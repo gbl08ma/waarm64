@@ -257,17 +257,20 @@ impl Client {
                     self.event(json!({ "type": "loggedout" }));
                 }
                 Update::Phase(_) => {}
-                Update::Failed(why) => {
+                Update::Failed { code, detail } => {
                     self.stop_data_plane();
-                    self.event(json!({ "type": "state", "state": "Failed", "error": why }));
+                    self.event(json!({ "type": "state", "state": "Failed", "code": code, "detail": detail }));
                     self.state = "Failed";
                 }
                 Update::Map(c) if c.tailnet_lock => {
                     self.session.close();
                     self.actions.extend(self.session.actions.drain(..));
                     self.stop_data_plane();
-                    let why = "this tailnet uses Tailnet Lock, which this client doesn't support: its node would need signing, and its peers' keys checking";
-                    self.event(json!({ "type": "state", "state": "Failed", "error": why }));
+                    // The page words it (`web/ts-client.ts` `failureOf`): this client doesn't support
+                    // Tailnet Lock (its node would need signing, and its peers' keys checking).
+                    self.event(
+                        json!({ "type": "state", "state": "Failed", "code": "tailnet-lock" }),
+                    );
                     self.state = "Failed";
                 }
                 Update::Map(c) => {
@@ -1129,7 +1132,7 @@ impl Client {
     }
 
     /// Uses the peer with this stable ID as the exit node ('' for none); the answer is an
-    /// `exitnode` event (its error, '' when it took).
+    /// `exitnode` event: with a `code` (`no-exit-node`, and the `id`) when it didn't take.
     pub fn set_exit_node(&mut self, id: &str, now: Instant) {
         let ok = id.is_empty()
             || self
@@ -1137,11 +1140,11 @@ impl Client {
                 .values()
                 .any(|p| p.stable_id == id && p.exit_option);
         if !ok {
-            return self.event(json!({ "type": "exitnode", "error": format!("no peer {id} offers to be an exit node") }));
+            return self.event(json!({ "type": "exitnode", "code": "no-exit-node", "id": id }));
         }
         self.exit_node = id.to_string();
         self.route();
-        self.event(json!({ "type": "exitnode", "error": "" }));
+        self.event(json!({ "type": "exitnode" }));
         self.publish_netmap();
         self.after(now);
     }
@@ -1418,7 +1421,7 @@ mod tests {
         c.set_exit_node("nope", now);
         assert!(
             std::iter::from_fn(|| c.poll())
-                .any(|a| matches!(a, Action::Event(e) if e.contains("no peer nope")))
+                .any(|a| matches!(a, Action::Event(e) if e.contains(r#""code":"no-exit-node""#) && e.contains(r#""id":"nope""#)))
         );
         c.set_exit_node("exit", now);
         assert_eq!(c.peer_for(world), Some(peer));

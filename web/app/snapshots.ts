@@ -11,6 +11,7 @@ import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
 import { createOverlay, identityOf } from './disks.ts';
 import { adaptersOf, canonical, CPU_FEATURES, macsOf, newId, shapeHash, shapeOf, slots, uniqueName, type CpuFeature, type DiskRecord, type Display, type MachineRecord, type Shape } from './shape.ts';
 import { overlayDir, snapshotPath, type Store } from './store.ts';
+import { msg, MsgError, t, type Msg } from '../i18n.ts';
 
 /** The display a machine runs with on this page: its own, 2D without WebGL2, none with the page's `?display=simple`. */
 export function effectiveDisplay(m: MachineRecord, page: { webgl2: boolean; simple: boolean }): Display | 'none' {
@@ -31,7 +32,7 @@ export type RestorePlan = {
   /** Disks whose state forks: the snapshot's blocks go into a new overlay (or an earlier unmoved fork is attached again). */
   forks: { disk: string; reused: boolean; replaceable?: { overlay: string; name: string; bytes: number } }[];
   /** Why it can't restore (a disk written in place moved on, and the file hasn't the whole disk). */
-  refused?: string;
+  refused?: Msg;
   /** Creates what the plan needs (fork overlays, attachments switched) and returns the worker's plan; `replace` writes into the attached overlays instead of forking. */
   commit(replace: boolean): Promise<DiskPlan[]>;
 };
@@ -46,7 +47,7 @@ export async function planRestore(store: Store, m: MachineRecord, disks: Map<str
   type Step = { slot: number; attachment: string; disk: DiskRecord; action: 'keep' | 'reuse' | 'fork' | 'fork-whole'; reuse?: string; replaceable?: { overlay: string; name: string; bytes: number } };
   const steps: Step[] = [];
   const kept: string[] = [];
-  let refused: string | undefined;
+  let refused: Msg | undefined;
   for (const p of snap.pins) {
     if (p.ram || !p.overlay) continue;
     const at = bySlot[p.slot]?.attachment;
@@ -57,7 +58,7 @@ export async function planRestore(store: Store, m: MachineRecord, disks: Map<str
       // Written in place: no earlier state to fork from.
       if (a.inPlace && (await overlayMeta(p.overlay)).generation === p.generation) { kept.push(d.name); continue; }
       if (p.blocks > 0) { steps.push({ slot: p.slot, attachment: a.id, disk: d, action: 'fork-whole' }); continue; }
-      refused = `${d.name} was written in place since this snapshot was taken, and the snapshot doesn't carry the whole disk: it can only restore onto that disk as it was.`;
+      refused = msg('snapshots:snapshots.writtenInPlace', { disk: d.name });
       continue;
     }
     if (a.overlay && overlayDir(a.overlay) === p.overlay && (await overlayMeta(p.overlay)).generation === p.generation) { kept.push(d.name); continue; }
@@ -75,7 +76,7 @@ export async function planRestore(store: Store, m: MachineRecord, disks: Map<str
     forks: steps.map((s) => ({ disk: s.disk.name, reused: s.action === 'reuse', replaceable: s.replaceable })),
     refused,
     async commit(replace) {
-      if (refused) throw new Error(refused);
+      if (refused) throw new MsgError(refused.key, refused.params);
       const plan: DiskPlan[] = [];
       for (const p of snap.pins) if (!p.ram && p.overlay && !steps.some((s) => s.slot === p.slot)) plan.push({ slot: p.slot, action: 'keep' });
       for (const s of steps) {
@@ -117,12 +118,12 @@ export async function machineLike(store: Store, snap: { id: string; machine: str
     let d = disks.find((x) => canonical(x.identity) === want);
     if (!d) {
       const i = sd.identity;
-      if (i.kind === 'stored') throw new Error('one of its disks was stored in this browser and is gone: the machine can\'t be made again');
+      if (i.kind === 'stored') throw new MsgError('snapshots:snapshots.storedDiskGone');
       d = i.kind === 'url'
-        ? { id: newId(), kind: 'url', name: i.path.split('/').pop() || 'disk', size: sd.size, url: snap.urls?.[sd.slot] ?? i.path, identity: i, created: now }
+        ? { id: newId(), kind: 'url', name: i.path.split('/').pop() || t('snapshots:snapshots.urlDisk'), size: sd.size, url: snap.urls?.[sd.slot] ?? i.path, identity: i, created: now }
         : i.kind === 'file'
           ? { id: newId(), kind: 'file', name: i.name, size: sd.size, identity: i, created: now }
-          : { id: i.id, kind: i.kind, name: i.kind === 'blank' ? 'Blank disk' : 'Ramdisk', size: sd.size, identity: i, created: now };
+          : { id: i.id, kind: i.kind, name: i.kind === 'blank' ? t('snapshots:snapshots.blankDisk') : t('snapshots:snapshots.ramdisk'), size: sd.size, identity: i, created: now };
       await store.put('disks', d);
       disks.push(d);
     }
@@ -131,7 +132,7 @@ export async function machineLike(store: Store, snap: { id: string; machine: str
   const taken = (await store.all('machines')).map((m) => m.name);
   const m: MachineRecord = {
     id: newId(),
-    name: uniqueName(`Like ${snap.name}`, taken),
+    name: uniqueName(t('snapshots:snapshots.like', { name: snap.name }), taken),
     ncpus: snap.shape.ncpus,
     ramMiB: snap.shape.ramMiB,
     ...(snap.shape.split ? { ramSplit: snap.shape.split } : {}),
@@ -173,7 +174,7 @@ export async function moveSnapshot(store: Store, id: string, to: string) {
 /** Imports a snapshot file into machine `machine`'s kept snapshots (its header read first; one of another shape is kept, orphaned). */
 export async function importSnapshot(store: Store, machine: string, file: File) {
   const { header } = await openSnapshot(file);
-  if (typeof header.shapeHash !== 'string' || !header.shape) throw new Error(`${file.name} is a snapshot of a machine this page didn't keep (a test's, or an older version's): it can only be loaded on that page`);
+  if (typeof header.shapeHash !== 'string' || !header.shape) throw new MsgError('snapshots:snapshots.notKept', { file: file.name });
   const id = newId();
   return store.writing(async () => {
     const dir = await opfsDir(`machines/${machine}/snapshots`, true);

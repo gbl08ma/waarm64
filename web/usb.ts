@@ -14,6 +14,7 @@ import type { UsbDevice, UsbFromWorker, UsbIdentity, UsbOpener, UsbProblem, UsbR
 import { GadgetZero } from './usb-gadget-zero.ts';
 import { UsbKeyboard } from './usb-keyboard.ts';
 import { bytes, type Ram } from './ram.ts';
+import { MsgError, toWire } from './msg.ts';
 
 // xhci::XhciShared (core/src/xhci.rs): events, then two virtio::WordRings of 4096 words.
 const RING_WORDS = 4096;
@@ -120,38 +121,38 @@ export class Usb {
    * the one answer to the page's `usb-attach` (none with `reply` false: the devices plugged in at start).
    */
   async attach(connector: number, device: UsbIdentity | UsbVirtual, reply = true): Promise<UsbFromWorker> {
-    const fail = (message: string, detail?: UsbProblem[]): UsbFromWorker => {
-      const m: UsbFromWorker = { type: 'usb-state', connector, state: 'error', message, ...(detail?.length ? { detail } : {}) };
+    const fail = (e: unknown, detail?: UsbProblem[]): UsbFromWorker => {
+      const m: UsbFromWorker = { type: 'usb-state', connector, state: 'error', message: String((e as Error)?.message ?? e), error: toWire(e), ...(detail?.length ? { detail } : {}) };
       if (reply) this.post(m);
       return m;
     };
-    if (!(connector >= 0 && connector < CONNECTORS)) return fail(`no connector ${connector}`);
-    if (this.plugged[connector] || this.opening.has(connector)) return fail(`connector ${connector} has a device`);
+    if (!(connector >= 0 && connector < CONNECTORS)) return fail(new Error(`no connector ${connector}`));
+    if (this.plugged[connector] || this.opening.has(connector)) return fail(new Error(`connector ${connector} has a device`));
     let dev: UsbDevice;
     if (device.api === 'virtual') {
       try {
         dev = virtualDevice(device);
       } catch (e) {
-        return fail(String((e as Error).message ?? e));
+        return fail(e);
       }
     } else {
-      if (this.init.deterministic) return fail('a real device in deterministic mode: its timing would make the run differ');
+      if (this.init.deterministic) return fail(new Error('a real device in deterministic mode: its timing would make the run differ'));
       const open = openers.get(device.api);
-      if (!open) return fail(`no ${device.api === 'usb' ? 'WebUSB' : 'WebHID'} here`);
+      if (!open) return fail(device.api === 'usb' ? new MsgError('usb:usb.noWebUsb') : new MsgError('usb:usb.noWebHid'));
       const gen = this.gens[connector];
       let resolve = () => {};
       this.opening.set(connector, new Promise<void>((r) => { resolve = r; }));
       try {
         dev = await open(device, { connector, gone: () => this.gone(connector, gen) });
       } catch (e) {
-        return fail(`couldn't open the device: ${(e as Error).message ?? e}`, (e as { problems?: UsbProblem[] }).problems);
+        return fail(new MsgError('usb:usb.openFailed', undefined, { cause: e }), (e as { problems?: UsbProblem[] }).problems);
       } finally {
         this.opening.delete(connector);
         resolve();
       }
       if (this.closed || this.plugged[connector]) {
         dev.detach();
-        return fail('the machine went away while it opened');
+        return fail(new MsgError('usb:usb.wentAway'));
       }
     }
     this.plugged[connector] = { dev, device };

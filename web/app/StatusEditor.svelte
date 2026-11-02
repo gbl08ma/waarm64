@@ -13,8 +13,9 @@
   import { liveNow } from './StatusBar.svelte';
   import StatusPiece from './StatusPiece.svelte';
   import {
-    aboutOf, DEFAULT_ITEMS, deviceOf, firstIndex, hasLooks, iconOf, lookOf, nameOf, palette, render, SAMPLE, shows, type Item, type Look,
+    aboutOf, DEFAULT_ITEMS, deviceOf, firstIndex, groupName, hasLooks, iconOf, lookOf, nameOf, palette, render, SAMPLE, shows, type Item, type Look,
   } from './statusbar.ts';
+  import { t } from '../i18n.ts';
   import { ui } from './ui.svelte.ts';
 
   let { net }: { net: PageNetwork } = $props();
@@ -26,7 +27,7 @@
   const sample = $derived(!ui.status.metrics);
   const live = $derived.by(() => {
     const l = liveNow(net, Date.now());
-    return sample ? { ...l, state: 'running' as const, stateText: 'Running', disks: SAMPLE.disks, nets: SAMPLE.nets, gpu: SAMPLE.gpu } : l;
+    return sample ? { ...l, state: 'running' as const, stateText: t('statusbar:StatusEditor.sample.state'), disks: SAMPLE.disks, nets: SAMPLE.nets, gpu: SAMPLE.gpu } : l;
   });
   const metrics = $derived(ui.status.metrics ?? SAMPLE.metrics);
 
@@ -109,34 +110,35 @@
   }
 
   const sel = $derived(chosen !== undefined ? items[chosen] : undefined);
-  const LOOK_WORDS: Record<Look, string> = { text: 'Words', icon: 'Icon', both: 'Icon and words' };
-  const DEVICE_WORDS = { cpu: 'vCPU', net: 'Adapter', disk: 'Disk' } as const;
+  const LOOK_WORDS: Record<Look, string> = { text: 'statusbar:StatusEditor.look.text', icon: 'statusbar:StatusEditor.look.icon', both: 'statusbar:StatusEditor.look.both' };
+  const DEVICE_WORDS = { cpu: 'statusbar:StatusEditor.device.cpu', net: 'statusbar:StatusEditor.device.net', disk: 'statusbar:StatusEditor.device.disk' } as const;
+  const INDEX_NOTE = { cpu: 'statusbar:StatusEditor.index.cpu', net: 'statusbar:StatusEditor.index.net', disk: 'statusbar:StatusEditor.index.disk' } as const;
 </script>
 
 <div class="status-edit">
-  <div class="bar" role="list" aria-label="The status bar's elements" ondragover={overEnd} ondrop={drop} data-field="status-bar">
+  <div class="bar" role="list" aria-label={t('statusbar:StatusEditor.bar')} ondragover={overEnd} ondrop={drop} data-field="status-bar">
     {#each items as it, at (at)}
       {@const pieces = render(it, metrics, live)}
       {#if over === at}<span class="mark" aria-hidden="true"></span>{/if}
       <div role="listitem" class="chip" class:spacer={it.kind === 'spacer'} class:chosen={chosen === at} class:absent={!pieces.length} draggable="true"
         ondragstart={(e) => start(e, { from: at })} ondragend={end} ondragover={(e) => overChip(e, at)} data-at={at} data-kind={it.kind}>
         <button class="pick" onclick={() => (chosen = chosen === at ? undefined : at)} onkeydown={(e) => key(e, at)} aria-pressed={chosen === at}
-          title={`${nameOf(it)}: ${aboutOf(it.kind)}${pieces.length ? '' : ' (not on the running machine: it shows when it is)'}\nDrag, or Alt+←/→, to move it`}>
-          {#if it.kind === 'spacer'}<span class="gap"><Icon name="arrows-horizontal" size={14} />spacer</span>
+          title={pieces.length ? t('statusbar:StatusEditor.chip.title', { name: nameOf(it), about: aboutOf(it.kind) }) : t('statusbar:StatusEditor.chip.title.absent', { name: nameOf(it), about: aboutOf(it.kind) })}>
+          {#if it.kind === 'spacer'}<span class="gap"><Icon name="arrows-horizontal" size={14} />{t('statusbar:StatusEditor.spacer')}</span>
           {:else if it.kind === 'divider'}<span class="line"></span>
           {:else if pieces.length}{#each pieces as p, k (k)}<StatusPiece item={it} {p} />{/each}
           {:else}<span>{nameOf(it)}</span>{/if}
         </button>
-        <button class="x" onclick={() => removeAt(at)} title="Remove it" aria-label={`Remove ${nameOf(it)}`}><Icon name="x" size={12} /></button>
+        <button class="x" onclick={() => removeAt(at)} title={t('statusbar:StatusEditor.remove.title')} aria-label={t('statusbar:StatusEditor.remove.label', { name: nameOf(it) })}><Icon name="x" size={12} /></button>
       </div>
     {/each}
     {#if over === items.length}<span class="mark" aria-hidden="true"></span>{/if}
-    {#if !items.length}<span class="empty">No elements: the page shows no status bar. Add some below.</span>{/if}
+    {#if !items.length}<span class="empty">{t('statusbar:StatusEditor.empty')}</span>{/if}
   </div>
   <div class="row">
-    <span class="note">{sample ? 'Showing made-up numbers: with a machine running, its own.' : 'Showing the running machine.'} {shows(items) ? '' : 'Nothing here shows anything: the page has no status bar.'}</span>
+    <span class="note">{sample ? t('statusbar:StatusEditor.sample') : t('statusbar:StatusEditor.running')} {shows(items) ? '' : t('statusbar:StatusEditor.nothing')}</span>
     <span class="grow"></span>
-    <button onclick={() => { keep(DEFAULT_ITEMS.map((i) => ({ ...i }))); remember({ statusBar: undefined }); chosen = undefined; }} data-action="status-defaults"><Icon name="refresh" size={14} />Restore defaults</button>
+    <button onclick={() => { keep(DEFAULT_ITEMS.map((i) => ({ ...i }))); remember({ statusBar: undefined }); chosen = undefined; }} data-action="status-defaults"><Icon name="refresh" size={14} />{t('statusbar:StatusEditor.defaults')}</button>
   </div>
 
   {#if sel && chosen !== undefined}
@@ -146,40 +148,40 @@
       <strong>{nameOf(sel)}</strong><span class="note">{aboutOf(sel.kind)}</span>
       {#if hasLooks(sel.kind) && iconOf(sel.kind)}
         <fieldset class="set">
-          <legend class="sr">Look</legend>
+          <legend class="sr">{t('statusbar:StatusEditor.look')}</legend>
           {#each ['text', 'icon', 'both'] as const as l (l)}
-            <label><input type="radio" name="status-look" checked={lookOf(sel) === l} onchange={() => change(at, { look: l })}> {LOOK_WORDS[l]}</label>
+            <label><input type="radio" name="status-look" checked={lookOf(sel) === l} onchange={() => change(at, { look: l })}> {t(LOOK_WORDS[l])}</label>
           {/each}
         </fieldset>
       {/if}
       {#if device === 'cpu' && sel.scope === 'each'}
         <fieldset class="set">
-          <legend class="sr">Each vCPU as</legend>
-          <label><input type="radio" name="status-bars" checked={!sel.numbers} onchange={() => change(at, { numbers: false })}> Bars</label>
-          <label><input type="radio" name="status-bars" checked={!!sel.numbers} onchange={() => change(at, { numbers: true })}> Numbers</label>
+          <legend class="sr">{t('statusbar:StatusEditor.cpus')}</legend>
+          <label><input type="radio" name="status-bars" checked={!sel.numbers} onchange={() => change(at, { numbers: false })}> {t('statusbar:StatusEditor.cpus.bars')}</label>
+          <label><input type="radio" name="status-bars" checked={!!sel.numbers} onchange={() => change(at, { numbers: true })}> {t('statusbar:StatusEditor.cpus.numbers')}</label>
         </fieldset>
       {/if}
       {#if device && sel.scope === 'one'}
         <fieldset class="set">
-          <legend class="sr">{DEVICE_WORDS[device]}</legend>
-          <label class="index">{DEVICE_WORDS[device]} <input type="number" min={firstIndex(device)} max="64" value={sel.index ?? firstIndex(device)}
+          <legend class="sr">{t(DEVICE_WORDS[device])}</legend>
+          <label class="index">{t(DEVICE_WORDS[device])} <input type="number" min={firstIndex(device)} max="64" value={sel.index ?? firstIndex(device)}
           onchange={(e) => { const n = Math.round(Number(e.currentTarget.value)); if (Number.isFinite(n) && n >= firstIndex(device)) change(at, { index: n }); }} data-field="status-index"></label>
-          <span class="note">{device === 'cpu' ? 'From 0, as the guest names them (cpu0).' : `From 1, as the machine's ${device === 'net' ? 'Network' : 'Disks'} tab lists them.`} Hidden on a machine that hasn't it.</span>
+          <span class="note">{t(INDEX_NOTE[device])}</span>
         </fieldset>
       {/if}
       <span class="grow"></span>
-      <button onclick={() => move(at, at - 1)} disabled={at === 0} title="Move it left"><Icon name="arrow-left" size={14} /></button>
-      <button onclick={() => move(at, at + 2)} disabled={at === items.length - 1} title="Move it right"><Icon name="arrow-right" size={14} /></button>
-      <button onclick={() => removeAt(at)}><Icon name="trash" size={14} />Remove</button>
+      <button onclick={() => move(at, at - 1)} disabled={at === 0} title={t('statusbar:StatusEditor.left')}><Icon name="arrow-left" size={14} /></button>
+      <button onclick={() => move(at, at + 2)} disabled={at === items.length - 1} title={t('statusbar:StatusEditor.right')}><Icon name="arrow-right" size={14} /></button>
+      <button onclick={() => removeAt(at)}><Icon name="trash" size={14} />{t('statusbar:StatusEditor.remove')}</button>
     </div>
   {/if}
 
-  <div class="palette" role="group" aria-label="Elements to add" ondragover={(e) => { if (drag?.from !== undefined) e.preventDefault(); }} ondrop={dropOut}>
+  <div class="palette" role="group" aria-label={t('statusbar:StatusEditor.palette')} ondragover={(e) => { if (drag?.from !== undefined) e.preventDefault(); }} ondrop={dropOut}>
     {#each groups as g (g.group)}
-      <span class="group">{g.group}</span>
+      <span class="group">{groupName(g.group)}</span>
       <div class="chips">
         {#each g.items as it, k (k)}
-          <button class="add" draggable="true" ondragstart={(e) => start(e, { add: it })} ondragend={end} onclick={() => insert(it)} title={`${aboutOf(it.kind)}\nClick to add it at the end, or drag it into the bar`} data-add={`${it.kind}${it.scope ? `:${it.scope}` : ''}`}>
+          <button class="add" draggable="true" ondragstart={(e) => start(e, { add: it })} ondragend={end} onclick={() => insert(it)} title={t('statusbar:StatusEditor.add.title', { about: aboutOf(it.kind) })} data-add={`${it.kind}${it.scope ? `:${it.scope}` : ''}`}>
             {#if iconOf(it.kind)}<Icon name={iconOf(it.kind)!} size={14} />{/if}{nameOf(it, true)}
           </button>
         {/each}

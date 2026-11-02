@@ -89,7 +89,7 @@ test("a disk's overlays are named variants: new, rename, switch, delete (a machi
     await switchOverlay(store, m, 'a0000000000a', b.id);
     const switched = (await store.get('machines', m.id)).attachments[0].overlay === b.id;
     let refused = '';
-    await switchOverlay(store, m, 'a0000000000a', 'ffffffffffff').catch((e: Error) => { refused = e.message; });
+    await switchOverlay(store, m, 'a0000000000a', 'ffffffffffff').catch((e: { msg?: { key: string } }) => { refused = e.msg?.key ?? String(e); });
     // A machine running on it (its overlay open, as a device worker holds it): deleting is refused.
     const files = await new Promise<{ close(): void }>((resolve) => {
       const w = new Worker('/tests/browser/overlay-worker.ts', { type: 'module' });
@@ -98,7 +98,7 @@ test("a disk's overlays are named variants: new, rename, switch, delete (a machi
     });
     const busy = await inUse(`overlays/${b.id}`);
     let running = '';
-    await deleteOverlay(store, b.id).catch((e: Error) => { running = e.message; });
+    await deleteOverlay(store, b.id).catch((e: { msg?: { key: string } }) => { running = e.msg?.key ?? String(e); });
     files.close();
     await new Promise((r) => setTimeout(r, 300));
     await deleteOverlay(store, b.id);
@@ -111,7 +111,7 @@ test("a disk's overlays are named variants: new, rename, switch, delete (a machi
     store.close();
     return out;
   });
-  assert.deepEqual(r, { names: ['Changes'], switched: true, refused: "that overlay isn't one of this disk's", busy: true, running: 'a machine is running on it: power it off first', left: null, files: [] });
+  assert.deepEqual(r, { names: ['Changes'], switched: true, refused: 'disks:disks.notThisDisk', busy: true, running: 'disks:disks.overlayRunning', left: null, files: [] });
   await context.close();
 });
 
@@ -160,7 +160,7 @@ test("a restore's plan: keep where the pin matches, fork where it moved on, reus
     const replace = await planRestore(store, structuredClone({ ...m, attachments: [{ ...m.attachments[0], overlay: a.id }, m.attachments[1]] }), disks, { name: 'snap', key: 'snap-1', pins: pins(3, 7) });
     out.replace = { reused: replace.forks.map((f: { reused: boolean }) => f.reused), plan: (await replace.commit(true)).map((p: { action: string; overlay?: string }) => [p.action, p.overlay === `overlays/${a.id}`]) };
     // Written in place and moved on: refused without the whole disk, forked into an overlay with it.
-    out.refused = (await plan(pins(4, 6))).refused ?? null;
+    out.refused = (await plan(pins(4, 6))).refused?.key ?? null;
     const whole = await plan(pins(4, 6, 256));
     out.whole = (await whole.commit(false)).map((p: { action: string; whole?: boolean }) => [p.action, !!p.whole]);
     store.close();
@@ -170,7 +170,7 @@ test("a restore's plan: keep where the pin matches, fork where it moved on, reus
   assert.deepEqual(r.moved, { forks: [[false, 'Changes']], plan: [['keep', false], ['write', false]], attached: true });
   assert.deepEqual(r.reused, { forks: [true], plan: ['keep', 'keep'] });
   assert.deepEqual(r.replace, { reused: [false], plan: [['keep', false], ['write', true]] });
-  assert.match(String(r.refused), /written in place since this snapshot was taken/);
+  assert.equal(r.refused, 'snapshots:snapshots.writtenInPlace');
   assert.deepEqual(r.whole, [['keep', false], ['write', true]]);
   await context.close();
 });

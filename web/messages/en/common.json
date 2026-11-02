@@ -1,0 +1,58 @@
+{
+  "App.message.close": {
+    "message": "Close",
+    "note": "Tooltip and screen-reader name of the × button at the right of the message bar (under the toolbar): it dismisses the message shown."
+  },
+  "App.screen.label": {
+    "message": "Machine screen",
+    "note": "Screen-reader name of the machine's screen (the canvas the guest draws on, in the page's main area)."
+  },
+  "App.screen.hint": {
+    "message": "Click to type",
+    "note": "Hint shown over the machine's screen while typing doesn't go to the machine (the screen hasn't the focus) and the toolbar's mouse lock is off."
+  },
+  "App.screen.hintLock": {
+    "message": "Click to type and take the mouse (Esc lets it go)",
+    "note": "Hint shown over the machine's screen while typing doesn't go to the machine and the toolbar's mouse lock is on: a click also hands the machine the mouse."
+  },
+  "App.boot.serial": {
+    "message": "The boot menus, and a first boot's questions, are on the serial console.",
+    "note": "Line on the boot card (over the screen while a machine starts) when the guest's boot menus or first-boot questions go to the serial console instead of the screen; a Show it button follows."
+  },
+  "App.boot.serial.show": {
+    "message": "Show it",
+    "note": "Button after the boot card's line about the serial console: it shows the serial terminal."
+  },
+  "MoveButtons.up": {
+    "message": "Up",
+    "note": "Screen-reader name of the Up arrow button of an item in an ordered list (a machine's disks, shared folders, network adapters on the Machines page): moves it up."
+  },
+  "MoveButtons.down": {
+    "message": "Down",
+    "note": "Screen-reader name of the Down arrow button of an item in an ordered list (a machine's disks, shared folders, network adapters on the Machines page): moves it down."
+  },
+  "MoveButtons.up.title": {
+    "message": "Move up",
+    "note": "Tooltip of the Up arrow button of an item in an ordered list on the Machines page, where the list doesn't say what moving means there."
+  },
+  "MoveButtons.down.title": {
+    "message": "Move down",
+    "note": "Tooltip of the Down arrow button of an item in an ordered list on the Machines page, where the list doesn't say what moving means there."
+  },
+  "ask.confirmTitle": {
+    "message": "Are you sure?",
+    "note": "The title of a confirmation dialog (OK/Cancel) that doesn't give a title of its own."
+  },
+  "ask.title": {
+    "message": "webpc",
+    "note": "The title of a notice or a text prompt that doesn't give a title of its own: the product's name."
+  },
+  "ask.ok": {
+    "message": "OK",
+    "note": "The confirm button of the page's dialogs (questions, notices, text prompts) that don't name their own action."
+  },
+  "ask.cancel": {
+    "message": "Cancel",
+    "note": "The button that dismisses one of the page's questions or text prompts without doing anything (Esc does the same)."
+  }
+}

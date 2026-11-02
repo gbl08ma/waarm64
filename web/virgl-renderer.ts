@@ -18,6 +18,7 @@ import { generate, parseTgsi, samplerUnit, uboBinding, type ProgramKey, type Pro
 import { padPlane, VideoContext, videoStats, type DecodedPicture, type DecoderFactory, type VideoStats, type VideoStream } from './virgl-video.ts';
 import { bytes, type Ram, type Segment } from './ram.ts';
 import { walk } from './virgl.ts';
+import { msg, type Msg } from './msg.ts';
 
 /** A resource's guest pages: offsets into guest RAM and lengths. */
 /** A resource's guest pages: segments of guest RAM (memory, offset, length; web/devices.ts `Segment`). */
@@ -2763,9 +2764,9 @@ void main() {
    * Why the renderer's state can't be saved now, or undefined: a context with video codecs or buffers (WebCodecs'
    * decoders keep their reference pictures to themselves).
    */
-  snapshotRefusal(): string | undefined {
+  snapshotRefusal(): Msg | undefined {
     for (const c of this.contexts.values()) {
-      if (c.video && (c.video.codecs.size || c.video.buffers.size)) return 'a video is being decoded through the GPU: close the video player first';
+      if (c.video && (c.video.codecs.size || c.video.buffers.size)) return msg('display:virgl-renderer.unsaveable.video');
     }
     return undefined;
   }

@@ -3,6 +3,7 @@
 // (web/stored.ts); the page (web/app/disks.ts) runs one per job.
 import { blobSource } from '../devices.ts';
 import { inflatePool } from '../inflate-pool.ts';
+import { toWire, type WireError } from '../msg.ts';
 import { importImage, mergeOverlay, openStoredForWriting, storedEstimate } from '../stored.ts';
 
 export type DiskJob =
@@ -13,7 +14,7 @@ export type DiskJob =
 export type DiskJobResult =
   | { type: 'progress'; done: number; total: number }
   | { type: 'done'; size?: number; format?: string; estimate?: number; blocks?: number }
-  | { type: 'error'; message: string };
+  | { type: 'error'; error: WireError };
 
 const post = (m: DiskJobResult) => self.postMessage(m);
 
@@ -36,6 +37,6 @@ self.onmessage = async (e: MessageEvent<DiskJob>) => {
       post({ type: 'done', blocks: await mergeOverlay(j.disk, j.overlay, j.identity, j.size) });
     }
   } catch (err) {
-    post({ type: 'error', message: String((err as Error).message ?? err) });
+    post({ type: 'error', error: toWire(err) });
   }
 };

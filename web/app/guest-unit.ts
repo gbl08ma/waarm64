@@ -19,7 +19,7 @@ export function guestUnit(o: { name: string; description: string; script: string
     {
       name: `systemd.extra-unit.${o.name}`,
       data: `[Unit]
-Description=${o.description}
+Description=${oneLine(o.description)}
 ConditionPathExists=!/etc/initrd-release
 ${o.unit}
 [Service]
@@ -31,6 +31,12 @@ ExecStart=/bin/sh %d/${sh}
     { name: `systemd.unit-dropin.${o.wantedBy}~${what}`, data: `[Unit]\nWants=${o.name}\nAfter=${o.name}\n` },
   ];
 }
+
+/** Words on one line (a unit's description ends at a newline). */
+export const oneLine = (s: string) => s.replace(/\s*\n\s*/g, ' ').trim();
+
+/** The units' descriptions, in the page's words (web/app/guest-words.ts renders them; the worker gets them with the start). */
+export type GuestWords = { keyboard: string; network: string; shares: string; /** The keyboard layout's name, for the comment atop its script. */ layout?: string };
 
 /** The fw_cfg file the core moves into SMBIOS type 11 (core/src/smbios.rs `OEM_STRINGS`, ABI 49): NUL-separated strings. */
 export const OEM_STRINGS_FILE = 'opt/webpc/oem-strings';

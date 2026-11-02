@@ -11,6 +11,7 @@ import { applyRam, BLOB_CHUNKS, CHUNK, corrupt, diskBlocks, openSnapshot, Snapsh
 import { diskIdentity, type BlkSpec, type DeviceSpec } from './devices.ts';
 import { ramDisk } from './ramdisk.ts';
 import { lzCodec } from './lz.ts';
+import { msg, MsgError, type Param } from './msg.ts';
 import { openOverlay, overlay, overlayMeta, removeOverlay, writeMeta, type WritableDisk } from './overlay.ts';
 import { isZero } from './qcow2-write.ts';
 import { ABI, bootVm, compileCore, Exit, type BootOptions, type ConsoleInput, type Restore, type Vm, type VmState } from './vm.ts';
@@ -129,15 +130,17 @@ export async function readSnapshot(
   // The codec's core reads back to its `snapshotVersionMin` (a caller naming another version means another core).
   const min = codec.snapshotVersion === coreVersion ? Math.min(codec.snapshotVersionMin ?? coreVersion, coreVersion) : coreVersion;
   if (typeof header.coreVersion !== 'number' || header.coreVersion > coreVersion || header.coreVersion < min) {
-    throw new SnapshotError('other-version', `This snapshot was made by another version of this page (its machine state is format ${header.coreVersion}; this version reads ${min === coreVersion ? coreVersion : `${min} to ${coreVersion}`}). Open it in the version that made it.`);
+    throw min === coreVersion
+      ? new SnapshotError('snapshots:snapshot.otherVersion', { format: header.coreVersion, reads: coreVersion }, 'other-version')
+      : new SnapshotError('snapshots:snapshot.otherVersion.range', { format: header.coreVersion, min, max: coreVersion }, 'other-version');
   }
   if (!!header.suspend !== !!opts.resume) {
     throw header.suspend
-      ? new SnapshotError('other-disk', "This file is a suspended machine's memory without its disk's changes: it only resumes in the browser that suspended it. Use Save snapshot to take a machine elsewhere.")
-      : corrupt('it is not a suspended machine');
+      ? new SnapshotError('snapshots:snapshot.suspended', {}, 'other-disk')
+      : corrupt(msg('snapshots:snapshot.damage.notSuspended'));
   }
   const pinned = (header.disks ?? []) as SnapshotDisk[];
-  if (!Array.isArray(pinned) || pinned.some((d) => !Number.isInteger(d?.slot) || typeof d.identity !== 'string' || !Number.isSafeInteger(d.size) || d.size < 0)) throw corrupt('its list of disks is not readable');
+  if (!Array.isArray(pinned) || pinned.some((d) => !Number.isInteger(d?.slot) || typeof d.identity !== 'string' || !Number.isSafeInteger(d.size) || d.size < 0)) throw corrupt(msg('snapshots:snapshot.damage.diskList'));
   // What each pinned disk's blocks do, by slot: an overlay written (emptied first), skipped (the overlay is kept as it
   // is), or a ramdisk's chunks (handed to its new device: `BlkSpec.ramInit`).
   type Target = { kind: 'overlay'; name: string; identity: string; size: number; whole?: boolean } | { kind: 'skip' } | { kind: 'ram'; spec: BlkSpec; size: number };
@@ -145,16 +148,16 @@ export async function readSnapshot(
   for (const d of pinned) {
     const spec = opts.devices?.[d.slot];
     if (d.ram) {
-      if (spec?.type !== 'blk' || spec.source !== 'ram' || spec.size !== d.size) throw new SnapshotError('other-machine', "This snapshot is of a machine with a ramdisk that this machine doesn't have.");
+      if (spec?.type !== 'blk' || spec.source !== 'ram' || spec.size !== d.size) throw new SnapshotError('snapshots:snapshot.noRamdisk', {}, 'other-machine');
       targets.set(d.slot, { kind: 'ram', spec, size: d.size });
       continue;
     }
-    if (spec?.type !== 'blk' || !spec.overlay) throw new SnapshotError('other-machine', "This snapshot is of a machine with a writable disk that this machine doesn't have.");
+    if (spec?.type !== 'blk' || !spec.overlay) throw new SnapshotError('snapshots:snapshot.noDisk', {}, 'other-machine');
     const identity = diskIdentity(spec, d.size);
     if (identity !== d.identity) {
       const same = d.sha256 !== undefined && opts.sha256 !== undefined && (await opts.sha256(d.slot)) === d.sha256;
       if (!same) {
-        throw new SnapshotError('other-disk', `This snapshot was taken on another disk (${describe(d.identity)}); the disk here is ${describe(identity)}. A snapshot only continues on the disk it was taken on: open that disk first (Open disk…), then load the snapshot.`);
+        throw new SnapshotError('snapshots:snapshot.otherDisk', { was: describe(d.identity), here: describe(identity) }, 'other-disk');
       }
     }
     const plan = opts.plan?.find((p) => p.slot === d.slot);
@@ -166,7 +169,7 @@ export async function readSnapshot(
   let next = await frames.next();
   for (; !next.done && next.value.tag in parts; next = await frames.next()) {
     const { tag, index, data } = next.value;
-    if (index !== parts[tag].length) throw corrupt("the machine's state is out of order");
+    if (index !== parts[tag].length) throw corrupt(msg('snapshots:snapshot.damage.stateOrder'));
     parts[tag].push(data);
   }
   const join = (p: Uint8Array[]) => {
@@ -174,7 +177,7 @@ export async function readSnapshot(
     p.reduce((at, b) => (out.set(b, at), at + b.length), 0);
     return out;
   };
-  if (!parts.CORE.length || !parts.DEVS.length) throw next.done ? truncated() : corrupt("the machine's state is missing");
+  if (!parts.CORE.length || !parts.DEVS.length) throw next.done ? truncated() : corrupt(msg('snapshots:snapshot.damage.stateMissing'));
   let host: VmState['host'];
   // The blobs DEVS names (`writeSnapshot`), made at their lengths and filled from the BLOB frames that follow.
   const blobs: Uint8Array[] = [];
@@ -182,31 +185,36 @@ export async function readSnapshot(
     host = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(join(parts.DEVS)), (_k, v: unknown) => {
       if (!v || typeof v !== 'object' || !('$blob' in v)) return v;
       const { $blob: n, length } = v as { $blob: unknown; length: unknown };
-      if (!Number.isInteger(n) || !Number.isSafeInteger(length) || (n as number) < 0 || (length as number) < 0 || (length as number) > 2 ** 32 || blobs[n as number]) throw corrupt("the devices' state is not readable");
+      if (!Number.isInteger(n) || !Number.isSafeInteger(length) || (n as number) < 0 || (length as number) < 0 || (length as number) > 2 ** 32 || blobs[n as number]) throw corrupt(msg('snapshots:snapshot.damage.devices'));
       return (blobs[n as number] = new Uint8Array(length as number));
     });
   } catch {
-    throw corrupt("the devices' state is not readable");
+    throw corrupt(msg('snapshots:snapshot.damage.devices'));
   }
   const filled = blobs.map(() => 0);
   for (; !next.done && next.value.tag === 'BLOB'; next = await frames.next()) {
     const { index, data } = next.value;
     const n = Math.floor(index / BLOB_CHUNKS), at = (index % BLOB_CHUNKS) * 2 ** 20;
-    if (!blobs[n] || at + data.length > blobs[n].length) throw corrupt("the devices' state doesn't fit its parts");
+    if (!blobs[n] || at + data.length > blobs[n].length) throw corrupt(msg('snapshots:snapshot.damage.blobFit'));
     blobs[n].set(data, at);
     filled[n] += data.length;
   }
-  if (filled.some((n, k) => n !== blobs[k]?.length)) throw corrupt("the devices' state is missing parts");
-  if (!Array.isArray(host?.devices) || !Array.isArray(host.input) || host.input.some((b) => !Number.isInteger(b) || b < 0 || b > 255)) throw corrupt("the devices' state is not readable");
+  if (filled.some((n, k) => n !== blobs[k]?.length)) throw corrupt(msg('snapshots:snapshot.damage.blobMissing'));
+  if (!Array.isArray(host?.devices) || !Array.isArray(host.input) || host.input.some((b) => !Number.isInteger(b) || b < 0 || b > 255)) throw corrupt(msg('snapshots:snapshot.damage.devices'));
   const restore: Restore = {
     core: join(parts.CORE),
     host,
     async fill(ram, spill = []) {
-      if (ram.length !== header.ramSize) throw new SnapshotError('other-machine', `This snapshot is of a machine with ${Number(header.ramSize) / 2 ** 20} MiB of memory; this one has ${ram.length / 2 ** 20} MiB.`);
+      if (ram.length !== header.ramSize) throw new SnapshotError('snapshots:snapshot.otherRam', { had: Number(header.ramSize) / 2 ** 20, has: ram.length / 2 ** 20 }, 'other-machine');
       const had = header.spill === undefined ? [] : header.spill;
-      if (!Array.isArray(had) || had.some((n) => !Number.isSafeInteger(n) || n <= 0)) throw corrupt('its memory sizes are not readable');
-      const mib = (sizes: number[]) => sizes.map((n) => `${n / 2 ** 20} MiB`).join(' + ');
-      if (had.join() !== spill.map((v) => v.length).join()) throw new SnapshotError('other-machine', `This snapshot is of a machine with ${had.length ? `NUMA nodes of ${mib(had)}` : 'no NUMA nodes'} past its first memory; this one has ${spill.length ? mib(spill.map((v) => v.length)) : 'none'}.`);
+      if (!Array.isArray(had) || had.some((n) => !Number.isSafeInteger(n) || n <= 0)) throw corrupt(msg('snapshots:snapshot.damage.memorySizes'));
+      const mib = (sizes: number[]) => sizes.map((n) => `${n / 2 ** 20} MiB`).join(' + '); // i18n-ignore: numbers and their unit
+      if (had.join() !== spill.map((v) => v.length).join()) {
+        throw new SnapshotError('snapshots:snapshot.otherNuma', {
+          had: had.length ? msg('snapshots:snapshot.otherNuma.had', { sizes: mib(had) }) : msg('snapshots:snapshot.otherNuma.hadNone'),
+          has: spill.length ? mib(spill.map((v) => v.length)) : msg('snapshots:snapshot.otherNuma.hasNone'),
+        }, 'other-machine');
+      }
       const views = [ram, ...spill];
       const starts = ramStarts(views.map((v) => v.length));
       for (; !next.done && next.value.tag === 'RAM '; next = await frames.next()) {
@@ -233,23 +241,23 @@ export async function readSnapshot(
           const was = (await overlayMeta(t.name)).generation;
           await removeOverlay(t.name);
           const files = await openOverlay(t.name, t.identity);
-          if (!writeMeta(files.meta, { generation: was + 1, merging: '' })) throw new Error("the disk's changes can't be written to the browser's storage (is it full?)");
+          if (!writeMeta(files.meta, { generation: was + 1, merging: '' })) throw new MsgError('snapshots:snapshot.storageFull');
           // Whole blocks are written, so the base is never read; no meta: its generation is set.
           const disk = overlay({ size: t.size, format: 'raw', read: async () => undefined }, files.data, files.map);
           open.set(slot, { disk, close: files.close, size: t.size });
-          if (t.whole && !(await disk.zero(0, t.size))) throw new Error("the disk can't be written to the browser's storage (is it full?)");
+          if (t.whole && !(await disk.zero(0, t.size))) throw new MsgError('snapshots:snapshot.storageFull.whole');
         }
         for (; !next.done; next = await frames.next()) {
           const { tag, index, data } = next.value;
-          if (tag !== 'DISK') throw corrupt("it has parts this page doesn't expect");
+          if (tag !== 'DISK') throw corrupt(msg('snapshots:snapshot.damage.unexpected'));
           const o = open.get(Math.floor(index / SLOT));
-          if (!o) throw corrupt('it has blocks of a disk it doesn\'t list');
+          if (!o) throw corrupt(msg('snapshots:snapshot.damage.unlistedDisk'));
           if (o === 'skip') continue;
           for (const { block, data: bytes } of diskBlocks(index % SLOT, data)) {
             const at = block * BLOCK;
-            if (at >= o.size) throw corrupt('it has blocks past the end of its disk');
+            if (at >= o.size) throw corrupt(msg('snapshots:snapshot.damage.pastDisk'));
             const part = bytes.subarray(0, Math.min(BLOCK, o.size - at));
-            if (!(isZero(part) ? await o.disk.zero(at, part.length) : await o.disk.write(at, part))) throw new Error("the disk's changes can't be written to the browser's storage (is it full?)");
+            if (!(isZero(part) ? await o.disk.zero(at, part.length) : await o.disk.write(at, part))) throw new MsgError('snapshots:snapshot.storageFull');
           }
         }
         for (const o of open.values()) if (o !== 'skip') o.disk.flush();
@@ -262,11 +270,11 @@ export async function readSnapshot(
   return { header, restore };
 }
 
-/** A disk identity (`diskIdentity`'s JSON) in words for a message. */
-function describe(identity: string) {
+/** A disk identity (`diskIdentity`'s JSON) for a message: a file in words, a URL's path as it is. */
+function describe(identity: string): Param {
   try {
     const d = JSON.parse(identity) as { file?: string; path?: string; size?: number; modified?: number };
-    return d.file !== undefined ? `the file ${d.file}, modified ${new Date(d.modified ?? 0).toLocaleString()}` : `${d.path}`;
+    return d.file !== undefined ? msg('snapshots:snapshot.diskFile', { file: d.file, when: new Date(d.modified ?? 0) }) : `${d.path}`;
   } catch {
     return identity;
   }

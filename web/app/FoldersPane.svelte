@@ -7,6 +7,7 @@
   import Check from './Check.svelte';
   import Icon from './Icon.svelte';
   import { ask } from './ask.svelte.ts';
+  import { t } from '../i18n.ts';
   import { bytesText } from './bytes.ts';
   import type { PageFolders } from './folders-live.ts';
   import { addFiles, copyTree, emptyFolder, folderSize, topLevel, type Copying, type Entry } from './folder-files.ts';
@@ -44,7 +45,7 @@
   const pickers = globalThis as unknown as Picker;
   const cancelled = (e: unknown) => (e as Error).name === 'AbortError';
 
-  const addPicked = (f: Folder) => act('Adding files', async () => {
+  const addPicked = (f: Folder) => act(t('folders:FoldersPane.busy.adding'), async () => {
     const picked = await pickers.showOpenFilePicker({ multiple: true }).catch((e) => { if (cancelled(e)) return []; throw e; });
     await withFolder(f.id, true, async () => addFiles(await dirOf(f), await Promise.all(picked.map((h) => h.getFile()))));
     await refreshOf(f);
@@ -62,18 +63,21 @@
       }
     });
   }
-  const copyOut = (f: Folder) => copy('Copying out', f.id, false, async () => [await dirOf(f), await pickers.showDirectoryPicker({ mode: 'readwrite' })]);
-  const copyIn = async (f: Folder) => { await copy('Copying in', f.id, true, async () => [await pickers.showDirectoryPicker({ mode: 'read' }), await dirOf(f)]); await refreshOf(f); };
+  const copyOut = (f: Folder) => copy(t('folders:FoldersPane.busy.copyingOut'), f.id, false, async () => [await dirOf(f), await pickers.showDirectoryPicker({ mode: 'readwrite' })]);
+  const copyIn = async (f: Folder) => { await copy(t('folders:FoldersPane.busy.copyingIn'), f.id, true, async () => [await pickers.showDirectoryPicker({ mode: 'read' }), await dirOf(f)]); await refreshOf(f); };
   async function empty(f: Folder) {
-    if (!(await ask.confirm(`Empty ${f.name}? Its files are deleted from this browser.`, { title: 'Empty the folder', ok: 'Empty', danger: true }))) return;
-    await act('Emptying', async () => { await withFolder(f.id, true, async () => emptyFolder(await dirOf(f))); await refreshOf(f); });
+    if (!(await ask.confirm(t('folders:FoldersPane.empty.question', { name: f.name }), { title: t('folders:FoldersPane.empty.title'), ok: t('folders:FoldersPane.empty.ok'), danger: true }))) return;
+    await act(t('folders:FoldersPane.busy.emptying'), async () => { await withFolder(f.id, true, async () => emptyFolder(await dirOf(f))); await refreshOf(f); });
   }
   async function remove(f: Folder) {
     const lose = users[f.id] ?? [];
     const size = f.kind === 'opfs' ? await folderSize(await dirOf(f)) : 0;
-    const what = `${f.kind === 'opfs' ? `Its files (${bytesText(size)}) are deleted from this browser. ` : 'The folder on this computer stays as it is. '}${lose.length ? `${lose.join(', ')} ${lose.length > 1 ? 'lose' : 'loses'} it.` : ''}`;
-    if (!(await ask.confirm(`Delete ${f.name}? ${what}`, { title: 'Delete the folder', ok: 'Delete', danger: true }))) return;
-    await act('Deleting', () => deleteFolderOf(folders, store, f));
+    const [name, count, machines] = [f.name, lose.length, lose];
+    const question = f.kind === 'opfs'
+      ? (count ? t('folders:FoldersPane.delete.opfs.lose', { name, size, count, machines }) : t('folders:FoldersPane.delete.opfs', { name, size }))
+      : (count ? t('folders:FoldersPane.delete.host.lose', { name, count, machines }) : t('folders:FoldersPane.delete.host', { name }));
+    if (!(await ask.confirm(question, { title: t('folders:FoldersPane.delete.title'), ok: t('folders:FoldersPane.delete.ok'), danger: true }))) return;
+    await act(t('folders:FoldersPane.busy.deleting'), () => deleteFolderOf(folders, store, f));
   }
   async function dropped(e: DragEvent, f: Folder) {
     e.preventDefault();
@@ -81,7 +85,7 @@
     dropping = false;
     if (busy(f)) return;
     const files = [...(e.dataTransfer?.items ?? [])].filter((i) => i.webkitGetAsEntry()?.isFile).map((i) => i.getAsFile()!); // a directory is a file here too
-    await act('Adding files', async () => { await withFolder(f.id, true, async () => addFiles(await dirOf(f), files)); await refreshOf(f); });
+    await act(t('folders:FoldersPane.busy.adding'), async () => { await withFolder(f.id, true, async () => addFiles(await dirOf(f), files)); await refreshOf(f); });
   }
 </script>
 
@@ -91,31 +95,31 @@
       <div class="line">
         <Icon name="folder" size={18} />
         <div class="what">
-          <input class="name" value={f.name} aria-label="Name" data-field="folder-name" onchange={(e) => { const name = e.currentTarget.value; void act('Renaming', () => editFolderOf(folders, store, f, { name })); }}>
-          <span class="meta">{f.kind === 'host' ? 'on this computer' : 'in the browser'} · {users[f.id]?.length ? `attached to ${users[f.id].join(', ')}` : 'attached to no machine'}{folders.held.has(f.id) ? ' · a machine in another tab has it' : ''}{folders.mine(f.id) ? ' · this page\'s machine has it' : ''}</span>
+          <input class="name" value={f.name} aria-label={t('folders:FoldersPane.name')} data-field="folder-name" onchange={(e) => { const name = e.currentTarget.value; void act(t('folders:FoldersPane.busy.renaming'), () => editFolderOf(folders, store, f, { name })); }}>
+          <span class="meta">{f.kind === 'host' ? t('folders:FoldersPane.kind.host') : t('folders:FoldersPane.kind.opfs')} · {users[f.id]?.length ? t('folders:FoldersPane.attachedTo', { machines: users[f.id] }) : t('folders:FoldersPane.attachedToNone')}{#if folders.held.has(f.id)} · {t('folders:FoldersPane.heldElsewhere')}{/if}{#if folders.mine(f.id)} · {t('folders:FoldersPane.heldHere')}{/if}</span>
         </div>
-        <Check compact checked={f.readOnly} onchange={(readOnly) => void act('Saving', () => editFolderOf(folders, store, f, { readOnly }))} field="folder-ro" title="No machine writes it">Read-only</Check>
-        {#if f.kind === 'opfs'}<button onclick={() => show(f)} data-action="folder-files">Files</button>{/if}
-        <button onclick={() => remove(f)} data-action="delete-folder"><Icon name="trash" size={16} />Delete</button>
+        <Check compact checked={f.readOnly} onchange={(readOnly) => void act(t('folders:FoldersPane.busy.saving'), () => editFolderOf(folders, store, f, { readOnly }))} field="folder-ro" title={t('folders:FoldersPane.readOnly.title')}>{t('folders:FoldersPane.readOnly')}</Check>
+        {#if f.kind === 'opfs'}<button onclick={() => show(f)} data-action="folder-files">{t('folders:FoldersPane.files')}</button>{/if}
+        <button onclick={() => remove(f)} data-action="delete-folder"><Icon name="trash" size={16} />{t('folders:FoldersPane.delete')}</button>
       </div>
       {#if open === f.id}
-        <div class="files" class:dropping role="region" aria-label="Its files" ondragover={(e) => { e.preventDefault(); dropping = true; }} ondragleave={() => (dropping = false)} ondrop={(e) => dropped(e, f)}>
+        <div class="files" class:dropping role="region" aria-label={t('folders:FoldersPane.files.label')} ondragover={(e) => { e.preventDefault(); dropping = true; }} ondragleave={() => (dropping = false)} ondrop={(e) => dropped(e, f)}>
           <ul data-files>
-            {#each entries as x (x.name)}<li>{x.name}{x.kind === 'directory' ? '/' : ''} <span class="meta">{bytesText(x.size)}</span></li>{:else}<li class="meta">Empty</li>{/each}
+            {#each entries as x (x.name)}<li>{x.name}{x.kind === 'directory' ? '/' : ''} <span class="meta">{bytesText(x.size)}</span></li>{:else}<li class="meta">{t('folders:FoldersPane.files.empty')}</li>{/each}
           </ul>
-          {#if busy(f)}<p class="note" data-busy>A machine has this folder: its files change only when it lets it go.</p>{/if}
+          {#if busy(f)}<p class="note" data-busy>{t('folders:FoldersPane.busyNote')}</p>{/if}
           <div class="row">
-            <button disabled={busy(f)} onclick={() => addPicked(f)} data-action="add-files">Add files…</button>
-            <button disabled={folders.held.has(f.id)} onclick={() => copyOut(f)} data-action="copy-out">Copy into a folder on this computer…</button>
-            <button disabled={busy(f)} onclick={() => copyIn(f)} data-action="copy-in">Copy from a folder on this computer…</button>
-            <button disabled={busy(f)} onclick={() => empty(f)} data-action="empty-folder">Empty</button>
+            <button disabled={busy(f)} onclick={() => addPicked(f)} data-action="add-files">{t('folders:FoldersPane.add')}</button>
+            <button disabled={folders.held.has(f.id)} onclick={() => copyOut(f)} data-action="copy-out">{t('folders:FoldersPane.copyOut')}</button>
+            <button disabled={busy(f)} onclick={() => copyIn(f)} data-action="copy-in">{t('folders:FoldersPane.copyIn')}</button>
+            <button disabled={busy(f)} onclick={() => empty(f)} data-action="empty-folder">{t('folders:FoldersPane.empty')}</button>
           </div>
-          {#if copying}<p class="note" data-copying>{copying.what}: {copying.done} of {copying.total || '…'} files, {bytesText(copying.bytes)} <button onclick={() => { copying!.stop = true; }} data-action="cancel-copy">Cancel</button></p>{/if}
+          {#if copying}<p class="note" data-copying>{t('folders:FoldersPane.copying', { what: copying.what, done: copying.done, total: copying.total || '…', bytes: copying.bytes })} <button onclick={() => { copying!.stop = true; }} data-action="cancel-copy">{t('folders:FoldersPane.copying.cancel')}</button></p>{/if}
         </div>
       {/if}
     </li>
   {:else}
-    <li class="none">No folders yet: make one here, or from a machine's Shared folders tab. A folder dropped on this page becomes one.</li>
+    <li class="none">{t('folders:FoldersPane.none')}</li>
   {/each}
 </ul>
 

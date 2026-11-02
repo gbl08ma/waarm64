@@ -2,7 +2,7 @@
 // map of the page's IndexedDB values (`<StateKey>` → hex), written back into that map: the
 // counterpart of tests/net/go-client.ts for the tailnet client's tests.
 import { readFileSync } from 'node:fs';
-import { TsClient, TsModule, type TsEvent } from '../../web/ts-client.ts';
+import { failureOf, TsClient, TsModule, type TsEvent } from '../../web/ts-client.ts';
 import type { NetMap } from '../../web/tailscale.ts';
 
 const ROOT = new URL('../..', import.meta.url).pathname;
@@ -29,7 +29,7 @@ export function startRust(o: { controlURL: string; authKey?: string; hostname: s
         else if (e.type === 'login') { if (o.onLogin) o.onLogin(e.url); else reject(new Error(`the Rust client wants an interactive login: ${e.url}`)); }
         else if (e.type === 'state') {
           state = e.state;
-          if (e.state === 'Failed') reject(new Error(e.error ?? 'failed'));
+          if (e.state === 'Failed') reject(failureOf(e));
         }
         if (state === 'Running' && netmap) resolve(netmap);
       },

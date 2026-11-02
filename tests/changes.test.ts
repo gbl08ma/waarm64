@@ -12,6 +12,7 @@ import { after, before, test } from 'node:test';
 import { splitmix64 } from '../tools/corpus/corpus.ts';
 import { hashSource, loadChanges } from '../web/changes.ts';
 import type { Source } from '../web/devices.ts';
+import { msgOf } from '../web/msg.ts';
 import { memFile, openOverlay, overlay } from '../web/overlay.ts';
 import { openDisk, readChanges } from '../web/qcow2.ts';
 import { changedClusters, writeQcow2, type Sink } from '../web/qcow2-write.ts';
@@ -120,15 +121,16 @@ test('a different base, a different size and a qcow2 without our checksum are re
 
   const other = base.slice();
   other[SIZE - 1] ^= 1;
-  await assert.rejects(load('guarded', file, other), /made over base\.img \(hash [0-9a-f]{12}…\), which isn't the page disk \(hash [0-9a-f]{12}…\)/);
-  await assert.rejects(load('guarded', file, base.subarray(0, SIZE - 4096)), /for a disk of \d+ bytes .*the page disk has/);
-  await assert.rejects(load('guarded', base, base), /isn't a changes file/);
+  const said = (key: string, params?: Record<string, unknown>) => (e: unknown) => msgOf(e)?.key === key && Object.entries(params ?? {}).every(([k, v]) => (v instanceof RegExp ? v.test(String(msgOf(e)?.params?.[k])) : msgOf(e)?.params?.[k] === v));
+  await assert.rejects(load('guarded', file, other), said('disks:changes.otherBase', { backing: 'base.img', hash: /^[0-9a-f]{12}$/, label: 'the page disk', baseHash: /^[0-9a-f]{12}$/ }));
+  await assert.rejects(load('guarded', file, base.subarray(0, SIZE - 4096)), said('disks:changes.otherSize', { size: SIZE, label: 'the page disk', baseSize: SIZE - 4096 }));
+  await assert.rejects(load('guarded', base, base), said('disks:changes.notChanges'));
   // A changes file from before the hash was of slices ("WPC1": the whole file's SHA-256) has no hash we check.
   const old = Buffer.from(file);
   const at = old.subarray(0, 4096).indexOf('WPC2');
   assert.ok(at > 0);
   old.write('WPC1', at);
-  await assert.rejects(load('guarded', old, base), /wasn't made by this page's Save disk/);
+  await assert.rejects(load('guarded', old, base), said('disks:changes.notOurs'));
   assert.deepEqual(await mergedOf('guarded', base), before);
 });
 

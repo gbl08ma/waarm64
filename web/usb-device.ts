@@ -3,6 +3,7 @@
 // page and the device worker exchange about the controller's ports. The controller is the
 // core's; the glue (web/usb.ts) turns its request records into `submit` calls and their results
 // into completion records. Devices never see TRBs, rings or guest addresses.
+import type { WireError } from './msg.ts';
 
 export type UsbSpeed = 'low' | 'full' | 'high' | 'super';
 
@@ -104,7 +105,8 @@ export type UsbToWorker =
 export type UsbFromWorker =
   | { type: 'usb-state'; connector: number; state: 'attached'; device: UsbIdentity | UsbVirtual; speed: UsbSpeed; problems?: UsbProblem[] }
   | { type: 'usb-state'; connector: number; state: 'detached'; reason?: 'unplugged' | 'guest' | 'page' }
-  | { type: 'usb-state'; connector: number; state: 'error'; message: string; detail?: UsbProblem[] };
+  /** `message`: the error's text, a developer's; `error`: the error itself, for the page's words (web/msg.ts `toWire`). */
+  | { type: 'usb-state'; connector: number; state: 'error'; message: string; error?: WireError; detail?: UsbProblem[] };
 
 /**
  * Why part of a device can't reach the guest, for the page's messages (docs/usb.md "The page"): on a successful attach

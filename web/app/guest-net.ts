@@ -32,10 +32,10 @@ done
 }
 
 /** The systemd credentials (web/app/guest-unit.ts: SMBIOS, systemd 256+) that have the guest take the leases' settings. */
-export const netCredentials = (): Credential[] =>
+export const netCredentials = (description: string): Credential[] =>
   guestUnit({
     name: 'webpc-network.service',
-    description: "Network settings from webpc's machine settings",
+    description,
     script: netScript(),
     // Before networkd reads its files; after the generator writes the page's .network credential into /run.
     unit: 'DefaultDependencies=no\nAfter=local-fs.target systemd-network-generator.service\nBefore=systemd-networkd.service network-pre.target shutdown.target\nConflicts=shutdown.target\n',

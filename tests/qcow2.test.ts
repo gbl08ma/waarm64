@@ -5,6 +5,7 @@ import { constants, inflateRawSync } from 'node:zlib';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
+import { msgOf } from '../web/msg.ts';
 import { inflateEach, openDisk, type Inflater } from '../web/qcow2.ts';
 
 const file = (name: string) => readFileSync(new URL(`./qcow2/${name}`, import.meta.url));
@@ -29,13 +30,13 @@ for (const [name, format] of [['v2.qcow2', 'qcow2'], ['v3.qcow2', 'qcow2'], ['de
 }
 
 for (const [name, why] of [
-  ['reject-backing.qcow2', /backing files/],
-  ['reject-zstd.qcow2', /zstd/],
-  ['reject-extl2.qcow2', /extended L2/],
-  ['reject-datafile.qcow2', /external data/],
-  ['reject-luks.qcow2', /encrypted/],
+  ['reject-backing.qcow2', 'disks:qcow2.backing'],
+  ['reject-zstd.qcow2', 'disks:qcow2.zstd'],
+  ['reject-extl2.qcow2', 'disks:qcow2.extendedL2'],
+  ['reject-datafile.qcow2', 'disks:qcow2.externalData'],
+  ['reject-luks.qcow2', 'disks:qcow2.encrypted'],
 ] as const) {
-  test(`${name} is refused at open`, () => assert.throws(() => open(name), why));
+  test(`${name} is refused at open`, () => assert.throws(() => open(name), (e) => msgOf(e)?.key === why));
 }
 
 // A request over many clusters reads the file in a few pieces, not one per cluster (the page's

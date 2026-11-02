@@ -4,6 +4,7 @@
 // and feeds it what comes back, the guest's packets and the time. It runs in
 // a worker or in Node alike: WebSocket, fetch and crypto are all it needs.
 import type { Lease } from './gateway.ts';
+import { MsgError } from './msg.ts';
 import { wasi } from './ts-wasi.ts';
 import type { NetMap } from './tailscale.ts';
 
@@ -54,29 +55,58 @@ export type TailnetConfig = {
   acceptRoutes?: boolean;
 };
 
+/** Why the client failed (`Failed`) or refused something: a stable code the page words (`failureOf`), and a developer's detail. */
+export type TsFailure = { code?: string; detail?: string };
+
 export type TsEvent =
-  | { type: 'state'; state: 'FetchingMap' | 'Connecting' | 'Meowing' | 'Handshaking' | 'Running' | 'Failed'; error?: string }
+  | ({ type: 'state'; state: 'FetchingMap' | 'Connecting' | 'Meowing' | 'Handshaking' | 'Running' | 'Failed' } & TsFailure)
   | { type: 'lease'; lease: Lease }
   | { type: 'self'; key: string; address6: number[] }
   | { type: 'serving'; addr: string }
   | { type: 'client'; key: string; address6: number[] }
   | { type: 'log'; msg: string }
   /** Tailscale: Go's state names (`Starting`, `NeedsLogin`, `Running`), or `Failed` with why. */
-  | { type: 'state'; state: 'Starting' | 'NeedsLogin' | 'Running'; error?: string }
+  | ({ type: 'state'; state: 'Starting' | 'NeedsLogin' | 'Running' } & TsFailure)
   | { type: 'netmap'; netmap: NetMap }
   /** Write this entry of the node's store (hex, as the Go client's store keeps it). */
   | { type: 'store'; key: string; value: string }
   /** The URL to visit to log the node in. */
   | { type: 'login'; url: string }
   | { type: 'loggedout' }
-  /** The answer to `setExitNode`: '' when it took, else why not. */
-  | { type: 'exitnode'; error: string };
+  /** The answer to `setExitNode`: no `code` when it took, else why not (`no-exit-node`: no peer `id` offers to be one). */
+  | ({ type: 'exitnode'; id?: string } & TsFailure);
 
 export type TsHandlers = {
   /** An IP packet for the guest (the array is the client's: keep it). */
   packet(p: Uint8Array): void;
   event(e: TsEvent): void;
 };
+
+/**
+ * The error a client's `Failed` state stands for (net/ts's codes, docs/tailnet.md "The ABI"): the words the page has
+ * for its code, or, for a code whose only words are technical, its detail (a developer's, shown as details).
+ */
+export function failureOf(f: TsFailure): Error {
+  const detail = f.detail ? new Error(f.detail) : undefined;
+  switch (f.code) {
+    case 'no-browser-relay': return new MsgError('network:ts-client.noBrowserRelay');
+    case 'region-no-browser-relay': return new MsgError('network:ts-client.regionNoBrowserRelay');
+    case 'derp-map': return new MsgError('network:ts-client.derpMap', { url: f.detail ?? '' });
+    case 'server-silent': return new MsgError('network:ts-client.serverSilent');
+    case 'handshake': return new MsgError('network:ts-client.handshake');
+    case 'control-refused': return new MsgError('network:ts-client.controlRefused', undefined, { cause: detail });
+    case 'not-authorized': return new MsgError('network:ts-client.notAuthorized');
+    case 'tailnet-lock': return new MsgError('network:ts-client.tailnetLock');
+    // `relay`, `derp-map-invalid`, `control-answer` and codes newer than this page: the detail says it.
+    default: return detail ?? new Error(f.code ?? '');
+  }
+}
+
+/** Why an exit node wasn't taken (an `exitnode` event with a `code`). */
+export function exitNodeError(e: TsFailure & { id?: string }): Error {
+  if (e.code === 'no-exit-node') return new MsgError('network:ts-client.noExitNode', { id: e.id ?? '' });
+  return failureOf(e);
+}
 
 export const DNS4 = [[1, 1, 1, 1], [1, 0, 0, 1]];
 export const DNS6 = [[0x26, 0x06, 0x47, 0x00, 0x47, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0x11]];

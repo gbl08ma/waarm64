@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { splitmix64 } from '../tools/corpus/corpus.ts';
 import { HASH_SLICE, hashSource } from '../web/changes.ts';
+import { msgOf } from '../web/msg.ts';
 import { memFile, overlay } from '../web/overlay.ts';
 import { openDisk, type Disk } from '../web/qcow2.ts';
 import { changedClusters, CLUSTER, deflateEach, nonZeroClusters, writeQcow2, type DataCluster, type Sink } from '../web/qcow2-write.ts';
@@ -51,7 +52,7 @@ test("the base's hash is node:crypto's SHA-256 of the slices' SHA-256 digests, o
   let told = 0;
   await hashSource({ size: big.length, read: (off, len) => big.subarray(off, off + len) }, (done) => { assert.ok(done > told); told = done; });
   assert.equal(told, big.length);
-  await assert.rejects(hashSource({ size: 10, read: () => undefined }, () => {}), /can't be read at 0/);
+  await assert.rejects(hashSource({ size: 10, read: () => undefined }, () => {}), (e) => msgOf(e)?.key === 'disks:changes.baseUnreadable' && msgOf(e)?.params?.offset === 0);
 });
 
 /** A sink into memory: the stream, with the header patched in at the start. */

@@ -3,6 +3,7 @@
 // after a machine stops), changes loaded into a new overlay, a file imported into the browser as a stored disk, an
 // overlay merged into its stored disk. Records go through web/app/store.ts (a record after its bytes, deleted before
 // them); bytes are touched in workers (sync access handles). Nothing here asks the user: the Machines page confirms first.
+import { fromWire, MsgError } from '../msg.ts';
 import { overlayBytes, overlayMeta, removeOverlay } from '../overlay.ts';
 import type { DiskJob, DiskJobResult } from './disk-worker.ts';
 import { runImport } from './import.ts';
@@ -18,7 +19,7 @@ export async function diskSource(d: DiskRecord): Promise<DiskRef['source']> {
   switch (d.kind) {
     case 'url': return { url: new URL(d.url!, globalThis.location?.href).href }; // the page's (a worker's bundle is under assets/)
     case 'file': {
-      if (!d.handle) throw new Error(`${d.name} has to be picked again`);
+      if (!d.handle) throw new MsgError('disks:disks.pickAgain', { name: d.name });
       return { file: await d.handle.getFile() };
     }
     case 'blank': return { blank: d.size };
@@ -48,7 +49,7 @@ export async function createOverlay(store: Store, d: DiskRecord, name: string, f
 
 export async function renameOverlay(store: Store, id: string, name: string) {
   const o = await store.get('overlays', id);
-  if (!o) throw new Error('that overlay is gone');
+  if (!o) throw new MsgError('disks:disks.overlayGone');
   await store.put('overlays', { ...o, name, modified: Date.now() });
 }
 
@@ -56,7 +57,7 @@ export async function renameOverlay(store: Store, id: string, name: string) {
 export async function switchOverlay(store: Store, m: MachineRecord, attachment: string, overlay: string) {
   const a = m.attachments.find((x) => x.id === attachment);
   const o = await store.get('overlays', overlay);
-  if (!a || !o || o.disk !== a.disk) throw new Error("that overlay isn't one of this disk's");
+  if (!a || !o || o.disk !== a.disk) throw new MsgError('disks:disks.notThisDisk');
   a.overlay = overlay;
   m.modified = Date.now();
   await store.put('machines', m);
@@ -67,7 +68,7 @@ export async function switchOverlay(store: Store, m: MachineRecord, attachment: 
  * next start makes an empty one). The record first, then the files.
  */
 export async function deleteOverlay(store: Store, id: string) {
-  if (await inUse(overlayDir(id))) throw new Error('a machine is running on it: power it off first');
+  if (await inUse(overlayDir(id))) throw new MsgError('disks:disks.overlayRunning');
   for (const m of await store.all('machines')) {
     if (!m.attachments.some((a) => a.overlay === id)) continue;
     for (const a of m.attachments) if (a.overlay === id) a.overlay = undefined;
@@ -122,7 +123,7 @@ function job(j: DiskJob, progress?: (fraction: number) => void) {
       const m = e.data;
       if (m.type === 'progress') return progress?.(m.total ? m.done / m.total : 0);
       w.terminate();
-      if (m.type === 'error') reject(new Error(m.message));
+      if (m.type === 'error') reject(fromWire(m.error));
       else resolve(m);
     };
     w.onerror = (e) => { w.terminate(); reject(new Error(e.message)); };
@@ -163,12 +164,12 @@ export async function importStored(store: Store, file: File, progress?: (fractio
  */
 export async function mergeIntoDisk(store: Store, overlay: string) {
   const o = await store.get('overlays', overlay);
-  if (!o) throw new Error('that overlay is gone');
+  if (!o) throw new MsgError('disks:disks.overlayGone');
   const d = await store.get('disks', o.disk);
-  if (d?.kind !== 'stored') throw new Error('only a disk stored in the browser takes an overlay in place');
+  if (d?.kind !== 'stored') throw new MsgError('disks:disks.onlyStored');
   const others = (await store.overlaysOf(d.id)).filter((x) => x.id !== o.id);
-  for (const x of [o, ...others]) if (await inUse(overlayDir(x.id))) throw new Error(`a machine is running on ${x.name}: power it off first`);
-  if (await inUse(diskDir(d.id))) throw new Error('a machine is running on the disk: power it off first');
+  for (const x of [o, ...others]) if (await inUse(overlayDir(x.id))) throw new MsgError('disks:disks.overlayNamedRunning', { name: x.name });
+  if (await inUse(diskDir(d.id))) throw new MsgError('disks:disks.diskRunning');
   for (const x of others) await deleteOverlay(store, x.id);
   for (const m of await store.all('machines')) {
     if (!m.attachments.some((a) => a.overlay === o.id)) continue;

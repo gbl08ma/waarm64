@@ -1,0 +1,262 @@
+{
+  "Toolbar.start": {
+    "message": "Start",
+    "note": "Label of the toolbar's start button (left, after the machine's name) while the machine is off, not started or suspended."
+  },
+  "Toolbar.start.title": {
+    "message": "Start the machine",
+    "note": "Tooltip of the toolbar's Start button (the machine is off, not started or suspended)."
+  },
+  "Toolbar.retry": {
+    "message": "Retry",
+    "note": "Label of the toolbar's start button after the machine failed to start."
+  },
+  "Toolbar.retry.title": {
+    "message": "Retry the machine",
+    "note": "Tooltip of the toolbar's Retry button (after the machine failed to start)."
+  },
+  "Toolbar.restart": {
+    "message": "Restart",
+    "note": "Label of the toolbar's start button while the machine runs (or is starting): it resets it."
+  },
+  "Toolbar.restart.title": {
+    "message": "Restart the machine (like pulling the plug)",
+    "note": "Tooltip of the toolbar's Restart button: a reset without the guest's shutdown."
+  },
+  "Toolbar.view.screen": {
+    "message": "Screen",
+    "note": "Tooltip and screen-reader name of the toolbar's view button that shows the machine's screen alone."
+  },
+  "Toolbar.view.terminal": {
+    "message": "Serial terminal",
+    "note": "Tooltip and screen-reader name of the toolbar's view button that shows the machine's serial terminal alone."
+  },
+  "Toolbar.view.both": {
+    "message": "Both",
+    "note": "Tooltip and screen-reader name of the toolbar's view button that shows the screen and the serial terminal side by side."
+  },
+  "Toolbar.name": {
+    "message": "webpc",
+    "note": "The product's name, at the toolbar's left end (the page's heading)."
+  },
+  "Toolbar.machines.title": {
+    "message": "The machines kept in this browser: their settings, disks, overlays and snapshots",
+    "note": "Tooltip of the toolbar's Machines button, which opens the Machines page."
+  },
+  "Toolbar.machines": {
+    "message": "Machines",
+    "note": "Label of the toolbar's first button: it opens the Machines page (the machines kept in this browser)."
+  },
+  "Toolbar.powerOff": {
+    "message": "Power off",
+    "note": "Screen-reader name of the toolbar's Power off button (a stop icon), shown while the machine runs."
+  },
+  "Toolbar.powerOff.title": {
+    "message": "Power off: stop the machine at once, like pulling the plug (shut the guest down first for a clean stop)",
+    "note": "Tooltip of the toolbar's Power off button (a stop icon)."
+  },
+  "Toolbar.suspend": {
+    "message": "Suspend",
+    "note": "Screen-reader name of the toolbar's Suspend button (zzz icon), shown for a machine whose disk keeps its changes in this browser."
+  },
+  "Toolbar.suspend.title": {
+    "message": "Suspend: stop the machine and keep its memory in this browser; the next start, or opening this page again, resumes it where it was",
+    "note": "Tooltip of the toolbar's Suspend button (zzz icon)."
+  },
+  "Toolbar.snapshot.title": {
+    "message": "Take a snapshot: the running machine as it is, kept with it in this browser (it pauses for a moment, then runs on)",
+    "note": "Tooltip of the toolbar's Snapshot button for a machine kept in this browser."
+  },
+  "Toolbar.snapshot.title.file": {
+    "message": "Take a snapshot: the running machine as it is, to a file (it pauses for a moment, then runs on)",
+    "note": "Tooltip of the toolbar's Snapshot button for a machine that isn't kept in this browser (the snapshot is saved as a file)."
+  },
+  "Toolbar.snapshot": {
+    "message": "Snapshot",
+    "note": "Label of the toolbar's Snapshot button: it takes a snapshot of the running machine."
+  },
+  "Toolbar.load.title": {
+    "message": "Load a snapshot: the machine as it was when it was taken",
+    "note": "Tooltip of the toolbar's Load snapshot menu button (history icon, after Snapshot)."
+  },
+  "Toolbar.load.latest": {
+    "message": "Latest snapshots",
+    "note": "Heading over the list of the machine's latest snapshots in the toolbar's Load snapshot menu."
+  },
+  "Toolbar.load.orphaned.title": {
+    "message": "Taken of this machine with other settings or disks: it can't be restored onto it",
+    "note": "Tooltip of a snapshot shown disabled in the toolbar's Load snapshot menu: the machine's settings or disks changed since it was taken."
+  },
+  "Toolbar.load.restore.title": {
+    "message": "Restore {{name}}",
+    "note": "Tooltip of a snapshot in the toolbar's Load snapshot menu; a click restores it. {{name}} is the snapshot's name."
+  },
+  "Toolbar.load.none": {
+    "message": "None kept yet: Snapshot keeps one.",
+    "note": "Line in the toolbar's Load snapshot menu when the machine has no snapshot kept; Snapshot is the toolbar's button that takes one."
+  },
+  "Toolbar.load.all": {
+    "message": "All snapshots…",
+    "note": "Item of the toolbar's Load snapshot menu: opens the machine's Snapshots tab on the Machines page."
+  },
+  "Toolbar.load.file": {
+    "message": "From a file…",
+    "note": "Item of the toolbar's Load snapshot menu: picks a snapshot file to restore."
+  },
+  "Toolbar.views": {
+    "message": "View",
+    "note": "Screen-reader name of the toolbar's group of view buttons (screen, serial terminal, both)."
+  },
+  "Toolbar.screen.title": {
+    "message": "The size of the machine's screen",
+    "note": "Tooltip of the toolbar's Screen menu button (machines with a virtio-gpu)."
+  },
+  "Toolbar.screen.size": {
+    "message": "Size",
+    "note": "Label of the screen size dropdown in the toolbar's Screen menu (Fit the window, or a fixed size)."
+  },
+  "Toolbar.screen.fit": {
+    "message": "Fit the window",
+    "note": "Choice in the toolbar's Screen menu's Size dropdown: the screen follows the page's size."
+  },
+  "Toolbar.screen.hidpi.title": {
+    "message": "The guest draws in device pixels instead of CSS pixels: sharper on a HiDPI screen, with smaller text unless the desktop scales (its EDID carries the screen's physical size)",
+    "note": "Tooltip of the HiDPI checkbox in the toolbar's Screen menu."
+  },
+  "Toolbar.screen.hidpi": {
+    "message": "HiDPI",
+    "note": "Checkbox in the toolbar's Screen menu: the screen in device pixels."
+  },
+  "Toolbar.screen.hint": {
+    "message": "A text console (fbcon) keeps the size it started with: a new size takes effect at the next boot (Restart), and the console is centred until then. A desktop takes it when it starts; whether it follows a change is up to its compositor (sway doesn't).",
+    "note": "Fine print at the foot of the toolbar's Screen menu: when a new size takes effect."
+  },
+  "Toolbar.keys.title": {
+    "message": "Key combinations the browser keeps for itself, sent to the screen's keyboard",
+    "note": "Tooltip of the toolbar's Keys menu button (keyboard icon): it sends key combinations the browser would take."
+  },
+  "Toolbar.keys.ctrlAltDel": {
+    "message": "Ctrl+Alt+Del",
+    "note": "Item of the toolbar's Keys menu: sends Ctrl+Alt+Delete to the machine. The keys' names as the keyboard labels them."
+  },
+  "Toolbar.keys.ctrlAlt": {
+    "message": "Ctrl+Alt+",
+    "note": "Heading in the toolbar's Keys menu over the row of F1–F12 buttons, each sending Ctrl+Alt and that key."
+  },
+  "Toolbar.keys.fkey.title": {
+    "message": "Ctrl+Alt+F{{n}}",
+    "note": "Tooltip and screen-reader name of a function key button in the toolbar's Keys menu. {{n}} is the function key's number (1 to 12)."
+  },
+  "Toolbar.keys.fkey": {
+    "message": "F{{n}}",
+    "note": "A function key button in the toolbar's Keys menu, under the Ctrl+Alt+ heading. {{n}} is the function key's number (1 to 12)."
+  },
+  "Toolbar.mouse.title.locked": {
+    "message": "Mouse lock: the machine has the mouse (Esc lets it go)",
+    "note": "Tooltip of the toolbar's Mouse lock menu button while the screen holds the mouse."
+  },
+  "Toolbar.mouse.title.on": {
+    "message": "Mouse lock is on: a click on the screen gives the machine the mouse",
+    "note": "Tooltip of the toolbar's Mouse lock menu button while the lock is on but the screen doesn't hold the mouse."
+  },
+  "Toolbar.mouse.title": {
+    "message": "Mouse lock: a click on the screen gives the machine the mouse, every button included",
+    "note": "Tooltip of the toolbar's Mouse lock menu button while the lock is off."
+  },
+  "Toolbar.mouse.lock.title": {
+    "message": "A click on the screen gives the machine the mouse: every button reaches it, the back and forward ones too, and the browser hides its pointer; Esc lets it go",
+    "note": "Tooltip of the Lock the mouse on a click checkbox in the toolbar's Mouse lock menu."
+  },
+  "Toolbar.mouse.lock": {
+    "message": "Lock the mouse on a click",
+    "note": "Checkbox in the toolbar's Mouse lock menu: turns the mouse lock on."
+  },
+  "Toolbar.mouse.pointer.title": {
+    "message": "The pointer moves as it does unlocked, at the host's speed, and stays in the screen",
+    "note": "Tooltip of the Pointer choice in the toolbar's Mouse lock menu."
+  },
+  "Toolbar.mouse.pointer": {
+    "message": "Pointer: the same speed as unlocked",
+    "note": "Radio choice in the toolbar's Mouse lock menu: how the locked mouse moves the machine's pointer (the default)."
+  },
+  "Toolbar.mouse.raw.title": {
+    "message": "The mouse's own motion to the machine's relative mouse, unbounded by the screen (games that turn with the mouse); the guest's settings set its speed",
+    "note": "Tooltip of the Raw choice in the toolbar's Mouse lock menu, when the machine has a relative mouse."
+  },
+  "Toolbar.mouse.raw.title.noMouse": {
+    "message": "This machine has no relative mouse (its Settings, Mouse): the lock moves the pointer",
+    "note": "Tooltip of the Raw choice in the toolbar's Mouse lock menu, disabled because the machine has no relative mouse (the Mouse setting on the Machines page)."
+  },
+  "Toolbar.mouse.raw": {
+    "message": "Raw: unbounded, for games",
+    "note": "Radio choice in the toolbar's Mouse lock menu: the mouse's own motion to the machine's relative mouse."
+  },
+  "Toolbar.mouse.hint": {
+    "message": "Esc lets the mouse go. In Raw the guest's own mouse settings set the speed.",
+    "note": "Fine print at the foot of the toolbar's Mouse lock menu, for a machine with a relative mouse."
+  },
+  "Toolbar.mouse.hint.noMouse": {
+    "message": "Esc lets the mouse go. In Raw the guest's own mouse settings set the speed. Raw needs the machine's Mouse (its Settings).",
+    "note": "Fine print at the foot of the toolbar's Mouse lock menu, for a machine without a relative mouse (the Mouse setting on the Machines page)."
+  },
+  "Toolbar.fullscreen": {
+    "message": "Full screen",
+    "note": "Screen-reader name of the toolbar's Full screen button."
+  },
+  "Toolbar.fullscreen.title": {
+    "message": "Full screen: browser shortcuts (Ctrl+W, Ctrl+T) and Esc go to the machine; hold Esc to leave",
+    "note": "Tooltip of the toolbar's Full screen button."
+  },
+  "Toolbar.size.title": {
+    "message": "The number of vCPUs, the size of the RAM and the graphics: applied by a restart",
+    "note": "Tooltip of the toolbar's Machine menu button (CPU icon), shown for a machine that isn't kept in this browser."
+  },
+  "Toolbar.size.cpus": {
+    "message": "Processors",
+    "note": "Label of the vCPU count dropdown in the toolbar's Machine menu."
+  },
+  "Toolbar.size.cpu_one": {
+    "message": "{{count}} vCPU",
+    "note": "A choice of the Processors dropdown in the toolbar's Machine menu: {{count}} is the number of virtual CPUs."
+  },
+  "Toolbar.size.cpu_other": {
+    "message": "{{count}} vCPUs",
+    "note": "A choice of the Processors dropdown in the toolbar's Machine menu: {{count}} is the number of virtual CPUs."
+  },
+  "Toolbar.size.ram": {
+    "message": "Memory",
+    "note": "Label of the RAM size dropdown in the toolbar's Machine menu (its choices are sizes in MiB or GiB)."
+  },
+  "Toolbar.size.gpu.title": {
+    "message": "3D gives the guest OpenGL ES through the browser's WebGL2 (virgl); 2D is a plain framebuffer",
+    "note": "Tooltip of the Graphics dropdown in the toolbar's Machine menu."
+  },
+  "Toolbar.size.gpu": {
+    "message": "Graphics",
+    "note": "Label of the graphics dropdown (3D or 2D) in the toolbar's Machine menu."
+  },
+  "Toolbar.size.gpu.3d": {
+    "message": "3D (WebGL2)",
+    "note": "Choice of the Graphics dropdown in the toolbar's Machine menu: 3D through virgl on the browser's WebGL2."
+  },
+  "Toolbar.size.gpu.2d": {
+    "message": "2D",
+    "note": "Choice of the Graphics dropdown in the toolbar's Machine menu: a plain framebuffer."
+  },
+  "Toolbar.size.apply": {
+    "message": "Apply and restart",
+    "note": "Button in the toolbar's Machine menu: restarts the machine with the size chosen."
+  },
+  "Toolbar.size.hint": {
+    "message": "Kept in this browser. A suspended machine resumes with the size it had; Boot instead starts it from its disk with this one.",
+    "note": "Fine print at the foot of the toolbar's Machine menu."
+  },
+  "main.gpuLock.noWebgl2": {
+    "message": "This browser has no WebGL2: 2D only",
+    "note": "Tooltip of the Machine menu's Graphics choice (the toolbar), turned off because the browser has no WebGL2."
+  },
+  "main.gpuLock.address": {
+    "message": "Set by the page's address (?gpu={{gpu}})",
+    "note": "Tooltip of the Machine menu's Graphics choice (the toolbar), turned off because the page's address sets it; {{gpu}} is the address's value."
+  }
+}

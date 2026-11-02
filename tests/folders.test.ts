@@ -11,6 +11,8 @@ import { PageFolders, type FolderAccess } from '../web/app/folders-live.ts';
 import { mountUnit, sharesCredentials, sharesPathError } from '../web/app/shares-mount.ts';
 import { folderDir, memoryFiles, memoryRecords, Store } from '../web/app/store.ts';
 import { createMachine } from '../web/app/machines.ts';
+import { guestWords } from '../web/app/guest-words.ts';
+import { msgOf } from '../web/msg.ts';
 
 let browser: Browser;
 let base: string;
@@ -72,7 +74,7 @@ test('folders: names, attachments, delete', async () => {
   await detachFolder(store, m.id, c.id);
   assert.equal('folders' in (await store.get('machines', m.id))!, false, 'no attachments: left out');
   for (let k = 0; k < MAX_FOLDERS; k++) await attachFolder(store, m.id, (await createFolder(store, { kind: 'opfs', name: `f${k}` })).id, false);
-  await assert.rejects(attachFolder(store, m.id, c.id, false), /has 16 folders/);
+  await assert.rejects(attachFolder(store, m.id, c.id, false), (e) => msgOf(e)?.key === 'folders:folders.tooMany' && msgOf(e)?.params?.max === 16);
   store.close();
 });
 
@@ -100,7 +102,8 @@ test('the mount unit: names as systemd-escape makes them, paths refused', { skip
   assert.equal(mountUnit('/home/me/host files'), 'home-me-host\\x20files');
   for (const ok of ['/mnt/shared', '/media/x', '/home/me/host files', '/srv/data', '/var/share/x']) assert.equal(sharesPathError(ok), undefined, ok);
   for (const bad of ['/mnt/100%', '/mnt/x ', '/mnt/x\\', `/${'é/'.repeat(30)}x`, '', 'mnt', '/', '/mnt/', '/mnt//x', '/mnt/../x', '/mnt/./x', '/etc', '/usr', '/lib64', '/dev', '/dev/x', '/proc/x', '/sys/y', '/a\nb', `/${'x'.repeat(255)}`]) assert.ok(sharesPathError(bad), JSON.stringify(bad));
-  const units = sharesCredentials('/mnt/shared');
+  const units = sharesCredentials('/mnt/shared', guestWords().shares);
+  assert.match(units[0].data, /^Description=Shared folders from webpc$/m);
   assert.deepEqual(units.map((c) => c.name), ['systemd.extra-unit.mnt-shared.mount', 'systemd.extra-unit.mnt-shared.automount', 'systemd.unit-dropin.remote-fs.target~webpc-shares']);
   assert.match(units[0].data, /What=webpc\nWhere=\/mnt\/shared\nType=9p\nOptions=trans=virtio,version=9p2000\.L,cache=none,msize=1048576,access=user,nofail\n/);
   assert.match(units[2].data, /Wants=mnt-shared\.automount/);
@@ -134,7 +137,7 @@ test('the live side: what a start serves, what waits, and what brings it in', as
   assert.equal(live.views()[1].problem, 'permission');
   await live.allow(host.id);
   assert.deepEqual(device.told.at(-1), { type: 'granted', id: host.id });
-  await assert.rejects(live.setReadOnly(m.id, host.id, true), /Detach it first/);
+  await assert.rejects(live.setReadOnly(m.id, host.id, true), (e) => msgOf(e)?.key === 'folders:folders-live.detachFirst');
   // Attached while it runs, then detached.
   const third = await createFolder(store, { kind: 'opfs', name: 'Third' });
   await live.attach(m.id, third, true);

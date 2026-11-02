@@ -1,0 +1,62 @@
+{
+  "Sound.summary.waiting": {
+    "message": "Sound: click to hear",
+    "note": "Tooltip of the toolbar's Sound menu button (and its screen-reader summary) until the page has had a click or a key: the browser plays no sound before one."
+  },
+  "Sound.summary.on": {
+    "message": "Sound",
+    "note": "Tooltip of the toolbar's Sound menu button (and its screen-reader summary) while sound is on."
+  },
+  "Sound.summary.muted": {
+    "message": "Sound (muted)",
+    "note": "Tooltip of the toolbar's Sound menu button (and its screen-reader summary) while sound is off (Sound on unticked, or the guest muted it)."
+  },
+  "Sound.summary.onMic": {
+    "message": "Sound · mic",
+    "note": "Tooltip of the toolbar's Sound menu button (and its screen-reader summary) while sound is on and the machine records from the microphone."
+  },
+  "Sound.summary.mutedMic": {
+    "message": "Sound (muted) · mic",
+    "note": "Tooltip of the toolbar's Sound menu button (and its screen-reader summary) while sound is off and the machine records from the microphone."
+  },
+  "Sound.micTag": {
+    "message": "mic",
+    "note": "Small tag drawn on the toolbar's Sound menu button while the machine records from the microphone: short for microphone."
+  },
+  "Sound.on": {
+    "message": "Sound on",
+    "note": "Checkbox in the toolbar's Sound menu: the machine's sound plays (unticked: muted). A guest's own Master switch moves it too."
+  },
+  "Sound.volume": {
+    "message": "Volume",
+    "note": "Label of the volume slider in the toolbar's Sound menu."
+  },
+  "Sound.mic": {
+    "message": "Microphone",
+    "note": "Checkbox in the toolbar's Sound menu: when the machine records, it gets the page's microphone (unticked: silence)."
+  },
+  "Sound.mic.title": {
+    "message": "When the machine records, the page asks for the microphone (the browser asks you the first time); off, the machine records silence",
+    "note": "Tooltip of the Microphone checkbox in the toolbar's Sound menu."
+  },
+  "Sound.micRaw": {
+    "message": "Raw microphone",
+    "note": "Checkbox in the toolbar's Sound menu: the microphone without the browser's echo cancellation, noise suppression and gain control."
+  },
+  "Sound.micRaw.title": {
+    "message": "The microphone as it comes: no echo cancellation, noise suppression or gain control (for music; for a call, leave it off)",
+    "note": "Tooltip of the Raw microphone checkbox in the toolbar's Sound menu."
+  },
+  "Sound.hint": {
+    "message": "Kept in this browser. The browser plays sound once the page has had a click or a key.",
+    "note": "Fine print at the foot of the toolbar's Sound menu: the choices are remembered, and the browser's autoplay rule."
+  },
+  "Sound.mic.denied": {
+    "message": "The browser refused the microphone: the machine records silence. Allow it in the site's settings, then turn Microphone off and on.",
+    "note": "Fine print in the toolbar's Sound menu, shown when the machine records and the browser refused the page the microphone."
+  },
+  "Sound.mic.asking": {
+    "message": "The machine is recording: the browser asks for the microphone.",
+    "note": "Fine print in the toolbar's Sound menu, shown while the machine records and the browser is asking the user for the microphone."
+  }
+}

@@ -39,7 +39,8 @@ side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/t
   `ts_deadline` says when to tick next; `ts_poll` returns actions until none is left, read from
   `ts_buf()`: open, send on or close a WebSocket, `fetch` a URL, a packet for the guest, a JSON
   event (`state`, `lease`, `self`, `serving`, `client`, `netmap`, `login`, `store`, `exitnode`,
-  `loggedout`, `log`). Also `ts_exit_node`, `ts_accept_routes`, `ts_logout`, `ts_private_key`, `ts_close`, `ts_free`.
+  `loggedout`, `log`); a `Failed` state and a refused `exitnode` say why as a stable `code` the page words
+  (`web/ts-client.ts` `failureOf`, docs/i18n.md), with any technical `detail` beside it. Also `ts_exit_node`, `ts_accept_routes`, `ts_logout`, `ts_private_key`, `ts_close`, `ts_free`.
   Bytes cross through the module's memory (`ts_alloc`), one copy each way. One thread, no shared
   memory, no atomics: one worker per client.
 - **`wasm32-wasip1`, not the core's target.** On `wasm32-unknown-unknown` std's `Instant::now()` and

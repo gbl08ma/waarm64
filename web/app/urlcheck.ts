@@ -5,11 +5,12 @@
 // by some tools; the page reads plain ranges, but a server that fails it is often a proxy rewriting ranges). Says what
 // fails and what the server needs, in words.
 import { checkManifest, isManifestUrl, type Manifest } from '../chunked.ts';
+import { msg, msgOf, type Msg } from '../msg.ts';
 
 export type UrlCheck = {
   ok: boolean;
   /** What fails, each with what the server needs; empty when it is fine. */
-  problems: string[];
+  problems: Msg[];
   /** The file's size (from `Content-Range` or `Content-Length`), when known. */
   bytes?: number;
   /** The server's validators, for the disk's identity (§3.1). */
@@ -21,7 +22,8 @@ export type UrlCheck = {
   head?: Uint8Array;
 };
 
-const CORS_HINT = "CORS for this page's origin: `Access-Control-Allow-Origin` (this origin or *), `Access-Control-Expose-Headers: Content-Range, Content-Length, ETag`, and `Range` allowed in answers to OPTIONS";
+/** What a server needs for CORS, a parameter of the problems that say so. */
+const CORS_HINT = msg('machines:urlcheck.corsHint');
 
 /** Checks `url` from this page (any origin); never throws. */
 export async function checkUrl(url: string, origin = globalThis.location?.origin): Promise<UrlCheck> {
@@ -29,12 +31,12 @@ export async function checkUrl(url: string, origin = globalThis.location?.origin
   try {
     u = new URL(url, globalThis.location?.href);
   } catch {
-    return { ok: false, problems: ["This isn't a URL."] };
+    return { ok: false, problems: [msg('machines:urlcheck.notUrl')] };
   }
-  const problems: string[] = [];
+  const problems: Msg[] = [];
   const sameOrigin = u.origin === origin;
-  if (u.protocol !== 'https:' && !sameOrigin && u.hostname !== 'localhost' && u.hostname !== '127.0.0.1') problems.push('The URL must be HTTPS: the page is served securely and the browser blocks plain HTTP from it.');
-  if (u.protocol !== 'https:' && u.protocol !== 'http:') return { ok: false, problems: ['Only http(s) URLs can be disks.'] };
+  if (u.protocol !== 'https:' && !sameOrigin && u.hostname !== 'localhost' && u.hostname !== '127.0.0.1') problems.push(msg('machines:urlcheck.https'));
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return { ok: false, problems: [msg('machines:urlcheck.httpOnly')] };
   const out: UrlCheck = { ok: false, problems };
   if (isManifestUrl(u.href)) return checkChunked(u, out);
   // A range read: what the disk does all the time. A failure here is the network or CORS (the browser doesn't say which).
@@ -42,22 +44,22 @@ export async function checkUrl(url: string, origin = globalThis.location?.origin
   try {
     r = await fetch(u, { headers: { Range: 'bytes=0-511' }, cache: 'no-store' });
   } catch {
-    problems.push(`The server didn't answer the page, or answered without CORS. It needs ${CORS_HINT}.`);
+    problems.push(msg('machines:urlcheck.noAnswer', { needs: CORS_HINT }));
     return out;
   }
   if (r.status === 404) {
-    problems.push('The server says there is no such file (404).');
+    problems.push(msg('machines:urlcheck.notFound'));
     return out;
   }
   if (r.status === 200) {
-    problems.push('The server ignores byte ranges (it sent the whole file for a range request): it must answer `Range: bytes=…` with 206 Partial Content.');
+    problems.push(msg('machines:urlcheck.noRanges'));
     void r.body?.cancel();
   } else if (r.status !== 206) {
-    problems.push(`The server answered ${r.status} ${r.statusText} to a range request (it should be 206).`);
+    problems.push(msg('machines:urlcheck.rangeStatus', { status: r.status, statusText: r.statusText }));
     return out;
   } else {
     const range = r.headers.get('content-range');
-    if (!range) problems.push('The server sends Content-Range but the page can\'t see it: it needs `Access-Control-Expose-Headers: Content-Range`.');
+    if (!range) problems.push(msg('machines:urlcheck.hiddenRange'));
     else out.bytes = Number(range.split('/')[1]) || undefined;
     out.head = new Uint8Array(await r.arrayBuffer());
     out.etag = r.headers.get('etag') ?? undefined;
@@ -66,10 +68,10 @@ export async function checkUrl(url: string, origin = globalThis.location?.origin
   // A suffix range: preflighted (only `bytes=a-b` is CORS-safelisted), so it also checks that OPTIONS allows `Range`.
   try {
     const s = await fetch(u, { headers: { Range: 'bytes=-512' }, cache: 'no-store' });
-    if (s.status !== 206) problems.push(`The server answered ${s.status} to a suffix range (\`bytes=-512\`); it should be 206.`);
+    if (s.status !== 206) problems.push(msg('machines:urlcheck.suffixStatus', { status: s.status }));
     void s.body?.cancel();
   } catch {
-    problems.push("The server refused a preflighted range request: its answer to OPTIONS must allow the `Range` header (`Access-Control-Allow-Headers: Range`).");
+    problems.push(msg('machines:urlcheck.preflight'));
   }
   if (out.bytes === undefined && r.status === 200) out.bytes = Number(r.headers.get('content-length')) || undefined;
   out.ok = problems.length === 0;
@@ -82,26 +84,26 @@ export async function checkUrl(url: string, origin = globalThis.location?.origin
  * disk's identity follows the content (docs/machines.md §3.1).
  */
 async function checkChunked(u: URL, out: UrlCheck): Promise<UrlCheck> {
-  const fail = (why: string) => (out.problems.push(why), out);
+  const fail = (why: Msg) => (out.problems.push(why), out);
   let m: Manifest;
   try {
     const r = await fetch(u, { cache: 'no-store' });
-    if (r.status === 404) return fail('The server says there is no such file (404).');
-    if (!r.ok) return fail(`The server answered ${r.status} ${r.statusText} for the manifest.`);
+    if (r.status === 404) return fail(msg('machines:urlcheck.notFound'));
+    if (!r.ok) return fail(msg('machines:urlcheck.manifestStatus', { status: r.status, statusText: r.statusText }));
     m = checkManifest(await r.json());
   } catch (e) {
-    return fail(e instanceof TypeError ? `The server didn't answer the page, or answered without CORS. It needs ${CORS_HINT}.` : `The manifest isn't a chunked image's: ${(e as Error).message}.`);
+    return fail(e instanceof TypeError ? msg('machines:urlcheck.noAnswer', { needs: CORS_HINT }) : msg('machines:urlcheck.badManifest', { why: msgOf(e) ?? String((e as Error).message ?? e) }));
   }
   try {
     const r = await fetch(new URL(m.pieces.replace('{hash}', m.hashes[0]), u), { headers: { Range: 'bytes=0-511' }, cache: 'no-store' });
-    if (r.status !== 206 && r.status !== 200) return fail(`The server answered ${r.status} ${r.statusText} for the image's first piece (it should be next to the manifest, as tools/chunk-image.ts wrote it).`);
+    if (r.status !== 206 && r.status !== 200) return fail(msg('machines:urlcheck.pieceStatus', { status: r.status, statusText: r.statusText }));
     out.head = new Uint8Array(await r.arrayBuffer()).slice(0, 512);
   } catch {
-    return fail(`The server didn't give the page the image's first piece. It needs ${CORS_HINT}, for the pieces too.`);
+    return fail(msg('machines:urlcheck.noPiece', { needs: CORS_HINT }));
   }
   Object.assign(out, { bytes: m.size, etag: m.id, name: m.name, ok: out.problems.length === 0 });
   return out;
 }
 
 /** The note the URL form shows beside a URL disk (docs/devices.md "Over HTTP": what is read once is kept in this browser). */
-export const URL_SLOW = "The first boot reads it over the network, and what it read stays in this browser, so the next boots read that from here. A chunked image with a boot's reads in its manifest (tools/disk-trace.ts) first-boots about as fast as a file. To keep all of it, store it in the browser.";
+export const URL_SLOW = msg('machines:urlcheck.slow');

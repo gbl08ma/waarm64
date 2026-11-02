@@ -4,9 +4,11 @@
 // web/app/locks.ts). It picks the guest's default way out (`primaryOf`) whenever an adapter's state changes. The
 // toolbar's Network menu, the Network wizard and the Machines page's Network tab and Connections drive it; web/app/main.ts
 // hands it the machine's adapters at each start. DOM-free: tests/net-live.test.ts runs it over a memory store.
+import { errorText, msg, MsgError, text, type Msg } from '../i18n.ts';
+import { isMsg } from '../msg.ts';
 import { connectionLock, Connections, type Connection, type ConnectionState } from './connections.ts';
 import { heldLocks, Locks } from './locks.ts';
-import { createNetwork, logOutNode, primaryOf, ranksOf, type Connect, type Network, type NetworkView } from './network.ts';
+import { createNetwork, logOutNode, primaryOf, ranksOf, viewOf, type Connect, type Network, type NetworkView } from './network.ts';
 import type { Adapter } from './shape.ts';
 import type { Store } from './store.ts';
 
@@ -23,14 +25,19 @@ export function connectOf(c: Connection, authKey?: string): Connect {
 }
 
 /** A connection another machine has (in another tab): `holder` is its name, when that tab answered. */
-export class HeldError extends Error {
+export class HeldError extends MsgError {
   readonly connection: Connection;
   readonly holder?: string;
   constructor(c: Connection, holder?: string) {
-    super(`${c.name} is in use by ${holder ?? 'a machine in another tab'}.`);
+    if (holder) super('network:net-live.held', { name: c.name, holder });
+    else super('network:net-live.heldElsewhere', { name: c.name });
+    this.name = 'HeldError';
     [this.connection, this.holder] = [c, holder];
   }
 }
+
+/** A note's words: a message's, or an error's headline and details (one line each). */
+const noteText = (n: Msg | unknown) => (n === undefined ? undefined : isMsg(n) ? text(n) : errorText(n));
 
 /** One adapter as the menu and the Network tab show it. */
 export type AdapterView = {
@@ -41,7 +48,7 @@ export type AdapterView = {
   view: NetworkView;
   /** A client runs. */
   active: boolean;
-  /** Something the page has to say about it: its connection was gone, another machine took it. */
+  /** Something the page has to say about it, in words: its connection was gone, another machine took it. */
   note?: string;
   /** The guest's default way out goes through it. */
   primary: boolean;
@@ -84,7 +91,8 @@ export class PageNetwork {
   private leaving = new Set<string>();
   /** The connection each adapter's client runs, while one does. */
   private running: (string | undefined)[] = [];
-  private notes: (string | undefined)[] = [];
+  /** What the page has to say about each adapter: a message, or an error its connecting met. */
+  private notes: (Msg | unknown)[] = [];
   private primary = -1;
 
   constructor(o: PageNetworkOptions) {
@@ -158,13 +166,13 @@ export class PageNetwork {
     if (!this.on || !a.connection || this.nets[i]?.active()) return;
     const c = await this.conns.get(a.connection);
     if (!c) {
-      this.notes[i] = 'Its connection is gone (an ephemeral one goes when its page closes): attach one again.';
+      this.notes[i] = msg('network:net-live.gone');
       await this.setAttachment(i, undefined);
     } else if (c.connectAtStart) {
       try {
         await this.connect(i, c);
       } catch (e) {
-        this.notes[i] = String((e as Error).message ?? e);
+        this.notes[i] = e;
       }
     }
   }
@@ -223,16 +231,16 @@ export class PageNetwork {
     const n = this.nets[i];
     if (!n) throw new Error(`the machine has no adapter ${i + 1}`);
     if (this.running[i] === c.id && n.active()) return;
-    if (!this.on) throw new Error('The machine is off: start it first.');
-    if (this.leaving.has(c.id)) throw new Error(`${c.name} is being logged out.`);
+    if (!this.on) throw new MsgError('network:net-live.off');
+    if (this.leaving.has(c.id)) throw new MsgError('network:net-live.loggingOut', { name: c.name });
     const other = this.running.findIndex((id, k) => id === c.id && k !== i);
-    if (other >= 0) throw new Error(`${c.name} is on adapter ${other + 1} already: a connection is one node, on one adapter.`);
+    if (other >= 0) throw new MsgError('network:net-live.onOtherAdapter', { name: c.name, adapter: other + 1 });
     const lock = connectionLock(c.id);
     if (!(await this.locks.take(lock))) throw new HeldError(c, await this.locks.holder(lock));
     // It stopped, or its adapters changed, while the lock was asked for.
     if (!this.on || this.nets[i] !== n) {
       if (!this.running.includes(c.id)) this.locks.drop(lock);
-      throw new Error('The machine is off: start it first.');
+      throw new MsgError('network:net-live.off');
     }
     if (n.active()) await this.disconnect(i, false);
     try {
@@ -307,7 +315,7 @@ export class PageNetwork {
    */
   async logoutKept(c: Connection) {
     await this.nodeOut(c, async (gone) => {
-      if (!gone) throw new Error(`Couldn't reach ${new URL(c.tailnet!.controlURL).host} to log ${c.name} out: it stays logged in.`);
+      if (!gone) throw new MsgError('network:net-live.notLoggedOut', { host: new URL(c.tailnet!.controlURL).host, name: c.name });
       await this.conns.put({ ...c, connectAtStart: false });
     });
     await this.refresh();
@@ -364,7 +372,7 @@ export class PageNetwork {
     this.running[i] = undefined;
     await this.nets[i].disconnect();
     this.locks.drop(lock);
-    this.notes[i] = `${c?.name ?? 'Its connection'} was taken by another machine.`;
+    this.notes[i] = c ? msg('network:net-live.taken', { name: c.name }) : msg('network:net-live.takenUnnamed');
     await this.refresh();
   }
 
@@ -388,7 +396,7 @@ export class PageNetwork {
 
   /** The page's machine's adapters now. */
   views(): AdapterView[] {
-    const views = this.adapters.map((_, i) => this.nets[i]?.view() ?? { phase: 'off' as const, text: 'Not connected', exitNodes: [] });
+    const views = this.adapters.map((_, i) => this.nets[i]?.view() ?? viewOf(undefined));
     // Two adapters on local helpers both give the guest a default route (their DHCP, not the page's): said, not fixed.
     const locals = views.flatMap((v, i) => (v.phase === 'connected' && v.local ? [i] : []));
     return this.adapters.map((a, i) => ({
@@ -397,7 +405,7 @@ export class PageNetwork {
       connection: this.connections.find((c) => c.id === a.connection),
       view: views[i],
       active: !!this.nets[i]?.active(),
-      note: this.notes[i] ?? (locals.length > 1 && locals.includes(i) && i !== this.primary ? `Adapter ${this.primary + 1} goes through a helper on this computer too: the guest has a default route through each.` : undefined),
+      note: noteText(this.notes[i]) ?? (locals.length > 1 && locals.includes(i) && i !== this.primary ? text(msg('network:net-live.twoHelpers', { adapter: this.primary + 1 })) : undefined),
       primary: i === this.primary,
       on: this.on,
     }));

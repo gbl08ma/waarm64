@@ -17,6 +17,7 @@
     {#if look !== 'icon' && p.label}<span aria-hidden="true">{p.label}</span>{/if}
     {#each p.parts as part, n (n)}<span class="part" aria-hidden="true"><Icon name={part.icon} size={14} />{part.text}</span>{/each}
   {:else if look === 'icon'}{#if p.short && !p.bars}<span>{p.short}</span>{/if}<span class="sr">{p.text}</span>{:else}<span>{p.text}</span>{/if}
+  <!-- i18n-ignore-next: a CSS length -->
   {#if p.bars}<span class="bars">{#each p.bars as b, n (n)}<span style:height="{Math.max(1, Math.round(b * 14))}px"></span>{/each}</span>{/if}
 </span>
 

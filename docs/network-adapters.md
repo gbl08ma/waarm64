@@ -32,7 +32,7 @@ code's comments still cite; machines had first left several adapters for later: 
 7. **Routing over several adapters:** each adapter's gateway has its own addresses, and only the **primary** offers
    the default route (§4).
 8. **Managed on the Machines page's Network tab and from the toolbar's Network menu.** Attaching starts with
-   **New connection…**, which makes the connection in the same wizard, because a new machine's user has none yet.
+   [New connection…](ui:network:NetWizard.pick.new), which makes the connection in the same wizard, because a new machine's user has none yet.
 
 ## 2. Connections
 
@@ -76,13 +76,13 @@ settings. Idempotent.
 
 A Web Lock `webpc-net:<id>` is held while a running machine has the connection's client (web/app/locks.ts, as USB's
 devices: [usb.md](usb.md) "Device locks"), over the store's `BroadcastChannel`: `net-who` asks which machine holds it,
-`net-held` answers, and `net-release` asks the holder to let go. The page offers **Use it here**, and the other tab
+`net-held` answers, and `net-release` asks the holder to let go. The page offers [Use it here](ui:network:main.useHere), and the other tab
 disconnects and says it was taken.
 
 ## 3. The page
 
 The Machines page's **Network tab** (§3.1) lists a machine's adapters with their MACs and connections, and
-**Connections** lists the browser's; the **Network wizard** (§3.2) attaches a connection, a new one or one of the
+**[Connections](ui:machines:MachinesPage.connections.heading)** lists the browser's; the **Network wizard** (§3.2) attaches a connection, a new one or one of the
 browser's; the toolbar's **Network menu** (§3.3) has a section per adapter of the page's machine. What each shows and
 does: [frontend.md](frontend.md) "The Machines page" and "Network". The live side is web/app/net-live.ts
 (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, each with its machine port, client and error; a
@@ -159,7 +159,7 @@ running in another tab takes effect there at once: that tab hears the record cha
   the machine's current attachments, and the restored guest renews its leases.
 - **A machine's definition** carries its adapters' MACs (`machine.macs`, left out for one at the default) and not its
   connections, which hold secrets and are this browser's: an imported machine's adapters come detached.
-- **Duplicate** copies the adapters with their MACs and no connections.
+- **[Duplicate](ui:machines:MachinesPage.duplicate)** copies the adapters with their MACs and no connections.
 
 ## 6. Tests
 

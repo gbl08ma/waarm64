@@ -7,6 +7,7 @@
 // (`setTimeout(0)`, measured: twice the upload of a microtask's batches at the same round trip, bench/net/REPORT.md
 // "The local helper"). It runs in a worker of its own (web/local-net-worker.ts: off the page's main thread), behind the tailnet clients' handle
 // (`startLocal`), so the page's network drives it as it drives them.
+import { fromWire, msg, MsgError, type Msg } from './msg.ts';
 import type { FromTailscale, NetMap, Tailscale } from './tailscale.ts';
 
 /** The framing's name and version, checked by both ends (net/webpc-net `Subprotocol`). */
@@ -18,16 +19,18 @@ export const LOCAL_SUBPROTOCOL = 'webpc-net.v1';
  */
 export const LOCAL_MAX_MESSAGE = 1 << 20;
 
-/** Why the helper closed the socket (net/webpc-net's close codes), as the page says it. */
-export const LOCAL_CLOSE: Record<number, string> = {
-  4001: 'the page and the helper are different versions',
-  4003: "the helper doesn't accept this page's address (run it with --origin)",
-  4004: "the link's token isn't this helper's: pair again with the link it prints",
-};
+/** Why the helper closed the socket (net/webpc-net's close codes), as the page says it; undefined for another code. */
+export function closeError(code: number): MsgError | undefined {
+  switch (code) {
+    case 4001: return new MsgError('network:local-net.versions');
+    case 4003: return new MsgError('network:local-net.origin');
+    case 4004: return new MsgError('network:local-net.token');
+  }
+  return undefined;
+}
 
-/** Why a socket that never opened didn't (a refused prompt and a stopped helper both fail at once on loopback). */
-export const UNREACHED = "couldn't reach the helper: is webpc-net running on this computer?";
-export const REFUSED = "this site isn't allowed to reach this computer: allow \u201cLocal network access\u201d in the site's settings (the icon left of the address, then Site settings), then Connect";
+/** The helper closed the connection (`reason`: what its close frame said, a developer's words). */
+export const helperClosed = (reason = '') => new MsgError('network:local-net.closed', undefined, reason ? { cause: new Error(reason) } : undefined);
 
 /**
  * Whether the browser refuses this origin loopback (Chromium's Local Network Access: the `loopback-network` permission,
@@ -73,18 +76,18 @@ export function framesOf(msg: Uint8Array): Uint8Array[] | undefined {
  * A `ws://127.0.0.1:<port>/<token>` (or `[::1]`, `localhost`) URL, or an error to show. The pairing link the helper
  * prints (`https://vm.tny.im/#net=ws://…`) gives its `net`.
  */
-export function parseLocalURL(input: string): { url: string } | { error: string } {
+export function parseLocalURL(input: string): { url: string } | { error: Msg } {
   let s = input.trim();
   const at = s.indexOf('#net=');
   if (at >= 0) s = decodeURIComponent(s.slice(at + 5).split('&')[0]);
-  if (!s) return { error: 'Paste the link webpc-net prints (https://vm.tny.im/#net=ws://127.0.0.1:…).' };
+  if (!s) return { error: msg('network:local-net.pasteLink') };
   let u: URL;
   try {
     u = new URL(s.trim());
   } catch {
-    return { error: `“${s}” isn't the helper's link (ws://127.0.0.1:<port>/<token>)` };
+    return { error: msg('network:local-net.notLink', { link: s }) };
   }
-  if (u.protocol !== 'ws:' || !['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname) || u.pathname.length < 2) return { error: `“${s}” isn't the helper's link (ws://127.0.0.1:<port>/<token>)` };
+  if (u.protocol !== 'ws:' || !['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname) || u.pathname.length < 2) return { error: msg('network:local-net.notLink', { link: s }) };
   return { url: u.href };
 }
 
@@ -113,7 +116,7 @@ export type LocalState = 'connecting' | 'connected' | 'closed';
 export type LocalNet = {
   state(): LocalState;
   /** Why it closed, as the page says it (undefined while open). */
-  error(): string | undefined;
+  error(): Error | undefined;
   /** Frames and bytes each way (the tests' and benchmarks'). */
   stats(): { rxFrames: number; txFrames: number; rxBytes: number; txBytes: number; rxMessages: number; txMessages: number };
   /** The guest's address and MTU, from the helper's last DHCP acknowledgment. */
@@ -127,7 +130,7 @@ export type LocalNet = {
  */
 export function startLocalNet(url: string, frames: MessagePort, onChange: () => void = () => {}): LocalNet {
   let state: LocalState = 'connecting';
-  let error: string | undefined;
+  let error: Error | undefined;
   const stats = { rxFrames: 0, txFrames: 0, rxBytes: 0, txBytes: 0, rxMessages: 0, txMessages: 0 };
   const ws = new WebSocket(url, LOCAL_SUBPROTOCOL);
   ws.binaryType = 'arraybuffer';
@@ -153,7 +156,7 @@ export function startLocalNet(url: string, frames: MessagePort, onChange: () => 
   };
   ws.onopen = () => {
     if (ws.protocol !== LOCAL_SUBPROTOCOL) {
-      error = LOCAL_CLOSE[4001];
+      error = closeError(4001);
       ws.close();
       return;
     }
@@ -163,7 +166,7 @@ export function startLocalNet(url: string, frames: MessagePort, onChange: () => 
   ws.onmessage = (e: MessageEvent) => {
     const got = framesOf(new Uint8Array(e.data as ArrayBuffer));
     if (!got) {
-      error = "the helper sent a message that isn't whole frames";
+      error = new MsgError('network:local-net.notFrames');
       ws.close();
       return;
     }
@@ -182,9 +185,10 @@ export function startLocalNet(url: string, frames: MessagePort, onChange: () => 
   ws.onclose = (e: CloseEvent) => {
     // A socket that never opened on loopback: the helper isn't running, or the browser refuses this site loopback.
     const never = state === 'connecting';
-    error ??= LOCAL_CLOSE[e.code] ?? (never ? UNREACHED : `the helper closed the connection${e.reason ? `: ${e.reason}` : ''}`);
+    const unreached = never && !error && !closeError(e.code);
+    error ??= closeError(e.code) ?? (never ? new MsgError('network:local-net.unreached') : helperClosed(e.reason));
     state = 'closed';
-    if (never && error === UNREACHED) void loopbackRefused().then((refused) => { if (refused) error = REFUSED; onChange(); });
+    if (unreached) void loopbackRefused().then((refused) => { if (refused) error = new MsgError('network:local-net.refused'); onChange(); });
     else onChange();
   };
   return {
@@ -227,13 +231,13 @@ export function startLocal(config: { url: string; ip: MessagePort }, onEvent: (m
         if (state === 'Running') { timings.runningMs ??= performance.now() - t0; resolve(netmap ?? localNetmap(undefined)); }
       } else if (m.type === 'netmap') netmap = m.netmap;
       else if (m.type === 'detached') detached?.(m.ip);
-      else if (m.type === 'error') reject(new Error(m.error));
+      else if (m.type === 'error') reject(fromWire(m.error));
       onEvent(m);
     };
   });
   running.catch(() => {});
   worker.postMessage({ type: 'start', url: config.url, ip: config.ip } satisfies ToLocal, [config.ip]);
-  const refuse = () => Promise.reject(new Error("the helper on this computer has no exit nodes"));
+  const refuse = () => Promise.reject(new MsgError('network:local-net.noExitNodes'));
   return {
     state: () => state, netmap: () => netmap, loginURL: () => undefined, running, timings: () => timings,
     attach: (ip) => worker.postMessage({ type: 'attach', ip } satisfies ToLocal, [ip]),

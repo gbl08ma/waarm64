@@ -7,6 +7,7 @@
 // `close` releases the backends' files (OPFS locks), answers `closed` and ends
 // the worker.
 import { CLOSE_MS, Devices, stateBuffers, type DevicesInit } from './devices.ts';
+import { toWire } from './msg.ts';
 import { registerUsbOpener } from './usb.ts';
 import { webHidOpener, type WebHidLike } from './webhid.ts';
 import { webUsbOpener, type WebUsbLike } from './webusb.ts';
@@ -22,14 +23,14 @@ let devices: Devices | undefined;
 
 
 self.onmessage = (e: MessageEvent) => {
-  if (e.data.type === 'init') start(e.data as Init).catch((err) => self.postMessage({ type: 'error', message: String(err) }));
+  if (e.data.type === 'init') start(e.data as Init).catch((err) => self.postMessage({ type: 'error', message: String(err), error: toWire(err) }));
   else if (e.data.type === 'flush') self.postMessage({ type: 'flushed' }); // after every earlier message
   else if (e.data.type === 'drain') void devices!.drain().then(() => self.postMessage({ type: 'drained' }));
   else if (e.data.type === 'save') {
     // The backends' state for a snapshot (the owner has the devices quiet).
     devices!.save().then(
       (state) => self.postMessage({ type: 'saved', state }, stateBuffers(state)),
-      (err) => self.postMessage({ type: 'saved', error: String(err instanceof Error ? err.message : err) }),
+      (err) => self.postMessage({ type: 'saved', error: String(err instanceof Error ? err.message : err), wire: toWire(err) }),
     );
   }
   else if (e.data.type === 'written' || e.data.type === 'blocks') {
@@ -57,7 +58,7 @@ self.onmessage = (e: MessageEvent) => {
 };
 
 async function start(init: Init) {
-  devices = await Devices.open(init, (device, text) => self.postMessage({ type: 'console', device, text }), (text) => self.postMessage({ type: 'notice', text }));
+  devices = await Devices.open(init, (device, text) => self.postMessage({ type: 'console', device, text }), (message) => self.postMessage({ type: 'notice', message }));
   // The page's `?iostats` (bench/remote-disk): the blk timers whenever the page asks, between requests.
   if (init.specs.some((d) => d.type === 'blk' && d.stats)) new BroadcastChannel('webpc-iostats').onmessage = (e) => { if (e.data === 'ask') (e.target as BroadcastChannel).postMessage(devices!.stats()); };
   self.postMessage({ type: 'ready' });

@@ -3,7 +3,8 @@
 // the card's IP port while it runs and puts the card on a frame port of its own (web/gateway.ts `FramePath`); the frames
 // go to the helper's WebSocket (`startLocalNet`). It speaks the tailnet clients' worker protocol as far as it has the
 // same things: start, attach, detach, state, a network map, errors.
-import { localNetmap, startLocalNet, type LocalNet, type ToLocal } from './local-net.ts';
+import { helperClosed, localNetmap, startLocalNet, type LocalNet, type ToLocal } from './local-net.ts';
+import { toWire } from './msg.ts';
 import type { FromTailscale } from './tailscale.ts';
 
 const post = (m: FromTailscale, transfer: Transferable[] = []) => self.postMessage(m, transfer);
@@ -27,7 +28,7 @@ function report() {
   if (!c) return;
   const s = c.state();
   // Closed: an error each time it's told (the reason can come later: the permission's answer).
-  if (s === 'closed') return post({ type: 'error', error: c.error() ?? 'the helper closed the connection' });
+  if (s === 'closed') return post({ type: 'error', error: toWire(c.error() ?? helperClosed()) });
   post({ type: 'netmap', netmap: localNetmap(c.lease()) });
   post({ type: 'state', state: s === 'connected' ? 'Running' : 'Connecting' });
 }

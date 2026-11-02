@@ -1,4 +1,5 @@
 // The disk-out worker's compressors: a pool of web/app/deflate-worker.ts, as a `Packer` for `writeQcow2`.
+import { fromWire } from '../msg.ts';
 import type { Packer } from '../qcow2-write.ts';
 import type { DeflateRequest, DeflateResult } from './deflate-worker.ts';
 
@@ -16,7 +17,7 @@ export function deflatePool(n = Math.max(1, Math.min(4, (navigator.hardwareConcu
       const m = e.data;
       const asked = waiting.get(m.id);
       waiting.delete(m.id);
-      if ('error' in m) return void asked?.reject(new Error(m.error));
+      if ('error' in m) return void asked?.reject(fromWire(m.error));
       let at = 0;
       asked?.resolve(Array.from(m.lengths, (len) => (len ? m.packed.subarray(at, at += len) : undefined)));
     };

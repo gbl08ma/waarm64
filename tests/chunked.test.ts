@@ -12,6 +12,7 @@ import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { cachedSource } from '../web/blockcache.ts';
 import { chunkedSource, type Manifest, type SyncGet } from '../web/chunked.ts';
+import { msgOf } from '../web/msg.ts';
 import { STEPS } from './steps.ts';
 
 const MiB = 1 << 20;
@@ -126,9 +127,9 @@ test('tools/disk-trace.ts: a run\'s reads, up to a mark, as 1 MiB blocks in firs
 test('a malformed manifest or a missing piece is refused', () => {
   const h = host(join(tmp, 'out'), true);
   writeFileSync(join(tmp, 'out/bad.json'), JSON.stringify({ format: 'webpc-chunked-1', size: 10, piece: MiB, pieces: 'x', hashes: [] }));
-  assert.throws(() => chunkedSource('http://h/bad.json', h.get), /malformed/);
+  assert.throws(() => chunkedSource('http://h/bad.json', h.get), (e) => msgOf(e)?.key === 'disks:chunked.malformed');
   writeFileSync(join(tmp, 'out/other.json'), JSON.stringify({ format: 'something' }));
-  assert.throws(() => chunkedSource('http://h/other.json', h.get), /not a chunked image/);
+  assert.throws(() => chunkedSource('http://h/other.json', h.get), (e) => msgOf(e)?.key === 'disks:chunked.notManifest');
   const m = JSON.parse(readFileSync(join(tmp, 'out/manifest.json'), 'utf8')) as Manifest;
   writeFileSync(join(tmp, 'out/gone.json'), JSON.stringify({ ...m, hashes: m.hashes.map((x, i) => (i === 2 ? '0'.repeat(64) : x)) }));
   const src = chunkedSource('http://h/gone.json', h.get);

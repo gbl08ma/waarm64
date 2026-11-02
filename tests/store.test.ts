@@ -7,6 +7,10 @@ import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { canonical, DEFAULT_MAC, generateName, isMac, MAX_ADAPTERS, MAX_DISKS, newId, newMac, serialOf, shapeDiff, shapeHash, shapeOf, slots, uniqueName, type DiskRecord, type MachineRecord } from '../web/app/shape.ts';
 import { memoryFiles, memoryRecords, Store, type SnapshotRecord } from '../web/app/store.ts';
+import { text } from '../web/i18n.ts';
+
+/** What `shapeDiff` says, in the catalog's words. */
+const diffWords = (...a: Parameters<typeof shapeDiff>) => shapeDiff(...a).map((m) => text(m));
 
 const disk = (id: string, over: Partial<DiskRecord> = {}): DiskRecord => ({ id, kind: 'url', name: 'disk.qcow2', size: 8 * 2 ** 30, url: 'https://example.org/images/disk.qcow2', identity: { kind: 'url', path: '/images/disk.qcow2', bytes: 400e6 }, created: 0, ...over });
 const machine = (over: Partial<MachineRecord> = {}): MachineRecord => ({
@@ -44,8 +48,8 @@ test("the shape: the other devices first, then the disks; its hash is stable and
   const withUsb = shapeOf(machine({ usb: true, usbDevices }), (id) => DISKS.get(id));
   assert.equal(withUsb.usb, true);
   assert.equal(await shapeHash(withUsb), await shapeHash(shapeOf(machine({ usb: true }), (id) => DISKS.get(id))), 'devices aren\'t in the shape');
-  assert.deepEqual(shapeDiff(s, withUsb), ['it had no USB controller']);
-  assert.deepEqual(shapeDiff(withUsb, s), ['it had a USB controller']);
+  assert.deepEqual(diffWords(s, withUsb), ['it had no USB controller']);
+  assert.deepEqual(diffWords(withUsb, s), ['it had a USB controller']);
   // What the guest sees does.
   const moved: [string, MachineRecord, Map<string, DiskRecord>?][] = [
     ['RAM', machine({ ramMiB: 2048 }), undefined],
@@ -73,28 +77,28 @@ test("the shape: the other devices first, then the disks; its hash is stable and
   assert.equal(withSwap.disks[1].swap, true);
   assert.equal('swap' in noSwap.disks[1], false, 'left out when off');
   assert.notEqual(await shapeHash(withSwap), await shapeHash(noSwap), 'swap');
-  assert.deepEqual(shapeDiff(noSwap, withSwap), ['disk 2: not swap then, swap now']);
-  assert.deepEqual(shapeDiff(withSwap, noSwap), ['disk 2: swap then, not swap now']);
+  assert.deepEqual(diffWords(noSwap, withSwap), ['disk 2: not swap then, swap now']);
+  assert.deepEqual(diffWords(withSwap, noSwap), ['disk 2: swap then, not swap now']);
   assert.equal(await shapeHash(shapeOf(swapM, (id) => DISKS.get(id))), h, 'swap on a blank disk is nothing');
   assert.notEqual(await shapeHash(shapeOf(m, (id) => DISKS.get(id), { cpu: ['e0pd'] })), h, 'cpu features');
   // SHA3 came after shapes: with it or without, a machine's snapshots keep their hash.
   const noSha3 = shapeOf(m, (id) => DISKS.get(id), { cpu: ['rng', 'e0pd', 'jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod'] });
   assert.deepEqual(s.cpu, ['rng', 'e0pd', 'sha3', 'jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod']);
   assert.equal(await shapeHash(noSha3), h, 'sha3 left out of the hash');
-  assert.deepEqual(shapeDiff(noSha3, s), []);
+  assert.deepEqual(diffWords(noSha3, s), []);
   // The features after it are in the hash (machines kept before them needn't match).
   for (const f of ['jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod'] as const) {
     const without = shapeOf(m, (id) => DISKS.get(id), { cpu: s.cpu.filter((g) => g !== f) });
     assert.notEqual(await shapeHash(without), h, `${f} in the hash`);
   }
   assert.notEqual(await shapeHash(shapeOf(m, (id) => DISKS.get(id), { display: '2d' })), h, 'a 3D machine run in 2D');
-  assert.deepEqual(shapeDiff(s, shapeOf(machine({ ramMiB: 2048 }), (id) => DISKS.get(id))), ['memory: 1024 MiB then, 2048 MiB now']);
-  assert.deepEqual(shapeDiff(s, s), []);
+  assert.deepEqual(diffWords(s, shapeOf(machine({ ramMiB: 2048 }), (id) => DISKS.get(id))), ['memory: 1024 MiB then, 2048 MiB now']);
+  assert.deepEqual(diffWords(s, s), []);
   // A split set by hand (spill memories, docs/spill-memories.md) moves it; the automatic one is no field at all.
   assert.equal('split' in s, false);
   const split = shapeOf(machine({ ramSplit: [512, 512] }), (id) => DISKS.get(id));
   assert.notEqual(await shapeHash(split), h, 'a split set by hand');
-  assert.deepEqual(shapeDiff(s, split), ["memory's split: automatic then, 512 + 512 MiB now"]);
+  assert.deepEqual(diffWords(s, split), ["memory's split: automatic then, 512 + 512 MiB now"]);
   assert.throws(() => shapeOf(m, () => undefined), /isn't in this browser/);
   assert.equal(slots({ nets: 0, display: 'none', attachments: new Array(MAX_DISKS) }).length, 4 + MAX_DISKS);
 });
@@ -112,11 +116,11 @@ test('network adapters in the shape: one at the default MAC is the card machines
   assert.deepEqual(two.devices, ['rng', 'keyboard', 'tablet', 'net', 'net', 'gpu', 'snd', 'blk', 'blk'], 'the adapters where the card was, in order');
   assert.deepEqual(two.macs, [DEFAULT_MAC, mac2]);
   assert.deepEqual(two.disks.map((d) => d.slot), [7, 8]);
-  assert.deepEqual(shapeDiff(card, two), ['network adapters: 1 then, 2 now']);
+  assert.deepEqual(diffWords(card, two), ['network adapters: 1 then, 2 now']);
   // Planted: a MAC left out of the hash would restore a snapshot onto adapters the guest doesn't know.
   const other = of({ network: undefined, adapters: [{ id: 'f00000000001', mac: mac2 }] });
   assert.notEqual(await shapeHash(other), h, 'another MAC');
-  assert.deepEqual(shapeDiff(card, other), [`network adapter 1: MAC ${DEFAULT_MAC} then, ${mac2} now`]);
+  assert.deepEqual(diffWords(card, other), [`network adapter 1: MAC ${DEFAULT_MAC} then, ${mac2} now`]);
   const swapped = of({ network: undefined, adapters: [{ id: 'f00000000002', mac: mac2 }, { id: 'f00000000001', mac: DEFAULT_MAC }] });
   assert.notEqual(await shapeHash(swapped), await shapeHash(two), 'their order');
   assert.ok(shapeDiff(two, swapped).length > 0);
@@ -172,8 +176,8 @@ async function storeFlows(make: () => Promise<{ a: Store; b: Store; write(path: 
   const swept = (await b.sweep()).sort();
   const reread = { machines: (await b.all('machines')).map((r) => r.name), overlays: (await b.overlaysOf(d.id)).map((r) => r.id), users: (await b.machinesWith(d.id)).map((r) => r.id), snapshots: (await b.snapshotsOf(m.id)).map((r) => r.id) };
   const sizes = { overlay: await b.files.size('overlays/c00000000001'), machine: await b.files.size('machines/aaaaaaaaaaaa'), transient: await b.files.size('overlays/t-debian') };
-  let refused = '';
-  await b.deleteDisk(d.id).catch((e) => { refused = String(e); });
+  let refused: unknown;
+  await b.deleteDisk(d.id).catch((e) => { refused = (e as { msg?: unknown }).msg ?? String(e); });
   await b.deleteMachine(m.id);
   const afterMachine = { snapshots: (await a.all('snapshots')).length, machineFiles: await a.files.size('machines/aaaaaaaaaaaa'), overlay: !!(await a.get('overlays', o.id)) };
   await b.deleteDisk(d.id);
@@ -188,7 +192,7 @@ const expected = {
   swept: ['disks/d0000000000f', 'machines/aaaaaaaaaaaa/snapshots/b0000000000f', 'machines/bbbbbbbbbbbb', 'overlays/c0000000000f'],
   reread: { machines: ['Brisk Heron'], overlays: ['c00000000001'], users: ['aaaaaaaaaaaa'], snapshots: ['b00000000001'] },
   sizes: { overlay: 5120, machine: (1 << 20) + 100, transient: 4096 },
-  refused: 'Error: the disk is attached to Brisk Heron: detach it first',
+  refused: { key: 'machines:store.diskAttached', params: { machines: ['Brisk Heron'] } },
   afterMachine: { snapshots: 0, machineFiles: 0, overlay: true },
   afterDisk: { overlays: 0, files: 0, disks: 0 },
   // `a`'s puts and `b`'s deletions: `b` hears only what another store did.
@@ -313,15 +317,15 @@ test("guest RAM past memory 0: the page's split, its note, and a split set by ha
   assert.equal(numaNote(3071, undefined, true), undefined);
   assert.deepEqual(ramSplitMiB(4096, undefined, true), [3071, 1025]);
   assert.deepEqual(ramSplitMiB(8192, undefined, true), [3071, 2560, 2561]);
-  assert.match(numaNote(4096, undefined, true)!, /^3071 MiB of it is the machine's fast memory; the guest gets the other 1025 MiB/);
+  assert.match(text(numaNote(4096, undefined, true)!), /^3071 MiB of it is the machine's fast memory; the guest gets the other 1025 MiB/);
   assert.equal(ramSplitError([1024, 2560], true), undefined);
-  assert.match(ramSplitError([1024, 2561], true)!, /with Vulkan, the first NUMA node holds at most 2560 MiB/);
-  assert.match(numaNote(4096)!, /^3071 MiB of it is the machine's fast memory; the guest gets the other 1025 MiB as a second NUMA node/);
-  assert.match(numaNote(8192)!, /as 2 more NUMA nodes/);
-  assert.match(numaNote(2048, [1024, 1024])!, /other 1024 MiB as a second NUMA node/);
+  assert.match(text(ramSplitError([1024, 2561], true)!), /with Vulkan, the first NUMA node holds at most 2560 MiB/);
+  assert.match(text(numaNote(4096)!), /^3071 MiB of it is the machine's fast memory; the guest gets the other 1025 MiB as a second NUMA node/);
+  assert.match(text(numaNote(8192)!), /as 2 more NUMA nodes/);
+  assert.match(text(numaNote(2048, [1024, 1024])!), /other 1024 MiB as a second NUMA node/);
   assert.equal(ramSplitError([1024, 1024]), undefined);
-  assert.match(ramSplitError([3072])!, /at most 3071 MiB/);
-  assert.match(ramSplitError([1024.5])!, /whole MiB/);
+  assert.match(text(ramSplitError([3072])!), /at most 3071 MiB/);
+  assert.match(text(ramSplitError([1024.5])!), /whole MiB/);
   const store = new Store(memoryRecords(), memoryFiles(), { channel: false });
   const m = { ...(await createMachine(store, { name: 'Numa', ramMiB: 3072 })), ramSplit: [2048, 1024] };
   await store.put('machines', m);
@@ -350,7 +354,7 @@ test("a machine's JIT budget: carried by its shape and its definition, outside t
   const set = shapeOf({ ...m, jitMiB: 128 }, () => undefined);
   assert.equal(set.jitMiB, 128);
   assert.equal(await shapeHash(set), await shapeHash(s), 'the guest does not see it: no snapshot is orphaned');
-  assert.deepEqual(shapeDiff(s, set), []);
+  assert.deepEqual(diffWords(s, set), []);
   const plain = await createMachine(store, { name: 'Plain' });
   const saved = await updateMachine(store, { ...m, jitMiB: 128 });
   const def = await exportDefinition(store, saved.id);
@@ -410,8 +414,8 @@ test("a machine's Vulkan setting: in its shape (with 3D only) and its definition
   const on = shapeOf({ ...m, vulkan: true }, () => undefined);
   assert.equal(on.vulkan, true);
   assert.notEqual(await shapeHash(on), await shapeHash(s), 'the guest sees it');
-  assert.deepEqual(shapeDiff(s, on), ['it had no Vulkan']);
-  assert.deepEqual(shapeDiff(on, s), ['it had Vulkan']);
+  assert.deepEqual(diffWords(s, on), ['it had no Vulkan']);
+  assert.deepEqual(diffWords(on, s), ['it had Vulkan']);
   // Only beside 3D: a 2D machine, or a 3D one run in 2D, has none; the page's `?gpu=vulkan` gives a 3D one Vulkan.
   assert.equal('vulkan' in shapeOf({ ...m, display: '2d', vulkan: true }, () => undefined), false);
   assert.equal('vulkan' in shapeOf({ ...m, vulkan: true }, () => undefined, { display: '2d' }), false);

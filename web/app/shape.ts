@@ -2,6 +2,7 @@
 // are, the slots a machine's devices take, and the shape: a canonical description of what the guest
 // sees, whose SHA-256 a snapshot is checked against. DOM-free: the page, the workers and Node's
 // tests use it alike. web/app/store.ts keeps these records.
+import { msg, type Msg } from '../msg.ts';
 
 /** The most disks a machine has (docs/machines.md §4.1: room left of the core's 32 transports for devices to come). */
 export const MAX_DISKS = 16;
@@ -307,48 +308,57 @@ export async function shapeHash(s: Shape): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** What differs between two shapes, in words for the snapshots view (an orphaned snapshot's reason): empty when they're the same. */
-export function shapeDiff(was: Shape, now: Shape): string[] {
-  const out: string[] = [];
-  if (was.version !== now.version) return ['it was made by another version of this page'];
-  if (was.ncpus !== now.ncpus) out.push(`processors: ${was.ncpus} then, ${now.ncpus} now`);
-  if (was.ramMiB !== now.ramMiB) out.push(`memory: ${was.ramMiB} MiB then, ${now.ramMiB} MiB now`);
+/** The devices a shape has or not, as `shapeDiff` says it (its words for each way round). */
+const HAD = {
+  mouse: [msg('machines:shape.diff.mouse.had'), msg('machines:shape.diff.mouse.hadNo')],
+  touch: [msg('machines:shape.diff.touch.had'), msg('machines:shape.diff.touch.hadNo')],
+  clock: [msg('machines:shape.diff.clock.had'), msg('machines:shape.diff.clock.hadNo')],
+  '9p': [msg('machines:shape.diff.shares.had'), msg('machines:shape.diff.shares.hadNo')],
+} as const;
+
+/** What differs between two shapes, as messages for the snapshots view (an orphaned snapshot's reason): empty when they're the same. */
+export function shapeDiff(was: Shape, now: Shape): Msg[] {
+  const out: Msg[] = [];
+  if (was.version !== now.version) return [msg('machines:shape.diff.version')];
+  if (was.ncpus !== now.ncpus) out.push(msg('machines:shape.diff.ncpus', { was: was.ncpus, now: now.ncpus }));
+  if (was.ramMiB !== now.ramMiB) out.push(msg('machines:shape.diff.ram', { was: was.ramMiB, now: now.ramMiB }));
   else if (canonical(was.split ?? []) !== canonical(now.split ?? [])) {
-    const split = (s?: number[]) => (s ? `${s.join(' + ')} MiB` : 'automatic');
-    out.push(`memory's split: ${split(was.split)} then, ${split(now.split)} now`);
+    const split = (s?: number[]) => (s ? msg('machines:shape.diff.split.sizes', { sizes: s.join(' + ') }) : msg('machines:shape.diff.split.automatic'));
+    out.push(msg('machines:shape.diff.split', { was: split(was.split), now: split(now.split) }));
   }
-  if (was.display !== now.display) out.push(`display: ${was.display} then, ${now.display} now`);
-  if (!!was.vulkan !== !!now.vulkan) out.push(was.vulkan ? 'it had Vulkan' : 'it had no Vulkan');
-  if (canonical(hashedCpu(was.cpu)) !== canonical(hashedCpu(now.cpu))) out.push(`processor features: ${was.cpu.join(', ') || 'none'} then, ${now.cpu.join(', ') || 'none'} now`);
+  if (was.display !== now.display) out.push(msg('machines:shape.diff.display', { was: was.display, now: now.display }));
+  if (!!was.vulkan !== !!now.vulkan) out.push(was.vulkan ? msg('machines:shape.diff.vulkan.had') : msg('machines:shape.diff.vulkan.hadNo'));
+  const features = (cpu: CpuFeature[]) => (cpu.length ? cpu.join(', ') : msg('machines:shape.diff.cpu.none'));
+  if (canonical(hashedCpu(was.cpu)) !== canonical(hashedCpu(now.cpu))) out.push(msg('machines:shape.diff.cpu', { was: features(was.cpu), now: features(now.cpu) }));
   const [macsWas, macsNow] = [macsOf(was), macsOf(now)];
-  if (macsWas.length !== macsNow.length) out.push(`network adapters: ${macsWas.length} then, ${macsNow.length} now`);
-  else for (let i = 0; i < macsWas.length; i++) if (macsWas[i] !== macsNow[i]) out.push(`network adapter ${i + 1}: MAC ${macsWas[i]} then, ${macsNow[i]} now`);
-  if (!!was.usb !== !!now.usb) out.push(was.usb ? 'it had a USB controller' : 'it had no USB controller');
-  for (const [k, name] of [['mouse', 'a relative mouse'], ['touch', 'a touchscreen'], ['clock', 'a clock device'], ['9p', 'a shared folders device']] as const) {
-    if (was.devices.includes(k) !== now.devices.includes(k)) out.push(was.devices.includes(k) ? `it had ${name}` : `it had no ${name.replace(/^an? /, '')}`);
+  if (macsWas.length !== macsNow.length) out.push(msg('machines:shape.diff.adapters', { was: macsWas.length, now: macsNow.length }));
+  else for (let i = 0; i < macsWas.length; i++) if (macsWas[i] !== macsNow[i]) out.push(msg('machines:shape.diff.mac', { n: i + 1, was: macsWas[i], now: macsNow[i] }));
+  if (!!was.usb !== !!now.usb) out.push(was.usb ? msg('machines:shape.diff.usb.had') : msg('machines:shape.diff.usb.hadNo'));
+  for (const k of ['mouse', 'touch', 'clock', '9p'] as const) {
+    if (was.devices.includes(k) !== now.devices.includes(k)) out.push(HAD[k][was.devices.includes(k) ? 0 : 1]);
   }
-  if (was.disks.length !== now.disks.length) out.push(`disks: ${was.disks.length} then, ${now.disks.length} now`);
+  if (was.disks.length !== now.disks.length) out.push(msg('machines:shape.diff.disks', { was: was.disks.length, now: now.disks.length }));
   for (let i = 0; i < Math.min(was.disks.length, now.disks.length); i++) {
     const [a, b] = [was.disks[i], now.disks[i]];
-    const what = `disk ${i + 1}`;
-    if (canonical(a.identity) !== canonical(b.identity)) out.push(`${what}: another disk (${describeIdentity(a.identity)} then, ${describeIdentity(b.identity)} now)`);
-    else if (a.size !== b.size) out.push(`${what}: ${a.size} bytes then, ${b.size} now`);
-    if (a.readOnly !== b.readOnly) out.push(`${what}: ${a.readOnly ? 'read-only' : 'writable'} then, ${b.readOnly ? 'read-only' : 'writable'} now`);
-    if (a.serial !== b.serial) out.push(`${what}: attached anew (its serial changed)`);
-    if (!!a.swap !== !!b.swap) out.push(`${what}: ${a.swap ? 'swap' : 'not swap'} then, ${b.swap ? 'swap' : 'not swap'} now`);
+    const n = i + 1;
+    if (canonical(a.identity) !== canonical(b.identity)) out.push(msg('machines:shape.diff.disk.other', { n, was: describeIdentity(a.identity), now: describeIdentity(b.identity) }));
+    else if (a.size !== b.size) out.push(msg('machines:shape.diff.disk.size', { n, was: a.size, now: b.size }));
+    if (a.readOnly !== b.readOnly) out.push(a.readOnly ? msg('machines:shape.diff.disk.readOnlyThen', { n }) : msg('machines:shape.diff.disk.writableThen', { n }));
+    if (a.serial !== b.serial) out.push(msg('machines:shape.diff.disk.serial', { n }));
+    if (!!a.swap !== !!b.swap) out.push(a.swap ? msg('machines:shape.diff.disk.swapThen', { n }) : msg('machines:shape.diff.disk.notSwapThen', { n }));
   }
-  if (!out.length && canonical(hashed(was)) !== canonical(hashed(now))) out.push('its devices are in another order');
+  if (!out.length && canonical(hashed(was)) !== canonical(hashed(now))) out.push(msg('machines:shape.diff.order'));
   return out;
 }
 
-/** A disk identity in words. */
-export function describeIdentity(d: DiskIdentity): string {
+/** A disk identity in words: a URL's file name as it is, else a message. */
+export function describeIdentity(d: DiskIdentity): string | Msg {
   switch (d.kind) {
     case 'url': return d.path.split('/').pop() || d.path;
-    case 'file': return `the file ${d.name}`;
-    case 'stored': return 'a disk stored in this browser';
-    case 'blank': return 'a blank disk';
-    case 'ramdisk': return 'a ramdisk';
+    case 'file': return msg('machines:shape.identity.file', { name: d.name });
+    case 'stored': return msg('machines:shape.identity.stored');
+    case 'blank': return msg('machines:shape.identity.blank');
+    case 'ramdisk': return msg('machines:shape.identity.ramdisk');
   }
 }
 
@@ -360,6 +370,7 @@ export function newId(): string {
 /** Whether `s` is an id `newId` makes: the store's sweep touches only such files (a transient machine's are named otherwise). */
 export const isId = (s: string) => /^[0-9a-f]{12}$/.test(s);
 
+// A generated machine name's words: names, kept as they are, not the page's copy.
 const ADJECTIVES = ['Amber', 'Brisk', 'Calm', 'Clever', 'Cobalt', 'Dusky', 'Eager', 'Fern', 'Gentle', 'Hazel', 'Ivory', 'Jade', 'Keen', 'Lucid', 'Mellow', 'Nimble', 'Olive', 'Plucky', 'Quiet', 'Rusty', 'Sable', 'Tidy', 'Umber', 'Vivid', 'Wry', 'Zesty'];
 const NOUNS = ['Heron', 'Otter', 'Lynx', 'Wren', 'Badger', 'Falcon', 'Marten', 'Puffin', 'Stoat', 'Ibis', 'Koala', 'Gecko', 'Raven', 'Bison', 'Crane', 'Dingo', 'Egret', 'Ferret', 'Lemur', 'Newt', 'Osprey', 'Panda', 'Quail', 'Tapir', 'Vole', 'Yak'];
 
@@ -370,7 +381,7 @@ export function generateName(taken: Iterable<string>, random: () => number = Mat
     const name = `${ADJECTIVES[Math.floor(random() * ADJECTIVES.length)]} ${NOUNS[Math.floor(random() * NOUNS.length)]}`;
     if (!used.has(name)) return name;
   }
-  return uniqueName('Machine', used);
+  return uniqueName('Machine', used); // i18n-ignore: a generated name
 }
 
 /** `name`, or `name (2)`, `name (3)`… : the first that isn't in `taken` (an imported machine's name, a copy's). */

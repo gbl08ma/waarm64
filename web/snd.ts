@@ -74,8 +74,8 @@ export const SWITCH = 1;
 export const VOLUME_MAX = 400;
 const CONTROLS = [
   // role, type, access, name: VOLUME (role 1), INTEGER (1), read, write and TLV read; MUTE (role 2), BOOLEAN (0), read and write.
-  { role: 1, type: 1, access: 1 << 0 | 1 << 1 | 1 << 4, name: 'Master Playback Volume' },
-  { role: 2, type: 0, access: 1 << 0 | 1 << 1, name: 'Master Playback Switch' },
+  { role: 1, type: 1, access: 1 << 0 | 1 << 1 | 1 << 4, name: 'Master Playback Volume' }, // i18n-ignore: ALSA's control name (the guest's mixer matches it)
+  { role: 2, type: 0, access: 1 << 0 | 1 << 1, name: 'Master Playback Switch' }, // i18n-ignore: ALSA's control name
 ];
 /** The sizes of a `virtio_snd_ctl_info` and a `virtio_snd_ctl_value`. */
 const CTL_INFO_SIZE = 96;

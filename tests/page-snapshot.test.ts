@@ -16,6 +16,7 @@ import { startServer } from '../tools/serve.ts';
 import { openSnapshot, SnapshotWriter } from '../web/snapshot-file.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
+import { t } from '../web/i18n.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const buildroot = existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES));
@@ -53,6 +54,8 @@ async function running(page: Page, ms = BOOT_MS) {
 /** Waits until the page has started loading a snapshot (the boot card's title), so a following `running` is the restored machine's. */
 const loadingSnapshot = (page: Page) => page.waitForFunction(() => document.getElementById('boot-title')!.textContent!.startsWith('Loading '), null, { timeout: 30_000, polling: 20 });
 const message = (page: Page) => page.locator('#message-text').textContent();
+/** The message's details (an error's causes, under its headline). */
+const details = (page: Page) => page.evaluate(() => document.getElementById('message-details')?.textContent ?? '');
 const status = (page: Page) => page.evaluate(() => (document.getElementById('status')?.textContent ?? ''));
 
 /** The canvas's pixels (the guest's scanout) and whether any is not black: the screen was drawn. */
@@ -240,8 +243,9 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   const cut = join(dir, 'cut.webpcsnap');
   writeFileSync(cut, bytes.subarray(0, Math.floor(bytes.length * 0.6)));
   await p2.setInputFiles('#load-snapshot-input', cut);
-  await p2.waitForFunction(() => document.body.dataset.state === 'failed' && /incomplete/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 30_000, polling: 50 });
-  assert.match((await message(p2))!, /^The snapshot couldn't be loaded: This snapshot is incomplete.*Nothing was changed.*Start boots Buildroot \(test guest\) normally/s);
+  await p2.waitForFunction(() => document.body.dataset.state === 'failed' && /incomplete/.test((document.getElementById('message-details')?.textContent ?? '')), null, { timeout: 30_000, polling: 50 });
+  assert.match((await message(p2))!, /^The snapshot couldn't be loaded\nNothing was changed.*Start boots Buildroot \(test guest\) normally/s);
+  assert.match(await details(p2), /^This snapshot is incomplete/); // the refusal: the headline's detail
   assert.deepEqual(await opfs(p2), untouched, 'the disk is untouched');
   await p2.locator('#message-actions button', { hasText: 'Start' }).click();
   await p2.waitForFunction(() => document.body.dataset.state !== 'failed', null, { timeout: 10_000, polling: 20 });
@@ -283,7 +287,7 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
     await page.waitForFunction(() => document.body.dataset.state === 'suspended', null, { timeout: 60_000 });
     assert.match((await message(page))!, /^Suspended: the machine's memory is kept in this browser/);
     assert.ok((await suspendFile())! > 100_000, 'the suspended machine is beside the overlay');
-    assert.equal(await page.locator('#restart').textContent(), 'Start');
+    assert.equal(await page.locator('#restart').textContent(), t('toolbar:Toolbar.start'));
   };
   assert.equal(await page.locator('#suspend').isEnabled(), true);
   await onSerial(page, 'SUSVAR=one\n');

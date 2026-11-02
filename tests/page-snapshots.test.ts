@@ -174,7 +174,8 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   }`, id);
   await page.goto(url);
   await stateIs(page, 'booting', 'running');
-  assert.match(await page.locator('#message-text').textContent() ?? '', /couldn't be resumed .*disk has changed/);
+  assert.match(await page.locator('#message-text').textContent() ?? '', /couldn't be resumed, so it was dropped/);
+  assert.match(await page.locator('#message-details').textContent() ?? '', /disk has changed/); // why: the note's detail
 
   // A RAM change orphans every snapshot (it asks first; the machine restarts with it); the Machines page deletes them in one action.
   await page.locator('#machines-open').click();

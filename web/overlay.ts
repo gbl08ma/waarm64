@@ -12,6 +12,7 @@
 // bumped, durably, before the first change of each opening, so "the overlay is as it was at
 // generation g" is a comparison of two integers. core/tests/common's `Overlay` is the native
 // (in-memory) equivalent (without discard or a generation).
+import { MsgError } from './msg.ts';
 import type { Disk } from './qcow2.ts';
 
 /** The part of `FileSystemSyncAccessHandle` the overlay uses. */
@@ -353,7 +354,8 @@ export const OVERLAY_WAIT_MS = 10_000;
  * and worker), which whoever opens the overlay's files holds until they're
  * closed; resolves to its release. A context that ends (a terminated worker, a
  * closed tab) drops its locks with its files. Waits up to `ms` for the
- * previous holder, then rejects with "overlay <name> is in use".
+ * previous holder, then rejects with "overlay <name> is in use" (a developer's words: its `problem` is
+ * `'overlay-in-use'`, for the page to say it).
  */
 export async function lockOverlay(name: string, ms = OVERLAY_WAIT_MS, mode: LockMode = 'exclusive'): Promise<() => void> {
   let release!: () => void;
@@ -367,7 +369,7 @@ export async function lockOverlay(name: string, ms = OVERLAY_WAIT_MS, mode: Lock
     });
   } catch (e) {
     if ((e as DOMException).name !== 'TimeoutError') throw e;
-    throw new Error(`overlay ${name} is in use: another machine held it for ${ms / 1000} s`);
+    throw Object.assign(new Error(`overlay ${name} is in use: another machine held it for ${ms / 1000} s`), { problem: 'overlay-in-use' });
   }
   return release;
 }
@@ -395,7 +397,7 @@ export async function openOverlay(name: string, want: string | undefined, waitMs
       if (opts.readOnly && !inMemory.has(name)) throw new DOMException(`no overlay ${name}`, 'NotFoundError');
       const o = inMemory.get(name) ?? { data: memFile(), map: memFile(), meta: memFile(), base: want ?? '' };
       if (o.base === '' && want !== undefined && !opts.readOnly) o.base = want;
-      if (want !== undefined && o.base !== want) throw new Error(`overlay ${name} belongs to ${o.base}, not ${want}`);
+      if (want !== undefined && o.base !== want) throw Object.assign(new Error(`overlay ${name} belongs to ${o.base}, not ${want}`), { problem: 'overlay-mismatch' });
       inMemory.set(name, o);
       return { data: o.data, map: o.map, meta: o.meta, close: done };
     }
@@ -415,7 +417,7 @@ export async function openOverlay(name: string, want: string | undefined, waitMs
     const bytes = new Uint8Array(base.getSize());
     base.read(bytes, { at: 0 });
     const got = new TextDecoder().decode(bytes);
-    if (want !== undefined && got !== want) throw new Error(`overlay ${name} belongs to ${got}, not ${want}`);
+    if (want !== undefined && got !== want) throw Object.assign(new Error(`overlay ${name} belongs to ${got}, not ${want}`), { problem: 'overlay-mismatch' });
     base.close();
     handles.pop();
     return { data, map, meta, close: done };
@@ -480,7 +482,7 @@ export async function fileWriter(path: string): Promise<{ write(bytes: Uint8Arra
   let at = 0;
   return {
     write(b) {
-      if (h.write(b, { at }) !== b.length) throw new Error("the browser's storage is full");
+      if (h.write(b, { at }) !== b.length) throw new MsgError('disks:overlay.storageFull');
       at += b.length;
     },
     close() {

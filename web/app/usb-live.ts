@@ -5,6 +5,7 @@
 // running machine's ports: `usb-attach` and `usb-detach` to the device worker, `usb-state` back (web/usb-device.ts).
 // The words and the matching are web/app/usb-ports.ts's; web/app/main.ts drives these for the page's machine.
 import type { UsbFromWorker, UsbIdentity, UsbProblem, UsbSpeed, UsbToWorker, UsbVirtual } from '../usb-device.ts';
+import { fromWire, MsgError, type Params } from '../msg.ts';
 import { USB_CONNECTORS, type UsbEntry } from './shape.ts';
 import { heldLocks, Locks } from './locks.ts';
 import type { Store } from './store.ts';
@@ -38,7 +39,7 @@ export async function listDevices(api: Api): Promise<HostDevice[]> {
  */
 export async function requestDevices(api: Api, filters: object[] = []): Promise<HostDevice[]> {
   const b = browserApi(api);
-  if (!b) throw new Error(api === 'usb' ? 'This browser has no WebUSB (Chromium and Chrome do).' : 'This browser has no WebHID (Chromium and Chrome do).');
+  if (!b) throw api === 'usb' ? new MsgError('usb:usb-live.noWebUsb') : new MsgError('usb:usb-live.noWebHid');
   try {
     const r = await b.requestDevice({ filters });
     return Array.isArray(r) ? r : [r];
@@ -108,18 +109,25 @@ export class UsbLocks extends Locks {
 export type Connector = { device: UsbIdentity | UsbVirtual; name: string; entry?: string; state: 'attaching' | 'attached' | 'detaching'; speed?: UsbSpeed; problems?: UsbProblem[] };
 
 /**
- * Why an attach failed: `message` in plain text (a line, then each problem's `text`), or, where the device worker
- * said which problems, `lead` and their `words` for the page to show with their remedies folded (UsbProblems.svelte).
+ * Why an attach failed: its message (the headline), and, where the device worker said which problems, their `words` for
+ * the page to show under it with their remedies folded (UsbProblems.svelte; usb-ports.ts `errorView`).
  */
-export class UsbError extends Error {
+export class UsbError extends MsgError {
   readonly problems: UsbProblem[];
-  readonly lead: string;
   readonly words: ProblemWords[];
-  constructor(lead: string, problems: UsbProblem[] = [], words: ProblemWords[] = []) {
-    super([lead, ...words.map((w) => w.text)].join('\n'));
-    this.lead = lead;
+  constructor(key: string, params?: Params, problems: UsbProblem[] = [], words: ProblemWords[] = []) {
+    super(key, params);
+    this.name = 'UsbError';
     this.problems = problems;
     this.words = words;
+  }
+}
+
+/** Another machine (in another tab) holds the device's lock: the page asks to take it (main.ts `attachEntry`). */
+export class UsbHeldError extends Error {
+  constructor() {
+    super('held');
+    this.name = 'UsbHeldError';
   }
 }
 
@@ -133,7 +141,8 @@ export class UsbPorts {
   private locks: UsbLocks;
   private pending = new Map<number, { resolve(): void; reject(e: Error): void; timer: ReturnType<typeof setTimeout> }>();
   onChange = () => {};
-  onGone: (c: number, was: Connector, reason?: string) => void = () => {};
+  /** `reason`: why it went (`usb-state` detached); `error`: the device worker's error, when it failed by itself. */
+  onGone: (c: number, was: Connector, reason?: 'unplugged' | 'guest' | 'page', error?: Error) => void = () => {};
 
   constructor(port: MessagePort, locks: UsbLocks) {
     [this.port, this.locks] = [port, locks];
@@ -153,8 +162,9 @@ export class UsbPorts {
       if (m.state === 'error') {
         const d = c && 'vendorId' in c.device ? c.device : undefined;
         const words = d ? (m.detail ?? []).map((x) => problemText(x, d)) : [];
-        p?.reject(new UsbError(words.length ? `${c!.name} couldn't be attached.` : m.message, m.detail, words));
-        if (!p && c) this.onGone(m.connector, c, m.message);
+        const err = m.error ? fromWire(m.error) : new Error(m.message);
+        p?.reject(words.length ? new UsbError('usb:usb-live.notAttached', { name: c!.name }, m.detail, words) : err);
+        if (!p && c) this.onGone(m.connector, c, undefined, err);
       } else {
         p?.resolve();
         if (!p && c) this.onGone(m.connector, c, m.reason);
@@ -175,7 +185,7 @@ export class UsbPorts {
         this.pending.delete(connector);
         if (m.type === 'usb-attach') this.free(connector);
         this.onChange();
-        reject(new UsbError("The machine's USB controller didn't answer: is it still running?"));
+        reject(new UsbError('usb:usb-live.noAnswer'));
       }, ms);
       this.pending.set(connector, { resolve, reject, timer });
       this.port.postMessage(m satisfies UsbToWorker);
@@ -190,14 +200,14 @@ export class UsbPorts {
   attached() { return this.connectors.flatMap((c, i) => (c ? [{ connector: i, ...c }] : [])); }
 
   /**
-   * Attaches `device` on `connector` (taking its lock first: a `held` error when another machine has it). Rejects with
+   * Attaches `device` on `connector` (taking its lock first: a `UsbHeldError` when another machine has it). Rejects with
    * the device worker's reason, in words.
    */
   async attach(connector: number, device: UsbIdentity | UsbVirtual, entry?: string, ms = 30_000): Promise<void> {
     const busy = this.connectors[connector];
-    if (busy) throw new UsbError(`Connector ${connector + 1} has ${busy.name}: detach it first.`);
-    if (device.api !== 'virtual' && !(await this.locks.take(usbLock(device)))) throw new UsbError('held');
-    if (this.connectors[connector]) { if (device.api !== 'virtual') this.locks.drop(usbLock(device)); throw new UsbError(`Connector ${connector + 1} is in use.`); }
+    if (busy) throw new UsbError('usb:usb-live.connectorTaken', { connector: connector + 1, name: busy.name });
+    if (device.api !== 'virtual' && !(await this.locks.take(usbLock(device)))) throw new UsbHeldError();
+    if (this.connectors[connector]) { if (device.api !== 'virtual') this.locks.drop(usbLock(device)); throw new UsbError('usb:usb-live.connectorInUse', { connector: connector + 1 }); }
     this.connectors[connector] = { device, name: deviceName(device), entry, state: 'attaching' };
     this.onChange();
     await this.request(connector, { type: 'usb-attach', connector, device }, ms);
@@ -231,7 +241,7 @@ export class UsbPorts {
 
   /** The machine stopped: nothing is attached any more; the locks go. */
   close() {
-    for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new UsbError('The machine stopped.')); }
+    for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new UsbError('usb:usb-live.stopped')); }
     this.pending.clear();
     for (let i = 0; i < USB_CONNECTORS; i++) this.free(i);
     this.port.onmessage = null;

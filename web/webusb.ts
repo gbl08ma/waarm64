@@ -9,6 +9,7 @@
 // The WebUSB surface is typed locally (`WebUsbDeviceLike`): Node's tests pass a scripted fake, and a
 // MessagePort proxy from the page could stand in for a worker without `navigator.usb`.
 
+import { MsgError, type Params } from './msg.ts';
 import type { Setup, UsbCode, UsbDevice, UsbEndpoint, UsbIdentity, UsbProblem, UsbResult, UsbSpeed, UsbTransfer } from './usb-device.ts';
 
 // ---- The WebUSB surface we use -------------------------------------------------------------------
@@ -250,13 +251,19 @@ export type WebUsbOptions = {
 };
 
 /** An open failed, or left nothing the guest could use; `problems` says why, for the page. */
-export class UsbOpenError extends Error {
+export class UsbOpenError extends MsgError {
   readonly problems: UsbProblem[];
-  constructor(message: string, problems: UsbProblem[]) {
-    super(message);
+  constructor(key: string, params: Params | undefined, problems: UsbProblem[], options?: { cause?: unknown }) {
+    super(key, params, options);
+    this.name = 'UsbOpenError';
     this.problems = problems;
   }
 }
+
+/** The browser couldn't open the device (`e`: its error, whose words are the browser's). WebHID's opener says it too. */
+export const openFailed = (e: unknown) => new UsbOpenError('usb:webusb.openFailed', undefined, [{ kind: 'open-failed', message: (e as Error).message }], { cause: e });
+/** The granted device isn't among those the browser lists now. WebHID's opener says it too. */
+export const notFound = () => new UsbOpenError('usb:webusb.notFound', undefined, [{ kind: 'open-failed', message: 'not found' }]); // i18n-ignore: stands for the browser's own error
 
 const GET = (type: number, index: number, lang: number, length: number): [WebUsbSetup, number] => [
   { requestType: 'standard', recipient: 'device', request: REQ_GET_DESCRIPTOR, value: (type << 8) | index, index: lang },
@@ -272,7 +279,7 @@ export async function openWebUsb(dev: WebUsbDeviceLike, opts: WebUsbOptions = {}
   try {
     if (!dev.opened) await dev.open();
   } catch (e) {
-    throw new UsbOpenError(`could not open the device: ${(e as Error).message}`, [{ kind: 'open-failed', message: (e as Error).message }]);
+    throw openFailed(e);
   }
   const p = new WebUsbPassthrough(dev, opts);
   try {
@@ -280,7 +287,7 @@ export async function openWebUsb(dev: WebUsbDeviceLike, opts: WebUsbOptions = {}
   } catch (e) {
     await dev.close().catch(() => {});
     if (e instanceof UsbOpenError) throw e;
-    throw new UsbOpenError(`could not read the device: ${(e as Error).message}`, [{ kind: 'open-failed', message: (e as Error).message }]);
+    throw new UsbOpenError('usb:webusb.readFailed', undefined, [{ kind: 'open-failed', message: (e as Error).message }], { cause: e });
   }
   return p;
 }
@@ -359,7 +366,7 @@ export class WebUsbPassthrough implements UsbDevice {
     await this.claimActive();
     // A configuration without interfaces is the guest's to use (control requests only); one whose every interface is out of reach isn't.
     const ifaces = this.active()?.interfaces.size ?? 0;
-    if (ifaces > 0 && this.claimed.size === 0) throw new UsbOpenError('no interface of the device can be used through WebUSB', this.problems);
+    if (ifaces > 0 && this.claimed.size === 0) throw new UsbOpenError('usb:webusb.noInterface', undefined, this.problems);
   }
 
   private async readStrings() {
@@ -754,7 +761,7 @@ export function pickDevice<D extends { vendorId: number; productId: number; seri
 export function webUsbOpener(usb: WebUsbLike) {
   return async (id: UsbIdentity, ctx: { gone?: () => void } = {}): Promise<WebUsbPassthrough> => {
     const dev = pickDevice(await usb.getDevices(), id);
-    if (!dev) throw new UsbOpenError('the device is not plugged in, or this page has no permission for it', [{ kind: 'open-failed', message: 'not found' }]);
+    if (!dev) throw notFound();
     let p: WebUsbPassthrough | null = null;
     const onDisconnect = (e: { device: WebUsbDeviceLike }) => {
       if (e.device !== dev) return;

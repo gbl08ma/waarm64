@@ -6,6 +6,7 @@
 // overlay into the store and deletes it, marking the store first so an interrupted merge is finished at its next
 // opening (`resumeMerge`), before anything reads it. Workers only in a browser (sync access handles).
 import type { Source } from './devices.ts';
+import { MsgError } from './msg.ts';
 import { openOverlay, overlay, overlayMeta, readMeta, removeOverlay, writeMeta, type OverlayFiles, type SyncFile } from './overlay.ts';
 import { openDisk, type Disk, type Inflater } from './qcow2.ts';
 
@@ -71,14 +72,14 @@ export async function importImage(src: Source, files: OverlayFiles, progress: (d
   for (let off = 0; off < image.size; off += CHUNK) {
     const len = Math.min(CHUNK, image.size - off);
     const bytes = await image.read(off, len);
-    if (!bytes) throw new Error(`the image can't be read at ${off}`);
+    if (!bytes) throw new MsgError('disks:stored.imageUnreadable', { offset: off });
     // Runs of blocks with a byte that isn't zero, each one write.
     for (let b = 0; b * BLOCK < len;) {
       const nonzero = (k: number) => k * BLOCK < len && bytes.subarray(k * BLOCK, Math.min(len, (k + 1) * BLOCK)).some((x) => x !== 0);
       if (!nonzero(b)) { b++; continue; }
       let e = b + 1;
       while (nonzero(e)) e++;
-      if (!(await store.write(off + b * BLOCK, bytes.subarray(b * BLOCK, Math.min(len, e * BLOCK))))) throw new Error("the disk can't be written to the browser's storage (is it full?)");
+      if (!(await store.write(off + b * BLOCK, bytes.subarray(b * BLOCK, Math.min(len, e * BLOCK))))) throw new MsgError('disks:stored.writeFailed');
       blocks += e - b;
       b = e;
     }
@@ -126,7 +127,7 @@ export async function mergeOverlay(diskPath: string, overlayPath: string, identi
   const files = await openOverlay(diskPath, identity);
   try {
     const m = readMeta(files.meta);
-    if (!writeMeta(files.meta, { generation: m.generation + 1, merging: overlayPath })) throw new Error("the disk's state can't be written to the browser's storage");
+    if (!writeMeta(files.meta, { generation: m.generation + 1, merging: overlayPath })) throw new MsgError('disks:stored.stateWriteFailed');
     return await copyIn(files, overlayPath, size);
   } finally {
     files.close();
@@ -161,7 +162,7 @@ async function copyIn(files: OverlayFiles, overlayPath: string, size: number) {
         const at = b * BLOCK;
         const len = Math.min(BLOCK, size - at);
         const ok = changes.zeroed(b) ? await store.zero(at, len) : await store.write(at, changes.block(b)!.subarray(0, len));
-        if (!ok) throw new Error("the disk can't be written to the browser's storage (is it full?)");
+        if (!ok) throw new MsgError('disks:stored.writeFailed');
         blocks++;
       }
       store.flush();
@@ -171,6 +172,6 @@ async function copyIn(files: OverlayFiles, overlayPath: string, size: number) {
     await removeOverlay(overlayPath);
   }
   const m = readMeta(files.meta);
-  if (!writeMeta(files.meta, { ...m, merging: '' })) throw new Error("the disk's state can't be written to the browser's storage");
+  if (!writeMeta(files.meta, { ...m, merging: '' })) throw new MsgError('disks:stored.stateWriteFailed');
   return blocks;
 }

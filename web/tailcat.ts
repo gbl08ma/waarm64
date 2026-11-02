@@ -7,6 +7,7 @@
 // the page's network controller drives either; what a tailcat server doesn't
 // have (exit nodes, logging out) is refused.
 import type { Lease } from './gateway.ts';
+import { fromWire, msg, MsgError, type Msg } from './msg.ts';
 import type { Reach6Options } from './reach6.ts';
 import type { FromTailscale, NetMap, Tailscale } from './tailscale.ts';
 
@@ -37,10 +38,10 @@ export type ToTailcat =
   | { type: 'detach' };
 
 /** A tailcat address as typed or pasted: `tc` and base64url, or an error to show. The module checks the rest. */
-export function parseTailcatAddr(input: string): { addr: string } | { error: string } {
+export function parseTailcatAddr(input: string): { addr: string } | { error: Msg } {
   const s = input.trim();
-  if (!s) return { error: 'Paste the address `tailcat serve exit-node` printed (it starts with “tc”).' };
-  if (!/^tc[A-Za-z0-9_-]{40,}$/.test(s)) return { error: 'That isn\'t a tailcat address: it starts with “tc” and is letters, digits, “-” and “_”, ~140 of them.' };
+  if (!s) return { error: msg('network:tailcat.pasteAddress') };
+  if (!/^tc[A-Za-z0-9_-]{40,}$/.test(s)) return { error: msg('network:tailcat.notAddress') };
   return { addr: s };
 }
 
@@ -59,10 +60,10 @@ const v6text = (b: number[]) => {
 };
 
 /** A relay as typed: `host` or `host:port`, or an error to show (the module checks it again). */
-export function parseRelay(input: string): { relay: string } | { error: string } {
+export function parseRelay(input: string): { relay: string } | { error: Msg } {
   const s = input.trim();
   if (!s) return { relay: '' };
-  if (!/^(\[[0-9a-fA-F:.]+\]|[A-Za-z0-9.-]+)(:\d{1,5})?$/.test(s)) return { error: 'A relay is a host name, or host:port (your derper; no https://).' };
+  if (!/^(\[[0-9a-fA-F:.]+\]|[A-Za-z0-9.-]+)(:\d{1,5})?$/.test(s)) return { error: msg('network:tailcat.badRelay') };
   return { relay: s };
 }
 
@@ -161,7 +162,7 @@ export function startTailcat(config: TailcatConfig, onEvent: (m: FromTailscale) 
       else if (m.type === 'netmap') netmap = m.netmap;
       else if (m.type === 'loaded') timings.loadMs = m.ms;
       else if (m.type === 'detached') detached?.(m.ip);
-      else if (m.type === 'error') reject(new Error(m.error));
+      else if (m.type === 'error') reject(fromWire(m.error));
       if (state === 'Running' && netmap && timings.runningMs === undefined) {
         timings.runningMs = performance.now() - t0;
         resolve(netmap);
@@ -181,7 +182,7 @@ export function startTailcat(config: TailcatConfig, onEvent: (m: FromTailscale) 
       detached = (ip) => { clearTimeout(t); resolve(ip); };
       worker.postMessage({ type: 'detach' } satisfies ToTailcat);
     }),
-    setExitNode: () => Promise.reject(new Error('a tailcat server is the exit node itself')),
+    setExitNode: () => Promise.reject(new MsgError('network:tailcat.noExitNodes')),
     setAcceptRoutes: () => {},
     logout: () => Promise.resolve(),
     close: () => worker.terminate(),

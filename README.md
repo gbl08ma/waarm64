@@ -18,7 +18,7 @@ It checks those, installs the npm packages, builds the emulator core (Rust to We
 nightly pinned in `rust-toolchain.toml`, which rustup installs the first time: ~700 MB; the build
 takes ~10 s on an M4, longer on slower machines), builds the UEFI firmware (EDK2, in a rootless
 Podman container, ~1 min the first time), builds the page (Vite, ~1 s) and serves it on `http://127.0.0.1:8080/`. Open
-that URL in **Chromium or Chrome** (other browsers aren't supported yet), then **Open disk…** (or
+that URL in **Chromium or Chrome** (other browsers aren't supported yet), then **[Open disk…](ui:machine:main.openDisk)** (or
 drop a file on the page): an arm64 Linux disk image that boots through UEFI, as qcow2, raw or an ISO,
 such as a distribution's generic cloud image or its installer. What the machine writes is kept in the browser's storage,
 per file, across reloads; **Save disk** takes it out (a changes file or a whole disk), **Reset

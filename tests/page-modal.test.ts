@@ -51,7 +51,7 @@ test('the URL check: what a disk server needs, said when it lacks it', async () 
   const check = (url: string) => page.evaluate(async (url) => {
     const { checkUrl } = await import('/web/app/urlcheck.ts' as string);
     const r = await checkUrl(url);
-    return { ok: r.ok, problems: r.problems, bytes: r.bytes, etag: r.etag, ...(r.name ? { name: r.name } : {}) };
+    return { ok: r.ok, problems: r.problems.map((p: { key: string }) => p.key), bytes: r.bytes, etag: r.etag, ...(r.name ? { name: r.name } : {}) };
   }, url);
   // A chunked image's manifest: its id the identity, its name the disk's.
   assert.deepEqual(await check(`${otherBase}/c/demo.json`), { ok: true, problems: [], bytes: 4096, etag: 'demo', name: 'Desktop Demo' });
@@ -62,10 +62,10 @@ test('the URL check: what a disk server needs, said when it lacks it', async () 
   assert.deepEqual(await check(`${otherBase}/disk.img`), { ok: true, problems: [], bytes: 4096, etag: '"v1"' });
   const plain = await check(`${otherBase}/plain/disk.img`);
   assert.equal(plain.ok, false);
-  assert.match(plain.problems.join(' '), /CORS/);
+  assert.ok(plain.problems.includes('machines:urlcheck.noAnswer'), plain.problems.join(' '));
   const noRanges = await check(`${otherBase}/noranges/disk.img`);
-  assert.match(noRanges.problems.join(' '), /ignores byte ranges/);
-  assert.match((await check(`${base}/no/such.img`)).problems.join(' '), /404/);
+  assert.ok(noRanges.problems.includes('machines:urlcheck.noRanges'), noRanges.problems.join(' '));
+  assert.ok((await check(`${base}/no/such.img`)).problems.includes('machines:urlcheck.notFound'));
   await context.close();
 });
 

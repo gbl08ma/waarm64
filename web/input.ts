@@ -11,6 +11,7 @@ const EV_ABS = 3;
 // KeyboardEvent.code → Linux keycodes (input-event-codes.h): a key's position on a PC keyboard, whatever its layout.
 const ROW = (codes: string, first: number) => codes.split(' ').map((c, k) => [c, first + k] as const);
 const KEYS = new Map<string, number>([
+  // i18n-ignore-next: KeyboardEvent.code names
   ...ROW('Escape Digit1 Digit2 Digit3 Digit4 Digit5 Digit6 Digit7 Digit8 Digit9 Digit0 Minus Equal Backspace Tab', 1),
   ...ROW('KeyQ KeyW KeyE KeyR KeyT KeyY KeyU KeyI KeyO KeyP BracketLeft BracketRight Enter ControlLeft', 16),
   ...ROW('KeyA KeyS KeyD KeyF KeyG KeyH KeyJ KeyK KeyL Semicolon Quote Backquote ShiftLeft Backslash', 30),

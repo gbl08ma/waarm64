@@ -267,7 +267,7 @@ impl Client {
                 url: c.cfg.derp_map_url.clone(),
             });
         } else if c.nodes.is_empty() {
-            c.fail("none of the address's DERP relays can be reached from a browser");
+            c.fail("no-browser-relay", "");
         } else {
             c.connect(now);
         }
@@ -297,15 +297,20 @@ impl Client {
         self.actions.push_back(Action::Event(v.to_string()));
     }
 
-    fn set_state(&mut self, s: State, error: Option<&str>) {
-        if self.state == s && error.is_none() && self.announced {
+    /// Announces state `s`; `failed`: why it failed, a stable code the page words
+    /// (`web/ts-client.ts` `failureOf`) and the technical detail, if any.
+    fn set_state(&mut self, s: State, failed: Option<(&'static str, &str)>) {
+        if self.state == s && failed.is_none() && self.announced {
             return;
         }
         self.state = s;
         self.announced = true;
         let name = format!("{s:?}");
-        self.event(match error {
-            Some(e) => json!({ "type": "state", "state": name, "error": e }),
+        self.event(match failed {
+            Some((code, "")) => json!({ "type": "state", "state": name, "code": code }),
+            Some((code, detail)) => {
+                json!({ "type": "state", "state": name, "code": code, "detail": detail })
+            }
             None => json!({ "type": "state", "state": name }),
         });
         if s == State::Running {
@@ -324,12 +329,13 @@ impl Client {
         }
     }
 
-    fn fail(&mut self, why: &str) {
+    /// Gives up: `code` says why (the page has its words), `detail` is a developer's.
+    fn fail(&mut self, code: &'static str, detail: &str) {
         self.close_derp();
         self.phase_deadline = None;
         self.meow_at = None;
         self.reconnect_at = None;
-        self.set_state(State::Failed, Some(why));
+        self.set_state(State::Failed, Some((code, detail)));
     }
 
     fn log(&mut self, msg: String) {
@@ -376,7 +382,7 @@ impl Client {
         self.node += 1;
         self.log(format!("DERP: {why}"));
         if self.state != State::Running && self.failures as usize > 2 * self.nodes.len().max(2) {
-            return self.fail(&why);
+            return self.fail("relay", &why);
         }
         let backoff = match self.failures {
             1 if was_up => Duration::ZERO,
@@ -390,10 +396,9 @@ impl Client {
             return;
         }
         if !ok {
-            return self.fail(&format!(
-                "couldn't load the DERP map {}",
-                self.cfg.derp_map_url
-            ));
+            // The detail is the map's URL, which the page's words name.
+            let url = self.cfg.derp_map_url.clone();
+            return self.fail("derp-map", &url);
         }
         match tailcat::region_nodes(body, self.region_id) {
             Ok((id, nodes)) => {
@@ -406,12 +411,11 @@ impl Client {
                     .filter_map(tailcat::DerpNode::browser_url)
                     .collect();
                 if self.nodes.is_empty() {
-                    return self
-                        .fail("none of the region's DERP relays can be reached from a browser");
+                    return self.fail("region-no-browser-relay", "");
                 }
                 self.connect(now);
             }
-            Err(e) => self.fail(&e),
+            Err(e) => self.fail("derp-map-invalid", &e),
         }
     }
 
@@ -689,12 +693,8 @@ impl Client {
             self.phase_deadline = None;
             match self.state {
                 State::Connecting => self.retry(now, "no answer from the relay".into()),
-                State::Meowing => self.fail(
-                    "the tailcat server didn't answer: is it running, and is the address right?",
-                ),
-                State::Handshaking => {
-                    self.fail("the WireGuard handshake with the tailcat server failed")
-                }
+                State::Meowing => self.fail("server-silent", ""),
+                State::Handshaking => self.fail("handshake", ""),
                 // A hello while running that the server ignores (it's away, or restarting):
                 // keep saying it, it answers once it's back.
                 State::Running => self.phase_deadline = Some(now + MEOW_TIMEOUT),

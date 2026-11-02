@@ -131,7 +131,7 @@ opened again after the fill so their new memory can only come from node 1):
 - **With the arm** (2026-10-24, `desktop-arm/`): the node-1 tabs' sweeps took a median of 161 ms (quartiles
   140–178) against the node-0 tabs' 123 ms (111–141), 1.3×; the WebGL window ran 24–28 frames a second through the
   fill and 29–33 reopened; the video kept 24 throughout, 2.3 minutes reopened.
-- **Without it** (2026-10-19, `desktop/`): the node-1 tabs' sweeps took ~1083 ms, 6.4×; what the user watched still
+- **Without the arm** (2026-10-19, `desktop/`): the node-1 tabs' sweeps took ~1083 ms, 6.4×; what the user watched still
   held its rate (WebGL 20–26 frames a second, 18–31 reopened; video 24), because those windows' hot data and work are
   mostly in node 0 and on the host's GPU and decoder.
 

@@ -3,7 +3,7 @@
 // to the device's request ring as RAM segments; backends here only speak the
 // device protocol. `Devices` works on the shared memory from any thread: in the
 // device worker (web/device-worker.ts) or inline on the vCPU thread.
-import { bytesText } from './app/bytes.ts';
+import { msg, msgOf, type Msg } from './msg.ts';
 import { browserClock, clockAnswer, CLOCK_ID } from './clock.ts';
 import { p9, type P9Files } from './9p.ts';
 import { folders9p, type FolderSpec } from './9p-folders.ts';
@@ -62,16 +62,13 @@ export type DeviceSpec =
 
 export type BlkSpec = { type: 'blk'; url?: string; keep?: boolean; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; ramInit?: [number, Uint8Array][]; swap?: string };
 
-const RAMDISK_FULL = "The ramdisk is out of memory: this tab can't have more, so the guest's writes to it fail (I/O errors). Deleting files there and trimming it (fstrim) makes room again.";
-
 /**
  * What the page says when a disk's write found the browser's storage full (docs/machines.md "Storage"), with the storage's
  * numbers where the browser gives them (as the Machines page's storage line has them).
  */
-export async function storageFullText() {
+export async function storageFull(): Promise<Msg> {
   const est = await globalThis.navigator?.storage?.estimate?.().catch(() => undefined);
-  const numbers = est?.quota ? ` (${bytesText(est.usage ?? 0)} used of ${bytesText(est.quota)})` : '';
-  return `The browser's storage is full${numbers}: the guest's writes to its disk fail (I/O errors), and its filesystem may stop taking any (read-only) until the machine is restarted. Make room on the Machines page (the browser's storage, at its bottom: what takes it, the remote disks' blocks), then restart the machine if it needs it.`;
+  return est?.quota ? msg('disks:devices.storageFull.numbers', { used: est.usage ?? 0, quota: est.quota }) : msg('disks:devices.storageFull');
 }
 
 /** How often the page is told at most that the storage is full. */
@@ -853,7 +850,7 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
       if (await w()) return true;
       full = true;
     } catch (e) {
-      full = (e as DOMException)?.name === 'QuotaExceededError' || /storage is full/.test(String((e as Error)?.message));
+      full = (e as DOMException)?.name === 'QuotaExceededError' || msgOf(e)?.key === 'disks:overlay.storageFull';
     }
     return full ? 'full' : false;
   };
@@ -1137,7 +1134,7 @@ export class Devices {
 
   /** Builds the backends, opening any overlays first (OPFS handles are created asynchronously). */
   /** `notice`: what the page should tell the user while the machine runs on (a ramdisk out of memory, the storage full). */
-  static async open(init: DevicesInit, out: (device: number, text: string) => void, notice: (text: string) => void = () => {}) {
+  static async open(init: DevicesInit, out: (device: number, text: string) => void, notice: (m: Msg) => void = () => {}) {
     // A stored disk written in place is opened as its store is for any writer: an interrupted merge is finished first.
     const overlays = await Promise.all(init.specs.map((d) => (d.type !== 'blk' || !d.overlay ? undefined : d.overlay.startsWith('disks/') ? openStoredForWriting(d.overlay, diskIdentity(d, d.size ?? 0), d.size ?? 0) : openOverlay(d.overlay, diskIdentity(d, d.size ?? 0)))));
     const sources = await Promise.all(init.specs.map(async (d) => {
@@ -1145,7 +1142,7 @@ export class Devices {
       if (d.source) {
         if (!d.size) throw new Error(`a ${d.source === 'ram' ? 'ramdisk' : 'blank disk'} needs a size`);
         if (d.source !== 'ram') return zeroSource(d.size);
-        const ram = ramDisk(d.size, d.ramInit, { onFull: () => notice(RAMDISK_FULL) });
+        const ram = ramDisk(d.size, d.ramInit, { onFull: () => notice(msg('disks:devices.ramdiskFull')) });
         // A swap ramdisk starts as a swap area (a restored one has its own first page in its chunks).
         if (d.swap && !d.ramInit && !(await ram.write(0, swapHeader(d.size, d.swap)))) throw new Error("the swap ramdisk's first page couldn't be written");
         return ram;
@@ -1162,7 +1159,7 @@ export class Devices {
     const full = () => {
       if (performance.now() - toldAt < FULL_REPEAT_MS) return;
       toldAt = performance.now();
-      void storageFullText().then(notice);
+      void storageFull().then(notice);
     };
     return new Devices(init, overlays, sources, out, full);
   }

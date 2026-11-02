@@ -52,7 +52,7 @@ and `.../guest-vk.qcow2` (fetch them into `target/deqp/`). Details: [docs/cloud.
 ## Commands
 
 ```sh
-scripts/ci.sh                  # what every change runs (~8 min): fmt, clippy, cargo test, TestFloat, wasm build, tsc, svelte-check, Node + Chromium tests, image tests, the long multi-vCPU runs
+scripts/ci.sh                  # what every change runs (~8 min): fmt, clippy, cargo test, TestFloat, wasm build, tsc, svelte-check, the i18n checks, Node + Chromium tests, image tests, the long multi-vCPU runs
 scripts/ci-net.sh              # the network tests on Debian (~4 min): also when a change touches the network (docs/testing.md)
 scripts/ci-debian.sh           # Debian on the page (~5 min): also for the page, firmware, devices, disks, snapshots, display, guest-visible changes; --platform (~6.5 min) adds the USB keyboard in the firmware and the clock catch-up, for those and track ends (docs/testing.md)
 scripts/ci-graphics.sh         # graphics on Debian (~3 min): also for the display, 3D, Venus's device, track ends: the Machine menu's 3D or 2D, vkcube through Venus
@@ -101,6 +101,10 @@ needs no CI run.
   (not too many, none redundant, none of known bad quality). Fewest dependencies isn't a goal in itself: an
   industry-standard set of dependencies and build steps beats a bespoke setup.
 - Anything that runs in the browser must work with cross-origin isolation (COOP/COEP) on.
+- **Words the user reads come from the catalog** (`web/messages/en/`, i18next; [docs/i18n.md](docs/i18n.md)): a new
+  message gets an entry with a note, keyed by its source file; workers, libraries, the core and C send keys, codes and
+  data, only the page renders; errors for the user are `MsgError`s (headline, cause as details). `tools/i18n-check.ts`
+  (in `scripts/ci.sh`) checks it, and the docs quote the page as `[words](ui:key)`.
 
 **Testing** ([docs/testing.md](docs/testing.md))
 - New behavior comes with tests at the cheapest layer that catches it. Instruction semantics need

@@ -7,8 +7,9 @@
 // the same) and, on tailcat's public relays, the nearest region. Going online through a server, it checks
 // whether the server's machine reaches the internet over IPv6 (web/reach6.ts), and leases the guest no IPv6
 // default route while it doesn't.
+import { MsgError, toWire } from './msg.ts';
 import { batchSender, packetsOf } from './net.ts';
-import { TsClient, TsModule, type TailcatConfig } from './ts-client.ts';
+import { failureOf, TsClient, TsModule, type TailcatConfig } from './ts-client.ts';
 import type { FromTailscale } from './tailscale.ts';
 import { nearestRegion, netmapOf, tailcatIdentity, type ToTailcat } from './tailcat.ts';
 import { ranked, routedLease, TAILCAT_ROUTES, type Lease, type Prefix } from './gateway.ts';
@@ -108,11 +109,11 @@ self.onmessage = async (e: MessageEvent<ToTailcat>) => {
           return;
         }
         if (ev.type !== 'state') return; // the Tailscale client's events
-        if (ev.state === 'Failed') return post({ type: 'error', error: ev.error ?? 'the connection failed' });
+        if (ev.state === 'Failed') return post({ type: 'error', error: toWire(ev.code ? failureOf(ev) : new MsgError('network:tailcat-worker.failed')) });
         post({ type: 'state', state: ev.state });
       },
     });
   } catch (err) {
-    post({ type: 'error', error: String((err as Error)?.message ?? err) });
+    post({ type: 'error', error: toWire(err) });
   }
 };

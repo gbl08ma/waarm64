@@ -13,6 +13,9 @@ import '@xterm/xterm/css/xterm.css';
 import { flushSync, mount } from 'svelte';
 import App from './App.svelte';
 import { ask } from './ask.svelte.ts';
+import { describe, errorText, msg, MsgError, said, t, text, type Described, type Msg, type Said } from '../i18n.ts';
+import { devText, fromWire, msgOf } from '../msg.ts';
+import { guestWords } from './guest-words.ts';
 import { clockSync, leaveWarning, remember, settings } from './settings.ts';
 import { page, ui, type Action, type MachinesTab, type PageState, type View } from './ui.svelte.ts';
 import type { DisplayToPage } from '../gpu-present.ts';
@@ -40,15 +43,14 @@ import { forgetTailcatIdentity, hasTailcatIdentity, newTailcatIdentity } from '.
 import { forgetProfile, keptProfiles } from '../tailscale-state.ts';
 import type { FromWorker, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
 import { adaptersOf, CPU_FEATURES, DEFAULT_MAC, KEYBOARD_CONNECTOR, newId, serialOf, shapeDiff, USB_CONNECTORS, type DiskRecord, type FolderAttachment, type MachineRecord, type Shape, type UsbEntry } from './shape.ts';
-import { deviceName, entryOf, identityKey, identityOf as usbIdentity, newEntry, problemText, usbLock } from './usb-ports.ts';
-import { browserApi, entryStates, filterFor, findDevices, granted, identityOfDevice, isGranted, requestDevices, ungranted, UsbError, UsbLocks, UsbPorts, type Api, type HostDevice } from './usb-live.ts';
+import { deviceName, entryOf, errorLines, identityKey, identityOf as usbIdentity, newEntry, problemText, usbLock } from './usb-ports.ts';
+import { browserApi, entryStates, filterFor, findDevices, granted, identityOfDevice, isGranted, requestDevices, ungranted, UsbError, UsbHeldError, UsbLocks, UsbPorts, type Api, type HostDevice } from './usb-live.ts';
 import type { UsbIdentity, UsbVirtual } from '../usb-device.ts';
 import { currentShape, planRestore } from './snapshots.ts';
 import { hashFile } from './definitions.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
 import { diskDir, overlayDir, machineDir, snapshotPath, Store } from './store.ts';
 import { deleteOverlay, diskSource, identityOf, loadChangesInto, refreshOverlay, refreshStored, switchOverlay } from './disks.ts';
-import { bytesText } from './bytes.ts';
 import { askPersist, attach, createDisk, createMachine, detachEverywhere, isRunning, knownDisk, machineLock, setAdapterConnection, updateMachine } from './machines.ts';
 import { keyboardSetting, resolveKeyboard } from './keyboard.ts';
 import { parseLocalURL } from '../local-net.ts';
@@ -61,12 +63,13 @@ if (build) console.info(`webpc: built from ${build}`);
 // A machine kept in this browser (docs/machines.md), by id: `?m=<id>`. It is the page's machine (`uefi`) with its own
 // vCPUs, RAM, display and disks. Without one the machine is transient, made from the query (the tests' `?machine=`).
 const store = await Store.open();
-let storedError = '';
+/** Why the stored machine `?m=` names can't be opened (an error the page shows), if it can't. */
+let storedError: unknown;
 /** The machine last opened on this page (in this browser): opened again by a page without a query. */
 const LAST = 'webpc.machine';
 const lastMachine = () => { try { return localStorage.getItem(LAST) ?? undefined; } catch { return undefined; } };
 const chosenId = params.get('m') ?? (location.search ? undefined : lastMachine());
-let stored = chosenId ? await loadStored(chosenId).catch((e) => { if (params.get('m')) storedError = String((e as Error).message ?? e); return undefined; }) : undefined;
+let stored = chosenId ? await loadStored(chosenId).catch((e) => { if (params.get('m')) storedError = e; return undefined; }) : undefined;
 const machine = stored ? 'uefi' : (params.get('machine') ?? 'uefi') as MachineName;
 if (!(machine in MACHINES)) throw new Error(`no machine ${machine}`);
 const spec: Machine = MACHINES[machine];
@@ -106,16 +109,21 @@ async function pageDisk() {
 /** A machine that boots the user's disk and has none yet (the page's own, until a disk is opened): it waits. */
 const needsDisk = () => !!spec.firmware && !spec.disk && !chosen && !stored?.record.attachments.length;
 /** What the toolbar calls the machine: its name, a chunked image's own (`?disk=` its manifest), or a transient one's and its disk's. */
-const machineTitle = () => (stored ? stored.record.name : chosen?.name ?? `${spec.label} · ${diskName() ?? (needsDisk() ? 'no disk' : '')}`.replace(/ · $/, ''));
+function machineTitle() {
+  if (stored) return stored.record.name;
+  if (chosen?.name) return chosen.name;
+  const disk = diskName();
+  return disk ? t('machine:main.title.disk', { machine: spec.title, disk }) : needsDisk() ? t('machine:main.title.noDisk', { machine: spec.title }) : text(spec.title);
+}
 
 /** A stored machine and its disks' records; refused (an error the page shows) when one of them is missing. */
 async function loadStored(id: string) {
   const record = await store.get('machines', id);
-  if (!record) throw new Error(`there is no machine ${id} in this browser`);
+  if (!record) throw new MsgError('machine:main.noMachine', { id });
   const disks = new Map<string, DiskRecord>();
   for (const a of record.attachments) {
     const d = await store.get('disks', a.disk);
-    if (!d) throw new Error(`machine ${record.name} has a disk that isn't in this browser (${a.disk})`);
+    if (!d) throw new MsgError('machine:main.noDisk', { name: record.name, id: a.disk });
     disks.set(d.id, d);
   }
   return { record, disks };
@@ -131,7 +139,7 @@ const pickedFiles = new Map<string, File>();
 class NeedsUser extends Error {
   readonly disks: DiskRecord[];
   constructor(disks: DiskRecord[]) {
-    super(`${disks.map((d) => d.name).join(', ')} need${disks.length === 1 ? 's' : ''} your permission (or picking again) in this session`);
+    super(`${disks.map((d) => d.name).join(', ')}: no permission in this session`);
     this.disks = disks;
   }
 }
@@ -153,7 +161,7 @@ async function grantFiles(disks: DiskRecord[]) {
     if (h?.requestPermission) {
       if ((await h.requestPermission({ mode: 'read' })) === 'granted') continue;
     }
-    const file = await pickFile(`Pick ${d.name} again`);
+    const file = await pickFile(t('disks:main.pickAgain', { name: d.name }));
     if (!file) return false;
     const want = d.identity as { name?: string; bytes?: number; modified?: number };
     // Another name, size or date: the same bytes by the hash, where the disk has one (a definition's: machines.md §6).
@@ -163,7 +171,7 @@ async function grantFiles(disks: DiskRecord[]) {
       continue;
     }
     if (differs) {
-      if (!(await ask.confirm(`${file.name} isn't the file this disk was made from (${want.name}, ${want.bytes} bytes, modified ${new Date(want.modified ?? 0).toLocaleString()}). Use it anyway? Its overlays were written over the other file's bytes and may not make sense over this one.`, { title: 'Another file', ok: 'Use it anyway', danger: true }))) return false;
+      if (!(await ask.confirm(t('disks:main.otherFile', { file: file.name, name: want.name, bytes: want.bytes, when: new Date(want.modified ?? 0) }), { title: t('disks:main.otherFile.title'), ok: t('disks:main.otherFile.ok'), danger: true }))) return false;
     }
     pickedFiles.set(d.id, file);
   }
@@ -190,7 +198,7 @@ async function ensureOverlays(s: { record: MachineRecord; disks: Map<string, Dis
     if (a.readOnly || d.kind === 'ramdisk' || a.inPlace || a.overlay) continue;
     const now = Date.now();
     a.overlay = newId();
-    await store.put('overlays', { id: a.overlay, name: 'Changes', disk: d.id, identity: d.identity, generation: 0, bytes: 0, created: now, modified: now });
+    await store.put('overlays', { id: a.overlay, name: t('disks:main.overlayName'), disk: d.id, identity: d.identity, generation: 0, bytes: 0, created: now, modified: now });
     changed = true;
   }
   if (changed) await store.put('machines', s.record);
@@ -304,7 +312,7 @@ void folders.refresh();
     history.replaceState(null, '', `${location.pathname}${location.search}`);
     const p = parseLocalURL(pairing);
     if ('url' in p) ui.netWizard = ui.current ? { mode: 'attach', machine: ui.current, adapter: 0, localURL: p.url, tick: 1 } : { mode: 'new', localURL: p.url, tick: 1 };
-    else console.warn(`#net: ${p.error}`);
+    else console.warn(`#net: ${devText(p.error)}`);
   }
 }
 store.onChange((c) => {
@@ -552,20 +560,35 @@ const addLog = (text: string) => {
 };
 
 /** A standing note (another browser), shown while there's no message. */
-let note = '';
+let note: Said = '';
 /** A message that clears itself (`notify`), until then. */
 let messageTimer: ReturnType<typeof setTimeout> | undefined;
-const showMessage = (message: string, actions: Action[], kind: 'error' | 'warn') => {
+/** Shows `message` in the message bar: its headline, and its details under it (an error's causes). */
+const showMessage = (message: Said | undefined, actions: Action[], kind: 'error' | 'warn') => {
   clearTimeout(messageTimer);
-  ui.message = message;
+  const d = said(message);
+  ui.message = d.headline;
+  ui.messageDetails = d.details;
   ui.messageKind = kind;
   ui.actions = actions;
 };
 
-function setState(s: PageState, message?: string, actions: Action[] = [], kind: 'error' | 'warn' = 'error') {
+/** The state's words (the status bar's state), by state. */
+const STATE_WORDS: Record<PageState, string> = {
+  idle: 'machine:main.state.idle',
+  loading: 'machine:main.state.loading',
+  booting: 'machine:main.state.booting',
+  running: 'machine:main.state.running',
+  off: 'machine:main.state.off',
+  suspended: 'machine:main.state.suspended',
+  rebooting: 'machine:main.state.rebooting',
+  crashed: 'machine:main.state.crashed',
+  failed: 'machine:main.state.failed',
+};
+function setState(s: PageState, message?: Said, actions: Action[] = [], kind: 'error' | 'warn' = 'error') {
   state = s;
   ui.state = s;
-  ui.stateText = { idle: 'Not started', loading: 'Loading', booting: 'Booting', running: 'Running', off: 'Powered off', suspended: 'Suspended', rebooting: 'Rebooting', crashed: 'Crashed', failed: "Couldn't start" }[s];
+  ui.stateText = t(STATE_WORDS[s]);
   document.body.dataset.state = s;
   showMessage(message ?? note, actions, message ? kind : 'warn');
   ui.boot.shown = (s === 'loading' || s === 'booting') && !ui.boot.done;
@@ -577,22 +600,39 @@ function setState(s: PageState, message?: string, actions: Action[] = [], kind: 
 }
 /** What happened, said while the machine stays as it is (a snapshot saved, or not): the message bar clears itself after 30 s. */
 const NOTICE_MS = 30_000;
-function notify(message: string, kind: 'error' | 'warn' = 'warn') {
+function notify(message: Said, kind: 'error' | 'warn' = 'warn') {
   showMessage(message, [], kind);
-  messageTimer = setTimeout(() => { if (ui.message === message) showMessage(note, [], 'warn'); }, NOTICE_MS);
+  const shown = ui.message;
+  messageTimer = setTimeout(() => { if (ui.message === shown) showMessage(note, [], 'warn'); }, NOTICE_MS);
 }
 /** The state's words for a while (a phase, a progress), until the next state. */
-const stateText = (text: string) => { ui.stateText = text; };
+const stateText = (m: Msg) => { ui.stateText = text(m); };
+/** A job's phase (words already rendered, or a message) and how far it is, for the state's words. */
+const progressText = (phase: string | Msg, f: number) => msg('machine:main.progress', { phase, percent: Math.floor(100 * f) });
+/** An error's words with a line said after its headline (what the page did about it), its causes under them. */
+function withNote(e: unknown, note: string): Described {
+  const d = describe(e);
+  return { headline: `${d.headline}\n${note}`, details: d.details };
+}
+/** Words a USB device's error adds under a headline (web/app/usb-ports.ts `errorLines`: its own, then its problems'). */
+const usbDetails = (headline: string, err: unknown): Described => ({ headline, details: errorLines(err).split('\n') });
+/** Whether error `e` (or a cause of it) is a disk's overlay another tab has open (web/overlay.ts `problem`, the browser's lock). */
+function inUse(e: unknown) {
+  for (let c = e, i = 0; c instanceof Error && i < 8; c = c.cause, i++) {
+    if ((c as { problem?: string }).problem === 'overlay-in-use' || c.name === 'NoModificationAllowedError') return true;
+  }
+  return false;
+}
 
 // What a user can do about each problem (the worker's message says what happened and why).
-const retry: Action = { label: 'Retry', run: () => void restart() };
-const showLog: Action = { label: 'Show serial log', run: () => { setView(ui.view === 'screen' ? 'both' : ui.view, false); term.scrollToBottom(); } };
+const retry: Action = { label: t('machine:main.retry'), run: () => void restart() };
+const showLog: Action = { label: t('machine:main.showLog'), run: () => { setView(ui.view === 'screen' ? 'both' : ui.view, false); term.scrollToBottom(); } };
 const copyLog: Action = {
-  label: 'Copy serial log',
-  run: (b) => navigator.clipboard.writeText(log).then(() => { b.textContent = 'Copied'; }, () => { b.textContent = "Couldn't copy: save it instead"; }),
+  label: t('machine:main.copyLog'),
+  run: (b) => navigator.clipboard.writeText(log).then(() => { b.textContent = t('machine:main.copyLog.copied'); }, () => { b.textContent = t('machine:main.copyLog.failed'); }),
 };
 const saveLog: Action = {
-  label: 'Save serial log',
+  label: t('machine:main.saveLog'),
   run: () => {
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([log], { type: 'text/plain' })), download: `webpc-${machine}-serial-${new Date().toISOString().replace(/[:.]/g, '-')}.log` });
     a.click();
@@ -600,11 +640,11 @@ const saveLog: Action = {
   },
 };
 /** A disk that isn't the one its changes were made over: a stored machine's disks are on the Machines page (a new empty overlay); a transient machine's is reset. */
-const resetDisk: Action = { get label() { return stored ? 'Disks…' : 'Reset disk…'; }, run: () => (stored ? openMachines('disks', stored.record.id) : void resetDiskAsked()) };
-const startNormally: Action = { label: 'Start', run: () => void restart() };
-const resumeAction: Action = { label: 'Start', run: () => void restart() };
-const bootInstead: Action = { label: 'Boot instead', run: () => void ask.confirm('Boot the machine from its disk instead? Its suspended memory is dropped: what the guest had not written to its disk is lost, as after a power cut.', { ok: 'Boot', danger: true }).then((yes) => { if (yes) void restart(false); }) };
-const loadAgain: Action = { label: 'Load snapshot…', run: () => loadSnapshotInput.click() };
+const resetDisk: Action = { get label() { return stored ? t('disks:main.disks') : t('disks:main.resetDisk'); }, run: () => (stored ? openMachines('disks', stored.record.id) : void resetDiskAsked()) };
+const startNormally: Action = { label: t('snapshots:main.startNormally'), run: () => void restart() };
+const resumeAction: Action = { label: t('machine:main.resume'), run: () => void restart() };
+const bootInstead: Action = { label: t('machine:main.bootInstead'), run: () => void ask.confirm(t('machine:main.bootInstead.confirm'), { ok: t('machine:main.bootInstead.ok'), danger: true }).then((yes) => { if (yes) void restart(false); }) };
+const loadAgain: Action = { label: t('snapshots:main.loadAgain'), run: () => loadSnapshotInput.click() };
 const ACTIONS: Record<Problem, Action[]> = {
   'missing-core': [retry],
   'missing-image': [retry],
@@ -682,7 +722,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   ui.boot.done = false;
   ui.boot.line = '';
   ui.boot.progress = undefined; // indeterminate until the sizes are known
-  ui.boot.title = snapshot ? `Loading ${snapshot.name}` : `Starting ${spec.label}`;
+  ui.boot.title = snapshot ? t('machine:main.boot.loading', { name: snapshot.name }) : t('machine:main.boot.starting', { machine: spec.title });
   setState('loading');
   worker.onmessage = (e: MessageEvent<FromWorker>) => {
     if (run !== r) return;
@@ -692,12 +732,12 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
         saving = false;
         snapshotJob = undefined;
       }
-      // A message without a problem is a note (resumed, suspended), not an error.
-      setState(m.state, m.message, m.problem ? ACTIONS[m.problem] : m.state === 'suspended' ? [resumeAction, bootInstead] : [], m.problem || m.state === 'crashed' || m.state === 'failed' ? 'error' : 'warn');
+      // A message without a problem is a note (resumed, suspended, a suspended copy that couldn't be resumed), not an error.
+      setState(m.state, m.error ?? m.note, m.problem ? ACTIONS[m.problem] : m.state === 'suspended' ? [resumeAction, bootInstead] : [], m.problem || m.state === 'crashed' || m.state === 'failed' ? 'error' : 'warn');
       if (m.state === 'booting') {
-        ui.boot.title = `Booting ${spec.label}`;
+        ui.boot.title = t('machine:main.boot.booting', { machine: spec.title });
         ui.boot.progress = undefined;
-        ui.boot.line = 'Starting the kernel'; // then its lines, until its console takes the screen (~2 s on Debian)
+        ui.boot.line = t('machine:main.boot.kernel'); // then its lines, until its console takes the screen (~2 s on Debian)
       }
       if (m.state === 'running') {
         ui.boot.shown = false;
@@ -727,7 +767,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     } else if (m.type === 'notice') {
       notify(m.message, 'error');
     } else if (m.type === 'status') {
-      if (m.status.asleep && !r.asleep && !saving) notify('The guest has gone to sleep (it suspended itself): a key or a click on its screen or terminal wakes it.');
+      if (m.status.asleep && !r.asleep && !saving) notify(msg('machine:main.asleep'));
       r.asleep = !!m.status.asleep;
       showStatus(m.status, alive(m.status));
       if (benchHooks) (window as unknown as { __status?: Status }).__status = m.status;
@@ -738,7 +778,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     } else if (m.type === 'heap') {
       (window as unknown as { __heap?: unknown }).__heap = m.heap;
     } else if (m.type === 'phase') {
-      ui.boot.line = m.text;
+      ui.boot.line = text(m.text);
       ui.boot.progress = undefined;
       if (state === 'loading') stateText(m.text);
     } else if (m.type === 'snapshot-progress') {
@@ -748,11 +788,11 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     } else if (m.type === 'snapshot-done') {
       snapshotJob?.done(m);
     } else if (m.type === 'snapshot-error') {
-      snapshotJob?.error(m.message);
+      snapshotJob?.error(fromWire(m.error));
     } else if (m.type === 'progress') {
       if (m.total) ui.boot.progress = m.loaded / m.total;
-      ui.boot.line = m.total ? `Downloading ${bytesText(m.loaded)} of ${bytesText(m.total)}` : `Downloading ${bytesText(m.loaded)}`;
-      if (state === 'loading') stateText(m.total ? `Loading ${Math.floor((100 * m.loaded) / m.total)}%` : 'Loading');
+      ui.boot.line = m.total ? t('machine:main.boot.downloading', { loaded: m.loaded, total: m.total }) : t('machine:main.boot.downloaded', { loaded: m.loaded });
+      if (state === 'loading') stateText(m.total ? msg('machine:main.state.loadingPercent', { percent: Math.floor((100 * m.loaded) / m.total) }) : msg('machine:main.state.loading'));
     } else if (m.type === 'screen' && !spec.firmware) {
       // The guest's console has the screen: it shows the boot from here. (Through the firmware the
       // screen stays black until a getty: the boot's output, menus and a first boot's questions are on the serial console.)
@@ -762,8 +802,9 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   };
   worker.onerror = (e) => {
     if (run !== r) return;
-    snapshotJob?.error(`the machine's worker failed: ${e.message}`);
-    setState('crashed', `The machine's worker failed: ${e.message}`, ACTIONS.emulator);
+    const error = new MsgError('machine:main.workerFailed', {}, { cause: new Error(e.message) });
+    snapshotJob?.error(error);
+    setState('crashed', error, ACTIONS.emulator);
   };
   const begin = async (three?: { renderer: MessagePort; caps: Uint8Array }) => {
     if (run !== r) return;
@@ -772,7 +813,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     let about: Awaited<ReturnType<typeof aboutMachine>>;
     if (!(await holdLock())) {
       if (run !== r) return;
-      setState('failed', `${stored!.record.name} runs in another tab of this page: power it off there, or close that tab, then Retry.`, [retry]);
+      setState('failed', msg('machine:main.runsElsewhere', { name: stored!.record.name }), [retry]);
       return;
     }
     if (run !== r) return dropLock();
@@ -787,8 +828,8 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       dropLock();
       if (e instanceof NeedsUser) {
         const needs = e.disks;
-        setState('idle', `${e.message}: the browser lets a page read a file only after you say so.`, [{ label: needs.some((d) => d.handle) ? 'Allow and start' : 'Pick and start', run: () => void grantFiles(needs).then((ok) => { if (ok) void restart(); }) }], 'warn');
-      } else setState('failed', `The machine's disks couldn't be opened: ${String((e as Error).message ?? e)}`, [retry]);
+        setState('idle', msg('disks:main.needsUser', { count: needs.length, names: needs.map((d) => d.name) }), [{ label: needs.some((d) => d.handle) ? t('disks:main.allowAndStart') : t('disks:main.pickAndStart'), run: () => void grantFiles(needs).then((ok) => { if (ok) void restart(); }) }], 'warn');
+      } else setState('failed', new MsgError('disks:main.notOpened', {}, { cause: e }), [retry]);
       return;
     }
     if (run !== r) return;
@@ -798,7 +839,8 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     if (folders.views().some((v) => v.problem)) ui.folders.wanted = true; // Allow access…, Use it here
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', query: location.search, machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine'))))?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0', jscvt: params.get('jscvt') !== '0', rcpc: params.get('rcpc') !== '0', sb: params.get('sb') !== '0', flagm: params.get('flagm') !== '0', dit: params.get('dit') !== '0', frintts: params.get('frintts') !== '0', dotprod: params.get('dotprod') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, folders: shares && { list: list!, port: shares.port2 }, sharesPath: shares ? sharesPath(stored!.record) : undefined, clock: stored ? !!stored.record.clock : params.get('clock') !== '0', sound, snapshot, resume, about, plan, ...three, vulkan: three && wantsVulkan() ? true : undefined } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(shares ? [shares.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
+    const startLayout = await resolveKeyboard(keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine')));
+    worker.postMessage({ type: 'start', query: location.search, machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: startLayout?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0', jscvt: params.get('jscvt') !== '0', rcpc: params.get('rcpc') !== '0', sb: params.get('sb') !== '0', flagm: params.get('flagm') !== '0', dit: params.get('dit') !== '0', frintts: params.get('frintts') !== '0', dotprod: params.get('dotprod') !== '0' }, params: params.get('params') ?? undefined, credentials, guest: guestWords(startLayout), nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, folders: shares && { list: list!, port: shares.port2 }, sharesPath: shares ? sharesPath(stored!.record) : undefined, clock: stored ? !!stored.record.clock : params.get('clock') !== '0', sound, snapshot, resume, about, plan, ...three, vulkan: three && wantsVulkan() ? true : undefined } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(shares ? [shares.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.
@@ -824,7 +866,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       } else if (m.type === 'stats') {
         showGraphics('3d', m);
       } else if (m.type === 'lost') {
-        setState('crashed', 'The browser lost the WebGL context the screen was drawn with.', ACTIONS.emulator);
+        setState('crashed', msg('display:main.webglLost'), ACTIONS.emulator);
       } else if (m.type === 'snapshotBytes') {
         bytesAsked.get(m.id)?.(m.bytes);
         bytesAsked.delete(m.id);
@@ -840,7 +882,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     };
     gpu.onerror = (e) => {
       if (run !== r) return;
-      setState('crashed', `The GPU worker failed: ${e.message}`, ACTIONS.emulator);
+      setState('crashed', new MsgError('display:main.gpuWorkerFailed', {}, { cause: new Error(e.message) }), ACTIONS.emulator);
     };
   } else void begin();
   if (nets.length) void net.autoconnect();
@@ -910,7 +952,7 @@ async function exclusively(f: () => Promise<void>) {
 }
 /** True while a snapshot is being written (after saying so) or the machine is being switched: a disk's Export, Open disk and the like wait for it. */
 function busy() {
-  if (saving) void ask.alert('A snapshot is being saved. Try again once it is done.');
+  if (saving) void ask.alert(t('snapshots:main.busy'));
   return switching || saving;
 }
 
@@ -925,7 +967,7 @@ async function reloadStored() {
   try {
     stored = await loadStored(s.record.id);
   } catch (e) {
-    setState('failed', `This machine can't be opened: ${String((e as Error).message ?? e)}.`, [{ label: 'Machines…', run: () => openMachines() }]);
+    setState('failed', new MsgError('machine:main.cantOpen', {}, { cause: e }), [{ label: t('machine:main.machines'), run: () => openMachines() }]);
     return false;
   }
   [ncpus, ramMiB, ramSplit, jitMiB] = [stored.record.ncpus, stored.record.ramMiB, stored.record.ramSplit, jitParam() || stored.record.jitMiB || 0];
@@ -948,13 +990,13 @@ const restart = (resume = true) => exclusively(async () => {
 
 /** The toolbar's Start, Restart or Retry: a restart of a running machine is a power cut, so it asks first. */
 async function restartAsked() {
-  if ((state === 'running' || state === 'booting') && !(await ask.confirm('Restart the machine? Like pulling the plug: unsaved work in the guest is lost.', { title: 'Restart', ok: 'Restart', danger: true }))) return;
+  if ((state === 'running' || state === 'booting') && !(await ask.confirm(t('machine:main.restart.confirm'), { title: t('machine:main.restart.title'), ok: t('machine:main.restart.ok'), danger: true }))) return;
   void restart();
 }
 /** The toolbar's Power off: the machine stops at once, after asking. */
 async function powerOffAsked() {
   if (!(state === 'running' || state === 'booting')) return;
-  if (!(await ask.confirm('Power the machine off? Like pulling the plug: unsaved work in the guest is lost (shut the guest down first, with poweroff, for a clean stop).', { title: 'Power off', ok: 'Power off', danger: true }))) return;
+  if (!(await ask.confirm(t('machine:main.powerOff.confirm'), { title: t('machine:main.powerOff.title'), ok: t('machine:main.powerOff.ok'), danger: true }))) return;
   await exclusively(async () => { await stop(); setState('off'); });
 }
 
@@ -962,12 +1004,12 @@ async function powerOffAsked() {
 function syncDiskButtons() {
   ui.title = machineTitle();
   ui.hasOverlay = !!overlayName();
-  ui.transient = !stored && !needsDisk() ? { label: spec.label, disk: baseName() } : undefined;
+  ui.transient = !stored && !needsDisk() ? { label: text(spec.title), disk: baseName() } : undefined;
 }
 /** No disk yet: say how to bring one, and start nothing. */
 function waitForDisk() {
-  if (stored) return setState('idle', `${stored.record.name} has no disks yet: add one on its Disks tab.`, [{ label: 'Disks…', run: () => openMachines('disks', stored!.record.id) }], 'warn');
-  setState('idle', 'Open a disk image to start the machine: an arm64 Linux image that boots through UEFI, as qcow2, raw or an installer or live ISO (Open disk…, or drop the file on the page). What the machine writes to it is kept in this browser, per file.', [{ label: 'Open disk…', run: () => void openDisk() }], 'warn');
+  if (stored) return setState('idle', msg('disks:main.noDisks', { name: stored.record.name }), [{ label: t('disks:main.disks'), run: () => openMachines('disks', stored!.record.id) }], 'warn');
+  setState('idle', msg('machine:main.openDisk.prompt'), [{ label: t('machine:main.openDisk'), run: () => void openDisk() }], 'warn');
 }
 
 // The disk reset (M8 decision 4): stop the machine (its overlay's files are locked while it runs), delete the overlay, start again.
@@ -975,13 +1017,14 @@ async function resetDiskAsked() {
   const name = overlayName();
   if (!name || busy()) return;
   const written = await overlayBytes(name).catch(() => 0);
-  const size = written ? ` (${bytesText(written)})` : '';
-  if (!(await ask.confirm(`Reset ${chosen || stored ? `the disk ${diskName()}` : `${spec.label}'s disk`}? Everything the machine wrote to it${size} is deleted: your files, installed packages and settings. It then boots from the image as published.`, { title: 'Reset the disk', ok: 'Reset', danger: true }))) return;
+  const disk = chosen || stored ? msg('disks:main.theDisk', { name: diskName() }) : msg('disks:main.machineDisk', { machine: spec.title });
+  const question = written ? t('disks:main.reset.confirm.size', { disk, size: written }) : t('disks:main.reset.confirm', { disk });
+  if (!(await ask.confirm(question, { title: t('disks:main.reset.title'), ok: t('disks:main.reset.ok'), danger: true }))) return;
   await exclusively(async () => {
     await stop();
     term.reset();
     setState('loading');
-    stateText('Resetting the disk');
+    stateText(msg('disks:main.resetting'));
     try {
       const a = bootAttachment();
       if (stored && a?.overlay) {
@@ -989,7 +1032,7 @@ async function resetDiskAsked() {
         stored.record = (await store.get('machines', stored.record.id)) ?? stored.record;
       } else if (!stored) await removeOverlay(name); // once the machine's device worker has closed it
     } catch (e) {
-      setState('failed', `The disk couldn't be reset: ${String(e)}\nClose other tabs of this page (one of them may have the disk open), then try again.`, [resetDisk, retry]);
+      setState('failed', new MsgError('disks:main.reset.failed', {}, { cause: e }), [resetDisk, retry]);
       return;
     }
     start();
@@ -1011,7 +1054,7 @@ async function openDisk() {
   try {
     [handle] = await picker.call(window);
   } catch (e) {
-    if ((e as DOMException).name !== 'AbortError') notify(`The file couldn't be opened: ${String((e as Error).message ?? e)}`, 'error');
+    if ((e as DOMException).name !== 'AbortError') notify(new MsgError('disks:main.openFailed', {}, { cause: e }), 'error');
     return;
   }
   await chooseDisk({ file: await handle.getFile(), handle });
@@ -1043,13 +1086,13 @@ async function machineForFile(file: File, handle?: FileSystemFileHandle) {
  */
 async function switchMachine(id: string) {
   if (machine !== 'uefi' || params.has('machine')) return void (location.search = `?m=${id}`);
-  if ((state === 'running' || state === 'booting') && stored?.record.id !== id && !(await ask.confirm('Open the other machine? This one stops, like pulling the plug: unsaved work in the guest is lost.', { title: 'Open the machine', ok: 'Open it', danger: true }))) return;
+  if ((state === 'running' || state === 'booting') && stored?.record.id !== id && !(await ask.confirm(t('machine:main.switch.confirm'), { title: t('machine:main.switch.title'), ok: t('machine:main.switch.ok'), danger: true }))) return;
   await exclusively(async () => {
     await stop();
     net.machineOff();
     const next = await loadStored(id);
     stored = next;
-    storedError = '';
+    storedError = undefined;
     chosen = undefined;
     [ncpus, ramMiB, ramSplit, jitMiB] = [next.record.ncpus, next.record.ramMiB, next.record.ramSplit, next.record.jitMiB ?? 0];
     want3d = wants3d();
@@ -1072,7 +1115,7 @@ async function chooseDisk(choice: { file: File; handle?: FileSystemFileHandle } 
   if ('file' in choice && (await isSnapshot(choice.file))) return loadSnapshot(choice.file); // a snapshot isn't a disk to boot: it replaces the machine
   if (busy()) return;
   if ('file' in choice && (await changesHeader(choice.file))) { // a changes file isn't a disk to boot: it goes onto the disk on the page
-    if (!overlayName()) return void ask.alert(`${choice.file.name} holds changes to a disk: open that disk first (Open disk…), then load them.`);
+    if (!overlayName()) return void ask.alert(t('disks:main.changes.noDisk', { name: choice.file.name }));
     await loadChanges(choice.file);
     return;
   }
@@ -1080,7 +1123,7 @@ async function chooseDisk(choice: { file: File; handle?: FileSystemFileHandle } 
   // The page's own machine: a file opened or dropped is a machine of its own, kept in this browser (machines.md §2).
   if ('file' in choice && machine === 'uefi' && !params.has('machine')) return machineForFile(choice.file, choice.handle);
   const next: DiskChoice = { ...choice, overlay: await diskOverlay(choice) };
-  if ((state === 'running' || state === 'booting') && !(await ask.confirm(`Boot ${next.file?.name ?? next.url}? The machine restarts, like pulling the plug: unsaved work in the guest is lost. Its changes to the current disk are kept.`, { ok: 'Boot it', danger: true }))) return;
+  if ((state === 'running' || state === 'booting') && !(await ask.confirm(t('disks:main.boot.confirm', { name: next.file?.name ?? next.url }), { ok: t('disks:main.boot.ok'), danger: true }))) return;
   chosen = next;
   syncDiskButtons();
   await restart();
@@ -1098,15 +1141,17 @@ async function loadChanges(file: File, target?: { machine: MachineRecord; attach
   const disk = !m ? undefined : here ? stored!.disks.get(a?.disk ?? '') : await store.get('disks', a?.disk ?? '');
   const overlay = overlayName();
   if (m ? !a || !disk : !overlay) return;
-  if (m && !here && (await isRunning(m.id))) return void ask.alert(`${m.name} runs in another tab: power it off there first.`);
+  if (m && !here && (await isRunning(m.id))) return void ask.alert(t('disks:main.changes.runsElsewhere', { name: m.name }));
   const info = await changesHeader(file);
-  if (!info) return void ask.alert(`${file.name} isn't a changes file (a qcow2 made by Export's "Changes only"). To boot a disk, use Open disk….`);
-  if (!info.hash) return void ask.alert(`${file.name} has a backing file (${info.backingName}) but wasn't made by this page's Export, so its base can't be checked: it can't be loaded.`);
+  if (!info) return void ask.alert(t('disks:main.changes.notChanges', { name: file.name }));
+  if (!info.hash) return void ask.alert(t('disks:main.changes.noHash', { name: file.name, backing: info.backingName }));
   const written = !m && overlay ? await overlayBytes(overlay).catch(() => 0) : 0;
   const running = here && (state === 'running' || state === 'booting');
-  const into = m ? `They go into a new overlay of ${disk!.name}, which the machine switches to (the one it has now is kept).` : `They replace everything the machine has written to ${chosen ? diskName() : `${spec.label}'s disk`}${written ? ` (${bytesText(written)})` : ''}, and the firmware's settings.`;
-  if (!(await ask.confirm(`Load the changes in ${file.name}? ${into}${running ? ' The machine stops, like pulling the plug, and starts again afterwards.' : ''}`, { title: 'Import changes', ok: 'Load them', danger: running || !m }))) return;
-  const progress = (phase: string, f: number) => stateText(`${phase} ${Math.floor(100 * f)}%`);
+  const onto = chosen ? diskName() : msg('disks:main.machineDisk', { machine: spec.title });
+  const into = m ? msg('disks:main.changes.intoOverlay', { disk: disk!.name }) : written ? msg('disks:main.changes.replace.size', { disk: onto, size: written }) : msg('disks:main.changes.replace', { disk: onto });
+  const question = running ? t('disks:main.changes.confirm.running', { name: file.name, into }) : t('disks:main.changes.confirm', { name: file.name, into });
+  if (!(await ask.confirm(question, { title: t('disks:main.changes.title'), ok: t('disks:main.changes.ok'), danger: running || !m }))) return;
+  const progress = (phase: string, f: number) => stateText(progressText(phase, f));
   const load = async () => {
     if (m) {
       const picked = pickedFiles.get(disk!.id);
@@ -1119,9 +1164,9 @@ async function loadChanges(file: File, target?: { machine: MachineRecord; attach
     // Another machine, off: nothing on this page stops.
     try {
       await load();
-      notify(`Loaded the changes in ${file.name} into a new overlay of ${disk!.name}.`);
+      notify(msg('disks:main.changes.loaded', { name: file.name, disk: disk!.name }));
     } catch (e) {
-      notify(`The changes couldn't be loaded: ${String((e as Error).message ?? e)}\nThe disk is as it was.`, 'error');
+      notify(new MsgError('disks:main.changes.failed', {}, { cause: e }), 'error');
     }
     return;
   }
@@ -1130,25 +1175,24 @@ async function loadChanges(file: File, target?: { machine: MachineRecord; attach
     await stop();
     term.reset();
     setState('off');
-    stateText('Loading the changes');
+    stateText(msg('disks:main.changes.loading'));
     try {
       await load();
     } catch (e) {
-      const text = String((e as Error).message ?? e);
-      setState('failed', `The changes couldn't be loaded: ${text}\n${/in use/.test(text) ? 'Close other tabs of this page (one of them may have the disk open), then try again.' : 'The disk is as it was.'}`, [retry]);
+      setState('failed', inUse(e) ? new MsgError('disks:main.changes.failed.inUse', {}, { cause: e }) : new MsgError('disks:main.changes.failed', {}, { cause: e }), [retry]);
       return;
     }
     if (wasOn || !target) start();
-    else setState('off', `Loaded the changes in ${file.name} into a new overlay of ${disk!.name}.`, [], 'warn');
+    else setState('off', msg('disks:main.changes.loaded', { name: file.name, disk: disk!.name }), [], 'warn');
   });
 }
 
 // Your disk out (loop 5): the changes over the image (a qcow2 that names it as its backing file), or the whole disk. The machine
 // stops while it's written (the overlay's files are the writer's); the file goes to where the user picks, or is downloaded.
 const SAVES: Record<ExportMode, { suffix: string; description: string; type: string }> = {
-  changes: { suffix: '-changes.qcow2', description: 'Changes over the base image (qcow2)', type: 'application/x-qcow2' },
-  qcow2: { suffix: '.qcow2', description: 'Whole disk (qcow2)', type: 'application/x-qcow2' },
-  raw: { suffix: '.img', description: 'Whole disk (raw)', type: 'application/octet-stream' },
+  changes: { suffix: '-changes.qcow2', description: t('disks:main.save.type.changes'), type: 'application/x-qcow2' },
+  qcow2: { suffix: '.qcow2', description: t('disks:main.save.type.qcow2'), type: 'application/x-qcow2' },
+  raw: { suffix: '.img', description: t('disks:main.save.type.raw'), type: 'application/octet-stream' },
 };
 /** The disk's file name: the chosen file's or URL's, or the machine's own image's. */
 const baseName = () => diskName() ?? (spec.disk ? new URL(spec.disk, location.href).pathname.split('/').pop() : undefined) ?? 'disk';
@@ -1165,7 +1209,7 @@ async function saveDisk(mode: ExportMode, compress: boolean, target?: { disk: Di
   if (!target && !overlay) return;
   if (target && !uses) {
     const others = (await store.machinesWith(target.disk.id)).filter((m) => m.attachments.some((a) => a.disk === target.disk.id && (target.overlay ? a.overlay === target.overlay : a.inPlace)));
-    for (const m of others) if (await isRunning(m.id)) return void ask.alert(`${m.name} runs from this disk in another tab: power it off there first.`);
+    for (const m of others) if (await isRunning(m.id)) return void ask.alert(t('disks:main.save.runsElsewhere', { name: m.name }));
   }
   const how = SAVES[mode];
   const fileName = target ? target.disk.name : baseName();
@@ -1195,19 +1239,20 @@ async function saveDisk(mode: ExportMode, compress: boolean, target?: { disk: Di
   };
   const ownFile = uses ? (await source()).file : undefined;
   if (handle && ownFile && !(await ownFile.slice(0, 1).arrayBuffer().then(() => true, () => false))) {
-    notify(`${handle.name} was the disk this machine runs from: the save dialog emptied it, so nothing was saved. The machine can't read its disk any more. Save to a different file next time.`, 'error');
+    notify(msg('disks:main.save.emptied', { name: handle.name }), 'error');
     return;
   }
   const write = async () => {
-    if (overlay === NO_OVERLAY_YET) throw new Error('the machine has written nothing to it yet');
+    if (overlay === NO_OVERLAY_YET) throw new MsgError('disks:main.save.nothing');
     const { source: src, identity } = await source();
-    const r = await runExport({ mode, compress, disk: { source: src, overlay, identity }, baseName: fileName, handle }, (phase, f) => stateText(`${phase} ${Math.floor(100 * f)}%`));
+    const r = await runExport({ mode, compress, disk: { source: src, overlay, identity }, baseName: fileName, handle }, (phase, f) => stateText(progressText(phase, f)));
     if (r.blob) {
       const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(r.blob), download: suggestedName });
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
     }
-    return `Saved ${handle?.name ?? suggestedName} (${bytesText(r.bytes)}${mode === 'changes' ? `, ${r.blocks} changed blocks; keep ${fileName} beside it` : ''}).`;
+    const name = handle?.name ?? suggestedName;
+    return mode === 'changes' ? msg('disks:main.saved.changes', { name, size: r.bytes, blocks: r.blocks, base: fileName }) : msg('disks:main.saved', { name, size: r.bytes });
   };
   if (!uses) {
     // Not this page's machine's disk: nothing stops (the state shows the progress, then says what it was).
@@ -1215,23 +1260,22 @@ async function saveDisk(mode: ExportMode, compress: boolean, target?: { disk: Di
     try {
       notify(await write());
     } catch (e) {
-      notify(`The disk couldn't be saved: ${String((e as Error).message ?? e)}`, 'error');
+      notify(new MsgError('disks:main.save.failed', {}, { cause: e }), 'error');
     } finally {
       ui.stateText = was;
     }
     return;
   }
   const running = state === 'running' || state === 'booting';
-  if (running && !(await ask.confirm('Stop the machine to save its disk? It is stopped like pulling the plug: unsaved work in the guest is lost (shut it down first with poweroff for a clean disk). It starts again afterwards.', { title: 'Save the disk', ok: 'Stop and save', danger: true }))) return;
+  if (running && !(await ask.confirm(t('disks:main.save.confirm'), { title: t('disks:main.save.title'), ok: t('disks:main.save.ok'), danger: true }))) return;
   await exclusively(async () => {
     await stop();
     setState('off');
-    stateText('Saving the disk');
+    stateText(msg('disks:main.saving'));
     try {
       setState('off', await write(), [], 'warn');
     } catch (e) {
-      const text = String((e as Error).message ?? e);
-      setState('failed', `The disk couldn't be saved: ${text}\n${/in use/.test(text) ? 'Close other tabs of this page (one of them may have the disk open), then try again.' : ''}`, [retry]);
+      setState('failed', inUse(e) ? new MsgError('disks:main.save.failed.inUse', {}, { cause: e }) : new MsgError('disks:main.save.failed', {}, { cause: e }), [retry]);
       return;
     }
     if (running) start();
@@ -1241,9 +1285,10 @@ async function saveDisk(mode: ExportMode, compress: boolean, target?: { disk: Di
 
 // Snapshots (docs/frontend.md "Snapshots"): the running machine, RAM and disk changes and all, in a file, and back.
 /** The save in progress: the worker's messages for it (the page's `worker.onmessage` forwards them). */
-let snapshotJob: { progress(phase: string, fraction: number): void; chunk(data: Uint8Array): void; done(m: { bytes: number; pausedMs: number; stateMs: number; blobBytes: number; pins: SnapshotDisk[]; slept?: boolean }): void; error(message: string): void } | undefined;
+let snapshotJob: { progress(phase: Msg, fraction: number): void; chunk(data: Uint8Array): void; done(m: { bytes: number; pausedMs: number; stateMs: number; blobBytes: number; pins: SnapshotDisk[]; slept?: boolean }): void; error(e: unknown): void } | undefined;
 const SNAPSHOT_SUFFIX = '.webpcsnap';
-const mb = bytesText;
+/** A save's phase in the state's words: with how far it is while that's known. */
+const snapshotProgress = (phase: Msg, f: number) => stateText(f > 0 && f < 1 ? progressText(phase, f) : phase);
 
 /** Past this, a snapshot says how much the 3D state adds to it and asks first (docs/graphics.md "Snapshots with 3D in use"). */
 const GRAPHICS_WARN = 64 << 20;
@@ -1265,7 +1310,7 @@ function graphicsBytes(r: Run) {
 /** Whether to take the snapshot: yes, unless the 3D state is large and the user says no. */
 async function graphicsOk(r: Run) {
   const bytes = await graphicsBytes(r);
-  return bytes < GRAPHICS_WARN || ask.confirm(`The machine is using 3D: its graphics memory (textures and buffers) adds up to ${mb(bytes)} to the snapshot before compression, and the machine pauses while it is read. Take the snapshot anyway?`, { title: 'A large snapshot', ok: 'Take it' });
+  return bytes < GRAPHICS_WARN || ask.confirm(t('snapshots:main.large.confirm', { size: bytes }), { title: t('snapshots:main.large.title'), ok: t('snapshots:main.large.ok') });
 }
 
 /**
@@ -1289,14 +1334,14 @@ async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
   const picker = (window as unknown as { showSaveFilePicker?: (o: object) => Promise<FileSystemFileHandle> }).showSaveFilePicker;
   if (picker) {
     try {
-      handle = await picker.call(window, { suggestedName, types: [{ description: 'webpc snapshot', accept: { 'application/octet-stream': [SNAPSHOT_SUFFIX] } }] });
+      handle = await picker.call(window, { suggestedName, types: [{ description: t('snapshots:main.fileType'), accept: { 'application/octet-stream': [SNAPSHOT_SUFFIX] } }] });
     } catch (e) {
       if ((e as DOMException).name === 'AbortError') return; // cancelled
       handle = undefined; // the download below
     }
   }
   if (run !== r || saving || switching || !(state === 'running' || state === 'booting')) return; // the machine moved on while the picker was open
-  const unplugged = await emptyPorts(r, 'Taking a snapshot');
+  const unplugged = await emptyPorts(r, 'snapshot');
   if (!unplugged) return;
   if (run !== r || saving || switching || !(state === 'running' || state === 'booting')) return;
   saving = true;
@@ -1305,10 +1350,10 @@ async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
   try {
     const result = await new Promise<{ bytes: number; pausedMs: number; stateMs: number; blobBytes: number; slept?: boolean }>((resolve, reject) => {
       snapshotJob = {
-        progress: (phase, f) => stateText(f > 0 && f < 1 ? `${phase} ${Math.floor(100 * f)}%` : phase),
+        progress: snapshotProgress,
         chunk: (data) => { parts.push(new Blob([data as Uint8Array<ArrayBuffer>])); },
         done: ({ bytes, pausedMs, stateMs, blobBytes, slept }) => resolve({ bytes, pausedMs, stateMs, blobBytes, slept }),
-        error: (message) => reject(new Error(message)),
+        error: reject,
       };
       r.worker.postMessage({ type: 'snapshot', handle, whole: o.whole, sleep: sleepFirst(r) } satisfies ToWorker);
     });
@@ -1321,10 +1366,12 @@ async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
     ui.snapshotResult = JSON.stringify(result); // for tools: the file's bytes, the pause's ms (and the devices' state's), the 3D contents' bytes
     if (run === r && (state === 'running' || state === 'booting')) {
       setState(state);
-      notify(`Saved the snapshot ${handle?.name ?? suggestedName} (${mb(result.bytes)}); the machine was paused for ${(result.pausedMs / 1000).toFixed(1)} s and runs on.${sleptNote(result.slept)}`);
+      const words = { name: handle?.name ?? suggestedName, size: result.bytes, seconds: (result.pausedMs / 1000).toFixed(1) };
+      const slept = sleptAs(result.slept);
+      notify(slept === 'slept' ? msg('snapshots:main.saved.slept', words) : slept === 'awake' ? msg('snapshots:main.saved.awake', words) : msg('snapshots:main.saved', words));
     }
   } catch (e) {
-    if (run === r) { setState(state); notify(`${String((e as Error).message ?? e)}\nThe machine runs on; no file was saved.`, 'error'); }
+    if (run === r) { setState(state); notify(withNote(e, t('snapshots:main.runsOn.noFile')), 'error'); }
   } finally {
     saving = false;
     snapshotJob = undefined;
@@ -1339,7 +1386,7 @@ async function keepSnapshot(name: string) {
   const s = stored;
   if (!r || !s || saving || switching || !(state === 'running' || state === 'booting')) return;
   if (!(await graphicsOk(r)) || run !== r || saving || switching || !(state === 'running' || state === 'booting')) return;
-  const unplugged = await emptyPorts(r, 'Taking a snapshot');
+  const unplugged = await emptyPorts(r, 'snapshot');
   if (!unplugged || run !== r || saving || switching || !(state === 'running' || state === 'booting')) return;
   saving = true;
   syncButtons();
@@ -1350,10 +1397,10 @@ async function keepSnapshot(name: string) {
     const result = await store.writing(async () => {
       const done = await new Promise<{ bytes: number; pausedMs: number; stateMs: number; blobBytes: number; pins: SnapshotDisk[]; slept?: boolean }>((resolve, reject) => {
         snapshotJob = {
-          progress: (phase, f) => stateText(f > 0 && f < 1 ? `${phase} ${Math.floor(100 * f)}%` : phase),
+          progress: snapshotProgress,
           chunk: () => {},
           done: (m) => resolve(m),
-          error: (message) => reject(new Error(message)),
+          error: reject,
         };
         r.worker.postMessage({ type: 'snapshot', keep: snapshotPath(s.record.id, id), sleep: sleepFirst(r) } satisfies ToWorker);
       });
@@ -1362,9 +1409,14 @@ async function keepSnapshot(name: string) {
     });
     ui.snapshotResult = JSON.stringify({ bytes: result.bytes, pausedMs: result.pausedMs, stateMs: result.stateMs, blobBytes: result.blobBytes, id });
     ui.records++; // this tab's own writes aren't announced to it (Store.onChange)
-    if (run === r && (state === 'running' || state === 'booting')) { setState(state); notify(`Kept the snapshot ${name} in this browser (${mb(result.bytes)}); the machine was paused for ${(result.pausedMs / 1000).toFixed(1)} s and runs on. Rename it on the Machines page.${sleptNote(result.slept)}`); }
+    if (run === r && (state === 'running' || state === 'booting')) {
+      setState(state);
+      const words = { name, size: result.bytes, seconds: (result.pausedMs / 1000).toFixed(1) };
+      const slept = sleptAs(result.slept);
+      notify(slept === 'slept' ? msg('snapshots:main.kept.slept', words) : slept === 'awake' ? msg('snapshots:main.kept.awake', words) : msg('snapshots:main.kept', words));
+    }
   } catch (e) {
-    if (run === r) { setState(state); notify(`${String((e as Error).message ?? e)}\nThe machine runs on; nothing was kept.`, 'error'); }
+    if (run === r) { setState(state); notify(withNote(e, t('snapshots:main.runsOn.nothingKept')), 'error'); }
   } finally {
     saving = false;
     snapshotJob = undefined;
@@ -1379,19 +1431,19 @@ async function suspend() {
   const r = run;
   if (!r || saving || switching || !(state === 'running' || state === 'booting')) return;
   // Its devices are unplugged first; the next start attaches the ones attached at start (docs/usb.md "The page").
-  const unplugged = await emptyPorts(r, 'Suspending');
+  const unplugged = await emptyPorts(r, 'suspend');
   if (!unplugged || run !== r || saving || switching || !(state === 'running' || state === 'booting')) return;
   saving = true;
   syncButtons();
   snapshotJob = {
-    progress: (phase, f) => stateText(f > 0 && f < 1 ? `${phase} ${Math.floor(100 * f)}%` : phase),
+    progress: snapshotProgress,
     chunk: () => {},
     done: () => {},
     // It runs on; the `suspended` state ends a suspend that worked (the worker's handler above).
-    error: (message) => {
+    error: (e) => {
       saving = false;
       snapshotJob = undefined;
-      if (run === r) { setState(state); notify(`${message}\nThe machine runs on.`, 'error'); }
+      if (run === r) { setState(state); notify(withNote(e, t('machine:main.runsOn')), 'error'); }
       syncButtons();
       void plugBack(r, unplugged);
     },
@@ -1400,7 +1452,7 @@ async function suspend() {
 }
 
 /** What a saved snapshot's message adds under the clock catch-up: whether the guest slept for it (undefined: not asked). */
-const sleptNote = (slept?: boolean) => slept === undefined || !clockSync() ? '' : slept ? ' The guest slept for it: loading it wakes the guest with its clock caught up.' : "\nThe guest didn't go to sleep when asked (its sleep key does nothing there?): its clock will lag after loading it.";
+const sleptAs = (slept?: boolean) => (slept === undefined || !clockSync() ? undefined : slept ? 'slept' : 'awake');
 
 /** Whether `file` starts with the snapshot signature (`WEBPCSNP`): how a chosen or dropped file is told from a disk image. */
 const isSnapshot = async (file: File) => new TextDecoder().decode(await file.slice(0, 8).arrayBuffer()) === 'WEBPCSNP';
@@ -1414,30 +1466,37 @@ async function restoreSnapshot(file: File, header: SnapshotHeader, key: string, 
   const s = stored!;
   const now = await aboutMachine();
   if (header.shapeHash !== now!.shapeHash) {
-    const why = header.shape ? shapeDiff(header.shape as Shape, now!.shape) : ['it was made by another version of this page'];
-    return void ask.alert(`${name} is a snapshot of a machine other than ${s.record.name} as it is now: ${why.join('; ')}.\nMachines… can make a machine like it.`, { title: "The snapshot can't be restored" });
+    const why = header.shape ? shapeDiff(header.shape as Shape, now!.shape).map((m) => text(m)).join('; ') : msg('snapshots:main.restore.otherVersion');
+    return void ask.alert(t('snapshots:main.restore.otherShape', { name, machine: s.record.name, why }), { title: t('snapshots:main.restore.cant') });
   }
   let plan: Awaited<ReturnType<typeof planRestore>>;
   try {
     plan = await planRestore(store, s.record, s.disks, { name: name.replace(/\.webpcsnap$/, ''), key, pins: (header.disks ?? []) as SnapshotDisk[] }, now!.shape.display);
   } catch (e) {
-    return void ask.alert(`${name} can't be restored: ${String((e as Error).message ?? e)}`);
+    return void ask.alert(errorText(new MsgError('snapshots:main.restore.failed', { name }, { cause: e })));
   }
-  if (plan.refused) return void ask.alert(`${name} can't be restored: ${plan.refused}`);
+  if (plan.refused) return void ask.alert(t('snapshots:main.restore.refused', { name, why: plan.refused }));
   const when = new Date(header.created);
+  const taken = !Number.isNaN(when.getTime());
   const running = state === 'running' || state === 'booting';
-  const forks = plan.forks.map((f) => (f.reused ? `${f.disk}: its earlier fork of this snapshot, attached again` : `${f.disk}: changed since, so the snapshot's state goes into a new overlay, attached now (the one it has stays as it is)`));
-  if (!(await ask.confirm(`Restore ${name}${Number.isNaN(when.getTime()) ? '' : `, taken ${when.toLocaleString()}`}? ${running ? 'The machine stops, like pulling the plug, and' : 'The machine'} runs on from where the snapshot was taken.${plan.kept.length ? `\nAs the snapshot left them: ${plan.kept.join(', ')}.` : ''}${forks.length ? `\n${forks.join('\n')}` : ''}`, { title: 'Restore a snapshot', ok: 'Restore', danger: running }))) return;
+  // The question, then a line on the disks the snapshot left as they are, and one per disk that forks.
+  const lines = [
+    running ? (taken ? t('snapshots:main.restore.confirm.takenRunning', { name, when }) : t('snapshots:main.restore.confirm.running', { name })) : taken ? t('snapshots:main.restore.confirm.taken', { name, when }) : t('snapshots:main.restore.confirm', { name }),
+    ...(plan.kept.length ? [t('snapshots:main.restore.kept', { disks: plan.kept })] : []),
+    ...plan.forks.map((f) => (f.reused ? t('snapshots:main.restore.fork.reused', { disk: f.disk }) : t('snapshots:main.restore.fork.new', { disk: f.disk }))),
+  ];
+  if (!(await ask.confirm(lines.join('\n'), { title: t('snapshots:main.restore.title'), ok: t('snapshots:main.restore.ok'), danger: running }))) return;
   const replaceable = plan.forks.filter((f) => !f.reused && f.replaceable);
-  const they = replaceable.length > 1;
-  const replace = replaceable.length > 0 && !(await ask.confirm(`Keep ${replaceable.map((f) => `${f.replaceable!.name} (${mb(f.replaceable!.bytes)})`).join(', ')} as ${they ? 'they are' : 'it is'} and restore into a new overlay? Replacing ${they ? 'them' : 'it'} instead loses what the machine wrote since the snapshot.`, { title: 'Keep the changes since?', ok: 'Keep, restore into a new overlay', cancel: `Replace ${they ? 'them' : 'it'}` }));
+  const count = replaceable.length;
+  const list = replaceable.map((f) => t('snapshots:main.restore.keep.item', { name: f.replaceable!.name, size: f.replaceable!.bytes }));
+  const replace = count > 0 && !(await ask.confirm(t('snapshots:main.restore.keep', { count, list }), { title: t('snapshots:main.restore.keep.title'), ok: t('snapshots:main.restore.keep.ok'), cancel: t('snapshots:main.restore.replace', { count }) }));
   await exclusively(async () => {
     await stop();
     let disks: DiskPlan[];
     try {
       disks = await plan.commit(replace);
     } catch (e) {
-      setState('failed', `${name} can't be restored: ${String((e as Error).message ?? e)}`, [retry]);
+      setState('failed', new MsgError('snapshots:main.restore.failed', { name }, { cause: e }), [retry]);
       return;
     }
     term.reset();
@@ -1461,7 +1520,7 @@ async function opfsFile(path: string) {
 }
 
 /** What a snapshot's disk is called, for messages. */
-const snapshotDisk = (name: string | null | undefined) => (name ? `the disk ${name}` : `${spec.label}'s own disk`);
+const snapshotDisk = (name: string | null | undefined) => (name ? msg('disks:main.theDisk', { name }) : msg('snapshots:main.ownDisk', { machine: spec.title }));
 
 /**
  * Loads a snapshot: the header is read here (no codec needed) to say what the file is and to refuse
@@ -1475,24 +1534,32 @@ async function loadSnapshot(file: File) {
   try {
     header = (await openSnapshot(file)).header;
   } catch (e) {
-    if (e instanceof SnapshotError) return void ask.alert(`${file.name}: ${e.message}`, { title: "Not a snapshot this page can load" });
+    if (e instanceof SnapshotError) return void ask.alert(t('snapshots:main.notSnapshot', { name: file.name, why: msgOf(e) }), { title: t('snapshots:main.notSnapshot.title') });
     throw e;
   }
   if (stored) return restoreSnapshot(file, header, `file:${String(header.created)}`, file.name);
   const label = typeof header.label === 'string' ? header.label : String(header.machine);
   if (header.machine !== machine) {
-    return void ask.alert(`${file.name} is a snapshot of ${label} (?machine=${String(header.machine)}), and this page runs ${spec.label} (?machine=${machine}). Open the page for that machine to load it.`);
+    return void ask.alert(t('snapshots:main.load.otherMachine', { name: file.name, other: label, otherId: String(header.machine), machine: spec.title, id: machine }));
   }
   const taken = typeof header.disk === 'string' ? header.disk : null;
   const open = chosen ? diskName()! : null;
   if (taken !== open) {
-    return void ask.alert(`${file.name} was taken on ${snapshotDisk(taken)}, and the disk open now is ${snapshotDisk(open)}. A snapshot continues only on the disk it was taken on: ${taken ? 'open that disk first (Open disk…), then load the snapshot' : 'reload the page (it starts with the machine\'s own disk), then load the snapshot'}.`);
+    return void ask.alert(taken ? t('snapshots:main.load.otherDisk', { name: file.name, taken: snapshotDisk(taken), open: snapshotDisk(open) }) : t('snapshots:main.load.otherDisk.reload', { name: file.name, taken: snapshotDisk(taken), open: snapshotDisk(open) }));
   }
   const overlay = overlayName();
   const written = overlay ? await overlayBytes(overlay).catch(() => 0) : 0;
   const when = new Date(header.created);
   const running = state === 'running' || state === 'booting';
-  if (!(await ask.confirm(`Load the snapshot ${file.name}? It holds ${label}${Number.isNaN(when.getTime()) ? '' : ` as it was on ${when.toLocaleString()}`} (${mb(file.size)}${typeof header.ncpus === 'number' ? `, ${header.ncpus} vCPU${header.ncpus > 1 ? 's' : ''}` : ''}). ${running ? 'This machine stops, like pulling the plug, and the' : 'The'} snapshot's machine takes its place, running where it was saved. Everything ${chosen ? `the disk ${diskName()}` : `${spec.label}'s disk`} has written${written ? ` (${mb(written)})` : ''} is replaced by the snapshot's changes to the disk.`, { title: 'Load a snapshot', ok: 'Load it', danger: true }))) return;
+  const dated = !Number.isNaN(when.getTime());
+  const count = typeof header.ncpus === 'number' ? header.ncpus : undefined;
+  const holds = count === undefined
+    ? (dated ? msg('snapshots:main.load.holds.when', { label, when, size: file.size }) : msg('snapshots:main.load.holds', { label, size: file.size }))
+    : dated ? msg('snapshots:main.load.holds.when.cpus', { label, when, size: file.size, count }) : msg('snapshots:main.load.holds.cpus', { label, size: file.size, count });
+  const replaces = running ? msg('snapshots:main.load.replaces.running') : msg('snapshots:main.load.replaces');
+  const disk = chosen ? msg('disks:main.theDisk', { name: diskName() }) : msg('disks:main.machineDisk', { machine: spec.title });
+  const lost = written ? msg('snapshots:main.load.written.size', { disk, size: written }) : msg('snapshots:main.load.written', { disk });
+  if (!(await ask.confirm(t('snapshots:main.load.confirm', { name: file.name, holds, replaces, lost }), { title: t('snapshots:main.load.title'), ok: t('snapshots:main.load.ok'), danger: true }))) return;
   await exclusively(async () => {
     await stop();
     term.reset();
@@ -1509,7 +1576,7 @@ document.addEventListener('drop', (e) => {
   const handle = item?.getAsFileSystemHandle?.().catch(() => null);
   void (async () => {
     const h = await handle;
-    if (h?.kind === 'directory') return void droppedFolder(h as FileSystemDirectoryHandle).catch((err) => notify(String((err as Error).message ?? err), 'error'));
+    if (h?.kind === 'directory') return void droppedFolder(h as FileSystemDirectoryHandle).catch((err) => notify(err, 'error'));
     void chooseDisk({ file, handle: h?.kind === 'file' ? h as FileSystemFileHandle : undefined });
   })();
 });
@@ -1518,7 +1585,7 @@ document.addEventListener('drop', (e) => {
 /** A directory dropped on the page: a folder of this browser's, offered to the running machine if the page's has shared folders. */
 async function droppedFolder(handle: FileSystemDirectoryHandle) {
   const here = !ui.machinesOpen && folders.running ? stored?.record : undefined;
-  if (here && !(await ask.confirm(`Attach ${handle.name} to ${here.name}? The folder is kept in this browser, for this or any machine.`, { title: 'A shared folder', ok: 'Attach' }))) return;
+  if (here && !(await ask.confirm(t('folders:main.drop.confirm', { folder: handle.name, machine: here.name }), { title: t('folders:main.drop.title'), ok: t('folders:main.drop.ok') }))) return;
   const f = await createFolder(store, { kind: 'host', name: handle.name, handle });
   if (here) await folderPage.folderAttach(here.id, f, false);
   else await folders.refresh();
@@ -1589,13 +1656,13 @@ const netLive = (machine: string | undefined, i: number) => (machine ?? 'transie
  * connects when the machine starts.
  */
 async function netAttach(machine: string | undefined, i: number, c: Connection, authKey?: string) {
-  if (c.ephemeral && machine && machine !== netKey() && await isRunning(machine)) throw new Error(`${c.name} is ephemeral, so it is this page's: the machine that runs in another tab can't use it.`);
+  if (c.ephemeral && machine && machine !== netKey() && await isRunning(machine)) throw new MsgError('network:main.ephemeral', { name: c.name });
   if (netLive(machine, i)) {
     try {
       await net.attach(i, c, authKey);
     } catch (e) {
       if (!(e instanceof HeldError)) throw e;
-      if (!(await ask.confirm(`${e.message} Use it here instead? That machine disconnects from it.`, { title: 'The connection is in use', ok: 'Use it here' }))) return;
+      if (!(await ask.confirm(t('network:main.held.useHere', { held: e.msg }), { title: t('network:main.held.title'), ok: t('network:main.useHere') }))) return;
       await net.takeFrom(i, c, authKey);
     }
     return;
@@ -1618,15 +1685,18 @@ async function netDetach(machine: string | undefined, i: number) {
 /** Deletes connection `c` after asking (naming the machines it is attached to): it is detached from them, and its state forgotten. */
 async function netDelete(c: Connection) {
   const on = (await store.all('machines')).filter((m) => m.adapters?.some((a) => a.connection === c.id)).map((m) => m.name);
-  if (settings().transientNet === c.id) on.push(spec.label);
-  const what = c.kind === 'tailnet' ? (c.ephemeral ? 'Its node leaves the tailnet when it is next seen offline.' : 'Its node is logged out of the tailnet and its keys are forgotten here.') : c.tailcat?.serve ? 'Its tailcat address stops working.' : '';
-  if (!(await ask.confirm(`Delete the connection ${c.name}?${on.length ? ` It is detached from ${on.join(', ')}.` : ''} ${what}`.trim(), { title: 'Delete the connection', ok: 'Delete', danger: true }))) return;
+  if (settings().transientNet === c.id) on.push(text(spec.title));
+  const what = c.kind === 'tailnet' ? (c.ephemeral ? msg('network:main.delete.leaves') : msg('network:main.delete.loggedOut')) : c.tailcat?.serve ? msg('network:main.delete.tailcat') : undefined;
+  const question = what
+    ? (on.length ? t('network:main.delete.confirm.on.what', { name: c.name, machines: on, what }) : t('network:main.delete.confirm.what', { name: c.name, what }))
+    : on.length ? t('network:main.delete.confirm.on', { name: c.name, machines: on }) : t('network:main.delete.confirm', { name: c.name });
+  if (!(await ask.confirm(question, { title: t('network:main.delete.title'), ok: t('network:main.delete.ok'), danger: true }))) return;
   const stranded = await net.remove(c);
   await detachEverywhere(store, c.id);
   if (settings().transientNet === c.id) remember({ transientNet: undefined });
   if (stored) stored.record = (await store.get('machines', stored.record.id)) ?? stored.record;
   await net.refresh();
-  if (stranded) throw new Error(`${c.name} is deleted, but its control server didn't answer: its node stays on the tailnet until it expires or an admin removes it.`);
+  if (stranded) throw new MsgError('network:main.stranded', { name: c.name });
 }
 
 /** Logs out the node of connection `c`, running or not; one another tab's machine has is taken from it after asking. */
@@ -1635,7 +1705,7 @@ async function netLogoutConnection(c: Connection) {
     await net.logoutKept(c);
   } catch (e) {
     if (!(e instanceof HeldError)) throw e;
-    if (!(await ask.confirm(`${e.message} Log it out all the same? That machine disconnects from it.`, { title: 'The connection is in use', ok: 'Log out', danger: true }))) return;
+    if (!(await ask.confirm(t('network:main.held.logOut', { held: e.msg }), { title: t('network:main.held.title'), ok: t('network:main.logOut'), danger: true }))) return;
     if (!(await net.locks.takeFrom(connectionLock(c.id)))) throw e;
     await net.logoutKept(c);
   }
@@ -1643,12 +1713,12 @@ async function netLogoutConnection(c: Connection) {
 
 /** Forgets tailcat connection `c`'s served identity, after asking: whoever has its address can't come in any more. */
 async function netNewAddress(c: Connection) {
-  const t = c.tailcat;
-  if (!t) return false;
-  if (!(await ask.confirm(`Forget ${c.name}'s tailcat address? Whoever has it can't come in any more, and the machine gets a new one when it next lets clients in.`, { ok: 'Forget it', danger: true }))) return false;
+  const tc = c.tailcat;
+  if (!tc) return false;
+  if (!(await ask.confirm(t('network:main.newAddress.confirm', { name: c.name }), { ok: t('network:main.newAddress.ok'), danger: true }))) return false;
   // An ephemeral connection's identity is in the page's memory: a new one; a stored one's is made again at its next serve.
-  if (c.ephemeral) await net.conns.put({ ...c, tailcat: { ...t, identity: newTailcatIdentity() } });
-  else await forgetTailcatIdentity(t.identityKey);
+  if (c.ephemeral) await net.conns.put({ ...c, tailcat: { ...tc, identity: newTailcatIdentity() } });
+  else await forgetTailcatIdentity(tc.identityKey);
   const at = net.runs(c.id);
   if (at >= 0) await net.edit((await net.conns.get(c.id))!);
   return true;
@@ -1716,7 +1786,7 @@ function syncMachineMenu() {
   ui.size.vulkan = want3d && wantsVulkan();
   ui.size.cpuChoices = [...new Set([...CPU_CHOICES, ncpus])].sort((a, b) => a - b);
   ui.size.ramChoices = [...new Set([...RAM_CHOICES, ramMiB])].sort((a, b) => a - b);
-  ui.size.gpuLock = !webgl2 ? 'This browser has no WebGL2: 2D only' : gpuAsked ? `Set by the page's address (?gpu=${params.get('gpu')})` : '';
+  ui.size.gpuLock = !webgl2 ? t('toolbar:main.gpuLock.noWebgl2') : gpuAsked ? t('toolbar:main.gpuLock.address', { gpu: params.get('gpu') ?? '' }) : '';
 }
 syncMachineMenu();
 // The memory signal (web/app/memory.ts, docs/frontend.md "Memory"): while the machine runs, a mark in localStorage
@@ -1743,7 +1813,7 @@ function crashedBefore() {
     clearAlive(aliveKey());
     if (stored) {
       const m = { ...stored.record, ...(o.jitMiB ? { jitMiB: o.jitMiB } : {}), ...(o.ramMiB ? { ramMiB: o.ramMiB, ramSplit: undefined } : {}) };
-      if (o.ramMiB && (await store.snapshotsOf(m.id)).length && !(await ask.confirm('Less RAM orphans its snapshots: they were taken of a machine with the old settings (they stay, marked, until deleted).', { ok: 'Use less RAM' }))) return void crashedBefore();
+      if (o.ramMiB && (await store.snapshotsOf(m.id)).length && !(await ask.confirm(t('machine:main.lessRam.confirm'), { ok: t('machine:main.lessRam.ok') }))) return void crashedBefore();
       stored.record = await updateMachine(store, m);
     } else remember(o);
     if (o.jitMiB) jitMiB = o.jitMiB;
@@ -1754,23 +1824,27 @@ function crashedBefore() {
   const jitNow = a.jitMiB || jitBudget();
   const ramLess = [...RAM_CHOICES].reverse().find((r) => r <= a.ramMiB / 2) ?? RAM_CHOICES[0];
   const actions: Action[] = [
-    ...(jitNow > 160 ? [{ label: 'Start with a 160 MiB JIT cache', run: () => void use({ jitMiB: 160 }) }] : jitNow > 64 ? [{ label: 'Start with a 64 MiB JIT cache', run: () => void use({ jitMiB: 64 }) }] : []),
-    ...(ramLess < a.ramMiB ? [{ label: `Start with ${ramLess} MiB of RAM`, run: () => void use({ ramMiB: ramLess }) }] : []),
-    { label: 'Start as it is', run: () => { clearAlive(aliveKey()); void restart(); } },
+    ...(jitNow > 160 ? [{ label: t('machine:main.crashed.jit', { mib: 160 }), run: () => void use({ jitMiB: 160 }) }] : jitNow > 64 ? [{ label: t('machine:main.crashed.jit', { mib: 64 }), run: () => void use({ jitMiB: 64 }) }] : []),
+    ...(ramLess < a.ramMiB ? [{ label: t('machine:main.crashed.ram', { mib: ramLess }), run: () => void use({ ramMiB: ramLess }) }] : []),
+    { label: t('machine:main.crashed.asIs'), run: () => { clearAlive(aliveKey()); void restart(); } },
   ];
-  setState('idle', `${a.name} was running when its tab closed without stopping it (${new Date(a.t).toLocaleString()}), most likely because the browser ran out of memory: by the emulator's own accounting it was using about ${a.gib} GiB (${a.peakGiB} at most), with ${a.ramMiB} MiB of guest RAM and a ${a.jitMiB} MiB JIT cache.\nA smaller JIT cache keeps less of the guest's code compiled (the browser spends about six times the cache's size on it when it is full); less RAM leaves the guest less room.`, actions, 'warn');
+  setState('idle', msg('machine:main.crashed', { name: a.name, when: new Date(a.t), gib: a.gib, peak: a.peakGiB, ram: a.ramMiB, jit: a.jitMiB }), actions, 'warn');
   return true;
 }
-/** The warning for a size this device may not have the memory for. */
-function memoryWarning(r: number, n: number, j = jitBudget()) {
+/** A question's words with the warning for a size this device may not have the memory for, a paragraph after them. */
+function memoryWarning(question: string, r: number, n: number, j = jitBudget()) {
   const need = hostMemoryGiB(r, n, j);
   const has = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-  return has !== undefined && has < need ? `\n\nThis needs about ${need.toFixed(1)} GiB of memory and this device reports ${has} GiB${has >= 8 ? ' (browsers report at most 8, so it may well have more)' : ''}: if it runs out, the browser closes the tab without warning.` : '';
+  if (has === undefined || has >= need) return question;
+  const warning = has >= 8 ? t('machine:main.memoryWarning.max', { need: need.toFixed(1), has }) : t('machine:main.memoryWarning', { need: need.toFixed(1), has });
+  return `${question}\n\n${warning}`;
 }
 async function applySize(n: number, r: number, g: '3d' | '2d') {
   if (n === ncpus && r === ramMiB && g === (want3d ? '3d' : '2d')) return;
   const running = state === 'running' || state === 'booting';
-  if (!(await ask.confirm(`Restart with ${n} vCPU${n > 1 ? 's' : ''}, ${r} MiB of RAM${hasGpu ? ` and ${g === '3d' ? '3D' : '2D'} graphics` : ''}?${running ? ' Like pulling the plug: unsaved work in the guest is lost.' : ''} A suspended machine is resumed as it was, with its own size.${memoryWarning(r, n)}`, { title: 'The machine\'s size', ok: 'Restart', danger: running }))) return;
+  const size = !hasGpu ? msg('machine:main.size', { count: n, ram: r }) : g === '3d' ? msg('machine:main.size.3d', { count: n, ram: r }) : msg('machine:main.size.2d', { count: n, ram: r });
+  const question = running ? t('machine:main.size.confirm.running', { size }) : t('machine:main.size.confirm', { size });
+  if (!(await ask.confirm(memoryWarning(question, r, n), { title: t('machine:main.size.title'), ok: t('machine:main.size.ok'), danger: running }))) return;
   if (r !== ramMiB) ramSplit = undefined;
   [ncpus, ramMiB] = [n, r];
   remember({ ncpus, ramMiB, ...(hasGpu && !gpuAsked ? { gpu: g } : {}) });
@@ -1784,7 +1858,7 @@ async function saveSettings(m: MachineRecord) {
   const s = stored;
   if (!s || m.id !== s.record.id) return;
   const running = state === 'running' || state === 'booting';
-  if (running && !(await ask.confirm(`Restart ${m.name} with its new settings? Like pulling the plug: unsaved work in the guest is lost. A suspended machine is resumed as it was, with its own size.${memoryWarning(m.ramMiB, m.ncpus, jitParam() || m.jitMiB || JIT_DEFAULT_MIB)}`, { title: 'Save and restart', ok: 'Restart', danger: true }))) return;
+  if (running && !(await ask.confirm(memoryWarning(t('machine:main.settings.confirm', { name: m.name }), m.ramMiB, m.ncpus, jitParam() || m.jitMiB || JIT_DEFAULT_MIB), { title: t('machine:main.settings.title'), ok: t('machine:main.settings.ok'), danger: true }))) return;
   await exclusively(async () => {
     await stop();
     s.record = await updateMachine(store, m);
@@ -1844,7 +1918,7 @@ async function editUsbEntriesNow(id: string | undefined, f: (e: UsbEntry[]) => U
     transientUsb = f(transientUsb);
   } else {
     const m = await store.get('machines', id);
-    if (!m) throw new Error('that machine is gone');
+    if (!m) throw new MsgError('usb:main.machineGone');
     m.usbDevices = f(m.usbDevices ?? []);
     if (!m.usbDevices.length) delete m.usbDevices;
     await store.put('machines', m);
@@ -1856,7 +1930,6 @@ async function editUsbEntriesNow(id: string | undefined, f: (e: UsbEntry[]) => U
 const isCurrent = (id: string | undefined) => (stored ? stored.record.id === id : id === undefined);
 const usbRunning = () => !!run?.usb && (state === 'running' || state === 'booting');
 const usbLocks = new UsbLocks(store, () => machineTitle(), (lock) => void letGo(lock));
-const stoppedText = "The machine isn't running on this page: its devices are attached when it runs.";
 
 /** The page's machine's USB as the menu and the tab show it (`ui.usb`), read again now. */
 let usbReading: Promise<void> | undefined;
@@ -1887,18 +1960,18 @@ function syncUsb() {
 function usbPorts(port: MessagePort) {
   const p = new UsbPorts(port, usbLocks);
   p.onChange = syncUsb;
-  p.onGone = (connector, was, reason) => {
+  p.onGone = (connector, was, reason, error) => {
     if (reason === 'unplugged' && was.device.api !== 'virtual') {
       // It may come back as another device (a bootloader, after a firmware upload): the offer to attach that one there.
       const api = was.device.api;
       const entry = usbEntries().find((e) => e.id === was.entry);
       const gone = { connector, api, atStart: entry?.atStart ?? false, name: was.name, at: Date.now() };
       lastGone = gone;
-      offer(`gone-${connector}`, `${was.name} was unplugged from connector ${connector + 1}. If it came back as another device (a bootloader, after a firmware upload), pick that one to attach it there.`, 'Pick it…', async () => {
+      offer(`gone-${connector}`, t('usb:main.offer.gone', { name: was.name, connector: connector + 1 }), t('usb:main.offer.pick'), async () => {
         for (const d of await requestDevices(api)) await rememberAndAttach(api, d, { connector, atStart: gone.atStart });
       });
-    } else if (reason && reason !== 'unplugged' && reason !== 'guest' && reason !== 'page') {
-      notify(`${was.name} was detached: ${reason}`, 'error');
+    } else if (error) {
+      notify(usbDetails(t('usb:main.detached', { name: was.name }), error), 'error');
     }
   };
   return p;
@@ -1915,25 +1988,24 @@ function offer(id: string, text: string, label: string, f: () => Promise<void>) 
   syncUsb();
 }
 
-/** An attach's error for the message bar: a `UsbError` with problems names the device itself. */
-const attachFailed = (name: string, err: unknown, again = '') =>
-  err instanceof UsbError && err.words.length ? err.message : `${name} couldn't be attached${again}: ${String((err as Error).message ?? err)}`;
+/** An attach's error for the message bar (`again`: an attach after a snapshot): a `UsbError` with problems names the device itself. */
+const attachFailed = (name: string, err: unknown, again = false): Said =>
+  err instanceof UsbError && err.words.length ? errorLines(err) : usbDetails(again ? t('usb:main.attachFailed.again', { name }) : t('usb:main.attachFailed', { name }), err);
 
 /** Attaches entry `e` on its connector; a device another machine holds is offered to be detached there first (`quiet`: skipped, with a note). */
 async function attachEntry(e: UsbEntry, o: { quiet?: boolean } = {}) {
   const p = run?.usb;
-  if (!p || !usbRunning()) throw new Error(stoppedText);
+  if (!p || !usbRunning()) throw new MsgError('usb:main.stopped');
   if (p.connectorOf(e.id) >= 0) return;
   const name = deviceName(e);
   try {
     await p.attach(e.connector, usbIdentity(e), e.id);
   } catch (err) {
-    if (!(err instanceof UsbError) || err.message !== 'held') throw err;
+    if (!(err instanceof UsbHeldError)) throw err;
     const who = await usbLocks.holder(usbLock(e));
-    const where = who ? `${who}, in another tab` : 'another machine (in another tab)';
-    if (o.quiet) return void notify(`${name} is attached to ${where}: it was left there.`);
-    if (!(await ask.confirm(`${name} is attached to ${where}. Detach it there and attach it here? That machine sees it unplugged: whatever it was doing with it breaks.`, { title: 'The device is in use', ok: 'Detach it there' }))) return;
-    if (!(await usbLocks.takeFrom(usbLock(e)))) throw new Error(`${where} didn't let ${name} go.`);
+    if (o.quiet) return void notify(who ? msg('usb:main.held.left', { name, who }) : msg('usb:main.held.left.unknown', { name }));
+    if (!(await ask.confirm(who ? t('usb:main.held.confirm', { name, who }) : t('usb:main.held.confirm.unknown', { name }), { title: t('usb:main.held.title'), ok: t('usb:main.held.ok') }))) return;
+    if (!(await usbLocks.takeFrom(usbLock(e)))) throw who ? new MsgError('usb:main.held.kept', { name, who }) : new MsgError('usb:main.held.kept.unknown', { name });
     await p.attach(e.connector, usbIdentity(e), e.id);
   }
 }
@@ -1944,7 +2016,7 @@ async function letGo(lock: string) {
   if (!p || at < 0) return usbLocks.drop(lock);
   const name = p.connectors[at]!.name;
   await p.detach(at).catch(() => {});
-  notify(`${name} was detached: another machine took it.`);
+  notify(msg('usb:main.taken', { name }));
 }
 
 const pageMachine = () => stored?.record.id;
@@ -1970,7 +2042,7 @@ function syncKeyboard(r: Run) {
     if (!p || run !== r || !usbRunning()) return;
     const c = p.connectors[KEYBOARD_CONNECTOR];
     if (keyboardLive && isKeyboard(c)) await p.detach(KEYBOARD_CONNECTOR).catch(() => {});
-    else if (!keyboardLive && !c) await p.attach(KEYBOARD_CONNECTOR, KEYBOARD).catch((err) => notify(`The built-in keyboard couldn't be plugged in: ${String((err as Error).message ?? err)}`, 'error'));
+    else if (!keyboardLive && !c) await p.attach(KEYBOARD_CONNECTOR, KEYBOARD).catch((err) => notify(usbDetails(t('usb:main.keyboardFailed'), err), 'error'));
   });
   return keyboardSync;
 }
@@ -1983,11 +2055,11 @@ async function attachAtStart(r: Run) {
   for (const e of entries) {
     if (run !== r) return;
     if (!found.has(e.id)) {
-      if (!isGranted(identityKey(e))) offer(`allow-${e.id}`, `${deviceName(e)} has no permission in this browser yet (the machine was made in another).`, 'Allow…', () => allowEntry(pageMachine(), e.id));
+      if (!isGranted(identityKey(e))) offer(`allow-${e.id}`, t('usb:main.offer.ungranted', { name: deviceName(e) }), t('usb:main.offer.allow'), () => allowEntry(pageMachine(), e.id));
       continue; // not plugged in: skipped without a word
     }
     if (!e.atStart) continue;
-    await attachEntry(e, { quiet: true }).catch((err) => notify(`${deviceName(e)} couldn't be attached: ${String((err as Error).message ?? err)}`, 'error'));
+    await attachEntry(e, { quiet: true }).catch((err) => notify(usbDetails(t('usb:main.attachFailed', { name: deviceName(e) }), err), 'error'));
   }
   syncUsb();
 }
@@ -2037,14 +2109,14 @@ async function connected(api: Api, device: HostDevice) {
   if (e) {
     if (run?.usb?.connectorOf(e.id) !== -1) return;
     if (e.atStart && !run.usb.connectors[e.connector]) return void attachEntry(e, { quiet: true }).catch((err) => notify(attachFailed(name, err), 'error'));
-    return offer(`seen-${identityKey(identity)}`, `${name} was plugged in.`, 'Attach', () => attachEntry(e));
+    return offer(`seen-${identityKey(identity)}`, t('usb:main.offer.plugged', { name }), t('usb:main.offer.attach'), () => attachEntry(e));
   }
   const back = lastGone && Date.now() - lastGone.at < REENUMERATION_MS ? lastGone : undefined;
   if (back) {
     offers.delete(`gone-${back.connector}`);
-    return offer(`seen-${identityKey(identity)}`, `${name} just appeared, where ${back.name} was (connector ${back.connector + 1}).`, 'Attach it there', () => rememberAndAttach(api, device, { connector: back.connector, atStart: back.atStart }));
+    return offer(`seen-${identityKey(identity)}`, t('usb:main.offer.back', { name, was: back.name, connector: back.connector + 1 }), t('usb:main.offer.there'), () => rememberAndAttach(api, device, { connector: back.connector, atStart: back.atStart }));
   }
-  offer(`seen-${identityKey(identity)}`, `${name} was plugged in.`, 'Attach and remember', () => rememberAndAttach(api, device));
+  offer(`seen-${identityKey(identity)}`, t('usb:main.offer.plugged', { name }), t('usb:main.offer.remember'), () => rememberAndAttach(api, device));
 }
 
 type Unplugged = { connector: number; device: UsbIdentity | UsbVirtual; entry?: string }[];
@@ -2052,15 +2124,15 @@ type Unplugged = { connector: number; device: UsbIdentity | UsbVirtual; entry?: 
  * Snapshot and Suspend need the ports empty (docs/usb.md "The page"): with devices attached it asks once, naming them,
  * and detaches them. Returns what was attached (to attach again after), or undefined when the user says no.
  */
-async function emptyPorts(r: Run, what: string): Promise<Unplugged | undefined> {
+async function emptyPorts(r: Run, what: 'snapshot' | 'suspend'): Promise<Unplugged | undefined> {
   // The built-in keyboard goes out and back in without a question (the firmware's keyboard; Linux has its own).
   const on = (r.usb?.attached() ?? []).filter((c) => !isKeyboard(c));
   if (!on.length) return r.usb ? r.usb.detachAll() : [];
   const names = on.map((c) => c.name);
-  const one = names.length === 1;
-  const list = one ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
-  const after = what === 'Suspending' ? 'The ones attached at start are attached again when it resumes.' : 'They are attached again once it is saved.';
-  if (!(await ask.confirm(`${what} needs the USB ports empty: ${list} ${one ? 'is' : 'are'} detached first, and the guest sees ${one ? 'it' : 'them'} unplugged: anything in progress with ${one ? 'it' : 'them'} (a copy, a firmware flash) breaks. ${after}`, { title: 'Detach the USB devices?', ok: 'Detach and go on' }))) return undefined;
+  const count = names.length;
+  const list = count === 1 ? names[0] : t('usb:main.empty.list', { first: names.slice(0, -1), last: names.at(-1) });
+  const question = what === 'suspend' ? t('usb:main.empty.suspend', { count, list }) : t('usb:main.empty.snapshot', { count, list });
+  if (!(await ask.confirm(question, { title: t('usb:main.empty.title'), ok: t('usb:main.empty.ok') }))) return undefined;
   return r.usb!.detachAll();
 }
 /** Attaches again what `emptyPorts` detached (the machine runs on after a snapshot). */
@@ -2068,7 +2140,7 @@ async function plugBack(r: Run, was: Unplugged | undefined) {
   for (const c of was ?? []) {
     if (run !== r || !usbRunning()) return;
     if (isKeyboard(c)) { await syncKeyboard(r); continue; }
-    await r.usb!.attach(c.connector, c.device, c.entry).catch((err) => notify(attachFailed(deviceName(c.device), err, ' again'), 'error'));
+    await r.usb!.attach(c.connector, c.device, c.entry).catch((err) => notify(attachFailed(deviceName(c.device), err, true), 'error'));
   }
 }
 
@@ -2096,7 +2168,7 @@ const usbPage = {
     if (at >= 0) await run!.usb!.detach(at);
   },
   usbEdit: async (machine: string | undefined, id: string, change: Partial<Pick<UsbEntry, 'connector' | 'atStart'>>) => {
-    if (change.connector !== undefined && isCurrent(machine) && (run?.usb?.connectorOf(id) ?? -1) >= 0) throw new Error('Detach it first: it is on its connector now.');
+    if (change.connector !== undefined && isCurrent(machine) && (run?.usb?.connectorOf(id) ?? -1) >= 0) throw new MsgError('usb:main.edit.detachFirst');
     await editUsbEntries(machine, (list) => list.map((e) => (e.id === id ? { ...e, ...change } : e)));
   },
   usbForget: async (machine: string | undefined, id: string) => {
@@ -2118,16 +2190,16 @@ const usbPage = {
     const o = offers.get(id);
     offers.delete(id);
     syncUsb();
-    if (take && o) void o.run().catch((err) => notify(String((err as Error).message ?? err), 'error')).finally(syncUsb);
+    if (take && o) void o.run().catch((err) => notify(err, 'error')).finally(syncUsb);
   },
   usbStates: async (m: MachineRecord) => entryStates(m.usbDevices ?? [], isCurrent(m.id) ? run?.usb?.attachedEntries() ?? new Set<string>() : new Set<string>(), usbLocks),
   usbZero: async () => {
     const p = run?.usb;
-    if (!p || !usbRunning()) throw new Error("The machine isn't running with a USB controller.");
+    if (!p || !usbRunning()) throw new MsgError('usb:main.zero.stopped');
     const at = p.connectors.findIndex((c) => c?.device.api === 'virtual' && c.device.kind === 'gadget-zero');
     if (at >= 0) return p.detach(at);
     const free = p.connectors.findIndex((c, i) => !c && i !== KEYBOARD_CONNECTOR);
-    if (free < 0) throw new Error('Every connector is in use.');
+    if (free < 0) throw new MsgError('usb:main.zero.full');
     await p.attach(free, { api: 'virtual', kind: 'gadget-zero' });
   },
 };
@@ -2157,8 +2229,8 @@ const folderPage = {
   folderAllow: (id: string) => folders.allow(id),
   folderUseHere: async (id: string) => {
     const v = folders.views().find((x) => x.id === id);
-    if (!(await ask.confirm(`${v?.name ?? 'The folder'} is in use by ${v?.holder ?? 'a machine in another tab'}. Use it here instead? That machine loses it while it runs.`, { title: 'The folder is in use', ok: 'Use it here' }))) return;
-    if (!(await folders.useHere(id))) throw new Error(`${v?.holder ?? 'That machine'} didn't let it go.`);
+    if (!(await ask.confirm(t('folders:main.inUse.confirm', { name: v?.name ?? msg('folders:main.inUse.folder'), holder: v?.holder ?? msg('folders:main.inUse.otherTab') }), { title: t('folders:main.inUse.title'), ok: t('folders:main.useHere') }))) return;
+    if (!(await folders.useHere(id))) throw new MsgError('folders:main.kept', { holder: v?.holder ?? msg('folders:main.kept.thatMachine') });
   },
 };
 Object.assign(page, {
@@ -2205,7 +2277,7 @@ Object.assign(page, {
       await net.connect(i, c);
     } catch (e) {
       if (!(e instanceof HeldError)) throw e;
-      if (await ask.confirm(`${e.message} Use it here instead? That machine disconnects from it.`, { title: 'The connection is in use', ok: 'Use it here' })) await net.takeFrom(i, c);
+      if (await ask.confirm(t('network:main.held.useHere', { held: e.msg }), { title: t('network:main.held.title'), ok: t('network:main.useHere') })) await net.takeFrom(i, c);
     }
   },
   netDisconnect: (i: number) => net.disconnect(i),
@@ -2225,11 +2297,11 @@ Object.assign(page, {
 function boot() {
   // SharedArrayBuffer (the guest's memory, shared by the vCPU workers) needs cross-origin isolation.
   if (!crossOriginIsolated) {
-    setState('failed', "This page needs cross-origin isolation for the emulator's shared memory, and it wasn't served with it (the COOP and COEP headers).\nRun `npm start` in the repository and open the URL it prints: its server sends them.");
+    setState('failed', msg('machine:main.notIsolated'));
     ui.cantRun = true;
     return;
   }
-  if (storedError) return setState('failed', `This machine can't be opened: ${storedError}.`);
+  if (storedError !== undefined) return setState('failed', new MsgError('machine:main.cantOpen', {}, { cause: storedError }));
   if (needsDisk()) return waitForDisk();
   if (crashedBefore()) return;
   // Chromium kills a renderer that runs out of memory without an error to catch (PLAN.md §4): judge up front.
@@ -2237,14 +2309,16 @@ function boot() {
   const has = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
   if (has !== undefined && has < need) {
     const fewer = Math.floor((has - hostMemoryGiB(ramMiB, 0, jitBudget())) / (hostMemoryGiB(0, 1) - hostMemoryGiB(0, 0)) + 1e-9);
-    setState('idle', `This machine needs about ${need.toFixed(1)} GiB of memory (${ramMiB} MiB of guest RAM plus the emulator, ${ncpus} vCPU${ncpus > 1 ? 's' : ''}), and this device reports ${has} GiB${has >= 8 ? ' (browsers report at most 8, so it may well have more)' : ''}.\nIf memory runs out, the browser closes the tab without warning. Close other tabs and apps first${fewer > 0 && fewer < ncpus ? `, or use fewer vCPUs (?ncpus=${fewer} fits)` : ''}.`, [{ label: 'Start anyway', run: () => void restart() }], 'warn');
+    const advice = fewer > 0 && fewer < ncpus ? msg('machine:main.memory.advice.fewer', { fewer }) : msg('machine:main.memory.advice');
+    const words = { need: need.toFixed(1), ram: ramMiB, count: ncpus, has, advice };
+    setState('idle', has >= 8 ? msg('machine:main.memory.max', words) : msg('machine:main.memory', words), [{ label: t('machine:main.memory.start'), run: () => void restart() }], 'warn');
     return;
   }
   start();
 }
 // Other browsers may work in part; nothing is done for them yet (their pass is in docs/backlog.md).
 const brands = (navigator as Navigator & { userAgentData?: { brands: { brand: string }[] } }).userAgentData?.brands ?? [];
-if (!brands.some((b) => b.brand === 'Chromium')) note = 'webpc is developed and tested in Chromium (and Chrome); in this browser, parts of it may not work.';
+if (!brands.some((b) => b.brand === 'Chromium')) note = msg('machine:main.notChromium');
 const diskParam = params.get('disk');
 if (diskParam && spec.firmware) {
   const url = new URL(diskParam, location.href).href;

@@ -10,6 +10,7 @@
   import type { PageAudio } from '../audio.ts';
   import { remember, settings } from './settings.ts';
   import { ui } from './ui.svelte.ts';
+  import { t } from '../i18n.ts';
 
   let { audio }: { audio: PageAudio } = $props();
 
@@ -25,7 +26,9 @@
   const waiting = $derived((void tick, audio.waiting()));
   const micState = $derived((void tick, audio.micState));
   $effect(() => { ui.mic = micState; }); // the status bar's Microphone
-  const summary = $derived(waiting ? 'Sound: click to hear' : `${on ? 'Sound' : 'Sound (muted)'}${micState === 'on' ? ' · mic' : ''}`);
+  const summary = $derived(waiting ? t('sound:Sound.summary.waiting')
+    : micState === 'on' ? (on ? t('sound:Sound.summary.onMic') : t('sound:Sound.summary.mutedMic'))
+    : on ? t('sound:Sound.summary.on') : t('sound:Sound.summary.muted'));
 
   $effect(() => { audio.setVolume(volume / 100, !on); });
   $effect(() => { audio.setMic(mic, micRaw); });
@@ -37,11 +40,11 @@
 </script>
 
 <Menu id="sound-menu" icon={on && !waiting ? 'volume' : 'volume-off'} title={summary} panel data-waiting={waiting || undefined}>
-  {#snippet badge()}<span id="sound-summary" class="sr">{summary}</span>{#if micState === 'on'}<span class="tag">mic</span>{/if}{/snippet}
-  <Check id="sound-on" bind:checked={on} onchange={keepSound}>Sound on</Check>
-  <label>Volume<input id="sound-volume" type="range" min="0" max="100" step="1" bind:value={volume} oninput={keepSound}></label>
-  <Check id="mic-on" bind:checked={mic} onchange={keepMic} title="When the machine records, the page asks for the microphone (the browser asks you the first time); off, the machine records silence">Microphone</Check>
-  <Check id="mic-raw" bind:checked={micRaw} onchange={keepMic} title="The microphone as it comes: no echo cancellation, noise suppression or gain control (for music; for a call, leave it off)">Raw microphone</Check>
-  <p class="hint" id="sound-hint">Kept in this browser. The browser plays sound once the page has had a click or a key.</p>
-  <p class="hint" id="mic-hint" hidden={micState !== 'denied' && micState !== 'asking'}>{micState === 'denied' ? "The browser refused the microphone: the machine records silence. Allow it in the site's settings, then turn Microphone off and on." : 'The machine is recording: the browser asks for the microphone.'}</p>
+  {#snippet badge()}<span id="sound-summary" class="sr">{summary}</span>{#if micState === 'on'}<span class="tag">{t('sound:Sound.micTag')}</span>{/if}{/snippet}
+  <Check id="sound-on" bind:checked={on} onchange={keepSound}>{t('sound:Sound.on')}</Check>
+  <label>{t('sound:Sound.volume')}<input id="sound-volume" type="range" min="0" max="100" step="1" bind:value={volume} oninput={keepSound}></label>
+  <Check id="mic-on" bind:checked={mic} onchange={keepMic} title={t('sound:Sound.mic.title')}>{t('sound:Sound.mic')}</Check>
+  <Check id="mic-raw" bind:checked={micRaw} onchange={keepMic} title={t('sound:Sound.micRaw.title')}>{t('sound:Sound.micRaw')}</Check>
+  <p class="hint" id="sound-hint">{t('sound:Sound.hint')}</p>
+  <p class="hint" id="mic-hint" hidden={micState !== 'denied' && micState !== 'asking'}>{micState === 'denied' ? t('sound:Sound.mic.denied') : t('sound:Sound.mic.asking')}</p>
 </Menu>

@@ -16,6 +16,7 @@
   import type { PageNetwork } from './net-live.ts';
   import type { Store } from './store.ts';
   import { page, ui } from './ui.svelte.ts';
+  import { t } from '../i18n.ts';
 
   let { store, audio, net, folders }: { store: Store; audio: PageAudio; net: PageNetwork; folders: PageFolders } = $props();
 
@@ -32,20 +33,20 @@
 
 <Toolbar {store} {audio} {net} {folders} />
 <div id="message" role="alert" hidden={!ui.message} data-kind={ui.messageKind} data-snapshot={ui.snapshotResult || undefined}>
-  <pre id="message-text">{ui.message}</pre>
+  <div id="message-body"><pre id="message-text">{ui.message}</pre>{#if ui.messageDetails.length}<pre id="message-details">{ui.messageDetails.join('\n')}</pre>{/if}</div>
   <div id="message-actions">{#each ui.actions as a (a)}<button onclick={(e) => a.run(e.currentTarget)}>{a.label}</button>{/each}</div>
-  <button id="message-close" class="close" aria-label="Close" title="Close" onclick={() => page.dismiss()}><Icon name="x" size={16} /></button>
+  <button id="message-close" class="close" aria-label={t('common:App.message.close')} title={t('common:App.message.close')} onclick={() => page.dismiss()}><Icon name="x" size={16} /></button>
 </div>
 <main>
   <div id="screen-view">
     <div id="screen-frame">
-      <canvas id="screen" tabindex="0" aria-label="Machine screen"></canvas><div id="screen-hint">{ui.mouseLock ? 'Click to type and take the mouse (Esc lets it go)' : 'Click to type'}</div>
+      <canvas id="screen" tabindex="0" aria-label={t('common:App.screen.label')}></canvas><div id="screen-hint">{ui.mouseLock ? t('common:App.screen.hintLock') : t('common:App.screen.hint')}</div>
       <div id="screen-cursor-clip"><canvas id="screen-cursor" width="64" height="64" hidden></canvas></div>
       <div id="boot" hidden={!ui.boot.shown}>
         <div id="boot-title">{ui.boot.title}</div>
         {#if ui.boot.progress === undefined}<progress id="boot-progress"></progress>{:else}<progress id="boot-progress" value={ui.boot.progress}></progress>{/if}
         <div id="boot-line">{ui.boot.line}</div>
-        <div id="boot-serial" hidden={!ui.boot.serial}><span>The boot menus, and a first boot's questions, are on the serial console.</span><button id="boot-serial-show" onclick={() => page.showLog()}>Show it</button></div>
+        <div id="boot-serial" hidden={!ui.boot.serial}><span>{t('common:App.boot.serial')}</span><button id="boot-serial-show" onclick={() => page.showLog()}>{t('common:App.boot.serial.show')}</button></div>
       </div>
     </div>
   </div>

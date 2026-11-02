@@ -5,6 +5,7 @@
 // worker sends `{type: 'lease', lease}` on that port whenever the node's address
 // changes, so the guest's DHCP gets the address the client reports.
 import type { Lease, Routes } from './gateway.ts';
+import { fromWire, MsgError, type WireError } from './msg.ts';
 import type { Reach6Options } from './reach6.ts';
 
 /** What the client reports of the node's network map (net/ts/src/netmap.rs). */
@@ -75,10 +76,11 @@ export type FromTailscale =
   | { type: 'login'; url: string }
   | { type: 'loaded'; ms: number }
   | { type: 'detached'; ip?: MessagePort }
-  /** The answer to `exitnode`: '' when it took, else the client's reason. */
-  | { type: 'exitnode'; error: string }
+  /** The answer to `exitnode`: no `error` when it took, else the client's reason (web/msg.ts `toWire`). */
+  | { type: 'exitnode'; error?: WireError }
   | { type: 'loggedout' }
-  | { type: 'error'; error: string };
+  /** The client failed: why, as web/msg.ts `toWire` posts it (`fromWire` takes it back). */
+  | { type: 'error'; error: WireError };
 
 const ip6 = (s: string) => {
   if (!s.includes(':') || !/^[0-9a-f:]+$/i.test(s)) return undefined;
@@ -164,7 +166,7 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
   const port1 = config.ip ?? own!.port1;
   let detached: ((ip?: MessagePort) => void) | undefined;
   let loggedOut: (() => void) | undefined;
-  let exitDone: ((error: string) => void) | undefined;
+  let exitDone: ((error?: WireError) => void) | undefined;
   let state = '';
   let netmap: NetMap | undefined;
   let loginURL: string | undefined;
@@ -185,7 +187,7 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
       else if (m.type === 'detached') detached?.(m.ip);
       else if (m.type === 'exitnode') exitDone?.(m.error);
       else if (m.type === 'loggedout') loggedOut?.();
-      else if (m.type === 'error') reject(new Error(m.error));
+      else if (m.type === 'error') reject(fromWire(m.error));
       onEvent(m);
     };
   });
@@ -204,8 +206,8 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
       worker.postMessage({ type: 'detach' } satisfies ToTailscale);
     }),
     setExitNode: (id) => new Promise<void>((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error('the client did not answer')), 10_000);
-      exitDone = (error) => { clearTimeout(t); error ? reject(new Error(error)) : resolve(); };
+      const t = setTimeout(() => reject(new MsgError('network:tailscale.noAnswer')), 10_000);
+      exitDone = (error) => { clearTimeout(t); error ? reject(fromWire(error)) : resolve(); };
       worker.postMessage({ type: 'exitnode', id } satisfies ToTailscale);
     }),
     setAcceptRoutes: (on) => worker.postMessage({ type: 'routes', on } satisfies ToTailscale),

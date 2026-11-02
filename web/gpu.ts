@@ -20,6 +20,7 @@ import { encodeRecord } from './virgl-trace.ts';
 import type { VirglHost } from './virgl-host.ts';
 import type { RendererSnapshot } from './virgl-renderer.ts';
 import { capsBacked } from './virgl-caps.ts';
+import { msg, toWire, type WireError } from './msg.ts';
 
 
 // Command and response types (virtio 1.2 §5.7.6).
@@ -995,16 +996,17 @@ export class Gpu {
    * writes them as frames of their own). Host pixels come back from the backing at `restore`. With 3D in use, the
    * renderer's state comes from the host (`VirglRenderer.save`: objects as data, contents read back; docs/graphics.md
    * "Snapshots with 3D in use"), with the 3D resources and the contexts' attachments here; the caps the guest was given are kept, for a
-   * restore to check. `unsaveable` where the host refuses (a video decoding) or can't save; the snapshot refuses it
+   * restore to check. `unsaveable` (why, as an error for the page: web/msg.ts `toWire`) where the host refuses (a video
+   * decoding) or can't save; the snapshot refuses it
    * (web/vm.ts), and a test's state read takes the rest all the same.
    */
   async save() {
     const inUse = this.used.size > 0 || [...this.resources.values()].some((r) => r.three);
-    let renderer: RendererSnapshot | undefined, unsaveable: string | undefined;
+    let renderer: RendererSnapshot | undefined, unsaveable: WireError | undefined;
     // A blob can outlive its context (a program's image the compositor still holds), its bytes and the window's with it.
-    if (this.venusContexts.size > 0 || [...this.resources.values()].some((r) => r.blob)) unsaveable = "the machine is using Vulkan (Venus), whose state can't be saved yet";
+    if (this.venusContexts.size > 0 || [...this.resources.values()].some((r) => r.blob)) unsaveable = toWire(msg('display:gpu.unsaveable.venus'));
     else if (inUse && this.host && !this.off3d) {
-      const got = this.host.save ? await this.host.save() : { refused: 'the machine is using 3D (virgl), and this renderer can\'t be saved' };
+      const got = this.host.save ? await this.host.save() : { refused: toWire(msg('display:gpu.unsaveable.virgl')) };
       if ('refused' in got) unsaveable = got.refused;
       else renderer = got.state;
     }

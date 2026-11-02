@@ -8,11 +8,13 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { DROPIN, netCredentials, netScript } from '../web/app/guest-net.ts';
 import { oemStrings } from '../web/app/guest-unit.ts';
+import { guestWords } from '../web/app/guest-words.ts';
 
 const hasDash = process.env.PATH?.split(':').some((p) => existsSync(join(p, 'dash')));
 
 test('credentials: a unit before networkd, its drop-in on networkd and its script, as base64 SMBIOS strings', () => {
-  const c = netCredentials();
+  const c = netCredentials(guestWords().network);
+  assert.match(c[1].data, /^Description=Network settings from webpc's machine settings$/m);
   assert.deepEqual(c.map((x) => x.name), ['webpc.network.sh', 'systemd.extra-unit.webpc-network.service', 'systemd.unit-dropin.systemd-networkd.service~webpc-network']);
   assert.match(c[1].data, /^DefaultDependencies=no$/m);
   assert.match(c[1].data, /^Before=systemd-networkd\.service /m);

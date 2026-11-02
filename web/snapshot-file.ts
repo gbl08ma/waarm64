@@ -17,6 +17,7 @@
 // the first block), BLOB (binary parts of DEVS: blob n's 1 MiB chunk k, index = n × 2^24 + k; a
 // file with them is version 2, which an older reader refuses as newer), "END ". Codec 0 is stored, 1 is deflate-raw; each frame is compressed alone, and
 // stored when compressing doesn't shrink it. Codecs plug in by id.
+import { msg, MsgError, type Msg, type Params } from './msg.ts';
 
 /** What the file says about itself; `machine` and the rest are the caller's (opaque here). */
 export type SnapshotHeader = { format: 1; coreVersion: number; abi: number; created: string; [key: string]: unknown };
@@ -38,22 +39,26 @@ const MAX_RAW = CHUNK + BITMAP;
 const MAX_RUN = 256; // blocks in a DISK frame
 const TAGS = new Set(['CORE', 'DEVS', 'BLOB', 'RAM ', 'DISK', 'END ']);
 
+/** Why a snapshot was refused (`SnapshotError.problem`). */
+export type SnapshotProblem = 'not-snapshot' | 'newer-format' | 'truncated' | 'corrupt' | 'other-version' | 'other-machine' | 'other-disk';
+
 /**
  * Why a snapshot was refused: `not-snapshot`, `newer-format`, `truncated` or `corrupt` (the file),
  * `other-version`, `other-machine` or `other-disk` (what it holds isn't for this core, this machine
- * or the disk on it: web/vm.ts, web/snapshot.ts); the message says what to do.
+ * or the disk on it: web/vm.ts, web/snapshot.ts); its message (`msg`, a key of the `snapshots` catalog) says what to do.
  */
-export class SnapshotError extends Error {
-  problem: 'not-snapshot' | 'newer-format' | 'truncated' | 'corrupt' | 'other-version' | 'other-machine' | 'other-disk';
-  constructor(problem: SnapshotError['problem'], message: string) {
-    super(message);
+export class SnapshotError extends MsgError {
+  readonly problem: SnapshotProblem;
+  constructor(key: string, params: Params | undefined, problem: SnapshotProblem, options?: { cause?: unknown }) {
+    super(key, params, options);
     this.name = 'SnapshotError';
     this.problem = problem;
   }
 }
 
-export const corrupt = (what: string) => new SnapshotError('corrupt', `This snapshot is damaged (${what}). Download or copy it again; if it keeps failing, save a new one.`);
-export const truncated = () => new SnapshotError('truncated', 'This snapshot is incomplete: the file ends before its end marker, so it was cut short while it was written or copied. Download or copy it again.');
+/** A damaged file: `what` says what of it is wrong (a message of its own, placed in the headline). */
+export const corrupt = (what: Msg) => new SnapshotError('snapshots:snapshot-file.corrupt', { what }, 'corrupt');
+export const truncated = () => new SnapshotError('snapshots:snapshot-file.truncated', {}, 'truncated');
 
 // ---- CRC-32 (IEEE, as zlib's) ----
 
@@ -103,7 +108,7 @@ async function collect(stream: ReadableStream<Uint8Array>, limit: number) {
     total += value.length;
     if (total > limit) {
       reader.cancel().catch(() => {});
-      throw corrupt('a compressed frame expands past its stated size');
+      throw corrupt(msg('snapshots:snapshot-file.damage.expands'));
     }
     parts.push(value);
   }
@@ -142,9 +147,9 @@ function popcount(bitmap: Uint8Array) {
 
 /** Checks a RAM frame's payload is a bitmap and exactly as many pages as it has bits set; returns the page count. */
 function checkRam(data: Uint8Array) {
-  if (data.length < BITMAP + PAGE || (data.length - BITMAP) % PAGE !== 0) throw corrupt('a memory block has an impossible size');
+  if (data.length < BITMAP + PAGE || (data.length - BITMAP) % PAGE !== 0) throw corrupt(msg('snapshots:snapshot-file.damage.memoryBlockSize'));
   const pages = popcount(data.subarray(0, BITMAP));
-  if (pages * PAGE !== data.length - BITMAP) throw corrupt("a memory block's page map and its length disagree");
+  if (pages * PAGE !== data.length - BITMAP) throw corrupt(msg('snapshots:snapshot-file.damage.pageMap'));
   return pages;
 }
 
@@ -153,13 +158,13 @@ export function applyRam(ram: Uint8Array, index: number, data: Uint8Array): void
   const pages = checkRam(data);
   const first = index * (CHUNK / PAGE);
   const have = Math.floor(ram.length / PAGE);
-  if (!Number.isSafeInteger(first) || first >= have) throw corrupt('a memory block is past the end of RAM: this snapshot is of a machine with more memory');
+  if (!Number.isSafeInteger(first) || first >= have) throw corrupt(msg('snapshots:snapshot-file.damage.pastRam'));
   let at = BITMAP;
   let seen = 0;
   for (let p = 0; p < 256 && seen < pages; p++) {
     if (!(data[p >> 3] & (1 << (p & 7)))) continue;
     seen++;
-    if (first + p >= have) throw corrupt('a memory block is past the end of RAM: this snapshot is of a machine with more memory');
+    if (first + p >= have) throw corrupt(msg('snapshots:snapshot-file.damage.pastRam'));
     ram.set(data.subarray(at, at + PAGE), (first + p) * PAGE);
     at += PAGE;
   }
@@ -167,7 +172,7 @@ export function applyRam(ram: Uint8Array, index: number, data: Uint8Array): void
 
 /** A DISK frame's blocks (4 KiB each, as views of `data`). */
 export function* diskBlocks(index: number, data: Uint8Array): Generator<{ block: number; data: Uint8Array }> {
-  if (data.length === 0 || data.length % PAGE !== 0 || data.length > MAX_RUN * PAGE) throw corrupt('a disk block run has an impossible size');
+  if (data.length === 0 || data.length % PAGE !== 0 || data.length > MAX_RUN * PAGE) throw corrupt(msg('snapshots:snapshot-file.damage.diskRunSize'));
   for (let i = 0; i < data.length / PAGE; i++) yield { block: index + i, data: data.subarray(i * PAGE, (i + 1) * PAGE) };
 }
 
@@ -372,7 +377,7 @@ class Input {
   async #more() {
     const { done, value } = await this.#reader.read();
     if (done) { this.#done = true; return; }
-    if (!(value instanceof Uint8Array)) throw corrupt('the file is not made of bytes');
+    if (!(value instanceof Uint8Array)) throw corrupt(msg('snapshots:snapshot-file.damage.notBytes'));
     if (value.length) { this.#chunks.push(value); this.#avail += value.length; }
   }
 
@@ -434,29 +439,29 @@ export async function openSnapshot(
   try {
     const magic = await input.take(8);
     if (!magic || MAGIC.some((b, i) => magic[i] !== b)) {
-      throw new SnapshotError('not-snapshot', "This file isn't a snapshot (it doesn't start with the snapshot signature). To start a machine from a disk image, use Open disk…; to load saved changes, use Load changes….");
+      throw new SnapshotError('snapshots:snapshot-file.notSnapshot', {}, 'not-snapshot');
     }
     const fixed = await input.take(8);
     if (!fixed) throw truncated();
     const fv = new DataView(fixed.buffer, fixed.byteOffset, 8);
     const version = fv.getUint32(0, true);
     if (version > VERSION) {
-      throw new SnapshotError('newer-format', `This snapshot was made by a newer version of this page (snapshot format ${version}; this one reads format ${VERSION}). Reload the page to get the latest version, or open the snapshot in the page that made it.`);
+      throw new SnapshotError('snapshots:snapshot-file.newerFormat', { format: version, reads: VERSION }, 'newer-format');
     }
-    if (version < 1) throw corrupt('its format number is not valid');
+    if (version < 1) throw corrupt(msg('snapshots:snapshot-file.damage.formatNumber'));
     const headerLen = fv.getUint32(4, true);
-    if (headerLen > MAX_HEADER) throw corrupt('its header is too long');
+    if (headerLen > MAX_HEADER) throw corrupt(msg('snapshots:snapshot-file.damage.headerLong'));
     const json = await input.take(headerLen);
     const crcBytes = json && (await input.take(4));
     if (!json || !crcBytes) throw truncated();
-    if (new DataView(crcBytes.buffer, crcBytes.byteOffset, 4).getUint32(0, true) !== crc32(json)) throw corrupt('its header fails its checksum');
+    if (new DataView(crcBytes.buffer, crcBytes.byteOffset, 4).getUint32(0, true) !== crc32(json)) throw corrupt(msg('snapshots:snapshot-file.damage.headerChecksum'));
     let header: SnapshotHeader;
     try {
       header = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(json));
     } catch {
-      throw corrupt('its header is not readable');
+      throw corrupt(msg('snapshots:snapshot-file.damage.headerUnreadable'));
     }
-    if (typeof header !== 'object' || header === null || Array.isArray(header) || header.format !== 1) throw corrupt('its header is not one this page knows');
+    if (typeof header !== 'object' || header === null || Array.isArray(header) || header.format !== 1) throw corrupt(msg('snapshots:snapshot-file.damage.headerUnknown'));
 
     async function* frames() {
       try {
@@ -472,25 +477,25 @@ export async function openSnapshot(
           const rawLen = v.getUint32(16, true);
           const storedLen = v.getUint32(20, true);
           const crc = v.getUint32(24, true);
-          if (!TAGS.has(tag) || (tag === 'BLOB' && version < 2)) throw corrupt('a part of it has an unknown kind');
-          if (v.getUint32(28, true) !== 0 || hi >= 2 ** 21) throw corrupt('a frame header has impossible fields');
+          if (!TAGS.has(tag) || (tag === 'BLOB' && version < 2)) throw corrupt(msg('snapshots:snapshot-file.damage.unknownKind'));
+          if (v.getUint32(28, true) !== 0 || hi >= 2 ** 21) throw corrupt(msg('snapshots:snapshot-file.damage.frameFields'));
           if (tag === 'END ') {
-            if (rawLen !== 0 || storedLen !== 0 || crc !== 0 || codec !== 0) throw corrupt('its end marker is malformed');
-            if (index !== count) throw corrupt(`its end marker counts ${index} frames but ${count} came before it`);
-            if (await input.more()) throw corrupt('there are bytes after its end marker');
+            if (rawLen !== 0 || storedLen !== 0 || crc !== 0 || codec !== 0) throw corrupt(msg('snapshots:snapshot-file.damage.endMalformed'));
+            if (index !== count) throw corrupt(msg('snapshots:snapshot-file.damage.endCount', { counted: index, came: count }));
+            if (await input.more()) throw corrupt(msg('snapshots:snapshot-file.damage.afterEnd'));
             return;
           }
-          if (rawLen === 0 || rawLen > MAX_RAW || storedLen > rawLen) throw corrupt('a frame has an impossible size');
+          if (rawLen === 0 || rawLen > MAX_RAW || storedLen > rawLen) throw corrupt(msg('snapshots:snapshot-file.damage.frameSize'));
           if (codec === 0 ? storedLen !== rawLen : !codecs.has(codec)) {
-            throw corrupt(codec === 0 ? 'a frame has an impossible size' : `a frame is compressed with codec ${codec}, which this page can't read; open it in the page that made it`);
+            throw corrupt(codec === 0 ? msg('snapshots:snapshot-file.damage.frameSize') : msg('snapshots:snapshot-file.damage.codec', { codec }));
           }
           if (tag === 'CORE' || tag === 'DEVS' || tag === 'BLOB' ? rawLen > CHUNK : tag === 'DISK' ? rawLen % PAGE !== 0 || rawLen > MAX_RUN * PAGE : false) {
-            throw corrupt('a frame has an impossible size');
+            throw corrupt(msg('snapshots:snapshot-file.damage.frameSize'));
           }
           const headBytes = h.slice(0, 24); // `h` is a view of the input's buffer, which the next take may reuse
           const stored = await input.take(storedLen);
           if (!stored) throw truncated();
-          if (frameCrc(headBytes, stored) !== crc) throw corrupt('a checksum fails');
+          if (frameCrc(headBytes, stored) !== crc) throw corrupt(msg('snapshots:snapshot-file.damage.checksum'));
           if (opts.check) {
             // Checked, not unpacked: a pass over a file before a restore touches anything.
             count++;
@@ -504,9 +509,9 @@ export async function openSnapshot(
               data = await codecs.get(codec)!.decompress(stored, rawLen);
             } catch (e) {
               if (e instanceof SnapshotError) throw e;
-              throw corrupt('a compressed frame does not unpack');
+              throw corrupt(msg('snapshots:snapshot-file.damage.unpack'));
             }
-            if (data.length !== rawLen) throw corrupt('a compressed frame unpacks to the wrong size');
+            if (data.length !== rawLen) throw corrupt(msg('snapshots:snapshot-file.damage.unpackSize'));
           }
           if (tag === 'RAM ') checkRam(data);
           count++;

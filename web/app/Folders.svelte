@@ -6,6 +6,7 @@
   import Check from './Check.svelte';
   import Icon from './Icon.svelte';
   import MoveButtons from './MoveButtons.svelte';
+  import { msg, t } from '../i18n.ts';
   import type { PageFolders } from './folders-live.ts';
   import { MAX_FOLDERS } from './folders.ts';
   import type { MachineRecord } from './shape.ts';
@@ -21,6 +22,11 @@
   const all = $derived((void ui.folders.tick, folders.folders));
   const here = $derived(machine.id === ui.current && folders.running);
   const live = $derived((void ui.folders.tick, here ? folders.views() : []));
+  /** Where the folder is kept, and whether it is read-only (for every machine). */
+  const kindText = (f: { kind: string; readOnly: boolean }) => {
+    const kind = f.kind === 'host' ? msg('folders:Folders.kind.host') : msg('folders:Folders.kind.opfs');
+    return f.readOnly ? t('folders:Folders.kind.readOnly', { kind }) : t(kind.key);
+  };
 </script>
 
 {#if machine.shares}
@@ -31,22 +37,22 @@
       {@const v = live.find((x) => x.id === a.id)}
       <li data-folder={a.id} data-problem={v?.problem}>
         <Icon name="folder" size={18} />
-        <div class="what"><strong>{v?.name ?? f?.name ?? 'A folder gone from this browser'}</strong>
-          <span class="meta">{f?.kind === 'host' ? 'on this computer' : 'in the browser'}{f?.readOnly ? ', read-only' : ''}{folders.held.has(a.id) ? ' · held by another machine' : ''}</span>
-          {#if v?.problem === 'permission'}<span class="meta warn">No permission in this browser</span>{/if}
-          {#if v?.problem === 'held'}<span class="meta warn">In use by {v.holder ?? 'a machine in another tab'}</span>{/if}</div>
-        <Check compact checked={a.readOnly} disabled={here && !v?.problem} onchange={(on) => void act('Saving', () => page.folderReadOnly(machine.id, a.id, on))} field="folder-read-only" title="This machine only reads it">Read-only</Check>
-        <MoveButtons index={i} count={machine.folders?.length ?? 0} onmove={(by) => act('Moving', () => page.folderMove(machine.id, a.id, by))} action="folder" />
-        {#if v?.problem === 'permission'}<button onclick={() => act('Asking', () => page.folderAllow(a.id))} data-action="allow-folder">Allow…</button>{/if}
-        {#if v?.problem === 'held'}<button onclick={() => act('Taking it', () => page.folderUseHere(a.id))} data-action="use-folder">Use it here</button>{/if}
-        <button onclick={() => act('Detaching', () => page.folderDetach(machine.id, a.id))} data-action="detach-folder">Detach</button>
+        <div class="what"><strong>{v?.name ?? f?.name ?? t('folders:Folders.gone')}</strong>
+          <span class="meta">{kindText({ kind: f?.kind ?? 'opfs', readOnly: !!f?.readOnly })}{#if folders.held.has(a.id)} · {t('folders:Folders.held')}{/if}</span>
+          {#if v?.problem === 'permission'}<span class="meta warn">{t('folders:Folders.noPermission')}</span>{/if}
+          {#if v?.problem === 'held'}<span class="meta warn">{v.holder ? t('folders:Folders.inUseBy', { holder: v.holder }) : t('folders:Folders.inUse')}</span>{/if}</div>
+        <Check compact checked={a.readOnly} disabled={here && !v?.problem} onchange={(on) => void act(t('folders:Folders.busy.saving'), () => page.folderReadOnly(machine.id, a.id, on))} field="folder-read-only" title={t('folders:Folders.readOnly.title')}>{t('folders:Folders.readOnly')}</Check>
+        <MoveButtons index={i} count={machine.folders?.length ?? 0} onmove={(by) => act(t('folders:Folders.busy.moving'), () => page.folderMove(machine.id, a.id, by))} action="folder" />
+        {#if v?.problem === 'permission'}<button onclick={() => act(t('folders:Folders.busy.asking'), () => page.folderAllow(a.id))} data-action="allow-folder">{t('folders:Folders.allow')}</button>{/if}
+        {#if v?.problem === 'held'}<button onclick={() => act(t('folders:Folders.busy.taking'), () => page.folderUseHere(a.id))} data-action="use-folder">{t('folders:Folders.useHere')}</button>{/if}
+        <button onclick={() => act(t('folders:Folders.busy.detaching'), () => page.folderDetach(machine.id, a.id))} data-action="detach-folder">{t('folders:Folders.detach')}</button>
       </li>
     {:else}
-      <li class="none">No folders attached.</li>
+      <li class="none">{t('folders:Folders.none')}</li>
     {/each}
   </ul>
-  {#if (machine.folders?.length ?? 0) < MAX_FOLDERS}<div class="row"><button onclick={() => page.folderWizard(machine.id, machine.folders ?? [])} data-action="attach-folder"><Icon name="plus" size={16} />Attach a folder…</button></div>{/if}
-  <p class="note">A folder is attached or detached at once, running or not: the guest finds it under the mount point by its name.</p>
+  {#if (machine.folders?.length ?? 0) < MAX_FOLDERS}<div class="row"><button onclick={() => page.folderWizard(machine.id, machine.folders ?? [])} data-action="attach-folder"><Icon name="plus" size={16} />{t('folders:Folders.attach')}</button></div>{/if}
+  <p class="note">{t('folders:Folders.note')}</p>
 </div>
 {/if}
 

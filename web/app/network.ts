@@ -8,6 +8,8 @@
 // client, when there is one, has it (`attach`); a restarted machine brings a new port, and
 // a disconnected client hands it back (`detach`), so a machine can be connected, disconnected and
 // connected again without a restart.
+import { describe, msg, t, type Msg } from '../i18n.ts';
+import { MsgError } from '../msg.ts';
 import { startTailscale, tailscaleBuilt, type FromTailscale, type NetMap, type Tailscale, type TailscaleConfig } from '../tailscale.ts';
 import type { Reach6Options } from '../reach6.ts';
 import { startLocal } from '../local-net.ts';
@@ -40,25 +42,25 @@ export type NetworkSettings = {
 export const DEFAULT_SETTINGS: NetworkSettings = { controlURL: '', hostname: '', autoconnect: false, keyed: false, exitNode: '', kind: 'tailscale', tailcatExit: true, tailcatServe: false, tailcatRelay: '' };
 
 /** A control server's URL as the client takes it: https (http only for this computer), or an error to show. */
-export function parseControlURL(input: string): { url: string } | { error: string } {
+export function parseControlURL(input: string): { url: string } | { error: Msg } {
   const s = input.trim();
   if (!s) return { url: DEFAULT_CONTROL };
   let u: URL;
   try {
     u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(s) ? s : `https://${s}`);
   } catch {
-    return { error: `“${s}” isn't a URL (for example https://headscale.example.com).` };
+    return { error: msg('network:network.notURL', { input: s }) };
   }
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
-  if (u.protocol !== 'https:' && !(u.protocol === 'http:' && local)) return { error: 'The control server must be an https:// URL (http:// works for this computer only).' };
+  if (u.protocol !== 'https:' && !(u.protocol === 'http:' && local)) return { error: msg('network:network.notHttps') };
   return { url: u.origin + (u.pathname === '/' ? '' : u.pathname.replace(/\/$/, '')) };
 }
 
 /** A node's hostname: one DNS label. Empty: `webpc`. */
-export function parseHostname(input: string): { hostname: string } | { error: string } {
+export function parseHostname(input: string): { hostname: string } | { error: Msg } {
   const s = input.trim().toLowerCase();
   if (!s) return { hostname: 'webpc' };
-  if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(s)) return { error: 'The hostname is letters, digits and hyphens (63 at most), not starting or ending with a hyphen.' };
+  if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(s)) return { error: msg('network:network.badHostname') };
   return { hostname: s };
 }
 
@@ -76,6 +78,8 @@ export type NetworkView = {
   phase: Phase;
   /** One line for the menu. */
   text: string;
+  /** An error's details, when there's one (`phase` `error`): what it said, one line each. */
+  details?: string[];
   /** Where to log in (only http(s) URLs). */
   loginURL?: string;
   /** The guest's IPv4 address, when connected. */
@@ -116,7 +120,7 @@ export function ranksOf(views: Pick<NetworkView, 'phase'>[]): number[] {
 }
 
 /** What a `Tailscale` client reports, as far as the view needs it. */
-export type ClientReport = { state: string; netmap?: NetMap; loginURL?: string; error?: string; tailcat?: boolean; local?: boolean };
+export type ClientReport = { state: string; netmap?: NetMap; loginURL?: string; error?: unknown; tailcat?: boolean; local?: boolean };
 
 const web = (s: string | undefined) => {
   try {
@@ -129,23 +133,29 @@ const web = (s: string | undefined) => {
 
 /** The menu's view of a client's report (`undefined`: there's no client). */
 export function viewOf(c: ClientReport | undefined): NetworkView {
-  if (!c) return { phase: 'off', text: 'Not connected', exitNodes: [] };
-  if (c.error) return { phase: 'error', text: `Couldn't connect: ${c.error.split('\n')[0]}`, exitNodes: [] };
+  if (!c) return { phase: 'off', text: t('network:network.notConnected'), exitNodes: [] };
+  if (c.error) {
+    const d = describe(c.error);
+    return { phase: 'error', text: t('network:network.couldntConnect'), details: [d.headline, ...d.details].filter((l) => l), exitNodes: [] };
+  }
   const loginURL = web(c.loginURL);
   if (c.local) {
-    if (c.state !== 'Running') return { phase: 'connecting', text: 'Connecting to the helper on this computer…', exitNodes: [] };
+    if (c.state !== 'Running') return { phase: 'connecting', text: t('network:network.connectingHelper'), exitNodes: [] };
     const address = c.netmap?.addresses[0]?.replace(/\/\d+$/, '');
-    return { phase: 'connected', address, exitNodes: [], internet: true, local: true, text: `Connected through this computer${address ? ` (${address})` : ''}` };
+    return { phase: 'connected', address, exitNodes: [], internet: true, local: true, text: address ? t('network:network.connectedLocal.address', { address }) : t('network:network.connectedLocal') };
   }
   if (c.netmap?.via === 'tailcat' || c.tailcat) {
     if (c.state === 'Running' && c.netmap) {
       const served = c.netmap.serving ? { served: c.netmap.serving } : {};
-      if (c.netmap.tailcatExit === false) return { phase: 'connected', exitNodes: [], text: 'Letting tailcat clients in', internet: false, ...served };
+      if (c.netmap.tailcatExit === false) return { phase: 'connected', exitNodes: [], text: t('network:network.servingOnly'), internet: false, ...served };
       const address = c.netmap.addresses.find((a) => !a.includes(':'))?.replace(/\/\d+$/, '');
-      return { phase: 'connected', address, exitNodes: [], internet: true, text: `Connected through the tailcat server${address ? ` (${address})` : ''}${c.netmap.serving ? ', letting tailcat clients in' : ''}`, ...served };
+      const text = address
+        ? (c.netmap.serving ? t('network:network.tailcat.address.serving', { address }) : t('network:network.tailcat.address', { address }))
+        : (c.netmap.serving ? t('network:network.tailcat.serving') : t('network:network.tailcat'));
+      return { phase: 'connected', address, exitNodes: [], internet: true, text, ...served };
     }
-    const doing: Record<string, string> = { FetchingMap: 'Looking up the relay…', Meowing: 'Waiting for the tailcat server…', Handshaking: 'Opening the tunnel…' };
-    return { phase: 'connecting', text: doing[c.state] ?? (c.state === '' ? 'Loading the client…' : 'Connecting to the relay…'), exitNodes: [] };
+    const doing: Record<string, string> = { FetchingMap: t('network:network.fetchingMap'), Meowing: t('network:network.meowing'), Handshaking: t('network:network.handshaking') };
+    return { phase: 'connecting', text: doing[c.state] ?? (c.state === '' ? t('network:network.loadingClient') : t('network:network.connectingRelay')), exitNodes: [] };
   }
   switch (c.state) {
     case 'Running': {
@@ -155,16 +165,19 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
       const via = exitNodes.find((e) => e.use);
       const routes = [...new Set((c.netmap?.peers ?? []).flatMap((p) => p.routes ?? []))];
       const subnets = routes.length ? { subnets: { routes, on: c.netmap?.acceptRoutes !== false } } : {};
-      return { phase: 'connected', address, exitNodes, internet: !!via, ...subnets, text: `Connected${c.netmap?.name ? ` as ${c.netmap.name.replace(/\.$/, '')}` : ''}${address ? ` (${address})` : ''}, ${peers} peer${peers === 1 ? '' : 's'}${via ? `, internet through ${via.name}` : ''}` };
+      const name = c.netmap?.name ? c.netmap.name.replace(/\.$/, '') : '';
+      const connected = name && address ? msg('network:network.connected.as.address', { name, address }) : name ? msg('network:network.connected.as', { name }) : address ? msg('network:network.connected.address', { address }) : msg('network:network.connected');
+      const text = via ? t('network:network.connectedPeers.via', { connected, count: peers, via: via.name }) : t('network:network.connectedPeers', { connected, count: peers });
+      return { phase: 'connected', address, exitNodes, internet: !!via, ...subnets, text };
     }
     case 'NeedsLogin':
-      return loginURL ? { phase: 'login', text: 'Log in to connect', loginURL, exitNodes: [] } : { phase: 'connecting', text: 'Contacting the control server…', exitNodes: [] };
+      return loginURL ? { phase: 'login', text: t('network:network.logIn'), loginURL, exitNodes: [] } : { phase: 'connecting', text: t('network:network.contacting'), exitNodes: [] };
     case 'NeedsMachineAuth':
-      return { phase: 'login', text: 'Waiting for an administrator to approve this machine', loginURL, exitNodes: [] };
+      return { phase: 'login', text: t('network:network.approval'), loginURL, exitNodes: [] };
     case 'Stopped':
-      return { phase: 'off', text: 'Stopped', exitNodes: [] };
+      return { phase: 'off', text: t('network:network.stopped'), exitNodes: [] };
     default:
-      return { phase: 'connecting', text: c.state === '' ? 'Loading the client…' : 'Connecting…', exitNodes: [] };
+      return { phase: 'connecting', text: c.state === '' ? t('network:network.loadingClient') : t('network:network.connecting'), exitNodes: [] };
   }
 }
 
@@ -242,7 +255,7 @@ export function createNetwork(
   let client: Tailscale | undefined;
   /** How many ports machines have brought. */
   let ports = 0;
-  let error: string | undefined;
+  let error: unknown;
   let tailcat = false;
   let local = false;
   /** The card is on frames (a local client had it last): an IP client brings the page's gateway back first. */
@@ -280,7 +293,7 @@ export function createNetwork(
     },
     connect(c) {
       if (client) return;
-      if (!free) throw new Error('the machine hasn\'t started, so its network card isn\'t there yet: start it first');
+      if (!free) throw new MsgError('network:network.notStarted');
       error = undefined;
       const ip = free;
       free = undefined;
@@ -300,12 +313,12 @@ export function createNetwork(
         : start({ controlURL: c.controlURL, authKey: c.authKey || undefined, hostname: c.hostname, exitNode: c.exitNode || undefined, acceptRoutes: c.acceptRoutes, ip, persist: c.persist, probe6: c.probe6 }, onEvent);
       client = t;
       if (!primary || rank) t.setPrimary(primary, rank);
-      t.running.catch((e) => { error = String(e?.message ?? e); onChange(); });
+      t.running.catch((e) => { error = e ?? new Error('failed'); onChange(); });
       onChange();
     },
     disconnect,
     async setExitNode(id) {
-      if (!client) throw new Error('not connected');
+      if (!client) throw new MsgError('network:network.noClient');
       await client.setExitNode(id);
     },
     setAcceptRoutes(on) {

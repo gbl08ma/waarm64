@@ -4,8 +4,9 @@
 // client's store format (web/tailscale-state.ts), so a node the Go client made before is the same node. While an exit
 // node is in use, it checks whether the exit node's machine reaches the internet over IPv6 (web/reach6.ts), and leases
 // the guest no IPv6 default route while it doesn't.
+import { MsgError, toWire } from './msg.ts';
 import { batchSender, packetsOf } from './net.ts';
-import { TsClient, TsModule } from './ts-client.ts';
+import { exitNodeError, failureOf, TsClient, TsModule } from './ts-client.ts';
 import { leaseFrom, subnetsOf, type FromTailscale, type NetMap, type ToTailscale } from './tailscale.ts';
 import { openState } from './tailscale-state.ts';
 import { ranked, routedLease, TAILNET_ROUTES, type Lease } from './gateway.ts';
@@ -91,7 +92,7 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
     return;
   }
   if (m.type === 'exitnode') {
-    if (!client) return post({ type: 'exitnode', error: 'the client isn\'t running' });
+    if (!client) return post({ type: 'exitnode', error: toWire(new MsgError('network:tailnet-worker.notRunning')) });
     return client.setExitNode(m.id);
   }
   if (m.type === 'routes') return client?.setAcceptRoutes(m.on);
@@ -121,18 +122,18 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
           case 'log': return console.log('tailnet:', ev.msg);
           case 'store': return state?.setState(ev.key, ev.value);
           case 'login': return post({ type: 'login', url: ev.url });
-          case 'exitnode': return post({ type: 'exitnode', error: ev.error });
+          case 'exitnode': return post(ev.code ? { type: 'exitnode', error: toWire(exitNodeError(ev)) } : { type: 'exitnode' });
           case 'loggedout': return void (state?.clear() ?? Promise.resolve()).then(() => post({ type: 'loggedout' }));
           case 'netmap':
             takeNetmap(ev.netmap);
             return post({ type: 'netmap', netmap: ev.netmap });
           case 'state':
-            if (ev.state === 'Failed') return post({ type: 'error', error: ev.error ?? 'the client failed' });
+            if (ev.state === 'Failed') return post({ type: 'error', error: toWire(ev.code ? failureOf(ev) : new MsgError('network:tailnet-worker.failed')) });
             return post({ type: 'state', state: ev.state });
         }
       },
     });
   } catch (err) {
-    post({ type: 'error', error: String((err as Error)?.message ?? err) });
+    post({ type: 'error', error: toWire(err) });
   }
 };

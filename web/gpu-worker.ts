@@ -12,6 +12,7 @@ import { idbBackend, ShaderCache } from './venus-cache.ts';
 import { VenusImport } from './venus-import.ts';
 import { shareMode, VenusShare, type ShareCheck, type ShareMode } from './venus-share.ts';
 import { VirglRenderer } from './virgl-renderer.ts';
+import { MsgError, toWire } from './msg.ts';
 import { flashProbe, glInfo, Screen } from './virgl-screen.ts';
 import { probeVideo, profileName, webCodecsDecoder, type VideoStats, type VideoStream } from './virgl-video.ts';
 
@@ -197,7 +198,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
         try {
           a = saveRenderer(renderer);
         } catch (err) {
-          a = { refused: `the 3D state couldn't be read: ${err instanceof Error ? err.message : err}` };
+          a = { refused: toWire(new MsgError('display:gpu-worker.unreadable3d', {}, { cause: err })) };
         }
         port.postMessage({ t: 'saved', id: c.id, ...a }, 'state' in a ? snapshotBuffers(a.state) : []);
       };

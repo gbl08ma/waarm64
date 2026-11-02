@@ -193,14 +193,14 @@ test('the guest reaches the peer and is reached, through DERP, the filter and Ma
     const answer = async (id: string) => {
       const n = r.events.length;
       r.client.setExitNode(id);
-      const e = r.events.slice(n).find((x) => x.type === 'exitnode') as { error: string } | undefined;
-      return e?.error;
+      const e = r.events.slice(n).find((x) => x.type === 'exitnode') as { code?: string } | undefined;
+      return e && (e.code ?? '');
     };
     const exitPeer = nm.peers.find((p) => p.exitNodeOption)!;
     assert.equal(await answer(exitPeer.id), '');
     assert.equal(r.netmap()?.exitNode, exitPeer.id);
     assert.equal(await answer(''), '');
-    assert.match((await answer('no-such-peer'))!, /no peer/);
+    assert.equal(await answer('no-such-peer'), 'no-exit-node');
   } finally {
     r.stop();
     udpServer.close();

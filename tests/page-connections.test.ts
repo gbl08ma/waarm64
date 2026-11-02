@@ -14,7 +14,9 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { answerAsks } from './page-ask.ts';
+import { t } from '../web/i18n.ts';
 
+const NO_CONNECTION = t('network:Network.noConnection');
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
 const WASM = new URL('../target/net/ts.wasm', import.meta.url);
 const skip = !existsSync(FIRMWARE) ? 'SKIPPED: run images/build.sh edk2' : !existsSync(WASM) ? 'SKIPPED: build the tailnet client (net/ts/build.sh)' : undefined;
@@ -98,7 +100,7 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   await pageA.goto(`${base}/web/app/?m=${a}`);
   await started(pageA);
   await menu(pageA);
-  assert.match(await text(pageA, '#net-conn'), /No connection attached/);
+  assert.ok((await text(pageA, '#net-conn')).includes(NO_CONNECTION), 'the menu says no connection is attached');
   await newTailnet(pageA, { hostname: 'alpha', pick: false });
   const [t] = await records(pageA, 'connections');
   assert.ok(t, 'the connection is kept');
@@ -150,7 +152,7 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   await started(pageB);
   await pageB.waitForFunction(() => /gone/.test(document.getElementById('net-hint')?.textContent ?? ''), null, { timeout: 15_000 });
   assert.equal(await phase(pageB), 'off');
-  assert.match(await text(pageB, '#net-conn'), /No connection attached/);
+  assert.ok((await text(pageB, '#net-conn')).includes(NO_CONNECTION), 'the menu says no connection is attached');
   assert.equal((await adapterOf(pageB, b)).connection, undefined, 'detached in the record');
 
   // Connections: rename, then delete (it is on no machine now; the question says what goes).
@@ -219,8 +221,8 @@ test('power off lets a connection go; a running machine follows what another tab
   await pageB.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 15_000 });
   assert.deepEqual(await locks(), []);
   // The menu's line follows the phase a moment later (under CI's load it was read before it moved: 2026-11-02).
-  await pageB.waitForFunction(() => /No connection attached/.test(document.querySelector('#net-conn')?.textContent ?? ''), null, { timeout: 5_000 }).catch(() => {});
-  assert.match(await text(pageB, '#net-conn'), /No connection attached/);
+  await pageB.waitForFunction((words) => (document.querySelector('#net-conn')?.textContent ?? '').includes(words), NO_CONNECTION, { timeout: 5_000 }).catch(() => {});
+  assert.ok((await text(pageB, '#net-conn')).includes(NO_CONNECTION), 'the menu says no connection is attached');
   await pageB.close();
 
   // Alpha, off: a second adapter, moved first. The first can't go up, the last can't go down, and Save keeps the order.

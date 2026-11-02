@@ -4,6 +4,7 @@
 // (web/tailscale-state.ts), tailcat's served identity in `webpc-tailcat` under `identityKey` (web/tailcat.ts). Ephemeral
 // ones live only in this page's memory, state included. One running machine has a connection at a time: its Web
 // Lock (`connectionLock`, web/app/locks.ts). DOM-free: Node's tests run it over a memory store.
+import { t } from '../i18n.ts';
 import { newTailcatIdentity, type TailcatIdentity } from '../tailcat.ts';
 import { DEFAULT_CONTROL, parseControlURL, type NetworkSettings } from './network.ts';
 import { newId, uniqueName } from './shape.ts';
@@ -79,7 +80,7 @@ export const connectionLock = (id: string) => `webpc-net:${id}`;
 /** A connection's default name: Tailscale, a Headscale's host, tailcat, or This computer. */
 export function defaultName(c: Pick<NewConnection, 'kind' | 'tailnet'>): string {
   if (c.kind === 'tailcat') return 'tailcat';
-  if (c.kind === 'local') return 'This computer';
+  if (c.kind === 'local') return t('network:connections.thisComputer');
   const url = c.tailnet?.controlURL || DEFAULT_CONTROL;
   return url === DEFAULT_CONTROL ? 'Tailscale' : new URL(url).host;
 }

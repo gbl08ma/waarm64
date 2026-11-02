@@ -5,6 +5,7 @@
 // `span` tells a cache above to take the whole piece. The manifest's `id` (a hash of the pieces' hashes) is the image's identity: it
 // changes with the content, whatever the URL.
 import type { Source } from './devices.ts';
+import { MsgError } from './msg.ts';
 
 export const CHUNKED_FORMAT = 'webpc-chunked-1';
 
@@ -38,9 +39,9 @@ export const isManifestUrl = (url: string) => /\.json$/i.test(new URL(url, 'http
 /** Checks a parsed manifest; throws saying what's wrong. */
 export function checkManifest(m: unknown): Manifest {
   const x = m as Manifest;
-  if (!x || x.format !== CHUNKED_FORMAT) throw new Error(`not a chunked image's manifest (format ${String(x?.format)})`);
+  if (!x || x.format !== CHUNKED_FORMAT) throw new MsgError('disks:chunked.notManifest', { format: String(x?.format) });
   if (!(x.size > 0) || !(x.piece >= 1 << 20) || x.piece % (1 << 20) || !Array.isArray(x.hashes) || x.hashes.length !== Math.ceil(x.size / x.piece) || typeof x.pieces !== 'string')
-    throw new Error("the chunked image's manifest is malformed");
+    throw new MsgError('disks:chunked.malformed');
   return x;
 }
 

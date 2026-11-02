@@ -5,6 +5,7 @@
 // handle the page got from `showSaveFilePicker`, or, without one, back to the page in chunks.
 import { hashSource } from '../changes.ts';
 import { diskIdentity } from '../devices.ts';
+import { msg, MsgError, toWire, type Msg } from '../msg.ts';
 import { openOverlay, overlay } from '../overlay.ts';
 import { openDisk } from '../qcow2.ts';
 import { changedClusters, nonZeroClusters, rawChunks, writeQcow2, type DataCluster, type Sink } from '../qcow2-write.ts';
@@ -18,7 +19,7 @@ const post = (m: ExportResult, transfer: Transferable[] = []) => self.postMessag
 self.onmessage = (e: MessageEvent<ExportRequest>) => {
   exportDisk(e.data).then(
     (r) => post({ type: 'done', ...r }),
-    (err) => post({ type: 'error', message: String((err as Error).message ?? err) }),
+    (err) => post({ type: 'error', error: toWire(err) }),
   );
 };
 
@@ -44,24 +45,24 @@ async function exportDisk(r: ExportRequest) {
       }
       if (at === undefined) written += chunk.length;
     };
-    const progress = (phase: string, done: number, total: number) => post({ type: 'progress', phase, done, total });
+    const progress = (phase: Msg, done: number, total: number) => post({ type: 'progress', phase, done, total });
     let blocks = 0;
-    if (r.mode === 'changes' && !disk) throw new Error('this disk has no changes over an image to save');
+    if (r.mode === 'changes' && !disk) throw new MsgError('disks:export-worker.noChanges');
     const whole = disk ?? base;
     if (r.mode === 'raw') {
       for await (const chunk of rawChunks(whole)) {
         await sink(chunk);
-        progress('Writing the disk', written, whole.size);
+        progress(msg('disks:export-worker.writingDisk'), written, whole.size);
       }
     } else {
       let clusters;
       let backing;
       if (r.mode === 'changes') {
-        const hash = await hashSource(src, (done) => progress('Reading the base image', done, src.size));
+        const hash = await hashSource(src, (done) => progress(msg('disks:export-worker.readingBase'), done, src.size));
         backing = { name: r.baseName, format: base.format, hash };
-        clusters = progressOf(changedClusters(disk!), disk!.written().length, (done, total) => progress('Writing the changes', done, total));
+        clusters = progressOf(changedClusters(disk!), disk!.written().length, (done, total) => progress(msg('disks:export-worker.writingChanges'), done, total));
       } else {
-        clusters = nonZeroClusters(whole, 1 << 20, (done) => progress('Writing the disk', done, whole.size));
+        clusters = nonZeroClusters(whole, 1 << 20, (done) => progress(msg('disks:export-worker.writingDisk'), done, whole.size));
       }
       const pool = r.compress ? deflatePool() : undefined;
       try {
