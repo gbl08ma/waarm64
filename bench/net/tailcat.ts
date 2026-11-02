@@ -10,7 +10,7 @@
 import { createSocket } from 'node:dgram';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
-import { TsClient, TsModule, type TsEvent } from '../../web/ts-client.ts';
+import { failureOf, TsClient, TsModule, type TsEvent } from '../../web/ts-client.ts';
 import { checksum } from '../../web/net.ts';
 
 const [addr, secs = '5'] = process.argv.slice(2);
@@ -103,7 +103,7 @@ const client = new TsClient(m, { addr }, {
     console.log(`[${(performance.now() - t0).toFixed(0)} ms]`, JSON.stringify(e));
     if (e.type === 'self') self6 = e.address6;
     if (e.type === 'state' && e.state === 'Running') running.resolve(performance.now() - t0);
-    if (e.type === 'state' && e.state === 'Failed') running.reject(new Error(e.error));
+    if (e.type === 'state' && e.state === 'Failed') running.reject(failureOf(e));
   },
 });
 const runningMs = await running.promise;

@@ -7,7 +7,7 @@
 import { createSocket } from 'node:dgram';
 import { readFileSync } from 'node:fs';
 import { checksum } from '../../web/net.ts';
-import { TsClient, TsModule } from '../../web/ts-client.ts';
+import { failureOf, TsClient, TsModule } from '../../web/ts-client.ts';
 
 const [addr] = process.argv.slice(2);
 const GUEST4 = [192, 0, 0, 2];
@@ -62,7 +62,7 @@ const client = new TsClient(m, { addr }, {
   event(e) {
     if (e.type === 'log') console.error('[ts]', e.msg);
     if (e.type === 'state' && e.state === 'Running') running.resolve();
-    if (e.type === 'state' && e.state === 'Failed') running.reject(new Error(e.error));
+    if (e.type === 'state' && e.state === 'Failed') running.reject(failureOf(e));
   },
 });
 await running.promise;

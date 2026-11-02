@@ -4,7 +4,7 @@
 // Usage: node bench/net/tailnet.ts <control URL> <auth key> [store.json] [hostname]
 // (NODE_EXTRA_CA_CERTS for a test CA; WEBPC_TS_WASM for another module.)
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { TsClient, TsModule, type TsEvent } from '../../web/ts-client.ts';
+import { failureOf, TsClient, TsModule, type TsEvent } from '../../web/ts-client.ts';
 import type { NetMap } from '../../web/tailscale.ts';
 
 const [control, authKey, storeFile, hostname = 'rust'] = process.argv.slice(2);
@@ -20,7 +20,7 @@ const netmap = await new Promise<NetMap>((resolve, reject) => {
     event(e: TsEvent) {
       if (e.type === 'log') console.log(`# ${e.msg}`);
       else if (e.type === 'store') { state[e.key] = e.value; if (storeFile) writeFileSync(storeFile, JSON.stringify(state, null, 1)); }
-      else if (e.type === 'state' && e.state === 'Failed') { clearTimeout(timer); reject(new Error(e.error)); }
+      else if (e.type === 'state' && e.state === 'Failed') { clearTimeout(timer); reject(failureOf(e)); }
       else if (e.type === 'login') { clearTimeout(timer); reject(new Error(`needs an interactive login: ${e.url}`)); }
       else if (e.type === 'netmap') { clearTimeout(timer); setTimeout(() => { c.close(); resolve(e.netmap); }, 200); }
     },

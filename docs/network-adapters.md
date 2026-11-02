@@ -32,7 +32,7 @@ code's comments still cite; machines had first left several adapters for later: 
 7. **Routing over several adapters:** each adapter's gateway has its own addresses, and only the **primary** offers
    the default route (§4).
 8. **Managed on the Machines page's Network tab and from the toolbar's Network menu.** Attaching starts with
-   **New connection…**, which makes the connection in the same wizard, because a new machine's user has none yet.
+   [New connection…](ui:network:NetWizard.pick.new), which makes the connection in the same wizard, because a new machine's user has none yet.
 
 ## 2. Connections
 

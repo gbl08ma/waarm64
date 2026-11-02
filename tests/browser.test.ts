@@ -15,6 +15,7 @@ import { STEPS } from './steps.ts';
 import type { SndState } from '../web/snd.ts';
 import { CONSOLE_INPUT_WANT } from '../web/vm.ts';
 import { answerAsks } from './page-ask.ts';
+import { t } from '../web/i18n.ts';
 
 let browser: Browser;
 let context: BrowserContext; // one origin storage (OPFS) for the boot pages; browser.newPage() gets a fresh one each time
@@ -496,7 +497,7 @@ test('the page runs a machine: serial terminal both ways, keyboard, power off, s
   await page.locator('.xterm').click();
   await page.keyboard.type('clear; exit\n');
   await state('off');
-  assert.equal(await page.locator('#restart').textContent(), 'Start');
+  assert.equal(await page.locator('#restart').textContent(), t('toolbar:Toolbar.start'));
   await page.locator('#restart').click();
   await state('running');
   assert.doesNotMatch(await terminal(), /webpc-42/); // a new machine, a cleared terminal
@@ -505,8 +506,8 @@ test('the page runs a machine: serial terminal both ways, keyboard, power off, s
   await page.locator('#restart').click();
   await page.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 10_000, polling: 50 });
   await state('running');
-  const t = await terminal();
-  assert.equal(t.match(/Run \/init as init process/g)?.length, 1, t); // one boot's log
+  const log = await terminal();
+  assert.equal(log.match(/Run \/init as init process/g)?.length, 1, log); // one boot's log
   assert.deepEqual(errors, []);
   await page.close();
 });

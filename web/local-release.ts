@@ -29,7 +29,7 @@ export function installLines(r: Release, t: Target): string {
   if (t.os === 'windows') {
     return [
       `$d = "$env:LOCALAPPDATA\\Programs\\webpc-net"; New-Item -ItemType Directory -Force $d | Out-Null; $ProgressPreference = 'SilentlyContinue'`,
-      `Invoke-WebRequest ${download(r.version)}/${file} -OutFile "$d\\webpc-net.exe"`,
+      `Invoke-WebRequest ${download(r.version)}/${file} -OutFile "$d\\webpc-net.exe"`, // i18n-ignore: a PowerShell command
       `if ((Get-FileHash "$d\\webpc-net.exe").Hash -ne '${sum}') { Remove-Item "$d\\webpc-net.exe"; throw 'not the published hash' }`,
       `& "$d\\webpc-net.exe"`,
     ].join('\n');

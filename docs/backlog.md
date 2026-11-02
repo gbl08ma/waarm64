@@ -1123,7 +1123,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Sound by hand only** ([audio.md](audio.md) "Tests"): the user confirmed playback and recording work (2026-10-12);
   no test can see the rest, because headless Chromium runs an `AudioContext` without a gesture (even with
   `--autoplay-policy=user-gesture-required`), never hides a page and grants its fake microphone without a prompt. Still
-  to check in a headed Chromium: the real autoplay path ("Sound: click to hear", then a click); a hidden tab's wake (the
+  to check in a headed Chromium: the real autoplay path ([Sound: click to hear](ui:sound:Sound.summary.waiting), then a click); a hidden tab's wake (the
   worklet's notify, the sink's 5 ms timeout; if a hidden tab throttles the device worker, the wait's timeout is the one
   to look at, the notify comes from the audio thread); the microphone's prompt at the guest's first recording, the
   browser's indicator going off when it stops and a refusal's hint (e.g. on the desktop guest `pw-record /tmp/a.wav`,

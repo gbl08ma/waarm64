@@ -13,7 +13,7 @@ import '@xterm/xterm/css/xterm.css';
 import { flushSync, mount } from 'svelte';
 import App from './App.svelte';
 import { ask } from './ask.svelte.ts';
-import { msg, said, t, type Said } from '../i18n.ts';
+import { msg, said, t, text, type Said } from '../i18n.ts';
 import { guestWords } from './guest-words.ts';
 import { clockSync, leaveWarning, remember, settings } from './settings.ts';
 import { page, ui, type Action, type MachinesTab, type PageState, type View } from './ui.svelte.ts';
@@ -42,8 +42,8 @@ import { forgetTailcatIdentity, hasTailcatIdentity, newTailcatIdentity } from '.
 import { forgetProfile, keptProfiles } from '../tailscale-state.ts';
 import type { FromWorker, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
 import { adaptersOf, CPU_FEATURES, DEFAULT_MAC, KEYBOARD_CONNECTOR, newId, serialOf, shapeDiff, USB_CONNECTORS, type DiskRecord, type FolderAttachment, type MachineRecord, type Shape, type UsbEntry } from './shape.ts';
-import { deviceName, entryOf, identityKey, identityOf as usbIdentity, newEntry, problemText, usbLock } from './usb-ports.ts';
-import { browserApi, entryStates, filterFor, findDevices, granted, identityOfDevice, isGranted, requestDevices, ungranted, UsbError, UsbLocks, UsbPorts, type Api, type HostDevice } from './usb-live.ts';
+import { deviceName, entryOf, errorLines, identityKey, identityOf as usbIdentity, newEntry, problemText, usbLock } from './usb-ports.ts';
+import { browserApi, entryStates, filterFor, findDevices, granted, identityOfDevice, isGranted, requestDevices, ungranted, UsbError, UsbHeldError, UsbLocks, UsbPorts, type Api, type HostDevice } from './usb-live.ts';
 import type { UsbIdentity, UsbVirtual } from '../usb-device.ts';
 import { currentShape, planRestore } from './snapshots.ts';
 import { hashFile } from './definitions.ts';
@@ -1420,7 +1420,7 @@ async function restoreSnapshot(file: File, header: SnapshotHeader, key: string, 
   const s = stored!;
   const now = await aboutMachine();
   if (header.shapeHash !== now!.shapeHash) {
-    const why = header.shape ? shapeDiff(header.shape as Shape, now!.shape) : ['it was made by another version of this page'];
+    const why = header.shape ? shapeDiff(header.shape as Shape, now!.shape).map((m) => text(m)) : ['it was made by another version of this page'];
     return void ask.alert(`${name} is a snapshot of a machine other than ${s.record.name} as it is now: ${why.join('; ')}.\nMachines… can make a machine like it.`, { title: "The snapshot can't be restored" });
   }
   let plan: Awaited<ReturnType<typeof planRestore>>;
@@ -1429,7 +1429,7 @@ async function restoreSnapshot(file: File, header: SnapshotHeader, key: string, 
   } catch (e) {
     return void ask.alert(`${name} can't be restored: ${String((e as Error).message ?? e)}`);
   }
-  if (plan.refused) return void ask.alert(`${name} can't be restored: ${plan.refused}`);
+  if (plan.refused) return void ask.alert(`${name} can't be restored: ${said(plan.refused).headline}`);
   const when = new Date(header.created);
   const running = state === 'running' || state === 'booting';
   const forks = plan.forks.map((f) => (f.reused ? `${f.disk}: its earlier fork of this snapshot, attached again` : `${f.disk}: changed since, so the snapshot's state goes into a new overlay, attached now (the one it has stays as it is)`));
@@ -1481,7 +1481,7 @@ async function loadSnapshot(file: File) {
   try {
     header = (await openSnapshot(file)).header;
   } catch (e) {
-    if (e instanceof SnapshotError) return void ask.alert(`${file.name}: ${e.message}`, { title: "Not a snapshot this page can load" });
+    if (e instanceof SnapshotError) return void ask.alert(`${file.name}: ${said(e).headline}`, { title: "Not a snapshot this page can load" });
     throw e;
   }
   if (stored) return restoreSnapshot(file, header, `file:${String(header.created)}`, file.name);
@@ -1893,7 +1893,7 @@ function syncUsb() {
 function usbPorts(port: MessagePort) {
   const p = new UsbPorts(port, usbLocks);
   p.onChange = syncUsb;
-  p.onGone = (connector, was, reason) => {
+  p.onGone = (connector, was, reason, error) => {
     if (reason === 'unplugged' && was.device.api !== 'virtual') {
       // It may come back as another device (a bootloader, after a firmware upload): the offer to attach that one there.
       const api = was.device.api;
@@ -1903,8 +1903,8 @@ function usbPorts(port: MessagePort) {
       offer(`gone-${connector}`, `${was.name} was unplugged from connector ${connector + 1}. If it came back as another device (a bootloader, after a firmware upload), pick that one to attach it there.`, 'Pick it…', async () => {
         for (const d of await requestDevices(api)) await rememberAndAttach(api, d, { connector, atStart: gone.atStart });
       });
-    } else if (reason && reason !== 'unplugged' && reason !== 'guest' && reason !== 'page') {
-      notify(`${was.name} was detached: ${reason}`, 'error');
+    } else if (error) {
+      notify(`${was.name} was detached: ${errorLines(error)}`, 'error');
     }
   };
   return p;
@@ -1923,7 +1923,7 @@ function offer(id: string, text: string, label: string, f: () => Promise<void>) 
 
 /** An attach's error for the message bar: a `UsbError` with problems names the device itself. */
 const attachFailed = (name: string, err: unknown, again = '') =>
-  err instanceof UsbError && err.words.length ? err.message : `${name} couldn't be attached${again}: ${String((err as Error).message ?? err)}`;
+  err instanceof UsbError && err.words.length ? errorLines(err) : `${name} couldn't be attached${again}: ${errorLines(err)}`;
 
 /** Attaches entry `e` on its connector; a device another machine holds is offered to be detached there first (`quiet`: skipped, with a note). */
 async function attachEntry(e: UsbEntry, o: { quiet?: boolean } = {}) {
@@ -1934,7 +1934,7 @@ async function attachEntry(e: UsbEntry, o: { quiet?: boolean } = {}) {
   try {
     await p.attach(e.connector, usbIdentity(e), e.id);
   } catch (err) {
-    if (!(err instanceof UsbError) || err.message !== 'held') throw err;
+    if (!(err instanceof UsbHeldError)) throw err;
     const who = await usbLocks.holder(usbLock(e));
     const where = who ? `${who}, in another tab` : 'another machine (in another tab)';
     if (o.quiet) return void notify(`${name} is attached to ${where}: it was left there.`);
@@ -1976,7 +1976,7 @@ function syncKeyboard(r: Run) {
     if (!p || run !== r || !usbRunning()) return;
     const c = p.connectors[KEYBOARD_CONNECTOR];
     if (keyboardLive && isKeyboard(c)) await p.detach(KEYBOARD_CONNECTOR).catch(() => {});
-    else if (!keyboardLive && !c) await p.attach(KEYBOARD_CONNECTOR, KEYBOARD).catch((err) => notify(`The built-in keyboard couldn't be plugged in: ${String((err as Error).message ?? err)}`, 'error'));
+    else if (!keyboardLive && !c) await p.attach(KEYBOARD_CONNECTOR, KEYBOARD).catch((err) => notify(`The built-in keyboard couldn't be plugged in: ${errorLines(err)}`, 'error'));
   });
   return keyboardSync;
 }
@@ -1993,7 +1993,7 @@ async function attachAtStart(r: Run) {
       continue; // not plugged in: skipped without a word
     }
     if (!e.atStart) continue;
-    await attachEntry(e, { quiet: true }).catch((err) => notify(`${deviceName(e)} couldn't be attached: ${String((err as Error).message ?? err)}`, 'error'));
+    await attachEntry(e, { quiet: true }).catch((err) => notify(`${deviceName(e)} couldn't be attached: ${errorLines(err)}`, 'error'));
   }
   syncUsb();
 }

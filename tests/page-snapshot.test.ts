@@ -16,6 +16,7 @@ import { startServer } from '../tools/serve.ts';
 import { openSnapshot, SnapshotWriter } from '../web/snapshot-file.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
+import { t } from '../web/i18n.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const buildroot = existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES));
@@ -283,7 +284,7 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
     await page.waitForFunction(() => document.body.dataset.state === 'suspended', null, { timeout: 60_000 });
     assert.match((await message(page))!, /^Suspended: the machine's memory is kept in this browser/);
     assert.ok((await suspendFile())! > 100_000, 'the suspended machine is beside the overlay');
-    assert.equal(await page.locator('#restart').textContent(), 'Start');
+    assert.equal(await page.locator('#restart').textContent(), t('toolbar:Toolbar.start'));
   };
   assert.equal(await page.locator('#suspend').isEnabled(), true);
   await onSerial(page, 'SUSVAR=one\n');

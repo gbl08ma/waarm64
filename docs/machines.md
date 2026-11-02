@@ -19,7 +19,7 @@ What the Machines page shows and does is [frontend.md](frontend.md) "Machines in
    or, for a stored disk, into the disk itself (rule 12).
 3. **Overlays belong to a base disk, not to a machine:** named variants of the same base that any machine attaching
    that base can choose from, one running machine at a time per overlay (its Web Lock). Users name, switch, delete,
-   create empty ("New empty") and export them.
+   create empty ([New empty](ui:disks:Disks.newEmpty)) and export them.
 4. **Disk sources:** an HTTP URL; a file from the user's computer, read where it is; a file **copied into the
    browser** (the user is told it duplicates a file they likely keep, in storage they can't easily see); a **blank**
    disk of a chosen size; a **ramdisk** of a chosen size in the host's memory.
@@ -39,7 +39,7 @@ What the Machines page shows and does is [frontend.md](frontend.md) "Machines in
    goes in and out (§6). A machine with its overlays and snapshots as one bundle isn't built.
 10. **URL disks** are checked when added (§4.2); what a host must give, chunked images and the block cache are
     [remote-disks.md](remote-disks.md) and devices.md "Over HTTP".
-11. **A stored disk can take an overlay in place** ("Merge into the disk"): the overlay's blocks are written into the
+11. **A stored disk can take an overlay in place** ([Merge into the disk](ui:disks:Disks.mergeButton)): the overlay's blocks are written into the
     stored disk, and **every other overlay of that disk is deleted** (they were over the old bytes); the
     confirmation lists them.
 12. **A stored disk can be written in place**, as an option per attachment: no overlay, the guest's writes go into
@@ -281,9 +281,9 @@ The file's format, what the core saves and the page's toolbar and header fields:
   paths to records.
 - **Orphaned:** a kept snapshot whose shape hash differs from its machine's now (the user changed RAM, added a
   disk, turned shared folders on…). Pins don't orphan a snapshot: a moved-on overlay is what the fork is for. The Snapshots tab says what
-  differs (`shapeDiff`, from the two shapes), and offers **Make a machine like it** (`machineLike`: a new machine
+  differs (`shapeDiff`, from the two shapes), and offers [Make a machine like it](ui:snapshots:Snapshots.like) (`machineLike`: a new machine
   from its shape, disks the browser has attached again by identity, blank disks and ramdisks made again, files picked
-  again) and **Delete orphaned snapshots**.
+  again) and [Delete orphaned snapshots](ui:snapshots:Snapshots.deleteOrphaned).
 
 ### 5.2 Save, keep, restore
 

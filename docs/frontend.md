@@ -80,7 +80,7 @@ its record's), `?usbzero=1` (Gadget Zero in the USB menu, for tests: [usb.md](us
   `/dev/console`, the serial port (GRUB passes no `console=`, so the kernel takes the device
   tree's PL011): it asks for a timezone, a locale and a root password on the serial terminal,
   with the screen waiting. The page passes no credentials (the user's answer); the boot card says
-  where the questions are ("Show it" opens the serial view). Tests pass them over fw_cfg
+  where the questions are ([Show it](ui:common:App.boot.serial.show) opens the serial view). Tests pass them over fw_cfg
   (`tests/debian-unattended.ts`: `login.noauth`, `firstboot.*`, an empty root password).
 - **`buildroot`**, the test guest: `-- /bin/sh` on the serial console, 256 MiB, a 640×480
   framebuffer that stays black (its kernel has no fbcon), the overlay `webpc-buildroot` (mounted
@@ -120,7 +120,7 @@ The model, its rules and why ([machines.md](machines.md)); here, what the page d
   disk's) generation and size from its files into the records. Without `?m=` the machine is transient, made from
   the query as before (`?machine=`, `?disk=`, `?disk2=`): its overlays keep their old single names.
 - **Disks:** a URL (checked when added: `urlcheck.ts`, what fails and what the server needs; a URL disk is slow and
-  the Machines page says so), a file (its `FileSystemFileHandle` kept in the record), a file **stored in the browser**
+  the Machines page says so), a file (its `FileSystemFileHandle` kept in the record), a file [stored in the browser](ui:disks:Disks.kind.stored)
   (converted into the block store, `web/stored.ts`; the confirmation says what it takes and that it duplicates the
   file), **blank** (zeros, always writable through its overlay) or a **ramdisk** (`web/ramdisk.ts`: empty at every
   boot, the guest's reboot too; its memory counts in the page's memory check). A snapshot and a suspended copy hold
@@ -169,12 +169,12 @@ an unused left side of a comma.
 
 A desktop application's toolbar (`Toolbar.svelte`): tool buttons with icons and tooltips, in groups split by
 separators; the main gates also have their names. Left to right: **Machines** (the Machines page), the machine's name,
-**Start/Restart/Retry** and **Power off** (a hard stop, asked first; only while it runs), **Suspend**,
+**Start/Restart/Retry** and [Power off](ui:toolbar:Toolbar.powerOff) (a hard stop, asked first; only while it runs), **Suspend**,
 **Snapshot** (one click: a stored machine's is kept in the browser at once, named by the time, renamed later on the
 Snapshots tab, the panic button; a transient machine's is saved to a file), **Load snapshot** (a menu: the machine's
 five latest kept snapshots, orphaned ones disabled; All snapshots… (the Snapshots tab); From a file…), the views
 (Screen, Serial terminal, Both), **Screen** (size and HiDPI, virtio-gpu machines), **Keys**, **Mouse lock** (a menu: on or
-off, and Pointer or Raw, remembered per browser; the button looks pressed while it's on: "Input", "Mouse lock"), **Full screen**,
+off, and Pointer or Raw, remembered per browser; the button looks pressed while it's on: "Input", "Mouse lock"), [Full screen](ui:toolbar:Toolbar.fullscreen),
 **Sound**, **Network**, **USB** (a machine with a USB controller: its remembered devices with attach toggles, the
 offers of a device that just appeared or has no permission here yet, Add a device…; [usb.md](usb.md) "The page"), and for a transient machine (a test's `?machine=`) the **Machine** menu (vCPUs, RAM, graphics);
 a stored machine's are its Settings. The power state (Booting, Running, Powered off…) is the status bar's first item
@@ -206,7 +206,7 @@ tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Pref
   connection; disk speed and totals; the renderer (3D or 2D, WebGL2 or a canvas, amber when WebGL2 is software), frame
   rate, video decode (the streams' codecs, hardware as asked: WebCodecs doesn't say what a decoder got, and pictures a
   second); mouse lock, keyboard (where keys go: the machine when the screen or the terminal has the focus, what the
-  screen's "Click to type" hint says otherwise, and its shortcuts too with full screen's Keyboard Lock), microphone (shown while it records);
+  screen's [Click to type](ui:common:App.screen.hint) hint says otherwise, and its shortcuts too with full screen's Keyboard Lock), microphone (shown while it records);
   spacer and divider.
 - **Per device:** MIPS, the JIT share, and the network's and disks' elements come summed (`all`), for `each` device
   (vCPUs as bars or numbers; adapters and disks one after another) or for `one`, by its number: vCPUs from 0, as the
@@ -258,8 +258,8 @@ Duplicate, Export the definition, Delete; then tabs:
 - **Disks** (`Disks.svelte`): the attachments in slot order (read-only, write in place, up, down, Detach); per writable
   disk its overlays (switch, New empty, Rename, Delete, Merge into the disk), **Export** (a menu: changes only, the
   whole disk as qcow2 or raw, compressed or not; a machine on this page running from it stops while the file is
-  written and starts again after) and **Import changes…** (a changes file becomes a new overlay, which the disk switches
-  to). There is no Reset for a stored machine: New empty is it, and keeps the old overlay. **Add a disk…** opens a
+  written and starts again after) and [Import changes…](ui:disks:Disks.importChanges) (a changes file becomes a new overlay, which the disk switches
+  to). There is no Reset for a stored machine: New empty is it, and keeps the old overlay. [Add a disk…](ui:disks:Disks.add) opens a
   wizard (`AddDisk.svelte`): the source first (**a disk already in this browser**, a file read where it is, a file
   copied into the browser, a URL, blank, a ramdisk), each explained, then its details and Read-only. A disk already
   in this browser is one another machine has or one detached (Detach keeps the disk and its overlays, and says so):
@@ -269,7 +269,7 @@ Duplicate, Export the definition, Delete; then tabs:
   a URL's path, size and validator), so its overlays come back with it.
 - **Network:** the machine's network adapters (docs/network-adapters.md): up to four, each with its MAC (a new
   machine's first is `52:54:00:12:34:56`, as the one card was; the others random), added, removed and moved up or down
-  with the machine off (the order is the guest's `eth<n>` and decides the default way out), and each with its connection (below, "Network"): **Attach…** or **Change connection…** (the Network wizard),
+  with the machine off (the order is the guest's `eth<n>` and decides the default way out), and each with its connection (below, "Network"): **Attach…** or [Change connection…](ui:network:Network.change) (the Network wizard),
   **Detach**, **Connect at start**, and Connect or Disconnect while it runs on this page. Attaching is saved at
   once, running or not (a connection isn't in the shape), and a machine running in another tab connects it at once. **Take the connection's settings in the guest** (on; off is
   `MachineRecord.netConfig: false`, carried by definitions, not in the shape): below, "What the page sets in the guest". **Connections** (in the list of machines) is the
@@ -368,7 +368,7 @@ the kernel's console (fbcon) replays the boot log from the first line and system
 follow, so the Screen view stays the default (loop 0's finding). **Through UEFI it isn't**: GRUB
 passes no `console=tty0`, so the screen stays black until tty1's getty, and the firmware's menus
 and the first boot's questions are on the serial console; the card stays until `running` and
-says so, with a "Show it" button for the serial view. On this host (M8 loop 4): the downloads (77.6 MB:
+says so, with a [Show it](ui:common:App.boot.serial.show) button for the serial view. On this host (M8 loop 4): the downloads (77.6 MB:
 Debian's kernel, its initrd and the core; the 403 MB disk is read by ranges as the guest needs it)
 take ~0.15 s from localhost, fbcon takes the screen ~2.4 s after the VM starts, and the login
 prompt comes at ~29 s (page load to `running`: 28.6, 29.1, 28.9, 29.0 s; loop 3: 28.6–29.0).
@@ -502,14 +502,14 @@ the panic button), named by the date and time; the Snapshots tab renames it. Kee
 OPFS `machines/<id>/snapshots/<id>` (`start`'s `snapshot.keep`), then the page writes its record (its pins, the
 shape) inside `Store.writing`. The toolbar's **Load snapshot** lists the five latest (orphaned ones disabled). The
 Machines page's Snapshots tab lists them all, newest first: **Restore** (on the page's machine), **Rename**,
-**Download** (the file as kept), **Delete**; **Import a file…** copies a file into them (one of another shape is kept,
-orphaned), **Restore from a file…** restores one at once, and **Save a snapshot to a file** writes one out (asking
+**Download** (the file as kept), **Delete**; [Import a file…](ui:snapshots:Snapshots.import) copies a file into them (one of another shape is kept,
+orphaned), [Restore from a file…](ui:snapshots:Snapshots.restoreFile) restores one at once, and [Save a snapshot to a file](ui:snapshots:Snapshots.toFile) writes one out (asking
 first, when a disk is written in place, whether the whole disk goes in, §4.4).
 - **Orphaned:** a kept snapshot whose shape hash isn't the machine's now (its RAM, vCPUs, display, disks…). It is
   struck through, with what differs (`shapeDiff`: "memory: 1024 MiB then, 2048 MiB now"), and offers **Make a machine
   like it** (`machineLike`: the settings and disks from the shape, the disks the browser has attached again by
   identity, blank disks and ramdisks made again under their ids, the attachments under the snapshot's serials; the
-  snapshot moves to it). **Delete orphaned snapshots** deletes them all after one confirmation with their total size.
+  snapshot moves to it). [Delete orphaned snapshots](ui:snapshots:Snapshots.deleteOrphaned) deletes them all after one confirmation with their total size.
   Saving changed settings warns that they orphan the snapshots.
 - **A restore never destroys a disk's state** (`planRestore`, web/app/snapshots.ts): per writable disk, an overlay
   that is the snapshot's pinned one at its pinned generation is **kept** (nothing written: the restore is RAM and
@@ -708,10 +708,10 @@ page writes the context's output latency into the ring's header, and the guest g
 - **The browser's autoplay rule:** a context made before the page had a user gesture starts suspended. The page
   resumes it at once (that works after any earlier click) and at every click or key anywhere on the page; meanwhile
   the sink's own clock plays the ring, so the guest's sound keeps time and nothing stalls, and the menu's summary
-  reads **Sound: click to hear** (with an accent border).
+  reads [Sound: click to hear](ui:sound:Sound.summary.waiting) (with an accent border).
 - **The Sound menu:** Sound on (unchecked: muted, the gain at 0; the guest still plays in real time), Volume
   (0-100%: the gain is its cube, as PipeWire's and PulseAudio's sliders), Microphone and Raw microphone (below). Both apply live and are kept in this browser (`muted`, `volume` in `webpc.settings`); the summary reads
-  "Sound (muted)" when off. Not in the Machine menu, whose choices apply by a restart.
+  [Sound (muted)](ui:sound:Sound.summary.muted) when off. Not in the Machine menu, whose choices apply by a restart.
 - **The guest's mixer:** Volume and Sound on are the guest's `Master Playback Volume` and `Switch` (the sound
   device's controls, [devices.md](devices.md) "snd"), where its kernel has them (Linux 6.7 and later): a machine
   starts at the menu's, the guest's changes move the menu (WirePlumber puts a new output at 40%; shown, not kept
@@ -719,9 +719,9 @@ page writes the context's output latency into the ring's header, and the guest g
 - **The microphone** (audio S4: [audio.md](audio.md) "Decisions"): each start also makes a **microphone ring**. When the guest
   starts recording, the device says so on the port with the stream's rate; unless **Microphone** is unchecked, the page
   asks for the microphone (`getUserMedia`: the browser's prompt the first time) with the browser's echo cancellation,
-  noise suppression and gain control, or none with **Raw microphone** (for music), makes a context at the stream's rate
+  noise suppression and gain control, or none with [Raw microphone](ui:sound:Sound.micRaw) (for music), makes a context at the stream's rate
   with a `MediaStreamAudioSourceNode` into the `webpc-mic` worklet, which writes the ring, and the summary reads
-  "Sound · mic". When recording stops the microphone and its context are closed (the browser's indicator goes off). Off,
+  [Sound · mic](ui:sound:Sound.summary.onMic). When recording stops the microphone and its context are closed (the browser's indicator goes off). Off,
   refused (the menu's hint says so) or until it's granted, the guest records silence in real time. Both choices apply
   live (the microphone is opened again) and are kept (`mic`, `micRaw`).
 - **Restarts and stops:** the rings are dropped with the machine (`detach`, the microphone closed); the playback
@@ -738,7 +738,7 @@ page writes the context's output latency into the ring's header, and the guest g
 
 - **Focus:** the screen takes the keyboard on a click (tabindex 0; the page focuses it on load
   and when the Screen or Both view is chosen, the terminal in the Terminal view). A focused
-  screen has an accent ring; an unfocused one shows "Click to type" over it. The terminal's frame
+  screen has an accent ring; an unfocused one shows [Click to type](ui:common:App.screen.hint) over it. The terminal's frame
   takes the accent while xterm.js has the focus (its cursor is filled then, too). Tab moves
   between them.
 - **Before the guest's keyboard driver** (the firmware, the boot loader, an initramfs: the worker's `keyboard
@@ -756,7 +756,7 @@ page writes the context's output latency into the ring's header, and the guest g
   the page then starts a new machine), and Ctrl+Alt+F2 to F6 switch to tty2–tty6, where logind
   starts a getty on demand (autovt, `NAutoVTs=6`); F7 to F12 switch to consoles with nothing on
   them. The smoke test checks the chord of F12 (the highest keycode of the set, 88).
-- **Full screen** puts the views (`main`) in full screen and asks for the **Keyboard Lock**
+- [Full screen](ui:toolbar:Toolbar.fullscreen) puts the views (`main`) in full screen and asks for the **Keyboard Lock**
   (`navigator.keyboard.lock()`, Chromium, effective only in full screen): Ctrl+W, Ctrl+T, Esc and
   the like go to the machine, and holding Esc leaves full screen (Chromium says so on entry).
   Without the lock (refused, or another browser) full screen still works and the browser keeps
@@ -1015,7 +1015,7 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
 - **Saving the disk** (loop 5): a disk's **Export** menu on the Machines page's Disks tab: *Changes
   only*, a qcow2 holding the blocks the machine wrote with the image as its backing file;
   *Whole disk* as qcow2 (zero clusters left out) or raw; the qcow2s are compressed unless the
-  menu's **Compress the qcow2** is unticked (remembered in the page's settings). The file goes where the user picks
+  menu's [Compress the qcow2](ui:disks:Disks.export.compress) is unticked (remembered in the page's settings). The file goes where the user picks
   (`showSaveFilePicker`, called first: it needs the click's activation; a worker streams into the
   handle's writable) or, without a picker, is downloaded (the worker posts 1 MiB chunks, the page
   collects a Blob). **Never over the running disk:** a save dialog empties the file it hands over
@@ -1068,7 +1068,7 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   a file with only it is refused like any qcow2 that isn't ours. The whole
   disk is scanned through the overlay over the base (the cost is reading the base: a 3 GiB Debian
   disk is the long case). Names: `<disk>-changes.qcow2`, `<disk>.qcow2`, `<disk>.img`.
-- **Loading changes** (loop 6): a disk's **Import changes…** on the Disks tab (or a changes file chosen with Open
+- **Loading changes** (loop 6): a disk's [Import changes…](ui:disks:Disks.importChanges) on the Disks tab (or a changes file chosen with Open
   disk or dropped: the first 64 KiB's header, `changesHeader` in web/qcow2.ts, tells it from a
   disk: a backing file) puts a changes file onto **the disk on the page** (the machine's own or the
   chosen one). `loadChanges` (web/changes.ts, in `web/app/import-worker.ts`, page side
@@ -1110,15 +1110,15 @@ Lock, `webpc-net:<id>`): another tab asking for it is told which machine has it 
 
 The toolbar's **Network** menu has a section per adapter of the page's machine (headed "Adapter n" when there are
 several; adapter 1's elements keep their ids, adapter n's end in `-<n-1>`): the status, the connection's name,
-**Log in…**, **Internet through** (a tailnet's exit nodes), **Reach the subnets peers route** (when a tailnet's
-peers route subnets), **This machine's tailcat address** (when it lets clients
+[Log in…](ui:network:Network.login), [Internet through](ui:network:Network.exitNode) (a tailnet's exit nodes), **Reach the subnets peers route** (when a tailnet's
+peers route subnets), [This machine's tailcat address](ui:network:Network.served) (when it lets clients
 in), **Connect** (the attached connection, when it isn't running), **Retry** (a connection that failed: disconnect and
-connect again), **Disconnect**, **Log out**, and **Connect…** or
-**Change connection…**, which opens the **Network wizard** (`NetWizard.svelte`): first the browser's connections,
-the most recently used free one chosen and those in use marked with their machine, after **New connection…**
-(without connections it starts at the next step); then the kind, **A tailnet**, **tailcat** or **This computer
+connect again), **Disconnect**, [Log out](ui:network:Network.logout), and [Connect…](ui:network:Network.setup) or
+[Change connection…](ui:network:Network.change), which opens the **Network wizard** (`NetWizard.svelte`): first the browser's connections,
+the most recently used free one chosen and those in use marked with their machine, after [New connection…](ui:network:NetWizard.pick.new)
+(without connections it starts at the next step); then the kind, [A tailnet](ui:network:NetWizard.kind.pickTailnet), **tailcat** or **This computer
 (webpc-net)**, then that kind's
-settings and **Keep this connection in this browser** (on; off makes it ephemeral), with Back, Cancel (or Esc) and
+settings and [Keep this connection in this browser](ui:network:NetWizard.keep) (on; off makes it ephemeral), with Back, Cancel (or Esc) and
 Connect. Form errors show in the wizard; Connect closes it (stopping the adapter's running client first) and opens
 the menu, which then says how the connection goes. The same wizard attaches a connection to a machine that isn't on
 the page (its Network tab: it connects at once if that machine runs in another tab, otherwise when it starts), makes one on its own and edits one (the Machines
@@ -1126,9 +1126,9 @@ page's **Connections**: rename, Edit, New address, Log out for any node kept her
 side is `web/app/net-live.ts` (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, the clients, the locks
 and the guest's default way out (below).
 
-- **This computer** (the local helper, net/webpc-net: [plans/networking-local.md](plans/networking-local.md)): a
+- [This computer](ui:network:connections.thisComputer) (the local helper, net/webpc-net: [plans/networking-local.md](plans/networking-local.md)): a
   program the user runs prints a pairing link, `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>`. Opening it
-  takes the fragment out of the address at once (it holds the token) and opens the wizard on **This computer**, the
+  takes the fragment out of the address at once (it holds the token) and opens the wizard on [This computer](ui:network:connections.thisComputer), the
   link filled in, attaching to the page's machine's first adapter (or making the connection, without one); pasting
   the link (or its `ws://` part) into that step does the same. The step shows the install lines for this browser's
   platform (`web/local-release.ts`: client hints, a choice of the six; the release's version and SHA-256s), or, with
@@ -1169,10 +1169,10 @@ and the guest's default way out (below).
   router advertisement with lifetime 0 and Route Information options). A machine with several adapters has its
   lease renewed every 10 s, so IPv4's default follows the primary within that (8–9 s measured, 10 at most; 49 s with the two-minute lease before); IPv6's moves with
   the advertisement, at once.
-- **A tailnet** takes a control server (empty: Tailscale's; a Headscale's `https://` URL, or
-  `http://` for this computer), a hostname (default `webpc`) and an optional auth key (a password field with a "Show the auth key" checkbox).
+- [A tailnet](ui:network:NetWizard.kind.pickTailnet) takes a control server (empty: Tailscale's; a Headscale's `https://` URL, or
+  `http://` for this computer), a hostname (default `webpc`) and an optional auth key (a password field with a [Show the auth key](ui:network:NetWizard.authKey.show) checkbox).
 - **Login:** without an auth key the client asks the control server for a login and the menu opens
-  with a **Log in…** link (a new tab; only `http(s)` URLs are ever offered); the client comes up
+  with a [Log in…](ui:network:Network.login) link (a new tab; only `http(s)` URLs are ever offered); the client comes up
   when the login completes. An admin-approval wait is shown as such. With an auth key (asked for only when the
   wizard connects the page's machine) there's no login; the key is never saved. A kept connection's node is kept
   either way; an ephemeral connection's node is an ephemeral node (the control server drops it once it's been away).
@@ -1185,13 +1185,13 @@ and the guest's default way out (below).
   address and no new login: **a connection connects at start** (`connectAtStart`, the Network tab's Connect at start)
   until Disconnect.
 - **Disconnect** withdraws the lease and stops the client (the guest keeps its address until the
-  lease runs out; the adapter and its connection stay); **Log out** removes the node from the tailnet and deletes its
+  lease runs out; the adapter and its connection stay); [Log out](ui:network:Network.logout) removes the node from the tailnet and deletes its
   keys. A machine restart (Restart, a guest
   reboot, Reset disk) hands the new machine's port to the running client (`attach`): it stays
   connected. A machine that stops with no start to follow (powered off, suspended, crashed) stops its clients and lets
   their connections go; they connect again at its next start ([network-adapters.md](network-adapters.md) §1).
 - **tailcat** (docs/tailnet.md "tailcat") has two choices, either or both:
-  - **Go online through a computer of mine** (the default): a **tailcat address** (a password
+  - [Go online through a computer of mine](ui:network:NetWizard.tailcat.exit) (the default): a **tailcat address** (a password
     field; a secret, kept only in a kept connection) and a line on what to run: `tailcat serve exit-node` on a
     computer of the user's. The Rust tailnet client (web/tailcat.ts, web/tailcat-worker.ts,
     net/ts) connects through the address's DERP relay; the status goes Loading the client,
@@ -1201,7 +1201,7 @@ and the guest's default way out (below).
     `fd7a:115c:a1e0:…` address, MTU 1280, resolvers 1.1.1.1 and 2606:4700:4700::1111 (reached
     through the exit node). What the guest reaches is TCP and UDP to wherever that computer
     reaches, its LAN included; no ping beyond it, no exit-node choice, no Log out.
-  - **Let tailcat clients in to this machine**: the machine is a tailcat server. The menu
+  - [Let tailcat clients in to this machine](ui:network:NetWizard.tailcat.serve): the machine is a tailcat server. The menu
     shows **its own tailcat address** (a password field with Show and Copy) and how to use it:
     on another computer, `tailcat ssh <address>` logs in to the guest's sshd (tailcat runs `ssh`
     with `tailcat <address> 22` as its ProxyCommand) and `tailcat <address> <port>` reaches any
@@ -1213,12 +1213,12 @@ and the guest's default way out (below).
     (`connectAtStart`); an ephemeral connection's is in the page's memory. **Advanced**: the **relay for clients** when not going online through a
     computer (that computer's relay serves otherwise): empty for tailcat's public relays, the
     region with the fastest `/derp/probe` (`nearestRegion`, as tailcat's own server picks; the
-    map's first if none answers), or one's own derper's `host[:port]`; and, editing a connection, **New address**, which
+    map's first if none answers), or one's own derper's `host[:port]`; and, editing a connection, [New address](ui:network:NetWizard.newAddress), which
     forgets the kept identity (after a confirmation), so the old address stops working (the adapter that runs it
     connects again at once). Serving alone, the guest gets the same lease without resolvers: it reaches only
-    the clients. The status says **Letting tailcat clients in** (or adds it to the exit node's).
+    the clients. The status says [Letting tailcat clients in](ui:network:network.servingOnly) (or adds it to the exit node's).
 - **Exit node:** when the tailnet has peers that advertise one (and an admin approved their
-  `0.0.0.0/0` routes) the menu shows **Internet through** with them and "Nothing: directly". Picking one
+  `0.0.0.0/0` routes) the menu shows [Internet through](ui:network:Network.exitNode) with them and [Nothing: directly](ui:network:Network.exitNode.none). Picking one
   calls the client's `setExitNode(id)` (the id is the peer's stable ID, `netmap.peers[].id`), the netmap reports the one in use (`netmap.exitNode`) and the
   status line says "internet through <name>". The choice is kept with the connection (`tailnet.exitNode`) and given
   to the client at the next Connect; using one makes the adapter the default way out (above). The guest's address, router and

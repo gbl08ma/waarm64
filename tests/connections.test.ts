@@ -13,6 +13,7 @@ import { Locks } from '../web/app/locks.ts';
 import { DEFAULT_SETTINGS } from '../web/app/network.ts';
 import { memoryFiles, memoryRecords, Store } from '../web/app/store.ts';
 import { profilesOf } from '../web/tailscale-state.ts';
+import { t } from '../web/i18n.ts';
 
 const store = (channel: string | false = false) => new Store(memoryRecords(), memoryFiles(), { channel });
 const fakeState = () => {
@@ -56,7 +57,7 @@ test('connections: stored and ephemeral, their names and state keys, deleted wit
   assert.equal(defaultName({ kind: 'tailnet', tailnet: { controlURL: 'http://127.0.0.1:8080', hostname: '', exitNode: '' } }), '127.0.0.1:8080');
   // The local helper: its link (with the token) kept in a stored connection, nothing kept elsewhere to forget.
   const here = await conns.create({ kind: 'local', local: { url: 'ws://127.0.0.1:8740/tok' } });
-  assert.equal(here.name, 'This computer');
+  assert.equal(here.name, t('network:connections.thisComputer'));
   assert.deepEqual((await s.get('connections', here.id))?.local, { url: 'ws://127.0.0.1:8740/tok' });
   assert.deepEqual(connectOf(here), { controlURL: '', hostname: '', local: 'ws://127.0.0.1:8740/tok' });
   await conns.delete(here.id);

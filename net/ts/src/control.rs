@@ -66,8 +66,12 @@ pub enum Phase {
 pub enum Update {
     Phase(Phase),
     Map(Changed),
-    /// Gave up for good (a refused registration, a key the server rejects): why.
-    Failed(String),
+    /// Gave up for good (a refused registration, a key the server rejects): why, as a stable
+    /// code the page words (`web/ts-client.ts` `failureOf`), and the technical detail, if any.
+    Failed {
+        code: &'static str,
+        detail: String,
+    },
 }
 
 pub struct Session {
@@ -228,10 +232,10 @@ impl Session {
         }
     }
 
-    fn fail(&mut self, why: String) {
+    fn fail(&mut self, code: &'static str, detail: String) {
         self.close();
         self.set_phase(Phase::Failed);
-        self.updates.push(Update::Failed(why));
+        self.updates.push(Update::Failed { code, detail });
     }
 
     /// The server's key fetched (or not).
@@ -473,7 +477,9 @@ impl Session {
         // answer that leaves out the user's details still works.
         let r: serde_json::Value = match serde_json::from_slice(body) {
             Ok(r) => r,
-            Err(e) => return self.fail(format!("the registration's answer: {e}")),
+            Err(e) => {
+                return self.fail("control-answer", format!("the registration's answer: {e}"));
+            }
         };
         let (error, auth_url) = (
             r["Error"].as_str().unwrap_or(""),
@@ -490,7 +496,7 @@ impl Session {
             return self.set_phase(Phase::LoggedOut);
         }
         if !error.is_empty() {
-            return self.fail(format!("the control server refused the node: {error}"));
+            return self.fail("control-refused", error.to_string());
         }
         if expired && self.kept.node.is_some() {
             // A new node key, the old one named so the server knows it's the same node.
@@ -510,7 +516,7 @@ impl Session {
                 // Long-polls until the user has logged in.
                 return self.send_register(now);
             }
-            return self.fail("the control server didn't authorize the node (an auth key, or an interactive login, is needed)".into());
+            return self.fail("not-authorized", String::new());
         }
         self.followup = None;
         self.kept.node = Some(self.node);
