@@ -6,14 +6,22 @@
 // - the catalog: every entry has its words and a note; keys are `<Source>.<name>`;
 // - every key the code names exists, is a literal, and sits in its source: a key `ns:Source.name` is named in a file
 //   `Source.*` (it mirrors where it's used), and every entry is named somewhere;
-// - a message's parameters: a call that names a key with an object of parameters (`t`, `msg`, `new MsgError`, a
-//   subclass, `<T k params>`) gives exactly the `{{names}}` its words use;
+// - an error written as one message: words that are a headline and a line after `\n` are a `MsgError` headline and
+//   a cause of its own;
+// - a message's parameters: a call that names a key (`t`, `msg`, `new MsgError`, a subclass, `<T k params>`) gives
+//   exactly the `{{names}}` its words use: a key as a literal, a conditional's, or through a map or a constant of the
+//   file (`STATE_WORDS[s]`, `const [key] = PHASE_WORD[p]`); parameters as an object, a conditional's objects, a
+//   constant of the file or `undefined`;
+// - no `.message` of a caught error is shown to the user (a `MsgError`'s is its developer text): `describe`,
+//   `errorText` or `msgOf` say it;
 // - copy outside the catalog: words in a component's markup or a copy attribute (`title`, `aria-label`, …), string
-//   results of a markup expression, copy properties (`label: 'Disks…'`) and sentence-like strings in the page's code
-//   (a line with `i18n-ignore`, or after a line with `i18n-ignore-next`, is skipped);
+//   results of a markup expression, copy properties (`label: 'Disks…'`) and sentence-like strings in the page's code,
+//   lower-case ones and ones with `;` or after a `Field=` too (a line with `i18n-ignore`, or after a line with
+//   `i18n-ignore-next`, is skipped);
 // - no worker reaches web/i18n.ts or i18next: the page alone renders words;
 // - the docs' UI quotes, `[words](ui:ns:Source.name)`, say the catalog's words, and words quoted in bold, italics or
-//   double quotes that are a message's (two words or more, or ending in "…") are written as such a quote;
+//   double quotes that are a message's (two words or more, or ending in "…") are written as such a quote, a quote
+//   broken across two lines included;
 // - the tests take the page's words from the catalog: no literal says a message's words (`checkTests`), but in a test
 //   named `wording: …`, which pins words on purpose.
 import { parse as parseSvelte } from 'svelte/compiler';
@@ -96,8 +104,43 @@ function calleeName(n: Node | undefined): string {
   return '';
 }
 
+/**
+ * Whether message words are a headline with a line under it (`Couldn't start {{name}}\nIt's running elsewhere.`): a
+ * first line with words of its own that ends as a headline does (no period, question mark, colon or ellipsis), and a
+ * line after it. A first line that is only a parameter (a tooltip's `{{name}}\n{{about}}`) or a sentence isn't one.
+ */
+export const loneLine = (message: string) => {
+  const nl = message.indexOf('\n');
+  if (nl < 0) return false;
+  const first = message.slice(0, nl).trim();
+  return /\p{L}/u.test(first.replace(/\{\{[^}]*\}\}|<\/?[a-z][a-z0-9-]*>/g, '')) && !/[.?!:…]$/.test(first) && message.slice(nl + 1).trim() !== '';
+};
+
+/** Words that read as prose: three words or more, of letters, with an article, a verb or the like among them. */
+const PROSE_WORD = /^(the|a|an|is|are|was|were|be|been|it|its|this|that|these|those|to|of|in|on|for|with|from|and|or|but|not|no|can|can't|couldn't|isn't|doesn't|didn't|won't|will|has|have|had|your|you)$/;
+
 /** Whether string `s` reads as a sentence for a user: a capital, then words, at least three. */
-const sentence = (s: string) => /^[A-Z][a-z’']*(?:[ ,;:()\-–—][^\s]*){2,}/.test(s.trim()) && /\p{Ll}{2}/u.test(s) && !/[{}<>=;]|^\w+\(|\$\{|https?:|\/\//.test(s);
+const sentence = (s: string): boolean => {
+  // A field's value is read as its own words (`Description=The emulator's …`, a unit's line).
+  const field = /^[A-Z][\w.-]*=(.+)$/s.exec(s.trim());
+  if (field) return sentence(field[1]) || lowerSentence(field[1]);
+  const t = s.trim();
+  if (!/^[A-Z][a-z’']*(?:[ ,;:()\-–—][^\s]*){2,}/.test(t) || !/\p{Ll}{2}/u.test(s) || /[{}<>=]|^\w+\(|\$\{|https?:|\/\//.test(s)) return false;
+  // A `;` joins two clauses of prose ("…; roses are red."), not declarations (`a: b; c: d`).
+  return !s.includes(';') || s.split(';').every((part, i) => i === 0 || /^ [a-z’']+(?: [^\s;:]+){1,}/.test(part));
+};
+
+/**
+ * Whether lower-case string `s` reads as a sentence for a user: four words or more, only letters and a little
+ * punctuation, a sentence's end (a period, a question or an ellipsis), and at least two of `PROSE_WORD`. A developer's
+ * phrase (a log line, an invariant) lives in a `console`/`Error` call, which the checks skip; this catches copy that
+ * starts in lower case.
+ */
+const lowerSentence = (s: string) => {
+  const t = s.trim();
+  if (!/^[a-z][a-z’']*(?: [a-z’',()-]+){3,}[.?!…]$/.test(t)) return false;
+  return t.split(/[ ,()]+/).filter((w) => PROSE_WORD.test(w.replace(/[.?!…]$/, ''))).length >= 2;
+};
 
 /** Words in `s`: a letter anywhere. */
 const letters = (s: string) => /\p{L}/u.test(s);
@@ -154,6 +197,7 @@ export function checkSources(catalogs: Catalogs, sources: Source[], o: { copyChe
       const extra = Object.keys(e).filter((x) => x !== 'message' && x !== 'note');
       if (extra.length) say(file, 1, `${ns}:${k}: unknown fields ${extra.join(', ')}`);
       if (/\{\{[^}]*$|^[^{]*\}\}/.test(e.message)) say(file, 1, `${ns}:${k}: unbalanced {{ }} in its words`);
+      if (loneLine(e.message)) say(file, 1, `${ns}:${k}: a headline and a line under it in one message: the headline is a message, the line its cause (new MsgError(headline, …, { cause: new MsgError(…) }); docs/copy.md "The elements")`);
     }
   }
 
@@ -171,24 +215,159 @@ export function checkSources(catalogs: Catalogs, sources: Source[], o: { copyChe
       return s !== undefined && KEY_RE.test(s) && catalogs[KEY_RE.exec(s)![1]] ? s : undefined;
     };
 
-    /** Checks the parameters given with `key` (an ObjectExpression, or nothing) against its words. */
-    const checkParams = (key: string, obj: Node | undefined, line: number) => {
-      const found = lookup(catalogs, key);
-      if (!found) return;
-      if (obj && obj.type !== 'ObjectExpression') return; // parameters built elsewhere: not checked here
-      const given = new Set<string>();
-      if (obj) {
-        for (const prop of obj.properties as Node[]) {
-          if (prop.type !== 'Property' || prop.computed) return; // a spread: not checked here
-          const k = prop.key as Node;
-          given.add((k.name as string | undefined) ?? String(k.value));
+    // The file's bindings, by name, for what a call's key or parameters are when they aren't written in it: `const x =
+    // …` or `const [a, b] = …` (a value), or a function's or a catch's parameter, a loop's or a pattern's (unknown);
+    // a use takes its innermost scope's, one bound twice there being unknown.
+    type Binding = { v: { init: Node; index?: number } | null; scope: Node };
+    const bindings = new Map<string, Binding[]>();
+    const bind = (name: string, v: Binding['v'], scope: Node) => bindings.set(name, [...(bindings.get(name) ?? []), { v, scope }]);
+    const bindPattern = (pat: Node | null | undefined, scope: Node) => {
+      if (!pat) return;
+      if (pat.type === 'Identifier') bind(pat.name as string, null, scope);
+      else if (pat.type === 'ArrayPattern') for (const el of pat.elements as (Node | null)[]) bindPattern(el, scope);
+      else if (pat.type === 'ObjectPattern') for (const pr of pat.properties as Node[]) bindPattern((pr.type === 'RestElement' ? pr.argument : pr.value) as Node, scope);
+      else if (pat.type === 'AssignmentPattern') bindPattern(pat.left as Node, scope);
+      else if (pat.type === 'RestElement') bindPattern(pat.argument as Node, scope);
+      else if (pat.type === 'TSParameterProperty') bindPattern(pat.parameter as Node, scope);
+    };
+    const SCOPE = /^(Program|BlockStatement|StaticBlock|SwitchStatement|ForStatement|ForInStatement|ForOfStatement|CatchClause)$|Function/;
+    const scan = (n: unknown, scope: Node) => {
+      if (!n || typeof n !== 'object') return;
+      if (Array.isArray(n)) { for (const c of n) scan(c, scope); return; }
+      const node = n as Node;
+      if (typeof node.type !== 'string') return;
+      const here = SCOPE.test(node.type) ? node : scope;
+      if (node.type === 'VariableDeclarator') {
+        const id = node.id as Node, init = node.init as Node | null;
+        if (init && id.type === 'Identifier') bind(id.name as string, { init }, scope);
+        else if (init && id.type === 'ArrayPattern') (id.elements as (Node | null)[]).forEach((el, index) => (el?.type === 'Identifier' ? bind(el.name as string, { init, index }, scope) : bindPattern(el, scope)));
+        else bindPattern(id, scope);
+      } else if (/Function/.test(node.type)) for (const prm of (node.params as Node[] | undefined) ?? []) bindPattern(prm, here);
+      else if (node.type === 'CatchClause') bindPattern(node.param as Node | null, here);
+      for (const [k, v] of Object.entries(node)) if (k !== 'metadata' && k !== 'parent' && k !== 'loc' && v && typeof v === 'object') scan(v, here);
+    };
+    const top = { type: 'Program', start: 0, end: src.text.length } as Node;
+    scan(p.program, top);
+    /** The value name `name` has where it's used, at `at`: its innermost scope's binding (undefined if unknown). */
+    const bound = (name: string, at: number) => {
+      const around = (bindings.get(name) ?? []).filter((b) => b.scope.start <= at && at < b.scope.end);
+      if (!around.length) return undefined;
+      const inner = Math.min(...around.map((b) => b.scope.end - b.scope.start));
+      const mine = around.filter((b) => b.scope.end - b.scope.start === inner);
+      return mine.length === 1 ? mine[0].v ?? undefined : undefined;
+    };
+    const strip = (n: Node | undefined): Node | undefined => {
+      while (n && /^(TSAsExpression|TSSatisfiesExpression|TSNonNullExpression|TSTypeAssertion|ParenthesizedExpression)$/.test(n.type)) n = n.expression as Node;
+      return n;
+    };
+    /** What expression `n` may be (its element `index`, if given), through conditionals, `??`/`||`, the file's constants and maps; undefined if it can't be told. */
+    const values = (n: Node | undefined, index?: number, depth = 0): Node[] | undefined => {
+      n = strip(n);
+      if (!n || depth > 8) return undefined;
+      if (index !== undefined) {
+        const whole = values(n, undefined, depth + 1);
+        if (!whole) return undefined;
+        const out: Node[] = [];
+        for (const w of whole) {
+          if (w.type !== 'ArrayExpression') return undefined;
+          const el = (w.elements as (Node | null)[])[index];
+          const v = el ? values(el, undefined, depth + 1) : [];
+          if (!v) return undefined;
+          out.push(...v);
+        }
+        return out;
+      }
+      const both = (a: Node, b: Node) => {
+        const x = values(a, undefined, depth + 1), y = values(b, undefined, depth + 1);
+        return x && y ? [...x, ...y] : undefined;
+      };
+      if (n.type === 'ConditionalExpression') return both(n.consequent as Node, n.alternate as Node);
+      if (n.type === 'LogicalExpression' && n.operator !== '&&') return both(n.left as Node, n.right as Node);
+      if (n.type === 'Identifier' && n.name !== 'undefined') {
+        const c = bound(n.name as string, n.start);
+        return c ? values(c.init, c.index, depth + 1) : undefined;
+      }
+      if (n.type === 'MemberExpression') {
+        const objs = values(n.object as Node, undefined, depth + 1);
+        if (!objs || !objs.every((o) => o.type === 'ObjectExpression')) return undefined;
+        const prop = n.computed ? stringOf(n.property) : ((n.property as Node).name as string);
+        const out: Node[] = [];
+        for (const o of objs) {
+          for (const pr of o.properties as Node[]) {
+            if (pr.type !== 'Property') return undefined;
+            const k = pr.computed ? undefined : (((pr.key as Node).name as string | undefined) ?? String((pr.key as Node).value));
+            if (prop !== undefined && k !== prop) continue;
+            const v = values(pr.value as Node, undefined, depth + 1);
+            if (!v) return undefined;
+            out.push(...v);
+          }
+        }
+        return out;
+      }
+      return [n];
+    };
+    /** The keys expression `n` may be (a `''` or other words that aren't a key: none), or undefined if it can't be told. */
+    const keysOf = (n: Node | undefined): string[] | undefined => {
+      const vs = values(n);
+      if (!vs) return undefined;
+      const out: string[] = [];
+      for (const v of vs) {
+        const s = stringOf(v);
+        if (s === undefined) return undefined;
+        if (keyNode(v)) out.push(s);
+      }
+      return out;
+    };
+    /** The names each object that expression `n` may be gives (none for `undefined`), or undefined if one can't be told. */
+    const givenOf = (n: Node | undefined, depth = 0): Set<string>[] | undefined => {
+      if (!n) return [new Set()];
+      const vs = values(n);
+      if (!vs || depth > 4) return undefined;
+      const out: Set<string>[] = [];
+      for (const v of vs) {
+        if (v.type === 'Identifier' && v.name === 'undefined') { out.push(new Set()); continue; }
+        if (v.type !== 'ObjectExpression') return undefined;
+        let sets = [new Set<string>()];
+        for (const pr of v.properties as Node[]) {
+          if (pr.type === 'SpreadElement') {
+            const inner = givenOf(pr.argument as Node, depth + 1);
+            if (!inner) return undefined;
+            sets = sets.flatMap((s) => inner.map((i) => new Set([...s, ...i])));
+          } else if (pr.type !== 'Property' || pr.computed) return undefined;
+          else for (const s of sets) s.add(((pr.key as Node).name as string | undefined) ?? String((pr.key as Node).value));
+        }
+        out.push(...sets);
+      }
+      return out;
+    };
+    /** Checks the parameters a call gives (`params`) against the words of every key it may name (`keyExpr`). */
+    const checkCall = (keyExpr: Node, params: Node | undefined, line: number) => {
+      const k = strip(keyExpr), pr = strip(params);
+      // A key and its parameters chosen by the same condition go in pairs.
+      if (k?.type === 'ConditionalExpression' && pr?.type === 'ConditionalExpression' && src.text.slice((k.test as Node).start, (k.test as Node).end) === src.text.slice((pr.test as Node).start, (pr.test as Node).end)) {
+        checkCall(k.consequent as Node, pr.consequent as Node, line);
+        checkCall(k.alternate as Node, pr.alternate as Node, line);
+        return;
+      }
+      const keys = keysOf(keyExpr);
+      const given = givenOf(params);
+      if (!keys || !given) return; // built at run time: not checked here
+      const via = stringOf(k) === undefined ? ` (the key through ${src.text.slice(keyExpr.start, keyExpr.end).replace(/\s+/g, ' ').slice(0, 40)})` : '';
+      const said = new Set<string>();
+      for (const key of keys) {
+        const found = lookup(catalogs, key);
+        if (!found) continue;
+        for (const g of given) {
+          const missing = [...found.vars].filter((v) => !g.has(v));
+          const extra = [...g].filter((v) => !found.vars.has(v));
+          if (missing.length) said.add(`${key}: its words use ${missing.map((v) => `{{${v}}}`).join(', ')}, not given${via}`);
+          if (extra.length) said.add(`${key}: ${extra.join(', ')} given, but its words don't use ${extra.length > 1 ? 'them' : 'it'}${via}`);
         }
       }
-      const missing = [...found.vars].filter((v) => !given.has(v));
-      const extra = [...given].filter((v) => !found.vars.has(v));
-      if (missing.length) say(src.path, line, `${key}: its words use ${missing.map((v) => `{{${v}}}`).join(', ')}, not given`);
-      if (extra.length) say(src.path, line, `${key}: ${extra.join(', ')} given, but its words don't use ${extra.length > 1 ? 'them' : 'it'}`);
+      for (const s of said) say(src.path, line, s);
     };
+    /** The checks on `<T k params>`, whose key is a literal. */
+    const checkParams = (key: string, obj: Node | undefined, line: number) => checkCall({ type: 'Literal', value: key, start: 0, end: 0 } as Node, obj, line);
 
     // Keys named in the code (and a component's markup), and their parameters.
     walk([p.program, p.svelte?.fragment], (n, parent, field) => {
@@ -202,16 +381,17 @@ export function checkSources(catalogs: Catalogs, sources: Source[], o: { copyChe
           const set = named.get(s) ?? new Set();
           set.add(stem);
           named.set(s, set);
-          // As a call's first argument: its parameters are the second.
-          if (parent && (parent.type === 'CallExpression' || parent.type === 'NewExpression') && field === 'arguments' && (parent.arguments as Node[])[0] === n) {
-            const callee = calleeName(parent.callee as Node);
-            if (/(^|\.)(t|msg|text|plain)$|Error$|^ask\./.test(callee) || parent.type === 'NewExpression') checkParams(s, (parent.arguments as Node[])[1], line);
-          }
         }
       } else if (n.type === 'TemplateLiteral') {
         const first = ((n.quasis as Node[])[0].value as { cooked: string }).cooked;
         const m = /^([a-z][a-z0-9-]*):/.exec(first);
         if (m && catalogs[m[1]] && (n.expressions as unknown[]).length) say(src.path, at(n), `a key built at run time (\`${first}…\`): name every key as a literal (a map from a code to its key, if need be)`);
+      }
+      // A call that names a key: its parameters are the second argument.
+      if ((n.type === 'CallExpression' || n.type === 'NewExpression') && (n.arguments as Node[]).length) {
+        const callee = calleeName(n.callee as Node);
+        const first = (n.arguments as Node[])[0];
+        if (/(^|\.)(t|msg|text|plain)$|Error$|^ask\./.test(callee) || (n.type === 'NewExpression' && keyNode(first))) checkCall(first, (n.arguments as Node[])[1], at(n));
       }
     });
 
@@ -253,6 +433,9 @@ export function checkSources(catalogs: Catalogs, sources: Source[], o: { copyChe
       });
     }
 
+    // A caught error's developer text shown to the user.
+    if (copy) shownMessages(p, (n, what) => { if (!waived(src.text, at(n))) say(src.path, at(n), what); });
+
     // Copy in the code: copy properties, sentence-like strings, DOM words.
     if (copy) {
       walk(p.program, (n, parent, field) => {
@@ -270,7 +453,7 @@ export function checkSources(catalogs: Catalogs, sources: Source[], o: { copyChe
           say(src.path, at(n), `${calleeName(parent.left as Node)} = "${words.slice(0, 60)}" (a message)`);
           return;
         }
-        if (sentence(words) && !(parent?.type === 'Property' && field === 'key')) say(src.path, at(n), `"${words.slice(0, 60)}" reads as words for the user (a message, or i18n-ignore if it isn't)`);
+        if ((sentence(words) || lowerSentence(words)) && !(parent?.type === 'Property' && field === 'key')) say(src.path, at(n), `"${words.slice(0, 60)}" reads as words for the user (a message, or i18n-ignore if it isn't)`);
       });
     }
   }
@@ -286,6 +469,94 @@ export function checkSources(catalogs: Catalogs, sources: Source[], o: { copyChe
     }
   }
   return problems;
+}
+
+/** Calls that show what they're given to the user (the message bar, a dialog, the state's words). */
+const SHOW_CALLS = /^(notify|setState|showMessage|stateText|said|fail|ask\.\w+|alert|confirm|prompt)$/;
+/** Calls whose parameters are a message's (`t('…', { why: … })`). */
+const MESSAGE_CALLS = /(^|\.)(t|msg|text)$|Error$/;
+
+/**
+ * Code that shows a caught error's `.message` to the user: a `MsgError`'s is its developer text (its key and
+ * parameters), so the page says an error with `describe`, `errorText` or `msgOf`. A caught error is a `catch`'s, or a
+ * rejection handler's (`.catch(fn)`, `.then(_, fn)`); its `.message` (through `String`, a template, `??`, a
+ * conditional) is flagged where it reaches a call that shows words, a message's parameter, the DOM's or the page's UI
+ * state, a component's state shown in its markup, or the markup itself. `msgOf(e) ?? e.message` and the like (a
+ * message first) are fine.
+ */
+function shownMessages(p: Parsed, say: (n: Node, what: string) => void) {
+  // A component's state shown in its markup: assigning to it shows it.
+  const shownNames = new Set<string>();
+  if (p.svelte) walk(p.svelte.fragment, (n) => { if (n.type === 'Identifier') shownNames.add(n.name as string); });
+  const paramNames = (ps: Node[] | undefined) => (ps ?? []).flatMap((x) => (x?.type === 'Identifier' ? [x.name as string] : x?.type === 'AssignmentPattern' && (x.left as Node).type === 'Identifier' ? [(x.left as Node).name as string] : []));
+  const visit = (n: unknown, caught: Set<string>, anc: { node: Node; key: string }[], key: string) => {
+    if (!n || typeof n !== 'object') return;
+    if (Array.isArray(n)) { for (const c of n) visit(c, caught, anc, key); return; }
+    const node = n as Node;
+    if (typeof node.type !== 'string') return;
+    let inner = caught;
+    if (node.type === 'CatchClause' && (node.param as Node | null)?.type === 'Identifier') inner = new Set([...caught, (node.param as Node).name as string]);
+    else if (/Function/.test(node.type)) {
+      const names = paramNames(node.params as Node[]);
+      const parent = anc.at(-1)?.node;
+      const callee = parent?.type === 'CallExpression' ? calleeName(parent.callee as Node) : '';
+      const args = parent?.type === 'CallExpression' ? (parent.arguments as Node[]) : [];
+      const handler = (/\.catch$/.test(callee) && args[0] === node) || (/\.then$/.test(callee) && args[1] === node);
+      inner = new Set([...caught].filter((x) => !names.includes(x)));
+      if (handler && names[0]) inner.add(names[0]);
+    }
+    if (node.type === 'MemberExpression' && !node.computed && ((node.property as Node).name === 'message')) {
+      let obj = node.object as Node;
+      while (/^(TSAsExpression|TSNonNullExpression|ParenthesizedExpression|TSTypeAssertion)$/.test(obj.type)) obj = obj.expression as Node;
+      if (obj.type === 'Identifier' && inner.has(obj.name as string)) {
+        const sink = sinkOf(anc, node, shownNames);
+        if (sink) say(node, `${obj.name as string}.message ${sink}: a MsgError's is its developer text (say the error with describe(), errorText() or msgOf(); i18n-ignore if it can't be one)`);
+      }
+    }
+    const next = [...anc, { node, key }];
+    for (const [k, v] of Object.entries(node)) {
+      if (k === 'metadata' || k === 'parent' || k === 'loc' || k === 'name_loc') continue;
+      if (v && typeof v === 'object') visit(v, inner, next, k);
+    }
+  };
+  visit(p.program, new Set(), [], '');
+}
+
+/** Where the value of `n` goes when it's shown to the user (words for the problem), or undefined. */
+function sinkOf(anc: { node: Node; key: string }[], n: Node, shownNames: Set<string>): string | undefined {
+  let child = n;
+  for (let i = anc.length - 1; i >= 0; i--) {
+    const { node } = anc[i];
+    const text = (x: unknown) => JSON.stringify(x ?? null);
+    // A message first: the developer's text only for an error without one.
+    if ((node.type === 'LogicalExpression' && node.right === child && /"msgOf"|"isMsg"|"describe"|"errorText"/.test(text(node.left)))
+      || (node.type === 'ConditionalExpression' && /"msgOf"|"isMsg"|"MsgError"/.test(text(node.test)))) return undefined;
+    // What keeps the value (or its words) as it is.
+    if (/^(TemplateLiteral|ConditionalExpression|LogicalExpression|TSAsExpression|TSNonNullExpression|ParenthesizedExpression|ChainExpression|SpreadElement|ArrayExpression)$/.test(node.type)
+      || (node.type === 'BinaryExpression' && node.operator === '+')
+      || (node.type === 'CallExpression' && /^(String|\w+\.(slice|trim|replace|split|join|toString|substring))$/.test(calleeName(node.callee as Node)) && node.callee !== child)
+      || (node.type === 'MemberExpression' && node.object === child)) { child = node; continue; }
+    if ((node.type === 'CallExpression' || node.type === 'NewExpression') && (node.arguments as Node[]).includes(child)) {
+      const name = calleeName(node.callee as Node);
+      if (DEV_CALLS.test(name)) return undefined;
+      return SHOW_CALLS.test(name) ? `is shown (${name}(…))` : undefined;
+    }
+    if (node.type === 'Property' && node.value === child) {
+      const obj = anc[i - 1]?.node, call = anc[i - 2]?.node;
+      if (obj?.type === 'ObjectExpression' && call && (call.type === 'CallExpression' || call.type === 'NewExpression') && (call.arguments as Node[]).indexOf(obj) >= 1 && MESSAGE_CALLS.test(calleeName(call.callee as Node))) return `is a message's parameter (${calleeName(call.callee as Node)}(…, { ${((node.key as Node).name as string) ?? ''}: … }))`;
+      return undefined;
+    }
+    if (node.type === 'AssignmentExpression' && node.right === child) {
+      const left = node.left as Node;
+      const name = calleeName(left);
+      if (/\.(textContent|innerText|innerHTML|title|placeholder|ariaLabel|alt)$|^ui\./.test(name)) return `is shown (${name} = …)`;
+      if (left.type === 'Identifier' && shownNames.has(left.name as string)) return `is shown (${left.name as string}, in the markup)`;
+      return undefined;
+    }
+    if (node.type === 'ExpressionTag') return 'is shown in the markup';
+    return undefined;
+  }
+  return undefined;
 }
 
 /** The string results of an expression shown as words: itself, a conditional's branches, a `||`/`??`'s sides, a template's. */
@@ -347,6 +618,9 @@ export function checkWorkers(root: string, sources: Source[]): Problem[] {
   return problems;
 }
 
+/** A UI quote in the docs, `[words](ui:key)`: its words may be broken across two lines (a paragraph's wrap). */
+const UI_QUOTE = () => /\[([^\]\n]+(?:\n[^\]\n]+)?)\]\(ui:([^)\s]+)\)/g;
+
 /** The docs' UI quotes against the catalog; with `fix`, the quotes' words rewritten (the new text, if any changed). */
 export function checkDoc(catalogs: Catalogs, path: string, text: string, fix = false): { problems: Problem[]; fixed?: string } {
   const problems: Problem[] = [];
@@ -356,31 +630,33 @@ export function checkDoc(catalogs: Catalogs, path: string, text: string, fix = f
   let changed = false;
   // Code (fenced or inline) says commands, not the page's words.
   const masked = text.replace(/```[\s\S]*?```/g, (m) => m.replace(/[^\n]/g, ' ')).replace(/`[^`\n]*`/g, (m) => ' '.repeat(m.length));
-  const out = masked.replace(/\[([^\]\n]+)\]\(ui:([^)\s]+)\)/g, (whole, words: string, key: string, offset: number) => {
+  const out = masked.replace(UI_QUOTE(), (whole, words: string, key: string, offset: number) => {
     const line = lineAt(text, offset);
     const found = lookup(catalogs, key);
     if (!found) { problems.push({ path, line, text: `[${words}](ui:${key}): no such message` }); return text.slice(offset, offset + whole.length); }
     const said = words.replace(/\*+|_+/g, '');
-    const ok = found.words.some((w) => new RegExp(`^${plainWords(w).replace(/[.*+?^$()|[\]\\]/g, '\\$&').replace(/\\?\{\\?\{[^}]*\}\}/g, '.+')}$`, 'u').test(said.trim()) || plainWords(w) === said.trim());
+    const one = said.replace(/\s+/g, ' ').trim();
+    const ok = found.words.some((w) => new RegExp(`^${plainWords(w).replace(/[.*+?^$()|[\]\\]/g, '\\$&').replace(/\\?\{\\?\{[^}]*\}\}/g, '.+')}$`, 'u').test(one) || plainWords(w) === one);
     if (ok) return text.slice(offset, offset + whole.length);
     if (fix && found.words.length === 1 && !found.words[0].includes('{{')) {
       changed = true;
       return `[${words.replace(said.trim(), plainWords(found.words[0]))}](ui:${key})`;
     }
-    problems.push({ path, line, text: `[${words}](ui:${key}): the page says "${plainWords(found.words[0])}"${fix ? ' (has parameters: fix it by hand)' : ' (node tools/i18n-check.ts --fix-docs)'}` });
+    problems.push({ path, line, text: `[${words.replace(/\s+/g, ' ')}](ui:${key}): the page says "${plainWords(found.words[0])}"${fix ? ' (has parameters: fix it by hand)' : ' (node tools/i18n-check.ts --fix-docs)'}` });
     return text.slice(offset, offset + whole.length);
   });
   // Quotes of a message's words that aren't marked as UI quotes.
-  const unlinked = masked.replace(/\[([^\]\n]+)\]\(ui:[^)\s]+\)/g, (m) => ' '.repeat(m.length));
-  for (const m of unlinked.matchAll(/\*\*([^*\n]+)\*\*|(?<![*\w])\*([^*\n]+)\*(?![*\w])|"([^"\n]+)"|“([^”\n]+)”/g)) {
-    const w = (m[1] ?? m[2] ?? m[3] ?? m[4]).trim();
+  const unlinked = masked.replace(UI_QUOTE(), (m) => ' '.repeat(m.length));
+  // A quote may be broken across two lines too.
+  for (const m of unlinked.matchAll(/\*\*([^*\n]+(?:\n[^*\n]+)?)\*\*|(?<![*\w])\*([^*\s][^*\n]*(?:\n[^*\n]+)?)\*(?![*\w])|"([^"\n]+(?:\n[^"\n]+)?)"|“([^”\n]+(?:\n[^”\n]+)?)”/g)) {
+    const w = (m[1] ?? m[2] ?? m[3] ?? m[4]).replace(/\s+/g, ' ').trim();
     const key = byWords.get(w);
     if (key && (/…$/.test(w) || /\s/.test(w))) problems.push({ path, line: lineAt(text, m.index), text: `"${w}" quotes the page: write it as [${w}](ui:${key})` });
   }
   if (!changed) return { problems };
   // Put the rewritten quotes into the original text (the masked copy only located them).
   let result = '', at = 0;
-  const re = /\[([^\]\n]+)\]\(ui:([^)\s]+)\)/g;
+  const re = UI_QUOTE();
   const fixedQuotes = [...out.matchAll(re)];
   const origQuotes = [...masked.matchAll(re)];
   origQuotes.forEach((o, i) => { result += text.slice(at, o.index) + fixedQuotes[i][0]; at = o.index + o[0].length; });

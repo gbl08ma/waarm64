@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { describe, errorText, marked, parts, plain, said, t, text } from '../web/i18n.ts';
 import { devText, fromWire, msg, msgOf, MsgError, toWire } from '../web/msg.ts';
-import { checkDoc, checkSources, checkTests, stemOf, varsOf, type Catalogs } from '../tools/i18n-check.ts';
+import { checkDoc, checkSources, checkTests, loneLine, stemOf, varsOf, type Catalogs } from '../tools/i18n-check.ts';
 import { words } from './words.ts';
 import { CATALOGS } from '../web/messages/en/index.ts';
 
@@ -143,4 +143,95 @@ test('wording: the button says Retry', () => { assert.equal(label, 'Retry'); });
   assert.equal(words('common:ask.ok', {}, { whole: true }).source, '^OK$');
   assert.match(t('snapshots:main.saved', { name: 'a', size: 2 ** 20, seconds: 1 }), words('snapshots:main.saved', { name: 'a' }, { start: true }));
   assert.doesNotMatch(t('snapshots:main.saved', { name: 'a', size: 2 ** 20, seconds: 1 }), words('snapshots:main.saved', { name: 'b' }));
+});
+
+const CAT2: Catalogs = {
+  x: {
+    'Thing.save': { message: 'Save {{name}}', note: 'A button that saves the thing named name.' },
+    'Thing.plain': { message: 'Plain words here', note: 'A message with no parameters.' },
+    'Thing.failed': { message: "Couldn't save {{name}}\nThe disk is full.", note: 'An error headline and its cause in one message.' },
+    'Thing.tip': { message: '{{name}}\n{{about}}', note: 'A tooltip: a name, then what it is.' },
+    'Thing.notice': { message: 'Saved {{name}}.\nThe guest slept.', note: 'A notice of two sentences.' },
+  },
+};
+const said2 = (problems: { path: string; line: number; text: string }[]) => problems.map((p) => `${p.path}:${p.line}: ${p.text}`).join('\n');
+
+test('checks: an error written as one message (a headline and a line under it)', () => {
+  const said = said2(checkSources(CAT2, [{ path: 'web/app/Thing.ts', text: `t('x:Thing.save', { name }); t('x:Thing.plain'); t('x:Thing.failed', { name }); t('x:Thing.tip', { name, about }); t('x:Thing.notice', { name });` }]));
+  assert.match(said, /x:Thing\.failed: a headline and a line under it in one message/);
+  assert.doesNotMatch(said, /Thing\.(tip|notice|save|plain): a headline/);
+  assert.equal(loneLine("Couldn't start {{name}}\nIt's running in another tab."), true);
+  assert.equal(loneLine('{{name}}\n{{about}}\nDrag it.'), false);
+  assert.equal(loneLine('This machine needs about {{need}} GiB.\n{{advice}}'), false);
+  assert.equal(loneLine('\nThe file itself remains on your computer.'), false);
+});
+
+test('checks: parameters through a map, a constant, a conditional, undefined', () => {
+  const said = said2(checkSources(CAT2, [{ path: 'web/app/Thing.ts', text: `const WORDS = { a: 'x:Thing.save', b: 'x:Thing.plain' };
+const PAIRS: Record<string, [string, number]> = { a: ['x:Thing.save', 1] };
+export const f1 = (k: 'a' | 'b') => t(WORDS[k]);
+export function f2(k: string) { const [key, tone] = PAIRS[k] ?? ['', 0]; return key ? t(key, { nam: tone }) : ''; }
+export const f3 = (c: boolean) => t('x:Thing.save', c ? { name: 1 } : {});
+const p = { name: 1, more: 2 };
+export const f4 = () => t('x:Thing.save', p);
+export const f5 = (c: boolean) => t(c ? 'x:Thing.save' : 'x:Thing.plain', c ? { name: 1 } : undefined);
+export const f6 = () => new MsgError('x:Thing.save', undefined, { cause: 1 });
+export const f7 = (params: object) => t('x:Thing.save', params);
+export const f8 = (c: boolean) => t(WORDS.b, c ? { ...p } : { name: 2 });
+export const f9 = () => t('x:Thing.tip', { name: 1, about: 2 }) + t('x:Thing.failed', { name: 1 }) + t('x:Thing.notice', { name: 1 });` }]));
+  const has = (re: RegExp) => assert.match(said, re);
+  has(/Thing\.ts:3: x:Thing\.save: its words use \{\{name\}\}, not given \(the key through WORDS\[k\]\)/);
+  has(/Thing\.ts:4: x:Thing\.save: its words use \{\{name\}\}, not given \(the key through key\)/);
+  has(/Thing\.ts:4: x:Thing\.save: nam given/);
+  has(/Thing\.ts:5: x:Thing\.save: its words use \{\{name\}\}, not given/);
+  has(/Thing\.ts:7: x:Thing\.save: more given/);
+  has(/Thing\.ts:9: x:Thing\.save: its words use \{\{name\}\}, not given/);
+  has(/Thing\.ts:11: x:Thing\.plain: name, more given/);
+  assert.doesNotMatch(said, /Thing\.ts:(8|10|12):|Thing\.ts:3: x:Thing\.plain/);
+});
+
+test('checks: copy in lower case, with a semicolon or after a field', () => {
+  const said = said2(checkSources(CAT2, [{ path: 'web/app/thing.ts', text: `export const a = 'the machine stops while the file is written.';
+export const b = 'The sky is blue; roses are red.';
+export const c = 'Description=The emulator keeps the layout here';
+export const d = 'color: red; margin: 0';
+export const e = 'a compressed cluster does not unpack';
+export const f = 'KEY=value';
+export const g = 'one two three four.';
+export const h = 'Set it; then: x';` }]));
+  assert.match(said, /thing\.ts:1: "the machine stops while the file is written\." reads as words/);
+  assert.match(said, /thing\.ts:2: "The sky is blue; roses are red\." reads as words/);
+  assert.match(said, /thing\.ts:3: "Description=The emulator/);
+  assert.doesNotMatch(said, /thing\.ts:[4-8]:/);
+});
+
+test("checks: a doc's quote broken across two lines", () => {
+  const doc = 'A **Plain\n  words here** quote, and [Wrong\n  words](ui:x:Thing.plain), and [Plain words\nhere](ui:x:Thing.plain).';
+  const said = checkDoc(CAT2, 'docs/a.md', doc).problems.map((p) => `${p.line}: ${p.text}`).join('\n');
+  assert.match(said, /1: "Plain words here" quotes the page: write it as \[Plain words here\]\(ui:x:Thing\.plain\)/);
+  assert.match(said, /2: \[Wrong words\]\(ui:x:Thing\.plain\): the page says "Plain words here"/);
+  assert.doesNotMatch(said, /3:/);
+  assert.match(checkDoc(CAT2, 'docs/a.md', doc, true).fixed!, /\[Plain words here\]\(ui:x:Thing\.plain\), and/);
+});
+
+test("checks: a caught error's .message shown to the user", () => {
+  const said = said2(checkSources(CAT2, [{ path: 'web/app/thing.ts', text: `export async function f(p: Promise<void>, c: boolean) {
+  try { await p; } catch (e) { notify((e as Error).message); }
+  await p.catch((err) => setState('failed', \`it failed: \${String(err.message)}\`));
+  try { await p; } catch (e) { t('x:Thing.save', { name: (e as Error).message }); }
+  try { await p; } catch (e) { ui.message = c ? e.message : ''; }
+  try { await p; } catch (e) { notify(msgOf(e) ?? (e as Error).message); }
+  try { await p; } catch (e) { console.error(e.message); throw new Error(e.message); }
+  document.body.onclick = (e) => notify(e.message);
+  try { await p; } catch (e) { const keep = (e as Error).message; return keep; }
+  try { await p; } catch (e) { notify(e.message); } // i18n-ignore
+}` }, { path: 'web/app/Thing.svelte', text: `<script lang="ts">let error = $state(''); let other = ''; async function g(p: Promise<void>) { try { await p; } catch (e) { error = (e as Error).message; other = (e as Error).message; } }</script>
+<p>{error}{t('x:Thing.plain')}{t('x:Thing.save', { name: 1 })}{t('x:Thing.failed', { name: 1 })}{t('x:Thing.tip', { name: 1, about: 2 })}{t('x:Thing.notice', { name: 1 })}</p>` }]));
+  const has = (re: RegExp) => assert.match(said, re);
+  has(/thing\.ts:2: e\.message is shown \(notify\(…\)\)/);
+  has(/thing\.ts:3: err\.message is shown \(setState\(…\)\)/);
+  has(/thing\.ts:4: e\.message is a message's parameter \(t\(…, \{ name: … \}\)\)/);
+  has(/thing\.ts:5: e\.message is shown \(ui\.message = …\)/);
+  has(/Thing\.svelte:1: e\.message is shown \(error, in the markup\)/);
+  assert.doesNotMatch(said, /thing\.ts:([6-9]|10):|other/);
 });
