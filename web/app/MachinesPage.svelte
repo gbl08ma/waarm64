@@ -2,12 +2,14 @@
   The Machines page (docs/machines.md §7): it takes the machine's place on the page (which runs on behind it).
   The machines kept in this browser (new, from a disk image, import a definition), and one machine: open it here,
   duplicate, export its definition, delete; its Settings, Disks and Snapshots as tabs. A transient machine (a test's
-  `?machine=`) is listed as this page's, with its disk's and snapshots' actions. The browser's network connections
-  (docs/network-adapters.md §3.1) under Connections, and the browser's storage at the bottom.
+  `?machine=`) is listed as this page's, with its disk's and snapshots' actions. The browser's disks (DisksPane.svelte)
+  under Disks, its network connections (docs/network-adapters.md §3.1) under Connections, and the browser's storage at
+  the bottom.
   Logic is in web/app/machines.ts, disks.ts and main.ts (`page`); every action that loses data asks first.
 -->
 <script lang="ts">
   import Disks from './Disks.svelte';
+  import DisksPane from './DisksPane.svelte';
   import Icon from './Icon.svelte';
   import MoveButtons from './MoveButtons.svelte';
   import Menu from './Menu.svelte';
@@ -55,6 +57,8 @@
   const PAGE = 'page';
   const CONNECTIONS = 'connections';
   const FOLDERS = 'folders';
+  /** The browser's disks (DisksPane.svelte). */
+  const DISKS = 'disks';
   /** The page's preferences (this browser's, for every machine). */
   const PREFERENCES = 'preferences';
   let warnOnLeave = $state(leaveWarning());
@@ -71,7 +75,7 @@
     running = new Set((await Promise.all(machines.map(async (m) => ((await isRunning(m.id)) ? m.id : '')))).filter(Boolean));
     suspended = new Set((await Promise.all(machines.map(async (m) => ((await suspendedCopy(machineDir(m.id)).catch(() => undefined)) ? m.id : '')))).filter(Boolean));
     if (ui.machinesSelected === undefined) ui.machinesSelected = ui.current ?? (ui.transient ? PAGE : undefined);
-    if (ui.machinesSelected !== PAGE && ui.machinesSelected !== CONNECTIONS && ui.machinesSelected !== FOLDERS && ui.machinesSelected !== PREFERENCES && ui.machinesSelected && !machines.some((m) => m.id === ui.machinesSelected)) ui.machinesSelected = undefined;
+    if (ui.machinesSelected !== PAGE && ui.machinesSelected !== CONNECTIONS && ui.machinesSelected !== FOLDERS && ui.machinesSelected !== DISKS && ui.machinesSelected !== PREFERENCES && ui.machinesSelected && !machines.some((m) => m.id === ui.machinesSelected)) ui.machinesSelected = undefined;
     const m = machines.find((x) => x.id === ui.machinesSelected);
     // The draft follows the record, unless the user is editing its settings.
     if (!m || !draft || draft.id !== m.id || !dirty) draft = m ? structuredClone($state.snapshot(m)) as MachineRecord : undefined;
@@ -280,6 +284,7 @@
         <input type="file" accept=".json,application/json" hidden bind:this={defInput} onchange={importDef} data-field="import-definition">
       </div>
       <div class="new">
+        <button class:chosen={ui.machinesSelected === DISKS} onclick={() => choose(DISKS)} data-machine={DISKS} title={t('machines:MachinesPage.disks.title')}><Icon name="database" size={16} />{t('machines:MachinesPage.disks', { n: disks.size })}</button>
         <button class:chosen={ui.machinesSelected === FOLDERS} onclick={() => choose(FOLDERS)} data-machine={FOLDERS} title={t('machines:MachinesPage.folders.title')}><Icon name="folder" size={16} />{t('machines:MachinesPage.folders', { n: (void ui.folders.tick, folders.folders.length) })}</button>
         <button class:chosen={ui.machinesSelected === CONNECTIONS} onclick={() => choose(CONNECTIONS)} data-machine={CONNECTIONS} title={t('machines:MachinesPage.connections.title')}><Icon name="network" size={16} />{t('machines:MachinesPage.connections', { n: conns.length })}</button>
         <button class:chosen={ui.machinesSelected === PREFERENCES} onclick={() => choose(PREFERENCES)} data-machine={PREFERENCES} title={t('machines:MachinesPage.preferences.title')}><Icon name="adjustments-horizontal" size={16} />{t('machines:MachinesPage.preferences')}</button>
@@ -306,6 +311,14 @@
               note={t('machines:MachinesPage.statusFullscreen.note')}>{t('machines:MachinesPage.statusFullscreen')}</Check>
           </div>
         </div>
+      </section>
+    {:else if ui.machinesSelected === DISKS}
+      <section class="machine" data-selected={DISKS}>
+        <div class="head">
+          <span class="title"><h3>{t('machines:MachinesPage.disks.heading')}</h3>
+          <span class="meta">{t('machines:MachinesPage.disks.meta')}</span></span>
+        </div>
+        <div class="tab"><DisksPane {store} {machines} {disks} {overlays} {running} {act} {offFirst} /></div>
       </section>
     {:else if ui.machinesSelected === FOLDERS}
       <section class="machine" data-selected={FOLDERS}>
@@ -494,7 +507,7 @@
             </div>
             <Folders {folders} machine={rec} {act} />
           {:else if ui.machinesTab === 'disks'}
-            <Disks {store} machine={m} {disks} {overlays} running={isOn(m.id)} {act} {offFirst} />
+            <Disks {store} machine={m} {machines} {disks} {overlays} running={isOn(m.id)} {act} {offFirst} />
           {:else}
             <Snapshots {store} machine={m} running={isOn(m.id)} {act} />
           {/if}

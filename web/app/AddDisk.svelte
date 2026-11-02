@@ -75,22 +75,6 @@
     });
     if (ok) dialog.close();
   }
-  /** Deletes a disk no machine has, with its overlays. */
-  async function deleteKnown(k: Known) {
-    const bytes = k.overlays.reduce((n, o) => n + o.bytes, 0);
-    const what = k.disk.kind === 'stored' ? msg('disks:AddDisk.delete.stored', { size: bytesText(k.disk.size) }) : k.disk.kind === 'file' || k.disk.kind === 'url' ? msg('disks:AddDisk.delete.remote') : msg('disks:AddDisk.delete.disk');
-    const remains = k.disk.kind === 'file' ? msg('disks:AddDisk.delete.remains.file') : k.disk.kind === 'url' ? msg('disks:AddDisk.delete.remains.url') : undefined;
-    const text = bytes ? t('disks:AddDisk.delete.confirmSized', { name: k.disk.name, what, count: k.overlays.length, size: bytesText(bytes), remains }) : t('disks:AddDisk.delete.confirm', { name: k.disk.name, what, count: k.overlays.length, remains });
-    if (!(await ask.confirm(text, { title: t('disks:AddDisk.delete.title'), ok: t('disks:AddDisk.delete.ok'), danger: true }))) return;
-    try {
-      await store.deleteDisk(k.disk.id);
-    } catch (e) {
-      error = errorText(e);
-    }
-    await readKnown();
-    if (!known.length) source = undefined;
-  }
-
   function choose(kind: Source) {
     source = kind;
     error = '';
@@ -188,7 +172,6 @@
                 <span class="meta">{t('disks:AddDisk.known.meta', { kind: KIND_TEXT[k.disk.kind], size: bytesText(k.disk.size), overlays: bytes ? msg('disks:AddDisk.known.overlaysSized', { count: k.overlays.length, size: bytesText(bytes) }) : msg('disks:AddDisk.known.overlays', { count: k.overlays.length }), users: k.users.length ? msg('disks:AddDisk.known.on', { machines: k.users.map((u) => u.name) }) : msg('disks:AddDisk.known.onNone') })}</span>
               </div>
               <button type="button" class="primary" onclick={() => attachKnown(k)} data-action="attach-known">{t('disks:AddDisk.known.attach')}</button>
-              {#if !k.users.length}<button type="button" onclick={() => deleteKnown(k)} data-action="delete-known" title={t('disks:AddDisk.known.delete.title')}><Icon name="trash" size={16} />{t('disks:AddDisk.known.delete')}</button>{/if}
             </li>
           {/each}
         </ul>

@@ -39,7 +39,7 @@ What the Machines page shows and does is [frontend.md](frontend.md) "Machines in
    goes in and out (§6). A machine with its overlays and snapshots as one bundle isn't built.
 10. **URL disks** are checked when added (§4.2); what a host must give, chunked images and the block cache are
     [remote-disks.md](remote-disks.md) and devices.md "Over HTTP".
-11. **A stored disk can take an overlay in place** ([Merge into the disk](ui:disks:Disks.mergeButton)): the overlay's blocks are written into the
+11. **A stored disk can take an overlay in place** ([Merge into the disk](ui:disks:Overlays.mergeButton)): the overlay's blocks are written into the
     stored disk, and **every other overlay of that disk is deleted** (they were over the old bytes); the
     confirmation lists them.
 12. **A stored disk can be written in place**, as an option per attachment: no overlay, the guest's writes go into
@@ -346,7 +346,7 @@ their overlays.
   hash), `web/app/machines.ts`, `web/app/disks.ts`, `web/app/snapshots.ts` (the shape now, the restore's plan, a
   machine like a snapshot), `web/app/definitions.ts`, `web/app/urlcheck.ts`, `web/app/disk-worker.ts` (a stored
   disk's estimate and import); the Svelte components (`MachinesPage.svelte`, `Disks.svelte`, `AddDisk.svelte`,
-  `Snapshots.svelte`).
+  `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ExportMenu.svelte`, `Snapshots.svelte`).
 - `web/devices.ts`: the `zero` and `ram` sources, a stored disk under an overlay or written in place, the generation
   bump, the serial in `GET_ID`. `web/ramdisk.ts`, `web/stored.ts`, `web/overlay.ts` (overlays by path, `meta`, the
   generation, `overlayMeta`, `removeOverlay`, `overlayBytes`, the suspend writer).
