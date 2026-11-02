@@ -1,0 +1,922 @@
+{
+ "date": "2026-11-02T02:43:24.370Z",
+ "host": "dev VM (Lima, M4 Mac mini)",
+ "cpus": 8,
+ "memGiB": 17.525535583496094,
+ "chromium": "153.0.8010.52",
+ "mib": 64,
+ "rounds": 3,
+ "results": [
+  {
+   "arm": "local:1500",
+   "mib": 64,
+   "mtu": 1500,
+   "ping": "30 packets transmitted, 30 received, 0% packet loss, time 5957ms\nrtt min/avg/max/mdev = 1.895/4.019/10.370/1.347 ms\nroot@localhost:~# echo __END$((40+2))__",
+   "rttMs": {
+    "min": 1.895,
+    "avg": 4.019,
+    "max": 10.37
+   },
+   "connectMs": {
+    "min": 1.7149999999999999,
+    "median": 1.865,
+    "max": null
+   },
+   "transfers": [
+    {
+     "dir": "down",
+     "mbit": 465.4,
+     "bytes": 67108864,
+     "wall": 1.303,
+     "cpu": {
+      "main": 0.008,
+      "workers": [
+       0.683,
+       0.668,
+       0.507,
+       0.491
+      ],
+      "other": 0.706,
+      "network": 0.153,
+      "helper": 0.299
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "up",
+     "mbit": 815.1,
+     "bytes": 67108864,
+     "wall": 1.061,
+     "cpu": {
+      "main": 0.009,
+      "workers": [
+       0.528,
+       0.49,
+       0.368,
+       0.339
+      ],
+      "other": 0.302,
+      "network": 0.141,
+      "helper": 0.434
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 670.6,
+     "bytes": 67108864,
+     "wall": 1.033,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.668,
+       0.639,
+       0.6,
+       0.581
+      ],
+      "other": 0.387,
+      "network": 0.145,
+      "helper": 0.358
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "up",
+     "mbit": 915.4,
+     "bytes": 67108864,
+     "wall": 0.775,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.671,
+       0.619,
+       0.426,
+       0.413
+      ],
+      "other": 0.335,
+      "network": 0.181,
+      "helper": 0.555
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "down",
+     "mbit": 664.7,
+     "bytes": 67108864,
+     "wall": 1.051,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.637,
+       0.599,
+       0.58,
+       0.571,
+       0.019
+      ],
+      "other": 0.247,
+      "network": 0.152,
+      "helper": 0.39
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 866.6,
+     "bytes": 67108864,
+     "wall": 0.923,
+     "cpu": {
+      "main": 0.011,
+      "workers": [
+       0.683,
+       0.574,
+       0.368,
+       0.206,
+       0.011
+      ],
+      "other": 0.195,
+      "network": 0.184,
+      "helper": 0.488
+     },
+     "mainPerMbit": 0.00001
+    }
+   ]
+  },
+  {
+   "arm": "local:65520",
+   "mib": 64,
+   "mtu": 65520,
+   "ping": "30 packets transmitted, 30 received, 0% packet loss, time 5933ms\nrtt min/avg/max/mdev = 1.779/3.648/4.371/0.635 ms\nroot@localhost:~# echo __END$((40+2))__",
+   "rttMs": {
+    "min": 1.779,
+    "avg": 3.648,
+    "max": 4.371
+   },
+   "connectMs": {
+    "min": 1.665,
+    "median": 1.875,
+    "max": null
+   },
+   "transfers": [
+    {
+     "dir": "down",
+     "mbit": 1050.8,
+     "bytes": 67108864,
+     "wall": 0.789,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.494,
+       0.482,
+       0.456,
+       0.304,
+       0.013
+      ],
+      "other": 0.317,
+      "network": 0.127,
+      "helper": 0.253
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 4.5,
+     "bytes": 34071694,
+     "wall": 60.346,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.027,
+       0.026
+      ],
+      "other": 0.013,
+      "network": 0.001,
+      "helper": 0.002
+     },
+     "mainPerMbit": 0.0022
+    },
+    {
+     "dir": "down",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 2.372,
+     "cpu": {
+      "main": 0.008,
+      "workers": [
+       0.042,
+       0.025
+      ],
+      "other": 0.013,
+      "network": 0,
+      "helper": 0.004
+     },
+     "mainPerMbit": null
+    },
+    {
+     "dir": "up",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.4,
+     "cpu": {
+      "main": 0.015,
+      "workers": [
+       0.079,
+       0.032
+      ],
+      "other": 0.015,
+      "network": 0,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    },
+    {
+     "dir": "down",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.43,
+     "cpu": {
+      "main": 0.009,
+      "workers": [
+       0.047,
+       0.02
+      ],
+      "other": 0.017,
+      "network": 0,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    },
+    {
+     "dir": "up",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.403,
+     "cpu": {
+      "main": 0.015,
+      "workers": [
+       0.071,
+       0.029
+      ],
+      "other": 0.006,
+      "network": 0,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    }
+   ]
+  },
+  {
+   "arm": "local:65520",
+   "mib": 64,
+   "mtu": 65520,
+   "ping": "30 packets transmitted, 30 received, 0% packet loss, time 5938ms\nrtt min/avg/max/mdev = 1.067/3.635/4.880/0.764 ms\nroot@localhost:~# echo __END$((40+2))__",
+   "rttMs": {
+    "min": 1.067,
+    "avg": 3.635,
+    "max": 4.88
+   },
+   "connectMs": {
+    "min": 1.655,
+    "median": 1.885,
+    "max": null
+   },
+   "transfers": [
+    {
+     "dir": "down",
+     "mbit": 1006.5,
+     "bytes": 67108864,
+     "wall": 0.781,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.551,
+       0.461,
+       0.333,
+       0.294,
+       0.013
+      ],
+      "other": 0.346,
+      "network": 0.115,
+      "helper": 0.23
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 1375.7,
+     "bytes": 67108864,
+     "wall": 0.817,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.588,
+       0.367,
+       0.22,
+       0.208,
+       0.012,
+       0.012
+      ],
+      "other": 0.282,
+      "network": 0.11,
+      "helper": 0.33
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 1254.9,
+     "bytes": 67108864,
+     "wall": 0.529,
+     "cpu": {
+      "main": 0.019,
+      "workers": [
+       0.605,
+       0.586,
+       0.567,
+       0.378,
+       0.019
+      ],
+      "other": 0.454,
+      "network": 0.132,
+      "helper": 0.302
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "up",
+     "mbit": 1362.1,
+     "bytes": 67108864,
+     "wall": 0.816,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.539,
+       0.368,
+       0.257,
+       0.257,
+       0.012
+      ],
+      "other": 0.306,
+      "network": 0.11,
+      "helper": 0.294
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "down",
+     "mbit": 1176.8,
+     "bytes": 67108864,
+     "wall": 0.519,
+     "cpu": {
+      "main": 0.019,
+      "workers": [
+       0.655,
+       0.617,
+       0.539,
+       0.405,
+       0.019
+      ],
+      "other": 0.385,
+      "network": 0.154,
+      "helper": 0.347
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "up",
+     "mbit": 1383.4,
+     "bytes": 67108864,
+     "wall": 0.815,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.528,
+       0.368,
+       0.319,
+       0.233
+      ],
+      "other": 0.233,
+      "network": 0.11,
+      "helper": 0.27
+     },
+     "mainPerMbit": 0.00001
+    }
+   ]
+  },
+  {
+   "arm": "local:1500",
+   "mib": 64,
+   "mtu": 1500,
+   "ping": "30 packets transmitted, 30 received, 0% packet loss, time 5939ms\nrtt min/avg/max/mdev = 1.765/3.452/4.330/0.718 ms\nroot@localhost:~# echo __END$((40+2))__",
+   "rttMs": {
+    "min": 1.765,
+    "avg": 3.452,
+    "max": 4.33
+   },
+   "connectMs": {
+    "min": 1.66,
+    "median": 1.8,
+    "max": null
+   },
+   "transfers": [
+    {
+     "dir": "down",
+     "mbit": 537,
+     "bytes": 67108864,
+     "wall": 1.313,
+     "cpu": {
+      "main": 0.008,
+      "workers": [
+       0.64,
+       0.602,
+       0.495,
+       0.48,
+       0.015
+      ],
+      "other": 0.724,
+      "network": 0.129,
+      "helper": 0.289
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "up",
+     "mbit": 832.4,
+     "bytes": 67108864,
+     "wall": 1.043,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.614,
+       0.508,
+       0.364,
+       0.249
+      ],
+      "other": 0.336,
+      "network": 0.144,
+      "helper": 0.441
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 705.1,
+     "bytes": 67108864,
+     "wall": 1.031,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.679,
+       0.65,
+       0.592,
+       0.543
+      ],
+      "other": 0.436,
+      "network": 0.155,
+      "helper": 0.369
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "up",
+     "mbit": 872.2,
+     "bytes": 67108864,
+     "wall": 1.046,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.535,
+       0.497,
+       0.335,
+       0.325
+      ],
+      "other": 0.229,
+      "network": 0.143,
+      "helper": 0.411
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "down",
+     "mbit": 755.7,
+     "bytes": 67108864,
+     "wall": 0.776,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.773,
+       0.773,
+       0.709,
+       0.696
+      ],
+      "other": 0.245,
+      "network": 0.193,
+      "helper": 0.515
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 917.8,
+     "bytes": 67108864,
+     "wall": 0.782,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.652,
+       0.614,
+       0.435,
+       0.371,
+       0.013
+      ],
+      "other": 0.23,
+      "network": 0.192,
+      "helper": 0.55
+     },
+     "mainPerMbit": 0.00001
+    }
+   ]
+  },
+  {
+   "arm": "local:1500",
+   "mib": 64,
+   "mtu": 1500,
+   "ping": "30 packets transmitted, 30 received, 0% packet loss, time 5928ms\nrtt min/avg/max/mdev = 1.472/3.767/9.798/1.313 ms\nroot@localhost:~# echo __END$((40+2))__",
+   "rttMs": {
+    "min": 1.472,
+    "avg": 3.767,
+    "max": 9.798
+   },
+   "connectMs": {
+    "min": 1.696,
+    "median": 1.906,
+    "max": null
+   },
+   "transfers": [
+    {
+     "dir": "down",
+     "mbit": 545.6,
+     "bytes": 67108864,
+     "wall": 1.293,
+     "cpu": {
+      "main": 0.008,
+      "workers": [
+       0.619,
+       0.619,
+       0.51,
+       0.48,
+       0.015
+      ],
+      "other": 0.719,
+      "network": 0.124,
+      "helper": 0.294
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "up",
+     "mbit": 817.8,
+     "bytes": 67108864,
+     "wall": 1.048,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.582,
+       0.496,
+       0.353,
+       0.305
+      ],
+      "other": 0.324,
+      "network": 0.143,
+      "helper": 0.439
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 702.2,
+     "bytes": 67108864,
+     "wall": 1.038,
+     "cpu": {
+      "main": 0,
+      "workers": [
+       0.645,
+       0.626,
+       0.578,
+       0.53
+      ],
+      "other": 0.347,
+      "network": 0.145,
+      "helper": 0.356
+     },
+     "mainPerMbit": 0
+    },
+    {
+     "dir": "up",
+     "mbit": 866.4,
+     "bytes": 67108864,
+     "wall": 1.045,
+     "cpu": {
+      "main": 0.019,
+      "workers": [
+       0.536,
+       0.488,
+       0.354,
+       0.306
+      ],
+      "other": 0.23,
+      "network": 0.144,
+      "helper": 0.44
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "down",
+     "mbit": 699.9,
+     "bytes": 67108864,
+     "wall": 1.041,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.624,
+       0.624,
+       0.586,
+       0.538
+      ],
+      "other": 0.298,
+      "network": 0.154,
+      "helper": 0.365
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "up",
+     "mbit": 3.8,
+     "bytes": 28836762,
+     "wall": 60.122,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.029,
+       0.02
+      ],
+      "other": 0.009,
+      "network": 0.001,
+      "helper": 0.003
+     },
+     "mainPerMbit": 0.0026
+    }
+   ]
+  },
+  {
+   "arm": "local:65520",
+   "mib": 64,
+   "mtu": 65520,
+   "ping": "30 packets transmitted, 30 received, 0% packet loss, time 5916ms\nrtt min/avg/max/mdev = 1.440/3.597/5.832/0.841 ms\nroot@localhost:~# echo __END$((40+2))__",
+   "rttMs": {
+    "min": 1.44,
+    "avg": 3.597,
+    "max": 5.832
+   },
+   "connectMs": {
+    "min": 1.645,
+    "median": 1.825,
+    "max": null
+   },
+   "transfers": [
+    {
+     "dir": "down",
+     "mbit": 1083.3,
+     "bytes": 67108864,
+     "wall": 0.803,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.498,
+       0.436,
+       0.349,
+       0.286,
+       0.012
+      ],
+      "other": 0.274,
+      "network": 0.112,
+      "helper": 0.212
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "up",
+     "mbit": 1340.6,
+     "bytes": 67108864,
+     "wall": 0.82,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.524,
+       0.378,
+       0.366,
+       0.22,
+       0.012
+      ],
+      "other": 0.293,
+      "network": 0.085,
+      "helper": 0.244
+     },
+     "mainPerMbit": 0.00001
+    },
+    {
+     "dir": "down",
+     "mbit": 1194.8,
+     "bytes": 67108864,
+     "wall": 0.52,
+     "cpu": {
+      "main": 0.019,
+      "workers": [
+       0.654,
+       0.654,
+       0.654,
+       0.442
+      ],
+      "other": 0.538,
+      "network": 0.192,
+      "helper": 0.346
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "up",
+     "mbit": 6.4,
+     "bytes": 48164722,
+     "wall": 60.194,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.027,
+       0.025
+      ],
+      "other": 0.013,
+      "network": 0.001,
+      "helper": 0.002
+     },
+     "mainPerMbit": 0.00156
+    },
+    {
+     "dir": "down",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.162,
+     "cpu": {
+      "main": 0.009,
+      "workers": [
+       0.038,
+       0.028
+      ],
+      "other": 0.009,
+      "network": 0,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    },
+    {
+     "dir": "up",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.433,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.073,
+       0.026
+      ],
+      "other": 0.009,
+      "network": 0,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    }
+   ]
+  },
+  {
+   "arm": "local:9000",
+   "mib": 64,
+   "mtu": 9000,
+   "ping": "30 packets transmitted, 30 received, 0% packet loss, time 5935ms\nrtt min/avg/max/mdev = 1.018/3.430/5.678/0.856 ms\nroot@localhost:~# echo __END$((40+2))__",
+   "rttMs": {
+    "min": 1.018,
+    "avg": 3.43,
+    "max": 5.678
+   },
+   "connectMs": {
+    "min": 1.655,
+    "median": 1.7650000000000001,
+    "max": null
+   },
+   "transfers": [
+    {
+     "dir": "down",
+     "mbit": 744.7,
+     "bytes": 67108864,
+     "wall": 0.789,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.76,
+       0.71,
+       0.608,
+       0.444,
+       0.013
+      ],
+      "other": 0.735,
+      "network": 0.19,
+      "helper": 0.355
+     },
+     "mainPerMbit": 0.00002
+    },
+    {
+     "dir": "up",
+     "mbit": 8.9,
+     "bytes": 67108864,
+     "wall": 60.231,
+     "cpu": {
+      "main": 0.01,
+      "workers": [
+       0.03,
+       0.027
+      ],
+      "other": 0.013,
+      "network": 0.002,
+      "helper": 0.005
+     },
+     "mainPerMbit": 0.00112
+    },
+    {
+     "dir": "down",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.057,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.039,
+       0.029
+      ],
+      "other": 0.02,
+      "network": 0,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    },
+    {
+     "dir": "up",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.451,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.075,
+       0.032
+      ],
+      "other": 0.012,
+      "network": 0,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    },
+    {
+     "dir": "down",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.17,
+     "cpu": {
+      "main": 0.013,
+      "workers": [
+       0.035,
+       0.028
+      ],
+      "other": 0.009,
+      "network": 0,
+      "helper": 0
+     },
+     "mainPerMbit": null
+    },
+    {
+     "dir": "up",
+     "mbit": 0,
+     "bytes": 0,
+     "wall": 3.45,
+     "cpu": {
+      "main": 0.012,
+      "workers": [
+       0.078,
+       0.035
+      ],
+      "other": 0.017,
+      "network": 0,
+      "helper": 0.003
+     },
+     "mainPerMbit": null
+    }
+   ]
+  }
+ ]
+}
