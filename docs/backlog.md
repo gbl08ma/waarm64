@@ -1361,12 +1361,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - LTP: only the syscalls subset; the loop-device tests (`getdents01`, `rename01`) and other areas
   need `mkfs` tools, a scratch disk and more RAM. kselftests: not `fp` (minutes of stress) nor the
   generic suites.
-- **A pause pending as the VM closes can stay pending** (parallel, backends on the VM's thread): a `close` that lands
-  after `pause()` passed its parked check and rang the doorbell for its quiesce (`ringAsync`) ends `Devices.serve`
-  before it answers, and `ringAsync` polls the served word for good (unref'd waits: in Node it doesn't hold the process,
-  but the promise never resolves false as `pause()` promises). Found reading the code for `tests/pause.test.ts`'s hangs
-  ([testing.md](testing.md) "A test file that never ends"), not seen in a run; a stop condition for `ringAsync` (the
-  host's close) would end it.
 - **`clockOffset`'s test** (`tests/threads.test.ts`) failed once under `scripts/ci.sh`'s load (2026-10-18: off by
   0.23 ms against its 0.2 ms bound; its delays are spin loops), passed alone 5 times: a margin to widen if it recurs.
 - `coremark_vm_jit`: pass a fixed iteration count through init's arguments so a run can't fall

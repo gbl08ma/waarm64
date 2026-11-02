@@ -267,6 +267,37 @@ test('parallel: close() while paused, and while a pause is pending, ends the wor
   assert.equal(refs.filter((r) => r.deref() === undefined).length, 2, 'a paused VM stays reachable (a worker left alive)');
 });
 
+// No image: one vCPU spinning on `b .`. The close lands in the one window the test above can't aim at: after pause()
+// found the vCPUs parked and rang the doorbell for its quiesce, before `Devices.serve` (on this thread) answered it.
+// The serve loop ends on the close without answering; the quiesce has to stop on the close too, and pause() resolve false.
+test('parallel: a close between the pause\'s doorbell and its answer resolves the pause false (1 vCPU, no image)', { timeout: 30_000 }, async () => {
+  const vm = await bootVm(WASM, { ramSize: 16 << 20, kernel: new Uint8Array([0, 0, 0, 0x14]), kernelOffset: 0, cmdline: '', ncpus: 1, parallel: true, jit: 0 });
+  const notify = Atomics.notify;
+  let rung = false;
+  let closing: Promise<unknown> | undefined;
+  // The quiesce's ring is the first notify of word 0 of a 2-word array on this thread (the doorbell; the vCPU's rings are
+  // in its worker), and the close's own notify of it the next.
+  Atomics.notify = ((a: Int32Array, i: number, n?: number) => {
+    const woken = notify(a, i, n);
+    if (!rung && a.length === 2 && i === 0) {
+      rung = true;
+      closing = vm.close();
+    }
+    return woken;
+  }) as typeof Atomics.notify;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const paused = await Promise.race([vm.pause(), new Promise<'pending'>((r) => { timer = setTimeout(() => r('pending'), 5_000); })]);
+    assert.ok(rung, 'the pause rang no doorbell');
+    assert.equal(paused, false, 'a pause the close cut short resolves false');
+    await closing;
+  } finally {
+    clearTimeout(timer);
+    Atomics.notify = notify;
+    await vm.close();
+  }
+});
+
 for (const [name, n] of [['buildroot', 1], ['buildroot-4cpu', 4]] as const) {
   test(`round-robin: pausing between runs leaves ${name}'s step count exact (JIT, ${n} vCPU${n > 1 ? 's' : ''})`, { skip, timeout: TIMEOUT }, async () => {
     let pauses = 0;
