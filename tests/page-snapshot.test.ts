@@ -246,7 +246,8 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   const needsDisk2 = await headerOnly('disk2.webpcsnap', { machine: 'buildroot', label: MACHINES.buildroot.label, ncpus: 2, disk: null, devices: ['rng', 'keyboard', 'tablet', 'snd', 'blk', 'blk'], disks: [] });
   await p2.setInputFiles('#load-snapshot-input', needsDisk2);
   await p2.waitForFunction(() => document.body.dataset.state === 'failed', null, { timeout: 30_000, polling: 50 });
-  assert.match((await message(p2))!, words('snapshots:worker.otherDevices', { name: 'disk2.webpcsnap', kinds: ['rng', 'keyboard', 'tablet', 'snd', 'blk', 'blk'], here: ['rng', 'keyboard', 'tablet', 'snd', 'clock', 'blk'], machine: t('machines:machine.buildroot') }, { start: true }));
+  assert.match((await message(p2))!, words('snapshots:worker.otherDevices', { name: 'disk2.webpcsnap' }, { whole: true }));
+  assert.match(await details(p2), words('snapshots:worker.otherDevices.cause', { kinds: ['rng', 'keyboard', 'tablet', 'snd', 'blk', 'blk'], here: ['rng', 'keyboard', 'tablet', 'snd', 'clock', 'blk'], machine: t('machines:machine.buildroot') }, { start: true }));
   assert.deepEqual((await p2.locator('#message-actions button').allTextContents()), [t('snapshots:main.startNormally'), t('snapshots:main.loadAgain')]);
   assert.deepEqual(await opfs(p2), untouched, 'the disk is untouched');
 
@@ -255,8 +256,9 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   writeFileSync(cut, bytes.subarray(0, Math.floor(bytes.length * 0.6)));
   await p2.setInputFiles('#load-snapshot-input', cut);
   await p2.waitForFunction((said) => document.body.dataset.state === 'failed' && (document.getElementById('message-details')?.textContent ?? '').includes(said), t('snapshots:snapshot-file.truncated'), { timeout: 30_000, polling: 50 });
-  assert.match((await message(p2))!, words('snapshots:worker.notLoaded', { machine: t('machines:machine.buildroot') }, { start: true }));
-  assert.match(await details(p2), words('snapshots:snapshot-file.truncated', {}, { start: true })); // the refusal: the headline's detail
+  assert.match((await message(p2))!, words('snapshots:worker.notLoaded', {}, { whole: true }));
+  assert.match(await details(p2), words('snapshots:worker.notLoaded.cause', { machine: t('machines:machine.buildroot') }, { start: true }));
+  assert.match(await details(p2), words('snapshots:snapshot-file.truncated')); // the refusal: the last detail
   assert.deepEqual(await opfs(p2), untouched, 'the disk is untouched');
   await p2.locator('#message-actions button', { hasText: t('snapshots:main.startNormally') }).click();
   await p2.waitForFunction(() => document.body.dataset.state !== 'failed', null, { timeout: 10_000, polling: 20 });

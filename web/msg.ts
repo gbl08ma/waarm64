@@ -41,6 +41,16 @@ export class MsgError extends Error {
   }
 }
 
+/**
+ * Messages that are each a cause of the one before, as an error's chain of causes (`{ cause: causes(list) }`): the
+ * page shows them a line each, under the headline (a check's several problems). `undefined` for none.
+ */
+export function causes(list: readonly Msg[]): MsgError | undefined {
+  let out: MsgError | undefined;
+  for (const m of [...list].reverse()) out = new MsgError(m.key, m.params, out ? { cause: out } : undefined);
+  return out;
+}
+
 /** The message an error carries, if it carries one. */
 export const msgOf = (e: unknown): Msg | undefined => (e instanceof MsgError ? e.msg : isMsg((e as { msg?: unknown } | null)?.msg) ? (e as { msg: Msg }).msg : undefined);
 

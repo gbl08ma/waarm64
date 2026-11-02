@@ -205,7 +205,7 @@ export class Store {
   /** Deletes a base disk and its overlays (records, then files). Refused while a machine attaches it. */
   async deleteDisk(id: string) {
     const users = await this.machinesWith(id);
-    if (users.length) throw new MsgError('machines:store.diskAttached', { machines: users.map((m) => m.name) });
+    if (users.length) throw new MsgError('machines:store.diskAttached', undefined, { cause: new MsgError('machines:store.diskAttached.cause', { machines: users.map((m) => m.name) }) });
     for (const o of await this.overlaysOf(id)) await this.deleteOverlay(o.id);
     await this.records.delete('disks', id);
     this.said({ kind: 'disks', id, deleted: true });

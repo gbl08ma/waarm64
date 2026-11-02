@@ -118,7 +118,7 @@ export async function machineLike(store: Store, snap: { id: string; machine: str
     let d = disks.find((x) => canonical(x.identity) === want);
     if (!d) {
       const i = sd.identity;
-      if (i.kind === 'stored') throw new MsgError('snapshots:snapshots.storedDiskGone');
+      if (i.kind === 'stored') throw new MsgError('snapshots:snapshots.storedDiskGone', undefined, { cause: new MsgError('snapshots:snapshots.storedDiskGone.cause') });
       d = i.kind === 'url'
         ? { id: newId(), kind: 'url', name: i.path.split('/').pop() || t('snapshots:snapshots.urlDisk'), size: sd.size, url: snap.urls?.[sd.slot] ?? i.path, identity: i, created: now }
         : i.kind === 'file'
@@ -174,7 +174,7 @@ export async function moveSnapshot(store: Store, id: string, to: string) {
 /** Imports a snapshot file into machine `machine`'s kept snapshots (its header read first; one of another shape is kept, orphaned). */
 export async function importSnapshot(store: Store, machine: string, file: File) {
   const { header } = await openSnapshot(file);
-  if (typeof header.shapeHash !== 'string' || !header.shape) throw new MsgError('snapshots:snapshots.notKept', { file: file.name });
+  if (typeof header.shapeHash !== 'string' || !header.shape) throw new MsgError('snapshots:snapshots.notKept', { file: file.name }, { cause: new MsgError('snapshots:snapshots.notKept.cause') });
   const id = newId();
   return store.writing(async () => {
     const dir = await opfsDir(`machines/${machine}/snapshots`, true);

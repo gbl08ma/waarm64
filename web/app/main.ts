@@ -815,7 +815,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     let about: Awaited<ReturnType<typeof aboutMachine>>;
     if (!(await holdLock())) {
       if (run !== r) return;
-      setState('failed', msg('machine:main.runsElsewhere', { name: stored!.record.name }), [retry]);
+      setState('failed', new MsgError('machine:main.runsElsewhere', { name: stored!.record.name }, { cause: new MsgError('machine:main.runsElsewhere.cause') }), [retry]);
       return;
     }
     if (run !== r) return dropLock();
@@ -1034,7 +1034,7 @@ async function resetDiskAsked() {
         stored.record = (await store.get('machines', stored.record.id)) ?? stored.record;
       } else if (!stored) await removeOverlay(name); // once the machine's device worker has closed it
     } catch (e) {
-      setState('failed', new MsgError('disks:main.reset.failed', {}, { cause: e }), [resetDisk, retry]);
+      setState('failed', new MsgError('disks:main.reset.failed', undefined, { cause: new MsgError('disks:main.inUse', undefined, { cause: e }) }), [resetDisk, retry]);
       return;
     }
     start();
@@ -1168,7 +1168,7 @@ async function loadChanges(file: File, target?: { machine: MachineRecord; attach
       await load();
       notify(msg('disks:main.changes.loaded', { name: file.name, disk: disk!.name }));
     } catch (e) {
-      notify(new MsgError('disks:main.changes.failed', {}, { cause: e }), 'error');
+      notify(new MsgError('disks:main.changes.failed', undefined, { cause: new MsgError('disks:main.changes.failed.unchanged', undefined, { cause: e }) }), 'error');
     }
     return;
   }
@@ -1181,7 +1181,7 @@ async function loadChanges(file: File, target?: { machine: MachineRecord; attach
     try {
       await load();
     } catch (e) {
-      setState('failed', inUse(e) ? new MsgError('disks:main.changes.failed.inUse', {}, { cause: e }) : new MsgError('disks:main.changes.failed', {}, { cause: e }), [retry]);
+      setState('failed', new MsgError('disks:main.changes.failed', undefined, { cause: inUse(e) ? new MsgError('disks:main.inUse', undefined, { cause: e }) : new MsgError('disks:main.changes.failed.unchanged', undefined, { cause: e }) }), [retry]);
       return;
     }
     if (wasOn || !target) start();
@@ -1277,7 +1277,7 @@ async function saveDisk(mode: ExportMode, compress: boolean, target?: { disk: Di
     try {
       setState('off', await write(), [], 'warn');
     } catch (e) {
-      setState('failed', inUse(e) ? new MsgError('disks:main.save.failed.inUse', {}, { cause: e }) : new MsgError('disks:main.save.failed', {}, { cause: e }), [retry]);
+      setState('failed', new MsgError('disks:main.save.failed', undefined, { cause: inUse(e) ? new MsgError('disks:main.inUse', undefined, { cause: e }) : e }), [retry]);
       return;
     }
     if (running) start();
@@ -1477,7 +1477,7 @@ async function restoreSnapshot(file: File, header: SnapshotHeader, key: string, 
   } catch (e) {
     return void ask.alert(errorText(new MsgError('snapshots:main.restore.failed', { name }, { cause: e })));
   }
-  if (plan.refused) return void ask.alert(t('snapshots:main.restore.refused', { name, why: plan.refused }));
+  if (plan.refused) return void ask.alert(errorText(new MsgError('snapshots:main.restore.refused', { name }, { cause: plan.refused })));
   const when = new Date(header.created);
   const taken = !Number.isNaN(when.getTime());
   const running = state === 'running' || state === 'booting';
@@ -2299,7 +2299,7 @@ Object.assign(page, {
 function boot() {
   // SharedArrayBuffer (the guest's memory, shared by the vCPU workers) needs cross-origin isolation.
   if (!crossOriginIsolated) {
-    setState('failed', msg('machine:main.notIsolated'));
+    setState('failed', new MsgError('machine:main.notIsolated', undefined, { cause: new MsgError('machine:main.notIsolated.cause', undefined, { cause: new MsgError('machine:main.notIsolated.fix') }) }));
     ui.cantRun = true;
     return;
   }

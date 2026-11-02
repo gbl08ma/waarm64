@@ -389,19 +389,27 @@
   },
   "net-live.off": {
     "message": "The machine is off. Start it first.",
-    "note": "An error (Network menu, Network wizard) when a connection is connected while the machine isn't running."
+    "note": "Error details, under network:net-live.notConnected (Network menu, Network wizard): a connection is connected while the machine isn't running."
+  },
+  "net-live.notConnected": {
+    "message": "Couldn't connect {{name}}",
+    "note": "Error headline (Network menu, Network wizard, the Machines page's Network tab) when a connection couldn't be connected on an adapter; why is the line under it (network:net-live.off, network:net-live.onOtherAdapter, network:net-live.loggingOut, network:network.notStarted, or the client's error). {{name}} is the connection's name."
   },
   "net-live.loggingOut": {
     "message": "{{name}} is being logged out.",
-    "note": "An error (Network menu, Network wizard) when the user connects a tailnet connection whose node is being logged out. {{name}} is the connection's name."
+    "note": "Error details, under network:net-live.notConnected (Network menu, Network wizard): the user connects a tailnet connection whose node is being logged out. {{name}} is the connection's name."
   },
   "net-live.onOtherAdapter": {
     "message": "{{name}} is already on adapter {{adapter}}. A connection can be on only one adapter at a time.",
-    "note": "An error (Network menu, Network wizard) when the user connects a connection that another adapter of the same machine runs. {{name}} is the connection's name; {{adapter}} the other adapter's number (1, 2, …)."
+    "note": "Error details, under network:net-live.notConnected (Network menu, Network wizard): the user connects a connection that another adapter of the same machine runs. {{name}} is the connection's name; {{adapter}} the other adapter's number (1, 2, …)."
   },
   "net-live.notLoggedOut": {
-    "message": "Couldn't reach {{host}} to log {{name}} out. It stays logged in.",
-    "note": "An error (Machines page's Connections, Network menu) when logging a kept tailnet node out failed because its control server didn't answer. {{host}} is the control server's host name; {{name}} the connection's name."
+    "message": "Couldn't log {{name}} out",
+    "note": "Error headline (Machines page's Connections, Network menu) when logging a kept tailnet node out failed because its control server didn't answer; network:net-live.notLoggedOut.cause is the line under it. {{name}} is the connection's name."
+  },
+  "net-live.notLoggedOut.cause": {
+    "message": "Couldn't reach {{host}}. It stays logged in.",
+    "note": "Error details, under network:net-live.notLoggedOut: the control server didn't answer, so the node is still on the tailnet. {{host}} is the control server's host name."
   },
   "net-live.taken": {
     "message": "{{name}} was taken by another machine.",
@@ -541,7 +549,7 @@
   },
   "network.notStarted": {
     "message": "The machine hasn't started yet. Start it first.",
-    "note": "An error (Network menu, Network wizard) when a connection is connected before the machine has a network card (it hasn't started). It may be shown as a detail."
+    "note": "Error details, under network:net-live.notConnected (Network menu, Network wizard): a connection is connected before the machine has a network card (it hasn't started)."
   },
   "network.noClient": {
     "message": "The adapter isn't connected.",

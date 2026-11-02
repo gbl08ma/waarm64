@@ -304,8 +304,8 @@
     "note": "Add a disk wizard: the error under the fields when the file or URL chosen is a disk the browser knows that the machine has already. {{name}} is that disk's name."
   },
   "AddDisk.urlProblems": {
-    "message": "Couldn't add the disk from this URL\n{{problems, lines}}",
-    "note": "Add a disk wizard › From a URL: the error under the fields when Add finds the server can't serve the URL as a disk: a headline, then {{problems}}, what fails (the URL check's problems), one per line."
+    "message": "Couldn't add the disk from this URL",
+    "note": "Add a disk wizard › From a URL: the headline of the error under the fields when Add finds the server can't serve the URL as a disk; the URL check's problems (machines:urlcheck.*), what fails, are the causes under it, one per line."
   },
   "AddDisk.pickFirst": {
     "message": "Select a file first.",
@@ -632,8 +632,12 @@
     "note": "The machine's state in the status bar while Reset disk… deletes the disk's changes."
   },
   "main.reset.failed": {
-    "message": "Couldn't reset the disk\nClose other tabs of this web app, as one of them may have the disk open, then try again.",
-    "note": "Error headline in the message bar (under the toolbar) when Reset disk… failed (Reset disk… and Retry follow), with a second line of advice; why is the detail under them."
+    "message": "Couldn't reset the disk",
+    "note": "Error headline in the message bar (under the toolbar) when Reset disk… failed (Reset disk… and Retry follow); under it disks:main.inUse, the advice, then why."
+  },
+  "main.inUse": {
+    "message": "Close other tabs of this web app, as one of them may have the disk open, then try again.",
+    "note": "Error details: the cause under the headline disks:main.reset.failed, on the line under it in the same place; what happened."
   },
   "main.openFailed": {
     "message": "Couldn't open the file",
@@ -696,12 +700,12 @@
     "note": "Notice in the message bar (under the toolbar) once changes were imported into a disk; {{name}} is the file's name, {{disk}} the disk's."
   },
   "main.changes.failed": {
-    "message": "Couldn't import the changes\nThe disk is unchanged.",
-    "note": "Error headline in the message bar (under the toolbar) when an import of changes failed, with a second line saying the disk is as it was; why is the detail under them."
+    "message": "Couldn't import the changes",
+    "note": "Error headline in the message bar (under the toolbar) when an import of changes failed; under it, disks:main.changes.failed.unchanged (or disks:main.inUse when another tab has the disk open, and Retry follows), then why."
   },
-  "main.changes.failed.inUse": {
-    "message": "Couldn't import the changes\nClose other tabs of this web app, as one of them may have the disk open, then try again.",
-    "note": "Error headline in the message bar (under the toolbar) when an import of changes failed because another tab has the disk open (Retry follows), with a second line of advice; the lower-level error is the detail under them."
+  "main.changes.failed.unchanged": {
+    "message": "The disk is unchanged.",
+    "note": "Error details: the line under the headline disks:main.changes.failed, before why the import failed; the disk is as it was."
   },
   "main.changes.loading": {
     "message": "Importing the changes",
@@ -741,11 +745,7 @@
   },
   "main.save.failed": {
     "message": "Couldn't save the disk",
-    "note": "Error headline in the message bar (under the toolbar) when a disk's export failed; why is the detail under it."
-  },
-  "main.save.failed.inUse": {
-    "message": "Couldn't save the disk\nClose other tabs of this web app, as one of them may have the disk open, then try again.",
-    "note": "Error headline in the message bar (under the toolbar) when a disk's export failed because another tab has the disk open (Retry follows), with a second line of advice; the lower-level error is the detail under them."
+    "note": "Error headline in the message bar (under the toolbar) when a disk's export failed; why is the detail under it; disks:main.inUse comes first when another tab has the disk open (Retry follows)."
   },
   "main.save.confirm": {
     "message": "Power off the machine to save its disk? This will forcibly power off the machine, so unsaved work in the guest will be lost. For a clean disk, shut the guest down first. The machine will be started again afterwards.",

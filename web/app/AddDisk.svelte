@@ -10,6 +10,7 @@
   import Modal from './Modal.svelte';
   import { ask } from './ask.svelte.ts';
   import { errorText, MsgError, t, text } from '../i18n.ts';
+  import { causes } from '../msg.ts';
   import type { OverlayRecord, Store } from './store.ts';
   import type { DiskRecord, MachineRecord } from './shape.ts';
   import { askPersist, attach, bytesText, createDisk, knownDisk, type NewDisk } from './machines.ts';
@@ -119,7 +120,7 @@
         };
         if (source === 'url') {
           urlCheck = await checkUrl(url);
-          if (!urlCheck.ok) throw new MsgError('disks:AddDisk.urlProblems', { problems: urlCheck.problems });
+          if (!urlCheck.ok) throw new MsgError('disks:AddDisk.urlProblems', undefined, { cause: causes(urlCheck.problems) });
           d = await reuse({ kind: 'url', url, name: urlCheck.name, size: virtualSize(urlCheck.head, urlCheck.bytes!), bytes: urlCheck.bytes!, etag: urlCheck.etag, lastModified: urlCheck.lastModified });
         } else if (source === 'file' || source === 'stored') {
           if (!picked) throw new MsgError('disks:AddDisk.pickFirst');

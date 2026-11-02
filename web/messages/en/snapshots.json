@@ -144,8 +144,12 @@
     "note": "Why a snapshot can't be restored, shown under “Couldn't restore …” in a notice when it's restored (its Restore button, Load snapshot…, or a file): {{disk}} is the name of a disk of the machine written in place (without an overlay) that has changed since."
   },
   "snapshots.storedDiskGone": {
-    "message": "Couldn't create the machine\nOne of the snapshot's disks was stored in this browser and has since been deleted.",
-    "note": "Error of Create a machine like it (Machines page, Snapshots tab), shown under the page's header: a headline, then why; a disk the snapshot was taken with was stored in this browser and has been deleted."
+    "message": "Couldn't create the machine",
+    "note": "Error of Create a machine like it (Machines page, Snapshots tab), shown under the page's header: the headline; why is the cause under it (snapshots:snapshots.storedDiskGone.cause); a disk the snapshot was taken with was stored in this browser and has been deleted."
+  },
+  "snapshots.storedDiskGone.cause": {
+    "message": "One of the snapshot's disks was stored in this browser and has since been deleted.",
+    "note": "Error details: the cause under the headline snapshots:snapshots.storedDiskGone, on the line under it in the same place; what happened, and what the user can do if anything."
   },
   "snapshots.urlDisk": {
     "message": "disk",
@@ -164,8 +168,12 @@
     "note": "Name of the machine Create a machine like it creates (Machines page, Snapshots tab); {{name}} is the snapshot's name. A number is added if a machine has that name already."
   },
   "snapshots.notKept": {
-    "message": "Couldn't import {{file}}\nIt's a snapshot of a machine that isn't stored in this browser, such as a test machine or one from an older version of this web app. It can only be loaded on that machine.",
-    "note": "Error of Import a file… (Machines page, Snapshots tab), shown under the page's header: a headline, then why; the file has no description of its machine to keep it by; {{file}} is the file's name."
+    "message": "Couldn't import {{file}}",
+    "note": "Error of Import a file… (Machines page, Snapshots tab), shown under the page's header: the headline; why is the cause under it (snapshots:snapshots.notKept.cause); the file has no description of its machine to keep it by; {{file}} is the file's name."
+  },
+  "snapshots.notKept.cause": {
+    "message": "It's a snapshot of a machine that isn't stored in this browser, such as a test machine or one from an older version of this web app. It can only be loaded on that machine.",
+    "note": "Error details: the cause under the headline snapshots:snapshots.notKept, on the line under it in the same place; what happened, and what the user can do if anything."
   },
   "snapshot-file.corrupt": {
     "message": "This snapshot is damaged ({{what}}). Download or copy it again, and if that doesn't help, save a new one.",
@@ -476,8 +484,8 @@
     "note": "Error headline (a notice, or the message bar (under the toolbar)) when a snapshot's restore failed while its disks were prepared; {{name}} is the snapshot's name; why is the detail under it."
   },
   "main.restore.refused": {
-    "message": "Couldn't restore {{name}}\n{{why}}",
-    "note": "Notice when a snapshot can't be restored onto the machine's disks as they are: a headline, then why; {{name}} is the snapshot's name, {{why}} the reason (e.g. a disk written in place moved on)."
+    "message": "Couldn't restore {{name}}",
+    "note": "Dialog when a snapshot can't be restored onto the machine's disks as they are: the error headline; under it, the reason (e.g. snapshots:snapshots.writtenInPlace, a disk written in place moved on). {{name}} is the snapshot's name."
   },
   "main.restore.confirm": {
     "message": "Restore {{name}}? The machine will continue from where the snapshot was taken.",
@@ -620,40 +628,76 @@
     "note": "The confirm button (drawn as a warning) of the question asked before a snapshot file is loaded."
   },
   "worker.otherShape": {
-    "message": "Couldn't load {{name}}\nIt was taken of a machine with other settings or disks than {{machine}} has now. To use it, create a machine like it on the Machines page (Snapshots tab).",
-    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because the machine's settings or disks changed since: a headline, then why and what to do; {{machine}} is the machine's name; {{name}} is the file's name, or “the suspended machine”."
+    "message": "Couldn't load {{name}}",
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because the machine's settings or disks changed since: the headline; why and what to do are the cause under it (snapshots:worker.otherShape.cause); {{machine}} is the machine's name; {{name}} is the file's name, or “the suspended machine”."
+  },
+  "worker.otherShape.cause": {
+    "message": "It was taken of a machine with other settings or disks than {{machine}} has now. To use it, create a machine like it on the Machines page (Snapshots tab).",
+    "note": "Error details: the cause under the headline snapshots:worker.otherShape, on the line under it in the same place; why and what to do. {{machine}}: as that entry's note says."
   },
   "worker.otherMachine": {
-    "message": "Couldn't load {{name}}\nIt's a snapshot of {{other}} (?machine={{otherId}}), but this is {{machine}} (?machine={{id}}). To load it, open this web app with ?machine={{otherId}} in the address. Start boots {{machine}} normally.",
-    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because it is of another test machine: a headline, then why and what to do; {{other}} and {{otherId}} are its machine's name and id, {{machine}} and {{id}} the page's; {{name}} is the file's name, or “the suspended machine”."
+    "message": "Couldn't load {{name}}",
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because it is of another test machine: the headline; why and what to do are the cause under it (snapshots:worker.otherMachine.cause); {{other}} and {{otherId}} are its machine's name and id, {{machine}} and {{id}} the page's; {{name}} is the file's name, or “the suspended machine”."
+  },
+  "worker.otherMachine.cause": {
+    "message": "It's a snapshot of {{other}} (?machine={{otherId}}), but this is {{machine}} (?machine={{id}}). To load it, open this web app with ?machine={{otherId}} in the address. Start boots {{machine}} normally.",
+    "note": "Error details: the cause under the headline snapshots:worker.otherMachine, on the line under it in the same place; why and what to do. {{other}}, {{otherId}}, {{machine}}, {{id}}: as that entry's note says."
   },
   "worker.devicesUnknown": {
-    "message": "Couldn't load {{name}}\nThis version of this web app can't read its list of devices; another version may have made it. Start boots {{machine}} normally.",
-    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its devices can't be read: a headline, then why and what to do; {{machine}} is the machine's name; {{name}} is the file's name, or “the suspended machine”."
+    "message": "Couldn't load {{name}}",
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its devices can't be read: the headline; why and what to do are the cause under it (snapshots:worker.devicesUnknown.cause); {{machine}} is the machine's name; {{name}} is the file's name, or “the suspended machine”."
+  },
+  "worker.devicesUnknown.cause": {
+    "message": "This version of this web app can't read its list of devices; another version may have made it. Start boots {{machine}} normally.",
+    "note": "Error details: the cause under the headline snapshots:worker.devicesUnknown, on the line under it in the same place; why and what to do. {{machine}}: as that entry's note says."
   },
   "worker.otherDevices": {
-    "message": "Couldn't load {{name}}\nIts machine had other devices ({{kinds}}) than this one ({{here}}). Open this web app as that machine was started, with the same disks and network, or Start {{machine}} normally.",
-    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its machine had other devices: a headline, then why and what to do; {{kinds}} are its devices, {{here}} the machine's, {{machine}} the machine's name; {{name}} is the file's name, or “the suspended machine”."
+    "message": "Couldn't load {{name}}",
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its machine had other devices: the headline; why and what to do are the cause under it (snapshots:worker.otherDevices.cause); {{kinds}} are its devices, {{here}} the machine's, {{machine}} the machine's name; {{name}} is the file's name, or “the suspended machine”."
+  },
+  "worker.otherDevices.cause": {
+    "message": "Its machine had other devices ({{kinds}}) than this one ({{here}}). Open this web app as that machine was started, with the same disks and network, or Start {{machine}} normally.",
+    "note": "Error details: the cause under the headline snapshots:worker.otherDevices, on the line under it in the same place; why and what to do. {{kinds}}, {{here}}, {{machine}}: as that entry's note says."
   },
   "worker.cpus": {
-    "message": "Couldn't load {{name}}\nIts vCPU count isn't readable. Start boots {{machine}} normally.",
-    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its vCPU count can't be read: a headline, then why and what to do; {{machine}} is the machine's name; {{name}} is the file's name, or “the suspended machine”."
+    "message": "Couldn't load {{name}}",
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its vCPU count can't be read: the headline; why and what to do are the cause under it (snapshots:worker.cpus.cause); {{machine}} is the machine's name; {{name}} is the file's name, or “the suspended machine”."
+  },
+  "worker.cpus.cause": {
+    "message": "Its vCPU count isn't readable. Start boots {{machine}} normally.",
+    "note": "Error details: the cause under the headline snapshots:worker.cpus, on the line under it in the same place; why and what to do. {{machine}}: as that entry's note says."
   },
   "worker.memory": {
-    "message": "Couldn't load {{name}}\nIts memory size isn't readable. Start boots {{machine}} normally.",
-    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its memory can't be read: a headline, then why and what to do; {{machine}} is the machine's name; {{name}} is the file's name, or “the suspended machine”."
+    "message": "Couldn't load {{name}}",
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its memory can't be read: the headline; why and what to do are the cause under it (snapshots:worker.memory.cause); {{machine}} is the machine's name; {{name}} is the file's name, or “the suspended machine”."
+  },
+  "worker.memory.cause": {
+    "message": "Its memory size isn't readable. Start boots {{machine}} normally.",
+    "note": "Error details: the cause under the headline snapshots:worker.memory, on the line under it in the same place; why and what to do. {{machine}}: as that entry's note says."
   },
   "worker.features": {
-    "message": "Couldn't load {{name}}\nThis version of this web app can't read its processor's features; another version may have made it. Start boots {{machine}} normally.",
-    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its processor's features can't be read: a headline, then why and what to do; {{machine}} is the machine's name; {{name}} is the file's name, or “the suspended machine”."
+    "message": "Couldn't load {{name}}",
+    "note": "Error in the message bar (under the toolbar) when a snapshot (a file, or the machine kept suspended) is refused before anything is touched (Start and Load snapshot… follow) because its processor's features can't be read: the headline; why and what to do are the cause under it (snapshots:worker.features.cause); {{machine}} is the machine's name; {{name}} is the file's name, or “the suspended machine”."
+  },
+  "worker.features.cause": {
+    "message": "This version of this web app can't read its processor's features; another version may have made it. Start boots {{machine}} normally.",
+    "note": "Error details: the cause under the headline snapshots:worker.features, on the line under it in the same place; why and what to do. {{machine}}: as that entry's note says."
   },
   "worker.notRestored": {
-    "message": "Couldn't restore the snapshot\nThe machine didn't start, and its disk may hold part of the snapshot's changes. Start boots {{machine}} normally from what is there. To start over from the disk's image, reset the disk.",
-    "note": "Error headline in the message bar (under the toolbar) when a snapshot failed once its disk's changes were being written (Start and Load snapshot… follow); {{machine}} is the machine's name; why is the detail under it."
+    "message": "Couldn't restore the snapshot",
+    "note": "Error headline in the message bar (under the toolbar) when a snapshot failed once its disk's changes were being written (Start and Load snapshot… follow); {{machine}} is the machine's name; why is the detail under it, after its cause (snapshots:worker.notRestored.cause) on the line under the headline."
+  },
+  "worker.notRestored.cause": {
+    "message": "The machine didn't start, and its disk may hold part of the snapshot's changes. Start boots {{machine}} normally from what is there. To start over from the disk's image, reset the disk.",
+    "note": "Error details: the cause under the headline snapshots:worker.notRestored, on the line under it in the same place; what happened. {{machine}}: as that entry's note says."
   },
   "worker.notLoaded": {
-    "message": "Couldn't load the snapshot\nNothing was changed. The machine isn't running, and its disk is as it was. Start boots {{machine}} normally, and Load snapshot… tries another file.",
-    "note": "Error headline in the message bar (under the toolbar) when a snapshot file was refused before anything was touched (Start and Load snapshot… follow); {{machine}} is the machine's name; why is the detail under it."
+    "message": "Couldn't load the snapshot",
+    "note": "Error headline in the message bar (under the toolbar) when a snapshot file was refused before anything was touched (Start and Load snapshot… follow); {{machine}} is the machine's name; why is the detail under it, after its cause (snapshots:worker.notLoaded.cause) on the line under the headline."
+  },
+  "worker.notLoaded.cause": {
+    "message": "Nothing was changed. The machine isn't running, and its disk is as it was. Start boots {{machine}} normally, and Load snapshot… tries another file.",
+    "note": "Error details: the cause under the headline snapshots:worker.notLoaded, on the line under it in the same place; what happened. {{machine}}: as that entry's note says."
   },
   "worker.phase.checking": {
     "message": "Checking the snapshot",
@@ -680,12 +724,20 @@
     "note": "The machine's state in the status bar while a snapshot's file is closed, the machine already running on."
   },
   "worker.notRunning": {
-    "message": "Couldn't save the snapshot\nThe machine isn't running.",
-    "note": "Error in the message bar (under the toolbar) when a snapshot reached a machine that had already stopped: a headline, then why."
+    "message": "Couldn't save the snapshot",
+    "note": "Error in the message bar (under the toolbar) when a snapshot reached a machine that had already stopped: the headline; why is the cause under it (snapshots:worker.notRunning.cause)."
+  },
+  "worker.notRunning.cause": {
+    "message": "The machine isn't running.",
+    "note": "Error details: the cause under the headline snapshots:worker.notRunning, on the line under it in the same place; what happened, and what the user can do if anything."
   },
   "worker.saving": {
-    "message": "Couldn't save the snapshot\nAnother snapshot is already being saved.",
-    "note": "Error in the message bar (under the toolbar) when a snapshot is asked while another is written: a headline, then why."
+    "message": "Couldn't save the snapshot",
+    "note": "Error in the message bar (under the toolbar) when a snapshot is asked while another is written: the headline; why is the cause under it (snapshots:worker.saving.cause)."
+  },
+  "worker.saving.cause": {
+    "message": "Another snapshot is already being saved.",
+    "note": "Error details: the cause under the headline snapshots:worker.saving, on the line under it in the same place; what happened, and what the user can do if anything."
   },
   "worker.ended": {
     "message": "The machine stopped before it could be paused.",

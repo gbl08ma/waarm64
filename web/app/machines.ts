@@ -20,21 +20,24 @@ export async function isRunning(id: string) {
   return (held.held ?? []).some((l) => l.name === machineLock(id));
 }
 
-/** The edits that need a machine off, each with its words (`needsOff`). */
+/** The edits that need a machine off, each with its words (`needsOff`): the error's headline and its cause. */
 const NEEDS_OFF = {
-  delete: 'machines:machines.needsOff.delete',
-  shape: 'machines:machines.needsOff.shape',
-  attach: 'machines:machines.needsOff.attach',
-  disks: 'machines:machines.needsOff.disks',
+  delete: ['machines:machines.needsOff.delete', 'machines:machines.needsOff.delete.cause'],
+  shape: ['machines:machines.needsOff.shape', 'machines:machines.needsOff.shape.cause'],
+  attach: ['machines:machines.needsOff.attach', 'machines:machines.needsOff.running'],
+  disks: ['machines:machines.needsOff.disks', 'machines:machines.needsOff.running'],
 } as const;
 
 /** Throws a message for the user when machine `id` runs: what needs it off (§4.1: no hotplug; the DT is fixed at boot). */
 export async function needsOff(id: string, what: keyof typeof NEEDS_OFF) {
-  if (await isRunning(id)) throw new MsgError(NEEDS_OFF[what]);
+  if (await isRunning(id)) {
+    const [headline, cause] = NEEDS_OFF[what];
+    throw new MsgError(headline, undefined, { cause: new MsgError(cause) });
+  }
 }
 
 /** The error of an edit to a machine that another tab deleted meanwhile. */
-const gone = () => new MsgError('machines:machines.machineGone');
+const gone = () => new MsgError('machines:machines.machineGone', undefined, { cause: new MsgError('machines:machines.machineGone.cause') });
 
 /** A new machine (no disks yet), named by default. */
 export async function createMachine(store: Store, o: Partial<Pick<MachineRecord, 'name' | 'ncpus' | 'ramMiB' | 'display' | 'network' | 'usb' | 'mouse' | 'touch' | 'clock' | 'shares' | 'keyboard'>> = {}) {
@@ -192,7 +195,7 @@ export async function createDisk(store: Store, d: NewDisk): Promise<DiskRecord> 
 /** Attaches disk `disk` to machine `m`, last (16 at most). A blank disk is always writable; an ISO read-only unless asked. */
 export async function attach(store: Store, m: MachineRecord, disk: DiskRecord, o: { readOnly?: boolean } = {}) {
   await needsOff(m.id, 'attach');
-  if (m.attachments.length >= MAX_DISKS) throw new MsgError('machines:machines.maxDisks', { max: MAX_DISKS });
+  if (m.attachments.length >= MAX_DISKS) throw new MsgError('machines:machines.maxDisks', undefined, { cause: new MsgError('machines:machines.maxDisks.cause', { max: MAX_DISKS }) });
   const readOnly = disk.kind === 'blank' || disk.kind === 'ramdisk' ? false : o.readOnly ?? disk.format === 'iso';
   const a: Attachment = { id: newId(), disk: disk.id, readOnly };
   m.attachments.push(a);
@@ -205,7 +208,7 @@ export async function attach(store: Store, m: MachineRecord, disk: DiskRecord, o
 export async function editAttachment(store: Store, m: MachineRecord, id: string, change: { readOnly?: boolean; inPlace?: boolean; swap?: boolean; move?: -1 | 1; detach?: boolean }) {
   await needsOff(m.id, 'disks');
   const i = m.attachments.findIndex((a) => a.id === id);
-  if (i < 0) throw new MsgError('machines:machines.notAttached');
+  if (i < 0) throw new MsgError('machines:machines.notAttached', undefined, { cause: new MsgError('machines:machines.notAttached.cause') });
   const a = m.attachments[i];
   const disk = await store.get('disks', a.disk);
   if (change.detach) m.attachments.splice(i, 1);
@@ -218,7 +221,7 @@ export async function editAttachment(store: Store, m: MachineRecord, id: string,
   }
   if (change.swap !== undefined) {
     if (disk?.kind !== 'ramdisk') throw new Error('only a ramdisk can be the guest\'s swap');
-    if (change.swap && disk.size < SWAP_MIN_PAGES * 4096) throw new MsgError('machines:machines.swapMin', { kib: SWAP_MIN_PAGES * 4 });
+    if (change.swap && disk.size < SWAP_MIN_PAGES * 4096) throw new MsgError('machines:machines.swapMin', undefined, { cause: new MsgError('machines:machines.swapMin.cause', { kib: SWAP_MIN_PAGES * 4 }) });
     a.swap = change.swap || undefined;
   }
   if (change.move) {

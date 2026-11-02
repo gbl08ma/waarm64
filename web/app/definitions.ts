@@ -32,11 +32,11 @@ export type Definition = {
 /** Machine `id`'s definition. */
 export async function exportDefinition(store: Store, id: string): Promise<Definition> {
   const m = await store.get('machines', id);
-  if (!m) throw new MsgError('machines:definitions.machineGone');
+  if (!m) throw new MsgError('machines:definitions.machineGone', undefined, { cause: new MsgError('machines:definitions.machineGone.cause') });
   const disks: DefinitionDisk[] = [];
   for (const a of m.attachments) {
     const d = await store.get('disks', a.disk);
-    if (!d) throw new MsgError('machines:definitions.diskMissing', { name: m.name });
+    if (!d) throw new MsgError('machines:definitions.diskMissing', undefined, { cause: new MsgError('machines:definitions.diskMissing.cause', { name: m.name }) });
     disks.push({ kind: d.kind, name: d.name, size: d.size, identity: d.identity, ...(d.url ? { url: d.url } : {}), ...(d.sha256 ? { sha256: d.sha256 } : {}), readOnly: a.readOnly, ...(a.inPlace ? { inPlace: true } : {}), ...(a.swap ? { swap: true } : {}), serial: a.id });
   }
   const usb = m.usbDevices?.length ? { usbDevices: toDefinition(m.usbDevices) } : {};
@@ -50,14 +50,14 @@ export function parseDefinition(text: string): Definition {
   try {
     d = JSON.parse(text) as Definition;
   } catch {
-    throw new MsgError('machines:definitions.notJson');
+    throw new MsgError('machines:definitions.notJson', undefined, { cause: new MsgError('machines:definitions.notJson.cause') });
   }
-  if (d?.type !== DEFINITION_TYPE) throw new MsgError('machines:definitions.notDefinition');
-  if (d.version !== DEFINITION_VERSION) throw new MsgError('machines:definitions.version', { version: String(d.version), reads: DEFINITION_VERSION });
+  if (d?.type !== DEFINITION_TYPE) throw new MsgError('machines:definitions.notDefinition', undefined, { cause: new MsgError('machines:definitions.notDefinition.cause') });
+  if (d.version !== DEFINITION_VERSION) throw new MsgError('machines:definitions.version', undefined, { cause: new MsgError('machines:definitions.version.cause', { version: String(d.version), reads: DEFINITION_VERSION }) });
   const m = d.machine;
   const ok = m && typeof m.name === 'string' && Number.isInteger(m.ncpus) && m.ncpus >= 1 && m.ncpus <= 64 && Number.isInteger(m.ramMiB) && m.ramMiB >= 64 && (m.ramSplit === undefined || (Array.isArray(m.ramSplit) && !ramSplitError(m.ramSplit, m.vulkan === true) && m.ramSplit.reduce((a, b) => a + b, 0) === m.ramMiB)) && (m.jitMiB === undefined || (Number.isInteger(m.jitMiB) && m.jitMiB >= 1 && m.jitMiB <= 4096)) && (m.keyboard === undefined || validKeyboard(m.keyboard)) && (m.netConfig === undefined || m.netConfig === false) && (m.display === '2d' || m.display === '3d') && (m.vulkan === undefined || typeof m.vulkan === 'boolean') && typeof m.network === 'boolean' && (m.macs === undefined || (Array.isArray(m.macs) && m.macs.length >= 1 && m.macs.length <= MAX_ADAPTERS && m.macs.every((x) => typeof x === 'string' && isMac(x)) && m.network)) && (m.usb === undefined || typeof m.usb === 'boolean') && (m.mouse === undefined || typeof m.mouse === 'boolean') && (m.touch === undefined || typeof m.touch === 'boolean') && (m.clock === undefined || typeof m.clock === 'boolean') && (m.shares === undefined || typeof m.shares === 'boolean') && (m.sharesMount === undefined || m.sharesMount === false) && (m.sharesPath === undefined || (typeof m.sharesPath === 'string' && !sharesPathError(m.sharesPath))) && (d.usbDevices === undefined || validDefinitionUsb(d.usbDevices))
     && Array.isArray(d.disks) && d.disks.length <= MAX_DISKS && d.disks.every((x) => ['url', 'file', 'stored', 'blank', 'ramdisk'].includes(x?.kind) && Number.isSafeInteger(x.size) && x.size > 0 && typeof x.name === 'string' && x.identity?.kind && typeof x.serial === 'string' && /^[0-9a-f]{12}$/.test(x.serial));
-  if (!ok) throw new MsgError('machines:definitions.damaged');
+  if (!ok) throw new MsgError('machines:definitions.damaged', undefined, { cause: new MsgError('machines:definitions.damaged.cause') });
   return d;
 }
 
