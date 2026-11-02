@@ -31,13 +31,17 @@ host's build check, and **L2** but for what needs a person or the dev VM: the pl
 
 ## Next
 
-1. **The dev VM:** `grep -v '^#' bench/net/results/local-helper/build-x86_64.txt > $TMPDIR/sums && net/webpc-net/build.sh --check $TMPDIR/sums v0.0.0-repro`
+1. **The dev VM, for L2's CI:** `scripts/ci-debian.sh` whole (the cloud has no `linux-snd` image, so `page-debian`, the
+   test of the guest's network settings on the page, skipped there; its other three passed), and `scripts/ci-net.sh` with the
+   Podman tailnet and tailcat (skipped in the cloud), since the link flap is every kind's now. `scripts/ci.sh` and `ci-net.sh`
+   passed in the cloud on 2026-11-02 but for the cloud's known video test (docs/cloud.md).
+2. **The dev VM:** `grep -v '^#' bench/net/results/local-helper/build-x86_64.txt > $TMPDIR/sums && net/webpc-net/build.sh --check $TMPDIR/sums v0.0.0-repro`
    at the commit that wrote that file (`git log -1 -- bench/net/results/local-helper/build-x86_64.txt`), and record it beside.
-2. **L2's left:** the user looks at Chromium's Local Network Access prompt once (headed: the deployed page, or `npm run
+3. **L2's left:** the user looks at Chromium's Local Network Access prompt once (headed: the deployed page, or `npm run
    serve` with `--origin`), and refuses it once to see the page's message; in the dev VM, MTU 65520 against 1500 with
    the worker and the batching (`bench/net/local.ts`, its `local:<mtu>` arm, now with no patch: the frame port takes
    65553-byte frames), then the helper's default `--mtu`.
-3. **L3** (the move to `gbl08ma/webpc-net` first): a test from a public origin (`--ip-address-space-overrides=127.0.0.1:<port>=public` and CDP's
+4. **L3** (the move to `gbl08ma/webpc-net` first): a test from a public origin (`--ip-address-space-overrides=127.0.0.1:<port>=public` and CDP's
    `Browser.setPermission` for `loopback-network`; Playwright 1.63's `grantPermissions` doesn't know the name), then the plan's list. L4 as the plan says.
 
 ## Found (worth not re-discovering)
