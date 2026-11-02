@@ -20,7 +20,7 @@
     "note": "Machines page, Disks: what a disk is, in the tooltip of its icon and before its size in the line under its name; also in Add a disk… › A disk already in this browser. A disk held in memory, empty at every boot."
   },
   "Disks.newOverlay.text": {
-    "message": "Name of the new, empty overlay (the disk as the image has it):",
+    "message": "With an empty overlay, the disk's contents will reflect its image. Enter a name for the new overlay:",
     "note": "Machines page, Disks: the question of the text prompt that New empty opens, above the field for the new overlay's name."
   },
   "Disks.newOverlay.name": {
@@ -32,11 +32,11 @@
     "note": "Machines page, Disks: the title of the text prompt that New empty opens (naming a new, empty overlay of the disk)."
   },
   "Disks.newOverlay.ok": {
-    "message": "Make it",
+    "message": "Create",
     "note": "Machines page, Disks: the confirm button of the New empty prompt: makes the overlay and switches the disk to it."
   },
   "Disks.busy.newOverlay": {
-    "message": "Making the overlay",
+    "message": "Creating the overlay",
     "note": "Machines page: the busy line (shown with a trailing …) while a new, empty overlay is made and the disk switched to it."
   },
   "Disks.busy.switch": {
@@ -60,7 +60,7 @@
     "note": "Machines page: the busy line (shown with a trailing …) while an overlay is renamed."
   },
   "Disks.delete.confirm": {
-    "message": "Delete the overlay {{name}}? What the machines wrote to the disk in it ({{size}}) is deleted for good.",
+    "message": "Delete the overlay {{name}}? This will delete the {{size}} of changes made on top of the base image.",
     "note": "Machines page, Disks: the confirmation (OK/Cancel, the OK in red) that an overlay's Delete asks. {{name}} is the overlay's name, {{size}} what it holds (e.g. \"12.0 MiB\")."
   },
   "Disks.delete.ok": {
@@ -76,19 +76,19 @@
     "note": "Machines page, Disks: one overlay in the list of those a merge deletes (Disks.merge.others). {{name}} is the overlay's name, {{size}} what it holds."
   },
   "Disks.merge.others": {
-    "message": "\nThese overlays of the disk are deleted (they were made over its old bytes): {{list}}.",
+    "message": "\nThis will delete the other overlays associated with this disk: {{list}}.",
     "note": "Machines page, Disks: the line of the merge's confirmation (Disks.merge.confirm) when the disk has other overlays: a merge deletes them. Starts on a new line. {{list}} is the overlays (each Disks.merge.other), joined with commas."
   },
   "Disks.merge.snapshots_one": {
-    "message": "\n{{count}} snapshot pinning them can no longer restore onto the disk without their own copy of it.",
+    "message": "\n{{count}} snapshot will no longer be restorable as it references this disk or one of its overlays.",
     "note": "Machines page, Disks: the line of the merge's confirmation (Disks.merge.confirm) when one snapshot pins the disk or the overlays involved. Starts on a new line. {{count}} is 1."
   },
   "Disks.merge.snapshots_other": {
-    "message": "\n{{count}} snapshots pinning them can no longer restore onto the disk without their own copy of it.",
+    "message": "\n{{count}} snapshots will no longer be restorable as they reference this disk or one of its overlays.",
     "note": "Machines page, Disks: the line of the merge's confirmation (Disks.merge.confirm) when several snapshots pin the disk or the overlays involved. Starts on a new line. {{count}} is how many."
   },
   "Disks.merge.confirm": {
-    "message": "Merge {{overlay}} into {{disk}}? Its changes become the disk's own.{{others}}{{snapshots}}",
+    "message": "Merge {{overlay}} into {{disk}}? The changes in it will become part of the disk.{{others}}{{snapshots}}",
     "note": "Machines page, Disks: the confirmation that Merge into the disk asks (OK in red when it deletes other overlays). {{overlay}} is the overlay's name, {{disk}} the stored disk's; {{others}} is Disks.merge.others or nothing, {{snapshots}} Disks.merge.snapshots or nothing."
   },
   "Disks.merge.ok": {
@@ -104,19 +104,19 @@
     "note": "Machines page: the busy line (shown with a trailing …) while a disk's read-only, swap or write in place box is saved."
   },
   "Disks.detach.keptRamdisk": {
-    "message": "The ramdisk stays in this browser (empty).",
+    "message": "The empty ramdisk continues to exist, taking no space.",
     "note": "Machines page, Disks: the middle sentence of the detach confirmation (Disks.detach.confirm) for a ramdisk."
   },
   "Disks.detach.kept": {
-    "message": "The disk stays in this browser, taking its space there.",
+    "message": "The disk remains stored in this browser, taking space.",
     "note": "Machines page, Disks: the middle sentence of the detach confirmation (Disks.detach.confirm) for a disk without overlays."
   },
   "Disks.detach.keptOverlays_one": {
-    "message": "The disk stays in this browser with its {{count}} overlay ({{size}}), taking its space there.",
+    "message": "The disk and its {{count}} overlay ({{size}}) remain stored in this browser, taking space.",
     "note": "Machines page, Disks: the middle sentence of the detach confirmation (Disks.detach.confirm) for a disk with one overlay. {{count}} is 1, {{size}} what the overlay holds."
   },
   "Disks.detach.keptOverlays_other": {
-    "message": "The disk stays in this browser with its {{count}} overlays ({{size}}), taking its space there.",
+    "message": "The disk and its {{count}} overlays ({{size}}) remain stored in this browser, taking space.",
     "note": "Machines page, Disks: the middle sentence of the detach confirmation (Disks.detach.confirm) for a disk with several overlays. {{count}} is how many, {{size}} what they hold together."
   },
   "Disks.detach.theDisk": {
@@ -124,7 +124,7 @@
     "note": "Machines page, Disks: names the disk in the detach confirmation (Disks.detach.confirm) when its record is missing."
   },
   "Disks.detach.confirm": {
-    "message": "Detach {{disk}} from {{machine}}? {{kept}} Add a disk… › A disk already in this browser attaches it again (here or to another machine), and deletes it when no machine has it.",
+    "message": "Detach {{disk}} from {{machine}}? {{kept}} To delete it or to attach it again, to this or another machine, use Add a disk… › A disk already in this browser.",
     "note": "Machines page, Disks: the confirmation that a disk's Detach asks. {{disk}} is the disk's name (or Disks.detach.theDisk), {{machine}} the machine's, {{kept}} one of Disks.detach.kept, Disks.detach.keptOverlays, Disks.detach.keptRamdisk."
   },
   "Disks.detach.title": {
@@ -140,7 +140,7 @@
     "note": "Machines page: the busy line (shown with a trailing …) while a disk is taken off the machine."
   },
   "Disks.export.title": {
-    "message": "Save the disk to a file: the changes over the image, or the whole disk",
+    "message": "Save the disk, or just the changes made to it, to a file",
     "note": "Machines page, Disks: the tooltip of a disk's Export menu button."
   },
   "Disks.export": {
@@ -148,7 +148,7 @@
     "note": "Machines page, Disks: the label of a disk's menu button that saves it to a file (its choices: changes only, whole disk as qcow2 or raw)."
   },
   "Disks.export.changes.title": {
-    "message": "A small qcow2 holding what the machine wrote, with the image as its backing file (keep it beside it)",
+    "message": "A qcow2 containing just the changes over the base image. Keep the latter, otherwise this file is useless.",
     "note": "Machines page, Disks › Export menu: the tooltip of Changes only (qcow2)."
   },
   "Disks.export.changes": {
@@ -180,7 +180,7 @@
     "note": "Machines page, Disks › Export menu: the checkbox (remembered) that compresses a qcow2 export's clusters."
   },
   "Disks.export.hint": {
-    "message": "A machine running from the disk stops while the file is written, and starts again after.",
+    "message": "Exporting will pause the associated machine while the file is written.",
     "note": "Machines page, Disks › Export menu: the small note at the menu's bottom."
   },
   "Disks.missing": {
@@ -200,7 +200,7 @@
     "note": "Machines page, Disks: the checkbox on a disk's line: the guest can read it but not write it (off and disabled for a blank disk or a ramdisk)."
   },
   "Disks.swap.title": {
-    "message": "The guest's swap, turned on at every boot with nothing to do inside: the page formats the ramdisk as swap and tells systemd (254+: Debian 13, Arch; not Debian 12). It takes memory as the guest swaps and gives it back as the guest frees it.",
+    "message": "Automatically configure the guest to use this ramdisk as swap. The guest must be running systemd version 254 or above. The memory usage of this ramdisk on the host will fluctuate as the guest uses the swap space.",
     "note": "Machines page, Disks: the tooltip of a ramdisk's swap checkbox."
   },
   "Disks.swap": {
@@ -208,7 +208,7 @@
     "note": "Machines page, Disks: the checkbox on a ramdisk's line that makes it the guest's swap."
   },
   "Disks.inPlace.title": {
-    "message": "The guest's writes go into the stored disk itself: no overlay, no variants, and snapshots can't fork it.",
+    "message": "The guest's writes go into the stored disk itself. Overlays are not used and snapshots can't fork it.",
     "note": "Machines page, Disks: the tooltip of a stored disk's write in place checkbox."
   },
   "Disks.inPlace": {
@@ -228,7 +228,7 @@
     "note": "Machines page, Disks: the tooltip of the down arrow on a disk's line (the disk takes a later slot)."
   },
   "Disks.detach.button.title": {
-    "message": "Take the disk off this machine (it stays in this browser)",
+    "message": "Take the disk off this machine. It remains stored in this browser.",
     "note": "Machines page, Disks: the tooltip of the Detach button on a disk's line."
   },
   "Disks.detach.button": {
@@ -240,7 +240,7 @@
     "note": "Machines page, Disks: the label before the list of a writable disk's overlays (the variants of its changes), where the user picks the one the machine uses."
   },
   "Disks.overlays.none": {
-    "message": "(a new overlay, at the next start)",
+    "message": "(a new overlay, at the next boot)",
     "note": "Machines page, Disks: the item of a disk's Changes in list when the machine has no overlay chosen yet: its next start makes one."
   },
   "Disks.overlays.option": {
@@ -252,7 +252,7 @@
     "note": "Machines page, Disks: an overlay in a disk's Changes in list that a snapshot's restore forked off another. {{name}} is its name, {{size}} what it holds."
   },
   "Disks.newEmpty.title": {
-    "message": "A new, empty overlay: the disk as the image has it (the one it has now is kept)",
+    "message": "A new, empty overlay: the disk contents will be reset to those of the disk image. The current overlay is kept.",
     "note": "Machines page, Disks: the tooltip of New empty."
   },
   "Disks.newEmpty": {
@@ -268,7 +268,7 @@
     "note": "Machines page, Disks: the button beside a disk's chosen overlay that renames it (a prompt asks the name)."
   },
   "Disks.deleteButton.title": {
-    "message": "Delete this overlay: what was written in it is lost",
+    "message": "Delete this overlay. This loses all changes from the base image that are contained within.",
     "note": "Machines page, Disks: the tooltip of Delete, beside the disk's chosen overlay."
   },
   "Disks.deleteButton": {
@@ -284,7 +284,7 @@
     "note": "Machines page, Disks: the button beside a stored disk's chosen overlay that writes its changes into the disk (after a confirmation)."
   },
   "Disks.importChanges.title": {
-    "message": "A changes file (Export › Changes only) of this disk becomes a new overlay, which the disk switches to",
+    "message": "A changes file of this disk (created via Export › Changes only) becomes a new overlay, and the disk switches to it.",
     "note": "Machines page, Disks: the tooltip of Import changes…."
   },
   "Disks.importChanges": {
@@ -300,7 +300,7 @@
     "note": "Machines page, Disks: the button under the list that opens the Add a disk wizard."
   },
   "Disks.full": {
-    "message": "{{max}} disks: a machine takes no more.",
+    "message": "A machine can't have more than {{max}} disks.",
     "note": "Machines page, Disks: the note in place of Add a disk… when the machine has as many disks as it can. {{max}} is that number."
   },
   "AddDisk.source.known": {
@@ -308,7 +308,7 @@
     "note": "Add a disk wizard (Machines page): the name of the choice of a disk the browser keeps already (shown only when there is one), on the first step's button."
   },
   "AddDisk.source.known.text": {
-    "message": "A disk another machine has, or one detached: with its overlays, as it was. A disk no machine has can be deleted here, with its overlays, to free the space it takes.",
+    "message": "A detached disk or one already associated with another machine. You can also delete detached disks here, to free the space they take.",
     "note": "Add a disk wizard: what A disk already in this browser means, under its name on the first step, and the note at the top of its step."
   },
   "AddDisk.title.known": {
@@ -320,7 +320,7 @@
     "note": "Add a disk wizard: the name of the choice of a disk image the page reads where it is, on the first step's button."
   },
   "AddDisk.source.file.text": {
-    "message": "A disk image (qcow2, raw, or an installer or live ISO) read where it is: nothing is copied. The machine's writes go into an overlay in this browser. In a later session the browser asks again before the page reads the file.",
+    "message": "A disk image (qcow2, raw, or an installer or live ISO) read directly from outside the browser, without copying. The machine's writes go into an overlay in this browser. In later sessions, the browser will ask again for access to this file.",
     "note": "Add a disk wizard: what A file on this computer means, under its name on the first step, and the note at the top of its step."
   },
   "AddDisk.title.file": {
@@ -332,7 +332,7 @@
     "note": "Add a disk wizard: the name of the choice of a disk image copied into the browser's storage, on the first step's button."
   },
   "AddDisk.source.stored.text": {
-    "message": "The image is copied into this browser's storage: no picking again, and it can take an overlay's changes into itself or be written in place. It duplicates the file, in storage you can't easily see outside this page.",
+    "message": "The image is copied into this browser's storage. You will not be asked to select a file or authorize access to it again. You will be able to merge overlays into the image, and optionally enable writing in place instead of using overlays. It duplicates the file, in storage you can't easily manage except from this page.",
     "note": "Add a disk wizard: what A file, copied into the browser means, under its name on the first step, and the note at the top of its step."
   },
   "AddDisk.title.stored": {
@@ -344,7 +344,7 @@
     "note": "Add a disk wizard: the name of the choice of a disk image on a web server, on the first step's button."
   },
   "AddDisk.source.url.text": {
-    "message": "An image on a web server, read in pieces as the guest needs them and kept in this browser (the server must allow this page's origin, and range requests unless it is a chunked image's manifest). Its first reads go over the network.",
+    "message": "An image on a web server, downloaded in segments as requested by the guest. The segments are cached in this browser. The server must allow this page's origin, and it should support range requests when not specifying a chunked image's manifest.",
     "note": "Add a disk wizard: what From a URL means, under its name on the first step, and the note at the top of its step."
   },
   "AddDisk.title.url": {
@@ -356,7 +356,7 @@
     "note": "Add a disk wizard: the name of the choice of an empty disk of a chosen size, on the first step's button."
   },
   "AddDisk.source.blank.text": {
-    "message": "An empty disk of the size you choose, for the guest to partition and format. It takes space in this browser only as the guest writes.",
+    "message": "An empty disk of the size you choose, for the guest to partition and format. The space it takes in this browser will increase as the guest writes.",
     "note": "Add a disk wizard: what Blank means, under its name on the first step, and the note at the top of its step."
   },
   "AddDisk.title.blank": {
@@ -368,7 +368,7 @@
     "note": "Add a disk wizard: the name of the choice of a disk in memory, on the first step's button."
   },
   "AddDisk.source.ramdisk.text": {
-    "message": "An empty disk in this computer's memory, empty again at every boot (the guest's reboot too): fast scratch space. It takes memory as the guest fills it, and gives it back when the guest trims (fstrim): all of it on a disk of up to 4 GiB, and the first 4 GiB on a larger one.",
+    "message": "An empty disk in this computer's memory, empty again at every boot of the guest. Useful as fast scratch space. It takes memory as the guest fills it, and gives it back when the guest trims (fstrim).",
     "note": "Add a disk wizard: what Ramdisk means, under its name on the first step, and the note at the top of its step."
   },
   "AddDisk.title.ramdisk": {
