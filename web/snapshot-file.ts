@@ -1,4 +1,4 @@
-// Snapshot file (M8 snapshots loop 4; docs/plans/snapshots.md "The file"): the container a saved
+// Snapshot file (docs/platform.md "The snapshot file"): the container a saved
 // machine is written to and read back from, streamed both ways (RAM is up to GiBs). Pure platform
 // APIs (CompressionStream, ReadableStream, Blob), so it runs in Node and in a worker. It knows
 // nothing of the core: CORE is opaque bytes, DEVS is JSON the caller makes, RAM and DISK are cut

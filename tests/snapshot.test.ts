@@ -1,4 +1,4 @@
-// A VM through snapshot files (web/snapshot.ts, docs/plans/snapshots.md loop 3): the guest runs
+// A VM through snapshot files (web/snapshot.ts, docs/platform.md "Snapshots"): the guest runs
 // under the JIT, is saved to a file (the core's state, the backends', RAM through the LZ codec),
 // closed, and a new VM started from the file runs on. Deterministic round-robin: the run takes
 // the steps of tests/steps.txt and prints what an unbroken run prints. Then what is refused.

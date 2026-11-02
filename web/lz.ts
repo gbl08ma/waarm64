@@ -1,4 +1,4 @@
-// The snapshot file's codec 2 (docs/plans/snapshots.md "The file"): the core's LZ (`core/src/lz.rs`,
+// The snapshot file's codec 2 (docs/platform.md "The snapshot file"): the core's LZ (`core/src/lz.rs`,
 // the LZ4 block format), chosen by measurement over CompressionStream's deflate (bench/boot/REPORT.md
 // "M8 phase C loop 4"). It runs in a core instance of its own on a small memory, so a file can be
 // read before there is a VM, in Node and in a worker alike. Frames are at most 1 MiB + 32 bytes.

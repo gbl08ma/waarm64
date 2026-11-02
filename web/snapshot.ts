@@ -1,4 +1,4 @@
-// A VM to a snapshot file and back (docs/plans/snapshots.md): web/vm.ts has the machine's state
+// A VM to a snapshot file and back (docs/platform.md "Snapshots"): web/vm.ts has the machine's state
 // (`snapshot()`, `BootOptions.restore`), web/snapshot-file.ts the container, web/lz.ts its codec.
 // The file: the header (what the machine is, and the writable disks it pins), CORE (the core's
 // state), DEVS (the host's: backend state and pending input, JSON), BLOB (the binary parts of DEVS:

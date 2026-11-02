@@ -1,7 +1,7 @@
 // Benchmark sessions started from a snapshot (docs/benchmarking.md "Starting from a snapshot"; dev-only, not in tests):
 // a warm guest saved once with the page's Save snapshot, then loaded by each arm of an A/B with Load snapshot…, so an
-// arm skips the boot, the login and the desktop's start. The JIT's code isn't in a snapshot (docs/plans/snapshots.md
-// "What a snapshot holds"): a restored machine starts with no compiled code, no TLB and zeroed counters, whatever core
+// arm skips the boot, the login and the desktop's start. The JIT's code isn't in a snapshot (docs/platform.md "Snapshots"
+// "Not in a snapshot"): a restored machine starts with no compiled code, no TLB and zeroed counters, whatever core
 // made the file. The page loads a file whose core state format (`snapshot_version`) and machine (devices, vCPUs, RAM,
 // CPU features) match: a core that differs only in its JIT or its build loads it; one with another state layout is
 // refused. `sidecar` keeps what made the file beside it (<file>.json): the core's SHA-256, the commit, the scene.

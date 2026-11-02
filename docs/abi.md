@@ -429,7 +429,7 @@ is the machine it was (the tests' step counts don't move).
 
 ## M8 phase C: snapshots (ABI 30)
 
-The design note of [plans/snapshots.md](plans/snapshots.md), as built (`core/src/snapshot.rs`,
+As built (`core/src/snapshot.rs`,
 `core/src/vm/state.rs`; what a snapshot is: [platform.md](platform.md) "Snapshots"). The core
 saves and restores everything a VM is except guest RAM, which the host copies (it owns the memory
 and the file format). A VM that is never snapshotted is the machine it was.
