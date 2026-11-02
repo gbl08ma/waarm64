@@ -11,6 +11,7 @@
 // there are, so the stream goes data first and the header (cluster 0) is written last, with
 // `sink(bytes, 0)`. Compressed clusters are packed end to end where they fall among the others;
 // one that isn't compressed starts at the next cluster boundary.
+import { MsgError } from './msg.ts';
 import type { WritableDisk } from './overlay.ts';
 import type { Disk } from './qcow2.ts';
 
@@ -265,7 +266,7 @@ function header(size: number, l1Size: number, l1At: number, tableAt: number, tab
   at += 8; // the end-of-extensions marker (type 0, length 0: zeros)
   if (backing) {
     const name = enc.encode(backing.name);
-    if (at + name.length > CLUSTER || name.length > 1023) throw new Error('the backing file name is too long');
+    if (at + name.length > CLUSTER || name.length > 1023) throw new MsgError('disks:qcow2-write.backingNameTooLong');
     h.setBigUint64(8, BigInt(at));
     h.setUint32(16, name.length);
     out.set(name, at);
@@ -278,7 +279,7 @@ export async function* changedClusters(disk: WritableDisk): AsyncGenerator<DataC
   for (const index of disk.written()) {
     if (disk.zeroed(index)) { yield { index, zero: true }; continue; }
     const bytes = await disk.read(index * CLUSTER, Math.min(CLUSTER, disk.size - index * CLUSTER));
-    if (!bytes) throw new Error(`block ${index} of the overlay can't be read`);
+    if (!bytes) throw new MsgError('disks:qcow2-write.overlayUnreadable', { block: index });
     yield { index, data: pad(bytes) };
   }
 }
@@ -287,7 +288,7 @@ export async function* changedClusters(disk: WritableDisk): AsyncGenerator<DataC
 export async function* nonZeroClusters(disk: Disk, chunk = 1 << 20, progress?: (done: number) => void): AsyncGenerator<DataCluster> {
   for (let off = 0; off < disk.size; off += chunk) {
     const bytes = await disk.read(off, Math.min(chunk, disk.size - off));
-    if (!bytes) throw new Error(`the disk can't be read at ${off}`);
+    if (!bytes) throw new MsgError('disks:qcow2-write.diskUnreadable', { offset: off });
     for (let c = 0; c < bytes.length; c += CLUSTER) {
       const data = bytes.subarray(c, c + CLUSTER);
       if (!isZero(data)) yield { index: (off + c) / CLUSTER, data: pad(data) };
@@ -300,7 +301,7 @@ export async function* nonZeroClusters(disk: Disk, chunk = 1 << 20, progress?: (
 export async function* rawChunks(disk: Disk, chunk = 1 << 20): AsyncGenerator<Uint8Array> {
   for (let off = 0; off < disk.size; off += chunk) {
     const bytes = await disk.read(off, Math.min(chunk, disk.size - off));
-    if (!bytes) throw new Error(`the disk can't be read at ${off}`);
+    if (!bytes) throw new MsgError('disks:qcow2-write.diskUnreadable', { offset: off });
     yield bytes;
   }
 }

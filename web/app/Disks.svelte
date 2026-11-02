@@ -10,6 +10,7 @@
   import MoveButtons from './MoveButtons.svelte';
   import Menu from './Menu.svelte';
   import { ask } from './ask.svelte.ts';
+  import { msg, t, text } from '../i18n.ts';
   import type { Store, OverlayRecord } from './store.ts';
   import type { DiskRecord, MachineRecord } from './shape.ts';
   import { MAX_DISKS } from './shape.ts';
@@ -34,58 +35,58 @@
 
   const plain = (m: MachineRecord) => $state.snapshot(m) as MachineRecord;
   const KIND: Record<string, { text: string; icon: IconName }> = {
-    url: { text: 'from a URL', icon: 'world-www' },
-    file: { text: 'a file on this computer', icon: 'file' },
-    stored: { text: 'stored in the browser', icon: 'database' },
-    blank: { text: 'blank', icon: 'square-dashed' },
-    ramdisk: { text: 'ramdisk', icon: 'bolt' },
+    url: { text: t('disks:Disks.kind.url'), icon: 'world-www' },
+    file: { text: t('disks:Disks.kind.file'), icon: 'file' },
+    stored: { text: t('disks:Disks.kind.stored'), icon: 'database' },
+    blank: { text: t('disks:Disks.kind.blank'), icon: 'square-dashed' },
+    ramdisk: { text: t('disks:Disks.kind.ramdisk'), icon: 'bolt' },
   };
-
-  const SWAP_TITLE = "The guest's swap, turned on at every boot with nothing to do inside: the page formats the ramdisk as swap and tells systemd (254+: Debian 13, Arch; not Debian 12). It takes memory as the guest swaps and gives it back as the guest frees it.";
   const overlaysOf = (disk: string) => overlays.filter((o) => o.disk === disk).sort((a, b) => a.created - b.created);
   async function newOverlay(attachment: string, disk: DiskRecord) {
-    const name = await ask.prompt('Name of the new, empty overlay (the disk as the image has it):', 'Fresh start', { title: 'New empty overlay', ok: 'Make it' });
+    const name = await ask.prompt(t('disks:Disks.newOverlay.text'), t('disks:Disks.newOverlay.name'), { title: t('disks:Disks.newOverlay.title'), ok: t('disks:Disks.newOverlay.ok') });
     if (!name) return;
-    await act('Making the overlay', async () => {
+    await act(t('disks:Disks.busy.newOverlay'), async () => {
       if (!(await offFirst(machine))) return;
       const o = await createOverlay(store, disk, name);
       await switchOverlay(store, plain(machine), attachment, o.id);
     });
   }
   async function switchTo(attachment: string, overlay: string) {
-    await act('Switching', async () => {
+    await act(t('disks:Disks.busy.switch'), async () => {
       if (!(await offFirst(machine))) return;
       await switchOverlay(store, plain(machine), attachment, overlay);
     });
   }
   async function rename(o: OverlayRecord) {
-    const name = await ask.prompt('New name:', o.name, { title: `Rename ${o.name}`, ok: 'Rename' });
-    if (name) await act('Renaming', () => renameOverlay(store, o.id, name));
+    const name = await ask.prompt(t('disks:Disks.rename.text'), o.name, { title: t('disks:Disks.rename.title', { name: o.name }), ok: t('disks:Disks.rename.ok') });
+    if (name) await act(t('disks:Disks.busy.rename'), () => renameOverlay(store, o.id, name));
   }
   async function remove(o: OverlayRecord) {
-    if (!(await ask.confirm(`Delete the overlay ${o.name}? What the machines wrote to the disk in it (${bytesText(o.bytes)}) is deleted for good.`, { ok: 'Delete', danger: true }))) return;
-    await act('Deleting', () => deleteOverlay(store, o.id));
+    if (!(await ask.confirm(t('disks:Disks.delete.confirm', { name: o.name, size: bytesText(o.bytes) }), { ok: t('disks:Disks.delete.ok'), danger: true }))) return;
+    await act(t('disks:Disks.busy.delete'), () => deleteOverlay(store, o.id));
   }
   async function merge(o: OverlayRecord, disk: DiskRecord) {
     const others = await mergeCosts(store, o.id);
     const pinned = new Set([`disks/${disk.id}`, `overlays/${o.id}`, ...others.map((x) => `overlays/${x.id}`)]);
     const snaps = (await store.all('snapshots')).filter((s) => s.pins.some((p) => p.overlay && pinned.has(p.overlay)));
-    if (!(await ask.confirm(`Merge ${o.name} into ${disk.name}? Its changes become the disk's own.${others.length ? `\nThese overlays of the disk are deleted (they were made over its old bytes): ${others.map((x) => `${x.name} (${bytesText(x.bytes)})`).join(', ')}.` : ''}${snaps.length ? `\n${snaps.length} snapshot${snaps.length > 1 ? 's' : ''} pinning them can no longer restore onto the disk without their own copy of it.` : ''}`, { ok: 'Merge', danger: others.length > 0 }))) return;
-    await act('Merging', () => mergeIntoDisk(store, o.id));
+    const deleted = others.length ? msg('disks:Disks.merge.others', { list: others.map((x) => msg('disks:Disks.merge.other', { name: x.name, size: bytesText(x.bytes) })) }) : undefined;
+    const orphaned = snaps.length ? msg('disks:Disks.merge.snapshots', { count: snaps.length }) : undefined;
+    if (!(await ask.confirm(t('disks:Disks.merge.confirm', { overlay: o.name, disk: disk.name, others: deleted, snapshots: orphaned }), { ok: t('disks:Disks.merge.ok'), danger: others.length > 0 }))) return;
+    await act(t('disks:Disks.busy.merge'), () => mergeIntoDisk(store, o.id));
   }
   /**
    * An attachment's read-only, in-place or swap box. Its value is taken from the event at once: Svelte's delegated events lose
    * `currentTarget` once dispatched, so read after an await (the power-off question) it was null and nothing was saved.
    */
   function setFlag(id: string, flag: { readOnly?: boolean; inPlace?: boolean; swap?: boolean }) {
-    void act('Changing', async () => { if (await offFirst(machine)) await editAttachment(store, plain(machine), id, flag); });
+    void act(t('disks:Disks.busy.change'), async () => { if (await offFirst(machine)) await editAttachment(store, plain(machine), id, flag); });
   }
   async function detach(id: string, d: DiskRecord | undefined) {
     const mine = d ? overlaysOf(d.id) : [];
     const bytes = mine.reduce((n, o) => n + o.bytes, 0);
-    const kept = d?.kind === 'ramdisk' ? 'The ramdisk stays in this browser (empty).' : `The disk stays in this browser${mine.length ? ` with its ${mine.length} overlay${mine.length === 1 ? '' : 's'} (${bytesText(bytes)})` : ''}, taking its space there.`;
-    if (!(await ask.confirm(`Detach ${d?.name ?? 'the disk'} from ${machine.name}? ${kept} Add a disk… › A disk already in this browser attaches it again (here or to another machine), and deletes it when no machine has it.`, { title: 'Detach a disk', ok: 'Detach' }))) return;
-    await act('Detaching', async () => { if (await offFirst(machine)) await editAttachment(store, plain(machine), id, { detach: true }); });
+    const kept = d?.kind === 'ramdisk' ? msg('disks:Disks.detach.keptRamdisk') : mine.length ? msg('disks:Disks.detach.keptOverlays', { count: mine.length, size: bytesText(bytes) }) : msg('disks:Disks.detach.kept');
+    if (!(await ask.confirm(t('disks:Disks.detach.confirm', { disk: d?.name ?? msg('disks:Disks.detach.theDisk'), machine: machine.name, kept }), { title: t('disks:Disks.detach.title'), ok: t('disks:Disks.detach.ok') }))) return;
+    await act(t('disks:Disks.busy.detach'), async () => { if (await offFirst(machine)) await editAttachment(store, plain(machine), id, { detach: true }); });
   }
 
   // Export and import.
@@ -107,12 +108,12 @@
 </script>
 
 {#snippet exportMenu(id: string, disk: DiskRecord, overlay: string | undefined, changes: boolean)}
-  <Menu id={`export-${id}`} icon="download" title="Save the disk to a file: the changes over the image, or the whole disk" label="Export" bind:open={() => exportOpen[id] ?? false, (v) => (exportOpen[id] = v)} align="left">
-    {#if changes}<button data-save="changes" title="A small qcow2 holding what the machine wrote, with the image as its backing file (keep it beside it)" onclick={() => save(id, disk, overlay, 'changes')}>Changes only (qcow2)</button>{/if}
-    <button data-save="qcow2" title="The whole disk as a qcow2 (empty space left out)" onclick={() => save(id, disk, overlay, 'qcow2')}>Whole disk (qcow2)</button>
-    <button data-save="raw" title="The whole disk as a raw image" onclick={() => save(id, disk, overlay, 'raw')}>Whole disk (raw)</button>
-    <Check bind:checked={compress} onchange={() => remember({ compress })} title="Compressed clusters (deflate), as qemu-img convert -c writes them: the file is about half the size and takes longer to write">Compress the qcow2</Check>
-    <p class="hint">A machine running from the disk stops while the file is written, and starts again after.</p>
+  <Menu id={`export-${id}`} icon="download" title={t('disks:Disks.export.title')} label={t('disks:Disks.export')} bind:open={() => exportOpen[id] ?? false, (v) => (exportOpen[id] = v)} align="left">
+    {#if changes}<button data-save="changes" title={t('disks:Disks.export.changes.title')} onclick={() => save(id, disk, overlay, 'changes')}>{t('disks:Disks.export.changes')}</button>{/if}
+    <button data-save="qcow2" title={t('disks:Disks.export.qcow2.title')} onclick={() => save(id, disk, overlay, 'qcow2')}>{t('disks:Disks.export.qcow2')}</button>
+    <button data-save="raw" title={t('disks:Disks.export.raw.title')} onclick={() => save(id, disk, overlay, 'raw')}>{t('disks:Disks.export.raw')}</button>
+    <Check bind:checked={compress} onchange={() => remember({ compress })} title={t('disks:Disks.export.compress.title')}>{t('disks:Disks.export.compress')}</Check>
+    <p class="hint">{t('disks:Disks.export.hint')}</p>
   </Menu>
 {/snippet}
 
@@ -122,40 +123,40 @@
     <li data-attachment={a.id}>
       <div class="row">
         <span class="kind" title={d ? KIND[d.kind].text : ''}><Icon name={d ? KIND[d.kind].icon : 'x'} size={18} /></span>
-        <strong>{d?.name ?? 'missing disk'}</strong>
-        <span class="meta">{d ? `${KIND[d.kind].text}, ${bytesText(d.size)}` : ''} · vd{String.fromCharCode(97 + i)}</span>
+        <strong>{d?.name ?? t('disks:Disks.missing')}</strong>
+        <span class="meta">{d ? t('disks:Disks.meta', { kind: KIND[d.kind].text, size: bytesText(d.size), letter: String.fromCharCode(97 + i) }) : t('disks:Disks.meta.missing', { letter: String.fromCharCode(97 + i) })}</span>
         <span class="grow"></span>
-        <Check compact checked={a.readOnly} disabled={d?.kind === 'blank' || d?.kind === 'ramdisk'} onchange={(on) => setFlag(a.id, { readOnly: on })}>read-only</Check>
+        <Check compact checked={a.readOnly} disabled={d?.kind === 'blank' || d?.kind === 'ramdisk'} onchange={(on) => setFlag(a.id, { readOnly: on })}>{t('disks:Disks.readOnly')}</Check>
         {#if d?.kind === 'ramdisk'}
-          <Check compact checked={!!a.swap} onchange={(on) => setFlag(a.id, { swap: on })} title={SWAP_TITLE}>swap</Check>
+          <Check compact checked={!!a.swap} onchange={(on) => setFlag(a.id, { swap: on })} title={t('disks:Disks.swap.title')}>{t('disks:Disks.swap')}</Check>
         {/if}
         {#if d?.kind === 'stored' && !a.readOnly}
-          <Check compact checked={!!a.inPlace} onchange={(on) => setFlag(a.id, { inPlace: on })} title="The guest's writes go into the stored disk itself: no overlay, no variants, and snapshots can't fork it.">write in place</Check>
+          <Check compact checked={!!a.inPlace} onchange={(on) => setFlag(a.id, { inPlace: on })} title={t('disks:Disks.inPlace.title')}>{t('disks:Disks.inPlace')}</Check>
         {/if}
-        <MoveButtons index={i} count={machine.attachments.length} onmove={(by) => act('Moving', () => editAttachment(store, plain(machine), a.id, { move: by }))} upTitle="Move up (an earlier slot)" downTitle="Move down (a later slot)" />
-        <button onclick={() => detach(a.id, d)} title="Take the disk off this machine (it stays in this browser)">Detach</button>
+        <MoveButtons index={i} count={machine.attachments.length} onmove={(by) => act(t('disks:Disks.busy.move'), () => editAttachment(store, plain(machine), a.id, { move: by }))} upTitle={t('disks:Disks.moveUp.title')} downTitle={t('disks:Disks.moveDown.title')} />
+        <button onclick={() => detach(a.id, d)} title={t('disks:Disks.detach.button.title')}>{t('disks:Disks.detach.button')}</button>
       </div>
-      {#if d?.kind === 'url'}<p class="note">{URL_SLOW}</p>{/if}
+      {#if d?.kind === 'url'}<p class="note">{text(URL_SLOW)}</p>{/if}
       {#if d && !a.readOnly && d.kind !== 'ramdisk' && !a.inPlace}
         <div class="overlays">
-          <label>Changes in
+          <label>{t('disks:Disks.overlays.label')}
             <select value={a.overlay ?? ''} onchange={(e) => switchTo(a.id, e.currentTarget.value)} data-field="overlay">
-              {#if !a.overlay}<option value="">(a new overlay, at the next start)</option>{/if}
-              {#each overlaysOf(d.id) as o (o.id)}<option value={o.id}>{o.name} ({bytesText(o.bytes)}{o.fork ? ', forked' : ''})</option>{/each}
+              {#if !a.overlay}<option value="">{t('disks:Disks.overlays.none')}</option>{/if}
+              {#each overlaysOf(d.id) as o (o.id)}<option value={o.id}>{o.fork ? t('disks:Disks.overlays.forked', { name: o.name, size: bytesText(o.bytes) }) : t('disks:Disks.overlays.option', { name: o.name, size: bytesText(o.bytes) })}</option>{/each}
             </select>
           </label>
-          <button onclick={() => newOverlay(a.id, d)} title="A new, empty overlay: the disk as the image has it (the one it has now is kept)"><Icon name="plus" size={16} />New empty</button>
+          <button onclick={() => newOverlay(a.id, d)} title={t('disks:Disks.newEmpty.title')}><Icon name="plus" size={16} />{t('disks:Disks.newEmpty')}</button>
           {#if a.overlay}
             {@const o = overlays.find((x) => x.id === a.overlay)}
             {#if o}
-              <button onclick={() => rename(o)} title="Rename this overlay"><Icon name="pencil" size={16} />Rename</button>
-              <button onclick={() => remove(o)} title="Delete this overlay: what was written in it is lost"><Icon name="trash" size={16} />Delete</button>
-              {#if d.kind === 'stored'}<button onclick={() => merge(o, d)} title="Write this overlay's changes into the stored disk itself"><Icon name="git-merge" size={16} />Merge into the disk</button>{/if}
+              <button onclick={() => rename(o)} title={t('disks:Disks.renameButton.title')}><Icon name="pencil" size={16} />{t('disks:Disks.renameButton')}</button>
+              <button onclick={() => remove(o)} title={t('disks:Disks.deleteButton.title')}><Icon name="trash" size={16} />{t('disks:Disks.deleteButton')}</button>
+              {#if d.kind === 'stored'}<button onclick={() => merge(o, d)} title={t('disks:Disks.mergeButton.title')}><Icon name="git-merge" size={16} />{t('disks:Disks.mergeButton')}</button>{/if}
               {@render exportMenu(a.id, d, o.id, d.kind !== 'blank')}
             {/if}
           {/if}
           {#if d.kind !== 'blank'}
-            <button onclick={() => importInputs[a.id]?.click()} title="A changes file (Export › Changes only) of this disk becomes a new overlay, which the disk switches to"><Icon name="upload" size={16} />Import changes…</button>
+            <button onclick={() => importInputs[a.id]?.click()} title={t('disks:Disks.importChanges.title')}><Icon name="upload" size={16} />{t('disks:Disks.importChanges')}</button>
             <input type="file" hidden bind:this={importInputs[a.id]} onchange={imported(a.id)} data-field="import-changes">
           {/if}
         </div>
@@ -164,13 +165,13 @@
       {/if}
     </li>
   {:else}
-    <li class="none">No disks yet.</li>
+    <li class="none">{t('disks:Disks.none')}</li>
   {/each}
 </ol>
 {#if machine.attachments.length < MAX_DISKS}
-  <button class="add" onclick={() => (adding = true)} data-action="add-disk-open"><Icon name="plus" size={16} />Add a disk…</button>
+  <button class="add" onclick={() => (adding = true)} data-action="add-disk-open"><Icon name="plus" size={16} />{t('disks:Disks.add')}</button>
 {:else}
-  <p class="note">{MAX_DISKS} disks: a machine takes no more.</p>
+  <p class="note">{t('disks:Disks.full', { max: MAX_DISKS })}</p>
 {/if}
 {#if adding}<AddDisk {store} {machine} {act} {offFirst} close={() => (adding = false)} />{/if}
 

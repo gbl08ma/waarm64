@@ -6,6 +6,7 @@
 // file is read by `readChanges`, not booted), external data files, extended L2
 // entries, zstd, unknown incompatible features. core/tests/common/qcow2.rs is the
 // native twin.
+import { MsgError } from './msg.ts';
 
 /** Reads exactly `len` bytes of the image file at `off`, or undefined (error, past the end). */
 export type ReadAt = (off: number, len: number) => Uint8Array | undefined;
@@ -64,22 +65,23 @@ export function openDisk(readAt: ReadAt, fileSize: number, inflater: Inflater = 
     return { size: fileSize, format: 'raw', read: async (off, len) => (off + len > fileSize ? undefined : readAsync ? readAsync(off, len) : readAt(off, len)) };
   }
   const h = new DataView(head.buffer, head.byteOffset, HEADER);
+  // What the user's image has that this reader refuses is a `MsgError` (the page says it); a malformed structure, a developer's error.
   const fail = (why: string): never => { throw new Error(`qcow2: ${why}`); };
   const version = h.getUint32(4);
-  if (version !== 2 && version !== 3) fail(`version ${version}`);
-  if (h.getBigUint64(8) !== 0n) fail('backing files are not supported: this is a changes file over another image, load it with "Load changes…" over that image, it is not a disk to boot');
+  if (version !== 2 && version !== 3) throw new MsgError('disks:qcow2.version', { version });
+  if (h.getBigUint64(8) !== 0n) throw new MsgError('disks:qcow2.backing');
   const clusterBits = h.getUint32(20);
   if (clusterBits < 9 || clusterBits > 21) fail(`cluster_bits ${clusterBits}`);
   const size = Number(h.getBigUint64(24));
-  if (h.getUint32(32) !== 0) fail('encrypted images are not supported');
+  if (h.getUint32(32) !== 0) throw new MsgError('disks:qcow2.encrypted');
   const l1Size = h.getUint32(36);
   const l1Offset = Number(h.getBigUint64(40));
   if (version === 3) {
     const incompatible = h.getBigUint64(72);
-    if (incompatible & 1n << 2n) fail('external data files are not supported');
-    if (incompatible & 1n << 4n) fail('extended L2 entries are not supported');
-    if (incompatible & ~KNOWN_INCOMPATIBLE) fail(`unknown incompatible features 0x${incompatible.toString(16)}`);
-    if (incompatible & 1n << 3n && h.getUint32(100) > 104 && h.getUint8(104) !== 0) fail('zstd compression is not supported');
+    if (incompatible & 1n << 2n) throw new MsgError('disks:qcow2.externalData');
+    if (incompatible & 1n << 4n) throw new MsgError('disks:qcow2.extendedL2');
+    if (incompatible & ~KNOWN_INCOMPATIBLE) throw new MsgError('disks:qcow2.unknownFeatures', { features: incompatible.toString(16) });
+    if (incompatible & 1n << 3n && h.getUint32(100) > 104 && h.getUint8(104) !== 0) throw new MsgError('disks:qcow2.zstd');
   }
   const cs = 2 ** clusterBits;
   const l2Entries = cs / 8;
@@ -336,14 +338,14 @@ export function readChanges(readAt: ReadAt, fileSize: number): (ChangesHeader & 
   const h = new DataView(head.buffer, head.byteOffset, head.length);
   const fail = (why: string): never => { throw new Error(`qcow2: ${why}`); };
   const version = h.getUint32(4);
-  if (version !== 2 && version !== 3) fail(`version ${version}`);
+  if (version !== 2 && version !== 3) throw new MsgError('disks:qcow2.version', { version });
   const clusterBits = h.getUint32(20);
-  if (clusterBits < 12 || clusterBits > 21) fail(`cluster_bits ${clusterBits} (the changes need clusters of at least 4 KiB)`);
-  if (h.getUint32(32) !== 0) fail('encrypted images are not supported');
+  if (clusterBits < 12 || clusterBits > 21) throw new MsgError('disks:qcow2.changesClusterBits', { bits: clusterBits });
+  if (h.getUint32(32) !== 0) throw new MsgError('disks:qcow2.encrypted');
   if (version === 3) {
     const incompatible = h.getBigUint64(72);
-    if (incompatible & ~KNOWN_INCOMPATIBLE) fail(`unsupported incompatible features 0x${incompatible.toString(16)}`);
-    if (incompatible & 1n << 3n) fail('compressed (zstd) clusters are not supported');
+    if (incompatible & ~KNOWN_INCOMPATIBLE) throw new MsgError('disks:qcow2.unsupportedFeatures', { features: incompatible.toString(16) });
+    if (incompatible & 1n << 3n) throw new MsgError('disks:qcow2.zstdClusters');
   }
   const size = Number(h.getBigUint64(24));
   const l1Size = h.getUint32(36);

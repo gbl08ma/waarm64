@@ -4,6 +4,7 @@
 // reads; the machine must have stopped (the overlay's Web Lock).
 import { loadChanges } from '../changes.ts';
 import { blobSource, diskIdentity, type Source } from '../devices.ts';
+import { toWire } from '../msg.ts';
 import { openDisk } from '../qcow2.ts';
 import type { ImportRequest, ImportResult } from './import.ts';
 import { openSource } from './sources.ts';
@@ -22,7 +23,7 @@ self.onmessage = async (e: MessageEvent<ImportRequest>) => {
     progress: (phase, done, total) => post({ type: 'progress', phase, done, total }),
   }).finally(() => base.close?.()).then(
     (r) => post({ type: 'done', blocks: r.blocks }),
-    (err) => post({ type: 'error', message: String((err as Error).message ?? err) }),
+    (err) => post({ type: 'error', error: toWire(err) }),
   );
 };
 
