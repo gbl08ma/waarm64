@@ -3,7 +3,7 @@
 // again), one held alone or with another key is released when let go.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { HEIGHT, HOLD_MS, keyOf, KEYS, legends, MODIFIERS, OskKeys, WIDTH, type ModifierMode } from '../web/app/osk.ts';
+import { autoLayout, COMPACT_BELOW, COMPACT_HEIGHT, COMPACT_WIDTH, HEIGHT, HOLD_MS, keyOf, KEYS, layoutOf, legends, MODIFIERS, OskKeys, PAGES, WIDTH, type Key, type ModifierMode } from '../web/app/osk.ts';
 
 /** An `OskKeys` on a clock the test moves, and what it sent (`+code` down, `-code` up). */
 function keyboard(mode: ModifierMode = 'next') {
@@ -36,6 +36,45 @@ test('the layout: 104 keys, every one a key the guest knows, none overlapping, a
   assert.equal(keyOf('Digit2', true), '@');
   assert.equal(keyOf('ArrowUp', false), 'ArrowUp');
   assert.equal(keyOf('NumpadEnter', false), 'Enter');
+});
+
+/** Asserts that keys `ks` don't overlap. */
+function apart(ks: Key[]) {
+  for (const a of ks) for (const b of ks) {
+    if (a === b) continue;
+    const ok = a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
+    assert.ok(ok, `${a.code} and ${b.code} overlap`);
+  }
+}
+
+test('the compact layout: pages of 10u by 5, full, every key of the full layout on one, Shift, Ctrl and Alt on several', () => {
+  assert.deepEqual(PAGES.map((p) => p.id), ['main', 'symbols', 'fn', 'keypad']);
+  const all = new Set<string>();
+  for (const p of PAGES) {
+    assert.equal(new Set(p.keys.map((k) => k.code)).size, p.keys.length, `${p.id}: a key once`);
+    for (const k of p.keys) {
+      assert.ok(k.x >= 0 && k.y >= 0 && k.x + k.w <= COMPACT_WIDTH + 1e-9 && k.y + k.h <= COMPACT_HEIGHT, `${p.id} ${k.code} inside`);
+      all.add(k.code);
+    }
+    apart(p.keys);
+    // Each row reaches the right edge, or a key short of it (the arrows' inverted T).
+    for (let y = 0; y < COMPACT_HEIGHT; y++) {
+      const right = Math.max(...p.keys.filter((k) => k.y <= y && y < k.y + k.h).map((k) => k.x + k.w));
+      assert.ok(right >= COMPACT_WIDTH - 1 - 1e-9, `${p.id} row ${y} reaches the edge: ${right}`);
+    }
+  }
+  assert.deepEqual([...all].sort(), KEYS.map((k) => k.code).sort());
+  for (const c of ['ShiftLeft', 'ControlLeft', 'AltLeft', 'Backspace', 'Escape', 'Tab']) {
+    assert.ok(PAGES.filter((p) => p.keys.some((k) => k.code === c)).length >= 3, `${c} on three pages at least`);
+  }
+});
+
+test('the layout chosen: compact below the threshold, forced either way', () => {
+  assert.equal(autoLayout(COMPACT_BELOW - 1), 'compact');
+  assert.equal(autoLayout(COMPACT_BELOW), 'full');
+  assert.equal(layoutOf(400, undefined), 'compact');
+  assert.equal(layoutOf(400, 'full'), 'full');
+  assert.equal(layoutOf(1400, 'compact'), 'compact');
 });
 
 test('a key is held by its pointer, down to up; two fingers on two keys chord as their touches go', () => {

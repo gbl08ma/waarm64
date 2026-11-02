@@ -1,7 +1,8 @@
 // The on-screen keyboard's keys and what pressing them does (docs/frontend.md "The on-screen keyboard"; Osk.svelte draws
-// it): a US ANSI layout of 104 keys by `KeyboardEvent.code`, and `OskKeys`, which turns pointers on the keys into the
-// keys' downs and ups as a real keyboard's: each pointer (a finger, the mouse, a pen) holds its key until it lifts, so
-// several fingers chord; a modifier tapped alone stays down (latched) for the keys that follow.
+// it): a US ANSI layout of 104 keys by `KeyboardEvent.code`, the compact layout's pages of the same keys for a phone's
+// width, and `OskKeys`, which turns pointers on the keys into the keys' downs and ups as a real keyboard's: each pointer
+// (a finger, the mouse, a pen) holds its key until it lifts, so several fingers chord; a modifier tapped alone stays
+// down (latched) for the keys that follow.
 
 /** A key: its code, where it is and how big, in key widths (`u`). */
 export type Key = { code: string; x: number; y: number; w: number; h: number };
@@ -36,6 +37,70 @@ export const KEYS: Key[] = [
   ...row(4.5, 22, ['NumpadEnter'], 2),
   ...row(5.5, 0, [['ControlLeft', 1.25], ['MetaLeft', 1.25], ['AltLeft', 1.25], ['Space', 6.25], ['AltRight', 1.25], ['MetaRight', 1.25], ['ContextMenu', 1.25], ['ControlRight', 1.25], 0.5, 'ArrowLeft', 'ArrowDown', 'ArrowRight', 0.5, ['Numpad0', 2], 'NumpadDecimal']),
 ];
+
+/** The two layouts: the full keyboard (`KEYS`), or the compact one's pages (`PAGES`) for a phone's width. */
+export type Layout = 'full' | 'compact';
+
+/** The compact layout's size in key widths: ten keys across, as a phone's keyboard. */
+export const COMPACT_WIDTH = 10, COMPACT_HEIGHT = 5;
+
+/** A page of the compact layout: its id (its tab's words are the catalog's `osk:Osk.page.<id>`) and its keys. */
+export type Page = { id: string; keys: Key[] };
+
+/** The bottom row of the letters' and the symbols' pages: Esc, Tab, the left modifiers but Shift, Space, Enter. */
+const bottom = () => row(4, 0, ['Escape', 'Tab', 'ControlLeft', 'MetaLeft', 'AltLeft', ['Space', 3], ['Enter', 2]]);
+/** The keypad's column width on its page (four in 6.5u, the arrows' block beside). */
+const NUM = 1.625;
+
+/**
+ * The compact layout's pages, each 10u by 5: the letters and digits; the symbols, the right-hand modifiers and the
+ * arrows; the F keys and the navigation block; the numeric keypad. Every key of the full layout is on one at least
+ * (Shift, Ctrl, Alt and the editing keys on several), so latched modifiers carry from one page to the next.
+ */
+export const PAGES: Page[] = [
+  { id: 'main', keys: [
+    ...row(0, 0, '1234567890'.split('').map((d) => `Digit${d}`)),
+    ...row(1, 0, letters('QWERTYUIOP')),
+    ...row(2, 0, [...letters('ASDFGHJKL'), 'Semicolon']),
+    ...row(3, 0, [['ShiftLeft', 1.5], ...letters('ZXCVBNM'), ['Backspace', 1.5]]),
+    ...bottom(),
+  ] },
+  { id: 'symbols', keys: [
+    ...row(0, 0, [['Backquote', 2], ['Minus', 2], ['Equal', 2], ['BracketLeft', 2], ['BracketRight', 2]]),
+    ...row(1, 0, [['Backslash', 2], ['Quote', 2], ['Comma', 2], ['Period', 2], ['Slash', 2]]),
+    ...row(2, 0, [['CapsLock', 1.5], ['ShiftRight', 1.75], ['AltRight', 1.75], ['MetaRight', 1.75], ['ContextMenu', 1.5], ['ControlRight', 1.75]]),
+    ...row(3, 0, [['ShiftLeft', 1.5], ['ArrowLeft', 1.75], ['ArrowDown', 1.75], ['ArrowUp', 1.75], ['ArrowRight', 1.75], ['Backspace', 1.5]]),
+    ...bottom(),
+  ] },
+  { id: 'fn', keys: [
+    ...row(0, 0, F(1, 10)),
+    ...row(1, 0, [...F(11, 12), 1, 'PrintScreen', 'ScrollLock', 'Pause', 1, 'Insert', 'Home', 'PageUp']),
+    ...row(2, 0, [['Escape', 1.5], ['Tab', 1.5], ['Backspace', 1.75], ['Enter', 1.75], 0.5, 'Delete', 'End', 'PageDown']),
+    ...row(3, 0, [['ShiftLeft', 2.5], ['ControlLeft', 2], ['AltLeft', 2], 1.5, 'ArrowUp']),
+    ...row(4, 0, [['MetaLeft', 2], ['Space', 4.5], 0.5, 'ArrowLeft', 'ArrowDown', 'ArrowRight']),
+  ] },
+  { id: 'keypad', keys: [
+    ...row(0, 0, [['NumLock', NUM], ['NumpadDivide', NUM], ['NumpadMultiply', NUM], ['NumpadSubtract', NUM], 0.5, ['Backspace', 3]]),
+    ...row(1, 0, [['Numpad7', NUM], ['Numpad8', NUM], ['Numpad9', NUM], NUM + 0.5, ['Escape', 1.5], ['Tab', 1.5]]),
+    ...row(1, 3 * NUM, [['NumpadAdd', NUM]], 2),
+    ...row(2, 0, [['Numpad4', NUM], ['Numpad5', NUM], ['Numpad6', NUM], NUM + 0.5, ['ShiftLeft', 1.5], ['ControlLeft', 1.5]]),
+    ...row(3, 0, [['Numpad1', NUM], ['Numpad2', NUM], ['Numpad3', NUM], NUM + 1.5, 'ArrowUp']),
+    ...row(3, 3 * NUM, [['NumpadEnter', NUM]], 2),
+    ...row(4, 0, [['Numpad0', 2 * NUM], ['NumpadDecimal', NUM], NUM + 0.5, 'ArrowLeft', 'ArrowDown', 'ArrowRight']),
+  ] },
+];
+
+/** The window width (CSS pixels) below which the keyboard is compact unless forced full (the full one's keys are ~25 px there). */
+export const COMPACT_BELOW = 600;
+
+/** The layout a window `width` wide gets on its own. */
+export const autoLayout = (width: number): Layout => (width < COMPACT_BELOW ? 'compact' : 'full');
+
+/**
+ * The layout shown: the one forced by the bar's button, while the window's width hasn't crossed `COMPACT_BELOW` since
+ * (`forced` is only kept while it differs from `autoLayout`), else the automatic one.
+ */
+export const layoutOf = (width: number, forced: Layout | undefined): Layout => forced ?? autoLayout(width);
 
 /** The keys that modify others: tapped alone, they stay down for the next key. */
 export const MODIFIERS = new Set(['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight']);

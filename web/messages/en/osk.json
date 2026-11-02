@@ -11,6 +11,46 @@
     "message": "Drag sideways to resize the keyboard.",
     "note": "On-screen keyboard: tooltip of the ↔ handle in its bar, left of the close button."
   },
+  "Osk.toCompact": {
+    "message": "Switch to the compact keyboard",
+    "note": "On-screen keyboard: tooltip and screen-reader name of the button in its bar (left of the resize handle) that shows the compact layout for a phone's width, its keys on pages chosen by tabs, instead of the full 104 keys."
+  },
+  "Osk.toFull": {
+    "message": "Switch to the full keyboard",
+    "note": "On-screen keyboard: tooltip and screen-reader name of the button in its bar (left of the resize handle) that shows the full 104-key keyboard instead of the compact layout's pages."
+  },
+  "Osk.page.main": {
+    "message": "abc",
+    "note": "On-screen keyboard, compact layout: the words of a tab in its bar choosing a page of keys: the first tab, the letters, the digits and the keys around them; lowercase as a phone keyboard's tab. Very short (a few characters)."
+  },
+  "Osk.pageTitle.main": {
+    "message": "Letters and digits",
+    "note": "On-screen keyboard, compact layout: tooltip of the tab \"abc\" in its bar, saying which keys its page has."
+  },
+  "Osk.page.symbols": {
+    "message": "#+=",
+    "note": "On-screen keyboard, compact layout: the words of a tab in its bar choosing a page of keys: the second tab, the punctuation keys, Caps Lock, the right-hand Shift, Ctrl, Alt, Super, Menu and the arrows; symbols as a phone keyboard's tab. Very short (a few characters)."
+  },
+  "Osk.pageTitle.symbols": {
+    "message": "Symbols, the right-hand modifiers and the arrows",
+    "note": "On-screen keyboard, compact layout: tooltip of the tab \"#+=\" in its bar, saying which keys its page has."
+  },
+  "Osk.page.fn": {
+    "message": "Fn",
+    "note": "On-screen keyboard, compact layout: the words of a tab in its bar choosing a page of keys: the third tab, F1–F12, Print Screen, Scroll Lock, Pause, Insert, Home, Page Up and Down, Delete, End and the arrows. Very short (a few characters)."
+  },
+  "Osk.pageTitle.fn": {
+    "message": "Function and navigation keys",
+    "note": "On-screen keyboard, compact layout: tooltip of the tab \"Fn\" in its bar, saying which keys its page has."
+  },
+  "Osk.page.keypad": {
+    "message": "Num",
+    "note": "On-screen keyboard, compact layout: the words of a tab in its bar choosing a page of keys: the fourth tab, the numeric keypad with Num Lock. Very short (a few characters)."
+  },
+  "Osk.pageTitle.keypad": {
+    "message": "Numeric keypad",
+    "note": "On-screen keyboard, compact layout: tooltip of the tab \"Num\" in its bar, saying which keys its page has."
+  },
   "Osk.key.Escape": {
     "message": "Esc",
     "note": "On-screen keyboard: the Escape key's label, as a US keyboard labels it."

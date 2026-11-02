@@ -848,6 +848,20 @@ it, the ↔ grip in the bar resizes it (the keys scale with its width; a grip in
 where it is and how wide is remembered (`settings().osk`), kept in the window, no wider than the window's width or
 height allow. The toolbar's menus open over it.
 
+- **The compact layout** (`osk.ts` `PAGES`, 10 keys across by 5 rows, as a phone's keyboard): a window narrower than
+  600 px (`COMPACT_BELOW`: the full keyboard's keys are ~25 px there) gets it on its own. Its keys are on four pages,
+  chosen by tabs in the bar: [abc](ui:osk:Osk.page.main) (digits, letters, `;`, Shift, Backspace, and a bottom row of
+  Esc, Tab, Ctrl, Super, Alt, Space, Enter), [#+=](ui:osk:Osk.page.symbols) (the other punctuation keys, Caps Lock, the
+  right-hand modifiers, Menu, the arrows), [Fn](ui:osk:Osk.page.fn) (F1–F12, Print Screen, Scroll Lock, Pause, the
+  navigation block, the arrows) and [Num](ui:osk:Osk.page.keypad) (the keypad). Every key of the full layout is on one
+  page at least; Shift, Ctrl, Alt, Esc, Tab, Backspace and the arrows on several. The pages share `OskKeys`, so a
+  modifier latched on one is used by a key on the next, and a pointer lets its key go wherever it lifts (a document
+  listener), its key gone with the page another finger changed. The bar's button between the tabs and the grip
+  ([Switch to the full keyboard](ui:osk:Osk.toFull), [Switch to the compact keyboard](ui:osk:Osk.toCompact)) forces the
+  other layout; the forced one is remembered (`settings().osk.layout`) until the window's width crosses the threshold
+  to where the automatic choice is the same (a phone turned to landscape and back is compact again). Each layout keeps
+  its own width (`w`, `wc`); the bar is a size container, and the title gives way to the tabs below 420 px.
+
 - **Keys** go through `Input.key` (web/input.ts), the path the screen's own key events take: to the keyboard, or before
   the guest has a driver on it, to the built-in USB keyboard or the serial console (with the `key` a US keyboard
   types, `osk.ts` `keyOf`, and the keyboard's modifiers).
@@ -879,14 +893,14 @@ height allow. The toolbar's menus open over it.
   keyboard's output report (`usb-leds`, docs/usb.md) before (`ui.leds`, main.ts `showLeds`). A guest that sets none
   (no driver, a firmware without LEDs) leaves them dark.
 - **Not yet:** the keys go to the guest's keyboard in every view (the serial terminal's view too); a key held here
-  doesn't repeat on the serial console (the guest's kernel repeats it on the keyboard); no layout but US; one size of
-  key labels on a phone (backlog).
+  doesn't repeat on the serial console (the guest's kernel repeats it on the keyboard); no layout but US (backlog).
 
-`tests/osk.test.ts` tests the layout and `OskKeys`; `tests/page-osk.test.ts` the keyboard and the Keys menu on the page,
+`tests/osk.test.ts` tests the layouts (the compact pages covering the full one's keys) and `OskKeys`; `tests/page-osk.test.ts` the keyboard and the Keys menu on the page,
 with the keyboard's, tablet's and serial console's ports kept on the page (clicks, a held key, latched modifiers, two
 fingers by CDP touches, the focus, a move and a resize remembered, the toggle mode, the holders beside the physical
 keyboard, a finger on the keyboard and one on the screen, the driver's change, the serial console before the driver,
-the LEDs from virtio-input's status events and their switch with the driver, Ctrl+W, Esc, Hold Esc);
+the LEDs from virtio-input's status events and their switch with the driver, Ctrl+W, Esc, Hold Esc; the compact layout at a
+phone's width: its tabs, a latch and a held key across pages, the forced layout remembered and dropped as the width crosses);
 `tests/usb-keyboard.test.ts` the built-in keyboard's `usb-leds`. The wake isn't tested on the page (a suspended guest's status is the worker's).
 
 ### The keyboard layout

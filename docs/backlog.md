@@ -1022,8 +1022,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
-- **The on-screen keyboard's next steps** (frontend.md "The on-screen keyboard"): a compact layout for a phone's width
-  (the full 104 keys at 400 px are small; rotating to landscape is the way for now); the serial terminal's view
+- **The on-screen keyboard's next steps** (frontend.md "The on-screen keyboard"): the serial terminal's view
   sending the keys to the serial console, as its own typing does; layouts besides US (legends from the guest's keymap, web/app/keyboard.ts); a
   key held on it repeating on the serial console (before the guest's keyboard driver), as the browser's repeats do.
 

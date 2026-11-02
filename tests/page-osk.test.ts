@@ -31,8 +31,8 @@ before(async () => {
 after(async () => { await browser?.close(); close?.(); });
 
 /** The page with its keyboard's, tablet's and serial console's ports kept here, its worker stopped and (`live`) the guest's keyboard driver said to be up. */
-async function open(live = true) {
-  const context = await browser.newContext({ viewport: { width: 1400, height: 900 }, hasTouch: true });
+async function open(live = true, viewport = { width: 1400, height: 900 }) {
+  const context = await browser.newContext({ viewport, hasTouch: true });
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -197,6 +197,62 @@ test('the on-screen keyboard moved and resized, remembered; Preferences keeps mo
   await showOsk(page);
   const kept = (await page.locator('#osk').boundingBox())!;
   assert.ok(Math.abs(kept.x - after.x) < 3 && Math.abs(kept.y - after.y) < 3 && Math.abs(kept.width - after.width) < 3, `kept: ${JSON.stringify([after, kept])}`);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('the compact layout at a phone\'s width: pages by tabs, a latch and a held key across them; the bar\'s button forces the full one until the width crosses', { skip, timeout: 120_000 }, async () => {
+  const { context, page, errors } = await open(true, { width: 390, height: 844 });
+  await showOsk(page);
+  const layout = () => page.locator('#osk').getAttribute('data-layout');
+  assert.equal(await layout(), 'compact');
+  assert.equal(await page.locator('#osk .title').isVisible(), false, 'no room for the title beside the tabs');
+  assert.equal(await key(page, 'F1').count(), 0, 'the letters\' page first');
+  await key(page, 'KeyA').click();
+  await settle(page, 2);
+  assert.deepEqual(await keys(page), ev([K.A, true], [K.A, false]));
+
+  // Ctrl latched on the letters' page, F1 on the F keys' page: Ctrl+F1.
+  await key(page, 'ControlLeft').click();
+  await page.locator('#osk [data-page=fn]').click();
+  assert.equal(await key(page, 'KeyA').count(), 0);
+  assert.equal(await key(page, 'ControlLeft').getAttribute('data-state'), 'latched', 'the latch shows on the other page');
+  await key(page, 'F1').click();
+  await settle(page, 4);
+  assert.deepEqual(await keys(page), ev([K.Ctrl, true], [K.F1, true], [K.F1, false], [K.Ctrl, false]));
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'screen');
+
+  // A key held while the page changes under it: let go when its pointer lifts, its key gone.
+  await page.locator('#osk [data-page=main]').click();
+  const a = (await key(page, 'KeyA').boundingBox())!;
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.down();
+  await settle(page, 1);
+  await page.locator('#osk [data-page=keypad]').dispatchEvent('click');
+  await key(page, 'Numpad5').waitFor();
+  await page.mouse.up();
+  await settle(page, 2);
+  assert.deepEqual(await keys(page), ev([K.A, true], [K.A, false]));
+
+  // The bar's button: the full keyboard, remembered; a wide window then a narrow one again: compact on its own.
+  await page.locator('#osk .layout').click();
+  assert.equal(await layout(), 'full');
+  assert.equal(await key(page, 'F1').count(), 1);
+  await load(page);
+  await showOsk(page);
+  assert.equal(await layout(), 'full', 'forced, remembered');
+  await page.setViewportSize({ width: 1400, height: 900 });
+  // The wide window seen: the forced layout is the automatic one there, so it's dropped.
+  await page.waitForFunction(() => !JSON.parse(localStorage.getItem('webpc.settings') ?? '{}').osk?.layout);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => document.querySelector('#osk')?.getAttribute('data-layout') === 'compact');
+  // Forced compact in a wide window.
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.waitForFunction(() => document.querySelector('#osk')?.getAttribute('data-layout') === 'full');
+  assert.equal(await page.locator('#osk .title').isVisible(), true, 'the full keyboard\'s title');
+  await page.locator('#osk .layout').click();
+  assert.equal(await layout(), 'compact');
+  assert.equal(await keys(page).then((k) => k.length), 0, 'switching presses no key');
   assert.deepEqual(errors, []);
   await context.close();
 });
