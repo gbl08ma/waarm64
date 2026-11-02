@@ -10,6 +10,7 @@
 // connected again without a restart.
 import { startTailscale, tailscaleBuilt, type FromTailscale, type NetMap, type Tailscale, type TailscaleConfig } from '../tailscale.ts';
 import type { Reach6Options } from '../reach6.ts';
+import { startLocal } from '../local-net.ts';
 import { forgetTailcatIdentity, hasTailcatIdentity, parseRelay, parseTailcatAddr, startTailcat, tailcatBuilt, type TailcatConfig, type TailcatServe } from '../tailcat.ts';
 
 export { tailscaleBuilt, tailcatBuilt, parseTailcatAddr, parseRelay, forgetTailcatIdentity, hasTailcatIdentity };
@@ -85,16 +86,22 @@ export type NetworkView = {
   served?: string;
   /** The subnets the tailnet's peers route (when any do), and whether they're installed. */
   subnets?: { routes: string[]; on: boolean };
-  /** Connected, and it reaches the internet (a tailnet's exit node in use, tailcat through a server): it can be the guest's default way out. */
+  /** Connected, and it reaches the internet (a tailnet's exit node in use, tailcat through a server, the local helper): it can be the guest's default way out. */
   internet?: boolean;
+  /** The local helper's: its lease always routes everything through it, so it is the primary first (`primaryOf`). */
+  local?: boolean;
 };
 
 /**
- * Which of a machine's adapters is the guest's default way out (docs/network-adapters.md §4): the first, in
- * order, that is connected and reaches the internet; without one, the first connected (so a machine with one adapter
+ * Which of a machine's adapters is the guest's default way out (docs/network-adapters.md §4): the first connected
+ * local helper's; else the first, in order, that is connected and reaches the internet; without one, the first connected (so a machine with one adapter
  * keeps its default route, as it always had); -1 when none is connected.
  */
-export function primaryOf(views: Pick<NetworkView, 'phase' | 'internet'>[]): number {
+export function primaryOf(views: Pick<NetworkView, 'phase' | 'internet' | 'local'>[]): number {
+  // A local helper's lease always carries a default route (its DHCP, not the page's): it goes first, so a tailnet or
+  // tailcat adapter beside it is the one given only its routes (docs/network-adapters.md §4).
+  const local = views.findIndex((v) => v.phase === 'connected' && v.local);
+  if (local >= 0) return local;
   const net = views.findIndex((v) => v.phase === 'connected' && v.internet);
   return net >= 0 ? net : views.findIndex((v) => v.phase === 'connected');
 }
@@ -109,7 +116,7 @@ export function ranksOf(views: Pick<NetworkView, 'phase'>[]): number[] {
 }
 
 /** What a `Tailscale` client reports, as far as the view needs it. */
-export type ClientReport = { state: string; netmap?: NetMap; loginURL?: string; error?: string; tailcat?: boolean };
+export type ClientReport = { state: string; netmap?: NetMap; loginURL?: string; error?: string; tailcat?: boolean; local?: boolean };
 
 const web = (s: string | undefined) => {
   try {
@@ -125,6 +132,11 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
   if (!c) return { phase: 'off', text: 'Not connected', exitNodes: [] };
   if (c.error) return { phase: 'error', text: `Couldn't connect: ${c.error.split('\n')[0]}`, exitNodes: [] };
   const loginURL = web(c.loginURL);
+  if (c.local) {
+    if (c.state !== 'Running') return { phase: 'connecting', text: 'Connecting to the helper on this computer…', exitNodes: [] };
+    const address = c.netmap?.addresses[0]?.replace(/\/\d+$/, '');
+    return { phase: 'connected', address, exitNodes: [], internet: true, local: true, text: `Connected through this computer${address ? ` (${address})` : ''}` };
+  }
   if (c.netmap?.via === 'tailcat' || c.tailcat) {
     if (c.state === 'Running' && c.netmap) {
       const served = c.netmap.serving ? { served: c.netmap.serving } : {};
@@ -159,9 +171,10 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
 /**
  * A tailnet (`controlURL`, …), or tailcat: through a server when `tailcat` (its address) is given, letting clients in with
  * `tailcatServe` (`probe6`: how the server's or the exit node's IPv6 reach is checked, web/reach6.ts). `persist`: the tailnet node's profile in `webpc-tailscale` (web/tailscale-state.ts), so it is kept and
- * comes back without a login; none: an ephemeral node (a connection kept nowhere, web/app/connections.ts).
+ * comes back without a login; none: an ephemeral node (a connection kept nowhere, web/app/connections.ts). `local`: the
+ * local helper's link (`ws://127.0.0.1:<port>/<token>`, web/local-net.ts), the card's frames to it.
  */
-export type Connect = { controlURL: string; hostname: string; authKey?: string; exitNode?: string; acceptRoutes?: boolean; persist?: string; tailcat?: string; tailcatServe?: TailcatServe; probe6?: Reach6Options };
+export type Connect = { controlURL: string; hostname: string; authKey?: string; exitNode?: string; acceptRoutes?: boolean; persist?: string; tailcat?: string; tailcatServe?: TailcatServe; probe6?: Reach6Options; local?: string };
 
 export type Network = {
   /** A new machine's end of the IP port (its device's `{ip: port}`; transfer it). Any client gets the other end. */
@@ -222,6 +235,7 @@ export function createNetwork(
   onChange: () => void,
   start: (config: TailscaleConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startTailscale,
   startCat: (config: TailcatConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startTailcat,
+  startHelper: (config: { url: string; ip: MessagePort }, onEvent: (m: FromTailscale) => void) => Tailscale = startLocal,
 ): Network {
   /** The page's end of the machine's port, while no client has it. */
   let free: MessagePort | undefined;
@@ -230,10 +244,13 @@ export function createNetwork(
   let ports = 0;
   let error: string | undefined;
   let tailcat = false;
+  let local = false;
+  /** The card is on frames (a local client had it last): an IP client brings the page's gateway back first. */
+  let onFrames = false;
   let primary = true;
   let rank = 0;
 
-  const report = (): ClientReport | undefined => (client ? { state: client.state(), netmap: client.netmap(), loginURL: client.loginURL(), error, tailcat } : undefined);
+  const report = (): ClientReport | undefined => (client ? { state: client.state(), netmap: client.netmap(), loginURL: client.loginURL(), error, tailcat, local } : undefined);
 
   async function disconnect() {
     const t = client;
@@ -257,6 +274,7 @@ export function createNetwork(
       else {
         free?.close();
         free = port1;
+        onFrames = false; // a new machine's card starts on the gateway
       }
       return port2;
     },
@@ -272,7 +290,12 @@ export function createNetwork(
         onChange();
       };
       tailcat = !!(c.tailcat || c.tailcatServe);
-      const t = tailcat
+      local = !!c.local;
+      if (onFrames && !local) ip.postMessage({ type: 'gateway' });
+      onFrames = local;
+      const t = local
+        ? startHelper({ url: c.local!, ip }, onEvent)
+        : tailcat
         ? startCat({ addr: c.tailcat ?? '', serve: c.tailcatServe, probe6: c.probe6, ip }, onEvent)
         : start({ controlURL: c.controlURL, authKey: c.authKey || undefined, hostname: c.hostname, exitNode: c.exitNode || undefined, acceptRoutes: c.acceptRoutes, ip, persist: c.persist, probe6: c.probe6 }, onEvent);
       client = t;

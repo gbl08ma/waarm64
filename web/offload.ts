@@ -10,6 +10,8 @@
 export const NET_HDR = 12;
 /** A 1500-byte MTU, the Ethernet header and a VLAN tag: the largest frame that isn't cut into segments. */
 export const MAX_FRAME = 1518;
+/** The largest frame a frame port takes (the local helper's link, whose MTU can be up to 65520): the largest IP packet behind Ethernet and a VLAN tag. */
+export const MAX_PORT_FRAME = 18 + 65_535;
 /** The largest packet the guest may hand over to be cut: an IPv6 header and the largest payload, behind Ethernet and a VLAN tag. */
 export const MAX_GSO_FRAME = 18 + 40 + 65_535;
 
@@ -71,14 +73,15 @@ function l3Of(f: Uint8Array): { l3: number; v6: boolean } | undefined {
 
 /**
  * The frames for one transmitted chain (`b`: the header, then the frame; the device's copy, changed in place):
- * the frame with its checksum finished, or its segments. Empty when the guest got it wrong (what a NIC drops).
+ * the frame with its checksum finished, or its segments. Empty when the guest got it wrong (what a NIC drops), or a
+ * plain frame is over `maxFrame` (a 1500-byte MTU's; a frame port's is `MAX_PORT_FRAME`).
  */
-export function transmit(b: Uint8Array): Uint8Array[] {
+export function transmit(b: Uint8Array, maxFrame = MAX_FRAME): Uint8Array[] {
   if (b.length <= NET_HDR) return [];
   const f = b.subarray(NET_HDR);
   const gso = b[1] & 0x7f;
   if (gso === GSO_NONE) {
-    if (f.length > MAX_FRAME) return [];
+    if (f.length > maxFrame) return [];
     if (b[0] & NEEDS_CSUM && !finish(f, le16(b, 6), le16(b, 8))) return [];
     return [f];
   }

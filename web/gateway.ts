@@ -55,6 +55,13 @@ export const routedLease = (lease: Lease | null, primary: boolean, routes: Route
 /** A layer-3 backend: IP packets out through `send`, in through the `deliver` it was made with. */
 export type IpBackend = { lease(): Lease | null; send(packet: Uint8Array): void; close?(): void };
 
+/**
+ * The other way an IP port's card can go (web/devices.ts): `{type: 'frames', port}` on the port (the local helper's
+ * client) puts the card's frames on `port`, the gateway bypassed (`port` null: dropped until one comes), and
+ * `{type: 'gateway'}` brings the gateway back. Each switch flaps the link under a driver.
+ */
+export type FramePath = { frames(port: MessagePort | null): void; gateway(): void };
+
 /** What `gateway` gives a backend's maker: where the guest's packets come from, and to tell the gateway its lease changed. */
 export type Deliver = (packet: Uint8Array) => void;
 
@@ -73,6 +80,8 @@ export type GatewayOptions = {
   renewSeconds?: number;
   /** Send unsolicited router advertisements this often (milliseconds; realtime only: a timer). 0: only when asked, and when the lease changes. */
   advertiseMs?: number;
+  /** The backend's lease moved to another address than the guest was given: the device flaps the link (web/devices.ts). */
+  stale?: () => void;
 };
 
 export const GATEWAY_MAC = [0x02, 0x77, 0x65, 0x62, 0x70, 0x63];
@@ -214,6 +223,8 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
   let advertised = false;
   let defaultRouter = false;
   let again: ReturnType<typeof setTimeout> | undefined;
+  /** The IPv4 address the guest was last given (acknowledged). */
+  let given: number[] | undefined;
 
   let leaseNow = (): Lease | null | undefined => undefined; // the backend's, once it exists
   const backend = makeBackend((packet) => {
@@ -224,7 +235,16 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
     if (lease) clampMss(packet, lease.mtu);
     if (v === 4 && packet.length >= 20) receive(eth(guestMac, mac, 0x0800, packet));
     else if (v === 6 && packet.length >= 40) receive(eth(guestMac, mac, 0x86dd, packet));
-  }, () => advertise());
+  }, () => {
+    // A lease for another address than the one the guest holds (another connection on the adapter): the guest would keep
+    // it until its renewal, so the link flaps and it asks now. The same address again (a reconnect) doesn't.
+    const lease = backend.lease();
+    if (given && lease && !eq(lease.address, 0, given)) {
+      given = undefined;
+      opts.stale?.();
+    }
+    advertise();
+  });
   leaseNow = () => backend.lease();
 
   /** A router advertisement to all nodes: the gateway is the default router while the lease has an IPv6 address, and isn't once it hasn't. */
@@ -286,6 +306,7 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
     m.set(b.subarray(10, 12), 10); // flags
     m.set(b.subarray(12, 16), 12); // ciaddr
     if (reply !== NAK && lease) m.set(lease.address, 16); // yiaddr
+    if (reply === ACK && lease) given = [...lease.address];
     if (reply !== NAK) m.set(gw, 20); // siaddr
     m.set(b.subarray(24, 44), 24); // giaddr, chaddr
     m.set([0x63, 0x82, 0x53, 0x63], 236);
@@ -519,7 +540,7 @@ export function echoBackend(lease: Lease = ECHO_LEASE) {
  * (web/net.ts `batchSender`), `{type: 'lease', lease}` (or `lease: null`) from
  * the backend sets the lease.
  */
-export function portBackend(port: MessagePort) {
+export function portBackend(port: MessagePort, path?: FramePath) {
   return (deliver: Deliver, leaseChanged: () => void): IpBackend => {
     let lease: Lease | null = null;
     const send = batchSender(port);
@@ -529,6 +550,10 @@ export function portBackend(port: MessagePort) {
       else if (e.data?.type === 'lease') {
         lease = e.data.lease;
         leaseChanged();
+      } else if (e.data?.type === 'frames') path?.frames(e.data.port ?? null);
+      else if (e.data?.type === 'gateway') {
+        lease = null; // the helper's frames went: whoever comes next leases afresh
+        path?.gateway();
       }
     };
     return {

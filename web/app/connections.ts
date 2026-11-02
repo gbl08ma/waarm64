@@ -1,4 +1,4 @@
-// The browser's network connections (docs/network-adapters.md §2): tailnets and tailcat, each with its own
+// The browser's network connections (docs/network-adapters.md §2): tailnets, tailcat and the local helper, each with its own
 // state, which a machine's adapters attach to. Stored ones are records in IndexedDB `webpc` `connections` (web/app/store.ts);
 // their state stays where the clients keep it: a tailnet's node in `webpc-tailscale` under the profile `stateKey`
 // (web/tailscale-state.ts), tailcat's served identity in `webpc-tailcat` under `identityKey` (web/tailcat.ts). Ephemeral
@@ -33,15 +33,22 @@ export type TailcatConnection = {
   identity?: TailcatIdentity;
 };
 
+export type LocalConnection = {
+  /** The helper's link, `ws://127.0.0.1:<port>/<token>` (a secret: the token lets a page on an allowed origin in). */
+  url: string;
+};
+
 export type Connection = {
   id: string;
   /** The user's; by default from the kind and the server. */
   name: string;
-  kind: 'tailnet' | 'tailcat';
+  kind: 'tailnet' | 'tailcat' | 'local';
   /** Kept nowhere: gone when this page closes (§1.6). */
   ephemeral: boolean;
   tailnet?: TailnetConnection;
   tailcat?: TailcatConnection;
+  /** The local helper on this computer (net/webpc-net, docs/plans/networking-local.md). */
+  local?: LocalConnection;
   /** Connect when a machine attached to it starts (off after Disconnect). */
   connectAtStart: boolean;
   /** When a machine last connected it (what the Attach wizard preselects); 0: never. */
@@ -57,6 +64,7 @@ export type NewConnection = {
   connectAtStart?: boolean;
   tailnet?: Omit<TailnetConnection, 'stateKey'>;
   tailcat?: Omit<TailcatConnection, 'identityKey' | 'identity'>;
+  local?: LocalConnection;
 };
 
 /** Where a stored connection's state is, to forget it with the connection (the page's: IndexedDB; the tests' fakes). */
@@ -68,9 +76,10 @@ export type ConnectionState = {
 /** The connection's Web Lock: held while a running machine has it (in any tab). */
 export const connectionLock = (id: string) => `webpc-net:${id}`;
 
-/** A connection's default name: Tailscale, a Headscale's host, or tailcat. */
+/** A connection's default name: Tailscale, a Headscale's host, tailcat, or This computer. */
 export function defaultName(c: Pick<NewConnection, 'kind' | 'tailnet'>): string {
   if (c.kind === 'tailcat') return 'tailcat';
+  if (c.kind === 'local') return 'This computer';
   const url = c.tailnet?.controlURL || DEFAULT_CONTROL;
   return url === DEFAULT_CONTROL ? 'Tailscale' : new URL(url).host;
 }
@@ -113,6 +122,7 @@ export class Connections {
       kind: o.kind,
       ephemeral,
       ...(o.kind === 'tailnet' ? { tailnet: { controlURL: DEFAULT_CONTROL, hostname: 'webpc', exitNode: '', ...o.tailnet, stateKey: id } } : {}),
+      ...(o.kind === 'local' ? { local: { url: o.local?.url ?? '' } } : {}),
       ...(o.kind === 'tailcat' ? { tailcat: { serve: false, relay: '', ...o.tailcat, identityKey: id, ...(ephemeral ? { identity: newTailcatIdentity() } : {}) } } : {}),
       connectAtStart: o.connectAtStart ?? true,
       lastUsed: 0,

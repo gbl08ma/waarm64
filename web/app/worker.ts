@@ -210,7 +210,7 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
     case 'net': {
       const n = m.nets![slot.adapter!];
       // Several adapters: frequent renewals, so the default route follows the primary (network-adapters.md §4).
-      return { type: 'net', mac: n.mac, gateway: slot.adapter, ...(m.nets!.length > 1 ? SEVERAL_ADAPTERS : {}), adapter: n.frames ?? { ip: n.ip } };
+      return { type: 'net', mac: n.mac, gateway: slot.adapter, ...(m.nets!.length > 1 ? SEVERAL_ADAPTERS : {}), adapter: { ip: n.ip } };
     }
     // Without the page's ring (a page that passed none), the sink plays on its own clock.
     // With the page's sound, its volume and mute are the device's controls (the guest's Master).

@@ -52,9 +52,7 @@ A/B measurements: docs/jit.md "Floating point"), `?growcore` (the core on the me
 exact-limits copy, for A/B measurements: [abi.md](abi.md) "A fixed-size memory"), `?jitmb=MiB` (the JIT's code cache budget, over a stored machine's
 own: `VmConfig.jit_bytes`, docs/jit.md "Memory"), `?usb=1` (a transient machine with a USB controller; a stored machine's is
 its record's), `?usbzero=1` (Gadget Zero in the USB menu, for tests: [usb.md](usb.md) "Gadget Zero on the page"),
-`?localnet=ws://127.0.0.1:<port>/<token>` or `#net=…` (the local helper's link, read at a machine's start: its first
-adapter's frames go straight to the helper, no gateway in the page and no connection, the Network menu unaware;
-web/local-net.ts, the spike of [plans/networking-local.md](plans/networking-local.md) L0, which L2 replaces).
+`#net=ws://127.0.0.1:<port>/<token>` (the local helper's pairing link: the Network wizard opens on it, "Network" below).
 
 ## The machines
 
@@ -1102,8 +1100,8 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
 A machine has up to four **network adapters** (machines with a `network` entry in machine.ts; a stored machine's
 are on its Network tab, above), and each adapter has a **connection** attached, or none (the cable out). A
 connection is the browser's, not the machine's (docs/network-adapters.md): a tailnet (a Tailscale network,
-docs/plans/networking.md; the backend is web/tailscale.ts, the client in its own worker) or tailcat (below), with its
-state (a tailnet's node, tailcat's served address), kept in IndexedDB `webpc` `connections` (web/app/connections.ts)
+docs/plans/networking.md; the backend is web/tailscale.ts, the client in its own worker), tailcat (below) or **this
+computer** (the local helper, below), with its state (a tailnet's node, tailcat's served address, the helper's link), kept in IndexedDB `webpc` `connections` (web/app/connections.ts)
 unless it is **ephemeral**: then it lives in the page's memory and is gone when the page closes, and its adapter
 comes back detached, saying so. Any machine can use a kept connection; one running machine has it at a time (its Web
 Lock, `webpc-net:<id>`): another tab asking for it is told which machine has it and, after **Use it here**, takes it
@@ -1113,10 +1111,12 @@ The toolbar's **Network** menu has a section per adapter of the page's machine (
 several; adapter 1's elements keep their ids, adapter n's end in `-<n-1>`): the status, the connection's name,
 **Log in…**, **Internet through** (a tailnet's exit nodes), **Reach the subnets peers route** (when a tailnet's
 peers route subnets), **This machine's tailcat address** (when it lets clients
-in), **Connect** (the attached connection, when it isn't running), **Disconnect**, **Log out**, and **Connect…** or
+in), **Connect** (the attached connection, when it isn't running), **Retry** (a connection that failed: disconnect and
+connect again), **Disconnect**, **Log out**, and **Connect…** or
 **Change connection…**, which opens the **Network wizard** (`NetWizard.svelte`): first the browser's connections,
 the most recently used free one chosen and those in use marked with their machine, after **New connection…**
-(without connections it starts at the next step); then the kind, **A tailnet** or **tailcat**, then that kind's
+(without connections it starts at the next step); then the kind, **A tailnet**, **tailcat** or **This computer
+(webpc-net)**, then that kind's
 settings and **Keep this connection in this browser** (on; off makes it ephemeral), with Back, Cancel (or Esc) and
 Connect. Form errors show in the wizard; Connect closes it (stopping the adapter's running client first) and opens
 the menu, which then says how the connection goes. The same wizard attaches a connection to a machine that isn't on
@@ -1125,6 +1125,23 @@ page's **Connections**: rename, Edit, New address, Log out for any node kept her
 side is `web/app/net-live.ts` (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, the clients, the locks
 and the guest's default way out (below).
 
+- **This computer** (the local helper, net/webpc-net: [plans/networking-local.md](plans/networking-local.md)): a
+  program the user runs prints a pairing link, `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>`. Opening it
+  takes the fragment out of the address at once (it holds the token) and opens the wizard on **This computer**, the
+  link filled in, attaching to the page's machine's first adapter (or making the connection, without one); pasting
+  the link (or its `ws://` part) into that step does the same. The step shows the install lines for this browser's
+  platform (`web/local-release.ts`: client hints, a choice of the six; the release's version and SHA-256s), or, with
+  no release yet, where the source is. Connecting starts the client in a worker of its own (web/local-net-worker.ts),
+  which puts the card on a frame port, the page's gateway bypassed (web/gateway.ts `FramePath`: the link flaps, so
+  the guest asks the helper for a lease at once), and moves its frames to the helper's WebSocket, those before a
+  timer's turn in one message. The helper's DHCP gives the lease, routes and resolvers, so the adapter is the guest's
+  default way out first (`primaryOf`); two such adapters both give a default route, and the menu says so. The
+  menu's line is "Connected through this computer (<address>)", the address read from the helper's DHCP
+  acknowledgment. Errors are the helper's close codes as sentences (another version, an origin it doesn't accept, a
+  wrong token), or, for a socket that never opened, the helper not running, or this site refused loopback
+  (`permissions.query({name: 'loopback-network'})`: denied), with where the setting is. Disconnect leaves the card on
+  frames to nothing, so connecting again to the same helper doesn't flap the link; another kind brings the gateway
+  back (with a flap).
 - **The card is always there** (`machine.network`): virtio-net on the Ethernet gateway from the
   boot, so connecting later never restarts the machine. The card costs no boot time (Debian to
   login, alternating runs, this container: 81.3 s median without it, 79.7 s with it, 3 runs each,

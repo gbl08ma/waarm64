@@ -1,0 +1,9 @@
+# net/webpc-net/build.sh v0.0.0-repro, 2026-11-01, x86_64 Linux (cloud container), go1.27.3; two clean builds matched.
+# Check on another host from the same source: net/webpc-net/build.sh --check <this file without these lines> v0.0.0-repro
+42196486d4fff9a14aa6a46251804cabdf585b09ab18fc2a933be0736ad2a477  LICENSES.txt
+2f9ad9c98bcb5228c66e2ad33edb6b642e6088c12650c67e5305d76647575f72  webpc-net-v0.0.0-repro-darwin-amd64
+9d3f5181eabee4aa21f89e5714c12b0d45b3038cc0ae8fe38cc8779a68cdae77  webpc-net-v0.0.0-repro-darwin-arm64
+f0388dc23561fbf2111dc18c931004099aaa61b23cca0d2dffb7622172c544a6  webpc-net-v0.0.0-repro-linux-amd64
+2b0f9d57e983e6f7ec43d284e7095085041af167bec24b1ddf9fd4ecbb1f8d58  webpc-net-v0.0.0-repro-linux-arm64
+e2565b3002544bd60865c1c7b082d17fba51abeee2041965b703c0a14af1f547  webpc-net-v0.0.0-repro-windows-amd64.exe
+e8e338373b4b193e573d907637474c7609258cef068530933a3b537b5c5b3708  webpc-net-v0.0.0-repro-windows-arm64.exe

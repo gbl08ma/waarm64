@@ -145,6 +145,23 @@ test('DHCP follows the backend: no lease, no offer; a request for another addres
   assert.equal(out.length, 0);
 });
 
+test('a lease for another address than the guest holds flaps the link; the same again, or none, does not', () => {
+  let stale = 0;
+  const { g, out, setLease } = rig(ECHO_LEASE, undefined, { stale: () => stale++ });
+  setLease({ ...ECHO_LEASE, address: [10, 9, 9, 9] });
+  assert.equal(stale, 0, 'nothing given yet: the guest asks for a lease anyway');
+  setLease(ECHO_LEASE);
+  g.send(dhcpMsg(3, [50, 4, ...ECHO_LEASE.address, 54, 4, ...GATEWAY_IP]));
+  assert.equal(dhcpReply(out.pop()!).type, 5);
+  setLease(null); // a disconnect: the guest keeps its address, for a reconnect to the same
+  setLease({ ...ECHO_LEASE });
+  assert.equal(stale, 0, 'the same address again');
+  setLease({ ...ECHO_LEASE, address: [10, 9, 9, 9] });
+  assert.equal(stale, 1, 'another connection, another address');
+  setLease({ ...ECHO_LEASE, address: [10, 9, 9, 8] });
+  assert.equal(stale, 1, 'once until the guest is given one again');
+});
+
 test('DHCP renewal (ciaddr set) is answered unicast to the guest', () => {
   const { g, out } = rig();
   g.send(dhcpMsg(3, [], ECHO_LEASE.address));

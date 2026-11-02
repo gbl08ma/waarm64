@@ -192,7 +192,7 @@
   // The network: each adapter's connection (the record's: attached while the machine runs too), and the browser's connections.
   const conns = $derived((void ui.net, net.connections));
   const live = $derived((void ui.net, net.views()));
-  const kindText = (c: Connection) => `${c.kind === 'tailnet' ? `a tailnet (${new URL(c.tailnet!.controlURL).host})` : c.tailcat?.exit ? 'tailcat through a server' : 'tailcat, letting clients in'}${c.ephemeral ? ', ephemeral (not kept)' : ''}`;
+  const kindText = (c: Connection) => `${c.kind === 'tailnet' ? `a tailnet (${new URL(c.tailnet!.controlURL).host})` : c.kind === 'local' ? 'the helper on this computer' : c.tailcat?.exit ? 'tailcat through a server' : 'tailcat, letting clients in'}${c.ephemeral ? ', ephemeral (not kept)' : ''}`;
   /** Who has connection `c` now: an adapter here, a machine in another tab, or no one. */
   const stateOf = (c: Connection) => (net.runs(c.id) >= 0 ? 'connected on this page' : net.held.has(c.id) ? 'in use in another tab' : 'not in use');
   const usedBy = (c: Connection) => [...machines.filter((m) => m.adapters?.some((a) => a.connection === c.id)).map((m) => m.name), ...(settings().transientNet === c.id && ui.transient ? [ui.transient.label] : [])];
@@ -328,7 +328,7 @@
                   <input class="conn-name" value={c.name} aria-label="Name" data-field="connection-name" onchange={(e) => { const name = e.currentTarget.value; void act('Renaming', () => page.netRename(c, name)); }}>
                   <span class="meta">{kindText(c)} · {stateOf(c)} · {usedBy(c).length ? `attached to ${usedBy(c).join(', ')}` : 'attached to no machine'}</span>
                 </div>
-                <button onclick={() => page.netWizard({ mode: 'edit', connection: c.id })} data-action="edit-connection" title={c.kind === 'tailnet' ? 'Its hostname (another control server is another connection)' : 'Its server and relay'}>Edit…</button>
+                <button onclick={() => page.netWizard({ mode: 'edit', connection: c.id })} data-action="edit-connection" title={c.kind === 'tailnet' ? 'Its hostname (another control server is another connection)' : c.kind === 'local' ? "The helper's link" : 'Its server and relay'}>Edit…</button>
                 {#if c.tailcat?.serve}<button onclick={() => act('Forgetting the address', () => page.netNewAddress(c))} data-action="new-address" title="Forget the connection's tailcat address: whoever has it can't come in any more">New address</button>{/if}
                 {#if net.hasNode(c) || (c.tailnet && net.runs(c.id) >= 0)}<button onclick={() => logoutConnection(c)} data-action="logout-connection" title="Remove the node from the tailnet and forget its keys">Log out</button>{/if}
                 <button onclick={() => act('Deleting', () => page.netDelete(c))} data-action="delete-connection" title="Delete the connection and what this browser keeps of it (its machines lose it)"><Icon name="trash" size={16} />Delete</button>

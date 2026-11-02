@@ -13,9 +13,9 @@ code's comments still cite; machines had first left several adapters for later: 
 1. **A machine has up to 4 network adapters** (`MAX_ADAPTERS`), in order, each with its own MAC. Adapters are part
    of the shape, their order too: virtio-mmio has no hotplug, so adding, removing or moving one needs the machine off
    (as a disk does).
-2. **Connections are the browser's, not the machine's:** a list kept in this browser, each a tailnet or tailcat
-   (later, perhaps, a p2p room: [plans/networking-p2p.md](plans/networking-p2p.md), or a local helper:
-   [plans/networking-local.md](plans/networking-local.md)). A connection carries its own state
+2. **Connections are the browser's, not the machine's:** a list kept in this browser, each a tailnet, tailcat or
+   the local helper on this computer (`local`: [plans/networking-local.md](plans/networking-local.md); later,
+   perhaps, a p2p room: [plans/networking-p2p.md](plans/networking-p2p.md)). A connection carries its own state
    (a tailnet's node, tailcat's identity and address), so it keeps working as the user moves from one machine to the
    next. There is no "default" connection.
 3. **An adapter with no connection is allowed:** a card with no cable.
@@ -53,6 +53,8 @@ Disconnect) and `lastUsed` (what the wizard preselects). The state stays where t
   that ran stays stopped); Delete deletes all the same and says the node stays on the tailnet until it expires or an
   admin removes it. While it goes on the connection's lock is held, nothing connects it and no other tab can take it;
   one another tab's machine has is taken from it first, after asking.
+- **The local helper's link** (`local.url`, `ws://127.0.0.1:<port>/<token>`) in the record: a secret, like tailcat's
+  `exit`; the helper keeps its token, so the link stays good across its restarts. Nothing else to forget.
 - **tailcat's served identity** in `webpc-tailcat` under `identityKey` (`served` for the one kept before
   connections). The server address it goes online through (`exit`) is a secret and is kept only in a stored
   connection.
@@ -101,7 +103,9 @@ running in another tab takes effect there at once: that tab hears the record cha
   192.0.0.2 on every adapter: it is local to its link (the client translates it to the tunnel's IPv6), and only the
   primary carries IPv4 routes, so two tailcat adapters with the same address don't meet. A tailnet's addresses are
   distinct already.
-- **The primary** (`primaryOf`): the first adapter, in order, that is connected and reaches the internet (a tailnet
+- **The primary** (`primaryOf`): a connected local helper's adapter first (its DHCP is the helper's, which always
+  gives a default route, so the page can't make it route only its own prefixes), else the first adapter, in order,
+  that is connected and reaches the internet (a tailnet
   with an exit node in use, tailcat going online through a server); without one, the first connected, so a machine
   with one adapter keeps its default route. The page picks it again on every change and tells each client
   (`setPrimary`). The primary's lease is as a single card's. The others' carry `routes` (`routedLease`), and their
@@ -117,6 +121,10 @@ running in another tab takes effect there at once: that tab hears the record cha
   kernel takes the more preferred of equal routes, and the earlier adapter's wins.
   systemd-networkd installs them all, so
   this works on any guest without configuration: Debian's `network.network.card` credential matches `e*`.
+- **A connection that changes under a running guest** (another on the adapter, or the local helper's path in or out):
+  the guest's IPv4 lease would stay until its renewal (half an hour on one adapter), so the card's link flaps
+  ([devices.md](devices.md) "net") and the guest asks for a lease at once; a reconnect to the same address doesn't
+  flap. **Measured** in `tests/net-local.test.ts` (Debian 13's networkd, the page's gateway's lease to the helper's).
 - **The takeover:** when the primary loses the internet, the next one becomes primary. Its router advertisement goes
   out at once, and IPv4's default moves at the guest's next DHCP renewal, so a machine with several adapters has its
   lease renewed every 10 s (DHCP's T1; the lease lasts two minutes, so a gateway that stops answering for a while

@@ -17,20 +17,41 @@ of 2026-11-01 below.
 
 ## State
 
-**L0 is done** (2026-11-01): the helper in `net/webpc-net/`, the spike on the page (`?localnet=`, `#net=`, web/local-net.ts),
-`tests/net-local.test.ts` in `scripts/ci-net.sh`, and L0's questions answered in bench/net/REPORT.md "The local helper".
+**L0 is done** (2026-11-01): the helper in `net/webpc-net/`, `tests/net-local.test.ts` in `scripts/ci-net.sh`, and L0's
+questions answered in bench/net/REPORT.md "The local helper". **L1 is done** (2026-11-01, cloud) but for the second
+host's build check, and **L2** but for what needs a person or the dev VM: the plan's "Done" and "Left" under each.
+
+## The user's answers (2026-11-01, for L2)
+
+- **A link flap** (virtio-net's `STATUS`, down and up) is allowed, guest-visible as it is, for **any kind**: whenever
+  what an adapter's guest holds would change (the path between the page's gateway and the helper, or the gateway's
+  lease address differing from the one the guest was given), never for a reconnect to the same address (networkd drops
+  an adapter's addresses on carrier loss, which cuts its TCP connections).
+- The move to its own repository: after L2, at L3's start (the user's OK to that timing).
 
 ## Next
 
-1. **L1:** the README's install lines, the release's license file (THIRD_PARTY.md says what it needs).
-2. **L2:** the connection kind replacing `?localnet=`, and in it, as measured: the client **in a worker, batched** (flush on
-   `setTimeout(0)`: bench/net/results/local-helper/variants.patch has both); a refused prompt told apart from a stopped helper
-   through `permissions.query({ name: 'loopback-network' })`, the message saying where the setting is; **the user looks at the
-   prompt once** (nothing headless shows it); raising `MAX_FRAME` for frame ports and measuring MTU 65520 with the rest.
-3. **L3:** a test from a public origin (`--ip-address-space-overrides=127.0.0.1:<port>=public` and CDP's
+1. **The dev VM, for L2's CI:** `scripts/ci-debian.sh` whole (the cloud has no `linux-snd` image, so `page-debian`, the
+   test of the guest's network settings on the page, skipped there; its other three passed), and `scripts/ci-net.sh` with the
+   Podman tailnet and tailcat (skipped in the cloud), since the link flap is every kind's now. `scripts/ci.sh` and `ci-net.sh`
+   passed in the cloud on 2026-11-02 but for the cloud's known video test (docs/cloud.md).
+2. **The dev VM:** `grep -v '^#' bench/net/results/local-helper/build-x86_64.txt > $TMPDIR/sums && net/webpc-net/build.sh --check $TMPDIR/sums v0.0.0-repro`
+   at the commit that wrote that file (`git log -1 -- bench/net/results/local-helper/build-x86_64.txt`), and record it beside.
+3. **L2's left:** the user looks at Chromium's Local Network Access prompt once (headed: the deployed page, or `npm run
+   serve` with `--origin`), and refuses it once to see the page's message; in the dev VM, MTU 65520 against 1500 with
+   the worker and the batching (`bench/net/local.ts`, its `local:<mtu>` arm, now with no patch: the frame port takes
+   65553-byte frames), then the helper's default `--mtu`.
+4. **L3** (the move to `gbl08ma/webpc-net` first): a test from a public origin (`--ip-address-space-overrides=127.0.0.1:<port>=public` and CDP's
    `Browser.setPermission` for `loopback-network`; Playwright 1.63's `grantPermissions` doesn't know the name), then the plan's list. L4 as the plan says.
 
 ## Found (worth not re-discovering)
+
+- **systemd-networkd ignores a carrier loss under 5 s** when the DHCP lease's MTU isn't the link's original one
+  (`link_carrier_lost`, systemd 257: against drivers that reset on an MTU change, systemd#18738), as the page's leases'
+  1280 isn't virtio's 1500: a 1 s flap, then a 5 s one (back in 4.95 s), changed nothing at the boot's first lease,
+  while after a `systemctl restart systemd-networkd` (the original MTU is then 1280) a 1 s one worked. The kernel saw
+  each (`carrier_changes`, networkd's "Lost carrier"). `FLAP_MS` is 7 s. `tests/browser/netguest.html?debugnet=1`
+  logs networkd at debug from the boot.
 
 - The fork's `go.mod` keeps `module github.com/containers/gvisor-tap-vsock`, so only `replace` can use it; `go install
   module@version` refuses any module with a `replace`. The fork needs Go ≥ 1.26.

@@ -1,6 +1,8 @@
-// The local network helper (docs/plans/networking-local.md, L0's spike; net/webpc-net): the page's Debian with one
-// card on a frame port, no gateway in the page, its frames over a WebSocket on loopback to the helper, whose
-// DHCP, DNS and gateway serve the guest onto this computer's sockets. The guest takes the helper's lease by itself
+// The local network helper (docs/plans/networking-local.md; net/webpc-net): the page's Debian with one card on an IP
+// port, as the page has it, first on the page's gateway with a lease of its own, then handed to the local helper's
+// client (web/local-net.ts `startLocal`, its worker) as the Network menu does: the card goes on a frame port, the
+// page's gateway bypassed, its frames over a WebSocket on loopback to the helper, whose DHCP, DNS and gateway serve the
+// guest onto this computer's sockets. The link flaps on the switch and the guest takes the helper's lease at once
 // (networkd, the card's credential), resolves through the helper, moves a few megabytes each way to a server on this
 // machine's loopback (--host-loopback) and runs `apt-get update`; IPv6 is on-link always and routed out only when this
 // machine reaches the internet over IPv6 (the helper's probe), so dual-stack names connect without a wait either way;
@@ -109,7 +111,7 @@ after(async () => {
   helper?.kill();
 });
 
-const local = (page: Page) => page.evaluate('window.harness.local()') as Promise<{ state: string; error?: string; stats: Record<string, number> }>;
+const local = (page: Page) => page.evaluate('window.harness.local()') as Promise<{ state: string; error?: string; addresses?: string[] } | undefined>;
 
 /** The close code a WebSocket to `url` gets, from `page`'s origin. */
 const closeCode = (page: Page, url: string) => page.evaluate((u) => new Promise<number>((resolve) => {
@@ -136,21 +138,37 @@ test('Debian on the page through the local helper: its lease, DNS, TCP to this m
       await other.context().close();
 
       const t0 = Date.now();
-      await page.goto(`${base}/tests/browser/netguest.html?${new URLSearchParams({ overlay: OVERLAY, ws })}`);
+      await page.goto(`${base}/tests/browser/netguest.html?${new URLSearchParams({ overlay: OVERLAY, port: '1' })}`);
+      await page.evaluate('window.harness.lease()'); // the page's gateway's lease, as a tailnet's would be
       await loginRoot(page, undefined, context);
       console.log(`# login prompt after ${((Date.now() - t0) / 1000).toFixed(0)} s`);
-      assert.equal((await local(page)).state, 'connected', await context());
 
       const addr4 = () => run("ip -4 -o addr show scope global | awk '{print $2, $4}'").then((s) => s.trim().split('\n')[0]);
-      let got = await addr4();
-      for (let k = 0; k < 30 && !got; k++) {
-        await page.waitForTimeout(1000);
-        got = await addr4();
-      }
-      assert.match(got, /^e\S+ 192\.168\.127\.\d+\/24$/, `the helper's lease: ${got}${await context()}`);
+      /** The guest's IPv4 address once it matches `re` (polled each second, at most `s` s). */
+      const addrLike = async (re: RegExp, s: number) => {
+        let got = await addr4();
+        for (let k = 0; k < s && !re.test(got); k++) {
+          await page.waitForTimeout(1000);
+          got = await addr4();
+        }
+        return got;
+      };
+      let got = await addrLike(/198\.18\.0\.15/, 60);
+      assert.match(got, /^e\S+ 198\.18\.0\.15\/32$/, `the page's gateway's lease first: ${got}`);
+      // The Network menu's Connect: the helper's client takes the card's port. Without the flap the guest would keep the
+      // gateway's address until its renewal (half an hour); with it, the helper's lease comes within seconds of the link's
+      // return (devices.ts `FLAP_MS`: the gateway's lease's MTU, 1280, makes networkd wait out a loss under 5 s).
+      const t1 = Date.now();
+      await page.evaluate((u) => (window as unknown as { harness: { connectLocal(u: string): void } }).harness.connectLocal(u), ws);
+      got = await addrLike(/192\.168\.127\.\d+/, 30);
+      if (!/192\.168\.127\./.test(got)) assert.fail(`the helper's lease: ${got}\n${await run("journalctl -b -u systemd-networkd --no-pager -o short-monotonic | sed -n '/Lost carrier/,$p' | head -40", 30_000)}${await context()}`);
+      console.log(`# the helper's lease ${((Date.now() - t1) / 1000).toFixed(0)} s after the switch: ${got}`);
+      assert.equal((await local(page))?.state, 'Running', await context());
       const routes = await run('ip -4 route');
       assert.match(routes, /default via 192\.168\.127\.1/, routes);
-      console.log(`# lease after ${((Date.now() - t0) / 1000).toFixed(0)} s: ${got}`);
+      assert.doesNotMatch(routes, /198\.18|169\.254\.0\.1/, `nothing left of the gateway's lease: ${routes}`);
+      for (let k = 0; k < 10 && !(await local(page))?.addresses?.length; k++) await page.waitForTimeout(500);
+      assert.deepEqual((await local(page))?.addresses, [`${got.split(' ')[1].split('/')[0]}/32`], "the menu's address: the helper's lease, read from its acknowledgment");
 
       // DNS through the helper's resolver (the host's).
       const name = await run('getent ahostsv4 deb.debian.org | head -1', 30_000);
@@ -166,8 +184,6 @@ test('Debian on the page through the local helper: its lease, DNS, TCP to this m
       const up = (await run(`curl -s -m 120 -w ' %{speed_upload}\\n' --data-binary @/tmp/big ${url}/up`, 180_000)).trim().split('\n')[0].split(' ');
       assert.equal(up[0], bigSum, 'the upload arrived whole');
       console.log(`# 8 MiB to the guest at ${(speed * 8 / 1e6).toFixed(1)} Mbit/s, from it at ${(Number(up[1]) * 8 / 1e6).toFixed(1)} Mbit/s (Debian's curl, loopback, this machine)`);
-      const st = (await local(page)).stats;
-      console.log(`# frames per message: to the guest ${(st.rxFrames / st.rxMessages).toFixed(2)}, from it ${(st.txFrames / st.txMessages).toFixed(2)}`);
 
       // IPv6: always on the link (the helper's /64 and its gateway), routed out only when this machine has it.
       const addr6 = () => run("ip -6 -o addr show scope global | awk '{print $4}'");
