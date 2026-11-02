@@ -22,7 +22,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | the toolbar's Snapshot and Load snapshot, `main.ts`'s `saveSnapshot` and `loadSnapshot`, `worker.ts`'s `saveSnapshot` and its start from a snapshot | snapshots on the page (below, "Snapshots") |
 | `web/app/shape.ts`, `web/app/store.ts` | machines as the unit (below, "Machines in the browser"): the records and their shape; IndexedDB and OPFS, the sweep, the change notices between tabs |
 | `web/app/machines.ts`, `web/app/disks.ts`, `web/app/urlcheck.ts` | what the Machines page does: machines and attachments; disks, overlays as variants, stored disks (import, merge), exports; a disk URL's check |
-| `web/app/MachinesPage.svelte`, `Disks.svelte`, `AddDisk.svelte`, `Snapshots.svelte` | the Machines page (below, "The Machines page"): its tabs, the Add a disk wizard |
+| `web/app/MachinesPage.svelte`, `Disks.svelte`, `AddDisk.svelte`, `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ExportMenu.svelte`, `Snapshots.svelte` | the Machines page (below, "The Machines page"): its tabs, the Add a disk wizard, the browser's Disks pane and its dialogs |
 | `web/app/disk-worker.ts`, `web/app/sources.ts`, `web/stored.ts`, `web/ramdisk.ts` | the stored disks' jobs, a disk's bytes in a worker, the block store over nothing, the ramdisk |
 | `web/app/machine.ts` | the machines, in one place: image URLs (the firmware, for UEFI machines), command line, the credentials a card adds, RAM, screen size, the `ready` marker, the default vCPU count |
 | `web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts` | the page's sound: the AudioContext, the worklet that plays the device worker's sound ring, the volume (below, "Sound") |
@@ -120,7 +120,7 @@ The model, its rules and why ([machines.md](machines.md)); here, what the page d
   disk's) generation and size from its files into the records. Without `?m=` the machine is transient, made from
   the query as before (`?machine=`, `?disk=`, `?disk2=`): its overlays keep their old single names.
 - **Disks:** a URL (checked when added: `urlcheck.ts`, what fails and what the server needs; a URL disk is slow and
-  the Machines page says so), a file (its `FileSystemFileHandle` kept in the record), a file [stored in this browser](ui:disks:Disks.kind.stored)
+  the Machines page says so), a file (its `FileSystemFileHandle` kept in the record), a file [stored in this browser](ui:disks:disk-kind.stored)
   (converted into the block store, `web/stored.ts`; the confirmation says what it takes and that it duplicates the
   file), **blank** (zeros, always writable through its overlay) or a **ramdisk** (`web/ramdisk.ts`: empty at every
   boot, the guest's reboot too; its memory counts in the page's memory check). A snapshot and a suspended copy hold
@@ -154,7 +154,12 @@ everywhere on the page (KiB, MiB, GiB: `bytes.ts` `bytesText`), as the sizes use
 **Styles** are scoped to the component that writes them, and nothing warns when they don't arrive: the Machines page's
 `.settings`, `.head`, `.tab`, `.meta` and button rules reach only its own markup (its snippets too), so a tab's settings
 stay in `MachinesPage.svelte` and a child component holds a list with styles of its own (`Usb.svelte`, `Folders.svelte`).
-The wizards' rules are `index.html`'s, by id: a new wizard is added to each of them.
+Dialogs are built on `Modal.svelte` (Add a disk…, Add a device…, the Network and Folder wizards, a disk's Overlays,
+Attach to a machine; the page's questions are `Ask.svelte`'s): the shell, its title, its row of buttons and the rules its
+content shares (notes, errors, labels, choices, lists of rows, the primary button), so a new dialog looks like the
+others by using it; `index.html` keeps the wizards' choices and what's particular to the Network and Folder wizards.
+A disk in a list is `DiskInfo.svelte` (its kind's icon, name and line), and a disk's kind in words and icon is
+`disk-kind.ts`.
 
 **Types:** `tsc` doesn't read the components; `npm run svelte-check` (a step of `scripts/ci.sh`, ~2 s) checks them
 with `tsconfig.svelte.json` (`web/app`, ESM resolution: svelte-check made the shared config's `nodenext` node10) and
@@ -256,15 +261,17 @@ Duplicate, Export the definition, Delete; then tabs:
   asks first when it orphans snapshots. The three are peripherals the guest sees: absent on machines made before
   them (off, so their shapes and snapshots stay as they were), on for new ones.
 - **Disks** (`Disks.svelte`): the attachments in slot order (read-only, write in place, up, down, Detach); per writable
-  disk its overlays (switch, New empty, Rename, Delete, Merge into the disk), **[Export](ui:disks:Disks.export)** (a menu: changes only, the
+  disk its overlays (switch, New empty, **[Overlays…](ui:disks:Disks.overlaysButton)**), **[Export](ui:disks:ExportMenu.label)** (a menu, `ExportMenu.svelte`: changes only, the
   whole disk as qcow2 or raw, compressed or not; a machine on this page running from it stops while the file is
   written and starts again after) and [Import changes…](ui:disks:Disks.importChanges) (a changes file becomes a new overlay, which the disk switches
-  to). There is no Reset for a stored machine: New empty is it, and keeps the old overlay. [Add a disk…](ui:disks:Disks.add) opens a
+  to). There is no Reset for a stored machine: New empty is it, and keeps the old overlay. Overlays… opens the disk's
+  **Overlays** dialog (`Overlays.svelte`, also from the Disks pane below): every overlay of the disk with what it holds,
+  when it was made and the machines that write to it; Rename, Delete (a machine that wrote to it is left without one,
+  and makes a new one at its next boot), Merge into the disk (a stored disk) and Export each. [Add a disk…](ui:disks:Disks.add) opens a
   wizard (`AddDisk.svelte`): the source first (**a disk already in this browser**, a file read where it is, a file
   copied into the browser, a URL, blank, a ramdisk), each explained, then its details and Read-only. A disk already
   in this browser is one another machine has or one detached (Detach keeps the disk and its overlays, and says so):
-  listed with its overlays and the machines that have it, attached again as it was, or, when no machine has it,
-  deleted with its overlays (`Store.deleteDisk`: the space comes back). A file or URL added again (or opened, or
+  listed with its overlays and the machines that have it, and attached again as it was. A file or URL added again (or opened, or
   dropped) is the disk the browser has for it, by identity (`machines.ts` `knownDisk`: a file's name, size and date,
   a URL's path, size and validator), so its overlays come back with it.
 - **[Network](ui:machines:MachinesPage.tab.network):** the machine's network adapters (docs/network-adapters.md): up to four, each with its MAC (a new
@@ -286,6 +293,14 @@ Duplicate, Export the definition, Delete; then tabs:
   is the browser's (`FoldersPane.svelte`): rename, Read-only, Delete, a folder in the browser's files. The toolbar has a
   **Folders** menu while the page's machine runs with them. [shares.md](shares.md) §4.
 - **[Snapshots](ui:machines:MachinesPage.tab.snapshots):** the kept ones (below, "A stored machine's snapshots").
+
+**[Disks](ui:machines:MachinesPage.disks.heading)** in the list of machines is the browser's disks (`DisksPane.svelte`): every disk and ramdisk, attached
+or detached, with what it is, its overlays and the machines that have it. [Overlays…](ui:disks:DisksPane.overlaysButton) (a disk with overlays) opens
+its Overlays dialog; **[Attach to a machine…](ui:disks:DisksPane.attach)** opens a dialog (`AttachDisk.svelte`) that lists the machines, each
+attaching the disk last with its overlays (the machine running in this tab is powered off first, after asking); a
+machine that has the disk already, has as many disks as a machine can (`MAX_DISKS`), or runs in another tab says so
+and can't take it. **[Delete](ui:disks:DisksPane.deleteButton)** is for a disk no machine has (its tooltip names the machines otherwise), with its
+overlays (`Store.deleteDisk`: the space comes back).
 
 A transient machine (a test's `?machine=`, or `?disk=`) is listed first as this page's machine, with a Disks tab (its
 disk's Export, Import changes…, **[Reset disk…](ui:machines:MachinesPage.resetDisk)**) and a Snapshots tab (restore from a file, save to a file). The
@@ -1021,7 +1036,7 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
 - Saving the disk (loop 5): a disk's **Export** menu on the Machines page's Disks tab: *Changes
   only*, a qcow2 holding the blocks the machine wrote with the image as its backing file;
   *Whole disk* as qcow2 (zero clusters left out) or raw; the qcow2s are compressed unless the
-  menu's [Compress the qcow2](ui:disks:Disks.export.compress) is unticked (remembered in the page's settings). The file goes where the user picks
+  menu's [Compress the qcow2](ui:disks:ExportMenu.compress) is unticked (remembered in the page's settings). The file goes where the user picks
   (`showSaveFilePicker`, called first: it needs the click's activation; a worker streams into the
   handle's writable) or, without a picker, is downloaded (the worker posts 1 MiB chunks, the page
   collects a Blob). **Never over the running disk:** a save dialog empties the file it hands over

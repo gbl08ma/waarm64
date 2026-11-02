@@ -1,23 +1,51 @@
 {
-  "Disks.kind.url": {
+  "disk-kind.url": {
     "message": "from a URL",
-    "note": "Machines page, Disks: what a disk is, in the tooltip of its icon and before its size in the line under its name (\"from a URL, 2.0 GiB\"); also in Add a disk… › A disk already in this browser. A disk read from a web server."
+    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Machines page's Disks tab and Disks pane) (\"from a URL, 2.0 GiB\"), and in Add a disk… › A disk already in this browser. A disk read from a web server."
   },
-  "Disks.kind.file": {
+  "disk-kind.file": {
     "message": "a file on your computer",
-    "note": "Machines page, Disks: what a disk is, in the tooltip of its icon and before its size in the line under its name; also in Add a disk… › A disk already in this browser. A disk whose base image is read where it is, a file on the user's computer."
+    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Machines page's Disks tab and Disks pane), and in Add a disk… › A disk already in this browser. A disk whose base image is read where it is, a file on the user's computer."
   },
-  "Disks.kind.stored": {
+  "disk-kind.stored": {
     "message": "stored in this browser",
-    "note": "Machines page, Disks: what a disk is, in the tooltip of its icon and before its size in the line under its name; also in Add a disk… › A disk already in this browser. A disk whose base image is copied into this browser's storage."
+    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Machines page's Disks tab and Disks pane), and in Add a disk… › A disk already in this browser. A disk whose base image is copied into this browser's storage."
   },
-  "Disks.kind.blank": {
+  "disk-kind.blank": {
     "message": "blank",
-    "note": "Machines page, Disks: what a disk is, in the tooltip of its icon and before its size in the line under its name; also in Add a disk… › A disk already in this browser. An empty disk (its base image all zeros) whose overlay is kept in this browser as the guest writes it."
+    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Machines page's Disks tab and Disks pane), and in Add a disk… › A disk already in this browser. An empty disk (its base image all zeros) whose overlay is kept in this browser as the guest writes it."
   },
-  "Disks.kind.ramdisk": {
+  "disk-kind.ramdisk": {
     "message": "ramdisk",
-    "note": "Machines page, Disks: what a disk is, in the tooltip of its icon and before its size in the line under its name; also in Add a disk… › A disk already in this browser. A disk held in memory, empty at every boot."
+    "note": "What a disk is, in the tooltip of its icon and before its size in the line under its name (the Machines page's Disks tab and Disks pane), and in Add a disk… › A disk already in this browser. A disk held in memory, empty at every boot."
+  },
+  "DiskInfo.meta": {
+    "message": "{{kind}}, {{size}}",
+    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the start of the small line under its name, before its overlays and its machines. {{kind}} is what it is (disk-kind.*), {{size}} its size."
+  },
+  "DiskInfo.overlays_one": {
+    "message": "{{count}} overlay",
+    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): how many overlays the disk has, its overlay empty, in its small line. {{count}} is 1."
+  },
+  "DiskInfo.overlays_other": {
+    "message": "{{count}} overlays",
+    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): how many overlays the disk has, they empty (or none), in its small line. {{count}} is how many."
+  },
+  "DiskInfo.overlaysSized_one": {
+    "message": "{{count}} overlay ({{size}})",
+    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the disk's overlay, holding something, in its small line. {{count}} is 1, {{size}} what it holds."
+  },
+  "DiskInfo.overlaysSized_other": {
+    "message": "{{count}} overlays ({{size}})",
+    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the disk's overlays, holding something, in its small line. {{count}} is how many, {{size}} what they hold together."
+  },
+  "DiskInfo.on": {
+    "message": "attached to {{machines}}",
+    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the end of the disk's small line: the machines that have it. {{machines}} is their names, joined with commas."
+  },
+  "DiskInfo.onNone": {
+    "message": "not attached to a machine",
+    "note": "A disk in a list of disks (DiskInfo: the Machines page's Disks pane, Add a disk… › A disk already in this browser): the end of the disk's small line when no machine has it."
   },
   "Disks.newOverlay.text": {
     "message": "With an empty overlay, the disk's contents will reflect its image. Enter a name for the new overlay:",
@@ -50,74 +78,6 @@
   "Disks.failed.switch": {
     "message": "Couldn't switch the overlay",
     "note": "Machines page: the error headline when the disk can't switch to the overlay chosen in its Changes in list; why is the detail under it."
-  },
-  "Disks.rename.text": {
-    "message": "Enter a new name for the overlay:",
-    "note": "Machines page, Disks: the question of the text prompt that an overlay's Rename opens, above the field holding its current name."
-  },
-  "Disks.rename.title": {
-    "message": "Rename the overlay {{name}}",
-    "note": "Machines page, Disks: the title of the prompt that an overlay's Rename opens. {{name}} is the overlay's current name."
-  },
-  "Disks.rename.ok": {
-    "message": "Rename",
-    "note": "Machines page, Disks: the confirm button of the rename prompt of an overlay."
-  },
-  "Disks.busy.rename": {
-    "message": "Renaming the overlay",
-    "note": "Machines page: the busy line (shown with a trailing …) while an overlay is renamed."
-  },
-  "Disks.failed.rename": {
-    "message": "Couldn't rename the overlay",
-    "note": "Machines page: the error headline when an overlay's Rename fails; why is the detail under it."
-  },
-  "Disks.delete.confirm": {
-    "message": "Delete the overlay {{name}}? This will delete the {{size}} of changes made on top of the base image.",
-    "note": "Machines page, Disks: the confirmation (OK/Cancel, the OK in red) that an overlay's Delete asks. {{name}} is the overlay's name, {{size}} what it holds (e.g. \"12.0 MiB\")."
-  },
-  "Disks.delete.ok": {
-    "message": "Delete",
-    "note": "Machines page, Disks: the confirm button of the question before an overlay is deleted."
-  },
-  "Disks.busy.delete": {
-    "message": "Deleting the overlay",
-    "note": "Machines page: the busy line (shown with a trailing …) while an overlay is deleted."
-  },
-  "Disks.failed.delete": {
-    "message": "Couldn't delete the overlay",
-    "note": "Machines page: the error headline when an overlay's Delete fails; why is the detail under it."
-  },
-  "Disks.merge.other": {
-    "message": "{{name}} ({{size}})",
-    "note": "Machines page, Disks: one overlay in the list of those a merge deletes (Disks.merge.others). {{name}} is the overlay's name, {{size}} what it holds."
-  },
-  "Disks.merge.others": {
-    "message": "\nThis will delete the other overlays associated with this disk: {{list}}.",
-    "note": "Machines page, Disks: the line of the merge's confirmation (Disks.merge.confirm) when the disk has other overlays: a merge deletes them. Starts on a new line. {{list}} is the overlays (each Disks.merge.other), joined with commas."
-  },
-  "Disks.merge.snapshots_one": {
-    "message": "\n{{count}} snapshot will no longer be restorable as it references this disk or one of its overlays.",
-    "note": "Machines page, Disks: the line of the merge's confirmation (Disks.merge.confirm) when one snapshot pins the disk or the overlays involved. Starts on a new line. {{count}} is 1."
-  },
-  "Disks.merge.snapshots_other": {
-    "message": "\n{{count}} snapshots will no longer be restorable as they reference this disk or one of its overlays.",
-    "note": "Machines page, Disks: the line of the merge's confirmation (Disks.merge.confirm) when several snapshots pin the disk or the overlays involved. Starts on a new line. {{count}} is how many."
-  },
-  "Disks.merge.confirm": {
-    "message": "Merge {{overlay}} into {{disk}}? The changes in it will become part of the disk.{{others}}{{snapshots}}",
-    "note": "Machines page, Disks: the confirmation that Merge into the disk asks (OK in red when it deletes other overlays). {{overlay}} is the overlay's name, {{disk}} the stored disk's; {{others}} is Disks.merge.others or nothing, {{snapshots}} Disks.merge.snapshots or nothing."
-  },
-  "Disks.merge.ok": {
-    "message": "Merge",
-    "note": "Machines page, Disks: the confirm button of the question before an overlay is merged into its stored disk."
-  },
-  "Disks.busy.merge": {
-    "message": "Merging the overlay",
-    "note": "Machines page: the busy line (shown with a trailing …) while an overlay's changes are written into its disk's base image, stored in this browser."
-  },
-  "Disks.failed.merge": {
-    "message": "Couldn't merge the overlay",
-    "note": "Machines page: the error headline when Merge into the disk fails; why is the detail under it."
   },
   "Disks.busy.change": {
     "message": "Changing the disk's settings",
@@ -158,50 +118,6 @@
   "Disks.busy.detach": {
     "message": "Detaching the disk",
     "note": "Machines page: the busy line (shown with a trailing …) while a disk is taken off the machine."
-  },
-  "Disks.export.title": {
-    "message": "Save the disk, or just the changes made to it, to a file",
-    "note": "Machines page, Disks: the tooltip of a disk's Export menu button."
-  },
-  "Disks.export": {
-    "message": "Export",
-    "note": "Machines page, Disks: the label of a disk's menu button that saves it to a file (its choices: changes only, whole disk as qcow2 or raw)."
-  },
-  "Disks.export.changes.title": {
-    "message": "A qcow2 containing just the changes over the base image. Keep the latter, otherwise this file is useless.",
-    "note": "Machines page, Disks › Export menu: the tooltip of Changes only (qcow2)."
-  },
-  "Disks.export.changes": {
-    "message": "Changes only (qcow2)",
-    "note": "Machines page, Disks › Export menu: the item that saves what the machine wrote over the disk's image, as a qcow2 backed by the image (not for a blank disk)."
-  },
-  "Disks.export.qcow2.title": {
-    "message": "Save the whole disk as a qcow2 file, leaving out blocks that are all zeros.",
-    "note": "Machines page, Disks › Export menu: the tooltip of Whole disk (qcow2)."
-  },
-  "Disks.export.qcow2": {
-    "message": "Whole disk (qcow2)",
-    "note": "Machines page, Disks › Export menu: the item that saves the whole disk, with its changes, as a qcow2."
-  },
-  "Disks.export.raw.title": {
-    "message": "Save the whole disk as a raw image.",
-    "note": "Machines page, Disks › Export menu: the tooltip of Whole disk (raw)."
-  },
-  "Disks.export.raw": {
-    "message": "Whole disk (raw)",
-    "note": "Machines page, Disks › Export menu: the item that saves the whole disk, with its changes, as a raw image."
-  },
-  "Disks.export.compress.title": {
-    "message": "Compress the qcow2 file with deflate, as qemu-img convert -c does. The file is about half the size and takes longer to write.",
-    "note": "Machines page, Disks › Export menu: the tooltip of the Compress the qcow2 checkbox."
-  },
-  "Disks.export.compress": {
-    "message": "Compress the qcow2",
-    "note": "Machines page, Disks › Export menu: the checkbox (remembered) that compresses a qcow2 export's clusters."
-  },
-  "Disks.export.hint": {
-    "message": "Exporting will forcibly power off a machine using the disk. After the file is written, the machine will be started again.",
-    "note": "Machines page, Disks › Export menu: the small note at the menu's bottom."
   },
   "Disks.missing": {
     "message": "Missing disk",
@@ -279,29 +195,13 @@
     "message": "New empty",
     "note": "Machines page, Disks: the button under a writable disk that makes a new, empty overlay (asking its name) and switches the disk to it."
   },
-  "Disks.renameButton.title": {
-    "message": "Rename this overlay.",
-    "note": "Machines page, Disks: the tooltip of Rename, beside the disk's chosen overlay."
+  "Disks.overlaysButton.title": {
+    "message": "Show all of this disk's overlays, to rename, delete or export them.",
+    "note": "Machines page, Disks: the tooltip of Overlays… on a disk."
   },
-  "Disks.renameButton": {
-    "message": "Rename",
-    "note": "Machines page, Disks: the button beside a disk's chosen overlay that renames it (a prompt asks the name)."
-  },
-  "Disks.deleteButton.title": {
-    "message": "Delete this overlay. This loses all changes from the base image that are contained within.",
-    "note": "Machines page, Disks: the tooltip of Delete, beside the disk's chosen overlay."
-  },
-  "Disks.deleteButton": {
-    "message": "Delete",
-    "note": "Machines page, Disks: the button beside a disk's chosen overlay that deletes it (after a confirmation)."
-  },
-  "Disks.mergeButton.title": {
-    "message": "Write this overlay's changes into the disk's base image, stored in this browser. Merging deletes the disk's other overlays.",
-    "note": "Machines page, Disks: the tooltip of Merge into the disk."
-  },
-  "Disks.mergeButton": {
-    "message": "Merge into the disk",
-    "note": "Machines page, Disks: the button beside a stored disk's chosen overlay that writes its changes into the disk (after a confirmation)."
+  "Disks.overlaysButton": {
+    "message": "Overlays…",
+    "note": "Machines page, Disks: the button on a disk with overlays that opens its Overlays dialog (every overlay of the disk, with Rename, Delete, Merge into the disk and Export)."
   },
   "Disks.importChanges.title": {
     "message": "A changes file of this disk (created via Export › Changes only (qcow2)) becomes a new overlay, and the disk switches to it.",
@@ -328,7 +228,7 @@
     "note": "Add a disk wizard (Machines page): the name of the choice of a disk the browser keeps already (shown only when there is one), on the first step's button."
   },
   "AddDisk.source.known.text": {
-    "message": "A detached disk or one already associated with another machine. You can also delete detached disks here, to free the space they take.",
+    "message": "A detached disk or one already associated with another machine. To delete a disk and free the space it takes, use Disks under the list of machines.",
     "note": "Add a disk wizard: what A disk already in this browser means, under its name on the first step, and the note at the top of its step."
   },
   "AddDisk.title.known": {
@@ -399,54 +299,6 @@
     "message": "Adding the disk",
     "note": "Machines page: the busy line (shown with a trailing …) while the Add a disk wizard attaches or makes the disk."
   },
-  "AddDisk.delete.stored": {
-    "message": "the disk ({{size}}) stored in this browser",
-    "note": "Add a disk wizard › A disk already in this browser: what deleting a stored disk deletes, in the confirmation (AddDisk.delete.confirm). {{size}} is the disk's size."
-  },
-  "AddDisk.delete.remote": {
-    "message": "what this browser keeps of the disk",
-    "note": "Add a disk wizard › A disk already in this browser: what deleting a file's or a URL's disk deletes, in the confirmation (AddDisk.delete.confirm)."
-  },
-  "AddDisk.delete.disk": {
-    "message": "the disk",
-    "note": "Add a disk wizard › A disk already in this browser: what deleting a blank disk or a ramdisk deletes, in the confirmation (AddDisk.delete.confirm)."
-  },
-  "AddDisk.delete.remains.file": {
-    "message": "\nThe file itself remains on your computer.",
-    "note": "Add a disk wizard › A disk already in this browser: the last line of a file's disk's delete confirmation (AddDisk.delete.confirm), on a new line: deleting it leaves the file itself alone."
-  },
-  "AddDisk.delete.remains.url": {
-    "message": "\nThe image itself remains on its web server.",
-    "note": "Add a disk wizard › A disk already in this browser: the last line of a URL's disk's delete confirmation (AddDisk.delete.confirm), on a new line: deleting it leaves the image on the server alone."
-  },
-  "AddDisk.delete.confirm_zero": {
-    "message": "Delete {{name}}? This will delete {{what}}.{{remains}}",
-    "note": "Add a disk wizard › A disk already in this browser: the confirmation (OK in red) that a disk's Delete asks when it has no overlay (a ramdisk, or a disk no machine has used). {{name}} is the disk's name, {{what}} AddDisk.delete.stored, .remote or .file, {{remains}} AddDisk.delete.remains.* or nothing."
-  },
-  "AddDisk.delete.confirm_one": {
-    "message": "Delete {{name}}? This will delete {{what}} and its {{count}} overlay.{{remains}}",
-    "note": "Add a disk wizard › A disk already in this browser: the confirmation (OK in red) that a disk's Delete asks, its overlay empty. {{name}} is the disk's name, {{what}} AddDisk.delete.stored, .remote or .disk, {{count}} 1, {{remains}} AddDisk.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
-  },
-  "AddDisk.delete.confirm_other": {
-    "message": "Delete {{name}}? This will delete {{what}} and its {{count}} overlays.{{remains}}",
-    "note": "Add a disk wizard › A disk already in this browser: the confirmation (OK in red) that a disk's Delete asks, its overlays (none or several) empty. {{name}} is the disk's name, {{what}} AddDisk.delete.stored, .remote or .disk, {{count}} how many overlays, {{remains}} AddDisk.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
-  },
-  "AddDisk.delete.confirmSized_one": {
-    "message": "Delete {{name}}? This will delete {{what}} and its {{count}} overlay, with the {{size}} of changes made on top of the base image.{{remains}}",
-    "note": "Add a disk wizard › A disk already in this browser: the confirmation (OK in red) that a disk's Delete asks when its overlay holds something. {{name}} is the disk's name, {{what}} AddDisk.delete.stored, .remote or .disk, {{count}} 1, {{size}} what the overlay holds, {{remains}} AddDisk.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
-  },
-  "AddDisk.delete.confirmSized_other": {
-    "message": "Delete {{name}}? This will delete {{what}} and its {{count}} overlays, with the {{size}} of changes made on top of the base image.{{remains}}",
-    "note": "Add a disk wizard › A disk already in this browser: the confirmation (OK in red) that a disk's Delete asks when its overlays hold something. {{name}} is the disk's name, {{what}} AddDisk.delete.stored, .remote or .disk, {{count}} how many overlays, {{size}} what they hold together, {{remains}} AddDisk.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
-  },
-  "AddDisk.delete.title": {
-    "message": "Delete a disk",
-    "note": "Add a disk wizard › A disk already in this browser: the title of the confirmation a disk's Delete asks."
-  },
-  "AddDisk.delete.ok": {
-    "message": "Delete",
-    "note": "Add a disk wizard › A disk already in this browser: the confirm button of the question before a disk is deleted."
-  },
   "AddDisk.attachedAlready": {
     "message": "{{name}} is already attached to this machine.",
     "note": "Add a disk wizard: the error under the fields when the file or URL chosen is a disk the browser knows that the machine has already. {{name}} is that disk's name."
@@ -483,45 +335,9 @@
     "message": "Where does the disk come from?",
     "note": "Add a disk wizard: the note above the choices of the first step."
   },
-  "AddDisk.known.overlays_one": {
-    "message": "{{count}} overlay",
-    "note": "Add a disk wizard › A disk already in this browser: how many overlays a listed disk has, its overlay empty, in its line (AddDisk.known.meta). {{count}} is 1."
-  },
-  "AddDisk.known.overlays_other": {
-    "message": "{{count}} overlays",
-    "note": "Add a disk wizard › A disk already in this browser: how many overlays a listed disk has, they empty (or none), in its line (AddDisk.known.meta). {{count}} is how many."
-  },
-  "AddDisk.known.overlaysSized_one": {
-    "message": "{{count}} overlay ({{size}})",
-    "note": "Add a disk wizard › A disk already in this browser: a listed disk's overlay, holding something, in its line (AddDisk.known.meta). {{count}} is 1, {{size}} what it holds."
-  },
-  "AddDisk.known.overlaysSized_other": {
-    "message": "{{count}} overlays ({{size}})",
-    "note": "Add a disk wizard › A disk already in this browser: a listed disk's overlays, holding something, in its line (AddDisk.known.meta). {{count}} is how many, {{size}} what they hold together."
-  },
-  "AddDisk.known.on": {
-    "message": "on {{machines}}",
-    "note": "Add a disk wizard › A disk already in this browser: which machines have a listed disk, in its line (AddDisk.known.meta). {{machines}} is their names, joined with commas."
-  },
-  "AddDisk.known.onNone": {
-    "message": "on no machine",
-    "note": "Add a disk wizard › A disk already in this browser: in a listed disk's line (AddDisk.known.meta) when no machine has it (it can be deleted)."
-  },
-  "AddDisk.known.meta": {
-    "message": "{{kind}}, {{size}} · {{overlays}} · {{users}}",
-    "note": "Add a disk wizard › A disk already in this browser: the small line under a listed disk's name. {{kind}} is what it is (Disks.kind.*), {{size}} its size, {{overlays}} AddDisk.known.overlays or .overlaysSized, {{users}} AddDisk.known.on or .onNone."
-  },
   "AddDisk.known.attach": {
     "message": "Attach",
     "note": "Add a disk wizard › A disk already in this browser: the button on a listed disk that attaches it to the machine (with its overlays)."
-  },
-  "AddDisk.known.delete.title": {
-    "message": "Delete the disk and its overlays, freeing the space they take in this browser.",
-    "note": "Add a disk wizard › A disk already in this browser: the tooltip of Delete on a disk no machine has."
-  },
-  "AddDisk.known.delete": {
-    "message": "Delete",
-    "note": "Add a disk wizard › A disk already in this browser: the button on a disk no machine has that deletes it with its overlays (after a confirmation)."
   },
   "AddDisk.url": {
     "message": "URL",
@@ -958,5 +774,301 @@
   "devices.storageFull.numbers": {
     "message": "This browser's storage is full ({{used, bytes}} used of {{quota, bytes}}). The guest's writes to the disk fail with I/O errors, and its filesystem may become read-only until the machine is restarted. Free up space on the Machines page, whose bottom bar shows what takes this browser's storage, then restart the machine if it needs it.",
     "note": "Error in the message bar (under the toolbar) while the machine runs, when a disk's write found the browser's storage full (said at most once a minute); {{used}} is what this web app's storage holds, {{quota}} what the browser gives it."
+  },
+  "ExportMenu.title": {
+    "message": "Save the disk, or just the changes made to it, to a file",
+    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the tooltip of a disk's Export menu button."
+  },
+  "ExportMenu.label": {
+    "message": "Export",
+    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the label of a disk's menu button that saves it to a file (its choices: changes only, whole disk as qcow2 or raw)."
+  },
+  "ExportMenu.changes.title": {
+    "message": "A qcow2 containing just the changes over the base image. Keep the latter, otherwise this file is useless.",
+    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the tooltip of Changes only (qcow2)."
+  },
+  "ExportMenu.changes": {
+    "message": "Changes only (qcow2)",
+    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the item that saves what the machine wrote over the disk's image, as a qcow2 backed by the image (not for a blank disk)."
+  },
+  "ExportMenu.qcow2.title": {
+    "message": "Save the whole disk as a qcow2 file, leaving out blocks that are all zeros.",
+    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the tooltip of Whole disk (qcow2)."
+  },
+  "ExportMenu.qcow2": {
+    "message": "Whole disk (qcow2)",
+    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the item that saves the whole disk, with its changes, as a qcow2."
+  },
+  "ExportMenu.raw.title": {
+    "message": "Save the whole disk as a raw image.",
+    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the tooltip of Whole disk (raw)."
+  },
+  "ExportMenu.raw": {
+    "message": "Whole disk (raw)",
+    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the item that saves the whole disk, with its changes, as a raw image."
+  },
+  "ExportMenu.compress.title": {
+    "message": "Compress the qcow2 file with deflate, as qemu-img convert -c does. The file is about half the size and takes longer to write.",
+    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the tooltip of the Compress the qcow2 checkbox."
+  },
+  "ExportMenu.compress": {
+    "message": "Compress the qcow2",
+    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the checkbox (remembered) that compresses a qcow2 export's clusters."
+  },
+  "ExportMenu.hint": {
+    "message": "Exporting will forcibly power off a machine using the disk. After the file is written, the machine will be started again.",
+    "note": "Export menu (on a machine's Disks tab, and on each overlay in a disk's Overlays dialog): the small note at the menu's bottom."
+  },
+  "Overlays.title": {
+    "message": "Overlays of {{disk}}",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the dialog's title. {{disk}} is the disk's name."
+  },
+  "Overlays.note": {
+    "message": "Each overlay holds changes made on top of the disk's base image. A machine writes to the overlay chosen for this disk on its Disks tab.",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the note under the title."
+  },
+  "Overlays.meta": {
+    "message": "{{size}} of changes, created {{when}}",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the small line under an overlay's name, before who uses it. {{size}} is what it holds, {{when}} when it was made (date and time)."
+  },
+  "Overlays.meta.forked": {
+    "message": "{{size}} of changes, created {{when}} when a snapshot was restored",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the small line under the name of an overlay that a snapshot's restore forked off another, before who uses it. {{size}} is what it holds, {{when}} when it was made (date and time)."
+  },
+  "Overlays.usedBy": {
+    "message": "used by {{machines}}",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): after an overlay's size and date: the machines whose attachment of the disk writes to it. {{machines}} is their names, joined with commas."
+  },
+  "Overlays.usedByNone": {
+    "message": "used by no machine",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): after an overlay's size and date when no machine writes to it."
+  },
+  "Overlays.none": {
+    "message": "This disk has no overlays.",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): in place of the list when the disk has none."
+  },
+  "Overlays.close": {
+    "message": "Close",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the button that closes the dialog."
+  },
+  "Overlays.rename.text": {
+    "message": "Enter a new name for the overlay:",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the question of the text prompt that an overlay's Rename opens, above the field holding its current name."
+  },
+  "Overlays.rename.title": {
+    "message": "Rename the overlay {{name}}",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the title of the prompt that an overlay's Rename opens. {{name}} is the overlay's current name."
+  },
+  "Overlays.rename.ok": {
+    "message": "Rename",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the confirm button of the rename prompt of an overlay."
+  },
+  "Overlays.busy.rename": {
+    "message": "Renaming the overlay",
+    "note": "Machines page: the busy line (shown with a trailing …) while an overlay is renamed."
+  },
+  "Overlays.failed.rename": {
+    "message": "Couldn't rename the overlay",
+    "note": "Machines page: the error headline when an overlay's Rename fails; why is the detail under it."
+  },
+  "Overlays.delete.confirm": {
+    "message": "Delete the overlay {{name}}? This will delete the {{size}} of changes made on top of the base image.",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the confirmation (OK/Cancel, the OK in red) that an overlay's Delete asks. {{name}} is the overlay's name, {{size}} what it holds (e.g. \"12.0 MiB\")."
+  },
+  "Overlays.delete.ok": {
+    "message": "Delete",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the confirm button of the question before an overlay is deleted."
+  },
+  "Overlays.busy.delete": {
+    "message": "Deleting the overlay",
+    "note": "Machines page: the busy line (shown with a trailing …) while an overlay is deleted."
+  },
+  "Overlays.failed.delete": {
+    "message": "Couldn't delete the overlay",
+    "note": "Machines page: the error headline when an overlay's Delete fails; why is the detail under it."
+  },
+  "Overlays.merge.other": {
+    "message": "{{name}} ({{size}})",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): one overlay in the list of those a merge deletes (Overlays.merge.others). {{name}} is the overlay's name, {{size}} what it holds."
+  },
+  "Overlays.merge.others": {
+    "message": "\nThis will delete the other overlays associated with this disk: {{list}}.",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the line of the merge's confirmation (Overlays.merge.confirm) when the disk has other overlays: a merge deletes them. Starts on a new line. {{list}} is the overlays (each Overlays.merge.other), joined with commas."
+  },
+  "Overlays.merge.snapshots_one": {
+    "message": "\n{{count}} snapshot will no longer be restorable as it references this disk or one of its overlays.",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the line of the merge's confirmation (Overlays.merge.confirm) when one snapshot pins the disk or the overlays involved. Starts on a new line. {{count}} is 1."
+  },
+  "Overlays.merge.snapshots_other": {
+    "message": "\n{{count}} snapshots will no longer be restorable as they reference this disk or one of its overlays.",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the line of the merge's confirmation (Overlays.merge.confirm) when several snapshots pin the disk or the overlays involved. Starts on a new line. {{count}} is how many."
+  },
+  "Overlays.merge.confirm": {
+    "message": "Merge {{overlay}} into {{disk}}? The changes in it will become part of the disk.{{others}}{{snapshots}}",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the confirmation that Merge into the disk asks (OK in red when it deletes other overlays). {{overlay}} is the overlay's name, {{disk}} the stored disk's; {{others}} is Overlays.merge.others or nothing, {{snapshots}} Overlays.merge.snapshots or nothing."
+  },
+  "Overlays.merge.ok": {
+    "message": "Merge",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the confirm button of the question before an overlay is merged into its stored disk."
+  },
+  "Overlays.busy.merge": {
+    "message": "Merging the overlay",
+    "note": "Machines page: the busy line (shown with a trailing …) while an overlay's changes are written into its disk's base image, stored in this browser."
+  },
+  "Overlays.failed.merge": {
+    "message": "Couldn't merge the overlay",
+    "note": "Machines page: the error headline when Merge into the disk fails; why is the detail under it."
+  },
+  "Overlays.renameButton.title": {
+    "message": "Rename this overlay.",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the tooltip of Rename, on each overlay."
+  },
+  "Overlays.renameButton": {
+    "message": "Rename",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the button on each overlay that renames it (a prompt asks the name)."
+  },
+  "Overlays.deleteButton.title": {
+    "message": "Delete this overlay. This loses all changes from the base image that are contained within.",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the tooltip of Delete, on each overlay."
+  },
+  "Overlays.deleteButton": {
+    "message": "Delete",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the button on each overlay that deletes it (after a confirmation)."
+  },
+  "Overlays.mergeButton.title": {
+    "message": "Write this overlay's changes into the disk's base image, stored in this browser. Merging deletes the disk's other overlays.",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the tooltip of Merge into the disk."
+  },
+  "Overlays.mergeButton": {
+    "message": "Merge into the disk",
+    "note": "Overlays dialog (a disk's Overlays…, on the Machines page's Disks pane or a machine's Disks tab): the button on each overlay of a stored disk that writes its changes into the disk (after a confirmation)."
+  },
+  "AttachDisk.title": {
+    "message": "Attach {{disk}} to a machine",
+    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): the dialog's title. {{disk}} is the disk's name."
+  },
+  "AttachDisk.note": {
+    "message": "The disk will be attached after the machine's other disks, with its overlays. If the machine is running in this tab, you will be asked to power it off first.",
+    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): the note under the title."
+  },
+  "AttachDisk.meta": {
+    "message": "{{n}} of {{max}} disks",
+    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): the small line under a machine's name. {{n}} is how many disks it has, {{max}} the most a machine can have (16)."
+  },
+  "AttachDisk.running": {
+    "message": "running",
+    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): after a machine's disks in its line when it runs (in this tab or another)."
+  },
+  "AttachDisk.has": {
+    "message": "The disk is already attached to this machine.",
+    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): the line under a machine that has the disk already, whose Attach is off."
+  },
+  "AttachDisk.full": {
+    "message": "This machine already has {{max}} disks, the most a machine can have. Detach one of them to attach this disk.",
+    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): the line under a machine that has as many disks as it can, whose Attach is off. {{max}} is that number (16)."
+  },
+  "AttachDisk.otherTab": {
+    "message": "This machine is running in another tab. Power it off there to attach this disk.",
+    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): the line under a machine that runs in another tab, whose Attach is off."
+  },
+  "AttachDisk.attach": {
+    "message": "Attach",
+    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): the button on a machine that attaches the disk to it, last (asking first to power off the machine running in this tab)."
+  },
+  "AttachDisk.none": {
+    "message": "No machines are stored in this browser.",
+    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): in place of the list when there are no machines."
+  },
+  "AttachDisk.cancel": {
+    "message": "Cancel",
+    "note": "Attach to a machine dialog (the Machines page's Disks pane, a disk's Attach to a machine…): the button that closes the dialog without attaching."
+  },
+  "AttachDisk.busy": {
+    "message": "Attaching the disk",
+    "note": "Machines page: the busy line (shown with a trailing …) while the Attach to a machine dialog attaches a disk."
+  },
+  "DisksPane.overlaysButton.title": {
+    "message": "Show all of this disk's overlays, to rename, delete or export them.",
+    "note": "Machines page, Disks pane (Disks under the list of machines): the tooltip of Overlays… on a disk."
+  },
+  "DisksPane.overlaysButton": {
+    "message": "Overlays…",
+    "note": "Machines page, Disks pane (Disks under the list of machines): the button on a disk with overlays that opens its Overlays dialog."
+  },
+  "DisksPane.attach.title": {
+    "message": "Choose a machine to attach this disk to, with its overlays.",
+    "note": "Machines page, Disks pane (Disks under the list of machines): the tooltip of Attach to a machine… on a disk."
+  },
+  "DisksPane.attach": {
+    "message": "Attach to a machine…",
+    "note": "Machines page, Disks pane (Disks under the list of machines): the button on a disk that opens the Attach to a machine dialog (the list of machines)."
+  },
+  "DisksPane.deleteButton.title": {
+    "message": "Delete the disk and its overlays, freeing the space they take in this browser.",
+    "note": "Machines page, Disks pane (Disks under the list of machines): the tooltip of Delete on a disk no machine has."
+  },
+  "DisksPane.deleteAttached.title": {
+    "message": "A disk attached to a machine can't be deleted. Detach it from {{machines}} first.",
+    "note": "Machines page, Disks pane (Disks under the list of machines): the tooltip of Delete, turned off, on a disk some machines have. {{machines}} is their names, joined with commas."
+  },
+  "DisksPane.deleteButton": {
+    "message": "Delete",
+    "note": "Machines page, Disks pane (Disks under the list of machines): the button on a disk that deletes it with its overlays (after a confirmation); off while a machine has the disk."
+  },
+  "DisksPane.none": {
+    "message": "No disks are stored in this browser.",
+    "note": "Machines page, Disks pane (Disks under the list of machines): in place of the list when there are no disks."
+  },
+  "DisksPane.busy.deleting": {
+    "message": "Deleting the disk",
+    "note": "Machines page: the busy line (shown with a trailing …) while a disk and its overlays are deleted."
+  },
+  "DisksPane.delete.stored": {
+    "message": "the disk ({{size}}) stored in this browser",
+    "note": "Machines page, Disks pane: what deleting a stored disk deletes, in the confirmation (DisksPane.delete.confirm). {{size}} is the disk's size."
+  },
+  "DisksPane.delete.remote": {
+    "message": "what this browser keeps of the disk",
+    "note": "Machines page, Disks pane: what deleting a file's or a URL's disk deletes, in the confirmation (DisksPane.delete.confirm)."
+  },
+  "DisksPane.delete.disk": {
+    "message": "the disk",
+    "note": "Machines page, Disks pane: what deleting a blank disk or a ramdisk deletes, in the confirmation (DisksPane.delete.confirm)."
+  },
+  "DisksPane.delete.remains.file": {
+    "message": "\nThe file itself remains on your computer.",
+    "note": "Machines page, Disks pane: the last line of a file's disk's delete confirmation (DisksPane.delete.confirm), on a new line: deleting it leaves the file itself alone."
+  },
+  "DisksPane.delete.remains.url": {
+    "message": "\nThe image itself remains on its web server.",
+    "note": "Machines page, Disks pane: the last line of a URL's disk's delete confirmation (DisksPane.delete.confirm), on a new line: deleting it leaves the image on the server alone."
+  },
+  "DisksPane.delete.confirm_zero": {
+    "message": "Delete {{name}}? This will delete {{what}}.{{remains}}",
+    "note": "Machines page, Disks pane: the confirmation (OK in red) that a disk's Delete asks when it has no overlay (a ramdisk, or a disk no machine has used). {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{remains}} DisksPane.delete.remains.* or nothing."
+  },
+  "DisksPane.delete.confirm_one": {
+    "message": "Delete {{name}}? This will delete {{what}} and its {{count}} overlay.{{remains}}",
+    "note": "Machines page, Disks pane: the confirmation (OK in red) that a disk's Delete asks, its overlay empty. {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{count}} 1, {{remains}} DisksPane.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
+  },
+  "DisksPane.delete.confirm_other": {
+    "message": "Delete {{name}}? This will delete {{what}} and its {{count}} overlays.{{remains}}",
+    "note": "Machines page, Disks pane: the confirmation (OK in red) that a disk's Delete asks, its overlays (none or several) empty. {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{count}} how many overlays, {{remains}} DisksPane.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
+  },
+  "DisksPane.delete.confirmSized_one": {
+    "message": "Delete {{name}}? This will delete {{what}} and its {{count}} overlay, with the {{size}} of changes made on top of the base image.{{remains}}",
+    "note": "Machines page, Disks pane: the confirmation (OK in red) that a disk's Delete asks when its overlay holds something. {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{count}} 1, {{size}} what the overlay holds, {{remains}} DisksPane.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
+  },
+  "DisksPane.delete.confirmSized_other": {
+    "message": "Delete {{name}}? This will delete {{what}} and its {{count}} overlays, with the {{size}} of changes made on top of the base image.{{remains}}",
+    "note": "Machines page, Disks pane: the confirmation (OK in red) that a disk's Delete asks when its overlays hold something. {{name}} is the disk's name, {{what}} DisksPane.delete.stored, .remote or .disk, {{count}} how many overlays, {{size}} what they hold together, {{remains}} DisksPane.delete.remains.file or .url (on a new line) for a file's or a URL's disk, else nothing."
+  },
+  "DisksPane.delete.title": {
+    "message": "Delete a disk",
+    "note": "Machines page, Disks pane: the title of the confirmation a disk's Delete asks."
+  },
+  "DisksPane.delete.ok": {
+    "message": "Delete",
+    "note": "Machines page, Disks pane: the confirm button of the question before a disk is deleted."
   }
 }

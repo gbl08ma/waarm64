@@ -4,8 +4,8 @@
   remembered by the machine, and attached at once when it runs in this tab.
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
   import Icon from './Icon.svelte';
+  import Modal from './Modal.svelte';
   import UsbProblems from './UsbProblems.svelte';
   import { t } from '../i18n.ts';
   import type { IconName } from './icons.ts';
@@ -26,10 +26,9 @@
     { api: 'hid', icon: 'device-gamepad-2', name: t('usb:AddUsb.hid'), text: t('usb:AddUsb.hid.text') },
   ];
 
-  let dialog: HTMLDialogElement;
+  let dialog: Modal;
   let error = $state<ErrorView>();
   let busy = $state(false);
-  onMount(() => dialog.showModal());
 
   async function choose(api: Api) {
     error = undefined;
@@ -45,33 +44,20 @@
   }
 </script>
 
-<dialog id="add-usb" bind:this={dialog} onclose={close} aria-labelledby="add-usb-title">
-  <div class="body">
-    <h2 id="add-usb-title">{t('usb:AddUsb.title', { name })}</h2>
-    <ol class="steps"><li>{t('usb:AddUsb.step.kind')}</li><li>{t('usb:AddUsb.step.pick')}</li></ol>
-    <div class="choices">
-      {#each KINDS as k (k.api)}
-        <button type="button" class="choice" data-usb-kind={k.api} disabled={busy || !hasApi(k.api)} title={hasApi(k.api) ? undefined : k.api === 'usb' ? t('usb:AddUsb.noWebUsb') : t('usb:AddUsb.noWebHid')} onclick={() => choose(k.api)}>
-          <b><Icon name={k.icon} size={18} />{k.name}</b><span>{k.text}</span>
-        </button>
-      {/each}
-    </div>
-    <p class="note">{t('usb:AddUsb.note')}</p>
-    {#if error}<div class="error" role="alert">{error.text}{#if error.words}<UsbProblems words={error.words} />{/if}</div>{/if}
-    <div class="buttons"><span class="grow"></span><button type="button" onclick={() => dialog.close()}>{t('usb:AddUsb.cancel')}</button></div>
+<Modal id="add-usb" bind:this={dialog} title={t('usb:AddUsb.title', { name })} onclose={close}>
+  <ol class="steps"><li>{t('usb:AddUsb.step.kind')}</li><li>{t('usb:AddUsb.step.pick')}</li></ol>
+  <div class="choices">
+    {#each KINDS as k (k.api)}
+      <button type="button" class="choice" data-usb-kind={k.api} disabled={busy || !hasApi(k.api)} title={hasApi(k.api) ? undefined : k.api === 'usb' ? t('usb:AddUsb.noWebUsb') : t('usb:AddUsb.noWebHid')} onclick={() => choose(k.api)}>
+        <b><Icon name={k.icon} size={18} />{k.name}</b><span>{k.text}</span>
+      </button>
+    {/each}
   </div>
-</dialog>
+  <p class="note">{t('usb:AddUsb.note')}</p>
+  {#if error}<div class="error" role="alert">{error.text}{#if error.words}<UsbProblems words={error.words} />{/if}</div>{/if}
+  {#snippet buttons()}<span class="grow"></span><button type="button" onclick={() => dialog.close()}>{t('usb:AddUsb.cancel')}</button>{/snippet}
+</Modal>
 
 <style>
-  dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; }
-  .body { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
-  h2 { margin: 0; font-size: 16px; font-weight: 600; }
-  .choices { display: flex; flex-direction: column; gap: 8px; }
-  .choice b { display: flex; align-items: center; gap: 8px; }
   .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
-  .note { margin: 0; color: var(--dim); font-size: 13px; }
-  .error { display: flex; flex-direction: column; gap: 6px; color: #ff8f8f; white-space: pre-wrap; margin: 0; }
-  .buttons { display: flex; gap: 8px; }
-  .grow { flex: 1; }
-  .buttons button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; background: var(--bg); }
 </style>

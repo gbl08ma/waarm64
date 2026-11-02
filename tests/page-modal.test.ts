@@ -172,8 +172,8 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   }, id);
   // The list shows the move too (it rereads after the store): the rows are keyed, so the blank disk's row moves without
   // being replaced, and a locator resolved before then holds its disabled box and waits for it forever.
-  await m.locator('[data-attachment]').nth(0).locator('.meta', { hasText: words('disks:Disks.meta', { kind: t('disks:Disks.kind.blank') }, { start: true }) }).waitFor();
-  await m.locator('[data-attachment]').nth(1).locator('.meta', { hasText: words('disks:Disks.meta', { kind: t('disks:Disks.kind.url') }, { start: true }) }).waitFor();
+  await m.locator('[data-attachment]').nth(0).locator('.meta', { hasText: words('disks:Disks.meta', { kind: t('disks:disk-kind.blank') }, { start: true }) }).waitFor();
+  await m.locator('[data-attachment]').nth(1).locator('.meta', { hasText: words('disks:Disks.meta', { kind: t('disks:disk-kind.url') }, { start: true }) }).waitFor();
   await m.locator('[data-attachment]').nth(1).getByRole('checkbox', { name: t('disks:Disks.readOnly') }).check();
   await page.waitForFunction(async (id) => {
     const { Store } = await import('/web/app/store.ts' as string);
@@ -392,19 +392,19 @@ test('a detached disk keeps its overlays: attached again from the browser\'s dis
   // Attached again from the browser's disks: the same disk, its overlay there.
   await page.locator('[data-action=add-disk-open]').click();
   await page.locator('#add-disk [data-source=known]').click();
-  await page.locator(`#add-disk [data-disk="${diskId}"]`, { hasText: words('disks:AddDisk.known.overlays', { count: 1 }) }).locator('[data-action=attach-known]').click();
+  await page.locator(`#add-disk [data-disk="${diskId}"]`, { hasText: words('disks:DiskInfo.overlays', { count: 1 }) }).locator('[data-action=attach-known]').click();
   await disk(page, 0);
   await m.locator('[data-field=overlay] option', { hasText: t('disks:Disks.newOverlay.name') }).waitFor({ state: 'attached' });
   // The same URL added again is that disk: refused here, where it's attached already.
   await addDisk(page, 'url', { url });
   await page.locator('#add-disk .error', { hasText: words('disks:AddDisk.attachedAlready') }).waitFor();
   await page.keyboard.press('Escape');
-  // Detached and deleted from the browser's disks: its record and its overlay go.
+  // Detached and deleted from the browser's disks (Disks under the list of machines): its record and its overlay go.
   await m.locator('[data-attachment]').first().getByRole('button', { name: t('disks:Disks.detach.button') }).click();
   await page.waitForFunction(() => document.querySelectorAll('.machines [data-attachment]').length === 0);
-  await page.locator('[data-action=add-disk-open]').click();
-  await page.locator('#add-disk [data-source=known]').click();
-  await page.locator(`#add-disk [data-disk="${diskId}"] [data-action=delete-known]`).click();
+  await modal(page).locator('nav [data-machine=disks]').click();
+  await modal(page).locator(`section[data-selected=disks] [data-disk="${diskId}"] [data-action=delete-disk]:not([disabled])`).click();
+  assert.match(asked.at(-1)!, words('disks:DisksPane.delete.confirm', { count: 1 }));
   await page.waitForFunction(async () => {
     const { Store } = await import('/web/app/store.ts' as string);
     const store = await Store.open();
@@ -412,6 +412,81 @@ test('a detached disk keeps its overlays: attached again from the browser\'s dis
     store.close();
     return disks.length === 0 && overlays.length === 0;
   }, null, { timeout: 10_000 });
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('the browser\'s disks: each disk\'s overlays renamed and deleted, attached to a machine (not to one that has it or has the most disks), refused deletion while attached', async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await answerAsks(page, (q) => (q.kind === 'prompt' ? 'Renamed' : true));
+  await page.goto(`${base}/web/app/`);
+  // Two machines: A with no disks, B with the most a machine can have; a detached blank disk X with two overlays.
+  const ids = await page.evaluate(async () => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { attach, createDisk, createMachine } = await import('/web/app/machines.ts' as string);
+    const { createOverlay } = await import('/web/app/disks.ts' as string);
+    const { MAX_DISKS } = await import('/web/app/shape.ts' as string);
+    const store = await Store.open();
+    const a = await createMachine(store, { name: 'Machine A' });
+    const b = await createMachine(store, { name: 'Machine B' });
+    for (let i = 0; i < MAX_DISKS; i++) await attach(store, b, await createDisk(store, { kind: 'blank', size: 1 << 20 }));
+    const x = await createDisk(store, { kind: 'blank', size: 1 << 20, name: 'Disk X' });
+    const first = await createOverlay(store, x, 'First');
+    const second = await createOverlay(store, x, 'Second');
+    store.close();
+    return { a: a.id as string, b: b.id as string, x: x.id as string, first: first.id as string, second: second.id as string };
+  });
+  await page.click('#machines-open');
+  await modal(page).locator('nav [data-machine=disks]').click();
+  const pane = modal(page).locator('section[data-selected=disks]');
+  const x = pane.locator(`[data-disk="${ids.x}"]`);
+  await x.waitFor();
+  assert.equal(await pane.locator('[data-disk]').count(), 17);
+  assert.match((await x.textContent())!, words('disks:DiskInfo.onNone'));
+  // Its overlays: one renamed, the other deleted.
+  await x.locator('[data-action=disk-overlays]').click();
+  const dialog = page.locator('#overlays');
+  await dialog.locator(`[data-overlay="${ids.first}"] [data-action=rename-overlay]`).click();
+  await dialog.locator(`[data-overlay="${ids.first}"] strong`, { hasText: 'Renamed' }).waitFor();
+  await dialog.locator(`[data-overlay="${ids.second}"] [data-action=delete-overlay]`).click();
+  await dialog.locator(`[data-overlay="${ids.second}"]`).waitFor({ state: 'detached' });
+  assert.equal(await dialog.locator('[data-overlay]').count(), 1);
+  await dialog.locator('[data-action=close-overlays]').click();
+  await dialog.waitFor({ state: 'detached' });
+  // Attached: B, full, says so and can't take it; A takes it.
+  await x.locator('[data-action=attach-disk]').click();
+  const attach = page.locator('#attach-disk');
+  assert.equal(await attach.locator(`[data-machine="${ids.b}"] [data-why]`).textContent(), t('disks:AttachDisk.full', { max: 16 }));
+  assert.ok(await attach.locator(`[data-machine="${ids.b}"] [data-action=attach-to]`).isDisabled());
+  await attach.locator(`[data-machine="${ids.a}"] [data-action=attach-to]`).click();
+  await attach.waitFor({ state: 'detached' });
+  await x.locator('[data-action=delete-disk][disabled]').waitFor();
+  assert.match((await x.textContent())!, words('disks:DiskInfo.on', { machines: 'Machine A' }));
+  // Again: A has it now.
+  await x.locator('[data-action=attach-disk]').click();
+  assert.equal(await attach.locator(`[data-machine="${ids.a}"] [data-why]`).textContent(), t('disks:AttachDisk.has'));
+  assert.ok(await attach.locator(`[data-machine="${ids.a}"] [data-action=attach-to]`).isDisabled());
+  await page.keyboard.press('Escape');
+  await attach.waitFor({ state: 'detached' });
+  // The same dialog from A's Disks tab: the overlay left, with the machine that uses it.
+  await modal(page).locator(`nav [data-machine="${ids.a}"]`).click();
+  const m = modal(page).locator(`section.machine[data-selected="${ids.a}"]`);
+  await m.locator('[data-tab=disks]').click();
+  await m.locator('[data-attachment] [data-field=overlay]').selectOption(ids.first);
+  await page.waitForFunction(async ([a, o]) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const store = await Store.open();
+    const rec = await store.get('machines', a);
+    store.close();
+    return rec?.attachments[0]?.overlay === o;
+  }, [ids.a, ids.first]);
+  await m.locator('[data-attachment] [data-action=disk-overlays]').click();
+  assert.match((await dialog.locator(`[data-overlay="${ids.first}"]`).textContent())!, words('disks:Overlays.usedBy', { machines: 'Machine A' }));
+  await page.keyboard.press('Escape');
+  await dialog.waitFor({ state: 'detached' });
   assert.deepEqual(errors, []);
   await context.close();
 });

@@ -377,7 +377,7 @@
   },
   "store.diskAttached": {
     "message": "Couldn't delete the disk\nIt's attached to {{machines}}. Detach it first.",
-    "note": "Error in the message bar when the user deletes a disk some machines still have (Add a disk, A disk already in this browser): the headline, then on the next line its details. {{machines}}: their names, comma-separated."
+    "note": "Error in the message bar when the user deletes a disk some machines still have (the Machines page's Disks pane): the headline, then on the next line its details. {{machines}}: their names, comma-separated."
   },
   "urlcheck.corsHint": {
     "message": "CORS headers for this web app's origin: `Access-Control-Allow-Origin` with this origin or *, `Access-Control-Expose-Headers: Content-Range, Content-Length, ETag`, and `Range` allowed in its answers to OPTIONS",
@@ -687,6 +687,14 @@
     "message": "Import a definition…",
     "note": "Machines page: button under the list of machines that makes a machine from a definition file."
   },
+  "MachinesPage.disks.title": {
+    "message": "Show every disk and ramdisk stored in this browser, whether attached to a machine or not.",
+    "note": "Machines page: tooltip of the Disks button under the list of machines."
+  },
+  "MachinesPage.disks": {
+    "message": "Disks ({{n}})",
+    "note": "Machines page: button under the list of machines that shows the browser's disks. {{n}}: how many."
+  },
   "MachinesPage.folders.title": {
     "message": "Show the shared folders stored in this browser, for any machine.",
     "note": "Machines page: tooltip of the Shared folders button under the list of machines."
@@ -742,6 +750,14 @@
   "MachinesPage.statusFullscreen": {
     "message": "Show the status bar in full screen",
     "note": "Machines page, Preferences: the label of a box under the status bar's editor."
+  },
+  "MachinesPage.disks.heading": {
+    "message": "Disks",
+    "note": "Machines page: the title of the browser's disks pane."
+  },
+  "MachinesPage.disks.meta": {
+    "message": "Stored in this browser, for any machine. The image of a disk from a file or a URL stays where it is; only its overlays are in this browser.",
+    "note": "Machines page, Disks pane: the line beside its title."
   },
   "MachinesPage.folders.heading": {
     "message": "Shared folders",
