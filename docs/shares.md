@@ -36,7 +36,7 @@ the guest ([frontend.md](frontend.md) "What the page sets in the guest").
    root and the page shows **Allow access to *name*** (`requestPermission` needs a click), which adds it while the
    machine runs. Chromium's "allow on every visit" makes this rare. A grant lost while running (the user revoked it)
    turns the folder's requests into `EACCES` and brings the same button back.
-6. **The guest's side is set by the page:** with **Mount shared folders in the guest** on (`MachineRecord.sharesMount`,
+6. **The guest's side is set by the page:** with **[Mount shared folders in the guest](ui:machines:MachinesPage.sharesMount)** on (`MachineRecord.sharesMount`,
    default on), a systemd automount at the machine's **mount point** (`MachineRecord.sharesPath`, default
    `/mnt/shared`, left out of the record while it is the default), set per machine because distributions differ on
    what lives under `/mnt` and `/media` (§5). Both are carried by definitions and not in the shape (the guest's disk
@@ -57,7 +57,7 @@ browser is its stored files.
 
 ### 2.2 Making one
 
-From **Shared folders** in the list of machines (as **Connections** is) and from the wizard (§4): **A folder on this
+From **[Shared folders](ui:machines:MachinesPage.folders.heading)** in the list of machines (as **Connections** is) and from the wizard (§4): **A folder on this
 computer** (`showDirectoryPicker({mode: 'readwrite'})`, or `'read'` with Read-only ticked first), **A new folder in
 the browser** (a name), and a folder **dropped** on the page or on the Machines page
 (`DataTransferItem.getAsFileSystemHandle()`: a directory becomes a host folder; files dropped on a folder in the
@@ -68,7 +68,7 @@ shown as it is.
 
 Its card lists the top level with sizes and has [Add files…](ui:folders:FoldersPane.add) (`showOpenFilePicker`, multiple, or a drop), **Copy
 into a folder on this computer…** and **Copy from a folder on this computer…** (`showDirectoryPicker`, recursive, with
-progress and Cancel), **Empty** (`web/app/folder-files.ts`); `folders/` counts in the storage estimate as OPFS does. Copying through a picked folder replaces an
+progress and Cancel), **[Empty](ui:folders:FoldersPane.empty)** (`web/app/folder-files.ts`); `folders/` counts in the storage estimate as OPFS does. Copying through a picked folder replaces an
 archive format (no zip writer, no dependency). While a machine writes the folder (its lock is exclusive) the card's
 changes are disabled and say which machine has it.
 
@@ -150,13 +150,13 @@ after the request it names**. What changes while the machine runs comes over the
 
 ## 4. The page
 
-- **The Machines page:** a **Shared folders** tab per machine: **Shared folders** (the switch: in the shape, so asked
-  as Settings' changes are), **Mount shared folders in the guest** and under it **Mount point** (a text field, default
+- **The Machines page:** a **[Shared folders](ui:machines:MachinesPage.tab.folders)** tab per machine: **[Shared folders](ui:machines:MachinesPage.shares)** (the switch: in the shape, so asked
+  as Settings' changes are), **[Mount shared folders in the guest](ui:machines:MachinesPage.sharesMount)** and under it **[Mount point](ui:machines:MachinesPage.sharesPath)** (a text field, default
   `/mnt/shared`, checked as typed by `sharesPathError`, §5; on the machine running on this page a change says it takes
   effect at the next start), and the attached folders in order (name, kind,
   Read-only, held by another machine, no permission in this browser; up, down, Detach, Allow…). [Attach a folder…](ui:folders:Folders.attach)
   opens the **Folder wizard** (`FolderWizard.svelte`): the browser's folders first, those in use marked with their
-  machine, after [New folder…](ui:folders:FolderWizard.pick.new): the kind, each explained, then its settings. **Shared folders** in the list of
+  machine, after [New folder…](ui:folders:FolderWizard.pick.new): the kind, each explained, then its settings. **[Shared folders](ui:machines:MachinesPage.folders.heading)** in the list of
   machines is the browser's (§2.2, §2.3), with rename, Read-only, Delete (naming the machines that lose it).
 - **The toolbar:** a **Folders** menu while the page's machine has `shares`: each attached folder with its state,
   **Allow access…**, Detach, [Attach a folder…](ui:folders:FoldersMenu.attach) (the wizard), and where the guest finds them (`<mount point>/<name>`).

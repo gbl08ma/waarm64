@@ -697,7 +697,7 @@ toolbar's USB menu), `UsbProblems.svelte` (a device's problems, with their remed
 `MachineRecord.usb` turns the controller on. The shape has `usb: true` only when it is on. When it is off the key is
 left out, so a machine made before USB keeps its canonical JSON and its shape hash (`tests/store.test.ts` pins the
 hash). New machines (`createMachine`: New machine, a disk file opened or dropped) have the controller; a definition
-without `machine.usb` imports with it off. It is turned on or off with the **USB controller** checkbox, which is on
+without `machine.usb` imports with it off. It is turned on or off with the **[USB controller](ui:machines:MachinesPage.usb)** checkbox, which is on
 the Settings tab and on the USB tab. The checkbox warns that the change orphans the machine's snapshots, as a RAM
 change does, and Save asks again when there are snapshots to orphan. `shapeDiff` says "it had (no) a USB controller".
 A transient machine (a test's) has the controller with `?usb=1` only. With a controller, the page passes a
@@ -724,16 +724,16 @@ device again with `getDevices()` and needs no click.
   this browser*. That happens to a definition's entries on another browser. [Allow…](ui:usb:Usb.allow) opens the browser's chooser
   filtered on the entry's IDs (and its serial number, for WebUSB), and so does the menu's offer at the first start.
 - **States** (`entryStates`):
-  - *attached*: on a connector of this page's machine.
+  - *[attached](ui:usb:Usb.state.attached)*: on a connector of this page's machine.
   - *held by …*: another tab's machine has it. The page sees the entry's Web Lock held, and the holder answers with
     its machine's name.
   - [plugged in](ui:usb:Usb.state.plugged).
   - [not plugged in](ui:usb:Usb.state.unplugged): skipped at start without a word.
   - [no permission in this browser](ui:usb:Usb.state.ungranted).
-- **Forget** detaches the device first. When no other machine remembers the device, Forget also calls
+- **[Forget](ui:usb:Usb.forget.button)** detaches the device first. When no other machine remembers the device, Forget also calls
   `device.forget()`, so the browser's grant goes too.
 - **Edits:** the list is edited while the machine runs, so a settings save (`updateMachine`) keeps the stored list
-  rather than the draft's. **Duplicate** copies the entries with new ids.
+  rather than the draft's. **[Duplicate](ui:machines:MachinesPage.duplicate)** copies the entries with new ids.
 - **Definitions** carry `machine.usb` and `usbDevices`, which are the entries without their ids. No grants travel.
 
 ### Device locks
@@ -743,7 +743,7 @@ the store's `BroadcastChannel`, with notes (`Store.tell`, `onNote`):
 - `usb-who` asks who holds a lock, and the holder answers `usb-held` with its machine's name.
 - `usb-release` asks the holder to detach the device.
 
-Attaching a device that another machine holds names that machine and offers **Detach it there**. The holder's page
+Attaching a device that another machine holds names that machine and offers **[Detach it there](ui:usb:main.held.ok)**. The holder's page
 then detaches it and says so.
 
 ### Attach and detach
@@ -753,9 +753,9 @@ They work while the machine runs on this page, from the USB tab or the toolbar's
   `running` state of each start. A start, a resume and a restored snapshot are treated alike, because a snapshot's
   ports are empty.
 - **Plugging in:** a granted device that is plugged in later (`connect`) is attached when its entry has *attach at
-  start* and its connector is free. Otherwise the menu offers it: *Attach* for an entry, *Attach and remember* for a
+  start* and its connector is free. Otherwise the menu offers it: *Attach* for an entry, *[Attach and remember](ui:usb:main.offer.remember)* for a
   device the machine doesn't remember.
-- **Re-enumeration:** when an attached device is unplugged, the menu offers **Pick it…**. That opens the chooser in
+- **Re-enumeration:** when an attached device is unplugged, the menu offers **[Pick it…](ui:usb:main.offer.pick)**. That opens the chooser in
   case the device came back as another one, such as a bootloader, because a device without a grant raises no
   `connect`. For 60 s after the unplug, a new granted device is offered on the same connector, as its own entry.
 - **What's left out:** an attach that worked can still leave part of the device out. Its `usb-state` lists those

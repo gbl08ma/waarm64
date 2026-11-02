@@ -50,8 +50,8 @@ What the Machines page shows and does is [frontend.md](frontend.md) "Machines in
 The page around them (the user, 2026-10-17):
 
 14. **Disks and snapshots are managed only on the Machines page** (and the wizards it opens). The toolbar keeps quick
-    actions: **Snapshot** (one click, kept in the browser under the time: a panic button, renamed later), **Load
-    snapshot** (the latest five, a file, all of them), Start/Restart, **Power off**, Suspend.
+    actions: **[Snapshot](ui:toolbar:Toolbar.snapshot)** (one click, kept in the browser under the time: a panic button, renamed later), **Load
+    snapshot** (the latest five, a file, all of them), Start/Restart, **[Power off](ui:toolbar:Toolbar.powerOff)**, Suspend.
 15. **The Machines page is a page, not a modal** (no dialogs over dialogs): it takes the machine's place; a machine's
     settings, disks, network, USB, shared folders and snapshots are tabs.
 16. **Add a disk is a wizard:** the kind of source first, each explained, then its details.
@@ -129,8 +129,8 @@ date are the same disk to the page.
 ### 3.2 Re-granting a file
 
 A `FileSystemFileHandle` kept in IndexedDB needs `requestPermission({mode: 'read'})` from a click in each session:
-a start that finds a file disk without permission stops at "Allow and start" (one prompt per handle), or at "Pick
-and start" for a disk with no handle (a definition's, or one opened through a plain file input where the browser has
+a start that finds a file disk without permission stops at "[Allow and start](ui:disks:main.allowAndStart)" (one prompt per handle), or at
+"[Pick and start](ui:disks:main.pickAndStart)" for a disk with no handle (a definition's, or one opened through a plain file input where the browser has
 no `showOpenFilePicker`). Drops give handles too (`DataTransferItem.getAsFileSystemHandle`), as the picker does: the
 Add a disk wizard's, Open disk…'s and From a disk image…'s (main.ts `openDisk`). A picked file is checked as in §6.
 
@@ -322,7 +322,7 @@ copy stale.
 ## 6. Machine definitions in and out
 
 `web/app/definitions.ts`; the page's side is frontend.md "Machines in the browser".
-- **Export the definition:** `<name>.webpc-machine.json` (`webpc-machine`, a version): the machine's settings (shared
+- **[Export the definition](ui:machines:MachinesPage.exportDefinition):** `<name>.webpc-machine.json` (`webpc-machine`, a version): the machine's settings (shared
   folders as `shares`, `sharesMount` and `sharesPath`, never the folders), the adapters' MACs (no connections), the
   remembered USB devices as identities (no grant travels), and per attachment the disk's kind, name, size, identity, URL, hash where the
   record has one, read-only, in place and serial. No handles, overlays, snapshots or file contents.
