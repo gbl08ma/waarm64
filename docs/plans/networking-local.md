@@ -1,4 +1,4 @@
-# A local network helper (L0 to L2 done, v0.1.0 released; L3 next)
+# A local network helper (L0 to L3 done, v0.1.0 released; L4 next)
 
 A third kind of connection, beside a tailnet and tailcat ([network-adapters.md](../network-adapters.md) §1): a
 small program the user runs on their own computer, which the page reaches over a WebSocket on loopback and which
@@ -10,7 +10,7 @@ Why: a browser has no UDP, so tailcat and a tailnet always go through DERP. The 
 users, rate-limited and best-effort: under 20 Mbit/s and a relay's round trip in the user's experience, and a
 friend's tailcat connection behaves worse still. A helper on the user's machine has the latency of loopback and
 the user's own uplink. Every name here (`webpc-net`, the subprotocol, the kind) is provisional: the project's
-name may change. **Where it stands:** NET-HANDOVER.md in the repository's root while the track is open; the helper,
+name may change. **How it works now:** [local-helper.md](../local-helper.md). **Where it stands:** NET-HANDOVER.md in the repository's root while the track is open; the helper,
 with its README, THIRD_PARTY.md and CLAUDE.md, is its own repository, `github.com/gbl08ma/webpc-net` (private until the
 user makes it public).
 
@@ -215,6 +215,11 @@ with tun2socks-style forwarders.
   already, from L0). The framing's unit tests in Node. How it
   works goes into tailnet.md's neighbor (a page of its own, or network-adapters.md), frontend.md "Network" and
   the backlog's loose ends.
+  - **Done** (2026-11-02): the move first (§1); `tests/page-local.test.ts` from a public origin (the test server's
+    address called public by `--ip-address-space-overrides`: connected once CDP grants `loopback-network`, the
+    refusal said otherwise); the Debian list was `tests/net-local.test.ts`'s already, now at the pinned commit; the
+    framing's tests were L2's. How it works: [local-helper.md](../local-helper.md), its own page; the loose ends in
+    backlog.md "Network".
 - **L4, release:** the deploy and making the repository public, with the user (v0.1.0, the first release, came with
   the move; the page's install lines download from a private repository until then).
 

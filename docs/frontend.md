@@ -1199,7 +1199,7 @@ page's **[Connections](ui:machines:MachinesPage.connections.heading)**: rename, 
 side is `web/app/net-live.ts` (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, the clients, the locks
 and the guest's default way out (below).
 
-- [Your computer](ui:network:connections.thisComputer) (the local helper, [webpc-net](https://github.com/gbl08ma/webpc-net): [plans/networking-local.md](plans/networking-local.md)): a
+- [Your computer](ui:network:connections.thisComputer) (the local helper, webpc-net: [local-helper.md](local-helper.md)): a
   program the user runs prints a pairing link, `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>` (only that origin's,
   even with `--origin`: a developer puts their own origin in its place). Opening it
   takes the fragment out of the address at once (it holds the token) and opens the wizard on [Your computer](ui:network:connections.thisComputer), the

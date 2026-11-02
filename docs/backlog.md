@@ -1253,6 +1253,17 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - The Network menu doesn't say a connection is IPv4-only.
   - `bench/gpu/firefox-load.ts`'s tailcat mode still drops the guest's IPv6 default and pins resolv.conf and
     gai.conf by hand; no longer needed, drop it at its next run.
+- **The local helper's loose ends** ([local-helper.md](local-helper.md), webpc-net's own repository):
+  - **Never run on Windows** (nor its install lines in PowerShell): whether gvisor-tap-vsock's DNS forwarder follows the
+    host's resolvers there (it asks Go's `net.Resolver` and forwards other types to `/etc/resolv.conf`'s servers,
+    which Windows hasn't), and what Defender and SmartScreen make of an unsigned binary fetched by `Invoke-WebRequest`.
+  - The install lines haven't run against a real release: the repository is private until L4. The Linux line ran
+    against a `file://` copy.
+  - `go install` waits on #745 landing in a gvisor-tap-vsock release (the `replace` goes then). If #745 stalls, a fork of
+    ours with the module path renamed would bring it back.
+  - The guest can't ping the internet over IPv6 (#745's ICMP forwarder is IPv4's only).
+  - Two `local` adapters both offer a default route: the menu says so, nothing picks one.
+  - Firefox's and Safari's handling of `ws://127.0.0.1` from an https page is unchecked (never a blocker).
 - **tailcat serving loose ends**: no `--allow` list (any key with the address gets in, as with tailcat's own
   default; the module would check the meowing key); clients are never dropped (64 WireGuard peers at most, until
   Disconnect); disco pings aren't answered, so `tailcat ping` gets no pong (the data path works); the public-relay

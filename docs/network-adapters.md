@@ -14,7 +14,7 @@ code's comments still cite; machines had first left several adapters for later: 
    of the shape, their order too: virtio-mmio has no hotplug, so adding, removing or moving one needs the machine off
    (as a disk does).
 2. **Connections are the browser's, not the machine's:** a list kept in this browser, each a tailnet, tailcat or
-   the local helper on this computer (`local`: [plans/networking-local.md](plans/networking-local.md); later,
+   the local helper on this computer (`local`: [local-helper.md](local-helper.md); later,
    perhaps, a p2p room: [plans/networking-p2p.md](plans/networking-p2p.md)). A connection carries its own state
    (a tailnet's node, tailcat's identity and address), so it keeps working as the user moves from one machine to the
    next. There is no "default" connection.

@@ -30,6 +30,10 @@ pushes touching code) and `release.yml` (~3 min on each of two runners). **v0.1.
 lines (`web/local-release.ts`). Not deployed. The lines download from a private repository until the user makes it
 public: nobody has run them against the real release yet (the Linux line ran against a `file://` copy at L1).
 
+**L3 is done** (2026-11-02): `tests/page-local.test.ts` from a public origin (granted through CDP, connected; refused,
+the menu's words for it; a planted `loopbackRefused` that never says denied is caught), and how it works in its own
+page, docs/local-helper.md, with the loose ends in backlog.md "Network".
+
 ## The user's answers (2026-11-01, for L2)
 
 - **A link flap** (virtio-net's `STATUS`, down and up) is allowed, guest-visible as it is, for **any kind**: whenever
@@ -40,8 +44,10 @@ public: nobody has run them against the real release yet (the Linux line ran aga
 
 ## Next
 
-1. **L3**: a test from a public origin (`--ip-address-space-overrides=127.0.0.1:<port>=public` and CDP's
-   `Browser.setPermission` for `loopback-network`; Playwright 1.63's `grantPermissions` doesn't know the name), then the plan's list. L4 as the plan says.
+1. **L4, with the user:** the deploy (the wizard offers v0.1.0's install lines) and making `gbl08ma/webpc-net` public;
+   then run the install lines against the real release on Linux, the Mac and, if one is at hand, Windows
+   (backlog.md "The local helper's loose ends").
+2. At the track's end: the plan's outcome is local-helper.md already; delete this handover, mark the plan done.
 
 ## Found (worth not re-discovering)
 

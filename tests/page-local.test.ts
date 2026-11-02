@@ -3,7 +3,8 @@
 // needs to be live). The helper's pairing link opens the page: the fragment leaves the address, the Network wizard opens
 // on This computer with the link filled in, and Attach keeps a `local` connection on the machine's first adapter, which
 // connects at its start through the real helper (built at the commit tests/webpc-net.ts pins). Stopping the helper is said in the menu,
-// and Retry, once it runs again, connects again; a link to no helper says it isn't running.
+// and Retry, once it runs again, connects again; a link to no helper says it isn't running. And from a public origin,
+// where Chromium's Local Network Access gates the socket: connected once allowed, the refusal said where to change it.
 // Needs the firmware (images/build.sh edk2) and Go.
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -23,6 +24,8 @@ const ROOT = new URL('..', import.meta.url).pathname;
 const skip = !existsSync(`${ROOT}target/images/edk2/QEMU_EFI.fd`) ? 'SKIPPED: run images/build.sh edk2' : helperSkip();
 
 let browser: Browser;
+/** The same Chromium with the test server's address called public, as https://vm.tny.im is: Local Network Access gates its sockets to loopback. */
+let publicBrowser: Browser;
 let base: string;
 let closeServer: () => void;
 let helper: ChildProcess | undefined;
@@ -60,8 +63,9 @@ before(async () => {
   port = await freePort();
   await startHelper();
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+  publicBrowser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', args: [`--ip-address-space-overrides=${new URL(base).host}=public`] });
 });
-after(async () => { await browser?.close(); closeServer?.(); await stopHelper(); });
+after(async () => { await browser?.close(); await publicBrowser?.close(); closeServer?.(); await stopHelper(); });
 
 /** A stored machine with a blank disk and one adapter, made through the page's own code. */
 const seed = (page: Page) => page.evaluate(async (modules) => {
@@ -136,5 +140,51 @@ test("the helper's pairing link: the wizard on This computer, Attach, connected 
     assert.deepEqual(errors, []);
   } finally {
     await context.close();
+  }
+});
+
+/** Through the helper's pairing link: a stored machine whose first adapter is attached to a new `local` connection. */
+async function pairAndAttach(page: Page) {
+  await page.goto(`${base}/web/app/`);
+  const id = await seed(page);
+  await page.goto(`${base}/web/app/?m=${id}#net=ws://127.0.0.1:${port}/${token}`);
+  await page.waitForFunction(() => (document.getElementById('net-wizard') as HTMLDialogElement | null)?.open === true, null, { timeout: 15_000 });
+  await page.click('#net-connect');
+  await page.waitForFunction(() => !(document.getElementById('net-wizard') as HTMLDialogElement).open, null, { timeout: 10_000 });
+}
+
+// Chromium's Local Network Access (bench/net/REPORT.md "The local helper"): a public page's socket to loopback needs the
+// `loopback-network` permission. Granted (through CDP: Playwright's grantPermissions doesn't know the name), the adapter
+// connects as on a local page; refused (headless shows no prompt, so the ask ends denied), the menu says where the
+// setting is rather than that the helper isn't running.
+test('from a public origin: granted, the adapter connects; refused, the menu says where to allow it', { skip, timeout: 5 * 60_000 }, async () => {
+  for (const granted of [true, false]) {
+    const context = await publicBrowser.newContext({ viewport: { width: 1400, height: 900 } });
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    try {
+      await page.goto(`${base}/web/app/`);
+      assert.equal(await page.evaluate(async () => (await navigator.permissions.query({ name: 'loopback-network' as PermissionName })).state), 'prompt', 'the page is gated');
+      if (granted) {
+        const cdp = await context.newCDPSession(page);
+        const { targetInfo } = await cdp.send('Target.getTargetInfo');
+        await cdp.send('Browser.setPermission', { permission: { name: 'loopback-network' }, setting: 'granted', origin: base, browserContextId: targetInfo.browserContextId });
+      }
+      await pairAndAttach(page);
+      await page.reload();
+      if (granted) {
+        await phaseIs(page, 'connected');
+        await menu(page);
+        assert.match((await page.locator('#net-status').textContent()) ?? '', words('network:network.connectedLocal', {}, { start: true }));
+      } else {
+        await phaseIs(page, 'error');
+        await menu(page);
+        assert.match((await page.locator('#net-status').textContent()) ?? '', words('network:local-net.refused'));
+      }
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
   }
 });
