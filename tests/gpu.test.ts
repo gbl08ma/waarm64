@@ -702,6 +702,48 @@ test('gpu: ring fences that fill the queue and stall give entries back, the next
   b.reset();
 });
 
+// A timer may fire before `performance.now()` says it is due (a cloud host's mostly fired a fraction of a millisecond
+// early): the stall check then re-arms, and must re-arm for what is left of `RING_STALL_MS`, not all of it again, or the
+// guest's queue waits twice the stall (backlog "CPU and ISA" until 2026-11-02; it flaked the test above's fixed wait).
+test('gpu: a stall timer that fires early re-arms for what is left of the stall', async () => {
+  const { gpuBackend } = await import('../web/gpu.ts');
+  const ram = new Uint8Array(RAM_SIZE);
+  const done: number[] = [];
+  const ctx = { ram: () => [ram], layout: ramLayout(RAM_SIZE), complete(w0: number) { done.push(w0); }, config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0, features: () => 0n };
+  const b = gpuBackend(ctx, { width: 800, height: 600, virgl: true, venus: true });
+  b.gpu.host = { call() {}, fence: () => new Promise<void>(() => {}) };
+  const send = (w0: number, c: Uint8Array) => { ram.set(c, 0x100); return b.request({ w0, queue: 0, read: [{ off: 0x100, len: c.length, mem: 0 }], write: [{ off: 0x800, len: 512, mem: 0 }] }); };
+  send(1, ctxCmd(3, V.CTX_CREATE, 0, 4));
+  // The backend's stall timer (`watchRings`) fires at half its delay; everything else's as asked.
+  const real = globalThis.setTimeout;
+  const arms: { ms: number; at: number; given: number }[] = [];
+  globalThis.setTimeout = ((fn: (...a: unknown[]) => void, ms?: number, ...rest: unknown[]) => {
+    if (fn.name !== 'watchRings') return real(fn, ms, ...rest);
+    arms.push({ ms: ms!, at: performance.now(), given: done.length });
+    return real(fn, Math.floor(ms! / 2), ...rest);
+  }) as typeof setTimeout;
+  try {
+    done.length = 0;
+    for (let i = 1; i <= 20; i++) {
+      const s = ctxCmd(3, V.SUBMIT_3D, 8, 0, 0x11223344, 5);
+      const v = new DataView(s.buffer);
+      v.setUint32(4, 1 | 2, true);
+      v.setBigUint64(8, BigInt(i), true);
+      v.setUint8(20, 1);
+      send(100 + i, s);
+    }
+    const last = performance.now();
+    for (let k = 0; k < 300 && done.length < 20 - 15; k++) await new Promise((r) => real(r, 10));
+    assert.equal(done.length, 20 - 15, 'stalled, entries come back');
+    const before = arms.filter((a) => a.given === 0 && a.at >= last);
+    assert.ok(before.length >= 1, 'the early timer re-armed before the stall was due');
+    for (const a of before) assert.ok(a.ms <= Math.ceil(last + 250 - a.at) + 1, `re-armed for ${a.ms} ms with ${(last + 250 - a.at).toFixed(1)} left`);
+  } finally {
+    globalThis.setTimeout = real;
+    b.reset();
+  }
+});
+
 test('gpu: a full queue whose fences go on retiring, or whose guest goes on sending, keeps its entries', async () => {
   const { gpuBackend } = await import('../web/gpu.ts');
   const ram = new Uint8Array(RAM_SIZE);
