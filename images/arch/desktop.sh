@@ -34,7 +34,7 @@ echo "==== media"
 FILES=$W/desktop-files
 rm -rf "$FILES"; mkdir -p "$FILES/root/pkg" "$FILES/home/arch/media"
 cp "$W"/pkg/webpc-va-*.pkg.tar.* "$FILES/root/pkg/"
-cp "$W"/media/{avsync.webm,sintel.webm,sintel-silent.webm,avsync.html} "$FILES/home/arch/media/"
+cp "$W"/media/{avsync.webm,sintel.webm,sintel-silent.webm,sintel_trailer-480p.mp4,avsync.html} "$FILES/home/arch/media/"
 echo "==== image"
 "$ROOT/images/arch/build.sh" --out "$OUT" --root-mib 20480 --packages "$PACKAGES" --files "$FILES" --setup "$ROOT/images/arch/desktop-setup.sh"
 rm -rf "$FILES"

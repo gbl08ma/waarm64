@@ -18,7 +18,8 @@ frames across size changes, a damaged chunk a decoder error that loses nothing b
 with a live codec refused a snapshot that saves once the player exits. **AV1 is decoded on the host (§10)**: offered
 wherever `VideoDecoder` takes it (the user's Linux Chromium decodes it in software), its headers rebuilt, exact in
 software and in the Mac's hardware, film grain included (webpc-va 2).
-**The track is done (§11): HEVC dropped.** What exists is
+**The track is done (§11): HEVC dropped.** Afterwards: **H.264 in the guest's Chromium where the host decodes in
+software (§12, 2026-11-02)** was a slideshow; the call queue's waits are now per picture and per submit. What exists is
 in the topic docs ([graphics.md](../graphics.md) "Video", [devices.md](../devices.md) "virgl"); this page keeps the decisions, the findings worth not
 re-discovering, and each loop's record.
 
@@ -496,3 +497,61 @@ Learned on the way (from the track's handover; for whoever works on video again)
   GLES 2): its GL runs are `--vo=gpu`.
 - **The PC sampler slows the guest** (Firefox's drops doubled): drop counts from unsampled runs only; and it charges
   a chunk to the instruction after the last exit, so exit sites (`arch_counter_get_cntvct`) look hot.
+
+
+## 12. H.264 in the guest's Chromium on a software decoder (2026-11-02)
+
+**The user's report:** H.264 in the guest's Chromium (a YouTube video served as H.264, then a local MP4) played as a
+slideshow on their host (Linux Chromium, NVIDIA, H.264 decoded in software): the decoder's rate 20-35 a second for a
+30 fps clip, the display ~9 and swinging, Chromium's whole window slow. Firefox played it smoothly; VP9 and AV1 were
+fine in Chromium. Never seen before because the desktop image had no H.264 clip (it has `sintel_trailer-480p.mp4`
+now) and YouTube serves mostly VP9 and AV1; the queue's rules for it were V1's, from before Chromium was in the image
+(195f7194's flicker fix was measured on VP9). Tool: `bench/gpu/chromium-video.ts` (a clip in kiosk Chromium; each
+second the page's presented video frames, its animation frames and drops, the host's video and fence numbers; `VIDEO`,
+`CAPTURE`); JSON in `bench/video/results/chromium-h264/`.
+
+- **Measured before** (the dev VM, OpenH264, Sintel's H.264 trailer at 24 fps; `devvm-before`): the host decoded 24
+  pictures a second, the screen presented 6-7 frames, the page saw 3-13 video frames and 6-31 animation frames a
+  second, a fence took 150 ms on average, a picture 170 ms from END_FRAME to written, and calls waited 220-300 ms: the
+  200 ms drain, every few frames.
+- **Cause 1: one context decodes and draws.** Chromium's GPU process sends its VA-API decodes and its GL compositing
+  on one virtio-gpu context (the queue's log: its draws and its decode-only submits on the same context). A decode
+  passed other contexts' waiting calls but not its own's, so a draw waiting for a picture a software decoder held
+  also held back the later pictures the decoder waited for, until the drain. Firefox decodes in its RDD process (a
+  context of its own), mpv's decode is ahead of its draw. Now a decode-only submit and an attach pass their context's
+  waiting draws (not its transfers, detaches or end: a decode may read what they bring); a pending picture carries the
+  place in the guest's order of the call that decoded it, and a call waits only for pictures from calls before it; a
+  picture decoded ahead of a waiting call that could see its planes is written after that call (`CallQueue.sees`, a
+  guest may decode into a surface a draw before it samples). That alone (`devvm-order-only`): ~9-10 presents a second.
+- **Cause 2: a context that decodes has every surface attached.** The waiting rule was "a pending picture's plane is
+  attached to the context", and Chromium's GPU process has all its surfaces' planes attached: each draw waited for the
+  newest pictures, ones it doesn't show yet and that the decoder holds until the guest sends more, which it doesn't
+  until a frame shows. Now a context's first waiting submit waits only if a pending plane is among what it can touch
+  (`VirglRenderer.submitTouches`: what each sub-context it draws in has bound, what its commands bind or name, what the
+  objects it makes refer to; a command it doesn't know: the old rule). Every submit of Mesa's virgl selects its
+  sub-context before anything that depends on one (checked on a capture: the first command past its queued
+  transfers is SET_SUB_CTX, or CREATE_SUB_CTX at a context's start), so decodes run ahead safely.
+- **After** (both causes; the dev VM `devvm-h264`, `devvm-vp9`; the Mac with `?gpu=virgl,swvideo`, Chrome for
+  Testing's FFmpeg, `mac-swvideo`; the Mac's runs had the fillers below built in and switched off): 24 video frames, 60 animation frames and 24 presents a second, none dropped, no
+  call waiting, fences under 1 ms, on both decoders; VP9 the same. With the old attached rule and the new order
+  (`mac-swvideo-waitattached`, `?gpu=waitattached` keeps it for A/B): 5-21 frames, ~125 dropped a phase, 205 ms waits.
+  The flicker check (`chromium-flicker.ts`, now with `VIDEO`): 0 frames back and 0 split in 30 s, H.264, and VP9 with
+  each picture's output delayed 40 ms (195f7194's 20-22 under its old rule). The guest's `ffmpeg -hwaccel vaapi`
+  reading each frame back (`v1.ts`, `mac-v1-readback`): 120 frames in 2.1 s, all equal to its software decode (the
+  backlog had 23 s: each picture through a drain).
+- **Tried and dropped: filler pictures** (the backlog's idea). A non-reference P picture of skipped macroblocks (CAVLC,
+  a PPS of its own, frame_num the last reference's + 1, POC the held picture's + 1), sent while a call waits for a
+  held picture once more pictures of a greater POC follow it than the stream's learned depth (no later picture can then
+  come before it), pushes the picture out: in a replay of Chromium's captured stream through `VideoDecoder`, a guest
+  that waits for the picture it shows stalled 200 ms at every picture on the Mac's FFmpeg (41.7 s for 204 pictures) and
+  took 2.1 s with fillers (one each, 6 ms a stall), every picture's luma equal to the run without; on OpenH264 1-3 a
+  stall. But once the two causes were fixed, the guest's Chromium never waited for a held picture (no filler sent in
+  30 s on the Mac, 0.1 a second on the dev VM), and the readback case went from 2.1 to 1.5 s only. Not worth their
+  code, nor their hazards: consecutive identical fillers read as one picture's second slice (OpenH264 failed; two PPS
+  ids in turn fix it), fillers sent to a decoder still decoding a drain's history push nothing, and OpenH264 under
+  Chromium's FFmpeg failed with a decoding error now and then when chunks followed a filler at once (never when
+  nothing went in until the filler had left the queue: the `dequeue` event).
+- **Also seen:** the SPS tells a software decoder a reorder depth of the stream's reference count (5 for the trailer,
+  whose depth is 2) until an IDR period shows the depth (§7), so FFmpeg holds ~5 pictures (latency ~210 ms on the
+  Mac); the guest's Chromium doesn't wait for them now. The new image (kernel 7.2.14, Mesa 26.2.6) behaved as the
+  old one (7.2.11).

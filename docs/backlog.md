@@ -537,13 +537,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   long-term pictures from the SPS can't be rebuilt (their POCs aren't sent). Testable only where the browser has
   HEVC (the Mac's hardware), and offline with FFmpeg in Podman.
 - **A VA-API consumer that waits on each picture, where the browser decodes H.264 in software** (the guest's
-  `ffmpeg -hwaccel vaapi` reading frames back, as in transcoding; plans/video.md §7): every frame right, but ~5 a
-  second (120 frames in 23 s on the Mac: each picture waits for the 200 ms drain). The decoder holds more pictures than
-  the guest sends before it waits (Chrome's FFmpeg 3 beyond the SPS's depth, its frame threads; OpenH264 up to 6,
-  ignoring the SPS), and no SPS can say less than 0. Firefox and mpv decode ahead and aren't affected. Ideas, none
-  tried: a filler picture (a non-reference all-skip P slice under a CAVLC PPS of ours) to push held pictures out; a
-  shorter drain for a codec drained again and again (each drain decodes its IDR period again, so the cost grows with
-  the period). Worth it only if transcoding in the guest matters.
+  `ffmpeg -hwaccel vaapi` reading frames back, as in transcoding; plans/video.md §7, §12): every frame right, 120 frames
+  in 2.1 s on the Mac (23 s before the call queue's waits became per picture and per submit), a drain now and then
+  where the decoder holds more pictures than the guest sends before it waits. Filler pictures (plans/video.md §12:
+  measured, exact, then dropped) took it to 1.5 s; worth bringing back only if transcoding in the guest matters, with
+  their hazards (OpenH264 under Chromium's FFmpeg wants nothing sent until a filler has left the queue).
 - **H.264 that jumps to a picture that isn't an IDR** (plans/video.md §9: the guest's FFmpeg seeking in an MPEG-TS,
   which has no index, lands mid-GOP; a stream whose key pictures are recovery-point I pictures): the guest's own
   decoder conceals the missing references, the browser's decoders (VideoToolbox, Chrome's FFmpeg, OpenH264) report a
@@ -1331,6 +1329,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
+- **`tests/page-local.test.ts`'s pairing-link test fails now and then under `scripts/ci.sh`'s load** (2026-11-02, once
+  in two runs; alone it passed twice): its `waitForFunction` reads `#net-wizard`'s `open` before the page has made the
+  dialog (`TypeError: Cannot read properties of null (reading 'open')`, tests/page-local.test.ts:105). Waiting for the
+  element (`?.open`) would fix the test; whether the page's start should open it sooner wasn't looked at.
 - **Screening an A/B** (docs/benchmarking.md; `bench/boot/REPORT.md` "M8: benchmarks started from a snapshot"), what
   wasn't measured: the churn page's functions run once and die, so it doesn't test how a cache policy keeps a reused
   hot set (a `hot=<n>` query that keeps calling the last n functions would); the real sites at 320 MiB in a run long

@@ -1,0 +1,36 @@
+{
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "153.0.8010.12",
+ "frames": 120,
+ "info": "7.2.14-arch1-2mesa 1:26.2.6-1 libva 2.24.1-1 ffmpeg 2:9.0.2-2 webpc-va 3-1 LIBVA_DRIVER_NAME=webpc",
+ "vainfo": "vainfo: Driver version: Mesa Gallium driver 26.2.6-arch1.1 for virgl (webpc)      VAProfileH264ConstrainedBaseline: VAEntrypointVLD      VAProfileH264Main               : VAEntrypointVLD      VAProfileH264High               : VAEntrypointVLD      VAProfileVP9Profile0            : VAEntrypointVLD      VAProfileAV1Profile0            : VAEntrypointVLD      VAProfileNone                   : VAEntrypointVideoProc",
+ "sintel_trailer-480p.mp4": {
+  "compare": "frames 120 of 120, equal 120, first differing========================================================================================================================",
+  "timing": "time 2.134 s user 0.561 s sys 0.580 s",
+  "ms": 4814,
+  "decoded": 128,
+  "dropped": 0,
+  "errors": 0,
+  "ahead": 0,
+  "maxWaitMs": 206.72999954223633,
+  "warnings": [
+   [
+    "virgl-dbg drain S2#221 fence#222 damage#223 (3)  p0@189[3,4]poc65536 p1@202[25,26]poc65538 p2@215[27,28]poc65540",
+    1
+   ],
+   [
+    "virgl-dbg drain S2#418 fence#419 damage#420 (3)  p16@376[36,37]poc65572 p17@383[38,39]poc65570 p19@398[42,43]poc65576 p20@405[34,35]poc65574 p21@412[3,4]poc65578",
+    1
+   ],
+   [
+    "virgl-dbg drain S2#454 fence#455 damage#456 (3)  p22@424[25,26]poc65586 p23@427[40,41]poc65582 p24@430[32,33]poc65580 p25@441[27,28]poc65584 p26@448[34,35]poc65592",
+    1
+   ],
+   [
+    "virgl-dbg drain unref#1184 unref#1185 unref#1186 unref#1187 unref#1188 unref#1189 unref#1190 unref#1191 unref#1192 unref#1193 unref#1194 unref#1195 unref#1196 unref#1197 unref#1198 unref#1199 unref#1200 unref#1201 S2#1202 A2:5-#1203 A2:6-#1204 A2:7-#1205 A2:8-#1206 A2:9-#1207 A2:10-#1208 A2:11-#1209 unref#1210 unref#1211 unref#1212 unref#1213 A2:12-#1214 unref#1215 unref#1216 A2:13-#1217 A2:14-#1218 A2:15-#1219 A2:16-#1220 A2:17-#1221 A2:18-#1222 A2:19-#1223 (64)  p123@1131[32,33]poc65782 p124@1138[36,37]poc65784 p125@1145[3,4]poc65786 p126@1152[42,43]poc65790 p127@1160[38,39]poc65788",
+    1
+   ]
+  ]
+ },
+ "debug": []
+}

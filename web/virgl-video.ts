@@ -141,8 +141,9 @@ type Codec = {
 const HISTORY_PICTURES = 600, HISTORY_BYTES = 32 << 20;
 type Buffer = { handle: number; format: number; width: number; height: number; planes: number[] };
 /** A picture sent to the decoder and not yet written: its codec, target buffer and its planes (as at END_FRAME), when it
- * was sent; an H.264 picture's IDR period and POC. */
-type Pending = { codec: Codec; target: number; planes: number[]; at: number; epoch?: number; poc?: number };
+ * was sent, the place in the guest's order of the call that sent it (`VideoEnv.order`); an H.264 picture's IDR period
+ * and POC; once decoded, the picture while it waits to be written (`VideoEnv.mayWrite`). */
+type Pending = { codec: Codec; target: number; planes: number[]; at: number; order: number; epoch?: number; poc?: number; pic?: DecodedPicture };
 
 const isH264 = (profile: number) => profile >= PROFILE.AVC_BASELINE && profile <= PROFILE.AVC_HIGH10;
 const isVp9 = (profile: number) => profile === PROFILE.VP9_PROFILE0;
@@ -172,6 +173,13 @@ export type VideoEnv = {
   write?(planes: number[], picture: DecodedPicture): void;
   /** A picture was written or given up: what waits for the pictures may go on. */
   settled?(): void;
+  /** The place in the guest's order of the call running now (the GPU worker's `CallQueue`); without it, 0. */
+  order?(): number;
+  /**
+   * Whether a picture sent at `order` may be written into these planes now: not while a call before it that could see
+   * them still waits (the queue ran the decode ahead of it). One that may not stays pending, decoded, until `land`.
+   */
+  mayWrite?(planes: readonly number[], order: number): boolean;
 };
 
 /**
@@ -276,11 +284,16 @@ export class VideoContext {
   /** Pictures sent to a decoder and not yet written. */
   get waiting() { return this.pending.size; }
 
-  /** The plane resources of the pending pictures' buffers. */
-  pendingPlanes(): number[] {
+  /** The plane resources of the pending pictures' buffers, of those sent by calls before `before`. */
+  pendingPlanes(before = Infinity): number[] {
     const out: number[] = [];
-    for (const q of this.pending.values()) out.push(...q.planes);
+    for (const q of this.pending.values()) if (q.order < before) out.push(...q.planes);
     return out;
+  }
+
+  /** Writes the decoded pictures that waited for earlier calls (`VideoEnv.mayWrite`), in order, as far as they now may. */
+  land() {
+    for (const [ts, q] of this.pending) if (q.pic && (this.env.mayWrite?.(q.planes, q.order) ?? true)) this.put(ts, q, q.pic);
   }
 
   /**
@@ -291,7 +304,7 @@ export class VideoContext {
    */
   drain() {
     this.nudge();
-    const codecs = new Set([...this.pending.values()].map((q) => q.codec));
+    const codecs = new Set([...this.pending.values()].filter((q) => !q.pic).map((q) => q.codec));
     for (const c of codecs) {
       if (!c.dec || !c.h264 || c.hardware) continue;
       const old = c.dec;
@@ -358,7 +371,7 @@ export class VideoContext {
     if (c.h264 && !c.hardware) this.remember(c, desc, bits, key, ts);
     // Decoded (a later picture may refer to it) but written nowhere if the guest destroyed its buffer after BEGIN_FRAME.
     const planes = this.buffers.get(target)?.planes;
-    if (shown && planes) this.pending.set(ts, { codec: c, target, planes, at: performance.now(), epoch: c.epoch, poc });
+    if (shown && planes) this.pending.set(ts, { codec: c, target, planes, at: performance.now(), order: this.env.order?.() ?? 0, epoch: c.epoch, poc });
     c.dec!.decode(data, key, ts);
   }
 
@@ -376,7 +389,7 @@ export class VideoContext {
       // Pending from END_FRAME, whenever its temporal unit goes (it may wait for the next frame: web/video-av1.ts).
       const planes = f.output ? this.buffers.get(f.shown)?.planes : undefined;
       if (f.output && !planes) this.env.debug?.(`video: codec ${c.handle}: no buffer ${f.shown} for a frame's output`);
-      if (planes) this.pending.set(ts, { codec: c, target: f.shown, planes, at: performance.now() });
+      if (planes) this.pending.set(ts, { codec: c, target: f.shown, planes, at: performance.now(), order: this.env.order?.() ?? 0 });
       chunks = c.av1!.chunks(desc, bits, target, ts);
     } catch (e) {
       this.env.caught?.(e);
@@ -421,34 +434,17 @@ export class VideoContext {
       // A drained decoder's pictures still count (`drain`).
       if (this.closed || (c.dec !== dec && !c.retired?.has(dec))) return;
       const q = this.pending.get(ts);
-      if (!q) return; // given up, or its buffer is gone
-      this.pending.delete(ts);
+      if (!q || q.pic) return; // given up, or its buffer is gone; or out already (a drained decoder's successor)
       // A software H.264 decoder outputs in display order: an earlier picture still pending (a lesser POC in this IDR
       // period, or one of an earlier period) never will come (dropped by it), so it's given up now, alone. Not while a
       // drained decoder and its successor both output.
       if (!c.hardware && q.poc !== undefined && !c.retired?.size) {
-        const over = (x: Pending) => x.codec === c && x.poc !== undefined && (x.epoch! < q.epoch! || (x.epoch === q.epoch && x.poc < q.poc!));
+        const over = (x: Pending) => x !== q && !x.pic && x.codec === c && x.poc !== undefined && (x.epoch! < q.epoch! || (x.epoch === q.epoch && x.poc < q.poc!));
         if (this.env.debug) for (const [t, x] of this.pending) if (over(x)) this.env.debug(`video: codec ${c.handle}: picture ${t} (period ${x.epoch}, POC ${x.poc}) passed over by ${ts} (period ${q.epoch}, POC ${q.poc})`);
         this.drop(over);
       }
-      // Never over a later picture (the guest used the buffer again): a drained decoder and its successor, or a
-      // retired one, may output out of order.
-      const last = this.written.get(q.planes[0]);
-      if (last !== undefined && last > ts) {
-        this.env.debug?.(`video: codec ${c.handle}: picture ${ts} is older than ${last}, in its planes already`);
-        this.stats.dropped++;
-      } else {
-        this.written.set(q.planes[0], ts);
-        const t0 = performance.now();
-        this.env.write?.(q.planes, pic);
-        const t1 = performance.now();
-        this.stats.decoded++;
-        c.decoded++;
-        this.stats.writeMs += t1 - t0;
-        this.stats.latencyMs += t1 - q.at;
-        this.stats.latencyMaxMs = Math.max(this.stats.latencyMaxMs, t1 - q.at);
-      }
-      this.env.settled?.();
+      if (this.env.mayWrite?.(q.planes, q.order) ?? true) this.put(ts, q, pic);
+      else q.pic = pic;
     }, (m) => {
       if (this.closed || c.dec !== dec) return;
       this.stats.decoderErrors++;
@@ -458,6 +454,29 @@ export class VideoContext {
     });
     c.dec = dec;
     this.env.debug?.(`video: codec ${c.handle}: decoder ${codec} ${c.width}x${c.height} ${c.hardware ? 'hardware' : 'software'}`);
+  }
+
+  /** A decoded picture into its planes (`VideoEnv.write`), no longer pending. */
+  private put(ts: number, q: Pending, pic: DecodedPicture) {
+    this.pending.delete(ts);
+    // Never over a later picture (the guest used the buffer again): a drained decoder and its successor, or a
+    // retired one, may output out of order.
+    const last = this.written.get(q.planes[0]);
+    if (last !== undefined && last > ts) {
+      this.env.debug?.(`video: codec ${q.codec.handle}: picture ${ts} is older than ${last}, in its planes already`);
+      this.stats.dropped++;
+    } else {
+      this.written.set(q.planes[0], ts);
+      const t0 = performance.now();
+      this.env.write?.(q.planes, pic);
+      const t1 = performance.now();
+      this.stats.decoded++;
+      q.codec.decoded++;
+      this.stats.writeMs += t1 - t0;
+      this.stats.latencyMs += t1 - q.at;
+      this.stats.latencyMaxMs = Math.max(this.stats.latencyMaxMs, t1 - q.at);
+    }
+    this.env.settled?.();
   }
 
   /**
@@ -476,7 +495,7 @@ export class VideoContext {
     void dec.flush().finally(() => {
       c.retired?.delete(dec);
       dec.close();
-      if (!this.closed) this.drop((q) => q.codec === c);
+      if (!this.closed) this.drop((q) => q.codec === c && !q.pic);
     });
   }
 

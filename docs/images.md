@@ -137,7 +137,8 @@ guest kernel"), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and
   skip the first-run pages. A **20 GiB root**, mostly free, for packages installed by hand. `images/arch/media.sh`
   makes `/home/arch/media` in Podman (Alpine's ffmpeg): `avsync.webm` (a white frame and a 1 kHz beep each second,
   VP8/Opus, 60 s), `sintel.webm` and `sintel-silent.webm` (the Sintel trailer, Blender Foundation, CC BY 3.0,
-  downloaded from download.blender.org with its sha256, as VP9/Opus 480p), and `avsync.html` (plays `?v=<clip>`);
+  downloaded from download.blender.org with its sha256, as VP9/Opus 480p), `sintel_trailer-480p.mp4` (the trailer's
+  original H.264 file: Chromium's H.264 path, plans/video.md §12), and `avsync.html` (plays `?v=<clip>`);
   `desktop-setup.sh` is the `--setup`. Result `target/arch/desktop.qcow2`; `bench/audio/avsync.ts` measures on it, and
   the page's session scripts (`bench/gpu/guest-session.ts`) log in as `arch` (`WEBPC_GUEST_USER=alarm` for an older
   Arch Linux ARM disk).

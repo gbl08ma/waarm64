@@ -17,6 +17,7 @@ import { FORMATS, GL, VERTEX_FORMATS, boxBytes, type Format, SW_0, SW_1 } from '
 import { generate, parseTgsi, samplerUnit, uboBinding, type ProgramKey, type ProgramLayout, type SamplerKey, type Tgsi } from './virgl-tgsi.ts';
 import { padPlane, VideoContext, videoStats, type DecodedPicture, type DecoderFactory, type VideoStats, type VideoStream } from './virgl-video.ts';
 import { bytes, type Ram, type Segment } from './ram.ts';
+import { walk } from './virgl.ts';
 
 /** A resource's guest pages: offsets into guest RAM and lengths. */
 /** A resource's guest pages: segments of guest RAM (memory, offset, length; web/devices.ts `Segment`). */
@@ -244,6 +245,10 @@ export class VirglRenderer {
   private video?: { decoders: DecoderFactory; hardware: readonly number[] };
   /** Called when a picture is written or given up, or an external resource's awaited bytes arrive (the GPU worker's queue goes on: `videoPending`). */
   onVideoSettled?: () => void;
+  /** The place in the guest's order of the call running now (the GPU worker's `CallQueue` sets it): the pictures it sends take it. */
+  videoOrder = 0;
+  /** Whether a picture sent at `order` may be written into these planes now (`VideoEnv.mayWrite`: the GPU worker's `CallQueue.sees`). */
+  videoMayWrite?: (planes: readonly number[], order: number) => boolean;
   /** Another renderer's blobs, imported by the guest (`ExternalResource`). */
   external?: ExternalSource;
   /** A video picture's plane written into a resource (rows of `w` texels of `bpp` bytes): Venus's textures imported from it take it too (web/venus-import.ts). */
@@ -1045,6 +1050,8 @@ export class VirglRenderer {
       hardware: this.video?.hardware,
       write: (planes, pic) => this.writePicture(planes, pic),
       settled: () => this.onVideoSettled?.(),
+      order: () => this.videoOrder,
+      mayWrite: (planes, order) => this.videoMayWrite?.(planes, order) ?? true,
     }, this.videoStats);
   }
 
@@ -1120,11 +1127,11 @@ export class VirglRenderer {
   /** What may see a pending picture (the GPU worker's `CallQueue`): a context with one's plane attached, the plane itself;
    * and what contexts share (what a context waiting for one draws, another may sample). */
   readonly videoPending = {
-    ctx: (id: number) => {
+    ctx: (id: number, before = Infinity) => {
       const c = this.contexts.get(id);
-      return !!c && this.pendingPlanes().some((r) => c.attached.has(r));
+      return !!c && this.pendingPlanes(before).some((r) => c.attached.has(r));
     },
-    res: (id: number) => this.pendingPlanes().includes(id),
+    res: (id: number, before = Infinity) => this.pendingPlanes(before).includes(id),
     shared: (a: number, b: number) => {
       const x = this.contexts.get(a)?.attached, y = this.contexts.get(b)?.attached;
       if (!x || !y) return false;
@@ -1133,12 +1140,90 @@ export class VirglRenderer {
       return false;
     },
     holds: (ctx: number, res: number) => !!this.contexts.get(ctx)?.attached.has(res),
+    /** Whether a submit could see a pending picture's plane, of those sent before `before` (`submitTouches`; one this can't read: any attached). */
+    submit: (ctx: number, words: Uint32Array, before = Infinity) => {
+      const planes = this.pendingPlanes(before);
+      if (!planes.length) return false;
+      const t = this.submitTouches(ctx, words);
+      if (!t) return this.videoPending.ctx(ctx, before);
+      return planes.some((r) => t.has(r));
+    },
   };
 
-  private pendingPlanes() {
-    const out: number[] = [...this.externalWaits];
-    for (const c of this.contexts.values()) if (c.video?.waiting) out.push(...c.video.pendingPlanes());
+  /**
+   * The resources a submit of a context could read or write, as far as its commands and the context's state now say
+   * (the GPU worker's `CallQueue` asks it of a context's first waiting submit, so every earlier call of the context
+   * has run): what each sub-context it draws in has bound (views, surfaces, vertex, index, uniform and stream output
+   * buffers), what its commands bind or name, and what the objects it makes refer to. Undefined if it has a command
+   * this doesn't know (it may then see anything the context has attached).
+   */
+  submitTouches(ctxId: number, words: Uint32Array): Set<number> | undefined {
+    const c = this.contexts.get(ctxId);
+    if (!c) return new Set();
+    const out = new Set<number>();
+    const made = new Map<number, number>(); // objects the submit makes: handle -> resource
+    let sub = c.sub;
+    const subs = new Set<Sub>();
+    const res = (h: number) => {
+      if (made.has(h)) return made.get(h);
+      const o = sub.objects.get(h);
+      return !o ? undefined : o.kind === 'view' || o.kind === 'surface' || o.kind === 'so' || o.kind === 'query' ? o.v.res : undefined;
+    };
+    const add = (r: number | undefined) => { if (r) out.add(r); };
+    let known = true;
+    const n = walk(words, (cmd, obj, at, len) => {
+      const p = words.subarray(at, at + len);
+      subs.add(sub);
+      switch (cmd) {
+        case 1: // CREATE_OBJECT: a view's, a surface's and a stream output target's resource is p[1], a query's p[3]
+          if (obj === 6 || obj === 8 || obj === 10) { made.set(p[0], p[1]); add(p[1]); }
+          else if (obj === 9) { made.set(p[0], p[3]); add(p[3]); }
+          return;
+        case 5: case 10: case 25: // SET_FRAMEBUFFER_STATE, SET_SAMPLER_VIEWS, SET_STREAMOUT_TARGETS: object handles
+          for (let k = cmd === 10 ? 2 : 1; k < p.length; k++) add(res(p[k]));
+          return;
+        case 6: for (let k = 2; k < p.length; k += 3) add(p[k]); return; // SET_VERTEX_BUFFERS
+        case 9: case 11: case 43: case 47: case 49: add(p[0]); return; // INLINE_WRITE, SET_INDEX_BUFFER, TRANSFER3D, CLEAR_TEXTURE, SET_TYPE
+        case 16: add(p[3]); add(p[12]); return; // BLIT
+        case 17: add(p[0]); add(p[5]); return; // RESOURCE_COPY_REGION
+        case 45: add(p[0]); add(p[11]); return; // COPY_TRANSFER3D
+        case 19: case 20: case 21: case 62: add(res(p[cmd === 62 ? 1 : 0])); return; // queries, CLEAR_SURFACE
+        case 27: add(p[4]); return; // SET_UNIFORM_BUFFER
+        case 59: add(p[2]); add(p[3]); return; // DECODE_BITSTREAM's staging buffers (its picture: VideoContext's order)
+        case 28: { const x = c.subs.get(p[0]); if (x) sub = x; return; } // SET_SUB_CTX
+        case 0: case 2: case 3: case 4: case 7: case 8: case 12: case 13: case 14: case 15: case 18: case 22: case 23: case 24:
+        case 26: case 29: case 30: case 31: case 32: case 33: case 36: case 39: case 41: case 44: case 46: case 51: case 52:
+        case 53: case 54: case 55: case 56: case 57: case 58: case 60: case 61:
+          return; // state, draws and clears (they use what's bound: below), video commands
+        default: known = false;
+      }
+    });
+    if (n < 0 || !known) return undefined;
+    for (const x of subs) {
+      for (const st of ['vs', 'fs'] as const) {
+        for (const v of x.views[st]) add(v?.res);
+        for (const u of x.ubos[st].values()) add(u.res);
+      }
+      for (const cb of x.fb.cbufs) add(cb?.res);
+      add(x.fb.zs?.res);
+      for (const vb of x.vbs) add(vb.res);
+      add(x.ib?.res);
+      for (const t of x.so.targets) add(t?.res);
+      for (const q of x.occlusion) add(q.res);
+    }
     return out;
+  }
+
+  /** The planes of the pictures sent by calls before `before` (an external resource's awaited bytes, always). */
+  private pendingPlanes(before = Infinity) {
+    const out: number[] = [...this.externalWaits];
+    for (const c of this.contexts.values()) if (c.video?.waiting) out.push(...c.video.pendingPlanes(before));
+    return out;
+  }
+
+  /** Writes the decoded pictures that waited for earlier calls (`VideoContext.land`): after the GPU worker's queue ran what it could. */
+  videoLand() {
+    for (const c of this.contexts.values()) if (c.video?.waiting) c.video.land();
   }
 
   /** Sends the AV1 frames that wait for the next one (`VideoContext.nudge`). */

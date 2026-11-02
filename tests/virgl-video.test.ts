@@ -119,7 +119,7 @@ const picture = (ts: number): DecodedPicture => ({ width: 4, height: 2, y: new U
 
 /** A context with a fake decoder, one codec (handle 1) and 8 NV12 buffers (handles 2-9, planes 31 and 32, 33 and 34, …),
  * used in turn as the guest's surfaces are (a buffer is decoded into again once released). */
-function video(profile: number, o: { hardware?: number[] } = {}) {
+function video(profile: number, o: { hardware?: number[]; order?: () => number; mayWrite?: (planes: readonly number[], order: number) => boolean } = {}) {
   const stats: VideoStats = videoStats();
   const errors: string[] = [], written: { planes: number[]; ts: number }[] = [];
   let settled = 0;
@@ -133,6 +133,8 @@ function video(profile: number, o: { hardware?: number[] } = {}) {
     hardware: o.hardware,
     write: (planes, pic) => written.push({ planes, ts: pic.y[0] }),
     settled: () => settled++,
+    order: o.order,
+    mayWrite: o.mayWrite,
   }, stats);
   const cmd = (c: number, ...p: number[]) => v.command(c, new Uint32Array(p));
   cmd(53, 1, profile, 1, 1, 30, 864, 480, 4);
@@ -513,8 +515,8 @@ test('CallQueue: a call waits only if it could see a pending picture; the rest r
   q.push({ t: 'fence', id: 1, at: 0 }, 0); // nothing waits before it: runs
   q.push(submit(1, 57, 59, 61), 0); // the next picture: runs
   q.push(submit(1, 8), 1); // the decoder's context reads its planes (a blit): waits
-  q.push(submit(1, 57, 59, 61), 1); // a picture behind its own context's waiting draw: waits
-  assert.deepEqual(ran, ['attach1:31', 'attach1:32', '1:57,59,61', '2:8', 'fence1', '1:57,59,61']);
+  q.push(submit(1, 57, 59, 61), 1); // a picture behind its own context's waiting draw: runs too (what it writes waits: `sees`)
+  assert.deepEqual(ran, ['attach1:31', 'attach1:32', '1:57,59,61', '2:8', 'fence1', '1:57,59,61', '1:57,59,61']);
   // The compositor (2) attaches a plane to show it: its draws wait from there on; another context's run ahead.
   q.push(attach(2, 31), 2);
   q.push(submit(2, 8), 2);
@@ -526,13 +528,13 @@ test('CallQueue: a call waits only if it could see a pending picture; the rest r
   q.push(submit(3, 10), 2); // behind its context's waiting transfer: waits
   q.push({ t: 'read', id: 3, res: 40 }, 2); // a read waits for every waiting call, and nothing passes it
   q.push(submit(4, 8), 2);
-  assert.deepEqual(ran.slice(6), ['attach2:31', '3:8', '3:9', 'transfer40']);
+  assert.deepEqual(ran.slice(7), ['attach2:31', '3:8', '3:9', 'transfer40']);
   assert.ok(q.stalled);
-  assert.equal(q.ahead, 4);
+  assert.equal(q.ahead, 5);
   // The picture comes out: the rest in order.
   pending.clear();
   q.progress(7);
-  assert.deepEqual(ran.slice(10), ['1:8', '1:57,59,61', '2:8', 'fence2', 'transfer31', '3:10', 'read40', '4:8']);
+  assert.deepEqual(ran.slice(11), ['1:8', '2:8', 'fence2', 'transfer31', '3:10', 'read40', '4:8']);
   assert.ok(!q.stalled);
   assert.equal(q.maxWaitMs, 6);
 
@@ -618,6 +620,125 @@ test('CallQueue: a context sharing a resource with a waiting one waits behind it
   q.progress(5);
   assert.deepEqual(ran.slice(2), ['2:8', '6:8', 'transfer50', 'transfer70', '1:8']);
   assert.ok(!q.stalled);
+});
+
+test('CallQueue: in a context that decodes and draws (Chromium\'s GPU process), decodes and attaches pass its waiting draw, which waits only for pictures decoded before it', () => {
+  // The pictures by the place of the call that decoded them; each decode takes the next buffer's planes (31,32, 33,34, 35,36).
+  const pictures = new Map<number, number[]>(), attached = new Map<number, Set<number>>([[1, new Set([31, 32, 33, 34, 35, 36])]]);
+  const ran: string[] = [];
+  let buffer = 0;
+  const before = (n: number) => [...pictures].filter(([k]) => k < n).flatMap(([, p]) => p);
+  const q = new CallQueue<WorkerCall>({
+    run: (m, n) => {
+      if (m.t === 'submit' && [...m.words].some((w) => (w & 0xff) === 61)) pictures.set(n, [31 + 2 * buffer, 32 + 2 * (buffer++)]);
+      if (m.t === 'ctxres') attached.get(m.ctx)![m.attach ? 'add' : 'delete'](m.res);
+      ran.push(m.t === 'ctxres' ? `${m.attach ? 'attach' : 'detach'}${m.res}` : m.t === 'transfer' ? `transfer${m.res}` : name(m));
+    },
+    pending: {
+      ctx: (id, n) => before(n).some((r) => attached.get(id)?.has(r)),
+      res: (id, n) => before(n).includes(id),
+      shared: () => false,
+      holds: (ctx, res) => !!attached.get(ctx)?.has(res),
+    },
+    drain: () => {}, giveUp: () => {},
+  });
+  const transfer = (res: number): WorkerCall => ({ t: 'transfer', ctx: 1, res, level: 0, box: { x: 0, y: 0, z: 0, w: 1, h: 1, d: 1 }, offset: 0, stride: 0, layerStride: 0, toHost: true });
+  q.push(submit(1, 57, 59, 61), 0); // picture A (31, 32)
+  q.push(submit(1, 8), 0); // a draw: waits for A
+  q.push(submit(1, 57, 59, 61), 0); // picture B (33, 34): passes the draw, so the decoder gets it
+  q.push({ t: 'ctxres', ctx: 1, res: 50, attach: true }, 0); // the next picture's import: passes too
+  q.push(submit(1, 9), 0); // the next draw: behind the first
+  assert.deepEqual(ran, ['1:57,59,61', '1:57,59,61', 'attach50']);
+  // A comes out: the first draw runs (B was decoded after it), the second waits for B.
+  pictures.delete(0);
+  q.progress(1);
+  assert.deepEqual(ran.slice(3), ['1:8']);
+  // A transfer and a detach of the context wait behind its draw, and a decode doesn't pass them (it may read what they bring).
+  q.push(transfer(40), 1);
+  q.push(submit(1, 57, 59, 61), 1);
+  assert.deepEqual(ran.slice(4), []);
+  pictures.delete(2);
+  q.progress(2);
+  assert.deepEqual(ran.slice(4), ['1:9', 'transfer40', '1:57,59,61']);
+  q.push(submit(1, 8), 2); // waits for C
+  q.push({ t: 'ctxres', ctx: 1, res: 50, attach: false }, 2);
+  q.push(submit(1, 57, 59, 61), 2);
+  assert.deepEqual(ran.slice(7), []);
+  pictures.clear();
+  q.progress(3);
+  assert.deepEqual(ran.slice(7), ['1:8', 'detach50', '1:57,59,61']);
+  // A decode that destroys a sub-context doesn't pass the context's waiting draw (which may use it); one that doesn't, does.
+  buffer = 0;
+  q.push(submit(1, 57, 59, 61), 3);
+  q.push(submit(1, 8), 3);
+  q.push(submit(1, 30, 54), 3);
+  q.push(submit(2, 57, 59, 61), 3);
+  assert.deepEqual(ran.slice(10), ['1:57,59,61', '2:57,59,61']);
+  pictures.clear();
+  q.progress(4);
+  assert.deepEqual(ran.slice(12), ['1:8', '1:30,54']);
+});
+
+test('CallQueue.sees: a picture decoded ahead of a waiting call that could see its planes is written after that call', () => {
+  // The queue's side: whether a call before a picture's place still waits and could see its planes.
+  const attached = new Map<number, Set<number>>([[1, new Set([31, 32, 33, 34])], [2, new Set([60])]]);
+  let pending = true;
+  const ran: string[] = [];
+  const q = new CallQueue<WorkerCall>({
+    run: (m) => void ran.push(name(m)),
+    pending: { ctx: (id) => pending && id === 1, res: () => false, shared: () => false, holds: (ctx, res) => !!attached.get(ctx)?.has(res) },
+    drain: () => {}, giveUp: () => {},
+  });
+  q.push(submit(1, 8), 0); // place 0: waits
+  q.push(submit(2, 8), 0); // place 1: another context's, runs
+  assert.ok(q.sees([33, 34], 2), 'the waiting draw (place 0) has the planes attached');
+  assert.ok(!q.sees([33, 34], 0), 'nothing before place 0 waits');
+  assert.ok(!q.sees([70], 2), 'planes nobody waiting has');
+  pending = false;
+  q.progress(1);
+  assert.ok(!q.sees([33, 34], 2));
+
+  // The context's side: a picture that may not be written yet stays pending, decoded, until `land`.
+  let may = false, order = 0;
+  const t = video(PROFILE.VP9_PROFILE0, { order: () => order, mayWrite: () => may });
+  order = 5;
+  t.frame(vp9(true), new Uint8Array([1]));
+  t.made[0].out(0);
+  assert.deepEqual(t.written, []);
+  assert.equal(t.v.waiting, 1);
+  assert.deepEqual(t.v.pendingPlanes(5), [], 'a call before the picture doesn\'t wait for it');
+  assert.deepEqual(t.v.pendingPlanes(6), [31, 32]);
+  t.v.land();
+  assert.deepEqual(t.written, []);
+  may = true;
+  t.v.land();
+  assert.deepEqual(t.written, [{ planes: [31, 32], ts: 0 }]);
+  assert.equal(t.v.waiting, 0);
+});
+
+test('VirglRenderer.submitTouches: what a submit binds, names and has bound; undefined for a command it doesn\'t know', () => {
+  const gl = mockGl();
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(4096)], log: (m) => errors.push(m) });
+  r.createContext(1);
+  for (const id of [10, 11, 12]) {
+    r.createResource({ id, target: 2, format: 64, bind: 0xa, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+    r.attach(1, id);
+  }
+  const cmds = (...c: number[][]) => new Uint32Array(c.flat());
+  const cmd = (c: number, obj: number, ...p: number[]) => [c | (obj << 8) | (p.length << 16), ...p];
+  const view = (h: number, res: number) => cmd(1, 6, h, res, 64 | (2 << 24), 0, 0, 0x688); // CREATE_OBJECT: SAMPLER_VIEW
+  const bind = (...h: number[]) => cmd(10, 0, 1, 0, ...h); // SET_SAMPLER_VIEWS: fragment, slot 0
+  const draw = cmd(8, 0, 0, 3, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0); // DRAW_VBO
+  assert.deepEqual([...r.submitTouches(1, cmds(view(5, 10), bind(5), draw))!], [10]);
+  assert.deepEqual([...r.submitTouches(1, cmds(cmd(28, 0, 0), draw))!], [], 'nothing bound yet');
+  r.submit(1, cmds(view(5, 10), view(6, 11), bind(5)));
+  assert.deepEqual([...r.submitTouches(1, cmds(draw))!], [10], 'what is bound');
+  assert.deepEqual([...r.submitTouches(1, cmds(bind(6), draw))!].sort(), [10, 11], 'bound before and bound by it');
+  assert.deepEqual([...r.submitTouches(1, cmds(cmd(17, 0, 12, 0, 0, 0, 0, 11, 0, 0, 0, 0, 4, 4, 1)))!].sort(), [10, 11, 12], 'a copy names its two');
+  assert.equal(r.submitTouches(1, cmds(cmd(99, 0))), undefined);
+  assert.equal(r.videoPending.submit(1, cmds(draw)), false, 'no picture pending');
+  assert.deepEqual(errors, []);
 });
 
 test('CallQueue: Venus\'s calls that make things run past waiting calls (its ring, polled, may import a resource now); those that end things wait', () => {

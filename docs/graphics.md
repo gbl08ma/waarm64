@@ -83,7 +83,8 @@ gfxstream driver is Vulkan only.
   screen draws again when its context comes back.
 - **The switches:** the Machine menu's Graphics (3D or 2D, a restart applies it); on the query, `?gpu=2d`, `virgl`,
   `virgl-null` (the null renderer: streams walked and counted, nothing drawn, fences at once), `nopace` and `q<N>`
-  (the flush pacing and the queue size, for measurements), `novideo`, `swvideo`, `debug` (the renderer's trace) and
+  (the flush pacing and the queue size, for measurements), `novideo`, `swvideo`, `waitattached` (the call queue's old,
+  coarser wait: a context waits while it has any pending picture's plane attached; A/B), `debug` (the renderer's trace) and
   `capture` (devices.md "Captures"), comma-separated; `?displaystats` turns on the display's counters (commands by
   type, fences' round trip and each hop, replies held) and the renderer's; `?display=simple` gives a gpu machine the
   simple framebuffer instead.
@@ -311,12 +312,18 @@ fence <n> held <s> s for <k> occlusion queries' results`.
 
 With video, a call waits while it could see a picture still being decoded (`CallQueue`, `web/virgl-host.ts`): Mesa's
 `end_frame` makes no fence and virglrenderer decodes synchronously, while WebCodecs decodes asynchronously and a
-software decoder may hold a picture until later ones come (plans/video.md §5, §7). What waits: a call of a context
-that has a pending picture's plane attached (unless the submit only decodes, `decodeOnly`, so the decoder gets the
-later pictures it may be waiting for), a call naming a pending plane, and whatever an earlier waiting call must
+software decoder may hold a picture until later ones come (plans/video.md §5, §7, §12). A call waits only for pictures
+decoded by calls before it in the guest's order (each pending picture carries its call's place). What waits: a
+context's submit that could touch a pending plane (`VirglRenderer.submitTouches`: what each sub-context it draws in
+has bound, what its commands bind or name, what the objects it makes refer to; one with a command it doesn't know, if
+the context has a pending plane attached), a call naming a pending plane, and whatever an earlier waiting call must
 precede: the same context or resource; fences, reads, saves, the screen and anything that ends a resource's life wait
 for every earlier waiting call; and **another context's call that could see what a waiting one draws** (a submit of a
-context sharing an attached resource with it, a transfer of one of its resources). The rest runs ahead. Past
+context sharing an attached resource with it, a transfer of one of its resources). The rest runs ahead. **A submit
+that only decodes (`decodeOnly`) and an attach pass even their own context's waiting calls** (not its transfers,
+detaches or end, which a decode may need), so the decoder gets the later pictures it may be waiting for: Chromium's
+GPU process decodes and draws on one context, with every surface attached (plans/video.md §12). A picture decoded
+ahead of a waiting call that could see its planes is written after that call has run (`CallQueue.sees`). Past
 `nudgeMs` (30 ms) with nothing out, frames held for the next one are sent (AV1's); past 200 ms the decoders are
 drained; past 1 s the pending pictures are given up (the guest sees the old planes rather than hanging). A picture
 pending for 3 s is given up whatever else comes out (`giveUpOld`): one a decoder never outputs while later ones do
@@ -902,6 +909,7 @@ the case dEQP stopped at, `stoppedAt`). A whole GLES3 list is ten slices (`STRID
   (`clang -O2 images/alpine/gl/glcomp.c -lEGL -lGLESv2`).
 - **Guest sessions** (`bench/gpu/guest-session.ts`; benchmarking.md "Guest sessions"): `sway-load.ts`,
   `firefox-load.ts` (synthetic pages and saved real sites, `bench/gpu/firefox-pages.sh`; `PHASES`, `GUEST_CMD`),
-  `gtk4-load.ts`, `snapshot-3d.ts`, `chromium-flicker.ts`, `filter-probe.ts`; `sway-mac.sh` runs any of them on the Mac
+  `gtk4-load.ts`, `snapshot-3d.ts`, `chromium-flicker.ts`, `chromium-video.ts` (a clip in the guest's Chromium: its
+  presented video and animation frames each second with the host's video and fence numbers), `filter-probe.ts`; `sway-mac.sh` runs any of them on the Mac
   host's GPU (`SCRIPT=`; `HEADED=1` only when the user isn't using the Mac). `PROFILE=1` samples every vCPU's PC and
   symbolizes the guest kernel's in the guest (benchmarking.md "PC sampling").

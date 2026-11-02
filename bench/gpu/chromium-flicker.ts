@@ -6,7 +6,8 @@
 // where B isn't A over 16 (two regions of one frame from different times: what a lost partial redraw leaves).
 //   node bench/gpu/chromium-flicker.ts <image.qcow2> [outdir]
 // VIRGL_GPU the page's `?gpu=` (default `virgl`); CR_FLAGS more flags for the guest's Chromium (e.g.
-// `--ui-disable-partial-swap`); WARM_S seconds after the counter first shows (20), PHASE_S the phase (30).
+// `--ui-disable-partial-swap`); WARM_S seconds after the counter first shows (20), PHASE_S the phase (30); VIDEO the
+// clip in ~/media (sintel-silent.webm; the image's H.264 one: sintel_trailer-480p.mp4).
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { GUEST_USER, openSession } from './guest-session.ts';
 
@@ -31,7 +32,7 @@ video { position: absolute; left: 300px; top: 300px; width: 640px; filter: satur
 @keyframes spin { to { transform: rotate(360deg); } }
 </style></head><body>
 <div class="row" id="a" style="top: ${ROW_A}px"></div><div class="row" id="b" style="top: ${ROW_B}px"></div>
-<video src="file://${HOME}/media/sintel-silent.webm" autoplay muted loop></video><div class="spin"></div>
+<video src="file://${HOME}/media/${process.env.VIDEO ?? 'sintel-silent.webm'}" autoplay muted loop></video><div class="spin"></div>
 <script>
 const blocks = (row) => Array.from({ length: ${BLOCKS} }, (_, k) => { const d = document.createElement('div'); d.style.left = (20 + 80 * k) + 'px'; row.appendChild(d); return d; });
 const A = blocks(document.getElementById('a')), B = blocks(document.getElementById('b'));

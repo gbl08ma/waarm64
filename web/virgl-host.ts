@@ -172,6 +172,13 @@ export function decodeOnly(words: Uint32Array) {
 // CREATE_OBJECT, SET_SUB_CTX, CREATE_SUB_CTX, DESTROY_SUB_CTX, TRANSFER3D, END_TRANSFERS, SET_TWEAKS, 53–61.
 const DECODE_SUBMIT = new Set([1, 28, 29, 30, 43, 44, 46, 53, 54, 55, 56, 57, 58, 59, 60, 61]);
 
+/** Whether a submit destroys a sub-context (DESTROY_SUB_CTX): it doesn't pass its context's waiting calls, which may use it. */
+function destroysSub(words: Uint32Array) {
+  let yes = false;
+  walk(words, (cmd) => { if (cmd === 30) yes = true; });
+  return yes;
+}
+
 /**
  * The GPU worker's calls in order, with video (docs/plans/video.md §5, §7). The guest expects a picture decoded once
  * its END_FRAME has run (Mesa's virgl makes no fence for it; virglrenderer decodes synchronously), while WebCodecs
@@ -190,14 +197,24 @@ const DECODE_SUBMIT = new Set([1, 28, 29, 30, 43, 44, 46, 53, 54, 55, 56, 57, 58
  * (`giveUpOld`).
  */
 export class CallQueue<M extends WorkerCall> {
-  private q: M[] = [];
+  /** The waiting calls, each with its place in the guest's order. */
+  private q: { m: M; n: number }[] = [];
+  private next = 0;
   private readonly o: {
-    run(m: M): void;
+    /** Runs a call; `n` is its place in the guest's order (the pictures it decodes take it: `VideoContext`). */
+    run(m: M, n: number): void;
     /**
-     * Whether a pending picture's plane is attached to a context, whether a resource is one, whether two contexts have
-     * a resource attached in common and whether a context has a resource attached.
+     * Whether a pending picture's plane is attached to a context, whether a resource is one (of the pictures decoded
+     * by calls before `before`: a call never waits for a later one's), whether two contexts have a resource attached
+     * in common and whether a context has a resource attached.
      */
-    pending: { ctx(id: number): boolean; res(id: number): boolean; shared(a: number, b: number): boolean; holds(ctx: number, res: number): boolean };
+    pending: {
+      ctx(id: number, before: number): boolean; res(id: number, before: number): boolean; shared(a: number, b: number): boolean; holds(ctx: number, res: number): boolean;
+      /** Whether a submit (its context's first waiting one) could see a pending plane: finer than `ctx` (a context that decodes and draws has every picture's planes attached). Without it, `ctx`. */
+      submit?(ctx: number, words: Uint32Array, before: number): boolean;
+    };
+    /** After the calls that could run ran: pictures held back from their planes (`sees`) may be written now. */
+    ran?(): void;
     nudge?(): void; drain(): void; giveUp(): void; nudgeMs?: number; drainMs?: number; giveUpMs?: number;
     /**
      * Gives up the pictures pending since before a time, called while calls wait with `now - oldMs`: one a decoder
@@ -218,13 +235,30 @@ export class CallQueue<M extends WorkerCall> {
   get length() { return this.q.length; }
 
   push(m: M, now = performance.now()) {
-    this.q.push(m);
+    this.q.push({ m, n: this.next++ });
     this.pump(now);
+  }
+
+  /**
+   * Whether a call before `before` that still waits could see these planes: a picture that call `before` decoded
+   * isn't written into them until it can't (a decode runs ahead of its own context's waiting draws, and the guest may
+   * decode into a surface a draw before it samples).
+   */
+  sees(planes: readonly number[], before: number) {
+    const p = this.o.pending;
+    for (const { m, n } of this.q) {
+      if (n >= before) break;
+      const ctx = m.t === 'submit' || m.t === 'ctxres' || m.t === 'transfer' ? m.ctx : undefined;
+      const res = m.t === 'transfer' || m.t === 'read' || m.t === 'ctxres' ? m.res : m.t === 'unref' || m.t === 'backing' ? m.id : undefined;
+      for (const r of planes) if (r === res || (ctx !== undefined && p.holds(ctx, r))) return true;
+    }
+    return false;
   }
 
   /** Runs what may run; call it when a picture comes out (`progress`) and from a timer while `stalled` (`tick`). */
   pump(now = performance.now()) {
     while (this.q.length && this.pass());
+    this.o.ran?.();
     if (this.q.length) this.since ??= now;
     else {
       if (this.since !== undefined) this.maxWaitMs = Math.max(this.maxWaitMs, now - this.since);
@@ -268,54 +302,71 @@ export class CallQueue<M extends WorkerCall> {
     const p = this.o.pending;
     // What the waiting calls so far hold back: their contexts and the resources they name.
     const busy = new Set<number>(), named = new Set<number>();
+    // The contexts with a waiting call other than a draw (a transfer, an attach or detach, the context's end): a
+    // decode, which may read what it brings, doesn't pass it.
+    const strict = new Set<number>();
     // Whether a call of `ctx` could see what a waiting context draws (through a resource they share).
     const sees = (ctx: number) => { for (const b of busy) if (p.shared(ctx, b)) return true; return false; };
     const held = (res: number) => { for (const b of busy) if (p.holds(b, res)) return true; return false; };
     let waits = false, ran = false;
     for (let k = 0; k < this.q.length;) {
-      const m = this.q[k];
+      const { m, n } = this.q[k];
       let go: boolean;
       switch (m.t) {
         case 'submit':
-          go = !busy.has(m.ctx) && (decodeOnly(m.words) || (!p.ctx(m.ctx) && !sees(m.ctx)));
-          if (!go) busy.add(m.ctx);
+          // A decode passes its own context's waiting calls too: in one process (Chromium's GPU process decodes and
+          // draws on one context), a draw waiting for a picture a software decoder holds would otherwise hold back the
+          // later pictures the decoder waits for. What it writes waits for them instead (`sees`). Every submit of Mesa's
+          // virgl selects its sub-context first (past its queued transfers), so one run ahead leaves none behind.
+          if (decodeOnly(m.words) && !(busy.has(m.ctx) && destroysSub(m.words))) go = !strict.has(m.ctx);
+          else {
+            go = !busy.has(m.ctx) && !(p.submit ? p.submit(m.ctx, m.words, n) : p.ctx(m.ctx, n)) && !sees(m.ctx);
+            if (!go) busy.add(m.ctx);
+          }
           break;
         case 'res':
           go = !named.has(m.desc.id);
           if (!go) named.add(m.desc.id);
           break;
         case 'ctxres':
-          go = !busy.has(m.ctx) && !named.has(m.res);
+          // An attach only makes a resource reachable (no earlier call names one not yet attached), so it passes its
+          // context's waiting draws as a decode does (Chromium attaches each new picture's planes); a detach doesn't.
+          go = (m.attach || !busy.has(m.ctx)) && !named.has(m.res);
           if (!go) {
             busy.add(m.ctx);
+            strict.add(m.ctx);
             named.add(m.res);
           }
           break;
         case 'ctx':
           go = !busy.has(m.id);
-          if (!go) busy.add(m.id);
+          if (!go) {
+            busy.add(m.id);
+            strict.add(m.id);
+          }
           break;
         case 'transfer':
-          go = !busy.has(m.ctx) && !named.has(m.res) && !p.res(m.res) && !held(m.res);
+          go = !busy.has(m.ctx) && !named.has(m.res) && !p.res(m.res, n) && !held(m.res);
           if (!go) {
             busy.add(m.ctx);
+            strict.add(m.ctx);
             named.add(m.res);
           }
           break;
         case 'backing':
           if (m.backing) {
-            go = !named.has(m.id) && !p.res(m.id);
+            go = !named.has(m.id) && !p.res(m.id, n);
             if (!go) named.add(m.id);
             break;
           }
         // falls through: a backing's detach ends what it held
         case 'unref':
           // What ends a resource waits for every earlier waiting call (a submit may use it), and nothing passes it.
-          if (waits || p.res(m.id)) return ran;
+          if (waits || p.res(m.id, n)) return ran;
           go = true;
           break;
         case 'read':
-          if (waits || p.res(m.res)) return ran;
+          if (waits || p.res(m.res, n)) return ran;
           go = true;
           break;
         case 'save':
@@ -350,7 +401,7 @@ export class CallQueue<M extends WorkerCall> {
       }
       this.q.splice(k, 1);
       if (waits) this.ahead++;
-      this.o.run(m);
+      this.o.run(m, n);
       ran = true;
     }
     return ran;
