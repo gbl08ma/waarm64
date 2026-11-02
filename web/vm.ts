@@ -67,7 +67,7 @@ type Exports = {
 };
 
 /**
- * What a VM is besides its RAM, for a snapshot (docs/plans/snapshots.md): the core's state
+ * What a VM is besides its RAM, for a snapshot (docs/platform.md "Snapshots"): the core's state
  * (`vm_snapshot_save`, format `version`) and the host's, as JSON: each backend's state (null: none)
  * and the serial input the guest hasn't been given yet.
  */

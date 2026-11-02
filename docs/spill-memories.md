@@ -71,7 +71,7 @@ What costs most here is guest code (the user's discussion, 2026-10-18).
   definition); a transient machine takes `?split=`. The host-memory check counts all of the RAM.
   `navigator.deviceMemory` reports at most 8, so the page can't confirm more than that and says so instead of
   refusing.
-- **Snapshots** ([plans/snapshots.md](plans/snapshots.md)): the spill memories' `RAM ` chunks follow memory 0's in
+- **Snapshots** ([platform.md](platform.md) "The snapshot file"): the spill memories' `RAM ` chunks follow memory 0's in
   the file, each memory from a whole chunk (web/snapshot.ts `ramStarts`). The header's `spill` lists their sizes
   (it is absent without them, so other files are unchanged), and so do the core's configuration words. A snapshot
   therefore restores only onto the same split; another machine's is refused.

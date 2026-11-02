@@ -1170,7 +1170,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   Checked on headless Chromium's synthetic events and on Debian's evdev, not on a real touchscreen or a desktop's
   compositor (GTK and Firefox on the Arch desktop guest).
 
-## Snapshots (M8 phase C, snapshots lane; [plans/snapshots.md](plans/snapshots.md), [platform.md](platform.md) "Snapshots")
+## Snapshots (M8 phase C, snapshots lane; [platform.md](platform.md) "Snapshots", [machines.md](machines.md) §5)
 - **A restored machine's lost interrupt** (audio, [audio.md](audio.md) "Linux driver behavior"): under ten busy-looping
   processes beside the page's snd snapshot test, once in eight runs (before the last bound change; none in 51 runs
   since, 25 of them with the core instrumented), the restored guest never took the sound device's SPI again: CPU 0 took
@@ -1227,9 +1227,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Snapshots between core versions:** a state of another `snapshot::VERSION` is refused; a
   migration path (or a reader per old version) would keep users' files alive across a format
   change. Prebuilt snapshots shipped with the repository (a Debian that resumes in seconds for a
-  first-time visitor) need this, or a rebuild at each format change.
+  first-time visitor) need this, or a rebuild at each format change. **Live migration** (a running machine moved to
+  another tab or browser without stopping it) isn't built either: today it is Save snapshot, then Load snapshot.
 - **Parallel round trips beyond the tests' guests:** save and restore work in parallel SMP
-  ([plans/snapshots.md](plans/snapshots.md) step 5); not yet run through a snapshot on 4 vCPUs:
+  (testing.md's "Snapshots: the core's state" row); not yet run through a snapshot on 4 vCPUs:
   Buildroot, the litmus and the stress guests, in Node and Chromium.
 - **A held chain the guest overwrote** (it changed a buffer it had given a device) makes the
   machine unsaveable until that queue is reset (`vm_snapshot_size` = `u64::MAX`): only a broken

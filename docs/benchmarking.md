@@ -116,7 +116,7 @@ A JIT A/B on the desktop guest needs no boot per arm: a **warm snapshot** is mad
 - **Across core builds:** a snapshot is tied to the core's state layout (`snapshot_version`) and the machine (devices,
   vCPUs, RAM, CPU features), never to the build that made it or its ABI, so a core that differs only in its JIT loads
   it and the guest runs on exactly (`tests/snapshot.test.ts` "a snapshot loads into another build of the core";
-  docs/plans/snapshots.md "Versions"). There is no special mode: the user's Load snapshot does it. The JIT's code,
+  docs/platform.md "The snapshot file"). There is no special mode: the user's Load snapshot does it. The JIT's code,
   the TLBs and the counters aren't in a snapshot (core/src/vm/state.rs), and the restore starts a new machine worker
   with new vCPU workers, so every arm starts with an empty code cache.
 - **A session from one:** `FROM_SNAPSHOT=<file>` for `bench/gpu/firefox-load.ts` (no login, no files, no sway: the

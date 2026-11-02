@@ -574,7 +574,7 @@ Firefox makes 10–25 resources a second, where the state is bounded by what the
   (SwiftShader truncates the float). Lost, and logged (`SavedResource.lost`): multisampled integer color.
 - **Carried:** the GPU worker answers `save` with the state, transferring the contents' buffers; the device adds its
   3D tables (devices.md "Snapshots"); the snapshot file carries the Uint8Arrays as BLOB frames (format version 2,
-  plans/snapshots.md "The file"); a restore hands the state to the new GPU worker (`load`) before it shows the scanout.
+  platform.md "The snapshot file"); a restore hands the state to the new GPU worker (`load`) before it shows the scanout.
 - **Refused** only while a context has video codecs or buffers (WebCodecs keeps its reference pictures, so a decode
   can't go on from a snapshot): "close the video player first".
 - **The size before saving:** every resource's bytes follow from its description (`snapshotBytes`), and from 64 MiB

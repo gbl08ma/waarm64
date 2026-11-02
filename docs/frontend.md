@@ -428,7 +428,7 @@ output, beyond xterm.js's 5,000 lines of scrollback) for Copy (the clipboard) an
 ## Snapshots
 
 The running machine, RAM and the disk's changes and all, in a file; and back (the format and the
-machinery: [platform.md](platform.md) "Snapshots", [plans/snapshots.md](plans/snapshots.md)).
+machinery: [platform.md](platform.md) "Snapshots" and "The snapshot file").
 
 **Snapshot** (the toolbar, enabled while the state is `running` or `booting`; a transient machine's goes to a file, a
 stored machine's is kept: below, "A stored machine's snapshots"): the picker first

@@ -290,7 +290,7 @@ type Backend = {
   /** Runs after the device's requests of a DEVICE exit were taken (every exit, even without any): virtio-snd's deterministic sink completes there. */
   polled?(): void;
   /**
-   * A snapshot (docs/plans/snapshots.md): what the backend must keep besides the requests it holds,
+   * A snapshot (docs/platform.md "Snapshots"): what the backend must keep besides the requests it holds,
    * as JSON, and the same given to a new backend. The core posts held requests to a restored VM's
    * backends again, so one that only holds buffers has neither.
    */

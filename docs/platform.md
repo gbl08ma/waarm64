@@ -261,8 +261,8 @@ Two modes, chosen by `VmConfig.deterministic`:
 ## Snapshots (`core/src/snapshot.rs`, `core/src/vm/state.rs`)
 
 The core saves a VM's state without its RAM and restores it into a new VM of the same
-configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"; the lane's plan:
-[plans/snapshots.md](plans/snapshots.md)). The host copies RAM and owns the file.
+configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"). The host copies RAM and owns the file
+(below, "The snapshot file").
 
 - **The format** is an explicit little-endian serialization with a version of its own
   (`snapshot::VERSION`), not a memory dump: each part has a `save` and a `restore` (`Cpu`,
@@ -306,7 +306,7 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"; the lane's plan
   file ([frontend.md](frontend.md) has the page's side when it lands) holds the core's state, the
   backends' (`Backend.save`/`restore` in `web/devices.ts`: the deterministic rng's position; a
   virtio-gpu's resource table, scanout and cursor, whose pixels come back from the restored RAM,
-  [devices.md](devices.md) "virtio-gpu"; a 9p device refuses to be saved for now) with the serial input the guest hadn't been given, and
+  [devices.md](devices.md) "virtio-gpu"; 9p's in-memory tree refuses to be saved: [shares.md](shares.md) §6) with the serial input the guest hadn't been given, and
   RAM in 1 MiB chunks without their zero pages, compressed by the core's LZ (`web/lz.ts`, an
   instance of the core of its own). A restore creates the VM without booting it, fills RAM from
   the file, has the core restore its state, starts the backends with theirs and serves the
@@ -324,6 +324,54 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"; the lane's plan
 - **Run modes:** round-robin's `Sched` and parallel mode's per-vCPU state are saved in one form
   (on or off, in WFI, a CPU_ON not yet taken), so a realtime state restores under either. A
   restored VM starts with empty TLBs and code caches.
+- **Not in a snapshot:** the JIT's code caches, the TLBs, the broadcast-maintenance queues and DSB waits (a restored
+  VM starts with none, so there is nothing to maintain), counters, and the firmware image (RAM holds what the guest
+  loaded). The base disk image is never in it either: only the overlay's blocks.
+
+### The snapshot file (`web/snapshot-file.ts`, `web/snapshot.ts`)
+
+The user owns snapshots as files (the user's call, 2026-09-29): the page saves one for download and resumes one
+given to it, in a fresh browser profile too. A kept snapshot is the same file ([machines.md](machines.md) §5). The
+container is streamed both ways (RAM is up to GiBs) and knows nothing of the core:
+- `WEBPCSNP`, a u32 format version, the JSON header with its CRC-32, then frames, little-endian. A frame is `{tag,
+  codec, index, raw length, stored length, CRC-32, reserved}` (32 bytes; the CRC covers the frame header's first 24
+  bytes, so a flipped index or length is caught, then the stored bytes) and the stored bytes.
+- **Tags:** `CORE` (the core's state) and `DEVS` (the backends' state as JSON), each cut into 1 MiB frames; `RAM `
+  (one per 1 MiB chunk with a non-zero page, `index` the chunk: a 32-byte bitmap of its non-zero 4 KiB pages, then
+  those pages; spill memories' chunks follow memory 0's, [spill-memories.md](spill-memories.md)); `DISK` (a run of
+  1 to 256 overlay blocks, `index` = the device slot × 2^40 + the first block); `BLOB` (the binary parts of DEVS: each
+  Uint8Array in the backends' state, the display's 3D contents, is `{"$blob": n, "length": …}` in the JSON, and blob
+  n's 1 MiB chunk k is a frame with `index` = n × 2^24 + k; [graphics.md](graphics.md) "Snapshots with 3D in use");
+  `END ` (its `index` is the frame count). A file without its `END ` is truncated. A file with BLOB frames is format
+  version 2 (an older page refuses it as newer), one without is version 1. The header's own fields are `format`,
+  `coreVersion`, `abi`, `created`; the page's are in [frontend.md](frontend.md) "Snapshots".
+- **A zero page** is one whose words all are (`zeroPage`, on a Uint32Array over RAM); its word index is the byte
+  offset shifted **unsigned** (`>>> 2`). Until 2026-10-19 a signed shift turned offsets past 2^31 negative, so every
+  machine with more than 2 GiB of RAM was saved without its top and came back with its vCPUs spinning and no
+  interrupts (found on the desktop guest's 2.5 GiB with 3D in use; `tests/snapshot-file.test.ts` "RAM past 2 GiB…").
+  Snapshots of such machines saved before then are damaged in a way no check sees.
+- **The codec** is per frame (so frames could be made and read by several workers on the shared memory), and a
+  frame that doesn't shrink is stored (codec 0). The page writes **the core's LZ** (codec 2: `core/src/lz.rs`, the
+  LZ4 block format, through `web/lz.ts` on one worker); the reader also takes deflate-raw (codec 1,
+  `CompressionStream`). Settled by measurement (`bench/boot/REPORT.md` "M8 phase C loop 4"): the LZ saves 6 times
+  faster for a file 1.4 times larger.
+- **Refusals** (`SnapshotError`, each naming what the user can do) come before anything is touched: not a snapshot,
+  a newer format, a core state version this core doesn't read, another machine, another disk, a checksum that fails,
+  a truncated file.
+- **Out:** `showSaveFilePicker` (called on the click), else a Blob download, which holds the whole file in the page
+  until its URL is revoked 60 s later: a big snapshot taken every few seconds piles up in the browser's blob storage
+  (tools space them out: `bench/gpu/snapshot-3d.ts`). **In:** a `File` read as a stream.
+- **Versions** (the user's call, 2026-10-01): the core's state has a format version of its own (`snapshot::VERSION`,
+  [abi.md](abi.md) "M8 phase C"), bumped when a saved field changes and pinned by a unit test of a fixed machine's
+  bytes, **not the wasm's input hash**: that would void every snapshot at every core change, the JIT's too, which
+  never changes what is saved. The header's `abi` is recorded, not checked. A state of a version the core doesn't
+  read is refused; there is no migration (backlog "Snapshots"). So a file loads into another build of the core with
+  the same state version, which is what benchmarks start from ([benchmarking.md](benchmarking.md) "Starting from a
+  snapshot"; `tests/snapshot.test.ts` "a snapshot loads into another build of the core…").
+- **The base's identity** (on the disk pins above): a chosen file's name, size and modification time, a URL's path,
+  and the SHA-256 (`hashSource`) where the writer has it. The cheap identity is checked first because the hash costs
+  a read of the whole base (Debian's 384 MiB took 1.8 s when measured), which a restore that resumes in seconds
+  shouldn't pay every time.
 
 ## The GIC: a GICv3 (`core/src/gicv3.rs`)
 

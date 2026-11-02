@@ -1,4 +1,4 @@
-// `pause()` and `resume()` on a VM (docs/platform.md "Pausing", docs/plans/snapshots.md "Quiescing"),
+// `pause()` and `resume()` on a VM (docs/platform.md "Pausing", docs/platform.md "Snapshots"),
 // in Node: the Buildroot guest on parallel vCPUs paused while it boots, idles and powers off, and
 // round-robin, where a pause between runs must not move the deterministic step count. They are races
 // by nature: WEBPC_PARALLEL_RUNS repeats the parallel ones (default 1; the pass counts were taken at 10).

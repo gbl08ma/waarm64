@@ -85,7 +85,7 @@ What each built is in its doc; numbers in the reports it names. Open loose ends:
 |---|---|---|
 | The interactive page (M8 phase A) | Done 2026-09-29 | [frontend.md](docs/frontend.md); `bench/boot/REPORT.md` "M8 loop 0"–"8" |
 | Your own disk through UEFI (phase B) | Done 2026-10-01 | [firmware.md](docs/firmware.md), [frontend.md](docs/frontend.md) "Your own disk" |
-| Snapshots and Suspend | Done 2026-10-01 | [plans/snapshots.md](docs/plans/snapshots.md), [platform.md](docs/platform.md) "Snapshots" |
+| Snapshots and Suspend | Done 2026-10-01 | [platform.md](docs/platform.md) "Snapshots", [machines.md](docs/machines.md) §5, [frontend.md](docs/frontend.md) "Snapshots" |
 | virtio-gpu 2D (G0, G1) | Done 2026-10-02 | [graphics.md](docs/graphics.md) |
 | Disk I/O speed | Done 2026-10-08 (the overlay's runs; the rest dropped by measurement) | `bench/io/REPORT.md` |
 | 3D through virgl on WebGL2 (G2–G4) | Done 2026-10-10: Firefox, GTK4, dEQP-GLES2/3's whole lists | [graphics.md](docs/graphics.md) |
