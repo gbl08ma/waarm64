@@ -720,6 +720,13 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   where the narrowed lane widened isn't the source), SQSHL/UQSHL/SQSHLU by immediate on bytes and
   halfwords (at twice the width, then narrowed), SQABS/SQNEG, SHLL, RBIT (a nibble swizzle), 8-bit
   MUL and PMUL/PMULL on bytes (eight shifted partial products).
+- **SDOT and UDOT** (`simd::inline_dot`, FEAT_DotProd): wasm has no dot product, so two `extmul`s, two shuffles
+  gathering each 32-bit lane's pairs, two `extadd_pairwise`s, an add of those, and Vd added last: about 7 host
+  instructions against SDOT's one, if V8 folds the middle add into a SADALP on arm64 as its timings suggest. **The order matters** (ns a dot on the
+  M4, accumulating into one register / independent results): this order 0.51 / 0.45; the pairs added before
+  gathering (an ADDP in shuffles, 8 instructions) 0.51 / 0.51; `i32x4.dot_i16x8_s` on even and odd bytes 0.88 /
+  0.89; two SADALPs onto Vd 1.45 / 0.38, whose accumulator chain is what sum loops hit. The ADDP order ran x264
+  medium 6.8% slower than its NEON path; this one is level with it (bench/boot/REPORT.md "FEAT_DotProd and FEAT_JSCVT, measured").
 - **NEON lane by lane** (`emit/simd_lane.rs`): what wasm has no lane op for, in i64 arithmetic per
   lane after the interpreter's i128 formulas: the saturating adds and subtracts on 32- and 64-bit
   lanes, SSHL/USHL/SRSHL/URSHL/SQSHL/UQSHL/SQRSHL/UQRSHL by register, the saturating shifts by
@@ -881,10 +888,14 @@ interpreter's; the helper runs the instruction otherwise.
   rounded value fits, under FPOK (Inexact), into the saturating truncation (2D lane by lane);
   FCVTXN rounds to odd from the RNE demote (inexact, it steps toward zero where the demote went away
   from the operand, then sets the odd bit), with an RNE result from the second binade up and finite;
-  FJCVTZS (FEAT_JSCVT, when the vCPU has it) from `f64.trunc` and `i32.trunc_sat_f64_s` for an
-  operand in (-2^31 - 1, 2^31), exact (Z set unless it's -0), or inexact under FPOK and, under FZ, not a
-  denormal; NZCV lazy as a 32-bit logical result of !Z (the helper's Z read back after it); out of range,
-  infinite or a NaN (Invalid) is the helper's; FRINT32Z/X and FRINT64Z/X (FEAT_FRINTTS), scalar and
+  FJCVTZS (FEAT_JSCVT, when the vCPU has it) from one `i64.trunc_sat_f64_s`, whose low half is the result for any
+  |x| < 2^63 (the one check that refuses NaNs and infinities too, the helper's with what's past it). Past int32 it
+  raises Invalid alone, so those don't need FPOK; in int32 an inexact one needs FPOK and, under FZ, no denormal. Z
+  (exact, in int32, not -0) is computed for NZCV only, lazy as a 32-bit logical result of !Z, so code that ignores it
+  skips the conversion back. **IOC is set behind a test of IOC itself:** whether a value fits int32 is a coin toss in
+  a hash's `>>> 0`, and branching on that alone mispredicted away the instruction's gain (`hash` 1.07-1.15× the
+  FCVTZS path against 0.96-0.98 now). The first form, `f64.trunc` with helpers past int32, ran past-int32 code
+  2.7-4.3× slower than guests without JSCVT (bench/boot/REPORT.md "FEAT_DotProd and FEAT_JSCVT, measured"); FRINT32Z/X and FRINT64Z/X (FEAT_FRINTTS), scalar and
   vector, as FRINTZ and FRINTI/X (nearest even under FPOK) and then the rounded value (lanes) in the
   integer's range, under FPOK (Inexact) with no NaN or, under FZ, denormal operand: the saturating
   -2^(N-1) and its Invalid are the helper's;

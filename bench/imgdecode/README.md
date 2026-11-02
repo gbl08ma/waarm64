@@ -32,6 +32,15 @@ that end in the window. The count alone moves by a round of 24 images, 25-33% of
 `WINDOW=60` (6-10 rounds) for a rate good to about 1%, and `WARM=15` is enough after the three rounds. Run both sides in one session,
 alternating, on the dev VM, with the PC sampler on for both (it runs during the window).
 
+## A CPU feature's A/B (2026-11-01)
+
+`codecs.ts <feature> <codecs|js> [rounds] [repeats]`: the Arch desktop disk on 4 vCPUs, a root shell, alternating
+`?<feature>=0` and on, a boot per arm and round, writing `bench/boot/results/<feature>/` and printing medians by arm.
+`codecs.sh` on the second disk (`codecs-disk.sh`, needs images/arch/media.sh's clips and gen.py's JPEGs) runs each codec
+one-threaded (dav1d, libvpx, ffvp9, h264, x264, libvpx and libaom encoding, djpeg, tjbench) with `q8dot.c`, an int8 dot
+product as ggml writes it; `js.html` runs ToInt32 kernels in Chromium and Firefox. A round takes 2 to 2.5 minutes.
+`QUERY='&dotprod=0' profile.ts` gives the browsers' side; a boot of its four cases takes 10 minutes.
+
 ## On the desktop guest (2026-10-22)
 
 What a user sees: Firefox in sway on a 3D machine, images decoded, scaled, uploaded by WebRender through virgl and

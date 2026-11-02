@@ -959,25 +959,41 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.local_get(FPOK);
             guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }
-        // FJCVTZS (FEAT_JSCVT): Wd = ToInt32(Dn), NZCV = 0Z00. An operand in
-        // (-2^31 - 1, 2^31) truncates to an i32 (a NaN isn't in it); exact (and
-        // not -0: Z) it raises nothing, inexact Inexact, which FPOK has set
-        // already (a denormal: under FZ the helper's, for IDC). The rest (out
-        // of range, infinite or a NaN: Invalid) is the helper's. NZCV stays
-        // lazy: a 32-bit logical result of !Z.
+        // FJCVTZS (FEAT_JSCVT): Wd = ToInt32(Dn), NZCV = 0Z00, on one 64-bit
+        // truncation, whose low half is the result for any |Dn| < 2^63 (the
+        // check that also refuses NaNs and infinities, the helper's with the
+        // rest, Invalid). Past int32 it raises Invalid alone, set here, so
+        // those don't need FPOK; in int32 an inexact one raises Inexact, which
+        // FPOK has set already (under FZ a denormal is the helper's, for IDC).
+        // Z, exact in int32 and not -0, is only computed for NZCV, lazy as a
+        // 32-bit logical result of !Z: code that ignores it doesn't pay for
+        // the conversion back.
         FJCVTZS if cx.jscvt => {
             fpa_guard(c);
-            let (v, e, fr) = (super::FT[1], super::tmp(false, 0), flag_locals(false).2);
+            let (v, n, fits, fr) = (super::FT[1], y, super::tmp(false, 0), flag_locals(false).2);
+            let exact = |c: &mut Func| {
+                c.local_get(n).op(0xb9).local_get(v).op(0x61); // f64.convert_i64_s, f64.eq
+            };
             f.load(c, rn);
             c.local_tee(x);
             f.to_float(c);
             c.local_tee(v);
-            c.op(0x9d).local_get(v).op(0x61).local_set(e); // f64.trunc, f64.eq
-            c.local_get(v).f64_const(-2147483649.0).op(0x64); // f64.gt
-            c.local_get(v).f64_const(2147483648.0).op(0x63).op(AND); // f64.lt
-            c.local_get(FPOK);
+            c.op(0xfc).op(6).local_set(n); // i64.trunc_sat_f64_s
+            c.local_get(n).local_get(n).op(0xc4).op(0x51); // i64.extend32_s, i64.eq
+            c.local_set(fits);
+            c.local_get(v)
+                .op(0x99)
+                .f64_const(9223372036854775808.0)
+                .op(0x63); // f64.abs, f64.lt
             under_fz(c, |c| no_denormal(c, f, &[x]));
-            c.local_get(e).op(0x72).op(AND); // i32.or
+            c.local_get(FPOK).if_t(super::I32);
+            c.i32_const(1);
+            c.else_();
+            c.local_get(fits).op(EQZ);
+            exact(c);
+            c.op(0x72); // i32.or
+            c.end();
+            c.op(AND);
             guarded_with(
                 c,
                 cx,
@@ -986,9 +1002,21 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 xmask(rd),
                 |c| {
                     set(c, false, rd, |c| {
-                        c.local_get(v).op(0xfc).op(2); // i32.trunc_sat_f64_s
+                        c.local_get(n).op(0xa7); // i32.wrap_i64
                     });
-                    c.local_get(e);
+                    let fpsr = offset_of!(Cpu, fpsr) as u32;
+                    // Tested with IOC itself, which is sticky: whether a value
+                    // fits is a coin toss in `>>> 0` of hashes, and this
+                    // branch is then taken once.
+                    c.local_get(VCPU).i64_load(fpsr).op(0xa7); // i32.wrap_i64
+                    c.i32_const(1).op(AND).local_get(fits).op(0x72).op(EQZ); // i32.or
+                    c.hint(false).if_();
+                    c.local_get(VCPU).local_get(VCPU).i64_load(fpsr);
+                    c.i64_const(1).op(0x84).i64_store(fpsr); // i64.or: IOC
+                    c.end();
+                    c.local_get(fits);
+                    exact(c);
+                    c.op(AND);
                     c.local_get(x).i64_const(i64::MIN).op(0x52); // i64.ne
                     c.op(AND).op(EQZ).local_set(fr);
                 },

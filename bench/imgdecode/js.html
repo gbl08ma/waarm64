@@ -1,0 +1,55 @@
+<!doctype html>
+<title>js</title>
+<pre id="r">running</pre>
+<script>
+// ToInt32 of doubles, FJCVTZS's work, in a guest's JS engine. Without the hwcap V8 and SpiderMonkey use FCVTZS with a
+// range check; with it, one instruction. Each kernel runs warm: the fourth and later of seven timings are kept.
+const N = 1 << 16;
+const inRange = new Float64Array(N), wide = new Float64Array(N), tiny = new Float64Array(N);
+let s = 12345;
+const next = () => (s = (s * 1664525 + 1013904223) % 4294967296) / 4294967296;
+for (let i = 0; i < N; i++) {
+  inRange[i] = (next() - 0.5) * 2e9;
+  wide[i] = (next() - 0.5) * 2e15; // past int32, inside int64
+  tiny[i] = next() * 1e6;
+}
+const out = new Int32Array(N);
+const kernels = {
+  // x | 0 on doubles that fit.
+  bitor(a) { let h = 0; for (let t = 0; t < 160; t++) for (let i = 0; i < N; i++) h = (h + (a[i] | 0)) | 0; return h; },
+  // The same on doubles past int32, which wrap.
+  wrap(a) { let h = 0; for (let t = 0; t < 160; t++) for (let i = 0; i < N; i++) h = (h ^ (a[i] | 0)) | 0; return h; },
+  // A store of a double into an Int32Array.
+  store(a) { let h = 0; for (let t = 0; t < 160; t++) { for (let i = 0; i < N; i++) out[i] = a[i] * 1.5; h ^= out[t & 255]; } return h; },
+  // Fixed point written with floats, as image and audio code in JS does.
+  fixed(a) {
+    let h = 0;
+    for (let t = 0; t < 120; t++) for (let i = 1; i < N - 1; i++) {
+      const v = (a[i - 1] + 2 * a[i] + a[i + 1]) * 0.25;
+      h = (h + (v | 0) * 3) | 0;
+    }
+    return h;
+  },
+  // A rolling hash on Numbers: products past 2^31, truncated by >>> and | 0.
+  hash() {
+    let h = 5381;
+    for (let t = 0; t < 10000000; t++) h = ((h * 33 + t) % 4294967296) >>> 0;
+    return h | 0;
+  },
+};
+const inputs = { bitor: inRange, wrap: wide, store: tiny, fixed: inRange, hash: undefined };
+const lines = [];
+for (const [k, f] of Object.entries(kernels)) {
+  const ts = [];
+  let check = 0;
+  for (let r = 0; r < 7; r++) {
+    const t0 = performance.now();
+    check = f(inputs[k]);
+    ts.push(performance.now() - t0);
+  }
+  lines.push(`JS ${k} ${ts.slice(3).sort((a, b) => a - b)[2].toFixed(2)} ms check ${check}`);
+}
+const text = lines.join('\n');
+document.getElementById('r').textContent = text;
+if (typeof dump === 'function') dump(text + '\nJS-END\n');
+</script>

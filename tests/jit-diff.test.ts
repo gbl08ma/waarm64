@@ -107,6 +107,9 @@ const CLASSES: Record<string, [number, number]> = {
   // FEAT_FRINTTS (ABI 59): FRINT32Z/X, FRINT64Z/X, scalar (ftype random) and vector.
   'FRINTTS': [0xff3e7c00, 0x1e284000],
   'AdvSIMD FP FRINTTS': [0x9fbfec00, 0x0e21e800],
+  // FEAT_DotProd (ABI 60): SDOT, UDOT, vector and by element.
+  'AdvSIMD DotProd': [0x9fe0fc00, 0x0e809400],
+  'AdvSIMD DotProd by element': [0x9fc0f400, 0x0f80e000],
   // FEAT_FlagM's RMIF (a helper; the rest of FlagM is among the sequences' helpers).
   'RMIF': [0xffe07c10, 0xba000400],
 };
@@ -577,6 +580,15 @@ const FP_EDGES: [string, number, bigint[]][] = [
   ['fjcvtzs w0, d1 (-2^31 - 0.5)', 0x1e7e0020, [0n, f64bits(-2147483648.5)]],
   ['fjcvtzs w0, d1 (-2^31 - 1)', 0x1e7e0020, [0n, f64bits(-2147483649)]],
   ['fjcvtzs w0, d1 (2^32 + 5.75)', 0x1e7e0020, [0n, f64bits(4294967301.75)]],
+  ['fjcvtzs w0, d1 (2^32)', 0x1e7e0020, [0n, f64bits(2 ** 32)]],
+  ['fjcvtzs w0, d1 (-3 * 2^32)', 0x1e7e0020, [0n, f64bits(-3 * 2 ** 32)]],
+  ['fjcvtzs w0, d1 (2^40 + 0.5)', 0x1e7e0020, [0n, f64bits(2 ** 40 + 0.5)]],
+  ['fjcvtzs w0, d1 (-2^40 - 0.5)', 0x1e7e0020, [0n, f64bits(-(2 ** 40) - 0.5)]],
+  ['fjcvtzs w0, d1 (2^53 + 2)', 0x1e7e0020, [0n, f64bits(2 ** 53 + 2)]],
+  ['fjcvtzs w0, d1 (-2^62)', 0x1e7e0020, [0n, f64bits(-(2 ** 62))]],
+  ['fjcvtzs w0, d1 (2^63 - 1024)', 0x1e7e0020, [0n, f64bits(2 ** 63 - 1024)]],
+  ['fjcvtzs w0, d1 (-2^63)', 0x1e7e0020, [0n, f64bits(-(2 ** 63))]],
+  ['fjcvtzs w0, d1 (-2^63 - 2048)', 0x1e7e0020, [0n, f64bits(-(2 ** 63) - 2048)]],
   ['fjcvtzs w0, d1 (2^63)', 0x1e7e0020, [0n, f64bits(2 ** 63)]],
   ['fjcvtzs w0, d1 (1e300)', 0x1e7e0020, [0n, f64bits(1e300)]],
   ['fjcvtzs w0, d1 (a denormal)', 0x1e7e0020, [0n, 1n]],
@@ -713,7 +725,7 @@ const VHELPERS = [
   (d: number, n: number) => 0x6e218800 | (n << 5) | d, // frinta vd.4s, vn.4s
   (d: number, n: number) => 0x7ee03800 | (n << 5) | d, // usqadd dd, dn
 ];
-const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 1 source', 'FP data processing, 2 sources', 'FP data processing, 3 sources', 'FP and general register moves, conversions', 'FP compare', 'FP conditional compare', 'FP conditional select', 'FJCVTZS', 'FRINTTS', 'AdvSIMD FP FRINTTS', 'conditional select', 'conditional compare'].map((n) => CLASSES[n]);
+const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 1 source', 'FP data processing, 2 sources', 'FP data processing, 3 sources', 'FP and general register moves, conversions', 'FP compare', 'FP conditional compare', 'FP conditional select', 'FJCVTZS', 'FRINTTS', 'AdvSIMD FP FRINTTS', 'AdvSIMD DotProd', 'AdvSIMD DotProd by element', 'conditional select', 'conditional compare'].map((n) => CLASSES[n]);
 const VMEM = ['SIMD&FP load/store, unsigned offset', 'SIMD&FP load/store pair', 'AdvSIMD load/store multiple structures', 'AdvSIMD load/store single structure'].map((n) => MEMORY[n]);
 const ALU = ['add/sub, immediate', 'add/sub, shifted and extended register', 'add/sub with carry', 'logical, immediate', 'logical, shifted register', 'bitfield, 64-bit', 'bitfield, 32-bit', 'variable shifts', 'conditional select', 'conditional compare', 'multiply-add', 'data processing, register'].map((n) => CLASSES[n]);
 const LAST = ['conditional branch', 'compare and branch', 'test and branch', 'branch to register'].map((n) => CLASSES[n]);

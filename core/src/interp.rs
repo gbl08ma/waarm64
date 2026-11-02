@@ -940,8 +940,18 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
                 float::exec(c, i, op)?
             }
         }
-        // FP/AdvSIMD beyond v8.0: RDM, DotProd, I8MM, FCMA, FHM, BF16, SM3, SM4,
-        // and FRINTTS without the feature.
+        // FEAT_DotProd: UNDEFINED without it, and its reserved sizes, before the FPEN trap.
+        SDOT_vec | UDOT_vec | SDOT_elt | UDOT_elt
+            if c.features & crate::cpu::FEATURE_DOTPROD != 0 =>
+        {
+            if bits(i, 23, 22) != 2 {
+                return Err(Exit::Undefined);
+            }
+            fp_enabled(c)?;
+            simd_int::dot(c, i)?
+        }
+        // FP/AdvSIMD beyond v8.0: RDM, I8MM, FCMA, FHM, BF16, SM3, SM4, and
+        // FRINTTS and DotProd without their features.
         SQRDMLAH_vec_1 | SQRDMLAH_vec_2 | SQRDMLSH_vec_1 | SQRDMLSH_vec_2 | SQRDMLAH_elt_1
         | SQRDMLSH_elt_1 | SQRDMLAH_elt_2 | SQRDMLSH_elt_2 | SDOT_vec | UDOT_vec | SDOT_elt
         | UDOT_elt | SMMLA_vec | UMMLA_vec | USMMLA_vec | SUDOT_element | USDOT_element

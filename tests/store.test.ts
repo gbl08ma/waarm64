@@ -67,12 +67,12 @@ test("the shape: the other devices first, then the disks; its hash is stable and
   }
   assert.notEqual(await shapeHash(shapeOf(m, (id) => DISKS.get(id), { cpu: ['e0pd'] })), h, 'cpu features');
   // SHA3 came after shapes: with it or without, a machine's snapshots keep their hash.
-  const noSha3 = shapeOf(m, (id) => DISKS.get(id), { cpu: ['rng', 'e0pd', 'jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts'] });
-  assert.deepEqual(s.cpu, ['rng', 'e0pd', 'sha3', 'jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts']);
+  const noSha3 = shapeOf(m, (id) => DISKS.get(id), { cpu: ['rng', 'e0pd', 'jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod'] });
+  assert.deepEqual(s.cpu, ['rng', 'e0pd', 'sha3', 'jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod']);
   assert.equal(await shapeHash(noSha3), h, 'sha3 left out of the hash');
   assert.deepEqual(shapeDiff(noSha3, s), []);
   // The features after it are in the hash (machines kept before them needn't match).
-  for (const f of ['jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts'] as const) {
+  for (const f of ['jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod'] as const) {
     const without = shapeOf(m, (id) => DISKS.get(id), { cpu: s.cpu.filter((g) => g !== f) });
     assert.notEqual(await shapeHash(without), h, `${f} in the hash`);
   }

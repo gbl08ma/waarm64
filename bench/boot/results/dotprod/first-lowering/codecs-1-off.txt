@@ -1,0 +1,46 @@
+Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics cpuid jscvt lrcpc sha3 sha512 dit flagm sb flagm2 frint rng
+x264 [info]: using cpu capabilities: ARMv8 NEON
+COLD Q8DOT neon 6.807 check -83128000
+COLD dav1d-av1 2880940
+CODEC dav1d-av1 1728752
+CODEC dav1d-av1 1665852
+CODEC dav1d-av1 1671335
+COLD libvpx-vp9-dec 1614027
+CODEC libvpx-vp9-dec 822920
+CODEC libvpx-vp9-dec 819109
+CODEC libvpx-vp9-dec 744062
+COLD ffvp9-dec 1253435
+CODEC ffvp9-dec 1105882
+CODEC ffvp9-dec 1111840
+CODEC ffvp9-dec 1082534
+COLD h264-dec 2763387
+CODEC h264-dec 2096867
+CODEC h264-dec 2340270
+CODEC h264-dec 1999732
+COLD x264-veryfast 4782397
+CODEC x264-veryfast 3754737
+CODEC x264-veryfast 3724972
+CODEC x264-veryfast 3737465
+COLD x264-medium 3895207
+CODEC x264-medium 3600089
+CODEC x264-medium 3683717
+CODEC x264-medium 3831905
+COLD libvpx-vp9-enc 1802314
+CODEC libvpx-vp9-enc 1035777
+CODEC libvpx-vp9-enc 1057447
+CODEC libvpx-vp9-enc 1115142
+COLD libaom-enc 975662
+CODEC libaom-enc 421397
+CODEC libaom-enc 344052
+CODEC libaom-enc 310639
+COLD djpeg 282320
+CODEC djpeg 165320
+CODEC djpeg 168732
+CODEC djpeg 157055
+Q8DOT neon 2.361 check -1662560000
+TJ Decompress    --> Frame rate:         110.804807 fps
+Q8DOT neon 2.260 check -1662560000
+TJ Decompress    --> Frame rate:         110.226251 fps
+Q8DOT neon 2.271 check -1662560000
+TJ Decompress    --> Frame rate:         110.254070 fps
+CODECS-END

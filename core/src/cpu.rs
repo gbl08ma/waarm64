@@ -135,6 +135,9 @@ pub const FEATURE_DIT: u64 = 256;
 /// FEAT_FRINTTS (ABI 59): `FRINT32Z`, `FRINT32X`, `FRINT64Z`, `FRINT64X`,
 /// scalar and vector, advertised in ID_AA64ISAR1_EL1.
 pub const FEATURE_FRINTTS: u64 = 512;
+/// FEAT_DotProd (ABI 60): `SDOT` and `UDOT`, vector and by element, advertised
+/// in ID_AA64ISAR0_EL1.
+pub const FEATURE_DOTPROD: u64 = 1024;
 /// Every feature bit the core knows.
 pub const FEATURES: u64 = FEATURE_CRYPTO
     | FEATURE_RNG
@@ -145,7 +148,8 @@ pub const FEATURES: u64 = FEATURE_CRYPTO
     | FEATURE_SB
     | FEATURE_FLAGM
     | FEATURE_DIT
-    | FEATURE_FRINTTS;
+    | FEATURE_FRINTTS
+    | FEATURE_DOTPROD;
 
 /// Whether a vCPU with `features` has FEAT_SHA512 and FEAT_SHA3.
 #[inline]

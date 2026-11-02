@@ -63,13 +63,17 @@ const ISAR0_RNDR: u64 = 1 << 60;
 /// TS = 2: FEAT_FlagM and FEAT_FlagM2.
 const ISAR0_TS: u64 = 2 << 52;
 
+/// DP = 1: FEAT_DotProd.
+const ISAR0_DP: u64 = 1 << 44;
+
 /// ID_AA64ISAR0_EL1 for a vCPU with `features`.
 pub fn isar0(features: u64) -> u64 {
     let has = |f: u64, v: u64| if features & f != 0 { v } else { 0 };
     let r = ID_AA64ISAR0
         | has(crate::cpu::FEATURE_CRYPTO, ISAR0_CRYPTO)
         | has(crate::cpu::FEATURE_RNG, ISAR0_RNDR)
-        | has(crate::cpu::FEATURE_FLAGM, ISAR0_TS);
+        | has(crate::cpu::FEATURE_FLAGM, ISAR0_TS)
+        | has(crate::cpu::FEATURE_DOTPROD, ISAR0_DP);
     if crate::cpu::has_sha3(features) {
         r & !(0xf << 12) | ISAR0_SHA3
     } else {

@@ -1,5 +1,5 @@
 webpc-corpus 1
-oracle qemu 2026-11-01
+oracle m4 2026-11-01
 test jscvt.fjcvtzs.0000
 code 1e7e01d6
 seed 5471641126661d8a
@@ -67,5935 +67,5935 @@ in v12=0x131502034816da3a71053e71eceeafdd fpcr=0x400000 fpsr=0x81
 out x7=0x0
 exit end
 test jscvt.fjcvtzs.0011
+code 1e7e0126
+seed 1d4179bda4577bfb
+in v9=0x10a16e41bd346293800e18e7b7418f59 fpcr=0x1c00000
+out x6=0x0 nzcv=0x0 fpsr=0x80
+exit end
+test jscvt.fjcvtzs.0012
 code 1e7e00a2
 seed 14f9db6febec9cc5
 in v5=0xde5de9a53ccaaee3130641f9dd01ca82 fpcr=0x4400000
 out x2=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0012
+test jscvt.fjcvtzs.0013
 code 1e7e028b
 seed c472f2dedaa19406
 in v20=0xbe1e38cf2833b1246af891be5a3b5a25 fpcr=0x2000000
 out x11=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0013
+test jscvt.fjcvtzs.0014
 code 1e7e0394
 seed a0a4cea0567681c5
 in v28=0x06c1141355b7b6bb240fd5dbc6f2b4be fpcr=0x6800000 fpsr=0x8000095
 out x20=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0014
+test jscvt.fjcvtzs.0015
 code 1e7e0247
 seed 84579e8c9e15efd5
 in v18=0xb5e36d45443b518dc330000000000000 fpcr=0x400000 fpsr=0x800000f
 out x7=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0015
+test jscvt.fjcvtzs.0016
 code 1e7e0036
 seed f22c5445e242edf6
 in v1=0x350f40ad929807110000000000000000 fpcr=0x4c00000
 out x22=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0016
+test jscvt.fjcvtzs.0017
 code 1e7e0358
 seed d052d7134a26de56
 in v26=0xc96832231ef61f81ffea894fa7e3a658 fpcr=0x4400000
 out x24=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0017
+test jscvt.fjcvtzs.0018
 code 1e7e0046
 seed 07ac27028af7a8fd
 in v2=0xbaafd2c4819cc577c02c6957bc23ffe4 fpcr=0x4000000
 out x6=0xfffffff2 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0018
+test jscvt.fjcvtzs.0019
 code 1e7e01ba
 seed f783d0ba490d3123
 in v13=0x2b553b211fd071314a2bb9ea3815451c fpcr=0x400000
 out x26=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0019
+test jscvt.fjcvtzs.0020
 code 1e7e02aa
 seed 5197e3a423dcb1a0
 in v21=0x3e759e045c590702709d7dc77f65c935
 out x10=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0020
+test jscvt.fjcvtzs.0021
 code 1e7e0241
 seed ce143267c530039f
 in v18=0xab6e08cec11bf8d0fff0000000000000 fpcr=0x5c00000
 out x1=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0021
+test jscvt.fjcvtzs.0022
 code 1e7e01ad
 seed e05696d0f200b983
 in v13=0x2e86201ebb92d59bfff0000000000000 fpcr=0x2c00000
 out x13=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0022
+test jscvt.fjcvtzs.0023
 code 1e7e020c
 seed d4cd1b418ce97076
 in v16=0x746d4ef47bf9417b0000000000000000 fpcr=0x4000000
 out x12=0x0
 exit end
-test jscvt.fjcvtzs.0023
+test jscvt.fjcvtzs.0024
 code 1e7e0231
 seed 85bfb3070feb678c
 in v17=0x922532ab3a1dd6fdc1f0000000600000 fpcr=0x4c00000
 out x17=0xfffffffa nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0024
+test jscvt.fjcvtzs.0025
 code 1e7e03d3
 seed 2ad8a9f73dd1fb10
 in v30=0xd18426c75dec3a467ff0000000000000 fpcr=0x1c00000
 out x19=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0025
+test jscvt.fjcvtzs.0026
 code 1e7e00ae
 seed dd9bc9d049455c81
 in v5=0xf0f37bde0dda252ac00f1ef435c6f87e fpcr=0x2400000
 out x14=0xfffffffd nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0026
+test jscvt.fjcvtzs.0027
 code 1e7e0332
 seed 939d6ccd1d101f0d
 in v25=0xc7c9a3c0f73bbec48000000000000000 fpcr=0x4400000 fpsr=0x8000098
 out x18=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0027
+test jscvt.fjcvtzs.0028
 code 1e7e0231
 seed 13b0d3e0ee2b0d95
 in v17=0x5c950c283d1db8a0f070b5af2ff0039f fpcr=0x4400000
 out x17=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0028
+test jscvt.fjcvtzs.0029
 code 1e7e0209
 seed 213a93e0a592ec46
 in v16=0x4d823593800cc8767ff3111eea68fced fpcr=0xc00000
 out x9=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0029
+test jscvt.fjcvtzs.0030
 code 1e7e00f5
 seed aa2a93801c084036
 in v7=0xb533b3631a1b7fe4127f7c4624d0504e fpcr=0x400000 fpsr=0x6
 out x21=0x0 nzcv=0x0 fpsr=0x16
 exit end
-test jscvt.fjcvtzs.0030
+test jscvt.fjcvtzs.0031
 code 1e7e03aa
 seed f8c310f4a1b2716d
 in v29=0xd97a3f53226e2e659f4ebaaa270d1802 fpcr=0x7c00000 fpsr=0x94
 out x10=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0031
+test jscvt.fjcvtzs.0032
 code 1e7e0082
 seed 3e63f6554e1019b9
 in v4=0x6c57b044f85ae972fff89efb286124dd fpcr=0x400000
 out x2=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0032
+test jscvt.fjcvtzs.0033
 code 1e7e005d
 seed fc3d5c7f579bdabb
 in v2=0x1d55ae98f302c74d62f6a0064a018d26 fpcr=0x400000
 out x29=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0033
+test jscvt.fjcvtzs.0034
 code 1e7e0107
 seed 8b183a500fadf57f
 in v8=0x9d7a52666a81236d0000000000000000 fpcr=0x2000000
 out x7=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0034
+test jscvt.fjcvtzs.0035
 code 1e7e0369
 seed 56c208a62c25251e
 in v27=0x7c651f108472905c0000000000000000 fpcr=0xc00000
 out x9=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0035
+test jscvt.fjcvtzs.0036
 code 1e7e035b
 seed 0fe48a4c077df973
 in v26=0x3853785710913499802fffffffffffff fpcr=0x4800000
 out x27=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0036
+test jscvt.fjcvtzs.0037
 code 1e7e0365
 seed c8c10415f505a70c
 in v27=0xc69d1bf85f72748b6abbd088fa04ccb2 fpcr=0x7400000
 out x5=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0037
+test jscvt.fjcvtzs.0038
 code 1e7e0357
 seed c7b866d4ac1439a0
 in v26=0xd113d516fe4b844d800ef9b281b3b643 fpcr=0x400000
 out x23=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0038
+test jscvt.fjcvtzs.0039
 code 1e7e0298
 seed 7823cb56db0a5893
 in v20=0x881518111dbad29b40b07db298000000 fpcr=0x4400000 fpsr=0x17
 out x24=0x107d nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0039
+test jscvt.fjcvtzs.0040
 code 1e7e0309
 seed 776673d1df944a42
 in v24=0x6c2752cc4f5aa9c1fff83e62a6f8261a fpcr=0xc00000
 out x9=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0040
+test jscvt.fjcvtzs.0041
 code 1e7e0136
 seed aaa6600860d6a28e
 in v9=0x1a2e9a20945fa061eda68e51a1539943 fpcr=0x2c00000 fpsr=0xf
 out x22=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0041
+test jscvt.fjcvtzs.0042
 code 1e7e0274
 seed 429c7e9b62012e46
 in v19=0x3c504276ad3afe658000000000000000 fpcr=0x400000 fpsr=0x5
 out x20=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0042
+test jscvt.fjcvtzs.0043
 code 1e7e0177
 seed b30b7461e9e260bc
 in v11=0xae428d5b007229fd0000000000000000 fpcr=0x4c00000
 out x23=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0043
+test jscvt.fjcvtzs.0044
 code 1e7e028d
 seed a84ed770b3daf787
 in v20=0xaeb24125f6a30e8041a620ee84000000 fpcr=0x800000
 out x13=0xb107742 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0044
+test jscvt.fjcvtzs.0045
 code 1e7e013d
 seed c6e34a1292f15a70
 in v9=0x4887abf6422e7daffff8c89d00b9b387 fpcr=0x1800000 fpsr=0x8000005
 out x29=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0045
+test jscvt.fjcvtzs.0046
 code 1e7e03d8
 seed 49d016af877d961e
 in v30=0xdde3992a7c4a50f4c9490ee427e13f80 fpcr=0x1400000
 out x24=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0046
+test jscvt.fjcvtzs.0047
 code 1e7e02c8
 seed acb118b72f2587eb
 in v22=0xd8b562f366ebe95b0000000000000000 fpcr=0x2800000
 out x8=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0047
+test jscvt.fjcvtzs.0048
 code 1e7e032d
 seed ee82cafd4afa6da6
 in v25=0xb8743b0ec16b19d180e7bf8725984900 fpcr=0x4800000
 out x13=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0048
+test jscvt.fjcvtzs.0049
 code 1e7e0274
 seed d84bedaaeb2dc0cc
 in v19=0xa9c7d5fb2196d95b0012bd989a589daf fpcr=0x2000000
 out x20=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0049
+test jscvt.fjcvtzs.0050
 code 1e7e03e1
 seed 8be46c6bc62d2967
 in v31=0x88b679b97efda5ff0000000000000000 fpcr=0x1400000
 out x1=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0050
+test jscvt.fjcvtzs.0051
 code 1e7e038f
 seed 56b788ee3ef9b4e5
 in v28=0x93cb4d10aff140f5bee83100f0000000 fpcr=0x800000
 out x15=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0051
+test jscvt.fjcvtzs.0052
 code 1e7e020f
 seed 67ee74efc3656c05
 in v16=0xf72495b2666251667ff0000000000000 fpcr=0x400000
 out x15=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0052
+test jscvt.fjcvtzs.0053
 code 1e7e0116
 seed a2761e000388e1a6
 in v8=0x3168ccf2993807403f9dd9521c6e8fba fpcr=0x1800000
 out x22=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0053
+test jscvt.fjcvtzs.0054
 code 1e7e031e
 seed 8b4a96e54140735e
 in v24=0x4785589129c7a2220001fb4790bee475 fpcr=0x2400000
 out x30=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0054
+test jscvt.fjcvtzs.0055
 code 1e7e01bf
 seed 8252558ec2952600
 in v13=0x053a519cf23a8c26f6e2230b24973b25 fpcr=0x400000 fpsr=0x1e
 out nzcv=0x0 fpsr=0x1f
 exit end
-test jscvt.fjcvtzs.0055
+test jscvt.fjcvtzs.0056
 code 1e7e039f
 seed 9aded438304f12c0
 in v28=0x9c7641664f319407fffc251b8420ec4a fpcr=0x1800000 fpsr=0x800000f
 out nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0056
+test jscvt.fjcvtzs.0057
 code 1e7e001b
 seed 23a2d16ff28ee9ca
 in v0=0xc7250af8b29601e8c1d0000001400000 fpcr=0x5c00000
 out x27=0xbffffffb nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0057
+test jscvt.fjcvtzs.0058
 code 1e7e010c
 seed f1eec3b5fec3aa72
 in v8=0xca2884fe0a26de9dfff63cc3cf921f57 fpcr=0x5c00000
 out x12=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0058
+test jscvt.fjcvtzs.0059
 code 1e7e0319
 seed 0aa3c201ddd8251c
 in v24=0x01963da9ff1eea68c00924328b527ad7 fpcr=0x4000000
 out x25=0xfffffffd nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0059
+test jscvt.fjcvtzs.0060
 code 1e7e00da
 seed 8760fb451aff0a63
 in v6=0xa778e9b82c638fa17ff9664dd7e795e1 fpcr=0xc00000
 out x26=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0060
+test jscvt.fjcvtzs.0061
 code 1e7e038b
 seed d1caf686b59c315a
 in v28=0x9b6d41fccb9327e1ffe27ee5d109cc33 fpcr=0xc00000
 out x11=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0061
+test jscvt.fjcvtzs.0062
 code 1e7e02a8
 seed 54370359b8f68111
 in v21=0xd21ad2bc1bfad5efffe0baf7950e03ba fpcr=0x1000000
 out x8=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0062
+test jscvt.fjcvtzs.0063
 code 1e7e02fa
 seed ee3fde767ca69a68
 in v23=0x6eca0d72e8572ffea9711bf4bde1c7df fpcr=0x2400000
 out x26=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0063
+test jscvt.fjcvtzs.0064
 code 1e7e0393
 seed 3d8fecc8a60593a5
 in v28=0x22733f31855cd76dbe90442704000000 fpcr=0x4000000
 out x19=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0064
+test jscvt.fjcvtzs.0065
 code 1e7e001c
 seed 14c7bee596644a74
 in v0=0xe80d9f4385c504b3fff911cffbe8480a fpcr=0x800000
 out x28=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0065
+test jscvt.fjcvtzs.0066
 code 1e7e01a4
 seed e2dcfaced49078c1
 in v13=0xfcae4fecc746846a3fdac281069c8a64 fpcr=0x4c00000
 out x4=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0066
+test jscvt.fjcvtzs.0067
 code 1e7e0131
 seed 088b519cd90aa841
 in v9=0xe6f2aeceadf0b7797ff0000000000000 fpcr=0x4400000
 out x17=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0067
+test jscvt.fjcvtzs.0068
 code 1e7e02bb
 seed 8255aab285cdce63
 in v21=0xa537df93f4eef8e1001fffffffffffff fpcr=0x4c00000 fpsr=0x8000086
 out x27=0x0 nzcv=0x0 fpsr=0x8000096
 exit end
-test jscvt.fjcvtzs.0068
+test jscvt.fjcvtzs.0069
 code 1e7e03f8
 seed 7446f5c3ee6e1475
 in v31=0xcdaa5f9d3b81fe3cc018284c80000000 fpcr=0x800000
 out x24=0xfffffffa nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0069
+test jscvt.fjcvtzs.0070
 code 1e7e0182
 seed 510bfc0a7760fac6
 in v12=0x8a2b4fa5598302d08000000000000000 fpcr=0x1400000
 out x2=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0070
+test jscvt.fjcvtzs.0071
 code 1e7e0387
 seed 5c62eca05aa0bc67
 in v28=0x34274123b0a2eb0341f0000000300000 fpcr=0x800000
 out x7=0x3 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0071
+test jscvt.fjcvtzs.0072
 code 1e7e0040
 seed b595def21d9bb883
 in v2=0xe69540b397df69f931acc1964591129b fpcr=0x5c00000
 out x0=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0072
+test jscvt.fjcvtzs.0073
 code 1e7e02dc
 seed 69fcb603e5863e57
 in v22=0xd53492491bbda873152b711979ed94d5 fpcr=0x1000000
 out x28=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0073
+test jscvt.fjcvtzs.0074
 code 1e7e00cd
 seed 91bc1b3dc001e1d0
 in v6=0x5d176c302abf1b210010000000000000
 out x13=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0074
+test jscvt.fjcvtzs.0075
 code 1e7e00e6
 seed 1d600b7412020af0
 in v7=0xafc6d7f4dc6720197ff0000000000000 fpcr=0x2000000
 out x6=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0075
+test jscvt.fjcvtzs.0076
 code 1e7e0157
 seed 392e528bd9c54114
 in v10=0x9c75d626ea10ecced0eb7a05be172e3c fpcr=0x7400000
 out x23=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0076
+test jscvt.fjcvtzs.0077
 code 1e7e0206
 seed 510018adeebf83c2
 in v16=0xfd6907bbbe25c9e90000000000000000 fpcr=0x4000000
 out x6=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0077
+test jscvt.fjcvtzs.0078
 code 1e7e00f5
 seed 2e7435d63ec4659a
 in v7=0x0e239d708029470e41a2dbf58c000000 fpcr=0x5800000
 out x21=0x96dfac6 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0078
+test jscvt.fjcvtzs.0079
 code 1e7e02f8
 seed 8c207470bea491bc
 in v23=0xf0b30d07915fbd524015e74b918bd779 fpcr=0x2800000
 out x24=0x5 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0079
+test jscvt.fjcvtzs.0080
 code 1e7e00e6
 seed e6d5a02717133537
 in v7=0xf48886d012809a7afff0000000000000
 out x6=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0080
+test jscvt.fjcvtzs.0081
 code 1e7e03e8
 seed 1fc680f41ae6b989
 in v31=0x932dc3326eeac4f5fff879687df19e99 fpcr=0x4400000
 out x8=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0081
+test jscvt.fjcvtzs.0082
 code 1e7e00f4
 seed 40b015b389c0f399
 in v7=0xdc0aad40a8bf9caf7ff0000000000000 fpcr=0x2000000
 out x20=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0082
+test jscvt.fjcvtzs.0083
 code 1e7e0092
 seed 9da5c35081cfdc5d
 in v4=0x48f10592ce31dcd5c8adc7caafa30062
 out x18=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0083
+test jscvt.fjcvtzs.0084
 code 1e7e0213
 seed 5d9525581a3ada38
 in v16=0xe1a59744201af618c1e23c13cc000000 fpcr=0x4400000
 out x19=0x6e1f61a0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0084
+test jscvt.fjcvtzs.0085
 code 1e7e038c
 seed e19465536057c917
 in v28=0xc1f231d5ff411d727ff710636fb9000d
 out x12=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0085
+test jscvt.fjcvtzs.0086
 code 1e7e015c
 seed 5e8873f451191b8b
 in v10=0x81d304d767d67648bf285f0584000000 fpcr=0x800000
 out x28=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0086
+test jscvt.fjcvtzs.0087
+code 1e7e01d9
+seed 5c0e0c4c52b94347
+in v14=0x6f947864463dd0da800f69afa9f628c9 fpcr=0x5c00000
+out x25=0x0 nzcv=0x0 fpsr=0x80
+exit end
+test jscvt.fjcvtzs.0088
 code 1e7e02a3
 seed a5ea41f1eef968c9
 in v21=0x7d587e99bc369042b0d7274fedbe8d44 fpcr=0x4000000
 out x3=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0087
+test jscvt.fjcvtzs.0089
 code 1e7e0234
 seed 028727b09a1d7d46
 in v17=0x6685d562630b70bec279145b84000000 fpcr=0x400000
 out x20=0xba47c000 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0088
+test jscvt.fjcvtzs.0090
 code 1e7e010e
 seed 0b17fbaabe7436aa
 in v8=0xe2b48dd6247d1ae37ff91895c897b223 fpcr=0x400000
 out x14=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0089
+test jscvt.fjcvtzs.0091
 code 1e7e02c9
 seed 1817ef7aef5de28c
 in v22=0x72a96510f6380c97a96f6e1ade7cd26a fpcr=0x400000 fpsr=0x8000000
 out x9=0x0 nzcv=0x0 fpsr=0x8000010
 exit end
-test jscvt.fjcvtzs.0090
+test jscvt.fjcvtzs.0092
 code 1e7e02b3
 seed 3c3e83fcbdc75fcd
 in v21=0x2ad257252c1dd5b18010000000000000
 out x19=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0091
+test jscvt.fjcvtzs.0093
 code 1e7e0267
 seed 0749d966cf43d437
 in v19=0xd0636a68d9e6b8f1c33cf362664ee1c0 fpcr=0x4c00000
 out x7=0x99b11e40 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0092
+test jscvt.fjcvtzs.0094
 code 1e7e034d
 seed 99ea3c5284ed2db7
 in v26=0xdd3ee8718ee27a478682dd043714dfd5 fpcr=0xc00000 fpsr=0x8000096
 out x13=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0093
+test jscvt.fjcvtzs.0095
 code 1e7e017b
 seed f487529f1022905d
 in v11=0x53fb9e9e1b30f8698c15c1d23b09f8de fpcr=0x2800000
 out x27=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0094
+test jscvt.fjcvtzs.0096
 code 1e7e0336
 seed 06754d81aa671f0e
 in v25=0xc0512e43d7d5375b800a3bc877d79ce3 fpcr=0x800000
 out x22=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0095
+test jscvt.fjcvtzs.0097
 code 1e7e0056
 seed aafdc2e5cec95830
 in v2=0xd227296b521faa857aa6bb879829f19d fpcr=0xc00000
 out x22=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0096
+test jscvt.fjcvtzs.0098
 code 1e7e027d
 seed 3679d8a914368f78
 in v19=0x08260bb57d00f857a894cecb02bfba82 fpsr=0x1d
 out x29=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0097
+test jscvt.fjcvtzs.0099
 code 1e7e03d0
 seed 9fdff00a100fe060
 in v30=0x47fb1de78827329100122d7c9ebc52b8 fpcr=0x1c00000
 out x16=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0098
+test jscvt.fjcvtzs.0100
 code 1e7e0298
 seed c5505d0e87182d61
 in v20=0x3f407585c48b5e85fff30741b84125bd fpcr=0x4400000 fpsr=0xa
 out x24=0x0 nzcv=0x0 fpsr=0xb
 exit end
-test jscvt.fjcvtzs.0099
+test jscvt.fjcvtzs.0101
 code 1e7e032f
 seed 359658db63e3acbb
 in v25=0xd9b99a82006384ee8a663e5066f2be93 fpcr=0x1000000
 out x15=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0100
+test jscvt.fjcvtzs.0102
 code 1e7e00b3
 seed 7383b41aaf5b884c
 in v5=0xc5b53c83d76c71667fff845fdb12fee3 fpcr=0x2000000 fpsr=0x8000008
 out x19=0x0 nzcv=0x0 fpsr=0x8000009
 exit end
-test jscvt.fjcvtzs.0101
+test jscvt.fjcvtzs.0103
 code 1e7e0225
 seed 6974910c10d59bd7
 in v17=0x52e1a12702a454fbc010000000000000 fpcr=0x800000 fpsr=0x17
 out x5=0xfffffffc nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0102
+test jscvt.fjcvtzs.0104
 code 1e7e030c
 seed cae43c8234bb389a
 in v24=0x49baef622d44a5d95dc1e9931ac5652f fpcr=0x800000 fpsr=0x83
 out x12=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0103
+test jscvt.fjcvtzs.0105
 code 1e7e025a
 seed 5b37cac5688f09fe
 in v18=0x6b6b8527d96cec9abff5cccc4929d5a6 fpcr=0x4400000
 out x26=0xffffffff nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0104
+test jscvt.fjcvtzs.0106
 code 1e7e01e3
 seed c7559952a0f0ac53
 in v15=0xa04c1cde69cea030fffcba8f8ff9a4ec
 out x3=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0105
+test jscvt.fjcvtzs.0107
 code 1e7e02dd
 seed 2d308faa55ab26d9
 in v22=0x2eaad87286895f575731adb2fca2dcec fpcr=0xc00000
 out x29=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0106
+test jscvt.fjcvtzs.0108
 code 1e7e029e
 seed eed3ce30060d9bcc
 in v20=0xfa88bfee3b003e5e8ffa708efde92212 fpcr=0x4400000
 out x30=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0107
+test jscvt.fjcvtzs.0109
 code 1e7e0053
 seed e01bbc781ad5e894
 in v2=0xdce129d409f9a57bfffc556a1520a65b fpcr=0x400000
 out x19=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0108
+test jscvt.fjcvtzs.0110
 code 1e7e0184
 seed db4d4849b43c6043
 in v12=0xb29eee0447c1ff637ff0000000000000 fpcr=0x4c00000
 out x4=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0109
+test jscvt.fjcvtzs.0111
 code 1e7e0234
 seed 7693ee86c9646efa
 in v17=0x787054f9526bc1963fe6282f27a0fdaf fpcr=0x2000000
 out x20=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0110
+test jscvt.fjcvtzs.0112
 code 1e7e03bf
 seed bc5606f089772c8e
 in v29=0x687764db3b7f0cf10000000000000000
 out nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0111
+test jscvt.fjcvtzs.0113
 code 1e7e02e2
 seed 94667bc0e34fb9a7
 in v23=0x7827c48326abb97ebfe278f7ca820b9b
 out x2=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0112
+test jscvt.fjcvtzs.0114
 code 1e7e0341
 seed d2d50ad7a0a34f53
 in v26=0x753252941cc1933fcfa0fd631bf81c38 fpcr=0x2c00000
 out x1=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0113
+test jscvt.fjcvtzs.0115
 code 1e7e032e
 seed 90fdc7fc70e0acf6
 in v25=0x50dfaf457453c884c3f18702b3aa258e fpcr=0x400000
 out x14=0x5da72000 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0114
+test jscvt.fjcvtzs.0116
+code 1e7e038c
+seed eaa0b2fbbaede848
+in v28=0x77f0cab3291ba322800bd5199d7e02ab fpcr=0x1c00000 fpsr=0x800000e
+out x12=0x0 nzcv=0x0 fpsr=0x800008e
+exit end
+test jscvt.fjcvtzs.0117
 code 1e7e026e
 seed 7d7df073f4a97e94
 in v19=0xd9390393072e19587fe0000000000000 fpcr=0x1800000 fpsr=0x8a
 out x14=0x0 fpsr=0x8b
 exit end
-test jscvt.fjcvtzs.0115
+test jscvt.fjcvtzs.0118
 code 1e7e03ad
 seed 8a5326e2f14daf23
 in v29=0x1577e721373469728010000000000000 fpcr=0x1c00000
 out x13=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0116
+test jscvt.fjcvtzs.0119
 code 1e7e02b0
 seed f11ad780b508f6d2
 in v21=0x2848897bd06adf627a78e48a312cdc0a fpcr=0x1800000
 out x16=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0117
+test jscvt.fjcvtzs.0120
 code 1e7e0379
 seed 446f89e5fa7a3d76
 in v27=0xd74a5a374adfe1e9fff0000000000000 fpcr=0x1800000
 out x25=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0118
+test jscvt.fjcvtzs.0121
 code 1e7e0332
 seed 7ece517cf397246c
 in v25=0x3019353b6c5ad6897ff0000000000000 fpcr=0x800000 fpsr=0x8000093
 out x18=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0119
+test jscvt.fjcvtzs.0122
 code 1e7e03a3
 seed dba9d0f72ccd6d11
 in v29=0x3ef500fae70b3df10000000000000000 fpcr=0x6400000
 out x3=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0120
+test jscvt.fjcvtzs.0123
 code 1e7e0255
 seed 150dc63578f9ee95
 in v18=0xea0dbb6af514616cbffeac8e7cb8bad7 fpcr=0x5400000
 out x21=0xffffffff nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0121
+test jscvt.fjcvtzs.0124
 code 1e7e0199
 seed 058ae730d1192b18
 in v12=0xa0857206f4f665d591a8c47658ed4217 fpcr=0x1c00000
 out x25=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0122
+test jscvt.fjcvtzs.0125
 code 1e7e01d7
 seed 51419953c9b569c1
 in v14=0x1cbd04169ed3ec627ff0000000000000 fpcr=0x1000000
 out x23=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0123
+test jscvt.fjcvtzs.0126
 code 1e7e0376
 seed 0d98ec4a19bc1134
 in v27=0xf5a84a4a64631d9ac01060fcbcaebb83 fpcr=0x1000000
 out x22=0xfffffffc nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0124
+test jscvt.fjcvtzs.0127
 code 1e7e0322
 seed 5b70836d25572160
 in v25=0xfba786c58a786106fff299e4a7bbf473
 out x2=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0125
+test jscvt.fjcvtzs.0128
 code 1e7e0087
 seed 537c1fbbbed4bada
 in v4=0x2d1d94999029530b3dd74b4cc0000000
 out x7=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0126
+test jscvt.fjcvtzs.0129
 code 1e7e01a2
 seed 49fae32e30f3af47
 in v13=0x70c1ee3811d6be66c164ef8dc4000000 fpcr=0xc00000
 out x2=0xff588392 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0127
+test jscvt.fjcvtzs.0130
 code 1e7e00a3
 seed 7ce43612fa22e92b
 in v5=0x26eb1b031bab441b7ffd925656177342 fpcr=0x4800000 fpsr=0x85
 out x3=0x0
 exit end
-test jscvt.fjcvtzs.0128
+test jscvt.fjcvtzs.0131
 code 1e7e0076
 seed beb59c0c04419cd9
 in v3=0xb4b5dac970ead1803af14a53e8420b09 fpcr=0x3c00000
 out x22=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0129
+test jscvt.fjcvtzs.0132
 code 1e7e02b6
 seed d03aff5ccb30d096
 in v21=0xd3b7bbef59c46ffc41e0000000900000
 out x22=0x80000004 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0130
+test jscvt.fjcvtzs.0133
 code 1e7e0134
 seed 44ba7440b245a127
 in v9=0xe70dcf335db125430000000000000000 fpcr=0x1c00000
 out x20=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0131
+test jscvt.fjcvtzs.0134
 code 1e7e00e0
 seed 0973f2c911c9741c
 in v7=0x723cf5b1995a66bec8416e3ecda39d82 fpcr=0x4000000
 out x0=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0132
+test jscvt.fjcvtzs.0135
 code 1e7e02c6
 seed 629b5b00336279b9
 in v22=0x7300be63ebd929cdfff642df1d404015 fpcr=0x5800000 fpsr=0x99
 out x6=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0133
+test jscvt.fjcvtzs.0136
 code 1e7e0211
 seed 9b79a306f0f42a04
 in v16=0x7a2fc1349f86167e3e3d9bb7e8000000 fpcr=0xc00000
 out x17=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0134
+test jscvt.fjcvtzs.0137
 code 1e7e0070
 seed af04d8689201dbe0
 in v3=0x771bed3e69e519f77fe0000000000000 fpcr=0xc00000
 out x16=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0135
+test jscvt.fjcvtzs.0138
 code 1e7e03e5
 seed 6e15e16bdf3e20ed
 in v31=0x83008364242022757ff0000000000000 fpcr=0x400000 fpsr=0x96
 out x5=0x0 nzcv=0x0 fpsr=0x97
 exit end
-test jscvt.fjcvtzs.0136
+test jscvt.fjcvtzs.0139
 code 1e7e01f9
 seed 8d2bef0863a2a1fa
 in v15=0xdd9f56b3f4089e36fff929f69782455e fpcr=0x400000 fpsr=0x8000006
 out x25=0x0 nzcv=0x0 fpsr=0x8000007
 exit end
-test jscvt.fjcvtzs.0137
+test jscvt.fjcvtzs.0140
 code 1e7e0152
 seed 29cb76281a67866b
 in v10=0xf3f2b9c7b723b51f0004e42c4cf28c43 fpcr=0x800000
 out x18=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0138
+test jscvt.fjcvtzs.0141
 code 1e7e0198
 seed 6125373d06fbd0fc
 in v12=0xd32df48346249d2a3fcd5c5bbc000000 fpcr=0x400000
 out x24=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0139
+test jscvt.fjcvtzs.0142
 code 1e7e027e
 seed 3961443aada688d9
 in v19=0x5e8f4065e612a44c9ab138dce54bf9e5 fpcr=0xc00000
 out x30=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0140
+test jscvt.fjcvtzs.0143
 code 1e7e02d3
 seed eb0c21379f8d897b
 in v22=0x6d64920163ad58d43ff0000000000000 fpcr=0x4400000
 out x19=0x1 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0141
+test jscvt.fjcvtzs.0144
 code 1e7e02d7
 seed 37991c47e64a9d84
 in v22=0x0492501866504116fff26089f07a65c9 fpcr=0x3000000 fpsr=0x89
 out x23=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0142
+test jscvt.fjcvtzs.0145
 code 1e7e00e6
 seed f9972740c9b81cbc
 in v7=0x182526f8c1f08a61401e000000000000 fpcr=0xc00000
 out x6=0x7 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0143
+test jscvt.fjcvtzs.0146
 code 1e7e0202
 seed 572551b59618f9f0
 in v16=0x9e652f2d8ae3415e45cd3a3092c9026c fpcr=0x4400000
 out x2=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0144
+test jscvt.fjcvtzs.0147
 code 1e7e006a
 seed ae4ca4918e8a4977
 in v3=0xf6403c62a86aaba81087586bfa3969c7 fpcr=0x4000000
 out x10=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0145
+test jscvt.fjcvtzs.0148
 code 1e7e037e
 seed c3364fde5aade157
 in v27=0xb7d174862b775e6841d0000001e00000 fpcr=0x3400000 fpsr=0x81
 out x30=0x40000007 nzcv=0x0 fpsr=0x91
 exit end
-test jscvt.fjcvtzs.0146
+test jscvt.fjcvtzs.0149
 code 1e7e0038
 seed db8128a6e65a99b7
 in v1=0xf61033cb95aa3f37b1d742b218d9079c fpcr=0x400000
 out x24=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0147
+test jscvt.fjcvtzs.0150
 code 1e7e0165
 seed e3ca4b914009e7e0
 in v11=0x6444e6df728ccc89fff84a05440383a9 fpcr=0x800000
 out x5=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0148
+test jscvt.fjcvtzs.0151
 code 1e7e0057
 seed 600ffffeea1ede07
 in v2=0x152752a0ff77fcfc7ff12ded0ae0a693 fpcr=0x7c00000
 out x23=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0149
+test jscvt.fjcvtzs.0152
 code 1e7e0082
 seed 17df8e1501e537c6
 in v4=0xe1cb6ea8641850f518c31f3cfcaa8d22 fpcr=0x400000
 out x2=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0150
+test jscvt.fjcvtzs.0153
 code 1e7e010d
 seed c9200ff4f7aaea3a
 in v8=0xb942b6dff845bf90fff0000000000000 fpcr=0x400000 fpsr=0xa
 out x13=0x0 nzcv=0x0 fpsr=0xb
 exit end
-test jscvt.fjcvtzs.0151
+test jscvt.fjcvtzs.0154
 code 1e7e0329
 seed b91e738538e3e452
 in v25=0x5e41082654ccd113bf99ba30b8000000
 out x9=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0152
+test jscvt.fjcvtzs.0155
 code 1e7e03e0
 seed d1af0b9e3753149e
 in v31=0x64499dc990fa5311000e2b801e1f571b fpcr=0x400000
 out x0=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0153
+test jscvt.fjcvtzs.0156
 code 1e7e02e3
 seed be5f31f0b6d6f7b1
 in v23=0xc4028b80a5f97671fff7a0e51e3f7b0d fpcr=0xc00000
 out x3=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0154
+test jscvt.fjcvtzs.0157
 code 1e7e038f
 seed b0373e91f9e741f4
 in v28=0x7e9c7b90be17f46f001fffffffffffff fpcr=0x1800000 fpsr=0x97
 out x15=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0155
+test jscvt.fjcvtzs.0158
 code 1e7e0271
 seed a905ad93b5c33360
 in v19=0xfb649a81319c0d6efff0000000000000 fpcr=0x5800000
 out x17=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0156
+test jscvt.fjcvtzs.0159
 code 1e7e03ad
 seed d5b3eb53cf9b93b5
 in v29=0x4160e0ee2cb4ebe73fa4eb5c34000000 fpcr=0x4000000
 out x13=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0157
+test jscvt.fjcvtzs.0160
 code 1e7e02e4
 seed 33cee0418fb4178e
 in v23=0xdd4aa4239e41f18cc015ec66a9bb2ce7 fpcr=0x2c00000
 out x4=0xfffffffb nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0158
+test jscvt.fjcvtzs.0161
 code 1e7e018a
 seed 608d9bc82ed2eaeb
 in v12=0xedae1219a1957f2fc00acaad60263076 fpcr=0x4800000
 out x10=0xfffffffd nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0159
+test jscvt.fjcvtzs.0162
 code 1e7e02d0
 seed 2619911b03f77421
 in v22=0x5ef18f40a3ada1337ff7a789b93149ef fpcr=0x4400000
 out x16=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0160
+test jscvt.fjcvtzs.0163
 code 1e7e03de
 seed e712f0ca6a04ddae
 in v30=0xf54c36b72797d480670451fc2974b93b fpcr=0x2400000
 out x30=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0161
+test jscvt.fjcvtzs.0164
 code 1e7e0387
 seed 58f19237f6007569
 in v28=0x959a435ad1fce35d6398d9e42bf83b8f fpcr=0x1000000
 out x7=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0162
+test jscvt.fjcvtzs.0165
 code 1e7e0398
 seed 297e75f417603330
 in v28=0xc2b61dfa58855de88000000000000001 fpcr=0x4400000 fpsr=0x8000093
 out x24=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0163
+test jscvt.fjcvtzs.0166
 code 1e7e0179
 seed 3ef01f634a2d6160
 in v11=0x4ff71d032fb3e68785658d7e41094cfc
 out x25=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0164
+test jscvt.fjcvtzs.0167
 code 1e7e01e8
 seed 70fdbdf33dd472de
 in v15=0x844d3c39b4bb7798affe19715887d138 fpcr=0x400000
 out x8=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0165
+test jscvt.fjcvtzs.0168
 code 1e7e0301
 seed 771ac86ce2390dff
 in v24=0xa86be099fd7a83fc801fffffffffffff
 out x1=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0166
+test jscvt.fjcvtzs.0169
 code 1e7e0136
 seed 85aa1caf98050912
 in v9=0x12a4f7caf51166047ff916858d73129e fpcr=0x800000 fpsr=0x8000095
 out x22=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0167
+test jscvt.fjcvtzs.0170
 code 1e7e00b3
 seed 06fc7c1bf3ab19aa
 in v5=0x6976a16610f2fa4efff0000000000000 fpcr=0x400000 fpsr=0x80
 out x19=0x0 nzcv=0x0 fpsr=0x81
 exit end
-test jscvt.fjcvtzs.0168
+test jscvt.fjcvtzs.0171
 code 1e7e0089
 seed 05d6bca0572241f3
 in v4=0xbabddf50bb1edc6a7fe84322b7b95902 fpcr=0x4400000
 out x9=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0169
+test jscvt.fjcvtzs.0172
 code 1e7e01a3
 seed b7d06ac19df95993
 in v13=0xdebf833e97f9e1d5b9494ae163a14448 fpcr=0x2800000
 out x3=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0170
+test jscvt.fjcvtzs.0173
 code 1e7e0350
 seed 959e277d10fc2bdc
 in v26=0x319c7449c748e1c59711d839cc1c3c88 fpcr=0xc00000
 out x16=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0171
+test jscvt.fjcvtzs.0174
 code 1e7e0019
 seed 0b15a8428508a528
 in v0=0xf91766f568db76f8fff0000000000000 fpcr=0x4c00000
 out x25=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0172
+test jscvt.fjcvtzs.0175
 code 1e7e0228
 seed a9b64080b86ca1d9
 in v17=0x403df74f85e3de1143e0000000000000 fpcr=0x4c00000 fpsr=0x800000b
 out x8=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0173
+test jscvt.fjcvtzs.0176
 code 1e7e022f
 seed 212a4c897435fa68
 in v17=0x70ebf2f99300b07e43f29d344b302e8c fpcr=0x1000000
 out x15=0x2e8c000 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0174
+test jscvt.fjcvtzs.0177
 code 1e7e01da
 seed aea9c468ae40f65f
 in v14=0x8f10d4e9d581e100c01dd3fc300a7b48 fpcr=0x1000000 fpsr=0x9
 out x26=0xfffffff9 nzcv=0x0 fpsr=0x19
 exit end
-test jscvt.fjcvtzs.0175
+test jscvt.fjcvtzs.0178
 code 1e7e005c
 seed 4cebaf0de1906ac9
 in v2=0x6eee262acad5a0e33ffe1341ea382863 fpcr=0x4c00000
 out x28=0x1 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0176
+test jscvt.fjcvtzs.0179
 code 1e7e001d
 seed d043253c9c9628d2
 in v0=0x967e1f6b6a98c658420c1fcce4000000 fpcr=0x6c00000
 out x29=0x83f99c80 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0177
+test jscvt.fjcvtzs.0180
 code 1e7e007a
 seed 37bb5696c607e917
 in v3=0x57540d4acf933dab1fc3037428c5d823 fpcr=0x3c00000
 out x26=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0178
+test jscvt.fjcvtzs.0181
 code 1e7e010d
 seed 85b5c144a7323a96
 in v8=0xf8688a2ba8a0cc39fff0000000000000 fpcr=0xc00000
 out x13=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0179
+test jscvt.fjcvtzs.0182
 code 1e7e02e2
 seed e19a47f86f66de33
 in v23=0xf6791be11c85cbb6acd5691568516c82 fpcr=0x1c00000
 out x2=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0180
+test jscvt.fjcvtzs.0183
 code 1e7e0284
 seed 0303b87d1b5f3a8b
 in v20=0x97ab88328bbf36ddfac2ec479aafaaec fpsr=0x95
 out x4=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0181
+test jscvt.fjcvtzs.0184
 code 1e7e02ed
 seed 44406869428435e6
 in v23=0xb85440436c6e182abff09eac093e6bd6 fpcr=0x800000
 out x13=0xffffffff nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0182
+test jscvt.fjcvtzs.0185
 code 1e7e03b3
 seed a07aed1b5ee594c5
 in v29=0x020455515f120342fffe3ccdbcf32a22 fpcr=0x400000
 out x19=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0183
+test jscvt.fjcvtzs.0186
 code 1e7e03ad
 seed 49de2dc3b369c339
 in v29=0xb4a861d2cd767fa17ff0000000000000
 out x13=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0184
+test jscvt.fjcvtzs.0187
 code 1e7e001e
 seed c00d87ea6b008e2c
 in v0=0x4734a398fd5b1062802fffffffffffff fpcr=0x4c00000
 out x30=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0185
+test jscvt.fjcvtzs.0188
 code 1e7e033f
 seed bcc20e22aceba032
 in v25=0xf80de8f2262a7ab0fff0000000000000 fpcr=0xc00000 fpsr=0x8d
 out nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0186
+test jscvt.fjcvtzs.0189
 code 1e7e0218
 seed 6c293ddf050a822b
 in v16=0x6c82efa2347109ec3e673ed0185f9c8d fpcr=0x800000
 out x24=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0187
+test jscvt.fjcvtzs.0190
 code 1e7e0075
 seed 9389f7b9977d7dff
 in v3=0x63daa0b681a6cb691fb89694b22fd612 fpcr=0x800000
 out x21=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0188
+test jscvt.fjcvtzs.0191
 code 1e7e02fd
 seed b933d97ad6a8f420
 in v23=0xd34e9d6e357ffa96fff0000000000000 fpcr=0x4800000 fpsr=0x83
 out x29=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0189
+test jscvt.fjcvtzs.0192
 code 1e7e0060
 seed 40d4c7f8fb782cf4
 in v3=0x919f24769b2ccac0c3e0000000000000 fpcr=0x6400000 fpsr=0x1b
 out x0=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0190
+test jscvt.fjcvtzs.0193
 code 1e7e0004
 seed c0dce4721f06ee3c
 in v0=0x1fcfcbdc07ab2421001fffffffffffff fpcr=0x2c00000
 out x4=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0191
+test jscvt.fjcvtzs.0194
 code 1e7e02b4
 seed 06e684762482424f
 in v21=0x43260f55578cdb7b8000000000000000 fpcr=0x2400000
 out x20=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0192
+test jscvt.fjcvtzs.0195
 code 1e7e0128
 seed 272e7804b86bfc0d
 in v9=0x466d86f4dbdab2368010000000000000 fpcr=0x800000
 out x8=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0193
+test jscvt.fjcvtzs.0196
 code 1e7e014b
 seed fb93ee3813980583
 in v10=0xacc6898941534cee7fe0000000000000 fpcr=0xc00000
 out x11=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0194
+test jscvt.fjcvtzs.0197
 code 1e7e015e
 seed 19533072be225e3a
 in v10=0x6e93974a837d7d127957ac5f03bf39c5
 out x30=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0195
+test jscvt.fjcvtzs.0198
 code 1e7e01c7
 seed 4675fb64106f9970
 in v14=0xf0fb9d5db2fc8d1340082c341256e6bd fpcr=0x4400000
 out x7=0x3 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0196
+test jscvt.fjcvtzs.0199
 code 1e7e03d0
 seed 25f5ae096c73ee46
 in v30=0xfeceeba4edf8d8f1401e264ee1586475 fpcr=0x6000000 fpsr=0x8000010
 out x16=0x7 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0197
+test jscvt.fjcvtzs.0200
 code 1e7e00a0
 seed ea8d672a3b08cdf1
 in v5=0xe1a0fe52b093ef088007701ffccd5057 fpcr=0x4c00000
 out x0=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0198
+test jscvt.fjcvtzs.0201
 code 1e7e00e7
 seed f1577fa59a2680d8
 in v7=0xbf5091a4a0593add4004000000000000 fpcr=0x1400000
 out x7=0x2 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0199
+test jscvt.fjcvtzs.0202
 code 1e7e02ca
 seed d55c8a13b4fb142d
 in v22=0x0654f3ab55766ea358506b622994a598 fpcr=0x5000000
 out x10=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0200
+test jscvt.fjcvtzs.0203
 code 1e7e035c
 seed 1360b8c00958284a
 in v26=0x85ad7ae69395821c7ff0000000000000 fpcr=0x2000000 fpsr=0x800000b
 out x28=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0201
+test jscvt.fjcvtzs.0204
 code 1e7e0375
 seed 3c89e57e89c1d62f
 in v27=0xec884bb2d09fd4e8000f606e3d9743b7 fpcr=0xc00000 fpsr=0x800001d
 out x21=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0202
+test jscvt.fjcvtzs.0205
 code 1e7e0320
 seed 72626a4e77388ecc
 in v25=0x2585cdd9cf9da063fff536f9579939e7 fpcr=0x3c00000
 out x0=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0203
+test jscvt.fjcvtzs.0206
 code 1e7e00e1
 seed c10ce32bb560dd4f
 in v7=0x9e464acfd53fa3c55494ac716bd4c412 fpcr=0x2400000
 out x1=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0204
+test jscvt.fjcvtzs.0207
 code 1e7e01f1
 seed 4788d3fd3ff97b61
 in v15=0x6e45fb77089e4a82fff0000000000000 fpcr=0x3800000
 out x17=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0205
+test jscvt.fjcvtzs.0208
 code 1e7e011b
 seed c7f0eaaf5680fe8d
 in v8=0x5f1317a111ebebf68000000000000000 fpcr=0x4c00000
 out x27=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0206
+test jscvt.fjcvtzs.0209
 code 1e7e02d5
 seed 459b7f4b8563fc59
 in v22=0xb58dfb16d3b8eaf2991427639f67e39c fpcr=0xc00000
 out x21=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0207
+test jscvt.fjcvtzs.0210
 code 1e7e03d7
 seed 41a1ec72c6d03154
 in v30=0xd056da69c7430a34bd785127fc000000 fpcr=0x4800000
 out x23=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0208
+test jscvt.fjcvtzs.0211
 code 1e7e01fd
 seed 91cb6fd2261d578c
 in v15=0x6b60003f35ecae0cc008aba782cc934d fpcr=0x800000 fpsr=0x8000086
 out x29=0xfffffffd nzcv=0x0 fpsr=0x8000096
 exit end
-test jscvt.fjcvtzs.0209
+test jscvt.fjcvtzs.0212
 code 1e7e0314
 seed 07fd4b88fa786cd1
 in v24=0x8540266b7bdd2bebdd6c61f10743e4d7 fpcr=0x1c00000 fpsr=0x800001d
 out x20=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0210
+test jscvt.fjcvtzs.0213
 code 1e7e03f6
 seed 660ce3c0cf5c0689
 in v31=0xc2b5d6323b7976fa0000000000000000 fpcr=0x2000000 fpsr=0x8000094
 out x22=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0211
+test jscvt.fjcvtzs.0214
 code 1e7e0004
 seed d997c48c9ffc21f8
 in v0=0xf2a3b8b026372d21fff6cb9b7884c10d fpcr=0x400000
 out x4=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0212
+test jscvt.fjcvtzs.0215
 code 1e7e0006
 seed d5361c00a1a351fa
 in v0=0xb3a4cc96fbf4f7c78000000000000000 fpcr=0x2c00000
 out x6=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0213
+test jscvt.fjcvtzs.0216
 code 1e7e03f3
 seed 2a8043fa4c048d40
 in v31=0x1c38af54305b86537ff2563e927a3625 fpcr=0xc00000
 out x19=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0214
+test jscvt.fjcvtzs.0217
 code 1e7e0297
 seed 8ec3cde8de28250c
 in v20=0xc7210c19c2ecf8d200069a42332d982b fpcr=0x2800000
 out x23=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0215
+test jscvt.fjcvtzs.0218
 code 1e7e020a
 seed d8fdf6e7058049e1
 in v16=0x08040cb5a9a7321f3d8c36def4000000
 out x10=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0216
+test jscvt.fjcvtzs.0219
 code 1e7e00df
 seed 163e932680bd06ab
 in v6=0x0930f4d384bd39a9c1df067614000000 fpcr=0x6000000
 out nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0217
+test jscvt.fjcvtzs.0220
 code 1e7e0101
 seed e357c81cced76cdc
 in v8=0xe2b4256881baa2e27ff218e42573cf9b
 out x1=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0218
+test jscvt.fjcvtzs.0221
 code 1e7e0042
 seed 48c0f605fd165db8
 in v2=0x21367d83052ec525abe7e0aaa66993b3
 out x2=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0219
+test jscvt.fjcvtzs.0222
 code 1e7e0366
 seed 8b978fdb498bc19a
 in v27=0x91013c37b0d530900000000000000000 fpcr=0x400000
 out x6=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0220
+test jscvt.fjcvtzs.0223
 code 1e7e001b
 seed 1a2cc0512ca89fcc
 in v0=0xe18123ea6b74e93258bd6842287b790b fpcr=0x6400000
 out x27=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0221
+test jscvt.fjcvtzs.0224
 code 1e7e0258
 seed f8d8567d37df764d
 in v18=0x64028f1ccf53278f400bb4efa4785f4d fpcr=0x2800000
 out x24=0x3 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0222
+test jscvt.fjcvtzs.0225
 code 1e7e01e5
 seed b4a797ce26409080
 in v15=0xd9350a672502440f5874603f008e7b6b fpcr=0x800000
 out x5=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0223
+test jscvt.fjcvtzs.0226
 code 1e7e0274
 seed 47b2b65472713c91
 in v19=0xfb2f5c76a2eafbdafffba43f06f16b7a fpcr=0x800000
 out x20=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0224
+test jscvt.fjcvtzs.0227
 code 1e7e01a9
 seed 58af18fa8205562f
 in v13=0xb24554337b833e0f43f2ab853d5fb238 fpcr=0x6800000
 out x9=0xfb238000 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0225
+test jscvt.fjcvtzs.0228
 code 1e7e0375
 seed db01f5311d3c8c97
 in v27=0x4884d940e5dc0b8d0014b0755a14573e fpcr=0x2800000
 out x21=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0226
+test jscvt.fjcvtzs.0229
 code 1e7e03f2
 seed bf5dc32bdfa2dd01
 in v31=0xce498191ab363e10c00a48fcc66e8885 fpcr=0x400000
 out x18=0xfffffffd nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0227
+test jscvt.fjcvtzs.0230
 code 1e7e0097
 seed c8b611dddc4e1095
 in v4=0x7e596e2894aea7f20009f6109955313b fpcr=0x2800000
 out x23=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0228
+test jscvt.fjcvtzs.0231
 code 1e7e0336
 seed 4a0424b18186b824
 in v25=0xc34195f1ffbc22560000000000000000 fpcr=0x5800000
 out x22=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0229
+test jscvt.fjcvtzs.0232
 code 1e7e02bf
 seed d4a3428e7cd877c9
 in v21=0xae2d2c819bbbc3107ff14e74e91453ff fpcr=0xc00000
 out nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0230
+test jscvt.fjcvtzs.0233
 code 1e7e02bf
 seed 8759fb8ccd4b8338
 in v21=0xfd66f0eb8da194c10000000000000000 fpcr=0x2400000
 out nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0231
+test jscvt.fjcvtzs.0234
 code 1e7e03d0
 seed dd368317e3f61c9d
 in v30=0x4c965f0d795c60d9fff0000000000000 fpcr=0x3400000
 out x16=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0232
+test jscvt.fjcvtzs.0235
 code 1e7e02b3
 seed b14867b05b74411a
 in v21=0x233ebf57d8d3056500029dd1ec1b7f09 fpcr=0xc00000 fpsr=0x8000015
 out x19=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0233
+test jscvt.fjcvtzs.0236
 code 1e7e0175
 seed 611288a31421c725
 in v11=0x59a61354ca20b2a27ff0000000000000 fpcr=0x800000
 out x21=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0234
+test jscvt.fjcvtzs.0237
 code 1e7e03c4
 seed 000cae6db4d13a5b
 in v30=0xc7b174b65280d1c2e80b226f977915ad fpcr=0x1000000
 out x4=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0235
+test jscvt.fjcvtzs.0238
 code 1e7e03e8
 seed c7f7cf4731eb7f10
 in v31=0x624b70e664e69939fff0000000000000 fpcr=0x800000
 out x8=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0236
+test jscvt.fjcvtzs.0239
 code 1e7e0027
 seed 89fa898cb5599dc6
 in v1=0x8164864b0c77ac468010000000000000 fpcr=0x4400000
 out x7=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0237
+test jscvt.fjcvtzs.0240
 code 1e7e013e
 seed f99a0853eb83741c
 in v9=0xec732a3d31f84306dd40a1d90622801e fpcr=0x2800000
 out x30=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0238
+test jscvt.fjcvtzs.0241
 code 1e7e0147
 seed 77a92cd0bba3f764
 in v10=0x4b6de9e4f4e3e68541e0000000e00000 fpcr=0x4400000
 out x7=0x80000007 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0239
+test jscvt.fjcvtzs.0242
 code 1e7e00f2
 seed 754f8e7888709a20
 in v7=0xc36011547a2541dec1f0000000580000 fpcr=0x1000000
 out x18=0xfffffffb nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0240
+test jscvt.fjcvtzs.0243
 code 1e7e000a
 seed 555fa9f71f02fb85
 in v0=0x997bf5b36b806fb3fff8c91dc851f139 fpcr=0x5c00000
 out x10=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0241
+test jscvt.fjcvtzs.0244
 code 1e7e03db
 seed 85ef41c493ee471a
 in v30=0x37a320d5ad5b5488f66e3582ef82f1ba
 out x27=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0242
+test jscvt.fjcvtzs.0245
 code 1e7e0147
 seed 8a1461ff1ea51f73
 in v10=0x1d24f584ce57ae048000000000000000 fpcr=0x2400000
 out x7=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0243
+test jscvt.fjcvtzs.0246
 code 1e7e0094
 seed 51b5419cef7b927f
 in v4=0x744cf9657a4922874010ed413d7c8863 fpcr=0x1400000 fpsr=0x8000084
 out x20=0x4 nzcv=0x0 fpsr=0x8000094
 exit end
-test jscvt.fjcvtzs.0244
+test jscvt.fjcvtzs.0247
 code 1e7e024d
 seed f7092e3bf5540a40
 in v18=0x296437a1dd4244feffe969372e8301bf fpcr=0xc00000
 out x13=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0245
+test jscvt.fjcvtzs.0248
 code 1e7e00e0
 seed da93c5fd2b5e75d9
 in v7=0x50d1aa7f5f1aaa831c0fe07864a5de3d fpcr=0x4c00000
 out x0=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0246
+test jscvt.fjcvtzs.0249
 code 1e7e0278
 seed 0ada2c8d4b3206a6
 in v19=0xabd3dd9dc477a7ddfff86bc7c0b56dd3 fpcr=0xc00000 fpsr=0x8000013
 out x24=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0247
+test jscvt.fjcvtzs.0250
 code 1e7e0042
 seed b664f0ddb5443ea9
 in v2=0x132993c87ad4dbe7c02ccd5cf8000000 fpcr=0x6400000 fpsr=0x800008f
 out x2=0xfffffff2 nzcv=0x0 fpsr=0x800009f
 exit end
-test jscvt.fjcvtzs.0248
+test jscvt.fjcvtzs.0251
 code 1e7e0349
 seed 474983fbd0989387
 in v26=0xc1f38d3e7de9fd020003a9925ebf573d fpcr=0xc00000
 out x9=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0249
+test jscvt.fjcvtzs.0252
 code 1e7e0146
 seed d04b8c82b43a2ab1
 in v10=0xff4a1fbd5dda103541600000a0000000
 out x6=0x800005 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0250
+test jscvt.fjcvtzs.0253
 code 1e7e01ae
 seed 1c5dbe89d9be462b
 in v13=0xdeca3cfdeb7ab58dc25ab7c2bc000000 fpcr=0x400000 fpsr=0x8a
 out x14=0x20f51000 nzcv=0x0 fpsr=0x8b
 exit end
-test jscvt.fjcvtzs.0251
+test jscvt.fjcvtzs.0254
 code 1e7e006b
 seed b8a13830058a55d2
 in v3=0xa7204a52d899532a000a99c0207c2f6d fpcr=0x4c00000
 out x11=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0252
+test jscvt.fjcvtzs.0255
 code 1e7e02a7
 seed 3bf11fbde1f73a45
 in v21=0x8d4f1fc51882fdf6c013658fecf18fb2 fpcr=0x4000000
 out x7=0xfffffffc nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0253
+test jscvt.fjcvtzs.0256
 code 1e7e0333
 seed 6aae40b401c20969
 in v25=0x6dd44a6f23f34caec10ec51f10000000 fpcr=0x400000
 out x19=0xfffc275d nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0254
+test jscvt.fjcvtzs.0257
 code 1e7e0238
 seed 16485d91d0992818
 in v17=0x75e6b81f8e5ec861c010ec3d5bc70896 fpsr=0x8000010
 out x24=0xfffffffc nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0255
+test jscvt.fjcvtzs.0258
 code 1e7e0019
 seed bc436ac28cf5f6ce
 in v0=0xad21221d247bac213fdb84cb9bb79492 fpcr=0x2c00000
 out x25=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0256
+test jscvt.fjcvtzs.0259
 code 1e7e03df
 seed 3b672ce91a9f75d9
 in v30=0xe165ad4dfef0b89c800d4ae2005155cf fpcr=0x400000
 out fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0257
+test jscvt.fjcvtzs.0260
 code 1e7e02c6
 seed d456c0d323e4592c
 in v22=0x45b3b0d2636bafc744b602050c8e0b4f fpcr=0xc00000
 out x6=0x4f000000 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0258
+test jscvt.fjcvtzs.0261
 code 1e7e0164
 seed fcbae0eabea93a0f
 in v11=0xe4f3c761bdfba6e27fe880508f1c863a fpcr=0xc00000
 out x4=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0259
+test jscvt.fjcvtzs.0262
 code 1e7e03f9
 seed ccf264cc1e7f0b68
 in v31=0x6ea6763c42692efeb71ca931d621a836 fpcr=0x400000
 out x25=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0260
+test jscvt.fjcvtzs.0263
 code 1e7e0115
 seed 20255d96a477850f
 in v8=0x0158acff042046c5fff0000000000000 fpcr=0x6800000 fpsr=0x800009a
 out x21=0x0 nzcv=0x0 fpsr=0x800009b
 exit end
-test jscvt.fjcvtzs.0261
+test jscvt.fjcvtzs.0264
 code 1e7e0305
 seed 74452a1038e7a537
 in v24=0x83564252e9199996000b203ab260cd8b fpcr=0x400000
 out x5=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0262
+test jscvt.fjcvtzs.0265
 code 1e7e01c0
 seed 0a50f61e80b2a5b5
 in v14=0x4de840d4bdbbe81b286d9b383bfaaa44 fpcr=0x2400000
 out x0=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0263
+test jscvt.fjcvtzs.0266
 code 1e7e0073
 seed 8c7f715243a09974
 in v3=0x3221d3119b0b3f2a0020000000000000 fpcr=0x1400000
 out x19=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0264
+test jscvt.fjcvtzs.0267
 code 1e7e0312
 seed 070fd0ca2488e68e
 in v24=0x34eb0616b6e43835002bf0053b529ac7 fpcr=0x5000000
 out x18=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0265
+test jscvt.fjcvtzs.0268
 code 1e7e02fa
 seed c3bfb9da24da2a2f
 in v23=0x6202d079609d6067e9efe1812f291c4f fpcr=0x3c00000
 out x26=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0266
+test jscvt.fjcvtzs.0269
 code 1e7e0305
 seed 873a260440bccf38
 in v24=0x866fc0d63bbf3fc76d8063eb2917ed2c fpcr=0x1400000
 out x5=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0267
+test jscvt.fjcvtzs.0270
 code 1e7e009c
 seed c74b66454fff4002
 in v4=0x2e0bcc90b9e4f1d00000000000000001
 out x28=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0268
+test jscvt.fjcvtzs.0271
 code 1e7e0290
 seed 3ccda865726c6c45
 in v20=0x23e90918ae339542ee4b0a1b85e9960b fpcr=0x1400000 fpsr=0x8000091
 out x16=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0269
+test jscvt.fjcvtzs.0272
 code 1e7e0016
 seed 29777ae5b5290659
 in v0=0x6b127e6fd59fbc94f15839377e8d5651 fpcr=0x4c00000
 out x22=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0270
+test jscvt.fjcvtzs.0273
 code 1e7e02d5
 seed 6e698cbfad7bf423
 in v22=0xa3f21209348c71750000000000000000
 out x21=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0271
+test jscvt.fjcvtzs.0274
 code 1e7e03f9
 seed 2675a29c61f493ad
 in v31=0x0d9801a2701182997ff54252b3691adb fpcr=0xc00000
 out x25=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0272
+test jscvt.fjcvtzs.0275
 code 1e7e00d5
 seed 3f7347620d121d63
 in v6=0x88751c5b6b761c6cbff73da7d18ed368 fpcr=0x400000
 out x21=0xffffffff fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0273
+test jscvt.fjcvtzs.0276
+code 1e7e0019
+seed 5e9763cb34a2738b
+in v0=0xea02d87a21b82be4000263762eb920e7 fpcr=0x3000000
+out x25=0x0 nzcv=0x0 fpsr=0x80
+exit end
+test jscvt.fjcvtzs.0277
 code 1e7e005e
 seed 270173ad94cd6646
 in v2=0x3c0647ad9cc4cc50fffb1b08b01b20db fpcr=0x400000
 out x30=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0274
+test jscvt.fjcvtzs.0278
 code 1e7e0124
 seed 06c615b4e5ff643e
 in v9=0xac581fec7f8e12937ca31ca55943d6e0 fpcr=0x3000000 fpsr=0x800000b
 out x4=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0275
+test jscvt.fjcvtzs.0279
 code 1e7e0130
 seed 4376542b4a5a0eaf
 in v9=0xb8d2cb9f6351d5ccc20c354550000000 fpcr=0x1800000
 out x16=0x79575600 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0276
+test jscvt.fjcvtzs.0280
 code 1e7e0142
 seed 2bc8661563135d9e
 in v10=0xfbdae69bd37785e4873a57a3f8858b29 fpcr=0xc00000 fpsr=0x800000c
 out x2=0x0 nzcv=0x0 fpsr=0x800001c
 exit end
-test jscvt.fjcvtzs.0277
+test jscvt.fjcvtzs.0281
 code 1e7e0283
 seed 949e28bc80af43ee
 in v20=0xbcd5d32b50b2afff1b245edafe467a8b fpcr=0x4800000
 out x3=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0278
+test jscvt.fjcvtzs.0282
 code 1e7e0091
 seed 6a3b69f2bb062920
 in v4=0xd0506b008686f46a8000000000000000 fpcr=0xc00000
 out x17=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0279
+test jscvt.fjcvtzs.0283
 code 1e7e0032
 seed 406880a96fdf64fb
 in v1=0x705415b90193b44e8000000000000000 fpcr=0x1c00000
 out x18=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0280
+test jscvt.fjcvtzs.0284
 code 1e7e02b3
 seed 01ddce570b93b3ff
 in v21=0x5332e19b31eb29399bc98c979391ba61 fpcr=0x2400000
 out x19=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0281
+test jscvt.fjcvtzs.0285
 code 1e7e000f
 seed 47ebdcb9293ff74e
 in v0=0x1049ed7d1e30e8fbc012f64378000000 fpcr=0xc00000 fpsr=0x8000082
 out x15=0xfffffffc nzcv=0x0 fpsr=0x8000092
 exit end
-test jscvt.fjcvtzs.0282
+test jscvt.fjcvtzs.0286
+code 1e7e0171
+seed a952836e46562ab6
+in v11=0x03b5e21c1801b04d80000e8a71b7ff67 fpcr=0x1400000 fpsr=0x800009f
+out x17=0x0 nzcv=0x0
+exit end
+test jscvt.fjcvtzs.0287
 code 1e7e00cc
 seed 7bda97d1190d7374
 in v6=0x6c1dda14dd5753f05d1b98b4c83178cd fpcr=0x2c00000
 out x12=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0283
+test jscvt.fjcvtzs.0288
 code 1e7e0230
 seed ac7b9ef96f992933
 in v17=0xa3d841655815f06dfff6adb7d34e39bb fpcr=0x400000
 out x16=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0284
+test jscvt.fjcvtzs.0289
 code 1e7e0087
 seed 9b293210185e9a56
 in v4=0xd1d674d760db0fd2fff40914e0a309cb fpcr=0x2400000
 out x7=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0285
+test jscvt.fjcvtzs.0290
 code 1e7e02db
 seed 51ec3a6b05d34194
 in v22=0x8a1334f0263778a4800f4e5c2c7ba069 fpcr=0x4800000 fpsr=0x81
 out x27=0x0 nzcv=0x0 fpsr=0x91
 exit end
-test jscvt.fjcvtzs.0286
+test jscvt.fjcvtzs.0291
 code 1e7e0120
 seed ca68ba409202d45b
 in v9=0x0d6b2de559088d6240049e515842e112
 out x0=0x2 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0287
+test jscvt.fjcvtzs.0292
 code 1e7e02c7
 seed ea5c1d605d2dc417
 in v22=0x0d4d926b7a215528a626255152d26fa0 fpcr=0x800000
 out x7=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0288
+test jscvt.fjcvtzs.0293
 code 1e7e00e2
 seed 3d92b1daba8b5664
 in v7=0x340a4623b7ad967f3e7961f81c000000 fpcr=0x5400000
 out x2=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0289
+test jscvt.fjcvtzs.0294
 code 1e7e01e8
 seed b56a849a577ce033
 in v15=0x5f74d7ee881e1236bf6af7103c000000 fpcr=0x4400000 fpsr=0x8000098
 out x8=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0290
+test jscvt.fjcvtzs.0295
 code 1e7e014b
 seed 753b64be1aec7ed1
 in v10=0xde040e99d8017d851f2b5da250db0ae5 fpcr=0x4800000
 out x11=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0291
+test jscvt.fjcvtzs.0296
 code 1e7e035e
 seed f3378ff7fedc2754
 in v26=0x8c9905f0d4c5f38f43f0000000000000 fpcr=0x400000
 out x30=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0292
+test jscvt.fjcvtzs.0297
 code 1e7e003a
 seed 69fe5814ad69b298
 in v1=0xb4121a39c20353dcfff062fd0062f749 fpcr=0x3000000
 out x26=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0293
+test jscvt.fjcvtzs.0298
 code 1e7e0195
 seed bcc8c8ae43341387
 in v12=0x92381fe97a59c0cee478da4134868167 fpcr=0x400000
 out x21=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0294
+test jscvt.fjcvtzs.0299
 code 1e7e0397
 seed f54f4f6c098772c0
 in v28=0xe5abab0829a6fadafff83b2f18fe0d15 fpcr=0x4400000
 out x23=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0295
+test jscvt.fjcvtzs.0300
 code 1e7e0280
 seed 2280ddc81e9ef2de
 in v20=0x10ddaf15d85b1016c3e0000000000000 fpcr=0x4c00000
 out x0=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0296
+test jscvt.fjcvtzs.0301
 code 1e7e0120
 seed 8480555b3d6c83ab
 in v9=0x524d0c67c9534b6a0007fef984e7314f
 out x0=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0297
+test jscvt.fjcvtzs.0302
 code 1e7e0114
 seed eda18fb8594a78d8
 in v8=0xfdef397c5af35bb7c3d6c571ba6acd35 fpcr=0x4c00000
 out x20=0x54cb2c00 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0298
+test jscvt.fjcvtzs.0303
 code 1e7e010c
 seed f9026509a2dfdf73
 in v8=0xddc524850483744b0000000000000000 fpcr=0x800000 fpsr=0x8000001
 out x12=0x0
 exit end
-test jscvt.fjcvtzs.0299
+test jscvt.fjcvtzs.0304
 code 1e7e0098
 seed 5bf95ad7e69cf0f0
 in v4=0x1d599bb03d10e6f5fff23705c4cac17b fpcr=0x800000 fpsr=0x8000014
 out x24=0x0 nzcv=0x0 fpsr=0x8000015
 exit end
-test jscvt.fjcvtzs.0300
+test jscvt.fjcvtzs.0305
 code 1e7e03b4
 seed d74ca0f214e2f6ac
 in v29=0xe56d39f7f667a9b3433e0b8e08421374 fpcr=0xc00000
 out x20=0x8421374 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0301
+test jscvt.fjcvtzs.0306
 code 1e7e002d
 seed a6d34ffabda886c9
 in v1=0xf16683addd8ab0267ffd3bdbd0da8583 fpcr=0x2800000 fpsr=0x9e
 out x13=0x0 nzcv=0x0 fpsr=0x9f
 exit end
-test jscvt.fjcvtzs.0302
+test jscvt.fjcvtzs.0307
 code 1e7e030a
 seed a1e13a65140cbf0e
 in v24=0xd591bf20f0869b62000b402b7ec1205b fpcr=0xc00000
 out x10=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0303
+test jscvt.fjcvtzs.0308
 code 1e7e0370
 seed 90e3a52e4f83722f
 in v27=0x97703c8fb908f9337ff094f4e75322e1 fpcr=0x2800000
 out x16=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0304
+test jscvt.fjcvtzs.0309
 code 1e7e0261
 seed ff87440ce61b0dfc
 in v19=0x5c3096c717021ef37feb13ce93fc688c fpcr=0x400000
 out x1=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0305
+test jscvt.fjcvtzs.0310
 code 1e7e00ad
 seed e8dab5dae7526eb6
 in v5=0x0d4c6601f4ed9203fff4eb2a25e554cf fpcr=0x4000000
 out x13=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0306
+test jscvt.fjcvtzs.0311
 code 1e7e0034
 seed 49b22bb9552ef5b2
 in v1=0xebbdae03ee6a30398000000000000000 fpcr=0x1000000 fpsr=0x8000092
 out x20=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0307
+test jscvt.fjcvtzs.0312
 code 1e7e024a
 seed b21914f766f274c7
 in v18=0x7e6990715aaa71cb7ff070df46951beb
 out x10=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0308
+test jscvt.fjcvtzs.0313
 code 1e7e00f5
 seed ff3bbcdb3bb801f6
 in v7=0x893f967494035e05c1e0000000100000 fpcr=0x6400000 fpsr=0x8000014
 out x21=0x80000000 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0309
+test jscvt.fjcvtzs.0314
 code 1e7e0194
 seed be414b081a5a9326
 in v12=0xa359dbc8e0b2af1d311649e4ced1c511
 out x20=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0310
+test jscvt.fjcvtzs.0315
 code 1e7e0286
 seed 344ddd9725afd83e
 in v20=0x5ee4e8c19d7cf3d8fff0000000000000 fpcr=0x800000
 out x6=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0311
+test jscvt.fjcvtzs.0316
 code 1e7e0183
 seed a7b34561ae971a32
 in v12=0x2611ad367494b1c57ff3d3aa86753a17 fpcr=0x2000000 fpsr=0x17
 out x3=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0312
+test jscvt.fjcvtzs.0317
 code 1e7e027a
 seed dc1fcf3c45c10386
 in v19=0x22e13c245602774a31e4b3c9afc624ca fpcr=0x5400000
 out x26=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0313
+test jscvt.fjcvtzs.0318
 code 1e7e01e3
 seed 4d8e3c8fa4aa7de5
 in v15=0x58c2ccf89410a2477ff482c49fa5c1a5
 out x3=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0314
+test jscvt.fjcvtzs.0319
 code 1e7e003f
 seed 03d64fa4fa6826b5
 in v1=0x52cac37c2255216d7ffb36900c5f54ca fpcr=0x400000
 out nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0315
+test jscvt.fjcvtzs.0320
 code 1e7e0070
 seed 7cc83d7c3f6d59ba
 in v3=0xc33fc70fd1648fafbff8000000000000 fpcr=0x800000
 out x16=0xffffffff nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0316
+test jscvt.fjcvtzs.0321
 code 1e7e01b9
 seed a0860c384bee6678
 in v13=0xdf5d5318f9ccd48cfff0000000000000 fpcr=0x1400000
 out x25=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0317
+test jscvt.fjcvtzs.0322
 code 1e7e0248
 seed 9bd6fdbe2d291329
 in v18=0xc2ec6ca6ae5199207ffb576451201035 fpcr=0x2800000
 out x8=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0318
+test jscvt.fjcvtzs.0323
 code 1e7e03ad
 seed 7b8b09f7097688ff
 in v29=0x588df7ae5da90480fff4631955b228f1 fpcr=0x1400000
 out x13=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0319
+test jscvt.fjcvtzs.0324
 code 1e7e0373
 seed abaa20ca131695ce
 in v27=0xa4c7477442b1d3680a97a6c77e7756f8 fpcr=0x400000
 out x19=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0320
+test jscvt.fjcvtzs.0325
 code 1e7e0388
 seed 143becd7974c203d
 in v28=0x25c06ad8b54c1da3800e2e3b22926781 fpcr=0xc00000
 out x8=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0321
+test jscvt.fjcvtzs.0326
 code 1e7e01f7
 seed 5875556e62a88f83
 in v15=0x390a74cb38d52bd9fff17d8c381f52ad fpcr=0xc00000
 out x23=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0322
+test jscvt.fjcvtzs.0327
 code 1e7e00e5
 seed 44768eec6bdd69f7
 in v7=0x7e10ca8efa318ff5d03bbd9cc5222492 fpcr=0x4800000
 out x5=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0323
+test jscvt.fjcvtzs.0328
 code 1e7e010d
 seed a7d2dc90103e888a
 in v8=0x143fdd9f1c1116febfda0c3ea30e8a0e fpcr=0x800000
 out x13=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0324
+test jscvt.fjcvtzs.0329
 code 1e7e032f
 seed f498594d633ad37f
 in v25=0x0e55a9396994f3efb38464eaeb2e7057 fpcr=0x6400000
 out x15=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0325
+test jscvt.fjcvtzs.0330
 code 1e7e0147
 seed a695631d6644fbf9
 in v10=0x7a72b4382ae322b18000000000000000 fpcr=0x4400000
 out x7=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0326
+test jscvt.fjcvtzs.0331
 code 1e7e0254
 seed 08c18191310551a7
 in v18=0x8aae8783ea4e2cd9c1f0000000080000 fpcr=0x1800000
 out x20=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0327
+test jscvt.fjcvtzs.0332
 code 1e7e03a1
 seed 71ec6f3e2abce3e3
 in v29=0xa7e8ea8157bab25c800b07231b8afe49 fpcr=0xc00000 fpsr=0x91
 out x1=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0328
+test jscvt.fjcvtzs.0333
 code 1e7e02cd
 seed 75a50c4bc3a8a729
 in v22=0x0c6abcf2fd90f6954016cffa007b28fe fpcr=0x800000 fpsr=0x92
 out x13=0x5
 exit end
-test jscvt.fjcvtzs.0329
+test jscvt.fjcvtzs.0334
 code 1e7e03af
 seed 0ead38172cd6dd86
 in v29=0x1f3778e65a42774f801fffffffffffff fpcr=0xc00000
 out x15=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0330
+test jscvt.fjcvtzs.0335
 code 1e7e003d
 seed d451877ddbffec83
 in v1=0x7515544ee9fcd640002fffffffffffff fpcr=0x800000
 out x29=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0331
+test jscvt.fjcvtzs.0336
 code 1e7e009a
 seed 110d67747e525e3d
 in v4=0x40d4398f6d9921adc12ba7c9cc000000 fpcr=0x1000000
 out x26=0xfff22c1c nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0332
+test jscvt.fjcvtzs.0337
 code 1e7e03d1
 seed 6e05498989bdd234
 in v30=0x5f94b7c45346ce137ff0000000000000 fpcr=0x2400000
 out x17=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0333
+test jscvt.fjcvtzs.0338
 code 1e7e03d3
 seed a7693ce04b252984
 in v30=0x0e368be36468e169ffff608c474fc6fa
 out x19=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0334
+test jscvt.fjcvtzs.0339
 code 1e7e01ce
 seed 63e2713e17c6d1fb
 in v14=0xe5962fb06d10d3e94008000000000000 fpcr=0xc00000
 out x14=0x3 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0335
+test jscvt.fjcvtzs.0340
 code 1e7e014e
 seed 84a4d7ea33f91625
 in v10=0x8a45cecf5b4cfb51c00c000000000000 fpcr=0x400000
 out x14=0xfffffffd nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0336
+test jscvt.fjcvtzs.0341
 code 1e7e0127
 seed 3753e80dcef60c22
 in v9=0xdf712cf17c3b23a7e6c2643c78d3fbf4 fpcr=0x400000
 out x7=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0337
+test jscvt.fjcvtzs.0342
 code 1e7e02e5
 seed badf93f2abe5ca89
 in v23=0x56c84bb7071cf8f83fe51158e89957e8 fpcr=0x400000
 out x5=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0338
+test jscvt.fjcvtzs.0343
 code 1e7e0222
 seed 66942a69c4243591
 in v17=0x6660ad341ade7db27ff0000000000000 fpcr=0x400000
 out x2=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0339
+test jscvt.fjcvtzs.0344
 code 1e7e0333
 seed d73b7521b082190d
 in v25=0x40a7100665c005a8fff0f16412edee5b fpcr=0x2400000
 out x19=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0340
+test jscvt.fjcvtzs.0345
 code 1e7e0049
 seed 2f8cc62cb29c4e20
 in v2=0x86f4bbb4d7d707cf000a82b1b2643b95
 out x9=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0341
+test jscvt.fjcvtzs.0346
 code 1e7e0390
 seed 85e0626028d3b57a
 in v28=0x7adb2b76baf0db9a401b1c4e016d6c31 fpcr=0x2400000
 out x16=0x6 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0342
+test jscvt.fjcvtzs.0347
 code 1e7e0093
 seed 9a81050cd286febc
 in v4=0xce32a1af323eef477ff0000000000000 fpcr=0x4400000
 out x19=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0343
+test jscvt.fjcvtzs.0348
 code 1e7e02ea
 seed c2454622b31bcf5f
 in v23=0x916364218e3a8b936dd424366b1d9b27 fpcr=0x1400000
 out x10=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0344
+test jscvt.fjcvtzs.0349
 code 1e7e0072
 seed 8f826e68e8808a81
 in v3=0xb9a8408cb00c39eccecbe808ac18e57f fpcr=0x2400000
 out x18=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0345
+test jscvt.fjcvtzs.0350
 code 1e7e0300
 seed b0cc45992357784c
 in v24=0x1eeed52aa99dd0e4949b3aa2670a22a9 fpcr=0x800000
 out x0=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0346
+test jscvt.fjcvtzs.0351
 code 1e7e0046
 seed 40bafb2f02a0b688
 in v2=0x7401f461ed13473f80072a7e8db5ed51 fpcr=0x4400000
 out x6=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0347
+test jscvt.fjcvtzs.0352
 code 1e7e0020
 seed 4269804cba8ac6f7
 in v1=0x9ac37b2cede593726ef9d433c58ddd51 fpcr=0x400000
 out x0=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0348
+test jscvt.fjcvtzs.0353
 code 1e7e019b
 seed 7fd377c8ae2ab801
 in v12=0x384c2dbef39460357fefffffffffffff fpcr=0x4800000 fpsr=0x8000097
 out x27=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0349
+test jscvt.fjcvtzs.0354
 code 1e7e01c3
 seed 0ba6d3afb2f69770
 in v14=0x1ab6b3960118096a0000000000000001 fpcr=0x4000000
 out x3=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0350
+test jscvt.fjcvtzs.0355
 code 1e7e0357
 seed ca3f8c8652046e22
 in v26=0xd61fec73b425e97cc1fa26ac3c000000 fpcr=0x1c00000
 out x23=0x5d953c40 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0351
+test jscvt.fjcvtzs.0356
 code 1e7e0219
 seed 08079d7cffe57707
 in v16=0x0e433df6e39f443b7ff0000000000000 fpcr=0x1c00000
 out x25=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0352
+test jscvt.fjcvtzs.0357
 code 1e7e00a6
 seed cc6002a36dc1c545
 in v5=0x24071e738491b50a3f90dafae0000000 fpcr=0x2800000
 out x6=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0353
+test jscvt.fjcvtzs.0358
 code 1e7e02da
 seed 33e94b6092c98ba2
 in v22=0x77d664455111beeb7ffb80c5996a0fd5 fpcr=0x2000000
 out x26=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0354
+test jscvt.fjcvtzs.0359
 code 1e7e01cc
 seed 8f5adfe7af9e884b
 in v14=0xb7974930c9f3d2fdc010598f43b57b5e fpcr=0x3c00000
 out x12=0xfffffffc nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0355
+test jscvt.fjcvtzs.0360
 code 1e7e03c1
 seed d2988a42b44327c0
 in v30=0xd51d7cddef068f98fff0000000000000 fpcr=0x800000
 out x1=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0356
+test jscvt.fjcvtzs.0361
 code 1e7e0074
 seed 4abdfea2091f4761
 in v3=0x6a2a3787a49e5ff67ff151188d82c945 fpcr=0x400000
 out x20=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0357
+test jscvt.fjcvtzs.0362
 code 1e7e00fd
 seed c95e61f8a32f7280
 in v7=0x3af62f531cea681d3faa29087c000000 fpcr=0x3800000
 out x29=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0358
+test jscvt.fjcvtzs.0363
 code 1e7e0338
 seed 2f2de6fef71fdac7
 in v25=0xce5212ab5a679efb8015fc2087585f1c
 out x24=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0359
+test jscvt.fjcvtzs.0364
 code 1e7e01f9
 seed cd2d1ee7d11f98c0
 in v15=0x49ebe282a810af47c0e9bd8d60000000 fpcr=0x1400000
 out x25=0xffff3214 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0360
+test jscvt.fjcvtzs.0365
 code 1e7e01e7
 seed 7e3473eb907b5b9a
 in v15=0x6553b5db6f5774677ff0000000000000 fpcr=0x800000
 out x7=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0361
+test jscvt.fjcvtzs.0366
 code 1e7e01de
 seed 9387ca4976b755cd
 in v14=0x6b09449bfdb02cfe7ff0000000000000 fpcr=0x5c00000
 out x30=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0362
+test jscvt.fjcvtzs.0367
 code 1e7e031b
 seed a92112a747b2388e
 in v24=0x246bcd516ae5946ffff0000000000000 fpcr=0x2800000
 out x27=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0363
+test jscvt.fjcvtzs.0368
 code 1e7e00c3
 seed 37f0ca2262c29d95
 in v6=0xa21794b9039d4ec5fff0000000000000
 out x3=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0364
+test jscvt.fjcvtzs.0369
 code 1e7e00ea
 seed cd482a9ec84304b8
 in v7=0x0764a96c67c2b225ec3f7dc4cff38740 fpcr=0x800000
 out x10=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0365
+test jscvt.fjcvtzs.0370
 code 1e7e027d
 seed adb31e6656861681
 in v19=0xcab347f966a1a784fff4eac089a8c41f fpcr=0xc00000
 out x29=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0366
+test jscvt.fjcvtzs.0371
 code 1e7e01bd
 seed 8bea29f68cf02e9d
 in v13=0x002ae0cc6d30e408a13221db8aa4848a fpcr=0x2800000
 out x29=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0367
+test jscvt.fjcvtzs.0372
 code 1e7e0042
 seed 8a46b3d2f6a0932f
 in v2=0x9e0aa35f8049c7cac003b6dd16db857b fpcr=0x800000 fpsr=0x800009e
 out x2=0xfffffffe nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0368
+test jscvt.fjcvtzs.0373
+code 1e7e00a0
+seed 88469db7c0633c63
+in v5=0x00ab0d13bba41977000292533abc48d9 fpcr=0x1000000
+out x0=0x0 nzcv=0x0 fpsr=0x80
+exit end
+test jscvt.fjcvtzs.0374
 code 1e7e0295
 seed 8da6d31b113d0f25
 in v20=0x04fee45cda94c5e27fefffffffffffff fpcr=0xc00000
 out x21=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0369
+test jscvt.fjcvtzs.0375
 code 1e7e03df
 seed 59270925e8120953
 in v30=0x0e11eb0c639bc5a4f68a5f556c2ae3ba fpcr=0xc00000
 out nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0370
+test jscvt.fjcvtzs.0376
 code 1e7e03f8
 seed 4b4691622a64bd0c
 in v31=0xbec0e9dcc06d2e7d3de6be8c527e5106 fpcr=0xc00000
 out x24=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0371
+test jscvt.fjcvtzs.0377
 code 1e7e004d
 seed c88feb0a557603b6
 in v2=0xb24e458c0a867d897ff0000000000000 fpcr=0xc00000 fpsr=0x8000095
 out x13=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0372
+test jscvt.fjcvtzs.0378
 code 1e7e000f
 seed 7c892c68c5b4cb17
 in v0=0xc87e9db36ba61e0443e4c879ce24fc40 fpcr=0x6400000
 out x15=0x27e20000 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0373
+test jscvt.fjcvtzs.0379
 code 1e7e025a
 seed e378441357d8d19b
 in v18=0xa183e25739d1fd82fff0000000000000 fpcr=0x800000
 out x26=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0374
+test jscvt.fjcvtzs.0380
 code 1e7e0088
 seed a63a0ef9e426dfd7
 in v4=0x4dfd8c84a3bfa9118000000000000000 fpcr=0x400000
 out x8=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0375
+test jscvt.fjcvtzs.0381
 code 1e7e00de
 seed 664a019f544a26ab
 in v6=0x332091a013e439d7d7863ca32ce9013a fpcr=0x2400000
 out x30=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0376
+test jscvt.fjcvtzs.0382
 code 1e7e0292
 seed cf8f4f0129d6a621
 in v20=0x9a5dface45b6ce6e4273f01e6c000000 fpcr=0x4c00000 fpsr=0x8a
 out x18=0x1e6c000 nzcv=0x0 fpsr=0x8b
 exit end
-test jscvt.fjcvtzs.0377
+test jscvt.fjcvtzs.0383
 code 1e7e00f4
 seed 60287a4cb18db7a1
 in v7=0xbc6a7541b9374f077ff0000000000000 fpcr=0x400000
 out x20=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0378
+test jscvt.fjcvtzs.0384
 code 1e7e03a7
 seed 909bdd2d9e564593
 in v29=0x7d372c7fdac4f22b0000000000000000 fpcr=0x1c00000
 out x7=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0379
+test jscvt.fjcvtzs.0385
 code 1e7e0009
 seed e043f25d09409395
 in v0=0x84a26a1f481d0841fff0000000000000
 out x9=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0380
+test jscvt.fjcvtzs.0386
 code 1e7e0178
 seed c1f254f2b3a8c636
 in v11=0x71f510f85828301d7ffb184d079b7d4e fpcr=0x800000
 out x24=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0381
+test jscvt.fjcvtzs.0387
 code 1e7e02fb
 seed 22212c8568dc08c8
 in v23=0x86f8032f0a51b587fff0000000000000 fpcr=0x2000000
 out x27=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0382
+test jscvt.fjcvtzs.0388
 code 1e7e0191
 seed 9882c66919600bf0
 in v12=0x7e673f827de81ae0c002333c14000000 fpcr=0xc00000
 out x17=0xfffffffe nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0383
+test jscvt.fjcvtzs.0389
 code 1e7e00d3
 seed b30349df9a6d41f1
 in v6=0xbaf12dea42b7aa8a7197580e539152e3 fpcr=0x5c00000
 out x19=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0384
+test jscvt.fjcvtzs.0390
 code 1e7e0145
 seed a20c90796b85573c
 in v10=0x6b58a6b40c4ce377ffe9d6390042843b fpcr=0x1800000
 out x5=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0385
+test jscvt.fjcvtzs.0391
 code 1e7e0253
 seed a2fca3cfcc4feb19
 in v18=0xa687eefb93dde886fffbcbd4f114f857 fpcr=0x2000000 fpsr=0x800009c
 out x19=0x0 nzcv=0x0 fpsr=0x800009d
 exit end
-test jscvt.fjcvtzs.0386
+test jscvt.fjcvtzs.0392
 code 1e7e01fd
 seed d5e08c158898015f
 in v15=0x7a3eee4c7c7a590641e0000000500000 fpcr=0x800000 fpsr=0x1a
 out x29=0x80000002 nzcv=0x0 fpsr=0x1b
 exit end
-test jscvt.fjcvtzs.0387
+test jscvt.fjcvtzs.0393
 code 1e7e0177
 seed 250bbcf265da35ef
 in v11=0x5be7654e9d20b7e0c3e1486b5c5a727b fpcr=0x2000000
 out x23=0x2c6c2800 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0388
+test jscvt.fjcvtzs.0394
 code 1e7e00b3
 seed 655c51c14ebb9f0c
 in v5=0x953807bdaf059617fff0000000000000
 out x19=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0389
+test jscvt.fjcvtzs.0395
 code 1e7e01ba
 seed a4fd96c73755c593
 in v13=0xb01a644b7d91ea785cd4e4b32fd551b0 fpcr=0x6c00000
 out x26=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0390
+test jscvt.fjcvtzs.0396
 code 1e7e0066
 seed 82e1ba2c3782ef22
 in v3=0xe7a81ee47fd19b19960e76b2f32c7a8b fpcr=0x2000000
 out x6=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0391
+test jscvt.fjcvtzs.0397
 code 1e7e00eb
 seed b3f8ad1524fb0e7c
 in v7=0xa89a10864b0c8f217ff4887af31e9fc1 fpcr=0x2c00000
 out x11=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0392
+test jscvt.fjcvtzs.0398
 code 1e7e0300
 seed 6cda1cf3fa9845b9
 in v24=0xaa08481f49e1c590bffba2a91fcda31e
 out x0=0xffffffff nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0393
+test jscvt.fjcvtzs.0399
 code 1e7e001e
 seed 63e05c69c0ea694d
 in v0=0x5632be357eda3935fff765692f515327 fpcr=0x800000
 out x30=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0394
+test jscvt.fjcvtzs.0400
 code 1e7e0279
 seed df4d5b9ba4760a9b
 in v19=0x475b586aec35966a8007ff23539ec1bf fpcr=0x2000000
 out x25=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0395
+test jscvt.fjcvtzs.0401
 code 1e7e01e5
 seed 92ebc5e7b9b41f82
 in v15=0x4cd45c5b0ab2b07e8000000000000000 fpcr=0x3400000
 out x5=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0396
+test jscvt.fjcvtzs.0402
 code 1e7e006a
 seed 862678979e860305
 in v3=0xa97d03f3a4161687bfeeed9734000000 fpcr=0x400000
 out x10=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0397
+test jscvt.fjcvtzs.0403
 code 1e7e03b6
 seed fe4b10f89959c895
 in v29=0x880a378bc08169eefff0000000000000 fpcr=0x1400000
 out x22=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0398
+test jscvt.fjcvtzs.0404
 code 1e7e038e
 seed 8c9784af80117136
 in v28=0x173973300c6945883e694c8670000000 fpcr=0x1c00000
 out x14=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0399
+test jscvt.fjcvtzs.0405
 code 1e7e00d9
 seed daed5d1fa8b69530
 in v6=0x8a7be3d366b0c3aefffa0fd47fe80bbd
 out x25=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0400
+test jscvt.fjcvtzs.0406
 code 1e7e011b
 seed 7d7295531191826c
 in v8=0x74e0a64f75e2a24c7ff07929c9824b47 fpcr=0x800000
 out x27=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0401
+test jscvt.fjcvtzs.0407
 code 1e7e0144
 seed aa678a813f19b61e
 in v10=0xb0646ec4f9c2d5a4fff0000000000000 fpcr=0x800000
 out x4=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0402
+test jscvt.fjcvtzs.0408
 code 1e7e02b1
 seed 598386b7d3521dc7
 in v21=0x9df6b34d2b694d06c150000000000000 fpcr=0xc00000
 out x17=0xffc00000 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0403
+test jscvt.fjcvtzs.0409
 code 1e7e01c7
 seed ec7264285ca407fd
 in v14=0x1fcd7423dce9d545629545725727fd59 fpcr=0x800000 fpsr=0x7
 out x7=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0404
+test jscvt.fjcvtzs.0410
 code 1e7e000e
 seed 46a8f998030143c5
 in v0=0xd24919974869d99eecd519c833ae753f fpcr=0xc00000
 out x14=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0405
+test jscvt.fjcvtzs.0411
 code 1e7e0275
 seed 13cc26e3df2d5260
 in v19=0x92035acaee191ad47fff6ac579bab291 fpcr=0x1400000 fpsr=0xa
 out x21=0x0 nzcv=0x0 fpsr=0xb
 exit end
-test jscvt.fjcvtzs.0406
+test jscvt.fjcvtzs.0412
 code 1e7e019b
 seed 7c0798919252edec
 in v12=0xd671d4680de391c2c58324ac55365e5c fpcr=0x2800000
 out x27=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0407
+test jscvt.fjcvtzs.0413
 code 1e7e02d7
 seed 0d9a0f79497578eb
 in v22=0x42c4a4b4f7094052bfd2198ec0641f6a fpcr=0xc00000
 out x23=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0408
+test jscvt.fjcvtzs.0414
 code 1e7e030f
 seed f73537268bfe7992
 in v24=0x750581e007d492f5000d77950288d78f fpcr=0x4400000 fpsr=0x97
 out x15=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0409
+test jscvt.fjcvtzs.0415
 code 1e7e03a0
 seed 4ee51a617eff394d
 in v29=0x86e158de5e1bff827ff0000000000000 fpcr=0x800000
 out x0=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0410
+test jscvt.fjcvtzs.0416
 code 1e7e006a
 seed 7ee03a68d0fcacc1
 in v3=0x68aa5496e9dfe5ffc14b9c866c000000 fpcr=0x6400000
 out x10=0xffc8c6f4 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0411
+test jscvt.fjcvtzs.0417
 code 1e7e01d3
 seed f146c33153d6e6c6
 in v14=0x5e7ba9545e2a9304eedddfebfc958e10 fpcr=0x3000000
 out x19=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0412
+test jscvt.fjcvtzs.0418
 code 1e7e02b1
 seed a5d3870b2d9f097a
 in v21=0x99e9378c7f123c3d800146730d7f700d fpcr=0x2800000
 out x17=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0413
+test jscvt.fjcvtzs.0419
 code 1e7e00a5
 seed 01bb8122abe9ad7a
 in v5=0x42ea88754ea585e4fffd35f41b0faefe fpcr=0x1c00000 fpsr=0x800001a
 out x5=0x0 nzcv=0x0 fpsr=0x800001b
 exit end
-test jscvt.fjcvtzs.0414
+test jscvt.fjcvtzs.0420
 code 1e7e0266
 seed 5e7947e8ae72dfed
 in v19=0x092c69e473d54d01c00f38e29c093756 fpcr=0x1400000
 out x6=0xfffffffd nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0415
+test jscvt.fjcvtzs.0421
 code 1e7e0134
 seed c0ba2beaf4a39d6e
 in v9=0x16b80e4672e54bbf8000000000000000 fpcr=0x4400000
 out x20=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0416
+test jscvt.fjcvtzs.0422
 code 1e7e02f1
 seed 7e27fae2b7c232e9
 in v23=0x291cf0d08308cd160000000000000000 fpcr=0x5400000
 out x17=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0417
+test jscvt.fjcvtzs.0423
 code 1e7e021e
 seed 3ed2e6e617a33da7
 in v16=0xab8305fe83f8504dfff743c18fd0f567 fpcr=0x4c00000 fpsr=0x9b
 out x30=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0418
+test jscvt.fjcvtzs.0424
 code 1e7e026c
 seed e09536ec7a1f3613
 in v19=0x6715336dc3f70ac67a3f948cdc1bb690 fpcr=0x5000000
 out x12=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0419
+test jscvt.fjcvtzs.0425
 code 1e7e0296
 seed c29fc087c08757aa
 in v20=0xf3ac0316f4f9c45166c3c652afb109d9 fpcr=0x1000000 fpsr=0x7
 out x22=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0420
+test jscvt.fjcvtzs.0426
 code 1e7e0038
 seed 7833090b8f4646b0
 in v1=0x3fd719b43a65b3517fefffffffffffff fpcr=0x400000 fpsr=0x8000006
 out x24=0x0 nzcv=0x0 fpsr=0x8000007
 exit end
-test jscvt.fjcvtzs.0421
+test jscvt.fjcvtzs.0427
 code 1e7e016c
 seed 3a4ff02e6189e1c7
 in v11=0x679cf6ac34e80b137fff25631d7c25af fpcr=0x400000
 out x12=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0422
+test jscvt.fjcvtzs.0428
 code 1e7e0234
 seed 8e30e57216dbb2b4
 in v17=0xcacb52233f0cf6db7ff0000000000000
 out x20=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0423
+test jscvt.fjcvtzs.0429
+code 1e7e038c
+seed ee649f52e8b31091
+in v28=0x0e68d84d0af28605000d09b27843062f fpcr=0x1c00000 fpsr=0x8000018
+out x12=0x0 nzcv=0x0 fpsr=0x8000098
+exit end
+test jscvt.fjcvtzs.0430
 code 1e7e0004
 seed 5a9d08e50abc585b
 in v0=0xd72a3722ee5b44867ff0000000000000 fpcr=0x1c00000
 out x4=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0424
+test jscvt.fjcvtzs.0431
 code 1e7e0305
 seed 4aed1ef05fa22a09
 in v24=0xe497ab4a09eb9e56563a64722aaebe42 fpsr=0x9
 out x5=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0425
+test jscvt.fjcvtzs.0432
 code 1e7e006a
 seed cf1f6375104265cc
 in v3=0x80d157cca1c1958c41d0000000a00000
 out x10=0x40000002 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0426
+test jscvt.fjcvtzs.0433
 code 1e7e00d1
 seed 54e35e06aa5255f2
 in v6=0xf3fc9a562e6ce7467fe7eae85eb3736a fpcr=0x800000
 out x17=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0427
+test jscvt.fjcvtzs.0434
 code 1e7e02b1
 seed 6b47d9f660cea640
 in v21=0xdb60e1b2de9723793dd3b1428c000000 fpcr=0x5c00000
 out x17=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0428
+test jscvt.fjcvtzs.0435
 code 1e7e013c
 seed f6d2d040508673b6
 in v9=0x815fe9ca36ea03788000000000000000 fpcr=0x800000
 out x28=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0429
+test jscvt.fjcvtzs.0436
 code 1e7e00f0
 seed f6966cce36fdbacd
 in v7=0x965e14635c208cda3fdad17ae997540f fpcr=0xc00000
 out x16=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0430
+test jscvt.fjcvtzs.0437
 code 1e7e00b1
 seed 973ebb0264877b37
 in v5=0x2955e6d2a494389efff0000000000000 fpcr=0x800000
 out x17=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0431
+test jscvt.fjcvtzs.0438
 code 1e7e03c7
 seed 7042af15bd4e7112
 in v30=0x46bac297593403277ff0000000000000 fpcr=0xc00000 fpsr=0x1a
 out x7=0x0 fpsr=0x1b
 exit end
-test jscvt.fjcvtzs.0432
+test jscvt.fjcvtzs.0439
 code 1e7e00ec
 seed cb623d636c242543
 in v7=0x55ba85eb077c12c38000000000000000 fpcr=0x2800000
 out x12=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0433
+test jscvt.fjcvtzs.0440
 code 1e7e03d1
 seed 2e98941d9a1121f5
 in v30=0xed40d16ec173ece5bfe16b12c59a75bc fpcr=0x400000
 out x17=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0434
+test jscvt.fjcvtzs.0441
 code 1e7e02d7
 seed 9e2d0ff2fce7b322
 in v22=0x9ef7a74b6254624dfffa5caa731c9e20
 out x23=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0435
+test jscvt.fjcvtzs.0442
 code 1e7e0349
 seed 88e00f53f93f2b40
 in v26=0x9bd07e7d6ed375b40000000000000000 fpcr=0x4000000 fpsr=0xd
 out x9=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0436
+test jscvt.fjcvtzs.0443
 code 1e7e03fe
 seed 4145ee70b3af784c
 in v31=0x7d569172d8034e17c2300c1750000000 fpcr=0x4400000
 out x30=0xf3e8b000 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0437
+test jscvt.fjcvtzs.0444
 code 1e7e01cd
 seed 0ac8c1ee553c12cc
 in v14=0xa90002487d435f3f90fe2b362b5a12d3 fpcr=0x2800000 fpsr=0x99
 out x13=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0438
+test jscvt.fjcvtzs.0445
 code 1e7e030c
 seed 0f7b43b66cfcd7d5
 in v24=0xac4dcca9c2d53e2d7ffbac704ecfa2e6 fpcr=0x1c00000
 out x12=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0439
+test jscvt.fjcvtzs.0446
 code 1e7e030b
 seed cf8516dacb4a2131
 in v24=0xdec3d11d4929c90f8000000000000000 fpcr=0x1400000
 out x11=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0440
+test jscvt.fjcvtzs.0447
 code 1e7e01d6
 seed de4a7173737ff3bc
 in v14=0xa920246420c9381d0000000000000000 fpcr=0x4c00000
 out x22=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0441
+test jscvt.fjcvtzs.0448
 code 1e7e012a
 seed af87cc709eb9958b
 in v9=0x62d213fa82a1b96a400c000000000000 fpcr=0x1000000 fpsr=0x8000013
 out x10=0x3 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0442
+test jscvt.fjcvtzs.0449
 code 1e7e027f
 seed 9254a1a50b95a4ab
 in v19=0x6ec296a74430fc357ff7058363f2bd63 fpcr=0x400000
 out nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0443
+test jscvt.fjcvtzs.0450
 code 1e7e0184
 seed 331e2a81129969d7
 in v12=0x3a5e3a7efca3606c3ff8000000000000 fpcr=0x1000000
 out x4=0x1 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0444
+test jscvt.fjcvtzs.0451
 code 1e7e032f
 seed 52878e8d6672442e
 in v25=0x9e2a5b78244de440fff530c1d12e68ab
 out x15=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0445
+test jscvt.fjcvtzs.0452
 code 1e7e02ab
 seed 12ea80ceaaeb180e
 in v21=0x96cd4bd5f7cc708756efecbf3194f604 fpcr=0x2c00000
 out x11=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0446
+test jscvt.fjcvtzs.0453
 code 1e7e033e
 seed f3d12285178a8b47
 in v25=0x184e47ffaa8f89417ff1f07d7883660b fpcr=0x4000000
 out x30=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0447
+test jscvt.fjcvtzs.0454
 code 1e7e0162
 seed f4bf48b1a5b7493a
 in v11=0x3460dcb62ef194beff9f5dcba2256437 fpcr=0x800000
 out x2=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0448
+test jscvt.fjcvtzs.0455
 code 1e7e034d
 seed 047b54f1ab97687c
 in v26=0x246ffcfcfc608bd47ff56571d36d38a1 fpcr=0xc00000
 out x13=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0449
+test jscvt.fjcvtzs.0456
 code 1e7e0035
 seed 6ea2771b0fe90391
 in v1=0x0cc17098964207992159085125e73222 fpcr=0x2400000
 out x21=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0450
+test jscvt.fjcvtzs.0457
 code 1e7e0231
 seed c0337103c85d76ca
 in v17=0xbc48455d529f7cec7ff93b83209d6a91
 out x17=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0451
+test jscvt.fjcvtzs.0458
 code 1e7e03e7
 seed 2233a6241ae391f5
 in v31=0xaf844d100f8105bc000fffffffffffff fpcr=0xc00000
 out x7=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0452
+test jscvt.fjcvtzs.0459
 code 1e7e003b
 seed a6dfed766bf9f81b
 in v1=0x95f4a357e06ade293ade6f844411731b fpcr=0xc00000
 out x27=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0453
+test jscvt.fjcvtzs.0460
 code 1e7e03e1
 seed 9d7b85ff587e94e5
 in v31=0x0f377956d4cfa135fff0000000000000 fpcr=0x400000
 out x1=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0454
+test jscvt.fjcvtzs.0461
 code 1e7e026c
 seed 766aad694d28c1b3
 in v19=0x00e65569c16968a44150000140000000
 out x12=0x400005 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0455
+test jscvt.fjcvtzs.0462
 code 1e7e03a6
 seed 29d5d9aa8efbf275
 in v29=0x578045a50f8a661afff497cd706fdd69 fpcr=0x800000 fpsr=0x800009c
 out x6=0x0 nzcv=0x0 fpsr=0x800009d
 exit end
-test jscvt.fjcvtzs.0456
+test jscvt.fjcvtzs.0463
 code 1e7e0233
 seed 0fd00c427d942d2a
 in v17=0x71ccdcd24a2bf5683e1b4220b4000000 fpcr=0x2800000
 out x19=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0457
+test jscvt.fjcvtzs.0464
 code 1e7e0220
 seed 3e4c01e4532ef2d8
 in v17=0xe215f00cffc2c1b043312d8fe9a8f0ca
 out x0=0xe9a8f0ca nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0458
+test jscvt.fjcvtzs.0465
 code 1e7e01ff
 seed 261f876fd5e0d3cf
 in v15=0xd7dfcc6a17d56130fff0000000000000 fpcr=0x5400000
 out nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0459
+test jscvt.fjcvtzs.0466
 code 1e7e03ff
 seed ac258a66b65c0be9
 in v31=0x1ab433b870b8e9e19a4287acd0df043e fpcr=0x400000
 out nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0460
+test jscvt.fjcvtzs.0467
 code 1e7e0267
 seed 46e7352442ea7646
 in v19=0x6b807a4313cebf5a7ff0000000000000 fpcr=0x800000
 out x7=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0461
+test jscvt.fjcvtzs.0468
 code 1e7e02d1
 seed 49024a9d5e98f160
 in v22=0x600fa63631cd8a0c00000bc427631979 fpcr=0xc00000
 out x17=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0462
+test jscvt.fjcvtzs.0469
 code 1e7e02b3
 seed 35879befc2f674d7
 in v21=0xa76ca4c0c0e1c171e0ef46239eac16de fpcr=0x1800000
 out x19=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0463
+test jscvt.fjcvtzs.0470
 code 1e7e0207
 seed 22e95bcb2b406aa4
 in v16=0xd45a9960ac6b8906fff0000000000000 fpcr=0x1400000
 out x7=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0464
+test jscvt.fjcvtzs.0471
+code 1e7e02d3
+seed ce20731fd0caa747
+in v22=0x3628d1b1b15847230001f1788a7c4f7d fpcr=0x3400000
+out x19=0x0 nzcv=0x0 fpsr=0x80
+exit end
+test jscvt.fjcvtzs.0472
 code 1e7e0174
 seed d27bbf635cdab253
 in v11=0x7e86034c354ed0ad800fffffffffffff fpcr=0x2c00000
 out x20=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0465
+test jscvt.fjcvtzs.0473
 code 1e7e0073
 seed 6628a09607b83237
 in v3=0xbd2c342e711b6e5f8000000000000000 fpcr=0x5800000
 out x19=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0466
+test jscvt.fjcvtzs.0474
 code 1e7e01aa
 seed a46c0d9f985867e5
 in v13=0xfe135f0ef8c95ec8ffe43269ade1ac26 fpcr=0xc00000
 out x10=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0467
+test jscvt.fjcvtzs.0475
 code 1e7e0143
 seed 48fa8ea9aff295fe
 in v10=0x1a4f0227e11e2f60fff89de453efd381 fpcr=0x4800000
 out x3=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0468
+test jscvt.fjcvtzs.0476
 code 1e7e03c6
 seed 6c14912a4289f273
 in v30=0xf29f3d734493bd40d1c5921b2b17f6e1 fpcr=0x1000000
 out x6=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0469
+test jscvt.fjcvtzs.0477
 code 1e7e02ea
 seed 5900e927f6094843
 in v23=0x4d6f97b0cebb2798efb7b897e30bef72 fpcr=0x800000
 out x10=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0470
+test jscvt.fjcvtzs.0478
 code 1e7e0267
 seed 7197c83e6a4aece9
 in v19=0xeef1d719f0e99e5a8000000000000001 fpcr=0x6400000 fpsr=0x96
 out x7=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0471
+test jscvt.fjcvtzs.0479
 code 1e7e00fb
 seed dc634938cc94ea91
 in v7=0x289ec0d922d7a211e7f4e81c7eedf885 fpcr=0x5c00000
 out x27=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0472
+test jscvt.fjcvtzs.0480
 code 1e7e028c
 seed 474d4840b8e22149
 in v20=0x193ea19446d9cc307ff4c999e8958d15 fpcr=0x400000
 out x12=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0473
+test jscvt.fjcvtzs.0481
 code 1e7e02c2
 seed 2ef240073b5a404f
 in v22=0x7731442d8f96bfc13fff105ed54ebf91 fpcr=0x1400000 fpsr=0x8000006
 out x2=0x1 nzcv=0x0 fpsr=0x8000016
 exit end
-test jscvt.fjcvtzs.0474
+test jscvt.fjcvtzs.0482
 code 1e7e027e
 seed 286f93df77023467
 in v19=0x9974dcf0b4e4005ac8c237ef0aced0eb fpcr=0x1c00000
 out x30=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0475
+test jscvt.fjcvtzs.0483
 code 1e7e01af
 seed 4bb2e23c8a14a69a
 in v13=0xe399c31b4bfd6ae57ff07969776a6275 fpcr=0x5400000 fpsr=0x8000098
 out x15=0x0 nzcv=0x0 fpsr=0x8000099
 exit end
-test jscvt.fjcvtzs.0476
+test jscvt.fjcvtzs.0484
 code 1e7e01bf
 seed 0d7f63c6de699766
 in v13=0xfaa272faa48481ed0001b60dde2be23f fpcr=0x2400000
 out nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0477
+test jscvt.fjcvtzs.0485
+code 1e7e0324
+seed 1dce89be0961534d
+in v25=0x700f27f75e2b6b8b8008c6311a627fdf fpcr=0x3400000 fpsr=0x800001b
+out x4=0x0 nzcv=0x0 fpsr=0x800009b
+exit end
+test jscvt.fjcvtzs.0486
 code 1e7e00d6
 seed 2f8e37f52dbd8a03
 in v6=0xffaaf7068d11daa7fff0000000000000 fpcr=0x1c00000
 out x22=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0478
+test jscvt.fjcvtzs.0487
 code 1e7e0128
 seed da78075824dc2dfc
 in v9=0x6155a10725fc5be1c1f0000000780000 fpcr=0x4800000
 out x8=0xfffffff9 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0479
+test jscvt.fjcvtzs.0488
 code 1e7e02af
 seed 55f1ac62d66807fa
 in v21=0x12fb5e78ebff4f30fff8d2e3e8a36008 fpcr=0x4c00000
 out x15=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0480
+test jscvt.fjcvtzs.0489
 code 1e7e03b0
 seed 7c6eae0cb151acdf
 in v29=0x42b5b707e44588d9c150000120000000 fpcr=0x1400000
 out x16=0xffbffffc nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0481
+test jscvt.fjcvtzs.0490
 code 1e7e028d
 seed 39b57c1dae38596d
 in v20=0x304839ed66524ec2fff0000000000000 fpcr=0x800000
 out x13=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0482
+test jscvt.fjcvtzs.0491
 code 1e7e000a
 seed 0f8b20bc8c710d23
 in v0=0xd92a2387a6833abf581dcb23685b61aa fpcr=0x4c00000
 out x10=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0483
+test jscvt.fjcvtzs.0492
 code 1e7e01cd
 seed 1f3d3360775f7bcb
 in v14=0x924872f78e91b373fff7b959357b40ed fpcr=0x7800000
 out x13=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0484
+test jscvt.fjcvtzs.0493
 code 1e7e006d
 seed 067e12a55b31bbcf
 in v3=0x0828a5d3db6164ed002fffffffffffff fpcr=0x400000
 out x13=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0485
+test jscvt.fjcvtzs.0494
 code 1e7e0121
 seed 4c1921f08250e62b
 in v9=0x039c7739d5c7a13e48ff3cc4999933ca fpcr=0x1400000
 out x1=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0486
+test jscvt.fjcvtzs.0495
 code 1e7e039c
 seed e8a52aed797b0471
 in v28=0xfbd67ef601f7c60b315856182933c146 fpcr=0x2400000
 out x28=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0487
+test jscvt.fjcvtzs.0496
 code 1e7e0159
 seed 7cb49fdc8f187b30
 in v10=0x1d9ca2d2d923a2cffff2888a319bc489 fpcr=0xc00000
 out x25=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0488
+test jscvt.fjcvtzs.0497
 code 1e7e0039
 seed 7c6566f4cef0391d
 in v1=0x9a26727dab599003a2d3fc5e9c868178 fpcr=0x2000000 fpsr=0x97
 out x25=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0489
+test jscvt.fjcvtzs.0498
 code 1e7e008b
 seed 5a7d96404d32f419
 in v4=0x770a6ade055c735b3fe77fd974ed52dc fpcr=0x400000
 out x11=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0490
+test jscvt.fjcvtzs.0499
 code 1e7e001e
 seed 7d9d4fc9d8191f5e
 in v0=0x641dfcd7f2aaaba4800fffffffffffff fpcr=0xc00000
 out x30=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0491
+test jscvt.fjcvtzs.0500
 code 1e7e012e
 seed 73bee5179e59cc1f
 in v9=0xd54c6d07b50b60e03ff8000000000000 fpcr=0x6400000
 out x14=0x1 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0492
+test jscvt.fjcvtzs.0501
 code 1e7e0343
 seed 2c33d656754dc115
 in v26=0x94edc6b9a934ad6f8000000000000000 fpcr=0x1800000
 out x3=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0493
+test jscvt.fjcvtzs.0502
 code 1e7e012e
 seed 9a0fc4f7649c7e8f
 in v9=0x0a2137fc7705f95218fbca55d22bab39 fpcr=0x1400000
 out x14=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0494
+test jscvt.fjcvtzs.0503
 code 1e7e036b
 seed 1f5e5e0ef40ac87c
 in v27=0x810d07a5eddd009f979fadde85b30848 fpcr=0x4800000
 out x11=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0495
+test jscvt.fjcvtzs.0504
 code 1e7e01bc
 seed 7063fd2813bcb126
 in v13=0xa8737a403654c5d0fffec2d2ea10cb26 fpcr=0x4400000
 out x28=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0496
+test jscvt.fjcvtzs.0505
 code 1e7e0170
 seed c762d98a33333bd5
 in v11=0x0a710ac41d972f47fff48ab972c3de1b fpcr=0x1400000
 out x16=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0497
+test jscvt.fjcvtzs.0506
 code 1e7e0088
 seed a03ca8c30ef0a288
 in v4=0x841ede65466a78b8f8f9c348e679cb84 fpcr=0x4400000 fpsr=0x96
 out x8=0x0 nzcv=0x0 fpsr=0x97
 exit end
-test jscvt.fjcvtzs.0498
+test jscvt.fjcvtzs.0507
 code 1e7e0004
 seed 7eb220bc683e4a1d
 in v0=0x0e898ae245c6ca328000000000000000 fpcr=0x1400000
 out x4=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0499
+test jscvt.fjcvtzs.0508
 code 1e7e0381
 seed 3d24e3d2199c81ec
 in v28=0x073771a0322a610f36f315b6728736a8 fpcr=0x800000
 out x1=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0500
+test jscvt.fjcvtzs.0509
 code 1e7e03a3
 seed dcfc7b564560d87f
 in v29=0x0eef6db5e6bcdfd00000beefdc53703d fpcr=0x800000
 out x3=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0501
+test jscvt.fjcvtzs.0510
 code 1e7e03f8
 seed d82b10b755ce8f93
 in v31=0x033b6b35fa8b4b9d0000000000000000 fpcr=0x800000
 out x24=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0502
+test jscvt.fjcvtzs.0511
 code 1e7e01f1
 seed b2589d945cedac01
 in v15=0xf45a13e385a8978afff0000000000000 fpcr=0x1800000 fpsr=0x90
 out x17=0x0 nzcv=0x0 fpsr=0x91
 exit end
-test jscvt.fjcvtzs.0503
+test jscvt.fjcvtzs.0512
 code 1e7e037b
 seed b76394ffc3085bfe
 in v27=0x33196a2f0c404afc7fe2aa28e781330c fpcr=0x400000
 out x27=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0504
+test jscvt.fjcvtzs.0513
 code 1e7e03a2
 seed e31f35753794bfb1
 in v29=0x9e91f56429a95f4ac00c976d37f63f0e fpcr=0x1000000
 out x2=0xfffffffd nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0505
+test jscvt.fjcvtzs.0514
 code 1e7e02c5
 seed 3deecd74b507d248
 in v22=0x25c17b122a959a54c02597bf5c000000 fpcr=0x6c00000 fpsr=0x15
 out x5=0xfffffff6 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0506
+test jscvt.fjcvtzs.0515
 code 1e7e02c7
 seed af6e6ba5f0cbf4eb
 in v22=0x817143c791ceaa827ff0000000000000 fpcr=0x2c00000
 out x7=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0507
+test jscvt.fjcvtzs.0516
 code 1e7e01fd
 seed 6e74b223b796f901
 in v15=0x5d1eae4da865f1cf01431c9bd42219ae fpcr=0x1000000 fpsr=0xb
 out x29=0x0 nzcv=0x0 fpsr=0x1b
 exit end
-test jscvt.fjcvtzs.0508
+test jscvt.fjcvtzs.0517
 code 1e7e0270
 seed 8cf9561c3a862a13
 in v19=0xf7514a419eb890928000000000000000 fpcr=0x2800000
 out x16=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0509
+test jscvt.fjcvtzs.0518
 code 1e7e00b4
 seed bfc8ffbc48153860
 in v5=0xb9ee4a59d79fb6380023a681f49abda2
 out x20=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0510
+test jscvt.fjcvtzs.0519
 code 1e7e023b
 seed 2ce1a81937d1cedd
 in v17=0xc1bbb6ed3e8b2bf54deee14d37c341b0 fpcr=0x4c00000
 out x27=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0511
+test jscvt.fjcvtzs.0520
 code 1e7e034e
 seed f1a4af0340563230
 in v26=0xf67041c9dacc943f3917d6b5349ba7e1 fpcr=0x400000
 out x14=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0512
+test jscvt.fjcvtzs.0521
 code 1e7e02a3
 seed 5e7c18440dc43504
 in v21=0x5f3fb71bab91197b801fffffffffffff fpcr=0xc00000
 out x3=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0513
+test jscvt.fjcvtzs.0522
 code 1e7e039a
 seed 82f6c14a551522a2
 in v28=0x9cc6e8adee3d50e4fff4204484afbceb fpcr=0x1000000
 out x26=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0514
+test jscvt.fjcvtzs.0523
 code 1e7e011d
 seed e7fadb9b58db4aec
 in v8=0x693687030d47c6db540e0d8bdc0479f1 fpcr=0x3400000
 out x29=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0515
+test jscvt.fjcvtzs.0524
 code 1e7e0302
 seed 43bc1a970ebf7811
 in v24=0x370b8217806f521fc3d66c31a313d775 fpcr=0x400000
 out x2=0xb0a22c00 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0516
+test jscvt.fjcvtzs.0525
 code 1e7e02cd
 seed 0c3222bcdf9de262
 in v22=0x0bb5a3de062226c5bf3612cf30000000
 out x13=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0517
+test jscvt.fjcvtzs.0526
 code 1e7e02df
 seed 78c14df5b95f4c38
 in v22=0x5346ed89a63a4519fff0000000000000
 out nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0518
+test jscvt.fjcvtzs.0527
 code 1e7e0302
 seed e8b9cdb2fa295e2d
 in v24=0x77410df6fbd44196fffc60d45b941aa3 fpcr=0x1c00000 fpsr=0x83
 out x2=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0519
+test jscvt.fjcvtzs.0528
 code 1e7e0052
 seed 2c36ebf286b8f028
 in v2=0x742a4c127d84fc4ddffca156b28d423c fpcr=0xc00000
 out x18=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0520
+test jscvt.fjcvtzs.0529
 code 1e7e01d7
 seed 41a189350ac0f3a7
 in v14=0x06c1d2ac0bb9bc7a7fe53b77caf43935 fpcr=0x800000
 out x23=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0521
+test jscvt.fjcvtzs.0530
 code 1e7e0181
 seed 6f5cf13bba8ecc4d
 in v12=0xcff5d20eb51e94f1d11b367a5a2a97fa fpcr=0x800000
 out x1=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0522
+test jscvt.fjcvtzs.0531
 code 1e7e0108
 seed aecad4c7bb7beeda
 in v8=0xcab2545051df6e280000000000000000 fpcr=0x6400000
 out x8=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0523
+test jscvt.fjcvtzs.0532
 code 1e7e01ee
 seed adfcb138b9ffa70f
 in v15=0x9f71cd0745a3e5945b3499c6abbaa186 fpcr=0x2000000
 out x14=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0524
+test jscvt.fjcvtzs.0533
 code 1e7e03a8
 seed 14fce473fd1ebf51
 in v29=0x15fc39c119b8d7a0af956b5f9418e396
 out x8=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0525
+test jscvt.fjcvtzs.0534
 code 1e7e0101
 seed a9d82057f69be46f
 in v8=0xf7bc20eea5d6eff0ee7dc80a4d3a1ae7 fpcr=0x2400000 fpsr=0xe
 out x1=0x0 nzcv=0x0 fpsr=0xf
 exit end
-test jscvt.fjcvtzs.0526
+test jscvt.fjcvtzs.0535
 code 1e7e0009
 seed 1f48fbe5a8a1beb0
 in v0=0x60eaf94fd7aec3cc8000000000000000 fpcr=0x7400000
 out x9=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0527
+test jscvt.fjcvtzs.0536
 code 1e7e02d1
 seed cb476504f378384d
 in v22=0x322dac34974339f50002c72177930525 fpcr=0xc00000 fpsr=0xc
 out x17=0x0 nzcv=0x0 fpsr=0x1c
 exit end
-test jscvt.fjcvtzs.0528
+test jscvt.fjcvtzs.0537
 code 1e7e020a
 seed 86a78124c7a0f4eb
 in v16=0x1a158c5451d414de3ff8f3509306de28 fpcr=0x2c00000
 out x10=0x1 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0529
+test jscvt.fjcvtzs.0538
 code 1e7e0138
 seed f5547c30b02abf26
 in v9=0xbdb46ac6c048f1f80000000000000000 fpcr=0x800000
 out x24=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0530
+test jscvt.fjcvtzs.0539
 code 1e7e03f7
 seed f0dd119e041a025b
 in v31=0xb0d983d01d1eba4e0000000000000000 fpcr=0x4000000
 out x23=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0531
+test jscvt.fjcvtzs.0540
 code 1e7e0237
 seed 9a68a997397dcfd4
 in v17=0xbf2cfcb2c8769c0c41e0000000900000 fpcr=0x5400000
 out x23=0x80000004 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0532
+test jscvt.fjcvtzs.0541
 code 1e7e0329
 seed 1bc8fae907671fc1
 in v25=0xf234e593ca7daaa3c150000000000000 fpcr=0x1c00000
 out x9=0xffc00000 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0533
+test jscvt.fjcvtzs.0542
 code 1e7e0130
 seed 973b4477e97a85c7
 in v9=0xdcf85b93615e1d19471a5163bc94fe25 fpcr=0x1400000
 out x16=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0534
+test jscvt.fjcvtzs.0543
 code 1e7e02ea
 seed 0ac8347d3d4227b4
 in v23=0x46663b8073f7cf1fc0ee5cc664000000 fpcr=0x1000000
 out x10=0xffff0d1a nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0535
+test jscvt.fjcvtzs.0544
 code 1e7e030e
 seed b920655991b023f1
 in v24=0xec28cb3010a61e797ff0000000000000 fpcr=0x5000000
 out x14=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0536
+test jscvt.fjcvtzs.0545
 code 1e7e02ae
 seed b9f39931ea5e8e0f
 in v21=0xc9406208627be7df0000000000000000 fpcr=0x2c00000
 out x14=0x0
 exit end
-test jscvt.fjcvtzs.0537
+test jscvt.fjcvtzs.0546
 code 1e7e0004
 seed 7c61d52bb7a352b8
 in v0=0x1a2bc6ec371220470000000000000000 fpcr=0x5000000
 out x4=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0538
+test jscvt.fjcvtzs.0547
 code 1e7e0373
 seed 0aba4f51bde7c56e
 in v27=0x8f0a530cffff692effe0000000000000 fpcr=0x1400000
 out x19=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0539
+test jscvt.fjcvtzs.0548
 code 1e7e004a
 seed 3fa479cd1664bb0b
 in v2=0x1ed4ab714e298a1affe692508c8925c5 fpcr=0x400000
 out x10=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0540
+test jscvt.fjcvtzs.0549
 code 1e7e025e
 seed b303509b741fe6cc
 in v18=0x7d49ea8eab77738c00145420145563ab fpcr=0x2000000
 out x30=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0541
+test jscvt.fjcvtzs.0550
 code 1e7e0004
 seed d65e2ffbf4225e58
 in v0=0x2abd18f5d5e91c46f4a873d80f872fe7 fpcr=0xc00000 fpsr=0x85
 out x4=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0542
+test jscvt.fjcvtzs.0551
 code 1e7e015b
 seed da5aa9c00ac0db40
 in v10=0xd75be9fbf1b173c07ff052f8bc2ad577 fpcr=0x4c00000 fpsr=0x8000081
 out x27=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0543
+test jscvt.fjcvtzs.0552
 code 1e7e0004
 seed 9dcfd691769f48ff
 in v0=0x5bb0897f2339c4eae9ce5b2f0daca4fc fpcr=0x4400000
 out x4=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0544
+test jscvt.fjcvtzs.0553
 code 1e7e0002
 seed f8859241584b731b
 in v0=0x7c5253c0bacbc793c150000140000000 fpcr=0x5c00000
 out x2=0xffbffffb nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0545
+test jscvt.fjcvtzs.0554
 code 1e7e01cf
 seed 7fd53ff9ca6abcc1
 in v14=0xacb471e049ab385d002ae091a4e26564 fpcr=0x4000000
 out x15=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0546
+test jscvt.fjcvtzs.0555
 code 1e7e02f5
 seed 64ae13100ce82b2f
 in v23=0xd1323dd8b3ad68827ff27b8ab8bd81a5 fpcr=0x1400000
 out x21=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0547
+test jscvt.fjcvtzs.0556
 code 1e7e00d5
 seed 188880f9441ad480
 in v6=0x07ac29e2b50d87aa2fd784696695e3b1 fpcr=0x2800000 fpsr=0x95
 out x21=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0548
+test jscvt.fjcvtzs.0557
 code 1e7e01b7
 seed 7d2101f0a03e8425
 in v13=0x43d093ecb3e2ae355615031544964513 fpcr=0x4000000
 out x23=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0549
+test jscvt.fjcvtzs.0558
 code 1e7e0075
 seed fb864d1b0fd4276d
 in v3=0x7af3127659df6f0880a07bf592a64bf2
 out x21=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0550
+test jscvt.fjcvtzs.0559
 code 1e7e01a0
 seed 7e3548e656eb4623
 in v13=0x55bab055a3c120197ffa4eb18c8519ee
 out x0=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0551
+test jscvt.fjcvtzs.0560
 code 1e7e0376
 seed d8e9c5d981b4ae87
 in v27=0xfeb0c61e7bb856cf8020000000000000 fpcr=0x4000000
 out x22=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0552
+test jscvt.fjcvtzs.0561
 code 1e7e008d
 seed b9656122dc5f9654
 in v4=0xf2baf676f9c29de38000000000000000 fpcr=0x1000000
 out x13=0x0
 exit end
-test jscvt.fjcvtzs.0553
+test jscvt.fjcvtzs.0562
 code 1e7e02eb
 seed 5577f7ca778632af
 in v23=0x998bda35e520ca3bffff85a46de956ec fpcr=0x1800000 fpsr=0x8000012
 out x11=0x0 nzcv=0x0 fpsr=0x8000013
 exit end
-test jscvt.fjcvtzs.0554
+test jscvt.fjcvtzs.0563
 code 1e7e0066
 seed 34d067adba50b9fe
 in v3=0x7e1678d9e802cdfec038383ee0000000 fpcr=0x6800000
 out x6=0xffffffe8 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0555
+test jscvt.fjcvtzs.0564
 code 1e7e010d
 seed 674e662928751de3
 in v8=0x6ebeabc67ea0845bbf65db2d64000000 fpcr=0x800000
 out x13=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0556
+test jscvt.fjcvtzs.0565
 code 1e7e0212
 seed 3e0ed813e46898a3
 in v16=0x7ce3ca781909cbc4fffc079cb5533993 fpcr=0x800000
 out x18=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0557
+test jscvt.fjcvtzs.0566
 code 1e7e028c
 seed 8a96429dd7463998
 in v20=0x19f4aa64a89a0da13dfab7c66c000000 fpcr=0x5400000
 out x12=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0558
+test jscvt.fjcvtzs.0567
 code 1e7e0347
 seed d8ef0a29507f02d7
 in v26=0xe5073a8ad4e2d5ce43f6784afed0d970 fpcr=0x6400000
 out x7=0xd970000 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0559
+test jscvt.fjcvtzs.0568
 code 1e7e0105
 seed e223c4450e2ddccd
 in v8=0xe7f5a1046026babc7ff1133ae747c7c1 fpcr=0xc00000 fpsr=0xb
 out x5=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0560
+test jscvt.fjcvtzs.0569
 code 1e7e02b7
 seed 4599dfd17dde430a
 in v21=0x8422c79f98518f0f7ff6a2de7943ff4b fpcr=0x3c00000
 out x23=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0561
+test jscvt.fjcvtzs.0570
 code 1e7e02fb
 seed a332ace79484e525
 in v23=0xb218c9a9cbef394643f839f0c4c7df52 fpcr=0xc00000
 out x27=0x7df52000 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0562
+test jscvt.fjcvtzs.0571
 code 1e7e0306
 seed d44c4f38e8ac0e32
 in v24=0xeda7fca51be8ffa47ff559b87cd391fb fpcr=0x1400000
 out x6=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0563
+test jscvt.fjcvtzs.0572
 code 1e7e02a2
 seed 0c50f5b27a3f254e
 in v21=0x1351ece496dd074ac12c931b58000000 fpcr=0x800000
 out x2=0xfff1b673 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0564
+test jscvt.fjcvtzs.0573
 code 1e7e025c
 seed 81237aa9255ebc32
 in v18=0x8ad19b0f6ecc5b4a8019eddb3e00e196 fpcr=0x4c00000
 out x28=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0565
+test jscvt.fjcvtzs.0574
 code 1e7e0354
 seed 209e7ca832e7e49f
 in v26=0x95ac9ed0ae8f1b36be94b9b7d4000000 fpcr=0x2000000 fpsr=0x800009f
 out x20=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0566
+test jscvt.fjcvtzs.0575
 code 1e7e0166
 seed 20b1d7ce873286c7
 in v11=0x820040f2d114ac4243dd1f33d92eb86f fpcr=0xc00000 fpsr=0x94
 out x6=0xbae1bc00 nzcv=0x0 fpsr=0x95
 exit end
-test jscvt.fjcvtzs.0567
+test jscvt.fjcvtzs.0576
 code 1e7e03c0
 seed 9cbaa5f3705b5b89
 in v30=0x772656c425a267d74130220b8c000000 fpcr=0x800000 fpsr=0x8000007
 out x0=0x10220b nzcv=0x0 fpsr=0x8000017
 exit end
-test jscvt.fjcvtzs.0568
+test jscvt.fjcvtzs.0577
 code 1e7e023b
 seed 25f3599b583693cf
 in v17=0x12fc4af7cfb810751c97f699b8a87a5e fpcr=0x2800000
 out x27=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0569
+test jscvt.fjcvtzs.0578
 code 1e7e024b
 seed ba0598c56d73b102
 in v18=0xcfa98393996761c6ffffad376a2b6d62 fpcr=0x3800000
 out x11=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0570
+test jscvt.fjcvtzs.0579
 code 1e7e0066
 seed e9dbd9d174e0eb41
 in v3=0x0ccfe6f9f226f4207ff0000000000000 fpcr=0x1400000
 out x6=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0571
+test jscvt.fjcvtzs.0580
 code 1e7e004f
 seed 8d6fce178987305b
 in v2=0xb3aa7cb0ebe3e57abff05d212d43e359 fpcr=0x6400000
 out x15=0xffffffff nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0572
+test jscvt.fjcvtzs.0581
 code 1e7e01f8
 seed f88a81cc3a39b306
 in v15=0x15877bb77070059bf1315d400539ed64 fpcr=0x1400000
 out x24=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0573
+test jscvt.fjcvtzs.0582
 code 1e7e0228
 seed 254fb3ac30e128ee
 in v17=0xb1f95b98979571470000000000000000 fpcr=0x2400000 fpsr=0xa
 out x8=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0574
+test jscvt.fjcvtzs.0583
 code 1e7e00c7
 seed 59e05248c8d4596c
 in v6=0xdce8b57375bad9d8401c9e6f38916d01 fpcr=0x2800000
 out x7=0x7 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0575
+test jscvt.fjcvtzs.0584
 code 1e7e008a
 seed d4b5c0c6931dc2d4
 in v4=0x5866e58cb413a1777ff644b9db3f4551 fpcr=0x1000000
 out x10=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0576
+test jscvt.fjcvtzs.0585
 code 1e7e0279
 seed d74d12902a4f558e
 in v19=0xe73532e201a516fcc1f0000000000000 fpcr=0x4c00000 fpsr=0x8000017
 out x25=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0577
+test jscvt.fjcvtzs.0586
 code 1e7e01cd
 seed 8cb594cf4f030afc
 in v14=0x74fd73e3eb811abd80178f1cea98abd1 fpcr=0x4c00000
 out x13=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0578
+test jscvt.fjcvtzs.0587
 code 1e7e0136
 seed a3cede34678ec804
 in v9=0xfa7fd5eb4bebb2087fe0d97d967e100f fpsr=0x86
 out x22=0x0 nzcv=0x0 fpsr=0x87
 exit end
-test jscvt.fjcvtzs.0579
+test jscvt.fjcvtzs.0588
 code 1e7e0334
 seed 73ef3570f4da05ae
 in v25=0xa70fd43dc2584eab41600000f0000000 fpcr=0x800000
 out x20=0x800007 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0580
+test jscvt.fjcvtzs.0589
 code 1e7e00fa
 seed 3246b203cf670ed5
 in v7=0xc9117cd5a2c4409e001029c5fcda764b fpcr=0x3800000
 out x26=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0581
+test jscvt.fjcvtzs.0590
 code 1e7e033f
 seed fb6ce3348da07cac
 in v25=0x9eb8f72640b1eb34802fa9f5c0c590ff fpcr=0x4800000 fpsr=0x9a
 out nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0582
+test jscvt.fjcvtzs.0591
 code 1e7e0354
 seed 647284e484c945b2
 in v26=0x7800c8ec1ba2b03f8000000000000000 fpcr=0x7400000
 out x20=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0583
+test jscvt.fjcvtzs.0592
 code 1e7e032b
 seed c204c7c1588936df
 in v25=0x2f18226a142e2f3cbff0000000000000 fpcr=0x1400000
 out x11=0xffffffff nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0584
+test jscvt.fjcvtzs.0593
+code 1e7e03ef
+seed 6a236a69288aacfc
+in v31=0xf064b5bdd087f65f00069187fcb76999 fpcr=0x1000000
+out x15=0x0 nzcv=0x0 fpsr=0x80
+exit end
+test jscvt.fjcvtzs.0594
 code 1e7e0363
 seed 665ba885d504f058
 in v27=0xd4a5420e1671f1bd76b645193bd3aa00
 out x3=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0585
+test jscvt.fjcvtzs.0595
 code 1e7e00fe
 seed fb9099ae8ec2ffcb
 in v7=0xc1fce7575c2c12474160000050000000 fpcr=0x2400000
 out x30=0x800002 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0586
+test jscvt.fjcvtzs.0596
 code 1e7e0236
 seed 74fefc1db3b9849c
 in v17=0x476766f57ab781c3e660dac574acc1eb fpcr=0x3000000 fpsr=0x9b
 out x22=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0587
+test jscvt.fjcvtzs.0597
 code 1e7e035d
 seed 0b87bcfbbe20ebed
 in v26=0xab8015792013a570a3f3dd6ce9e622c5
 out x29=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0588
+test jscvt.fjcvtzs.0598
 code 1e7e03b1
 seed e66e956612102de7
 in v29=0x7ac024bbd47102a3800fffffffffffff fpcr=0x2800000 fpsr=0x98
 out x17=0x0
 exit end
-test jscvt.fjcvtzs.0589
+test jscvt.fjcvtzs.0599
 code 1e7e00a4
 seed 9f265c48c0ae06e4
 in v5=0xae95b2fcffb476a10000000000000000 fpcr=0x800000
 out x4=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0590
+test jscvt.fjcvtzs.0600
 code 1e7e0020
 seed d42e98d74eb9d66f
 in v1=0x1357786a48dca941002f6c0ff73b8c9e fpcr=0xc00000 fpsr=0x9f
 out x0=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0591
+test jscvt.fjcvtzs.0601
 code 1e7e03d8
 seed 4197a1695a9852fe
 in v30=0xa77b1a3226c28234802ac6be474439f1 fpcr=0x1800000
 out x24=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0592
+test jscvt.fjcvtzs.0602
 code 1e7e0027
 seed e11738278753698e
 in v1=0x29c18495ca018fe4fff0000000000000 fpcr=0x4000000 fpsr=0xe
 out x7=0x0 nzcv=0x0 fpsr=0xf
 exit end
-test jscvt.fjcvtzs.0593
+test jscvt.fjcvtzs.0603
 code 1e7e0274
 seed c58fdbd33f52ec0e
 in v19=0x9f36cc1f80f898354fd7a527e637c6fe fpcr=0xc00000
 out x20=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0594
+test jscvt.fjcvtzs.0604
 code 1e7e02a2
 seed 1260c82eb67b5e21
 in v21=0x365192c82984b364414d6e79bc000000 fpcr=0x6c00000 fpsr=0x85
 out x2=0x3adcf3 nzcv=0x0 fpsr=0x95
 exit end
-test jscvt.fjcvtzs.0595
+test jscvt.fjcvtzs.0605
 code 1e7e0072
 seed 412e39554a0d1c62
 in v3=0x753198917f032fa20ce39921c89c1750 fpcr=0xc00000
 out x18=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0596
+test jscvt.fjcvtzs.0606
 code 1e7e0029
 seed aba32a8027410f3f
 in v1=0xf37d678fbea26913801fffffffffffff fpcr=0x5c00000
 out x9=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0597
+test jscvt.fjcvtzs.0607
 code 1e7e00f2
 seed aec1b50b01ffa2ee
 in v7=0x7d12a7b868d5831619408f502396d653 fpcr=0x2000000
 out x18=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0598
+test jscvt.fjcvtzs.0608
 code 1e7e0331
 seed 284c87bd6f3874d8
 in v25=0xc46f0dd5d30cad0e2be46054cda9c7ea fpcr=0x400000
 out x17=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0599
+test jscvt.fjcvtzs.0609
 code 1e7e01d5
 seed 84933e352e2e5cd7
 in v14=0x091a1d6494703706cf0b251f7ed66d9e fpcr=0x2000000
 out x21=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0600
+test jscvt.fjcvtzs.0610
 code 1e7e030b
 seed 3b36b7f02252ae9f
 in v24=0x43011bc8f3c73b7070f85a5bd89528f7
 out x11=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0601
+test jscvt.fjcvtzs.0611
 code 1e7e02ad
 seed 9c1630e73dcae8cb
 in v21=0xeb67669ff0ec02a2bfdb8123b037137d
 out x13=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0602
+test jscvt.fjcvtzs.0612
 code 1e7e0384
 seed 1dc9c6bafaecd31d
 in v28=0xd13cc5a0739f4596fff067e86687f567 fpcr=0x6000000
 out x4=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0603
+test jscvt.fjcvtzs.0613
 code 1e7e0394
 seed c9a948d291470972
 in v28=0xc4e0b00cb0fb35423feb037bcc000000
 out x20=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0604
+test jscvt.fjcvtzs.0614
 code 1e7e02af
 seed 415e70dbb8424ba8
 in v21=0x475d6e8b19a10110928d43d4e05e21a7 fpcr=0x4400000
 out x15=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0605
+test jscvt.fjcvtzs.0615
 code 1e7e0296
 seed b78a47a520f7596b
 in v20=0xb78dd1d014d4d3b47ff456fe39ad56ef fpcr=0x2c00000
 out x22=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0606
+test jscvt.fjcvtzs.0616
 code 1e7e02ca
 seed dff09b646a28091b
 in v22=0xdd43a5b5ccad4803608c7a07ad742987 fpcr=0x3c00000
 out x10=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0607
+test jscvt.fjcvtzs.0617
 code 1e7e01c3
 seed 7c658e1f366b87a2
 in v14=0x1d4fc3118d4c91400000000000000000 fpcr=0x7800000
 out x3=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0608
+test jscvt.fjcvtzs.0618
 code 1e7e0082
 seed 92cf5cd1980ba4d1
 in v4=0x83d2b76397f3b9e3c3f030cc0af5768c fpcr=0xc00000
 out x2=0xa8974000 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0609
+test jscvt.fjcvtzs.0619
 code 1e7e03ab
 seed c3ca1204c76231f4
 in v29=0x92e8ef02169a49366e65bdc557e97bff fpcr=0x4800000 fpsr=0x800008b
 out x11=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0610
+test jscvt.fjcvtzs.0620
 code 1e7e0089
 seed c7ba71214db64595
 in v4=0x4bbf8583008ada9840ba424fe7207d8f fpcr=0x4000000 fpsr=0x800001e
 out x9=0x1a42 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0611
+test jscvt.fjcvtzs.0621
 code 1e7e03ee
 seed c7fe0c2f8b4c1118
 in v31=0x818f1cc23d78b4887ff0000000000000 fpcr=0x400000
 out x14=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0612
+test jscvt.fjcvtzs.0622
 code 1e7e034c
 seed 44777a44c5b255bc
 in v26=0x38b23382f8bb28a90005fb00d1a75013 fpcr=0x400000
 out x12=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0613
+test jscvt.fjcvtzs.0623
 code 1e7e03e6
 seed 8e836babb352db07
 in v31=0x3233acb90f2e7358d48454837ed1ca3d fpcr=0x4400000 fpsr=0xf
 out x6=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0614
+test jscvt.fjcvtzs.0624
 code 1e7e03d7
 seed d2450ad7abb2bfe8
 in v30=0x47761a289c573db3000e0986e42d8e13
 out x23=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0615
+test jscvt.fjcvtzs.0625
 code 1e7e030f
 seed 0de73f0f20200796
 in v24=0xb39966d0895d579afffc8eb9973612a9 fpsr=0x1d
 out x15=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0616
+test jscvt.fjcvtzs.0626
 code 1e7e03ff
 seed b943e20d9f9dd8fb
 in v31=0x7afe97e70048ba7d41b1642ed0000000 fpcr=0x2c00000
 out nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0617
+test jscvt.fjcvtzs.0627
 code 1e7e035b
 seed 7319999855935f22
 in v26=0x5d4062494bcc7875bda385ef00000000 fpsr=0x8000003
 out x27=0x0 nzcv=0x0 fpsr=0x8000013
 exit end
-test jscvt.fjcvtzs.0618
+test jscvt.fjcvtzs.0628
 code 1e7e01b8
 seed 406f92cce4f0194e
 in v13=0xc78a04d3782d70cfda3347ff9ac0cd8c fpcr=0x400000
 out x24=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0619
+test jscvt.fjcvtzs.0629
 code 1e7e0057
 seed 1953ba573a10b2a8
 in v2=0xed504bd95b8ee033cbf5981e206a09f8 fpcr=0x1800000
 out x23=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0620
+test jscvt.fjcvtzs.0630
 code 1e7e00dd
 seed aaf3ca99fa23c442
 in v6=0xc6336e4bc1f19286fff7d0e2030525cb fpcr=0x4000000
 out x29=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0621
+test jscvt.fjcvtzs.0631
 code 1e7e02e2
 seed 4e6d0fa9392d4bd3
 in v23=0x6f283961793714abfff0000000000000 fpcr=0x5800000
 out x2=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0622
+test jscvt.fjcvtzs.0632
 code 1e7e037e
 seed 7eacd8083c80e151
 in v27=0x7ad2b66529114d398000000000000000 fpcr=0x400000
 out x30=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0623
+test jscvt.fjcvtzs.0633
 code 1e7e01e0
 seed ea2ba3d0bd936382
 in v15=0x2047ec156fe1e91d0000000000000001 fpcr=0x400000
 out x0=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0624
+test jscvt.fjcvtzs.0634
 code 1e7e02f7
 seed e696af961db19234
 in v23=0xc7fa02735b0ffd203db45f0e10000000 fpcr=0x400000
 out x23=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0625
+test jscvt.fjcvtzs.0635
 code 1e7e031b
 seed 54c8e15dbe5e8ea5
 in v24=0x9379c60bf37a361b0000000000000000 fpcr=0x4000000
 out x27=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0626
+test jscvt.fjcvtzs.0636
 code 1e7e0092
 seed b98009d340c28709
 in v4=0x0c0c3ffe6d91042a0000000000000001 fpcr=0x2c00000
 out x18=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0627
+test jscvt.fjcvtzs.0637
 code 1e7e01f8
 seed 28025bdaca7fe85f
 in v15=0xb2648fc2416955bf7ffe3c0fd84bc1b7 fpcr=0x4000000
 out x24=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0628
+test jscvt.fjcvtzs.0638
 code 1e7e03b2
 seed 20f914b9be6f274a
 in v29=0xf9d0b3e66b7de91fc016000000000000 fpcr=0x1800000
 out x18=0xfffffffb nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0629
+test jscvt.fjcvtzs.0639
 code 1e7e0249
 seed fff0060c228fe86e
 in v18=0xecadd99b97406fd6802f4a7245d88c8d fpcr=0x1000000
 out x9=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0630
+test jscvt.fjcvtzs.0640
 code 1e7e02eb
 seed b43fc7abb5c35472
 in v23=0x60f59eee69b5975dfff6cac6b4e2b46b fpcr=0x4000000
 out x11=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0631
+test jscvt.fjcvtzs.0641
 code 1e7e00de
 seed 4cb15a1e2ff9d6ae
 in v6=0xbce03638063a91f1bf27e6165c000000 fpcr=0x800000
 out x30=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0632
+test jscvt.fjcvtzs.0642
 code 1e7e0339
 seed 637731a5bac29072
 in v25=0x0227b4a4c19881b2be4ebc0530000000 fpcr=0x400000
 out x25=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0633
+test jscvt.fjcvtzs.0643
 code 1e7e0043
 seed 501ae15038e05638
 in v2=0x5b9790b69dc3b4175785d7cdee7a6015 fpcr=0x4400000
 out x3=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0634
+test jscvt.fjcvtzs.0644
 code 1e7e02dc
 seed 318df6c7efbda018
 in v22=0x0fac40346795dacc43d0000000000000 fpcr=0x1000000
 out x28=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0635
+test jscvt.fjcvtzs.0645
 code 1e7e00ef
 seed 84baf16a85a4be9d
 in v7=0xd80761c4514f8c95bff0000000000000 fpcr=0x3400000
 out x15=0xffffffff nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0636
+test jscvt.fjcvtzs.0646
 code 1e7e01fd
 seed 9598c8bb6d8a9d22
 in v15=0xbdf0a63b817c6ef319f251469730b0bd fpcr=0x2400000
 out x29=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0637
+test jscvt.fjcvtzs.0647
 code 1e7e0088
 seed 248f62c5528ad579
 in v4=0xef114f7303fb6d81fffcbb683aed9df6 fpcr=0x4400000
 out x8=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0638
+test jscvt.fjcvtzs.0648
 code 1e7e030a
 seed c741cef02dc42028
 in v24=0x59489b01925c7ef1002fffffffffffff fpcr=0x2000000
 out x10=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0639
+test jscvt.fjcvtzs.0649
 code 1e7e0035
 seed 3afe231f436dbfda
 in v1=0x03ef74194bbbd04441f0000000600000 fpcr=0x1800000
 out x21=0x6 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0640
+test jscvt.fjcvtzs.0650
 code 1e7e037d
 seed ac776cc7f712009c
 in v27=0xad0fcb12c70b9133d123ccc298bfbd2a fpcr=0x1c00000
 out x29=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0641
+test jscvt.fjcvtzs.0651
 code 1e7e0093
 seed 58f23a4e26180674
 in v4=0x0825375f546474927ffebd24bae5c540 fpcr=0x6800000
 out x19=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0642
+test jscvt.fjcvtzs.0652
 code 1e7e0117
 seed 511fb3853cb82da3
 in v8=0x40611962ad6fd27d002143236a47bfa7 fpcr=0x400000
 out x23=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0643
+test jscvt.fjcvtzs.0653
 code 1e7e0053
 seed f3a5cd9466a4b696
 in v2=0x189427b8287ab29afffed1d7033f9cfa fpcr=0x6400000 fpsr=0x8000017
 out x19=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0644
+test jscvt.fjcvtzs.0654
 code 1e7e0307
 seed c70f5679ef20a226
 in v24=0x0a5e6c8275db7d5b4330000000000000 fpcr=0x800000
 out x7=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0645
+test jscvt.fjcvtzs.0655
 code 1e7e03f1
 seed 59407a960dd71904
 in v31=0x41481102147e956fc01bcbc642879bab fpcr=0x800000
 out x17=0xfffffffa nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0646
+test jscvt.fjcvtzs.0656
 code 1e7e006a
 seed 13106be9f9775083
 in v3=0x52696e294640e0f241f0000000680000 fpcr=0x2400000
 out x10=0x6 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0647
+test jscvt.fjcvtzs.0657
 code 1e7e02f1
 seed fac068508e772dfd
 in v23=0x81a66efbc73b62a07ff20d541ffced53 fpcr=0x4400000
 out x17=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0648
+test jscvt.fjcvtzs.0658
 code 1e7e02f5
 seed 58e7818f26900072
 in v23=0x1f6204bbe270993f0010000000000000 fpcr=0x4400000 fpsr=0x8000009
 out x21=0x0 nzcv=0x0 fpsr=0x8000019
 exit end
-test jscvt.fjcvtzs.0649
+test jscvt.fjcvtzs.0659
 code 1e7e01bd
 seed 1d9424cdbc429fd8
 in v13=0x9192a4250c4e1af28006c55eeff5ac25 fpsr=0x10
 out x29=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0650
+test jscvt.fjcvtzs.0660
 code 1e7e026e
 seed f3b5a2ebe7516610
 in v19=0xc264f1a57a8cd621db4d8abbc21bf8d1 fpcr=0x1800000
 out x14=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0651
+test jscvt.fjcvtzs.0661
 code 1e7e0318
 seed ddd7f86cca407af4
 in v24=0x7b5db6c8763f25747fac970aa1ed2239 fpcr=0x400000 fpsr=0xd
 out x24=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0652
+test jscvt.fjcvtzs.0662
 code 1e7e0342
 seed ce577b0e20c7d488
 in v26=0x89da6bc2500953e78000000000000000 fpcr=0xc00000 fpsr=0x800009e
 out x2=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0653
+test jscvt.fjcvtzs.0663
 code 1e7e02fa
 seed 6733ec935a43fbb3
 in v23=0xf1ac1f17ca4efdadc003b8d8ac58ad20 fpcr=0x1000000
 out x26=0xfffffffe nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0654
+test jscvt.fjcvtzs.0664
 code 1e7e0084
 seed c8b0a667eb633166
 in v4=0xc08004d56c0a368c8020000000000000 fpcr=0x2c00000
 out x4=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0655
+test jscvt.fjcvtzs.0665
 code 1e7e0371
 seed e049c43e16d170ca
 in v27=0x899eb05ceacf9de32e54bffb74cb3684
 out x17=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0656
+test jscvt.fjcvtzs.0666
 code 1e7e0225
 seed 474710507c387010
 in v17=0x9d57139dc37a67e6c1500000a0000000 fpcr=0xc00000
 out x5=0xffbffffe nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0657
+test jscvt.fjcvtzs.0667
 code 1e7e02a9
 seed 0fe142d7808a7c1a
 in v21=0x08bbff866acdb5130000000000000000 fpcr=0x4400000 fpsr=0x97
 out x9=0x0
 exit end
-test jscvt.fjcvtzs.0658
+test jscvt.fjcvtzs.0668
 code 1e7e0295
 seed 2dd5b25ffe7a643a
 in v20=0x8ad6c9b8e5ac61dffff2b810d3d3d83b fpcr=0x800000
 out x21=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0659
+test jscvt.fjcvtzs.0669
 code 1e7e003e
 seed fbd935862af164be
 in v1=0x10b8bb7849149d9a8000000000000000 fpcr=0xc00000
 out x30=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0660
+test jscvt.fjcvtzs.0670
 code 1e7e02c5
 seed 7ea5ccfeb005c810
 in v22=0x477279499e68b6067ff0000000000000 fpcr=0x4800000 fpsr=0x1b
 out x5=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0661
+test jscvt.fjcvtzs.0671
 code 1e7e02dd
 seed 9bfd937fd498f52b
 in v22=0x428c36493b6ec0961a54e049eac6d6f4 fpcr=0x3c00000
 out x29=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0662
+test jscvt.fjcvtzs.0672
 code 1e7e030f
 seed f667b1953288f4a8
 in v24=0xd224139ee22af6773f074c4704000000 fpcr=0x800000
 out x15=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0663
+test jscvt.fjcvtzs.0673
 code 1e7e020e
 seed 0a307ce565edb84a
 in v16=0xf0ca130a4d8a4574c1e0000000e00000 fpcr=0x1c00000
 out x14=0x7ffffff9 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0664
+test jscvt.fjcvtzs.0674
 code 1e7e036e
 seed b3693013727fafc4
 in v27=0xc8d0e43683f26af9b6db1632cf5c5bc9
 out x14=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0665
+test jscvt.fjcvtzs.0675
 code 1e7e02cb
 seed 6a8560f923ffe24c
 in v22=0xabd099eae00416840000000000000000 fpcr=0x3800000
 out x11=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0666
+test jscvt.fjcvtzs.0676
 code 1e7e02ef
 seed 5eeb207359d6bf66
 in v23=0xfd06d4f831e968f8fff0000000000000 fpcr=0x3400000
 out x15=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0667
+test jscvt.fjcvtzs.0677
 code 1e7e01be
 seed c9ab5274ebceee8d
 in v13=0x25ca84e602a1790b9c6ae6ca23dfd108 fpcr=0x1800000
 out x30=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0668
+test jscvt.fjcvtzs.0678
 code 1e7e02ce
 seed 944ce473f20216d8
 in v22=0x40dd8763d6f2e073c2e56820c6e415a6 fpcr=0x6800000
 out x14=0xf9c8df53 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0669
+test jscvt.fjcvtzs.0679
 code 1e7e0074
 seed f940028b237735f9
 in v3=0xb858a139605b706bc1d0000001800000 fpcr=0x2400000
 out x20=0xbffffffa nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0670
+test jscvt.fjcvtzs.0680
 code 1e7e0165
 seed d8dbe0cb591e110b
 in v11=0xcfba09bf4396fbb8fffbbd041a712667 fpcr=0x1400000
 out x5=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0671
+test jscvt.fjcvtzs.0681
 code 1e7e00b3
 seed 488f37d1e422d666
 in v5=0x1f287a3c0f93d855308dda42faa58860 fpcr=0x2800000
 out x19=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0672
+test jscvt.fjcvtzs.0682
 code 1e7e0162
 seed 44923daf2e75a1a2
 in v11=0x1c83794c996c72b8fff4d85184ba7f7d fpcr=0x3c00000
 out x2=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0673
+test jscvt.fjcvtzs.0683
 code 1e7e00f0
 seed 320df46d12e06b71
 in v7=0x06b4656933313a240000000000000000 fpcr=0x400000
 out x16=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0674
+test jscvt.fjcvtzs.0684
 code 1e7e0019
 seed 5e4dd2ba7bb498e9
 in v0=0xdfc0641b1c0fc1550000000000000001 fpcr=0x800000
 out x25=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0675
+test jscvt.fjcvtzs.0685
 code 1e7e0178
 seed 584b5e74edcc9378
 in v11=0xf129d86d8428110356f5a3beabcdba64 fpcr=0xc00000
 out x24=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0676
+test jscvt.fjcvtzs.0686
 code 1e7e030b
 seed 33a6a8644607be19
 in v24=0xa79733650093ecea7ff0000000000000 fpcr=0xc00000
 out x11=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0677
+test jscvt.fjcvtzs.0687
 code 1e7e002a
 seed f3aa7b77341f2b27
 in v1=0x8ac6cf616c7794246c880c9e16b29479 fpcr=0x3800000
 out x10=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0678
+test jscvt.fjcvtzs.0688
 code 1e7e0302
 seed 4067b356489ab417
 in v24=0x3c3ffa3763d043343fdad434b0e3bcb5
 out x2=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0679
+test jscvt.fjcvtzs.0689
 code 1e7e025c
 seed 490dd5f67ac4ed4b
 in v18=0xcfe26af54c1b2d9afffca8617497e331 fpcr=0x1c00000
 out x28=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0680
+test jscvt.fjcvtzs.0690
 code 1e7e030d
 seed 9350747f46bf5cae
 in v24=0x44b8c2956018b36efff475c693359aaf fpcr=0x2800000
 out x13=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0681
+test jscvt.fjcvtzs.0691
 code 1e7e0218
 seed 35cd29d91f647c9a
 in v16=0x769fc7878c8da1a20000000000000000 fpcr=0x2400000 fpsr=0x800000d
 out x24=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0682
+test jscvt.fjcvtzs.0692
 code 1e7e03ff
 seed be7cf686774546e1
 in v31=0x6796bb39f49c3b5e4b1aa6092b6e4b3f fpcr=0x1400000 fpsr=0x99
 out nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0683
+test jscvt.fjcvtzs.0693
 code 1e7e02ec
 seed b81a058579147324
 in v23=0x2c433f69e3854d73c01efe00c5c177af fpcr=0x4c00000
 out x12=0xfffffff9 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0684
+test jscvt.fjcvtzs.0694
 code 1e7e0394
 seed b28d1a82945c776a
 in v28=0x4a6251138e0c1fff6c24ae658f383336 fpcr=0x1000000
 out x20=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0685
+test jscvt.fjcvtzs.0695
 code 1e7e024f
 seed e40e21f5a0d93d68
 in v18=0x1a086c271290cb0841f0000000700000 fpcr=0x6000000 fpsr=0x89
 out x15=0x7 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0686
+test jscvt.fjcvtzs.0696
 code 1e7e0278
 seed e615c03aca45cf7d
 in v19=0x15b6c5f3e0fdbc21064d1ad15f6b5740 fpcr=0xc00000
 out x24=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0687
+test jscvt.fjcvtzs.0697
 code 1e7e02cb
 seed 667cd8063c4d2051
 in v22=0x396b974ff9bd5b1b0000000000000000
 out x11=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0688
+test jscvt.fjcvtzs.0698
 code 1e7e03ce
 seed 0f71396b6b50ea88
 in v30=0x38bbbef6676b04c27ff0000000000000 fpcr=0x3c00000
 out x14=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0689
+test jscvt.fjcvtzs.0699
 code 1e7e037c
 seed 73fc038b156ca7da
 in v27=0xcc0a5be118f2460f000e6af9331d7033 fpcr=0x4000000
 out x28=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0690
+test jscvt.fjcvtzs.0700
 code 1e7e029f
 seed 50a064912b3ac322
 in v20=0x6e7c0949cfc7fef2fff207b7fc1323ab fpcr=0x1000000 fpsr=0x8000082
 out nzcv=0x0 fpsr=0x8000083
 exit end
-test jscvt.fjcvtzs.0691
+test jscvt.fjcvtzs.0701
 code 1e7e01aa
 seed 0e3961d2a999144d
 in v13=0x5a41a9b18f36aa69801fffffffffffff fpcr=0x800000
 out x10=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0692
+test jscvt.fjcvtzs.0702
 code 1e7e02ea
 seed 2a37ba214fc16716
 in v23=0x1f84a2159d71a5c37fe0b25a6442fb47 fpcr=0x800000 fpsr=0xf
 out x10=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0693
+test jscvt.fjcvtzs.0703
 code 1e7e03cf
 seed 500c1127a1ae95c2
 in v30=0xb726a84ce2a93e2ebe3f4953952423ee fpcr=0x800000
 out x15=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0694
+test jscvt.fjcvtzs.0704
 code 1e7e0324
 seed 1c4762e67620b49d
 in v25=0x5645994999bb2e1c8020000000000000 fpcr=0x800000
 out x4=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0695
+test jscvt.fjcvtzs.0705
 code 1e7e0398
 seed a83fe3c076a337c0
 in v28=0x543c6db0cd4ed0de3fd709db91458a93 fpcr=0x400000 fpsr=0x8e
 out x24=0x0 nzcv=0x0 fpsr=0x9e
 exit end
-test jscvt.fjcvtzs.0696
+test jscvt.fjcvtzs.0706
 code 1e7e0319
 seed 74c0babdc5fefccf
 in v24=0x5f38bdc9c8bfe2351f30f81a5ff1c46f fpcr=0x4c00000 fpsr=0x89
 out x25=0x0 nzcv=0x0 fpsr=0x99
 exit end
-test jscvt.fjcvtzs.0697
+test jscvt.fjcvtzs.0707
 code 1e7e03b8
 seed c038259928bacf7e
 in v29=0xb72634a7ea2bfee480033b22060e7263 fpcr=0x800000
 out x24=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0698
+test jscvt.fjcvtzs.0708
 code 1e7e0155
 seed c544b3d84c6b58f6
 in v10=0x888c93b14287fdb4bf9c984c4c000000 fpcr=0x4c00000
 out x21=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0699
+test jscvt.fjcvtzs.0709
 code 1e7e038b
 seed f696b51a762f3f4e
 in v28=0x02f4f51d73768cd93dffb62974000000 fpcr=0x4000000
 out x11=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0700
+test jscvt.fjcvtzs.0710
 code 1e7e0151
 seed 7d5276b98ead78f9
 in v10=0x9a35e942059455dd7ff8cde3fc469299 fpcr=0x3800000
 out x17=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0701
+test jscvt.fjcvtzs.0711
 code 1e7e011c
 seed 7ec9459d939db023
 in v8=0x2f93b77408ccb52936590ebec36b8fdc fpcr=0x1c00000 fpsr=0x800000b
 out x28=0x0 nzcv=0x0 fpsr=0x800001b
 exit end
-test jscvt.fjcvtzs.0702
+test jscvt.fjcvtzs.0712
 code 1e7e036b
 seed 45e121595e9166be
 in v27=0x9e11b9286e941e638010000000000000 fpcr=0x2c00000
 out x11=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0703
+test jscvt.fjcvtzs.0713
 code 1e7e0003
 seed 7721b326868cabc8
 in v0=0x92d77e9f83179483c3da6f9c3190b837 fpcr=0xc00000
 out x3=0xbd1f2400 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0704
+test jscvt.fjcvtzs.0714
 code 1e7e0389
 seed 3742d3ce4992d830
 in v28=0x7787b937d3898fdc0001be2f7b98c9e9 fpcr=0x2000000
 out x9=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0705
+test jscvt.fjcvtzs.0715
 code 1e7e0040
 seed 47f8ed6a7f0764de
 in v2=0x3391a556ff757e9f8274b0a19a9bfb18 fpcr=0x400000
 out x0=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0706
+test jscvt.fjcvtzs.0716
 code 1e7e036a
 seed 5030296eed1e45bf
 in v27=0xe87e41c52d57de193f677fc6bc000000
 out x10=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0707
+test jscvt.fjcvtzs.0717
 code 1e7e01df
 seed 9eb7c6b5e65c96e0
 in v14=0x2b625ec959e1f6c07ff5b9cd60deba91 fpcr=0x4c00000 fpsr=0x2
 out nzcv=0x0 fpsr=0x3
 exit end
-test jscvt.fjcvtzs.0708
+test jscvt.fjcvtzs.0718
 code 1e7e0253
 seed 27f5fc9f30bd6db4
 in v18=0xbebad9713842fc834025750ed8000000 fpcr=0x2000000
 out x19=0xa nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0709
+test jscvt.fjcvtzs.0719
 code 1e7e00d2
 seed 1bb610e9b71879a7
 in v6=0x1d139b068e65648e7fe3433384189cfb fpcr=0x2400000
 out x18=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0710
+test jscvt.fjcvtzs.0720
 code 1e7e0115
 seed 79d66caac12c4449
 in v8=0xb989c443ab2cf9a5000ac09169112727 fpcr=0xc00000 fpsr=0x8000003
 out x21=0x0 nzcv=0x0 fpsr=0x8000013
 exit end
-test jscvt.fjcvtzs.0711
+test jscvt.fjcvtzs.0721
 code 1e7e03f3
 seed 0f117e97cc3105eb
 in v31=0x483541389ad155447ff0000000000000 fpcr=0x5800000 fpsr=0x8000010
 out x19=0x0 nzcv=0x0 fpsr=0x8000011
 exit end
-test jscvt.fjcvtzs.0712
+test jscvt.fjcvtzs.0722
 code 1e7e01e4
 seed 835d65c30178ddd2
 in v15=0xd1a91a398c905cfe613f858239ad6af7 fpcr=0x2800000
 out x4=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0713
+test jscvt.fjcvtzs.0723
 code 1e7e0047
 seed e44384bfc227fcdd
 in v2=0xe878c30661723964800cb6835ffa1a1b fpcr=0x6000000 fpsr=0x9b
 out x7=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0714
+test jscvt.fjcvtzs.0724
 code 1e7e0100
 seed e5b7d10460a88b27
 in v8=0x87b84706e986f258dca1ca6089d8dafe fpcr=0x800000 fpsr=0x8000089
 out x0=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0715
+test jscvt.fjcvtzs.0725
 code 1e7e0396
 seed 8b3ff42c620f3067
 in v28=0x67807b9122a564bd002d9c200838e53d fpcr=0x4400000
 out x22=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0716
+test jscvt.fjcvtzs.0726
 code 1e7e03c1
 seed ccc37a6f668dc508
 in v30=0x6d79d43c49abf8cb8000000000000000 fpcr=0xc00000
 out x1=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0717
+test jscvt.fjcvtzs.0727
 code 1e7e00f7
 seed 9959cbe80a244dbf
 in v7=0x867217edb64f5642ffee7656990d6537 fpcr=0x2000000 fpsr=0x800000e
 out x23=0x0 nzcv=0x0 fpsr=0x800000f
 exit end
-test jscvt.fjcvtzs.0718
+test jscvt.fjcvtzs.0728
 code 1e7e0214
 seed 3697ab17d57f30f5
 in v16=0x6c67315b698f18cafff0000000000000 fpcr=0x400000
 out x20=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0719
+test jscvt.fjcvtzs.0729
 code 1e7e03b4
 seed a7e73f56f0ffd039
 in v29=0x5dd131ab57e235a5a70261c06c880cf3 fpcr=0x2000000 fpsr=0x800000d
 out x20=0x0 nzcv=0x0 fpsr=0x800001d
 exit end
-test jscvt.fjcvtzs.0720
+test jscvt.fjcvtzs.0730
 code 1e7e02a7
 seed 3930dc7239ad64d1
 in v21=0xb01af702752b6ae1801611ec1c7aaffe fpcr=0x3c00000
 out x7=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0721
+test jscvt.fjcvtzs.0731
 code 1e7e00c8
 seed 8e763a322a9533ef
 in v6=0x40d46756c6f8124041eb8865c0000000 fpcr=0xc00000
 out x8=0xdc432e00 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0722
+test jscvt.fjcvtzs.0732
 code 1e7e0056
 seed ebeb72341a11cc80
 in v2=0xdbe7bf683f48d8467ff08a5303c80bed fpcr=0xc00000
 out x22=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0723
+test jscvt.fjcvtzs.0733
 code 1e7e03d8
 seed cef2ed5ad809c375
 in v30=0x6bf499f9a567da038003ce2282d0af15 fpcr=0x400000 fpsr=0x8000016
 out x24=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0724
+test jscvt.fjcvtzs.0734
 code 1e7e03f8
 seed 6d2206d5a1dc9fc9
 in v31=0x3db3eba3339caa54f359782788a012ec fpcr=0x800000
 out x24=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0725
+test jscvt.fjcvtzs.0735
 code 1e7e003b
 seed 44f6680a06174de2
 in v1=0xcadd8579945ce1194018000000000000 fpcr=0x400000
 out x27=0x6 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0726
+test jscvt.fjcvtzs.0736
 code 1e7e034d
 seed 3e3d6749b9604e5b
 in v26=0x6c5d78e9759b5c207ff39d2360c9d9d5
 out x13=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0727
+test jscvt.fjcvtzs.0737
 code 1e7e03bb
 seed 4a0be397c52296e4
 in v29=0xd9b2ffe9ab827b750000000000000000 fpcr=0x400000
 out x27=0x0
 exit end
-test jscvt.fjcvtzs.0728
+test jscvt.fjcvtzs.0738
 code 1e7e0016
 seed 97b2157494a99d9f
 in v0=0xaa7abe45e307dc2afff803c362cad0f2 fpcr=0x2400000
 out x22=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0729
+test jscvt.fjcvtzs.0739
 code 1e7e0336
 seed 1b981246d2becc40
 in v25=0xeb9b4a44270f236cfab3644854c4028c fpcr=0x3000000
 out x22=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0730
+test jscvt.fjcvtzs.0740
 code 1e7e0125
 seed b8ed1125adb97666
 in v9=0xa63fd5eeedfcda8b7ff2550db6db5ce7 fpcr=0x1800000
 out x5=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0731
+test jscvt.fjcvtzs.0741
 code 1e7e0339
 seed c4741337f8f7f060
 in v25=0x2c956a6f6f5f2f3a8000000000000001 fpcr=0x2c00000 fpsr=0x15
 out x25=0x0
 exit end
-test jscvt.fjcvtzs.0732
+test jscvt.fjcvtzs.0742
 code 1e7e01c8
 seed ca08097fc315248b
 in v14=0x83dec6069f65f999f5ecd3b81e4b4851 fpcr=0x6400000
 out x8=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0733
+test jscvt.fjcvtzs.0743
 code 1e7e006d
 seed a7feb235c75f37e0
 in v3=0xdd9718ac1e7f87cfc06714f5d0000000 fpcr=0x2000000 fpsr=0x8000015
 out x13=0xffffff48 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0734
+test jscvt.fjcvtzs.0744
 code 1e7e0111
 seed 664ef8a5814972a0
 in v8=0x6ab2c990d909bceffff76991f2c66eb7 fpcr=0xc00000
 out x17=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0735
+test jscvt.fjcvtzs.0745
 code 1e7e005f
 seed 871073abcb05d281
 in v2=0x8b817166fe9babd07ff0000000000000 fpcr=0x2800000
 out nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0736
+test jscvt.fjcvtzs.0746
 code 1e7e0038
 seed b590d59d4b31edb4
 in v1=0x9b64dcfcbda78b1d80039a458a983e53
 out x24=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0737
+test jscvt.fjcvtzs.0747
 code 1e7e0156
 seed bc8336ae8eae51ff
 in v10=0xde0d41550c79c63afff0000000000000 fpcr=0x2000000
 out x22=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0738
+test jscvt.fjcvtzs.0748
 code 1e7e026f
 seed 421c7a893be4459e
 in v19=0x9eb6f471784bd56b80183c17c9d8ef68 fpcr=0x400000
 out x15=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0739
+test jscvt.fjcvtzs.0749
 code 1e7e015a
 seed 0ae2355320612830
 in v10=0xbe6bdf2f75ca1c67fff86f48b5b95620 fpcr=0xc00000
 out x26=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0740
+test jscvt.fjcvtzs.0750
 code 1e7e029f
 seed 4d8c16baa3d68393
 in v20=0x8e614203c7d0272ebf71878d58000000 fpsr=0x800009e
 out nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0741
+test jscvt.fjcvtzs.0751
 code 1e7e00ff
 seed 0480d638550f280c
 in v7=0x16c2b82e9cf2c6fc2cd36b6f1091cb95 fpcr=0x4800000
 out nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0742
+test jscvt.fjcvtzs.0752
 code 1e7e027f
 seed 2a0721898acdaf33
 in v19=0x43edf4e0153baac500284eb710553267 fpcr=0x400000
 out nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0743
+test jscvt.fjcvtzs.0753
 code 1e7e02c7
 seed 30167044618fe406
 in v22=0xd5ec6bf6b7339bb8718c5728d977a922 fpcr=0x4000000
 out x7=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0744
+test jscvt.fjcvtzs.0754
 code 1e7e008a
 seed 95b22e0fce6463a7
 in v4=0x31b9ef2411abe034e5eb12b031681d61 fpcr=0x2400000
 out x10=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0745
+test jscvt.fjcvtzs.0755
 code 1e7e03e2
 seed 416aa879007d189f
 in v31=0xab4722fe198e749ffff0000000000000 fpcr=0x2400000
 out x2=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0746
+test jscvt.fjcvtzs.0756
 code 1e7e0081
 seed 9981b0d11388376b
 in v4=0xaa0619828f4447bbe2b9b1a44d04b457 fpcr=0x4400000
 out x1=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0747
+test jscvt.fjcvtzs.0757
 code 1e7e020e
 seed d2c8f4cfc9771765
 in v16=0xff8613447d27e73c000147517cc4e32f fpcr=0x2c00000
 out x14=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0748
+test jscvt.fjcvtzs.0758
 code 1e7e0058
 seed 366893e606f59dd1
 in v2=0x7cb12aec9296df61adda4540306cbf29 fpcr=0xc00000
 out x24=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0749
+test jscvt.fjcvtzs.0759
 code 1e7e005a
 seed f41b4501383b2bdf
 in v2=0x705f621b2bcfb2e6fb2528b6d086972a fpcr=0x800000
 out x26=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0750
+test jscvt.fjcvtzs.0760
 code 1e7e00b8
 seed d9cc90e44805991e
 in v5=0x03ce8698f1db2fcdc1ce88e6f4000000 fpcr=0x800000
 out x24=0xc2ee3218 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0751
+test jscvt.fjcvtzs.0761
 code 1e7e0228
 seed df64d11d088a82ac
 in v17=0x8f129c32811b98763c4eea5f5094781d fpcr=0x1800000
 out x8=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0752
+test jscvt.fjcvtzs.0762
 code 1e7e0143
 seed 394c5b6973eb1cbc
 in v10=0xc973716c3ef4b6f28000000000000000 fpcr=0x3c00000
 out x3=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0753
+test jscvt.fjcvtzs.0763
 code 1e7e0310
 seed 42a4b67e2344954e
 in v24=0x9687142cc3caad467ff0000000000000 fpcr=0x4400000
 out x16=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0754
+test jscvt.fjcvtzs.0764
 code 1e7e0201
 seed e3ff5a1ca1300f11
 in v16=0x0b444988f186674d064c3630f0f0a01b fpcr=0x4c00000
 out x1=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0755
+test jscvt.fjcvtzs.0765
 code 1e7e005b
 seed 83fe99443480c2c8
 in v2=0xf82980c06efd35aa8000000000000000 fpcr=0x1400000 fpsr=0x8000089
 out x27=0x0
 exit end
-test jscvt.fjcvtzs.0756
+test jscvt.fjcvtzs.0766
 code 1e7e00fb
 seed 4f22bbabc3ba73be
 in v7=0x4d8813eacd54e11afff0000000000000 fpcr=0x800000
 out x27=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0757
+test jscvt.fjcvtzs.0767
 code 1e7e0085
 seed 161309e586019e56
 in v4=0xe8395c3d22b9ac8343d0000000000000 fpcr=0x2c00000
 out x5=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0758
+test jscvt.fjcvtzs.0768
 code 1e7e00df
 seed b6b182eb311a92e7
 in v6=0xf3b6f3132749cf5e8002e421e551b973 fpcr=0x6c00000 fpsr=0x8000091
 exit end
-test jscvt.fjcvtzs.0759
+test jscvt.fjcvtzs.0769
 code 1e7e03ac
 seed 58617bdb004b1be9
 in v29=0xfb260562b89e3626416c8ea598000000 fpcr=0x1800000
 out x12=0xe4752c nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0760
+test jscvt.fjcvtzs.0770
 code 1e7e0298
 seed 0f66fbbbcf615c01
 in v20=0x604230b2021e384f7ff78043b521dc67 fpcr=0x1800000
 out x24=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0761
+test jscvt.fjcvtzs.0771
 code 1e7e0115
 seed 319f6d8a32c745d9
 in v8=0x6e8b50cdca8d541ffff0c08148a6bb05 fpcr=0x1000000
 out x21=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0762
+test jscvt.fjcvtzs.0772
 code 1e7e0001
 seed d56416fc0e9bf509
 in v0=0x435df11bcc9499f0fff0000000000000 fpcr=0xc00000
 out x1=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0763
+test jscvt.fjcvtzs.0773
 code 1e7e01d0
 seed 7366080a13e8ff6d
 in v14=0xbd1301f2769e88a17ff9a0fbd25147a9 fpcr=0xc00000
 out x16=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0764
+test jscvt.fjcvtzs.0774
 code 1e7e0272
 seed fbd60a13a874b040
 in v19=0x45be669e7f014ae9002fffffffffffff fpcr=0x400000
 out x18=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0765
+test jscvt.fjcvtzs.0775
 code 1e7e02a1
 seed 303c293390952f5a
 in v21=0x6dedbb43f504abf2fff0000000000000 fpcr=0x400000 fpsr=0x800000a
 out x1=0x0 nzcv=0x0 fpsr=0x800000b
 exit end
-test jscvt.fjcvtzs.0766
+test jscvt.fjcvtzs.0776
 code 1e7e003d
 seed c1397772a6f83ee4
 in v1=0x58ed97f03ec506ba41e0000000400000 fpcr=0x4000000 fpsr=0x8000093
 out x29=0x80000002 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0767
+test jscvt.fjcvtzs.0777
 code 1e7e0361
 seed 6bec0b6692dd3fa8
 in v27=0x1dbd73cfd4bcb2140000000000000000 fpcr=0x2800000
 out x1=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0768
+test jscvt.fjcvtzs.0778
 code 1e7e02f0
 seed 5839af1e081758bc
 in v23=0x6abb22b572018f18469198f88809cf60 fpcr=0x800000
 out x16=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0769
+test jscvt.fjcvtzs.0779
 code 1e7e0237
 seed d73a948f251c48a3
 in v17=0x4f64270ef9cbe824675799abba65a16f fpcr=0x6000000
 out x23=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0770
+test jscvt.fjcvtzs.0780
 code 1e7e036e
 seed 865aea892b9560aa
 in v27=0x5778e6d95aaaba40fff62ede131c756f fpcr=0x2c00000
 out x14=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0771
+test jscvt.fjcvtzs.0781
 code 1e7e007b
 seed 616d5873705015ed
 in v3=0xb016ea0b4ae14aedfe485a33e2de70fd fpcr=0x800000
 out x27=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0772
+test jscvt.fjcvtzs.0782
 code 1e7e01d8
 seed f381c2dac054ced1
 in v14=0xc36b71503b5773920000000000000001 fpcr=0x2400000
 out x24=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0773
+test jscvt.fjcvtzs.0783
 code 1e7e02f8
 seed d4da9050de245a1b
 in v23=0x52638e249f02071c0000000000000000 fpcr=0x2c00000
 out x24=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0774
+test jscvt.fjcvtzs.0784
 code 1e7e0169
 seed 07cdb472b8185165
 in v11=0x3622e85a79918d037ff0000000000000 fpcr=0x400000
 out x9=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0775
+test jscvt.fjcvtzs.0785
 code 1e7e0046
 seed 832eb3e2ffae5425
 in v2=0x2e41ef76169c0aa5c00dbaab3c000000 fpcr=0x6400000
 out x6=0xfffffffd nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0776
+test jscvt.fjcvtzs.0786
 code 1e7e03c0
 seed 3238073efba5947d
 in v30=0x0d96cfc1291382b3120c099fd13e6c21 fpcr=0x4000000
 out x0=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0777
+test jscvt.fjcvtzs.0787
 code 1e7e03d2
 seed fdfd012f2d18abe1
 in v30=0xaf9be68b38b0c575401f46ab01eed3c7 fpcr=0x6400000
 out x18=0x7 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0778
+test jscvt.fjcvtzs.0788
 code 1e7e01ab
 seed fb0af49077cc418a
 in v13=0x3310fda4e6ee00c65bd77bacb1816f9c
 out x11=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0779
+test jscvt.fjcvtzs.0789
 code 1e7e03f4
 seed 5055c2e8aeba011c
 in v31=0x4a75e6e08978c12843d5f97f4537050d fpcr=0x2800000
 out x20=0xdc143400 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0780
+test jscvt.fjcvtzs.0790
 code 1e7e0079
 seed 800406ff7838d81d
 in v3=0xcc8722e5e2d685e59cdf4befe2b646ad fpcr=0x2c00000
 out x25=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0781
+test jscvt.fjcvtzs.0791
 code 1e7e03df
 seed 586f06b36981080d
 in v30=0x22e67ab2faaaa73bfffc0a4c1df002a1 fpcr=0x400000
 out nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0782
+test jscvt.fjcvtzs.0792
 code 1e7e020a
 seed 1f8a9ceae538819a
 in v16=0xe00accd179f151c8000978924401c8f9 fpcr=0x400000
 out x10=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0783
+test jscvt.fjcvtzs.0793
 code 1e7e00c9
 seed 4bb4fcd67ea60810
 in v6=0x9950234b743a1b36c004bf018e520a56 fpcr=0x1000000
 out x9=0xfffffffe nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0784
+test jscvt.fjcvtzs.0794
 code 1e7e03f0
 seed 5dc798b04f4594c8
 in v31=0x41170d4016abdb8c800fffffffffffff fpcr=0x800000
 out x16=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0785
+test jscvt.fjcvtzs.0795
 code 1e7e02c6
 seed c17e261e83736dec
 in v22=0x7fa8bb72f1a4a859001fffffffffffff fpcr=0x4400000
 out x6=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0786
+test jscvt.fjcvtzs.0796
 code 1e7e0240
 seed f4183b1a7a2cd0d5
 in v18=0x16d67f72390b7f1a7fefffffffffffff fpcr=0x4000000
 out x0=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0787
+test jscvt.fjcvtzs.0797
 code 1e7e01e8
 seed 60a181e4e9aa5a5d
 in v15=0xe44833360c764dab22f59e3aa7a47b8c fpcr=0xc00000
 out x8=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0788
+test jscvt.fjcvtzs.0798
 code 1e7e009b
 seed d4a6de9dbee94baa
 in v4=0xc3a78a92b7e32a4b8001402875bc7791 fpcr=0x2000000
 out x27=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0789
+test jscvt.fjcvtzs.0799
 code 1e7e005a
 seed 92268a117208d2fe
 in v2=0x7ffe8b00235fd44d8000000000000000 fpcr=0x800000
 out x26=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0790
+test jscvt.fjcvtzs.0800
 code 1e7e0223
 seed 1eb2746d039b347c
 in v17=0x53b8e61bd928ea067ff339c2ddeccc31 fpcr=0xc00000
 out x3=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0791
+test jscvt.fjcvtzs.0801
 code 1e7e0045
 seed 04e3f4aca7012e35
 in v2=0xf5378b2f8351ef32c070045a04000000 fpcr=0x1000000
 out x5=0xffffff00 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0792
+test jscvt.fjcvtzs.0802
 code 1e7e004c
 seed 1b01129058483502
 in v2=0x52de1904814fff03fff0000000000000 fpcr=0x400000
 out x12=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0793
+test jscvt.fjcvtzs.0803
 code 1e7e028e
 seed 3ab4d96daf4d5020
 in v20=0x0d231ed736b6b362c1f0000000300000 fpcr=0xc00000
 out x14=0xfffffffd nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0794
+test jscvt.fjcvtzs.0804
 code 1e7e0259
 seed eb7e3ece0fe9249d
 in v18=0xbcbcd6e23a7fd5f08020000000000000 fpcr=0x1000000 fpsr=0x8000087
 out x25=0x0 nzcv=0x0 fpsr=0x8000097
 exit end
-test jscvt.fjcvtzs.0795
+test jscvt.fjcvtzs.0805
 code 1e7e0255
 seed aa63ecf4cd2f4f34
 in v18=0x229f5a8c0c35db45d9bc593e1339f774 fpcr=0x1400000
 out x21=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0796
+test jscvt.fjcvtzs.0806
 code 1e7e0080
 seed a7e604a937ccbb2d
 in v4=0xb3f9242d54ea80367ffbb2f3e93a5526 fpcr=0xc00000
 out x0=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0797
+test jscvt.fjcvtzs.0807
+code 1e7e0044
+seed 542b2135f6c132d3
+in v2=0x1630128c8be0cfd38005cf46b363d877 fpcr=0x7000000 fpsr=0x800000e
+out x4=0x0 nzcv=0x0 fpsr=0x800008e
+exit end
+test jscvt.fjcvtzs.0808
 code 1e7e0243
 seed 835e45c722a3bf10
 in v18=0x9dceb8ec9da68184c1d0000000200000 fpcr=0xc00000
 out x3=0xc0000000 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0798
+test jscvt.fjcvtzs.0809
 code 1e7e02e7
 seed 35cf1beb7a269295
 in v23=0xbdabb4e5c8453db5ffefffffffffffff fpcr=0x2800000
 out x7=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0799
+test jscvt.fjcvtzs.0810
 code 1e7e0306
 seed a5abc23c37b8062f
 in v24=0xdc7d2c02f9782515fff9a7757a7e1cc6 fpcr=0x1000000
 out x6=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0800
+test jscvt.fjcvtzs.0811
 code 1e7e01b8
 seed 4e7f6330ee3a7c4b
 in v13=0x2d78096510a891f27ff47eaf1a67c54b fpcr=0x5400000
 out x24=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0801
+test jscvt.fjcvtzs.0812
 code 1e7e00f6
 seed 95b1da14a2e93754
 in v7=0xcfe32332663cad43000d2cd2c50c777b fpcr=0x800000
 out x22=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0802
+test jscvt.fjcvtzs.0813
 code 1e7e0395
 seed 6bc8c3503f0c32da
 in v28=0x1d08366ef1ac1db5fff7106a586010b7 fpcr=0x1000000
 out x21=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0803
+test jscvt.fjcvtzs.0814
+code 1e7e0241
+seed b3ff0c1ee639f5dc
+in v18=0xf9ea770a1e7e0b9d0005d260260dbefb fpcr=0x5000000
+out x1=0x0 nzcv=0x0 fpsr=0x80
+exit end
+test jscvt.fjcvtzs.0815
 code 1e7e008e
 seed 83e28646ba634ef3
 in v4=0x6119796b26724d28fff89b34bbe42e8a fpcr=0x5800000
 out x14=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0804
+test jscvt.fjcvtzs.0816
 code 1e7e0009
 seed d97e94a5cea39604
 in v0=0xd60aed94d07259d9fff2beaedeca1abd fpcr=0x6800000 fpsr=0x800008b
 out x9=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0805
+test jscvt.fjcvtzs.0817
 code 1e7e0339
 seed 5b670b441ce411e2
 in v25=0x7d0e9be5268f8080f147d049dc049156 fpcr=0x400000
 out x25=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0806
+test jscvt.fjcvtzs.0818
 code 1e7e0342
 seed d94888b51a35ec16
 in v26=0x983ebee4910e87740020000000000000 fpcr=0x2c00000
 out x2=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0807
+test jscvt.fjcvtzs.0819
 code 1e7e014a
 seed a9ce4ff74be12a84
 in v10=0x3e0152810d19e66f31e148b14ff9d762 fpcr=0x6800000
 out x10=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0808
+test jscvt.fjcvtzs.0820
 code 1e7e018c
 seed f7dc303d74bddeaa
 in v12=0x3ea1580184b1936f335c441a45f01252 fpcr=0x6c00000
 out x12=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0809
+test jscvt.fjcvtzs.0821
 code 1e7e00a3
 seed dc8252cf8a41f8d1
 in v5=0xff16be82fe1a69b2ffefffffffffffff fpcr=0x4800000
 out x3=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0810
+test jscvt.fjcvtzs.0822
 code 1e7e027c
 seed d4be8df397fe0eb3
 in v19=0xc10d019a8806c9303fece592bbae9d8a fpcr=0x1000000
 out x28=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0811
+test jscvt.fjcvtzs.0823
 code 1e7e02f3
 seed 06fbb74728ae9533
 in v23=0x29148fecad89267c0000000000000000 fpcr=0x4c00000
 out x19=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0812
+test jscvt.fjcvtzs.0824
 code 1e7e036e
 seed cfa49245406678d0
 in v27=0xecb768be2438338e2029d44ca582107a fpcr=0x5400000 fpsr=0x8b
 out x14=0x0 nzcv=0x0 fpsr=0x9b
 exit end
-test jscvt.fjcvtzs.0813
+test jscvt.fjcvtzs.0825
 code 1e7e024c
 seed 04f8af29fbee96ff
 in v18=0x89377275e4ce8561800bb40dd909ac3f fpcr=0x800000 fpsr=0x99
 out x12=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0814
+test jscvt.fjcvtzs.0826
 code 1e7e02a0
 seed c3abfe863eb4f988
 in v21=0xe96583e1e0942aaeaa79db21a22df798 fpcr=0x2800000
 out x0=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0815
+test jscvt.fjcvtzs.0827
 code 1e7e015b
 seed c9ead1a813b74de5
 in v10=0x086df57c008758f6fff0b41b8312419d fpsr=0x8000019
 out x27=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0816
+test jscvt.fjcvtzs.0828
 code 1e7e030d
 seed 04e683d15df2d128
 in v24=0xb0e8f3ab9b93118039b0b51d1c9f8ffc fpcr=0x2800000
 out x13=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0817
+test jscvt.fjcvtzs.0829
 code 1e7e03a5
 seed 3f6853cd78a570f8
 in v29=0xae46e7053be1c3ff7ff994217ca2ea79 fpcr=0x1800000
 out x5=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0818
+test jscvt.fjcvtzs.0830
 code 1e7e0258
 seed 2aaa3b00335d604d
 in v18=0xf5483985b3409e59bffbf9730cf53f3d
 out x24=0xffffffff nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0819
+test jscvt.fjcvtzs.0831
 code 1e7e001c
 seed d6e4cac29c55d27d
 in v0=0x5d4480ce0ec7f7b82cdbeee1bffd4ad8 fpcr=0x400000
 out x28=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0820
+test jscvt.fjcvtzs.0832
 code 1e7e00f1
 seed c4fd6f77fceacea6
 in v7=0x9ef8d07171a12e26c26bbfc548000000 fpcr=0x2800000 fpsr=0x8000086
 out x17=0x1d5c000 nzcv=0x0 fpsr=0x8000087
 exit end
-test jscvt.fjcvtzs.0821
+test jscvt.fjcvtzs.0833
 code 1e7e038c
 seed c6621434fea1953f
 in v28=0xc10bf9cc7ce9986afff278b3361e9d1f fpcr=0x2800000
 out x12=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0822
+test jscvt.fjcvtzs.0834
 code 1e7e02b9
 seed 86d0ec59be115b3c
 in v21=0xc5283470c1dc2bae7ffbf32023d7c9a4 fpcr=0x2c00000 fpsr=0x800008f
 out x25=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0823
+test jscvt.fjcvtzs.0835
 code 1e7e0165
 seed 58a7240d6923b53c
 in v11=0xa3dd15a9ac6fca8d84d957ffe51b2686 fpsr=0x800001d
 out x5=0x0
 exit end
-test jscvt.fjcvtzs.0824
+test jscvt.fjcvtzs.0836
 code 1e7e00d3
 seed 5d873b12730467b9
 in v6=0x689040ba7449d31b3b1f055cc3fa55c5 fpcr=0x6c00000
 out x19=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0825
+test jscvt.fjcvtzs.0837
 code 1e7e0175
 seed 5bccb08246c27d9f
 in v11=0xf5e5a661c76412e1002bd365dbfe54b7 fpcr=0x4c00000
 out x21=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0826
+test jscvt.fjcvtzs.0838
 code 1e7e0346
 seed 6250803f3007df07
 in v26=0xb76141a7f266b32bfff0000000000000 fpcr=0x7400000 fpsr=0x91
 out x6=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0827
+test jscvt.fjcvtzs.0839
 code 1e7e03a1
 seed 0db79c53ed013ca8
 in v29=0x9a8498806c55e0b7923f53b7cb212825 fpcr=0x3c00000
 out x1=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0828
+test jscvt.fjcvtzs.0840
 code 1e7e0388
 seed bf404ce52efb6b9c
 in v28=0x5b2bba2a1ae715871428b514298e5d33 fpcr=0xc00000
 out x8=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0829
+test jscvt.fjcvtzs.0841
 code 1e7e0193
 seed aa03d7f3b95e76f6
 in v12=0x6b4a2799f679e62d863bf06b86b5db24 fpcr=0x5800000
 out x19=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0830
+test jscvt.fjcvtzs.0842
 code 1e7e016b
 seed 01e37df390cffe8e
 in v11=0x42c56dc2c6027e3340032bba4a2a3372 fpcr=0x1000000 fpsr=0x800009a
 out x11=0x2 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0831
+test jscvt.fjcvtzs.0843
 code 1e7e03b3
 seed c191364e2f5b7bba
 in v29=0x75c9e47d4e25222d8000000000000000 fpcr=0x800000
 out x19=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0832
+test jscvt.fjcvtzs.0844
 code 1e7e01c3
 seed f6945e4c365da4a1
 in v14=0x19a4b7b09e184c3effe7b1b8e0d41b12 fpcr=0x5c00000
 out x3=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0833
+test jscvt.fjcvtzs.0845
 code 1e7e0193
 seed 0eb0a902eaa1c090
 in v12=0x81096f7de00ee41045b7423f49ad3735 fpcr=0x1c00000
 out x19=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0834
+test jscvt.fjcvtzs.0846
 code 1e7e0379
 seed 3466eaa47f63380b
 in v27=0x3183aaf4cf346cd9fff01012e98cffd5 fpcr=0x6c00000
 out x25=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0835
+test jscvt.fjcvtzs.0847
 code 1e7e0337
 seed 896a91979b05ce50
 in v25=0xcefa90bf5568c3bdc3f297575b5dce8b fpcr=0x4400000
 out x23=0x23175000 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0836
+test jscvt.fjcvtzs.0848
 code 1e7e0222
 seed cddf0ae90189b94c
 in v17=0xf53448e036aa63c80000000000000000 fpcr=0x3800000
 out x2=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0837
+test jscvt.fjcvtzs.0849
 code 1e7e008d
 seed 4d70e0825d414cde
 in v4=0x332d8eeb4f8b8c96c160000090000000 fpcr=0x3000000
 out x13=0xff7ffffc nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0838
+test jscvt.fjcvtzs.0850
 code 1e7e0344
 seed 3fbebba2bf2fa588
 in v26=0xda0b3b0b1abb03948000000000000000 fpcr=0x800000 fpsr=0x19
 out x4=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0839
+test jscvt.fjcvtzs.0851
 code 1e7e0217
 seed 6968d804e130b1b4
 in v16=0x8c28b1c7d1bb62f34014000000000000 fpcr=0x1400000
 out x23=0x5 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0840
+test jscvt.fjcvtzs.0852
 code 1e7e0040
 seed b0ad389d5ee88c50
 in v2=0xc3a35a52cf1e4bd03cc700e7b2e575d6 fpcr=0x5c00000 fpsr=0x9f
 out x0=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0841
+test jscvt.fjcvtzs.0853
 code 1e7e02c3
 seed d3a611c0c86650fc
 in v22=0x701e3028ff5c6323fff134f820651aef fpcr=0x2800000
 out x3=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0842
+test jscvt.fjcvtzs.0854
 code 1e7e0154
 seed bbb980195bb28504
 in v10=0xc576c0625c392c7a6ec29d22fdeb5e72 fpcr=0x400000 fpsr=0x8000098
 out x20=0x0 nzcv=0x0 fpsr=0x8000099
 exit end
-test jscvt.fjcvtzs.0843
+test jscvt.fjcvtzs.0855
 code 1e7e00e2
 seed 3af48f907544f37c
 in v7=0xeaca5fbf8720d7d37ff0000000000000 fpcr=0x800000
 out x2=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0844
+test jscvt.fjcvtzs.0856
 code 1e7e0119
 seed 63cce4ca9deeb961
 in v8=0x7be215ef61a3a37ebff368dc02dc2774 fpcr=0x3800000
 out x25=0xffffffff nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0845
+test jscvt.fjcvtzs.0857
 code 1e7e00d2
 seed fb3d6ca575714387
 in v6=0x8070fc0e504e0fc07ff2c07e76c2c6b1 fpcr=0x400000
 out x18=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0846
+test jscvt.fjcvtzs.0858
 code 1e7e0312
 seed b293c601b9923457
 in v24=0xc1bb7ee860e7c0dfbff8000000000000 fpcr=0x800000
 out x18=0xffffffff nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0847
+test jscvt.fjcvtzs.0859
 code 1e7e02bc
 seed f55e533956f8a931
 in v21=0x390e4944a233ac54bfe29806380edef3 fpcr=0x400000 fpsr=0x1f
 out x28=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0848
+test jscvt.fjcvtzs.0860
 code 1e7e025d
 seed 6366999841733d09
 in v18=0xe2deeecafe5a6718bff0000000000000 fpcr=0x3400000
 out x29=0xffffffff nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0849
+test jscvt.fjcvtzs.0861
 code 1e7e039f
 seed 91025d82f9d82e6b
 in v28=0x5de864f8d361930143f2823ac9c94c51
 out nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0850
+test jscvt.fjcvtzs.0862
 code 1e7e00f7
 seed 5cc29767ae387799
 in v7=0x06edb67fc27d10f4ffe0000000000000 fpcr=0x800000 fpsr=0x6
 out x23=0x0 nzcv=0x0 fpsr=0x7
 exit end
-test jscvt.fjcvtzs.0851
+test jscvt.fjcvtzs.0863
 code 1e7e03fd
 seed fc50a8201d7b9f10
 in v31=0x70142463c1efc4487ff0000000000000 fpcr=0x2800000
 out x29=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0852
+test jscvt.fjcvtzs.0864
 code 1e7e03f9
 seed b57e7f1d98fdb5c8
 in v31=0x0ab362c9daa190c63ff84cfe0f32e1be fpcr=0x800000
 out x25=0x1 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0853
+test jscvt.fjcvtzs.0865
 code 1e7e014f
 seed 0058404d703d6c90
 in v10=0x725ce06fbc741aa84150000120000000 fpcr=0x6000000
 out x15=0x400004 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0854
+test jscvt.fjcvtzs.0866
 code 1e7e03c1
 seed f053b3e0d002e8e7
 in v30=0x2361e8540bf0d2d48020000000000000 fpcr=0x6000000
 out x1=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0855
+test jscvt.fjcvtzs.0867
 code 1e7e00c2
 seed 92e432efd59589c4
 in v6=0x765d03308b502adf6b2b4011269193b0 fpcr=0x3c00000
 out x2=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0856
+test jscvt.fjcvtzs.0868
 code 1e7e00d7
 seed 1a5e0a90b8a1d40c
 in v6=0xbc1fe3a87f9ee5b062bc68516cf72aad
 out x23=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0857
+test jscvt.fjcvtzs.0869
 code 1e7e0354
 seed 815163bbbbb424d5
 in v26=0xe3afb91765a71dc043e0000000000000 fpcr=0x800000
 out x20=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0858
+test jscvt.fjcvtzs.0870
 code 1e7e002c
 seed 806125e52c602ee5
 in v1=0xd53a06444072523a7ff20599d0248fdb
 out x12=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0859
+test jscvt.fjcvtzs.0871
 code 1e7e024a
 seed 05ee5865a9e41353
 in v18=0x0bb7e051d21433de7fefffffffffffff fpcr=0x7c00000 fpsr=0x6
 out x10=0x0 nzcv=0x0 fpsr=0x7
 exit end
-test jscvt.fjcvtzs.0860
+test jscvt.fjcvtzs.0872
 code 1e7e00ec
 seed 2e1ce140ab735264
 in v7=0x2076dfa1af432feafffc52eb60f12db1 fpcr=0x400000
 out x12=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0861
+test jscvt.fjcvtzs.0873
 code 1e7e022d
 seed a7a0f7b3a89496a8
 in v17=0x75aa94d760f28cddfff4a9c7f3f105d3 fpcr=0x400000
 out x13=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0862
+test jscvt.fjcvtzs.0874
 code 1e7e0234
 seed 1422832deb323f31
 in v17=0x60543384ef2a3c4741e0000000800000 fpcr=0x800000
 out x20=0x80000004 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0863
+test jscvt.fjcvtzs.0875
 code 1e7e0228
 seed e234218b060bbe26
 in v17=0x71258d43cd85b73cc1992c7358000000 fpcr=0x800000 fpsr=0x14
 out x8=0xf9b4e32a nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0864
+test jscvt.fjcvtzs.0876
 code 1e7e008d
 seed b5f4a93c6b62524d
 in v4=0x8f5d0d3ef4975c77aee627566086f4a2
 out x13=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0865
+test jscvt.fjcvtzs.0877
 code 1e7e0297
 seed a96568bdcdbe14dd
 in v20=0xc8c639df68b57b90426f6817a4000000 fpcr=0x2800000
 out x23=0x40bd2000 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0866
+test jscvt.fjcvtzs.0878
 code 1e7e0236
 seed d74167ca07b82cec
 in v17=0xcf011b8e842e0189401371d48967639c fpcr=0x400000
 out x22=0x4 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0867
+test jscvt.fjcvtzs.0879
 code 1e7e02bc
 seed b0eeb8372a32d22e
 in v21=0xb3e049ba7e09eca98000000000000000 fpcr=0xc00000 fpsr=0x8000009
 out x28=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0868
+test jscvt.fjcvtzs.0880
 code 1e7e02ab
 seed 0c119f720340e882
 in v21=0x7935386512ca8b6cfff0000000000000 fpcr=0x2800000
 out x11=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0869
+test jscvt.fjcvtzs.0881
 code 1e7e009f
 seed bf03560c9d8be219
 in v4=0xa06d9883cc10e1494012000000000000 fpcr=0x6400000
 out nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0870
+test jscvt.fjcvtzs.0882
 code 1e7e03f8
 seed d9187f4a4993124b
 in v31=0x2fb00540da61c5a4c858fab26b20c39f fpcr=0x800000
 out x24=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0871
+test jscvt.fjcvtzs.0883
 code 1e7e03c0
 seed 47fc997d41274a26
 in v30=0x9f9dca609d0c4c3f11473c2b370cce48 fpcr=0x6000000 fpsr=0x88
 out x0=0x0 nzcv=0x0 fpsr=0x98
 exit end
-test jscvt.fjcvtzs.0872
+test jscvt.fjcvtzs.0884
 code 1e7e0366
 seed f116f2020749609f
 in v27=0xc7baeeb0be7f5a96ddfc1dd90929d1e3 fpsr=0x86
 out x6=0x0 nzcv=0x0 fpsr=0x87
 exit end
-test jscvt.fjcvtzs.0873
+test jscvt.fjcvtzs.0885
 code 1e7e006d
 seed ec5d4df12a4af82f
 in v3=0x0ea4ed9c70c833590000000000000000 fpcr=0x400000
 out x13=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0874
+test jscvt.fjcvtzs.0886
 code 1e7e0218
 seed 9aae806199ec0efa
 in v16=0xddf4a7e36f51095f3ff0000000000000 fpcr=0x800000 fpsr=0x9f
 out x24=0x1 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0875
+test jscvt.fjcvtzs.0887
 code 1e7e031a
 seed b91089139fa13e2d
 in v24=0x50232def5abe32a5c1f0000000700000
 out x26=0xfffffff9 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0876
+test jscvt.fjcvtzs.0888
 code 1e7e031c
 seed 0c43cd763ffe164e
 in v24=0x00e3c9fb7fa764298000000000000000 fpcr=0xc00000
 out x28=0x0
 exit end
-test jscvt.fjcvtzs.0877
+test jscvt.fjcvtzs.0889
 code 1e7e0211
 seed c1b693d22f55aeef
 in v16=0x4591f901c5931ad97ff722c7f3eb3ca9 fpcr=0x5800000
 out x17=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0878
+test jscvt.fjcvtzs.0890
 code 1e7e03db
 seed 8fc36419ee3877d2
 in v30=0x2b8db1e6fb99dfb541d0000000200000 fpcr=0x4800000
 out x27=0x40000000 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0879
+test jscvt.fjcvtzs.0891
 code 1e7e0294
 seed e314067f76bf27df
 in v20=0x76446e364804b47d00081826dc115b19 fpcr=0xc00000
 out x20=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0880
+test jscvt.fjcvtzs.0892
 code 1e7e024c
 seed 46f5c5e27076407d
 in v18=0xa68ff296218980337ff2239e4988fd47 fpcr=0xc00000
 out x12=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0881
+test jscvt.fjcvtzs.0893
 code 1e7e0308
 seed 8a3983006ed811b4
 in v24=0xe8028277931ad3a80010000000000000 fpcr=0x400000
 out x8=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0882
+test jscvt.fjcvtzs.0894
 code 1e7e018a
 seed 9c631d46a1db743a
 in v12=0x6beee53bc78668c7800bbd2003e9b113 fpcr=0x2800000
 out x10=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0883
+test jscvt.fjcvtzs.0895
 code 1e7e0009
 seed 28a575451c030f5f
 in v0=0xcf6d69cda969499d7ff97f249dfe266a fpcr=0x400000 fpsr=0x9
 out x9=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0884
+test jscvt.fjcvtzs.0896
 code 1e7e0243
 seed dba4adbf6710570a
 in v18=0x29e0aa8e30ef13f20000000000000000 fpcr=0x5800000 fpsr=0x95
 out x3=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0885
+test jscvt.fjcvtzs.0897
 code 1e7e016f
 seed a01c35ea4a0c1530
 in v11=0x637459c15b1ba4ae802fffffffffffff fpcr=0x4000000 fpsr=0xa
 out x15=0x0 nzcv=0x0 fpsr=0x1a
 exit end
-test jscvt.fjcvtzs.0886
+test jscvt.fjcvtzs.0898
 code 1e7e02a7
 seed 44f1976182a13652
 in v21=0xb3e1f1a98f7608f70000000000000001 fpcr=0x800000
 out x7=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0887
+test jscvt.fjcvtzs.0899
 code 1e7e018c
 seed 747cc50a563608dd
 in v12=0xdb8bbf51eba36dc5b1f9acdfd9125676
 out x12=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0888
+test jscvt.fjcvtzs.0900
 code 1e7e0004
 seed 86cdd652516b77c3
 in v0=0x90ff6b744d1c6d1d002356b50c0cb07c fpcr=0x5000000
 out x4=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0889
+test jscvt.fjcvtzs.0901
 code 1e7e03a8
 seed 201035d20055a0ce
 in v29=0x9c4cb97cc9ffac0ec1e0000000900000 fpcr=0x5400000
 out x8=0x7ffffffc nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0890
+test jscvt.fjcvtzs.0902
 code 1e7e03a7
 seed 5646d507db67fe99
 in v29=0x344068401ecc574a7ffc4f32f2ca8287 fpcr=0x400000
 out x7=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0891
+test jscvt.fjcvtzs.0903
 code 1e7e0362
 seed ef4da4444d809a76
 in v27=0x2b97cf84f769cee2c6c83898d8b517f7 fpcr=0x1000000 fpsr=0x80
 out x2=0x0 nzcv=0x0 fpsr=0x81
 exit end
-test jscvt.fjcvtzs.0892
+test jscvt.fjcvtzs.0904
 code 1e7e02bf
 seed ceb9957f94c46f9e
 in v21=0x29ab2505f63a3ab5fffe80b1acf3fbfa fpcr=0x4400000
 out nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0893
+test jscvt.fjcvtzs.0905
 code 1e7e0106
 seed 32e279bfca34426a
 in v8=0xb43e415606dce05ebff2dffab6677f4f fpcr=0x800000
 out x6=0xffffffff nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0894
+test jscvt.fjcvtzs.0906
 code 1e7e01c3
 seed a37338dd6f0aafd7
 in v14=0xb894646a3a06a7b5bff0c4d3710c8ef8 fpcr=0x800000
 out x3=0xffffffff nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0895
+test jscvt.fjcvtzs.0907
 code 1e7e008f
 seed 8aab5dd898f2802e
 in v4=0xa5d54b9f72fea69ffff0000000000000 fpcr=0x2c00000 fpsr=0x8000086
 out x15=0x0 nzcv=0x0 fpsr=0x8000087
 exit end
-test jscvt.fjcvtzs.0896
+test jscvt.fjcvtzs.0908
 code 1e7e0091
 seed bda909516d455eeb
 in v4=0x8b19f4ff84fa2cd46b8904758c9f63cd fpcr=0x1800000
 out x17=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0897
+test jscvt.fjcvtzs.0909
 code 1e7e03e6
 seed 3564dc6c19c42094
 in v31=0xc50b46f1e41f9a817ff747e184c1aaab fpcr=0x1c00000
 out x6=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0898
+test jscvt.fjcvtzs.0910
 code 1e7e0190
 seed e96c1fa82aa56eaa
 in v12=0xd990e5bdd141359dffe0000000000000 fpcr=0x400000
 out x16=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0899
+test jscvt.fjcvtzs.0911
+code 1e7e008f
+seed 3db3755faa44c62c
+in v4=0x039c81a1cc338b3e000fffffffffffff fpcr=0x1000000 fpsr=0x95
+out x15=0x0 nzcv=0x0
+exit end
+test jscvt.fjcvtzs.0912
+code 1e7e01b9
+seed 334e43ff20dd6893
+in v13=0x0e0f2e66f3ea8fcf000fffffffffffff fpcr=0x5800000
+out x25=0x0 nzcv=0x0 fpsr=0x80
+exit end
+test jscvt.fjcvtzs.0913
 code 1e7e039c
 seed 60a37c30e2c8fe53
 in v28=0x1b680c9f7eab6dffc3f9b82fcb5d0424
 out x28=0x2fbdc000 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0900
+test jscvt.fjcvtzs.0914
 code 1e7e026e
 seed 23265419fddb4eaf
 in v19=0xd9ed8decc1aa30d1c1e0000000000000 fpcr=0x2c00000
 out x14=0x80000000 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0901
+test jscvt.fjcvtzs.0915
 code 1e7e0188
 seed 384d8dc347f7d00b
 in v12=0xe07917585b5ac2e8bfffb8c35df0bf31 fpcr=0x1c00000
 out x8=0xffffffff nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0902
+test jscvt.fjcvtzs.0916
 code 1e7e01c9
 seed 25c2aa69394c12f2
 in v14=0xbccfd386a618fb7129e3c9f78e35720c fpcr=0xc00000
 out x9=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0903
+test jscvt.fjcvtzs.0917
 code 1e7e0196
 seed 68279b7e5a925784
 in v12=0x94f82e047143bcbbc240e9ac48000000 fpcr=0x1400000 fpsr=0x8000089
 out x22=0x2ca77000
 exit end
-test jscvt.fjcvtzs.0904
+test jscvt.fjcvtzs.0918
 code 1e7e03b3
 seed cf226ee1617610e2
 in v29=0xbaa6cc2090e8eb154004277189c217b4 fpcr=0x2800000 fpsr=0x8000012
 out x19=0x2 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0905
+test jscvt.fjcvtzs.0919
 code 1e7e0378
 seed 0a27ae800bd6ad8d
 in v27=0x52544a37a6e821f78022061f89dd4d43 fpcr=0x1800000
 out x24=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0906
+test jscvt.fjcvtzs.0920
 code 1e7e027c
 seed 25c42e6388cf3974
 in v19=0xbb15929ada1257667ff9e72781f10535 fpcr=0x4c00000 fpsr=0x8000016
 out x28=0x0 nzcv=0x0 fpsr=0x8000017
 exit end
-test jscvt.fjcvtzs.0907
+test jscvt.fjcvtzs.0921
 code 1e7e038b
 seed 0a9b08da8262ded9
 in v28=0xef2b170b778599e2fff026c8a9c4de11 fpcr=0x4800000
 out x11=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0908
+test jscvt.fjcvtzs.0922
 code 1e7e03d2
 seed fa169ba96126a352
 in v30=0xfaf89089c63dd40e23801a46d2a35afe fpcr=0x5400000
 out x18=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0909
+test jscvt.fjcvtzs.0923
 code 1e7e0329
 seed 9f12b592def9640f
 in v25=0x4c639789d7784437c1600000c0000000 fpcr=0x4400000
 out x9=0xff7ffffa nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0910
+test jscvt.fjcvtzs.0924
 code 1e7e02d5
 seed 9c6b37904b6a5cc6
 in v22=0xbd05b875e00d9bbff64b9a94416aee8e fpcr=0x6c00000
 out x21=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0911
+test jscvt.fjcvtzs.0925
 code 1e7e0309
 seed 0452495b3bd74fe8
 in v24=0x8bce73f1f81d078b000fffffffffffff fpcr=0x400000
 out x9=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0912
+test jscvt.fjcvtzs.0926
 code 1e7e0290
 seed 292d2c69fdaa50b1
 in v20=0xee097324a25d3296e51f7db5b18d3db4
 out x16=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0913
+test jscvt.fjcvtzs.0927
 code 1e7e0296
 seed 5236d41b6a2fa1eb
 in v20=0x0c78f8de5c15b71e8000000000000001 fpcr=0x800000 fpsr=0x800001b
 out x22=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0914
+test jscvt.fjcvtzs.0928
 code 1e7e02fd
 seed 24ed0aad7241a89a
 in v23=0x5f8fdc2f87a9c1cee2c12c8085e4eba3 fpcr=0x2800000
 out x29=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0915
+test jscvt.fjcvtzs.0929
 code 1e7e032b
 seed 5803fd7bce68f0a1
 in v25=0xd0107643a2dcf9677ff265e45606b27f fpcr=0x3c00000
 out x11=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0916
+test jscvt.fjcvtzs.0930
 code 1e7e01c7
 seed 786f37aa40fcb335
 in v14=0x7471100dfd5d94237ff0000000000000 fpsr=0x800009f
 out x7=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0917
+test jscvt.fjcvtzs.0931
 code 1e7e0394
 seed 1faaed973ea70fcd
 in v28=0xc06580e7d8b0db577ff8426960b5143b fpcr=0xc00000 fpsr=0x89
 out x20=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0918
+test jscvt.fjcvtzs.0932
 code 1e7e02f0
 seed 62c4d1ddd74f8be5
 in v23=0xbed01e5b47376bc97ff0000000000000 fpcr=0x400000
 out x16=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0919
+test jscvt.fjcvtzs.0933
 code 1e7e03b4
 seed 42ab48b491d08a0f
 in v29=0xd5bcf3e9bad854027ffe65157cfb5194 fpcr=0x7c00000
 out x20=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0920
+test jscvt.fjcvtzs.0934
 code 1e7e0373
 seed e46ff3549a59ec16
 in v27=0x53a5288901b3681dfff0000000000000 fpcr=0x400000
 out x19=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0921
+test jscvt.fjcvtzs.0935
 code 1e7e003c
 seed ed97404917d06689
 in v1=0x36010e7e1b720a103fdf9e5e7b7b97fd fpcr=0x6c00000 fpsr=0x98
 out x28=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0922
+test jscvt.fjcvtzs.0936
+code 1e7e00a3
+seed 2127da2efb16f0ea
+in v5=0x489e2886cfd140208004acdc3c65e2e7 fpcr=0x3400000 fpsr=0x9a
+out x3=0x0 nzcv=0x0
+exit end
+test jscvt.fjcvtzs.0937
 code 1e7e0397
 seed 939672d3bfb5814d
 in v28=0x368efc16f8de1af5fff0000000000000 fpcr=0x400000
 out x23=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0923
+test jscvt.fjcvtzs.0938
 code 1e7e0213
 seed afeb9178fac32389
 in v16=0xb8f6974ec5029f40fff0000000000000 fpcr=0x400000
 out x19=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0924
+test jscvt.fjcvtzs.0939
 code 1e7e00ac
 seed 7cab8c87f721fb21
 in v5=0x5dc8310213a0118299d60c3ba2bb472a
 out x12=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0925
+test jscvt.fjcvtzs.0940
 code 1e7e0116
 seed 0b04ca71dd6a0332
 in v8=0x7775b2a33c4c799f7ff048638843656d fpcr=0x6400000
 out x22=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0926
+test jscvt.fjcvtzs.0941
 code 1e7e02ee
 seed 464676f8016ff058
 in v23=0x526228ba62731f14c1e0000000e00000 fpcr=0x400000
 out x14=0x7ffffff9 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0927
+test jscvt.fjcvtzs.0942
 code 1e7e00e8
 seed 453fe2be29cc09a0
 in v7=0x2f28aff3c855ba6abf40c00ee4000000 fpcr=0x3000000
 out x8=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0928
+test jscvt.fjcvtzs.0943
 code 1e7e0306
 seed b8b9cbc9dd855823
 in v24=0xf58470c06130efdf802fffffffffffff fpcr=0x800000
 out x6=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0929
+test jscvt.fjcvtzs.0944
 code 1e7e0293
 seed eb54c2c7bdd0cddb
 in v20=0x70b58fa994bfa5304005672b4588b95e
 out x19=0x2 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0930
+test jscvt.fjcvtzs.0945
 code 1e7e0122
 seed 6b458ad47b7ca5e2
 in v9=0x061a889400508495ddccfee3dd73071f fpcr=0x2c00000
 out x2=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0931
+test jscvt.fjcvtzs.0946
 code 1e7e0242
 seed 7924ff4aa325c933
 in v18=0xf8e77075ec55cef30000000000000000 fpcr=0x400000
 out x2=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0932
+test jscvt.fjcvtzs.0947
 code 1e7e003c
 seed fd321334c0fdfbb4
 in v1=0x04376c31d5b233887ff0000000000000 fpcr=0x400000
 out x28=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0933
+test jscvt.fjcvtzs.0948
 code 1e7e0353
 seed d769a55c47266c6f
 in v26=0xf240ffbfa3038ae95b289eee455a87f5 fpcr=0x800000
 out x19=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0934
+test jscvt.fjcvtzs.0949
 code 1e7e037c
 seed a3a23b4aedf20ee4
 in v27=0x9a6101f0d9fd724cfffa9d3b07cf0e56 fpcr=0x1000000
 out x28=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0935
+test jscvt.fjcvtzs.0950
 code 1e7e0092
 seed cb43cb34b5fb16b2
 in v4=0x0073ce77c7ba2153fffcb6ccb5f764c9 fpcr=0x4400000
 out x18=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0936
+test jscvt.fjcvtzs.0951
 code 1e7e0137
 seed 732d5a65b7d4e67b
 in v9=0x0558308fa429939857c61ff27630d6e8 fpcr=0xc00000
 out x23=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0937
+test jscvt.fjcvtzs.0952
 code 1e7e0352
 seed b5df20992ecc191c
 in v26=0xcdc24bf470b2d986c3e88ae0de12d885 fpcr=0x400000
 out x18=0x693bd800 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0938
+test jscvt.fjcvtzs.0953
 code 1e7e0359
 seed 0e989eec80b3ca07
 in v26=0x96c370626745599cfff291e190ccd22f fpcr=0xc00000 fpsr=0x91
 out x25=0x0
 exit end
-test jscvt.fjcvtzs.0939
+test jscvt.fjcvtzs.0954
 code 1e7e008c
 seed 5048bbc2b101d747
 in v4=0x83ee66009600792e0000000000000000
 out x12=0x0 nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0940
+test jscvt.fjcvtzs.0955
 code 1e7e0308
 seed 21fb331d35795dcf
 in v24=0x8ebce8a68b71be548000000000000000 fpcr=0x4800000
 out x8=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0941
+test jscvt.fjcvtzs.0956
 code 1e7e01d5
 seed 759c37153c253296
 in v14=0xcdbc9f8d4101c051f4ca57cd41ac5ad8 fpcr=0xc00000
 out x21=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0942
+test jscvt.fjcvtzs.0957
 code 1e7e03bc
 seed c56937b19c919870
 in v29=0x7b041c07560285e2409f179d48d4c1cd fpcr=0x3400000 fpsr=0x8000017
 out x28=0x7c5 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0943
+test jscvt.fjcvtzs.0958
 code 1e7e000c
 seed 4bb7f4bc76660b5a
 in v0=0x5c3e095687f730205a32fa67585e9e3b fpcr=0x1c00000 fpsr=0x800000f
 out x12=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0944
+test jscvt.fjcvtzs.0959
 code 1e7e0205
 seed f9213a99d616d9b3
 in v16=0x03633c1b4e4d0894335f90a2a7180aed
 out x5=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0945
+test jscvt.fjcvtzs.0960
 code 1e7e03a1
 seed 5a9f345e251214d7
 in v29=0xf028e9c4f5c2b4be6d390d3ea55d468e fpcr=0x5400000
 out x1=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0946
+test jscvt.fjcvtzs.0961
 code 1e7e00ce
 seed e33f8400536861f8
 in v6=0x8a3ecac20778d40d23b271326538fb42 fpcr=0x1000000
 out x14=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0947
+test jscvt.fjcvtzs.0962
 code 1e7e03c6
 seed 86ba0135ee2b6904
 in v30=0xa1c1dc2bcaa88cdf3ff57949d9dcf7f0 fpcr=0x800000
 out x6=0x1 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0948
+test jscvt.fjcvtzs.0963
 code 1e7e0170
 seed fe9832eeb7ec0505
 in v11=0x27bfdc50f573950a574925da109e09ca
 out x16=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0949
+test jscvt.fjcvtzs.0964
 code 1e7e0311
 seed 2142228d54df857a
 in v24=0x1f4d88b83eca76ae4202bbfa00000000 fpcr=0x4400000
 out x17=0x577f4000 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0950
+test jscvt.fjcvtzs.0965
 code 1e7e02b8
 seed 0d1751b0924097e3
 in v21=0x21397ca927c37a747ffd734c7358cc5e fpcr=0xc00000 fpsr=0x8000017
 out x24=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0951
+test jscvt.fjcvtzs.0966
 code 1e7e03bb
 seed 2c02766712437d20
 in v29=0x542ef40bc3a87c294000f7d020000000 fpcr=0x4c00000
 out x27=0x2 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0952
+test jscvt.fjcvtzs.0967
 code 1e7e03b9
 seed 4e8ecab3eb91a72e
 in v29=0xe8600a7ec1d915f817a95b8f4e691bdb fpcr=0x6400000
 out x25=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0953
+test jscvt.fjcvtzs.0968
 code 1e7e010e
 seed 18513b55ff059ff8
 in v8=0xfc04d8cba7a49cc39df51b9ac63aecfd fpcr=0x800000 fpsr=0x8000081
 out x14=0x0 nzcv=0x0 fpsr=0x8000091
 exit end
-test jscvt.fjcvtzs.0954
+test jscvt.fjcvtzs.0969
 code 1e7e03c1
 seed 1952f10d2706b18b
 in v30=0x2d81d14fb54681c3fb0895f254732636 fpcr=0x400000 fpsr=0x8000085
 out x1=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0955
+test jscvt.fjcvtzs.0970
 code 1e7e02ac
 seed c2fb73d5b5b84c1a
 in v21=0xc40310884533d48b001f81e52e4659d6 fpcr=0x800000
 out x12=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0956
+test jscvt.fjcvtzs.0971
 code 1e7e0107
 seed 8321f05559c30373
 in v8=0x4742a6e7222adf62bfeaed1c801457a4 fpcr=0x1c00000
 out x7=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0957
+test jscvt.fjcvtzs.0972
 code 1e7e01d4
 seed e01f94df906c003b
 in v14=0x2a04959d5079a95c8e28bdb26c14e8d6 fpcr=0x2000000
 out x20=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0958
+test jscvt.fjcvtzs.0973
 code 1e7e02ce
 seed e5e214b753a7ebd9
 in v22=0xd41aeff1df56c16ec25e05a1f8000000 fpcr=0x400000
 out x14=0xe9782000 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0959
+test jscvt.fjcvtzs.0974
 code 1e7e0386
 seed 88f02d6b0fd28546
 in v28=0xf426f882d5154a2dfff0000000000000 fpcr=0x1400000
 out x6=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0960
+test jscvt.fjcvtzs.0975
 code 1e7e03f5
 seed 300ca40dcf97042e
 in v31=0x8ac49224dc84963a8010000000000000 fpcr=0x1800000
 out x21=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0961
+test jscvt.fjcvtzs.0976
 code 1e7e0218
 seed 484c724de8954e74
 in v16=0x79168f3bae6b9ed6ffff9a1a554cc558 fpcr=0x5000000
 out x24=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0962
+test jscvt.fjcvtzs.0977
 code 1e7e017f
 seed 0dfe61ee9ea17bf3
 in v11=0x2d43ecc259f30a76802be0e9528be509 fpcr=0xc00000 fpsr=0x800009c
 out nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0963
+test jscvt.fjcvtzs.0978
 code 1e7e011f
 seed dc1096d51595e5b2
 in v8=0x39585a8fc644995b0000000000000000
 out nzcv=0x40000000
 exit end
-test jscvt.fjcvtzs.0964
+test jscvt.fjcvtzs.0979
 code 1e7e0003
 seed ef4f1eb3859c6216
 in v0=0x92af740972134713001fffffffffffff fpcr=0x800000
 out x3=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0965
+test jscvt.fjcvtzs.0980
 code 1e7e0179
 seed 6b42b8297cd9168e
 in v11=0x1e90e3c76c1af5ac800c160a0f4d6d17 fpcr=0x400000
 out x25=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0966
+test jscvt.fjcvtzs.0981
 code 1e7e0012
 seed 57f725b251dae833
 in v0=0x0f44436dd7bdc09a2c19239cf24ccffb fpcr=0x1000000
 out x18=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0967
+test jscvt.fjcvtzs.0982
 code 1e7e02ef
 seed b228e20d2655d2df
 in v23=0x1be2d3a0ebe0db819e294771812a6b5d fpcr=0x1400000
 out x15=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0968
+test jscvt.fjcvtzs.0983
 code 1e7e017e
 seed 42c6aad2ac154cac
 in v11=0xebdcc2213bc088137ffa2701aeedd8d2 fpcr=0x800000
 out x30=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0969
+test jscvt.fjcvtzs.0984
 code 1e7e00e4
 seed 99d3fb42631c1ca6
 in v7=0xad3dd490baa291b40236482d335815b1 fpcr=0x2800000
 out x4=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0970
+test jscvt.fjcvtzs.0985
 code 1e7e032e
 seed 975c59fbee8e4a96
 in v25=0x867552fcabc6eef8bf6c4f17f8000000
 out x14=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0971
+test jscvt.fjcvtzs.0986
 code 1e7e01a2
 seed ab5eda9b9774e9e5
 in v13=0x10a552841696fa6dfff439dc8851ae5b fpcr=0x1000000 fpsr=0x89
 out x2=0x0 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0972
+test jscvt.fjcvtzs.0987
 code 1e7e01f7
 seed 4e5e03c8ba54c2d4
 in v15=0x97520e5be9a7201040046c4b7f68cf81 fpcr=0x4400000 fpsr=0x97
 out x23=0x2 nzcv=0x0
 exit end
-test jscvt.fjcvtzs.0973
+test jscvt.fjcvtzs.0988
 code 1e7e00ea
 seed 296ef666ee5a3326
 in v7=0x3aa93d88ea0730094efc861ca6ec7f58 fpcr=0x4000000
 out x10=0x0 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0974
+test jscvt.fjcvtzs.0989
 code 1e7e0082
 seed 33fbe92d876178d3
 in v4=0xa65032bd204d4a9380259fdfd7c18ed5
 out x2=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0975
+test jscvt.fjcvtzs.0990
 code 1e7e029d
 seed 6bccd35c711ef84d
 in v20=0x1c3ebe82a626a7ee2b58f6b4f24a814b fpcr=0x1800000
 out x29=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0976
+test jscvt.fjcvtzs.0991
 code 1e7e0236
 seed 1e969d8778aaca00
 in v17=0x186df6a02a633a3d4008390fea9b5128
 out x22=0x3 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0977
+test jscvt.fjcvtzs.0992
 code 1e7e005f
 seed e314ad1fe31eca8b
 in v2=0xd4eb969eed129ee90009c0c740566289 fpcr=0xc00000
 out nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0978
+test jscvt.fjcvtzs.0993
 code 1e7e012c
 seed 198d4325f42d6230
 in v9=0x81be271e96182b62c3d980c91c19d230 fpcr=0x2000000
 out x12=0x98b74000 nzcv=0x0 fpsr=0x1
 exit end
-test jscvt.fjcvtzs.0979
+test jscvt.fjcvtzs.0994
 code 1e7e017c
 seed c042c95c80bb2494
 in v11=0x44b8dcb2b150b8c21e59393ef3c79af7 fpcr=0x5000000
 out x28=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0980
+test jscvt.fjcvtzs.0995
 code 1e7e014e
 seed 1385ba6cbb63d5f3
 in v10=0x4d11b7aa229b164780167b3a30ee66b5 fpcr=0x3400000
 out x14=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0981
+test jscvt.fjcvtzs.0996
 code 1e7e03b0
 seed cc814e927d114f1c
 in v29=0xa49aaf05fd1ecb55c012000000000000 fpcr=0x2c00000
 out x16=0xfffffffc nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0982
+test jscvt.fjcvtzs.0997
 code 1e7e02f5
 seed e56fb0b07d7e2630
 in v23=0x2cd7350ba44e6f18a13b87599d018b85
 out x21=0x0 nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0983
+test jscvt.fjcvtzs.0998
 code 1e7e0324
 seed 951005d31151bee4
 in v25=0x9034f6b6fcd491bdc000afa8fda58831 fpcr=0xc00000
 out x4=0xfffffffe nzcv=0x0 fpsr=0x10
 exit end
-test jscvt.fjcvtzs.0984
-code 1e7e01b9
-seed a70833a3d4dd03e0
-in v13=0xf28f323d9cc1e37e8000b0ddb4c6e5bb fpcr=0x2c00000
-out x25=0x0 nzcv=0x0 fpsr=0x10
-exit end
-test jscvt.fjcvtzs.0985
-code 1e7e039f
-seed 9821fc862b3a59ee
-in v28=0xd7dc65f666060665c1d0000000e00000 fpcr=0xc00000
-out nzcv=0x0 fpsr=0x10
-exit end
-test jscvt.fjcvtzs.0986
-code 1e7e00ac
-seed 465a183bb7c98786
-in v5=0x679ca89a2618573f7ffab5259eb7e68b fpcr=0x400000
-out x12=0x0 nzcv=0x0 fpsr=0x1
-exit end
-test jscvt.fjcvtzs.0987
-code 1e7e03a5
-seed 117656a84639550b
-in v29=0x2e7519325e3d6d767ff57a229bc2cc9d fpcr=0x2800000 fpsr=0x800009c
-out x5=0x0 nzcv=0x0 fpsr=0x800009d
-exit end
-test jscvt.fjcvtzs.0988
-code 1e7e0145
-seed f5c818ade5037a5b
-in v10=0x30bc0d5cc34669cb0c4e0d4068701054 fpcr=0x2c00000 fpsr=0x8000006
-out x5=0x0 fpsr=0x8000016
-exit end
-test jscvt.fjcvtzs.0989
-code 1e7e038c
-seed df7a785e749c000c
-in v28=0xce5856ddcab5b3af0005e81590b62de9 fpcr=0xc00000
-out x12=0x0 nzcv=0x0 fpsr=0x10
-exit end
-test jscvt.fjcvtzs.0990
-code 1e7e00d2
-seed 91eec279dc40a5d4
-in v6=0x941bdda54865f002c3e0000000000000 fpcr=0x800000
-out x18=0x0 fpsr=0x1
-exit end
-test jscvt.fjcvtzs.0991
-code 1e7e0289
-seed f9200b179f38819c
-in v20=0x722ac4ce78976584bff1478eb95d731d fpcr=0x4000000 fpsr=0x800000e
-out x9=0xffffffff nzcv=0x0 fpsr=0x800001e
-exit end
-test jscvt.fjcvtzs.0992
-code 1e7e0249
-seed 40ce993cc9b0f168
-in v18=0xb56b62136b5db70e0000000000000000 fpcr=0x2400000 fpsr=0x9d
-out x9=0x0 nzcv=0x40000000
-exit end
-test jscvt.fjcvtzs.0993
-code 1e7e010b
-seed 3d74ce9634be9a60
-in v8=0xbcee0fc721b9d8dafff0000000000000 fpcr=0x400000
-out x11=0x0 nzcv=0x0 fpsr=0x1
-exit end
-test jscvt.fjcvtzs.0994
-code 1e7e02fc
-seed fd2e54ef35656259
-in v23=0x19892265b987bd0f7fff482efe3666b0 fpcr=0x800000
-out x28=0x0 nzcv=0x0 fpsr=0x1
-exit end
-test jscvt.fjcvtzs.0995
-code 1e7e0312
-seed 35935d363ab0420e
-in v24=0x8199e88a9667a06ffff3d75107249e05 fpcr=0x2c00000
-out x18=0x0 nzcv=0x0 fpsr=0x1
-exit end
-test jscvt.fjcvtzs.0996
-code 1e7e039e
-seed 061f412b96021791
-in v28=0x1a39a7a773cfee2e0000000000000000 fpcr=0xc00000
-out x30=0x0 nzcv=0x40000000
-exit end
-test jscvt.fjcvtzs.0997
-code 1e7e012e
-seed 03f3ad76c27d452f
-in v9=0x08c1d61fc1557bedc3310cda450fc99e fpcr=0x1800000
-out x14=0xbaf03662 nzcv=0x0 fpsr=0x1
-exit end
-test jscvt.fjcvtzs.0998
-code 1e7e015d
-seed dad59ad76e0cc3b5
-in v10=0x6df86ce252a8120dbfd4afdfd4f2c58f fpcr=0x800000
-out x29=0x0 nzcv=0x0 fpsr=0x10
-exit end
 test jscvt.fjcvtzs.0999
-code 1e7e0024
-seed 25b294646d6e1ebd
-in v1=0x3b52fe9745f5c48943388894fc764efa fpcr=0x1800000 fpsr=0x8000081
-out x4=0xfc764efa nzcv=0x0
+code 1e7e0094
+seed 9e69c85c9bccb7e0
+in v4=0xa1cd127be8b4cbc780019ca77b300d97 fpcr=0x5000000
+out x20=0x0 nzcv=0x0 fpsr=0x80
 exit end

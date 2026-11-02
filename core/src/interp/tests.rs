@@ -1886,6 +1886,64 @@ fn crypto_feature_gate() {
 }
 
 #[test]
+fn dotprod() {
+    use crate::cpu::{FEATURE_DOTPROD, FEATURES};
+    const SDOT: u32 = 0x4e82_9420; // sdot v0.4s, v1.16b, v2.16b
+    const UDOT: u32 = 0x6e82_9420; // udot v0.4s, v1.16b, v2.16b
+    const SDOT_2S: u32 = 0x0e82_9420; // sdot v0.2s, v1.8b, v2.8b
+    const SDOT_ELT: u32 = 0x4fa2_e820; // sdot v0.4s, v1.16b, v2.4b[3]
+    const UDOT_ELT_2S: u32 = 0x2f82_e020; // udot v0.2s, v1.8b, v2.4b[0]
+    let run = |insn: u32, d: u128, n: u128, m: u128| {
+        let mut t = T::new(&[insn]);
+        (t.c.v[0], t.c.v[1], t.c.v[2]) = (d, n, m);
+        t.step().unwrap();
+        t.c.v[0]
+    };
+    let lanes = |l: [u32; 4]| (0..4).fold(0u128, |v, k| v | (l[k] as u128) << (32 * k));
+    let splat = |b: u8| u128::from_ne_bytes([b; 16]);
+    // -128 × -128 four times; -1 × -1 four times; 255 × 255 four times.
+    assert_eq!(run(SDOT, 0, splat(0x80), splat(0x80)), lanes([65536; 4]));
+    assert_eq!(run(SDOT, 0, splat(0xff), splat(0xff)), lanes([4; 4]));
+    assert_eq!(run(UDOT, 0, splat(0xff), splat(0xff)), lanes([260100; 4]));
+    // It accumulates modulo 2^32, and each lane sums its own bytes.
+    let n = u128::from_le_bytes(core::array::from_fn(|k| k as u8 + 1));
+    let m = u128::from_le_bytes(core::array::from_fn(|k| k as u8 % 4 + 1));
+    assert_eq!(
+        run(SDOT, lanes([u32::MAX, 1, 2, 3]), n, m),
+        lanes([29, 71, 112, 153])
+    );
+    // A 64-bit arrangement clears the top half.
+    assert_eq!(
+        run(SDOT_2S, u128::MAX, 0, 0),
+        u32::MAX as u128 * 0x1_0000_0001
+    );
+    // By element: Vm's lane in every lane, from the whole of Vm even without Q.
+    let m = lanes([1, 0, 0, 0x0101_0102]);
+    assert_eq!(run(SDOT_ELT, 0, n, m), lanes([11, 31, 51, 71]));
+    assert_eq!(
+        run(UDOT_ELT_2S, 0, n, lanes([0xff, 0, 0, 0])),
+        lanes([255, 1275, 0, 0])
+    );
+    assert_eq!(
+        run(0x2fa2_e820, 0, splat(1), lanes([0, 0, 0, 0xff])),
+        lanes([255, 255, 0, 0])
+    ); // udot v0.2s, v1.8b, v2.4b[3]
+    // UNDEFINED without the feature, and the reserved sizes ahead of the FPEN trap.
+    for insn in [SDOT, UDOT, SDOT_ELT, UDOT_ELT_2S] {
+        let mut t = T::new(&[insn]);
+        t.c.features = FEATURES & !FEATURE_DOTPROD;
+        assert_eq!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+    }
+    for insn in [0x4e42_9420u32, 0x4e02_9420, 0x4ec2_9420, 0x4f62_e820] {
+        let mut t = T::new(&[insn]);
+        t.c.cpacr_el1 = 0;
+        assert_eq!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+    }
+    assert_eq!(sys::isar0(FEATURE_DOTPROD) >> 44 & 0xf, 1);
+    assert_eq!(sys::isar0(0) >> 44 & 0xf, 0);
+}
+
+#[test]
 fn jscvt_feature_gate() {
     // fjcvtzs w1, d2: UNDEFINED without FEATURE_JSCVT, ahead of the FPEN trap;
     // with it, Wd zero-extended and NZCV = 0Z00 whatever NZCV was.

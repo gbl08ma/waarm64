@@ -1171,6 +1171,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             fp_guard(c, cx, i, k);
             if !(cx.crypto && crypto::inline(c, i, op))
                 && !(cx.sha3 && crypto::inline_sha3(c, i, op))
+                && !(cx.features & crate::cpu::FEATURE_DOTPROD != 0 && simd::inline_dot(c, i, op))
                 && !simd::inline(c, i, op)
                 && !simd_lane::inline(c, i, op)
                 && !float::inline(c, cx, i, op, k)
@@ -4515,6 +4516,33 @@ mod tests {
         let mut load = vec![0x28, 2];
         crate::jit::wasm::uleb(&mut load, CRC_TABLES[1].as_ptr() as usize as u32 as u64);
         assert!(has(&b, &load));
+    }
+
+    #[test]
+    fn dotprod() {
+        // sdot v0.4s, v1.16b, v2.16b: signed extmuls of both halves, the even
+        // and odd 32-bit lanes' shuffles, each extadd_pairwise_i16x8_s, two adds.
+        let b = emit(0x4e829420, 0).unwrap();
+        assert!(has(&b, &[0xfd, 0x9c, 1]) && has(&b, &[0xfd, 0x9d, 1]));
+        assert!(has(&b, &[0xfd, 0x7e]));
+        assert!(has(&b, &[0xfd, 0x0d, 0, 1, 2, 3, 8, 9, 10, 11]));
+        assert!(has(&b, &[0xfd, 0x0d, 4, 5, 6, 7, 12, 13, 14, 15]));
+        // udot: unsigned; a by element form splats Vm's lane first.
+        assert!(has(&emit(0x6e829420, 0).unwrap(), &[0xfd, 0x9f, 1]));
+        let b = emit(0x4fa2e820, 0).unwrap();
+        assert!(has(&b, &[0xfd, 0x0d, 12, 13, 14, 15, 12, 13, 14, 15]));
+        // sdot v0.2s: the low half only, the top cleared.
+        let b = emit(0x0e829420, 0).unwrap();
+        assert!(!has(&b, &[0xfd, 0x9d, 1]));
+        assert!(has(&b, &[0x42, 0, 0xfd, 0x1e, 1, 0x21]));
+        // Reserved sizes and a vCPU without the feature: the helper.
+        assert_eq!(emit(0x4e429420, 0), None);
+        assert_eq!(emit(0x4f62e820, 0), None);
+        let off = Ctx {
+            features: crate::cpu::FEATURES & !crate::cpu::FEATURE_DOTPROD,
+            ..FLAT
+        };
+        assert_eq!(emit_in(0x4e829420, 0, &off), None);
     }
 
     #[test]

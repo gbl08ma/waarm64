@@ -323,10 +323,10 @@ const NOT_OURS: &[&str] = &[
     "ldg", "ldgm", "stgm", "stzgm",
     // FEAT_LOR, FEAT_WFxT, FEAT_LS64 (FlagM, FlagM2 and SB are ours since ABI 59)
     "wfet", "wfit", "ld64b", "st64b", "st64bv", "st64bv0",
-    // FP/AdvSIMD beyond v8.0: FEAT_FHM, FEAT_RDM, FEAT_DotProd, FEAT_I8MM, FEAT_FCMA,
-    // FEAT_SM3, FEAT_SM4 (FEAT_JSCVT and FEAT_FRINTTS are ours since ABI 59).
+    // FP/AdvSIMD beyond v8.0: FEAT_FHM, FEAT_RDM, FEAT_I8MM, FEAT_FCMA, FEAT_SM3, FEAT_SM4
+    // (FEAT_JSCVT and FEAT_FRINTTS are ours since ABI 59, FEAT_DotProd since 60).
     "fmlal", "fmlal2", "fmlsl", "fmlsl2",
-    "sqrdmlah", "sqrdmlsh", "sdot", "udot", "usdot", "sudot", "smmla", "ummla", "usmmla", "fcmla",
+    "sqrdmlah", "sqrdmlsh", "usdot", "sudot", "smmla", "ummla", "usmmla", "fcmla",
     "fcadd",
     // At EL0, where `check` runs: HVC and ERET are EL1-only; no EL3 (SMC), no
     // halting or external debug (HLT, DCPS1-3, DRPS).

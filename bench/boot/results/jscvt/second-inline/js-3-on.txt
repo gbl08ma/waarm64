@@ -1,0 +1,32 @@
+Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics cpuid jscvt lrcpc sha3 asimddp sha512 dit flagm sb flagm2 frint rng
+JS chromium bitor 183.40 ms check -9946592
+JS chromium wrap 36.70 ms check 0
+JS chromium store 59.00 ms check 1701650
+JS chromium fixed 198.40 ms check 815465624
+JS chromium hash 365.80 ms check -359372347</pre>
+JS firefox bitor 94.00 ms check -9946592
+JS firefox wrap 112.00 ms check 0
+JS firefox store 90.00 ms check 1701650
+JS firefox fixed 197.00 ms check 815465624
+JS firefox hash 382.00 ms check -359372347
+JS chromium bitor 199.20 ms check -9946592
+JS chromium wrap 138.60 ms check 0
+JS chromium store 96.90 ms check 1701650
+JS chromium fixed 281.00 ms check 815465624
+JS chromium hash 396.90 ms check -359372347</pre>
+JS firefox bitor 52.00 ms check -9946592
+JS firefox wrap 73.00 ms check 0
+JS firefox store 79.00 ms check 1701650
+JS firefox fixed 175.00 ms check 815465624
+JS firefox hash 367.00 ms check -359372347
+JS chromium bitor 222.90 ms check -9946592
+JS chromium wrap 138.70 ms check 0
+JS chromium store 97.50 ms check 1701650
+JS chromium fixed 277.60 ms check 815465624
+JS chromium hash 400.20 ms check -359372347</pre>
+JS firefox bitor 56.00 ms check -9946592
+JS firefox wrap 67.00 ms check 0
+JS firefox store 69.00 ms check 1701650
+JS firefox fixed 162.00 ms check 815465624
+JS firefox hash 415.00 ms check -359372347
+CODECS-END

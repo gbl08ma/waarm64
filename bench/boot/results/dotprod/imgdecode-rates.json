@@ -1,0 +1,52 @@
+{
+ "unit": "images/s, higher is better; rounds 1 to 3; round 1 ran before FJCVTZS was reworked, rounds 2 and 3 after",
+ "host": "dev VM, M4 under Lima, 4 vCPUs, Chromium 153.0.8010.52",
+ "chromium-avif": {
+  "on": [
+   4.478,
+   4.515,
+   4.749
+  ],
+  "off": [
+   4.47,
+   4.819,
+   4.736
+  ]
+ },
+ "firefox-avif": {
+  "on": [
+   3.297,
+   3.627,
+   3.601
+  ],
+  "off": [
+   3.539,
+   3.362,
+   3.371
+  ]
+ },
+ "chromium-jpg": {
+  "on": [
+   10.098,
+   11.124,
+   10.838
+  ],
+  "off": [
+   10.448,
+   10.589,
+   10.822
+  ]
+ },
+ "firefox-jpg": {
+  "on": [
+   17.492,
+   18.665,
+   18.449
+  ],
+  "off": [
+   17.511,
+   18.577,
+   18.458
+  ]
+ }
+}

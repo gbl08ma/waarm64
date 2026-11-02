@@ -12,7 +12,7 @@ test('core instantiates on shared imported memory and uses atomics', () => {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   assert.ok(mem.buffer instanceof SharedArrayBuffer);
   const ex = new WebAssembly.Instance(mod, coreImports(mem)).exports as Record<string, (...a: number[]) => number | bigint>;
-  assert.equal(ex.abi_version(), 59);
+  assert.equal(ex.abi_version(), 60);
   // Scratch space past the core's own data and stack.
   const scratch = mem.grow(1) * 65536;
   const words = new BigUint64Array(mem.buffer, scratch, 3);
@@ -115,7 +115,7 @@ test('whole VM boots a bare-metal test through the vm_* exports (ABI 8)', () => 
   assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'more than 32 devices is rejected');
   new BigUint64Array(mem.buffer, cfg, 8).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 2048n, 2048n]);
   assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'a framebuffer over half of RAM is rejected');
-  new BigUint64Array(mem.buffer, cfg, 10).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 640n, 480n, 0n, 1024n]); // bits 0–9 are features (ABI 59)
+  new BigUint64Array(mem.buffer, cfg, 10).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 640n, 480n, 0n, 2048n]); // bits 0–10 are features (ABI 60)
   assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'a reserved feature bit is rejected');
   new BigUint64Array(mem.buffer, cfg, 12).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 640n, 480n, 0n, 0n, 1n, 2n]);
   assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'no GICv2 (ABI 23)');

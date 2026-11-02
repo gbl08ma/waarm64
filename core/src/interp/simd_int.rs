@@ -666,6 +666,27 @@ fn by_element(c: &mut Cpu, i: u32) -> R {
     Ok(())
 }
 
+/// FEAT_DotProd's SDOT and UDOT, vector and by element (the caller checks the
+/// feature and the size): each 32-bit lane of Vd adds the four products of the
+/// bytes it covers in Vn and in Vm, or in Vm's lane `index`, modulo 2^32.
+pub(super) fn dot(c: &mut Cpu, i: u32) -> R {
+    let (rd, rn, rm, q, u, _, _) = fields(i);
+    let by_element = bit(i, 24);
+    let index = (bit(i, 11) as u32) << 1 | bit(i, 21) as u32;
+    let (a, b, d) = (c.v[rn], c.v[rm], c.v[rd]);
+    let mut o = Out::new();
+    for e in 0..lanes(q, 32, false) {
+        let m = if by_element { index } else { e };
+        let sum = (0..4).fold(elem(d, e, 32) as i128, |acc, k| {
+            let x = int(elem(a, 4 * e + k, 8), 8, u);
+            acc + x * int(elem(b, 4 * m + k, 8), 8, u)
+        });
+        o.set(e, 32, sum as u64 & ones(32));
+    }
+    write(c, rd, o, q);
+    Ok(())
+}
+
 fn permute(c: &mut Cpu, i: u32) -> R {
     let (rd, rn, rm, q, _, size, _) = fields(i);
     need(!(size == 3 && !q))?;

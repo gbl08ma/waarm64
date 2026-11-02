@@ -107,6 +107,53 @@ pub(super) fn inline(c: &mut Func, i: u32, op: Op) -> bool {
     }
 }
 
+/// FEAT_DotProd's SDOT and UDOT, vector and by element; false for anything else
+/// (the reserved sizes among them). The sixteen products as two `extmul`s, the
+/// pairs of each 32-bit lane gathered by two shuffles, and two
+/// `extadd_pairwise`s, summed before Vd, so Vd sees one add: accumulating both
+/// is 3× slower in a sum loop. The other orders lost: bench/boot/REPORT.md
+/// "FEAT_DotProd and FEAT_JSCVT, measured".
+pub(super) fn inline_dot(c: &mut Func, i: u32, op: Op) -> bool {
+    let by_element = match op {
+        Op::SDOT_vec | Op::UDOT_vec => false,
+        Op::SDOT_elt | Op::UDOT_elt => true,
+        _ => return false,
+    };
+    if bits(i, 23, 22) != 2 {
+        return false;
+    }
+    let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+    let (q, u) = (bit(i, 30), bit(i, 29) as usize);
+    if by_element {
+        let index = (bit(i, 11) as u32) << 1 | bit(i, 21) as u32;
+        vreg(c, rm);
+        vreg(c, rm);
+        c.shuffle(gather(4, |_| index));
+        c.local_set(VT[3]);
+    }
+    for high in 0..=q as usize {
+        vreg(c, rn);
+        if by_element {
+            c.local_get(VT[3]);
+        } else {
+            vreg(c, rm);
+        }
+        c.simd(EXTMUL[u][high][0]).local_set(VT[high]);
+    }
+    let (lo, hi) = (VT[0], VT[q as usize]);
+    put(c, rd, q, |c| {
+        for part in 0..2 {
+            c.local_get(lo).local_get(hi);
+            c.shuffle(gather(4, |e| 2 * e + part));
+            c.simd(EXTADD_PAIRWISE[1][u]);
+        }
+        c.simd(ADD[2]);
+        vreg(c, rd);
+        c.simd(ADD[2]);
+    });
+    true
+}
+
 /// Pushes Vn.
 fn vreg(c: &mut Func, n: u32) {
     c.vget(n);

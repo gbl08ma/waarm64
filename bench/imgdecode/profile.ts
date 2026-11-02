@@ -24,7 +24,7 @@ page.on('console', (m) => {
   if (/panic|error/i.test(t)) console.log('# console:', t.slice(0, 300));
 });
 await answerAsks(page, (q) => { console.log('# ask:', q.text.slice(0, 200)); });
-await page.goto(`${base}/web/app/?disk=/target/images/debian-browsers/disk.qcow2&disk2=/target/imgdecode/disk2.img&ncpus=4&ram=3072&view=terminal&displaystats`);
+await page.goto(`${base}/web/app/?disk=/target/images/debian-browsers/disk.qcow2&disk2=/target/imgdecode/disk2.img&ncpus=4&ram=3072&view=terminal&displaystats${process.env.QUERY ?? ''}`);
 const log = () => page.evaluate(() => (window as unknown as { __serialLog: () => string }).__serialLog());
 const until = async (re: RegExp, ms: number, from = 0) => {
   for (const end = Date.now() + ms; Date.now() < end;) {

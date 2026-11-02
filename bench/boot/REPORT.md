@@ -3044,3 +3044,78 @@ differ, the Firefox crash's class), mixed groups on the read array (check 42: a 
 and with the load only inside the group the plant still passed, for a reason not found; a load of the page before each
 call made it fail).
 
+
+## FEAT_DotProd and FEAT_JSCVT, measured (2026-11-02)
+
+The dev VM (8 vCPUs, the M4 under Lima), Chromium 153.0.8010.52 headless, the guest on 4 vCPUs, alternating arms, a boot
+per arm and round; the x86 side is unmeasured. Medians of rounds, each round the median of three runs in a boot. Raw:
+`results/dotprod/`, `results/jscvt/`, how: bench/imgdecode/README.md "A CPU feature's A/B".
+
+**Who has SDOT and UDOT** (words in the guests' executable segments): Chromium 6,472; libaom 4,912; libgkcodecs 2,902
+(Arch's Firefox; Debian's has none, and Debian ships libdav1d apart); libvpx 1,200 (Debian), 2,347 (Arch); x264 248; dav1d 174, all
+by element; libavcodec 38; libxul 16. **None in libjpeg, libwebp, OpenH264 or rav1e**, so nothing a JPEG decodes runs
+differently: the claim that libjpeg-turbo picks a dotprod path is false.
+
+**SDOT's order in wasm**, ns a dot on the M4 in Chromium and in Node's V8 alike (`dot-seq`, ad hoc), accumulating into
+one register / with independent results. All gave the same check values.
+
+| Sequence | Host ops (estimated, not disassembled) | Chained | Independent |
+|---|---|---|---|
+| extmul, extadd_pairwise, an ADDP in shuffles | 8 | 0.51 | 0.51 |
+| extended halves, `i32x4.dot_i16x8_s`, the same ADDP | ~8, going by its time | 0.51 | 0.51 |
+| even and odd bytes, `i32x4.dot_i16x8_s` | 14 | 0.88 | 0.89 |
+| extmul, shuffles, two SADALPs onto Vd | 6 | **1.45** | 0.38 |
+| extmul, shuffles, SADDLP and SADALP, then Vd (kept) | 7 | 0.51 | 0.45 |
+
+0.51 is the accumulator's add chain, what native SDOT runs at too (0.50 ns in `q8dot`). Two SADALPs on Vd chain two
+long latencies per dot: the fewest ops, and three times slower in a sum loop.
+
+**Codecs, on/off of time** (lower is better), five rounds on the kept order, three on the extended-halves one
+(`results/dotprod/first-lowering/`). No workload separates: every pair's rounds overlap.
+
+| Workload | Extended halves | Kept |
+|---|---|---|
+| dav1d, AV1 decode | 1.010 | 0.984 |
+| libvpx, VP9 decode | 0.954 | 0.971 |
+| ffvp9 decode | 0.978 | 0.975 |
+| x264 veryfast | 0.993 | 0.986 |
+| x264 medium | **1.068**, rounds apart | 1.014 |
+| libvpx, VP9 encode | 1.005 | 1.004 |
+| libaom encode | 0.978 | 1.007 |
+| h264 decode (control) | 1.007 | 0.994 |
+| djpeg (control) | 1.016 | 0.992 |
+
+`q8dot`, ggml's int8 dot product, is level too (2.26 ns against 2.29 per 16 bytes): SMULL, SMULL2 and two SADALPs are as
+cheap in wasm as our SDOT, so the NEON paths DotProd replaces have little to lose to.
+
+**Browsers, images a second** (higher is better), three rounds of `profile.ts`, `imgdecode-rates.json`; the arms overlap
+in every case, and rounds move ±7% on AVIF.
+
+| Case | Off | On | On/off by round |
+|---|---|---|---|
+| Chromium, AVIF | 4.74 | 4.52 | 1.00, 0.94, 1.00 |
+| Firefox, AVIF | 3.37 | 3.60 | 0.93, 1.08, 1.07 |
+| Chromium, JPEG (control) | 10.59 | 10.84 | 0.97, 1.05, 1.00 |
+| Firefox, JPEG (control) | 18.46 | 18.45 | 1.00, 1.00, 1.00 |
+
+A tie: **DotProd is advertised** (the user's rule, PLAN.md).
+
+**JSCVT, on/off of time**, three rounds, `js.html` (kernels written to stress ToInt32, so per operation, not what a page
+gains). Both engines use FJCVTZS: the first two forms moved these numbers, though neither binary holds the instruction.
+
+| Kernel | Chromium: first / past int32 inline / kept | Firefox: first / inline / kept |
+|---|---|---|
+| `wrap`, doubles past int32 | 4.28 / 0.64 / **0.52** | 2.74 / 0.95 / 0.92 |
+| `store` into an Int32Array | 0.70 / 0.69 / **0.75** | 0.69 / 0.96 / 0.87 |
+| `fixed`, fixed point in floats | 1.17 / 0.94 / **0.63** | 1.09 / 0.95 / 0.92 |
+| `bitor`, ToInt32 in range | 1.20 / 0.97 / **0.88** | 0.81 / 0.63 / 0.95 |
+| `hash`, `>>> 0` of products | 1.31 / 1.07 / 0.98 | 1.24 / 1.15 / 0.96 |
+
+Bold: rounds apart. *First* took `f64.trunc` and a helper past int32. *Past int32 inline* is one `i64.trunc_sat` with Z
+out of the guard and `if !fits` around IOC; `hash`'s values fall on either side of 2^31 at random, and *kept* tests IOC
+in the same branch, sticky, so it's taken once. Round 3 of that second column's Chromium arm ran slow in all five
+kernels, unexplained; the third column has no such round. Firefox's clock is coarse and its rounds overlap throughout.
+Nothing is slower: **JSCVT is advertised.**
+
+Steps move with ABI 59 and 60 together (the guests' Linux sees SB, LRCPC, DIT and the rest): Buildroot +0.14%, Alpine +0.13%,
+Alpine's userspace -0.03%, crypto -0.4%, USB -6%. EDK2 doesn't move.

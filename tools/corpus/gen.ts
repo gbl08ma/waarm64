@@ -941,21 +941,8 @@ const crypto: Form[] = [
 ];
 
 // FEAT_JSCVT: FJCVTZS on FP edge values (near the int32 limits and integers, wide
-// exponents for the modular wrap, NaNs, denormals). Its NZCV is 0Z00. Not a denormal
-// under FZ: QEMU before 9.0.2 sets Z for it (the pseudocode clears it; QEMU's 7619129f0d).
-const fjcvtzs = fpForm("fjcvtzs", "0001111001111110000000nnnnnddddd", 1000, { fmt: () => FD, fp: "n" });
-const jscvt: Form[] = [
-  {
-    ...fjcvtzs,
-    gen(r, seed) {
-      const g = fjcvtzs.gen(r, seed)!;
-      const n = (g.code[0] >>> 5) & 31;
-      const d = g.in.get(`v${n}`)! & M64;
-      const fpcr = g.in.get("fpcr") ?? 0n;
-      return (d >> 52n) & 0x7ffn || !(d & ((1n << 52n) - 1n)) || !(fpcr & (1n << 24n)) ? g : undefined;
-    },
-  },
-];
+// exponents for the modular wrap, NaNs, denormals, denormals flushed under FZ). Its NZCV is 0Z00.
+const jscvt: Form[] = [fpForm("fjcvtzs", "0001111001111110000000nnnnnddddd", 1000, { fmt: () => FD, fp: "n" })];
 
 // FEAT_LRCPC, FEAT_SB, FEAT_FlagM and FlagM2, FEAT_DIT, FEAT_FRINTTS (ABI 59). NZCV comes from the seed.
 const fixed = (name: string, count: number, w: number): Form => ({ name, count, gen: () => ({ code: [w >>> 0], in: new Map() }) });
@@ -983,15 +970,20 @@ const ext: Form[] = [
       return { code: [set >>> 0, (0xd53b42a0 | u) >>> 0, 0xd503405f], in: m };
     },
   },
-  // a (16) is 64 bits, b (15) the FPCR's mode; vector: U the FPCR's mode, a (12) 64 bits. No reserved
-  // encodings (ftype 2, doubles without Q): QEMU's user mode reports them as ILL_ILLOPN, the M4 and we as ILL_ILLOPC.
-  fpForm("frintts", "00011110yy10100ab10000nnnnnddddd", 600, { fix: (r) => ({ y: r.int(2) }) }),
-  vfpForm("frintts_vec", "0QU011100z100001111a10nnnnnddddd", 600, [[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 0]], {
-    fix: (r): Fields => (r.chance(0.5) ? { z: 1, Q: 1 } : { z: 0 }),
-  }),
+  // a (16) is 64 bits, b (15) the FPCR's mode; vector: U the FPCR's mode, a (12) 64 bits. Reserved encodings
+  // included (ftype 2 or 3, doubles without Q).
+  fpForm("frintts", "00011110yy10100ab10000nnnnnddddd", 600, { fix: (r) => ({ y: r.chance(0.95) ? r.int(2) : r.range(2, 3) }) }),
+  vfpForm("frintts_vec", "0QU011100z100001111a10nnnnnddddd", 600, [[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 0]]),
 ];
 
-export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto, jscvt, ext };
+// FEAT_DotProd (ABI 60): SDOT and UDOT, vector and by element, bytes with edge values, reserved sizes included.
+const dotSize = (r: Rng): Fields => ({ z: r.chance(0.9) ? 2 : r.pick([0, 1, 3]) });
+const dotprod: Form[] = [
+  vform("vec", "0QU01110zz0mmmmm100101nnnnnddddd", 600, { fix: dotSize, esize: () => 8 }),
+  vform("elt", "0QU01111zzLMmmmm1110H0nnnnnddddd", 600, { fix: dotSize, esize: () => 8 }),
+];
+
+export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto, jscvt, ext, dotprod };
 
 /** Generates a group's tests (without oracle results). */
 export function generate(group: string): Test[] {
