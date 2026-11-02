@@ -213,8 +213,8 @@ changes; the drop-before-run discipline of the page before machines is kept besi
 - A snapshot holds its chunks (`DISK` frames, as an overlay's blocks), a suspended copy too (the ramdisk isn't in
   OPFS); a restore hands the new chunks to the device (`BlkSpec.ramInit`).
 
-**As swap.** A ramdisk's **swap** box in the machine's disks (`Attachment.swap`, ramdisks of 40 KiB and up; carried by
-definitions, not in the shape) makes it the guest's swap with nothing to do inside:
+**As swap.** A ramdisk's **swap** box in the machine's disks (`Attachment.swap`, ramdisks of 40 KiB and up; in the
+shape, §5.1, and carried by definitions) makes it the guest's swap with nothing to do inside:
 - At every start the device worker writes a swap area's first page over the empty ramdisk (`BlkSpec.swap`, the label;
   `web/ramdisk.ts` `swapHeader`: `mkswap`'s version 1 page, byte for byte, with a fresh UUID, the label
   `webpc-swap<n>` by the swap ramdisks' slot order, and `SWAPSPACE2` at 4 KiB). A restored ramdisk is the snapshot's
@@ -269,7 +269,7 @@ The file's format, what the core saves and the page's toolbar and header fields:
 
 - **The shape** (`shape.ts` `shapeOf`) is a canonical JSON of what the guest sees: vCPUs, RAM (and the memory
   split), the display (2D or 3D: different devices) and Vulkan, the transports in slot order, each disk's size,
-  read-only flag, serial and base identity, the CPU features (`cpu`), the network adapters' MACs (left out for one adapter at the default MAC). **A feature that
+  read-only flag, serial and base identity (and `swap: true` for a ramdisk the guest uses as swap, §4.3), the CPU features (`cpu`), the network adapters' MACs (left out for one adapter at the default MAC). **A feature that
   came later joins only when it's on** (the USB controller as `usb: true`; the mouse, the touchscreen, the clock and
   9p as transports on machines that have them), so machines made before it keep their hash; `sha3` among the CPU
   features is left out of the hash for the same reason. Its SHA-256 is the **shape hash** (`shapeHash`). Names, the
