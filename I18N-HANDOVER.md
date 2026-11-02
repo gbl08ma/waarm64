@@ -13,9 +13,21 @@ The brief: [I18N-KICKOFF.md](I18N-KICKOFF.md). How it works: [docs/i18n.md](docs
   (toolbar, status bar, sound, message bar: `common`/`toolbar`/`statusbar`/`sound`), the Machines page (`machines`),
   disks, snapshots and the display's refusals, network (the Rust tailnet client now sends codes, `net/ts`), USB and
   folders. One deviation undone: "Add a disk: from a url" keeps its lower case.
-- **Phase B (in progress):** `main.ts`, `worker.ts` and the protocol's errors (the worker sends `WireError`s and `Msg`s),
-  `vm.ts`, `devices.ts`, `ram.ts`'s split codes.
-- **Then:** C, the Chromium tests that read words (the cause is now under the headline, `#message-details`); D, the
-  docs' remaining UI quotes as `[words](ui:key)` (`node tools/i18n-check.ts` lists them); `tools/i18n-check.ts` joins
-  `scripts/ci.sh`; `scripts/ci.sh`, `ci-debian.sh`, `ci-machines.sh` and `ci-graphics.sh`.
-- Small guest-visible change: the keyboard unit's script names the layout by its id in a comment, not its English name.
+- **Phase B (done):** `main.ts`, `worker.ts` and the protocol (the worker sends `WireError`s and `Msg`s), `vm.ts`,
+  `devices.ts`, `ram.ts`'s split codes. **Phase D (done):** the docs quote the page as `[words](ui:key)`; the checks are in
+  `scripts/ci.sh` and the convention in CLAUDE.md. **Review (done):** `review/i18n`'s findings fixed (the emulator's
+  headline over an error's words instead of its key and stack, a failed connection's reason in one-line places, line
+  breaks, stacks across workers, markers in parameters, the worklet in the checks), the rest in the backlog.
+- **Runs in the cloud session (2026-11-02):** `scripts/ci.sh` all but two: the known x86_64 video case (docs/cloud.md)
+  and one test that failed only under the full run's load and passes alone three times (once
+  `page-connections` "power off lets a connection go", once `page-usb` "the USB tab"; both read the page right
+  after an action, and only words changed in their code). `ci-machines.sh` passes; `ci-debian.sh`'s tests pass with
+  `WEBPC_DISTROS=debian`, but its main Debian test skipped (no `linux-snd` image here); `ci-graphics.sh` ran one of three.
+- **Left for the dev VM, before the track ends:** `scripts/ci.sh` (watch those two tests), `scripts/ci-debian.sh
+  --platform`, `ci-graphics.sh`, `ci-net.sh` (the tailnet client's failures are codes now: `net/ts`), `ci-audio.sh`,
+  `ci-usb.sh`, `ci-deqp-vk.sh`'s page (the Venus refusals). Then the track ends: its outcome is docs/i18n.md and the
+  PLAN row; this file and the kickoff go.
+- **For the user's review:** the copy itself (`web/messages/en/`, a note per entry); two choices made: "Mouse lock" in
+  docs/frontend.md quotes the status bar element's name (the toolbar menu has no message with those words); the guidance
+  lines now sit in the headline and the cause under it (e.g. "The snapshot couldn't be loaded\nNothing was changed…",
+  then why).
