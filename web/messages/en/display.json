@@ -1,1 +1,18 @@
-{}
+{
+  "gpu.unsaveable.venus": {
+    "message": "the machine is using Vulkan (Venus), whose state can't be saved yet",
+    "note": "Why a snapshot can't be taken, shown in the message bar as the detail under “the machine can't be saved” (Snapshot, Save snapshot or Suspend while the machine runs): a program in the guest uses Vulkan, whose state snapshots don't hold yet."
+  },
+  "gpu.unsaveable.virgl": {
+    "message": "the machine is using 3D (virgl), and this renderer can't be saved",
+    "note": "Why a snapshot can't be taken, shown in the message bar as the detail under “the machine can't be saved” (Snapshot, Save snapshot or Suspend while the machine runs): a program in the guest uses 3D, and the renderer drawing it can't save its state."
+  },
+  "gpu-worker.unreadable3d": {
+    "message": "the 3D state couldn't be read",
+    "note": "Why a snapshot can't be taken, shown in the message bar as the detail under “the machine can't be saved” (Snapshot, Save snapshot or Suspend while the machine runs): reading back the 3D renderer's state failed; the renderer's error follows it as a further detail."
+  },
+  "virgl-renderer.unsaveable.video": {
+    "message": "a video is being decoded through the GPU: close the video player first",
+    "note": "Why a snapshot can't be taken, shown in the message bar as the detail under “the machine can't be saved” (Snapshot, Save snapshot or Suspend while the machine runs): the guest is decoding a video through the browser's decoders, whose pictures can't be saved."
+  }
+}

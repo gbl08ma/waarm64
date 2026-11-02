@@ -8,6 +8,7 @@ import type { Backing, Box, RendererSnapshot, ResourceDesc } from './virgl-rende
 import type { VirglRenderer } from './virgl-renderer.ts';
 import type { Screen } from './virgl-screen.ts';
 import { walk } from './virgl.ts';
+import { toWire, type WireError } from './msg.ts';
 
 export type Rect = { x: number; y: number; w: number; h: number };
 
@@ -52,7 +53,7 @@ export type VenusCall =
   | { t: 'venus-init'; memory: WebAssembly.Memory; core: WebAssembly.Memory; window: { at: number; bytes: number; watch: number } };
 
 /** What a host's `save` answers: the renderer's state, or why it can't be saved now. */
-export type HostSave = { state: RendererSnapshot } | { refused: string };
+export type HostSave = { state: RendererSnapshot } | { refused: WireError };
 
 /**
  * A Venus fence: its context, ring and id. It stands for that ring's work, and only that: another client's fence doesn't
@@ -76,7 +77,7 @@ export interface VirglHost {
 /** The renderer's answer to a snapshot (the queries settled first: `pollQueries`). */
 export function saveRenderer(r: VirglRenderer): HostSave {
   const refused = r.snapshotRefusal();
-  return refused ? { refused } : { state: r.save() };
+  return refused ? { refused: toWire(refused) } : { state: r.save() };
 }
 
 /** The contents' buffers in a renderer's state (to transfer it across a port). */

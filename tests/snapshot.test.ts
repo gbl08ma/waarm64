@@ -322,7 +322,7 @@ test('a snapshot carries the disk\'s changes: a restore replaces the overlay wit
 
   // Refused before the overlay is touched: another disk, a file cut in its disk blocks.
   const other = { ...o, devices: guestDevices(new URL('alpine/rootfs.ext4', IMAGES).href, name) };
-  await assert.rejects(readSnapshot(file, codec, codec.snapshotVersion, { devices: other.devices }), (e: unknown) => e instanceof SnapshotError && e.problem === 'other-disk' && /taken on another disk/.test(e.message));
+  await assert.rejects(readSnapshot(file, codec, codec.snapshotVersion, { devices: other.devices }), (e: unknown) => e instanceof SnapshotError && e.problem === 'other-disk' && e.msg.key === 'snapshots:snapshot.otherDisk');
   await assert.rejects(readSnapshot(file.slice(0, file.size - 5000), codec, codec.snapshotVersion, { devices: o.devices }), (e: unknown) => e instanceof SnapshotError && e.problem === 'truncated');
   const flipped = new Uint8Array(await file.arrayBuffer());
   flipped[flipped.length - 3000] ^= 1;
@@ -379,7 +379,7 @@ test('a suspended machine resumes onto its overlay, and its file is no snapshot 
   const file = (await suspended(name))!;
   assert.equal(file.size, w.bytes);
   // It is not a snapshot to load: it has no disk. And a snapshot is not a suspended machine.
-  await assert.rejects(readSnapshot(file, codec, codec.snapshotVersion, { devices: o.devices }), (e: unknown) => e instanceof SnapshotError && e.problem === 'other-disk' && /suspended machine/.test(e.message));
+  await assert.rejects(readSnapshot(file, codec, codec.snapshotVersion, { devices: o.devices }), (e: unknown) => e instanceof SnapshotError && e.problem === 'other-disk' && e.msg.key === 'snapshots:snapshot.suspended');
   // Resumed: the overlay is kept, the machine finishes in the unbroken boot's steps.
   const { header, restore } = await readSnapshot(file, codec, codec.snapshotVersion, { devices: o.devices, resume: true });
   assert.equal(header.suspend, true);

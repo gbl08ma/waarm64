@@ -842,8 +842,8 @@ Worth not re-discovering:
   vfat)` (images/arch/build.sh sets it in `/etc/mkinitcpio.conf.d/webpc.conf`).
 - Firefox: a fresh profile's first minute is busy (WebExtensions, settings sync failing offline): warm up 30 s before
   measuring. The null renderer can't run Firefox's WebGL page (it never gets ready).
-- `Gpu.save()` is also the tests' state read (`vm.deviceState`): it never throws; it marks `unsaveable` and
-  `vm.snapshot` refuses.
+- `Gpu.save()` is also the tests' state read (`vm.deviceState`): it never throws; it marks `unsaveable` (why, a message of
+  the `display` catalog as an error for the wire: web/msg.ts `toWire`) and `vm.snapshot` refuses with it as the cause.
 - Playwright's `keyboard.insertText` sends no Enter for a `\n` (paste lines, press Enter); the tty's line is 4096
   bytes. The Mac host's shell is zsh (`status` is read-only) with no `timeout` (`perl -e 'alarm shift; exec @ARGV' N`),
   and the dev VM runs on the same Mac: never measure on both at once.

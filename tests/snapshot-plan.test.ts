@@ -122,6 +122,7 @@ test("a swap ramdisk starts with its swap page; a restored one keeps the snapsho
 test("a snapshot carries the spill memories' RAM, and restores only onto the same ones", async () => {
   const { ramStarts } = await import('../web/snapshot.ts');
   const { SnapshotError } = await import('../web/snapshot-file.ts');
+  const { text } = await import('../web/i18n.ts');
   assert.deepEqual(ramStarts([16 << 20, 0x18_0000, 2 << 20]), [0, 16, 18]);
   const module = await compileCore(WASM);
   const codec = await lzCodec(module);
@@ -148,6 +149,6 @@ test("a snapshot carries the spill memories' RAM, and restores only onto the sam
   await back.close();
   for (const other of [[0x18_0000], [2 << 20, 0x18_0000], undefined]) {
     const { restore } = await readSnapshot(file, codec, codec.snapshotVersion);
-    await assert.rejects(bootVm(module, { ...o, spill: other, restore }), (e: unknown) => e instanceof SnapshotError && /NUMA nodes of 1\.5 MiB \+ 2 MiB/.test((e as Error).message), JSON.stringify(other));
+    await assert.rejects(bootVm(module, { ...o, spill: other, restore }), (e: unknown) => e instanceof SnapshotError && /NUMA nodes of 1\.5 MiB \+ 2 MiB/.test(text(e.msg)), JSON.stringify(other));
   }
 });

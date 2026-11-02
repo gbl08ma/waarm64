@@ -97,6 +97,7 @@ function sameBytes(actual: Uint8Array, expected: Uint8Array, what: string) {
   }
 }
 
+/** `p` is refused with `problem`; `msg` matches its message's key and parameters (`e.message`: web/msg.ts `devText`). */
 async function refused(p: Promise<unknown>, problem: SnapshotError['problem'], msg?: RegExp) {
   await assert.rejects(p, (e: unknown) => {
     assert.ok(e instanceof SnapshotError, `not a SnapshotError: ${e}`);
@@ -243,7 +244,7 @@ test('a pluggable codec (id 2) round trips, and an unknown one is refused', asyn
   const r = await restore(whole(file), 65536, { codecs: [tail] });
   sameBytes(r.core, core, 'core');
   assert.ok(file.length < 400);
-  await refused(readAll(whole(file)), 'corrupt', /codec 2/);
+  await refused(readAll(whole(file)), 'corrupt', /damage\.codec \{codec=2\}/);
 });
 
 test('refusals: not a snapshot, a newer format, truncated, corrupt', async () => {
@@ -253,24 +254,24 @@ test('refusals: not a snapshot, a newer format, truncated, corrupt', async () =>
   await refused(openSnapshot(whole(new Uint8Array(0))), 'not-snapshot');
   await refused(openSnapshot(whole(file.slice(0, 5))), 'not-snapshot');
   const newer = file.slice(); dv(newer).setUint32(8, 3, true);
-  await refused(openSnapshot(whole(newer)), 'newer-format', /newer version/);
+  await refused(openSnapshot(whole(newer)), 'newer-format', /snapshot-file\.newerFormat \{format=3, reads=2\}/);
   const old = file.slice(); dv(old).setUint32(8, 0, true);
   await refused(openSnapshot(whole(old)), 'corrupt');
   const hl = dv(file).getUint32(12, true);
   const frames0 = 16 + hl + 4;
   const trunc = file.slice(0, file.length - 10);
-  await refused(readAll(whole(trunc)), 'truncated', /incomplete.*again/s);
-  await refused(readAll(whole(file.slice(0, file.length - 32))), 'truncated', /incomplete/); // no END
-  await refused(readAll(whole(concat([file, new Uint8Array(1)]))), 'corrupt', /after its end marker/);
+  await refused(readAll(whole(trunc)), 'truncated', /snapshot-file\.truncated/);
+  await refused(readAll(whole(file.slice(0, file.length - 32))), 'truncated', /snapshot-file\.truncated/); // no END
+  await refused(readAll(whole(concat([file, new Uint8Array(1)]))), 'corrupt', /damage\.afterEnd/);
   const badHeaderCrc = file.slice(); badHeaderCrc[16] ^= 1;
-  await refused(openSnapshot(whole(badHeaderCrc)), 'corrupt', /header/);
+  await refused(openSnapshot(whole(badHeaderCrc)), 'corrupt', /damage\.headerChecksum/);
   const hugeHeader = file.slice(); dv(hugeHeader).setUint32(12, 0x7fffffff, true);
   await refused(openSnapshot(whole(hugeHeader)), 'corrupt');
   const badCrc = file.slice(); badCrc[frames0 + 32 + 5] ^= 1; // a stored byte
-  await refused(readAll(whole(badCrc)), 'corrupt', /checksum/);
+  await refused(readAll(whole(badCrc)), 'corrupt', /damage\.checksum/);
   // The END's count: patch the last 32 bytes.
   const badCount = file.slice(); dv(badCount).setUint32(file.length - 32 + 8, 99, true);
-  await refused(readAll(whole(badCount)), 'corrupt', /end marker/);
+  await refused(readAll(whole(badCount)), 'corrupt', /damage\.endCount/);
   const reserved = file.slice(); reserved[frames0 + 28] = 1;
   await refused(readAll(whole(reserved)), 'corrupt');
 });
@@ -305,15 +306,15 @@ test('refusals: well-formed frames that say impossible things', async () => {
   await refused(ok([hand('CORE', 1, 0, 4, new Uint8Array(9)), END(1)]), 'corrupt'); // stored > raw
   await refused(ok([hand('CORE', 0, 0, 9, new Uint8Array(4)), END(1)]), 'corrupt'); // codec 0 with other lengths
   await refused(ok([hand('CORE', 1, 0, 100, new Uint8Array([1, 2, 3])), END(1)]), 'corrupt'); // not deflate
-  await refused(ok([hand('CORE', 7, 0, 3, new Uint8Array(3)), END(1)]), 'corrupt', /codec 7/);
+  await refused(ok([hand('CORE', 7, 0, 3, new Uint8Array(3)), END(1)]), 'corrupt', /damage\.codec \{codec=7\}/);
   await refused(ok([hand('CORE', 0, 0, 3, new Uint8Array(3))]), 'truncated');
   await refused(ok([hand('DISK', 0, 0, 4095, new Uint8Array(4095)), END(1)]), 'corrupt');
   await refused(ok([hand('DISK', 0, 0, 257 * 4096, new Uint8Array(257 * 4096)), END(1)]), 'corrupt');
   // RAM: bitmap and length disagree; no pages; bits past the end of RAM.
   const bm = (bits: number[]) => { const b = new Uint8Array(32); for (const p of bits) b[p >> 3] |= 1 << (p & 7); return b; };
   const ramFrame = (bits: number[], pages: number) => hand('RAM ', 0, 0, 32 + pages * 4096, concat([bm(bits), new Uint8Array(pages * 4096).fill(7)]));
-  await refused(ok([ramFrame([0, 1], 1), END(1)]), 'corrupt', /page map/);
-  await refused(ok([ramFrame([0], 2), END(1)]), 'corrupt', /page map/);
+  await refused(ok([ramFrame([0, 1], 1), END(1)]), 'corrupt', /damage\.pageMap/);
+  await refused(ok([ramFrame([0], 2), END(1)]), 'corrupt', /damage\.pageMap/);
   await refused(ok([ramFrame([], 0), END(1)]), 'corrupt');
   // 32 bytes short of a page multiple.
   await refused(ok([hand('RAM ', 0, 0, 100, new Uint8Array(100)), END(1)]), 'corrupt');
@@ -460,6 +461,6 @@ test('a state\'s Uint8Arrays (the display\'s 3D contents) travel as BLOB frames,
     return concat(parts);
   };
   await readSnapshot(whole(await made(20, 20)), deflateCodec, 7);
-  await refused(readSnapshot(whole(await made(30, 20)), deflateCodec, 7), 'corrupt', /missing parts/);
-  await refused(readSnapshot(whole(await made(10, 20)), deflateCodec, 7), 'corrupt', /doesn't fit/);
+  await refused(readSnapshot(whole(await made(30, 20)), deflateCodec, 7), 'corrupt', /damage\.blobMissing/);
+  await refused(readSnapshot(whole(await made(10, 20)), deflateCodec, 7), 'corrupt', /damage\.blobFit/);
 });

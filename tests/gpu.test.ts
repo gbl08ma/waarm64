@@ -925,7 +925,7 @@ test('venus: a blob left of a destroyed context refuses the snapshot, and caps r
   r.ok(ctxCreate(3, 4, 'vkcube'));
   r.ok(blob(3, 10, 4096));
   r.ok(ctxCmd(3, V.CTX_DESTROY));
-  assert.match((await r.gpu.save()).unsaveable ?? '', /Vulkan/);
+  assert.equal((await r.gpu.save()).unsaveable?.msg?.key, 'display:gpu.unsaveable.venus');
   r.ok(cmd(T.UNREF, 10, 0));
   const saved = JSON.parse(JSON.stringify(await r.gpu.save()));
   assert.equal(saved.unsaveable, undefined);
@@ -982,7 +982,7 @@ test('venus: blobs, their mapping in the window, uuids and submits reach the hos
   assert.deepEqual(calls[7], { t: 'vsubmit', ctx: 3, bytes: [0x44, 0x33, 0x22, 0x11, 5, 0, 0, 0], fence: { flags: 3, ring: 2, id: '77n' } });
   assert.ok(fences >= 7, 'creates, maps and unmaps wait for the host');
   // Not saved while a Venus context exists; a reset forgets them.
-  assert.match((await r.gpu.save()).unsaveable ?? '', /Vulkan/);
+  assert.equal((await r.gpu.save()).unsaveable?.msg?.key, 'display:gpu.unsaveable.venus');
   r.gpu.reset();
   assert.equal((await r.gpu.save()).unsaveable, undefined);
 });

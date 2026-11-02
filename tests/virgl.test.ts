@@ -18,6 +18,7 @@ import { replay } from '../web/virgl-replay.ts';
 import { generate, parseTgsi, TgsiError, type ProgramKey } from '../web/virgl-tgsi.ts';
 import { encodeRecord, encodeTrace, readTrace } from '../web/virgl-trace.ts';
 import { ramLayout } from '../web/ram.ts';
+import { msg, toWire, type WireError } from '../web/msg.ts';
 import { dictionary, findingKey, loadSeeds, makeCase, runTrace } from './virgl-fuzz.ts';
 import { mockGl } from './virgl-mock-gl.ts';
 
@@ -1004,18 +1005,19 @@ test('virgl snapshots: contexts that never submitted are made again; one in use 
   assert.equal(type(c.g.control(ctxCmd(0x200, 8, 0, 0), 64)), 0x1200);
   // A context that submitted has objects in the renderer: saved from the host's state, or refused by a host that can't.
   assert.equal(type(a.g.control(ctxCmd(0x207, 7, 4, 0, 0), 64)), 0x1100);
-  assert.match((await a.g.save() as { unsaveable?: string }).unsaveable ?? '', /3D/);
+  assert.equal((await a.g.save() as { unsaveable?: WireError }).unsaveable?.msg?.key, 'display:gpu.unsaveable.virgl');
   const state: RendererSnapshot = { version: 1, resources: [], contexts: [{ id: 7, sub: 0, attached: [], subs: [] }] };
   a.g.host = { call: () => undefined, fence: () => undefined, save: async () => ({ state }) };
-  const inUse = await a.g.save() as unknown as { unsaveable?: string; renderer?: RendererSnapshot; used: number[] };
+  const inUse = await a.g.save() as unknown as { unsaveable?: WireError; renderer?: RendererSnapshot; used: number[] };
   assert.deepEqual([inUse.unsaveable, inUse.renderer, inUse.used], [undefined, state, [7]]);
   const d = make(capsA);
   d.g.restore(inUse);
   assert.deepEqual(d.calls.filter((x) => x.t === 'ctx' || x.t === 'load'), [{ t: 'load', state }], 'the renderer makes the contexts');
-  a.g.host = { call: () => undefined, fence: () => undefined, save: async () => ({ refused: 'a video is being decoded' }) };
-  assert.equal((await a.g.save() as { unsaveable?: string }).unsaveable, 'a video is being decoded');
+  const video = toWire(msg('display:virgl-renderer.unsaveable.video'));
+  a.g.host = { call: () => undefined, fence: () => undefined, save: async () => ({ refused: video }) };
+  assert.deepEqual((await a.g.save() as { unsaveable?: WireError }).unsaveable, video);
   a.g.control(ctxCmd(0x201, 7), 64);
-  assert.equal((await a.g.save() as { unsaveable?: string }).unsaveable, undefined);
+  assert.equal((await a.g.save() as { unsaveable?: WireError }).unsaveable, undefined);
 });
 
 test('virgl cursor: a 3D resource\'s image is read back from the renderer, in its format, and a later update wins', async () => {

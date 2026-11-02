@@ -16,7 +16,8 @@ import { WindowWatch } from './window.ts';
 import { CLOSE_MS, Devices, ENTRY_WORDS, EV_CONFIG, VENUS_ARENA, VENUS_WINDOW, deviceEntry, deviceShm, diskIdentity, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
-import { SnapshotError } from './snapshot-file.ts';
+import { corrupt, SnapshotError } from './snapshot-file.ts';
+import { fromWire, msg, MsgError, type WireError } from './msg.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 import type { CompileInit, CompileJob, CompiledJob } from './jit-compile-worker.ts';
 import { spillImports } from './spill.ts';
@@ -900,9 +901,9 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     } catch (err) {
       throw withPanic(err, ex, memory);
     }
-    if (r === 1) throw new SnapshotError('other-version', `This snapshot was made by another version of this page (its machine state isn't format ${ex.snapshot_version()}, the one this version reads). Open it in the version that made it.`);
-    if (r === 2) throw new SnapshotError('other-machine', 'This snapshot is of a machine with other hardware (memory, processors or devices) than this one, so it can\'t continue here.');
-    if (r) throw new SnapshotError('corrupt', 'This snapshot is damaged (its machine state is inconsistent). Download or copy it again; if it keeps failing, save a new one.');
+    if (r === 1) throw new SnapshotError('snapshots:vm.otherVersion', { format: ex.snapshot_version() }, 'other-version');
+    if (r === 2) throw new SnapshotError('snapshots:vm.otherHardware', {}, 'other-machine');
+    if (r) throw corrupt(msg('snapshots:vm.damage.inconsistent'));
   } else {
     if (fw?.flash) {
       if (fw.flash.length !== flashSize) throw new Error(`firmware.flash: ${fw.flash.length} bytes, the bank has ${flashSize}`);
@@ -1052,7 +1053,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       for (let tries = 0; tries < 1000; tries++) {
         // Takes the completions the backends left, as the run loop would at its next boundary.
         const n = ex.vm_snapshot_size(vm);
-        if (n === 0xffff_ffff_ffff_ffffn) throw new Error(o.usb ? "the machine can't be saved now: a USB device is plugged in (detach it first), or the guest changed buffers it had given to a device" : "the machine can't be saved now: the guest changed buffers it had given to a device");
+        if (n === 0xffff_ffff_ffff_ffffn) throw new MsgError('snapshots:vm.cantSaveNow', {}, { cause: o.usb ? msg('snapshots:vm.cantSaveNow.usb') : msg('snapshots:vm.cantSaveNow.buffers') });
         if (n === 0n) {
           // A device has something for its backend (chains that hadn't fit, an event): serve it.
           await devices.quiesce();
@@ -1067,15 +1068,16 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
         const got = Number(ex.vm_snapshot_save(vm, stateBuf.at, stateBuf.len));
         if (!got) continue; // a backend completed something in between
         const saved = await devices.save();
-        const why = saved.map((d) => (d as { unsaveable?: string } | null)?.unsaveable).find((x) => x);
-        if (why) throw new Error(`the machine can't be saved: ${why}`);
+        // A device that can't be saved now says why (web/gpu.ts `save`), as an error posted across workers.
+        const why = saved.map((d) => (d as { unsaveable?: WireError } | null)?.unsaveable).find((x) => x);
+        if (why) throw new MsgError('snapshots:vm.cantSave', {}, { cause: fromWire(why) });
         return {
           version: ex.snapshot_version(),
           core: bytes().slice(stateBuf.at, stateBuf.at + got),
           host: { devices: saved, input: queued.flatMap((b) => [...b]) },
         };
       }
-      throw new Error("the machine can't be saved: its devices never went quiet");
+      throw new MsgError('snapshots:vm.cantSave', {}, { cause: msg('snapshots:vm.cantSave.notQuiet') });
     },
     /**
      * The writable disks' changes, for a snapshot (the VM as for `snapshot()`): for each disk with

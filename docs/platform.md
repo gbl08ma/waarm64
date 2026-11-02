@@ -355,7 +355,8 @@ container is streamed both ways (RAM is up to GiBs) and knows nothing of the cor
   LZ4 block format, through `web/lz.ts` on one worker); the reader also takes deflate-raw (codec 1,
   `CompressionStream`). Settled by measurement (`bench/boot/REPORT.md` "M8 phase C loop 4"): the LZ saves 6 times
   faster for a file 1.4 times larger.
-- **Refusals** (`SnapshotError`, each naming what the user can do) come before anything is touched: not a snapshot,
+- **Refusals** (`SnapshotError`, a `MsgError` with its `problem` and a message of the `snapshots` catalog that names
+  what the user can do: docs/i18n.md) come before anything is touched: not a snapshot,
   a newer format, a core state version this core doesn't read, another machine, another disk, a checksum that fails,
   a truncated file.
 - **Out:** `showSaveFilePicker` (called on the click), else a Blob download, which holds the whole file in the page

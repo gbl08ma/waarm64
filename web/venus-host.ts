@@ -208,7 +208,7 @@ export class VenusRenderer {
     };
     // A module with another arena would grow its heap into the window (or, built for memory 0, write its data over the
     // core's heap there): one built before memory 1 has no `venus_arena_end`; a later one says where its arena ends.
-    const stale = `Vulkan's renderer (target/vk/venus.wasm) isn't built for its arena (${VENUS_ARENA >> 20} MiB of memory 1): rebuild it (vk/build.sh)`;
+    const stale = `Vulkan's renderer (target/vk/venus.wasm) isn't built for its arena (${VENUS_ARENA >> 20} MiB of memory 1): rebuild it (vk/build.sh)`; // i18n-ignore: a developer's (the GPU worker logs it)
     if (!WebAssembly.Module.exports(module).some((e) => e.name === 'venus_arena_end')) throw new Error(stale);
     const instance = await WebAssembly.instantiate(module, imports);
     if ((instance.exports as unknown as Exports).venus_arena_end() >>> 0 !== VENUS_ARENA) throw new Error(stale);
