@@ -67,6 +67,11 @@ export const ui = $state({
   keysReleased: 0,
   /** The last key typed on the physical keyboard into the screen (`n` bumped each time): it ends the on-screen keyboard's latches. */
   keyTyped: { code: '', n: 0 },
+  /**
+   * The keyboard layout the running machine gives its guest (a `KEYBOARD_LAYOUTS` id, web/app/keyboard.ts), or none
+   * (the guest's own, taken as US): the on-screen keyboard's legends and the characters it types into the serial console.
+   */
+  keyLayout: undefined as string | undefined,
   /** The LEDs the guest set on the keyboard it reads now (bit 0 Num, 1 Caps, 2 Scroll Lock): the on-screen keyboard lights its lock keys. */
   leds: 0,
   /** The machine has a relative mouse (the lock's `raw` mode). */
@@ -169,8 +174,11 @@ export type Page = {
   showOsk(on: boolean): void;
   /** Holds key `code` down for `ms` (Hold Esc: a guest's browser leaves its full screen on a held Esc). */
   holdKey(code: string, ms: number): void;
-  /** The on-screen keyboard's key `code` down or up, with the modifiers down on it. */
-  oskKey(code: string, down: boolean, mods: Mods): void;
+  /**
+   * The on-screen keyboard's key `code` down or up, with the modifiers down on it; `repeat`, a held key's repeat. To the
+   * serial console when the terminal has the focus (as its own typing does), else to the screen's keys.
+   */
+  oskKey(code: string, down: boolean, mods: Mods, repeat?: boolean): void;
   screenSize(): void;
   openMachines(tab?: MachinesTab, id?: string): void;
   closeMachines(): void;

@@ -97,6 +97,7 @@ tests/baremetal/build.sh && tests/baremetal/oracle.sh [--hvf]  # rebuild the bar
 node tools/uefi-oracle.ts debian alpine alpine-grub          # unmodified images through our EDK2 (images/build.sh edk2) on QEMU
 tests/usb/gadget.sh up|down|status [zero acm zero-a zero-b]   # the dummy_hcd gadgets (once: tests/usb/gadget.sh install)
 tests/usb/oracle.sh [--trace] [--tests 1,2]                  # the linux-usb guest's testusb on QEMU's qemu-xhci + usb-host on Gadget Zero
+node tools/osk-keymaps.ts      # regenerate web/app/keymaps.ts (the on-screen keyboard's layouts) from xkeyboard-config; needs xkbcomp, xkeyboard-config, xorgproto's keysymdef.h
 node tests/usb/hid-record.ts   # re-record Chromium's parse of the uhid rig's devices (tests/usb/hid-fixtures/) when Chromium moves
 node bench/usb/run.ts 5        # WebUSB's per-transfer cost and bulk throughput from a worker, against Gadget Zero (bench/usb/)
 scripts/testfloat.sh           # FP core vs TestFloat 3e (in ci.sh)

@@ -1,17 +1,34 @@
 // The on-screen keyboard's keys (web/app/osk.ts): its layout, and pointers on its keys as a real keyboard's downs and
 // ups: each pointer holds its key, fingers chord, a modifier tapped alone is latched for the next key (or until tapped
-// again), one held alone or with another key is released when let go.
+// again), one held alone or with another key is released when let go, the last key held repeats; the layouts' keys and
+// legends for each keymap.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { autoLayout, COMPACT_BELOW, COMPACT_HEIGHT, COMPACT_WIDTH, HEIGHT, HOLD_MS, keyOf, KEYS, layoutOf, legends, MODIFIERS, OskKeys, PAGES, WIDTH, type Key, type ModifierMode } from '../web/app/osk.ts';
+import { autoLayout, COMPACT_BELOW, COMPACT_HEIGHT, COMPACT_WIDTH, eventOf, fullKeys, HEIGHT, HOLD_MS, keymapOf, keyOf, KEYS, layoutOf, legends, MODIFIERS, OskKeys, pages, PAGES, REPEAT_DELAY_MS, REPEAT_MS, WIDTH, type Key, type ModifierMode, type Mods } from '../web/app/osk.ts';
+import { KEYMAPS } from '../web/app/keymaps.ts';
 
-/** An `OskKeys` on a clock the test moves, and what it sent (`+code` down, `-code` up). */
+/** An `OskKeys` on a clock the test moves (its timers too), and what it sent (`+code` down, `-code` up, `*code` a repeat). */
 function keyboard(mode: ModifierMode = 'next') {
   let now = 0;
   const sent: string[] = [];
-  const k = new OskKeys((code, down) => sent.push(`${down ? '+' : '-'}${code}`), mode, () => now);
+  const timers = new Map<number, { at: number; f: () => void }>();
+  let next = 0;
+  const clock = { set: (f: () => void, ms: number) => (timers.set(++next, { at: now + ms, f }), next), clear: (id: unknown) => void timers.delete(id as number) };
+  const k = new OskKeys((code, down, repeat) => sent.push(`${repeat ? '*' : down ? '+' : '-'}${code}`), mode, () => now, clock);
   const take = () => sent.splice(0);
-  return { k, take, wait: (ms: number) => { now += ms; } };
+  /** Moves the clock by `ms`, firing the timers due on the way, in order. */
+  const wait = (ms: number) => {
+    const end = now + ms;
+    for (;;) {
+      const due = [...timers].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+      if (!due) break;
+      timers.delete(due[0]);
+      now = due[1].at;
+      due[1].f();
+    }
+    now = end;
+  };
+  return { k, take, wait, pending: () => timers.size };
 }
 
 test('the layout: 104 keys, every one a key the guest knows, none overlapping, all inside', async () => {
@@ -67,6 +84,97 @@ test('the compact layout: pages of 10u by 5, full, every key of the full layout 
   for (const c of ['ShiftLeft', 'ControlLeft', 'AltLeft', 'Backspace', 'Escape', 'Tab']) {
     assert.ok(PAGES.filter((p) => p.keys.some((k) => k.code === c)).length >= 3, `${c} on three pages at least`);
   }
+});
+
+test('every layout: the full keyboard with its extra keys, none overlapping; the compact pages hold the same keys', async () => {
+  const { codeOf } = await import('../web/input.ts');
+  const ids = Object.keys(KEYMAPS);
+  const { KEYBOARD_LAYOUTS } = await import('../web/app/keyboard.ts');
+  assert.deepEqual(ids.sort(), KEYBOARD_LAYOUTS.map((l) => l.id).sort(), 'a keymap for every layout the setting offers (node tools/osk-keymaps.ts)');
+  for (const id of ids) {
+    const map = keymapOf(id);
+    const full = fullKeys(map);
+    apart(full);
+    for (const k of full) {
+      assert.ok(codeOf(k.code) !== undefined, `${id} ${k.code}: a Linux keycode`);
+      assert.ok(k.x >= 0 && k.x + k.w <= WIDTH + 1e-9 && k.y + k.h <= HEIGHT, `${id} ${k.code} inside`);
+    }
+    const extra = ['IntlBackslash', 'IntlRo', 'IntlYen'].filter((c) => map[c]);
+    assert.equal(full.length, 104 + extra.length, id);
+    const all = new Set<string>();
+    for (const p of pages(map)) {
+      apart(p.keys);
+      for (const k of p.keys) {
+        assert.ok(k.x >= 0 && k.x + k.w <= COMPACT_WIDTH + 1e-9 && k.y + k.h <= COMPACT_HEIGHT, `${id} ${p.id} ${k.code} inside`);
+        all.add(k.code);
+      }
+    }
+    assert.deepEqual([...all].sort(), full.map((k) => k.code).sort(), id);
+    // Every character key has a legend (JIS's Backquote, Hankaku/Zenkaku, none).
+    for (const k of full) if (!MODIFIERS.has(k.code) && /^(Key|Digit|Intl)/.test(k.code)) assert.ok(legends(k.code, map)?.main, `${id} ${k.code}`);
+  }
+  assert.deepEqual(fullKeys(keymapOf('us')).map((k) => k.code), KEYS.map((k) => k.code));
+  assert.equal(keymapOf(undefined), keymapOf('us'));
+  assert.equal(keymapOf('nonesuch'), keymapOf('us'));
+  assert.ok(fullKeys(keymapOf('de')).some((k) => k.code === 'IntlBackslash'));
+  assert.ok(fullKeys(keymapOf('jp')).some((k) => k.code === 'IntlYen'));
+  assert.ok(fullKeys(keymapOf('br')).some((k) => k.code === 'IntlRo'));
+  assert.ok(!fullKeys(keymapOf('us-dvorak')).some((k) => k.code === 'IntlBackslash'));
+});
+
+test('a layout\'s legends and characters: German, French, Dvorak; AltGr as the right Alt where a key has a third level', () => {
+  const de = keymapOf('de'), fr = keymapOf('fr'), dv = keymapOf('us-dvorak');
+  assert.deepEqual(legends('KeyY', de), { main: 'Z', alt: '←' });
+  assert.deepEqual(legends('KeyQ', de), { main: 'Q', alt: '@' });
+  assert.deepEqual(legends('Semicolon', de), { main: 'Ö', alt: '˝' });
+  assert.deepEqual(legends('Digit7', de), { top: '/', main: '7', alt: '{' });
+  assert.deepEqual(legends('IntlBackslash', de), { top: '>', main: '<', alt: '|' });
+  assert.deepEqual(legends('Digit1', fr), { top: '1', main: '&', alt: '¹' });
+  assert.deepEqual(legends('KeyQ', fr), { main: 'A', alt: 'æ' });
+  assert.equal(keyOf('KeyY', false, de), 'z');
+  assert.equal(keyOf('Semicolon', true, de), 'Ö');
+  assert.equal(keyOf('KeyQ', false, de, true), '@');
+  assert.equal(keyOf('KeyE', false, de, true), '€');
+  assert.equal(keyOf('KeyS', false, dv), 'o');
+  assert.equal(keyOf('Numpad5', true, de), '5');
+  assert.equal(keyOf('NumpadEnter', false, de), 'Enter');
+  assert.equal(keyOf('Space', false, de), ' ');
+  const m = (o: Partial<Mods>): Mods => ({ shift: false, ctrl: false, alt: false, meta: false, altGr: false, ...o });
+  assert.deepEqual(eventOf('KeyQ', m({ altGr: true }), de), { key: '@', ctrlKey: false, altKey: false, metaKey: false });
+  // A key without a third level, or a layout without any (US): the right Alt is Alt.
+  assert.deepEqual(eventOf('KeyX', m({ altGr: true }), keymapOf('us')), { key: 'x', ctrlKey: false, altKey: true, metaKey: false });
+  assert.deepEqual(eventOf('KeyA', m({ alt: true, shift: true }), de), { key: 'A', ctrlKey: false, altKey: true, metaKey: false });
+});
+
+test('the last key held repeats after REPEAT_DELAY_MS, every REPEAT_MS; a modifier doesn\'t; a release or another key stops it', () => {
+  const { k, take, wait, pending } = keyboard();
+  k.press(1, 'KeyA');
+  wait(REPEAT_DELAY_MS - 1);
+  assert.deepEqual(take(), ['+KeyA']);
+  wait(1 + 2 * REPEAT_MS);
+  assert.deepEqual(take(), ['*KeyA', '*KeyA', '*KeyA']);
+  // Another key pressed: it repeats, the first stops.
+  k.press(2, 'KeyB');
+  wait(REPEAT_DELAY_MS);
+  assert.deepEqual(take(), ['+KeyB', '*KeyB']);
+  k.release(2);
+  wait(REPEAT_DELAY_MS * 2);
+  assert.deepEqual(take(), ['-KeyB']);
+  k.release(1);
+  assert.deepEqual(take(), ['-KeyA']);
+  assert.equal(pending(), 0);
+  // A modifier held alone doesn't repeat; a key held with it does.
+  k.press(1, 'ShiftLeft');
+  wait(REPEAT_DELAY_MS * 2);
+  assert.deepEqual(take(), ['+ShiftLeft']);
+  k.press(2, 'Digit1');
+  wait(REPEAT_DELAY_MS);
+  k.releaseAll();
+  assert.deepEqual(take(), ['+Digit1', '*Digit1', '-Digit1', '-ShiftLeft']);
+  assert.equal(pending(), 0);
+  k.press(1, 'KeyC');
+  k.forget();
+  assert.equal(pending(), 0);
 });
 
 test('the layout chosen: compact below the threshold, forced either way', () => {
@@ -125,7 +233,7 @@ test('a modifier tapped alone is latched until the next key is released; tapped 
   k.press(2, 'KeyB');
   k.release(1);
   assert.deepEqual(take(), ['+ShiftLeft', '+KeyA', '+KeyB', '-KeyA']);
-  assert.deepEqual(k.mods(), { shift: true, ctrl: false, alt: false, meta: false });
+  assert.deepEqual(k.mods(), { shift: true, ctrl: false, alt: false, meta: false, altGr: false });
   k.release(2);
   assert.deepEqual(take(), ['-KeyB', '-ShiftLeft']);
 });

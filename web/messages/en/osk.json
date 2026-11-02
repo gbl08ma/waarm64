@@ -91,6 +91,14 @@
     "message": "Backspace",
     "note": "On-screen keyboard: the Backspace key's label."
   },
+  "Osk.key.BackspaceShort": {
+    "message": "⌫",
+    "note": "On-screen keyboard: the Backspace key's label where the key is only one key wide (a Japanese keyboard's, beside the yen key): a symbol, or a very short word."
+  },
+  "Osk.key.HankakuZenkaku": {
+    "message": "半/全",
+    "note": "On-screen keyboard: the label of a Japanese keyboard's Hankaku/Zenkaku key (half-width/full-width input), left of 1, as the key is printed. Keep it as is unless the language's Japanese keyboards print it otherwise."
+  },
   "Osk.key.Enter": {
     "message": "Enter",
     "note": "On-screen keyboard: the label of the Enter key and the keypad's Enter key."

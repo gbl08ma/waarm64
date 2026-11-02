@@ -1022,9 +1022,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
-- **The on-screen keyboard's next steps** (frontend.md "The on-screen keyboard"): the serial terminal's view
-  sending the keys to the serial console, as its own typing does; layouts besides US (legends from the guest's keymap, web/app/keyboard.ts); a
-  key held on it repeating on the serial console (before the guest's keyboard driver), as the browser's repeats do.
+- **The on-screen keyboard's next steps** (frontend.md "The on-screen keyboard", "Not yet"): a compact letters' page per
+  layout (German's Ü and Ä beside the letters, not on the symbols' page); JIS's input-method keys.
 
 - **Errors written as one message** ([copy.md](copy.md) "The elements": a headline, then the cause as details): where
   the code throws a single message, its words are "Couldn't …" and a second line after `\n` instead of a `MsgError`

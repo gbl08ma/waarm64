@@ -8,13 +8,15 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import Icon from './Icon.svelte';
-  import { autoLayout, COMPACT_HEIGHT, COMPACT_WIDTH, HEIGHT, KEYS, layoutOf, legends, OskKeys, PAGES, WIDTH, type Key, type Layout, type ModifierMode, type Mods } from './osk.ts';
+  import { autoLayout, COMPACT_HEIGHT, COMPACT_WIDTH, fullKeys, HEIGHT, keymapOf, layoutOf, legends, OskKeys, pages, WIDTH, type Key, type Layout, type ModifierMode, type Mods } from './osk.ts';
   import { remember, settings } from './settings.ts';
   import { t } from '../i18n.ts';
 
   type Props = {
-    /** Key `code` down or up, with the modifiers down on the keyboard (for a terminal's characters). */
-    send(code: string, down: boolean, mods: Mods): void;
+    /** Key `code` down or up, with the modifiers down on the keyboard (for a terminal's characters); `repeat`, a held key's. */
+    send(code: string, down: boolean, mods: Mods, repeat?: boolean): void;
+    /** The machine's keyboard layout (web/app/keyboard.ts), or none (US): the keys' legends, ISO's or JIS's extra keys. */
+    keyLayout?: string;
     mode: ModifierMode;
     /** Bumped when the guest's keys were released elsewhere (a blur): what the keyboard holds is forgotten. */
     released: number;
@@ -24,12 +26,12 @@
     leds: number;
     onclose(): void;
   };
-  let { send, mode, released, typed, leds, onclose }: Props = $props();
+  let { send, keyLayout, mode, released, typed, leds, onclose }: Props = $props();
   /** The lock keys' LEDs: their bits in `leds`. */
   const LED_BITS: Record<string, number> = { NumLock: 1, CapsLock: 2, ScrollLock: 4 };
 
   let tick = $state(0);
-  const keys = new OskKeys((code, down) => send(code, down, keys.mods()));
+  const keys = new OskKeys((code, down, repeat) => send(code, down, keys.mods(), repeat));
   keys.onChange = () => { tick++; };
   $effect(() => { keys.mode = mode; });
   $effect(() => { if (released) untrack(() => keys.forget()); });
@@ -46,9 +48,17 @@
     Delete: 'osk:Osk.key.Delete', End: 'osk:Osk.key.End', PageDown: 'osk:Osk.key.PageDown', NumLock: 'osk:Osk.key.NumLock',
     ArrowUp: 'osk:Osk.key.ArrowUp', ArrowDown: 'osk:Osk.key.ArrowDown', ArrowLeft: 'osk:Osk.key.ArrowLeft', ArrowRight: 'osk:Osk.key.ArrowRight',
   };
-  const label = (keys: Key[]) => keys.map((k) => ({ ...k, legend: legends(k.code), name: NAMES[k.code] ? t(NAMES[k.code]) : undefined }));
-  const FULL = label(KEYS);
-  const PAGE_KEYS: Record<string, ReturnType<typeof label>> = Object.fromEntries(PAGES.map((p) => [p.id, label(p.keys)]));
+  // The keys and their legends, as the machine's layout has them.
+  const keymap = $derived(keymapOf(keyLayout));
+  /** Key `k`'s words: a one-key-wide Backspace's short ones (JIS's), JIS's Hankaku/Zenkaku (Backquote without a character). */
+  const nameOf = (k: Key) =>
+    k.code === 'Backspace' && k.w < 1.5 ? t('osk:Osk.key.BackspaceShort')
+    : k.code === 'Backquote' && !keymap.Backquote ? t('osk:Osk.key.HankakuZenkaku')
+    : NAMES[k.code] ? t(NAMES[k.code]) : undefined;
+  const label = (keys: Key[]) => keys.map((k) => ({ ...k, legend: legends(k.code, keymap), name: nameOf(k) }));
+  const FULL = $derived(label(fullKeys(keymap)));
+  const PAGES = $derived(pages(keymap));
+  const PAGE_KEYS = $derived(Object.fromEntries(PAGES.map((p) => [p.id, label(p.keys)])));
   /** The compact layout's tabs: their words and tooltips. */
   const PAGE_WORDS: Record<string, [string, string]> = {
     main: ['osk:Osk.page.main', 'osk:Osk.pageTitle.main'], symbols: ['osk:Osk.page.symbols', 'osk:Osk.pageTitle.symbols'],
@@ -176,7 +186,7 @@
     {#each labels as k (k.code)}
       <div class="key" data-code={k.code} data-state={stateOf(k.code, tick)} data-led={LED_BITS[k.code] ? (leds & LED_BITS[k.code] ? 'on' : 'off') : undefined} class:named={!!k.name}
         style:left={px(k.x * u)} style:top={px(k.y * u)} style:width={px(k.w * u)} style:height={px(k.h * u)}>
-        {#if k.name}<span class="main">{k.name}</span>{:else if k.legend?.top}<span class="top">{k.legend.top}</span><span class="main">{k.legend.main}</span>{:else}<span class="main">{k.legend?.main}</span>{/if}
+        {#if k.name}<span class="main">{k.name}</span>{:else if k.legend?.top}<span class="top">{k.legend.top}</span><span class="main">{k.legend.main}</span>{:else}<span class="main">{k.legend?.main}</span>{/if}{#if k.legend?.alt}<span class="alt">{k.legend.alt}</span>{/if}
       </div>
     {/each}
   </div>
@@ -208,6 +218,8 @@
   .key.named { font-size: calc(var(--u) * 0.24); text-align: center; }
   #osk[data-layout=compact] .key.named { font-size: calc(var(--u) * 0.27); }
   .key .top { color: var(--dim); font-size: 0.85em; }
+  /* The AltGr character, as a keyboard prints it: small, at the bottom right. */
+  .key .alt { position: absolute; right: calc(var(--u) * 0.1); bottom: calc(var(--u) * 0.04); color: var(--accent); font-size: 0.7em; }
   /* A lock key's LED, as a keyboard's in its key: dim off, lit on. */
   .key[data-led]::after { content: ''; position: absolute; top: calc(var(--u) * 0.1); right: calc(var(--u) * 0.1); width: calc(var(--u) * 0.12);
     height: calc(var(--u) * 0.12); border-radius: 50%; background: var(--line); }

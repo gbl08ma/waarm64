@@ -31,7 +31,7 @@ before(async () => {
 after(async () => { await browser?.close(); close?.(); });
 
 /** The page with its keyboard's, tablet's and serial console's ports kept here, its worker stopped and (`live`) the guest's keyboard driver said to be up. */
-async function open(live = true, viewport = { width: 1400, height: 900 }) {
+async function open(live = true, viewport = { width: 1400, height: 900 }, query = '') {
   const context = await browser.newContext({ viewport, hasTouch: true });
   const page = await context.newPage();
   const errors: string[] = [];
@@ -56,13 +56,13 @@ async function open(live = true, viewport = { width: 1400, height: 900 }) {
       return post.call(this, m, transfer as unknown as StructuredSerializeOptions);
     } as typeof Worker.prototype.postMessage;
   });
-  await load(page, live);
+  await load(page, live, query);
   return { context, page, errors };
 }
 
 /** Loads (or reloads) the page, stops its worker and says the guest's keyboard driver is up. */
-async function load(page: Page, live = true) {
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1&view=screen`);
+async function load(page: Page, live = true, query = '') {
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1&view=screen${query}`);
   await page.waitForFunction(() => (window as unknown as { __workers: Worker[] }).__workers.length > 0, null, { timeout: 30_000 });
   await page.evaluate((live) => {
     const [worker] = (window as unknown as { __workers: Worker[] }).__workers;
@@ -346,6 +346,88 @@ test('before the guest has a keyboard driver: the keyboard and the Keys menu typ
   await page.locator('[data-chord="ControlLeft KeyW"]').click();
   assert.equal(await serial(1), '\x17');
   assert.deepEqual(await keys(page), [], 'nothing to the keyboard without its driver');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+/** The serial console's input since the last call, once it has `n` characters. */
+async function serialIn(page: Page, n: number) {
+  await page.waitForFunction((n) => (window as unknown as { __serial: string[] }).__serial.join('').length >= n, n, { timeout: 5000 });
+  return page.evaluate(() => (window as unknown as { __serial: string[] }).__serial.splice(0).join(''));
+}
+const terminalFocused = (page: Page) => page.evaluate(() => document.activeElement === document.querySelector('#terminal textarea'));
+
+test('the terminal\'s view: the keys go to the serial console as its typing does, the terminal keeps the focus; a held key repeats there', { skip, timeout: 120_000 }, async () => {
+  const { context, page, errors } = await open();
+  await page.locator('[data-view-button=terminal]').click();
+  assert.ok(await terminalFocused(page));
+  await page.locator('#keys summary').click();
+  await page.locator('#osk-toggle').click();
+  await page.locator('#osk').waitFor();
+  assert.ok(await terminalFocused(page), 'the terminal keeps the focus');
+  await key(page, 'ShiftLeft').click();
+  await key(page, 'KeyA').click();
+  await key(page, 'KeyB').click();
+  await key(page, 'ControlLeft').click();
+  await key(page, 'KeyC').click();
+  await key(page, 'ArrowUp').click();
+  assert.equal(await serialIn(page, 6), 'Ab\x03\x1b[A');
+  assert.ok(await terminalFocused(page));
+  // Held: the key, then its repeats (500 ms, then ~30 a second).
+  const a = (await key(page, 'KeyA').boundingBox())!;
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(900);
+  await page.mouse.up();
+  const held = await serialIn(page, 4);
+  assert.match(held, /^a{4,}$/, `held: ${JSON.stringify(held)}`);
+  await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(() => (window as unknown as { __serial: string[] }).__serial.length), 0, 'no repeat after the release');
+  // Both views, the screen clicked: the keys go to the screen's keyboard again.
+  await page.locator('[data-view-button=both]').click();
+  await page.locator('#screen').focus();
+  await key(page, 'KeyA').click();
+  await settle(page, 2);
+  assert.deepEqual(await keys(page), ev([K.A, true], [K.A, false]));
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('before the guest has a keyboard driver, a held key repeats on the serial console; with it, the guest\'s kernel repeats', { skip, timeout: 120_000 }, async () => {
+  const { context, page, errors } = await open(false);
+  await showOsk(page);
+  const hold = async (ms: number) => {
+    const b = (await key(page, 'KeyB').boundingBox())!;
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(ms);
+    await page.mouse.up();
+  };
+  await hold(900);
+  assert.match(await serialIn(page, 4), /^b{4,}$/);
+  // The driver up: one down and one up to the keyboard, whatever the hold.
+  await page.evaluate(() => (window as unknown as { __workers: Worker[] }).__workers[0].onmessage?.(new MessageEvent('message', { data: { type: 'keyboard', live: true } })));
+  await hold(900);
+  await settle(page, 2);
+  await page.waitForTimeout(100);
+  assert.deepEqual(await keys(page), ev([48, true], [48, false]));
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('the machine\'s keyboard layout: German legends and ISO\'s key, its characters and AltGr\'s on the serial console', { skip, timeout: 120_000 }, async () => {
+  const { context, page, errors } = await open(false, undefined, '&keyboard=de');
+  await showOsk(page);
+  assert.equal(await key(page, 'KeyY').locator('.main').textContent(), 'Z');
+  assert.equal(await key(page, 'Semicolon').locator('.main').textContent(), 'Ö');
+  assert.equal(await key(page, 'KeyQ').locator('.alt').textContent(), '@');
+  assert.equal(await key(page, 'IntlBackslash').count(), 1, 'ISO\'s key beside the left Shift');
+  await key(page, 'KeyY').click();
+  await key(page, 'Semicolon').click();
+  await key(page, 'IntlBackslash').click();
+  await key(page, 'AltRight').click();
+  await key(page, 'KeyQ').click();
+  assert.equal(await serialIn(page, 4), 'zö<@');
   assert.deepEqual(errors, []);
   await context.close();
 });
