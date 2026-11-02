@@ -3,6 +3,7 @@
 // (the page that runs it, in any tab), and edits that need it off are refused while it's held. Nothing here asks the
 // user; the Machines page confirms first.
 import { cacheBytes } from '../diskcache.ts';
+import { SWAP_MIN_PAGES } from '../ramdisk.ts';
 import { FOLLOW_BROWSER } from './keyboard.ts';
 import { defaultCpus } from './machine.ts';
 import { adaptersOf, canonical, DEFAULT_MAC, generateName, MAX_ADAPTERS, MAX_DISKS, newId, newMac, uniqueName, type Attachment, type DiskIdentity, type DiskRecord, type MachineRecord } from './shape.ts';
@@ -187,8 +188,8 @@ export async function attach(store: Store, m: MachineRecord, disk: DiskRecord, o
   return a;
 }
 
-/** Changes attachment `id` of machine `m` (read-only, in place, its place in the order) or detaches it (`detach`). */
-export async function editAttachment(store: Store, m: MachineRecord, id: string, change: { readOnly?: boolean; inPlace?: boolean; move?: -1 | 1; detach?: boolean }) {
+/** Changes attachment `id` of machine `m` (read-only, in place, swap, its place in the order) or detaches it (`detach`). */
+export async function editAttachment(store: Store, m: MachineRecord, id: string, change: { readOnly?: boolean; inPlace?: boolean; swap?: boolean; move?: -1 | 1; detach?: boolean }) {
   await needsOff(m.id, 'Changing its disks');
   const i = m.attachments.findIndex((a) => a.id === id);
   if (i < 0) throw new Error('that disk is no longer attached');
@@ -201,6 +202,11 @@ export async function editAttachment(store: Store, m: MachineRecord, id: string,
   if (change.inPlace !== undefined) {
     if (disk?.kind !== 'stored') throw new Error('only a disk stored in the browser can be written in place');
     a.inPlace = change.inPlace || undefined;
+  }
+  if (change.swap !== undefined) {
+    if (disk?.kind !== 'ramdisk') throw new Error('only a ramdisk can be the guest\'s swap');
+    if (change.swap && disk.size < SWAP_MIN_PAGES * 4096) throw new Error(`a swap ramdisk needs at least ${SWAP_MIN_PAGES * 4} KiB`);
+    a.swap = change.swap || undefined;
   }
   if (change.move) {
     const j = i + change.move;

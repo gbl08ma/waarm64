@@ -21,7 +21,7 @@ import { BLOCK_CACHE, cachedSource, type BlockCacheStats } from './blockcache.ts
 import { cacheKey, openBlockStore, releaseStores } from './diskcache.ts';
 import { chunkedSource, isManifestUrl } from './chunked.ts';
 import { openOverlay, overlay, type OverlayFiles, type WritableDisk } from './overlay.ts';
-import { ramDisk } from './ramdisk.ts';
+import { ramDisk, swapHeader } from './ramdisk.ts';
 import { openStored, openStoredForWriting } from './stored.ts';
 import { inflatePool } from './inflate-pool.ts';
 import { openDisk, type Disk } from './qcow2.ts';
@@ -42,7 +42,8 @@ import { bytes, ramLayout, type Ram, type RamLayout, type Segment } from './ram.
  * DISCARD and WRITE_ZEROES: what the guest trims leaves the overlay (the page's machines; the
  * tests' guests are without it, as their step counts are). `source` is a disk with no image (docs/machines.md
  * §4.2, `size` given): `zero`, a blank disk that reads as zeros (writable through its overlay), or `ram`, a ramdisk
- * (web/ramdisk.ts: writable in itself, empty at every start, with DISCARD). `serial` is what GET_ID answers (default
+ * (web/ramdisk.ts: writable in itself, empty at every start, with DISCARD; with `swap`, a swap area labelled so at
+ * every start: `swapHeader`). `serial` is what GET_ID answers (default
  * `webpc-blk`); `identity` replaces `diskIdentity`'s for the overlay's check (a machine's disk record says it). `stored`
  * is a disk kept in the browser (web/stored.ts: its OPFS directory, `disks/<id>`, read under its overlay; `size` given);
  * written in place, the disk is instead its own overlay (`overlay` `disks/<id>` over a `zero` source). A `url` disk is
@@ -59,7 +60,7 @@ export type DeviceSpec =
   | SndSpec
   | { type: 'clock' };
 
-export type BlkSpec = { type: 'blk'; url?: string; keep?: boolean; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; ramInit?: [number, Uint8Array][] };
+export type BlkSpec = { type: 'blk'; url?: string; keep?: boolean; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; ramInit?: [number, Uint8Array][]; swap?: string };
 
 const RAMDISK_FULL = "The ramdisk is out of memory: this tab can't have more, so the guest's writes to it fail (I/O errors). Deleting files there and trimming it (fstrim) makes room again.";
 
@@ -1094,11 +1095,15 @@ export class Devices {
   static async open(init: DevicesInit, out: (device: number, text: string) => void, notice: (text: string) => void = () => {}) {
     // A stored disk written in place is opened as its store is for any writer: an interrupted merge is finished first.
     const overlays = await Promise.all(init.specs.map((d) => (d.type !== 'blk' || !d.overlay ? undefined : d.overlay.startsWith('disks/') ? openStoredForWriting(d.overlay, diskIdentity(d, d.size ?? 0), d.size ?? 0) : openOverlay(d.overlay, diskIdentity(d, d.size ?? 0)))));
-    const sources = await Promise.all(init.specs.map((d) => {
+    const sources = await Promise.all(init.specs.map(async (d) => {
       if (d.type !== 'blk') return undefined;
       if (d.source) {
         if (!d.size) throw new Error(`a ${d.source === 'ram' ? 'ramdisk' : 'blank disk'} needs a size`);
-        return d.source === 'ram' ? ramDisk(d.size, d.ramInit, { onFull: () => notice(RAMDISK_FULL) }) : zeroSource(d.size);
+        if (d.source !== 'ram') return zeroSource(d.size);
+        const ram = ramDisk(d.size, d.ramInit, { onFull: () => notice(RAMDISK_FULL) });
+        // A swap ramdisk starts as a swap area (a restored one has its own first page in its chunks).
+        if (d.swap && !d.ramInit && !(await ram.write(0, swapHeader(d.size, d.swap)))) throw new Error("the swap ramdisk's first page couldn't be written");
+        return ram;
       }
       if (d.stored) return openStored(d.stored, d.size ?? 0);
       if (d.file) return blobSource(d.file);

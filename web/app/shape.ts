@@ -52,9 +52,10 @@ export type DiskRecord = {
 /**
  * A disk in a machine's slot list. `readOnly`: the guest can't write it; otherwise it writes into
  * the overlay `overlay` (an id in IndexedDB `overlays`, machines.md §2), or, with `inPlace`, into
- * the disk itself (a stored disk only: §4.4), or, for a ramdisk, into memory.
+ * the disk itself (a stored disk only: §4.4), or, for a ramdisk, into memory. `swap`: a ramdisk the guest uses as swap
+ * (§4.3, web/app/guest-swap.ts).
  */
-export type Attachment = { id: string; disk: string; readOnly: boolean; inPlace?: boolean; overlay?: string };
+export type Attachment = { id: string; disk: string; readOnly: boolean; inPlace?: boolean; overlay?: string; swap?: true };
 
 /** The machine's display: a virtio-gpu, 2D or with virgl (3D, rendered with WebGL2): the guest sees different devices. */
 export type Display = '2d' | '3d';

@@ -25,6 +25,34 @@ const ARENA_PAGES = 65536;
 const CHUNK_PAGES = RAM_CHUNK / 65536;
 let sabBytes = 0;
 
+/** The guest's swap page size (arm64 Linux with 4 KiB pages: Debian's and Arch's kernels). */
+const SWAP_PAGE = 4096;
+/** The fewest pages `swapon` takes (mkswap's minimum). */
+export const SWAP_MIN_PAGES = 10;
+
+/**
+ * The first page of a swap area over a disk of `size` bytes, as `mkswap` writes it (Linux's `union swap_header`,
+ * version 1, little-endian): the version, the last page, no bad pages, `uuid` (16 bytes) and `label` (at most 15
+ * bytes: blkid's `LABEL=`), and `SWAPSPACE2` at the page's end. A guest whose pages are larger than 4 KiB doesn't
+ * find the signature (its `swapon` refuses the disk).
+ */
+export function swapHeader(size: number, label: string, uuid: Uint8Array = crypto.getRandomValues(new Uint8Array(16))): Uint8Array {
+  const pages = Math.floor(size / SWAP_PAGE);
+  const name = new TextEncoder().encode(label);
+  if (pages < SWAP_MIN_PAGES) throw new Error(`a swap area needs ${SWAP_MIN_PAGES} pages of ${SWAP_PAGE} bytes`);
+  if (name.length > 15) throw new Error('a swap label of at most 15 bytes');
+  if (uuid.length !== 16) throw new Error('a 16-byte UUID');
+  const page = new Uint8Array(SWAP_PAGE);
+  const v = new DataView(page.buffer);
+  v.setUint32(1024, 1, true); // version
+  v.setUint32(1028, Math.min(pages - 1, 0xffffffff), true); // last_page
+  v.setUint32(1032, 0, true); // nr_badpages
+  page.set(uuid, 1036);
+  page.set(name, 1052);
+  page.set(new TextEncoder().encode('SWAPSPACE2'), SWAP_PAGE - 10);
+  return page;
+}
+
 /** A ramdisk of `size` bytes (a multiple of 512), empty. `chunks()` says how many are held (tests: the memory given back). */
 export function ramDisk(size: number, init: [number, Uint8Array][] = [], opts: { sabBudget?: number; onFull?: () => void } = {}): WritableDisk & { chunks(): number; arenaBytes(): number; chunkList(): [number, Uint8Array][] } {
   // `init`: a restored ramdisk's chunks (a snapshot's blocks, written by web/snapshot.ts into another ramDisk: shared memory, not copied).

@@ -1,6 +1,6 @@
 // Machine definitions in and out (docs/machines.md §6): a machine's shape as a small JSON file (`webpc-machine`,
 // version 1): its settings, and per attachment the disk's kind, name, size and identity (a URL as is; a file's name,
-// size, date and hash where known; a blank disk's or ramdisk's size), read-only, written in place, its serial. No
+// size, date and hash where known; a blank disk's or ramdisk's size), read-only, written in place, a ramdisk as swap, its serial. No
 // overlays, snapshots or file contents ("export a machine", the bundle, is later and named apart). An import makes a
 // new machine (its name made unique): URL, blank and ramdisk disks come back as they were (a disk this browser has, by
 // identity, is attached again); file disks, and stored disks this browser doesn't have, are files to pick at its first
@@ -18,7 +18,7 @@ import { ramSplitError } from './machine.ts';
 export const DEFINITION_TYPE = 'webpc-machine';
 export const DEFINITION_VERSION = 1;
 
-export type DefinitionDisk = { kind: DiskKind; name: string; size: number; identity: DiskIdentity; url?: string; sha256?: string; readOnly: boolean; inPlace?: boolean; serial: string };
+export type DefinitionDisk = { kind: DiskKind; name: string; size: number; identity: DiskIdentity; url?: string; sha256?: string; readOnly: boolean; inPlace?: boolean; swap?: boolean; serial: string };
 export type Definition = {
   type: typeof DEFINITION_TYPE;
   version: number;
@@ -36,7 +36,7 @@ export async function exportDefinition(store: Store, id: string): Promise<Defini
   for (const a of m.attachments) {
     const d = await store.get('disks', a.disk);
     if (!d) throw new Error(`${m.name} has a disk that isn't in this browser`);
-    disks.push({ kind: d.kind, name: d.name, size: d.size, identity: d.identity, ...(d.url ? { url: d.url } : {}), ...(d.sha256 ? { sha256: d.sha256 } : {}), readOnly: a.readOnly, ...(a.inPlace ? { inPlace: true } : {}), serial: a.id });
+    disks.push({ kind: d.kind, name: d.name, size: d.size, identity: d.identity, ...(d.url ? { url: d.url } : {}), ...(d.sha256 ? { sha256: d.sha256 } : {}), readOnly: a.readOnly, ...(a.inPlace ? { inPlace: true } : {}), ...(a.swap ? { swap: true } : {}), serial: a.id });
   }
   const usb = m.usbDevices?.length ? { usbDevices: toDefinition(m.usbDevices) } : {};
   const macs = adaptersOf(m).map((a) => a.mac);
@@ -88,7 +88,7 @@ export async function importDefinition(store: Store, def: Definition): Promise<{
       await store.put('disks', d);
       have.push(d);
     }
-    attachments.push({ id: attachments.some((a) => a.id === x.serial) ? newId() : x.serial, disk: d.id, readOnly: x.readOnly, ...(x.inPlace && d.kind === 'stored' ? { inPlace: true } : {}) });
+    attachments.push({ id: attachments.some((a) => a.id === x.serial) ? newId() : x.serial, disk: d.id, readOnly: x.readOnly, ...(x.inPlace && d.kind === 'stored' ? { inPlace: true } : {}), ...(x.swap === true && d.kind === 'ramdisk' ? { swap: true as const } : {}) });
   }
   const machine: MachineRecord = {
     id: newId(),

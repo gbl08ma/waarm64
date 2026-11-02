@@ -76,7 +76,7 @@ async function login(page: Page) {
 }
 
 /** Makes a machine's records in the page's store (as the modal does); returns its id. */
-async function makeMachine(page: Page, m: { ncpus: number; ramMiB: number; disks: { kind: string; name: string; size: number; url?: string; readOnly?: boolean; identity: unknown }[] }) {
+async function makeMachine(page: Page, m: { ncpus: number; ramMiB: number; disks: { kind: string; name: string; size: number; url?: string; readOnly?: boolean; swap?: boolean; identity: unknown }[] }) {
   return page.evaluate(async (m) => {
     const { Store } = await import('/web/app/store.ts' as string);
     const { newId } = await import('/web/app/shape.ts' as string);
@@ -86,7 +86,7 @@ async function makeMachine(page: Page, m: { ncpus: number; ramMiB: number; disks
     for (const d of m.disks) {
       const id = newId();
       await store.put('disks', { id, kind: d.kind, name: d.name, size: d.size, url: d.url, identity: d.kind === 'url' ? d.identity : { kind: d.kind, id, bytes: d.size }, created: now });
-      attachments.push({ id: newId(), disk: id, readOnly: !!d.readOnly });
+      attachments.push({ id: newId(), disk: id, readOnly: !!d.readOnly, ...(d.swap ? { swap: true } : {}) });
     }
     const id = newId();
     await store.put('machines', { id, name: 'Test machine', ncpus: m.ncpus, ramMiB: m.ramMiB, display: '2d', network: true, attachments, created: now, modified: now });
@@ -97,7 +97,7 @@ async function makeMachine(page: Page, m: { ncpus: number; ramMiB: number; disks
 
 const MiB = 2 ** 20;
 
-test('a machine with four disks: Debian from a URL, a blank disk formatted and kept, a ramdisk empty after a reboot, a read-only one', { skip, timeout: 30 * 60_000 }, () => withDebianLock(async () => {
+test('a machine with five disks: Debian from a URL, a blank disk formatted and kept, a ramdisk empty after a reboot, a read-only one, a ramdisk as swap', { skip, timeout: 30 * 60_000 }, () => withDebianLock(async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors: string[] = [];
@@ -114,22 +114,27 @@ test('a machine with four disks: Debian from a URL, a blank disk formatted and k
       { kind: 'blank', name: 'Blank', size: 256 * MiB, identity: null },
       { kind: 'ramdisk', name: 'Ramdisk', size: 128 * MiB, identity: null },
       { kind: 'url', name: 'QEMU_EFI.fd', size: firmware.length, url: '/target/images/edk2/QEMU_EFI.fd', readOnly: true, identity: { kind: 'url', path: '/target/images/edk2/QEMU_EFI.fd', bytes: firmware.length } },
+      { kind: 'ramdisk', name: 'Swap', size: 64 * MiB, swap: true, identity: null },
     ],
   });
-  const [, blank, ram, ro] = serials.map((s) => `/dev/disk/by-id/virtio-${s}`);
+  const [, blank, ram, ro, swap] = serials.map((s) => `/dev/disk/by-id/virtio-${s}`);
   await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&display=simple&${credentialsQuery()}`);
   assert.equal(await page.locator('#machine').textContent(), 'Test machine');
   await running(page);
   await login(page);
 
   // The serials name the disks; their sizes and read-only flags are the attachments'.
-  assert.equal(await ok(page, `for d in ${serials.map((s) => `/dev/disk/by-id/virtio-${s}`).join(' ')}; do echo $(blockdev --getsize64 --getro $d); done`), `${size} 0 ${256 * MiB} 0 ${128 * MiB} 0 ${firmware.length} 1`);
+  assert.equal(await ok(page, `for d in ${serials.map((s) => `/dev/disk/by-id/virtio-${s}`).join(' ')}; do echo $(blockdev --getsize64 --getro $d); done`), `${size} 0 ${256 * MiB} 0 ${128 * MiB} 0 ${firmware.length} 1 ${64 * MiB} 0`);
   // The read-only disk: the file's bytes, and writes refused.
   assert.equal(await ok(page, `sha256sum < ${ro} | cut -c1-64`), createHash('sha256').update(firmware).digest('hex'));
   assert.notEqual((await sh(page, `dd if=/dev/zero of=${ro} bs=4096 count=1 oflag=direct`)).status, 0);
   // The blank disk reads as zeros; formatted, mounted and written, it keeps the file.
   assert.equal(await ok(page, `cmp -n ${256 * MiB} ${blank} /dev/zero && echo zeros`), 'zeros');
   await ok(page, `mkfs.ext4 -q ${blank} && mkdir -p /mnt/b && mount ${blank} /mnt/b && echo kept-$((6*7)) > /mnt/b/file && sync`, 180_000);
+  // The swap ramdisk (web/app/guest-swap.ts): on with nothing done in the guest, by its label, trimmed as it frees.
+  const swapOn = `swapon --noheadings --show=LABEL,TYPE,SIZE; readlink -f /dev/disk/by-label/webpc-swap0 ${swap}; systemctl show -P Options 'dev-disk-by\\x2dlabel-webpc\\x2dswap0.swap'`;
+  const swapWant = (out: string) => assert.match(out, /^webpc-swap0 partition 64M (\/dev\/vd\w) \1 sw,nofail,discard$/, out);
+  swapWant(await ok(page, swapOn));
   // The ramdisk: empty, then written.
   assert.equal(await ok(page, `cmp -n ${128 * MiB} ${ram} /dev/zero && echo zeros`), 'zeros');
   await ok(page, `mkfs.ext4 -q ${ram} && mkdir -p /mnt/r && mount ${ram} /mnt/r && echo gone > /mnt/r/file && sync && cat /mnt/r/file`);
@@ -141,6 +146,7 @@ test('a machine with four disks: Debian from a URL, a blank disk formatted and k
   await login(page);
   assert.equal(await ok(page, `cmp -n ${128 * MiB} ${ram} /dev/zero && echo zeros`), 'zeros');
   assert.equal(await ok(page, `mount ${blank} /mnt/b && cat /mnt/b/file`), 'kept-42');
+  swapWant(await ok(page, swapOn)); // a new ramdisk, a new swap area
   await type(page, 'poweroff\n');
   await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 120_000 });
 
@@ -154,7 +160,7 @@ test('a machine with four disks: Debian from a URL, a blank disk formatted and k
     store.close();
     return out;
   }, id);
-  assert.deepEqual(stored.overlays, [true, true, false, false]);
+  assert.deepEqual(stored.overlays, [true, true, false, false, false]);
   assert.deepEqual(stored.files, ['flash']);
   assert.ok(stored.sizes.every((n) => n > 0), `overlay sizes ${stored.sizes}`);
   assert.deepEqual(errors, []);
