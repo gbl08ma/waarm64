@@ -120,7 +120,7 @@ The model, its rules and why ([machines.md](machines.md)); here, what the page d
   disk's) generation and size from its files into the records. Without `?m=` the machine is transient, made from
   the query as before (`?machine=`, `?disk=`, `?disk2=`): its overlays keep their old single names.
 - **Disks:** a URL (checked when added: `urlcheck.ts`, what fails and what the server needs; a URL disk is slow and
-  the Machines page says so), a file (its `FileSystemFileHandle` kept in the record), a file [stored in the browser](ui:disks:Disks.kind.stored)
+  the Machines page says so), a file (its `FileSystemFileHandle` kept in the record), a file [stored in this browser](ui:disks:Disks.kind.stored)
   (converted into the block store, `web/stored.ts`; the confirmation says what it takes and that it duplicates the
   file), **blank** (zeros, always writable through its overlay) or a **ramdisk** (`web/ramdisk.ts`: empty at every
   boot, the guest's reboot too; its memory counts in the page's memory check). A snapshot and a suspended copy hold
@@ -243,7 +243,7 @@ The page's side of [machines.md](machines.md). It takes the machine's place on t
 address opens it, so a reload keeps it): **[Back to the machine](ui:machines:MachinesPage.back)** (or a view button) returns. The machines on the left
 (new, **from a disk image…** (what Open disk… and a drop do), import a definition), each said running (its Web Lock
 is held, in any tab), suspended (a suspended copy is kept, `machines/<id>/suspend`) or off, and the chosen one on the right:
-Open on this page (for the page's own machine, **[Start](ui:machines:MachinesPage.start)** while it's off, "[Running on this page](ui:machines:MachinesPage.runningHere)" while it runs),
+Open in this tab (for the page's own machine, **[Start](ui:machines:MachinesPage.start)** while it's off, "[Running in this tab](ui:machines:MachinesPage.runningHere)" while it runs),
 Duplicate, Export the definition, Delete; then tabs:
 - **[Settings](ui:machines:MachinesPage.tab.settings):** name, vCPUs, RAM (512 MiB to 16 GiB, `machine.ts` `RAM_CHOICES`; past `MEMORY0_MIB`, 3071 MiB, the rest goes to spill memories (on a machine with Vulkan
   the first holds at most 2,560 MiB: Venus's arena and window come first in memory 1) that the guest sees
@@ -278,8 +278,8 @@ Duplicate, Export the definition, Delete; then tabs:
 - **[USB](ui:machines:MachinesPage.tab.usb)** (`Usb.svelte`): the USB controller's switch (also on Settings: it is in the shape), the remembered devices
   with their state (attached, plugged in, not plugged in, held by another machine, no permission in this browser),
   connector, attach at start, Attach and Detach (while the machine runs on this page), Allow…, Forget. **Add a
-  device…** opens a wizard (`AddUsb.svelte`): the kind first, a USB device (WebUSB) or a HID device (WebHID), each
-  explained, then the browser's chooser. [usb.md](usb.md) "The page".
+  device…** opens a wizard (`AddUsb.svelte`): two numbered steps (the kind, then the browser's chooser) over the kinds, a
+  USB device (WebUSB) or a HID device (WebHID), each explained, and a note on what the machine remembers. [usb.md](usb.md) "The page".
 - **[Shared folders](ui:machines:MachinesPage.tab.folders):** the machine's switch (in the shape), **[Mount shared folders in the guest](ui:machines:MachinesPage.sharesMount)** and its **Mount
   point**, and the attached folders (`Folders.svelte`: order, Read-only, Allow…, Use it here, Detach), changed at once,
   running or not. **[Attach a folder…](ui:folders:Folders.attach)** opens the Folder wizard (`FolderWizard.svelte`). **[Shared folders](ui:machines:MachinesPage.folders.heading)** in the list of machines
@@ -290,7 +290,7 @@ Duplicate, Export the definition, Delete; then tabs:
 A transient machine (a test's `?machine=`, or `?disk=`) is listed first as this page's machine, with a Disks tab (its
 disk's Export, Import changes…, **[Reset disk…](ui:machines:MachinesPage.resetDisk)**) and a Snapshots tab (restore from a file, save to a file). The
 storage's estimate is at the bottom, with what takes it and, while remote disks' blocks are kept (docs/devices.md "Over
-HTTP"), **Clear remote disks' blocks** (a running machine reading one gives its store up too, and reads from memory and the
+HTTP"), **Clear the URL disks' cache** (a running machine reading one gives its store up too, and reads from memory and the
 network from then on).
 
 ## The worker protocol
@@ -543,7 +543,7 @@ are Start and Boot instead). A failure before that leaves the machine running.
   version, a damaged file), it is dropped and the machine boots, with a note saying so.
 - **It resumes only onto its disks as it left them:** the file pins each overlay's path and generation, and the
   worker compares them (`overlayMeta`) before resuming: a switched overlay, a reset, a merge or a boot since moved
-  them on, and the copy is dropped with a note ("[its disk has changed since it was suspended](ui:machine:worker.diskChanged)"). The worker also still
+  them on, and the copy is dropped with a note ("[Its disk has changed since it was suspended.](ui:machine:worker.diskChanged)"). The worker also still
   drops it (`dropSuspend`) right after a resume's `bootVm` and before a boot the page asked for (`start.resume`
   false: Boot instead). A ramdisk's blocks are in the file (they are nowhere else). A stored machine's copy is
   `machines/<id>/suspend`; a transient one's is beside its overlay.
@@ -551,7 +551,7 @@ are Start and Boot instead). A failure before that leaves the machine running.
   refuses it without `resume`, and Save snapshot is what leaves the browser.
 - A disk of one's own (Open disk…, a drop) is a stored machine's, so its suspended copy is the machine's and the page
   reopens it after a reload (the last machine): a file disk needs the user's click first ("[Allow and start](ui:disks:main.allowAndStart)", or
-  "[Pick and start](ui:disks:main.pickAndStart)" without a handle), then it resumes.
+  "[Select and start](ui:disks:main.pickAndStart)" without a handle), then it resumes.
 
 ### The guest's clock
 
@@ -1122,8 +1122,7 @@ in), **[Connect](ui:network:Network.connect)** (the attached connection, when it
 connect again), **[Disconnect](ui:network:Network.disconnect)**, [Log out](ui:network:Network.logout), and [Connect…](ui:network:Network.setup) or
 [Change connection…](ui:network:Network.change), which opens the **Network wizard** (`NetWizard.svelte`): first the browser's connections,
 the most recently used free one chosen and those in use marked with their machine, after [New connection…](ui:network:NetWizard.pick.new)
-(without connections it starts at the next step); then the kind, [A tailnet](ui:network:NetWizard.kind.pickTailnet), **tailcat** or **This computer
-(webpc-net)**, then that kind's
+(without connections it starts at the next step); then the kind, [A tailnet](ui:network:NetWizard.kind.pickTailnet), **tailcat** or [Your computer (webpc-net)](ui:network:NetWizard.kind.pickLocal), then that kind's
 settings and [Keep this connection in this browser](ui:network:NetWizard.keep) (on; off makes it ephemeral), with Back, Cancel (or Esc) and
 Connect. Form errors show in the wizard; Connect closes it (stopping the adapter's running client first) and opens
 the menu, which then says how the connection goes. The same wizard attaches a connection to a machine that isn't on
@@ -1132,13 +1131,15 @@ page's **[Connections](ui:machines:MachinesPage.connections.heading)**: rename, 
 side is `web/app/net-live.ts` (`PageNetwork`): a `Network` (web/app/network.ts) per adapter, the clients, the locks
 and the guest's default way out (below).
 
-- [This computer](ui:network:connections.thisComputer) (the local helper, net/webpc-net: [plans/networking-local.md](plans/networking-local.md)): a
+- [Your computer](ui:network:connections.thisComputer) (the local helper, net/webpc-net: [plans/networking-local.md](plans/networking-local.md)): a
   program the user runs prints a pairing link, `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>`. Opening it
-  takes the fragment out of the address at once (it holds the token) and opens the wizard on [This computer](ui:network:connections.thisComputer), the
+  takes the fragment out of the address at once (it holds the token) and opens the wizard on [Your computer](ui:network:connections.thisComputer), the
   link filled in, attaching to the page's machine's first adapter (or making the connection, without one); pasting
-  the link (or its `ws://` part) into that step does the same. The step shows the install lines for this browser's
-  platform (`web/local-release.ts`: client hints, a choice of the six; the release's version and SHA-256s), or, with
-  no release yet, where the source is. Connecting starts the client in a worker of its own (web/local-net-worker.ts),
+  the link (or its `ws://` part) into that step does the same. A new connection's step is numbered steps that end at
+  the link's field: run webpc-net, with the install lines for this browser's platform under it (`web/local-release.ts`:
+  client hints, a choice of the six; the release's version and SHA-256s), or, with no release yet, where the source
+  is; then paste the link; a short note after (the link is a secret, allow local network access). Editing shows the
+  field alone. Connecting starts the client in a worker of its own (web/local-net-worker.ts),
   which puts the card on a frame port, the page's gateway bypassed (web/gateway.ts `FramePath`: the link flaps, so
   the guest asks the helper for a lease at once), and moves its frames to the helper's WebSocket, those before a
   timer's turn in one message. The helper's DHCP gives the lease, routes and resolvers, so the adapter is the guest's
@@ -1197,9 +1198,10 @@ and the guest's default way out (below).
   connected. A machine that stops with no start to follow (powered off, suspended, crashed) stops its clients and lets
   their connections go; they connect again at its next start ([network-adapters.md](network-adapters.md) §1).
 - **tailcat** (docs/tailnet.md "tailcat") has two choices, either or both:
-  - [Go online through a computer of mine](ui:network:NetWizard.tailcat.exit) (the default): a **tailcat address** (a password
-    field; a secret, kept only in a kept connection) and a line on what to run: `tailcat serve exit-node` on a
-    computer of the user's. The Rust tailnet client (web/tailcat.ts, web/tailcat-worker.ts,
+  - [Go online through a computer](ui:network:NetWizard.tailcat.exit) (the default): numbered steps that end at
+    the **tailcat address** (a password field; a secret, kept only in a kept connection): install tailcat on a computer
+    of the user's, run `tailcat serve exit-node` there, paste the address it prints; then a short note on what the
+    machine reaches and keeping the address secret. The Rust tailnet client (web/tailcat.ts, web/tailcat-worker.ts,
     net/ts) connects through the address's DERP relay; the status goes Loading the client,
     Connecting to the relay, Waiting for the tailcat server, Opening the tunnel, then **Connected
     through the tailcat server (192.0.0.2)**. The guest's lease: IPv4 `192.0.0.2` (translated to
@@ -1224,7 +1226,7 @@ and the guest's default way out (below).
     connects again at once). Serving alone, the guest gets the same lease without resolvers: it reaches only
     the clients. The status says [Letting tailcat clients in](ui:network:network.servingOnly) (or adds it to the exit node's).
 - **Exit node:** when the tailnet has peers that advertise one (and an admin approved their
-  `0.0.0.0/0` routes) the menu shows [Internet through](ui:network:Network.exitNode) with them and [Nothing: directly](ui:network:Network.exitNode.none). Picking one
+  `0.0.0.0/0` routes) the menu shows [Internet through](ui:network:Network.exitNode) with them and [No exit node](ui:network:Network.exitNode.none). Picking one
   calls the client's `setExitNode(id)` (the id is the peer's stable ID, `netmap.peers[].id`), the netmap reports the one in use (`netmap.exitNode`) and the
   status line says "internet through <name>". The choice is kept with the connection (`tailnet.exitNode`) and given
   to the client at the next Connect; using one makes the adapter the default way out (above). The guest's address, router and

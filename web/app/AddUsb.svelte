@@ -1,7 +1,7 @@
 <!--
-  Add a USB device (docs/usb.md "The page"): a wizard, as Add a disk is. The kind first, each
-  explained (WebUSB or WebHID: what each reaches), then the browser's chooser, which lists every device it may show.
-  What is picked is remembered by the machine, and attached at once when it runs on this page.
+  Add a USB device (docs/usb.md "The page"): a wizard, as Add a disk is. Two numbered steps (the kind, then the
+  browser's chooser), the kinds, each explained (WebUSB or WebHID: what each reaches), then a note: what is picked is
+  remembered by the machine, and attached at once when it runs in this tab.
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
@@ -48,7 +48,7 @@
 <dialog id="add-usb" bind:this={dialog} onclose={close} aria-labelledby="add-usb-title">
   <div class="body">
     <h2 id="add-usb-title">{t('usb:AddUsb.title', { name })}</h2>
-    <p class="note">{t('usb:AddUsb.intro')}</p>
+    <ol class="steps"><li>{t('usb:AddUsb.step.kind')}</li><li>{t('usb:AddUsb.step.pick')}</li></ol>
     <div class="choices">
       {#each KINDS as k (k.api)}
         <button type="button" class="choice" data-usb-kind={k.api} disabled={busy || !hasApi(k.api)} title={hasApi(k.api) ? undefined : k.api === 'usb' ? t('usb:AddUsb.noWebUsb') : t('usb:AddUsb.noWebHid')} onclick={() => choose(k.api)}>
@@ -56,6 +56,7 @@
         </button>
       {/each}
     </div>
+    <p class="note">{t('usb:AddUsb.note')}</p>
     {#if error}<div class="error" role="alert">{error.text}{#if error.words}<UsbProblems words={error.words} />{/if}</div>{/if}
     <div class="buttons"><span class="grow"></span><button type="button" onclick={() => dialog.close()}>{t('usb:AddUsb.cancel')}</button></div>
   </div>
@@ -67,6 +68,7 @@
   h2 { margin: 0; font-size: 16px; font-weight: 600; }
   .choices { display: flex; flex-direction: column; gap: 8px; }
   .choice b { display: flex; align-items: center; gap: 8px; }
+  .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
   .note { margin: 0; color: var(--dim); font-size: 13px; }
   .error { display: flex; flex-direction: column; gap: 6px; color: #ff8f8f; white-space: pre-wrap; margin: 0; }
   .buttons { display: flex; gap: 8px; }

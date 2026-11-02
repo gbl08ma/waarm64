@@ -1026,7 +1026,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   through a map (`STATE_WORDS`, `PHASE_WORD`) or the parameters are a conditional or built elsewhere; sentences in lower
   case, or with `;` or `=`, aren't flagged as copy; a quote in the docs split across two lines isn't seen; nothing
   catches code that shows a `MsgError`'s `.message` (its developer text) to the user. Each would be a rule over the AST.
-- **A style guide for the page's words** (`docs/copy.md`; the user, 2026-11-02): once the user has reviewed and adjusted the copy in the catalog ([i18n.md](i18n.md)), write down its voice (terms, capitalization, punctuation, how a button, a title, an error's headline and its details are phrased), so new messages follow it. Not before: the current words aren't the model.
 - **Firefox** (not a target; 2026-10-15): Debian boots on the page in Firefox 157 (headless, the dev VM)
   once qcow2's compressed clusters stopped relying on Chromium's DecompressionStream handing over
   its output before the junk error (`web/qcow2.ts` `inflate`) and SpiderMonkey runs without the
@@ -1338,10 +1337,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   in two runs; alone it passed twice): its `waitForFunction` reads `#net-wizard`'s `open` before the page has made the
   dialog (`TypeError: Cannot read properties of null (reading 'open')`, tests/page-local.test.ts:105). Waiting for the
   element (`?.open`) would fix the test; whether the page's start should open it sooner wasn't looked at.
-- **`tests/page-usb.test.ts`'s "the USB tab" fails now and then under `scripts/ci.sh`'s load** (2026-11-02, once in the
-  cloud and once in the dev VM; alone it passed 3 of 3 each time): `page.uncheck` of a definition's at-start box
-  (tests/page-usb.test.ts:126) reports "Clicking the checkbox did not change its state", as if the list re-rendered
-  under the click. Waiting for the entry to settle (or checking the state after a re-query) would fix the test.
 - **Screening an A/B** (docs/benchmarking.md; `bench/boot/REPORT.md` "M8: benchmarks started from a snapshot"), what
   wasn't measured: the churn page's functions run once and die, so it doesn't test how a cache policy keeps a reused
   hot set (a `hot=<n>` query that keeps calling the last n functions would); the real sites at 320 MiB in a run long

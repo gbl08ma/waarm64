@@ -134,9 +134,10 @@ test('checks: tests take the page\'s words from the catalog', () => {
   assert.ok(x, 'Retry later: Saved the snapshot');
   assert.equal(peer, 'Retry'); // i18n-ignore
   assert.match(note, /the file/);
+  assert.match(unit, /^Description=The machine stops while the file is written$/m);
 });
 test('wording: the button says Retry', () => { assert.equal(label, 'Retry'); });` }]);
-  assert.deepEqual(problems.map((p) => p.line), [2, 3, 4, 5]);
+  assert.deepEqual(problems.map((p) => p.line), [2, 3, 4, 5, 10]);
   assert.match(problems[0].text, /'Retry' says the page's words \(x:Thing\.retry\)/);
   // The helper: a message's words with the parameters given, the others any text.
   assert.equal(words('common:ask.ok', {}, { whole: true }).source, '^OK$');

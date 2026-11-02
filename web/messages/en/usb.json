@@ -21,118 +21,118 @@
   },
   "usb-ports.class.audio": {
     "message": "audio",
-    "note": "A USB interface class's name (audio), lowercase, placed in the problem \"Interface N is a {{class}} interface, which the browser keeps from pages…\" (USB menu, Machines page's USB tab)."
+    "note": "A USB interface class's name (audio), lowercase, placed in the problem \"The guest doesn't see interface N, because this browser keeps {{class}} interfaces from web apps.\" (USB menu, Machines page's USB tab)."
   },
   "usb-ports.class.cdc": {
     "message": "communications (CDC)",
-    "note": "A USB interface class's name (communications (CDC)), lowercase, placed in the problem \"Interface N is a {{class}} interface, which the browser keeps from pages…\" (USB menu, Machines page's USB tab)."
+    "note": "A USB interface class's name (communications (CDC)), lowercase, placed in the problem \"The guest doesn't see interface N, because this browser keeps {{class}} interfaces from web apps.\" (USB menu, Machines page's USB tab)."
   },
   "usb-ports.class.hid": {
     "message": "HID",
-    "note": "A USB interface class's name (HID), lowercase, placed in the problem \"Interface N is a {{class}} interface, which the browser keeps from pages…\" (USB menu, Machines page's USB tab)."
+    "note": "A USB interface class's name (HID), lowercase, placed in the problem \"The guest doesn't see interface N, because this browser keeps {{class}} interfaces from web apps.\" (USB menu, Machines page's USB tab)."
   },
   "usb-ports.class.stillImage": {
     "message": "still image",
-    "note": "A USB interface class's name (still image), lowercase, placed in the problem \"Interface N is a {{class}} interface, which the browser keeps from pages…\" (USB menu, Machines page's USB tab)."
+    "note": "A USB interface class's name (still image), lowercase, placed in the problem \"The guest doesn't see interface N, because this browser keeps {{class}} interfaces from web apps.\" (USB menu, Machines page's USB tab)."
   },
   "usb-ports.class.printer": {
     "message": "printer",
-    "note": "A USB interface class's name (printer), lowercase, placed in the problem \"Interface N is a {{class}} interface, which the browser keeps from pages…\" (USB menu, Machines page's USB tab)."
+    "note": "A USB interface class's name (printer), lowercase, placed in the problem \"The guest doesn't see interface N, because this browser keeps {{class}} interfaces from web apps.\" (USB menu, Machines page's USB tab)."
   },
   "usb-ports.class.massStorage": {
     "message": "mass storage",
-    "note": "A USB interface class's name (mass storage), lowercase, placed in the problem \"Interface N is a {{class}} interface, which the browser keeps from pages…\" (USB menu, Machines page's USB tab)."
+    "note": "A USB interface class's name (mass storage), lowercase, placed in the problem \"The guest doesn't see interface N, because this browser keeps {{class}} interfaces from web apps.\" (USB menu, Machines page's USB tab)."
   },
   "usb-ports.class.hub": {
     "message": "hub",
-    "note": "A USB interface class's name (hub), lowercase, placed in the problem \"Interface N is a {{class}} interface, which the browser keeps from pages…\" (USB menu, Machines page's USB tab)."
+    "note": "A USB interface class's name (hub), lowercase, placed in the problem \"The guest doesn't see interface N, because this browser keeps {{class}} interfaces from web apps.\" (USB menu, Machines page's USB tab)."
   },
   "usb-ports.class.cdcData": {
     "message": "CDC data",
-    "note": "A USB interface class's name (CDC data), lowercase, placed in the problem \"Interface N is a {{class}} interface, which the browser keeps from pages…\" (USB menu, Machines page's USB tab)."
+    "note": "A USB interface class's name (CDC data), lowercase, placed in the problem \"The guest doesn't see interface N, because this browser keeps {{class}} interfaces from web apps.\" (USB menu, Machines page's USB tab)."
   },
   "usb-ports.class.smartCard": {
     "message": "smart card",
-    "note": "A USB interface class's name (smart card), lowercase, placed in the problem \"Interface N is a {{class}} interface, which the browser keeps from pages…\" (USB menu, Machines page's USB tab)."
+    "note": "A USB interface class's name (smart card), lowercase, placed in the problem \"The guest doesn't see interface N, because this browser keeps {{class}} interfaces from web apps.\" (USB menu, Machines page's USB tab)."
   },
   "usb-ports.class.video": {
     "message": "video",
-    "note": "A USB interface class's name (video), lowercase, placed in the problem \"Interface N is a {{class}} interface, which the browser keeps from pages…\" (USB menu, Machines page's USB tab)."
+    "note": "A USB interface class's name (video), lowercase, placed in the problem \"The guest doesn't see interface N, because this browser keeps {{class}} interfaces from web apps.\" (USB menu, Machines page's USB tab)."
   },
   "usb-ports.class.audioVideo": {
     "message": "audio/video",
-    "note": "A USB interface class's name (audio/video), lowercase, placed in the problem \"Interface N is a {{class}} interface, which the browser keeps from pages…\" (USB menu, Machines page's USB tab)."
+    "note": "A USB interface class's name (audio/video), lowercase, placed in the problem \"The guest doesn't see interface N, because this browser keeps {{class}} interfaces from web apps.\" (USB menu, Machines page's USB tab)."
   },
   "usb-ports.class.bluetooth": {
     "message": "wireless controller (Bluetooth)",
-    "note": "A USB interface class's name (wireless controller (Bluetooth)), lowercase, placed in the problem \"Interface N is a {{class}} interface, which the browser keeps from pages…\" (USB menu, Machines page's USB tab)."
+    "note": "A USB interface class's name (wireless controller (Bluetooth)), lowercase, placed in the problem \"The guest doesn't see interface N, because this browser keeps {{class}} interfaces from web apps.\" (USB menu, Machines page's USB tab)."
   },
   "usb-ports.class.dfu": {
     "message": "DFU",
-    "note": "A USB interface class's name (DFU), lowercase, placed in the problem \"Interface N is a {{class}} interface, which the browser keeps from pages…\" (USB menu, Machines page's USB tab)."
+    "note": "A USB interface class's name (DFU), lowercase, placed in the problem \"The guest doesn't see interface N, because this browser keeps {{class}} interfaces from web apps.\" (USB menu, Machines page's USB tab)."
   },
   "usb-ports.class.vendor": {
     "message": "vendor-specific",
-    "note": "A USB interface class's name (vendor-specific), lowercase, placed in the problem \"Interface N is a {{class}} interface, which the browser keeps from pages…\" (USB menu, Machines page's USB tab)."
+    "note": "A USB interface class's name (vendor-specific), lowercase, placed in the problem \"The guest doesn't see interface N, because this browser keeps {{class}} interfaces from web apps.\" (USB menu, Machines page's USB tab)."
   },
   "usb-ports.class.other": {
     "message": "class {{code}}",
-    "note": "A USB interface class without a name of its own, placed in the problem \"Interface N is a {{class}} interface…\". {{code}} is the class number in hex, e.g. 0x0f."
+    "note": "A USB interface class without a name of its own, placed in the problem \"The guest doesn't see interface N, because this browser keeps {{class}} interfaces from web apps.\" (USB menu, Machines page's USB tab). {{code}} is the class number in hex, e.g. 0x05."
   },
   "usb-ports.usage.pointer": {
     "message": "pointer",
-    "note": "A HID collection's kind (pointer), lowercase, placed in the problem \"The device's {{what}} part is kept from pages by the browser…\" about a HID device (USB menu, Machines page's USB tab)."
+    "note": "A HID collection's kind (pointer), lowercase, placed in the problem \"The guest doesn't get the device's {{what}} part…\" about a HID device (USB menu, Machines page's USB tab)."
   },
   "usb-ports.usage.mouse": {
     "message": "mouse",
-    "note": "A HID collection's kind (mouse), lowercase, placed in the problem \"The device's {{what}} part is kept from pages by the browser…\" about a HID device (USB menu, Machines page's USB tab)."
+    "note": "A HID collection's kind (mouse), lowercase, placed in the problem \"The guest doesn't get the device's {{what}} part…\" about a HID device (USB menu, Machines page's USB tab)."
   },
   "usb-ports.usage.keyboard": {
     "message": "keyboard",
-    "note": "A HID collection's kind (keyboard), lowercase, placed in the problem \"The device's {{what}} part is kept from pages by the browser…\" about a HID device (USB menu, Machines page's USB tab)."
+    "note": "A HID collection's kind (keyboard), lowercase, placed in the problem \"The guest doesn't get the device's {{what}} part…\" about a HID device (USB menu, Machines page's USB tab)."
   },
   "usb-ports.usage.keypad": {
     "message": "keypad",
-    "note": "A HID collection's kind (keypad), lowercase, placed in the problem \"The device's {{what}} part is kept from pages by the browser…\" about a HID device (USB menu, Machines page's USB tab)."
+    "note": "A HID collection's kind (keypad), lowercase, placed in the problem \"The guest doesn't get the device's {{what}} part…\" about a HID device (USB menu, Machines page's USB tab)."
   },
   "usb-ports.usage.systemControl": {
     "message": "system control",
-    "note": "A HID collection's kind (system control), lowercase, placed in the problem \"The device's {{what}} part is kept from pages by the browser…\" about a HID device (USB menu, Machines page's USB tab)."
+    "note": "A HID collection's kind (system control), lowercase, placed in the problem \"The guest doesn't get the device's {{what}} part…\" about a HID device (USB menu, Machines page's USB tab)."
   },
   "usb-ports.usage.other": {
     "message": "collection {{usage}}",
-    "note": "A HID collection without a name of its own, placed in the problem \"The device's {{what}} part is kept from pages…\". {{usage}} is its usage page and usage in hex, e.g. 000c:0001."
+    "note": "A HID collection without a name of its own, placed in the problem \"The guest doesn't get the device's {{what}} part…\". {{usage}} is its usage page and usage in hex, e.g. 000c:0001."
   },
   "usb-ports.protectedInterface.hid": {
-    "message": "Interface {{interface}} is a {{class}} interface, which the browser keeps from pages: the guest doesn't see it. Its HID part can come in as a HID device instead (Add a device…, then a HID device), unless it is a keyboard or a mouse: the machine has the page's.",
-    "note": "A problem under a WebUSB device attached with part of it left out (Machines page's USB tab, the USB menu's tooltip, an attach's error). {{interface}} is the interface number; {{class}} its class's name (usb-ports.class.*). This variant is for a HID interface: it says where to go instead."
+    "message": "The guest doesn't see interface {{interface}}, because this browser keeps {{class}} interfaces from web apps. To pass its HID part through, use Add a device… › A HID device (WebHID) instead. A keyboard's keys and a mouse's pointer can't be passed through either way; your keyboard and mouse reach the machine through this emulator anyway.",
+    "note": "A problem under a WebUSB device attached with part of it left out (Machines page's USB tab, the USB menu's tooltip, an attach's error). {{interface}} is the interface number; {{class}} its class's name (usb-ports.class.*), read as a plural (\"audio interfaces\"). This variant is for a HID interface: it says where to go instead (the menu path is the Add a USB device wizard's words)."
   },
   "usb-ports.protectedInterface.disk": {
-    "message": "Interface {{interface}} is a {{class}} interface, which the browser keeps from pages: the guest doesn't see it. A disk image comes in through the machine's Disks instead.",
-    "note": "A problem under a WebUSB device attached with part of it left out (Machines page's USB tab, the USB menu's tooltip, an attach's error). {{interface}} is the interface number; {{class}} its class's name (usb-ports.class.*). This variant is for a mass storage interface."
+    "message": "The guest doesn't see interface {{interface}}, because this browser keeps {{class}} interfaces from web apps. Add a disk image to the machine's Disks instead.",
+    "note": "A problem under a WebUSB device attached with part of it left out (Machines page's USB tab, the USB menu's tooltip, an attach's error). {{interface}} is the interface number; {{class}} its class's name (usb-ports.class.*), read as a plural (\"audio interfaces\"). This variant is for a mass storage interface."
   },
   "usb-ports.protectedInterface.sound": {
-    "message": "Interface {{interface}} is a {{class}} interface, which the browser keeps from pages: the guest doesn't see it. Sound goes through the machine's sound card (and the microphone), which the page has.",
-    "note": "A problem under a WebUSB device attached with part of it left out (Machines page's USB tab, the USB menu's tooltip, an attach's error). {{interface}} is the interface number; {{class}} its class's name (usb-ports.class.*). This variant is for an audio or video interface."
+    "message": "The guest doesn't see interface {{interface}}, because this browser keeps {{class}} interfaces from web apps. Sound goes through the machine's own sound card instead, which can also record from your computer's microphone.",
+    "note": "A problem under a WebUSB device attached with part of it left out (Machines page's USB tab, the USB menu's tooltip, an attach's error). {{interface}} is the interface number; {{class}} its class's name (usb-ports.class.*), read as a plural (\"audio interfaces\"). This variant is for an audio or video interface."
   },
   "usb-ports.protectedInterface.bluetooth": {
-    "message": "Interface {{interface}} is a {{class}} interface, which the browser keeps from pages: the guest doesn't see it. A browser has no way to a Bluetooth adapter.",
-    "note": "A problem under a WebUSB device attached with part of it left out (Machines page's USB tab, the USB menu's tooltip, an attach's error). {{interface}} is the interface number; {{class}} its class's name (usb-ports.class.*). This variant is for a Bluetooth adapter."
+    "message": "The guest doesn't see interface {{interface}}, because this browser keeps {{class}} interfaces from web apps. No browser lets a web app use a Bluetooth adapter.",
+    "note": "A problem under a WebUSB device attached with part of it left out (Machines page's USB tab, the USB menu's tooltip, an attach's error). {{interface}} is the interface number; {{class}} its class's name (usb-ports.class.*), read as a plural (\"audio interfaces\"). This variant is for a Bluetooth adapter."
   },
   "usb-ports.protectedInterface": {
-    "message": "Interface {{interface}} is a {{class}} interface, which the browser keeps from pages: the guest doesn't see it.",
-    "note": "A problem under a WebUSB device attached with part of it left out (Machines page's USB tab, the USB menu's tooltip, an attach's error). {{interface}} is the interface number; {{class}} its class's name (usb-ports.class.*). This variant is for any other class (no route elsewhere)."
+    "message": "The guest doesn't see interface {{interface}}, because this browser keeps {{class}} interfaces from web apps.",
+    "note": "A problem under a WebUSB device attached with part of it left out (Machines page's USB tab, the USB menu's tooltip, an attach's error). {{interface}} is the interface number; {{class}} its class's name (usb-ports.class.*), read as a plural (\"audio interfaces\"). This variant is for any other class (no route elsewhere)."
   },
   "usb-ports.browserSaid": {
     "message": "The browser said: {{said}}",
     "note": "Line under a USB problem's folded details (Machines page's USB tab, Add a USB device, the USB menu's error): the browser's own error message. {{said}} is that message, in the browser's words."
   },
   "usb-ports.zadig": {
-    "message": "Install the WinUSB driver for it with Zadig: Options, List All Devices, pick the device, WinUSB, Replace Driver.",
+    "message": "Install the WinUSB driver for the device with Zadig. In Zadig, select Options › List All Devices, select the device, choose WinUSB, then select Replace Driver.",
     "note": "Step 1 of the Windows remedy under a USB problem (folded, with a link to zadig.akeo.ie): how to give the device the driver a browser needs. Zadig's menu items are named as Zadig names them."
   },
   "usb-ports.zadig.interface": {
-    "message": "Install the WinUSB driver for it with Zadig: Options, List All Devices, pick the device's interface {{interface}}, WinUSB, Replace Driver.",
+    "message": "Install the WinUSB driver for the interface with Zadig. In Zadig, select Options › List All Devices, select the device's interface {{interface}}, choose WinUSB, then select Replace Driver.",
     "note": "Step 1 of the Windows remedy for an interface something else holds (folded under the problem, with a link to zadig.akeo.ie). {{interface}} is the interface number."
   },
   "usb-ports.replug": {
@@ -140,23 +140,23 @@
     "note": "Last step of a USB remedy (Windows' driver, Linux's udev rule), numbered in the folded details under the problem."
   },
   "usb-ports.claimFailed": {
-    "message": "Something on this computer is already using it (interface {{interface}}), so the browser can't pass it to the machine.",
-    "note": "A USB problem's short text (Machines page's USB tab, USB menu, an attach's error): a driver or program on the host holds an interface; the OS's remedy is folded under it. {{interface}} is the interface number."
+    "message": "Interface {{interface}} doesn't reach the guest, because something on your computer is already using it.",
+    "note": "A USB problem's short text (Machines page's USB tab, USB menu, an attach's error): a driver or program on the user's computer holds an interface; the OS's remedy is folded under it. {{interface}} is the interface number."
   },
   "usb-ports.claimFailed.linux": {
     "message": "How to free it on Linux",
-    "note": "Title of the folded remedy (a summary to click) under the problem \"Something on this computer is already using it…\", on a Linux host."
+    "note": "Title of the folded remedy (a summary to click) under the problem \"Interface N doesn't reach the guest, because something on your computer is already using it.\", when the user's computer runs Linux."
   },
   "usb-ports.claimFailed.linux.driver": {
-    "message": "Find the kernel driver that holds it (such as cdc_acm, ftdi_sio, cp210x, ch341 or usblp):",
+    "message": "Find the kernel driver that holds the interface, such as cdc_acm, ftdi_sio, cp210x, ch341, or usblp:",
     "note": "Step 1 of the Linux remedy for an interface a driver holds; a command to copy (lsusb -t) follows. The driver names are Linux's."
   },
   "usb-ports.claimFailed.linux.name": {
-    "message": "Find the interface's name under that driver (such as {{name}}):",
+    "message": "Find the interface's name under that driver, such as {{name}}:",
     "note": "Step 2 of the Linux remedy for an interface a driver holds; a command to copy follows. {{name}} is an example of a sysfs interface name, e.g. 1-2:1.0."
   },
   "usb-ports.claimFailed.linux.unbind": {
-    "message": "Unbind it; it stays free until the device is plugged in again:",
+    "message": "Unbind the driver from it. The interface stays free until the device is plugged in again:",
     "note": "Step 3 of the Linux remedy for an interface a driver holds; the unbind command to copy follows."
   },
   "usb-ports.claimFailed.linux.again": {
@@ -164,52 +164,52 @@
     "note": "Step 4, the last, of the Linux remedy for an interface a driver holds."
   },
   "usb-ports.claimFailed.linux.blacklist": {
-    "message": "To keep the driver off for good (for every device it serves), add this line to a file in /etc/modprobe.d/:",
+    "message": "To keep the driver off for good, for every device it serves, add this line to a file in /etc/modprobe.d/:",
     "note": "Note after the Linux remedy's steps for an interface a driver holds; the line to add (blacklist <driver>) follows."
   },
   "usb-ports.claimFailed.mac": {
     "message": "What to do on macOS",
-    "note": "Title of the folded remedy under the problem \"Something on this computer is already using it…\", on a Mac."
+    "note": "Title of the folded remedy under the problem \"Interface N doesn't reach the guest, because something on your computer is already using it.\", on a Mac."
   },
   "usb-ports.claimFailed.mac.quit": {
     "message": "Quit any app that uses the device, then attach it again.",
     "note": "The one step of the macOS remedy for an interface something holds."
   },
   "usb-ports.claimFailed.mac.note": {
-    "message": "macOS's own drivers keep serial devices (CDC serial, serial adapters), and a page can't take them: if one of those holds it, the device can't reach the machine from this computer.",
+    "message": "macOS's own drivers may hold serial devices, such as CDC serial devices, and a web app can't take a device from them. If one of those drivers holds it, the device can't reach the machine from your computer.",
     "note": "Note after the macOS remedy's step for an interface something holds."
   },
   "usb-ports.claimFailed.windows": {
     "message": "How to free it on Windows",
-    "note": "Title of the folded remedy under the problem \"Something on this computer is already using it…\", on Windows (Zadig's steps follow)."
+    "note": "Title of the folded remedy under the problem \"Interface N doesn't reach the guest, because something on your computer is already using it.\", on Windows (Zadig's steps follow)."
   },
   "usb-ports.claimFailed.windows.note": {
-    "message": "Windows' own programs then no longer see that interface.",
+    "message": "After this, programs on your computer that used the old driver no longer see that interface.",
     "note": "Note after the Windows remedy's steps (the WinUSB driver through Zadig) for an interface something holds."
   },
   "usb-ports.claimFailed.other": {
-    "message": "Something on this computer is already using it (interface {{interface}}), so the browser can't pass it to the machine. Close what uses it on this computer, then attach it again.",
-    "note": "A USB problem's text on a host without a remedy of its own (ChromeOS, other): a driver or program holds an interface. {{interface}} is the interface number."
+    "message": "Interface {{interface}} doesn't reach the guest, because something on your computer is already using it. Close what uses it, then attach the device again.",
+    "note": "A USB problem's text on a computer without a remedy of its own (ChromeOS, other): a driver or program holds an interface. {{interface}} is the interface number."
   },
   "usb-ports.protectedCollection.kept": {
-    "message": "The device's {{what}} part is kept from pages by the browser, all but its feature reports (its settings, which tools such as VIA use): the guest gets only those. The machine has the page's keyboard and mouse already.",
+    "message": "The guest gets only the feature reports of the device's {{what}} part, the settings that tools such as VIA use. This browser keeps the rest of that part from web apps. Your keyboard and mouse reach the machine through this emulator anyway.",
     "note": "A problem under an attached WebHID device (Machines page's USB tab, USB menu's tooltip): one of its collections reaches the guest only through its feature reports. {{what}} is the collection's kind (usb-ports.usage.*)."
   },
   "usb-ports.protectedCollection": {
-    "message": "The device's {{what}} part is kept from pages by the browser: the guest doesn't get it. The machine has the page's keyboard and mouse already.",
+    "message": "The guest doesn't get the device's {{what}} part, because this browser keeps it from web apps. Your keyboard and mouse reach the machine through this emulator anyway.",
     "note": "A problem under an attached WebHID device (Machines page's USB tab, USB menu's tooltip): one of its collections doesn't reach the guest. {{what}} is the collection's kind (usb-ports.usage.*)."
   },
   "usb-ports.noCollections": {
-    "message": "Everything this HID device offers is kept from pages by the browser (a keyboard's keys, a mouse's pointer, a security key): nothing is left for the guest. The machine has the page's keyboard and mouse already.",
+    "message": "None of this HID device reaches the guest. This browser keeps all of its parts from web apps, as it does with keyboards, mice, and security keys. Your keyboard and mouse reach the machine through this emulator anyway.",
     "note": "A problem under a WebHID device that couldn't be attached (an attach's error in the USB menu, Add a USB device, the Machines page): nothing of it reaches pages."
   },
   "usb-ports.openFailed.linux": {
-    "message": "The browser couldn't open it: your user probably has no permission to use it.",
-    "note": "A problem when a USB or HID device couldn't be opened, on a Linux host (an attach's error); the udev remedy is folded under it, with the browser's own message."
+    "message": "This browser couldn't open the device. Your user account probably has no permission to use it.",
+    "note": "A problem when a USB or HID device couldn't be opened, when the user's computer runs Linux (an attach's error); the udev remedy is folded under it, with the browser's own message."
   },
   "usb-ports.openFailed.linux.title": {
-    "message": "How to give your user access on Linux",
-    "note": "Title of the folded remedy (a udev rule) under the problem \"The browser couldn't open it: your user probably has no permission…\"."
+    "message": "How to give your user account access on Linux",
+    "note": "Title of the folded remedy (a udev rule) under the problem \"This browser couldn't open the device. Your user account probably has no permission to use it.\""
   },
   "usb-ports.openFailed.linux.udev": {
     "message": "Add this udev rule to /etc/udev/rules.d/70-webpc.rules:",
@@ -220,35 +220,35 @@
     "note": "Step 2 of the Linux remedy for a device the user may not open; the command to copy follows."
   },
   "usb-ports.openFailed.windows": {
-    "message": "The browser couldn't open it: on Windows it needs the WinUSB driver.",
+    "message": "This browser couldn't open the device. On Windows, it needs the WinUSB driver.",
     "note": "A problem when a WebUSB device couldn't be opened on Windows (an attach's error); Zadig's steps are folded under it."
   },
   "usb-ports.openFailed.windows.title": {
-    "message": "How to install it",
-    "note": "Title of the folded remedy (installing WinUSB with Zadig) under the problem \"The browser couldn't open it: on Windows it needs the WinUSB driver.\""
+    "message": "How to install WinUSB",
+    "note": "Title of the folded remedy (installing WinUSB with Zadig) under the problem \"This browser couldn't open the device. On Windows, it needs the WinUSB driver.\""
   },
   "usb-ports.openFailed.other": {
-    "message": "The browser couldn't open it: another program may have it open. Close that program, then attach the device again.",
-    "note": "A problem when a device couldn't be opened, on a host without a remedy of its own (an attach's error); the browser's own message is folded under it."
+    "message": "This browser couldn't open the device. Another program may have it open; close that program, then attach the device again.",
+    "note": "A problem when a device couldn't be opened, on a computer without a remedy of its own (an attach's error); the browser's own message is folded under it."
   },
   "usb-live.noWebUsb": {
-    "message": "This browser has no WebUSB (Chromium and Chrome do).",
+    "message": "This browser doesn't support WebUSB. Chromium and Google Chrome do.",
     "note": "Error (message bar, Add a USB device) when a USB device is to be picked in a browser without WebUSB."
   },
   "usb-live.noWebHid": {
-    "message": "This browser has no WebHID (Chromium and Chrome do).",
+    "message": "This browser doesn't support WebHID. Chromium and Google Chrome do.",
     "note": "Error (message bar, Add a USB device) when a HID device is to be picked in a browser without WebHID."
   },
   "usb-live.notAttached": {
-    "message": "{{name}} couldn't be attached.",
+    "message": "Couldn't attach {{name}}",
     "note": "Headline of an attach's error when the device worker said why (USB menu, Add a USB device, Machines page's USB tab, message bar): the problems and their remedies follow under it. {{name}} is the device's name."
   },
   "usb-live.noAnswer": {
-    "message": "The machine's USB controller didn't answer: is it still running?",
+    "message": "The machine's USB controller didn't answer. Check that the machine is still running.",
     "note": "Error when an attach or a detach got no answer from the running machine in time (USB menu, Machines page's USB tab, message bar)."
   },
   "usb-live.connectorTaken": {
-    "message": "Connector {{connector}} has {{name}}: detach it first.",
+    "message": "{{name}} is on connector {{connector}}. Detach it first.",
     "note": "Error when a device is attached on a connector another device is on (USB menu, Machines page's USB tab). {{connector}} is the connector's number (from 1); {{name}} the device on it."
   },
   "usb-live.connectorInUse": {
@@ -260,40 +260,40 @@
     "note": "Error of an attach or a detach still waiting when the machine stopped (USB menu, Machines page's USB tab, message bar)."
   },
   "usb.noWebUsb": {
-    "message": "no WebUSB here",
-    "note": "Detail of an attach's error (message bar, USB menu): the machine's device worker has no WebUSB to open the device with. Lowercase: it follows a headline."
+    "message": "WebUSB isn't available to the machine.",
+    "note": "Detail of an attach's error (message bar, USB menu): the machine's device worker has no WebUSB to open the device with. A full sentence: it is a line under a headline."
   },
   "usb.noWebHid": {
-    "message": "no WebHID here",
-    "note": "Detail of an attach's error (message bar, USB menu): the machine's device worker has no WebHID to open the device with. Lowercase: it follows a headline."
+    "message": "WebHID isn't available to the machine.",
+    "note": "Detail of an attach's error (message bar, USB menu): the machine's device worker has no WebHID to open the device with. A full sentence: it is a line under a headline."
   },
   "usb.openFailed": {
-    "message": "couldn't open the device",
-    "note": "Detail of an attach's error (message bar, USB menu) when the device worker couldn't open the device; why follows on the next line. Lowercase: it follows a headline."
+    "message": "The device couldn't be opened.",
+    "note": "Detail of an attach's error (message bar, USB menu) when the device worker couldn't open the device; why follows on the next line. A full sentence: it is a line under a headline."
   },
   "usb.wentAway": {
-    "message": "the machine went away while it opened",
-    "note": "Detail of an attach's error (message bar, USB menu): the machine stopped while the device was being opened. Lowercase: it follows a headline."
+    "message": "The machine stopped while the device was being opened.",
+    "note": "Detail of an attach's error (message bar, USB menu): the machine stopped while the device was being opened. A full sentence: it is a line under a headline."
   },
   "webusb.openFailed": {
-    "message": "could not open the device",
-    "note": "Detail of an attach's error (message bar, USB menu) when the browser refused to open a USB or HID device; the browser's own words follow on the next line. Lowercase: it follows a headline."
+    "message": "This browser couldn't open the device.",
+    "note": "Detail of an attach's error (message bar, USB menu) when the browser refused to open a USB or HID device; the browser's own words follow on the next line. A full sentence: it is a line under a headline."
   },
   "webusb.readFailed": {
-    "message": "could not read the device",
-    "note": "Detail of an attach's error (message bar, USB menu) when a WebUSB device's descriptors couldn't be read; the browser's own words follow on the next line. Lowercase: it follows a headline."
+    "message": "The device couldn't be read.",
+    "note": "Detail of an attach's error (message bar, USB menu) when a WebUSB device's descriptors couldn't be read or its configuration set up; the browser's own words follow on the next line. A full sentence: it is a line under a headline."
   },
   "webusb.noInterface": {
-    "message": "no interface of the device can be used through WebUSB",
-    "note": "Detail of an attach's error (message bar, USB menu) when every interface of a WebUSB device is kept from pages or held; the problems follow. Lowercase: it follows a headline."
+    "message": "None of the device's interfaces can be used through WebUSB.",
+    "note": "Detail of an attach's error (message bar, USB menu) when every interface of a WebUSB device is kept from pages or held; the problems follow. A full sentence: it is a line under a headline."
   },
   "webusb.notFound": {
-    "message": "the device is not plugged in, or this page has no permission for it",
-    "note": "Detail of an attach's error (message bar, USB menu) when the remembered device isn't among those the browser lists now. Lowercase: it follows a headline."
+    "message": "The device isn't plugged in, or this web app has no permission to use it.",
+    "note": "Detail of an attach's error (message bar, USB menu) when the remembered device isn't among those the browser lists now. A full sentence: it is a line under a headline."
   },
   "webhid.noCollections": {
-    "message": "WebHID shows none of this device's collections",
-    "note": "Detail of an attach's error (message bar, USB menu) when the browser hides all of a HID device. Lowercase: it follows a headline."
+    "message": "WebHID shows none of this device's collections.",
+    "note": "Detail of an attach's error (message bar, USB menu) when the browser hides all of a HID device. A full sentence: it is a line under a headline."
   },
   "Usb.state.attached": {
     "message": "attached",
@@ -301,7 +301,7 @@
   },
   "Usb.state.plugged": {
     "message": "plugged in",
-    "note": "A remembered USB device's state, at the end of its line on the Machines page's USB tab (lowercase, after ' · '): plugged into this computer, with permission, and attached nowhere."
+    "note": "A remembered USB device's state, at the end of its line on the Machines page's USB tab (lowercase, after ' · '): plugged into your computer, with permission, and attached nowhere."
   },
   "Usb.state.unplugged": {
     "message": "not plugged in",
@@ -320,11 +320,11 @@
     "note": "A remembered USB device's state on the Machines page's USB tab: attached to another machine, in another tab. {{holder}} is that machine's name."
   },
   "Usb.forget.attached": {
-    "message": "Forget {{name}}? It is detached first (the guest sees it unplugged). When no other machine remembers it, the browser's permission for it goes too.",
+    "message": "Forget {{name}}? It will be detached first, and the guest will see it unplugged. If no other machine remembers it, this browser's permission to use it will be removed too.",
     "note": "Question (confirm dialog) on the Machines page's USB tab when Forget is clicked on a device attached to the running machine. {{name}} is the device's name."
   },
   "Usb.forget": {
-    "message": "Forget {{name}}? When no other machine remembers it, the browser's permission for it goes too.",
+    "message": "Forget {{name}}? If no other machine remembers it, this browser's permission to use it will be removed too.",
     "note": "Question (confirm dialog) on the Machines page's USB tab when Forget is clicked on a device not attached here. {{name}} is the device's name."
   },
   "Usb.forget.title": {
@@ -340,7 +340,7 @@
     "note": "What the Machines page is doing (shown with … at its top) while a USB device is forgotten."
   },
   "Usb.noController": {
-    "message": "This machine has no USB controller: turn it on above to attach devices. It changes the machine's shape, so the snapshots taken before are orphaned.",
+    "message": "This machine has no USB controller. Turn it on above to attach devices; snapshots taken before the change will be orphaned.",
     "note": "Note at the top of the Machines page's USB tab for a machine whose USB controller is off (the switch is above it)."
   },
   "Usb.meta.usb": {
@@ -368,7 +368,7 @@
     "note": "Part of a remembered USB device's details line (Machines page, USB tab), after ' · ', for the fourth or later of identical devices without a serial number ({{n}} is its place, 4 and up)."
   },
   "Usb.connector.title": {
-    "message": "The root connector it goes on (the guest's port path: its names under /dev/serial/by-path stay the same)",
+    "message": "The root connector the device is plugged into. It sets the device's port path in the guest, so its names under /dev/serial/by-path stay the same.",
     "note": "Tooltip of a remembered USB device's Connector field (Machines page, USB tab)."
   },
   "Usb.connector": {
@@ -380,7 +380,7 @@
     "note": "What the Machines page is doing (shown with … at its top) while a USB device's connector or At start is saved."
   },
   "Usb.atStart.title": {
-    "message": "Attached when the machine starts, and when it is plugged in while the machine runs",
+    "message": "Attach the device when the machine starts, and when the device is plugged in while the machine runs.",
     "note": "Tooltip of a remembered USB device's At start checkbox (Machines page, USB tab)."
   },
   "Usb.atStart": {
@@ -392,7 +392,7 @@
     "note": "What the Machines page is doing (shown with … at its top) while the browser's chooser asks for a USB device's permission."
   },
   "Usb.allow.title": {
-    "message": "The browser's chooser, showing this device: pick it to give this page its permission",
+    "message": "Open this browser's device chooser, showing this device. Select it to give this web app permission to use it.",
     "note": "Tooltip of a USB device's Allow… button (Machines page, USB tab)."
   },
   "Usb.allow": {
@@ -404,35 +404,35 @@
     "note": "What the Machines page is doing (shown with … at its top) while a USB device is detached."
   },
   "Usb.detach.title": {
-    "message": "Unplug it from the guest",
+    "message": "Unplug the device from the guest.",
     "note": "Tooltip of an attached USB device's Detach button (Machines page, USB tab)."
   },
   "Usb.detach": {
     "message": "Detach",
-    "note": "Button on a USB device attached to the machine running on this page (Machines page, USB tab): unplugs it from the guest."
+    "note": "Button on a USB device attached to the machine running in this tab (Machines page, USB tab): unplugs it from the guest."
   },
   "Usb.busy.attaching": {
     "message": "Attaching",
     "note": "What the Machines page is doing (shown with … at its top) while a USB device is attached."
   },
   "Usb.attachHere.title": {
-    "message": "Another machine has it: it is detached there first (asked)",
+    "message": "Another machine is using the device. You will be asked before it is detached there.",
     "note": "Tooltip of the Attach here… button on a USB device another machine holds (Machines page, USB tab)."
   },
   "Usb.attach.title": {
-    "message": "Plug it into the guest",
+    "message": "Plug the device into the guest.",
     "note": "Tooltip of a plugged-in USB device's Attach button (Machines page, USB tab)."
   },
   "Usb.attachHere": {
     "message": "Attach here…",
-    "note": "Button on a USB device another machine holds, while this machine runs on the page (Machines page, USB tab): asks, then takes it."
+    "note": "Button on a USB device another machine holds, while this machine runs in this tab (Machines page, USB tab): asks, then takes it."
   },
   "Usb.attach": {
     "message": "Attach",
-    "note": "Button on a plugged-in USB device while the machine runs on this page (Machines page, USB tab): plugs it into the guest."
+    "note": "Button on a plugged-in USB device while the machine runs in this tab (Machines page, USB tab): plugs it into the guest."
   },
   "Usb.forget.button.title": {
-    "message": "The machine no longer remembers it",
+    "message": "Make this machine forget the device.",
     "note": "Tooltip of a remembered USB device's Forget button (Machines page, USB tab)."
   },
   "Usb.forget.button": {
@@ -444,15 +444,15 @@
     "note": "The Machines page's USB tab's list when the machine remembers no device."
   },
   "Usb.builtin.pluggedNow": {
-    "message": "Connector {{connector}} is the built-in keyboard's: the screen's keys reach the firmware and the boot loader through it, until the guest's own keyboard driver takes over (then it is unplugged, now it is plugged in).",
+    "message": "Connector {{connector}} belongs to the built-in keyboard. It carries the screen's keys to the firmware and the boot loader, and is unplugged once the guest's own keyboard driver takes over. It is plugged in now.",
     "note": "Note on the Machines page's USB tab, for the machine running on this page while its built-in keyboard is plugged in. {{connector}} is the keyboard's connector number (from 1)."
   },
   "Usb.builtin.asNow": {
-    "message": "Connector {{connector}} is the built-in keyboard's: the screen's keys reach the firmware and the boot loader through it, until the guest's own keyboard driver takes over (then it is unplugged, as now).",
+    "message": "Connector {{connector}} belongs to the built-in keyboard. It carries the screen's keys to the firmware and the boot loader, and is unplugged once the guest's own keyboard driver takes over. It is unplugged now.",
     "note": "Note on the Machines page's USB tab, for the machine running on this page while its built-in keyboard is unplugged (the guest's driver took over). {{connector}} is the keyboard's connector number (from 1)."
   },
   "Usb.builtin": {
-    "message": "Connector {{connector}} is the built-in keyboard's: the screen's keys reach the firmware and the boot loader through it, until the guest's own keyboard driver takes over (then it is unplugged).",
+    "message": "Connector {{connector}} belongs to the built-in keyboard. It carries the screen's keys to the firmware and the boot loader, and is unplugged once the guest's own keyboard driver takes over.",
     "note": "Note on the Machines page's USB tab, for a machine that isn't running on this page. {{connector}} is the built-in keyboard's connector number (from 1)."
   },
   "Usb.add": {
@@ -460,35 +460,35 @@
     "note": "Button under the remembered devices (Machines page, USB tab): opens the Add a USB device wizard."
   },
   "Usb.twins": {
-    "message": "Identical devices without a serial number are told apart by the order the browser lists them in (usually the order they were plugged in): plug them in the same order, or the guest sees them swapped.",
+    "message": "Identical devices without a serial number are told apart by the order this browser lists them in, usually the order they were plugged in. Plug them in in the same order every time, or the guest may see them swapped.",
     "note": "Note on the Machines page's USB tab, shown when the machine remembers identical devices without a serial number."
   },
   "Usb.note.otherTab": {
-    "message": "It runs in another tab: attach and detach there. Devices aren't part of the machine's shape: they are plugged in and out while it runs, and Snapshot and Suspend unplug them first (asked).",
+    "message": "The machine is running in another tab; attach and detach devices there. Devices are plugged in and out while the machine runs, without orphaning its snapshots. Snapshot and Suspend ask, then unplug them first.",
     "note": "Note at the bottom of the Machines page's USB tab while the machine runs in another tab."
   },
   "Usb.note.stopped": {
-    "message": "Attach and detach while the machine runs on this page (its toolbar has a USB menu). Devices aren't part of the machine's shape: they are plugged in and out while it runs, and Snapshot and Suspend unplug them first (asked).",
+    "message": "Attach and detach devices while the machine runs in this tab, here or from the toolbar's USB menu. Devices are plugged in and out while the machine runs, without orphaning its snapshots. Snapshot and Suspend ask, then unplug them first.",
     "note": "Note at the bottom of the Machines page's USB tab while the machine isn't running."
   },
   "Usb.note": {
-    "message": "Devices aren't part of the machine's shape: they are plugged in and out while it runs, and Snapshot and Suspend unplug them first (asked).",
+    "message": "Devices are plugged in and out while the machine runs, without orphaning its snapshots. Snapshot and Suspend ask, then unplug them first.",
     "note": "Note at the bottom of the Machines page's USB tab while the machine runs on this page."
   },
   "UsbMenu.why.unplugged": {
-    "message": "Not plugged in",
+    "message": "The device isn't plugged in.",
     "note": "Tooltip of a remembered device's line in the toolbar's USB menu when it isn't plugged in (its checkbox is off)."
   },
   "UsbMenu.why.heldBy": {
-    "message": "Held by {{holder}}",
+    "message": "{{holder}} is using the device.",
     "note": "Tooltip of a remembered device's line in the USB menu when another machine, in another tab, has it. {{holder}} is that machine's name."
   },
   "UsbMenu.why.held": {
-    "message": "Held by another machine",
+    "message": "Another machine is using the device.",
     "note": "Tooltip of a remembered device's line in the USB menu when another machine, in another tab that didn't say its name, has it."
   },
   "UsbMenu.why.ungranted": {
-    "message": "No permission in this browser yet: Allow it on the Machines page's USB tab",
+    "message": "This browser has no permission to use the device yet. Allow it on the Machines page's USB tab.",
     "note": "Tooltip of a remembered device's line in the USB menu when this browser hasn't granted it (its checkbox is off)."
   },
   "UsbMenu.where.detaching": {
@@ -520,7 +520,7 @@
     "note": "Right side of a device's line in the toolbar's USB menu when it isn't plugged in."
   },
   "UsbMenu.title": {
-    "message": "USB devices: attach them to the machine, or add one",
+    "message": "Attach USB devices to the machine, or add one.",
     "note": "Tooltip of the toolbar's USB menu button."
   },
   "UsbMenu.attached": {
@@ -532,7 +532,7 @@
     "note": "Button of an offer at the top of the USB menu (a device plugged in, one unplugged, a permission to give): dismisses the offer."
   },
   "UsbMenu.problems": {
-    "message": "Part of it doesn't reach the guest: hover here, or see All USB settings…",
+    "message": "Part of the device doesn't reach the guest. Hover here, or see All USB settings… for details.",
     "note": "Warning under an attached device in the toolbar's USB menu when part of it is kept from the guest; its tooltip lists what."
   },
   "UsbMenu.none": {
@@ -556,7 +556,7 @@
     "note": "Button in the toolbar's USB menu: opens the Machines page's USB tab for this machine."
   },
   "UsbMenu.stopped": {
-    "message": "The machine isn't running: its devices are attached when it runs.",
+    "message": "The machine isn't running. Devices marked At start that are plugged in will be attached when it starts.",
     "note": "Hint at the bottom of the toolbar's USB menu while the machine isn't running."
   },
   "AddUsb.usb": {
@@ -564,7 +564,7 @@
     "note": "Title of the first choice in the Add a USB device wizard: a device passed through over WebUSB."
   },
   "AddUsb.usb.text": {
-    "message": "Developer and maker hardware, passed through as it is: microcontroller boards and debug probes, Android phones (adb, fastboot), USB-serial adapters, logic analysers, SDRs, printers. Not what the browser keeps from pages (keyboards, mice, disks, webcams, headsets, Bluetooth adapters), nor an interface a driver on this computer holds: the page says which and what to do.",
+    "message": "Developer and maker hardware, passed through as it is: microcontroller boards and debug probes, Android phones (adb, fastboot), USB-serial adapters, logic analysers, SDRs, and printers. Keyboards, mice, disks, webcams, headsets, and Bluetooth adapters can't be passed through, nor can an interface a driver on your computer holds. If a device has such parts, you will be told which, and what to do.",
     "note": "Explanation under A USB device (WebUSB), the first choice in the Add a USB device wizard."
   },
   "AddUsb.hid": {
@@ -572,23 +572,31 @@
     "note": "Title of the second choice in the Add a USB device wizard: a device built from what WebHID tells."
   },
   "AddUsb.hid.text": {
-    "message": "Game pads, joysticks and wheels, macro pads and Stream Decks, a keyboard's configuration interface (VIA), a UPS. The guest gets a USB HID device built from what the browser tells of it, over USB or Bluetooth. A keyboard's keys and a mouse's pointer stay the browser's (the machine has the page's).",
+    "message": "Game pads, joysticks and wheels, macro pads and Stream Decks, a keyboard's configuration interface (VIA), and UPSes, over USB or Bluetooth. The guest gets a USB HID device rebuilt from what this browser reports about it. A keyboard's keys and a mouse's pointer can't be passed through; your keyboard and mouse reach the machine through this emulator anyway.",
     "note": "Explanation under A HID device (WebHID), the second choice in the Add a USB device wizard."
   },
   "AddUsb.title": {
     "message": "Add a USB device to {{name}}",
     "note": "Title of the Add a USB device wizard (a dialog from the USB menu or the Machines page's USB tab). {{name}} is the machine's name."
   },
-  "AddUsb.intro": {
-    "message": "Which kind? The browser then shows the devices it may give this page: pick one. The machine remembers it, and the browser keeps the permission.",
-    "note": "Text under the Add a USB device wizard's title, above the two kinds to choose from."
+  "AddUsb.step.kind": {
+    "message": "Choose the kind of device below.",
+    "note": "Step 1 of the Add a USB device wizard, numbered, above the two kinds to choose from."
+  },
+  "AddUsb.step.pick": {
+    "message": "Select the device in the list this browser shows.",
+    "note": "Step 2 of the Add a USB device wizard, numbered, above the two kinds: the browser's chooser opens once a kind is chosen."
+  },
+  "AddUsb.note": {
+    "message": "The machine remembers the device and attaches it at start, and this browser keeps the permission to use it. A machine running in this tab gets it right away.",
+    "note": "Note under the two kinds in the Add a USB device wizard: what happens to the device picked."
   },
   "AddUsb.noWebUsb": {
-    "message": "This browser has no WebUSB",
+    "message": "This browser doesn't support WebUSB.",
     "note": "Tooltip of the disabled WebUSB choice in the Add a USB device wizard, in a browser without WebUSB."
   },
   "AddUsb.noWebHid": {
-    "message": "This browser has no WebHID",
+    "message": "This browser doesn't support WebHID.",
     "note": "Tooltip of the disabled WebHID choice in the Add a USB device wizard, in a browser without WebHID."
   },
   "AddUsb.cancel": {
@@ -600,15 +608,15 @@
     "note": "Title of the folded details (a summary to click) under a USB problem that has no remedy of its own, only the browser's message."
   },
   "main.machineGone": {
-    "message": "that machine is gone",
-    "note": "Error when a USB device's entry is changed for a machine that was deleted meanwhile."
+    "message": "The machine was deleted.",
+    "note": "Error when a USB device's entry is changed for a machine that was deleted meanwhile (in another tab)."
   },
   "main.stopped": {
-    "message": "The machine isn't running on this page: its devices are attached when it runs.",
-    "note": "Error when a USB device is attached (the USB menu, the Machines page's USB tab) while the machine isn't running on this page."
+    "message": "The machine isn't running in this tab. Start it to attach devices.",
+    "note": "Error when a USB device is attached (the USB menu, the Machines page's USB tab) while the machine isn't running in this tab."
   },
   "main.offer.gone": {
-    "message": "{{name}} was unplugged from connector {{connector}}. If it came back as another device (a bootloader, after a firmware upload), pick that one to attach it there.",
+    "message": "{{name}} was unplugged from connector {{connector}}. If it came back as another device, such as a bootloader after a firmware upload, pick that one to attach it on the same connector.",
     "note": "An offer in the toolbar's USB menu when an attached device was unplugged (Pick it… follows); {{name}} is the device's name, {{connector}} its connector's number."
   },
   "main.offer.pick": {
@@ -620,27 +628,27 @@
     "note": "Error headline in the message bar (under the toolbar) when an attached USB device was detached by an error; {{name}} is the device's name; the error is the detail under it."
   },
   "main.attachFailed": {
-    "message": "{{name}} couldn't be attached",
+    "message": "Couldn't attach {{name}}",
     "note": "Error headline in the message bar (under the toolbar) when a USB device couldn't be attached; {{name}} is the device's name; why is the detail under it."
   },
   "main.attachFailed.again": {
-    "message": "{{name}} couldn't be attached again",
+    "message": "Couldn't attach {{name}} again",
     "note": "Error headline in the message bar (under the toolbar) when a USB device detached for a snapshot couldn't be attached again; {{name}} is the device's name; why is the detail under it."
   },
   "main.held.left": {
-    "message": "{{name}} is attached to {{who}}, in another tab: it was left there.",
+    "message": "{{name}} was left attached to {{who}}, in another tab.",
     "note": "Notice in the message bar (under the toolbar) when a device attached at start is attached to another tab's machine (left there); {{name}} is the device's name, {{who}} that machine's."
   },
   "main.held.left.unknown": {
-    "message": "{{name}} is attached to another machine (in another tab): it was left there.",
+    "message": "{{name}} was left attached to another machine, in another tab.",
     "note": "Notice in the message bar (under the toolbar) when a device attached at start is attached to another tab's machine whose name isn't known; {{name}} is the device's name."
   },
   "main.held.confirm": {
-    "message": "{{name}} is attached to {{who}}, in another tab. Detach it there and attach it here? That machine sees it unplugged: whatever it was doing with it breaks.",
+    "message": "Detach {{name}} from {{who}}, in another tab, and attach it here? That machine will see the device unplugged, and whatever it was doing with it will fail.",
     "note": "Text of the question asked when a USB device is attached here while another tab's machine has it; {{name}} is the device's name, {{who}} that machine's."
   },
   "main.held.confirm.unknown": {
-    "message": "{{name}} is attached to another machine (in another tab). Detach it there and attach it here? That machine sees it unplugged: whatever it was doing with it breaks.",
+    "message": "Detach {{name}} from another machine, in another tab, and attach it here? That machine will see the device unplugged, and whatever it was doing with it will fail.",
     "note": "Text of the question asked when a USB device is attached here while another tab's machine, whose name isn't known, has it; {{name}} is the device's name."
   },
   "main.held.title": {
@@ -652,23 +660,23 @@
     "note": "The confirm button of the question asked when a USB device is attached here while another tab's machine has it."
   },
   "main.held.kept": {
-    "message": "{{who}}, in another tab didn't let {{name}} go.",
-    "note": "Error when another tab's machine didn't give up a USB device asked for here; {{who}} is that machine's name, {{name}} the device's."
+    "message": "Couldn't take {{name}} from {{who}}, in another tab",
+    "note": "Error headline when another tab's machine didn't give up a USB device asked for here; {{who}} is that machine's name, {{name}} the device's."
   },
   "main.held.kept.unknown": {
-    "message": "another machine (in another tab) didn't let {{name}} go.",
-    "note": "Error when another tab's machine, whose name isn't known, didn't give up a USB device asked for here; {{name}} is the device's name."
+    "message": "Couldn't take {{name}} from the machine in another tab",
+    "note": "Error headline when another tab's machine, whose name isn't known, didn't give up a USB device asked for here; {{name}} is the device's name."
   },
   "main.taken": {
-    "message": "{{name}} was detached: another machine took it.",
+    "message": "{{name}} was detached, because another machine took it.",
     "note": "Notice in the message bar (under the toolbar) when another tab's machine took a USB device from this one; {{name}} is the device's name."
   },
   "main.keyboardFailed": {
-    "message": "The built-in keyboard couldn't be plugged in",
+    "message": "Couldn't plug in the built-in keyboard",
     "note": "Error headline in the message bar (under the toolbar) when the page's built-in USB keyboard (for the firmware and boot loaders) couldn't be attached; why is the detail under it."
   },
   "main.offer.ungranted": {
-    "message": "{{name}} has no permission in this browser yet (the machine was made in another).",
+    "message": "This browser has no permission to use {{name}} yet, because the machine was set up in another browser.",
     "note": "An offer in the toolbar's USB menu for a remembered device the browser hasn't allowed (Allow… follows); {{name}} is the device's name."
   },
   "main.offer.allow": {
@@ -688,7 +696,7 @@
     "note": "Button of the USB menu's offer for a device the machine doesn't remember that was plugged in: it attaches it and remembers it."
   },
   "main.offer.back": {
-    "message": "{{name}} just appeared, where {{was}} was (connector {{connector}}).",
+    "message": "{{name}} just appeared where {{was}} was, on connector {{connector}}.",
     "note": "An offer in the toolbar's USB menu when a device appeared right after an attached one was unplugged (a bootloader after a firmware upload); {{name}} is the new device's name, {{was}} the old one's, {{connector}} the connector's number."
   },
   "main.offer.there": {
@@ -700,19 +708,19 @@
     "note": "Several USB devices named in the question asked before a snapshot or Suspend: {{first}} is all of them but the last (joined with commas), {{last}} the last."
   },
   "main.empty.snapshot_one": {
-    "message": "Taking a snapshot needs the USB ports empty: {{list}} is detached first, and the guest sees it unplugged: anything in progress with it (a copy, a firmware flash) breaks. They are attached again once it is saved.",
+    "message": "Taking a snapshot needs the USB ports empty. This will detach {{list}}, and the guest will see it unplugged; anything in progress with it, such as a copy or a firmware flash, will fail. It will be attached again once the snapshot is saved.",
     "note": "Text of the question asked by Snapshot or Save snapshot while a USB device is attached; {{list}} is its name."
   },
   "main.empty.snapshot_other": {
-    "message": "Taking a snapshot needs the USB ports empty: {{list}} are detached first, and the guest sees them unplugged: anything in progress with them (a copy, a firmware flash) breaks. They are attached again once it is saved.",
+    "message": "Taking a snapshot needs the USB ports empty. This will detach {{list}}, and the guest will see them unplugged; anything in progress with them, such as a copy or a firmware flash, will fail. They will be attached again once the snapshot is saved.",
     "note": "Text of the question asked by Snapshot or Save snapshot while USB devices are attached; {{list}} is their names, {{count}} how many."
   },
   "main.empty.suspend_one": {
-    "message": "Suspending needs the USB ports empty: {{list}} is detached first, and the guest sees it unplugged: anything in progress with it (a copy, a firmware flash) breaks. The ones attached at start are attached again when it resumes.",
+    "message": "Suspending needs the USB ports empty. This will detach {{list}}, and the guest will see it unplugged; anything in progress with it, such as a copy or a firmware flash, will fail. If it is marked At start, it will be attached again when the machine resumes.",
     "note": "Text of the question asked by Suspend while a USB device is attached; {{list}} is its name."
   },
   "main.empty.suspend_other": {
-    "message": "Suspending needs the USB ports empty: {{list}} are detached first, and the guest sees them unplugged: anything in progress with them (a copy, a firmware flash) breaks. The ones attached at start are attached again when it resumes.",
+    "message": "Suspending needs the USB ports empty. This will detach {{list}}, and the guest will see them unplugged; anything in progress with them, such as a copy or a firmware flash, will fail. Those marked At start will be attached again when the machine resumes.",
     "note": "Text of the question asked by Suspend while USB devices are attached; {{list}} is their names, {{count}} how many."
   },
   "main.empty.title": {
@@ -720,11 +728,11 @@
     "note": "Title of the question asked by Snapshot, Save snapshot or Suspend while USB devices are attached."
   },
   "main.empty.ok": {
-    "message": "Detach and go on",
+    "message": "Detach and continue",
     "note": "The confirm button of the question asked by Snapshot, Save snapshot or Suspend while USB devices are attached."
   },
   "main.edit.detachFirst": {
-    "message": "Detach it first: it is on its connector now.",
+    "message": "Detach the device before changing its connector.",
     "note": "Error when an attached USB device's connector is changed (the Machines page's USB tab)."
   },
   "main.zero.stopped": {

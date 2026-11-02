@@ -13,7 +13,7 @@ the guest ([frontend.md](frontend.md) "What the page sets in the guest").
 ## 1. The rules
 
 1. **Folders are the browser's.** A list kept in this browser (IndexedDB `webpc`, object store `folders`), each one
-   of two kinds: [a folder on this computer](ui:folders:FolderWizard.state.host) (a directory handle the user picked or dropped) or **a folder in the
+   of two kinds: [a folder on your computer](ui:folders:FolderWizard.state.host) (a directory handle the user picked or dropped) or **a folder in the
    browser** (a directory in OPFS, `folders/<id>/`). Each has a name and **Read-only**. Machines are attached to
    folders; deleting a folder detaches it from every machine (and, for one in the browser, deletes its files, asked
    first with their size).
@@ -156,7 +156,8 @@ after the request it names**. What changes while the machine runs comes over the
   effect at the next start), and the attached folders in order (name, kind,
   Read-only, held by another machine, no permission in this browser; up, down, Detach, Allow…). [Attach a folder…](ui:folders:Folders.attach)
   opens the **Folder wizard** (`FolderWizard.svelte`): the browser's folders first, those in use marked with their
-  machine, after [New folder…](ui:folders:FolderWizard.pick.new): the kind, each explained, then its settings. **[Shared folders](ui:machines:MachinesPage.folders.heading)** in the list of
+  machine, after [New folder…](ui:folders:FolderWizard.pick.new): the kind, each explained, then its settings (for a folder on the
+  user's computer, numbered steps, Read-only then the picker, that end at **[Pick the folder…](ui:folders:FolderWizard.choose)**, and a note on the folders Chromium refuses). **[Shared folders](ui:machines:MachinesPage.folders.heading)** in the list of
   machines is the browser's (§2.2, §2.3), with rename, Read-only, Delete (naming the machines that lose it).
 - **The toolbar:** a **Folders** menu while the page's machine has `shares`: each attached folder with its state,
   **Allow access…**, Detach, [Attach a folder…](ui:folders:FoldersMenu.attach) (the wizard), and where the guest finds them (`<mount point>/<name>`).

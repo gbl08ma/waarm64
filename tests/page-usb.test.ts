@@ -123,7 +123,17 @@ test('the USB tab: the controller, Add a device, twins, a device held elsewhere;
   assert.deepEqual(await page.$$eval('.machines [data-usb-entry]:nth-child(3) [data-field=connector] option', (o) => o.map((e) => e.textContent)), ['1', '2', '3']);
   assert.ok([t('usb:Usb.builtin', { connector: 4 }), t('usb:Usb.builtin.asNow', { connector: 4 }), t('usb:Usb.builtin.pluggedNow', { connector: 4 })].includes(await page.textContent('.machines [data-usb-builtin]') ?? ''));
   await page.selectOption('.machines [data-usb-entry]:nth-child(3) [data-field=connector]', { value: '0' });
-  await page.uncheck('.machines [data-usb-entry]:nth-child(3) [data-field=at-start]');
+  // The connector's save re-renders the entry when it lands, undoing a click made before it (under load, CI saw it):
+  // uncheck until the box stays clear.
+  for (let i = 0; ; i++) {
+    try {
+      await page.uncheck('.machines [data-usb-entry]:nth-child(3) [data-field=at-start]', { timeout: 2_000 });
+      break;
+    } catch (e) {
+      if (i >= 10) throw e;
+      await page.waitForTimeout(200);
+    }
+  }
   await page.waitForFunction(() => (document.querySelector('.machines [data-usb-entry]:nth-child(3) [data-field=connector]') as HTMLSelectElement).value === '0', null, { polling: 100 });
 
   // Another tab's machine holds the Pico: the tab says which.

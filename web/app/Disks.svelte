@@ -10,7 +10,7 @@
   import MoveButtons from './MoveButtons.svelte';
   import Menu from './Menu.svelte';
   import { ask } from './ask.svelte.ts';
-  import { msg, t, text } from '../i18n.ts';
+  import { msg, MsgError, t, text } from '../i18n.ts';
   import type { Store, OverlayRecord } from './store.ts';
   import type { DiskRecord, MachineRecord } from './shape.ts';
   import { MAX_DISKS } from './shape.ts';
@@ -47,23 +47,27 @@
     if (!name) return;
     await act(t('disks:Disks.busy.newOverlay'), async () => {
       if (!(await offFirst(machine))) return;
-      const o = await createOverlay(store, disk, name);
-      await switchOverlay(store, plain(machine), attachment, o.id);
+      try {
+        const o = await createOverlay(store, disk, name);
+        await switchOverlay(store, plain(machine), attachment, o.id);
+      } catch (e) {
+        throw new MsgError('disks:Disks.failed.newOverlay', {}, { cause: e });
+      }
     });
   }
   async function switchTo(attachment: string, overlay: string) {
     await act(t('disks:Disks.busy.switch'), async () => {
       if (!(await offFirst(machine))) return;
-      await switchOverlay(store, plain(machine), attachment, overlay);
+      await switchOverlay(store, plain(machine), attachment, overlay).catch((e) => { throw new MsgError('disks:Disks.failed.switch', {}, { cause: e }); });
     });
   }
   async function rename(o: OverlayRecord) {
     const name = await ask.prompt(t('disks:Disks.rename.text'), o.name, { title: t('disks:Disks.rename.title', { name: o.name }), ok: t('disks:Disks.rename.ok') });
-    if (name) await act(t('disks:Disks.busy.rename'), () => renameOverlay(store, o.id, name));
+    if (name) await act(t('disks:Disks.busy.rename'), () => renameOverlay(store, o.id, name).catch((e) => { throw new MsgError('disks:Disks.failed.rename', {}, { cause: e }); }));
   }
   async function remove(o: OverlayRecord) {
     if (!(await ask.confirm(t('disks:Disks.delete.confirm', { name: o.name, size: bytesText(o.bytes) }), { ok: t('disks:Disks.delete.ok'), danger: true }))) return;
-    await act(t('disks:Disks.busy.delete'), () => deleteOverlay(store, o.id));
+    await act(t('disks:Disks.busy.delete'), () => deleteOverlay(store, o.id).catch((e) => { throw new MsgError('disks:Disks.failed.delete', {}, { cause: e }); }));
   }
   async function merge(o: OverlayRecord, disk: DiskRecord) {
     const others = await mergeCosts(store, o.id);
@@ -72,7 +76,7 @@
     const deleted = others.length ? msg('disks:Disks.merge.others', { list: others.map((x) => msg('disks:Disks.merge.other', { name: x.name, size: bytesText(x.bytes) })) }) : undefined;
     const orphaned = snaps.length ? msg('disks:Disks.merge.snapshots', { count: snaps.length }) : undefined;
     if (!(await ask.confirm(t('disks:Disks.merge.confirm', { overlay: o.name, disk: disk.name, others: deleted, snapshots: orphaned }), { ok: t('disks:Disks.merge.ok'), danger: others.length > 0 }))) return;
-    await act(t('disks:Disks.busy.merge'), () => mergeIntoDisk(store, o.id));
+    await act(t('disks:Disks.busy.merge'), () => mergeIntoDisk(store, o.id).catch((e) => { throw new MsgError('disks:Disks.failed.merge', {}, { cause: e }); }));
   }
   /**
    * An attachment's read-only, in-place or swap box. Its value is taken from the event at once: Svelte's delegated events lose

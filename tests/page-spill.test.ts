@@ -55,9 +55,9 @@ test('Debian with RAM past memory 0: the Machine menu says so; three NUMA nodes,
   await page.goto(`${base}/web/app/?${query}`);
   // The Machine menu: the running split's note, the automatic one's for another size, none for a size memory 0 holds.
   await page.locator('#machine-menu summary').click();
-  assert.match(await page.locator('#machine-numa').textContent() ?? '', /^2560 MiB of it is the machine's fast memory; the guest gets the other 1536 MiB as 2 more NUMA nodes/);
+  assert.match(await page.locator('#machine-numa').textContent() ?? '', words('machines:machine.numa', { count: 2, fast: 2560, rest: 1536 }, { whole: true }));
   await page.selectOption('#machine-ram', '8192');
-  assert.match(await page.locator('#machine-numa').textContent() ?? '', /^3071 MiB of it .* other 5121 MiB as 2 more NUMA nodes/);
+  assert.match(await page.locator('#machine-numa').textContent() ?? '', words('machines:machine.numa', { count: 2, fast: 3071, rest: 5121 }, { whole: true }));
   await page.selectOption('#machine-ram', '2048');
   assert.equal(await page.locator('#machine-numa').count(), 0);
   await page.locator('#machine-menu summary').click();

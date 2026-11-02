@@ -25,8 +25,12 @@ The brief: [I18N-KICKOFF.md](I18N-KICKOFF.md). How it works: [docs/i18n.md](docs
   `WEBPC_DISTROS=debian`, but its main Debian test skipped (no `linux-snd` image here); `ci-graphics.sh` ran one of three.
 - **Tests take the words from the catalog (done, 2026-11-02, after the merge into main):** `tools/i18n-check.ts` reads
   `tests/` too, `tests/words.ts` gives a message as a pattern, ~45 test files converted (docs/i18n.md "Tests"). In the
-  dev VM on that tree: `scripts/ci.sh` (but `page-usb`'s "the USB tab" under load, alone 3 of 3: backlog),
+  dev VM on that tree: `scripts/ci.sh`,
   `ci-debian.sh`, `ci-machines.sh`, `ci-net.sh`, `ci-audio.sh` pass.
+- **The copy rewritten to a style guide (2026-11-02):** docs/copy.md from the user's own edits and choices (the
+  voice, no colon chains, "this web app"/"this emulator", "your computer", "base image"), applied to every catalog by
+  area; setup screens steps first (the tailcat choice as the user sketched it, the local helper, tailnet, Add a USB
+  device, the folder wizard). The user reviews it next and the guide is refined from there.
 - **Left for the dev VM, before the track ends:** `scripts/ci-debian.sh --platform`, `ci-graphics.sh`, `ci-usb.sh`,
   `ci-deqp-vk.sh`'s page (the Venus refusals). Then the track ends: its outcome is docs/i18n.md and the
   PLAN row; this file and the kickoff go.

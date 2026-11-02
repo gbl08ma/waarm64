@@ -12,12 +12,12 @@
     "note": "Hint shown over the machine's screen while typing doesn't go to the machine (the screen hasn't the focus) and the toolbar's mouse lock is off."
   },
   "App.screen.hintLock": {
-    "message": "Click to type and take the mouse (Esc lets it go)",
+    "message": "Click to type and capture the mouse, Esc to release it",
     "note": "Hint shown over the machine's screen while typing doesn't go to the machine and the toolbar's mouse lock is on: a click also hands the machine the mouse."
   },
   "App.boot.serial": {
     "message": "No video output. The guest may be sending boot menus and setup instructions to the serial console.",
-    "note": "Line on the boot card (over the screen while a machine starts) when the guest's boot menus or first-boot questions go to the serial console instead of the screen; a Show it button follows."
+    "note": "Line on the boot card (over the screen while a machine starts) when the guest's boot menus or first-boot questions go to the serial console instead of the screen; a Show serial console button follows."
   },
   "App.boot.serial.show": {
     "message": "Show serial console",

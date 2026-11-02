@@ -1,6 +1,7 @@
 <!--
   The Folder wizard (docs/shares.md §4), a dialog opened through `ui.folderWizard`: attach one of the browser's folders to
-  a machine (those in use marked with their machine), or make a new one: its kind, each explained, then its settings.
+  a machine (those in use marked with their machine), or make a new one: its kind, each explained, then its settings
+  (for a folder on this computer, numbered steps that end at Pick the folder…).
   Without a `machine` it only makes a folder (Shared folders, on the Machines page). web/app/main.ts attaches.
 -->
 <script lang="ts">
@@ -104,8 +105,11 @@
       </section>
     {:else if step === 'host'}
       <section class="net-step">
-        <Check id="folder-host-ro" bind:checked={readOnly}>{t('folders:FolderWizard.readOnly')}</Check>
-        <p class="net-note">{readOnly ? t('folders:FolderWizard.host.read') : t('folders:FolderWizard.host.readWrite')}</p>
+        <ol class="steps">
+          <li>{t('folders:FolderWizard.host.readOnly')}<Check id="folder-host-ro" bind:checked={readOnly}>{t('folders:FolderWizard.readOnly')}</Check></li>
+          <li>{readOnly ? t('folders:FolderWizard.host.read') : t('folders:FolderWizard.host.readWrite')}</li>
+        </ol>
+        <p class="net-note">{t('folders:FolderWizard.host.refused')}</p>
       </section>
     {:else}
       <section class="net-step">
@@ -122,3 +126,8 @@
     </div>
   </form>
 </dialog>
+
+<style>
+  .steps { display: flex; flex-direction: column; gap: 8px; margin: 0; padding-left: 20px; }
+  .steps li > :global(*) { margin-top: 6px; }
+</style>

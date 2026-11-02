@@ -1,14 +1,14 @@
 {
   "guest-words.keyboard": {
-    "message": "Keyboard layout from webpc's machine settings",
+    "message": "Keyboard layout from the emulator's machine settings",
     "note": "Inside the guest: the description of the systemd unit (webpc-keyboard.service) that sets the guest's keyboard layout from the machine's settings, as `systemctl status` and the boot log show it. One line, no trailing period."
   },
   "guest-words.network": {
-    "message": "Network settings from webpc's machine settings",
+    "message": "Network configuration from the emulator's machine settings",
     "note": "Inside the guest: the description of the systemd unit (webpc-network.service) that applies the network settings the page gives the guest's adapters, as `systemctl status` and the boot log show it. One line, no trailing period."
   },
   "guest-words.shares": {
-    "message": "Shared folders from webpc",
+    "message": "Shared folders from the emulator",
     "note": "Inside the guest: the description of the mount and automount units of the shared folders (e.g. mnt-webpc.mount), as `systemctl status`, `mount` tools and the boot log show it. One line, no trailing period."
   }
 }

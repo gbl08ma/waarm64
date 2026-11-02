@@ -186,7 +186,7 @@ with tun2socks-style forwarders.
     GitHub's releases wait on the move (L3/L4, and the download location in §6).
 - **L2, the page:** the kind, the wizard's steps, the client, the primary's rule, the errors.
   - **Done** (2026-11-01, a cloud session; docs/frontend.md "Network", docs/network-adapters.md): the kind `local` (its
-    link in the record); the wizard's [This computer (webpc-net)](ui:network:NetWizard.kind.pickLocal) step (the link, or the pairing link, pasted; the
+    link in the record); the wizard's [Your computer (webpc-net)](ui:network:NetWizard.kind.pickLocal) step (the link, or the pairing link, pasted; the
     install lines for the browser's platform from `web/local-release.ts`, the same as `build.sh`'s; none until a
     release); the pairing link opening the page (`#net=`: out of the address at once, the wizard on it); the client in
     a worker, batched on `setTimeout(0)`; the card's frame path beside the gateway's (`FramePath`) with a **link flap**
@@ -245,7 +245,7 @@ failing at once in between (`bench/net/local-ipv6.ts`).
 
 ## 6. Open questions
 
-- The kind's name on the page ([This computer](ui:network:connections.thisComputer), "Local helper", …) and the helper's.
+- The kind's name on the page ([Your computer](ui:network:connections.thisComputer), "Local helper", …) and the helper's.
 - The default port.
 - Where the install lines download from: GitHub's releases (one more party users already know) or vm.tny.im.
 - Whether gvisor-tap-vsock's DNS forwarder follows the host's resolvers on every platform (Windows especially: it

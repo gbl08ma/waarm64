@@ -130,7 +130,7 @@ date are the same disk to the page.
 
 A `FileSystemFileHandle` kept in IndexedDB needs `requestPermission({mode: 'read'})` from a click in each session:
 a start that finds a file disk without permission stops at "[Allow and start](ui:disks:main.allowAndStart)" (one prompt per handle), or at
-"[Pick and start](ui:disks:main.pickAndStart)" for a disk with no handle (a definition's, or one opened through a plain file input where the browser has
+"[Select and start](ui:disks:main.pickAndStart)" for a disk with no handle (a definition's, or one opened through a plain file input where the browser has
 no `showOpenFilePicker`). Drops give handles too (`DataTransferItem.getAsFileSystemHandle`), as the picker does: the
 Add a disk wizard's, Open disk…'s and From a disk image…'s (main.ts `openDisk`). A picked file is checked as in §6.
 
@@ -281,7 +281,7 @@ The file's format, what the core saves and the page's toolbar and header fields:
   paths to records.
 - **Orphaned:** a kept snapshot whose shape hash differs from its machine's now (the user changed RAM, added a
   disk, turned shared folders on…). Pins don't orphan a snapshot: a moved-on overlay is what the fork is for. The Snapshots tab says what
-  differs (`shapeDiff`, from the two shapes), and offers [Make a machine like it](ui:snapshots:Snapshots.like) (`machineLike`: a new machine
+  differs (`shapeDiff`, from the two shapes), and offers [Create a machine like it](ui:snapshots:Snapshots.like) (`machineLike`: a new machine
   from its shape, disks the browser has attached again by identity, blank disks and ramdisks made again, files picked
   again) and [Delete orphaned snapshots](ui:snapshots:Snapshots.deleteOrphaned).
 
@@ -292,7 +292,7 @@ The file's format, what the core saves and the page's toolbar and header fields:
   downloads as it is. Keeping many snapshots of a machine with a big overlay costs that overlay each time; sharing
   blocks between them isn't built (backlog, if the sizes measured ask for it).
 - **Restore** (a kept snapshot, or a file restored at once): refused before anything is touched when the shape hash
-  differs (Make a machine like it is offered). Then per writable disk (`planRestore`, web/app/snapshots.ts; the page
+  differs (the notice points to Create a machine like it). Then per writable disk (`planRestore`, web/app/snapshots.ts; the page
   passes the plan to the worker as `start.plan`): the attached overlay is the pinned one at the pinned generation →
   **keep** (nothing written: the restore is RAM and state); otherwise → **fork**: a new overlay named after the
   snapshot gets its blocks and is attached, and the old overlay stays as it was. The confirmation says which disks

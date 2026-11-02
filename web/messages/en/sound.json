@@ -36,7 +36,7 @@
     "note": "Checkbox in the toolbar's Sound menu: when the machine records, it gets the page's microphone (unticked: silence)."
   },
   "Sound.mic.title": {
-    "message": "When the machine records, the page asks for the microphone (the browser asks you the first time); off, the machine records silence",
+    "message": "Let the machine record from your computer's microphone. This web app asks for it when the machine starts recording, and the browser asks for your permission the first time. When this is off, the machine records silence.",
     "note": "Tooltip of the Microphone checkbox in the toolbar's Sound menu."
   },
   "Sound.micRaw": {
@@ -44,19 +44,19 @@
     "note": "Checkbox in the toolbar's Sound menu: the microphone without the browser's echo cancellation, noise suppression and gain control."
   },
   "Sound.micRaw.title": {
-    "message": "The microphone as it comes: no echo cancellation, noise suppression or gain control (for music; for a call, leave it off)",
+    "message": "Record the microphone without echo cancellation, noise suppression, or gain control. This suits music; leave it off for calls.",
     "note": "Tooltip of the Raw microphone checkbox in the toolbar's Sound menu."
   },
   "Sound.hint": {
-    "message": "Kept in this browser. The browser plays sound once the page has had a click or a key.",
+    "message": "These settings are kept in this browser. The browser plays sound only after you click or press a key in this web app.",
     "note": "Fine print at the foot of the toolbar's Sound menu: the choices are remembered, and the browser's autoplay rule."
   },
   "Sound.mic.denied": {
-    "message": "The browser refused the microphone: the machine records silence. Allow it in the site's settings, then turn Microphone off and on.",
+    "message": "The browser denied access to the microphone, so the machine records silence. Allow it in the site's settings, then turn Microphone off and on again.",
     "note": "Fine print in the toolbar's Sound menu, shown when the machine records and the browser refused the page the microphone."
   },
   "Sound.mic.asking": {
-    "message": "The machine is recording: the browser asks for the microphone.",
+    "message": "The machine is recording, and the browser is asking for permission to use the microphone.",
     "note": "Fine print in the toolbar's Sound menu, shown while the machine records and the browser is asking the user for the microphone."
   }
 }

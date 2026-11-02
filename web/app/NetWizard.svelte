@@ -200,43 +200,58 @@
       <button type="button" class="net-choice" id="net-pick-local" onclick={() => showStep('local')}><b>{t('network:NetWizard.kind.pickLocal')}</b><span>{t('network:NetWizard.kind.pickLocal.note')}</span></button>
     </section>
     <section id="net-step-local" class="net-step" hidden={step !== 'local'}>
-      <!-- i18n-ignore-next: the placeholder is an example of the link, not words -->
-      <label>{t('network:NetWizard.local.link')}<input id="net-local-url" bind:value={localURL} type="password" placeholder="https://vm.tny.im/#net=ws://127.0.0.1:8740/…" autocomplete="off" spellcheck="false"></label>
-      <p class="net-note"><T k="network:NetWizard.local.note">{#snippet a(text)}<a href={SOURCE} target="_blank" rel="noopener">{text}</a>{/snippet}</T></p>
-      {#if !editing}
-        {#if RELEASE}
-          <details id="net-local-install" open={!localURL}><summary>{t('network:NetWizard.install', { version: RELEASE.version })}</summary>
-            <label>{t('network:NetWizard.install.for')}<select id="net-local-target" value={`${shown.os}-${shown.arch}`} onchange={(e) => { target = TARGETS.find((t) => `${t.os}-${t.arch}` === e.currentTarget.value); }}>
-              {#each TARGETS as t (`${t.os}-${t.arch}`)}<option value={`${t.os}-${t.arch}`}>{targetName(t)}</option>{/each}
-            </select></label>
-            <pre id="net-local-lines">{installLines(RELEASE, shown)}</pre>
-            <p class="net-note">{shown.os === 'windows' ? t('network:NetWizard.install.note.windows') : t('network:NetWizard.install.note')}</p>
-          </details>
-        {:else}
-          <p id="net-local-install" class="net-note"><T k="network:NetWizard.noRelease">{#snippet a(text)}<a href={SOURCE} target="_blank" rel="noopener">{text}</a>{/snippet}{#snippet code(text)}<code>{text}</code>{/snippet}</T></p>
-        {/if}
+      {#snippet localField(label: string)}
+        <!-- i18n-ignore-next: the placeholder is an example of the link, not words -->
+        <label>{label}<input id="net-local-url" bind:value={localURL} type="password" placeholder="https://vm.tny.im/#net=ws://127.0.0.1:8740/…" autocomplete="off" spellcheck="false"></label>
+      {/snippet}
+      {#if editing}
+        {@render localField(t('network:NetWizard.local.link'))}
+      {:else}
+        <ol class="net-steps">
+          <li>
+            <T k="network:NetWizard.local.run">{#snippet a(text)}<a href={SOURCE} target="_blank" rel="noopener">{text}</a>{/snippet}</T>
+            {#if RELEASE}
+              <details id="net-local-install" open={!localURL}><summary>{t('network:NetWizard.install', { version: RELEASE.version })}</summary>
+                <label>{t('network:NetWizard.install.for')}<select id="net-local-target" value={`${shown.os}-${shown.arch}`} onchange={(e) => { target = TARGETS.find((t) => `${t.os}-${t.arch}` === e.currentTarget.value); }}>
+                  {#each TARGETS as t (`${t.os}-${t.arch}`)}<option value={`${t.os}-${t.arch}`}>{targetName(t)}</option>{/each}
+                </select></label>
+                <p class="net-note">{shown.os === 'windows' ? t('network:NetWizard.install.note.windows') : t('network:NetWizard.install.note')}</p>
+                <pre id="net-local-lines">{installLines(RELEASE, shown)}</pre>
+              </details>
+            {:else}
+              <p id="net-local-install" class="net-note"><T k="network:NetWizard.noRelease">{#snippet a(text)}<a href={SOURCE} target="_blank" rel="noopener">{text}</a>{/snippet}{#snippet code(text)}<code>{text}</code>{/snippet}</T></p>
+            {/if}
+          </li>
+          <li>{@render localField(t('network:NetWizard.local.paste'))}</li>
+        </ol>
       {/if}
+      <p class="net-note">{t('network:NetWizard.local.note')}</p>
     </section>
     <section id="net-step-tailnet" class="net-step" hidden={step !== 'tailscale'}>
       <label>{t('network:NetWizard.control')}<input id="net-control" bind:value={control} disabled={!!editing} placeholder={t('network:NetWizard.control.placeholder')} autocomplete="off" spellcheck="false"></label>
+      {#if !editing}<p class="net-note"><T k="network:NetWizard.control.note">{#snippet code(text)}<code>{text}</code>{/snippet}</T></p>{/if}
       <!-- i18n-ignore-next: the placeholder is the default hostname, not words -->
       <label>{t('network:NetWizard.hostname')}<input id="net-hostname" bind:value={hostname} placeholder="webpc" autocomplete="off" spellcheck="false"></label>
       {#if here}
         <label>{t('network:NetWizard.authKey')}<input id="net-authkey" bind:value={authKey} type={reveal ? 'text' : 'password'} autocomplete="off" spellcheck="false"></label>
         <Check id="net-reveal" bind:checked={reveal}>{t('network:NetWizard.authKey.show')}</Check>
-        <p class="net-note"><T k="network:NetWizard.authKey.note">{#snippet code(text)}<code>{text}</code>{/snippet}</T></p>
+        <p class="net-note">{t('network:NetWizard.authKey.note')}</p>
       {:else if editing}
         <p class="net-note">{t('network:NetWizard.control.edit')}</p>
       {:else}
-        <p class="net-note"><T k="network:NetWizard.login.note">{#snippet code(text)}<code>{text}</code>{/snippet}</T></p>
+        <p class="net-note">{t('network:NetWizard.login.note')}</p>
       {/if}
     </section>
     <section id="net-step-tailcat" class="net-step" hidden={step !== 'tailcat'}>
       <Check id="net-tc-exit" bind:checked={tcExit}>{t('network:NetWizard.tailcat.exit')}</Check>
       <div id="net-tc-exit-fields" class="net-sub" hidden={!tcExit}>
-        <!-- i18n-ignore-next: the placeholder is how an address starts, not words -->
-        <label>{t('network:NetWizard.tailcat.address')}<input id="net-tailcat" bind:value={tailcat} type="password" placeholder="tc…" autocomplete="off" spellcheck="false"></label>
-        <p class="net-note"><T k="network:NetWizard.tailcat.exit.note">{#snippet code(text)}<code>{text}</code>{/snippet}{#snippet a(text)}<a href="https://github.com/tailscale/tailcat" target="_blank" rel="noopener">{text}</a>{/snippet}</T></p>
+        <ol class="net-steps">
+          <li><T k="network:NetWizard.tailcat.exit.install">{#snippet a(text)}<a href="https://github.com/tailscale/tailcat" target="_blank" rel="noopener">{text}</a>{/snippet}</T></li>
+          <li><T k="network:NetWizard.tailcat.exit.run">{#snippet code(text)}<code>{text}</code>{/snippet}</T></li>
+          <!-- i18n-ignore-next: the placeholder is how an address starts, not words -->
+          <li><label>{t('network:NetWizard.tailcat.exit.paste')}<input id="net-tailcat" bind:value={tailcat} type="password" placeholder="tc…" autocomplete="off" spellcheck="false"></label></li>
+        </ol>
+        <p class="net-note">{t('network:NetWizard.tailcat.exit.note')}</p>
       </div>
       <Check id="net-tc-serve" bind:checked={tcServe}>{t('network:NetWizard.tailcat.serve')}</Check>
       <div id="net-tc-serve-fields" class="net-sub" hidden={!tcServe}>
@@ -265,3 +280,10 @@
     </div>
   </form>
 </dialog>
+
+<style>
+  /* A choice's numbered steps, which end at its field: the steps' words at the dialog's size, the field's label too. */
+  .net-steps { display: flex; flex-direction: column; gap: 8px; margin: 0; padding-left: 20px; }
+  .net-steps li > :is(details, p) { margin-top: 6px; }
+  :global(#net-wizard) .net-steps label { color: var(--text); font-size: inherit; gap: 4px; }
+</style>

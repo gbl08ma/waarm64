@@ -1,6 +1,6 @@
 {
   "shares-mount.absolute": {
-    "message": "The mount point is an absolute path.",
+    "message": "The mount point must be an absolute path, starting with /.",
     "note": "Warning under the Mount point field (Machines page, Shared folders tab), and the error when such settings are saved: the path doesn't start with /."
   },
   "shares-mount.root": {
@@ -8,7 +8,7 @@
     "note": "Warning under the Mount point field (Machines page, Shared folders tab), and the error when such settings are saved: the path is /."
   },
   "shares-mount.control": {
-    "message": "The mount point can't have control characters.",
+    "message": "The mount point can't contain control characters.",
     "note": "Warning under the Mount point field (Machines page, Shared folders tab), and the error when such settings are saved: the path has a control character."
   },
   "shares-mount.tooLong": {
@@ -16,15 +16,15 @@
     "note": "Warning under the Mount point field (Machines page, Shared folders tab), and the error when such settings are saved: the path, or its systemd unit's name, is over 255 bytes."
   },
   "shares-mount.characters": {
-    "message": "The mount point can't have \"%\", or end in a space or \"\\\" (systemd reads them otherwise).",
+    "message": "The mount point can't contain \"%\" or end in a space or \"\\\", because systemd reads those differently.",
     "note": "Warning under the Mount point field (Machines page, Shared folders tab), and the error when such settings are saved: the path has a character systemd would read otherwise."
   },
   "shares-mount.plainly": {
-    "message": "Write the mount point plainly: no \".\" or \"..\", no \"//\", no \"/\" at the end.",
+    "message": "The mount point can't have \".\" or \"..\" as a part, contain \"//\", or end in \"/\".",
     "note": "Warning under the Mount point field (Machines page, Shared folders tab), and the error when such settings are saved: the path isn't written plainly."
   },
   "shares-mount.guestOwn": {
-    "message": "{{path}} is the guest's own: mounting there would hide it.",
+    "message": "{{path}} is one of the guest's own directories; mounting there would hide what it holds.",
     "note": "Warning under the Mount point field (Machines page, Shared folders tab), and the error when such settings are saved: the path is one of the guest's own directories. {{path}} is the path written."
   },
   "folders.defaultName": {
@@ -32,43 +32,43 @@
     "note": "A new folder's name when none is given (Folder wizard: the Name field's placeholder; Shared folders on the Machines page), made unique with a number when taken."
   },
   "folders.folderGone": {
-    "message": "that folder is gone",
-    "note": "Error (Machines page, Shared folders) when a folder is renamed or changed after another tab deleted it. Lowercase, as a short reason."
+    "message": "The folder was deleted.",
+    "note": "Error (Machines page, Shared folders) when a folder is renamed or changed after another tab deleted it."
   },
   "folders.machineGone": {
-    "message": "that machine is gone",
-    "note": "Error (Machines page, Folders tab, the toolbar's Folders menu) when a folder is attached to, detached from or moved in a machine another tab deleted. Lowercase, as a short reason."
+    "message": "The machine was deleted.",
+    "note": "Error (Machines page, Folders tab, the toolbar's Folders menu) when a folder is attached to, detached from or moved in a machine another tab deleted."
   },
   "folders.tooMany": {
-    "message": "{{name}} has {{max}} folders, the most a machine has.",
+    "message": "{{name}} already has {{max}} folders, the most a machine can have.",
     "note": "Error (Folder wizard, Folders tab) when a folder is attached to a machine that has the most it may. {{name}} is the machine's name; {{max}} that most (16)."
   },
   "folders-page.inUse": {
-    "message": "A machine has this folder: power it off or detach it first.",
+    "message": "A machine is using this folder. Power it off or detach the folder first.",
     "note": "Error on the Machines page (Shared folders) when files are added, copied in or out, or the folder emptied while a machine has the folder."
   },
   "folders-page.inUseElsewhere": {
-    "message": "{{name}} is in use by a machine in another tab: power it off there first.",
+    "message": "A machine in another tab is using {{name}}. Power that machine off first.",
     "note": "Error on the Machines page (Shared folders) when a folder a machine in another tab has is deleted. {{name}} is the folder's name."
   },
   "folders-live.detachFirst": {
-    "message": "Detach it first: the machine has it now.",
-    "note": "Error on the Machines page's Folders tab when Read-only is changed on a folder the machine running on this page has."
+    "message": "The machine is using the folder. Detach it before changing Read-only.",
+    "note": "Error on the Machines page's Folders tab when Read-only is changed on a folder the machine running in this tab has."
   },
   "Folders.kind.host": {
-    "message": "on this computer",
+    "message": "on your computer",
     "note": "Under an attached folder's name (Machines page, Folders tab): it is a folder on the user's computer."
   },
   "Folders.kind.opfs": {
-    "message": "in the browser",
-    "note": "Under an attached folder's name (Machines page, Folders tab): it is a folder kept by the browser."
+    "message": "in this browser",
+    "note": "Under an attached folder's name (Machines page, Folders tab): it is a folder kept by this browser."
   },
   "Folders.kind.readOnly": {
     "message": "{{kind}}, read-only",
     "note": "Under an attached folder's name (Machines page, Folders tab) when the folder itself is read-only. {{kind}} is where it is (Folders.kind.host or Folders.kind.opfs)."
   },
   "Folders.gone": {
-    "message": "A folder gone from this browser",
+    "message": "A deleted folder",
     "note": "Name shown for an attached folder whose record another tab deleted (Machines page, Folders tab)."
   },
   "Folders.held": {
@@ -92,7 +92,7 @@
     "note": "What the Machines page is doing (shown with … at its top) while a folder's Read-only is saved."
   },
   "Folders.readOnly.title": {
-    "message": "This machine only reads it",
+    "message": "This machine can only read the folder.",
     "note": "Tooltip of an attached folder's Read-only checkbox (Machines page, Folders tab): for this machine's attachment."
   },
   "Folders.readOnly": {
@@ -112,7 +112,7 @@
     "note": "Button on an attached host folder the browser needs a click for (Machines page, Folders tab): asks for its permission."
   },
   "Folders.busy.taking": {
-    "message": "Taking it",
+    "message": "Taking the folder",
     "note": "What the Machines page is doing (shown with … at its top) while a folder another machine has is taken for this one."
   },
   "Folders.useHere": {
@@ -136,7 +136,7 @@
     "note": "Button under the attached folders (Machines page, Folders tab): opens the Folder wizard."
   },
   "Folders.note": {
-    "message": "A folder is attached or detached at once, running or not: the guest finds it under the mount point by its name.",
+    "message": "Folders are attached and detached at once, whether the machine is running or not. The guest finds each folder under the mount point, by its name.",
     "note": "Note at the bottom of the Machines page's Folders tab."
   },
   "FoldersMenu.state.permission": {
@@ -168,7 +168,7 @@
     "note": "State beside an attached folder's name in the toolbar's Folders menu: the machine has it, and reads and writes it."
   },
   "FoldersMenu.title": {
-    "message": "The machine's shared folders",
+    "message": "Show the machine's shared folders.",
     "note": "Tooltip of the toolbar's Folders menu button."
   },
   "FoldersMenu.allow": {
@@ -192,12 +192,12 @@
     "note": "Button in the toolbar's Folders menu: opens the Folder wizard."
   },
   "FoldersMenu.where": {
-    "message": "In the guest: <path>{{path}}</path>. A guest without systemd 256 mounts them by hand: <command>…</command>",
-    "note": "Note at the bottom of the toolbar's Folders menu when the page mounts the folders. <path> is shown as code: the mount point {{path}} followed by /<name>; <command> is replaced by the mount command to type (its words here aren't shown)."
+    "message": "The guest finds them in <path>{{path}}</path>. In a guest with a systemd older than version 256, mount them with this command: <command>…</command>",
+    "note": "Note at the bottom of the toolbar's Folders menu when this emulator mounts the folders. <path> is shown as code: the mount point {{path}} followed by /<name>; <command> is replaced by the mount command to type (its words here aren't shown)."
   },
   "FoldersMenu.where.byHand": {
-    "message": "A guest without systemd 256 mounts them by hand: <command>…</command>",
-    "note": "Note at the bottom of the toolbar's Folders menu when the page doesn't mount the folders. <command> is replaced by the mount command to type, shown as code (its words here aren't shown)."
+    "message": "Mount them in the guest with this command: <command>…</command>",
+    "note": "Note at the bottom of the toolbar's Folders menu when this emulator doesn't mount the folders (Mount shared folders in the guest is off). <command> is replaced by the mount command to type, shown as code (its words here aren't shown)."
   },
   "FolderWizard.state.heldBy": {
     "message": "in use by {{holder}}",
@@ -208,12 +208,12 @@
     "note": "Under a folder to pick in the Folder wizard's first step: a machine in another tab, which didn't say its name, has it."
   },
   "FolderWizard.state.host": {
-    "message": "a folder on this computer",
+    "message": "a folder on your computer",
     "note": "Under a folder to pick in the Folder wizard's first step: it is a folder on the user's computer."
   },
   "FolderWizard.state.opfs": {
-    "message": "a folder in the browser",
-    "note": "Under a folder to pick in the Folder wizard's first step: it is a folder kept by the browser."
+    "message": "a folder in this browser",
+    "note": "Under a folder to pick in the Folder wizard's first step: it is a folder kept by this browser."
   },
   "FolderWizard.state.readOnly": {
     "message": "{{state}}, read-only",
@@ -228,7 +228,7 @@
     "note": "Title of the Folder wizard when a new folder is made (its kind, then its settings)."
   },
   "FolderWizard.pick.note": {
-    "message": "A folder is kept by this browser, for any of its machines. Several machines can read one; one that writes has it alone.",
+    "message": "Folders are kept in this browser and can be attached to any of its machines. Several machines can read a folder at once, but a machine that writes to it has it alone.",
     "note": "Text at the top of the Folder wizard's first step, above the folders to pick."
   },
   "FolderWizard.pick.new": {
@@ -236,7 +236,7 @@
     "note": "Title of the first choice in the Folder wizard's first step: make a new folder instead."
   },
   "FolderWizard.pick.new.text": {
-    "message": "On this computer, or in the browser.",
+    "message": "On your computer, or in this browser.",
     "note": "Text under New folder… in the Folder wizard's first step."
   },
   "FolderWizard.pick.readOnly": {
@@ -248,32 +248,40 @@
     "note": "Question at the top of the Folder wizard's kind step, above the two kinds."
   },
   "FolderWizard.kind.host": {
-    "message": "A folder on this computer",
+    "message": "A folder on your computer",
     "note": "Title of the first kind in the Folder wizard: a folder the user picks on the computer."
   },
   "FolderWizard.kind.host.text": {
-    "message": "You pick it; the machine reads and writes the files themselves. Writing into a big file is slow: each session copies it (SQLite databases and disk images belong in the browser's kind, or on a disk).",
-    "note": "Explanation under A folder on this computer in the Folder wizard's kind step."
+    "message": "A folder you pick. The machine reads and writes its files directly. Changing part of a big file is slow, because the whole file is copied first; keep SQLite databases and disk images in a folder in this browser or on a disk.",
+    "note": "Explanation under A folder on your computer in the Folder wizard's kind step."
   },
   "FolderWizard.kind.opfs": {
-    "message": "A new folder in the browser",
-    "note": "Title of the second kind in the Folder wizard: a folder the browser keeps."
+    "message": "A new folder in this browser",
+    "note": "Title of the second kind in the Folder wizard: a folder this browser keeps."
   },
   "FolderWizard.kind.opfs.text": {
-    "message": "Kept by this browser beside its disks, fast for any kind of writing. Files go in and out through its card, under Shared folders on the Machines page.",
+    "message": "Kept in this browser with its disks, and fast for any kind of writing. Add and copy out its files from its card under Shared folders, on the Machines page.",
     "note": "Explanation under A new folder in the browser in the Folder wizard's kind step."
   },
   "FolderWizard.readOnly": {
     "message": "Read-only",
-    "note": "Checkbox in the Folder wizard's settings for a new folder: no machine writes it."
+    "note": "Checkbox in the Folder wizard's settings for a new folder (in step 1 for a folder on your computer): no machine writes it."
+  },
+  "FolderWizard.host.readOnly": {
+    "message": "Tick Read-only if no machine should write to the folder:",
+    "note": "Step 1 of the Folder wizard's settings for a folder on your computer, numbered; the Read-only checkbox follows."
   },
   "FolderWizard.host.read": {
-    "message": "Pick the folder next: the browser asks whether this page may read it, and refuses a few (your home directory itself, system ones).",
-    "note": "Note in the Folder wizard before a folder on the computer is picked, with Read-only on."
+    "message": "Select Pick the folder…, then choose the folder. This browser asks whether this web app may read it.",
+    "note": "Step 2, the last, of the Folder wizard's settings for a folder on your computer, with Read-only on; it leads to the Pick the folder… button."
   },
   "FolderWizard.host.readWrite": {
-    "message": "Pick the folder next: the browser asks whether this page may read and write it, and refuses a few (your home directory itself, system ones).",
-    "note": "Note in the Folder wizard before a folder on the computer is picked, with Read-only off."
+    "message": "Select Pick the folder…, then choose the folder. This browser asks whether this web app may read and write it.",
+    "note": "Step 2, the last, of the Folder wizard's settings for a folder on your computer, with Read-only off; it leads to the Pick the folder… button."
+  },
+  "FolderWizard.host.refused": {
+    "message": "This browser refuses a few folders, such as your home directory itself and system folders.",
+    "note": "Note under the steps of the Folder wizard's settings for a folder on your computer."
   },
   "FolderWizard.name": {
     "message": "Name",
@@ -312,7 +320,7 @@
     "note": "What the Machines page is doing while a folder on the computer is copied into a folder in the browser (shown with … at its top, and in the copy's progress line)."
   },
   "FoldersPane.empty.question": {
-    "message": "Empty {{name}}? Its files are deleted from this browser.",
+    "message": "Empty {{name}}? This will delete its files from this browser.",
     "note": "Question (confirm dialog) when Empty is clicked under a folder in the browser (Machines page, Shared folders). {{name}} is the folder's name."
   },
   "FoldersPane.empty.title": {
@@ -328,27 +336,27 @@
     "note": "What the Machines page is doing (shown with … at its top) while a folder in the browser is emptied."
   },
   "FoldersPane.delete.opfs.lose_one": {
-    "message": "Delete {{name}}? Its files ({{size, bytes}}) are deleted from this browser. {{machines}} loses it.",
+    "message": "Delete {{name}}? This will delete its {{size, bytes}} of files from this browser. {{machines}} will lose the folder.",
     "note": "Question (confirm dialog) when Delete is clicked on a folder in the browser attached to one machine (Machines page, Shared folders). {{name}} is the folder's name, {{size}} its files' size, {{machines}} the machine's name."
   },
   "FoldersPane.delete.opfs.lose_other": {
-    "message": "Delete {{name}}? Its files ({{size, bytes}}) are deleted from this browser. {{machines}} lose it.",
+    "message": "Delete {{name}}? This will delete its {{size, bytes}} of files from this browser. {{machines}} will lose the folder.",
     "note": "Question (confirm dialog) when Delete is clicked on a folder in the browser attached to several machines. {{name}} is the folder's name, {{size}} its files' size, {{machines}} the machines' names, joined with commas; {{count}} how many."
   },
   "FoldersPane.delete.opfs": {
-    "message": "Delete {{name}}? Its files ({{size, bytes}}) are deleted from this browser.",
+    "message": "Delete {{name}}? This will delete its {{size, bytes}} of files from this browser.",
     "note": "Question (confirm dialog) when Delete is clicked on a folder in the browser attached to no machine (Machines page, Shared folders). {{name}} is the folder's name, {{size}} its files' size."
   },
   "FoldersPane.delete.host.lose_one": {
-    "message": "Delete {{name}}? The folder on this computer stays as it is. {{machines}} loses it.",
+    "message": "Delete {{name}}? The folder on your computer will stay as it is. {{machines}} will lose it.",
     "note": "Question (confirm dialog) when Delete is clicked on a folder on the computer attached to one machine (Machines page, Shared folders). {{name}} is the folder's name, {{machines}} the machine's name."
   },
   "FoldersPane.delete.host.lose_other": {
-    "message": "Delete {{name}}? The folder on this computer stays as it is. {{machines}} lose it.",
+    "message": "Delete {{name}}? The folder on your computer will stay as it is. {{machines}} will lose it.",
     "note": "Question (confirm dialog) when Delete is clicked on a folder on the computer attached to several machines. {{name}} is the folder's name, {{machines}} the machines' names, joined with commas; {{count}} how many."
   },
   "FoldersPane.delete.host": {
-    "message": "Delete {{name}}? The folder on this computer stays as it is.",
+    "message": "Delete {{name}}? The folder on your computer will stay as it is.",
     "note": "Question (confirm dialog) when Delete is clicked on a folder on the computer attached to no machine (Machines page, Shared folders). {{name}} is the folder's name."
   },
   "FoldersPane.delete.title": {
@@ -372,12 +380,12 @@
     "note": "What the Machines page is doing (shown with … at its top) while a folder is renamed."
   },
   "FoldersPane.kind.host": {
-    "message": "on this computer",
+    "message": "on your computer",
     "note": "Under a folder's name on its card (Machines page, Shared folders): it is a folder on the user's computer."
   },
   "FoldersPane.kind.opfs": {
-    "message": "in the browser",
-    "note": "Under a folder's name on its card (Machines page, Shared folders): it is a folder kept by the browser."
+    "message": "in this browser",
+    "note": "Under a folder's name on its card (Machines page, Shared folders): it is a folder kept by this browser."
   },
   "FoldersPane.attachedTo": {
     "message": "attached to {{machines}}",
@@ -392,15 +400,15 @@
     "note": "Under a folder's name on its card (Machines page, Shared folders), after ' · ': a running machine in another tab has it."
   },
   "FoldersPane.heldHere": {
-    "message": "this page's machine has it",
-    "note": "Under a folder's name on its card (Machines page, Shared folders), after ' · ': the machine running on this page has it."
+    "message": "the machine in this tab has it",
+    "note": "Under a folder's name on its card (Machines page, Shared folders), after ' · ': the machine running in this tab has it."
   },
   "FoldersPane.busy.saving": {
     "message": "Saving",
     "note": "What the Machines page is doing (shown with … at its top) while a folder's Read-only is saved (Shared folders)."
   },
   "FoldersPane.readOnly.title": {
-    "message": "No machine writes it",
+    "message": "No machine can write to the folder.",
     "note": "Tooltip of a folder's Read-only checkbox on its card (Machines page, Shared folders): for every machine."
   },
   "FoldersPane.readOnly": {
@@ -424,7 +432,7 @@
     "note": "The list of a folder in the browser's files (Machines page, Shared folders) when it has none."
   },
   "FoldersPane.busyNote": {
-    "message": "A machine has this folder: its files change only when it lets it go.",
+    "message": "A machine is using this folder. Its files can be changed here once the machine releases it.",
     "note": "Note under a folder in the browser's files (Machines page, Shared folders) while a machine has it (the buttons are off)."
   },
   "FoldersPane.add": {
@@ -432,11 +440,11 @@
     "note": "Button under a folder in the browser's files (Machines page, Shared folders): opens the browser's file picker."
   },
   "FoldersPane.copyOut": {
-    "message": "Copy into a folder on this computer…",
+    "message": "Copy into a folder on your computer…",
     "note": "Button under a folder in the browser's files (Machines page, Shared folders): copies them into a folder the user picks."
   },
   "FoldersPane.copyIn": {
-    "message": "Copy from a folder on this computer…",
+    "message": "Copy from a folder on your computer…",
     "note": "Button under a folder in the browser's files (Machines page, Shared folders): copies a folder the user picks into it."
   },
   "FoldersPane.empty": {
@@ -452,15 +460,15 @@
     "note": "Button after a copy's progress line (Machines page, Shared folders): stops the copy."
   },
   "FoldersPane.none": {
-    "message": "No folders yet: make one here, or from a machine's Shared folders tab. A folder dropped on this page becomes one.",
+    "message": "No folders yet. Create one here or from a machine's Shared folders tab; a folder dropped here becomes one too.",
     "note": "Shared folders on the Machines page when the browser keeps no folder."
   },
   "main.drop.confirm": {
-    "message": "Attach {{folder}} to {{machine}}? The folder is kept in this browser, for this or any machine.",
+    "message": "Attach {{folder}} to {{machine}}? The folder will be kept in this browser, for this or any other machine.",
     "note": "Text of the question asked when a folder is dropped on the page while a machine with shared folders runs; {{folder}} is the folder's name, {{machine}} the machine's."
   },
   "main.drop.title": {
-    "message": "A shared folder",
+    "message": "Attach a folder",
     "note": "Title of the question asked when a folder is dropped on the page."
   },
   "main.drop.ok": {
@@ -468,12 +476,12 @@
     "note": "The confirm button of the question asked when a folder is dropped on the page: it is attached to the running machine."
   },
   "main.inUse.confirm": {
-    "message": "{{name}} is in use by {{holder}}. Use it here instead? That machine loses it while it runs.",
+    "message": "Use {{name}} here instead? It is in use by {{holder}}, which will lose it while it runs.",
     "note": "Text of the question asked by Use it here for a shared folder another tab's machine has: {{name}} is the folder's name, {{holder}} that machine's."
   },
   "main.inUse.folder": {
-    "message": "The folder",
-    "note": "Names the shared folder, at the start of the question asked by Use it here, when its name isn't known."
+    "message": "the folder",
+    "note": "Names the shared folder, mid-sentence in the question asked by Use it here, when its name isn't known."
   },
   "main.inUse.otherTab": {
     "message": "a machine in another tab",
@@ -488,11 +496,11 @@
     "note": "The confirm button of the question asked by Use it here for a shared folder: the folder is taken from the other machine."
   },
   "main.kept": {
-    "message": "{{holder}} didn't let it go.",
-    "note": "Error shown when Use it here couldn't take a shared folder from the machine that has it; {{holder}} is that machine."
+    "message": "Couldn't take the folder from {{holder}}",
+    "note": "Error headline shown when Use it here couldn't take a shared folder from the machine that has it; {{holder}} is that machine."
   },
   "main.kept.thatMachine": {
-    "message": "That machine",
-    "note": "Names the machine that has a shared folder, in “… didn't let it go.”, when its name isn't known."
+    "message": "that machine",
+    "note": "Names the machine that has a shared folder, in \"Couldn't take the folder from …\", when its name isn't known."
   }
 }

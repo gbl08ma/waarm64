@@ -4,7 +4,7 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step (which connection an adapter gets): the kind of a tailnet connection, under the connection's name. {{host}} is its control server's host name (e.g. controlplane.tailscale.com)."
   },
   "NetWizard.kind.local": {
-    "message": "the helper on this computer",
+    "message": "the helper on your computer",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the kind of a connection through the local helper (webpc-net), under the connection's name."
   },
   "NetWizard.kind.tailcatExit": {
@@ -17,7 +17,7 @@
   },
   "NetWizard.kind.ephemeral": {
     "message": "{{kind}}, ephemeral",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the kind of a connection that is kept nowhere (gone when the page closes). {{kind}} is the kind's words (e.g. “a tailnet (controlplane.tailscale.com)”)."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the kind of a connection that is kept nowhere (gone when its tab closes). {{kind}} is the kind's words (e.g. “a tailnet (controlplane.tailscale.com)”)."
   },
   "NetWizard.kind.held": {
     "message": "{{kind}}; in use by {{holder}}",
@@ -32,15 +32,15 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the error under the list when the user goes on without choosing a connection. “New connection…” is the first choice's name."
   },
   "NetWizard.chooseTailcat": {
-    "message": "Choose at least one: going online through a computer of yours, or letting clients in.",
+    "message": "Choose at least one: going online through a computer, or letting tailcat clients in.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step: the error when neither of its two checkboxes (going online through a computer, letting clients in) is ticked."
   },
   "NetWizard.tailcatNotBuilt": {
-    "message": "The tailnet client isn't built on this server. Start the page with `npm run serve` or `npm start` (they build it), or run net/ts/build.sh.",
+    "message": "The tailnet client isn't built on this server. Start this web app with `npm run serve` or `npm start`, which build it, or run net/ts/build.sh.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step: the error when the server that serves the page lacks the tailnet client's module (a developer's setup). The commands stay as they are."
   },
   "NetWizard.tailscaleNotBuilt": {
-    "message": "The Tailscale client isn't built on this server. Start the page with `npm run serve` or `npm start` (they build it), or run net/ts/build.sh.",
+    "message": "The Tailscale client isn't built on this server. Start this web app with `npm run serve` or `npm start`, which build it, or run net/ts/build.sh.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step: the error when the server that serves the page lacks the tailnet client's module (a developer's setup). The commands stay as they are."
   },
   "NetWizard.title.edit": {
@@ -52,19 +52,19 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): its title on its first step, choosing the connection of one of the machine's network adapters. {{adapter}} is the adapter's number (1, 2, …)."
   },
   "NetWizard.title.kind": {
-    "message": "A new connection",
+    "message": "New connection",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): its title on the step that asks which kind of connection to make."
   },
   "NetWizard.title.tailnet": {
-    "message": "A new connection: a tailnet",
+    "message": "New tailnet connection",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): its title on the step that makes a tailnet connection (Tailscale or a Headscale)."
   },
   "NetWizard.title.local": {
-    "message": "A new connection: this computer",
+    "message": "New connection through your computer",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): its title on the step that makes a connection through the local helper (webpc-net)."
   },
   "NetWizard.title.tailcat": {
-    "message": "A new connection: tailcat",
+    "message": "New tailcat connection",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): its title on the step that makes a tailcat connection."
   },
   "NetWizard.save": {
@@ -84,7 +84,7 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): the button that attaches the connection to an adapter of a machine that isn't running here (it connects when the machine starts)."
   },
   "NetWizard.pick.note": {
-    "message": "Which connection should the adapter have? A connection is kept by this browser, for any of its machines: one running machine has it at a time.",
+    "message": "Which connection should the adapter have? Connections are stored in this browser, and any of its machines can use them; only one running machine can use a connection at a time.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the text above the list of the browser's connections."
   },
   "NetWizard.pick.new": {
@@ -92,11 +92,11 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the first choice of the list, which goes on to make a new connection."
   },
   "NetWizard.pick.new.note": {
-    "message": "A tailnet, tailcat, or this computer.",
+    "message": "A tailnet, tailcat, or your computer.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the line under “New connection…”, the kinds it can make."
   },
   "NetWizard.kind.note": {
-    "message": "How should the machine reach a network? Its network adapter is always there: connecting doesn't restart it.",
+    "message": "How should the machine reach a network? Connecting doesn't restart the machine.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the text above its three choices."
   },
   "NetWizard.kind.pickTailnet": {
@@ -104,7 +104,7 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the name of the first choice (Tailscale or a Headscale)."
   },
   "NetWizard.kind.pickTailnet.note": {
-    "message": "Tailscale, or your Headscale: the machine joins as a device of its own, reaches the other devices by name, and the internet through an exit node.",
+    "message": "The machine joins your Tailscale or Headscale network as a device of its own. It reaches the other devices by name, and can reach the internet through an exit node.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the line under “A tailnet”."
   },
   "NetWizard.kind.pickTailcat": {
@@ -112,24 +112,32 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the name of the second choice. tailcat is a program's name, written in lower case."
   },
   "NetWizard.kind.pickTailcat.note": {
-    "message": "A computer of yours shares its network with the machine, and other computers can reach the machine (ssh, any port) through an address of its own.",
+    "message": "A computer running tailcat shares its network with the machine. Other computers can also reach the machine through an address of its own, with ssh or on any port.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the line under “tailcat (no account)”."
   },
   "NetWizard.kind.pickLocal": {
-    "message": "This computer (webpc-net)",
+    "message": "Your computer (webpc-net)",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the name of the third choice, the local helper (webpc-net is its program's name)."
   },
   "NetWizard.kind.pickLocal.note": {
-    "message": "A small program you run here gives the machine this computer's network: the internet and your LAN at this computer's own speed, no relay and no account.",
+    "message": "A small program you run on your computer gives the machine your computer's network, including your LAN and the internet. It runs at your computer's own speed, with no relay and no account.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the line under “This computer (webpc-net)”."
   },
   "NetWizard.local.link": {
     "message": "The helper's link",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step: the label of the field where the link webpc-net prints is pasted."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step while it edits a connection: the label of the field where the link webpc-net prints is pasted (a new connection has the numbered steps instead)."
+  },
+  "NetWizard.local.run": {
+    "message": "Run <a>webpc-net</a> on your computer.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step (a new connection): its first numbered step; the install lines, or how to build it, follow inside it. <a>…</a> links to the helper's source and releases."
+  },
+  "NetWizard.local.paste": {
+    "message": "Paste the link it prints, below:",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step (a new connection): its second numbered step, the label of the field where the link webpc-net prints is pasted. “it” is webpc-net."
   },
   "NetWizard.local.note": {
-    "message": "Run <a>webpc-net</a> on this computer and paste the link it prints (opening the link does it too). The link has a secret in it: whoever has it, on a page the helper accepts, uses your network. The browser asks once whether this site may reach devices on your local network: allow it.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step: the text under the link's field. <a>…</a> is a link to the helper's source and releases."
+    "message": "Opening the link does the same. Keep the link to yourself, as it lets any page the helper accepts use your network. When this browser asks whether this site may reach devices on your local network, allow it.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step: the note under its numbered steps (below the link's field), for consequences and warnings."
   },
   "NetWizard.install": {
     "message": "Install webpc-net {{version}}",
@@ -140,16 +148,16 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step: the label of the list of platforms (e.g. “Linux, x86-64”) whose install lines are shown: “For Linux, x86-64”."
   },
   "NetWizard.install.note": {
-    "message": "In a terminal: it downloads webpc-net, checks it against its published SHA-256 and runs it.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step: the line under the install lines, for Linux and macOS."
+    "message": "In a terminal, run these lines, which download webpc-net, check it against its published SHA-256, and run it:",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step, inside its first step's install box: the line above the install lines, for Linux and macOS. The colon introduces the lines."
   },
   "NetWizard.install.note.windows": {
-    "message": "In a terminal (PowerShell): it downloads webpc-net, checks it against its published SHA-256 and runs it.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step: the line under the install lines, for Windows."
+    "message": "In PowerShell, run these lines, which download webpc-net, check it against its published SHA-256, and run it:",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step, inside its first step's install box: the line above the install lines, for Windows. The colon introduces the lines."
   },
   "NetWizard.noRelease": {
-    "message": "No release yet: build it from <a>its source</a> (webpc's <code>net/webpc-net</code>, <code>go run .</code>).",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step: shown instead of the install lines while the helper has no release. <a>…</a> links to its source; <code>…</code> are a directory and a command, as they are."
+    "message": "There's no release yet. To build and run it from <a>its source</a>, run <code>go run .</code> in <code>net/webpc-net</code>.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step, under its first step: shown instead of the install lines while the helper has no release. <a>…</a> links to its source; <code>…</code> are a command and a directory, as they are."
   },
   "NetWizard.control": {
     "message": "Control server",
@@ -158,6 +166,10 @@
   "NetWizard.control.placeholder": {
     "message": "Tailscale (default), or a Headscale's URL",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step: the placeholder of the empty control server field."
+  },
+  "NetWizard.control.note": {
+    "message": "A Headscale server must answer <code>/key</code> with CORS headers.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step (a new connection): the note under the control server's field. <code>/key</code> is a URL path, as it is."
   },
   "NetWizard.hostname": {
     "message": "Hostname",
@@ -172,35 +184,43 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step: the checkbox that shows the typed auth key instead of dots."
   },
   "NetWizard.authKey.note": {
-    "message": "Without an auth key you log in, in a new tab; with one there's no login, and the key isn't kept. A kept connection's node stays on the tailnet over reloads. A Headscale must answer <code>/key</code> with CORS headers.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step, when the connection connects now: the text under the auth key. <code>/key</code> is a URL path, as it is."
+    "message": "Without an auth key, you will log in, in a new tab, when the machine connects.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step, when the connection connects now: the note under the auth key and its Show checkbox."
   },
   "NetWizard.control.edit": {
-    "message": "Another control server is another node: make a new connection for it.",
+    "message": "A different control server needs a new connection.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step while it edits a connection: the text that says why the control server can't be changed."
   },
   "NetWizard.login.note": {
-    "message": "The machine logs in, in a new tab, when it first connects. A Headscale must answer <code>/key</code> with CORS headers.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step, when the connection doesn't connect now (no auth key is asked for): the text under the fields. <code>/key</code> is a URL path, as it is."
+    "message": "You will log in, in a new tab, when the machine first connects.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step, when the connection doesn't connect now (no auth key is asked for): the note under the fields."
   },
   "NetWizard.tailcat.exit": {
-    "message": "Go online through a computer of mine",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step: the checkbox that sends the machine's traffic through a tailcat server on a computer of the user's."
+    "message": "Go online through a computer",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step: the checkbox that sends the machine's traffic through a tailcat server on a computer of the user's; numbered steps follow it."
   },
-  "NetWizard.tailcat.address": {
-    "message": "Its tailcat address",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step: the label of the field for the tailcat server's address (which starts with “tc”)."
+  "NetWizard.tailcat.exit.install": {
+    "message": "Install <a>tailcat</a> on a computer with access to the internet or to a network of your choice.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step, under “Go online through a computer”: its first numbered step. <a>…</a> links to tailcat's project."
+  },
+  "NetWizard.tailcat.exit.run": {
+    "message": "Run <code>tailcat serve exit-node</code>.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step, under “Go online through a computer”: its second numbered step, on that computer. <code>…</code> is a command, as it is."
+  },
+  "NetWizard.tailcat.exit.paste": {
+    "message": "Paste the address it prints, below:",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step, under “Go online through a computer”: its third numbered step, the label of the field for the tailcat server's address (which starts with “tc”)."
   },
   "NetWizard.tailcat.exit.note": {
-    "message": "On that computer run <code>tailcat serve exit-node</code> (<a>tailcat</a>) and paste the address it prints: the machine reaches what that computer reaches, its LAN and the internet. Keep the address to yourself: it lets anyone in. A kept connection keeps it in this browser.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step: the text under the server's address. <code>…</code> is a command, as it is; <a>…</a> links to tailcat's project."
+    "message": "The virtual machines will reach what the computer reaches, including its LAN and the internet. Keep the address to yourself, as it lets anyone use the connection.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step: the note under the numbered steps of “Go online through a computer” (below the address field), for consequences and warnings."
   },
   "NetWizard.tailcat.serve": {
     "message": "Let tailcat clients in to this machine",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step: the checkbox that gives the machine a tailcat address other computers reach it by."
   },
   "NetWizard.tailcat.serve.note": {
-    "message": "The connection gets a tailcat address of its own. With it another computer runs <code>{{ssh}}</code> to log in to the guest's sshd, or <code>{{connect}}</code> for any port the guest listens on.",
+    "message": "The connection gets a tailcat address of its own, shown in the Network menu once connected. On another computer, <code>{{ssh}}</code> logs in to the guest's sshd, and <code>{{connect}}</code> reaches any port the guest listens on.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step: the text under “Let tailcat clients in to this machine”. {{ssh}} and {{connect}} are commands (tailcat ssh <address>, tailcat <address> <port>), shown as code."
   },
   "NetWizard.advanced": {
@@ -216,7 +236,7 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step, Advanced: the placeholder of the empty relay field (what is used then)."
   },
   "NetWizard.relay.note": {
-    "message": "Your own <a>derper</a>'s host or host:port: faster than tailcat's public relays, which are rate-limited. Used when the machine doesn't go online through a computer of yours (that computer's relay serves then).",
+    "message": "The host name or host:port of your own <a>derper</a>, which is faster than tailcat's public relays, as they are rate-limited. It is used only when the machine doesn't go online through a computer running tailcat; otherwise, that computer's relay serves the clients.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step, Advanced: the text under the relay field. <a>…</a> links to derper (Tailscale's relay server), a program's name."
   },
   "NetWizard.newAddress": {
@@ -224,19 +244,19 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step while it edits a connection, Advanced: the button that forgets the connection's tailcat address (it asks first)."
   },
   "NetWizard.newAddress.note": {
-    "message": "Forgets the connection's address: whoever has it can't come in any more.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step while it edits a connection, Advanced: the line under “New address”."
+    "message": "Forget the connection's address. Whoever has it can't come in any more.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step while it edits a connection, Advanced: the line under “New address”, what the button does."
   },
   "NetWizard.keep": {
     "message": "Keep this connection in this browser",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the steps that make a new connection: the checkbox (on by default) that stores it; off, the connection is ephemeral."
   },
   "NetWizard.keep.note": {
-    "message": "Any machine here can use it again, and it comes back after a reload without a login.",
+    "message": "Any machine in this browser can use it again, and it comes back after a reload without a new login.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): the line under “Keep this connection in this browser” while it is ticked."
   },
   "NetWizard.keep.ephemeral": {
-    "message": "Ephemeral: kept nowhere, it goes when this page closes (a tailnet's node then leaves the tailnet, and a served address stops working).",
+    "message": "The connection will be ephemeral and kept nowhere. It will be gone when this tab closes or reloads; a tailnet's node then leaves the tailnet, and a served tailcat address stops working.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): the line under “Keep this connection in this browser” while it isn't ticked."
   },
   "NetWizard.back": {
@@ -253,14 +273,14 @@
   },
   "Network.exitNode.stopFailed": {
     "message": "Couldn't stop using the exit node",
-    "note": "The toolbar's Network menu: the error headline under an adapter when choosing “Nothing: directly” in “Internet through” didn't work. Its cause is shown under it."
+    "note": "The toolbar's Network menu: the error headline under an adapter when choosing “No exit node” in “Internet through” didn't work. Its cause is shown under it."
   },
   "Network.logout.confirm": {
-    "message": "Log out? This machine is removed from the network and its keys are forgotten here; connecting again logs in as a new node.",
+    "message": "Log out of the tailnet? This will remove this machine from the tailnet and forget its keys in this browser. Connecting again will log in as a new node.",
     "note": "The toolbar's Network menu: the question asked (OK/Cancel dialog) when the user clicks “Log out” on a tailnet adapter."
   },
   "Network.title": {
-    "message": "The machine's network: a tailnet, tailcat or this computer, on each adapter",
+    "message": "Connect the machine's network adapters to a tailnet, tailcat, or your computer.",
     "note": "The toolbar's Network menu: the tooltip of the toolbar's Network button."
   },
   "Network.adapter": {
@@ -272,8 +292,8 @@
     "note": "The toolbar's Network menu: the heading of the adapter the guest's default route goes through, when the machine has more than one. {{adapter}} is its number."
   },
   "Network.connection.ephemeral": {
-    "message": "{{name}} (ephemeral: not kept)",
-    "note": "The toolbar's Network menu: the line that names an adapter's connection, when that connection is kept nowhere (gone when the page closes). {{name}} is the connection's name."
+    "message": "{{name}} (ephemeral)",
+    "note": "The toolbar's Network menu: the line that names an adapter's connection, when that connection is ephemeral (kept nowhere, gone when the tab closes). {{name}} is the connection's name."
   },
   "Network.noConnection": {
     "message": "No connection attached",
@@ -288,8 +308,8 @@
     "note": "The toolbar's Network menu: the label of the list of exit nodes (the tailnet's peers that offer to carry the internet traffic): “Internet through <peer>”."
   },
   "Network.exitNode.none": {
-    "message": "Nothing: directly",
-    "note": "The toolbar's Network menu: the first choice of “Internet through”: no exit node."
+    "message": "No exit node",
+    "note": "The toolbar's Network menu: the first choice of “Internet through”: no exit node, the internet directly."
   },
   "Network.exitNode.offline": {
     "message": "{{name}} (offline)",
@@ -320,7 +340,7 @@
     "note": "The toolbar's Network menu: the button that shows the machine's tailcat address instead of dots."
   },
   "Network.served.note": {
-    "message": "On another computer: <code>{{ssh}}</code> logs in to the guest's sshd, <code>{{connect}}</code> reaches any port it listens on. Anyone with the address gets in.",
+    "message": "On another computer, <code>{{ssh}}</code> logs in to the guest's sshd, and <code>{{connect}}</code> reaches any port the guest listens on. Keep the address to yourself, as it lets anyone in.",
     "note": "The toolbar's Network menu: the text under the machine's tailcat address. {{ssh}} and {{connect}} are commands (tailcat ssh <address>, tailcat <address> <port>), shown as code."
   },
   "Network.connect": {
@@ -344,7 +364,7 @@
     "note": "The toolbar's Network menu: the button that stops the adapter's connection (it stays attached, and doesn't connect at the next start)."
   },
   "Network.logout.title": {
-    "message": "Remove this machine from the tailnet and forget its keys",
+    "message": "Remove this machine from the tailnet and forget its keys.",
     "note": "The toolbar's Network menu: the tooltip of “Log out”."
   },
   "Network.logout": {
@@ -352,7 +372,7 @@
     "note": "The toolbar's Network menu: the button (on a tailnet adapter) that logs the machine's node out of the tailnet, and the confirm button of the question it asks."
   },
   "connections.thisComputer": {
-    "message": "This computer",
+    "message": "Your computer",
     "note": "The default name of a new connection through the local helper (webpc-net), as the Network wizard, the Network menu and the Machines page's Connections show it. It is stored with the connection, which the user can rename."
   },
   "net-live.held": {
@@ -364,11 +384,11 @@
     "note": "As net-live.held, when the other tab didn't say which machine has the connection. {{name}} is the connection's name."
   },
   "net-live.gone": {
-    "message": "Its connection is gone (an ephemeral one goes when its page closes): attach one again.",
-    "note": "A note in the toolbar's Network menu (under the adapter) and the Machines page's Network tab, when the machine starts and the connection its adapter had is gone (it was detached)."
+    "message": "The adapter's connection was deleted, or was ephemeral and its tab closed. Attach a connection again.",
+    "note": "A note in the toolbar's Network menu (under the adapter) and the Machines page's Network tab, when the machine starts and the connection its adapter had is gone (deleted, or ephemeral and its tab closed): it was detached."
   },
   "net-live.off": {
-    "message": "The machine is off: start it first.",
+    "message": "The machine is off. Start it first.",
     "note": "An error (Network menu, Network wizard) when a connection is connected while the machine isn't running."
   },
   "net-live.loggingOut": {
@@ -376,11 +396,11 @@
     "note": "An error (Network menu, Network wizard) when the user connects a tailnet connection whose node is being logged out. {{name}} is the connection's name."
   },
   "net-live.onOtherAdapter": {
-    "message": "{{name}} is on adapter {{adapter}} already: a connection is one node, on one adapter.",
+    "message": "{{name}} is already on adapter {{adapter}}. A connection can be on only one adapter at a time.",
     "note": "An error (Network menu, Network wizard) when the user connects a connection that another adapter of the same machine runs. {{name}} is the connection's name; {{adapter}} the other adapter's number (1, 2, …)."
   },
   "net-live.notLoggedOut": {
-    "message": "Couldn't reach {{host}} to log {{name}} out: it stays logged in.",
+    "message": "Couldn't reach {{host}} to log {{name}} out. It stays logged in.",
     "note": "An error (Machines page's Connections, Network menu) when logging a kept tailnet node out failed because its control server didn't answer. {{host}} is the control server's host name; {{name}} the connection's name."
   },
   "net-live.taken": {
@@ -388,23 +408,23 @@
     "note": "A note in the toolbar's Network menu (under the adapter) and the Machines page's Network tab, when a machine in another tab took the adapter's connection (it disconnected here). {{name}} is the connection's name."
   },
   "net-live.takenUnnamed": {
-    "message": "Its connection was taken by another machine.",
+    "message": "This adapter's connection was taken by another machine.",
     "note": "As net-live.taken, when the connection's record couldn't be read (its name isn't known)."
   },
   "net-live.twoHelpers": {
-    "message": "Adapter {{adapter}} goes through a helper on this computer too: the guest has a default route through each.",
+    "message": "Adapter {{adapter}} also goes through a helper on your computer, so the guest has a default route through each.",
     "note": "A note in the toolbar's Network menu (under the adapter) and the Machines page's Network tab, under an adapter connected through the local helper when another adapter is too. {{adapter}} is the other adapter's number (1, 2, …)."
   },
   "network.notURL": {
-    "message": "“{{input}}” isn't a URL (for example https://headscale.example.com).",
+    "message": "“{{input}}” isn't a URL. Enter one such as https://headscale.example.com.",
     "note": "The Network wizard, the tailnet step: the error when the control server field isn't a URL. {{input}} is what was typed."
   },
   "network.notHttps": {
-    "message": "The control server must be an https:// URL (http:// works for this computer only).",
-    "note": "The Network wizard, the tailnet step: the error when the control server's URL isn't https (or http on this computer)."
+    "message": "The control server must be an https:// URL. Only a server on your computer may use http://.",
+    "note": "The Network wizard, the tailnet step: the error when the control server's URL isn't https (or http on your computer)."
   },
   "network.badHostname": {
-    "message": "The hostname is letters, digits and hyphens (63 at most), not starting or ending with a hyphen.",
+    "message": "The hostname can have up to 63 letters, digits, and hyphens, and can't start or end with a hyphen.",
     "note": "The Network wizard, the tailnet step: the error when the hostname isn't a valid name."
   },
   "network.notConnected": {
@@ -416,15 +436,15 @@
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): the connection failed. Its cause (the client's reason) is shown under it in the Network menu."
   },
   "network.connectingHelper": {
-    "message": "Connecting to the helper on this computer…",
+    "message": "Connecting to the helper on your computer…",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): connecting to the local helper (webpc-net)."
   },
   "network.connectedLocal.address": {
-    "message": "Connected through this computer ({{address}})",
+    "message": "Connected through your computer ({{address}})",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): connected through the local helper. {{address}} is the guest's IPv4 address."
   },
   "network.connectedLocal": {
-    "message": "Connected through this computer",
+    "message": "Connected through your computer",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): connected through the local helper, before its DHCP gave the guest an address."
   },
   "network.servingOnly": {
@@ -520,127 +540,127 @@
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): the tailnet client starts."
   },
   "network.notStarted": {
-    "message": "the machine hasn't started, so its network card isn't there yet: start it first",
-    "note": "An error (Network menu, Network wizard) when a connection is connected before the machine has a network card. Lower case: it may be shown as a detail."
+    "message": "The machine hasn't started yet. Start it first.",
+    "note": "An error (Network menu, Network wizard) when a connection is connected before the machine has a network card (it hasn't started). It may be shown as a detail."
   },
   "network.noClient": {
-    "message": "not connected",
-    "note": "The cause under “Couldn't use that exit node” (Network menu) when the adapter has no client. Lower case: a detail."
+    "message": "The adapter isn't connected.",
+    "note": "The cause under “Couldn't use that exit node” (Network menu) when the adapter has no client. A detail line."
   },
   "tailscale.noAnswer": {
-    "message": "the client did not answer",
-    "note": "The cause under “Couldn't use that exit node” (Network menu) when the tailnet client didn't answer in 10 s. Lower case: a detail."
+    "message": "The tailnet client didn't answer.",
+    "note": "The cause under “Couldn't use that exit node” (Network menu) when the tailnet client didn't answer in 10 s. A detail line."
   },
   "tailcat.pasteAddress": {
-    "message": "Paste the address `tailcat serve exit-node` printed (it starts with “tc”).",
+    "message": "Paste the address that `tailcat serve exit-node` printed. It starts with “tc”.",
     "note": "The Network wizard, the tailcat step: the error when going online through a computer is ticked and its address is empty. `tailcat serve exit-node` is a command, as it is."
   },
   "tailcat.notAddress": {
-    "message": "That isn't a tailcat address: it starts with “tc” and is letters, digits, “-” and “_”, ~140 of them.",
+    "message": "That isn't a tailcat address. An address starts with “tc” and has about 140 letters, digits, “-”, and “_”.",
     "note": "The Network wizard, the tailcat step: the error when the server's address isn't one."
   },
   "tailcat.badRelay": {
-    "message": "A relay is a host name, or host:port (your derper; no https://).",
+    "message": "Enter the relay as a host name or host:port, without https://.",
     "note": "The Network wizard, the tailcat step (Advanced): the error when the relay for clients isn't a host or host:port."
   },
   "tailcat.noExitNodes": {
-    "message": "a tailcat server is the exit node itself",
-    "note": "The cause under “Couldn't use that exit node” (Network menu) on a tailcat connection. Lower case: a detail."
+    "message": "A tailcat connection has no exit nodes to choose from.",
+    "note": "The cause under “Couldn't use that exit node” (Network menu) on a tailcat connection. A detail line."
   },
   "local-net.versions": {
-    "message": "the page and the helper are different versions",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): the helper closed the connection because its version and the page's differ."
+    "message": "This web app and the helper are different versions.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): the helper closed the connection because its version and this web app's differ."
   },
   "local-net.origin": {
-    "message": "the helper doesn't accept this page's address (run it with --origin)",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): the helper refused this page's origin. --origin is the helper's option, as it is."
+    "message": "The helper doesn't accept this web app's address. Run it with --origin.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): the helper refused this web app's origin. --origin is the helper's option, as it is."
   },
   "local-net.token": {
-    "message": "the link's token isn't this helper's: pair again with the link it prints",
+    "message": "The link isn't this helper's. Use the link it prints.",
     "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): the link's token is wrong (an old link, another helper)."
   },
   "local-net.closed": {
-    "message": "the helper closed the connection",
+    "message": "The helper closed the connection.",
     "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): the helper closed the connection for another reason; what it said, if anything, is shown under it."
   },
   "local-net.pasteLink": {
-    "message": "Paste the link webpc-net prints (https://vm.tny.im/#net=ws://127.0.0.1:…).",
-    "note": "The Network wizard, the local helper's step: the error when the link's field is empty. The link is an example of the helper's."
+    "message": "Paste the link that webpc-net prints. It looks like https://vm.tny.im/#net=ws://127.0.0.1:…",
+    "note": "The Network wizard, the local helper's step: the error when the link's field is empty. The link is an example of the helper's, as it is."
   },
   "local-net.notLink": {
-    "message": "“{{link}}” isn't the helper's link (ws://127.0.0.1:<port>/<token>)",
+    "message": "“{{link}}” isn't the helper's link. The link looks like ws://127.0.0.1:<port>/<token>.",
     "note": "The Network wizard, the local helper's step: the error when what was pasted isn't the helper's link. {{link}} is what was pasted (or its #net= part); the link's form is as it is."
   },
   "local-net.notFrames": {
-    "message": "the helper sent a message that isn't whole frames",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): the helper spoke wrongly (the page closed the connection)."
+    "message": "The helper sent a malformed message.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): the helper sent something that isn't its framing (this web app closed the connection)."
   },
   "local-net.unreached": {
-    "message": "couldn't reach the helper: is webpc-net running on this computer?",
+    "message": "Couldn't reach the helper. Check that webpc-net is running on your computer.",
     "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): the connection never opened."
   },
   "local-net.refused": {
-    "message": "this site isn't allowed to reach this computer: allow “Local network access” in the site's settings (the icon left of the address, then Site settings), then Connect",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): the browser refuses this site access to the local network (Chromium's Local Network Access permission). “Local network access” and “Site settings” are Chromium's own words."
+    "message": "This browser doesn't let this site reach the helper on your computer. Click the icon left of the address, choose Site settings, allow “Local network access”, and connect again.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for an adapter on the local helper, webpc-net): this browser refuses this site access to the local network (Chromium's Local Network Access permission). “Local network access” and “Site settings” are Chromium's own words."
   },
   "local-net.noExitNodes": {
-    "message": "the helper on this computer has no exit nodes",
-    "note": "The cause under “Couldn't use that exit node” (Network menu) on a local helper's connection. Lower case: a detail."
+    "message": "A connection through your computer has no exit nodes to choose from.",
+    "note": "The cause under “Couldn't use that exit node” (Network menu) on a local helper's connection. A detail line."
   },
   "tailcat-worker.failed": {
-    "message": "the connection failed",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailcat adapter) when the client failed without saying why. Lower case: a detail."
+    "message": "The connection failed.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailcat adapter) when the client failed without saying why. A detail line."
   },
   "tailnet-worker.notRunning": {
-    "message": "the client isn't running",
-    "note": "The cause under “Couldn't use that exit node” (Network menu) when the tailnet client hasn't started. Lower case: a detail."
+    "message": "The tailnet client isn't running.",
+    "note": "The cause under “Couldn't use that exit node” (Network menu) when the tailnet client hasn't started. A detail line."
   },
   "tailnet-worker.failed": {
-    "message": "the client failed",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailnet adapter) when the client failed without saying why. Lower case: a detail."
+    "message": "The tailnet client failed.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailnet adapter) when the client failed without saying why. A detail line."
   },
   "ts-client.noBrowserRelay": {
-    "message": "none of the address's DERP relays can be reached from a browser",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailcat adapter): the tailcat address names only relays a browser can't reach. Lower case: a detail."
+    "message": "None of the address's DERP relays can be reached from a browser.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailcat adapter): the tailcat address names only relays a browser can't reach. A detail line."
   },
   "ts-client.regionNoBrowserRelay": {
-    "message": "none of the region's DERP relays can be reached from a browser",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailcat adapter): the relay region has only relays a browser can't reach. Lower case: a detail."
+    "message": "None of the region's DERP relays can be reached from a browser.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailcat adapter): the relay region has only relays a browser can't reach. A detail line."
   },
   "ts-client.derpMap": {
-    "message": "couldn't load the DERP map {{url}}",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailcat adapter): the list of relays couldn't be loaded. {{url}} is its URL. Lower case: a detail."
+    "message": "Couldn't load the list of DERP relays from {{url}}.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailcat adapter): the list of relays (the DERP map) couldn't be loaded. {{url}} is its URL. A detail line."
   },
   "ts-client.serverSilent": {
-    "message": "the tailcat server didn't answer: is it running, and is the address right?",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailcat adapter): the tailcat server never answered. Lower case: a detail."
+    "message": "The tailcat server didn't answer. Check that it is running and that the address is right.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailcat adapter): the tailcat server never answered. A detail line."
   },
   "ts-client.handshake": {
-    "message": "the WireGuard handshake with the tailcat server failed",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailcat adapter): the encrypted tunnel couldn't be made. Lower case: a detail."
+    "message": "The WireGuard handshake with the tailcat server failed.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailcat adapter): the encrypted tunnel couldn't be made. A detail line."
   },
   "ts-client.controlRefused": {
-    "message": "the control server refused the node",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailnet adapter): the control server refused to register the node; what it said is shown under it. Lower case: a detail."
+    "message": "The control server refused the node.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailnet adapter): the control server refused to register the node; what it said is shown under it. A detail line."
   },
   "ts-client.notAuthorized": {
-    "message": "the control server didn't authorize the node (an auth key, or an interactive login, is needed)",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailnet adapter). Lower case: a detail."
+    "message": "The control server didn't authorize the node. It needs an auth key or an interactive login.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailnet adapter). A detail line."
   },
   "ts-client.tailnetLock": {
-    "message": "this tailnet uses Tailnet Lock, which this client doesn't support: its node would need signing, and its peers' keys checking",
-    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailnet adapter): the tailnet has Tailnet Lock (Tailscale's feature's name) on. Lower case: a detail."
+    "message": "This tailnet uses Tailnet Lock, which this emulator doesn't support.",
+    "note": "The cause under “Couldn't connect” (the Network menu's status for a tailnet adapter): the tailnet has Tailnet Lock (Tailscale's feature's name) on. A detail line."
   },
   "ts-client.noExitNode": {
-    "message": "no peer {{id}} offers to be an exit node",
-    "note": "The cause under “Couldn't use that exit node” (Network menu): the chosen peer isn't an exit node (any more). {{id}} is the peer's stable ID. Lower case: a detail."
+    "message": "No peer {{id}} offers to be an exit node.",
+    "note": "The cause under “Couldn't use that exit node” (Network menu): the chosen peer isn't an exit node (any more). {{id}} is the peer's stable ID. A detail line."
   },
   "main.ephemeral": {
-    "message": "{{name}} is ephemeral, so it is this page's: the machine that runs in another tab can't use it.",
-    "note": "Error when an ephemeral connection is attached to a machine that runs in another tab (the Network wizard, the Machines page's Network tab); {{name}} is the connection's name."
+    "message": "{{name}} is ephemeral and belongs to this tab, so a machine running in another tab can't use it.",
+    "note": "Error when an ephemeral connection (kept in this tab's memory only) is attached to a machine that runs in another tab (the Network wizard, the Machines page's Network tab); {{name}} is the connection's name."
   },
   "main.held.useHere": {
-    "message": "{{held}} Use it here instead? That machine disconnects from it.",
+    "message": "{{held}} Use it here instead? That machine will disconnect from it.",
     "note": "Text of the question asked when a connection attached or connected here is in use by another tab's machine; {{held}} says who has it."
   },
   "main.held.title": {
@@ -652,7 +672,7 @@
     "note": "The confirm button of the question asked when a connection is in use by another tab's machine: it is taken from that machine."
   },
   "main.held.logOut": {
-    "message": "{{held}} Log it out all the same? That machine disconnects from it.",
+    "message": "{{held}} Log it out anyway? That machine will disconnect from it.",
     "note": "Text of the question asked by a connection's Log out (the Machines page's Connections) while another tab's machine uses it; {{held}} says who has it."
   },
   "main.logOut": {
@@ -660,15 +680,15 @@
     "note": "The confirm button (drawn as a warning) of the question asked by Log out while another tab's machine uses the connection."
   },
   "main.delete.leaves": {
-    "message": "Its node leaves the tailnet when it is next seen offline.",
+    "message": "Its node will leave the tailnet when it is next seen offline.",
     "note": "What deleting an ephemeral tailnet connection does, in the question asked by its Delete."
   },
   "main.delete.loggedOut": {
-    "message": "Its node is logged out of the tailnet and its keys are forgotten here.",
+    "message": "Its node will be logged out of the tailnet and its keys forgotten in this browser.",
     "note": "What deleting a tailnet connection does, in the question asked by its Delete."
   },
   "main.delete.tailcat": {
-    "message": "Its tailcat address stops working.",
+    "message": "Its tailcat address will stop working.",
     "note": "What deleting a tailcat connection that lets clients in does, in the question asked by its Delete."
   },
   "main.delete.confirm": {
@@ -676,7 +696,7 @@
     "note": "Text of the question asked by a connection's Delete (the Machines page's Connections) when no machine has it and deleting it does nothing more; {{name}} is its name."
   },
   "main.delete.confirm.on": {
-    "message": "Delete the connection {{name}}? It is detached from {{machines}}.",
+    "message": "Delete the connection {{name}}? It will be detached from {{machines}}.",
     "note": "Text of the question asked by a connection's Delete when machines have it attached; {{name}} is its name, {{machines}} theirs."
   },
   "main.delete.confirm.what": {
@@ -684,7 +704,7 @@
     "note": "Text of the question asked by a connection's Delete when no machine has it; {{name}} is its name, {{what}} what deleting it does."
   },
   "main.delete.confirm.on.what": {
-    "message": "Delete the connection {{name}}? It is detached from {{machines}}. {{what}}",
+    "message": "Delete the connection {{name}}? It will be detached from {{machines}}. {{what}}",
     "note": "Text of the question asked by a connection's Delete when machines have it attached; {{name}} is its name, {{machines}} theirs, {{what}} what deleting it does."
   },
   "main.delete.title": {
@@ -696,15 +716,15 @@
     "note": "The confirm button (drawn as a warning) of the question asked by a connection's Delete."
   },
   "main.stranded": {
-    "message": "{{name}} is deleted, but its control server didn't answer: its node stays on the tailnet until it expires or an admin removes it.",
+    "message": "{{name}} is deleted, but its control server didn't answer. Its node stays on the tailnet until it expires or an admin removes it.",
     "note": "Error shown after a tailnet connection was deleted and its control server couldn't be told; {{name}} is the connection's name."
   },
   "main.newAddress.confirm": {
-    "message": "Forget {{name}}'s tailcat address? Whoever has it can't come in any more, and the machine gets a new one when it next lets clients in.",
+    "message": "Forget {{name}}'s tailcat address? Whoever has it won't be able to come in any more, and the machine will get a new one when it next lets clients in.",
     "note": "Text of the question asked by a tailcat connection's New address; {{name}} is the connection's name."
   },
   "main.newAddress.ok": {
-    "message": "Forget it",
+    "message": "Forget address",
     "note": "The confirm button (drawn as a warning) of the question asked by a tailcat connection's New address."
   }
 }

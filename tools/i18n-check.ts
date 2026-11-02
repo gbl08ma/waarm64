@@ -407,6 +407,14 @@ export function checkTests(catalogs: Catalogs, sources: Source[]): Problem[] {
   /** The message a piece of text quotes, if any: all of it or its start (two words or more, or ending in "…"), four
    * words or more from its middle, a title-case word that is a message by itself. */
   const quoted = (raw: string): string | undefined => {
+    // The words may follow a field's name or a tag (`Description=Keyboard layout from…`, `title: …`, `<b>…`).
+    for (const m of raw.matchAll(/[=:>]\s*/g)) {
+      const key = quotedWhole(raw.slice(m.index + m[0].length));
+      if (key) return key;
+    }
+    return quotedWhole(raw);
+  };
+  const quotedWhole = (raw: string): string | undefined => {
     const s = raw.replace(/\s+/g, ' ').trim();
     if (!/\p{L}/u.test(s)) return undefined;
     const n = wordCount(s);

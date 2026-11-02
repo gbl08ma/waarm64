@@ -32,7 +32,7 @@
     "note": "The name of a status bar element (the state kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.state.about": {
-    "message": "Powered off, booting, running, and what the page is doing",
+    "message": "Whether the machine is powered off, booting, or running, and what this emulator is doing.",
     "note": "What the Power state status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.vcpus": {
@@ -40,7 +40,7 @@
     "note": "The name of a status bar element (the vcpus kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.vcpus.about": {
-    "message": "How many vCPUs the machine has",
+    "message": "How many vCPUs the machine has.",
     "note": "What the vCPUs status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.ram": {
@@ -48,7 +48,7 @@
     "note": "The name of a status bar element (the ram kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.ram.about": {
-    "message": "The machine's RAM",
+    "message": "The machine's RAM.",
     "note": "What the RAM status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.uptime": {
@@ -56,7 +56,7 @@
     "note": "The name of a status bar element (the uptime kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.uptime.about": {
-    "message": "How long the machine has run",
+    "message": "How long the machine has been running.",
     "note": "What the Uptime status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.clock": {
@@ -64,7 +64,7 @@
     "note": "The name of a status bar element (the clock kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.clock.about": {
-    "message": "This computer's time",
+    "message": "Your computer's time.",
     "note": "What the Clock status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.memory": {
@@ -72,7 +72,7 @@
     "note": "The name of a status bar element (the memory kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.memory.about": {
-    "message": "What the machine costs its tab, by the emulator's accounting (the memory signal)",
+    "message": "How much memory the machine's tab uses, as this emulator counts it.",
     "note": "What the Tab memory status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.mips": {
@@ -80,7 +80,7 @@
     "note": "The name of a status bar element (the mips kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider. Per-device elements wrap it (\"{{name}}, each vCPU\")."
   },
   "statusbar.kind.mips.about": {
-    "message": "Millions of guest instructions run a second",
+    "message": "Millions of guest instructions run a second.",
     "note": "What the MIPS status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.jit": {
@@ -88,7 +88,7 @@
     "note": "The name of a status bar element (the jit kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider. Per-device elements wrap it (\"{{name}}, each vCPU\")."
   },
   "statusbar.kind.jit.about": {
-    "message": "The share of the instructions run in compiled code (the rest are interpreted)",
+    "message": "The share of instructions run as compiled code; the rest are interpreted.",
     "note": "What the JIT share status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.irqs": {
@@ -96,7 +96,7 @@
     "note": "The name of a status bar element (the irqs kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.irqs.about": {
-    "message": "Interrupts taken a second",
+    "message": "Interrupts taken a second.",
     "note": "What the IRQ/s status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.blocks": {
@@ -104,7 +104,7 @@
     "note": "The name of a status bar element (the blocks kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.blocks.about": {
-    "message": "Blocks the JIT compiled since boot, and how often its cache was flushed",
+    "message": "Blocks the JIT has compiled since boot, and how often its cache was flushed.",
     "note": "What the Blocks compiled status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.compile": {
@@ -112,7 +112,7 @@
     "note": "The name of a status bar element (the compile kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.compile.about": {
-    "message": "Time spent compiling since boot (all vCPUs)",
+    "message": "Time spent compiling since boot, on all vCPUs.",
     "note": "What the Compile time status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.jitcache": {
@@ -120,7 +120,7 @@
     "note": "The name of a status bar element (the jitcache kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.jitcache.about": {
-    "message": "The JIT's live code against its cache's budget",
+    "message": "How much of the JIT's cache its compiled code fills.",
     "note": "What the JIT cache status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.netrate": {
@@ -128,7 +128,7 @@
     "note": "The name of a status bar element (the netrate kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider. Per-device elements wrap it (\"{{name}}, each vCPU\")."
   },
   "statusbar.kind.netrate.about": {
-    "message": "Bytes a second received and sent by the machine",
+    "message": "Bytes a second received and sent by the machine.",
     "note": "What the Network traffic status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.nettotal": {
@@ -136,7 +136,7 @@
     "note": "The name of a status bar element (the nettotal kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider. Per-device elements wrap it (\"{{name}}, each vCPU\")."
   },
   "statusbar.kind.nettotal.about": {
-    "message": "Bytes received and sent since the machine started",
+    "message": "Bytes received and sent since the machine started.",
     "note": "What the Network total status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.link": {
@@ -144,7 +144,7 @@
     "note": "The name of a status bar element (the link kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider. Per-device elements wrap it (\"{{name}}, each vCPU\")."
   },
   "statusbar.kind.link.about": {
-    "message": "An adapter's connection: connected, connecting, waiting for a login, or off",
+    "message": "The state of an adapter's connection: connected, connecting, waiting for a login, or off.",
     "note": "What the Connection status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.diskrate": {
@@ -152,7 +152,7 @@
     "note": "The name of a status bar element (the diskrate kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider. Per-device elements wrap it (\"{{name}}, each vCPU\")."
   },
   "statusbar.kind.diskrate.about": {
-    "message": "Bytes a second read (R) and written (W)",
+    "message": "Bytes a second read (R) and written (W).",
     "note": "What the Disk speed status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.disktotal": {
@@ -160,7 +160,7 @@
     "note": "The name of a status bar element (the disktotal kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider. Per-device elements wrap it (\"{{name}}, each vCPU\")."
   },
   "statusbar.kind.disktotal.about": {
-    "message": "Bytes read (R) and written (W) since the machine started",
+    "message": "Bytes read (R) and written (W) since the machine started.",
     "note": "What the Disk total status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.gpu": {
@@ -168,7 +168,7 @@
     "note": "The name of a status bar element (the gpu kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.gpu.about": {
-    "message": "How the screen is drawn: 3D through WebGL2 (virgl), or 2D; amber when the browser renders in software",
+    "message": "How the screen is drawn: 3D through WebGL2 (virgl), or 2D. It turns amber when this browser renders in software.",
     "note": "What the Renderer status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.fps": {
@@ -176,7 +176,7 @@
     "note": "The name of a status bar element (the fps kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.fps.about": {
-    "message": "Screen updates drawn a second",
+    "message": "Screen updates drawn a second.",
     "note": "What the Frame rate status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.video": {
@@ -184,7 +184,7 @@
     "note": "The name of a status bar element (the video kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.video.about": {
-    "message": "The guest's video streams decoded by the browser (VA-API over virgl, 3D machines), their codecs and pictures a second",
+    "message": "The video streams the guest decodes through this browser (VA-API over virgl, on 3D machines), with their codecs and pictures a second.",
     "note": "What the Video decode status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.pointer": {
@@ -192,7 +192,7 @@
     "note": "The name of a status bar element (the pointer kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.pointer.about": {
-    "message": "Whether the screen holds the mouse (green), would take it on a click (grey), or the lock is off (dim)",
+    "message": "Whether the screen holds the mouse (green), will take it on a click (grey), or the mouse lock is off (dim).",
     "note": "What the Mouse lock status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.keyboard": {
@@ -200,7 +200,7 @@
     "note": "The name of a status bar element (the keyboard kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.keyboard.about": {
-    "message": "Where typing goes: to the machine (green; in full screen with the keyboard lock, the browser's shortcuts too), or nowhere until a click on the screen",
+    "message": "Where typing goes: to the machine (green), or nowhere until you click the screen. In full screen with the keyboard lock, the browser's shortcuts go to the machine too.",
     "note": "What the Keyboard status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.mic": {
@@ -208,7 +208,7 @@
     "note": "The name of a status bar element (the mic kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.mic.about": {
-    "message": "Shown while the machine records from the microphone (or the browser refused it)",
+    "message": "Shown while the machine records from the microphone, or when this browser refused it the microphone.",
     "note": "What the Microphone status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.spacer": {
@@ -216,7 +216,7 @@
     "note": "The name of a status bar element (the spacer kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.spacer.about": {
-    "message": "Takes the free room: what follows goes to the right",
+    "message": "Takes up the free space, pushing what follows to the right.",
     "note": "What the Spacer status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.divider": {
@@ -224,7 +224,7 @@
     "note": "The name of a status bar element (the divider kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
   "statusbar.kind.divider.about": {
-    "message": "A line between elements",
+    "message": "A line between elements.",
     "note": "What the Divider status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.name.each.cpu": {
@@ -292,15 +292,15 @@
     "note": "Tooltip of the power state at the left of the status bar (the page's footer). {{state}} is the state's words (Running, Powered off, Loading 40%…)."
   },
   "statusbar.clock.title": {
-    "message": "This computer's time: {{time}}",
-    "note": "Tooltip of the Clock element in the status bar (the page's footer). {{time}} is this computer's time of day, as the browser's locale writes it."
+    "message": "Your computer's time: {{time}}",
+    "note": "Tooltip of the Clock element in the status bar (the page's footer). {{time}} is your computer's time of day, as the browser's locale writes it."
   },
   "statusbar.pointer.held": {
     "message": "Mouse held",
     "note": "The Mouse lock element in the status bar (the page's footer) (or its screen-reader text when drawn as an icon) while the screen holds the mouse."
   },
   "statusbar.pointer.held.title": {
-    "message": "The screen holds the mouse (Esc lets go)",
+    "message": "The screen holds the mouse. Press Esc to release it.",
     "note": "Tooltip of the Mouse lock element in the status bar (the page's footer) while the screen holds the mouse."
   },
   "statusbar.pointer.on": {
@@ -308,7 +308,7 @@
     "note": "The Mouse lock element in the status bar (the page's footer) (or its screen-reader text) while the lock is on and a click on the screen would take the mouse."
   },
   "statusbar.pointer.on.title": {
-    "message": "A click on the screen takes the mouse",
+    "message": "A click on the screen will lock the mouse to it.",
     "note": "Tooltip of the Mouse lock element in the status bar (the page's footer) while the lock is on but the screen doesn't hold the mouse."
   },
   "statusbar.pointer.off": {
@@ -316,7 +316,7 @@
     "note": "The Mouse lock element in the status bar (the page's footer) (or its screen-reader text) while the toolbar's mouse lock is off."
   },
   "statusbar.pointer.off.title": {
-    "message": "The mouse lock is off (the toolbar turns it on)",
+    "message": "The mouse lock is off. Turn it on from the toolbar's Mouse lock menu.",
     "note": "Tooltip of the Mouse lock element in the status bar (the page's footer) while the lock is off."
   },
   "statusbar.keyboard.locked": {
@@ -324,7 +324,7 @@
     "note": "The Keyboard element in the status bar (the page's footer) (or its screen-reader text) in full screen with the keyboard lock: every key goes to the machine."
   },
   "statusbar.keyboard.locked.title": {
-    "message": "Full screen with the keyboard lock: keys and the browser's shortcuts go to the machine (hold Esc to leave)",
+    "message": "Keys and the browser's shortcuts go to the machine, in full screen with the keyboard lock. Hold Esc to leave full screen.",
     "note": "Tooltip of the Keyboard element in the status bar (the page's footer) in full screen with the keyboard lock."
   },
   "statusbar.keyboard.typing": {
@@ -332,7 +332,7 @@
     "note": "The Keyboard element in the status bar (the page's footer) (or its screen-reader text) while the screen or the terminal has the focus."
   },
   "statusbar.keyboard.typing.title": {
-    "message": "Keys go to the machine (the browser keeps its shortcuts; full screen locks them too)",
+    "message": "Keys go to the machine. This browser keeps its own shortcuts; full screen sends them to the machine too.",
     "note": "Tooltip of the Keyboard element in the status bar (the page's footer) while keys go to the machine."
   },
   "statusbar.keyboard.click": {
@@ -340,7 +340,7 @@
     "note": "The Keyboard element in the status bar (the page's footer) (or its screen-reader text) while keys don't go to the machine."
   },
   "statusbar.keyboard.click.title": {
-    "message": "Keys go elsewhere: a click on the screen sends them to the machine",
+    "message": "Keys don't go to the machine. Click the screen to type to it.",
     "note": "Tooltip of the Keyboard element in the status bar (the page's footer) while keys don't go to the machine."
   },
   "statusbar.mic.on": {
@@ -348,7 +348,7 @@
     "note": "The Microphone element in the status bar (the page's footer) (or its screen-reader text) while the machine records from the microphone."
   },
   "statusbar.mic.on.title": {
-    "message": "The machine records from the microphone",
+    "message": "The machine is recording from the microphone.",
     "note": "Tooltip of the Microphone element in the status bar (the page's footer) while the machine records."
   },
   "statusbar.mic.denied": {
@@ -356,7 +356,7 @@
     "note": "The Microphone element in the status bar (the page's footer) (or its screen-reader text) when the machine records but the browser refused the microphone."
   },
   "statusbar.mic.denied.title": {
-    "message": "The machine records, but the browser refused the microphone: it gets silence",
+    "message": "The machine is recording, but this browser refused it the microphone, so it gets silence.",
     "note": "Tooltip of the Microphone element in the status bar (the page's footer) when the browser refused the microphone."
   },
   "statusbar.link.other": {
@@ -384,7 +384,7 @@
     "note": "The Renderer element's short value (next to its icon, when drawn as an icon) in the status bar (the page's footer): the screen is 2D."
   },
   "statusbar.gpu.canvas.title": {
-    "message": "The screen is 2D, drawn on a canvas (this browser has no hardware WebGL2)",
+    "message": "The screen is 2D, drawn on a canvas, because this browser has no hardware WebGL2.",
     "note": "Tooltip of the Renderer element in the status bar (the page's footer) when the screen is drawn on a 2D canvas."
   },
   "statusbar.gpu.3d": {
@@ -400,11 +400,11 @@
     "note": "The Renderer element in the status bar (the page's footer) when a 2D machine's WebGL2 is rendered in software by the browser."
   },
   "statusbar.gpu.software.3d.title": {
-    "message": "The screen is 3D through WebGL2, which this browser renders in software: slow",
+    "message": "The screen is 3D through WebGL2, which this browser renders in software, so it is slow.",
     "note": "Tooltip of the Renderer element in the status bar (the page's footer), 3D in software (the renderer's name may follow on a line of its own)."
   },
   "statusbar.gpu.software.2d.title": {
-    "message": "The screen is 2D through WebGL2, which this browser renders in software: slow",
+    "message": "The screen is 2D through WebGL2, which this browser renders in software, so it is slow.",
     "note": "Tooltip of the Renderer element in the status bar (the page's footer), 2D in software (the renderer's name may follow on a line of its own)."
   },
   "statusbar.gpu.webgl2.3d": {
@@ -416,11 +416,11 @@
     "note": "The Renderer element in the status bar (the page's footer) when a 2D machine's screen is drawn through WebGL2 on the GPU."
   },
   "statusbar.gpu.webgl2.3d.title": {
-    "message": "The screen is 3D (virgl), drawn through WebGL2 on the GPU",
+    "message": "The screen is 3D (virgl), drawn through WebGL2 on the GPU.",
     "note": "Tooltip of the Renderer element in the status bar (the page's footer), 3D on the GPU (the renderer's name may follow on a line of its own)."
   },
   "statusbar.gpu.webgl2.2d.title": {
-    "message": "The screen is 2D, drawn through WebGL2 on the GPU",
+    "message": "The screen is 2D, drawn through WebGL2 on the GPU.",
     "note": "Tooltip of the Renderer element in the status bar (the page's footer), 2D on the GPU (the renderer's name may follow on a line of its own)."
   },
   "statusbar.fps": {
@@ -428,7 +428,7 @@
     "note": "The Frame rate element in the status bar (the page's footer). {{fps}} is the screen updates drawn in the last second."
   },
   "statusbar.fps.title": {
-    "message": "{{fps}} screen updates drawn a second",
+    "message": "{{fps}} screen updates drawn a second.",
     "note": "Tooltip of the Frame rate element in the status bar (the page's footer). {{fps}} is the screen updates drawn in the last second."
   },
   "statusbar.video.idle": {
@@ -436,7 +436,7 @@
     "note": "The Video decode element in the status bar (the page's footer) while the guest decodes no video through VA-API."
   },
   "statusbar.video.idle.title": {
-    "message": "Video decode: no stream (the guest decodes none through VA-API now)",
+    "message": "The guest isn't decoding any video through VA-API now.",
     "note": "Tooltip of the Video decode element in the status bar (the page's footer) while no stream is decoded."
   },
   "statusbar.video.hw": {
@@ -480,7 +480,7 @@
     "note": "A stream's line in the Video decode element's tooltip in the status bar (the page's footer): {{profile}} its codec, {{width}}×{{height}} its picture size, {{facts}} what's known of its decoder (hardware or software, no decoder now, N pictures a second), comma-separated."
   },
   "statusbar.video.title": {
-    "message": "Video decode (hardware is what the decoder asked for: the browser doesn't say what it got)",
+    "message": "Video decode. A stream marked hardware asked for a hardware decoder; this browser doesn't say whether it got one.",
     "note": "First line of the Video decode element's tooltip in the status bar (the page's footer); a line per stream follows."
   },
   "statusbar.video.errors": {
@@ -512,7 +512,7 @@
     "note": "The Tab memory element in the status bar (the page's footer): {{size}} is what the machine costs its browser tab (a size in MiB or GiB)."
   },
   "statusbar.memory.title": {
-    "message": "The tab: about {{size}} by the emulator's accounting",
+    "message": "The tab uses about {{size}}, as this emulator counts it.",
     "note": "Tooltip of the Tab memory element in the status bar (the page's footer): {{size}} is the tab's memory (a size in MiB or GiB)."
   },
   "statusbar.irqs": {
@@ -520,7 +520,7 @@
     "note": "The IRQ/s element in the status bar (the page's footer): {{irqs}} is the interrupts taken in the last second."
   },
   "statusbar.irqs.title": {
-    "message": "{{irqs}} interrupts a second",
+    "message": "{{irqs}} interrupts a second.",
     "note": "Tooltip of the IRQ/s element in the status bar (the page's footer): {{irqs}} is the interrupts taken in the last second."
   },
   "statusbar.blocks.flushed": {
@@ -532,7 +532,7 @@
     "note": "The Blocks compiled element's short value (next to its icon) in the status bar (the page's footer) once the JIT's cache was flushed: {{blocks}} compiled, {{flushes}} flushes."
   },
   "statusbar.blocks.flushed.title": {
-    "message": "JIT: {{blocks}} blocks compiled (cache flushed {{flushes}}×)",
+    "message": "The JIT has compiled {{blocks}} blocks; its cache was flushed {{flushes}}×.",
     "note": "Tooltip of the Blocks compiled element in the status bar (the page's footer) once the JIT's cache was flushed: {{blocks}} compiled since boot, {{flushes}} flushes."
   },
   "statusbar.blocks": {
@@ -540,7 +540,7 @@
     "note": "The Blocks compiled element in the status bar (the page's footer): {{blocks}} blocks the JIT compiled since boot."
   },
   "statusbar.blocks.title": {
-    "message": "JIT: {{blocks}} blocks compiled",
+    "message": "The JIT has compiled {{blocks}} blocks.",
     "note": "Tooltip of the Blocks compiled element in the status bar (the page's footer): {{blocks}} blocks the JIT compiled since boot."
   },
   "statusbar.compile": {
@@ -548,7 +548,7 @@
     "note": "The Compile time element in the status bar (the page's footer): {{time}} is the time spent compiling since boot, in seconds (\"9.3 s\")."
   },
   "statusbar.compile.title": {
-    "message": "JIT: {{time}} compiling since boot",
+    "message": "The JIT has spent {{time}} compiling since boot.",
     "note": "Tooltip of the Compile time element in the status bar (the page's footer): {{time}} is the time spent compiling since boot, in seconds."
   },
   "statusbar.jitcache.use": {
@@ -560,7 +560,7 @@
     "note": "The JIT cache element in the status bar (the page's footer): {{cache}} is its use (\"61 MiB of 320 MiB\")."
   },
   "statusbar.jitcache.title": {
-    "message": "The JIT's cache: {{cache}} in use",
+    "message": "The JIT's cache holds {{cache}}.",
     "note": "Tooltip of the JIT cache element in the status bar (the page's footer): {{cache}} is its use (\"61 MiB of 320 MiB\")."
   },
   "statusbar.net.traffic": {
@@ -572,11 +572,11 @@
     "note": "The network traffic or total element for every adapter in the status bar (the page's footer) (its screen-reader text when drawn with arrows): {{traffic}} is received and sent."
   },
   "statusbar.net.all.total.title": {
-    "message": "The network, every adapter: received and sent since the start",
+    "message": "Bytes received and sent by every adapter since the machine started.",
     "note": "Tooltip of the Network total element for every adapter in the status bar (the page's footer)."
   },
   "statusbar.net.all.rate.title": {
-    "message": "The network, every adapter: received and sent a second",
+    "message": "Bytes a second received and sent by every adapter.",
     "note": "Tooltip of the Network traffic element for every adapter in the status bar (the page's footer)."
   },
   "statusbar.net.all.label": {
@@ -588,11 +588,11 @@
     "note": "A network traffic or total element for one adapter in the status bar (the page's footer) (its screen-reader text when drawn with arrows): {{name}} is the adapter's name, {{traffic}} received and sent."
   },
   "statusbar.net.one.total.title": {
-    "message": "{{name}}: received and sent since the start",
+    "message": "Bytes received and sent by {{name}} since the machine started.",
     "note": "Tooltip of the Network total element for one adapter in the status bar (the page's footer): {{name}} is the adapter's name."
   },
   "statusbar.net.one.rate.title": {
-    "message": "{{name}}: received and sent a second",
+    "message": "Bytes a second received and sent by {{name}}.",
     "note": "Tooltip of the Network traffic element for one adapter in the status bar (the page's footer): {{name}} is the adapter's name."
   },
   "statusbar.disk.traffic": {
@@ -604,11 +604,11 @@
     "note": "The Disk speed or Disk total element for every disk in the status bar (the page's footer): {{traffic}} is read (R) and written (W)."
   },
   "statusbar.disk.all.total.title": {
-    "message": "The disks, all of them: read (R) and written (W) since the start",
+    "message": "Bytes read (R) and written (W) on all disks since the machine started.",
     "note": "Tooltip of the Disk total element for every disk in the status bar (the page's footer)."
   },
   "statusbar.disk.all.rate.title": {
-    "message": "The disks, all of them: read (R) and written (W) a second",
+    "message": "Bytes a second read (R) and written (W) on all disks.",
     "note": "Tooltip of the Disk speed element for every disk in the status bar (the page's footer)."
   },
   "statusbar.disk.name": {
@@ -620,11 +620,11 @@
     "note": "A Disk speed or Disk total element for one disk in the status bar (the page's footer): {{name}} is the disk's name (its file), {{traffic}} read (R) and written (W)."
   },
   "statusbar.disk.one.total.title": {
-    "message": "{{name}}: read (R) and written (W) since the start",
+    "message": "Bytes read (R) and written (W) on {{name}} since the machine started.",
     "note": "Tooltip of the Disk total element for one disk in the status bar (the page's footer): {{name}} is the disk's name."
   },
   "statusbar.disk.one.rate.title": {
-    "message": "{{name}}: read (R) and written (W) a second",
+    "message": "Bytes a second read (R) and written (W) on {{name}}.",
     "note": "Tooltip of the Disk speed element for one disk in the status bar (the page's footer): {{name}} is the disk's name."
   },
   "statusbar.cpu.mips": {
@@ -636,11 +636,11 @@
     "note": "The JIT share element in the status bar (the page's footer) (and per vCPU in its tooltip): {{value}} is the percentage of instructions run in compiled code (\"98.7%\"), or several vCPUs' separated by spaces."
   },
   "statusbar.cpu.mips.title": {
-    "message": "{{value}} million instructions a second",
+    "message": "{{value}} million instructions a second.",
     "note": "Tooltip of the machine's MIPS element in the status bar (the page's footer): {{value}} is the millions of guest instructions run in the last second."
   },
   "statusbar.cpu.jit.title": {
-    "message": "{{value}} of the instructions run in compiled code",
+    "message": "{{value}} of the instructions run as compiled code.",
     "note": "Tooltip of the machine's JIT share element in the status bar (the page's footer): {{value}} is a percentage (\"98.7%\")."
   },
   "statusbar.cpu.line": {
@@ -704,15 +704,15 @@
     "note": "Label of the number field (and screen-reader name of its group) in the Preferences' status bar editor for an element that shows one disk: which one."
   },
   "StatusEditor.index.cpu": {
-    "message": "From 0, as the guest names them (cpu0). Hidden on a machine that hasn't it.",
+    "message": "Numbered from 0, as the guest names them (cpu0). Hidden on a machine that doesn't have it.",
     "note": "Note beside the vCPU number field of a one-vCPU element in the Preferences' status bar editor."
   },
   "StatusEditor.index.net": {
-    "message": "From 1, as the machine's Network tab lists them. Hidden on a machine that hasn't it.",
+    "message": "Numbered from 1, as the machine's Network tab lists them. Hidden on a machine that doesn't have it.",
     "note": "Note beside the Adapter number field of a one-adapter element in the Preferences' status bar editor (the Network tab is the Machines page's)."
   },
   "StatusEditor.index.disk": {
-    "message": "From 1, as the machine's Disks tab lists them. Hidden on a machine that hasn't it.",
+    "message": "Numbered from 1, as the machine's Disks tab lists them. Hidden on a machine that doesn't have it.",
     "note": "Note beside the Disk number field of a one-disk element in the Preferences' status bar editor (the Disks tab is the Machines page's)."
   },
   "StatusEditor.bar": {
@@ -720,19 +720,19 @@
     "note": "Screen-reader name of the copy of the status bar in Preferences whose chips are the bar's elements, in order."
   },
   "StatusEditor.chip.title": {
-    "message": "{{name}}: {{about}}\nDrag, or Alt+←/→, to move it",
-    "note": "Tooltip of an element's chip in the Preferences' status bar editor; a click chooses it. {{name}} is the element's name, {{about}} what it shows."
+    "message": "{{name}}\n{{about}}\nDrag it, or press Alt+←/→, to move it.",
+    "note": "Tooltip of an element's chip in the Preferences' status bar editor, on three lines; a click chooses it. {{name}} is the element's name, {{about}} what it shows (a sentence)."
   },
   "StatusEditor.chip.title.absent": {
-    "message": "{{name}}: {{about}} (not on the running machine: it shows when it is)\nDrag, or Alt+←/→, to move it",
-    "note": "Tooltip of a dimmed element's chip in the Preferences' status bar editor: the running machine hasn't its device (a second disk). {{name}} is the element's name, {{about}} what it shows."
+    "message": "{{name}}\n{{about}} The running machine doesn't have it, so it shows nothing now.\nDrag it, or press Alt+←/→, to move it.",
+    "note": "Tooltip of a dimmed element's chip in the Preferences' status bar editor, on three lines: the running machine hasn't its device (a second disk). {{name}} is the element's name, {{about}} what it shows (a sentence)."
   },
   "StatusEditor.spacer": {
     "message": "spacer",
     "note": "The words on a spacer's chip in the Preferences' status bar editor (between arrows: it takes the free room)."
   },
   "StatusEditor.remove.title": {
-    "message": "Remove it",
+    "message": "Remove this element.",
     "note": "Tooltip of the × on an element's chip in the Preferences' status bar editor."
   },
   "StatusEditor.remove.label": {
@@ -740,11 +740,11 @@
     "note": "Screen-reader name of the × on an element's chip in the Preferences' status bar editor. {{name}} is the element's name."
   },
   "StatusEditor.empty": {
-    "message": "No elements: the page shows no status bar. Add some below.",
+    "message": "No elements, so no status bar is shown. Add some below.",
     "note": "Shown in the Preferences' status bar editor's bar when it has no element; the palette below adds them."
   },
   "StatusEditor.sample": {
-    "message": "Showing made-up numbers: with a machine running, its own.",
+    "message": "Showing made-up numbers. With a machine running, it shows the machine's own.",
     "note": "Note under the Preferences' status bar editor's bar while no machine runs: the chips show a made-up machine's numbers."
   },
   "StatusEditor.running": {
@@ -752,7 +752,7 @@
     "note": "Note under the Preferences' status bar editor's bar while a machine runs: the chips show its numbers."
   },
   "StatusEditor.nothing": {
-    "message": "Nothing here shows anything: the page has no status bar.",
+    "message": "None of these elements shows anything, so no status bar is shown.",
     "note": "Note under the Preferences' status bar editor's bar (after Showing…) when its elements are all spacers or dividers."
   },
   "StatusEditor.defaults": {
@@ -776,11 +776,11 @@
     "note": "Radio choice for an each-vCPU element in the Preferences' status bar editor: each vCPU's number."
   },
   "StatusEditor.left": {
-    "message": "Move it left",
+    "message": "Move the element left.",
     "note": "Tooltip of the left arrow button in the settings of a chosen element in the Preferences' status bar editor."
   },
   "StatusEditor.right": {
-    "message": "Move it right",
+    "message": "Move the element right.",
     "note": "Tooltip of the right arrow button in the settings of a chosen element in the Preferences' status bar editor."
   },
   "StatusEditor.remove": {
@@ -792,7 +792,7 @@
     "note": "Screen-reader name of the palette under the Preferences' status bar editor: the elements that can be added, by group."
   },
   "StatusEditor.add.title": {
-    "message": "{{about}}\nClick to add it at the end, or drag it into the bar",
+    "message": "{{about}}\nClick to add it at the end, or drag it into the bar.",
     "note": "Tooltip of an element's chip in the palette of the Preferences' status bar editor. {{about}} is what the element shows."
   },
   "ui.loading": {

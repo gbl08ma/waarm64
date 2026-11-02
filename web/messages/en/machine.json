@@ -8,12 +8,12 @@
     "note": "The toolbar's name of a machine opened from the page's address that boots a disk of the user's and has none yet; {{machine}} is the machine's name."
   },
   "main.noMachine": {
-    "message": "there is no machine {{id}} in this browser",
-    "note": "Detail under “This machine can't be opened” in the message bar (under the toolbar) when the page's address (`?m=`) names a machine that isn't kept in this browser; {{id}} is the id in the address."
+    "message": "There is no machine {{id}} in this browser.",
+    "note": "Detail under “Couldn't open the machine” in the message bar (under the toolbar) when the page's address (`?m=`) names a machine that isn't kept in this browser; {{id}} is the id in the address."
   },
   "main.noDisk": {
-    "message": "machine {{name}} has a disk that isn't in this browser ({{id}})",
-    "note": "Detail under “This machine can't be opened” in the message bar (under the toolbar) when one of the machine's disks is gone from this browser; {{name}} is the machine's name, {{id}} the missing disk's id."
+    "message": "The machine {{name}} has a disk that isn't stored in this browser any more: {{id}}.",
+    "note": "Detail under “Couldn't open the machine” in the message bar (under the toolbar) when one of the machine's disks is gone from this browser; {{name}} is the machine's name, {{id}} the missing disk's id."
   },
   "main.state.idle": {
     "message": "Not started",
@@ -76,7 +76,7 @@
     "note": "What the Copy serial log button in the message bar (under the toolbar) says once the log is on the clipboard."
   },
   "main.copyLog.failed": {
-    "message": "Couldn't copy: save it instead",
+    "message": "Couldn't copy",
     "note": "What the Copy serial log button in the message bar (under the toolbar) says when the browser refused the clipboard (Save serial log is beside it)."
   },
   "main.saveLog": {
@@ -92,7 +92,7 @@
     "note": "Button in the message bar (under the toolbar) after the machine was suspended: it asks, then boots the machine from its disk and drops its suspended memory."
   },
   "main.bootInstead.confirm": {
-    "message": "Boot the machine from its disk instead? Its suspended memory is dropped: what the guest had not written to its disk is lost, as after a power cut.",
+    "message": "Boot the machine from its disk instead? This will discard its suspended memory, and anything the guest hadn't written to its disk will be lost, as after a power cut.",
     "note": "Text of the question asked by Boot instead (the message bar, after a suspend)."
   },
   "main.bootInstead.ok": {
@@ -124,27 +124,27 @@
     "note": "Line on the boot card while the emulator's and the machine's files download and the server didn't say their size: {{loaded}} arrived so far."
   },
   "main.asleep": {
-    "message": "The guest has gone to sleep (it suspended itself): a key or a click on its screen or terminal wakes it.",
+    "message": "The guest has suspended itself. Press a key or click its screen or terminal to wake it.",
     "note": "Notice in the message bar (under the toolbar) when the guest suspends itself (its own sleep, not the page's Suspend); it clears itself after a while."
   },
   "main.workerFailed": {
-    "message": "The machine's worker failed",
+    "message": "The emulator stopped unexpectedly",
     "note": "Error headline in the message bar (under the toolbar) when the worker that runs the machine failed (the machine has crashed; Show serial log and the like follow); the browser's error is the detail under it."
   },
   "main.runsElsewhere": {
-    "message": "{{name}} runs in another tab of this page: power it off there, or close that tab, then Retry.",
-    "note": "Error in the message bar (under the toolbar) when the machine to start already runs in another tab or window (Retry follows); {{name}} is the machine's name."
+    "message": "Couldn't start {{name}}\nIt's running in another tab of this web app. Power it off there or close that tab, then Retry.",
+    "note": "Error in the message bar (under the toolbar) when the machine to start already runs in another tab or window (Retry follows): a headline, then what to do; {{name}} is the machine's name."
   },
   "main.cantOpen": {
-    "message": "This machine can't be opened",
+    "message": "Couldn't open the machine",
     "note": "Error headline in the message bar (under the toolbar) when the machine kept in this browser that the page opens is gone, or one of its disks is; why is the detail under it."
   },
   "main.machines": {
     "message": "Machines…",
-    "note": "Button in the message bar (under the toolbar) after “This machine can't be opened”: it opens the Machines page."
+    "note": "Button in the message bar (under the toolbar) after “Couldn't open the machine”: it opens the Machines page."
   },
   "main.restart.confirm": {
-    "message": "Restart the machine? Like pulling the plug: unsaved work in the guest is lost.",
+    "message": "Restart the machine? This will power it off at once, like pulling the plug, and unsaved work in the guest will be lost.",
     "note": "Text of the question asked by the toolbar's Restart while the machine runs."
   },
   "main.restart.title": {
@@ -156,7 +156,7 @@
     "note": "The confirm button (drawn as a warning) of the question asked by the toolbar's Restart."
   },
   "main.powerOff.confirm": {
-    "message": "Power the machine off? Like pulling the plug: unsaved work in the guest is lost (shut the guest down first, with poweroff, for a clean stop).",
+    "message": "Power off the machine? This will stop it at once, like pulling the plug, and unsaved work in the guest will be lost. To stop it cleanly, shut down the guest first, for example with the poweroff command.",
     "note": "Text of the question asked by the toolbar's Power off."
   },
   "main.powerOff.title": {
@@ -168,7 +168,7 @@
     "note": "The confirm button (drawn as a warning) of the question asked by the toolbar's Power off."
   },
   "main.openDisk.prompt": {
-    "message": "Open a disk image to start the machine: an arm64 Linux image that boots through UEFI, as qcow2, raw or an installer or live ISO (Open disk…, or drop the file on the page). What the machine writes to it is kept in this browser, per file.",
+    "message": "Open a disk image to start the machine. It must be an arm64 Linux image that boots through UEFI: qcow2, raw, or an installer or live ISO. Use Open disk…, or drop the file on this web app. What the machine writes to the disk is kept in this browser, separately for each file.",
     "note": "What the message bar (under the toolbar) says on a first visit, when the page's machine has no disk yet; an Open disk… button follows."
   },
   "main.openDisk": {
@@ -176,7 +176,7 @@
     "note": "Button in the message bar (under the toolbar) on a first visit (the page's machine has no disk yet): it opens the browser's file picker for a disk image."
   },
   "main.switch.confirm": {
-    "message": "Open the other machine? This one stops, like pulling the plug: unsaved work in the guest is lost.",
+    "message": "Open the other machine? This will power off this one at once, like pulling the plug, and unsaved work in its guest will be lost.",
     "note": "Text of the question asked when another machine is opened (the Machines page's Open, a disk file opened or dropped) while the one on the page runs."
   },
   "main.switch.title": {
@@ -184,15 +184,15 @@
     "note": "Title of the question asked when another machine is opened while the one on the page runs."
   },
   "main.switch.ok": {
-    "message": "Open it",
+    "message": "Open",
     "note": "The confirm button (drawn as a warning) of the question asked when another machine is opened while the one on the page runs."
   },
   "main.runsOn": {
-    "message": "The machine runs on.",
+    "message": "The machine is still running.",
     "note": "Line after the headline of an error in the message bar (under the toolbar) when Suspend failed: the machine wasn't suspended and still runs; why is the detail under it."
   },
   "main.lessRam.confirm": {
-    "message": "Less RAM orphans its snapshots: they were taken of a machine with the old settings (they stay, marked, until deleted).",
+    "message": "Start with less RAM? This will orphan the machine's snapshots, as they were taken with its old settings. They remain stored, marked as orphaned, until you delete them.",
     "note": "Text of the question asked by Start with N MiB of RAM (the message bar, after the machine's tab closed while it ran) when the machine has kept snapshots."
   },
   "main.lessRam.ok": {
@@ -200,7 +200,7 @@
     "note": "The confirm button of the question asked by Start with N MiB of RAM when the machine has kept snapshots."
   },
   "main.crashed": {
-    "message": "{{name}} was running when its tab closed without stopping it ({{when}}), most likely because the browser ran out of memory: by the emulator's own accounting it was using about {{gib}} GiB ({{peak}} at most), with {{ram}} MiB of guest RAM and a {{jit}} MiB JIT cache.\nA smaller JIT cache keeps less of the guest's code compiled (the browser spends about six times the cache's size on it when it is full); less RAM leaves the guest less room.",
+    "message": "{{name}}'s tab closed while it was running ({{when}}), most likely because the browser ran out of memory. The emulator counted about {{gib}} GiB in use ({{peak}} GiB at most), with {{ram}} MiB of guest RAM and a {{jit}} MiB JIT cache.\nA smaller JIT cache keeps less of the guest's code compiled; when the cache is full, the browser uses about six times its size for it. Less RAM leaves the guest less room.",
     "note": "What the message bar (under the toolbar) says when the page opens a machine whose tab closed while it ran (buttons to start it smaller follow): {{name}} is the machine's name, {{when}} when it was last seen running, {{gib}} and {{peak}} the memory it used then and at most (GiB), {{ram}} its RAM and {{jit}} its JIT cache (MiB)."
   },
   "main.crashed.jit": {
@@ -216,12 +216,12 @@
     "note": "Button in the message bar (under the toolbar) after the machine's tab closed while it ran: it starts the machine unchanged."
   },
   "main.memoryWarning": {
-    "message": "This needs about {{need}} GiB of memory and this device reports {{has}} GiB: if it runs out, the browser closes the tab without warning.",
-    "note": "Paragraph after the question asked before a restart with another size (the toolbar's Machine menu, a stored machine's Save) when the device may not have the memory: {{need}} is what the machine needs, {{has}} what the device reports (GiB)."
+    "message": "This needs about {{need}} GiB of memory, and your computer reports {{has}} GiB. If memory runs out, the browser will close the tab without warning.",
+    "note": "Paragraph after the question asked before a restart with another size (the toolbar's Machine menu, a stored machine's Save) when your computer may not have the memory: {{need}} is what the machine needs, {{has}} what your computer reports (GiB)."
   },
   "main.memoryWarning.max": {
-    "message": "This needs about {{need}} GiB of memory and this device reports {{has}} GiB (browsers report at most 8, so it may well have more): if it runs out, the browser closes the tab without warning.",
-    "note": "Paragraph after the question asked before a restart with another size when the device may not have the memory and reports 8 GiB, the most browsers report: {{need}} is what the machine needs, {{has}} what the device reports (GiB)."
+    "message": "This needs about {{need}} GiB of memory, and your computer reports {{has}} GiB. Browsers report at most 8 GiB, so it may have more. If memory runs out, the browser will close the tab without warning.",
+    "note": "Paragraph after the question asked before a restart with another size when your computer may not have the memory and reports 8 GiB, the most browsers report: {{need}} is what the machine needs, {{has}} what your computer reports (GiB)."
   },
   "main.size_one": {
     "message": "{{count}} vCPU, {{ram}} MiB of RAM",
@@ -248,11 +248,11 @@
     "note": "The size in the question “Restart with …?” (the toolbar's Machine menu) for several vCPUs with 2D graphics: {{count}} is the vCPUs, {{ram}} the RAM in MiB."
   },
   "main.size.confirm": {
-    "message": "Restart with {{size}}? A suspended machine is resumed as it was, with its own size.",
+    "message": "Restart with {{size}}? If the machine is suspended, it will resume with the size it had, and the new size will apply from its next boot.",
     "note": "Text of the question asked when a size is chosen in the toolbar's Machine menu while the machine isn't running; {{size}} is the size chosen (vCPUs, RAM, graphics)."
   },
   "main.size.confirm.running": {
-    "message": "Restart with {{size}}? Like pulling the plug: unsaved work in the guest is lost. A suspended machine is resumed as it was, with its own size.",
+    "message": "Restart with {{size}}? This will power off the machine at once, like pulling the plug, and unsaved work in the guest will be lost.",
     "note": "Text of the question asked when a size is chosen in the toolbar's Machine menu while the machine runs; {{size}} is the size chosen (vCPUs, RAM, graphics)."
   },
   "main.size.title": {
@@ -264,7 +264,7 @@
     "note": "The confirm button of the question asked when a size is chosen in the toolbar's Machine menu."
   },
   "main.settings.confirm": {
-    "message": "Restart {{name}} with its new settings? Like pulling the plug: unsaved work in the guest is lost. A suspended machine is resumed as it was, with its own size.",
+    "message": "Restart {{name}} with its new settings? This will power it off at once, like pulling the plug, and unsaved work in the guest will be lost.",
     "note": "Text of the question asked when the Machines page's Settings tab saves new settings for the machine running on the page; {{name}} is the machine's name."
   },
   "main.settings.title": {
@@ -276,67 +276,67 @@
     "note": "The confirm button (drawn as a warning) of the question asked when new settings are saved for the machine running on the page."
   },
   "main.notIsolated": {
-    "message": "This page needs cross-origin isolation for the emulator's shared memory, and it wasn't served with it (the COOP and COEP headers).\nRun `npm start` in the repository and open the URL it prints: its server sends them.",
-    "note": "Error in the message bar (under the toolbar) when the page was served without the headers the emulator needs (nothing can run)."
+    "message": "Couldn't start the machine\nThis web app needs cross-origin isolation (the COOP and COEP headers) for the emulator's shared memory, and the server didn't send them.\nRun `npm start` in the repository and open the URL it prints; its server sends them.",
+    "note": "Error in the message bar (under the toolbar) when the page was served without the headers the emulator needs (nothing can run): a headline, then why and what to do."
   },
   "main.memory_one": {
-    "message": "This machine needs about {{need}} GiB of memory ({{ram}} MiB of guest RAM plus the emulator, {{count}} vCPU), and this device reports {{has}} GiB.\n{{advice}}",
-    "note": "What the message bar (under the toolbar) says before a start when the device may not have the memory for the machine (Start anyway follows): {{need}} is what it needs and {{has}} what the device reports (GiB), {{ram}} its RAM (MiB), {{count}} its vCPUs (one), {{advice}} what to do."
+    "message": "This machine needs about {{need}} GiB of memory, counting {{ram}} MiB of guest RAM, {{count}} vCPU, and the emulator itself. Your computer reports {{has}} GiB.\n{{advice}}",
+    "note": "What the message bar (under the toolbar) says before a start when your computer may not have the memory for the machine (Start anyway follows): {{need}} is what it needs and {{has}} what your computer reports (GiB), {{ram}} its RAM (MiB), {{count}} its vCPUs (one), {{advice}} what to do."
   },
   "main.memory_other": {
-    "message": "This machine needs about {{need}} GiB of memory ({{ram}} MiB of guest RAM plus the emulator, {{count}} vCPUs), and this device reports {{has}} GiB.\n{{advice}}",
-    "note": "What the message bar (under the toolbar) says before a start when the device may not have the memory for the machine (Start anyway follows): {{need}} is what it needs and {{has}} what the device reports (GiB), {{ram}} its RAM (MiB), {{count}} its vCPUs (several), {{advice}} what to do."
+    "message": "This machine needs about {{need}} GiB of memory, counting {{ram}} MiB of guest RAM, {{count}} vCPUs, and the emulator itself. Your computer reports {{has}} GiB.\n{{advice}}",
+    "note": "What the message bar (under the toolbar) says before a start when your computer may not have the memory for the machine (Start anyway follows): {{need}} is what it needs and {{has}} what your computer reports (GiB), {{ram}} its RAM (MiB), {{count}} its vCPUs (several), {{advice}} what to do."
   },
   "main.memory.max_one": {
-    "message": "This machine needs about {{need}} GiB of memory ({{ram}} MiB of guest RAM plus the emulator, {{count}} vCPU), and this device reports {{has}} GiB (browsers report at most 8, so it may well have more).\n{{advice}}",
-    "note": "What the message bar (under the toolbar) says before a start when the device may not have the memory for the machine (Start anyway follows) and reports 8 GiB, the most browsers report: {{need}} is what it needs and {{has}} what the device reports (GiB), {{ram}} its RAM (MiB), {{count}} its vCPUs (one), {{advice}} what to do."
+    "message": "This machine needs about {{need}} GiB of memory, counting {{ram}} MiB of guest RAM, {{count}} vCPU, and the emulator itself. Your computer reports {{has}} GiB; browsers report at most 8 GiB, so it may have more.\n{{advice}}",
+    "note": "What the message bar (under the toolbar) says before a start when your computer may not have the memory for the machine (Start anyway follows) and reports 8 GiB, the most browsers report: {{need}} is what it needs and {{has}} what your computer reports (GiB), {{ram}} its RAM (MiB), {{count}} its vCPUs (one), {{advice}} what to do."
   },
   "main.memory.max_other": {
-    "message": "This machine needs about {{need}} GiB of memory ({{ram}} MiB of guest RAM plus the emulator, {{count}} vCPUs), and this device reports {{has}} GiB (browsers report at most 8, so it may well have more).\n{{advice}}",
-    "note": "What the message bar (under the toolbar) says before a start when the device may not have the memory for the machine (Start anyway follows) and reports 8 GiB, the most browsers report: {{need}} is what it needs and {{has}} what the device reports (GiB), {{ram}} its RAM (MiB), {{count}} its vCPUs (several), {{advice}} what to do."
+    "message": "This machine needs about {{need}} GiB of memory, counting {{ram}} MiB of guest RAM, {{count}} vCPUs, and the emulator itself. Your computer reports {{has}} GiB; browsers report at most 8 GiB, so it may have more.\n{{advice}}",
+    "note": "What the message bar (under the toolbar) says before a start when your computer may not have the memory for the machine (Start anyway follows) and reports 8 GiB, the most browsers report: {{need}} is what it needs and {{has}} what your computer reports (GiB), {{ram}} its RAM (MiB), {{count}} its vCPUs (several), {{advice}} what to do."
   },
   "main.memory.advice": {
     "message": "If memory runs out, the browser closes the tab without warning. Close other tabs and apps first.",
-    "note": "The advice line of the message bar's warning that the device may not have the memory for the machine."
+    "note": "The advice line of the message bar's warning that your computer may not have the memory for the machine."
   },
   "main.memory.advice.fewer": {
-    "message": "If memory runs out, the browser closes the tab without warning. Close other tabs and apps first, or use fewer vCPUs (?ncpus={{fewer}} fits).",
-    "note": "The advice line of the message bar's warning that the device may not have the memory for the machine, when fewer vCPUs would fit; {{fewer}} is how many."
+    "message": "If memory runs out, the browser closes the tab without warning. Close other tabs and apps first, or use fewer vCPUs; {{fewer}} would fit (?ncpus={{fewer}}).",
+    "note": "The advice line of the message bar's warning that your computer may not have the memory for the machine, when fewer vCPUs would fit; {{fewer}} is how many."
   },
   "main.memory.start": {
     "message": "Start anyway",
-    "note": "Button in the message bar (under the toolbar) after the warning that the device may not have the memory for the machine: it starts it all the same."
+    "note": "Button in the message bar (under the toolbar) after the warning that your computer may not have the memory for the machine: it starts it all the same."
   },
   "main.notChromium": {
-    "message": "webpc is developed and tested in Chromium (and Chrome); in this browser, parts of it may not work.",
+    "message": "This web app is developed and tested in Chromium and Chrome. In this browser, parts of it may not work.",
     "note": "Note in the message bar (under the toolbar) in a browser other than Chromium or Chrome, shown while there is nothing else to say."
   },
   "worker.suspendedMachine": {
-    "message": "The suspended machine",
-    "note": "Names the machine kept suspended in this browser in the words of a snapshot that can't be loaded (in place of a file's name), at the start of a sentence."
+    "message": "the suspended machine",
+    "note": "Names the machine kept suspended in this browser in the words of a snapshot that can't be loaded (in place of a file's name), inside a sentence (“Couldn't load the suspended machine”)."
   },
   "worker.notResumed": {
-    "message": "The suspended machine couldn't be resumed, so it was dropped and the machine boots from its disk.",
-    "note": "Note in the message bar (under the toolbar) when a start found a suspended machine that couldn't be resumed: the page boots the machine instead; why is the detail under it."
+    "message": "Couldn't resume the suspended machine\nIts suspended memory was discarded, and the machine is booting from its disk instead.",
+    "note": "Note in the message bar (under the toolbar) when a start found a suspended machine that couldn't be resumed (the page boots the machine instead): a headline, then what happened; why is the detail under it."
   },
   "worker.phase.resuming": {
     "message": "Resuming the suspended machine",
     "note": "Line on the boot card and the machine's state in the status bar while a start checks the machine kept suspended in this browser."
   },
   "worker.diskChanged": {
-    "message": "its disk has changed since it was suspended",
-    "note": "Detail under “The suspended machine couldn't be resumed…” in the message bar (under the toolbar): a disk of the machine moved on since the suspend (a reset, a switch of overlay, a merge)."
+    "message": "Its disk has changed since it was suspended.",
+    "note": "Detail under “Couldn't resume the suspended machine” in the message bar (under the toolbar): a disk of the machine moved on since the suspend (a reset, a switch of overlay, a merge)."
   },
   "worker.vulkanSplit": {
-    "message": "{{machine}} can't start with Vulkan and its memory split: {{why}}.\nChange its memory on the Machines page (or the split in the address), or turn Vulkan off for it.",
-    "note": "Error in the message bar (under the toolbar) when a machine with Vulkan has a memory split that leaves no room for Vulkan's memory (Retry follows): {{machine}} is the machine's name, {{why}} what is wrong with the split."
+    "message": "Couldn't start {{machine}} with Vulkan\nIts memory split doesn't work with Vulkan ({{why}}). Change the machine's memory on the Machines page, or the split in the address, or turn Vulkan off for it.",
+    "note": "Error in the message bar (under the toolbar) when a machine with Vulkan has a memory split that leaves no room for Vulkan's memory (Retry follows): a headline, then why and what to do; {{machine}} is the machine's name, {{why}} what is wrong with the split (a machines catalog message, lower case)."
   },
   "worker.vulkanSplit.snapshot": {
-    "message": "{{machine}} can't start with Vulkan and the snapshot's memory split: {{why}}.\nTurn Vulkan off for it, or Start it normally.",
-    "note": "Error in the message bar (under the toolbar) when a snapshot loaded on a machine with Vulkan has a memory split that leaves no room for Vulkan's memory: {{machine}} is the machine's name, {{why}} what is wrong with the split."
+    "message": "Couldn't start {{machine}} with Vulkan\nThe snapshot's memory split doesn't work with Vulkan ({{why}}). Turn Vulkan off for the machine, or start it without the snapshot.",
+    "note": "Error in the message bar (under the toolbar) when a snapshot loaded on a machine with Vulkan has a memory split that leaves no room for Vulkan's memory: a headline, then why and what to do; {{machine}} is the machine's name, {{why}} what is wrong with the split (a machines catalog message, lower case)."
   },
   "worker.panic": {
-    "message": "The guest's kernel panicked\nThe serial log shows what led to it; Restart boots the machine again.",
+    "message": "The guest's kernel panicked\nThe serial log shows what led to it. Restart boots the machine again.",
     "note": "Error headline in the message bar (under the toolbar) when the guest's kernel panicked (Show serial log and the like follow); the kernel's panic line is the detail under it."
   },
   "worker.resumed": {
@@ -344,71 +344,71 @@
     "note": "Note in the message bar (under the toolbar) once a suspended machine was resumed."
   },
   "worker.stopped.unimplemented": {
-    "message": "The emulator stopped: an unimplemented instruction or register at pc 0x{{pc}}.",
-    "note": "Error in the message bar (under the toolbar) when the guest used something the emulator doesn't have (Show serial log and the like follow); {{pc}} is the address, in hex."
+    "message": "The emulator stopped\nThe guest used an instruction or register that this emulator doesn't implement (at pc 0x{{pc}}).",
+    "note": "Error in the message bar (under the toolbar) when the guest used something the emulator doesn't have (Show serial log and the like follow): a headline, then why; {{pc}} is the address, in hex."
   },
   "worker.stopped.exit": {
-    "message": "The emulator stopped: exit {{exit}}.",
-    "note": "Error in the message bar (under the toolbar) when the emulator stopped for a reason it has no words for; {{exit}} is its exit code."
+    "message": "The emulator stopped unexpectedly (exit code {{exit}})",
+    "note": "Error headline in the message bar (under the toolbar) when the emulator stopped for a reason it has no words for; {{exit}} is its exit code."
   },
   "worker.http": {
-    "message": "answered HTTP {{status}}",
-    "note": "What the server said about a file the machine needs, in the error that it's missing; {{status}} is the HTTP status."
+    "message": "HTTP {{status}}",
+    "note": "What the server answered for a file the machine needs, in the error that it's missing (“The server answered … for …”); {{status}} is the HTTP status."
   },
   "worker.http.notFound": {
-    "message": "answered HTTP {{status}} (not found)",
-    "note": "What the server said about a file the machine needs when it isn't there, in the error that it's missing; {{status}} is the HTTP status (404)."
+    "message": "HTTP {{status}} (not found)",
+    "note": "What the server answered for a file the machine needs when it isn't there, in the error that it's missing (“The server answered … for …”); {{status}} is the HTTP status (404)."
   },
   "worker.noCore": {
-    "message": "The emulator core isn't built: {{path}} {{why}}.\nRun `npm start` in the repository: it builds the core, then serves this page.",
-    "note": "Error in the message bar (under the toolbar) when the emulator's core can't be fetched from the server (a development checkout; Retry follows): {{path}} is its path in the repository, {{why}} what the server answered."
+    "message": "Couldn't load the emulator core\nThe server answered {{why}} for {{path}}, so the core may not be built. Run `npm start` in the repository; it builds the core, then serves this web app.",
+    "note": "Error in the message bar (under the toolbar) when the emulator's core can't be fetched from the server (a development checkout; Retry follows): a headline, then why and what to do; {{path}} is its path in the repository, {{why}} what the server answered (HTTP and its status)."
   },
   "worker.noImage": {
-    "message": "{{machine}}'s image isn't there: {{path}} {{why}}.\nRun {{prepare}}, then Retry.",
-    "note": "Error in the message bar (under the toolbar) when a file of a test machine can't be fetched from the server (Retry follows): {{machine}} is the machine's name, {{path}} the file's path in the repository, {{why}} what the server answered, {{prepare}} the command that builds it."
+    "message": "Couldn't load {{machine}}'s image\nThe server answered {{why}} for {{path}}. Run {{prepare}}, then Retry.",
+    "note": "Error in the message bar (under the toolbar) when a file of a test machine can't be fetched from the server (Retry follows): a headline, then why and what to do; {{machine}} is the machine's name, {{path}} the file's path in the repository, {{why}} what the server answered (HTTP and its status), {{prepare}} the command that builds it."
   },
   "worker.noServer": {
-    "message": "The server didn't answer for {{path}}: is it still running (`npm start`)?",
-    "note": "Error in the message bar (under the toolbar) when the server didn't answer for a file the machine needs (Retry follows); {{path}} is the file's path in the repository; the browser's error is the detail under it."
+    "message": "Couldn't load {{path}}\nThe server didn't answer. Check that it is still running (`npm start`).",
+    "note": "Error in the message bar (under the toolbar) when the server didn't answer for a file the machine needs (Retry follows): a headline, then what to check; {{path}} is the file's path in the repository; the browser's error is the detail under it."
   },
   "worker.diskInUse": {
-    "message": "{{machine}}'s disk is in use: another tab or window of this page runs the machine on it (the browser lets one open it at a time).\nClose that tab, then Retry.",
-    "note": "Error headline in the message bar (under the toolbar) when the machine's disk is open in another tab (Retry follows); {{machine}} is the machine's name; the lower-level error is the detail under it."
+    "message": "Couldn't start {{machine}}\nAnother tab or window of this web app is running the machine on the same disk, and the browser lets only one of them open it at a time. Close that tab, then Retry.",
+    "note": "Error in the message bar (under the toolbar) when the machine's disk is open in another tab (Retry follows): a headline, then why and what to do; {{machine}} is the machine's name; the lower-level error is the detail under it."
   },
   "worker.diskMismatch": {
-    "message": "{{machine}}'s saved disk was written over a different image than the one served now.\nReset the disk to start over from this image (what the machine wrote is deleted).",
-    "note": "Error headline in the message bar (under the toolbar) when the changes kept for the machine's disk were made over another image (Reset disk… follows); {{machine}} is the machine's name; the lower-level error is the detail under it."
+    "message": "Couldn't start {{machine}}\nThe changes kept for its disk were made over a different image than the one served now. To start over from this image, reset the disk, which deletes those changes.",
+    "note": "Error in the message bar (under the toolbar) when the changes kept for the machine's disk were made over another image (Reset disk… or Disks… follows): a headline, then why and what to do; {{machine}} is the machine's name; the lower-level error is the detail under it."
   },
   "worker.memory": {
-    "message": "The browser couldn't reserve {{ram}} MiB for the machine's RAM.\nClose other tabs, then Retry.",
-    "note": "Error headline in the message bar (under the toolbar) when the browser refused the machine's memory (Retry follows); {{ram}} is the RAM; the browser's error is the detail under it."
+    "message": "Couldn't reserve memory for the machine\nThe browser refused {{ram}} MiB for the machine's RAM. Close other tabs, then Retry.",
+    "note": "Error in the message bar (under the toolbar) when the browser refused the machine's memory (Retry follows): a headline, then what to do; {{ram}} is the RAM; the browser's error is the detail under it."
   },
   "worker.emulator": {
     "message": "The emulator stopped with an error",
     "note": "Error headline in the message bar (under the toolbar) when the emulator failed (Show serial log and the like follow); the error and where it happened (for a bug report) are the details under it."
   },
   "worker.suspend.notRunning": {
-    "message": "The machine isn't running, so there is nothing to suspend.",
-    "note": "Error in the message bar (under the toolbar) when Suspend reached a machine that had already stopped."
+    "message": "Couldn't suspend the machine\nIt had already stopped.",
+    "note": "Error in the message bar (under the toolbar) when Suspend reached a machine that had already stopped: a headline, then why."
   },
   "worker.suspend.noHome": {
-    "message": "This machine has no disk of its own to keep a suspended copy beside.",
-    "note": "Error in the message bar (under the toolbar) when Suspend is asked of a machine that keeps nothing in this browser."
+    "message": "Couldn't suspend the machine\nOnly a machine whose disk changes are kept in this browser can be suspended.",
+    "note": "Error in the message bar (under the toolbar) when Suspend is asked of a machine that keeps nothing in this browser: a headline, then why."
   },
   "worker.suspend.busy": {
-    "message": "A snapshot is being saved: suspend once it is done.",
-    "note": "Error in the message bar (under the toolbar) when Suspend is asked while a snapshot is being written."
+    "message": "Couldn't suspend the machine\nA snapshot is being saved. Suspend the machine once it's done.",
+    "note": "Error in the message bar (under the toolbar) when Suspend is asked while a snapshot is being written: a headline, then what to do."
   },
   "worker.phase.suspending": {
     "message": "Suspending the machine",
     "note": "The machine's state in the status bar while Suspend writes its memory (a percentage may follow)."
   },
   "worker.suspended": {
-    "message": "Suspended: the machine's memory is kept in this browser ({{size, bytes}}). Start resumes it where it was; Boot instead starts it from its disk, as after a power cut.",
+    "message": "The machine is suspended, and its memory ({{size, bytes}}) is kept in this browser. Start resumes it where it was. Boot instead starts it from its disk, as after a power cut.",
     "note": "Note in the message bar (under the toolbar) once the machine was suspended (Start and Boot instead follow); {{size}} is what its memory takes in this browser."
   },
   "worker.suspend.failed": {
-    "message": "The machine couldn't be suspended",
+    "message": "Couldn't suspend the machine",
     "note": "Error headline in the message bar (under the toolbar) when Suspend failed (the machine runs on); why is the detail under it."
   }
 }

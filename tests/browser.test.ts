@@ -666,7 +666,7 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
   await page.waitForTimeout(500);
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'crashed'); // not restarted by the reset
   await page.getByText(t('machine:main.copyLog')).click();
-  await page.getByText(t('machine:main.copyLog.copied')).waitFor({ timeout: 5_000 });
+  await page.getByText(t('machine:main.copyLog.copied'), { exact: true }).waitFor({ timeout: 5_000 });
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   assert.match(copied, /Booting Linux on physical CPU[^]*Kernel panic - not syncing: Requested init/);
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByText(t('machine:main.saveLog')).click()]);
