@@ -444,15 +444,15 @@
     "note": "The Machines page's USB tab's list when the machine remembers no device."
   },
   "Usb.builtin.pluggedNow": {
-    "message": "Connector {{connector}} belongs to the built-in keyboard. It carries the screen's keys to the firmware and the boot loader, and is unplugged once the guest's own keyboard driver takes over. It is plugged in now.",
+    "message": "Connector {{connector}} belongs to the built-in keyboard. It passes the keys you press to the firmware and the boot loader, and is unplugged once the guest's own keyboard driver takes over. It is plugged in now.",
     "note": "Note on the Machines page's USB tab, for the machine running on this page while its built-in keyboard is plugged in. {{connector}} is the keyboard's connector number (from 1)."
   },
   "Usb.builtin.asNow": {
-    "message": "Connector {{connector}} belongs to the built-in keyboard. It carries the screen's keys to the firmware and the boot loader, and is unplugged once the guest's own keyboard driver takes over. It is unplugged now.",
+    "message": "Connector {{connector}} belongs to the built-in keyboard. It passes the keys you press to the firmware and the boot loader, and is unplugged once the guest's own keyboard driver takes over. It is unplugged now.",
     "note": "Note on the Machines page's USB tab, for the machine running on this page while its built-in keyboard is unplugged (the guest's driver took over). {{connector}} is the keyboard's connector number (from 1)."
   },
   "Usb.builtin": {
-    "message": "Connector {{connector}} belongs to the built-in keyboard. It carries the screen's keys to the firmware and the boot loader, and is unplugged once the guest's own keyboard driver takes over.",
+    "message": "Connector {{connector}} belongs to the built-in keyboard. It passes the keys you press to the firmware and the boot loader, and is unplugged once the guest's own keyboard driver takes over.",
     "note": "Note on the Machines page's USB tab, for a machine that isn't running on this page. {{connector}} is the built-in keyboard's connector number (from 1)."
   },
   "Usb.add": {

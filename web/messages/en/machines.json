@@ -1236,11 +1236,11 @@
     "note": "Machines page, Shared folders tab: the label of the field with the path where the guest mounts the shared folders."
   },
   "MachinesPage.sharesPath.noteRunning": {
-    "message": "Mounting over a directory that has files hides them. A new mount point takes effect at the next boot. The guest must be running systemd version 256 or above; nothing is written to its disk.",
+    "message": "Mounting over a non-empty guest directory hides its original contents. A new mount point takes effect at the next boot. The guest must be running systemd version 256 or above. This feature works without writing anything to its disk.",
     "note": "Machines page, Shared folders tab: the note under Mount point, while the machine runs on this page."
   },
   "MachinesPage.sharesPath.note": {
-    "message": "Mounting over a directory that has files hides them. The guest must be running systemd version 256 or above; nothing is written to its disk.",
+    "message": "Mounting over a non-empty guest directory hides its original contents. The guest must be running systemd version 256 or above. This feature works without writing anything to its disk.",
     "note": "Machines page, Shared folders tab: the note under Mount point."
   },
   "MachinesPage.empty": {
