@@ -346,7 +346,7 @@ that don't fit the request ring wait in order, and are posted after the next com
 
 The WebHID device is built on it.
 
-**Gadget Zero** (`web/usb-gadget-zero.ts`, 0525:a4a0) is what Linux's `usbtest` and `testusb` test the
+[Gadget Zero](ui:usb:UsbMenu.zero) (`web/usb-gadget-zero.ts`, 0525:a4a0) is what Linux's `usbtest` and `testusb` test the
 controller with. It behaves as Linux's `g_zero` (f_sourcesink and f_loopback), from their behavior.
 - **Configuration 3, source/sink** (the first, which Linux chooses):
   - bulk IN 0x81 sends the pattern
@@ -721,15 +721,15 @@ device again with `getDevices()` and needs no click.
 - **Grants:** WebUSB and WebHID list only devices that are both granted and plugged in, so a missing grant looks the
   same as a device that is unplugged. The page keeps the identities it has seen granted in localStorage
   (`webpc.usbGranted`) to tell the two apart. An entry that isn't listed there and isn't found has *no permission in
-  this browser*. That happens to a definition's entries on another browser. **Allow…** opens the browser's chooser
+  this browser*. That happens to a definition's entries on another browser. [Allow…](ui:usb:Usb.allow) opens the browser's chooser
   filtered on the entry's IDs (and its serial number, for WebUSB), and so does the menu's offer at the first start.
 - **States** (`entryStates`):
   - *attached*: on a connector of this page's machine.
   - *held by …*: another tab's machine has it. The page sees the entry's Web Lock held, and the holder answers with
     its machine's name.
-  - *plugged in*.
-  - *not plugged in*: skipped at start without a word.
-  - *no permission in this browser*.
+  - [plugged in](ui:usb:Usb.state.plugged).
+  - [not plugged in](ui:usb:Usb.state.unplugged): skipped at start without a word.
+  - [no permission in this browser](ui:usb:Usb.state.ungranted).
 - **Forget** detaches the device first. When no other machine remembers the device, Forget also calls
   `device.forget()`, so the browser's grant goes too.
 - **Edits:** the list is edited while the machine runs, so a settings save (`updateMachine`) keeps the stored list
@@ -781,7 +781,7 @@ entries to the next start, as with a restore.
 
 ### Gadget Zero on the page
 
-`?usbzero=1` adds a **Gadget Zero** toggle to the USB menu. It attaches the virtual `{api: 'virtual', kind:
+`?usbzero=1` adds a [Gadget Zero](ui:usb:UsbMenu.zero) toggle to the USB menu. It attaches the virtual `{api: 'virtual', kind:
 'gadget-zero'}` on the first free connector, so the page's tests can attach, detach and snapshot without host
 hardware. It takes no lock and is no entry.
 

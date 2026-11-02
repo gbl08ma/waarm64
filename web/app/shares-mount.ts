@@ -1,6 +1,7 @@
 // The shared folders' mount in the guest (docs/shares.md "The guest"): a systemd automount at the machine's mount point,
 // given as SMBIOS credentials (web/app/guest-unit.ts: systemd 256+, read at boot), so the first access mounts the
 // device and a guest without the module or the device boots on. Nothing is installed in the guest's disk.
+import { msg, type Msg } from '../msg.ts';
 import type { Credential } from './machine.ts';
 
 export const DEFAULT_SHARES_PATH = '/mnt/shared';
@@ -13,16 +14,16 @@ export const SHARES_OPTIONS = 'trans=virtio,version=9p2000.L,cache=none,msize=10
 const OWN = ['/bin', '/boot', '/etc', '/lib', '/lib32', '/lib64', '/libx32', '/run', '/sbin', '/tmp', '/usr', '/var'];
 const UNDER = ['/dev', '/proc', '/sys'];
 
-/** Why `path` can't be a mount point, in words; undefined if it can. */
-export function sharesPathError(path: string): string | undefined {
-  if (!path.startsWith('/')) return 'The mount point is an absolute path.';
-  if (path === '/') return "The mount point can't be the guest's root.";
+/** Why `path` can't be a mount point, as a message (the page renders it: this runs in the machine's worker too); undefined if it can. */
+export function sharesPathError(path: string): Msg | undefined {
+  if (!path.startsWith('/')) return msg('folders:shares-mount.absolute');
+  if (path === '/') return msg('folders:shares-mount.root');
   // eslint-disable-next-line no-control-regex
-  if (/[\x00-\x1f\x7f]/.test(path)) return "The mount point can't have control characters.";
-  if (new TextEncoder().encode(path).length > 255 || mountUnit(path).length + '.automount'.length > 255) return 'The mount point is too long.';
-  if (/[%]|\s$|\\$/.test(path)) return 'The mount point can\'t have "%", or end in a space or "\\" (systemd reads them otherwise).';
-  if (path.endsWith('/') || path.includes('//') || path.split('/').some((p) => p === '.' || p === '..')) return 'Write the mount point plainly: no "." or "..", no "//", no "/" at the end.';
-  if (OWN.includes(path) || UNDER.some((d) => path === d || path.startsWith(`${d}/`))) return `${path} is the guest's own: mounting there would hide it.`;
+  if (/[\x00-\x1f\x7f]/.test(path)) return msg('folders:shares-mount.control');
+  if (new TextEncoder().encode(path).length > 255 || mountUnit(path).length + '.automount'.length > 255) return msg('folders:shares-mount.tooLong');
+  if (/[%]|\s$|\\$/.test(path)) return msg('folders:shares-mount.characters');
+  if (path.endsWith('/') || path.includes('//') || path.split('/').some((p) => p === '.' || p === '..')) return msg('folders:shares-mount.plainly');
+  if (OWN.includes(path) || UNDER.some((d) => path === d || path.startsWith(`${d}/`))) return msg('folders:shares-mount.guestOwn', { path });
   return undefined;
 }
 

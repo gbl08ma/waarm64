@@ -13,6 +13,10 @@ import { after, before, test } from 'node:test';
 import { chromium, type BrowserContext, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { answerAsks, type Question } from './page-ask.ts';
+import { t } from '../web/i18n.ts';
+
+const PLUGGED = t('usb:Usb.state.plugged');
+const UNGRANTED = t('usb:Usb.state.ungranted');
 
 let base: string;
 let close: () => void;
@@ -96,28 +100,28 @@ test('the USB tab: the controller, Add a device, twins, a device held elsewhere;
   await page.locator('.machines [data-selected] [data-tab=settings]').waitFor();
   assert.equal(await page.isChecked('.machines [data-field=usb]'), true);
   await page.click('.machines [data-tab=usb]');
-  await page.locator('.machines .usb .none', { hasText: 'No USB devices remembered' }).waitFor();
+  await page.locator('.machines .usb .none', { hasText: t('usb:Usb.none') }).waitFor();
 
   // The wizard: the kind first, then the chooser (here, the fake's first device of that kind).
   await page.click('.machines [data-action=add-usb]');
-  assert.match(await page.textContent('#add-usb [data-usb-kind=usb]') ?? '', /WebUSB.*Android phones/s);
-  assert.match(await page.textContent('#add-usb [data-usb-kind=hid]') ?? '', /WebHID.*Game pads/s);
+  assert.equal(await page.textContent('#add-usb [data-usb-kind=usb]'), t('usb:AddUsb.usb') + t('usb:AddUsb.usb.text'));
+  assert.equal(await page.textContent('#add-usb [data-usb-kind=hid]'), t('usb:AddUsb.hid') + t('usb:AddUsb.hid.text'));
   await page.click('#add-usb [data-usb-kind=usb]');
   await page.locator('#add-usb').waitFor({ state: 'detached' });
   await page.waitForFunction(() => document.querySelectorAll('.machines [data-usb-entry]').length === 1, null, { polling: 100 });
   await addDevice(page, 'hid', 2);
   await addDevice(page, 'hid', 3);
-  await page.waitForFunction(() => [...document.querySelectorAll('.machines [data-usb-state]')].every((e) => e.textContent === 'plugged in'), null, { polling: 100 });
+  await page.waitForFunction((want) => [...document.querySelectorAll('.machines [data-usb-state]')].every((e) => e.textContent === want), PLUGGED, { polling: 100 });
   assert.deepEqual(await entries(page), [
-    { name: 'Pico', state: 'plugged in', connector: 0, atStart: true },
-    { name: 'DualSense Wireless Controller', state: 'plugged in', connector: 1, atStart: true },
-    { name: 'DualSense Wireless Controller', state: 'plugged in', connector: 2, atStart: true },
+    { name: 'Pico', state: PLUGGED, connector: 0, atStart: true },
+    { name: 'DualSense Wireless Controller', state: PLUGGED, connector: 1, atStart: true },
+    { name: 'DualSense Wireless Controller', state: PLUGGED, connector: 2, atStart: true },
   ]);
   await page.locator('.machines [data-usb-twins]').waitFor();
-  assert.match(await page.textContent('.machines [data-usb-entry]:nth-child(3) .meta') ?? '', /the 2nd of its kind/);
+  assert.ok((await page.textContent('.machines [data-usb-entry]:nth-child(3) .meta') ?? '').includes(t('usb:Usb.meta.index.nd', { n: 2 })));
   // Connectors 1-3 are the user's (4 is the built-in keyboard's, the tab says so). Connector and attach at start are kept.
   assert.deepEqual(await page.$$eval('.machines [data-usb-entry]:nth-child(3) [data-field=connector] option', (o) => o.map((e) => e.textContent)), ['1', '2', '3']);
-  assert.match(await page.textContent('.machines [data-usb-builtin]') ?? '', /keyboard/);
+  assert.ok([t('usb:Usb.builtin', { connector: 4 }), t('usb:Usb.builtin.asNow', { connector: 4 }), t('usb:Usb.builtin.pluggedNow', { connector: 4 })].includes(await page.textContent('.machines [data-usb-builtin]') ?? ''));
   await page.selectOption('.machines [data-usb-entry]:nth-child(3) [data-field=connector]', { value: '0' });
   await page.uncheck('.machines [data-usb-entry]:nth-child(3) [data-field=at-start]');
   await page.waitForFunction(() => (document.querySelector('.machines [data-usb-entry]:nth-child(3) [data-field=connector]') as HTMLSelectElement).value === '0', null, { polling: 100 });
@@ -135,7 +139,7 @@ test('the USB tab: the controller, Add a device, twins, a device held elsewhere;
   });
   await page.click('.machines [data-tab=settings]');
   await page.click('.machines [data-tab=usb]');
-  await page.locator('.machines [data-usb-entry]:first-child [data-usb-state]', { hasText: 'held by Other machine' }).waitFor();
+  await page.locator('.machines [data-usb-entry]:first-child [data-usb-state]', { hasText: t('usb:Usb.state.heldBy', { holder: 'Other machine' }) }).waitFor();
   await other.close();
 
   // The definition carries the identities, not the grants.
@@ -160,10 +164,10 @@ test('the USB tab: the controller, Add a device, twins, a device held elsewhere;
   writeFileSync(file, def);
   await pb.setInputFiles('.machines [data-field=import-definition]', file);
   await pb.locator('.machines [data-selected] [data-tab=usb]').click();
-  await pb.waitForFunction(() => [...document.querySelectorAll('.machines [data-usb-state]')].length === 3 && [...document.querySelectorAll('.machines [data-usb-state]')].every((e) => e.textContent === 'no permission in this browser'), null, { polling: 100 });
+  await pb.waitForFunction((want) => [...document.querySelectorAll('.machines [data-usb-state]')].length === 3 && [...document.querySelectorAll('.machines [data-usb-state]')].every((e) => e.textContent === want), UNGRANTED, { polling: 100 });
   await pb.click('.machines [data-usb-entry]:first-child [data-action=allow]');
-  await pb.locator('.machines [data-usb-entry]:first-child [data-usb-state]', { hasText: 'plugged in' }).waitFor();
-  assert.equal((await entries(pb))[1].state, 'no permission in this browser', 'the others stay as they were');
+  await pb.locator('.machines [data-usb-entry]:first-child [data-usb-state]', { hasText: PLUGGED }).waitFor();
+  assert.equal((await entries(pb))[1].state, UNGRANTED, 'the others stay as they were');
 
   // Forget: asked, and the grant goes (no other machine remembers it).
   await pb.click('.machines [data-usb-entry]:first-child [data-action=forget]');

@@ -5,6 +5,8 @@
 -->
 <script lang="ts">
   import Menu from './Menu.svelte';
+  import T from './T.svelte';
+  import { errorText, t } from '../i18n.ts';
   import type { PageFolders } from './folders-live.ts';
   import { SHARES_BY_HAND } from './shares-mount.ts';
   import { page, ui } from './ui.svelte.ts';
@@ -23,31 +25,44 @@
       await f();
       error = '';
     } catch (e) {
-      error = String((e as Error).message ?? e);
+      error = errorText(e);
     }
   }
-  const stateText = (v: (typeof views)[number]) => (v.problem === 'permission' ? 'needs your permission' : v.problem === 'held' ? `in use by ${v.holder ?? 'a machine in another tab'}` : v.problem === 'missing' ? 'not in this browser any more' : v.problem === 'failed' ? `can't be used: ${v.holder}` : v.readOnly ? 'read-only' : 'read and write');
+  function stateText(v: (typeof views)[number]) {
+    switch (v.problem) {
+      case 'permission': return t('folders:FoldersMenu.state.permission');
+      case 'held': return v.holder ? t('folders:FoldersMenu.state.heldBy', { holder: v.holder }) : t('folders:FoldersMenu.state.held');
+      case 'missing': return t('folders:FoldersMenu.state.missing');
+      case 'failed': return t('folders:FoldersMenu.state.failed', { why: v.holder });
+      default: return v.readOnly ? t('folders:FoldersMenu.state.readOnly') : t('folders:FoldersMenu.state.readWrite');
+    }
+  }
 </script>
 
-<Menu id="folders" icon="folder" title="The machine's shared folders" bind:open panel data-waiting={waiting || undefined}>
+<Menu id="folders" icon="folder" title={t('folders:FoldersMenu.title')} bind:open panel data-waiting={waiting || undefined}>
   {#snippet badge()}{#if waiting}<span class="dot" aria-hidden="true"></span>{/if}{/snippet}
   <ul class="folder-list">
     {#each views as v (v.id)}
       <li data-folder={v.id} data-problem={v.problem}>
         <span><b>{v.name}</b> <small>{stateText(v)}</small></span>
         <span class="net-row">
-          {#if v.problem === 'permission'}<button data-action="allow-folder" onclick={() => act(() => page.folderAllow(v.id))}>Allow access to {v.name}</button>{/if}
-          {#if v.problem === 'held'}<button data-action="use-folder" onclick={() => act(() => page.folderUseHere(v.id))}>Use it here</button>{/if}
-          <button data-action="detach-folder" onclick={() => act(() => page.folderDetach(ui.current!, v.id))}>Detach</button>
+          {#if v.problem === 'permission'}<button data-action="allow-folder" onclick={() => act(() => page.folderAllow(v.id))}>{t('folders:FoldersMenu.allow', { name: v.name })}</button>{/if}
+          {#if v.problem === 'held'}<button data-action="use-folder" onclick={() => act(() => page.folderUseHere(v.id))}>{t('folders:FoldersMenu.useHere')}</button>{/if}
+          <button data-action="detach-folder" onclick={() => act(() => page.folderDetach(ui.current!, v.id))}>{t('folders:FoldersMenu.detach')}</button>
         </span>
       </li>
     {:else}
-      <li class="net-note">No folders attached.</li>
+      <li class="net-note">{t('folders:FoldersMenu.none')}</li>
     {/each}
   </ul>
   <p id="folders-error" class="net-note net-menu-error" hidden={!error}>{error}</p>
-  <div class="net-actions"><button id="folder-attach" onclick={() => { open = false; page.folderWizard(ui.current, folders.views().map((v) => ({ id: v.id, readOnly: v.readOnly }))); }}>Attach a folder…</button></div>
-  <p class="net-note" id="folders-where">{#if ui.folders.path}In the guest: <code>{ui.folders.path}/&lt;name&gt;</code>. {/if}A guest without systemd 256 mounts them by hand: <code>{SHARES_BY_HAND}</code></p>
+  <div class="net-actions"><button id="folder-attach" onclick={() => { open = false; page.folderWizard(ui.current, folders.views().map((v) => ({ id: v.id, readOnly: v.readOnly }))); }}>{t('folders:FoldersMenu.attach')}</button></div>
+  <!-- The markers' words stand for what the page puts there (the path and the command): the snippets show those. -->
+  <p class="net-note" id="folders-where">
+    {#snippet path()}<code>{ui.folders.path}/&lt;name&gt;</code>{/snippet}
+    {#snippet command()}<code>{SHARES_BY_HAND}</code>{/snippet}
+    {#if ui.folders.path}<T k="folders:FoldersMenu.where" params={{ path: ui.folders.path }} {path} {command} />{:else}<T k="folders:FoldersMenu.where.byHand" {command} />{/if}
+  </p>
 </Menu>
 
 <style>

@@ -8,6 +8,7 @@
   import AddUsb from './AddUsb.svelte';
   import Menu from './Menu.svelte';
   import UsbProblems from './UsbProblems.svelte';
+  import { t } from '../i18n.ts';
   import { deviceName, errorView, type ErrorView } from './usb-ports.ts';
   import { page, ui } from './ui.svelte.ts';
 
@@ -32,39 +33,50 @@
     }
   }
   const toggle = (id: string, on: boolean) => run(() => (on ? page.usbAttach(id) : page.usbDetach(id)));
+  type View = (typeof ui.usb.entries)[number];
+  /** The device's line's tooltip: why it can't be attached now, if it can't. */
+  const why = (v: View) => (v.state === 'unplugged' ? t('usb:UsbMenu.why.unplugged') : v.state === 'held' ? (v.holder ? t('usb:UsbMenu.why.heldBy', { holder: v.holder }) : t('usb:UsbMenu.why.held')) : v.state === 'ungranted' ? t('usb:UsbMenu.why.ungranted') : '');
+  /** What the device's line says at its right: where it is, or why it can't be attached. */
+  function where(v: View, c: (typeof ui.usb.connectors)[number]) {
+    if (c?.entry === v.entry.id && c.state !== 'attached') return c.state === 'detaching' ? t('usb:UsbMenu.where.detaching') : t('usb:UsbMenu.where.attaching');
+    if (v.state === 'attached') return t('usb:UsbMenu.where.connector', { connector: v.entry.connector + 1 });
+    if (v.state === 'held') return v.holder ? t('usb:UsbMenu.where.heldBy', { holder: v.holder }) : t('usb:UsbMenu.where.held');
+    if (v.state === 'plugged') return '';
+    return v.state === 'ungranted' ? t('usb:UsbMenu.where.ungranted') : t('usb:UsbMenu.where.unplugged');
+  }
 </script>
 
-<Menu id="usb-menu" icon="usb" title="USB devices: attach them to the machine, or add one" bind:open panel data-attached={attached || undefined}>
-  {#snippet badge()}{#if attached}<span class="count" aria-label={`${attached} attached`}>{attached}</span>{/if}{/snippet}
+<Menu id="usb-menu" icon="usb" title={t('usb:UsbMenu.title')} bind:open panel data-attached={attached || undefined}>
+  {#snippet badge()}{#if attached}<span class="count" aria-label={t('usb:UsbMenu.attached', { n: attached })}>{attached}</span>{/if}{/snippet}
   {#each ui.usb.offers as o (o.id)}
     <div class="offer" data-usb-offer={o.id}>
       <p>{o.text}</p>
-      <div class="row"><button class="primary" onclick={() => page.usbOffer(o.id, true)}>{o.label}</button><button onclick={() => page.usbOffer(o.id, false)}>Not now</button></div>
+      <div class="row"><button class="primary" onclick={() => page.usbOffer(o.id, true)}>{o.label}</button><button onclick={() => page.usbOffer(o.id, false)}>{t('usb:UsbMenu.notNow')}</button></div>
     </div>
   {/each}
   {#each ui.usb.entries as v (v.entry.id)}
     {@const on = v.state === 'attached'}
     {@const c = ui.usb.connectors[v.entry.connector]}
-    <label class="device" data-usb-device={v.entry.id} data-state={v.state} title={v.state === 'unplugged' ? 'Not plugged in' : v.state === 'held' ? `Held by ${v.holder ?? 'another machine'}` : v.state === 'ungranted' ? 'No permission in this browser yet: Allow it on the Machines page\'s USB tab' : ''}>
+    <label class="device" data-usb-device={v.entry.id} data-state={v.state} title={why(v)}>
       <input type="checkbox" checked={on || c?.entry === v.entry.id} disabled={!ui.usb.running || (!on && (v.state === 'unplugged' || v.state === 'ungranted' || (!!c && c.entry !== v.entry.id)))} onchange={(e) => toggle(v.entry.id, (e.currentTarget as HTMLInputElement).checked)}>
       <span class="name">{deviceName(v.entry)}</span>
-      <span class="dim">{c?.entry === v.entry.id && c.state !== 'attached' ? `${c.state}…` : on ? `connector ${v.entry.connector + 1}` : v.state === 'held' ? `in ${v.holder ?? 'another machine'}` : v.state === 'plugged' ? '' : v.state === 'ungranted' ? 'no permission' : 'not plugged in'}</span>
+      <span class="dim">{where(v, c)}</span>
     </label>
     {#if on && c?.entry === v.entry.id && c.problems?.length}
-      <p class="warn" data-usb-problems={v.entry.id} title={c.problems.map((w) => w.text).join('\n\n')}>Part of it doesn't reach the guest: hover here, or see All USB settings…</p>
+      <p class="warn" data-usb-problems={v.entry.id} title={c.problems.map((w) => w.text).join('\n\n')}>{t('usb:UsbMenu.problems')}</p>
     {/if}
   {:else}
-    <p class="hint">No devices remembered yet.</p>
+    <p class="hint">{t('usb:UsbMenu.none')}</p>
   {/each}
   {#if ui.usb.zero}
-    <label class="device" data-usb-zero><input type="checkbox" checked={zeroOn} disabled={!ui.usb.running} onchange={() => run(() => page.usbZero())}><span class="name">Gadget Zero</span><span class="dim">test device</span></label>
+    <label class="device" data-usb-zero><input type="checkbox" checked={zeroOn} disabled={!ui.usb.running} onchange={() => run(() => page.usbZero())}><span class="name">{t('usb:UsbMenu.zero')}</span><span class="dim">{t('usb:UsbMenu.zero.note')}</span></label>
   {/if}
   {#if error}<div class="error" role="alert">{error.text}{#if error.words}<UsbProblems words={error.words} />{/if}</div>{/if}
   <div class="row">
-    <button id="usb-add" onclick={() => { open = false; adding = true; }}>Add a device…</button>
-    {#if ui.current}<button onclick={() => { open = false; page.openMachines('usb', ui.current); }}>All USB settings…</button>{/if}
+    <button id="usb-add" onclick={() => { open = false; adding = true; }}>{t('usb:UsbMenu.add')}</button>
+    {#if ui.current}<button onclick={() => { open = false; page.openMachines('usb', ui.current); }}>{t('usb:UsbMenu.all')}</button>{/if}
   </div>
-  {#if !ui.usb.running}<p class="hint">The machine isn't running: its devices are attached when it runs.</p>{/if}
+  {#if !ui.usb.running}<p class="hint">{t('usb:UsbMenu.stopped')}</p>{/if}
 </Menu>
 {#if adding}<AddUsb machine={ui.current} name={ui.title} close={() => (adding = false)} />{/if}
 

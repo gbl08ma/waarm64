@@ -7,6 +7,7 @@
   import { onMount } from 'svelte';
   import Icon from './Icon.svelte';
   import UsbProblems from './UsbProblems.svelte';
+  import { t } from '../i18n.ts';
   import type { IconName } from './icons.ts';
   import { hasApi, type Api } from './usb-live.ts';
   import { errorView, type ErrorView } from './usb-ports.ts';
@@ -21,8 +22,8 @@
   let { machine, name, close }: Props = $props();
 
   const KINDS: { api: Api; icon: IconName; name: string; text: string }[] = [
-    { api: 'usb', icon: 'usb', name: 'A USB device (WebUSB)', text: 'Developer and maker hardware, passed through as it is: microcontroller boards and debug probes, Android phones (adb, fastboot), USB-serial adapters, logic analysers, SDRs, printers. Not what the browser keeps from pages (keyboards, mice, disks, webcams, headsets, Bluetooth adapters), nor an interface a driver on this computer holds: the page says which and what to do.' },
-    { api: 'hid', icon: 'device-gamepad-2', name: 'A HID device (WebHID)', text: 'Game pads, joysticks and wheels, macro pads and Stream Decks, a keyboard\'s configuration interface (VIA), a UPS. The guest gets a USB HID device built from what the browser tells of it, over USB or Bluetooth. A keyboard\'s keys and a mouse\'s pointer stay the browser\'s (the machine has the page\'s).' },
+    { api: 'usb', icon: 'usb', name: t('usb:AddUsb.usb'), text: t('usb:AddUsb.usb.text') },
+    { api: 'hid', icon: 'device-gamepad-2', name: t('usb:AddUsb.hid'), text: t('usb:AddUsb.hid.text') },
   ];
 
   let dialog: HTMLDialogElement;
@@ -46,17 +47,17 @@
 
 <dialog id="add-usb" bind:this={dialog} onclose={close} aria-labelledby="add-usb-title">
   <div class="body">
-    <h2 id="add-usb-title">Add a USB device to {name}</h2>
-    <p class="note">Which kind? The browser then shows the devices it may give this page: pick one. The machine remembers it, and the browser keeps the permission.</p>
+    <h2 id="add-usb-title">{t('usb:AddUsb.title', { name })}</h2>
+    <p class="note">{t('usb:AddUsb.intro')}</p>
     <div class="choices">
       {#each KINDS as k (k.api)}
-        <button type="button" class="choice" data-usb-kind={k.api} disabled={busy || !hasApi(k.api)} title={hasApi(k.api) ? undefined : `This browser has no ${k.api === 'usb' ? 'WebUSB' : 'WebHID'}`} onclick={() => choose(k.api)}>
+        <button type="button" class="choice" data-usb-kind={k.api} disabled={busy || !hasApi(k.api)} title={hasApi(k.api) ? undefined : k.api === 'usb' ? t('usb:AddUsb.noWebUsb') : t('usb:AddUsb.noWebHid')} onclick={() => choose(k.api)}>
           <b><Icon name={k.icon} size={18} />{k.name}</b><span>{k.text}</span>
         </button>
       {/each}
     </div>
     {#if error}<div class="error" role="alert">{error.text}{#if error.words}<UsbProblems words={error.words} />{/if}</div>{/if}
-    <div class="buttons"><span class="grow"></span><button type="button" onclick={() => dialog.close()}>Cancel</button></div>
+    <div class="buttons"><span class="grow"></span><button type="button" onclick={() => dialog.close()}>{t('usb:AddUsb.cancel')}</button></div>
   </div>
 </dialog>
 

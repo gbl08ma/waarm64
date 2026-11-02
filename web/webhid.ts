@@ -8,7 +8,7 @@
 import type { Setup, UsbIdentity, UsbProblem, UsbResult, UsbTransfer } from './usb-device.ts';
 import { VirtualDevice, type ControlAnswer } from './usb-virtual.ts';
 import { encodeReportDescriptor, normalizeCollections, protectedCollections, reportSizes, usesReportIds, visibleCollections, type HidCollectionInfo, type HidCollectionLike, type ReportKind } from './hid-descriptor.ts';
-import { UsbOpenError, pickDevice } from './webusb.ts';
+import { UsbOpenError, notFound, openFailed, pickDevice } from './webusb.ts';
 
 export type WebHidInputReport = { reportId: number; data: DataView };
 
@@ -219,12 +219,11 @@ export async function openWebHid(dev: WebHidDeviceLike, opts: WebHidOptions = {}
   // Only what the page can use: a protected collection's input and output reports never arrive and can't be sent.
   const all = normalizeCollections(dev.collections);
   const collections = visibleCollections(all);
-  if (collections.length === 0) throw new UsbOpenError('WebHID shows none of this device\'s collections', [{ kind: 'no-collections' }]);
+  if (collections.length === 0) throw new UsbOpenError('usb:webhid.noCollections', undefined, [{ kind: 'no-collections' }]);
   try {
     if (!dev.opened) await dev.open();
   } catch (e) {
-    const message = (e as Error).message;
-    throw new UsbOpenError(`could not open the device: ${message}`, [{ kind: 'open-failed', message }]);
+    throw openFailed(e);
   }
   const d = new WebHidDevice(dev, hidLayout(dev.vendorId, dev.productId, collections), opts);
   d.problems = protectedCollections(all).map((c): UsbProblem => ({ kind: 'protected-collection', ...c }));
@@ -240,7 +239,7 @@ export function webHidOpener(hid: WebHidLike) {
   return async (id: UsbIdentity, ctx: { gone?: () => void; connector?: number } = {}): Promise<WebHidDevice> => {
     const devs = (await hid.getDevices()).map((d) => ({ d, vendorId: d.vendorId, productId: d.productId }));
     const dev = pickDevice(devs, { ...id, serialNumber: undefined })?.d;
-    if (!dev) throw new UsbOpenError('the device is not plugged in, or this page has no permission for it', [{ kind: 'open-failed', message: 'not found' }]);
+    if (!dev) throw notFound();
     let fired = false;
     const onDisconnect = (e: { device: WebHidDeviceLike }) => {
       if (e.device !== dev || fired) return;

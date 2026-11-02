@@ -16,6 +16,7 @@ import { credentialsQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { answerAsks } from './page-ask.ts';
 import { PAGE_QUERY } from './page-query.ts';
+import { t } from '../web/i18n.ts';
 
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -99,7 +100,7 @@ test('the page: the wizard, the lock between two tabs, the tab and the pane, Del
   await a.goto(`${base}/web/app/?m=${alpha}`);
   await started(a);
   await menu(a);
-  assert.match(await itemState(a, data) ?? '', /Data read and write/);
+  assert.ok((await itemState(a, data) ?? '').includes(`Data ${t('folders:FoldersMenu.state.readWrite')}`));
 
   // A second tab's machine: Alpha writes it, so it waits, naming Alpha, and takes it after asking.
   const b = await context.newPage();
@@ -108,7 +109,7 @@ test('the page: the wizard, the lock between two tabs, the tab and the pane, Del
   await b.goto(`${base}/web/app/?m=${bravo}`);
   await started(b);
   await menu(b);
-  await b.waitForFunction((id) => /in use by Alpha/.test(document.querySelector(`#folders [data-folder="${id}"]`)?.textContent ?? ''), data, { timeout: 10_000 });
+  await b.waitForFunction(([id, want]) => (document.querySelector(`#folders [data-folder="${id}"]`)?.textContent ?? '').includes(want), [data, t('folders:FoldersMenu.state.heldBy', { holder: 'Alpha' })], { timeout: 10_000 });
   await b.locator(`#folders [data-folder="${data}"] [data-action="use-folder"]`).click();
   await b.waitForFunction((id) => document.querySelector(`#folders [data-folder="${id}"]`)?.getAttribute('data-problem') === null, data, { timeout: 15_000 });
   assert.match(asked.at(-1)!, /in use by Alpha.*Use it here/);

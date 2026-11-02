@@ -13,7 +13,7 @@ the guest ([frontend.md](frontend.md) "What the page sets in the guest").
 ## 1. The rules
 
 1. **Folders are the browser's.** A list kept in this browser (IndexedDB `webpc`, object store `folders`), each one
-   of two kinds: **a folder on this computer** (a directory handle the user picked or dropped) or **a folder in the
+   of two kinds: [a folder on this computer](ui:folders:FolderWizard.state.host) (a directory handle the user picked or dropped) or **a folder in the
    browser** (a directory in OPFS, `folders/<id>/`). Each has a name and **Read-only**. Machines are attached to
    folders; deleting a folder detaches it from every machine (and, for one in the browser, deletes its files, asked
    first with their size).
@@ -29,7 +29,7 @@ the guest ([frontend.md](frontend.md) "What the page sets in the guest").
 4. **One writer at a time.** A Web Lock per folder (`webpc-folder:<id>`), taken by a running machine: `shared` for a
    read-only attachment, `exclusive` for a read-write one (the attachment's own Read-only, or the folder's). Several
    machines can read a folder; one can write it, and then none other reads it (a reader would see writes land
-   halfway). A machine that wants a held folder is told which machine holds it and offers **Use it here**, as the
+   halfway). A machine that wants a held folder is told which machine holds it and offers [Use it here](ui:folders:FoldersMenu.useHere), as the
    connections do (`web/app/locks.ts`, topic `folder`).
 5. **The grant is the browser's.** A folder on this computer keeps its handle in IndexedDB. At start, a machine
    checks each attached folder's permission (`queryPermission`); where it isn't granted the folder is left out of the
@@ -66,7 +66,7 @@ shown as it is.
 
 ### 2.3 A folder in the browser's contents
 
-Its card lists the top level with sizes and has **Add files…** (`showOpenFilePicker`, multiple, or a drop), **Copy
+Its card lists the top level with sizes and has [Add files…](ui:folders:FoldersPane.add) (`showOpenFilePicker`, multiple, or a drop), **Copy
 into a folder on this computer…** and **Copy from a folder on this computer…** (`showDirectoryPicker`, recursive, with
 progress and Cancel), **Empty** (`web/app/folder-files.ts`); `folders/` counts in the storage estimate as OPFS does. Copying through a picked folder replaces an
 archive format (no zip writer, no dependency). While a machine writes the folder (its lock is exclusive) the card's
@@ -154,12 +154,12 @@ after the request it names**. What changes while the machine runs comes over the
   as Settings' changes are), **Mount shared folders in the guest** and under it **Mount point** (a text field, default
   `/mnt/shared`, checked as typed by `sharesPathError`, §5; on the machine running on this page a change says it takes
   effect at the next start), and the attached folders in order (name, kind,
-  Read-only, held by another machine, no permission in this browser; up, down, Detach, Allow…). **Attach a folder…**
+  Read-only, held by another machine, no permission in this browser; up, down, Detach, Allow…). [Attach a folder…](ui:folders:Folders.attach)
   opens the **Folder wizard** (`FolderWizard.svelte`): the browser's folders first, those in use marked with their
-  machine, after **New folder…**: the kind, each explained, then its settings. **Shared folders** in the list of
+  machine, after [New folder…](ui:folders:FolderWizard.pick.new): the kind, each explained, then its settings. **Shared folders** in the list of
   machines is the browser's (§2.2, §2.3), with rename, Read-only, Delete (naming the machines that lose it).
 - **The toolbar:** a **Folders** menu while the page's machine has `shares`: each attached folder with its state,
-  **Allow access…**, Detach, **Attach a folder…** (the wizard), and where the guest finds them (`<mount point>/<name>`).
+  **Allow access…**, Detach, [Attach a folder…](ui:folders:FoldersMenu.attach) (the wizard), and where the guest finds them (`<mount point>/<name>`).
 - **A drop on the page's screen** of a directory offers to attach it to the running machine (and keep it as a folder).
 - The transient machine (`?machine=`, `?disk=`) has no folders: it isn't stored, and tests make their own.
 

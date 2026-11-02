@@ -4,6 +4,7 @@
 // entries a definition carries, and the page's words for what the device worker reports (`UsbProblem`). DOM-free:
 // Node's tests use it. The live side (the browser's devices, the locks, the running machine's ports) is
 // web/app/usb-live.ts.
+import { describe, errorText, msg, t, type Msg } from '../i18n.ts';
 import type { UsbIdentity, UsbProblem, UsbVirtual } from '../usb-device.ts';
 import { newId, USB_CONNECTORS, USER_CONNECTORS, type UsbEntry } from './shape.ts';
 
@@ -27,8 +28,9 @@ export const usbLock = (i: Pick<UsbIdentity, 'api' | 'vendorId' | 'productId' | 
 
 /** A device's name on the page: its product name, or its IDs. */
 export function deviceName(d: { api?: string; kind?: string; vendorId?: number; productId?: number; productName?: string | null }): string {
-  if (d.api === 'virtual') return d.kind === 'gadget-zero' ? 'Gadget Zero (test device)' : d.kind === 'keyboard' ? 'Built-in keyboard' : 'a test device';
-  return d.productName?.trim() || `${d.api === 'hid' ? 'HID' : 'USB'} device ${hex4(d.vendorId ?? 0)}:${hex4(d.productId ?? 0)}`;
+  if (d.api === 'virtual') return t(d.kind === 'gadget-zero' ? 'usb:usb-ports.gadgetZero' : d.kind === 'keyboard' ? 'usb:usb-ports.builtinKeyboard' : 'usb:usb-ports.testDevice');
+  const ids = `${hex4(d.vendorId ?? 0)}:${hex4(d.productId ?? 0)}`;
+  return d.productName?.trim() || (d.api === 'hid' ? t('usb:usb-ports.hidDevice', { ids }) : t('usb:usb-ports.usbDevice', { ids }));
 }
 export const virtualName = (v: UsbVirtual) => deviceName(v);
 
@@ -106,21 +108,30 @@ export function hostOs(nav: { userAgent?: string; userAgentData?: { platform?: s
   return 'other';
 }
 
-/** USB interface classes by number, as the messages name them. */
-const CLASSES: Record<number, string> = { 0x01: 'audio', 0x02: 'communications (CDC)', 0x03: 'HID', 0x06: 'still image', 0x07: 'printer', 0x08: 'mass storage', 0x09: 'hub', 0x0a: 'CDC data', 0x0b: 'smart card', 0x0e: 'video', 0x10: 'audio/video', 0xe0: 'wireless controller (Bluetooth)', 0xfe: 'DFU', 0xff: 'vendor-specific' };
-const className = (c: number) => CLASSES[c] ?? `class 0x${c.toString(16).padStart(2, '0')}`;
+/** USB interface classes by number, as the messages name them (their keys). */
+const CLASSES: Record<number, string> = {
+  0x01: 'usb:usb-ports.class.audio', 0x02: 'usb:usb-ports.class.cdc', 0x03: 'usb:usb-ports.class.hid', 0x06: 'usb:usb-ports.class.stillImage',
+  0x07: 'usb:usb-ports.class.printer', 0x08: 'usb:usb-ports.class.massStorage', 0x09: 'usb:usb-ports.class.hub', 0x0a: 'usb:usb-ports.class.cdcData',
+  0x0b: 'usb:usb-ports.class.smartCard', 0x0e: 'usb:usb-ports.class.video', 0x10: 'usb:usb-ports.class.audioVideo', 0xe0: 'usb:usb-ports.class.bluetooth',
+  0xfe: 'usb:usb-ports.class.dfu', 0xff: 'usb:usb-ports.class.vendor',
+};
+const className = (c: number): Msg => (CLASSES[c] ? msg(CLASSES[c]) : msg('usb:usb-ports.class.other', { code: `0x${c.toString(16).padStart(2, '0')}` }));
 
-/** The HID top-level collections the browser protects, as the messages name them (usage page:usage). */
-const HID_USAGES: Record<string, string> = { '1:1': 'pointer', '1:2': 'mouse', '1:6': 'keyboard', '1:7': 'keypad', '1:128': 'system control' };
+/** The HID top-level collections the browser protects, as the messages name them (usage page:usage → key). */
+const HID_USAGES: Record<string, string> = { '1:1': 'usb:usb-ports.usage.pointer', '1:2': 'usb:usb-ports.usage.mouse', '1:6': 'usb:usb-ports.usage.keyboard', '1:7': 'usb:usb-ports.usage.keypad', '1:128': 'usb:usb-ports.usage.systemControl' };
 
-/** Where to go instead for what WebUSB keeps from pages, by class (docs/usb.md "What WebUSB can't attach, and where it goes instead"). */
-function protectedRoute(c: number): string {
+/**
+ * What WebUSB keeps from pages, with where to go instead by class (docs/usb.md "What WebUSB can't attach, and where it
+ * goes instead"): a message per route.
+ */
+function protectedInterface(iface: number, c: number): string {
+  const p = { interface: iface, class: className(c) };
   switch (c) {
-    case 0x03: return ' Its HID part can come in as a HID device instead (Add a device…, then a HID device), unless it is a keyboard or a mouse: the machine has the page\'s.';
-    case 0x08: return ' A disk image comes in through the machine\'s Disks instead.';
-    case 0x01: case 0x0e: case 0x10: return ' Sound goes through the machine\'s sound card (and the microphone), which the page has.';
-    case 0xe0: return ' A browser has no way to a Bluetooth adapter.';
-    default: return '';
+    case 0x03: return t('usb:usb-ports.protectedInterface.hid', p);
+    case 0x08: return t('usb:usb-ports.protectedInterface.disk', p);
+    case 0x01: case 0x0e: case 0x10: return t('usb:usb-ports.protectedInterface.sound', p);
+    case 0xe0: return t('usb:usb-ports.protectedInterface.bluetooth', p);
+    default: return t('usb:usb-ports.protectedInterface', p);
   }
 }
 
@@ -143,13 +154,16 @@ export function wordsText(w: ProblemWords, all = false): string {
   const f = w.fix;
   const step = (s: FixStep) => [s.text, s.code, s.link].filter(Boolean).join(' ');
   const fix = f ? [`${f.title}:`, ...f.steps.map((s, i) => `${i + 1}. ${step(s)}`), ...(f.note ? [step(f.note)] : [])] : [];
-  return [w.text, ...fix, ...(w.said ? [`The browser said: ${w.said}`] : [])].join('\n');
+  return [w.text, ...fix, ...(w.said ? [browserSaid(w.said)] : [])].join('\n');
 }
+
+/** The browser's own message, as the page quotes it under a problem. */
+export const browserSaid = (said: string) => t('usb:usb-ports.browserSaid', { said });
 
 /** Zadig's steps for the WinUSB driver on an interface (Windows: a browser uses a device only through WinUSB). */
 const zadig = (iface?: number): FixStep[] => [
-  { text: `Install the WinUSB driver for it with Zadig: Options, List All Devices, pick the device${iface === undefined ? '' : `'s interface ${iface}`}, WinUSB, Replace Driver.`, link: 'https://zadig.akeo.ie' },
-  { text: 'Unplug the device, plug it in again, then attach it.' },
+  { text: iface === undefined ? t('usb:usb-ports.zadig') : t('usb:usb-ports.zadig.interface', { interface: iface }), link: 'https://zadig.akeo.ie' },
+  { text: t('usb:usb-ports.replug') },
 ];
 
 /**
@@ -159,66 +173,72 @@ const zadig = (iface?: number): FixStep[] => [
 export function problemText(p: UsbProblem, d: { api: 'usb' | 'hid'; vendorId: number; productId: number }, os: HostOs = hostOs()): ProblemWords {
   switch (p.kind) {
     case 'protected-interface':
-      return { text: `Interface ${p.interface} is a ${className(p.class)} interface, which the browser keeps from pages: the guest doesn't see it.${protectedRoute(p.class)}` };
+      return { text: protectedInterface(p.interface, p.class) };
     case 'claim-failed': {
-      const text = `Something on this computer is already using it (interface ${p.interface}), so the browser can't pass it to the machine.`;
+      const text = t('usb:usb-ports.claimFailed', { interface: p.interface });
       const said = p.message;
       const name = `1-2:1.${p.interface}`;
       switch (os) {
         case 'linux': return {
           text, said, fix: {
-            title: 'How to free it on Linux',
+            title: t('usb:usb-ports.claimFailed.linux'),
             steps: [
-              { text: 'Find the kernel driver that holds it (such as cdc_acm, ftdi_sio, cp210x, ch341 or usblp):', code: 'lsusb -t' },
-              { text: `Find the interface's name under that driver (such as ${name}):`, code: 'ls /sys/bus/usb/drivers/<driver>/' },
-              { text: 'Unbind it; it stays free until the device is plugged in again:', code: `echo -n ${name} | sudo tee /sys/bus/usb/drivers/<driver>/unbind` },
-              { text: 'Attach the device again.' },
+              { text: t('usb:usb-ports.claimFailed.linux.driver'), code: 'lsusb -t' }, // i18n-ignore: a command
+              { text: t('usb:usb-ports.claimFailed.linux.name', { name }), code: 'ls /sys/bus/usb/drivers/<driver>/' }, // i18n-ignore: a command
+              { text: t('usb:usb-ports.claimFailed.linux.unbind'), code: `echo -n ${name} | sudo tee /sys/bus/usb/drivers/<driver>/unbind` }, // i18n-ignore: a command
+              { text: t('usb:usb-ports.claimFailed.linux.again') },
             ],
-            note: { text: 'To keep the driver off for good (for every device it serves), add this line to a file in /etc/modprobe.d/:', code: 'blacklist <driver>' },
+            note: { text: t('usb:usb-ports.claimFailed.linux.blacklist'), code: 'blacklist <driver>' }, // i18n-ignore: a line of a file
           },
         };
         case 'mac': return {
           text, said, fix: {
-            title: 'What to do on macOS',
-            steps: [{ text: 'Quit any app that uses the device, then attach it again.' }],
-            note: { text: "macOS's own drivers keep serial devices (CDC serial, serial adapters), and a page can't take them: if one of those holds it, the device can't reach the machine from this computer." },
+            title: t('usb:usb-ports.claimFailed.mac'),
+            steps: [{ text: t('usb:usb-ports.claimFailed.mac.quit') }],
+            note: { text: t('usb:usb-ports.claimFailed.mac.note') },
           },
         };
-        case 'windows': return { text, said, fix: { title: 'How to free it on Windows', steps: zadig(p.interface), note: { text: "Windows' own programs then no longer see that interface." } } };
-        default: return { text: `${text} Close what uses it on this computer, then attach it again.`, said };
+        case 'windows': return { text, said, fix: { title: t('usb:usb-ports.claimFailed.windows'), steps: zadig(p.interface), note: { text: t('usb:usb-ports.claimFailed.windows.note') } } };
+        default: return { text: t('usb:usb-ports.claimFailed.other', { interface: p.interface }), said };
       }
     }
     case 'protected-collection': {
-      const what = HID_USAGES[`${p.usagePage}:${p.usage}`] ?? `collection ${hex4(p.usagePage)}:${hex4(p.usage)}`;
-      return {
-        text: p.kept
-          ? `The device's ${what} part is kept from pages by the browser, all but its feature reports (its settings, which tools such as VIA use): the guest gets only those. The machine has the page's keyboard and mouse already.`
-          : `The device's ${what} part is kept from pages by the browser: the guest doesn't get it. The machine has the page's keyboard and mouse already.`,
-      };
+      const usage = HID_USAGES[`${p.usagePage}:${p.usage}`];
+      const what = usage ? msg(usage) : msg('usb:usb-ports.usage.other', { usage: `${hex4(p.usagePage)}:${hex4(p.usage)}` });
+      return { text: p.kept ? t('usb:usb-ports.protectedCollection.kept', { what }) : t('usb:usb-ports.protectedCollection', { what }) };
     }
     case 'no-collections':
-      return { text: 'Everything this HID device offers is kept from pages by the browser (a keyboard\'s keys, a mouse\'s pointer, a security key): nothing is left for the guest. The machine has the page\'s keyboard and mouse already.' };
+      return { text: t('usb:usb-ports.noCollections') };
     case 'open-failed': {
       const said = p.message;
       if (os === 'linux') return {
-        text: "The browser couldn't open it: your user probably has no permission to use it.", said, fix: {
-          title: 'How to give your user access on Linux',
+        text: t('usb:usb-ports.openFailed.linux'), said, fix: {
+          title: t('usb:usb-ports.openFailed.linux.title'),
           steps: [
-            { text: 'Add this udev rule to /etc/udev/rules.d/70-webpc.rules:', code: udevRule(d) },
-            { text: 'Reload the rules:', code: 'sudo udevadm control --reload' },
-            { text: 'Unplug the device, plug it in again, then attach it.' },
+            { text: t('usb:usb-ports.openFailed.linux.udev'), code: udevRule(d) },
+            { text: t('usb:usb-ports.openFailed.linux.reload'), code: 'sudo udevadm control --reload' }, // i18n-ignore: a command
+            { text: t('usb:usb-ports.replug') },
           ],
         },
       };
-      if (os === 'windows' && d.api === 'usb') return { text: "The browser couldn't open it: on Windows it needs the WinUSB driver.", said, fix: { title: 'How to install it', steps: zadig() } };
-      return { text: "The browser couldn't open it: another program may have it open. Close that program, then attach the device again.", said };
+      if (os === 'windows' && d.api === 'usb') return { text: t('usb:usb-ports.openFailed.windows'), said, fix: { title: t('usb:usb-ports.openFailed.windows.title'), steps: zadig() } };
+      return { text: t('usb:usb-ports.openFailed.other'), said };
     }
   }
 }
 
-/** An error as the page shows it: a line, and the problems' words when it is an attach's that has them (a `UsbError`). */
+/**
+ * An error as the page shows it: its words (a headline and its causes, a line each), or, for an attach's that has the
+ * problems' words (a `UsbError`), its headline and those.
+ */
 export type ErrorView = { text: string; words?: ProblemWords[] };
 export function errorView(e: unknown): ErrorView {
-  const u = e as { lead?: string; words?: ProblemWords[]; message?: string } | undefined;
-  return u?.words?.length ? { text: u.lead ?? '', words: u.words } : { text: String(u?.message ?? e) };
+  const words = (e as { words?: ProblemWords[] } | undefined)?.words;
+  return words?.length ? { text: describe(e).headline, words } : { text: errorText(e) };
+}
+
+/** An error's view as plain text, a line each: its text, then each problem's (for the message bar). */
+export function errorLines(e: unknown): string {
+  const v = errorView(e);
+  return [v.text, ...(v.words ?? []).map((w) => w.text)].join('\n');
 }

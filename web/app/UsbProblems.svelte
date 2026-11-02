@@ -4,7 +4,8 @@
   to copy) and the browser's own message.
 -->
 <script lang="ts">
-  import type { FixStep, ProblemWords } from './usb-ports.ts';
+  import { t } from '../i18n.ts';
+  import { browserSaid, type FixStep, type ProblemWords } from './usb-ports.ts';
 
   let { words }: { words: ProblemWords[] } = $props();
 </script>
@@ -17,12 +18,12 @@
       <p>{w.text}</p>
       {#if w.fix || w.said}
         <details>
-          <summary>{w.fix?.title ?? 'Details'}</summary>
+          <summary>{w.fix?.title ?? t('usb:UsbProblems.details')}</summary>
           {#if w.fix}
             <ol>{#each w.fix.steps as s, j (j)}<li>{@render step(s)}</li>{/each}</ol>
             {#if w.fix.note}<div class="note">{@render step(w.fix.note)}</div>{/if}
           {/if}
-          {#if w.said}<div class="said">The browser said: {w.said}</div>{/if}
+          {#if w.said}<div class="said">{browserSaid(w.said)}</div>{/if}
         </details>
       {/if}
     </div>

@@ -5,6 +5,7 @@
 // page's tab drive it; web/app/main.ts hands it each start's record. DOM-free but for what `FolderAccess` wraps:
 // tests/folders.test.ts runs it over a memory store.
 import type { FolderSpec, FoldersFromDevice, FoldersToDevice } from '../9p-folders.ts';
+import { MsgError } from '../msg.ts';
 import { attachFolder, detachFolder, folderLock, folderSpecs, moveFolder, readsOnly, setAttachmentReadOnly, type Folder } from './folders.ts';
 import { heldLocks, Locks } from './locks.ts';
 import type { FolderAttachment, MachineRecord } from './shape.ts';
@@ -210,7 +211,7 @@ export class PageFolders {
   }
 
   async setReadOnly(machine: string, id: string, readOnly: boolean) {
-    if (machine === this.machine && this.served.has(id)) throw new Error('Detach it first: the machine has it now.');
+    if (machine === this.machine && this.served.has(id)) throw new MsgError('folders:folders-live.detachFirst');
     await setAttachmentReadOnly(this.store, machine, id, readOnly);
     await this.refresh();
     if (machine === this.machine) this.attached = this.attached.map((a) => (a.id === id ? { ...a, readOnly } : a));

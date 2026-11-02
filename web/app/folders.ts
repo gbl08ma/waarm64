@@ -4,6 +4,8 @@
 // writer at a time: a running machine holds the folder's Web Lock (`folderLock`, web/app/locks.ts), shared to read,
 // exclusive to write. DOM-free: Node's tests run it over a memory store.
 import type { FolderSpec } from '../9p-folders.ts';
+import { MsgError } from '../msg.ts';
+import { t } from '../i18n.ts';
 import { folderDir, type Store } from './store.ts';
 import { newId, uniqueName, type FolderAttachment, type MachineRecord } from './shape.ts';
 
@@ -55,7 +57,7 @@ export async function createFolder(store: Store, n: NewFolder): Promise<Folder> 
   const all = await store.all('folders');
   for (const f of all) if (f.handle && n.handle && (await f.handle.isSameEntry(n.handle))) return f;
   const taken = all.map((f) => f.name);
-  const f: Folder = { id: newId(), name: uniqueName(n.name.trim() || 'Shared folder', taken), kind: n.kind, readOnly: !!n.readOnly, ...(n.handle ? { handle: n.handle } : {}), lastUsed: 0, created: Date.now() };
+  const f: Folder = { id: newId(), name: uniqueName(n.name.trim() || t('folders:folders.defaultName'), taken), kind: n.kind, readOnly: !!n.readOnly, ...(n.handle ? { handle: n.handle } : {}), lastUsed: 0, created: Date.now() };
   await store.put('folders', f);
   return f;
 }
@@ -63,7 +65,7 @@ export async function createFolder(store: Store, n: NewFolder): Promise<Folder> 
 /** Changes a folder's name or Read-only (an attached machine takes them at its next start). */
 export async function editFolder(store: Store, id: string, change: Partial<Pick<Folder, 'name' | 'readOnly'>>) {
   const f = await store.get('folders', id);
-  if (!f) throw new Error('that folder is gone');
+  if (!f) throw new MsgError('folders:folders.folderGone');
   const name = change.name === undefined ? f.name : uniqueName(change.name.trim() || f.name, (await store.all('folders')).filter((x) => x.id !== id).map((x) => x.name));
   const next = { ...f, ...change, name };
   await store.put('folders', next);
@@ -77,7 +79,7 @@ export async function machinesWith(store: Store, id: string) {
 
 const editAttachments = async (store: Store, machine: string, edit: (m: MachineRecord, list: FolderAttachment[]) => FolderAttachment[]) => {
   const m = await store.get('machines', machine);
-  if (!m) throw new Error('that machine is gone');
+  if (!m) throw new MsgError('folders:folders.machineGone');
   const list = edit(m, m.folders ?? []);
   const { folders: _, ...rest } = m;
   await store.put('machines', { ...rest, ...(list.length ? { folders: list } : {}) });
@@ -87,7 +89,7 @@ const editAttachments = async (store: Store, machine: string, edit: (m: MachineR
 export async function attachFolder(store: Store, machine: string, id: string, readOnly: boolean) {
   await editAttachments(store, machine, (m, list) => {
     if (list.some((a) => a.id === id)) return list;
-    if (list.length >= MAX_FOLDERS) throw new Error(`${m.name} has ${MAX_FOLDERS} folders, the most a machine has.`);
+    if (list.length >= MAX_FOLDERS) throw new MsgError('folders:folders.tooMany', { name: m.name, max: MAX_FOLDERS });
     return [...list, { id, readOnly }];
   });
   const f = await store.get('folders', id);

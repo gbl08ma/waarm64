@@ -12,6 +12,7 @@ import { mountUnit, sharesCredentials, sharesPathError } from '../web/app/shares
 import { folderDir, memoryFiles, memoryRecords, Store } from '../web/app/store.ts';
 import { createMachine } from '../web/app/machines.ts';
 import { guestWords } from '../web/app/guest-words.ts';
+import { msgOf } from '../web/msg.ts';
 
 let browser: Browser;
 let base: string;
@@ -73,7 +74,7 @@ test('folders: names, attachments, delete', async () => {
   await detachFolder(store, m.id, c.id);
   assert.equal('folders' in (await store.get('machines', m.id))!, false, 'no attachments: left out');
   for (let k = 0; k < MAX_FOLDERS; k++) await attachFolder(store, m.id, (await createFolder(store, { kind: 'opfs', name: `f${k}` })).id, false);
-  await assert.rejects(attachFolder(store, m.id, c.id, false), /has 16 folders/);
+  await assert.rejects(attachFolder(store, m.id, c.id, false), (e) => msgOf(e)?.key === 'folders:folders.tooMany' && msgOf(e)?.params?.max === 16);
   store.close();
 });
 
@@ -136,7 +137,7 @@ test('the live side: what a start serves, what waits, and what brings it in', as
   assert.equal(live.views()[1].problem, 'permission');
   await live.allow(host.id);
   assert.deepEqual(device.told.at(-1), { type: 'granted', id: host.id });
-  await assert.rejects(live.setReadOnly(m.id, host.id, true), /Detach it first/);
+  await assert.rejects(live.setReadOnly(m.id, host.id, true), (e) => msgOf(e)?.key === 'folders:folders-live.detachFirst');
   // Attached while it runs, then detached.
   const third = await createFolder(store, { kind: 'opfs', name: 'Third' });
   await live.attach(m.id, third, true);

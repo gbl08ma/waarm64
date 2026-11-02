@@ -10,7 +10,9 @@ import { exportDefinition, importDefinition, parseDefinition } from '../web/app/
 import { createMachine, duplicateMachine, updateMachine } from '../web/app/machines.ts';
 import { memoryFiles, memoryRecords, Store } from '../web/app/store.ts';
 import type { UsbEntry } from '../web/app/shape.ts';
-import { deviceName, errorView, freeConnector, hasTwins, identityAt, identityKey, matchDevices, newEntry, problemText, usbLock, validDefinitionUsb, wordsText, type HostOs } from '../web/app/usb-ports.ts';
+import { errorText, t } from '../web/i18n.ts';
+import { msg, msgOf } from '../web/msg.ts';
+import { deviceName, errorLines, errorView, freeConnector, hasTwins, identityAt, identityKey, matchDevices, newEntry, problemText, usbLock, validDefinitionUsb, wordsText, type HostOs } from '../web/app/usb-ports.ts';
 import { filterFor, UsbError, UsbLocks, UsbPorts } from '../web/app/usb-live.ts';
 
 const entry = (over: Partial<UsbEntry>): UsbEntry => ({ id: 'e00000000001', api: 'usb', vendorId: 0x2e8a, productId: 0x000a, connector: 0, atStart: true, ...over });
@@ -20,9 +22,10 @@ test('identities, lock names and connectors', () => {
   assert.equal(identityKey({ api: 'hid', vendorId: 0x54c, productId: 0xce6 }), 'hid:054c:0ce6:n:0');
   assert.equal(identityKey({ api: 'hid', vendorId: 0x54c, productId: 0xce6, index: 1 }), 'hid:054c:0ce6:n:1');
   assert.equal(usbLock({ api: 'usb', vendorId: 1, productId: 2 }), 'webpc-usb:usb:0001:0002:n:0');
-  assert.equal(deviceName({ api: 'usb', vendorId: 0x2e8a, productId: 0xa }), 'USB device 2e8a:000a');
+  assert.equal(deviceName({ api: 'usb', vendorId: 0x2e8a, productId: 0xa }), t('usb:usb-ports.usbDevice', { ids: '2e8a:000a' }));
   assert.equal(deviceName({ api: 'hid', vendorId: 1, productId: 2, productName: ' DualSense ' }), 'DualSense');
-  assert.equal(deviceName({ api: 'virtual', kind: 'gadget-zero' }), 'Gadget Zero (test device)');
+  assert.equal(deviceName({ api: 'virtual', kind: 'gadget-zero' }), t('usb:usb-ports.gadgetZero'));
+  assert.equal(deviceName({ api: 'hid', vendorId: 1, productId: 2 }), t('usb:usb-ports.hidDevice', { ids: '0001:0002' }));
   assert.equal(freeConnector([]), 0);
   assert.equal(freeConnector([{ connector: 0 }, { connector: 2 }]), 1);
   assert.equal(freeConnector([0, 1, 2, 3, 0, 1].map((connector) => ({ connector }))), 2, 'the least used once all are');
@@ -51,25 +54,38 @@ test("the browser's devices matched to entries: by serial number, and identical 
 test("the messages for what the device worker can't do, with each OS's remedy", () => {
   const d = { api: 'usb' as const, vendorId: 0x2e8a, productId: 0xa };
   const words = (p: UsbProblem, dev: typeof d | { api: 'hid'; vendorId: number; productId: number } = d, os?: HostOs) => wordsText(problemText(p, dev, os), true);
-  assert.match(words({ kind: 'protected-interface', interface: 2, class: 3 }, d, 'linux'), /Interface 2 is a HID interface.*HID device instead/);
-  assert.match(words({ kind: 'protected-interface', interface: 0, class: 8 }, d, 'linux'), /mass storage.*Disks/);
+  const text = (p: UsbProblem, dev: typeof d | { api: 'hid'; vendorId: number; productId: number } = d, os?: HostOs) => problemText(p, dev, os).text;
+  assert.equal(text({ kind: 'protected-interface', interface: 2, class: 3 }, d, 'linux'), t('usb:usb-ports.protectedInterface.hid', { interface: 2, class: msg('usb:usb-ports.class.hid') }));
+  assert.equal(text({ kind: 'protected-interface', interface: 0, class: 8 }, d, 'linux'), t('usb:usb-ports.protectedInterface.disk', { interface: 0, class: msg('usb:usb-ports.class.massStorage') }));
+  assert.equal(text({ kind: 'protected-interface', interface: 0, class: 0x0f }, d, 'linux'), t('usb:usb-ports.protectedInterface', { interface: 0, class: msg('usb:usb-ports.class.other', { code: '0x0f' }) }));
   const claim = { kind: 'claim-failed' as const, interface: 1, message: 'Unable to claim interface.' };
   // The short text says what happened, plainly; the remedy and the browser's message are folded under it.
   const linux = problemText(claim, d, 'linux');
-  assert.match(linux.text, /already using it \(interface 1\)/);
+  assert.equal(linux.text, t('usb:usb-ports.claimFailed', { interface: 1 }));
   assert.doesNotMatch(linux.text, /[`<]|sudo|cdc_acm/, 'no commands in the short text');
   assert.equal(linux.said, 'Unable to claim interface.');
+  assert.equal(linux.fix?.title, t('usb:usb-ports.claimFailed.linux'));
   assert.deepEqual(linux.fix?.steps.map((s) => s.code).filter(Boolean), ['lsusb -t', 'ls /sys/bus/usb/drivers/<driver>/', 'echo -n 1-2:1.1 | sudo tee /sys/bus/usb/drivers/<driver>/unbind']);
+  assert.equal(linux.fix?.steps[1].text, t('usb:usb-ports.claimFailed.linux.name', { name: '1-2:1.1' }));
   assert.equal(linux.fix?.note?.code, 'blacklist <driver>');
-  assert.match(wordsText(linux, true), /cdc_acm.*\n.*unbind/s);
+  assert.match(wordsText(linux, true), /lsusb -t\n.*unbind/s);
+  assert.ok(wordsText(linux, true).endsWith(t('usb:usb-ports.browserSaid', { said: 'Unable to claim interface.' })));
   assert.equal(wordsText(linux), linux.text);
-  assert.match(words(claim, d, 'windows'), /WinUSB.*Zadig.*zadig\.akeo\.ie/);
-  assert.match(words(claim, d, 'mac'), /macOS/);
-  assert.match(words({ kind: 'no-collections' }, { ...d, api: 'hid' }), /kept from pages/);
-  assert.match(words({ kind: 'protected-collection', usagePage: 1, usage: 6, kept: true }, { ...d, api: 'hid' }), /keyboard part.*all but its feature reports/);
-  assert.match(words({ kind: 'protected-collection', usagePage: 1, usage: 2, kept: false }, { ...d, api: 'hid' }), /mouse part.*doesn't get it/);
-  assert.match(words({ kind: 'open-failed', message: 'Failed to open the device.' }, { ...d, api: 'hid' }, 'linux'), /permission.*KERNEL=="hidraw\*", ATTRS\{idVendor\}=="2e8a", ATTRS\{idProduct\}=="000a", TAG\+="uaccess"/s);
+  const windows = problemText(claim, d, 'windows');
+  assert.equal(windows.fix?.title, t('usb:usb-ports.claimFailed.windows'));
+  assert.deepEqual(windows.fix?.steps.map((s) => [s.text, s.link]), [[t('usb:usb-ports.zadig.interface', { interface: 1 }), 'https://zadig.akeo.ie'], [t('usb:usb-ports.replug'), undefined]]);
+  assert.equal(problemText(claim, d, 'mac').fix?.title, t('usb:usb-ports.claimFailed.mac'));
+  assert.equal(text(claim, d, 'chromeos'), t('usb:usb-ports.claimFailed.other', { interface: 1 }));
+  assert.equal(text({ kind: 'no-collections' }, { ...d, api: 'hid' }), t('usb:usb-ports.noCollections'));
+  assert.equal(text({ kind: 'protected-collection', usagePage: 1, usage: 6, kept: true }, { ...d, api: 'hid' }), t('usb:usb-ports.protectedCollection.kept', { what: msg('usb:usb-ports.usage.keyboard') }));
+  assert.equal(text({ kind: 'protected-collection', usagePage: 1, usage: 2, kept: false }, { ...d, api: 'hid' }), t('usb:usb-ports.protectedCollection', { what: msg('usb:usb-ports.usage.mouse') }));
+  assert.equal(text({ kind: 'protected-collection', usagePage: 0xc, usage: 1, kept: false }, { ...d, api: 'hid' }), t('usb:usb-ports.protectedCollection', { what: msg('usb:usb-ports.usage.other', { usage: '000c:0001' }) }));
+  const hidOpen = problemText({ kind: 'open-failed', message: 'Failed to open the device.' }, { ...d, api: 'hid' }, 'linux');
+  assert.equal(hidOpen.text, t('usb:usb-ports.openFailed.linux'));
+  assert.equal(hidOpen.fix?.steps[0].code, 'KERNEL=="hidraw*", ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="000a", TAG+="uaccess"');
   assert.match(words({ kind: 'open-failed', message: 'Access denied.' }, d, 'linux'), /SUBSYSTEM=="usb".*Access denied/s);
+  assert.equal(text({ kind: 'open-failed', message: 'x' }, d, 'windows'), t('usb:usb-ports.openFailed.windows'));
+  assert.equal(text({ kind: 'open-failed', message: 'x' }, d, 'mac'), t('usb:usb-ports.openFailed.other'));
   // No problem's words carry Markdown: the page shows them as text.
   for (const os of ['linux', 'mac', 'windows', 'chromeos', 'other'] as const) {
     for (const p of [claim, { kind: 'open-failed' as const, message: 'x' }]) assert.doesNotMatch(words(p, d, os), /`/);
@@ -109,7 +125,7 @@ test('the ports: attach, refuse, detach all and attach again, a device unplugged
     assert.equal(ports.connectors[1]?.state, 'attached');
     assert.deepEqual(ports.connectors[1]?.problems, [{ kind: 'protected-interface', interface: 2, class: 3 }], 'what was left out, for the page');
     assert.deepEqual([...ports.attachedEntries()], ['e1']);
-    await assert.rejects(ports.attach(1, { api: 'virtual', kind: 'gadget-zero' }), /Connector 2 has Pico/);
+    await assert.rejects(ports.attach(1, { api: 'virtual', kind: 'gadget-zero' }), (e) => msgOf(e)?.key === 'usb:usb-live.connectorTaken' && errorText(e) === t('usb:usb-live.connectorTaken', { connector: 2, name: 'Pico' }));
     // Another tab can't have it; it learns who has it, and asks for it.
     assert.equal(await locksB.take(usbLock(pico)), false);
     assert.equal(await locksB.holder(usbLock(pico)), 'Machine A');
@@ -125,8 +141,9 @@ test('the ports: attach, refuse, detach all and attach again, a device unplugged
     // A refusal says why, with the remedy, and frees the connector and the lock.
     const bad = { api: 'usb' as const, vendorId: 0xdead, productId: 1 };
     const err = await ports.attach(2, bad).catch((e: unknown) => e);
-    assert.ok(err instanceof UsbError && /couldn't be attached\.\nSomething on this computer is already using it \(interface 0\)/.test(err.message), String(err));
-    assert.deepEqual(errorView(err), { text: err.lead, words: err.words }, 'the page shows the words, with their remedies');
+    assert.ok(err instanceof UsbError && msgOf(err)?.key === 'usb:usb-live.notAttached', String(err));
+    assert.equal(errorLines(err), [t('usb:usb-live.notAttached', { name: deviceName(bad) }), problemText({ kind: 'claim-failed', interface: 0, message: 'busy' }, bad).text].join('\n'));
+    assert.deepEqual(errorView(err), { text: t('usb:usb-live.notAttached', { name: deviceName(bad) }), words: err.words }, 'the page shows the words, with their remedies');
     assert.equal(ports.connectors[2], undefined);
     assert.equal(await locksA.take(usbLock(bad)), true);
     locksA.drop(usbLock(bad));
