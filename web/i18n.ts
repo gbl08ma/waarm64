@@ -26,6 +26,84 @@ void i18n.init({
   interpolation: { escapeValue: false },
 });
 
+// The copy editor (docs/i18n.md "Editing the copy on the page", web/app/copy-edit.ts): while it's on (for this tab,
+// from the console), every message rendered carries an invisible mark of what it is, which the editor finds in the
+// page and takes out, and the words changed in it so far (kept in this browser) stand in for the catalog's.
+const EDIT_FLAG = 'copy-edit';
+const EDITS = 'copy-edit.changes';
+const storage = (kind: 'sessionStorage' | 'localStorage'): Storage | undefined => {
+  try { return (globalThis as Record<string, unknown>)[kind] as Storage | undefined; } catch { return undefined; }
+};
+/** Whether the copy editor is on in this tab (for the whole load: turning it on or off takes a reload). */
+export const COPY_EDITING = storage('sessionStorage')?.getItem(EDIT_FLAG) === 'on';
+
+/** A message as rendered while the copy editor is on: its key, its parameters as rendered, its words (unmarked). */
+export type Shown = { key: string; params: Record<string, unknown>; words: string; rich: boolean };
+const shown: Shown[] = [];
+const shownAt = new Map<string, number>();
+// A mark: U+2063, the message's number in `shown` in binary as U+200B (0) and U+200C (1), U+2064.
+const MARK = /\u2063([\u200b\u200c]+)\u2064/g;
+
+/** `s` without the copy editor's marks (for words that leave the page: the guest's). */
+export const unmarked = (s: string) => s.replace(MARK, '');
+
+/** The mark of message `key` with `params` (as rendered) whose words are `words`. */
+function mark(key: string, params: Record<string, unknown>, words: string, rich = false): string {
+  const plainWords = unmarked(words);
+  const at = `${key}\0${plainWords}`;
+  let id = shownAt.get(at);
+  if (id === undefined) {
+    id = shown.push({ key, params, words: plainWords, rich }) - 1;
+    shownAt.set(at, id);
+  }
+  return `\u2063${id.toString(2).replace(/0/g, '\u200b').replace(/1/g, '\u200c')}\u2064`;
+}
+
+/** The changed words kept in this browser, by full key (plural forms by their own: `ns:Source.name_one`). */
+export function copyEdits(): Record<string, string> {
+  try { return JSON.parse(storage('localStorage')?.getItem(EDITS) ?? '{}') as Record<string, string>; } catch { return {}; }
+}
+
+/** The copy editor's view of the messages (web/app/copy-edit-ui.ts). */
+export const copyEditor = {
+  /** The marks in `s`: the numbers of the messages, in order. */
+  marks: (s: string) => [...s.matchAll(MARK)].map((m) => parseInt(m[1].replace(/\u200b/g, '0').replace(/\u200c/g, '1'), 2)),
+  shown: (id: number): Shown | undefined => shown[id],
+  /** Every message shown so far with key `key`. */
+  shownOf: (key: string) => shown.flatMap((s, id) => (s.key === key ? [id] : [])),
+  /** The catalog's entries for `key` (its plural forms, if it has them), by full key. */
+  entries(key: string): { key: string; message: string; note: string }[] {
+    const [ns, k] = key.split(/:(.*)/s);
+    const c = CATALOGS[ns] ?? {};
+    if (c[k]) return [{ key, ...c[k] }];
+    return Object.entries(c).filter(([f]) => f.replace(/_(zero|one|two|few|many|other)$/, '') === k).map(([f, e]) => ({ key: `${ns}:${f}`, ...e }));
+  },
+  /** Changes entry `full`'s words to `words` (the catalog's again when `undefined`), here and in this browser. */
+  change(full: string, words: string | undefined) {
+    const [ns, k] = full.split(/:(.*)/s);
+    const edits = copyEdits();
+    if (words === undefined || words === CATALOGS[ns]?.[k]?.message) delete edits[full];
+    else edits[full] = words;
+    storage('localStorage')?.setItem(EDITS, JSON.stringify(edits));
+    i18n.addResource(LANGUAGE, ns, k, words ?? CATALOGS[ns]?.[k]?.message ?? '');
+  },
+  /** Message `id`'s words now (after a change): its old words and its new. */
+  again(id: number): { was: string; now: string } {
+    const s = shown[id];
+    const was = s.words;
+    // A message with markers is cut into pieces in the page (T.svelte): its new words show when it's drawn again.
+    if (!s.rich) s.words = unmarked(i18n.t(s.key, s.params) as string);
+    return { was, now: s.words };
+  },
+};
+
+if (COPY_EDITING) {
+  for (const [full, words] of Object.entries(copyEdits())) {
+    const [ns, k] = full.split(/:(.*)/s);
+    if (CATALOGS[ns]?.[k]) i18n.addResource(LANGUAGE, ns, k, words);
+  }
+}
+
 // Formats a message's words can ask for: `{{size, bytes}}`, `{{list, lines}}`.
 i18n.services.formatter?.add('bytes', (v: unknown) => bytesText(Number(v)));
 i18n.services.formatter?.add('lines', (v: unknown) => (Array.isArray(v) ? v.join('\n') : String(v)));
@@ -48,7 +126,8 @@ function param(v: Param): unknown {
 export function text(m: Msg): string {
   const p: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(m.params ?? {})) p[k] = param(v);
-  return i18n.t(m.key, p) as string;
+  const words = i18n.t(m.key, p) as string;
+  return COPY_EDITING ? mark(m.key, p, words) + words : words;
 }
 
 /** Message `key`'s words with `params`. */
@@ -75,7 +154,9 @@ export function marked(key: string, params?: Params): { tag?: string; text: stri
     } else p[k] = r;
   }
   const back = (s: string) => s.replace(/\u0001(\d+)\u0002/g, (_, i: string) => held[Number(i)]);
-  return parts(i18n.t(key, p) as string).map((x) => ({ ...x, text: back(x.text) }));
+  const pieces = parts(i18n.t(key, p) as string).map((x) => ({ ...x, text: back(x.text) }));
+  if (COPY_EDITING && pieces.length) pieces[0] = { ...pieces[0], text: mark(key, p, pieces.map((x) => x.text).join(''), true) + pieces[0].text };
+  return pieces;
 }
 
 /** A message's words cut at its markers: plain text (`tag` undefined) and the text each `<tag>…</tag>` wraps. */

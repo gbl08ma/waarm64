@@ -54,6 +54,7 @@ import { deleteOverlay, diskSource, identityOf, loadChangesInto, refreshOverlay,
 import { askPersist, attach, createDisk, createMachine, detachEverywhere, isRunning, knownDisk, machineLock, setAdapterConnection, updateMachine } from './machines.ts';
 import { keyboardSetting, resolveKeyboard } from './keyboard.ts';
 import { parseLocalURL } from '../local-net.ts';
+import { installCopyEdit } from './copy-edit.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -322,6 +323,7 @@ store.onChange((c) => {
   if (c.kind === 'machines' && c.id === stored?.record.id) void followRecord();
 });
 mount(App, { target: document.body, props: { store, audio, net, folders } });
+installCopyEdit();
 flushSync();
 let canvas = $<HTMLCanvasElement>('screen');
 const screenBox = $('screen-view');
