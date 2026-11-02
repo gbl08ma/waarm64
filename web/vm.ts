@@ -1604,12 +1604,16 @@ function usbHost(port: MessagePort) {
   };
 }
 
-/** `ring` with a wait that yields instead of blocking: resolves once the backends took everything up to this ring. */
-async function ringAsync(bell: Int32Array) {
+/**
+ * `ring` with a wait that yields instead of blocking: resolves once the backends took everything up to this ring, or
+ * once `stopped` (the host's close: a closed `Devices.serve` answers no ring, and a pause's quiesce would wait for good).
+ */
+async function ringAsync(bell: Int32Array, stopped: () => boolean) {
   const n = Atomics.add(bell, 0, 1) + 1;
   Atomics.notify(bell, 0);
   for (let a; ((a = Atomics.load(bell, 1)) - n | 0) < 0;) {
     if (a === -1) throw new Error('device backends failed (see their error)');
+    if (stopped()) return;
     const w = Atomics.waitAsync(bell, 1, a, 100);
     if (w.async) await w.value;
   }
@@ -1628,16 +1632,24 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
     // The vCPU workers ring the doorbell; this thread serves it between its awaits.
     const d = await Devices.open(init, out, notice);
     let failed: unknown;
-    void d.serve(new Int32Array(init.memory.buffer, bellAddr, 2)).catch((e) => { failed = e; });
+    let closed = false;
+    const bell = new Int32Array(init.memory.buffer, bellAddr, 2);
+    void d.serve(bell).catch((e) => { failed = e; });
     return {
       kick: (_wait: boolean) => { throw new Error('parallel: the vCPU workers ring the doorbell'); },
       inFlight: () => false,
       settle: async () => { if (failed) throw failed; },
-      quiesce: () => ringAsync(new Int32Array(init.memory.buffer, bellAddr, 2)),
+      quiesce: () => ringAsync(bell, () => closed),
       save: async () => d.save(),
       written: async (i: number) => d.written(i),
       blocks: async (i: number, blocks: number[]) => d.blocks(i, blocks),
-      output: () => text, flush: async () => { if (failed) throw failed; }, close: async () => (d.close(), d.stats()),
+      output: () => text, flush: async () => { if (failed) throw failed; },
+      close: async () => {
+        closed = true;
+        Atomics.notify(bell, 1); // a quiesce waiting for its answer
+        d.close();
+        return d.stats();
+      },
     };
   }
   if (!inWorker || (init.specs.length === 0 && !init.xhci)) {
@@ -1689,7 +1701,10 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       else if (e.data.type === 'drained') drained.shift()?.();
       else if (e.data.type === 'saved') saved(e.data);
       else if (e.data.type === 'disk') asked.get(e.data.id)?.(e.data);
-      else if (e.data.type === 'closed') closed(e.data.stats);
+      else if (e.data.type === 'closed') {
+        for (const d of drained.splice(0)) d(); // a closed worker answers no drain
+        closed(e.data.stats);
+      }
     };
   });
   worker.postMessage({ type: 'init', ...init, bell: bellAddr }, [...specPorts(init.specs), ...(init.xhci?.port ? [init.xhci.port] : [])]);
@@ -1700,7 +1715,8 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
     settle: async () => {},
     // A remote disk's requests run on after a poll (realtime, R4): they complete before the doorbell is answered.
     quiesce: async () => {
-      await ringAsync(bell); // what the last poll hadn't taken: the drain waits for it too
+      await ringAsync(bell, () => closing !== undefined); // what the last poll hadn't taken: the drain waits for it too
+      if (closing) return;
       await new Promise<void>((resolve) => {
         drained.push(resolve);
         worker.postMessage({ type: 'drain' });
@@ -1728,6 +1744,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       closed = resolve;
       setTimeout(resolve, CLOSE_MS + 500);
       worker.postMessage({ type: 'close' });
+      Atomics.notify(bell, 1); // a quiesce waiting for its answer
     })),
   };
 }

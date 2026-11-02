@@ -1175,7 +1175,12 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
     }
     armRings();
   };
-  const armRings = () => { if (full()) ringWatch ??= setTimeout(watchRings, RING_STALL_MS); };
+  // Armed for what is left of the stall, not a whole `RING_STALL_MS` again: a timer may fire a little before
+  // `performance.now()` says it is due (a cloud host's mostly do), and the guest's queue would then wait for twice the stall;
+  // the same for activity since the timer was armed.
+  const armRings = () => {
+    if (full()) ringWatch ??= setTimeout(watchRings, Math.max(1, Math.ceil(ringActive + RING_STALL_MS - performance.now())));
+  };
   // The stats' queue occupancy (`?displaystats`): the most replies held at once, and the time QUEUE_FULL of them were
   // (the page's queue size: the guest's ring had no free entry, so its next command waited).
   let fullSince = -1;

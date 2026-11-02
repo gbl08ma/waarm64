@@ -54,11 +54,6 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   an external abort. What hardware does there is IMPLEMENTATION DEFINED; not compared with the M4.
 - **Arm AARCHMRS JSON:** its in-package notice is unread (`THIRD_PARTY.md`); read it only to
   generate decoder tables or coverage checks from it.
-- **A timing-bound GPU test flakes in the cloud** (2026-11-01): tests/gpu.test.ts "ring fences that fill the queue and
-  stall…" waits 300 ms for `RING_STALL_MS` (250 ms); when the stall timer fires a little early against
-  `performance.now()`, the check re-arms for another 250 ms and nothing has come back at 300 (`0 !== 25`). In a cloud
-  session it failed 3 to 4 times in 8 alone, the same before and after the commit tested; not seen in the dev VM. Waiting
-  for the entries (bounded) instead of a fixed 300 ms, or a stall check that tolerates an early timer, would settle it.
 - **Corpus depth:** thin FP flag paths (8 `fp_scalar` tests raise Divide-by-Zero); add biased forms
   when touching FP again.
 
@@ -1371,14 +1366,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - LTP: only the syscalls subset; the loop-device tests (`getdents01`, `rename01`) and other areas
   need `mkfs` tools, a scratch disk and more RAM. kselftests: not `fp` (minutes of stress) nor the
   generic suites.
-- **A pause pending as the VM closes can stay pending** (parallel, backends on the VM's thread): a `close` that lands
-  after `pause()` passed its parked check and rang the doorbell for its quiesce (`ringAsync`) ends `Devices.serve`
-  before it answers, and `ringAsync` polls the served word for good (unref'd waits: in Node it doesn't hold the process,
-  but the promise never resolves false as `pause()` promises). Found reading the code for `tests/pause.test.ts`'s hangs
-  ([testing.md](testing.md) "A test file that never ends"), not seen in a run; a stop condition for `ringAsync` (the
-  host's close) would end it.
-- **`clockOffset`'s test** (`tests/threads.test.ts`) failed once under `scripts/ci.sh`'s load (2026-10-18: off by
-  0.23 ms against its 0.2 ms bound; its delays are spin loops), passed alone 5 times: a margin to widen if it recurs.
 - `coremark_vm_jit`: pass a fixed iteration count through init's arguments so a run can't fall
   under CoreMark's 10 s rule.
 - The PC-sampling profiler samples once per chunk (32K steps).

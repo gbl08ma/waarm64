@@ -153,7 +153,9 @@ same pause.
   earlier pause is never mistaken for this one's. A parked worker isn't inside `vm_run_cpu` or
   handling an exit for the liveness block, so it doesn't look stuck. An exit or error that ends
   the machine releases the paused workers (the word goes even) and the pause resolves false;
-  `close()` does the same, so a paused or pausing VM ends its workers.
+  `close()` does the same, so a paused or pausing VM ends its workers. The doorbell's wait stops on the backends'
+  close too: a closed `Devices.serve` answers no ring, so a `close()` that lands after the doorbell rang would otherwise
+  leave the pause pending for good.
 - **`runAsync` while paused** keeps returning `BUDGET` (the caller's loop stays alive) after a
   short wait, and the idle limit doesn't count the paused time (the progress clock restarts at
   `resume()`).

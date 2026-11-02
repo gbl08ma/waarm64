@@ -39,19 +39,31 @@ test('three core instances run guests concurrently on one memory, interpreter an
 // seconds apart). Here the other side's clock runs 2 s ahead of this thread's
 // and answers after a varying delay, split unevenly around its reading: the
 // estimate lands within the shortest round trip's half, whatever the delays.
+// That half is the bound, taken from the round trips as they ran (plus 0.1 ms
+// for the awaits around them), not from the delays asked for: a loaded host
+// that preempts the spin of the 0.2 ms round makes the 1 ms round the fastest,
+// 0.25 ms off and right (a fixed 0.2 ms bound failed so under scripts/ci.sh,
+// 2026-10-18). Picking any round but the fastest, or averaging, is 0.5 ms off
+// or more. The second case preempts the fastest round on purpose.
 test('clockOffset finds another clock through its fastest round trip', async () => {
   const skew = 2000;
-  const delays = [3, 1, 0.2, 4, 2];
-  let i = 0;
   const spin = (ms: number) => { for (const t = performance.now(); performance.now() - t < ms;); };
-  const ask = async () => {
-    const d = delays[i++ % delays.length];
-    spin(d / 4);
-    const t = performance.timeOrigin + performance.now() + skew;
-    spin((3 * d) / 4);
-    return t;
-  };
-  const clock = await clockOffset(ask, 10);
-  const err = clock - (performance.timeOrigin + skew);
-  assert.ok(Math.abs(err) < 0.2, `off by ${err} ms`);
+  for (const preempt of [0, 5]) {
+    const delays = [3, 1, 0.2, 4, 2];
+    let i = 0;
+    let fastest = Infinity;
+    const ask = async () => {
+      const d = delays[i++ % delays.length];
+      const t0 = performance.now();
+      spin(d / 4);
+      const t = performance.timeOrigin + performance.now() + skew;
+      spin((3 * d) / 4 + (d === 0.2 ? preempt : 0));
+      fastest = Math.min(fastest, performance.now() - t0);
+      return t;
+    };
+    const clock = await clockOffset(ask, 10);
+    const err = clock - (performance.timeOrigin + skew);
+    assert.ok(Math.abs(err) < fastest / 2 + 0.1, `off by ${err} ms, the fastest round trip ${fastest.toFixed(3)} ms (preempted ${preempt} ms)`);
+    if (preempt) assert.ok(fastest >= 1, 'the preempted round was the fastest');
+  }
 });
