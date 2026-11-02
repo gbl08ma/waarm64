@@ -168,6 +168,8 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
     assert.equal(await page.getAttribute('#net-authkey', 'type'), 'password');
     await page.click('#net-connect');
     await page.waitForFunction(() => document.getElementById('network')!.dataset.phase !== 'off', null, { timeout: 30_000 });
+    // It closes once the page has attached the connection, a moment after the menu's phase moves (a loaded host lost the race).
+    await page.waitForFunction(() => !(document.getElementById('net-wizard') as HTMLDialogElement).open, null, { timeout: 10_000 });
     assert.equal(await visible(page, '#net-wizard'), false, 'the wizard closes');
     assert.equal(await visible(page, '#net-status'), true, 'the menu shows how it goes');
     assert.equal(await visible(page, '#net-logout'), true, 'a kept connection is a kept node: it can be logged out');
