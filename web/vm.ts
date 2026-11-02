@@ -10,7 +10,7 @@ import { chunkedHead, isManifestUrl } from './chunked.ts';
 import { fusedFma } from './fma.ts';
 import type { GpuState } from './gpu.ts';
 import type { SndState } from './snd.ts';
-import type { UsbFromWorker, UsbIdentity, UsbToWorker, UsbVirtual } from './usb-device.ts';
+import type { UsbFromWorker, UsbIdentity, UsbState, UsbToWorker, UsbVirtual } from './usb-device.ts';
 import type { UsbAttach } from './usb.ts';
 import { WindowWatch } from './window.ts';
 import { CLOSE_MS, Devices, ENTRY_WORDS, EV_CONFIG, VENUS_ARENA, VENUS_WINDOW, deviceEntry, deviceShm, diskIdentity, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
@@ -1586,14 +1586,15 @@ export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: 
   }
 }
 
-/** `attach` and `detach` over the xHCI's port, each resolving with its `usb-state` (one per request, in order). */
+/** `attach` and `detach` over the xHCI's port, each resolving with its `usb-state` (one per request, in order; a keyboard's `usb-leds` isn't an answer). */
 function usbHost(port: MessagePort) {
-  const waiting: { connector: number; resolve: (m: UsbFromWorker) => void }[] = [];
+  const waiting: { connector: number; resolve: (m: UsbState) => void }[] = [];
   port.onmessage = (e: MessageEvent<UsbFromWorker>) => {
+    if (e.data.type !== 'usb-state') return;
     const i = waiting.findIndex((w) => w.connector === e.data.connector);
     if (i >= 0) waiting.splice(i, 1)[0].resolve(e.data);
   };
-  const ask = (m: UsbToWorker) => new Promise<UsbFromWorker>((resolve) => {
+  const ask = (m: UsbToWorker) => new Promise<UsbState>((resolve) => {
     waiting.push({ connector: m.connector, resolve });
     port.postMessage(m);
   });

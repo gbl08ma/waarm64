@@ -67,6 +67,8 @@ export const ui = $state({
   keysReleased: 0,
   /** The last key typed on the physical keyboard into the screen (`n` bumped each time): it ends the on-screen keyboard's latches. */
   keyTyped: { code: '', n: 0 },
+  /** The LEDs the guest set on the keyboard it reads now (bit 0 Num, 1 Caps, 2 Scroll Lock): the on-screen keyboard lights its lock keys. */
+  leds: 0,
   /** The machine has a relative mouse (the lock's `raw` mode). */
   hasMouse: false,
   /** The page can't run here (no cross-origin isolation): no Start. */

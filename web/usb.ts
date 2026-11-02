@@ -10,7 +10,7 @@
 // ones a page registers in the device worker (`registerUsbOpener`). The page attaches and detaches
 // them with `usb-attach`/`usb-detach` messages on a port and hears `usb-state` back.
 
-import type { UsbDevice, UsbFromWorker, UsbIdentity, UsbOpener, UsbProblem, UsbResult, UsbSpeed, UsbToWorker, UsbTransfer, UsbVirtual } from './usb-device.ts';
+import type { UsbDevice, UsbFromWorker, UsbIdentity, UsbState, UsbOpener, UsbProblem, UsbResult, UsbSpeed, UsbToWorker, UsbTransfer, UsbVirtual } from './usb-device.ts';
 import { GadgetZero } from './usb-gadget-zero.ts';
 import { UsbKeyboard } from './usb-keyboard.ts';
 import { bytes, type Ram } from './ram.ts';
@@ -120,9 +120,9 @@ export class Usb {
    * plug lands before the vCPU runs on), then posted to the core, then `usb-state` attached (or error),
    * the one answer to the page's `usb-attach` (none with `reply` false: the devices plugged in at start).
    */
-  async attach(connector: number, device: UsbIdentity | UsbVirtual, reply = true): Promise<UsbFromWorker> {
-    const fail = (e: unknown, detail?: UsbProblem[]): UsbFromWorker => {
-      const m: UsbFromWorker = { type: 'usb-state', connector, state: 'error', message: String((e as Error)?.message ?? e), error: toWire(e), ...(detail?.length ? { detail } : {}) };
+  async attach(connector: number, device: UsbIdentity | UsbVirtual, reply = true): Promise<UsbState> {
+    const fail = (e: unknown, detail?: UsbProblem[]): UsbState => {
+      const m: UsbState = { type: 'usb-state', connector, state: 'error', message: String((e as Error)?.message ?? e), error: toWire(e), ...(detail?.length ? { detail } : {}) };
       if (reply) this.post(m);
       return m;
     };
@@ -132,6 +132,8 @@ export class Usb {
     if (device.api === 'virtual') {
       try {
         dev = virtualDevice(device);
+        const kbd = dev instanceof UsbKeyboard ? dev : undefined;
+        if (kbd) kbd.onLeds = (leds) => this.post({ type: 'usb-leds', connector, leds });
       } catch (e) {
         return fail(e);
       }
@@ -157,7 +159,7 @@ export class Usb {
     }
     this.plugged[connector] = { dev, device };
     this.completion([connector, CPL_ATTACH | SPEEDS[dev.speed] << 8, 0]);
-    const m: UsbFromWorker = { type: 'usb-state', connector, state: 'attached', device, speed: dev.speed, ...(dev.problems?.length ? { problems: dev.problems } : {}) };
+    const m: UsbState = { type: 'usb-state', connector, state: 'attached', device, speed: dev.speed, ...(dev.problems?.length ? { problems: dev.problems } : {}) };
     if (reply) this.post(m);
     return m;
   }
@@ -168,7 +170,7 @@ export class Usb {
   }
 
   /** Unplugs `connector`: the device is released, the core fails its TDs, the guest sees a disconnect. */
-  detach(connector: number, reason: 'unplugged' | 'guest' | 'page' = 'page'): UsbFromWorker {
+  detach(connector: number, reason: 'unplugged' | 'guest' | 'page' = 'page'): UsbState {
     const p = this.plugged[connector];
     if (p) {
       this.plugged[connector] = undefined;
@@ -177,7 +179,7 @@ export class Usb {
       p.dev.detach();
       this.completion([connector, CPL_DETACH, 0]);
     }
-    const m: UsbFromWorker = { type: 'usb-state', connector, state: 'detached', reason };
+    const m: UsbState = { type: 'usb-state', connector, state: 'detached', reason };
     this.post(m);
     return m;
   }

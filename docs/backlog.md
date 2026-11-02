@@ -1024,8 +1024,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 - **The on-screen keyboard's next steps** (frontend.md "The on-screen keyboard"): a compact layout for a phone's width
   (the full 104 keys at 400 px are small; rotating to landscape is the way for now); the serial terminal's view
-  sending the keys to the serial console, as its own typing does; Caps Lock and Num Lock lit from the guest's LEDs
-  (virtio-input's `EV_LED` status events); layouts besides US (legends from the guest's keymap, web/app/keyboard.ts); a
+  sending the keys to the serial console, as its own typing does; layouts besides US (legends from the guest's keymap, web/app/keyboard.ts); a
   key held on it repeating on the serial console (before the guest's keyboard driver), as the browser's repeats do.
 
 - **Errors written as one message** ([copy.md](copy.md) "The elements": a headline, then the cause as details): where

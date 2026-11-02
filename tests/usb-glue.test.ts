@@ -3,7 +3,7 @@
 // (core/src/xhci.rs `XhciShared`).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { UsbDevice, UsbFromWorker, UsbResult } from '../web/usb-device.ts';
+import type { UsbDevice, UsbState, UsbResult } from '../web/usb-device.ts';
 import { GadgetZero } from '../web/usb-gadget-zero.ts';
 import { Usb, registerUsbOpener } from '../web/usb.ts';
 
@@ -62,7 +62,7 @@ test('the glue turns request records into TDs and results into completion record
   const RAM = 65536;
   let kicks = 0;
   const channel = new MessageChannel();
-  const states: UsbFromWorker[] = [];
+  const states: UsbState[] = [];
   channel.port2.onmessage = (e) => states.push(e.data);
   const usb = new Usb({ memory, shared: 0, ram: RAM, ramSize: 65536, deterministic: true, kick: () => kicks++, port: channel.port1 });
   // The ports keep the process alive: closed whatever happens, or a failed assertion hangs the file instead of failing.

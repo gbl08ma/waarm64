@@ -141,6 +141,8 @@ export class UsbPorts {
   private locks: UsbLocks;
   private pending = new Map<number, { resolve(): void; reject(e: Error): void; timer: ReturnType<typeof setTimeout> }>();
   onChange = () => {};
+  /** The guest set the LEDs of the keyboard on connector `c` (the built-in one's: bit 0 Num, 1 Caps, 2 Scroll Lock). */
+  onLeds: (c: number, leds: number) => void = () => {};
   /** `reason`: why it went (`usb-state` detached); `error`: the device worker's error, when it failed by itself. */
   onGone: (c: number, was: Connector, reason?: 'unplugged' | 'guest' | 'page', error?: Error) => void = () => {};
 
@@ -150,6 +152,7 @@ export class UsbPorts {
   }
 
   private heard(m: UsbFromWorker) {
+    if (m.type === 'usb-leds') return this.onLeds(m.connector, m.leds);
     if (m.type !== 'usb-state') return;
     const c = this.connectors[m.connector];
     const p = this.pending.get(m.connector);

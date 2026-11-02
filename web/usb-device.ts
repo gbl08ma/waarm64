@@ -106,7 +106,11 @@ export type UsbFromWorker =
   | { type: 'usb-state'; connector: number; state: 'attached'; device: UsbIdentity | UsbVirtual; speed: UsbSpeed; problems?: UsbProblem[] }
   | { type: 'usb-state'; connector: number; state: 'detached'; reason?: 'unplugged' | 'guest' | 'page' }
   /** `message`: the error's text, a developer's; `error`: the error itself, for the page's words (web/msg.ts `toWire`). */
-  | { type: 'usb-state'; connector: number; state: 'error'; message: string; error?: WireError; detail?: UsbProblem[] };
+  | { type: 'usb-state'; connector: number; state: 'error'; message: string; error?: WireError; detail?: UsbProblem[] }
+  /** The LEDs the guest set on the built-in keyboard (its output report: bit 0 Num, 1 Caps, 2 Scroll Lock), on a change. */
+  | { type: 'usb-leds'; connector: number; leds: number };
+/** An attach's answer (`usb-state`). */
+export type UsbState = Extract<UsbFromWorker, { type: 'usb-state' }>;
 
 /**
  * Why part of a device can't reach the guest, for the page's messages (docs/usb.md "The page"): on a successful attach

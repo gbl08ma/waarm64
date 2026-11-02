@@ -874,15 +874,20 @@ height allow. The toolbar's menus open over it.
   guest, as the screen's do.
 - **Without a touchscreen** a finger landing on the screen with no other finger on it is the tablet's (the screen's
   own fingers are counted, not the page's: a finger on the keyboard doesn't make the screen's touch a second one).
+- **LEDs:** Num Lock, Caps Lock and Scroll Lock carry a light, as the guest set it on the keyboard it reads now: the
+  virtio keyboard's status events (`EV_LED`, on the keyboard's port) once its driver is up, the built-in USB
+  keyboard's output report (`usb-leds`, docs/usb.md) before (`ui.leds`, main.ts `showLeds`). A guest that sets none
+  (no driver, a firmware without LEDs) leaves them dark.
 - **Not yet:** the keys go to the guest's keyboard in every view (the serial terminal's view too); a key held here
-  doesn't repeat on the serial console (the guest's kernel repeats it on the keyboard); no layout but US;
-  Caps Lock and Num Lock show no state (the guest's LEDs aren't read); one size of key labels on a phone (backlog).
+  doesn't repeat on the serial console (the guest's kernel repeats it on the keyboard); no layout but US; one size of
+  key labels on a phone (backlog).
 
 `tests/osk.test.ts` tests the layout and `OskKeys`; `tests/page-osk.test.ts` the keyboard and the Keys menu on the page,
 with the keyboard's, tablet's and serial console's ports kept on the page (clicks, a held key, latched modifiers, two
 fingers by CDP touches, the focus, a move and a resize remembered, the toggle mode, the holders beside the physical
 keyboard, a finger on the keyboard and one on the screen, the driver's change, the serial console before the driver,
-Ctrl+W, Esc, Hold Esc). The wake isn't tested on the page (a suspended guest's status is the worker's).
+the LEDs from virtio-input's status events and their switch with the driver, Ctrl+W, Esc, Hold Esc);
+`tests/usb-keyboard.test.ts` the built-in keyboard's `usb-leds`. The wake isn't tested on the page (a suspended guest's status is the worker's).
 
 ### The keyboard layout
 

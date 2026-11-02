@@ -397,7 +397,7 @@ a device kind of their own (docs/frontend.md "The guest's clock").
   them from DOM keyboard, pointer and wheel events, keys by `KeyboardEvent.code`, a US PC
   layout; what's held is released when the element or the window loses the focus, and `chord`
   sends combinations the browser keeps, docs/frontend.md "Input"); they wait for event buffers
-  (oldest dropped past 1024). LED status events go to the port. The page's mouse lock and touches: docs/frontend.md "Input".
+  (oldest dropped past 1024). LED status events go to the port (the page lights the on-screen keyboard's lock keys by them). The page's mouse lock and touches: docs/frontend.md "Input".
 
 ### virtio-gpu (ID 16): 2D, and 3D through virgl
 What the guests do with it, and why it is built as it is: [graphics.md](graphics.md) "The 2D display".

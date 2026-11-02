@@ -326,6 +326,8 @@ that don't fit the request ring wait in order, and are posted after the next com
   - `usb-attach` gets one `usb-state`: attached (with the speed) or error.
   - `usb-detach` gets one detached.
   - Devices plugged in at start (`usb.attach`) get none.
+  - The built-in keyboard's LEDs, when the guest changes them (SET_REPORT), come as `usb-leds` (`connector`, `leds`:
+    bit 0 Num, 1 Caps, 2 Scroll Lock), unasked: the on-screen keyboard lights its lock keys by them.
 
   Without a port, `bootVm` makes a channel and the VM's `usb.attach`/`usb.detach` resolve with the
   answer. `usb.events` plugs and unplugs at step counts for `runToPowerOff`, exactly there in
@@ -645,7 +647,7 @@ by themselves.
   - Interface class 3, subclass 1, protocol 1, with HID 1.11's boot report descriptor (63 bytes).
   - Interrupt IN 0x81 carries 8-byte reports: the modifier bits (0xE0–0xE7 as bits 0–7), a reserved byte, and up
     to six usages, or ErrorRollOver (1) in all six while more are held.
-  - The LEDs come by SET_REPORT(output). GET_REPORT, GET/SET_IDLE and GET/SET_PROTOCOL are answered; the two
+  - The LEDs come by SET_REPORT(output), and a change goes to the page (`usb-leds`). GET_REPORT, GET/SET_IDLE and GET/SET_PROTOCOL are answered; the two
     protocols share the layout.
   - Every change of the held keys is a report, sent in order (a press and its release both reach the host), to the
     IN TD the host keeps queued. Up to 32 wait while none is queued. While unconfigured, the state is only kept.

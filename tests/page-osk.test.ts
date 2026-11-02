@@ -37,7 +37,8 @@ async function open(live = true) {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.addInitScript(() => {
-    const w = window as unknown as { __keys: number[][][]; __tablet: number[][][]; __serial: string[]; __workers: Worker[] };
+    const w = window as unknown as { __keys: number[][][]; __tablet: number[][][]; __serial: string[]; __workers: Worker[]; __ports: Record<string, MessagePort> };
+    w.__ports = {};
     [w.__keys, w.__tablet, w.__serial, w.__workers] = [[], [], [], []];
     const post = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function (this: Worker, m: Record<string, unknown>, transfer: Transferable[]) {
@@ -46,6 +47,7 @@ async function open(live = true) {
         for (const [k, into] of [['keyboard', w.__keys], ['tablet', w.__tablet], ['serial', w.__serial]] as const) {
           const port = m[k] as MessagePort;
           port.onmessage = (e: MessageEvent) => (into as unknown[]).push(e.data);
+          w.__ports[k] = port; // the device's end: the test speaks as the guest's device on it
           const stand = new MessageChannel().port2;
           m[k] = stand;
           transfer = transfer.map((x) => (x === port ? stand : x));
@@ -288,6 +290,33 @@ test('before the guest has a keyboard driver: the keyboard and the Keys menu typ
   await page.locator('[data-chord="ControlLeft KeyW"]').click();
   assert.equal(await serial(1), '\x17');
   assert.deepEqual(await keys(page), [], 'nothing to the keyboard without its driver');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('the lock keys show the guest\'s LEDs: the virtio keyboard\'s with its driver, the built-in USB one\'s before', { skip, timeout: 120_000 }, async () => {
+  const { context, page, errors } = await open();
+  await showOsk(page);
+  const led = (code: string) => key(page, code).getAttribute('data-led');
+  /** The guest's keyboard driver sets LED `code` (0 Num, 1 Caps, 2 Scroll Lock): a virtio-input status event. */
+  const status = (code: number, value: number) => page.evaluate(([c, v]) => (window as unknown as { __ports: Record<string, MessagePort> }).__ports.keyboard.postMessage([0x11, c, v]), [code, value]);
+  const shows = (code: string, on: boolean) => page.waitForFunction(([c, on]) => (document.querySelector(`#osk [data-code=${c}]`)?.getAttribute('data-led') === 'on') === on, [code, on] as const, { timeout: 5000 });
+  assert.equal(await led('CapsLock'), 'off');
+  assert.equal(await led('KeyA'), null, 'only the lock keys have one');
+  await status(1, 1);
+  await shows('CapsLock', true);
+  await status(0, 1);
+  await shows('NumLock', true);
+  assert.equal(await led('ScrollLock'), 'off');
+  await status(1, 0);
+  await shows('CapsLock', false);
+  assert.equal(await led('NumLock'), 'on');
+  // The driver gone (the firmware's turn): the built-in USB keyboard's LEDs, none set on this machine.
+  await page.evaluate(() => (window as unknown as { __workers: Worker[] }).__workers[0].onmessage?.(new MessageEvent('message', { data: { type: 'keyboard', live: false } })));
+  await shows('NumLock', false);
+  // Back: the virtio keyboard's, as the guest left them.
+  await page.evaluate(() => (window as unknown as { __workers: Worker[] }).__workers[0].onmessage?.(new MessageEvent('message', { data: { type: 'keyboard', live: true } })));
+  await shows('NumLock', true);
   assert.deepEqual(errors, []);
   await context.close();
 });

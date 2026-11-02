@@ -104,18 +104,28 @@ test('the page\'s usb-key messages reach the keyboard through the glue', async (
   const usb = new Usb({ memory, shared: 0, ram: 65536, ramSize: 65536, deterministic: false, kick: () => {}, port: channel.port1 });
   const answers: unknown[] = [];
   channel.port2.onmessage = (e) => answers.push(e.data);
-  channel.port2.postMessage({ type: 'usb-attach', connector: 3, device: { api: 'virtual', kind: 'keyboard' } });
-  await new Promise((r) => setTimeout(r, 20));
-  assert.deepEqual(answers, [{ type: 'usb-state', connector: 3, state: 'attached', device: { api: 'virtual', kind: 'keyboard' }, speed: 'full' }]);
-  const kbd = (usb as unknown as { plugged: { dev: UsbKeyboard }[] }).plugged[3].dev;
-  channel.port2.postMessage({ type: 'usb-key', connector: 3, code: 'MetaLeft', down: true });
-  channel.port2.postMessage({ type: 'usb-key', connector: 3, code: 'KeyQ', down: true });
-  await new Promise((r) => setTimeout(r, 20));
-  assert.deepEqual(bytes({ code: 'success', actual: 8, data: kbd.report() }), [0x08, 0, 0x14, 0, 0, 0, 0, 0]);
-  channel.port2.postMessage({ type: 'usb-key', connector: 3, code: '', down: false });
-  await new Promise((r) => setTimeout(r, 20));
-  assert.deepEqual([...kbd.report()], [0, 0, 0, 0, 0, 0, 0, 0]);
-  assert.equal(answers.length, 1, 'keys get no answer');
-  usb.close();
-  channel.port2.close();
+  try {
+    channel.port2.postMessage({ type: 'usb-attach', connector: 3, device: { api: 'virtual', kind: 'keyboard' } });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(answers, [{ type: 'usb-state', connector: 3, state: 'attached', device: { api: 'virtual', kind: 'keyboard' }, speed: 'full' }]);
+    const kbd = (usb as unknown as { plugged: { dev: UsbKeyboard }[] }).plugged[3].dev;
+    channel.port2.postMessage({ type: 'usb-key', connector: 3, code: 'MetaLeft', down: true });
+    channel.port2.postMessage({ type: 'usb-key', connector: 3, code: 'KeyQ', down: true });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(bytes({ code: 'success', actual: 8, data: kbd.report() }), [0x08, 0, 0x14, 0, 0, 0, 0, 0]);
+    channel.port2.postMessage({ type: 'usb-key', connector: 3, code: '', down: false });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual([...kbd.report()], [0, 0, 0, 0, 0, 0, 0, 0]);
+    assert.equal(answers.length, 1, 'keys get no answer');
+    // The guest's LEDs (SET_REPORT) go to the page: Caps Lock on, then the same again (no message), then off.
+    await control(kbd, 0x00, 9, 1, 0, 0);
+    await control(kbd, 0x21, 0x09, 0x0200, 0, 1, new Uint8Array([0x02]));
+    await control(kbd, 0x21, 0x09, 0x0200, 0, 1, new Uint8Array([0x02]));
+    await control(kbd, 0x21, 0x09, 0x0200, 0, 1, new Uint8Array([0x00]));
+    await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(answers.slice(1), [{ type: 'usb-leds', connector: 3, leds: 2 }, { type: 'usb-leds', connector: 3, leds: 0 }]);
+  } finally {
+    usb.close();
+    channel.port2.close();
+  }
 });

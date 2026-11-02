@@ -64,6 +64,8 @@ export class UsbKeyboard extends VirtualDevice {
   private waiting: Held[] = [];
   /** What the host set: the LEDs (num, caps, scroll, compose, kana bits), the protocol (0 boot, 1 report), the idle rate. */
   leds = 0;
+  /** Told the LEDs when the host changes them. */
+  onLeds?: (leds: number) => void;
   protocol = 1;
   idle = 0;
 
@@ -128,7 +130,10 @@ export class UsbKeyboard extends VirtualDevice {
         return undefined;
       case 0x09: // SET_REPORT
         if (reportType !== 2 || !data?.length) return undefined;
-        this.leds = data[0] & 0x1f;
+        if ((data[0] & 0x1f) !== this.leds) {
+          this.leds = data[0] & 0x1f;
+          this.onLeds?.(this.leds);
+        }
         return true;
       case 0x02: return new Uint8Array([this.idle]); // GET_IDLE
       case 0x0a: this.idle = s.value >> 8; return true; // SET_IDLE (kept: no report is repeated)

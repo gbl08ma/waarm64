@@ -484,6 +484,13 @@ function sleepFirst(r: Run) {
 }
 
 /** A key or a click for a guest that sleeps: it wakes (as a machine does on its keyboard), and the input goes on to it. */
+/** The LEDs the guest set: on the virtio keyboard and on the built-in USB one (bit 0 Num, 1 Caps, 2 Scroll Lock). */
+let leds = { virtio: 0, usb: 0 };
+const EV_LED = 0x11;
+/** Shows the LEDs of the keyboard the guest reads now: the virtio one once its driver is up, else the built-in USB one. */
+function showLeds() {
+  ui.leds = keyboardLive ? leds.virtio : leds.usb;
+}
 /** Hold Esc's key held now: its timer, and its release. */
 let holding: { timer: ReturnType<typeof setTimeout>; up: () => void } | undefined;
 function wakeOnInput() {
@@ -717,6 +724,15 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   const input = attachInput(canvas, kbd.port1, tablet.port1, { live: () => keyboardLive, send: (d) => term.input(d, true), usb: keyboardKey }, { mouse: mouse?.port1, touch: touch?.port1, locked });
   input.mouseLock(ui.mouseLock, ui.mouseLockMode);
   input.onRelease(() => { ui.keysReleased++; });
+  // The guest's LEDs on the virtio keyboard: its status events (EV_LED, code 0 Num, 1 Caps, 2 Scroll Lock).
+  kbd.port1.onmessage = (e: MessageEvent<number[]>) => {
+    const [type, code, value] = e.data;
+    if (type !== EV_LED || code > 2) return;
+    leds.virtio = value ? leds.virtio | (1 << code) : leds.virtio & ~(1 << code);
+    showLeds();
+  };
+  leds = { virtio: 0, usb: 0 };
+  showLeds();
   input.onTyped((code) => { ui.keyTyped = { code, n: ui.keyTyped.n + 1 }; });
   ui.hasMouse = !!mouse;
   canvas.addEventListener('keydown', wakeOnInput);
@@ -772,6 +788,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       // The keys go elsewhere now (the virtio keyboard, or the built-in USB one or the serial console): what's held is released where it went down.
       if (m.live !== keyboardLive) r.input.release();
       keyboardLive = m.live;
+      showLeds();
       void syncKeyboard(r);
     } else if (m.type === 'notice') {
       notify(m.message, 'error');
@@ -1969,6 +1986,11 @@ function syncUsb() {
 function usbPorts(port: MessagePort) {
   const p = new UsbPorts(port, usbLocks);
   p.onChange = syncUsb;
+  p.onLeds = (c, l) => {
+    if (c !== KEYBOARD_CONNECTOR) return;
+    leds.usb = l;
+    showLeds();
+  };
   p.onGone = (connector, was, reason, error) => {
     if (reason === 'unplugged' && was.device.api !== 'virtual') {
       // It may come back as another device (a bootloader, after a firmware upload): the offer to attach that one there.

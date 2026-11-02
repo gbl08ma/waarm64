@@ -19,9 +19,13 @@
     released: number;
     /** The last key typed on the physical keyboard (`n` bumped each time): it ends the latches as a key here does. */
     typed: { code: string; n: number };
+    /** The guest's LEDs (bit 0 Num, 1 Caps, 2 Scroll Lock): lit on the lock keys. */
+    leds: number;
     onclose(): void;
   };
-  let { send, mode, released, typed, onclose }: Props = $props();
+  let { send, mode, released, typed, leds, onclose }: Props = $props();
+  /** The lock keys' LEDs: their bits in `leds`. */
+  const LED_BITS: Record<string, number> = { NumLock: 1, CapsLock: 2, ScrollLock: 4 };
 
   let tick = $state(0);
   const keys = new OskKeys((code, down) => send(code, down, keys.mods()));
@@ -117,7 +121,7 @@
   </div>
   <div class="keys" style:height={px(u * HEIGHT)} onpointerdown={keyDown} onpointerup={keyUp} onpointercancel={keyUp}>
     {#each LABELS as k (k.code)}
-      <div class="key" data-code={k.code} data-state={stateOf(k.code, tick)} class:named={!!k.name}
+      <div class="key" data-code={k.code} data-state={stateOf(k.code, tick)} data-led={LED_BITS[k.code] ? (leds & LED_BITS[k.code] ? 'on' : 'off') : undefined} class:named={!!k.name}
         style:left={px(k.x * u)} style:top={px(k.y * u)} style:width={px(k.w * u)} style:height={px(k.h * u)}>
         {#if k.name}<span class="main">{k.name}</span>{:else if k.legend?.top}<span class="top">{k.legend.top}</span><span class="main">{k.legend.main}</span>{:else}<span class="main">{k.legend?.main}</span>{/if}
       </div>
@@ -141,6 +145,10 @@
     transform: scale(0.94); }
   .key.named { font-size: calc(var(--u) * 0.24); text-align: center; }
   .key .top { color: var(--dim); font-size: 0.85em; }
+  /* A lock key's LED, as a keyboard's in its key: dim off, lit on. */
+  .key[data-led]::after { content: ''; position: absolute; top: calc(var(--u) * 0.1); right: calc(var(--u) * 0.1); width: calc(var(--u) * 0.12);
+    height: calc(var(--u) * 0.12); border-radius: 50%; background: var(--line); }
+  .key[data-led=on]::after { background: var(--ok); box-shadow: 0 0 calc(var(--u) * 0.12) var(--ok); }
   .key[data-state=held] { background: var(--pressed); border-color: var(--accent); }
   .key[data-state=latched] { background: color-mix(in srgb, var(--accent) 35%, var(--bar)); border-color: var(--accent); }
 </style>
