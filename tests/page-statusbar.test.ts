@@ -8,6 +8,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
+import { t } from '../web/i18n.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const skip = !(existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES))) && 'SKIPPED: run images/build.sh';
@@ -69,7 +70,7 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   assert.equal((await kept(page)).find((i: { kind: string }) => i.kind === 'vcpus').look, 'icon');
   // A vCPU element's two sets of options (its look, bars or numbers), each in its own frame.
   await page.click(`${chips}[data-kind=mips][data-at="10"] .pick`);
-  assert.deepEqual(await page.$$eval('[data-field=status-options] fieldset legend', (ls) => ls.map((l) => l.textContent)), ['Look', 'Each vCPU as']);
+  assert.deepEqual(await page.$$eval('[data-field=status-options] fieldset legend', (ls) => ls.map((l) => l.textContent)), [t('statusbar:StatusEditor.look'), t('statusbar:StatusEditor.cpus')]);
   if (shots) await page.locator('[data-field=status-options]').screenshot({ path: `${shots}/options.png` });
   await page.click(`${chips}[data-kind=vcpus] .pick`);
   if (shots) {
@@ -88,12 +89,12 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   await page.waitForFunction(() => document.fullscreenElement === document.body, null, { timeout: 5000 });
   assert.equal(await page.locator('#status').isVisible(), true);
   assert.equal(await page.locator('header.toolbar').isVisible(), false);
-  const keysSay = (re: RegExp) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector('#status [data-kind=keyboard]')?.textContent ?? ''), re.source, { timeout: 5000 });
-  await keysSay(await page.evaluate(() => 'keyboard' in navigator) ? /Keys locked/ : /Typing to the machine/);
+  const keysSay = (words: string) => page.waitForFunction((w) => (document.querySelector('#status [data-kind=keyboard]')?.textContent ?? '').includes(w), words, { timeout: 5000 });
+  await keysSay(await page.evaluate(() => 'keyboard' in navigator) ? t('statusbar:statusbar.keyboard.locked') : t('statusbar:statusbar.keyboard.typing'));
   await page.evaluate(() => document.exitFullscreen());
-  await keysSay(/Typing to the machine/); // the screen keeps the focus
+  await keysSay(t('statusbar:statusbar.keyboard.typing')); // the screen keeps the focus
   await page.evaluate(() => (document.activeElement as HTMLElement).blur());
-  await keysSay(/Click to type/);
+  await keysSay(t('statusbar:statusbar.keyboard.click'));
   await page.click('#machines-open');
   await page.click('[data-machine=preferences]');
 

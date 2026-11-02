@@ -10,6 +10,7 @@ import type { ProblemWords } from './usb-ports.ts';
 import type { LockMode } from '../input.ts';
 import { normalize, type Graphics, type Metrics } from './statusbar.ts';
 import { settings } from './settings.ts';
+import { t } from '../i18n.ts';
 
 export type View = 'screen' | 'terminal' | 'both';
 /** The machine's power state, plus the page's own `idle`: no machine yet (waiting for a disk, or for "Start anyway"). */
@@ -22,7 +23,7 @@ export const ui = $state({
   title: '',
   state: 'loading' as PageState,
   /** The state's words (a phase or a progress while loading or saving). */
-  stateText: 'Loading',
+  stateText: t('statusbar:ui.loading'),
   /** The message bar: a problem or a note, and what can be done about it. */
   message: '',
   /** The message's details, one per line, under it (an error's causes: web/i18n.ts `describe`). */

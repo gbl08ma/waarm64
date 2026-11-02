@@ -8,7 +8,8 @@
 <script lang="ts">
   import StatusPiece from './StatusPiece.svelte';
   import type { PageNetwork } from './net-live.ts';
-  import { render, shows, type Item, type Live, type Piece } from './statusbar.ts';
+  import { adapterName, render, shows, type Item, type Live, type Piece } from './statusbar.ts';
+  import { t } from '../i18n.ts';
   import { ui } from './ui.svelte.ts';
 
   let { net }: { net: PageNetwork } = $props();
@@ -35,7 +36,10 @@
       mouseLock: ui.mouseLock, mouseLocked: ui.mouseLocked, keyboardLocked: ui.keyboardLocked, keysFocused: ui.keysFocused, mic: ui.mic,
       disks: ui.status.disks,
       gpu: ui.status.gpu?.g,
-      nets: net.views().map((a) => ({ name: `Adapter ${a.index + 1}`, phase: a.view.phase, text: `${a.connection?.name ?? 'no connection'}: ${a.view.text}` })),
+      nets: net.views().map((a) => ({
+        name: adapterName(a.index + 1), phase: a.view.phase,
+        text: a.connection ? t('statusbar:StatusBar.link', { connection: a.connection.name, state: a.view.text }) : t('statusbar:StatusBar.link.none', { state: a.view.text }),
+      })),
     };
   }
   /** Whether a dot goes between entries `a` and `b` (none beside a spacer or a divider). */

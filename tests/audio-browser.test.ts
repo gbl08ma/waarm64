@@ -26,6 +26,7 @@ import { GAP_FRAMES, LATENCY, QUANTA, READ, UNDERRUNS, WRITE } from '../web/audi
 import { peaks } from './audio-tap.ts';
 import { fnv1a } from '../web/snd.ts';
 import { answerAsks } from './page-ask.ts';
+import { t } from '../web/i18n.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const skip = process.env.WEBPC_AUDIO_TESTS !== '1' ? 'SKIPPED: scripts/ci-audio.sh runs it (WEBPC_AUDIO_TESTS=1)'
@@ -261,7 +262,7 @@ const silence16 = fnv1a(new Uint8Array(16384 * 4)).toString(16).padStart(8, '0')
 test('the guest records the page\'s microphone (raw): the tone on both channels, in real time; the microphone closes when it stops', { skip }, async () => {
   const { context, page, errors } = await micPage({ micRaw: true }, 3);
   await page.waitForFunction(() => (window as unknown as { __audio: Mic }).__audio?.micState === 'on', null, { timeout: 60_000 });
-  await page.waitForFunction(() => /· mic/.test(document.getElementById('sound-summary')!.textContent ?? ''), null, { timeout: 5_000 });
+  await page.waitForFunction((said) => said.includes(document.getElementById('sound-summary')!.textContent ?? ''), [t('sound:Sound.summary.onMic'), t('sound:Sound.summary.mutedMic')], { timeout: 5_000 });
   assert.deepEqual(await processing(page), [false, false, false], 'raw');
   await until(page, /snd test (ok|failed)/, 30_000);
   const r = recorded(await serial(page));
@@ -307,7 +308,7 @@ test('Microphone off: the page never asks for it and the guest records silence i
   const no = await micPage({}, undefined, refusing);
   await no.page.waitForFunction(() => (window as unknown as { __audio: Mic }).__audio?.micState === 'denied', null, { timeout: 60_000 });
   await no.page.locator('#sound-menu summary').click();
-  assert.match(await no.page.locator('#mic-hint').textContent() ?? '', /refused the microphone/);
+  assert.equal(await no.page.locator('#mic-hint').textContent(), t('sound:Sound.mic.denied'));
   assert.equal(await no.page.locator('#mic-hint').isVisible(), true);
   await until(no.page, /snd test (ok|failed)/, 30_000);
   assert.equal(recorded(await serial(no.page)).hash, silence16);

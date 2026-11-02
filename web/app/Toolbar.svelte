@@ -17,11 +17,17 @@
   import { remember, settings } from './settings.ts';
   import { page, ui, type View } from './ui.svelte.ts';
   import { numaNote } from './machine.ts';
+  import { t, text } from '../i18n.ts';
 
   let { store, audio, net, folders }: { store: Store; audio: PageAudio; net: PageNetwork; folders: PageFolders } = $props();
 
   const running = $derived(ui.state === 'running' || ui.state === 'booting');
-  const startLabel = $derived(ui.state === 'off' || ui.state === 'idle' || ui.state === 'suspended' ? 'Start' : ui.state === 'failed' ? 'Retry' : 'Restart');
+  const startAs = $derived(ui.state === 'off' || ui.state === 'idle' || ui.state === 'suspended' ? 'start' : ui.state === 'failed' ? 'retry' : 'restart');
+  const START = {
+    start: { label: 'toolbar:Toolbar.start', title: 'toolbar:Toolbar.start.title' },
+    retry: { label: 'toolbar:Toolbar.retry', title: 'toolbar:Toolbar.retry.title' },
+    restart: { label: 'toolbar:Toolbar.restart', title: 'toolbar:Toolbar.restart.title' },
+  } as const;
   const canSnapshot = $derived(running && !ui.busy);
 
   // Load snapshot: the machine's latest kept snapshots (orphaned ones can't restore: shown, disabled), a file, or all of them.
@@ -55,96 +61,96 @@
   $effect(() => { const [n, r, g] = [ui.size.ncpus, ui.size.ramMiB, ui.size.gpu]; if (!sizeOpen) [ncpus, ramMiB, gpu] = [n, r, g]; });
   /** The note for a size past memory 0 (its NUMA nodes); the running split (`?split=`) while the size is unchanged. */
   const numa = $derived(numaNote(Number(ramMiB), Number(ramMiB) === ui.size.ramMiB ? ui.size.split : undefined, ui.size.vulkan));
-  const ramText = (n: number) => (n >= 1024 && n % 512 === 0 ? `${n / 1024} GiB` : `${n} MiB`);
+  const ramText = (n: number) => (n >= 1024 && n % 512 === 0 ? `${n / 1024} GiB` : `${n} MiB`); // i18n-ignore: a size and its unit
 
   const VIEWS: { v: View; icon: 'device-desktop' | 'terminal-2' | 'layout-columns'; title: string }[] = [
-    { v: 'screen', icon: 'device-desktop', title: 'Screen' },
-    { v: 'terminal', icon: 'terminal-2', title: 'Serial terminal' },
-    { v: 'both', icon: 'layout-columns', title: 'Both' },
+    { v: 'screen', icon: 'device-desktop', title: t('toolbar:Toolbar.view.screen') },
+    { v: 'terminal', icon: 'terminal-2', title: t('toolbar:Toolbar.view.terminal') },
+    { v: 'both', icon: 'layout-columns', title: t('toolbar:Toolbar.view.both') },
   ];
 </script>
 
 <header class="toolbar">
-  <h1>webpc</h1>
-  <button id="machines-open" class="tool labelled" aria-pressed={ui.machinesOpen} title="The machines kept in this browser: their settings, disks, overlays and snapshots" onclick={() => page.openMachines()}>
-    <Icon name="server-2" /><span class="label">Machines</span>
+  <h1>{t('toolbar:Toolbar.name')}</h1>
+  <button id="machines-open" class="tool labelled" aria-pressed={ui.machinesOpen} title={t('toolbar:Toolbar.machines.title')} onclick={() => page.openMachines()}>
+    <Icon name="server-2" /><span class="label">{t('toolbar:Toolbar.machines')}</span>
   </button>
   <span id="machine" title={ui.title}>{ui.title}</span>
   <span class="sep"></span>
-  <button id="restart" class="tool labelled" hidden={ui.cantRun} disabled={ui.busy} title={startLabel === 'Restart' ? 'Restart the machine (like pulling the plug)' : `${startLabel} the machine`} onclick={() => page.restart()}>
-    <Icon name={startLabel === 'Restart' ? 'refresh' : 'player-play'} /><span class="label">{startLabel}</span>
+  <button id="restart" class="tool labelled" hidden={ui.cantRun} disabled={ui.busy} title={t(START[startAs].title)} onclick={() => page.restart()}>
+    <Icon name={startAs === 'restart' ? 'refresh' : 'player-play'} /><span class="label">{t(START[startAs].label)}</span>
   </button>
-  <button id="power-off" class="tool" hidden={ui.cantRun || !running} disabled={ui.busy} aria-label="Power off" title="Power off: stop the machine at once, like pulling the plug (shut the guest down first for a clean stop)" onclick={() => page.powerOffAsked()}>
+  <button id="power-off" class="tool" hidden={ui.cantRun || !running} disabled={ui.busy} aria-label={t('toolbar:Toolbar.powerOff')} title={t('toolbar:Toolbar.powerOff.title')} onclick={() => page.powerOffAsked()}>
     <Icon name="player-stop" />
   </button>
-  <button id="suspend" class="tool" hidden={!ui.hasOverlay || ui.cantRun} disabled={!canSnapshot} aria-label="Suspend" title="Suspend: stop the machine and keep its memory in this browser; the next start, or opening this page again, resumes it where it was" onclick={() => page.suspend()}>
+  <button id="suspend" class="tool" hidden={!ui.hasOverlay || ui.cantRun} disabled={!canSnapshot} aria-label={t('toolbar:Toolbar.suspend')} title={t('toolbar:Toolbar.suspend.title')} onclick={() => page.suspend()}>
     <Icon name="zzz" />
   </button>
   <span class="sep"></span>
-  <button id="save-snapshot" class="tool labelled" disabled={!canSnapshot} title={ui.current ? 'Take a snapshot: the running machine as it is, kept with it in this browser (it pauses for a moment, then runs on)' : 'Take a snapshot: the running machine as it is, to a file (it pauses for a moment, then runs on)'} onclick={() => page.takeSnapshot()}>
-    <Icon name="history-toggle" /><span class="label">Snapshot</span>
+  <button id="save-snapshot" class="tool labelled" disabled={!canSnapshot} title={ui.current ? t('toolbar:Toolbar.snapshot.title') : t('toolbar:Toolbar.snapshot.title.file')} onclick={() => page.takeSnapshot()}>
+    <Icon name="history-toggle" /><span class="label">{t('toolbar:Toolbar.snapshot')}</span>
   </button>
-  <Menu id="load-snapshot" icon="history" title="Load a snapshot: the machine as it was when it was taken" bind:open={loadOpen} disabled={ui.busy}>
+  <Menu id="load-snapshot" icon="history" title={t('toolbar:Toolbar.load.title')} bind:open={loadOpen} disabled={ui.busy}>
     {#if ui.current}
-      <div class="label">Latest snapshots</div>
+      <div class="label">{t('toolbar:Toolbar.load.latest')}</div>
       {#each latest as s (s.id)}
-        <button data-snapshot={s.id} disabled={s.orphaned} title={s.orphaned ? "Taken of this machine with other settings or disks: it can't be restored onto it" : `Restore ${s.name}`} onclick={() => { loadOpen = false; page.restoreKept(s.id); }}>
+        <button data-snapshot={s.id} disabled={s.orphaned} title={s.orphaned ? t('toolbar:Toolbar.load.orphaned.title') : t('toolbar:Toolbar.load.restore.title', { name: s.name })} onclick={() => { loadOpen = false; page.restoreKept(s.id); }}>
           <span>{s.name}</span><span class="dim">{new Date(s.created).toLocaleString()}</span>
         </button>
       {:else}
-        <p class="hint">None kept yet: Snapshot keeps one.</p>
+        <p class="hint">{t('toolbar:Toolbar.load.none')}</p>
       {/each}
       <hr>
-      <button onclick={() => { loadOpen = false; page.openMachines('snapshots', ui.current); }}>All snapshots…</button>
+      <button onclick={() => { loadOpen = false; page.openMachines('snapshots', ui.current); }}>{t('toolbar:Toolbar.load.all')}</button>
     {/if}
-    <button onclick={loadFile}>From a file…</button>
+    <button onclick={loadFile}>{t('toolbar:Toolbar.load.file')}</button>
   </Menu>
   <span class="sep"></span>
-  <span class="views" role="group" aria-label="View">
+  <span class="views" role="group" aria-label={t('toolbar:Toolbar.views')}>
     {#each VIEWS as { v, icon, title } (v)}
       <button class="tool" data-view-button={v} aria-pressed={ui.view === v} aria-label={title} {title} onclick={() => page.setView(v)}><Icon name={icon} /></button>
     {/each}
   </span>
   {#if ui.hasGpu}
-    <Menu id="screen-menu" icon="aspect-ratio" title="The size of the machine's screen" panel>
-      <label>Size<select id="screen-size" bind:value={screenSize} onchange={() => { remember({ screen: screenSize }); page.screenSize(); }}>
-        <option value="fit">Fit the window</option><option value="1024x768">1024×768</option><option value="1280x800">1280×800</option><option value="1920x1080">1920×1080</option>
+    <Menu id="screen-menu" icon="aspect-ratio" title={t('toolbar:Toolbar.screen.title')} panel>
+      <label>{t('toolbar:Toolbar.screen.size')}<select id="screen-size" bind:value={screenSize} onchange={() => { remember({ screen: screenSize }); page.screenSize(); }}>
+        <option value="fit">{t('toolbar:Toolbar.screen.fit')}</option><option value="1024x768">1024×768</option><option value="1280x800">1280×800</option><option value="1920x1080">1920×1080</option>
       </select></label>
-      <Check id="screen-hidpi" bind:checked={hidpi} onchange={() => { remember({ hidpi }); page.screenSize(); }} title="The guest draws in device pixels instead of CSS pixels: sharper on a HiDPI screen, with smaller text unless the desktop scales (its EDID carries the screen's physical size)">HiDPI</Check>
-      <p class="hint">A text console (fbcon) keeps the size it started with: a new size takes effect at the next boot (Restart), and the console is centred until then. A desktop takes it when it starts; whether it follows a change is up to its compositor (sway doesn't).</p>
+      <Check id="screen-hidpi" bind:checked={hidpi} onchange={() => { remember({ hidpi }); page.screenSize(); }} title={t('toolbar:Toolbar.screen.hidpi.title')}>{t('toolbar:Toolbar.screen.hidpi')}</Check>
+      <p class="hint">{t('toolbar:Toolbar.screen.hint')}</p>
     </Menu>
   {/if}
-  <Menu id="keys" icon="keyboard" title="Key combinations the browser keeps for itself, sent to the screen's keyboard" bind:open={keysOpen}>
-    <button data-chord="ControlLeft AltLeft Delete" onclick={() => chord('ControlLeft AltLeft Delete')}>Ctrl+Alt+Del</button>
-    <div class="label">Ctrl+Alt+</div>
+  <Menu id="keys" icon="keyboard" title={t('toolbar:Toolbar.keys.title')} bind:open={keysOpen}>
+    <button data-chord="ControlLeft AltLeft Delete" onclick={() => chord('ControlLeft AltLeft Delete')}>{t('toolbar:Toolbar.keys.ctrlAltDel')}</button>
+    <div class="label">{t('toolbar:Toolbar.keys.ctrlAlt')}</div>
     <div class="fkeys" id="fkeys">
       {#each Array.from({ length: 12 }, (_, k) => k + 1) as k (k)}
-        <button data-chord={`ControlLeft AltLeft F${k}`} title={`Ctrl+Alt+F${k}`} aria-label={`Ctrl+Alt+F${k}`} onclick={() => chord(`ControlLeft AltLeft F${k}`)}>F{k}</button>
+        <button data-chord={`ControlLeft AltLeft F${k}`} title={t('toolbar:Toolbar.keys.fkey.title', { n: k })} aria-label={t('toolbar:Toolbar.keys.fkey.title', { n: k })} onclick={() => chord(`ControlLeft AltLeft F${k}`)}>{t('toolbar:Toolbar.keys.fkey', { n: k })}</button>
       {/each}
     </div>
   </Menu>
-  <Menu id="mouse-lock" icon="mouse" title={ui.mouseLocked ? 'Mouse lock: the machine has the mouse (Esc lets it go)' : ui.mouseLock ? 'Mouse lock is on: a click on the screen gives the machine the mouse' : 'Mouse lock: a click on the screen gives the machine the mouse, every button included'} data-on={ui.mouseLock || undefined} panel>
-    <Check id="mouse-lock-on" checked={ui.mouseLock} onchange={(on) => page.setMouseLock(on)} title="A click on the screen gives the machine the mouse: every button reaches it, the back and forward ones too, and the browser hides its pointer; Esc lets it go">Lock the mouse on a click</Check>
-    <label class="row" title="The pointer moves as it does unlocked, at the host's speed, and stays in the screen"><input type="radio" name="mouse-lock-mode" value="pointer" data-mode="pointer" checked={ui.mouseLockMode === 'pointer'} onchange={() => page.setMouseLock(ui.mouseLock, 'pointer')}> Pointer: the same speed as unlocked</label>
-    <label class="row" title={ui.hasMouse ? "The mouse's own motion to the machine's relative mouse, unbounded by the screen (games that turn with the mouse); the guest's settings set its speed" : "This machine has no relative mouse (its Settings, Mouse): the lock moves the pointer"}><input type="radio" name="mouse-lock-mode" value="raw" data-mode="raw" checked={ui.mouseLockMode === 'raw'} disabled={!ui.hasMouse} onchange={() => page.setMouseLock(ui.mouseLock, 'raw')}> Raw: unbounded, for games</label>
-    <p class="hint">Esc lets the mouse go. In Raw the guest's own mouse settings set the speed.{ui.hasMouse ? '' : " Raw needs the machine's Mouse (its Settings)."}</p>
+  <Menu id="mouse-lock" icon="mouse" title={ui.mouseLocked ? t('toolbar:Toolbar.mouse.title.locked') : ui.mouseLock ? t('toolbar:Toolbar.mouse.title.on') : t('toolbar:Toolbar.mouse.title')} data-on={ui.mouseLock || undefined} panel>
+    <Check id="mouse-lock-on" checked={ui.mouseLock} onchange={(on) => page.setMouseLock(on)} title={t('toolbar:Toolbar.mouse.lock.title')}>{t('toolbar:Toolbar.mouse.lock')}</Check>
+    <label class="row" title={t('toolbar:Toolbar.mouse.pointer.title')}><input type="radio" name="mouse-lock-mode" value="pointer" data-mode="pointer" checked={ui.mouseLockMode === 'pointer'} onchange={() => page.setMouseLock(ui.mouseLock, 'pointer')}> {t('toolbar:Toolbar.mouse.pointer')}</label>
+    <label class="row" title={ui.hasMouse ? t('toolbar:Toolbar.mouse.raw.title') : t('toolbar:Toolbar.mouse.raw.title.noMouse')}><input type="radio" name="mouse-lock-mode" value="raw" data-mode="raw" checked={ui.mouseLockMode === 'raw'} disabled={!ui.hasMouse} onchange={() => page.setMouseLock(ui.mouseLock, 'raw')}> {t('toolbar:Toolbar.mouse.raw')}</label>
+    <p class="hint">{ui.hasMouse ? t('toolbar:Toolbar.mouse.hint') : t('toolbar:Toolbar.mouse.hint.noMouse')}</p>
   </Menu>
-  <button id="fullscreen" class="tool" aria-label="Full screen" title="Full screen: browser shortcuts (Ctrl+W, Ctrl+T) and Esc go to the machine; hold Esc to leave" onclick={() => page.fullscreen()}><Icon name="maximize" /></button>
+  <button id="fullscreen" class="tool" aria-label={t('toolbar:Toolbar.fullscreen')} title={t('toolbar:Toolbar.fullscreen.title')} onclick={() => page.fullscreen()}><Icon name="maximize" /></button>
   <span class="sep"></span>
   <Sound {audio} />
   {#if ui.hasNetwork}<Network {net} />{/if}
   {#if ui.usb.on}<UsbMenu />{/if}
   {#if ui.folders.on}<FoldersMenu {folders} />{/if}
   {#if !ui.current}
-    <Menu id="machine-menu" icon="cpu" title="The number of vCPUs, the size of the RAM and the graphics: applied by a restart" bind:open={sizeOpen} panel>
-      <label>Processors<select id="machine-cpus" bind:value={ncpus}>{#each ui.size.cpuChoices as n (n)}<option value={n}>{n} vCPU{n > 1 ? 's' : ''}</option>{/each}</select></label>
-      <label>Memory<select id="machine-ram" bind:value={ramMiB}>{#each ui.size.ramChoices as n (n)}<option value={n}>{ramText(n)}</option>{/each}</select></label>
-      {#if numa}<p class="hint warn" id="machine-numa">{numa}</p>{/if}
+    <Menu id="machine-menu" icon="cpu" title={t('toolbar:Toolbar.size.title')} bind:open={sizeOpen} panel>
+      <label>{t('toolbar:Toolbar.size.cpus')}<select id="machine-cpus" bind:value={ncpus}>{#each ui.size.cpuChoices as n (n)}<option value={n}>{t('toolbar:Toolbar.size.cpu', { count: n })}</option>{/each}</select></label>
+      <label>{t('toolbar:Toolbar.size.ram')}<select id="machine-ram" bind:value={ramMiB}>{#each ui.size.ramChoices as n (n)}<option value={n}>{ramText(n)}</option>{/each}</select></label>
+      {#if numa}<p class="hint warn" id="machine-numa">{text(numa)}</p>{/if}
       {#if ui.hasGpu}
-        <label id="machine-gpu-label" title="3D gives the guest OpenGL ES through the browser's WebGL2 (virgl); 2D is a plain framebuffer">Graphics<select id="machine-gpu" bind:value={gpu} disabled={!!ui.size.gpuLock} title={ui.size.gpuLock}><option value="3d">3D (WebGL2)</option><option value="2d">2D</option></select></label>
+        <label id="machine-gpu-label" title={t('toolbar:Toolbar.size.gpu.title')}>{t('toolbar:Toolbar.size.gpu')}<select id="machine-gpu" bind:value={gpu} disabled={!!ui.size.gpuLock} title={ui.size.gpuLock}><option value="3d">{t('toolbar:Toolbar.size.gpu.3d')}</option><option value="2d">{t('toolbar:Toolbar.size.gpu.2d')}</option></select></label>
       {/if}
-      <button id="machine-apply" onclick={() => { sizeOpen = false; page.applySize(Number(ncpus), Number(ramMiB), gpu); }}>Apply and restart</button>
-      <p class="hint">Kept in this browser. A suspended machine resumes with the size it had; Boot instead starts it from its disk with this one.</p>
+      <button id="machine-apply" onclick={() => { sizeOpen = false; page.applySize(Number(ncpus), Number(ramMiB), gpu); }}>{t('toolbar:Toolbar.size.apply')}</button>
+      <p class="hint">{t('toolbar:Toolbar.size.hint')}</p>
     </Menu>
   {/if}
 </header>
