@@ -52,14 +52,18 @@ that only make sense natively dropped, `vk/wasi/` ahead on the include path) and
   on a **ticker** of its own (web/venus-ticker.ts: a worker sleeping 0.05 ms in a blocking `Atomics.wait`, then
   notifying the word the pump `waitAsync`s on; ~0.08 ms a turn on the Mac, ~0.17 on Linux), because Chromium stretches
   `waitAsync`'s own 0.25 ms timeout to ~1.5 ms on the Mac (bench/vulkan/wake.ts). The ticker runs only while the pump
-  does (word 1); `?gpu=vkpoll=pump` gives the pump's own turns back, `?gpu=vktick=<ms>` another sleep. GSK's Vulkan
+  does (word 1), which the pump never clears while a turn waits on a tick; that wait also times out at the pump's own
+period, and a ticker that can't be made or fails to load hands back to the pump with a warning. `?gpu=vkpoll=pump`
+gives the pump's own turns back, `?gpu=vktick=<ms>` another sleep (0.01–10 ms; else refused with a warning). GSK's Vulkan
   renderer makes ~65–80 synchronous `vkAllocateDescriptorSets` a frame (Mesa's Venus allocates sets synchronously
   for good once a pool made with `FREE_DESCRIPTOR_SET_BIT` has had sets of mixed layouts freed), and each waited a
   turn: iconscroll on the M4 ran at 6.5 frames/s with the pump, ~31 with the ticker (bench/vulkan/REPORT.md "VK4 T13–T14").
   A ring goes idle after the guest's idle timeout (Mesa's 1 ms) without commands, and the guest's next command then
-  sends a notify (`vkNotifyRingMESA`, an execbuffer); `?gpu=vkidle=<ms>` keeps rings active longer (A/B). vkr counts
-  what it runs (the patch's `vkr_wasi_count_cmd`: by where it came from, ring, virtqueue or a nested stream, whether it
-  asks for a reply, and its type; rings gone idle; notifies, which also count each `vkWaitRingSeqnoMESA`), and the render
+  sends a notify (`vkNotifyRingMESA`, an execbuffer); `?gpu=vkidle=<ms>` keeps rings active longer (A/B, 0–1,000 ms;
+  vkr's synchronous seqno wait keeps the guest's own timeout). vkr counts what it runs (the patch's
+  `vkr_wasi_count_cmd`: by where it came from, ring, virtqueue or a nested stream, whether it asks for a reply, and its
+  type, under the module's `venus_cmd_types`; each time a ring goes idle; notifies, which also count each
+  `vkWaitRingSeqnoMESA`), u32s whose differences the host sums modulo 2^32, and the render
   stats carry them (`venus`'s `ringCmds`, `queueCmds`, `nestedCmds`, `replies`, `idles`, `notifies`, the pump's own
   `turnMs`, and `venusCalls`: the replied commands and the virtqueue's by name), which bench/gpu/guest-session.ts sums
   (`venus.cmds`, `venus.calls`).

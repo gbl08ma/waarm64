@@ -13,7 +13,7 @@ import { VENUS_ARENA } from '../web/ram.ts';
 const MODULE = new URL('../target/vk/venus.wasm', import.meta.url);
 const skip = !existsSync(MODULE) && 'SKIPPED: run vk/build.sh';
 
-async function renderer(caps?: GpuCaps, options: { hold?: string[]; heldFormats?: boolean; ycbcr?: boolean; l9?: L9Suspect[] } = {}) {
+async function renderer(caps?: GpuCaps, options: { hold?: string[]; heldFormats?: boolean; ycbcr?: boolean; l9?: L9Suspect[]; ringIdleMs?: number; tickMs?: number } = {}) {
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
   // A window of 1 MiB after the arena, and an empty write-watch (no vCPUs, no pages) past it.
   const window = { at: VENUS_ARENA, bytes: 1 << 20, watch: VENUS_ARENA + 0x1000_0000 };
@@ -33,6 +33,17 @@ test('a renderer module built for another arena is refused', async () => {
   const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
   const old = new WebAssembly.Module(new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
   await assert.rejects(VenusRenderer.create(old, memory, { at: 0, bytes: 0, watch: 0 }), /isn't built for its arena \(1280 MiB of memory 1\): rebuild it/);
+});
+
+// VK4 T13's review, F8: one with the arena's export but built before vkr's counts (whose exports the stats call every
+// second) is refused too, before it runs.
+test('a renderer module older than the counts is refused', async () => {
+  const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+  const name = [...new TextEncoder().encode('venus_arena_end')];
+  // (func (export "venus_arena_end") (result i32) (i32.const 0))
+  const older = new WebAssembly.Module(new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0, 1, 5, 1, 0x60, 0, 1, 0x7f, 3, 2, 1, 0,
+    7, name.length + 4, 1, name.length, ...name, 0, 0, 10, 6, 1, 4, 0, 0x41, 0, 0x0b]));
+  await assert.rejects(VenusRenderer.create(older, memory, { at: 0, bytes: 0, watch: 0 }), /older than this page \(no venus_cmd_counts, .*\): rebuild it/);
 });
 
 test("a blob's bytes move into the window at its map and back at its unmap", { skip }, async () => {
@@ -91,6 +102,69 @@ test('the commands vkr runs are counted, those asking for a reply and the virtqu
   assert.deepEqual([t.queueCmds, t.ringCmds, t.nestedCmds, t.replies], [2, 0, 0, 1]);
   assert.deepEqual(v.calls(), { 'vkEnumerateInstanceVersion@queue+reply': 1, 'vkGetDeviceQueue@queue': 1 });
   assert.deepEqual(v.calls(), {}, 'counted since the last look');
+});
+
+/** A command's words for `vsubmit`: u32s, and u64s as two (Venus's stream is little-endian, 4-byte aligned). */
+function words(...xs: (number | bigint)[]) {
+  const out: number[] = [];
+  for (const x of xs) {
+    if (typeof x === 'bigint') out.push(Number(x & 0xffffffffn), Number(x >> 32n));
+    else out.push(x >>> 0);
+  }
+  return new Uint8Array(new Uint32Array(out).buffer);
+}
+
+// VK4 T13's review, F4: a ring that goes idle counts once, not at every poll while it stays idle; a notify wakes it.
+test('a ring gone idle is counted once each time it goes idle', { skip }, async () => {
+  const { v } = await renderer();
+  v.wake = () => {}; // the test polls
+  const poll = (v.raw as unknown as { venus_poll(): number }).venus_poll;
+  v.call({ t: 'vctx', id: 7, create: true, name: 'a' });
+  v.call({ t: 'blob', ctx: 7, res: 3, mem: 2, flags: 1, blobId: 0n, size: 8192 });
+  // vkCreateRingMESA (188): ring 1 on resource 3, idle after 1 ms; head, tail, status, a 4 KiB buffer, extra.
+  v.call({ t: 'vsubmit', ctx: 7, bytes: words(188, 0, 1n, 1n, 1000384000, 0n, 0, 3, 0n, 8192n, 1_000_000n, 0n, 64n, 128n, 256n, 4096n, 4352n, 64n) });
+  const spin = (ms: number) => { const t = performance.now(); while (performance.now() - t < ms); };
+  // `times()` gives the counts since its last call.
+  let idles = 0, notifies = 0;
+  const look = () => { const t = v.times(); idles += t.idles; notifies += t.notifies; };
+  look();
+  idles = 0;
+  spin(3);
+  for (let i = 0; i < 10; i++) poll();
+  look();
+  assert.equal(idles, 1, 'polls of an idle ring each counted');
+  // vkNotifyRingMESA (190) wakes it; idle again, it counts once more.
+  v.call({ t: 'vsubmit', ctx: 7, bytes: words(190, 0, 1n, 0, 0) });
+  poll();
+  spin(3);
+  for (let i = 0; i < 5; i++) poll();
+  look();
+  assert.deepEqual([idles, notifies], [2, 1]);
+});
+
+// The review's F6: a knob that isn't a number in its range (`?gpu=vkidle=`, `vktick=`) is refused with a warning, so
+// an A/B arm is what it says or says it isn't; a long idle floor would wrap into vkr's u32 of µs.
+test('the ring-idle and tick knobs outside their ranges are refused with a warning', { skip }, async (t) => {
+  const warned: string[] = [];
+  t.mock.method(console, 'warn', (m: string) => { warned.push(String(m)); });
+  await renderer(undefined, { ringIdleMs: 5e6, tickMs: Number.NaN });
+  await renderer(undefined, { ringIdleMs: 20, tickMs: 0.05 });
+  assert.deepEqual(warned.filter((m) => /ignored/.test(m)), ['venus: vkidle=5000000 ignored (not a number from 0 to 1000 ms)', 'venus: vktick=NaN ignored (not a number from 0.01 to 10 ms)']);
+});
+
+// The review's F5: vkr's counters are u32s that wrap; a second's count stays its own across the wrap.
+test('a counter that wraps still gives the second\'s count', { skip }, async () => {
+  const { v, memory } = await renderer();
+  const types = (v.raw as unknown as { venus_cmd_types(): number }).venus_cmd_types();
+  const at = (v.raw as unknown as { venus_cmd_counts(): number }).venus_cmd_counts() >>> 0;
+  // [where 1: the virtqueue][no reply][type 17].
+  const bucket = new Uint32Array(memory.buffer, at + 4 * (2 * types + 17), 1);
+  bucket[0] = 0xfffffff0;
+  v.times();
+  v.calls();
+  bucket[0] = (bucket[0] + 0x20) >>> 0;
+  assert.equal(v.times().queueCmds, 0x20);
+  assert.deepEqual(v.calls(), { 'vkGetDeviceQueue@queue': 0x20 });
 });
 
 // A virtio reset (a guest reboot) ends every Venus context with its blobs: the new guest makes its contexts again under

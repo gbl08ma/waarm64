@@ -613,7 +613,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   DRM syncobjs signalled through the virtqueue; no feedback path), 3 a GTK4 frame, and GSK's ~70 synchronous
   `vkAllocateDescriptorSets` a frame (Venus's pools go synchronous once sets of mixed layouts are freed) each a ring
   round trip: both the guest's Mesa's, which a guest patch could change; (4) the ticker's busy cost (~50 ms a second of
-  the GPU worker at iconscroll) could drop if the ticker read the rings' tails itself and woke the pump only for work.
+  the GPU worker at iconscroll) could drop if the ticker read the rings' tails itself and woke the pump only for work;
+  a submit held for the guest's own signal keeps the pump turning at the ticker's pace as long as it's held.
 - **A WSI image exported as a buffer isn't shared** (VK3 L1): Mesa's prime blit (a device Venus takes for another
   GPU's, or NVIDIA's) exports a linear buffer each frame is copied into; web/venus-share.ts shares only images
   (`venus_resource_texture`), so such a window is black, with a warning. Sharing a buffer would need the driver to name

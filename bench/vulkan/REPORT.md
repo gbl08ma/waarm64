@@ -789,7 +789,7 @@ on Linux). 83 × ~1.3 ms is most of the 150 ms frame; gtk4-demo woke ~2,100 time
 
 **The fix: the pump's turns timed by a ticker worker** (web/venus-ticker.ts): a worker sleeping in a blocking
 `Atomics.wait` and then notifying the word the pump `waitAsync`s on. On the M4 such a worker turns every 0.40 ms at
-0.25, 0.155 at 0.1 and **0.08 at 0.05**, and its notify arrives in ~25 µs (`wake-mac-*.json`); on Linux 0.5, 0.245 and
+0.25, 0.155 at 0.1 and **0.08 at 0.05**, and a worker its notify wakes turns at the same pace (`wake-mac-*.json`; a latency across the two workers isn't measurable there: their clocks disagree by more); on Linux 0.5, 0.245 and
 0.165 (`wake-vm-*.json`), so there only the shorter period helps. The ticker runs only while the pump does.
 
 | iconscroll on the M4, one session each | frames/s | the pump's gap | gtk4-demo wakes a second |
@@ -827,6 +827,22 @@ the pump alone. The test (tests/venus-driver.test.ts, the fences' test with the 
   1 fish 0.946, 0.870 (pump) / 0.848, 0.847 (0.05) / 0.927, 0.876 (0.1); 1,000 fish 2.534, 2.599 / 2.586, 2.555 / 2.498,
   2.508; the toolkit 0.948, 0.946 / 1.084, 0.916 / 0.997, 0.912; the guest's CPU a frame the same within the rounds:
   no arm worse.
+
+**The out-of-context review** (a fresh agent, static, on the local branch `review/vk4-t13`, 10 findings, all fixed):
+the tests couldn't fail with a ticker that never ticked or never stopped (the fallback timeout carried the pump): the
+fences' test now also counts the ticker's ticks over its run and while idle (F1); a ticker whose worker can't be made
+or fails to load hands back to the pump with a warning, instead of a pump left waiting on it or a throw inside vkr's
+command (F2, F3; the ticker is made at the renderer's start now, never inside a module's call); `idles` counted every
+poll of an idle ring, not each time one went idle (F4: it read ~1,900 a second at iconscroll
+in the results' `cmds.idles`); the counters' differences now wrap modulo 2^32 (F5); the knobs out of range (`vktick=NaN`
+slept for ever, `vktick=0` spun, a long `vkidle` wrapped and lengthened vkr's synchronous seqno wait, which now keeps
+the guest's own idle timeout) are refused with a warning (F6); the bound of command types comes from the module (F7);
+a module older than the counts is refused before it runs (F8); comments (F9); `wake.ts`'s latency across two
+workers' clocks, which disagree on the Mac by more than it, dropped (F10). Each fix with its test, seen failing with
+the fault planted back (F4's in vkr, rebuilt), but F9's and F10's. With the fixes, one session of the three demos on Vulkan and GL
+(`gtk4-final-contended.json`, run while CI loaded the dev VM on the same Mac: every arm slower) kept the order:
+iconscroll 29.3 frames/s on Vulkan against GL's 22.6, fishbowl and frames at 60; `idles` 60–75 a second, about as many as
+the guest's notifies.
 
 **T14: the guest's execbuffers.** Per GTK4 frame (frames, 60 frames/s; the virtqueue's commands by name): 3 fenced
 queue submits, each **two** execbuffers (`vn_queue_submission_signal_syncs`: a fenced `vkWaitRingSeqnoMESA`, then a

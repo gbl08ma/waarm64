@@ -110,13 +110,15 @@ test('a submit\'s fence comes back without waiting for the browser\'s slow look 
   page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
   await page.goto(`${base}/tests/browser/venus-driver.html`);
   await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
-  type R = { median: number; nudges: number; empty: number; idlePolls: number; stuck: boolean; stoppedUnderTurn: boolean; adapter: string; skipped?: string; error?: string };
-  const run = (poll: string) => page.evaluate((poll) => (window as unknown as { venus: { runFences(s: object, poll: string, n: number): Promise<R> } }).venus.runFences({
-    vert: '/target/vk/test/driver.vert.spv', frag: '/target/vk/test/driver.frag.spv', comp: '/target/vk/test/driver.comp.spv', costs: '/target/vk/test/costs.frag.spv' }, poll, 20), poll);
+  type R = { median: number; nudges: number; empty: number; idlePolls: number; stuck: boolean; stoppedUnderTurn: boolean; ticks: number; idleTicks: number; ticker: string; adapter: string; skipped?: string; error?: string };
+  const run = (poll: string, tickerUrl?: string) => page.evaluate(([poll, tickerUrl]) => (window as unknown as { venus: { runFences(s: object, poll: string, n: number, tickerUrl?: string): Promise<R> } }).venus.runFences({
+    vert: '/target/vk/test/driver.vert.spv', frag: '/target/vk/test/driver.frag.spv', comp: '/target/vk/test/driver.comp.spv', costs: '/target/vk/test/costs.frag.spv' }, poll, 20, tickerUrl), [poll, tickerUrl] as const);
   const old = await run('timeout'), pump = await run('pump'), ticker = await run('ticker');
+  // A ticker that fails to load, and one whose worker can't be made (another origin's): the pump alone, fences back.
+  const unloaded = await run('ticker', '/web/no-such-ticker.ts'), unmade = await run('ticker', 'https://example.invalid/ticker.js');
   await page.close();
   if (old.skipped) return t.skip(`SKIPPED: ${old.skipped}`);
-  for (const r of [old, pump, ticker]) assert.equal(r.error, undefined, String(r.error));
+  for (const r of [old, pump, ticker, unloaded, unmade]) assert.equal(r.error, undefined, String(r.error));
   // The times are logged, not asserted (they follow the machine's load: under CI's both were 5-6 ms); on a quiet
   // SwiftShader the old way's fence is ~3 ms and the pump's ~1 ms (bench/vulkan/costs.ts, REPORT.md "VK3 L2").
   console.log(JSON.stringify({ adapter: old.adapter, timeout: old.median, pump: pump.median, ticker: ticker.median, nudges: pump.nudges, empty: pump.empty, tickerNudges: ticker.nudges }));
@@ -132,6 +134,12 @@ test('a submit\'s fence comes back without waiting for the browser\'s slow look 
     assert.equal(r.stuck, false, `${name}: a scheduled turn never came`);
     assert.equal(r.stoppedUnderTurn, false, `${name}: the ticker stopped while a turn waited on it`);
   }
+  // The ticker ticked while the fences came back (its turns, not the fallback's), and stopped once idle.
+  assert.ok(ticker.ticks > 0, 'the ticker never ticked');
+  assert.equal(ticker.idleTicks, 0, 'the ticker ticked while idle');
+  assert.equal(ticker.ticker, 'ticker');
+  assert.equal(pump.ticks, 0);
+  assert.deepEqual([unloaded.ticker, unmade.ticker], ['pump', 'pump'], 'a ticker that failed left its pump waiting on it');
 });
 
 // VK3 L4c-A (the static review's finding 1 and its odd-sized memories): two devices on one window, as two Venus contexts.

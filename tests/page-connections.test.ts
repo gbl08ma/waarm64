@@ -218,6 +218,8 @@ test('power off lets a connection go; a running machine follows what another tab
   await pageA.click('[data-adapter="0"] [data-action="detach-connection"]');
   await pageB.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 15_000 });
   assert.deepEqual(await locks(), []);
+  // The menu's line follows the phase a moment later (under CI's load it was read before it moved: 2026-11-02).
+  await pageB.waitForFunction(() => /No connection attached/.test(document.querySelector('#net-conn')?.textContent ?? ''), null, { timeout: 5_000 }).catch(() => {});
   assert.match(await text(pageB, '#net-conn'), /No connection attached/);
   await pageB.close();
 

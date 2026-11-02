@@ -30,14 +30,16 @@ export type VenusStats = {
  * How the rings are polled while active (`?gpu=vkpoll=timeout` the old way, for A/B). `timeout` reschedules with a
  * nested `setTimeout(f, 0)`, which Chromium clamps to ~4.5 ms a turn from the fifth (6 ms on the Mac): the guest's
  * fences, which retire at a poll, came back ~4 ms late, a floor of ~3 ms a frame on the M4 (bench/vulkan/REPORT.md
- * "VK3 L2"). `pump` (the default) waits `PERIOD_MS` between turns on `Atomics.waitAsync`'s timeout (~0.5 ms a turn in
+ * "VK3 L2"). `pump` waits `PERIOD_MS` between turns on `Atomics.waitAsync`'s timeout (~0.5 ms a turn in
  * Chromium on Linux, ~1.55 ms on the Mac; a timer set from a message's task, ~1.6 ms, where there is no shared
  * memory), so no timer is nested and the worker's own timers keep their turns (a loop of messages alone starved them
  * in VK2). A submit, a notify and a completion poll at once besides. While a submit is in flight each turn also nudges WebGPU (web/venus-gpu.ts `nudge`).
  * Turning without any delay after work (VK3 L2's first try) polled ~100,000 times a second for nothing: the scene's
- * frame was the same. `ticker` (the default where there are workers, VK4 T13; `?gpu=vkpoll=pump` the pump alone) is
- * the pump with its turns timed by a worker of its own (web/venus-ticker.ts): the Mac stretches `waitAsync`'s 0.25 ms
- * timeout to ~1.5 ms, and each synchronous Venus call (GSK's ~80 `vkAllocateDescriptorSets` a frame) waited a turn.
+ * frame was the same. `ticker` (the default where there are workers, `Atomics.waitAsync` and shared memory, VK4 T13;
+ * `?gpu=vkpoll=pump` the pump alone, as in Node) is the pump with its turns timed by a worker of its own
+ * (web/venus-ticker.ts): the Mac stretches `waitAsync`'s 0.25 ms timeout to ~1.5 ms, and each synchronous Venus call
+ * (GSK's ~80 `vkAllocateDescriptorSets` a frame) waited a turn. A ticker that can't be made or fails to load leaves the
+ * pump alone, with a warning.
  */
 export type VenusPoll = 'timeout' | 'pump' | 'ticker';
 /**
@@ -69,8 +71,11 @@ export type VenusOptions = { syncPipelines?: boolean;
   /** `?gpu=vkidle=<ms>`: a ring stays active (polled, so the guest's next command needs no notify) at least this long
    * after its last command, whatever the guest's idle timeout (Mesa's 1 ms; vk/README.md "Calls and rings"). */
   ringIdleMs?: number;
-  /** `?gpu=vktick=<ms>`: the ticker's sleep between turns (default `TICK_MS`; A/B). */
+  /** `?gpu=vktick=<ms>`: the ticker's sleep between turns (default `TICK_MS`; A/B). Knobs outside their range (`TICK_RANGE`,
+   * `IDLE_RANGE`, or not a number) are refused with a warning: the default stays. */
   tickMs?: number;
+  /** The ticker's module instead of web/venus-ticker.ts (tests: one that fails to load). */
+  tickerUrl?: URL;
   /** `?gpu=vkhold=<feature>`: adapter features the device doesn't take (web/venus-gpu.ts `gpuFeatures`); `heldFormats`
    * (`?gpu=vkformats=held`): nor `HELD_FEATURES` (libplacebo's advanced path off, as before VK3 L4e). */
   hold?: readonly string[]; heldFormats?: boolean;
@@ -88,9 +93,6 @@ const YCBCR = 1 << 30;
 /** venus_init's flags for `VenusOptions.l9`'s driver suspects (vk/driver/wg_private.h `WG_FEATURE_L9_*`). */
 export const L9_FLAGS: Partial<Record<L9Suspect, number>> = { bindgroups: 1 << 29, pad: 1 << 28 };
 
-/** vkr's command types counted (vk/glue.c `venus_cmd_counts`: the patch's `VKR_WASI_CMD_TYPES`). */
-const CMD_TYPES = 384;
-
 /** The pump's wait between turns, and how often it nudges at most (ms). */
 const PERIOD_MS = 0.25, NUDGE_MS = 1;
 /**
@@ -99,6 +101,15 @@ const PERIOD_MS = 0.25, NUDGE_MS = 1;
  * (bench/vulkan/REPORT.md "VK4 T13–T14").
  */
 const TICK_MS = 0.05;
+/** The knobs' ranges (ms): a tick of 0 would spin, NaN sleep for ever; an idle floor past ~1 s only keeps the pump busy. */
+const TICK_RANGE = [0.01, 10], IDLE_RANGE = [0, 1000];
+/** A knob's value if it's a number in its range; else a warning and undefined (the default). */
+function knob(name: string, v: number | undefined, [lo, hi]: number[]) {
+  if (v === undefined) return undefined;
+  if (Number.isFinite(v) && v >= lo && v <= hi) return v;
+  console.warn(`venus: ${name}=${v} ignored (not a number from ${lo} to ${hi} ms)`);
+  return undefined;
+}
 
 type Exports = {
   _initialize(): void;
@@ -116,6 +127,7 @@ type Exports = {
   venus_resource_unmap(ctx: number, res: number): number;
   venus_poll(): number;
   venus_cmd_counts(): number;
+  venus_cmd_types(): number;
   venus_ring_events(): number;
   venus_cmd_name(type: number): number;
   venus_ring_idle(us: number): void;
@@ -179,7 +191,7 @@ export class VenusRenderer {
   private fenceWatch: ReturnType<typeof setInterval> | undefined;
   private readonly warnedStuck = new Set<string>();
   private pollTimer: ReturnType<typeof setTimeout> | undefined;
-  private readonly poll: VenusPoll;
+  private poll: VenusPoll;
   /** The pump's: it runs (the rings active or a submit in flight), a turn is scheduled; when it last polled and nudged. */
   private running = false;
   private queued = false;
@@ -237,12 +249,20 @@ export class VenusRenderer {
     // core's heap there): one built before memory 1 has no `venus_arena_end`; a later one says where its arena ends.
     const stale = `Vulkan's renderer (target/vk/venus.wasm) isn't built for its arena (${VENUS_ARENA >> 20} MiB of memory 1): rebuild it (vk/build.sh)`;
     if (!WebAssembly.Module.exports(module).some((e) => e.name === 'venus_arena_end')) throw new Error(stale);
+    // One built before vkr's counts (VK4 T13) lacks their exports, which the stats call every second.
+    const names = new Set(WebAssembly.Module.exports(module).map((e) => e.name));
+    const missing = ['venus_cmd_counts', 'venus_cmd_types', 'venus_ring_events', 'venus_cmd_name', 'venus_ring_idle'].filter((n) => !names.has(n));
+    if (missing.length) throw new Error(`Vulkan's renderer (target/vk/venus.wasm) is older than this page (no ${missing.join(', ')}): rebuild it (vk/build.sh)`);
     const instance = await WebAssembly.instantiate(module, imports);
     if ((instance.exports as unknown as Exports).venus_arena_end() >>> 0 !== VENUS_ARENA) throw new Error(stale);
     self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.heldFormats ? HELD_FEATURES : []), ...(options.hold ?? [])], options.ycbcr ?? true, options.l9);
     self.nudgeMs = options.nudgeMs ?? NUDGE_MS;
-    self.tickMs = options.tickMs ?? TICK_MS;
-    if (options.ringIdleMs !== undefined) self.ex.venus_ring_idle(Math.round(options.ringIdleMs * 1000));
+    self.cmdTypes = self.ex.venus_cmd_types();
+    const idle = knob('vkidle', options.ringIdleMs, IDLE_RANGE);
+    if (idle !== undefined) self.ex.venus_ring_idle(Math.round(idle * 1000));
+    // The ticker, made here (never inside a module's call, where a throw would unwind vkr mid-command).
+    const tick = knob('vktick', options.tickMs, TICK_RANGE) ?? TICK_MS;
+    if (self.poll === 'ticker') self.startTicker(tick, options.tickerUrl);
     gpu.onSubmit = () => self?.worked();
     // The shaders of earlier runs, for this build of the renderer (web/venus-cache.ts): loaded before any context.
     if (options.cache) gpu.cache = await options.cache(self.buildId);
@@ -433,7 +453,7 @@ export class VenusRenderer {
     const r = this.stats, g = this.gpu.stats;
     const now: VenusTimes = { polls: r.polls, gaps: r.gaps, gapMs: r.gapMs, gapMaxMs: r.gapMaxMs, submits: g.submits, done: g.done, doneMs: g.doneMs, doneMaxMs: g.doneMaxMs, orderMs: g.orderMs, nudges: g.nudges, fences: r.fences, fenceMs: r.fenceMs, fenceMaxMs: r.fenceMaxMs,
       encodeMs: g.encodeMs, submitCallMs: g.submitCallMs, uploads: g.uploads, uploadBytes: g.uploadBytes, readbacks: g.readbacks, passes: g.passes, draws: g.draws, gpuTimed: g.gpuTimed, gpuMs: g.gpuMs, workDone: g.workDone, workDoneMs: g.workDoneMs, bindGroups: g.bindGroups,
-      ...this.cmdTotals(), turnMs: r.turnMs, ticks: this.ticks ? Atomics.load(this.ticks, 0) : 0 };
+      ...this.cmdTotals(), turnMs: r.turnMs, ticks: this.counted?.ticks ?? 0 };
     const last = this.lastTimes;
     this.lastTimes = now;
     r.gapMaxMs = g.doneMaxMs = r.fenceMaxMs = 0;
@@ -443,20 +463,33 @@ export class VenusRenderer {
     return d;
   }
 
-  /** vkr's counts now (`venus_cmd_counts`: [where][reply][type], u32s that only grow). */
+  /** vkr's command types counted (`venus_cmd_types`: the patch's `VKR_WASI_CMD_TYPES`). */
+  private cmdTypes = 0;
+  /** vkr's counters and the ticker's ticks as last read (u32s that wrap), and their totals since the start (exact). */
+  private lastRaw: { cmds: Uint32Array; events: Uint32Array; ticks: number } | undefined;
+  private counted: { cmds: Float64Array; events: Float64Array; ticks: number } | undefined;
+
+  /** vkr's counts (`venus_cmd_counts`: [where][reply][type]) and the ticks, totalled across their wraps (each a sum of differences modulo 2^32). */
   private counts() {
-    const n = CMD_TYPES * 6;
-    return { cmds: new Uint32Array(this.memory.buffer, this.ex.venus_cmd_counts() >>> 0, n).slice(), events: new Uint32Array(this.memory.buffer, this.ex.venus_ring_events() >>> 0, 2).slice() };
+    const n = this.cmdTypes * 6;
+    const cmds = new Uint32Array(this.memory.buffer, this.ex.venus_cmd_counts() >>> 0, n).slice(), events = new Uint32Array(this.memory.buffer, this.ex.venus_ring_events() >>> 0, 2).slice();
+    const ticks = this.ticks ? Atomics.load(this.ticks, 0) >>> 0 : 0;
+    const last = this.lastRaw, c = (this.counted ??= { cmds: new Float64Array(n), events: new Float64Array(2), ticks: 0 });
+    for (let i = 0; i < n; i++) c.cmds[i] += (cmds[i] - (last?.cmds[i] ?? 0)) >>> 0;
+    for (let i = 0; i < 2; i++) c.events[i] += (events[i] - (last?.events[i] ?? 0)) >>> 0;
+    c.ticks += (ticks - (last?.ticks ?? 0)) >>> 0;
+    this.lastRaw = { cmds, events, ticks };
+    return c;
   }
 
   private cmdTotals() {
-    const { cmds, events } = this.counts();
+    const { cmds, events } = this.counts(), CMD_TYPES = this.cmdTypes;
     const sum = (from: number, to: number) => cmds.subarray(from * CMD_TYPES, to * CMD_TYPES).reduce((n, x) => n + x, 0);
     // [where][reply][type]: where 0 the rings, 1 the virtqueue, 2 nested streams; reply 1 at odd rows.
     return { ringCmds: sum(0, 2), queueCmds: sum(2, 4), nestedCmds: sum(4, 6), replies: sum(1, 2) + sum(3, 4) + sum(5, 6), idles: events[0], notifies: events[1] };
   }
 
-  private lastCalls: Uint32Array | undefined;
+  private lastCalls: Float64Array | undefined;
   private readonly names = new Map<number, string>();
   /**
    * The commands that asked for a reply since the last call, by name (the guest waits for each: a synchronous Venus
@@ -464,7 +497,7 @@ export class VenusRenderer {
    * `<name>@queue` (each submit an execbuffer of the guest's: notifies, fenced submits' waits; `+reply` if it asked).
    */
   calls(): Record<string, number> {
-    const { cmds } = this.counts();
+    const cmds = this.counts().cmds.slice(), CMD_TYPES = this.cmdTypes;
     const last = this.lastCalls;
     this.lastCalls = cmds;
     const out: Record<string, number> = {};
@@ -540,8 +573,9 @@ export class VenusRenderer {
     this.stats.turnMs += performance.now() - now;
     // The ticker stops while nothing runs (a notify or a submit starts it again: `schedule`), but never under a turn
     // that waits on it: it may have ticked for the last time just before that turn began waiting, and stopped it would
-    // never tick again, so the turn never came and the pump never scheduled another (VK4 T13: iconscroll at 0.9
-    // frames/s, a new gtk4-demo dead of Venus's watchdog).
+    // never tick again. Before the wait had its fallback timeout, that turn never came and the pump never scheduled
+    // another (VK4 T13: iconscroll at 0.9 frames/s, a new gtk4-demo dead of Venus's watchdog); now it would come only
+    // at the pump's old pace.
     if (!this.running && !this.queued && this.ticks) Atomics.store(this.ticks, 1, 0);
     if (this.running && !this.queued) {
       this.queued = true;
@@ -551,7 +585,34 @@ export class VenusRenderer {
 
   /** The ticker's words (web/venus-ticker.ts): [0] its ticks, [1] set while it runs. */
   private ticks: Int32Array | undefined;
-  private tickMs = TICK_MS;
+
+  /**
+   * Starts the ticker (web/venus-ticker.ts) that times the pump's turns. Without `Atomics.waitAsync`, shared memory or
+   * workers, or if the worker can't be made, the pump goes alone; one that fails to load later hands back to the pump
+   * too (a turn waiting on it then comes at its fallback timeout).
+   */
+  private startTicker(period: number, url?: URL) {
+    const fallBack = (why: unknown) => {
+      console.warn(`venus: no ticker for the rings' polls (${String(why)}): they're polled at the pump's own pace`);
+      this.poll = 'pump';
+      this.ticks = undefined;
+      this.wait = undefined;
+    };
+    if (typeof (Atomics as { waitAsync?: unknown }).waitAsync !== 'function' || typeof SharedArrayBuffer === 'undefined' || typeof Worker === 'undefined') return fallBack('no Atomics.waitAsync, shared memory or workers');
+    try {
+      const sab = new SharedArrayBuffer(8);
+      const worker = url ? new Worker(url, { type: 'module' }) : new Worker(new URL('./venus-ticker.ts', import.meta.url), { type: 'module' });
+      worker.onerror = (e) => {
+        e.preventDefault();
+        worker.terminate();
+        if (this.ticks && this.ticks.buffer === sab) fallBack(e.message || 'its worker failed');
+      };
+      worker.postMessage({ sab, period });
+      this.ticks = new Int32Array(sab);
+    } catch (e) {
+      fallBack(e);
+    }
+  }
 
   private schedule() {
     if (!this.wait) {
@@ -559,10 +620,8 @@ export class VenusRenderer {
         this.queued = false;
         this.turn();
       };
-      if (this.poll === 'ticker') {
-        const sab = new SharedArrayBuffer(8), ticks = new Int32Array(sab);
-        this.ticks = ticks;
-        new Worker(new URL('./venus-ticker.ts', import.meta.url), { type: 'module' }).postMessage({ sab, period: this.tickMs });
+      const ticks = this.ticks;
+      if (this.poll === 'ticker' && ticks) {
         const waitAsync = (Atomics as unknown as { waitAsync(a: Int32Array, i: number, v: number, t: number): { async: boolean; value: Promise<string> | string } }).waitAsync;
         this.wait = () => {
           if (!Atomics.load(ticks, 1)) {
@@ -577,6 +636,7 @@ export class VenusRenderer {
         this.wait();
         return;
       }
+      // (The pump alone.)
       const waitAsync = (Atomics as unknown as { waitAsync?(a: Int32Array, i: number, v: number, t: number): { async: boolean; value: Promise<string> | string } }).waitAsync;
       if (waitAsync && typeof SharedArrayBuffer !== 'undefined') {
         // A word nobody notifies: the wait ends at its timeout.

@@ -48,6 +48,7 @@ void *venus_resource_data(uint32_t ctx_id, uint32_t res_id);
 uint32_t venus_resource_texture(uint32_t ctx_id, uint32_t res_id);
 int venus_poll(void);
 const uint32_t *venus_cmd_counts(void);
+uint32_t venus_cmd_types(void);
 const uint32_t *venus_ring_events(void);
 const char *venus_cmd_name(uint32_t type);
 void venus_ring_idle(uint32_t us);
@@ -215,9 +216,10 @@ venus_poll(void)
 }
 
 /* vkr's counts (vk/README.md "Calls and rings"; the patch's vkr_cs.h): the commands dispatched, [where: ring, virtqueue,
- * nested][asks for a reply][type], and the rings' events [went idle, woken by a notify]; never reset (the host takes
- * differences). */
-extern uint32_t vkr_wasi_cmds[3][2][384];
+ * nested][asks for a reply][type < venus_cmd_types()], and the rings' events [went idle, woken by a notify, or a
+ * vkWaitRingSeqnoMESA]; never reset, u32s that wrap (the host sums their differences modulo 2^32). */
+extern uint32_t vkr_wasi_cmds[];
+uint32_t vkr_wasi_cmd_types(void);
 extern uint32_t vkr_wasi_ring_events[2];
 extern uint64_t vkr_wasi_idle_ns;
 const char *vkr_wasi_cmd_name(uint32_t type);
@@ -225,7 +227,13 @@ const char *vkr_wasi_cmd_name(uint32_t type);
 EXPORT const uint32_t *
 venus_cmd_counts(void)
 {
-   return &vkr_wasi_cmds[0][0][0];
+   return vkr_wasi_cmds;
+}
+
+EXPORT uint32_t
+venus_cmd_types(void)
+{
+   return vkr_wasi_cmd_types();
 }
 
 EXPORT const uint32_t *

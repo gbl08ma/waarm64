@@ -110,9 +110,11 @@ export async function runImport() {
  * the rings polled by `poll`, each awaited on a MessageChannel's turns (unclamped). The median ms from the submit to its
  * fence, the nudges counted (web/venus-gpu.ts `nudge`), the empty submits that reached the queue, and the polls over
  * 100 ms after the last (none: the poller stops while idle), and whether a turn scheduled under a direct poll that
- * found nothing to run is still pending 50 ms later (`stuck`), or found its ticker stopped (`stoppedUnderTurn`).
+ * found nothing to run is still pending 50 ms later (`stuck`), or found its ticker stopped (`stoppedUnderTurn`); the
+ * ticker's ticks over the run and while idle, and the poll it ended with (`tickerUrl`: another ticker module, which may
+ * fail to load).
  */
-export async function runFences(spirv: { vert: string; frag: string; comp: string; costs: string }, poll: VenusPoll, n: number) {
+export async function runFences(spirv: { vert: string; frag: string; comp: string; costs: string }, poll: VenusPoll, n: number, tickerUrl?: string) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -122,8 +124,10 @@ export async function runFences(spirv: { vert: string; frag: string; comp: strin
   let empty = 0;
   const submit = device.queue.submit.bind(device.queue);
   device.queue.submit = (buffers: Iterable<GPUCommandBuffer>) => { if (![...buffers].length) empty++; submit(buffers); };
-  const v = await VenusRenderer.create(module, memory, { at: VENUS_ARENA, bytes: 1 << 20, watch: 0 }, device, device, poll);
+  const v = await VenusRenderer.create(module, memory, { at: VENUS_ARENA, bytes: 1 << 20, watch: 0 }, device, device, poll, { tickerUrl: tickerUrl ? new URL(tickerUrl, location.href) : undefined });
   const ex = v.raw as unknown as Test;
+  // The ticker's ticks (web/venus-ticker.ts) over the run, and after it while idle (`times()` counts since its last call).
+  v.times();
   const words = async (url: string) => new Uint8Array(await (await fetch(url)).arrayBuffer());
   const put = (b: Uint8Array) => { const p = ex.venus_alloc(b.length) >>> 0; new Uint8Array(memory.buffer, p, b.length).set(b); return [p, b.length / 4]; };
   const [vs, vn] = put(await words(spirv.vert)), [fs, fn] = put(await words(spirv.frag)), [cs, cn] = put(await words(spirv.comp)), [ks, kn] = put(await words(spirv.costs));
@@ -139,11 +143,13 @@ export async function runFences(spirv: { vert: string; frag: string; comp: strin
     if (i >= 3) ms.push(performance.now() - t0);
   }
   ms.sort((a, b) => a - b);
-  // Idle (the rings never started, no submit in flight), the poller stops: no polls over 100 ms.
+  const ticks = v.times().ticks;
+  // Idle (the rings never started, no submit in flight), the poller stops: no polls over 100 ms, nor ticks.
   await new Promise((r) => setTimeout(r, 20));
   const polls = v.stats.polls;
+  v.times();
   await new Promise((r) => setTimeout(r, 100));
-  const idlePolls = v.stats.polls - polls;
+  const idlePolls = v.stats.polls - polls, idleTicks = v.times().ticks;
   // A turn scheduled (a submit's: `worked`), then a direct poll (a notify's: `wake`) finding nothing to run before that
   // turn comes: the scheduled turn still comes, and the pump schedules again after it (VK4 T13: the ticker stopped
   // under a pending turn, which never came, and the pump never scheduled again).
@@ -156,7 +162,7 @@ export async function runFences(spirv: { vert: string; frag: string; comp: strin
   await new Promise((r) => setTimeout(r, 50));
   const stuck = pump.queued;
   device.destroy();
-  return { median: ms[ms.length >> 1], nudges: v.gpu.stats.nudges, empty, idlePolls, stuck, stoppedUnderTurn, adapter: adapter.info.architecture };
+  return { median: ms[ms.length >> 1], nudges: v.gpu.stats.nudges, empty, idlePolls, stuck, stoppedUnderTurn, ticks, idleTicks, ticker: (v as unknown as { poll: string }).poll, adapter: adapter.info.architecture };
 }
 
 /**

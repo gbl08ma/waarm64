@@ -1,5 +1,5 @@
 diff --git a/src/venus/vkr_context.c b/src/venus/vkr_context.c
-index cc82c42d..cd866543 100644
+index cc82c42d..221d4996 100644
 --- a/src/venus/vkr_context.c
 +++ b/src/venus/vkr_context.c
 @@ -172,6 +172,9 @@ vkr_context_submit_cmd(struct vkr_context *ctx, const void *buffer, size_t size)
@@ -105,7 +105,7 @@ index cc82c42d..cd866543 100644
 +    * a ring that runs dry first is the guest's fault, and fatal). */
 +   (void)ok;
 +   while (!vkr_context_get_fatal(ctx) && !vkr_seqno_ge(vkr_ring_load_head(ring), ring_seqno)) {
-+      if (!vkr_ring_poll(ring) && !vkr_seqno_ge(vkr_ring_load_head(ring), ring_seqno)) {
++      if (!vkr_ring_poll_for_seqno(ring) && !vkr_seqno_ge(vkr_ring_load_head(ring), ring_seqno)) {
 +         vkr_context_set_fatal(ctx);
 +         return false;
 +      }
@@ -167,22 +167,26 @@ index 3867f138..cf2f8b50 100644
  
  enum vkr_context_validate_level {
 diff --git a/src/venus/vkr_cs.h b/src/venus/vkr_cs.h
-index 5e7d4b1d..d05553c4 100644
+index 5e7d4b1d..ea7d2ade 100644
 --- a/src/venus/vkr_cs.h
 +++ b/src/venus/vkr_cs.h
-@@ -442,4 +442,28 @@ vkr_cs_handle_store_id(void **handle, vkr_object_id id, VkObjectType type)
+@@ -442,4 +442,32 @@ vkr_cs_handle_store_id(void **handle, vkr_object_id id, VkObjectType type)
     *p = id;
  }
  
 +#ifdef __wasi__
 +/* webpc (vk/README.md "Calls and rings"): the commands dispatched, by where they came from (0 a ring, 1 the virtqueue,
 + * 2 a nested stream), whether they ask for a reply (the guest waits for those) and their type; vk/glue.c
-+ * `venus_counts` hands them to the render stats. */
++ * `venus_cmd_counts` hands them to the render stats, `venus_cmd_types` their bound. */
 +#define VKR_WASI_CMD_TYPES 384
 +extern uint32_t vkr_wasi_cmds[3][2][VKR_WASI_CMD_TYPES];
 +/* The command's name (vkr_ring.c, which has the protocol's names). */
 +const char *
 +vkr_wasi_cmd_name(uint32_t type);
++
++/* VKR_WASI_CMD_TYPES, for the glue and the host (no copy of the bound to keep in step). */
++uint32_t
++vkr_wasi_cmd_types(void);
 +
 +static inline void
 +vkr_wasi_count_cmd(const struct vkr_cs_decoder *dec, int where)
@@ -689,7 +693,7 @@ index be3ae046..ff7b79d7 100644
 +
  #endif /* VKR_RENDERER_H */
 diff --git a/src/venus/vkr_ring.c b/src/venus/vkr_ring.c
-index 0d4899ef..ef252d2b 100644
+index 0d4899ef..592cd374 100644
 --- a/src/venus/vkr_ring.c
 +++ b/src/venus/vkr_ring.c
 @@ -227,6 +227,9 @@ vkr_ring_submit_cmd(struct vkr_ring *ring,
@@ -718,7 +722,7 @@ index 0d4899ef..ef252d2b 100644
     }
  
     vkr_cs_decoder_reset(dec);
-@@ -348,6 +360,77 @@ out:
+@@ -348,6 +360,100 @@ out:
     return ret;
  }
  
@@ -733,11 +737,17 @@ index 0d4899ef..ef252d2b 100644
 +   return vn_dispatch_command_name(type);
 +}
 +
++uint32_t
++vkr_wasi_cmd_types(void)
++{
++   return VKR_WASI_CMD_TYPES;
++}
++
 +/* One pass of vkr_ring_thread's loop (webpc: the GPU worker polls instead of a thread): the commands the guest added
 + * since, or once idle_timeout passed without any, the idle status (the guest then notifies). Returns whether the ring
 + * is still active, so its poller stays awake across frames (VK0 B: a wake-up saved a submit). */
-+bool
-+vkr_ring_poll(struct vkr_ring *ring)
++static bool
++vkr_ring_poll_idle(struct vkr_ring *ring, uint64_t idle_floor_ns)
 +{
 +   struct vkr_context *ctx = ring->dispatch.data;
 +   if (!ring->started || vkr_context_get_fatal(ctx))
@@ -761,9 +771,11 @@ index 0d4899ef..ef252d2b 100644
 +      ring->pending_notify = false;
 +      vkr_ring_unset_status_bits(ring, VK_RING_STATUS_IDLE_BIT_MESA);
 +      ring->last_submit = now;
++      ring->idle_counted = false;
 +   }
 +   const uint32_t cmd_size = vkr_ring_load_tail(ring) - ring->buffer.cur;
 +   if (cmd_size) {
++      ring->idle_counted = false;
 +      if (cmd_size > ring->buffer.size) {
 +         vkr_log("%s: cmd_size(%u) > ring->buffer.size(%u)", __func__, cmd_size, ring->buffer.size);
 +         vkr_ring_set_status_bits(ring, VK_RING_STATUS_FATAL_BIT_MESA);
@@ -780,23 +792,38 @@ index 0d4899ef..ef252d2b 100644
 +      ring->last_submit = now;
 +      return true;
 +   }
-+   const uint64_t idle_timeout = ring->idle_timeout > vkr_wasi_idle_ns ? ring->idle_timeout : vkr_wasi_idle_ns;
++   const uint64_t idle_timeout = ring->idle_timeout > idle_floor_ns ? ring->idle_timeout : idle_floor_ns;
 +   if (now >= ring->last_submit + idle_timeout) {
 +      vkr_ring_set_status_bits(ring, VK_RING_STATUS_IDLE_BIT_MESA);
 +      if (ring->buffer.cur == vkr_ring_load_tail(ring)) {
-+         vkr_wasi_ring_events[0]++;
++         /* Once each time it goes idle, not at every poll of an idle ring. */
++         if (!ring->idle_counted)
++            vkr_wasi_ring_events[0]++;
++         ring->idle_counted = true;
 +         return false;
 +      }
 +      vkr_ring_unset_status_bits(ring, VK_RING_STATUS_IDLE_BIT_MESA);
 +   }
 +   return true;
 +}
++
++bool
++vkr_ring_poll(struct vkr_ring *ring)
++{
++   return vkr_ring_poll_idle(ring, vkr_wasi_idle_ns);
++}
++
++bool
++vkr_ring_poll_for_seqno(struct vkr_ring *ring)
++{
++   return vkr_ring_poll_idle(ring, 0);
++}
 +#endif
 +
  void
  vkr_ring_start(struct vkr_ring *ring)
  {
-@@ -355,6 +438,11 @@ vkr_ring_start(struct vkr_ring *ring)
+@@ -355,6 +461,11 @@ vkr_ring_start(struct vkr_ring *ring)
  
     assert(!ring->started);
     ring->started = true;
@@ -808,7 +835,7 @@ index 0d4899ef..ef252d2b 100644
     ret = thrd_create(&ring->thread, vkr_ring_thread, ring);
     if (ret != thrd_success)
        ring->started = false;
-@@ -363,6 +451,10 @@ vkr_ring_start(struct vkr_ring *ring)
+@@ -363,6 +474,10 @@ vkr_ring_start(struct vkr_ring *ring)
  bool
  vkr_ring_stop(struct vkr_ring *ring)
  {
@@ -819,7 +846,7 @@ index 0d4899ef..ef252d2b 100644
     mtx_lock(&ring->mutex);
     if (thrd_equal(ring->thread, thrd_current())) {
        mtx_unlock(&ring->mutex);
-@@ -381,6 +473,11 @@ vkr_ring_stop(struct vkr_ring *ring)
+@@ -381,6 +496,11 @@ vkr_ring_stop(struct vkr_ring *ring)
  void
  vkr_ring_notify(struct vkr_ring *ring)
  {
@@ -831,7 +858,7 @@ index 0d4899ef..ef252d2b 100644
     mtx_lock(&ring->mutex);
     ring->pending_notify = true;
     cnd_signal(&ring->cond);
-@@ -441,6 +538,14 @@ vkr_ring_wait_virtqueue_seqno(struct vkr_ring *ring, uint64_t seqno)
+@@ -441,6 +561,14 @@ vkr_ring_wait_virtqueue_seqno(struct vkr_ring *ring, uint64_t seqno)
  
     bool ok = true;
  
@@ -847,10 +874,10 @@ index 0d4899ef..ef252d2b 100644
     while (ok && ring->started && ring->virtqueue_seqno < seqno)
        ok = cnd_wait(&ring->cond, &ring->mutex) == thrd_success;
 diff --git a/src/venus/vkr_ring.h b/src/venus/vkr_ring.h
-index 89d8159e..e47fab60 100644
+index 89d8159e..6c179712 100644
 --- a/src/venus/vkr_ring.h
 +++ b/src/venus/vkr_ring.h
-@@ -102,6 +102,16 @@ struct vkr_ring {
+@@ -102,6 +102,18 @@ struct vkr_ring {
     atomic_bool pending_notify;
     atomic_bool monitor;
     uint64_t virtqueue_seqno;
@@ -863,17 +890,25 @@ index 89d8159e..e47fab60 100644
 +   bool stalled;
 +   uint64_t stall_seqno;
 +   uint32_t pending_off, pending_size, pending_head;
++   /* Counted as gone idle (vkr_wasi_ring_events[0]) since its last command or notify. */
++   bool idle_counted;
 +#endif
  };
  
  struct vkr_ring *
-@@ -115,6 +125,11 @@ vkr_ring_destroy(struct vkr_ring *ring);
+@@ -115,6 +127,17 @@ vkr_ring_destroy(struct vkr_ring *ring);
  void
  vkr_ring_start(struct vkr_ring *ring);
  
 +#ifdef __wasi__
 +bool
 +vkr_ring_poll(struct vkr_ring *ring);
++
++/* vkr_ring_poll for a synchronous wait on the ring's seqno (vkr_context_wait_ring_seqno): idle after the guest's idle
++ * timeout alone, not the host's longer one (vkr_wasi_idle_ns), so a ring that runs dry before the seqno ends the wait
++ * as soon as before. */
++bool
++vkr_ring_poll_for_seqno(struct vkr_ring *ring);
 +#endif
 +
  bool
