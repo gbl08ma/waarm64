@@ -31,8 +31,7 @@ host's build check, and **L2** but for what needs a person or the dev VM: the pl
 
 ## Next
 
-1. **L2's left, both the user's:** Chromium's Local Network Access prompt, seen once (headed: the deployed page, or `npm
-   run serve` with `--origin`) and refused once to see the page's message; and the helper's default `--mtu`, which stays
+1. **L2's left, the user's:** the helper's default `--mtu`, which stays
    1500: 65520 is measured, about 1.7× down and 1.6× up (bench/net/REPORT.md "The stalled uploads"), and the guest's UDP
    does reach the internet at that size (the plan's "The MTU"). L2's CI passed in the dev VM on 2026-11-02, and the
    helper's build matches the x86_64 sums on aarch64.

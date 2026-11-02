@@ -168,7 +168,7 @@ with tun2socks-style forwarders.
     Mbit/s, against 2.0 ms and 123/218 through a relay here and 101 ms and 4/19 through a public one), which settled
     a worker and batching (§3) and the MTU's limit; IPv6 on the Mac, and the reach changing under a running guest (a
     namespace), the default following within a minute. That also found the gateway not saying it's a router (§5).
-  - **Not seen:** the prompt itself, which needs a headed browser: the user's, at L2.
+  - **Seen** (the user, 2026-11-02, at L2): the prompt itself.
 - **L1, the helper's repository:** flags, the kept token, origins, the subprotocol, logs; a README that states
   the code ours and imported, the install lines, the hashes and how to rebuild them; the pinned toolchain in
   `go.mod`; releases built here, checked by a second build elsewhere.
@@ -196,7 +196,11 @@ with tun2socks-style forwarders.
     `?localnet=` is gone. Tests: tests/page-local.test.ts (the pairing link, the wizard, the real helper, Retry),
     tests/net-local.test.ts (now through the card's IP port: the gateway's lease, then the helper's after the switch),
     and the unit tests docs/testing.md lists.
-  - **Left:** the prompt seen by a person (headed: the user's); the helper's default MTU. MTU 65520 is measured with
+  - **Seen by the user** (2026-11-02, on the deployed page at vm.tny.im): the prompt appears at the connection to the
+    helper on loopback, and the connection works, in an Incognito window too. A denial is kept for good: asking again
+    never prompts again, until the user removes the block from the site's permissions (the icon in the address bar).
+    Nothing the page can do about it; its message says where the setting is.
+  - **Left:** the helper's default MTU. MTU 65520 is measured with
     the worker and the batching (bench/net/REPORT.md "The stalled uploads": 1.1 Gbit/s down, 1.5 up against 0.6 and 0.95
     at 1500, one boot each) and the uploads that stalled at every MTU are fixed; the default stays the user's call.
 - **L3, tests and docs:** a Chromium test in `scripts/ci-net.sh` with the helper at a pinned version (`go
