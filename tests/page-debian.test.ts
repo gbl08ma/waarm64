@@ -27,6 +27,8 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
+import { t } from '../web/i18n.ts';
+import { words } from './words.ts';
 import { MACHINES, readyWatcher } from '../web/app/machine.ts';
 import { SnapshotWriter } from '../web/snapshot-file.ts';
 import { unattendedQuery } from './debian-unattended.ts';
@@ -185,13 +187,13 @@ async function save(page: Page, name: string) {
   ]);
   const path = join(dir, name);
   await download.saveAs(path);
-  await page.waitForFunction(() => /^Saved the snapshot /.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 60_000 });
+  await page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:main.saved', {}, { start: true }).source, { timeout: 60_000 });
   const info = JSON.parse(await page.evaluate(() => document.getElementById('message')?.dataset.snapshot!)) as { bytes: number; pausedMs: number };
   assert.equal(info.bytes, readFileSync(path).length, 'the page counted the bytes the file has');
   return { path, ...info };
 }
 /** Waits until the page has started loading a snapshot (the boot card's title), so a following `running` is the restored machine's. */
-const loadingSnapshot = (page: Page) => page.waitForFunction(() => document.getElementById('boot-title')!.textContent!.startsWith('Loading '), null, { timeout: 30_000, polling: 20 });
+const loadingSnapshot = (page: Page) => page.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:main.boot.loading', {}, { start: true }).source, { timeout: 30_000, polling: 20 });
 /** The page's OPFS: each directory's files and their sizes. */
 const opfs = (page: Page) => page.evaluate(async () => {
   const out: Record<string, Record<string, number>> = {};
@@ -238,9 +240,9 @@ for (let run = 1; run <= RUNS; run++) {
     await page.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
 
     // A snapshot of another machine is refused at once, before anything stops (written by Buildroot's page: only the header matters).
-    await page.setInputFiles('#load-snapshot-input', await headerOnly('buildroot-header.webpcsnap', { machine: 'buildroot', label: 'Buildroot (test guest)', ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] }));
+    await page.setInputFiles('#load-snapshot-input', await headerOnly('buildroot-header.webpcsnap', { machine: 'buildroot', label: MACHINES.buildroot.label, ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] }));
     await page.waitForTimeout(1000);
-    assert.match(dialogs.at(-1)!, /^buildroot-header\.webpcsnap is a snapshot of Buildroot \(test guest\) \(\?machine=buildroot\), and this page runs Debian 13 \(\?machine=debian\)/);
+    assert.match(dialogs.at(-1)!, words('snapshots:main.load.otherMachine', { name: 'buildroot-header.webpcsnap', other: MACHINES.buildroot.label, otherId: 'buildroot', machine: t('machines:machine.debian'), id: 'debian' }, { start: true }));
     assert.notEqual(await stateOf(page), 'failed');
 
     // GRUB's menu counts 5 s from when it starts (~5 s after the boot manager did): `c` on the screen until it is stopped.
@@ -493,7 +495,7 @@ for (let run = 1; run <= RUNS; run++) {
     const t3 = performance.now();
     await running(p2, undefined, 120_000);
     console.log(`# debian suspend: ${(kept.suspend / 1e6).toFixed(1)} MB kept, suspended in ${(suspendMs / 1000).toFixed(1)} s, resumed ${((performance.now() - t3) / 1000).toFixed(1)} s after the reload`);
-    assert.match((await message(p2))!, /^Resumed the suspended machine/);
+    assert.match((await message(p2))!, words('machine:worker.resumed', {}, { start: true }));
     assert.equal((await opfs(p2))['webpc-debian'].suspend, undefined, 'a resumed machine has no suspended copy');
     await onSerial(p2, 'clear; echo var=[$SUSVAR]; echo third-$((6*7)) >/root/third && sync && echo 3 >/proc/sys/vm/drop_caches && cat /root/snapmark /root/after /root/third && echo al""l-three\n');
     await shows(p2, /var=\[suspended-42\][^]*?disk-kept-42\s*after-42\s*third-42\s*all-three/);
@@ -501,7 +503,7 @@ for (let run = 1; run <= RUNS; run++) {
     // wrote on, the variable store beside it): the files are there.
     await p2.reload();
     await running(p2);
-    assert.doesNotMatch((await message(p2)) ?? '', /Resumed/);
+    assert.doesNotMatch((await message(p2)) ?? '', words('machine:worker.resumed'));
     await onSerial(p2, 'root\n');
     await shows(p2, /root@\S+:~# /);
     await onSerial(p2, 'cat /root/snapmark /root/after /root/third\n');

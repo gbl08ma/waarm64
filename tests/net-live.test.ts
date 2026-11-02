@@ -157,15 +157,15 @@ test("the guest's default way out: the adapter that reaches the internet, moving
   p.net.ports('m', adapters(ts, cat));
   await p.net.autoconnect();
   assert.equal(p.net.views().findIndex((v) => v.primary), -1, 'none connected yet');
-  p.all[0].set('Running', netmap());
+  p.all[0].set('Running', netmap()); // i18n-ignore
   assert.equal(p.net.views().findIndex((v) => v.primary), 0, 'the tailnet without an exit node, the only one up');
-  p.all[1].set('Running', { ...netmap(), via: 'tailcat', tailcatExit: true });
+  p.all[1].set('Running', { ...netmap(), via: 'tailcat', tailcatExit: true }); // i18n-ignore
   assert.equal(p.net.views().findIndex((v) => v.primary), 1, 'tailcat through a server reaches the internet');
   assert.equal(p.log.filter((l) => l.startsWith('ts0 primary')).at(-1), 'ts0 primary false', 'the tailnet offers its routes only');
   assert.equal(p.log.filter((l) => l.startsWith('cat1 primary')).at(-1) ?? 'cat1 primary true', 'cat1 primary true');
   // The tailnet takes an exit node: it comes first in order, so the default moves to it.
   await p.net.setExitNode(0, 'nEXIT');
-  p.all[0].set('Running', netmap({ exitNode: 'nEXIT' }));
+  p.all[0].set('Running', netmap({ exitNode: 'nEXIT' })); // i18n-ignore
   assert.equal(p.net.views().findIndex((v) => v.primary), 0);
   assert.equal((await p.net.conns.get(ts.id))!.tailnet!.exitNode, 'nEXIT', 'the exit node is kept with the connection');
   // Subnet routes: on unless turned off, and the choice is kept with the connection too.
@@ -292,10 +292,10 @@ test('a kept node is logged out with no machine running it, and only one that is
   assert.equal((p.all[0].config as TailscaleConfig).persist, c.tailnet!.stateKey, 'the node\'s own keys');
   assert.equal((p.all[0].config as TailscaleConfig).authKey, undefined);
   assert.ok(!p.log.includes('ts0 logout'), 'not before the control server has answered: unconnected it would only forget it here');
-  p.all[0].set('Connecting');
+  p.all[0].set('Connecting'); // i18n-ignore
   p.all[0].set('NeedsLogin');
   assert.ok(!p.log.includes('ts0 logout'), "NeedsLogin without a link is where a client starts");
-  p.all[0].set('Running', netmap());
+  p.all[0].set('Running', netmap()); // i18n-ignore
   await out;
   assert.deepEqual(p.log.filter((l) => !l.includes('primary')), [`ts0 start ${c.id}`, 'ts0 logout', 'ts0 close']);
   assert.equal(p.net.hasNode(c), false);
@@ -343,7 +343,7 @@ test('a running client that logs out or is deleted stops first: unconnected, the
   await p.net.connect(0, (await p.net.conns.get(c.id))!);
   const del = p.net.remove(c);
   await new Promise((r) => setTimeout(r, 5));
-  p.all[3].set('Running', netmap());
+  p.all[3].set('Running', netmap()); // i18n-ignore
   assert.equal(await del, false);
   assert.ok(p.log.includes('ts3 logout'), `${p.log}`);
 
@@ -368,7 +368,7 @@ test('while a node logs out nothing connects it, and no other tab is let in', as
   assert.equal(await quietly(a.net.connect(0, c)), 'network:net-live.loggingOut');
   assert.equal(await b.net.locks.takeFrom(connectionLock(c.id), { ms: 300 }), false, 'the other tab waits');
   assert.ok(a.net.locks.mine(connectionLock(c.id)));
-  a.all[0].set('Running', netmap());
+  a.all[0].set('Running', netmap()); // i18n-ignore
   await out;
   assert.ok(!a.net.locks.mine(connectionLock(c.id)));
   assert.match(await quietly(a.net.connect(0, c)), /^ok$/, 'then it can');
@@ -435,7 +435,7 @@ test('logging out a node another tab has: refused until taken from it', async ()
   assert.equal(a.net.runs(c.id), -1);
   const out = b.net.logoutKept(c);
   await new Promise((r) => setTimeout(r, 5));
-  b.all[0].set('Running', netmap());
+  b.all[0].set('Running', netmap()); // i18n-ignore
   await out;
   assert.deepEqual(kept, []);
   a.close();

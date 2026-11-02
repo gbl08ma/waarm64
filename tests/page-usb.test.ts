@@ -202,7 +202,7 @@ test("an existing machine (made before USB) keeps its shape: the controller off,
   await page.locator('.machines [data-usb-orphans]').waitFor();
   await page.click('.machines [data-action=save]');
   await page.waitForFunction(() => (document.querySelector('.machines [data-action=save]') as HTMLButtonElement).disabled, null, { polling: 100 });
-  assert.ok(asked.some((q) => /orphans its snapshots/.test(q.text)), 'asked first');
+  assert.ok(asked.some((q) => q.text === t('machines:MachinesPage.orphans.confirm')), 'asked first');
   const after = await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);
     const { currentShape } = await import('/web/app/snapshots.ts' as string);
@@ -213,7 +213,7 @@ test("an existing machine (made before USB) keeps its shape: the controller off,
   assert.equal(after.usb, true);
   assert.notEqual(after.hash, before);
   await page.click('.machines [data-tab=snapshots]');
-  await page.locator('.machines', { hasText: 'it had no USB controller' }).waitFor();
+  await page.locator('.machines', { hasText: t('machines:shape.diff.usb.hadNo') }).waitFor();
   assert.deepEqual(errors, []);
   await c.close();
 });

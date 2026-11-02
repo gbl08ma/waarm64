@@ -13,6 +13,7 @@ import { folderDir, memoryFiles, memoryRecords, Store } from '../web/app/store.t
 import { createMachine } from '../web/app/machines.ts';
 import { guestWords } from '../web/app/guest-words.ts';
 import { msgOf } from '../web/msg.ts';
+import { words } from './words.ts';
 
 let browser: Browser;
 let base: string;
@@ -103,7 +104,7 @@ test('the mount unit: names as systemd-escape makes them, paths refused', { skip
   for (const ok of ['/mnt/shared', '/media/x', '/home/me/host files', '/srv/data', '/var/share/x']) assert.equal(sharesPathError(ok), undefined, ok);
   for (const bad of ['/mnt/100%', '/mnt/x ', '/mnt/x\\', `/${'é/'.repeat(30)}x`, '', 'mnt', '/', '/mnt/', '/mnt//x', '/mnt/../x', '/mnt/./x', '/etc', '/usr', '/lib64', '/dev', '/dev/x', '/proc/x', '/sys/y', '/a\nb', `/${'x'.repeat(255)}`]) assert.ok(sharesPathError(bad), JSON.stringify(bad));
   const units = sharesCredentials('/mnt/shared', guestWords().shares);
-  assert.match(units[0].data, /^Description=Shared folders from webpc$/m);
+  assert.match(units[0].data, new RegExp(`^Description=${words('guest:guest-words.shares').source}$`, 'm'));
   assert.deepEqual(units.map((c) => c.name), ['systemd.extra-unit.mnt-shared.mount', 'systemd.extra-unit.mnt-shared.automount', 'systemd.unit-dropin.remote-fs.target~webpc-shares']);
   assert.match(units[0].data, /What=webpc\nWhere=\/mnt\/shared\nType=9p\nOptions=trans=virtio,version=9p2000\.L,cache=none,msize=1048576,access=user,nofail\n/);
   assert.match(units[2].data, /Wants=mnt-shared\.automount/);

@@ -17,6 +17,7 @@ import { startServer } from '../tools/serve.ts';
 import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
+import { words } from './words.ts';
 
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -89,11 +90,13 @@ test('the storage full under a running guest: its writes fail, and the page says
     const fill = await sh(page, 'dd if=/dev/urandom of=/root/fill bs=1M count=1024 oflag=direct conv=fsync', 300_000);
     assert.notEqual(fill.status, 0, `dd: ${fill.out}`);
     assert.match(fill.out, /Input\/output error/);
-    const full = () => page.evaluate(() => (window as unknown as { messages: string[] }).messages.filter((m) => /The browser's storage is full/.test(m)));
-    await page.waitForFunction(() => (window as unknown as { messages: string[] }).messages.some((m) => /The browser's storage is full/.test(m)), null, { timeout: 10_000 });
+    // The storage-full message, with its numbers or without.
+    const fullSrc = ['disks:devices.storageFull', 'disks:devices.storageFull.numbers'].map((k) => `(?:${words(k).source})`).join('|');
+    const full = () => page.evaluate((src) => (window as unknown as { messages: string[] }).messages.filter((m) => new RegExp(src).test(m)), fullSrc);
+    await page.waitForFunction((src) => (window as unknown as { messages: string[] }).messages.some((m) => new RegExp(src).test(m)), fullSrc, { timeout: 10_000 });
     const said = await full();
     assert.equal(said.length, 1, `said once: ${said.join(' | ')}`);
-    assert.match(said[0], /^The browser's storage is full \(\S+ \S+ used of \S+ \S+\): the guest's writes to its disk fail \(I\/O errors\)/);
+    assert.match(said[0], words('disks:devices.storageFull.numbers', {}, { start: true }));
     assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', 'the machine runs on');
 
     assert.deepEqual(errors, []);

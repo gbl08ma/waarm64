@@ -9,6 +9,7 @@ import { startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
+import { words } from './words.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const skip = !(existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES))) && 'SKIPPED: run images/build.sh';
@@ -26,6 +27,12 @@ before(async () => {
 });
 after(async () => { await browser?.close(); close?.(); });
 
+/** Message `key`'s words as a pattern's source, each parameter in `re` matched by its own pattern. */
+const pattern = (key: string, re: Record<string, string> = {}) => {
+  let src = words(key, Object.fromEntries(Object.keys(re).map((k) => [k, `\u{E000}${k}\u{E000}`]))).source;
+  for (const [k, v] of Object.entries(re)) src = src.replace(`\u{E000}${k}\u{E000}`, v);
+  return src;
+};
 const bar = (page: Page) => page.evaluate(() => (document.getElementById('status')?.textContent ?? '').replace(/\s+/g, ' ').trim());
 const kinds = (page: Page, sel: string) => page.$$eval(sel, (els) => els.map((e) => (e as HTMLElement).dataset.kind));
 const kept = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('webpc.settings') ?? '{}').statusBar);
@@ -37,8 +44,14 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
   await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=2`);
-  await page.waitForFunction(() => /MIPS/.test(document.getElementById('status')?.textContent ?? ''), null, { timeout: 60_000, polling: 200 });
-  assert.match(await bar(page), /^Running 2 vCPUs · 256 MiB · up \d+:\d\d:\d\d · \d+ MIPS · [\d.]+% in JIT · \d+ IRQ\/s$/);
+  const mips = pattern('statusbar:statusbar.cpu.mips', { value: '\\d+' });
+  await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('status')?.textContent ?? ''), mips, { timeout: 60_000, polling: 200 });
+  const vcpus = words('statusbar:statusbar.vcpus', { count: 2 }).source;
+  // The power state, a divider, then the rest with a dot between (the bar's drawing, not words).
+  assert.match(await bar(page), new RegExp(`^${words('machine:main.state.running').source} ${[
+    vcpus, '256 MiB', pattern('statusbar:statusbar.uptime', { time: '\\d+:\\d\\d:\\d\\d' }), mips,
+    pattern('statusbar:statusbar.cpu.jit', { value: '[\\d.]+%' }), pattern('statusbar:statusbar.irqs', { irqs: '\\d+' }),
+  ].join(' · ')}$`));
 
   await page.click('#machines-open');
   await page.click('[data-machine=preferences]');
@@ -61,7 +74,8 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   // The bar draws them: a spacer, a bar per vCPU, the disk's speed.
   await page.waitForFunction(() => document.querySelectorAll('#status [data-kind=mips] .bars span').length === 2, null, { timeout: 10_000 });
   assert.equal(await page.locator('#status .spacer').count(), 1);
-  assert.match(await bar(page), /disk R [\d.]+ (B|KiB|MiB)\/s W [\d.]+ (B|KiB|MiB)\/s$/);
+  const rate = '[\\d.]+ (B|KiB|MiB)/s';
+  assert.match(await bar(page), new RegExp(`${pattern('statusbar:statusbar.disk.all', { traffic: pattern('statusbar:statusbar.disk.traffic', { read: rate, written: rate }) })}$`));
   // The look: the vCPUs as an icon and the number.
   await page.click(`${chips}[data-kind=vcpus] .pick`);
   await page.click('[data-field=status-options] input[name=status-look] >> nth=1');
@@ -110,7 +124,7 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   await page.click('[data-machine=preferences]');
   await page.click('[data-action=status-defaults]');
   assert.equal(await kept(page), undefined);
-  await page.waitForFunction(() => /2 vCPUs · 256 MiB/.test(document.getElementById('status')?.textContent?.replace(/\s+/g, ' ') ?? ''), null, { timeout: 10_000 });
+  await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('status')?.textContent?.replace(/\s+/g, ' ') ?? ''), `${words('statusbar:statusbar.vcpus', { count: 2 }).source} · 256 MiB`, { timeout: 10_000 });
   assert.deepEqual(errors, []);
   await context.close();
 });

@@ -17,6 +17,8 @@ import { openSnapshot, SnapshotWriter } from '../web/snapshot-file.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
+import { words } from './words.ts';
+import { MACHINES } from '../web/app/machine.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const buildroot = existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES));
@@ -52,7 +54,7 @@ async function running(page: Page, ms = BOOT_MS) {
   assert.equal(state, 'running', `${message}; the terminal shows: ${await terminal(page)}`);
 }
 /** Waits until the page has started loading a snapshot (the boot card's title), so a following `running` is the restored machine's. */
-const loadingSnapshot = (page: Page) => page.waitForFunction(() => document.getElementById('boot-title')!.textContent!.startsWith('Loading '), null, { timeout: 30_000, polling: 20 });
+const loadingSnapshot = (page: Page) => page.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:main.boot.loading', {}, { start: true }).source, { timeout: 30_000, polling: 20 });
 const message = (page: Page) => page.locator('#message-text').textContent();
 /** The message's details (an error's causes, under its headline). */
 const details = (page: Page) => page.evaluate(() => document.getElementById('message-details')?.textContent ?? '');
@@ -79,7 +81,7 @@ async function save(page: Page, name: string) {
   ]);
   const path = join(dir, name);
   await download.saveAs(path);
-  await page.waitForFunction(() => /^Saved the snapshot /.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 60_000 });
+  await page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:main.saved', {}, { start: true }).source, { timeout: 60_000 });
   const info = JSON.parse(await page.evaluate(() => document.getElementById('message')?.dataset.snapshot!)) as { bytes: number; pausedMs: number };
   assert.equal(info.bytes, readFileSync(path).length, 'the page counted the bytes the file has');
   return { path, filename: download.suggestedFilename(), ...info };
@@ -149,7 +151,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   assert.equal(bytes.subarray(0, 8).toString('latin1'), 'WEBPCSNP');
   assert.ok(bytes.length > 100_000 && bytes.length < 120e6, `a plausible size: ${bytes.length}`);
   const header = (await openSnapshot(new Blob([bytes]))).header;
-  assert.deepEqual([header.machine, header.label, header.ncpus, header.disk, header.devices], ['buildroot', 'Buildroot (test guest)', 2, null, ['rng', 'keyboard', 'tablet', 'snd', 'clock', 'blk']]);
+  assert.deepEqual([header.machine, header.label, header.ncpus, header.disk, header.devices], ['buildroot', MACHINES.buildroot.label, 2, null, ['rng', 'keyboard', 'tablet', 'snd', 'clock', 'blk']]);
   assert.match(String(header.serial), /saved-state/);
   assert.equal((header.disks as { sha256?: string }[])[0].sha256, undefined, 'no hash of the base image is written');
   // It was only paused: it answers, and its steps keep counting.
@@ -161,7 +163,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
     (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('picked.webpcsnap', { create: true });
   });
   await page.locator('#save-snapshot').click();
-  await page.waitForFunction(() => /^Saved the snapshot picked\.webpcsnap/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 60_000 });
+  await page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:main.saved', { name: 'picked.webpcsnap' }, { start: true }).source, { timeout: 60_000 });
   const picked = await page.evaluate(async () => {
     const f = await (await (await navigator.storage.getDirectory()).getFileHandle('picked.webpcsnap')).getFile();
     return { size: f.size, magic: new TextDecoder().decode(await f.slice(0, 8).arrayBuffer()) };
@@ -180,6 +182,12 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   const dialogs: string[] = [];
   p2.on('pageerror', (e) => errors2.push(String(e)));
   await answerAsks(p2, (q) => { dialogs.push(`${q.kind}: ${q.text}`); });
+  /** The last question asked: a `kind` (confirm, alert) whose words match `re`. */
+  const asked = (kind: string, re: RegExp) => {
+    const d = dialogs.at(-1)!;
+    assert.ok(d.startsWith(`${kind}: `), d);
+    assert.match(d.slice(kind.length + 2), re);
+  };
   // What the page sends to the guest's serial port beyond plain keys: escape sequences (a terminal's replies to queries).
   await p2.addInitScript(() => {
     const send = MessagePort.prototype.postMessage;
@@ -198,10 +206,13 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   await loadingSnapshot(p2);
   await running(p2);
   console.log(`# snapshot load (buildroot): ${((performance.now() - t0) / 1000).toFixed(2)} s from the choice to running`);
-  assert.match(dialogs.at(-1)!, /^confirm: Load the snapshot first\.webpcsnap\? It holds Buildroot \(test guest\) as it was on .* \(\d.* (KiB|MiB), 2 vCPUs\)\..*replaced by the snapshot's changes to the disk\.$/);
+  asked('confirm', words('snapshots:main.load.confirm', { name: 'first.webpcsnap', replaces: t('snapshots:main.load.replaces.running') }, { whole: true }));
+  assert.match(dialogs.at(-1)!, words('snapshots:main.load.holds.when.cpus', { label: MACHINES.buildroot.label, count: 2 }));
+  const disk = t('disks:main.machineDisk', { machine: t('machines:machine.buildroot') });
+  assert.match(dialogs.at(-1)!, new RegExp(`${words('snapshots:main.load.written', { disk }).source}$|${words('snapshots:main.load.written.size', { disk }).source}$`));
   // The terminal shows the saved output's tail, and the status the snapshot's vCPUs (the page asked for 1).
   await shows(p2, /saved-state/);
-  await p2.waitForFunction(() => /(?<!\d)2 vCPUs/.test((document.getElementById('status')?.textContent ?? '')), null, { timeout: 10_000 });
+  await p2.waitForFunction((src) => new RegExp(`(?<!\\d)${src}`).test((document.getElementById('status')?.textContent ?? '')), words('statusbar:statusbar.vcpus', { count: 2 }).source, { timeout: 10_000 });
   assert.equal(await p2.locator('#boot').isHidden(), true);
   // The machine is where it was: its variable, its tmpfs file, and a shell that answers.
   await onSerial(p2, 'echo var=[$SNAPVAR]; cat /dev/snapfile; echo af""ter-$((6*7))\n');
@@ -214,43 +225,44 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   writeFileSync(junk, Buffer.from('this is not a snapshot, only text'));
   await p2.setInputFiles('#load-snapshot-input', junk);
   await p2.waitForTimeout(500);
-  assert.match(dialogs.at(-1)!, /^alert: junk\.webpcsnap: This file isn't a snapshot/);
+  asked('alert', words('snapshots:main.notSnapshot', { name: 'junk.webpcsnap', why: t('snapshots:snapshot-file.notSnapshot') }, { start: true }));
   assert.equal(await stateOf(p2), 'running');
   // ... a snapshot of another machine, by the page (a real one on a Debian page, below, and a header-only one here) ...
-  const other = await headerOnly('debian-header.webpcsnap', { machine: 'debian', label: 'Debian 13', ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] });
+  const other = await headerOnly('debian-header.webpcsnap', { machine: 'debian', label: MACHINES.debian.label, ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] });
   await p2.setInputFiles('#load-snapshot-input', other);
   await p2.waitForTimeout(500);
-  assert.match(dialogs.at(-1)!, /^alert: debian-header\.webpcsnap is a snapshot of Debian 13 \(\?machine=debian\), and this page runs Buildroot \(test guest\) \(\?machine=buildroot\)/);
+  asked('alert', words('snapshots:main.load.otherMachine', { name: 'debian-header.webpcsnap', other: MACHINES.debian.label, otherId: 'debian', machine: t('machines:machine.buildroot'), id: 'buildroot' }, { start: true }));
   // ... one taken on another disk, by name ...
-  const elsewhere = await headerOnly('other-disk.webpcsnap', { machine: 'buildroot', label: 'Buildroot (test guest)', ncpus: 2, disk: 'mine.qcow2', devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] });
+  const elsewhere = await headerOnly('other-disk.webpcsnap', { machine: 'buildroot', label: MACHINES.buildroot.label, ncpus: 2, disk: 'mine.qcow2', devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] });
   await p2.setInputFiles('#load-snapshot-input', elsewhere);
   await p2.waitForTimeout(500);
-  assert.match(dialogs.at(-1)!, /^alert: other-disk\.webpcsnap was taken on the disk mine\.qcow2, and the disk open now is Buildroot \(test guest\)'s own disk\. .*open that disk first \(Open disk…\)/);
+  asked('alert', words('snapshots:main.load.otherDisk', { name: 'other-disk.webpcsnap', taken: t('disks:main.theDisk', { name: 'mine.qcow2' }), open: t('snapshots:main.ownDisk', { machine: t('machines:machine.buildroot') }) }, { start: true }));
   assert.equal(await stateOf(p2), 'running');
   await onSerial(p2, 'echo ali""ve-$((6*7))\n');
   await shows(p2, /alive-42/);
   const untouched = await opfs(p2);
 
   // ... a snapshot whose machine had a second disk this page wasn't opened with (the worker's refusal, after the confirmation) ...
-  const needsDisk2 = await headerOnly('disk2.webpcsnap', { machine: 'buildroot', label: 'Buildroot (test guest)', ncpus: 2, disk: null, devices: ['rng', 'keyboard', 'tablet', 'snd', 'blk', 'blk'], disks: [] });
+  const needsDisk2 = await headerOnly('disk2.webpcsnap', { machine: 'buildroot', label: MACHINES.buildroot.label, ncpus: 2, disk: null, devices: ['rng', 'keyboard', 'tablet', 'snd', 'blk', 'blk'], disks: [] });
   await p2.setInputFiles('#load-snapshot-input', needsDisk2);
   await p2.waitForFunction(() => document.body.dataset.state === 'failed', null, { timeout: 30_000, polling: 50 });
-  assert.match((await message(p2))!, /^disk2\.webpcsnap can't be loaded: its machine had other devices \(rng, keyboard, tablet, snd, blk, blk; here: rng, keyboard, tablet, snd, clock, blk\)\.\nOpen this page as that machine was started \(the same disks/);
-  assert.deepEqual((await p2.locator('#message-actions button').allTextContents()), ['Start', 'Load snapshot…']);
+  assert.match((await message(p2))!, words('snapshots:worker.otherDevices', { name: 'disk2.webpcsnap', kinds: ['rng', 'keyboard', 'tablet', 'snd', 'blk', 'blk'], here: ['rng', 'keyboard', 'tablet', 'snd', 'clock', 'blk'], machine: t('machines:machine.buildroot') }, { start: true }));
+  assert.deepEqual((await p2.locator('#message-actions button').allTextContents()), [t('snapshots:main.startNormally'), t('snapshots:main.loadAgain')]);
   assert.deepEqual(await opfs(p2), untouched, 'the disk is untouched');
 
   // ... and a truncated snapshot: refused whole, before the disk is touched; Start boots the machine normally.
   const cut = join(dir, 'cut.webpcsnap');
   writeFileSync(cut, bytes.subarray(0, Math.floor(bytes.length * 0.6)));
   await p2.setInputFiles('#load-snapshot-input', cut);
-  await p2.waitForFunction(() => document.body.dataset.state === 'failed' && /incomplete/.test((document.getElementById('message-details')?.textContent ?? '')), null, { timeout: 30_000, polling: 50 });
-  assert.match((await message(p2))!, /^The snapshot couldn't be loaded\nNothing was changed.*Start boots Buildroot \(test guest\) normally/s);
-  assert.match(await details(p2), /^This snapshot is incomplete/); // the refusal: the headline's detail
+  await p2.waitForFunction((said) => document.body.dataset.state === 'failed' && (document.getElementById('message-details')?.textContent ?? '').includes(said), t('snapshots:snapshot-file.truncated'), { timeout: 30_000, polling: 50 });
+  assert.match((await message(p2))!, words('snapshots:worker.notLoaded', { machine: t('machines:machine.buildroot') }, { start: true }));
+  assert.match(await details(p2), words('snapshots:snapshot-file.truncated', {}, { start: true })); // the refusal: the headline's detail
   assert.deepEqual(await opfs(p2), untouched, 'the disk is untouched');
-  await p2.locator('#message-actions button', { hasText: 'Start' }).click();
+  await p2.locator('#message-actions button', { hasText: t('snapshots:main.startNormally') }).click();
   await p2.waitForFunction(() => document.body.dataset.state !== 'failed', null, { timeout: 10_000, polling: 20 });
   await running(p2);
-  assert.match(await status(p2), /\d vCPUs?/);
+  const bar = await status(p2);
+  assert.ok([1, 2].some((count) => new RegExp(`(?<!\\d)${words('statusbar:statusbar.vcpus', { count }).source}`).test(bar)), bar);
   await onSerial(p2, 'echo var=[$SNAPVAR] boo""ted-$((6*7))\n');
   await shows(p2, /var=\[\] booted-42/); // a normal boot: the variable of the snapshot isn't there
 
@@ -258,7 +270,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   await drop(p2, first.path);
   await loadingSnapshot(p2);
   await running(p2);
-  assert.match(dialogs.at(-1)!, /^confirm: Load the snapshot first\.webpcsnap\?/);
+  asked('confirm', words('snapshots:main.load.confirm', { name: 'first.webpcsnap' }, { start: true }));
   await onSerial(p2, 'echo var=[$SNAPVAR]; cat /dev/snapfile\n');
   await shows(p2, /var=\[kept-42\]\s*tmpfs-kept-42/);
   assert.deepEqual(errors2, []);
@@ -285,7 +297,7 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
   const suspend = async () => {
     await page.locator('#suspend').click();
     await page.waitForFunction(() => document.body.dataset.state === 'suspended', null, { timeout: 60_000 });
-    assert.match((await message(page))!, /^Suspended: the machine's memory is kept in this browser/);
+    assert.match((await message(page))!, words('machine:worker.suspended', {}, { start: true }));
     assert.ok((await suspendFile())! > 100_000, 'the suspended machine is beside the overlay');
     assert.equal(await page.locator('#restart').textContent(), t('toolbar:Toolbar.start'));
   };
@@ -299,7 +311,7 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
   await page.reload();
   await running(page);
   console.log(`# suspend (buildroot): resumed ${((performance.now() - t0) / 1000).toFixed(2)} s after the reload`);
-  assert.match((await message(page))!, /^Resumed the suspended machine/);
+  assert.match((await message(page))!, words('machine:worker.resumed', {}, { start: true }));
   assert.equal(await suspendFile(), undefined, 'a resumed machine has no suspended copy');
   assert.equal(await susvar(), 'one');
   // Opened again without a suspend: it boots (a new shell). The planted bug (the copy kept after a resume) resumes the old one here.
@@ -307,7 +319,7 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
   assert.equal(await susvar(), 'two');
   await page.reload();
   await running(page);
-  assert.doesNotMatch((await message(page)) ?? '', /Resumed/);
+  assert.doesNotMatch((await message(page)) ?? '', words('machine:worker.resumed'));
   assert.equal(await susvar(), '');
 
   // Start resumes too; Boot instead drops the suspended machine and boots; Reset disk drops it with the disk's changes.
@@ -318,7 +330,7 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
   await running(page);
   assert.equal(await susvar(), 'three');
   await suspend();
-  await page.locator('#message-actions button', { hasText: 'Boot instead' }).click();
+  await page.locator('#message-actions button', { hasText: t('machine:main.bootInstead') }).click();
   await page.waitForFunction(() => document.body.dataset.state === 'booting', null, { timeout: 30_000, polling: 20 });
   await running(page);
   assert.equal(await suspendFile(), undefined);

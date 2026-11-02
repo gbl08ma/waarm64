@@ -31,7 +31,7 @@ export function startRust(o: { controlURL: string; authKey?: string; hostname: s
           state = e.state;
           if (e.state === 'Failed') reject(failureOf(e));
         }
-        if (state === 'Running' && netmap) resolve(netmap);
+        if (state === 'Running' && netmap) resolve(netmap); // i18n-ignore
       },
     });
     return { client, running, netmap: () => netmap, events, stop: () => client.close() };

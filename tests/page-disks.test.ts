@@ -81,7 +81,7 @@ test("a disk's overlays are named variants: new, rename, switch, delete (a machi
     const store = await Store.open();
     const d = { id: 'd0000000000a', kind: 'url', name: 'disk.img', size: 1 << 20, url: '/x', identity: { kind: 'url', path: '/x', bytes: 1 << 20 }, created: 0 };
     await store.put('disks', d);
-    const a = await createOverlay(store, d, 'Changes');
+    const a = await createOverlay(store, d, 'Work');
     const b = await createOverlay(store, d, 'Experiment');
     const m = { id: 'aaaaaaaaaaab', name: 'M', ncpus: 1, ramMiB: 512, display: '2d', network: false, created: 0, modified: 0, attachments: [{ id: 'a0000000000a', disk: d.id, readOnly: false, overlay: a.id }] };
     await store.put('machines', m);
@@ -111,7 +111,7 @@ test("a disk's overlays are named variants: new, rename, switch, delete (a machi
     store.close();
     return out;
   });
-  assert.deepEqual(r, { names: ['Changes'], switched: true, refused: 'disks:disks.notThisDisk', busy: true, running: 'disks:disks.overlayRunning', left: null, files: [] });
+  assert.deepEqual(r, { names: ['Work'], switched: true, refused: 'disks:disks.notThisDisk', busy: true, running: 'disks:disks.overlayRunning', left: null, files: [] });
   await context.close();
 });
 
@@ -132,7 +132,7 @@ test("a restore's plan: keep where the pin matches, fork where it moved on, reus
     const s = { id: 'd0000000000c', kind: 'stored', name: 'stored.img', size: 1 << 20, identity: { kind: 'stored', id: 'd0000000000c', bytes: 0 }, created: 0 };
     await store.put('disks', d);
     await store.put('disks', s);
-    const a = await createOverlay(store, d, 'Changes');
+    const a = await createOverlay(store, d, 'Work');
     const m = { id: 'aaaaaaaaaaac', name: 'M', ncpus: 1, ramMiB: 512, display: '2d', network: false, created: 0, modified: 0, attachments: [{ id: 'a0000000000b', disk: d.id, readOnly: false, overlay: a.id }, { id: 'a0000000000c', disk: s.id, readOnly: false, inPlace: true }] };
     await store.put('machines', m);
     const disks = new Map<string, unknown>([[d.id, d], [s.id, s]]);
@@ -167,7 +167,7 @@ test("a restore's plan: keep where the pin matches, fork where it moved on, reus
     return out;
   });
   assert.deepEqual(r.same, { kept: ['disk.img', 'stored.img'], forks: 0, plan: [{ slot: 5, action: 'keep' }, { slot: 6, action: 'keep' }] });
-  assert.deepEqual(r.moved, { forks: [[false, 'Changes']], plan: [['keep', false], ['write', false]], attached: true });
+  assert.deepEqual(r.moved, { forks: [[false, 'Work']], plan: [['keep', false], ['write', false]], attached: true });
   assert.deepEqual(r.reused, { forks: [true], plan: ['keep', 'keep'] });
   assert.deepEqual(r.replace, { reused: [false], plan: [['keep', false], ['write', true]] });
   assert.equal(r.refused, 'snapshots:snapshots.writtenInPlace');

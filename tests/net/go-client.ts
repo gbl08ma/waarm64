@@ -31,7 +31,7 @@ export function startGo(o: { controlURL: string; authKey?: string; hostname: str
       else if (m.type === 'state') state = m.state;
       else if (m.type === 'netmap') netmap = m.netmap;
       else if (m.type === 'login') reject(new Error(`the Go client wants an interactive login: ${m.url}`));
-      if (state === 'Running' && netmap?.addresses?.length) resolve(netmap);
+      if (state === 'Running' && netmap?.addresses?.length) resolve(netmap); // i18n-ignore
     });
   });
   running.catch(() => {});

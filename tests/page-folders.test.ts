@@ -17,6 +17,7 @@ import { withDebianLock } from './debian-lock.ts';
 import { answerAsks } from './page-ask.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { t } from '../web/i18n.ts';
+import { words } from './words.ts';
 
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -112,7 +113,7 @@ test('the page: the wizard, the lock between two tabs, the tab and the pane, Del
   await b.waitForFunction(([id, want]) => (document.querySelector(`#folders [data-folder="${id}"]`)?.textContent ?? '').includes(want), [data, t('folders:FoldersMenu.state.heldBy', { holder: 'Alpha' })], { timeout: 10_000 });
   await b.locator(`#folders [data-folder="${data}"] [data-action="use-folder"]`).click();
   await b.waitForFunction((id) => document.querySelector(`#folders [data-folder="${id}"]`)?.getAttribute('data-problem') === null, data, { timeout: 15_000 });
-  assert.match(asked.at(-1)!, /in use by Alpha.*Use it here/);
+  assert.match(asked.at(-1)!, words('folders:main.inUse.confirm', { holder: 'Alpha' }));
   await a.waitForFunction((id) => document.querySelector(`#folders [data-folder="${id}"]`)?.getAttribute('data-problem') === 'held', data, { timeout: 5_000 });
 
   // Attach a new folder through the wizard while Bravo runs: nothing else to attach, so its kinds at once.
@@ -145,7 +146,7 @@ test('the page: the wizard, the lock between two tabs, the tab and the pane, Del
   await b.waitForFunction(() => /hello\.txt/.test(document.querySelector('[data-files]')?.textContent ?? ''), null, { timeout: 5_000 });
   await b.locator(`[data-selected="folders"] [data-folder="${data}"] [data-action="delete-folder"]`).click();
   await b.waitForFunction((id) => !document.querySelector(`[data-selected="folders"] [data-folder="${id}"]`), data, { timeout: 10_000 });
-  assert.match(asked.at(-1)!, /Delete Data\? Its files \(.*\) are deleted.*(Alpha, Bravo|Bravo, Alpha) lose/);
+  assert.ok([['Alpha', 'Bravo'], ['Bravo', 'Alpha']].some((ms) => words('folders:FoldersPane.delete.opfs.lose', { count: 2, name: 'Data', machines: ms.join(', ') }).test(asked.at(-1)!)), asked.at(-1)!);
   assert.deepEqual(await withStore(b, `(async ({ store }, id) => (await store.get('machines', id)).folders)`, alpha), undefined, 'detached from every machine');
   assert.deepEqual(errors, []);
   await context.close();
@@ -357,7 +358,7 @@ test('snapshots: restored with a file open for writing, and into a folder detach
   await ok(page, 'echo one >&9; echo one >&7; chmod 700 /mnt/shared/Work/open.txt; stat -c %i /mnt/shared/Work/open.txt > /tmp/inode');
   await page.waitForTimeout(1000);
   await page.locator('#save-snapshot').click();
-  await page.waitForFunction(() => (document.getElementById('message-text')?.textContent ?? '').startsWith('Kept the snapshot '), null, { timeout: 180_000 });
+  await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:main.kept', {}, { start: true }).source, { timeout: 180_000 }); // its .slept and .awake variants start the same
   // The snapshot landed what was open, and the machine writes on.
   assert.equal(await folderFile(page, host, 'open.txt'), 'one\n');
   await ok(page, 'echo two >&9; echo two >&7');
@@ -368,7 +369,7 @@ test('snapshots: restored with a file open for writing, and into a folder detach
   await page.locator('#folders summary').click();
   await page.click('#machines-open');
   await page.locator('.machines [data-tab=snapshots]').click();
-  await page.locator('.machines [data-snapshot]').first().getByRole('button', { name: 'Restore' }).click();
+  await page.locator('.machines [data-snapshot]').first().getByRole('button', { name: t('snapshots:Snapshots.restore') }).click();
   await page.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 30_000, polling: 50 });
   await running(page);
   await page.waitForTimeout(1000);

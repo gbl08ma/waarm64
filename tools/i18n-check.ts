@@ -13,7 +13,9 @@
 //   (a line with `i18n-ignore`, or after a line with `i18n-ignore-next`, is skipped);
 // - no worker reaches web/i18n.ts or i18next: the page alone renders words;
 // - the docs' UI quotes, `[words](ui:ns:Source.name)`, say the catalog's words, and words quoted in bold, italics or
-//   double quotes that are a message's (two words or more, or ending in "…") are written as such a quote.
+//   double quotes that are a message's (two words or more, or ending in "…") are written as such a quote;
+// - the tests take the page's words from the catalog: no literal says a message's words (`checkTests`), but in a test
+//   named `wording: …`, which pins words on purpose.
 import { parse as parseSvelte } from 'svelte/compiler';
 import { parseSync } from 'vite';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -385,6 +387,85 @@ export function checkDoc(catalogs: Catalogs, path: string, text: string, fix = f
   return { problems, fixed: result + text.slice(at) };
 }
 
+/** Tests whose literals may say the page's words: the renderer's own. */
+const WORDING_FILES = new Set(['tests/i18n.test.ts']);
+
+/**
+ * The tests' words: a test reads the page's words through `t(key)` (or checks a key or an element), so a change of
+ * words changes no test. A string, template or regex literal is flagged when it says a message's words: two words or
+ * more of one (or a message ending in "…"), or a capitalized one-word message whole (`'Retry'`, `/^Sound$/`; a
+ * lower-case word is most often a state's value in the code, not copy). A test named `wording: …` pins words on
+ * purpose and is skipped, as is a line with `i18n-ignore` (data that reads like a message: a peer's state).
+ */
+export function checkTests(catalogs: Catalogs, sources: Source[]): Problem[] {
+  const problems: Problem[] = [];
+  // Each message's words, a parameter as NUL (a quote never spans one).
+  const messages: { key: string; words: string }[] = [];
+  for (const [ns, c] of Object.entries(catalogs)) for (const [k, e] of Object.entries(c)) messages.push({ key: `${ns}:${baseKey(k)}`, words: plainWords(e.message).replace(/\{\{[^}]*\}\}/g, '\0') });
+  const wordCount = (s: string) => (s.match(/\p{L}[\p{L}’'-]*/gu) ?? []).length;
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  /** The message a piece of text quotes, if any: all of it or its start (two words or more, or ending in "…"), four
+   * words or more from its middle, a title-case word that is a message by itself. */
+  const quoted = (raw: string): string | undefined => {
+    const s = raw.replace(/\s+/g, ' ').trim();
+    if (!/\p{L}/u.test(s)) return undefined;
+    const n = wordCount(s);
+    if (n >= 2 || s.endsWith('…')) {
+      const start = new RegExp(`^${esc(s)}($|[^\\p{L}])`, 'u');
+      const within = new RegExp(`(^|[^\\p{L}])${esc(s)}($|[^\\p{L}])`, 'u');
+      return messages.find((m) => start.test(m.words) || (n >= 4 && within.test(m.words)))?.key;
+    }
+    if (/^\p{Lu}\p{Ll}+$/u.test(s)) return messages.find((m) => m.words === s)?.key;
+    return undefined;
+  };
+  /** A template's words, each expression as NUL: a message whole (`Saved the snapshot ${name} (…)`). */
+  const quotedTemplate = (quasis: string[]): string | undefined => {
+    const first = quasis[0].replace(/\s+/g, ' ').trimStart();
+    if (first && quoted(first.trimEnd())) return quoted(first.trimEnd());
+    const whole = quasis.map((q) => q.replace(/\s+/g, ' ')).join('\0').trim();
+    return wordCount(whole) >= 2 ? messages.find((m) => m.words === whole)?.key : undefined;
+  };
+  /** A regex's literal runs (between its metacharacters), its escapes resolved. */
+  const runs = (pattern: string) => pattern.replace(/\\([^\w])/g, '$1').replace(/\\[a-zA-Z]|\[[^\]]*\]|[(){}*+?|^$]|\.(?![\p{L} ])/gu, '\n').split('\n').map((r) => r.trim()).filter((r) => /\p{L}/u.test(r));
+  for (const src of sources) {
+    if (WORDING_FILES.has(src.path)) continue;
+    const p = parseSource({ path: src.path, text: src.text });
+    if ('line' in p) { problems.push(p); continue; }
+    const say = (n: Node, what: string, key: string) => {
+      const line = lineAt(src.text, n.start);
+      if (!waived(src.text, line)) problems.push({ path: src.path, line, text: `${what} says the page's words (${key}): take them from the catalog, t('${key}…')` });
+    };
+    const skip = new Set<Node>();
+    walk(p.program, (n) => {
+      // A test pinning words on purpose.
+      if (n.type === 'CallExpression' || n.type === 'NewExpression') {
+        const name = calleeName(n.callee as Node), args = n.arguments as Node[];
+        if (/^(test|it|describe|t\.test)$/.test(name) && /^wording:/.test(stringOf(args[0]) ?? '')) return false;
+        // A test's name, an assertion's message, a log or an Error's words are the developer's.
+        if (/^(test|it|describe|t\.test)$/.test(name)) skip.add(args[0]);
+        const msgAt = /^assert\.(ok|fail)$|^assert$/.test(name) ? 1 : /^assert\.(rejects|throws|doesNotThrow|doesNotReject)$/.test(name) ? 2 : /^assert\.\w+$/.test(name) ? 2 : -1;
+        if (msgAt >= 0 && args[msgAt]) skip.add(args[msgAt]);
+        if (DEV_CALLS.test(name) && !name.startsWith('assert')) for (const a of args) skip.add(a);
+      }
+      if (skip.has(n)) return false;
+      if (n.type === 'Literal' && typeof n.value === 'string') {
+        const key = quoted(n.value);
+        if (key) say(n, `'${n.value.slice(0, 50)}'`, key);
+      } else if (n.type === 'Literal' && n.regex) {
+        const { pattern } = n.regex as { pattern: string };
+        for (const r of runs(pattern)) {
+          const key = wordCount(r) >= 2 || r.endsWith('…') || new RegExp(`\\^${esc(r)}\\$`).test(pattern) ? quoted(r) : undefined;
+          if (key) { say(n, `/${pattern.slice(0, 50)}/`, key); break; }
+        }
+      } else if (n.type === 'TemplateLiteral') {
+        const key = quotedTemplate((n.quasis as Node[]).map((q) => (q.value as { cooked: string }).cooked ?? ''));
+        if (key) say(n, `\`${src.text.slice(n.start + 1, Math.min(n.end - 1, n.start + 51))}\``, key);
+      }
+    });
+  }
+  return problems;
+}
+
 function files(dir: string, test: (p: string) => boolean, out: string[] = []): string[] {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
@@ -413,6 +494,8 @@ export function checkAll(root: string, o: { fixDocs?: boolean } = {}): Problem[]
   const web = files(join(root, 'web'), (p) => /\.(ts|svelte)$/.test(p) && !/\.d\.ts$/.test(p) && !p.includes('/messages/')).map((p) => ({ path: rel(p), text: readFileSync(p, 'utf8') }));
   problems.push(...checkSources(catalogs, web));
   problems.push(...checkWorkers(root, web));
+  const tests = files(join(root, 'tests'), (p) => /\.ts$/.test(p) && !/\.d\.ts$/.test(p)).map((p) => ({ path: rel(p), text: readFileSync(p, 'utf8') }));
+  problems.push(...checkTests(catalogs, tests));
   const docs = [...files(join(root, 'docs'), (p) => p.endsWith('.md')), join(root, 'README.md')].filter(existsSync);
   for (const d of docs) {
     const r = checkDoc(catalogs, rel(d), readFileSync(d, 'utf8'), o.fixDocs);

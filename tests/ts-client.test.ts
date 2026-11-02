@@ -60,7 +60,7 @@ test('the module takes an address, says who the node is, and opens the relay wit
   // The tunnel address is Tailscale's ULA prefix and the public key's first 80 bits.
   assert.deepEqual(self.address6.slice(0, 6), [0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0]);
   assert.equal(hex(self.address6.slice(6)), self.key.slice('nodekey:'.length, 'nodekey:'.length + 20));
-  assert.deepEqual(events.filter((e) => e.type === 'state'), [{ type: 'state', state: 'Connecting' }]);
+  assert.deepEqual(events.filter((e) => e.type === 'state'), [{ type: 'state', state: 'Connecting' }]); // i18n-ignore
   assert.deepEqual(StubSocket.opened.map((s) => [s.url, s.protocol, s.binaryType]), [['wss://derp.test/derp', 'derp', 'arraybuffer']]);
   // The server speaks first: nothing goes out on open.
   StubSocket.opened[0].open();

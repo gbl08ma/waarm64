@@ -13,6 +13,7 @@ import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
+import { words } from './words.ts';
 
 const IMAGE = new URL('../target/images/buildroot/rootfs.ext4', import.meta.url);
 const KERNEL = new URL('../target/images/linux/Image', import.meta.url);
@@ -93,10 +94,10 @@ test('the page saves the disk of a running machine: whole disk as raw and as qco
   };
   await loaded(changes);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 60_000 });
-  assert.match(dialogs.at(-1)!, /^Load the changes in rootfs\.ext4-changes\.qcow2\?/);
+  assert.match(dialogs.at(-1)!, words('disks:main.changes.confirm', { name: 'rootfs.ext4-changes.qcow2' }, { start: true })); // or its .running variant: the same start
   await page.setInputFiles('#load-changes-input', raw);
   await page.waitForTimeout(500);
-  assert.match(dialogs.at(-1)!, /rootfs\.ext4\.img isn't a changes file/);
+  assert.match(dialogs.at(-1)!, words('disks:main.changes.notChanges', { name: 'rootfs.ext4.img' }));
   assert.deepEqual(errors, []);
   await context.close();
 });

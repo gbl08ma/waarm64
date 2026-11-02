@@ -27,6 +27,7 @@ import { peaks } from './audio-tap.ts';
 import { fnv1a } from '../web/snd.ts';
 import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
+import { words } from './words.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const skip = process.env.WEBPC_AUDIO_TESTS !== '1' ? 'SKIPPED: scripts/ci-audio.sh runs it (WEBPC_AUDIO_TESTS=1)'
@@ -134,7 +135,7 @@ test('the snd guest plays a tone on the page in real time: its length in its own
   await page.reload();
   await page.locator('#sound-menu summary').click();
   assert.equal(await page.locator('#sound-on').isChecked(), false);
-  assert.match(await page.locator('#sound-summary').textContent() ?? '', /muted/);
+  assert.ok([t('sound:Sound.summary.muted'), t('sound:Sound.summary.mutedMic')].includes(await page.locator('#sound-summary').textContent() ?? ''), 'the summary says muted');
   assert.deepEqual(errors, []);
   await context.close();
 });
@@ -147,7 +148,7 @@ test('with its context not running, the page says sound waits for a click; the g
   await page.goto(`${base}/web/app/?machine=snd&view=terminal&params=snd_seconds=4&snd=stats`);
   await page.waitForFunction(() => (window as unknown as W).__audio?.context()?.state === 'running', null, { timeout: 60_000 });
   await page.evaluate(() => (window as unknown as W).__audio.context().suspend());
-  await page.waitForFunction(() => (window as unknown as W).__audio?.waiting() && /click/.test(document.getElementById('sound-summary')!.textContent ?? ''), null, { timeout: 5_000 });
+  await page.waitForFunction((said) => (window as unknown as W).__audio?.waiting() && document.getElementById('sound-summary')!.textContent === said, t('sound:Sound.summary.waiting'), { timeout: 5_000 });
   const quanta = (await header(page))[QUANTA];
   await page.waitForTimeout(1500);
   const h = await header(page);
@@ -158,7 +159,7 @@ test('with its context not running, the page says sound waits for a click; the g
   await until(page, /snd test (ok|failed)/, 30_000);
   await inTime(page, 'suspended, then resumed');
   assert.ok((await header(page))[QUANTA] > quanta, 'the worklet played again after the click');
-  assert.match(await page.locator('#sound-summary').textContent() ?? '', /^Sound$/);
+  assert.equal(await page.locator('#sound-summary').textContent(), t('sound:Sound.summary.on'));
   assert.deepEqual(errors, []);
   await context.close();
 });
@@ -178,7 +179,7 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     await page.waitForTimeout(2000);
     const before = (await header(page))[READ];
     // Watched from before the click: the guest's power-off replaces the page's message.
-    const saved = page.waitForFunction(() => /^Saved the snapshot /.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 60_000, polling: 20 })
+    const saved = page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('snapshots:main.saved', {}, { start: true }).source, { timeout: 60_000, polling: 20 })
       .catch(async (e) => { throw new Error(`${e}; the page says: ${await page.locator('#message-text').textContent()}`); });
     const [download] = await Promise.all([page.waitForEvent('download', { timeout: 60_000 }), page.locator('#save-snapshot').click()]);
     const path = join(dir, 'snd.webpcsnap');
@@ -204,7 +205,7 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     await p2.mouse.click(5, 5);
     await until(p2, /snd: hw params/);
     await p2.setInputFiles('#load-snapshot-input', path);
-    await p2.waitForFunction(() => document.getElementById('boot-title')!.textContent!.startsWith('Loading '), null, { timeout: 30_000, polling: 20 });
+    await p2.waitForFunction((src) => new RegExp(src).test(document.getElementById('boot-title')!.textContent!), words('machine:main.boot.loading', {}, { start: true }).source, { timeout: 30_000, polling: 20 });
     await p2.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 30_000, polling: 20 }); // the old machine is gone
     await p2.waitForFunction(() => document.body.dataset.state === 'running' && (window as unknown as W).__audio?.playing && (window as unknown as W).__audio?.context()?.state === 'running', null, { timeout: 60_000, polling: 100 });
     // Listened to once the restored stream flows (half a second on the new ring): under load its vCPUs start late.

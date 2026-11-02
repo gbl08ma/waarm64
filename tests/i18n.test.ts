@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { describe, errorText, marked, parts, plain, said, t, text } from '../web/i18n.ts';
 import { devText, fromWire, msg, msgOf, MsgError, toWire } from '../web/msg.ts';
-import { checkDoc, checkSources, stemOf, varsOf, type Catalogs } from '../tools/i18n-check.ts';
+import { checkDoc, checkSources, checkTests, stemOf, varsOf, type Catalogs } from '../tools/i18n-check.ts';
+import { words } from './words.ts';
 import { CATALOGS } from '../web/messages/en/index.ts';
 
 test('rendering: a key, its parameters, markers', () => {
@@ -115,4 +116,30 @@ test('checks: the docs quote the page in its words', () => {
   const fixed = checkDoc(CAT, 'docs/a.md', doc, true).fixed!;
   assert.match(fixed, /\[Where\?\]\(ui:x:Other\.elsewhere\)/);
   assert.match(fixed, /`Where\?` is code/);
+});
+
+test('checks: tests take the page\'s words from the catalog', () => {
+  const cat: Catalogs = { x: {
+    'Thing.retry': { message: 'Retry', note: 'A button.' },
+    'Thing.saved': { message: 'Saved the snapshot {{name}} ({{size, bytes}})', note: 'A message bar line.' },
+    'Thing.long': { message: 'The machine stops while the file is written', note: 'A note.' },
+    'Thing.state': { message: 'running', note: 'A state.' },
+  } };
+  const problems = checkTests(cat, [{ path: 'tests/a.test.ts', text: `test('Retry after a failure', async () => {
+  await page.getByRole('button', { name: 'Retry' }).click();
+  assert.match(bar, /^Saved the snapshot /);
+  assert.equal(bar, \`Saved the snapshot \${name} (1 MiB)\`);
+  assert.match(note, /stops while the file is written/);
+  assert.equal(state, 'running');
+  assert.ok(x, 'Retry later: Saved the snapshot');
+  assert.equal(peer, 'Retry'); // i18n-ignore
+  assert.match(note, /the file/);
+});
+test('wording: the button says Retry', () => { assert.equal(label, 'Retry'); });` }]);
+  assert.deepEqual(problems.map((p) => p.line), [2, 3, 4, 5]);
+  assert.match(problems[0].text, /'Retry' says the page's words \(x:Thing\.retry\)/);
+  // The helper: a message's words with the parameters given, the others any text.
+  assert.equal(words('common:ask.ok', {}, { whole: true }).source, '^OK$');
+  assert.match(t('snapshots:main.saved', { name: 'a', size: 2 ** 20, seconds: 1 }), words('snapshots:main.saved', { name: 'a' }, { start: true }));
+  assert.doesNotMatch(t('snapshots:main.saved', { name: 'a', size: 2 ** 20, seconds: 1 }), words('snapshots:main.saved', { name: 'b' }));
 });

@@ -11,6 +11,8 @@ import { credentialsQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks, type Question } from './page-ask.ts';
+import { t } from '../web/i18n.ts';
+import { words } from './words.ts';
 
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -90,8 +92,8 @@ test('Gadget Zero on a stored Debian machine: attached from the menu, seen by th
 
   // A kept snapshot: asked first (naming it), unplugged while it is written, attached again after.
   await page.click('#save-snapshot');
-  await page.waitForFunction(() => /Kept the snapshot/.test(document.getElementById('message-text')?.textContent ?? ''), null, { timeout: 120_000, polling: 250 });
-  assert.ok(asked.some((q) => /needs the USB ports empty: Gadget Zero \(test device\) is detached first/.test(q.text)), asked.map((q) => q.text).join(' | '));
+  await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('snapshots:main.kept').source, { timeout: 120_000, polling: 250 });
+  assert.ok(asked.some((q) => q.text === t('usb:main.empty.snapshot', { count: 1, list: t('usb:usb-ports.gadgetZero') })), asked.map((q) => q.text).join(' | '));
   await page.waitForFunction(() => document.getElementById('usb-menu')?.dataset.attached === '1', null, { timeout: 30_000, polling: 100 });
   assert.equal(await zeros(page, 1), '1');
   assert.match(await ok(page, 'dmesg | grep -c "USB disconnect"'), /^[1-9]/, 'the guest saw it unplugged');

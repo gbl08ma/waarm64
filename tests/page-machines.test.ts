@@ -111,8 +111,8 @@ test('a machine with five disks: Debian from a URL, a blank disk formatted and k
     ncpus: 2, ramMiB: 1024,
     disks: [
       { kind: 'url', name: 'disk.qcow2', size, url: '/target/images/debian/disk.qcow2', identity: { kind: 'url', path: '/target/images/debian/disk.qcow2', bytes: image.length } },
-      { kind: 'blank', name: 'Blank', size: 256 * MiB, identity: null },
-      { kind: 'ramdisk', name: 'Ramdisk', size: 128 * MiB, identity: null },
+      { kind: 'blank', name: 'Blank', size: 256 * MiB, identity: null }, // i18n-ignore: a name the test gives
+      { kind: 'ramdisk', name: 'Ramdisk', size: 128 * MiB, identity: null }, // i18n-ignore: a name the test gives
       { kind: 'url', name: 'QEMU_EFI.fd', size: firmware.length, url: '/target/images/edk2/QEMU_EFI.fd', readOnly: true, identity: { kind: 'url', path: '/target/images/edk2/QEMU_EFI.fd', bytes: firmware.length } },
       { kind: 'ramdisk', name: 'Swap', size: 64 * MiB, swap: true, identity: null },
     ],

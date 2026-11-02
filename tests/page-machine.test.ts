@@ -9,6 +9,7 @@ import { startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { answerAsks } from './page-ask.ts';
+import { words } from './words.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const skip = !(existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES))) && 'SKIPPED: run images/build.sh';
@@ -27,6 +28,8 @@ after(async () => { await browser?.close(); close?.(); });
 const status = (page: Page) => page.evaluate(() => (document.getElementById('status')?.textContent ?? ''));
 const statusShows = (page: Page, re: RegExp) => page.waitForFunction((src) => new RegExp(src).test(document.getElementById('status')?.textContent ?? ''), re.source, { timeout: 120_000, polling: 200 })
   .catch(async (e) => { throw new Error(`${e}; the status shows: ${await status(page)}`); });
+/** The status bar's vCPUs element, then its RAM's (`<n> MiB`, a size and its unit). */
+const sized = (ncpus: number, mib: number) => new RegExp(`${words('statusbar:statusbar.vcpus', { count: ncpus }).source}\\b.*${mib} MiB`);
 
 test('the Machine menu sets the vCPUs and the RAM, applies them by a restart and is remembered', { skip }, async () => {
   const context = await browser.newContext();
@@ -35,7 +38,7 @@ test('the Machine menu sets the vCPUs and the RAM, applies them by a restart and
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
   await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1`);
-  await statusShows(page, /1 vCPU\b.*256 MiB/);
+  await statusShows(page, sized(1, 256));
 
   // The menu starts at what runs; applying the same size does nothing.
   assert.equal(await page.locator('#machine-cpus').inputValue(), '1');
@@ -44,13 +47,13 @@ test('the Machine menu sets the vCPUs and the RAM, applies them by a restart and
   await page.selectOption('#machine-cpus', '2');
   await page.selectOption('#machine-ram', '512');
   await page.click('#machine-apply');
-  await statusShows(page, /2 vCPUs.*512 MiB/);
+  await statusShows(page, sized(2, 512));
 
   // Remembered: a reload without the query starts the same size; the query wins over it.
   await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot`);
-  await statusShows(page, /2 vCPUs.*512 MiB/);
+  await statusShows(page, sized(2, 512));
   await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1&ram=1024`);
-  await statusShows(page, /1 vCPU\b.*1024 MiB/);
+  await statusShows(page, sized(1, 1024));
   assert.deepEqual(errors, []);
   await context.close();
 });

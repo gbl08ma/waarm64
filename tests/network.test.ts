@@ -13,7 +13,7 @@ const netmap = (over: Partial<NetMap> = {}): NetMap => ({ name: 'guest.tail.test
 test('control server URLs: Tailscale by default, https, http only for this computer', () => {
   assert.deepEqual(parseControlURL(''), { url: 'https://controlplane.tailscale.com' });
   assert.deepEqual(parseControlURL('  '), { url: 'https://controlplane.tailscale.com' });
-  assert.deepEqual(parseControlURL('headscale.example.com'), { url: 'https://headscale.example.com' });
+  assert.deepEqual(parseControlURL('headscale.example.com'), { url: 'https://headscale.example.com' }); // i18n-ignore
   assert.deepEqual(parseControlURL('https://hs.example.com:8443/'), { url: 'https://hs.example.com:8443' });
   assert.deepEqual(parseControlURL('https://example.com/hs/'), { url: 'https://example.com/hs' });
   assert.deepEqual(parseControlURL('http://localhost:8080'), { url: 'http://localhost:8080' });
@@ -33,17 +33,17 @@ test('the view of the client: contacting, login, approval, connected, stopped, e
   assert.equal(viewOf({ state: '' }).phase, 'connecting');
   assert.equal(viewOf({ state: 'Starting' }).phase, 'connecting');
   assert.equal(viewOf({ state: 'NeedsLogin' }).phase, 'connecting'); // no URL yet
-  assert.deepEqual(viewOf({ state: 'NeedsLogin', loginURL: 'https://login.example.com/a/1' }), { phase: 'login', text: 'Log in to connect', loginURL: 'https://login.example.com/a/1', exitNodes: [] });
+  assert.deepEqual(viewOf({ state: 'NeedsLogin', loginURL: 'https://login.example.com/a/1' }), { phase: 'login', text: t('network:network.logIn'), loginURL: 'https://login.example.com/a/1', exitNodes: [] });
   assert.equal(viewOf({ state: 'NeedsMachineAuth' }).phase, 'login');
-  const up = viewOf({ state: 'Running', netmap: netmap() });
+  const up = viewOf({ state: 'Running', netmap: netmap() }); // i18n-ignore
   assert.equal(up.phase, 'connected');
   assert.equal(up.address, '100.90.0.2');
   assert.equal(up.text, t('network:network.connectedPeers', { connected: msg('network:network.connected.as.address', { name: 'guest.tail.test', address: '100.90.0.2' }), count: 1 }));
-  assert.equal(viewOf({ state: 'Running', netmap: netmap({ peers: [] }) }).text, t('network:network.connectedPeers', { connected: msg('network:network.connected.as.address', { name: 'guest.tail.test', address: '100.90.0.2' }), count: 0 }));
+  assert.equal(viewOf({ state: 'Running', netmap: netmap({ peers: [] }) }).text, t('network:network.connectedPeers', { connected: msg('network:network.connected.as.address', { name: 'guest.tail.test', address: '100.90.0.2' }), count: 0 })); // i18n-ignore
   assert.equal(up.subnets, undefined, 'no peer routes a subnet: no choice to offer');
   const lan = netmap({ peers: [{ id: 'r', name: 'router.', addresses: [], exitNodeOption: false, routes: ['192.168.1.0/24'] }], acceptRoutes: false });
-  assert.deepEqual(viewOf({ state: 'Running', netmap: lan }).subnets, { routes: ['192.168.1.0/24'], on: false });
-  assert.equal(viewOf({ state: 'Stopped' }).phase, 'off');
+  assert.deepEqual(viewOf({ state: 'Running', netmap: lan }).subnets, { routes: ['192.168.1.0/24'], on: false }); // i18n-ignore
+  assert.equal(viewOf({ state: 'Stopped' }).phase, 'off'); // i18n-ignore
   assert.deepEqual(viewOf({ state: 'Starting', error: new Error('no route', { cause: new Error('more') }) }), { phase: 'error', text: t('network:network.couldntConnect'), details: ['no route', 'more'], exitNodes: [] });
 });
 
@@ -98,7 +98,7 @@ test('connecting: the client gets the machine\'s port; a restarted machine\'s ne
 
   const dev2 = net.port(); // the machine restarted
   assert.deepEqual(f.log.slice(1), ['attach']);
-  f.clients[0].setState('Running', netmap());
+  f.clients[0].setState('Running', netmap()); // i18n-ignore
   assert.equal(net.view().phase, 'connected');
   assert.ok(changes > 0);
 
@@ -133,7 +133,7 @@ test('a client that fails shows the error until it comes up', () => {
   net.connect({ controlURL: 'https://c', hostname: 'h' });
   f.clients[0].emit({ type: 'error', error: toWire(new Error('the control server is not reachable')) });
   assert.equal(net.view().phase, 'error');
-  f.clients[0].setState('Running', netmap());
+  f.clients[0].setState('Running', netmap()); // i18n-ignore
   assert.equal(net.view().phase, 'connected');
   dev.close();
 });
@@ -144,11 +144,11 @@ test('exit nodes: the menu lists the approved ones and the one in use; the choic
     { id: 'nB', name: 'b.tail.test.', addresses: ['100.90.0.4/32'], online: false, exitNodeOption: true },
     { id: 'nC', name: 'c.tail.test.', addresses: ['100.90.0.5/32'], exitNodeOption: false },
   ];
-  assert.deepEqual(viewOf({ state: 'Running', netmap: netmap({ peers }) }).exitNodes, [
+  assert.deepEqual(viewOf({ state: 'Running', netmap: netmap({ peers }) }).exitNodes, [ // i18n-ignore
     { id: 'nA', name: 'a.tail.test', online: true, use: false },
     { id: 'nB', name: 'b.tail.test', online: false, use: false },
   ]);
-  const used = viewOf({ state: 'Running', netmap: netmap({ peers, exitNode: 'nA' }) });
+  const used = viewOf({ state: 'Running', netmap: netmap({ peers, exitNode: 'nA' }) }); // i18n-ignore
   assert.deepEqual(used.exitNodes.map((e) => e.use), [true, false]);
   assert.equal(used.text, t('network:network.connectedPeers.via', { connected: msg('network:network.connected.as.address', { name: 'guest.tail.test', address: '100.90.0.2' }), count: 3, via: 'a.tail.test' }));
   assert.deepEqual(viewOf({ state: 'Starting', netmap: netmap({ peers }) }).exitNodes, [], 'only when connected');
@@ -200,7 +200,7 @@ test('a tailcat connection: the address goes to the tailcat client, not the Tail
   const nm = netmapOf({ address: [192, 0, 0, 2], address6: [0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], mtu: 1280, dns: [[1, 1, 1, 1]], dns6: [[0x26, 0x06, 0x47, 0, 0x47, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0x11]], domains: [] });
   assert.deepEqual(nm.addresses, ['192.0.0.2/32', 'fd7a:115c:a1e0:102:304:506:708:90a/128']);
   assert.deepEqual(nm.dns, ['1.1.1.1', '2606:4700:4700::1111']);
-  cats[0].setState('Running', nm);
+  cats[0].setState('Running', nm); // i18n-ignore
   assert.deepEqual(net.view(), { phase: 'connected', address: '192.0.0.2', exitNodes: [], internet: true, text: t('network:network.tailcat.address', { address: '192.0.0.2' }) });
   cats[0].emit({ type: 'error', error: toWire(new Error('the tailcat server didn\'t answer')) });
   assert.equal(net.view().phase, 'error');
@@ -234,14 +234,14 @@ test('a served machine (tailcat T3): serving alone or beside a tailcat server; t
   net.connect({ controlURL: '', hostname: '', tailcatServe: { relay: '127.0.0.1:8443' } });
   assert.deepEqual(ts.log, []);
   assert.deepEqual(cats[0].config, { addr: '', serve: { relay: '127.0.0.1:8443' } });
-  cats[0].setState('Running', netmapOf(lease, 'tcSERVED', false));
+  cats[0].setState('Running', netmapOf(lease, 'tcSERVED', false)); // i18n-ignore
   assert.deepEqual(net.view(), { phase: 'connected', exitNodes: [], text: t('network:network.servingOnly'), internet: false, served: 'tcSERVED' });
   await net.disconnect();
   assert.equal(net.view().served, undefined);
   // Beside a tailcat server: both said.
   net.connect({ controlURL: '', hostname: '', tailcat: 'tcEXIT', tailcatServe: { relay: '' } });
   assert.deepEqual(cats[1].config, { addr: 'tcEXIT', serve: { relay: '' } });
-  cats[1].setState('Running', netmapOf(lease, 'tcSERVED'));
+  cats[1].setState('Running', netmapOf(lease, 'tcSERVED')); // i18n-ignore
   assert.deepEqual(net.view(), { phase: 'connected', address: '192.0.0.2', exitNodes: [], internet: true, text: t('network:network.tailcat.address.serving', { address: '192.0.0.2' }), served: 'tcSERVED' });
 });
 
@@ -264,8 +264,8 @@ test("the guest's default way out: the first adapter that reaches the internet, 
   assert.equal(primaryOf([c('connecting', true), c('connected', false)]), 1);
   assert.deepEqual(ranksOf([c('connected'), c('off'), c('connected'), c('connected')]), [0, 1, 1, 2], 'connected adapters before each');
   assert.deepEqual(ranksOf([c('connecting'), c('connected')]), [0, 0], 'only connected ones count');
-  assert.equal(viewOf({ state: 'Running', netmap: netmap() }).internet, false, 'a tailnet without an exit node');
-  assert.equal(viewOf({ state: 'Running', netmap: netmap({ exitNode: 'nPEER', peers: [{ id: 'nPEER', name: 'peer', addresses: ['100.90.0.3/32'], exitNodeOption: true }] }) }).internet, true);
+  assert.equal(viewOf({ state: 'Running', netmap: netmap() }).internet, false, 'a tailnet without an exit node'); // i18n-ignore
+  assert.equal(viewOf({ state: 'Running', netmap: netmap({ exitNode: 'nPEER', peers: [{ id: 'nPEER', name: 'peer', addresses: ['100.90.0.3/32'], exitNodeOption: true }] }) }).internet, true); // i18n-ignore
   const told: (boolean | number)[][] = [];
   const fake = (): Tailscale => ({
     state: () => '', netmap: () => undefined, loginURL: () => undefined, running: new Promise(() => {}), timings: () => ({}),
@@ -287,7 +287,7 @@ test("a port that comes while the client detaches stays, connected or not: the o
   let give!: (p?: MessagePort) => void;
   const closed: string[] = [];
   const start = ((c: { ip: MessagePort }) => ({
-    state: () => 'Running', netmap: () => undefined, loginURL: () => undefined, running: new Promise(() => {}), timings: () => ({}),
+    state: () => 'Running', netmap: () => undefined, loginURL: () => undefined, running: new Promise(() => {}), timings: () => ({}), // i18n-ignore
     setPrimary: () => {}, attach: () => {}, detach: () => new Promise((r) => { give = r; }), setExitNode: async () => {}, setAcceptRoutes: () => {}, logout: async () => {}, close: () => {},
     ip: c.ip,
   })) as never;
@@ -328,7 +328,7 @@ test("a local connection: the helper's link goes to the local client; an IP clie
   assert.deepEqual(ts.log, []);
   assert.equal(locals[0].url, 'ws://127.0.0.1:8740/tok');
   assert.deepEqual(net.view(), { phase: 'connecting', text: t('network:network.connectingHelper'), exitNodes: [] });
-  locals[0].setState('Running', localNetmap({ address: '192.168.127.2' }));
+  locals[0].setState('Running', localNetmap({ address: '192.168.127.2' })); // i18n-ignore
   assert.deepEqual(net.view(), { phase: 'connected', address: '192.168.127.2', exitNodes: [], internet: true, local: true, text: t('network:network.connectedLocal.address', { address: '192.168.127.2' }) });
   locals[0].emit({ type: 'error', error: toWire(new Error("couldn't reach the helper")) });
   assert.equal(net.view().phase, 'error');

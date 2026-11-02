@@ -6,7 +6,9 @@ import { createServer, type Server } from 'node:http';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
+import { t } from '../web/i18n.ts';
 import { answerAsks } from './page-ask.ts';
+import { words } from './words.ts';
 
 const DEMO = { format: 'webpc-chunked-1', name: 'Desktop Demo', size: 4096, piece: 1 << 20, pieces: 'pieces/{hash}.bin', hashes: ['0'.repeat(64)], id: 'demo' };
 let browser: Browser;
@@ -108,31 +110,32 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   await m.locator('[data-field=name]').fill('Workbench');
   await m.locator('[data-field=ncpus]').selectOption('2');
   await m.locator('[data-field=ram]').selectOption('1024');
-  await m.locator('[data-field=jit]').selectOption({ label: '128 MiB' });
+  await m.locator('[data-field=jit]').selectOption({ label: t('machines:MachinesPage.mib', { n: 128 }) });
   await m.locator('[data-field=display]').selectOption('2d');
   // The keyboard layout: a new machine follows the browser, with its note; none set, no note; "Match this browser" answers either way.
-  assert.equal(await m.locator('[data-field=keyboard] option:checked').textContent(), "This browser's, at every boot");
-  assert.match(await m.locator('[data-keyboard-note]').textContent() ?? '', /^At every boot the page changes the guest's own keyboard settings to the layout this browser reports/);
+  assert.equal(await m.locator('[data-field=keyboard] option:checked').textContent(), t('machines:MachinesPage.keyboard.follow'));
+  const followNote = await m.locator('[data-keyboard-note]').textContent() ?? '';
+  assert.ok(['machines:MachinesPage.keyboard.followNote.now', 'machines:MachinesPage.keyboard.followNote'].some((k) => words(k, {}, { whole: true }).test(followNote)), followNote);
   await m.locator('[data-field=keyboard]').selectOption({ index: 0 });
   assert.equal(await m.locator('[data-keyboard-note]').count(), 0);
   await m.locator('[data-action=match-keyboard]').click();
   await m.locator('[data-keyboard-match]').waitFor();
-  await m.locator('[data-field=keyboard]').selectOption({ label: 'Portuguese' });
-  assert.match(await m.locator('[data-keyboard-note]').textContent() ?? '', /^The next time the machine boots, the page changes the guest's own keyboard settings to this layout/);
+  await m.locator('[data-field=keyboard]').selectOption({ label: t('machines:keyboard.pt') });
+  assert.match(await m.locator('[data-keyboard-note]').textContent() ?? '', words('machines:MachinesPage.keyboard.setNote', {}, { whole: true }));
   await m.locator('[data-action=save]').click();
   await modal(page).locator('.pick', { hasText: 'Workbench' }).waitFor();
   // The network's settings in the guest (the Network tab): on for a new machine, with its note; off is saved as false.
   await m.locator('[data-tab=network]').click();
   assert.equal(await m.locator('[data-field=net-config]').isChecked(), true);
-  assert.match(await m.locator('[data-net-config-note]').textContent() ?? '', /^At every boot the page has the guest's systemd-networkd take each connection's MTU/);
+  assert.match(await m.locator('[data-net-config-note]').textContent() ?? '', words('machines:MachinesPage.netConfig.on', {}, { whole: true }));
   await m.locator('[data-field=net-config]').uncheck();
-  assert.match(await m.locator('[data-net-config-note]').textContent() ?? '', /^The page leaves the guest's network settings alone/);
+  assert.match(await m.locator('[data-net-config-note]').textContent() ?? '', words('machines:MachinesPage.netConfig.off', {}, { whole: true }));
   await m.locator('[data-action=save]').click();
   await page.waitForFunction(() => document.querySelector('.machines [data-action=save]')?.hasAttribute('disabled'));
   // A URL disk (checked), a blank one, a ramdisk; a URL whose server lacks CORS is refused with the reason (the wizard stays open).
   await m.locator('[data-tab=disks]').click();
   await addDisk(page, 'url', { url: `${otherBase}/plain/disk.img` });
-  await page.locator('#add-disk .error', { hasText: 'CORS' }).waitFor();
+  await page.locator('#add-disk .error', { hasText: words('machines:urlcheck.noAnswer', { needs: t('machines:urlcheck.corsHint') }) }).waitFor();
   await addDisk(page, 'url', { url: `${base}/tests/qcow2/deflate.qcow2` }, true);
   await disk(page, 0);
   await addDisk(page, 'blank', { size: '64' });
@@ -140,7 +143,7 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   await addDisk(page, 'ramdisk', { size: '32' });
   await disk(page, 2);
   // A disk with an overlay (New empty) has an Export menu: its choices are there (the menu's open state starts unset).
-  await m.locator('[data-attachment]').nth(1).getByRole('button', { name: 'New empty' }).click();
+  await m.locator('[data-attachment]').nth(1).getByRole('button', { name: t('disks:Disks.newEmpty') }).click();
   await m.locator('[data-attachment]').nth(1).locator('[id^=export-] summary').click();
   await m.locator('[data-attachment]').nth(1).locator('[data-save=qcow2]').waitFor();
   await m.locator('[data-attachment]').nth(1).locator('[id^=export-] summary').click();
@@ -158,7 +161,7 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   assert.ok((got.disks[0][1] as number) > 0);
   assert.deepEqual({ ...got, disks: got.disks.slice(1) }, { ...want, disks: want.disks.slice(1) });
   // Reordered and read-only from the list; detached.
-  await m.locator('[data-attachment]').nth(1).getByRole('button', { name: 'Up' }).click();
+  await m.locator('[data-attachment]').nth(1).getByRole('button', { name: t('common:MoveButtons.up') }).click();
   await page.waitForFunction(async (id) => {
     const { Store } = await import('/web/app/store.ts' as string);
     const store = await Store.open();
@@ -169,9 +172,9 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   }, id);
   // The list shows the move too (it rereads after the store): the rows are keyed, so the blank disk's row moves without
   // being replaced, and a locator resolved before then holds its disabled box and waits for it forever.
-  await m.locator('[data-attachment]').nth(0).locator('.meta', { hasText: /^blank,/ }).waitFor();
-  await m.locator('[data-attachment]').nth(1).locator('.meta', { hasText: /^from a URL,/ }).waitFor();
-  await m.locator('[data-attachment]').nth(1).getByRole('checkbox', { name: 'read-only' }).check();
+  await m.locator('[data-attachment]').nth(0).locator('.meta', { hasText: words('disks:Disks.meta', { kind: t('disks:Disks.kind.blank') }, { start: true }) }).waitFor();
+  await m.locator('[data-attachment]').nth(1).locator('.meta', { hasText: words('disks:Disks.meta', { kind: t('disks:Disks.kind.url') }, { start: true }) }).waitFor();
+  await m.locator('[data-attachment]').nth(1).getByRole('checkbox', { name: t('disks:Disks.readOnly') }).check();
   await page.waitForFunction(async (id) => {
     const { Store } = await import('/web/app/store.ts' as string);
     const store = await Store.open();
@@ -180,8 +183,8 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
     return m.attachments[1].readOnly === true;
   }, id);
   // Only the ramdisk has a swap box (web/app/guest-swap.ts); checked, the record says so.
-  assert.equal(await m.locator('[data-attachment]').getByRole('checkbox', { name: 'swap' }).count(), 1);
-  await m.locator('[data-attachment]').nth(2).getByRole('checkbox', { name: 'swap' }).check();
+  assert.equal(await m.locator('[data-attachment]').getByRole('checkbox', { name: t('disks:Disks.swap') }).count(), 1);
+  await m.locator('[data-attachment]').nth(2).getByRole('checkbox', { name: t('disks:Disks.swap') }).check();
   await page.waitForFunction(async (id) => {
     const { Store } = await import('/web/app/store.ts' as string);
     const store = await Store.open();
@@ -189,7 +192,7 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
     store.close();
     return m.attachments[2].swap === true;
   }, id);
-  await m.locator('[data-attachment]').nth(2).getByRole('button', { name: 'Detach' }).click();
+  await m.locator('[data-attachment]').nth(2).getByRole('button', { name: t('disks:Disks.detach.button') }).click();
   await page.waitForFunction(() => document.querySelectorAll('.machines [data-attachment]').length === 2);
 
   // Kept across a reload (the Machines page stays open: `#machines`), and opened on the page: the toolbar names it.
@@ -215,7 +218,7 @@ test('a machine edited on the Machines page while it is off on this page starts 
   const m = modal(page).locator('section.machine[data-selected]');
   await m.locator('[data-action=open]').click();
   // On the page with no disks: it waits, and the Machines page offers Start (not a disabled "on this page").
-  await page.waitForFunction(() => document.body.dataset.state === 'idle' && /has no disks yet/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 10_000 });
+  await page.waitForFunction((src) => document.body.dataset.state === 'idle' && new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('disks:main.noDisks').source, { timeout: 10_000 });
   await page.click('#machines-open');
   await m.locator('[data-tab=disks]').click();
   await addDisk(page, 'blank', { size: '64' });
@@ -224,7 +227,7 @@ test('a machine edited on the Machines page while it is off on this page starts 
   await m.locator('[data-action=start]').click();
   // It starts with the disk added since it was opened (the firmware loads and boots; a stale record would wait again).
   await page.waitForFunction(() => ['loading', 'booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
-  assert.doesNotMatch(await page.locator('#message-text').textContent() ?? '', /has no disks yet/);
+  assert.doesNotMatch(await page.locator('#message-text').textContent() ?? '', words('disks:main.noDisks'));
   assert.deepEqual(errors, []);
   await context.close();
 });
@@ -300,12 +303,13 @@ test('the machine list says which machines are suspended (a suspended copy in OP
   await page.reload();
   await page.click('#machines-open');
   const meta = (id: string) => modal(page).locator(`button.pick[data-machine="${id}"] .meta`);
-  await page.waitForFunction((id) => / · suspended$/.test(document.querySelector(`.machines button.pick[data-machine="${id}"] .meta`)?.textContent ?? ''), ids[0], { timeout: 10_000 });
-  assert.match(await meta(ids[1]).textContent() ?? '', / · off$/);
+  const listMeta = (state: string) => words('machines:MachinesPage.list.meta', { count: 0, state: t(`machines:MachinesPage.state.${state}`) }, { whole: true });
+  await page.waitForFunction(([id, src]) => new RegExp(src).test(document.querySelector(`.machines button.pick[data-machine="${id}"] .meta`)?.textContent ?? ''), [ids[0], listMeta('suspended').source], { timeout: 10_000 });
+  assert.match(await meta(ids[1]).textContent() ?? '', listMeta('off'));
   await meta(ids[0]).click();
   // The chosen machine's header (it showed the last one made, which is off, until the click lands).
   await modal(page).locator(`section.machine[data-selected="${ids[0]}"] [data-machine-state]`).waitFor();
-  assert.equal(await modal(page).locator(`section.machine[data-selected="${ids[0]}"] [data-machine-state]`).textContent(), 'suspended');
+  assert.equal(await modal(page).locator(`section.machine[data-selected="${ids[0]}"] [data-machine-state]`).textContent(), t('machines:MachinesPage.state.suspended'));
   assert.deepEqual(errors, []);
   await context.close();
 });
@@ -323,7 +327,7 @@ test("a machine's RAM past memory 0: the note, and the advanced section's split,
   await m.locator('[data-field=ram]').selectOption('2048');
   assert.equal(await m.locator('[data-numa]').count(), 0, 'memory 0 holds 2 GiB');
   await m.locator('[data-field=ram]').selectOption('4096');
-  assert.match(await m.locator('[data-numa]').textContent() ?? '', /^3071 MiB of it .* other 1025 MiB as a second NUMA node/);
+  assert.match(await m.locator('[data-numa]').textContent() ?? '', words('machines:machine.numa', { count: 1, fast: 3071, rest: 1025 }, { whole: true }));
   // The advanced section, closed: set by hand, it starts from the automatic split; the RAM is then its sum.
   assert.equal(await m.locator('[data-ram-split]').getAttribute('open'), null);
   await m.locator('[data-ram-split] summary').click();
@@ -334,13 +338,13 @@ test("a machine's RAM past memory 0: the note, and the advanced section's split,
   await m.locator('[data-field=ram0]').dispatchEvent('change');
   await m.locator('[data-field=ram-nodes]').fill('1024, 5000');
   await m.locator('[data-field=ram-nodes]').dispatchEvent('change');
-  assert.match(await m.locator('[data-split-problem]').textContent() ?? '', /1 to 4096 MiB/);
+  assert.match(await m.locator('[data-split-problem]').textContent() ?? '', words('machines:machine.split.node', { max: 4096, mib: 5000 }));
   assert.equal(await m.locator('[data-action=save]').isDisabled(), true);
   await m.locator('[data-field=ram-nodes]').fill('1024, 512');
   await m.locator('[data-field=ram-nodes]').dispatchEvent('change');
   assert.equal(await m.locator('[data-split-problem]').count(), 0);
   assert.equal(await m.locator('[data-field=ram]').inputValue(), '3584');
-  assert.match(await m.locator('[data-numa]').textContent() ?? '', /^2048 MiB of it .* other 1536 MiB as 2 more NUMA nodes/);
+  assert.match(await m.locator('[data-numa]').textContent() ?? '', words('machines:machine.numa', { count: 2, fast: 2048, rest: 1536 }, { whole: true }));
   await m.locator('[data-action=save]').click();
   await m.locator('[data-action=save]').and(page.locator(':disabled')).waitFor();
   // Kept: after a reload the section is open with the split, and turning it off is the automatic split again.
@@ -351,7 +355,7 @@ test("a machine's RAM past memory 0: the note, and the advanced section's split,
   assert.deepEqual([await m.locator('[data-field=ram0]').inputValue(), await m.locator('[data-field=ram-nodes]').inputValue(), await m.locator('[data-field=ram]').inputValue()], ['2048', '1024, 512', '3584']);
   await m.locator('[data-field=custom-split]').uncheck();
   assert.equal(await m.locator('[data-field=ram]').isDisabled(), false);
-  assert.match(await m.locator('[data-numa]').textContent() ?? '', /^3071 MiB of it .* other 513 MiB as a second NUMA node/);
+  assert.match(await m.locator('[data-numa]').textContent() ?? '', words('machines:machine.numa', { count: 1, fast: 3071, rest: 513 }, { whole: true }));
   assert.deepEqual(errors, []);
   await context.close();
 });
@@ -371,8 +375,8 @@ test('a detached disk keeps its overlays: attached again from the browser\'s dis
   const url = `${base}/tests/qcow2/deflate.qcow2`;
   await addDisk(page, 'url', { url });
   await disk(page, 0);
-  await m.locator('[data-attachment]').first().getByRole('button', { name: 'New empty' }).click(); // the prompt's default: "Fresh start"
-  await m.locator('[data-field=overlay] option', { hasText: 'Fresh start' }).waitFor({ state: 'attached' });
+  await m.locator('[data-attachment]').first().getByRole('button', { name: t('disks:Disks.newEmpty') }).click(); // the prompt's default name
+  await m.locator('[data-field=overlay] option', { hasText: t('disks:Disks.newOverlay.name') }).waitFor({ state: 'attached' });
   const diskId = await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);
     const store = await Store.open();
@@ -381,21 +385,22 @@ test('a detached disk keeps its overlays: attached again from the browser\'s dis
     return d.id as string;
   });
   // Detached: the message says where it goes and how it comes back.
-  await m.locator('[data-attachment]').first().getByRole('button', { name: 'Detach' }).click();
+  await m.locator('[data-attachment]').first().getByRole('button', { name: t('disks:Disks.detach.button') }).click();
   await page.waitForFunction(() => document.querySelectorAll('.machines [data-attachment]').length === 0);
-  assert.match(asked.at(-1)!, /stays in this browser with its 1 overlay .*A disk already in this browser attaches it again/);
+  assert.match(asked.at(-1)!, words('disks:Disks.detach.confirm'));
+  assert.match(asked.at(-1)!, words('disks:Disks.detach.keptOverlays', { count: 1 }));
   // Attached again from the browser's disks: the same disk, its overlay there.
   await page.locator('[data-action=add-disk-open]').click();
   await page.locator('#add-disk [data-source=known]').click();
-  await page.locator(`#add-disk [data-disk="${diskId}"]`, { hasText: '1 overlay' }).locator('[data-action=attach-known]').click();
+  await page.locator(`#add-disk [data-disk="${diskId}"]`, { hasText: words('disks:AddDisk.known.overlays', { count: 1 }) }).locator('[data-action=attach-known]').click();
   await disk(page, 0);
-  await m.locator('[data-field=overlay] option', { hasText: 'Fresh start' }).waitFor({ state: 'attached' });
+  await m.locator('[data-field=overlay] option', { hasText: t('disks:Disks.newOverlay.name') }).waitFor({ state: 'attached' });
   // The same URL added again is that disk: refused here, where it's attached already.
   await addDisk(page, 'url', { url });
-  await page.locator('#add-disk .error', { hasText: 'attached to this machine already' }).waitFor();
+  await page.locator('#add-disk .error', { hasText: words('disks:AddDisk.attachedAlready') }).waitFor();
   await page.keyboard.press('Escape');
   // Detached and deleted from the browser's disks: its record and its overlay go.
-  await m.locator('[data-attachment]').first().getByRole('button', { name: 'Detach' }).click();
+  await m.locator('[data-attachment]').first().getByRole('button', { name: t('disks:Disks.detach.button') }).click();
   await page.waitForFunction(() => document.querySelectorAll('.machines [data-attachment]').length === 0);
   await page.locator('[data-action=add-disk-open]').click();
   await page.locator('#add-disk [data-source=known]').click();
@@ -431,8 +436,8 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
   await page.waitForFunction(() => ['loading', 'booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
   await page.click('#machines-open');
   await m.locator('[data-tab=disks]').click();
-  await page.waitForFunction(() => /running/.test(document.querySelector('.machines .head .meta')?.textContent ?? ''), null, { timeout: 10_000 });
-  await m.locator('[data-attachment]').first().getByRole('checkbox', { name: 'read-only' }).check();
+  await page.waitForFunction((s) => (document.querySelector('.machines .head .meta')?.textContent ?? '').includes(s), t('machines:MachinesPage.state.running'), { timeout: 10_000 });
+  await m.locator('[data-attachment]').first().getByRole('checkbox', { name: t('disks:Disks.readOnly') }).check();
   await page.waitForFunction(async (id) => {
     const { Store } = await import('/web/app/store.ts' as string);
     const store = await Store.open();
@@ -440,7 +445,7 @@ test('a disk\'s read-only box on a running machine: powered off after asking, th
     store.close();
     return rec.attachments[0].readOnly === true;
   }, id, { timeout: 10_000 });
-  assert.match(asked.at(-1)!, /^Power .* off\?/);
+  assert.match(asked.at(-1)!, words('machines:MachinesPage.powerOff.confirm', {}, { start: true }));
   assert.equal(await page.locator('.machines .error').count(), 0, 'no error');
   await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 10_000 });
   assert.deepEqual(errors, []);
@@ -465,7 +470,7 @@ test("the storage footer shows remote disks' kept blocks and clears them", async
   await page.click('#machines-open');
   const clear = page.locator('[data-action=clear-remote-cache]');
   await clear.waitFor();
-  assert.match(await clear.textContent() ?? '', /^Clear remote disks' blocks \(3(\.0)? MiB\)$/);
+  assert.equal(await clear.textContent(), t('machines:MachinesPage.storage.clear', { size: 3 << 20 }));
   await clear.click();
   await clear.waitFor({ state: 'detached' });
   const left = await page.evaluate(async () => {

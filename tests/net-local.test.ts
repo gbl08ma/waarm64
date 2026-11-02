@@ -163,7 +163,7 @@ test('Debian on the page through the local helper: its lease, DNS, TCP to this m
       got = await addrLike(/192\.168\.127\.\d+/, 30);
       if (!/192\.168\.127\./.test(got)) assert.fail(`the helper's lease: ${got}\n${await run("journalctl -b -u systemd-networkd --no-pager -o short-monotonic | sed -n '/Lost carrier/,$p' | head -40", 30_000)}${await context()}`);
       console.log(`# the helper's lease ${((Date.now() - t1) / 1000).toFixed(0)} s after the switch: ${got}`);
-      assert.equal((await local(page))?.state, 'Running', await context());
+      assert.equal((await local(page))?.state, 'Running', await context()); // i18n-ignore
       const routes = await run('ip -4 route');
       assert.match(routes, /default via 192\.168\.127\.1/, routes);
       assert.doesNotMatch(routes, /198\.18|169\.254\.0\.1/, `nothing left of the gateway's lease: ${routes}`);

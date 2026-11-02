@@ -23,6 +23,8 @@ import { startServer } from '../tools/serve.ts';
 import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
+import { t } from '../web/i18n.ts';
+import { words } from './words.ts';
 import { answerAsks } from './page-ask.ts';
 
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -135,8 +137,8 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
     await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&${unattendedQuery()}`);
     assert.equal(await visible(page, '#network'), true, 'Debian can have a card');
     await page.locator('#network summary').click();
-    assert.match(await text(page, '#net-status'), /Not connected/);
-    assert.equal(await text(page, '#net-setup'), 'Connect…');
+    assert.match(await text(page, '#net-status'), words('network:network.notConnected'));
+    assert.equal(await text(page, '#net-setup'), t('network:Network.setup'));
     assert.equal(await visible(page, '#net-disconnect'), false);
 
     // A tailnet: a bad control server or hostname is refused in the form; nothing restarts, nothing of them is saved.
@@ -145,11 +147,11 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
     assert.equal(await visible(page, '#net-step-tailnet'), true);
     await page.fill('#net-control', 'ftp://example.com');
     await page.click('#net-connect');
-    assert.match(await text(page, '#net-error'), /https/);
+    assert.match(await text(page, '#net-error'), words('network:network.notHttps'));
     await page.fill('#net-hostname', 'no good');
     await page.fill('#net-control', 'http://127.0.0.1:1');
     await page.click('#net-connect');
-    assert.match(await text(page, '#net-error'), /hostname/i);
+    assert.match(await text(page, '#net-error'), words('network:network.badHostname'));
     assert.deepEqual(await connections(page), [], 'nothing of it saved');
     // Back to the choice, and forward again: the fields are as they were.
     await page.click('#net-back');
@@ -174,7 +176,7 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
     assert.equal(await visible(page, '#net-status'), true, 'the menu shows how it goes');
     assert.equal(await visible(page, '#net-logout'), true, 'a kept connection is a kept node: it can be logged out');
     assert.equal(await visible(page, '#net-disconnect'), true);
-    assert.equal(await text(page, '#net-setup'), 'Change connection…');
+    assert.equal(await text(page, '#net-setup'), t('network:Network.change'));
     assert.ok(['connecting', 'login', 'error'].includes((await phase(page))!), `unreachable control server: ${await phase(page)}`);
     const saved = await connections(page);
     assert.ok(!JSON.stringify(saved).includes('SECRET'), 'the auth key is never saved');
@@ -194,7 +196,7 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
     await page.locator('#network summary').click();
     await page.click('#net-disconnect');
     await page.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 10_000 });
-    assert.equal(await text(page, '#net-setup'), 'Change connection…', 'the connection stays attached');
+    assert.equal(await text(page, '#net-setup'), t('network:Network.change'), 'the connection stays attached');
     assert.equal(await visible(page, '#net-connect-now'), true);
     assert.equal((await connections(page))[0].connectAtStart, false, 'off at the next start');
     assert.equal(await page.locator('#net-remove').count(), 0, 'the card is always there: nothing to remove');
@@ -210,11 +212,11 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
     await page.uncheck('#net-tc-exit');
     assert.equal(await visible(page, '#net-tailcat'), false);
     await page.click('#net-connect');
-    assert.match(await text(page, '#net-error'), /at least one/);
+    assert.match(await text(page, '#net-error'), words('network:NetWizard.chooseTailcat'));
     await page.check('#net-tc-exit');
     await page.fill('#net-tailcat', 'tcnot-an-address');
     await page.click('#net-connect');
-    assert.match(await text(page, '#net-error'), /isn't a tailcat address/);
+    assert.match(await text(page, '#net-error'), words('network:tailcat.notAddress'));
     assert.equal(await phase(page), 'off');
     if (!tailcatRig) {
       console.log('# SKIPPED: the wizard against a tailcat relay, and serving (WEBPC_TAILCAT=1 and net/ts/build.sh)');
@@ -225,9 +227,9 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
       await page.fill('#net-tailcat', otherServer(tailcatRig));
       await page.uncheck('#net-keep');
       await page.click('#net-connect');
-      await statusIs(page, /Waiting for the tailcat server/, 15_000);
+      await statusIs(page, words('network:network.meowing'), 15_000);
       await page.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'error', null, { timeout: 30_000, polling: 250 });
-      assert.match(await text(page, '#net-status'), /Couldn't connect/);
+      assert.match(await text(page, '#net-status'), words('network:network.couldntConnect'));
       assert.ok(!JSON.stringify(await connections(page)).includes(tailcatRig.slice(2, 30)), 'an ephemeral connection is never stored');
       await page.click('#net-disconnect');
       await page.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 10_000 });
@@ -243,10 +245,10 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
       assert.equal(await page.locator('#net-tc-forget').count(), 0, 'a new connection has no address to forget');
       await page.fill('#net-tc-relay', 'https://nope/');
       await page.click('#net-connect');
-      assert.match(await text(page, '#net-error'), /host/);
+      assert.match(await text(page, '#net-error'), words('network:tailcat.badRelay'));
       await page.fill('#net-tc-relay', '127.0.0.1:8444');
       await page.click('#net-connect');
-      await statusIs(page, /Letting tailcat clients in/, 30_000);
+      await statusIs(page, words('network:network.servingOnly'), 30_000);
       assert.equal(await visible(page, '#net-served'), true);
       assert.equal(await page.getAttribute('#net-served-addr', 'type'), 'password');
       await page.click('#net-served-show');
@@ -271,7 +273,7 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
       await page.reload();
       await running(page);
       await page.locator('#network summary').click();
-      await statusIs(page, /Letting tailcat clients in/, 60_000);
+      await statusIs(page, words('network:network.servingOnly'), 60_000);
       await page.click('#net-served-show');
       assert.equal(await page.locator('#net-served-addr').inputValue(), served, 'the same address after a reload');
       // New address, from the connection's Edit (the Machines page's Connections): the kept one is forgotten, and
@@ -285,7 +287,7 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
       await page.click('#net-connect');
       await page.click('[data-action="back"]');
       await page.locator('#network summary').click();
-      await statusIs(page, /Letting tailcat clients in/, 30_000);
+      await statusIs(page, words('network:network.servingOnly'), 30_000);
       await page.waitForFunction((old) => (document.getElementById('net-served-addr') as HTMLInputElement).value !== old, served, { timeout: 10_000 });
       await page.click('#net-disconnect');
       await page.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 10_000 });
@@ -301,13 +303,13 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
     await page.uncheck('#net-keep');
     await page.click('#net-connect');
     await page.waitForFunction(() => document.getElementById('network')!.dataset.phase !== 'off', null, { timeout: 30_000 });
-    assert.match(await text(page, '#net-conn'), /ephemeral/);
+    assert.match(await text(page, '#net-conn'), words('network:Network.connection.ephemeral'));
     const kept = (await connections(page)).length;
     await page.reload();
     await page.locator('#network summary').click();
-    await page.waitForFunction(() => /gone/.test(document.getElementById('net-hint')!.textContent!), null, { timeout: 30_000 });
+    await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('net-hint')!.textContent!), words('network:net-live.gone').source, { timeout: 30_000 });
     assert.equal(await phase(page), 'off');
-    assert.match(await text(page, '#net-conn'), /No connection attached/);
+    assert.match(await text(page, '#net-conn'), words('network:Network.noConnection'));
     assert.equal((await connections(page)).length, kept, 'the stored ones stay');
     await running(page);
     await onSerial(page, 'root\n');

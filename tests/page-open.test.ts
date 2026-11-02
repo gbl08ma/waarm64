@@ -13,7 +13,9 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
+import { t } from '../web/i18n.ts';
 import { answerAsks } from './page-ask.ts';
+import { words } from './words.ts';
 
 let browser: Browser;
 let base: string;
@@ -55,7 +57,7 @@ test('a machine running in another tab: a second tab says so at once, and starts
     await page.waitForFunction(() => document.body.dataset.state === 'failed', null, { timeout: 30_000 })
       .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => document.body.dataset.state)}: ${await message(page)}`); });
     const waited = Date.now() - t0;
-    assert.match(await message(page), /Elsewhere runs in another tab of this page/);
+    assert.match(await message(page), words('machine:main.runsElsewhere', { name: 'Elsewhere' }));
     assert.ok(waited < 8_000, `said after ${waited} ms (the overlay's wait is 10 s)`);
     // The page didn't queue for the lock behind the other tab: only the holder has it, and no one waits.
     const locks = await holder.evaluate(async (id) => {
@@ -67,8 +69,8 @@ test('a machine running in another tab: a second tab says so at once, and starts
 
     // The other tab lets it go: Retry starts it here (the page holds the lock while it's starting).
     await holder.evaluate(() => (window as unknown as { release: () => void }).release());
-    await page.locator('#message-actions button', { hasText: 'Retry' }).click();
-    await page.waitForFunction(() => !/runs in another tab/.test(document.getElementById('message-text')?.textContent ?? '') && document.body.dataset.state !== 'failed', null, { timeout: 30_000 })
+    await page.locator('#message-actions button', { hasText: t('machine:main.retry') }).click();
+    await page.waitForFunction((src) => !new RegExp(src).test(document.getElementById('message-text')?.textContent ?? '') && document.body.dataset.state !== 'failed', words('machine:main.runsElsewhere', { name: 'Elsewhere' }).source, { timeout: 30_000 })
       .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => document.body.dataset.state)}: ${await message(page)}`); });
   } finally {
     await context.close();
@@ -100,15 +102,15 @@ test('Open disk… and From a disk image… pick through the file picker: the ma
     page.on('pageerror', (e) => errors.push(String(e)));
     await answerAsks(page); // "Open the other machine? This one stops…"
     await page.goto(`${base}/web/app/?${PAGE_QUERY}`);
-    await page.waitForFunction(() => document.body.dataset.state === 'idle' && /Open a disk image/.test(document.getElementById('message-text')?.textContent ?? ''), null, { timeout: 30_000 });
-    const openDisk = page.locator('#message-actions button', { hasText: 'Open disk…' });
+    await page.waitForFunction((src) => document.body.dataset.state === 'idle' && new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), words('machine:main.openDisk.prompt').source, { timeout: 30_000 });
+    const openDisk = page.locator('#message-actions button', { hasText: t('machine:main.openDisk') });
 
     // Cancelled: nothing happens.
     await openDisk.click();
     await page.waitForFunction(() => (window as unknown as { picked: number }).picked === 1);
     await page.waitForTimeout(300);
     assert.equal(await page.evaluate(() => document.body.dataset.state), 'idle');
-    assert.equal(await page.locator('#machine').textContent(), 'AArch64 machine · no disk');
+    assert.equal(await page.locator('#machine').textContent(), t('machine:main.title.noDisk', { machine: t('machines:machine.uefi') }));
 
     // Picked: a machine named after the file, its disk with the handle.
     await page.evaluate(() => { (window as unknown as { pick: string[] }).pick.push('first.raw'); });
@@ -118,7 +120,7 @@ test('Open disk… and From a disk image… pick through the file picker: the ma
     // The Machines page's From a disk image…: the same.
     await page.evaluate(() => { (window as unknown as { pick: string[] }).pick.push('second.raw'); });
     await page.locator('#machines-open').click();
-    await page.locator('.machines button', { hasText: 'From a disk image…' }).click();
+    await page.locator('.machines button', { hasText: t('machines:MachinesPage.fromImage') }).click();
     await page.waitForFunction(() => (document.getElementById('machine')?.textContent ?? '') === 'second', null, { timeout: 10_000 });
 
     const disks = await page.evaluate(async () => {

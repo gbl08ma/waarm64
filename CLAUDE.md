@@ -104,7 +104,8 @@ needs no CI run.
 - **Words the user reads come from the catalog** (`web/messages/en/`, i18next; [docs/i18n.md](docs/i18n.md)): a new
   message gets an entry with a note, keyed by its source file; workers, libraries, the core and C send keys, codes and
   data, only the page renders; errors for the user are `MsgError`s (headline, cause as details). `tools/i18n-check.ts`
-  (in `scripts/ci.sh`) checks it, and the docs quote the page as `[words](ui:key)`.
+  (in `scripts/ci.sh`) checks it, the docs quote the page as `[words](ui:key)`, and tests take its words from the
+  catalog (`t`, `tests/words.ts`; a test that pins words is its own `wording: …` case).
 
 **Testing** ([docs/testing.md](docs/testing.md))
 - New behavior comes with tests at the cheapest layer that catches it. Instruction semantics need

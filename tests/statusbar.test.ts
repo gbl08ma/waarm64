@@ -8,6 +8,7 @@ import type { Status } from '../web/app/protocol.ts';
 import { msg, t } from '../web/i18n.ts';
 
 const MiB = 2 ** 20;
+const RUNNING = t('machine:main.state.running');
 const status = (o: Partial<Status> = {}): Status => ({
   ncpus: 2, ramMiB: 1024, uptime: 10_000, steps: 0, jitBlocks: 1234, jitFlushes: 0, jitCompileMs: 2500, jitSteps: 0, jitBytes: 0, irqs: 0,
   loopMaxMs: 0, loopAgeMs: 0, vcpus: [], stats: {} as Status['stats'],
@@ -15,7 +16,7 @@ const status = (o: Partial<Status> = {}): Status => ({
   disks: [{ read: 0, written: 0 }], nets: [{ rx: 0, tx: 0 }, { rx: 0, tx: 0 }], cpus: [{ steps: 0, jitSteps: 0 }, { steps: 0, jitSteps: 0 }],
   ...o,
 });
-const live: Live = { state: 'running', stateText: 'Running', now: 0, mouseLock: true, mouseLocked: false, keyboardLocked: false, keysFocused: false, mic: 'idle', disks: ['root.qcow2'], nets: [{ name: 'Adapter 1', phase: 'connected', text: '' }, { name: 'Adapter 2', phase: 'off', text: '' }] };
+const live: Live = { state: 'running', stateText: RUNNING, now: 0, mouseLock: true, mouseLocked: false, keyboardLocked: false, keysFocused: false, mic: 'idle', disks: ['root.qcow2'], nets: [{ name: 'Adapter 1', phase: 'connected', text: '' }, { name: 'Adapter 2', phase: 'off', text: '' }] };
 /** Two statuses a second apart: 600 M steps (500 M of them in JIT code), 1000 IRQs, 2 MiB read, 1 MiB received on adapter 2. */
 function second(): Metrics {
   const a = status();
@@ -35,7 +36,7 @@ const disk = (read: string, written: string) => t('statusbar:statusbar.disk.traf
 test('the defaults draw what the bar always showed', () => {
   const m = second();
   assert.equal(DEFAULT_ITEMS.filter((i) => i.kind !== 'divider').map((i) => text(i, m)).join(' · '), [
-    'Running', t('statusbar:statusbar.vcpus', { count: 2 }), '1024 MiB', t('statusbar:statusbar.uptime', { time: '0:00:11' }), mips('600'), inJit('83.3%'), t('statusbar:statusbar.irqs', { irqs: '1,000' }),
+    RUNNING, t('statusbar:statusbar.vcpus', { count: 2 }), '1024 MiB', t('statusbar:statusbar.uptime', { time: '0:00:11' }), mips('600'), inJit('83.3%'), t('statusbar:statusbar.irqs', { irqs: '1,000' }),
   ].join(' · '));
   assert.ok(shows(DEFAULT_ITEMS));
   assert.ok(!shows([{ kind: 'spacer' }, { kind: 'divider' }]), 'only layout: no bar');
@@ -53,7 +54,7 @@ test('rates need two statuses, and none across a new run', () => {
   const m = metrics(status(), 0);
   assert.equal(text({ kind: 'mips' }, m), '', 'no MIPS from one status');
   assert.equal(text({ kind: 'vcpus' }, m), t('statusbar:statusbar.vcpus', { count: 2 }));
-  assert.equal(text({ kind: 'state' }, undefined), 'Running', 'the state needs no status');
+  assert.equal(text({ kind: 'state' }, undefined), RUNNING, 'the state needs no status');
   assert.equal(text({ kind: 'vcpus' }, undefined), '');
 });
 

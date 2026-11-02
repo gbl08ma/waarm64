@@ -23,9 +23,12 @@ The brief: [I18N-KICKOFF.md](I18N-KICKOFF.md). How it works: [docs/i18n.md](docs
   `page-connections` "power off lets a connection go", once `page-usb` "the USB tab"; both read the page right
   after an action, and only words changed in their code). `ci-machines.sh` passes; `ci-debian.sh`'s tests pass with
   `WEBPC_DISTROS=debian`, but its main Debian test skipped (no `linux-snd` image here); `ci-graphics.sh` ran one of three.
-- **Left for the dev VM, before the track ends:** `scripts/ci.sh` (watch those two tests), `scripts/ci-debian.sh
-  --platform`, `ci-graphics.sh`, `ci-net.sh` (the tailnet client's failures are codes now: `net/ts`), `ci-audio.sh`,
-  `ci-usb.sh`, `ci-deqp-vk.sh`'s page (the Venus refusals). Then the track ends: its outcome is docs/i18n.md and the
+- **Tests take the words from the catalog (done, 2026-11-02, after the merge into main):** `tools/i18n-check.ts` reads
+  `tests/` too, `tests/words.ts` gives a message as a pattern, ~45 test files converted (docs/i18n.md "Tests"). In the
+  dev VM on that tree: `scripts/ci.sh` (but `page-usb`'s "the USB tab" under load, alone 3 of 3: backlog),
+  `ci-debian.sh`, `ci-machines.sh`, `ci-net.sh`, `ci-audio.sh` pass.
+- **Left for the dev VM, before the track ends:** `scripts/ci-debian.sh --platform`, `ci-graphics.sh`, `ci-usb.sh`,
+  `ci-deqp-vk.sh`'s page (the Venus refusals). Then the track ends: its outcome is docs/i18n.md and the
   PLAN row; this file and the kickoff go.
 - **For the user's review:** the copy itself (`web/messages/en/`, a note per entry); two choices made: "Mouse lock" in
   docs/frontend.md quotes the status bar element's name (the toolbar menu has no message with those words); the guidance

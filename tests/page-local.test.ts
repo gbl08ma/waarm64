@@ -14,6 +14,8 @@ import type { AddressInfo } from 'node:net';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
+import { t } from '../web/i18n.ts';
+import { words } from './words.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const hasGo = () => {
@@ -106,25 +108,25 @@ test("the helper's pairing link: the wizard on This computer, Attach, connected 
     assert.equal(new URL(page.url()).hash, '', 'the token left the address');
     assert.equal(await page.locator('#net-step-local').isVisible(), true, 'on This computer');
     assert.equal(await page.inputValue('#net-local-url'), ws);
-    assert.match((await page.locator('#net-local-install').textContent()) ?? '', /No release yet/);
+    assert.match((await page.locator('#net-local-install').textContent()) ?? '', words('network:NetWizard.noRelease'));
     assert.equal(await page.isChecked('#net-keep'), true);
-    assert.equal(await page.locator('#net-connect').textContent(), 'Attach', 'the machine is off: attached, connecting at its start');
+    assert.equal(await page.locator('#net-connect').textContent(), t('network:NetWizard.attach'), 'the machine is off: attached, connecting at its start');
     await page.click('#net-connect');
     await page.waitForFunction(() => !(document.getElementById('net-wizard') as HTMLDialogElement).open, null, { timeout: 10_000 });
     const [c] = await connections(page);
-    assert.deepEqual([c.kind, c.name, c.local], ['local', 'This computer', { url: ws }]);
+    assert.deepEqual([c.kind, c.name, c.local], ['local', t('network:connections.thisComputer'), { url: ws }]);
 
     // The machine starts and its adapter connects through the helper.
     await page.reload();
     await phaseIs(page, 'connected');
     await menu(page);
-    assert.match((await page.locator('#net-status').textContent()) ?? '', /^Connected through this computer/);
-    assert.match((await page.locator('#net-conn').textContent()) ?? '', /This computer/);
+    assert.match((await page.locator('#net-status').textContent()) ?? '', words('network:network.connectedLocal', {}, { start: true }));
+    assert.ok(((await page.locator('#net-conn').textContent()) ?? '').includes(t('network:connections.thisComputer')), 'the connection is This computer');
 
     // The helper stops: the menu says so; Retry once it runs again connects again.
     await stopHelper();
     await phaseIs(page, 'error');
-    assert.match((await page.locator('#net-status').textContent()) ?? '', /the helper closed the connection/);
+    assert.match((await page.locator('#net-status').textContent()) ?? '', words('network:local-net.closed'));
     await startHelper();
     await page.click('#net-retry');
     await phaseIs(page, 'connected');
@@ -133,7 +135,7 @@ test("the helper's pairing link: the wizard on This computer, Attach, connected 
     await stopHelper();
     await phaseIs(page, 'error');
     await page.click('#net-retry');
-    await page.waitForFunction(() => /isn't running|couldn't reach the helper/.test(document.getElementById('net-status')?.textContent ?? ''), null, { timeout: 15_000 });
+    await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('net-status')?.textContent ?? ''), words('network:local-net.unreached').source, { timeout: 15_000 });
     await startHelper();
     assert.deepEqual(errors, []);
   } finally {

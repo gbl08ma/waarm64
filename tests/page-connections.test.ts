@@ -15,8 +15,14 @@ import { chromium, type Browser, type BrowserContext, type Page } from 'playwrig
 import { startServer } from '../tools/serve.ts';
 import { answerAsks } from './page-ask.ts';
 import { t } from '../web/i18n.ts';
+import { words } from './words.ts';
 
 const NO_CONNECTION = t('network:Network.noConnection');
+const CHANGE = t('network:Network.change');
+const CONNECT = t('network:NetWizard.connect');
+const ATTACH = t('network:NetWizard.attach');
+/** A connection to choose in the wizard, in use by `holder`'s machine. */
+const heldBy = (holder: string) => words('network:NetWizard.kind.held', { holder });
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
 const WASM = new URL('../target/net/ts.wasm', import.meta.url);
 const skip = !existsSync(FIRMWARE) ? 'SKIPPED: run images/build.sh edk2' : !existsSync(WASM) ? 'SKIPPED: build the tailnet client (net/ts/build.sh)' : undefined;
@@ -108,7 +114,7 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   assert.equal(t.ephemeral, false);
   assert.equal((await adapterOf(pageA, a)).connection, t.id, 'attached to Alpha\'s adapter');
   assert.match(await text(pageA, '#net-conn'), /127\.0\.0\.1:1/);
-  assert.equal(await text(pageA, '#net-setup'), 'Change connection…');
+  assert.equal(await text(pageA, '#net-setup'), CHANGE);
 
   // Bravo, in another tab: Alpha has it, and says so; Use it here takes it (Alpha disconnects and says why).
   const pageB = await context.newPage();
@@ -120,16 +126,18 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   await pageB.click('#net-setup');
   assert.equal(await pageB.locator('#net-step-pick').isVisible(), true);
   const choice = pageB.locator(`[data-connection="${t.id}"]`);
-  await pageB.waitForFunction((id) => /in use by Alpha/.test(document.querySelector(`[data-connection="${id}"]`)?.textContent ?? ''), t.id, { timeout: 5_000 });
+  await pageB.waitForFunction(([id, src]) => new RegExp(src).test(document.querySelector(`[data-connection="${id}"]`)?.textContent ?? ''), [t.id, heldBy('Alpha').source], { timeout: 5_000 });
   await choice.click();
-  assert.equal(await text(pageB, '#net-connect'), 'Connect');
+  assert.equal(await text(pageB, '#net-connect'), CONNECT);
   await pageB.click('#net-connect');
   await pageB.waitForFunction(() => document.getElementById('network')!.dataset.phase !== 'off', null, { timeout: 30_000 });
   assert.equal(asked.length, 1, `asked once: ${asked}`);
-  assert.match(asked[0], /^B: .*in use by Alpha.*Use it here/);
+  assert.match(asked[0], /^B: /);
+  assert.match(asked[0], words('network:net-live.held', { holder: 'Alpha' }));
+  assert.match(asked[0], words('network:main.held.useHere'));
   await pageA.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 15_000 });
   await menu(pageA);
-  assert.match(await text(pageA, '#net-hint'), /taken by another machine/);
+  assert.match(await text(pageA, '#net-hint'), words('network:net-live.taken'));
   assert.equal(await pageA.locator('#net-connect-now').isVisible(), true, 'Alpha keeps it attached: Connect is there');
   assert.equal((await adapterOf(pageB, b)).connection, t.id, 'attached to Bravo too');
 
@@ -138,19 +146,19 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   await pageA.click('[data-tab="network"]');
   await pageA.waitForSelector('[data-adapter="0"] [data-action="detach-connection"]');
   await pageA.click('[data-adapter="0"] [data-action="detach-connection"]');
-  await pageA.waitForFunction(() => /No connection/.test(document.querySelector('[data-adapter="0"] [data-connection-name]')?.textContent ?? ''), null, { timeout: 10_000 });
+  await pageA.waitForFunction((src) => new RegExp(src).test(document.querySelector('[data-adapter="0"] [data-connection-name]')?.textContent ?? ''), words('machines:MachinesPage.adapter.noConnection').source, { timeout: 10_000 });
   assert.equal((await adapterOf(pageA, a)).connection, undefined);
 
   // Bravo: an ephemeral connection in its place, kept nowhere; after a reload it is gone and the adapter says so.
   await menu(pageB);
   await newTailnet(pageB, { hostname: 'bravo', pick: true, keep: false });
   assert.equal((await records(pageB, 'connections')).length, 1, 'the ephemeral one is not stored');
-  assert.match(await text(pageB, '#net-conn'), /ephemeral/);
+  assert.match(await text(pageB, '#net-conn'), words('network:Network.connection.ephemeral'));
   const eph = (await adapterOf(pageB, b)).connection;
   assert.ok(eph && eph !== t.id);
   await pageB.reload();
   await started(pageB);
-  await pageB.waitForFunction(() => /gone/.test(document.getElementById('net-hint')?.textContent ?? ''), null, { timeout: 15_000 });
+  await pageB.waitForFunction((src) => new RegExp(src).test(document.getElementById('net-hint')?.textContent ?? ''), words('network:net-live.gone').source, { timeout: 15_000 });
   assert.equal(await phase(pageB), 'off');
   assert.ok((await text(pageB, '#net-conn')).includes(NO_CONNECTION), 'the menu says no connection is attached');
   assert.equal((await adapterOf(pageB, b)).connection, undefined, 'detached in the record');
@@ -168,7 +176,7 @@ test('connections: a new machine connected in one wizard, another tab\'s machine
   await row.locator('[data-action="delete-connection"]').click();
   await pageB.waitForFunction((id) => !document.querySelector(`li[data-connection="${id}"]`), t.id, { timeout: 10_000 });
   assert.equal(asked.length, 1);
-  assert.match(asked[0], /Delete the connection Home tailnet\?/);
+  assert.match(asked[0], words('network:main.delete.confirm.what', { name: 'Home tailnet' }));
   assert.deepEqual(await records(pageB, 'connections'), []);
   assert.deepEqual(errors, []);
 });
@@ -197,7 +205,7 @@ test('power off lets a connection go; a running machine follows what another tab
   assert.equal((await records(pageA, 'connections'))[0].connectAtStart, true, "it isn't a Disconnect");
   await menu(pageA);
   assert.equal(await pageA.locator('#net-connect-now').isVisible(), false);
-  assert.equal(await text(pageA, '#net-setup'), 'Change connection…');
+  assert.equal(await text(pageA, '#net-setup'), CHANGE);
 
   // Bravo runs in another tab; from Alpha's tab, attaching to it connects it there at once.
   const pageB = await context.newPage();
@@ -210,7 +218,7 @@ test('power off lets a connection go; a running machine follows what another tab
   await pageA.click('[data-tab="network"]');
   await pageA.click('[data-adapter="0"] [data-action="attach-connection"]');
   await pageA.locator(`#net-wizard [data-connection="${t.id}"]`).click();
-  assert.equal(await text(pageA, '#net-connect'), 'Attach');
+  assert.equal(await text(pageA, '#net-connect'), ATTACH);
   await pageA.click('#net-connect');
   await pageB.waitForFunction(() => document.getElementById('network')!.dataset.phase !== 'off', null, { timeout: 15_000 });
   assert.deepEqual(await locks(), [`webpc-net:${t.id}`], 'Bravo holds it');

@@ -14,6 +14,7 @@ import { credentialsQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
+import { t } from '../web/i18n.ts';
 
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -139,7 +140,7 @@ test("a disk stored in the browser (1): imported, its overlays as variants (chan
   const { id } = imported;
   storedRun.id = id;
 
-  // 1. Its first overlay ("Changes", made at the start) takes a file; its generation moves.
+  // 1. Its first overlay (the page's, made at the start) takes a file; its generation moves.
   await boot(page, id, 'over its first overlay');
   await ok(page, 'echo one > /root/one && sync');
   await powerOff(page);
@@ -147,7 +148,7 @@ test("a disk stored in the browser (1): imported, its overlays as variants (chan
     const m = await store.get('machines', a);
     return store.get('overlays', m.attachments[0].overlay);
   }, id);
-  assert.equal(first.name, 'Changes');
+  assert.equal(first.name, t('disks:main.overlayName'));
   assert.ok(first.generation >= 1 && first.bytes > 0, `generation ${first.generation}, ${first.bytes} bytes`);
 
   // 2. Its changes saved and loaded into a new overlay; an empty one beside them; the machine switched to the loaded one.
@@ -161,7 +162,7 @@ test("a disk stored in the browser (1): imported, its overlays as variants (chan
     await disks.switchOverlay(store, m, m.attachments[0].id, loaded.id);
     return { loaded: loaded.name, empty: empty.id, names: (await store.overlaysOf(d.id)).map((o: { name: string }) => o.name).sort() };
   }, id);
-  assert.deepEqual(variants.names, ['Changes', 'Fresh', 'saved-changes']);
+  assert.deepEqual(variants.names, [t('disks:main.overlayName'), 'Fresh', 'saved-changes'].sort());
   await boot(page, id, 'over the loaded changes');
   assert.equal(await ok(page, 'cat /root/one'), 'one');
   await ok(page, 'echo two > /root/two && sync');
@@ -184,7 +185,7 @@ test('a disk stored in the browser (2): an overlay merged into it, then written 
     await store.put('machines', m2);
     return { costs, blocks, before, after: (await store.get('disks', m.attachments[0].disk)).generation, overlays: (await store.overlaysOf(m.attachments[0].disk)).length, files: await store.files.list('overlays') };
   }, id);
-  assert.deepEqual(merged.costs, ['Changes', 'Fresh']);
+  assert.deepEqual(merged.costs, [t('disks:main.overlayName'), 'Fresh'].sort());
   assert.ok(merged.blocks > 0 && merged.after === merged.before + 1, JSON.stringify(merged));
   assert.equal(merged.overlays, 0);
   assert.deepEqual(merged.files, []);

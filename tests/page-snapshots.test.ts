@@ -18,6 +18,8 @@ import { credentialsQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
+import { t } from '../web/i18n.ts';
+import { words } from './words.ts';
 
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -107,11 +109,11 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   const keep = async (name: string) => {
     const before = await page.locator('#message').getAttribute('data-snapshot');
     await page.locator('#save-snapshot').click();
-    await page.waitForFunction((b) => document.getElementById('message')?.dataset.snapshot !== (b ?? undefined) && (document.getElementById('message-text')?.textContent ?? '').startsWith('Kept the snapshot '), before, { timeout: 120_000 });
+    await page.waitForFunction(([b, src]) => document.getElementById('message')?.dataset.snapshot !== (b ?? undefined) && new RegExp(src!).test(document.getElementById('message-text')?.textContent ?? ''), [before, words('snapshots:main.kept', {}, { start: true }).source] as const, { timeout: 120_000 });
     keepAs = name;
     await page.locator('#machines-open').click();
     await page.locator('.machines [data-tab=snapshots]').click();
-    await page.locator('.machines [data-snapshot]').first().getByRole('button', { name: 'Rename' }).click();
+    await page.locator('.machines [data-snapshot]').first().getByRole('button', { name: t('snapshots:Snapshots.rename') }).click();
     await page.locator('.machines [data-snapshot]', { hasText: name }).waitFor({ timeout: 10_000 });
     await page.locator('[data-action=back]').click();
   };
@@ -132,14 +134,14 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   const restore = async (name: string) => {
     await page.click('#machines-open');
     await page.locator('.machines [data-tab=snapshots]').click();
-    await page.locator('.machines [data-snapshot]', { hasText: name }).getByRole('button', { name: 'Restore' }).click();
+    await page.locator('.machines [data-snapshot]', { hasText: name }).getByRole('button', { name: t('snapshots:Snapshots.restore') }).click();
     await page.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 30_000, polling: 50 })
       .catch((e) => { throw new Error(`${e}; the last dialog: ${dialogs.at(-1)}`); });
     await stateIs(page, 'running');
   };
   // "one": the overlay moved on since, so its state goes into a new overlay; the newer state stays in the old one.
   await restore('one');
-  assert.match(dialogs.at(-2)!, /changed since, so the snapshot's state goes into a new overlay/);
+  assert.match(dialogs.at(-2)!, words('snapshots:main.restore.fork.new'));
   assert.equal(await ok(page, 'cat /root/f /mnt/r/x'), 'a r-one');
   const after1 = await record<{ overlays: { name: string; fork?: unknown }[]; attached: string }>(page, `async (store, id) => {
     const m = await store.get('machines', id);
@@ -147,7 +149,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
     return { overlays: overlays.map((o) => ({ name: o.name, fork: o.fork })), attached: overlays.find((o) => o.id === m.attachments[0].overlay).name };
   }`, id);
   assert.equal(after1.attached, 'one', 'the fork is attached');
-  assert.deepEqual(after1.overlays.map((o) => o.name).sort(), ['Changes', 'one']);
+  assert.deepEqual(after1.overlays.map((o) => o.name).sort(), [t('disks:main.overlayName'), 'one'].sort());
   // "three" from there: its state was the old overlay's (moved on since too: the machine wrote after it), forked again.
   await restore('three');
   assert.equal(await ok(page, 'cat /root/f'), 'c');
@@ -160,7 +162,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   await stateIs(page, 'suspended');
   await page.goto(url);
   await stateIs(page, 'running');
-  assert.match(await page.locator('#message-text').textContent() ?? '', /Resumed/);
+  assert.match(await page.locator('#message-text').textContent() ?? '', words('machine:worker.resumed'));
   assert.equal(await ok(page, 'cat /root/f /mnt/r/x'), 'b r-two');
   // Suspended again, then its overlay switched: the next load boots instead, with a note.
   await page.locator('#suspend').click();
@@ -174,8 +176,8 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   }`, id);
   await page.goto(url);
   await stateIs(page, 'booting', 'running');
-  assert.match(await page.locator('#message-text').textContent() ?? '', /couldn't be resumed, so it was dropped/);
-  assert.match(await page.locator('#message-details').textContent() ?? '', /disk has changed/); // why: the note's detail
+  assert.match(await page.locator('#message-text').textContent() ?? '', words('machine:worker.notResumed'));
+  assert.match(await page.locator('#message-details').textContent() ?? '', words('machine:worker.diskChanged')); // why: the note's detail
 
   // A RAM change orphans every snapshot (it asks first; the machine restarts with it); the Machines page deletes them in one action.
   await page.locator('#machines-open').click();
@@ -187,7 +189,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   await m.locator('[data-tab=snapshots]').click();
   await page.locator('.machines .orphan').first().waitFor();
   assert.equal(await page.locator('.machines .orphan').count(), 3);
-  assert.match(await page.locator('.machines .orphan').first().textContent() ?? '', /memory: 1024 MiB then, 2048 MiB now/);
+  assert.match(await page.locator('.machines .orphan').first().textContent() ?? '', words('machines:shape.diff.ram', { was: 1024, now: 2048 }));
   await page.locator('.machines [data-action=delete-orphaned]').click();
   await page.waitForFunction(() => document.querySelectorAll('.machines [data-snapshot]').length === 0, null, { timeout: 10_000 });
   assert.equal((await record<unknown[]>(page, `async (store, id) => store.snapshotsOf(id)`, id)).length, 0);

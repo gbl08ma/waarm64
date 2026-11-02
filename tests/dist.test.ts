@@ -11,6 +11,7 @@ import { chromium, type Browser } from 'playwright-core';
 import { BINARIES, VULKAN, writeDist } from '../tools/dist.ts';
 import { ROOT, startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
+import { t } from '../web/i18n.ts';
 
 const skipCopy = BINARIES.some((f) => !existsSync(join(ROOT, f))) && 'SKIPPED: npm start --prepare-only builds the binaries';
 const buildroot = existsSync(join(ROOT, 'target/images/buildroot/rootfs.ext4')) && existsSync(join(ROOT, 'target/images/linux/Image'));
@@ -85,7 +86,7 @@ test('the static copy opens idle and boots Buildroot in Chromium', { skip }, asy
   await page.goto(`${base}/web/app/?probe=1#here`);
   await page.waitForURL(`${base}/?probe=1#here`);
   await page.goto(`${base}/`);
-  await page.waitForFunction(() => document.body.dataset.state === 'idle' && /Open a disk image/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 10_000 });
+  await page.waitForFunction((said) => document.body.dataset.state === 'idle' && (document.getElementById('message-text')?.textContent ?? '').includes(said), t('machine:main.openDisk.prompt'), { timeout: 10_000 });
   await page.goto(`${base}/?${PAGE_QUERY}machine=buildroot&ncpus=1`);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 60_000, polling: 250 });
   assert.deepEqual(errors, []);

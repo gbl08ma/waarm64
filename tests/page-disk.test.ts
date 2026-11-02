@@ -22,7 +22,9 @@ import { startServer } from '../tools/serve.ts';
 import { credentialsQuery, unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
+import { t } from '../web/i18n.ts';
 import { answerAsks } from './page-ask.ts';
+import { words } from './words.ts';
 
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -108,8 +110,8 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   // The page's own machine (no `machine=`) has no disk: it starts nothing, says how to bring one, and names no distribution.
   // The serial terminal only (the keys test's GRUB menu is on it); Debian's credentials, for its unattended first boot.
   await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=terminal&display=simple&${credentialsQuery()}`);
-  await page.waitForFunction(() => document.body.dataset.state === 'idle' && /Open a disk image/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 10_000 });
-  assert.equal(await page.locator('#machine').textContent(), 'AArch64 machine · no disk');
+  await page.waitForFunction((src) => document.body.dataset.state === 'idle' && new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('machine:main.openDisk.prompt').source, { timeout: 10_000 });
+  assert.equal(await page.locator('#machine').textContent(), t('machine:main.title.noDisk', { machine: t('machines:machine.uefi') }));
   assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /debian/i);
   await page.locator('#restart').click(); // Start: still waiting for a disk
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'idle');
@@ -196,13 +198,13 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   assert.equal(download.suggestedFilename(), 'mydisk-changes.qcow2');
   const downloaded = join(dir, 'mydisk-changes.qcow2');
   await download.saveAs(downloaded);
-  await page.waitForFunction(() => /^Saved /.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 30_000 });
+  await page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('disks:main.saved.changes', {}, { start: true }).source, { timeout: 30_000 });
   await page.evaluate(() => {
     (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('picked.qcow2', { create: true });
   });
   await page.locator('.machines [id^=export-] summary').click();
   await page.locator('.machines [data-save=changes]').click();
-  await page.waitForFunction(() => /^Saved picked\.qcow2/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 120_000 });
+  await page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('disks:main.saved.changes', { name: 'picked.qcow2' }, { start: true }).source, { timeout: 120_000 });
   await back();
   const picked = Buffer.from(await page.evaluate(async () => {
     const f = await (await (await navigator.storage.getDirectory()).getFileHandle('picked.qcow2')).getFile();
@@ -227,7 +229,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   // A reload opens the machine again, which asks for its file (a File picked without a handle isn't remembered);
   // choosing the file again finds its machine and its changes.
   await page.reload();
-  await page.waitForFunction(() => document.body.dataset.state === 'idle' && /picking again/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 30_000 });
+  await page.waitForFunction((src) => document.body.dataset.state === 'idle' && new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('disks:main.needsUser', { count: 1 }).source, { timeout: 30_000 });
   await choose();
   await onSerial(page, 'root\n');
   await shows(page, /root@\S+:~# /);
@@ -249,7 +251,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   });
   try {
     await exportDisk('qcow2');
-    await page.waitForFunction(() => /was the disk this machine runs from/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 30_000 });
+    await page.waitForFunction((src) => new RegExp(src).test((document.getElementById('message-text')?.textContent ?? '')), words('disks:main.save.emptied').source, { timeout: 30_000 });
     assert.equal(await page.evaluate(() => (window as unknown as { suggested: string }).suggested), 'mydisk-saved.qcow2');
     assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', 'the machine wasn\'t stopped for it');
     await back();
@@ -273,7 +275,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   await page2.setInputFiles('#load-changes-input', downloaded);
   await page2.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 60_000, polling: 100 }); // stopped for the load
   await running(page2, 'off');
-  assert.match(dialogs[0], /^Load the changes in mydisk-changes\.qcow2\?/);
+  assert.match(dialogs[0], words('disks:main.changes.confirm', { name: 'mydisk-changes.qcow2' }, { start: true })); // or its .running variant: the same start
   await onSerial(page2, 'root\n');
   await shows(page2, /root@\S+:~# /);
   await onSerial(page2, 'cat /root/own-mark\n');

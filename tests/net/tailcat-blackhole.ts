@@ -61,7 +61,7 @@ const client = new TsClient(m, { addr }, {
   packet(p) { if (p[0] >> 4 === 4 && p[9] === 17 && p.length >= 32) last = Math.max(last, new DataView(p.buffer, p.byteOffset).getUint32(28)); },
   event(e) {
     if (e.type === 'log') console.error('[ts]', e.msg);
-    if (e.type === 'state' && e.state === 'Running') running.resolve();
+    if (e.type === 'state' && e.state === 'Running') running.resolve(); // i18n-ignore
     if (e.type === 'state' && e.state === 'Failed') running.reject(failureOf(e));
   },
 });
