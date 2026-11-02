@@ -17,6 +17,7 @@ step tailnet client; net/ts/build.sh
 step npm deps;    [ node_modules/.package-lock.json -nt package-lock.json ] || npm ci --no-fund --no-audit
 step typecheck;   npx tsc --noEmit
 step svelte-check; npm run -s svelte-check
+step i18n;        node --disable-warning=ExperimentalWarning tools/i18n-check.ts
 current() { images/build.sh --check "$1" > /dev/null; }
 export WEBPC_DISTROS=${WEBPC_DISTROS-$(current alpine && echo alpine)$(current alpine-user && echo ,alpine-user)$(current alpine-uefi && echo ,alpine-uefi)}
 export WEBPC_LONG_TESTS=${WEBPC_LONG_TESTS-1}

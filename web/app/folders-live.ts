@@ -10,6 +10,7 @@ import { attachFolder, detachFolder, folderLock, folderSpecs, moveFolder, readsO
 import { heldLocks, Locks } from './locks.ts';
 import type { FolderAttachment, MachineRecord } from './shape.ts';
 import type { Store } from './store.ts';
+import { errorText } from '../i18n.ts';
 
 /**
  * Why an attached folder isn't served. `permission`: the browser needs a click; `held`: another machine has it;
@@ -164,7 +165,7 @@ export class PageFolders {
       this.problems.delete(a.id);
     } catch (e) {
       this.locks.drop(lock);
-      this.problems.set(a.id, { problem: 'failed', holder: String((e as Error).message ?? e) });
+      this.problems.set(a.id, { problem: 'failed', holder: errorText(e) });
     }
   }
 
