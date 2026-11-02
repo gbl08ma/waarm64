@@ -7,6 +7,7 @@
 // before their record do it inside `writing`, which the sweep waits out (a Web Lock, shared by
 // every tab). Other tabs hear of every change through a BroadcastChannel (`onChange`): their
 // views reread. DOM-free: Node's tests run it over memory (`memoryRecords`, `memoryFiles`).
+import { MsgError } from '../msg.ts';
 import type { Connection } from './connections.ts';
 import type { Folder } from './folders.ts';
 import { isId, type DiskIdentity, type DiskRecord, type MachineRecord, type Shape } from './shape.ts';
@@ -204,7 +205,7 @@ export class Store {
   /** Deletes a base disk and its overlays (records, then files). Refused while a machine attaches it. */
   async deleteDisk(id: string) {
     const users = await this.machinesWith(id);
-    if (users.length) throw new Error(`the disk is attached to ${users.map((m) => m.name).join(', ')}: detach it first`);
+    if (users.length) throw new MsgError('machines:store.diskAttached', { machines: users.map((m) => m.name) });
     for (const o of await this.overlaysOf(id)) await this.deleteOverlay(o.id);
     await this.records.delete('disks', id);
     this.said({ kind: 'disks', id, deleted: true });

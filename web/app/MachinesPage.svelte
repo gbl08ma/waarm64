@@ -17,6 +17,8 @@
   import Usb from './Usb.svelte';
   import UsbProblems from './UsbProblems.svelte';
   import { ask } from './ask.svelte.ts';
+  import T from './T.svelte';
+  import { msg, said, t, text, MsgError, type Msg } from '../i18n.ts';
   import { machineDir, type Store, type OverlayRecord } from './store.ts';
   import { suspended as suspendedCopy } from '../overlay.ts';
   import type { Connection } from './connections.ts';
@@ -27,7 +29,7 @@
   import type { PageNetwork } from './net-live.ts';
   import { adaptersOf, MAX_ADAPTERS, type DiskRecord, type MachineRecord } from './shape.ts';
   import { clearCaches } from '../diskcache.ts';
-  import { askPersist, bytesText, createMachine, deleteMachine, duplicateMachine, isRunning, movedAdapter, storageReport, updateMachine, withAdapter, withoutAdapter } from './machines.ts';
+  import { askPersist, createMachine, deleteMachine, duplicateMachine, isRunning, movedAdapter, storageReport, updateMachine, withAdapter, withoutAdapter } from './machines.ts';
   import { exportDefinition, importDefinition, parseDefinition } from './definitions.ts';
   import { leaveWarning, remember, settings } from './settings.ts';
   import { page, ui, type MachinesTab } from './ui.svelte.ts';
@@ -100,13 +102,13 @@
   const plain = (m: MachineRecord) => $state.snapshot(m) as MachineRecord;
   const isOn = (id: string) => running.has(id);
   /** Running, suspended or off. */
-  const stateText = (id: string) => (isOn(id) ? 'running' : suspended.has(id) ? 'suspended' : 'off');
+  const stateText = (id: string) => (isOn(id) ? msg('machines:MachinesPage.state.running') : suspended.has(id) ? msg('machines:MachinesPage.state.suspended') : msg('machines:MachinesPage.state.off'));
 
   /** Powers machine `m` off, after asking, before an edit that needs it off; false if it can't be (or the user says no). */
   async function offFirst(m: MachineRecord) {
     if (!isOn(m.id)) return true;
-    if (m.id !== ui.current) { error = 'It runs in another tab: power it off there first.'; return false; }
-    if (!(await ask.confirm(`Power ${m.name} off? Like pulling the plug: unsaved work in the guest is lost.`, { ok: 'Power off', danger: true }))) return false;
+    if (m.id !== ui.current) { error = t('machines:MachinesPage.otherTab'); return false; }
+    if (!(await ask.confirm(t('machines:MachinesPage.powerOff.confirm', { name: m.name }), { ok: t('machines:MachinesPage.powerOff.ok'), danger: true }))) return false;
     await page.powerOff();
     await reread();
     return true;
@@ -125,41 +127,42 @@
     if (!m.shares) delete m.shares;
     if (m.sharesMount !== false) delete m.sharesMount;
     if (!m.sharesPath) delete m.sharesPath;
-    await act('Saving', async () => {
-      if (m.sharesPath && sharesPathError(m.sharesPath)) throw new Error(sharesPathError(m.sharesPath));
+    const pathError = m.sharesPath ? sharesPathError(m.sharesPath) : undefined;
+    if (pathError) { error = said(pathError).headline; return; }
+    await act(t('machines:MachinesPage.busy.saving'), async () => {
       const was = machines.find((x) => x.id === m.id)!;
-      if (shapeChanged(was, m) && (await store.snapshotsOf(m.id)).length && !(await ask.confirm('This change orphans its snapshots: they were taken of a machine with the old settings (they stay, marked, until deleted).', { ok: 'Save' }))) return;
+      if (shapeChanged(was, m) && (await store.snapshotsOf(m.id)).length && !(await ask.confirm(t('machines:MachinesPage.orphans.confirm'), { ok: t('machines:MachinesPage.save') }))) return;
       // The machine on this page, running: it restarts with them (the page asks).
       if (restartChanged(was, m) && m.id === ui.current && isOn(m.id)) return page.saveSettings(m);
-      if (restartChanged(was, m) && isOn(m.id)) throw new Error('It runs in another tab: power it off there first.');
+      if (restartChanged(was, m) && isOn(m.id)) throw new MsgError('machines:MachinesPage.otherTab');
       await updateMachine(store, m);
       if (m.id === ui.current) await page.netFollow();
     });
     dirty = false;
   }
   // The keyboard layout: "Match this browser" picks the one the browser reports (web/app/keyboard.ts), for the user to save.
-  let keyboardNote = $state('');
+  let keyboardNote = $state<Msg | undefined>();
   /** What this browser reports now, for the note of a machine that follows it. */
-  let browserNow = $state<string | undefined>();
+  let browserNow = $state<Msg | undefined>();
   browserLayout().then((l) => (browserNow = l?.label), () => {});
   async function matchKeyboard() {
     const l = await browserLayout();
     if (l) { draft!.keyboard = l.id; dirty = true; }
-    keyboardNote = l ? `This browser's keyboard looks like ${l.label}: save to use it.` : "This browser doesn't say which layout its keyboard has (only Chromium-based browsers do), or it isn't one in the list: pick it yourself.";
+    keyboardNote = l ? msg('machines:MachinesPage.keyboard.matched', { layout: l.label }) : msg('machines:MachinesPage.keyboard.unknown');
   }
   // The RAM's split, set by hand (the advanced section; docs/spill-memories.md): memory 0, then the NUMA nodes past it, MiB.
-  let splitProblem = $state('');
+  let splitProblem = $state<Msg | undefined>();
   let ram0Input = $state<HTMLInputElement>();
   let nodesInput = $state<HTMLInputElement>();
   function customSplit(on: boolean) {
     draft!.ramSplit = on ? ramSplitMiB(draft!.ramMiB, undefined, !!draft!.vulkan) : undefined;
-    splitProblem = '';
+    splitProblem = undefined;
     dirty = true;
   }
   /** Takes the two fields: a valid split sets the RAM to its sum, else says what's wrong (and Save waits). */
   function editSplit() {
     const split = [Number(ram0Input!.value), ...nodesInput!.value.split(',').map((x) => x.trim()).filter(Boolean).map(Number)];
-    splitProblem = ramSplitError(split, !!draft!.vulkan) ?? '';
+    splitProblem = ramSplitError(split, !!draft!.vulkan);
     if (!splitProblem) [draft!.ramSplit, draft!.ramMiB] = [split, split.reduce((a, b) => a + b, 0)];
     dirty = true;
   }
@@ -167,9 +170,9 @@
 
   // Definitions in and out (§6): the machine's shape as a small file; disks that are files are picked again at its first start.
   async function exportDef(m: MachineRecord) {
-    await act('Exporting', async () => {
+    await act(t('machines:MachinesPage.busy.exporting'), async () => {
       const def = await exportDefinition(store, m.id);
-      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([JSON.stringify(def, null, 2)], { type: 'application/json' })), download: `${m.name.replace(/[^\w.-]+/g, '-')}.webpc-machine.json` });
+      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([JSON.stringify(def, null, 2)], { type: 'application/json' })), download: `${m.name.replace(/[^\w.-]+/g, '-')}.webpc-machine.json` }); // i18n-ignore: a file name
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
     });
@@ -178,31 +181,34 @@
   const importDef = () => {
     const f = defInput.files?.[0];
     defInput.value = '';
-    if (f) void act('Importing', async () => {
+    if (f) void act(t('machines:MachinesPage.busy.importing'), async () => {
       const r = await importDefinition(store, parseDefinition(await f.text()));
       ui.machinesSelected = r.machine.id;
-      if (r.toPick.length) error = `${r.machine.name} is made. Its files are picked when it first starts: ${r.toPick.join(', ')}.`;
+      if (r.toPick.length) error = t('machines:MachinesPage.imported.toPick', { name: r.machine.name, files: r.toPick });
     });
   };
   async function remove(m: MachineRecord) {
-    if (await ask.confirm(`Delete ${m.name}? Its snapshots and firmware settings are deleted; its disks and their overlays stay.`, { ok: 'Delete', danger: true })) await act('Deleting', () => deleteMachine(store, m.id));
+    if (await ask.confirm(t('machines:MachinesPage.delete.confirm', { name: m.name }), { ok: t('machines:MachinesPage.delete.ok'), danger: true })) await act(t('machines:MachinesPage.busy.deleting'), () => deleteMachine(store, m.id));
   }
 
-  const MOVE_ADAPTER = "Move it: the guest's eth numbers follow this order, and the first adapter that reaches the internet is the default way out (the machine restarts with it)";
+  const MOVE_ADAPTER = t('machines:MachinesPage.adapter.move');
   // The network: each adapter's connection (the record's: attached while the machine runs too), and the browser's connections.
   const conns = $derived((void ui.net, net.connections));
   const live = $derived((void ui.net, net.views()));
-  const kindText = (c: Connection) => `${c.kind === 'tailnet' ? `a tailnet (${new URL(c.tailnet!.controlURL).host})` : c.kind === 'local' ? 'the helper on this computer' : c.tailcat?.exit ? 'tailcat through a server' : 'tailcat, letting clients in'}${c.ephemeral ? ', ephemeral (not kept)' : ''}`;
+  const kindText = (c: Connection): Msg => {
+    const kind = c.kind === 'tailnet' ? msg('machines:MachinesPage.connection.tailnet', { host: new URL(c.tailnet!.controlURL).host }) : c.kind === 'local' ? msg('machines:MachinesPage.connection.local') : c.tailcat?.exit ? msg('machines:MachinesPage.connection.tailcatExit') : msg('machines:MachinesPage.connection.tailcatServe');
+    return c.ephemeral ? msg('machines:MachinesPage.connection.ephemeral', { kind }) : kind;
+  };
   /** Who has connection `c` now: an adapter here, a machine in another tab, or no one. */
-  const stateOf = (c: Connection) => (net.runs(c.id) >= 0 ? 'connected on this page' : net.held.has(c.id) ? 'in use in another tab' : 'not in use');
+  const stateOf = (c: Connection) => (net.runs(c.id) >= 0 ? t('machines:MachinesPage.connection.here') : net.held.has(c.id) ? t('machines:MachinesPage.connection.otherTab') : t('machines:MachinesPage.connection.unused'));
   const usedBy = (c: Connection) => [...machines.filter((m) => m.adapters?.some((a) => a.connection === c.id)).map((m) => m.name), ...(settings().transientNet === c.id && ui.transient ? [ui.transient.label] : [])];
   async function setAtStart(c: Connection, on: boolean) {
     await net.conns.put({ ...c, connectAtStart: on });
     await net.refresh();
   }
   async function logoutConnection(c: Connection) {
-    if (!(await ask.confirm(`Log ${c.name} out? Its node is removed from the tailnet and its keys are forgotten here; connecting again logs in as a new node.`, { ok: 'Log out', danger: true }))) return;
-    await act('Logging out', () => page.netLogoutConnection(c));
+    if (!(await ask.confirm(t('machines:MachinesPage.logout.confirm', { name: c.name }), { ok: t('machines:MachinesPage.logout.ok'), danger: true }))) return;
+    await act(t('machines:MachinesPage.busy.loggingOut'), () => page.netLogoutConnection(c));
   }
 
   // The page's own disk (a transient machine): its export's options.
@@ -213,40 +219,40 @@
 
 {#snippet usbSwitch()}
   {#if draft}
-    <Check bind:checked={draft.usb} field="usb" title="An xHCI with four connectors (USB 2 and USB 3 each) for the machine's USB devices: the guest sees it, so turning it on or off changes the machine's shape">USB controller</Check>
-    {#if !!draft.usb !== !!machines.find((x) => x.id === draft?.id)?.usb}<p class="note warn" data-usb-orphans>Turning the USB controller {draft.usb ? 'on' : 'off'} changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.</p>{/if}
+    <Check bind:checked={draft.usb} field="usb" title={t('machines:MachinesPage.usb.title')}>{t('machines:MachinesPage.usb')}</Check>
+    {#if !!draft.usb !== !!machines.find((x) => x.id === draft?.id)?.usb}<p class="note warn" data-usb-orphans>{draft.usb ? t('machines:MachinesPage.usb.orphans.on') : t('machines:MachinesPage.usb.orphans.off')}</p>{/if}
   {/if}
 {/snippet}
 
 {#snippet vulkanSwitch()}
   {#if draft && draft.display === '3d'}
-    <Check bind:checked={draft.vulkan} field="vulkan" title="Vulkan through Venus beside 3D: the guest's Vulkan programs draw on this browser's WebGPU (what the guest is offered follows its GPU). Experimental: snapshots can't be taken while a program uses it. The guest sees it, so turning it on or off changes the machine's shape">Vulkan (WebGPU, experimental)</Check>
-    {#if !!draft.vulkan !== !!machines.find((x) => x.id === draft?.id)?.vulkan}<p class="note warn" data-vulkan-orphans>Turning Vulkan {draft.vulkan ? 'on' : 'off'} changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.{draft.vulkan && !hasWebgpu ? ' This browser has no WebGPU: its Vulkan programs would draw nothing here.' : ''}</p>{/if}
+    <Check bind:checked={draft.vulkan} field="vulkan" title={t('machines:MachinesPage.vulkan.title')}>{t('machines:MachinesPage.vulkan')}</Check>
+    {#if !!draft.vulkan !== !!machines.find((x) => x.id === draft?.id)?.vulkan}<p class="note warn" data-vulkan-orphans>{!draft.vulkan ? t('machines:MachinesPage.vulkan.orphans.off') : hasWebgpu ? t('machines:MachinesPage.vulkan.orphans.on') : t('machines:MachinesPage.vulkan.orphans.onNoWebgpu')}</p>{/if}
   {/if}
 {/snippet}
 
 {#snippet pointerSwitches()}
   {#if draft}
     {@const rec = machines.find((x) => x.id === draft?.id)}
-    <Check bind:checked={draft.mouse} field="mouse" title="A relative mouse (virtio-input) for the mouse lock's Raw mode: while the screen holds the mouse its motion goes to the guest unbounded by the screen (games), at the guest's own mouse speed. Without it the lock has the Pointer mode only. The guest sees it, so turning it on or off changes the machine's shape">Mouse (the mouse lock's Raw mode)</Check>
-    <Check bind:checked={draft.touch} field="touch" title="A touchscreen (virtio-input, multitouch): the page's touches go to the guest as touches. Without it a touch moves the pointer and clicks. The guest sees it, so turning it on or off changes the machine's shape">Touchscreen</Check>
-    <Check bind:checked={draft.clock} field="clock" title="A clock device (virtio-rtc) that reads the browser's clock: a guest with a driver for it (Linux 6.16 and later) gets a PTP clock that chrony can follow (refclock PHC), so its time stays the browser's across snapshots and the host's sleep, and a read-only RTC. The guest sees it, so turning it on or off changes the machine's shape">Clock device (the browser's time)</Check>
-    {#if !!draft.mouse !== !!rec?.mouse || !!draft.touch !== !!rec?.touch || !!draft.clock !== !!rec?.clock}<p class="note warn" data-pointer-orphans>Adding or removing the mouse, the touchscreen or the clock device changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.</p>{/if}
+    <Check bind:checked={draft.mouse} field="mouse" title={t('machines:MachinesPage.mouse.title')}>{t('machines:MachinesPage.mouse')}</Check>
+    <Check bind:checked={draft.touch} field="touch" title={t('machines:MachinesPage.touch.title')}>{t('machines:MachinesPage.touch')}</Check>
+    <Check bind:checked={draft.clock} field="clock" title={t('machines:MachinesPage.clock.title')}>{t('machines:MachinesPage.clock')}</Check>
+    {#if !!draft.mouse !== !!rec?.mouse || !!draft.touch !== !!rec?.touch || !!draft.clock !== !!rec?.clock}<p class="note warn" data-pointer-orphans>{t('machines:MachinesPage.pointers.orphans')}</p>{/if}
   {/if}
 {/snippet}
 
 {#snippet saveRow()}
-  <div class="row"><button class="primary" onclick={saveSettings} data-action="save" disabled={!dirty || !!splitProblem}>{restartsToSave ? 'Save and restart' : 'Save'}</button>
-    {#if dirty}<button onclick={() => { dirty = false; void reread(); }}>Revert</button>{/if}</div>
+  <div class="row"><button class="primary" onclick={saveSettings} data-action="save" disabled={!dirty || !!splitProblem}>{restartsToSave ? t('machines:MachinesPage.saveRestart') : t('machines:MachinesPage.save')}</button>
+    {#if dirty}<button onclick={() => { dirty = false; void reread(); }}>{t('machines:MachinesPage.revert')}</button>{/if}</div>
 {/snippet}
 
 <div class="machines" data-busy={busy || undefined}>
   <div class="bar">
-    <button class="tool labelled" onclick={() => page.closeMachines()} data-action="back" title="Back to the machine"><Icon name="arrow-left" /><span class="label">Back to the machine</span></button>
-    <h2>Machines</h2>
-    {#if busy}<span class="busy">{busy}…</span>{/if}
+    <button class="tool labelled" onclick={() => page.closeMachines()} data-action="back" title={t('machines:MachinesPage.back')}><Icon name="arrow-left" /><span class="label">{t('machines:MachinesPage.back')}</span></button>
+    <h2>{t('machines:MachinesPage.heading')}</h2>
+    {#if busy}<span class="busy">{t('machines:MachinesPage.busy', { what: busy })}</span>{/if}
   </div>
-  {#if error}<div class="error" role="alert"><div class="text">{error}{#if usbError?.words && usbError.text === error}<UsbProblems words={usbError.words} />{/if}</div><button class="dismiss" aria-label="Close" onclick={() => (error = '')}><Icon name="x" size={14} /></button></div>{/if}
+  {#if error}<div class="error" role="alert"><div class="text">{error}{#if usbError?.words && usbError.text === error}<UsbProblems words={usbError.words} />{/if}</div><button class="dismiss" aria-label={t('machines:MachinesPage.dismiss')} onclick={() => (error = '')}><Icon name="x" size={14} /></button></div>{/if}
   <div class="panes">
     <nav>
       <ul>
@@ -254,7 +260,7 @@
           <li class:chosen={ui.machinesSelected === PAGE}>
             <button class="pick" onclick={() => choose(PAGE)} data-machine={PAGE}>
               <span class="name">{ui.transient.label}</span>
-              <span class="meta">this page's machine (from its address, not kept)</span>
+              <span class="meta">{t('machines:MachinesPage.list.transient')}</span>
             </button>
           </li>
         {/if}
@@ -262,62 +268,62 @@
           <li class:chosen={m.id === ui.machinesSelected}>
             <button class="pick" onclick={() => choose(m.id)} data-machine={m.id}>
               <span class="name">{m.name}</span>
-              <span class="meta">{m.attachments.length} disk{m.attachments.length === 1 ? '' : 's'} · {isOn(m.id) || suspended.has(m.id) || m.id !== ui.current ? stateText(m.id) : 'on this page'}</span>
+              <span class="meta">{t('machines:MachinesPage.list.meta', { count: m.attachments.length, state: isOn(m.id) || suspended.has(m.id) || m.id !== ui.current ? stateText(m.id) : msg('machines:MachinesPage.state.here') })}</span>
             </button>
           </li>
         {/each}
       </ul>
       <div class="new">
-        <button onclick={() => act('Making a machine', async () => { choose((await createMachine(store)).id); })} data-action="new-machine"><Icon name="plus" size={16} />New machine</button>
-        {#if ui.firmware}<button onclick={() => page.openDisk()} title="A machine for a disk image on this computer (qcow2, raw or an ISO), started at once: the same as dropping the file on the page"><Icon name="file" size={16} />From a disk image…</button>{/if}
-        <button onclick={() => defInput.click()} title="A machine definition (.webpc-machine.json): its settings and disks, without their contents"><Icon name="file-import" size={16} />Import a definition…</button>
+        <button onclick={() => act(t('machines:MachinesPage.busy.making'), async () => { choose((await createMachine(store)).id); })} data-action="new-machine"><Icon name="plus" size={16} />{t('machines:MachinesPage.newMachine')}</button>
+        {#if ui.firmware}<button onclick={() => page.openDisk()} title={t('machines:MachinesPage.fromImage.title')}><Icon name="file" size={16} />{t('machines:MachinesPage.fromImage')}</button>{/if}
+        <button onclick={() => defInput.click()} title={t('machines:MachinesPage.importDefinition.title')}><Icon name="file-import" size={16} />{t('machines:MachinesPage.importDefinition')}</button>
         <input type="file" accept=".json,application/json" hidden bind:this={defInput} onchange={importDef} data-field="import-definition">
       </div>
       <div class="new">
-        <button class:chosen={ui.machinesSelected === FOLDERS} onclick={() => choose(FOLDERS)} data-machine={FOLDERS} title="The shared folders this browser keeps, for any machine"><Icon name="folder" size={16} />Shared folders ({(void ui.folders.tick, folders.folders.length)})</button>
-        <button class:chosen={ui.machinesSelected === CONNECTIONS} onclick={() => choose(CONNECTIONS)} data-machine={CONNECTIONS} title="The network connections this browser keeps (tailnets, tailcat), for any machine's adapters"><Icon name="network" size={16} />Connections ({conns.length})</button>
-        <button class:chosen={ui.machinesSelected === PREFERENCES} onclick={() => choose(PREFERENCES)} data-machine={PREFERENCES} title="How the page behaves in this browser, for every machine"><Icon name="adjustments-horizontal" size={16} />Preferences</button>
+        <button class:chosen={ui.machinesSelected === FOLDERS} onclick={() => choose(FOLDERS)} data-machine={FOLDERS} title={t('machines:MachinesPage.folders.title')}><Icon name="folder" size={16} />{t('machines:MachinesPage.folders', { n: (void ui.folders.tick, folders.folders.length) })}</button>
+        <button class:chosen={ui.machinesSelected === CONNECTIONS} onclick={() => choose(CONNECTIONS)} data-machine={CONNECTIONS} title={t('machines:MachinesPage.connections.title')}><Icon name="network" size={16} />{t('machines:MachinesPage.connections', { n: conns.length })}</button>
+        <button class:chosen={ui.machinesSelected === PREFERENCES} onclick={() => choose(PREFERENCES)} data-machine={PREFERENCES} title={t('machines:MachinesPage.preferences.title')}><Icon name="adjustments-horizontal" size={16} />{t('machines:MachinesPage.preferences')}</button>
       </div>
     </nav>
 
     {#if ui.machinesSelected === PREFERENCES}
       <section class="machine" data-selected={PREFERENCES}>
         <div class="head">
-          <span class="title"><h3>Preferences</h3>
-          <span class="meta">Kept by this browser, for every machine.</span></span>
+          <span class="title"><h3>{t('machines:MachinesPage.preferences')}</h3>
+          <span class="meta">{t('machines:MachinesPage.preferences.meta')}</span></span>
         </div>
         <div class="tab settings">
           <Check bind:checked={warnOnLeave} onchange={() => remember({ leaveWarning: warnOnLeave })} field="leave-warning"
-            note="Leaving the page (closing the tab, reloading it, going elsewhere) stops its machine like pulling the plug: unsaved work in the guest is lost. With this on, the browser asks first, in its own words. Suspend keeps a machine to come back to.">Ask before leaving the page while a machine runs</Check>
+            note={t('machines:MachinesPage.leaveWarning.note')}>{t('machines:MachinesPage.leaveWarning')}</Check>
           <Check bind:checked={catchUpClock} onchange={() => remember({ clockSync: catchUpClock })} field="clock-sync"
-            note="Snapshot and Suspend first press the guest's sleep key, so the guest suspends itself (as a laptop does when its lid closes) and is woken once the file is written; loading the file wakes it the same way, so its clock catches up with the time the file sat. A guest that doesn't sleep on the key (no systemd-logind) is saved as it is, after waiting up to 10 s. Off, a snapshot is a pause the guest can hardly tell, and its clock lags until something sets it.">Suspend the guest before taking a snapshot</Check>
+            note={t('machines:MachinesPage.clockSync.note')}>{t('machines:MachinesPage.clockSync')}</Check>
         </div>
         <div class="tab">
-          <h4>Status bar</h4>
+          <h4>{t('machines:MachinesPage.statusBar')}</h4>
           <StatusEditor {net} />
           <div class="settings status-fullscreen">
             <Check bind:checked={ui.statusFullscreen} onchange={() => remember({ statusFullscreen: ui.statusFullscreen })} field="status-fullscreen"
-              note="Off, full screen is the machine alone, edge to edge; on, the bar comes along (its Keyboard element says there whether the browser's shortcuts reach the machine).">Show the status bar in full screen</Check>
+              note={t('machines:MachinesPage.statusFullscreen.note')}>{t('machines:MachinesPage.statusFullscreen')}</Check>
           </div>
         </div>
       </section>
     {:else if ui.machinesSelected === FOLDERS}
       <section class="machine" data-selected={FOLDERS}>
         <div class="head">
-          <span class="title"><h3>Shared folders</h3>
-          <span class="meta">Kept by this browser for any machine; one that writes a folder has it alone.</span></span>
+          <span class="title"><h3>{t('machines:MachinesPage.folders.heading')}</h3>
+          <span class="meta">{t('machines:MachinesPage.folders.meta')}</span></span>
           <span class="grow"></span>
-          <button onclick={() => page.folderWizard(undefined, [])} data-action="new-folder"><Icon name="plus" size={16} />New folder…</button>
+          <button onclick={() => page.folderWizard(undefined, [])} data-action="new-folder"><Icon name="plus" size={16} />{t('machines:MachinesPage.folders.new')}</button>
         </div>
         <div class="tab"><FoldersPane {folders} {store} {act} /></div>
       </section>
     {:else if ui.machinesSelected === CONNECTIONS}
       <section class="machine" data-selected={CONNECTIONS}>
         <div class="head">
-          <span class="title"><h3>Connections</h3>
-          <span class="meta">Kept by this browser for any machine's adapters; one running machine has a connection at a time.</span></span>
+          <span class="title"><h3>{t('machines:MachinesPage.connections.heading')}</h3>
+          <span class="meta">{t('machines:MachinesPage.connections.meta')}</span></span>
           <span class="grow"></span>
-          <button onclick={() => page.netWizard({ mode: 'new' })} data-action="new-connection"><Icon name="plus" size={16} />New connection…</button>
+          <button onclick={() => page.netWizard({ mode: 'new' })} data-action="new-connection"><Icon name="plus" size={16} />{t('machines:MachinesPage.connections.new')}</button>
         </div>
         <div class="tab">
           <ul class="adapters connections">
@@ -325,43 +331,43 @@
               <li data-connection={c.id}>
                 <Icon name="network" size={18} />
                 <div class="what">
-                  <input class="conn-name" value={c.name} aria-label="Name" data-field="connection-name" onchange={(e) => { const name = e.currentTarget.value; void act('Renaming', () => page.netRename(c, name)); }}>
-                  <span class="meta">{kindText(c)} · {stateOf(c)} · {usedBy(c).length ? `attached to ${usedBy(c).join(', ')}` : 'attached to no machine'}</span>
+                  <input class="conn-name" value={c.name} aria-label={t('machines:MachinesPage.connection.name')} data-field="connection-name" onchange={(e) => { const name = e.currentTarget.value; void act(t('machines:MachinesPage.busy.renaming'), () => page.netRename(c, name)); }}>
+                  <span class="meta">{t('machines:MachinesPage.connection.meta', { kind: kindText(c), state: stateOf(c), used: usedBy(c).length ? msg('machines:MachinesPage.connection.usedBy', { machines: usedBy(c) }) : msg('machines:MachinesPage.connection.usedByNone') })}</span>
                 </div>
-                <button onclick={() => page.netWizard({ mode: 'edit', connection: c.id })} data-action="edit-connection" title={c.kind === 'tailnet' ? 'Its hostname (another control server is another connection)' : c.kind === 'local' ? "The helper's link" : 'Its server and relay'}>Edit…</button>
-                {#if c.tailcat?.serve}<button onclick={() => act('Forgetting the address', () => page.netNewAddress(c))} data-action="new-address" title="Forget the connection's tailcat address: whoever has it can't come in any more">New address</button>{/if}
-                {#if net.hasNode(c) || (c.tailnet && net.runs(c.id) >= 0)}<button onclick={() => logoutConnection(c)} data-action="logout-connection" title="Remove the node from the tailnet and forget its keys">Log out</button>{/if}
-                <button onclick={() => act('Deleting', () => page.netDelete(c))} data-action="delete-connection" title="Delete the connection and what this browser keeps of it (its machines lose it)"><Icon name="trash" size={16} />Delete</button>
+                <button onclick={() => page.netWizard({ mode: 'edit', connection: c.id })} data-action="edit-connection" title={c.kind === 'tailnet' ? t('machines:MachinesPage.connection.edit.tailnet') : c.kind === 'local' ? t('machines:MachinesPage.connection.edit.local') : t('machines:MachinesPage.connection.edit.tailcat')}>{t('machines:MachinesPage.connection.edit')}</button>
+                {#if c.tailcat?.serve}<button onclick={() => act(t('machines:MachinesPage.busy.forgettingAddress'), () => page.netNewAddress(c))} data-action="new-address" title={t('machines:MachinesPage.connection.newAddress.title')}>{t('machines:MachinesPage.connection.newAddress')}</button>{/if}
+                {#if net.hasNode(c) || (c.tailnet && net.runs(c.id) >= 0)}<button onclick={() => logoutConnection(c)} data-action="logout-connection" title={t('machines:MachinesPage.connection.logout.title')}>{t('machines:MachinesPage.connection.logout')}</button>{/if}
+                <button onclick={() => act(t('machines:MachinesPage.busy.deleting'), () => page.netDelete(c))} data-action="delete-connection" title={t('machines:MachinesPage.connection.delete.title')}><Icon name="trash" size={16} />{t('machines:MachinesPage.connection.delete')}</button>
               </li>
             {:else}
-              <li class="none">No connections yet: make one here, or from a machine's adapter (its Network tab, or the toolbar's Network menu).</li>
+              <li class="none">{t('machines:MachinesPage.connections.none')}</li>
             {/each}
           </ul>
         </div>
       </section>
     {:else if ui.machinesSelected === PAGE && ui.transient}
       <section class="machine" data-selected={PAGE}>
-        <div class="head"><span class="title"><h3>{ui.transient.label}</h3><span class="meta">This page's machine, from its address: its size is in the toolbar's Machine menu.</span></span></div>
+        <div class="head"><span class="title"><h3>{ui.transient.label}</h3><span class="meta">{t('machines:MachinesPage.transient.meta')}</span></span></div>
         <div class="tabs" role="tablist">
-          <button role="tab" aria-selected={ui.machinesTab !== 'snapshots'} onclick={() => tab('disks')} data-tab="disks"><Icon name="database" size={16} />Disks</button>
-          <button role="tab" aria-selected={ui.machinesTab === 'snapshots'} onclick={() => tab('snapshots')} data-tab="snapshots"><Icon name="history" size={16} />Snapshots</button>
+          <button role="tab" aria-selected={ui.machinesTab !== 'snapshots'} onclick={() => tab('disks')} data-tab="disks"><Icon name="database" size={16} />{t('machines:MachinesPage.tab.disks')}</button>
+          <button role="tab" aria-selected={ui.machinesTab === 'snapshots'} onclick={() => tab('snapshots')} data-tab="snapshots"><Icon name="history" size={16} />{t('machines:MachinesPage.tab.snapshots')}</button>
         </div>
         {#if ui.machinesTab !== 'snapshots'}
           <div class="tab">
             <div class="disk" data-attachment={PAGE}>
               <div class="row"><Icon name="database" size={18} /><strong>{ui.transient.disk}</strong>
-                {#if ui.hasOverlay}<span class="meta">its changes are kept in this browser</span>{/if}</div>
+                {#if ui.hasOverlay}<span class="meta">{t('machines:MachinesPage.transient.overlay')}</span>{/if}</div>
               {#if ui.hasOverlay}
                 <div class="row actions">
-                  <Menu id="save" icon="download" title="Save the disk to a file: the machine stops while it's written" label="Export" bind:open={pageExportOpen} align="left">
-                    <button data-save="changes" title="A small qcow2 holding what the machine wrote, with the image it booted as its backing file (kept beside it)" onclick={() => savePage('changes')}>Changes only (qcow2)</button>
-                    <button data-save="qcow2" title="The whole disk as a qcow2 (empty space left out)" onclick={() => savePage('qcow2')}>Whole disk (qcow2)</button>
-                    <button data-save="raw" title="The whole disk as a raw image" onclick={() => savePage('raw')}>Whole disk (raw)</button>
-                    <Check id="save-compress" bind:checked={compress} onchange={() => remember({ compress })} title="Compressed clusters (deflate), as qemu-img convert -c writes them: the file is about half the size and takes longer to write">Compress the qcow2</Check>
-                    <p class="hint">The machine stops while the file is written, as if its plug were pulled: shut it down first (<code>poweroff</code>) for a clean disk.</p>
+                  <Menu id="save" icon="download" title={t('machines:MachinesPage.export.title')} label={t('machines:MachinesPage.export')} bind:open={pageExportOpen} align="left">
+                    <button data-save="changes" title={t('machines:MachinesPage.export.changes.title')} onclick={() => savePage('changes')}>{t('machines:MachinesPage.export.changes')}</button>
+                    <button data-save="qcow2" title={t('machines:MachinesPage.export.qcow2.title')} onclick={() => savePage('qcow2')}>{t('machines:MachinesPage.export.qcow2')}</button>
+                    <button data-save="raw" title={t('machines:MachinesPage.export.raw.title')} onclick={() => savePage('raw')}>{t('machines:MachinesPage.export.raw')}</button>
+                    <Check id="save-compress" bind:checked={compress} onchange={() => remember({ compress })} title={t('machines:MachinesPage.export.compress.title')}>{t('machines:MachinesPage.export.compress')}</Check>
+                    <p class="hint"><T k="machines:MachinesPage.export.hint">{#snippet code(words: string)}<code>{words}</code>{/snippet}</T></p>
                   </Menu>
-                  <button onclick={() => document.getElementById('load-changes-input')!.click()} title="Put the changes of a saved changes file onto this disk (the disk it was made over must be this one)"><Icon name="upload" size={16} />Import changes…</button>
-                  <button id="reset-disk" disabled={ui.busy} onclick={() => page.resetDisk()} title="Delete what the machine wrote to its disk and boot from the image again"><Icon name="trash" size={16} />Reset disk…</button>
+                  <button onclick={() => document.getElementById('load-changes-input')!.click()} title={t('machines:MachinesPage.importChanges.title')}><Icon name="upload" size={16} />{t('machines:MachinesPage.importChanges')}</button>
+                  <button id="reset-disk" disabled={ui.busy} onclick={() => page.resetDisk()} title={t('machines:MachinesPage.resetDisk.title')}><Icon name="trash" size={16} />{t('machines:MachinesPage.resetDisk')}</button>
                 </div>
               {/if}
             </div>
@@ -375,57 +381,57 @@
       <section class="machine" data-selected={m.id}>
         <div class="head">
           <span class="title"><h3>{m.name}</h3>
-          <span class="meta" data-machine-state>{stateText(m.id)}{m.id === ui.current ? ' · on this page' : ''}</span></span>
+          <span class="meta" data-machine-state>{m.id === ui.current ? t('machines:MachinesPage.head.stateHere', { state: stateText(m.id) }) : text(stateText(m.id))}</span></span>
           <span class="grow"></span>
           {#if m.id !== ui.current}
-            <button onclick={() => page.openMachine(m.id)} data-action="open"><Icon name="player-play" size={16} />Open on this page</button>
+            <button onclick={() => page.openMachine(m.id)} data-action="open"><Icon name="player-play" size={16} />{t('machines:MachinesPage.open')}</button>
           {:else if ui.state === 'running' || ui.state === 'booting' || ui.state === 'loading'}
-            <button data-action="open" disabled title="It runs on this page: its changes take effect at its next start">Running on this page</button>
+            <button data-action="open" disabled title={t('machines:MachinesPage.runningHere.title')}>{t('machines:MachinesPage.runningHere')}</button>
           {:else}
-            <button class="primary" onclick={() => { page.closeMachines(); page.restart(); }} data-action="start" title="Start it on this page, as it is now (its settings and disks)"><Icon name="player-play" size={16} />Start</button>
+            <button class="primary" onclick={() => { page.closeMachines(); page.restart(); }} data-action="start" title={t('machines:MachinesPage.start.title')}><Icon name="player-play" size={16} />{t('machines:MachinesPage.start')}</button>
           {/if}
-          <button onclick={() => act('Copying', async () => { choose((await duplicateMachine(store, m.id)).id); })} title="A new machine with these settings and disks (each with a new empty overlay)"><Icon name="copy" size={16} />Duplicate</button>
-          <button onclick={() => exportDef(m)} title="The machine's settings and disks (which files, which URLs), without their contents, overlays or snapshots"><Icon name="file-export" size={16} />Export the definition</button>
-          <button onclick={() => remove(m)} title="Delete the machine (its disks and their overlays stay)"><Icon name="trash" size={16} />Delete</button>
+          <button onclick={() => act(t('machines:MachinesPage.busy.copying'), async () => { choose((await duplicateMachine(store, m.id)).id); })} title={t('machines:MachinesPage.duplicate.title')}><Icon name="copy" size={16} />{t('machines:MachinesPage.duplicate')}</button>
+          <button onclick={() => exportDef(m)} title={t('machines:MachinesPage.exportDefinition.title')}><Icon name="file-export" size={16} />{t('machines:MachinesPage.exportDefinition')}</button>
+          <button onclick={() => remove(m)} title={t('machines:MachinesPage.machine.delete.title')}><Icon name="trash" size={16} />{t('machines:MachinesPage.machine.delete')}</button>
         </div>
         <div class="tabs" role="tablist">
-          <button role="tab" aria-selected={ui.machinesTab === 'settings'} onclick={() => tab('settings')} data-tab="settings"><Icon name="settings" size={16} />Settings</button>
-          <button role="tab" aria-selected={ui.machinesTab === 'disks'} onclick={() => tab('disks')} data-tab="disks"><Icon name="database" size={16} />Disks ({m.attachments.length})</button>
-          <button role="tab" aria-selected={ui.machinesTab === 'network'} onclick={() => tab('network')} data-tab="network"><Icon name="network" size={16} />Network</button>
-          <button role="tab" aria-selected={ui.machinesTab === 'usb'} onclick={() => tab('usb')} data-tab="usb"><Icon name="usb" size={16} />USB{m.usbDevices?.length ? ` (${m.usbDevices.length})` : ''}</button>
-          <button role="tab" aria-selected={ui.machinesTab === 'folders'} onclick={() => tab('folders')} data-tab="folders"><Icon name="folder" size={16} />Shared folders{m.folders?.length ? ` (${m.folders.length})` : ''}</button>
-          <button role="tab" aria-selected={ui.machinesTab === 'snapshots'} onclick={() => tab('snapshots')} data-tab="snapshots"><Icon name="history" size={16} />Snapshots</button>
+          <button role="tab" aria-selected={ui.machinesTab === 'settings'} onclick={() => tab('settings')} data-tab="settings"><Icon name="settings" size={16} />{t('machines:MachinesPage.tab.settings')}</button>
+          <button role="tab" aria-selected={ui.machinesTab === 'disks'} onclick={() => tab('disks')} data-tab="disks"><Icon name="database" size={16} />{t('machines:MachinesPage.tab.disksCount', { n: m.attachments.length })}</button>
+          <button role="tab" aria-selected={ui.machinesTab === 'network'} onclick={() => tab('network')} data-tab="network"><Icon name="network" size={16} />{t('machines:MachinesPage.tab.network')}</button>
+          <button role="tab" aria-selected={ui.machinesTab === 'usb'} onclick={() => tab('usb')} data-tab="usb"><Icon name="usb" size={16} />{m.usbDevices?.length ? t('machines:MachinesPage.tab.usbCount', { n: m.usbDevices.length }) : t('machines:MachinesPage.tab.usb')}</button>
+          <button role="tab" aria-selected={ui.machinesTab === 'folders'} onclick={() => tab('folders')} data-tab="folders"><Icon name="folder" size={16} />{m.folders?.length ? t('machines:MachinesPage.tab.foldersCount', { n: m.folders.length }) : t('machines:MachinesPage.tab.folders')}</button>
+          <button role="tab" aria-selected={ui.machinesTab === 'snapshots'} onclick={() => tab('snapshots')} data-tab="snapshots"><Icon name="history" size={16} />{t('machines:MachinesPage.tab.snapshots')}</button>
         </div>
         <div class="tab">
           {#if ui.machinesTab === 'settings'}
             <div class="settings" oninput={() => (dirty = true)} onchange={() => (dirty = true)}>
-              <label>Name <input bind:value={draft.name} data-field="name"></label>
-              <label>vCPUs <select bind:value={draft.ncpus} data-field="ncpus">{#each CPU_CHOICES as n}<option value={n}>{n}</option>{/each}</select></label>
-              <label>RAM <select bind:value={draft.ramMiB} data-field="ram" disabled={!!draft.ramSplit} title={draft.ramSplit ? 'The sum of the split below' : ''}>{#each [...new Set([...RAM_CHOICES, draft.ramMiB])].sort((a, b) => a - b) as n}<option value={n}>{n} MiB</option>{/each}</select></label>
-              {#if numaNote(draft.ramMiB, draft.ramSplit, !!draft.vulkan)}<p class="note warn" data-numa>{numaNote(draft.ramMiB, draft.ramSplit, !!draft.vulkan)}</p>{/if}
+              <label>{t('machines:MachinesPage.name')} <input bind:value={draft.name} data-field="name"></label>
+              <label>{t('machines:MachinesPage.ncpus')} <select bind:value={draft.ncpus} data-field="ncpus">{#each CPU_CHOICES as n}<option value={n}>{n}</option>{/each}</select></label>
+              <label>{t('machines:MachinesPage.ram')} <select bind:value={draft.ramMiB} data-field="ram" disabled={!!draft.ramSplit} title={draft.ramSplit ? t('machines:MachinesPage.ram.title') : ''}>{#each [...new Set([...RAM_CHOICES, draft.ramMiB])].sort((a, b) => a - b) as n}<option value={n}>{t('machines:MachinesPage.mib', { n })}</option>{/each}</select></label>
+              {#if numaNote(draft.ramMiB, draft.ramSplit, !!draft.vulkan)}<p class="note warn" data-numa>{text(numaNote(draft.ramMiB, draft.ramSplit, !!draft.vulkan)!)}</p>{/if}
               <details class="advanced" data-ram-split open={!!draft.ramSplit}>
-                <summary>Memory split (advanced)</summary>
-                <Check checked={!!draft.ramSplit} onchange={customSplit} field="custom-split">Set the split myself</Check>
+                <summary>{t('machines:MachinesPage.split')}</summary>
+                <Check checked={!!draft.ramSplit} onchange={customSplit} field="custom-split">{t('machines:MachinesPage.split.custom')}</Check>
                 {#if draft.ramSplit}
                   <div class="split">
-                    <label>Memory 0, MiB <input bind:this={ram0Input} type="number" min="64" step="1" value={draft.ramSplit[0]} onchange={editSplit} data-field="ram0"></label>
-                    <label>NUMA nodes past it, MiB each <input bind:this={nodesInput} value={draft.ramSplit.slice(1).join(', ')} placeholder="none" onchange={editSplit} data-field="ram-nodes"></label>
+                    <label>{t('machines:MachinesPage.split.memory0')} <input bind:this={ram0Input} type="number" min="64" step="1" value={draft.ramSplit[0]} onchange={editSplit} data-field="ram0"></label>
+                    <label>{t('machines:MachinesPage.split.nodes')} <input bind:this={nodesInput} value={draft.ramSplit.slice(1).join(', ')} placeholder={t('machines:MachinesPage.split.nodes.placeholder')} onchange={editSplit} data-field="ram-nodes"></label>
                   </div>
-                  {#if splitProblem}<p class="note warn" data-split-problem>{splitProblem}</p>{/if}
+                  {#if splitProblem}<p class="note warn" data-split-problem>{text(splitProblem)}</p>{/if}
                 {/if}
-                <p class="note">Memory 0 is the fast memory, beside the emulator, up to {MEMORY0_MIB} MiB. Each NUMA node (up to 4096 MiB, at most 8) is a memory of its own, slower to reach. The guest's processors are all on memory 0's node, so Linux fills it first.</p>
+                <p class="note">{t('machines:MachinesPage.split.note', { max: MEMORY0_MIB })}</p>
               </details>
-              <label>JIT cache <select bind:value={draft.jitMiB} data-field="jit" title="The most compiled guest code the emulator keeps before it starts over. The browser spends several times this on it: a smaller cache saves memory, a larger one keeps a big guest's code (a web browser's) compiled">{#each [undefined, ...new Set([...JIT_CHOICES, ...(draft.jitMiB ? [draft.jitMiB] : [])])].sort((a, b) => (a ?? 0) - (b ?? 0)) as n}<option value={n}>{n ? `${n} MiB` : `Default (${JIT_DEFAULT_MIB} MiB)`}</option>{/each}</select></label>
-              <label>Display <select bind:value={draft.display} data-field="display"><option value="3d">3D (WebGL2)</option><option value="2d">2D</option></select></label>
+              <label>{t('machines:MachinesPage.jit')} <select bind:value={draft.jitMiB} data-field="jit" title={t('machines:MachinesPage.jit.title')}>{#each [undefined, ...new Set([...JIT_CHOICES, ...(draft.jitMiB ? [draft.jitMiB] : [])])].sort((a, b) => (a ?? 0) - (b ?? 0)) as n}<option value={n}>{n ? t('machines:MachinesPage.mib', { n }) : t('machines:MachinesPage.jit.default', { n: JIT_DEFAULT_MIB })}</option>{/each}</select></label>
+              <label>{t('machines:MachinesPage.display')} <select bind:value={draft.display} data-field="display"><option value="3d">{t('machines:MachinesPage.display.3d')}</option><option value="2d">{t('machines:MachinesPage.display.2d')}</option></select></label>
               {@render vulkanSwitch()}
-              <label>Keyboard layout <select bind:value={draft.keyboard} onchange={() => (keyboardNote = '')} data-field="keyboard" title="The layout of your keyboard, for the page to set in the guest">{#each [undefined, FOLLOW_BROWSER, ...KEYBOARD_LAYOUTS.map((l) => l.id)] as id}<option value={id}>{id === FOLLOW_BROWSER ? "This browser's, at every boot" : id ? KEYBOARD_LAYOUTS.find((l) => l.id === id)!.label : "Don't set it (the guest's own)"}</option>{/each}</select></label>
-              <button class="beside" onclick={matchKeyboard} data-action="match-keyboard" title="The layout this browser reports for your keyboard"><Icon name="keyboard" size={16} />Match this browser</button>
-              {#if keyboardNote}<p class="note" data-keyboard-match>{keyboardNote}</p>{/if}
-              {#if draft.keyboard === FOLLOW_BROWSER}<p class="note" data-keyboard-note>At every boot the page changes the guest's own keyboard settings to the layout this browser reports{browserNow ? ` (now ${browserNow})` : ''} (console, X11 and Wayland, on a guest with systemd 256 or newer). Where the browser doesn't say (only Chromium-based browsers do), the guest keeps its last layout; so does "Don't set it".</p>{:else if draft.keyboard}<p class="note" data-keyboard-note>The next time the machine boots, the page changes the guest's own keyboard settings to this layout (console, X11 and Wayland, on a guest with systemd 256 or newer), and again at every boot while it is set. "Don't set it" leaves the last layout set.</p>{/if}
+              <label>{t('machines:MachinesPage.keyboard')} <select bind:value={draft.keyboard} onchange={() => (keyboardNote = undefined)} data-field="keyboard" title={t('machines:MachinesPage.keyboard.title')}>{#each [undefined, FOLLOW_BROWSER, ...KEYBOARD_LAYOUTS.map((l) => l.id)] as id}<option value={id}>{id === FOLLOW_BROWSER ? t('machines:MachinesPage.keyboard.follow') : id ? text(KEYBOARD_LAYOUTS.find((l) => l.id === id)!.label) : t('machines:MachinesPage.keyboard.none')}</option>{/each}</select></label>
+              <button class="beside" onclick={matchKeyboard} data-action="match-keyboard" title={t('machines:MachinesPage.keyboard.match.title')}><Icon name="keyboard" size={16} />{t('machines:MachinesPage.keyboard.match')}</button>
+              {#if keyboardNote}<p class="note" data-keyboard-match>{text(keyboardNote)}</p>{/if}
+              {#if draft.keyboard === FOLLOW_BROWSER}<p class="note" data-keyboard-note>{browserNow ? t('machines:MachinesPage.keyboard.followNote.now', { layout: browserNow }) : t('machines:MachinesPage.keyboard.followNote')}</p>{:else if draft.keyboard}<p class="note" data-keyboard-note>{t('machines:MachinesPage.keyboard.setNote')}</p>{/if}
               {@render usbSwitch()}
               {@render pointerSwitches()}
               {@render saveRow()}
-              <p class="note">vCPUs, RAM, the display and Vulkan, the network adapters, the USB controller, the mouse, the touchscreen, the clock device and shared folders make the machine's shape: changing one orphans the snapshots taken before (they stay, marked, until deleted). The JIT cache doesn't: the guest doesn't see it.</p>
+              <p class="note">{t('machines:MachinesPage.shape.note')}</p>
             </div>
           {:else if ui.machinesTab === 'network'}
             <div class="network">
@@ -437,30 +443,30 @@
                   {@const here = m.id === ui.current && at >= 0 ? live[at] : undefined}
                   <li data-adapter={i}>
                     <Icon name="network" size={18} />
-                    <div class="what"><strong>Adapter {i + 1}</strong><span class="meta">virtio-net, MAC {a.mac}</span>
-                      <span class="meta" data-connection-name>{c ? `${c.name}: ${kindText(c)}` : 'No connection: the cable is out'}{here?.active ? ` · ${here.view.text}` : ''}{here?.primary ? ' · the default way out' : ''}</span>
-                      {#if here?.note}<span class="meta warn">{here.note}</span>{/if}</div>
+                    <div class="what"><strong>{t('machines:MachinesPage.adapter', { n: i + 1 })}</strong><span class="meta">{t('machines:MachinesPage.adapter.mac', { mac: a.mac })}</span>
+                      <span class="meta" data-connection-name>{c ? t('machines:MachinesPage.adapter.connection', { name: c.name, kind: kindText(c) }) : t('machines:MachinesPage.adapter.noConnection')}{#if here?.active}{' · '}{said(here.view.text).headline}{/if}{#if here?.primary}{' · '}{t('machines:MachinesPage.adapter.primary')}{/if}</span>
+                      {#if here?.note}<span class="meta warn">{said(here.note).headline}</span>{/if}</div>
                     {#if at >= 0}
-                      {#if c}<Check compact checked={c.connectAtStart} onchange={(on) => void act('Saving', () => setAtStart(c, on))} field="connect-at-start" title="Connect it when the machine starts (Disconnect turns it off)">Connect at start</Check>{/if}
-                      <button onclick={() => page.netWizard({ mode: 'attach', machine: m.id, adapter: at, here: !!here?.on })} data-action="attach-connection" title="A connection of this browser's, or a new one">{c ? 'Change connection…' : 'Attach…'}</button>
-                      {#if c}<button onclick={() => act('Detaching', () => page.netDetach(m.id, at))} data-action="detach-connection" title="Take the connection off the adapter (its client stops)">Detach</button>{/if}
+                      {#if c}<Check compact checked={c.connectAtStart} onchange={(on) => void act(t('machines:MachinesPage.busy.saving'), () => setAtStart(c, on))} field="connect-at-start" title={t('machines:MachinesPage.adapter.atStart.title')}>{t('machines:MachinesPage.adapter.atStart')}</Check>{/if}
+                      <button onclick={() => page.netWizard({ mode: 'attach', machine: m.id, adapter: at, here: !!here?.on })} data-action="attach-connection" title={t('machines:MachinesPage.adapter.attach.title')}>{c ? t('machines:MachinesPage.adapter.change') : t('machines:MachinesPage.adapter.attach')}</button>
+                      {#if c}<button onclick={() => act(t('machines:MachinesPage.busy.detaching'), () => page.netDetach(m.id, at))} data-action="detach-connection" title={t('machines:MachinesPage.adapter.detach.title')}>{t('machines:MachinesPage.adapter.detach')}</button>{/if}
                       {#if here && c && (here.on || here.active)}
-                        {#if here.active}<button onclick={() => act('Disconnecting', () => page.netDisconnect(at))} data-action="disconnect">Disconnect</button>
-                        {:else}<button onclick={() => act('Connecting', () => page.netConnect(at))} data-action="connect">Connect</button>{/if}
+                        {#if here.active}<button onclick={() => act(t('machines:MachinesPage.busy.disconnecting'), () => page.netDisconnect(at))} data-action="disconnect">{t('machines:MachinesPage.adapter.disconnect')}</button>
+                        {:else}<button onclick={() => act(t('machines:MachinesPage.busy.connecting'), () => page.netConnect(at))} data-action="connect">{t('machines:MachinesPage.adapter.connect')}</button>{/if}
                       {/if}
-                    {:else}<span class="meta">Save to attach a connection</span>{/if}
+                    {:else}<span class="meta">{t('machines:MachinesPage.adapter.saveFirst')}</span>{/if}
                     <MoveButtons index={i} count={adaptersOf(draft).length} onmove={(by) => { draft = movedAdapter(draft!, a.id, by); dirty = true; }} upTitle={MOVE_ADAPTER} downTitle={MOVE_ADAPTER} action="adapter" />
-                    <button onclick={() => { draft = withoutAdapter(draft!, a.id); dirty = true; }} title="Take the adapter out (the machine restarts without it)" data-action="remove-adapter"><Icon name="trash" size={16} />Remove</button>
+                    <button onclick={() => { draft = withoutAdapter(draft!, a.id); dirty = true; }} title={t('machines:MachinesPage.adapter.remove.title')} data-action="remove-adapter"><Icon name="trash" size={16} />{t('machines:MachinesPage.adapter.remove')}</button>
                   </li>
                 {:else}
-                  <li class="none">No network adapters: the machine is offline.</li>
+                  <li class="none">{t('machines:MachinesPage.adapters.none')}</li>
                 {/each}
               </ul>
-              {#if adaptersOf(draft).length < MAX_ADAPTERS}<div class="row"><button onclick={() => { draft = withAdapter(draft!); dirty = true; }} data-action="add-adapter"><Icon name="plus" size={16} />Add a network adapter</button></div>{/if}
-              <p class="note">Up to {MAX_ADAPTERS}, each with its own MAC (eth0, eth1… in the guest, in this order). Adding, removing or moving one changes the machine's shape: snapshots taken before are orphaned. A connection is attached, changed or detached while the machine runs, as a cable is; the guest's default route goes through the first adapter that reaches the internet.</p>
-              <Check checked={draft.netConfig !== false} onchange={(on) => { draft!.netConfig = on ? undefined : false; dirty = true; }} field="net-config" title="At every boot the page has the guest's systemd-networkd take what each connection's lease says">
-                Take the connection's settings in the guest
-                {#snippet note()}<span data-net-config-note>{#if draft?.netConfig !== false}At every boot the page has the guest's systemd-networkd take each connection's MTU (a tailnet's is 1280: at the adapter's 1500, large packets can be lost) and search domain (MagicDNS's), and use DHCP on adapters nothing else sets up, on a guest with systemd 256 or newer. Nothing is written to the guest's disk: it lasts until the guest shuts down. NetworkManager takes them by itself.{:else}The page leaves the guest's network settings alone: the guest takes the MTU and search domain only if it is set up to. The next boot has none of the page's settings.{/if}</span>{/snippet}
+              {#if adaptersOf(draft).length < MAX_ADAPTERS}<div class="row"><button onclick={() => { draft = withAdapter(draft!); dirty = true; }} data-action="add-adapter"><Icon name="plus" size={16} />{t('machines:MachinesPage.adapters.add')}</button></div>{/if}
+              <p class="note">{t('machines:MachinesPage.adapters.note', { max: MAX_ADAPTERS })}</p>
+              <Check checked={draft.netConfig !== false} onchange={(on) => { draft!.netConfig = on ? undefined : false; dirty = true; }} field="net-config" title={t('machines:MachinesPage.netConfig.title')}>
+                {t('machines:MachinesPage.netConfig')}
+                {#snippet note()}<span data-net-config-note>{draft?.netConfig !== false ? t('machines:MachinesPage.netConfig.on') : t('machines:MachinesPage.netConfig.off')}</span>{/snippet}
               </Check>
               {@render saveRow()}
             </div>
@@ -474,14 +480,14 @@
             {@const rec = machines.find((x) => x.id === m.id) ?? m}
             {@const pathError = sharesPathError(draft.sharesPath ?? DEFAULT_SHARES_PATH)}
             <div class="settings folders-switch" oninput={() => (dirty = true)} onchange={() => (dirty = true)}>
-              <Check bind:checked={draft.shares} field="shares" title="One virtio-9p device through which the guest reaches this machine's folders: the guest sees it, so turning it on or off changes the machine's shape">Shared folders</Check>
-              {#if !!draft.shares !== !!rec.shares}<p class="note warn" data-shares-orphans>Turning shared folders {draft.shares ? 'on' : 'off'} changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.</p>{/if}
+              <Check bind:checked={draft.shares} field="shares" title={t('machines:MachinesPage.shares.title')}>{t('machines:MachinesPage.shares')}</Check>
+              {#if !!draft.shares !== !!rec.shares}<p class="note warn" data-shares-orphans>{draft.shares ? t('machines:MachinesPage.shares.orphans.on') : t('machines:MachinesPage.shares.orphans.off')}</p>{/if}
               {#if draft.shares}
-                <Check checked={draft.sharesMount !== false} onchange={(on) => { draft!.sharesMount = on ? undefined : false; dirty = true; }} field="shares-mount" title="At every boot the page has the guest's systemd mount the device, at the first access">Mount shared folders in the guest</Check>
+                <Check checked={draft.sharesMount !== false} onchange={(on) => { draft!.sharesMount = on ? undefined : false; dirty = true; }} field="shares-mount" title={t('machines:MachinesPage.sharesMount.title')}>{t('machines:MachinesPage.sharesMount')}</Check>
                 {#if draft.sharesMount !== false}
-                  <label>Mount point <input value={draft.sharesPath ?? DEFAULT_SHARES_PATH} oninput={(e) => { const v = e.currentTarget.value; draft!.sharesPath = v === DEFAULT_SHARES_PATH ? undefined : v; }} data-field="shares-path" spellcheck="false"></label>
-                  {#if pathError}<p class="note warn" data-shares-path-error>{pathError}</p>{/if}
-                  <p class="note" data-shares-path-note>Mounting over a directory that has files hides them.{m.id === ui.current && ui.state === 'running' ? ' A new mount point takes effect at the next start.' : ''} On a guest with systemd 256 or newer; nothing is written to its disk.</p>
+                  <label>{t('machines:MachinesPage.sharesPath')} <input value={draft.sharesPath ?? DEFAULT_SHARES_PATH} oninput={(e) => { const v = e.currentTarget.value; draft!.sharesPath = v === DEFAULT_SHARES_PATH ? undefined : v; }} data-field="shares-path" spellcheck="false"></label>
+                  {#if pathError}<p class="note warn" data-shares-path-error>{said(pathError).headline}</p>{/if}
+                  <p class="note" data-shares-path-note>{m.id === ui.current && ui.state === 'running' ? t('machines:MachinesPage.sharesPath.noteRunning') : t('machines:MachinesPage.sharesPath.note')}</p>
                 {/if}
               {/if}
               {#if dirty}{@render saveRow()}{/if}
@@ -495,16 +501,16 @@
         </div>
       </section>
     {:else}
-      <section class="machine empty"><p>Choose a machine, or make a new one.</p></section>
+      <section class="machine empty"><p>{t('machines:MachinesPage.empty')}</p></section>
     {/if}
   </div>
 
   {#if storage}
     <footer class="storage">
-      <span>The browser's storage: {bytesText(storage.usage)} used of {bytesText(storage.quota)}{storage.persisted ? ', kept under pressure' : ''}.</span>
-      {#if !storage.persisted}<button onclick={() => act('Asking', askPersist)}>Keep it under pressure</button>{/if}
-      {#if storage.remote > 0}<button data-action="clear-remote-cache" title="Remote disks read again from the network (a running machine too, from now on). Kept a week after their last use at most; the browser may also take them back when space runs short" onclick={() => act('Clearing', clearCaches)}>Clear remote disks' blocks ({bytesText(storage.remote)})</button>{/if}
-      <details><summary>What takes it</summary><ul>{#each storage.items.filter((x) => x.bytes > 0) as it}<li>{it.what}: {bytesText(it.bytes)}</li>{/each}</ul></details>
+      <span>{storage.persisted ? t('machines:MachinesPage.storage.persisted', { used: storage.usage, quota: storage.quota }) : t('machines:MachinesPage.storage', { used: storage.usage, quota: storage.quota })}</span>
+      {#if !storage.persisted}<button onclick={() => act(t('machines:MachinesPage.busy.asking'), askPersist)}>{t('machines:MachinesPage.storage.persist')}</button>{/if}
+      {#if storage.remote > 0}<button data-action="clear-remote-cache" title={t('machines:MachinesPage.storage.clear.title')} onclick={() => act(t('machines:MachinesPage.busy.clearing'), clearCaches)}>{t('machines:MachinesPage.storage.clear', { size: storage.remote })}</button>{/if}
+      <details><summary>{t('machines:MachinesPage.storage.items')}</summary><ul>{#each storage.items.filter((x) => x.bytes > 0) as it}<li>{t('machines:MachinesPage.storage.item', { what: it.what, size: it.bytes })}</li>{/each}</ul></details>
     </footer>
   {/if}
 </div>

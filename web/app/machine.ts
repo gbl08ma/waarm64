@@ -4,11 +4,14 @@
 // benchmarks' guest on it; `buildroot` is the small test guest, for the page's
 // smoke test (tests/browser.test.ts) and quick looks. URLs are relative to this module, so
 // nothing here depends on the dev server's layout beyond where target/ is.
-import { MAX_MEMORY0_RAM, splitError, splitRam, VENUS_RESERVE } from '../ram.ts';
+import { msg, type Msg } from '../msg.ts';
+import { MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam, VENUS_RESERVE } from '../ram.ts';
 
 export type Machine = {
-  /** Its name on the page. */
+  /** Its name as the snapshots it makes record it (their header's `label`), and in developers' messages. */
   label: string;
+  /** Its name on the page, in words. */
+  title: Msg;
   /** What makes its images, for the page's message when one is missing. */
   prepare: string;
   /**
@@ -87,7 +90,8 @@ export const MACHINES = {
   // The page's machine (docs/frontend.md): EDK2 and no disk of its own. It waits for the user's disk (Open disk, a drop,
   // `?disk=<url>`), whose loader it boots; a guest without systemd-networkd configures its card itself.
   uefi: {
-    label: 'AArch64 machine',
+    label: 'AArch64 machine', // i18n-ignore: the snapshots' record of it (`title` is its words)
+    title: msg('machines:machine.uefi'),
     prepare: '`npm start` (it builds the firmware)',
     kernel: FIRMWARE,
     firmware: true,
@@ -101,7 +105,8 @@ export const MACHINES = {
   // The tests' and benchmarks' guest (`?machine=debian`, tests/debian-unattended.ts): Debian's published image, unmodified: EDK2 boots its shim and GRUB (docs/firmware.md, docs/images.md "Debian for interaction").
   // No first-boot answers are passed: its first boot asks on the serial console, as on a regular machine.
   debian: {
-    label: 'Debian 13',
+    label: 'Debian 13', // i18n-ignore: the snapshots' record of it (`title` is its words)
+    title: msg('machines:machine.debian'),
     prepare: '`images/build.sh debian edk2`',
     kernel: FIRMWARE,
     firmware: true,
@@ -117,7 +122,8 @@ export const MACHINES = {
   // A shell on the serial console. No fbcon in its kernel: the screen stays black. The root is
   // mounted read-only; the overlay is there so a restart exercises its hand-over (the OPFS locks).
   buildroot: {
-    label: 'Buildroot (test guest)',
+    label: 'Buildroot (test guest)', // i18n-ignore: the snapshots' record of it (`title` is its words)
+    title: msg('machines:machine.buildroot'),
     prepare: '`images/build.sh` (docs/images.md)',
     kernel: images('linux/Image'),
     disk: images('buildroot/rootfs.ext4'),
@@ -130,7 +136,8 @@ export const MACHINES = {
   // The sound test guest (images/snd/init.c, audio S2): plays a 440/660 Hz tone through virtio-snd for
   // `snd_seconds` (?params=snd_seconds=60; 1.024 s without), then powers off. No disk, no screen.
   snd: {
-    label: 'Sound test guest',
+    label: 'Sound test guest', // i18n-ignore: the snapshots' record of it (`title` is its words)
+    title: msg('machines:machine.snd'),
     prepare: '`images/build.sh linux-snd` (docs/images.md)',
     kernel: images('linux-snd/Image'),
     initrd: images('linux-snd/initramfs.cpio'),
@@ -164,17 +171,28 @@ export function ramSplitMiB(ramMiB: number, split?: number[], vulkan = false): n
   const s = splitRam(ramMiB * 2 ** 20, vulkan ? VENUS_RESERVE : 0);
   return [s.ramSize, ...s.spill].map((n) => n / 2 ** 20);
 }
-/** Why `split` (MiB, memory 0 first) isn't one a machine (with Vulkan or not) can have, for the user; undefined when it is. */
-export function ramSplitError(split: number[], vulkan = false): string | undefined {
-  if (!split.length || split.some((n) => !Number.isInteger(n))) return 'sizes are whole MiB';
-  return splitError(split[0] * 2 ** 20, split.slice(1).map((n) => n * 2 ** 20), vulkan ? VENUS_RESERVE : 0);
+/**
+ * Why `split` (MiB, memory 0 first) isn't one a machine (with Vulkan or not) can have, for the user; undefined when it is.
+ * web/ram.ts `splitError` decides; the reasons follow its checks, in its order.
+ */
+export function ramSplitError(split: number[], vulkan = false): Msg | undefined {
+  if (!split.length || split.some((n) => !Number.isInteger(n))) return msg('machines:machine.split.whole');
+  const reserve = vulkan ? VENUS_RESERVE : 0;
+  const [ram, ...spill] = split.map((n) => n * 2 ** 20);
+  if (!splitError(ram, spill, reserve)) return undefined;
+  const mib = (n: number) => n / 2 ** 20;
+  if (!Number.isSafeInteger(ram) || ram < 64 << 20 || ram % 65536) return msg('machines:machine.split.memory0Min');
+  if (ram > MAX_MEMORY0_RAM) return msg('machines:machine.split.memory0Max', { max: mib(MAX_MEMORY0_RAM) });
+  if (spill.length > MAX_SPILL) return msg('machines:machine.split.nodes', { max: MAX_SPILL });
+  const bad = spill.find((s) => !Number.isSafeInteger(s) || s < 65536 || s % 65536 || s > MAX_SPILL_BYTES);
+  if (bad !== undefined) return msg('machines:machine.split.node', { max: mib(MAX_SPILL_BYTES), mib: mib(bad) });
+  return msg('machines:machine.split.vulkan', { max: mib(MAX_SPILL_BYTES - reserve) });
 }
 /** The note for a machine whose RAM goes past memory 0: undefined when it all fits there. */
-export function numaNote(ramMiB: number, split?: number[], vulkan = false): string | undefined {
+export function numaNote(ramMiB: number, split?: number[], vulkan = false): Msg | undefined {
   const [m0, ...spill] = ramSplitMiB(ramMiB, split, vulkan);
   if (!spill.length) return undefined;
-  const nodes = spill.length === 1 ? 'a second NUMA node' : `${spill.length} more NUMA nodes`;
-  return `${m0} MiB of it is the machine's fast memory; the guest gets the other ${ramMiB - m0} MiB as ${nodes}, slower to reach (each access goes through the emulator's slow path), which Linux uses once the first node is full.`;
+  return msg('machines:machine.numa', { count: spill.length, fast: m0, rest: ramMiB - m0 });
 }
 /**
  * The host memory a machine needs, GiB: its RAM, ~1 GiB for the browser and the first vCPU's

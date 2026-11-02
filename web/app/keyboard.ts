@@ -6,6 +6,7 @@
 // manager read it). Both stay in the guest's disk: turning the setting off leaves the last layout set. Not in /run, as
 // the network's settings are (web/app/guest-net.ts): Xorg's xorg.conf.d, localed, console-setup and pam_env read /etc only.
 
+import { msg, type Msg } from '../msg.ts';
 import { guestUnit } from './guest-unit.ts';
 import type { Credential } from './machine.ts';
 
@@ -14,7 +15,7 @@ import type { Credential } from './machine.ts';
  * localed's conversion takes the first match in systemd's kbd-model-map, which for `de` is kbd's 7-bit map (`ö` types
  * `[`), and has none for `ch`, `cz`, Dvorak, Colemak or US international.
  */
-export type KeyboardLayout = { id: string; label: string; layout: string; variant?: string; model?: string; vc: string };
+export type KeyboardLayout = { id: string; label: Msg; layout: string; variant?: string; model?: string; vc: string };
 
 /**
  * Latin-script layouts only (a guest's login and shell need Latin letters; a layout that toggles needs its own
@@ -22,30 +23,30 @@ export type KeyboardLayout = { id: string; label: string; layout: string; varian
  * browser" (`detectLayout`).
  */
 const TABLE: (KeyboardLayout & { sig: Record<string, string> })[] = [
-  { id: 'us', label: 'English (US)', vc: 'us', layout: 'us', sig: { KeyQ: 'q', KeyY: 'y', KeyW: 'w', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=', Backquote: '`', Slash: '/' } },
-  { id: 'us-intl', label: 'English (US, international with dead keys)', vc: 'us-acentos', layout: 'us', variant: 'intl', sig: {} },
-  { id: 'gb', label: 'English (UK)', vc: 'uk', layout: 'gb', sig: { KeyY: 'y', Semicolon: ';', Quote: "'", BracketLeft: '[', Backslash: '#', IntlBackslash: '\\', Minus: '-', Backquote: '`' } },
-  { id: 'us-dvorak', label: 'English (Dvorak)', vc: 'dvorak', layout: 'us', variant: 'dvorak', sig: { KeyQ: "'", KeyW: ',', KeyE: '.', KeyS: 'o', Semicolon: 's', Minus: '[', BracketLeft: '/' } },
-  { id: 'us-colemak', label: 'English (Colemak)', vc: 'colemak', layout: 'us', variant: 'colemak', sig: { KeyE: 'f', KeyR: 'p', KeyS: 'r', KeyD: 's', Semicolon: 'o', KeyJ: 'n', KeyK: 'e' } },
-  { id: 'pt', label: 'Portuguese', vc: 'pt-latin1', layout: 'pt', sig: { Semicolon: 'ç', Quote: 'º', BracketLeft: '+', BracketRight: '´', Backslash: '~', Minus: "'", Equal: '«', Backquote: '\\' } },
-  { id: 'br', label: 'Portuguese (Brazil, ABNT2)', vc: 'br-abnt2', layout: 'br', model: 'abnt2', sig: { Semicolon: 'ç', Quote: '~', BracketLeft: '´', BracketRight: '[', Backslash: ']', Minus: '-', Equal: '=', Backquote: "'", IntlRo: '/' } },
-  { id: 'es', label: 'Spanish', vc: 'es', layout: 'es', sig: { Semicolon: 'ñ', Quote: '´', BracketLeft: '`', BracketRight: '+', Backslash: 'ç', Minus: "'", Equal: '¡', Backquote: 'º' } },
-  { id: 'latam', label: 'Spanish (Latin American)', vc: 'la-latin1', layout: 'latam', sig: { Semicolon: 'ñ', Quote: '{', BracketLeft: '´', BracketRight: '+', Backslash: '}', Minus: "'", Equal: '¿', Backquote: '|' } },
-  { id: 'fr', label: 'French (AZERTY)', vc: 'fr-latin1', layout: 'fr', sig: { KeyQ: 'a', KeyA: 'q', KeyW: 'z', KeyZ: 'w', Semicolon: 'm', KeyM: ',', Digit2: 'é', Quote: 'ù', BracketLeft: '^', Minus: ')', Equal: '=', Backquote: '²', Backslash: '*' } },
-  { id: 'be', label: 'Belgian (AZERTY)', vc: 'be-latin1', layout: 'be', sig: { KeyQ: 'a', KeyA: 'q', KeyW: 'z', Semicolon: 'm', Digit2: 'é', Quote: 'ù', BracketLeft: '^', Minus: ')', Equal: '-', Backquote: '²', Backslash: 'µ' } },
-  { id: 'de', label: 'German', vc: 'de-latin1', layout: 'de', sig: { KeyY: 'z', KeyZ: 'y', Semicolon: 'ö', Quote: 'ä', BracketLeft: 'ü', BracketRight: '+', Minus: 'ß', Equal: '´', Backquote: '^', Backslash: '#', Slash: '-' } },
-  { id: 'ch', label: 'German (Switzerland)', vc: 'de_CH-latin1', layout: 'ch', sig: { KeyY: 'z', KeyZ: 'y', Semicolon: 'ö', Quote: 'ä', BracketLeft: 'ü', BracketRight: '¨', Minus: "'", Equal: '^', Backquote: '§', Backslash: '$', Slash: '-' } },
-  { id: 'ch-fr', label: 'French (Switzerland)', vc: 'fr_CH-latin1', layout: 'ch', variant: 'fr', sig: { KeyY: 'z', KeyZ: 'y', Semicolon: 'é', Quote: 'à', BracketLeft: 'è', BracketRight: '¨', Minus: "'", Equal: '^', Backquote: '§', Backslash: '$' } },
-  { id: 'it', label: 'Italian', vc: 'it', layout: 'it', sig: { Semicolon: 'ò', Quote: 'à', BracketLeft: 'è', BracketRight: '+', Backslash: 'ù', Minus: "'", Equal: 'ì', Backquote: '\\' } },
-  { id: 'se', label: 'Swedish', vc: 'sv-latin1', layout: 'se', sig: { Semicolon: 'ö', Quote: 'ä', BracketLeft: 'å', BracketRight: '¨', Backslash: "'", Minus: '+', Equal: '´', Backquote: '§' } },
-  { id: 'fi', label: 'Finnish', vc: 'fi', layout: 'fi', sig: {} },
-  { id: 'no', label: 'Norwegian', vc: 'no', layout: 'no', sig: { Semicolon: 'ø', Quote: 'æ', BracketLeft: 'å', BracketRight: '¨', Backslash: "'", Minus: '+', Equal: '\\', Backquote: '|' } },
-  { id: 'dk', label: 'Danish', vc: 'dk-latin1', layout: 'dk', sig: { Semicolon: 'æ', Quote: 'ø', BracketLeft: 'å', BracketRight: '¨', Backslash: "'", Minus: '+', Equal: '´', Backquote: '½' } },
-  { id: 'pl', label: 'Polish', vc: 'pl2', layout: 'pl', sig: {} },
-  { id: 'cz', label: 'Czech', vc: 'cz-qwertz', layout: 'cz', sig: { KeyY: 'z', KeyZ: 'y', Digit2: 'ě', Semicolon: 'ů', Quote: '§', BracketLeft: 'ú', BracketRight: ')', Minus: '=', Equal: '´', Backquote: ';' } },
-  { id: 'hu', label: 'Hungarian', vc: 'hu', layout: 'hu', sig: { KeyY: 'z', KeyZ: 'y', Digit0: 'ö', Minus: 'ü', Equal: 'ó', BracketLeft: 'ő', BracketRight: 'ú', Semicolon: 'é', Quote: 'á', Backslash: 'ű', Backquote: '0' } },
-  { id: 'tr', label: 'Turkish (Q)', vc: 'tr_q-latin5', layout: 'tr', sig: { KeyI: 'ı', Semicolon: 'ş', Quote: 'i', BracketLeft: 'ğ', BracketRight: 'ü', Comma: 'ö', Period: 'ç', Minus: '*', Equal: '-', Backquote: '"' } },
-  { id: 'jp', label: 'Japanese', vc: 'jp106', layout: 'jp', model: 'jp106', sig: { Minus: '-', Equal: '^', BracketLeft: '@', BracketRight: '[', Semicolon: ';', Quote: ':', Backslash: ']', IntlYen: '¥', IntlRo: '\\' } },
+  { id: 'us', label: msg('machines:keyboard.us'), vc: 'us', layout: 'us', sig: { KeyQ: 'q', KeyY: 'y', KeyW: 'w', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=', Backquote: '`', Slash: '/' } },
+  { id: 'us-intl', label: msg('machines:keyboard.usIntl'), vc: 'us-acentos', layout: 'us', variant: 'intl', sig: {} },
+  { id: 'gb', label: msg('machines:keyboard.gb'), vc: 'uk', layout: 'gb', sig: { KeyY: 'y', Semicolon: ';', Quote: "'", BracketLeft: '[', Backslash: '#', IntlBackslash: '\\', Minus: '-', Backquote: '`' } },
+  { id: 'us-dvorak', label: msg('machines:keyboard.usDvorak'), vc: 'dvorak', layout: 'us', variant: 'dvorak', sig: { KeyQ: "'", KeyW: ',', KeyE: '.', KeyS: 'o', Semicolon: 's', Minus: '[', BracketLeft: '/' } },
+  { id: 'us-colemak', label: msg('machines:keyboard.usColemak'), vc: 'colemak', layout: 'us', variant: 'colemak', sig: { KeyE: 'f', KeyR: 'p', KeyS: 'r', KeyD: 's', Semicolon: 'o', KeyJ: 'n', KeyK: 'e' } },
+  { id: 'pt', label: msg('machines:keyboard.pt'), vc: 'pt-latin1', layout: 'pt', sig: { Semicolon: 'ç', Quote: 'º', BracketLeft: '+', BracketRight: '´', Backslash: '~', Minus: "'", Equal: '«', Backquote: '\\' } },
+  { id: 'br', label: msg('machines:keyboard.br'), vc: 'br-abnt2', layout: 'br', model: 'abnt2', sig: { Semicolon: 'ç', Quote: '~', BracketLeft: '´', BracketRight: '[', Backslash: ']', Minus: '-', Equal: '=', Backquote: "'", IntlRo: '/' } },
+  { id: 'es', label: msg('machines:keyboard.es'), vc: 'es', layout: 'es', sig: { Semicolon: 'ñ', Quote: '´', BracketLeft: '`', BracketRight: '+', Backslash: 'ç', Minus: "'", Equal: '¡', Backquote: 'º' } },
+  { id: 'latam', label: msg('machines:keyboard.latam'), vc: 'la-latin1', layout: 'latam', sig: { Semicolon: 'ñ', Quote: '{', BracketLeft: '´', BracketRight: '+', Backslash: '}', Minus: "'", Equal: '¿', Backquote: '|' } },
+  { id: 'fr', label: msg('machines:keyboard.fr'), vc: 'fr-latin1', layout: 'fr', sig: { KeyQ: 'a', KeyA: 'q', KeyW: 'z', KeyZ: 'w', Semicolon: 'm', KeyM: ',', Digit2: 'é', Quote: 'ù', BracketLeft: '^', Minus: ')', Equal: '=', Backquote: '²', Backslash: '*' } },
+  { id: 'be', label: msg('machines:keyboard.be'), vc: 'be-latin1', layout: 'be', sig: { KeyQ: 'a', KeyA: 'q', KeyW: 'z', Semicolon: 'm', Digit2: 'é', Quote: 'ù', BracketLeft: '^', Minus: ')', Equal: '-', Backquote: '²', Backslash: 'µ' } },
+  { id: 'de', label: msg('machines:keyboard.de'), vc: 'de-latin1', layout: 'de', sig: { KeyY: 'z', KeyZ: 'y', Semicolon: 'ö', Quote: 'ä', BracketLeft: 'ü', BracketRight: '+', Minus: 'ß', Equal: '´', Backquote: '^', Backslash: '#', Slash: '-' } },
+  { id: 'ch', label: msg('machines:keyboard.ch'), vc: 'de_CH-latin1', layout: 'ch', sig: { KeyY: 'z', KeyZ: 'y', Semicolon: 'ö', Quote: 'ä', BracketLeft: 'ü', BracketRight: '¨', Minus: "'", Equal: '^', Backquote: '§', Backslash: '$', Slash: '-' } },
+  { id: 'ch-fr', label: msg('machines:keyboard.chFr'), vc: 'fr_CH-latin1', layout: 'ch', variant: 'fr', sig: { KeyY: 'z', KeyZ: 'y', Semicolon: 'é', Quote: 'à', BracketLeft: 'è', BracketRight: '¨', Minus: "'", Equal: '^', Backquote: '§', Backslash: '$' } },
+  { id: 'it', label: msg('machines:keyboard.it'), vc: 'it', layout: 'it', sig: { Semicolon: 'ò', Quote: 'à', BracketLeft: 'è', BracketRight: '+', Backslash: 'ù', Minus: "'", Equal: 'ì', Backquote: '\\' } },
+  { id: 'se', label: msg('machines:keyboard.se'), vc: 'sv-latin1', layout: 'se', sig: { Semicolon: 'ö', Quote: 'ä', BracketLeft: 'å', BracketRight: '¨', Backslash: "'", Minus: '+', Equal: '´', Backquote: '§' } },
+  { id: 'fi', label: msg('machines:keyboard.fi'), vc: 'fi', layout: 'fi', sig: {} },
+  { id: 'no', label: msg('machines:keyboard.no'), vc: 'no', layout: 'no', sig: { Semicolon: 'ø', Quote: 'æ', BracketLeft: 'å', BracketRight: '¨', Backslash: "'", Minus: '+', Equal: '\\', Backquote: '|' } },
+  { id: 'dk', label: msg('machines:keyboard.dk'), vc: 'dk-latin1', layout: 'dk', sig: { Semicolon: 'æ', Quote: 'ø', BracketLeft: 'å', BracketRight: '¨', Backslash: "'", Minus: '+', Equal: '´', Backquote: '½' } },
+  { id: 'pl', label: msg('machines:keyboard.pl'), vc: 'pl2', layout: 'pl', sig: {} },
+  { id: 'cz', label: msg('machines:keyboard.cz'), vc: 'cz-qwertz', layout: 'cz', sig: { KeyY: 'z', KeyZ: 'y', Digit2: 'ě', Semicolon: 'ů', Quote: '§', BracketLeft: 'ú', BracketRight: ')', Minus: '=', Equal: '´', Backquote: ';' } },
+  { id: 'hu', label: msg('machines:keyboard.hu'), vc: 'hu', layout: 'hu', sig: { KeyY: 'z', KeyZ: 'y', Digit0: 'ö', Minus: 'ü', Equal: 'ó', BracketLeft: 'ő', BracketRight: 'ú', Semicolon: 'é', Quote: 'á', Backslash: 'ű', Backquote: '0' } },
+  { id: 'tr', label: msg('machines:keyboard.tr'), vc: 'tr_q-latin5', layout: 'tr', sig: { KeyI: 'ı', Semicolon: 'ş', Quote: 'i', BracketLeft: 'ğ', BracketRight: 'ü', Comma: 'ö', Period: 'ç', Minus: '*', Equal: '-', Backquote: '"' } },
+  { id: 'jp', label: msg('machines:keyboard.jp'), vc: 'jp106', layout: 'jp', model: 'jp106', sig: { Minus: '-', Equal: '^', BracketLeft: '@', BracketRight: '[', Semicolon: ';', Quote: ':', Backslash: ']', IntlYen: '¥', IntlRo: '\\' } },
 ];
 
 export const KEYBOARD_LAYOUTS: readonly KeyboardLayout[] = TABLE.map(({ sig: _, ...l }) => l);
@@ -96,7 +97,7 @@ export function keyboardScript(l: KeyboardLayout): string {
   const model = l.model ?? 'pc105';
   const variant = l.variant ?? '';
   const env = [`XKB_DEFAULT_LAYOUT=${l.layout}`, `XKB_DEFAULT_MODEL=${model}`, ...(variant ? [`XKB_DEFAULT_VARIANT=${variant}`] : [])].join('\n');
-  return `# From webpc: the machine's keyboard layout setting (${l.label}), run at every boot while it is on.
+  return `# From webpc: the machine's keyboard layout setting (${l.id}), run at every boot while it is on.
 # Sets KEY="VALUE" in a file, unless it says so already.
 set_kv() {
   grep -qx "$2=\\"$3\\"" "$1" 2>/dev/null && return

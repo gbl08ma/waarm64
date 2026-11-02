@@ -1,1 +1,1286 @@
-{}
+{
+  "machine.uefi": {
+    "message": "AArch64 machine",
+    "note": "The name of the page's own machine (the firmware machine the user opens a disk image on), as the page's title and the Machines page show it before a disk names it."
+  },
+  "machine.debian": {
+    "message": "Debian 13",
+    "note": "The name of the tests' Debian guest (`?machine=debian`), as the page's title and the Machines page show it."
+  },
+  "machine.buildroot": {
+    "message": "Buildroot (test guest)",
+    "note": "The name of the small Buildroot test guest (`?machine=buildroot`), as the page's title and the Machines page show it."
+  },
+  "machine.snd": {
+    "message": "Sound test guest",
+    "note": "The name of the sound test guest (`?machine=snd`), as the page's title shows it."
+  },
+  "machine.split.whole": {
+    "message": "sizes are whole MiB",
+    "note": "Machines page, Settings tab, Memory split (advanced): the warning under the split's fields when a size isn't a whole number of MiB (Save waits)."
+  },
+  "machine.split.memory0Min": {
+    "message": "memory 0 needs at least 64 MiB",
+    "note": "Machines page, Settings tab, Memory split (advanced): the warning under the split's fields when memory 0 is under 64 MiB (Save waits)."
+  },
+  "machine.split.memory0Max": {
+    "message": "memory 0 holds at most {{max}} MiB",
+    "note": "Machines page, Settings tab, Memory split (advanced): the warning under the split's fields when memory 0 is too large (Save waits). {{max}}: the most memory 0 holds, MiB."
+  },
+  "machine.split.nodes": {
+    "message": "at most {{max}} NUMA nodes past memory 0",
+    "note": "Machines page, Settings tab, Memory split (advanced): the warning under the split's fields when it lists too many NUMA nodes (Save waits). {{max}}: the most NUMA nodes (8)."
+  },
+  "machine.split.node": {
+    "message": "a NUMA node holds 1 to {{max}} MiB (not {{mib}})",
+    "note": "Machines page, Settings tab, Memory split (advanced): the warning under the split's fields when a NUMA node's size is out of range (Save waits). {{max}}: the largest node, MiB; {{mib}}: the size the user wrote."
+  },
+  "machine.split.vulkan": {
+    "message": "with Vulkan, the first NUMA node holds at most {{max}} MiB",
+    "note": "Machines page, Settings tab, Memory split (advanced): the warning under the split's fields when, on a machine with Vulkan, the first NUMA node leaves no room for Vulkan's memory (Save waits). {{max}}: its most, MiB."
+  },
+  "machine.numa_one": {
+    "message": "{{fast}} MiB of it is the machine's fast memory; the guest gets the other {{rest}} MiB as a second NUMA node, slower to reach (each access goes through the emulator's slow path), which Linux uses once the first node is full.",
+    "note": "Warning under the RAM choice (Machines page, Settings tab; the toolbar's Machine menu) when the RAM goes past memory 0 into one NUMA node. {{fast}}: memory 0's MiB; {{rest}}: the MiB past it."
+  },
+  "machine.numa_other": {
+    "message": "{{fast}} MiB of it is the machine's fast memory; the guest gets the other {{rest}} MiB as {{count}} more NUMA nodes, slower to reach (each access goes through the emulator's slow path), which Linux uses once the first node is full.",
+    "note": "Warning under the RAM choice (Machines page, Settings tab; the toolbar's Machine menu) when the RAM goes past memory 0 into several NUMA nodes. {{fast}}: memory 0's MiB; {{rest}}: the MiB past it; {{count}}: how many NUMA nodes past memory 0."
+  },
+  "keyboard.us": {
+    "message": "English (US)",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.usIntl": {
+    "message": "English (US, international with dead keys)",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.gb": {
+    "message": "English (UK)",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.usDvorak": {
+    "message": "English (Dvorak)",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.usColemak": {
+    "message": "English (Colemak)",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.pt": {
+    "message": "Portuguese",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.br": {
+    "message": "Portuguese (Brazil, ABNT2)",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.es": {
+    "message": "Spanish",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.latam": {
+    "message": "Spanish (Latin American)",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.fr": {
+    "message": "French (AZERTY)",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.be": {
+    "message": "Belgian (AZERTY)",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.de": {
+    "message": "German",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.ch": {
+    "message": "German (Switzerland)",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.chFr": {
+    "message": "French (Switzerland)",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.it": {
+    "message": "Italian",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.se": {
+    "message": "Swedish",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.fi": {
+    "message": "Finnish",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.no": {
+    "message": "Norwegian",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.dk": {
+    "message": "Danish",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.pl": {
+    "message": "Polish",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.cz": {
+    "message": "Czech",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.hu": {
+    "message": "Hungarian",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.tr": {
+    "message": "Turkish (Q)",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "keyboard.jp": {
+    "message": "Japanese",
+    "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
+  },
+  "shape.diff.mouse.had": {
+    "message": "it had a relative mouse",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine had a relative mouse then, not now."
+  },
+  "shape.diff.mouse.hadNo": {
+    "message": "it had no relative mouse",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine has a relative mouse now, not then."
+  },
+  "shape.diff.touch.had": {
+    "message": "it had a touchscreen",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine had a touchscreen then, not now."
+  },
+  "shape.diff.touch.hadNo": {
+    "message": "it had no touchscreen",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine has a touchscreen now, not then."
+  },
+  "shape.diff.clock.had": {
+    "message": "it had a clock device",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine had the clock device then, not now."
+  },
+  "shape.diff.clock.hadNo": {
+    "message": "it had no clock device",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine has the clock device now, not then."
+  },
+  "shape.diff.shares.had": {
+    "message": "it had a shared folders device",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine had the shared folders device then, not now."
+  },
+  "shape.diff.shares.hadNo": {
+    "message": "it had no shared folders device",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine has the shared folders device now, not then."
+  },
+  "shape.diff.version": {
+    "message": "it was made by another version of this page",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the snapshot's description of the machine is in another format, so nothing else can be compared."
+  },
+  "shape.diff.ncpus": {
+    "message": "processors: {{was}} then, {{now}} now",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{was}}, {{now}}: the vCPU counts."
+  },
+  "shape.diff.ram": {
+    "message": "memory: {{was}} MiB then, {{now}} MiB now",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{was}}, {{now}}: the RAM, MiB."
+  },
+  "shape.diff.split.sizes": {
+    "message": "{{sizes}} MiB",
+    "note": "A memory split as shape.diff.split shows it: {{sizes}} is the sizes, MiB, joined with \" + \" (e.g. 1024 + 512)."
+  },
+  "shape.diff.split.automatic": {
+    "message": "automatic",
+    "note": "A memory split as shape.diff.split shows it, when the page chose it (the user set none)."
+  },
+  "shape.diff.split": {
+    "message": "memory's split: {{was}} then, {{now}} now",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{was}}, {{now}}: each split (shape.diff.split.sizes or shape.diff.split.automatic)."
+  },
+  "shape.diff.display": {
+    "message": "display: {{was}} then, {{now}} now",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{was}}, {{now}}: the display's code as it is (3d, 2d, none)."
+  },
+  "shape.diff.vulkan.had": {
+    "message": "it had Vulkan",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine had Vulkan then, not now."
+  },
+  "shape.diff.vulkan.hadNo": {
+    "message": "it had no Vulkan",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine has Vulkan now, not then."
+  },
+  "shape.diff.cpu.none": {
+    "message": "none",
+    "note": "The processor features of shape.diff.cpu when there are none."
+  },
+  "shape.diff.cpu": {
+    "message": "processor features: {{was}} then, {{now}} now",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{was}}, {{now}}: the vCPUs' optional features' names, comma-separated, or shape.diff.cpu.none."
+  },
+  "shape.diff.adapters": {
+    "message": "network adapters: {{was}} then, {{now}} now",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{was}}, {{now}}: the numbers of network adapters."
+  },
+  "shape.diff.mac": {
+    "message": "network adapter {{n}}: MAC {{was}} then, {{now}} now",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{n}}: the adapter's number, from 1; {{was}}, {{now}}: its MAC addresses."
+  },
+  "shape.diff.usb.had": {
+    "message": "it had a USB controller",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine had the USB controller then, not now."
+  },
+  "shape.diff.usb.hadNo": {
+    "message": "it had no USB controller",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine has the USB controller now, not then."
+  },
+  "shape.diff.disks": {
+    "message": "disks: {{was}} then, {{now}} now",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{was}}, {{now}}: the numbers of disks attached."
+  },
+  "shape.diff.disk.other": {
+    "message": "disk {{n}}: another disk ({{was}} then, {{now}} now)",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{n}}: the disk's place, from 1; {{was}}, {{now}}: which disk each was (a URL's file name, or a shape.identity message)."
+  },
+  "shape.diff.disk.size": {
+    "message": "disk {{n}}: {{was}} bytes then, {{now}} now",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{n}}: the disk's place, from 1; {{was}}, {{now}}: its sizes, bytes."
+  },
+  "shape.diff.disk.readOnlyThen": {
+    "message": "disk {{n}}: read-only then, writable now",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{n}}: the disk's place, from 1."
+  },
+  "shape.diff.disk.writableThen": {
+    "message": "disk {{n}}: writable then, read-only now",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{n}}: the disk's place, from 1."
+  },
+  "shape.diff.disk.serial": {
+    "message": "disk {{n}}: attached anew (its serial changed)",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{n}}: the disk's place, from 1."
+  },
+  "shape.diff.disk.swapThen": {
+    "message": "disk {{n}}: swap then, not swap now",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{n}}: the disk's place, from 1 (a ramdisk the guest used as swap)."
+  },
+  "shape.diff.disk.notSwapThen": {
+    "message": "disk {{n}}: not swap then, swap now",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{n}}: the disk's place, from 1 (a ramdisk the guest now uses as swap)."
+  },
+  "shape.diff.order": {
+    "message": "its devices are in another order",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the same devices, in another order."
+  },
+  "shape.identity.file": {
+    "message": "the file {{name}}",
+    "note": "Which disk an attachment was, in shape.diff.disk.other: a file on this computer. {{name}}: its file name."
+  },
+  "shape.identity.stored": {
+    "message": "a disk stored in this browser",
+    "note": "Which disk an attachment was, in shape.diff.disk.other: a disk stored in the browser."
+  },
+  "shape.identity.blank": {
+    "message": "a blank disk",
+    "note": "Which disk an attachment was, in shape.diff.disk.other: a blank disk."
+  },
+  "shape.identity.ramdisk": {
+    "message": "a ramdisk",
+    "note": "Which disk an attachment was, in shape.diff.disk.other: a ramdisk."
+  },
+  "machines.needsOff.delete": {
+    "message": "Deleting a machine needs the machine off: power it off first (it runs in this tab or another).",
+    "note": "Error headline in the Machines page's message bar when an edit needs the machine off and it runs (in this tab or another). Here: Delete."
+  },
+  "machines.needsOff.shape": {
+    "message": "Changing its processors, memory or devices needs the machine off: power it off first (it runs in this tab or another).",
+    "note": "Error headline in the Machines page's message bar when an edit needs the machine off and it runs (in this tab or another). Here: Save in its Settings, with a change of its shape."
+  },
+  "machines.needsOff.attach": {
+    "message": "Attaching a disk needs the machine off: power it off first (it runs in this tab or another).",
+    "note": "Error headline in the Machines page's message bar when an edit needs the machine off and it runs (in this tab or another). Here: adding a disk (Disks tab, or opening one)."
+  },
+  "machines.needsOff.disks": {
+    "message": "Changing its disks needs the machine off: power it off first (it runs in this tab or another).",
+    "note": "Error headline in the Machines page's message bar when an edit needs the machine off and it runs (in this tab or another). Here: a change on the Disks tab (read-only, order, detach…)."
+  },
+  "machines.machineGone": {
+    "message": "that machine is gone",
+    "note": "Error headline in the Machines page's message bar when an action's machine was deleted meanwhile (in another tab)."
+  },
+  "machines.copyName": {
+    "message": "{{name}} (copy)",
+    "note": "The name a machine made by Duplicate (Machines page) gets, made unique with a number if taken. {{name}}: the machine copied. Stored: it stays the copy's name."
+  },
+  "machines.blankDiskName": {
+    "message": "Blank disk",
+    "note": "The name a new blank disk gets when the user gives none (Machines page, Disks tab, Add a disk). Stored: it stays the disk's name."
+  },
+  "machines.ramdiskName": {
+    "message": "Ramdisk",
+    "note": "The name a new ramdisk gets when the user gives none (Machines page, Disks tab, Add a disk). Stored: it stays the disk's name."
+  },
+  "machines.maxDisks": {
+    "message": "a machine has at most {{max}} disks",
+    "note": "Error headline in the message bar when a disk is added to a machine that has the most already. {{max}}: the most disks (16)."
+  },
+  "machines.notAttached": {
+    "message": "that disk is no longer attached",
+    "note": "Error headline in the Machines page's message bar when a change on the Disks tab finds the disk detached meanwhile (in another tab)."
+  },
+  "machines.swapMin": {
+    "message": "a swap ramdisk needs at least {{kib}} KiB",
+    "note": "Error headline in the Machines page's message bar when the user ticks swap on a ramdisk too small for it (Disks tab). {{kib}}: the least size, KiB."
+  },
+  "machines.storage.stored": {
+    "message": "Stored disk {{name}}",
+    "note": "An item of What takes it, the list of what fills the browser's storage (Machines page, at the bottom), before its size (MachinesPage.storage.item). {{name}}: a disk stored in the browser."
+  },
+  "machines.storage.overlayOfNone": {
+    "message": "a disk: {{overlay}}",
+    "note": "An item of What takes it, the list of what fills the browser's storage (Machines page, at the bottom), before its size (MachinesPage.storage.item). An overlay whose disk the browser no longer has; {{overlay}}: the overlay's name."
+  },
+  "machines.storage.overlay": {
+    "message": "{{disk}}: {{overlay}}",
+    "note": "An item of What takes it, the list of what fills the browser's storage (Machines page, at the bottom), before its size (MachinesPage.storage.item). {{disk}}: the disk's name; {{overlay}}: the name of one of its overlays (the changes a machine wrote)."
+  },
+  "machines.storage.machine": {
+    "message": "{{name}}: variable store, snapshots",
+    "note": "An item of What takes it, the list of what fills the browser's storage (Machines page, at the bottom), before its size (MachinesPage.storage.item). {{name}}: a machine, whose firmware variables and snapshots these are."
+  },
+  "machines.storage.remote": {
+    "message": "Remote disks' blocks, kept to read them again without the network",
+    "note": "An item of What takes it, the list of what fills the browser's storage (Machines page, at the bottom), before its size (MachinesPage.storage.item). The blocks of URL disks kept in the browser."
+  },
+  "definitions.machineGone": {
+    "message": "that machine is gone",
+    "note": "Error headline in the Machines page's message bar when Export the definition finds the machine deleted meanwhile (in another tab)."
+  },
+  "definitions.diskMissing": {
+    "message": "{{name}} has a disk that isn't in this browser",
+    "note": "Error headline in the Machines page's message bar when Export the definition finds one of the machine's disks missing from the browser. {{name}}: the machine."
+  },
+  "definitions.notJson": {
+    "message": "this file isn't a machine definition (it isn't JSON)",
+    "note": "Error headline in the Machines page's message bar after Import a definition…: the file chosen isn't JSON."
+  },
+  "definitions.notDefinition": {
+    "message": "this file isn't a machine definition",
+    "note": "Error headline in the Machines page's message bar after Import a definition…: the file is JSON, but not a machine definition."
+  },
+  "definitions.version": {
+    "message": "this definition is version {{version}}; this page reads version {{reads}}",
+    "note": "Error headline in the Machines page's message bar after Import a definition…: a definition of another version. {{version}}: the file's; {{reads}}: the one this page reads."
+  },
+  "definitions.damaged": {
+    "message": "this machine definition is damaged (a field is missing or out of range)",
+    "note": "Error headline in the Machines page's message bar after Import a definition…: a field is missing or out of range."
+  },
+  "store.diskAttached": {
+    "message": "the disk is attached to {{machines}}: detach it first",
+    "note": "Error headline in the Machines page's message bar when the user deletes a disk some machines still have. {{machines}}: their names, comma-separated."
+  },
+  "urlcheck.corsHint": {
+    "message": "CORS for this page's origin: `Access-Control-Allow-Origin` (this origin or *), `Access-Control-Expose-Headers: Content-Range, Content-Length, ETag`, and `Range` allowed in answers to OPTIONS",
+    "note": "What a server must send for CORS, placed in the URL problems urlcheck.noAnswer and urlcheck.noPiece. Header names in backquotes stay as they are."
+  },
+  "urlcheck.notUrl": {
+    "message": "This isn't a URL.",
+    "note": "A problem with a disk's URL, in the list Add a disk shows under the URL after checking it (Machines page, Disks tab), and in the error when the URL is added anyway. Here: what was typed isn't a URL."
+  },
+  "urlcheck.https": {
+    "message": "The URL must be HTTPS: the page is served securely and the browser blocks plain HTTP from it.",
+    "note": "A problem with a disk's URL, in the list Add a disk shows under the URL after checking it (Machines page, Disks tab), and in the error when the URL is added anyway. Here: a plain HTTP URL on another origin."
+  },
+  "urlcheck.httpOnly": {
+    "message": "Only http(s) URLs can be disks.",
+    "note": "A problem with a disk's URL, in the list Add a disk shows under the URL after checking it (Machines page, Disks tab), and in the error when the URL is added anyway. Here: a URL of another scheme (ftp:, file:…)."
+  },
+  "urlcheck.noAnswer": {
+    "message": "The server didn't answer the page, or answered without CORS. It needs {{needs}}.",
+    "note": "A problem with a disk's URL, in the list Add a disk shows under the URL after checking it (Machines page, Disks tab), and in the error when the URL is added anyway. Here: the request failed (the network, or CORS: the browser doesn't say which). {{needs}}: urlcheck.corsHint."
+  },
+  "urlcheck.notFound": {
+    "message": "The server says there is no such file (404).",
+    "note": "A problem with a disk's URL, in the list Add a disk shows under the URL after checking it (Machines page, Disks tab), and in the error when the URL is added anyway. Here: the server answered 404 (for the image, or a chunked image's manifest)."
+  },
+  "urlcheck.noRanges": {
+    "message": "The server ignores byte ranges (it sent the whole file for a range request): it must answer `Range: bytes=…` with 206 Partial Content.",
+    "note": "A problem with a disk's URL, in the list Add a disk shows under the URL after checking it (Machines page, Disks tab), and in the error when the URL is added anyway. Here: the server answered a range request with the whole file (200)."
+  },
+  "urlcheck.rangeStatus": {
+    "message": "The server answered {{status}} {{statusText}} to a range request (it should be 206).",
+    "note": "A problem with a disk's URL, in the list Add a disk shows under the URL after checking it (Machines page, Disks tab), and in the error when the URL is added anyway. {{status}}: the HTTP status code; {{statusText}}: the server's text for it."
+  },
+  "urlcheck.hiddenRange": {
+    "message": "The server sends Content-Range but the page can't see it: it needs `Access-Control-Expose-Headers: Content-Range`.",
+    "note": "A problem with a disk's URL, in the list Add a disk shows under the URL after checking it (Machines page, Disks tab), and in the error when the URL is added anyway. Here: the range was answered, but CORS hides its Content-Range header."
+  },
+  "urlcheck.suffixStatus": {
+    "message": "The server answered {{status}} to a suffix range (`bytes=-512`); it should be 206.",
+    "note": "A problem with a disk's URL, in the list Add a disk shows under the URL after checking it (Machines page, Disks tab), and in the error when the URL is added anyway. {{status}}: the HTTP status code of a request for the file's last bytes."
+  },
+  "urlcheck.preflight": {
+    "message": "The server refused a preflighted range request: its answer to OPTIONS must allow the `Range` header (`Access-Control-Allow-Headers: Range`).",
+    "note": "A problem with a disk's URL, in the list Add a disk shows under the URL after checking it (Machines page, Disks tab), and in the error when the URL is added anyway. Here: the CORS preflight of a suffix range failed."
+  },
+  "urlcheck.manifestStatus": {
+    "message": "The server answered {{status}} {{statusText}} for the manifest.",
+    "note": "A problem with a disk's URL, in the list Add a disk shows under the URL after checking it (Machines page, Disks tab), and in the error when the URL is added anyway. Here: a chunked image's manifest. {{status}}: the HTTP status code; {{statusText}}: the server's text for it."
+  },
+  "urlcheck.badManifest": {
+    "message": "The manifest isn't a chunked image's: {{why}}.",
+    "note": "A problem with a disk's URL, in the list Add a disk shows under the URL after checking it (Machines page, Disks tab), and in the error when the URL is added anyway. Here: the manifest (JSON) was read, but isn't a chunked image's. {{why}}: what's wrong with it (a message of its own)."
+  },
+  "urlcheck.pieceStatus": {
+    "message": "The server answered {{status}} {{statusText}} for the image's first piece (it should be next to the manifest, as tools/chunk-image.ts wrote it).",
+    "note": "A problem with a disk's URL, in the list Add a disk shows under the URL after checking it (Machines page, Disks tab), and in the error when the URL is added anyway. Here: a chunked image's first piece. {{status}}: the HTTP status code; {{statusText}}: the server's text for it. The tool's path stays as it is."
+  },
+  "urlcheck.noPiece": {
+    "message": "The server didn't give the page the image's first piece. It needs {{needs}}, for the pieces too.",
+    "note": "A problem with a disk's URL, in the list Add a disk shows under the URL after checking it (Machines page, Disks tab), and in the error when the URL is added anyway. Here: the request for a chunked image's first piece failed. {{needs}}: urlcheck.corsHint."
+  },
+  "urlcheck.slow": {
+    "message": "The first boot reads it over the network, and what it read stays in this browser, so the next boots read that from here. A chunked image with a boot's reads in its manifest (tools/disk-trace.ts) first-boots about as fast as a file. To keep all of it, store it in the browser.",
+    "note": "Note beside a URL disk (Machines page, Disks tab) and after a URL checks out in Add a disk: how a disk over the network is read. The tool's path stays as it is."
+  },
+  "MachinesPage.state.running": {
+    "message": "running",
+    "note": "Machines page: a machine's state, in the list of machines (after its disks) and beside its name at the top of its pane. Here: it runs (in this tab or another)."
+  },
+  "MachinesPage.state.suspended": {
+    "message": "suspended",
+    "note": "Machines page: a machine's state, in the list of machines (after its disks) and beside its name at the top of its pane. Here: it has a suspended copy (Start resumes it)."
+  },
+  "MachinesPage.state.off": {
+    "message": "off",
+    "note": "Machines page: a machine's state, in the list of machines (after its disks) and beside its name at the top of its pane. Here: it is off."
+  },
+  "MachinesPage.otherTab": {
+    "message": "It runs in another tab: power it off there first.",
+    "note": "Machines page: message bar text (also an error headline) when an edit that needs a machine off finds it running in another tab."
+  },
+  "MachinesPage.powerOff.confirm": {
+    "message": "Power {{name}} off? Like pulling the plug: unsaved work in the guest is lost.",
+    "note": "Machines page: confirmation dialog's text before an edit that needs the machine on this page off (e.g. on the Disks tab). {{name}}: the machine."
+  },
+  "MachinesPage.powerOff.ok": {
+    "message": "Power off",
+    "note": "Machines page: the confirm button of MachinesPage.powerOff.confirm's dialog."
+  },
+  "MachinesPage.busy.saving": {
+    "message": "Saving",
+    "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Save on the Settings tab, or a Connect at start box."
+  },
+  "MachinesPage.orphans.confirm": {
+    "message": "This change orphans its snapshots: they were taken of a machine with the old settings (they stay, marked, until deleted).",
+    "note": "Machines page, Settings tab: confirmation dialog's text when Save changes the machine's shape and it has snapshots."
+  },
+  "MachinesPage.save": {
+    "message": "Save",
+    "note": "Machines page: the button that saves a machine's settings (Settings, Network, USB and Shared folders tabs), and the confirm button of MachinesPage.orphans.confirm's dialog."
+  },
+  "MachinesPage.keyboard.matched": {
+    "message": "This browser's keyboard looks like {{layout}}: save to use it.",
+    "note": "Machines page, Settings tab: note under the Keyboard layout after Match this browser found the layout. {{layout}}: the layout's name (a keyboard message)."
+  },
+  "MachinesPage.keyboard.unknown": {
+    "message": "This browser doesn't say which layout its keyboard has (only Chromium-based browsers do), or it isn't one in the list: pick it yourself.",
+    "note": "Machines page, Settings tab: note under the Keyboard layout after Match this browser found none."
+  },
+  "MachinesPage.busy.exporting": {
+    "message": "Exporting",
+    "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Export the definition."
+  },
+  "MachinesPage.busy.importing": {
+    "message": "Importing",
+    "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Import a definition…."
+  },
+  "MachinesPage.imported.toPick": {
+    "message": "{{name}} is made. Its files are picked when it first starts: {{files}}.",
+    "note": "Machines page: message bar text after Import a definition… made a machine with disks that are files on the user's computer. {{name}}: the new machine; {{files}}: the files' names, comma-separated."
+  },
+  "MachinesPage.delete.confirm": {
+    "message": "Delete {{name}}? Its snapshots and firmware settings are deleted; its disks and their overlays stay.",
+    "note": "Machines page: confirmation dialog's text after a machine's Delete button. {{name}}: the machine."
+  },
+  "MachinesPage.delete.ok": {
+    "message": "Delete",
+    "note": "Machines page: the confirm button of MachinesPage.delete.confirm's dialog."
+  },
+  "MachinesPage.busy.deleting": {
+    "message": "Deleting",
+    "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: deleting a machine or a connection."
+  },
+  "MachinesPage.adapter.move": {
+    "message": "Move it: the guest's eth numbers follow this order, and the first adapter that reaches the internet is the default way out (the machine restarts with it)",
+    "note": "Machines page, Network tab: tooltip of each adapter's move up and move down buttons."
+  },
+  "MachinesPage.connection.tailnet": {
+    "message": "a tailnet ({{host}})",
+    "note": "Machines page, Connections: what kind of connection it is, in each connection's line (and after an adapter's connection on the Network tab). {{host}}: its control server's host name."
+  },
+  "MachinesPage.connection.local": {
+    "message": "the helper on this computer",
+    "note": "Machines page, Connections: what kind of connection it is, in each connection's line (and after an adapter's connection on the Network tab). Here: the local helper program."
+  },
+  "MachinesPage.connection.tailcatExit": {
+    "message": "tailcat through a server",
+    "note": "Machines page, Connections: what kind of connection it is, in each connection's line (and after an adapter's connection on the Network tab). Here: tailcat that goes out through a server."
+  },
+  "MachinesPage.connection.tailcatServe": {
+    "message": "tailcat, letting clients in",
+    "note": "Machines page, Connections: what kind of connection it is, in each connection's line (and after an adapter's connection on the Network tab). Here: tailcat that lets clients in."
+  },
+  "MachinesPage.connection.ephemeral": {
+    "message": "{{kind}}, ephemeral (not kept)",
+    "note": "Machines page, Connections: what kind of connection it is, in each connection's line (and after an adapter's connection on the Network tab). An ephemeral connection's kind; {{kind}}: one of the kinds above."
+  },
+  "MachinesPage.connection.here": {
+    "message": "connected on this page",
+    "note": "Machines page, Connections: who has the connection now, in each connection's line. Here: an adapter of this page's machine."
+  },
+  "MachinesPage.connection.otherTab": {
+    "message": "in use in another tab",
+    "note": "Machines page, Connections: who has the connection now, in each connection's line. Here: a machine in another tab."
+  },
+  "MachinesPage.connection.unused": {
+    "message": "not in use",
+    "note": "Machines page, Connections: who has the connection now, in each connection's line. Here: no one."
+  },
+  "MachinesPage.logout.confirm": {
+    "message": "Log {{name}} out? Its node is removed from the tailnet and its keys are forgotten here; connecting again logs in as a new node.",
+    "note": "Machines page, Connections: confirmation dialog's text after a connection's Log out button. {{name}}: the connection."
+  },
+  "MachinesPage.logout.ok": {
+    "message": "Log out",
+    "note": "Machines page, Connections: the confirm button of MachinesPage.logout.confirm's dialog."
+  },
+  "MachinesPage.busy.loggingOut": {
+    "message": "Logging out",
+    "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: a connection's Log out."
+  },
+  "MachinesPage.usb.title": {
+    "message": "An xHCI with four connectors (USB 2 and USB 3 each) for the machine's USB devices: the guest sees it, so turning it on or off changes the machine's shape",
+    "note": "Machines page, Settings and USB tabs: tooltip of the USB controller box."
+  },
+  "MachinesPage.usb": {
+    "message": "USB controller",
+    "note": "Machines page, Settings and USB tabs: the label of the box that gives the machine a USB controller."
+  },
+  "MachinesPage.usb.orphans.on": {
+    "message": "Turning the USB controller on changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.",
+    "note": "Machines page, Settings and USB tabs: warning under the USB controller box once it is ticked (not saved yet)."
+  },
+  "MachinesPage.usb.orphans.off": {
+    "message": "Turning the USB controller off changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.",
+    "note": "Machines page, Settings and USB tabs: warning under the USB controller box once it is unticked (not saved yet)."
+  },
+  "MachinesPage.vulkan.title": {
+    "message": "Vulkan through Venus beside 3D: the guest's Vulkan programs draw on this browser's WebGPU (what the guest is offered follows its GPU). Experimental: snapshots can't be taken while a program uses it. The guest sees it, so turning it on or off changes the machine's shape",
+    "note": "Machines page, Settings tab: tooltip of the Vulkan box (shown with the 3D display)."
+  },
+  "MachinesPage.vulkan": {
+    "message": "Vulkan (WebGPU, experimental)",
+    "note": "Machines page, Settings tab: the label of the box that gives a 3D machine Vulkan."
+  },
+  "MachinesPage.vulkan.orphans.off": {
+    "message": "Turning Vulkan off changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.",
+    "note": "Machines page, Settings tab: warning under the Vulkan box once it is unticked (not saved yet)."
+  },
+  "MachinesPage.vulkan.orphans.on": {
+    "message": "Turning Vulkan on changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.",
+    "note": "Machines page, Settings tab: warning under the Vulkan box once it is ticked (not saved yet), in a browser with WebGPU."
+  },
+  "MachinesPage.vulkan.orphans.onNoWebgpu": {
+    "message": "Turning Vulkan on changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does. This browser has no WebGPU: its Vulkan programs would draw nothing here.",
+    "note": "Machines page, Settings tab: warning under the Vulkan box once it is ticked (not saved yet), in a browser without WebGPU."
+  },
+  "MachinesPage.mouse.title": {
+    "message": "A relative mouse (virtio-input) for the mouse lock's Raw mode: while the screen holds the mouse its motion goes to the guest unbounded by the screen (games), at the guest's own mouse speed. Without it the lock has the Pointer mode only. The guest sees it, so turning it on or off changes the machine's shape",
+    "note": "Machines page, Settings tab: tooltip of the Mouse box."
+  },
+  "MachinesPage.mouse": {
+    "message": "Mouse (the mouse lock's Raw mode)",
+    "note": "Machines page, Settings tab: the label of the box that gives the machine a relative mouse."
+  },
+  "MachinesPage.touch.title": {
+    "message": "A touchscreen (virtio-input, multitouch): the page's touches go to the guest as touches. Without it a touch moves the pointer and clicks. The guest sees it, so turning it on or off changes the machine's shape",
+    "note": "Machines page, Settings tab: tooltip of the Touchscreen box."
+  },
+  "MachinesPage.touch": {
+    "message": "Touchscreen",
+    "note": "Machines page, Settings tab: the label of the box that gives the machine a touchscreen."
+  },
+  "MachinesPage.clock.title": {
+    "message": "A clock device (virtio-rtc) that reads the browser's clock: a guest with a driver for it (Linux 6.16 and later) gets a PTP clock that chrony can follow (refclock PHC), so its time stays the browser's across snapshots and the host's sleep, and a read-only RTC. The guest sees it, so turning it on or off changes the machine's shape",
+    "note": "Machines page, Settings tab: tooltip of the Clock device box."
+  },
+  "MachinesPage.clock": {
+    "message": "Clock device (the browser's time)",
+    "note": "Machines page, Settings tab: the label of the box that gives the machine the clock device."
+  },
+  "MachinesPage.pointers.orphans": {
+    "message": "Adding or removing the mouse, the touchscreen or the clock device changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.",
+    "note": "Machines page, Settings tab: warning under the Mouse, Touchscreen and Clock device boxes once one of them changed (not saved yet)."
+  },
+  "MachinesPage.saveRestart": {
+    "message": "Save and restart",
+    "note": "Machines page: the Save button's words when the machine runs on this page and the change takes a restart."
+  },
+  "MachinesPage.revert": {
+    "message": "Revert",
+    "note": "Machines page: button beside Save, while a machine's settings have unsaved changes: drops them."
+  },
+  "MachinesPage.back": {
+    "message": "Back to the machine",
+    "note": "Machines page: the button (and its tooltip) at the left of the top bar that closes the page and shows the machine again."
+  },
+  "MachinesPage.heading": {
+    "message": "Machines",
+    "note": "Machines page: the page's title, in its top bar."
+  },
+  "MachinesPage.busy": {
+    "message": "{{what}}…",
+    "note": "Machines page: top bar, while an action runs. {{what}}: what it is doing (a MachinesPage.busy.* message, or a tab's own)."
+  },
+  "MachinesPage.dismiss": {
+    "message": "Close",
+    "note": "Machines page: accessible name (aria-label) of the × button that dismisses the message bar."
+  },
+  "MachinesPage.list.transient": {
+    "message": "this page's machine (from its address, not kept)",
+    "note": "Machines page: under the name of the page's own machine (opened from the address, e.g. a test's ?machine=) in the list of machines."
+  },
+  "MachinesPage.list.meta_one": {
+    "message": "{{count}} disk · {{state}}",
+    "note": "Machines page: under a machine's name in the list of machines, when it has one disk. {{state}}: its state (a MachinesPage.state.* message)."
+  },
+  "MachinesPage.list.meta_other": {
+    "message": "{{count}} disks · {{state}}",
+    "note": "Machines page: under a machine's name in the list of machines. {{count}}: its disks; {{state}}: its state (a MachinesPage.state.* message)."
+  },
+  "MachinesPage.state.here": {
+    "message": "on this page",
+    "note": "Machines page: a machine's state in the list of machines when it is the one this page has, off."
+  },
+  "MachinesPage.busy.making": {
+    "message": "Making a machine",
+    "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: New machine."
+  },
+  "MachinesPage.newMachine": {
+    "message": "New machine",
+    "note": "Machines page: button under the list of machines that makes a machine with the default settings and no disks."
+  },
+  "MachinesPage.fromImage.title": {
+    "message": "A machine for a disk image on this computer (qcow2, raw or an ISO), started at once: the same as dropping the file on the page",
+    "note": "Machines page: tooltip of From a disk image…."
+  },
+  "MachinesPage.fromImage": {
+    "message": "From a disk image…",
+    "note": "Machines page: button under the list of machines that opens a disk image file and starts a machine on it."
+  },
+  "MachinesPage.importDefinition.title": {
+    "message": "A machine definition (.webpc-machine.json): its settings and disks, without their contents",
+    "note": "Machines page: tooltip of Import a definition…. The file extension stays as it is."
+  },
+  "MachinesPage.importDefinition": {
+    "message": "Import a definition…",
+    "note": "Machines page: button under the list of machines that makes a machine from a definition file."
+  },
+  "MachinesPage.folders.title": {
+    "message": "The shared folders this browser keeps, for any machine",
+    "note": "Machines page: tooltip of the Shared folders button under the list of machines."
+  },
+  "MachinesPage.folders": {
+    "message": "Shared folders ({{n}})",
+    "note": "Machines page: button under the list of machines that shows the browser's shared folders. {{n}}: how many."
+  },
+  "MachinesPage.connections.title": {
+    "message": "The network connections this browser keeps (tailnets, tailcat), for any machine's adapters",
+    "note": "Machines page: tooltip of the Connections button under the list of machines."
+  },
+  "MachinesPage.connections": {
+    "message": "Connections ({{n}})",
+    "note": "Machines page: button under the list of machines that shows the browser's network connections. {{n}}: how many."
+  },
+  "MachinesPage.preferences.title": {
+    "message": "How the page behaves in this browser, for every machine",
+    "note": "Machines page: tooltip of the Preferences button under the list of machines."
+  },
+  "MachinesPage.preferences": {
+    "message": "Preferences",
+    "note": "Machines page: button under the list of machines, and the title of the pane it shows: the page's preferences."
+  },
+  "MachinesPage.preferences.meta": {
+    "message": "Kept by this browser, for every machine.",
+    "note": "Machines page, Preferences: the line beside the pane's title."
+  },
+  "MachinesPage.leaveWarning.note": {
+    "message": "Leaving the page (closing the tab, reloading it, going elsewhere) stops its machine like pulling the plug: unsaved work in the guest is lost. With this on, the browser asks first, in its own words. Suspend keeps a machine to come back to.",
+    "note": "Machines page, Preferences: the note under Ask before leaving the page while a machine runs."
+  },
+  "MachinesPage.leaveWarning": {
+    "message": "Ask before leaving the page while a machine runs",
+    "note": "Machines page, Preferences: the label of a box."
+  },
+  "MachinesPage.clockSync.note": {
+    "message": "Snapshot and Suspend first press the guest's sleep key, so the guest suspends itself (as a laptop does when its lid closes) and is woken once the file is written; loading the file wakes it the same way, so its clock catches up with the time the file sat. A guest that doesn't sleep on the key (no systemd-logind) is saved as it is, after waiting up to 10 s. Off, a snapshot is a pause the guest can hardly tell, and its clock lags until something sets it.",
+    "note": "Machines page, Preferences: the note under Suspend the guest before taking a snapshot."
+  },
+  "MachinesPage.clockSync": {
+    "message": "Suspend the guest before taking a snapshot",
+    "note": "Machines page, Preferences: the label of a box."
+  },
+  "MachinesPage.statusBar": {
+    "message": "Status bar",
+    "note": "Machines page, Preferences: the heading over the status bar's editor."
+  },
+  "MachinesPage.statusFullscreen.note": {
+    "message": "Off, full screen is the machine alone, edge to edge; on, the bar comes along (its Keyboard element says there whether the browser's shortcuts reach the machine).",
+    "note": "Machines page, Preferences: the note under Show the status bar in full screen."
+  },
+  "MachinesPage.statusFullscreen": {
+    "message": "Show the status bar in full screen",
+    "note": "Machines page, Preferences: the label of a box under the status bar's editor."
+  },
+  "MachinesPage.folders.heading": {
+    "message": "Shared folders",
+    "note": "Machines page: the title of the browser's shared folders pane."
+  },
+  "MachinesPage.folders.meta": {
+    "message": "Kept by this browser for any machine; one that writes a folder has it alone.",
+    "note": "Machines page, Shared folders pane: the line beside its title."
+  },
+  "MachinesPage.folders.new": {
+    "message": "New folder…",
+    "note": "Machines page, Shared folders pane: button that opens the wizard for a new shared folder."
+  },
+  "MachinesPage.connections.heading": {
+    "message": "Connections",
+    "note": "Machines page: the title of the browser's network connections pane."
+  },
+  "MachinesPage.connections.meta": {
+    "message": "Kept by this browser for any machine's adapters; one running machine has a connection at a time.",
+    "note": "Machines page, Connections pane: the line beside its title."
+  },
+  "MachinesPage.connections.new": {
+    "message": "New connection…",
+    "note": "Machines page, Connections pane: button that opens the wizard for a new network connection."
+  },
+  "MachinesPage.connection.name": {
+    "message": "Name",
+    "note": "Machines page, Connections: accessible name (aria-label) of the field that holds (and renames) a connection's name."
+  },
+  "MachinesPage.busy.renaming": {
+    "message": "Renaming",
+    "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: renaming a connection."
+  },
+  "MachinesPage.connection.meta": {
+    "message": "{{kind}} · {{state}} · {{used}}",
+    "note": "Machines page, Connections: the line under a connection's name. {{kind}}: what it is (a MachinesPage.connection kind); {{state}}: who has it now; {{used}}: which machines it is attached to."
+  },
+  "MachinesPage.connection.usedBy": {
+    "message": "attached to {{machines}}",
+    "note": "Machines page, Connections: the end of a connection's line. {{machines}}: the machines whose adapters have it, comma-separated."
+  },
+  "MachinesPage.connection.usedByNone": {
+    "message": "attached to no machine",
+    "note": "Machines page, Connections: the end of a connection's line when no machine's adapter has it."
+  },
+  "MachinesPage.connection.edit.tailnet": {
+    "message": "Its hostname (another control server is another connection)",
+    "note": "Machines page, Connections: tooltip of a tailnet connection's Edit… button."
+  },
+  "MachinesPage.connection.edit.local": {
+    "message": "The helper's link",
+    "note": "Machines page, Connections: tooltip of a local helper connection's Edit… button."
+  },
+  "MachinesPage.connection.edit.tailcat": {
+    "message": "Its server and relay",
+    "note": "Machines page, Connections: tooltip of a tailcat connection's Edit… button."
+  },
+  "MachinesPage.connection.edit": {
+    "message": "Edit…",
+    "note": "Machines page, Connections: button on each connection that opens its settings in the connection wizard."
+  },
+  "MachinesPage.busy.forgettingAddress": {
+    "message": "Forgetting the address",
+    "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: a connection's New address."
+  },
+  "MachinesPage.connection.newAddress.title": {
+    "message": "Forget the connection's tailcat address: whoever has it can't come in any more",
+    "note": "Machines page, Connections: tooltip of New address."
+  },
+  "MachinesPage.connection.newAddress": {
+    "message": "New address",
+    "note": "Machines page, Connections: button on a tailcat connection that lets clients in: gives it a new address."
+  },
+  "MachinesPage.connection.logout.title": {
+    "message": "Remove the node from the tailnet and forget its keys",
+    "note": "Machines page, Connections: tooltip of a connection's Log out button."
+  },
+  "MachinesPage.connection.logout": {
+    "message": "Log out",
+    "note": "Machines page, Connections: button on a connection logged in to a tailnet (asks first: MachinesPage.logout.confirm)."
+  },
+  "MachinesPage.connection.delete.title": {
+    "message": "Delete the connection and what this browser keeps of it (its machines lose it)",
+    "note": "Machines page, Connections: tooltip of a connection's Delete button."
+  },
+  "MachinesPage.connection.delete": {
+    "message": "Delete",
+    "note": "Machines page, Connections: button on each connection that deletes it."
+  },
+  "MachinesPage.connections.none": {
+    "message": "No connections yet: make one here, or from a machine's adapter (its Network tab, or the toolbar's Network menu).",
+    "note": "Machines page, Connections pane: in place of the list when the browser keeps no connection."
+  },
+  "MachinesPage.transient.meta": {
+    "message": "This page's machine, from its address: its size is in the toolbar's Machine menu.",
+    "note": "Machines page: the line beside the title of the page's own machine (opened from the address, not kept)."
+  },
+  "MachinesPage.tab.disks": {
+    "message": "Disks",
+    "note": "Machines page: the Disks tab of the page's own machine (opened from the address)."
+  },
+  "MachinesPage.tab.snapshots": {
+    "message": "Snapshots",
+    "note": "Machines page: the Snapshots tab of a machine."
+  },
+  "MachinesPage.transient.overlay": {
+    "message": "its changes are kept in this browser",
+    "note": "Machines page, the page's own machine, Disks tab: beside its disk's name when the browser keeps what the machine wrote."
+  },
+  "MachinesPage.export.title": {
+    "message": "Save the disk to a file: the machine stops while it's written",
+    "note": "Machines page, the page's own machine, Disks tab: tooltip of the Export menu."
+  },
+  "MachinesPage.export": {
+    "message": "Export",
+    "note": "Machines page, the page's own machine, Disks tab: the menu that saves its disk to a file."
+  },
+  "MachinesPage.export.changes.title": {
+    "message": "A small qcow2 holding what the machine wrote, with the image it booted as its backing file (kept beside it)",
+    "note": "Machines page, Export menu: tooltip of Changes only (qcow2)."
+  },
+  "MachinesPage.export.changes": {
+    "message": "Changes only (qcow2)",
+    "note": "Machines page, Export menu: an item that saves only what the machine wrote."
+  },
+  "MachinesPage.export.qcow2.title": {
+    "message": "The whole disk as a qcow2 (empty space left out)",
+    "note": "Machines page, Export menu: tooltip of Whole disk (qcow2)."
+  },
+  "MachinesPage.export.qcow2": {
+    "message": "Whole disk (qcow2)",
+    "note": "Machines page, Export menu: an item that saves the whole disk as a qcow2."
+  },
+  "MachinesPage.export.raw.title": {
+    "message": "The whole disk as a raw image",
+    "note": "Machines page, Export menu: tooltip of Whole disk (raw)."
+  },
+  "MachinesPage.export.raw": {
+    "message": "Whole disk (raw)",
+    "note": "Machines page, Export menu: an item that saves the whole disk as a raw image."
+  },
+  "MachinesPage.export.compress.title": {
+    "message": "Compressed clusters (deflate), as qemu-img convert -c writes them: the file is about half the size and takes longer to write",
+    "note": "Machines page, Export menu: tooltip of Compress the qcow2. The command stays as it is."
+  },
+  "MachinesPage.export.compress": {
+    "message": "Compress the qcow2",
+    "note": "Machines page, Export menu: the label of a box that compresses the qcow2 files it writes."
+  },
+  "MachinesPage.export.hint": {
+    "message": "The machine stops while the file is written, as if its plug were pulled: shut it down first (<code>poweroff</code>) for a clean disk.",
+    "note": "Machines page, Export menu: the hint at its bottom. <code>…</code> wraps a guest command, shown as code (it stays as it is)."
+  },
+  "MachinesPage.importChanges.title": {
+    "message": "Put the changes of a saved changes file onto this disk (the disk it was made over must be this one)",
+    "note": "Machines page, the page's own machine, Disks tab: tooltip of Import changes…."
+  },
+  "MachinesPage.importChanges": {
+    "message": "Import changes…",
+    "note": "Machines page, the page's own machine, Disks tab: button that opens a changes file to apply to its disk."
+  },
+  "MachinesPage.resetDisk.title": {
+    "message": "Delete what the machine wrote to its disk and boot from the image again",
+    "note": "Machines page, the page's own machine, Disks tab: tooltip of Reset disk…."
+  },
+  "MachinesPage.resetDisk": {
+    "message": "Reset disk…",
+    "note": "Machines page, the page's own machine, Disks tab: button that deletes what the machine wrote (asks first)."
+  },
+  "MachinesPage.head.stateHere": {
+    "message": "{{state}} · on this page",
+    "note": "Machines page: beside a machine's name at the top of its pane, when it is this page's machine. {{state}}: its state (a MachinesPage.state.* message)."
+  },
+  "MachinesPage.open": {
+    "message": "Open on this page",
+    "note": "Machines page: button at the top of a machine's pane (one this page doesn't have) that opens it here."
+  },
+  "MachinesPage.runningHere.title": {
+    "message": "It runs on this page: its changes take effect at its next start",
+    "note": "Machines page: tooltip of the disabled Running on this page button."
+  },
+  "MachinesPage.runningHere": {
+    "message": "Running on this page",
+    "note": "Machines page: a disabled button at the top of the pane of the machine running on this page, in place of Start."
+  },
+  "MachinesPage.start.title": {
+    "message": "Start it on this page, as it is now (its settings and disks)",
+    "note": "Machines page: tooltip of Start."
+  },
+  "MachinesPage.start": {
+    "message": "Start",
+    "note": "Machines page: button at the top of the pane of this page's machine, while it is off: closes the page and starts it."
+  },
+  "MachinesPage.busy.copying": {
+    "message": "Copying",
+    "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Duplicate."
+  },
+  "MachinesPage.duplicate.title": {
+    "message": "A new machine with these settings and disks (each with a new empty overlay)",
+    "note": "Machines page: tooltip of Duplicate."
+  },
+  "MachinesPage.duplicate": {
+    "message": "Duplicate",
+    "note": "Machines page: button at the top of a machine's pane that makes a copy of it."
+  },
+  "MachinesPage.exportDefinition.title": {
+    "message": "The machine's settings and disks (which files, which URLs), without their contents, overlays or snapshots",
+    "note": "Machines page: tooltip of Export the definition."
+  },
+  "MachinesPage.exportDefinition": {
+    "message": "Export the definition",
+    "note": "Machines page: button at the top of a machine's pane that saves its definition file."
+  },
+  "MachinesPage.machine.delete.title": {
+    "message": "Delete the machine (its disks and their overlays stay)",
+    "note": "Machines page: tooltip of a machine's Delete button."
+  },
+  "MachinesPage.machine.delete": {
+    "message": "Delete",
+    "note": "Machines page: button at the top of a machine's pane that deletes it (asks first: MachinesPage.delete.confirm)."
+  },
+  "MachinesPage.tab.settings": {
+    "message": "Settings",
+    "note": "Machines page: a tab of a stored machine's pane. Its settings: processors, memory, display, devices."
+  },
+  "MachinesPage.tab.disksCount": {
+    "message": "Disks ({{n}})",
+    "note": "Machines page: a tab of a stored machine's pane. Its disks; {{n}}: how many are attached."
+  },
+  "MachinesPage.tab.network": {
+    "message": "Network",
+    "note": "Machines page: a tab of a stored machine's pane. Its network adapters."
+  },
+  "MachinesPage.tab.usbCount": {
+    "message": "USB ({{n}})",
+    "note": "Machines page: a tab of a stored machine's pane. Its USB controller and devices, when it remembers some; {{n}}: how many."
+  },
+  "MachinesPage.tab.usb": {
+    "message": "USB",
+    "note": "Machines page: a tab of a stored machine's pane. Its USB controller and devices, when it remembers none."
+  },
+  "MachinesPage.tab.foldersCount": {
+    "message": "Shared folders ({{n}})",
+    "note": "Machines page: a tab of a stored machine's pane. Its shared folders, when some are attached; {{n}}: how many."
+  },
+  "MachinesPage.tab.folders": {
+    "message": "Shared folders",
+    "note": "Machines page: a tab of a stored machine's pane. Its shared folders, when none is attached."
+  },
+  "MachinesPage.name": {
+    "message": "Name",
+    "note": "Machines page, Settings tab: the label of the machine's name field."
+  },
+  "MachinesPage.ncpus": {
+    "message": "vCPUs",
+    "note": "Machines page, Settings tab: the label of the processor count menu."
+  },
+  "MachinesPage.ram": {
+    "message": "RAM",
+    "note": "Machines page, Settings tab: the label of the memory size menu."
+  },
+  "MachinesPage.ram.title": {
+    "message": "The sum of the split below",
+    "note": "Machines page, Settings tab: tooltip of the RAM menu while it is disabled, the memory split being set by hand."
+  },
+  "MachinesPage.mib": {
+    "message": "{{n}} MiB",
+    "note": "Machines page, Settings tab: an option of the RAM and JIT cache menus. {{n}}: the size, MiB."
+  },
+  "MachinesPage.split": {
+    "message": "Memory split (advanced)",
+    "note": "Machines page, Settings tab: the summary of the folded section that sets the memory split by hand."
+  },
+  "MachinesPage.split.custom": {
+    "message": "Set the split myself",
+    "note": "Machines page, Settings tab: Memory split (advanced): the label of the box that sets the split by hand."
+  },
+  "MachinesPage.split.memory0": {
+    "message": "Memory 0, MiB",
+    "note": "Machines page, Settings tab: Memory split (advanced): the label of memory 0's size field."
+  },
+  "MachinesPage.split.nodes": {
+    "message": "NUMA nodes past it, MiB each",
+    "note": "Machines page, Settings tab: Memory split (advanced): the label of the field that lists the NUMA nodes' sizes, comma-separated."
+  },
+  "MachinesPage.split.nodes.placeholder": {
+    "message": "none",
+    "note": "Machines page, Settings tab: Memory split (advanced): the placeholder of the NUMA nodes field when it is empty."
+  },
+  "MachinesPage.split.note": {
+    "message": "Memory 0 is the fast memory, beside the emulator, up to {{max}} MiB. Each NUMA node (up to 4096 MiB, at most 8) is a memory of its own, slower to reach. The guest's processors are all on memory 0's node, so Linux fills it first.",
+    "note": "Machines page, Settings tab: Memory split (advanced): the note at its bottom. {{max}}: the most memory 0 holds, MiB."
+  },
+  "MachinesPage.jit": {
+    "message": "JIT cache",
+    "note": "Machines page, Settings tab: the label of the JIT cache size menu."
+  },
+  "MachinesPage.jit.title": {
+    "message": "The most compiled guest code the emulator keeps before it starts over. The browser spends several times this on it: a smaller cache saves memory, a larger one keeps a big guest's code (a web browser's) compiled",
+    "note": "Machines page, Settings tab: tooltip of the JIT cache menu."
+  },
+  "MachinesPage.jit.default": {
+    "message": "Default ({{n}} MiB)",
+    "note": "Machines page, Settings tab: the first option of the JIT cache menu: the page's default. {{n}}: its size, MiB."
+  },
+  "MachinesPage.display": {
+    "message": "Display",
+    "note": "Machines page, Settings tab: the label of the display menu."
+  },
+  "MachinesPage.display.3d": {
+    "message": "3D (WebGL2)",
+    "note": "Machines page, Settings tab: an option of the Display menu: a GPU with 3D, drawn with WebGL2."
+  },
+  "MachinesPage.display.2d": {
+    "message": "2D",
+    "note": "Machines page, Settings tab: an option of the Display menu: a GPU without 3D."
+  },
+  "MachinesPage.keyboard": {
+    "message": "Keyboard layout",
+    "note": "Machines page, Settings tab: the label of the keyboard layout menu."
+  },
+  "MachinesPage.keyboard.title": {
+    "message": "The layout of your keyboard, for the page to set in the guest",
+    "note": "Machines page, Settings tab: tooltip of the Keyboard layout menu."
+  },
+  "MachinesPage.keyboard.follow": {
+    "message": "This browser's, at every boot",
+    "note": "Machines page, Settings tab: an option of the Keyboard layout menu: the layout the browser reports, looked up at every start."
+  },
+  "MachinesPage.keyboard.none": {
+    "message": "Don't set it (the guest's own)",
+    "note": "Machines page, Settings tab: the first option of the Keyboard layout menu: the page doesn't set the guest's layout."
+  },
+  "MachinesPage.keyboard.match.title": {
+    "message": "The layout this browser reports for your keyboard",
+    "note": "Machines page, Settings tab: tooltip of Match this browser."
+  },
+  "MachinesPage.keyboard.match": {
+    "message": "Match this browser",
+    "note": "Machines page, Settings tab: button beside the Keyboard layout menu that picks the layout the browser reports."
+  },
+  "MachinesPage.keyboard.followNote.now": {
+    "message": "At every boot the page changes the guest's own keyboard settings to the layout this browser reports (now {{layout}}) (console, X11 and Wayland, on a guest with systemd 256 or newer). Where the browser doesn't say (only Chromium-based browsers do), the guest keeps its last layout; so does \"Don't set it\".",
+    "note": "Machines page, Settings tab: note under the Keyboard layout menu when it is This browser's, at every boot, and the browser reports a layout. {{layout}}: that layout's name. \"Don't set it\" quotes the menu's first option."
+  },
+  "MachinesPage.keyboard.followNote": {
+    "message": "At every boot the page changes the guest's own keyboard settings to the layout this browser reports (console, X11 and Wayland, on a guest with systemd 256 or newer). Where the browser doesn't say (only Chromium-based browsers do), the guest keeps its last layout; so does \"Don't set it\".",
+    "note": "Machines page, Settings tab: note under the Keyboard layout menu when it is This browser's, at every boot, and the browser reports no layout now. \"Don't set it\" quotes the menu's first option."
+  },
+  "MachinesPage.keyboard.setNote": {
+    "message": "The next time the machine boots, the page changes the guest's own keyboard settings to this layout (console, X11 and Wayland, on a guest with systemd 256 or newer), and again at every boot while it is set. \"Don't set it\" leaves the last layout set.",
+    "note": "Machines page, Settings tab: note under the Keyboard layout menu when a layout is chosen. \"Don't set it\" quotes the menu's first option."
+  },
+  "MachinesPage.shape.note": {
+    "message": "vCPUs, RAM, the display and Vulkan, the network adapters, the USB controller, the mouse, the touchscreen, the clock device and shared folders make the machine's shape: changing one orphans the snapshots taken before (they stay, marked, until deleted). The JIT cache doesn't: the guest doesn't see it.",
+    "note": "Machines page, Settings tab: the note at the tab's bottom, under Save."
+  },
+  "MachinesPage.adapter": {
+    "message": "Adapter {{n}}",
+    "note": "Machines page, Network tab: the name of each network adapter. {{n}}: its place, from 1."
+  },
+  "MachinesPage.adapter.mac": {
+    "message": "virtio-net, MAC {{mac}}",
+    "note": "Machines page, Network tab: the line under an adapter's name. {{mac}}: its MAC address."
+  },
+  "MachinesPage.adapter.connection": {
+    "message": "{{name}}: {{kind}}",
+    "note": "Machines page, Network tab: the adapter's connection, under its name. {{name}}: the connection's name; {{kind}}: what it is (a MachinesPage.connection kind). The connection's state and MachinesPage.adapter.primary may follow, after a \" · \"."
+  },
+  "MachinesPage.adapter.noConnection": {
+    "message": "No connection: the cable is out",
+    "note": "Machines page, Network tab: in place of the adapter's connection when it has none."
+  },
+  "MachinesPage.adapter.primary": {
+    "message": "the default way out",
+    "note": "Machines page, Network tab: after an adapter's connection (after a \" · \") when it is the one the guest's default route goes through."
+  },
+  "MachinesPage.adapter.atStart.title": {
+    "message": "Connect it when the machine starts (Disconnect turns it off)",
+    "note": "Machines page, Network tab: tooltip of Connect at start."
+  },
+  "MachinesPage.adapter.atStart": {
+    "message": "Connect at start",
+    "note": "Machines page, Network tab: the label of a box on an adapter with a connection."
+  },
+  "MachinesPage.adapter.attach.title": {
+    "message": "A connection of this browser's, or a new one",
+    "note": "Machines page, Network tab: tooltip of Attach… and Change connection…."
+  },
+  "MachinesPage.adapter.change": {
+    "message": "Change connection…",
+    "note": "Machines page, Network tab: button on an adapter with a connection that opens the connection wizard to pick another."
+  },
+  "MachinesPage.adapter.attach": {
+    "message": "Attach…",
+    "note": "Machines page, Network tab: button on an adapter without a connection that opens the connection wizard."
+  },
+  "MachinesPage.busy.detaching": {
+    "message": "Detaching",
+    "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: an adapter's Detach."
+  },
+  "MachinesPage.adapter.detach.title": {
+    "message": "Take the connection off the adapter (its client stops)",
+    "note": "Machines page, Network tab: tooltip of Detach."
+  },
+  "MachinesPage.adapter.detach": {
+    "message": "Detach",
+    "note": "Machines page, Network tab: button on an adapter with a connection that takes it off."
+  },
+  "MachinesPage.busy.disconnecting": {
+    "message": "Disconnecting",
+    "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: an adapter's Disconnect."
+  },
+  "MachinesPage.adapter.disconnect": {
+    "message": "Disconnect",
+    "note": "Machines page, Network tab: button on an adapter of the machine running on this page while its connection is up."
+  },
+  "MachinesPage.busy.connecting": {
+    "message": "Connecting",
+    "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: an adapter's Connect."
+  },
+  "MachinesPage.adapter.connect": {
+    "message": "Connect",
+    "note": "Machines page, Network tab: button on an adapter of the machine running on this page while its connection is down."
+  },
+  "MachinesPage.adapter.saveFirst": {
+    "message": "Save to attach a connection",
+    "note": "Machines page, Network tab: on an adapter added but not saved yet, in place of its buttons."
+  },
+  "MachinesPage.adapter.remove.title": {
+    "message": "Take the adapter out (the machine restarts without it)",
+    "note": "Machines page, Network tab: tooltip of Remove."
+  },
+  "MachinesPage.adapter.remove": {
+    "message": "Remove",
+    "note": "Machines page, Network tab: button on each adapter that takes it out of the machine."
+  },
+  "MachinesPage.adapters.none": {
+    "message": "No network adapters: the machine is offline.",
+    "note": "Machines page, Network tab: in place of the list when the machine has no adapter."
+  },
+  "MachinesPage.adapters.add": {
+    "message": "Add a network adapter",
+    "note": "Machines page, Network tab: button under the list of adapters."
+  },
+  "MachinesPage.adapters.note": {
+    "message": "Up to {{max}}, each with its own MAC (eth0, eth1… in the guest, in this order). Adding, removing or moving one changes the machine's shape: snapshots taken before are orphaned. A connection is attached, changed or detached while the machine runs, as a cable is; the guest's default route goes through the first adapter that reaches the internet.",
+    "note": "Machines page, Network tab: the note under the list of adapters. {{max}}: the most adapters (4)."
+  },
+  "MachinesPage.netConfig.title": {
+    "message": "At every boot the page has the guest's systemd-networkd take what each connection's lease says",
+    "note": "Machines page, Network tab: tooltip of Take the connection's settings in the guest."
+  },
+  "MachinesPage.netConfig": {
+    "message": "Take the connection's settings in the guest",
+    "note": "Machines page, Network tab: the label of a box under the adapters."
+  },
+  "MachinesPage.netConfig.on": {
+    "message": "At every boot the page has the guest's systemd-networkd take each connection's MTU (a tailnet's is 1280: at the adapter's 1500, large packets can be lost) and search domain (MagicDNS's), and use DHCP on adapters nothing else sets up, on a guest with systemd 256 or newer. Nothing is written to the guest's disk: it lasts until the guest shuts down. NetworkManager takes them by itself.",
+    "note": "Machines page, Network tab: the note under Take the connection's settings in the guest, while it is ticked."
+  },
+  "MachinesPage.netConfig.off": {
+    "message": "The page leaves the guest's network settings alone: the guest takes the MTU and search domain only if it is set up to. The next boot has none of the page's settings.",
+    "note": "Machines page, Network tab: the note under Take the connection's settings in the guest, while it is unticked."
+  },
+  "MachinesPage.shares.title": {
+    "message": "One virtio-9p device through which the guest reaches this machine's folders: the guest sees it, so turning it on or off changes the machine's shape",
+    "note": "Machines page, Shared folders tab: tooltip of the Shared folders box."
+  },
+  "MachinesPage.shares": {
+    "message": "Shared folders",
+    "note": "Machines page, Shared folders tab: the label of the box that gives the machine the shared folders device."
+  },
+  "MachinesPage.shares.orphans.on": {
+    "message": "Turning shared folders on changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.",
+    "note": "Machines page, Shared folders tab: warning under the Shared folders box once it is ticked (not saved yet)."
+  },
+  "MachinesPage.shares.orphans.off": {
+    "message": "Turning shared folders off changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.",
+    "note": "Machines page, Shared folders tab: warning under the Shared folders box once it is unticked (not saved yet)."
+  },
+  "MachinesPage.sharesMount.title": {
+    "message": "At every boot the page has the guest's systemd mount the device, at the first access",
+    "note": "Machines page, Shared folders tab: tooltip of Mount shared folders in the guest."
+  },
+  "MachinesPage.sharesMount": {
+    "message": "Mount shared folders in the guest",
+    "note": "Machines page, Shared folders tab: the label of a box under Shared folders."
+  },
+  "MachinesPage.sharesPath": {
+    "message": "Mount point",
+    "note": "Machines page, Shared folders tab: the label of the field with the path where the guest mounts the shared folders."
+  },
+  "MachinesPage.sharesPath.noteRunning": {
+    "message": "Mounting over a directory that has files hides them. A new mount point takes effect at the next start. On a guest with systemd 256 or newer; nothing is written to its disk.",
+    "note": "Machines page, Shared folders tab: the note under Mount point, while the machine runs on this page."
+  },
+  "MachinesPage.sharesPath.note": {
+    "message": "Mounting over a directory that has files hides them. On a guest with systemd 256 or newer; nothing is written to its disk.",
+    "note": "Machines page, Shared folders tab: the note under Mount point."
+  },
+  "MachinesPage.empty": {
+    "message": "Choose a machine, or make a new one.",
+    "note": "Machines page: in place of a machine's pane when none is chosen."
+  },
+  "MachinesPage.storage.persisted": {
+    "message": "The browser's storage: {{used, bytes}} used of {{quota, bytes}}, kept under pressure.",
+    "note": "Machines page: the browser's storage, in the bar at the page's bottom. Here: the browser keeps it when space runs short. {{used}}: the bytes the page uses; {{quota}}: the most it may."
+  },
+  "MachinesPage.storage": {
+    "message": "The browser's storage: {{used, bytes}} used of {{quota, bytes}}.",
+    "note": "Machines page: the browser's storage, in the bar at the page's bottom. {{used}}: the bytes the page uses; {{quota}}: the most it may."
+  },
+  "MachinesPage.busy.asking": {
+    "message": "Asking",
+    "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Keep it under pressure (the browser is asked)."
+  },
+  "MachinesPage.storage.persist": {
+    "message": "Keep it under pressure",
+    "note": "Machines page: the browser's storage, in the bar at the page's bottom. A button that asks the browser to keep the page's storage when space runs short."
+  },
+  "MachinesPage.storage.clear.title": {
+    "message": "Remote disks read again from the network (a running machine too, from now on). Kept a week after their last use at most; the browser may also take them back when space runs short",
+    "note": "Machines page: the browser's storage, in the bar at the page's bottom. Tooltip of Clear remote disks' blocks."
+  },
+  "MachinesPage.busy.clearing": {
+    "message": "Clearing",
+    "note": "Machines page: what the page is doing, shown in the top bar (MachinesPage.busy) while an action runs. Here: Clear remote disks' blocks."
+  },
+  "MachinesPage.storage.clear": {
+    "message": "Clear remote disks' blocks ({{size, bytes}})",
+    "note": "Machines page: the browser's storage, in the bar at the page's bottom. A button that drops the kept blocks of URL disks. {{size}}: their bytes."
+  },
+  "MachinesPage.storage.items": {
+    "message": "What takes it",
+    "note": "Machines page: the browser's storage, in the bar at the page's bottom. The summary of a folded list of what fills the storage."
+  },
+  "MachinesPage.storage.item": {
+    "message": "{{what}}: {{size, bytes}}",
+    "note": "Machines page: the browser's storage, in the bar at the page's bottom. An item of What takes it. {{what}}: what (a machines.storage.* message); {{size}}: its bytes."
+  }
+}
