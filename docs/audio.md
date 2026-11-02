@@ -37,8 +37,8 @@ the guest images in [images.md](images.md), the tests in [testing.md](testing.md
 - **The microphone opens on the guest's demand:** the device always has an input stream; the page asks for the
   microphone (`getUserMedia`, the browser's prompt) the first time the guest starts capturing, and the guest records
   silence, in real time, until it's granted (or if it's denied or turned off). The browser's processing (echo
-  cancellation, noise suppression, auto gain) is on, since the guest's own sound would otherwise be in a call; **Raw
-  microphone** turns it off, for music.
+  cancellation, noise suppression, auto gain) is on, since the guest's own sound would otherwise be in a call; [Raw
+  microphone](ui:sound:Sound.micRaw) turns it off, for music.
 - **No guest-side software.** The guest's own driver and sound stack (ALSA alone, PipeWire, PulseAudio) run unmodified;
   mixing and resampling of several guest streams stay the guest's.
 - **The guests' own kernels carry the driver**: Debian's, Alpine's and the desktop guest's Arch (arch.bens.haus's

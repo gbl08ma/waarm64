@@ -231,23 +231,24 @@ export class PageNetwork {
     const n = this.nets[i];
     if (!n) throw new Error(`the machine has no adapter ${i + 1}`);
     if (this.running[i] === c.id && n.active()) return;
-    if (!this.on) throw new MsgError('network:net-live.off');
-    if (this.leaving.has(c.id)) throw new MsgError('network:net-live.loggingOut', { name: c.name });
+    const refused = (cause: unknown) => new MsgError('network:net-live.notConnected', { name: c.name }, { cause });
+    if (!this.on) throw refused(new MsgError('network:net-live.off'));
+    if (this.leaving.has(c.id)) throw refused(new MsgError('network:net-live.loggingOut', { name: c.name }));
     const other = this.running.findIndex((id, k) => id === c.id && k !== i);
-    if (other >= 0) throw new MsgError('network:net-live.onOtherAdapter', { name: c.name, adapter: other + 1 });
+    if (other >= 0) throw refused(new MsgError('network:net-live.onOtherAdapter', { name: c.name, adapter: other + 1 }));
     const lock = connectionLock(c.id);
     if (!(await this.locks.take(lock))) throw new HeldError(c, await this.locks.holder(lock));
     // It stopped, or its adapters changed, while the lock was asked for.
     if (!this.on || this.nets[i] !== n) {
       if (!this.running.includes(c.id)) this.locks.drop(lock);
-      throw new MsgError('network:net-live.off');
+      throw refused(new MsgError('network:net-live.off'));
     }
     if (n.active()) await this.disconnect(i, false);
     try {
       n.connect(connectOf(c, authKey));
     } catch (e) {
       this.locks.drop(lock);
-      throw e;
+      throw refused(e);
     }
     this.running[i] = c.id;
     this.notes[i] = undefined;
@@ -315,7 +316,7 @@ export class PageNetwork {
    */
   async logoutKept(c: Connection) {
     await this.nodeOut(c, async (gone) => {
-      if (!gone) throw new MsgError('network:net-live.notLoggedOut', { host: new URL(c.tailnet!.controlURL).host, name: c.name });
+      if (!gone) throw new MsgError('network:net-live.notLoggedOut', { name: c.name }, { cause: new MsgError('network:net-live.notLoggedOut.cause', { host: new URL(c.tailnet!.controlURL).host }) });
       await this.conns.put({ ...c, connectAtStart: false });
     });
     await this.refresh();

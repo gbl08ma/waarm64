@@ -178,7 +178,7 @@ async function storeFlows(make: () => Promise<{ a: Store; b: Store; write(path: 
   const reread = { machines: (await b.all('machines')).map((r) => r.name), overlays: (await b.overlaysOf(d.id)).map((r) => r.id), users: (await b.machinesWith(d.id)).map((r) => r.id), snapshots: (await b.snapshotsOf(m.id)).map((r) => r.id) };
   const sizes = { overlay: await b.files.size('overlays/c00000000001'), machine: await b.files.size('machines/aaaaaaaaaaaa'), transient: await b.files.size('overlays/t-debian') };
   let refused: unknown;
-  await b.deleteDisk(d.id).catch((e) => { refused = (e as { msg?: unknown }).msg ?? String(e); });
+  await b.deleteDisk(d.id).catch((e) => { refused = [(e as { msg?: unknown }).msg ?? String(e), (e as { cause?: { msg?: unknown } }).cause?.msg]; });
   await b.deleteMachine(m.id);
   const afterMachine = { snapshots: (await a.all('snapshots')).length, machineFiles: await a.files.size('machines/aaaaaaaaaaaa'), overlay: !!(await a.get('overlays', o.id)) };
   await b.deleteDisk(d.id);
@@ -193,7 +193,7 @@ const expected = {
   swept: ['disks/d0000000000f', 'machines/aaaaaaaaaaaa/snapshots/b0000000000f', 'machines/bbbbbbbbbbbb', 'overlays/c0000000000f'],
   reread: { machines: ['Brisk Heron'], overlays: ['c00000000001'], users: ['aaaaaaaaaaaa'], snapshots: ['b00000000001'] },
   sizes: { overlay: 5120, machine: (1 << 20) + 100, transient: 4096 },
-  refused: { key: 'machines:store.diskAttached', params: { machines: ['Brisk Heron'] } },
+  refused: [{ key: 'machines:store.diskAttached' }, { key: 'machines:store.diskAttached.cause', params: { machines: ['Brisk Heron'] } }],
   afterMachine: { snapshots: 0, machineFiles: 0, overlay: true },
   afterDisk: { overlays: 0, files: 0, disks: 0 },
   // `a`'s puts and `b`'s deletions: `b` hears only what another store did.

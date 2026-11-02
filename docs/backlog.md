@@ -1022,16 +1022,22 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   sending the keys to the serial console, as its own typing does; layouts besides US (legends from the guest's keymap, web/app/keyboard.ts); a
   key held on it repeating on the serial console (before the guest's keyboard driver), as the browser's repeats do.
 
-- **Errors written as one message** ([copy.md](copy.md) "The elements": a headline, then the cause as details): where
-  the code throws a single message, its words are "Couldn't …" and a second line after `\n` instead of a `MsgError`
-  headline with a cause of its own (`machines.needsOff.*`, `definitions.*`, `store.diskAttached` in machines.ts,
-  definitions.ts, store.ts; `net-live.off`, `network.notStarted`, `net-live.onOtherAdapter`, `net-live.notLoggedOut`;
-  the worker's errors without a cause). Each would split into a headline key and a cause key, and its caller wrap one
-  in the other. The checker doesn't see it either (a lone-line check is to add).
-- **The i18n checks' holes** (tools/i18n-check.ts; review/i18n, 2026-11-02): parameters aren't checked when a key comes
-  through a map (`STATE_WORDS`, `PHASE_WORD`) or the parameters are a conditional or built elsewhere; sentences in lower
-  case, or with `;` or `=`, aren't flagged as copy; a quote in the docs split across two lines isn't seen; nothing
-  catches code that shows a `MsgError`'s `.message` (its developer text) to the user. Each would be a rule over the AST.
+- **What the i18n checks can't see** (tools/i18n-check.ts, [i18n.md](i18n.md) "Checks"; 2026-11-02, when the
+  headline-and-line errors were split and the AST rules added). Each needs data flow across functions or modules, which
+  the checker doesn't have (it reads one file's syntax, no types):
+  - **Errors that are only a cause.** A `MsgError` whose words are a sentence ([The machine is off. Start it first.](ui:network:net-live.off)) is
+    a cause; it needs a headline where it reaches the user unwrapped. About 80 such keys are thrown (`folders-page.*`,
+    `disks.*`, `usb-live.*`, `local-net.*`, …); most are wrapped by their callers (`new MsgError('…couldn't …', …, {
+    cause: e })`), and only the network's four were audited and given one (`net-live.notConnected`,
+    `net-live.notLoggedOut`). Telling which reach the page bare means following each throw to where it's shown.
+  - **Parameters of a key that comes from elsewhere**: a function's parameter or a field (`t(d.name)`,
+    `msg(m.key, m.params)`, the worker's `failure(problem, m)`), or another module's constant. The calls whose key the
+    file names (a literal, a conditional, a map or constant of the file, by scope) are all checked.
+  - **A `.message` shown at a distance**: the rule follows a caught error's `.message` to a call, a parameter, the DOM or
+    a component's state in the same expression; one stored in a field or posted across a worker (`web/usb.ts`'s
+    `usb-state` `message`) and shown later isn't followed.
+  - **Copy in lower case without a sentence's end** isn't flagged: the code's lower-case phrases without one are
+    developers' (15 of them in the renderers, 2026-11-02), and copy ends with a period.
 - **Firefox** (not a target; 2026-10-15): Debian boots on the page in Firefox 157 (headless, the dev VM)
   once qcow2's compressed clusters stopped relying on Chromium's DecompressionStream handing over
   its output before the junk error (`web/qcow2.ts` `inflate`) and SpiderMonkey runs without the

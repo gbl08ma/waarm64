@@ -8,8 +8,8 @@ and the choices they made then; it grows as the user reviews more of the copy.
 
 - **Plain and conventional.** The words a user expects from other software: Create, Delete, Power off, Restore. No
   invented phrasing ("Make it"), no wordplay.
-- **The effect first.** Say what happens or what something does before why or how: "No video output. The guest may
-  be sending boot menus and setup instructions to the serial console."; "Automatically configure the guest to use
+- **The effect first.** Say what happens or what something does before why or how: [No video output. The guest may
+  be sending boot menus and setup instructions to the serial console.](ui:common:App.boot.serial); "Automatically configure the guest to use
   this ramdisk as swap."
 - **Full sentences**, ending with a period, tooltips and notes included. A button, a label, a title and an error's
   headline aren't sentences and take no period.
@@ -74,8 +74,8 @@ actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
   opens a further step that asks something ([Connect…](ui:network:Network.setup), [Add a disk…](ui:disks:Disks.add)), none when it acts at once.
 - **Busy text** (while an action runs): the verb's -ing form and its object, no period ([Creating the overlay](ui:disks:Disks.busy.newOverlay)).
 - **Titles and headings**: sentence case, no period.
-- **Tooltips**: full sentences, a period. Say what the control does, then what it affects ("Take the disk off this
-  machine. It remains stored in this browser.").
+- **Tooltips**: full sentences, a period. Say what the control does, then what it affects ([Take the disk off this
+  machine. It remains stored in this browser.](ui:disks:Disks.detach.button.title)).
 - **Confirmations**: the question first ("Delete the overlay Work?"), then what it will cause, with `will` ("This will
   delete the 12.0 MiB of changes made on top of the base image."). The OK button names the action ("Delete"), never
   "OK" for something destructive.

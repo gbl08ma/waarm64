@@ -288,24 +288,40 @@
     "note": "Which disk an attachment was, in shape.diff.disk.other: a ramdisk."
   },
   "machines.needsOff.delete": {
-    "message": "Couldn't delete the machine\nIt's running, in this tab or another. Power it off first.",
-    "note": "Error in the Machines page's message bar when Delete finds the machine running (in this tab or another): the headline, then on the next line its details."
+    "message": "Couldn't delete the machine",
+    "note": "Error in the Machines page's message bar when Delete finds the machine running (in this tab or another): the headline; its details are the line under it (machines:machines.needsOff.delete.cause)."
+  },
+  "machines.needsOff.delete.cause": {
+    "message": "It's running, in this tab or another. Power it off first.",
+    "note": "Error details: the cause under the headline machines:machines.needsOff.delete, on the line under it in the same place; what happened, and what the user can do if anything."
   },
   "machines.needsOff.shape": {
-    "message": "Couldn't save the settings\nThese changes need the machine off, and it's running in this tab or another. Power it off first.",
-    "note": "Error in the message bar when Save (Machines page, Settings, or the toolbar's Machine menu) changes the machine's vCPUs, RAM, devices or JIT cache while it runs (in this tab or another): the headline, then on the next line its details."
+    "message": "Couldn't save the settings",
+    "note": "Error in the message bar when Save (Machines page, Settings, or the toolbar's Machine menu) changes the machine's vCPUs, RAM, devices or JIT cache while it runs (in this tab or another): the headline; its details are the line under it (machines:machines.needsOff.shape.cause)."
+  },
+  "machines.needsOff.shape.cause": {
+    "message": "These changes need the machine off, and it's running in this tab or another. Power it off first.",
+    "note": "Error details: the cause under the headline machines:machines.needsOff.shape, on the line under it in the same place; what happened, and what the user can do if anything."
   },
   "machines.needsOff.attach": {
-    "message": "Couldn't add the disk\nThe machine is running, in this tab or another. Power it off first.",
-    "note": "Error in the message bar when adding a disk (Machines page, Disks tab, Add a disk) finds the machine running (in this tab or another): the headline, then on the next line its details."
+    "message": "Couldn't add the disk",
+    "note": "Error in the message bar when adding a disk (Machines page, Disks tab, Add a disk) finds the machine running (in this tab or another): the headline; its details are the line under it (machines:machines.needsOff.running)."
+  },
+  "machines.needsOff.running": {
+    "message": "The machine is running, in this tab or another. Power it off first.",
+    "note": "Error details: the cause under the headline machines:machines.needsOff.attach (or machines:machines.needsOff.disks), on the line under it in the same place; what happened, and what the user can do if anything."
   },
   "machines.needsOff.disks": {
-    "message": "Couldn't change the machine's disks\nThe machine is running, in this tab or another. Power it off first.",
-    "note": "Error in the Machines page's message bar when a change on the Disks tab (read-only, order, detach…) finds the machine running (in this tab or another): the headline, then on the next line its details."
+    "message": "Couldn't change the machine's disks",
+    "note": "Error in the Machines page's message bar when a change on the Disks tab (read-only, order, detach…) finds the machine running (in this tab or another): the headline; its details are the line under it (machines:machines.needsOff.running)."
   },
   "machines.machineGone": {
-    "message": "Couldn't find the machine\nIt may have been deleted in another tab.",
-    "note": "Error in the Machines page's message bar when an action's machine was deleted meanwhile (in another tab): the headline, then on the next line its details."
+    "message": "Couldn't find the machine",
+    "note": "Error in the Machines page's message bar when an action's machine was deleted meanwhile (in another tab): the headline; its details are the line under it (machines:machines.machineGone.cause)."
+  },
+  "machines.machineGone.cause": {
+    "message": "It may have been deleted in another tab.",
+    "note": "Error details: the cause under the headline machines:machines.machineGone, on the line under it in the same place; what happened, and what the user can do if anything."
   },
   "machines.copyName": {
     "message": "{{name}} (copy)",
@@ -320,16 +336,28 @@
     "note": "The name a new ramdisk gets when the user gives none (Machines page, Disks tab, Add a disk). Stored: it stays the disk's name."
   },
   "machines.maxDisks": {
-    "message": "Couldn't add the disk\nA machine can't have more than {{max}} disks.",
-    "note": "Error in the message bar when a disk is added to a machine that has the most already: the headline, then on the next line its details. {{max}}: the most disks (16)."
+    "message": "Couldn't add the disk",
+    "note": "Error in the message bar when a disk is added to a machine that has the most already: the headline; its details are the line under it (machines:machines.maxDisks.cause). {{max}}: the most disks (16)."
+  },
+  "machines.maxDisks.cause": {
+    "message": "A machine can't have more than {{max}} disks.",
+    "note": "Error details: the cause under the headline machines:machines.maxDisks, on the line under it in the same place; what happened, and what the user can do if anything. {{max}}: as that entry's note says."
   },
   "machines.notAttached": {
-    "message": "Couldn't change the disk\nIt's no longer attached to this machine.",
-    "note": "Error in the Machines page's message bar when a change on the Disks tab finds the disk detached meanwhile (in another tab): the headline, then on the next line its details."
+    "message": "Couldn't change the disk",
+    "note": "Error in the Machines page's message bar when a change on the Disks tab finds the disk detached meanwhile (in another tab): the headline; its details are the line under it (machines:machines.notAttached.cause)."
+  },
+  "machines.notAttached.cause": {
+    "message": "It's no longer attached to this machine.",
+    "note": "Error details: the cause under the headline machines:machines.notAttached, on the line under it in the same place; what happened, and what the user can do if anything."
   },
   "machines.swapMin": {
-    "message": "Couldn't use the ramdisk as swap\nA swap ramdisk must be at least {{kib}} KiB.",
-    "note": "Error in the Machines page's message bar when the user ticks swap on a ramdisk too small for it (Disks tab): the headline, then on the next line its details. {{kib}}: the least size, KiB."
+    "message": "Couldn't use the ramdisk as swap",
+    "note": "Error in the Machines page's message bar when the user ticks swap on a ramdisk too small for it (Disks tab): the headline; its details are the line under it (machines:machines.swapMin.cause). {{kib}}: the least size, KiB."
+  },
+  "machines.swapMin.cause": {
+    "message": "A swap ramdisk must be at least {{kib}} KiB.",
+    "note": "Error details: the cause under the headline machines:machines.swapMin, on the line under it in the same place; what happened, and what the user can do if anything. {{kib}}: as that entry's note says."
   },
   "machines.storage.stored": {
     "message": "Stored disk {{name}}",
@@ -352,32 +380,60 @@
     "note": "An item of What uses the space, the list of what fills the browser's storage (Machines page, at the bottom), before its size (MachinesPage.storage.item). The blocks of URL disks kept in the browser."
   },
   "definitions.machineGone": {
-    "message": "Couldn't export the definition\nThe machine may have been deleted in another tab.",
-    "note": "Error in the Machines page's message bar when Export the definition finds the machine deleted meanwhile (in another tab): the headline, then on the next line its details."
+    "message": "Couldn't export the definition",
+    "note": "Error in the Machines page's message bar when Export the definition finds the machine deleted meanwhile (in another tab): the headline; its details are the line under it (machines:definitions.machineGone.cause)."
+  },
+  "definitions.machineGone.cause": {
+    "message": "The machine may have been deleted in another tab.",
+    "note": "Error details: the cause under the headline machines:definitions.machineGone, on the line under it in the same place; what happened, and what the user can do if anything."
   },
   "definitions.diskMissing": {
-    "message": "Couldn't export the definition\n{{name}} has a disk that isn't in this browser.",
-    "note": "Error in the Machines page's message bar when Export the definition finds one of the machine's disks missing from the browser: the headline, then on the next line its details. {{name}}: the machine."
+    "message": "Couldn't export the definition",
+    "note": "Error in the Machines page's message bar when Export the definition finds one of the machine's disks missing from the browser: the headline; its details are the line under it (machines:definitions.diskMissing.cause). {{name}}: the machine."
+  },
+  "definitions.diskMissing.cause": {
+    "message": "{{name}} has a disk that isn't in this browser.",
+    "note": "Error details: the cause under the headline machines:definitions.diskMissing, on the line under it in the same place; what happened, and what the user can do if anything. {{name}}: as that entry's note says."
   },
   "definitions.notJson": {
-    "message": "Couldn't import the definition\nThe file isn't JSON, so it isn't a machine definition.",
-    "note": "Error in the Machines page's message bar after Import a definition…: the file chosen isn't JSON. The headline, then on the next line its details."
+    "message": "Couldn't import the definition",
+    "note": "Error in the Machines page's message bar after Import a definition…: the file chosen isn't JSON. The headline; its details are the line under it (machines:definitions.notJson.cause)."
+  },
+  "definitions.notJson.cause": {
+    "message": "The file isn't JSON, so it isn't a machine definition.",
+    "note": "Error details: the cause under the headline machines:definitions.notJson, on the line under it in the same place; what happened, and what the user can do if anything."
   },
   "definitions.notDefinition": {
-    "message": "Couldn't import the definition\nThe file isn't a machine definition.",
-    "note": "Error in the Machines page's message bar after Import a definition…: the file is JSON, but not a machine definition. The headline, then on the next line its details."
+    "message": "Couldn't import the definition",
+    "note": "Error in the Machines page's message bar after Import a definition…: the file is JSON, but not a machine definition. The headline; its details are the line under it (machines:definitions.notDefinition.cause)."
+  },
+  "definitions.notDefinition.cause": {
+    "message": "The file isn't a machine definition.",
+    "note": "Error details: the cause under the headline machines:definitions.notDefinition, on the line under it in the same place; what happened, and what the user can do if anything."
   },
   "definitions.version": {
-    "message": "Couldn't import the definition\nIt's version {{version}}, and this web app reads version {{reads}}.",
-    "note": "Error in the Machines page's message bar after Import a definition…: a definition of another version. The headline, then on the next line its details. {{version}}: the file's; {{reads}}: the one this web app reads."
+    "message": "Couldn't import the definition",
+    "note": "Error in the Machines page's message bar after Import a definition…: a definition of another version. The headline; its details are the line under it (machines:definitions.version.cause). {{version}}: the file's; {{reads}}: the one this web app reads."
+  },
+  "definitions.version.cause": {
+    "message": "It's version {{version}}, and this web app reads version {{reads}}.",
+    "note": "Error details: the cause under the headline machines:definitions.version, on the line under it in the same place; what happened, and what the user can do if anything. {{version}}, {{reads}}: as that entry's note says."
   },
   "definitions.damaged": {
-    "message": "Couldn't import the definition\nThe definition is damaged. A field is missing or out of range.",
-    "note": "Error in the Machines page's message bar after Import a definition…: a field is missing or out of range. The headline, then on the next line its details."
+    "message": "Couldn't import the definition",
+    "note": "Error in the Machines page's message bar after Import a definition…: a field is missing or out of range. The headline; its details are the line under it (machines:definitions.damaged.cause)."
+  },
+  "definitions.damaged.cause": {
+    "message": "The definition is damaged. A field is missing or out of range.",
+    "note": "Error details: the cause under the headline machines:definitions.damaged, on the line under it in the same place; what happened, and what the user can do if anything."
   },
   "store.diskAttached": {
-    "message": "Couldn't delete the disk\nIt's attached to {{machines}}. Detach it first.",
-    "note": "Error in the message bar when the user deletes a disk some machines still have (the Machines page's Disks pane): the headline, then on the next line its details. {{machines}}: their names, comma-separated."
+    "message": "Couldn't delete the disk",
+    "note": "Error in the message bar when the user deletes a disk some machines still have (the Machines page's Disks pane): the headline; its details are the line under it (machines:store.diskAttached.cause). {{machines}}: their names, comma-separated."
+  },
+  "store.diskAttached.cause": {
+    "message": "It's attached to {{machines}}. Detach it first.",
+    "note": "Error details: the cause under the headline machines:store.diskAttached, on the line under it in the same place; what happened, and what the user can do if anything. {{machines}}: as that entry's note says."
   },
   "urlcheck.corsHint": {
     "message": "CORS headers for this web app's origin: `Access-Control-Allow-Origin` with this origin or *, `Access-Control-Expose-Headers: Content-Range, Content-Length, ETag`, and `Range` allowed in its answers to OPTIONS",

@@ -141,7 +141,7 @@ test('a connection on one adapter only; an attachment whose connection is gone i
   assert.equal(p.saved[1], undefined);
   assert.ok(1 in p.saved, 'the gone attachment is saved detached');
   assert.equal(p.net.views()[1].note, t('network:net-live.gone'));
-  await assert.rejects(p.net.connect(1, c), (e) => msgOf(e)?.key === 'network:net-live.onOtherAdapter' && msgOf(e)?.params?.adapter === 1);
+  await assert.rejects(p.net.connect(1, c), (e) => keysOf(e) === 'network:net-live.notConnected › network:net-live.onOtherAdapter' && msgOf((e as Error).cause)?.params?.adapter === 1);
   // Deleting a connection disconnects it here, forgets it and takes it off the adapter.
   await p.net.remove(c);
   assert.equal(await p.net.conns.get(c.id), undefined);
@@ -191,7 +191,7 @@ test('a machine powered off lets its connections go, and connects them at its ne
   assert.equal(p.net.runs(c.id), -1);
   assert.equal((await p.net.conns.get(c.id))!.connectAtStart, true, "it isn't a Disconnect");
   assert.equal(p.net.views()[0].on, false, 'the menu has no Connect to offer');
-  await assert.rejects(p.net.connect(0, c), (e) => msgOf(e)?.key === 'network:net-live.off');
+  await assert.rejects(p.net.connect(0, c), (e) => keysOf(e) === 'network:net-live.notConnected › network:net-live.off');
   // Attaching stays possible: it is saved, and connects at the start.
   await p.net.attach(0, other);
   assert.equal(p.saved[0], other.id);
@@ -274,8 +274,10 @@ test('adapters reordered: the clients follow their adapters across the restart, 
   p.close();
 });
 
-/** What `p` came to: 'ok', or its error's message's key (its words, without one). */
-const quietly = (p: Promise<unknown>) => p.then(() => 'ok', (e) => msgOf(e)?.key ?? String(e?.message ?? e));
+/** The keys of error `e`'s messages: its headline's, then its causes' (` › ` between). */
+const keysOf = (e: unknown) => { const k: string[] = []; for (let c = e; msgOf(c); c = (c as Error).cause) k.push(msgOf(c)!.key); return k.join(' › '); };
+/** What `p` came to: 'ok', or its error's messages' keys (its words, without one). */
+const quietly = (p: Promise<unknown>) => p.then(() => 'ok', (e) => keysOf(e) || String(e?.message ?? e));
 
 test('a kept node is logged out with no machine running it, and only one that is kept can be', async () => {
   const kept: string[] = [];
@@ -312,7 +314,7 @@ test("a kept node whose control server doesn't answer stays as it was", async ()
   const out = quietly(p.net.logoutKept(c));
   await new Promise((r) => setTimeout(r, 5));
   p.all[0].fail('no route');
-  assert.equal(await out, 'network:net-live.notLoggedOut');
+  assert.equal(await out, 'network:net-live.notLoggedOut › network:net-live.notLoggedOut.cause');
   assert.ok(!p.log.includes('ts0 logout'));
   assert.deepEqual(kept, [c.tailnet!.stateKey]);
   // Deleting it all the same says the node is left behind.
@@ -337,7 +339,7 @@ test('a running client that logs out or is deleted stops first: unconnected, the
   assert.ok(!p.log.includes('ts0 logout'), `not through the unconnected client: ${p.log}`);
   assert.ok(p.log.includes('ts0 detach'));
   p.all[1].fail('no route');
-  assert.equal(await out, 'network:net-live.notLoggedOut');
+  assert.equal(await out, 'network:net-live.notLoggedOut › network:net-live.notLoggedOut.cause');
   assert.deepEqual(kept, [c.tailnet!.stateKey], 'nothing forgotten');
 
   await p.net.connect(0, (await p.net.conns.get(c.id))!);
@@ -365,7 +367,7 @@ test('while a node logs out nothing connects it, and no other tab is let in', as
   await a.net.conns.put({ ...c, connectAtStart: false });
   const out = a.net.logoutKept(c);
   await new Promise((r) => setTimeout(r, 5));
-  assert.equal(await quietly(a.net.connect(0, c)), 'network:net-live.loggingOut');
+  assert.equal(await quietly(a.net.connect(0, c)), 'network:net-live.notConnected › network:net-live.loggingOut');
   assert.equal(await b.net.locks.takeFrom(connectionLock(c.id), { ms: 300 }), false, 'the other tab waits');
   assert.ok(a.net.locks.mine(connectionLock(c.id)));
   a.all[0].set('Running', netmap()); // i18n-ignore
@@ -391,7 +393,7 @@ test('a lock taken for a machine that stopped meanwhile is let go', async () => 
   b.net.ports('mb', adapters(undefined));
   const going = quietly(b.net.connect(0, c));
   b.net.machineOff();
-  assert.equal(await going, 'network:net-live.off');
+  assert.equal(await going, 'network:net-live.notConnected › network:net-live.off');
   assert.equal(b.net.views()[0].active, false);
   assert.ok(!b.net.locks.mine(connectionLock(c.id)));
   a.close();

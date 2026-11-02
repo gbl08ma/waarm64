@@ -578,6 +578,7 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   let r = await settled(page);
   assert.equal(r.state, 'failed');
   assert.match(r.text!, words('machine:main.notIsolated', {}, { start: true }));
+  assert.match(r.details!, words('machine:main.notIsolated.cause', {}, { start: true }));
   assert.equal(await page.locator('#restart').isHidden(), true);
   await page.close();
   // xterm.js not installed: the module graph fails to load.
@@ -586,14 +587,15 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   assert.match(await page.locator('#message-text').textContent() ?? '', /scripts didn't load[^]*npm start/);
   await page.close();
   // The core, then an image: 404s from the machine worker's fetches; Retry once they're back.
-  for (const [pattern, want] of [
-    ['**/webpc_core.wasm', words('machine:worker.noCore', { path: 'target/wasm32-unknown-unknown/release/webpc_core.wasm', why: t('machine:worker.http.notFound', { status: 404 }) }, { start: true })],
-    ['**/buildroot/rootfs.ext4', words('machine:worker.noImage', { machine: t('machines:machine.buildroot'), path: 'target/images/buildroot/rootfs.ext4', why: t('machine:worker.http.notFound', { status: 404 }) }, { start: true })],
+  for (const [pattern, want, why] of [
+    ['**/webpc_core.wasm', words('machine:worker.noCore', {}, { start: true }), words('machine:worker.noCore.cause', { path: 'target/wasm32-unknown-unknown/release/webpc_core.wasm', why: t('machine:worker.http.notFound', { status: 404 }) }, { start: true })],
+    ['**/buildroot/rootfs.ext4', words('machine:worker.noImage', { machine: t('machines:machine.buildroot') }, { start: true }), words('machine:worker.noImage.cause', { path: 'target/images/buildroot/rootfs.ext4', why: t('machine:worker.http.notFound', { status: 404 }) }, { start: true })],
   ] as const) {
     page = await open((p) => p.route(pattern, (r) => r.fulfill({ status: 404 })));
     r = await settled(page);
     assert.equal(r.state, 'failed', r.text!);
     assert.match(r.text!, want);
+    assert.match(r.details!, why);
     assert.deepEqual(r.actions, [t('machine:main.retry')]);
     await page.unroute(pattern);
     await page.locator('#message-actions button').click();
@@ -661,7 +663,8 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
   let r = await settled(page);
   assert.equal(r.state, 'crashed');
   assert.match(r.text!, words('machine:worker.panic', {}, { start: true }));
-  assert.match(r.details!, /^Kernel panic - not syncing: Requested init \/nonexistent failed/); // the panic line: the headline's detail
+  assert.match(r.details!, words('machine:worker.panic.cause', {}, { start: true }));
+  assert.match(r.details!, /Kernel panic - not syncing: Requested init \/nonexistent failed/); // the panic line: the last detail
   assert.deepEqual(r.actions, [t('machine:main.showLog'), t('machine:main.copyLog'), t('machine:main.saveLog')]);
   await page.waitForTimeout(500);
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'crashed'); // not restarted by the reset

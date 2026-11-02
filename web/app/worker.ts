@@ -255,34 +255,34 @@ function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, name: 
   // A stored machine's snapshot is checked by its shape (docs/machines.md §5.1): the page checked it first and
   // offers to make a machine like it; here it is refused before anything is touched.
   if (m.about && typeof h.shapeHash === 'string' && h.shapeHash !== m.about.shapeHash) {
-    throw failure('snapshot', msg('snapshots:worker.otherShape', { name, machine: m.about.name }));
+    throw failure('snapshot', msg('snapshots:worker.otherShape', { name }), new MsgError('snapshots:worker.otherShape.cause', { machine: m.about.name }));
   }
   if (h.machine !== m.machine) {
     const other = typeof h.label === 'string' ? h.label : String(h.machine);
-    throw failure('snapshot', msg('snapshots:worker.otherMachine', { name, other, otherId: String(h.machine), machine: machine.title, id: m.machine }));
+    throw failure('snapshot', msg('snapshots:worker.otherMachine', { name }), new MsgError('snapshots:worker.otherMachine.cause', { other, otherId: String(h.machine), machine: machine.title, id: m.machine }));
   }
   const kinds = h.devices;
   const all = layout(m, machine);
   if (!Array.isArray(kinds) || !kinds.length || !kinds.every((k) => typeof k === 'string')) {
-    throw failure('snapshot', msg('snapshots:worker.devicesUnknown', { name, machine: machine.title }));
+    throw failure('snapshot', msg('snapshots:worker.devicesUnknown', { name }), new MsgError('snapshots:worker.devicesUnknown.cause', { machine: machine.title }));
   }
   // A snapshot from before the clock device (virtio-rtc) is made without it: it holds no state, and the rest is the same.
   const here = [all, all.filter((s) => s.kind !== 'clock')].find((l) => kinds.join() === l.map((s) => s.kind).join());
   if (!here) {
-    throw failure('snapshot', msg('snapshots:worker.otherDevices', { name, kinds: kinds as string[], here: all.map((s) => s.kind), machine: machine.title }));
+    throw failure('snapshot', msg('snapshots:worker.otherDevices', { name }), new MsgError('snapshots:worker.otherDevices.cause', { kinds: kinds as string[], here: all.map((s) => s.kind), machine: machine.title }));
   }
   const ncpus = h.ncpus;
-  if (typeof ncpus !== 'number' || !Number.isInteger(ncpus) || ncpus < 1 || ncpus > 64) throw failure('snapshot', msg('snapshots:worker.cpus', { name, machine: machine.title }));
+  if (typeof ncpus !== 'number' || !Number.isInteger(ncpus) || ncpus < 1 || ncpus > 64) throw failure('snapshot', msg('snapshots:worker.cpus', { name }), new MsgError('snapshots:worker.cpus.cause', { machine: machine.title }));
   const specs = here.map((s) => device(s, m, machine));
   // Memory 0's RAM, and the spill memories' (docs/spill-memories.md), as they were.
   const ramSize = Number(h.ramSize);
   const spill = h.spill === undefined ? [] : h.spill;
-  if (!Number.isSafeInteger(ramSize) || ramSize < 64 << 20 || !Array.isArray(spill) || splitError(ramSize, spill as number[])) throw failure('snapshot', msg('snapshots:worker.memory', { name, machine: machine.title }));
+  if (!Number.isSafeInteger(ramSize) || ramSize < 64 << 20 || !Array.isArray(spill) || splitError(ramSize, spill as number[])) throw failure('snapshot', msg('snapshots:worker.memory', { name }), new MsgError('snapshots:worker.memory.cause', { machine: machine.title }));
   const ram = (ramSize + (spill as number[]).reduce((a, b) => a + b, 0)) / 2 ** 20;
   // A snapshot from before the header said (ABI 34 and older) had none of them.
   const cpu = h.cpu ?? [];
   if (!Array.isArray(cpu) || !cpu.every((f): f is CpuFeature => CPU_FEATURES.includes(f as CpuFeature))) {
-    throw failure('snapshot', msg('snapshots:worker.features', { name, machine: machine.title }));
+    throw failure('snapshot', msg('snapshots:worker.features', { name }), new MsgError('snapshots:worker.features.cause', { machine: machine.title }));
   }
   return { slots: here, specs, ncpus, ramMiB: ram, split: { ramSize, spill: spill as number[] }, cpu };
 }
@@ -294,14 +294,14 @@ const repoPath = (url: string) => new URL(url).pathname.replace(/^\//, '');
 /** Why the file at `url` couldn't be fetched (the server's answer, `status`), as a failure a user can act on. */
 function missing(url: string, machine: Machine, status: number) {
   const why = status === 404 ? msg('machine:worker.http.notFound', { status }) : msg('machine:worker.http', { status });
-  if (url === CORE) return failure('missing-core', msg('machine:worker.noCore', { path: repoPath(url), why }));
-  return failure('missing-image', msg('machine:worker.noImage', { machine: machine.title, path: repoPath(url), why, prepare: machine.prepare }));
+  if (url === CORE) return failure('missing-core', msg('machine:worker.noCore'), new MsgError('machine:worker.noCore.cause', { path: repoPath(url), why }));
+  return failure('missing-image', msg('machine:worker.noImage', { machine: machine.title }), new MsgError('machine:worker.noImage.cause', { path: repoPath(url), why, prepare: machine.prepare }));
 }
 
 /** Fetches `urls` whole, posting the progress over all of them (Content-Length; the server sends it). */
 async function download(urls: string[], machine: Machine) {
   const responses = await Promise.all(urls.map(async (url) => {
-    const r = await fetch(url).catch((err) => { throw failure(url === CORE ? 'missing-core' : 'missing-image', msg('machine:worker.noServer', { path: repoPath(url) }), err); });
+    const r = await fetch(url).catch((err) => { throw failure(url === CORE ? 'missing-core' : 'missing-image', msg('machine:worker.noServer', { path: repoPath(url) }), new MsgError('machine:worker.noServer.cause', undefined, { cause: err })); });
     if (!r.ok) throw missing(url, machine, r.status);
     return r;
   }));
@@ -359,14 +359,14 @@ function explain(err: unknown, machine: Machine): [Problem, Error] {
   // A SnapshotError has a `problem` of its own (why the file was refused): checked before the worker's.
   if (err instanceof SnapshotError) {
     // From `readSnapshot` nothing was touched; once `bootVm` has the file, the disk may hold its blocks.
-    return ['snapshot', restoring ? new MsgError('snapshots:worker.notRestored', { machine: machine.title }, { cause: err }) : new MsgError('snapshots:worker.notLoaded', { machine: machine.title }, { cause: err })];
+    return ['snapshot', restoring ? new MsgError('snapshots:worker.notRestored', undefined, { cause: new MsgError('snapshots:worker.notRestored.cause', { machine: machine.title }, { cause: err }) }) : new MsgError('snapshots:worker.notLoaded', undefined, { cause: new MsgError('snapshots:worker.notLoaded.cause', { machine: machine.title }, { cause: err }) })];
   }
   // An overlay another tab holds (web/overlay.ts `problem`, or the browser's lock on its files), or one written over another image.
   if (among(err, (e) => e.problem === 'overlay-in-use' || e.name === 'NoModificationAllowedError')) {
-    return ['disk-in-use', new MsgError('machine:worker.diskInUse', { machine: machine.title }, { cause: err })];
+    return ['disk-in-use', new MsgError('machine:worker.diskInUse', { machine: machine.title }, { cause: new MsgError('machine:worker.diskInUse.cause', undefined, { cause: err }) })];
   }
   if (among(err, (e) => e.problem === 'overlay-mismatch')) {
-    return ['disk-mismatch', new MsgError('machine:worker.diskMismatch', { machine: machine.title }, { cause: err })];
+    return ['disk-mismatch', new MsgError('machine:worker.diskMismatch', { machine: machine.title }, { cause: new MsgError('machine:worker.diskMismatch.cause', undefined, { cause: err }) })];
   }
   const e = err as Error & { problem?: Problem };
   if (e.problem && msgOf(e)) return [e.problem, e];
@@ -378,7 +378,7 @@ function explain(err: unknown, machine: Machine): [Problem, Error] {
   }
   const text = String(e?.message ?? e);
   if (e instanceof RangeError && /memory/i.test(text)) {
-    return ['memory', new MsgError('machine:worker.memory', { ram: ramMiB }, { cause: err })];
+    return ['memory', new MsgError('machine:worker.memory', undefined, { cause: new MsgError('machine:worker.memory.cause', { ram: ramMiB }, { cause: err }) })];
   }
   // The details are the stack: V8's starts with the message; Firefox's is only the frames.
   const stack = e instanceof Error && e.stack ? (e.stack.includes(text) ? e.stack : `${text}\n${e.stack}`.trim()) : text;
@@ -404,7 +404,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   const bootInstead = async (err: unknown) => {
     if (home) await dropSuspend(home).catch(() => {});
     restoring = false;
-    return start({ ...m, resume: false }, new MsgError('machine:worker.notResumed', {}, { cause: err }));
+    return start({ ...m, resume: false }, new MsgError('machine:worker.notResumed', undefined, { cause: new MsgError('machine:worker.notResumed.cause', undefined, { cause: err }) }));
   };
   // The disk is read by ranges as the guest needs it (not downloaded): check it's there.
   // A snapshot has the variable store in its RAM (the restore writes it beside the overlay) and needs no kernel.
@@ -474,7 +474,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   const tooBig = withVenus && splitError(split.ramSize, split.spill, VENUS_RESERVE);
   if (tooBig) {
     const why = splitMsg(tooBig);
-    throw failure('memory', snapshot ? msg('machine:worker.vulkanSplit.snapshot', { machine: machine.title, why }) : msg('machine:worker.vulkanSplit', { machine: machine.title, why }));
+    throw failure('memory', msg('machine:worker.vulkanSplit', { machine: machine.title }), snapshot ? new MsgError('machine:worker.vulkanSplit.snapshot.cause', { why }) : new MsgError('machine:worker.vulkanSplit.cause', { why }));
   }
   const devices = liveSpecs = specs ?? here.map((s) => device(s, m, machine));
   const kinds = here.map((s) => s.kind);
@@ -522,7 +522,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
     // The guest hangs (or resets, with panic=N: the page keeps the crash on show rather than restarting).
     if (!panicked && at >= 0 && seen.indexOf('\n', at) >= 0) {
       panicked = true;
-      state('crashed', { error: new MsgError('machine:worker.panic', {}, { cause: seen.slice(at).split('\n')[0].trim() }), problem: 'panic' });
+      state('crashed', { error: new MsgError('machine:worker.panic', undefined, { cause: new MsgError('machine:worker.panic.cause', undefined, { cause: seen.slice(at).split('\n')[0].trim() }) }), problem: 'panic' });
     }
   };
   if (restore) {
@@ -567,7 +567,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
       await shutdown(vm, machine);
       if (panicked) return; // said
       else if (r.kind === Exit.PSCI) state(r.x[0] === PSCI_SYSTEM_OFF ? 'off' : 'rebooting');
-      else state('crashed', { error: r.kind === Exit.UNIMPLEMENTED ? new MsgError('machine:worker.stopped.unimplemented', { pc: vm.pc().toString(16) }) : new MsgError('machine:worker.stopped.exit', { exit: r.kind }), problem: 'emulator' });
+      else state('crashed', { error: r.kind === Exit.UNIMPLEMENTED ? new MsgError('machine:worker.stopped.unimplemented', undefined, { cause: new MsgError('machine:worker.stopped.unimplemented.cause', { pc: vm.pc().toString(16) }) }) : new MsgError('machine:worker.stopped.exit', { exit: r.kind }), problem: 'emulator' });
       return;
     }
   } finally {
@@ -596,8 +596,8 @@ async function saveSnapshot(handle?: FileSystemFileHandle, keep?: string, whole 
   const fail = (error: unknown) => post({ type: 'snapshot-error', error: toWire(error) });
   const v = vm;
   const s = session;
-  if (!v || !s || stopping || closed) return fail(new MsgError('snapshots:worker.notRunning'));
-  if (snapshotting) return fail(new MsgError('snapshots:worker.saving'));
+  if (!v || !s || stopping || closed) return fail(new MsgError('snapshots:worker.notRunning', undefined, { cause: new MsgError('snapshots:worker.notRunning.cause') }));
+  if (snapshotting) return fail(new MsgError('snapshots:worker.saving', undefined, { cause: new MsgError('snapshots:worker.saving.cause') }));
   snapshotting = true;
   let out: FileSystemWritableFileStream | undefined;
   let kept: Awaited<ReturnType<typeof fileWriter>> | undefined;
@@ -666,9 +666,9 @@ async function suspend(sleep = false) {
   const v = vm;
   const s = session;
   const machine = current;
-  if (!v || !s || !machine || stopping || closed) return fail(new MsgError('machine:worker.suspend.notRunning'));
-  if (!home) return fail(new MsgError('machine:worker.suspend.noHome'));
-  if (snapshotting) return fail(new MsgError('machine:worker.suspend.busy'));
+  if (!v || !s || !machine || stopping || closed) return fail(new MsgError('machine:worker.suspend.notRunning', undefined, { cause: new MsgError('machine:worker.suspend.notRunning.cause') }));
+  if (!home) return fail(new MsgError('machine:worker.suspend.noHome', undefined, { cause: new MsgError('machine:worker.suspend.noHome.cause') }));
+  if (snapshotting) return fail(new MsgError('machine:worker.suspend.busy', undefined, { cause: new MsgError('machine:worker.suspend.busy.cause') }));
   snapshotting = true;
   let paused = false;
   try {

@@ -224,8 +224,8 @@ tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Pref
   machine's numbers, `SAMPLE`, while none runs): dragged to move (Alt+←/→ with the focus on one), × or dragged onto the
   palette to remove, chosen to set their look, bars or numbers and device number. The palette under it adds an element
   at the end on a click, where it's dropped on a drag. Restore defaults forgets the kept list.
-- **In full screen:** off by default (the machine alone, edge to edge: full screen is `<main>`'s); Preferences' "Show the
-  status bar in full screen" (`statusFullscreen`) makes it the page's, without its toolbar and message bar (index.html).
+- **In full screen:** off by default (the machine alone, edge to edge: full screen is `<main>`'s); Preferences' [Show the
+  status bar in full screen](ui:machines:MachinesPage.statusFullscreen) (`statusFullscreen`) makes it the page's, without its toolbar and message bar (index.html).
 - **Costs:** none to the emulation: the per-vCPU steps were counted already; the disk and adapter bytes are one add per
   completed request in the device worker, into a shared buffer the machine worker reads once a second (devices.md
   "Threads and determinism"); the GPU's numbers are increments where the work already happens, posted once a second.
@@ -285,11 +285,11 @@ Duplicate, Export the definition, Delete; then tabs:
   shape and snapshots stay as they were; definitions carry the MACs (`machine.macs`) and no connections.
 - **[USB](ui:machines:MachinesPage.tab.usb)** (`Usb.svelte`): the USB controller's switch (also on Settings: it is in the shape), the remembered devices
   with their state (attached, plugged in, not plugged in, held by another machine, no permission in this browser),
-  connector, attach at start, Attach and Detach (while the machine runs on this page), Allow…, Forget. **Add a
-  device…** opens a wizard (`AddUsb.svelte`): two numbered steps (the kind, then the browser's chooser) over the kinds, a
+  connector, attach at start, Attach and Detach (while the machine runs on this page), Allow…, Forget. [Add a
+  device…](ui:usb:UsbMenu.add) opens a wizard (`AddUsb.svelte`): two numbered steps (the kind, then the browser's chooser) over the kinds, a
   USB device (WebUSB) or a HID device (WebHID), each explained, and a note on what the machine remembers. [usb.md](usb.md) "The page".
-- **[Shared folders](ui:machines:MachinesPage.tab.folders):** the machine's switch (in the shape), **[Mount shared folders in the guest](ui:machines:MachinesPage.sharesMount)** and its **Mount
-  point**, and the attached folders (`Folders.svelte`: order, Read-only, Allow…, Use it here, Detach), changed at once,
+- **[Shared folders](ui:machines:MachinesPage.tab.folders):** the machine's switch (in the shape), **[Mount shared folders in the guest](ui:machines:MachinesPage.sharesMount)** and its [Mount
+  point](ui:machines:MachinesPage.sharesPath), and the attached folders (`Folders.svelte`: order, Read-only, Allow…, Use it here, Detach), changed at once,
   running or not. **[Attach a folder…](ui:folders:Folders.attach)** opens the Folder wizard (`FolderWizard.svelte`). **[Shared folders](ui:machines:MachinesPage.folders.heading)** in the list of machines
   is the browser's (`FoldersPane.svelte`): rename, Read-only, Delete, a folder in the browser's files. The toolbar has a
   **Folders** menu while the page's machine runs with them. [shares.md](shares.md) §4.
@@ -581,8 +581,8 @@ default** since 2026-10-25, the user; `?clocksync=1` or `0` decides for the page
 `web/app/settings.ts` `clockSync`; the page tests' `PAGE_QUERY` turns it off, `tests/page-clock.test.ts` on) makes it notice as a laptop
 does: Snapshot (both kinds) and Suspend first press the guest's **sleep key** (`KEY_SLEEP` on the virtio-input
 keyboard, `Input.chord('Sleep')`; systemd-logind suspends on it by default), and the worker waits up to 10 s for the
-guest to suspend itself (PSCI SYSTEM_SUSPEND: [platform.md](platform.md) "System suspend"; "Putting the guest to
-sleep" in the state line) before it pauses the machine. A file taken while the guest slept says so (`slept: true` in
+guest to suspend itself (PSCI SYSTEM_SUSPEND: [platform.md](platform.md) "System suspend"; [Putting the guest to
+sleep](ui:snapshots:worker.phase.sleep) in the state line) before it pauses the machine. A file taken while the guest slept says so (`slept: true` in
 its header), and **loading it** (a snapshot, or a suspended machine resumed) moves the guest's clock on by the time
 since the header's `created` (`vm_clock_skip`) and wakes it: its resume counts that as sleep, so its wall clock is
 the browser's again and its monotonic clock hasn't jumped (nothing it times runs out). The running machine wakes once
@@ -1221,8 +1221,8 @@ and the guest's default way out (below).
 - **The card is always there** (`machine.network`): virtio-net on the Ethernet gateway from the
   boot, so connecting later never restarts the machine. The card costs no boot time (Debian to
   login, alternating runs, this container: 81.3 s median without it, 79.7 s with it, 3 runs each,
-  noise), and the client isn't loaded until Connect. While the machine's **Take the connection's settings in the
-  guest** is on (`?netconfig=0` turns it off on a transient one), a systemd credential
+  noise), and the client isn't loaded until Connect. While the machine's [Take the connection's settings in the
+  guest](ui:machines:MachinesPage.netConfig) is on (`?netconfig=0` turns it off on a transient one), a systemd credential
   (`network.network.card`, over fw_cfg since phase B loop 3; on the command line before) gives
   networkd a `.network` file (systemd-network-generator writes it as `/run/systemd/network/card.network`), and a unit
   has every `.network` file take the lease's MTU and search domain ("What the page sets in the guest", below) (Debian's own units are all enabled under UEFI), so the guest asks the gateway for DHCP by itself; the gateway offers nothing

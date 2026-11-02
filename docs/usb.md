@@ -722,8 +722,8 @@ device again with `getDevices()` and needs no click.
   those becomes its own entry, with its own index.
 - **Grants:** WebUSB and WebHID list only devices that are both granted and plugged in, so a missing grant looks the
   same as a device that is unplugged. The page keeps the identities it has seen granted in localStorage
-  (`webpc.usbGranted`) to tell the two apart. An entry that isn't listed there and isn't found has *no permission in
-  this browser*. That happens to a definition's entries on another browser. [Allow…](ui:usb:Usb.allow) opens the browser's chooser
+  (`webpc.usbGranted`) to tell the two apart. An entry that isn't listed there and isn't found has [no permission in
+  this browser](ui:usb:Usb.state.ungranted). That happens to a definition's entries on another browser. [Allow…](ui:usb:Usb.allow) opens the browser's chooser
   filtered on the entry's IDs (and its serial number, for WebUSB), and so does the menu's offer at the first start.
 - **States** (`entryStates`):
   - *[attached](ui:usb:Usb.state.attached)*: on a connector of this page's machine.
