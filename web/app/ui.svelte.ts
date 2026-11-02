@@ -25,6 +25,8 @@ export const ui = $state({
   stateText: 'Loading',
   /** The message bar: a problem or a note, and what can be done about it. */
   message: '',
+  /** The message's details, one per line, under it (an error's causes: web/i18n.ts `describe`). */
+  messageDetails: [] as string[],
   messageKind: 'warn' as 'error' | 'warn',
   actions: [] as Action[],
   /** The last snapshot written (its bytes, pause and id), for tools: `#message[data-snapshot]`. */

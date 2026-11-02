@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { oemStrings } from '../web/app/guest-unit.ts';
 import { detectLayout, FOLLOW_BROWSER, KEYBOARD_LAYOUTS, keyboardCredentials, keyboardLayout, keyboardScript, keyboardSetting, resolveKeyboard, validKeyboard } from '../web/app/keyboard.ts';
+import { guestWords } from '../web/app/guest-words.ts';
 
 const map = (o: Record<string, string>) => new Map(Object.entries(o));
 const US = { KeyQ: 'q', KeyW: 'w', KeyE: 'e', KeyR: 'r', KeyY: 'y', KeyZ: 'z', KeyA: 'a', KeyS: 's', KeyD: 'd', KeyJ: 'j', KeyK: 'k', KeyM: 'm', KeyI: 'i', Digit0: '0', Digit2: '2', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=', Backquote: '`', Slash: '/', Comma: ',', Period: '.' };
@@ -48,7 +49,8 @@ test("which setting a start uses: the query's, a stored machine's own, the brows
 });
 
 test('credentials: a unit, its drop-in on systemd-user-sessions and its script, as base64 SMBIOS strings', () => {
-  const c = keyboardCredentials(keyboardLayout('ch-fr')!);
+  const c = keyboardCredentials(keyboardLayout('ch-fr')!, guestWords().keyboard);
+  assert.match(c[1].data, /^Description=Keyboard layout from webpc's machine settings$/m);
   assert.deepEqual(c.map((x) => x.name), ['webpc.keyboard.sh', 'systemd.extra-unit.webpc-keyboard.service', 'systemd.unit-dropin.systemd-user-sessions.service~webpc-keyboard']);
   assert.match(c[1].data, /^ImportCredential=webpc\.keyboard\.sh$/m);
   assert.match(c[1].data, /^ExecStart=\/bin\/sh %d\/webpc\.keyboard\.sh$/m);

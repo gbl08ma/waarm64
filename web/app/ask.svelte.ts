@@ -1,5 +1,7 @@
 // The page's questions and notices (docs/frontend.md "Dialogs"): in-page dialogs instead of the browser's confirm, alert
 // and prompt, shown one at a time by Ask.svelte (`<dialog id="ask">`). Each resolves when answered; Esc is Cancel.
+// The words are the caller's, rendered (`t(…)`, web/i18n.ts); the defaults are the catalog's.
+import { t } from '../i18n.ts';
 
 export type Question = {
   kind: 'confirm' | 'alert' | 'prompt';
@@ -38,9 +40,9 @@ export function answer(ok: boolean, text = '') {
 
 export const ask = {
   /** OK or Cancel. */
-  confirm: (text: string, o: Options = {}) => show({ kind: 'confirm', title: o.title ?? 'Are you sure?', text, ok: o.ok ?? 'OK', cancel: o.cancel ?? 'Cancel', danger: o.danger ?? false, value: '' }) as Promise<boolean>,
+  confirm: (text: string, o: Options = {}) => show({ kind: 'confirm', title: o.title ?? t('common:ask.confirmTitle'), text, ok: o.ok ?? t('common:ask.ok'), cancel: o.cancel ?? t('common:ask.cancel'), danger: o.danger ?? false, value: '' }) as Promise<boolean>,
   /** A notice: OK only. */
-  alert: (text: string, o: Options = {}) => show({ kind: 'alert', title: o.title ?? 'webpc', text, ok: o.ok ?? 'OK', cancel: '', danger: false, value: '' }).then(() => {}),
+  alert: (text: string, o: Options = {}) => show({ kind: 'alert', title: o.title ?? t('common:ask.title'), text, ok: o.ok ?? t('common:ask.ok'), cancel: '', danger: false, value: '' }).then(() => {}),
   /** A line of text, or undefined if cancelled. */
-  prompt: (text: string, value = '', o: Options = {}) => show({ kind: 'prompt', title: o.title ?? 'webpc', text, ok: o.ok ?? 'OK', cancel: o.cancel ?? 'Cancel', danger: false, value }) as Promise<string | undefined>,
+  prompt: (text: string, value = '', o: Options = {}) => show({ kind: 'prompt', title: o.title ?? t('common:ask.title'), text, ok: o.ok ?? t('common:ask.ok'), cancel: o.cancel ?? t('common:ask.cancel'), danger: false, value }) as Promise<string | undefined>,
 };

@@ -13,6 +13,8 @@ import '@xterm/xterm/css/xterm.css';
 import { flushSync, mount } from 'svelte';
 import App from './App.svelte';
 import { ask } from './ask.svelte.ts';
+import { msg, said, t, type Said } from '../i18n.ts';
+import { guestWords } from './guest-words.ts';
 import { clockSync, leaveWarning, remember, settings } from './settings.ts';
 import { page, ui, type Action, type MachinesTab, type PageState, type View } from './ui.svelte.ts';
 import type { DisplayToPage } from '../gpu-present.ts';
@@ -552,17 +554,20 @@ const addLog = (text: string) => {
 };
 
 /** A standing note (another browser), shown while there's no message. */
-let note = '';
+let note: Said = '';
 /** A message that clears itself (`notify`), until then. */
 let messageTimer: ReturnType<typeof setTimeout> | undefined;
-const showMessage = (message: string, actions: Action[], kind: 'error' | 'warn') => {
+/** Shows `message` in the message bar: its headline, and its details under it (an error's causes). */
+const showMessage = (message: Said | undefined, actions: Action[], kind: 'error' | 'warn') => {
   clearTimeout(messageTimer);
-  ui.message = message;
+  const d = said(message);
+  ui.message = d.headline;
+  ui.messageDetails = d.details;
   ui.messageKind = kind;
   ui.actions = actions;
 };
 
-function setState(s: PageState, message?: string, actions: Action[] = [], kind: 'error' | 'warn' = 'error') {
+function setState(s: PageState, message?: Said, actions: Action[] = [], kind: 'error' | 'warn' = 'error') {
   state = s;
   ui.state = s;
   ui.stateText = { idle: 'Not started', loading: 'Loading', booting: 'Booting', running: 'Running', off: 'Powered off', suspended: 'Suspended', rebooting: 'Rebooting', crashed: 'Crashed', failed: "Couldn't start" }[s];
@@ -577,9 +582,10 @@ function setState(s: PageState, message?: string, actions: Action[] = [], kind: 
 }
 /** What happened, said while the machine stays as it is (a snapshot saved, or not): the message bar clears itself after 30 s. */
 const NOTICE_MS = 30_000;
-function notify(message: string, kind: 'error' | 'warn' = 'warn') {
+function notify(message: Said, kind: 'error' | 'warn' = 'warn') {
   showMessage(message, [], kind);
-  messageTimer = setTimeout(() => { if (ui.message === message) showMessage(note, [], 'warn'); }, NOTICE_MS);
+  const shown = ui.message;
+  messageTimer = setTimeout(() => { if (ui.message === shown) showMessage(note, [], 'warn'); }, NOTICE_MS);
 }
 /** The state's words for a while (a phase, a progress), until the next state. */
 const stateText = (text: string) => { ui.stateText = text; };
@@ -798,7 +804,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     if (folders.views().some((v) => v.problem)) ui.folders.wanted = true; // Allow access…, Use it here
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', query: location.search, machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine'))))?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0', jscvt: params.get('jscvt') !== '0', rcpc: params.get('rcpc') !== '0', sb: params.get('sb') !== '0', flagm: params.get('flagm') !== '0', dit: params.get('dit') !== '0', frintts: params.get('frintts') !== '0', dotprod: params.get('dotprod') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, folders: shares && { list: list!, port: shares.port2 }, sharesPath: shares ? sharesPath(stored!.record) : undefined, clock: stored ? !!stored.record.clock : params.get('clock') !== '0', sound, snapshot, resume, about, plan, ...three, vulkan: three && wantsVulkan() ? true : undefined } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(shares ? [shares.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
+    worker.postMessage({ type: 'start', query: location.search, machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: (await resolveKeyboard(keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine'))))?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0', jscvt: params.get('jscvt') !== '0', rcpc: params.get('rcpc') !== '0', sb: params.get('sb') !== '0', flagm: params.get('flagm') !== '0', dit: params.get('dit') !== '0', frintts: params.get('frintts') !== '0', dotprod: params.get('dotprod') !== '0' }, params: params.get('params') ?? undefined, credentials, guest: guestWords(), nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, folders: shares && { list: list!, port: shares.port2 }, sharesPath: shares ? sharesPath(stored!.record) : undefined, clock: stored ? !!stored.record.clock : params.get('clock') !== '0', sound, snapshot, resume, about, plan, ...three, vulkan: three && wantsVulkan() ? true : undefined } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(shares ? [shares.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.

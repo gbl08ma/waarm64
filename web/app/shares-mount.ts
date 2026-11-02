@@ -43,11 +43,11 @@ export function mountUnit(path: string): string {
 export const SHARES_BY_HAND = `mount -t 9p -o trans=virtio,version=9p2000.L,cache=none ${SHARES_TAG} /mnt`;
 
 /** The credentials that have the guest automount the device at `path`. */
-export function sharesCredentials(path: string): Credential[] {
+export function sharesCredentials(path: string, description: string): Credential[] {
   const unit = mountUnit(path);
   return [
-    { name: `systemd.extra-unit.${unit}.mount`, data: `[Unit]\nDescription=Shared folders from webpc\n\n[Mount]\nWhat=${SHARES_TAG}\nWhere=${path}\nType=9p\nOptions=${SHARES_OPTIONS}\n` },
-    { name: `systemd.extra-unit.${unit}.automount`, data: `[Unit]\nDescription=Shared folders from webpc\n\n[Automount]\nWhere=${path}\n` },
+    { name: `systemd.extra-unit.${unit}.mount`, data: `[Unit]\nDescription=${description}\n\n[Mount]\nWhat=${SHARES_TAG}\nWhere=${path}\nType=9p\nOptions=${SHARES_OPTIONS}\n` },
+    { name: `systemd.extra-unit.${unit}.automount`, data: `[Unit]\nDescription=${description}\n\n[Automount]\nWhere=${path}\n` },
     { name: 'systemd.unit-dropin.remote-fs.target~webpc-shares', data: `[Unit]\nWants=${unit}.automount\n` },
   ];
 }

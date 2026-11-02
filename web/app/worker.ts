@@ -409,7 +409,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   savedFlash = await flash;
   // The units' credentials (the keyboard layout, the network's settings, swap ramdisks' fstab lines) are too long for fw_cfg's names: the core puts them in SMBIOS (core/src/smbios.rs).
   const keys = keyboardLayout(m.keyLayout);
-  const units = [...(keys ? keyboardCredentials(keys) : []), ...(net ? netCredentials() : []), ...(m.sharesPath ? sharesCredentials(m.sharesPath) : []), ...swapCredentials(m.disks.flatMap((d) => ('swap' in d.source && d.source.swap ? [d.source.swap] : [])))];
+  const units = [...(keys ? keyboardCredentials(keys, m.guest.keyboard) : []), ...(net ? netCredentials(m.guest.network) : []), ...(m.sharesPath ? sharesCredentials(m.sharesPath, m.guest.shares) : []), ...swapCredentials(m.disks.flatMap((d) => ('swap' in d.source && d.source.swap ? [d.source.swap] : [])))];
   const oem = units.length ? [{ name: OEM_STRINGS_FILE, data: oemStrings(units).join('\0') }] : [];
   const firmware = machine.firmware ? { flash: savedFlash, fwCfg: [...credentialFiles(credentials), ...oem] } : undefined;
   if (stopping) return;

@@ -32,7 +32,7 @@
 
 <Toolbar {store} {audio} {net} {folders} />
 <div id="message" role="alert" hidden={!ui.message} data-kind={ui.messageKind} data-snapshot={ui.snapshotResult || undefined}>
-  <pre id="message-text">{ui.message}</pre>
+  <div id="message-body"><pre id="message-text">{ui.message}</pre>{#if ui.messageDetails.length}<pre id="message-details">{ui.messageDetails.join('\n')}</pre>{/if}</div>
   <div id="message-actions">{#each ui.actions as a (a)}<button onclick={(e) => a.run(e.currentTarget)}>{a.label}</button>{/each}</div>
   <button id="message-close" class="close" aria-label="Close" title="Close" onclick={() => page.dismiss()}><Icon name="x" size={16} /></button>
 </div>

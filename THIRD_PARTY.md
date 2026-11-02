@@ -44,6 +44,7 @@ Reimplemented from the description, nothing copied; credited all the same.
 |---|---|---|---|
 | @xterm/xterm | 6.0.0 | MIT | the page's serial terminal (`web/app/`); served from `node_modules` (only `lib/xterm.mjs` and `css/xterm.css`), not vendored |
 | svelte | 5.57.2 | MIT | the page's components (`web/app/*.svelte`, `*.svelte.ts`): the compiler in `tools/svelte.ts`, its client runtime served from `node_modules` (copied to `vendor/` in the static copy, with its license) |
+| i18next | 26.4.7 | MIT | the page's words (`web/i18n.ts`, docs/i18n.md): rendered from the catalog in `web/messages/`; bundled by Vite, not vendored |
 | esm-env | 1.2.2 | MIT | imported by Svelte's runtime (the same) |
 | clsx | 2.1.1 | MIT | imported by Svelte's runtime (the same) |
 

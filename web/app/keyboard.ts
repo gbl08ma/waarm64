@@ -124,10 +124,10 @@ fi
 }
 
 /** The systemd credentials (web/app/guest-unit.ts: SMBIOS, systemd 256+) that set `l` in the guest at every boot. */
-export const keyboardCredentials = (l: KeyboardLayout): Credential[] =>
+export const keyboardCredentials = (l: KeyboardLayout, description: string): Credential[] =>
   guestUnit({
     name: 'webpc-keyboard.service',
-    description: "Keyboard layout from webpc's machine settings",
+    description,
     script: keyboardScript(l),
     // Before the logins' gate and the display manager, so every login sees what it set.
     unit: 'After=dbus.service local-fs.target\nBefore=systemd-user-sessions.service display-manager.service\n',

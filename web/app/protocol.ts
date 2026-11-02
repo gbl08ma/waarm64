@@ -6,6 +6,7 @@ import type { Vm } from '../vm.ts';
 import type { FolderSpec } from '../9p-folders.ts';
 import type { Credential, MachineName } from './machine.ts';
 import type { Shape } from './shape.ts';
+import type { GuestWords } from './guest-unit.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
 
 /**
@@ -95,6 +96,8 @@ export type ToWorker =
      * ones boot Debian unattended). The release page passes none.
      */
     credentials?: Credential[];
+    /** The words of the units the page has the guest run (web/app/guest-words.ts): the page renders them, the worker places them. */
+    guest: GuestWords;
     /** The machine's disks in slot order (docs/machines.md §4.1: at most `MAX_DISKS`), resolved by the page. */
     disks: StartDisk[];
     /**

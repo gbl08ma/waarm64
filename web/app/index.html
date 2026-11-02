@@ -105,8 +105,10 @@
   /* The message bar. */
   #message { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 16px; padding: 10px 16px; background: #2a1215; color: #ffb4b6; border-bottom: 1px solid #5c1d22; }
   #message[data-kind=warn] { background: #2a2312; color: #f3d98b; border-color: #5c4b1d; }
-  #message-text { flex: 1 1 480px; margin: 0; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; max-height: 30vh; overflow: auto; }
+  #message-body { flex: 1 1 480px; max-height: 30vh; overflow: auto; }
+  #message-text, #message-details { margin: 0; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; }
   #message-text::first-line { font-weight: 600; }
+  #message-details { margin-top: 4px; opacity: 0.8; }
   #message-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   #message-actions button { border: 1px solid currentColor; border-radius: 6px; color: inherit; }
   #message .close { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; margin-left: auto; border-radius: 4px; color: inherit; }

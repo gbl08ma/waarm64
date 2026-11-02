@@ -1,0 +1,18 @@
+{
+  "ask.confirmTitle": {
+    "message": "Are you sure?",
+    "note": "The title of a confirmation dialog (OK/Cancel) that doesn't give a title of its own."
+  },
+  "ask.title": {
+    "message": "webpc",
+    "note": "The title of a notice or a text prompt that doesn't give a title of its own: the product's name."
+  },
+  "ask.ok": {
+    "message": "OK",
+    "note": "The confirm button of the page's dialogs (questions, notices, text prompts) that don't name their own action."
+  },
+  "ask.cancel": {
+    "message": "Cancel",
+    "note": "The button that dismisses one of the page's questions or text prompts without doing anything (Esc does the same)."
+  }
+}
