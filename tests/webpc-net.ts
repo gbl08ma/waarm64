@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-export const WEBPC_NET_COMMIT = '847265d096d42aea8dec5a7bae0feeb14413496f';
+export const WEBPC_NET_COMMIT = '41ffc67609d28342dd6c538d4ca435cbf099c22d'; // v0.2.0's code, with a fix to its tests
 // Over HTTPS once the repository is public; while it's private, over SSH with the user's key.
 const REPOS = ['https://github.com/gbl08ma/webpc-net.git', 'git@github.com:gbl08ma/webpc-net.git'];
 

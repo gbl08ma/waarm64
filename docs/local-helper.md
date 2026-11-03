@@ -12,7 +12,7 @@ and their history are in [plans/networking-local.md](plans/networking-local.md).
 
 ## The helper, briefly
 
-- **Go glue over gvisor-tap-vsock** (Podman machine's and Lima's network, on gVisor's netstack), about 770 lines of
+- **Go glue over gvisor-tap-vsock** (Podman machine's and Lima's network, on gVisor's netstack), about 1,050 lines of
   ours. Its IPv6 comes from the unmerged [#745](https://github.com/containers/gvisor-tap-vsock/pull/745), taken by a
   `replace` to its author's fork at one commit. Because of that `replace`, `go install` refuses the module.
 - **Listens on `127.0.0.1:8740`** (`--listen`). It accepts a WebSocket only on `/<token>`, only from an allowed origin
@@ -24,7 +24,12 @@ and their history are in [plans/networking-local.md](plans/networking-local.md).
   `fd77:6562:7063::/64` unless `--no-ipv6`. Every page connected to one helper is on the same switch. The guest
   reaches the internet and the LAN, and reaches the host's own loopback only with `--host-loopback`
   (`192.168.127.254`). The helper drops the guest's packets to `0.0.0.0/8`, `127.0.0.0/8`, `::`, `::1` and
-  IPv4-mapped addresses, which the forwarders would dial as this computer's own loopback.
+  IPv4-mapped addresses, which the forwarders would dial as this computer's own loopback. The network knows a guest
+  by its MAC, so two machines need different MACs to get different addresses.
+- **Each guest's address is kept across a restart** (`leases-<address>` beside the token, the 100 most recently
+  connected MACs): the library's DHCP pool lives in memory and hands out addresses in order, and a page reconnecting
+  to a restarted helper doesn't make its guest ask again, so two running guests could otherwise swap or share an
+  address. What's kept comes from the pool, for MACs seen on a link, never from frames a guest could make up.
 - **IPv6 out only while the host has it.** The helper asks three public resolvers over IPv6 every minute. While none
   answers, its router advertisements carry no default route, so the guest's IPv6 to the internet fails at once and
   programs fall back to IPv4 without waiting, as the page does for a tunnel's far end ([network-adapters.md](network-adapters.md)
@@ -77,9 +82,10 @@ measured.
 The helper's releases are built by its own GitHub Actions, separately from webpc's deploy (the user's, 2026-11-02).
 A `v*` tag is built on an x86_64 and an arm64 Linux runner, and the release is published only when the two builds
 are byte-identical. **The page offers a release** once `web/local-release.ts` takes its version and SHA256SUMS, in a
-change of webpc's. v0.1.2 is the current one (v0.1.0's sums also matched a build in the dev VM).
+change of webpc's. v0.2.0 is the current one (v0.1.0's sums also matched a build in the dev VM). A release is cut only
+after an out-of-context review of what it adds (the user's, 2026-11-03: each one costs runner minutes).
 
-**webpc's tests build the helper at the commit `tests/webpc-net.ts` pins** (v0.1.2's). The commit is fetched with git
+**webpc's tests build the helper at the commit `tests/webpc-net.ts` pins** (v0.2.0's code, with a later fix to its tests). The commit is fetched with git
 into `target/net/webpc-net-src`, over HTTPS or else SSH, and built into `target/net/webpc-net`. With
 `WEBPC_NET_SRC=../webpc-net` they build a checkout of yours instead, which is how to work on the page and the helper
 together. Where the commit can't be fetched (a cloud session, while the repository is private), those tests say

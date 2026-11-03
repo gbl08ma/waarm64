@@ -36,7 +36,14 @@ page, docs/local-helper.md, with the loose ends in backlog.md "Network".
 
 **The out-of-context review** (`review/net-local`, 2026-11-02): 14 findings, 13 fixed from failing tests (plan §4 "L3"),
 the helper's in v0.1.1; one in the backlog. **v0.1.2** prints a pairing link for each `--origin` again (the
-user's: v0.1.0 had dropped them); the page offers it and the tests pin it.
+user's: v0.1.0 had dropped them).
+
+**v0.2.0** (2026-11-03): two guests on two sockets tested (each its own lease, TCP between them), and each guest's
+IPv4 address kept across a helper's restart (`leases-<address>` beside the token, from the library's pool, the 100
+most recently connected MACs). Three out-of-context reviews before the release (the user's rule now: a release only
+after one); the page offers it and the tests pin its code (`41ffc67`: a fix to its tests after the tag). New in the
+backlog: every new machine has the same MAC, so two on one helper share an address; a connection shared by several
+machines (the user's idea, low priority).
 
 ## The user's answers (2026-11-01, for L2)
 

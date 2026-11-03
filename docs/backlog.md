@@ -1263,10 +1263,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     ours with the module path renamed would bring it back.
   - The guest can't ping the internet over IPv6 (#745's ICMP forwarder is IPv4's only).
   - Two `local` adapters both offer a default route: the menu says so, nothing picks one.
-  - Two machines on one helper can hold the same IPv4 address after the helper restarts: its DHCP pool is in memory
-    and hands out addresses in order, ignoring the one asked for, and a reconnect doesn't flap the link (by design), so
-    until the next renewal (up to 30 minutes) both guests use it. A pool kept across restarts, or one that honors the
-    requested address, would fix it (upstream's).
+  - **Every new machine has the same MAC** (`DEFAULT_MAC`, web/app/machines.ts `createMachine`; a copy keeps its MACs):
+    two of them on one helper share an address, since its network knows a guest by its MAC, and the switch's table
+    flips between their links. A MAC of its own for each new machine (`newMac`) fixes it, for machines made after;
+    existing ones would need theirs changed (guest-visible: the guest's interface name and leases follow the MAC).
   - Firefox's and Safari's handling of `ws://127.0.0.1` from an https page is unchecked (never a blocker).
   - (Low priority, the user's idea, 2026-11-03) One `local` connection on several machines at once over one WebSocket,
     rather than a socket per adapter. It needs connections modeled as exclusive or shared (a Web Lock holds each now,

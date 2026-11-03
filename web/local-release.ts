@@ -10,15 +10,15 @@ export type Release = { version: string; /** SHA256SUMS: file name to hash. */ s
 
 /** The release the page offers: its SHA256SUMS, from github.com/gbl08ma/webpc-net/releases (built twice there, and matched). */
 export const RELEASE: Release = {
-  version: 'v0.1.2',
+  version: 'v0.2.0',
   sums: {
-    'LICENSES.txt': '74cd07abc87cf7851ea33235b3d26d2ff5078579bb1a3186681c408285672497',
-    'webpc-net-v0.1.2-darwin-amd64': '8b05b5ed8378397726ddeacfa9b602e457d7c3cd095f406dc1d3b086bf2a8156',
-    'webpc-net-v0.1.2-darwin-arm64': '3bc2708faf7b1b4a94062bbff890403a4912d24228d5ddc43cdc30b54a91d634',
-    'webpc-net-v0.1.2-linux-amd64': '7ee459d76bd9e5b80719f6730af546dfd46e1f13d72db9ac0d67762532a2c0f1',
-    'webpc-net-v0.1.2-linux-arm64': '8a991001c2cb279e631324703f158432e9ea8ef413a92a4b4b206fd4ccc23b3d',
-    'webpc-net-v0.1.2-windows-amd64.exe': 'b589259eabac9414f2d9c9cba5c79d3be4a2d12c1bcca848ed193c024e160e09',
-    'webpc-net-v0.1.2-windows-arm64.exe': '2567ca59df6be8b3c5e5b37297fcf806130aed1991318f8a7f1c006ff5e71168',
+    'LICENSES.txt': '8e0fcdbe5ceb32432b0638ecadb696be807b0d9d5d4dcf17cc36d594d6fcc1ef',
+    'webpc-net-v0.2.0-darwin-amd64': '1c49312924770c5f77f3e7330edf6f8b11329f5e5a6b28b49d3a38a39b45640c',
+    'webpc-net-v0.2.0-darwin-arm64': '8510debe4684e3138d356c6764eba1a1588441462cf16b98107b538bea9cf8d8',
+    'webpc-net-v0.2.0-linux-amd64': '3430f8d6b3eb642dc9ac13c7cf8a2ab46f5aea2c2ee0449e4c07366cef093e5f',
+    'webpc-net-v0.2.0-linux-arm64': 'a5de8be0d3812838db98914a3bb57ee8968164c2954fddd3568a04748f84518a',
+    'webpc-net-v0.2.0-windows-amd64.exe': '4a879ac1423c98a6bedca317a77f66208436fa0aa637d8de84e211626d4e36af',
+    'webpc-net-v0.2.0-windows-arm64.exe': '4203307d3dd5563d92d6b4589276d9935204bf8380885a1eb9b5ebd6dee5965a',
   },
 };
 

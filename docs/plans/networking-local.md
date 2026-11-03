@@ -25,11 +25,12 @@ user makes it public).
   (`release.yml`: a `v*` tag built on an x86_64 and an arm64 Linux runner, published only when both builds are
   identical), **separate from webpc's deploy** (the user's, 2026-11-02): the page offers a release once
   `web/local-release.ts` takes its SHA256SUMS. **v0.1.0** (2026-11-02) is the first; its sums also matched a build in
-  the dev VM. v0.1.1 (the same day) has a static review's fixes (§4 "L3"), and v0.1.2 prints a pairing link for each `--origin` again (the user's, after v0.1.0 had dropped them). webpc's tests build the helper at a commit `tests/webpc-net.ts` pins (the user's choice over a sibling
+  the dev VM. v0.1.1 (the same day) has a static review's fixes (§4 "L3"), and v0.1.2 prints a pairing link for each `--origin` again (the user's, after v0.1.0 had dropped them). v0.2.0
+  (2026-11-03) keeps each guest's address across a restart (three out-of-context reviews before its release). webpc's tests build the helper at a commit `tests/webpc-net.ts` pins (the user's choice over a sibling
   checkout or a submodule), or a checkout named by `WEBPC_NET_SRC`. `go install` still waits on the IPv6 fork below.
   Trust comes from:
   - **Little code of our own:** the helper is glue over libraries users already run (§2). The README says what is
-    ours and what is imported, honestly: about 770 lines of ours (the 250 first guessed grew with IPv6's reach, the
+    ours and what is imported, honestly: about 1,050 lines of ours (the 250 first guessed grew with IPv6's reach, the
     refusals that tell the page why, and the frames' batching) on Podman's network stack, not "a small program".
   - **Reproducible binaries** for Linux, macOS and Windows, each on x86_64 and arm64, whose SHA-256 is published
     (the release, the README, the page's help). No code signing for now (Apple's or Authenticode would change the
