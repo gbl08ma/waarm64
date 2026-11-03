@@ -429,7 +429,7 @@ function glslStage(translate: Awaited<ReturnType<typeof translator>>, tmp: strin
 
 const noGlslc = missing || (spawnSync('glslc', ['--version']).status !== 0 && 'SKIPPED: no glslc');
 
-test('subgroup operations are WGSL\'s where the device has subgroups of one size, and run right (VK3 L5)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+test('subgroup operations are WGSL\'s where the device has subgroups of one size, of one invocation otherwise, and run right (VK3 L5, GD G1)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
   try {
     const translate = await translator();
@@ -446,13 +446,16 @@ test('subgroup operations are WGSL\'s where the device has subgroups of one size
       'subgroupShuffleDown', 'quadBroadcast', 'quadSwapX', 'quadSwapY', 'quadSwapDiagonal']) assert.match(all.text, new RegExp(`\\b${f}\\(`), f);
     // WGSL's subgroupBroadcast wants a constant lane: a read of one invocation is a shuffle.
     assert.doesNotMatch(all.text, /subgroupBroadcast\(/);
-    // Without the device's subgroups (or with sizes that vary), subgroups of one: the basic operations, no more.
+    // Without the device's subgroups (or with sizes that vary), subgroups of one: the device advertises the basic
+    // operations, but every family translates, each its value on a subgroup of one invocation (GD G1: Godot's Forward+
+    // uses `subgroupBroadcastFirst(subgroupMin(…))` whatever the device advertises), and none of WGSL's built-ins.
     const one = glslStage(translate, tmp, 'tests/venus/l5/subgroups.comp');
-    assert.equal(one.rc, 3, one.text.slice(0, 200));
-    assert.match(one.text, /^the subgroup operation \w+ without the device's subgroups$/);
-    const errors = await compile([all.text]);
+    assert.equal(one.rc, 0, one.text.slice(0, 200));
+    assert.doesNotMatch(one.text, /enable subgroups|\bsubgroup[A-Z]\w*\(|\bquad[A-Z]\w*\(/);
+    const errors = await compile([all.text, one.text]);
     if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
     if (!/subgroups/.test(errors[0])) assert.equal(errors[0], '', 'WGSL Chromium rejected');
+    assert.equal(errors[1], '', 'WGSL Chromium rejected (subgroups of one)');
 
     // Run: each invocation's results against its subgroup's (members by their first invocation, in their order).
     const run = async (size: number) => {
@@ -460,26 +463,35 @@ test('subgroup operations are WGSL\'s where the device has subgroups of one size
       assert.equal(r.rc, 0, r.text);
       return runCompute(r.text, [{ binding: 0, size: 64 * 16 * 4 }], ['subgroups']);
     };
+    // Each invocation's results against its subgroup's of `sgSize` (1: every invocation its own).
+    const check = (r: NonNullable<Awaited<ReturnType<typeof runCompute>>>, sgSize: number, what: string) => {
+      assert.deepEqual(r.errors, [], what);
+      const o = new Uint32Array(r.out[0].buffer);
+      const at = (n: number, k: number) => o[n * 16 + k];
+      const groups = new Map<number, number[]>();
+      for (let n = 0; n < 64; n++) groups.set(at(n, 2), [...(groups.get(at(n, 2)) ?? []), n]);
+      const bad: string[] = [];
+      for (let n = 0; n < 64; n++) {
+        const g = groups.get(at(n, 2))!.sort((a, b) => at(a, 0) - at(b, 0));
+        const inv = at(n, 0), size = at(n, 1), lane = (i: number) => g.find((m) => at(m, 0) === i)!;
+        const want = [inv, sgSize, g[0], g.reduce((a, b) => a + b, 0), g.filter((m) => at(m, 0) <= inv).reduce((a, b) => a + b, 0),
+          g.filter((m) => at(m, 0) < inv).reduce((a, m) => Math.max(a, m * 7 % 5), 0), g.filter((m) => m & 1).length,
+          lane(inv ^ 1), inv >= 1 ? lane(inv - 1) : undefined, lane(inv & ~1) + lane(inv | 1), lane(inv ^ 1), lane((inv & ~3) | 3),
+          (Math.min(...g) - 40) >>> 0, inv, 1 + (inv === 0 ? 2 : 0), lane(size - 1 - inv)];
+        // A lane past the subgroup (a cluster or quad wider than it: undefined in Vulkan) is no expectation.
+        want.forEach((w, k) => { if (w !== undefined && !Number.isNaN(w) && at(n, k) !== w) bad.push(`invocation ${n} result ${k}: ${at(n, k)}, not ${w}`); });
+      }
+      assert.deepEqual(bad.slice(0, 8), [], `${what}: of ${bad.length}`);
+    };
+    // Subgroups of one, on any adapter (no WGSL subgroups).
+    const r1 = glslStage(translate, tmp, 'tests/venus/l5/subgroups-run.comp');
+    assert.equal(r1.rc, 0, r1.text);
+    check((await runCompute(r1.text, [{ binding: 0, size: 64 * 16 * 4 }]))!, 1, 'subgroups of one');
     let res = await run(4);
     if (!res) return t.skip('SKIPPED: the adapter has no subgroups');
     if (res.min !== res.max) return t.skip(`SKIPPED: the adapter's subgroups vary in size (${res.min}-${res.max})`);
     if (res.min !== 4) res = (await run(res.min))!;
-    assert.deepEqual(res.errors, []);
-    const o = new Uint32Array(res.out[0].buffer);
-    const at = (n: number, k: number) => o[n * 16 + k];
-    const groups = new Map<number, number[]>();
-    for (let n = 0; n < 64; n++) groups.set(at(n, 2), [...(groups.get(at(n, 2)) ?? []), n]);
-    const bad: string[] = [];
-    for (let n = 0; n < 64; n++) {
-      const g = groups.get(at(n, 2))!.sort((a, b) => at(a, 0) - at(b, 0));
-      const inv = at(n, 0), size = at(n, 1), lane = (i: number) => g.find((m) => at(m, 0) === i)!;
-      const want = [inv, res.min, g[0], g.reduce((a, b) => a + b, 0), g.filter((m) => at(m, 0) <= inv).reduce((a, b) => a + b, 0),
-        g.filter((m) => at(m, 0) < inv).reduce((a, m) => Math.max(a, m * 7 % 5), 0), g.filter((m) => m & 1).length,
-        lane(inv ^ 1), inv >= 1 ? lane(inv - 1) : undefined, lane(inv & ~1) + lane(inv | 1), lane(inv ^ 1), lane((inv & ~3) | 3),
-        (Math.min(...g) - 40) >>> 0, inv, 1 + (inv === 0 ? 2 : 0), lane(size - 1 - inv)];
-      want.forEach((w, k) => { if (w !== undefined && at(n, k) !== w) bad.push(`invocation ${n} result ${k}: ${at(n, k)}, not ${w}`); });
-    }
-    assert.deepEqual(bad.slice(0, 8), [], `of ${bad.length}`);
+    check(res, res.min, `subgroups of ${res.min}`);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

@@ -1906,6 +1906,9 @@ emit_subgroup(struct ctx *c, nir_intrinsic_instr *intr)
       case nir_intrinsic_ballot:
          line(c, "t%u = select(0u, 1u, %s);", def->index, src_comp(c, &intr->src[0], 0));
          return;
+      case nir_intrinsic_read_invocation: /* a subgroup of one reads itself (Godot's Forward+ uses subgroups unconditionally) */
+         line(c, "t%u = %s;", def->index, src_comp(c, &intr->src[0], 0));
+         return;
       default:
          failf(c, "the subgroup operation %s without the device's subgroups", nir_intrinsic_infos[intr->intrinsic].name);
          return;

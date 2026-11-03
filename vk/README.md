@@ -177,7 +177,7 @@ exact for linear interpolation, within a pixel close for perspective (dEQP-VK's 
 cases of it pass); a flat input as it is.
 
 Subgroups are in compute and fragment shaders only
-(WGSL's), and a subgroup-scoped barrier does nothing. Without them, the basic operations of subgroups of one invocation.
+(WGSL's), and a subgroup-scoped barrier does nothing. Without them, subgroups of one invocation: the device advertises the basic operations in compute, but every family translates, each its value on a subgroup of one (NIR lowers them for size 1, `read_invocation` printed as its value: GD G1), since programs use what the device doesn't advertise (Godot's Forward+ scene shader calls `subgroupBroadcastFirst(subgroupMin(…))` in its fragment stage unconditionally, and drew no mesh on the M4 before).
 
 **16-bit values** (VK3 L5): kept in a u32's low half. 16-bit storage (buffers, uniform buffers, push constants; every
 adapter) loads and stores halves of words, a store to a buffer or shared memory as an `atomicAnd` and an `atomicOr` on
