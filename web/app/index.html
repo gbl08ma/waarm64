@@ -101,15 +101,17 @@
   #folder-wizard #folder-choose { border-color: var(--accent); }
 
   /* The message bar. */
-  #message { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 16px; padding: 10px 16px; background: #2a1215; color: #ffb4b6; border-bottom: 1px solid #5c1d22; }
+  /* The buttons and the close are one height and stay at the top; the text is centered beside them while it is
+     shorter (a line or two), and starts at the top when it is taller. */
+  #message { --row: 30px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 16px; padding: 10px 16px; background: #2a1215; color: #ffb4b6; border-bottom: 1px solid #5c1d22; }
   #message[data-kind=warn] { background: #2a2312; color: #f3d98b; border-color: #5c4b1d; }
-  #message-body { flex: 1 1 480px; max-height: 30vh; overflow: auto; }
+  #message-body { align-self: center; flex: 1 1 480px; max-height: 30vh; overflow: auto; }
   #message-text, #message-details { margin: 0; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; }
   #message-text::first-line { font-weight: 600; }
   #message-details { margin-top: 4px; opacity: 0.8; }
   #message-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-  #message-actions button { border: 1px solid currentColor; border-radius: 6px; color: inherit; }
-  #message .close { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; margin-left: auto; border-radius: 4px; color: inherit; }
+  #message-actions button { min-height: var(--row); border: 1px solid currentColor; border-radius: 6px; color: inherit; }
+  #message .close { display: flex; align-items: center; justify-content: center; width: var(--row); height: var(--row); padding: 0; margin-left: auto; border-radius: 4px; color: inherit; }
 
   /* The machine: its screen, its serial terminal, or both. */
   main { flex: 1; min-height: 0; display: flex; gap: 12px; padding: 12px; }

@@ -12,6 +12,7 @@
   import Disks from './Disks.svelte';
   import DisksPane from './DisksPane.svelte';
   import Icon from './Icon.svelte';
+  import Pane from './Pane.svelte';
   import MoveButtons from './MoveButtons.svelte';
   import Menu from './Menu.svelte';
   import Check from './Check.svelte';
@@ -306,12 +307,8 @@
     </nav>
 
     {#if ui.machinesSelected === PREFERENCES}
-      <section class="machine" data-selected={PREFERENCES}>
-        <div class="head">
-          <span class="title"><h3>{t('machines:MachinesPage.preferences')}</h3>
-          <span class="meta">{t('machines:MachinesPage.preferences.meta')}</span></span>
-        </div>
-        <div class="tab settings">
+      <Pane id={PREFERENCES} title={t('machines:MachinesPage.preferences')} meta={t('machines:MachinesPage.preferences.meta')}>
+        <div class="settings">
           <Check bind:checked={warnOnLeave} onchange={() => remember({ leaveWarning: warnOnLeave })} field="leave-warning"
             note={t('machines:MachinesPage.leaveWarning.note')}>{t('machines:MachinesPage.leaveWarning')}</Check>
           <Check bind:checked={catchUpClock} onchange={() => remember({ clockSync: catchUpClock })} field="clock-sync"
@@ -321,7 +318,7 @@
           <label>{t('machines:MachinesPage.shaderBudget')} <select bind:value={shaderMiB} onchange={() => remember({ shaderMiB })} data-field="shader-budget">{#each [...new Set([...CACHE_BUDGET_CHOICES, shaderMiB])].sort((a, b) => a - b) as n}<option value={n}>{n === CACHE_BUDGET / 2 ** 20 ? t('machines:MachinesPage.shaderBudget.default', { n }) : t('machines:MachinesPage.mib', { n })}</option>{/each}</select></label>
           <p class="note">{t('machines:MachinesPage.shaderBudget.note')}</p>
         </div>
-        <div class="tab">
+        <div class="part">
           <h4>{t('machines:MachinesPage.statusBar')}</h4>
           <StatusEditor {net} />
           <div class="settings status-fullscreen">
@@ -329,42 +326,25 @@
               note={t('machines:MachinesPage.statusFullscreen.note')}>{t('machines:MachinesPage.statusFullscreen')}</Check>
           </div>
         </div>
-      </section>
+      </Pane>
     {:else if ui.machinesSelected === ABOUT}
-      <section class="machine" data-selected={ABOUT}>
-        <div class="head">
-          <span class="title"><h3>{t('machines:MachinesPage.about')}</h3>
-          <span class="meta">{t('machines:MachinesPage.about.meta')}</span></span>
-        </div>
-        <div class="tab"><About /></div>
-      </section>
+      <Pane id={ABOUT} title={t('machines:MachinesPage.about')} meta={t('machines:MachinesPage.about.meta')}><About /></Pane>
     {:else if ui.machinesSelected === DISKS}
-      <section class="machine" data-selected={DISKS}>
-        <div class="head">
-          <span class="title"><h3>{t('machines:MachinesPage.disks.heading')}</h3>
-          <span class="meta">{t('machines:MachinesPage.disks.meta')}</span></span>
-        </div>
-        <div class="tab"><DisksPane {store} {machines} {disks} {overlays} {running} {act} {offFirst} /></div>
-      </section>
+      <Pane id={DISKS} title={t('machines:MachinesPage.disks.heading')} meta={t('machines:MachinesPage.disks.meta')}>
+        <DisksPane {store} {machines} {disks} {overlays} {running} {act} {offFirst} />
+      </Pane>
     {:else if ui.machinesSelected === FOLDERS}
-      <section class="machine" data-selected={FOLDERS}>
-        <div class="head">
-          <span class="title"><h3>{t('machines:MachinesPage.folders.heading')}</h3>
-          <span class="meta">{t('machines:MachinesPage.folders.meta')}</span></span>
-          <span class="grow"></span>
+      <Pane id={FOLDERS} title={t('machines:MachinesPage.folders.heading')} meta={t('machines:MachinesPage.folders.meta')}>
+        {#snippet actions()}
           <button onclick={() => page.folderWizard(undefined, [])} data-action="new-folder"><Icon name="plus" size={16} />{t('machines:MachinesPage.folders.new')}</button>
-        </div>
-        <div class="tab"><FoldersPane {folders} {store} {act} /></div>
-      </section>
+        {/snippet}
+        <FoldersPane {folders} {store} {act} />
+      </Pane>
     {:else if ui.machinesSelected === CONNECTIONS}
-      <section class="machine" data-selected={CONNECTIONS}>
-        <div class="head">
-          <span class="title"><h3>{t('machines:MachinesPage.connections.heading')}</h3>
-          <span class="meta">{t('machines:MachinesPage.connections.meta')}</span></span>
-          <span class="grow"></span>
+      <Pane id={CONNECTIONS} title={t('machines:MachinesPage.connections.heading')} meta={t('machines:MachinesPage.connections.meta')}>
+        {#snippet actions()}
           <button onclick={() => page.netWizard({ mode: 'new' })} data-action="new-connection"><Icon name="plus" size={16} />{t('machines:MachinesPage.connections.new')}</button>
-        </div>
-        <div class="tab">
+        {/snippet}
           <ul class="adapters connections">
             {#each conns as c (c.id)}
               <li data-connection={c.id}>
@@ -382,17 +362,12 @@
               <li class="none">{t('machines:MachinesPage.connections.none')}</li>
             {/each}
           </ul>
-        </div>
-      </section>
+      </Pane>
     {:else if ui.machinesSelected === PAGE && ui.transient}
-      <section class="machine" data-selected={PAGE}>
-        <div class="head"><span class="title"><h3>{ui.transient.label}</h3><span class="meta">{t('machines:MachinesPage.transient.meta')}</span></span></div>
-        <div class="tabs" role="tablist">
-          <button role="tab" aria-selected={ui.machinesTab !== 'snapshots'} onclick={() => tab('disks')} data-tab="disks"><Icon name="database" size={16} />{t('machines:MachinesPage.tab.disks')}</button>
-          <button role="tab" aria-selected={ui.machinesTab === 'snapshots'} onclick={() => tab('snapshots')} data-tab="snapshots"><Icon name="history" size={16} />{t('machines:MachinesPage.tab.snapshots')}</button>
-        </div>
+      <Pane id={PAGE} title={ui.transient.label} meta={t('machines:MachinesPage.transient.meta')}
+        tabs={[{ id: 'disks', icon: 'database', label: t('machines:MachinesPage.tab.disks') }, { id: 'snapshots', icon: 'history', label: t('machines:MachinesPage.tab.snapshots') }]}
+        tab={ui.machinesTab === 'snapshots' ? 'snapshots' : 'disks'} ontab={(x) => tab(x as MachinesTab)}>
         {#if ui.machinesTab !== 'snapshots'}
-          <div class="tab">
             <div class="disk" data-attachment={PAGE}>
               <div class="row"><Icon name="database" size={18} /><strong>{ui.transient.disk}</strong>
                 {#if ui.hasOverlay}<span class="meta">{t('machines:MachinesPage.transient.overlay')}</span>{/if}</div>
@@ -410,18 +385,22 @@
                 </div>
               {/if}
             </div>
-          </div>
         {:else}
-          <div class="tab"><Snapshots {store} {act} /></div>
+          <Snapshots {store} {act} />
         {/if}
-      </section>
+      </Pane>
     {:else if draft}
       {@const m = draft}
-      <section class="machine" data-selected={m.id}>
-        <div class="head">
-          <span class="title"><h3>{m.name}</h3>
-          <span class="meta" data-machine-state>{m.id === ui.current ? t('machines:MachinesPage.head.stateHere', { state: stateText(m.id) }) : text(stateText(m.id))}</span></span>
-          <span class="grow"></span>
+      <Pane id={m.id} title={m.name} meta={m.id === ui.current ? t('machines:MachinesPage.head.stateHere', { state: stateText(m.id) }) : text(stateText(m.id))} metaAttrs={{ 'data-machine-state': '' }}
+        tabs={[
+          { id: 'settings', icon: 'settings', label: t('machines:MachinesPage.tab.settings') },
+          { id: 'disks', icon: 'database', label: t('machines:MachinesPage.tab.disksCount', { n: m.attachments.length }) },
+          { id: 'network', icon: 'network', label: t('machines:MachinesPage.tab.network') },
+          { id: 'usb', icon: 'usb', label: m.usbDevices?.length ? t('machines:MachinesPage.tab.usbCount', { n: m.usbDevices.length }) : t('machines:MachinesPage.tab.usb') },
+          { id: 'folders', icon: 'folder', label: m.folders?.length ? t('machines:MachinesPage.tab.foldersCount', { n: m.folders.length }) : t('machines:MachinesPage.tab.folders') },
+          { id: 'snapshots', icon: 'history', label: t('machines:MachinesPage.tab.snapshots') },
+        ]} tab={ui.machinesTab} ontab={(x) => tab(x as MachinesTab)}>
+        {#snippet actions()}
           {#if m.id !== ui.current}
             <button onclick={() => page.openMachine(m.id)} data-action="open"><Icon name="player-play" size={16} />{t('machines:MachinesPage.open')}</button>
           {:else if ui.state === 'running' || ui.state === 'booting' || ui.state === 'loading'}
@@ -432,16 +411,7 @@
           <button onclick={() => act(t('machines:MachinesPage.busy.copying'), async () => { choose((await duplicateMachine(store, m.id)).id); })} title={t('machines:MachinesPage.duplicate.title')}><Icon name="copy" size={16} />{t('machines:MachinesPage.duplicate')}</button>
           <button onclick={() => exportDef(m)} title={t('machines:MachinesPage.exportDefinition.title')}><Icon name="file-export" size={16} />{t('machines:MachinesPage.exportDefinition')}</button>
           <button onclick={() => remove(m)} title={t('machines:MachinesPage.machine.delete.title')}><Icon name="trash" size={16} />{t('machines:MachinesPage.machine.delete')}</button>
-        </div>
-        <div class="tabs" role="tablist">
-          <button role="tab" aria-selected={ui.machinesTab === 'settings'} onclick={() => tab('settings')} data-tab="settings"><Icon name="settings" size={16} />{t('machines:MachinesPage.tab.settings')}</button>
-          <button role="tab" aria-selected={ui.machinesTab === 'disks'} onclick={() => tab('disks')} data-tab="disks"><Icon name="database" size={16} />{t('machines:MachinesPage.tab.disksCount', { n: m.attachments.length })}</button>
-          <button role="tab" aria-selected={ui.machinesTab === 'network'} onclick={() => tab('network')} data-tab="network"><Icon name="network" size={16} />{t('machines:MachinesPage.tab.network')}</button>
-          <button role="tab" aria-selected={ui.machinesTab === 'usb'} onclick={() => tab('usb')} data-tab="usb"><Icon name="usb" size={16} />{m.usbDevices?.length ? t('machines:MachinesPage.tab.usbCount', { n: m.usbDevices.length }) : t('machines:MachinesPage.tab.usb')}</button>
-          <button role="tab" aria-selected={ui.machinesTab === 'folders'} onclick={() => tab('folders')} data-tab="folders"><Icon name="folder" size={16} />{m.folders?.length ? t('machines:MachinesPage.tab.foldersCount', { n: m.folders.length }) : t('machines:MachinesPage.tab.folders')}</button>
-          <button role="tab" aria-selected={ui.machinesTab === 'snapshots'} onclick={() => tab('snapshots')} data-tab="snapshots"><Icon name="history" size={16} />{t('machines:MachinesPage.tab.snapshots')}</button>
-        </div>
-        <div class="tab">
+        {/snippet}
           {#if ui.machinesTab === 'settings'}
             <div class="settings" oninput={() => (dirty = true)} onchange={() => (dirty = true)}>
               <label>{t('machines:MachinesPage.name')} <input bind:value={draft.name} data-field="name"></label>
@@ -537,10 +507,9 @@
           {:else}
             <Snapshots {store} machine={m} running={isOn(m.id)} {act} />
           {/if}
-        </div>
-      </section>
+      </Pane>
     {:else}
-      <section class="machine empty"><p>{t('machines:MachinesPage.empty')}</p></section>
+      <section class="empty"><p>{t('machines:MachinesPage.empty')}</p></section>
     {/if}
   </div>
 
@@ -559,7 +528,6 @@
   .machines { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
   .bar { display: flex; align-items: center; gap: 12px; padding: 6px 12px; border-bottom: 1px solid var(--line); background: var(--panel); }
   h2 { margin: 0; font-size: 15px; font-weight: 600; }
-  h3 { margin: 0; font-size: 16px; font-weight: 600; }
   .busy { color: var(--busy); font-size: 13px; }
   .error { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 8px 12px; color: #ffb4b6; background: #2a1215; border-bottom: 1px solid #5c1d22; white-space: pre-wrap; }
   .error .text { display: flex; flex-direction: column; gap: 6px; }
@@ -573,16 +541,9 @@
   .meta { color: var(--dim); font-size: 12px; }
   .new { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; border-top: 1px solid var(--line); }
   .new button { display: flex; align-items: center; gap: 8px; text-align: left; border-radius: 4px; padding: 5px 10px; }
-  section.machine { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
-  section.empty { align-items: center; justify-content: center; color: var(--dim); }
-  .head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 12px 16px 8px; }
-  .head .title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
-  .head .grow { flex: 1; }
-  .head button, .row button, .settings button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
-  .tabs { flex: none; display: flex; gap: 2px; padding: 0 16px; box-shadow: inset 0 -1px var(--line); overflow-x: auto; scrollbar-width: none; }
-  .tabs button { flex: none; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px 6px 0 0; border: 1px solid transparent; border-bottom: 0; color: var(--dim); }
-  .tabs button[aria-selected=true] { color: var(--text); background: var(--bg); border-color: var(--line); border-bottom: 1px solid var(--bg); }
-  .tab { padding: 16px; }
+  section.empty { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--dim); }
+  .row button, .settings button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
+  .part { margin-top: 32px; }
   .settings { display: grid; grid-template-columns: max-content minmax(0, 320px) 1fr; gap: 10px 16px; align-items: center; }
   /* A full-row note's text would widen the labels' max-content column and squeeze the controls to nothing: it takes the row's width instead. */
   .settings > .note, .settings > .advanced { contain: inline-size; }

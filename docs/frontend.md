@@ -153,8 +153,13 @@ the hidden file inputs `#open-disk-input`, `#load-snapshot-input`, `#load-change
 everywhere on the page (KiB, MiB, GiB: `bytes.ts` `bytesText`), as the sizes users enter are (a disk in MiB, RAM).
 
 **Styles** are scoped to the component that writes them, and nothing warns when they don't arrive: the Machines page's
-`.settings`, `.head`, `.tab`, `.meta` and button rules reach only its own markup (its snippets too), so a tab's settings
+`.settings`, `.row`, `.meta` and button rules reach only its own markup (its snippets too), so a tab's settings
 stay in `MachinesPage.svelte` and a child component holds a list with styles of its own (`Usb.svelte`, `Folders.svelte`).
+Every pane on the right of the Machines page (a machine, Disks, Shared folders, Connections, Preferences, About) is a
+`Pane.svelte`: its head (title, small line, the `actions` snippet's buttons), its tabs (`tabs`, `tab`, `ontab`) and
+its body (`.tab`), so a new pane looks like the others by using it. The title is at one place whether the head has buttons
+or not (its line is a button's height, `--row`), a long small line wraps under the title and leaves the buttons beside it,
+and the body starts at one place under a head of one line (`tests/page-layout.test.ts`).
 Dialogs are built on `Modal.svelte` (Add a disk…, Add a device…, the Network and Folder wizards, a disk's Overlays,
 Attach to a machine; the page's questions are `Ask.svelte`'s): the shell, its title, its row of buttons and the rules its
 content shares (notes, errors, labels, choices, lists of rows, the primary button), so a new dialog looks like the
