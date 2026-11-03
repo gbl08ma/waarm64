@@ -1,6 +1,6 @@
 // The virgl renderer on WebGL2 (docs/graphics.md "Decisions", "The renderer"): Mesa's virgl command
 // stream (virglrenderer's virgl_protocol.h) decoded and run on one WebGL2 context. The decoder and the state model
-// follow virglrenderer's vrend_decode.c and vrend_renderer.c (MIT, THIRD_PARTY.md): contexts with sub-contexts that
+// follow virglrenderer's vrend_decode.c and vrend_renderer.c (MIT, THIRD_PARTY.json): contexts with sub-contexts that
 // own the objects (shaders, blend, depth-stencil-alpha and rasterizer states, vertex elements, sampler views and
 // states, surfaces, queries), resources shared by the contexts they're attached to, and the GL state set from the
 // sub-context at each draw (one WebGL2 context serves every guest context, so nothing is assumed bound across

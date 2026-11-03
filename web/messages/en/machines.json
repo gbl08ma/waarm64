@@ -779,6 +779,122 @@
     "message": "Stored in this browser, for every machine.",
     "note": "Machines page, Preferences: the line beside the pane's title."
   },
+  "MachinesPage.about.title": {
+    "message": "This web app's version, its source code and the licenses of the software it includes.",
+    "note": "Machines page: tooltip of the About button under the list of machines (after Preferences)."
+  },
+  "MachinesPage.about": {
+    "message": "About",
+    "note": "Machines page: button under the list of machines (after Preferences), and the title of the pane it shows: this web app's version, source code and third-party software."
+  },
+  "MachinesPage.about.meta": {
+    "message": "A whole-system AArch64 emulator for the browser.",
+    "note": "Machines page, About: the line beside the pane's title, what this web app is."
+  },
+  "About.source": {
+    "message": "Source code",
+    "note": "Machines page, About: label of the link to this web app's source code repository."
+  },
+  "About.version": {
+    "message": "Version",
+    "note": "Machines page, About: label of the version this copy of the web app was built from (a tag and its commit, or a commit)."
+  },
+  "About.version.tag": {
+    "message": "<tag>{{tag}}</tag> (commit <hash>{{commit}}</hash>)",
+    "note": "Machines page, About, beside Version: the release tag this copy was built from, and its commit. {{tag}} is the tag's name (a link to it in the repository), {{commit}} the commit's abbreviated hash (a link to the commit)."
+  },
+  "About.version.tagDirty": {
+    "message": "<tag>{{tag}}</tag> (commit <hash>{{commit}}</hash>), with local changes",
+    "note": "Machines page, About, beside Version: as the release tag line, for a copy built from a work tree with changes not committed. {{tag}} is the tag's name, {{commit}} the commit's abbreviated hash (links)."
+  },
+  "About.version.commit": {
+    "message": "Commit <hash>{{commit}}</hash>",
+    "note": "Machines page, About, beside Version: the commit this copy was built from, when no release tag is on it. {{commit}} is the commit's abbreviated hash (a link to the commit in the repository)."
+  },
+  "About.version.commitDirty": {
+    "message": "Commit <hash>{{commit}}</hash>, with local changes",
+    "note": "Machines page, About, beside Version: as the commit line, for a copy built from a work tree with changes not committed. {{commit}} is the commit's abbreviated hash (a link)."
+  },
+  "About.unknown": {
+    "message": "Not known",
+    "note": "Machines page, About, beside Version or Date: for a copy built outside a git checkout, which has no commit to show."
+  },
+  "About.date": {
+    "message": "Date",
+    "note": "Machines page, About: label of the date of the version this copy was built from."
+  },
+  "About.date.title": {
+    "message": "The date of the commit this copy of the web app was built from.",
+    "note": "Machines page, About: tooltip of the Date label."
+  },
+  "About.date.value": {
+    "message": "{{when}}",
+    "note": "Machines page, About, beside Date: {{when}} is the date and time of the commit this copy was built from, as the browser writes dates."
+  },
+  "About.license": {
+    "message": "License",
+    "note": "Machines page, About: label of this web app's own license; beside it, the license's identifier (MIT), a link to its text."
+  },
+  "About.thirdParty": {
+    "message": "Third-party software",
+    "note": "Machines page, About: heading of the list of the other projects this web app includes or derives code from."
+  },
+  "About.thirdParty.intro": {
+    "message": "This web app includes the following software, or code derived from it, by the part of it they are in. Each is used under its license; its texts are linked beside it.",
+    "note": "Machines page, About: the sentences under Third-party software, above the tables (one per part of the web app)."
+  },
+  "About.group.page": {
+    "message": "The interface",
+    "note": "Machines page, About, Third-party software: heading of the table of the projects in the web page itself (its components, words, icons, terminal)."
+  },
+  "About.group.core": {
+    "message": "The emulator",
+    "note": "Machines page, About, Third-party software: heading of the table of the projects in the emulator's core (the CPU, the devices)."
+  },
+  "About.group.graphics": {
+    "message": "3D graphics through OpenGL",
+    "note": "Machines page, About, Third-party software: heading of the table of the projects in the 3D renderer for the guest's OpenGL (virgl on WebGL2)."
+  },
+  "About.group.vulkan": {
+    "message": "3D graphics through Vulkan",
+    "note": "Machines page, About, Third-party software: heading of the table of the projects in the Vulkan renderer (Venus on WebGPU)."
+  },
+  "About.group.network": {
+    "message": "Networking",
+    "note": "Machines page, About, Third-party software: heading of the table of the projects in the network client (tailnets, tailcat)."
+  },
+  "About.group.firmware": {
+    "message": "UEFI firmware",
+    "note": "Machines page, About, Third-party software: heading of the table of the projects in the UEFI firmware the machines boot."
+  },
+  "About.col.project": {
+    "message": "Project",
+    "note": "Machines page, About, Third-party software: column heading, the project's name (a link to it)."
+  },
+  "About.col.version": {
+    "message": "Version",
+    "note": "Machines page, About, Third-party software: column heading, the project's version or commit included."
+  },
+  "About.col.license": {
+    "message": "License",
+    "note": "Machines page, About, Third-party software: column heading, the project's license (an SPDX identifier or expression)."
+  },
+  "About.col.texts": {
+    "message": "License texts",
+    "note": "Machines page, About, Third-party software: column heading, links to the project's license files at that version."
+  },
+  "About.derived": {
+    "message": "Derived code",
+    "note": "Machines page, About, Third-party software: small tag beside a project's name, when some of this web app's code is ported or derived from that project's."
+  },
+  "About.derived.title": {
+    "message": "Some of this web app's code is ported from this project or reimplements it.",
+    "note": "Machines page, About, Third-party software: tooltip of the Derived code tag."
+  },
+  "About.bundled": {
+    "message": "All the license texts of this part, as distributed with this web app: <link>{{file}}</link>.",
+    "note": "Machines page, About, Third-party software: under a table, a link to a license file served beside the web app. {{file}} is the file's name (EDK2-LICENSES.txt, VENUS-LICENSES.txt, THIRD-PARTY-LICENSES.md)."
+  },
   "MachinesPage.leaveWarning.note": {
     "message": "Leaving this web app (closing the tab, reloading it, or going elsewhere) powers off its machine at once, like pulling the plug, and unsaved work in the guest is lost. With this on, the browser asks first, in its own words. To come back to a machine later, suspend it.",
     "note": "Machines page, Preferences: the note under Ask before leaving this web app while a machine runs."

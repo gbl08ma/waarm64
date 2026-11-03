@@ -1,0 +1,2463 @@
+{
+  "$comment": [
+    "The third-party code, dependencies and references of webpc: the authoritative list (docs/third-party.md says how to keep it).",
+    "Each section is a table: `columns` name the cells of `md` (Markdown). An entry with `about` (a group of the About pane) is shown on the",
+    "Machines page and needs `url`, `version`, `license` (SPDX) and `licenseTexts` (pinned links), or `parts` with those; tools/third-party.ts checks it."
+  ],
+  "sections": [
+    {
+      "id": "derived",
+      "title": "Code in this repository derived from other projects",
+      "intro": [
+        "When porting or copying code, add a row here and keep the original\ncopyright/license header in the file."
+      ],
+      "columns": [
+        {
+          "key": "ours",
+          "title": "Our file(s)"
+        },
+        {
+          "key": "source",
+          "title": "Source project, file, commit"
+        },
+        {
+          "key": "license",
+          "title": "License"
+        }
+      ],
+      "entries": [
+        {
+          "id": "dynarmic-decoder",
+          "name": "dynarmic",
+          "about": "core",
+          "url": "https://github.com/lioncash/dynarmic/tree/a41c380246d3",
+          "version": "a41c380246d3",
+          "license": "0BSD",
+          "licenseTexts": [
+            {
+              "name": "LICENSE.txt",
+              "url": "https://github.com/lioncash/dynarmic/blob/a41c380246d3/LICENSE.txt"
+            }
+          ],
+          "md": {
+            "ours": "`core/src/a64/a64.inc`",
+            "source": "dynarmic, `src/dynarmic/frontend/A64/decoder/a64.inc`, `a41c380246d3` (verbatim, header added). `core/build.rs` follows the match order of dynarmic's `a64.h`",
+            "license": "0BSD"
+          }
+        },
+        {
+          "id": "virglrenderer-protocol",
+          "name": "virglrenderer",
+          "about": "graphics",
+          "url": "https://gitlab.freedesktop.org/virgl/virglrenderer/-/tree/c8e3fc3b",
+          "version": "c8e3fc3b",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "COPYING",
+              "url": "https://gitlab.freedesktop.org/virgl/virglrenderer/-/blob/c8e3fc3b/COPYING"
+            }
+          ],
+          "md": {
+            "ours": "`web/virgl.ts` (G2)",
+            "source": "virglrenderer `c8e3fc3b`: the command and object names of `src/virgl_protocol.h` (`enum virgl_context_cmd`, `enum virgl_object_type`) and the field layout of `src/virgl_hw.h` (`struct virgl_caps_v1`/`_v2`) as tables; the caps' base values are virglrenderer's own output on a GLES 3.0 host (docs/graphics.md \"The caps\")",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "mesa-video",
+          "name": "Mesa",
+          "about": "graphics",
+          "url": "https://gitlab.freedesktop.org/mesa/mesa/-/tree/96cb43121031992b85767f9c1be8f3f48e22b1d2",
+          "version": "26.2.4",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "docs/license.rst",
+              "url": "https://gitlab.freedesktop.org/mesa/mesa/-/blob/96cb43121031992b85767f9c1be8f3f48e22b1d2/docs/license.rst"
+            },
+            {
+              "name": "licenses/MIT",
+              "url": "https://gitlab.freedesktop.org/mesa/mesa/-/blob/96cb43121031992b85767f9c1be8f3f48e22b1d2/licenses/MIT"
+            }
+          ],
+          "md": {
+            "ours": "`web/virgl-video.ts`, `web/video-h264.ts` (video, docs/plans/video.md)",
+            "source": "Mesa 26.2.4 (MIT): the video commands' layouts (`src/virtio/virtio-gpu/virgl_protocol.h`), `struct virgl_video_caps` and the picture descs' field offsets (`virgl_video_hw.h`, measured with its compiler), `enum pipe_video_profile`'s values; nothing copied. The H.264 parameter sets are written from ITU-T H.264 §7.3.2",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "virglrenderer-renderer",
+          "name": "virglrenderer",
+          "about": "graphics",
+          "url": "https://gitlab.freedesktop.org/virgl/virglrenderer/-/tree/c8e3fc3b",
+          "version": "c8e3fc3b",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "COPYING",
+              "url": "https://gitlab.freedesktop.org/virgl/virglrenderer/-/blob/c8e3fc3b/COPYING"
+            }
+          ],
+          "md": {
+            "ours": "`web/virgl-renderer.ts`, `web/virgl-tgsi.ts`, `web/virgl-formats.ts` (G3)",
+            "source": "virglrenderer `c8e3fc3b`, rewritten in TypeScript for WebGL2 (no code copied verbatim): the command decoding and payload layouts of `src/vrend/vrend_decode.c` and `virgl_protocol.h`; the state model (contexts, sub-contexts owning the objects, resources attached to contexts, long shaders in pieces) and the GLES-host conventions of `vrend_renderer.c` (the front face inverted for guest resources, a negative viewport's y flip in the shader, BGRA stored as its bytes); the GLSL conventions of `vrend_shader.c` (registers as float vec4s holding bits, constants as `uvec4` bits, the fragment coordinate's origin flip); the GL formats and swizzles of `vrend_formats.c`'s GLES tables. The TGSI text grammar is Mesa's `tgsi_dump.c`/`tgsi_strings.c` as virglrenderer carries them",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "webgl-aquarium-scene",
+          "name": "WebGL Aquarium",
+          "url": "https://github.com/WebGLSamples/WebGLSamples.github.io",
+          "md": {
+            "ours": "`bench/vulkan/scene/sim.c`, `sim.h`, `scene.h`, `shaders/` (but `tk*`) (VK0)",
+            "source": "The WebGL Aquarium ([WebGLSamples](https://github.com/WebGLSamples/WebGLSamples.github.io), `4c87dfea3cff`): `aquarium/aquarium.js`, `aquarium-common.js` (the fish table, the view, the draw order, the light rays' and bubbles' parameters), `aquarium.html`'s shaders (ported from GLSL ES to GLSL 450 and WGSL), tdl's matrix helpers and particle shader (`tdl/fast.js`, `tdl/particles.js`); the license text in `bench/vulkan/scene/LICENSE.aquarium`",
+            "license": "BSD-3-Clause"
+          }
+        },
+        {
+          "id": "virglrenderer-venus-capture",
+          "name": "virglrenderer",
+          "md": {
+            "ours": "`tools/venus-oracle/capture.patch` (VK0 B)",
+            "source": "virglrenderer `e0a1caf3b147`: a diff whose context and hooks are lines of `src/meson.build` and `src/venus/vkr_{context,queue,ring,transport}.c` (SPDX MIT, © Google), plus two new files of ours (`vkr_capture.{c,h}`, tagged MIT); applied in `target/venus-oracle/`, built for the oracle only, never distributed",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "vulkan-profiles-patch",
+          "name": "Vulkan-Profiles",
+          "md": {
+            "ours": "`bench/vulkan/profiles/build-layer.sh` (VK0 A)",
+            "source": "Khronos's Vulkan-Profiles `vulkan-sdk-1.4.363.0` (`fce885d30eba`): edits `scripts/gen_profiles_layer.py` in a copy under `target/vk0a/psrc` (four `GET_VALUE` calls made modifiable, and a 3-line fragment of its `GetValueEnum` quoted as the anchor of a 2-line addition); the patched layer stays in `target/`, not distributed",
+            "license": "Apache-2.0"
+          }
+        },
+        {
+          "id": "mesa-os-misc-bench",
+          "name": "Mesa",
+          "md": {
+            "ours": "`bench/vulkan/nir/wasi/os_misc.c`, `shim.h` (VK1 step 1)",
+            "source": "Mesa 26.2.4: platform-free stubs for the functions `src/util/os_misc.h` declares (the signatures are Mesa's, the bodies ours), and the POSIX calls Mesa's util reaches for that wasi-libc lacks",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "mesa-kosmickrisp-compiler",
+          "name": "Mesa",
+          "about": "vulkan",
+          "url": "https://gitlab.freedesktop.org/mesa/mesa/-/tree/96cb43121031992b85767f9c1be8f3f48e22b1d2",
+          "version": "26.2.4",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "docs/license.rst",
+              "url": "https://gitlab.freedesktop.org/mesa/mesa/-/blob/96cb43121031992b85767f9c1be8f3f48e22b1d2/docs/license.rst"
+            },
+            {
+              "name": "licenses/MIT",
+              "url": "https://gitlab.freedesktop.org/mesa/mesa/-/blob/96cb43121031992b85767f9c1be8f3f48e22b1d2/licenses/MIT"
+            }
+          ],
+          "md": {
+            "ours": "`vk/compiler/` (VK2 L1: the NIR → WGSL backend)",
+            "source": "Mesa 26.2.4's KosmicKrisp (`src/kosmickrisp/compiler/nir_to_msl.c` and `vulkan/kk_shader.c`, SPDX MIT, © LunarG and Google): the pass lists of `msl_preprocess_nir`, `msl_optimize_nir` and `kk_lower_nir` followed in `wgsl_nir.c` (`lower_subpass_dim` after `kk_shader.c`'s), and the printer's shape (a gather, declarations, values predeclared, control flow node by node); lavapipe's `lvp_nir_lower_pipeline_layout.c` (MIT) as the model for lowering `vulkan_resource_index` to an index and offset. The WGSL printing and the descriptor and binding scheme are ours",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "mesa-kosmickrisp-driver",
+          "name": "Mesa",
+          "about": "vulkan",
+          "url": "https://gitlab.freedesktop.org/mesa/mesa/-/tree/96cb43121031992b85767f9c1be8f3f48e22b1d2",
+          "version": "26.2.4",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "docs/license.rst",
+              "url": "https://gitlab.freedesktop.org/mesa/mesa/-/blob/96cb43121031992b85767f9c1be8f3f48e22b1d2/docs/license.rst"
+            },
+            {
+              "name": "licenses/MIT",
+              "url": "https://gitlab.freedesktop.org/mesa/mesa/-/blob/96cb43121031992b85767f9c1be8f3f48e22b1d2/licenses/MIT"
+            }
+          ],
+          "md": {
+            "ours": "`vk/driver/` (VK2 L2: the driver on WebGPU)",
+            "source": "Mesa 26.2.4's KosmicKrisp (`src/kosmickrisp/vulkan/`, SPDX MIT, © LunarG and Google) as the model for a driver on the runtime's `vk_shader` path (`kk_shader.c`'s `vk_device_shader_ops` and `kk_cmd_bind_shaders`, the dynamic vertex-input state set in the command buffer), and lavapipe's `lvp_device.c` (MIT) for the device's shape; no code copied. The format table follows the WebGPU spec's texture format capabilities (W3C, documentation)",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "virglrenderer-vkr-wasm",
+          "name": "virglrenderer",
+          "about": "vulkan",
+          "url": "https://gitlab.freedesktop.org/virgl/virglrenderer/-/tree/e0a1caf3b147",
+          "version": "e0a1caf3b147",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "COPYING",
+              "url": "https://gitlab.freedesktop.org/virgl/virglrenderer/-/blob/e0a1caf3b147/COPYING"
+            }
+          ],
+          "md": {
+            "ours": "`vk/patches/vkr-wasm.patch`, `vk/wasi/` (VK1 L6)",
+            "source": "virglrenderer `e0a1caf3b147`: a diff whose context is lines of `src/venus/vkr_{context,device_memory,queue,renderer,ring}.{c,h}` (SPDX MIT, © Google; our changes MIT like the files): vkr's threads replaced by polls, blobs exported as their storage. `vk/wasi/` is Mesa 26.2.4's `os_misc.h` and `os_get_option` signatures with bodies of ours, and stubs for the POSIX headers wasi-libc lacks; `vk/driver/` is ours, written against Mesa's Vulkan runtime (its entrypoint tables generated by Mesa's `vk_entrypoints_gen.py`, MIT)",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "tsconnect-main",
+          "name": "Tailscale",
+          "md": {
+            "ours": "`net/tailscale/main_js.go` (N2)",
+            "source": "the engine setup of Tailscale's `cmd/tsconnect/wasm/wasm_js.go` (v1.102.5), with our `Tun` device and JS API instead of the netstack-terminated sockets and ssh; header kept",
+            "license": "BSD-3-Clause"
+          }
+        },
+        {
+          "id": "tailcat-protocol",
+          "name": "tailcat",
+          "about": "network",
+          "url": "https://github.com/tailscale/tailcat/tree/52fbad3",
+          "version": "0.7.0",
+          "license": "BSD-3-Clause",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://github.com/tailscale/tailcat/blob/52fbad3/LICENSE"
+            }
+          ],
+          "md": {
+            "ours": "`net/ts/src/tailcat.rs`, `net/ts/src/client.rs`",
+            "source": "tailcat v0.7.0 (`github.com/tailscale/tailcat`, `52fbad3`): the address format, read and written (`wire.go`, `ParseAddr` in `tailcat.go`), the meow handshake from both sides (`disco.go`), the tunnel address of a node key (`tcAddrForKey`) and the NAT64 prefix convention; reimplemented in Rust from those files, nothing copied",
+            "license": "BSD-3-Clause"
+          }
+        },
+        {
+          "id": "tailscale-rs-noise",
+          "name": "tailscale-rs",
+          "about": "network",
+          "url": "https://github.com/tailscale/tailscale-rs/tree/d34658bbb2eb4593ae6df959aa93e9ee1e0457c6",
+          "version": "0.6.1",
+          "license": "BSD-3-Clause",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://github.com/tailscale/tailscale-rs/blob/d34658bbb2eb4593ae6df959aa93e9ee1e0457c6/LICENSE"
+            }
+          ],
+          "md": {
+            "ours": "`net/ts/src/noise.rs`",
+            "source": "the control channel's record framing of tailscale-rs's `ts_control_noise` v0.6.1 (`codec.rs`, `handshake.rs`: the 3-byte header, the record types, the chunk size, the counter nonces), rewritten without its tokio codec, and the early payload of `ts_control`'s `connect.rs`; the handshake itself is `ts_noise`'s, a dependency",
+            "license": "BSD-3-Clause"
+          }
+        },
+        {
+          "id": "tailscale-control",
+          "name": "tailscale-rs and Tailscale",
+          "about": "network",
+          "parts": [
+            {
+              "name": "tailscale-rs",
+              "url": "https://github.com/tailscale/tailscale-rs/tree/d34658bbb2eb4593ae6df959aa93e9ee1e0457c6",
+              "version": "0.6.1",
+              "license": "BSD-3-Clause",
+              "licenseTexts": [
+                {
+                  "name": "LICENSE",
+                  "url": "https://github.com/tailscale/tailscale-rs/blob/d34658bbb2eb4593ae6df959aa93e9ee1e0457c6/LICENSE"
+                }
+              ]
+            },
+            {
+              "name": "Tailscale",
+              "url": "https://github.com/tailscale/tailscale/tree/5fb2a81b065b0a0bbbfc67ab20a0d9c6a1108115",
+              "version": "1.102.5",
+              "license": "BSD-3-Clause",
+              "licenseTexts": [
+                {
+                  "name": "LICENSE",
+                  "url": "https://github.com/tailscale/tailscale/blob/5fb2a81b065b0a0bbbfc67ab20a0d9c6a1108115/LICENSE"
+                }
+              ]
+            }
+          ],
+          "md": {
+            "ours": "`net/ts/src/control.rs`, `net/ts/src/netmap.rs`, `net/ts/src/tailnet.rs`",
+            "source": "the control session, map stream and data plane follow tailscale-rs's `ts_control` (`client/register.rs`, `client/map_stream.rs`, `map_request_builder.rs`) and Tailscale's `controlclient`, `magicsock` and `filter` (v1.102.5): what's sent and how responses apply; reimplemented over the worker's transports, nothing copied",
+            "license": "BSD-3-Clause"
+          }
+        },
+        {
+          "id": "tailscale-derp",
+          "name": "tailscale-rs and Tailscale",
+          "about": "network",
+          "parts": [
+            {
+              "name": "tailscale-rs",
+              "url": "https://github.com/tailscale/tailscale-rs/tree/d34658bbb2eb4593ae6df959aa93e9ee1e0457c6",
+              "version": "0.6.1",
+              "license": "BSD-3-Clause",
+              "licenseTexts": [
+                {
+                  "name": "LICENSE",
+                  "url": "https://github.com/tailscale/tailscale-rs/blob/d34658bbb2eb4593ae6df959aa93e9ee1e0457c6/LICENSE"
+                }
+              ]
+            },
+            {
+              "name": "Tailscale",
+              "url": "https://github.com/tailscale/tailscale/tree/5fb2a81b065b0a0bbbfc67ab20a0d9c6a1108115",
+              "version": "1.102.5",
+              "license": "BSD-3-Clause",
+              "licenseTexts": [
+                {
+                  "name": "LICENSE",
+                  "url": "https://github.com/tailscale/tailscale/blob/5fb2a81b065b0a0bbbfc67ab20a0d9c6a1108115/LICENSE"
+                }
+              ]
+            }
+          ],
+          "md": {
+            "ours": "`net/ts/src/derp.rs`",
+            "source": "the DERP client handshake and frame types of Tailscale's `derp` package as tailscale-rs's `ts_derp` (v0.6.1) has them (`frame/`, `client.rs` `make_clientinfo`); reimplemented over a byte stream, nothing copied",
+            "license": "BSD-3-Clause"
+          }
+        },
+        {
+          "id": "tailscale-controlhttp",
+          "name": "Tailscale",
+          "md": {
+            "ours": "`net/tailscale/overlay/controlhttp_client_js.go` (N2)",
+            "source": "`tailscale.com/control/controlhttp/client_js.go` (v1.102.5), copied with one marked change (keep the control server's HTTPS port over WebSocket); `net/tailscale/build.sh` builds against a copy of the module with this file replaced",
+            "license": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "id": "techniques",
+      "title": "Techniques from papers and other projects (ideas, no code)",
+      "intro": [
+        "Reimplemented from the description, nothing copied; credited all the same."
+      ],
+      "columns": [
+        {
+          "key": "where",
+          "title": "Where"
+        },
+        {
+          "key": "idea",
+          "title": "Idea"
+        },
+        {
+          "key": "source",
+          "title": "Source"
+        }
+      ],
+      "entries": [
+        {
+          "id": "hamburg-vpaes",
+          "name": "Mike Hamburg, \"Accelerating AES with Vector Permute Instructions\"",
+          "md": {
+            "where": "`core/src/crypto.rs` `Nested`, `core/src/jit/emit/crypto.rs` (M6.5)",
+            "idea": "AES SubBytes by \"nested inversion\" over the tower field GF(2⁴)[t]/(t² + t + ζ) with 16-entry lookups as vector permutes and an infinity flag; the formulas and field representation of section 3.3, implemented by us (tables generated at compile time)",
+            "source": "Mike Hamburg, \"Accelerating AES with Vector Permute Instructions\", CHES 2009 (the paper; the technique behind OpenSSL's `vpaes`, whose code we didn't read)"
+          }
+        },
+        {
+          "id": "rijndael-inv-mix-columns",
+          "name": "Daemen and Rijmen, \"The Design of Rijndael\"",
+          "md": {
+            "where": "`core/src/jit/emit/crypto.rs` `inv_mix_columns` (M6.5)",
+            "idea": "InvMixColumns as MixColumns after a multiply by 04 00 05 00",
+            "source": "Daemen and Rijmen, \"The Design of Rijndael\", 4.1.3"
+          }
+        },
+        {
+          "id": "bearssl-bmul",
+          "name": "BearSSL",
+          "url": "https://bearssl.org",
+          "md": {
+            "where": "`core/src/crypto.rs` `clmul32`/`clmul64` (M6.5)",
+            "idea": "Carry-less multiplication with integer multiplies of operands masked to every fourth bit (\"multiply with holes\"), so partial sums can't carry into the next bit of the same class; constant time without a carry-less multiply instruction",
+            "source": "Thomas Pornin, BearSSL's `bmul` (`src/hash/ghash_ctmul.c`) and its \"Constant-Time Mul\" notes (bearssl.org), MIT"
+          }
+        },
+        {
+          "id": "kosmickrisp-nir-backend",
+          "name": "Mesa (KosmicKrisp)",
+          "md": {
+            "where": "docs/graphics.md \"The shape\" (route (b)), `bench/vulkan/nir/spike.c` (VK1)",
+            "idea": "A NIR → WGSL backend modelled on KosmicKrisp's NIR → MSL (`src/kosmickrisp/compiler/`), with its pass order (`kosmicomp.c`, `vulkan/kk_shader.c`) as the spike's",
+            "source": "KosmicKrisp in Mesa 26.2.4 (SPDX MIT on its files), and LunarG's XDC 2025 overview"
+          }
+        },
+        {
+          "id": "libpoly-geometry",
+          "name": "Mesa (libpoly)",
+          "md": {
+            "where": "docs/graphics.md \"What maps, what's emulated, what isn't offered\" (geometry and tessellation, not built)",
+            "idea": "Geometry and tessellation as a compute pre-pass that expands into vertex and index buffers, then a plain draw",
+            "source": "libpoly (Mesa 26.2.4's `src/poly/`, from Asahi and Honeykrisp; SPDX MIT) and its FOSDEM talk on panvk; MoltenVK's tessellation (v1.4.2, Apache-2.0) for the known cost"
+          }
+        },
+        {
+          "id": "venus-protocol-generator",
+          "name": "venus-protocol",
+          "url": "https://gitlab.freedesktop.org/virgl/venus-protocol",
+          "md": {
+            "where": "docs/graphics.md \"Not taken for Vulkan\" (route (a))",
+            "idea": "A Venus decoder generated by a `build.rs` from venus-protocol's XML, as virglrenderer's `vkr` and Mesa's Venus driver are generated from it",
+            "source": "[venus-protocol](https://gitlab.freedesktop.org/virgl/venus-protocol) v1.1.3 (`ca19b6358d7c`): no LICENSE file; its generator (`vn_protocol.py`, `vkxml.py`, `templates/`) MIT by SPDX tag, its XML (`vk.xml`, `VK_MESA_venus_protocol.xml`, `VK_EXT_command_serialization.xml`) Apache-2.0 OR MIT"
+          }
+        }
+      ]
+    },
+    {
+      "id": "npm",
+      "title": "Runtime dependencies (npm)",
+      "intro": [],
+      "columns": [
+        {
+          "key": "package",
+          "title": "Package"
+        },
+        {
+          "key": "version",
+          "title": "Version"
+        },
+        {
+          "key": "license",
+          "title": "License"
+        },
+        {
+          "key": "use",
+          "title": "Use"
+        }
+      ],
+      "entries": [
+        {
+          "id": "npm-xterm",
+          "name": "@xterm/xterm",
+          "about": "page",
+          "url": "https://www.npmjs.com/package/@xterm/xterm/v/6.0.0",
+          "version": "6.0.0",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://github.com/xtermjs/xterm.js/blob/f447274f430fd22513f6adbf9862d19524471c04/LICENSE"
+            }
+          ],
+          "md": {
+            "package": "@xterm/xterm",
+            "version": "6.0.0",
+            "license": "MIT",
+            "use": "the page's serial terminal (`web/app/`); served from `node_modules` (only `lib/xterm.mjs` and `css/xterm.css`), not vendored"
+          }
+        },
+        {
+          "id": "npm-svelte",
+          "name": "svelte",
+          "about": "page",
+          "url": "https://www.npmjs.com/package/svelte/v/5.57.2",
+          "version": "5.57.2",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "LICENSE.md",
+              "url": "https://github.com/sveltejs/svelte/blob/10fdca7d705081cae17bf7d609d46ee6eb237d17/LICENSE.md"
+            }
+          ],
+          "md": {
+            "package": "svelte",
+            "version": "5.57.2",
+            "license": "MIT",
+            "use": "the page's components (`web/app/*.svelte`, `*.svelte.ts`): the compiler in `tools/svelte.ts`, its client runtime served from `node_modules` (copied to `vendor/` in the static copy, with its license)"
+          }
+        },
+        {
+          "id": "npm-i18next",
+          "name": "i18next",
+          "about": "page",
+          "url": "https://www.npmjs.com/package/i18next/v/26.4.7",
+          "version": "26.4.7",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://github.com/i18next/i18next/blob/5546d211a32e73642d22b57e58cc762338270afa/LICENSE"
+            }
+          ],
+          "md": {
+            "package": "i18next",
+            "version": "26.4.7",
+            "license": "MIT",
+            "use": "the page's words (`web/i18n.ts`, docs/i18n.md): rendered from the catalog in `web/messages/`; bundled by Vite, not vendored"
+          }
+        },
+        {
+          "id": "npm-esm-env",
+          "name": "esm-env",
+          "about": "page",
+          "url": "https://www.npmjs.com/package/esm-env/v/1.2.2",
+          "version": "1.2.2",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://github.com/benmccann/esm-env/blob/29965dc0db750c27616db85262817f5d40e6cc79/packages/esm-env/LICENSE"
+            }
+          ],
+          "md": {
+            "package": "esm-env",
+            "version": "1.2.2",
+            "license": "MIT",
+            "use": "imported by Svelte's runtime (the same)"
+          }
+        },
+        {
+          "id": "npm-clsx",
+          "name": "clsx",
+          "about": "page",
+          "url": "https://www.npmjs.com/package/clsx/v/2.1.1",
+          "version": "2.1.1",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "license",
+              "url": "https://github.com/lukeed/clsx/blob/925494cf31bcd97d3337aacd34e659e80cae7fe2/license"
+            }
+          ],
+          "md": {
+            "package": "clsx",
+            "version": "2.1.1",
+            "license": "MIT",
+            "use": "imported by Svelte's runtime (the same)"
+          }
+        },
+        {
+          "id": "npm-tabler-icons",
+          "name": "@tabler/icons-svelte-runes",
+          "about": "page",
+          "url": "https://www.npmjs.com/package/@tabler/icons-svelte-runes/v/3.49.0",
+          "version": "3.49.0",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://github.com/tabler/tabler-icons/blob/bbed884d15354b5cebf2493371f20dc2d5e83eaf/LICENSE"
+            }
+          ],
+          "md": {
+            "package": "@tabler/icons-svelte-runes",
+            "version": "3.49.0",
+            "license": "MIT",
+            "use": "the page's icons (`web/app/icons.ts`, docs/frontend.md \"Icons\"): Tabler's outline icons, by name; only those imported reach the build"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rust-net-ts",
+      "title": "Rust dependencies of the tailnet client (`net/ts`)",
+      "intro": [
+        "Built to `target/net/ts.wasm` by `net/ts/build.sh` (docs/tailnet.md), loaded only when the user connects. Its direct dependencies, and those of theirs named here (`Cargo.lock` pins them, with their own; all permissive; licenses as their Cargo.toml says them)."
+      ],
+      "columns": [
+        {
+          "key": "crate",
+          "title": "Crate"
+        },
+        {
+          "key": "version",
+          "title": "Version"
+        },
+        {
+          "key": "license",
+          "title": "License"
+        },
+        {
+          "key": "use",
+          "title": "Use"
+        }
+      ],
+      "entries": [
+        {
+          "id": "crate-ts_tunnel",
+          "name": "ts_tunnel",
+          "about": "network",
+          "url": "https://crates.io/crates/ts_tunnel/0.6.1",
+          "version": "0.6.1",
+          "license": "BSD-3-Clause",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://github.com/tailscale/tailscale-rs/blob/d34658bbb2eb4593ae6df959aa93e9ee1e0457c6/LICENSE"
+            }
+          ],
+          "md": {
+            "crate": "`ts_tunnel`",
+            "version": "0.6.1",
+            "license": "BSD-3-Clause",
+            "use": "tailscale-rs's WireGuard (third-party audited)"
+          }
+        },
+        {
+          "id": "crate-ts_keys",
+          "name": "ts_keys",
+          "about": "network",
+          "url": "https://crates.io/crates/ts_keys/0.6.1",
+          "version": "0.6.1",
+          "license": "BSD-3-Clause",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://github.com/tailscale/tailscale-rs/blob/d34658bbb2eb4593ae6df959aa93e9ee1e0457c6/LICENSE"
+            }
+          ],
+          "md": {
+            "crate": "`ts_keys`",
+            "version": "0.6.1",
+            "license": "BSD-3-Clause",
+            "use": "tailscale-rs's keys"
+          }
+        },
+        {
+          "id": "crate-ts_packet",
+          "name": "ts_packet",
+          "about": "network",
+          "url": "https://crates.io/crates/ts_packet/0.6.1",
+          "version": "0.6.1",
+          "license": "BSD-3-Clause",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://github.com/tailscale/tailscale-rs/blob/d34658bbb2eb4593ae6df959aa93e9ee1e0457c6/LICENSE"
+            }
+          ],
+          "md": {
+            "crate": "`ts_packet`",
+            "version": "0.6.1",
+            "license": "BSD-3-Clause",
+            "use": "tailscale-rs's packets"
+          }
+        },
+        {
+          "id": "crate-ts_noise",
+          "name": "ts_noise",
+          "about": "network",
+          "url": "https://crates.io/crates/ts_noise/0.6.1",
+          "version": "0.6.1",
+          "license": "BSD-3-Clause",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://github.com/tailscale/tailscale-rs/blob/d34658bbb2eb4593ae6df959aa93e9ee1e0457c6/LICENSE"
+            }
+          ],
+          "md": {
+            "crate": "`ts_noise`",
+            "version": "0.6.1",
+            "license": "BSD-3-Clause",
+            "use": "tailscale-rs's Noise IK, the control server's handshake"
+          }
+        },
+        {
+          "id": "crate-ts_capabilityversion",
+          "name": "ts_capabilityversion",
+          "about": "network",
+          "url": "https://crates.io/crates/ts_capabilityversion/0.6.1",
+          "version": "0.6.1",
+          "license": "BSD-3-Clause",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://github.com/tailscale/tailscale-rs/blob/d34658bbb2eb4593ae6df959aa93e9ee1e0457c6/LICENSE"
+            }
+          ],
+          "md": {
+            "crate": "`ts_capabilityversion`",
+            "version": "0.6.1",
+            "license": "BSD-3-Clause",
+            "use": "tailscale-rs's capability versions"
+          }
+        },
+        {
+          "id": "crate-ts_control_serde",
+          "name": "ts_control_serde",
+          "about": "network",
+          "url": "https://crates.io/crates/ts_control_serde/0.6.1",
+          "version": "0.6.1",
+          "license": "BSD-3-Clause",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://github.com/tailscale/tailscale-rs/blob/d34658bbb2eb4593ae6df959aa93e9ee1e0457c6/LICENSE"
+            }
+          ],
+          "md": {
+            "crate": "`ts_control_serde`",
+            "version": "0.6.1",
+            "license": "BSD-3-Clause",
+            "use": "tailscale-rs's control protocol's types"
+          }
+        },
+        {
+          "id": "crate-ts_packetfilter",
+          "name": "ts_packetfilter",
+          "about": "network",
+          "url": "https://crates.io/crates/ts_packetfilter/0.6.1",
+          "version": "0.6.1",
+          "license": "BSD-3-Clause",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://github.com/tailscale/tailscale-rs/blob/d34658bbb2eb4593ae6df959aa93e9ee1e0457c6/LICENSE"
+            }
+          ],
+          "md": {
+            "crate": "`ts_packetfilter`",
+            "version": "0.6.1",
+            "license": "BSD-3-Clause",
+            "use": "tailscale-rs's packet filter"
+          }
+        },
+        {
+          "id": "crate-ts_packetfilter_state",
+          "name": "ts_packetfilter_state",
+          "about": "network",
+          "url": "https://crates.io/crates/ts_packetfilter_state/0.6.1",
+          "version": "0.6.1",
+          "license": "BSD-3-Clause",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://github.com/tailscale/tailscale-rs/blob/d34658bbb2eb4593ae6df959aa93e9ee1e0457c6/LICENSE"
+            }
+          ],
+          "md": {
+            "crate": "`ts_packetfilter_state`",
+            "version": "0.6.1",
+            "license": "BSD-3-Clause",
+            "use": "tailscale-rs's packet filter's state"
+          }
+        },
+        {
+          "id": "crate-ts_disco_protocol",
+          "name": "ts_disco_protocol",
+          "about": "network",
+          "url": "https://crates.io/crates/ts_disco_protocol/0.6.1",
+          "version": "0.6.1",
+          "license": "BSD-3-Clause",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://github.com/tailscale/tailscale-rs/blob/d34658bbb2eb4593ae6df959aa93e9ee1e0457c6/LICENSE"
+            }
+          ],
+          "md": {
+            "crate": "`ts_disco_protocol`",
+            "version": "0.6.1",
+            "license": "BSD-3-Clause",
+            "use": "tailscale-rs's disco protocol"
+          }
+        },
+        {
+          "id": "crate-h2",
+          "name": "h2",
+          "about": "network",
+          "url": "https://crates.io/crates/h2/0.4.20",
+          "version": "0.4.20",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://docs.rs/crate/h2/0.4.20/source/LICENSE"
+            }
+          ],
+          "md": {
+            "crate": "`h2`",
+            "version": "0.4.20",
+            "license": "MIT",
+            "use": "HTTP/2 to the control server"
+          }
+        },
+        {
+          "id": "crate-http",
+          "name": "http",
+          "about": "network",
+          "url": "https://crates.io/crates/http/1.5.0",
+          "version": "1.5.0",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/http/1.5.0/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/http/1.5.0/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`http`",
+            "version": "1.5.0",
+            "license": "MIT or Apache-2.0",
+            "use": "HTTP/2 to the control server"
+          }
+        },
+        {
+          "id": "crate-bytes",
+          "name": "bytes",
+          "about": "network",
+          "url": "https://crates.io/crates/bytes/1.12.1",
+          "version": "1.12.1",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://docs.rs/crate/bytes/1.12.1/source/LICENSE"
+            }
+          ],
+          "md": {
+            "crate": "`bytes`",
+            "version": "1.12.1",
+            "license": "MIT",
+            "use": "HTTP/2 to the control server"
+          }
+        },
+        {
+          "id": "crate-tokio",
+          "name": "tokio",
+          "about": "network",
+          "url": "https://crates.io/crates/tokio/1.53.3",
+          "version": "1.53.3",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://docs.rs/crate/tokio/1.53.3/source/LICENSE"
+            }
+          ],
+          "md": {
+            "crate": "`tokio`",
+            "version": "1.53.3",
+            "license": "MIT",
+            "use": "its I/O traits only, no runtime (HTTP/2 to the control server)"
+          }
+        },
+        {
+          "id": "crate-crypto_box",
+          "name": "crypto_box",
+          "about": "network",
+          "url": "https://crates.io/crates/crypto_box/0.9.1",
+          "version": "0.9.1",
+          "license": "Apache-2.0 OR MIT",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/crypto_box/0.9.1/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/crypto_box/0.9.1/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`crypto_box`",
+            "version": "0.9.1",
+            "license": "Apache-2.0 or MIT",
+            "use": "DERP's NaCl box"
+          }
+        },
+        {
+          "id": "crate-chacha20poly1305",
+          "name": "chacha20poly1305",
+          "about": "network",
+          "url": "https://crates.io/crates/chacha20poly1305/0.10.1",
+          "version": "0.10.1",
+          "license": "Apache-2.0 OR MIT",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/chacha20poly1305/0.10.1/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/chacha20poly1305/0.10.1/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`chacha20poly1305`",
+            "version": "0.10.1",
+            "license": "Apache-2.0 or MIT",
+            "use": "RustCrypto's; also through `ts_tunnel`"
+          }
+        },
+        {
+          "id": "crate-x25519-dalek",
+          "name": "x25519-dalek",
+          "about": "network",
+          "url": "https://crates.io/crates/x25519-dalek/3.0.0",
+          "version": "3.0.0",
+          "license": "BSD-3-Clause",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://docs.rs/crate/x25519-dalek/3.0.0/source/LICENSE"
+            }
+          ],
+          "md": {
+            "crate": "`x25519-dalek`",
+            "version": "3.0.0",
+            "license": "BSD-3-Clause",
+            "use": "also through `ts_tunnel`"
+          }
+        },
+        {
+          "id": "crate-ed25519-dalek",
+          "name": "ed25519-dalek",
+          "about": "network",
+          "url": "https://crates.io/crates/ed25519-dalek/3.0.0",
+          "version": "3.0.0",
+          "license": "BSD-3-Clause",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://docs.rs/crate/ed25519-dalek/3.0.0/source/LICENSE"
+            }
+          ],
+          "md": {
+            "crate": "`ed25519-dalek`",
+            "version": "3.0.0",
+            "license": "BSD-3-Clause",
+            "use": "the network-lock key"
+          }
+        },
+        {
+          "id": "crate-blake2",
+          "name": "blake2",
+          "about": "network",
+          "url": "https://crates.io/crates/blake2/0.10.6",
+          "version": "0.10.6",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/blake2/0.10.6/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/blake2/0.10.6/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`blake2`",
+            "version": "0.10.6",
+            "license": "MIT or Apache-2.0",
+            "use": "RustCrypto's; also through `ts_tunnel`"
+          }
+        },
+        {
+          "id": "crate-ipnet",
+          "name": "ipnet",
+          "about": "network",
+          "url": "https://crates.io/crates/ipnet/2.12.2",
+          "version": "2.12.2",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/ipnet/2.12.2/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/ipnet/2.12.2/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`ipnet`",
+            "version": "2.12.2",
+            "license": "MIT or Apache-2.0",
+            "use": ""
+          }
+        },
+        {
+          "id": "crate-chrono",
+          "name": "chrono",
+          "about": "network",
+          "url": "https://crates.io/crates/chrono/0.4.45",
+          "version": "0.4.45",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE.txt",
+              "url": "https://docs.rs/crate/chrono/0.4.45/source/LICENSE.txt"
+            }
+          ],
+          "md": {
+            "crate": "`chrono`",
+            "version": "0.4.45",
+            "license": "MIT or Apache-2.0",
+            "use": ""
+          }
+        },
+        {
+          "id": "crate-serde",
+          "name": "serde",
+          "about": "network",
+          "url": "https://crates.io/crates/serde/1.0.229",
+          "version": "1.0.229",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/serde/1.0.229/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/serde/1.0.229/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`serde`",
+            "version": "1.0.229",
+            "license": "MIT or Apache-2.0",
+            "use": ""
+          }
+        },
+        {
+          "id": "crate-serde_json",
+          "name": "serde_json",
+          "about": "network",
+          "url": "https://crates.io/crates/serde_json/1.0.154",
+          "version": "1.0.154",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/serde_json/1.0.154/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/serde_json/1.0.154/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`serde_json`",
+            "version": "1.0.154",
+            "license": "MIT or Apache-2.0",
+            "use": ""
+          }
+        },
+        {
+          "id": "crate-base64",
+          "name": "base64",
+          "about": "network",
+          "url": "https://crates.io/crates/base64/0.22.1",
+          "version": "0.22.1",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/base64/0.22.1/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/base64/0.22.1/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`base64`",
+            "version": "0.22.1",
+            "license": "MIT or Apache-2.0",
+            "use": ""
+          }
+        },
+        {
+          "id": "crate-getrandom",
+          "name": "getrandom",
+          "about": "network",
+          "url": "https://crates.io/crates/getrandom/0.3.4",
+          "version": "0.3.4",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/getrandom/0.3.4/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/getrandom/0.3.4/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`getrandom`",
+            "version": "0.3.4",
+            "license": "MIT or Apache-2.0",
+            "use": ""
+          }
+        },
+        {
+          "id": "crate-url",
+          "name": "url",
+          "about": "network",
+          "url": "https://crates.io/crates/url/2.5.8",
+          "version": "2.5.8",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/url/2.5.8/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/url/2.5.8/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`url`",
+            "version": "2.5.8",
+            "license": "MIT or Apache-2.0",
+            "use": "through `ts_control_serde`"
+          }
+        },
+        {
+          "id": "crate-idna",
+          "name": "idna",
+          "about": "network",
+          "url": "https://crates.io/crates/idna/1.1.0",
+          "version": "1.1.0",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/idna/1.1.0/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/idna/1.1.0/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`idna`",
+            "version": "1.1.0",
+            "license": "MIT or Apache-2.0",
+            "use": "through `ts_control_serde` (`url`'s IDNA tables)"
+          }
+        },
+        {
+          "id": "crate-icu_normalizer",
+          "name": "icu_normalizer",
+          "about": "network",
+          "url": "https://crates.io/crates/icu_normalizer/2.3.0",
+          "version": "2.3.0",
+          "license": "Unicode-3.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://docs.rs/crate/icu_normalizer/2.3.0/source/LICENSE"
+            }
+          ],
+          "md": {
+            "crate": "`icu_normalizer`",
+            "version": "2.3.0",
+            "license": "Unicode-3.0",
+            "use": "ICU4X's normalizer, through `ts_control_serde` (`url`'s IDNA tables)"
+          }
+        },
+        {
+          "id": "crate-serde_with",
+          "name": "serde_with",
+          "about": "network",
+          "url": "https://crates.io/crates/serde_with/3.24.0",
+          "version": "3.24.0",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/serde_with/3.24.0/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/serde_with/3.24.0/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`serde_with`",
+            "version": "3.24.0",
+            "license": "MIT or Apache-2.0",
+            "use": "through `ts_control_serde`"
+          }
+        },
+        {
+          "id": "crate-hkdf",
+          "name": "hkdf",
+          "about": "network",
+          "url": "https://crates.io/crates/hkdf/0.12.4",
+          "version": "0.12.4",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/hkdf/0.12.4/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/hkdf/0.12.4/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`hkdf`",
+            "version": "0.12.4",
+            "license": "MIT or Apache-2.0",
+            "use": "RustCrypto's, through `ts_tunnel`"
+          }
+        },
+        {
+          "id": "crate-tracing",
+          "name": "tracing",
+          "about": "network",
+          "url": "https://crates.io/crates/tracing/0.1.44",
+          "version": "0.1.44",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://docs.rs/crate/tracing/0.1.44/source/LICENSE"
+            }
+          ],
+          "md": {
+            "crate": "`tracing`",
+            "version": "0.1.44",
+            "license": "MIT",
+            "use": "through `ts_tunnel`"
+          }
+        },
+        {
+          "id": "crate-zerocopy",
+          "name": "zerocopy",
+          "about": "network",
+          "url": "https://crates.io/crates/zerocopy/0.8.63",
+          "version": "0.8.63",
+          "license": "BSD-2-Clause OR Apache-2.0 OR MIT",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-BSD",
+              "url": "https://docs.rs/crate/zerocopy/0.8.63/source/LICENSE-BSD"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/zerocopy/0.8.63/source/LICENSE-APACHE"
+            },
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/zerocopy/0.8.63/source/LICENSE-MIT"
+            }
+          ],
+          "md": {
+            "crate": "`zerocopy`",
+            "version": "0.8.63",
+            "license": "BSD-2-Clause or Apache-2.0 or MIT",
+            "use": "through `ts_tunnel`"
+          }
+        }
+      ]
+    },
+    {
+      "id": "go-net-tailscale",
+      "title": "Go dependencies of the Tailscale backend (`net/tailscale`, N2)",
+      "intro": [
+        "Built to `target/net/tailscale.wasm` by `net/tailscale/build.sh`. No longer the page's client (since 2026-10-17 that's `net/ts`): a test fixture, not distributed. Modules linked into the wasm (`go list -deps`, checked 2026-09-29; `go.mod` pins the versions), all permissive. Re-run the listing when bumping the pin."
+      ],
+      "columns": [
+        {
+          "key": "module",
+          "title": "Module"
+        },
+        {
+          "key": "license",
+          "title": "License"
+        }
+      ],
+      "entries": [
+        {
+          "id": "go-tailscale",
+          "name": "tailscale.com v1.102.5",
+          "md": {
+            "module": "`tailscale.com` v1.102.5",
+            "license": "BSD-3-Clause"
+          }
+        },
+        {
+          "id": "go-wireguard-go",
+          "name": "github.com/tailscale/wireguard-go",
+          "md": {
+            "module": "`github.com/tailscale/wireguard-go`",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "go-gvisor",
+          "name": "gvisor.dev/gvisor",
+          "md": {
+            "module": "`gvisor.dev/gvisor`",
+            "license": "Apache-2.0"
+          }
+        },
+        {
+          "id": "go-websocket",
+          "name": "github.com/coder/websocket",
+          "md": {
+            "module": "`github.com/coder/websocket`",
+            "license": "ISC"
+          }
+        },
+        {
+          "id": "go-compress",
+          "name": "github.com/klauspost/compress",
+          "md": {
+            "module": "`github.com/klauspost/compress`",
+            "license": "BSD-3-Clause, Apache-2.0 and MIT parts"
+          }
+        },
+        {
+          "id": "go-bart",
+          "name": "github.com/gaissmai/bart",
+          "md": {
+            "module": "`github.com/gaissmai/bart`",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "go-groupcache",
+          "name": "github.com/golang/groupcache",
+          "md": {
+            "module": "`github.com/golang/groupcache`",
+            "license": "Apache-2.0"
+          }
+        },
+        {
+          "id": "go-btree",
+          "name": "github.com/google/btree",
+          "md": {
+            "module": "`github.com/google/btree`",
+            "license": "Apache-2.0"
+          }
+        },
+        {
+          "id": "go-memconn",
+          "name": "github.com/akutz/memconn",
+          "md": {
+            "module": "`github.com/akutz/memconn`",
+            "license": "Apache-2.0"
+          }
+        },
+        {
+          "id": "go-go4-mem",
+          "name": "go4.org/mem",
+          "md": {
+            "module": "`go4.org/mem`",
+            "license": "Apache-2.0"
+          }
+        },
+        {
+          "id": "go-netipx",
+          "name": "go4.org/netipx",
+          "md": {
+            "module": "`go4.org/netipx`",
+            "license": "BSD-3-Clause"
+          }
+        },
+        {
+          "id": "go-json-experiment",
+          "name": "github.com/go-json-experiment/json",
+          "md": {
+            "module": "`github.com/go-json-experiment/json`",
+            "license": "BSD-3-Clause"
+          }
+        },
+        {
+          "id": "go-x",
+          "name": "golang.org/x/{crypto,exp,net,sys,term,text,time}",
+          "md": {
+            "module": "`golang.org/x/{crypto,exp,net,sys,term,text,time}`",
+            "license": "BSD-3-Clause"
+          }
+        },
+        {
+          "id": "go-wasm-exec",
+          "name": "Go's wasm_exec.js (copied next to the module)",
+          "md": {
+            "module": "Go's `wasm_exec.js` (copied next to the module)",
+            "license": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "id": "toolchain",
+      "title": "Toolchain libraries built into our binaries",
+      "intro": [],
+      "columns": [
+        {
+          "key": "library",
+          "title": "Library"
+        },
+        {
+          "key": "version",
+          "title": "Version"
+        },
+        {
+          "key": "license",
+          "title": "License"
+        },
+        {
+          "key": "use",
+          "title": "Use"
+        }
+      ],
+      "entries": [
+        {
+          "id": "rust-std",
+          "name": "Rust's standard library",
+          "about": "core",
+          "url": "https://github.com/rust-lang/rust/tree/6eeff9a52c3e35c4c4cbf5651f342dcd2191866f/library",
+          "version": "nightly-2026-09-24 (6eeff9a52)",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://github.com/rust-lang/rust/blob/6eeff9a52c3e35c4c4cbf5651f342dcd2191866f/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://github.com/rust-lang/rust/blob/6eeff9a52c3e35c4c4cbf5651f342dcd2191866f/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "library": "Rust's standard library (`core`, `alloc`, `std`) and the crates it builds in for wasm32 (`dlmalloc` 0.2.14, `hashbrown` 0.17.1, `compiler_builtins` 0.1.160; `library/Cargo.lock`)",
+            "version": "the pinned nightly (`rust-toolchain.toml`: nightly-2026-09-24, `6eeff9a52`)",
+            "license": "MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`; `compiler_builtins` also carries LLVM's compiler-rt parts, Apache-2.0 WITH LLVM-exception)",
+            "use": "rebuilt by `-Zbuild-std` into the core (`webpc_core.wasm`) and the tailnet client (`ts.wasm`)"
+          }
+        }
+      ]
+    },
+    {
+      "id": "dev",
+      "title": "Development dependencies (not distributed)",
+      "intro": [],
+      "columns": [
+        {
+          "key": "package",
+          "title": "Package"
+        },
+        {
+          "key": "version",
+          "title": "Version"
+        },
+        {
+          "key": "license",
+          "title": "License"
+        }
+      ],
+      "entries": [
+        {
+          "id": "dev-playwright-core",
+          "name": "playwright-core",
+          "md": {
+            "package": "playwright-core",
+            "version": "1.63.0",
+            "license": "Apache-2.0"
+          }
+        },
+        {
+          "id": "dev-typescript",
+          "name": "typescript",
+          "md": {
+            "package": "typescript",
+            "version": "7.0.2",
+            "license": "Apache-2.0"
+          }
+        },
+        {
+          "id": "dev-types-node",
+          "name": "@types/node",
+          "md": {
+            "package": "@types/node",
+            "version": "26.6.2",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "dev-lunarg-vulkan-sdk",
+          "name": "LunarG's Vulkan SDK",
+          "md": {
+            "package": "LunarG's Vulkan SDK for macOS (VK0's Mac arm; `bench/vulkan/macsdk.ts` unpacks the loader, KosmicKrisp, MoltenVK, glslc, the validation and GFXReconstruct layers and tools into `target/vulkan/macsdk`, copied to the Mac host's `~/webpc-gpu-bench`, never installed); and its Linux SDK, which `bench/vulkan/nvidia.sh` fetches into its own directory on the user's desktop (headers, loader, glslc, `vulkaninfo`, GFXReconstruct), with a portable Node v26.7.0 (MIT, `LICENSE` at v26.7.0) and Playwright's Chrome for Testing",
+            "version": "1.4.363.0",
+            "license": "Apache-2.0 (loader, layers, GFXReconstruct is MIT), MIT (KosmicKrisp: Mesa), Apache-2.0 (MoltenVK, shaderc); each component's licence checked at its `vulkan-sdk-1.4.363.0` tag or release (rows below), not in the SDK's installer payload"
+          }
+        },
+        {
+          "id": "dev-naga-cli",
+          "name": "naga-cli",
+          "md": {
+            "package": "naga-cli (VK0 D: SPIR-V → WGSL; `cargo +stable install --locked naga-cli` natively into `~/.cargo/bin` and for wasm32-wasip1 into `target/vulkan-tools/naga-wasm`; run by `bench/vulkan/translate/shaders.ts`, `coverage.ts`, `naga-wasm.ts`)",
+            "version": "30.0.1 (crates.io; gfx-rs/wgpu `v30.0.1`)",
+            "license": "MIT OR Apache-2.0 (naga, naga-cli, naga-types: their `LICENSE.MIT`, `LICENSE.APACHE` and Cargo.toml; the repository's at `v30.0.1`); its locked dependencies MIT OR Apache-2.0 for the most part, with MIT, BSD-3-Clause, BSD-2-Clause OR Apache-2.0 OR MIT, Zlib, Unlicense OR MIT and Unicode-3.0 (`spirv` 0.4.0: Apache-2.0)"
+          }
+        },
+        {
+          "id": "dev-gfxreconstruct",
+          "name": "GFXReconstruct",
+          "md": {
+            "package": "GFXReconstruct (VK0 S arm 3, B, D: Vulkan capture and replay; `tools/vulkan-tools/build-gfxr.sh` builds it natively into `target/vulkan-tools/gfxreconstruct`, `gfxr-capture.sh`, read by `bench/vulkan/translate/convert.ts`)",
+            "version": "`vulkan-sdk-1.4.363.0`, `4401228c791b`",
+            "license": "MIT (`LICENSE.md`, `LICENSES/LICENSE.txt`); its submodules Vulkan-Headers (Apache-2.0 OR MIT), SPIRV-Headers (Khronos's MIT-style), SPIRV-Reflect (Apache-2.0), OpenXR (disabled); LZ4 and zstd from the system (BSD-2-Clause; BSD-3-Clause or GPL-2.0; `LICENSES/LICENSE_ThirdParty.txt`, whose Windows-only parts aren't built)"
+          }
+        },
+        {
+          "id": "dev-vulkan-profiles-layer",
+          "name": "Vulkan-Profiles",
+          "md": {
+            "package": "Khronos's Profiles layer (VK0 A: `tools/vulkan-tools/build-profiles.sh` into `target/vulkan-tools/profiles`, patched by `bench/vulkan/profiles/build-layer.sh` (above) into `target/vk0a/profiles`; `bench/vulkan/profiles/make.ts` writes our profiles to its JSON schema 0.8.2)",
+            "version": "`vulkan-sdk-1.4.363.0`, `fce885d30eba`",
+            "license": "Apache-2.0 (code; docs and CMake files CC-BY-4.0: `LICENSE.md`); the dependencies its `update_deps.py` fetches from `scripts/known_good.json`: Vulkan-Headers v1.4.363 (Apache-2.0 OR MIT), Vulkan-Utility-Libraries and Vulkan-Loader v1.4.363 (Apache-2.0), jsoncpp 1.9.6 (public domain, else MIT), valijson v1.0.2 (BSD-2-Clause), googletest v1.14.0 (BSD-3-Clause; fetched, not built)"
+          }
+        },
+        {
+          "id": "dev-venus-oracle",
+          "name": "The Venus oracle (virglrenderer, Mesa)",
+          "md": {
+            "package": "The Venus oracle (VK0 B, D; VK1's oracle: `tools/venus-oracle/build.sh`, `--capture`, `--wsi`; `run.sh`, `capture.sh`, `dump.ts`, `wayland.sh`, `encode-cost.sh`): virglrenderer's vtest server and Venus renderer, and Mesa's Venus driver, built natively into `target/venus-oracle`",
+            "version": "virglrenderer `e0a1caf3b147` (main, 2026-10-21) with its venus-protocol v1.1.3 subproject; Mesa `mesa-26.2.4` (`96cb43121031`)",
+            "license": "MIT (virglrenderer's `COPYING`, SPDX MIT on `src/venus/`; Mesa: below); venus-protocol as in the techniques table"
+          }
+        },
+        {
+          "id": "dev-system-vulkan-packages",
+          "name": "System packages for the Vulkan work",
+          "md": {
+            "package": "System packages the Vulkan work depends on (dev VM, zypper; CLAUDE.md lists them)",
+            "version": "as installed 2026-10-25",
+            "license": "`spirv-opt` (SPIRV-Tools 2026.4~rc2, Apache-2.0: `LICENSE` at `v2026.4.rc2`), `spirv-cross` 1.4.313.0 (Apache-2.0, at `vulkan-sdk-1.4.313.0`), `glslc` (shaderc 2026.4, Apache-2.0 at `v2026.4`), vulkan-tools 1.4.363 (vkcube, vulkaninfo) and the validation layers 1.4.363 (Apache-2.0 at `vulkan-sdk-1.4.363.0`), the loader `libvulkan1` 1.4.363 (Apache-2.0), lavapipe (`libvulkan_lvp`, Mesa 26.2.3, MIT: the dev VM's Vulkan; `MESA_SPIRV_DUMP_PATH` gives D its stages), glslang 16.6.0 (Mesa's build; BSD-3-Clause, BSD-2-Clause, MIT, Apache-2.0, and the old grammar's GPL-3.0 with the Bison exception: `LICENSE.txt` at `16.6.0`), 7zip 26.04 (`macsdk.ts`; LGPL-2.1-or-later with the unRAR restriction: its `License.txt`), Valgrind 3.27.1 (callgrind in `encode-cost.sh`; GPL: its `COPYING`), sway 1.12 (headless, for WSI: MIT) and xvfb-run (vkQuake). Tools only: nothing linked into or shipped with our code"
+          }
+        },
+        {
+          "id": "dev-cargo-fuzz",
+          "name": "cargo-fuzz",
+          "md": {
+            "package": "cargo-fuzz (installed tool)",
+            "version": "0.13.2",
+            "license": "MIT OR Apache-2.0"
+          }
+        },
+        {
+          "id": "dev-libfuzzer-sys",
+          "name": "libfuzzer-sys",
+          "md": {
+            "package": "libfuzzer-sys (`core/fuzz` only)",
+            "version": "0.4.13",
+            "license": "(MIT OR Apache-2.0) AND NCSA (bundled libFuzzer)"
+          }
+        },
+        {
+          "id": "dev-capstone-rs",
+          "name": "capstone / capstone-sys",
+          "md": {
+            "package": "capstone / capstone-sys (`core/fuzz` only)",
+            "version": "0.14.0 / 0.18.0",
+            "license": "MIT; bundles Capstone 5.0 (BSD-3-Clause)"
+          }
+        },
+        {
+          "id": "dev-softfloat-testfloat",
+          "name": "Berkeley SoftFloat 3e and TestFloat 3e",
+          "md": {
+            "package": "Berkeley SoftFloat 3e + TestFloat 3e (built under `target/testfloat` by `scripts/testfloat.sh`, `testfloat_gen` only; and in the `fptest` guest image, SoftFloat linked into `images/fptest/fptest.c`)",
+            "version": "`a0c6494cdc11` / `a9c849f1b0eb`",
+            "license": "BSD-3-Clause"
+          }
+        },
+        {
+          "id": "dev-wasi-sdk",
+          "name": "wasi-sdk",
+          "md": {
+            "package": "wasi-sdk (VK1 step 1's wasm C toolchain: `bench/vulkan/nir/build.sh` fetches it into `target/vk1`; clang, lld and wasi-libc)",
+            "version": "34.0",
+            "license": "Apache-2.0 WITH LLVM-exception (the SDK, LLVM); wasi-libc: Apache-2.0 WITH LLVM-exception, Apache-2.0 or MIT, its parts dlmalloc (CC0-1.0), emmalloc (MIT), musl (MIT), cloudlibc (BSD-2-Clause), musl-fts (BSD-3-Clause) (its `LICENSE`)"
+          }
+        },
+        {
+          "id": "dev-emsdk",
+          "name": "emsdk",
+          "md": {
+            "package": "Emscripten's emsdk (measured against wasi-sdk in VK1 step 1, `bench/vulkan/nir/build.sh emscripten`; not the chosen toolchain)",
+            "version": "6.0.13",
+            "license": "emsdk: MIT (its `LICENSE`); Emscripten: MIT or NCSA (`upstream/emscripten/LICENSE`), with LLVM's and binaryen's (Apache-2.0)"
+          }
+        },
+        {
+          "id": "dev-miniz-oxide",
+          "name": "miniz_oxide",
+          "md": {
+            "package": "miniz_oxide (`core` dev-dependency: the native test runners' qcow2 reader, `core/tests/common/qcow2.rs`; default features off)",
+            "version": "0.9.1",
+            "license": "MIT OR Zlib OR Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "id": "workloads",
+      "title": "Benchmark workloads fetched at build time (not in the repository)",
+      "intro": [],
+      "columns": [
+        {
+          "key": "workload",
+          "title": "Workload"
+        },
+        {
+          "key": "source",
+          "title": "Source, commit"
+        },
+        {
+          "key": "license",
+          "title": "License"
+        },
+        {
+          "key": "use",
+          "title": "How we use it"
+        }
+      ],
+      "entries": [
+        {
+          "id": "coremark",
+          "name": "CoreMark",
+          "url": "https://github.com/eembc/coremark",
+          "md": {
+            "workload": "CoreMark",
+            "source": "[eembc/coremark](https://github.com/eembc/coremark), `1f483d5b8316`",
+            "license": "Apache-2.0, plus EEMBC's CoreMark Acceptable Use Agreement (the CoreMark trademark only for results of unmodified sources)",
+            "use": "`bench/interp/build-coremark.sh` fetches it into `target/dl/coremark` and builds it unmodified with our own port layer (`bench/interp/coremark/core_portme.{c,h}`, MIT) into `target/bench/` (not committed, not distributed)"
+          }
+        },
+        {
+          "id": "webgl-aquarium-assets",
+          "name": "WebGL Aquarium",
+          "url": "https://github.com/WebGLSamples/WebGLSamples.github.io",
+          "md": {
+            "workload": "The WebGL Aquarium's models and textures (VK0's scene)",
+            "source": "[WebGLSamples](https://github.com/WebGLSamples/WebGLSamples.github.io) `4c87dfea3cff`, `aquarium/assets/` and `static_assets/`",
+            "license": "BSD-3-Clause (the repository's LICENSE.md: Copyright 2009, Google Inc.)",
+            "use": "`bench/vulkan/assets.ts` fetches them into `target/vulkan/aquarium-src` and converts them into one pack (`target/vulkan/aquarium.pack`: decoded RGBA with mips, interleaved vertices) that the benchmark's arms read; not committed, not distributed"
+          }
+        },
+        {
+          "id": "mesa-compiler-vk1",
+          "name": "Mesa",
+          "md": {
+            "workload": "Mesa's compiler (VK1 step 1, route (b)'s premise)",
+            "source": "Mesa 26.2.4 (the Venus oracle's tree, `tools/venus-oracle/build.sh`)",
+            "license": "MIT (`docs/license.rst`; of the 334 files compiled, 324 carry it by SPDX tag or text and 5 have no header and fall under it: 2 sources and 3 generated by its MIT scripts), with Berkeley SoftFloat 3e in `src/util/softfloat.c` (BSD-3-Clause), BLAKE3 1.8.2 in `src/util/blake3/` (CC0-1.0, Apache-2.0 or Apache-2.0 WITH LLVM-exception: upstream's `LICENSE_CC0`, `LICENSE_A2`, `LICENSE_A2LLVM` at `1.8.2`; Mesa's copy has no headers) and `src/c11/impl/threads_posix.c` (BSL-1.0)",
+            "use": "`bench/vulkan/nir/build.sh` builds `spirv_to_nir`, NIR, util and KosmicKrisp's `src/kosmickrisp/compiler/` (NIR → MSL) unmodified, natively and for wasm, with our harness (`spike.c`: the pass list follows `kosmicomp.c` and `kk_shader.c`, nothing copied) into `target/vk1` (not committed, not distributed)"
+          }
+        },
+        {
+          "id": "venus-module",
+          "name": "Venus's renderer module",
+          "about": "vulkan",
+          "bundled": "VENUS-LICENSES.txt",
+          "parts": [
+            {
+              "name": "virglrenderer",
+              "url": "https://gitlab.freedesktop.org/virgl/virglrenderer/-/tree/e0a1caf3b147",
+              "version": "e0a1caf3b147",
+              "license": "MIT",
+              "licenseTexts": [
+                {
+                  "name": "COPYING",
+                  "url": "https://gitlab.freedesktop.org/virgl/virglrenderer/-/blob/e0a1caf3b147/COPYING"
+                }
+              ]
+            },
+            {
+              "name": "venus-protocol",
+              "url": "https://gitlab.freedesktop.org/virgl/venus-protocol/-/tree/ca19b6358d7cc491bc3e4de76f04c6700876a8fa",
+              "version": "1.1.3",
+              "license": "MIT AND (Apache-2.0 OR MIT)",
+              "licenseTexts": [
+                {
+                  "name": "MIT",
+                  "url": "https://spdx.org/licenses/MIT.html"
+                },
+                {
+                  "name": "Apache-2.0",
+                  "url": "https://spdx.org/licenses/Apache-2.0.html"
+                }
+              ]
+            },
+            {
+              "name": "Mesa",
+              "url": "https://gitlab.freedesktop.org/mesa/mesa/-/tree/96cb43121031992b85767f9c1be8f3f48e22b1d2",
+              "version": "26.2.4",
+              "license": "MIT AND BSD-3-Clause AND BSL-1.0 AND (CC0-1.0 OR Apache-2.0 OR Apache-2.0 WITH LLVM-exception)",
+              "licenseTexts": [
+                {
+                  "name": "docs/license.rst",
+                  "url": "https://gitlab.freedesktop.org/mesa/mesa/-/blob/96cb43121031992b85767f9c1be8f3f48e22b1d2/docs/license.rst"
+                },
+                {
+                  "name": "licenses/MIT",
+                  "url": "https://gitlab.freedesktop.org/mesa/mesa/-/blob/96cb43121031992b85767f9c1be8f3f48e22b1d2/licenses/MIT"
+                },
+                {
+                  "name": "licenses/BSL-1.0",
+                  "url": "https://gitlab.freedesktop.org/mesa/mesa/-/blob/96cb43121031992b85767f9c1be8f3f48e22b1d2/licenses/BSL-1.0"
+                },
+                {
+                  "name": "licenses/Apache-2.0",
+                  "url": "https://gitlab.freedesktop.org/mesa/mesa/-/blob/96cb43121031992b85767f9c1be8f3f48e22b1d2/licenses/Apache-2.0"
+                }
+              ]
+            },
+            {
+              "name": "wasi-libc",
+              "url": "https://github.com/WebAssembly/wasi-libc/tree/2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13",
+              "version": "wasi-sdk-34",
+              "license": "(Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT) AND MIT AND CC0-1.0 AND BSD-2-Clause AND BSD-3-Clause",
+              "licenseTexts": [
+                {
+                  "name": "LICENSE",
+                  "url": "https://github.com/WebAssembly/wasi-libc/blob/2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13/LICENSE"
+                },
+                {
+                  "name": "musl COPYRIGHT",
+                  "url": "https://github.com/WebAssembly/wasi-libc/blob/2e6fb9d8ee0cdf9e431fbcabe8af3115de000a13/libc-top-half/musl/COPYRIGHT"
+                }
+              ]
+            },
+            {
+              "name": "LLVM compiler-rt and libc++",
+              "url": "https://github.com/llvm/llvm-project/tree/895aa2c896ada719451be2e3673c83da8ddf1141",
+              "version": "wasi-sdk-34",
+              "license": "Apache-2.0 WITH LLVM-exception",
+              "licenseTexts": [
+                {
+                  "name": "compiler-rt/LICENSE.TXT",
+                  "url": "https://github.com/llvm/llvm-project/blob/895aa2c896ada719451be2e3673c83da8ddf1141/compiler-rt/LICENSE.TXT"
+                },
+                {
+                  "name": "libcxx/LICENSE.TXT",
+                  "url": "https://github.com/llvm/llvm-project/blob/895aa2c896ada719451be2e3673c83da8ddf1141/libcxx/LICENSE.TXT"
+                }
+              ]
+            }
+          ],
+          "md": {
+            "workload": "Venus's renderer module (VK1 L6: `vk/build.sh` → `target/vk/venus.wasm`, fetched by the GPU worker on a Vulkan machine; in `npm run dist`'s copy since VK2 L7, as `assets/venus-<hash>.wasm` with `VENUS-LICENSES.txt` beside it)",
+            "source": "virglrenderer `e0a1caf3b147` (`src/venus/` and its own `src/mesa/` util copy) with venus-protocol v1.1.3; Mesa `mesa-26.2.4`'s Vulkan runtime (whole since VK2: `vk_pipeline`, `vk_shader`, `vk_meta` and the rest), `spirv_to_nir`, NIR, the GLSL types (`src/compiler/`), util, c11 and BLAKE3; wasi-sdk 34 (wasi-libc, compiler-rt; sha256 pinned in `vk/build.sh`)",
+            "license": "MIT (virglrenderer, Mesa: above), with Mesa's BLAKE3 (CC0-1.0 / Apache-2.0) and `src/c11/impl/threads_posix.c` (BSL-1.0) as in the row above; wasi-libc MIT and Apache-2.0 WITH LLVM-exception (its `LICENSE`, musl's MIT `COPYRIGHT`, dlmalloc public domain), compiler-rt Apache-2.0 WITH LLVM-exception",
+            "use": "Built unmodified but for our patch (the row in the code table); distributed with those licences beside it, as EDK2's are: `VENUS-LICENSES.txt`, which vk/build.sh assembles from `vk/LICENSES.head` (what is in the module, and the notices of BLAKE3, wasi-libc's musl and dlmalloc), virglrenderer's `COPYING`, Mesa's `docs/license.rst`, `licenses/MIT`, `licenses/BSL-1.0`, `licenses/Apache-2.0`, SoftFloat's notice from `src/util/softfloat.c`, and the LLVM exception's text (`vk/LLVM-exception.txt`, LLVM's own words)"
+          }
+        },
+        {
+          "id": "debian-vulkan-guest",
+          "name": "Debian trixie packages (VK1's guest)",
+          "md": {
+            "workload": "VK1's guest (`images/debian-vulkan/build.sh`)",
+            "source": "Debian trixie packages from snapshot.debian.org (20260924T000000Z): `mesa-vulkan-drivers` 25.0.7 (the Venus ICD), `vulkan-tools` (vkcube, vulkaninfo), `sway` and their dependencies",
+            "license": "Mesa MIT, vulkan-tools Apache-2.0, sway MIT (Debian's `copyright` files); the rest as Debian ships it",
+            "use": "Installed into the tests' Debian through the UEFI oracle into `target/images/debian-vulkan` (not committed, not distributed)"
+          }
+        },
+        {
+          "id": "arch-desktop-vulkan",
+          "name": "Arch Linux aarch64 packages (desktop guest)",
+          "md": {
+            "workload": "VK1's desktop guest (`images/arch/desktop.sh`, Venus added)",
+            "source": "arch.bens.haus's aarch64 port, as of the build (2026-10-25): `vulkan-virtio` 26.2.5 (Mesa's Venus ICD), `vulkan-tools` 1.4.363; `gdb` only in a debugging copy (`EXTRA_PACKAGES`)",
+            "license": "Mesa MIT, vulkan-tools Apache-2.0 (as above), gdb GPL-3.0-or-later (a tool in a guest, never linked or shipped)",
+            "use": "Installed into the guest image `target/arch/desktop.qcow2` (not committed, not distributed)"
+          }
+        },
+        {
+          "id": "librequake",
+          "name": "LibreQuake",
+          "url": "https://github.com/lavenderdotpet/LibreQuake",
+          "md": {
+            "workload": "LibreQuake's data (vkQuake's game data for VK0 A, B, D)",
+            "source": "[LibreQuake](https://github.com/lavenderdotpet/LibreQuake) v0.09-beta, the release's `lite.zip` (sha256 `428e736b2f01…`)",
+            "license": "BSD-3-Clause for the models, textures and sounds (`id1/docs/COPYING`), GPL-2.0 for the QuakeC (`progs.dat`) and `pop.lmp` (`id1/docs/misc-docs/COPYING`), as the release's `id1/docs/README-IMPORTANT-LICENCE-INFO` sets out",
+            "use": "fetched by hand into `target/vk0a/lq-dl` and `target/venus-oracle/librequake`; vkQuake loads it (`bench/vulkan/translate/programs.sh`); not committed, not distributed"
+          }
+        },
+        {
+          "id": "mpv-ffmpeg-vk0",
+          "name": "mpv and FFmpeg",
+          "md": {
+            "workload": "mpv and FFmpeg for VK0 A and D (libplacebo's Vulkan renderer)",
+            "source": "openSUSE's mpv 0.41.0+git20260918 (`e76a35ec95`) and FFmpeg 8 (libavcodec 62.28) packages, unpacked into `target/vk0a/root` (not installed: they would move the system's Chromium on)",
+            "license": "mpv: GPL-2.0-or-later (its `Copyright` and `LICENSE.GPL` at `v0.41.0` and in the package); FFmpeg: LGPL-2.1-or-later, GPL-2.0-or-later as openSUSE builds it (`LICENSE.md` at `n8.0`; the package ships `COPYING.GPLv2`)",
+            "use": "run unmodified on lavapipe through the Profiles layer (`programs.sh`); see the copyleft table"
+          }
+        },
+        {
+          "id": "arch-vulkan-guest",
+          "name": "Arch Linux aarch64 packages (VK0 arm 4)",
+          "md": {
+            "workload": "VK0 arm 4's guest and build container (`images/vulkan/`)",
+            "source": "Arch Linux aarch64 packages (arch.bens.haus) as of the build: `mesa` 26.2.5 with `vulkan-swrast` (lavapipe), `vulkan-icd-loader`, `vulkan-headers`, `shaderc`",
+            "license": "Mesa MIT; the loader and shaderc Apache-2.0; the headers Apache-2.0 OR MIT (each as at its upstream tag above; the Arch builds not separately checked)",
+            "use": "`images/vulkan/build.sh` builds the scene in rootless Podman and a guest with lavapipe (`target/vulkan/`); not committed, not distributed"
+          }
+        },
+        {
+          "id": "mesa-virgl-guest",
+          "name": "Mesa",
+          "url": "https://mesa3d.org",
+          "md": {
+            "workload": "Mesa (G2's virgl guest)",
+            "source": "[Mesa](https://mesa3d.org) 26.1.6 release tarball (`MESA_SHA256` in `images/build.sh`)",
+            "license": "MIT",
+            "use": "`images/build.sh alpine-virgl` builds it unmodified (llvmpipe and virgl) in Alpine's container into the benchmark image's `/opt/mesa` (`target/images`, not committed, not distributed)"
+          }
+        }
+      ]
+    },
+    {
+      "id": "media",
+      "title": "Media in the repository (test fixtures)",
+      "intro": [],
+      "columns": [
+        {
+          "key": "ours",
+          "title": "Our file(s)"
+        },
+        {
+          "key": "source",
+          "title": "Source"
+        },
+        {
+          "key": "license",
+          "title": "License"
+        },
+        {
+          "key": "use",
+          "title": "How we use it"
+        }
+      ],
+      "entries": [
+        {
+          "id": "sintel",
+          "name": "Sintel trailer",
+          "md": {
+            "ours": "`tests/virgl/video-h264.vglt.gz`, `video-vp9.vglt.gz`, `video-h264-orig.h264.gz`, `video.json` (video V1)",
+            "source": "The Sintel trailer, © Blender Foundation (durian.blender.org), the 480p H.264 MP4 and a VP9 WebM made from it (`images/arch/media.sh`)",
+            "license": "CC BY 3.0",
+            "use": "The first 40 pictures of each, as the guest's FFmpeg sent them through VA-API (`bench/video/fixture.ts`), the original stream's first pictures and SHA-256 hashes of FFmpeg's decoded frames: the Chromium video tests' input and reference"
+          }
+        }
+      ]
+    },
+    {
+      "id": "firmware",
+      "title": "Firmware we build and distribute (not in the repository)",
+      "intro": [],
+      "columns": [
+        {
+          "key": "binary",
+          "title": "Binary"
+        },
+        {
+          "key": "source",
+          "title": "Source, commit"
+        },
+        {
+          "key": "license",
+          "title": "License"
+        },
+        {
+          "key": "use",
+          "title": "How we use it"
+        }
+      ],
+      "entries": [
+        {
+          "id": "edk2",
+          "name": "EDK2",
+          "about": "firmware",
+          "bundled": "EDK2-LICENSES.txt",
+          "parts": [
+            {
+              "name": "EDK2",
+              "url": "https://github.com/tianocore/edk2/tree/2970e5699ba6267f3384ffab20f96647578aebc8",
+              "version": "edk2-stable202608",
+              "license": "BSD-2-Clause-Patent",
+              "licenseTexts": [
+                {
+                  "name": "License.txt",
+                  "url": "https://github.com/tianocore/edk2/blob/2970e5699ba6267f3384ffab20f96647578aebc8/License.txt"
+                }
+              ]
+            },
+            {
+              "name": "OpenSSL",
+              "url": "https://github.com/openssl/openssl/tree/8cf17aaeb4599f8af87fefd810b5b5fee90fe69e",
+              "version": "8cf17aaeb459",
+              "license": "Apache-2.0",
+              "licenseTexts": [
+                {
+                  "name": "LICENSE.txt",
+                  "url": "https://github.com/openssl/openssl/blob/8cf17aaeb4599f8af87fefd810b5b5fee90fe69e/LICENSE.txt"
+                }
+              ]
+            },
+            {
+              "name": "libfdt",
+              "url": "https://github.com/devicetree-org/pylibfdt/tree/cfff805481bdea27f900c32698171286542b8d3c",
+              "version": "cfff805481bd",
+              "license": "BSD-2-Clause OR GPL-2.0-or-later",
+              "licenseTexts": [
+                {
+                  "name": "BSD-2-Clause",
+                  "url": "https://github.com/devicetree-org/pylibfdt/blob/cfff805481bdea27f900c32698171286542b8d3c/BSD-2-Clause"
+                }
+              ]
+            }
+          ],
+          "md": {
+            "binary": "`target/images/edk2/QEMU_EFI.fd`, and the UEFI Shell in `shell.img` (tests only) (`images/build.sh edk2`, M8 phase B)",
+            "source": "[EDK2](https://github.com/tianocore/edk2) `edk2-stable202608`, `2970e5699ba6`, `ArmVirtPkg/ArmVirtQemuKernel.dsc`",
+            "license": "BSD-2-Clause-Patent; linked in from its submodules: OpenSSL (Apache-2.0, in `Hash2DxeCrypto`) and libfdt (BSD-2-Clause, dual with GPL-2.0)",
+            "use": "built with four small patches of ours (`images/edk2/*.patch`: the virtio-gpu as a console, the boot logo's progress bar, the GOP's flushes a frame at a time, and NonDiscoverablePciDeviceDxe and our driver in the build; they change EDK2's files, under its license) and one driver of ours, `images/edk2/WebpcXhciDxe` (webpc's own code, MIT: it registers the DT's `generic-xhci` as a non-discoverable xHCI through EDK2's library interfaces; no EDK2 code copied into it) and run as the guest's UEFI firmware; served to users with `LICENSES.txt` (the three texts), as binary redistribution requires. No EDK2 code is copied into webpc's own code"
+          }
+        }
+      ]
+    },
+    {
+      "id": "references-permissive",
+      "title": "Reference projects: verified licenses",
+      "intro": [
+        "Checked on 2026-09-25 against the upstream default branch at the commit listed; the Vulkan work's rows (VK0,\nVK1) on 2026-10-25 at the version or tag listed. Re-check at the commit you actually pin before copying anything.",
+        "**Permissive: code may be ported with attribution.**"
+      ],
+      "columns": [
+        {
+          "key": "project",
+          "title": "Project"
+        },
+        {
+          "key": "version",
+          "title": "Commit / version"
+        },
+        {
+          "key": "license",
+          "title": "License"
+        },
+        {
+          "key": "notes",
+          "title": "Notes"
+        }
+      ],
+      "entries": [
+        {
+          "id": "ref-v86",
+          "name": "v86",
+          "url": "https://github.com/copy/v86",
+          "md": {
+            "project": "[v86](https://github.com/copy/v86)",
+            "version": "`5f9a90f2be01`",
+            "license": "BSD-2-Clause",
+            "notes": "JIT architecture (wasmgen, block compilation and batching), 9p and its lazy HTTP filesystem, state save/restore, async HTTP disks; in-browser comparison target (i686)"
+          }
+        },
+        {
+          "id": "ref-tinyemu",
+          "name": "TinyEMU",
+          "url": "https://bellard.org/tinyemu/",
+          "md": {
+            "project": "[TinyEMU](https://bellard.org/tinyemu/)",
+            "version": "2019-12-21 tarball",
+            "license": "MIT (per-file headers, `MIT-LICENSE.txt`)",
+            "notes": "`virtio.c`, `fs*.c` and `riscv_*` are MIT. `slirp/` has its own headers. `aes.c`, `sha256.c`, `fbuf.h`, `ps2.h` lack the MIT header, so check them individually. Compact virtio-mmio and virtio devices in C; JSLinux is an in-browser comparison target (riscv64)"
+          }
+        },
+        {
+          "id": "ref-dynarmic",
+          "name": "dynarmic",
+          "url": "https://github.com/lioncash/dynarmic",
+          "md": {
+            "project": "[dynarmic](https://github.com/lioncash/dynarmic)",
+            "version": "`a41c380246d3`",
+            "license": "0BSD",
+            "notes": "Repository **archived** 2024-03. The former upstream (merryhime/dynarmic) is gone. Fine as a read-only reference. The decoder's pattern table; IR design, A64 semantics, JIT techniques"
+          }
+        },
+        {
+          "id": "ref-virglrenderer-virgl",
+          "name": "virglrenderer",
+          "url": "https://gitlab.freedesktop.org/virgl/virglrenderer",
+          "md": {
+            "project": "[virglrenderer](https://gitlab.freedesktop.org/virgl/virglrenderer)",
+            "version": "`c8e3fc3b`",
+            "license": "MIT",
+            "notes": "The virgl protocol (`src/virgl_protocol.h`, `virgl_hw.h`), the host's command decoder (`src/vrend/vrend_decode.c`) and TGSI → GLSL translator (`vrend_shader.c`): G3's reference, porting allowed with attribution. A debug build with our capture patch (`tools/virgl-oracle/capture.patch`, a diff against `c8e3fc3b`, MIT like the file it patches) is the oracle (`tools/virgl-oracle/build.sh`, built into `target/`, not distributed)"
+          }
+        },
+        {
+          "id": "ref-virglrenderer-venus",
+          "name": "virglrenderer",
+          "url": "https://gitlab.freedesktop.org/virgl/virglrenderer",
+          "md": {
+            "project": "[virglrenderer](https://gitlab.freedesktop.org/virgl/virglrenderer), Venus",
+            "version": "`e0a1caf3b147` (main, 2026-10-21)",
+            "license": "MIT (`COPYING`; SPDX MIT, © Google, on `src/venus/`)",
+            "notes": "The Venus renderer (`src/venus/`, `vkr`) behind vtest is VK0's and VK1's oracle (`tools/venus-oracle/`, with `capture.patch`: above), and route (b) plans to build `vkr` for wasm as the translator's decoder (docs/graphics.md \"The shape\"); its generated decoder comes from venus-protocol v1.1.3 (techniques table)"
+          }
+        },
+        {
+          "id": "ref-mesa",
+          "name": "Mesa",
+          "url": "https://gitlab.freedesktop.org/mesa/mesa",
+          "md": {
+            "project": "[Mesa](https://gitlab.freedesktop.org/mesa/mesa)",
+            "version": "`mesa-26.2.4` (`96cb43121031`); lavapipe from the system's 26.2.3",
+            "license": "MIT for the parts we touch (`docs/license.rst`; SPDX MIT on `src/virtio/vulkan/` (the Venus driver), `src/vulkan/runtime/`, `src/compiler/nir/`, `src/compiler/spirv/`, `src/poly/` (libpoly), `src/kosmickrisp/`, `src/gallium/frontends/lavapipe/`; the runtime's `radix_sort/`, for acceleration structures only, is Fuchsia's BSD-style). Elsewhere other licences (`licenses/`: SGI-B-2.0 for GLX, GPL-2.0-only, BSL-1.0, Apache-2.0)",
+            "notes": "The Venus driver in the oracle (above), lavapipe as the dev VM's Vulkan; route (b) (docs/graphics.md \"The shape\") is Mesa's common Vulkan runtime, `spirv_to_nir`, NIR's passes and libpoly under a WebGPU backend of ours; VK1 step 1 built the compiler for wasm (the workloads table); KosmicKrisp is also in LunarG's macOS SDK (above)"
+          }
+        },
+        {
+          "id": "ref-naga-wgpu",
+          "name": "naga / wgpu",
+          "url": "https://github.com/gfx-rs/wgpu",
+          "md": {
+            "project": "[naga / wgpu](https://github.com/gfx-rs/wgpu)",
+            "version": "`v30.0.1` (naga 30.0.1); wgpu-hal 30.0.0 as Firefox 157.0.1 vendors it (`third_party/rust/wgpu-hal`)",
+            "license": "MIT OR Apache-2.0 (`LICENSE.MIT`, `LICENSE.APACHE`)",
+            "notes": "naga is VK0 D's SPIR-V → WGSL translator and route (a)'s (development dependencies above); wgpu-hal's Vulkan backend read for A (what Firefox's WebGPU asks of a device)"
+          }
+        },
+        {
+          "id": "ref-dawn-and-tint",
+          "name": "Dawn and Tint",
+          "url": "https://dawn.googlesource.com/dawn",
+          "md": {
+            "project": "[Dawn and Tint](https://dawn.googlesource.com/dawn) (GitHub mirror `google/dawn`)",
+            "version": "`main`, 2026-10-25 (as in Chromium 153)",
+            "license": "BSD-3-Clause (`LICENSE`, `Files: *`; \"The Dawn & Tint Authors\")",
+            "notes": "Chromium's WebGPU, which every browser arm of VK0 runs on (Tint compiles our WGSL); A ran it in the guest's role on lavapipe and read what it requires of Vulkan; Tint's SPIR-V reader is route (a)'s other frontend, not tried"
+          }
+        },
+        {
+          "id": "ref-angle",
+          "name": "ANGLE",
+          "url": "https://chromium.googlesource.com/angle/angle",
+          "md": {
+            "project": "[ANGLE](https://chromium.googlesource.com/angle/angle) (GitHub mirror `google/angle`)",
+            "version": "`main`, 2026-10-25 (as in Chromium 153)",
+            "license": "BSD-3-Clause (`LICENSE`)",
+            "notes": "Chromium's GL on Vulkan in A (what ES3 needs of a device); on Metal, G's baseline on the Mac"
+          }
+        },
+        {
+          "id": "ref-swiftshader",
+          "name": "SwiftShader",
+          "url": "https://swiftshader.googlesource.com/SwiftShader",
+          "md": {
+            "project": "[SwiftShader](https://swiftshader.googlesource.com/SwiftShader) (GitHub mirror `google/swiftshader`)",
+            "version": "as in Chromium 153",
+            "license": "Apache-2.0 (`LICENSE.txt` on `master`)",
+            "notes": "the dev VM's WebGPU adapter (correctness only), the source of A's `webgpu-swiftshader` profile"
+          }
+        },
+        {
+          "id": "ref-moltenvk",
+          "name": "MoltenVK",
+          "url": "https://github.com/KhronosGroup/MoltenVK",
+          "md": {
+            "project": "[MoltenVK](https://github.com/KhronosGroup/MoltenVK)",
+            "version": "`v1.4.2` (LunarG's SDK 1.4.363.0)",
+            "license": "Apache-2.0 (`LICENSE`)",
+            "notes": "VK0's native context arm on the Mac; its feature level and tessellation cost a reference for the plan (techniques table)"
+          }
+        },
+        {
+          "id": "ref-vulkan-tools",
+          "name": "Vulkan-Tools",
+          "url": "https://github.com/KhronosGroup/Vulkan-Tools",
+          "md": {
+            "project": "[Vulkan-Tools](https://github.com/KhronosGroup/Vulkan-Tools)",
+            "version": "`vulkan-sdk-1.4.363.0` (zypper's vulkan-tools 1.4.363)",
+            "license": "Apache-2.0 (`LICENSE.txt`)",
+            "notes": "vkcube, a program measured in A, B and D; `vulkaninfo`"
+          }
+        },
+        {
+          "id": "ref-wlroots",
+          "name": "wlroots",
+          "url": "https://gitlab.freedesktop.org/wlroots/wlroots",
+          "md": {
+            "project": "[wlroots](https://gitlab.freedesktop.org/wlroots/wlroots) / [sway](https://github.com/swaywm/sway)",
+            "version": "0.20.2 / 1.12",
+            "license": "MIT (`LICENSE` at each tag)",
+            "notes": "headless sway as the Wayland compositor for VK0's presenting clients (`tools/venus-oracle/wayland.sh`); wlroots's Vulkan renderer read for A; sway 1.12 is also G's compositor in the desktop guest"
+          }
+        },
+        {
+          "id": "ref-crosvm",
+          "name": "crosvm",
+          "url": "https://github.com/google/crosvm",
+          "md": {
+            "project": "[crosvm](https://github.com/google/crosvm)",
+            "version": "`501fcaaa701d`",
+            "license": "BSD-3-Clause",
+            "notes": "virtio devices (blk, net, gpu, input, snd), the `p9` crate, arm64 FDT, PSCI; `rutabaga_gfx` for graphics"
+          }
+        },
+        {
+          "id": "ref-firecracker",
+          "name": "Firecracker",
+          "url": "https://github.com/firecracker-microvm/firecracker",
+          "md": {
+            "project": "[Firecracker](https://github.com/firecracker-microvm/firecracker)",
+            "version": "`8ff4940e6a72`",
+            "license": "Apache-2.0",
+            "notes": "Needs NOTICE/attribution if code is copied. Minimal virtio-mmio model, arm64 FDT, direct kernel boot"
+          }
+        },
+        {
+          "id": "ref-rust-vmm-vm-fdt",
+          "name": "rust-vmm/vm-fdt",
+          "url": "https://github.com/rust-vmm/vm-fdt",
+          "md": {
+            "project": "[rust-vmm/vm-fdt](https://github.com/rust-vmm/vm-fdt)",
+            "version": "crate 0.3.0",
+            "license": "Apache-2.0 OR BSD-3-Clause",
+            "notes": "Not used: `core/src/fdt.rs` is our own writer"
+          }
+        },
+        {
+          "id": "ref-rust-vmm-vm-virtio",
+          "name": "rust-vmm/vm-virtio",
+          "url": "https://github.com/rust-vmm/vm-virtio",
+          "md": {
+            "project": "[rust-vmm/vm-virtio](https://github.com/rust-vmm/vm-virtio) (`virtio-queue`, `virtio-bindings`)",
+            "version": "virtio-queue 0.18.0, virtio-bindings 0.2.7",
+            "license": "virtio-queue: **Apache-2.0 AND BSD-3-Clause**; virtio-bindings: BSD-3-Clause OR Apache-2.0",
+            "notes": "Repository **archived** 2026-09-11. Crates are still published. Not used: our own split queues (`core/src/virtio.rs`)"
+          }
+        },
+        {
+          "id": "ref-gem5",
+          "name": "gem5",
+          "url": "https://github.com/gem5/gem5",
+          "md": {
+            "project": "[gem5](https://github.com/gem5/gem5)",
+            "version": "`f5c5a6e390f5`",
+            "license": "BSD-3-Clause",
+            "notes": "GICv2/GICv3 and generic timer models (M7's per-CPU GIC)"
+          }
+        },
+        {
+          "id": "ref-berkeley-softfloat-3e",
+          "name": "Berkeley SoftFloat 3e",
+          "url": "https://github.com/ucb-bar/berkeley-softfloat-3",
+          "md": {
+            "project": "[Berkeley SoftFloat 3e](https://github.com/ucb-bar/berkeley-softfloat-3) / [TestFloat 3e](https://github.com/ucb-bar/berkeley-testfloat-3)",
+            "version": "`a0c6494cdc11` / `a9c849f1b0eb`",
+            "license": "BSD-3-Clause (text in `COPYING.txt`)",
+            "notes": "TestFloat vectors (`scripts/testfloat.sh`); the FP suite's reference (`images/fptest`, linked, not copied); the FP core itself is ours"
+          }
+        },
+        {
+          "id": "ref-capstone",
+          "name": "Capstone",
+          "url": "https://github.com/capstone-engine/capstone",
+          "md": {
+            "project": "[Capstone](https://github.com/capstone-engine/capstone)",
+            "version": "`9791930a895b` (`next`)",
+            "license": "BSD-3-Clause (`LICENSES/`)",
+            "notes": "Some parts are LLVM-derived under their own license. We use it only as a tool: the decoder sweep, disassembly for debugging"
+          }
+        },
+        {
+          "id": "ref-sail-arm-model",
+          "name": "Sail ARM model",
+          "url": "https://github.com/rems-project/sail-arm",
+          "md": {
+            "project": "[Sail ARM model](https://github.com/rems-project/sail-arm)",
+            "version": "`1bf2e5574ba9`",
+            "license": "BSD-3-Clause-Clear (per model directory)",
+            "notes": "The Clear variant explicitly grants no patent rights. Executable ISA model: the oracle for disputed corner cases"
+          }
+        },
+        {
+          "id": "ref-arm-a64-machine-readable-spec",
+          "name": "Arm A64 machine-readable spec",
+          "md": {
+            "project": "Arm A64 machine-readable spec (AARCHMRS JSON)",
+            "version": "2024-12 release",
+            "license": "Arm publishes a \"BSD license JSON\" release, but its release notes defer to the Proprietary Notice inside the package",
+            "notes": "**Read the notice in the downloaded package before generating code from it.** Until then, dynarmic's 0BSD decoder table is the safe source"
+          }
+        },
+        {
+          "id": "ref-playwright",
+          "name": "Playwright",
+          "url": "https://github.com/microsoft/playwright",
+          "md": {
+            "project": "[Playwright](https://github.com/microsoft/playwright)",
+            "version": "1.63.0",
+            "license": "Apache-2.0",
+            "notes": ""
+          }
+        },
+        {
+          "id": "ref-tailscale",
+          "name": "Tailscale",
+          "url": "https://github.com/tailscale/tailscale",
+          "md": {
+            "project": "[Tailscale](https://github.com/tailscale/tailscale)",
+            "version": "v1.102.5",
+            "license": "BSD-3-Clause",
+            "notes": "the client the networking backend is built from (above); its `tailscaled` image is the test peer"
+          }
+        },
+        {
+          "id": "ref-tailscale-rs",
+          "name": "tailscale-rs",
+          "url": "https://github.com/tailscale/tailscale-rs",
+          "md": {
+            "project": "[tailscale-rs](https://github.com/tailscale/tailscale-rs)",
+            "version": "v0.6.1 (`main` at `0d41a6f` read)",
+            "license": "BSD-3-Clause",
+            "notes": "Tailscale's Rust client: its sans-I/O crates are the tailnet client's dependencies (above); its control, DERP and runtime crates, which need sockets and tokio's runtime, are the reference for ours (docs/tailnet.md \"The module\")"
+          }
+        },
+        {
+          "id": "ref-tailcat",
+          "name": "tailcat",
+          "url": "https://github.com/tailscale/tailcat",
+          "md": {
+            "project": "[tailcat](https://github.com/tailscale/tailcat)",
+            "version": "v0.7.0 (`52fbad3`)",
+            "license": "BSD-3-Clause",
+            "notes": "Tailscale's data plane without a control plane; its protocol is reimplemented in `net/ts` (above), its CLI is the test server (`tailcat serve exit-node`), with `derper` from the `tailscale.com` it pins"
+          }
+        },
+        {
+          "id": "ref-headscale",
+          "name": "headscale",
+          "url": "https://github.com/juanfont/headscale",
+          "md": {
+            "project": "[headscale](https://github.com/juanfont/headscale)",
+            "version": "v0.29.4",
+            "license": "BSD-3-Clause",
+            "notes": "the control server the networking tests run in rootless Podman (`tests/net/tailnet.sh`; natively in a cloud session, `tests/net/tailnet-native.sh`); never linked or distributed"
+          }
+        }
+      ]
+    },
+    {
+      "id": "references-copyleft",
+      "title": null,
+      "intro": [
+        "**Copyleft or other: use as oracle, guest workload or behavioral reference only. Never copy code.**"
+      ],
+      "columns": [
+        {
+          "key": "project",
+          "title": "Project"
+        },
+        {
+          "key": "version",
+          "title": "Commit"
+        },
+        {
+          "key": "license",
+          "title": "License"
+        },
+        {
+          "key": "use",
+          "title": "Use"
+        }
+      ],
+      "entries": [
+        {
+          "id": "ref-qemu",
+          "name": "QEMU",
+          "url": "https://gitlab.com/qemu-project/qemu",
+          "md": {
+            "project": "[QEMU](https://gitlab.com/qemu-project/qemu)",
+            "version": "`a97f90fcf802`",
+            "license": "GPL-2.0 overall, per-file licenses (TCG mostly BSD/MIT)",
+            "use": "`qemu-aarch64` and `qemu-system-aarch64 -M virt` as oracles and comparison; `hw/arm/virt.c` as the de facto platform reference"
+          }
+        },
+        {
+          "id": "ref-unicorn",
+          "name": "Unicorn",
+          "url": "https://github.com/unicorn-engine/unicorn",
+          "md": {
+            "project": "[Unicorn](https://github.com/unicorn-engine/unicorn)",
+            "version": "`7c5db94191de`",
+            "license": "GPL-2.0",
+            "use": "optional in-process fuzzing oracle (not used so far)"
+          }
+        },
+        {
+          "id": "ref-kvm-unit-tests",
+          "name": "kvm-unit-tests",
+          "url": "https://gitlab.com/kvm-unit-tests/kvm-unit-tests",
+          "md": {
+            "project": "[kvm-unit-tests](https://gitlab.com/kvm-unit-tests/kvm-unit-tests)",
+            "version": "master, 2026-09-25",
+            "license": "GPL-2.0 (many files LGPL-2)",
+            "use": "guest-run system tests"
+          }
+        },
+        {
+          "id": "ref-ltp",
+          "name": "LTP",
+          "url": "https://github.com/linux-test-project/ltp",
+          "md": {
+            "project": "[LTP](https://github.com/linux-test-project/ltp)",
+            "version": "`f5bf852334d5`",
+            "license": "GPL-2.0",
+            "use": "in-guest tests (with the kernel selftests)"
+          }
+        },
+        {
+          "id": "ref-herdtools7",
+          "name": "herdtools7",
+          "url": "https://github.com/herd/herdtools7",
+          "md": {
+            "project": "[herdtools7](https://github.com/herd/herdtools7)",
+            "version": "7.58, `1ca343e16a20`",
+            "license": "CeCILL-B (`asllib/` is BSD-3-Clause, © Arm)",
+            "use": "built and run in the images container (`images/build.sh litmus`: `diyone7` makes the tests, `herd7` their allowed outcomes, `litmus7` the programs run in the guest and on the oracle VM); nothing copied (M7)"
+          }
+        },
+        {
+          "id": "ref-risu",
+          "name": "risu",
+          "url": "https://gitlab.com/pm215/risu",
+          "md": {
+            "project": "[risu](https://gitlab.com/pm215/risu)",
+            "version": "`eed224965e7b`",
+            "license": "EPL-1.0",
+            "use": "the methodology behind the golden corpus"
+          }
+        },
+        {
+          "id": "ref-buildroot",
+          "name": "Buildroot",
+          "url": "https://gitlab.com/buildroot.org/buildroot",
+          "md": {
+            "project": "[Buildroot](https://gitlab.com/buildroot.org/buildroot)",
+            "version": "master, 2026-09-25",
+            "license": "GPL-2.0-or-later",
+            "use": "building test and bench images"
+          }
+        },
+        {
+          "id": "ref-linux-kernel",
+          "name": "Linux kernel",
+          "md": {
+            "project": "Linux kernel",
+            "version": "—",
+            "license": "GPL-2.0",
+            "use": "`booting.rst`, the DT bindings and the drivers as the spec our devices must satisfy"
+          }
+        },
+        {
+          "id": "ref-vkmark",
+          "name": "vkmark",
+          "url": "https://github.com/vkmark/vkmark",
+          "md": {
+            "project": "[vkmark](https://github.com/vkmark/vkmark)",
+            "version": "zypper's 2025.01+git.20250909 (upstream `master` around `83a128d65b1a`)",
+            "license": "LGPL-2.1-or-later (`COPYING-LGPL2.1`, source headers)",
+            "use": "a program measured in VK0 A, B and D (`bench/vulkan/translate/programs.sh`)"
+          }
+        },
+        {
+          "id": "ref-vkquake",
+          "name": "vkQuake",
+          "url": "https://github.com/Novum/vkQuake",
+          "md": {
+            "project": "[vkQuake](https://github.com/Novum/vkQuake)",
+            "version": "1.37.0 (zypper)",
+            "license": "GPL-2.0 (`LICENSE.txt` at `1.37.0` and in the package)",
+            "use": "a game measured in VK0 A, B and D, with LibreQuake's data (workloads table); its frames captured on lavapipe and replayed on the renderer in VK2 L5 (`images/vkframes/build.sh`, as vkmark's scenes; the captures stay in `target/`)"
+          }
+        },
+        {
+          "id": "ref-vk-gl-cts",
+          "name": "VK-GL-CTS",
+          "url": "https://github.com/KhronosGroup/VK-GL-CTS",
+          "md": {
+            "project": "[VK-GL-CTS](https://github.com/KhronosGroup/VK-GL-CTS)",
+            "version": "`opengl-es-cts-3.2.14.1` (dEQP-GLES2/3, G4); `vulkan-cts-1.4.7.0` (`e2724713`, dEQP-VK, VK2 L5)",
+            "license": "Apache-2.0 (`LICENSE`; its fetched sources: glslang BSD-3-Clause and others, SPIRV-Tools Apache-2.0, amber Apache-2.0)",
+            "use": "conformance tests built in rootless Podman (`images/deqp/build.sh`, `Containerfile.vk`) and run in the guest; nothing copied, the binaries stay in `target/`"
+          }
+        },
+        {
+          "id": "ref-gtk",
+          "name": "GTK",
+          "url": "https://gitlab.gnome.org/GNOME/gtk",
+          "md": {
+            "project": "[GTK](https://gitlab.gnome.org/GNOME/gtk)",
+            "version": "4.22.5 (dev VM, zypper's gtk4-demo); 4.24.1 in the desktop guest",
+            "license": "LGPL-2.0-or-later (`COPYING` at `4.22.5`: the Library GPL 2 text; `gdk/gdkvulkancontext.c`'s header: version 2 or later; `gsk/gpu/gskvulkandevice.c` has none, so `COPYING` applies)",
+            "use": "gtk4-demo's fishbowl with GSK on Vulkan in A, B and D, and on GL as G's baseline (`bench/gpu/gtk4-load.ts`); `gdk/gdkvulkancontext.c` and `gsk/gpu/gskvulkandevice.c` read for what it requires"
+          }
+        },
+        {
+          "id": "ref-mpv",
+          "name": "mpv",
+          "url": "https://github.com/mpv-player/mpv",
+          "md": {
+            "project": "[mpv](https://github.com/mpv-player/mpv) / [libplacebo](https://code.videolan.org/videolan/libplacebo) / [FFmpeg](https://ffmpeg.org)",
+            "version": "mpv 0.41.0+git20260918; libplacebo 7.360.1 (zypper); FFmpeg 8",
+            "license": "mpv GPL-2.0-or-later (`Copyright`, `LICENSE.GPL` at `v0.41.0`); libplacebo LGPL-2.1-or-later (`LICENSE` at `v7.360.1`); FFmpeg LGPL-2.1-or-later, GPL in openSUSE's build (`LICENSE.md` at `n8.0`)",
+            "use": "mpv's `gpu-next` (libplacebo on Vulkan) measured in A and D; mpv on VA-API is G's baseline (docs/plans/video.md)"
+          }
+        },
+        {
+          "id": "ref-vkd3d",
+          "name": "vkd3d",
+          "url": "https://gitlab.winehq.org/wine/vkd3d",
+          "md": {
+            "project": "[vkd3d](https://gitlab.winehq.org/wine/vkd3d)",
+            "version": "2.1 (zypper's vkd3d-demos); 1.19 (Arch's aarch64 package, and its `tests/d3d12` built from the 1.19 release in an Arch container by `target/vkd3d/build-tests.sh`)",
+            "license": "LGPL-2.1-or-later (`COPYING`, `LICENSE` at `vkd3d-2.1`)",
+            "use": "its D3D12 demos in A (what it requires of Vulkan); since VK3 L7.5 a guest workload on Venus (`bench/vulkan/vkd3d.ts`: the package and the test binary on a second disk, `target/vkd3d/vkd3d.ext4`, installed and run in the desktop guest; in the NVIDIA bundle since L8); no code copied (`bench/vulkan/vkd3d.py` is ours, through ctypes)"
+          }
+        },
+        {
+          "id": "ref-firefox",
+          "name": "Firefox",
+          "url": "https://github.com/mozilla-firefox/firefox",
+          "md": {
+            "project": "[Firefox](https://github.com/mozilla-firefox/firefox)",
+            "version": "157.0.1 (zypper; `FIREFOX_157_0_1_RELEASE`)",
+            "license": "MPL-2.0 overall (`LICENSE` defers to `toolkit/content/license.html`); its wgpu is MIT OR Apache-2.0 (above)",
+            "use": "headless through Playwright in the dev VM only, A's probe of its WebGPU on the Vulkan device (`target/vk0a/firefox-probe.ts`, not committed)"
+          }
+        }
+      ],
+      "outro": [
+        "Guest images we build and distribute (kernel, BusyBox, and so on) carry their own\nlicenses and obligations. Publish the Buildroot configs and point to the sources."
+      ]
+    }
+  ]
+}

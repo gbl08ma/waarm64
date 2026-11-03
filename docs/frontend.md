@@ -281,7 +281,7 @@ Duplicate, Export the definition, Delete; then tabs:
   **[Detach](ui:machines:MachinesPage.adapter.detach)**, **[Connect at start](ui:machines:MachinesPage.adapter.atStart)**, and Connect or Disconnect while it runs on this page. Attaching is saved at
   once, running or not (a connection isn't in the shape), and a machine running in another tab connects it at once. **[Take the connection's settings in the guest](ui:machines:MachinesPage.netConfig)** (on; off is
   `MachineRecord.netConfig: false`, carried by definitions, not in the shape): below, "What the page sets in the guest". **[Connections](ui:machines:MachinesPage.connections.heading)** (in the list of machines) is the
-  browser's connections; **[Preferences](ui:machines:MachinesPage.preferences)** under it is the page's, per browser (below, "Leaving the page" and "The status bar"). A machine made before adapters keeps its card (`network`), read as one adapter at that MAC, so its
+  browser's connections; **[Preferences](ui:machines:MachinesPage.preferences)** under it is the page's, per browser (below, "Leaving the page" and "The status bar"), and **[About](ui:machines:MachinesPage.about)** after it (below, "About"). A machine made before adapters keeps its card (`network`), read as one adapter at that MAC, so its
   shape and snapshots stay as they were; definitions carry the MACs (`machine.macs`) and no connections.
 - **[USB](ui:machines:MachinesPage.tab.usb)** (`Usb.svelte`): the USB controller's switch (also on Settings: it is in the shape), the remembered devices
   with their state (attached, plugged in, not plugged in, held by another machine, no permission in this browser),
@@ -308,6 +308,20 @@ disk's Export, Import changes…, **[Reset disk…](ui:machines:MachinesPage.res
 storage's estimate is at the bottom, with what takes it and, while remote disks' blocks are kept (docs/devices.md "Over
 HTTP"), **Clear the URL disks' cache** (a running machine reading one gives its store up too, and reads from memory and the
 network from then on).
+
+### About
+
+**[About](ui:machines:MachinesPage.about)**, last under the list of machines (after Preferences; `About.svelte`), is webpc's own: a link to its
+repository (`package.json`'s `repository`), the version it was built from (the tag on the commit when one was cut, with
+the commit; otherwise the commit; "with local changes" when tracked files differed), that commit's date (the console's
+line has the same: below, "A static copy"), webpc's license, and **[Third-party software](ui:machines:About.thirdParty)**: a table per part
+of the web app (the interface, the emulator, OpenGL's and Vulkan's renderers, networking, the UEFI firmware) of the
+projects built into it or whose code ours is derived from, each with its version, its license (SPDX) and links to its
+license texts at that version, and under a table the license file served beside the page that holds them all
+(`EDK2-LICENSES.txt`, `VENUS-LICENSES.txt`, `THIRD-PARTY-LICENSES.md`). The rows are `THIRD_PARTY.json`'s marked
+`about`, which Vite gives the page as `virtual:webpc-about` at build time, nothing else of that file
+([third-party.md](third-party.md)). A link to another site opens in a new tab with `rel="external nofollow noopener
+noreferrer"`; a file beside the page in a new tab. `tests/page-about.test.ts`.
 
 ## The worker protocol
 
@@ -1532,7 +1546,8 @@ without it, `--no-vulkan` leaves it out, and `npm start`'s copy has it only when
   the query and fragment (the page was there until 2026-10-23).
 - `THIRD-PARTY-LICENSES.md` (the bundled packages' licenses: Vite's `build.license`), `EDK2-LICENSES.txt` (the
   firmware's), `VENUS-LICENSES.txt` (Vulkan's renderer's: virglrenderer, Mesa, wasi-sdk's libraries; vk/build.sh
-  writes it), `LICENSE`, and a marker file (`.webpc-dist`, from `web/app/public/`, so a plain `vite build` has it
+  writes it), `LICENSE`: the About pane links them (above, "About"; `BUNDLED` in `tools/third-party.ts` names the
+  first two's sources), and a marker file (`.webpc-dist`, from `web/app/public/`, so a plain `vite build` has it
   too): the script only empties a directory that has it.
 
 **The host must send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`**

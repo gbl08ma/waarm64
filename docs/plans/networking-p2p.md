@@ -43,7 +43,7 @@ key) and the Ethernet gateway ([devices.md](../devices.md) "net").
 - **No room owner, no membership list.** Anyone who knows a room's ID can join. A room is as private
   as its ID is hard to guess: `gabriel-lan` is effectively public, and the page says so.
 - Dependencies: the Nostr side needs BIP-340 Schnorr signatures on secp256k1 (RustCrypto's `k256`,
-  MIT/Apache-2.0; **OK'd by the user, 2026-10-18**), with a THIRD_PARTY.md row when it lands.
+  MIT/Apache-2.0; **OK'd by the user, 2026-10-18**), with a THIRD_PARTY.json row when it lands.
   Everything else is already in `net/ts` (`ts_tunnel`, BLAKE2s, ChaCha20-Poly1305, NaCl boxes).
 
 ## 2. A room

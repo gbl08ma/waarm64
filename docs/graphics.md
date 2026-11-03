@@ -23,7 +23,7 @@ These bind the graphics work; changing one is the user's call (PLAN.md).
   and Zink (GL on Vulkan) would be another layer of Mesa under emulation. The guest runs a thin driver that
   serializes; the work happens on the host.
 - **3D is OpenGL ES through Mesa's virgl driver, rendered by our own virgl renderer on WebGL2.** virglrenderer (MIT)
-  is the reference (ported from with attribution where it helps, THIRD_PARTY.md); the guest gets what virglrenderer
+  is the reference (ported from with attribution where it helps, THIRD_PARTY.json); the guest gets what virglrenderer
   gives on a GLES 3.0 host, GLES 3.0 and desktop GL 2.1.
 - **WebGL2 is the baseline.** A WebGPU backend for the same protocol (GLES 3.1: compute, storage buffers) is a backlog
   item, not built. A page without WebGL2 offers 2D only.

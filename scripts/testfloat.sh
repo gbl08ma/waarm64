@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds Berkeley TestFloat 3e (with SoftFloat 3e) under target/testfloat, once,
 # and checks webpc_core::fp against its vectors (core/tests/testfloat.rs).
-# Commits and licenses: THIRD_PARTY.md. Needs network access on the first run.
+# Commits and licenses: THIRD_PARTY.json. Needs network access on the first run.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 dir=target/testfloat

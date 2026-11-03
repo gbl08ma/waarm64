@@ -26,6 +26,7 @@ import { parseArgs } from 'node:util';
 import { build } from 'vite';
 import { APP, ROOT, startServer } from './serve.ts';
 import { FIRMWARE, main as prepare, Stop, WASM } from './start.ts';
+import { BUNDLED } from './third-party.ts';
 
 export const OUT = join(ROOT, 'target/dist');
 
@@ -33,9 +34,9 @@ export const OUT = join(ROOT, 'target/dist');
 const MARK = '.webpc-dist';
 
 /** The binaries the page fetches, as paths in the repository. */
-export const BINARIES = [relative(ROOT, WASM), 'target/net/ts.wasm', FIRMWARE, 'target/images/edk2/LICENSES.txt'];
+export const BINARIES = [relative(ROOT, WASM), 'target/net/ts.wasm', FIRMWARE, BUNDLED['EDK2-LICENSES.txt']];
 /** Vulkan's renderer and its licences (vk/build.sh). */
-export const VULKAN = ['target/vk/venus.wasm', 'target/vk/LICENSES.txt'];
+export const VULKAN = ['target/vk/venus.wasm', BUNDLED['VENUS-LICENSES.txt']];
 
 /**
  * Writes the static copy of the page to `out` (its binaries must be built; Vulkan's renderer too unless `vulkan` is
@@ -50,8 +51,9 @@ export async function writeDist(out = OUT, { vulkan = true }: { vulkan?: boolean
   const vk = VULKAN.every((f) => existsSync(join(ROOT, f)));
   if (vulkan && !vk) throw new Stop(`Not built: ${VULKAN.filter((f) => !existsSync(join(ROOT, f))).join(', ')} (vk/build.sh builds Vulkan's renderer; --no-vulkan leaves it out).`);
   await build({ configFile: join(ROOT, 'vite.config.ts'), build: { outDir: out }, logLevel: 'warn' });
-  cpSync(join(ROOT, 'target/images/edk2/LICENSES.txt'), join(out, 'EDK2-LICENSES.txt'));
-  if (vk) cpSync(join(ROOT, 'target/vk/LICENSES.txt'), join(out, 'VENUS-LICENSES.txt'));
+  // The license files the About pane links (tools/third-party.ts `BUNDLED`).
+  cpSync(join(ROOT, BUNDLED['EDK2-LICENSES.txt']), join(out, 'EDK2-LICENSES.txt'));
+  if (vk) cpSync(join(ROOT, BUNDLED['VENUS-LICENSES.txt']), join(out, 'VENUS-LICENSES.txt'));
   cpSync(join(ROOT, 'LICENSE'), join(out, 'LICENSE'));
   return readdirSync(out, { recursive: true, encoding: 'utf8' }).filter((f) => statSync(join(out, f)).isFile());
 }

@@ -44,7 +44,7 @@ where frames take seconds). Real-GPU numbers are the Mac's; SwiftShader's are fo
 
 ## The scene
 
-The WebGL Aquarium (WebGLSamples, BSD-3-Clause: its models, textures, fish table, camera, shaders; THIRD_PARTY.md),
+The WebGL Aquarium (WebGLSamples, BSD-3-Clause: its models, textures, fish table, camera, shaders; THIRD_PARTY.json),
 ported once and drawn by every arm from the same simulation (`scene/sim.c`: our own sin, cos and random numbers, a
 fixed 1/60 s step, no libc, built natively and to wasm) and the same draw order (`scene/scene.h`, a command list each
 arm replays as its own API's calls). Fish with per-fish data, the placed props (91 objects), seaweed, bubbles,
@@ -467,7 +467,7 @@ platform-free `os_misc.c`). Emscripten's own advantages (its POSIX emulation, it
 
 **Licences**: the module compiles 334 of Mesa's files: MIT (88 with SPDX tags, 236 with the MIT text, 5 without a
 header under Mesa's MIT), Berkeley SoftFloat 3e (`util/softfloat.c`, BSD-3-Clause), BLAKE3 1.8.2 (CC0-1.0 or
-Apache-2.0), and `c11/impl/threads_posix.c` (BSL-1.0); THIRD_PARTY.md has the rows.
+Apache-2.0), and `c11/impl/threads_posix.c` (BSL-1.0); THIRD_PARTY.json has the rows.
 
 ## VK1: the write-watch costs machines without a window nothing measurable
 

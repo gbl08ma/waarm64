@@ -1,5 +1,5 @@
 // Ported from the WebGL Aquarium (WebGLSamples, Copyright 2009, Google Inc., BSD-3-Clause: LICENSE.aquarium beside
-// this file; THIRD_PARTY.md).
+// this file; THIRD_PARTY.json).
 // The Aquarium's frame as a list of commands that every arm turns into its own API's calls (render() in aquarium.js):
 // the base group, the fish, the inner globe, the seaweed, the outside, the bubbles, the light rays and the outer globe,
 // with the pipeline, the material and the object's uniforms each draw needs. The lasers are off, as the Aquarium's
