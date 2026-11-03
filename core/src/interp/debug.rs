@@ -16,8 +16,9 @@ use crate::cpu::{Cpu, DISPATCH_MMU, INTERP_ALIGN, INTERP_DEBUG, PSTATE_D, PSTATE
 use crate::mem::{Access, Fault, FaultKind, Host, Mem};
 use crate::mmu::{Bus, Mmu, Tlb, Use};
 
-/// MDSCR_EL1: SS, KDE, MDE.
+/// MDSCR_EL1: SS, TDCC, KDE, MDE.
 pub const MDSCR_SS: u64 = 1 << 0;
+pub const MDSCR_TDCC: u64 = 1 << 12;
 pub const MDSCR_KDE: u64 = 1 << 13;
 pub const MDSCR_MDE: u64 = 1 << 15;
 /// DBGBCR<n>_EL1's fields (v8.0): BT, LBN, SSC, HMC, BAS, PMC, E.
@@ -194,9 +195,11 @@ fn step(c: &mut Cpu, m: &mut impl Bus) -> R {
     r
 }
 
-/// LDXR, LDAXR, LDXP, LDAXP (any size): the step's EX bit.
+/// LDXR, LDAXR, LDXP, LDAXP (any size): the step's EX bit. The group's
+/// o2 = 0, L = 1 (bits 29:22) with o1 (bit 21) set is a pair, LDXP/LDAXP
+/// with bit 31 set and CASP with it clear (which isn't a Load-Exclusive).
 fn load_exclusive(i: u32) -> bool {
-    i & 0x3fc0_0000 == 0x0840_0000
+    i & 0x3fc0_0000 == 0x0840_0000 && (i >> 31 == 1 || i >> 21 & 1 == 0)
 }
 
 /// DBGBCR.BT.

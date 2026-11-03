@@ -623,8 +623,9 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   state (the merge of its incoming edges, found by a first emission) and every edge conforms to
   it; the head's state is loaded once before the loop.
   Locals map: i64 scratch 2..=5, i32 6..=9, the flag locals 10..=16, X registers from 17 (in
-  order of first use), V registers 49..=79 then 96, SHA's i32s 80..=95, PMULL's i64s 100..=112,
-  VT 119–122, FPOK 123, VTMP 124, TAKEN 125.
+  order of first use), V registers 49..=79 then 96, SHA's i32s 80..=95, FT's f64s 97..=99 and
+  113..=117 (the double FMA's exact product and sums), PMULL's i64s 100..=112, FZOK 118, VT 119–122,
+  FPOK 123, VTMP 124, TAKEN 125.
 - **Lazy NZCV:** ADDS/SUBS, ADCS/SBCS, ANDS/BICS keep their operands (or result) in flag locals
   and record their kind; a setter replaced by the next one emits no flag code. Conditions (B.cond,
   CSEL & co, CCMP, ADC's carry) come straight from the operands where the kind allows (SUBS: EQ,
@@ -912,9 +913,11 @@ interpreter's; the helper runs the instruction otherwise.
   -2^(N-1) and its Invalid are the helper's;
   FCVT to and from half (scalar), as the vector half forms below, single or double straight to half
   in integer arithmetic (no double rounding);
-  FCVT single↔double, scalar and vector (FCVTL/FCVTN): widening is exact without FPOK for a zero,
-  normal or infinite operand; narrowing takes FPOK, a normal or zero operand and a fast result or a
-  zero.
+  FCVT single↔double: the scalar form's widening is exact without FPOK for a zero, normal or
+  infinite operand, its narrowing takes FPOK, a normal or zero operand and a fast result or a zero;
+  the vector forms are narrower, every lane normal and under FPOK: FCVTL (widening) sends a zero or
+  infinite lane, or a block without FPOK (IXC clear), to the helper though it would be exact, and
+  FCVTN (narrowing) takes normal source lanes and fast results only, a zero lane going to the helper.
 - **Zero results** (FADD/FSUB/FMUL/FDIV scalar and vector, FNMUL, the FMA forms): taken where
   they're exact. A zero sum or difference is always exact (a nonzero exact sum rounds to a nonzero
   result); a zero product or quotient only with a zero operand (the dividend), and only when the
