@@ -1013,9 +1013,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   own copy of each module, and the code cache has no module cap: a long or code-heavy run (the user's Arch
   desktop, at login, with the compile worker on) dies in `jit_install`. The fix would be a
   `VmConfig` cap on modules per cache epoch (an ABI change) the host sets on SpiderMonkey only.
-  Private windows have no OPFS (`getDirectory` throws SecurityError): no overlay, so no machine.
+  Private windows have no OPFS (`getDirectory` throws SecurityError): the page runs with its store and overlays in
+  memory (machines.md "Without OPFS"; Debian opened through Open disk… boots, 2026-11-03); what reads OPFS from the page
+  directly (kept snapshots, the overlays' sizes, folders in the browser) still throws there.
   Unmeasured: SpiderMonkey's speed. Driving it: Playwright's `firefox.launch({ channel:
-  'moz-firefox', executablePath: '/usr/bin/firefox' })` (WebDriver BiDi, zypper's Firefox) with
+  'moz-firefox', executablePath: '/usr/bin/firefox' })` (WebDriver BiDi, zypper's Firefox; in a cloud session
+  `npx playwright-core install firefox`, Playwright's own Firefox, plain `firefox.launch({ executablePath })`, a
+  private window through the pref `browser.privatebrowsing.autostart`) with
   `firefoxUserPrefs: { 'memory.phc.enabled': false }` (PHC's stack walks hit the VM's
   SME-without-SVE in libgcc's unwinder: SIGILL) and `env: chromiumEnv()`.
 - **Page tests on the build** (2026-10-24, bench/boot/REPORT.md "The page under Vite"): the page tests that only drive

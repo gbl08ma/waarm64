@@ -319,6 +319,10 @@
     "message": "Start anyway",
     "note": "Button in the message bar (under the toolbar) after the warning that your computer may not have the memory for the machine: it starts it all the same."
   },
+  "main.noStorage": {
+    "message": "This browser doesn't let the web app keep anything (in a private window, for example): what the machine writes to its disks, its snapshots and the machines you make last only until this tab is closed.",
+    "note": "Note in the message bar (under the toolbar) when the browser refuses the web app its storage (OPFS: Firefox's private windows), shown while there is nothing else to say. It takes the place of the note that the browser isn't Chromium."
+  },
   "main.notChromium": {
     "message": "This web app is developed and tested in Chromium and Chrome. In this browser, parts of it may not work.",
     "note": "Note in the message bar (under the toolbar) in a browser other than Chromium or Chrome, shown while there is nothing else to say."
