@@ -29,8 +29,6 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   breakpoint could stay uncompiled and watched pages out of the TLB instead, so their accesses take
   the slow path, which would check the comparators. Only if a debugged program's speed becomes a
   concern: unarmed code doesn't pay either way.
-- **Self-hosted debug's loose ends:** watchpoints on device (MMIO) accesses aren't checked (the
-  MMIO path runs the instruction again on the `Io` bus, without the `Watch` wrapper).
 - **Spectre-BHB reporting:** Linux says `spectre_v2` "Mitigation: CSV2, but not BHB" (and installs no
   BHB mitigation: MIDR 0 has no loop count). Only `ID_AA64PFR0_EL1.CSV2` = 3 clears it, which needs
   `SCXTNUM_EL0`/`EL1` (plain registers, `SCTLR_EL1.TSCXT` trap, JIT sysreg path, snapshot state).
@@ -38,10 +36,6 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   load): the check would sit on the flat bus's fast path, which the MMU-off EL1 and user-mode guests run on, and
   correct firmware doesn't notice; DC ZVA to RAM mapped as Device with the MMU on zeroes it (the M4: an alignment
   fault).
-- **Watchpoints** (found 2026-10-30, against the M4, `interp/debug.rs`): an atomic read-modify-write is checked as a store
-  alone, so a load-only watchpoint misses LDADD and CAS, a failing CAS included; and the check comes before the
-  translation, so a watchpoint on an unmapped address beats the translation fault (M4 and QEMU: translation fault).
-  The first has to tell RMWs from STXR, which shares `cas`; the second needs a probe of the translation first.
 - **Reserved AdvSIMD encodings with FPEN 0** take the FP trap (`interp.rs`: `fp_enabled` before the handler's field
   checks); on the M4 they're UNDEFINED. Harmless to a kernel that enables FP on the trap: the retry is UNDEFINED.
 - **Exclusives and LSE on device memory:** an LDXR reads (through `Io`, with LDAR), its STXR and the LSE atomics take

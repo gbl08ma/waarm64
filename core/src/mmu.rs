@@ -640,6 +640,37 @@ pub trait Bus {
         Ok(())
     }
 
+    /// A store-exclusive's swap (STXR, STXP's 8 bytes): [`Self::cas`], but a
+    /// store for the watchpoints (`interp::debug::Watch`), where CAS is a
+    /// read-modify-write.
+    #[inline(always)]
+    fn store_exclusive(
+        &mut self,
+        c: &Cpu,
+        va: u64,
+        size: u32,
+        expected: u64,
+        new: u64,
+    ) -> Result<u64, Fault> {
+        let p = self.host_aligned(c, va, size as u64, Access::Write)?;
+        // SAFETY: as in read_atomic.
+        Ok(unsafe { self.mem().cas(p, size, expected, new) })
+    }
+
+    /// STXP's 16 bytes: [`Self::cas_pair`], a store as in [`Self::store_exclusive`].
+    #[inline(always)]
+    fn store_exclusive_pair(
+        &mut self,
+        c: &Cpu,
+        va: u64,
+        expected: [u64; 2],
+        new: [u64; 2],
+    ) -> Result<[u64; 2], Fault> {
+        let p = self.host_aligned(c, va, 16, Access::Write)?;
+        // SAFETY: as in read_pair.
+        Ok(unsafe { self.mem().cas_pair(p, expected, new) })
+    }
+
     /// Atomic compare-and-swap. Returns the old value; the swap happened iff it
     /// equals `expected`. Faults report a write.
     fn cas(&mut self, c: &Cpu, va: u64, size: u32, expected: u64, new: u64) -> Result<u64, Fault> {
@@ -917,7 +948,7 @@ impl<'a> Mmu<'a> {
     /// a page of the watched window keeps its record until the store.
     /// `SCTLR_EL1.A` makes every misaligned access fault first.
     #[inline(always)]
-    fn span(
+    pub(crate) fn span(
         &mut self,
         c: &Cpu,
         va: u64,

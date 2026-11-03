@@ -37,6 +37,7 @@ use crate::cpu::{Cpu, PSTATE_I, sctlr};
 use crate::flash::{FLASH, Flash};
 use crate::fw_cfg::{FW_CFG, FwCfg};
 use crate::gicv3::{self, Gicv3};
+use crate::interp::debug::{self, Kind};
 use crate::interp::{self, Exit, platform, sys, take_exception, take_irq};
 use crate::jit;
 use crate::mem::{Access, Fault, FaultKind, Mem};
@@ -1855,6 +1856,17 @@ impl Io<'_> {
     }
 }
 
+/// A device access's watchpoint (`debug::hit`): the instruction ran first in
+/// the debug interpreter, whose `Watch` checked the accesses up to the first
+/// one that reached a device, but not those after it (a pair's second).
+#[inline(always)]
+fn watch(c: &Cpu, va: u64, size: u32, el: u64, kind: Kind) -> Result<(), Fault> {
+    if c.mdscr_el1 & debug::MDSCR_MDE == 0 {
+        return Ok(());
+    }
+    debug::hit(c, va, size as u64, el, kind).map_or(Ok(()), Err)
+}
+
 const FLASH_END: u64 = FLASH + crate::flash::MAX_SIZE;
 const FW_CFG_END: u64 = FW_CFG + crate::fw_cfg::SIZE;
 const XHCI_END: u64 = xhci::BASE + xhci::SIZE;
@@ -1877,6 +1889,7 @@ impl Bus for Io<'_> {
     fn read_el(&mut self, c: &Cpu, va: u64, size: u32, el: u64) -> Result<u64, Fault> {
         match self.mmu.read_el(c, va, size, el) {
             Err(f) if f.kind == FaultKind::Bus => {
+                watch(c, va, size, el, Kind::Load)?;
                 let pa = self.pa(c, va);
                 self.dev_read(pa, size).ok_or(f)
             }
@@ -1887,6 +1900,7 @@ impl Bus for Io<'_> {
     fn write_el(&mut self, c: &Cpu, va: u64, size: u32, val: u64, el: u64) -> Result<(), Fault> {
         match self.mmu.write_el(c, va, size, val, el) {
             Err(f) if f.kind == FaultKind::Bus => {
+                watch(c, va, size, el, Kind::Store)?;
                 let pa = self.pa(c, va);
                 self.dev_write(pa, size, val).ok_or(f)
             }
@@ -1907,6 +1921,7 @@ impl Bus for Io<'_> {
     fn read_atomic(&mut self, c: &Cpu, va: u64, size: u32) -> Result<u64, Fault> {
         match self.mmu.read_atomic(c, va, size) {
             Err(f) if f.kind == FaultKind::Bus => {
+                watch(c, va, size, c.el(), Kind::Load)?;
                 let pa = self.pa(c, va);
                 self.dev_read(pa, size).ok_or(f)
             }
@@ -1917,6 +1932,7 @@ impl Bus for Io<'_> {
     fn write_atomic(&mut self, c: &Cpu, va: u64, size: u32, val: u64) -> Result<(), Fault> {
         match self.mmu.write_atomic(c, va, size, val) {
             Err(f) if f.kind == FaultKind::Bus => {
+                watch(c, va, size, c.el(), Kind::Store)?;
                 let pa = self.pa(c, va);
                 self.dev_write(pa, size, val).ok_or(f)
             }

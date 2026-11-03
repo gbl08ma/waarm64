@@ -1392,3 +1392,51 @@ fn the_window_is_in_memory_1_after_its_renderer() {
         );
     }
 }
+
+#[test]
+fn a_watchpoint_on_a_device_register_is_taken_before_the_access() {
+    use crate::interp::debug::{self, MDSCR_KDE, MDSCR_MDE};
+    let mut t = T::new(&[STR_W1_X0, B_SELF], VmConfig::default());
+    let c = t.cpu();
+    (c.x[0], c.x[1]) = (UART, b'A' as u64);
+    c.mdscr_el1 = MDSCR_MDE | MDSCR_KDE;
+    c.dbgwvr[0] = UART;
+    c.dbgwcr[0] = 0xf << 5 | 2 << 3 | 1 << 1 | 1; // bytes 0-3, stores, EL1
+    c.set_pstate(crate::cpu::M_EL1H); // PSTATE.D clear
+    debug::arm(c);
+    t.vm.run(1);
+    let c = t.cpu();
+    assert_eq!(
+        (c.pc, c.esr_el1, c.far_el1),
+        (VBAR + 0x200, 0x35 << 26 | 1 << 25 | 1 << 6 | 0x22, UART)
+    );
+    assert_eq!(t.vm.shared.console.tx.pop(), None);
+    // Off, the store goes to the UART.
+    let c = t.cpu();
+    c.dbgwcr[0] = 0;
+    debug::arm(c);
+    c.pc = RAM_BASE;
+    t.vm.run(1);
+    assert_eq!(t.vm.shared.console.tx.pop(), Some(b'A'));
+}
+
+#[test]
+fn a_watchpoint_on_a_pairs_second_device_register() {
+    use crate::interp::debug::{self, MDSCR_KDE, MDSCR_MDE};
+    // stp w1, w2, [x0]: the first word reaches the UART, then the run loop's
+    // `Io` runs the pair again; the watchpoint on the second word is taken.
+    let mut t = T::new(&[0x2900_0801, B_SELF], VmConfig::default());
+    let c = t.cpu();
+    (c.x[0], c.x[1]) = (UART, b'A' as u64);
+    c.mdscr_el1 = MDSCR_MDE | MDSCR_KDE;
+    c.dbgwvr[0] = UART;
+    c.dbgwcr[0] = 0xf0 << 5 | 2 << 3 | 1 << 1 | 1; // bytes 4-7, stores, EL1
+    c.set_pstate(crate::cpu::M_EL1H);
+    debug::arm(c);
+    t.vm.run(1);
+    let c = t.cpu();
+    assert_eq!(
+        (c.pc, c.esr_el1, c.far_el1),
+        (VBAR + 0x200, 0x35 << 26 | 1 << 25 | 1 << 6 | 0x22, UART + 4)
+    );
+}

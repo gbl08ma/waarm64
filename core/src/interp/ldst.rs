@@ -131,7 +131,7 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R 
             c.monitor.size = 0;
             let ok = mon.addr == base
                 && mon.size == size as u64
-                && m.cas(c, base, size, mon.val[0], new)? == mon.val[0];
+                && m.store_exclusive(c, base, size, mon.val[0], new)? == mon.val[0];
             c.set_reg(rs, !ok as u64);
         }
         STXP | STLXP => {
@@ -142,13 +142,13 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R 
                 aligned(base, 16)?;
                 mon.addr == base
                     && mon.size == 16
-                    && m.cas_pair(c, base, mon.val, [lo, hi])? == mon.val
+                    && m.store_exclusive_pair(c, base, mon.val, [lo, hi])? == mon.val
             } else {
                 aligned(base, 8)?;
                 let new = lo as u32 as u64 | hi << 32;
                 mon.addr == base
                     && mon.size == 8
-                    && m.cas(c, base, 8, mon.val[0], new)? == mon.val[0]
+                    && m.store_exclusive(c, base, 8, mon.val[0], new)? == mon.val[0]
             };
             c.set_reg(rs, !ok as u64);
         }

@@ -10,7 +10,7 @@ buildroot 40602487
 # devices: virtio-net offers its offloads (web/offload.ts), receive merging and MRG_RXBUF included, which the guest's driver negotiates;
 # the tablet has a mouse's back and forward buttons (BTN_SIDE, BTN_EXTRA).
 devices 113676750
-ltp 2791738276
+ltp 2792026865
 crypto 5565764105
 # alpine: its test devices have virtio-net, whose offloads (web/offload.ts) the guest's driver negotiates, and the tablet
 # with a mouse's back and forward buttons.

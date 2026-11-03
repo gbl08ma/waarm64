@@ -153,8 +153,11 @@ use, and kvm-unit-tests' `debug-*`.
   address match on the instruction about to run (BAS non-zero), unlinked context ID match, PMC and
   SSC (no Secure state), EC 0x30/0x31 with ELR on the instruction. Watchpoints (MDE): BAS byte
   selection (on a doubleword, or a word with `WVR[2]`), MASK ranges, LSC, PAC (LDTR/STTR as EL0),
-  linked context; plain and exclusive accesses, atomics, `DC ZVA`; EC 0x34/0x35, WnR, FAR the first
-  watched byte the access touches (QEMU's too), taken before the access. Software step (`MDSCR_EL1.SS`):
+  linked context; plain and exclusive accesses, atomics, `DC ZVA`, device registers; EC 0x34/0x35, WnR, FAR the
+  first watched byte the access touches (QEMU's too), taken after the access translates (its alignment, translation,
+  access flag and permission faults first, `AArch64.TranslateAddress`) and before it reads or writes. An atomic
+  read-modify-write (LD<op>, SWP, CAS, CASP; a failing CAS too) is a load and a store: a watchpoint for either
+  matches, WnR 0 if one for loads does; a store-exclusive is a store (`Bus::store_exclusive`). Software step (`MDSCR_EL1.SS`):
   `PSTATE.SS` is bit 21 of `pstate`; an instruction that completes clears it, and the step
   exception (EC 0x32/0x33) is taken before the next one, with ISV and EX (a load-exclusive was
   stepped); an exception the instruction raises leaves it set (SPSR.SS = 1, the instruction runs
@@ -163,9 +166,12 @@ use, and kvm-unit-tests' `debug-*`.
   the step that leaves pending reports no ISV. An IRQ is taken before a pending step exception.
 - **Order:** a pending step, then the PC alignment fault and the instruction abort, then a
   breakpoint, as the architecture prioritizes them.
-- **Not checked:** watchpoints on device accesses (the MMIO path runs the instruction again
-  without them), and a `DC ZVA` or pair store hit part-way leaves the bytes before it written
-  (the architecture allows that for multi-access instructions).
+- **Device accesses:** an instruction that reaches a device register runs again on the run loop's
+  `Io` bus; `Watch` checked its accesses up to that one, and `Io` checks the device accesses after
+  it (a pair's second register) with `debug::hit`, behind one `MDSCR_EL1.MDE` test on the MMIO path.
+- **Left as is:** a `DC ZVA` or pair store hit part-way leaves the bytes before it written (the
+  architecture allows that for multi-access instructions); a watched `DC ZVA` on a device's
+  registers takes the watchpoint, where the alignment fault comes first.
 
 **At no measured cost when nobody debugs** (bench/interp/REPORT.md "Self-hosted debug": Alpine's
 boot and userspace and the JIT's small guests unchanged; the block interpreter's flat small guest
@@ -186,8 +192,8 @@ dispatcher does, and what it tests costs what `SCTLR_EL1.A`'s test cost before:
   through `set_pstate` and the dispatcher; a debug register's MSR must never join `msr_continues`
   or `plain_write`.
 - An armed EL runs in the **debug interpreter**: `step_bus`'s loop with the checks, over a `Watch`
-  bus (an `Mmu` that checks each data access against the watchpoints first, and has no `fast`
-  path): its own monomorphized copy of the interpreter (~110 KB of wasm), cold and never inlined,
+  bus (an `Mmu` that checks each data access against the watchpoints, translating it first when one
+  matches, and has no `fast` path): its own monomorphized copy of the interpreter (~110 KB of wasm), cold and never inlined,
   so `interp::steps` and the block interpreter are as they were. Without a JIT, the run loops
   (`Vm`'s chunk, `interp::run`, `run_system`) pick it for the whole chunk while any EL is armed.
   The user-mode exports, whose host writes `Cpu` fields directly, derive the dispatch bytes before

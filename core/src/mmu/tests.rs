@@ -760,3 +760,90 @@ fn watched_page_crossing_store_after_overflow() {
         assert_eq!(w.take(), [last, last + 1], "hit {hit}");
     }
 }
+
+/// The debug interpreter's bus: an access translates (its faults first),
+/// then a watchpoint is taken before it reaches RAM or a device; an atomic
+/// read-modify-write is a load and a store, a store-exclusive a store.
+#[test]
+fn watchpoints_come_after_translation() {
+    use crate::interp::debug::{self, MDSCR_KDE, MDSCR_MDE, Watch};
+    const DEV: u64 = 2 << 2;
+    let mut p = Pt::new();
+    p.map(0x2000, 3, 0x9000 | PAGE | AP_RO);
+    p.map(0x4000, 3, (RAM as u64 + 0x1000) | PAGE | DEV); // a device's registers
+    p.map(0x3000, 3, 0xa000 | PAGE);
+    let mut c = Cpu {
+        mdscr_el1: MDSCR_MDE | MDSCR_KDE,
+        ..cpu()
+    };
+    c.set_pstate(crate::cpu::M_EL1H); // PSTATE.D clear
+    let mut v = Vcpu::new(c.clone());
+    let mut b = Watch(Mmu::new(&p.r.mem, Some(&mut v.tlb)));
+    let watch = |c: &mut Cpu, va: u64, lsc: u64| {
+        c.dbgwvr[0] = va & !7;
+        c.dbgwcr[0] = 0xff << 5 | lsc << 3 | 1 << 1 | 1; // BAS all, LSC, PAC EL1, E
+        debug::arm(c);
+    };
+    let f = |addr, access, kind| Some(Fault { addr, access, kind });
+    // Unmapped: the translation fault, for a load, a store and an atomic.
+    watch(&mut c, 0x7000, 3);
+    assert_eq!(
+        b.read(&c, 0x7000, 8).err(),
+        f(0x7000, Access::Read, FaultKind::Translation(3))
+    );
+    assert_eq!(
+        b.write(&c, 0x7000, 8, 0).err(),
+        f(0x7000, Access::Write, FaultKind::Translation(3))
+    );
+    assert_eq!(
+        b.rmw(&c, 0x7000, 8, 0, 1).err(),
+        f(0x7000, Access::Write, FaultKind::Translation(3))
+    );
+    // Read-only: a store's permission fault; a load takes the watchpoint.
+    watch(&mut c, 0x2008, 3);
+    assert_eq!(
+        b.write(&c, 0x2008, 8, 0).err(),
+        f(0x2008, Access::Write, FaultKind::Permission(3))
+    );
+    assert_eq!(
+        b.read(&c, 0x2008, 8).err(),
+        f(0x2008, Access::Read, FaultKind::Watch)
+    );
+    // A device's registers: the watchpoint before the bus (the run loop's `io`).
+    watch(&mut c, 0x4008, 2);
+    assert_eq!(
+        b.read(&c, 0x4008, 4).map_err(|f| f.kind),
+        Err(FaultKind::Bus)
+    );
+    assert_eq!(
+        b.write(&c, 0x400c, 4, 0).err(),
+        f(0x400c, Access::Write, FaultKind::Watch)
+    );
+    // An unaligned atomic: the alignment fault.
+    assert_eq!(
+        b.rmw(&c, 0x4009, 4, 0, 1).err(),
+        f(0x4009, Access::Write, FaultKind::Align)
+    );
+    // RAM: an atomic RMW is a load (WnR 0) for a load watchpoint, a store for
+    // a store one; a store-exclusive only a store.
+    watch(&mut c, 0x3000, 1);
+    let r = |kind| f(0x3000, Access::Read, kind);
+    let w = |kind| f(0x3000, Access::Write, kind);
+    assert_eq!(b.rmw(&c, 0x3000, 8, 0, 1).err(), r(FaultKind::Watch));
+    assert_eq!(b.cas(&c, 0x3000, 8, 5, 1).err(), r(FaultKind::Watch)); // fails: memory is 0
+    assert_eq!(
+        b.cas_pair(&c, 0x3000, [5, 5], [1, 1]).err(),
+        r(FaultKind::Watch)
+    );
+    assert_eq!(b.store_exclusive(&c, 0x3000, 8, 0, 1), Ok(0));
+    watch(&mut c, 0x3000, 2);
+    assert_eq!(b.rmw(&c, 0x3000, 8, 0, 1).err(), w(FaultKind::Watch));
+    assert_eq!(
+        b.store_exclusive(&c, 0x3000, 8, 1, 2).err(),
+        w(FaultKind::Watch)
+    );
+    assert_eq!(
+        b.store_exclusive_pair(&c, 0x3000, [1, 0], [2, 2]).err(),
+        w(FaultKind::Watch)
+    );
+}

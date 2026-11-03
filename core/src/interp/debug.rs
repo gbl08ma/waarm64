@@ -265,44 +265,105 @@ fn watchpoint(c: &Cpu, va: u64, size: u64, el: u64, write: bool) -> Option<u64> 
         .find(|&a| (0..2).any(|n| on[n] && hit(n, a & VA)))
 }
 
-/// The bus the debug interpreter goes through: `B`'s, with each data access
-/// checked against the watchpoints first. No `fast` path: every access comes
-/// through here.
-pub(crate) struct Watch<B>(pub B);
+/// The bus the debug interpreter goes through: an [`Mmu`], with each data
+/// access checked against the watchpoints. The access translates first (its
+/// alignment, translation, access flag and permission faults come before a
+/// watchpoint, `AArch64.TranslateAddress`), then a watchpoint is taken before
+/// anything is read or written, a device access's included (what isn't RAM
+/// reaches its bus here as `FaultKind::Bus`, which a watchpoint precedes). No
+/// `fast` path: every access comes through here.
+pub(crate) struct Watch<'a>(pub Mmu<'a>);
 
-impl<B: Bus> Watch<B> {
-    fn check(&self, c: &Cpu, va: u64, size: u64, el: u64, access: Access) -> Result<(), Fault> {
-        let write = match access {
-            Access::Read => false,
-            Access::Write => true,
-            Access::Maint => return Ok(()),
-        };
-        if c.mdscr_el1 & MDSCR_MDE == 0 || !enabled(c, c.el()) {
+/// What a data access does, for the watchpoints' LSC.
+#[derive(Clone, Copy)]
+pub(crate) enum Kind {
+    Load,
+    Store,
+    /// An atomic read-modify-write (LSE's LD<op>, SWP, CAS and CASP, a
+    /// failing CAS too): a watchpoint for loads or for stores matches it, and
+    /// WnR is 0 if one for loads would (ESR_ELx.ISS.WnR).
+    Rmw,
+}
+
+/// The watchpoint exception for `size` bytes at `va` accessed with `el`'s
+/// permissions, if one matches and debug exceptions are enabled. The run
+/// loop's `Io` checks a device access with it: an instruction that reaches a
+/// device runs again there, past the accesses `Watch` checked.
+pub(crate) fn hit(c: &Cpu, va: u64, size: u64, el: u64, kind: Kind) -> Option<Fault> {
+    if c.mdscr_el1 & MDSCR_MDE == 0 || !enabled(c, c.el()) {
+        return None;
+    }
+    let (addr, access) = match kind {
+        Kind::Load => (watchpoint(c, va, size, el, false)?, Access::Read),
+        Kind::Store => (watchpoint(c, va, size, el, true)?, Access::Write),
+        Kind::Rmw => match watchpoint(c, va, size, el, false) {
+            Some(a) => {
+                // The first byte either kind matches.
+                let w = watchpoint(c, va, size, el, true).unwrap_or(a);
+                (a.min(w), Access::Read)
+            }
+            None => (watchpoint(c, va, size, el, true)?, Access::Write),
+        },
+    };
+    Some(Fault {
+        addr,
+        access,
+        kind: FaultKind::Watch,
+    })
+}
+
+/// A translation's outcome as a probe sees it: what isn't RAM translated too.
+fn translated<T>(r: Result<T, Fault>) -> Result<(), Fault> {
+    match r {
+        Err(f) if f.kind != FaultKind::Bus => Err(f),
+        _ => Ok(()),
+    }
+}
+
+impl Watch<'_> {
+    /// A load or store: translated (without the access) before a watchpoint is taken.
+    fn plain(&mut self, c: &Cpu, va: u64, size: u32, el: u64, kind: Kind) -> Result<(), Fault> {
+        let Some(w) = hit(c, va, size as u64, el, kind) else {
             return Ok(());
-        }
-        match watchpoint(c, va, size, el, write) {
-            Some(addr) => Err(Fault {
-                addr,
-                access,
-                kind: FaultKind::Watch,
-            }),
-            None => Ok(()),
+        };
+        let (access, u) = match kind {
+            Kind::Load => (Access::Read, Use::Read),
+            _ => (Access::Write, Use::Write),
+        };
+        translated(self.0.span(c, va, size, access, u, el))?;
+        Err(w)
+    }
+
+    /// An atomic's host address, translated (a fault first) and then checked.
+    fn atomic(
+        &mut self,
+        c: &Cpu,
+        va: u64,
+        len: u64,
+        access: Access,
+        kind: Kind,
+    ) -> Result<Host, Fault> {
+        let r = self.0.host_aligned(c, va, len, access);
+        translated(r)?;
+        match hit(c, va, len, c.el(), kind) {
+            Some(w) => Err(w),
+            None => r,
         }
     }
 }
 
-impl<B: Bus> Bus for Watch<B> {
+impl Bus for Watch<'_> {
     fn mem(&self) -> &Mem {
         self.0.mem()
     }
 
     fn read_el(&mut self, c: &Cpu, va: u64, size: u32, el: u64) -> Result<u64, Fault> {
-        self.check(c, va, size as u64, el, Access::Read)?;
+        self.plain(c, va, size, el, Kind::Load)?;
         self.0.read_el(c, va, size, el)
     }
 
     fn write_el(&mut self, c: &Cpu, va: u64, size: u32, val: u64, el: u64) -> Result<(), Fault> {
-        self.check(c, va, size as u64, el, Access::Write)?;
+        self.plain(c, va, size, el, Kind::Store)?;
         self.0.write_el(c, va, size, val, el)
     }
 
@@ -314,9 +375,38 @@ impl<B: Bus> Bus for Watch<B> {
         self.0.maint(c, va, write)
     }
 
+    /// The exclusives', LDAR's and STLR's, and STXR's (`store_exclusive`).
     fn host_aligned(&mut self, c: &Cpu, va: u64, len: u64, access: Access) -> Result<Host, Fault> {
-        self.check(c, va, len, c.el(), access)?;
-        self.0.host_aligned(c, va, len, access)
+        let kind = match access {
+            Access::Read => Kind::Load,
+            Access::Write => Kind::Store,
+            Access::Maint => return self.0.host_aligned(c, va, len, access),
+        };
+        self.atomic(c, va, len, access, kind)
+    }
+
+    fn cas(&mut self, c: &Cpu, va: u64, size: u32, expected: u64, new: u64) -> Result<u64, Fault> {
+        let p = self.atomic(c, va, size as u64, Access::Write, Kind::Rmw)?;
+        // SAFETY: aligned RAM (host_aligned).
+        Ok(unsafe { self.mem().cas(p, size, expected, new) })
+    }
+
+    fn rmw(&mut self, c: &Cpu, va: u64, size: u32, op: u32, v: u64) -> Result<u64, Fault> {
+        let p = self.atomic(c, va, size as u64, Access::Write, Kind::Rmw)?;
+        // SAFETY: as in cas.
+        Ok(unsafe { self.mem().rmw(p, size, op, v) })
+    }
+
+    fn cas_pair(
+        &mut self,
+        c: &Cpu,
+        va: u64,
+        expected: [u64; 2],
+        new: [u64; 2],
+    ) -> Result<[u64; 2], Fault> {
+        let p = self.atomic(c, va, 16, Access::Write, Kind::Rmw)?;
+        // SAFETY: 16 aligned bytes of RAM (host_aligned).
+        Ok(unsafe { self.mem().cas_pair(p, expected, new) })
     }
 
     fn fast(&mut self, _c: &Cpu, _va: u64, _size: u32, _u: Use) -> Option<*mut u8> {

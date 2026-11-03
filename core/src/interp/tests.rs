@@ -2193,3 +2193,79 @@ fn run_loops_retire_the_smp_exits() {
     assert_eq!(run_system(&mut v, &t.r.mem, 2), (2, Ok(())));
     assert_eq!((v.cpu.pc, v.cpu.el()), (CODE + 8, 1));
 }
+
+/// One instruction at EL0 with watchpoint 0 on `DATA`'s doubleword for
+/// `lsc` (1 loads, 2 stores), x9 = `addr`: the exception taken, if any, as
+/// (ESR, FAR), and x2.
+fn watched(prog: &[u32], lsc: u64, addr: u64) -> (Option<(u64, u64)>, u64) {
+    let mut t = T::new(prog).x(9, addr).x(1, 7);
+    t.c.vbar_el1 = VBAR;
+    t.c.mdscr_el1 = debug::MDSCR_MDE;
+    t.c.dbgwvr[0] = DATA;
+    t.c.dbgwcr[0] = 0xff << 5 | lsc << 3 | 2 << 1 | 1; // BAS all, LSC, PAC EL0, E
+    debug::arm(&mut t.c);
+    for _ in prog {
+        t.sys().unwrap();
+        if t.c.el() == 1 {
+            return (Some((t.c.esr_el1, t.c.far_el1)), t.c.x[2]);
+        }
+    }
+    (None, t.c.x[2])
+}
+
+#[test]
+fn watchpoints_see_an_atomic_rmw_as_a_load_and_a_store() {
+    const LDADD: u32 = 0xf8210120; // ldadd x1, x0, [x9]
+    const CAS: u32 = 0xc8a17d20; // cas x1, x0, [x9]
+    const CASP: u32 = 0x48207d22; // casp x0, x1, x2, x3, [x9]
+    const SWPB: u32 = 0x38218120; // swpb w1, w0, [x9]
+    let (r, w) = (
+        0x34 << 26 | 1 << 25 | 0x22,
+        0x34 << 26 | 1 << 25 | 1 << 6 | 0x22,
+    );
+    for insn in [LDADD, CAS, CASP, SWPB] {
+        // A load watchpoint matches, with WnR 0 (a failing CAS too: x1 = 7,
+        // memory 0); a store one too, with WnR 1.
+        assert_eq!(watched(&[insn], 1, DATA).0, Some((r, DATA)), "{insn:#x}");
+        assert_eq!(watched(&[insn], 2, DATA).0, Some((w, DATA)), "{insn:#x}");
+        assert_eq!(watched(&[insn], 3, DATA).0, Some((r, DATA)), "{insn:#x}");
+        assert_eq!(watched(&[insn], 1, DATA + 16).0, None, "{insn:#x}");
+    }
+    // A store-exclusive is a store: ldxr x0, [x9]; stxr w2, x1, [x9].
+    let excl = [0xc85f7d20, 0xc8027d21];
+    assert_eq!(watched(&excl, 2, DATA).0, Some((w, DATA)));
+    assert_eq!(watched(&excl[1..], 2, DATA).0, None); // no monitor: no access
+    let (e, status) = watched(&excl, 1, DATA);
+    assert_eq!(e, Some((r, DATA))); // the LDXR
+    assert_eq!(status, 0);
+}
+
+#[test]
+fn a_fault_in_translation_comes_before_a_watchpoint() {
+    // Past the PA size with the MMU off: an address size fault at level 0,
+    // whatever the watchpoint on that address.
+    let far = 1 << 45;
+    let abort = |wnr: u64| Some((0x24 << 26 | 1 << 25 | wnr << 6, far));
+    let prog = |insn: u32, lsc: u64| {
+        let mut t = T::new(&[insn]).x(9, far).x(1, 7);
+        t.c.vbar_el1 = VBAR;
+        t.c.mdscr_el1 = debug::MDSCR_MDE;
+        t.c.dbgwvr[0] = far;
+        t.c.dbgwcr[0] = 0xff << 5 | lsc << 3 | 2 << 1 | 1;
+        debug::arm(&mut t.c);
+        t.sys().unwrap();
+        Some((t.c.esr_el1, t.c.far_el1))
+    };
+    assert_eq!(prog(0xf9400120, 1), abort(0)); // ldr x0, [x9]
+    assert_eq!(prog(0xf9000121, 2), abort(1)); // str x1, [x9]
+    assert_eq!(prog(0xf8210120, 3), abort(1)); // ldadd x1, x0, [x9]
+    // A watchpoint on an unaligned atomic's address: the alignment fault.
+    let mut t = T::new(&[0xf8210120]).x(9, DATA + 1).x(1, 7);
+    t.c.vbar_el1 = VBAR;
+    t.c.mdscr_el1 = debug::MDSCR_MDE;
+    t.c.dbgwvr[0] = DATA;
+    t.c.dbgwcr[0] = 0xff << 5 | 3 << 3 | 2 << 1 | 1;
+    debug::arm(&mut t.c);
+    t.sys().unwrap();
+    assert_eq!((t.c.esr_el1 & 0x3f, t.c.far_el1), (0x21, DATA + 1));
+}
