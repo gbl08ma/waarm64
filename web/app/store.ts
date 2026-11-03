@@ -7,6 +7,7 @@
 // before their record do it inside `writing`, which the sweep waits out (a Web Lock, shared by
 // every tab). Other tabs hear of every change through a BroadcastChannel (`onChange`): their
 // views reread. DOM-free: Node's tests run it over memory (`memoryRecords`, `memoryFiles`).
+import { hasOpfs } from '../overlay.ts';
 import { MsgError } from '../msg.ts';
 import type { Connection } from './connections.ts';
 import type { Folder } from './folders.ts';
@@ -114,9 +115,12 @@ export class Store {
     }
   }
 
-  /** The browser's store (IndexedDB and OPFS), or, without them (Node), one in memory for the process's life. */
+  /**
+   * The browser's store (IndexedDB and OPFS), or, without them (Node; Firefox's private windows, which refuse OPFS:
+   * `hasOpfs`), one in memory for the process's life.
+   */
   static async open(): Promise<Store> {
-    if (typeof indexedDB === 'undefined' || typeof navigator.storage?.getDirectory !== 'function') return new Store(sharedMemory.records, sharedMemory.files);
+    if (typeof indexedDB === 'undefined' || !(await hasOpfs())) return new Store(sharedMemory.records, sharedMemory.files);
     return new Store(await idbRecords(), opfsFiles(await navigator.storage.getDirectory()));
   }
 

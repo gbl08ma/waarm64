@@ -86,6 +86,13 @@ Since decided (the user, 2026-10-17):
   is written after its bytes and deleted before them, so a crash leaves unreferenced files, never a record without
   its files. `Store.sweep` removes, at start, id-named files under `overlays/`, `machines/*/snapshots/`, `disks/` and
   `folders/` without a record, and waits for writers first (`Store.writing`, a shared Web Lock).
+- **Without OPFS** (Firefox's private windows, where `getDirectory` throws a SecurityError; Node): `hasOpfs`
+  (`web/overlay.ts`, one probe per context) sends the store to memory (records and files, for the page's life) and the
+  overlays, variable stores and suspended copies to the memory of the context that opens them (the machine's worker,
+  for its run), and the URL disks' block cache is off. A machine opened from a disk runs; nothing outlives the tab,
+  and the message bar says so ([This browser doesn't let the web app keep anything (in a private window, for example): what the machine writes to its disks, its snapshots and the machines you make last only until this tab is closed.](ui:machine:main.noStorage)). What reads OPFS from the page directly (a kept
+  snapshot's download, restore or move, the overlays' sizes, a folder in the browser) isn't adapted
+  (`tests/no-opfs.test.ts`).
 - **Several tabs:** a running machine holds the Web Lock `webpc-machine:<id>` (beside its overlays' own), and a
   `BroadcastChannel` tells other tabs to read the records again (`onChange`). What needs the machine off (attaching,
   detaching or reordering disks, a change of shape) is refused while it runs, in this tab or another (`isRunning`),

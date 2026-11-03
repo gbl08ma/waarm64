@@ -13,7 +13,7 @@
 // The device worker holds the directory's Web Lock while it reads it; another tab on the same image gets no store (an
 // opener waits 2 s for it: a restarting machine's old device worker lets go as it closes). The page's Clear asks the
 // workers holding one to give its space back (`clearCaches`).
-import { opfsDir, shortOnFull, type SyncFile } from './overlay.ts';
+import { hasOpfs, opfsDir, shortOnFull, type SyncFile } from './overlay.ts';
 
 /** The Storage Bucket's name, or the OPFS directory's where there are no buckets. */
 export const CACHE_DIR = 'remote-cache';
@@ -215,7 +215,7 @@ export async function clearCaches() {
  * deleting other images' caches; undefined where it can't (no OPFS, another tab has it, no room).
  */
 export async function openBlockStore(key: string, size: number, block: number): Promise<BlockStore | undefined> {
-  if (typeof navigator.storage === 'undefined' || typeof FileSystemSyncAccessHandle === 'undefined') return undefined;
+  if (typeof FileSystemSyncAccessHandle === 'undefined' || !(await hasOpfs())) return undefined;
   const release = await tryLock(key, LOCK_WAIT_MS);
   if (!release) return undefined;
   const handles: FileSystemSyncAccessHandle[] = [];

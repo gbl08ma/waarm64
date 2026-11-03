@@ -23,7 +23,7 @@ import type { FromGpuWorker, ToGpuWorker } from '../gpu-worker.ts';
 import type { ShareMode } from '../venus-share.ts';
 import { attachInput, terminalBytes, type Input, type LockMode } from '../input.ts';
 import { PageAudio } from '../audio.ts';
-import { opfsDir, overlayBytes, removeOverlay } from '../overlay.ts';
+import { hasOpfs, opfsDir, overlayBytes, removeOverlay } from '../overlay.ts';
 import { changesHeader as readChangesHeader } from '../qcow2.ts';
 import { openSnapshot, SnapshotError, type SnapshotHeader } from '../snapshot-file.ts';
 import { ALIVE_EVERY_MS, clearAlive, lastCrash, markAlive, Signal } from './memory.ts';
@@ -2398,6 +2398,8 @@ function boot() {
 // Other browsers may work in part; nothing is done for them yet (their pass is in docs/backlog.md).
 const brands = (navigator as Navigator & { userAgentData?: { brands: { brand: string }[] } }).userAgentData?.brands ?? [];
 if (!brands.some((b) => b.brand === 'Chromium')) note = msg('machine:main.notChromium');
+// Firefox's private windows refuse OPFS: the store and the overlays are in memory (`hasOpfs`), and the page says so.
+if (!(await hasOpfs())) note = msg('machine:main.noStorage');
 const diskParam = params.get('disk');
 if (diskParam && spec.firmware) {
   const url = new URL(diskParam, location.href).href;

@@ -367,6 +367,18 @@ export function memFile(): SyncFile & { bytes: () => Uint8Array } {
   };
 }
 
+let opfs: Promise<boolean> | undefined;
+/**
+ * Whether this context has OPFS: not in Node, and not in Firefox's private windows, where `getDirectory` throws a
+ * SecurityError. Without it, overlays, firmware variables and suspended machines live in this context's memory (as in
+ * Node), and the page's store in the page's (`Store.open`): a machine runs, and nothing outlives the tab.
+ */
+export function hasOpfs(): Promise<boolean> {
+  return (opfs ??= typeof navigator === 'undefined' || typeof navigator.storage?.getDirectory !== 'function'
+    ? Promise.resolve(false)
+    : navigator.storage.getDirectory().then(() => true, () => false));
+}
+
 /**
  * The OPFS directory at `path` (`/`-separated: `overlays/<id>`, or a single name), made with its
  * parents when `create`; a missing one throws NotFoundError.
@@ -429,7 +441,7 @@ export async function openOverlay(name: string, want: string | undefined, waitMs
     release();
   };
   try {
-    if (typeof navigator.storage === 'undefined') {
+    if (!(await hasOpfs())) {
       if (opts.readOnly && !inMemory.has(name)) throw new DOMException(`no overlay ${name}`, 'NotFoundError');
       const o = inMemory.get(name) ?? { data: memFile(), map: memFile(), meta: memFile(), base: want ?? '' };
       if (o.base === '' && want !== undefined && !opts.readOnly) o.base = want;
@@ -481,7 +493,7 @@ export async function openOverlay(name: string, want: string | undefined, waitMs
 export async function removeOverlay(name: string) {
   const release = await lockOverlay(name); // after the machine that had it closed it
   try {
-    if (typeof navigator.storage === 'undefined') {
+    if (!(await hasOpfs())) {
       inMemory.delete(name);
       inMemoryFlash.delete(name);
       inMemoryFiles.delete(`${name}/${SUSPEND}`);
@@ -516,7 +528,7 @@ export const suspendWriter = (name: string, makeRoom?: () => Promise<boolean>) =
  * some; still refused, it throws `storageFullError()`. Dedicated workers only in a browser (a sync access handle).
  */
 export async function fileWriter(path: string, makeRoom?: () => Promise<boolean>): Promise<{ write(bytes: Uint8Array): void | Promise<void>; close(): void; abort(): Promise<void> }> {
-  if (typeof navigator.storage === 'undefined') {
+  if (!(await hasOpfs())) {
     const parts: Uint8Array[] = [];
     inMemoryFiles.delete(path);
     return { write: (b) => { parts.push(b.slice()); }, close: () => { inMemoryFiles.set(path, parts); }, abort: async () => { inMemoryFiles.delete(path); } };
@@ -547,7 +559,7 @@ export async function fileWriter(path: string, makeRoom?: () => Promise<boolean>
 
 /** The suspended machine kept beside overlay `name`, if there is one. */
 export async function suspended(name: string): Promise<Blob | undefined> {
-  if (typeof navigator.storage === 'undefined') {
+  if (!(await hasOpfs())) {
     const parts = inMemoryFiles.get(`${name}/${SUSPEND}`);
     return parts && new Blob(parts as BlobPart[]);
   }
@@ -563,7 +575,7 @@ export async function suspended(name: string): Promise<Blob | undefined> {
 
 /** Drops the suspended machine beside overlay `name` (none is fine): before a machine runs on the overlay. */
 export async function dropSuspend(name: string) {
-  if (typeof navigator.storage === 'undefined') return void inMemoryFiles.delete(`${name}/${SUSPEND}`);
+  if (!(await hasOpfs())) return void inMemoryFiles.delete(`${name}/${SUSPEND}`);
   try {
     const dir = await opfsDir(name);
     await dir.removeEntry(SUSPEND);
@@ -574,7 +586,7 @@ export async function dropSuspend(name: string) {
 
 /** Overlay `name`'s meta (generation, merging), read from a page or a worker without opening it; zeros without one. */
 export async function overlayMeta(name: string): Promise<Meta> {
-  if (typeof navigator.storage === 'undefined') {
+  if (!(await hasOpfs())) {
     const o = inMemory.get(name);
     return o ? readMeta(o.meta) : { generation: 0, merging: '' };
   }
@@ -611,7 +623,7 @@ const inMemoryFlash = new Map<string, Uint8Array>();
  * at a time runs on the overlay (`lockOverlay`), and it is that machine's worker that saves.
  */
 export async function loadFlash(name: string): Promise<Uint8Array | undefined> {
-  if (typeof navigator.storage === 'undefined') return inMemoryFlash.get(name);
+  if (!(await hasOpfs())) return inMemoryFlash.get(name);
   try {
     const dir = await opfsDir(name);
     const bytes = new Uint8Array(await (await (await dir.getFileHandle('flash')).getFile()).arrayBuffer());
@@ -624,7 +636,7 @@ export async function loadFlash(name: string): Promise<Uint8Array | undefined> {
 
 /** Saves the variable store beside overlay `name` (a dedicated worker: sync access handle, which is exclusive). */
 export async function saveFlash(name: string, bytes: Uint8Array) {
-  if (typeof navigator.storage === 'undefined') {
+  if (!(await hasOpfs())) {
     inMemoryFlash.set(name, bytes.slice());
     return;
   }
