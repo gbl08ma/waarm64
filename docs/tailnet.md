@@ -51,7 +51,7 @@ side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/t
   natively the tests pass their own `Instant`s. Our pinned nightly, no `simd128`, `opt-level=3`
   (~17% faster than `s` for 16 KB more Brotli), stripped.
 - **tailscale-rs's crates as dependencies, not a fork** (crates.io, pinned by `Cargo.lock`,
-  THIRD_PARTY.md). **Import, don't rewrite** (the user, 2026-10-16): where a crate does the job it's
+  THIRD_PARTY.json). **Import, don't rewrite** (the user, 2026-10-16): where a crate does the job it's
   used as it is, even at some size: `ts_tunnel` (WireGuard, audited in v0.6.0), `ts_noise`,
   `ts_keys`, `ts_packet`, `ts_control_serde` (the control protocol's types; +144 KB Brotli, most of it
   `url`'s IDNA tables), `h2` (+~100 KB Brotli), `ts_packetfilter`, `ts_disco_protocol`,

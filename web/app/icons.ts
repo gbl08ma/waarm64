@@ -1,4 +1,4 @@
-// The page's icons (docs/frontend.md "Icons"): Tabler's outline icons (MIT, THIRD_PARTY.md) from
+// The page's icons (docs/frontend.md "Icons"): Tabler's outline icons (MIT, THIRD_PARTY.json) from
 // @tabler/icons-svelte-runes, by name. Only these reach the build. A new icon is an import and an entry here.
 import IconArrowDown from '@tabler/icons-svelte-runes/icons/arrow-down';
 import IconArrowLeft from '@tabler/icons-svelte-runes/icons/arrow-left';
@@ -21,6 +21,7 @@ import IconFilePlus from '@tabler/icons-svelte-runes/icons/file-plus';
 import IconGitMerge from '@tabler/icons-svelte-runes/icons/git-merge';
 import IconHistory from '@tabler/icons-svelte-runes/icons/history';
 import IconHistoryToggle from '@tabler/icons-svelte-runes/icons/history-toggle';
+import IconInfoCircle from '@tabler/icons-svelte-runes/icons/info-circle';
 import IconKeyboard from '@tabler/icons-svelte-runes/icons/keyboard';
 import IconLayoutColumns from '@tabler/icons-svelte-runes/icons/layout-columns';
 import IconMaximize from '@tabler/icons-svelte-runes/icons/maximize';
@@ -82,6 +83,7 @@ export const ICONS = {
   'git-merge': IconGitMerge,
   'history': IconHistory,
   'history-toggle': IconHistoryToggle,
+  'info-circle': IconInfoCircle,
   'keyboard': IconKeyboard,
   'layout-columns': IconLayoutColumns,
   'maximize': IconMaximize,

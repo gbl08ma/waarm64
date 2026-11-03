@@ -13,7 +13,9 @@ runs unmodified arm64 Linux. Chromium is the primary target.
   [docs/backlog.md](docs/backlog.md), not in TODOs.
 - `bench/*/REPORT.md`: dated measurement journals with committed JSON. Read `bench/spike/REPORT.md`
   and [docs/v8.md](docs/v8.md) before designing JIT, dispatch or TLB code.
-- `THIRD_PARTY.md`: verified licenses of reference projects and the attribution of ported code.
+- `THIRD_PARTY.json`: verified licenses of reference projects, the dependencies, and the attribution of ported code: the
+  authoritative, machine-readable list (no THIRD_PARTY.md; [docs/third-party.md](docs/third-party.md) says how to keep it).
+  Its rows marked `about` are what the page's About pane credits.
 - `<TRACK>-KICKOFF.md` and `<TRACK>-HANDOVER.md` in the repo root (e.g. `VK2-…`), **tracked** (so a fresh clone or a
   cloud session has them): the user's brief for a track (or one of its phases) and the notes that carry it from one
   session to the next. Several tracks can be open at once: `ls *-KICKOFF.md *-HANDOVER.md` shows which. Commit a
@@ -139,8 +141,8 @@ the user's desktop); for V8 flags use `node --v8-options`. A launcher whose Chro
 `env: chromiumEnv()` (`tools/nosme.ts`): the M4 under Lima has SME but no SVE, and Chromium's SME kernels fault
 reading a decoded frame without the shim ([docs/testing.md](docs/testing.md), "Video over virgl").
 
-**Licensing**: MIT. Check `THIRD_PARTY.md` before porting code; copy only from the permissive table,
-keep headers, add an attribution row. GPL, EPL and CeCILL projects (QEMU, Unicorn, kvm-unit-tests,
+**Licensing**: MIT. Check `THIRD_PARTY.json` before porting code; copy only from the permissive section,
+keep headers, add an attribution row (and mark it `about` when the code ships: docs/third-party.md). GPL, EPL and CeCILL projects (QEMU, Unicorn, kvm-unit-tests,
 LTP, risu, herdtools7) are oracles, guest workloads or behavioral references only: **never copy
 their code.**
 

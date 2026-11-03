@@ -52,7 +52,7 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   checks); on the M4 they're UNDEFINED. Harmless to a kernel that enables FP on the trap: the retry is UNDEFINED.
 - **Exclusives and LSE on device memory:** an LDXR reads (through `Io`, with LDAR), its STXR and the LSE atomics take
   an external abort. What hardware does there is IMPLEMENTATION DEFINED; not compared with the M4.
-- **Arm AARCHMRS JSON:** its in-package notice is unread (`THIRD_PARTY.md`); read it only to
+- **Arm AARCHMRS JSON:** its in-package notice is unread (`THIRD_PARTY.json`); read it only to
   generate decoder tables or coverage checks from it.
 - **Corpus depth:** thin FP flag paths (8 `fp_scalar` tests raise Divide-by-Zero); add biased forms
   when touching FP again.
@@ -1361,6 +1361,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   protocol that cancels, then expects only fresh data with sequence numbers, would notice. None seen yet.
 
 ## Tests and tools
+
+- **THIRD_PARTY.md from THIRD_PARTY.json** ([third-party.md](third-party.md)): a CI job or GitHub workflow that writes
+  the Markdown (`node tools/third-party.ts --markdown`) whenever the JSON changes, if a readable page is wanted again.
+- **The About pane's crates are the ones THIRD_PARTY.md named**: the tailnet client's direct dependencies and a few of
+  theirs (`rust-net-ts`), and Rust's standard library as one row. `cargo metadata` for `net/ts` on wasm32 resolves 165
+  crates (proc macros and build-only ones among them, so fewer are linked); the core has none. A generated listing of
+  every crate linked into `ts.wasm` and `webpc_core.wasm`, with each one's license text (as `VENUS-LICENSES.txt` and
+  Vite's `THIRD-PARTY-LICENSES.md` do for theirs), would make the attribution complete.
 
 - **Screening an A/B** (docs/benchmarking.md; `bench/boot/REPORT.md` "M8: benchmarks started from a snapshot"), what
   wasn't measured: the churn page's functions run once and die, so it doesn't test how a cache policy keeps a reused

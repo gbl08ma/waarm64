@@ -52,7 +52,7 @@ rasterizer.
 - **A per-machine choice, off by default,** until every program that switches meets the bar (§1); then on by default
   where WebGPU is.
 - **A C toolchain for wasm is allowed** (clang with wasi-sdk is the one in use). Each library it brings in is still
-  checked against THIRD_PARTY.md and gets its row.
+  checked against THIRD_PARTY.json and gets its row.
 - **Realtime mode only**, as for virgl; the vCPU never blocks on the GPU worker.
 - **Correctness gate: dEQP-VK** (the same VK-GL-CTS build as the GLES gate, a guest workload), with pass lists in CI as
   `scripts/ci-deqp.sh` has for GLES. **The oracle:** virglrenderer's Venus renderer on lavapipe through vtest in the dev

@@ -3,11 +3,12 @@
   The machines kept in this browser (new, from a disk image, import a definition), and one machine: open it here,
   duplicate, export its definition, delete; its Settings, Disks and Snapshots as tabs. A transient machine (a test's
   `?machine=`) is listed as this page's, with its disk's and snapshots' actions. The browser's disks (DisksPane.svelte)
-  under Disks, its network connections (docs/network-adapters.md §3.1) under Connections, and the browser's storage at
-  the bottom.
+  under Disks, its network connections (docs/network-adapters.md §3.1) under Connections, the page's Preferences, About (webpc's
+  build and the third-party software in it, About.svelte), and the browser's storage at the bottom.
   Logic is in web/app/machines.ts, disks.ts and main.ts (`page`); every action that loses data asks first.
 -->
 <script lang="ts">
+  import About from './About.svelte';
   import Disks from './Disks.svelte';
   import DisksPane from './DisksPane.svelte';
   import Icon from './Icon.svelte';
@@ -61,6 +62,8 @@
   const DISKS = 'disks';
   /** The page's preferences (this browser's, for every machine). */
   const PREFERENCES = 'preferences';
+  /** webpc's own: its source, build and the third-party software in it (About.svelte). */
+  const ABOUT = 'about';
   let warnOnLeave = $state(leaveWarning());
   let catchUpClock = $state(settings().clockSync !== false);
 
@@ -75,7 +78,7 @@
     running = new Set((await Promise.all(machines.map(async (m) => ((await isRunning(m.id)) ? m.id : '')))).filter(Boolean));
     suspended = new Set((await Promise.all(machines.map(async (m) => ((await suspendedCopy(machineDir(m.id)).catch(() => undefined)) ? m.id : '')))).filter(Boolean));
     if (ui.machinesSelected === undefined) ui.machinesSelected = ui.current ?? (ui.transient ? PAGE : undefined);
-    if (ui.machinesSelected !== PAGE && ui.machinesSelected !== CONNECTIONS && ui.machinesSelected !== FOLDERS && ui.machinesSelected !== DISKS && ui.machinesSelected !== PREFERENCES && ui.machinesSelected && !machines.some((m) => m.id === ui.machinesSelected)) ui.machinesSelected = undefined;
+    if (ui.machinesSelected !== PAGE && ui.machinesSelected !== CONNECTIONS && ui.machinesSelected !== FOLDERS && ui.machinesSelected !== DISKS && ui.machinesSelected !== PREFERENCES && ui.machinesSelected !== ABOUT && ui.machinesSelected && !machines.some((m) => m.id === ui.machinesSelected)) ui.machinesSelected = undefined;
     const m = machines.find((x) => x.id === ui.machinesSelected);
     // The draft follows the record, unless the user is editing its settings.
     if (!m || !draft || draft.id !== m.id || !dirty) draft = m ? structuredClone($state.snapshot(m)) as MachineRecord : undefined;
@@ -288,6 +291,7 @@
         <button class:chosen={ui.machinesSelected === FOLDERS} onclick={() => choose(FOLDERS)} data-machine={FOLDERS} title={t('machines:MachinesPage.folders.title')}><Icon name="folder" size={16} />{t('machines:MachinesPage.folders', { n: (void ui.folders.tick, folders.folders.length) })}</button>
         <button class:chosen={ui.machinesSelected === CONNECTIONS} onclick={() => choose(CONNECTIONS)} data-machine={CONNECTIONS} title={t('machines:MachinesPage.connections.title')}><Icon name="network" size={16} />{t('machines:MachinesPage.connections', { n: conns.length })}</button>
         <button class:chosen={ui.machinesSelected === PREFERENCES} onclick={() => choose(PREFERENCES)} data-machine={PREFERENCES} title={t('machines:MachinesPage.preferences.title')}><Icon name="adjustments-horizontal" size={16} />{t('machines:MachinesPage.preferences')}</button>
+        <button class:chosen={ui.machinesSelected === ABOUT} onclick={() => choose(ABOUT)} data-machine={ABOUT} title={t('machines:MachinesPage.about.title')}><Icon name="info-circle" size={16} />{t('machines:MachinesPage.about')}</button>
       </div>
     </nav>
 
@@ -313,6 +317,14 @@
               note={t('machines:MachinesPage.statusFullscreen.note')}>{t('machines:MachinesPage.statusFullscreen')}</Check>
           </div>
         </div>
+      </section>
+    {:else if ui.machinesSelected === ABOUT}
+      <section class="machine" data-selected={ABOUT}>
+        <div class="head">
+          <span class="title"><h3>{t('machines:MachinesPage.about')}</h3>
+          <span class="meta">{t('machines:MachinesPage.about.meta')}</span></span>
+        </div>
+        <div class="tab"><About /></div>
       </section>
     {:else if ui.machinesSelected === DISKS}
       <section class="machine" data-selected={DISKS}>

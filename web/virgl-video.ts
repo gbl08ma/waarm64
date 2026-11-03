@@ -2,7 +2,7 @@
 // a codec, video buffers (a picture's planes as ordinary virgl textures: NV12 is an R8 luma and an RG8 chroma
 // texture) and, per picture, BEGIN_FRAME, DECODE_BITSTREAM (the picture's parameters and its slice data, each in a
 // staging buffer) and END_FRAME. The host decodes with WebCodecs and writes the picture into the planes, as
-// virglrenderer's vrend_video.c does with a host VA-API (MIT, THIRD_PARTY.md). Layouts are Mesa 26.2's
+// virglrenderer's vrend_video.c does with a host VA-API (MIT, THIRD_PARTY.json). Layouts are Mesa 26.2's
 // (src/virtio/virtio-gpu/virgl_video_hw.h, virgl_protocol.h, src/gallium/drivers/virgl/virgl_video.c).
 import { av1Frame, Av1Stream } from './video-av1.ts';
 import { codecString, H264Stream } from './video-h264.ts';

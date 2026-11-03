@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import sirv from 'sirv';
 import { defineConfig, type Plugin } from 'vite';
 import { buildStamp, withStamp } from './tools/stamp.ts';
+import { aboutData, FILE as THIRD_PARTY } from './tools/third-party.ts';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 
@@ -18,6 +19,25 @@ const stamp = (): Plugin => ({
   name: 'webpc-stamp',
   transformIndexHtml: (html, ctx) => (ctx.filename.endsWith('web/app/index.html') ? withStamp(html, buildStamp(ROOT)) : html),
 });
+
+/**
+ * `virtual:webpc-about`: what the Machines page's About pane shows (tools/third-party.ts `aboutData`): the build's
+ * commit, and the third-party projects THIRD_PARTY.json marks for it, nothing else of that file.
+ */
+const about = (): Plugin => {
+  const ID = 'virtual:webpc-about';
+  let build = false;
+  return {
+    name: 'webpc-about',
+    configResolved: (config) => { build = config.command === 'build'; },
+    resolveId: (id) => (id === ID ? `\0${ID}` : null),
+    load(id) {
+      if (id !== `\0${ID}`) return null;
+      this.addWatchFile(THIRD_PARTY);
+      return `export default ${JSON.stringify(aboutData({ build }, ROOT))};`;
+    },
+  };
+};
 
 /** Node's modules, which web/ imports (dynamically) only on its Node paths (the tests' boots in Node): left as they are. */
 const nodeModules = (): Plugin => ({
@@ -52,7 +72,7 @@ export default defineConfig(({ command, mode }) => ({
   appType: 'mpa',
   // Copied as they are into the static copy: the hosts' headers files and web/app/'s old address's redirect.
   publicDir: command === 'build' ? `${ROOT}web/app/public` : false,
-  plugins: [svelte({ compilerOptions: { runes: true, discloseVersion: false, ...(mode === 'test' ? { dev: false, hmr: false } : {}) } }), stamp(), rootPage(), nodeModules()],
+  plugins: [svelte({ compilerOptions: { runes: true, discloseVersion: false, ...(mode === 'test' ? { dev: false, hmr: false } : {}) } }), stamp(), about(), rootPage(), nodeModules()],
   resolve: mode === 'test' ? { conditions: ['module', 'browser', 'production'] } : {},
   worker: { format: 'es', plugins: () => [nodeModules()] },
   // No pre-bundling: the few packages the page uses are ES modules, and every test process runs its own dev server (a

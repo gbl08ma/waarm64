@@ -75,7 +75,7 @@ wasm64 core was free there), B +31–40%, D +26–32%.
 - **The host never parses virtio rings**, only device protocols ([devices.md](devices.md)).
 - **Our own code** where a port would drag in more than it gives (the FDT writer, the virtqueues,
   the 9p server, the FP core, the crypto, the wasm encoder); ports only from permissively licensed
-  projects, attributed in `THIRD_PARTY.md` (the decoder's pattern table is dynarmic's).
+  projects, attributed in `THIRD_PARTY.json` (the decoder's pattern table is dynarmic's).
 
 ## Code map
 

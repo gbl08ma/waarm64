@@ -8,7 +8,7 @@
 //! on 2026-09-28): the interpreter's S-box is a 256-byte table computed at
 //! compile time; the JIT inlines AES with swizzles (`jit::emit::crypto`). The
 //! carry-less multiply uses integer multiplies of operands with holes
-//! (BearSSL's `bmul` idea, reimplemented; `THIRD_PARTY.md`), which the JIT's
+//! (BearSSL's `bmul` idea, reimplemented; `THIRD_PARTY.json`), which the JIT's
 //! inline PMULL follows.
 //!
 //! A vector register is a u128 with byte *i* (of an AES block, in memory

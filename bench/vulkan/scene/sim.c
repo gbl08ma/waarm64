@@ -1,5 +1,5 @@
 // Ported from the WebGL Aquarium (WebGLSamples, Copyright 2009, Google Inc., BSD-3-Clause: LICENSE.aquarium beside
-// this file; THIRD_PARTY.md).
+// this file; THIRD_PARTY.json).
 // The Aquarium's simulation (sim.h). Constants and formulas from aquarium.js and aquarium-common.js (WebGLSamples,
 // BSD-3-Clause): the default view ("g_ui" sliders), the fish table, the bubbles' emitter and the light rays.
 #include "sim.h"

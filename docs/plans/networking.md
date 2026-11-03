@@ -179,7 +179,7 @@ backend keeps deterministic mode exact, as the loopback adapter does now):
 
 ### 4.2 Licensing
 `tailscale.com` is a Go dependency (BSD-3), not copied code; Go's `wasm_exec.js` (BSD-3) ships
-with the build. Both get rows in `THIRD_PARTY.md`. Adapting `tsconnect`'s setup code keeps its
+with the build. Both get rows in `THIRD_PARTY.json`. Adapting `tsconnect`'s setup code keeps its
 header.
 
 ### 4.3 Maintenance

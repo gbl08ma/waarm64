@@ -1,8 +1,8 @@
 // Ported from the WebGL Aquarium (WebGLSamples, Copyright 2009, Google Inc., BSD-3-Clause: LICENSE.aquarium beside
-// this file; THIRD_PARTY.md).
+// this file; THIRD_PARTY.json).
 // VK0's scene (bench/vulkan/REPORT.md): the WebGL Aquarium's simulation, shared by every arm so each draws the same
 // frames: the native Vulkan scene (vk.c), the GLES port (gles.c) and, compiled to wasm, the WebGPU pages. Ported from
-// aquarium.js (WebGLSamples, BSD-3-Clause, THIRD_PARTY.md): the camera, the fish paths, the bubbles and the light rays.
+// aquarium.js (WebGLSamples, BSD-3-Clause, THIRD_PARTY.json): the camera, the fish paths, the bubbles and the light rays.
 // Time advances a fixed 1/60 s a frame, and sin, cos and the random numbers are our own, so a frame index gives the
 // same numbers on every platform. No libc: the wasm build has none.
 #ifndef SIM_H

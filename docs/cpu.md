@@ -341,7 +341,7 @@ FMA, so:
 AESE/AESD/AESMC/AESIMC, PMULL/PMULL2 (8- and 64-bit), SHA1C/P/M/H/SU0/SU1, SHA256H/H2/SU0/SU1;
 SHA512H/H2/SU0/SU1, EOR3, RAX1, XAR, BCAX (FEAT_SHA512, FEAT_SHA3).
 - **Our own Rust** from FIPS 197, FIPS 180-4 and the Arm pseudocode (nothing ported; papers
-  credited in `THIRD_PARTY.md`). Table-free, because that measured fastest: SubBytes as the
+  credited in `THIRD_PARTY.json`). Table-free, because that measured fastest: SubBytes as the
   GF(2⁸) inverse (x²⁵⁴ by an addition chain of bytewise SWAR multiplies) plus the affine map;
   (Inv)MixColumns by `xtime` and rotations; `PMULL.1Q` as Karatsuba over 32×32 multiplies with
   holes. Scalar Rust, since the core is built without `simd128`.
@@ -363,7 +363,7 @@ SHA512H/H2/SU0/SU1, EOR3, RAX1, XAR, BCAX (FEAT_SHA512, FEAT_SHA3).
 
 ## Decoder (`core/build.rs` ← `core/src/a64/a64.inc`)
 
-- Generated from dynarmic's pattern table (0BSD, attributed in `THIRD_PARTY.md`).
+- Generated from dynarmic's pattern table (0BSD, attributed in `THIRD_PARTY.json`).
 - Should-be-one fields are relaxed to match the M4, except in CAS/CASP, where the M4 raises
   UNDEFINED.
 - Checked exhaustively against Capstone 5.0 ([testing.md](testing.md) "Decoder sweep").

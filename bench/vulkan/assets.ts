@@ -1,5 +1,5 @@
 // VK0's scene assets (bench/vulkan/REPORT.md): the WebGL Aquarium's models and textures (WebGLSamples, BSD-3-Clause,
-// THIRD_PARTY.md), fetched at a pinned commit and converted into one binary pack that every arm reads: the native
+// THIRD_PARTY.json), fetched at a pinned commit and converted into one binary pack that every arm reads: the native
 // Vulkan scene, the GLES port, the WebGPU pages. Textures are decoded by a headless Chromium (WebGL, no colour or alpha
 // conversion), stored as RGBA8 with their mip chains (a 2x2 box filter, as GL's generateMipmap does), in GL's memory
 // order: the scene's textures flipped as the Aquarium uploads them (UNPACK_FLIP_Y), the rest not.

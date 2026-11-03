@@ -2,7 +2,7 @@
 
 What exists and how it works, by topic. Decisions, and every track with its state, are in [`../PLAN.md`](../PLAN.md);
 measurement journals in `bench/*/REPORT.md`; third-party code and licenses in
-[`../THIRD_PARTY.md`](../THIRD_PARTY.md). These pages describe the current state: when something
+[`../THIRD_PARTY.json`](../THIRD_PARTY.json) ([third-party.md](third-party.md)). These pages describe the current state: when something
 changes, edit the page rather than appending a dated note (dates and "how we got here" belong in
 commit messages and the reports, unless they record a finding worth not re-discovering).
 
@@ -34,6 +34,7 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [firmware.md](firmware.md) | booting unmodified images through UEFI: which EDK2 and what it needs of the machine, our patches, Linux under it, DT vs ACPI, the guests (credentials, seed disks), gotchas |
 | [devenv.md](devenv.md) | the dev VM, what's installed and why, the USB rigs, deploying, dev-only tools, every command |
 | [cloud.md](cloud.md) | Claude Code cloud sessions: what differs from the dev VM (x86_64, Node, Chromium, dtc, images) and the setup script |
+| [third-party.md](third-party.md) | `THIRD_PARTY.json`, the authoritative list of third-party code and references: its sections and fields, which rows the About pane shows and why, pinned license links, the checks |
 | [backlog.md](backlog.md) | open loose ends by area |
 | [plans/networking.md](plans/networking.md) | exploration for M8's networking (not scheduled) |
 | [plans/networking-p2p.md](plans/networking-p2p.md) | peer-to-peer rooms over WebRTC: addresses that are keys, WireGuard over data channels, DERP for signalling and fallback, a Nostr directory, names that are keys (proposed, not scheduled) |

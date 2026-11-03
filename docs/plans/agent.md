@@ -41,7 +41,7 @@ power off. Worth a line in the host-integration track.
   named `com.redhat.spice.0`; udev starts it when the port appears. It does monitor configuration
   (X11's resize through xrandr; on Wayland it leaves that to the compositor), the clipboard (X11,
   and GNOME on Wayland in recent versions) and the mouse mode. The host side is ours, written from
-  the protocol's specification; check spice-protocol's license in `THIRD_PARTY.md` before using its
+  the protocol's specification; check spice-protocol's license in `THIRD_PARTY.json` before using its
   headers as more than a reference.
 - **qemu-guest-agent** (GPL-2: a guest workload; packaged everywhere, started by a unit bound to
   its port `org.qemu.guest_agent.0`): JSON commands, among them `guest-set-time`,

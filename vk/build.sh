@@ -19,7 +19,7 @@ case $(uname -m) in
 esac
 mkdir -p "$W"
 
-# wasi-sdk 34 (Apache-2.0 WITH LLVM-exception; THIRD_PARTY.md).
+# wasi-sdk 34 (Apache-2.0 WITH LLVM-exception; THIRD_PARTY.json).
 if [ ! -x "$W/$WASI_SDK/bin/clang" ]; then
   curl -sSfL -o "$W/$WASI_SDK.tar.gz" "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/$WASI_SDK.tar.gz"
   echo "$WASI_SHA256  $W/$WASI_SDK.tar.gz" | sha256sum -c --quiet
@@ -66,7 +66,7 @@ node "$ROOT/vk/gen.ts" "$W" "$W/$WASI_SDK"
 ninja -C "$W" -f wasm.ninja > "$W/wasm-build.log" || { tail -30 "$W/wasm-build.log"; exit 1; }
 if [ "${1:-}" = native ]; then ninja -C "$W" -f native.ninja > "$W/native-build.log" || { tail -30 "$W/native-build.log"; exit 1; }; fi
 
-# The licences shipped beside the module (`npm run dist` copies both; THIRD_PARTY.md's row).
+# The licences shipped beside the module (`npm run dist` copies both; THIRD_PARTY.json's row).
 {
   cat "$ROOT/vk/LICENSES.head"
   section() { printf '\n\n==== %s ====\n\n' "$1"; }
