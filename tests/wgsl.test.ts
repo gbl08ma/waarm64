@@ -497,6 +497,67 @@ test('subgroup operations are WGSL\'s where the device has subgroups of one size
   }
 });
 
+test('values are lets where their uses allow, vars where they leave their scope or a loop carries them (GD G2)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/g2/values.comp');
+    assert.equal(r.rc, 0, r.text);
+    // Few vars (Tint's uniformity analysis visits each in scope at every loop, break and if), no run-once loop (pick's
+    // early returns), floats as f32 values.
+    const vars = r.text.match(/\bvar t\d+/g)?.length ?? 0, lets = r.text.match(/\blet t\d+/g)?.length ?? 0;
+    assert.ok(lets > 4 * vars, `${lets} lets, ${vars} vars`);
+    assert.equal(r.text.match(/\bloop \{/g)?.length, 5, 'the program\'s five loops (no loop that runs once)');
+    assert.match(r.text, /let t\d+: f32 = /);
+    // `last`, which its loop carries from an undefined first value (no store before the loop), declared outside the
+    // loop: inside, each iteration would start it at 0 (WGSL's zero value; SwiftShader's path happens to keep it).
+    const lines = r.text.split('\n'), indent = (l: string) => l.length - l.trimStart().length;
+    const tag = lines.find((l) => /= 0x1234u;$/.test(l))?.match(/t\d+/)?.[0];
+    const sum = tag && lines.find((l) => new RegExp(`^ *let (t\\d+): u32 = \\((t\\d+ \\+ ${tag}|${tag} \\+ t\\d+)\\);$`).test(l))?.match(/let (t\d+)/)?.[1];
+    const store = sum ? lines.findIndex((l) => new RegExp(`^ *t\\d+ = ${sum};$`).test(l)) : -1;
+    assert.ok(store > 0, 'last\'s store');
+    const reg = lines[store].trim().split(' ')[0];
+    const head = lines.slice(0, store).findLastIndex((l) => l.trim() === 'loop {' && indent(l) < indent(lines[store]));
+    const decl = lines.findIndex((l) => l.trim() === `var ${reg}: u32;`);
+    assert.ok(decl >= 0 && decl < head && indent(lines[decl]) <= indent(lines[head]), `${reg} declared outside its loop`);
+    const res = await runCompute(r.text, [{ binding: 0, size: 64 * 9 * 4 }]);
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    const o = new Uint32Array(res.out[0].buffer);
+    const pick = (n: number) => n % 3 === 0 ? Math.imul(n, 5) >>> 0 : n % 3 === 1 ? (n + 7 > 40 ? n + 7 : (n + 7) * 2) : (n ^ 0x55) >>> 0;
+    const bits = (x: number) => new Uint32Array(new Float32Array([x]).buffer)[0];
+    const bad: string[] = [];
+    for (let n = 0; n < 64; n++) {
+      let sum = 0, last = 0;
+      for (let i = 0; i < (n & 7) + 2; i++) {
+        if (i > 0) sum = (sum + Math.imul(last, i)) >>> 0;
+        last = (i * n + 4660) >>> 0;
+      }
+      let found = 0, at = 0;
+      for (let i = 0; i < 32; i++) {
+        at = i * 3 + n;
+        if ((at & 15) === 9) { found = 1; break; }
+      }
+      let total = 0;
+      for (let i = 0; i < 4; i++) {
+        let inner = i;
+        for (let j = 0; j <= (n + i) % 5; j++) inner += j * 2;
+        total = (Math.imul(total, 3) + inner) >>> 0;
+      }
+      const f = Math.fround(n * 0.5 + 1), g = Math.fround(Math.fround(f * f) - (n & 3));
+      const want = [(pick(n) + pick(n + 1)) >>> 0, sum, at + found * 1000, total, bits(Math.fround(g / 2)), (n * -3 + 7) >>> 0,
+        (n - 30 < 0 ? 1 : 0) + (n * 2 === 40 ? 2 : 0), n < 32 ? pick(n * 2) : Math.trunc(f)];
+      let x = n, y = 1;
+      for (let i = 0; i < (n & 3) + 3; i++) [x, y] = [y + i, x];
+      want.push(x * 100 + y);
+      want.forEach((w, k) => { if (o[n * 9 + k] !== w) bad.push(`invocation ${n} result ${k}: ${o[n * 9 + k]}, not ${w}`); });
+    }
+    assert.deepEqual(bad.slice(0, 8), [], `of ${bad.length}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('16-bit storage on every adapter, 16-bit floats with shader-f16, and scratch arrays (VK3 L5)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
   try {
@@ -1399,7 +1460,8 @@ test('textureQueryLod is worked out in the shader, an array\'s coordinate withou
     const one = text('tests/venus/t9/query.frag');
     assert.match(one, /var r0_0: texture_2d<i32>/, 'the texture only asked, declared by its type');
     const keyed = text('tests/venus/t9/query.frag', key(ADDRESS.edge, { levels: 9, min: 5, max: 1000 }));
-    assert.match(keyed, /0x40a00000u/, 'the sampler\'s minLod');
+    // 5.0, as a constant's bits or (only floats reading it) as an f32 literal (GD G2).
+    assert.match(keyed, /0x40a00000u|0x1\.4p\+2f/, 'the sampler\'s minLod');
     const errors = await compile([one, keyed, text('tests/venus/t9/query-array.frag'), text('tests/venus/t9/query-array.frag', key(ADDRESS.edge, { levels: 4 }))]);
     if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
     assert.equal(errors.join(''), '');

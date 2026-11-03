@@ -771,6 +771,54 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## GD G2: Godot's shader modules — Tint's uniformity analysis over 13,000 vars; 3.7 s → 65 ms on the M4
+
+2026-11-03. Each of the 209 stages Godot 4.7.2's editor hands Venus (its scene's 174 among them: SPIR-V dumped on
+lavapipe through the Mac profile, GD-KICKOFF.md 4) translated by the native translator (`vk/build.sh native`) and its
+WGSL's `createShaderModule` timed to `getCompilationInfo`'s answer on a device of its own (`bench/vulkan/tint-time.ts`;
+on the Mac `bench/vulkan/mac-tint-time.sh`), on the dev VM's SwiftShader (Chromium 153.0.8010.52, the translator for
+its features: `WGSL_DEVICE=19,1`, no shader-f16) and the M4 (Chrome for Testing 153.0.8010.12, Metal, `27,1`). The GPU
+process keeps what it parsed by the text, so each run of a module carries a comment of its own. JSON in `results/gd/g2/`.
+
+**Where the time went.** Tint's uniformity analysis (Dawn's `src/tint/lang/wgsl/resolver/uniformity.cc`, read at
+Chromium 153's branch, chromium/8010) visits every function-scope `var` in scope at each `loop`, `break`, `continue`
+and `if`, making a node and an edge for each (a break also walks each var's statement up to the loop). The printer
+declared every value and register a `var` at the function's top: the Forward+ scene fragment stage has 13,113 of them,
+218 loops, 220 breaks and 454 ifs, nested 30 deep. `let`s never enter that set. Building Tint natively to profile it
+wasn't allowed in the session; each step below was measured instead.
+
+| step (dev VM, the 209 stages) | Forward+ fragment stages (ms, KiB) | sum (ms) | stages > 100 ms |
+| --- | --- | --- | --- |
+| before: every value a var at the top | 5,154 / 3,207 (1,254 / 1,264) | 10,760 | 5 |
+| lets where the uses stay in the scope; the rest vars where their scope starts, registers outside every loop around them | 250 / 239 (1,146 / 1,154) | 1,551 | 2 |
+| registers outside only the loops that may read them before writing them | 189 / 183 | 1,409 | 2 |
+| f32 values (a scalar float only floats read) | 134 / 132 (925 / 931) | 1,060 | 2 |
+| a register's load by the register's name; float constants as hex literals | 130 / 127 (833 / 839) | 996 | 2 |
+| a loop that runs once as its statements (161 of the 218) | 99 / 102 (748 / 753), 3 runs | 894 | 1 |
+| integer ops whose bits don't depend on the sign on the u32s | **89 / 89** (722 / 727), 3 runs | **829** | **0** |
+
+| | Forward+ fragment stages (ms) | the next (ms) | sum of 209 (ms) | stages > 100 ms |
+| --- | --- | --- | --- | --- |
+| M4, before | 3,725 / 3,639 | 446 | 8,889 | 3 |
+| **M4, G2** (3 runs, medians) | **62 / 65** | 19 | **488** | **0** |
+
+- **Vars were the superlinear part, volume what's left.** Moving 13,113 vars to 607 took the stage from 5.2 s to
+  0.25 s; 329 registers at the top cost ~60 ms more than in their own scopes (~0.17 µs a var a statement). What's left is
+  close to linear in the text, ~120 ms a MB on SwiftShader's path (the bitcasts' share: a trial dropping the integer
+  ones alone saved ~3%), so the last steps cut text: two thirds of the stage was float arithmetic printed as
+  `bitcast<u32>(op(bitcast<f32>(a), …))`.
+- **Loop-carried registers.** A register is declared outside each loop around its loads and stores that may read it
+  before writing it in an iteration (`carry_list`: a phi's first value can be undefined, with no store before the loop).
+  A WGSL `var` declared in a loop is zero at each iteration; SwiftShader's path (Tint's SPIR-V) keeps the last
+  iteration's value instead, so only the printed text shows a misplaced one (`tests/venus/g2/values.comp`'s check).
+- **The trace's 5–6 s** (GD-KICKOFF.md 3) were on a busy GPU process; alone the M4 took 3.6–3.7 s. The dev VM's
+  "didn't finish in 290 s" didn't come back: 3–5 s here.
+- **No other program's slower.** The other programs' 105 stages (gtk4, mpv, the scene, vkcube, vkmark, vkQuake:
+  `target/vk1/spirv/`) on the dev VM, 5 runs each: 266 → 135 ms in all, the slowest 31 → 12 ms, none slower by over
+  10% (`vm-programs-*.json`); their WGSL 1.35 → 0.87 MB.
+- **What's left** (docs/backlog.md "The printer's WGSL"): vectors as f32 (inputs and buffer loads are still read as
+  `bitcast<f32>(t.x)`), the uniform buffers' word indexing, a native profile of Tint.
+
 ## VK4 T17: pipelines' loose ends — made at creation they lose (off by default); the store deflated, shown, cleared and its budget a preference
 
 2026-11-03. vkQuake's capture (its state at frame 200) and vkmark's desktop scene replayed twice in a session each
@@ -2921,6 +2969,9 @@ the toolbar's NUMA note now count Venus's share of memory 0.
 
 ## Tools
 
+- GD G2: `tint-time.ts` (each WGSL module's `createShaderModule` on a device of its own, `REPEAT` runs of their own
+  text, a timeout that relaunches the browser) and `mac-tint-time.sh` (the same on the Mac's GPU); a program's stages
+  as WGSL from the native translator (`vk/build.sh native`, `WGSL_DEVICE=<features>,<subgroup size>`).
 - VK4 T1: `census.ts` (dEQP-VK's not-passed cases by cause, from `../gpu/deqp-run.ts`'s results; `--cases <cause>` lists
   a cause's); `deqp-run.ts`'s `DETAIL` in one pass over the log (a census's hundreds of cases) and `DETAIL_NOTSUPPORTED=1`
   (the reasons of NotSupported cases too; through `../gpu/sway-mac.sh`).

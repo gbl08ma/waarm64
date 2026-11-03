@@ -1,0 +1,60 @@
+#version 450
+// GD G2: values the printer places by their uses (tests/wgsl.test.ts runs it against the same worked out in JS): a
+// function's early returns (a loop that runs once, printed as its statements), a value a loop carries from an undefined
+// first one (no store before the loop), one set in a loop and read after it, nested loops' accumulators (the inner one
+// fresh each outer iteration), floats only floats read (f32 values), integers whose bits don't depend on the sign, and
+// a swap a loop carries.
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) buffer Out { uint o[]; };
+
+uint pick(uint n) {
+  if (n % 3u == 0u) return n * 5u;
+  if (n % 3u == 1u) {
+    uint a = n + 7u;
+    if (a > 40u) return a;
+    return a * 2u;
+  }
+  return n ^ 0x55u;
+}
+
+void main() {
+  uint n = gl_LocalInvocationIndex, k = n * 9u;
+  o[k + 0u] = pick(n) + pick(n + 1u);
+  uint last;
+  uint sum = 0u;
+  for (uint i = 0u; i < (n & 7u) + 2u; i++) {
+    if (i > 0u) sum += last * i;
+    last = i * n + 4660u; // 0x1234: tests/wgsl.test.ts finds the register by it
+  }
+  o[k + 1u] = sum;
+  uint found = 0u, at = 0u;
+  for (uint i = 0u; i < 32u; i++) {
+    at = i * 3u + n;
+    if ((at & 15u) == 9u) {
+      found = 1u;
+      break;
+    }
+  }
+  o[k + 2u] = at + found * 1000u;
+  uint total = 0u;
+  for (uint i = 0u; i < 4u; i++) {
+    uint inner = i;
+    for (uint j = 0u; j <= (n + i) % 5u; j++) inner += j * 2u;
+    total = total * 3u + inner;
+  }
+  o[k + 3u] = total;
+  float f = float(n) * 0.5 + 1.0;
+  float g = f * f - float(n & 3u);
+  o[k + 4u] = floatBitsToUint(g / 2.0);
+  o[k + 5u] = uint(int(n) * -3 + 7);
+  o[k + 6u] = uint((int(n) - 30) < 0) + uint(int(n) * 2 == 40) * 2u;
+  o[k + 7u] = n < 32u ? pick(n * 2u) : uint(f);
+  // a swap a loop carries (out of SSA, a register's load read after a store to it)
+  uint x = n, y = 1u;
+  for (uint i = 0u; i < (n & 3u) + 3u; i++) {
+    uint t = x;
+    x = y + i;
+    y = t;
+  }
+  o[k + 8u] = x * 100u + y;
+}

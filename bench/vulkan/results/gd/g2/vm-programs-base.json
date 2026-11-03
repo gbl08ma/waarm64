@@ -1,0 +1,1390 @@
+{
+ "date": "2026-11-03T20:32:40.916Z",
+ "chromium": "153.0.8010.52",
+ "platform": "linux",
+ "adapter": {
+  "vendor": "google",
+  "architecture": "swiftshader",
+  "device": "",
+  "description": "",
+  "features": [
+   "clip-distances",
+   "subgroups"
+  ]
+ },
+ "timeoutS": 30,
+ "repeat": 5,
+ "modules": 105,
+ "timeouts": 0,
+ "errors": 0,
+ "sumMs": 266.4,
+ "maxMs": 30.7,
+ "over100": 0,
+ "rows": [
+  {
+   "file": "gtk4-0x019b2076594f231089d3fbe062d0e27795cca978564f81d83645f772a709be0f.frag.wgsl",
+   "bytes": 20874,
+   "ms": 4.5,
+   "runs": [
+    5.6,
+    4.5,
+    4.5,
+    4.4,
+    4.4
+   ],
+   "errors": []
+  },
+  {
+   "file": "gtk4-0x1e074cfd0228e6b014458d7ab8134204346d516333408204bcc84e7bbcb52fe5.vert.wgsl",
+   "bytes": 9132,
+   "ms": 1.7,
+   "runs": [
+    1.8,
+    1.7,
+    1.8,
+    1.7,
+    1.7
+   ],
+   "errors": []
+  },
+  {
+   "file": "gtk4-0x31369cfdbd0a3a9d73448034b1711bcef9f51a43215b4bdbc086200f5b16c720.frag.wgsl",
+   "bytes": 5844,
+   "ms": 1.2,
+   "runs": [
+    1.2,
+    1.3,
+    1,
+    1.3,
+    1.2
+   ],
+   "errors": []
+  },
+  {
+   "file": "gtk4-0x3f308587994fda2b33f1d19749339ad87d7555a81f7c6bf74157327c2f785f20.frag.wgsl",
+   "bytes": 79759,
+   "ms": 24.1,
+   "runs": [
+    28.8,
+    24.1,
+    23.3,
+    24.4,
+    22.8
+   ],
+   "errors": []
+  },
+  {
+   "file": "gtk4-0x41969f7038cdfc0a77a5293086dc423557bfafc84302e75a02980d7328295e14.vert.wgsl",
+   "bytes": 45725,
+   "ms": 7.3,
+   "runs": [
+    7.6,
+    7.3,
+    7.2,
+    7.4,
+    7.1
+   ],
+   "errors": []
+  },
+  {
+   "file": "gtk4-0x44473b3c60e3ccfdecd5b2fa7224aba6f4641a9f3dc4b84068f0859ec0341cc9.frag.wgsl",
+   "bytes": 36009,
+   "ms": 7.5,
+   "runs": [
+    7.5,
+    7.3,
+    7.4,
+    7.7,
+    8.2
+   ],
+   "errors": []
+  },
+  {
+   "file": "gtk4-0x49e9703c830bcef500e905ce885d13e4589fa0b609fad3be4e8a817422fe5a18.vert.wgsl",
+   "bytes": 10482,
+   "ms": 1.7,
+   "runs": [
+    1.8,
+    1.5,
+    1.7,
+    1.6,
+    1.7
+   ],
+   "errors": []
+  },
+  {
+   "file": "gtk4-0x753491c05e8407c9ec3bd67802a39689e96da7108c7ae70111df060276f51b1b.frag.wgsl",
+   "bytes": 3902,
+   "ms": 0.7,
+   "runs": [
+    0.8,
+    0.7,
+    0.7,
+    0.6,
+    0.6
+   ],
+   "errors": []
+  },
+  {
+   "file": "gtk4-0xb7952901034a599c17c8d18935172cf2bb7b09932000ea391d5095ef856c00d9.vert.wgsl",
+   "bytes": 7620,
+   "ms": 1.2,
+   "runs": [
+    1.2,
+    1.2,
+    1.2,
+    1.2,
+    1.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "gtk4-0xbbd56ca7cc9345cc935dbc8b4ad88ace5fd5561b95e60409b6f243a792945e20.vert.wgsl",
+   "bytes": 6280,
+   "ms": 1,
+   "runs": [
+    1.1,
+    0.9,
+    1,
+    1,
+    1.1
+   ],
+   "errors": []
+  },
+  {
+   "file": "gtk4-0xd026dbabf879babcf2347e908810e8fdf27b738650db0b2df37b83050c9d6a05.vert.wgsl",
+   "bytes": 7634,
+   "ms": 1.2,
+   "runs": [
+    1.2,
+    1.3,
+    1.3,
+    1.2,
+    1.1
+   ],
+   "errors": []
+  },
+  {
+   "file": "gtk4-0xd6a272d012514a1b166f1ead7a5c3af29eb7c2be14d8da6e87ae7dc267566fc1.frag.wgsl",
+   "bytes": 3502,
+   "ms": 0.6,
+   "runs": [
+    0.7,
+    0.7,
+    0.6,
+    0.6,
+    0.6
+   ],
+   "errors": []
+  },
+  {
+   "file": "gtk4-0xec3c4f3fc528d5f28be724327eb4c6f6323f7dac357a469d057508b9e09eed28.vert.wgsl",
+   "bytes": 35016,
+   "ms": 5.5,
+   "runs": [
+    5.4,
+    5.5,
+    5.5,
+    5.2,
+    5.5
+   ],
+   "errors": []
+  },
+  {
+   "file": "gtk4-0xeecd5b6028fb31e4dc047a65dcb8fcda18b92d7417ea45c5a6197458f59966f4.frag.wgsl",
+   "bytes": 71029,
+   "ms": 18.2,
+   "runs": [
+    18.1,
+    18.2,
+    18.4,
+    17.9,
+    18.2
+   ],
+   "errors": []
+  },
+  {
+   "file": "mpv-0x0612b7d56e629d7fb4e1a17e07b0e72c61431f51133da33ead14558c99de6355.frag.wgsl",
+   "bytes": 3364,
+   "ms": 0.8,
+   "runs": [
+    0.8,
+    0.8,
+    0.6,
+    0.7,
+    0.8
+   ],
+   "errors": []
+  },
+  {
+   "file": "mpv-0x08bf5562e1fd09f0861e1f1f48fe3af5d707724f0664cf2361d9ccb5b3c17a51.frag.wgsl",
+   "bytes": 3578,
+   "ms": 0.7,
+   "runs": [
+    0.7,
+    0.7,
+    0.7,
+    0.7,
+    0.6
+   ],
+   "errors": []
+  },
+  {
+   "file": "mpv-0x2293f9930a32be80e48c8d909154faef1a2038340a3e6382d0aa6c281d6d654e.vert.wgsl",
+   "bytes": 1002,
+   "ms": 0.3,
+   "runs": [
+    0.3,
+    0.3,
+    0.3,
+    0.3,
+    5.1
+   ],
+   "errors": []
+  },
+  {
+   "file": "mpv-0x3f7fb93f61e8b1ebb73dcb81b10bf2a0fc60ef8312aa20fc2bd3efe29461297e.frag.wgsl",
+   "bytes": 3118,
+   "ms": 0.6,
+   "runs": [
+    0.6,
+    0.5,
+    0.8,
+    0.7,
+    0.6
+   ],
+   "errors": []
+  },
+  {
+   "file": "mpv-0x584f937b5248f95e1aa094b5ad758d7e3d21aad37ae7bb1d85fb613a5da405d2.frag.wgsl",
+   "bytes": 1713,
+   "ms": 0.5,
+   "runs": [
+    0.5,
+    0.4,
+    0.5,
+    0.5,
+    0.4
+   ],
+   "errors": []
+  },
+  {
+   "file": "mpv-0x67105840524012a876feba7454432a49b6eb5e98cfac0b6feba6bd593c853d3f.vert.wgsl",
+   "bytes": 1215,
+   "ms": 0.4,
+   "runs": [
+    0.4,
+    0.4,
+    0.4,
+    0.4,
+    0.4
+   ],
+   "errors": []
+  },
+  {
+   "file": "mpv-0x7e4d3afae568f893e6ec103657135d3bad94279e5e197a2ac59771c9a105acba.frag.wgsl",
+   "bytes": 8134,
+   "ms": 1.5,
+   "runs": [
+    1.5,
+    1.5,
+    1.6,
+    1.5,
+    1.5
+   ],
+   "errors": []
+  },
+  {
+   "file": "mpv-0x7f9e8dc6fc3feea5572bd4505cb23b612017b5a6d084f9ebc205d766c6110773.frag.wgsl",
+   "bytes": 9057,
+   "ms": 1.5,
+   "runs": [
+    1.6,
+    1.6,
+    1.5,
+    1.5,
+    1.5
+   ],
+   "errors": []
+  },
+  {
+   "file": "mpv-0xb755b64fec5cd804de36cfa7a67ca38421b31697b62d69a9b6056d7c3367c38a.frag.wgsl",
+   "bytes": 1055,
+   "ms": 0.3,
+   "runs": [
+    0.3,
+    0.3,
+    0.4,
+    0.3,
+    0.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "mpv-0xbbcceae129c0351011e32724a1a36abd4bf29939f9c82a05e22dba581f0f26fd.frag.wgsl",
+   "bytes": 496,
+   "ms": 0.3,
+   "runs": [
+    0.4,
+    0.3,
+    0.3,
+    0.2,
+    0.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "scene-0x08b26398c42c8ca3ca088334e677f70594cef0d54af5762bbea12717e796ab23.frag.wgsl",
+   "bytes": 8382,
+   "ms": 1.4,
+   "runs": [
+    1.5,
+    1.3,
+    1.4,
+    1.4,
+    1.4
+   ],
+   "errors": []
+  },
+  {
+   "file": "scene-0x11b5164385da084976dac9b998e0c186e1b6bfc097c43bc653d33ff21c5ce483.vert.wgsl",
+   "bytes": 15709,
+   "ms": 2.4,
+   "runs": [
+    2.4,
+    2.3,
+    2.4,
+    2.4,
+    2.4
+   ],
+   "errors": []
+  },
+  {
+   "file": "scene-0x16db6b8c12e5d46299ab667a446fb5e91791eaa6065f8227239f7f9a2ce6358c.frag.wgsl",
+   "bytes": 12573,
+   "ms": 2,
+   "runs": [
+    2.2,
+    2,
+    2,
+    2,
+    2
+   ],
+   "errors": []
+  },
+  {
+   "file": "scene-0x2db0041dbca0a61bcddd1b3ee7c2136afd30e02bf078dbdfb7394095d38e4992.frag.wgsl",
+   "bytes": 1431,
+   "ms": 0.3,
+   "runs": [
+    0.3,
+    0.4,
+    0.3,
+    0.4,
+    0.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "scene-0x3695d5229634fc188de2182bdd232c2474079f9e2091e03fb6a6ffd56f41f8b0.vert.wgsl",
+   "bytes": 15109,
+   "ms": 2.3,
+   "runs": [
+    2.3,
+    2.5,
+    2.3,
+    2.3,
+    2.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "scene-0x5581b94573ec61fbad76ac12add19d953f7cf267d7d0d004989f303e26e42015.frag.wgsl",
+   "bytes": 11001,
+   "ms": 1.8,
+   "runs": [
+    1.8,
+    1.8,
+    1.8,
+    1.8,
+    1.8
+   ],
+   "errors": []
+  },
+  {
+   "file": "scene-0x5b1d1db72ebdb1f8f8ebc7e36b0ff0eb0d8140899a6b2a91e5672ed64e97e159.vert.wgsl",
+   "bytes": 11003,
+   "ms": 1.6,
+   "runs": [
+    1.8,
+    1.6,
+    1.6,
+    1.6,
+    1.7
+   ],
+   "errors": []
+  },
+  {
+   "file": "scene-0x66d1cd7df684c5de4f9fadb0d092fd098b76bb979520d6c10a7bb01cba25229a.frag.wgsl",
+   "bytes": 8516,
+   "ms": 1.4,
+   "runs": [
+    1.4,
+    1.5,
+    1.4,
+    1.4,
+    1.5
+   ],
+   "errors": []
+  },
+  {
+   "file": "scene-0x832fb0729b1e5b9b974e72618f89c016528d2556020bd2ec7ccd2e2d24ad6f62.frag.wgsl",
+   "bytes": 10448,
+   "ms": 1.7,
+   "runs": [
+    1.7,
+    1.7,
+    1.7,
+    1.8,
+    1.6
+   ],
+   "errors": []
+  },
+  {
+   "file": "scene-0x988b6aa57e4f5ae687c1d74cfc8263e72a2a7daadf75d5ebad402ca34648dbe7.vert.wgsl",
+   "bytes": 25765,
+   "ms": 4,
+   "runs": [
+    3.9,
+    4.2,
+    4,
+    4,
+    4
+   ],
+   "errors": []
+  },
+  {
+   "file": "scene-0xad59e61705db695d3323c2e89fd22e887e57d7e98a0443826a1a9ef48b4d4622.frag.wgsl",
+   "bytes": 12827,
+   "ms": 2,
+   "runs": [
+    2.2,
+    2,
+    2,
+    2.1,
+    2
+   ],
+   "errors": []
+  },
+  {
+   "file": "scene-0xb1146bbe6c5747dde9a2e5885290f6120afa2860745b941ba3c716b3545f56f4.frag.wgsl",
+   "bytes": 10689,
+   "ms": 1.7,
+   "runs": [
+    1.8,
+    1.7,
+    1.7,
+    1.8,
+    1.7
+   ],
+   "errors": []
+  },
+  {
+   "file": "scene-0xb36582a8b8c531e0c7fea5bb16b9a879f66ea5bb74eecdda0672a2a02327627f.frag.wgsl",
+   "bytes": 1474,
+   "ms": 0.4,
+   "runs": [
+    0.4,
+    0.3,
+    0.4,
+    0.4,
+    0.4
+   ],
+   "errors": []
+  },
+  {
+   "file": "scene-0xd4c6da8f08b3618b839c20c5efafbbd6aad1c5f921bfb2d6a4efb1b24db58af8.frag.wgsl",
+   "bytes": 7234,
+   "ms": 1.2,
+   "runs": [
+    1.2,
+    1.1,
+    1.2,
+    1.1,
+    1.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "scene-0xe0b00989e65ee274500d503262b011de04aa7c387d5b315c5b0be4c02d4aa1ed.vert.wgsl",
+   "bytes": 24244,
+   "ms": 3.9,
+   "runs": [
+    4,
+    3.7,
+    3.9,
+    4,
+    3.7
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkcube-0x06320a67cd76def4a8d2b1796a340562fa64e3ba0497047a420956f28bb1b291.vert.wgsl",
+   "bytes": 5391,
+   "ms": 0.9,
+   "runs": [
+    0.9,
+    0.9,
+    0.8,
+    0.9,
+    1
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkcube-0x31aaca2745f0d8fb9281a1e2fcbc2fb001b8d36903a774abd532cc82ea030dce.frag.wgsl",
+   "bytes": 5521,
+   "ms": 1,
+   "runs": [
+    0.9,
+    1,
+    1,
+    0.9,
+    1.1
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkmark-0x09362f95e18e28c4e9e4f1094e09c975b78ad98580ee8ab20f6ee735c6a09c6b.frag.wgsl",
+   "bytes": 8927,
+   "ms": 1.5,
+   "runs": [
+    1.5,
+    1.4,
+    1.5,
+    1.3,
+    1.5
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkmark-0x3f7c91a9af63750784b5ea92c71f16196b79992ef5d06c43a89a15484fe1c8ac.vert.wgsl",
+   "bytes": 13115,
+   "ms": 2,
+   "runs": [
+    2,
+    2,
+    2,
+    2.1,
+    2
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkmark-0x564e11dd444f8d4555152966cbddb65d70a179dff8d3ba939abc45d8a27333d9.frag.wgsl",
+   "bytes": 633,
+   "ms": 0.4,
+   "runs": [
+    0.2,
+    0.4,
+    0.4,
+    4.1,
+    0.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkmark-0x64494ff2cd085fd3191452218631d324f3bcb533fca2bcd9ac6e17818c2f3f5c.vert.wgsl",
+   "bytes": 7532,
+   "ms": 1.3,
+   "runs": [
+    1.3,
+    1.3,
+    1.1,
+    1.3,
+    1.2
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkmark-0x726cac4bf325149596da110928b8735a3c498ab82d8fa76b2b34f8e889f636ea.frag.wgsl",
+   "bytes": 3939,
+   "ms": 0.7,
+   "runs": [
+    0.8,
+    0.7,
+    0.7,
+    0.7,
+    0.6
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkmark-0x74795fbeb70efc30a7792039cca1e08d8330d35cb5e2125b3db2f8f41deff0b1.vert.wgsl",
+   "bytes": 10938,
+   "ms": 1.8,
+   "runs": [
+    1.8,
+    1.8,
+    1.7,
+    1.6,
+    1.8
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkmark-0x76f42295f23bc349f8b6e08dc2c7914dfb1e0ac3a5537ef990e1c0cb37a9ea36.vert.wgsl",
+   "bytes": 8810,
+   "ms": 1.4,
+   "runs": [
+    1.4,
+    1.4,
+    1.3,
+    1.5,
+    1.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkmark-0x83b12d8e6cd024105e3b1259b1ac6b7e5290896f40d2224724bb0c8b5a517129.frag.wgsl",
+   "bytes": 443,
+   "ms": 0.3,
+   "runs": [
+    0.3,
+    0.2,
+    0.2,
+    0.3,
+    0.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkmark-0x9724c66edaab69f5b052d3222c96d8b98c0edb3dc18f0deaa652b0e573e86982.frag.wgsl",
+   "bytes": 1127,
+   "ms": 0.3,
+   "runs": [
+    0.4,
+    0.3,
+    0.3,
+    0.3,
+    0.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkmark-0x9a8997b2eb5f07d64a5c58c070e5e369148290c6f7659912bf9036f82aebc0e2.vert.wgsl",
+   "bytes": 9027,
+   "ms": 1.4,
+   "runs": [
+    1.6,
+    1.3,
+    1.4,
+    1.4,
+    1.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkmark-0x9bf32fa68bef65f0e1f401ed9ee34a87c8f35f07faf0eb4e03317f3157e44427.frag.wgsl",
+   "bytes": 4289,
+   "ms": 0.7,
+   "runs": [
+    0.7,
+    0.7,
+    0.8,
+    0.7,
+    0.7
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkmark-0xa79a912b975b4968eaa249c35858f6b51d2d0ed4f28db0306eaee2072fe25e7b.frag.wgsl",
+   "bytes": 8102,
+   "ms": 1.3,
+   "runs": [
+    1.3,
+    1.3,
+    1.2,
+    1.3,
+    1.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkmark-0xa9dc70c7484e5f874503d59c3b4bf18c91f1356f911be0ab892b9fc55239b4c3.vert.wgsl",
+   "bytes": 3149,
+   "ms": 0.6,
+   "runs": [
+    0.6,
+    0.5,
+    0.7,
+    0.6,
+    0.6
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkmark-0xadb1cda8642a3e6285e4a6031e9a5fd2f8a21c4f2488852bddaf66a6667fbdc4.vert.wgsl",
+   "bytes": 1002,
+   "ms": 0.3,
+   "runs": [
+    0.3,
+    0.3,
+    0.3,
+    0.3,
+    0.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkmark-0xf6b21744782df448cb321fe829b86a2752f9d7c3bcc1dbd9cea8a3db2d83e4eb.frag.wgsl",
+   "bytes": 7665,
+   "ms": 1.2,
+   "runs": [
+    1.3,
+    1.2,
+    1.2,
+    1.3,
+    1.2
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkmark-0xf9759bee7243f4ba40265bd66ff5d735b613efbfa4ca511fd0c2cad4fe144500.frag.wgsl",
+   "bytes": 443,
+   "ms": 0.2,
+   "runs": [
+    0.3,
+    0.1,
+    0.2,
+    0.1,
+    0.2
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x02d2d2ef88590e87887fe4db36a0a9e5a637d78889c3a999f2849ea02293dcd4.frag.wgsl",
+   "bytes": 2917,
+   "ms": 0.6,
+   "runs": [
+    0.7,
+    0.5,
+    0.7,
+    0.6,
+    0.5
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x09a04a4e467f3202d7752b434673c2caa22340817566bd77a4fde0aea8f8e4d6.vert.wgsl",
+   "bytes": 17571,
+   "ms": 2.6,
+   "runs": [
+    2.5,
+    2.6,
+    2.6,
+    2.5,
+    2.6
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x0b1d52047d172cceacd05355a73073f0b2c1f1433d1799072a12bc1bcb03430d.frag.wgsl",
+   "bytes": 3394,
+   "ms": 0.6,
+   "runs": [
+    0.7,
+    0.7,
+    0.6,
+    0.6,
+    0.6
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x1389c94b66cfef164c593b5dd3a87fdb5e0a5f3b5ceeada597aecf2907f3196e.frag.wgsl",
+   "bytes": 468,
+   "ms": 0.2,
+   "runs": [
+    0.3,
+    0.2,
+    0.2,
+    0.2,
+    0.2
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x185b8bdfab6caa1a96e43f8d7714435af084f56cdf5452104a1ad9bc6c97ee71.frag.wgsl",
+   "bytes": 2444,
+   "ms": 0.6,
+   "runs": [
+    0.6,
+    0.5,
+    0.6,
+    0.5,
+    0.6
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x1f829a44c5021454ea9c96e1ee5755af202d435b68c56c6c1b2125f4258877d3.frag.wgsl",
+   "bytes": 11145,
+   "ms": 2.1,
+   "runs": [
+    2.1,
+    2.2,
+    2.1,
+    2,
+    2.1
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x343d0de3085969321d5ddff629d3551ff56de6046a98c76815e3f7ca53f9a2b9.comp.wgsl",
+   "bytes": 75152,
+   "ms": 20,
+   "runs": [
+    20.7,
+    19.5,
+    20.7,
+    19.8,
+    20
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x38c53d8ef35a987535ff1eaa8df6e5597473524e55a364332993a2fe5290bc78.comp.wgsl",
+   "bytes": 28966,
+   "ms": 4.8,
+   "runs": [
+    5,
+    4.8,
+    4.6,
+    4.8,
+    4.7
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x3998e6c0f4a1172ab5c80f8462deb8f683838bb674a9df47b430c529407a16d7.frag.wgsl",
+   "bytes": 12863,
+   "ms": 2.1,
+   "runs": [
+    2.1,
+    2.2,
+    2.2,
+    2,
+    2
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x3ad457cf7eb956b094c868659644f0691098b0992f92530c626b1648f7208bd1.vert.wgsl",
+   "bytes": 2249,
+   "ms": 0.4,
+   "runs": [
+    0.5,
+    0.4,
+    0.4,
+    0.4,
+    0.5
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x3c5a412d5146fef8a64873b0365b83fbc78672b27b51666868c0927fdd10c09f.frag.wgsl",
+   "bytes": 5825,
+   "ms": 0.9,
+   "runs": [
+    1,
+    0.8,
+    0.8,
+    0.9,
+    0.9
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x3c67a9ff128b742fa73245496045ae3fb2ed74423a95c0a4dfffad00c8ac5edb.frag.wgsl",
+   "bytes": 4824,
+   "ms": 0.8,
+   "runs": [
+    0.8,
+    0.8,
+    0.8,
+    0.8,
+    0.9
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x3ec63e87c9e7d3cf36de0367da23bdab7c31f828819018e81699126c0b27316c.frag.wgsl",
+   "bytes": 2772,
+   "ms": 0.6,
+   "runs": [
+    0.4,
+    0.6,
+    0.6,
+    0.5,
+    0.6
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x47447a4ae7f2e6048306d2558920e84e5e336e9837f67899b8f471ac1502d087.vert.wgsl",
+   "bytes": 5155,
+   "ms": 0.9,
+   "runs": [
+    0.9,
+    5.2,
+    0.9,
+    1,
+    0.9
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x48fbe8ba2f3f9535077c6cedf9ad89032c9c6db2ecc49a7e3c74ee55d9254367.frag.wgsl",
+   "bytes": 14615,
+   "ms": 2.3,
+   "runs": [
+    2.3,
+    2.2,
+    2.3,
+    2.2,
+    2.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x4d81e3c082ed250ab8b3bc7ba8edb7d202cd72251833f2423a3c37a119ad4e6e.frag.wgsl",
+   "bytes": 5959,
+   "ms": 1,
+   "runs": [
+    1,
+    0.9,
+    1,
+    0.9,
+    1
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x51f0710eca575559e3f5bafbdd814bc77587c69c968e8af6381c836aaaf8d60b.frag.wgsl",
+   "bytes": 14615,
+   "ms": 0.4,
+   "runs": [
+    0.4,
+    0.4,
+    0.3,
+    0.3,
+    0.4
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x52afefe88995941e6b871347134031d480580aac91ac88333add60f352c6e404.frag.wgsl",
+   "bytes": 3259,
+   "ms": 0.7,
+   "runs": [
+    0.8,
+    0.6,
+    0.7,
+    0.7,
+    0.6
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x5419cc47de92818a3c2176e4f876f959838145e784a90942a2171d9e8d6290a0.vert.wgsl",
+   "bytes": 5674,
+   "ms": 0.9,
+   "runs": [
+    0.9,
+    0.9,
+    0.8,
+    0.9,
+    0.9
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x545f1ce57e76c52b0e5535f5e2f1f045f5158bf9a3e045f141324740174a4ee7.frag.wgsl",
+   "bytes": 1942,
+   "ms": 0.4,
+   "runs": [
+    0.3,
+    0.5,
+    0.4,
+    0.5,
+    0.4
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x55d47383faaccc36217bd979a5cf5b834d42d157b127eff1dce84a45622ecb32.frag.wgsl",
+   "bytes": 159241,
+   "ms": 30.1,
+   "runs": [
+    30.1,
+    30.2,
+    30.7,
+    29.5,
+    30.1
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x6100fd1c435d32d0ba1f5359ced1bcc086356f6995be790a7259c58cc1c378c2.comp.wgsl",
+   "bytes": 5249,
+   "ms": 1,
+   "runs": [
+    1.2,
+    1,
+    0.9,
+    1,
+    0.8
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x64804fd06e6afa38a02d3824b5e28ca9005bc8807f7decebe5dcb4b3559db3f5.frag.wgsl",
+   "bytes": 14468,
+   "ms": 2.2,
+   "runs": [
+    2.4,
+    2.4,
+    2.2,
+    2.2,
+    2.1
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x663dc62a436dbf079e88489196a133dc654f8d23fbf1ec67b5b0bda3482a0e07.frag.wgsl",
+   "bytes": 3106,
+   "ms": 0.7,
+   "runs": [
+    0.6,
+    0.7,
+    0.7,
+    0.5,
+    0.7
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x718b3084c3be1dfc3af3497c539c45820cb03d1aa58fb5247848e8f1d17d152e.frag.wgsl",
+   "bytes": 590,
+   "ms": 0.2,
+   "runs": [
+    0.2,
+    0.2,
+    0.4,
+    0.2,
+    0.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x748165216058d2f8b463cc181d39a3bcf9ebb437acf37242cf2f95d3229aa4cd.frag.wgsl",
+   "bytes": 2772,
+   "ms": 0.5,
+   "runs": [
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.6
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x812f1413470bff5a3f480951ae0bddb81cdc2ceef4c215a7292c2a8a61dfbd80.comp.wgsl",
+   "bytes": 9478,
+   "ms": 1.5,
+   "runs": [
+    1.6,
+    1.5,
+    1.6,
+    1.5,
+    1.5
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x81443b1fa7955a35acd4a056479a4db34fe713fd289988c65d74283dcbe749f0.vert.wgsl",
+   "bytes": 30748,
+   "ms": 6.2,
+   "runs": [
+    6.3,
+    6.4,
+    6.2,
+    6.1,
+    6.1
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x83d3562bdd0fd404ed9e8b5da54cd3ddba1423020a01757a21d150ffff0c8704.frag.wgsl",
+   "bytes": 159094,
+   "ms": 30.7,
+   "runs": [
+    30.6,
+    30.1,
+    30.7,
+    31.6,
+    32
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x93ab96efc232c53eb81f87446bc423d1bf2fbbf3a496eb7a37f41fdcc5c12c82.vert.wgsl",
+   "bytes": 4973,
+   "ms": 0.8,
+   "runs": [
+    1,
+    0.9,
+    0.8,
+    0.8,
+    0.8
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x9b1088dbbc4eb2245788e8909c1ab064fb042b47e3419f9fe332f3cf29a4b80a.frag.wgsl",
+   "bytes": 14468,
+   "ms": 0.3,
+   "runs": [
+    0.3,
+    0.3,
+    0.3,
+    0.3,
+    0.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x9cafb63651bb581ac60224e58a150fce71183d75f78fbb5df60b197ade189c95.comp.wgsl",
+   "bytes": 4150,
+   "ms": 0.9,
+   "runs": [
+    0.7,
+    0.6,
+    1.1,
+    0.9,
+    0.9
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x9d01f0c3a4d207b0f31d6bcc158ccfaae59ea64ed7881b3fb0c2e16b0608409d.frag.wgsl",
+   "bytes": 1685,
+   "ms": 0.5,
+   "runs": [
+    0.5,
+    0.4,
+    0.5,
+    0.5,
+    0.5
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0x9db9cba01d7e9435c324c47daec713085dbdd3a09b989b6e56418831b25ef0a3.vert.wgsl",
+   "bytes": 36077,
+   "ms": 7.4,
+   "runs": [
+    7.6,
+    7.5,
+    7.2,
+    7.1,
+    7.4
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0xaf28568bd92bb6c44cf9e00d045e93b51c0be7b21fec7b2dc62d5430d638c49e.frag.wgsl",
+   "bytes": 2640,
+   "ms": 0.6,
+   "runs": [
+    0.7,
+    0.5,
+    0.7,
+    0.5,
+    0.6
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0xaf612a9141c6e3782fc119ef4689ceb8f602c28331bcfba316cc36349945341d.frag.wgsl",
+   "bytes": 4214,
+   "ms": 0.8,
+   "runs": [
+    0.8,
+    0.8,
+    0.7,
+    0.8,
+    0.7
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0xb0b67388811c624ed7d461c9f3d24875de75e46334ca772b0ef687611f758728.vert.wgsl",
+   "bytes": 13339,
+   "ms": 2.2,
+   "runs": [
+    2.2,
+    2.3,
+    2.1,
+    2.1,
+    2.2
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0xb82e189cc6b02f31f3af773f59692078a8391b620dc77c811c8e32634881392b.comp.wgsl",
+   "bytes": 1032,
+   "ms": 0.3,
+   "runs": [
+    0.4,
+    0.3,
+    0.3,
+    0.5,
+    0.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0xb95df2dba20dadea08e9e4596bc99bca3bee767d8a3ecfe97c5c181210837609.frag.wgsl",
+   "bytes": 527,
+   "ms": 0.3,
+   "runs": [
+    0.4,
+    0.4,
+    0.2,
+    0.3,
+    0.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0xbf08a5f32de610f73528c505a8fbf6fbcc9e50660afab33b5a2bb4d353c77fe5.vert.wgsl",
+   "bytes": 5099,
+   "ms": 0.9,
+   "runs": [
+    0.9,
+    0.9,
+    0.9,
+    0.8,
+    0.8
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0xbf7a060dde600f1f87f6d00f0b68c0b9722b87e447083dd0710db693de7d5769.frag.wgsl",
+   "bytes": 2640,
+   "ms": 0.5,
+   "runs": [
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.6
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0xd560ec538d55aa7cbe00a5666b4a1afadbde2099f979aab4aaa788dee0628c37.frag.wgsl",
+   "bytes": 5333,
+   "ms": 0.9,
+   "runs": [
+    1,
+    0.9,
+    1,
+    0.9,
+    0.8
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0xd59f0f1325476cc5de2da7a3d2446b84c1891a09cf5ef5f5b895c4075e096264.frag.wgsl",
+   "bytes": 3234,
+   "ms": 0.6,
+   "runs": [
+    0.5,
+    0.6,
+    0.6,
+    0.6,
+    0.6
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0xdbdd24c00c8a15a445d23ffba9b691f885993fa9548131b2a85e377279632e5d.frag.wgsl",
+   "bytes": 2821,
+   "ms": 0.6,
+   "runs": [
+    0.6,
+    0.5,
+    0.7,
+    0.6,
+    0.5
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0xe4d1a7f96070e6ac6e5e1483d24e1800381b8033d0b95cc18ee3f20f977a3334.frag.wgsl",
+   "bytes": 4251,
+   "ms": 0.8,
+   "runs": [
+    0.8,
+    1,
+    0.8,
+    0.8,
+    0.7
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0xedf983d471e0d7b7507d82759cbf49c0ef2301b599c81f9937fc366b4eaff4d9.vert.wgsl",
+   "bytes": 8721,
+   "ms": 1.3,
+   "runs": [
+    1.4,
+    1.2,
+    1.3,
+    1.4,
+    1.3
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0xf79e2b12d69148152d33dd09fc01abfe6b0a8feffa997f32c613ee5805170e97.frag.wgsl",
+   "bytes": 4348,
+   "ms": 0.7,
+   "runs": [
+    0.7,
+    0.8,
+    0.8,
+    0.7,
+    0.6
+   ],
+   "errors": []
+  },
+  {
+   "file": "vkquake-0xfffc1a82e541eaaa08b19c218996280931076604de9b6f39853112a76d6e950a.frag.wgsl",
+   "bytes": 7698,
+   "ms": 1.3,
+   "runs": [
+    1.6,
+    1.2,
+    1.3,
+    1.3,
+    1.3
+   ],
+   "errors": []
+  }
+ ]
+}

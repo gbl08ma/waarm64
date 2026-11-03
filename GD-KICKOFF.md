@@ -54,7 +54,13 @@ Results in `bench/results/local/godot/` (dev VM) and `godot-mac-*` (the M4).
   one invocation, the only operation NIR left for size 1: every family of `tests/venus/l5/subgroups.comp` now translates
   and `subgroups-run.comp` runs right with subgroups of one (tests/wgsl.test.ts); Godot's Forward+ box and editor
   viewport draw on the M4 (`godot-mac-2`, `-7`). Left: nothing).
-- **G2. Shader modules Dawn takes seconds over** (M–L; the main one). Find where the time goes (Tint built natively from
+- **G2. Shader modules Dawn takes seconds over** (done 2026-11-03: Tint's uniformity analysis visits every `var` in
+  scope at each loop, break and if, and the printer declared all 13,113 values at the top; values are now `let`s where
+  their uses stay in scope, vars declared where their scope starts, registers outside only the loops that carry them,
+  run-once loops as their statements, scalar floats as f32, register loads by the register's name. The Forward+
+  fragment stages 3,725 → 65 ms on the M4 (5,154 → 89 on SwiftShader), every Godot stage under 100 ms, the 209 in all
+  8.9 → 0.49 s; the other programs' 105 stages 266 → 135 ms, none slower (bench/vulkan/REPORT.md "GD G2",
+  tests/venus/g2/values.comp). Left: backlog "The printer's WGSL"). Find where the time goes (Tint built natively from
   Dawn's sources, profiled on Godot's two modules), then make the printer's WGSL cheap for it: likely values defined
   once as `let` rather than `var` where they dominate their uses, fewer vars, the texture arrays' if-trees not copying
   more than the access. *Done:* every Godot stage's `createShaderModule` under ~100 ms on the M4 (a script over the

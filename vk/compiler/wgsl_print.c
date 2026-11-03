@@ -1,9 +1,11 @@
 /*
  * Prints lowered NIR as WGSL (wgsl.h for the model). Shaped like KosmicKrisp's nir_to_msl.c (Mesa 26.2.4, MIT):
- * a gather of what the shader declares, the declarations, then the control flow printed node by node with every
- * value predeclared. Our own code.
+ * a gather of what the shader declares, the declarations, then the control flow printed node by node, each value a
+ * let where its uses allow and a var otherwise (place_values). Our own code.
  */
+#include <ctype.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -71,6 +73,36 @@ struct ctx {
    const char *uc;
    bool uc_save;
    unsigned shm_words;
+
+   /* Where each value is declared (place_values). Each control-flow list is a scope (by its blocks' index:
+    * block_scope), under the list holding its if or loop (scope_parent), loop bodies marked. A value whose uses all
+    * stay in its own scope is a `let` where its instruction assigns it once at its own level, else a var declared
+    * just before the instruction (decl_scope -1); any other value, and every register, a var declared where its scope
+    * starts (decl_scope, chained per scope from scope_first through decl_next). */
+   unsigned *block_scope;
+   int *scope_parent;
+   unsigned *scope_depth;
+   bool *scope_loop;
+   int *decl_scope, *decl_next, *scope_first;
+   const char **decl_type;
+   /* Values stored as f32, by index (float_values). */
+   BITSET_WORD *fdef;
+   /* By a register load's value: the register it reads where its uses can name that instead (alias_loads), else -1. */
+   int *alias;
+   /* By a loop body's scope: the registers its iterations may read before writing them (carry_loop). */
+   BITSET_WORD **scope_carried;
+   int *reg_num; /* a register's number in those sets, by its decl's value */
+   unsigned reg_words;
+   /* The instruction being printed whose value may be a let: its name, the indent and the output's offset of its
+    * assignments at its own level, how many, and whether a line assigned it in part or deeper. */
+   bool track;
+   char track_name[16];
+   unsigned track_len, track_indent, track_count;
+   uint32_t track_off;
+   bool track_other;
+   /* A run-once loop's final break, not printed (loop_once); the list to print next continuing its scope. */
+   nir_instr *skip_jump;
+   bool in_scope;
 };
 
 static void
@@ -92,11 +124,39 @@ line(struct ctx *c, const char *fmt, ...)
 {
    for (unsigned i = 0; i < c->indent; i++)
       _mesa_string_buffer_append(c->out, "  ");
+   const uint32_t at = c->out->length;
    va_list ap;
    va_start(ap, fmt);
    _mesa_string_buffer_vprintf(c->out, fmt, ap);
    va_end(ap);
    _mesa_string_buffer_append(c->out, "\n");
+   /* The tracked value (place_values) named in the line: assigned whole (`tN = ` first) at its instruction's level, or
+    * anything else (assigned in part, deeper, mid-line). */
+   if (!c->track)
+      return;
+   for (const char *s = c->out->buf + at; (s = strstr(s, c->track_name)); s += c->track_len) {
+      const char *rest = s + c->track_len;
+      if ((s > c->out->buf + at && (isalnum((unsigned char)s[-1]) || s[-1] == '_')) || isdigit((unsigned char)*rest))
+         continue;
+      if (s == c->out->buf + at && !strncmp(rest, " = ", 3) && c->indent == c->track_indent) {
+         if (!c->track_count++)
+            c->track_off = at;
+      } else {
+         c->track_other = true;
+      }
+   }
+}
+
+/* Replaces the output's `len` bytes at `off` with `text`. */
+static void
+splice(struct ctx *c, uint32_t off, uint32_t len, const char *text)
+{
+   char *tail = strdup(c->out->buf + off + len);
+   c->out->length = off;
+   c->out->buf[off] = 0;
+   _mesa_string_buffer_append(c->out, text);
+   _mesa_string_buffer_append(c->out, tail);
+   free(tail);
 }
 
 static char *
@@ -163,6 +223,8 @@ comps(struct ctx *c, unsigned first, unsigned n)
 static const char *
 def_name(struct ctx *c, nir_def *def)
 {
+   if (c->alias && c->alias[def->index] >= 0)
+      return fmt(c, "t%d", c->alias[def->index]);
    return fmt(c, "t%u", def->index);
 }
 
@@ -1323,40 +1385,293 @@ def_needs_var(nir_instr *instr)
    }
 }
 
-static bool
-predeclare_def(nir_def *def, void *data)
+/* A value's WGSL type: its register's, or its own. */
+static const char *
+value_type(struct ctx *c, nir_def *def)
 {
-   struct ctx *c = data;
-   if (!def_needs_var(nir_def_instr(def)))
-      return true;
-   if (def->bit_size != 1 && def->bit_size != 16 && def->bit_size != 32) {
-      failf(c, "%u-bit values", def->bit_size);
-      return true;
+   nir_instr *instr = nir_def_instr(def);
+   if (instr->type == nir_instr_type_intrinsic && nir_instr_as_intrinsic(instr)->intrinsic == nir_intrinsic_decl_reg) {
+      nir_intrinsic_instr *decl = nir_instr_as_intrinsic(instr);
+      return storage_type(c, nir_intrinsic_bit_size(decl), nir_intrinsic_num_components(decl));
    }
-   line(c, "var t%u: %s;", def->index, storage_type(c, def->bit_size, def->num_components));
-   return true;
+   if (c->fdef && BITSET_TEST(c->fdef, def->index))
+      return "f32";
+   return storage_type(c, def->bit_size, def->num_components);
+}
+
+/* Whether a list jumps to the loop it is in (a break or continue outside its own loops), apart from `except`. */
+static bool
+jumps_to_loop(struct exec_list *list, nir_instr *except)
+{
+   foreach_list_typed (nir_cf_node, node, node, list) {
+      if (node->type == nir_cf_node_block) {
+         nir_instr *last = nir_block_last_instr(nir_cf_node_as_block(node));
+         if (last && last != except && last->type == nir_instr_type_jump &&
+             (nir_instr_as_jump(last)->type == nir_jump_break || nir_instr_as_jump(last)->type == nir_jump_continue))
+            return true;
+      } else if (node->type == nir_cf_node_if) {
+         if (jumps_to_loop(&nir_cf_node_as_if(node)->then_list, except) ||
+             jumps_to_loop(&nir_cf_node_as_if(node)->else_list, except))
+            return true;
+      }
+   }
+   return false;
+}
+
+/* A loop that runs once: its body ends in a break, its only jump to it (GD G2: 161 of the 218 loops of Godot's Forward+
+ * fragment stage, from early returns NIR lowered). It is printed as its body's statements, in the scope around it. */
+static nir_instr *
+loop_once(nir_loop *loop)
+{
+   if (nir_loop_has_continue_construct(loop))
+      return NULL;
+   nir_instr *last = nir_block_last_instr(nir_loop_last_block(loop));
+   if (!last || last->type != nir_instr_type_jump || nir_instr_as_jump(last)->type != nir_jump_break)
+      return NULL;
+   return jumps_to_loop(&loop->body, last) ? NULL : last;
 }
 
 static void
-predeclare(struct ctx *c, nir_function_impl *impl)
+scope_blocks(struct ctx *c, struct exec_list *list, unsigned s, unsigned *count);
+
+static void
+scope_walk(struct ctx *c, struct exec_list *list, int parent, bool loop, unsigned *count)
 {
-   nir_foreach_block(block, impl) {
-      nir_foreach_instr(instr, block) {
-         if (instr->type == nir_instr_type_intrinsic &&
-             nir_instr_as_intrinsic(instr)->intrinsic == nir_intrinsic_decl_reg) {
-            nir_intrinsic_instr *decl = nir_instr_as_intrinsic(instr);
-            if (nir_intrinsic_num_array_elems(decl))
-               failf(c, "register arrays");
-            line(c, "var t%u: %s;", decl->def.index,
-                 storage_type(c, nir_intrinsic_bit_size(decl), nir_intrinsic_num_components(decl)));
-            continue;
-         }
-         nir_foreach_def(instr, predeclare_def, c);
+   const unsigned s = (*count)++;
+   c->scope_parent[s] = parent;
+   c->scope_depth[s] = parent < 0 ? 0 : c->scope_depth[parent] + 1;
+   c->scope_loop[s] = loop;
+   scope_blocks(c, list, s, count);
+}
+
+static void
+scope_blocks(struct ctx *c, struct exec_list *list, unsigned s, unsigned *count)
+{
+   foreach_list_typed (nir_cf_node, node, node, list) {
+      switch (node->type) {
+      case nir_cf_node_block:
+         c->block_scope[nir_cf_node_as_block(node)->index] = s;
+         break;
+      case nir_cf_node_if:
+         scope_walk(c, &nir_cf_node_as_if(node)->then_list, s, false, count);
+         scope_walk(c, &nir_cf_node_as_if(node)->else_list, s, false, count);
+         break;
+      case nir_cf_node_loop:
+         if (loop_once(nir_cf_node_as_loop(node)))
+            scope_blocks(c, &nir_cf_node_as_loop(node)->body, s, count);
+         else
+            scope_walk(c, &nir_cf_node_as_loop(node)->body, s, true, count);
+         break;
+      default:
+         break;
       }
    }
 }
 
+static int
+scope_meet(const struct ctx *c, int a, int b)
+{
+   while (c->scope_depth[a] > c->scope_depth[b])
+      a = c->scope_parent[a];
+   while (c->scope_depth[b] > c->scope_depth[a])
+      b = c->scope_parent[b];
+   while (a != b) {
+      a = c->scope_parent[a];
+      b = c->scope_parent[b];
+   }
+   return a;
+}
+
+/* What `list` does to the registers surely written since its loop's iteration began (`a`; every register past a
+ * jump, which doesn't fall through): a load of one not in it may read the last iteration's value (`carried`). The
+ * state at each break of the loop walked directly is ANDed into `brk`. Stores of part of a register don't count. */
+static void
+carry_list(struct ctx *c, struct exec_list *list, BITSET_WORD *a, BITSET_WORD *brk, BITSET_WORD *carried)
+{
+   const unsigned words = c->reg_words;
+   foreach_list_typed (nir_cf_node, node, node, list) {
+      switch (node->type) {
+      case nir_cf_node_block:
+         nir_foreach_instr (instr, nir_cf_node_as_block(node)) {
+            if (instr->type == nir_instr_type_jump) {
+               if (nir_instr_as_jump(instr)->type == nir_jump_break)
+                  for (unsigned w = 0; w < words; w++)
+                     brk[w] &= a[w];
+               memset(a, 0xff, words * sizeof(BITSET_WORD));
+               continue;
+            }
+            if (instr->type != nir_instr_type_intrinsic)
+               continue;
+            nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+            if (intr->intrinsic == nir_intrinsic_load_reg) {
+               const int k = c->reg_num[intr->src[0].ssa->index];
+               if (!BITSET_TEST(a, k))
+                  BITSET_SET(carried, k);
+            } else if (intr->intrinsic == nir_intrinsic_store_reg) {
+               nir_intrinsic_instr *decl = nir_src_as_intrinsic(intr->src[1]);
+               if (nir_intrinsic_write_mask(intr) == BITFIELD_MASK(nir_intrinsic_num_components(decl)))
+                  BITSET_SET(a, c->reg_num[decl->def.index]);
+            }
+         }
+         break;
+      case nir_cf_node_if: {
+         BITSET_WORD *t = ralloc_array(c->mem, BITSET_WORD, words);
+         memcpy(t, a, words * sizeof(BITSET_WORD));
+         carry_list(c, &nir_cf_node_as_if(node)->then_list, t, brk, carried);
+         carry_list(c, &nir_cf_node_as_if(node)->else_list, a, brk, carried);
+         for (unsigned w = 0; w < words; w++)
+            a[w] &= t[w];
+         ralloc_free(t);
+         break;
+      }
+      case nir_cf_node_loop: {
+         /* Each iteration from what was written before it (a later one has more), out with what every break has. */
+         BITSET_WORD *inner = ralloc_array(c->mem, BITSET_WORD, words);
+         memset(inner, 0xff, words * sizeof(BITSET_WORD));
+         carry_list(c, &nir_cf_node_as_loop(node)->body, a, inner, carried);
+         memcpy(a, inner, words * sizeof(BITSET_WORD));
+         ralloc_free(inner);
+         break;
+      }
+      default:
+         break;
+      }
+   }
+}
+
+/* Each loop's carried registers (scope_carried, by its body's scope). */
+static void
+carry_loops(struct ctx *c, struct exec_list *list)
+{
+   foreach_list_typed (nir_cf_node, node, node, list) {
+      if (node->type == nir_cf_node_if) {
+         carry_loops(c, &nir_cf_node_as_if(node)->then_list);
+         carry_loops(c, &nir_cf_node_as_if(node)->else_list);
+      } else if (node->type == nir_cf_node_loop) {
+         struct exec_list *body = &nir_cf_node_as_loop(node)->body;
+         if (loop_once(nir_cf_node_as_loop(node))) {
+            carry_loops(c, body);
+            continue;
+         }
+         nir_block *first = nir_cf_node_as_block(exec_node_data(nir_cf_node, exec_list_get_head(body), node));
+         const unsigned words = c->reg_words;
+         BITSET_WORD *carried = rzalloc_array(c->mem, BITSET_WORD, words);
+         BITSET_WORD *a = rzalloc_array(c->mem, BITSET_WORD, words), *brk = ralloc_array(c->mem, BITSET_WORD, words);
+         memset(brk, 0xff, words * sizeof(BITSET_WORD));
+         carry_list(c, body, a, brk, carried);
+         ralloc_free(a);
+         ralloc_free(brk);
+         c->scope_carried[c->block_scope[first->index]] = carried;
+         carry_loops(c, body);
+      }
+   }
+}
+
+/* The scope a use reads in: its instruction's, or for an if's condition the list holding the if. */
+static int
+use_scope(const struct ctx *c, nir_src *src)
+{
+   if (nir_src_is_if(src))
+      return c->block_scope[nir_cf_node_as_block(nir_cf_node_prev(&nir_src_use_if(src)->cf_node))->index];
+   return c->block_scope[nir_src_use_instr(src)->block->index];
+}
+
+/* Where each value is declared (GD G2). Tint's uniformity analysis visits every function-scope var in scope at each
+ * loop, break, continue and if (making nodes for each: uniformity.cc), so a function of 13,000 vars declared at its
+ * top and a few hundred loops (Godot's Forward+ fragment stage) took seconds in createShaderModule; a let costs it
+ * nothing there. A value whose uses all stay in its own scope (NIR's dominance: after it, in its list or deeper) is
+ * printed there; one used past its scope (defined in a loop and read after it, or in an if whose other side jumps) is
+ * a var at the start of the innermost scope holding its uses. A register is a var at the start of the innermost scope
+ * holding its loads and stores, outside each loop around that whose iterations may read it before writing it
+ * (carry_list: a loop's phi can carry a value from one iteration to the next with no access outside the loop, where
+ * its first value is undefined). */
+static void
+place_values(struct ctx *c, nir_function_impl *impl)
+{
+   nir_index_blocks(impl);
+   const unsigned nblocks = impl->num_blocks + 1, ndefs = impl->ssa_alloc;
+   c->block_scope = rzalloc_array(c->mem, unsigned, nblocks);
+   c->scope_parent = rzalloc_array(c->mem, int, nblocks);
+   c->scope_depth = rzalloc_array(c->mem, unsigned, nblocks);
+   c->scope_loop = rzalloc_array(c->mem, bool, nblocks);
+   c->scope_first = ralloc_array(c->mem, int, nblocks);
+   c->decl_scope = ralloc_array(c->mem, int, ndefs);
+   c->decl_next = ralloc_array(c->mem, int, ndefs);
+   c->decl_type = ralloc_array(c->mem, const char *, ndefs);
+   memset(c->scope_first, 0xff, nblocks * sizeof(int));
+   memset(c->decl_scope, 0xff, ndefs * sizeof(int));
+   unsigned count = 0;
+   scope_walk(c, &impl->body, -1, false, &count);
+   c->reg_num = ralloc_array(c->mem, int, ndefs);
+   memset(c->reg_num, 0xff, ndefs * sizeof(int));
+   unsigned nregs = 0;
+   nir_foreach_reg_decl (decl, impl)
+      c->reg_num[decl->def.index] = nregs++;
+   c->reg_words = BITSET_WORDS(MAX2(nregs, 1));
+   c->scope_carried = rzalloc_array(c->mem, BITSET_WORD *, nblocks);
+   if (nregs)
+      carry_loops(c, &impl->body);
+   /* Backwards, each pushed onto its scope's chain: a scope declares its vars in the order of their values. */
+   nir_foreach_block_reverse (block, impl) {
+      nir_foreach_instr_reverse (instr, block) {
+         nir_def *def = nir_instr_def(instr);
+         if (!def)
+            continue;
+         const bool reg = instr->type == nir_instr_type_intrinsic &&
+                          nir_instr_as_intrinsic(instr)->intrinsic == nir_intrinsic_decl_reg;
+         if (reg && nir_intrinsic_num_array_elems(nir_instr_as_intrinsic(instr)))
+            failf(c, "register arrays");
+         if (!reg && (!def_needs_var(instr) || c->alias[def->index] >= 0))
+            continue;
+         const unsigned bits = reg ? nir_intrinsic_bit_size(nir_instr_as_intrinsic(instr)) : def->bit_size;
+         if (bits != 1 && bits != 16 && bits != 32) {
+            failf(c, "%u-bit values", bits);
+            continue;
+         }
+         int s = reg ? -1 : (int)c->block_scope[block->index];
+         nir_foreach_use_including_if (src, def)
+            s = s < 0 ? use_scope(c, src) : scope_meet(c, s, use_scope(c, src));
+         if (reg) {
+            if (s < 0)
+               continue;
+            /* Outside each loop around it that may carry it from one iteration to the next. */
+            for (int x = s; x >= 0; x = c->scope_parent[x])
+               if (c->scope_loop[x] && BITSET_TEST(c->scope_carried[x], c->reg_num[def->index]))
+                  s = c->scope_parent[x];
+         } else if (s == (int)c->block_scope[block->index]) {
+            continue; /* its instruction's: a let where it can (emit_block) */
+         }
+         c->decl_scope[def->index] = s;
+         c->decl_type[def->index] = value_type(c, def);
+         c->decl_next[def->index] = c->scope_first[s];
+         c->scope_first[s] = def->index;
+      }
+   }
+}
+
+/* The vars a scope starts with (place_values). */
+static void
+declare_scope(struct ctx *c, struct exec_list *list)
+{
+   nir_block *first = nir_cf_node_as_block(exec_node_data(nir_cf_node, exec_list_get_head(list), node));
+   for (int i = c->scope_first[c->block_scope[first->index]]; i >= 0; i = c->decl_next[i])
+      line(c, "var t%d: %s;", i, c->decl_type[i]);
+}
+
 /* ALU: each component on its own, sources bitcast to the op's input types. */
+/* Integer ops whose bits don't depend on the sign (WGSL's i32 and u32 both wrap at run time): on 32-bit values as
+ * stored, without bitcasts to i32 and back. */
+static bool
+alu_sign_free(nir_alu_instr *alu)
+{
+   switch (alu->op) {
+   case nir_op_iadd: case nir_op_isub: case nir_op_imul: case nir_op_ishl: case nir_op_ieq: case nir_op_ine:
+      return alu->src[0].src.ssa->bit_size == 32 && alu->src[1].src.ssa->bit_size == 32;
+   default:
+      return false;
+   }
+}
+
 static const char *
 alu_in(struct ctx *c, nir_alu_instr *alu, unsigned i, unsigned comp)
 {
@@ -1366,7 +1681,125 @@ alu_in(struct ctx *c, nir_alu_instr *alu, unsigned i, unsigned comp)
       return raw;
    if (s->src.ssa->bit_size == 16)
       return view16(c, raw, base_of(nir_op_infos[alu->op].input_types[i]));
-   return as_base(c, raw, base_of(nir_op_infos[alu->op].input_types[i]), 1);
+   const unsigned base = alu_sign_free(alu) ? WGSL_U32 : base_of(nir_op_infos[alu->op].input_types[i]);
+   if (c->fdef && BITSET_TEST(c->fdef, s->src.ssa->index))
+      return base == WGSL_F32 ? raw : fmt(c, "bitcast<%s>(%s)", base_name(base), raw);
+   return as_base(c, raw, base, 1);
+}
+
+/* Whether an ALU op reads its source i (of 32 bits) through alu_in, as its input type. */
+static bool
+alu_reads_typed(nir_op op, unsigned i)
+{
+   switch (op) {
+   case nir_op_mov: case nir_op_bcsel: case nir_op_vec2: case nir_op_vec3: case nir_op_vec4:
+   case nir_op_unpack_32_2x16_split_x: case nir_op_unpack_32_2x16_split_y: case nir_op_pack_32_2x16_split:
+   case nir_op_b2b1: case nir_op_f2f32:
+      return false;
+   case nir_op_ubitfield_extract: case nir_op_ibitfield_extract:
+      return i == 0;
+   case nir_op_bitfield_insert:
+      return i < 2;
+   default:
+      return true;
+   }
+}
+
+/* Which values are stored as f32 rather than u32 (GD G2): a scalar float ALU result that only ALU ops read, each as a
+ * float. Two of every three operations of Godot's Forward+ fragment stage were floats', each printed as
+ * bitcast<u32>(op(bitcast<f32>(a), bitcast<f32>(b))): three calls for Tint to resolve where one does. */
+static void
+float_values(struct ctx *c, nir_function_impl *impl)
+{
+   c->fdef = rzalloc_array(c->mem, BITSET_WORD, BITSET_WORDS(impl->ssa_alloc));
+   nir_foreach_block (block, impl) {
+      nir_foreach_instr (instr, block) {
+         nir_def *def;
+         if (instr->type == nir_instr_type_alu) {
+            nir_alu_instr *alu = nir_instr_as_alu(instr);
+            if (alu->def.bit_size != 32 || alu->def.num_components != 1 ||
+                base_of(nir_op_infos[alu->op].output_type) != WGSL_F32 || !alu_reads_typed(alu->op, 0) ||
+                alu->op == nir_op_b2f32)
+               continue;
+            def = &alu->def;
+         } else if (instr->type == nir_instr_type_load_const) {
+            /* A constant as an f32 literal, exact in hex: one that is finite, normal or +0 (a let's, so never a
+             * const-expression's operand). */
+            nir_load_const_instr *lc = nir_instr_as_load_const(instr);
+            const uint32_t bits = lc->value[0].u32;
+            const uint32_t exp = (bits >> 23) & 0xff;
+            if (lc->def.bit_size != 32 || lc->def.num_components != 1 || exp == 0xff || (exp == 0 && bits))
+               continue;
+            def = &lc->def;
+         } else {
+            continue;
+         }
+         bool ok = true;
+         nir_foreach_use_including_if (src, def) {
+            if (nir_src_is_if(src) || nir_src_use_instr(src)->type != nir_instr_type_alu) {
+               ok = false;
+               break;
+            }
+            nir_alu_instr *use = nir_instr_as_alu(nir_src_use_instr(src));
+            const unsigned i = (const nir_alu_src *)src - use->src;
+            if (!alu_reads_typed(use->op, i) || base_of(nir_op_infos[use->op].input_types[i]) != WGSL_F32) {
+               ok = false;
+               break;
+            }
+         }
+         if (ok)
+            BITSET_SET(c->fdef, def->index);
+      }
+   }
+}
+
+/* Counts the sources of an instruction that read `data`'s value. */
+static bool
+count_reads(nir_src *src, void *data)
+{
+   void **d = data;
+   if (src->ssa == d[0])
+      (*(unsigned *)d[1])++;
+   return true;
+}
+
+/* Register loads whose uses name the register itself (alias): each use in the load's block (an if's condition after
+ * it), with no store to the register before the last. */
+static void
+alias_loads(struct ctx *c, nir_function_impl *impl)
+{
+   c->alias = ralloc_array(c->mem, int, impl->ssa_alloc);
+   memset(c->alias, 0xff, impl->ssa_alloc * sizeof(int));
+   nir_foreach_block (block, impl) {
+      nir_foreach_instr (instr, block) {
+         if (instr->type != nir_instr_type_intrinsic || nir_instr_as_intrinsic(instr)->intrinsic != nir_intrinsic_load_reg)
+            continue;
+         nir_intrinsic_instr *load = nir_instr_as_intrinsic(instr);
+         nir_def *reg = load->src[0].ssa;
+         unsigned left = 0;
+         bool ok = true, in_if = false;
+         nir_foreach_use_including_if (src, &load->def) {
+            if (nir_src_is_if(src))
+               in_if = nir_cf_node_prev(&nir_src_use_if(src)->cf_node) == &block->cf_node;
+            if (nir_src_is_if(src) ? !in_if : nir_src_use_instr(src)->block != block)
+               ok = false;
+            else if (!nir_src_is_if(src))
+               left++;
+         }
+         for (nir_instr *i = nir_instr_next(instr); ok && i && (left || in_if); i = nir_instr_next(i)) {
+            unsigned n = 0;
+            void *d[2] = { &load->def, &n };
+            nir_foreach_src(i, count_reads, d);
+            left -= n;
+            if ((left || in_if) && i->type == nir_instr_type_intrinsic &&
+                nir_instr_as_intrinsic(i)->intrinsic == nir_intrinsic_store_reg &&
+                nir_instr_as_intrinsic(i)->src[1].ssa == reg)
+               ok = false;
+         }
+         if (ok)
+            c->alias[load->def.index] = reg->index;
+      }
+   }
 }
 
 static const char *
@@ -1393,7 +1826,7 @@ alu_comp(struct ctx *c, nir_alu_instr *alu, unsigned comp)
    const char *b = n_in > 1 ? alu_in(c, alu, 1, comp) : NULL;
    const char *d = n_in > 2 ? alu_in(c, alu, 2, comp) : NULL;
    const bool boolean = alu->def.bit_size == 1;
-   const unsigned out = boolean ? WGSL_U32 : base_of(nir_op_infos[op].output_type);
+   const unsigned out = boolean || alu_sign_free(alu) ? WGSL_U32 : base_of(nir_op_infos[op].output_type);
    const char *e = NULL;
 #define BIN(o) e = fmt(c, "(%s " o " %s)", a, b)
 #define F1(f) e = fmt(c, f "(%s)", a)
@@ -1521,6 +1954,8 @@ alu_comp(struct ctx *c, nir_alu_instr *alu, unsigned comp)
       return e;
    if (alu->def.bit_size == 16)
       return store16(c, e, out);
+   if (c->fdef && BITSET_TEST(c->fdef, alu->def.index))
+      return e;
    return to_storage(c, e, out, 1);
 }
 
@@ -1545,6 +1980,10 @@ static void
 emit_load_const(struct ctx *c, nir_load_const_instr *lc)
 {
    const unsigned n = lc->def.num_components;
+   if (BITSET_TEST(c->fdef, lc->def.index)) {
+      line(c, "t%u = %af;", lc->def.index, (double)lc->value[0].f32);
+      return;
+   }
    if (n == 1) {
       line(c, "t%u = %s;", lc->def.index, literal(c, lc, 0));
       return;
@@ -2040,7 +2479,8 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_load_barycentric_at_sample:
       return;
    case nir_intrinsic_load_reg:
-      line(c, "t%u = %s;", def->index, src_name(c, &intr->src[0]));
+      if (c->alias[def->index] < 0)
+         line(c, "t%u = %s;", def->index, src_name(c, &intr->src[0]));
       return;
    case nir_intrinsic_store_reg: {
       nir_intrinsic_instr *decl = nir_src_as_intrinsic(intr->src[1]);
@@ -2510,6 +2950,8 @@ static void emit_cf_list(struct ctx *c, struct exec_list *list);
 static void
 emit_jump(struct ctx *c, nir_jump_instr *jump)
 {
+   if (&jump->instr == c->skip_jump)
+      return;
    switch (jump->type) {
    case nir_jump_break:
       line(c, "break;");
@@ -2529,12 +2971,35 @@ emit_jump(struct ctx *c, nir_jump_instr *jump)
    }
 }
 
+/* After an instruction whose value is its own scope's (place_values): `let tN: T = ` where it assigned the value once,
+ * whole, at its own level; else a var declared before it. */
+static void
+place_value(struct ctx *c, nir_def *def, uint32_t start)
+{
+   const char *type = value_type(c, def);
+   if (c->track_count == 1 && !c->track_other) {
+      splice(c, c->track_off, c->track_len, fmt(c, "let %s: %s", c->track_name, type));
+      return;
+   }
+   char *decl = fmt(c, "%*svar %s: %s;\n", 2 * c->indent, "", c->track_name, type);
+   splice(c, start, 0, decl);
+}
+
 static void
 emit_block(struct ctx *c, nir_block *block)
 {
    nir_foreach_instr(instr, block) {
       if (c->failed)
          return;
+      nir_def *def = nir_instr_def(instr);
+      const uint32_t start = c->out->length;
+      c->track = def && def_needs_var(instr) && c->decl_scope[def->index] < 0 && c->alias[def->index] < 0;
+      if (c->track) {
+         c->track_len = snprintf(c->track_name, sizeof(c->track_name), "t%u", def->index);
+         c->track_indent = c->indent;
+         c->track_count = 0;
+         c->track_other = false;
+      }
       switch (instr->type) {
       case nir_instr_type_alu:
          emit_alu(c, nir_instr_as_alu(instr));
@@ -2556,6 +3021,10 @@ emit_block(struct ctx *c, nir_block *block)
       default:
          failf(c, "an instruction of type %d", instr->type);
          break;
+      }
+      if (c->track) {
+         c->track = false;
+         place_value(c, def, start);
       }
    }
 }
@@ -2617,6 +3086,9 @@ needs_uniform_condition(struct ctx *c, nir_if *nif)
 static void
 emit_cf_list(struct ctx *c, struct exec_list *list)
 {
+   if (!c->in_scope)
+      declare_scope(c, list);
+   c->in_scope = false;
    foreach_list_typed(nir_cf_node, node, node, list) {
       switch (node->type) {
       case nir_cf_node_block:
@@ -2625,8 +3097,8 @@ emit_cf_list(struct ctx *c, struct exec_list *list)
       case nir_cf_node_if: {
          nir_if *nif = nir_cf_node_as_if(node);
          if (needs_uniform_condition(c, nif)) {
-            /* WGSL's uniformity analysis can't see that Vulkan's barriers are in uniform control flow (every value
-             * here is a var, assigned wherever): the condition of an if around a barrier, or breaking out of a loop
+            /* WGSL's uniformity analysis can't see that Vulkan's barriers are in uniform control flow (values reach
+             * it through registers, vars assigned wherever): the condition of an if around a barrier, or breaking out of a loop
              * that holds one, is passed through workgroupUniformLoad. The barrier after it keeps the next write of
              * the same var from racing this read, so that one var serves every condition. WebGPU counts each workgroup
              * var rounded up to 16 bytes: the var is shared memory's spare word where it has one (wgsl_print), else one
@@ -2677,6 +3149,16 @@ emit_cf_list(struct ctx *c, struct exec_list *list)
          nir_loop *loop = nir_cf_node_as_loop(node);
          if (nir_loop_has_continue_construct(loop))
             failf(c, "a loop with a continue construct");
+         nir_instr *once = loop_once(loop);
+         if (once) {
+            /* Its statements here (place_values gave them this scope), without the break. */
+            nir_instr *outer_skip = c->skip_jump;
+            c->skip_jump = once;
+            c->in_scope = true;
+            emit_cf_list(c, &loop->body);
+            c->skip_jump = outer_skip;
+            break;
+         }
          line(c, "loop {");
          c->indent++;
          const bool outer = c->in_barrier_loop;
@@ -2775,8 +3257,8 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
    const mesa_shader_stage stage = nir->info.stage;
    line(&c, "diagnostic(off, derivative_uniformity);");
    const bool subgroups = c.uses_subgroup_ops || c.uses_sg_inv || c.uses_sg_size;
-   /* Every value being a var, WGSL's uniformity analysis can't see Vulkan's (a subgroup operation's control flow and
-    * its uniform operands are the program's to keep). */
+   /* Through registers, vars assigned wherever, WGSL's uniformity analysis can't see Vulkan's (a subgroup operation's
+    * control flow and its uniform operands are the program's to keep). */
    if (c.f16)
       line(&c, "enable f16;");
    if (subgroups)
@@ -2869,7 +3351,9 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
    }
    if (info->push_ubo_size)
       line(&c, "let pc = r%u_%u;", WGSL_MAX_GROUPS - 1, WGSL_PUSH_BINDING);
-   predeclare(&c, impl);
+   float_values(&c, impl);
+   alias_loads(&c, impl);
+   place_values(&c, impl);
    emit_cf_list(&c, &impl->body);
    if (has_out && stage != MESA_SHADER_VERTEX)
       line(&c, "return o;");

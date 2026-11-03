@@ -547,6 +547,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   holds its entries inflated in memory, ~7× what's stored (vkQuake's): a store kept full at 64 MiB would hold ~450 MB in
   the GPU worker; entries could be held deflated and inflated at a lookup if a synchronous inflate were at hand (the
   lookups are synchronous). (4) A pipeline made at once by a submit (`syncPipelines`) is counted, never seen.
+- **The printer's WGSL, what Tint still pays for** (GD G2; vk/README.md "The shader path", bench/vulkan/REPORT.md "GD
+  G2"): Godot's largest stages take ~89 ms of `createShaderModule` on SwiftShader's path, ~65 ms on the M4, close to
+  linear in the text now (~120 ms a MB). Smaller next: vectors as f32 where only floats read them (inputs, buffer loads
+  and vecN constructions are still u32 read as `bitcast<f32>(t.x)`: ~2,400 a stage), the uniform buffers' word indexing
+  (`r[((t >> 2u) + 0u) >> 2u][((t >> 2u) + 0u) & 3u]` a word), a single-use value inlined into its use. Tint was read,
+  not profiled (building Dawn wasn't allowed in G2's session): a native Tint (Dawn's CMake, `tint` with the WGSL reader)
+  on these stages would say what the rest is. Seen beside it: a function-scope `var` declared in a loop came back with
+  the last iteration's value on SwiftShader's path, where WGSL zero-initializes it at each declaration (as far as read:
+  confirm against the spec, then report to Dawn); the printer no longer relies on either.
 - **What the device advertises, left for the translator** (VK2 L7, VK3 L5; vk/README.md "The shader path"): subgroups
   are WGSL's only where the adapter's have one size (Intel's and AMD's vary: there, subgroups of one invocation; a
   size the shader could ask for would need WebGPU's `subgroup-size-control`, which Chromium has as experimental), in

@@ -3,9 +3,11 @@
  * (Mesa's src/kosmickrisp/compiler: its pass order, and a backend that prints a high-level language from NIR brought
  * out of SSA). Our own code but where a function says it follows one of Mesa's (MIT).
  *
- * The model: every SSA value and register is a function-scope `var` of u32 (or bool) scalars and vectors, and each
- * operation bitcasts its sources to the types it works on and its result back, so no type inference is needed and
- * no WGSL const-expression can overflow or produce a NaN (constants are vars too). Descriptors become bindings of
+ * The model: every SSA value and register is a u32 (or bool) scalar or vector, and each operation bitcasts its sources
+ * to the types it works on and its result back, so no type inference is needed; a scalar float that only float
+ * operations read is an f32 instead (GD G2). Values are `let`s where their uses stay in their scope and function-scope
+ * `var`s otherwise (registers among them), declared where their scope starts; a constant is a `let` too, so no WGSL
+ * const-expression can overflow or produce a NaN (wgsl_print.c `place_values`). Descriptors become bindings of
  * their own: a Vulkan (set, binding, element) is a slot of its set's layout (`wgsl_layout`), and slot s is WGSL
  * @group(g) @binding(2(base + s)) for the resource, 2(base + s) + 1 for a combined image-sampler's sampler, where the
  * set's layout says its group g and its first slot base there (WebGPU has 4 bind groups; the driver puts sets 3 and

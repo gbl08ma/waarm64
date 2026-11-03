@@ -77,14 +77,23 @@ row; arrays of textures, buffers and storage images indexed dynamically as a bin
 of a set is WGSL `@binding(2(base + s))` of its group, a combined image-sampler's sampler `2(base + s) + 1`, where set
 n is group n but sets 3 and up share group 3 one after another, WebGPU having 4 bind groups; I/O to locations;
 explicit memory; NIR's optimization loop) → `wgsl_link` for a vertex and fragment pair (`nir_opt_varyings`) → `wgsl_print`, out of SSA. The
-printed WGSL keeps every value in a function-scope `var` of u32 or bool and bitcasts at each operation, so it needs no
-type inference and no const-expression can overflow or make a NaN (shader-creation errors in WGSL); textures and
+printed WGSL keeps every value as u32 or bool and bitcasts at each operation, so it needs no type inference (a scalar
+float only float operations read is an f32, and the integer operations whose bits don't depend on the sign work on the
+u32s as they are); a value is a `let` where its uses stay in its scope and a function-scope `var` declared where the
+scope holding its uses starts otherwise, a register a `var` outside each loop that may read it before writing it in an
+iteration (`place_values`, `carry_list`), a register's load its register's name where nothing stores to it before the
+load's last use, and a loop that runs once (its body ends in its only break: NIR's early returns) its statements in
+the scope around it. Constants are `let`s too, so no const-expression can overflow or make a NaN (shader-creation
+errors in WGSL); a float one only floats read is an exact hex literal. Tint's uniformity analysis visits every `var` in
+scope at each loop, break, continue and if: with every value a `var` at the function's top, Godot's Forward+ fragment
+stage (13,113 vars, 218 loops) took 3.7 s of `createShaderModule` on the M4 and stalled the GPU process; 65 ms since
+GD G2 (bench/vulkan/REPORT.md "GD G2"). Textures and
 samplers come from the tex instruction's indices; push constants are immediates (a struct of vec4s, since immediates
 can't be arrays, copied into an array the shader indexes), or, past the device's immediates (64 bytes in Chromium;
 Vulkan's minimum is 128), a uniform buffer of the driver's at `@group(3) @binding(998)`, bound at a dynamic offset a
 draw; a compute shader's `if` around a barrier, or breaking out of a loop that holds one, takes its condition through
-`workgroupUniformLoad` (WGSL's uniformity analysis can't see that Vulkan's barriers are in uniform control flow, every
-value being a `var`; a barrier after it keeps the next write from racing the read, so one word serves every condition:
+`workgroupUniformLoad` (WGSL's uniformity analysis can't see that Vulkan's barriers are in uniform control flow, values
+reaching it through registers, vars assigned wherever; a barrier after it keeps the next write from racing the read, so one word serves every condition:
 shared memory's spare word where it has one (WebGPU counts each workgroup var rounded up to 16 bytes), else a var of
 its own, `wg_uc`, where the workgroup's storage has room, else shared memory's first word, saved and restored between
 barriers, through atomics where shared memory is of atomics (VK3 L6c; WGSL's `workgroupUniformLoad` takes one); the device advertises WebGPU's workgroup storage
@@ -155,8 +164,8 @@ and written words in `wgsl_info`). The driver's compute pass ("The driver") call
 **Subgroups** (VK3 L5): with WebGPU's `subgroups` and an adapter whose subgroups have one size (`wg_subgroup_size`:
 SwiftShader's 4, Apple's and NVIDIA's 32; WGSL can't choose one, so an adapter whose sizes vary keeps subgroups of one
 invocation), `wgsl_lower` lowers for that size (`nir_lower_subgroups`, ballots of 4 × 32 bits) and the printer uses
-WGSL's built-ins (`enable subgroups`, `diagnostic(off, subgroup_uniformity)`: every value being a var, the uniformity
-the program keeps can't be seen): ballots, votes, `subgroupBroadcastFirst`, a read of one invocation as
+WGSL's built-ins (`enable subgroups`, `diagnostic(off, subgroup_uniformity)`: through registers, vars assigned
+wherever, the uniformity the program keeps can't be seen): ballots, votes, `subgroupBroadcastFirst`, a read of one invocation as
 `subgroupShuffle` (WGSL's `subgroupBroadcast` wants a constant lane), the shuffles, quad broadcasts by a constant and
 swaps, elect, and the reductions and add or mul scans WGSL has; NIR lowers the rest (masks, ballot queries, equality
 votes, clustered reductions, the other scans, quad votes). A bool goes through them as 0 or 1. WGSL has no subgroup
