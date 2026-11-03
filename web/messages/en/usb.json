@@ -340,8 +340,12 @@
     "note": "What the Machines page is doing (shown with … at its top) while a USB device is forgotten."
   },
   "Usb.noController": {
+    "message": "This machine has no USB controller. Turn it on above to attach devices.",
+    "note": "Note at the top of the Machines page's USB tab for a machine whose USB controller is off (the switch is above it) and that has no snapshots."
+  },
+  "Usb.noController.orphans": {
     "message": "This machine has no USB controller. Turn it on above to attach devices; snapshots taken before the change will be orphaned.",
-    "note": "Note at the top of the Machines page's USB tab for a machine whose USB controller is off (the switch is above it)."
+    "note": "Note at the top of the Machines page's USB tab for a machine whose USB controller is off (the switch is above it) and that has snapshots."
   },
   "Usb.meta.usb": {
     "message": "USB {{ids}}",

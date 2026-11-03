@@ -49,6 +49,8 @@
   let running = $state<Set<string>>(new Set());
   /** The machines with a suspended copy (Start resumes them). */
   let suspended = $state<Set<string>>(new Set());
+  /** The machines with kept snapshots: only theirs warn, under a control, that a change of shape orphans them. */
+  let withSnapshots = $state<Set<string>>(new Set());
   let draft = $state<MachineRecord | undefined>();
   let error = $state('');
   /** A USB attach's problems, shown under `error` while it is theirs (`text`). */
@@ -78,6 +80,7 @@
     disks = new Map((await store.all('disks')).map((d) => [d.id, d]));
     overlays = await store.all('overlays');
     running = new Set((await Promise.all(machines.map(async (m) => ((await isRunning(m.id)) ? m.id : '')))).filter(Boolean));
+    withSnapshots = new Set((await store.all('snapshots')).map((s) => s.machine));
     suspended = new Set((await Promise.all(machines.map(async (m) => ((await suspendedCopy(machineDir(m.id)).catch(() => undefined)) ? m.id : '')))).filter(Boolean));
     if (ui.machinesSelected === undefined) ui.machinesSelected = ui.current ?? (ui.transient ? PAGE : undefined);
     if (ui.machinesSelected !== PAGE && ui.machinesSelected !== CONNECTIONS && ui.machinesSelected !== FOLDERS && ui.machinesSelected !== DISKS && ui.machinesSelected !== PREFERENCES && ui.machinesSelected !== ABOUT && ui.machinesSelected && !machines.some((m) => m.id === ui.machinesSelected)) ui.machinesSelected = undefined;
@@ -125,6 +128,8 @@
 
   // Settings.
   let dirty = $state(false);
+  /** The machine being edited has snapshots that a change of shape would orphan. */
+  const orphanable = $derived(!!draft && withSnapshots.has(draft.id));
   const shapeChanged = (a: MachineRecord, b: MachineRecord) => a.ramMiB !== b.ramMiB || (a.ramSplit ?? []).join() !== (b.ramSplit ?? []).join() || a.ncpus !== b.ncpus || a.display !== b.display || !!a.vulkan !== !!b.vulkan || adaptersOf(a).map((x) => x.mac).join() !== adaptersOf(b).map((x) => x.mac).join() || !!a.usb !== !!b.usb || !!a.mouse !== !!b.mouse || !!a.touch !== !!b.touch || !!a.clock !== !!b.clock || !!a.shares !== !!b.shares;
   /** What takes a restart: the shape, and the JIT's budget (the guest doesn't see it: no snapshot is orphaned). */
   const restartChanged = (a: MachineRecord, b: MachineRecord) => shapeChanged(a, b) || (a.jitMiB ?? 0) !== (b.jitMiB ?? 0);
@@ -229,14 +234,17 @@
 {#snippet usbSwitch()}
   {#if draft}
     <Check bind:checked={draft.usb} field="usb" title={t('machines:MachinesPage.usb.title')}>{t('machines:MachinesPage.usb')}</Check>
-    {#if !!draft.usb !== !!machines.find((x) => x.id === draft?.id)?.usb}<p class="note warn" data-usb-orphans>{draft.usb ? t('machines:MachinesPage.usb.orphans.on') : t('machines:MachinesPage.usb.orphans.off')}</p>{/if}
+    {#if orphanable && !!draft.usb !== !!machines.find((x) => x.id === draft?.id)?.usb}<p class="note warn" data-usb-orphans>{draft.usb ? t('machines:MachinesPage.usb.orphans.on') : t('machines:MachinesPage.usb.orphans.off')}</p>{/if}
   {/if}
 {/snippet}
 
 {#snippet vulkanSwitch()}
   {#if draft && draft.display === '3d'}
     <Check bind:checked={draft.vulkan} field="vulkan" title={t('machines:MachinesPage.vulkan.title')}>{t('machines:MachinesPage.vulkan')}</Check>
-    {#if !!draft.vulkan !== !!machines.find((x) => x.id === draft?.id)?.vulkan}<p class="note warn" data-vulkan-orphans>{!draft.vulkan ? t('machines:MachinesPage.vulkan.orphans.off') : hasWebgpu ? t('machines:MachinesPage.vulkan.orphans.on') : t('machines:MachinesPage.vulkan.orphans.onNoWebgpu')}</p>{/if}
+    {#if !!draft.vulkan !== !!machines.find((x) => x.id === draft?.id)?.vulkan}
+      {#if orphanable}<p class="note warn" data-vulkan-orphans>{!draft.vulkan ? t('machines:MachinesPage.vulkan.orphans.off') : hasWebgpu ? t('machines:MachinesPage.vulkan.orphans.on') : t('machines:MachinesPage.vulkan.orphans.onNoWebgpu')}</p>
+      {:else if draft.vulkan && !hasWebgpu}<p class="note warn" data-vulkan-no-webgpu>{t('machines:MachinesPage.vulkan.noWebgpu')}</p>{/if}
+    {/if}
   {/if}
 {/snippet}
 
@@ -246,7 +254,7 @@
     <Check bind:checked={draft.mouse} field="mouse" title={t('machines:MachinesPage.mouse.title')}>{t('machines:MachinesPage.mouse')}</Check>
     <Check bind:checked={draft.touch} field="touch" title={t('machines:MachinesPage.touch.title')}>{t('machines:MachinesPage.touch')}</Check>
     <Check bind:checked={draft.clock} field="clock" title={t('machines:MachinesPage.clock.title')}>{t('machines:MachinesPage.clock')}</Check>
-    {#if !!draft.mouse !== !!rec?.mouse || !!draft.touch !== !!rec?.touch || !!draft.clock !== !!rec?.clock}<p class="note warn" data-pointer-orphans>{t('machines:MachinesPage.pointers.orphans')}</p>{/if}
+    {#if orphanable && (!!draft.mouse !== !!rec?.mouse || !!draft.touch !== !!rec?.touch || !!draft.clock !== !!rec?.clock)}<p class="note warn" data-pointer-orphans>{t('machines:MachinesPage.pointers.orphans')}</p>{/if}
   {/if}
 {/snippet}
 
@@ -506,13 +514,13 @@
               {@render usbSwitch()}
               {#if dirty}{@render saveRow()}{/if}
             </div>
-            <Usb machine={machines.find((x) => x.id === m.id) ?? m} running={isOn(m.id)} {act} />
+            <Usb machine={machines.find((x) => x.id === m.id) ?? m} running={isOn(m.id)} snapshots={withSnapshots.has(m.id)} {act} />
           {:else if ui.machinesTab === 'folders'}
             {@const rec = machines.find((x) => x.id === m.id) ?? m}
             {@const pathError = sharesPathError(draft.sharesPath ?? DEFAULT_SHARES_PATH)}
             <div class="settings folders-switch" oninput={() => (dirty = true)} onchange={() => (dirty = true)}>
               <Check bind:checked={draft.shares} field="shares" title={t('machines:MachinesPage.shares.title')}>{t('machines:MachinesPage.shares')}</Check>
-              {#if !!draft.shares !== !!rec.shares}<p class="note warn" data-shares-orphans>{draft.shares ? t('machines:MachinesPage.shares.orphans.on') : t('machines:MachinesPage.shares.orphans.off')}</p>{/if}
+              {#if orphanable && !!draft.shares !== !!rec.shares}<p class="note warn" data-shares-orphans>{draft.shares ? t('machines:MachinesPage.shares.orphans.on') : t('machines:MachinesPage.shares.orphans.off')}</p>{/if}
               {#if draft.shares}
                 <Check checked={draft.sharesMount !== false} onchange={(on) => { draft!.sharesMount = on ? undefined : false; dirty = true; }} field="shares-mount" title={t('machines:MachinesPage.sharesMount.title')}>{t('machines:MachinesPage.sharesMount')}</Check>
                 {#if draft.sharesMount !== false}

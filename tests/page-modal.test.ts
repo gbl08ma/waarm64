@@ -245,11 +245,10 @@ test("a 3D machine's Vulkan box: beside 3D only, its shape note, saved and kept 
   await m.waitFor();
   const id = await m.getAttribute('data-selected');
   await m.locator('[data-field=name]').fill('Vk box');
-  // A new machine is 3D, Vulkan off; checking it says what it does to the snapshots.
+  // A new machine is 3D, Vulkan off; it has no snapshots, so checking it says nothing of them.
   assert.equal(await m.locator('[data-field=vulkan]').isChecked(), false);
-  assert.equal(await m.locator('[data-vulkan-orphans]').count(), 0);
   await m.locator('[data-field=vulkan]').check();
-  await m.locator('[data-vulkan-orphans]').waitFor();
+  assert.equal(await m.locator('[data-vulkan-orphans]').count(), 0);
   // 2D has no Vulkan: the box goes; back to 3D, it is as it was.
   await m.locator('[data-field=display]').selectOption('2d');
   assert.equal(await m.locator('[data-field=vulkan]').count(), 0);
@@ -266,12 +265,24 @@ test("a 3D machine's Vulkan box: beside 3D only, its shape note, saved and kept 
     return { vulkan: rec.vulkan, shape: (await currentShape(rec, () => undefined)).shape.vulkan };
   }, id);
   assert.deepEqual(await stored(), { vulkan: true, shape: true });
+  // With a kept snapshot, unchecking it says what it does to them.
+  await page.evaluate(async (id) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { currentShape } = await import('/web/app/snapshots.ts' as string);
+    const store = await Store.open();
+    const { shape, hash } = await currentShape(await store.get('machines', id), () => undefined);
+    await store.put('snapshots', { id: 'cccccccccccc', machine: id, name: 'Before', created: 1, bytes: 1, shape, shapeHash: hash, pins: [] });
+    store.close();
+  }, id);
   await page.reload();
   await modal(page).waitFor();
   await modal(page).locator('.pick', { hasText: 'Vk box' }).click();
   await modal(page).locator(`[data-selected="${id}"]`).waitFor();
   assert.equal(await modal(page).locator('section.machine [data-field=vulkan]').isChecked(), true);
   assert.equal(await modal(page).locator('section.machine [data-vulkan-orphans]').count(), 0);
+  await modal(page).locator('section.machine [data-field=vulkan]').uncheck();
+  await modal(page).locator('section.machine [data-vulkan-orphans]').waitFor();
+  assert.equal(await modal(page).locator('section.machine [data-vulkan-orphans]').textContent(), t('machines:MachinesPage.vulkan.orphans.off'));
   assert.deepEqual(errors, []);
   await context.close();
 });

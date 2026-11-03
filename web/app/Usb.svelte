@@ -20,9 +20,11 @@
     machine: MachineRecord;
     /** It runs (on this page, or in another tab). */
     running: boolean;
+    /** It has kept snapshots (turning the controller on would orphan them). */
+    snapshots: boolean;
     act(what: string, f: () => Promise<unknown>): Promise<void>;
   };
-  let { machine, running, act }: Props = $props();
+  let { machine, running, snapshots, act }: Props = $props();
 
   const here = $derived(machine.id === ui.current && ui.usb.running);
   let views = $state<EntryView[]>([]);
@@ -55,7 +57,7 @@
 
 <div class="usb">
   {#if !machine.usb}
-    <p class="note" data-usb-off>{t('usb:Usb.noController')}</p>
+    <p class="note" data-usb-off>{snapshots ? t('usb:Usb.noController.orphans') : t('usb:Usb.noController')}</p>
   {/if}
   <ul class="entries">
     {#each views as v (v.entry.id)}
