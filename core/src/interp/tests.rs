@@ -403,6 +403,13 @@ fn faults_leave_state_alone() {
     // ldr x0, [sp] with SP misaligned: SP alignment fault (SCTLR_EL1.SA0).
     let mut t = T::new(&[0xf94003e0]).x(31, DATA + 8);
     assert_eq!(t.step(), Err(Exit::Trap(0x26 << 26)));
+    // A prefetch has no SP alignment check: prfm pldl1keep, [sp]; prfum
+    // pldl1keep, [sp, #1]; prfm pldl1keep, [sp, x1].
+    for insn in [0xf98003e0, 0xf88013e0, 0xf8a16be0] {
+        let mut t = T::new(&[insn]).x(31, DATA + 8).x(1, 3);
+        assert_eq!(t.step(), Ok(()), "{insn:#x}");
+        assert_eq!(t.c.pc, CODE + 4);
+    }
 }
 
 /// DATA holds bytes 0, 1, 2, … (mod 256); `seq(k, n)` is the n-byte LE value at DATA + k.

@@ -15,8 +15,15 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R 
     if undefined(i, op) {
         return Err(Exit::Undefined);
     }
+    // A prefetch has no SP alignment check (the size 3, opc 2 forms of `single`'s
+    // classes with a PRFM there).
+    let prefetch = matches!(op, PRFM_imm | PRFM_unscaled_imm)
+        || matches!(op, STRx_LDRx_imm_2 | STURx_LDURx | STRx_reg | LDRx_reg)
+            && bits(i, 31, 30) == 3
+            && bits(i, 23, 22) == 2;
     let base = match op {
         LDR_lit_gen | LDRSW_lit | PRFM_lit => 0, // no base register
+        _ if prefetch => c.reg_sp(rn),
         _ => super::base_reg(c, rn)?,
     };
     match op {

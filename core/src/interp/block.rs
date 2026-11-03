@@ -34,7 +34,7 @@ use std::collections::HashMap;
 enum K {
     /// Any instruction: `x` is the word, `imm` its `Op` (as an index of `Op::ALL`).
     Generic,
-    /// Does nothing (NOP-space hints, PRFM without an SP base).
+    /// Does nothing (NOP-space hints, PRFM).
     Nop,
     /// `Xd|SP = Xn|SP + imm` (ADD/SUB immediate without flags; SUB negated).
     AddI64,
@@ -774,9 +774,7 @@ fn uop_op(w: u32, op: Op) -> Wide {
         BLR => u(K::Blr, 0, 0),
 
         NOP | HINT | XPAC_2 | PACIA_2 | PACIB_2 | AUTIA_2 | AUTIB_2 | BTI | ESB | PSB | TSB
-        | CSDB | DGH | PRFM_lit => u(K::Nop, 0, 0),
-        // The base register is read (an SP base may fault) before the hint.
-        PRFM_imm | PRFM_unscaled_imm if rn != 31 => u(K::Nop, 0, 0),
+        | CSDB | DGH | PRFM_lit | PRFM_imm | PRFM_unscaled_imm => u(K::Nop, 0, 0),
 
         LDR_lit_gen | LDRSW_lit => {
             let size = match (op, bit(w, 30)) {

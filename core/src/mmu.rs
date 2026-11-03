@@ -48,6 +48,10 @@ use crate::cpu::{Cpu, sctlr};
 use crate::mem::{Access, Fault, FaultKind, Host, Mem};
 
 pub const TLB_ENTRIES: usize = 4096;
+/// In a TLB entry's tag, bit 11 cleared (above the inverted memory index, bits
+/// 10:3): a Device page's entry, which every fast path misses, so that
+/// [`Mmu::miss`] checks the alignment of each access to it.
+const DEVICE: u64 = 1 << 11;
 /// Entries an index holds, one per array: six used, a power of two for the
 /// JIT's shift and mask.
 pub const TLB_SLOTS: usize = 8;
@@ -239,12 +243,12 @@ impl Tlb {
     }
 
     /// Caches `va`'s page in `array`; `level` is the walk's leaf level (below
-    /// 3: a page of a block).
-    fn fill(&mut self, array: usize, va: u64, host: Host, ng: bool, level: u8) {
+    /// 3: a page of a block). A `device` page's entry has [`DEVICE`] in its tag.
+    fn fill(&mut self, array: usize, va: u64, host: Host, ng: bool, level: u8, device: bool) {
         let s = index(va) * TLB_SLOTS + array;
         self.drop_slot(s);
         self.e[index(va)].0[array] = Entry {
-            tag: (va | 0xfff) ^ (host.mem() as u64) << 3,
+            tag: (va | 0xfff) ^ (host.mem() as u64) << 3 ^ if device { DEVICE } else { 0 },
             addend: host.0.wrapping_sub(va & !0xfff),
         };
         if level < 3 {
@@ -274,7 +278,7 @@ impl Tlb {
         if self.nwatched as usize == WATCHED {
             self.unwatch(mem);
         }
-        self.fill(array, va, host, w.ng, w.level);
+        self.fill(array, va, host, w.ng, w.level, w.device());
         let slot = (index(va) * TLB_SLOTS + array) as u32;
         let tag = self.e[index(va)].0[array].tag;
         self.watched[self.nwatched as usize] = Watched {
@@ -422,6 +426,11 @@ pub struct Walk {
 }
 
 impl Walk {
+    /// Device memory (MAIR attribute 0000xxxx).
+    pub fn device(&self) -> bool {
+        self.attr >> 4 == 0
+    }
+
     pub fn allows(&self, el: u64, u: Use) -> bool {
         self.perms >> (3 * el as u32 + u as u32) & 1 == 1
     }
@@ -547,7 +556,11 @@ pub fn asid(c: &Cpu) -> u64 {
 pub fn at(c: &Cpu, mem: &Mem, va: u64, el: u64, u: Use) -> u64 {
     const RES1: u64 = 1 << 11;
     if c.sctlr_el1 & sctlr::M == 0 {
-        // Flat: Device-nGnRnE (ATTR 0), outer shareable.
+        // Flat: Device-nGnRnE (ATTR 0), outer shareable; past the PA size, an
+        // address size fault at level 0 (FST 0, F).
+        if va >> PA_BITS != 0 {
+            return (FaultKind::AddressSize(0).fsc() as u64) << 1 | RES1 | 1;
+        }
         return va & OA_MASK | 2 << 7 | RES1;
     }
     let r = if el == 0 && e0pd(c, va) {
@@ -674,6 +687,22 @@ fn misaligned(va: u64, access: Access) -> Fault {
     }
 }
 
+/// With the MMU off, a VA past the PA size is an address size fault at level
+/// 0, not an external abort (`AArch64.S1DisabledOutput`; TBI isn't applied
+/// there). Only on the way out of a failed access: RAM never gets here.
+#[cold]
+#[inline(never)]
+fn flat_fault(f: Fault) -> Fault {
+    if f.kind == FaultKind::Bus && f.addr >> PA_BITS != 0 {
+        Fault {
+            kind: FaultKind::AddressSize(0),
+            ..f
+        }
+    } else {
+        f
+    }
+}
+
 /// MMU and `SCTLR_EL1.A` off: VA = PA, no permissions, no page splits.
 pub struct Flat<'a>(pub &'a Mem);
 
@@ -685,21 +714,27 @@ impl Bus for Flat<'_> {
 
     #[inline(always)]
     fn read_el(&mut self, _: &Cpu, va: u64, size: u32, _: u64) -> Result<u64, Fault> {
-        self.0.read(va, size)
+        self.0.read(va, size).map_err(flat_fault)
     }
 
     #[inline(always)]
     fn write_el(&mut self, _: &Cpu, va: u64, size: u32, val: u64, _: u64) -> Result<(), Fault> {
-        self.0.write(va, size, val)
+        self.0.write(va, size, val).map_err(flat_fault)
     }
 
     #[inline(always)]
     fn fetch(&mut self, _: &Cpu, pc: u64) -> Result<u32, Fault> {
-        self.0.read(pc, 4).map(|v| v as u32)
+        self.0.read(pc, 4).map(|v| v as u32).map_err(flat_fault)
     }
 
     fn maint(&mut self, _: &Cpu, va: u64, _: bool) -> Result<Option<u64>, Fault> {
-        Ok(self.0.host(va, 1, Access::Maint).ok().map(|_| va))
+        match self.0.host(va, 1, Access::Maint) {
+            Ok(_) => Ok(Some(va)),
+            Err(f) => match flat_fault(f) {
+                f if f.kind == FaultKind::Bus => Ok(None),
+                f => Err(f),
+            },
+        }
     }
 
     #[inline(always)]
@@ -712,7 +747,7 @@ impl Bus for Flat<'_> {
         if !va.is_multiple_of(len) {
             return Err(misaligned(va, access));
         }
-        self.0.host(va, len, access)
+        self.0.host(va, len, access).map_err(flat_fault)
     }
 }
 
@@ -743,10 +778,25 @@ impl<'a> Mmu<'a> {
         u: Use,
         el: u64,
     ) -> Result<Host, Fault> {
+        self.host_in(c, va, len, false, access, u, el)
+    }
+
+    /// [`Self::host`] for `len` bytes of a larger access, `split` if it
+    /// crosses a page ([`Self::miss`]).
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    fn host_in(
+        &mut self,
+        c: &Cpu,
+        va: u64,
+        len: u64,
+        split: bool,
+        access: Access,
+        u: Use,
+        el: u64,
+    ) -> Result<Host, Fault> {
         if c.sctlr_el1 & sctlr::M == 0 {
-            // ponytail: no address size fault for VAs past PA_BITS with the MMU
-            // off; they aren't RAM, so they fault as external aborts instead.
-            return self.mem.host(va, len, access);
+            return self.mem.host(va, len, access).map_err(flat_fault);
         }
         if let Some(t) = &self.tlb {
             let e = t.e[index(va)].0[3 * el as usize + u as usize];
@@ -754,7 +804,7 @@ impl<'a> Mmu<'a> {
                 return Ok(Host(va.wrapping_add(e.addend)));
             }
         }
-        self.miss(c, va, len, access, u, el)
+        self.miss(c, va, len, split, access, u, el)
     }
 
     /// The host address of the instruction at `pc` (aligned), through the
@@ -765,12 +815,16 @@ impl<'a> Mmu<'a> {
     }
 
     /// TLB miss: walk, check permissions, and fill the TLB if the page is RAM.
+    /// `split`: a part of a page-crossing access (misaligned, so on Device
+    /// memory an alignment fault).
+    #[allow(clippy::too_many_arguments)]
     #[inline(never)]
     fn miss(
         &mut self,
         c: &Cpu,
         va: u64,
         len: u64,
+        split: bool,
         access: Access,
         u: Use,
         el: u64,
@@ -780,11 +834,18 @@ impl<'a> Mmu<'a> {
             access,
             kind,
         };
+        // A data access to Device memory must be aligned (instruction fetches
+        // and cache maintenance have no such check).
+        let device_check = u != Use::Exec && access != Access::Maint;
+        let misaligned = split || !va.is_multiple_of(len);
         if let Some(t) = &mut self.tlb {
-            // A spill memory's entry: only the memory index differs.
+            // A spill memory's entry, or a Device page's: only bits 11:3 differ.
             let e = t.e[index(va)].0[3 * el as usize + u as usize];
             if (e.tag ^ (va.wrapping_add(len - 1) | 0xfff)) & !0xff8 == 0 && e.tag & 0xff8 != 0xff8
             {
+                if e.tag & DEVICE == 0 && device_check && misaligned {
+                    return Err(fault(FaultKind::Align));
+                }
                 return Ok(Host(va.wrapping_add(e.addend)));
             }
             t.stats.misses += 1;
@@ -795,6 +856,10 @@ impl<'a> Mmu<'a> {
         let w = walk(c, self.mem, va).map_err(fault)?;
         if !w.allows(el, u) {
             return Err(fault(FaultKind::Permission(w.level)));
+        }
+        let device = w.device() && device_check;
+        if device && misaligned {
+            return Err(fault(FaultKind::Align));
         }
         if let Some(t) = &mut self.tlb {
             t.stats.walks += 1;
@@ -825,7 +890,7 @@ impl<'a> Mmu<'a> {
                 a.store(u64::MAX, core::sync::atomic::Ordering::SeqCst);
             }
             core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-            return self.miss(c, va, len, access, u, el);
+            return self.miss(c, va, len, split, access, u, el);
         }
         // A tagged PC (TBI) never fills the instruction TLB, so it misses
         // every fast path that finds code by VA (the JIT's transfer cache, the
@@ -841,7 +906,7 @@ impl<'a> Mmu<'a> {
             if u == Use::Write && self.mem.watched(w.pa) {
                 t.fill_watched(self.mem, array, va, page, &w);
             } else {
-                t.fill(array, va, page, w.ng, w.level);
+                t.fill(array, va, page, w.ng, w.level, device);
             }
         }
         Ok(p)
@@ -868,21 +933,31 @@ impl<'a> Mmu<'a> {
         if size as u64 <= first {
             return Ok((self.host(c, va, size as u64, access, u, el)?, None));
         }
-        let p1 = self.host(c, va, first, access, u, el)?;
+        let p1 = self.host_in(c, va, first, true, access, u, el)?;
         let n = self.tlb.as_ref().map_or(0, |t| t.nwatched);
-        let p2 = self.host(
-            c,
-            va.wrapping_add(first),
-            size as u64 - first,
-            access,
-            u,
-            el,
-        )?;
+        let p2 = self
+            .host_in(
+                c,
+                va.wrapping_add(first),
+                size as u64 - first,
+                true,
+                access,
+                u,
+                el,
+            )
+            .map_err(|f| match f.kind {
+                // Reported at the access's address, as a whole.
+                FaultKind::Align => Fault { addr: va, ..f },
+                _ => f,
+            })?;
         // The second page's watched write entry overflowed the records (`Tlb::fill_watched`): that dropped the
         // first page's record and marked it before its bytes are stored, so a look in between would miss them.
         // Translating it again records it anew (one record is left, so this one can't overflow).
         if self.tlb.as_ref().is_some_and(|t| t.nwatched < n) {
-            return Ok((self.host(c, va, first, access, u, el)?, Some((p2, first))));
+            return Ok((
+                self.host_in(c, va, first, true, access, u, el)?,
+                Some((p2, first)),
+            ));
         }
         Ok((p1, Some((p2, first))))
     }

@@ -125,7 +125,11 @@ match it step for step.
 - **Alignment:** `SCTLR_EL1.A` alignment faults; SP alignment faults (`SA`/`SA0`, EC 0x26) —
   QEMU TCG doesn't raise these, the M4 (hvf) does, and we follow the architecture. A load/store's
   checks run in the pseudocode's order: its reserved encodings are UNDEFINED first (decoding), then
-  the FPEN trap for SIMD&FP, then the SP alignment fault (`ldst::undefined`, `ldst_fp::base`). Exclusives,
+  the FPEN trap for SIMD&FP, then the SP alignment fault (`ldst::undefined`, `ldst_fp::base`); a prefetch (PRFM,
+  PRFUM) has none. A data access to **Device memory** (MAIR attribute 0000xxxx) must be aligned to its size, a
+  page-crossing one never is (`Mmu::miss`, after the walk and its permission check; instruction fetches and cache
+  maintenance aren't checked). With the MMU off, where everything is Device, it isn't checked: the flat bus
+  exists to have no such test, and correct firmware doesn't notice (backlog). Exclusives,
   LDAR/STLR and LSE atomics need natural alignment (v8.0 rules; we don't advertise LSE2, which the
   M4 and QEMU implement: see [testing.md](testing.md) "Known oracle behavior").
 - `Cpu::default()` is a Linux user process at EL0; `Cpu::reset()` the EL1 boot state.
@@ -259,8 +263,12 @@ The table is `core/src/interp/sys.rs`.
 - The interpreter has three copies of `exec` over a `Bus`: flat (MMU off), MMU, and `vm::Io`
   for device MMIO, LDAR and STLR included ([platform.md](platform.md)); the choice is made outside the instruction
   loop.
-- Loose ends (backlog): no Device-memory alignment faults, no address-size fault for VAs past 40
-  bits with the MMU off, PRFM with a misaligned SP base faults, a branch to a tagged address keeps the tag in the PC.
+- **Device pages in the TLB:** their entries have tag bit 11 (`DEVICE`, above the inverted memory index) cleared,
+  so the exact compares of every fast path (the interpreters', the JIT's inline arms, spill memories' included)
+  miss them and `Mmu::miss` finds the entry and checks the alignment. MMIO already went that way; RAM mapped as
+  Device (no guest of ours does: virtio-gpu's window is mapped cached) pays a call per access.
+- **With the MMU off**, a VA past the 40-bit PA size is an address size fault at level 0, not an external abort
+  (`mmu::flat_fault`, on a failed access's way out; `AT` reports it too). TBI isn't applied there.
 
 ## Memory accesses and atomics (`core/src/mem.rs`)
 

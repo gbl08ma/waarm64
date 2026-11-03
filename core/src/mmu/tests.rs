@@ -372,6 +372,81 @@ fn asid_follows_a1_and_as() {
 }
 
 #[test]
+fn device_memory_faults_misaligned_accesses() {
+    // MAIR attribute 2 is Device-nGnRnE: a misaligned data access to it is an
+    // alignment fault, the first time (the walk) and after (its TLB entry,
+    // which no fast path takes); aligned ones, fetches and cache maintenance
+    // go through. Normal memory next to it doesn't care.
+    const DEV: u64 = 2 << 2;
+    let mut p = Pt::new();
+    p.map(0x2000, 3, 0x9000 | PAGE);
+    p.map(0x3000, 3, 0xa000 | PAGE | DEV);
+    p.map(0x4000, 3, (RAM as u64 + 0x1000) | PAGE | DEV); // nothing there (MMIO)
+    p.r.mem.write(0xa008, 8, 0x1122_3344_5566_7788).unwrap();
+    let c = Cpu {
+        mair_el1: 0x44ff,
+        ..cpu()
+    };
+    let mut v = Vcpu::new(c.clone());
+    let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+    let align = |addr, access| {
+        Err(Fault {
+            addr,
+            access,
+            kind: FaultKind::Align,
+        })
+    };
+    for _ in 0..2 {
+        assert_eq!(b.read(&c, 0x3008, 8), Ok(0x1122_3344_5566_7788));
+        assert_eq!(b.read(&c, 0x300c, 4), Ok(0x1122_3344));
+        assert_eq!(b.read(&c, 0x300a, 4), align(0x300a, Access::Read));
+        assert_eq!(
+            b.write(&c, 0x3001, 2, 0).map(|_| 0),
+            align(0x3001, Access::Write)
+        );
+        assert!(b.fast(&c, 0x3008, 8, Use::Read).is_none());
+    }
+    assert_eq!(b.fetch(&c, 0x3008), Ok(0x5566_7788));
+    assert_eq!(b.maint(&c, 0x3003, false), Ok(Some(0xa003)));
+    // A page-crossing access into or out of Device memory.
+    assert_eq!(b.read(&c, 0x2ffc, 8), align(0x2ffc, Access::Read));
+    assert_eq!(b.read(&c, 0x3ffe, 4), align(0x3ffe, Access::Read));
+    // Normal memory: misaligned is fine, across into Normal memory too.
+    assert_eq!(b.read(&c, 0x2001, 2), Ok(0));
+    // A device's registers: misaligned faults before the bus is asked.
+    assert_eq!(b.read(&c, 0x4002, 4), align(0x4002, Access::Read));
+    assert_eq!(
+        b.read(&c, 0x4004, 4).map_err(|f| f.kind),
+        Err(FaultKind::Bus)
+    );
+}
+
+#[test]
+fn past_the_pa_size_with_the_mmu_off() {
+    // An address size fault at level 0 (`AArch64.S1DisabledOutput`), through
+    // either bus and for every kind of access; below the PA size, nothing
+    // there is still an external abort.
+    let r = TestRam::new(64);
+    let c = Cpu::default();
+    let (far, near) = (1 << PA_BITS, (1 << PA_BITS) - 8);
+    let kind = |r: Result<u64, Fault>| r.map_err(|f| f.kind);
+    let size = Err(FaultKind::AddressSize(0));
+    let mut flat = Flat(&r.mem);
+    let mut mmu = Mmu::new(&r.mem, None);
+    for b in [&mut flat as &mut dyn Bus, &mut mmu] {
+        assert_eq!(kind(b.read(&c, far, 8)), size);
+        assert_eq!(kind(b.read(&c, u64::MAX - 7, 8)), size);
+        assert_eq!(kind(b.write(&c, far, 4, 0).map(|_| 0)), size);
+        assert_eq!(kind(b.fetch(&c, far).map(u64::from)), size);
+        assert_eq!(kind(b.read_atomic(&c, far, 8)), size);
+        assert_eq!(kind(b.maint(&c, far, false).map(|_| 0)), size);
+        assert_eq!(kind(b.read(&c, near, 8)), Err(FaultKind::Bus));
+        assert_eq!(b.maint(&c, near, false), Ok(None));
+    }
+    assert_eq!(at(&c, &r.mem, far, 1, Use::Read), 1 << 11 | 1);
+}
+
+#[test]
 fn atomics_mmu_off() {
     let r = TestRam::new(64);
     let c = Cpu::default();
@@ -516,11 +591,11 @@ fn transfer_cache_entries_die_with_their_generation() {
     // holds only global entries; EL0's dies once an nG one was filled there.
     t.xc_fill(0x1000, 3, 7, 4);
     t.xc_fill(0x2000, 2, 7, 4);
-    t.fill(Use::Exec as usize, 0x2000, Host(0x2000), true, 3);
-    t.fill(3 + Use::Read as usize, 0x5000, Host(0x5000), true, 3);
+    t.fill(Use::Exec as usize, 0x2000, Host(0x2000), true, 3, false);
+    t.fill(3 + Use::Read as usize, 0x5000, Host(0x5000), true, 3, false);
     t.flush_ng();
     assert!(live(t, 0x1000, 3) && !live(t, 0x2000, 2));
-    t.fill(3 + Use::Exec as usize, 0x1000, Host(0x1000), true, 3);
+    t.fill(3 + Use::Exec as usize, 0x1000, Host(0x1000), true, 3, false);
     t.flush_ng();
     assert!(!live(t, 0x1000, 3));
     // Blocks dropped: all of it.

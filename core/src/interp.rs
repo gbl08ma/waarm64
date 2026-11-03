@@ -215,7 +215,6 @@ pub fn run_system(v: &mut Vcpu, mem: &Mem, n: u64) -> (u64, R) {
 
 /// A load/store base register; with SP as the base, `SCTLR_EL1.SA0`/`SA` make a
 /// misaligned SP take an SP alignment fault (EC 0x26).
-// ponytail: PRFM with a misaligned SP faults too, where hardware wouldn't.
 #[inline(always)]
 fn base_reg(c: &Cpu, rn: u32) -> R<u64> {
     let v = c.reg_sp(rn);

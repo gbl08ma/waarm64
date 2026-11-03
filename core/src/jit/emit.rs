@@ -1573,12 +1573,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 load_reg(c, rt, off, len, sign, false)
             });
         }
-        PRFM_lit => {}
-        PRFM_imm | PRFM_unscaled_imm => {
-            if rn == 31 {
-                return false; // SP's alignment check
-            }
-        }
+        PRFM_lit | PRFM_imm | PRFM_unscaled_imm => {} // no SP alignment check
         STRx_LDRx_imm_2 | STURx_LDURx | STRx_reg | LDRx_reg | STRx_LDRx_imm_1 | STTRB | LDTRB
         | LDTRSB | STTRH | LDTRH | LDTRSH | STTR | LDTR | LDTRSW => {
             if matches!(op, STRx_reg | LDRx_reg) && bits(i, 15, 13) & 2 == 0 {
@@ -1609,7 +1604,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 0 => (true, false, false),
                 1 => (false, false, false),
                 2 if size == 3 && prfm => {
-                    return rn != 31; // PRFM: nothing but SP's alignment check
+                    return true; // PRFM: nothing (no SP alignment check)
                 }
                 _ if size == 3 || (size == 2 && opc == 3) => return false, // UNDEFINED
                 _ => (false, true, opc == 3),
@@ -4852,9 +4847,11 @@ mod tests {
             b.windows(7)
                 .any(|w| w == [0x20, 3, 0x42, 15, 0x83, 0x50, 0x71])
         );
-        // PRFM: nothing, unless its base is SP; with a reserved option, a helper.
+        // PRFM: nothing, SP base included (no SP alignment check); with a
+        // reserved option, a helper.
         assert_eq!(emit(0xf9800020, 0).unwrap(), []); // prfm pldl1keep, [x1]
-        assert_eq!(emit(0xf98003e0, 0), None); // prfm pldl1keep, [sp]
+        assert_eq!(emit(0xf98003e0, 0).unwrap(), []); // prfm pldl1keep, [sp]
+        assert_eq!(emit(0xf8a16be0, 0).unwrap(), []); // prfm pldl1keep, [sp, x1]
         assert_eq!(emit(0xf8a10820, 0), None); // prfm pldl1keep, [x1, w1, uxtb]: UNDEFINED
         // LDTR and STTR at EL1 go through EL0's arrays (loads: read; stores: write).
         for (insn, arr) in [(0xf8408820, tlb_array(0, 0)), (0xf8008840, tlb_array(0, 1))] {

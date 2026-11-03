@@ -35,10 +35,11 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   BHB mitigation: MIDR 0 has no loop count). Only `ID_AA64PFR0_EL1.CSV2` = 3 clears it, which needs
   `SCXTNUM_EL0`/`EL1` (plain registers, `SCTLR_EL1.TSCXT` trap, JIT sysreg path, snapshot state).
 - **MMU:** per-ASID stashes of nG entries (the previous ASID's are dropped at a switch; Alpine's
-  boot refills ~0.3M); ~0.3M of Alpine's misses are direct-mapped conflicts; no Device-memory
-  alignment faults (with the MMU off too, where every access is Device: on the M4 an unaligned load and DC ZVA fault,
-  QEMU's TCG only the load; the flat bus exists to have no such test; correct firmware doesn't notice); no
-  address-size fault for VAs past 40 bits with the MMU off (external abort); PRFM with a misaligned SP base faults.
+  boot refills ~0.3M); ~0.3M of Alpine's misses are direct-mapped conflicts; no Device-memory alignment faults
+  with the MMU off, where every access is Device (on the M4 an unaligned load and DC ZVA fault, QEMU's TCG only the
+  load): the check would sit on the flat bus's fast path, which the MMU-off EL1 and user-mode guests run on, and
+  correct firmware doesn't notice; DC ZVA to RAM mapped as Device with the MMU on zeroes it (the M4: an alignment
+  fault).
 - **Watchpoints** (found 2026-10-30, against the M4, `interp/debug.rs`): an atomic read-modify-write is checked as a store
   alone, so a load-only watchpoint misses LDADD and CAS, a failing CAS included; and the check comes before the
   translation, so a watchpoint on an unmapped address beats the translation fault (M4 and QEMU: translation fault).
