@@ -132,6 +132,8 @@ type Exports = {
   venus_cmd_counts(): number;
   venus_cmd_types(): number;
   venus_ring_events(): number;
+  /** The monitored rings' status words, which the ticker sets alive (GD G3; web/venus-ticker.ts). */
+  venus_ring_alive(): number;
   venus_cmd_name(type: number): number;
   venus_ring_idle(us: number): void;
   venus_resource_data(ctx: number, res: number): number;
@@ -254,9 +256,9 @@ export class VenusRenderer {
     // core's heap there): one built before memory 1 has no `venus_arena_end`; a later one says where its arena ends.
     const stale = `Vulkan's renderer (target/vk/venus.wasm) isn't built for its arena (${VENUS_ARENA >> 20} MiB of memory 1): rebuild it (vk/build.sh)`; // i18n-ignore: a developer's (the GPU worker logs it)
     if (!WebAssembly.Module.exports(module).some((e) => e.name === 'venus_arena_end')) throw new Error(stale);
-    // One built before vkr's counts (VK4 T13) lacks their exports, which the stats call every second.
+    // One built before vkr's counts (VK4 T13) or the alive table (GD G3) lacks their exports, which the stats and the ticker use.
     const names = new Set(WebAssembly.Module.exports(module).map((e) => e.name));
-    const missing = ['venus_cmd_counts', 'venus_cmd_types', 'venus_ring_events', 'venus_cmd_name', 'venus_ring_idle'].filter((n) => !names.has(n));
+    const missing = ['venus_cmd_counts', 'venus_cmd_types', 'venus_ring_events', 'venus_cmd_name', 'venus_ring_idle', 'venus_ring_alive'].filter((n) => !names.has(n));
     if (missing.length) throw new Error(`Vulkan's renderer (target/vk/venus.wasm) is older than this page (no ${missing.join(', ')}): rebuild it (vk/build.sh)`);
     const instance = await WebAssembly.instantiate(module, imports);
     if ((instance.exports as unknown as Exports).venus_arena_end() >>> 0 !== VENUS_ARENA) throw new Error(stale);
@@ -613,7 +615,8 @@ export class VenusRenderer {
         worker.terminate();
         if (this.ticks && this.ticks.buffer === sab) fallBack(e.message || 'its worker failed');
       };
-      worker.postMessage({ sab, period });
+      // The ticker is also vkr's ring monitor (GD G3): it sets the rings' alive bits while this thread is in a long call.
+      worker.postMessage({ sab, period, alive: { memory: this.memory, table: this.ex.venus_ring_alive() >>> 0 } });
       this.ticks = new Int32Array(sab);
     } catch (e) {
       fallBack(e);

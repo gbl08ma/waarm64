@@ -7,7 +7,8 @@
 // is made so (`PROFILE=images/vkframes/venus-profile.json`, on SwiftShader, whenever what the device advertises changes).
 //   node bench/vulkan/venus-run.ts [image] [outdir]   (the image also IMAGE=, default target/images/debian-vulkan/disk.qcow2;
 //   the form bench/gpu/sway-mac.sh calls with SCRIPT=../vulkan/venus-run.ts, mode `-`); GPU_KNOBS: more of `?gpu=`, comma-separated
-//   (e.g. `vkvendor=nvidia,vkreadback`: web/app/main.ts); AFTER: commands after the replays, one a line
+//   (e.g. `vkvendor=nvidia,vkreadback`: web/app/main.ts); AFTER: commands after the replays, one a line; a CMDS line
+//   `@stall <ms>` blocks the GPU worker's thread that long instead (GD G3)
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { openSession } from '../gpu/guest-session.ts';
@@ -28,7 +29,12 @@ try {
   await s.rootShell();
   results.kernel = await s.run('uname -r; dmesg | grep -E "virtio_gpu|\\[drm\\]" | head -20');
   results.vulkaninfo = await s.run('VN_DEBUG=init vulkaninfo --summary 2>&1 | head -60', 120_000);
-  for (const cmd of (process.env.CMDS ?? '').split('\n').filter(Boolean)) results[cmd] = await s.run(cmd, 300_000);
+  for (const cmd of (process.env.CMDS ?? '').split('\n').filter(Boolean)) {
+    // `@stall <ms>`: the GPU worker's thread blocked that long (the page's `__webpcStallGpu`), while the guest runs on.
+    const stall = /^@stall (\d+)$/.exec(cmd);
+    if (stall) await s.page.evaluate((ms) => (window as unknown as { __webpcStallGpu(ms: number): void }).__webpcStallGpu(ms), Number(stall[1]));
+    else results[cmd] = await s.run(cmd, 300_000);
+  }
   if (process.env.PROFILE) {
     // Compressed and in lines short enough for the serial screen (runLines reads 6 at a time; 300-character lines lost some).
     const b64 = await s.runLines('cd /tmp && rm -f VP_*.json && vulkaninfo --json >/dev/null 2>&1; gzip -9 < /tmp/VP_*.json | base64 -w 100', 300_000);

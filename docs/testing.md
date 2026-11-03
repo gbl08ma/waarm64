@@ -24,7 +24,8 @@ only edits docs: `.md` files or code comments):
   device's 2D display, and at the end of a milestone or a track. That is the canvas 2D screen here (SwiftShader's
   WebGL2 is software, which the presenter leaves to canvas 2D); `gpu=2d,gl2d` runs them on the WebGL2 one.
 - **`scripts/ci-graphics.sh`** (~3 min, two boots at a time) runs `page-machine`'s graphics test and `page-venus` (vkcube
-  through Venus on images/debian-vulkan/build.sh's Debian, reaching steady frames, its frames presented through a GLES
+  through Venus on images/debian-vulkan/build.sh's Debian, reaching steady frames and living through a 6 s stall of the
+  GPU worker's thread past Venus's watchdog (GD G3), its frames presented through a GLES
   sway into virgl and seen by grim, and with images/vkframes/build.sh's disk vkcube's frames compared with lavapipe's,
   vk/README.md "Checking frames"; skipped without that image or vk/build.sh's renderer). It must pass too when a change
   touches the display or 3D (virtio-gpu, its presenter, the GPU worker, the Machine menu's graphics, Venus's device), and

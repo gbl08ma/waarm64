@@ -66,7 +66,11 @@ Results in `bench/results/local/godot/` (dev VM) and `godot-mac-*` (the M4).
   more than the access. *Done:* every Godot stage's `createShaderModule` under ~100 ms on the M4 (a script over the
   dumped corpus, `bench/results/local/godot-tools/tint-time.ts` made a bench tool), no other program's slower, the
   translator's tests and dEQP-VK's list unchanged. This one affects every large program (vkd3d's games, DXVK).
-- **G3. A long GPU-process call must not kill the guest's program** (S–M). The ring's alive bit set from outside the
+- **G3. A long GPU-process call must not kill the guest's program** (done 2026-11-03: the ticker is vkr's ring monitor,
+  setting the monitored rings' alive bits every second from its own thread through a table the patch keeps under a
+  lock; vkcube lives through a 6 s stall of the GPU worker, where it died of "expired ring alive status" (134) before
+  (tests/page-venus.test.ts, `window.__webpcStallGpu`; vk/README.md "The ring monitor"). Left: `?gpu=vkpoll=pump` and
+  `timeout`, A/B knobs, have no monitor between polls). The ring's alive bit set from outside the
   GPU worker's thread while that thread is in a call (the ticker, web/venus-ticker.ts, already runs beside it), so
   Venus's watchdog sees a busy renderer, not a dead one; Mesa's own 895 s abort stays for real hangs. *Done:* a test
   that blocks the worker past 4 s under a guest wait without the program aborting.

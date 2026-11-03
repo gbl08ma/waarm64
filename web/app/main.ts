@@ -521,6 +521,9 @@ if (benchHooks) (window as unknown as { __serialLog?: () => string }).__serialLo
 if (benchHooks) (window as unknown as { __webpcHeap?: () => void }).__webpcHeap = () => run?.worker.postMessage({ type: 'heap' } satisfies ToWorker);
 /** `window.__webpcGrab()`: the 3D screen as the page draws it, read back in the GPU worker (RGBA, top row first): bench/vulkan/present.ts
  * (a Playwright screenshot waits for a compositor frame, which SwiftShader's busy GPU process may not give for minutes). */
+/** `window.__webpcStallGpu(ms)` (tests/page-venus.test.ts): the GPU worker's thread blocked that long, as a long GPU-process call
+ * blocks it (GD G3: Venus's watchdog must see a busy renderer, not a dead one). */
+if (benchHooks) (window as unknown as { __webpcStallGpu?: (ms: number) => void }).__webpcStallGpu = (ms) => run?.gpu?.postMessage({ type: 'stall', ms } satisfies ToGpuWorker);
 const grabs = new Map<number, (g: { width: number; height: number; pixels: Uint8Array }) => void>();
 if (benchHooks) (window as unknown as { __webpcGrab?: () => Promise<unknown> }).__webpcGrab = () => new Promise((resolve) => {
   const id = grabs.size + Math.random();

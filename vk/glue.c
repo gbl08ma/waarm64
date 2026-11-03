@@ -52,6 +52,7 @@ int venus_poll(void);
 const uint32_t *venus_cmd_counts(void);
 uint32_t venus_cmd_types(void);
 const uint32_t *venus_ring_events(void);
+const uint32_t *venus_ring_alive(void);
 const char *venus_cmd_name(uint32_t type);
 void venus_ring_idle(uint32_t us);
 void *venus_alloc(uint32_t size);
@@ -250,6 +251,16 @@ EXPORT const uint32_t *
 venus_ring_events(void)
 {
    return vkr_wasi_ring_events;
+}
+
+/* The monitored rings' status words for the ticker (web/venus-ticker.ts) to set alive from its own thread (GD G3; the
+ * patch's vkr_ring.h `vkr_wasi_alive`: [0] a lock, [1] the report period in us, [2] the count, then the addresses). */
+extern uint32_t vkr_wasi_alive[];
+
+EXPORT const uint32_t *
+venus_ring_alive(void)
+{
+   return vkr_wasi_alive;
 }
 
 EXPORT const char *

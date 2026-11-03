@@ -6,7 +6,7 @@
 // images/vkframes/build.sh's disk, its captures (vkcube, vkmark's scenes, vkQuake) replayed on the device and their
 // frames compared with lavapipe's. Skipped where the page has no adapter (with `--enable-unsafe-webgpu`: SwiftShader's in
 // the dev VM), as without the image or the renderer. Any WebGPU error the page logged fails it (an invalid command drops
-// its whole submit: VK3 L6c's vkQuake frame, 80% off). In scripts/ci-graphics.sh and scripts/ci-deqp-vk.sh, ~1.5 min.
+// its whole submit: VK3 L6c's vkQuake frame, 80% off). In scripts/ci-graphics.sh and scripts/ci-deqp-vk.sh, ~2 min.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -32,6 +32,16 @@ const SWAY = 'mkdir -p -m 700 /tmp/xdg; printf "output HEADLESS-1 resolution 640
   + 'for i in $(seq 50); do [ -S /tmp/xdg/wayland-1 ] && break; sleep 0.2; done; echo sway $(ls /tmp/xdg | grep -cx wayland-1)';
 const vkcube = (frames: number) => 'S=$(date +%s%N); XDG_RUNTIME_DIR=/tmp/xdg WAYLAND_DISPLAY=wayland-1 MESA_VK_WSI_DEBUG=sw '
   + `timeout 120 vkcube --wsi wayland --c ${frames} > /tmp/vkcube.log 2>&1; echo "vkcube $? $(( ($(date +%s%N) - S) / 1000000 ))"; head -c 300 /tmp/vkcube.log`;
+
+// A long GPU-process call (GD G3: Dawn's createShaderModule of Godot's Forward+ shader took 5 s on the GPU process's
+// main thread, and the GPU worker's synchronous WebGL and WebGPU calls waited behind it) blocks the GPU worker's thread:
+// nothing polls the rings, and Venus's watchdog in the guest (a wait checks the ring's alive bit every ~3.5 s: Mesa's
+// vn_relax) aborted the program unless something else set the bit. vkcube runs across a 6 s stall of the GPU worker
+// (`@stall`: bench/vulkan/venus-run.ts) and finishes; its time says it ran through it.
+const STALL_MS = 6000;
+const STALL_START = `(S=$(date +%s%N); XDG_RUNTIME_DIR=/tmp/xdg WAYLAND_DISPLAY=wayland-1 MESA_VK_WSI_DEBUG=sw timeout 150 vkcube --wsi wayland --c 1000 > /tmp/vkstall.log 2>&1; `
+  + 'echo "$? $(( ($(date +%s%N) - S) / 1000000 ))" > /tmp/vkstall.rc) > /dev/null 2>&1 & sleep 3; echo started';
+const STALL_END = 'for i in $(seq 150); do [ -f /tmp/vkstall.rc ] && break; sleep 1; done; echo "vkstall $(cat /tmp/vkstall.rc 2>/dev/null || echo none)"; head -c 400 /tmp/vkstall.log';
 
 // Presentation (vk/README.md "Presentation"): a second sway, rendering with GLES on virgl, imports vkcube's WSI images
 // as dma-bufs into virgl (web/venus-share.ts copies them into virgl's textures); grim's two screenshots a second apart,
@@ -60,7 +70,7 @@ test('vkcube reaches steady frames through Venus on the page', { skip, timeout: 
   let passed = false;
   try {
     const r = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', 'bench/vulkan/venus-run.ts', out], {
-      cwd: root, env: { ...process.env, CHROMIUM_ARGS: `${process.env.CHROMIUM_ARGS ?? ''} --enable-unsafe-webgpu`, GPU_KNOBS: 'vkbreak=bitmap,vkbreak=canvas', IMAGE, REPLAY: frames ? 'all' : '', CMDS: [SWAY, vkcube(SHORT), vkcube(LONG), SWAY_GL, PRESENT, OOPS].join('\n') }, encoding: 'utf8', timeout: 8 * 60_000,
+      cwd: root, env: { ...process.env, CHROMIUM_ARGS: `${process.env.CHROMIUM_ARGS ?? ''} --enable-unsafe-webgpu`, GPU_KNOBS: 'vkbreak=bitmap,vkbreak=canvas', IMAGE, REPLAY: frames ? 'all' : '', CMDS: [SWAY, vkcube(SHORT), vkcube(LONG), STALL_START, `@stall ${STALL_MS}`, STALL_END, SWAY_GL, PRESENT, OOPS].join('\n') }, encoding: 'utf8', timeout: 8 * 60_000,
     });
     assert.equal(r.status, 0, `venus-run.ts failed (its output and the serial log: ${out}): ${(r.stdout + r.stderr).slice(-2000)}`);
     const res = JSON.parse(readFileSync(join(out, 'results.json'), 'utf8')) as Record<string, string>;
@@ -80,6 +90,13 @@ test('vkcube reaches steady frames through Venus on the page', { skip, timeout: 
     console.log(`vkcube: ${SHORT} frames in ${ran[0]} ms, ${LONG} in ${ran[1]} ms: ${fps.toFixed(1)} frames/s steady`);
     // SwiftShader's WebGPU on 2 vCPUs: ~50 frames/s in the dev VM; a stall (a fence or the ring not serviced) is far under.
     assert.ok(fps > 5, `${fps.toFixed(1)} frames/s`);
+    const stalled = /vkstall (\d+) (\d+)/.exec(res[STALL_END] ?? '');
+    console.log(`vkcube across a ${STALL_MS} ms stall of the GPU worker: ${res[STALL_END]}`);
+    assert.ok(stalled, `vkcube across the stall didn't finish: ${res[STALL_END]}`);
+    assert.equal(stalled[1], '0', `vkcube didn't live through a ${STALL_MS} ms stall of the GPU worker (134: Venus's watchdog aborted it): ${res[STALL_END]}`);
+    assert.ok(Number(stalled[2]) > 3000 + STALL_MS, `vkcube ended before the stall did: ${res[STALL_END]}`);
+    // Mesa logs each watchdog check: one ran during the stall, and found the ring alive.
+    assert.match(res[STALL_END] ?? '', /stuck in \w+ wait/, `vkcube's waits never reached Venus's watchdog: ${res[STALL_END]}`);
     assert.match(res[SWAY_GL], /sway 1/, `sway on GLES started: ${res[SWAY_GL]}`);
     const shots = [...(res[PRESENT] ?? '').matchAll(/shot grey (\d+) colours (\d+)/g)].map((m) => ({ grey: Number(m[1]), colours: Number(m[2]) }));
     console.log(`vkcube presented through virgl: ${res[PRESENT]}`);

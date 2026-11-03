@@ -43,8 +43,9 @@ that only make sense natively dropped, `vk/wasi/` ahead on the include path) and
   take `>>> 0` of them.
 - **No threads.** vkr's ring, ring-monitor and queue-sync threads become polls under `__wasi__`
   (`vk/patches/vkr-wasm.patch`): `vkr_renderer_poll` runs every ring and retires fences, and a seqno wait polls its
-  ring. A ring command that waits for a virtqueue seqno not submitted yet (`vkWaitVirtqueueSeqnoMESA`, which Mesa
-  26's driver sends) can't block the only thread, since that seqno comes in a later submit: the ring stalls after it,
+  ring. The ring monitor's alive bits are set at each poll and also by the GPU worker's ticker ("The ring monitor").
+  A ring command that waits for a virtqueue seqno not submitted yet (`vkWaitVirtqueueSeqnoMESA`, which Mesa 26's driver
+  sends) can't block the only thread, since that seqno comes in a later submit: the ring stalls after it,
   keeps the rest of its batch, and its poll resumes once the seqno arrives. The module imports `wasi.thread-spawn`,
   which the host answers with -1.
 - **Calls and rings** (VK4 T13). A Venus call the guest makes synchronously (a command asking for a reply: `vn_call_*`)
@@ -67,6 +68,18 @@ gives the pump's own turns back, `?gpu=vktick=<ms>` another sleep (0.01–10 ms;
   stats carry them (`venus`'s `ringCmds`, `queueCmds`, `nestedCmds`, `replies`, `idles`, `notifies`, the pump's own
   `turnMs`, and `venusCalls`: the replied commands and the virtqueue's by name), which bench/gpu/guest-session.ts sums
   (`venus.cmds`, `venus.calls`).
+- **The ring monitor** (GD G3). Venus's watchdog in the guest (Mesa's `vn_relax`) clears the instance ring's alive bit
+  as a wait starts and aborts the program if its first check, ~3.5 s in, finds it still clear; vkr's monitor thread sets it at the report period the
+  guest asks (Mesa's 3 s). A poll sets it, but a call that holds the GPU worker's thread for seconds (Dawn's
+  `createShaderModule` of Godot's 1.3 MB Forward+ WGSL took 5–6 s in the GPU process, and the worker's next synchronous
+  WebGL or WebGPU call waited behind it) left it unset, and the guest aborted Godot. So the ticker is the monitor too:
+  the patch keeps a table of the monitored rings' status words (`vkr_wasi_alive`, glue.c's `venus_ring_alive`: a lock,
+  the smallest period asked, the count, the addresses), rebuilt under its lock whenever a monitored ring comes or goes,
+  and the ticker, every third of that period, takes the lock and sets each word's alive bit (web/venus-ticker.ts
+  `setAlive`), stopped or running. A renderer stuck for good still meets Mesa's own abort (895 s), and one whose worker
+  is gone takes its ticker with it. `?gpu=vkpoll=pump` and `timeout` have no ticker, so no monitor between polls.
+  tests/page-venus.test.ts runs vkcube across a 6 s stall of the GPU worker (`window.__webpcStallGpu`): without the
+  ticker's bits Mesa logs "aborting on expired ring alive status" and vkcube dies (134); with them it finishes.
 
 ## The shader path
 

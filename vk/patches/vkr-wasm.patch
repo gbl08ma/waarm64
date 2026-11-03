@@ -533,10 +533,10 @@ index 6a3a909e..41593720 100644
     struct vkr_object base;
  };
 diff --git a/src/venus/vkr_renderer.c b/src/venus/vkr_renderer.c
-index d04f11b3..b168a484 100644
+index d04f11b3..64f82884 100644
 --- a/src/venus/vkr_renderer.c
 +++ b/src/venus/vkr_renderer.c
-@@ -232,6 +232,111 @@ vkr_renderer_import_resource(uint32_t ctx_id,
+@@ -232,6 +232,135 @@ vkr_renderer_import_resource(uint32_t ctx_id,
     return vkr_context_import_resource(ctx, res_id, fd_type, fd, size);
  }
  
@@ -562,6 +562,30 @@ index d04f11b3..b168a484 100644
 +      }
 +   }
 +   return active;
++}
++
++uint32_t vkr_wasi_alive[3 + VKR_WASI_ALIVE_MAX];
++
++void
++vkr_wasi_alive_update(void)
++{
++   uint32_t words[VKR_WASI_ALIVE_MAX], n = 0, period_us = 0;
++   list_for_each_entry (struct vkr_context, ctx, &vkr_state.contexts, head) {
++      list_for_each_entry (struct vkr_ring, ring, &ctx->rings, head) {
++         if (!ring->monitor || n == VKR_WASI_ALIVE_MAX)
++            continue;
++         words[n++] = (uint32_t)(uintptr_t)ring->control.status;
++         if (!period_us || ctx->ring_monitor.report_period_us < period_us)
++            period_us = ctx->ring_monitor.report_period_us;
++      }
++   }
++   /* The ticker holds the lock for a few loads and stores at most. */
++   while (__atomic_exchange_n(&vkr_wasi_alive[0], 1, __ATOMIC_SEQ_CST))
++      ;
++   vkr_wasi_alive[1] = period_us;
++   vkr_wasi_alive[2] = n;
++   memcpy(&vkr_wasi_alive[3], words, n * sizeof(words[0]));
++   __atomic_store_n(&vkr_wasi_alive[0], 0, __ATOMIC_SEQ_CST);
 +}
 +
 +void *
@@ -693,10 +717,21 @@ index be3ae046..ff7b79d7 100644
 +
  #endif /* VKR_RENDERER_H */
 diff --git a/src/venus/vkr_ring.c b/src/venus/vkr_ring.c
-index 0d4899ef..592cd374 100644
+index 0d4899ef..2b6904fe 100644
 --- a/src/venus/vkr_ring.c
 +++ b/src/venus/vkr_ring.c
-@@ -227,6 +227,9 @@ vkr_ring_submit_cmd(struct vkr_ring *ring,
+@@ -165,6 +165,10 @@ void
+ vkr_ring_destroy(struct vkr_ring *ring)
+ {
+    list_del(&ring->head);
++#ifdef __wasi__
++   if (ring->monitor)
++      vkr_wasi_alive_update();
++#endif
+ 
+    assert(!ring->started);
+    vkr_cs_decoder_fini(&ring->decoder);
+@@ -227,6 +231,9 @@ vkr_ring_submit_cmd(struct vkr_ring *ring,
     vkr_cs_decoder_set_buffer_stream(dec, buffer, size);
  
     while (vkr_cs_decoder_has_command(dec)) {
@@ -706,7 +741,7 @@ index 0d4899ef..592cd374 100644
        vn_dispatch_command(&ring->dispatch);
        if (vkr_cs_decoder_get_fatal(dec)) {
           vkr_log("ring_submit_cmd: vn_dispatch_command failed");
-@@ -239,6 +242,15 @@ vkr_ring_submit_cmd(struct vkr_ring *ring,
+@@ -239,6 +246,15 @@ vkr_ring_submit_cmd(struct vkr_ring *ring,
        const uint32_t cur_ring_head = ring_head + (dec->cur - buffer);
        vkr_ring_store_head(ring, cur_ring_head);
        vkr_context_on_ring_seqno_update(ring->dispatch.data, ring->id, cur_ring_head);
@@ -722,7 +757,7 @@ index 0d4899ef..592cd374 100644
     }
  
     vkr_cs_decoder_reset(dec);
-@@ -348,6 +360,100 @@ out:
+@@ -348,6 +364,100 @@ out:
     return ret;
  }
  
@@ -823,7 +858,7 @@ index 0d4899ef..592cd374 100644
  void
  vkr_ring_start(struct vkr_ring *ring)
  {
-@@ -355,6 +461,11 @@ vkr_ring_start(struct vkr_ring *ring)
+@@ -355,6 +465,11 @@ vkr_ring_start(struct vkr_ring *ring)
  
     assert(!ring->started);
     ring->started = true;
@@ -835,7 +870,7 @@ index 0d4899ef..592cd374 100644
     ret = thrd_create(&ring->thread, vkr_ring_thread, ring);
     if (ret != thrd_success)
        ring->started = false;
-@@ -363,6 +474,10 @@ vkr_ring_start(struct vkr_ring *ring)
+@@ -363,6 +478,10 @@ vkr_ring_start(struct vkr_ring *ring)
  bool
  vkr_ring_stop(struct vkr_ring *ring)
  {
@@ -846,7 +881,7 @@ index 0d4899ef..592cd374 100644
     mtx_lock(&ring->mutex);
     if (thrd_equal(ring->thread, thrd_current())) {
        mtx_unlock(&ring->mutex);
-@@ -381,6 +496,11 @@ vkr_ring_stop(struct vkr_ring *ring)
+@@ -381,6 +500,11 @@ vkr_ring_stop(struct vkr_ring *ring)
  void
  vkr_ring_notify(struct vkr_ring *ring)
  {
@@ -858,7 +893,7 @@ index 0d4899ef..592cd374 100644
     mtx_lock(&ring->mutex);
     ring->pending_notify = true;
     cnd_signal(&ring->cond);
-@@ -441,6 +561,14 @@ vkr_ring_wait_virtqueue_seqno(struct vkr_ring *ring, uint64_t seqno)
+@@ -441,6 +565,14 @@ vkr_ring_wait_virtqueue_seqno(struct vkr_ring *ring, uint64_t seqno)
  
     bool ok = true;
  
@@ -874,10 +909,10 @@ index 0d4899ef..592cd374 100644
     while (ok && ring->started && ring->virtqueue_seqno < seqno)
        ok = cnd_wait(&ring->cond, &ring->mutex) == thrd_success;
 diff --git a/src/venus/vkr_ring.h b/src/venus/vkr_ring.h
-index 89d8159e..6c179712 100644
+index 89d8159e..10a18759 100644
 --- a/src/venus/vkr_ring.h
 +++ b/src/venus/vkr_ring.h
-@@ -102,6 +102,18 @@ struct vkr_ring {
+@@ -102,8 +102,33 @@ struct vkr_ring {
     atomic_bool pending_notify;
     atomic_bool monitor;
     uint64_t virtqueue_seqno;
@@ -895,8 +930,23 @@ index 89d8159e..6c179712 100644
 +#endif
  };
  
++#ifdef __wasi__
++/* webpc (GD G3): the monitored rings' status words, whose alive bit the GPU worker's ticker (web/venus-ticker.ts) sets
++ * from a thread of its own, as vkr's ring monitor thread does natively: a long call on the GPU worker's thread (Dawn's
++ * createShaderModule over seconds) then isn't taken by Venus's watchdog in the guest for a dead renderer. [0] a lock
++ * (1 while held: by the ticker while it reads the table and sets the bits, by vkr while it changes it), [1] the
++ * smallest report period asked (us), [2] the count, then the words' addresses. vkr_wasi_alive_update rebuilds it
++ * whenever a monitored ring comes or goes, so the ticker never writes a ring's memory after vkr let it go. */
++#define VKR_WASI_ALIVE_MAX 64
++extern uint32_t vkr_wasi_alive[3 + VKR_WASI_ALIVE_MAX];
++void
++vkr_wasi_alive_update(void);
++#endif
++
  struct vkr_ring *
-@@ -115,6 +127,17 @@ vkr_ring_destroy(struct vkr_ring *ring);
+ vkr_ring_create(const struct vkr_ring_layout *layout,
+                 struct vkr_context *ctx,
+@@ -115,6 +140,17 @@ vkr_ring_destroy(struct vkr_ring *ring);
  void
  vkr_ring_start(struct vkr_ring *ring);
  
@@ -915,7 +965,7 @@ index 89d8159e..6c179712 100644
  vkr_ring_stop(struct vkr_ring *ring);
  
 diff --git a/src/venus/vkr_transport.c b/src/venus/vkr_transport.c
-index a8daba46..5662aba1 100644
+index a8daba46..2880ca72 100644
 --- a/src/venus/vkr_transport.c
 +++ b/src/venus/vkr_transport.c
 @@ -80,6 +80,9 @@ vkr_dispatch_vkExecuteCommandStreamsMESA(
@@ -928,3 +978,13 @@ index a8daba46..5662aba1 100644
           vn_dispatch_command(dispatch);
           if (vkr_context_get_fatal(ctx))
              break;
+@@ -251,6 +254,9 @@ vkr_dispatch_vkCreateRingMESA(struct vn_dispatch_context *dispatch,
+       }
+ 
+       ring->monitor = true;
++#ifdef __wasi__
++      vkr_wasi_alive_update();
++#endif
+    }
+ 
+    const VkRingPriorityInfoMESA *priority_info =
