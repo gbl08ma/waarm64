@@ -11,6 +11,7 @@ import IconCpu from '@tabler/icons-svelte-runes/icons/cpu';
 import IconDatabase from '@tabler/icons-svelte-runes/icons/database';
 import IconDatabaseImport from '@tabler/icons-svelte-runes/icons/database-import';
 import IconDeviceDesktop from '@tabler/icons-svelte-runes/icons/device-desktop';
+import IconDeviceMobile from '@tabler/icons-svelte-runes/icons/device-mobile';
 import IconDeviceGamepad2 from '@tabler/icons-svelte-runes/icons/device-gamepad-2';
 import IconDownload from '@tabler/icons-svelte-runes/icons/download';
 import IconFile from '@tabler/icons-svelte-runes/icons/file';
@@ -71,6 +72,7 @@ export const ICONS = {
   'database': IconDatabase,
   'database-import': IconDatabaseImport,
   'device-desktop': IconDeviceDesktop,
+  'device-mobile': IconDeviceMobile,
   'device-gamepad-2': IconDeviceGamepad2,
   'download': IconDownload,
   'file': IconFile,

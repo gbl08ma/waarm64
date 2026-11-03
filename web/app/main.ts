@@ -21,7 +21,7 @@ import { page, ui, type Action, type MachinesTab, type PageState, type View } fr
 import type { DisplayToPage } from '../gpu-present.ts';
 import type { FromGpuWorker, ToGpuWorker } from '../gpu-worker.ts';
 import type { ShareMode } from '../venus-share.ts';
-import { attachInput, type Input, type LockMode } from '../input.ts';
+import { attachInput, terminalBytes, type Input, type LockMode } from '../input.ts';
 import { PageAudio } from '../audio.ts';
 import { opfsDir, overlayBytes, removeOverlay } from '../overlay.ts';
 import { changesHeader as readChangesHeader } from '../qcow2.ts';
@@ -55,7 +55,7 @@ import { askPersist, attach, createDisk, createMachine, detachEverywhere, isRunn
 import { keyboardSetting, resolveKeyboard } from './keyboard.ts';
 import { parseLocalURL } from '../local-net.ts';
 import { installCopyEdit } from './copy-edit.ts';
-import { keyOf, type Mods } from './osk.ts';
+import { eventOf, keyOf, keymapOf, type Mods } from './osk.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -337,6 +337,12 @@ const loadSnapshotInput = $<HTMLInputElement>('load-snapshot-input');
 // The serial terminal. The PL011 has no size negotiation: the guest assumes 80×24 unless told (`stty`); the firmware's console is 80×25 (images/build.sh edk2 offers no other mode), so the terminal has 25 rows.
 const term = new Terminal({ cols: 80, rows: 25, convertEol: false, scrollback: 5000, fontFamily: 'ui-monospace, "DejaVu Sans Mono", Menlo, monospace', fontSize: 14, theme: { background: '#0b0d10' } });
 term.open($('terminal'));
+/** The terminal has the focus (its view, or both views with it last clicked): the on-screen keyboard types into it. */
+const terminalFocused = () => ui.view !== 'screen' && !!term.textarea && term.textarea === document.activeElement;
+/** The on-screen keyboard's keys down into the terminal (their ups go there too). */
+const oskToTerminal = new Set<string>();
+// A key typed on the physical keyboard into the terminal ends the on-screen keyboard's latches, as one into the screen does.
+term.textarea?.addEventListener('keyup', (e) => { ui.keyTyped = { code: e.code, n: ui.keyTyped.n + 1 }; });
 
 // Views: the screen first (M8 decision 2), the terminal, or both.
 const setView = (v: View, save = true) => {
@@ -869,6 +875,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
     const startLayout = await resolveKeyboard(keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine')));
+    ui.keyLayout = startLayout?.id;
     worker.postMessage({ type: 'start', query: location.search, machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: startLayout?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0', jscvt: params.get('jscvt') !== '0', rcpc: params.get('rcpc') !== '0', sb: params.get('sb') !== '0', flagm: params.get('flagm') !== '0', dit: params.get('dit') !== '0', frintts: params.get('frintts') !== '0', dotprod: params.get('dotprod') !== '0' }, params: params.get('params') ?? undefined, credentials, guest: guestWords(startLayout), nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, folders: shares && { list: list!, port: shares.port2 }, sharesPath: shares ? sharesPath(stored!.record) : undefined, clock: stored ? !!stored.record.clock : params.get('clock') !== '0', sound, snapshot, resume, about, plan, ...three, vulkan: three && wantsVulkan() ? true : undefined } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(shares ? [shares.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
   };
   if (want3d && !no3d) {
@@ -2296,7 +2303,8 @@ Object.assign(page, {
   chord: (keys: string[]) => { canvas.focus(); wakeOnInput(); run?.input.chord(...keys); },
   showOsk: (on: boolean) => {
     ui.osk = on;
-    if (on) canvas.focus();
+    // The view's input keeps (or takes) the focus: the terminal in its view, or in both views when it has it.
+    if (on && !terminalFocused()) (ui.view === 'terminal' ? term : canvas).focus();
   },
   holdKey: (code: string, ms: number) => {
     canvas.focus();
@@ -2310,9 +2318,20 @@ Object.assign(page, {
     const up = () => { holding = undefined; r.input.key(code, false, e, 'hold'); };
     holding = { timer: setTimeout(up, ms), up };
   },
-  oskKey: (code: string, down: boolean, m: Mods) => {
+  oskKey: (code: string, down: boolean, m: Mods, repeat = false) => {
+    const e = { ...eventOf(code, m, keymapOf(ui.keyLayout)), repeat };
+    // A key goes where it went down: the terminal (it has the focus: the terminal's view, or both views with the
+    // terminal last clicked) or the screen's keys. The terminal types it as xterm.js does its own keys.
+    const toTerminal = down ? terminalFocused() : oskToTerminal.has(code);
+    if (!down) oskToTerminal.delete(code);
+    else if (toTerminal) oskToTerminal.add(code);
+    if (toTerminal) {
+      const bytes = down ? terminalBytes(e) : null;
+      if (bytes !== null) term.input(bytes, true);
+      return;
+    }
     if (down) wakeOnInput();
-    run?.input.key(code, down, { key: keyOf(code, m.shift), ctrlKey: m.ctrl, altKey: m.alt, metaKey: m.meta }, 'osk');
+    run?.input.key(code, down, e, 'osk');
   },
   screenSize: () => { fit(); scheduleSize(); },
   openMachines,
