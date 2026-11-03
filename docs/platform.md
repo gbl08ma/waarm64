@@ -99,7 +99,8 @@ indexes of their instance).
 - **Shared state** (the GIC, the PL011, the virtio transports, completion draining, PSCI power
   states and CPU_ON requests) is behind one lock, `Vm::plat` (a `Mutex`; round-robin reaches it
   through `&mut` without locking). Each vCPU drives its own timer PPIs (taking the lock only when a
-  level changes) and reads its IRQ line from an atomic that the platform code republishes after
+  level changes; CPU_ON takes the levels from the GIC, so a line left high at CPU_OFF drops with the
+  reset timer) and reads its IRQ line from an atomic that the platform code republishes after
   every change under the lock (`Vm::refresh`, which also wakes a vCPU whose line went up). A chunk
   boundary with nothing new takes no lock: the signal word, the maintenance flag, the clock, the
   timer levels, the IRQ atomic.
@@ -196,8 +197,11 @@ and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor a
   still ends it after 10 s (tests/hoststall.test.ts).
 - IC operations don't wait: the architecture promises another PE the new code only
   after a context synchronization event *that follows its seeing the change*, which ends the chunk
-  here. `maint.c` had its ISB before waiting for the rewrite: parallel mode ran the old code (401),
-  and the test was fixed (QEMU TCG and hvf pass it either way).
+  here, or under the JIT a fast-completed ISB (docs/jit.md "Fast completions") exits to the dispatcher
+  when the vCPU's table is behind the cache's drops (`Jit::behind`): completed in place, it chained on
+  into the old code (`isb.c`: 3-8 stale calls in 8 rounds before, REVIEW-20261103.md). `maint.c` had
+  its ISB before waiting for the rewrite: parallel mode ran the old code (401), and the test was fixed
+  (QEMU TCG and hvf pass it either way).
 - **The stale-code checker tolerates** stale blocks in parallel mode (`jit::Cache::tolerant`:
   code another vCPU rewrote is legal to run until this vCPU's next context synchronization): it
   drops the block at the run loop's entry and counts it (`JIT_STALE`, counter word 90), and only
@@ -236,7 +240,9 @@ Two modes, chosen by `VmConfig.deterministic`:
   more than one (one counter for every CPU). `CNTFRQ` defaults to 62.5 MHz
   (QEMU's). WFI completes when the GIC signals an interrupt (masked or not); otherwise virtual
   time jumps to the next armed timer deadline, and with none the run returns the idle exit
-  (`value` = u64::MAX), PC on the WFI. **Every guest takes the same number of steps natively, in
+  (`value` = u64::MAX), PC on the WFI. A deadline at or past 2^62 ticks (`TIME_MAX`, centuries: a CVAL near 2^64,
+  as a negative TVAL early on makes) counts as none: the counter would overflow a few steps past it, and a
+  restore refuses a counter that far. **Every guest takes the same number of steps natively, in
   Node and in Chromium, interpreted or under the JIT**; tests assert those counts
   ([testing.md](testing.md) "Step counts").
 - **Realtime** (I/O benchmarks, `openssl speed`, interactive use): the core imports
@@ -513,7 +519,8 @@ never does: measured on Debian 13 (an hour on CNTVCT at a restore), `date` was r
 self-detected stall and systemd killed journald for its watchdog (`WatchdogSec=`, on CLOCK_MONOTONIC); arm64 has no
 "guest was paused" signal to the kernel (x86's kvmclock `PVCLOCK_GUEST_STOPPED`: arm64 takes asm-generic's
 `kvm_check_and_clear_guest_paused`, which returns false). A snapshot taken while the guest is suspended saves that
-(snapshot format 3), so the restored machine is suspended too.
+(snapshot format 3), so the restored machine is suspended too; one taken after `vm_wake` but before the vCPU ran
+(round-robin's next `vm_run` takes the wake) saves the pending start, as a CPU_ON request, so it resumes.
 
 ## Bare-metal test convention
 

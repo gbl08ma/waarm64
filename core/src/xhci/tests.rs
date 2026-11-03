@@ -1008,3 +1008,69 @@ pub(super) fn a_halted_td_after_a_link_trb_is_where_its_first_trb_is() {
         "the ring's start, cycle 0 (toggled by the Link TRB)"
     );
 }
+
+/// 400 No-Op TDs on bulk IN (a ring of its own at `RING`) with the guest not reading events:
+/// the walk stops for room (`Ep::more`), with nothing in flight and the ports empty.
+fn a_walk_waiting_for_room() -> T {
+    const RING: u64 = RAM_BASE + 0x2_0000;
+    let mut t = configured();
+    assert_eq!(
+        t.command([0, 0, 0, T_STOP_EP << 10 | 3 << 16 | 1 << 24]).0,
+        CC_SUCCESS
+    );
+    assert_eq!(
+        t.command([RING as u32 | 1, 0, 0, T_SET_DEQ << 10 | 3 << 16 | 1 << 24])
+            .0,
+        CC_SUCCESS
+    );
+    for k in 0..400 {
+        t.put(RING + 16 * k, &[0, 0, 0, T_NOOP << 10 | C_IOC | 1]);
+    }
+    t.put(RING + 16 * 400, &[0, 0, 0, 0]);
+    t.cpl([0, CPL_DETACH, 0]);
+    t.events();
+    t.wr(DBOFF + 4, 3);
+    for _ in 0..4 {
+        t.ns += 1_000_000;
+        t.x.tick(t.ns, false, &t.mem, &t.sh);
+    }
+    t.requests();
+    assert!(
+        t.x.quiet(&t.sh) && t.x.saveable(),
+        "a snapshot can be taken"
+    );
+    assert_eq!(t.x.due(), 0, "the walk waits for room");
+    t
+}
+
+/// The Transfer Events the guest reads while the machine runs on.
+fn transfer_events(t: &mut T) -> usize {
+    let mut n = 0;
+    for _ in 0..100 {
+        n += t
+            .events()
+            .iter()
+            .filter(|e| ty(e) == T_TRANSFER_EVENT)
+            .count();
+        t.ns += 1_000_000;
+        t.x.tick(t.ns, false, &t.mem, &t.sh);
+    }
+    n
+}
+
+#[test]
+pub(super) fn a_snapshot_keeps_a_walk_waiting_for_room() {
+    let mut t = a_walk_waiting_for_room();
+    assert_eq!(transfer_events(&mut t), 400, "unbroken");
+    let mut t = a_walk_waiting_for_room();
+    let mut w = Writer::default();
+    t.x.save(&mut w);
+    let mut x = Xhci::new();
+    x.latency = 0;
+    let mut r = Reader(&w.0);
+    x.restore(&mut r).unwrap();
+    r.end().unwrap();
+    t.x = x;
+    assert_eq!(t.x.due(), 0, "the restored walk waits too");
+    assert_eq!(transfer_events(&mut t), 400, "restored");
+}

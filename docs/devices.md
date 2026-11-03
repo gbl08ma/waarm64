@@ -30,10 +30,13 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
   and drives the transport's line.
 - **Reset epochs:** records carry the transport's reset count (mod 256); the backend skips stale
   records and the core drops their completions, so a reset never lets a stale request complete
-  into a reused ring. (In realtime mode a backend can still write a buffer just after a reset, as
+  into a reused ring. A backend that skipped any sets `SIGNAL_DEVICE` as a completion does: the room
+  they held may be what the new driver's first chain waits for (below), and no completion would
+  come for them. A reset also sets the shared block's negotiated features back to 0 (`Ctx.features()`
+  is 0 until the next FEATURES_OK: net's link flap takes non-zero as a driver). (In realtime mode a backend can still write a buffer just after a reset, as
   DMA can on hardware; deterministic mode waits, so it can't happen there.)
-- **Chains that don't fit the request ring** stay available and are posted after the next
-  completions.
+- **Chains that don't fit the request ring** stay available and are posted at the next drain of the
+  completions (`SIGNAL_DEVICE`: a completion, or stale records skipped).
 - **Chains in flight:** each queue keeps the heads of the chains posted and not completed, in
   order. A completion is taken only for one of them, and a VM restored from a snapshot posts
   them again ([platform.md](platform.md) "Snapshots"): a backend that only holds buffers has

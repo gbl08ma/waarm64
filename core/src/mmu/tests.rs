@@ -422,6 +422,41 @@ fn device_memory_faults_misaligned_accesses() {
 }
 
 #[test]
+fn cache_maintenance_first_keeps_a_device_page_device() {
+    // DC CVAC (the read array) or DC IVAC (the write array) on a Device page
+    // before any data access fills its entry: that entry is still a Device
+    // page's, so a misaligned access after it is an alignment fault.
+    const DEV: u64 = 2 << 2;
+    let mut p = Pt::new();
+    p.map(0x3000, 3, 0xa000 | PAGE | DEV);
+    let c = Cpu {
+        mair_el1: 0x44ff,
+        ..cpu()
+    };
+    let mut v = Vcpu::new(c.clone());
+    let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+    let align = |addr, access| {
+        Err(Fault {
+            addr,
+            access,
+            kind: FaultKind::Align,
+        })
+    };
+    assert_eq!(b.maint(&c, 0x3000, false), Ok(Some(0xa000)));
+    assert_eq!(b.read(&c, 0x300a, 4), align(0x300a, Access::Read));
+    assert!(b.fast(&c, 0x3008, 8, Use::Read).is_none());
+    assert_eq!(b.maint(&c, 0x3000, true), Ok(Some(0xa000)));
+    assert_eq!(
+        b.write(&c, 0x3001, 2, 0).map(|_| 0),
+        align(0x3001, Access::Write)
+    );
+    assert!(b.fast(&c, 0x3008, 8, Use::Write).is_none());
+    // Aligned accesses and the maintenance itself still go through.
+    assert_eq!(b.read(&c, 0x3008, 8), Ok(0));
+    assert_eq!(b.maint(&c, 0x3003, true), Ok(Some(0xa003)));
+}
+
+#[test]
 fn past_the_pa_size_with_the_mmu_off() {
     // An address size fault at level 0 (`AArch64.S1DisabledOutput`), through
     // either bus and for every kind of access; below the PA size, nothing

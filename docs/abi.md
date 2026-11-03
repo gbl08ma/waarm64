@@ -62,8 +62,8 @@ Design notes for an ABI change go in this file before the code.
 - `vm_run(vm, budget: u64) -> u32` (round-robin): an exit kind; details in `vm_exit(vm) -> *const
   ExitInfo` = {kind, steps retired (all vCPUs), value, x0–x3, cpu (the vCPU that exited, ABI 22),
   wake (ABI 25)}.
-- `vm_run_cpu(vm, cpu, budget) -> u32` (parallel, ABI 25): runs vCPU `cpu` on the calling thread;
-  `vm_exit_cpu(vm, cpu)` its `ExitInfo`; `vm_cpu_signal(vm, i)` vCPU *i*'s wake word (below).
+- `vm_run_cpu(vm, cpu, budget) -> u32` (parallel, ABI 25): runs vCPU `cpu` on the calling thread (STOP at once past
+  the last vCPU); `vm_exit_cpu(vm, cpu)` its `ExitInfo`; `vm_cpu_signal(vm, i)` vCPU *i*'s wake word (below).
   `vm_set_chunk(vm, steps)` (ABI 34, any thread): the steps between two publications of a vCPU's PC in its counters,
   32768 by default (0 restores it); the guest PC sampler (web/profiler.ts) shortens it while it runs, so a sample is
   at most that many instructions old instead of naming the exit that ended a long chunk. Round-robin is unaffected.
@@ -262,7 +262,8 @@ puts its functions into the core's table.
 ## System suspend (ABI 54)
 
 A guest in PSCI SYSTEM_SUSPEND ([platform.md](platform.md) "System suspend") has every vCPU off until the host wakes
-it. All three from any thread (round-robin's `vm_wake` between `vm_run` calls; it takes effect at the next one):
+it. In parallel mode all three from any thread; in round-robin, `vm_suspended` from any thread, `vm_wake` and
+`vm_clock_skip` between `vm_run` calls (a wake takes effect at the next one, and a snapshot taken before it keeps it):
 - `vm_suspended(vm) -> u32`: 1 while the guest is suspended.
 - `vm_wake(vm) -> u32`: its vCPU resumes at the entry it gave, with x0 = its context (parallel mode: the vCPU's wake
   word is bumped and notified). 0 if it wasn't suspended.
@@ -464,7 +465,8 @@ calls; parallel: every vCPU's thread out of `vm_run_cpu`, STOP set or not):
   pins the bytes of a fixed machine's state, so a layout change without the bump fails.
   `snapshot_version_min() -> u32` (ABI 54): the oldest version a restore still reads (`snapshot::VERSION_MIN`), when a
   newer layout only added something an older state can lack: version 3 added a suspended guest after the devices, so a
-  version 2 state is a version 3 one without it. The host accepts a file whose version is in that range.
+  version 2 state was a version 3 one without it; version 4 added fields inside the devices' (a transport's SHMSel, an
+  xHCI endpoint's walk waiting for room), so it reads only itself. The host accepts a file whose version is in that range.
 
 **What must match** between the state and the `VmConfig` of the VM it is restored into:
 `ram_size`, `deterministic`, `cntfrq`, `ticks_per_insn`, the device entries, `fb_width`,
@@ -485,7 +487,7 @@ fixed order):
   (in realtime mode its base is recomputed from the new VM's `rtc`, so it shows the host's time;
   deterministic, the saved base), the flash bank (bytes, mode, status), fw_cfg (files, selector,
   offset).
-- Per virtio transport: its registers and queues (addresses, sizes, `last_avail`, `used`), the
+- Per virtio transport: its registers (SHMSel among them: version 4) and queues (addresses, sizes, `last_avail`, `used`), the
   **in-flight chains of each queue in the order they were posted**, and its `DevShared` status,
   features, epoch and config space. The rings are empty by the rules above and aren't saved.
 - Version 3: last, and only when the guest is in PSCI SYSTEM_SUSPEND, the vCPU that suspended it (u32), its entry and

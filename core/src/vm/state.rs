@@ -11,10 +11,6 @@
 use super::*;
 use crate::snapshot::{self, Error, Reader, Writer};
 
-/// A counter or a clock past this isn't one a VM reaches (centuries), and
-/// keeps the arithmetic on a restored one from overflowing.
-const TIME_MAX: u64 = 1 << 62;
-
 impl Vm {
     /// Whether the vCPUs have FEAT_RNG, whose streams a snapshot keeps: in
     /// realtime mode a restored VM goes on with its own key, so a machine
@@ -169,8 +165,10 @@ impl Vm {
                 let (on, wfi, start) = self.sched_par(c);
                 (on, if wfi { Wait::Wfi } else { Wait::No }, false, start)
             } else {
+                // A start is a woken SYSTEM_SUSPEND's (`wake_suspended`) the next run hasn't taken.
                 let s = self.sched[c];
-                (s.power == Power::On, s.wait, s.event, None)
+                let start = self.plat.get_mut().start[c];
+                (s.power == Power::On, s.wait, s.event, start)
             };
             w.bool(on);
             w.u8(match wait {
@@ -273,7 +271,7 @@ impl Vm {
             let event = r.bool()?;
             let start = r.bool()?;
             let (entry, context) = (r.u64()?, r.u64()?);
-            // A CPU_ON request is for a vCPU that is off (parallel mode).
+            // A CPU_ON request is for a vCPU that is off (parallel mode, or a woken SYSTEM_SUSPEND).
             if start && (on || !self.realtime()) {
                 return Err(Error::Corrupt);
             }
@@ -304,7 +302,7 @@ impl Vm {
         if let Some(x) = &mut p.xhci {
             x.restore(&mut r)?;
         }
-        if version >= 3 && !r.0.is_empty() {
+        if !r.0.is_empty() {
             let (c, entry, context) = (r.u32()? as usize, r.u64()?, r.u64()?);
             // Only one that suspended it may be (every vCPU off), and only from a CPU_ON-free state.
             if c >= n

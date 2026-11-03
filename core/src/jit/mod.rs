@@ -1889,15 +1889,21 @@ impl Jit {
     /// [`Table::sync`]).
     #[inline(always)]
     fn fresh(&mut self, mem: &Mem) {
-        if self.drops.load(Ordering::Relaxed) != self.table.drops
-            || self.ivals.load(Ordering::Relaxed) != self.table.ivals
-        {
+        if self.behind() {
             self.sync(mem);
         } else if let Some(m) = self.table.todo.first()
             && reached(self.ready.load(Ordering::Acquire), m.seq)
         {
             self.install();
         }
+    }
+
+    /// Whether the cache dropped blocks (a flush, another vCPU's IC) that this
+    /// table hasn't caught up with: its links, jump cache and transfer cache may
+    /// still reach them until the dispatcher's [`Jit::fresh`].
+    pub fn behind(&self) -> bool {
+        self.drops.load(Ordering::Relaxed) != self.table.drops
+            || self.ivals.load(Ordering::Relaxed) != self.table.ivals
     }
 
     #[inline(never)]

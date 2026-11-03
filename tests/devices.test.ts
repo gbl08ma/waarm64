@@ -1,7 +1,8 @@
 // Device backends without a guest: the 9P2000.L server (web/9p.ts), the
 // loopback network adapter (web/net.ts), virtio-input's config answers, and
-// the blk and net backends' I/O counters (the page's status, `Ctx.io`), and
-// the doorbell's server's end (`Devices.serve`, parallel mode in Node).
+// the blk and net backends' I/O counters (the page's status, `Ctx.io`), the
+// poll's records from before a reset, and the doorbell's server's end
+// (`Devices.serve`, parallel mode in Node).
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -395,6 +396,24 @@ test('changeConfig: the generation goes odd around the write, even after it, and
   assert.equal(new Uint8Array(memory.buffer)[shared + 24], 9);
   assert.equal(Atomics.load(new Int32Array(memory.buffer, signal, 1), 0), 4, 'SIGNAL_DEVICE');
   assert.equal(Atomics.load(new Int32Array(memory.buffer, wake, 1), 0), 1, 'the vCPU woken');
+});
+
+test('poll: records from before a reset are skipped, and the signal word set (a chain may wait for their room)', async () => {
+  // The layout (docs/abi.md): events at 0, epoch at 16, the request ring (head, tail, words) at 280.
+  const memory = { buffer: new SharedArrayBuffer(1 << 16) };
+  const [shared, signal] = [0, 40_000];
+  const u32 = new Uint32Array(memory.buffer);
+  u32[16 / 4] = 1; // the transport was reset once
+  const ring = 280 / 4;
+  u32.set([0 << 24 | 3, 0], ring + 2); // epoch 0's record of head 3, no segments
+  Atomics.store(u32, ring, 2);
+  const seen: number[] = [];
+  const backend = { reset() {}, request: (r: { w0: number }) => { seen.push(r.w0); return 0; } };
+  const self = { memory, shared: [shared], signal, wakes: [], backends: [backend], epochs: [0], deterministic: true, detached: new Set(), kick: (Devices.prototype as unknown as { kick(): void }).kick };
+  await (Devices.prototype.poll as (this: unknown) => Promise<void>).call(self);
+  assert.deepEqual(seen, [], 'the stale record skipped');
+  assert.equal(Atomics.load(u32, ring + 1), 2, 'and taken');
+  assert.equal(Atomics.load(new Int32Array(memory.buffer, signal, 1), 0), 4, 'SIGNAL_DEVICE');
 });
 
 test('terminalBytes: what a terminal sends for the keys that drive EDK2 and GRUB', async () => {

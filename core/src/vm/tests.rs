@@ -619,7 +619,8 @@ fn a_state_is_refused_by_another_version_or_machine() {
         b"WPCS",
         b"XPCS\x01\0\0\0",
         b"WPCS\x01\0\0\0",
-        b"WPCS\x04\0\0\0",
+        b"WPCS\x03\0\0\0",
+        b"WPCS\x05\0\0\0",
     ] {
         assert_eq!(restore(bad, cfg, &[DEV]), Err(Error::Format), "{bad:?}");
     }
@@ -730,10 +731,10 @@ fn the_saved_bytes_are_pinned_to_the_version() {
     t.vm.shared.console.rx.push(b'k');
     assert_eq!(t.vm.run(5), exit::BUDGET);
     let state = t.save();
-    assert_eq!(snapshot::VERSION, 3);
+    assert_eq!(snapshot::VERSION, 4);
     assert_eq!(
         (state.len(), hash(&state)),
-        (266_617, 9_173_920_810_526_671_222),
+        (266_625, 17_707_746_691_298_762_247),
         "the layout moved"
     );
 }
@@ -842,14 +843,14 @@ fn system_suspend_waits_for_the_host_and_its_clock_skip_keeps_the_rtc_on_host_ti
     let s = b.cpu().x[2];
     assert!((1_700_003_600..1_700_003_602).contains(&s), "{s}");
     assert!(!b.vm.clock_skip(HOUR), "awake again");
-    // A version 2 state (nothing after the devices) restores awake; one with the field is refused.
-    let mut v2 = state[..state.len() - 20].to_vec();
-    v2[4..8].copy_from_slice(&2u32.to_le_bytes());
-    let (c, r) = a.restore(&v2, later, &[]);
+    // A state without the field restores awake.
+    let (c, r) = a.restore(&state[..state.len() - 20], later, &[]);
     assert_eq!(r, Ok(()));
     assert!(!c.vm.suspended());
-    v2.extend_from_slice(&state[state.len() - 20..]);
-    assert_eq!(a.restore(&v2, later, &[]).1, Err(Error::Corrupt));
+    // One of a version before the devices' last fields is refused, not misread.
+    let mut v3 = state.clone();
+    v3[4..8].copy_from_slice(&3u32.to_le_bytes());
+    assert_eq!(a.restore(&v3, later, &[]).1, Err(Error::Format));
     // A deterministic guest has no SYSTEM_SUSPEND (its PSCI is as it was: step counts don't move).
     let mut d = T::new(&[HVC, HVC, B_SELF], VmConfig::default());
     (d.cpu().x[0], d.cpu().x[1]) = (0x8400_000a, 0xc400_000e);
@@ -1439,4 +1440,126 @@ fn a_watchpoint_on_a_pairs_second_device_register() {
         (c.pc, c.esr_el1, c.far_el1),
         (VBAR + 0x200, 0x35 << 26 | 1 << 25 | 1 << 6 | 0x22, UART + 4)
     );
+}
+
+#[test]
+fn a_round_robin_snapshot_between_wake_and_run_keeps_the_wake() {
+    const ENTRY: u64 = RAM_BASE + 0x100;
+    let cfg = VmConfig {
+        deterministic: 0,
+        ..VmConfig::default()
+    };
+    let mut a = T::new(&[HVC, B_SELF], cfg);
+    for (k, w) in [NOP, NOP, B_SELF].into_iter().enumerate() {
+        a.vm.mem.write(ENTRY + 4 * k as u64, 4, w as u64).unwrap();
+    }
+    let c = a.cpu();
+    (c.x[0], c.x[1], c.x[2]) = (0xc400_000e, ENTRY, 0x42); // SYSTEM_SUSPEND
+    assert_eq!(a.vm.run(10), exit::IDLE);
+    assert!(a.vm.suspended());
+    assert!(a.vm.wake_suspended());
+    // Saved before the next run has taken the wake.
+    let state = a.save();
+    let (mut b, r) = a.restore(&state, cfg, &[]);
+    assert_eq!(r, Ok(()));
+    assert_eq!(b.vm.power(0), Power::On, "woken");
+    assert_eq!(b.vm.run(2), exit::BUDGET);
+    assert_eq!((b.cpu().pc, b.cpu().x[0]), (ENTRY + 8, 0x42));
+    // And the original runs on the same.
+    assert_eq!(a.vm.run(2), exit::BUDGET);
+    assert_eq!((a.cpu().pc, a.cpu().x[0]), (ENTRY + 8, 0x42));
+}
+
+#[test]
+fn the_exports_refuse_a_vcpu_past_the_last() {
+    let t = T::new(&[B_SELF], par(2));
+    let vm: *const Vm = &t.vm;
+    // SAFETY: `vm` is a live parallel VM, and no thread runs its vCPUs.
+    unsafe {
+        assert_eq!(crate::vm_run_cpu(vm, 2, 10), exit::STOP);
+        assert_eq!(crate::vm_run_cpu(vm, u32::MAX, 10), exit::STOP);
+        assert!(crate::vm_exit_cpu(vm, 2).is_null());
+        assert_eq!(crate::vm_run_cpu(vm, 1, 10), exit::IDLE, "vCPU 1 is off");
+    }
+}
+
+#[test]
+fn a_cpu_on_lowers_the_timer_lines_left_high_at_cpu_off() {
+    const E1: u64 = RAM_BASE + 0x200; // vCPU 1's first entry
+    const E2: u64 = RAM_BASE + 0x300; // its second
+    const MOV_X0_1: u32 = 0xd280_0020;
+    const MOV_X0_2: u32 = 0xd280_0040;
+    const MOVK_X0_8400_16: u32 = 0xf2b0_8000; // x0 = 0x8400_0002: CPU_OFF
+    const MSR_CNTV_CTL_X0: u32 = 0xd51b_e320;
+    const MSR_CNTV_CVAL_XZR: u32 = 0xd51b_e35f;
+    for smp in [0, 1] {
+        let cfg = VmConfig { smp, ..par(2) };
+        let mut t = T::new(&[HVC, B_SELF, HVC, B_SELF], cfg);
+        // vCPU 1 arms its virtual timer at CVAL 0 (due at once, IRQs masked) and calls CPU_OFF.
+        let e1 = [
+            MSR_CNTV_CVAL_XZR,
+            MOV_X0_1,
+            MSR_CNTV_CTL_X0,
+            NOP,
+            NOP,
+            NOP,
+            MOV_X0_2,
+            MOVK_X0_8400_16,
+            HVC,
+            B_SELF,
+        ];
+        for (k, w) in e1.into_iter().enumerate() {
+            t.vm.mem.write(E1 + 4 * k as u64, 4, w as u64).unwrap();
+        }
+        t.vm.mem.write(E2, 4, B_SELF as u64).unwrap();
+        let c = t.cpu();
+        (c.x[0], c.x[1], c.x[2], c.x[3]) = (0xc400_0003, 1, E1, 0); // CPU_ON(1)
+        // Round-robin runs both vCPUs; parallel mode the one named.
+        let run = |t: &mut T, c: usize, n: u64| {
+            if smp == 1 {
+                // SAFETY: this thread is the only one, and runs one vCPU at a time.
+                unsafe { t.vm.run_cpu(c, n) }
+            } else {
+                t.vm.run(n)
+            }
+        };
+        run(&mut t, 0, 1);
+        assert_eq!(t.cpu().x[0], 0, "smp {smp}: CPU_ON");
+        run(&mut t, 1, 100_000);
+        assert_eq!(t.vm.power(1), Power::Off, "smp {smp}: CPU_OFF");
+        assert!(
+            t.vm.plat.get_mut().gic.level(1, IRQ_VTIMER),
+            "smp {smp}: the line was high at CPU_OFF"
+        );
+        // vCPU 0 starts it again (its timer reset, disabled): the line drops.
+        let c = t.cpu();
+        c.pc = RAM_BASE + 8;
+        (c.x[0], c.x[1], c.x[2], c.x[3]) = (0xc400_0003, 1, E2, 0);
+        run(&mut t, 0, 1);
+        assert_eq!(t.cpu().x[0], 0, "smp {smp}: the second CPU_ON");
+        run(&mut t, 1, 100_000);
+        assert_eq!(t.vm.vcpus[1].cpu.cntv_ctl_el0, 0);
+        assert!(
+            !t.vm.plat.get_mut().gic.level(1, IRQ_VTIMER),
+            "smp {smp}: the timer line is stuck high"
+        );
+    }
+}
+
+#[test]
+fn a_deadline_past_the_counters_range_is_no_deadline() {
+    // CVAL near u64::MAX (as a negative TVAL early on makes it): no jump there,
+    // where the counter would overflow, but an idle exit with nothing to wait for.
+    let mut t = T::new(&[WFI, NOP, B_SELF], VmConfig::default());
+    t.vtimer_at(u64::MAX - 3);
+    assert_eq!(t.vm.run(100), exit::IDLE);
+    assert_eq!((t.cpu().pc, t.vm.exit.value), (RAM_BASE, u64::MAX));
+    assert_eq!(t.vm.now(), 0);
+    // One just inside the range is jumped to, and the VM saves and restores.
+    let mut t = T::new(&[WFI, NOP, B_SELF], VmConfig::default());
+    t.vtimer_at((1 << 62) - 10);
+    assert_eq!(t.vm.run(2), exit::BUDGET);
+    assert_eq!((t.cpu().pc, t.vm.now()), (RAM_BASE + 8, (1 << 62) - 8));
+    let state = t.save();
+    assert_eq!(t.restore(&state, VmConfig::default(), &[]).1, Ok(()));
 }
