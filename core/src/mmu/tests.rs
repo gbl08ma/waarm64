@@ -149,6 +149,25 @@ fn ttbr1_and_tbi() {
         ..c
     };
     assert_eq!(p.walk(&tbi1, 0x12ff_0000_1234_5000).unwrap().pa, 0x6000);
+    // A fetch from a tagged PC translates, but never fills the instruction
+    // TLB (the dispatcher strips the tag: docs/jit.md "Linking"); its data
+    // reads do fill the read array.
+    p.r.mem.write(0x7010, 4, 0xd503201f).unwrap();
+    let mut v = Vcpu::new(tbi.clone());
+    let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+    assert_eq!(b.fetch(&tbi, tagged), Ok(0xd503201f));
+    assert_eq!(b.fetch(&tbi, tagged), Ok(0xd503201f));
+    assert_eq!(b.read(&tbi, tagged, 4), Ok(0xd503201f));
+    assert_eq!(b.read(&tbi, tagged, 4), Ok(0xd503201f));
+    let t = b.tlb.as_ref().unwrap();
+    assert_eq!(t.stats.walks, 3, "two fetches and a read");
+    let e = &t.e[index(tagged)].0;
+    assert_eq!(
+        e[3 + Use::Exec as usize].tag & 0xfff,
+        0,
+        "no instruction TLB entry"
+    );
+    assert_eq!(e[3 + Use::Read as usize].tag | 0xfff, tagged | 0xfff);
 }
 
 #[test]

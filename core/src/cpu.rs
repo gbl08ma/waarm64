@@ -438,6 +438,29 @@ impl Cpu {
         (self.pstate >> 2) & 3
     }
 
+    /// The PC a branch to `va` sets (`AArch64.BranchAddr`): with TBI for `va`'s
+    /// half (TCR_EL1.TBI0 or TBI1, by bit 55), the top byte is bit 55's sign
+    /// extension. Without TBI a non-canonical address stays, and its fetch
+    /// faults. (No PAuth, so no TBID.)
+    #[inline(always)]
+    pub fn branch_addr(&self, va: u64) -> u64 {
+        let canon = ((va << 8) as i64 >> 8) as u64;
+        if canon == va {
+            return va;
+        }
+        self.untag_pc(va, canon)
+    }
+
+    #[inline(never)]
+    #[cold]
+    fn untag_pc(&self, va: u64, canon: u64) -> u64 {
+        if self.tcr_el1 >> (37 + (va >> 55 & 1)) & 1 == 1 {
+            canon
+        } else {
+            va
+        }
+    }
+
     /// Sets PSTATE (M and DAIF) and swaps the stack pointers when the selected
     /// one changes; `dispatch` follows the EL.
     pub fn set_pstate(&mut self, p: u64) {

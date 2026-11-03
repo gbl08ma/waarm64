@@ -2137,6 +2137,12 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
         // SAFETY: guaranteed by the caller; the reference ends before a block runs.
         let vr = unsafe { &mut *v };
         vr.jit.mem = mem;
+        // A branch to a tagged address (TBI) leaves its tag in the PC: compiled
+        // BR/BLR/RET and the block interpreter don't strip it, but a tagged VA
+        // never fills the instruction TLB or the transfer cache, so it misses
+        // their fast paths and comes here, where it's stripped once
+        // (`Cpu::branch_addr`; docs/jit.md "Linking").
+        vr.cpu.pc = vr.cpu.branch_addr(vr.cpu.pc);
         let (pc, key) = (vr.cpu.pc, key(vr, mem));
         let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
         jit.fresh(mem);
@@ -2216,14 +2222,16 @@ trait Regime: interp::block::Fast {
 impl Regime for Flat<'_> {
     #[inline(always)]
     fn key(&mut self, c: &crate::cpu::Cpu, pc: u64) -> Option<u64> {
-        (pc & 3 == 0).then_some(pc | c.el() & 1)
+        // A tagged PC is the dispatcher's to strip.
+        (pc & 3 == 0 && c.branch_addr(pc) == pc).then_some(pc | c.el() & 1)
     }
 }
 
 impl Regime for Mmu<'_> {
     #[inline(always)]
     fn key(&mut self, c: &crate::cpu::Cpu, pc: u64) -> Option<u64> {
-        if pc & 3 != 0 {
+        // A tagged PC is the dispatcher's to strip.
+        if pc & 3 != 0 || c.branch_addr(pc) != pc {
             return None;
         }
         let p = self.fetch_ptr(c, pc).ok()?;

@@ -264,6 +264,14 @@ the interpreter's own code.
   taken when `left` covers it; back-edges to the head branch to a wasm `loop` under the same
   budget check (the budget alone: no atomic load, since `left` never exceeds the chunk). Other
   edges leave through the tails above.
+- **A tagged PC** (TBI: BR, BLR, RET or ERET through a pointer whose top byte isn't bit 55's
+  sign extension): `AArch64.BranchAddr` drops the tag, so ADR, BL's X30 and ELR never see it.
+  Compiled BR/BLR/RET and the block interpreter's don't strip it, which keeps their hot paths
+  as they were: a tagged VA never fills the instruction TLB (`Mmu::miss`), so it misses the
+  transfer cache, its miss function and the block interpreter's next-block probe (`ikey`), whose
+  slow lookups (`Regime::key`) hand it to the dispatcher, which strips it (`Cpu::branch_addr`,
+  one compare per dispatch) before it finds the block. The plain interpreter's BR/BLR/RET and
+  ERET strip it themselves (`tests/jit.test.ts` "a branch through a tagged pointer").
 - Dropping a block drops the blocks chained to it, transitively (the cache records who chains to
   whom).
 

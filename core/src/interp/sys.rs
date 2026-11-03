@@ -781,6 +781,7 @@ fn eret(c: &mut Cpu) {
         c.step_syn = 0;
     }
     c.set_pstate(p);
+    let target = c.branch_addr(target);
     c.pc = target;
     if !legal || spsr & SPSR_IL != 0 {
         enter(c, 0x0e << 26, None, target, SPSR_IL);

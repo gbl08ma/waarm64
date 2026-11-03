@@ -827,6 +827,13 @@ impl<'a> Mmu<'a> {
             core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
             return self.miss(c, va, len, access, u, el);
         }
+        // A tagged PC (TBI) never fills the instruction TLB, so it misses
+        // every fast path that finds code by VA (the JIT's transfer cache, the
+        // block interpreter's next block) and reaches the dispatcher, which
+        // strips the tag (docs/jit.md "Linking").
+        if u == Use::Exec && c.branch_addr(va) != va {
+            return Ok(p);
+        }
         if let Some(t) = &mut self.tlb
             && let Ok(page) = self.mem.host(w.pa & !0xfff, 0x1000, access)
         {

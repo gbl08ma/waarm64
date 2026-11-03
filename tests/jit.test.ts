@@ -291,6 +291,29 @@ test('a transfer cache hit runs its target only if the steps left cover it', () 
   assert.deepEqual(shortRuns(0), want);
 });
 
+// A tagged PC (docs/jit.md "Linking"): with TBI0 a branch drops its target's top byte
+// (`AArch64.BranchAddr`), which compiled BR/BLR/RET leave to the dispatcher: a tagged VA never fills
+// the instruction TLB or the transfer cache, so it always misses them. `blr x7` to f through a
+// tagged pointer, and f returns through a tagged X30; ADR shows the PC.
+//   0x400000: blr x7; adr x3, .; subs x5, x5, #1; b.ne 0x400000; brk
+//   0x401000 (f): adr x2, .; add x1, x1, #1; orr x30, x30, x6; ret
+function taggedBranches(threshold: number) {
+  const g = twoPages([threshold, 1, 64, 0, 0], 0n);
+  g.code(0x1000, [0xd63f00e0, 0x10000003, 0xf10004a5, 0x54ffffa1, 0xd4200000]);
+  g.code(0x5000, [0x10000002, 0x91000421, 0xaa0603de, 0xd65f03c0]);
+  const tag = 0x5an << 56n;
+  g.x[904 / 8] |= 1n << 37n; // TCR_EL1.TBI0
+  [g.x[5], g.x[6], g.x[7]] = [1000n, tag, tag | 0x401000n];
+  const done = g.go(100_000n, 0x400000n);
+  return { done, x1: g.x[1], x2: g.x[2], x3: g.x[3], x30: g.x[30], pc: g.x[32] };
+}
+
+test('a branch through a tagged pointer drops the tag from the PC, compiled too', () => {
+  const want = { done: 8000n, x1: 1000n, x2: 0x401000n, x3: 0x400004n, x30: 0x5an << 56n | 0x400004n, pc: 0x400010n };
+  assert.deepEqual(taggedBranches(0xffff_ffff), want, 'interpreted');
+  assert.deepEqual(taggedBranches(0), want, 'JIT');
+});
+
 // A forward region across pages (M8): with a threshold of 2 and a batch of 16, the loop's two
 // blocks are pending together and compiled as one function, a loop, whose edge into the second
 // page checks that the page is still mapped there. Remapped to the decoy, the edge isn't taken

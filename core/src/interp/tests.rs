@@ -1075,6 +1075,38 @@ fn el1_exceptions_and_eret_state() {
 }
 
 #[test]
+fn branches_to_tagged_addresses() {
+    // BranchAddr: with TBI for the target's half, BR, BLR, RET and ERET drop
+    // the tag (the top byte is bit 55's sign extension), so ADR and BLR's X30
+    // see the PC without it; without TBI the tag stays (and the fetch faults).
+    const TAG: u64 = 0x5a << 56;
+    // br x9 / blr x9 / ret x9; nop; adr x2, .
+    for insn in [0xd61f0120, 0xd63f0120, 0xd65f0120] {
+        for tbi in [false, true] {
+            let mut t = T::new(&[insn, 0xd503201f, 0x10000002]).x(9, TAG | (CODE + 8));
+            t.c.tcr_el1 = (tbi as u64) << 37;
+            let t = t.run();
+            if tbi {
+                assert_eq!((t.c.pc, t.c.x[2]), (CODE + 12, CODE + 8), "{insn:#x}");
+            } else {
+                assert_eq!(t.c.pc, TAG | (CODE + 8), "{insn:#x}");
+            }
+            if insn == 0xd63f0120 {
+                assert_eq!(t.c.x[30], CODE + 4);
+            }
+        }
+    }
+    // ERET to a tagged address in the TTBR1 half: TBI1 makes its top byte ones.
+    let elr = 0x00ff_ff80_0000_4444;
+    for (tcr, pc) in [(1 << 38, 0xffff_ff80_0000_4444), (1 << 37, elr)] {
+        let mut t = T::new(&[0xd69f03e0]).el1();
+        (t.c.spsr_el1, t.c.elr_el1, t.c.tcr_el1) = (0x3c5, elr, tcr);
+        t.sys().unwrap();
+        assert_eq!(t.c.pc, pc);
+    }
+}
+
+#[test]
 fn el1_register_writes() {
     let prog = [
         0xd5101080, // msr oslar_el1, x0

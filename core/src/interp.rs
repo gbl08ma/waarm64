@@ -806,9 +806,9 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
                 c.pc = pc.wrapping_add(sext((bits(i, 18, 5) << 2) as u64, 16));
             }
         }
-        BR | RET => c.pc = c.reg(rn),
+        BR | RET => c.pc = c.branch_addr(c.reg(rn)),
         BLR => {
-            c.pc = c.reg(rn);
+            c.pc = c.branch_addr(c.reg(rn));
             c.x[30] = pc.wrapping_add(4);
         }
 

@@ -39,11 +39,6 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   alignment faults (with the MMU off too, where every access is Device: on the M4 an unaligned load and DC ZVA fault,
   QEMU's TCG only the load; the flat bus exists to have no such test; correct firmware doesn't notice); no
   address-size fault for VAs past 40 bits with the MMU off (external abort); PRFM with a misaligned SP base faults.
-- **A tagged PC** (found 2026-10-30, against the M4): with TBI, BR, BLR, RET and ERET to a tagged address keep the tag in
-  the PC (`AArch64.BranchAddr` removes it: the top byte is bit 55's sign extension), so ADR, BL's X30 and ELR show it.
-  Reached only by code that branches through tagged pointers; TBI0 is on for every Linux process. A check in every
-  indirect branch would cost the JIT's hot path. Untried: a tagged PC always misses the transfer cache and the
-  same-page chain, so canonicalize it on those slow paths and never fill an instruction TLB entry for a tagged VA.
 - **Watchpoints** (found 2026-10-30, against the M4, `interp/debug.rs`): an atomic read-modify-write is checked as a store
   alone, so a load-only watchpoint misses LDADD and CAS, a failing CAS included; and the check comes before the
   translation, so a watchpoint on an unmapped address beats the translation fault (M4 and QEMU: translation fault).
