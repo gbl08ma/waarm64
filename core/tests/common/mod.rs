@@ -605,6 +605,8 @@ impl Backends {
             }
             while let Some(r) = d.req.pop_request() {
                 if r.w0 >> 24 != epoch {
+                    // Their room may be what a new chain waits for (web/devices.ts `poll`).
+                    vm.signal(SIGNAL_DEVICE);
                     continue;
                 }
                 let readable =

@@ -587,10 +587,10 @@ fn a_state_that_cannot_be_is_refused() {
     for n in 0..state.len() {
         assert_eq!(restored(&t, &state[..n]).0, corrupt, "{n} bytes");
     }
-    // The layout: the registers (32 bytes: the driver's features at 8), then
+    // The layout: the registers (36 bytes: the driver's features at 8), then
     // per queue its size (8), ready (1), three addresses (24), last_avail and
     // used (4), the chains in flight (a count, 4, and their heads).
-    const Q0: usize = 32;
+    const Q0: usize = 36;
     let with = |at: usize, bytes: &[u8]| {
         let mut s = state.clone();
         s[at..at + bytes.len()].copy_from_slice(bytes);
@@ -795,4 +795,67 @@ fn the_window_is_shared_memory_region_1_and_survives_a_reset() {
     t.t = Transport::new(DeviceEntry { shm: 1, ..entry() }).with_window(None);
     assert_eq!(regs(&mut t, 1), [u32::MAX; 4]);
     assert!(!DeviceEntry { shm: 2, ..entry() }.valid());
+}
+
+#[test]
+fn a_reset_clears_the_negotiated_features() {
+    // `features()` is 0 before FEATURES_OK (web/devices.ts's net takes non-zero as a driver there).
+    let mut t = T::new();
+    t.up(F_VERSION_1 | F_EVENT_IDX);
+    let f = |t: &T| [0, 1].map(|k| t.sh.features[k].load(Ordering::Relaxed));
+    assert_eq!(f(&t), [F_EVENT_IDX as u32, 1]);
+    t.wr(0x070, 0);
+    assert_eq!(f(&t), [0, 0], "the old driver's features after a reset");
+}
+
+#[test]
+fn a_backlog_behind_records_from_before_a_reset_waits_for_the_backends_signal() {
+    // The request ring is full of a record the backend hasn't read when the driver resets; the
+    // new driver's first chain doesn't fit behind it. The backend skips the stale record and
+    // signals (no completion comes for it, docs/devices.md): the run loop's `complete` posts the
+    // chain and writes avail_event, so the driver notifies its next buffer.
+    let mut t = T::new();
+    t.up(F_VERSION_1 | F_EVENT_IDX);
+    t.desc(DESC, 0, BUF, 4, D_WRITE, 0);
+    let fill = vec![0; RING_WORDS - 3];
+    assert!(t.sh.req.push(&fill));
+    t.wr(0x070, 0);
+    for k in 0..4 {
+        t.mem().write(AVAIL + 8 * k, 8, 0).unwrap();
+        t.mem().write(USED + 8 * k, 8, 0).unwrap();
+    }
+    t.up(F_VERSION_1 | F_EVENT_IDX);
+    assert_eq!(t.offer(&[0]), 0, "no room behind the stale record");
+    let avail_event = USED + 4 + 8 * QSIZE;
+    assert_eq!(t.mem().read(avail_event, 2).unwrap(), 0);
+    for _ in 0..fill.len() {
+        t.sh.req.pop::<1>();
+    }
+    assert_eq!(t.t.complete(&t.mem, &t.sh), EV_REQUEST);
+    assert_eq!(t.sh.req.pop_request().unwrap().w0, 1 << 24);
+    assert_eq!(t.mem().read(avail_event, 2).unwrap(), 1);
+}
+
+#[test]
+fn the_selected_shared_memory_region_is_in_the_state() {
+    let window = Some((0x1_4000_0000, 256 << 20));
+    let e = DeviceEntry { shm: 1, ..entry() };
+    let mut t = T::new();
+    t.t = Transport::new(e).with_window(window);
+    t.up(F_VERSION_1);
+    t.wr(0x0ac, SHM_ID_WINDOW as u64);
+    let state = saved(&t);
+    let mut n = Transport::new(e).with_window(window);
+    let sh = Box::<DevShared>::default();
+    let mut r = Reader(&state);
+    assert_eq!(
+        n.restore(&mut r, &t.mem, &sh).and_then(|()| r.end()),
+        Ok(())
+    );
+    (t.t, t.sh) = (n, sh);
+    assert_eq!(
+        t.rd(0x0b0) as u32,
+        256 << 20,
+        "SHMLen of the region selected before the save"
+    );
 }

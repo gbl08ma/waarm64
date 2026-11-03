@@ -619,7 +619,8 @@ fn a_state_is_refused_by_another_version_or_machine() {
         b"WPCS",
         b"XPCS\x01\0\0\0",
         b"WPCS\x01\0\0\0",
-        b"WPCS\x04\0\0\0",
+        b"WPCS\x03\0\0\0",
+        b"WPCS\x05\0\0\0",
     ] {
         assert_eq!(restore(bad, cfg, &[DEV]), Err(Error::Format), "{bad:?}");
     }
@@ -730,10 +731,10 @@ fn the_saved_bytes_are_pinned_to_the_version() {
     t.vm.shared.console.rx.push(b'k');
     assert_eq!(t.vm.run(5), exit::BUDGET);
     let state = t.save();
-    assert_eq!(snapshot::VERSION, 3);
+    assert_eq!(snapshot::VERSION, 4);
     assert_eq!(
         (state.len(), hash(&state)),
-        (266_617, 9_173_920_810_526_671_222),
+        (266_625, 17_707_746_691_298_762_247),
         "the layout moved"
     );
 }
@@ -842,14 +843,14 @@ fn system_suspend_waits_for_the_host_and_its_clock_skip_keeps_the_rtc_on_host_ti
     let s = b.cpu().x[2];
     assert!((1_700_003_600..1_700_003_602).contains(&s), "{s}");
     assert!(!b.vm.clock_skip(HOUR), "awake again");
-    // A version 2 state (nothing after the devices) restores awake; one with the field is refused.
-    let mut v2 = state[..state.len() - 20].to_vec();
-    v2[4..8].copy_from_slice(&2u32.to_le_bytes());
-    let (c, r) = a.restore(&v2, later, &[]);
+    // A state without the field restores awake.
+    let (c, r) = a.restore(&state[..state.len() - 20], later, &[]);
     assert_eq!(r, Ok(()));
     assert!(!c.vm.suspended());
-    v2.extend_from_slice(&state[state.len() - 20..]);
-    assert_eq!(a.restore(&v2, later, &[]).1, Err(Error::Corrupt));
+    // One of a version before the devices' last fields is refused, not misread.
+    let mut v3 = state.clone();
+    v3[4..8].copy_from_slice(&3u32.to_le_bytes());
+    assert_eq!(a.restore(&v3, later, &[]).1, Err(Error::Format));
     // A deterministic guest has no SYSTEM_SUSPEND (its PSCI is as it was: step counts don't move).
     let mut d = T::new(&[HVC, HVC, B_SELF], VmConfig::default());
     (d.cpu().x[0], d.cpu().x[1]) = (0x8400_000a, 0xc400_000e);

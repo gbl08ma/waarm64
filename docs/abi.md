@@ -464,7 +464,8 @@ calls; parallel: every vCPU's thread out of `vm_run_cpu`, STOP set or not):
   pins the bytes of a fixed machine's state, so a layout change without the bump fails.
   `snapshot_version_min() -> u32` (ABI 54): the oldest version a restore still reads (`snapshot::VERSION_MIN`), when a
   newer layout only added something an older state can lack: version 3 added a suspended guest after the devices, so a
-  version 2 state is a version 3 one without it. The host accepts a file whose version is in that range.
+  version 2 state was a version 3 one without it; version 4 added fields inside the devices' (a transport's SHMSel, an
+  xHCI endpoint's walk waiting for room), so it reads only itself. The host accepts a file whose version is in that range.
 
 **What must match** between the state and the `VmConfig` of the VM it is restored into:
 `ram_size`, `deterministic`, `cntfrq`, `ticks_per_insn`, the device entries, `fb_width`,
@@ -485,7 +486,7 @@ fixed order):
   (in realtime mode its base is recomputed from the new VM's `rtc`, so it shows the host's time;
   deterministic, the saved base), the flash bank (bytes, mode, status), fw_cfg (files, selector,
   offset).
-- Per virtio transport: its registers and queues (addresses, sizes, `last_avail`, `used`), the
+- Per virtio transport: its registers (SHMSel among them: version 4) and queues (addresses, sizes, `last_avail`, `used`), the
   **in-flight chains of each queue in the order they were posted**, and its `DevShared` status,
   features, epoch and config space. The rings are empty by the rules above and aren't saved.
 - Version 3: last, and only when the guest is in PSCI SYSTEM_SUSPEND, the vCPU that suspended it (u32), its entry and
