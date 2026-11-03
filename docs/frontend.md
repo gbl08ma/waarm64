@@ -1609,7 +1609,7 @@ npm run dist && wrangler deploy --message "$(git log -1 --format=%s | head -c 10
 ```
 
 then check it from Chromium (`bench/results/local/live-pages.ts <origin>` boots Debian from a local file on the
-deployed page; untracked). How it was set up:
+deployed page and screenshots it as `live.png` in `$CLAUDE_JOB_DIR/tmp`, else the system's tmp directory; untracked). How it was set up:
 
 - **wrangler** (Cloudflare's CLI) in the dev VM, outside the repo (not a dependency): `npm i -g --prefix ~/.local
   wrangler@4.151.1` (in `~/.local/bin`; npm skips `workerd`'s postinstall, which only `wrangler dev` needs).
