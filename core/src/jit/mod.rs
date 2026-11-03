@@ -524,6 +524,10 @@ pub struct Cache {
     xmiss: Option<u32>,
     /// What the host reads of the cache without its lock, and its limit ([`Gauge`]).
     gauge: Arc<Gauge>,
+    /// A limit the host stores while [`Cache::plan`] runs (the race of a
+    /// tier-up's check and its install, which tests can't time otherwise).
+    #[cfg(test)]
+    limit_at_plan: Option<u64>,
 }
 
 /// The cache's state for the host, read without the lock (`vm_jit_gauge`,
@@ -625,6 +629,8 @@ impl Cache {
             tables: Vec::new(),
             xmiss: None,
             gauge: Arc::new(Gauge::default()),
+            #[cfg(test)]
+            limit_at_plan: None,
         }
         .gauged()
     }
@@ -760,9 +766,13 @@ impl Cache {
     }
 
     /// `n` consecutive slots for a module; flushes the cache first if they
-    /// don't fit (counted in `s`).
-    fn alloc(&mut self, n: u32, s: &mut Stats) -> u32 {
-        if self.next + n > self.cfg.capacity || self.live_bytes >= self.budget() {
+    /// don't fit or the modules' bytes reached `budget` (counted in `s`).
+    /// `budget` is [`Cache::budget`] read once by the caller, which checked
+    /// room against it when it mustn't flush ([`Cache::tier_up`]): the host
+    /// may lower its limit meanwhile, and a second read would flush under
+    /// the JIT code that's running.
+    fn alloc(&mut self, n: u32, budget: u64, s: &mut Stats) -> u32 {
+        if self.next + n > self.cfg.capacity || self.live_bytes >= budget {
             self.flush(s);
         }
         self.next += n;
@@ -960,7 +970,7 @@ impl Cache {
     /// table `t`'s clock), into `t`.
     fn emit_if_due(&mut self, t: &mut Table, mem: &Mem) {
         if self.due(t) {
-            self.emit_batch(t, mem);
+            self.emit_batch(t, mem, self.budget());
         }
     }
 
@@ -979,7 +989,7 @@ impl Cache {
     }
 
     /// Emits the pending batch and the loop regions waiting, into `t`.
-    fn emit_batch(&mut self, t: &mut Table, mem: &Mem) {
+    fn emit_batch(&mut self, t: &mut Table, mem: &Mem, budget: u64) {
         let ns = now_ns();
         // The loop regions that waited first, so each one's index is
         // the module's plus its place.
@@ -1017,7 +1027,7 @@ impl Cache {
         regions.extend(self.plan(mem));
         t.stats.plan_ns += now_ns().saturating_sub(ns);
         self.batch += 1;
-        let Some(idx) = self.install(t, regions, mem) else {
+        let Some(idx) = self.install(t, regions, mem, budget) else {
             return;
         };
         for (k, (key, word, quiet)) in tiers.into_iter().enumerate() {
@@ -1040,6 +1050,10 @@ impl Cache {
     /// compiled yet, counted from zero again and compiled as a head once
     /// that has happened often enough.
     fn plan(&mut self, mem: &Mem) -> Vec<block::Region> {
+        #[cfg(test)]
+        if let Some(l) = self.limit_at_plan.take() {
+            self.gauge.0[G_LIMIT].store(l, Ordering::Relaxed);
+        }
         let pending = core::mem::take(&mut self.pending);
         self.pending_steps = 0;
         let all = self.cfg.threshold == 0 && self.cfg.region_after == 0;
@@ -1135,6 +1149,9 @@ impl Cache {
     /// ([`Cache::emit_batch`], which points the word at it then), or (batch
     /// 1: JIT-stress, JIT-check, the forced mode) compiles it now.
     fn tier_up(&mut self, t: &mut Table, key: u64, va: u64, mem: &Mem) {
+        // Read once: the room checked below is the room `alloc` finds,
+        // whatever limit the host stores meanwhile.
+        let budget = self.budget();
         if let Some(r) = self.tiers.get(&key) {
             r.quiet.iter().for_each(|&w| t.quiet(w));
             t.redirect(r.word, r.idx, key);
@@ -1170,9 +1187,8 @@ impl Cache {
             // Never a flush here (JIT code is running): without room the
             // dispatcher's next miss emits it.
             let n = (self.pending.len() + self.tierq.len()) as u32;
-            if self.due(t) && self.next + n <= self.cfg.capacity && self.live_bytes < self.budget()
-            {
-                self.emit_batch(t, mem);
+            if self.due(t) && self.next + n <= self.cfg.capacity && self.live_bytes < budget {
+                self.emit_batch(t, mem, budget);
             }
             return;
         }
@@ -1180,8 +1196,7 @@ impl Cache {
         // what it goes on to call must stay in the cache. Without room, the
         // head stays alone until the next flush drops it.
         let r = self.region(key, va, mem);
-        if r.blocks.len() < 2 || self.next >= self.cfg.capacity || self.live_bytes >= self.budget()
-        {
+        if r.blocks.len() < 2 || self.next >= self.cfg.capacity || self.live_bytes >= budget {
             return;
         }
         // Members that are loop heads compiled alone stop counting: this
@@ -1204,7 +1219,7 @@ impl Cache {
             t.stats.plan_ns += now_ns().saturating_sub(ns);
             self.batch += 1;
         }
-        let Some(idx) = self.install(t, regions, mem) else {
+        let Some(idx) = self.install(t, regions, mem, budget) else {
             return;
         };
         t.redirect(word, idx, key);
@@ -1213,14 +1228,16 @@ impl Cache {
     }
 
     /// Compiles `regions` into one module and logs it; the table index of its
-    /// first function. Table `t` installs it after the lock is released
-    /// ([`Jit::install`]: a compile in V8 under the lock would hold up every
-    /// vCPU's misses). Counted in `t`.
+    /// first function. Its slots flush the cache if they don't fit or the
+    /// modules' bytes reached `budget` ([`Cache::alloc`]). Table `t` installs
+    /// it after the lock is released ([`Jit::install`]: a compile in V8 under
+    /// the lock would hold up every vCPU's misses). Counted in `t`.
     fn install(
         &mut self,
         t: &mut Table,
         mut regions: Vec<block::Region>,
         mem: &Mem,
+        budget: u64,
     ) -> Option<u32> {
         let (base, phys) = mem.base();
         let ram = (base as usize, phys, mem.size());
@@ -1232,7 +1249,7 @@ impl Cache {
             return None;
         }
         let n = regions.len() as u32;
-        let slot = self.alloc(n, &mut t.stats);
+        let slot = self.alloc(n, budget, &mut t.stats);
         t.miss_functions(self, mem);
         let xmiss = self.xmiss.filter(|_| !self.off)?;
         let mut tiers = Vec::new();
@@ -2627,20 +2644,26 @@ mod tests {
         let s = &mut Stats::default();
         c.map.insert(0x100, Info::default());
         // After the miss functions' slots.
-        assert_eq!((c.alloc(4, s), c.alloc(4, s)), (2, 6));
+        assert_eq!(
+            (c.alloc(4, c.budget(), s), c.alloc(4, c.budget(), s)),
+            (2, 6)
+        );
         assert_eq!((s.flushes, c.epoch), (0, 0));
-        assert_eq!(c.alloc(3, s), 2); // 10 + 3 > 10: flushed, from slot 2 again
+        assert_eq!(c.alloc(3, c.budget(), s), 2); // 10 + 3 > 10: flushed, from slot 2 again
         assert_eq!((s.flushes, c.epoch), (1, 1));
         assert!(c.map.is_empty());
-        assert_eq!((c.alloc(4, s), c.alloc(1, s)), (5, 9));
+        assert_eq!(
+            (c.alloc(4, c.budget(), s), c.alloc(1, c.budget(), s)),
+            (5, 9)
+        );
         assert_eq!(s.flushes, 1);
         c.flush(s);
-        assert_eq!((c.alloc(1, s), s.flushes), (2, 2));
+        assert_eq!((c.alloc(1, c.budget(), s), s.flushes), (2, 2));
         // The byte budget flushes too, at the next slots after the modules' bytes reach it.
         c.live_bytes = 999;
-        assert_eq!((c.alloc(1, s), s.flushes), (3, 2));
+        assert_eq!((c.alloc(1, c.budget(), s), s.flushes), (3, 2));
         c.live_bytes = 1000;
-        assert_eq!((c.alloc(1, s), s.flushes), (2, 3));
+        assert_eq!((c.alloc(1, c.budget(), s), s.flushes), (2, 3));
         assert_eq!(c.live_bytes, 0);
     }
 
@@ -2669,9 +2692,9 @@ mod tests {
         // At the limit the next slots flush, and the gauge says so.
         c.gauge.0[G_LIMIT].store(20 << 20, Ordering::Relaxed);
         c.live_bytes = (20 << 20) - 1;
-        assert_eq!((c.alloc(1, s), s.flushes), (MISS_SLOTS, 0));
+        assert_eq!((c.alloc(1, c.budget(), s), s.flushes), (MISS_SLOTS, 0));
         c.live_bytes = 20 << 20;
-        c.alloc(1, s);
+        c.alloc(1, c.budget(), s);
         assert_eq!(
             (
                 s.flushes,
@@ -3083,7 +3106,8 @@ mod tests {
                 .iter()
                 .all(|r| r.blocks.len() == 1 && r.tier.is_some())
         );
-        c.install(&mut t, regions, &mem).expect("installed");
+        c.install(&mut t, regions, &mem, c.budget())
+            .expect("installed");
         let word = c.map[&a].word;
         let modules = c.log.len();
         c.tier_up(&mut t, a, a, &mem);
@@ -3114,6 +3138,67 @@ mod tests {
         assert_eq!(t.hot[wb as usize - 1], 0, "b goes quiet");
         c.tier_up(&mut t, b, b, &mem);
         assert!(c.tierq.is_empty() && t.hot[wb as usize - 1] == 0);
+    }
+
+    /// A tier-up runs inside JIT code (`jit_hot`): the host lowering the
+    /// limit to the live bytes between its check for room and its install
+    /// doesn't flush the cache under that code (REVIEW-20261103 #5); the
+    /// next miss from the dispatcher does.
+    #[test]
+    fn a_tier_up_never_flushes_when_the_host_lowers_the_limit() {
+        let mut ram = vec![0u128; 0x3000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x3000) };
+        mem.write(0x1000, 4, 0x9100_0400).unwrap(); // add x0, x0, #1
+        mem.write(0x1004, 4, 0x1400_0003).unwrap(); // b 0x1010
+        mem.write(0x1010, 4, 0xf100_04a5).unwrap(); // subs x5, x5, #1
+        mem.write(0x1014, 4, 0x54ff_ff61).unwrap(); // b.ne 0x1000
+        mem.write(0x1018, 4, 0xd420_0000).unwrap(); // brk
+        for at in [0x2000, 0x2010] {
+            mem.write(at, 4, 0x9100_0400).unwrap(); // add x0, x0, #1
+            mem.write(at + 4, 4, 0xd65f_03c0).unwrap(); // ret
+        }
+        // Batch 1 compiles the region at once; a larger batch when it's due.
+        for batch in [1, 4] {
+            let mut c = Cache::new(Config {
+                batch,
+                ..Config::DEFAULT
+            });
+            let mut t = Table::new(&mut c);
+            c.xmiss = Some(1);
+            (t.xmiss, t.base) = (true, 1);
+            let (a, b) = (0x1000, 0x1010);
+            for k in [a, b] {
+                c.info(k, || 2).queued = true;
+                c.pending.push((k, k));
+            }
+            let regions = c.plan(&mem);
+            c.install(&mut t, regions, &mem, c.budget())
+                .expect("installed");
+            // A block waiting, so the tier-up plans a batch; due at once.
+            c.info(0x2000, || 2).queued = true;
+            c.pending.push((0x2000, 0x2000));
+            c.pending_steps = BATCH_STEPS;
+            // As if the modules held the host's limit to come.
+            c.live_bytes = MIN_LIMIT;
+            c.limit_at_plan = Some(MIN_LIMIT);
+            let (s, epoch, modules) = (t.stats.flushes, c.epoch, c.log.len());
+            c.tier_up(&mut t, a, a, &mem);
+            assert_eq!(c.limit_at_plan, None, "batch {batch}: planned");
+            assert_eq!(
+                (t.stats.flushes, c.epoch),
+                (s, epoch),
+                "batch {batch}: no flush under JIT code"
+            );
+            assert_eq!(c.log.len(), modules + 1, "batch {batch}: emitted");
+            assert!(c.tiers.contains_key(&a), "batch {batch}: tiered up");
+            // The dispatcher's next emit flushes.
+            c.info(0x2010, || 2).queued = true;
+            c.pending.push((0x2010, 0x2010));
+            c.pending_steps = BATCH_STEPS;
+            c.emit_if_due(&mut t, &mem);
+            assert_eq!(t.stats.flushes, s + 1, "batch {batch}: the dispatcher's");
+        }
     }
 
     /// A member's hot word stops counting when an enclosing region is
