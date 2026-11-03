@@ -7,7 +7,7 @@
 // opening (`resumeMerge`), before anything reads it. Workers only in a browser (sync access handles).
 import type { Source } from './devices.ts';
 import { MsgError } from './msg.ts';
-import { openOverlay, overlay, overlayMeta, readMeta, removeOverlay, writeMeta, type OverlayFiles, type SyncFile } from './overlay.ts';
+import { openOverlay, overlay, overlayMeta, readMeta, removeOverlay, storageFullError, writeMeta, type OverlayFiles, type SyncFile } from './overlay.ts';
 import { openDisk, type Disk, type Inflater } from './qcow2.ts';
 
 const BLOCK = 4096;
@@ -79,7 +79,7 @@ export async function importImage(src: Source, files: OverlayFiles, progress: (d
       if (!nonzero(b)) { b++; continue; }
       let e = b + 1;
       while (nonzero(e)) e++;
-      if (!(await store.write(off + b * BLOCK, bytes.subarray(b * BLOCK, Math.min(len, e * BLOCK))))) throw new MsgError('disks:stored.writeFailed');
+      if (!(await store.write(off + b * BLOCK, bytes.subarray(b * BLOCK, Math.min(len, e * BLOCK))))) throw new MsgError('disks:stored.writeFailed', undefined, { cause: await storageFullError() });
       blocks += e - b;
       b = e;
     }
@@ -162,7 +162,7 @@ async function copyIn(files: OverlayFiles, overlayPath: string, size: number) {
         const at = b * BLOCK;
         const len = Math.min(BLOCK, size - at);
         const ok = changes.zeroed(b) ? await store.zero(at, len) : await store.write(at, changes.block(b)!.subarray(0, len));
-        if (!ok) throw new MsgError('disks:stored.writeFailed');
+        if (!ok) throw new MsgError('disks:stored.writeFailed', undefined, { cause: await storageFullError() });
         blocks++;
       }
       store.flush();

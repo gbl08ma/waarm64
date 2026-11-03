@@ -96,6 +96,18 @@ export function releaseStores() {
   return freed;
 }
 
+/**
+ * Room for a write the storage refused that isn't a disk's own (a kept snapshot, a suspended machine, a restore's
+ * fork): every image's kept blocks go, as Clear does (those a machine reads given up by the worker that holds them,
+ * which `releaseStores` can't reach from another); whether anything was freed. Off the record the browser refuses
+ * writes long before the quota `estimate()` reports, which the cache's budget comes from (docs/remote-disks.md).
+ */
+export async function makeRoom() {
+  const here = releaseStores();
+  const freed = await clearCaches().catch(() => 0);
+  return here || freed > 0;
+}
+
 /** The directory name for an image's identity (any string: a JSON of what identifies it). */
 export async function cacheKey(identity: string) {
   const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity)));

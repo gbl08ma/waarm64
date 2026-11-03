@@ -172,10 +172,12 @@ a device kind of their own (docs/frontend.md "The guest's clock").
   quarter of the free quota, at most 2 GiB: other images' caches go first (least recently used), then this image's
   slots are reused in the order they were filled. The device worker holds the image's Web Lock (`webpc-cache:<key>`,
   waiting 2 s for a restarting machine's old worker); another tab on the same image reads without it. **The guest's
-  writes go first:** the store checks each write's count (Chromium's sync handles come back short at the quota, they
-  don't throw, and a fresh incognito profile takes ~0.8 GB while `estimate()` reports 3.2) and gives up for the
-  session on a short one (map cleared, data cut off); a disk write that fails makes every open store give up
-  (`releaseStores`) and is tried once more. The Machines
+  writes go first:** the store checks each write's count (Chromium's sync handles come back short or throw at the quota;
+  off the record a refused write returns 4294967288, and a fresh incognito profile takes ~0.8 GB while `estimate()`
+  reports 3.2) and gives up for the session on a refused one (map cleared, data cut off); a guest's write, zeroing or
+  discard that fails makes every open store give up (`releaseStores`) and is tried once more, and a kept snapshot's, a
+  suspended machine's, a restore's fork's or a snapshot file import's write does the same across workers (`makeRoom`:
+  every image's cache, as Clear; docs/machines.md "Storage"). The Machines
   page's storage footer shows and clears it (a machine reading one is asked over a BroadcastChannel to give its store
   up); `?diskcache=0` turns it off (benchmarks). A remote desktop boot's second
   boot: 109 → 63 s, no requests (bench/remote-disk/REPORT.md "R3").

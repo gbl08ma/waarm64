@@ -506,6 +506,45 @@ test('virtio-blk: a write that finds the storage full gets the remote disks\' ke
   store.close();
 });
 
+test('virtio-blk: a discard or a write of zeroes that finds the storage full gets the kept blocks out of the way and lands, or is told', async () => {
+  const { blockStore } = await import('../web/diskcache.ts');
+  const size = 64 * 4096;
+  const ram = new Uint8Array(1 << 16);
+  const ctx = { ram: () => [ram] } as unknown as Ctx;
+  const src = { size, read: (off: number, len: number) => new Uint8Array(len).fill(7) };
+  // The map file's writes that grow it need room: none while the store keeps anything (or ever, with `never`).
+  let never = false;
+  const kept = memFile();
+  const store = blockStore(kept, memFile(), size, 4096, 8);
+  const m = memFile();
+  const map = { ...m, read: m.read.bind(m), getSize: m.getSize.bind(m), truncate: m.truncate.bind(m), flush: m.flush.bind(m),
+    write: (buf: Uint8Array, o: { at: number }) => (o.at + buf.length > m.getSize() && (never || kept.getSize() > 0) ? 0 : m.write(buf, o)) };
+  let told = 0;
+  const b = blk(ctx, src, { data: memFile(), map, meta: memFile(), close() {} }, true, undefined, 'webpc-blk', false, () => told++);
+  /** DISCARD (11) or WRITE_ZEROES (13, unmap allowed) of blocks [k, k + n); the status. */
+  const ask = async (type: number, k: number, n: number) => {
+    const h = new DataView(ram.buffer, 0, 32);
+    h.setUint32(0, type, true);
+    h.setBigUint64(8, 0n, true);
+    h.setBigUint64(16, BigInt(k * 8), true);
+    h.setUint32(24, n * 8, true);
+    h.setUint32(28, type === 13 ? 1 : 0, true);
+    ram[8192] = 0xff;
+    await b.request({ w0: 0, queue: 0, read: [{ off: 0, len: 16, mem: 0 }, { off: 16, len: 16, mem: 0 }], write: [{ off: 8192, len: 1, mem: 0 }] });
+    return ram[8192];
+  };
+  const [OK, IOERR] = [0, 1];
+  store.put(0, new Uint8Array(4096).fill(1));
+  assert.deepEqual([await ask(13, 4, 4), store.stats().gaveUp, told], [OK, true, 0], 'zeroes: the store gave its room up, and they landed');
+  const again = blockStore(kept, memFile(), size, 4096, 8);
+  again.put(0, new Uint8Array(4096).fill(1));
+  assert.deepEqual([await ask(11, 20, 4), again.stats().gaveUp, told], [OK, true, 0], 'a discard: the same');
+  never = true;
+  assert.deepEqual([await ask(11, 40, 4), await ask(13, 50, 4), told], [IOERR, IOERR, 1], 'still full: failed, and told once');
+  store.close();
+  again.close();
+});
+
 test('virtio-blk: a write the storage refuses (short, or QuotaExceededError) is told once, until a write lands again; other errors aren\'t', async () => {
   const size = 16 * 4096;
   const ram = new Uint8Array(1 << 16);

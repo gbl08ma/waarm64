@@ -17,6 +17,7 @@ import { lzCodec } from '../lz.ts';
 import { openSnapshot, SnapshotError, type SnapshotHeader, type Sink } from '../snapshot-file.ts';
 import { readSnapshot, writeSnapshot, type SnapshotDisk } from '../snapshot.ts';
 import { SEVERAL_ADAPTERS, type DeviceSpec } from '../devices.ts';
+import { makeRoom } from '../diskcache.ts';
 import { startSampler, startTimeline, type Timeline } from '../profiler.ts';
 import { OEM_STRINGS_FILE, oemStrings } from './guest-unit.ts';
 import { netCredentials } from './guest-net.ts';
@@ -606,7 +607,7 @@ async function saveSnapshot(handle?: FileSystemFileHandle, keep?: string, whole 
   try {
     const lz = await codec();
     out = await handle?.createWritable();
-    kept = keep ? await fileWriter(keep) : undefined;
+    kept = keep ? await fileWriter(keep, makeRoom) : undefined;
     const sink: Sink = async (chunk) => {
       if (kept) return kept.write(chunk);
       if (out) return out.write(chunk as Uint8Array<ArrayBuffer>);
@@ -679,7 +680,7 @@ async function suspend(sleep = false) {
     paused = true;
     const cut = serialTail.length >= TAIL ? serialTail.indexOf('\n') + 1 : 0;
     const meta = { ...header(s, cut), ...(sleep && v.suspended() ? { slept: true } : {}) };
-    const out = await suspendWriter(home);
+    const out = await suspendWriter(home, makeRoom);
     let bytes = 0;
     try {
       let posted = 0;

@@ -54,6 +54,22 @@ export type WritableDisk = Disk & {
   epoch?(): void;
 };
 
+/**
+ * The numbers of this origin's storage, as `navigator.storage.estimate()` gives them (the Machines page's storage line
+ * has them too): what it holds and what the browser gives it; undefined where the browser says nothing. Off the record,
+ * and under a quota a test lowers, the browser refuses writes before `quota`: these are what it says, not the limit met.
+ */
+export async function storageNumbers(): Promise<{ used: number; quota: number } | undefined> {
+  const est = await globalThis.navigator?.storage?.estimate?.().catch(() => undefined);
+  return est?.quota ? { used: est.usage ?? 0, quota: est.quota } : undefined;
+}
+
+/** The cause of a write the browser's storage refused (docs/machines.md "Storage"): it's full, with its numbers where the browser gives them. */
+export async function storageFullError(): Promise<MsgError> {
+  const n = await storageNumbers();
+  return n ? new MsgError('disks:overlay.storageFull.numbers', { used: n.used, quota: n.quota }) : new MsgError('disks:overlay.storageFull');
+}
+
 /** An overlay's `meta` file: its generation (u64 LE at 0) and, for a stored disk, the overlay being merged into it (`merging`: its id, or empty). */
 export type Meta = { generation: number; merging: string };
 const META_SIZE = 32;
@@ -112,6 +128,18 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
   mapFile.read(new Uint8Array(map.buffer, 0, Math.min(mapFile.getSize(), blocks * 4)), { at: 0 }); // the host is little-endian, as the file
   let slots = Math.floor(data.getSize() / BLOCK);
   const blockLen = (b: number) => Math.min(BLOCK, base.size - b * BLOCK);
+  /**
+   * Writes map entries [first, end) to the map file (`map` has them already); `old` is what they were. A write the
+   * storage refused (it grows the file, which needs room) may have landed in part, a torn entry too: `old` is written
+   * back (what landed is inside the file now, and an overwrite there needs no room; the rest reads as zeros, as `old`
+   * has it past the file's end) and `map` takes it again, so the file and `map` still agree. False then.
+   */
+  const putMap = (first: number, end: number, old: Uint32Array) => {
+    if (mapFile.write(new Uint8Array(map.buffer, first * 4, (end - first) * 4), { at: first * 4 }) === (end - first) * 4) return true;
+    map.set(old, first);
+    mapFile.write(new Uint8Array(old.buffer, old.byteOffset, old.byteLength), { at: first * 4 });
+    return false;
+  };
 
   // The slots no block maps. `free` may also hold slots that were cut off or taken since: `isFree` decides.
   const isFree = new Set<number>();
@@ -145,8 +173,9 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
       if (top <= hole) break;
       const b = owner[top];
       if (data.read(buf, { at: top * BLOCK }) !== BLOCK || data.write(buf, { at: hole * BLOCK }) !== BLOCK) return false;
+      const old = map.slice(b, b + 1);
       map[b] = hole + 1;
-      if (mapFile.write(new Uint8Array(map.buffer, b * 4, 4), { at: b * 4 }) !== 4) return false;
+      if (!putMap(b, b + 1, old)) return false;
       isFree.delete(hole);
       isFree.add(top--);
     }
@@ -232,8 +261,9 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
         block.set(bytes.subarray(pos - off, end - off), pos - b * BLOCK);
         const slot = take();
         if (data.write(block, { at: slot * BLOCK }) !== BLOCK) { release(slot); shrink(); return false; }
+        const old = map.slice(b, b + 1);
         map[b] = slot + 1;
-        if (mapFile.write(new Uint8Array(map.buffer, b * 4, 4), { at: b * 4 }) !== 4) return false;
+        if (!putMap(b, b + 1, old)) { release(slot); shrink(); return false; }
         b++;
       } else {
         // A run of whole blocks the overlay doesn't hold.
@@ -250,8 +280,13 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
             shrink();
             return false;
           }
+          const old = map.slice(b + i, b + j + 1);
           for (let k = i; k <= j; k++) map[b + k] = taken[k] + 1;
-          if (mapFile.write(new Uint8Array(map.buffer, (b + i) * 4, (j - i + 1) * 4), { at: (b + i) * 4 }) !== (j - i + 1) * 4) return false;
+          if (!putMap(b + i, b + j + 1, old)) {
+            for (const s of taken.slice(i)) release(s);
+            shrink();
+            return false;
+          }
           i = j + 1;
         }
         b = c + 1;
@@ -266,12 +301,13 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
   const unmap = (first: number, end: number, held: boolean) => {
     if (end <= first) return true;
     const slotsBack: number[] = [];
+    const old = map.slice(first, end);
     for (let b = first; b < end; b++) {
       if (held && !map[b]) continue;
       if (map[b] && map[b] !== ZERO) slotsBack.push(map[b] - 1);
       map[b] = ZERO;
     }
-    if (mapFile.write(new Uint8Array(map.buffer, first * 4, (end - first) * 4), { at: first * 4 }) !== (end - first) * 4) return false;
+    if (!putMap(first, end, old)) return false; // the blocks keep their slots
     for (const s of slotsBack) release(s);
     return compact();
   };
@@ -411,7 +447,13 @@ export async function openOverlay(name: string, want: string | undefined, waitMs
     };
     const [data, map, meta, base] = [await open('data'), await open('map'), await open('meta'), await open('base')];
     if (base.getSize() === 0 && want !== undefined && !opts.readOnly) {
-      base.write(new TextEncoder().encode(want), { at: 0 });
+      // A new overlay records its image. Refused (the storage full), none is recorded, so the next opening records it
+      // (a part of one would be another image's, and every opening after would be refused as a mismatch).
+      const id = new TextEncoder().encode(want);
+      if (shortOnFull(base as unknown as SyncFile).write(id, { at: 0 }) !== id.length) {
+        base.truncate(0);
+        throw await storageFullError();
+      }
       base.flush();
     }
     const bytes = new Uint8Array(base.getSize());
@@ -423,6 +465,9 @@ export async function openOverlay(name: string, want: string | undefined, waitMs
     return { data, map, meta, close: done };
   } catch (e) {
     done();
+    // Making its directory or files refused (the storage full): said as a write is. What was made is empty, and the
+    // next opening goes on from it.
+    if ((e as DOMException)?.name === 'QuotaExceededError') throw await storageFullError();
     throw e;
   }
 }
@@ -459,16 +504,18 @@ const SUSPEND = 'suspend';
  * A suspended machine (docs/frontend.md "Suspend"): its snapshot without the overlays' blocks (they stay in OPFS), in
  * the `suspend` file of the machine's directory `name` (a stored machine's `machines/<id>`, a transient one's overlay).
  * It pins each overlay's generation (docs/machines.md §5.3): a start resumes it only while every pin matches, and
- * drops it (`dropSuspend`) before the machine runs, resumed or booted. This writes it (`fileWriter`).
+ * drops it (`dropSuspend`) before the machine runs, resumed or booted. This writes it (`fileWriter`, `makeRoom` as there).
  */
-export const suspendWriter = (name: string) => fileWriter(`${name}/${SUSPEND}`);
+export const suspendWriter = (name: string, makeRoom?: () => Promise<boolean>) => fileWriter(`${name}/${SUSPEND}`, makeRoom);
 
 /**
  * Writes the OPFS file at `path` (made with its directories; a kept snapshot's, a suspended machine's): a sink for the
  * bytes, in order, then `close` (a file that never got there has no end marker, and a snapshot's is refused as
- * truncated) or `abort` (the file is removed). Dedicated workers only in a browser (a sync access handle).
+ * truncated) or `abort` (the file is removed). A write the storage refuses (short, or `QuotaExceededError`) asks
+ * `makeRoom` for room (the remote disks' kept blocks: `makeRoom` in web/diskcache.ts) and is tried again if it made
+ * some; still refused, it throws `storageFullError()`. Dedicated workers only in a browser (a sync access handle).
  */
-export async function fileWriter(path: string): Promise<{ write(bytes: Uint8Array): void; close(): void; abort(): Promise<void> }> {
+export async function fileWriter(path: string, makeRoom?: () => Promise<boolean>): Promise<{ write(bytes: Uint8Array): void | Promise<void>; close(): void; abort(): Promise<void> }> {
   if (typeof navigator.storage === 'undefined') {
     const parts: Uint8Array[] = [];
     inMemoryFiles.delete(path);
@@ -479,10 +526,12 @@ export async function fileWriter(path: string): Promise<{ write(bytes: Uint8Arra
   const dir = await opfsDir(parts.join('/'), true);
   const h = await (await dir.getFileHandle(file, { create: true })).createSyncAccessHandle();
   h.truncate(0);
+  const f = shortOnFull(h as unknown as SyncFile);
   let at = 0;
+  const put = (b: Uint8Array) => f.write(b, { at }) === b.length;
   return {
-    write(b) {
-      if (h.write(b, { at }) !== b.length) throw new MsgError('disks:overlay.storageFull');
+    async write(b) {
+      if (!put(b) && !(makeRoom && (await makeRoom()) && put(b))) throw await storageFullError();
       at += b.length;
     },
     close() {

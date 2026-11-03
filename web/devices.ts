@@ -20,7 +20,7 @@ import { IoStats } from './iostats.ts';
 import { BLOCK_CACHE, cachedSource, type BlockCacheStats } from './blockcache.ts';
 import { cacheKey, openBlockStore, releaseStores } from './diskcache.ts';
 import { chunkedSource, isManifestUrl } from './chunked.ts';
-import { openOverlay, overlay, type OverlayFiles, type WritableDisk } from './overlay.ts';
+import { openOverlay, overlay, storageNumbers, type OverlayFiles, type WritableDisk } from './overlay.ts';
 import { ramDisk, swapHeader } from './ramdisk.ts';
 import { openStored, openStoredForWriting } from './stored.ts';
 import { inflatePool } from './inflate-pool.ts';
@@ -67,8 +67,8 @@ export type BlkSpec = { type: 'blk'; url?: string; keep?: boolean; source?: 'zer
  * numbers where the browser gives them (as the Machines page's storage line has them).
  */
 export async function storageFull(): Promise<Msg> {
-  const est = await globalThis.navigator?.storage?.estimate?.().catch(() => undefined);
-  return est?.quota ? msg('disks:devices.storageFull.numbers', { used: est.usage ?? 0, quota: est.quota }) : msg('disks:devices.storageFull');
+  const n = await storageNumbers();
+  return n ? msg('disks:devices.storageFull.numbers', { used: n.used, quota: n.quota }) : msg('disks:devices.storageFull');
 }
 
 /** How often the page is told at most that the storage is full. */
@@ -857,6 +857,16 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
     }
     return full ? 'full' : false;
   };
+  /**
+   * A change to the overlay (a write, a zeroing, a discard): true when it landed. One the storage refused (most likely
+   * OPFS over the quota) gets the remote disks' kept blocks out of the way and is tried once more; still refused, the
+   * user is told (`outcome`).
+   */
+  const change = async (w: () => Promise<boolean>) => {
+    let tried = await attempt(w);
+    if (tried !== true && releaseStores()) tried = await attempt(w);
+    return outcome(tried);
+  };
   const outcome = (r: boolean | 'full') => {
     if (r === true) told = false;
     else if (r === 'full' && onFull && !told) {
@@ -891,11 +901,7 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
         // The data follows the header in the readable buffers. Read-only: IOERR.
         const len = r.read.reduce((k, s) => k + s.len, 0);
         const payload = st ? st.time('gather', len, () => gather(ram, r.read, len)) : gather(ram, r.read, len);
-        const write = () => rw!.write(Number(h.getBigUint64(8, true)) * 512, payload.subarray(16));
-        // A failed write is most likely the storage full (OPFS over quota): the remote disks' kept blocks give way, once.
-        let tried = rw ? await attempt(write) : false;
-        if (tried !== true && rw && releaseStores()) tried = await attempt(write);
-        const ok = rw ? outcome(tried) : false;
+        const ok = rw ? await change(() => rw!.write(Number(h.getBigUint64(8, true)) * 512, payload.subarray(16))) : false;
         status = ok ? S_OK : S_IOERR;
         if (ok) io[1] += len - 16;
       } else if (h.byteLength === 16 && h.getUint32(0, true) === T_FLUSH && rw) {
@@ -911,7 +917,7 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
         else if (seg.getUint32(12, true) & (zeroes ? ~1 : ~0)) status = S_UNSUPP;
         else {
           const [off, bytes] = [Number(seg.getBigUint64(0, true)) * 512, seg.getUint32(8, true) * 512];
-          const ok = bytes <= BLK_MAX_UNMAP_SECTORS * 512 && off + bytes <= disk.size && (zeroes ? outcome(await attempt(() => rw.zero(off, bytes))) : rw.discard(off, bytes));
+          const ok = bytes <= BLK_MAX_UNMAP_SECTORS * 512 && off + bytes <= disk.size && (await change(zeroes ? () => rw.zero(off, bytes) : async () => rw.discard(off, bytes)));
           status = ok ? S_OK : S_IOERR;
         }
       }

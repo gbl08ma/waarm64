@@ -468,8 +468,8 @@
     "note": "Error (message bar) of Import changes… when the disk's image isn't the one the changes were made over. {{backing}} is the backing file's name the changes record, {{hash}} the first 12 hex digits of its hash, {{label}} the disk's name, {{baseHash}} the first 12 hex digits of the disk's."
   },
   "changes.blockWriteFailed": {
-    "message": "Block {{block}} can't be written to this browser's storage, which may be full.",
-    "note": "Error (message bar) of Import changes… when a block can't be written to the new overlay. {{block}} is the 4 KiB block's number."
+    "message": "Block {{block}} can't be written to this browser's storage.",
+    "note": "Error (message bar) of Import changes… when a block can't be written to the new overlay; why (the storage is full, with its numbers: disks:overlay.storageFull.numbers) is the cause under it. {{block}} is the 4 KiB block's number."
   },
   "changes.loadingChanges": {
     "message": "Loading the changes",
@@ -532,8 +532,8 @@
     "note": "Error under the fields of Add a disk › A file, copied into this browser when the file can't be read while it is copied. {{offset}} is the byte offset of the failed read."
   },
   "stored.writeFailed": {
-    "message": "The disk can't be written to this browser's storage, which may be full.",
-    "note": "Error when a stored disk's blocks can't be written: under the fields of Add a disk › A file, copied into this browser, or on the Machines page when Merge into the disk fails."
+    "message": "The disk can't be written to this browser's storage.",
+    "note": "Error when a stored disk's blocks can't be written: under the fields of Add a disk › A file, copied into this browser, or on the Machines page when Merge into the disk fails; why (the storage is full, with its numbers: disks:overlay.storageFull.numbers) is the line under it."
   },
   "stored.stateWriteFailed": {
     "message": "The disk's state can't be written to this browser's storage.",
@@ -548,8 +548,12 @@
     "note": "Error when a chunked image's manifest is missing fields or they don't agree: in Add a disk › From a URL's check, or as a detail when the disks can't be opened."
   },
   "overlay.storageFull": {
-    "message": "This browser's storage is full.",
-    "note": "Error when a file written into the browser's storage (a kept snapshot, a suspended machine) falls short: the storage is full. Shown as a detail of the error that the snapshot couldn't be saved."
+    "message": "This browser's storage is full. Free up space on the Machines page, whose bottom bar shows what takes this browser's storage.",
+    "note": "Error details: a write into the browser's storage (a kept snapshot, a suspended machine, a snapshot's disk changes restored, a disk or snapshot file imported, Import changes…) was refused, and the browser doesn't say how much it holds. The cause under the error's headline (Couldn't save the snapshot, Couldn't suspend the machine, Couldn't import …, The disk can't be written to this browser's storage.)."
+  },
+  "overlay.storageFull.numbers": {
+    "message": "This browser's storage is full ({{used, bytes}} used of {{quota, bytes}}). Free up space on the Machines page, whose bottom bar shows what takes this browser's storage.",
+    "note": "Error details: a write into the browser's storage (a kept snapshot, a suspended machine, a snapshot's disk changes restored, a disk or snapshot file imported, Import changes…) was refused. The cause under the error's headline (Couldn't save the snapshot, Couldn't suspend the machine, Couldn't import …, The disk can't be written to this browser's storage.). {{used}} is what this web app's storage holds, {{quota}} what the browser says it gives it (in a private window the browser refuses writes well before it)."
   },
   "main.needsUser_one": {
     "message": "Allow access to {{names}}, or select the file again, to start the machine. This browser lets a web app read a file on your computer only once you allow it in the current session.",

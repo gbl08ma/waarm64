@@ -43,6 +43,19 @@ Findings worth not re-measuring:
 - The deterministic mode reads a remote disk one request at a time with synchronous XHRs, by design (its step
   counts); everything above is realtime mode.
 
+## Off the record
+
+In an off-the-record profile (an Incognito window; Playwright's `newContext`) OPFS lives in memory, and Chromium's
+sync handles refuse writes at ~0.8 GB in all while `estimate()` reports ~3.2 GB. The block cache sizes its budget
+from that estimate (a quarter of the free quota, web/diskcache.ts), so it can hold what was the room for everything
+else. Nothing tells a page it is off the record, so the cache isn't made smaller there; instead what needs the room
+gets it back: a guest's disk write that is refused empties the open stores (`releaseStores`) and is tried once more,
+and a kept snapshot, a Suspend, a Restore's fork and a snapshot file's import do the same through `makeRoom` (every
+image's cache, as the Machines page's Clear: a running machine's device worker gives its store up over the
+BroadcastChannel). What they freed is fetched again from the server. Still refused, the error says the storage is
+full with `estimate()`'s numbers (docs/machines.md "Storage"). tests/page-incognito.test.ts reads a URL disk's whole
+image into the cache off the record, then keeps a snapshot, restores it (a fork) and suspends.
+
 ## What a server must give
 
 HTTPS (or the page's own origin, or localhost); CORS for the page's origin (`Access-Control-Allow-Origin`, `*` is

@@ -290,3 +290,57 @@ test("the overlay's generation moves once per opening, before its first change, 
   assert.deepEqual(readMeta(meta), { generation: 4, merging: 'c00000000001' });
   assert.deepEqual(readMeta(memFile()), { generation: 0, merging: '' });
 });
+
+test('writes the storage refuses at random (growing data or map, short or thrown) fail alone: what the overlay reads is what its files say, each block old or new', async () => {
+  for (let seed = 1n; seed <= 16n; seed++) await refusedAtRandom(seed);
+});
+
+/** Random writes, zeroings and discards, some refused, each checked against the files reopened and a model. */
+async function refusedAtRandom(seed: bigint) {
+  const g = splitmix64(seed);
+  const rand = (n: number) => Number(g.next().value as bigint % BigInt(n));
+  const size = 500 * 4096; // a map file that keeps growing: new blocks far past its end
+  const baseBytes = Uint8Array.from({ length: size }, (_, k) => (k * 2654435761) >>> 24);
+  const base = openDisk((off, len) => baseBytes.slice(off, off + len), size);
+  let refusing = 0; // out of 8: how often a write that grows a file is refused
+  /** A memory file whose growing writes the "storage" refuses while `refusing`: short (any prefix, or nothing) or thrown. */
+  const refusable = () => {
+    const f = memFile();
+    return Object.assign(f, {
+      write: ((write) => (buf: Uint8Array, o: { at: number }) => {
+        // Only a write that grows the file needs room (an overwrite inside it lands, as on OPFS past the quota).
+        if (o.at + buf.length <= f.getSize() || rand(8) >= refusing) return write(buf, o);
+        const how = rand(3);
+        if (how === 0) throw new DOMException('No space available for this operation', 'QuotaExceededError');
+        if (how === 1) return 4294967288; // off the record (Chromium 153, OPFS in memory): an error code as the count
+        const part = rand(buf.length); // a torn map entry too
+        return part ? write(buf.subarray(0, part), o) : 0;
+      })(f.write),
+    });
+  };
+  const [data, map] = [refusable(), refusable()];
+  const d = overlay(base, data, map);
+  const model = baseBytes.slice();
+  const same = (a: Uint8Array, b: Uint8Array) => Buffer.compare(a, b) === 0;
+  for (let i = 0; i < 300; i++) {
+    refusing = i % 100 < 40 ? 0 : 3; // stretches with room, and stretches nearly full
+    const off = rand(size / 512) * 512;
+    const len = Math.min(size - off, (rand(rand(3) ? 16 : 200) + 1) * 512);
+    const op = ['write', 'zero', 'discard'][Math.min(rand(4), 2)];
+    const fill = rand(1 << 30);
+    const want = op === 'write' ? Uint8Array.from({ length: len }, (_, k) => ((k + fill) * 2246822519) >>> 24) : new Uint8Array(len);
+    const ok = op === 'write' ? await d.write(off, want) : op === 'zero' ? await d.zero(off, len) : d.discard(off, len);
+    refusing = 0;
+    const now = (await d.read(0, size))!;
+    const what = `seed ${seed}, step ${i} (${op} of ${off}+${len}, ${ok ? 'landed' : 'refused'})`;
+    assert.ok(same(now, (await overlay(base, data, map).read(0, size))!), `${what}: the overlay reads otherwise than its files`);
+    // Outside the request, nothing moved; inside, each sector is as it was or as asked (a discard's whole blocks: zeros).
+    assert.ok(same(now.subarray(0, off), model.subarray(0, off)) && same(now.subarray(off + len), model.subarray(off + len)), `${what}: bytes outside it changed`);
+    if (ok && op !== 'discard') assert.ok(same(now.subarray(off, off + len), want), `${what}: not as written`);
+    for (let at = off; at < off + len; at += 512) {
+      const x = now.subarray(at, at + 512);
+      assert.ok(same(x, model.subarray(at, at + 512)) || same(x, want.subarray(at - off, at - off + 512)), `${what}: sector ${at / 512} is neither old nor new`);
+    }
+    model.set(now);
+  }
+}

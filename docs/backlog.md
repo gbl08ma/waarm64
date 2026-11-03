@@ -399,8 +399,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (`web/diskcache.ts`'s `cacheRoot`: not persisted, a week after its last use, 2 GiB shared), and a disk's boot trace
   (`prefetch` in its manifest) doesn't fit a resumed guest, so the demo's manifest carries a trace recorded from the
   resume instead (or none: the paced prefetch then costs nothing).
-- Overlay: no quota handling (OPFS errors come back as `IOERR`), the base identified by path and
-  size only.
+- Overlay: the base identified by path and size only. (A full storage: machines.md "Storage".)
 - blk DISCARD/WRITE_ZEROES ([devices.md](devices.md)) is the page's only: offering it to the
   tests' guests moves every writable guest's step count (the driver reads the longer config) and
   needs the native twin (`core/tests/common` `Overlay`) to take the requests. One segment per
@@ -1057,17 +1056,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     (the chunks' map lookup per request: kept if within noise). The cloud's boots written in place (221 s) and on a merged disk (290 s)
     were slower than its overlay boots (115–156 s), one run each on shared hardware; the user's boots of stored and
     merged disks by hand showed nothing like it. If anyone relies on in-place disks for speed, time those boots too.
-  - **Off the record, the remote disks' block cache crowds out snapshots** (VK3 L3b): an off-the-record profile keeps
-    OPFS in memory, where Chromium's sync handles come back short at ~0.8 GB in all while `estimate()` reports ~3.2 GB;
-    the cache (web/diskcache.ts) sizes its budget from that estimate (a quarter of the free quota), so with a URL disk
-    it takes the room a kept snapshot, a Restore's fork or a Suspend then finds full ("is it full?", "the browser's
-    storage is full"). That was tests/page-snapshots.test.ts's failure from the cache's arrival (2026-10-23) to L3b; the
-    test now runs on an on-disk profile, as a user's, where the estimate holds. A user in an Incognito window can still
-    meet it: the snapshot and suspend writers could give the cache's stores up on a short write and try once more, as
-    a guest's disk write does (`releaseStores`), or the cache could stay small off the record.
-  - A full quota stops an import or a kept snapshot with "is it full?" and no numbers (a guest's write says so with
-    them: machines.md "Storage"); those messages could carry `estimate()`'s too. `Storage.overrideQuotaForOrigin`
-    (tests/page-quota.test.ts) makes the case cheap to test; `estimate()` doesn't report the override.
+  - **The storage full, what's left** (machines.md "Storage"): a stored disk's import or merge and Import changes… say
+    the storage is full with its numbers but don't give the remote disks' cache its room back first, as a snapshot's
+    writers do (`makeRoom`). Off the record and under a lowered quota the numbers are `estimate()`'s, which say less is
+    used than where the browser refuses (nothing reports the real limit there); the cache isn't made smaller off the
+    record, as nothing tells a page it is.
   - A stored disk's SHA-256 isn't computed in the background (once would do: it never changes; machines.md §3.1), and a definition carries a file's hash only
     where the record has one: a definition's file is checked by name, size and date unless something hashed it.
   - **Chromium 153 crashes reading a file handle back from IndexedDB in an off-the-record context** (the whole

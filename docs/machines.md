@@ -106,9 +106,27 @@ Since decided (the user, 2026-10-17):
   most once a minute (overwrites of held blocks still land while it's full); the machine runs on, though a guest's
   filesystem may abort on its own refused writes (Debian's ext4 does at times: read-only, then EIO for anything not
   cached, until a restart) (tests/page-quota.test.ts lowers the quota with `Storage.overrideQuotaForOrigin`). Chromium's sync
-  handles past the quota come back short in some contexts and throw `QuotaExceededError` in others; the overlay and the
-  block cache take both as a short write (`shortOnFull`): a thrown one used to leave the overlay's taken slots neither
-  mapped nor free, and a compaction after a trim then moved one as block 0's (the guest's first block read as zeros).
+  handles past the quota come back short in some contexts and throw `QuotaExceededError` in others (off the record a
+  refused write returns 4294967288, an error code as its count); the overlay, the block cache and the snapshot writer
+  take each as a refused write (`shortOnFull`, a count that isn't the request's): a thrown one used to leave the overlay's
+  taken slots neither mapped nor free, and a compaction after a trim then moved one as block 0's (the guest's first block
+  read as zeros). A guest's zeroing or discard (the overlay's map grows) goes the same way as its write. The overlay's map
+  entries that fall short are written back as they were and taken back in memory (`putMap`), so the overlay reads what
+  its files say (once its map was written in part, a reopened overlay read another block's bytes); an overlay whose
+  making was refused throws the same full storage, and its next opening makes it (a part of its base's identity used to
+  be recorded, and every later opening refused as another image's).
+- **The storage full outside a guest's disk writes** says so with the same numbers, as the cause under what failed:
+  `disks:overlay.storageFull.numbers` ("full, X used of Y", or without numbers where the browser gives none) under
+  [Couldn't save the snapshot](ui:snapshots:worker.notSaved), [Couldn't suspend the machine](ui:machine:worker.suspend.failed),
+  a restore's [The disk's changes couldn't be written to this browser's storage.](ui:snapshots:snapshot.storageFull), a
+  stored disk's import or merge ([The disk can't be written to this browser's storage.](ui:disks:stored.writeFailed)), Import changes… and a
+  snapshot file's import ([Couldn't import {{file}}](ui:snapshots:snapshots.notKept)). A kept snapshot's and a suspended machine's
+  writer (`fileWriter`), a restore's fork and a snapshot file's import first get the remote disks' kept blocks out of the
+  way (`makeRoom`, web/diskcache.ts: every image's cache, as the page's Clear, those a running machine reads given up
+  by its device worker) and try again: off the record the browser refuses writes far below the quota `estimate()`
+  reports, which the cache's budget comes from (remote-disks.md "Off the record"). The numbers are `estimate()`'s:
+  off the record, and under a lowered quota, they say less is used than the browser refuses at
+  (tests/storage-full.test.ts checks them against `estimate()`, in Chromium without a guest).
 - **Transient machines:** the tests' query parameters (`?machine=debian`, `?disk=`, `?disk2=`, `?ncpus=`, `?ram=`)
   make a machine that is never stored. Its overlays keep their single names (`webpc-debian`, `webpc-buildroot`,
   `webpc-disk-<hash>` for `?disk=`), which the sweep never touches; its suspended copy is beside its overlay.
@@ -365,10 +383,12 @@ disks (import, export under `qemu-img compare`, merge and its resume), the gener
 plan, the Machines page and the URL check, definitions across fresh profiles; on Debian (`scripts/ci-machines.sh`)
 several disks, a stored Debian, kept snapshots, forks, Suspend on pins, orphaning.
 
-**Profiles:** an off-the-record Playwright context keeps OPFS in memory, where sync handles' writes come back short at
-~0.8 GB in all while `estimate()` reports ~3.2 GB; a stored Debian doesn't fit, and the kept snapshots' test (with the
-URL disk's block cache, which sizes itself from that estimate) didn't either, so both run in a fresh on-disk profile
-(`launchPersistentContext`), as a user's browser is. Definitions' tests use on-disk profiles too (Chromium 153 crashes
+**Profiles:** an off-the-record Playwright context keeps OPFS in memory, where sync handles' writes are refused at
+~0.8 GB in all while `estimate()` reports ~3.2 GB; a stored Debian doesn't fit, and the kept snapshots' test (three
+snapshots, forks and a Suspend beside the URL disk's block cache) doesn't either, so both run in a fresh on-disk profile
+(`launchPersistentContext`), as a user's browser is. tests/page-incognito.test.ts is the off-the-record case on
+purpose: the cache filled with the whole image (385 MiB), then a kept snapshot, a Restore's fork and a Suspend, which
+the cache's room given back lets through (before it, the Suspend was refused). Definitions' tests use on-disk profiles too (Chromium 153 crashes
 reading a file handle back from IndexedDB off the record: backlog).
 
 ## 10. Ahead

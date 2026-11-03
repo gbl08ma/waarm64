@@ -12,7 +12,8 @@ import { diskIdentity, type BlkSpec, type DeviceSpec } from './devices.ts';
 import { ramDisk } from './ramdisk.ts';
 import { lzCodec } from './lz.ts';
 import { msg, MsgError, type Param } from './msg.ts';
-import { openOverlay, overlay, overlayMeta, removeOverlay, writeMeta, type WritableDisk } from './overlay.ts';
+import { openOverlay, overlay, overlayMeta, removeOverlay, storageFullError, writeMeta, type WritableDisk } from './overlay.ts';
+import { makeRoom } from './diskcache.ts';
 import { isZero } from './qcow2-write.ts';
 import { ABI, bootVm, compileCore, Exit, type BootOptions, type ConsoleInput, type Restore, type Vm, type VmState } from './vm.ts';
 
@@ -226,6 +227,11 @@ export async function readSnapshot(
       // The disks: each overlay written is emptied (a snapshot's blocks are all the disk has written; with `whole`, all
       // the disk has), then takes the file's blocks; a ramdisk's go into chunks for its device.
       const open = new Map<number, { disk: WritableDisk; close(): void; size: number } | 'skip'>();
+      // A write the storage refused gets the remote disks' kept blocks out of the way (`makeRoom`) and is tried once more
+      // (until there's nothing left to give).
+      let room = true;
+      const lands = async (w: () => boolean | Promise<boolean>) => (await w()) || (room && (room = await makeRoom().catch(() => false)) && (await w()));
+      const full = async () => new MsgError('snapshots:snapshot.storageFull', undefined, { cause: await storageFullError() });
       const rams: { spec: BlkSpec; disk: ReturnType<typeof ramDisk> }[] = [];
       try {
         for (const [slot, t] of targets) {
@@ -241,11 +247,11 @@ export async function readSnapshot(
           const was = (await overlayMeta(t.name)).generation;
           await removeOverlay(t.name);
           const files = await openOverlay(t.name, t.identity);
-          if (!writeMeta(files.meta, { generation: was + 1, merging: '' })) throw new MsgError('snapshots:snapshot.storageFull');
+          if (!(await lands(() => writeMeta(files.meta, { generation: was + 1, merging: '' })))) throw await full();
           // Whole blocks are written, so the base is never read; no meta: its generation is set.
           const disk = overlay({ size: t.size, format: 'raw', read: async () => undefined }, files.data, files.map);
           open.set(slot, { disk, close: files.close, size: t.size });
-          if (t.whole && !(await disk.zero(0, t.size))) throw new MsgError('snapshots:snapshot.storageFull.whole');
+          if (t.whole && !(await lands(() => disk.zero(0, t.size)))) throw new MsgError('snapshots:snapshot.storageFull.whole', undefined, { cause: await storageFullError() });
         }
         for (; !next.done; next = await frames.next()) {
           const { tag, index, data } = next.value;
@@ -257,7 +263,7 @@ export async function readSnapshot(
             const at = block * BLOCK;
             if (at >= o.size) throw corrupt(msg('snapshots:snapshot.damage.pastDisk'));
             const part = bytes.subarray(0, Math.min(BLOCK, o.size - at));
-            if (!(isZero(part) ? await o.disk.zero(at, part.length) : await o.disk.write(at, part))) throw new MsgError('snapshots:snapshot.storageFull');
+            if (!(await lands(() => (isZero(part) ? o.disk.zero(at, part.length) : o.disk.write(at, part))))) throw await full();
           }
         }
         for (const o of open.values()) if (o !== 'skip') o.disk.flush();
