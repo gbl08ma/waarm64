@@ -47,7 +47,7 @@
 use crate::cpu::{Cpu, sctlr};
 use crate::mem::{Access, Fault, FaultKind, Host, Mem};
 
-pub const TLB_ENTRIES: usize = 4096;
+pub const TLB_ENTRIES: usize = 16384;
 /// In a TLB entry's tag, bit 11 cleared (above the inverted memory index, bits
 /// 10:3): a Device page's entry, which every fast path misses, so that
 /// [`Mmu::miss`] checks the alignment of each access to it.
@@ -128,7 +128,7 @@ pub struct Tlb {
     /// Slots (`index * TLB_SLOTS + array`) filled with nG entries since the
     /// last flush, `ng_len` of them. A slot may since hold another entry:
     /// dropping it then is an over-invalidation, which is always allowed.
-    ng: [u16; NG_SLOTS],
+    ng: [u32; NG_SLOTS],
     /// Per slot (`index * TLB_SLOTS + array`): 0 for an entry from a page,
     /// else its block's class, [`block_class`].
     blk: [u8; TLB_ENTRIES * TLB_SLOTS],
@@ -265,7 +265,7 @@ impl Tlb {
             }
             let n = self.ng_len as usize;
             if n < NG_SLOTS {
-                self.ng[n] = (index(va) * TLB_SLOTS + array) as u16;
+                self.ng[n] = (index(va) * TLB_SLOTS + array) as u32;
             }
             self.ng_len = (n + 1).min(NG_SLOTS + 1) as u32;
         }
@@ -393,7 +393,7 @@ pub struct Vcpu {
 }
 
 impl Vcpu {
-    /// Boxed: the TLB is 770 KiB.
+    /// Boxed: the TLB is 2.4 MiB.
     pub fn new(cpu: Cpu) -> Box<Vcpu> {
         let mut v = Box::<Vcpu>::new_zeroed();
         let p = v.as_mut_ptr();

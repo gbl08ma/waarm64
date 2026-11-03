@@ -237,20 +237,23 @@ The table is `core/src/interp/sys.rs`.
 - Faults carry kind, level and access (ESR WnR, CM). Cache maintenance by VA translates and
   faults like a read (`DC IVAC` like a write); what's at the address doesn't matter, so a device or nothing is no
   fault. `DC ZVA` on what isn't RAM is an alignment fault, as on the M4 (never a store to a device).
-- **The TLB** is the M0 spike's shape: direct-mapped, 4096 entries × {tag, addend} (16 bytes) per
+- **The TLB** is the M0 spike's shape: direct-mapped, 16,384 entries × {tag, addend} (16 bytes) per
   (EL, read/write/execute). The tag is the page VA with bits 11:0 all ones (**bits 11:3 are
   reserved for an inverted memory index**, layout A's escape hatch, [architecture.md](architecture.md));
   a lookup compares with `(va + size − 1) | 0xfff`, so page-crossing accesses miss and are
-  split. The host address is `va + addend` (QEMU-style). MMIO and unmapped pages always miss.
+  split. The host address is `va + addend` (QEMU-style). MMIO and unmapped pages always miss. 16,384 entries,
+  2.4 MiB a vCPU, since 2026-11-03: at 4,096 most misses were conflicts among the kernel's linear-map pages, and the
+  larger table cut misses 14-30% and the process-heavy phases 1-3% (`bench/boot/REPORT.md` "The TLB at 16,384
+  entries"); per-ASID stashes of nG entries and victim buffers measured out there.
 - **ASIDs:** entries hold no ASID. An ASID change or `TLBI ASIDE1` drops only the non-global
   (nG) entries, tracked in `Tlb::ng` (up to 1024 slots, else a full flush); a change of
   `SCTLR_EL1.M` flushes everything. (Keeping global entries cut Alpine's boot misses 3.61M →
-  1.07M.) Per-ASID stashes of nG entries are a backlog item.
+  1.07M.) Per-ASID stashes of nG entries would serve under a sixth of the nG refills (measured out: "The TLB" above).
 - **Blocks:** a 2 MiB or 1 GiB leaf is cached as entries for the pages it was used through, and
   a TLBI by VA drops every one of them, not only its own page's: Linux unmaps a transparent huge
   page with one TLBI for the 2 MiB. `Tlb::blk` marks the slots filled from blocks by class (VA
   half, level) and `Tlb::nblk` counts them; a flush by VA scans the block's indices (512 for
-  2 MiB, all 4096 for 1 GiB) only for a class the TLB holds, and drops an EL's transfer cache if
+  2 MiB, all 16,384 for 1 GiB) only for a class the TLB holds, and drops an EL's transfer cache if
   its instruction TLB filled from a block in that half. Without this, stale pages of a freed THP
   stayed mapped until the next ASID switch: hidden while KPTI switched ASIDs at every kernel entry,
   it corrupted glibc's heap in dEQP once FEAT_E0PD let a KASLR kernel run without KPTI

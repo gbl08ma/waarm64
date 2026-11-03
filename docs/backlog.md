@@ -34,9 +34,7 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 - **Spectre-BHB reporting:** Linux says `spectre_v2` "Mitigation: CSV2, but not BHB" (and installs no
   BHB mitigation: MIDR 0 has no loop count). Only `ID_AA64PFR0_EL1.CSV2` = 3 clears it, which needs
   `SCXTNUM_EL0`/`EL1` (plain registers, `SCTLR_EL1.TSCXT` trap, JIT sysreg path, snapshot state).
-- **MMU:** per-ASID stashes of nG entries (the previous ASID's are dropped at a switch; Alpine's
-  boot refills ~0.3M); ~0.3M of Alpine's misses are direct-mapped conflicts; no Device-memory alignment faults
-  with the MMU off, where every access is Device (on the M4 an unaligned load and DC ZVA fault, QEMU's TCG only the
+- **MMU:** no Device-memory alignment faults with the MMU off, where every access is Device (on the M4 an unaligned load and DC ZVA fault, QEMU's TCG only the
   load): the check would sit on the flat bus's fast path, which the MMU-off EL1 and user-mode guests run on, and
   correct firmware doesn't notice; DC ZVA to RAM mapped as Device with the MMU on zeroes it (the M4: an alignment
   fault).

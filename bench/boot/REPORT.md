@@ -3181,3 +3181,51 @@ more are a few a session in every arm; 800K had the most in both workloads, and 
 makes each batch's install larger, which a slower host would feel. **`BATCH_STEPS` stays 50K.** Rebuilding the live
 regions into 512-region modules while the guest idles wasn't built: the rebuilt functions would start in Liftoff and
 tier up again, adding to what the code GC frees, for the same module saving that measured flat here.
+
+## The TLB at 16,384 entries; per-ASID stashes and victim buffers measured out
+
+2026-11-03, the dev VM, Chromium 153.0.8010.52; `results/tlb16k/`. The backlog's two MMU speed items: a per-ASID
+stash of nG entries (the previous ASID's are dropped at a switch) and the direct-mapped TLB's conflicts.
+
+**What the misses are.** A temporary build (never committed) classified every TLB fill, its counters out through
+unused exception-class slots (`counts/`; `exp-*` are Alpine's boot in Node, `userspace-4096.json` the userspace
+benchmark in Chromium, its counters cover the boot and the four phases):
+
+| | Alpine boot | boot + userspace phases |
+|---|---|---|
+| TLB misses | 746,805 | 1,728,182 |
+| fills | 626,453 | 1,557,837 |
+| fills on a slot holding another page (conflicts) | 287,156 | 971,280 |
+| … a victim ring of 4 / 16 / 64 would have served | 199,212 / 223,100 / 237,966 | 518,098 / 588,795 / 672,899 |
+| nG fills | 232,409 | 949,924 |
+| … a per-ASID stash would have served | 58,581 | 143,786 |
+| ASID switches stashed (entries) | 3,625 (110,437) | 9,658 (237,107) |
+
+The stash model was generous (it keeps whatever was live at a switch; any TLBI by VA drops that page from every
+stash, ASIDE1 its ASID's, VMALLE1 all) and still serves under a sixth of the nG refills. It would also cost parallel
+SMP: a TLBI IS for another ASID skips a vCPU only if it holds nothing of that ASID (`Tlb::low_global`), which a
+stash ends. Not built. The conflicts ping-pong (69% are wanted back within four evictions), and nearly all are the
+kernel's data (`exp2-alpine.txt`: EL1 reads 199,390 and writes 82,156 of them, EL0 3,820; none between the halves;
+the pages under 1 GiB apart, the linear map of the 1 GiB RAM competing for 4,096 slots). A victim buffer would
+serve them on `Mmu::miss`, still behind the JIT's helper call; a larger table serves them inline at no cost (the
+index mask is a constant). 8,192 entries removed 31% of the boot's conflicts (`exp8k-alpine.txt`), 16,384 more:
+the boot's misses 746,805 → 639,853 (`t*-alpine.txt`), steps unchanged (2,655,076,428).
+
+**A/B, alternated in one session** (medians; rounds in `tlb/`, `smp/`, `apps/`):
+
+| | 4,096 | 8,192 | 16,384 |
+|---|---|---|---|
+| Alpine boot (JIT), 3 rounds | 5392.8 ms | 5401.7 (+0.2%) | 5364.6 (-0.5%) |
+| Alpine userspace, total | 13754.4 ms | 13755.9 (+0.0%) | 13465.7 (-2.1%) |
+| … compress / lua / churn / sqlite | 1925.0 / 3036.2 / 1219.3 / 2337.0 | +0.5 / +0.1 / +2.4 / +0.1% | **-1.6 / -1.0 / -2.4** / -1.2% |
+| 4 vCPUs, parallel (`smp_user_jit_4`), 4 rounds, total | 15594.0 ms | | 15411.4 (-1.2%) |
+| … compress / lua / churn / sqlite | 1957.9 / 3256.2 / 1538.7 / 2490.8 | | -3.5 / -0.4 / **-2.8** / +0.3% |
+| … TLB misses (4 vCPUs), median | 4.4 M | | 3.1 M |
+| Chromium in Debian (`bench/apps/chromium.ts`, 4 vCPUs, 4 pairs): renders 1-3 | 16.83 / 10.41 / 9.89 s | | 16.50 / 10.53 / 9.64 s |
+| … TLB misses a render, median | 14.8 / 12.8 / 12.7 M | | 11.4 / 10.0 / 9.7 M |
+
+In bold, the 16,384 arm's rounds all beat 4,096's; the rest overlap (the renders move ±10% from boot to boot).
+Misses fall 14% (one vCPU) to 30% (four), the process-heavy phases gain 1-3%, nothing measured slower, four
+larger TLBs in parallel SMP included. **The TLB is 16,384 entries**: +1,634 KiB per vCPU (the `Tlb` 823,040 →
+2,496,256 bytes), the nG list's slots `u32` (16,384 × 8 slots pass 16 bits). A TLBI by VA in a page of a 1 GiB
+block now scans up to 16,384 indices (4,096 before), only while the TLB holds an entry of that class.
