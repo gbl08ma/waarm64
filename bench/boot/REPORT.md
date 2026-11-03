@@ -3119,3 +3119,65 @@ Nothing is slower: **JSCVT is advertised.**
 
 Steps move with ABI 59 and 60 together (the guests' Linux sees SB, LRCPC, DIT and the rest): Buildroot +0.14%, Alpine +0.13%,
 Alpine's userspace -0.03%, crypto -0.4%, USB -6%. EDK2 doesn't move.
+
+## The wasm code GC today, and larger batches in a browser (2026-11-03)
+
+The backlog's "The wasm code GC stops every vCPU" and "Fewer, larger modules for a browser, what's left". The dev VM,
+headless Chromium 153.0.8010.52, core `0cacda0f`; every session from `target/snapbench/pages.webpcsnap` (the desktop
+guest, 4 vCPUs) through `bench/gpu/ab.sh`. Data in `results/m9-codegc/` (README).
+
+**What V8's code GC frees and when** (V8's `src/wasm/wasm-engine.cc` and `wasm-code-manager.cc`, read at their
+current main): code goes on the engine's potentially-dead list when its last reference drops while its module lives:
+Liftoff code that TurboFan replaced (and wrappers). A module that dies takes its code with it in the module's own
+teardown, not in the code GC, so a JIT flush doesn't feed it. A GC starts once the potentially-dead code passes
+64 KB plus a tenth of all committed wasm code in the process, asks every isolate to report the code on its stacks (a
+stack-guard interrupt and a task), and the isolate that reports last frees the dead code (`FreeDeadCode`) under the
+engine's mutex. So what it frees follows the tier-ups, not the module count.
+
+**The code GC no longer stops the vCPUs.** One session of each with `--trace-wasm-code-gc` and the vCPU timeline
+(`bench/gpu/stalls.ts`; the trace's times can't be used: the renderer's stdout reaches the harness in buffered chunks):
+
+| | code GCs | the largest | stalls ≥ 20 / ≥ 50 ms | longest | all vCPUs at once |
+|---|---|---|---|---|---|
+| pages session (315 s, 2,798 modules, no flush) | 29 | 6,923 objects in 1,678 modules (limit ~48 MB) | 2 / 0 | 35 ms | 0 |
+| churn screen (316 s, 57,390 modules, 1 flush) | 42 | 16,420 objects in 3,771 modules (limit ~92 MB) | 1 / 0 | 41 ms (one vCPU) | 0 |
+
+On 2026-10-15 ("M8: V8's GC on the vCPU threads") the code GC stopped all four vCPUs for 50-75 ms a few times a
+session. Since then the vCPU workers return to their event loop and the compile threshold went from 50 to
+1000-2000; which of the two removed it wasn't isolated.
+
+**Larger batches** (`BATCH_STEPS` 50K, 200K, 800K; two sessions per arm, alternating; `ab-pages/`, `ab-churn/`,
+`summary.txt` in each from `bench/gpu/ab-summary.ts`). The pages session:
+
+| | 50K (kept) | 200K | 800K |
+|---|---|---|---|
+| modules | 2,793 · 2,758 | 1,516 · 1,516 | 918 · 918 |
+| wasm | 133 · 133 MB | 132 · 132 | 132 · 133 |
+| busy MIPS | 194 · 186 | 194 · 195 | 197 · 188 |
+| interpreted G steps | 3.44 · 3.45 | 3.54 · 3.49 | 3.65 · 3.64 |
+| V8's code, median (MiB) | 401 · 414 | 388 · 385 | 379 · 400 |
+| renderer RSS, median (MiB) | 3,624 · 3,607 | 3,560 · 3,627 | 3,563 · 3,574 |
+| stalls ≥ 20 / ≥ 50 ms | 2 · 1 / 0 | 3 · 2 / 0 | 4 · 2 / 0 |
+| wiki, bbc load (s) | 14.5 · 10.5, 10.9 · 12.9 | 10.5 · 10.3, 13.1 · 11.8 | 10.5 · 10.2, 11.8 · 12.3 |
+
+The churn screen (`made`: the page's own work in the session):
+
+| | 50K (kept) | 200K | 800K |
+|---|---|---|---|
+| modules | 57,447 · 55,678 | 37,857 · 38,978 | 23,973 · 24,195 |
+| wasm, flushes | 571 · 557 MB, 2 · 1 | 522 · 533, 1 · 1 | 451 · 452, 1 · 1 |
+| `made` | 9,093 · 8,769 | 8,894 · 9,080 | 8,546 · 8,640 |
+| busy MIPS | 252 · 245 | 259 · 260 | 251 · 263 |
+| share compiled, interpreted G steps | 0.90, 16.5 · 15.9 | 0.883, 18.7 · 19.2 | 0.851, 23.2 · 23.4 |
+| the cache's lock acquisitions | 79 · 76 M | 113 · 116 M | 181 · 181 M |
+| V8's code, median (MiB) | 562 · 542 | 527 · 513 | 478 · 489 |
+| renderer RSS, median (MiB) | 4,179 · 4,166 | 4,029 · 4,074 | 3,976 · 4,013 |
+| stalls ≥ 20 / ≥ 50 ms | 1 · 5 / 0 | 2 · 1 / 0 | 4 · 4 / 0 |
+
+Fewer modules for the same wasm, and nothing a user would notice gained: the pages session's busy MIPS and loads
+within the sessions' spread, the churn's work even at 200K (its +4% busy MIPS spent on 16% more steps interpreted and
+50% more lock acquisitions) and 4% lower at 800K, memory 1-6% lower (13% of V8's code at 800K). Stalls of 20 ms or
+more are a few a session in every arm; 800K had the most in both workloads, and a block waiting longer interpreted
+makes each batch's install larger, which a slower host would feel. **`BATCH_STEPS` stays 50K.** Rebuilding the live
+regions into 512-region modules while the guest idles wasn't built: the rebuilt functions would start in Liftoff and
+tier up again, adding to what the code GC frees, for the same module saving that measured flat here.

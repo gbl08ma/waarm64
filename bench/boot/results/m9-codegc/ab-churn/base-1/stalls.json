@@ -1,0 +1,26 @@
+{
+ "bench/results/local/lm/ab-churn/base-1/churn-all.timeline.json": {
+  "seconds": 315,
+  "mips": 508,
+  "busyMips": 252,
+  "busyShare": 0.5,
+  "stallsAtLeastMs": {
+   "20": 1,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 42,
+  "stalledMsPerSecondPerVcpu": 0.03,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

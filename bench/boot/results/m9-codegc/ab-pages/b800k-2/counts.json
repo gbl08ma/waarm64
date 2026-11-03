@@ -1,0 +1,18 @@
+{
+ "bench/results/local/lm/ab-pages/b800k-2/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 87.74,
+   "flushes": 0,
+   "modules": 920,
+   "mib": 126.6,
+   "overdue": 0,
+   "parks": 3331,
+   "locks": 21158720,
+   "interpGsteps": 3.64,
+   "share": 0.958,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

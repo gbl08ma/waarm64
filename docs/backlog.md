@@ -104,14 +104,6 @@ left open, most promising first.
     Re-emitting would shrink the code too: a jump-cache tail is 61 B and a probe for a successor in another page 116,
     against 22 for a direct call, 9.7% of Debian's code (the wasm size item below).
   - The dispatcher's entries (13% of the stalls) and the signature check's table load (5.3% of the time).
-- **Fewer, larger modules for a browser, what's left** after tier-ups wait for the batch ([jit.md](jit.md) "Compile
-  policy"; `bench/boot/REPORT.md` "M8: tier-ups folded into the batches"): Firefox's pages session makes ~2,800
-  modules (75 regions each, 11% with 1-8), the churn screen ~23,000 (22 each, 35% with 1-8: batches made due by
-  `BATCH_STEPS` while the guest writes new code all the time). Not tried: larger batches while the cache is warm
-  (Alpine paid +20% for 16M-step batches), and rebuilding the live regions into 512-region modules while the guest
-  is idle (from recipes, in the compile worker, swapped in at the dispatcher: most of the machinery was 1e628b8's
-  replay). Either is worth it only past what the fold gave: the pages session's V8 code fell 6% for 59% fewer
-  modules.
 - **Liftoff zero-fills its locals at every entry**, 4 bytes at a time (`str wzr, [x16], #4` in a loop): ~5% of
   Liftoff's samples in Firefox sit in prologues. Measured 2026-10-20 (`bench/boot/REPORT.md` "M8: what Liftoff runs
   that a static change could cut"): V8 zero-fills when a function has **more than 12 locals** besides its
@@ -129,13 +121,10 @@ left open, most promising first.
   shell are alive; the other pages then load normally. Three times in ~35 sessions on 2026-10-16, on three builds
   (WARM=32; the default before the foldable offsets; the posted modules): always the first page (wiki). Rerun such
   a session under JIT-check, and look at what Firefox waits for (the guest's `ps`, its console) when it hangs.
-- **The wasm code GC stops every vCPU** (what remains of "What V8's GC stops a vCPU for", closed 2026-10-15 by
-  returning the vCPU workers to their event loop: docs/v8.md "Threads that never return to their event loop"). The
-  isolate that frees the dead code spends 43-69 ms of CPU in `FreeDeadCode` while the others wait in
-  `ReportLiveCodeForGC`: 50-75 ms on all vCPUs at once, a few times a session; the longest stalls left with Firefox
-  (54 ms). What dies is Liftoff code TurboFan replaced and flushed modules' code; fewer, larger modules or less
-  tier-up churn would shrink it, neither measured. Also open from that item: which Blink object a vCPU thread's
-  `new WebAssembly.Module` allocates in Oilpan (`CppGC.SweepOnAllocation` inside `wasm.SyncCompile`).
+- **Which Blink object a vCPU thread's `new WebAssembly.Module` allocates in Oilpan** (`CppGC.SweepOnAllocation`
+  inside `wasm.SyncCompile`; `bench/boot/REPORT.md` "M8: V8's GC on the vCPU threads"): left open when the vCPU
+  workers began returning to their event loop. The wasm code GC that item also named no longer stops the vCPUs
+  (`bench/boot/REPORT.md` "The wasm code GC today, and larger batches in a browser", 2026-11-03).
 - **llvmpipe under the JIT** ([graphics.md](graphics.md) "Guests that composite with llvmpipe"): sway compositing
   through Mesa's software GL kept four vCPUs at ~54% for ~3 frames a second at 1376×762 (pixman:
   4–8%). Profiled 2026-10-08 with a compositor-like GLES load (`images/alpine/gl`): ~95% of the

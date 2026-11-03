@@ -1161,6 +1161,15 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   of its steps. **Decaying a block's count** while it isn't reported changed nothing. **Without the pressure rule**
   (a flat 2000) the wasm fell 9-11% but Alpine's boot ran 2.8% slower and Firefox's pages interpreted 27% more steps:
   a cold boot wants 1000, a browser's working set under pressure 2000, which the rule gives.
+- **Larger batches in a browser** (2026-11-03; `bench/boot/REPORT.md` "The wasm code GC today, and larger batches in
+  a browser"): `BATCH_STEPS` 200K and 800K against 50K, two sessions each of Firefox's pages session and the churn
+  screen. Modules fell 45% and 67% (pages) and 31% and 57% (churn) for the same wasm on the pages session, but
+  nothing a user would notice moved: busy MIPS and page loads within the sessions' spread, the churn page's work even
+  at 200K (16% more steps interpreted, 50% more lock acquisitions) and 4% lower at 800K, memory 1-6% lower, and 800K
+  had the most stalls of 20 ms or more in both. Not built: **rebuilding the live regions into 512-region modules
+  while the guest idles**. The wasm code GC frees Liftoff code that TurboFan replaced, not dead modules' code (a
+  module's code goes with the module), so rebuilt functions starting in Liftoff again would add to it, for a module
+  saving that measured flat.
 
 ## Validation
 

@@ -1,0 +1,52 @@
+{
+ "bench/results/local/lm/ab-churn/b200k-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 160.63,
+   "flushes": 1,
+   "modules": 38082,
+   "mib": 500.5,
+   "overdue": 0,
+   "parks": 110387,
+   "locks": 113541947,
+   "interpGsteps": 18.73,
+   "share": 0.883,
+   "phases": {}
+  },
+  "flushes": [
+   {
+    "atS": 168,
+    "atGsteps": 87.62,
+    "kind": "plain",
+    "replayed": 0,
+    "replayedMiB": 0,
+    "emits": {
+     "inline": 0,
+     "worker": 0
+    },
+    "discards": {
+     "epoch": 0,
+     "page": 0,
+     "import": 0,
+     "wasted": 0
+    },
+    "replayLocks": 0,
+    "modulesEmitted": 18830,
+    "mibEmitted": 225.1,
+    "shareBefore": 0.884,
+    "shareAfter": [
+     0.758,
+     0.758,
+     0.813,
+     0.819,
+     0.822,
+     0.825,
+     0.826,
+     0.83,
+     0.83,
+     0.829
+    ]
+   }
+  ]
+ }
+}
