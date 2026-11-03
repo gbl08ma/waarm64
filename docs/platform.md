@@ -99,7 +99,8 @@ indexes of their instance).
 - **Shared state** (the GIC, the PL011, the virtio transports, completion draining, PSCI power
   states and CPU_ON requests) is behind one lock, `Vm::plat` (a `Mutex`; round-robin reaches it
   through `&mut` without locking). Each vCPU drives its own timer PPIs (taking the lock only when a
-  level changes) and reads its IRQ line from an atomic that the platform code republishes after
+  level changes; CPU_ON takes the levels from the GIC, so a line left high at CPU_OFF drops with the
+  reset timer) and reads its IRQ line from an atomic that the platform code republishes after
   every change under the lock (`Vm::refresh`, which also wakes a vCPU whose line went up). A chunk
   boundary with nothing new takes no lock: the signal word, the maintenance flag, the clock, the
   timer levels, the IRQ atomic.
@@ -239,7 +240,9 @@ Two modes, chosen by `VmConfig.deterministic`:
   more than one (one counter for every CPU). `CNTFRQ` defaults to 62.5 MHz
   (QEMU's). WFI completes when the GIC signals an interrupt (masked or not); otherwise virtual
   time jumps to the next armed timer deadline, and with none the run returns the idle exit
-  (`value` = u64::MAX), PC on the WFI. **Every guest takes the same number of steps natively, in
+  (`value` = u64::MAX), PC on the WFI. A deadline at or past 2^62 ticks (`TIME_MAX`, centuries: a CVAL near 2^64,
+  as a negative TVAL early on makes) counts as none: the counter would overflow a few steps past it, and a
+  restore refuses a counter that far. **Every guest takes the same number of steps natively, in
   Node and in Chromium, interpreted or under the JIT**; tests assert those counts
   ([testing.md](testing.md) "Step counts").
 - **Realtime** (I/O benchmarks, `openssl speed`, interactive use): the core imports
@@ -516,7 +519,8 @@ never does: measured on Debian 13 (an hour on CNTVCT at a restore), `date` was r
 self-detected stall and systemd killed journald for its watchdog (`WatchdogSec=`, on CLOCK_MONOTONIC); arm64 has no
 "guest was paused" signal to the kernel (x86's kvmclock `PVCLOCK_GUEST_STOPPED`: arm64 takes asm-generic's
 `kvm_check_and_clear_guest_paused`, which returns false). A snapshot taken while the guest is suspended saves that
-(snapshot format 3), so the restored machine is suspended too.
+(snapshot format 3), so the restored machine is suspended too; one taken after `vm_wake` but before the vCPU ran
+(round-robin's next `vm_run` takes the wake) saves the pending start, as a CPU_ON request, so it resumes.
 
 ## Bare-metal test convention
 

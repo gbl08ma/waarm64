@@ -130,7 +130,7 @@ unsafe fn fast_exit(ctx: *const (), c: usize, v: &mut Vcpu, insn: u32, e: Exit) 
 const JIT_PUBLISH: u64 = 1 << 16;
 
 /// Steps between two checks of a running vCPU's timers against the clock
-/// (`run_loop`), unless their registers change: a few µs of guest code.
+/// (`run_loop`, between chunks), unless their registers change: a few µs of guest code.
 const TIMER_STEPS: u64 = 4096;
 
 /// `CpuPar::asid` when a TLBI IS must wait for the vCPU whatever its ASID
@@ -353,10 +353,14 @@ impl Vm {
                 // Under the lock, with the request taken: another CPU_ON
                 // must see it on (found by `smp`'s check 4).
                 p.state.store(RUN, Ordering::SeqCst);
+                // The timer lines as the GIC has them (high if they were at CPU_OFF), so the
+                // reset timer's first check drives them low (as `set_sched_par` takes them).
+                let ppi = (pl.gic.level(c, IRQ_VTIMER), pl.gic.level(c, IRQ_PTIMER));
                 drop(pl);
                 cpu_on(v, entry, context);
                 *own = Own {
                     steps: own.steps,
+                    ppi,
                     ..Own::default()
                 };
             }
@@ -365,8 +369,9 @@ impl Vm {
                 return exit::BUDGET;
             }
             // The timers against the clock (a host call) when TIMER_STEPS steps passed since they last were,
-            // their registers changed, or the vCPU waits in WFI; a timer that comes due between is seen
-            // that many steps late at most (and at once by a guest that looks: `Exit::Platform`).
+            // their registers changed, or the vCPU waits in WFI. This runs between chunks, so a timer that
+            // comes due between is seen less than TIMER_STEPS plus a chunk (up to CHUNK) steps late (and at
+            // once by a guest that looks: `Exit::Platform`).
             let regs = [
                 v.cpu.cntv_ctl_el0,
                 v.cpu.cntv_cval_el0,
