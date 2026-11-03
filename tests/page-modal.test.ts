@@ -559,6 +559,40 @@ test("the storage footer shows remote disks' kept blocks and clears them", async
   await context.close();
 });
 
+test("the storage footer shows Vulkan's shader store and clears it; Preferences set its budget (VK4 T17)", async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/`);
+  // Entries as the GPU worker leaves them (web/venus-cache.ts): flushed through IndexedDB, deflated.
+  const stored = await page.evaluate(async () => {
+    const { idbBackend, ShaderCache } = await import('/web/venus-cache.ts' as string);
+    const backend = idbBackend();
+    const c = await ShaderCache.open('build', { backend });
+    c.put('a', crypto.getRandomValues(new Uint8Array(40_000)));
+    c.put('b', new TextEncoder().encode('let x = 1;\n'.repeat(4000)));
+    await c.flush();
+    backend.close();
+    return c.stats.bytes;
+  });
+  assert.ok(stored > 40_000 && stored < 45_000, `stored ${stored}`);
+  await page.click('#machines-open');
+  const clear = page.locator('[data-action=clear-shaders]');
+  await clear.waitFor();
+  assert.equal(await clear.textContent(), t('machines:MachinesPage.storage.clearShaders', { size: stored }));
+  await clear.click();
+  await clear.waitFor({ state: 'detached' });
+  const left = await page.evaluate(async () => (await import('/web/venus-cache.ts' as string)).shaderStoreSize());
+  assert.deepEqual(left, { bytes: 0, entries: 0 });
+  // The budget: the default chosen, a choice remembered for the next machine's start.
+  await modal(page).locator('[data-machine=preferences]').click();
+  const budget = modal(page).locator('[data-field=shader-budget]');
+  assert.equal(await budget.inputValue(), '32');
+  await budget.selectOption('64');
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('webpc.settings') ?? '{}').shaderMiB), 64);
+  await context.close();
+});
+
 test("remote disks' blocks: in an expiring bucket of their own, cleared while a machine reads them, gone after a week unused", async () => {
   const context = await browser.newContext();
   const page = await context.newPage();

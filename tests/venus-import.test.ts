@@ -32,8 +32,21 @@ function device() {
       return t as unknown as GPUTexture;
     },
     queue: { writeTexture(dst: { texture: object }, data: Uint8Array) { writes.push(`${names.get(dst.texture)}=${[...data].join(',')}`); } },
+    /** The resources' own textures (VK4 T16), named K1, K2…, and those destroyed. */
+    made: 0,
+    destroyed: [] as string[],
+    createTexture(desc: GPUTextureDescriptor) {
+      const name = `K${++this.made}`;
+      const t = { format: desc.format, width: (desc.size as number[])[0], height: (desc.size as number[])[1], destroy: () => this.destroyed.push(name) };
+      names.set(t, name);
+      return t as unknown as GPUTexture;
+    },
+    name: (t: GPUTexture | undefined) => (t ? names.get(t) : undefined),
   };
 }
+
+/** What the driver makes an imported R8 image's texture with (web/venus-gpu.ts `descs`). */
+const DESC: GPUTextureDescriptor = { size: [2, 1, 1], format: 'r8unorm', usage: 7, mipLevelCount: 1, sampleCount: 1, dimension: '2d', viewFormats: [] };
 
 /** `VenusGpu.later`'s order: work goes at once, or after held submits (`hold`/`drain`). */
 function queue() {
@@ -45,9 +58,9 @@ function queue() {
   };
 }
 
-function setup() {
+function setup(options: { rewrite?: boolean } = {}) {
   const r = renderer(), d = device(), q = queue();
-  const im = new VenusImport(d as unknown as GPUDevice, r as never, q.later);
+  const im = new VenusImport(d as unknown as GPUDevice, r as never, q.later, options);
   /** A picture written into resource `res` (virgl's texture has it, then the import is told: `onPlane`). */
   const picture = (res: number, ...bytes: number[]) => {
     r.resources.set(res, new Uint8Array(bytes));
@@ -116,4 +129,70 @@ test('VenusImport: a reset (or a snapshot\'s load) forgets every resource\'s byt
   im.bind(d.texture('U'), 5);
   picture(5, 4, 4);
   assert.deepEqual(d.writes, ['T=1,1', 'T=3,3', 'U=9,9', 'U=4,4']);
+});
+
+test('VenusImport: a resource imported again at each frame keeps its texture, written only by its pictures', () => {
+  const { r, d, im, picture } = setup();
+  r.resources.set(5, new Uint8Array([1, 1]));
+  // The first frame's image: the resource's own texture, its bytes read back once.
+  const k = im.bind(d.texture('A'), 5, DESC);
+  assert.equal(d.name(k), 'K1');
+  assert.deepEqual(d.writes, ['K1=1,1']);
+  // The next frame's image of the same surface: the same texture, nothing written.
+  assert.equal(im.bind(d.texture('B'), 5, DESC), k);
+  assert.equal(r.readbacks, 1);
+  assert.deepEqual(d.writes, ['K1=1,1']);
+  // An image's end leaves the resource's texture; a picture is written into it once, whatever images it had.
+  im.bind(d.texture('A'), 0);
+  picture(5, 7, 8);
+  assert.equal(im.bind(d.texture('C'), 5, DESC), k);
+  assert.deepEqual(d.writes, ['K1=1,1', 'K1=7,8']);
+  assert.deepEqual(d.destroyed, []);
+  assert.deepEqual(im.stats, { ...im.stats, binds: 3, made: 1, pictures: 1, readbacks: 1 });
+  // Another description (an image of another format or size on the same memory) gets a texture of its own.
+  const other = im.bind(d.texture('D'), 5, { ...DESC, size: [1, 1, 1] });
+  assert.equal(d.name(other), 'K2');
+  assert.deepEqual(d.writes, ['K1=1,1', 'K1=7,8', 'K2=7,8']);
+});
+
+test('VenusImport: a resource\'s end destroys its textures in the queue\'s order; its id\'s next owner gets new ones', () => {
+  const { r, d, q, im, picture } = setup();
+  r.resources.set(5, new Uint8Array([1, 1]));
+  im.bind(d.texture('A'), 5, DESC);
+  q.hold();
+  picture(5, 3, 3); // the picture's write, held behind a submit that samples the texture
+  im.unref(5);
+  assert.deepEqual(d.destroyed, [], 'destroyed before the held work that uses it');
+  // The id comes back for another surface before the held work drains: its own texture, its own bytes.
+  r.resources.set(5, new Uint8Array([9, 9]));
+  const k2 = im.bind(d.texture('B'), 5, DESC);
+  assert.equal(d.name(k2), 'K2');
+  q.drain();
+  assert.deepEqual(d.destroyed, ['K1']);
+  assert.deepEqual(d.writes, ['K1=1,1', 'K1=3,3', 'K2=9,9']);
+  // A reset destroys every resource's textures.
+  im.reset();
+  assert.deepEqual(d.destroyed, ['K1', 'K2']);
+  assert.equal(d.name(im.bind(d.texture('C'), 5, DESC)), 'K3');
+});
+
+test('VenusImport: a texture made while its picture is pending is left to the picture', () => {
+  const { r, d, im, picture } = setup();
+  r.resources.set(5, new Uint8Array([0, 0]));
+  r.pending.add(5);
+  im.bind(d.texture('A'), 5, DESC);
+  assert.equal(r.readbacks, 0);
+  assert.deepEqual(d.writes, []);
+  r.pending.delete(5);
+  picture(5, 7, 8);
+  assert.deepEqual(d.writes, ['K1=7,8']);
+});
+
+test('VenusImport: with `rewrite` (`?gpu=vkimport=rewrite`) each image keeps its own texture, written at its bind', () => {
+  const { r, d, im } = setup({ rewrite: true });
+  r.resources.set(5, new Uint8Array([1, 1]));
+  assert.equal(im.bind(d.texture('A'), 5, DESC), undefined);
+  assert.equal(im.bind(d.texture('B'), 5, DESC), undefined);
+  assert.deepEqual(d.writes, ['A=1,1', 'B=1,1']);
+  assert.equal(d.made, 0);
 });

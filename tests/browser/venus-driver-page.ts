@@ -43,7 +43,7 @@ export async function run(spirv: { vert: string; frag: string; comp: string }, b
   const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
   let store: ShaderCache | undefined;
   const v = await VenusRenderer.create(module, memory, { at: VENUS_ARENA, bytes: 1 << 20, watch: 0 }, device, device, 'pump',
-    backend ? { cache: async (id) => (store = await ShaderCache.open(id, { backend })) } : {});
+    { premake: true, ...(backend ? { cache: async (id: string) => (store = await ShaderCache.open(id, { backend })) } : {}) });
   const ex = v.raw as unknown as Test;
   const words = async (url: string) => new Uint8Array(await (await fetch(url)).arrayBuffer());
   const put = (b: Uint8Array) => { const p = ex.venus_alloc(b.length) >>> 0; new Uint8Array(memory.buffer, p, b.length).set(b); return [p, b.length / 4]; };
@@ -90,7 +90,8 @@ export async function runImport() {
     videoPending: { res: () => false },
   }, (f) => v.gpu.later(f));
   const binds: number[] = [];
-  v.gpu.onImport = (t, res) => { binds.push(res); importer.bind(t, res); };
+  // The resource's own texture takes the image's place (VK4 T16).
+  v.gpu.onImport = (t, res, desc) => { binds.push(res); return importer.bind(t, res, desc); };
   const text = (p: number) => { const u8 = new Uint8Array(memory.buffer); let e = p; while (u8[e]) e++; return new TextDecoder().decode(u8.slice(p, e)); };
   const copy = async () => {
     if (ex.wgt_import(7)) return { error: text(ex.wgt_error() >>> 0) };

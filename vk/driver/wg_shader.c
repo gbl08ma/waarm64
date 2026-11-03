@@ -1454,6 +1454,9 @@ wg_deserialize(struct vk_device *device, struct blob_reader *blob, uint32_t vers
    return VK_SUCCESS;
 }
 
+/* Render pipelines made at their draw only (vk/glue.c `venus_premake`: the page's default; `?gpu=vkpremake=on` A/B). */
+bool wg_premake_off;
+
 /* Pipelines made, timed for the render stats (`translateMs`: the translation, or a cache's lookups). */
 VKAPI_ATTR VkResult VKAPI_CALL
 wg_CreateGraphicsPipelines(VkDevice device, VkPipelineCache cache, uint32_t count,
@@ -1462,6 +1465,15 @@ wg_CreateGraphicsPipelines(VkDevice device, VkPipelineCache cache, uint32_t coun
 {
    const int64_t t0 = os_time_get_nano();
    VkResult r = vk_common_CreateGraphicsPipelines(device, cache, count, infos, alloc, pipelines);
+   /* With `?gpu=vkpremake=on`, their render pipelines now, where their state decides them (WebGPU makes them
+    * asynchronously): off by default, since programs make many they never draw with, whose compiles then delay those
+    * they do (VK4 T17; vk/README.md "Pipelines made asynchronously"). */
+   if (!wg_premake_off) {
+      VK_FROM_HANDLE(wg_device, dev, device);
+      for (uint32_t i = 0; i < count; i++)
+         if (pipelines[i])
+            wg_pipeline_premake(dev, pipelines[i], &infos[i]);
+   }
    gpu_translated((double)(os_time_get_nano() - t0) / 1e6);
    return r;
 }
@@ -1717,8 +1729,8 @@ fragment_without_depth(struct wg_program *p, const struct wg_shader *fs)
    return p->fs_no_depth;
 }
 
-uint32_t
-wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
+static uint32_t
+render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool premade)
 {
    if (!p->pipelines)
       p->pipelines = _mesa_hash_table_create(NULL, key_hash, key_equal);
@@ -1729,9 +1741,11 @@ wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
 
    struct wg_json j = { 0 };
    const struct wg_pull *pull = wg_pipeline_pull(p, k);
-   wg_json_printf(&j, "{\"layout\":%u,\"vertex\":{\"module\":%u,\"entryPoint\":\"main\","
+   /* `premade`: the worker counts those a draw sets (web/venus-gpu.ts `premade`). */
+   wg_json_printf(&j, "{%s\"layout\":%u,", premade ? "\"premade\":true," : "", pull ? pull->layout : p->layout);
+   wg_json_printf(&j, "\"vertex\":{\"module\":%u,\"entryPoint\":\"main\","
                   "\"constants\":{\"wg_flip_y\":%d,\"wg_flip_z\":%d",
-                  pull ? pull->layout : p->layout, p->vs_module ? p->vs_module : k->vs->module, k->flip ? 1 : -1,
+                  p->vs_module ? p->vs_module : k->vs->module, k->flip ? 1 : -1,
                   k->flip_z ? 1 : 0);
    if (k->vs->info.uses_view)
       wg_json_printf(&j, ",\"wg_view\":%u", k->view);
@@ -1873,4 +1887,16 @@ wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
    memcpy(copy, k, sizeof(*copy));
    _mesa_hash_table_insert(p->pipelines, copy, (void *)(uintptr_t)id);
    return id;
+}
+
+uint32_t
+wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
+{
+   return render_pipeline(p, k, false);
+}
+
+uint32_t
+wg_render_pipeline_premade(struct wg_program *p, const struct wg_pipeline_key *k)
+{
+   return render_pipeline(p, k, true);
 }

@@ -32,6 +32,7 @@
   import type { PageNetwork } from './net-live.ts';
   import { adaptersOf, MAX_ADAPTERS, type DiskRecord, type MachineRecord } from './shape.ts';
   import { clearCaches } from '../diskcache.ts';
+  import { CACHE_BUDGET, CACHE_BUDGET_CHOICES, clearShaderStore } from '../venus-cache.ts';
   import { askPersist, createMachine, deleteMachine, duplicateMachine, isRunning, movedAdapter, storageReport, updateMachine, withAdapter, withoutAdapter } from './machines.ts';
   import { exportDefinition, importDefinition, parseDefinition } from './definitions.ts';
   import { leaveWarning, remember, settings } from './settings.ts';
@@ -66,6 +67,7 @@
   const ABOUT = 'about';
   let warnOnLeave = $state(leaveWarning());
   let catchUpClock = $state(settings().clockSync !== false);
+  let shaderMiB = $state(settings().shaderMiB ?? CACHE_BUDGET / 2 ** 20);
 
   const CPU_CHOICES = [1, 2, 3, 4, 6, 8];
   /** This browser offers WebGPU (a Vulkan machine's renderer draws on it; without it, Vulkan programs draw nothing). */
@@ -308,6 +310,8 @@
             note={t('machines:MachinesPage.clockSync.note')}>{t('machines:MachinesPage.clockSync')}</Check>
           <Check checked={ui.oskModifiers === 'toggle'} onchange={(on) => { ui.oskModifiers = on ? 'toggle' : 'next'; remember({ oskModifiers: ui.oskModifiers }); }} field="osk-toggle"
             note={t('machines:MachinesPage.oskToggle.note')}>{t('machines:MachinesPage.oskToggle')}</Check>
+          <label>{t('machines:MachinesPage.shaderBudget')} <select bind:value={shaderMiB} onchange={() => remember({ shaderMiB })} data-field="shader-budget">{#each [...new Set([...CACHE_BUDGET_CHOICES, shaderMiB])].sort((a, b) => a - b) as n}<option value={n}>{n === CACHE_BUDGET / 2 ** 20 ? t('machines:MachinesPage.shaderBudget.default', { n }) : t('machines:MachinesPage.mib', { n })}</option>{/each}</select></label>
+          <p class="note">{t('machines:MachinesPage.shaderBudget.note')}</p>
         </div>
         <div class="tab">
           <h4>{t('machines:MachinesPage.statusBar')}</h4>
@@ -537,6 +541,7 @@
       <span>{storage.persisted ? t('machines:MachinesPage.storage.persisted', { used: storage.usage, quota: storage.quota }) : t('machines:MachinesPage.storage', { used: storage.usage, quota: storage.quota })}</span>
       {#if !storage.persisted}<button title={t('machines:MachinesPage.storage.persist.title')} onclick={() => act(t('machines:MachinesPage.busy.asking'), askPersist)}>{t('machines:MachinesPage.storage.persist')}</button>{/if}
       {#if storage.remote > 0}<button data-action="clear-remote-cache" title={t('machines:MachinesPage.storage.clear.title')} onclick={() => act(t('machines:MachinesPage.busy.clearing'), clearCaches)}>{t('machines:MachinesPage.storage.clear', { size: storage.remote })}</button>{/if}
+      {#if storage.shaders > 0}<button data-action="clear-shaders" title={t('machines:MachinesPage.storage.clearShaders.title')} onclick={() => act(t('machines:MachinesPage.busy.clearing'), clearShaderStore)}>{t('machines:MachinesPage.storage.clearShaders', { size: storage.shaders })}</button>{/if}
       <details><summary>{t('machines:MachinesPage.storage.items')}</summary><ul>{#each storage.items.filter((x) => x.bytes > 0) as it}<li>{t('machines:MachinesPage.storage.item', { what: it.what, size: it.bytes })}</li>{/each}</ul></details>
     </footer>
   {/if}

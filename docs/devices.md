@@ -566,8 +566,9 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   `?gpu=vkgputime`; `?gpu=vknudge=<ms>` sets the nudges' period, VK3 L2b). At each queue submit the driver takes the window's written pages (web/window.ts) and uploads them.
   Calls that come before the module is ready wait in a backlog, and so does the device's fence. The driver's
   pipelines are made asynchronously and a submit drawing with one not yet ready is held, in order (VK3 L3); the
-  translated shaders persist across runs in IndexedDB `webpc-shaders`, the origin's (`venusPipelines` in the render
-  stats; vk/README.md "Pipelines made asynchronously", "The shader cache").
+  translated shaders persist across runs in IndexedDB `webpc-shaders`, the origin's, deflated (`venusPipelines` in the
+  render stats; vk/README.md "Pipelines made asynchronously", "The shader cache"). A render pipeline is made when its
+  draw is recorded (`?gpu=vkpremake=on`: at `vkCreateGraphicsPipelines` too, a loss measured by VK4 T17).
 - **The driver** (vk/README.md "The driver"): Vulkan on the GPU worker's WebGPU device (web/venus-gpu.ts; with no
   adapter it keeps the objects and draws nothing). What it advertises follows the browser's WebGPU device, its limits
   and features read at the renderer's start (vk/README.md "The driver"; VK2 L7), less what the translator can't do yet,

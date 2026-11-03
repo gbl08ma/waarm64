@@ -771,6 +771,63 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T17: pipelines' loose ends — made at creation they lose (off by default); the store deflated, shown, cleared and its budget a preference
+
+2026-11-03. vkQuake's capture (its state at frame 200) and vkmark's desktop scene replayed twice in a session each
+(`bench/vulkan/venus-run.ts`, `REPLAY=vkquake,vkmark-desktop,vkquake,vkmark-desktop`; Debian with Vulkan, 2 vCPUs) on the
+dev VM's SwiftShader (Chromium 153.0.8010.52, `CHROMIUM_ARGS="--enable-unsafe-webgpu --enable-features=Vulkan"`) and the
+M4 (Chrome for Testing 153.0.8010.12, through `bench/gpu/sway-mac.sh`), with render pipelines also made at
+`vkCreateGraphicsPipelines` (`?gpu=vkpremake=on`, vk/README.md "Pipelines made asynchronously") and without. JSON in
+`results/vk4/t17/` (`replay-*-on-r1` with the viewport guess fixed; the same counts).
+
+| vkQuake | made at creation, of them drawn | held for pipelines (ms) | load (s) | the first 31 frames (frames/s) |
+| --- | --- | --- | --- | --- |
+| SwiftShader, cold, at draws (the default) | — | 2,478 | 1.20 | **11.1** |
+| SwiftShader, cold, at creation too (2 sessions) | 100, 8 | 20,788, 22,654 | 2.15, 2.49 | 4.8, 4.4 |
+| SwiftShader, again in the session, at draws | — | 446 | 0.44 | 13.8 |
+| SwiftShader, again, at creation too | 100, 8 | 169, 2,311 | 0.43, 0.49 | 15.9, 12.4 |
+| M4, cold, at draws | — | 2 | 0.87 | **269** |
+| M4, cold, at creation too | 100, 8 | 5,438 | 1.41 | 26 |
+| M4, again in the session (both) | 100, 8 / — | 0.1 / 1.5 | 0.42 / 0.40 | 326 / 343 |
+
+- **Made at creation, pipelines cost more than they save.** vkQuake makes 285 Vulkan pipelines by its frame 200, 100
+  of them with a key their state decides (the rest are made at draws only); its frames draw with 18 render pipelines,
+  8 of them among those 100. The other 92 are compiled for nothing, queued on Dawn's workers ahead of those the first
+  frames need: cold, its frames run 10× slower on the M4 and 2.3× on SwiftShader. Warm (Dawn's cache in the session) it
+  costs little either way. vkmark's 2 pipelines are both made at creation and drawn, no measurable change. So the page
+  makes render pipelines at their draws, as before; `?gpu=vkpremake=on` for A/B (backlog "Pipelines' loose ends").
+- **The store is deflated in IndexedDB** (CompressionStream's deflate-raw, inflated at the load; vk/README.md "The
+  shader cache"): vkQuake's 282 entries, 4.68 MB held, are **0.63 MB stored (7.4×)**, vkmark's 28 KB 2.4 KB. The budget
+  counts what's stored, so 32 MiB holds ~50 vkQuakes instead of ~7; the memory held at a full store is ~7× the budget,
+  so the Preferences offer 8 to 64 MiB ("Space for Vulkan's shaders", 32 by default). The Machines page's storage line
+  lists the store and clears it (tests/page-modal.test.ts).
+
+## VK4 T16: imports without rewrites — a texture per resource; mpv wrote each picture once already, the import's time a frame 0.22 → 0.18 ms
+
+2026-11-03. mpv on Vulkan with VA-API as VK2 L6 (`bench/audio/avsync.ts` through `bench/gpu/sway-mac.sh`, Sintel's H.264
+trailer from the media disk, `WARM_S=8`, `PHASE_S=20`, 4 vCPUs; the desktop guest; the M4, Chrome for Testing
+153.0.8010.12), each session mpv's default (`--vo=gpu-next --gpu-api=vulkan`) and with interpolation
+(`--video-sync=display-resample --interpolation`); the arms in alternated sessions, before (`?gpu=vkimport=rewrite`, each
+image its own texture, written at its bind) and after (each resource's own texture, vk/README.md "Imports"). JSON in
+`results/vk4/t16/`. The GPU worker's import time is `importMs`, its writes and readbacks (the render stats).
+
+| the M4, 2 rounds | frames, dropped | binds a frame | textures made a frame | KB written a frame | the import's ms a frame |
+| --- | --- | --- | --- | --- | --- |
+| default, before | 529, 535; 0 | 2.0 | 2.0 | 600 | 0.218, 0.226 |
+| default, after | 529, 530; 0 | 2.0 | **0** | 600 | **0.176, 0.178** |
+| interpolation, before | 531, 530; 0 | 2.0 | 2.0 | 600 | 0.195, 0.200 |
+| interpolation, after | 531, 531; 0 | 2.0 | **0** | 600 | **0.173, 0.172** |
+
+- **The bytes don't change: mpv imports a surface once a picture**, also interpolating (libplacebo keeps a frame's
+  mapping while the frame is in its queue). The backlog's "every frame's planes are written again" was the write at
+  each bind, which is each picture's one write; with the resource's texture it moves to the picture's landing (or the
+  texture's making), and a re-import, which mpv doesn't do, writes nothing.
+- **What goes is a texture made and written fresh at every bind**: two a frame before, none once each surface of the
+  pool has its own (`importMade`: 0 over the phases). Writing into a texture that already lives is ~20% cheaper on the
+  worker's thread (0.04 ms a frame); rounds don't overlap. The guest, the frames and the drops the same.
+- Left (backlog "Imports' gaps"): each picture is still 0.6 MB of `writeTexture` at 480p (fewer only with the picture
+  on the GPU), and the imported image's own texture is still made at `vkCreateImage` and destroyed at its bind.
+
 ## VK4 T13–T14: a synchronous call waited a poll turn — GSK's iconscroll 6.5 → 33 frames/s, past GL; the guest's execbuffers are Mesa's fences
 
 2026-11-02. The desktop guest (Arch Linux, GTK 4.24.1, Mesa 26.2.5, sway 1.12 on GLES through virgl), 4 vCPUs, through

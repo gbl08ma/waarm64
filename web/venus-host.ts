@@ -86,7 +86,10 @@ export type VenusOptions = { syncPipelines?: boolean;
   ycbcr?: boolean;
   /** `?gpu=vkl9=<suspect>`: VK3 L9a's suspects back at 4fdc69fb's behaviour (web/venus-gpu.ts `L9_SUSPECTS`); the
    * driver's take flags (`L9_FLAGS`), the device request the rest. */
-  l9?: readonly L9Suspect[] };
+  l9?: readonly L9Suspect[];
+  /** `?gpu=vkpremake=on` (true; A/B): render pipelines made at vkCreateGraphicsPipelines too, not only at their first
+   * draw (VK4 T17: off by default, a loss on cold compiles; vk/README.md "Pipelines made asynchronously"). */
+  premake?: boolean };
 
 /** venus_init's flag for `VenusOptions.ycbcr` (vk/driver/wg_private.h `WG_FEATURE_YCBCR`). */
 const YCBCR = 1 << 30;
@@ -134,6 +137,8 @@ type Exports = {
   venus_resource_data(ctx: number, res: number): number;
   venus_resource_texture(ctx: number, res: number): number;
   venus_build_id(): number;
+  /** Absent from a module built before VK4 T17 (which makes pipelines at their draws only). */
+  venus_premake?(on: number): void;
   venus_arena_end(): number;
   venus_alloc(size: number): number;
   venus_free(p: number): void;
@@ -257,6 +262,7 @@ export class VenusRenderer {
     if ((instance.exports as unknown as Exports).venus_arena_end() >>> 0 !== VENUS_ARENA) throw new Error(stale);
     self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.heldFormats ? HELD_FEATURES : []), ...(options.hold ?? [])], options.ycbcr ?? true, options.l9);
     self.nudgeMs = options.nudgeMs ?? NUDGE_MS;
+    self.ex.venus_premake?.(options.premake ? 1 : 0);
     self.cmdTypes = self.ex.venus_cmd_types();
     const idle = knob('vkidle', options.ringIdleMs, IDLE_RANGE);
     if (idle !== undefined) self.ex.venus_ring_idle(Math.round(idle * 1000));

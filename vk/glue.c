@@ -13,6 +13,7 @@
 
 /* The driver's (vk/driver/wg_private.h; not included: its headers are Mesa's, vkr's util is its own copy). */
 extern bool wg_unwaited_allocations;
+extern bool wg_premake_off;
 void wg_memory_rebind(VkDeviceMemory memory, void *data);
 uint32_t wg_memory_texture(VkDeviceMemory memory);
 extern void (*wg_submitted)(void);
@@ -31,6 +32,7 @@ IMPORT("venus_submitted") void venus_submitted(void);
 
 int venus_init(uint32_t features, const uint32_t *limits, uint32_t nlimits, void *window, uint32_t window_bytes);
 const char *venus_build_id(void);
+void venus_premake(int on);
 uint32_t venus_arena_end(void);
 void venus_complete(uint32_t serial);
 uint32_t venus_capset(void *out);
@@ -91,6 +93,14 @@ venus_init(uint32_t features, const uint32_t *limits, uint32_t nlimits, void *wi
    wg_submitted = venus_submitted;
    wg_unwaited_allocations = true;
    return vkr_renderer_init(VKR_RENDERER_THREAD_SYNC | VKR_RENDERER_ASYNC_FENCE_CB, &callbacks);
+}
+
+/* `?gpu=vkpremake=on` (A/B): render pipelines made at vkCreateGraphicsPipelines too, not only at their first draw
+ * (wg_pipeline_premake; the page turns it off by default: VK4 T17 measured it a loss on cold compiles). */
+EXPORT void
+venus_premake(int on)
+{
+   wg_premake_off = !on;
 }
 
 /* The driver's build ID (vk/gen.ts: a hash of vk/'s sources), a NUL-terminated string: the worker's shader store

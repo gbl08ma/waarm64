@@ -57,6 +57,9 @@ test('the driver draws a scene, runs a compute pass and fills host-visible memor
   const stats = r.stats as Record<string, number>;
   assert.equal(stats.syncPipelines, 0, 'pipelines made at once');
   assert.ok(stats.pipelinesReady >= 2, `pipelines ready: ${stats.pipelinesReady}`);
+  // With `premake` (VK4 T17, off on the page) its render pipeline was made at vkCreateGraphicsPipelines, and the draw
+  // set that one: no other made.
+  assert.deepEqual([stats.premade, stats.premadeUsed, stats.pipelines], [1, 1, 2], 'premade, used, pipelines');
 });
 
 test('a second run translates nothing the first did: its shaders come from the store, and it draws the same', { skip, timeout: 120_000 }, async (t) => {
@@ -99,6 +102,8 @@ test('an image bound to imported dma-buf memory has its resource\'s bytes, and a
   assert.equal(second.error, undefined, String(second.error));
   assert.deepEqual(r.errors, [], 'WebGPU errors');
   assert.deepEqual(r.binds, [7]);
+  // The image took resource 7's own texture (VK4 T16): made once, its bytes written once at the bind and once at the picture.
+  assert.equal((r.stats as { made: number }).made, 1);
   // At the bind: the resource's bytes read back; after a picture: the picture's.
   assert.deepEqual(first.bytes, Array.from({ length: 16 }, (_, i) => 10 + i));
   assert.deepEqual(second.bytes, Array.from({ length: 16 }, (_, i) => 200 + i));

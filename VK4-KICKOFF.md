@@ -88,10 +88,10 @@ R1–R4 and then of R5–R7, had its findings fixed or moved to the backlog the 
 - **T15. Venus's submits ~2 ms later on NVIDIA** (M, needs the user's runs): a bundle carrying the page at several
   of the 34 commits between 4fdc69fb and c8087cb0, run as alternated arms in one session, or Dawn's trace categories
   at both. *Start:* backlog entry of that name, REPORT.md "VK3 L9a".
-- **T16. Imports without rewrites** (S–M): every video frame's planes are written again (~0.2 ms and 0.6 MB a frame
+- **T16. Imports without rewrites** (done 2026-11-03: each virgl resource a texture of its own, an import writes nothing; mpv imports a surface once a picture anyway, so 600 KB a frame stay, the import's GPU-worker time a frame 0.22 → 0.18 ms on the M4. Left: backlog "Imports' gaps") (S–M): every video frame's planes are written again (~0.2 ms and 0.6 MB a frame
   at 480p, ~3 MB at 1080p); a Venus texture per resource written only when its picture changes. *Done:* mpv's GPU
   worker time a frame before and after. *Start:* backlog "Imports' gaps".
-- **T17. Pipelines' loose ends** (S each): pipelines made at `vkCreateGraphicsPipelines` (a first frame's stalls),
+- **T17. Pipelines' loose ends** (done 2026-11-03: render pipelines made at creation lose, cold vkQuake 269 → 26 frames/s on the M4 (100 made, 8 drawn), so off by default behind `?gpu=vkpremake=on`; the shader store deflated (vkQuake's 7.4×), on the Machines page's storage line with a clear, its budget a Preference of 8–64 MiB. Left: backlog "Pipelines' loose ends") (S each): pipelines made at `vkCreateGraphicsPipelines` (a first frame's stalls),
   the shader store compressed, shown on the Machines page and its budget configurable (the user's ask, 2026-10-26).
   *Start:* backlog "Pipelines' loose ends after VK3 L3".
 

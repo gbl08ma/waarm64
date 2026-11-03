@@ -3,6 +3,7 @@
 // (the page that runs it, in any tab), and edits that need it off are refused while it's held. Nothing here asks the
 // user; the Machines page confirms first.
 import { cacheBytes } from '../diskcache.ts';
+import { shaderStoreSize } from '../venus-cache.ts';
 import { t } from '../i18n.ts';
 import { msg, MsgError, type Msg } from '../msg.ts';
 import { SWAP_MIN_PAGES } from '../ramdisk.ts';
@@ -247,8 +248,11 @@ export async function storageReport(store: Store) {
   for (const m of await store.all('machines')) items.push({ what: msg('machines:machines.storage.machine', { name: m.name }), bytes: await store.files.size(machineDir(m.id)) });
   const remote = await cacheBytes();
   items.push({ what: msg('machines:machines.storage.remote'), bytes: remote });
+  // Vulkan's translated shaders (web/venus-cache.ts), the origin's for every machine.
+  const shaders = (await shaderStoreSize().catch(() => ({ bytes: 0 }))).bytes;
+  items.push({ what: msg('machines:machines.storage.shaders'), bytes: shaders });
   items.sort((a, b) => b.bytes - a.bytes);
-  return { usage: est.usage ?? 0, quota: est.quota ?? 0, persisted, items, remote };
+  return { usage: est.usage ?? 0, quota: est.quota ?? 0, persisted, items, remote, shaders };
 }
 
 /** Asks the browser to keep this origin's storage under pressure (§2): once, the first time something is stored. */

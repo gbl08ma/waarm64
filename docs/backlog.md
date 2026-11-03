@@ -560,16 +560,17 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   Mesa and virglrenderer natively first (minutes, meson and Mesa's build dependencies), so the preparation leaves it
   out and a user's copy has Vulkan only if they built it. A prebuilt module fetched by hash (as the firmware could be)
   would bring it to every `npm start`.
-- **Pipelines' loose ends after VK3 L3** (REPORT.md "VK3 L3", vk/README.md "Pipelines made asynchronously", "The shader
-  cache"): (1) render pipelines are made when a draw is recorded; made at vkCreateGraphicsPipelines from the pipeline's
-  static state (the viewport's flip and dynamic state guessed), most would be ready before the first frame records,
-  at the cost of some never used: unmeasured. (2) SwiftShader's compile isn't kept across a browser restart (Metal's
-  and NVIDIA's are, through Dawn's cache in the profile and the driver's own: REPORT.md "VK3: the NVIDIA run after L2b"). (3) The
-  store's entries are kept uncompressed (vkQuake's 3.5 MiB) and loaded whole at Vulkan's start; CompressionStream on
-  the way to IndexedDB would hold ~3× more under the same budget. (4) The store isn't shown on the Machines page's
-  storage line nor cleared from it, and its 32 MiB budget is fixed: the user wants it configurable (2026-10-26; the
-  budget and the origin-wide scope are approved: entries are keyed by content, so one program on two machines shares
-  them). (5) A pipeline made at once by a submit (`syncPipelines`) is counted, never seen.
+- **Pipelines' loose ends** (REPORT.md "VK3 L3", "VK4 T17"; vk/README.md "Pipelines made asynchronously", "The shader
+  cache"): (1) render pipelines made at vkCreateGraphicsPipelines (`?gpu=vkpremake=on`, VK4 T17) lose: vkQuake's
+  capture makes 100 so and draws with 8, and the 92 compiles delay the first frames' (cold, 269 → 26 frames/s on the
+  M4). Of its 18 drawn pipelines, 10 have keys the creation's guesses miss (not looked into: the sampler variant, a
+  dynamic state's default, a read-only depth layout). What might win: making one at creation only for a program that
+  draws most of what it makes (a count kept per program in the store), or at a lower priority than a draw's, which
+  WebGPU can't say. (2) SwiftShader's compile isn't kept across a browser restart (Metal's and NVIDIA's are, through
+  Dawn's cache in the profile and the driver's own: REPORT.md "VK3: the NVIDIA run after L2b"). (3) The shader store
+  holds its entries inflated in memory, ~7× what's stored (vkQuake's): a store kept full at 64 MiB would hold ~450 MB in
+  the GPU worker; entries could be held deflated and inflated at a lookup if a synchronous inflate were at hand (the
+  lookups are synchronous). (4) A pipeline made at once by a submit (`syncPipelines`) is counted, never seen.
 - **What the device advertises, left for the translator** (VK2 L7, VK3 L5; vk/README.md "The shader path"): subgroups
   are WGSL's only where the adapter's have one size (Intel's and AMD's vary: there, subgroups of one invocation; a
   size the shader could ask for would need WebGPU's `subgroup-size-control`, which Chromium has as experimental), in
@@ -647,9 +648,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     mpv on SIGTERM wasn't rechecked. **The hosted desktop disk needs replacing** with one built since L4e (the
     local one is) before a deploy of the page, which since L4e takes libplacebo's advanced path by default
     (`?gpu=vkformats=held`: off), so that an old disk's first cold mpv doesn't meet the freeze.
-  - **Every frame's planes are written again** (libplacebo imports a surface each time it shows it): ~0.2 ms of the
-    GPU worker and 0.6 MB a frame at 480p, ~3 MB at 1080p. A Venus texture per resource, kept while the resource lives
-    and written only when a picture changes it, would make a bind free.
+  - **Each picture is still written into Venus's texture** (VK4 T16 gave each resource a texture of its own, so an
+    import writes nothing; bench/vulkan/REPORT.md "VK4 T16"): 0.6 MB and ~0.18 ms of the GPU worker a frame at 480p
+    (~3 MB at 1080p), the bytes the host decoded anyway, copied by `queue.writeTexture`. Fewer would need the picture
+    on the GPU (WebCodecs' frame into WebGPU: `importExternalTexture` gives RGB, not the planes, so a plane would be a
+    compute pass's output from it). And an imported image still makes its own texture at `vkCreateImage`, destroyed at
+    its bind (two a frame for mpv; the driver would have to make an image's texture lazily, at its first use).
   - A resource with no picture written yet is read back once at its first import (WebGL's synchronous `readPixels`);
     what the guest renders into a virgl resource after it is imported (rather than a decoder's picture) never reaches
     Venus's copy. Nothing makes the guest wait for a picture before it samples the import (`vaSyncSurface` waits for
@@ -1362,6 +1366,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   protocol that cancels, then expects only fresh data with sequence numbers, would notice. None seen yet.
 
 ## Tests and tools
+
+- **`baremetal_parallel_through_snapshots` failed once under `scripts/ci.sh`'s load** (2026-11-03, VK4 T16–T17's run;
+  no core change): `smp: exit 5 (0x0) on vCPU 0 after 2016 steps`, the test past 60 s where alone it takes 2.4 s; it
+  passed alone 5 times and in the next full run. A timing assumption in the test or the SMP snapshot path, unknown.
 
 - **THIRD_PARTY.md from THIRD_PARTY.json** ([third-party.md](third-party.md)): a CI job or GitHub workflow that writes
   the Markdown (`node tools/third-party.ts --markdown`) whenever the JSON changes, if a readable page is wanted again.

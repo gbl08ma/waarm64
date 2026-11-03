@@ -651,6 +651,7 @@ wg_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
       return;
    wg_device_register(dev, false);
    wg_device_drain(dev);
+   wg_pipeline_premake_finish(dev);
    vk_queue_finish(&dev->queue.vk);
    wg_id_release(dev->push_buffer);
    wg_id_release(dev->fan_indices);

@@ -21,6 +21,8 @@ export type VenusGpuStats = {
    * for one (`deferred`) and the ms they waited, pipelines a submit had to make at once instead (`syncPipelines`: never
    * expected), and the ms the translator took (`translations`: vkCreate*Pipelines in the module, `translateMs`). */
   pipelinesReady: number; pipelineReadyMs: number; deferred: number; deferredMs: number; syncPipelines: number; translations: number; translateMs: number;
+  /** Render pipelines the driver made at vkCreateGraphicsPipelines (VK4 T17: `premade` in their JSON), and those of them a draw set. */
+  premade: number; premadeUsed: number;
   /** The shader cache across runs (web/venus-cache.ts): lookups found and not, entries stored. */
   cacheHits: number; cacheMisses: number; cacheStores: number;
   /** A submit's parts in the worker (VK3 L2b): the ms from its encoder to its submit (the module's replay into WebGPU's
@@ -246,7 +248,7 @@ class Timing {
 }
 
 export class VenusGpu {
-  readonly stats: VenusGpuStats = { submits: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, pipelines: 0, pipelineMs: 0, bindGroups: 0, errors: 0, dirtyPages: 0, done: 0, doneMs: 0, doneMaxMs: 0, orderMs: 0, nudges: 0, pipelinesReady: 0, pipelineReadyMs: 0, deferred: 0, deferredMs: 0, syncPipelines: 0, translations: 0, translateMs: 0, cacheHits: 0, cacheMisses: 0, cacheStores: 0, encodeMs: 0, submitCallMs: 0, passes: 0, draws: 0, gpuTimed: 0, gpuMs: 0, workDone: 0, workDoneMs: 0 };
+  readonly stats: VenusGpuStats = { submits: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, pipelines: 0, pipelineMs: 0, bindGroups: 0, errors: 0, dirtyPages: 0, done: 0, doneMs: 0, doneMaxMs: 0, orderMs: 0, nudges: 0, pipelinesReady: 0, pipelineReadyMs: 0, deferred: 0, deferredMs: 0, syncPipelines: 0, premade: 0, premadeUsed: 0, translations: 0, translateMs: 0, cacheHits: 0, cacheMisses: 0, cacheStores: 0, encodeMs: 0, submitCallMs: 0, passes: 0, draws: 0, gpuTimed: 0, gpuMs: 0, workDone: 0, workDoneMs: 0 };
   /** Submits not yet completed. */
   inFlight = 0;
   /** Called after each submit (the host's poller then runs until it completes: web/venus-host.ts). */
@@ -308,8 +310,15 @@ export class VenusGpu {
   private readonly written = new WeakMap<GPUTexture, number>();
   private touched = new Set<GPUTexture>();
   /** A texture's bytes are another renderer's resource's from now on (`res`; 0: no longer): web/venus-import.ts, called at the bind (it
-   * writes the texture in the queue's order itself). */
-  onImport: ((texture: GPUTexture, res: number) => void) | undefined;
+   * writes textures in the queue's order itself). `desc` is what the texture was made with; what it returns, the resource's own texture
+   * (kept while the resource lives), takes the image's place under its id (VK4 T16). */
+  onImport: ((texture: GPUTexture, res: number, desc: GPUTextureDescriptor | undefined) => GPUTexture | undefined) | undefined;
+  /** Render pipelines made at vkCreateGraphicsPipelines that no draw has set yet (`stats.premade`). */
+  private readonly unusedPremade = new WeakSet<object>();
+  /** Each texture that may be imported into (single-sampled, `COPY_DST`): what it was made with. */
+  private readonly descs = new WeakMap<GPUTexture, GPUTextureDescriptor>();
+  /** Resources' textures put in images' places by `onImport`: web/venus-import.ts destroys them, not an image's end. */
+  private readonly borrowed = new WeakSet<GPUTexture>();
   /** The shaders across runs (web/venus-cache.ts), once loaded: until then every lookup misses. */
   cache: ShaderCache | undefined;
   private cacheFound: { key: string; bytes: Uint8Array } | undefined;
@@ -411,6 +420,7 @@ export class VenusGpu {
       gpu_destroy(id: number) {
         const o = self.objs[id];
         self.objs[id] = undefined;
+        if (o instanceof GPUTexture && self.borrowed.has(o)) return;
         if (o instanceof GPUBuffer || o instanceof GPUTexture || o instanceof GPUQuerySet || o instanceof MsLayers) later(() => o.destroy());
       },
       gpu_grow(id: number, size: number) {
@@ -439,8 +449,15 @@ export class VenusGpu {
       gpu_dirty: (ptr: number, max: number) => this.dirtyInto(ptr, max),
       gpu_texture_import(tex: number, res: number) {
         const t = self.get<GPUTexture>(tex);
-        // web/venus-import.ts writes the texture in the queue's order (`later`).
-        if (t instanceof GPUTexture) self.onImport?.(t, res);
+        if (!(t instanceof GPUTexture)) return;
+        // web/venus-import.ts writes textures in the queue's order (`later`). The resource's own texture, if it gives one,
+        // is the image's from now on (no command can have named the image's before its memory was bound).
+        const own = self.onImport?.(t, res, self.descs.get(t));
+        if (own && own !== t) {
+          self.objs[tex] = own;
+          self.borrowed.add(own);
+          later(() => t.destroy());
+        }
       },
       gpu_encoder() {
         self.encodeAt = performance.now();
@@ -569,6 +586,7 @@ export class VenusGpu {
       gpu_pass_end() { later(() => self.endPass()); },
       gpu_set_pipeline(id: number) {
         const o = self.objs[id];
+        if (o && self.unusedPremade.delete(o)) self.stats.premadeUsed++;
         if (o instanceof Later && !o.value) {
           if (self.rec) {
             // Held: the submit goes once the pipeline is ready (`gpu_submit`).
@@ -1272,6 +1290,7 @@ override bit: u32 = 8u;
         const tex = (j.sampleCount ?? 1) > 1 && (j.size as number[])[2] > 1 ? new MsLayers(d, j as GPUTextureDescriptor) as unknown as GPUTexture : d.createTexture(j as GPUTextureDescriptor);
         this.objs[id] = tex;
         if (j.packed) this.packed.set(tex, j.packed);
+        else if ((j.sampleCount ?? 1) === 1 && (j.usage & TEX_COPY_DST)) this.descs.set(tex, j as GPUTextureDescriptor);
         return;
       }
       case 2: {
@@ -1295,6 +1314,8 @@ override bit: u32 = 8u;
         return;
       }
       case 6: case 7: {
+        const premade = !!j.premade;
+        delete j.premade;
         const text = JSON.stringify(j).slice(0, 2000);
         j.layout = this.objs[j.layout];
         if (kind === 6) {
@@ -1342,6 +1363,10 @@ override bit: u32 = 8u;
           this.objs[id] = later;
         }
         this.stats.pipelineMs += performance.now() - t0;
+        if (premade) {
+          this.stats.premade++;
+          this.unusedPremade.add(this.objs[id]!);
+        }
         return;
       }
       case 8: {

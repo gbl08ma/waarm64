@@ -789,6 +789,20 @@ later than WebGPU says (VK3 L4e: a cold compile on a host whose GPU cache is war
 outlives Chrome's profiles). tests/venus-gpu.test.ts checks the order on a
 stand-in device; tests/venus-driver.test.ts that the driver's program draws right with them held.
 
+**Made at creation, off by default** (VK4 T17): the driver makes a render pipeline when a draw is recorded (its key: the
+draw's state, the pass's attachments, the program's variant); with `?gpu=vkpremake=on` it also makes one at
+`vkCreateGraphicsPipelines` (`wg_pipeline_premake`, vk/driver/wg_cmd.c). That loses: programs make many pipelines they
+never draw with (vkQuake's capture: 100 made so, 8 of them drawn), and their compiles, queued on Dawn's workers, delay
+the ones the first frames wait for (cold vkQuake 269 → 26 frames/s on the M4, 11 → 4.8 on SwiftShader;
+bench/vulkan/REPORT.md "VK4 T17"). The new pipeline is bound into a command buffer of the
+device's own, which gives its stages and the state it holds (Mesa's `dyn->set`), and the pass is the one it was made
+for (its rendering formats or subpass); the key is then `draw_key`'s, as a draw's. Guessed: a dynamic viewport's flips
+(the device's last draw's), not indexed (a strip's index format is the draw's), nothing pulled for offsets, the
+program's variant without bound sets. A pipeline whose key a draw's dynamic state decides (extended dynamic state:
+topology, cull, depth and stencil tests, blending or vertex strides dynamic, as DXVK's, Zink's), or of tessellation or
+geometry, is made at its draw only. A draw that differs makes its own, as before; the worker counts those made so and
+those a draw set (`premade`, `premadeUsed` in `venusPipelines`).
+
 ## The shader cache
 
 What makes a pipeline in the module (SPIR-V to NIR, NIR's passes, the WGSL: 0.6 ms a pipeline, 25 ms GTK4's largest
@@ -804,11 +818,18 @@ misread.
 
 The worker's store (web/venus-cache.ts) holds them in memory, loaded from IndexedDB `webpc-shaders` when Vulkan starts.
 It is the origin's, shared by every machine (an entry depends on the shader and the device, not the machine), and kept
-under a byte budget (32 MiB, least recently used out first), written back a second after a change. Entries carry the
+under a byte budget (least recently used out first), written back a second after a change. Entries are stored deflated
+(CompressionStream's deflate-raw; one that doesn't shrink as it is) and inflated at the load (VK4 T17), and the budget
+counts what is stored, so the bytes held in memory are larger by the ratio (vkQuake's 4.7 MB as 0.63 MB: 7.4×). The budget is the page's Preferences'
+("[Space for Vulkan's shaders](ui:machines:MachinesPage.shaderBudget)", 8 to 64 MiB, 32 by default, `webpc.settings`
+`shaderMiB`), taken at a machine's start; the Machines page's storage line shows the store and clears it
+(`shaderStoreSize`, `clearShaderStore`; a machine running with Vulkan keeps what it holds and stores it again as it
+changes). Entries carry the
 renderer's build ID (`venus_build_id`), and those of another build are dropped at the load. So a program's second run
 on a machine (or on another machine of the page) translates nothing its first did. What remains is the browser's own
 pipeline compile, which Chromium caches itself (bench/vulkan/REPORT.md "VK3 L3"). `?gpu=vkcache=off` keeps nothing, for
-cold runs and A/B. tests/venus-cache.test.ts checks the store; tests/venus-driver.test.ts a second run of the driver's
+cold runs and A/B. tests/venus-cache.test.ts checks the store (its deflated entries too), tests/page-modal.test.ts the
+Machines page's line and budget; tests/venus-driver.test.ts a second run of the driver's
 program on a new renderer (no lookup missed, nothing new stored, the same pixels).
 
 ## Checking frames
@@ -958,19 +979,28 @@ two images, a draw, and the images and memories freed again.
   of its own); an image bound to it is shared, made with `COPY_DST`, and the worker is told its texture is the
   resource's (`gpu_texture_import`). A dma-buf image's layout has tight rows (an external or DRM-modifier image's:
   `wg_image_dma_buf`), so the plane's own dma-buf is as large as the image needs; others keep rows 256 bytes apart.
-- **The bytes** (web/venus-import.ts `VenusImport`): `queue.writeTexture` into the image's texture, so in the queue's
-  order before the submits that sample it. At the bind, the last picture written into the resource (kept for every
-  resource imported before; a surface is imported again at every frame it shows), or the virgl texture read back (its
-  first import); and every picture the video path writes into a plane afterwards goes to the textures imported from it
-  too (`VirglRenderer.onPlane`, the decoded bytes the host has anyway).
+- **The texture** (web/venus-import.ts `VenusImport`, VK4 T16): each resource has a WebGPU texture of its own, one per
+  texture description (an image of another format or size on the same memory gets another), made at its first import
+  and destroyed at the resource's end (`unref`, a reset); an image bound to the resource's memory takes it in place of
+  its own under its id (web/venus-gpu.ts `onImport`; the image's own texture is destroyed, and an image's end leaves
+  the resource's). A surface imported again (libplacebo imports it at every frame it shows) is a bind that writes
+  nothing, and what Vulkan draws into a resource stays in it across imports. `?gpu=vkimport=rewrite` gives each image
+  its own texture, written at its bind, as before T16 (A/B).
+- **The bytes**: `queue.writeTexture` into the resource's texture, so in the queue's order before the submits that
+  sample it. When it's made, the last picture written into the resource (kept for every resource imported before), or
+  the virgl texture read back (its first import); and every picture the video path writes into a plane afterwards goes
+  to the resource's textures too (`VirglRenderer.onPlane`, the decoded bytes the host has anyway). mpv writes each
+  picture once either way (it imports a surface once a picture); T16 took the import's GPU-worker time a frame from
+  0.22 to 0.18 ms on the M4 (bench/vulkan/REPORT.md "VK4 T16").
 - **The order:** nothing makes the guest wait for a picture before it imports and samples its surface. Mesa's virgl VA
   driver makes no fence for a decode, so mpv's `vaSyncSurface` returns at once (docs/plans/video.md), and Venus's ring
   is polled, past the GPU worker's call queue, which holds calls behind pending pictures. A bind while the resource's
   picture is still decoding (`videoPending.res`) reads nothing back and leaves the texture to the picture, written when
   it lands; a draw already submitted samples the texture's earlier bytes (a reused surface's last picture, or zeros for
   a fresh one) and the next one the picture. Binds, pictures and a resource's end (`unref`) all go through the queue's
-  order (`VenusGpu.later`, behind submits held for their pipelines), and a bind held past its resource's end, its id
-  perhaps reused, is dropped (counted at the call). A virtio reset or a snapshot's load forgets every resource. The
+  order (`VenusGpu.later`, behind submits held for their pipelines), and a texture's first write held past its
+  resource's end, its id perhaps reused, is dropped (counted at the call); which textures a resource has is known at
+  once, and its end takes them out at once, destroying them in the queue's order. A virtio reset or a snapshot's load forgets every resource. The
   call queue runs Venus's calls that make things (a context, a blob, its map, a resource's attach, a submit) past the
   calls waiting for pictures, so a resource is imported in vkr before the ring names it; those that end things wait in
   order as an unref does. The kernel's attach and the ring are still two paths: the device worker hands the attach
@@ -979,8 +1009,9 @@ two images, a draw, and the images and memories freed again.
 
 `tests/venus-driver.test.ts` imports a resource in the driver's test program (`wgt_import`: an R8G8 image with the
 LINEAR modifier on imported memory, copied to a buffer) through `VenusImport` with a fake renderer, before and after a
-picture; `tests/venus-import.test.ts` checks the order (pending pictures, held binds and pictures across a resource's
-end, resets), `tests/virgl-video.test.ts` the call queue's; `tests/gpu.test.ts` checks the device's hand-over. mpv's playback is measured by
+picture, the image on the resource's own texture; `tests/venus-import.test.ts` checks the order (pending pictures, held
+binds and pictures across a resource's end, resets) and the resources' textures (kept across imports, one per
+description, destroyed at the end in order), `tests/virgl-video.test.ts` the call queue's; `tests/gpu.test.ts` checks the device's hand-over. mpv's playback is measured by
 `bench/audio/avsync.ts` (`MPV_VARIANTS`): bench/vulkan/REPORT.md "VK2 L6".
 
 ## On the page

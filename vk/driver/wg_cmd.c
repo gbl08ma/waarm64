@@ -14,8 +14,11 @@
 #include <string.h>
 
 #include "util/os_time.h"
+#include "vk_command_pool.h"
 #include "vk_descriptor_update_template.h"
 #include "vk_format.h"
+#include "vk_graphics_state.h"
+#include "vk_pipeline.h"
 #include "vk_pipeline_layout.h"
 #include "vk_render_pass.h"
 #include "vk_util.h"
@@ -1513,31 +1516,18 @@ draw_refused(const struct wg_program *p)
    return true;
 }
 
-/* `face`: 0 the whole draw, 1 its front faces, 2 its back faces (draw_faces); `provoke`: a WG_PROVOKE_* mode for a draw
- * through indices of its own (a list then, its index buffer the replay's), or -1. */
-static bool
-record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
+/* A draw's render pipeline key from the command buffer's state (`vs` and `fs` its stages, `fs` NULL without a program;
+ * `face` and `provoke` as record_draw's), and the stencil reference it draws with: record_draw's, and
+ * wg_pipeline_premake's at a pipeline's creation. */
+static void
+draw_key(struct wg_cmd_buffer *cmd, struct wg_shader *vs, struct wg_shader *fs, bool indexed, uint32_t face, int provoke,
+         struct wg_pipeline_key *out, uint32_t *s_ref_out)
 {
-   struct wg_shader *vs = cmd->shaders[MESA_SHADER_VERTEX], *fs = cmd->shaders[MESA_SHADER_FRAGMENT];
    const struct vk_dynamic_graphics_state *dyn = &cmd->vk.dynamic_graphics_state;
-   if (!vs || !vs->program || !cmd->pass.active)
-      return false;
-   if (!cmd->xfb_record && (dyn->rs.rasterizer_discard_enable ||
-                            (dyn->rs.cull_mode == VK_CULL_MODE_FRONT_AND_BACK && dyn->ia.primitive_topology >= 3)))
-      return false;
-   /* Its stages on one program; if they came with different ones (wg_program_merge), a program of both's. */
-   struct wg_program *base = vs->program;
-   if (fs && fs->program && fs->program != base)
-      base = wg_program_merge(base, fs->program);
-   struct wg_program *p = program_for(cmd, 0, base);
-   wg_variant_modules(p, vs, fs && fs->program ? fs : NULL);
-   if (draw_refused(p))
-      return false;
-
    struct wg_pipeline_key k;
    memset(&k, 0, sizeof(k));
    k.vs = vs;
-   k.fs = fs && fs->program ? fs : NULL;
+   k.fs = fs;
    k.topology = dyn->ia.primitive_topology;
    if (provoke >= 0) {
       k.topology = provoke >= WG_PROVOKE_LINE_LIST ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -1566,7 +1556,6 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
    /* WebGPU wants minDepth <= maxDepth: an inverted range (reverse-Z) is the range the right way round and the vertex
     * shader's z mirrored (w - z), which lands each depth where the inverted range would. */
    k.flip_z = dyn->vp.viewport_count && dyn->vp.viewports[0].minDepth > dyn->vp.viewports[0].maxDepth;
-   dummy_samples(cmd, dyn->ms.rasterization_samples);
    k.samples = cmd->pass.samples;
    k.sample_mask = dyn->ms.sample_mask == 0xffff ? 0xffffffffu : dyn->ms.sample_mask;
    k.alpha_to_coverage = dyn->ms.alpha_to_coverage_enable && k.samples > 1;
@@ -1634,6 +1623,40 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
             bound[b] = cmd->vbs[b].buffer->offset + cmd->vbs[b].offset;
       wg_vertex_pull(&k, vs->info.inputs, bound);
    }
+   *out = k;
+   *s_ref_out = s_ref;
+}
+
+/* `face`: 0 the whole draw, 1 its front faces, 2 its back faces (draw_faces); `provoke`: a WG_PROVOKE_* mode for a draw
+ * through indices of its own (a list then, its index buffer the replay's), or -1. */
+static bool
+record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
+{
+   struct wg_shader *vs = cmd->shaders[MESA_SHADER_VERTEX], *fs = cmd->shaders[MESA_SHADER_FRAGMENT];
+   const struct vk_dynamic_graphics_state *dyn = &cmd->vk.dynamic_graphics_state;
+   if (!vs || !vs->program || !cmd->pass.active)
+      return false;
+   if (!cmd->xfb_record && (dyn->rs.rasterizer_discard_enable ||
+                            (dyn->rs.cull_mode == VK_CULL_MODE_FRONT_AND_BACK && dyn->ia.primitive_topology >= 3)))
+      return false;
+   /* Its stages on one program; if they came with different ones (wg_program_merge), a program of both's. */
+   struct wg_program *base = vs->program;
+   if (fs && fs->program && fs->program != base)
+      base = wg_program_merge(base, fs->program);
+   struct wg_program *p = program_for(cmd, 0, base);
+   wg_variant_modules(p, vs, fs && fs->program ? fs : NULL);
+   if (draw_refused(p))
+      return false;
+
+   dummy_samples(cmd, dyn->ms.rasterization_samples);
+   struct wg_pipeline_key k;
+   uint32_t s_ref;
+   if (provoke >= 0)
+      indexed = false;
+   draw_key(cmd, vs, fs && fs->program ? fs : NULL, indexed, face, provoke, &k, &s_ref);
+   /* What wg_pipeline_premake guesses of a dynamic viewport: the last draw's. */
+   struct wg_device *dev = container_of(cmd->vk.base.device, struct wg_device, vk);
+   dev->premake_flip = k.flip, dev->premake_flip_z = k.flip_z;
    /* A vertex stage that can't pull what it must: dropped, said once, not an invalid pipeline. */
    static bool unpulled;
    if (!wg_pipeline_pull_ok(p, &k)) {
@@ -1766,6 +1789,148 @@ provoke_mode(const struct wg_cmd_buffer *cmd, bool indexed)
    case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP: return last ? WG_PROVOKE_LINE_STRIP : -1;
    default: return -1;
    }
+}
+
+static uint32_t face_of(uint32_t faces, uint32_t i);
+
+/* The states a draw's key reads (draw_key) that a pipeline made at its creation must hold itself: by what they are
+ * for (a depth or stencil attachment, colour attachments), the rest always. */
+static const enum mesa_vk_dynamic_graphics_state premake_states[] = {
+   MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY, MESA_VK_DYNAMIC_RS_RASTERIZER_DISCARD_ENABLE, MESA_VK_DYNAMIC_RS_CULL_MODE,
+   MESA_VK_DYNAMIC_RS_FRONT_FACE, MESA_VK_DYNAMIC_RS_DEPTH_CLAMP_ENABLE, MESA_VK_DYNAMIC_RS_DEPTH_CLIP_ENABLE,
+   MESA_VK_DYNAMIC_RS_PROVOKING_VERTEX, MESA_VK_DYNAMIC_MS_SAMPLE_MASK, MESA_VK_DYNAMIC_MS_ALPHA_TO_COVERAGE_ENABLE,
+   MESA_VK_DYNAMIC_VI, MESA_VK_DYNAMIC_VI_BINDING_STRIDES,
+};
+static const enum mesa_vk_dynamic_graphics_state premake_depth[] = {
+   MESA_VK_DYNAMIC_DS_DEPTH_TEST_ENABLE, MESA_VK_DYNAMIC_DS_DEPTH_WRITE_ENABLE, MESA_VK_DYNAMIC_DS_DEPTH_COMPARE_OP,
+   MESA_VK_DYNAMIC_RS_DEPTH_BIAS_ENABLE,
+};
+static const enum mesa_vk_dynamic_graphics_state premake_stencil[] = {
+   MESA_VK_DYNAMIC_DS_STENCIL_TEST_ENABLE, MESA_VK_DYNAMIC_DS_STENCIL_OP, MESA_VK_DYNAMIC_DS_STENCIL_COMPARE_MASK,
+   MESA_VK_DYNAMIC_DS_STENCIL_WRITE_MASK,
+};
+static const enum mesa_vk_dynamic_graphics_state premake_colors[] = {
+   MESA_VK_DYNAMIC_CB_BLEND_ENABLES, MESA_VK_DYNAMIC_CB_BLEND_EQUATIONS, MESA_VK_DYNAMIC_CB_WRITE_MASKS,
+   MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES,
+};
+
+static bool
+premake_static(const struct vk_dynamic_graphics_state *dyn, const enum mesa_vk_dynamic_graphics_state *states, uint32_t n)
+{
+   for (uint32_t i = 0; i < n; i++)
+      if (!BITSET_TEST(dyn->set, states[i]))
+         return false;
+   return true;
+}
+
+void
+wg_pipeline_premake(struct wg_device *dev, VkPipeline handle, const VkGraphicsPipelineCreateInfo *info)
+{
+   VK_FROM_HANDLE(vk_pipeline, pipeline, handle);
+   if (!pipeline || pipeline->bind_point != VK_PIPELINE_BIND_POINT_GRAPHICS ||
+       (pipeline->flags & VK_PIPELINE_CREATE_2_LIBRARY_BIT_KHR))
+      return;
+   /* The render pass the pipeline is for: its attachments' formats, samples and views. */
+   struct vk_graphics_pipeline_all_state all;
+   struct vk_graphics_pipeline_state state;
+   memset(&state, 0, sizeof(state));
+   if (vk_graphics_pipeline_state_fill(&dev->vk, &state, info, NULL, NULL, 0, &all, NULL,
+                                       VK_SYSTEM_ALLOCATION_SCOPE_OBJECT, NULL) != VK_SUCCESS ||
+       !state.rp || !vk_render_pass_state_has_attachment_info(state.rp))
+      return;
+   if (!dev->premake_cmd) {
+      const VkCommandPoolCreateInfo pi = { .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+      struct vk_command_pool *pool = calloc(1, sizeof(*pool));
+      struct vk_command_buffer *vk = NULL;
+      if (!pool || vk_command_pool_init(&dev->vk, pool, &pi, NULL) != VK_SUCCESS) {
+         free(pool);
+         return;
+      }
+      if (wg_cmd_buffer_create(pool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, &vk) != VK_SUCCESS) {
+         vk_command_pool_finish(pool);
+         free(pool);
+         return;
+      }
+      dev->premake_pool = pool;
+      dev->premake_cmd = container_of(vk, struct wg_cmd_buffer, vk);
+   }
+   struct wg_cmd_buffer *cmd = dev->premake_cmd;
+   wg_cmd_buffer_reset(&cmd->vk, 0);
+   pipeline->ops->cmd_bind(&cmd->vk, pipeline);
+   struct vk_dynamic_graphics_state *dyn = &cmd->vk.dynamic_graphics_state;
+   struct wg_shader *vs = cmd->shaders[MESA_SHADER_VERTEX], *fs = cmd->shaders[MESA_SHADER_FRAGMENT];
+   const struct vk_render_pass_state *rp = state.rp;
+   const bool depth = rp->depth_attachment_format != VK_FORMAT_UNDEFINED;
+   const bool stencil = rp->stencil_attachment_format != VK_FORMAT_UNDEFINED;
+   bool colors = false;
+   for (uint32_t i = 0; i < rp->color_attachment_count; i++)
+      colors |= rp->color_attachment_formats[i] != VK_FORMAT_UNDEFINED;
+   /* A pipeline whose key a draw's dynamic state decides (extended dynamic state: DXVK's, Zink's) is made at its draw,
+    * as are those of stages that draw_key can't take without a draw (none: a mesh pipeline, tessellation). */
+   if (!vs || !vs->program || cmd->shaders[MESA_SHADER_TESS_CTRL] || cmd->shaders[MESA_SHADER_GEOMETRY] ||
+       !premake_static(dyn, premake_states, ARRAY_SIZE(premake_states)) ||
+       (depth && !premake_static(dyn, premake_depth, ARRAY_SIZE(premake_depth))) ||
+       (stencil && !premake_static(dyn, premake_stencil, ARRAY_SIZE(premake_stencil))) ||
+       (colors && !premake_static(dyn, premake_colors, ARRAY_SIZE(premake_colors))) ||
+       ((depth && dyn->rs.depth_bias.enable) && !BITSET_TEST(dyn->set, MESA_VK_DYNAMIC_RS_DEPTH_BIAS_FACTORS)) ||
+       dyn->rs.rasterizer_discard_enable)
+      return;
+   /* The pass as wg_CmdBeginRendering would have it with views of those formats (layouts that aren't read-only). */
+   cmd->pass.active = true;
+   cmd->pass.color_count = MIN2(rp->color_attachment_count, 8);
+   for (uint32_t i = 0; i < cmd->pass.color_count; i++)
+      cmd->pass.colors[i] = rp->color_attachment_formats[i];
+   cmd->pass.depth = rp->depth_attachment_format;
+   cmd->pass.stencil = rp->stencil_attachment_format;
+   cmd->pass.samples = state.ms && state.ms->rasterization_samples ? state.ms->rasterization_samples : 1;
+   cmd->pass.view_mask = state.mv ? state.mv->view_mask : 0;
+   if (!colors && !depth && !stencil) {
+      if (cmd->pass.color_count == 8)
+         cmd->pass.color_count = 7;
+      cmd->pass.colors[cmd->pass.color_count] = VK_FORMAT_R8_UNORM;
+      cmd->pass.dummy = ++cmd->pass.color_count;
+   }
+   /* A dynamic viewport: the last draw's flips (a program keeps one convention). */
+   if (!BITSET_TEST(dyn->set, MESA_VK_DYNAMIC_VP_VIEWPORTS) || !dyn->vp.viewport_count) {
+      dyn->vp.viewport_count = 1;
+      dyn->vp.viewports[0] = (VkViewport){ .width = 1, .height = dev->premake_flip ? -1 : 1,
+                                           .minDepth = dev->premake_flip_z ? 1 : 0, .maxDepth = dev->premake_flip_z ? 0 : 1 };
+   }
+   struct wg_program *base = vs->program;
+   if (fs && fs->program && fs->program != base)
+      base = wg_program_merge(base, fs->program);
+   struct wg_program *p = program_for(cmd, 0, base);
+   wg_variant_modules(p, vs, fs && fs->program ? fs : NULL);
+   if (p->refused)
+      return;
+   /* Not indexed (a strip's index format is the draw's), vertices from the bindings' start (none pulled for offsets). */
+   struct wg_pipeline_key k;
+   uint32_t s_ref;
+   const int provoke = provoke_mode(cmd, false);
+   const uint32_t faces = draw_faces(cmd);
+   for (uint32_t i = 0; i < faces; i++) {
+      draw_key(cmd, vs, fs && fs->program ? fs : NULL, false, face_of(faces, i), provoke, &k, &s_ref);
+      if (!wg_pipeline_pull_ok(p, &k))
+         return;
+      wg_render_pipeline_premade(p, &k);
+      if (cmd->pass.view_mask && (vs->info.uses_view || (fs && fs->info.uses_view)))
+         u_foreach_bit(view, cmd->pass.view_mask) {
+            struct wg_pipeline_key per_view = k;
+            per_view.view = view;
+            wg_render_pipeline_premade(p, &per_view);
+         }
+   }
+}
+
+void
+wg_pipeline_premake_finish(struct wg_device *dev)
+{
+   if (!dev->premake_pool)
+      return;
+   vk_command_pool_finish(dev->premake_pool);
+   free(dev->premake_pool);
+   dev->premake_pool = NULL;
+   dev->premake_cmd = NULL;
 }
 
 /* A draw of `count` vertices or indices through indices of its own (OP_PROVOKE), in `mode`. */

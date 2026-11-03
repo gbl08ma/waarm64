@@ -1482,5 +1482,29 @@
   "MachinesPage.storage.item": {
     "message": "{{what}}: {{size, bytes}}",
     "note": "Machines page: the browser's storage, in the bar at the page's bottom. An item of What uses the space. {{what}}: what (a machines.storage.* message); {{size}}: its bytes."
+  },
+  "machines.storage.shaders": {
+    "message": "Vulkan's translated shaders",
+    "note": "An item of What uses the space, the list of what fills the browser's storage (Machines page, at the bottom), before its size (MachinesPage.storage.item). The shaders machines with Vulkan translated, kept so that a program's next start translates nothing again; shared by every machine."
+  },
+  "MachinesPage.storage.clearShaders": {
+    "message": "Clear Vulkan's shaders ({{size, bytes}})",
+    "note": "Machines page: the browser's storage, in the bar at the page's bottom. A button that deletes the kept translated shaders of machines with Vulkan. {{size}}: their bytes."
+  },
+  "MachinesPage.storage.clearShaders.title": {
+    "message": "Delete the shaders that machines with Vulkan translated. A program's next start translates them again, which takes longer. A machine running now keeps those it holds and stores them again as they change.",
+    "note": "Machines page: the browser's storage, in the bar at the page's bottom. Tooltip of Clear Vulkan's shaders."
+  },
+  "MachinesPage.shaderBudget": {
+    "message": "Space for Vulkan's shaders",
+    "note": "Machines page, Preferences: the label of a list of sizes (MiB), the most that Vulkan's translated shaders may take in the browser's storage."
+  },
+  "MachinesPage.shaderBudget.default": {
+    "message": "Default ({{n}} MiB)",
+    "note": "Machines page, Preferences: the default choice of Space for Vulkan's shaders. {{n}}: the size in MiB."
+  },
+  "MachinesPage.shaderBudget.note": {
+    "message": "Machines with Vulkan keep the shaders they translate, so that a program's next start, on any machine, translates nothing again. When the space is full, those used least recently go first. In use, they take up to about seven times this much memory. A change takes effect at the next start of a machine.",
+    "note": "Machines page, Preferences: the note under Space for Vulkan's shaders."
   }
 }

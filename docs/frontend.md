@@ -308,7 +308,8 @@ A transient machine (a test's `?machine=`, or `?disk=`) is listed first as this 
 disk's Export, Import changes…, **[Reset disk…](ui:machines:MachinesPage.resetDisk)**) and a Snapshots tab (restore from a file, save to a file). The
 storage's estimate is at the bottom, with what takes it and, while remote disks' blocks are kept (docs/devices.md "Over
 HTTP"), **Clear the URL disks' cache** (a running machine reading one gives its store up too, and reads from memory and the
-network from then on).
+network from then on); while Vulkan's translated shaders are kept, **[Clear Vulkan's shaders (…)](ui:machines:MachinesPage.storage.clearShaders)**
+(vk/README.md "The shader cache"; the store's size counts what IndexedDB holds, deflated).
 
 ### About
 
@@ -678,7 +679,7 @@ On a 3D machine (below) it should run with `WLR_RENDERER=gles2` instead: Mesa's 
 wherever the browser has WebGL2 (since G3). The Machine menu's **[Graphics](ui:toolbar:Toolbar.size.gpu)** (3D or 2D, kept in the browser's
 settings, applied by a restart) turns it off; the query is over the menu: `?gpu=2d` keeps the 2D path above,
 `?gpu=virgl-null` G2's null renderer, `?gpu=virgl` 3D (the menu's choice is then greyed out, as it is without WebGL2).
-A machine's Vulkan setting (the Machines page's Settings, beside 3D) or `?gpu=vulkan` (with 3D) also gives the machine Vulkan through Venus (devices.md "Venus"; its programs draw on the browser's WebGPU and their frames reach the screen through the virgl renderer; without WebGPU they draw nothing). The renderer's module (vk/build.sh) is fetched only by such a machine. Its translated shaders are kept across runs in IndexedDB `webpc-shaders` (the origin's, for every machine, 32 MiB at most, an entry of another renderer build dropped at the load; vk/README.md "The shader cache"); `?gpu=vkcache=off` keeps none and `?gpu=vkpipelines=sync` makes its pipelines at once (both for A/B).
+A machine's Vulkan setting (the Machines page's Settings, beside 3D) or `?gpu=vulkan` (with 3D) also gives the machine Vulkan through Venus (devices.md "Venus"; its programs draw on the browser's WebGPU and their frames reach the screen through the virgl renderer; without WebGPU they draw nothing). The renderer's module (vk/build.sh) is fetched only by such a machine. Its translated shaders are kept across runs in IndexedDB `webpc-shaders` (the origin's, for every machine, deflated, under the Preferences' [Space for Vulkan's shaders](ui:machines:MachinesPage.shaderBudget), 32 MiB by default, an entry of another renderer build dropped at the load; vk/README.md "The shader cache"); `?gpu=vkcache=off` keeps none, `?gpu=vkpipelines=sync` makes its pipelines at once, `?gpu=vkpremake=on` makes render pipelines at `vkCreateGraphicsPipelines` too (not only at draws; a loss, vk/README.md "Pipelines made asynchronously") and `?gpu=vkimport=rewrite` gives each image imported from a virgl resource a texture of its own (vk/README.md "Imports"; all for A/B).
 A 3D machine also advertises the browser's video decoders (WebCodecs) to the guest's VA-API driver and decodes with
 them ([graphics.md](graphics.md) "Video", [plans/video.md](plans/video.md)): H.264 and VP9, in hardware where the browser
 has them and in software elsewhere (`?gpu=swvideo` decodes in software even where there's hardware, for experiments);

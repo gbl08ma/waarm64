@@ -240,6 +240,12 @@ struct wg_device {
    struct util_vma_heap address_heap;
    bool address_heap_made;
    struct list_head address_memories;
+   /* Render pipelines made at vkCreateGraphicsPipelines (wg_cmd.c `wg_pipeline_premake`): a command buffer of the
+    * device's that a new pipeline is bound into for its state, and what a dynamic viewport is guessed to be (the last
+    * draw's flips). */
+   struct vk_command_pool *premake_pool;
+   struct wg_cmd_buffer *premake_cmd;
+   bool premake_flip, premake_flip_z;
 };
 #define WG_PUSH_BUFFER_SIZE (1u << 20)
 /* The bytes a memory's GPUBuffer has past it, for a uniform block declared past the range bound. */
@@ -660,6 +666,14 @@ struct wg_pipeline_key {
 };
 
 uint32_t wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *key);
+/* The same, made at the pipeline's creation (wg_pipeline_premake): marked for the worker's count of those a draw uses. */
+uint32_t wg_render_pipeline_premade(struct wg_program *p, const struct wg_pipeline_key *key);
+/* A graphics pipeline's render pipelines made at its creation, from its static state and the render pass it is for (a
+ * dynamic viewport's flip guessed, not indexed, nothing pulled for offsets: a draw that differs makes its own), unless
+ * a draw's dynamic state would decide them (vk/README.md "Pipelines made asynchronously"). */
+void wg_pipeline_premake(struct wg_device *dev, VkPipeline pipeline, const VkGraphicsPipelineCreateInfo *info);
+void wg_pipeline_premake_finish(struct wg_device *dev);
+extern bool wg_premake_off;
 /* WebGPU's vertex buffers for a draw: Vulkan's binding b is slot b, except that an attribute reaching past its
  * binding's stride (Vulkan allows offsets up to maxVertexInputAttributeOffset, WebGPU wants offset + size within the
  * stride) reads a slot of its own, a free one, bound to the same buffer `base` bytes further. A pulled binding
