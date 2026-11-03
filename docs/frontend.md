@@ -259,7 +259,8 @@ Duplicate, Export the definition, Delete; then tabs:
   (`ramSplitError`), the RAM then being their sum (the machine's `ramSplit`, in its shape and its definition), display,
   **keyboard layout** (a new machine's follows the browser; "Input" below, "The keyboard layout"). Save; on the machine running on this page it reads **[Save and restart](ui:machines:MachinesPage.saveRestart)**
   (asked first), the USB controller, the **[Mouse (the mouse lock's Raw mode)](ui:machines:MachinesPage.mouse)** and the **[Touchscreen](ui:machines:MachinesPage.touch)**. A change of shape
-  asks first when it orphans snapshots. The three are peripherals the guest sees: absent on machines made before
+  asks first when it orphans snapshots; a box whose change does (Vulkan, the USB controller, the mouse, touchscreen and
+  clock device, shared folders) warns under it only when the machine has snapshots, while the note under Save always says it. The three are peripherals the guest sees: absent on machines made before
   them (off, so their shapes and snapshots stay as they were), on for new ones.
 - **Disks** (`Disks.svelte`): the attachments in slot order (read-only, write in place, up, down, Detach); per writable
   disk its overlays (switch, New empty, **[Overlays…](ui:disks:Disks.overlaysButton)**), **[Export](ui:disks:ExportMenu.label)** (a menu, `ExportMenu.svelte`: changes only, the

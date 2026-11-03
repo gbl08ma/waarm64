@@ -625,11 +625,11 @@
   },
   "MachinesPage.usb.orphans.on": {
     "message": "Turning the USB controller on changes the hardware the guest sees. Once you save, snapshots taken before can no longer be restored; they remain, marked as orphaned, until you delete them.",
-    "note": "Machines page, Settings and USB tabs: warning under the USB controller box once it is ticked (not saved yet)."
+    "note": "Machines page, Settings and USB tabs: warning under the USB controller box once it is ticked (not saved yet); only for a machine with snapshots."
   },
   "MachinesPage.usb.orphans.off": {
     "message": "Turning the USB controller off changes the hardware the guest sees. Once you save, snapshots taken before can no longer be restored; they remain, marked as orphaned, until you delete them.",
-    "note": "Machines page, Settings and USB tabs: warning under the USB controller box once it is unticked (not saved yet)."
+    "note": "Machines page, Settings and USB tabs: warning under the USB controller box once it is unticked (not saved yet); only for a machine with snapshots."
   },
   "MachinesPage.vulkan.title": {
     "message": "Give the guest Vulkan through Venus, alongside 3D. Its Vulkan programs draw with this browser's WebGPU, and what the guest is offered follows your computer's GPU. This is experimental, and snapshots can't be taken while a program uses Vulkan.",
@@ -641,15 +641,19 @@
   },
   "MachinesPage.vulkan.orphans.off": {
     "message": "Turning Vulkan off changes the hardware the guest sees. Once you save, snapshots taken before can no longer be restored; they remain, marked as orphaned, until you delete them.",
-    "note": "Machines page, Settings tab: warning under the Vulkan box once it is unticked (not saved yet)."
+    "note": "Machines page, Settings tab: warning under the Vulkan box once it is unticked (not saved yet); only for a machine with snapshots."
   },
   "MachinesPage.vulkan.orphans.on": {
     "message": "Turning Vulkan on changes the hardware the guest sees. Once you save, snapshots taken before can no longer be restored; they remain, marked as orphaned, until you delete them.",
-    "note": "Machines page, Settings tab: warning under the Vulkan box once it is ticked (not saved yet), in a browser with WebGPU."
+    "note": "Machines page, Settings tab: warning under the Vulkan box once it is ticked (not saved yet), in a browser with WebGPU; only for a machine with snapshots."
   },
   "MachinesPage.vulkan.orphans.onNoWebgpu": {
     "message": "Turning Vulkan on changes the hardware the guest sees. Once you save, snapshots taken before can no longer be restored; they remain, marked as orphaned, until you delete them. This browser has no WebGPU, so Vulkan programs would draw nothing here.",
-    "note": "Machines page, Settings tab: warning under the Vulkan box once it is ticked (not saved yet), in a browser without WebGPU."
+    "note": "Machines page, Settings tab: warning under the Vulkan box once it is ticked (not saved yet), in a browser without WebGPU; only for a machine with snapshots."
+  },
+  "MachinesPage.vulkan.noWebgpu": {
+    "message": "This browser has no WebGPU, so Vulkan programs would draw nothing here.",
+    "note": "Machines page, Settings tab: warning under the Vulkan box once it is ticked (not saved yet), in a browser without WebGPU, for a machine with no snapshots (MachinesPage.vulkan.orphans.onNoWebgpu otherwise)."
   },
   "MachinesPage.mouse.title": {
     "message": "Give the machine a relative mouse (virtio-input) for the mouse lock's Raw mode. While the machine has the mouse, its motion goes to the guest unbounded by the screen, for games, at the guest's own mouse speed. Without it, the mouse lock has only the Pointer mode.",
@@ -677,7 +681,7 @@
   },
   "MachinesPage.pointers.orphans": {
     "message": "Adding or removing the mouse, the touchscreen, or the clock device changes the hardware the guest sees. Once you save, snapshots taken before can no longer be restored; they remain, marked as orphaned, until you delete them.",
-    "note": "Machines page, Settings tab: warning under the Mouse, Touchscreen and Clock device boxes once one of them changed (not saved yet)."
+    "note": "Machines page, Settings tab: warning under the Mouse, Touchscreen and Clock device boxes once one of them changed (not saved yet); only for a machine with snapshots."
   },
   "MachinesPage.saveRestart": {
     "message": "Save and restart",
@@ -1413,11 +1417,11 @@
   },
   "MachinesPage.shares.orphans.on": {
     "message": "Turning shared folders on changes the hardware the guest sees. Once you save, snapshots taken before can no longer be restored; they remain, marked as orphaned, until you delete them.",
-    "note": "Machines page, Shared folders tab: warning under the Shared folders box once it is ticked (not saved yet)."
+    "note": "Machines page, Shared folders tab: warning under the Shared folders box once it is ticked (not saved yet); only for a machine with snapshots."
   },
   "MachinesPage.shares.orphans.off": {
     "message": "Turning shared folders off changes the hardware the guest sees. Once you save, snapshots taken before can no longer be restored; they remain, marked as orphaned, until you delete them.",
-    "note": "Machines page, Shared folders tab: warning under the Shared folders box once it is unticked (not saved yet)."
+    "note": "Machines page, Shared folders tab: warning under the Shared folders box once it is unticked (not saved yet); only for a machine with snapshots."
   },
   "MachinesPage.sharesMount.title": {
     "message": "At every boot, this emulator has the guest's systemd mount the shared folders, at their first access.",

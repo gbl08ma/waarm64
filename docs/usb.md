@@ -700,8 +700,8 @@ toolbar's USB menu), `UsbProblems.svelte` (a device's problems, with their remed
 left out, so a machine made before USB keeps its canonical JSON and its shape hash (`tests/store.test.ts` pins the
 hash). New machines (`createMachine`: New machine, a disk file opened or dropped) have the controller; a definition
 without `machine.usb` imports with it off. It is turned on or off with the **[USB controller](ui:machines:MachinesPage.usb)** checkbox, which is on
-the Settings tab and on the USB tab. The checkbox warns that the change orphans the machine's snapshots, as a RAM
-change does, and Save asks again when there are snapshots to orphan. `shapeDiff` says "it had (no) a USB controller".
+the Settings tab and on the USB tab. When the machine has snapshots, the checkbox warns that the change orphans them,
+as a RAM change does, and Save asks again. `shapeDiff` says "it had (no) a USB controller".
 A transient machine (a test's) has the controller with `?usb=1` only. With a controller, the page passes a
 `MessagePort` in the worker's `start` message (`protocol.ts` `usb`). The page's `usb-attach` and `usb-detach` go
 through it, and the device worker's `usb-state` comes back.
