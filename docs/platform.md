@@ -220,6 +220,8 @@ and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor a
   the userspace phases on 4 vCPUs this cut the DSB waits from 92K (8.3 s over the vCPUs) to 3K
   (0.06 s) and process churn by 37% in Chromium (`bench/boot/REPORT.md` "M7 loop 8"): after a
   fork, parent and child have different ASIDs, so COW faults rarely concern another running vCPU.
+  What remains (same-ASID targets, all-ASID and kernel-range TLBIs: 0.4% of the vCPUs' time in a
+  `go build` loop) isn't worth shortening further ([jit.md](jit.md) "Tried and not kept").
   `maint` rounds 7 and 8 test it (another ASID; a global mapping), on QEMU and hvf too; planted
   out (global entries cached, or same-ASID targets skipped), `maint` fails (checks 261–263,
   212–213).

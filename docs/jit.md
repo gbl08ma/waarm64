@@ -1115,7 +1115,14 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   queued maintenance or an unmasked IRQ is pending (2026-10-15, `bench/boot/REPORT.md` "M8: the
   device round trip"): a ping to a busy vCPU 17% faster (it waited up to a chunk for its IRQ), the
   userspace benchmark unchanged, but Firefox playing video no better (drops, guest MIPS, fence
-  latency): a browser's vCPUs are seldom busy when their interrupts come.
+  latency): a browser's vCPUs are seldom busy when their interrupts come. Nor is it worth it for the DSB waits
+  that remain after the ASID filter ([platform.md](platform.md) "Broadcast maintenance"; a waiter sleeps until its
+  targets end their chunks): in 300 s of the `go build` loop on 4 vCPUs they total 4.4–4.9 s, 0.4% of the vCPUs'
+  time, and 0.5% with the JIT lock's waits in Firefox's pages session. Ending the target's chunk early saves only
+  part of each 20–60 µs wait (a sleeping waiter takes ~10–35 µs to wake, and chained blocks and regions reach a
+  dispatch only when they leave), so the gain is a fraction of 0.4%, under the ~1% a measurement can resolve
+  (that loop's MIPS spread is 1,094–1,489), while the check sits on every dispatch. Ending it from outside with no
+  dispatch would need a memory check in the compiled code's hot path.
 - **Out-of-line jump-cache probes:** slower. The probes cost nothing measurable at steady state now
   that hot loops are regions.
 - **A lower compile threshold** (2–50): both boots got slower (before the block interpreter).

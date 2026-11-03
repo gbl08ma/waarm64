@@ -963,15 +963,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 
-- **The remaining DSB waits** (~3K per userspace run on 4 vCPUs, 20–60 µs each: same-ASID
-  targets, and all-ASID or kernel-range TLBIs) wait for the target's chunk boundary. A 4096-step
-  chunk in parallel mode cut the average from 100 to 65 µs and polling before sleeping to 55 µs,
-  before the ASID filter made both moot; ending a target's chunk from outside would need a memory
-  check in the JIT's hot path. In 300 s of the `go build` loop on 4 vCPUs they're 4.4–4.9 s, about the JIT lock's
-  waiting before the no-wait miss: `bench/boot/results/m8-devlat/kick/kick.patch` (a run ends early, between two
-  dispatches, when an interrupt or another vCPU's request is due) was never measured on them. It predates the
-  dispatcher's current shape and needs porting; test it as `run.sh go` in `bench/boot/results/m8-lock2/tools/` (two
-  sessions per arm, `dsbMs` and the MIPS, whose spread there is wide) and the gates.
 - **An exit's remaining cost** (~240 ns in the desktop guest after the fast completions and the throttled timer
   check and counters, [jit.md](jit.md) "What an exit to the run loop costs"): what's left is unmeasured part by
   part: the run loop's per-iteration atomics (the signal and wake words, `pending`, the IRQ line, the ASID's SeqCst
