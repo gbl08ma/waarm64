@@ -616,7 +616,11 @@ function setState(s: PageState, message?: Said, actions: Action[] = [], kind: 'e
   ui.boot.serial = !!spec.firmware && s === 'booting';
   ui.usb.running = !!run?.usb && (s === 'running' || s === 'booting');
   // Stopped with no start to follow: a restart doesn't pass here (its clients stay, on the new machine's ports).
-  if (s === 'off' || s === 'suspended' || s === 'crashed' || s === 'failed' || s === 'idle') net.machineOff();
+  if (s === 'off' || s === 'suspended' || s === 'crashed' || s === 'failed' || s === 'idle') {
+    net.machineOff();
+    // The guest's cursor (an image, or hidden by a graphical session) goes with the machine: the host's pointer is back over its screen.
+    if (guestCursor) { guestCursor = undefined; showCursor(); }
+  }
   syncButtons();
 }
 /** What happened, said while the machine stays as it is (a snapshot saved, or not): the message bar clears itself after 30 s. */
@@ -781,6 +785,8 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       if (m.state === 'off' || m.state === 'crashed' || m.state === 'suspended' || m.state === 'failed') {
         clearAlive(aliveKey());
         r.usb?.close();
+        // The screen lets go of the mouse (a stopped machine has nothing to give it to) and a click doesn't take it again; the next start's input takes the setting.
+        r.input.mouseLock(false);
         dropLock();
         folders.end();
         void refreshRecords();

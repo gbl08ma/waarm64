@@ -259,6 +259,34 @@ test('the mouse lock, raw mode: a click takes the mouse, its motion goes to the 
   await context.close();
 });
 
+test('a machine that shuts itself down lets go of the mouse and of the cursor its graphical session hid', { skip, timeout: 120_000 }, async () => {
+  const { context, page, errors, cdp, at } = await open();
+  await lockOn(page, 'raw');
+  const p = at(0.5, 0.5);
+  const click = async () => {
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...p });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...p, button: 'left', buttons: 1, clickCount: 1 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...p, button: 'left', buttons: 0, clickCount: 1 });
+  };
+  await click();
+  await page.waitForFunction(() => document.pointerLockElement?.id === 'screen', null, { timeout: 5000 });
+  // The guest's session hides the host's pointer (its own cursor is drawn in the frame, or it hid it).
+  await page.evaluate(() => (window as unknown as { __display: MessagePort }).__display.postMessage({ type: 'cursor', image: null, hotX: 0, hotY: 0, x: 0, y: 0 }));
+  await page.waitForFunction(() => document.querySelector<HTMLCanvasElement>('#screen')!.style.cursor === 'none', null, { timeout: 5000 });
+  // The guest powers off: its worker says so.
+  await page.evaluate(() => (window as unknown as { __workers: Worker[] }).__workers[0].dispatchEvent(new MessageEvent('message', { data: { type: 'state', state: 'off' } })));
+  await page.waitForFunction(() => document.getElementById('state')?.dataset.state === 'off', null, { timeout: 5000 });
+  await page.waitForFunction(() => document.pointerLockElement === null, null, { timeout: 5000 });
+  assert.equal(await page.evaluate(() => document.querySelector<HTMLCanvasElement>('#screen')!.style.cursor), '', "the page's own pointer over the stopped screen");
+  // A click on the stopped screen doesn't take the mouse again.
+  await page.waitForTimeout(1500); // Chromium refuses a lock asked for right after one ended: past that, a refusal here is the page's
+  await click();
+  await page.waitForTimeout(500);
+  assert.equal(await page.evaluate(() => document.pointerLockElement), null, 'the stopped screen keeps its hands off the mouse');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test('leaving a running machine asks first, unless Preferences says not to', { skip, timeout: 120_000 }, async () => {
   const { context, page, errors, at } = await open('&leavewarning=1', true);
   assert.ok(['booting', 'running'].includes((await page.getAttribute('#state', 'data-state'))!), 'the page thinks it runs');

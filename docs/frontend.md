@@ -729,7 +729,8 @@ starts; following live is the agent's job ([plans/agent.md](plans/agent.md)).
 they change (`cursor`; its moves as `cursor-at`, which the page uses only under the mouse lock: the tablet is absolute, the host's pointer is the guest's), and the page draws it at the canvas's scale into
 a blob (`image-set(url(…) <dpr>x) hotX hotY, none`; at most 128×128 device pixels, followed by the same cursor cut to its top-left 32 CSS pixels: Chromium skips a cursor over 32×32 where its image would reach past the page's edge, which made the guest's cursor vanish in the last 64 pixels), again whenever the scale changes. A cursor the guest
 never set leaves the page's own pointer (EDK2's screens and a console with no mouse driver keep one); one it hid is
-`none`; a virtio reset goes back to never set (`GpuHooks.cursorReset`), and a restored snapshot sends its cursor again.
+`none`; a virtio reset goes back to never set (`GpuHooks.cursorReset`), and so does the machine stopping (off, suspended,
+crashed: the page's pointer is back over its last screen); a restored snapshot sends its cursor again.
 The image is smoothed only when the scale isn't whole; Chromium normalizes `-webkit-image-set(...)` to `image-set(...)`.
 A guest that warps its cursor (`MOVE_CURSOR` away from the pointer) isn't shown: none seen (backlog).
 
@@ -819,7 +820,9 @@ page writes the context's output latency into the ring's header, and the guest g
   as far; turning back starts the sum over.
 - **[Mouse lock](ui:statusbar:statusbar.kind.pointer)** (the toolbar's menu, `webpc.settings` `mouseLock` and `mouseLockMode`): a click on the screen takes
   the mouse (Pointer Lock) and isn't the guest's; every button reaches the guest then, the back and forward ones too.
-  Esc (the browser's) or the menu lets it go, and so does a change of mode (the next click takes it in the new one).
+  Esc (the browser's) or the menu lets it go, and so does a change of mode (the next click takes it in the new one);
+  the machine stopping (powered off from the page or by the guest, suspended, crashed) lets it go too, and a click on
+  the stopped screen doesn't take it again.
   Two modes (`web/input.ts` `LockMode`):
   - **Pointer** (the default): the motion moves the tablet, from where the pointer was, by the browser's
     `movementX/Y` (CSS pixels, accelerated as the host's pointer is) across the canvas's box: the same speed as
