@@ -269,8 +269,15 @@ test('network adapters on the Machines page: added up to the limit, removed; cop
   const { adaptersOf } = await import('../web/app/shape.ts');
   const store = new Store(memoryRecords(), memoryFiles(), { channel: false });
   const m = await createMachine(store, { name: 'Net' });
-  assert.deepEqual(adaptersOf(m).map((a) => a.mac), [DEFAULT_MAC], 'a new machine has one adapter, as machines had their card');
+  // One adapter, with a MAC of its own: two machines on one network (the local helper's switch) must differ.
+  const [mac] = adaptersOf(m).map((a) => a.mac);
+  assert.equal(adaptersOf(m).length, 1);
+  assert.ok(isMac(mac) && mac !== DEFAULT_MAC, mac);
+  assert.notEqual(adaptersOf(await createMachine(store, { name: 'Net 2' }))[0].mac, mac, "another new machine's MAC");
   assert.deepEqual(adaptersOf(await createMachine(store, { network: false })), []);
+  const bare = await createMachine(store, { network: false });
+  const first = adaptersOf(withAdapter(bare))[0].mac;
+  assert.ok(isMac(first) && first !== DEFAULT_MAC, `the first adapter added: ${first}`);
   let x = m;
   for (let i = 0; i < 6; i++) x = withAdapter(x);
   assert.equal(adaptersOf(x).length, MAX_ADAPTERS);
@@ -296,7 +303,9 @@ test('network adapters on the Machines page: added up to the limit, removed; cop
   const back = await importDefinition(store, parseDefinition(JSON.stringify(def)));
   assert.deepEqual(adaptersOf(back.machine).map((a) => [a.mac, a.connection]), adaptersOf(x).map((a) => [a.mac, undefined]));
   // One adapter at the default MAC is written as definitions were before adapters, and such a definition reads back as it.
-  const plain = await exportDefinition(store, (await createMachine(store, { name: 'Plain' })).id);
+  const made = await createMachine(store, { name: 'Plain' }); // made before new machines had MACs of their own
+  await store.put('machines', { ...made, adapters: [{ ...adaptersOf(made)[0], mac: DEFAULT_MAC }] });
+  const plain = await exportDefinition(store, made.id);
   assert.deepEqual([plain.machine.network, 'macs' in plain.machine], [true, false]);
   assert.deepEqual(adaptersOf((await importDefinition(store, plain)).machine).map((a) => a.mac), [DEFAULT_MAC]);
   for (const macs of [[], ['53:54:00:00:00:01'], ['nope'], new Array(MAX_ADAPTERS + 1).fill(DEFAULT_MAC)]) {

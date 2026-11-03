@@ -275,8 +275,9 @@ Duplicate, Export the definition, Delete; then tabs:
   listed with its overlays and the machines that have it, and attached again as it was. A file or URL added again (or opened, or
   dropped) is the disk the browser has for it, by identity (`machines.ts` `knownDisk`: a file's name, size and date,
   a URL's path, size and validator), so its overlays come back with it.
-- **[Network](ui:machines:MachinesPage.tab.network):** the machine's network adapters (docs/network-adapters.md): up to four, each with its MAC (a new
-  machine's first is `52:54:00:12:34:56`, as the one card was; the others random), added, removed and moved up or down
+- **[Network](ui:machines:MachinesPage.tab.network):** the machine's network adapters (docs/network-adapters.md): up to four, each with its MAC (random,
+  `newMac`, since 2026-11-03: machines share LANs, such as a local helper's, whose network knows a guest by its MAC;
+  machines made before have `52:54:00:12:34:56` first, as the one card was), added, removed and moved up or down
   with the machine off (the order is the guest's `eth<n>` and decides the default way out), and each with its connection (below, "Network"): **[Attach…](ui:machines:MachinesPage.adapter.attach)** or [Change connection…](ui:network:Network.change) (the Network wizard),
   **[Detach](ui:machines:MachinesPage.adapter.detach)**, **[Connect at start](ui:machines:MachinesPage.adapter.atStart)**, and Connect or Disconnect while it runs on this page. Attaching is saved at
   once, running or not (a connection isn't in the shape), and a machine running in another tab connects it at once. **[Take the connection's settings in the guest](ui:machines:MachinesPage.netConfig)** (on; off is

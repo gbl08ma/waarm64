@@ -8,7 +8,7 @@ import { msg, MsgError, type Msg } from '../msg.ts';
 import { SWAP_MIN_PAGES } from '../ramdisk.ts';
 import { FOLLOW_BROWSER } from './keyboard.ts';
 import { defaultCpus } from './machine.ts';
-import { adaptersOf, canonical, DEFAULT_MAC, generateName, MAX_ADAPTERS, MAX_DISKS, newId, newMac, uniqueName, type Attachment, type DiskIdentity, type DiskRecord, type MachineRecord } from './shape.ts';
+import { adaptersOf, canonical, generateName, MAX_ADAPTERS, MAX_DISKS, newId, newMac, uniqueName, type Attachment, type DiskIdentity, type DiskRecord, type MachineRecord } from './shape.ts';
 import { machineDir, type Store } from './store.ts';
 
 /** The lock a page holds while it runs machine `id`. */
@@ -49,7 +49,7 @@ export async function createMachine(store: Store, o: Partial<Pick<MachineRecord,
     ncpus: o.ncpus ?? defaultCpus(globalThis.navigator?.hardwareConcurrency || 4),
     ramMiB: o.ramMiB ?? 2048,
     display: o.display ?? '3d',
-    adapters: (o.network ?? true) ? [{ id: newId(), mac: DEFAULT_MAC }] : [],
+    adapters: (o.network ?? true) ? [{ id: newId(), mac: newMac() }] : [], // a MAC of its own: machines share LANs (a local helper's)
     usb: o.usb ?? true,
     mouse: o.mouse ?? true,
     touch: o.touch ?? true,
@@ -79,7 +79,7 @@ export async function duplicateMachine(store: Store, id: string) {
 export function withAdapter(m: MachineRecord): MachineRecord {
   const have = adaptersOf(m);
   if (have.length >= MAX_ADAPTERS) return m;
-  return { ...m, network: undefined, adapters: [...have, { id: newId(), mac: have.length ? newMac(have.map((a) => a.mac)) : DEFAULT_MAC }] };
+  return { ...m, network: undefined, adapters: [...have, { id: newId(), mac: newMac(have.map((a) => a.mac)) }] };
 }
 
 /** `m` without adapter `id`. */
