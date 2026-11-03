@@ -245,7 +245,8 @@ deterministic mode), and testusb's run takes ~140M steps.
 ### Snapshots
 
 `Xhci::save` keeps the registers, the ports' registers, each slot and endpoint's state with its rings'
-positions, the event ring's producer and segment table, the events waiting for room, and the low halves of
+positions and whether its walk stopped for room (`Ep::more`: past `WALK_TDS` or with the events waiting
+for the guest; the restored controller walks on at its first boundary), the event ring's producer and segment table, the events waiting for room, and the low halves of
 ERSTBA and ERDP written without their high ones yet. It needs the
 ports empty and nothing in flight. A machine with a device plugged in can't be saved:
 `vm_snapshot_size` returns `u64::MAX` and `vm.snapshot()` says to detach it. The detach completes

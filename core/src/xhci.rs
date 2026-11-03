@@ -1950,8 +1950,8 @@ impl Xhci {
         self.ports.iter().all(|p| !p.attached) && self.tags.is_empty() && self.held.is_none()
     }
 
-    /// Saves the registers, ports, slots and rings; the TDs in flight and the records are empty
-    /// (`quiet`, `saveable`).
+    /// Saves the registers, ports, slots and rings (with the endpoints whose walk waits for room,
+    /// `Ep::more`); the TDs in flight and the records are empty (`quiet`, `saveable`).
     pub fn save(&self, w: &mut Writer) {
         for v in [self.usbcmd, self.usbsts, self.dnctrl, self.config] {
             w.u32(v);
@@ -1976,6 +1976,8 @@ impl Xhci {
                     w.u64(p.at);
                     w.bool(p.cycle);
                 }
+                // A walk that stopped for room goes on at the restored VM's next boundary.
+                w.bool(e.more);
             }
         }
         for v in [self.iman, self.imod, self.erstsz] {
@@ -2048,6 +2050,8 @@ impl Xhci {
                     at: r.u64()? & !0xf,
                     cycle: r.bool()?,
                 };
+                e.more = r.bool()?;
+                self.more |= e.more;
             }
         }
         self.iman = r.u32()? & 3;

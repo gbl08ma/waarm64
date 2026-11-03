@@ -302,7 +302,7 @@ impl Vm {
         if let Some(x) = &mut p.xhci {
             x.restore(&mut r)?;
         }
-        if version >= 3 && !r.0.is_empty() {
+        if !r.0.is_empty() {
             let (c, entry, context) = (r.u32()? as usize, r.u64()?, r.u64()?);
             // Only one that suspended it may be (every vCPU off), and only from a CPU_ON-free state.
             if c >= n

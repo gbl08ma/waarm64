@@ -10,10 +10,11 @@
 pub const MAGIC: u32 = u32::from_le_bytes(*b"WPCS");
 /// Bumped whenever a saved field is added, removed or changes meaning (the
 /// pinned bytes in `vm/tests.rs` fail when the layout moves without it).
-/// 3: a guest in PSCI SYSTEM_SUSPEND, after the devices.
-pub const VERSION: u32 = 3;
-/// The oldest version a restore still reads: 2 is 3 without a suspended guest.
-pub const VERSION_MIN: u32 = 2;
+/// 3: a guest in PSCI SYSTEM_SUSPEND, after the devices. 4: a virtio transport's SHMSel, and
+/// the xHCI's endpoints whose walk waits for room.
+pub const VERSION: u32 = 4;
+/// The oldest version a restore still reads (4: the older ones lack fields in the devices').
+pub const VERSION_MIN: u32 = 4;
 
 /// Why a restore was refused (`vm_snapshot_restore`'s return value).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

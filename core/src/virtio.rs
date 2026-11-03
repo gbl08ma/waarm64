@@ -21,6 +21,8 @@
 //! docs/spill-memories.md), and a buffer lies in one memory. Completion: `w0` as posted,
 //! then the number of bytes written. `epoch` counts device resets (mod 256), so
 //! records from before a reset are skipped by the backend and dropped here.
+//! A backend that skipped any sets `vm::SIGNAL_DEVICE` as a completion does:
+//! the room they took may be what a chain of the new driver waits for.
 
 use core::sync::atomic::{AtomicU8, AtomicU32, Ordering, fence};
 use std::collections::VecDeque;
@@ -535,7 +537,8 @@ impl Transport {
     fn set_status(&mut self, v: u32, mem: &Mem, sh: &DevShared) -> u32 {
         if v == 0 {
             // Reset: everything but the configuration; completions still in
-            // the ring (and any posted later for older requests) are dropped.
+            // the ring (and any posted later for older requests) are dropped,
+            // and the negotiated features are 0 again until FEATURES_OK.
             let (entry, epoch, seen, scratch, shm) = (
                 self.entry,
                 self.epoch + 1,
@@ -551,6 +554,9 @@ impl Transport {
                 ..Transport::new(entry)
             };
             sh.epoch.store(epoch, Ordering::Release);
+            sh.features
+                .iter()
+                .for_each(|f| f.store(0, Ordering::Relaxed));
             sh.cpl.clear();
             sh.status.store(0, Ordering::Release);
             return EV_STATUS;
@@ -626,7 +632,9 @@ impl Transport {
                 let (nr, nw) = walk_chain(mem, q.desc, q.size, head, indirect, out)?;
                 out[1] = nr | nw << 16;
                 if !sh.req.push(out) {
-                    // Retried after completions, which needs no notify.
+                    // Retried at the next `complete`, which needs no notify: after a
+                    // completion, or the backend's signal once it skipped records
+                    // from before a reset (which complete nothing).
                     self.backlog = true;
                     return Ok(posted);
                 }
@@ -745,13 +753,14 @@ impl Transport {
         words <= RING_WORDS
     }
 
-    /// Saves the registers, the queues with their in-flight chains, and the
+    /// Saves the registers (SHMSel among them), the queues with their in-flight chains, and the
     /// shared block's status, features, epoch and config space.
     pub fn save(&self, w: &mut Writer, sh: &DevShared) {
         w.u32(self.dev_features_sel);
         w.u32(self.drv_features_sel);
         w.u64(self.driver_features);
         w.u32(self.queue_sel);
+        w.u32(self.shm_sel);
         w.u32(self.isr);
         w.u32(self.status);
         w.u32(self.epoch);
@@ -789,6 +798,7 @@ impl Transport {
         self.drv_features_sel = r.u32()?;
         self.driver_features = r.u64()?;
         self.queue_sel = r.u32()?;
+        self.shm_sel = r.u32()?;
         self.isr = r.u32()? & (INT_VRING | INT_CONFIG);
         self.status = r.u32()? & 0xff;
         self.epoch = r.u32()?;

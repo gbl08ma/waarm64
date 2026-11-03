@@ -1214,6 +1214,7 @@ export class Devices {
       let tail = u32[ring + 1];
       const head = Atomics.load(u32, ring);
       const word = () => u32[ring + 2 + (tail++ % RING_WORDS)];
+      let skipped = false;
       while (tail !== head) {
         const w0 = word();
         const n = word();
@@ -1221,7 +1222,10 @@ export class Devices {
         const r = { w0, queue: (w0 >>> 16) & 0xff, read: segs(n & 0xffff), write: segs(n >>> 16) };
         tail >>>= 0;
         Atomics.store(u32, ring + 1, tail);
-        if (w0 >>> 24 !== epoch) continue; // posted before a reset
+        if (w0 >>> 24 !== epoch) { // posted before a reset
+          skipped = true;
+          continue;
+        }
         const len = b.request(r);
         if (len === undefined) continue;
         if (typeof len === 'number') this.complete(i, w0, len);
@@ -1231,6 +1235,8 @@ export class Devices {
           this.detached.add(p);
         } else this.complete(i, w0, await len);
       }
+      // The room they took may be what a chain of the new driver waits for, and nothing completes them (docs/devices.md).
+      if (skipped) this.kick();
       b.polled?.();
     }
     this.usb?.poll();
