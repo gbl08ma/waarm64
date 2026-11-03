@@ -16,5 +16,5 @@ step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
 for name in debian edk2; do images/build.sh --check "$name" > /dev/null || { echo "ci-machines: the $name image is missing or stale (images/build.sh $name)"; exit 1; }; done
 export WEBPC_DISTROS=debian WEBPC_DEBIAN_SLOTS=${WEBPC_DEBIAN_SLOTS-3}
 step 'Machines on the page (Debian)'
-node --disable-warning=ExperimentalWarning --test tests/page-machines.test.ts tests/page-stored.test.ts tests/page-snapshots.test.ts tests/page-quota.test.ts tests/page-usb-guest.test.ts tests/page-folders.test.ts
+node --disable-warning=ExperimentalWarning --test tests/page-machines.test.ts tests/page-stored.test.ts tests/page-snapshots.test.ts tests/page-quota.test.ts tests/page-incognito.test.ts tests/page-usb-guest.test.ts tests/page-folders.test.ts
 printf '\nCI-MACHINES OK (%d s)\n' "$SECONDS"

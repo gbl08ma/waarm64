@@ -4,7 +4,7 @@
 // to be the one it was made over. Workers only in a browser (sync access handles, synchronous reads).
 import type { Source } from './devices.ts';
 import { msg, MsgError, type Msg } from './msg.ts';
-import { openOverlay, overlay, removeOverlay } from './overlay.ts';
+import { openOverlay, overlay, removeOverlay, storageFullError } from './overlay.ts';
 import { openDisk, readChanges } from './qcow2.ts';
 import { isZero } from './qcow2-write.ts';
 
@@ -64,7 +64,7 @@ export async function loadChanges(o: {
     const total = Math.ceil(c.size / 4096);
     let blocks = 0;
     for await (const { block, data } of c.blocks()) {
-      if (!(isZero(data) ? await disk.zero(block * 4096, data.length) : await disk.write(block * 4096, data))) throw new MsgError('disks:changes.blockWriteFailed', { block });
+      if (!(isZero(data) ? await disk.zero(block * 4096, data.length) : await disk.write(block * 4096, data))) throw new MsgError('disks:changes.blockWriteFailed', { block }, { cause: await storageFullError() });
       if (++blocks % 256 === 0) progress(msg('disks:changes.loadingChanges'), block, total);
     }
     disk.flush();

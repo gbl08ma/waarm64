@@ -5,7 +5,8 @@
 // snapshot that hasn't moved since; or, when the user asks, **replace** (the attached overlay takes the blocks). A
 // disk written in place keeps only at its pinned generation; otherwise a file with its whole disk forks it into an
 // overlay, and one without is refused (§4.4). Nothing here asks the user; the page and the Machines page confirm first.
-import { opfsDir, overlayMeta } from '../overlay.ts';
+import { opfsDir, overlayMeta, storageFullError } from '../overlay.ts';
+import { makeRoom } from '../diskcache.ts';
 import { openSnapshot } from '../snapshot-file.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
 import { createOverlay, identityOf } from './disks.ts';
@@ -178,8 +179,16 @@ export async function importSnapshot(store: Store, machine: string, file: File) 
   const id = newId();
   return store.writing(async () => {
     const dir = await opfsDir(`machines/${machine}/snapshots`, true);
-    const w = await (await dir.getFileHandle(id, { create: true })).createWritable();
-    await file.stream().pipeTo(w);
+    const copy = async () => file.stream().pipeTo(await (await dir.getFileHandle(id, { create: true })).createWritable());
+    const full = (e: unknown) => (e as DOMException)?.name === 'QuotaExceededError';
+    try {
+      // The storage full: the remote disks' kept blocks go (`makeRoom`), and it's copied once more.
+      await copy().catch(async (e) => { if (full(e) && (await makeRoom())) return copy(); throw e; });
+    } catch (e) {
+      await dir.removeEntry(id).catch(() => {});
+      if (full(e)) throw new MsgError('snapshots:snapshots.notKept', { file: file.name }, { cause: await storageFullError() });
+      throw e;
+    }
     const pins = ((header.disks ?? []) as SnapshotDisk[]).map((p) => ({ slot: p.slot, overlay: p.overlay, generation: p.generation, blocks: p.blocks, ram: p.ram }));
     const rec = { id, machine, name: file.name.replace(/\.webpcsnap$/, ''), created: Date.parse(String(header.created)) || Date.now(), bytes: file.size, shape: header.shape as Shape, shapeHash: header.shapeHash as string, pins, urls: header.urls as Record<number, string> | undefined };
     await store.put('snapshots', rec);

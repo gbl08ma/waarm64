@@ -169,7 +169,7 @@
   },
   "snapshots.notKept": {
     "message": "Couldn't import {{file}}",
-    "note": "Error of Import a file… (Machines page, Snapshots tab), shown under the page's header: the headline; why is the cause under it (snapshots:snapshots.notKept.cause); the file has no description of its machine to keep it by; {{file}} is the file's name."
+    "note": "Error of Import a file… (Machines page, Snapshots tab), shown under the page's header: the headline; why is the cause under it: the file has no description of its machine to keep it by (snapshots:snapshots.notKept.cause), or the browser's storage is full (disks:overlay.storageFull.numbers); {{file}} is the file's name."
   },
   "snapshots.notKept.cause": {
     "message": "It's a snapshot of a machine that isn't stored in this browser, such as a test machine or one from an older version of this web app. It can only be loaded on that machine.",
@@ -356,12 +356,12 @@
     "note": "In the error of a snapshot restored onto other memory: this machine has no NUMA nodes past its first memory."
   },
   "snapshot.storageFull": {
-    "message": "The disk's changes couldn't be written to this browser's storage. It may be full.",
-    "note": "Detail under “The emulator stopped with an error” in the message bar (under the toolbar) when a snapshot is restored: the snapshot's disk changes couldn't be written into the browser's storage (it may be full)."
+    "message": "The disk's changes couldn't be written to this browser's storage.",
+    "note": "Detail under “The emulator stopped with an error” in the message bar (under the toolbar) when a snapshot is restored: the snapshot's disk changes couldn't be written into the browser's storage; why (the storage is full, with its numbers: disks:overlay.storageFull.numbers) is the line under it."
   },
   "snapshot.storageFull.whole": {
-    "message": "The disk couldn't be written to this browser's storage. It may be full.",
-    "note": "Detail under “The emulator stopped with an error” in the message bar (under the toolbar) when a snapshot that carries a whole disk is restored: the disk couldn't be written into the browser's storage (it may be full)."
+    "message": "The disk couldn't be written to this browser's storage.",
+    "note": "Detail under “The emulator stopped with an error” in the message bar (under the toolbar) when a snapshot that carries a whole disk is restored: the disk couldn't be written into the browser's storage; why (the storage is full, with its numbers: disks:overlay.storageFull.numbers) is the line under it."
   },
   "snapshot.damage.unexpected": {
     "message": "it has parts this version doesn't expect",
