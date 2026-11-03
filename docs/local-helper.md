@@ -12,19 +12,19 @@ and their history are in [plans/networking-local.md](plans/networking-local.md).
 
 ## The helper, briefly
 
-- **Go glue over gvisor-tap-vsock** (Podman machine's and Lima's network, on gVisor's netstack), about 650 lines of
+- **Go glue over gvisor-tap-vsock** (Podman machine's and Lima's network, on gVisor's netstack), about 770 lines of
   ours. Its IPv6 comes from the unmerged [#745](https://github.com/containers/gvisor-tap-vsock/pull/745), taken by a
   `replace` to its author's fork at one commit. Because of that `replace`, `go install` refuses the module.
 - **Listens on `127.0.0.1:8740`** (`--listen`). It accepts a WebSocket only on `/<token>`, only from an allowed origin
   (`https://vm.tny.im`, plus each `--origin`, matched exactly), and only with the subprotocol `webpc-net.v1`. A refusal
   completes the handshake and closes with 4001 (another version), 4003 (the origin) or 4004 (the token), so the page
   can say which. The token is kept in the user's config directory, so a paired page keeps working across restarts.
-- **Prints one pairing link**, `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>`, even with `--origin`. A
-  developer on another origin puts that origin in the link's place.
+- **Prints the pairing link**, `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>`, and one for each `--origin`.
 - **One network per helper:** DHCP on `192.168.127.0/24` with the gateway and resolver at `.1`, and IPv6 on
   `fd77:6562:7063::/64` unless `--no-ipv6`. Every page connected to one helper is on the same switch. The guest
   reaches the internet and the LAN, and reaches the host's own loopback only with `--host-loopback`
-  (`192.168.127.254`).
+  (`192.168.127.254`). The helper drops the guest's packets to `0.0.0.0/8`, `127.0.0.0/8`, `::`, `::1` and
+  IPv4-mapped addresses, which the forwarders would dial as this computer's own loopback.
 - **IPv6 out only while the host has it.** The helper asks three public resolvers over IPv6 every minute. While none
   answers, its router advertisements carry no default route, so the guest's IPv6 to the internet fails at once and
   programs fall back to IPv4 without waiting, as the page does for a tunnel's far end ([network-adapters.md](network-adapters.md)
@@ -77,9 +77,9 @@ measured.
 The helper's releases are built by its own GitHub Actions, separately from webpc's deploy (the user's, 2026-11-02).
 A `v*` tag is built on an x86_64 and an arm64 Linux runner, and the release is published only when the two builds
 are byte-identical. **The page offers a release** once `web/local-release.ts` takes its version and SHA256SUMS, in a
-change of webpc's. v0.1.0 is the current one. Its sums also matched a build in the dev VM.
+change of webpc's. v0.1.2 is the current one (v0.1.0's sums also matched a build in the dev VM).
 
-**webpc's tests build the helper at the commit `tests/webpc-net.ts` pins** (v0.1.0's). The commit is fetched with git
+**webpc's tests build the helper at the commit `tests/webpc-net.ts` pins** (v0.1.2's). The commit is fetched with git
 into `target/net/webpc-net-src`, over HTTPS or else SSH, and built into `target/net/webpc-net`. With
 `WEBPC_NET_SRC=../webpc-net` they build a checkout of yours instead, which is how to work on the page and the helper
 together. Where the commit can't be fetched (a cloud session, while the repository is private), those tests say
@@ -115,6 +115,11 @@ comparison, tailcat on this machine gave 556/355 Mbit/s at 1.8 ms, and through a
   to the guest like a stall, then new connections failing.
 - **gVisor's neighbor advertisements lack the Router flag** on a non-forwarding stack, and Linux then drops the
   default route 5.4 s after traffic pauses. A default route that vanishes with nothing logged is this kind of thing.
+- **The guest's UDP to `0.0.0.0` reached the host's `127.0.0.1`** (and `::ffff:0.0.0.0` too), without
+  `--host-loopback`: gVisor drops other loopback destinations, not these, and the forwarders dial what they're given.
+  A static review found it, after v0.1.0. The helper's `TestNoHostLoopbackUDP` covers each address.
+- **A browser fails a WebSocket handshake whose answer names no protocol it offered** (1006, no close code), so a
+  refusal of another version needs that version answered first. The helper does so since v0.1.1.
 - **#745's ICMP forwarder is IPv4's only:** the guest can't ping the internet over IPv6 (the gateway answers its own pings).
 - **Lima forwards the dev VM's loopback ports to the Mac's:** a tunnel's local port and a helper on the Mac need
   different ports.

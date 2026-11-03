@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { dhcpAck, frameMessage, framesOf, LOCAL_MAX_MESSAGE, LOCAL_SUBPROTOCOL, parseLocalURL, startLocalNet } from '../web/local-net.ts';
 import { MAX_PORT_FRAME } from '../web/offload.ts';
+import { MsgError } from '../web/msg.ts';
 import { helperSource } from './webpc-net.ts';
 
 const frame = (n: number, fill: number) => new Uint8Array(n).fill(fill);
@@ -87,9 +88,14 @@ test('the pairing link the helper prints gives its ws:// link', () => {
   assert.deepEqual(parseLocalURL(' http://localhost:8080/#net=ws%3A%2F%2F127.0.0.1%3A9%2Fx '), { url: 'ws://127.0.0.1:9/x' });
   assert.ok('error' in parseLocalURL('https://vm.tny.im/#net='));
   assert.ok('error' in parseLocalURL('https://vm.tny.im/#net=ws://example.com:8740/abc'), 'loopback only');
+  assert.ok('error' in parseLocalURL('https://vm.tny.im/#net=ws://127.0.0.1:8740/%E0%A4%A'), 'a malformed escape: a message, not a throw');
 });
 
-test("the guest's lease from the helper's DHCP acknowledgment (the menu's address)", () => {
+const GUEST = [0x52, 0x54, 0, 0x12, 0x34, 0x56];
+const OTHER = [0x52, 0x54, 0, 0x65, 0x43, 0x21];
+
+/** The helper's DHCP acknowledgment of 192.168.127.<last> for the client `mac`, broadcast (as a client without an address gets it). */
+function ackFrame(mac: number[], last = 2) {
   const f = new Uint8Array(14 + 20 + 8 + 240 + 12);
   f.set([0xff, 0xff, 0xff, 0xff, 0xff, 0xff], 0);
   f.set([8, 0], 12);
@@ -97,13 +103,70 @@ test("the guest's lease from the helper's DHCP acknowledgment (the menu's addres
   f.set([0, 67, 0, 68], 34);
   const d = 42;
   f[d] = 2;
-  f.set([192, 168, 127, 2], d + 16);
+  f[d + 1] = 1;
+  f[d + 2] = 6;
+  f.set([192, 168, 127, last], d + 16);
+  f.set(mac, d + 28);
   f.set([0x63, 0x82, 0x53, 0x63], d + 236);
   f.set([53, 1, 5, 26, 2, 0x05, 0xdc, 255], d + 240);
-  assert.deepEqual(dhcpAck(f), { address: '192.168.127.2', mtu: 1500 });
+  return f;
+}
+
+test("the guest's lease from the helper's DHCP acknowledgment (the menu's address)", () => {
+  const f = ackFrame(GUEST);
+  const d = 42;
+  assert.deepEqual(dhcpAck(f, new Uint8Array(GUEST)), { address: '192.168.127.2', mtu: 1500 });
+  assert.equal(dhcpAck(f, new Uint8Array(OTHER)), undefined, "another guest's (the switch floods a broadcast acknowledgment to every page)");
   f[d + 242] = 2; // an offer
-  assert.equal(dhcpAck(f), undefined);
+  assert.equal(dhcpAck(f, new Uint8Array(GUEST)), undefined);
   f[d + 242] = 5;
   f[35] = 69; // not from the server's port
-  assert.equal(dhcpAck(f), undefined);
+  assert.equal(dhcpAck(f, new Uint8Array(GUEST)), undefined);
+});
+
+test("the client's lease is its own guest's, not another's on the same helper", async () => {
+  const realSocket = globalThis.WebSocket;
+  let socket: { onmessage?: (e: MessageEvent) => void; onopen?: () => void } | undefined;
+  globalThis.WebSocket = class {
+    static OPEN = 1;
+    readyState = 1;
+    protocol = LOCAL_SUBPROTOCOL;
+    constructor() { socket = this as never; }
+    send() {}
+    close() {}
+  } as unknown as typeof WebSocket;
+  const port = { postMessage() {} } as unknown as MessagePort;
+  try {
+    const net = startLocalNet('ws://127.0.0.1:1/t', port);
+    socket!.onopen!();
+    // The guest's DHCP discovery (its MAC as the source), then the acknowledgments: another guest's first.
+    const discovery = new Uint8Array(60).fill(0xff);
+    discovery.set(GUEST, 6);
+    port.onmessage!({ data: discovery.buffer } as MessageEvent);
+    socket!.onmessage!({ data: frameMessage([ackFrame(OTHER, 3)]).buffer } as MessageEvent);
+    assert.equal(net.lease(), undefined, "another guest's acknowledgment");
+    socket!.onmessage!({ data: frameMessage([ackFrame(GUEST, 2)]).buffer } as MessageEvent);
+    assert.deepEqual(net.lease(), { address: '192.168.127.2', mtu: 1500 });
+    socket!.onmessage!({ data: frameMessage([ackFrame(OTHER, 3)]).buffer } as MessageEvent);
+    assert.deepEqual(net.lease(), { address: '192.168.127.2', mtu: 1500 }, 'kept');
+    net.close();
+  } finally {
+    globalThis.WebSocket = realSocket;
+  }
+});
+
+test("a link Chromium's WebSocket refuses (a blocked port) closes the client with a sentence, not a throw", () => {
+  const realSocket = globalThis.WebSocket;
+  globalThis.WebSocket = class {
+    constructor() { throw new DOMException("The port 6000 is not allowed.", 'SyntaxError'); }
+  } as unknown as typeof WebSocket;
+  try {
+    let changed = 0;
+    const net = startLocalNet('ws://127.0.0.1:6000/t', { postMessage() {} } as unknown as MessagePort, () => changed++);
+    assert.equal(net.state(), 'closed');
+    assert.ok(net.error() instanceof MsgError, String(net.error()));
+    net.close();
+  } finally {
+    globalThis.WebSocket = realSocket;
+  }
 });

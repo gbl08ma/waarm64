@@ -307,16 +307,19 @@ void folders.refresh();
 
 // The local helper's pairing link (webpc-net prints `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>`): the
 // fragment never reached a server; it leaves the address at once (it holds the token) and opens the Network wizard on
-// it, attaching to the page's machine's first adapter when there's one.
-{
+// it, attaching to the page's machine's first adapter when there's one. Also when the link is opened in a tab that
+// already shows the page: only the fragment changes, and the browser doesn't load the page again.
+function takePairing() {
   const pairing = new URLSearchParams(location.hash.slice(1)).get('net');
-  if (pairing) {
-    history.replaceState(null, '', `${location.pathname}${location.search}`);
-    const p = parseLocalURL(pairing);
-    if ('url' in p) ui.netWizard = ui.current ? { mode: 'attach', machine: ui.current, adapter: 0, localURL: p.url, tick: 1 } : { mode: 'new', localURL: p.url, tick: 1 };
-    else console.warn(`#net: ${devText(p.error)}`);
-  }
+  if (!pairing) return;
+  history.replaceState(null, '', `${location.pathname}${location.search}`);
+  const p = parseLocalURL(pairing);
+  const tick = (ui.netWizard?.tick ?? 0) + 1;
+  if ('url' in p) ui.netWizard = ui.current ? { mode: 'attach', machine: ui.current, adapter: 0, localURL: p.url, tick } : { mode: 'new', localURL: p.url, tick };
+  else console.warn(`#net: ${devText(p.error)}`);
 }
+takePairing();
+addEventListener('hashchange', takePairing);
 store.onChange((c) => {
   ui.records++;
   void net.refresh();

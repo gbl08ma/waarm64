@@ -512,11 +512,14 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
     if (framesMode) flap(); // the guest's lease was the helper's
     framesMode = false;
   };
+  /** The page's gateway's frames: none while the card is on the helper's frames (it is bypassed; what it says is stale). */
+  const fromGateway = (f: Uint8Array) => { if (!framesMode) receiveFrame(f); };
   const adapter: NetAdapter =
     a === 'loopback' ? loopback(receiveFrame)
     : a === 'echo' ? gateway(receiveFrame, echoBackend(echoLease(d.gateway ?? 0)), { ...gatewayOf(d.gateway ?? 0), leaseSeconds: d.leaseSeconds, renewSeconds: d.renewSeconds })
     : a instanceof MessagePort ? portAdapter(a, receiveFrame)
-    : gateway(receiveFrame, portBackend(a.ip, { frames: toFrames, gateway: toGateway }), { advertiseMs: 60_000, ...gatewayOf(d.gateway ?? 0), leaseSeconds: d.leaseSeconds, renewSeconds: d.renewSeconds, stale: flap });
+    : gateway(fromGateway, portBackend(a.ip, { frames: toFrames, gateway: toGateway }), { advertiseMs: 60_000, ...gatewayOf(d.gateway ?? 0), leaseSeconds: d.leaseSeconds, renewSeconds: d.renewSeconds, stale: flap });
+  if (a instanceof MessagePort) framesTo = adapter; // a frame port from the start: its own, the card's frames go to it
   const out = (f: Uint8Array) => (framesMode ? framesTo?.send(f) : adapter.send(f));
   return {
     request(r) {
@@ -544,7 +547,7 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
     },
     close: () => {
       clearTimeout(flapping);
-      framesTo?.close?.();
+      if (framesTo !== adapter) framesTo?.close?.();
       adapter.close?.();
     },
   };

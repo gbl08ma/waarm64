@@ -1263,7 +1263,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     ours with the module path renamed would bring it back.
   - The guest can't ping the internet over IPv6 (#745's ICMP forwarder is IPv4's only).
   - Two `local` adapters both offer a default route: the menu says so, nothing picks one.
+  - Two machines on one helper can hold the same IPv4 address after the helper restarts: its DHCP pool is in memory
+    and hands out addresses in order, ignoring the one asked for, and a reconnect doesn't flap the link (by design), so
+    until the next renewal (up to 30 minutes) both guests use it. A pool kept across restarts, or one that honors the
+    requested address, would fix it (upstream's).
   - Firefox's and Safari's handling of `ws://127.0.0.1` from an https page is unchecked (never a blocker).
+  - (Low priority, the user's idea, 2026-11-03) One `local` connection on several machines at once over one WebSocket,
+    rather than a socket per adapter. It needs connections modeled as exclusive or shared (a Web Lock holds each now,
+    docs/network-adapters.md §2.3) and a UX that stays clear. The helper already puts every socket on one switch, so
+    several machines can already share its LAN, each with a connection of its own.
 - **tailcat serving loose ends**: no `--allow` list (any key with the address gets in, as with tailcat's own
   default; the module would check the meowing key); clients are never dropped (64 WireGuard peers at most, until
   Disconnect); disco pings aren't answered, so `tailcat ping` gets no pong (the data path works); the public-relay

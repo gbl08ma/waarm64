@@ -25,14 +25,18 @@ protocol's sake (65520 stays a flag: about 1.7× down and 1.6× up, bench/net/RE
 passed in the dev VM on 2026-11-02, and the helper's build matches the x86_64 sums on aarch64.
 
 **The move is done** (2026-11-02): `github.com/gbl08ma/webpc-net` with `ci.yml` (vet and `-race` tests, ~2 min, on
-pushes touching code) and `release.yml` (~3 min on each of two runners). **v0.1.0 is released** (from the pinned commit
-`cf1c15b`; the helper now prints only the default origin's pairing link) and the page's wizard offers its install
+pushes touching code) and `release.yml` (~3 min on each of two runners). **v0.1.0 was released** (from commit
+`cf1c15b`) and the page's wizard offers its install
 lines (`web/local-release.ts`). Not deployed. The lines download from a private repository until the user makes it
 public: nobody has run them against the real release yet (the Linux line ran against a `file://` copy at L1).
 
 **L3 is done** (2026-11-02): `tests/page-local.test.ts` from a public origin (granted through CDP, connected; refused,
 the menu's words for it; a planted `loopbackRefused` that never says denied is caught), and how it works in its own
 page, docs/local-helper.md, with the loose ends in backlog.md "Network".
+
+**The out-of-context review** (`review/net-local`, 2026-11-02): 14 findings, 13 fixed from failing tests (plan §4 "L3"),
+the helper's in v0.1.1; one in the backlog. **v0.1.2** prints a pairing link for each `--origin` again (the
+user's: v0.1.0 had dropped them); the page offers it and the tests pin it.
 
 ## The user's answers (2026-11-01, for L2)
 

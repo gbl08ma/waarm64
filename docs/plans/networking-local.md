@@ -25,11 +25,11 @@ user makes it public).
   (`release.yml`: a `v*` tag built on an x86_64 and an arm64 Linux runner, published only when both builds are
   identical), **separate from webpc's deploy** (the user's, 2026-11-02): the page offers a release once
   `web/local-release.ts` takes its SHA256SUMS. **v0.1.0** (2026-11-02) is the first; its sums also matched a build in
-  the dev VM. webpc's tests build the helper at a commit `tests/webpc-net.ts` pins (the user's choice over a sibling
+  the dev VM. v0.1.1 (the same day) has a static review's fixes (§4 "L3"), and v0.1.2 prints a pairing link for each `--origin` again (the user's, after v0.1.0 had dropped them). webpc's tests build the helper at a commit `tests/webpc-net.ts` pins (the user's choice over a sibling
   checkout or a submodule), or a checkout named by `WEBPC_NET_SRC`. `go install` still waits on the IPv6 fork below.
   Trust comes from:
   - **Little code of our own:** the helper is glue over libraries users already run (§2). The README says what is
-    ours and what is imported, honestly: about 650 lines of ours (the 250 first guessed grew with IPv6's reach, the
+    ours and what is imported, honestly: about 770 lines of ours (the 250 first guessed grew with IPv6's reach, the
     refusals that tell the page why, and the frames' batching) on Podman's network stack, not "a small program".
   - **Reproducible binaries** for Linux, macOS and Windows, each on x86_64 and arm64, whose SHA-256 is published
     (the release, the README, the page's help). No code signing for now (Apple's or Authenticode would change the
@@ -220,6 +220,15 @@ with tun2socks-style forwarders.
     refusal said otherwise); the Debian list was `tests/net-local.test.ts`'s already, now at the pinned commit; the
     framing's tests were L2's. How it works: [local-helper.md](../local-helper.md), its own page; the loose ends in
     backlog.md "Network".
+  - **A static review** (out of context, `review/net-local`; 2026-11-02) found 14; fixed, each from a failing test:
+    the guest's UDP to `0.0.0.0` and `::ffff:0.0.0.0` reaching the host's loopback without `--host-loopback`; another
+    version's 4001 never reaching a browser (the handshake needs one of the page's protocols answered); a long origin's
+    4003 lost past a close frame's 123 bytes; another guest's DHCP acknowledgment taken as the page's lease; a pairing
+    link opened in a tab already on the page ignored; the page's gateway still talking to a guest on the helper's
+    frames; a raw MessagePort adapter dropping the guest's frames; a malformed `%` or a blocked port throwing instead
+    of a message; `build.sh` emptying any directory it was given; a manual release run on a tag publishing;
+    `licenses.sh` and the tests' build racing or ignoring an architecture. v0.1.1 has the helper's. Left in the
+    backlog: two machines' addresses after a helper's restart.
 - **L4, release:** the deploy and making the repository public, with the user (v0.1.0, the first release, came with
   the move; the page's install lines download from a private repository until then).
 

@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-export const WEBPC_NET_COMMIT = 'cf1c15b4a306066a01af4d084a781936b3bc1ee2';
+export const WEBPC_NET_COMMIT = '847265d096d42aea8dec5a7bae0feeb14413496f';
 // Over HTTPS once the repository is public; while it's private, over SSH with the user's key.
 const REPOS = ['https://github.com/gbl08ma/webpc-net.git', 'git@github.com:gbl08ma/webpc-net.git'];
 
@@ -66,8 +66,11 @@ export function buildHelper(): string {
   const s = helperSource();
   if ('skip' in s) throw new Error(s.skip);
   mkdirSync(`${ROOT}target/net`, { recursive: true });
-  execFileSync('go', ['build', '-o', `${ROOT}target/net/webpc-net`, '.'], { cwd: s.dir, stdio: 'inherit', timeout: 300_000 });
-  return `${ROOT}target/net/webpc-net`;
+  // Built beside it and renamed into place: test files build it in parallel processes, and one may be running it.
+  const out = `${ROOT}target/net/webpc-net`;
+  execFileSync('go', ['build', '-o', `${out}-${process.pid}`, '.'], { cwd: s.dir, stdio: 'inherit', timeout: 300_000 });
+  renameSync(`${out}-${process.pid}`, out);
+  return out;
 }
 
 /** Why a test that builds the helper can't run (no Go, no source), or undefined. */

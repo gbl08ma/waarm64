@@ -58,3 +58,54 @@ test("net: a card on an IP port goes to a frame port and back (the local helper'
     for (const p of [ip.port1, frames.port1]) p.close();
   }
 });
+
+/** A card's context for these tests: a driver, the link's changes and the frames the guest was given counted. */
+function card() {
+  const ram = new Uint8Array(1 << 16);
+  const config = new Uint8Array(8);
+  config[6] = 1;
+  const given = { n: 0 };
+  const ctx = {
+    ram: () => [ram], complete: () => { given.n++; }, features: () => 1n, config: () => config, io: new Float64Array(2),
+    changeConfig: (w: (c: Uint8Array) => void) => w(config),
+  } as unknown as Ctx;
+  return { ram, ctx, given };
+}
+const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
+
+test('net: a card on a frame port of its own (a MessagePort adapter) sends the guest\'s frames to it', async () => {
+  const { ram, ctx } = card();
+  const port = new MessageChannel();
+  const got: number[] = [];
+  port.port1.onmessage = (e) => got.push((e.data as ArrayBuffer).byteLength);
+  const n = net(ctx, { type: 'net', adapter: port.port2 });
+  try {
+    ram.fill(0, 0, 12);
+    ram.fill(7, 12, 12 + 100);
+    n.request({ w0: 1, queue: 1, read: [{ off: 0, len: 12 + 100, mem: 0 }], write: [] });
+    for (let k = 0; k < 100 && !got.length; k++) await tick(10);
+    assert.deepEqual(got, [100]);
+  } finally {
+    n.close?.();
+    port.port1.close();
+  }
+});
+
+test("net: on the helper's frames, the page's gateway says nothing to the guest (a lease it still had, its advertisements)", async () => {
+  const { ctx, given } = card();
+  const ip = new MessageChannel();
+  const n = net(ctx, { type: 'net', adapter: { ip: ip.port2 } });
+  const frames = new MessageChannel();
+  try {
+    for (let k = 0; k < 4; k++) n.request({ w0: 100 + k, queue: 0, read: [], write: [{ off: 4096 * (k + 1), len: 2048, mem: 0 }] });
+    ip.port1.postMessage({ type: 'frames', port: frames.port2 }, [frames.port2]);
+    await tick(50);
+    // A lease after the switch (a previous client's, late): the gateway would advertise itself as the IPv6 router.
+    ip.port1.postMessage({ type: 'lease', lease: { address: [100, 64, 0, 2], address6: [0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2], mtu: 1280, dns: [], domains: [] } });
+    await tick(100);
+    assert.equal(given.n, 0, "the gateway's frames reached the guest");
+  } finally {
+    n.close?.();
+    for (const p of [ip.port1, frames.port1]) p.close();
+  }
+});

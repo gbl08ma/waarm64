@@ -79,7 +79,14 @@ export function framesOf(msg: Uint8Array): Uint8Array[] | undefined {
 export function parseLocalURL(input: string): { url: string } | { error: Msg } {
   let s = input.trim();
   const at = s.indexOf('#net=');
-  if (at >= 0) s = decodeURIComponent(s.slice(at + 5).split('&')[0]);
+  if (at >= 0) {
+    s = s.slice(at + 5).split('&')[0];
+    try {
+      s = decodeURIComponent(s);
+    } catch {
+      return { error: msg('network:local-net.notLink', { link: s }) };
+    }
+  }
   if (!s) return { error: msg('network:local-net.pasteLink') };
   let u: URL;
   try {
@@ -91,13 +98,18 @@ export function parseLocalURL(input: string): { url: string } | { error: Msg } {
   return { url: u.href };
 }
 
-/** The address and MTU a DHCP acknowledgment in `f` (an Ethernet frame to the guest) gives, if it is one. */
-export function dhcpAck(f: Uint8Array): { address: string; mtu?: number } | undefined {
+/**
+ * The address and MTU a DHCP acknowledgment in `f` (an Ethernet frame to the guest) gives, if it is one and for the
+ * client `mac`: the helper broadcasts acknowledgments to clients without an address, and its switch floods them to every
+ * page connected, another machine's included.
+ */
+export function dhcpAck(f: Uint8Array, mac: Uint8Array): { address: string; mtu?: number } | undefined {
   if (f.length < 14 + 20 + 8 + 240 || f[12] !== 8 || f[13] !== 0 || f[14] >> 4 !== 4 || f[23] !== 17) return undefined;
   const udp = 14 + (f[14] & 15) * 4;
   const d = udp + 8;
   if (((f[udp] << 8) | f[udp + 1]) !== 67 || ((f[udp + 2] << 8) | f[udp + 3]) !== 68 || d + 240 > f.length || f[d] !== 2) return undefined;
   if (f[d + 236] !== 0x63 || f[d + 237] !== 0x82 || f[d + 238] !== 0x53 || f[d + 239] !== 0x63) return undefined;
+  if (f[d + 2] !== 6 || mac.length !== 6 || mac.some((b, k) => f[d + 28 + k] !== b)) return undefined;
   let ack = false;
   let mtu: number | undefined;
   for (let k = d + 240; k < f.length && f[k] !== 255;) {
@@ -132,8 +144,17 @@ export function startLocalNet(url: string, frames: MessagePort, onChange: () => 
   let state: LocalState = 'connecting';
   let error: Error | undefined;
   const stats = { rxFrames: 0, txFrames: 0, rxBytes: 0, txBytes: 0, rxMessages: 0, txMessages: 0 };
-  const ws = new WebSocket(url, LOCAL_SUBPROTOCOL);
+  let ws: WebSocket;
+  try {
+    ws = new WebSocket(url, LOCAL_SUBPROTOCOL);
+  } catch (e) { // a URL the browser refuses outright (a port it blocks, such as 6000)
+    const failed = new MsgError('network:local-net.unreached', undefined, { cause: e });
+    queueMicrotask(onChange);
+    return { state: () => 'closed', error: () => failed, stats: () => ({ ...stats }), lease: () => undefined, close() {} };
+  }
   ws.binaryType = 'arraybuffer';
+  /** The guest's MAC, from the first unicast source of its frames (its DHCP acknowledgments are the ones for it). */
+  let mac: Uint8Array | undefined;
   let pending: Uint8Array[] = [];
   let pendingBytes = 0;
   let lease: { address: string; mtu?: number } | undefined;
@@ -147,6 +168,7 @@ export function startLocalNet(url: string, frames: MessagePort, onChange: () => 
   };
   frames.onmessage = (e: MessageEvent) => {
     const f = new Uint8Array(e.data as ArrayBuffer);
+    if (!mac && f.length >= 14 && !(f[6] & 1)) mac = f.slice(6, 12);
     stats.txFrames++;
     stats.txBytes += f.length;
     if (pendingBytes + 4 + f.length > LOCAL_MAX_MESSAGE) flush();
@@ -174,7 +196,7 @@ export function startLocalNet(url: string, frames: MessagePort, onChange: () => 
     for (const f of got) {
       stats.rxFrames++;
       stats.rxBytes += f.length;
-      const ack = dhcpAck(f); // its first checks (the length, IPv4, UDP) turn other frames away at once
+      const ack = mac && dhcpAck(f, mac); // its first checks (the length, IPv4, UDP) turn other frames away at once
       if (ack) {
         lease = ack;
         onChange();

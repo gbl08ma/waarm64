@@ -143,6 +143,24 @@ test("the helper's pairing link: the wizard on This computer, Attach, connected 
   }
 });
 
+test('a pairing link opened in a tab that already shows the page: the fragment changes only, and the wizard opens', { skip, timeout: 2 * 60_000 }, async () => {
+  const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await context.newPage();
+  try {
+    await page.goto(`${base}/web/app/`);
+    const id = await seed(page);
+    await page.goto(`${base}/web/app/?m=${id}`);
+    await page.waitForFunction(() => !!document.getElementById('net-wizard'), null, { timeout: 15_000 });
+    const ws = `ws://127.0.0.1:${port}/${token}`;
+    await page.evaluate((h) => { location.hash = h; }, `#net=${ws}`); // no reload: a fragment's change only
+    await page.waitForFunction(() => (document.getElementById('net-wizard') as HTMLDialogElement).open, null, { timeout: 10_000 });
+    assert.equal(new URL(page.url()).hash, '', 'the token left the address');
+    assert.equal(await page.inputValue('#net-local-url'), ws);
+  } finally {
+    await context.close();
+  }
+});
+
 /** Through the helper's pairing link: a stored machine whose first adapter is attached to a new `local` connection. */
 async function pairAndAttach(page: Page) {
   await page.goto(`${base}/web/app/`);
