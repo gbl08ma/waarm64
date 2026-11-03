@@ -37,7 +37,8 @@ for src in *.c; do
     fi
   fi
   if [ -n "$hvf" ]; then
-    log=$(timeout 60 ssh "$MAC" /opt/homebrew/bin/qemu-system-aarch64 -M virt,gic-version=3 -accel hvf -cpu host -smp "$smp" \
+    # Bounded on the Mac too: timeout ends ssh, not the QEMU it started there (one spun for days, 2026-11-03).
+    log=$(timeout 60 ssh "$MAC" perl -e "'alarm shift; exec @ARGV'" 50 /opt/homebrew/bin/qemu-system-aarch64 -M virt,gic-version=3 -accel hvf -cpu host -smp "$smp" \
       "${qemu_args[@]}" "${flash[@]}" -kernel "/tmp/webpc-baremetal/$t-hvf.elf" < <(stdin) || true)
   else
     log=$(timeout 30 qemu-system-aarch64 -M virt,gic-version=3 -accel tcg -cpu "$cpu" -smp "$smp" "${qemu_args[@]}" \

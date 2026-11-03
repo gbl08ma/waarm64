@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# The disk bench/vulkan/godot.ts gives the guest (dev-only): Godot's arm64 build (4.7.2, sha256-pinned; its zip holds
+# one binary) at /godot and two test projects at /projects/<name>/, the same scene (a box, a camera, a sun, a plain
+# background) under Forward+ (`forward`) and Mobile (`mobile`).
+#   bench/vulkan/godot-disk.sh      -> target/godot/godot.ext4 (the download kept in target/godot/dl/)
+set -euo pipefail
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+OUT=$ROOT/target/godot
+VERSION=4.7.2 SHA256=5dd0d86405cf7e8adf79fb6377b38ba682a2846cb378ffe5364f38c01ad29b9d
+mkdir -p "$OUT/dl"
+zip=$OUT/dl/godot-$VERSION.zip
+if ! echo "$SHA256  $zip" | sha256sum -c --quiet >/dev/null 2>&1; then
+  curl -sSLf -o "$zip" "https://github.com/godotengine/godot/releases/download/$VERSION-stable/Godot_v$VERSION-stable_linux.arm64.zip"
+  echo "$SHA256  $zip" | sha256sum -c --quiet
+fi
+tree=$(mktemp -d "${TMPDIR:-/tmp}/godot-disk.XXXXXX")
+trap 'rm -rf "$tree"' EXIT
+python3 -I -c 'import sys, zipfile; z = zipfile.ZipFile(sys.argv[1]); open(sys.argv[2], "wb").write(z.read(z.namelist()[0]))' "$zip" "$tree/godot"
+chmod +x "$tree/godot"
+for p in forward mobile; do
+  method=forward_plus feature='Forward Plus'
+  [ $p = mobile ] && method=mobile feature=Mobile
+  mkdir -p "$tree/projects/$p"
+  cat > "$tree/projects/$p/project.godot" <<EOF
+config_version=5
+
+[application]
+config/name="probe3d"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.7", "$feature")
+
+[rendering]
+renderer/rendering_method="$method"
+EOF
+  cat > "$tree/projects/$p/main.tscn" <<'EOF'
+[gd_scene load_steps=4 format=3]
+
+[sub_resource type="BoxMesh" id="1"]
+[sub_resource type="StandardMaterial3D" id="2"]
+albedo_color = Color(0.9, 0.3, 0.2, 1)
+[sub_resource type="Environment" id="3"]
+background_mode = 1
+background_color = Color(0.2, 0.4, 0.8, 1)
+
+[node name="Main" type="Node3D"]
+
+[node name="Box" type="MeshInstance3D" parent="."]
+mesh = SubResource("1")
+surface_material_override/0 = SubResource("2")
+transform = Transform3D(0.8, 0, 0.6, 0, 1, 0, -0.6, 0, 0.8, 0, 0, 0)
+
+[node name="Camera" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 3)
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.7, 0.7, 0, -0.7, 0.7, 0, 2, 0)
+
+[node name="Env" type="WorldEnvironment" parent="."]
+environment = SubResource("3")
+EOF
+done
+rm -f "$OUT/godot.ext4"
+/sbin/mkfs.ext4 -q -d "$tree" "$OUT/godot.ext4" 400M
+echo "$OUT/godot.ext4"
