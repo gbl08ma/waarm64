@@ -888,10 +888,14 @@ impl<'a> Mmu<'a> {
         if !w.allows(el, u) {
             return Err(fault(FaultKind::Permission(w.level)));
         }
-        let device = w.device() && device_check;
-        if device && misaligned {
+        if w.device() && device_check && misaligned {
             return Err(fault(FaultKind::Align));
         }
+        // The entry is a Device page's whatever filled it (a cache
+        // maintenance op too, which shares the data arrays), so the data
+        // accesses that hit it later still check alignment; the instruction
+        // array, which no data access reads, is filled as Normal.
+        let device = w.device() && u != Use::Exec;
         if let Some(t) = &mut self.tlb {
             t.stats.walks += 1;
         }

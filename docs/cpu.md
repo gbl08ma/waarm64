@@ -128,7 +128,8 @@ match it step for step.
   the FPEN trap for SIMD&FP, then the SP alignment fault (`ldst::undefined`, `ldst_fp::base`); a prefetch (PRFM,
   PRFUM) has none. A data access to **Device memory** (MAIR attribute 0000xxxx) must be aligned to its size, a
   page-crossing one never is (`Mmu::miss`, after the walk and its permission check; instruction fetches and cache
-  maintenance aren't checked). With the MMU off, where everything is Device, it isn't checked: the flat bus
+  maintenance aren't checked, though maintenance that fills a Device page's TLB entry fills it as Device, so the
+  accesses after it are). With the MMU off, where everything is Device, it isn't checked: the flat bus
   exists to have no such test, and correct firmware doesn't notice (backlog). Exclusives,
   LDAR/STLR and LSE atomics need natural alignment (v8.0 rules; we don't advertise LSE2, which the
   M4 and QEMU implement: see [testing.md](testing.md) "Known oracle behavior").
@@ -145,8 +146,10 @@ what in-guest `gdb` (`stepi`, `hbreak`, `watch`), `ptrace` single step and perf'
 use, and kvm-unit-tests' `debug-*`.
 
 - **Registers:** `DBGBVR/BCR0-1`, `DBGWVR/WCR0-1` (`Cpu::dbgbvr` …, the control registers'
-  v8.0 fields kept), `MDSCR_EL1` (SS, KDE, MDE), the OS lock (`OSLAR`/`OSLSR`); the OS double
-  lock, DCC and save/restore registers stay RAZ/WI. Breakpoint 1 is the context-aware one. They're
+  v8.0 fields kept), `MDSCR_EL1` (SS, TDCC, KDE, MDE), the OS lock (`OSLAR`/`OSLSR`); the OS double
+  lock, DCC and save/restore registers stay RAZ/WI, but with `MDSCR_EL1.TDCC` set EL0's accesses to
+  the DCC (`MDCCSR_EL0`, `DBGDTR_EL0`, `DBGDTRRX/TX_EL0`) trap to EL1 (EC 0x18; Linux sets it at boot
+  and sends SIGILL); an MSR of read-only `MDCCSR_EL0` is UNDEFINED first. Breakpoint 1 is the context-aware one. They're
   in snapshots (`snapshot::VERSION` 2, with the step's syndrome and `PSTATE.SS`).
 - **What raises what:** debug exceptions need the OS lock clear, and from EL1 `MDSCR_EL1.KDE` and
   `PSTATE.D` clear (`AArch64.GenerateDebugExceptionsFrom`). Breakpoints (MDE): unlinked and linked
@@ -159,8 +162,8 @@ use, and kvm-unit-tests' `debug-*`.
   read-modify-write (LD<op>, SWP, CAS, CASP; a failing CAS too) is a load and a store: a watchpoint for either
   matches, WnR 0 if one for loads does; a store-exclusive is a store (`Bus::store_exclusive`). Software step (`MDSCR_EL1.SS`):
   `PSTATE.SS` is bit 21 of `pstate`; an instruction that completes clears it, and the step
-  exception (EC 0x32/0x33) is taken before the next one, with ISV and EX (a load-exclusive was
-  stepped); an exception the instruction raises leaves it set (SPSR.SS = 1, the instruction runs
+  exception (EC 0x32/0x33) is taken before the next one, with ISV and EX (a Load-Exclusive was
+  stepped: LDXR, LDAXR, LDXP, LDAXP of any size, not CASP or LDAR from the same encoding group); an exception the instruction raises leaves it set (SPSR.SS = 1, the instruction runs
   again; a real external abort too, set by `take_exception`: the run loop's MMIO shares
   `FaultKind::Bus` and completes the instruction), SVC and HVC complete it; ERET restores `SPSR.SS` only while step is on at its target, and
   the step that leaves pending reports no ISV. An IRQ is taken before a pending step exception.
@@ -220,7 +223,8 @@ The table is `core/src/interp/sys.rs`.
   `CNTFRQ_EL0`; Linux emulates EL0 reads of ID registers.
 - The v8.0 registers that exist at EL1 when it's the highest EL: `ACTLR_EL1`, `OSECCR_EL1`,
   `OSDTRRX/TX_EL1`, `DBGDTR_EL0`, `DBGDTRRX/TX_EL0` are RAZ/WI; `MDRAR_EL1`,
-  `DBGAUTHSTATUS_EL1`, `MDCCSR_EL0`, `RVBAR_EL1` read as zero; `RMR_EL1` reads 1 (AA64) and
+  `DBGAUTHSTATUS_EL1`, `MDCCSR_EL0`, `RVBAR_EL1` read as zero (the DCC ones from EL0 trap while
+  `MDSCR_EL1.TDCC` is set: "Self-hosted debug" above); `RMR_EL1` reads 1 (AA64) and
   ignores writes (no warm reset). `IC IALLU(IS)` with Rt ≠ 31 executes as with 31.
 - The GICv3 CPU interface (`ICC_*_EL1`, in a VM): [platform.md](platform.md) "The GIC".
 - Left out (the decoder sweep's `SYS_NOT_OURS`, UNDEFINED): EL2/EL3 and secure state, AArch32
@@ -358,9 +362,11 @@ FMA, so:
 AESE/AESD/AESMC/AESIMC, PMULL/PMULL2 (8- and 64-bit), SHA1C/P/M/H/SU0/SU1, SHA256H/H2/SU0/SU1;
 SHA512H/H2/SU0/SU1, EOR3, RAX1, XAR, BCAX (FEAT_SHA512, FEAT_SHA3).
 - **Our own Rust** from FIPS 197, FIPS 180-4 and the Arm pseudocode (nothing ported; papers
-  credited in `THIRD_PARTY.json`). Table-free, because that measured fastest: SubBytes as the
-  GF(2⁸) inverse (x²⁵⁴ by an addition chain of bytewise SWAR multiplies) plus the affine map;
-  (Inv)MixColumns by `xtime` and rotations; `PMULL.1Q` as Karatsuba over 32×32 multiplies with
+  credited in `THIRD_PARTY.json`). Speed first: the interpreter's SubBytes is a 256-byte S-box
+  (and its inverse) computed at compile time (x²⁵⁴ by square and multiply plus the affine map); the
+  arithmetic form, the GF(2⁸) inverse by an addition chain of bytewise SWAR multiplies, is the tests'
+  second reference only; the JIT inlines SubBytes as nested inversion over GF(2⁴) in `i8x16.swizzle`s
+  of constant vectors ([jit.md](jit.md) "Crypto"); (Inv)MixColumns by `xtime` and rotations; `PMULL.1Q` as Karatsuba over 32×32 multiplies with
   holes. Scalar Rust, since the core is built without `simd128`.
 - **Constant time is not a requirement** (decided 2026-09-28): we control the wasm we emit, not
   what V8 makes of it, and the guest's NEON fallbacks have no timing guarantees on our JIT

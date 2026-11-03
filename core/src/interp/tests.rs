@@ -2179,6 +2179,94 @@ fn stepped_external_abort_runs_again() {
 }
 
 #[test]
+fn stepped_load_exclusives_set_ex() {
+    use crate::cpu::PSTATE_SS;
+    // Each instruction stepped at EL0 (x4 = DATA): the software step
+    // exception's EX bit (ISS bit 6) is set for a Load-Exclusive alone
+    // (LDXR, LDAXR, LDXP, LDAXP, any size), not for CASP, LDAR or STXR,
+    // which share their encoding group.
+    let ex = |insn: u32| {
+        let mut t = T::new(&[insn, 0xd503201f]).x(4, DATA); // ...; nop
+        t.c.vbar_el1 = VBAR;
+        t.c.mdscr_el1 = debug::MDSCR_SS;
+        t.c.pstate |= PSTATE_SS;
+        debug::arm(&mut t.c);
+        t.sys().unwrap();
+        t.sys().unwrap();
+        assert_eq!(
+            (t.c.esr_el1 >> 26, t.c.elr_el1),
+            (0x32, CODE + 4),
+            "{insn:#010x}: a software step from EL0"
+        );
+        t.c.esr_el1 >> 6 & 1
+    };
+    for insn in [
+        0xc85f7c80, // ldxr x0, [x4]
+        0x085f7c80, // ldxrb w0, [x4]
+        0xc85ffc80, // ldaxr x0, [x4]
+        0xc87f0480, // ldxp x0, x1, [x4]
+        0x887f0480, // ldxp w0, w1, [x4]
+        0xc87f8480, // ldaxp x0, x1, [x4]
+    ] {
+        assert_eq!(ex(insn), 1, "{insn:#010x}");
+    }
+    for insn in [
+        0x48207c82, // casp x0, x1, x2, x3, [x4]
+        0x48607c82, // caspa x0, x1, x2, x3, [x4]
+        0x4860fc82, // caspal x0, x1, x2, x3, [x4]
+        0x08607c82, // caspa w0, w1, w2, w3, [x4]
+        0xc8dffc80, // ldar x0, [x4]
+        0xc8037c81, // stxr w3, x1, [x4]
+        0xd503201f, // nop
+    ] {
+        assert_eq!(ex(insn), 0, "{insn:#010x}");
+    }
+}
+
+#[test]
+fn tdcc_traps_el0_dcc() {
+    use crate::cpu::sctlr;
+    // MDSCR_EL1.TDCC traps EL0's accesses to the debug communications
+    // channel (MDCCSR_EL0, DBGDTR_EL0, DBGDTRRX_EL0, DBGDTRTX_EL0) to EL1
+    // with EC 0x18; without it, and at EL1, they read zero and ignore writes.
+    // An MSR of read-only MDCCSR_EL0 is UNDEFINED, ahead of the trap.
+    const TDCC: u64 = 1 << 12;
+    let run = |insn: u32, el1: bool, mdscr: u64| {
+        let mut t = T::new(&[insn]);
+        if el1 {
+            t = t.el1();
+        }
+        t.c.x[0] = 0x55;
+        t.c.vbar_el1 = VBAR;
+        t.c.sctlr_el1 |= sctlr::UCT; // no other EL0 trap in play
+        t.c.mdscr_el1 = mdscr;
+        t.sys().unwrap();
+        if t.c.pc == CODE + 4 {
+            (None, t.c.x[0])
+        } else {
+            assert_eq!(t.c.elr_el1, CODE, "{insn:#010x}");
+            (Some(t.c.esr_el1), t.c.x[0])
+        }
+    };
+    for (insn, read, esr) in [
+        (0xd5330100, true, 0x6220_c003),  // mrs x0, mdccsr_el0
+        (0xd5330400, true, 0x6220_c009),  // mrs x0, dbgdtr_el0
+        (0xd5330500, true, 0x6220_c00b),  // mrs x0, dbgdtrrx_el0
+        (0xd5130400, false, 0x6220_c008), // msr dbgdtr_el0, x0
+        (0xd5130500, false, 0x6220_c00a), // msr dbgdtrtx_el0, x0
+    ] {
+        let ok = (None, if read { 0 } else { 0x55 });
+        assert_eq!(run(insn, false, TDCC), (Some(esr), 0x55), "{insn:#010x}");
+        assert_eq!(run(insn, false, 0xffff & !TDCC), ok, "{insn:#010x}");
+        assert_eq!(run(insn, true, TDCC), ok, "{insn:#010x} at EL1");
+    }
+    // msr mdccsr_el0, x0: UNDEFINED, TDCC or not.
+    for mdscr in [0, TDCC] {
+        assert_eq!(run(0xd5130100, false, mdscr).0, Some(0x0200_0000));
+    }
+}
+
+#[test]
 fn run_loops_retire_the_smp_exits() {
     use crate::cpu::FEATURE_SMP;
     // wfe, sev, sevl at EL0 (nTWE set): each retires in `run`.

@@ -390,6 +390,11 @@ fn read(c: &Cpu, i: u32, key: u32) -> R<u64> {
         }
         CNTFRQ | CNTPCT | CNTVCT | CNTP_TVAL | CNTP_CTL | CNTP_CVAL | CNTV_TVAL | CNTV_CTL
         | CNTV_CVAL => return timer(c, i, key),
+        // The debug communications channel at EL0: MDSCR_EL1.TDCC traps it
+        // (Linux sets it); otherwise, and at EL1, the RAZ registers below.
+        MDCCSR | DBGDTR | DBGDTRRXTX if el0 && c.mdscr_el1 & debug::MDSCR_TDCC != 0 => {
+            return Err(trap_sys(i));
+        }
         // EL1 from here on: exec has rejected op1 != 3 at EL0.
         SPSR_EL1 => c.spsr_el1,
         ELR_EL1 => c.elr_el1,
@@ -565,6 +570,10 @@ fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
         }
         DAIF_R if el0 && c.sctlr_el1 & sctlr::UMA == 0 => return Err(trap_sys(i)),
         DAIF_R => c.pstate = c.pstate & !DAIF | v & DAIF,
+        // As in `read` (MDCCSR_EL0 is read-only: its MSR stays UNDEFINED).
+        DBGDTR | DBGDTRRXTX if el0 && c.mdscr_el1 & debug::MDSCR_TDCC != 0 => {
+            return Err(trap_sys(i));
+        }
         FPCR => {
             super::fp_enabled(c)?;
             c.fpcr = v & FPCR_MASK;
