@@ -635,7 +635,8 @@ pub unsafe extern "C" fn vm_window_watch(vm: *const vm::Vm) -> *const u32 {
 /// Parallel mode (`VmConfig.smp` = 1, ABI 25): runs vCPU `cpu` on the calling
 /// thread for at most `budget` of its steps; returns the exit kind, with the
 /// details in [`vm_exit_cpu`]. Every vCPU has its own thread, and calls for
-/// one vCPU always come from the same core instance (docs/abi.md).
+/// one vCPU always come from the same core instance (docs/abi.md). Past the
+/// last vCPU, `vm::exit::STOP` at once (nothing runs).
 ///
 /// # Safety
 /// `vm` comes from [`vm_new`] and isn't freed meanwhile; no other thread runs
@@ -643,7 +644,12 @@ pub unsafe extern "C" fn vm_window_watch(vm: *const vm::Vm) -> *const u32 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn vm_run_cpu(vm: *const vm::Vm, cpu: u32, budget: u64) -> u32 {
     // SAFETY: guaranteed by the caller.
-    unsafe { (*vm).run_cpu(cpu as usize, budget) }
+    let vm = unsafe { &*vm };
+    if cpu as usize >= vm.vcpus.len() {
+        return vm::exit::STOP;
+    }
+    // SAFETY: guaranteed by the caller; `cpu` is a vCPU's.
+    unsafe { vm.run_cpu(cpu as usize, budget) }
 }
 
 /// The last run's `vm::ExitInfo`: kind, steps, value, x0–x3, cpu, wake (u64
@@ -902,7 +908,7 @@ pub unsafe extern "C" fn vm_wake(vm: *const vm::Vm) -> u32 {
 /// Moves a suspended guest's realtime clock on by `ns` (the time it slept
 /// through while the machine was in a file); the RTC stays on the host's
 /// time. 1 if done; 0 if the guest isn't suspended or time is deterministic.
-/// From any thread.
+/// Parallel mode: from any thread; round-robin: between [`vm_run`] calls.
 ///
 /// # Safety
 /// See the note above [`vm_new`].

@@ -270,10 +270,18 @@ impl Vm {
         initrd: Option<(u64, u64)>,
         cmdline: &str,
     ) -> Result<(), &'static str> {
-        let rd = |pa, size| self.mem.read(pa, size).map_err(|_| "kernel outside RAM");
-        if rd(kernel_pa + 0x38, 4)? as u32 == IMAGE_MAGIC {
-            let text_offset = rd(kernel_pa + 8, 8)?;
-            if !(kernel_pa - text_offset).is_multiple_of(2 << 20) {
+        // The host's values and the Image header's: checked, so a bad one is refused (not a
+        // panic, or a wrap in release).
+        let rd = |pa: u64, size| {
+            let pa = pa.checked_add(kernel_pa).ok_or("kernel outside RAM")?;
+            self.mem.read(pa, size).map_err(|_| "kernel outside RAM")
+        };
+        if rd(0x38, 4)? as u32 == IMAGE_MAGIC {
+            let text_offset = rd(8, 8)?;
+            let base = kernel_pa
+                .checked_sub(text_offset)
+                .ok_or("Image base below 0")?;
+            if !base.is_multiple_of(2 << 20) {
                 return Err("Image base not 2 MiB aligned");
             }
         }
@@ -281,12 +289,13 @@ impl Vm {
         let ram = self.mem.size();
         let dtb_pa = RAM_BASE + ram - DTB_SPACE;
         let fb = framebuffer(&self.cfg);
-        let initrd = initrd.map(|(pa, len)| (pa, pa + len));
-        if let Some((start, end)) = initrd
-            && (start < RAM_BASE || end > fb.map_or(dtb_pa, |f| f.0))
-        {
-            return Err("initrd outside RAM or over the framebuffer or DTB space");
-        }
+        let initrd = match initrd.map(|(pa, len)| pa.checked_add(len).map(|end| (pa, end))) {
+            None => None,
+            Some(Some((start, end))) if start >= RAM_BASE && end <= fb.map_or(dtb_pa, |f| f.0) => {
+                Some((start, end))
+            }
+            Some(_) => return Err("initrd outside RAM or over the framebuffer or DTB space"),
+        };
         let fb = fb.map(|(pa, _)| (pa, self.cfg.fb_width, self.cfg.fb_height));
         let ncpus = self.cfg.ncpus.max(1) as usize;
         let spill: Vec<_> = self.mem.spill().iter().map(|s| (s.phys, s.size)).collect();
@@ -364,6 +373,16 @@ mod tests {
             "the reset keeps the VM's features"
         );
         assert_eq!(vm.mem.read(dtb, 4), Ok(0xedfe0dd0)); // FDT magic, big-endian
+        // Values the arithmetic would overflow on are refused, not a panic or a wrap.
+        assert!(
+            vm.boot(u64::MAX - 7, None, "").is_err(),
+            "the header past 2^64"
+        );
+        vm.mem.write(k + 8, 8, k + (2 << 20)).unwrap();
+        assert!(vm.boot(k, None, "").is_err(), "a text_offset past the base");
+        vm.mem.write(k + 8, 8, 0).unwrap();
+        let rd = Some((RAM_BASE + (4 << 20), u64::MAX));
+        assert!(vm.boot(k, rd, "").is_err(), "an initrd's end past 2^64");
     }
 
     #[test]

@@ -74,6 +74,11 @@ pub const IRQ_RTC: usize = 34;
 /// Alpine −14% in Node; identical steps at 1024–131072).
 const CHUNK: u64 = 32768;
 
+/// A counter or a clock past this isn't one a VM reaches (centuries): a
+/// restore refuses one, and deterministic time doesn't jump to a deadline
+/// past it, which keeps the counter's arithmetic from overflowing.
+const TIME_MAX: u64 = 1 << 62;
+
 /// `repr(C)`, all u64 so the host can fill it with a `BigUint64Array`; new fields go at the end.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -989,9 +994,10 @@ impl Vm {
     /// otherwise): the time it would have slept through. Linux's resume
     /// counts the counter's progress over a suspend as sleep (a nonstop
     /// clocksource), so its realtime clock catches up and its monotonic one
-    /// doesn't move. The RTC still shows the host's time. From any thread.
+    /// doesn't move. The RTC still shows the host's time. Parallel mode: from
+    /// any thread; round-robin: no vCPU runs.
     pub fn clock_skip(&self, ns: u64) -> bool {
-        if !self.realtime() || self.clock.ns().saturating_add(ns) >= 1 << 62 {
+        if !self.realtime() || self.clock.ns().saturating_add(ns) >= TIME_MAX {
             return false;
         }
         let mut p = self.plat.lock();
@@ -1174,7 +1180,9 @@ impl Vm {
 
     /// Every vCPU is off or waiting. Deterministic time jumps to the next timer
     /// deadline (the vCPUs it was for complete their WFI); realtime mode, or no
-    /// deadline, returns the idle exit.
+    /// deadline, returns the idle exit. A deadline at or past [`TIME_MAX`] (a
+    /// CVAL near 2^64, as a negative TVAL early on makes) is none: a jump there
+    /// would overflow the counter a few steps on.
     ///
     /// One reading of the counter decides both whether a timer fires and the
     /// deadline: in realtime mode the clock moves between reads, and a timer
@@ -1202,7 +1210,10 @@ impl Vm {
                 return None;
             }
         }
-        match self.next_deadline_at(now) {
+        let deadline = self
+            .next_deadline_at(now)
+            .filter(|&t| self.realtime() || t < TIME_MAX);
+        match deadline {
             Some(t) if !self.realtime() => {
                 self.skipped += t - now;
                 for c in 0..self.vcpus.len() {
