@@ -481,7 +481,8 @@ impl Vm {
     /// loop would only complete and go on from: a counter read, and the
     /// context synchronization of ISB, DSB, ERET and DAIF writes when this
     /// vCPU has nothing queued to drain, no TLBI IS of its own to wait for (the
-    /// hook is set only then), its ASID published, and no IRQ to take. A timer
+    /// hook is set only then), its ASID published, and no IRQ to take; an ISB
+    /// also not while its JIT table is behind the cache. A timer
     /// that comes due meanwhile is seen at the chunk's end, as anywhere else
     /// in a chunk. Returns false (nothing changed) otherwise.
     fn fast(&self, c: usize, v: &mut Vcpu, insn: u32, e: Exit) -> bool {
@@ -501,6 +502,12 @@ impl Vm {
                     return false;
                 }
                 if v.cpu.pstate & PSTATE_I == 0 && p.irq.load(Ordering::SeqCst) {
+                    return false;
+                }
+                // An ISB that follows another vCPU's IC must fetch the new code: the block
+                // would chain on through links and caches the table hasn't synced yet, so
+                // it exits to the dispatcher, which catches up (`Jit::fresh`).
+                if matches!(op, Op::ISB) && v.jit.cache.as_ref().is_some_and(|j| j.behind()) {
                     return false;
                 }
                 if self.vcpus.len() > 1 {

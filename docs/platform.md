@@ -196,8 +196,11 @@ and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor a
   still ends it after 10 s (tests/hoststall.test.ts).
 - IC operations don't wait: the architecture promises another PE the new code only
   after a context synchronization event *that follows its seeing the change*, which ends the chunk
-  here. `maint.c` had its ISB before waiting for the rewrite: parallel mode ran the old code (401),
-  and the test was fixed (QEMU TCG and hvf pass it either way).
+  here, or under the JIT a fast-completed ISB (docs/jit.md "Fast completions") exits to the dispatcher
+  when the vCPU's table is behind the cache's drops (`Jit::behind`): completed in place, it chained on
+  into the old code (`isb.c`: 3-8 stale calls in 8 rounds before, REVIEW-20261103.md). `maint.c` had
+  its ISB before waiting for the rewrite: parallel mode ran the old code (401), and the test was fixed
+  (QEMU TCG and hvf pass it either way).
 - **The stale-code checker tolerates** stale blocks in parallel mode (`jit::Cache::tolerant`:
   code another vCPU rewrote is legal to run until this vCPU's next context synchronization): it
   drops the block at the run loop's entry and counts it (`JIT_STALE`, counter word 90), and only
