@@ -51,7 +51,10 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 ## Interpreter
 
 What the block interpreter's speed track (2026-10-21/22, `bench/interp/REPORT.md` "M8-INTERP loop 0" to "loop 11")
-left open, most promising first.
+left open, most promising first. Re-profiled 2026-11-04 (`bench/boot/REPORT.md` "Where a busy vCPU's time goes in Firefox, again"): the block interpreter is 13% of a busy
+vCPU's samples in Firefox's pages session (`hot` 9.5%), 14-16% while a page loads and 3-4% while it scrolls; 4.1% of
+the steps, so an interpreted step costs ~3.5× a compiled one. The loads' new code (1.4-1.9 M instructions decoded a
+20 s window, Firefox's own JIT's rewrites among it) runs interpreted until hot.
 
 - **More handlers, by workload** (`bench/interp/REPORT.md` "M8-INTERP loop 13" counted Alpine's boot's slow path).
   Left on the boots: CASP (a 128-bit atomic), STTR/LDTR (the EL0 TLB array from EL1: a second context in `Fast`),
@@ -82,7 +85,9 @@ left open, most promising first.
 - **Indirect transfers into a browser's code** (2026-10-16; `bench/boot/REPORT.md` "M8: where a busy vCPU's time goes
   in Firefox"). In Firefox's pages session 26% of a busy vCPU's time stalls at a guest function's first instruction,
   83% of it after a `return_call_indirect` (the code footprint defeats the branch predictor; direct and imported tail
-  calls don't stall). Warm members took the jump-cache tails into warm code away (+18% busy MIPS). What remains:
+  calls don't stall). Warm members took the jump-cache tails into warm code away (+18% busy MIPS). Re-profiled
+  2026-11-04 (`bench/boot/REPORT.md` "Where a busy vCPU's time goes in Firefox, again"): entries 22.0% of the samples (27-29% while pages scroll), 80% of them after a
+  `return_call_indirect`, 15% from the dispatcher; the signature check 3.0%. What remains:
   - **Returns as host returns: tried, not kept** (2026-10-16, `bench/boot/REPORT.md` "M8: guest calls as host
     calls"): returns' entry stalls fell from 42.5% of the kernel's to 17.5%, but the time reappeared at the
     continuation's code (guest code 61.3% → 59.6% of samples) and the code grew 12-32%, a third flush in Firefox.
@@ -90,7 +95,11 @@ left open, most promising first.
   - **Tails into code that was cold when its predecessor was compiled** (warm members only take what had run 16
     times): re-emitting a hot region once its jump-cache targets are compiled. Likely to move the stall as host
     returns did (above): first measure whether a direct tail call into code evicted from the caches stalls as much as
-    an indirect one (`chain.mjs` with the targets evicted). A per-site slot in a module-local
+    an indirect one (`chain.mjs` with the targets evicted). **Measured 2026-11-04** (`bench/boot/REPORT.md` "Where a busy vCPU's time goes in Firefox, again"): at 131,072
+    functions in a random order (TurboFan), an imported tail call costs 25 ns an entry against 84 for
+    `return_call_indirect` and 50 for a direct `return_call` in one module, near their warm 20-25: the cold cost is
+    the indirect transfer's loads, not the target's code, so re-emitting into imported tail calls is worth building
+    and A/B-ing on the pages session (a browser's bodies are larger and less alike than the microbenchmark's). A per-site slot in a module-local
     table, filled on install, measured no cheaper than the jump cache (`chain.mjs` `local`, 35 against 37 ns).
     Re-emitting would shrink the code too: a jump-cache tail is 61 B and a probe for a successor in another page 116,
     against 22 for a direct call, 9.7% of Debian's code (the wasm size item below).
@@ -107,7 +116,8 @@ left open, most promising first.
   own with the wasm size items below: `no-base-local.patch` in `bench/boot/results/m8-liftoff/baseruns/`). The lever is getting functions to 12, which dropping scratch
   locals can't (one load or store takes ADDR, HOST and TLBE): it would take sharing one local between guest
   registers whose live ranges don't overlap, a register allocator over the block's locals. Bounded by the
-  prologues' ~5% of Liftoff's samples in Firefox.
+  prologues' ~5% of Liftoff's samples in Firefox; Liftoff's bodies were 12.9% of a busy vCPU's samples then and 6.3%
+  on 2026-11-04 (`bench/boot/REPORT.md` "Where a busy vCPU's time goes in Firefox, again"), so ~0.3% now.
 - **A Firefox session whose first page times out**: Firefox never reports its first page; the guest's kernel and
   shell are alive; the other pages then load normally. Three times in ~35 sessions on 2026-10-16, on three builds
   (WARM=32; the default before the foldable offsets; the posted modules): always the first page (wiki). Rerun such
@@ -130,7 +140,7 @@ left open, most promising first.
   virgl (graphics.md "Decisions"); llvmpipe stays what guests without 3D fall back to.
 - **A browser session past the 320 MiB budget** (`bench/boot/REPORT.md` "M8: the carry timed, and a larger code
   cache", "M8: a machine's JIT budget and the page's memory signal"): Firefox's pages session compiles ~260 MiB and
-  doesn't flush; a longer one will, and each flush doubles the threshold's floor (the long stutters at later flushes
+  doesn't flush (from the snapshot, 2026-11-04: 132 MB, no flush); a longer one will, and each flush doubles the threshold's floor (the long stutters at later flushes
   were the doubled floor). The churn page flushes at 320 MiB (twice in ~140 s with `hot=1500`); not measured: a real
   session long enough to flush there. Carrying the hot set across the flush and an adaptive budget didn't pay (jit.md
   "Tried and not kept"); a machine can set its own budget (the JIT cache setting).
@@ -215,13 +225,14 @@ left open, most promising first.
     would cover it;
   - **the cache's lock** ([jit.md](jit.md) "Sharing" "What the lock costs"): since a miss no longer waits for it and
     a guest issues 2 ICs a page (2 KiB lines), the waiting is ~1.8 s over Firefox's pages session (0.7% of the
-    acquisitions found it held), ~2.9 s on the churn screen and ~0.4 s in 300 s of the `go build` loop
+    acquisitions found it held; from the snapshot on 2026-11-04 1.66 s, 0.35% of busy vCPU time), ~2.9 s on the churn screen and ~0.4 s in 300 s of the `go build` loop
     (`bench/boot/REPORT.md` "M8: a miss doesn't wait for the JIT cache's lock, and 2 KiB instruction cache lines").
     What still waits is catch-ups, tier-ups, flushes and ICs. Not worth a loop alone. Unscreened, by evidence:
     - **Firefox's own ICs:** in the pages and churn sessions a Firefox started before the change keeps 64-byte steps
       (it reads CTR_EL0 once), so those sessions' ICs fell by only a third (1.07 M → 0.71 M on the churn). Make the
       warm snapshots again (`bench/gpu/warm-snapshots.sh firefox debian`, ~6 min) so later A/Bs start from a guest that
-      read 2 KiB; then count `ics` on the churn screen again (expect a few times fewer).
+      read 2 KiB; then count `ics` on the churn screen again (expect a few times fewer). `pages.webpcsnap` was remade
+      on 2026-11-04 (Firefox started in that session, so it read 2 KiB); the churn's count is still to take.
     - **Coalescing ICs per page** until the next context synchronization (not guest-visible): only for a guest that
       steps by its own line regardless of CTR_EL0; none seen.
     - **Allocations under the lock** (dlmalloc behind std's global spin lock): count them before doing anything.
@@ -1013,7 +1024,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   part: the run loop's per-iteration atomics (the signal and wake words, `pending`, the IRQ line, the ASID's SeqCst
   fence) and `jit::steps`' re-entry (`key`'s translation of the PC, `Cache::enter`'s lookup, `fresh`). Profile it
   with perf and V8's `--perf-prof` on a loop of an always-exiting instruction (`mrs cntfrq_el0`) before changing
-  any of it. The exits that remain frequent in a browser are syscalls (SVC), faults and IRQs.
+  any of it. The exits that remain frequent in a browser are syscalls (SVC), faults and IRQs: in Firefox's pages
+  session ~10-15K a second over 4 vCPUs, ~0.2-0.3% of busy vCPU time at 240 ns, the run loop's functions 0.7% of the
+  samples (`bench/boot/REPORT.md` "Where a busy vCPU's time goes in Firefox, again", 2026-11-04). Not worth a loop for the browser.
 - **The ISB fix's cost is unmeasured** (2026-11-03, [platform.md](platform.md) "Broadcast maintenance"): a
   fast-completed ISB now reads two counters (relaxed) and exits once per invalidation another vCPU made. Expected
   below the noise; to confirm with `bench/run.ts`'s A/B in Chromium on the long workloads and the desktop guest's image

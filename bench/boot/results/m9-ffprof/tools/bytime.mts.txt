@@ -1,0 +1,20 @@
+import { readFileSync } from 'node:fs';
+const [samplesFile, jitFile, log] = process.argv.slice(2);
+const vcpu = new Set(['1027275','1027276','1027277','1027274']);
+const all: number[] = [];
+for (const l of readFileSync(samplesFile, 'utf8').split('\n')) { const m = /^\s*(\d+)\s+(\d+\.\d+):/.exec(l); if (m && vcpu.has(m[1])) all.push(+m[2]); }
+let t0 = Infinity; for (const t of all) if (t < t0) t0 = t;
+const W = 20;
+const tot: number[] = [], cat = new Map<string, number[]>();
+for (const t of all) { const b = Math.floor((t - t0) / W); tot[b] = (tot[b] ?? 0) + 1; }
+const inc = (k: string, b: number) => { const a = cat.get(k) ?? cat.set(k, []).get(k)!; a[b] = (a[b] ?? 0) + 1; };
+for (const l of readFileSync(jitFile, 'utf8').split('\n')) {
+  const r = l.split('\t'); if (r.length < 5 || !vcpu.has(r[0])) continue;
+  const t = +r[r.length - 1].slice(1); const b = Math.floor((t - t0) / W);
+  if (/_pa0x/.test(r[1])) inc(r[2] === '0' ? 'entry' : 'guest body', b);
+  else if (/interp5block|jit9interpret/.test(r[1])) inc('block interp', b);
+  else if (/webpc_core|xmiss|jit_exec/.test(r[1])) inc('core other', b);
+}
+const ks = ['guest body', 'entry', 'block interp', 'core other'];
+console.log(`window(s)  vCPU-samples/s  ${ks.join(' | ')}  (% of vCPU samples)`);
+for (let b = 0; b < tot.length; b++) console.log(`${String(b * W).padStart(4)}-${String((b + 1) * W).padEnd(4)} ${String(Math.round((tot[b] ?? 0) / W)).padStart(6)}  ${ks.map((k) => (100 * ((cat.get(k)?.[b]) ?? 0) / (tot[b] || 1)).toFixed(1).padStart(6)).join(' ')}`);

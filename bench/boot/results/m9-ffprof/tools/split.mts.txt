@@ -1,0 +1,32 @@
+// Per time decile, the vCPU threads' shares; plus entry-stall entry kinds; plus top core functions.
+import { readFileSync } from 'node:fs';
+const [samplesFile, jitFile] = process.argv.slice(2);
+const vcpu = new Set(['1027275','1027276','1027277','1027274']);
+const times: number[] = [];
+const tOf = new Map<string, number[]>();
+for (const l of readFileSync(samplesFile, 'utf8').split('\n')) {
+  const m = /^\s*(\d+)\s+(\d+\.\d+):/.exec(l); if (!m || !vcpu.has(m[1])) continue; times.push(+m[2]);
+}
+let t0 = Infinity, t1 = -Infinity; for (const t of times) { if (t < t0) t0 = t; if (t > t1) t1 = t; }
+console.log(`span ${(t1 - t0).toFixed(0)} s, vcpu samples ${times.length}`);
+// jit.tsv has no time: redo by the order? jit.tsv rows follow sorted sample time, so use samples.txt order sorted.
+const rows = readFileSync(jitFile, 'utf8').split('\n').map((l) => l.split('\t')).filter((r) => r.length > 4 && vcpu.has(r[0]));
+const fn = new Map<string, number>();
+const how = new Map<string, number>();
+let ent = 0;
+for (const r of rows) {
+  const name = r[1];
+  if (!/_pa0x/.test(name)) { const k = name.replace(/^JS:/, '').replace(/-\d+-\w+$/, '').slice(0, 110); fn.set(k, (fn.get(k) ?? 0) + 1); continue; }
+  if (r[2] === '0') {
+    ent++;
+    const el = /^JS:0x[0-9a-f]{16}_pa/.test(name) ? 'kernel' : 'user';
+    const h = r[8] === '8000003' && r[9] === 'x17=pc' ? 'after return_call_indirect' : r[8] === '8000003' ? 'sig in x16, x17 elsewhere (dispatcher?)' : 'other';
+    const lk = (r[10] ?? '').replace(/^JS:/, '').replace(/_pa0x.*/, '_pa').replace(/-\d+-\w+$/, '');
+    const from = /_pa$/.test(lk) ? 'guest code' : lk.slice(0, 60);
+    how.set(`${el}: ${h} (lr in ${from})`, (how.get(`${el}: ${h} (lr in ${from})`) ?? 0) + 1);
+  }
+}
+console.log(`\nentry samples ${ent} (${(100*ent/times.length).toFixed(1)}% of vCPU samples)`);
+for (const [k, v] of [...how].sort((a, b) => b[1] - a[1]).slice(0, 14)) console.log(`${(100*v/ent).toFixed(1).padStart(5)}%  ${k}`);
+console.log(`\ntop non-guest functions (% of vCPU samples)`);
+for (const [k, v] of [...fn].sort((a, b) => b[1] - a[1]).slice(0, 40)) console.log(`${(100*v/times.length).toFixed(2).padStart(6)}%  ${k}`);

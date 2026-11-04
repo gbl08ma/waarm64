@@ -1,0 +1,51 @@
+span 334 s, vcpu samples 478928
+
+entry samples 105527 (22.0% of vCPU samples)
+ 48.7%  kernel: after return_call_indirect (lr in _RNvNtCsfyJ81pLjVxE_10webpc_core3jit5steps)
+ 31.3%  user: after return_call_indirect (lr in _RNvNtCsfyJ81pLjVxE_10webpc_core3jit5steps)
+ 10.9%  user: sig in x16, x17 elsewhere (dispatcher?) (lr in _RNvNtCsfyJ81pLjVxE_10webpc_core3jit5steps)
+  4.2%  kernel: sig in x16, x17 elsewhere (dispatcher?) (lr in _RNvNtCsfyJ81pLjVxE_10webpc_core3jit5steps)
+  3.1%  kernel: other (lr in _RNvNtCsfyJ81pLjVxE_10webpc_core3jit5steps)
+  1.9%  user: other (lr in _RNvNtCsfyJ81pLjVxE_10webpc_core3jit5steps)
+
+top non-guest functions (% of vCPU samples)
+  9.53%  _RINvNtNtCsfyJ81pLjVxE_10webpc_core6interp5block3hotNtNtB6_3mmu3MmuNCINvNtB6_3jit9interpretBN_E0EB6_
+  1.52%  _RNvNtCsfyJ81pLjVxE_10webpc_core3jit5steps
+  1.24%  jit_exec_mmu
+  0.98%  _RNvMs4_NtNtCsfyJ81pLjVxE_10webpc_core6interp5blockNtB5_5Cache9count_out
+  0.90%  xmiss_el0
+  0.82%  _RNvMs4_NtNtCsfyJ81pLjVxE_10webpc_core6interp5blockNtB5_5Cache4miss
+  0.74%  _RNvMs3_NtCsfyJ81pLjVxE_10webpc_core3jitNtB5_3Jit4miss
+  0.70%  _RINvNtCsfyJ81pLjVxE_10webpc_core3jit9interpretNtNtB4_3mmu3MmuEB4_
+  0.62%  _RNvNtCsfyJ81pLjVxE_10webpc_core3mmu4walk
+  0.56%  _RNvMs4_NtNtCsfyJ81pLjVxE_10webpc_core6interp5blockNtB5_5Cache7slot_in
+  0.36%  _RNvMNtCsfyJ81pLjVxE_10webpc_core3mmuNtB2_3Tlb8flush_va
+  0.36%  _RINvNtNtCsfyJ81pLjVxE_10webpc_core6interp4ldst4execNtNtB6_3mmu3MmuEB6_
+  0.34%  Builtin:LoadGlobalIC
+  0.33%  xmiss_el1
+  0.32%  _RNvMs2_NtCsfyJ81pLjVxE_10webpc_core3mmuNtB5_3Mmu4miss
+  0.31%  _RNvMs2_NtNtCsfyJ81pLjVxE_10webpc_core2vm8parallelNtB7_2Vm7run_cpu
+  0.30%  _RNvMs2_NtCsfyJ81pLjVxE_10webpc_core3jitNtB5_5Table4sync
+  0.25%  _RNvXs3_NtCsfyJ81pLjVxE_10webpc_core3mmuNtB5_3MmuNtB5_3Bus7read_el
+  0.23%  _RNvXs3_NtCsfyJ81pLjVxE_10webpc_core3mmuNtB5_3MmuNtB5_3Bus8write_el
+  0.19%  _RNvNtNtCsfyJ81pLjVxE_10webpc_core3jit5block6end_op
+  0.18%  Builtin:AtomicsLoad
+  0.18%  *'runCpu http://127.0.0.1:37845/web/vcpu-worker.ts?worker_file&type=module:40:22
+  0.16%  *' http://127.0.0.1:37845/web/vm.ts:49:31
+  0.16%  _RNCNvMs4_NtNtCsfyJ81pLjVxE_10webpc_core6interp5blockNtB7_5Cache4miss0Bb_
+  0.15%  _RINvNtNtCsfyJ81pLjVxE_10webpc_core6interp5block3runNtNtB6_3mmu3MmuEB6_
+  0.14%  _RNvNtNtCsfyJ81pLjVxE_10webpc_core2vm8parallel9fast_exit
+  0.14%  _RNvMs2_NtNtCsfyJ81pLjVxE_10webpc_core2vm8parallelNtB7_2Vm10handle_par
+  0.14%  _RINvNtCsfyJ81pLjVxE_10webpc_core6interp10exec_at_opNtNtB4_3mmu3MmuEB4_
+  0.14%  _RNvMNtCsfyJ81pLjVxE_10webpc_core3mmuNtB2_3Tlb4fill
+  0.13%  _RINvNtNtCsfyJ81pLjVxE_10webpc_core6interp4ldst6singleNtNtB6_3mmu3MmuEB6_
+  0.13%  _RINvNtNtCsfyJ81pLjVxE_10webpc_core6interp3sys4execNtNtB6_3mmu3MmuEB6_
+  0.12%  _RNvMs0_NtCskNiITKmO1MI_8dlmalloc8dlmallocINtB5_8DlmallocNtNtB7_3sys6SystemE6mallocCsfyJ81pLjVxE_10webpc_core
+  0.12%  _RNvMNtCsfyJ81pLjVxE_10webpc_core3mmuNtB2_3Tlb8flush_ng
+  0.10%  Builtin:CEntry_Return1_ArgvOnStack_NoBuiltinExit
+  0.08%  _RNvMs4_NtCsfyJ81pLjVxE_10webpc_core3jitNtB5_9PageIndex4file
+  0.07%  _RNvMs0_NtCskNiITKmO1MI_8dlmalloc8dlmallocINtB5_8DlmallocNtNtB7_3sys6SystemE4freeCsfyJ81pLjVxE_10webpc_core
+  0.07%  _RNvMs2_NtNtCsfyJ81pLjVxE_10webpc_core2vm8parallelNtB7_2Vm11publish_cpu
+  0.07%  wasm-to-js-<anonymous>-none
+  0.06%  _RNvNtNtCs1ANigp3HO42_17compiler_builtins3int19specialized_div_rem12u128_div_rem
+  0.06%  jit_exec_span

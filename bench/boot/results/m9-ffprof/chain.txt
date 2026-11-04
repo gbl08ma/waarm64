@@ -1,0 +1,17 @@
+# bench/boot/results/m8-warm/tools/chain.mjs on the dev VM, Node v26.7.0, pad 40 (ns an entry, best of R runs).
+# `node [--no-liftoff] chain.mjs <kind> <N> 40 <F> <R>`; N functions chained in a random order.
+
+# Default flags (Liftoff first), F=64 (imports: modules of 64 consecutive path positions), R=3. At large N the
+# functions may not have tiered up, and F=64 walks contiguous code: superseded by the runs below.
+direct N=1000 21.52     indirect N=1000 22.44     import N=1000 21.34
+direct N=32000 26.51    indirect N=32000 78.82    import N=32000 21.15
+direct N=131072 96.57   indirect N=131072 133.56  import N=131072 21.90
+direct N=262144 102.54  indirect N=262144 142.49  import N=262144 21.53
+
+# --no-liftoff (TurboFan only), F=1 (imports: one function a module, compiled in a random order), R=3.
+direct N=1000 21.61     indirect N=1000 25.07     import N=1000 21.59
+direct N=32000 21.76    indirect N=32000 27.55    import N=32000 20.32
+direct N=131072 50.15   indirect N=131072 84.26   import N=131072 25.06
+
+# The same at N=131072, R=5, twice.
+direct 50.44 / 50.32    indirect 83.85 / 83.62    import 24.42 / 25.08

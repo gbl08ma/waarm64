@@ -3255,3 +3255,77 @@ fix):
 | wiki / bbc load (s, median) | 9.9 / 11.3 | 9.1 / 10.8 | overlap |
 
 Alpine userspace has too few overflows to show: not A/B'd. Kept.
+
+## Where a busy vCPU's time goes in Firefox, again (2026-11-04)
+
+"M8: where a busy vCPU's time goes in Firefox" (2026-10-16) profiled the pages session at ~140 busy MIPS; the JIT,
+the MMU and the run loop have changed much since (~214 busy MIPS unprofiled today). The same profile again to check
+the backlog's CPU, interpreter, JIT and SMP items. The dev VM, Chromium 155.0.8059.84, core `672e9908`; one pages
+session from `target/snapbench/pages.webpcsnap` (4 vCPUs) with `--perf-prof` and `perf record -k mono
+--user-regs=x16,x17,lr` (`results/m9-ffprof/tools/run.sh`); 352 s (336 unprofiled), 181 busy MIPS under the
+profiler. Data, scripts and the microbenchmark's runs in `results/m9-ffprof/` (README).
+
+**The vCPU threads' samples** (478,928; `attr.txt`, the October split's script with perf's map counted as V8 code):
+
+| | 2026-10-16 | now |
+|---|---|---|
+| guest code, the function's first instruction (kernel, user) | 25.8% (15.0, 10.8) | **22.0%** (12.3, 9.7) |
+| guest code, a `call_indirect`'s signature check | 5.3% | 3.0% |
+| guest code, TurboFan bodies (kernel, user) | 22.7% | **30.8%** (14.6, 16.2) |
+| guest code, Liftoff bodies (kernel, user) | 12.9% | 6.3% (1.9, 4.4) |
+| the core: block interpreter | 6.1% | **13.0%** (`hot` alone 9.5%) |
+| the core: dispatcher, misses | 5.6% | 3.5% |
+| the core: helpers (entry and bodies) | 3.8% | 3.7% (`jit_exec_mmu` 1.2%) |
+| the core: TLB misses and walks | 0.8% | 1.6% |
+| the core: compiles and installs | 2.3% | 1.0% |
+| the core: run loop, devices | 0.4% | 0.7% |
+| Chromium (no symbols; no address over 0.2%), vDSO, libc | 10.4% | 11.1% |
+
+**How a function was entered** (`split.txt`): 80% of the entry samples after a `return_call_indirect` (the signature
+in x16, the target in x17), 15% from the dispatcher, 5% other: as in October (83%, 13%). The return address is
+`jit::steps`' in every sample (a chain of tail calls returns there), so it doesn't name the predecessor; the kernel's
+split by target (October: 57% static successors through the jump cache, 32% returns) wasn't redone (it needs the Arch
+kernel's `System.map` and `Image`).
+
+**Over time** (`bytime.txt`, 20 s windows; JIT log `jit.jsonl.gz`): the block interpreter is the page loads' cost and
+the entry stalls are steady state's.
+
+| | page loads (5 windows) | scrolling (5 windows) |
+|---|---|---|
+| block interpreter, of the vCPU samples | 14-16% | 2.7-4.1% |
+| function entries, of the vCPU samples | 21-24% | 27-29% |
+| guest steps interpreted | 2.0-4.0% (8.6-10.3% in the first 40 s) | 0.7-1.0% |
+| instructions decoded / invalidations, a window | 1.4-1.9 M / 580-1,320 | 51-98 K / 17-37 |
+
+Over the session 4.1% of the steps ran in the block interpreter for 13% of the samples: an interpreted step costs
+~3.5× a compiled one, ~4-5× in the loads. The loads bring new code (Firefox's own JIT among it, whose rewrites are the
+invalidations), run interpreted until hot.
+
+**Other counters** (the session's last JIT counters): no JIT flush (132 MB compiled; the session is shorter than
+October's, from the snapshot), the cache's lock waited 1.66 s in all (0.35% of busy vCPU time; 79,718 of 18.6 M
+acquisitions contended), `lagFlushes` 0, one prune (39 ms). Exits: ~5-10K SVCs, ~0.5-1.2K data aborts and ~2-4K
+IRQs a second (the page windows' `exceptions` and `irqs`); at the ~240 ns of an exit's round trip that is ~0.2-0.3% of
+busy vCPU time, the run loop's own functions 0.7% of the samples.
+
+**A direct transfer into cold code** (backlog: "first measure whether a direct tail call into code evicted from the
+caches stalls as much as an indirect one"). October's `chain.mjs` stopped at 32,000 functions, whose hot lines
+(~8 MB) fit the M4's L2. Node v26.7.0, `--no-liftoff`, pad 40, functions chained in a random order (`chain.txt`), ns
+an entry:
+
+| | 1,000 | 32,000 | 131,072 |
+|---|---|---|---|
+| `return_call_indirect`, one table | 25 | 28 | **84** |
+| `return_call`, one module (through V8's jump table) | 22 | 22 | 50 |
+| `return_call` of an import, a module a function, compiled in a random order | 22 | 20 | **25** |
+
+Stable over two more runs at 131,072 (84 / 50 / 25). Without `--no-liftoff` large chains don't tier up (direct 97,
+indirect 134 at 131,072). So in code that doesn't fit the caches the indirect transfer costs ~60 ns more than an
+imported tail call, which stays near its warm cost: there the stall is the transfer's dependent loads (table entry,
+signature, V8's jump table), not fetching the target's code. That disagrees with the reading of "M8: guest calls as
+host calls" (the stall moved to the continuation's code), which was a different change (host calls and returns,
+12-32% more code); the microbenchmark's bodies are small and alike, a browser's aren't.
+
+**What it changes in the backlog**: re-emitting hot regions whose jump-cache tails now lead to compiled code (as
+imported tail calls) is the most promising lever (entries 22% of the samples, 27-29% in steady state); the block
+interpreter's cost in page loads (13% of the samples) is the second; Liftoff's zero-fill (Liftoff's bodies 6.3%), an
+exit's cost, the cache's lock and the 320 MiB budget fell to under 1% each in this session.
