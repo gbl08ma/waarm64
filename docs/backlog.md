@@ -561,6 +561,29 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   on these stages would say what the rest is. Seen beside it: a function-scope `var` declared in a loop came back with
   the last iteration's value on SwiftShader's path, where WGSL zero-initializes it at each declaration (as far as read:
   confirm against the spec, then report to Dawn); the printer no longer relies on either.
+- **Godot on Venus, GD's leftovers** (GD, ended 2026-11-04 for dEQP-VK's next tasks; bench/vulkan/REPORT.md "GD G4",
+  "GD G7–G8"). Godot 4.7.2's editor, its Forward+ and SDFGI scenes and the Global Illumination demo run on the M4 and
+  the user's NVIDIA desktop (the demo at 60 frames/s there), X11 and Wayland. Left, ranked:
+  - **Freezes and black windows on NVIDIA** (the user, 2026-11-04): the GI demo in SDFGI mode freezes the guest's
+    display at times (back when the mode is left), and Godot's window is sometimes black instead of the scene, under
+    Wayland too; no WebGPU error since the last two fixes. All Venus contexts and the compositor share one GPU
+    process, so one program's long frames hold every window: VK4's T20 (what the emulations cost a program's frame)
+    should name the costly paths first; then the render stats' frame and pass times in that mode.
+  - **The device's address buffer** (seen on SwiftShader, `results/gd/g8/gi-editor-swiftshader.json`): every memory
+    allocated with a device address is in one GPUBuffer that doubles by copy (old and new at once), up to
+    `maxStorageBufferBindingSize`; VMA with buffer device addresses gives every block the flag, images' blocks too,
+    whose bytes the driver never uses. The demo's editor grew it to 512 MiB, which SwiftShader's Vulkan refused (the
+    editor black). Placing a memory there only at its first buffer bind would leave images' memory out; the driver
+    says each grow (`wg: the device address buffer grows to N MiB`).
+  - **Godot as a standing workload** (G7's rest): a GFXReconstruct capture of Godot's scene on the dev VM's lavapipe
+    (images/vkframes/build.sh, as vkQuake's; under the Venus profile it takes Mobile: SwiftShader's 16 textures)
+    replayed in tests/page-venus.test.ts; the editor's first start cold and warm on the M4 (bench/vulkan/godot.ts
+    records `firstFrameS`; two runs of one RUNS line in one session: the second has Godot's shader cache and the
+    page's store warm); the first frame was ~35 s (editor) and ~41 s (SDFGI scene) after the start, its pipelines.
+  - **nvidia.sh's `godot` step, not yet run by the user** (`nvidia-bundle.sh --godot`, then `VK2_STEPS=godot
+    bench/vulkan/nvidia.sh page <bundle>`, ~20 min): the bar's NVIDIA half by the harness (the user's hand runs meet it).
+  - **Why one refused bind group froze every window** (the screen-space effects' before the fix): not a held command's
+    throw (`runOp` catches); a test that a refused bind group leaves the compositor alone would say.
 - **What the device advertises, left for the translator** (VK2 L7, VK3 L5; vk/README.md "The shader path"): subgroups
   are WGSL's only where the adapter's have one size (Intel's and AMD's vary: there, subgroups of one invocation; a
   size the shader could ask for would need WebGPU's `subgroup-size-control`, which Chromium has as experimental), in
@@ -1507,7 +1530,7 @@ report it. Nothing has been filed.
   `web/venus-gpu.ts` `subgroupsRight` in a page with `subgroups` requested. Which layer is at fault (Tint's MSL, Metal's
   compiler) is unknown: compare Tint's MSL output with the hand-written MSL. Our workaround: the page holds subgroups
   where the check fails.
-- **Chromium and macOS: one endless compute dispatch from a web page wedges the M4's GPU for good** (GD-HANDOVER.md, GD
+- **Chromium and macOS: one endless compute dispatch from a web page wedges the M4's GPU for good** (GD
   G4; `bench/results/local/godot-mac-g4b`): a dispatch whose loop never ends (Godot's SDFGI light loop, `i < light_count`
   read as 0xffffffff on Chrome for Testing 153.0.8010.12, whose indirect dispatches read clobbered immediates: fixed by
   153's release) kept the GPU at 100% with nothing to stop it. Neither Dawn (no device loss, no watchdog) nor macOS
@@ -1517,6 +1540,14 @@ report it. Nothing has been filed.
   (`bench/vulkan/imm-probe.ts` is the shape, its cap removed); run it only with the user there to
   restart the Mac. Two reports: Chromium (a page shouldn't be able to hang the GPU past a watchdog: Dawn's device loss
   on a timeout) and Apple (processes stuck exiting with their GPU work, and no recovery from it).
+  Tools for a run that may do so (GD G4; not committed, `bench/results/local/godot-tools/`): `loop-cap.py` (the
+  printer: every loop breaks after N iterations of its own; `vk/build.sh` after it, `git checkout
+  vk/compiler/wgsl_print.c` and a rebuild to undo), `stall-guard-worker.diff` (`git apply`: each pass its own command
+  buffer submitted in turn at the submit, its time to done logged, submits halted once one is 3 s late),
+  `gpu-sampler.sh` (the Mac's GPU, load and Chrome's processes every 2 s); never `stall-debug.py` (it submitted passes
+  before their submit's writes). Rules: nothing suspect on the M4 without the cap and the user there; after every Mac
+  run, `bench/gpu/mac-leftovers.sh`; a Mac-only GPU failure is checked on the current Stable and Canary Chrome for
+  Testing before it's taken for ours.
 - **Mesa: X11's same-GPU check fails for a DRM device that isn't on PCI** (vk/README.md "Presentation", the prime
   blit's buffers, shared since GD G7 at the cost of a copy a frame): `wsi_device_matches_drm_fd` (src/vulkan/wsi/wsi_common_drm.c) compares PCI bus info only, so
   on a virtio-mmio virtio-gpu (DRM_BUS_PLATFORM) Venus's device never matches the X server's DRI3 device and every X11

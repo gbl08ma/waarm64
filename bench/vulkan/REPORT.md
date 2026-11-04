@@ -806,8 +806,20 @@ demo failed with out-of-memory errors before the change and opens and runs at 60
 (`gi-editor-swiftshader.json`) Godot leaves Forward+ (16 textures) and the editor stayed black at a wall of ours met
 first, the device's address buffer (every memory allocated with a device address, in one GPUBuffer that doubles by
 copy) growing 256 → 512 MiB, which SwiftShader's Vulkan refused (`vkAllocateMemory failed with
-VK_ERROR_OUT_OF_DEVICE_MEMORY` in Dawn's `CreateBuffer`), every later command using it invalid. GD-HANDOVER.md has
+VK_ERROR_OUT_OF_DEVICE_MEMORY` in Dawn's `CreateBuffer`), every later command using it invalid. docs/backlog.md "Godot on Venus, GD's leftovers" has
 the next steps.
+
+**The screen-space effects.** With SSAO/SSIL on (the demo outside the editor, on NVIDIA), WebGPU refused a bind group,
+an `r8unorm` view where the layout said `rgba8unorm` (a stage declares a written image rgba8; Godot binds an R8 view,
+which native drivers write as the view's format), and the guest's whole display froze until that Godot was killed.
+Such an image now takes a variant for the view's format (vk/README.md "Storage images without a format"; driver test
+89, failing before); on the user's desktop the effects draw and nothing freezes.
+
+**SDFGI over the level.** In SDFGI mode WebGPU refused a bind group: an 8-layer 2D array view (640×640 RGBA16F)
+where a compute stage declares a 2D texture. G4 bound one-layer views so; any such view now binds its base layer, as
+native drivers read it (driver test 90, the user's error before). No error since on the user's desktop; the mode
+still freezes the display at times, and Godot's window is sometimes black (Wayland too): docs/backlog.md "Godot on
+Venus, GD's leftovers", for VK4's T20 first.
 
 ## GD G4: SDFGI's stall on the M4 — Playwright's Chrome 153.0.8010.12 clobbered an indirect dispatch's immediates
 

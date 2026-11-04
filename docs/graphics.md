@@ -628,6 +628,12 @@ parts are described in detail: the renderer's code in [vk/README.md](../vk/READM
 host's side in [devices.md](devices.md) "Venus" and "The host-visible window", the tests in [testing.md](testing.md)
 "dEQP", the loose ends in [backlog.md](backlog.md) ("Platform and devices": the Vulkan entries).
 
+**Programs it runs** beyond the tests' (each found by a track that ran it end to end): vkcube, vkmark, vkQuake, mpv on
+Vulkan with VA-API, GTK4, ANGLE's ES3 and Dawn in the guest's Chromium, vkd3d's tests; and Godot 4.7.2 (GD, 2026-11-03
+to 11-04): its editor, Forward+ and Mobile scenes, SDFGI, and its Global Illumination demo at 60 frames/s on NVIDIA,
+under Wayland and X11 (X11's windows through Mesa's prime blit, vk/README.md "Presentation"). What GD left is in
+backlog.md "Godot on Venus, GD's leftovers"; bench/vulkan/godot.ts and godot-disk.sh run it.
+
 ### The shape
 
 - **The device** (web/gpu.ts, web/venus.ts): virtio-gpu with `CONTEXT_INIT`, `RESOURCE_BLOB`, `HOST_VISIBLE` (a shared

@@ -45,6 +45,17 @@ for (const r of RUNS) {
   await run(asUser(`swaymsg exec 'env ${process.env.GODOT_ENV ?? ''} /mnt/godot/godot --verbose ${args} > /tmp/godot-${r.tag}.log 2>&1; echo godot exit status \\$? >> /tmp/godot-${r.tag}.log'`));
   const t0 = performance.now();
   const shots: string[] = [];
+  // The first frame (GD G7: the editor's start, cold and warm): the first second of the renderer's stats in which a
+  // Vulkan frame reached virgl (`shareRefreshes`: Godot's window is the only Vulkan one), polled before the shots
+  // (those due meanwhile are taken at once after it) and for the run's time at most.
+  let firstFrameS: number | undefined;
+  while (firstFrameS === undefined && performance.now() - t0 < r.runS * 1000) {
+    await page.waitForTimeout(500);
+    const stats = await page.evaluate(() => ((window as unknown as { __renderStats?: unknown[] }).__renderStats ?? []).splice(0)) as { shareRefreshes?: number }[];
+    if (stats.length) appendFileSync(`${out}/render-${r.tag}.jsonl`, stats.map((x) => JSON.stringify({ shot: 0, ...x })).join('\n') + '\n');
+    if (stats.some((x) => (x.shareRefreshes ?? 0) > 0)) firstFrameS = Math.round((performance.now() - t0) / 100) / 10;
+  }
+  log(r.tag, 'first frame', firstFrameS === undefined ? `not within ${r.runS} s` : `${firstFrameS} s`);
   for (let t = SHOT_S; t <= r.runS; t += SHOT_S) {
     await page.waitForTimeout(Math.max(0, t0 + t * 1000 - performance.now()));
     const name = `${r.tag}-${String(t).padStart(3, '0')}s`;
@@ -68,7 +79,7 @@ for (const r of RUNS) {
   // Which display server Godot took (X11 through Xwayland where DISPLAY is set and Xwayland installed, else Wayland:
   // under X11 Mesa's WSI copies each frame into a buffer, the prime blit, GD G7) and its first lines about Vulkan.
   const display = (await run(`grep -m4 -iE 'display (driver|server)|x11|wayland' /tmp/godot-${r.tag}.log | cut -c1-160`)).trim();
-  results[r.tag] = { args, shots, display, errors: godotLog.filter((l) => /ERROR|error|WARNING|Vulkan|Device/.test(l)).slice(-30) };
+  results[r.tag] = { args, firstFrameS, shots, display, errors: godotLog.filter((l) => /ERROR|error|WARNING|Vulkan|Device/.test(l)).slice(-30) };
   save();
 }
 save();
