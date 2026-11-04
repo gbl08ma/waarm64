@@ -22,8 +22,15 @@ windows shown": the page shares the prime blit's buffers); the harness then need
 display driver logged.
 
 **G8 (the GI demo, GD-KICKOFF.md):** its "Couldn't map buffer memory (VkResult error -2)" is
-`VK_ERROR_OUT_OF_DEVICE_MEMORY` at a map; first lead, Venus's host-visible window (256 MiB by default, `VENUS_WINDOW`;
-docs/devices.md "The host-visible window"). The demo's download may need the user (the asset store).
+`VK_ERROR_OUT_OF_DEVICE_MEMORY` at a map. First lead (unconfirmed): host-visible memory lives in the arena and the
+device advertises it as a 1 GiB heap (wg_device.c `WG_HOST_HEAP_SIZE`, device-local and host-visible, like an
+integrated GPU), but a memory's bytes move into Venus's host-visible window while it's mapped (vk/README.md: "a blob's
+map into the window copies its storage there"), and the window is 256 MiB (`VENUS_WINDOW`; docs/devices.md "The
+host-visible window"): like a BAR without ReBAR, it caps what is mapped at once, yet nothing tells the guest. Godot
+(VMA) keeps its host-visible memory mapped for good, so a big scene would pass 256 MiB mapped and the next map fails.
+Check first: the guest's mapped total when it fails. Options: a bigger window (memory 1's 4 GiB shared with the arena
+and node 1's RAM), a mappable heap the window's size beside an unmappable rest (as a GPU without ReBAR reports), or the
+window and the arena as one. The demo's download may need the user (the asset store).
 
 **Next: G7.** Also worth a look there: the first frame comes ~35 s (editor) and ~41 s (SDFGI scene) after Godot
 starts, its pipelines' compile; how much of it the shader store saves on a second start is G7's "cold and warm".
