@@ -22,8 +22,9 @@
 //! Entries carry no ASID: the arrays only ever hold global entries and the
 //! current ASID's non-global (nG) ones. An ASID change or `TLBI ASIDE1` drops
 //! the nG entries alone, found through a list of the slots they were filled
-//! into (`Tlb::ng`), so the kernel's global entries survive context switches
-//! (M6 loop 9: Alpine's boot refilled 3.2M of them after 5,700 whole flushes).
+//! into (`Tlb::ng`), or past its capacity through their marks in `Tlb::blk`,
+//! so the kernel's global entries survive context switches (M6 loop 9:
+//! Alpine's boot refilled 3.2M of them after 5,700 whole flushes).
 //!
 //! A block (a 2 MiB or 1 GiB leaf) is cached as entries for the pages it was
 //! accessed through, and a TLBI by VA must drop all of them: Linux unmaps a
@@ -55,8 +56,14 @@ const DEVICE: u64 = 1 << 11;
 /// Entries an index holds, one per array: six used, a power of two for the
 /// JIT's shift and mask.
 pub const TLB_SLOTS: usize = 8;
-/// Capacity of the nG slot list; past it, dropping the nG entries flushes all.
+/// Capacity of the nG slot list; past it, dropping the nG entries scans
+/// `Tlb::blk` for [`NG`] marks instead.
 const NG_SLOTS: usize = 1024;
+/// In `Tlb::blk`, a slot's mark that it holds an nG entry (above the block
+/// class, bits 2:0).
+const NG: u8 = 0x80;
+/// In `Tlb::blk`, a slot's block class ([`block_class`]; 0 for a page).
+const CLASS: u8 = 7;
 /// Physical address size we advertise (`ID_AA64MMFR0_EL1.PARange` = 40 bits).
 pub const PA_BITS: u32 = 40;
 const OA_MASK: u64 = 0x0000_ffff_ffff_f000;
@@ -129,8 +136,10 @@ pub struct Tlb {
     /// last flush, `ng_len` of them. A slot may since hold another entry:
     /// dropping it then is an over-invalidation, which is always allowed.
     ng: [u32; NG_SLOTS],
-    /// Per slot (`index * TLB_SLOTS + array`): 0 for an entry from a page,
-    /// else its block's class, [`block_class`].
+    /// Per slot (`index * TLB_SLOTS + array`): its entry's block class
+    /// ([`CLASS`]: 0 for an entry from a page, else [`block_class`]) and
+    /// whether it is nG ([`NG`]), what `flush_ng` scans for when `ng`
+    /// overflowed.
     blk: [u8; TLB_ENTRIES * TLB_SLOTS],
     /// Live entries from blocks, by class (minus one).
     nblk: [u32; 4],
@@ -218,17 +227,28 @@ impl Tlb {
     /// Drops every nG entry: the global ones match any ASID.
     pub(crate) fn flush_ng(&mut self) {
         let n = self.ng_len as usize;
-        if n > NG_SLOTS {
-            return self.flush_all();
-        }
         self.stats.flushes += 1;
         for el in 0..2 {
             if core::mem::take(&mut self.xng[el]) {
                 self.bump_el(el);
             }
         }
-        for k in 0..n {
-            self.drop_slot(self.ng[k] as usize);
+        if n <= NG_SLOTS {
+            for k in 0..n {
+                self.drop_slot(self.ng[k] as usize);
+            }
+        } else {
+            // The list overflowed: the marks find every nG slot, eight a word
+            // (128 KiB read, where dropping everything wrote 2.3 MiB and
+            // lost the global entries).
+            for w in 0..self.blk.len() / 8 {
+                let b = &self.blk[w * 8..w * 8 + 8];
+                let mut m = u64::from_le_bytes(b.try_into().unwrap()) & 0x8080_8080_8080_8080;
+                while m != 0 {
+                    self.drop_slot(w * 8 + m.trailing_zeros() as usize / 8);
+                    m &= m - 1;
+                }
+            }
         }
         self.ng_len = 0;
     }
@@ -236,7 +256,7 @@ impl Tlb {
     /// Empties slot `s` (`index * TLB_SLOTS + array`).
     fn drop_slot(&mut self, s: usize) {
         self.e[s / TLB_SLOTS].0[s % TLB_SLOTS] = Entry::default();
-        let k = core::mem::take(&mut self.blk[s]);
+        let k = core::mem::take(&mut self.blk[s]) & CLASS;
         if k != 0 {
             self.nblk[k as usize - 1] -= 1;
         }
@@ -260,6 +280,7 @@ impl Tlb {
             }
         }
         if ng {
+            self.blk[s] |= NG;
             if array % 3 == Use::Exec as usize {
                 self.xng[array / 3] = true;
             }
@@ -361,7 +382,7 @@ impl Tlb {
                 let x = (first + i) & (TLB_ENTRIES - 1);
                 for a in 0..TLB_SLOTS {
                     let s = x * TLB_SLOTS + a;
-                    if self.blk[s] == k && (self.e[x].0[a].tag ^ va) & mask == 0 {
+                    if self.blk[s] & CLASS == k && (self.e[x].0[a].tag ^ va) & mask == 0 {
                         self.drop_slot(s);
                     }
                 }

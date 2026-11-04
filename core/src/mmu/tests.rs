@@ -522,7 +522,7 @@ fn asid_changes_keep_global_entries() {
     p.r.mem.write(0x9000, 8, 1).unwrap();
     p.r.mem.write(0xa000, 8, 2).unwrap();
     p.r.mem.write(0xb000, 8, 3).unwrap();
-    const MANY: u64 = 0x10_0000_0000;
+    const MANY: u64 = 0x10_0001_0000; // TLB indices from 16: clear of 0x1000 and 0x2000
     for i in 0..NG_SLOTS as u64 + 1 {
         p.map(MANY + (i << 12), 3, 0xa000 | PAGE | NG);
     }
@@ -549,12 +549,35 @@ fn asid_changes_keep_global_entries() {
     );
     b.flush_all();
     assert_eq!(b.read(&c, 0x1000, 8), Ok(3));
-    // Past the list's capacity, dropping the nG entries flushes everything.
+    // Past the list's capacity, dropping the nG entries still keeps the
+    // global ones and finds every nG one, the first filled and the last.
+    assert_eq!(b.read(&c, 0x2000, 8), Ok(3));
     for i in 0..NG_SLOTS as u64 + 1 {
-        b.read(&c, MANY + (i << 12), 8).unwrap();
+        assert_eq!(b.read(&c, MANY + (i << 12), 8), Ok(2));
     }
+    let last = MANY + ((NG_SLOTS as u64) << 12);
     p.r.mem.write(l3 + 8, 8, 0x9000 | PAGE).unwrap();
+    p.r.mem.write(l3 + 16, 8, 0x9000 | PAGE | NG).unwrap();
+    for va in [MANY, last] {
+        let mut t = ROOT0;
+        for level in 0..3 {
+            t =
+                p.r.mem
+                    .read(t + 8 * (va >> (39 - 9 * level) & 511), 8)
+                    .unwrap()
+                    & OA_MASK;
+        }
+        p.r.mem
+            .write(t + 8 * (va >> 12 & 511), 8, 0x9000 | PAGE | NG)
+            .unwrap();
+    }
     b.flush_ng();
+    assert_eq!(
+        (b.read(&c, 0x1000, 8), b.read(&c, 0x2000, 8)),
+        (Ok(3), Ok(1))
+    );
+    assert_eq!((b.read(&c, MANY, 8), b.read(&c, last, 8)), (Ok(1), Ok(1)));
+    b.flush_all();
     assert_eq!(b.read(&c, 0x1000, 8), Ok(1));
 }
 

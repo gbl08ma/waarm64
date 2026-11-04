@@ -3229,3 +3229,29 @@ Misses fall 14% (one vCPU) to 30% (four), the process-heavy phases gain 1-3%, no
 larger TLBs in parallel SMP included. **The TLB is 16,384 entries**: +1,634 KiB per vCPU (the `Tlb` 823,040 →
 2,496,256 bytes), the nG list's slots `u32` (16,384 × 8 slots pass 16 bits). A TLBI by VA in a page of a 1 GiB
 block now scans up to 16,384 indices (4,096 before), only while the TLB holds an entry of that class.
+
+## Past the nG list: a scan of nG marks instead of a whole flush (2026-11-04)
+
+The dev VM, Chromium 155.0.8059.84; `bench/gpu/results/p1-ng/`. REVIEW-20261103.md's P1: `Tlb::ng` lists the slots
+of nG fills, up to 1,024 (fills, refills included), and past that an ASID switch or `TLBI ASIDE1` flushed the whole
+TLB, the kernel's global entries with it (2.3 MiB written). The list wasn't resized with the TLB (16,384 entries
+since 2026-11-03, above).
+
+**How often** (a temporary build counting `flush_ng`'s calls and overflows in place of walks and flushes;
+`instr-*.json`): Alpine's boot and userspace phases, 12,429 nG drops, 7 of them overflows. Firefox's pages session
+(4 vCPUs, from `pages.webpcsnap`), each site's 12 s scroll window: 16 (hn) to 80 (wiki) overflows, ~7 a second.
+
+**The fix:** each slot's byte in `Tlb::blk` (block class in bits 2:0) carries an nG mark (bit 7) set at the fill;
+past the list, `flush_ng` reads the 128 KiB of marks eight slots a word and drops only the marked slots.
+
+**A/B, Firefox's pages session from the snapshot**, `bench/gpu/ab.sh`, 3 rounds alternated (`a-*` base, `b-*` the
+fix):
+
+| | base | scan | |
+|---|---|---|---|
+| busy MIPS (rounds) | 204 / 207 / 210 | 214 / 212 / 214 | +3.4% median, no overlap |
+| session wall (s) | 335.7 / 334.4 / 335.5 | 331.4 / 332.9 / 330.5 | -1.2%, no overlap |
+| TLB misses in the scroll windows, wiki / mdn / github / bbc / hn (median, k) | 344 / 246 / 378 / 342 / 164 | 290 / 208 / 299 / 282 / 129 | -16 to -21% |
+| wiki / bbc load (s, median) | 9.9 / 11.3 | 9.1 / 10.8 | overlap |
+
+Alpine userspace has too few overflows to show: not A/B'd. Kept.

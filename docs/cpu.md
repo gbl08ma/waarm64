@@ -256,7 +256,9 @@ The table is `core/src/interp/sys.rs`.
   larger table cut misses 14-30% and the process-heavy phases 1-3% (`bench/boot/REPORT.md` "The TLB at 16,384
   entries"); per-ASID stashes of nG entries and victim buffers measured out there.
 - **ASIDs:** entries hold no ASID. An ASID change or `TLBI ASIDE1` drops only the non-global
-  (nG) entries, tracked in `Tlb::ng` (up to 1024 slots, else a full flush); a change of
+  (nG) entries, tracked in `Tlb::ng` (up to 1024 slots); past that the slots' nG marks in `Tlb::blk` are scanned
+  (128 KiB read, eight slots a word), so the global entries survive a busy process too (a full flush there was ~7 a
+  second in Firefox on 4 vCPUs, 2026-11-04); a change of
   `SCTLR_EL1.M` flushes everything. (Keeping global entries cut Alpine's boot misses 3.61M →
   1.07M.) Per-ASID stashes of nG entries would serve under a sixth of the nG refills (measured out: "The TLB" above).
 - **Blocks:** a 2 MiB or 1 GiB leaf is cached as entries for the pages it was used through, and
