@@ -1503,3 +1503,13 @@ report it. Nothing has been filed.
   `web/venus-gpu.ts` `subgroupsRight` in a page with `subgroups` requested. Which layer is at fault (Tint's MSL, Metal's
   compiler) is unknown: compare Tint's MSL output with the hand-written MSL. Our workaround: the page holds subgroups
   where the check fails.
+- **Chromium and macOS: one endless compute dispatch from a web page wedges the M4's GPU for good** (GD-HANDOVER.md, GD
+  G4; `bench/results/local/godot-mac-g4b`): a dispatch whose loop never ends (Godot's SDFGI light loop, `i < light_count`
+  read as 0xffffffff on Chrome for Testing 153.0.8010.12, whose indirect dispatches read clobbered immediates: fixed by
+  153's release) kept the GPU at 100% with nothing to stop it. Neither Dawn (no device loss, no watchdog) nor macOS
+  (Metal's command buffer timeout) ended the work; the browser's GPU processes stayed in state `E` (exiting), `kill -9`
+  couldn't end them, the Mac throttled (the dev VM's CI with it), and only a restart freed the GPU. Seen on macOS 26.6.2
+  (M4 Mac mini). Repro still to write: a page whose compute shader loops on a bound it reads as huge from a buffer
+  (`bench/results/local/godot-tools/imm-probe.ts` is the shape, its cap removed); run it only with the user there to
+  restart the Mac. Two reports: Chromium (a page shouldn't be able to hang the GPU past a watchdog: Dawn's device loss
+  on a timeout) and Apple (processes stuck exiting with their GPU work, and no recovery from it).

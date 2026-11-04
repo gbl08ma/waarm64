@@ -5,7 +5,7 @@
 # built there with the Mac's own clang (Command Line Tools), and the loader is pointed at the driver by VK_DRIVER_FILES.
 #   bench/vulkan/mac.sh [kosmickrisp|moltenvk] [name]   -> bench/results/local/vk0/<name>/ (one JSON a setting)
 #   bench/vulkan/mac.sh webgpu [name]                     arm 2: bench/vulkan/webgpu.ts in the Mac's headless Chrome for
-#                                                         Testing (Playwright's, with the packages bench/mac-packages.sh
+#                                                         Testing (bench/mac-chrome.sh's, the packages bench/mac-packages.sh
 #                                                         keeps in ~/webpc-gpu-bench); MODES and the rest pass through
 #   bench/vulkan/mac.sh micro [name]                      C, E, F: bench/vulkan/micro.ts (ONLY= one benchmark)
 #   bench/vulkan/mac.sh nir [name]                        VK1 step 1: bench/vulkan/nir/run.ts (Node, Chromium; WASM=, ARMS=)
@@ -24,8 +24,9 @@ if [ "$DRIVER" = micro ]; then
   rsync -a --delete --exclude results bench/vulkan "$HOST:$W/bench/"
   rsync -a bench/stats.ts "$HOST:$W/bench/" && rsync -a bench/spike/page.ts bench/spike/worker.ts bench/spike/benchmarks.ts "$HOST:$W/bench/spike/"
   . bench/mac-packages.sh && mac_packages "$HOST" webpc-gpu-bench
+  . bench/mac-chrome.sh && mac_chrome "$HOST"   # the current Stable Chrome for Testing there
   ssh "$HOST" "cd $W && export PATH=/opt/homebrew/bin:\$PATH && \
-    export CHROMIUM=\"\$(ls -d \$HOME/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/*.app | sort | tail -1)/Contents/MacOS/Google Chrome for Testing\" && \
+    export CHROMIUM=\"$MAC_CHROME\" && \
     mkdir -p results && perl -e 'alarm shift; exec @ARGV' ${MAC_TIMEOUT:-580} node --disable-warning=ExperimentalWarning bench/vulkan/micro.ts results/$NAME.json ${ONLY:+--only $ONLY}"
   mkdir -p bench/results/local/vk0
   rsync -a "$HOST:$W/results/$NAME.json" bench/results/local/vk0/
@@ -41,8 +42,9 @@ if [ "$DRIVER" = nir ]; then
   rsync -a --delete --exclude '*.log' target/vk1/spirv "$HOST:$W/target/vk1/"
   rsync -a "$WASM" "$HOST:$W/$WASM"
   . bench/mac-packages.sh && mac_packages "$HOST" webpc-gpu-bench
+  . bench/mac-chrome.sh && mac_chrome "$HOST"   # the current Stable Chrome for Testing there
   ssh "$HOST" "cd $W && export PATH=/opt/homebrew/bin:\$PATH && \
-    export CHROMIUM=\"\$(ls -d \$HOME/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/*.app | sort | tail -1)/Contents/MacOS/Google Chrome for Testing\" && \
+    export CHROMIUM=\"$MAC_CHROME\" && \
     mkdir -p results && perl -e 'alarm shift; exec @ARGV' ${MAC_TIMEOUT:-580} node --disable-warning=ExperimentalWarning bench/vulkan/nir/run.ts \
       results/$NAME.json --arm ${ARMS:-node,chromium} --reps ${REPS:-5} --wasm $WASM"
   mkdir -p bench/results/local/vk1
@@ -56,9 +58,10 @@ if [ "$DRIVER" = arm3 ]; then
   rsync -a --delete --exclude results bench/vulkan "$HOST:$W/bench/"
   for t in $TRACES; do rsync -a --delete "target/vulkan/captures/$t-trace" "$HOST:$W/target/vulkan/captures/"; done
   . bench/mac-packages.sh && mac_packages "$HOST" webpc-gpu-bench
+  . bench/mac-chrome.sh && mac_chrome "$HOST"   # the current Stable Chrome for Testing there
   list=; for t in $TRACES; do list="$list vulkan/captures/$t-trace"; done
   ssh "$HOST" "cd $W && export PATH=/opt/homebrew/bin:\$PATH && \
-    export CHROMIUM=\"\$(ls -d \$HOME/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/*.app | sort | tail -1)/Contents/MacOS/Google Chrome for Testing\" && \
+    export CHROMIUM=\"$MAC_CHROME\" && \
     rm -rf results/$NAME && WARMUP=${WARMUP:-60} SAMPLES=${SAMPLES:-10} FRAMES=${FRAMES:-60} NO_IMMEDIATES=${NO_IMMEDIATES:-} \
     perl -e 'alarm shift; exec @ARGV' ${MAC_TIMEOUT:-580} node --disable-warning=ExperimentalWarning bench/vulkan/arm3.ts results/$NAME $NAME $list; \
     sw_vers -productVersion > results/$NAME/macos.txt"
@@ -73,8 +76,9 @@ if [ "$DRIVER" = webgpu ]; then
   rsync -a --delete --exclude results bench/vulkan "$HOST:$W/bench/"
   rsync -a target/vulkan/aquarium.pack target/vulkan/scene.wasm "$HOST:$W/target/vulkan/"
   . bench/mac-packages.sh && mac_packages "$HOST" webpc-gpu-bench
+  . bench/mac-chrome.sh && mac_chrome "$HOST"   # the current Stable Chrome for Testing there
   ssh "$HOST" "cd $W && export PATH=/opt/homebrew/bin:\$PATH && \
-    export CHROMIUM=\"\$(ls -d \$HOME/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/*.app | sort | tail -1)/Contents/MacOS/Google Chrome for Testing\" && \
+    export CHROMIUM=\"$MAC_CHROME\" && \
     rm -rf results/$NAME && FISH='${FISH-1 100 1000 10000 30000}' TOOLKIT='${TOOLKIT-2000 8000}' MSAA='${MSAA-1 4}' MODES='${MODES:-storage}' \
     WARMUP=${WARMUP:-60} SAMPLES=${SAMPLES:-10} FRAMES=${FRAMES:-60} GPU_FRAMES=${GPU_FRAMES:-20} \
     perl -e 'alarm shift; exec @ARGV' ${MAC_TIMEOUT:-580} node --disable-warning=ExperimentalWarning bench/vulkan/webgpu.ts results/$NAME $NAME; \

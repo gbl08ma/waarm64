@@ -12,8 +12,9 @@ ssh "$HOST" "mkdir -p $DEST/bench/results/local/video $DEST/tools"
 rsync -a --delete --exclude results bench/video "$HOST:$DEST/bench/"
 rsync -a --delete web "$HOST:$DEST/"
 rsync -a tools/nosme.ts "$HOST:$DEST/tools/"
+. bench/mac-chrome.sh && mac_chrome "$HOST"   # the current Stable Chrome for Testing there
 rsync -a "$CAPTURE" "$HOST:$DEST/bench/results/local/video/capture.vglt"
 rsync -a --checksum "$MD5" "$HOST:$DEST/bench/results/local/video/orig.md5"
 ssh "$HOST" "cd $DEST && export PATH=/opt/homebrew/bin:\$PATH VERBOSE=${VERBOSE:-} REORDER=${REORDER:-} && [ -n \"\$VERBOSE\" ] || unset VERBOSE; [ -n \"\$REORDER\" ] || unset REORDER; \
-  export CHROMIUM=\"\$(ls -d \$HOME/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/*.app | sort | tail -1)/Contents/MacOS/Google Chrome for Testing\" && \
+  export CHROMIUM=\"$MAC_CHROME\" && \
   perl -e 'alarm shift; exec @ARGV' ${MAC_TIMEOUT:-300} node --disable-warning=ExperimentalWarning bench/video/replay.ts bench/results/local/video/capture.vglt $2 bench/results/local/video/orig.md5 ${4:-} ${5:-}"

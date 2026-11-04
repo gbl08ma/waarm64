@@ -16,13 +16,14 @@ ssh "$HOST" "mkdir -p $DEST/bench $DEST/tools $DEST/$CORE $DEST/target/images $D
 rsync -a --delete --exclude results --exclude memory bench/boot bench/interp bench/spike bench/run.ts bench/stats.ts "$HOST:$DEST/bench/"
 # The dev server (Vite: tools/serve.ts) and the packages, installed there (bench/mac-packages.sh).
 . bench/mac-packages.sh && mac_packages "$HOST" "$DEST"
+. bench/mac-chrome.sh && mac_chrome "$HOST"   # the current Stable Chrome for Testing there
 rsync -a --delete web "$HOST:$DEST/"
 rsync -a "${WASM:-$CORE/webpc_core.wasm}" "$HOST:$DEST/$CORE/webpc_core.wasm"
 rsync -a target/images/alpine target/images/alpine-user "$HOST:$DEST/target/images/"
 rsync -a --exclude '*defconfig' --exclude 'System.map' target/images/linux target/images/buildroot "$HOST:$DEST/target/images/"
 rsync -a target/bench/coremark.bin target/bench/coremark-linux "$HOST:$DEST/target/bench/"
 ssh "$HOST" "cd $DEST && export PATH=/opt/homebrew/bin:\$PATH WEBPC_TAILSCALE=0 && \
-  export CHROMIUM=\"\$(ls -d \$HOME/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/*.app | sort | tail -1)/Contents/MacOS/Google Chrome for Testing\" && \
+  export CHROMIUM=\"$MAC_CHROME\" && \
   node --disable-warning=ExperimentalWarning bench/run.ts --out bench/results/local/$name.json $*"
 mkdir -p bench/results/local/mac
 rsync -a "$HOST:$DEST/bench/results/local/$name.json" bench/results/local/mac/

@@ -14,8 +14,11 @@ the x86_64 desktop (which the user needs for other work).
   (`~/.ssh/config`). The `oracle` VM (Debian 13, 4 vCPUs, 4 GiB) shares the Mac:
   `ssh macmini.lan /opt/homebrew/bin/limactl shell oracle <cmd>`.
 - The Mac host runs real-GPU benchmarks from `~/webpc-gpu-bench` (`bench/gpu/sway-mac.sh` copies what they need;
-  nothing is installed there; its disk has little room: keep it small). After every run on the Mac (not the VM's own CI,
-  which can't use its GPU), `bench/gpu/mac-leftovers.sh` says the Mac's GPU utilization, its load and any Playwright Chrome no run owns
+  nothing is installed there; its disk has little room: keep it small). Their browser is the current Stable Chrome
+  for Testing, which `bench/mac-chrome.sh` (every `*-mac.sh` sources it) fetches into `~/webpc-chrome/<version>/` when
+  Stable moves, not Playwright's own download: that lags Stable and is an early build of its milestone (153.0.8010.12
+  read clobbered immediates in indirect dispatches, which 153's release didn't: GD G4). After every run on the Mac (not the VM's own CI,
+  which can't use its GPU), `bench/gpu/mac-leftovers.sh` says the Mac's GPU utilization, its load and any Chrome for Testing no run owns
   (`--kill` ends those, by PID): a run that hangs the GPU leaves its browser behind (the harness's alarm ends node,
   not Chrome), and a GPU held at 100% throttles the whole Mac, the dev VM's CI with it (GD G4: five such browsers made
   CI's timing tests fail for an hour). A GPU process stuck exiting can't be ended: only a restart of the Mac frees it.
@@ -25,7 +28,8 @@ the x86_64 desktop (which the user needs for other work).
 ## Packages
 
 From zypper (add what's missing with `sudo zypper in`, and note it here):
-- Node 26, Chromium 153 (`/usr/bin/chromium`), clang/lld/llvm, qemu (user, system, tools), podman (rootless), dtc,
+- Node 26, Chromium 155 (`/usr/bin/chromium`: Tumbleweed's, the newest Chromium released for Linux arm64 there; keep
+  it current with `sudo zypper in chromium`; Google builds no Chrome for Testing for Linux arm64), clang/lld/llvm, qemu (user, system, tools), podman (rootless), dtc,
   capstone, qemu-uefi-aarch64 (EDK2 for the UEFI oracle), mtools, dosfstools, dejavu-fonts (headless Chromium draws no
   page text without a font: screenshots of the page need it); Rust through rustup and `rust-toolchain.toml`.
 - Graphics: qemu-hw-display-virtio-gpu (QEMU's virtio-gpu device is a separate package) and edid-decode (the graphics

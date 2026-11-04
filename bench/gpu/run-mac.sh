@@ -12,8 +12,9 @@ rsync -a --delete --exclude results --exclude memory bench/gpu bench/spike bench
 rsync -a --delete web "$HOST:$DEST/"   # flush_cost runs the backend itself (web/gpu.ts and what it imports)
 # The dev server (Vite: tools/serve.ts) and the packages, installed there (bench/mac-packages.sh).
 . bench/mac-packages.sh && mac_packages "$HOST" "$DEST"
+. bench/mac-chrome.sh && mac_chrome "$HOST"   # the current Stable Chrome for Testing there
 ssh "$HOST" "cd $DEST && export PATH=/opt/homebrew/bin:\$PATH && \
-  export CHROMIUM=\"\$(ls -d \$HOME/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/*.app | sort | tail -1)/Contents/MacOS/Google Chrome for Testing\" && \
+  export CHROMIUM=\"$MAC_CHROME\" && \
   node --disable-warning=ExperimentalWarning bench/run.ts --page bench/gpu/index.html --chromium-args='--enable-unsafe-webgpu' --out bench/results/local/gpu-mac.json $* && \
   sw_vers -productVersion > bench/results/local/gpu-mac.macos && system_profiler SPDisplaysDataType | grep -E 'Chipset|Metal|Cores' > bench/results/local/gpu-mac.gpu"
 mkdir -p bench/results/local

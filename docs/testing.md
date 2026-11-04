@@ -678,7 +678,7 @@ Lima's `vz` passes no host USB devices through, so the test devices come from th
 The dev VM sees no real USB devices, but the Mac mini that hosts it does. A by-hand check (not a test in any
 `ci-*.sh`; usb.md "Findings") runs the page in a headless Chrome on the Mac, driven from the VM:
 
-- **The browser:** Playwright's Chrome for Testing, already on the Mac (`~/Library/Caches/ms-playwright/chromium-*`),
+- **The browser:** the current Stable Chrome for Testing on the Mac (`~/webpc-chrome/current/`, bench/mac-chrome.sh),
   started over SSH with `--headless=new --remote-debugging-port=9223 --user-data-dir=/tmp/webpc-cft`. It listens on
   the Mac's `127.0.0.1:9223` (with `--remote-debugging-address=127.0.0.1` it took `[::1]`). Start each session
   with a fresh profile (`rm -rf /tmp/webpc-cft` first): a reused one listed none of the policy's devices.

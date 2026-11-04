@@ -1,44 +1,44 @@
 # GD handover
 
-## The SDFGI stall (from G4, open)
+## The SDFGI stall (from G4): cause found, a bug of an early Chrome 153 build
 
-**State.** G4 is done (GD-KICKOFF.md); with it Godot's `sdfgi` scene (bench/vulkan/godot-disk.sh) gets SDFGI's
-pipelines on the M4, and its first frame never finishes: the GPU stays at 100%, the browser's GPU processes can't exit
-(state `E`, `kill -9` doesn't take them) and only a restart of the Mac frees the GPU. One valid run shows it
-(`bench/results/local/godot-mac-g4b`, Chrome's default flags, a clean GPU). Every later M4 run that night (g4c–g4f:
-traces, `vkgputime`, `sdfgi-least`) started on the GPU g4b had wedged and proves nothing. `godot-tools/dispatch-each.ts`
-(each translated compute stage once, on zeroed inputs) finished all 151 on SwiftShader and the M4: weak evidence that
-no stage loops by its code alone.
+**Only Playwright's Chrome.** Every Mac run uses Playwright 1.63's Chrome for Testing 153.0.8010.12 (`chromium-1243`;
+stable was 157 on 2026-11-04). `imm-probe.ts` on Chrome for Testing builds (in `~/webpc-gpu-bench/cft/` on the Mac):
+the clobber shows only on 153.0.8010.12, sandbox on or off; 153.0.8010.52 (153's last), 154.0.8037.92, 155.0.8059.84,
+156.0.8078.80, 157.0.8103.38 (stable) and 159.0.8141.0 (canary) read all twelve words right in all four cases. So a
+real user's Chrome doesn't meet it, and the Mac harness measures a stale, buggy Chrome until it runs a current one.
 
-**A finding of its own.** Web content (our page, WebGPU on by default on macOS) made the M4's GPU run without end, and
-neither Chrome (Dawn's device loss, its watchdog) nor macOS (Metal's timeout) recovered: the GPU processes stuck
-exiting, the Mac throttled (the dev VM's CI with it) until restarted. A small standalone WebGPU page reproducing it
-would be worth a Chromium bug (and Apple's, for processes stuck exiting); filing is the user's call.
+**Cause (2026-11-04).** On the M4, Chrome 153.0.8010.12's WebGPU (Dawn on Metal) gives an **indirect** compute dispatch wrong
+immediates: its first six words (bytes 0–23) read `0xffff 0 1 0 0 0xffffffff`, whatever `setImmediates` set; words 6–11
+come through; a direct dispatch reads all twelve right; `@builtin(num_workgroups)` makes no difference; SwiftShader
+reads them right. Standalone repro: `bench/results/local/godot-tools/imm-probe.ts` (one page, four cases; run on the
+Mac through ssh with `CHROMIUM` set to Playwright's Chrome for Testing, as sway-mac.sh does). Godot's
+`sdfgi_direct_light.glsl` (stage `0xad9bcc4c09…`, dispatched indirectly) loops `for (i = 0; i < params.light_count;
+i++)` with `light_count` its push word 5: it reads 0xffffffff and runs ~4·10⁹ iterations an invocation, which is the
+GPU that never finishes, and then the processes stuck exiting (neither Dawn nor macOS ends the work).
 
-**Rules.** No SDFGI (or other suspect) run on the M4 without a guard against a runaway pass, and none without the user
-there to restart the Mac if it wedges; after any Mac run, `bench/gpu/mac-leftovers.sh` (`--kill` allowed).
+How it was found (runs `bench/results/local/godot-mac-g4g`…`g4o`, each with `.gpusamples`: the GPU every 2 s):
+every printed loop capped (`godot-tools/loop-cap.py`, a printer patch, never committed), every pass its own submit
+with a halt after 3 s (`stall-guard-worker.diff`); SDFGI then draws right on the M4 (box, plane, GI shadow) with one
+pass, that stage, at 12 ms a frame; a 16× cap made it 115 ms; caps per loop (only loop 6, the shadow march: no change;
+loops 0–4: all of it; loop 4 alone: all of it) gave the light loop; logged immediates (`light_count` 1) and indirect
+arguments (1–59 workgroups) were right on the page's side, so the probe followed. The Mac recovered on its own from
+every run (the GPU back to 0% as Chrome closed): with the cap, the runaway pass ends.
 
-**Tried on the dev VM (2026-11-04).** Chromium's WebGPU can't run on lavapipe here: Dawn finds it (`chrome://gpu`:
-"llvmpipe … Blocklisted - crbug.com/40057808: CPU adapters not fully tested or conformant") and hands out SwiftShader
-whatever the switches (`--use-vulkan=native`, `--use-webgpu-adapter=default`, `forceFallbackAdapter`,
-`--disable-dawn-features=use_blocklist`), so the page can't get the M4's limits (48 textures, 8 storage textures) and
-SDFGI's pipelines can't run on the page here. `dispatch-each.ts` with adversarial inputs (`FILL=ones|nan|big`: every
-buffer word and sampled texel `0xffffffff`, a NaN, or 1e30) runs 2, 7 and 9 stages past 15 s on one workgroup (none on
-zeros); the ones read are bounded by a count from a buffer (volumetric fog's `0x8b27729f8e…`: `i >= params[0x38]`
-compared signed, ~2·10⁹ with those fills), so long on bad data natively too: such a test can't tell a translation bug
-from a count read wrong, but shows that a "never-ending" stall can be a count read wrong (candidate 1 below). The two
-big SDFGI-like stages (`0x9ba24f3b3f…`, `0xb1ba74114c…`: 9–10 3D textures, 4 3D storage images) ran past 15 s only on
-`big`. Tools in `bench/results/local/godot-tools/` (`dispatch-each.ts`, `adapter-probe.ts`, `gpu-page.ts`).
+**Not this cause:** the translation (all ten loops of the stage are bounded by constants or push words, no
+`continue` skips an increment), the push constants the worker sets, the indirect counts, the shadow march.
+
+**Unsound tool, don't reuse:** `godot-tools/stall-debug.py` submitted each compute pass as it ended, before the writes
+(`gpu_write`'s `queue.writeBuffer`) the rest of its submit makes: 45 driver tests fail with it. The worker diff above
+keeps each pass's command buffer and submits them in turn at the submit (135/135 pass).
+
+**Rules.** Nothing suspect on the M4 without a guard (the loop cap) and the user there; after any Mac run,
+`bench/gpu/mac-leftovers.sh`.
 
 **Next.**
-1. Find the pass that doesn't end. The page on the dev VM can't run SDFGI's pipelines (above), so either:
-   a. a guard first: a dev knob that caps every translated loop's iterations (the printer's loops; past the cap, break
-      and count it), then one M4 run with each compute pass submitted alone and logged
-      (`bench/results/local/godot-tools/stall-debug.py` patches web/venus-gpu.ts for that: `dbgsub`/`dbgdone`, never
-      committed); with the user there, since a run without the cap needs a Mac restart; or
-   b. a capture of SDFGI's frame (GFXReconstruct natively on lavapipe through the Mac profile, as G7 plans), its
-      counts and indirect arguments read at each dispatch natively (the oracle), against what our replay computes.
-2. Reduce it to a standalone page: that pass's shader and its inputs dumped from the frame.
-3. Then the cause. Candidates, none ranked: a GPU-made count or index read stale (usage-scope shadows, alias or words
-   copies), a NaN in a march that exits only by `break` (ordered vs unordered compares, Metal's fast math), an
-   out-of-bounds `textureLoad` where Vulkan's robustness gives 0, a loop bound compared with the wrong signedness.
+1. The Mac harness now runs the current Stable Chrome for Testing (bench/mac-chrome.sh; 157.0.8103.38 on 2026-11-04,
+   Godot's Forward+ scene checked on it: `godot-mac-cft157`). Next: SDFGI on it with the loop cap (the direct-light
+   pass should drop from ~12 ms a frame), and only then without it, the user there.
+2. No driver workaround needed for the immediates (fixed in Chrome itself); no Chromium bug to file for it. The other
+   finding stands: an endless dispatch wedges the M4's GPU past Dawn's and macOS's recovery (filing is the user's call).
+3. Whether a loop cap belongs in the translator for good (a page that hangs the GPU takes the Mac with it): backlog.
