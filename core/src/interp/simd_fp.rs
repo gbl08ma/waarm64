@@ -11,6 +11,8 @@ use crate::decode::Op;
 use crate::fp::{self, D, Fmt, Fpu, H, Rounding, S};
 use core::cmp::Ordering;
 
+/// The handler for an AdvSIMD FP class, if `op` is one (inlined: `simd_int::handler`).
+#[inline(always)]
 pub(super) fn handler(op: Op) -> Option<fn(&mut Cpu, u32) -> R> {
     use Op::*;
     Some(match op {

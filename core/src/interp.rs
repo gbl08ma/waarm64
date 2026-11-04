@@ -145,7 +145,12 @@ pub(crate) fn step_bus(cpu: &mut Cpu, m: &mut impl Bus) -> R {
 /// The JIT's per-instruction helpers call this too (`jit::jit_exec_flat`).
 #[inline(always)]
 pub(crate) fn exec_at(cpu: &mut Cpu, m: &mut impl Bus, insn: u32, pc: u64) -> R {
-    cpu_pc_then(cpu, pc, |c| exec(c, m, insn, pc))
+    // A direct call, not a closure: LLVM sizes a closure on its own, and once
+    // the instruction set's code outgrew its threshold it stopped inlining
+    // `exec` here, a call per instruction (the FP guest −28%, REVIEW P3).
+    cpu.pc = pc.wrapping_add(4);
+    let r = exec(cpu, m, insn, pc);
+    pc_back(cpu, pc, r)
 }
 
 /// Runs up to `n` instructions; returns how many retired and why it stopped early.
@@ -428,6 +433,8 @@ fn shift(v: u64, ty: u32, amt: u32, sf: bool) -> u64 {
 }
 
 /// ExtendReg: UXTB..SXTX by `option`, then shifted left by `amt` (≤ 4).
+/// Always inlined: on the step loop's integer path (REVIEW P3).
+#[inline(always)]
 fn extend(v: u64, option: u32, amt: u32) -> u64 {
     let v = match option {
         0 => v as u8 as u64,
@@ -497,15 +504,15 @@ fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64) -> R {
 /// block interpreter's generic micro-op.
 #[inline(never)]
 pub(crate) fn exec_at_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
-    cpu_pc_then(c, pc, |c| exec_op(c, m, i, pc, op))
+    c.pc = pc.wrapping_add(4);
+    let r = exec_op(c, m, i, pc, op);
+    pc_back(c, pc, r)
 }
 
-/// Sets the PC past the instruction at `pc`, runs `f`, and puts the PC back
-/// on it if it didn't retire (as [`exec_at`]).
+/// After an instruction at `pc` ran with the PC set past it: puts the PC back
+/// on it if it didn't retire (as [`exec_at`]), and passes `r` on.
 #[inline(always)]
-fn cpu_pc_then(c: &mut Cpu, pc: u64, f: impl FnOnce(&mut Cpu) -> R) -> R {
-    c.pc = pc.wrapping_add(4);
-    let r = f(c);
+fn pc_back(c: &mut Cpu, pc: u64, r: R) -> R {
     if let Err(e) = r
         && !e.retired()
     {
@@ -984,13 +991,18 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
             simd_int::three_diff(c, i)?
         }
         // AdvSIMD integer and FP; EL1 system instructions (M3) are still unimplemented.
-        _ => match simd_int::handler(op).or_else(|| simd_fp::handler(op)) {
-            Some(f) => {
-                fp_enabled(c)?;
-                f(c, i)?
-            }
-            None => return Err(Exit::Unimplemented(op)),
-        },
+        _ => {
+            // A match, not `or_else`: no closure for LLVM to leave out of line.
+            let f = match simd_int::handler(op) {
+                None => simd_fp::handler(op),
+                f => f,
+            };
+            let Some(f) = f else {
+                return Err(Exit::Unimplemented(op));
+            };
+            fp_enabled(c)?;
+            f(c, i)?
+        }
     }
     Ok(())
 }

@@ -168,7 +168,10 @@ fn post_index(c: &mut Cpu, i: u32, base: u64, total: u64) {
     }
 }
 
-/// LD1–LD4 / ST1–ST4 (multiple structures).
+/// LD1–LD4 / ST1–ST4 (multiple structures). Out of line, as
+/// [`single_structure`]: rare, and kept out of `exec`'s copies (measured
+/// neutral either way: docs/cpu.md "The block interpreter").
+#[inline(never)]
 fn multiple(c: &mut Cpu, m: &mut impl Bus, i: u32) -> R {
     let (q, load_, size) = (bit(i, 30), bit(i, 22), bits(i, 11, 10));
     let (rpt, selem) = match bits(i, 15, 12) {
@@ -316,6 +319,7 @@ fn interleave<const E: usize>(buf: &mut [u8], lanes: &mut [[u8; 16]], load_: boo
 }
 
 /// LD1–LD4 / ST1–ST4 (single structure) and LD1R–LD4R.
+#[inline(never)]
 fn single_structure(c: &mut Cpu, m: &mut impl Bus, i: u32) -> R {
     let (q, load_, s, size) = (bit(i, 30), bit(i, 22), bit(i, 12), bits(i, 11, 10));
     let opcode = bits(i, 15, 13);

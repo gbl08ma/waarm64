@@ -103,7 +103,10 @@ fn need(ok: bool) -> R {
     if ok { Ok(()) } else { Err(Exit::Undefined) }
 }
 
-/// The handler for an integer AdvSIMD class, if `op` is one.
+/// The handler for an integer AdvSIMD class, if `op` is one. Always inlined,
+/// as `simd_fp::handler`: in `exec_op` the two are one table on `op`, where
+/// LLVM's heuristic once made them calls (the FP guest −4%, REVIEW P3).
+#[inline(always)]
 pub(super) fn handler(op: Op) -> Option<fn(&mut Cpu, u32) -> R> {
     use Op::*;
     Some(match op {

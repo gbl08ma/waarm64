@@ -401,6 +401,18 @@ dispatcher hasn't compiled (`jit::steps`; [jit.md](jit.md) "Dispatch"): every bl
 `threshold` times, and natively everything (no wasm engine), so the native boots with `jit` ≠ 0
 test it against `tests/steps.txt`.
 
+**The reference interpreter's speed rests on LLVM's inlining**: `exec` (the decode and the big match) must be
+inlined into `steps`' loop and the JIT's per-instruction helpers (`jit_exec_flat`, `_mmu`), or each instruction
+pays a call. A closure, a small `or_else` or a helper like `extend` left to LLVM's size heuristic can go out of
+line when unrelated code grows: REVIEW-20261103's P3 (the structure loads' fast path) did that to `exec_at`'s
+closure (the FP guest −28%), then to `simd_int::handler`'s and `simd_fp::handler`'s lookup and `extend` (−4% more).
+Those are now direct calls and `#[inline(always)]`. To check a change: strip the wasm's debug sections
+(`wasm-tools strip -d '.debug.*'`), `wasm-tools print` it and compare the functions the step loop
+(`interp::steps::go::<Flat>`) calls, and its size, with the base's. LLVM's attribute inference can also reshape
+the loop with no inlining change: P3's `multiple` (its slow path's shape, even with the fast path dead or out of
+line) made `ldst_fp::exec`'s result `initializes((0, 1))`, and the loop reads the `Exit` in bytes: `interp_mips`
+−0.6 to −1.1% in three sessions, the other benchmarks flat, kept (`bench/interp/REPORT.md` "REVIEW P3 and P4").
+
 - **A block is the JIT's** (`jit::block::form`, the same key: PA and regime bits), decoded once into
   8-byte micro-ops with their operand fields pulled out and kept in the vCPU table's cache: a kind, three
   register bytes and a `u32` that holds the kind's flags and immediate (`interp::block::pack` says what goes where
