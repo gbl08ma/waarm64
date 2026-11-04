@@ -18,12 +18,26 @@ would be worth a Chromium bug (and Apple's, for processes stuck exiting); filing
 **Rules.** No SDFGI (or other suspect) run on the M4 without a guard against a runaway pass, and none without the user
 there to restart the Mac if it wedges; after any Mac run, `bench/gpu/mac-leftovers.sh` (`--kill` allowed).
 
+**Tried on the dev VM (2026-11-04).** Chromium's WebGPU can't run on lavapipe here: Dawn finds it (`chrome://gpu`:
+"llvmpipe … Blocklisted - crbug.com/40057808: CPU adapters not fully tested or conformant") and hands out SwiftShader
+whatever the switches (`--use-vulkan=native`, `--use-webgpu-adapter=default`, `forceFallbackAdapter`,
+`--disable-dawn-features=use_blocklist`), so the page can't get the M4's limits (48 textures, 8 storage textures) and
+SDFGI's pipelines can't run on the page here. `dispatch-each.ts` with adversarial inputs (`FILL=ones|nan|big`: every
+buffer word and sampled texel `0xffffffff`, a NaN, or 1e30) runs 2, 7 and 9 stages past 15 s on one workgroup (none on
+zeros); the ones read are bounded by a count from a buffer (volumetric fog's `0x8b27729f8e…`: `i >= params[0x38]`
+compared signed, ~2·10⁹ with those fills), so long on bad data natively too: such a test can't tell a translation bug
+from a count read wrong, but shows that a "never-ending" stall can be a count read wrong (candidate 1 below). The two
+big SDFGI-like stages (`0x9ba24f3b3f…`, `0xb1ba74114c…`: 9–10 3D textures, 4 3D storage images) ran past 15 s only on
+`big`. Tools in `bench/results/local/godot-tools/` (`dispatch-each.ts`, `adapter-probe.ts`, `gpu-page.ts`).
+
 **Next.**
-1. Find the pass that doesn't end, on the dev VM, where a runaway pass kills only its process: SwiftShader's limits
-   (16 textures a stage) keep Godot off Forward+, so replay SDFGI's real frame from a capture (GFXReconstruct on
-   lavapipe, as G7 plans) with each compute pass submitted alone and logged
-   (`bench/results/local/godot-tools/stall-debug.py` patches web/venus-gpu.ts for that: `dbgsub`/`dbgdone`, never
-   committed).
+1. Find the pass that doesn't end. The page on the dev VM can't run SDFGI's pipelines (above), so either:
+   a. a guard first: a dev knob that caps every translated loop's iterations (the printer's loops; past the cap, break
+      and count it), then one M4 run with each compute pass submitted alone and logged
+      (`bench/results/local/godot-tools/stall-debug.py` patches web/venus-gpu.ts for that: `dbgsub`/`dbgdone`, never
+      committed); with the user there, since a run without the cap needs a Mac restart; or
+   b. a capture of SDFGI's frame (GFXReconstruct natively on lavapipe through the Mac profile, as G7 plans), its
+      counts and indirect arguments read at each dispatch natively (the oracle), against what our replay computes.
 2. Reduce it to a standalone page: that pass's shader and its inputs dumped from the frame.
 3. Then the cause. Candidates, none ranked: a GPU-made count or index read stale (usage-scope shadows, alias or words
    copies), a NaN in a march that exits only by `break` (ordered vs unordered compares, Metal's fast math), an
