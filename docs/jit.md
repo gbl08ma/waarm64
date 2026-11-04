@@ -242,7 +242,8 @@ the interpreter's own code.
   instructions in user space) probe the vCPU's **transfer cache** (`mmu::Tlb::xc`, QEMU's
   `tb_jmp_cache`): 16,384 direct-mapped entries by VA bits 15:2 of {VA | regime bits, table index
   | length << 32 | generation << 48}, one probe where the instruction TLB and then the jump cache
-  were two (`emit::indirect`). The dispatcher fills an entry when it enters a block. A miss
+  were two (`emit::indirect`; a BR's, BLR's or RET's target comes from the branch's local, not a load of
+  the PC it stored: V8 doesn't forward the store). The dispatcher fills an entry when it enters a block. A miss
   tail-calls the cache's **miss function** for the EL (`emit::xmiss`, with the block retired),
   which does the old lookup (instruction TLB, jump cache), fills the entry and tail-calls the
   target, or returns to the dispatcher. The two miss functions are one module per cache in table
@@ -378,7 +379,8 @@ its jump cache and hot words, its helper counts and its counters.
   vCPU), and logs the page for the tables' decoded blocks (`Cache::ival_log`, every IC, since a
   flush leaves decoded blocks the cache has no keys for); each table drops them from its jump
   cache and its decoded blocks when it catches up (`Cache::tables`: the keys
-  dropped since, or all of it past 4,096). The broadcast drains don't touch the JIT any more. Until
+  dropped since, or all of it past 4,096). The keys an IC drops (the page's and their linkers') go to the
+  tables and out of the pending batch once, not once a key. The broadcast drains don't touch the JIT any more. Until
   its table catches up a vCPU may run a dropped block, the window the tolerant cache allowed already.
 - **Tier-up across tables:** a head redirects in each table on its own, when it gets hot there
   (`Cache::tiers`); a member's hot word that a region quiets keeps its redirect if it has one
@@ -491,7 +493,8 @@ running it out traps the machine. Everything the JIT keeps there is bounded:
   host (the allocation error hook, `diag`: `handle_alloc_error` skips the panic hook, so the crash above came with
   no message); `tests/heap.test.ts` runs one out through `heap_probe` (ABI 50) on the exact core and the growable one.
 - **The block map's page index** (`PageIndex`, for `IC IVAU`): a page's own keys by their low 12 bits (offset and
-  regime bits; the page is the rest), 2 bytes a key, and the regions filed under a page other than their head's by
+  regime bits; the page is the rest; a key is filed once, though an IC of another page that dropped it as a linker
+  leaves it in its list), 2 bytes a key, and the regions filed under a page other than their head's by
   the head's whole key. Its byte count is exact (the lists' capacities, the tables, 8 bytes of allocator a list). It
   held whole keys before (8 bytes a key, a list's smallest allocation 32 bytes): tests/heap.test.ts's guest, 1024 keys
   a page, 0.9 M keys: the heap's live bytes 86 → 81 MiB, its mark 111 → 106 MiB; Firefox's pages session, 1.45 M
@@ -640,7 +643,8 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   whose edges disagree is emitted again with flags in memory.
 - **The PC on the way out:** a block whose successors are all members doesn't store the next PC
   (`Func::defer_pc`; a conditional branch keeps its outcome in `TAKEN`); only the exit paths do.
-- **Integer:** MOVZ/N/K, ADR/ADRP, ADD/SUB (all forms, S or not), ADC/SBC(S), logical, bitfield
+- **Integer:** MOVZ/N/K, ADR/ADRP (ADRP's page is the entry PC plus a constant, `Func::page`: a
+  function runs at any VA of its PA, and a VA keeps the PA's page offset), ADD/SUB (all forms, S or not), ADC/SBC(S), logical, bitfield
   moves and aliases, EXTR, variable shifts, CSEL & co, CCMP/CCMN, MADD/MSUB and the long
   multiplies, SMULH/UMULH (from 32-bit halves: wasm has no wide multiply), UDIV/SDIV (with `if`s
   where wasm traps), REV*/RBIT/CLZ/CLS, all branches, the NOP hints. 32-bit forms run on i32 and
@@ -881,7 +885,9 @@ interpreter's; the helper runs the instruction otherwise.
     there's no upper bound to test. That needs the round to odd's inexact test to be |e| > 0, not
     e ≠ 0: an infinite sum has a NaN error, and stepping ∞'s bits toward a NaN's sign (the host's:
     negative on x86-64) gave the largest finite double. The vector form is the same on f64x2 (its five v128 scratch locals don't hold both
-    splits, so the low halves are recomputed from the operands); the scalar form uses eight f64
+    splits, so the low halves are recomputed from the operands; by element, the factor's shuffle is
+    made once into a local for the product and once for the guard: V8 doesn't merge repeated shuffles, which
+    were five `dup`s an `FMLA Vd.2D, Vn.2D, Vm.D[i]` in TurboFan's code); the scalar form uses eight f64
     scratch locals (`FT`).
   - *Emulation's guard:* FPOK, a fast result (vector single: also an exact zero from a zero product and
     addend); doubles: the factors' test above. No midpoint or binade cases fall back. The single midpoint test
@@ -945,7 +951,9 @@ interpreter's; the helper runs the instruction otherwise.
   (`fallback_with`'s hook). FCCMP/FCCMPE store NZCV (an immediate like 0100 has no SUBS form); their
   helper path stores the lazy flags first, as the helper reads them.
 - **FMAX/FMIN/FMAXNM/FMINNM** (scalar and vector): wasm's `max`/`min` with zero, normal or infinite
-  operands (no NaN: then FMAXNM is FMAX), which order -0 below +0 as ARM does; no flags, no FPOK.
+  operands (no NaN: then FMAXNM is FMAX), which order -0 below +0 as ARM does; no flags, no FPOK. The
+  vector forms test the result for NaN lanes (wasm's `min`/`max` give a NaN where either operand is one),
+  and under FZ both operands for denormals, in one branch.
   The pairwise forms (FADDP, FMAXP … on Vm:Vn, and the scalar pairs) shuffle the even and the odd
   lanes side by side and take the lane rules; FMAXV/FMINV/FMAXNMV/FMINNMV reduce lanes 0 and 1
   against 2 and 3, then the two (without NaNs the order doesn't matter).

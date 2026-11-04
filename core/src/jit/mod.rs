@@ -848,19 +848,26 @@ impl Cache {
         } else if let Some(mut keys) = self.pages.take(pa >> 12) {
             // With the blocks that chain to them, transitively: their code
             // calls the dropped functions directly.
+            let mut gone = Vec::with_capacity(keys.len());
             while let Some(k) = keys.pop() {
                 self.map.remove(&k);
                 self.spans.remove(&k);
                 self.tiers.remove(&k);
-                for t in self.tables.iter_mut().filter(|t| !t.all) {
-                    if t.dropped.len() < JC / 16 {
-                        t.dropped.push(k);
-                    } else {
-                        (t.all, t.dropped) = (true, Vec::new());
-                    }
-                }
-                self.pending.retain(|p| p.0 != k);
+                gone.push(k);
                 keys.extend(self.linkers.remove(&k).unwrap_or_default());
+            }
+            // Then the tables and the pending batch once, not once a key.
+            gone.sort_unstable();
+            gone.dedup();
+            for t in self.tables.iter_mut().filter(|t| !t.all) {
+                if t.dropped.len() + gone.len() <= JC / 16 {
+                    t.dropped.extend_from_slice(&gone);
+                } else {
+                    (t.all, t.dropped) = (true, Vec::new());
+                }
+            }
+            if !self.pending.is_empty() {
+                self.pending.retain(|p| gone.binary_search(&p.0).is_err());
             }
         } else {
             return;
@@ -2022,9 +2029,14 @@ impl PageIndex {
     /// Files a new key under its page.
     fn file(&mut self, key: u64) {
         let l = self.own.entry(key >> 12).or_default();
-        let cap = l.capacity();
-        l.push((key & 0xfff) as u16);
-        self.lists += 2 * (l.capacity() - cap) as u64;
+        // A key back after an IC of another page dropped it (as a linker) is
+        // still in its page's list.
+        let o = (key & 0xfff) as u16;
+        if !l.contains(&o) {
+            let cap = l.capacity();
+            l.push(o);
+            self.lists += 2 * (l.capacity() - cap) as u64;
+        }
     }
 
     /// Files a region's head under another page the region covers.
@@ -2876,6 +2888,32 @@ mod tests {
         assert_eq!(want, (301, Err(Exit::Brk(0))));
         let cache = v.jit.cache.as_deref().unwrap().cache.lock();
         assert!(cache.off && cache.map.len() == 3); // mov, the loop, brk
+    }
+
+    /// An IC drops a page's keys and their linkers from the pending batch and
+    /// keeps the rest; a linker it dropped from another page is filed there
+    /// once when it comes back (it was still in that page's list).
+    #[test]
+    fn invalidation_keeps_other_pending_keys_and_refiles_a_linker_once() {
+        let mut c = Cache::new(Config::DEFAULT);
+        let mut t = Table::new(&mut c);
+        let s = &mut Stats::default();
+        for k in [0x1000, 0x1008, 0x3000, 0x3010, 0x5000] {
+            c.info(k, || 1);
+            t.fill(k, 7, 1);
+        }
+        c.linkers.insert(0x1000, vec![0x3000, 0x3010]);
+        c.linkers.insert(0x1008, vec![0x3000]);
+        c.pending = vec![(0x5000, 0), (0x3010, 0), (0x1008, 0), (0x5004, 0)];
+        c.invalidate(0x1000, s);
+        assert_eq!(c.pending, [(0x5000, 0), (0x5004, 0)]);
+        assert_eq!(c.map.keys().copied().collect::<Vec<_>>(), [0x5000]);
+        let mut dropped = c.tables[t.id].dropped.clone();
+        dropped.sort();
+        assert_eq!(dropped, [0x1000, 0x1008, 0x3000, 0x3010], "once each");
+        c.info(0x3000, || 1);
+        c.info(0x3010, || 1);
+        assert_eq!(c.pages.own[&3], [0, 0x10]);
     }
 
     /// Invalidation drops the blocks from the cache at once, and from each

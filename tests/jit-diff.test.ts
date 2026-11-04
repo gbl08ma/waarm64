@@ -38,6 +38,7 @@ type Exports = {
 /** Instruction classes: fixed bits (mask, value) over random words. */
 const CLASSES: Record<string, [number, number]> = {
   'data processing, immediate': [0x1c000000, 0x10000000], // op0 100x
+  'PC-relative (ADR, ADRP)': [0x1f000000, 0x10000000], // in ALU: ADRP in a region's later members, its page from the entry's
   'data processing, register': [0x0e000000, 0x0a000000], // op0 x101
   branches: [0x1c000000, 0x14000000], // op0 101x
   // Narrower, for the flag and operand edge cases.
@@ -626,6 +627,10 @@ const FP_EDGES: [string, number, bigint[]][] = [
   ['w fmla v0.2d (denormal factor)', 0x4e62cc20, [f64bits(1), f64bits(2 ** -1060), f64bits(2 ** 1000)]],
   ['w fmla v0.2d (split overflows)', 0x4e62cc20, [f64bits(1), f64bits(1.5 * 2 ** 1000), f64bits(2 ** -500)]],
   ['w fmla v0.2d (Dekker product overflows)', 0x4e62cc20, [f64bits(-(2 ** 30 - 1) * 2 ** 994), f64bits((2 - 2 ** -30) * 2 ** 992), f64bits((2 - 2 ** -30) * 2 ** 30)]],
+  // By element: the guard's factor is the element (Vm.D[1], the same value in both lanes here).
+  ['w fmla v0.2d, v1.2d, v2.d[1] (product 2^-901)', 0x4fc21820, [f64bits(2 ** -848 + 2 ** -900), f64bits(-(2 ** -451) * (1 + 2 ** -30)), f64bits(2 ** -450 * (1 - 2 ** -30))]],
+  ['w fmla v0.2d, v1.2d, v2.d[1] (zero factor)', 0x4fc21820, [f64bits(1), f64bits(1.5), 1n << 63n]],
+  ['w fmla v0.2d, v1.2d, v2.d[1] (denormal factor)', 0x4fc21820, [f64bits(1), f64bits(2 ** 1000), f64bits(2 ** -1060)]],
   ['w fmla v0.2d (exact zero)', 0x4e62cc20, [f64bits(-3), f64bits(1.5), f64bits(2)]],
   // A 64-bit source rounded by one: 2^64 - 1 becomes 2^63, past any signed compare.
   ['uqrshrn s0, d1, #1 (2^64 - 1)', 0x7f3f9c20, [0n, (1n << 64n) - 1n]],
@@ -779,7 +784,7 @@ const VHELPERS = [
 ];
 const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 1 source', 'FP data processing, 2 sources', 'FP data processing, 3 sources', 'FP and general register moves, conversions', 'FP compare', 'FP conditional compare', 'FP conditional select', 'FJCVTZS', 'FRINTTS', 'AdvSIMD FP FRINTTS', 'AdvSIMD DotProd', 'AdvSIMD DotProd by element', 'conditional select', 'conditional compare'].map((n) => CLASSES[n]);
 const VMEM = ['SIMD&FP load/store, unsigned offset', 'SIMD&FP load/store pair', 'AdvSIMD load/store multiple structures', 'AdvSIMD load/store single structure'].map((n) => MEMORY[n]);
-const ALU = ['add/sub, immediate', 'add/sub, shifted and extended register', 'add/sub with carry', 'logical, immediate', 'logical, shifted register', 'bitfield, 64-bit', 'bitfield, 32-bit', 'variable shifts', 'conditional select', 'conditional compare', 'multiply-add', 'data processing, register'].map((n) => CLASSES[n]);
+const ALU = ['PC-relative (ADR, ADRP)', 'add/sub, immediate', 'add/sub, shifted and extended register', 'add/sub with carry', 'logical, immediate', 'logical, shifted register', 'bitfield, 64-bit', 'bitfield, 32-bit', 'variable shifts', 'conditional select', 'conditional compare', 'multiply-add', 'data processing, register'].map((n) => CLASSES[n]);
 const LAST = ['conditional branch', 'compare and branch', 'test and branch', 'branch to register'].map((n) => CLASSES[n]);
 const SEQUENCES: Record<string, { pool: [number, number][]; helpers: boolean; aes?: boolean; sha?: boolean; vec?: boolean }> = {
   'ALU, flags and conditions': { pool: ALU, helpers: false },

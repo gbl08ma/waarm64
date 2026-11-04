@@ -1,0 +1,338 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-11-04T17:30:41.766Z",
+ "commit": "a079ec66ca0c",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 18
+ },
+ "browser": {
+  "version": "155.0.8059.84",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "jit_coremark_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "CoreMark 2K performance run (bench/interp/build-coremark.sh)",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.007,
+     "avgBlock": 104.73,
+     "interpretedPct": 26.186,
+     "blocks": 57,
+     "modules": 4,
+     "bytes": 38784,
+     "compileMs": 1.41,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 8,
+     "flagsStored": 65,
+     "condDirect": 60,
+     "condComputed": 5,
+     "condMemory": 0,
+     "blocksPerRegion": 1.67,
+     "backEdges": 17,
+     "tierUps": 6
+    }
+   },
+   "samples": [
+    73.09941520627086
+   ],
+   "median": 73.09941520627086,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "jit_coremark_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "CoreMark 2K performance run (bench/interp/build-coremark.sh)",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0.0001,
+     "avgBlock": 10174.53,
+     "interpretedPct": 0.117,
+     "blocks": 37,
+     "modules": 2,
+     "bytes": 34256,
+     "compileMs": 0.46,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 53,
+     "flagsStored": 524,
+     "condDirect": 403,
+     "condComputed": 10,
+     "condMemory": 0,
+     "blocksPerRegion": 2.22,
+     "backEdges": 78,
+     "tierUps": 46,
+     "helpers": []
+    },
+    "placements": [
+     {
+      "pad": 0,
+      "samples": [
+       2092.0502086832807,
+       1891.2529545497518,
+       2358.4905648773124,
+       2396.6446977659707,
+       2160.9940583797325
+      ]
+     },
+     {
+      "pad": 7424,
+      "samples": [
+       2276.6078532930833,
+       1971.4144907072828,
+       2406.738870300059,
+       2409.6385550820823,
+       2213.6137234558705
+      ]
+     },
+     {
+      "pad": 14848,
+      "samples": [
+       2234.636872624537,
+       1959.8236162179753,
+       2409.6385550820823,
+       2418.379684651987,
+       2258.6109550993006
+      ]
+     },
+     {
+      "pad": 22272,
+      "samples": [
+       2258.6109550993006,
+       1961.7459538416238,
+       2411.0910181662007,
+       2416.918429438246,
+       2220.9883391496774
+      ]
+     },
+     {
+      "pad": 29696,
+      "samples": [
+       2316.1551829567893,
+       1937.9844960680655,
+       2425.712553851579,
+       2416.91842726212,
+       2243.409983399413
+      ]
+     },
+     {
+      "pad": 37120,
+      "samples": [
+       2300.1725128596313,
+       1934.2359761201772,
+       2412.5452354833515,
+       2419.8427100493236,
+       2220.9883409872846
+      ]
+     },
+     {
+      "pad": 44544,
+      "samples": [
+       2310.803003725628,
+       1951.219512195122,
+       2406.738868142225,
+       2411.0910181662007,
+       2240.8963592916966
+      ]
+     },
+     {
+      "pad": 51968,
+      "samples": [
+       2308.1361802727793,
+       1941.7475719727877,
+       2389.4862612197253,
+       2409.6385550820823,
+       2143.6227228116927
+      ]
+     }
+    ]
+   },
+   "samples": [
+    2160.9940583797325,
+    2276.6078532930833,
+    2258.6109550993006,
+    2258.6109550993006,
+    2316.1551829567893,
+    2300.1725128596313,
+    2310.803003725628,
+    2308.1361802727793
+   ],
+   "median": 2288.390183076357,
+   "iqr": 50.19193103669113,
+   "n": 8
+  },
+  {
+   "name": "jit_coremark_iterations_cold",
+   "unit": "iterations/s",
+   "params": {
+    "guest": "CoreMark 2K performance run (bench/interp/build-coremark.sh)",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.007,
+     "avgBlock": 104.73,
+     "interpretedPct": 26.186,
+     "blocks": 57,
+     "modules": 4,
+     "bytes": 38784,
+     "compileMs": 1.41,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 8,
+     "flagsStored": 65,
+     "condDirect": 60,
+     "condComputed": 5,
+     "condMemory": 0,
+     "blocksPerRegion": 1.67,
+     "backEdges": 17,
+     "tierUps": 6
+    },
+    "insnsPerIteration": 245455
+   },
+   "samples": [
+    297.81243232184426
+   ],
+   "median": 297.81243232184426,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "jit_coremark_iterations",
+   "unit": "iterations/s",
+   "params": {
+    "guest": "CoreMark 2K performance run (bench/interp/build-coremark.sh)",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0.0001,
+     "avgBlock": 10174.53,
+     "interpretedPct": 0.117,
+     "blocks": 37,
+     "modules": 2,
+     "bytes": 34256,
+     "compileMs": 0.46,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 53,
+     "flagsStored": 524,
+     "condDirect": 403,
+     "condComputed": 10,
+     "condMemory": 0,
+     "blocksPerRegion": 2.22,
+     "backEdges": 78,
+     "tierUps": 46,
+     "helpers": []
+    },
+    "placements": [
+     {
+      "pad": 0,
+      "samples": [
+       2092.0502086832807,
+       1891.2529545497518,
+       2358.4905648773124,
+       2396.6446977659707,
+       2160.9940583797325
+      ]
+     },
+     {
+      "pad": 7424,
+      "samples": [
+       2276.6078532930833,
+       1971.4144907072828,
+       2406.738870300059,
+       2409.6385550820823,
+       2213.6137234558705
+      ]
+     },
+     {
+      "pad": 14848,
+      "samples": [
+       2234.636872624537,
+       1959.8236162179753,
+       2409.6385550820823,
+       2418.379684651987,
+       2258.6109550993006
+      ]
+     },
+     {
+      "pad": 22272,
+      "samples": [
+       2258.6109550993006,
+       1961.7459538416238,
+       2411.0910181662007,
+       2416.918429438246,
+       2220.9883391496774
+      ]
+     },
+     {
+      "pad": 29696,
+      "samples": [
+       2316.1551829567893,
+       1937.9844960680655,
+       2425.712553851579,
+       2416.91842726212,
+       2243.409983399413
+      ]
+     },
+     {
+      "pad": 37120,
+      "samples": [
+       2300.1725128596313,
+       1934.2359761201772,
+       2412.5452354833515,
+       2419.8427100493236,
+       2220.9883409872846
+      ]
+     },
+     {
+      "pad": 44544,
+      "samples": [
+       2310.803003725628,
+       1951.219512195122,
+       2406.738868142225,
+       2411.0910181662007,
+       2240.8963592916966
+      ]
+     },
+     {
+      "pad": 51968,
+      "samples": [
+       2308.1361802727793,
+       1941.7475719727877,
+       2389.4862612197253,
+       2409.6385550820823,
+       2143.6227228116927
+      ]
+     }
+    ],
+    "insnsPerIteration": 245455
+   },
+   "samples": [
+    8804.049867472986,
+    9275.069031934783,
+    9201.748335589742,
+    9201.748335589742,
+    9436.18778241655,
+    9371.073200539238,
+    9414.382607771076,
+    9403.517771481695
+   ],
+   "median": 9323.07111623701,
+   "iqr": 204.48564496429753,
+   "n": 8
+  }
+ ]
+}

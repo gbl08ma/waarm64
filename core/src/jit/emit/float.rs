@@ -1748,14 +1748,22 @@ fn minmax(
     b: &dyn Fn(&mut Func),
 ) {
     let tr = VT[2];
+    fpa_guard(c);
     a(c);
     b(c);
-    c.simd(op::MINMAX[d as usize][max as usize]).local_set(tr);
-    a(c);
-    plain_lanes(c, d);
-    b(c);
-    plain_lanes(c, d);
-    every_lane(c, d, q, 2);
+    c.simd(op::MINMAX[d as usize][max as usize]).local_tee(tr);
+    // wasm's min and max give a NaN where either operand is one: the
+    // result's lanes are the operands' NaN test; under FZ, neither operand
+    // a denormal.
+    c.local_get(tr).simd(op::CMP[d as usize][0]);
+    under_fz_bad(c, |c| {
+        a(c);
+        denormal_lanes(c, d);
+        b(c);
+        denormal_lanes(c, d);
+        c.simd(op::OR);
+    });
+    every_lane(c, d, q, 1);
     guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
 }
 
@@ -2080,15 +2088,33 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                     c.simd(op::F64X2_NEG);
                 }
             };
+            // A by-element factor is a shuffle: made once, in `tr` (free until
+            // TwoSum's), then in `bh` for the guard (V8 doesn't merge the
+            // shuffles: one `dup` each).
+            let held = |l: u32| {
+                move |c: &mut Func| {
+                    if by_element {
+                        c.local_get(l);
+                    } else {
+                        factor(c);
+                    }
+                }
+            };
+            if by_element {
+                factor(c);
+                c.local_set(tr);
+            }
+            let fb = held(tr);
             va(c);
-            factor(c);
+            fb(c);
             c.simd(mul).local_set(p);
-            // Veltkamp: h = g - (g - v), g = (2^27 + 1)·v; l = v - h on the fly.
+            // Veltkamp: h = g - (g - v), g = (2^27 + 1)·v; l = v - h on the fly
+            // (g in `pl`, set only after).
             let k27 = splat(true, 134217729f64.to_bits());
-            for (h, v) in [(ah, &va as &dyn Fn(&mut Func)), (bh, &factor)] {
+            for (h, v) in [(ah, &va as &dyn Fn(&mut Func)), (bh, &fb)] {
                 c.v128_const(k27);
                 v(c);
-                c.simd(mul).local_tee(tr).local_get(tr);
+                c.simd(mul).local_tee(pl).local_get(pl);
                 v(c);
                 c.simd(sub).simd(sub).local_set(h);
             }
@@ -2103,12 +2129,12 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 .local_get(p)
                 .simd(sub);
             c.local_get(ah);
-            low(c, bh, &factor);
+            low(c, bh, &fb);
             c.simd(mul).simd(add);
             low(c, ah, &va);
             c.local_get(bh).simd(mul).simd(add);
             low(c, ah, &va);
-            low(c, bh, &factor);
+            low(c, bh, &fb);
             c.simd(mul).simd(add).local_set(pl);
             // TwoSum(c, p): th (into ah), tl (into tr); bb in bh.
             let (th, tl, bb) = (ah, tr, bh);
@@ -2159,7 +2185,12 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             // As the scalar form: no denormal factor, a product from 2^-900, or
             // a zero factor (e' = e - 1: (e'a | e'b) ≥ 0, e'a + e'b ≥ 1144); a
             // fast result.
-            for (v, t) in [(&va as &dyn Fn(&mut Func), ta), (&factor, tb)] {
+            if by_element {
+                factor(c);
+                c.local_set(bh);
+            }
+            let fb = held(bh);
+            for (v, t) in [(&va as &dyn Fn(&mut Func), ta), (&fb, tb)] {
                 v(c);
                 c.i32_const(1).simd(op::I64X2_SHL);
                 c.i32_const(53).simd(op::I64X2_SHR_U);
@@ -2173,7 +2204,7 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.v128_const(0).simd(op::I64X2_GE_S).simd(op::AND);
             vreg(c, rn);
             zero_lanes(c, true);
-            factor(c);
+            fb(c);
             zero_lanes(c, true);
             c.simd(op::OR).simd(op::OR);
             c.local_get(tr);
@@ -2181,7 +2212,7 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             under_fz_bad(c, |c| {
                 vreg(c, rn);
                 denormal_lanes(c, true);
-                factor(c);
+                fb(c);
                 denormal_lanes(c, true);
                 acc(c);
                 denormal_lanes(c, true);

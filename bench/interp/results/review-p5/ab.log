@@ -1,0 +1,138 @@
+== round 1: base
+jit_mips_cold                   138.985 ±0.000 MIPS
+jit_mips                       5625.879 ±40.750 MIPS
+vm_jit_flat_mips_cold           160.256 ±0.000 MIPS
+vm_jit_flat_mips               5586.592 ±331.023 MIPS
+vm_jit_mmu_mips_cold            137.504 ±0.000 MIPS
+vm_jit_mmu_mips                5006.258 ±356.754 MIPS
+jit_fp_mips_cold                 45.615 ±0.000 MIPS
+jit_fp_mips                    2613.557 ±295.966 MIPS
+jit_coremark_mips_cold           70.960 ±0.000 MIPS
+jit_coremark_mips              2260.540 ±56.187 MIPS
+jit_coremark_iterations_cold    289.095 ±0.000 iterations/s
+jit_coremark_iterations        9209.608 ±228.908 iterations/s
+alpine jit 1: 2655076428 steps in 5414 ms, 490.4 MIPS (warm-up)
+boot_alpine_jit_mips            508.780 ±2.798 MIPS
+boot_alpine_jit_total          5218.520 ±28.720 ms
+alpine_user_jit_compress       1902.245 ±7.230 ms
+alpine_user_jit_lua            3001.070 ±14.027 ms
+alpine_user_jit_churn          1151.110 ±196.820 ms
+alpine_user_jit_sqlite         2296.710 ±27.425 ms
+alpine_user_jit_total         13291.925 ±338.185 ms
+  if (data.error) throw new Error(`benchmark failed in page: ${data.error}`);
+Error: benchmark failed in page: TypeError: suite[only] is not a function
+== round 1: p5
+jit_mips_cold                   144.561 ±0.000 MIPS
+jit_mips                       5582.718 ±90.079 MIPS
+vm_jit_flat_mips_cold           158.793 ±0.000 MIPS
+vm_jit_flat_mips               5486.968 ±278.001 MIPS
+vm_jit_mmu_mips_cold            135.272 ±0.000 MIPS
+vm_jit_mmu_mips                4914.005 ±326.027 MIPS
+jit_fp_mips_cold                 45.626 ±0.000 MIPS
+jit_fp_mips                    2694.804 ±241.285 MIPS
+jit_coremark_mips_cold           68.190 ±0.000 MIPS
+jit_coremark_mips              2300.836 ±50.324 MIPS
+jit_coremark_iterations_cold    277.809 ±0.000 iterations/s
+jit_coremark_iterations        9373.775 ±205.023 iterations/s
+alpine jit 1: 2655076428 steps in 5498 ms, 482.9 MIPS (warm-up)
+boot_alpine_jit_mips            505.451 ±0.968 MIPS
+boot_alpine_jit_total          5252.885 ±10.090 ms
+alpine_user_jit_compress       1902.265 ±15.137 ms
+alpine_user_jit_lua            2930.285 ±15.468 ms
+alpine_user_jit_churn          1186.850 ±188.750 ms
+alpine_user_jit_sqlite         2311.505 ±24.042 ms
+alpine_user_jit_total         13370.400 ±348.025 ms
+  if (data.error) throw new Error(`benchmark failed in page: ${data.error}`);
+Error: benchmark failed in page: TypeError: suite[only] is not a function
+== round 2: base
+jit_mips_cold                   147.113 ±0.000 MIPS
+jit_mips                       5517.252 ±1247.988 MIPS
+vm_jit_flat_mips_cold           162.140 ±0.000 MIPS
+vm_jit_flat_mips               5617.978 ±358.387 MIPS
+vm_jit_mmu_mips_cold            137.979 ±0.000 MIPS
+vm_jit_mmu_mips                5000.000 ±275.067 MIPS
+jit_fp_mips_cold                 44.043 ±0.000 MIPS
+jit_fp_mips                    2704.531 ±113.402 MIPS
+jit_coremark_mips_cold           74.308 ±0.000 MIPS
+jit_coremark_mips              2262.469 ±44.897 MIPS
+jit_coremark_iterations_cold    302.736 ±0.000 iterations/s
+jit_coremark_iterations        9217.468 ±182.914 iterations/s
+alpine jit 1: 2655076428 steps in 5481 ms, 484.4 MIPS (warm-up)
+boot_alpine_jit_mips            501.532 ±0.867 MIPS
+boot_alpine_jit_total          5293.935 ±9.165 ms
+alpine_user_jit_compress       1885.520 ±10.988 ms
+alpine_user_jit_lua            2987.385 ±19.555 ms
+alpine_user_jit_churn          1159.610 ±192.277 ms
+alpine_user_jit_sqlite         2329.710 ±27.425 ms
+alpine_user_jit_total         13345.280 ±330.933 ms
+  if (data.error) throw new Error(`benchmark failed in page: ${data.error}`);
+Error: benchmark failed in page: TypeError: suite[only] is not a function
+== round 2: p5
+jit_mips_cold                   149.477 ±0.000 MIPS
+jit_mips                       5574.937 ±65.360 MIPS
+vm_jit_flat_mips_cold           149.981 ±0.000 MIPS
+vm_jit_flat_mips               5602.241 ±433.347 MIPS
+vm_jit_mmu_mips_cold            136.286 ±0.000 MIPS
+vm_jit_mmu_mips                4914.005 ±315.887 MIPS
+jit_fp_mips_cold                 44.793 ±0.000 MIPS
+jit_fp_mips                    2704.535 ±139.356 MIPS
+jit_coremark_mips_cold           73.099 ±0.000 MIPS
+jit_coremark_mips              2288.390 ±50.192 MIPS
+jit_coremark_iterations_cold    297.812 ±0.000 iterations/s
+jit_coremark_iterations        9323.071 ±204.486 iterations/s
+alpine jit 1: 2655076428 steps in 5488 ms, 483.8 MIPS (warm-up)
+boot_alpine_jit_mips            503.671 ±2.275 MIPS
+boot_alpine_jit_total          5271.455 ±23.913 ms
+alpine_user_jit_compress       1882.080 ±1.558 ms
+alpine_user_jit_lua            2924.190 ±10.340 ms
+alpine_user_jit_churn          1160.585 ±200.673 ms
+alpine_user_jit_sqlite         2269.705 ±29.497 ms
+alpine_user_jit_total         13235.740 ±331.867 ms
+  if (data.error) throw new Error(`benchmark failed in page: ${data.error}`);
+Error: benchmark failed in page: TypeError: suite[only] is not a function
+== round 3: base
+jit_mips_cold                   155.340 ±0.000 MIPS
+jit_mips                       5544.030 ±1185.829 MIPS
+vm_jit_flat_mips_cold           159.236 ±0.000 MIPS
+vm_jit_flat_mips               5594.406 ±447.104 MIPS
+vm_jit_mmu_mips_cold            141.143 ±0.000 MIPS
+vm_jit_mmu_mips                5006.258 ±355.164 MIPS
+jit_fp_mips_cold                 46.871 ±0.000 MIPS
+jit_fp_mips                    2711.172 ±253.351 MIPS
+jit_coremark_mips_cold           73.126 ±0.000 MIPS
+jit_coremark_mips              2283.758 ±9.121 MIPS
+jit_coremark_iterations_cold    297.921 ±0.000 iterations/s
+jit_coremark_iterations        9304.201 ±37.158 iterations/s
+alpine jit 1: 2655076428 steps in 5497 ms, 483.0 MIPS (warm-up)
+boot_alpine_jit_mips            501.986 ±1.213 MIPS
+boot_alpine_jit_total          5289.145 ±12.820 ms
+alpine_user_jit_compress       1882.015 ±13.053 ms
+alpine_user_jit_lua            3002.290 ±18.808 ms
+alpine_user_jit_churn          1160.145 ±188.523 ms
+alpine_user_jit_sqlite         2313.845 ±44.918 ms
+alpine_user_jit_total         13402.980 ±350.440 ms
+  if (data.error) throw new Error(`benchmark failed in page: ${data.error}`);
+Error: benchmark failed in page: TypeError: suite[only] is not a function
+== round 3: p5
+jit_mips_cold                   153.669 ±0.000 MIPS
+jit_mips                       5586.603 ±77.468 MIPS
+vm_jit_flat_mips_cold           151.057 ±0.000 MIPS
+vm_jit_flat_mips               5555.556 ±330.008 MIPS
+vm_jit_mmu_mips_cold            133.824 ±0.000 MIPS
+vm_jit_mmu_mips                5037.783 ±358.725 MIPS
+jit_fp_mips_cold                 46.849 ±0.000 MIPS
+jit_fp_mips                    2660.144 ±273.565 MIPS
+jit_coremark_mips_cold           70.385 ±0.000 MIPS
+jit_coremark_mips              2297.531 ±47.458 MIPS
+jit_coremark_iterations_cold    286.755 ±0.000 iterations/s
+jit_coremark_iterations        9360.311 ±193.347 iterations/s
+alpine jit 1: 2655076428 steps in 5515 ms, 481.4 MIPS (warm-up)
+boot_alpine_jit_mips            502.004 ±1.911 MIPS
+boot_alpine_jit_total          5288.950 ±20.155 ms
+alpine_user_jit_compress       1917.725 ±4.742 ms
+alpine_user_jit_lua            2941.680 ±29.628 ms
+alpine_user_jit_churn          1192.935 ±181.668 ms
+alpine_user_jit_sqlite         2301.495 ±12.842 ms
+alpine_user_jit_total         13538.540 ±313.342 ms
+  if (data.error) throw new Error(`benchmark failed in page: ${data.error}`);
+Error: benchmark failed in page: TypeError: suite[only] is not a function

@@ -808,6 +808,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
     let head = r.blocks[0].va;
     let mut c = emit::Func::default();
     c.plain = plain;
+    c.page = (head & 0xfff) as i64;
     let mut into = vec![emit::Regs::default(); n];
     let mut flags = vec![In::Unset; n];
     let mut dead = vec![false; n];

@@ -181,6 +181,13 @@ pub struct Func {
     /// The block's offset from the function's entry PC (local 1): a region's
     /// blocks (step 8) share the head's.
     pub base: i64,
+    /// The entry PC's offset in its 4 KiB page: the same for every VA that
+    /// runs the function (its key is a PA, and a VA keeps a PA's page offset
+    /// at every granule), so ADRP's page is the entry PC plus a constant.
+    pub page: i64,
+    /// ADDR holds the PC the block's last instruction (BR, BLR, RET) stored,
+    /// for [`indirect`]: nothing between them writes ADDR.
+    pub pc_in_addr: bool,
     /// Whether NZCV was live at the block's entry, once known (step 8.4):
     /// false if a setter came first, true if a condition, a helper, a
     /// possible exit (a load/store's failure path, the block's end) or a
@@ -717,15 +724,16 @@ pub const ZERO_GLOBAL: u32 = 0;
 pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
     use Op::*;
     c.ireads = 0;
+    c.pc_in_addr = false;
     let sf = bit(i, 31);
     let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
     let here = 4 * k as i64;
     match op {
         ADR => set(c, true, rd, |c| pc_plus(c, here + adr_imm(i) as i64)),
+        // (entry + off) & !0xfff = entry + off - (its page offset), known here.
         ADRP => set(c, true, rd, |c| {
-            pc_plus(c, here);
-            c.i64_const(!0xfff).i64_and();
-            c.i64_const((adr_imm(i) << 12) as i64).i64_add();
+            let at = c.page.wrapping_add(c.base).wrapping_add(here) & 0xfff;
+            pc_plus(c, (here - at).wrapping_add((adr_imm(i) << 12) as i64));
         }),
         MOVN | MOVZ | MOVK => {
             let hw = bits(i, 22, 21);
@@ -1014,10 +1022,13 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
                 c.local_tee(TAKEN).select().i64_store(PC);
             }
         }
+        // The target stays in ADDR for `indirect`, which then needn't load
+        // the PC back (V8 doesn't forward the store).
         BR | BLR | RET => {
             c.local_get(VCPU);
             get(c, true, rn);
-            c.i64_store(PC);
+            c.local_tee(ADDR).i64_store(PC);
+            c.pc_in_addr = true;
             if op == BLR {
                 set(c, true, 30, |c| pc_plus(c, here + 4));
             }
@@ -1249,7 +1260,8 @@ pub enum Bus {
 /// `regime`). If it's there and `left` covers this block's `len` and its
 /// length, tail-calls it through the table (type `ty`), after `check` (the
 /// stale-code checker) if given. Otherwise falls through (to the block's
-/// return).
+/// return). The PC is the `Cpu`'s, or ADDR's when the branch left it there
+/// ([`Func::pc_in_addr`]).
 pub fn indirect(
     c: &mut Func,
     regime: u64,
@@ -1259,7 +1271,11 @@ pub fn indirect(
     check: Option<u32>,
 ) {
     const KEY: u32 = BASE; // i64 scratch
-    c.local_get(VCPU).i64_load(PC).local_tee(ADDR);
+    if core::mem::take(&mut c.pc_in_addr) {
+        c.local_get(ADDR);
+    } else {
+        c.local_get(VCPU).i64_load(PC).local_tee(ADDR);
+    }
     c.i64_const(3).op(AND + W).op(EQZ + WC); // aligned
     if let Some(miss) = miss {
         via_xc(c, regime, len, ty, check);
@@ -4661,12 +4677,19 @@ mod tests {
             emit(0x10000040, 2).unwrap(),
             [0x20, 1, 0x42, 16, 0x7c, 0x21, 17]
         );
-        // adrp x1, .+0x1000 as instruction 0: (entry & !0xfff) + 0x1000
-        #[rustfmt::skip]
-        let want = [
-            0x20, 1, 0x42, 0x80, 0x60, 0x83, 0x42, 0x80, 0x20, 0x7c, 0x21, 17,
-        ];
+        // adrp x1, .+0x1000 as instruction 0 at a page's start: entry + 0x1000
+        let want = [0x20, 1, 0x42, 0x80, 0x20, 0x7c, 0x21, 17];
         assert_eq!(emit(0xb0000001, 0).unwrap(), want);
+        // The same as instruction 1 of a region member 0x10 past an entry at
+        // 0x7f8 in its page (the instruction at 0x80c): its page is entry - 0x7f8,
+        // so entry + 0x808 (i64.const 0x808)
+        let mut c = Func {
+            page: 0x7f8,
+            base: 0x10,
+            ..Func::default()
+        };
+        assert!(inline(&mut c, 0xb0000001, decode(0xb0000001), 1, &FLAT));
+        assert_eq!(c.c.b, [0x20, 1, 0x42, 0x88, 0x10, 0x7c, 0x21, 17]);
     }
 
     #[test]
@@ -4757,10 +4780,10 @@ mod tests {
             0x22, TAKEN as u8, 0x1b, 0x37, 3, 0x80, 2, // the outcome kept for chaining
         ];
         assert_eq!(emit(0x35000083, 0).unwrap(), want);
-        // blr x30: the PC from x30 before x30 is written
+        // blr x30: the PC from x30 before x30 is written, kept in ADDR (2)
         #[rustfmt::skip]
         let want = [
-            0x20, 0, 0x20, 0, 0x29, 3, 0xf0, 1, 0x22, 17, 0x37, 3, 0x80, 2,
+            0x20, 0, 0x20, 0, 0x29, 3, 0xf0, 1, 0x22, 17, 0x22, 2, 0x37, 3, 0x80, 2,
             0x20, 1, 0x42, 4, 0x7c, 0x21, 17,
         ];
         assert_eq!(emit(0xd63f03c0, 0).unwrap(), want);

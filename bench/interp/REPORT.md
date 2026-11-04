@@ -1962,3 +1962,37 @@ the base and HEAD (one data address apart, flat and MMU copies). Its slow path c
 block interpreter, its SIMD and FP instructions generic micro-ops. `dec/`, three rounds: pre-P3 54.2, HEAD
 (`9b657848`) **54.4** (+0.3%, every round ahead, under the noise floor). The rest of the block interpreter's
 yardstick is in `broad/` above (flat); `vm_dec_flat_mips` wasn't run (it runs in `hot`).
+
+## REVIEW P5: the smaller JIT items (2026-11-04)
+
+The dev VM, Chromium 155.0.8059.84; `bench/interp/ab.sh`, arms alternated each round, medians; JSON in
+`results/review-p5/` (`./`, `s2/` and `gl/`: one session each). Base `a079ec66`; P5 is all five of REVIEW-20261103.md's
+items in one build: ADRP's page from the entry PC plus a constant; BR/BLR/RET keep their target in ADDR for the
+transfer probe (no reload of the PC they stored); vector FMAX/FMIN/FMAXNM/FMINNM test the result for NaN lanes (and
+under FZ both operands for denormals, in one branch); the emulated double FMA's by-element factor shuffled once into a
+local; `Cache::invalidate` hands the dropped keys to the tables and the pending batch once, and `PageIndex::file`
+files a key once.
+
+What V8 makes of it (`tools/v8code.ts`, TurboFan): CoreMark's 81 hot functions reload the PC 87 times, from 97 (the
+10 indirect transfers); a guest of two `FMLA Vd.2D, Vn.2D, Vm.D[i]` under `fma=emul` has 4 element `dup`s, from 12
+(V8 doesn't merge the repeated shuffles), its function 2,128 → 2,096 bytes.
+
+| | base | P5 | |
+|---|---|---|---|
+| `alpine_user_jit` total, ms (`./`) | 13,345 | 13,370 | +0.2%, rounds overlap |
+| `alpine_user_jit` total, ms (`s2/`) | 13,265 | 13,161 | −0.8%, rounds overlap |
+| `alpine_user_jit_lua`, ms (`./`) | 3,001 | 2,930 | **−2.4%**, rounds apart (2,987-3,002 against 2,924-2,942) |
+| `alpine_user_jit_lua`, ms (`s2/`) | 2,969 | 2,918 | −1.7%, rounds overlap |
+| `alpine_user_jit_churn`, ms (`./`, `s2/`) | 1,160, 1,145 | 1,187, 1,137 | +2.3%, −0.7%: noise (IQR ±190) |
+| `boot_alpine_jit_mips` | 502.0 | 503.7 | +0.3% |
+| `jit_coremark_mips` | 2,263 | 2,298 | **+1.5%**, rounds apart (2,261-2,284 against 2,288-2,301) |
+| `jit_fp_mips` | 2,705 | 2,695 | −0.4%, rounds overlap |
+| `jit_mips` | 5,544 | 5,583 | +0.7%, rounds overlap |
+| `vm_jit_flat_mips` | 5,594 | 5,556 | −0.7%, rounds overlap |
+| `vm_jit_mmu_mips` (`./`, `s2/`) | 5,006, 4,981 | 4,914, 4,988 | −1.8% then +0.1%: noise |
+| `gl_llvmpipe_jit_frame`, ms (`s2/`, 3 rounds) | 247.3 | 251.9 | +1.9%, rounds overlap |
+| `gl_llvmpipe_jit_frame`, ms (`gl/`, 4 rounds) | 248.5 | 248.5 | 0 |
+
+llvmpipe's +1.9% (the item where FMAX/FMIN's clamps count) didn't hold in a session of its own with a third arm, P5
+with the old FMAX/FMIN test (`oldmm`: 246.6, rounds overlapping both). Kept: nothing regresses past noise, CoreMark and
+Lua (the most indirect transfers) gain. `bench/interp/yardstick.sh` now serves `gl_*` from bench/boot's page.
