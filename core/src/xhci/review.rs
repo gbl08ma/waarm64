@@ -112,6 +112,12 @@ fn walking_goes_on_once_tds_leave_flight() {
     assert_eq!(r.len(), MAX_TDS);
     t.x.tick(0, false, &t.mem, &t.sh);
     assert!(t.requests().is_empty(), "no more than MAX_TDS");
+    // Nothing to do until a TD leaves flight: no boundary is due (an idle parallel vCPU waits on
+    // `due`, and spun on a 0 for as long as a backend held 1024 TDs).
+    for _ in 0..1000 {
+        t.x.tick(0, false, &t.mem, &t.sh);
+        assert_eq!(t.x.due(), u64::MAX, "nothing due while the TDs are held");
+    }
     for q in &r {
         t.done(q, CC_SUCCESS, 8);
     }
