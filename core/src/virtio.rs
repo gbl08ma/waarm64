@@ -40,6 +40,12 @@ pub const CONFIG_SIZE: usize = 256;
 pub const RING_WORDS: usize = 4096;
 pub const MAX_QUEUES: usize = 8;
 pub const MAX_QUEUE_SIZE: u64 = 1024;
+/// The most buffers a chain through an indirect table may have, whatever the queue's size (as
+/// QEMU's `VIRTQUEUE_MAX_SIZE`). Linux bounds only the ring slots an indirect chain takes, not
+/// its length: virtio-gpu posts a vmalloc'd command one page a segment, past a queue of 16.
+pub const MAX_CHAIN: u64 = 1024;
+// The longest request record (2 + 3 words a segment) fits the request ring.
+const _: () = assert!(MAX_QUEUE_SIZE <= MAX_CHAIN && 2 + 3 * MAX_CHAIN as usize <= RING_WORDS);
 
 /// `DevShared::events` bits (also bits 8+ of the `DEVICE` exit's value).
 pub const EV_REQUEST: u32 = 1;
@@ -277,8 +283,8 @@ impl From<crate::mem::Fault> for Bad {
 /// Walks the split-queue descriptor chain starting at `head` in the table of
 /// `size` descriptors at `desc`, appending each buffer as (offset, length,
 /// memory) to `out`. Returns the readable and writable counts. Everything the guest
-/// supplies is checked: the chain is at most `size` buffers (so loops end),
-/// indices stay in their table, buffers lie in RAM, readable before writable,
+/// supplies is checked: the chain is at most `size` buffers, or `MAX_CHAIN` once it is in an
+/// indirect table (so loops end), indices stay in their table, buffers lie in RAM, readable before writable,
 /// and indirect tables (if `indirect_ok`) are well formed and not nested.
 pub fn walk_chain(
     mem: &Mem,
@@ -290,6 +296,7 @@ pub fn walk_chain(
 ) -> Result<(u32, u32), Bad> {
     let (mut table, mut n, mut i) = (desc, size, head);
     let (mut nr, mut nw, mut count, mut nested) = (0u32, 0u32, 0u64, false);
+    let mut limit = size;
     loop {
         if i >= n {
             return Err(Bad);
@@ -301,11 +308,11 @@ pub fn walk_chain(
             if !indirect_ok || nested || flags & D_NEXT != 0 || len == 0 || len % 16 != 0 {
                 return Err(Bad);
             }
-            (table, n, i, nested) = (addr, len / 16, 0, true);
+            (table, n, i, nested, limit) = (addr, len / 16, 0, true, MAX_CHAIN);
             continue;
         }
         count += 1;
-        if count > size {
+        if count > limit {
             return Err(Bad);
         }
         let (m, off) = mem.ram_offset(addr, len).ok_or(Bad)?;

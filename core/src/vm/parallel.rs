@@ -410,10 +410,7 @@ impl Vm {
                     own.steps += 1;
                     continue;
                 }
-                let frq = self.cfg.cntfrq as u128;
-                own.exit.value = deadline(&v.cpu, now).map_or(u64::MAX, |t| {
-                    ((t - now) as u128 * 1_000_000_000).div_ceil(frq) as u64
-                });
+                own.exit.value = ns_to(deadline(&v.cpu, now), now, self.cfg.cntfrq);
                 // Woken for the xHCI's next completions too.
                 let due = self.shared.xhci_due.load(Ordering::Relaxed);
                 if due != u64::MAX {
@@ -873,9 +870,13 @@ impl Vm {
         s
     }
 
-    /// Whether vCPU `c` is on, or starting (parallel mode).
-    pub(super) fn power_par(&self, c: usize) -> Power {
-        let pl = self.plat_of(c);
+    /// Whether vCPU `c` is on, or starting (parallel mode), asked by vCPU `by` (whose counters
+    /// take a wait for the lock: only a vCPU's own thread writes them) or by the host (`None`).
+    pub(super) fn power_par(&self, c: usize, by: Option<usize>) -> Power {
+        let pl = match by {
+            Some(by) => self.plat_of(by),
+            None => self.plat.lock(),
+        };
         if self.shared.cpus[c].par.state.load(Ordering::SeqCst) != OFF || pl.start[c].is_some() {
             Power::On
         } else {
@@ -891,7 +892,7 @@ impl Vm {
         let r = match f {
             PSCI_AFFINITY_INFO | PSCI_AFFINITY_INFO_64 => {
                 match self.cpu_of(psci_aff(x[1], f == PSCI_AFFINITY_INFO_64)) {
-                    Some(t) if x[2] == 0 => (self.power_par(t) == Power::Off) as i64,
+                    Some(t) if x[2] == 0 => (self.power_par(t, Some(c)) == Power::Off) as i64,
                     _ => PSCI_INVALID_PARAMETERS,
                 }
             }

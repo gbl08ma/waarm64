@@ -166,8 +166,9 @@ transports do.
   - Immediate data (IDT) goes into the request record. It is a TD of one TRB, OUT, at most 8 bytes;
     anything else with IDT is a TRB Error.
   - A walk reads at most 256 TDs (`WALK_TDS`) and the endpoint goes on at the next chunk boundary: a
-    ring of No-Ops linked to itself is a TD for ever. So does one that found 1024 TDs in flight
-    (`MAX_TDS`), once some leave.
+    ring of No-Ops linked to itself is a TD for ever. One that found 1024 TDs in flight (`MAX_TDS`) goes
+    on once some leave, and asks for no boundary meanwhile (`due()`: an idle vCPU waits on it, and
+    a backend may hold IN TDs for as long as its device sends nothing).
   - A control TD's Data and Status stages follow its Setup stage; without one it is a TRB Error (a
     device never gets a control transfer without a setup packet).
   - Anything wrong is a TRB Error event, and the endpoint halts: a TRB out of RAM, a type that doesn't
@@ -210,7 +211,9 @@ transports do.
   and the core looks again at its ticks too. Deterministic mode needs no wait: the host serves every
   record before the guest runs on. (Without it, in parallel SMP about one run in a hundred under load
   had a cancelled read's bytes land on the TRBs of a transfer ring the guest had just put in the freed
-  buffer: TRB Errors, then usbtest waiting for good.)
+  buffer: TRB Errors, then usbtest waiting for good.) CRCR's stop or abort while a completion is held
+  waits for it, the command still running (CRR reads 1): its completion, then the Ring Stopped event,
+  in the specification's order (Linux waits up to 5 s for CRR to clear).
 - **Root ports:**
   - A USB 3 port goes straight to U0, enabled, on connect.
   - A USB 2 port connects in Polling and is enabled (U0) by the driver's port reset.

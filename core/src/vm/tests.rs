@@ -267,6 +267,35 @@ fn realtime_wfi_idles_until_the_deadline() {
 }
 
 #[test]
+fn a_far_realtime_deadline_is_a_long_wait() {
+    // 2^60 ticks at 62.5 MHz are 2^64 ns: a second past them is past a u64, so no deadline, not
+    // a wrap to a second (a wait that ends early, again and again).
+    for cfg in [
+        VmConfig {
+            deterministic: 0,
+            ..VmConfig::default()
+        },
+        par(1),
+    ] {
+        let mut t = T::new(&[WFI, B_SELF], cfg);
+        let cval = t.vm.now() + (1 << 60) + 62_500_000;
+        t.vtimer_at(cval);
+        let ns = if t.vm.parallel() {
+            // SAFETY: this thread is the only one that runs a vCPU, and none runs while the exit
+            // is read.
+            unsafe {
+                assert_eq!(t.vm.run_cpu(0, 10), exit::IDLE);
+                (*t.vm.exit_of(0)).value
+            }
+        } else {
+            assert_eq!(t.vm.run(10), exit::IDLE);
+            t.vm.exit.value
+        };
+        assert!(ns > 1 << 63, "{ns} ns");
+    }
+}
+
+#[test]
 fn a_timer_is_pending_or_a_deadline_at_one_instant() {
     // WFI decides from one counter reading (M6.5: in realtime mode a timer
     // due between two readings was neither, and the host slept for good).
@@ -1562,4 +1591,37 @@ fn a_deadline_past_the_counters_range_is_no_deadline() {
     assert_eq!((t.cpu().pc, t.vm.now()), (RAM_BASE + 8, (1 << 62) - 8));
     let state = t.save();
     assert_eq!(t.restore(&state, VmConfig::default(), &[]).1, Ok(()));
+}
+
+/// Runs `f` while another thread holds the platform's lock (for 50 ms from before `f`).
+fn with_the_lock_held<R>(vm: &Vm, f: impl FnOnce() -> R) -> R {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::scope(|s| {
+        s.spawn(move || {
+            let _g = vm.plat.lock();
+            tx.send(()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        });
+        rx.recv().unwrap();
+        f()
+    })
+}
+
+#[test]
+fn a_wait_for_the_lock_counts_on_the_vcpu_that_waited() {
+    // vCPU 0 asks AFFINITY_INFO about vCPU 1, and the host asks too, while another thread holds
+    // the platform's lock: the waits are vCPU 0's, or nobody's. A vCPU's counters are written by
+    // its own thread only (a load and a store), so another thread's bump could lose counts.
+    let mut a = T::new(&[HVC, WFI, B_SELF], par(2));
+    let c = a.cpu();
+    (c.x[0], c.x[1], c.x[2]) = (0xc400_0004, 1, 0);
+    // SAFETY: this thread is the only one that runs a vCPU.
+    with_the_lock_held(&a.vm, || unsafe { a.vm.run_cpu(0, 10) });
+    assert_eq!(with_the_lock_held(&a.vm, || a.vm.power(1)), Power::Off);
+    let waits = |t: &T, i: usize| {
+        t.vm.shared.cpus[i].counters.par[PAR_LOCK_CONTENDED].load(Ordering::Relaxed)
+    };
+    assert_eq!(a.cpu().x[0], 1, "AFFINITY_INFO: off");
+    assert!(waits(&a, 0) >= 1, "vCPU 0 waited");
+    assert_eq!(waits(&a, 1), 0, "vCPU 1 never asked");
 }

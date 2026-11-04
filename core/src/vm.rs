@@ -955,7 +955,7 @@ impl Vm {
     /// Whether vCPU `c` is on (PSCI).
     pub fn power(&self, c: usize) -> Power {
         if self.parallel() {
-            return self.power_par(c);
+            return self.power_par(c, None);
         }
         self.sched[c].power
     }
@@ -1224,10 +1224,7 @@ impl Vm {
                 None
             }
             t => {
-                let frq = self.cfg.cntfrq as u128;
-                self.exit.value = t.map_or(u64::MAX, |t| {
-                    ((t - now) as u128 * 1_000_000_000).div_ceil(frq) as u64
-                });
+                self.exit.value = ns_to(t, now, self.cfg.cntfrq);
                 Some(exit::IDLE)
             }
         }
@@ -1626,6 +1623,15 @@ fn deadline(c: &Cpu, now: u64) -> Option<u64> {
     .filter(|&(ctl, cval)| ctl & 3 == 1 && cval > now)
     .map(|(_, cval)| cval)
     .min()
+}
+
+/// An idle exit's nanoseconds to a vCPU's deadline (`deadline`, after `now`) at `frq` Hz, rounded
+/// up: a far deadline is `u64::MAX` (none), never a short wait wrapped around.
+fn ns_to(deadline: Option<u64>, now: u64, frq: u64) -> u64 {
+    deadline.map_or(u64::MAX, |t| {
+        let ns = ((t - now) as u128 * 1_000_000_000).div_ceil(frq as u128);
+        u64::try_from(ns).unwrap_or(u64::MAX)
+    })
 }
 
 /// Drives the devices' lines (SPIs) into the GIC.

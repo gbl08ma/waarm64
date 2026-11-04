@@ -742,6 +742,61 @@ pub(super) fn in_realtime_a_stop_completes_once_the_backend_read_its_cancel() {
 }
 
 #[test]
+fn a_command_ring_stop_during_a_held_command_comes_after_its_completion() {
+    // CRCR's CS while a Stop Endpoint waits for the backend to read its cancel: the command is
+    // still running (CRR 1), completes, and then the ring stops (xHCI 4.6.1.2), not the other way
+    // round, and the No-Op behind it waits for the next doorbell.
+    let mut t = configured();
+    t.x.fence = true;
+    t.trb(
+        BULK_IN,
+        [BUF as u32, 0, 512, T_NORMAL << 10 | C_IOC | C_ISP],
+    );
+    t.wr(DBOFF + 4, 3);
+    let r = t.requests();
+    assert_eq!(r.len(), 1);
+    let stop = CMD + 16 * t.cmd.0;
+    for (k, ty_) in [T_STOP_EP << 10 | 3 << 16 | 1 << 24, T_NOOP_CMD << 10]
+        .into_iter()
+        .enumerate()
+    {
+        t.put(stop + 16 * k as u64, &[0, 0, 0, ty_ | t.cmd.1 as u32]);
+    }
+    t.cmd.0 += 2;
+    t.wr(DBOFF, 0);
+    t.events(); // the TD's Stopped event
+    t.wr(OP + 0x18, 2); // CS
+    assert_eq!(t.rd(OP + 0x18) & 8, 8, "CRR: the Stop Endpoint still runs");
+    assert!(
+        t.events().is_empty(),
+        "nothing before the command completes"
+    );
+    t.requests(); // the backend reads the cancel
+    t.x.complete(&t.mem, &t.sh, t.ns);
+    let ev = t.events();
+    let ev: Vec<_> = ev
+        .iter()
+        .map(|e| (e[0] as u64 | (e[1] as u64) << 32, e[2] >> 24))
+        .collect();
+    assert_eq!(
+        ev,
+        [(stop, CC_SUCCESS), (stop + 16, CC_RING_STOPPED)],
+        "the completion, then the ring stopped at the No-Op"
+    );
+    assert_eq!(t.rd(OP + 0x18) & 8, 0, "CRR");
+    t.x.tick(t.ns, true, &t.mem, &t.sh);
+    assert!(t.events().is_empty(), "the ring stays stopped");
+    t.wr(DBOFF, 0);
+    let ev = t.events();
+    assert_eq!(ev.len(), 1);
+    assert_eq!(
+        (ev[0][0] as u64, ev[0][2] >> 24),
+        (stop + 16, CC_SUCCESS),
+        "the No-Op"
+    );
+}
+
+#[test]
 pub(super) fn an_unplug_fails_what_is_in_flight() {
     let mut t = configured();
     let a = t.trb(

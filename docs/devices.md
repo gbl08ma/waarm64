@@ -21,7 +21,10 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
   **TypeScript never parses virtio rings**, only the device protocol (e.g. the virtio-blk
   header). A malformed chain, a buffer outside RAM, a readable buffer after a writable one, more
   chains than the queue holds or an available index more than a queue ahead puts the device in
-  NEEDS_RESET.
+  NEEDS_RESET. A chain is at most the queue's size in buffers, or 1024 (`MAX_CHAIN`, QEMU's
+  bound) once it goes through an indirect table: Linux bounds an indirect chain only by the ring
+  slots it takes, and virtio-gpu posts a vmalloc'd command (a virgl command buffer, a
+  framebuffer's backing entries) one page a segment, past the page's GPU queue of 16.
 - **Notify = exit:** the core returns the `DEVICE` exit; the vCPU worker rings the device worker's
   doorbell and waits or resumes (below). One path for native and wasm.
 - **Completions → IRQs:** the backend writes guest buffers directly, appends {queue, head, bytes

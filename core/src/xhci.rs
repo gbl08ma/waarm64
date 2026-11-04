@@ -337,6 +337,9 @@ pub struct Xhci {
     pub latency: u64,
     /// An endpoint waits to walk on (`Ep::more`): the next boundary should `tick`.
     more: bool,
+    /// An endpoint waits for a TD to leave flight (`Ep::more` at `MAX_TDS`): it walks on when one
+    /// does, not at the next boundary (an idle vCPU would spin on a `due` of 0 meanwhile).
+    full: bool,
     /// The command ring waits for room in the event ring.
     cmd_wait: bool,
     /// Realtime mode: a command whose cancels the backend hasn't read yet completes once it has
@@ -347,6 +350,9 @@ pub struct Xhci {
     cancel_mark: Option<u32>,
     /// A command's completion event, held until the backend has read every cancel record.
     held: Option<[u32; 4]>,
+    /// CRCR's CS or CA came while a command was `held`: the ring stops after its completion
+    /// (CRR reads 1 until then, as the command is still running).
+    stop: bool,
     /// `EV_REQUEST` from a flush whose caller doesn't return it (the commands' own): the next
     /// flush returns it.
     posted: u32,
@@ -418,10 +424,12 @@ impl Xhci {
             due: u64::MAX,
             latency: LATENCY_NS,
             more: false,
+            full: false,
             cmd_wait: false,
             fence: false,
             cancel_mark: None,
             held: None,
+            stop: false,
             posted: 0,
         }
     }
@@ -546,7 +554,10 @@ impl Xhci {
             }
             0x54 => self.dnctrl = v & 0xffff,
             0x58 => {
-                if v & 6 != 0 && self.crr {
+                if v & 6 != 0 && self.crr && self.held.is_some() {
+                    // CS or CA during a held command: it completes first, then the ring stops.
+                    self.stop = true;
+                } else if v & 6 != 0 && self.crr {
                     // CS or CA: the ring stops after the current command (there is none).
                     self.crr = false;
                     let p = self.crcr.at;
@@ -885,6 +896,19 @@ impl Xhci {
             }
             self.held = None;
             self.event(ev, true);
+            if core::mem::take(&mut self.stop) {
+                self.crr = false;
+                let p = self.crcr.at;
+                let stopped = [
+                    p as u32,
+                    (p >> 32) as u32,
+                    CC_RING_STOPPED << 24,
+                    T_COMMAND_EVENT << 10,
+                ];
+                self.event(stopped, true);
+                self.write_events(mem);
+                return;
+            }
             self.write_events(mem);
             if !self.pending.is_empty() {
                 self.cmd_wait = true;
@@ -1434,7 +1458,12 @@ impl Xhci {
                 return;
             }
             // Room in flight, a bound per walk and room for the events: else on at the next boundary.
-            if self.tags.len() >= MAX_TDS || n >= WALK_TDS || self.pending.len() >= WALK_TDS {
+            if self.tags.len() >= MAX_TDS {
+                self.slots[slot].eps[dci].more = true;
+                self.full = true;
+                return;
+            }
+            if n >= WALK_TDS || self.pending.len() >= WALK_TDS {
                 self.slots[slot].eps[dci].more = true;
                 self.more = true;
                 return;
@@ -1689,14 +1718,20 @@ impl Xhci {
 
     /// The earliest time (ns) a completed TD waits for its latency; u64::MAX if none waits.
     pub fn due(&self) -> u64 {
-        if self.more { 0 } else { self.due }
+        if self.walks_on() { 0 } else { self.due }
+    }
+
+    /// An endpoint waits to walk on and could: a bound of the last walk, or a TD left flight.
+    fn walks_on(&self) -> bool {
+        self.more || self.full && self.tags.len() < MAX_TDS
     }
 
     /// Walks on the endpoints that stopped for room (`Ep::more`).
     fn rewalk(&mut self, mem: &Mem) {
-        if !core::mem::take(&mut self.more) {
+        if !self.walks_on() {
             return;
         }
+        (self.more, self.full) = (false, false);
         for s in 1..=MAX_SLOTS {
             if !self.slots[s].enabled {
                 continue;

@@ -221,6 +221,32 @@ fn indirect_descriptors() {
     assert!(!t.broken());
 }
 
+/// An indirect chain may be longer than the queue (Linux bounds only the ring slots it takes:
+/// virtio-gpu posts a vmalloc'd command a page a segment), up to `MAX_CHAIN` buffers.
+#[test]
+fn an_indirect_chain_longer_than_the_queue() {
+    let table = BUF + 0x1000;
+    for (n, ok) in [(QSIZE + 1, true), (MAX_CHAIN, true), (MAX_CHAIN + 1, false)] {
+        let mut t = T::new();
+        t.up(F_VERSION_1 | F_INDIRECT_DESC);
+        t.desc(DESC, 0, table, 16 * n, D_INDIRECT, 0);
+        for i in 0..n {
+            let next = if i + 1 < n { D_NEXT } else { 0 };
+            t.desc(table, i, BUF, 4, next, i + 1);
+        }
+        t.offer(&[0]);
+        assert_eq!(t.broken(), !ok, "{n} buffers");
+        if ok {
+            let r = t.sh.req.pop_request().unwrap();
+            assert_eq!(
+                (r.read.len(), r.write.len()),
+                (n as usize, 0),
+                "{n} buffers"
+            );
+        }
+    }
+}
+
 #[test]
 fn backlog_waits_for_room() {
     let mut t = T::new();
