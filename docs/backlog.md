@@ -932,6 +932,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     122 `api.buffer_view.access.uniform_storage_texel_buffer` cases are NotSupported for `VK_KHR_maintenance5` and
     `VK_KHR_extended_flags` (not the without-format features, as this said before GD G5 offered them); storage texel buffers of formats under a word (r8, rg8, r16) and
     texel buffer atomics (R32's, mandatory in 1.3) aren't offered; sRGB and 64-bit formats aren't either.
+  - **`images/vkframes/venus-profile.json` predates VK4 T11** (2026-10-26; found by GD G6): it says R8_UINT and the
+    other tier1 formats have no storage, which the device has offered since T11, so captures made through it (the
+    programs' frames, `bench/vulkan/translate/programs.sh` with that profile) see an older device. Remake it
+    (`PROFILE=images/vkframes/venus-profile.json bench/vulkan/venus-run.ts`), rebuild the vkframes disk, check the
+    replays' references still hold.
   - **Storage images read as textures' leftovers** (GD G4; vk/README.md "Storage images a stage only reads"; the
     out-of-context review of 2026-11-04): a subresource read through such a texture and written through a storage
     binding in one scope (a 3D image's level is one WebGPU subresource) invalidates the dispatch or pass, its submit

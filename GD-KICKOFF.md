@@ -93,7 +93,12 @@ Results in `bench/results/local/godot/` (dev VM) and `godot-mac-*` (the M4).
   `image` group: no image case to add. Left: nothing). A variant by the view's
   format at the bind (or words), and `shaderStorageImageWriteWithoutFormat` advertised. *Done:* Godot's stage translates;
   `api.buffer_view`'s and the image cases join the list.
-- **G6. R8_UINT storage** (S): what Godot asks of it, offered through words or tier1.
+- **G6. R8_UINT storage** (S) (done 2026-11-04, nothing to change: Godot asks it of its default VRS texture, R8_UINT
+  4x4 as colour attachment, sampled and storage, on devices without VRS; our device offers R8_UINT storage in optimal
+  tiling on every adapter since VK4 T11 (words without tier1). The error came only from the two dev VM runs without a
+  WebGPU adapter (`vm-1`, `vm-2`: "this browser has no WebGPU adapter here"), where the driver has no adapter caps;
+  none of the runs with one logged it. Left: images/vkframes/venus-profile.json predates T11, docs/backlog.md).
+  What Godot asks of it, offered through words or tier1.
 - **G7. Godot as a standing workload** (M). A capture of Godot's scene frames (GFXReconstruct on lavapipe, as vkQuake's)
   replayed on the page beside the other programs' (tests/page-venus.test.ts); the editor's first start timed on the M4
   (cold and with the shader store warm); a `godot` step for `bench/vulkan/nvidia.sh` so the user's next NVIDIA run
