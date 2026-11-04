@@ -97,6 +97,8 @@ struct wgsl_resource {
    bool image_words;      /* a storage image as its view's words (kind WGSL_STORAGE, or _READ if the stage only reads it; its parameters a
                            * uniform buffer at the next binding: wgsl_print.c `image_words`); `dim`, `format` as a
                            * storage texture's */
+   bool image_texture;    /* a storage image the stage only reads, as a texture (kind WGSL_TEXTURE: wgsl_print.c
+                           * `texture_images`); `dim` as a storage texture's */
    uint8_t access;        /* storage textures */
    uint16_t format;       /* storage textures: enum pipe_format */
    uint32_t size;         /* uniform buffers: the bytes declared */
@@ -243,6 +245,10 @@ struct wgsl_print_options {
    bool push_storage;
    /* WebGPU's maxInterStageShaderVariables (0: unchecked). */
    uint32_t max_inter_stage;
+   /* WebGPU's storage textures a stage, vertex, fragment and compute (where `storage_limits`): past them, storage images
+    * a stage only reads are textures (wgsl_print.c `texture_images`). */
+   bool storage_limits;
+   uint32_t max_storage_textures[3];
 };
 
 /* Prints a lowered shader. Returns ralloc'd text owned by `mem_ctx`, or NULL with `error`. */

@@ -3768,9 +3768,11 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
          wg_json_printf(&j, "%s{\"binding\":%u,\"view\":%u}", sep, res->binding,
                         res->kind == WGSL_TEXTURE && feedback_att(r, d) >= 0 ? wg_view_twin(d->view)
                         : r->view_mask && !r->layered && d->type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT ? wg_view_att(d->view, r->view)
-                        : res->kind == WGSL_STORAGE_TEXTURE && d->view->storage ? d->view->storage
+                        : (res->kind == WGSL_STORAGE_TEXTURE || res->image_texture) && d->view->storage ? d->view->storage
+                        : res->image_texture                                ? d->view->view
                         : d->plane && d->plane < d->view->plane_count       ? d->view->planes[d->plane]
                         : res->kind != WGSL_TEXTURE                         ? d->view->view
+                        : d->view->flat && res->dim == WGSL_DIM_2D && !res->multisampled ? d->view->flat
                         : d->view->faces && res->dim == WGSL_DIM_2D_ARRAY   ? d->view->faces
                         : d->view->sampled                                  ? d->view->sampled
                                                                             : d->view->view);

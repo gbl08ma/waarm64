@@ -451,6 +451,10 @@ print_options(const struct wgsl_varyings *fs)
       .max_workgroup_storage = wg_limits.max_compute_workgroup_storage_size,
       .max_uniform_size = wg_limits.max_uniform_buffer_binding_size,
       .max_inter_stage = wg_limits.max_inter_stage_shader_variables,
+      .storage_limits = true,
+      .max_storage_textures = { MIN2(wg_limits.max_storage_textures, wg_limits.max_storage_textures_in_vertex_stage),
+                                MIN2(wg_limits.max_storage_textures, wg_limits.max_storage_textures_in_fragment_stage),
+                                wg_limits.max_storage_textures },
       .features = ((wg_features & WG_FEATURE_TIER2) ? WGSL_TIER2 : 0) | ((wg_features & WG_FEATURE_TIER1) ? WGSL_TIER1 : 0) |
                   ((wg_features & WG_FEATURE_DUAL_SOURCE) ? WGSL_DUAL_SOURCE : 0) |
                   (wg_subgroup_size() > 1 ? WGSL_SUBGROUPS : 0) | ((wg_features & WG_FEATURE_F16) ? WGSL_F16 : 0),
@@ -885,7 +889,7 @@ wg_compute_based(struct wg_program *p, uint32_t x, uint32_t y, uint32_t z)
    X(push_ubo_size) X(vis) X(pair_count) X(pairs) X(int_pair_count) X(int_pairs) X(key_pair_count) X(key_pairs)        \
    X(uses_base)
 #define RESOURCE_FIELDS(X)                                                                                             \
-   X(group) X(binding) X(kind) X(dim) X(sample) X(multisampled) X(atomic) X(signed_atomic) X(written) X(nonfiltering) X(image_words) X(access) \
+   X(group) X(binding) X(kind) X(dim) X(sample) X(multisampled) X(atomic) X(signed_atomic) X(written) X(nonfiltering) X(image_words) X(image_texture) X(access) \
    X(format) X(size)
 
 static void
@@ -1249,8 +1253,11 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
          for (uint32_t i = 0; ok && i < shaders[a]->info.resource_count; i++)
             for (uint32_t k = 0; ok && k < shaders[b]->info.resource_count; k++) {
                const struct wgsl_resource *x = &shaders[a]->info.resources[i], *y = &shaders[b]->info.resources[k];
-               if (x->kind == WGSL_STORAGE_TEXTURE && y->kind == WGSL_STORAGE_TEXTURE && x->group == y->group &&
-                   x->binding == y->binding && x->access != y->access) {
+               /* Or one stage only reads it, as a texture (wgsl_print.c `texture_images`), and another writes it. */
+               const bool xi = x->kind == WGSL_STORAGE_TEXTURE || x->image_texture;
+               const bool yi = y->kind == WGSL_STORAGE_TEXTURE || y->image_texture;
+               if (xi && yi && x->group == y->group && x->binding == y->binding &&
+                   (x->kind != y->kind || x->access != y->access || x->sample != y->sample)) {
                   snprintf(error, sizeof(error), "a storage image the stages access differently (group %u binding %u)",
                            x->group, x->binding);
                   ok = false;

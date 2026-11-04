@@ -408,6 +408,10 @@ struct wg_image_view {
    uint32_t *layer_atts;  /* multiview, layered passes: layers past the first as attachments (wg_view_att), WG_MAX_LAYERS - 1 of them */
    struct wg_view_crop *crops; /* the attachment in a pass smaller than it (wg_view_crop) */
    uint32_t word_params; /* a word binding's parameters (wgsl_print.c `image_words`), made at the first (0: none) */
+   /* A sampled 2D array view of one layer as a 2D view, for a shader that declares it 2D (0: none). Vulkan wants the
+    * view's type to be the shader's; Godot binds its 2D array default texture to 2D samplers (SDFGI's compute stages),
+    * which native drivers read as its layer, and WebGPU refuses the bind group (GD G4). */
+   uint32_t flat;
 };
 
 /* A view's attachment for multiview's view `view`: its layer past the view's first. */

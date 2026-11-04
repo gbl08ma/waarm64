@@ -46,6 +46,9 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=2`);
   const mips = pattern('statusbar:statusbar.cpu.mips', { value: '\\d+' });
   await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('status')?.textContent ?? ''), mips, { timeout: 60_000, polling: 200 });
+  // And past the boot (a loaded host shows MIPS while the state still says booting).
+  const running = `^\\s*${words('machine:main.state.running').source}\\s`;
+  await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('status')?.textContent ?? ''), running, { timeout: 60_000, polling: 200 });
   const vcpus = words('statusbar:statusbar.vcpus', { count: 2 }).source;
   // The power state, a divider, then the rest with a dot between (the bar's drawing, not words).
   assert.match(await bar(page), new RegExp(`^${words('machine:main.state.running').source} ${[

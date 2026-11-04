@@ -1,0 +1,29 @@
+#version 450
+// tests/venus-driver.test.ts (GD G4, wg_test.c 86): 16 textures (WebGPU's per stage) and a storage image the stage only
+// reads: within the limits, the image a storage texture. Each texture's texel and the image's summed into the buffer.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform texture2D t[16];
+layout(set = 0, binding = 16) uniform sampler s;
+layout(set = 0, binding = 17, r32ui) readonly uniform uimage2D img;
+layout(set = 0, binding = 18) buffer Out { uint v[4]; } o;
+void main() {
+  vec4 sum = vec4(0);
+  sum += texelFetch(sampler2D(t[0], s), ivec2(0), 0);
+  sum += texelFetch(sampler2D(t[1], s), ivec2(0), 0);
+  sum += texelFetch(sampler2D(t[2], s), ivec2(0), 0);
+  sum += texelFetch(sampler2D(t[3], s), ivec2(0), 0);
+  sum += texelFetch(sampler2D(t[4], s), ivec2(0), 0);
+  sum += texelFetch(sampler2D(t[5], s), ivec2(0), 0);
+  sum += texelFetch(sampler2D(t[6], s), ivec2(0), 0);
+  sum += texelFetch(sampler2D(t[7], s), ivec2(0), 0);
+  sum += texelFetch(sampler2D(t[8], s), ivec2(0), 0);
+  sum += texelFetch(sampler2D(t[9], s), ivec2(0), 0);
+  sum += texelFetch(sampler2D(t[10], s), ivec2(0), 0);
+  sum += texelFetch(sampler2D(t[11], s), ivec2(0), 0);
+  sum += texelFetch(sampler2D(t[12], s), ivec2(0), 0);
+  sum += texelFetch(sampler2D(t[13], s), ivec2(0), 0);
+  sum += texelFetch(sampler2D(t[14], s), ivec2(0), 0);
+  sum += texelFetch(sampler2D(t[15], s), ivec2(0), 0);
+  o.v[0] = uint(sum.y);
+  o.v[1] = imageLoad(img, ivec2(1, 1)).x;
+}

@@ -933,6 +933,17 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     format (images do: 122 `api.buffer_view.access.uniform_storage_texel_buffer` cases NotSupported; advertising them
     for images needs the image's format at the bind); storage texel buffers of formats under a word (r8, rg8, r16) and
     texel buffer atomics (R32's, mandatory in 1.3) aren't offered; sRGB and 64-bit formats aren't either.
+  - **Storage images read as textures' leftovers** (GD G4; vk/README.md "Storage images a stage only reads"; the
+    out-of-context review of 2026-11-04): a subresource read through such a texture and written through a storage
+    binding in one scope (a 3D image's level is one WebGPU subresource) invalidates the dispatch or pass, its submit
+    dropped, as a read-only storage binding beside a writable one did before (`scope_images` doesn't see it; a
+    texture can't be widened to read-write as `program_for` widens buffers); a 2D array view of one layer bound to a
+    storage image declared 2D still makes an invalid bind group (`wg_image_view.flat` is made for sampled views only and
+    storage bindings take `storage` or `view`); `wg_program_merge` (programs from the cache) skips the checks across
+    stages that `wg_shader_compile` makes, so stages that disagree on an image's kind there make an invalid pipeline
+    instead of a refused one; the worker's `packPass` clamps its bindings to `maxStorageBufferBindingSize`, so a packed
+    alias of a large 3D image is copied wrong, not refused, and an array's copies go a layer at a time through two
+    temporary buffers.
   - **Storage images as words' leftovers** (VK4 T11; vk/README.md "Storage images as words"): a view past
     `maxStorageBufferBindingSize` makes an invalid bind group, its submit dropped (WebGPU's minimum is 128 MiB: a 4096x4096
     `rgba16float` level, loaded and stored); a stage of many such images meets the storage and uniform buffers a stage has

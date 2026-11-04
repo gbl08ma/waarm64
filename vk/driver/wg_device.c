@@ -383,11 +383,16 @@ view_format_ok(VkFormat format, VkFormat view)
 }
 
 /* A view of `format` of a texture of `f`, which WebGPU refuses, that a texture of its own can back (VK4 T4): bytes for
- * bytes, a block for a block. */
+ * bytes, a block for a block. A packed format's (16 bits a texel in an rgba8unorm texture) and another of 16 bits a
+ * texel copy through a buffer, packed and unpacked by the worker (`copyPacked`): Godot's SDFGI writes an R16_UINT image
+ * and samples it as R4G4B4A4 (GD G4). */
 static bool
 view_format_aliasable(const struct wg_texture_format *f, VkFormat view)
 {
    const struct wg_texture_format *v = wg_texture_format(view);
+   if (v && ((f->flags | v->flags) & WG_FMT_PACKED))
+      return !((f->flags | v->flags) & (WG_FMT_DEPTH | WG_FMT_STENCIL)) && f->bw == 1 && v->bw == 1 &&
+             vk_format_get_blocksize(f->vk) == 2 && vk_format_get_blocksize(view) == 2;
    return v && !(f->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL | WG_FMT_PACKED)) &&
           !(v->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL | WG_FMT_PACKED)) && v->bytes == f->bytes && v->bw == f->bw &&
           v->bh == f->bh;
@@ -1171,6 +1176,9 @@ wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, V
       usage |= 4;
    if ((vi->usage & VK_IMAGE_USAGE_STORAGE_BIT) && (flags & WG_FMT_STORAGE_TEXTURE))
       usage |= 8;
+   /* A storage image a stage only reads is bound as a texture (GD G4: wgsl_print.c `texture_images`). */
+   if ((vi->usage & VK_IMAGE_USAGE_STORAGE_BIT) && (flags & WG_FMT_SAMPLE))
+      usage |= 4;
    if (vi->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
       usage |= 16;
    /* A pass may draw it in a crop, copied from it and back (`crop_copies`), which for depth may be the worker's shader. */
@@ -1646,6 +1654,16 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
                      layered ? view->vk.base_array_layer : 0, layered ? view->vk.layer_count : 1);
       view->sampled = wg_create_json(WG_KIND_VIEW, &j);
    }
+   if (view->vk.view_type == VK_IMAGE_VIEW_TYPE_2D_ARRAY && view->vk.layer_count == 1 && layered &&
+       !strcmp(dim, "2d-array") && (view->vk.usage & VK_IMAGE_USAGE_SAMPLED_BIT)) {
+      wg_json_printf(&j, "{\"texture\":%u,%s", tex, swizzle);
+      if (!strcmp(aspect, "all"))
+         wg_json_printf(&j, "\"format\":\"%s\",", view->fmt->name);
+      wg_json_printf(&j, "\"dimension\":\"2d\",\"aspect\":\"%s\",\"baseMipLevel\":%u,\"mipLevelCount\":%u,"
+                     "\"baseArrayLayer\":%u,\"arrayLayerCount\":1}",
+                     aspect, view->vk.base_mip_level, view->vk.level_count, view->vk.base_array_layer);
+      view->flat = wg_create_json(WG_KIND_VIEW, &j);
+   }
    if ((view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE || view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) &&
        (vk_format_is_int(view->vk.view_format) || aspects == VK_IMAGE_ASPECT_STENCIL_BIT ||
         aspects == VK_IMAGE_ASPECT_DEPTH_BIT)) {
@@ -1784,6 +1802,7 @@ wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallb
       return;
    wg_id_release(view->twin);
    wg_id_release(view->twin_tex);
+   wg_id_release(view->flat);
    wg_id_release(view->view);
    wg_id_release(view->storage);
    wg_id_release(view->sampled);
