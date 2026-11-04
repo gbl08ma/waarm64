@@ -1,0 +1,150 @@
+== round 1: base
+alpine jit 1: 2655076428 steps in 5451 ms, 487.1 MIPS (warm-up)
+boot_alpine_jit_mips            514.991 ±4.241 MIPS
+boot_alpine_jit_total          5155.575 ±42.918 ms
+alpine_user_jit_compress       1891.170 ±25.727 ms
+alpine_user_jit_lua            2962.785 ±11.275 ms
+alpine_user_jit_churn          1133.865 ±197.965 ms
+alpine_user_jit_sqlite         2287.440 ±45.470 ms
+alpine_user_jit_total         13511.890 ±347.703 ms
+alpine jit 4: 2655076428 steps in 11743 ms, 226.1 MIPS (warm-up)
+boot_alpine_dec_mips            229.289 ±0.126 MIPS
+boot_alpine_dec_total         11579.610 ±6.340 ms
+buildroot jit 4: 40602487 steps in 272 ms, 149.3 MIPS (warm-up)
+boot_dec_mips                   189.603 ±1.304 MIPS
+boot_dec_total                  214.145 ±1.470 ms
+dec_mips_cold                   203.562 ±0.000 MIPS
+dec_mips                        502.229 ±2.172 MIPS
+vm_dec_mmu_mips_cold            164.204 ±0.000 MIPS
+vm_dec_mmu_mips                 496.093 ±3.493 MIPS
+interp_mips_cold                                   61.059 ±0.000 MIPS
+interp_mips                     122.368 ±0.778 MIPS
+interp_fp_mips_cold                             33.764 ±0.000 MIPS
+interp_fp_mips                   59.062 ±0.172 MIPS
+jit_fp_mips_cold                 46.571 ±0.000 MIPS
+jit_fp_mips                    2700.978 ±114.413 MIPS
+== round 1: fix3
+alpine jit 1: 2655076428 steps in 5560 ms, 477.5 MIPS (warm-up)
+boot_alpine_jit_mips            500.280 ±1.508 MIPS
+boot_alpine_jit_total          5307.185 ±16.055 ms
+alpine_user_jit_compress       1887.315 ±16.238 ms
+alpine_user_jit_lua            2989.645 ±18.522 ms
+alpine_user_jit_churn          1167.120 ±198.275 ms
+alpine_user_jit_sqlite         2301.285 ±34.735 ms
+alpine_user_jit_total         13446.800 ±410.100 ms
+alpine jit 4: 2655076428 steps in 11761 ms, 225.7 MIPS (warm-up)
+boot_alpine_dec_mips            228.948 ±0.120 MIPS
+boot_alpine_dec_total         11596.850 ±6.075 ms
+buildroot jit 4: 40602487 steps in 275 ms, 147.4 MIPS (warm-up)
+boot_dec_mips                   189.351 ±1.239 MIPS
+boot_dec_total                  214.430 ±1.398 ms
+dec_mips_cold                   203.459 ±0.000 MIPS
+dec_mips                        498.225 ±3.632 MIPS
+vm_dec_mmu_mips_cold            164.204 ±0.000 MIPS
+vm_dec_mmu_mips                 493.401 ±1.828 MIPS
+interp_mips_cold                                   57.737 ±0.000 MIPS
+interp_mips                     121.767 ±1.039 MIPS
+interp_fp_mips_cold                             34.048 ±0.000 MIPS
+interp_fp_mips                   61.127 ±0.058 MIPS
+jit_fp_mips_cold                 46.718 ±0.000 MIPS
+jit_fp_mips                    2739.727 ±47.225 MIPS
+== round 2: base
+alpine jit 1: 2655076428 steps in 5592 ms, 474.8 MIPS (warm-up)
+boot_alpine_jit_mips            495.454 ±6.561 MIPS
+boot_alpine_jit_total          5358.875 ±71.902 ms
+alpine_user_jit_compress       1871.630 ±17.595 ms
+alpine_user_jit_lua            2997.890 ±24.792 ms
+alpine_user_jit_churn          1141.180 ±180.097 ms
+alpine_user_jit_sqlite         2276.180 ±52.863 ms
+alpine_user_jit_total         13215.495 ±314.310 ms
+alpine jit 4: 2655076428 steps in 11746 ms, 226.0 MIPS (warm-up)
+boot_alpine_dec_mips            229.310 ±0.026 MIPS
+boot_alpine_dec_total         11578.545 ±1.295 ms
+buildroot jit 4: 40602487 steps in 275 ms, 147.9 MIPS (warm-up)
+boot_dec_mips                   188.919 ±1.198 MIPS
+boot_dec_total                  214.920 ±1.367 ms
+dec_mips_cold                   201.613 ±0.000 MIPS
+dec_mips                        500.000 ±1.896 MIPS
+vm_dec_mmu_mips_cold            161.290 ±0.000 MIPS
+vm_dec_mmu_mips                 495.909 ±3.383 MIPS
+interp_mips_cold                                   60.929 ±0.000 MIPS
+interp_mips                     122.617 ±0.623 MIPS
+interp_fp_mips_cold                             32.873 ±0.000 MIPS
+interp_fp_mips                   59.065 ±0.095 MIPS
+jit_fp_mips_cold                 45.449 ±0.000 MIPS
+jit_fp_mips                    2737.851 ±96.016 MIPS
+== round 2: fix3
+alpine jit 1: 2655076428 steps in 5438 ms, 488.3 MIPS (warm-up)
+boot_alpine_jit_mips            500.782 ±14.854 MIPS
+boot_alpine_jit_total          5301.865 ±161.335 ms
+alpine_user_jit_compress       1869.410 ±6.363 ms
+alpine_user_jit_lua            2976.830 ±32.988 ms
+alpine_user_jit_churn          1148.845 ±184.892 ms
+alpine_user_jit_sqlite         2286.570 ±23.418 ms
+alpine_user_jit_total         13179.860 ±332.970 ms
+alpine jit 4: 2655076428 steps in 11770 ms, 225.6 MIPS (warm-up)
+boot_alpine_dec_mips            228.920 ±0.120 MIPS
+boot_alpine_dec_total         11598.275 ±6.095 ms
+buildroot jit 4: 40602487 steps in 273 ms, 148.5 MIPS (warm-up)
+boot_dec_mips                   190.541 ±0.551 MIPS
+boot_dec_total                  213.090 ±0.617 ms
+dec_mips_cold                   203.666 ±0.000 MIPS
+dec_mips                        501.788 ±3.271 MIPS
+vm_dec_mmu_mips_cold            160.514 ±0.000 MIPS
+vm_dec_mmu_mips                 491.884 ±3.887 MIPS
+interp_mips_cold                                   56.689 ±0.000 MIPS
+interp_mips                     120.989 ±1.570 MIPS
+interp_fp_mips_cold                             34.124 ±0.000 MIPS
+interp_fp_mips                   61.058 ±0.316 MIPS
+jit_fp_mips_cold                 48.077 ±0.000 MIPS
+jit_fp_mips                    2742.544 ±54.490 MIPS
+== round 3: base
+alpine jit 1: 2655076428 steps in 5446 ms, 487.5 MIPS (warm-up)
+boot_alpine_jit_mips            506.814 ±0.357 MIPS
+boot_alpine_jit_total          5238.760 ±3.693 ms
+alpine_user_jit_compress       1880.905 ±9.513 ms
+alpine_user_jit_lua            2977.485 ±23.422 ms
+alpine_user_jit_churn          1136.050 ±196.270 ms
+alpine_user_jit_sqlite         2275.395 ±14.915 ms
+alpine_user_jit_total         13236.190 ±335.305 ms
+alpine jit 4: 2655076428 steps in 11755 ms, 225.9 MIPS (warm-up)
+boot_alpine_dec_mips            228.987 ±0.158 MIPS
+boot_alpine_dec_total         11594.890 ±7.988 ms
+buildroot jit 4: 40602487 steps in 272 ms, 149.2 MIPS (warm-up)
+boot_dec_mips                   188.998 ±2.699 MIPS
+boot_dec_total                  214.830 ±3.098 ms
+dec_mips_cold                   202.943 ±0.000 MIPS
+dec_mips                        499.471 ±2.804 MIPS
+vm_dec_mmu_mips_cold            163.132 ±0.000 MIPS
+vm_dec_mmu_mips                 495.602 ±4.442 MIPS
+interp_mips_cold                                   61.228 ±0.000 MIPS
+interp_mips                     123.071 ±0.399 MIPS
+interp_fp_mips_cold                             32.930 ±0.000 MIPS
+interp_fp_mips                   58.946 ±0.174 MIPS
+jit_fp_mips_cold                 46.425 ±0.000 MIPS
+jit_fp_mips                    2621.322 ±292.758 MIPS
+== round 3: fix3
+alpine jit 1: 2655076428 steps in 5440 ms, 488.1 MIPS (warm-up)
+boot_alpine_jit_mips            506.045 ±3.994 MIPS
+boot_alpine_jit_total          5246.720 ±41.992 ms
+alpine_user_jit_compress       1864.180 ±1.800 ms
+alpine_user_jit_lua            2964.350 ±17.828 ms
+alpine_user_jit_churn          1144.885 ±172.695 ms
+alpine_user_jit_sqlite         2265.880 ±39.863 ms
+alpine_user_jit_total         13181.580 ±339.778 ms
+alpine jit 4: 2655076428 steps in 11705 ms, 226.8 MIPS (warm-up)
+boot_alpine_dec_mips            229.889 ±0.061 MIPS
+boot_alpine_dec_total         11549.380 ±3.082 ms
+buildroot jit 4: 40602487 steps in 273 ms, 148.6 MIPS (warm-up)
+boot_dec_mips                   189.559 ±2.291 MIPS
+boot_dec_total                  214.195 ±2.608 ms
+dec_mips_cold                   205.550 ±0.000 MIPS
+dec_mips                        499.813 ±5.138 MIPS
+vm_dec_mmu_mips_cold            164.002 ±0.000 MIPS
+vm_dec_mmu_mips                 494.193 ±1.435 MIPS
+interp_mips_cold                                   58.021 ±0.000 MIPS
+interp_mips                     121.242 ±0.289 MIPS
+interp_fp_mips_cold                             34.066 ±0.000 MIPS
+interp_fp_mips                   61.128 ±0.186 MIPS
+jit_fp_mips_cold                 48.094 ±0.000 MIPS
+jit_fp_mips                    2738.788 ±21.028 MIPS

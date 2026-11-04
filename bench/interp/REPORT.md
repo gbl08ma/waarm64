@@ -1904,3 +1904,54 @@ Chromium 153.0.8010.52, 3 alternated rounds, medians, JSON and the patch in `res
 Dropped. Nothing gained past noise, and the flat guest fell as it did for the shared probe above (−19.5%). Not profiled, but
 the two look alike: `hot<Flat>` sits close to something in V8's register allocation, and a change that reads as smaller can
 cross it. A change to `hot` has to be measured on the flat guest whatever it looks like.
+
+## REVIEW P3 and P4: the structure loads' fast path, IXC, and the inlining P3 broke (2026-11-04)
+
+The dev VM, Chromium 155.0.8059.84, Node 26.7.0; `bench/interp/ab.sh`, arms alternated each round, medians; JSON in
+`results/review-p3p4/` (one directory a session). Base `aa9bd5fe` (before P3); P3 is `952bfc7f` (the structure loads
+and stores through `Bus::fast`, REVIEW-20261103.md); P4 skips the FP fast paths' exactness test when FPSR.IXC is set.
+
+**P3 cost the reference interpreter a call per instruction.** `first/`, three rounds:
+
+| | base | P3 | P3 + P4 |
+|---|---|---|---|
+| `interp_fp_mips` | 59.1 | **42.6** (−27.8%) | 43.7 |
+| `jit_fp_mips` | 2,740 | 2,728 | 2,739 |
+
+The FP guest has no structure loads (`vld1q_u8` is an `ldr q`). In the wasm (`wasm-tools print`, debug sections
+stripped), `interp::steps::go::<Flat>` went from ~3,980 lines to 306 and `jit_exec_flat` from ~3,780 to 218:
+`exec_at`'s closure (`|c| exec(c, m, insn, pc)` through `cpu_pc_then`) had gone out of line, LLVM's size heuristic
+tipped by `ldst_fp::exec`'s growth. The fix calls `exec` directly (`pc_back` after). That left −5% on both
+reference guests (`v2/`: `interp_fp_mips` 59.1 → 56.1, `interp_mips` 122.9 → 116.8; `dec_mips` and `jit_fp_mips`
+flat). Moving `multiple` and `single_structure` out of line changed nothing (`v3/`, fix2 = fix). The step loop's
+callees against the base's: `extend`, `simd_int::handler` and the `or_else` closure to `simd_fp::handler` were now
+calls. All three made inline (`#[inline(always)]`, a `match` for the closure): the loops call what the base's call.
+
+| `v4/`, three rounds | base | P4 alone (B) | P3 + P4 + fixes |
+|---|---|---|---|
+| `interp_fp_mips` | 59.0 | 61.2 | **61.1** |
+| `interp_mips` | 122.4 | 122.8 | 121.7 |
+
+**What's left of P3, `interp_mips` −0.6 to −1.1%:** builds C (P4 and the direct call, base's `ldst_fp.rs`) and D (all
+the fixes, base's `ldst_fp.rs`) equal P4 alone (`v5/`: 122.3, 122.4, 122.7 against 121.6). Bisected on the loop's
+shape (its line count, a static proxy): base's `multiple` with the rest of P3 gives the base's loop; P3's `multiple`
+gives the other whether its fast path is live, dead (`None`), inlined or not, and with base's post-index sum. In the
+crate's IR, `ldst_fp::exec`'s result gains `initializes((0, 1))` (and `%c` `captures(none)`): LLVM's attribute
+inference, and the loop then reads the `Exit` in bytes. No inlining change; kept.
+
+**The whole of it against base** (`broad/`, three rounds):
+
+| | base | P3 + P4 + fixes | |
+|---|---|---|---|
+| `alpine_user_jit` total, ms | 13,236 | 13,182 | −0.4%, rounds overlap |
+| `boot_alpine_jit_mips` | 506.8 | 500.8 | −1.2%, rounds overlap (495-515 against 500-506) |
+| `boot_alpine_dec_mips` | 229.3 | 228.9 | −0.1% |
+| `boot_dec_mips` | 189.0 | 189.6 | +0.3% |
+| `dec_mips` | 500.0 | 499.8 | 0 |
+| `vm_dec_mmu_mips` | 495.9 | 493.4 | −0.5% |
+| `interp_fp_mips` | 59.1 | **61.1** | **+3.5%** |
+| `interp_mips` | 122.6 | 121.2 | −1.1% |
+| `jit_fp_mips` | 2,701 | 2,740 | +1.4%, rounds overlap |
+
+P4 alone is the FP guest's +3.5-3.9% (`v1/`, `v3/`). Natively, P3's structure forms (one instruction, release, flat
+bus): `ld1 {v0-v3}.16b` 207 → 15 ns, `ld4 .16b` 183 → 22, `st4` 271 → 20 (`ldp q0, q1` 11).

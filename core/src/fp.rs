@@ -1234,6 +1234,9 @@ impl Fpu {
         if !self.fast() || !normal(f, a) || !normal(f, b) {
             return None;
         }
+        // IXC is cumulative: once set (nearly always, after a program's first
+        // inexact operation) whether this result is exact changes nothing.
+        let ixc = self.flags & IXC != 0;
         let (r, inexact) = if f == S {
             let (x, y) = (f32::from_bits(a as u32), f32::from_bits(b as u32));
             let (xd, yd) = (x as f64, y as f64);
@@ -1244,15 +1247,16 @@ impl Fpu {
                 Op2::Div => x / y,
             };
             // Products of two singles are exact in double; sums use TwoSum.
-            let inexact = match op {
-                Op2::Add | Op2::Sub => {
-                    let y = if matches!(op, Op2::Sub) { -y } else { y };
-                    let bv = r - x;
-                    (x - (r - bv)) + (y - bv) != 0.0
-                }
-                Op2::Mul => r as f64 != xd * yd,
-                Op2::Div => r as f64 * yd != xd,
-            };
+            let inexact = !ixc
+                && match op {
+                    Op2::Add | Op2::Sub => {
+                        let y = if matches!(op, Op2::Sub) { -y } else { y };
+                        let bv = r - x;
+                        (x - (r - bv)) + (y - bv) != 0.0
+                    }
+                    Op2::Mul => r as f64 != xd * yd,
+                    Op2::Div => r as f64 * yd != xd,
+                };
             (r.to_bits() as u64, inexact)
         } else if f == D {
             let (x, y) = (f64::from_bits(a), f64::from_bits(b));
@@ -1265,16 +1269,17 @@ impl Fpu {
             if !fast_result(D, r.to_bits()) {
                 return None;
             }
-            let inexact = match op {
-                // TwoSum: the rounding error of r = x + y, exactly.
-                Op2::Add | Op2::Sub => {
-                    let y = if matches!(op, Op2::Sub) { -y } else { y };
-                    let bv = r - x;
-                    (x - (r - bv)) + (y - bv) != 0.0
-                }
-                Op2::Mul => !exact_product_f64(x, y, r),
-                Op2::Div => !exact_product_f64(r, y, x),
-            };
+            let inexact = !ixc
+                && match op {
+                    // TwoSum: the rounding error of r = x + y, exactly.
+                    Op2::Add | Op2::Sub => {
+                        let y = if matches!(op, Op2::Sub) { -y } else { y };
+                        let bv = r - x;
+                        (x - (r - bv)) + (y - bv) != 0.0
+                    }
+                    Op2::Mul => !exact_product_f64(x, y, r),
+                    Op2::Div => !exact_product_f64(r, y, x),
+                };
             (r.to_bits(), inexact)
         } else {
             return None;
@@ -1292,17 +1297,18 @@ impl Fpu {
         if !self.fast() || !normal(f, a) || a & f.sign() != 0 {
             return None;
         }
+        let ixc = self.flags & IXC != 0;
         let (r, inexact) = if f == S {
             let r = f32::from_bits(a as u32).sqrt();
             let rd = r as f64;
             (
                 r.to_bits() as u64,
-                rd * rd != f32::from_bits(a as u32) as f64,
+                !ixc && rd * rd != f32::from_bits(a as u32) as f64,
             )
         } else if f == D {
             let x = f64::from_bits(a);
             let r = x.sqrt();
-            (r.to_bits(), !exact_product_f64(r, r, x))
+            (r.to_bits(), !ixc && !exact_product_f64(r, r, x))
         } else {
             return None;
         };

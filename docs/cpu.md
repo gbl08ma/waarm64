@@ -343,7 +343,9 @@ FMA, so:
   before rounding, FZ, DN, the ARM NaN order) over one generic u128 unpack/round/pack for half,
   single and double. Chosen over porting SoftFloat: smaller and ARM-specific.
 - **Fast paths:** single and double add/sub/mul/div/sqrt use host arithmetic in RNE when inputs
-  are normal and the result is normal above the smallest binade, with Inexact computed exactly.
+  are normal and the result is normal above the smallest binade, with Inexact computed exactly, unless
+  FPSR.IXC is already set (`Fpu::with_fpsr`): IXC is cumulative, so then the exactness test (for double MUL, DIV
+  and SQRT a u128 product, compiler-rt calls in wasm) is skipped.
 - NaNs are fixed up to ARM propagation rules (or the default NaN with `FPCR.DN`) after each op.
 - `FMADD` and friends use the exact software FMA, except where the JIT's inline FMA applies (round to
   nearest even, FPSR.IXC already set, normal or zero operands and a normal result): then `Fpu::muladd` runs

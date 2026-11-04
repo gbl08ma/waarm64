@@ -562,3 +562,57 @@ fn round_int_n() {
     assert_eq!(r(RN, D, 1, PosInf, 32), (d(1.0), IXC)); // a denormal rounded up
     assert_eq!(r(FZ, D, 1, PosInf, 32), (d(0.0), IDC)); // flushed first
 }
+
+/// With FPSR.IXC already set, the fast paths of add, sub, mul, div and sqrt
+/// skip the exactness test: the results and every other flag are those with IXC
+/// clear, and IXC stays set (exact and inexact cases, single and double).
+#[test]
+fn fast_paths_with_ixc_set_skip_the_exactness_test() {
+    let mut x = 0x9e37_79b9_7f4a_7c15u64;
+    let mut next = || {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        x
+    };
+    // Random normals, and small integers (whose results are often exact).
+    let mut vals: Vec<(Fmt, u64)> = Vec::new();
+    for k in 0..2000u64 {
+        let r = next();
+        let (sv, dv) = if k % 2 == 0 {
+            (
+                (r as u32 & 0x3fff_ffff | 0x0080_0000) as u64,
+                r & 0x3fff_ffff_ffff_ffff | 1 << 52,
+            )
+        } else {
+            let n = (r % 64) as f64 + 1.0;
+            (s(n as f32), d(n))
+        };
+        vals.push((S, sv));
+        vals.push((D, dv));
+    }
+    let mut exact = 0;
+    for w in vals.as_chunks::<4>().0 {
+        for &(f, a, b) in &[(w[0].0, w[0].1, w[2].1), (w[1].0, w[1].1, w[3].1)] {
+            let ops: [&dyn Fn(&mut Fpu) -> u64; 5] = [
+                &|u| u.add(f, a, b),
+                &|u| u.sub(f, a, b),
+                &|u| u.mul(f, a, b),
+                &|u| u.div(f, a, b),
+                &|u| u.sqrt(f, a),
+            ];
+            for (k, op) in ops.iter().enumerate() {
+                let (want, flags) = run(RN, op);
+                exact += (flags & IXC == 0) as u32;
+                let mut u = Fpu::with_fpsr(RN, IXC);
+                let r = op(&mut u);
+                assert!(
+                    (r, u.flags) == (want, flags | IXC),
+                    "op {k} on {a:#x}, {b:#x}: {r:#x} {:#x}, want {want:#x} {flags:#x}",
+                    u.flags
+                );
+            }
+        }
+    }
+    assert!(exact > 500, "{exact} exact cases");
+}
