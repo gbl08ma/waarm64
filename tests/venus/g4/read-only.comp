@@ -1,0 +1,36 @@
+#version 450
+// tests/venus-driver.test.ts (GD G4, wg_test.c 84): ten storage images the stage only reads, past WebGPU's 8 storage
+// textures a stage, beside one it writes. i0 to i5 are level 1 of layers 0 to 5 of one R32_UINT image (101 to 106),
+// i6 its level 0, layer 0 (1); arr its level 1, layers 2 and 3; cube its level 1 as a cube; col an RGBA8 image.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0, r32ui) readonly uniform uimage2D i0;
+layout(set = 0, binding = 1, r32ui) readonly uniform uimage2D i1;
+layout(set = 0, binding = 2, r32ui) readonly uniform uimage2D i2;
+layout(set = 0, binding = 3, r32ui) readonly uniform uimage2D i3;
+layout(set = 0, binding = 4, r32ui) readonly uniform uimage2D i4;
+layout(set = 0, binding = 5, r32ui) readonly uniform uimage2D i5;
+layout(set = 0, binding = 6, r32ui) readonly uniform uimage2D i6;
+layout(set = 0, binding = 7, r32ui) readonly uniform uimage2DArray arr;
+layout(set = 0, binding = 8, r32ui) readonly uniform uimageCube cube;
+layout(set = 0, binding = 9, rgba8) readonly uniform image2D col;
+layout(set = 0, binding = 10, r32ui) writeonly uniform uimage2D dst;
+layout(set = 0, binding = 11) buffer Out { uint v[16]; } o;
+void main() {
+  o.v[0] = imageLoad(i0, ivec2(1, 1)).x;
+  o.v[1] = imageLoad(i1, ivec2(1, 0)).x;
+  o.v[2] = imageLoad(i2, ivec2(0, 1)).x;
+  o.v[3] = imageLoad(i3, ivec2(0, 0)).x;
+  o.v[4] = imageLoad(i4, ivec2(1, 1)).x;
+  o.v[5] = imageLoad(i5, ivec2(1, 1)).x;
+  o.v[6] = imageLoad(i6, ivec2(3, 3)).x;
+  o.v[7] = imageLoad(arr, ivec3(1, 0, 1)).x;
+  ivec3 as = imageSize(arr);
+  o.v[8] = uint(as.x);
+  o.v[9] = uint(as.z);
+  o.v[10] = imageLoad(cube, ivec3(1, 1, 4)).x;
+  o.v[11] = uint(imageSize(cube).x);
+  o.v[12] = packUnorm4x8(imageLoad(col, ivec2(1, 1)));
+  o.v[13] = uint(imageSize(i1).x);
+  o.v[14] = uint(imageSize(i6).y);
+  imageStore(dst, ivec2(1, 0), uvec4(imageLoad(i2, ivec2(1, 1)).x + 1000u));
+}

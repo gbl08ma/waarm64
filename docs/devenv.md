@@ -14,7 +14,11 @@ the x86_64 desktop (which the user needs for other work).
   (`~/.ssh/config`). The `oracle` VM (Debian 13, 4 vCPUs, 4 GiB) shares the Mac:
   `ssh macmini.lan /opt/homebrew/bin/limactl shell oracle <cmd>`.
 - The Mac host runs real-GPU benchmarks from `~/webpc-gpu-bench` (`bench/gpu/sway-mac.sh` copies what they need;
-  nothing is installed there; its disk has little room: keep it small).
+  nothing is installed there; its disk has little room: keep it small). After every run on the Mac (not the VM's own CI,
+  which can't use its GPU), `bench/gpu/mac-leftovers.sh` says the Mac's GPU utilization, its load and any Playwright Chrome no run owns
+  (`--kill` ends those, by PID): a run that hangs the GPU leaves its browser behind (the harness's alarm ends node,
+  not Chrome), and a GPU held at 100% throttles the whole Mac, the dev VM's CI with it (GD G4: five such browsers made
+  CI's timing tests fail for an hour). A GPU process stuck exiting can't be ended: only a restart of the Mac frees it.
 - Side checkouts: `../webpc-exp` and `../webpc-base` (detached worktrees for A/B experiments).
 - Benchmark numbers from the x86_64 desktop (M0 to M5 step 7) aren't comparable with the VM's.
 

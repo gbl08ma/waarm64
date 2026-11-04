@@ -1,0 +1,12 @@
+#version 450
+// tests/venus-driver.test.ts (GD G4, wg_test.c 85): a 2D array view of one layer bound where the shader declares a 2D
+// texture (Godot's SDFGI binds its 2D array default texture so), and an R4G4B4A4 view of an R16_UINT image (SDFGI
+// writes such an image and samples it so), each texel packed into the buffer.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform sampler2D flat_view;
+layout(set = 0, binding = 1) uniform sampler2D packed_view;
+layout(set = 0, binding = 2) buffer Out { uint v[4]; } o;
+void main() {
+  o.v[0] = packUnorm4x8(texelFetch(flat_view, ivec2(1, 1), 0));
+  o.v[1] = packUnorm4x8(texelFetch(packed_view, ivec2(1, 0), 0));
+}

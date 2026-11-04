@@ -74,7 +74,13 @@ Results in `bench/results/local/godot/` (dev VM) and `godot-mac-*` (the M4).
   GPU worker's thread while that thread is in a call (the ticker, web/venus-ticker.ts, already runs beside it), so
   Venus's watchdog sees a busy renderer, not a dead one; Mesa's own 895 s abort stays for real hangs. *Done:* a test
   that blocks the worker past 4 s under a guest wait without the program aborting.
-- **G4. Read-only storage images bound as sampled textures** (M). A storage image a stage only reads is a texture
+- **G4. Read-only storage images bound as sampled textures** (done 2026-11-04: a storage image a stage only reads is a
+  texture where it must be (loaded without a format, or a format with no storage texture) or where the stage's storage
+  textures pass WebGPU's; SDFGI's one-layer 2D array views bound where 2D is declared and its R4G4B4A4 views of R16_UINT
+  images as packed aliases; Godot's 209 stages within 6 storage textures (was 15/9/9), driver tests 84–87, dEQP-VK's
+  list unchanged and passing (vk/README.md "Storage images a stage only reads"). Left: SDFGI's first frame never
+  finishes on the M4 and its GPU work outlives the browser until the Mac restarts (GD-HANDOVER.md "The SDFGI stall");
+  the review's other findings in docs/backlog.md "Storage images read as textures' leftovers"). A storage image a stage only reads is a texture
   read by `textureLoad` (the texture gets `TEXTURE_BINDING`), which takes Godot's SDFGI stages under 8 storage textures
   and helps any program past WebGPU's storage limit. *Done:* Godot with SDFGI on draws; dEQP-VK cases with read-only
   storage images still pass.

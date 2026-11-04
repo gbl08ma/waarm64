@@ -1,0 +1,10 @@
+#version 450
+#extension GL_EXT_shader_image_load_formatted : require
+// tests/venus-driver.test.ts (GD G4, wg_test.c 87): a storage image declared without a format and only asked its size
+// (its sample type unknown), bound to an R32_UINT view: the stage is refused, dispatching nothing, the submit valid.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 17) readonly uniform uimage2D img;
+layout(set = 0, binding = 18) buffer Out { uint v[4]; } o;
+void main() {
+  o.v[0] = uint(imageSize(img).x);
+}

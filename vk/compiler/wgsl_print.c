@@ -25,6 +25,7 @@ struct res_use {
    struct wgsl_resource r;
    bool signed_atomic, unsigned_atomic;
    bool texel; /* a texel buffer's words (texel_buffer) */
+   bool typed; /* a storage image read as a texture: its sample type from a load's (texture_images) */
 };
 
 struct ctx {
@@ -51,6 +52,11 @@ struct ctx {
    bool word_image_written[WGSL_MAX_RESOURCES];
    uint16_t word_image_format[WGSL_MAX_RESOURCES];
    unsigned word_image_count;
+   /* Storage images this stage only reads, as textures (texture_images). */
+   unsigned tex_images[WGSL_MAX_RESOURCES];
+   unsigned tex_image_count;
+   bool storage_limits;
+   uint32_t max_storage_textures; /* the stage's, where storage_limits */
 
    struct res_use res[WGSL_MAX_RESOURCES];
    unsigned res_count;
@@ -506,6 +512,46 @@ is_word_image(const struct ctx *c, unsigned index)
    return word_image(c, index) >= 0;
 }
 
+/* A storage image the stage only reads (loads and size queries, no atomics, not multisampled) can be a texture there,
+ * read by `textureLoad` at its view's first level (GD G4). It is one where it must be (loaded without a format, or of a
+ * format with no storage texture) and where the stage's storage textures are past WebGPU's for the stage (8 at most, 4
+ * by default; Godot's SDFGI stages bind 15 storage images, 12 only read), those it only reads in order until they fit:
+ * not before, since textures have a limit of their own (16), which a stage sampling 16 would pass. The driver binds the
+ * storage image's view, its texture made with TEXTURE_BINDING beside STORAGE_BINDING. Every access of that binding in
+ * the stage goes through it; a pipeline whose stages disagree on its kind or sample type is refused (wg_shader.c), as
+ * one whose stages' storage access differed was before. An image only asked its size without a format stays what it
+ * was (refused: its sample type is unknown). */
+static bool
+is_tex_image(const struct ctx *c, unsigned index)
+{
+   for (unsigned i = 0; i < c->tex_image_count; i++)
+      if (c->tex_images[i] == index)
+         return true;
+   return false;
+}
+
+/* A storage image read as a texture: its resource, its sample type from the type a load returns (the format where the
+ * stage only asks its size). */
+static void
+texture_image(struct ctx *c, unsigned index, nir_intrinsic_instr *intr)
+{
+   struct res_use *r = resource(c, index, WGSL_TEXTURE);
+   r->r.kind = WGSL_TEXTURE;
+   r->r.image_texture = true;
+   r->r.dim = image_dim(c, nir_intrinsic_image_dim(intr), nir_intrinsic_image_array(intr));
+   if (nir_intrinsic_format(intr) != PIPE_FORMAT_NONE)
+      r->r.format = nir_intrinsic_format(intr);
+   if (intr->intrinsic == nir_intrinsic_image_load) {
+      const nir_alu_type t = nir_alu_type_get_base_type(nir_intrinsic_dest_type(intr));
+      r->r.sample = t == nir_type_int ? WGSL_SAMPLE_SINT : t == nir_type_uint ? WGSL_SAMPLE_UINT : WGSL_SAMPLE_UNFILTERABLE;
+      r->typed = true;
+   } else if (!r->typed) {
+      const enum pipe_format f = r->r.format;
+      r->r.sample = util_format_is_pure_sint(f) ? WGSL_SAMPLE_SINT : util_format_is_pure_uint(f) ? WGSL_SAMPLE_UINT
+                                                                                                : WGSL_SAMPLE_UNFILTERABLE;
+   }
+}
+
 static struct res_use *
 image_words(struct ctx *c, unsigned index, nir_intrinsic_instr *intr)
 {
@@ -575,6 +621,10 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_image_size: {
       if (nir_intrinsic_image_dim(intr) == GLSL_SAMPLER_DIM_BUF) {
          texel_buffer(c, const_index(c, &intr->src[0]), intr->intrinsic == nir_intrinsic_image_store);
+         break;
+      }
+      if (is_tex_image(c, const_index(c, &intr->src[0]))) {
+         texture_image(c, const_index(c, &intr->src[0]), intr);
          break;
       }
       if (is_word_image(c, const_index(c, &intr->src[0]))) {
@@ -847,7 +897,7 @@ gather(struct ctx *c, nir_function_impl *impl)
       unsigned index;
       uint8_t access;
       uint16_t format;
-      bool atomic;
+      bool atomic, ms, loaded;
    } images[WGSL_MAX_RESOURCES];
    unsigned image_count = 0;
    nir_foreach_block(block, impl) {
@@ -873,15 +923,37 @@ gather(struct ctx *c, nir_function_impl *impl)
                              : intr->intrinsic == nir_intrinsic_image_store ? WGSL_ACCESS_WRITE
                              : intr->intrinsic == nir_intrinsic_image_load ? WGSL_ACCESS_READ : 0;
          images[i].atomic |= atomic;
+         images[i].ms |= nir_intrinsic_image_dim(intr) == GLSL_SAMPLER_DIM_MS;
+         images[i].loaded |= intr->intrinsic == nir_intrinsic_image_load;
          if (nir_intrinsic_format(intr) != PIPE_FORMAT_NONE)
             images[i].format = nir_intrinsic_format(intr);
       }
    }
+   /* Each image a storage texture, its words or a texture (texture_images): a texture where only one can be (read
+    * without a format, or of a format without storage textures: its sample type from its loads), and past the stage's
+    * storage textures, the others it only reads. */
+   enum { AS_STORAGE, AS_WORDS, AS_TEXTURE } as[WGSL_MAX_RESOURCES];
+   unsigned storage = 0;
+   const unsigned features = (c->tier1 ? WGSL_TIER1 : 0) | (c->tier2 ? WGSL_TIER2 : 0);
    for (unsigned i = 0; i < image_count; i++) {
-      const unsigned features = (c->tier1 ? WGSL_TIER1 : 0) | (c->tier2 ? WGSL_TIER2 : 0);
       /* An image only asked its size is bound as read-only (declare_resources). */
       const uint8_t access = images[i].access ? images[i].access : WGSL_ACCESS_READ;
-      if (!images[i].atomic && !wgsl_image_as_words(images[i].format, access, features))
+      const bool read_only = !images[i].atomic && !images[i].ms && !(access & WGSL_ACCESS_WRITE);
+      if (read_only && images[i].loaded && (!images[i].format || !storage_format(images[i].format)))
+         as[i] = AS_TEXTURE;
+      else if (images[i].atomic || wgsl_image_as_words(images[i].format, access, features))
+         as[i] = AS_WORDS;
+      else
+         as[i] = AS_STORAGE, storage++;
+   }
+   for (unsigned i = 0; i < image_count && c->storage_limits && storage > c->max_storage_textures; i++)
+      if (as[i] == AS_STORAGE && !images[i].atomic && !images[i].ms && !(images[i].access & WGSL_ACCESS_WRITE) &&
+          (images[i].loaded || images[i].format))
+         as[i] = AS_TEXTURE, storage--;
+   for (unsigned i = 0; i < image_count; i++) {
+      if (as[i] == AS_TEXTURE)
+         c->tex_images[c->tex_image_count++] = images[i].index;
+      if (as[i] != AS_WORDS)
          continue;
       c->word_images[c->word_image_count] = images[i].index;
       c->word_image_written[c->word_image_count] = images[i].access & WGSL_ACCESS_WRITE;
@@ -2677,6 +2749,13 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       }
       const char *xy, *layer;
       image_coords(c, intr, &intr->src[1], &xy, &layer);
+      if (is_tex_image(c, index)) {
+         const struct res_use *r = find_res(c, index);
+         const char *e = layer ? fmt(c, "textureLoad(%s, %s, %s, 0)", res_name(c, index), xy, layer)
+                               : fmt(c, "textureLoad(%s, %s, 0)", res_name(c, index), xy);
+         assign_vec4(c, def, e, r->r.sample == WGSL_SAMPLE_UINT ? WGSL_U32 : r->r.sample == WGSL_SAMPLE_SINT ? WGSL_I32 : WGSL_F32);
+         return;
+      }
       const char *e = layer ? fmt(c, "textureLoad(%s, %s, %s)", res_name(c, index), xy, layer)
                             : fmt(c, "textureLoad(%s, %s)", res_name(c, index), xy);
       const char *b = texel_base(nir_intrinsic_format(intr));
@@ -3201,6 +3280,10 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
       .dual_source = features & WGSL_DUAL_SOURCE,
       .subgroups = features & WGSL_SUBGROUPS,
       .f16 = features & WGSL_F16,
+      .storage_limits = o->storage_limits,
+      .max_storage_textures = o->max_storage_textures[nir->info.stage == MESA_SHADER_VERTEX     ? 0
+                                                      : nir->info.stage == MESA_SHADER_FRAGMENT ? 1
+                                                                                                : 2],
    };
    error[0] = 0;
    c.out = _mesa_string_buffer_create(c.mem, 4096);
