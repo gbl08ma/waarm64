@@ -1349,12 +1349,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
-- **`scripts/ci.sh`'s JS step runs close to its 10 GiB cap** (2026-11-04, GD G4's and the core review's #5 runs): three
+- **`scripts/ci.sh`'s JS step runs close to its cap** (2026-11-04, GD G4's and the core review's #5 runs; the cap was
+  10 GiB then, 11 GiB since, CLAUDE.md): three
   runs of nine were OOM-killed in `npm test` (one on a healthy host, two while the Mac's GPU was wedged), the others
   passed. Peaks seen by a watcher: `tests/boot-node-litmus.test.ts` 3.1 GiB, a native test binary under `target/`
   2.6 GiB, the TSan `litmus_parallel` run 1.7 GiB, Chrome renderers up to 2 GiB; they overlap by chance. Either lower
   the peak (what boot-node-litmus holds: its guests' memories at once?), keep the heavy native runs out of `npm test`'s
-  concurrency, or give the scope more (CLAUDE.md's 10 GiB; the VM has 18).
+  concurrency; the cap was raised to 11 GiB on 2026-11-04, so watch for OOM kills there again.
 
 - **`baremetal_parallel_through_snapshots` failed once under `scripts/ci.sh`'s load** (2026-11-03, VK4 T16–T17's run;
   no core change): `smp: exit 5 (0x0) on vCPU 0 after 2016 steps`, the test past 60 s where alone it takes 2.4 s; it

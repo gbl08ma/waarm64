@@ -156,7 +156,8 @@ their code.**
   experiment 9). Bound every wait too; if a run's CPU or progress doesn't match its expected time,
   kill it and investigate.
 - **Cap memory on heavy runs** (`npm test`, `scripts/ci.sh`, multi-machine experiments):
-  `systemd-run --user --scope -q -p MemoryMax=10G -p MemorySwapMax=0 -- timeout N <cmd>` (14G for `scripts/ci-deqp-vk.sh`'s two machines). A leak
+  `systemd-run --user --scope -q -p MemoryMax=10G -p MemorySwapMax=0 -- timeout N <cmd>` (11G for `npm test` and the
+  `scripts/ci*.sh` scripts, whose JS step peaks near 10G: docs/backlog.md; 14G for `scripts/ci-deqp-vk.sh`'s two machines). A leak
   once grew a Node test process to 7 GB and the VM's OOM kill took the whole Claude session down
   (M8 loop 8); a capped scope dies alone. **Subagents cap every `node` and `cargo` run**, small
   ones too, with caps that sum under the VM's memory (a "pure TypeScript" unit test run uncapped
