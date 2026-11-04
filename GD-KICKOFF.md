@@ -106,14 +106,15 @@ Results in `bench/results/local/godot/` (dev VM) and `godot-mac-*` (the M4).
   replayed on the page beside the other programs' (tests/page-venus.test.ts); the editor's first start timed on the M4
   (cold and with the shader store warm); a `godot` step for `bench/vulkan/nvidia.sh` so the user's next NVIDIA run
   confirms G1–G3 there; then a bigger project (one of Godot's demos with lights, shadows, decals, SDFGI and
-  post-processing) to find what the simple scene doesn't reach. **And X11 windows shown** (added 2026-11-04): a Vulkan
+  post-processing, not the GI demo, which is G8's) to find what the simple scene doesn't reach. **And X11 windows shown** (added 2026-11-04): a Vulkan
   program presenting through Xwayland takes Mesa's prime blit in our guest (its X11 same-GPU check matches PCI devices
   only; our virtio-gpu is virtio-mmio), copying each frame into a buffer the page doesn't share, so its window is black
   (Godot's editor on the user's NVIDIA desktop, with Xwayland installed; it draws with `--display-driver wayland`).
   Some programs run only under Xwayland: the page shows those buffers (docs/backlog.md "A WSI image exported as a
   buffer isn't shared"). *Done:* Godot's editor under X11 draws as under Wayland; the desktop image or a test image
   gets Xwayland so the harness meets that path.
-- **G8. The true limit: Godot's Global Illumination demo in the editor** (added 2026-11-04; in G7 or after it). The
+- **G8. The true limit: Godot's Global Illumination demo in the editor** (added 2026-11-04; after G7, a task of its
+  own: it likely needs the host-visible memory and the window reworked, GD-HANDOVER.md "G8"). The
   demo (https://store.godotengine.org/asset/godot-foundation/global-illumination-demo/download/3295/) opened in the
   editor crashes or gets Godot stuck on the user's test machine, with "Couldn't map buffer memory (VkResult error -2)"
   (`VK_ERROR_OUT_OF_DEVICE_MEMORY` at a map: a lead is Venus's host-visible window, 256 MiB by default) and
