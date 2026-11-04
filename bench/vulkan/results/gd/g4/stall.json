@@ -1,0 +1,135 @@
+{
+ "scene": "bench/vulkan/godot-disk.sh sdfgi, 60 s",
+ "host": "Mac mini M4, macOS 26.6.2",
+ "runs": {
+  "godot-mac-g4g": {
+   "what": "every loop capped at 4096; each pass its own submit",
+   "chrome": "153.0.8010.12",
+   "gpuMeanPct": 42.1,
+   "gpuMaxPct": 83,
+   "directLightPassMs": 12.45,
+   "frames": 3950,
+   "gpuSamples": "every 2 s while Chrome ran"
+  },
+  "godot-mac-g4h": {
+   "what": "every loop capped at 65536",
+   "chrome": "153.0.8010.12",
+   "gpuMeanPct": 53.6,
+   "gpuMaxPct": 96,
+   "directLightPassMs": 116.35,
+   "frames": 810,
+   "gpuSamples": "every 2 s while Chrome ran"
+  },
+  "godot-mac-g4i": {
+   "what": "loop k of each stage capped at 4096*(k+1)",
+   "chrome": "153.0.8010.12",
+   "gpuMeanPct": 50.7,
+   "gpuMaxPct": 90,
+   "directLightPassMs": 35.92,
+   "frames": 2128,
+   "gpuSamples": "every 2 s while Chrome ran"
+  },
+  "godot-mac-g4j": {
+   "what": "cap 4096*(k+1); immediates and dispatches logged",
+   "chrome": "153.0.8010.12",
+   "gpuMeanPct": 53.0,
+   "gpuMaxPct": 92,
+   "directLightPassMs": 36.59,
+   "frames": 2264,
+   "gpuSamples": "every 2 s while Chrome ran"
+  },
+  "godot-mac-g4k": {
+   "what": "loop 6 (the shadow march) at 65536, the rest 4096",
+   "chrome": "153.0.8010.12",
+   "gpuMeanPct": 44.4,
+   "gpuMaxPct": 100,
+   "directLightPassMs": 12.29,
+   "frames": 4166,
+   "gpuSamples": "every 2 s while Chrome ran"
+  },
+  "godot-mac-g4l": {
+   "what": "cap 4096; indirect arguments read back",
+   "chrome": "153.0.8010.12",
+   "gpuMeanPct": 42.1,
+   "gpuMaxPct": 77,
+   "directLightPassMs": 11.93,
+   "frames": 4086,
+   "gpuSamples": "every 2 s while Chrome ran"
+  },
+  "godot-mac-g4m": {
+   "what": "cap 65536; indirect arguments read back over the run",
+   "chrome": "153.0.8010.12",
+   "gpuMeanPct": 54.1,
+   "gpuMaxPct": 96,
+   "directLightPassMs": 114.6,
+   "frames": 841,
+   "gpuSamples": "every 2 s while Chrome ran"
+  },
+  "godot-mac-g4n": {
+   "what": "loops 0-4 at 65536, 5-9 at 4096",
+   "chrome": "153.0.8010.12",
+   "gpuMeanPct": 53.7,
+   "gpuMaxPct": 96,
+   "directLightPassMs": 114.59,
+   "frames": 822,
+   "gpuSamples": "every 2 s while Chrome ran"
+  },
+  "godot-mac-g4o": {
+   "what": "loop 4 (the light loop) at 65536, the rest 4096",
+   "chrome": "153.0.8010.12",
+   "gpuMeanPct": 51.9,
+   "gpuMaxPct": 96,
+   "directLightPassMs": 115.41,
+   "frames": 817,
+   "gpuSamples": "every 2 s while Chrome ran"
+  },
+  "godot-mac-g4p": {
+   "what": "cap 4096 on Chrome for Testing 157",
+   "chrome": "157.0.8103.38",
+   "gpuMeanPct": 21.9,
+   "gpuMaxPct": 94,
+   "directLightPassMs": 0.02,
+   "frames": 7244,
+   "gpuSamples": "every 2 s while Chrome ran"
+  },
+  "godot-mac-g4q": {
+   "what": "no cap, no debug code, Chrome for Testing 157",
+   "chrome": "157.0.8103.38",
+   "gpuMeanPct": 20.3,
+   "gpuMaxPct": 87,
+   "gpuSamples": "every 2 s while Chrome ran",
+   "afterFirstFrame": {
+    "seconds": 44.4,
+    "presents": 2483,
+    "maxGapMs": 54
+   },
+   "firstFrameAfterSplashS": 41
+  },
+  "godot-mac-g4r": {
+   "what": "Godot's editor on the Forward+ project, 90 s, no debug code, Chrome for Testing 157",
+   "chrome": "157.0.8103.38",
+   "afterFirstFrame": {
+    "seconds": 82.2,
+    "presents": 4526,
+    "maxGapMs": 757
+   },
+   "firstFrameAfterStartS": 35,
+   "aborts": 0
+  }
+ },
+ "probe": {
+  "tool": "bench/vulkan/imm-probe.ts",
+  "immediates": "43000000 43000000 43000000 4 0 1 0 1 11 3f000000 3fc00000 0",
+  "indirectReads": {
+   "153.0.8010.12 (Playwright 1.63)": "ffff 0 1 0 0 ffffffff 0 1 11 3f000000 3fc00000 0 (100001 iterations: the cap)",
+   "153.0.8010.52": "right",
+   "154.0.8037.92": "right",
+   "155.0.8059.84": "right",
+   "156.0.8078.80": "right",
+   "157.0.8103.38": "right",
+   "159.0.8141.0": "right",
+   "SwiftShader, Chromium 153.0.8010.52 (dev VM)": "right"
+  },
+  "directReads": "right on every version"
+ }
+}

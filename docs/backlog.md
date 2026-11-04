@@ -1510,6 +1510,6 @@ report it. Nothing has been filed.
   (Metal's command buffer timeout) ended the work; the browser's GPU processes stayed in state `E` (exiting), `kill -9`
   couldn't end them, the Mac throttled (the dev VM's CI with it), and only a restart freed the GPU. Seen on macOS 26.6.2
   (M4 Mac mini). Repro still to write: a page whose compute shader loops on a bound it reads as huge from a buffer
-  (`bench/results/local/godot-tools/imm-probe.ts` is the shape, its cap removed); run it only with the user there to
+  (`bench/vulkan/imm-probe.ts` is the shape, its cap removed); run it only with the user there to
   restart the Mac. Two reports: Chromium (a page shouldn't be able to hang the GPU past a watchdog: Dawn's device loss
   on a timeout) and Apple (processes stuck exiting with their GPU work, and no recovery from it).

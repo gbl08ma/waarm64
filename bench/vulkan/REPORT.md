@@ -771,6 +771,43 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## GD G4: SDFGI's stall on the M4 — Playwright's Chrome 153.0.8010.12 clobbered an indirect dispatch's immediates
+
+2026-11-04. With G4's storage images bound, Godot's `sdfgi` scene (bench/vulkan/godot-disk.sh: a floor and a box, a
+sun with shadows, SDFGI on) never finished its first frame on the M4: the GPU at 100%, the browser's GPU processes
+stuck exiting, only a restart of the Mac freeing it. JSON: `results/gd/g4/stall.json` (each run below; the Mac's GPU
+sampled every 2 s by `ioreg`); the runs' logs stay in `bench/results/local/godot-mac-g4*`.
+
+**The method.** Two debug patches, never committed: the printer gave every loop a counter of its own and a `break`
+past a cap (a function `var` a loop, so a barrier loop's exit stays uniform: Godot's 76 stages with loops all compiled
+so), and the GPU worker gave every render and compute pass a command buffer of its own, submitted in turn at the submit
+(after every `queue.writeBuffer` the submit makes: submitting a pass as it ended, as an earlier hack did, ran it before
+the writes of later commands and failed 45 driver tests), logged with its time to done, and stopped submitting once a
+submit was 3 s late. With the cap the scene drew and the Mac recovered from every run; the pass's time then said which
+loop ran to its cap:
+
+| run (Chrome for Testing 153.0.8010.12) | direct-light pass (ms a frame) |
+| --- | --- |
+| every loop at 4,096 | 12.4 |
+| every loop at 65,536 | 116 |
+| only loop 6 (the shadow march) at 65,536 | 12.3 |
+| loops 0–4 at 65,536 | 115 |
+| only loop 4 (the light loop) at 65,536 | 115 |
+
+Loop 4 is `sdfgi_direct_light.glsl`'s `for (uint i = 0; i < params.light_count; i++)`, `light_count` push word 5. The
+worker set it to 1 (logged), the indirect arguments were sane (1–59 workgroups); the shader read 0xffffffff.
+
+**The cause.** `bench/vulkan/imm-probe.ts` (a page: 12 immediate words read back by direct and indirect dispatch): on
+the M4 with Chrome for Testing 153.0.8010.12, Playwright 1.63's, an indirect dispatch reads its first six words as
+`0xffff 0 1 0 0 0xffffffff`; a direct one reads them right; `num_workgroups` makes no difference. 153.0.8010.52 (153's
+release), 154, 155, 156, 157.0.8103.38 (stable) and 159 (canary) read them right, sandbox on or off. A bug of that
+early build, not ours: the Mac's runs now use the current Stable Chrome for Testing (bench/mac-chrome.sh).
+
+**On Chrome for Testing 157, no debug code:** the scene's first frame comes ~41 s after the splash (its pipelines'
+compile), then 44 s of frames at the screen's rate with no gap over 54 ms; the direct-light pass takes 0.02 ms (with
+the cap's timing patch); the editor on the Forward+ project draws its 3D viewport ~35 s after it starts, then 82 s with
+no gap over 757 ms, and nothing aborts. The GD bar holds on the M4.
+
 ## GD G2: Godot's shader modules — Tint's uniformity analysis over 13,000 vars; 3.7 s → 65 ms on the M4
 
 2026-11-03. Each of the 209 stages Godot 4.7.2's editor hands Venus (its scene's 174 among them: SPIR-V dumped on

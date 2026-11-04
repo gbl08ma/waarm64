@@ -78,9 +78,12 @@ Results in `bench/results/local/godot/` (dev VM) and `godot-mac-*` (the M4).
   texture where it must be (loaded without a format, or a format with no storage texture) or where the stage's storage
   textures pass WebGPU's; SDFGI's one-layer 2D array views bound where 2D is declared and its R4G4B4A4 views of R16_UINT
   images as packed aliases; Godot's 209 stages within 6 storage textures (was 15/9/9), driver tests 84–87, dEQP-VK's
-  list unchanged and passing (vk/README.md "Storage images a stage only reads"). Left: SDFGI's first frame never
-  finishes on the M4 and its GPU work outlives the browser until the Mac restarts (GD-HANDOVER.md "The SDFGI stall");
-  the review's other findings in docs/backlog.md "Storage images read as textures' leftovers"). A storage image a stage only reads is a texture
+  list unchanged and passing (vk/README.md "Storage images a stage only reads"). SDFGI draws on the M4: its stall, a
+  first frame that never finished, was Playwright's Chrome for Testing 153.0.8010.12 reading an indirect dispatch's
+  first immediates clobbered (`light_count` as 0xffffffff in the direct-light loop), fixed in Chrome itself; the Mac's
+  runs now use the current Stable Chrome for Testing, and on 157 the scene and the editor meet the bar (bench/vulkan/REPORT.md
+  "GD G4"). Left: the review's other findings in docs/backlog.md "Storage images read as textures' leftovers"; the
+  endless dispatch that wedged the M4's GPU, an upstream report in docs/backlog.md). A storage image a stage only reads is a texture
   read by `textureLoad` (the texture gets `TEXTURE_BINDING`), which takes Godot's SDFGI stages under 8 storage textures
   and helps any program past WebGPU's storage limit. *Done:* Godot with SDFGI on draws; dEQP-VK cases with read-only
   storage images still pass.
