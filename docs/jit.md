@@ -542,14 +542,17 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   every TLB fill and device write): over a session a guest's page cache fills its RAM anyway. The virgl resources
   aren't in the renderer: their textures are the GPU process's, their backing is guest RAM, and the GPU worker's
   shared transfer buffers were 37-45 MB.
-- **Where it goes:** the machine worker reads it each second into the status (`Status.memory`, `Vm.hostUse`). Past
-  what `navigator.deviceMemory` reports (at most 8 in Chromium), it caps the JIT cache at what it holds then (the
-  gauge's limit word, `G_LIMIT`: the cache flushes there and refills to it, never under 16 MiB). The page keeps a mark
-  per running machine in `localStorage` (`webpc.alive.<machine id>`: name, RAM, vCPUs, JIT budget, the estimate and
-  its peak), renewed every 10 s and cleared at every clean stop (power off, restart, the guest's shutdown, a crash
-  the page saw, the tab's `pagehide`). A mark no tab renewed for 30 s means the tab went away with the machine running,
-  most likely killed for memory (Chromium gives a page no out-of-memory error): the next start says so and offers a
-  160 MiB (or 64 MiB) JIT cache, half the RAM, or to start as it is ([frontend.md](frontend.md) "Too little memory").
+- **Where it goes:** the machine worker reads it each second into the status (`Status.memory`, `Vm.hostUse`). Past what
+  `navigator.deviceMemory` reports (at most 8 in Chromium), it caps the JIT cache at what it holds then (the gauge's
+  limit word, `G_LIMIT`: the cache flushes there and refills to it, never under 16 MiB). The flush comes at a
+  dispatcher's emit, never at a tier-up: that runs inside JIT code (`jit_hot`), and checks for room and allocates its
+  slots against one read of the limit, so a limit stored in between can't flush under the code on the stack. The page
+  keeps a mark per running machine in `localStorage` (`webpc.alive.<machine id>`: name, RAM, vCPUs, JIT budget, the
+  estimate and its peak), renewed every 10 s and cleared at every clean stop (power off, restart, the guest's shutdown,
+  a crash the page saw, the tab's `pagehide`). A mark no tab renewed for 30 s means the tab went away with the machine
+  running, most likely killed for memory (Chromium gives a page no out-of-memory error): the next start says so and
+  offers a 160 MiB (or 64 MiB) JIT cache, half the RAM, or to start as it is ([frontend.md](frontend.md) "Too little
+  memory").
 
 ## Invalidation and the stale-code checker
 
