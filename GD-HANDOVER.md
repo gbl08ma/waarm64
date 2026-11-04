@@ -11,6 +11,15 @@ Forward+ project draws its 3D viewport, and the `sdfgi` scene (a sun with shadow
 second after the first frame (757 and 54 ms) and no abort. **NVIDIA is the bar's other half, unchecked:** G7's
 `godot` step for `bench/vulkan/nvidia.sh`, run by the user.
 
+**NVIDIA, the user's first look (2026-11-04): Godot's editor black under X11, drawing under Wayland.** Godot picked X11
+(XWayland) there; Mesa's X11 WSI then took the prime blit (`VN_DEBUG=wsi MESA_LOG_LEVEL=debug`: `prime_blit=1`), whose
+buffers the page can't show; `--display-driver wayland` drew (`prime_blit=0`). Not NVIDIA's: the X11 same-GPU check
+matches PCI devices only and our virtio-gpu is virtio-mmio, so every X11 Vulkan client is black (docs/backlog.md "A
+WSI image exported as a buffer isn't shared", now needed, and the Mesa upstream report). The M4 runs drew on Wayland;
+why they and the user's run chose differently is unchecked (Godot's own display driver choice). For G7: decide the
+fix (sharing buffers, a patched guest Mesa, or Wayland by default in the desktop image) and make the harness say
+which display driver Godot used.
+
 **Next: G7.** Also worth a look there: the first frame comes ~35 s (editor) and ~41 s (SDFGI scene) after Godot
 starts, its pipelines' compile; how much of it the shader store saves on a second start is G7's "cold and warm".
 
