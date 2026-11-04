@@ -502,6 +502,83 @@ fn fp_load_store_structures() {
     assert_eq!(fp(&[0x0c408c40]).step(), Err(Exit::Undefined));
 }
 
+/// [`Flat`] without its fast path: every structure element is its own access.
+struct Slow<'a>(Flat<'a>);
+
+impl Bus for Slow<'_> {
+    fn mem(&self) -> &Mem {
+        self.0.mem()
+    }
+    fn read_el(&mut self, c: &Cpu, va: u64, size: u32, el: u64) -> Result<u64, Fault> {
+        self.0.read_el(c, va, size, el)
+    }
+    fn write_el(&mut self, c: &Cpu, va: u64, size: u32, val: u64, el: u64) -> Result<(), Fault> {
+        self.0.write_el(c, va, size, val, el)
+    }
+    fn fetch(&mut self, c: &Cpu, pc: u64) -> Result<u32, Fault> {
+        self.0.fetch(c, pc)
+    }
+    fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<Option<u64>, Fault> {
+        self.0.maint(c, va, write)
+    }
+    fn host_aligned(
+        &mut self,
+        c: &Cpu,
+        va: u64,
+        len: u64,
+        access: Access,
+    ) -> Result<crate::mem::Host, Fault> {
+        self.0.host_aligned(c, va, len, access)
+    }
+}
+
+/// Every structure load and store (LD1–LD4, ST1–ST4 multiple and single,
+/// LD1R–LD4R; offset and post-index) through the bus's fast path, a whole
+/// transfer at a time, matches one access an element: registers and memory.
+#[test]
+fn structure_fast_path_matches_per_element() {
+    let mut forms = 0;
+    for single in [false, true] {
+        for enc in 0u32..1 << 9 {
+            // Q, L, R (single only), opcode (4 bits multiple, 3+S single), size.
+            let (q, l, r) = (enc >> 8 & 1, enc >> 7 & 1, enc >> 6 & 1);
+            let (op, size) = (enc >> 2 & 15, enc & 3);
+            if !single && r == 1 {
+                continue;
+            }
+            let base = if single { 0x0d00_0000 } else { 0x0c00_0000 };
+            let fields = q << 30 | l << 22 | r << 21 | op << 12 | size << 10 | 2 << 5;
+            for (post, rm) in [(0, 0), (1, 31), (1, 3)] {
+                for rt in [0, 30] {
+                    let insn = base | post << 23 | rm << 16 | fields | rt;
+                    for addr in [DATA + 8, DATA + 3] {
+                        let run = |slow: bool| {
+                            let mut t = fp(&[insn]).x(2, addr).x(3, 100);
+                            t.c.v = core::array::from_fn(|n| {
+                                (n as u128 + 1)
+                                    .wrapping_mul(0x9e37_79b9_7f4a_7c15_f39c_c060_5ced_c834)
+                            });
+                            let r = if slow {
+                                step_bus(&mut t.c, &mut Slow(Flat(&t.r.mem)))
+                            } else {
+                                step_bus(&mut t.c, &mut Flat(&t.r.mem))
+                            };
+                            let m: Vec<u64> = (0..40).map(|k| t.rd(DATA + 8 * k, 8)).collect();
+                            (r, t.c.v, t.c.x, m)
+                        };
+                        let (fast, slow) = (run(false), run(true));
+                        assert!(fast == slow, "{insn:#010x} at {addr:#x}");
+                        forms += (fast.0.is_ok() && post == 0 && addr == DATA + 8) as u32;
+                    }
+                }
+            }
+        }
+    }
+    // Every defined form ran, for both Rt: 106 multiple (Q × L × 7 opcodes ×
+    // 4 sizes, less the 6 reserved .1d with more than one element) and 272 single.
+    assert_eq!(forms, 2 * (106 + 272));
+}
+
 #[test]
 fn fpcr_fpsr() {
     // msr fpsr, x1; mrs x0, fpcr (after msr fpcr, x1): only the implemented bits stick.

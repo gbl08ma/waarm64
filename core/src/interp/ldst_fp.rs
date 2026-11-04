@@ -5,8 +5,8 @@
 use super::{Exit, R, bit, bits, extend, sext};
 use crate::cpu::{Cpu, sctlr};
 use crate::decode::Op;
-use crate::mem::{Access, Fault, FaultKind};
-use crate::mmu::Bus;
+use crate::mem::{self, Access, Fault, FaultKind};
+use crate::mmu::{Bus, Use};
 
 /// `SCTLR_EL1.A` on a Q register: one 16-byte element, though it's accessed as
 /// two 8-byte ones.
@@ -189,21 +189,41 @@ fn multiple(c: &mut Cpu, m: &mut impl Bus, i: u32) -> R {
     let esize = 8 * ebytes;
     let emask = (1u128 << esize) - 1;
     let (t, base) = (bits(i, 4, 0) as usize, base(c, bits(i, 9, 5))?);
+    let total = rpt as u32 * selem as u32 * datasize;
     // Loads build the new registers (at most four: register t + k is v[k])
     // and commit after the last read. Every element of each gets written, and
     // Q=0 clears the upper half, so they start at zero.
     let mut v = [0u128; 4];
-    let mut addr = base;
-    for r in 0..rpt {
-        for e in 0..elements {
-            for s in 0..selem {
-                let (k, sh) = (r + s, e * esize);
-                if load_ {
-                    v[k] |= load(c, m, addr, ebytes)? << sh;
-                } else {
-                    store(c, m, addr, ebytes, (c.v[(t + k) % 32] >> sh) & emask)?;
+    let u = if load_ { Use::Read } else { Use::Write };
+    if let Some(p) = m.fast(c, base, total, u) {
+        // The whole transfer is RAM in one page, with no alignment check: 8
+        // bytes an access (an element never straddles two; each stays single-
+        // copy atomic, as `mem::load`'s pieces are naturally aligned), and the
+        // elements (de-)interleaved in a buffer.
+        fast_multiple(
+            c,
+            p,
+            load_,
+            t,
+            rpt * selem,
+            selem,
+            ebytes as usize,
+            datasize as usize,
+            &mut v,
+        );
+    } else {
+        let mut addr = base;
+        for r in 0..rpt {
+            for e in 0..elements {
+                for s in 0..selem {
+                    let (k, sh) = (r + s, e * esize);
+                    if load_ {
+                        v[k] |= load(c, m, addr, ebytes)? << sh;
+                    } else {
+                        store(c, m, addr, ebytes, (c.v[(t + k) % 32] >> sh) & emask)?;
+                    }
+                    addr = addr.wrapping_add(ebytes as u64);
                 }
-                addr = addr.wrapping_add(ebytes as u64);
             }
         }
     }
@@ -212,8 +232,87 @@ fn multiple(c: &mut Cpu, m: &mut impl Bus, i: u32) -> R {
             c.v[(t + k) % 32] = *x;
         }
     }
-    post_index(c, i, base, addr.wrapping_sub(base));
+    post_index(c, i, base, total as u64);
     Ok(())
+}
+
+/// [`multiple`]'s transfer through the host pointer `p` to `regs` registers'
+/// worth of bytes: loads into `v`, stores from `c.v[t..]`. With one element a
+/// structure, memory holds the registers in order; else structure `e` holds
+/// element `e` of each register in turn.
+#[allow(clippy::too_many_arguments)]
+#[inline(never)]
+fn fast_multiple(
+    c: &Cpu,
+    p: *mut u8,
+    load_: bool,
+    t: usize,
+    regs: usize,
+    selem: usize,
+    ebytes: usize,
+    datasize: usize,
+    v: &mut [u128; 4],
+) {
+    let total = regs * datasize;
+    let mut buf = [0u8; 64];
+    let mut lanes = [[0u8; 16]; 4];
+    if load_ {
+        for (o, x) in buf[..total].as_chunks_mut::<8>().0.iter_mut().enumerate() {
+            // SAFETY: `fast` found `total` bytes of RAM at `p`.
+            *x = unsafe { mem::load(p.add(8 * o), 8) }.to_le_bytes();
+        }
+    } else {
+        for (k, l) in lanes.iter_mut().take(regs).enumerate() {
+            *l = c.v[(t + k) % 32].to_le_bytes();
+        }
+    }
+    if selem == 1 {
+        for (k, l) in lanes.iter_mut().take(regs).enumerate() {
+            let m = &mut buf[k * datasize..(k + 1) * datasize];
+            if load_ {
+                l[..datasize].copy_from_slice(m);
+            } else {
+                m.copy_from_slice(&l[..datasize]);
+            }
+        }
+    } else {
+        let lanes = &mut lanes[..selem];
+        let buf = &mut buf[..total];
+        match ebytes {
+            1 => interleave::<1>(buf, lanes, load_),
+            2 => interleave::<2>(buf, lanes, load_),
+            4 => interleave::<4>(buf, lanes, load_),
+            _ => interleave::<8>(buf, lanes, load_),
+        }
+    }
+    if load_ {
+        for (x, l) in v.iter_mut().zip(lanes).take(regs) {
+            *x = u128::from_le_bytes(l);
+        }
+    } else {
+        for (o, x) in buf[..total].as_chunks::<8>().0.iter().enumerate() {
+            // SAFETY: as for the loads.
+            unsafe { mem::store(p.add(8 * o), 8, u64::from_le_bytes(*x)) };
+        }
+    }
+}
+
+/// Structure `e` of `buf` (E-byte elements) is element `e` of each of
+/// `lanes` in turn: loads de-interleave `buf` into `lanes`, stores the reverse.
+/// E is a constant so that each element is a move, not a `memcpy` call.
+#[inline(always)]
+fn interleave<const E: usize>(buf: &mut [u8], lanes: &mut [[u8; 16]], load_: bool) {
+    let structs = buf.as_chunks_mut::<E>().0.chunks_exact_mut(lanes.len());
+    for (e, xs) in structs.enumerate() {
+        for (x, l) in xs.iter_mut().zip(lanes.iter_mut()) {
+            let l: &mut [u8; E] = (&mut l[e * E..e * E + E]).try_into().unwrap();
+            if load_ {
+                *l = *x;
+            } else {
+                *x = *l;
+            }
+        }
+    }
 }
 
 /// LD1–LD4 / ST1–ST4 (single structure) and LD1R–LD4R.
@@ -234,11 +333,14 @@ fn single_structure(c: &mut Cpu, m: &mut impl Bus, i: u32) -> R {
     let (t, base) = (bits(i, 4, 0) as usize, base(c, bits(i, 9, 5))?);
     let esize = 8 * ebytes;
     let emask = (1u128 << esize) - 1;
+    // The whole transfer through a host pointer when it's RAM in one page.
+    let u = if load_ { Use::Read } else { Use::Write };
+    let fast = m.fast(c, base, selem as u32 * ebytes, u);
     let mut addr = base;
     if index == u32::MAX {
         let mut vals = [0u128; 4];
         for x in vals.iter_mut().take(selem) {
-            *x = load(c, m, addr, ebytes)?;
+            *x = lane_load(c, m, fast, base, addr, ebytes)?;
             addr = addr.wrapping_add(ebytes as u64);
         }
         let n = if q { 128 / esize } else { 64 / esize };
@@ -251,9 +353,16 @@ fn single_structure(c: &mut Cpu, m: &mut impl Bus, i: u32) -> R {
         for (k, x) in vals.iter_mut().take(selem).enumerate() {
             let tt = (t + k) % 32;
             if load_ {
-                *x = load(c, m, addr, ebytes)?;
+                *x = lane_load(c, m, fast, base, addr, ebytes)?;
             } else {
-                store(c, m, addr, ebytes, (c.v[tt] >> sh) & emask)?;
+                let x = (c.v[tt] >> sh) & emask;
+                match fast {
+                    // SAFETY: `fast` found the transfer's bytes in RAM at `p`.
+                    Some(p) => unsafe {
+                        mem::store(p.add((addr - base) as usize), ebytes, x as u64)
+                    },
+                    None => store(c, m, addr, ebytes, x)?,
+                }
             }
             addr = addr.wrapping_add(ebytes as u64);
         }
@@ -266,4 +375,22 @@ fn single_structure(c: &mut Cpu, m: &mut impl Bus, i: u32) -> R {
     }
     post_index(c, i, base, addr.wrapping_sub(base));
     Ok(())
+}
+
+/// One element of [`single_structure`]: through `fast`, the host pointer for
+/// the transfer at `base`, else the bus.
+#[inline(always)]
+fn lane_load(
+    c: &Cpu,
+    m: &mut impl Bus,
+    fast: Option<*mut u8>,
+    base: u64,
+    addr: u64,
+    ebytes: u32,
+) -> R<u128> {
+    match fast {
+        // SAFETY: `fast` found the transfer's bytes in RAM at `p`; `addr` is in it.
+        Some(p) => Ok(unsafe { mem::load(p.add((addr - base) as usize), ebytes) } as u128),
+        None => load(c, m, addr, ebytes),
+    }
 }

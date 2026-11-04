@@ -433,6 +433,14 @@ test it against `tests/steps.txt`.
   probe for a pair"). A register only read needs no compare for XZR: `pack` stores `Cpu::zero`'s slot for it (`reads`),
   `hot` reads it with a plain load and `Uop::wide` maps it back: +3.1% on Alpine's boot and the user-mode guest
   (`bench/interp/REPORT.md` "XZR's reads without a compare").
+- **The structure loads and stores** (LD1–LD4, ST1–ST4, LD1R–LD4R: generic micro-ops, so the interpreter's own
+  code, `interp::ldst_fp`) take `Bus::fast` for the whole transfer: when it's RAM in one page, the multiple forms move
+  8 bytes an access and (de-)interleave the elements in a buffer, and the single forms' elements go through the one
+  pointer. Otherwise (a page crossing, a TLB miss, SCTLR_EL1.A, a watchpoint's bus, a device) each element is its own
+  access, which is where faults come from. Natively, `ld1 {v0.16b-v3.16b}` 207 → 15 ns, `ld4` 183 → 22 ns, `st4` 271 →
+  20 ns (`ldp q0, q1` 11 ns); the JIT compiles these inline, so only cold code and the JIT's helper calls (a page
+  crossing, a miss) run them. `interp::tests::structure_fast_path_matches_per_element` holds both paths to the same
+  registers and memory for every form.
 - **One call-free loop** (`interp::block::hot`): the blocks run, and chain from one to the next, in a
   loop with no call on any path (no generic micro-op, no slow load or store, no TLB walk, no panic:
   a micro-op's register bytes trusted, as `pack` makes them, the slots a fixed-size array), so V8 keeps its state in
