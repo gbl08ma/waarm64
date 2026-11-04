@@ -84,7 +84,13 @@ Results in `bench/results/local/godot/` (dev VM) and `godot-mac-*` (the M4).
   read by `textureLoad` (the texture gets `TEXTURE_BINDING`), which takes Godot's SDFGI stages under 8 storage textures
   and helps any program past WebGPU's storage limit. *Done:* Godot with SDFGI on draws; dEQP-VK cases with read-only
   storage images still pass.
-- **G5. Storage images without a format** (M; backlog "Storage images as words' leftovers"): a variant by the view's
+- **G5. Storage images without a format** (done 2026-11-04: `shaderStorageImageReadWithoutFormat` and
+  `WriteWithoutFormat` offered with their format features; a storage image written or only sized without a format is
+  printed for the bound view's format through a variant keyed by it (a storage texture, or words), one only loaded is a
+  texture (G4); Godot's corpus all translates (210 and 175 stages), driver test 88 (and 87 answers the size now);
+  92 more of `api.buffer_view.access` in the list, passing already (not G5's: never sampled); the 122
+  `uniform_storage_texel_buffer` cases need `VK_KHR_maintenance5`, not these features, and this dEQP-VK build has no
+  `image` group: no image case to add. Left: nothing). A variant by the view's
   format at the bind (or words), and `shaderStorageImageWriteWithoutFormat` advertised. *Done:* Godot's stage translates;
   `api.buffer_view`'s and the image cases join the list.
 - **G6. R8_UINT storage** (S): what Godot asks of it, offered through words or tier1.

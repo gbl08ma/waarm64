@@ -3838,7 +3838,7 @@ g4_views(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer ou
  * GD G4, wgt_misc's scenarios 86 (`cs` g4/textures-full.comp) and 87 (g4/size-only.comp): a set of 16 sampled images
  * (one 2x2 RGBA8 image cleared green), a sampler, a storage image (a 2x2 R32_UINT image cleared to 42) and the buffer.
  * 86 sums the textures' green and reads the image (16, 42 in the first words); 87 only asks the image's size through a
- * declaration without a format, which is refused (the buffer untouched, the submit valid).
+ * declaration without a format (2: GD G5 keys it by the view's format).
  */
 static int
 g4_limits(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
@@ -3931,6 +3931,93 @@ g4_limits(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer o
    CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
    CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
    CmdDispatch(cmd, 1, 1, 1);
+   return 0;
+}
+
+/*
+ * GD G5, wgt_misc's scenario 88, `cs` g5/formatless.comp: three 2x2 storage images the shader declares without a
+ * format: RGBA8_UNORM cleared to 0, R8G8_UNORM cleared to 0, R32_SFLOAT cleared to 3. The shader writes (1, 0, 1, 1)
+ * at (1, 0) of the first, (0.2, 0.8) at (0, 1) of the second and 2 c + 1 at (1, 1) of the third; each is copied out
+ * (256, 512, 768) and the first's width is at the buffer's start.
+ */
+static int
+g5_formatless(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage =
+      (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   static const VkFormat formats[3] = { VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8_UNORM, VK_FORMAT_R32_SFLOAT };
+   VkImage imgs[3];
+   VkImageView views[3];
+   for (uint32_t i = 0; i < 3; i++) {
+      if (g4_image(formats[i], 2, 1, 1, 0, &imgs[i]))
+         return 1;
+      const VkImageViewCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = imgs[i],
+                                         .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = formats[i],
+                                         .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
+      CHECK(CreateImageView(dev, &vi, NULL, &views[i]));
+   }
+   VkShaderModule m;
+   if (shader(cs, cs_words, &m))
+      return 1;
+   VkDescriptorSetLayoutBinding bindings[4];
+   for (uint32_t i = 0; i < 4; i++)
+      bindings[i] = (VkDescriptorSetLayoutBinding){ i, i < 3 ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                                    1, VK_SHADER_STAGE_COMPUTE_BIT, NULL };
+   const VkDescriptorSetLayoutCreateInfo li = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                .bindingCount = 4, .pBindings = bindings };
+   VkDescriptorSetLayout dsl;
+   CHECK(CreateDescriptorSetLayout(dev, &li, NULL, &dsl));
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                            .setLayoutCount = 1, .pSetLayouts = &dsl };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   const VkComputePipelineCreateInfo ci = {
+      .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = layout,
+      .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                 .module = m, .pName = "main" },
+   };
+   VkPipeline pipeline;
+   CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipeline));
+   const VkDescriptorPoolSize ps[2] = { { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3 }, { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 } };
+   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                            .poolSizeCount = 2, .pPoolSizes = ps };
+   VkDescriptorPool dp;
+   CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+   const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                             .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
+   VkDescriptorSet set;
+   CHECK(AllocateDescriptorSets(dev, &dai, &set));
+   VkDescriptorImageInfo ii[3];
+   for (uint32_t i = 0; i < 3; i++)
+      ii[i] = (VkDescriptorImageInfo){ VK_NULL_HANDLE, views[i], VK_IMAGE_LAYOUT_GENERAL };
+   const VkDescriptorBufferInfo bi = { out, 0, 16 };
+   const VkWriteDescriptorSet wr[2] = {
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0, .descriptorCount = 3,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .pImageInfo = ii },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 3, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi },
+   };
+   UpdateDescriptorSets(dev, 2, wr, 0, NULL);
+   const VkImageSubresourceRange whole = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+   for (uint32_t i = 0; i < 3; i++)
+      CmdClearColorImage(cmd, imgs[i], VK_IMAGE_LAYOUT_GENERAL, &(VkClearColorValue){ .float32 = { i == 2 ? 3.0f : 0.0f } },
+                         1, &whole);
+   const VkMemoryBarrier before = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                    .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT };
+   CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &before, 0, NULL,
+                      0, NULL);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+   CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
+   CmdDispatch(cmd, 1, 1, 1);
+   const VkMemoryBarrier after = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                                   .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT };
+   CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &after, 0, NULL,
+                      0, NULL);
+   for (uint32_t i = 0; i < 3; i++) {
+      const VkBufferImageCopy down = { .bufferOffset = 256 * (i + 1), .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+                                       .imageExtent = { 2, 2, 1 } };
+      CmdCopyImageToBuffer(cmd, imgs[i], VK_IMAGE_LAYOUT_GENERAL, out, 1, &down);
+   }
    return 0;
 }
 
@@ -5474,6 +5561,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 86 || scenario == 87) {
       if (g4_limits(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 88) {
+      if (g5_formatless(cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 39 || scenario == 43) {
       if (t7_addresses(cs, cs_words, cmd, pool, scenario == 43))

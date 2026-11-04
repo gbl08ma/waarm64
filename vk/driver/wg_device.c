@@ -330,6 +330,15 @@ wg_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice, VkFormat 
          p->linearTilingFeatures = pProps->formatProperties.linearTilingFeatures;
          p->optimalTilingFeatures = pProps->formatProperties.optimalTilingFeatures;
          p->bufferFeatures = pProps->formatProperties.bufferFeatures;
+         /* Storage without a format, wherever there is storage (GD G5: `shaderStorageImage*WithoutFormat`). */
+         const VkFormatFeatureFlags2 without = VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT |
+                                               VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT;
+         if (linear & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)
+            p->linearTilingFeatures |= without;
+         if (optimal & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)
+            p->optimalTilingFeatures |= without;
+         if (buffer & VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT)
+            p->bufferFeatures |= without;
          break;
       }
       case VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT: {

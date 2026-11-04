@@ -97,6 +97,9 @@ struct wgsl_resource {
    bool image_words;      /* a storage image as its view's words (kind WGSL_STORAGE, or _READ if the stage only reads it; its parameters a
                            * uniform buffer at the next binding: wgsl_print.c `image_words`); `dim`, `format` as a
                            * storage texture's */
+   bool formatless;       /* a storage image declared without a format and written or only asked its size: its format
+                           * a key's (WGSL_IMAGE_KEY), the bound view's; without one, r32uint (wgsl_print.c
+                           * `image_format`) */
    bool image_texture;    /* a storage image the stage only reads, as a texture (kind WGSL_TEXTURE: wgsl_print.c
                            * `texture_images`); `dim` as a storage texture's */
    uint8_t access;        /* storage textures */
@@ -180,6 +183,8 @@ struct wgsl_sampler_key {
    uint8_t padded;                 /* a compressed image larger in its texture (whole blocks): `size` is what it is */
    uint8_t faces;                  /* a cube bound as its faces (padded, or a shadow cube sampled from fetches) */
    uint8_t clamp_dref;             /* the reference clamped to 0..1: a fixed-point depth format */
+   uint16_t format;                /* WGSL_IMAGE_KEY: the bound view's enum pipe_format */
+   uint16_t format_pad;            /* zero (keys are compared whole) */
    float bias, min_lod, max_lod;
    uint32_t border[4];             /* the border as the shader reads it: float bits, or integers on an integer texture */
    uint32_t size[3];               /* padded: the view's first level, as Vulkan has it */
@@ -190,6 +195,9 @@ struct wgsl_sampler_key {
 
 /* A key's `sampler` where the texture is what it's about (a padded texture's size queries, whatever samples it). */
 #define WGSL_NO_SAMPLER 0xffffffffu
+/* A key's `sampler` for a storage image declared without a format (`texture` its index): `format` is the bound view's
+ * (GD G5, wgsl_print.c `image_format`). */
+#define WGSL_IMAGE_KEY 0xfffffffeu
 
 /* The NIR options every stage is compiled with, and spirv_to_nir's. */
 const struct nir_shader_compiler_options *wgsl_nir_options(void);

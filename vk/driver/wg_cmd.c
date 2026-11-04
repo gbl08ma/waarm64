@@ -1329,6 +1329,19 @@ program_keys(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program 
       keys[n].sampler = WGSL_NO_SAMPLER;
       padded_key_fill(t->view, &keys[n++]);
    }
+   /* A storage image declared without a format: the bound view's (GD G5, wgsl_print.c `image_format`). */
+   for (uint32_t k = 0; k < p->resource_count; k++) {
+      if (!p->resources[k].formatless)
+         continue;
+      const uint32_t index = (uint32_t)p->resources[k].group << 16 | p->resources[k].binding;
+      const struct wg_descriptor *t = pair_descriptor(cmd, point, p, index);
+      if (!t || !t->view)
+         continue;
+      memset(&keys[n], 0, sizeof(keys[n]));
+      keys[n].texture = index;
+      keys[n].sampler = WGSL_IMAGE_KEY;
+      keys[n++].format = (uint16_t)vk_format_to_pipe_format(t->view->vk.view_format);
+   }
    return n;
 }
 
@@ -1432,7 +1445,10 @@ program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
       wg_program_mixed(p);
    mask[0] |= p->mixed[0], mask[1] |= p->mixed[1];
    struct wgsl_sampler_key keys[3 * WGSL_MAX_PAIRS + WGSL_MAX_RESOURCES];
-   const uint32_t key_count = p->pair_count || p->int_pair_count || p->key_pair_count || dev_padded(cmd)
+   bool formatless = false;
+   for (uint32_t k = 0; k < p->resource_count; k++)
+      formatless |= p->resources[k].formatless;
+   const uint32_t key_count = p->pair_count || p->int_pair_count || p->key_pair_count || dev_padded(cmd) || formatless
                                  ? program_keys(cmd, point, p, keys) : 0;
    struct wg_storage_alias aliases[8];
    const uint32_t alias_count = storage_aliases(cmd, point, p, aliases);

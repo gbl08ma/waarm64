@@ -491,6 +491,10 @@ keyed_text(const struct wg_program *v, const struct wg_stage_nir *n, const struc
        * it samples nothing at all). */
       for (uint32_t i = 0; (v->keys[k].padded || v->keys[k].faces) && i < info->resource_count; i++)
          touched |= ((uint32_t)info->resources[i].group << 16 | info->resources[i].binding) == v->keys[k].texture;
+      /* A storage image without a format (GD G5). */
+      for (uint32_t i = 0; v->keys[k].sampler == WGSL_IMAGE_KEY && i < info->resource_count; i++)
+         touched |= info->resources[i].formatless &&
+                    ((uint32_t)info->resources[i].group << 16 | info->resources[i].binding) == v->keys[k].texture;
    }
    if (!touched)
       return NULL;
@@ -715,6 +719,35 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl
       insert_resource(v, at, &twin);
    }
 #undef MASKED
+   /* A storage image without a format is the bound view's (GD G5): a storage texture of that format, or its words where
+    * WebGPU has none for the access (as wgsl_print.c decides, `gather`), their parameters at the next binding. */
+   for (uint32_t i = 0; i < key_count; i++) {
+      if (keys[i].sampler != WGSL_IMAGE_KEY)
+         continue;
+      for (uint32_t k = 0; k < v->resource_count; k++) {
+         struct wgsl_resource *r = &v->resources[k];
+         if (res_index(r) != keys[i].texture || !r->formatless)
+            continue;
+         const uint8_t access = r->access ? r->access : WGSL_ACCESS_READ;
+         const unsigned features = ((wg_features & WG_FEATURE_TIER1) ? WGSL_TIER1 : 0) |
+                                   ((wg_features & WG_FEATURE_TIER2) ? WGSL_TIER2 : 0);
+         r->format = keys[i].format;
+         if (r->kind == WGSL_STORAGE_TEXTURE && wgsl_image_as_words(keys[i].format, access, features) &&
+             v->resource_count < WGSL_MAX_RESOURCES) {
+            const bool written = access & WGSL_ACCESS_WRITE;
+            r->kind = written ? WGSL_STORAGE : WGSL_STORAGE_READ;
+            r->image_words = true;
+            r->atomic = r->written = written;
+            struct wgsl_resource params = { .group = r->group, .binding = r->binding + 1, .kind = WGSL_UNIFORM, .size = 32 };
+            const uint8_t vis = v->vis[k];
+            const int set = v->res_set[k];
+            insert_resource(v, k + 1, &params);
+            v->vis[k + 1] = vis;
+            v->res_set[k + 1] = set;
+         }
+         break;
+      }
+   }
    /* A padded cube is bound as its faces (wgsl_sampler.c fetches from them). */
    for (uint32_t i = 0; i < key_count; i++)
       for (uint32_t k = 0; keys[i].faces && k < v->resource_count; k++)
@@ -889,7 +922,7 @@ wg_compute_based(struct wg_program *p, uint32_t x, uint32_t y, uint32_t z)
    X(push_ubo_size) X(vis) X(pair_count) X(pairs) X(int_pair_count) X(int_pairs) X(key_pair_count) X(key_pairs)        \
    X(uses_base)
 #define RESOURCE_FIELDS(X)                                                                                             \
-   X(group) X(binding) X(kind) X(dim) X(sample) X(multisampled) X(atomic) X(signed_atomic) X(written) X(nonfiltering) X(image_words) X(image_texture) X(access) \
+   X(group) X(binding) X(kind) X(dim) X(sample) X(multisampled) X(atomic) X(signed_atomic) X(written) X(nonfiltering) X(image_words) X(image_texture) X(formatless) X(access) \
    X(format) X(size)
 
 static void
@@ -1146,13 +1179,20 @@ push_storage(struct vk_descriptor_set_layout *const *layouts, uint32_t count)
 static struct wg_stage_nir *
 stage_nir_keep(const nir_shader *nir, const struct wgsl_varyings *fs)
 {
-   /* Any texture op: a padded texture's size query is printed against its key too. */
+   /* Any texture op: a padded texture's size query is printed against its key too; and a storage image declared without
+    * a format, printed against the bound view's (GD G5). */
    bool samples = false;
    nir_foreach_function_impl (impl, nir)
       nir_foreach_block (block, impl)
          nir_foreach_instr (instr, block)
             if (instr->type == nir_instr_type_tex) {
                samples |= nir_instr_as_tex(instr)->sampler_dim != GLSL_SAMPLER_DIM_BUF;
+            } else if (instr->type == nir_instr_type_intrinsic) {
+               const nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+               samples |= (intr->intrinsic == nir_intrinsic_image_store || intr->intrinsic == nir_intrinsic_image_load ||
+                           intr->intrinsic == nir_intrinsic_image_size) &&
+                          nir_intrinsic_image_dim(intr) != GLSL_SAMPLER_DIM_BUF &&
+                          nir_intrinsic_format(intr) == PIPE_FORMAT_NONE;
             }
    if (!samples)
       return NULL;

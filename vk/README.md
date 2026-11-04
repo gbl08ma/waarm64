@@ -548,11 +548,20 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   storage texture) and where the stage's storage textures would pass WebGPU's for the stage (8 at most, 4 by default,
   `wgsl_print_options.max_storage_textures`; Godot's SDFGI stages bind 15 storage images, 12 only read): those it only
   reads, in order, until the rest fit. Not before: textures have a limit of their own (16), which a stage sampling 16
-  would pass. One only asked its size without a format stays a storage image (refused: its sample type is unknown). The
+  would pass. One only asked its size without a format stays a storage image (its sample type unknown; the view's since G5, below). The
   resource says so (`image_texture`); the driver binds the storage image's view as for a storage binding (a cube's faces
   as a 2D array, `wg_image_view.storage`), the image's texture made with `TEXTURE_BINDING` beside `STORAGE_BINDING`
   wherever its format samples, and the scope's scan counts it as a read. A pipeline whose stages disagree on its kind or
   sample type is refused, as one whose stages' storage access differed was before.
+- **Storage images without a format** (GD G5; `image_format` in wgsl_print.c, `program_keys` in wg_cmd.c):
+  `shaderStorageImageReadWithoutFormat` and `shaderStorageImageWriteWithoutFormat` are offered, with their format
+  features (`VK_FORMAT_FEATURE_2_STORAGE_*_WITHOUT_FORMAT_BIT`) wherever there is storage. A storage image declared
+  without a format that a stage only loads is a texture (above: its loads' type is its sample type). One it writes or
+  only asks the size of is the bound view's: the stage's own module takes `r32uint` (`formatless` on the resource),
+  and every draw and dispatch takes a variant keyed by the view's format (a `wgsl_sampler_key` with `WGSL_IMAGE_KEY`,
+  the image's index and the format), printed from the stage's kept NIR as if declared with it, a storage texture or
+  words as a declared format would be (`wg_program_variant` gives the variant's layout the same, words' parameters at
+  the next binding). Godot's post-processing writes such an image; vkd3d's UAV clears do too.
 - **Storage images as words** (VK4 T7, T11; `image_words` and `declare_word_images` in wgsl_print.c, `image_use` in
   wg_cmd.c). WGSL has no atomics on textures, and WebGPU's storage textures come one way for most formats: read-only and
   write-only in core or with `texture-formats-tier1`, read-write only for r32's and, with tier2, tier2's list; no format at all

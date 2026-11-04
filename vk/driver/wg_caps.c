@@ -170,6 +170,11 @@ wg_caps_features(struct vk_features *f)
       .bufferDeviceAddress = true,
       /* Its list has the 16-bit normalized formats, which only tier1 has at all. */
       .shaderStorageImageExtendedFormats = HAS(TIER1_STORAGE) && HAS(TIER1),
+      /* A storage image without a format is printed for the bound view's (GD G5: a variant keyed by it, wgsl_print.c
+       * `image_format`; one only read is a texture, `texture_images`); a texel buffer decodes its view's format at run
+       * time (wgsl_print.c `texel_buffer`). */
+      .shaderStorageImageReadWithoutFormat = true,
+      .shaderStorageImageWriteWithoutFormat = true,
       .shaderClipDistance = HAS(CLIP_DISTANCES),
       /* A tree of ifs over the elements (wgsl_nir.c; buffers and storage images since VK3 L7.1: Dawn's Vulkan
        * backend requires all four). */

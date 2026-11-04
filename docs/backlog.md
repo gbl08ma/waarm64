@@ -699,8 +699,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `maxPushConstantsSize` (D3D's 256 bytes of root constants; Vulkan's 128 here), `viewportBoundsRange`,
   `viewportSubPixelBits`, `maxPerStageDescriptorUniformBuffers` (14 wanted, 13 here), dual-source blending (SwiftShader's
   adapter only), geometry and tessellation shaders, `multiDrawIndirect`, `multiViewport`, `occlusionQueryPrecise`,
-  pipeline statistics queries, cull distances, `shaderImageGatherExtended`, `shaderStorageImageWriteWithoutFormat`
-  (vkd3d's UAV-clear pipelines then don't translate: "a storage image of format PIPE_FORMAT_NONE", 10 at device creation),
+  pipeline statistics queries, cull distances, `shaderImageGatherExtended` (`shaderStorageImageWriteWithoutFormat`, whose
+  absence kept 10 of vkd3d's UAV-clear pipelines from translating, is offered since GD G5: unchecked with vkd3d since),
   vertex attribute divisors, sampler min/max reduction. vkd3d's own tests (tests/d3d12, built by
   `target/vkd3d/build-tests.sh`: `TESTS=` in vkd3d.ts): test_draw_instanced, test_draw_indexed_instanced and
   test_root_constants pass; test_vertex_id fails 39 of 89 (as at L7.5 after VK3 L7b captured indirect draws, so not those alone: VK3 L8's check; and a
@@ -929,9 +929,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     then, or else a usage-scope conflict) was refused by WebGPU's binding aliasing (16 of `descriptor_copy.compute`'s texel buffer
     cases: "Writable storage buffer binding aliasing", the dispatch dropped; since VK4 T3 a read-only one is copied
     instead: "Usage scopes' leftovers" above);
-    `shaderStorageImageReadWithoutFormat`/`WriteWithoutFormat` aren't advertised though texel buffers don't need a
-    format (images do: 122 `api.buffer_view.access.uniform_storage_texel_buffer` cases NotSupported; advertising them
-    for images needs the image's format at the bind); storage texel buffers of formats under a word (r8, rg8, r16) and
+    122 `api.buffer_view.access.uniform_storage_texel_buffer` cases are NotSupported for `VK_KHR_maintenance5` and
+    `VK_KHR_extended_flags` (not the without-format features, as this said before GD G5 offered them); storage texel buffers of formats under a word (r8, rg8, r16) and
     texel buffer atomics (R32's, mandatory in 1.3) aren't offered; sRGB and 64-bit formats aren't either.
   - **Storage images read as textures' leftovers** (GD G4; vk/README.md "Storage images a stage only reads"; the
     out-of-context review of 2026-11-04): a subresource read through such a texture and written through a storage
@@ -952,8 +951,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     writes stays refused (a second binding of the same image would take it); planes of multi-planar images aren't words; a
     shared image's flush has no test of its own; the words' and copies' cost on a real program is unmeasured (`rw.hook` shows
     it working, nothing in the images leans on it). With words, the formats Vulkan's storage doesn't need (sRGB, packed
-    16-bit) and `shaderStorageImageReadWithoutFormat`/`WriteWithoutFormat` for images become possible: a word binding needs
-    the view's format at the bind, or a variant per format.
+    16-bit) become possible (`shaderStorageImage*WithoutFormat` are offered since GD G5: a variant per bound format).
   - **`mismatched_formats`** (VK4 T11): a shader whose format isn't its view's (Vulkan leaves the values undefined): the bind
     group is invalid (WebGPU wants the layout's format) and its submit dropped, where dEQP-VK only asks that nothing crashes:
     not in the list, though they pass. A variant by the view's format, or words, would keep the rest of the submit.

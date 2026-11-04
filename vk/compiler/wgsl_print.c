@@ -52,6 +52,13 @@ struct ctx {
    bool word_image_written[WGSL_MAX_RESOURCES];
    uint16_t word_image_format[WGSL_MAX_RESOURCES];
    unsigned word_image_count;
+   /* Storage images declared without a format and written or only asked their size, and the format each is printed for
+    * (image_format). */
+   unsigned formatless_images[WGSL_MAX_RESOURCES];
+   uint16_t formatless_format[WGSL_MAX_RESOURCES];
+   unsigned formatless_count;
+   const struct wgsl_sampler_key *keys;
+   unsigned key_count;
    /* Storage images this stage only reads, as textures (texture_images). */
    unsigned tex_images[WGSL_MAX_RESOURCES];
    unsigned tex_image_count;
@@ -552,6 +559,32 @@ texture_image(struct ctx *c, unsigned index, nir_intrinsic_instr *intr)
    }
 }
 
+/* A storage image's format: its declaration's, or, declared without one (`shaderStorageImageWriteWithoutFormat`, GD G5;
+ * an image only read is a texture: texture_images), the bound view's, from the variant's key (WGSL_IMAGE_KEY: the
+ * driver's `program_keys`), else r32uint, a format core WebGPU binds read-write, for the stage's module before any
+ * bind (the draws and dispatches take a variant). Whether it is a storage texture or words follows from that format
+ * as from a declared one. */
+static enum pipe_format
+image_format(const struct ctx *c, nir_intrinsic_instr *intr)
+{
+   if (nir_intrinsic_format(intr) != PIPE_FORMAT_NONE || !nir_src_is_const(intr->src[0]))
+      return nir_intrinsic_format(intr);
+   const unsigned index = nir_src_as_uint(intr->src[0]);
+   for (unsigned i = 0; i < c->formatless_count; i++)
+      if (c->formatless_images[i] == index)
+         return c->formatless_format[i];
+   return nir_intrinsic_format(intr);
+}
+
+static bool
+is_formatless(const struct ctx *c, unsigned index)
+{
+   for (unsigned i = 0; i < c->formatless_count; i++)
+      if (c->formatless_images[i] == index)
+         return true;
+   return false;
+}
+
 static struct res_use *
 image_words(struct ctx *c, unsigned index, nir_intrinsic_instr *intr)
 {
@@ -563,6 +596,7 @@ image_words(struct ctx *c, unsigned index, nir_intrinsic_instr *intr)
    r->r.image_words = true;
    r->r.dim = image_dim(c, nir_intrinsic_image_dim(intr), nir_intrinsic_image_array(intr));
    r->r.format = w < 0 ? nir_intrinsic_format(intr) : c->word_image_format[w];
+   r->r.formatless = is_formatless(c, index);
    struct res_use *p = resource(c, index + 1, WGSL_UNIFORM);
    p->r.size = 32;
    return r;
@@ -633,7 +667,8 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       }
       struct res_use *r = resource(c, const_index(c, &intr->src[0]), WGSL_STORAGE_TEXTURE);
       r->r.dim = image_dim(c, nir_intrinsic_image_dim(intr), nir_intrinsic_image_array(intr));
-      r->r.format = nir_intrinsic_format(intr);
+      r->r.format = image_format(c, intr);
+      r->r.formatless = is_formatless(c, const_index(c, &intr->src[0]));
       if (!storage_format(r->r.format))
          failf(c, "a storage image of format %s", util_format_name(r->r.format));
       if (intr->intrinsic == nir_intrinsic_image_load)
@@ -929,6 +964,20 @@ gather(struct ctx *c, nir_function_impl *impl)
             images[i].format = nir_intrinsic_format(intr);
       }
    }
+   /* An image declared without a format that the stage writes or only asks the size of: the key's format, or r32uint
+    * (image_format). */
+   for (unsigned i = 0; i < image_count; i++) {
+      if (images[i].format || images[i].atomic || images[i].ms ||
+          (images[i].loaded && !(images[i].access & WGSL_ACCESS_WRITE)))
+         continue;
+      uint16_t f = PIPE_FORMAT_R32_UINT;
+      for (unsigned k = 0; k < c->key_count; k++)
+         if (c->keys[k].sampler == WGSL_IMAGE_KEY && c->keys[k].texture == images[i].index && c->keys[k].format)
+            f = c->keys[k].format;
+      c->formatless_images[c->formatless_count] = images[i].index;
+      c->formatless_format[c->formatless_count++] = f;
+      images[i].format = f;
+   }
    /* Each image a storage texture, its words or a texture (texture_images): a texture where only one can be (read
     * without a format, or of a format without storage textures: its sample type from its loads), and past the stage's
     * storage textures, the others it only reads. */
@@ -948,7 +997,7 @@ gather(struct ctx *c, nir_function_impl *impl)
    }
    for (unsigned i = 0; i < image_count && c->storage_limits && storage > c->max_storage_textures; i++)
       if (as[i] == AS_STORAGE && !images[i].atomic && !images[i].ms && !(images[i].access & WGSL_ACCESS_WRITE) &&
-          (images[i].loaded || images[i].format))
+          (images[i].loaded || images[i].format) && !is_formatless(c, images[i].index))
          as[i] = AS_TEXTURE, storage--;
    for (unsigned i = 0; i < image_count; i++) {
       if (as[i] == AS_TEXTURE)
@@ -2758,7 +2807,7 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       }
       const char *e = layer ? fmt(c, "textureLoad(%s, %s, %s)", res_name(c, index), xy, layer)
                             : fmt(c, "textureLoad(%s, %s)", res_name(c, index), xy);
-      const char *b = texel_base(nir_intrinsic_format(intr));
+      const char *b = texel_base(image_format(c, intr));
       assign_vec4(c, def, e, !strcmp(b, "u32") ? WGSL_U32 : !strcmp(b, "i32") ? WGSL_I32 : WGSL_F32);
       return;
    }
@@ -2805,7 +2854,7 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       }
       const char *xy, *layer;
       image_coords(c, intr, &intr->src[1], &xy, &layer);
-      const char *b = texel_base(nir_intrinsic_format(intr));
+      const char *b = texel_base(image_format(c, intr));
       nir_src *value = &intr->src[3];
       const char *v = value->ssa->num_components == 4 ? src_name(c, value)
                       : fmt(c, "vec4<u32>(%s, 0u, 0u, 0u)", src_name(c, value));
@@ -3281,6 +3330,8 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
       .subgroups = features & WGSL_SUBGROUPS,
       .f16 = features & WGSL_F16,
       .storage_limits = o->storage_limits,
+      .keys = o->keys,
+      .key_count = o->key_count,
       .max_storage_textures = o->max_storage_textures[nir->info.stage == MESA_SHADER_VERTEX     ? 0
                                                       : nir->info.stage == MESA_SHADER_FRAGMENT ? 1
                                                                                                 : 2],
