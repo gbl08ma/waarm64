@@ -184,6 +184,8 @@ const vmJitFlatMips = async (o: Options) => mipsOf(o, 'vm_jit_flat_mips', 'bench
 const vmJitMmuMips = async (o: Options) => mipsOf(o, 'vm_jit_mmu_mips', 'bench/interp/guest.c EL1 MMU on', await setupVm(true, 1));
 // The block interpreter (interp::block): the dispatcher, never compiling.
 const decMips = async (o: Options) => placed(o, 'dec_mips', 'bench/interp/guest.c', (pad) => setup('guest.bin', JIT_INTERP, pad));
+// Its slow path: the FP guest's SIMD and FP instructions are generic micro-ops (`interp::exec_at_op`).
+const decFpMips = async (o: Options) => placed(o, 'dec_fp_mips', 'bench/interp/guest-fp.c', (pad) => setup('guest-fp.bin', JIT_INTERP, pad));
 const vmDecFlatMips = async (o: Options) => mipsOf(o, 'vm_dec_flat_mips', 'bench/interp/guest.c EL1 MMU off', await setupVm(false, 4));
 const vmDecMmuMips = async (o: Options) => mipsOf(o, 'vm_dec_mmu_mips', 'bench/interp/guest.c EL1 MMU on', await setupVm(true, 4));
 
@@ -226,7 +228,7 @@ export const suite = {
   interp_mips: interpMips, interp_fp_mips: interpFpMips, vm_flat_mips: vmFlatMips, vm_mmu_mips: vmMmuMips,
   jit_mips: jitMips, jit_fp_mips: jitFpMips, vm_jit_flat_mips: vmJitFlatMips, vm_jit_mmu_mips: vmJitMmuMips,
   coremark_mips: coremarkInterp, jit_coremark_mips: coremarkJit,
-  dec_mips: decMips, vm_dec_flat_mips: vmDecFlatMips, vm_dec_mmu_mips: vmDecMmuMips,
+  dec_mips: decMips, dec_fp_mips: decFpMips, vm_dec_flat_mips: vmDecFlatMips, vm_dec_mmu_mips: vmDecMmuMips,
 };
 export const runAll = async (o: Options) => {
   const out = [];

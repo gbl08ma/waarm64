@@ -1955,3 +1955,10 @@ inference, and the loop then reads the `Exit` in bytes. No inlining change; kept
 
 P4 alone is the FP guest's +3.5-3.9% (`v1/`, `v3/`). Natively, P3's structure forms (one instruction, release, flat
 bus): `ld1 {v0-v3}.16b` 207 → 15 ns, `ld4 .16b` 183 → 22, `st4` 271 → 20 (`ldp q0, q1` 11).
+
+**The block interpreter** (what users run before the JIT compiles): `hot`, its call-free loop, is the same code in
+the base and HEAD (one data address apart, flat and MMU copies). Its slow path changed shape (`block::run`,
+`interp::exec_at_op`, and `decode` a call from `run`), measured by `dec_fp_mips`, new: the FP guest through the
+block interpreter, its SIMD and FP instructions generic micro-ops. `dec/`, three rounds: pre-P3 54.2, HEAD
+(`9b657848`) **54.4** (+0.3%, every round ahead, under the noise floor). The rest of the block interpreter's
+yardstick is in `broad/` above (flat); `vm_dec_flat_mips` wasn't run (it runs in `hot`).
