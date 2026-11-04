@@ -63,6 +63,8 @@ type Res = ResourceDesc & {
   dead?: boolean;
   /** Another renderer's blob, typed by the guest (`ExternalResource`): its texture holds that renderer's bytes. */
   external?: true;
+  /** An external resource's first plane's stride, as the guest typed it. */
+  stride?: number;
 };
 
 /**
@@ -70,7 +72,8 @@ type Res = ResourceDesc & {
  * compositor imported (a dma-buf) and typed (PIPE_RESOURCE_SET_TYPE): a texture of the format and size the guest said,
  * whose bytes the other renderer writes (`ExternalSource`, `VirglRenderer.writeExternal`).
  */
-export type ExternalResource = { readonly id: number; readonly width: number; readonly height: number; readonly format: number; readonly dead?: boolean };
+/** `stride`: the bytes between rows of the guest's import (its first plane's; 0 if it didn't say): a prime blit's buffer is read with it. */
+export type ExternalResource = { readonly id: number; readonly width: number; readonly height: number; readonly format: number; readonly stride?: number; readonly dead?: boolean };
 /** Where external resources' bytes come from (web/venus-share.ts). */
 export type ExternalSource = {
   /** Whether `id` is one of its blobs (the guest may type it). */
@@ -516,6 +519,8 @@ export class VirglRenderer {
       if (!r.tex || !r.fmt || r.fmt.block !== 1 || (r.fmt.kind !== 'unorm' && r.fmt.kind !== 'float')) this.error(`resource ${id}: an imported blob of format ${r.fmt?.name ?? p[1]} isn't shared (colour formats only)`);
       else {
         r.external = true;
+        // The first plane's stride (VIRGL_PIPE_RES_SET_TYPE_PLANE_STRIDE(0)), past the modifier.
+        if (p.length > 8) r.stride = p[8];
         this.externals.add(r);
       }
     }

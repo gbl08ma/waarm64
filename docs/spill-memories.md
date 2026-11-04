@@ -48,7 +48,7 @@ What costs most here is guest code (the user's discussion, 2026-10-18).
 - **Memory 1 on a machine with Vulkan** (VK4 T19) holds Venus's renderer first (its arena, web/ram.ts
   `VENUS_ARENA`), then the host-visible window (`VmConfig.window_at`, [devices.md](devices.md) "The host-visible
   window"), then node 1's RAM, if any: a region is a guest-physical range at an offset in its memory (`mem::Spill`'s
-  `off`), and node 1 holds at most 4 GiB less the arena and the window (2,560 MiB; `splitRam`'s `reserve`). Such a
+  `off`), and node 1 holds at most 4 GiB less the arena and the window (1,536 MiB; `splitRam`'s `reserve`). Such a
   machine has memory 1 even without a NUMA node, and its JIT code the memory-1 arm, so the window's pages are reached
   as node 1's. Memory 0 is then as large as without Vulkan.
 - **A host address names its memory.** The core's RAM pointers are a 64-bit `Host`: bits 63:56 are the memory index

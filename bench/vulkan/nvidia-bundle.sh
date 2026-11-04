@@ -6,18 +6,24 @@
 # (images/vkframes/build.sh), the desktop guest (images/arch/desktop.sh), the media disk (bench/video/media-disk.sh)
 # and VK0's scene's disk (images/vulkan/build.sh); since VK3 L8 the dEQP-VK guest and its disk (images/deqp/build.sh vk)
 # and vkd3d's (bench/vulkan/vkd3d.ts disk, with its tests built by target/vkd3d/build-tests.sh). ~4.8 GB; the user copies
-# it to the desktop.
-#   bench/vulkan/nvidia-bundle.sh [out.tar]      (default target/vk2-nvidia-bundle.tar)
+# it to the desktop. Godot's disk (bench/vulkan/godot-disk.sh, GD G7) when it's built. `--godot`: only what nvidia.sh's
+# godot step needs (the core, the renderer, the firmware, the desktop guest and Godot's disk; ~3 GB).
+#   bench/vulkan/nvidia-bundle.sh [--godot] [out.tar]      (default target/vk2-nvidia-bundle.tar)
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+GODOT_ONLY=
+[ "${1:-}" = --godot ] && { GODOT_ONLY=1; shift; }
 OUT=$(realpath -m "${1:-target/vk2-nvidia-bundle.tar}")
 FILES=(
   target/wasm32-unknown-unknown/release/webpc_core.wasm target/vk/venus.wasm target/vk/LICENSES.txt
-  target/images/edk2/QEMU_EFI.fd target/images/edk2/LICENSES.txt target/images/debian/disk.qcow2
-  target/images/debian-vulkan/disk.qcow2 target/vkframes/vkframes.ext4 target/arch/desktop.qcow2
+  target/images/edk2/QEMU_EFI.fd target/images/edk2/LICENSES.txt target/arch/desktop.qcow2
+)
+[ -n "$GODOT_ONLY" ] || FILES+=(
+  target/images/debian/disk.qcow2 target/images/debian-vulkan/disk.qcow2 target/vkframes/vkframes.ext4
   target/video/media.ext4 target/vulkan/disk.ext4
   target/deqp/guest-vk.qcow2 target/deqp/deqp-vk.ext4 target/vkd3d/vkd3d.ext4
 )
+if [ -n "$GODOT_ONLY" ] || [ -f target/godot/godot.ext4 ]; then FILES+=(target/godot/godot.ext4); fi
 missing=()
 for f in "${FILES[@]}"; do [ -f "$f" ] || missing+=("$f"); done
 [ ${#missing[@]} -eq 0 ] || { echo "nvidia-bundle: not built: ${missing[*]}" >&2; exit 1; }

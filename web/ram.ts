@@ -51,8 +51,14 @@ export const HEAP_FLOOR = 1 << 30;
  */
 export const MAX_MEMORY0_RAM = 2 ** 32 - HEAP_FLOOR - (1 << 20);
 
-/** The host-visible window a machine with a Venus GPU gets (`BootOptions.window`): Venus's rings, command streams and mapped memory. */
-export const VENUS_WINDOW = 256 << 20;
+/**
+ * The host-visible window a machine with a Venus GPU gets (`BootOptions.window`): Venus's rings, command streams and
+ * mapped memory. Linux gives a mappable blob its place here when the blob is made (Venus makes a memory's at its first
+ * map) and keeps it until the blob's end, so this caps the host-visible memory mapped at once: it holds the device's
+ * whole host-visible heap (1 GiB, vk/driver/wg_device.c) and 256 MiB for Venus's own (GD G8: at 256 MiB, Godot's VMA,
+ * whose blocks stay mapped, failed its third 128 MiB map with -2). Untouched pages cost nothing.
+ */
+export const VENUS_WINDOW = 1280 << 20;
 
 /**
  * The renderer's arena on such a machine: memory 1's first bytes, the module's data, stack and heap (vk/wasi/arena.c

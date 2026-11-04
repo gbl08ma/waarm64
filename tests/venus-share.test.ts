@@ -2,7 +2,8 @@
 // texture imported by a virgl context reaches the virgl renderer byte for byte, every way (the bitmap and canvas ways
 // where the page doesn't render in software: not SwiftShader's, so the dev VM runs the readback way only), and a GPU
 // way's first copies are checked: one that copies wrong is dropped for the next, down to the readback way, before the
-// frame shows (on SwiftShader too: the broken ways make no WebGPU canvas). Skipped without a WebGPU adapter. And the
+// frame shows (on SwiftShader too: the broken ways make no WebGPU canvas); a prime blit's buffer (X11's WSI) the same.
+// Skipped without a WebGPU adapter. And the
 // check's verdicts themselves, in Node.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -35,7 +36,7 @@ test('a Venus image reaches the virgl renderer\'s texture byte for byte, once ea
   for (const mode of ['readback', 'bitmap', 'canvas']) {
     const m = r[mode] as Record<string, string> | string;
     if (typeof m === 'string') { assert.notEqual(mode, 'readback', m); continue; }
-    for (const k of ['first', 'x', 'rgba', 'float', 'unwritten', 'written']) assert.equal(m[k], 'same', `${mode}: ${k}: ${m[k]}`);
+    for (const k of ['first', 'x', 'rgba', 'float', 'unwritten', 'written', 'blit', 'blitRows', 'blitUnwritten', 'blitWritten']) assert.equal(m[k], 'same', `${mode}: ${k}: ${m[k]}`);
     assert.equal(m.log, 'none', `${mode}: the renderer's errors`);
     assert.equal(m.check, 'kept', `${mode}: the check`);
   }

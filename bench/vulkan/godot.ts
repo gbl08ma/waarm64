@@ -3,7 +3,8 @@
 // (target/godot/godot.ext4: /godot and /projects/<name>/, made by bench/vulkan/godot-disk.sh), each RUN started by sway,
 // the page's screen kept every SHOT_S seconds for RUN_S, then Godot's log and the page's console kept beside them.
 //   node bench/vulkan/godot.ts <image.qcow2> [outdir]
-// RUNS: `tag=<godot args>` a line (default: the Forward+ project's scene); `{p}` is the projects' copy in the guest's
+// RUNS: `tag=<godot args>` a line (default: the Forward+ project's scene; `tag:<s>=…` runs that one <s> seconds instead
+// of RUN_S); `{p}` is the projects' copy in the guest's
 // home (~/projects, writable: the editor imports into a project). RUN_S (90), SHOT_S (15), NCPUS (4), RAM_MIB (6144),
 // SCREEN (e.g. 1280x720), GPU_KNOBS (more of `?gpu=`), GODOT_ENV (more of Godot's environment, e.g. `VN_DEBUG=…`).
 // bench/gpu/sway-mac.sh runs it on the Mac (SCRIPT=../vulkan/godot.ts, mode `-`; it copies the disk when it exists).
@@ -16,7 +17,7 @@ const out = process.argv[3] ?? new URL('../results/local/godot/', import.meta.ur
 mkdirSync(out, { recursive: true });
 const RUN_S = Number(process.env.RUN_S ?? 90), SHOT_S = Number(process.env.SHOT_S ?? 15);
 const RUNS = (process.env.RUNS ?? 'forward=--path {p}/forward --rendering-driver vulkan').split('\n').filter(Boolean)
-  .map((l) => { const i = l.indexOf('='); return { tag: l.slice(0, i), args: l.slice(i + 1) }; });
+  .map((l) => { const i = l.indexOf('='), [tag, secs] = l.slice(0, i).split(':'); return { tag, runS: Number(secs || RUN_S), args: l.slice(i + 1) }; });
 const s = await openSession({
   gpu: ['virgl,vulkan', process.env.GPU_KNOBS].filter(Boolean).join(','), screen: process.env.SCREEN || undefined, image, out,
   ncpus: Number(process.env.NCPUS ?? 4), ramMiB: Number(process.env.RAM_MIB ?? 6144), disk2: process.env.DISK2 ?? '/target/godot/godot.ext4',
@@ -44,7 +45,7 @@ for (const r of RUNS) {
   await run(asUser(`swaymsg exec 'env ${process.env.GODOT_ENV ?? ''} /mnt/godot/godot --verbose ${args} > /tmp/godot-${r.tag}.log 2>&1; echo godot exit status \\$? >> /tmp/godot-${r.tag}.log'`));
   const t0 = performance.now();
   const shots: string[] = [];
-  for (let t = SHOT_S; t <= RUN_S; t += SHOT_S) {
+  for (let t = SHOT_S; t <= r.runS; t += SHOT_S) {
     await page.waitForTimeout(Math.max(0, t0 + t * 1000 - performance.now()));
     const name = `${r.tag}-${String(t).padStart(3, '0')}s`;
     await page.locator('#screen').screenshot({ path: `${out}/${name}.png` }).catch((e) => log('screenshot', String(e).slice(0, 200)));
@@ -64,7 +65,10 @@ for (const r of RUNS) {
   writeFileSync(`${out}/dmesg-${r.tag}.txt`, (await runLines(`(journalctl -b --no-pager -n 60 -o short-monotonic 2>&1 | cut -c1-220; coredumpctl --no-pager list 2>&1 | tail -5; coredumpctl --no-pager info 2>&1 | grep -E 'Signal|#[0-9]+ ' | head -40 | cut -c1-200; free -m)`, 90_000)).join('\n') + '\n');
   const godotLog = await runLines(`grep -v -E '^(ALSA|XInput)' /tmp/godot-${r.tag}.log | tail -${process.env.LOG_LINES ?? 120} | cut -c1-300`, 60_000);
   writeFileSync(`${out}/godot-${r.tag}.log`, godotLog.join('\n') + '\n');
-  results[r.tag] = { args, shots, errors: godotLog.filter((l) => /ERROR|error|WARNING|Vulkan|Device/.test(l)).slice(-30) };
+  // Which display server Godot took (X11 through Xwayland where DISPLAY is set and Xwayland installed, else Wayland:
+  // under X11 Mesa's WSI copies each frame into a buffer, the prime blit, GD G7) and its first lines about Vulkan.
+  const display = (await run(`grep -m4 -iE 'display (driver|server)|x11|wayland' /tmp/godot-${r.tag}.log | cut -c1-160`)).trim();
+  results[r.tag] = { args, shots, display, errors: godotLog.filter((l) => /ERROR|error|WARNING|Vulkan|Device/.test(l)).slice(-30) };
   save();
 }
 save();

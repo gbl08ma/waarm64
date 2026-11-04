@@ -257,7 +257,7 @@ is held, in any tab), suspended (a suspended copy is kept, `machines/<id>/suspen
 Open in this tab (for the page's own machine, **[Start](ui:machines:MachinesPage.start)** while it's off, "[Running in this tab](ui:machines:MachinesPage.runningHere)" while it runs),
 Duplicate, Export the definition, Delete; then tabs:
 - **[Settings](ui:machines:MachinesPage.tab.settings):** name, vCPUs, RAM (512 MiB to 16 GiB, `machine.ts` `RAM_CHOICES`; past `MEMORY0_MIB`, 3071 MiB, the rest goes to spill memories (on a machine with Vulkan
-  the first holds at most 2,560 MiB: Venus's arena and window come first in memory 1) that the guest sees
+  the first holds at most 1,536 MiB: Venus's arena and window come first in memory 1) that the guest sees
   as NUMA nodes, slower to reach, and a note under the choice says so (`numaNote`, with the machine's Vulkan setting): [spill-memories.md](spill-memories.md); a machine or definition with another size is shown as it
   is), **[Memory split (advanced)](ui:machines:MachinesPage.split)**, closed unless the machine has one: *[Set the split myself](ui:machines:MachinesPage.split.custom)* starts from the
   automatic split and takes memory 0's size and the NUMA nodes' sizes (MiB, comma-separated), checked as typed

@@ -138,6 +138,7 @@ type Exports = {
   venus_ring_idle(us: number): void;
   venus_resource_data(ctx: number, res: number): number;
   venus_resource_texture(ctx: number, res: number): number;
+  venus_resource_buffer(ctx: number, res: number): number;
   venus_build_id(): number;
   /** Absent from a module built before VK4 T17 (which makes pipelines at their draws only). */
   venus_premake?(on: number): void;
@@ -537,8 +538,10 @@ export class VenusRenderer {
 
   /**
    * The WebGPU texture of the image a blob was exported from (a WSI image, which the guest's compositor imports into
-   * virgl: web/venus-share.ts), with the submit that last wrote it; the rings run first, so what the guest asked of
-   * the queue before now has been submitted. Undefined: not an image's memory, or no device.
+   * virgl: web/venus-share.ts), with the submit that last wrote it; or, for memory no image is bound to (Mesa's prime
+   * blit: each frame copied into a buffer it exports), its WebGPU buffer, with the submit whose transfer last wrote
+   * it. The rings run first, so what the guest asked of the queue before now has been submitted. Undefined: neither,
+   * or no device.
    */
   shared(res: number) {
     const ctx = this.owner.get(res);
@@ -546,7 +549,9 @@ export class VenusRenderer {
     this.stats.polls++;
     if (this.ex.venus_poll()) this.wake();
     const id = this.ex.venus_resource_texture(ctx, res);
-    return id ? this.gpu.texture(id) : undefined;
+    if (id) return this.gpu.texture(id);
+    const b = this.ex.venus_resource_buffer(ctx, res);
+    return b ? this.gpu.buffer(b) : undefined;
   }
 
   /** Polls the rings now, and then until they are all idle again and no submit is in flight (a notify, a submit wakes them). */

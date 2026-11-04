@@ -622,6 +622,14 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
 #### The host-visible window (Venus, VK1)
 For Vulkan through Venus ([graphics.md](graphics.md) "Vulkan through Venus"): guest-visible memory that the host renderer and the
 guest share without copies (Venus's ring, its command streams, its reply buffers, and the Vulkan memory a program maps).
+- **Its size** (`VENUS_WINDOW`, web/ram.ts): 1,280 MiB, the device's 1 GiB host-visible heap whole and 256 MiB for
+  Venus's rings, command streams and replies. Linux's virtio-gpu gives each mappable blob its place in the window when
+  the blob is made (`virtio_gpu_vram_map` from the create, `drm_mm` over the region) and frees it at the blob's end, and
+  Venus makes a memory's blob at its first map: so the window caps the host-visible memory mapped at once, past which
+  the create fails and the map returns `VK_ERROR_OUT_OF_DEVICE_MEMORY`. At 256 MiB (VK1 to GD G7) Godot's VMA, which
+  keeps its 128 MiB blocks mapped for good, failed its third (the GI demo's "Couldn't map buffer memory (VkResult error
+  -2)", GD G8); `tests/venus/vkmap.py` maps 768 MiB at once (tests/page-venus.test.ts). Untouched pages cost nothing;
+  node 1's RAM moves to later spill memories (memory 1 holds 1,536 MiB of it at most).
 - **Where it is** (`VmConfig.window`, ABI 53; `window_at`, ABI 55): at the guest PA after RAM, outside the DT's
   `/memory`; its bytes are **memory 1's**, after the renderer's arena (`window_at`) and before node 1's RAM, so the
   renderer reads them in place and memory 0 gives none of its 4 GiB to Vulkan (VK4 T19). The virtio-gpu transport

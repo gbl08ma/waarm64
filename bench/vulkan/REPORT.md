@@ -771,6 +771,44 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## GD G7–G8: X11's windows (the prime blit's buffers shared) and the window that capped mapped memory
+
+2026-11-04, the dev VM (SwiftShader, Chromium 155), the tests' Debian rebuilt with Xwayland and python3
+(images/debian-vulkan/build.sh) and the desktop image with Xwayland (Mesa 26.2.6). JSON: `results/gd/g7/`,
+`results/gd/g8/`.
+
+**X11 (G7).** Mesa's X11 WSI takes the prime blit in our guest for every client (its same-GPU check knows PCI only; our
+virtio-gpu is virtio-mmio): Godot's editor on the user's NVIDIA desktop, X11 by default where Xwayland is installed,
+was black. With the prime blit's buffers shared (vk/README.md "Presentation"):
+
+| | before | after |
+| --- | --- | --- |
+| `tests/venus-share.test.ts`, a buffer source (256-byte and tight rows) | fails (no texture) | byte for byte, once each write |
+| vkcube `--wsi xcb` through Xwayland on a GLES sway (the page test's `X11`) | black (VK3 L1's path) | 74–75% clear colour, frames differ; 538–545 frames copied from buffers |
+| Godot 4.7.2's editor, `mobile` project, X11 (`prime_blit=1` 4×, `VN_DEBUG=wsi`) | black on NVIDIA (the user's run) | its 3D viewport draws (`godot-editor-x11.json`) |
+
+**The window (G8).** Godot's GI demo in the editor failed on the user's machine with "Couldn't map buffer memory
+(VkResult error -2)". Linux's virtio-gpu gives each mappable blob its place in the host-visible window when the blob is
+made and keeps it until the blob's end; Venus makes a memory's blob at its first map. So the window (256 MiB, Venus's
+rings in it too) capped the host-visible memory mapped at once, and VMA, which takes 128 MiB blocks on our 1 GiB heap
+and keeps them mapped, met it at its second or third. `tests/venus/vkmap.py` (6 memories of 128 MiB, each mapped and
+kept, written whole):
+
+| window | mapped | the first failure |
+| --- | --- | --- |
+| 256 MiB (`window-256.json`) | 1 of 6 | memory 1: `vkMapMemory` -2, Godot's error |
+| 1,280 MiB (`window-1280.json`) | 6 of 6 | — |
+
+The window is now 1,280 MiB (the heap whole and 256 MiB), `vm::MAX_WINDOW` 2 GiB; node 1's RAM in memory 1 at most
+1,536 MiB (was 2,560), the rest in later spill memories. **On the user's NVIDIA desktop** (this build, by hand) the
+demo failed with out-of-memory errors before the change and opens and runs at 60 frames/s with it, no obvious glitches
+(not every reflection-probe and lighting mode tried). On SwiftShader
+(`gi-editor-swiftshader.json`) Godot leaves Forward+ (16 textures) and the editor stayed black at a wall of ours met
+first, the device's address buffer (every memory allocated with a device address, in one GPUBuffer that doubles by
+copy) growing 256 → 512 MiB, which SwiftShader's Vulkan refused (`vkAllocateMemory failed with
+VK_ERROR_OUT_OF_DEVICE_MEMORY` in Dawn's `CreateBuffer`), every later command using it invalid. GD-HANDOVER.md has
+the next steps.
+
 ## GD G4: SDFGI's stall on the M4 — Playwright's Chrome 153.0.8010.12 clobbered an indirect dispatch's immediates
 
 2026-11-04. With G4's storage images bound, Godot's `sdfgi` scene (bench/vulkan/godot-disk.sh: a floor and a box, a

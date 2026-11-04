@@ -17,6 +17,9 @@
 // rows of the image are read back (`CHECK_ROWS`) and compared with what the virgl texture got; a way that copies
 // wrong is dropped for the next (bitmap, canvas, readback), and that frame gets the next way's copy before it shows.
 // The readback way is the reference and always works.
+// A frame Mesa's prime blit copied into a buffer it exported (X11's WSI in our guest: its same-GPU check knows PCI
+// devices only, and our virtio-gpu is on virtio-mmio) is copied from that buffer into a texture of the resource's
+// first (`fromBuffer`), which then goes any of the three ways.
 import { FORMATS } from './virgl-formats.ts';
 import { softwareRenderer } from './virgl-screen.ts';
 import type { ExternalResource, VirglRenderer } from './virgl-renderer.ts';
@@ -27,14 +30,16 @@ export const SHARE_WAYS: readonly ShareMode[] = ['bitmap', 'canvas', 'readback']
 
 /** What a Venus texture is: the WebGPU texture and the submit that last wrote it (web/venus-gpu.ts `texture`). */
 export type SharedTexture = { texture: GPUTexture; written: number };
+/** A buffer Venus's driver wrote a frame into (Mesa's prime blit), and the submit that last wrote it (web/venus-gpu.ts `buffer`). */
+export type SharedBuffer = { buffer: GPUBuffer; written: number };
 
-export type ShareStats = { refreshes: number; bitmaps: number; canvases: number; readbacks: number; readbackBytes: number; skipped: number; ms: number; checks: number; checksWrong: number; checksUnclear: number; unshared: number };
+export type ShareStats = { refreshes: number; bitmaps: number; canvases: number; readbacks: number; readbackBytes: number; skipped: number; ms: number; checks: number; checksWrong: number; checksUnclear: number; unshared: number; fromBuffers: number };
 
 /** Where the check stands (web/gpu-worker.ts's render stats; bench/vulkan/present.ts records it). */
 export type ShareCheck = { way: ShareMode; state: 'checking' | 'right' | 'reference'; dropped: { way: ShareMode; why: string }[] };
 
 /** GPUTextureUsage's and GPUBufferUsage's values (the globals may be missing where this module is only imported). */
-const RENDER_ATTACHMENT = 16, COPY_DST = 8, MAP_READ = 1, MAP_MODE_READ = 1;
+const RENDER_ATTACHMENT = 16, COPY_DST = 8, MAP_READ = 1, MAP_MODE_READ = 1, TEX_COPY_SRC = 1, TEX_COPY_DST = 2, TEXTURE_BINDING = 4;
 /** Rows of the image a check reads back, spread over its height, and the conclusive checks a GPU way must pass. */
 const CHECK_ROWS = 8, CHECKS = 3;
 /** Within this of each other (of 1), a channel copied is right: a GPU way goes through 8 bits (and a 10-bit or float image). */
@@ -55,6 +60,18 @@ function shared(format: GPUTextureFormat): { swizzle: string; bytes: number } | 
     case 'rgba16float': return { swizzle: 'rgba', bytes: 8 };
     default: return undefined;
   }
+}
+
+/**
+ * The texture format whose texels are a virgl format's bytes as stored (virgl keeps B8G8R8A8 as its bytes: its texture's
+ * channels are the bytes in memory order, as an `rgba8unorm` texture of them samples), for a prime blit's buffer; and
+ * its bytes a texel. Undefined: not shared from a buffer.
+ */
+export function bufferFormat(virgl: number): { format: GPUTextureFormat; bytes: number } | undefined {
+  const f = FORMATS.get(virgl);
+  if (!f || f.block !== 1) return undefined;
+  const k = glKind(f.type, f.bpp);
+  return k === 8 ? { format: 'rgba8unorm', bytes: 4 } : k === 10 ? { format: 'rgb10a2unorm', bytes: 4 } : k === 16 ? { format: 'rgba16float', bytes: 8 } : undefined;
 }
 
 /** A half float's value. */
@@ -119,7 +136,7 @@ export type ShareOptions = {
 };
 
 export class VenusShare {
-  readonly stats: ShareStats = { refreshes: 0, bitmaps: 0, canvases: 0, readbacks: 0, readbackBytes: 0, skipped: 0, ms: 0, checks: 0, checksWrong: 0, checksUnclear: 0, unshared: 0 };
+  readonly stats: ShareStats = { refreshes: 0, bitmaps: 0, canvases: 0, readbacks: 0, readbackBytes: 0, skipped: 0, ms: 0, checks: 0, checksWrong: 0, checksUnclear: 0, unshared: 0, fromBuffers: 0 };
   /** The submit each external resource's bytes were copied from (by resource id). */
   private readonly copied = new Map<number, number>();
   private readonly canvases = new Map<string, { canvas: OffscreenCanvas; ctx: GPUCanvasContext }>();
@@ -134,6 +151,8 @@ export class VenusShare {
   private readonly unshared = new Set<number>();
   /** Readback buffers by resource id (`staging`). */
   private readonly buffers = new Map<number, GPUBuffer>();
+  /** The texture a prime blit's buffer is copied into, by resource id, and the buffer's write it holds (`fromBuffer`). */
+  private readonly blits = new Map<number, SharedTexture>();
   /** The way in use and where its check stands. */
   readonly check: ShareCheck;
   private passed = 0;
@@ -145,9 +164,9 @@ export class VenusShare {
    */
   private readonly device: GPUDevice;
   private readonly renderer: VirglRenderer;
-  private readonly source: (id: number) => SharedTexture | undefined;
+  private readonly source: (id: number) => SharedTexture | SharedBuffer | undefined;
   private readonly options: ShareOptions;
-  constructor(device: GPUDevice, mode: ShareMode, renderer: VirglRenderer, source: (id: number) => SharedTexture | undefined, options: ShareOptions = {}) {
+  constructor(device: GPUDevice, mode: ShareMode, renderer: VirglRenderer, source: (id: number) => SharedTexture | SharedBuffer | undefined, options: ShareOptions = {}) {
     [this.device, this.renderer, this.source, this.options] = [device, renderer, source, options];
     this.check = { way: mode, state: mode === 'readback' ? 'reference' : 'checking', dropped: [] };
   }
@@ -175,16 +194,50 @@ export class VenusShare {
   }
 
   /** The image behind an external resource, or undefined (warned once: a blob that isn't an image's stays black). */
-  private sourceOf(r: ExternalResource) {
-    const src = this.source(r.id);
+  private sourceOf(r: ExternalResource): SharedTexture | undefined {
+    const got = this.source(r.id);
+    const src = got && 'buffer' in got ? this.fromBuffer(r, got) : got;
     if (!src && !this.unshared.has(r.id)) {
-      // A swapchain's images may go before the compositor lets go of them (vkcube's first, at 500×500); but a window
-      // whose images are all so is black (Mesa's prime blit: its frames copied into buffers it exports, VK3 L1).
+      // A swapchain's images may go before the compositor lets go of them (vkcube's first, at 500×500).
       this.unshared.add(r.id);
       this.stats.unshared++;
-      this.warn(`resource ${r.id} (${r.width}x${r.height}) isn't (or no longer) a Vulkan image's memory: not shown`);
+      this.warn(`resource ${r.id} (${r.width}x${r.height}) isn't (or no longer) a Vulkan image's or buffer's memory: not shown`);
     }
     return src;
+  }
+
+  /**
+   * A prime blit's frame (a buffer, rows `r.stride` bytes apart as the guest's import says, else 256-aligned as Mesa's
+   * are) as a texture of the resource's (`bufferFormat`), copied again when the buffer has been written since. In the
+   * queue's order, after the submits whose copies wrote it.
+   */
+  private fromBuffer(r: ExternalResource, src: SharedBuffer): SharedTexture | undefined {
+    const f = bufferFormat(r.format);
+    if (!f) {
+      this.warn(`a prime blit's buffer of virgl's format ${FORMATS.get(r.format)?.name ?? r.format} isn't shared`);
+      return undefined;
+    }
+    let t = this.blits.get(r.id);
+    if (t && t.written === src.written) return t;
+    const w = r.width, h = r.height, row = w * f.bytes;
+    const stride = r.stride || Math.ceil(row / 256) * 256;
+    if (stride < row || stride * (h - 1) + row > src.buffer.size) {
+      this.warn(`resource ${r.id}: a ${r.width}x${r.height} frame with rows ${stride} bytes apart is past its ${src.buffer.size}-byte buffer`);
+      return undefined;
+    }
+    if (!t || t.texture.width !== w || t.texture.height !== h || t.texture.format !== f.format) {
+      t?.texture.destroy();
+      t = { texture: this.device.createTexture({ size: [w, h], format: f.format, usage: TEX_COPY_SRC | TEX_COPY_DST | TEXTURE_BINDING }), written: -1 };
+      this.blits.set(r.id, t);
+    }
+    const enc = this.device.createCommandEncoder();
+    // WebGPU's rows are 256 bytes apart at least as far; a stride that isn't (Mesa's always is) goes a row at a time.
+    if (stride % 256 === 0) enc.copyBufferToTexture({ buffer: src.buffer, bytesPerRow: stride, rowsPerImage: h }, { texture: t.texture }, [w, h]);
+    else for (let y = 0; y < h; y++) enc.copyBufferToTexture({ buffer: src.buffer, offset: y * stride }, { texture: t.texture, origin: [0, y] }, [w, 1]);
+    this.device.queue.submit([enc.finish()]);
+    t.written = src.written;
+    this.stats.fromBuffers++;
+    return t;
   }
 
   /** Before a submit of the compositor's context runs (`VirglRenderer.external.refresh`): a GPU way copies now. */
@@ -228,6 +281,8 @@ export class VenusShare {
 
   forget(id: number) {
     this.copied.delete(id);
+    this.blits.get(id)?.texture.destroy();
+    this.blits.delete(id);
     if (!this.inFlight.has(id)) this.dropStaging(id);
   }
 
@@ -285,7 +340,7 @@ export class VenusShare {
       this.copied.delete(r.id);
       this.inFlight.delete(r.id);
       handed = true;
-      const now = this.source(r.id);
+      const now = this.sourceOf(r);
       if (now) {
         if (next === 'readback') this.readback(r, now);
         else this.copyChecked(r, now);

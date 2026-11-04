@@ -102,7 +102,9 @@ Results in `bench/results/local/godot/` (dev VM) and `godot-mac-*` (the M4).
   WebGPU adapter (`vm-1`, `vm-2`: "this browser has no WebGPU adapter here"), where the driver has no adapter caps;
   none of the runs with one logged it. Left: images/vkframes/venus-profile.json predates T11, docs/backlog.md).
   What Godot asks of it, offered through words or tier1.
-- **G7. Godot as a standing workload** (M). A capture of Godot's scene frames (GFXReconstruct on lavapipe, as vkQuake's)
+- **G7. Godot as a standing workload** (M) (X11's part done 2026-11-04: the prime blit's buffers shared, vkcube through
+  Xwayland in tests/page-venus.test.ts, the editor under X11 draws in the dev VM; nvidia.sh's `godot` step; REPORT.md "GD
+  G7–G8". Left: the capture, the editor's start cold and warm, the bigger project). A capture of Godot's scene frames (GFXReconstruct on lavapipe, as vkQuake's)
   replayed on the page beside the other programs' (tests/page-venus.test.ts); the editor's first start timed on the M4
   (cold and with the shader store warm); a `godot` step for `bench/vulkan/nvidia.sh` so the user's next NVIDIA run
   confirms G1–G3 there; then a bigger project (one of Godot's demos with lights, shadows, decals, SDFGI and
@@ -113,7 +115,9 @@ Results in `bench/results/local/godot/` (dev VM) and `godot-mac-*` (the M4).
   Some programs run only under Xwayland: the page shows those buffers (docs/backlog.md "A WSI image exported as a
   buffer isn't shared"). *Done:* Godot's editor under X11 draws as under Wayland; the desktop image or a test image
   gets Xwayland so the harness meets that path.
-- **G8. The true limit: Godot's Global Illumination demo in the editor** (added 2026-11-04; after G7, a task of its
+- **G8. The true limit: Godot's Global Illumination demo in the editor** (first findings 2026-11-04: the -2 was the
+  host-visible window, now 1,280 MiB; on SwiftShader the device's address buffer is the next wall; REPORT.md "GD
+  G7–G8") (added 2026-11-04; after G7, a task of its
   own: it likely needs the host-visible memory and the window reworked, GD-HANDOVER.md "G8"). The
   demo (https://store.godotengine.org/asset/godot-foundation/global-illumination-demo/download/3295/) opened in the
   editor crashes or gets Godot stuck on the user's test machine, with "Couldn't map buffer memory (VkResult error -2)"

@@ -326,10 +326,10 @@ test("guest RAM past memory 0: the page's split, its note, and a split set by ha
   // splits it), so node 1 is smaller.
   assert.equal(numaNote(3071, undefined, true), undefined);
   assert.deepEqual(ramSplitMiB(4096, undefined, true), [3071, 1025]);
-  assert.deepEqual(ramSplitMiB(8192, undefined, true), [3071, 2560, 2561]);
+  assert.deepEqual(ramSplitMiB(8192, undefined, true), [3071, 1536, 3585]);
   assert.equal(text(numaNote(4096, undefined, true)!), t('machines:machine.numa', { count: 1, fast: 3071, rest: 1025 }));
-  assert.equal(ramSplitError([1024, 2560], true), undefined);
-  assert.match(text(ramSplitError([1024, 2561], true)!), words('machines:machine.split.vulkan', { max: 2560 }, { whole: true }));
+  assert.equal(ramSplitError([1024, 1536], true), undefined);
+  assert.match(text(ramSplitError([1024, 1537], true)!), words('machines:machine.split.vulkan', { max: 1536 }, { whole: true }));
   assert.equal(text(numaNote(4096)!), t('machines:machine.numa', { count: 1, fast: 3071, rest: 1025 }));
   assert.match(text(numaNote(8192)!), words('machines:machine.numa', { count: 2 }, { whole: true }));
   assert.match(text(numaNote(2048, [1024, 1024])!), words('machines:machine.numa', { count: 1, rest: 1024 }, { whole: true }));
@@ -350,7 +350,7 @@ test("guest RAM past memory 0: the page's split, its note, and a split set by ha
   const big = { ...def, machine: { ...def.machine, ramMiB: 7167, ramSplit: [3071, 4096] } };
   assert.deepEqual(parseDefinition(JSON.stringify(big)).machine.ramSplit, [3071, 4096]);
   assert.throws(() => parseDefinition(JSON.stringify({ ...big, machine: { ...big.machine, display: '3d', vulkan: true } })), /damaged/);
-  assert.ok(parseDefinition(JSON.stringify({ ...big, machine: { ...big.machine, ramMiB: 5631, ramSplit: [3071, 2560], display: '3d', vulkan: true } })));
+  assert.ok(parseDefinition(JSON.stringify({ ...big, machine: { ...big.machine, ramMiB: 4607, ramSplit: [3071, 1536], display: '3d', vulkan: true } })));
 });
 
 test("a machine's JIT budget: carried by its shape and its definition, outside the shape's hash, counted by the memory rule; its keyboard layout and network settings by its definition", async () => {

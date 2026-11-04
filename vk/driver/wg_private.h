@@ -296,6 +296,9 @@ struct wg_device_memory {
 
 /* The texture of the shared image bound to a memory, or 0 (glue.c's venus_resource_texture). */
 uint32_t wg_memory_texture(VkDeviceMemory memory);
+/* The GPUBuffer of a memory no image is bound to, or 0 (glue.c's venus_resource_buffer): Mesa's prime blit exports a
+ * buffer each frame is copied into (web/venus-share.ts). */
+uint32_t wg_memory_shared_buffer(VkDeviceMemory memory);
 
 struct wg_buffer {
    struct vk_buffer vk;

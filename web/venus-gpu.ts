@@ -306,9 +306,11 @@ export class VenusGpu {
   private readonly idleWaiters: (() => void)[] = [];
   private readonly seen = new Set<string>();
   private readonly mem: () => ArrayBuffer;
-  /** The submit (its count in `stats.submits`) that last wrote each texture, and those the open encoder writes. */
-  private readonly written = new WeakMap<GPUTexture, number>();
-  private touched = new Set<GPUTexture>();
+  /** The submit (its count in `stats.submits`) that last wrote each texture, and those the open encoder writes; also
+   * buffers written by a transfer (copies, fills, updates: Mesa's prime blit copies each frame into one it exports,
+   * web/venus-share.ts), not by a shader's storage writes. */
+  private readonly written = new WeakMap<GPUTexture | GPUBuffer, number>();
+  private touched = new Set<GPUTexture | GPUBuffer>();
   /** A texture's bytes are another renderer's resource's from now on (`res`; 0: no longer): web/venus-import.ts, called at the bind (it
    * writes textures in the queue's order itself). `desc` is what the texture was made with; what it returns, the resource's own texture
    * (kept while the resource lives), takes the image's place under its id (VK4 T16). */
@@ -365,6 +367,12 @@ export class VenusGpu {
   texture(id: number): { texture: GPUTexture; written: number } | undefined {
     const t = this.objs[id];
     return t instanceof GPUTexture ? { texture: t, written: this.written.get(t) ?? 0 } : undefined;
+  }
+
+  /** A buffer by its id, with the submit whose transfer last wrote it (0: none yet): web/venus-share.ts reads a prime blit's. */
+  buffer(id: number): { buffer: GPUBuffer; written: number } | undefined {
+    const b = this.objs[id];
+    return b instanceof GPUBuffer ? { buffer: b, written: this.written.get(b) ?? 0 } : undefined;
   }
 
   /** The module's `wg` imports. */
@@ -476,6 +484,7 @@ export class VenusGpu {
         if (!size) return;
         const a = buf(src), b = buf(dst);
         // WebGPU copies 4-aligned offsets and sizes; Vulkan any (VK3 L4c-F): the others by a compute pass.
+        later(() => self.touched.add(b));
         if ((so | dO | size) & 3) later(() => self.copyUnaligned(a, so, b, dO, size));
         else if (a === b) later(() => self.copyWithin(a, so, dO, size));
         else later(() => self.enc!.copyBufferToBuffer(a, so, b, dO, size));
@@ -493,6 +502,7 @@ export class VenusGpu {
       gpu_copy_tb(b: number, offset: number, bpr: number, rows: number, tex: number, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number, aspect: number) {
         const B = buf(b), T = self.get<GPUTexture>(tex);
         later(() => {
+          self.touched.add(B);
           if (aspect) return self.depthStencilCopy(false, B, offset, bpr, rows, T, mip, x, y, z, w, h, depth, aspect);
           const p = self.packed.get(T);
           if (p) return self.pack(p, B, offset, bpr, rows || h, T, mip, x, y, z, w, h, depth);
@@ -518,6 +528,7 @@ export class VenusGpu {
       gpu_fill(b: number, offset: number, size: number, value: number) {
         if (!size) return;
         const B = buf(b);
+        later(() => self.touched.add(B));
         if (value === 0) return later(() => self.enc!.clearBuffer(B, offset, size));
         const t = self.staging(size, (m) => new Uint32Array(m).fill(value >>> 0));
         later(() => self.enc!.copyBufferToBuffer(t, 0, B, offset, size));

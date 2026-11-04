@@ -21,9 +21,12 @@
 // firstboot prompts, root without a password, as the page's command line does
 // today); Alpine gets a CIDATA seed disk whose user-data unlocks root (needs
 // mkfs.vfat and mcopy). Logs: target/uefi-oracle/<name>.log. Exit code 0 if
-// every image logged in and powered off.
+// every image logged in and powered off. QEMU goes with this process (its exit,
+// SIGTERM, SIGINT); one an earlier run left behind (its Node killed outright, or
+// V8's out-of-memory abort, which no handler sees) is found by its pidfile,
+// target/uefi-oracle/<name>.pid, and stopped at the next run's start.
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { createWriteStream, existsSync, readFileSync, rmSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -97,6 +100,44 @@ async function seedDisk(dir: string) {
 
 type Result = { name: string; ok: boolean; marks: Record<string, number>; log: string };
 
+/** The QEMUs this run started, with their pidfiles: killed when it ends, however it ends short of an abort. */
+const children = new Map<ReturnType<typeof spawn>, string>();
+const killChildren = () => {
+  for (const [q, pidFile] of children) {
+    q.kill('SIGKILL');
+    rmSync(pidFile, { force: true });
+  }
+};
+process.on('exit', killChildren);
+for (const [sig, code] of [['SIGINT', 130], ['SIGTERM', 143]] as const) {
+  process.on(sig, () => {
+    killChildren();
+    process.exit(code);
+  });
+}
+
+/** A process's command line's arguments, or undefined if it's gone. */
+function cmdline(pid: number): string[] | undefined {
+  try { return readFileSync(`/proc/${pid}/cmdline`, 'latin1').split('\0'); } catch { return undefined; }
+}
+
+/**
+ * Stops the QEMU an earlier run of this image left running (its pidfile names it, and its command line names the
+ * pidfile), if that run is gone; refuses if the run that started it is still there (two runs on one image's files).
+ */
+async function stopLeftover(pidFile: string) {
+  let pid: number;
+  try { pid = Number(readFileSync(pidFile, 'latin1').trim()); } catch { return; }
+  const args = pid > 0 ? cmdline(pid) : undefined;
+  if (!args?.some((a) => a.includes('qemu-system')) || !args.includes(pidFile)) return;
+  const ppid = Number(/\) \S+ (\d+)/.exec(readFileSync(`/proc/${pid}/stat`, 'latin1'))?.[1]);
+  if (cmdline(ppid)?.some((a) => a.endsWith('uefi-oracle.ts'))) throw new Error(`QEMU ${pid} is still running for another uefi-oracle.ts run (${ppid}) on ${pidFile}`);
+  console.log(`stopping QEMU ${pid}, left running by an earlier run (${pidFile})`);
+  process.kill(pid, 'SIGTERM');
+  for (let i = 0; i < 50 && cmdline(pid); i++) await new Promise((r) => setTimeout(r, 100));
+  if (cmdline(pid)) process.kill(pid, 'SIGKILL');
+}
+
 async function boot(what: string): Promise<Result> {
   const alpine = ALPINE.images[what];
   const name = alpine || what === 'debian' ? what : basename(what).replace(/\.qcow2$/, '');
@@ -104,6 +145,8 @@ async function boot(what: string): Promise<Result> {
     : alpine ? await download({ ...alpine, label: `Alpine (${alpine.loader})`, pinFile: 'images/alpine-uefi.json' }) : what;
   if (!existsSync(base)) throw new Error(`${base}: not there (images/build.sh debian?)`);
   const dir = join(OUT, name);
+  const pidFile = join(OUT, `${name}.pid`);
+  await stopLeftover(pidFile);
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
   const disk = join(dir, 'disk.qcow2');
@@ -133,12 +176,17 @@ async function boot(what: string): Promise<Result> {
     ['kernel', /Linux version/], ['init', /Run \/init|Freeing unused kernel/], ['login prompt', /login: ?$/m], ['power-off', /reboot: Power down/],
   ];
   if (opt.extra) args.push(...opt.extra.split(' ').filter(Boolean));
-  const q = spawn(QEMU[0], args, { stdio: ['pipe', 'pipe', 'pipe'] });
-  let all = '', tail = '', logged = false, menu = false;
+  const q = spawn(QEMU[0], [...args, '-pidfile', pidFile], { stdio: ['pipe', 'pipe', 'pipe'] });
+  children.set(q, pidFile);
+  // The serial log goes to its file as it comes (kept whole in a string, a guest that printed without end took Node
+  // past its heap and the log with it).
+  const log = join(OUT, `${name}.log`);
+  const logFile = createWriteStream(log, { encoding: 'latin1' });
+  let tail = '', logged = false, menu = false;
   const send = (s: string) => setTimeout(() => q.stdin.write(s), 300);
   const onData = (b: Buffer) => {
     const s = b.toString('latin1');
-    all += s;
+    logFile.write(s, 'latin1');
     // Without escape sequences: Limine draws its menu a character at a time between cursor moves.
     tail = (tail + s).replace(/\x1b\[[0-9;?=]*[A-Za-z]/g, '').slice(-2000);
     for (const [k, re] of stages) if (!(k in marks) && re.test(tail)) marks[k] = now();
@@ -151,9 +199,10 @@ async function boot(what: string): Promise<Result> {
   q.stderr.on('data', onData);
   const timer = setTimeout(() => q.kill(), Number(opt.timeout) * 1000);
   await new Promise((r) => q.on('close', r));
+  children.delete(q);
+  await rm(pidFile, { force: true });
   clearTimeout(timer);
-  const log = join(OUT, `${name}.log`);
-  await writeFile(log, all);
+  await new Promise((r) => logFile.end(r));
   return { name, ok: 'power-off' in marks && 'command' in marks, marks, log };
 }
 

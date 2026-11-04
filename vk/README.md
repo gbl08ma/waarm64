@@ -939,11 +939,23 @@ image into the virgl texture made at the import (web/virgl-renderer.ts `External
 - **Not NVIDIA's vendor ID:** the device reports the adapter's maker as its vendor (web/venus-gpu.ts `VENDORS`), but
   never NVIDIA's 0x10de: Venus's guest driver (Mesa 26's `vn_wsi_init`) then takes the device for Venus on NVIDIA's own
   driver, which can't render to linear images, and its WSI renders into an optimal image and copies each frame into a
-  buffer it exports instead (the prime blit). That buffer has no texture to share, so every Vulkan window was black
-  on the user's NVIDIA desktop (bench/vulkan/REPORT.md "VK3 L1"; reproduced on SwiftShader with `?gpu=vkvendor=nvidia`
-  and the desktop guest's Mesa 26.2; Debian's 25.0 has no such branch). An external resource that isn't an image's
-  memory is warned of (`venus-share: resource N … isn't (or no longer) a Vulkan image's memory`; vkcube's first 500×500
-  swapchain is one, gone before it shows) and counted (`unshared` in the render stats).
+  buffer it exports instead (the prime blit), which every Vulkan window on the user's NVIDIA desktop took before the
+  buffers were shared (bench/vulkan/REPORT.md "VK3 L1"; reproduced on SwiftShader with `?gpu=vkvendor=nvidia` and the
+  desktop guest's Mesa 26.2; Debian's 25.0 has no such branch). An external resource that is neither an image's memory
+  nor a buffer's is warned of (`venus-share: resource N … isn't (or no longer) a Vulkan image's or buffer's memory`;
+  vkcube's first 500×500 swapchain is one, gone before it shows) and counted (`unshared` in the render stats).
+- **The prime blit's buffers** (GD G7): every X11 client takes the prime blit in our guest, whatever the vendor. Mesa's
+  X11 WSI renders directly only for a device the X server's DRI3 device matches (`wsi_device_matches_drm_fd`), which
+  compares PCI bus info alone (Venus doesn't override `can_present_on_device`, as Mesa asks of drivers for GPUs off
+  PCI), and our virtio-gpu is on virtio-mmio: so through Xwayland an optimal image is copied each frame
+  (`vkCmdCopyImageToBuffer`) into a linear buffer on dedicated memory exported as a dma-buf, rows 256-byte aligned.
+  The driver names that memory's GPUBuffer when no image is bound to it (`venus_resource_buffer`,
+  `wg_memory_shared_buffer`), web/venus-gpu.ts records the submit whose transfer (a copy, a fill) last wrote each
+  buffer as it does textures, and web/venus-share.ts copies the buffer, once each time it's written, into a texture of
+  the resource's own (`fromBuffer`: `rgba8unorm`, `rgb10a2unorm` or `rgba16float`, so its texels are virgl's stored
+  bytes; rows as far apart as the import's stride, `PIPE_RESOURCE_SET_TYPE`'s first plane), which then goes the
+  chosen way. Godot's editor on the user's NVIDIA desktop picked X11 and was black before (`prime_blit=1` with
+  `VN_DEBUG=wsi` on Mesa 26).
 - **Three ways** (bench/vulkan/REPORT.md "VK2 L4"):
   - **bitmap** (where the page doesn't render in software): at the start of the compositor's submit, the image is
     drawn into a WebGPU canvas context's texture (an OffscreenCanvas of its size, `bgra8unorm`), its colours the virgl

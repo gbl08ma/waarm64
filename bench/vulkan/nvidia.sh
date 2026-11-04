@@ -63,6 +63,12 @@
 # (bench/vulkan/l9b-cases.txt) with the page's completion faults.
 # And VK2_STEPS="t18" (~4 min): VK4 T8 and T18's check, fetches from views with a base level by name
 # (bench/vulkan/t18-cases.txt), which fail on SwiftShader and pass on the M4: whether NVIDIA's Vulkan meets them.
+# And VK2_STEPS="godot" (GD G7, ~20 min; a bundle made with `nvidia-bundle.sh --godot` carries only what it needs): Godot
+# 4.7.2 in the desktop guest (bench/vulkan/godot.ts, Godot's disk from bench/vulkan/godot-disk.sh), each run started by
+# sway and its screen kept every 15 s: the editor on the Forward+ project as Godot picks its display (X11 through
+# Xwayland, as on the user's desktop: the prime blit), the editor under Wayland, the Forward+ scene, the SDFGI scene,
+# and the Global Illumination demo in the editor (GD G8); GD's bar: a 3D viewport that draws, no stall over a second
+# after the first frame, no abort.
 # At the end it writes <dir>/vk3-nvidia-results.tar.gz (with results/summary.txt: each step's verdict, and whether the
 # page held the adapter's subgroups, VK3 L5): send that file back. VK2_KEEP=1 keeps an earlier run's results and adds
 # to them (VK2_KEEP=1 VK2_STEPS=none only writes the summary's last line, host.txt and the tarball). VK2_DRY=1 prints what each step would run (no bundle
@@ -269,6 +275,18 @@ if [ "${1:-}" = page ]; then
   fi
   if [[ " ${VK2_STEPS:-} " == *" t18 "* ]]; then
     step deqp-t18 600 env CASES="$REPO/bench/vulkan/t18-cases.txt" LIMIT_S=400 DETAIL=20 PASSED=1 node bench/gpu/deqp-run.ts vk target/deqp/guest-vk.qcow2 "$R/deqp-t18"
+  fi
+  if [[ " ${VK2_STEPS:-} " == *" godot "* ]]; then
+    # GD G7 (only when asked: VK2_STEPS=godot, ~20 min): Godot's editor (X11 and Wayland), its scenes and the GI demo.
+    if [ -n "$DRY" ] || [ -f "$P/target/godot/godot.ext4" ]; then
+      step godot 2100 env RUN_S=100 SHOT_S=20 RUNS="$(printf '%s\n' 'editor-x11=--path {p}/forward --editor --rendering-driver vulkan' \
+        'editor-wayland=--path {p}/forward --editor --rendering-driver vulkan --display-driver wayland' \
+        'forward=--path {p}/forward --rendering-driver vulkan' 'sdfgi=--path {p}/sdfgi --rendering-driver vulkan' \
+        'gi-editor:300=--path {p}/gi --editor --rendering-driver vulkan')" node bench/vulkan/godot.ts target/arch/desktop.qcow2 "$R/godot"
+      [ -f "$R/godot/results.json" ] && node -e 'const r = require(process.argv[1]); for (const [k, v] of Object.entries(r)) if (v && v.shots) console.log(`godot ${k}: ${v.shots.at(-1) ?? "no shot"}; ${(v.display ?? "").split("\n")[0].slice(0, 80)}`)' "$R/godot/results.json" | tee -a "$R/summary.txt" || true
+    else
+      echo "godot: skipped (the bundle has no target/godot/godot.ext4: bench/vulkan/godot-disk.sh)" | tee -a "$R/summary.txt"
+    fi
   fi
   if [[ " ${VK2_STEPS:-} " == *" l9b "* ]]; then
     # VK3 L9b (only when asked: VK2_STEPS=l9b, ~5 min): the first run's two fails and their neighbours by name

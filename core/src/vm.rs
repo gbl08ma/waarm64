@@ -159,8 +159,9 @@ pub struct VmConfig {
     pub fma: u64,
 }
 
-/// The largest host-visible window.
-pub const MAX_WINDOW: u64 = 1 << 30;
+/// The largest host-visible window: Venus's (web/ram.ts `VENUS_WINDOW`, 1,280 MiB since GD G8) holds its device's
+/// whole host-visible heap, since Linux places every mappable blob there while it lives.
+pub const MAX_WINDOW: u64 = 2 << 30;
 
 impl VmConfig {
     /// The host-visible window as (guest PA, size), if there is one: right after RAM (its bytes in memory 1).

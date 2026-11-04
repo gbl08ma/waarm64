@@ -17,7 +17,7 @@ test('the gpu test kernel finds a Venus device: the window, the features, three 
     devices: [{ type: 'gpu', width: 640, height: 480, virgl: true, venus: true }],
   }, 5e9);
   const out = r.console.replaceAll('\r\n', '\n');
-  for (const want of ['[drm] Host memory window: 0x50000000 +0x10000000', '[drm] features: +virgl +edid +resource_blob +host_visible', '[drm] features: +context_init',
+  for (const want of ['[drm] Host memory window: 0x50000000 +0x50000000', '[drm] features: +virgl +edid +resource_blob +host_visible', '[drm] features: +context_init',
     '[drm] number of cap sets: 3', '[drm] cap set 2: id 4, max-version 0, max-size 160', 'gpu: mode set 640x480 pitch 2560\n', 'gpu: damage sent\n']) {
     assert.ok(out.includes(want), `missing ${JSON.stringify(want)}`);
   }

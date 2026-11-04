@@ -645,11 +645,11 @@ host's side in [devices.md](devices.md) "Venus" and "The host-visible window", t
   become bind groups made at bind time and cached by content (8 sets advertised, sets 3 and up sharing WebGPU's
   fourth group); push constants are immediates, past them a push buffer of the driver's; barriers are accepted
   (WebGPU tracks hazards); one queue family; fences complete on `onSubmittedWorkDone`. vk/README.md "The driver".
-- **Memory:** device-local memory is plain GPUBuffers and textures. Host-visible memory is the window (256 MiB of
-  memory 1 after the arena, at the guest PA after RAM, outside guest RAM), which guest and renderer share; its pages are write-protected in the TLB
+- **Memory:** device-local memory is plain GPUBuffers and textures. Host-visible memory is the window (1,280 MiB of
+  memory 1 after the arena: the 1 GiB host-visible heap whole, since Linux places each mappable blob there when it's made, GD G8, at the guest PA after RAM, outside guest RAM), which guest and renderer share; its pages are write-protected in the TLB
   and marked dirty on the first write (the write-watch), and the written ranges are uploaded at each submit.
   Readbacks map a staging buffer and copy into the window before the fence is signalled. A Vulkan machine's memory 0
-  holds as much RAM as any (3,071 MiB); node 1 follows the window in memory 1, at most 2,560 MiB
+  holds as much RAM as any (3,071 MiB); node 1 follows the window in memory 1, at most 1,536 MiB
   ([spill-memories.md](spill-memories.md)).
 - **Presentation:** Venus's WSI images are shared with the virgl renderer's screen as a copy from a WebGPU texture into
   WebGL's (bitmap, canvas or readback; the first copies of a way are checked against a readback, and a wrong way is

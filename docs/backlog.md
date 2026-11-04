@@ -599,17 +599,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   round trip: both the guest's Mesa's, which a guest patch could change; (4) the ticker's busy cost (~50 ms a second of
   the GPU worker at iconscroll) could drop if the ticker read the rings' tails itself and woke the pump only for work;
   a submit held for the guest's own signal keeps the pump turning at the ticker's pace as long as it's held.
-- **A WSI image exported as a buffer isn't shared** (VK3 L1): Mesa's prime blit (a device Venus takes for another
-  GPU's, or NVIDIA's) exports a linear buffer each frame is copied into; web/venus-share.ts shares only images
-  (`venus_resource_texture`), so such a window is black, with a warning. Sharing a buffer would need the driver to name
-  the memory's GPUBuffer, writes to buffers tracked like textures' and a buffer-to-texture copy with the import's
-  stride. **Needed now** (GD, 2026-11-04): every Vulkan client presenting through X11 (XWayland) takes that path in
-  our guest. Mesa's X11 same-GPU check (`wsi_device_matches_drm_fd`, through DRI3) matches PCI devices only, and our
-  virtio-gpu is on virtio-mmio (a platform DRM device), so Venus has no PCI bus info and the check always fails:
-  Godot's editor on the user's NVIDIA desktop stayed black under X11 (`VN_DEBUG=wsi MESA_LOG_LEVEL=debug`:
-  `prime_blit=1`) and drew with `--display-driver wayland` (`prime_blit=0`). Proton/DXVK and SDL games under XWayland
-  would be black the same way. Meanwhile: Wayland where the program allows it (Godot: `--display-driver wayland`, or
-  the editor setting run/platforms/linuxbsd/prefer_wayland).
 - **Venus at 1 fish on NVIDIA: 2.4–2.6 ms a frame against virgl's 1.5, parked by the user** (2026-10-26: 1 fish isn't
   representative; likely NVIDIA's driver latency or its GPU leaving low power slowly; Venus is ahead at 1,000 fish and
   the toolkit). The leads: Chromium notices a lone pass done ~2.2 ms late there (1.2 nudged, at once under load), the
@@ -1528,8 +1517,8 @@ report it. Nothing has been filed.
   (`bench/vulkan/imm-probe.ts` is the shape, its cap removed); run it only with the user there to
   restart the Mac. Two reports: Chromium (a page shouldn't be able to hang the GPU past a watchdog: Dawn's device loss
   on a timeout) and Apple (processes stuck exiting with their GPU work, and no recovery from it).
-- **Mesa: X11's same-GPU check fails for a DRM device that isn't on PCI** (docs/backlog.md "A WSI image exported as a
-  buffer isn't shared"): `wsi_device_matches_drm_fd` (src/vulkan/wsi/wsi_common_drm.c) compares PCI bus info only, so
+- **Mesa: X11's same-GPU check fails for a DRM device that isn't on PCI** (vk/README.md "Presentation", the prime
+  blit's buffers, shared since GD G7 at the cost of a copy a frame): `wsi_device_matches_drm_fd` (src/vulkan/wsi/wsi_common_drm.c) compares PCI bus info only, so
   on a virtio-mmio virtio-gpu (DRM_BUS_PLATFORM) Venus's device never matches the X server's DRI3 device and every X11
   swapchain takes the prime blit. Seen with Mesa 26.2.5 (Arch's `vulkan-virtio`) in our desktop guest. Fix: compare the
   DRM render node's major and minor (`VK_EXT_physical_device_drm`, which Venus fills from the virtgpu device) when the

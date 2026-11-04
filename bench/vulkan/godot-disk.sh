@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # The disk bench/vulkan/godot.ts gives the guest (dev-only): Godot's arm64 build (4.7.2, sha256-pinned; its zip holds
 # one binary) at /godot and test projects at /projects/<name>/, the same scene (a box, a camera, a sun, a plain
-# background) under Forward+ (`forward`) and Mobile (`mobile`), and a lit one with SDFGI on (`sdfgi`, Forward+).
+# background) under Forward+ (`forward`) and Mobile (`mobile`), a lit one with SDFGI on (`sdfgi`, Forward+), and Godot's
+# Global Illumination demo (`gi`: godot-demo-projects' 3d/global_illumination from Godot's asset store, MIT, sha256-pinned;
+# GD G8).
 #   bench/vulkan/godot-disk.sh      -> target/godot/godot.ext4 (the download kept in target/godot/dl/)
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -112,6 +114,15 @@ sed 's/sdfgi_enabled = true/sdfgi_enabled = true\nsdfgi_cascades = 1/' "$tree/pr
 printf '%s\n' "$(cat "$tree/projects/sdfgi/project.godot")" 'global_illumination/sdfgi/probe_ray_count=0' \
   'global_illumination/sdfgi/frames_to_converge=0' 'global_illumination/sdfgi/frames_to_update_lights=0' \
   > "$tree/projects/sdfgi-least/project.godot"
+# GD G8: the Global Illumination demo (LightmapGI, VoxelGI, SDFGI, a reflection probe, SSAO and SSIL over a level).
+GI_SHA256=13c05a05fc84becca76ee9d3b81a6b6a417ac516ff2402f969fe30c7ded49a06
+gi=$OUT/dl/3d_global_illumination.zip
+if ! echo "$GI_SHA256  $gi" | sha256sum -c --quiet >/dev/null 2>&1; then
+  curl -sSLf -o "$gi" "https://store.godotengine.org/asset/godot-foundation/global-illumination-demo/download/3295/"
+  echo "$GI_SHA256  $gi" | sha256sum -c --quiet
+fi
+python3 -I -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$gi" "$tree/gi"
+mv "$tree/gi/global_illumination" "$tree/projects/gi" && rmdir "$tree/gi"
 rm -f "$OUT/godot.ext4"
 /sbin/mkfs.ext4 -q -d "$tree" "$OUT/godot.ext4" 400M
 echo "$OUT/godot.ext4"

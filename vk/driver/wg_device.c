@@ -704,6 +704,9 @@ static void
 address_grow(struct wg_device *dev, uint64_t size)
 {
    if (dev->address_buffer) {
+      /* Said: a grow needs the old and the new buffer at once, and every memory with an address is in it (VMA with
+       * device addresses gives all of a program's memory the flag, its images' too: GD G8). */
+      fprintf(stderr, "wg: the device address buffer grows to %llu MiB\n", (unsigned long long)(size >> 20));
       gpu_grow(dev->address_buffer, size);
       dev->address_gen++;
    } else {
@@ -922,6 +925,16 @@ wg_memory_texture(VkDeviceMemory _mem)
 {
    VK_FROM_HANDLE(wg_device_memory, mem, _mem);
    return mem && mem->image ? mem->image->tex : 0;
+}
+
+uint32_t
+wg_memory_shared_buffer(VkDeviceMemory _mem)
+{
+   VK_FROM_HANDLE(wg_device_memory, mem, _mem);
+   /* Not an image's, nor another renderer's, nor a share of the device's address buffer (its bytes start past 0). */
+   if (!mem || mem->image || mem->import_res || mem->placeholder || mem->address)
+      return 0;
+   return wg_memory_buffer(mem);
 }
 
 void

@@ -245,13 +245,13 @@ test('guest RAM splits into memory 0 and spill memories', () => {
   assert.deepEqual(splitRam(3 * G - M), { ramSize: 3 * G - M, spill: [] });
   assert.deepEqual(splitRam(4 * G), { ramSize: 3 * G - M, spill: [G + M] });
   assert.deepEqual(splitRam(12 * G), { ramSize: 3 * G - M, spill: [4 * G, 4 * G, G + M] });
-  // A Venus machine's memory 1 holds its renderer's arena and window before node 1 (1.5 GiB): memory 0 as without.
-  assert.equal(VENUS_RESERVE, 1.5 * G);
+  // A Venus machine's memory 1 holds its renderer's arena and window before node 1 (2.5 GiB): memory 0 as without.
+  assert.equal(VENUS_RESERVE, 2.5 * G);
   assert.deepEqual(splitRam(3 * G - M, VENUS_RESERVE), { ramSize: 3 * G - M, spill: [] });
   assert.deepEqual(splitRam(4 * G, VENUS_RESERVE), { ramSize: 3 * G - M, spill: [G + M] });
-  assert.deepEqual(splitRam(12 * G, VENUS_RESERVE), { ramSize: 3 * G - M, spill: [2.5 * G, 4 * G, 2.5 * G + M] });
-  assert.equal(splitError(2 * G, [2.5 * G], VENUS_RESERVE), undefined);
-  assert.deepEqual(splitError(2 * G, [2.5 * G + 64 * 1024], VENUS_RESERVE), { code: 'vulkan', max: 2560 });
+  assert.deepEqual(splitRam(12 * G, VENUS_RESERVE), { ramSize: 3 * G - M, spill: [1.5 * G, 4 * G, 3.5 * G + M] });
+  assert.equal(splitError(2 * G, [1.5 * G], VENUS_RESERVE), undefined);
+  assert.deepEqual(splitError(2 * G, [1.5 * G + 64 * 1024], VENUS_RESERVE), { code: 'vulkan', max: 1536 });
   assert.throws(() => splitRam(40 * G), RangeError);
   assert.equal(splitError(2 * G, [G, 4 * G]), undefined);
   assert.deepEqual(splitError(3 * G, []), { code: 'memory0-max', max: 3071 });

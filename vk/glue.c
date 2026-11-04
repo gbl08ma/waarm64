@@ -16,6 +16,7 @@ extern bool wg_unwaited_allocations;
 extern bool wg_premake_off;
 void wg_memory_rebind(VkDeviceMemory memory, void *data);
 uint32_t wg_memory_texture(VkDeviceMemory memory);
+uint32_t wg_memory_shared_buffer(VkDeviceMemory memory);
 extern void (*wg_submitted)(void);
 extern uintptr_t wg_window_at, wg_window_bytes;
 int wg_caps_init(uint32_t features, const uint32_t *limits, uint32_t count);
@@ -48,6 +49,7 @@ int venus_resource_unmap(uint32_t ctx_id, uint32_t res_id);
 int venus_test_peers(uint32_t ctx_id, uint32_t res_id, VkDeviceMemory memory, int import_first);
 void *venus_resource_data(uint32_t ctx_id, uint32_t res_id);
 uint32_t venus_resource_texture(uint32_t ctx_id, uint32_t res_id);
+uint32_t venus_resource_buffer(uint32_t ctx_id, uint32_t res_id);
 int venus_poll(void);
 const uint32_t *venus_cmd_counts(void);
 uint32_t venus_cmd_types(void);
@@ -210,6 +212,15 @@ venus_resource_texture(uint32_t ctx_id, uint32_t res_id)
 {
    VkDeviceMemory memory = vkr_renderer_resource_memory(ctx_id, res_id);
    return memory != VK_NULL_HANDLE ? wg_memory_texture(memory) : 0;
+}
+
+/* The WebGPU buffer (its id in web/venus-gpu.ts) of the memory a resource was exported from when no image is bound to
+ * it, or 0: Mesa's prime blit, which copies each frame into a linear buffer it exports (web/venus-share.ts). */
+EXPORT uint32_t
+venus_resource_buffer(uint32_t ctx_id, uint32_t res_id)
+{
+   VkDeviceMemory memory = vkr_renderer_resource_memory(ctx_id, res_id);
+   return memory != VK_NULL_HANDLE ? wg_memory_shared_buffer(memory) : 0;
 }
 
 /* A submit's GPU work is done (and its readbacks mapped): its syncs signal. */

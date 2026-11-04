@@ -2,7 +2,8 @@
 // with `?gpu=vulkan` (vk/build.sh's renderer, target/vk/venus.wasm), its Vulkan device the renderer's, and vkcube on
 // sway (headless, pixman; the WSI's CPU path) reaching steady frames: a short run and a long one both finish, and the
 // frames between them come at a rate, drawn by the renderer's driver on the page's WebGPU device; vkcube's frames
-// presented on a sway that renders with GLES on virgl (the WSI's images shared into virgl's textures); and, with
+// presented on a sway that renders with GLES on virgl (the WSI's images shared into virgl's textures), and through
+// Xwayland there (X11's WSI: the prime blit's buffers shared); and, with
 // images/vkframes/build.sh's disk, its captures (vkcube, vkmark's scenes, vkQuake) replayed on the device and their
 // frames compared with lavapipe's. Skipped where the page has no adapter (with `--enable-unsafe-webgpu`: SwiftShader's in
 // the dev VM), as without the image or the renderer. Any WebGPU error the page logged fails it (an invalid command drops
@@ -27,7 +28,8 @@ const skip = !debian ? 'SKIPPED: scripts/ci-graphics.sh runs it (WEBPC_DISTROS=d
 // The frames of the short run and the long one: the rate is the difference's, past vkcube's start.
 const SHORT = 60, LONG = 360;
 
-const SWAY = 'mkdir -p -m 700 /tmp/xdg; printf "output HEADLESS-1 resolution 640x480\\n" > /tmp/sway.conf; '
+// Without Xwayland: X11's step below takes the GLES sway's (this one's, on pixman, would have no DRI3).
+const SWAY = 'mkdir -p -m 700 /tmp/xdg; printf "output HEADLESS-1 resolution 640x480\\nxwayland disable\\n" > /tmp/sway.conf; '
   + '(XDG_RUNTIME_DIR=/tmp/xdg WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 sway -c /tmp/sway.conf > /tmp/sway.log 2>&1 &); '
   + 'for i in $(seq 50); do [ -S /tmp/xdg/wayland-1 ] && break; sleep 0.2; done; echo sway $(ls /tmp/xdg | grep -cx wayland-1)';
 const vkcube = (frames: number) => 'S=$(date +%s%N); XDG_RUNTIME_DIR=/tmp/xdg WAYLAND_DISPLAY=wayland-1 MESA_VK_WSI_DEBUG=sw '
@@ -58,6 +60,23 @@ const PPM = `perl -e 'for $f (@ARGV) { open F, "<", $f; binmode F; local $/; $d 
 const PRESENT = `(${GL_ENV} timeout 60 vkcube --wsi wayland --c 1500 > /tmp/vkcube2.log 2>&1 &); sleep 8; ${GL_ENV} grim -t ppm /tmp/a.ppm; sleep 1; ${GL_ENV} grim -t ppm /tmp/b.ppm; `
   + `${PPM} /tmp/a.ppm /tmp/b.ppm; cmp -s /tmp/a.ppm /tmp/b.ppm && echo frames same || echo frames differ; pkill -x vkcube; head -c 300 /tmp/vkcube2.log`;
 
+// X11 (GD G7): vkcube through Xwayland on the same sway. Mesa's X11 WSI takes the prime blit in our guest (its same-GPU
+// check knows PCI devices only; our virtio-gpu is on virtio-mmio), copying each frame into a buffer it exports, which
+// web/venus-share.ts copies into a texture: the window shows as under Wayland. Black before. Needs the image's Xwayland
+// (images/debian-vulkan/build.sh since GD G7: `X11 none` otherwise, and the test says to rebuild).
+const X11 = `X=$(ls /tmp/.X11-unix 2>/dev/null | sed -n 's/^X//p' | head -1); if [ -z "$X" ] || ! command -v Xwayland > /dev/null; then echo X11 none; else `
+  + `(${GL_ENV} DISPLAY=:$X timeout 60 vkcube --wsi xcb --c 1500 > /tmp/vkcube3.log 2>&1 &); sleep 10; ${GL_ENV} grim -t ppm /tmp/a.ppm; sleep 1; ${GL_ENV} grim -t ppm /tmp/b.ppm; `
+  + `${PPM} /tmp/a.ppm /tmp/b.ppm; cmp -s /tmp/a.ppm /tmp/b.ppm && echo frames same || echo frames differ; pkill -x vkcube; head -c 300 /tmp/vkcube3.log; fi`;
+
+// Host-visible memory mapped at once (GD G8): tests/venus/vkmap.py maps 6 memories of 128 MiB and keeps them mapped,
+// as VMA keeps its blocks (Godot's: 128 MiB each on a 1 GiB heap). Linux gives each its place in the host-visible window
+// when Venus makes its blob, at the first map, so a window smaller than what's mapped fails the map with -2 (the GI
+// demo's "Couldn't map buffer memory"); the window holds the host-visible heap whole. The script reaches the guest in
+// base64 lines short enough for the serial console's.
+const VKMAP_B64 = readFileSync(join(root, 'tests/venus/vkmap.py')).toString('base64');
+const VKMAP_UP = Array.from({ length: Math.ceil(VKMAP_B64.length / 600) }, (_, i) => `echo ${VKMAP_B64.slice(i * 600, (i + 1) * 600)} >> /tmp/vkmap.b64; echo up`);
+const VKMAP = 'base64 -d /tmp/vkmap.b64 > /tmp/vkmap.py && timeout 120 python3 /tmp/vkmap.py 6 128 2>&1 | tail -3';
+
 // The renderer once wrote memory 0's bottom 4 MiB through its stack (vk/README.md "The build"): the guest's kernel
 // oopsed as vkcube started.
 const OOPS = 'echo oopses $(dmesg | grep -c "Internal error")';
@@ -70,7 +89,7 @@ test('vkcube reaches steady frames through Venus on the page', { skip, timeout: 
   let passed = false;
   try {
     const r = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', 'bench/vulkan/venus-run.ts', out], {
-      cwd: root, env: { ...process.env, CHROMIUM_ARGS: `${process.env.CHROMIUM_ARGS ?? ''} --enable-unsafe-webgpu`, GPU_KNOBS: 'vkbreak=bitmap,vkbreak=canvas', IMAGE, REPLAY: frames ? 'all' : '', CMDS: [SWAY, vkcube(SHORT), vkcube(LONG), STALL_START, `@stall ${STALL_MS}`, STALL_END, SWAY_GL, PRESENT, OOPS].join('\n') }, encoding: 'utf8', timeout: 8 * 60_000,
+      cwd: root, env: { ...process.env, CHROMIUM_ARGS: `${process.env.CHROMIUM_ARGS ?? ''} --enable-unsafe-webgpu`, GPU_KNOBS: 'vkbreak=bitmap,vkbreak=canvas', IMAGE, REPLAY: frames ? 'all' : '', CMDS: ['rm -f /tmp/vkmap.b64', ...VKMAP_UP, VKMAP, SWAY, vkcube(SHORT), vkcube(LONG), STALL_START, `@stall ${STALL_MS}`, STALL_END, SWAY_GL, PRESENT, X11, OOPS].join('\n') }, encoding: 'utf8', timeout: 8 * 60_000,
     });
     assert.equal(r.status, 0, `venus-run.ts failed (its output and the serial log: ${out}): ${(r.stdout + r.stderr).slice(-2000)}`);
     const res = JSON.parse(readFileSync(join(out, 'results.json'), 'utf8')) as Record<string, string>;
@@ -79,6 +98,8 @@ test('vkcube reaches steady frames through Venus on the page', { skip, timeout: 
       return t.skip('SKIPPED: the page has no WebGPU adapter');
     }
     assert.match(res.vulkaninfo, /deviceName\s*= Virtio-GPU Venus \(webpc WebGPU\)/, 'the guest\'s Vulkan device is the renderer\'s');
+    console.log(`host-visible memory mapped at once: ${res[VKMAP]}`);
+    assert.match(res[VKMAP] ?? '', /vkmap mapped 6 of 6 x 128 MiB/, `host-visible memory mapped at once (the window too small?): ${res[VKMAP]}`);
     assert.match(res[SWAY], /sway 1/, `sway started: ${res[SWAY]}`);
     const ran = [SHORT, LONG].map((n) => {
       const m = /vkcube (\d+) (\d+)/.exec(res[vkcube(n)] ?? '');
@@ -104,7 +125,14 @@ test('vkcube reaches steady frames through Venus on the page', { skip, timeout: 
     // The window fills sway's output; the clear colour is most of it (~75% on SwiftShader), the cube the rest.
     for (const s of shots) assert.ok(s.grey >= 40 && s.colours >= 100, `vkcube's frame isn't on sway's output: ${JSON.stringify(s)} (${res[PRESENT]})`);
     assert.match(res[PRESENT], /frames differ/, `vkcube's frames stopped reaching virgl: ${res[PRESENT]}`);
-    const share = res.share as unknown as { way: string; dropped: { way: string }[] } | null;
+    console.log(`vkcube presented through Xwayland: ${res[X11]}`);
+    assert.doesNotMatch(res[X11] ?? '', /X11 none/, 'the image has no Xwayland: rebuild it (images/debian-vulkan/build.sh)');
+    const xshots = [...(res[X11] ?? '').matchAll(/shot grey (\d+) colours (\d+)/g)].map((m) => ({ grey: Number(m[1]), colours: Number(m[2]) }));
+    assert.equal(xshots.length, 2, `grim's screenshots under X11: ${res[X11]}`);
+    for (const s of xshots) assert.ok(s.grey >= 40 && s.colours >= 100, `vkcube's X11 frame isn't on sway's output (the prime blit's buffer not shared): ${JSON.stringify(s)} (${res[X11]})`);
+    assert.match(res[X11], /frames differ/, `vkcube's X11 frames stopped reaching virgl: ${res[X11]}`);
+    const share = res.share as unknown as { way: string; dropped: { way: string }[]; fromBuffers: number } | null;
+    assert.ok((share?.fromBuffers ?? 0) > 0, `vkcube under X11 didn't take the prime blit (no frame copied from a buffer): ${JSON.stringify(share)}`);
     assert.deepEqual([share?.way, share?.dropped.map((d) => d.way)], ['readback', ['bitmap', 'canvas']], `the check of the broken ways: ${JSON.stringify(share)}`);
     if (frames) {
       const names = Object.keys(res).filter((k) => /^replay [^ ]+$/.test(k)).map((k) => k.slice(7));
