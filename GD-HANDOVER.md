@@ -15,10 +15,15 @@ second after the first frame (757 and 54 ms) and no abort. **NVIDIA is the bar's
 (XWayland) there; Mesa's X11 WSI then took the prime blit (`VN_DEBUG=wsi MESA_LOG_LEVEL=debug`: `prime_blit=1`), whose
 buffers the page can't show; `--display-driver wayland` drew (`prime_blit=0`). Not NVIDIA's: the X11 same-GPU check
 matches PCI devices only and our virtio-gpu is virtio-mmio, so every X11 Vulkan client is black (docs/backlog.md "A
-WSI image exported as a buffer isn't shared", now needed, and the Mesa upstream report). The M4 runs drew on Wayland;
-why they and the user's run chose differently is unchecked (Godot's own display driver choice). For G7: decide the
-fix (sharing buffers, a patched guest Mesa, or Wayland by default in the desktop image) and make the harness say
-which display driver Godot used.
+WSI image exported as a buffer isn't shared", now needed, and the Mesa upstream report). The M4 runs drew on Wayland
+because our desktop image has no Xwayland (images/arch/); the user's test image has it, so Godot chose X11. Under
+Wayland the editor on NVIDIA holds 60 frames/s (a handful of CSGBox3D cubes). The fix is G7's (GD-KICKOFF.md "X11
+windows shown": the page shares the prime blit's buffers); the harness then needs Xwayland in its image and Godot's
+display driver logged.
+
+**G8 (the GI demo, GD-KICKOFF.md):** its "Couldn't map buffer memory (VkResult error -2)" is
+`VK_ERROR_OUT_OF_DEVICE_MEMORY` at a map; first lead, Venus's host-visible window (256 MiB by default, `VENUS_WINDOW`;
+docs/devices.md "The host-visible window"). The demo's download may need the user (the asset store).
 
 **Next: G7.** Also worth a look there: the first frame comes ~35 s (editor) and ~41 s (SDFGI scene) after Godot
 starts, its pipelines' compile; how much of it the shader store saves on a second start is G7's "cold and warm".
