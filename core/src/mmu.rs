@@ -30,8 +30,11 @@
 //! accessed through, and a TLBI by VA must drop all of them: Linux unmaps a
 //! transparent huge page with one TLBI for the 2 MiB (`__flush_tlb_range`'s
 //! stride). `Tlb::blk` marks the slots filled from blocks, by class (VA half
-//! and level), and a flush by VA scans a block's indices for each class the
-//! TLB holds entries of (`Tlb::nblk`).
+//! and level), and a flush by VA scans a block's indices for each class whose
+//! entries the TLB may hold for that block: `Tlb::rblk` counts the live ones
+//! by a hash of class and block, so the kernel's 2 MiB entries (live all the
+//! time) don't send every flush in their half through 512 indices, nor a
+//! 1 GiB block's through all of them.
 // ponytail: the nG entries of the previous ASID are dropped, not kept for when
 // it's current again (per-ASID stashes; 0.3M nG refills in Alpine's boot).
 //
@@ -141,8 +144,10 @@ pub struct Tlb {
     /// whether it is nG ([`NG`]), what `flush_ng` scans for when `ng`
     /// overflowed.
     blk: [u8; TLB_ENTRIES * TLB_SLOTS],
-    /// Live entries from blocks, by class (minus one).
-    nblk: [u32; 4],
+    /// Live entries from blocks, counted by [`rblk_bucket`] of their class and
+    /// block: a bucket at 0 has none of that block's, a collision only costs
+    /// a flush by VA its scan.
+    rblk: [u32; RBLK],
     /// The EL's instruction TLB filled entries from blocks in a VA half since
     /// the EL's transfer cache entries were last dropped: a flush by VA
     /// there drops them all, as the block's other pages may have some.
@@ -169,6 +174,24 @@ struct Watched {
 /// A block's class, 1 to 4: its VA half and level (1 or 2).
 fn block_class(va: u64, level: u8) -> u8 {
     1 + 2 * (va >> 55 & 1) as u8 + (level == 1) as u8
+}
+
+/// `Tlb::rblk`'s buckets.
+const RBLK: usize = 1024;
+
+/// VA bits 55:12 of a page (the top byte is TBI's; bit 55 picks the half).
+const VA_PAGE: u64 = 0x00ff_ffff_ffff_f000;
+
+/// The VA bits a block of class `k` spans: 2 MiB or 1 GiB.
+fn block_shift(k: u8) -> u32 {
+    if k & 1 == 0 { 30 } else { 21 }
+}
+
+/// The `Tlb::rblk` bucket of the block of class `k` that holds `va`: the
+/// block's number and class, hashed (Fibonacci) to `RBLK`'s 10 bits.
+fn rblk_bucket(k: u8, va: u64) -> usize {
+    let block = (va & VA_PAGE) >> block_shift(k) << 2 | (k - 1) as u64;
+    (block.wrapping_mul(0x9e37_79b9_7f4a_7c15) >> (64 - RBLK.trailing_zeros())) as usize
 }
 
 /// Counted in the slow paths; the VM run loop publishes them (`vm::Counters`).
@@ -218,7 +241,7 @@ impl Tlb {
         self.bump();
         self.e.fill(Slots::default());
         self.blk.fill(0);
-        self.nblk = [0; 4];
+        self.rblk.fill(0);
         self.ng_len = 0;
         self.xng = [false; 2];
         self.low_global = false;
@@ -255,10 +278,11 @@ impl Tlb {
 
     /// Empties slot `s` (`index * TLB_SLOTS + array`).
     fn drop_slot(&mut self, s: usize) {
-        self.e[s / TLB_SLOTS].0[s % TLB_SLOTS] = Entry::default();
+        let e = core::mem::take(&mut self.e[s / TLB_SLOTS].0[s % TLB_SLOTS]);
         let k = core::mem::take(&mut self.blk[s]) & CLASS;
         if k != 0 {
-            self.nblk[k as usize - 1] -= 1;
+            // The tag's bits 55:12 are the VA's.
+            self.rblk[rblk_bucket(k, e.tag)] -= 1;
         }
     }
 
@@ -274,7 +298,7 @@ impl Tlb {
         if level < 3 {
             let k = block_class(va, level);
             self.blk[s] = k;
-            self.nblk[k as usize - 1] += 1;
+            self.rblk[rblk_bucket(k, va)] += 1;
             if array % 3 == Use::Exec as usize {
                 self.xblk[array / 3][(va >> 55 & 1) as usize] = true;
             }
@@ -353,17 +377,17 @@ impl Tlb {
         // The page's VAs fill 1024 consecutive transfer cache slots.
         let first = (va >> 2) as usize & (XC_ENTRIES - 1) & !1023;
         for x in &mut self.xc[first..first + 1024] {
-            if (x.tag ^ va) & 0x00ff_ffff_ffff_f000 == 0 {
+            if (x.tag ^ va) & VA_PAGE == 0 {
                 *x = Xc::default();
             }
         }
         for a in 0..TLB_SLOTS {
-            if (self.e[index(va)].0[a].tag ^ va) & 0x00ff_ffff_ffff_f000 == 0 {
+            if (self.e[index(va)].0[a].tag ^ va) & VA_PAGE == 0 {
                 self.drop_slot(index(va) * TLB_SLOTS + a);
             }
         }
         // The other pages of a block holding `va`: those of each class the TLB
-        // holds, in the indices the block's pages map to.
+        // may hold for that block, in the indices the block's pages map to.
         let hi = (va >> 55 & 1) as usize;
         for el in 0..2 {
             if self.xblk[el][hi] {
@@ -372,11 +396,11 @@ impl Tlb {
         }
         for level in [2, 1] {
             let k = block_class(va, level);
-            if self.nblk[k as usize - 1] == 0 {
+            if self.rblk[rblk_bucket(k, va)] == 0 {
                 continue;
             }
-            let shift = 12 + 9 * (3 - level as u32);
-            let mask = 0x00ff_ffff_ffff_ffff & !((1u64 << shift) - 1);
+            let shift = block_shift(k);
+            let mask = VA_PAGE & !((1u64 << shift) - 1);
             let first = index(va & mask);
             for i in 0..(1usize << (shift - 12)).min(TLB_ENTRIES) {
                 let x = (first + i) & (TLB_ENTRIES - 1);

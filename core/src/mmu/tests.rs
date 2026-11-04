@@ -299,7 +299,178 @@ fn flush_by_va_drops_a_whole_block() {
     // The counts follow entries overwritten and dropped: none left after
     // dropping the block's again.
     b.flush_va(VA + 0x1f_f000);
-    assert_eq!(v.tlb.nblk, [0; 4]);
+    assert!(v.tlb.rblk.iter().all(|&n| n == 0));
+}
+
+/// `Tlb::rblk` counts a block's live entries in its own bucket: a flush by VA
+/// in another block of the class finds 0 there and scans nothing.
+#[test]
+fn block_counts_follow_their_block() {
+    const A: u64 = 0xffff_8000_0040_0000; // a 2 MiB block in the high half
+    let k = block_class(A, 2);
+    let (a, next) = (rblk_bucket(k, A), rblk_bucket(k, A + 0x20_0000));
+    assert_ne!(a, next);
+    assert_eq!(rblk_bucket(k, A + 0x1f_f000), a);
+    assert_ne!(rblk_bucket(block_class(A, 1), A), a); // the 1 GiB block holding it
+    let mut v = Vcpu::new(cpu());
+    let t = &mut v.tlb;
+    t.fill(
+        3 + Use::Read as usize,
+        A + 0x5000,
+        Host(0x5000),
+        false,
+        2,
+        false,
+    );
+    t.fill(
+        3 + Use::Exec as usize,
+        A + 0x6000,
+        Host(0x6000),
+        false,
+        2,
+        false,
+    );
+    assert_eq!((t.rblk[a], t.rblk[next]), (2, 0));
+    t.flush_va(A + 0x20_0000);
+    assert_eq!(t.rblk[a], 2);
+    t.flush_va(A + 0x1f_f000);
+    assert!(t.rblk.iter().all(|&n| n == 0));
+    assert!(t.blk.iter().all(|&b| b == 0));
+}
+
+/// The TLB against a fresh walk, on tables remapped at random with the TLBIs
+/// Linux would send (one VA of a block for the block, each page's for
+/// pages): 1 GiB and 2 MiB blocks and pages in both halves, at VAs whose TLB
+/// indices coincide, read, written and fetched at EL1.
+#[test]
+fn tlb_matches_a_fresh_walk_through_remaps() {
+    const REGIONS: [u64; 4] = [
+        0x4000_0000,
+        0x8000_0000,
+        0xffff_0000_4000_0000,
+        0xffff_0000_8000_0000,
+    ];
+    const PAGES: u64 = 8; // an L3 table's pages mapped
+    let c = cpu();
+    for seed in 0..6u64 {
+        let mut rng = crate::rng::Rng::new([seed, 1, 2, 3], 0);
+        let mut p = Pt::new();
+        // Each region: its L1 slot, its L2 table, two L3 tables; states.
+        let mut l1 = [0u64; 4];
+        let mut l2 = [0u64; 4];
+        let mut l3 = [[0u64; 2]; 4];
+        for (r, &base) in REGIONS.iter().enumerate() {
+            for j in 0..2 {
+                p.map(base + (j << 21), 3, PAGE);
+            }
+            let root = if base >> 55 & 1 == 1 { ROOT1 } else { ROOT0 };
+            let t1 = p.r.mem.read(root + 8 * (base >> 39 & 511), 8).unwrap() & OA_MASK;
+            l1[r] = t1 + 8 * (base >> 30 & 511);
+            l2[r] = p.r.mem.read(l1[r], 8).unwrap() & OA_MASK;
+            for (j, t3) in l3[r].iter_mut().enumerate() {
+                *t3 = p.r.mem.read(l2[r] + 8 * j as u64, 8).unwrap() & OA_MASK;
+            }
+        }
+        // Every page's last word says which page it is.
+        for pa in (0..RAM as u64).step_by(0x1000) {
+            p.r.mem.write(pa + 0xff8, 8, pa | 0x5a).unwrap();
+        }
+        let mut v = Vcpu::new(c.clone());
+        let mut flushes = Vec::new();
+        let mut draw = |n: u64| rng.draw() % n;
+        for op in 0..3000 {
+            let r = draw(4) as usize;
+            let base = REGIONS[r];
+            let mem = &p.r.mem;
+            let d1 = mem.read(l1[r], 8).unwrap();
+            let d2 = |j: usize| mem.read(l2[r] + 8 * j as u64, 8).unwrap();
+            // The TLBIs that drop what a level 2 slot's mapping cached.
+            let drop2 = |j: usize, draw: &mut dyn FnMut(u64) -> u64, f: &mut Vec<u64>| {
+                let at = base + ((j as u64) << 21);
+                match d2(j) & 3 {
+                    1 => f.push(at + (draw(512) << 12)),
+                    3 => f.extend((0..PAGES).map(|i| at + (i << 12))),
+                    _ => {}
+                }
+            };
+            match draw(8) {
+                0 => {
+                    // Level 1: invalid, a 1 GiB block at PA 0 or the table.
+                    match d1 & 3 {
+                        1 => flushes.push(base + (draw(1 << 18) << 12)),
+                        3 => (0..2).for_each(|j| drop2(j, &mut draw, &mut flushes)),
+                        _ => {}
+                    }
+                    let d = [0, BLOCK, l2[r] | TABLE][draw(3) as usize];
+                    p.r.mem.write(l1[r], 8, d).unwrap();
+                }
+                1 => {
+                    // Level 2: invalid, a 2 MiB block or the L3 table.
+                    let j = draw(2) as usize;
+                    if d1 & 3 == 3 {
+                        drop2(j, &mut draw, &mut flushes);
+                    }
+                    let d = [0, BLOCK, 0x20_0000 | BLOCK, l3[r][j] | TABLE][draw(4) as usize];
+                    p.r.mem.write(l2[r] + 8 * j as u64, 8, d).unwrap();
+                }
+                2 => {
+                    // A page of an L3 table, to another PA.
+                    let (j, i) = (draw(2) as usize, draw(PAGES));
+                    if d1 & 3 == 3 && d2(j) & 3 == 3 {
+                        flushes.push(base + ((j as u64) << 21) + (i << 12));
+                    }
+                    let d = draw(RAM as u64 >> 12) << 12 | PAGE;
+                    p.r.mem.write(l3[r][j] + 8 * i, 8, d).unwrap();
+                }
+                _ => {
+                    // An access: a mapped page of an L3 table or anywhere
+                    // in the first 4 MiB (all of the RAM a block reaches).
+                    let off = if draw(2) == 0 {
+                        draw(2) << 21 | draw(PAGES) << 12
+                    } else {
+                        draw(1 << 10) << 12
+                    };
+                    let va = base + off + 0xff8;
+                    let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+                    let mut fresh = Mmu::new(&p.r.mem, None);
+                    let (got, want) = match draw(3) {
+                        0 => (b.read(&c, va, 8), fresh.read(&c, va, 8)),
+                        1 => (
+                            b.fetch(&c, va).map(u64::from),
+                            fresh.fetch(&c, va).map(u64::from),
+                        ),
+                        _ => {
+                            let w = fresh.read(&c, va, 8).unwrap_or(0);
+                            (
+                                b.write(&c, va, 8, w).map(|_| w),
+                                fresh.write(&c, va, 8, w).map(|_| w),
+                            )
+                        }
+                    };
+                    assert_eq!(got, want, "seed {seed}, op {op}, VA {va:#x}");
+                }
+            }
+            let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+            for va in flushes.drain(..) {
+                b.flush_va(va);
+            }
+            if op % 500 == 499 {
+                // The counts are the live entries'.
+                let t = &v.tlb;
+                let mut n = [0u32; RBLK];
+                for s in 0..TLB_ENTRIES * TLB_SLOTS {
+                    let k = t.blk[s] & CLASS;
+                    if k != 0 {
+                        n[rblk_bucket(k, t.e[s / TLB_SLOTS].0[s % TLB_SLOTS].tag)] += 1;
+                    }
+                }
+                assert!(
+                    n == t.rblk,
+                    "seed {seed}, op {op}: the block counts drifted"
+                );
+            }
+        }
+    }
 }
 
 #[test]

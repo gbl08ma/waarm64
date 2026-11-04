@@ -1996,3 +1996,22 @@ What V8 makes of it (`tools/v8code.ts`, TurboFan): CoreMark's 81 hot functions r
 llvmpipe's +1.9% (the item where FMAX/FMIN's clamps count) didn't hold in a session of its own with a third arm, P5
 with the old FMAX/FMIN test (`oldmm`: 246.6, rounds overlapping both). Kept: nothing regresses past noise, CoreMark and
 Lua (the most indirect transfers) gain. `bench/interp/yardstick.sh` now serves `gl_*` from bench/boot's page.
+
+## REVIEW P6: a TLBI by VA scans a block only when its bucket counts entries (2026-11-04)
+
+`Tlb::rblk` (docs/cpu.md "Blocks") replaces the per-class count: a flush by VA reads a block's indices only when a hash
+bucket of its class and block counts live entries. Counted natively (the block interpreter, `tests/distros.rs`): Alpine's
+boot made 6,071 block scans (25M slots) of ~34K flushes by VA, now 200-399; the userspace run 16K (65M slots). Against
+233a8952, `bench/interp/ab.sh` alternated, 3 rounds, Chromium 155.0.8059.84 on the dev VM (`results/review-p6/`):
+
+| | base | P6 | |
+|---|---|---|---|
+| `alpine_jit_total` (warm), ms | 5,207.9 | 5,208.0 | 0.0%, rounds overlap |
+| `alpine_user_jit_total`, ms | 13,070 | 13,133 | +0.5%, rounds apart (13,018-13,077 against 13,110-13,161): under the 1% floor |
+| `alpine_user_jit_lua`, ms | 2,898.9 | 2,915.5 | +0.6%, rounds apart (2,898-2,906 against 2,909-2,918) |
+| `alpine_user_jit_compress`, `_sqlite`, `_churn` | | | +0.2%, +0.5%, +0.6%: rounds overlap |
+
+No gain shows, as expected: ~25M byte checks are a few ms of a 5 s boot. The userspace run's +0.5% is under the
+noise floor; Lua (compute, few TLBIs) moved as much, so it reads
+as the build's layout rather than the hash in `fill` and `drop_slot`. Kept for the cases it targets: flushes in a
+half with live block entries (always, in the kernel's), and a 1 GiB block's 16,384 indices.

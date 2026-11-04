@@ -264,9 +264,13 @@ The table is `core/src/interp/sys.rs`.
 - **Blocks:** a 2 MiB or 1 GiB leaf is cached as entries for the pages it was used through, and
   a TLBI by VA drops every one of them, not only its own page's: Linux unmaps a transparent huge
   page with one TLBI for the 2 MiB. `Tlb::blk` marks the slots filled from blocks by class (VA
-  half, level) and `Tlb::nblk` counts them; a flush by VA scans the block's indices (512 for
-  2 MiB, all 16,384 for 1 GiB) only for a class the TLB holds, and drops an EL's transfer cache if
-  its instruction TLB filled from a block in that half. Without this, stale pages of a freed THP
+  half, level) and `Tlb::rblk` counts the live ones in 1,024 buckets hashed by class and block; a flush by VA scans
+  the block's indices (512 for 2 MiB, all 16,384 for 1 GiB) only when its block's bucket counts some (a collision
+  costs a scan, nothing else). Counting by class alone sent every flush in the kernel's half through 512 indices,
+  since its 2 MiB entries are always live: in Alpine's boot ~6K of ~34K flushes by VA, 25M slots read; in the
+  userspace benchmark (THP in the low half too) 16K, 65M slots; with the buckets Alpine's boot scans under 400 times
+  (counted natively; neither run filled an entry from a 1 GiB block). A flush by VA also drops an EL's transfer cache
+  if its instruction TLB filled from a block in that half. Without this, stale pages of a freed THP
   stayed mapped until the next ASID switch: hidden while KPTI switched ASIDs at every kernel entry,
   it corrupted glibc's heap in dEQP once FEAT_E0PD let a KASLR kernel run without KPTI
   (`c3ae697`; bisected and narrowed with `kpti=1`, `nokaslr` and `transparent_hugepage=never`
