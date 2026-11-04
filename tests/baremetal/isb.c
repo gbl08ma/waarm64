@@ -1,4 +1,4 @@
-// Cross-modification seen through an ISB in a hot loop (REVIEW-20261103.md, finding 1): CPU 1
+// Cross-modification seen through an ISB in a hot loop (docs/platform.md "Broadcast maintenance"): CPU 1
 // runs a loop that reads `flag`, executes ISB and calls `code` through a pointer (BLR), often
 // enough for the JIT to compile the loop with the call followed into its region. CPU 0 rewrites
 // `code` (DC CVAU, DSB ISH, IC IVAU, DSB ISH) and only then publishes the round in `flag`. Once

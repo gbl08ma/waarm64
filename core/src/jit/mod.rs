@@ -3180,7 +3180,7 @@ mod tests {
 
     /// A tier-up runs inside JIT code (`jit_hot`): the host lowering the
     /// limit to the live bytes between its check for room and its install
-    /// doesn't flush the cache under that code (REVIEW-20261103 #5); the
+    /// doesn't flush the cache under that code (the core review's #5); the
     /// next miss from the dispatcher does.
     #[test]
     fn a_tier_up_never_flushes_when_the_host_lowers_the_limit() {

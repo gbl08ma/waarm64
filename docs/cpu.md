@@ -410,7 +410,7 @@ test it against `tests/steps.txt`.
 **The reference interpreter's speed rests on LLVM's inlining**: `exec` (the decode and the big match) must be
 inlined into `steps`' loop and the JIT's per-instruction helpers (`jit_exec_flat`, `_mmu`), or each instruction
 pays a call. A closure, a small `or_else` or a helper like `extend` left to LLVM's size heuristic can go out of
-line when unrelated code grows: REVIEW-20261103's P3 (the structure loads' fast path) did that to `exec_at`'s
+line when unrelated code grows: the structure loads' fast path (2026-11-04) did that to `exec_at`'s
 closure (the FP guest −28%), then to `simd_int::handler`'s and `simd_fp::handler`'s lookup and `extend` (−4% more).
 Those are now direct calls and `#[inline(always)]`. To check a change: strip the wasm's debug sections
 (`wasm-tools strip -d '.debug.*'`), `wasm-tools print` it and compare the functions the step loop

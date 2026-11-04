@@ -710,7 +710,7 @@ for (const fma of ARMS) test(`JIT vs interpreter: FP edge cases${armName(fma)}`,
   assert.deepEqual(failures, []);
 });
 
-// FCVTL/FCVTN between single and double (REVIEW-20261103 P2): the scalar FCVT's rule lane by lane, so a zero or
+// FCVTL/FCVTN between single and double: the scalar FCVT's rule lane by lane, so a zero or
 // infinite lane, or widening with FPSR.IXC clear, stays inline. Each word: V1's two 64-bit halves, FPCR, FPSR; the
 // run must match the interpreter and call no helper.
 const pair = (x: number, y: number) => f32bits(x) | (f32bits(y) << 32n);

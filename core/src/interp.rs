@@ -147,7 +147,7 @@ pub(crate) fn step_bus(cpu: &mut Cpu, m: &mut impl Bus) -> R {
 pub(crate) fn exec_at(cpu: &mut Cpu, m: &mut impl Bus, insn: u32, pc: u64) -> R {
     // A direct call, not a closure: LLVM sizes a closure on its own, and once
     // the instruction set's code outgrew its threshold it stopped inlining
-    // `exec` here, a call per instruction (the FP guest −28%, REVIEW P3).
+    // `exec` here, a call per instruction (the FP guest −28%: docs/cpu.md).
     cpu.pc = pc.wrapping_add(4);
     let r = exec(cpu, m, insn, pc);
     pc_back(cpu, pc, r)
@@ -433,7 +433,7 @@ fn shift(v: u64, ty: u32, amt: u32, sf: bool) -> u64 {
 }
 
 /// ExtendReg: UXTB..SXTX by `option`, then shifted left by `amt` (≤ 4).
-/// Always inlined: on the step loop's integer path (REVIEW P3).
+/// Always inlined: on the step loop's integer path (docs/cpu.md).
 #[inline(always)]
 fn extend(v: u64, option: u32, amt: u32) -> u64 {
     let v = match option {

@@ -37,13 +37,16 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   correct firmware doesn't notice; DC ZVA to RAM mapped as Device with the MMU on zeroes it (the M4: an alignment
   fault).
 - **Reserved AdvSIMD encodings with FPEN 0** take the FP trap (`interp.rs`: `fp_enabled` before the handler's field
-  checks); on the M4 they're UNDEFINED. Harmless to a kernel that enables FP on the trap: the retry is UNDEFINED.
+  checks); on the M4 they're UNDEFINED. Harmless to a kernel that enables FP on the trap: the retry is UNDEFINED. The
+  same order applies to scalar FP16's `ftype` and the by-element forms' reserved sizes, equally harmless.
 - **Exclusives and LSE on device memory:** an LDXR reads (through `Io`, with LDAR), its STXR and the LSE atomics take
   an external abort. What hardware does there is IMPLEMENTATION DEFINED; not compared with the M4.
 - **Arm AARCHMRS JSON:** its in-package notice is unread (`THIRD_PARTY.json`); read it only to
   generate decoder tables or coverage checks from it.
 - **Corpus depth:** thin FP flag paths (8 `fp_scalar` tests raise Divide-by-Zero); add biased forms
-  when touching FP again.
+  when touching FP again. A biased fuzz against qemu-aarch64 (2026-11-03: 1.07M FP and AdvSIMD FP instructions, every
+  FZ/DN/RMode, every cumulative flag) found no difference, so this is coverage, not a suspected bug; its generator
+  (special values per lane size, random FPCR) wasn't kept and is what those forms would be.
 
 ## Interpreter
 
@@ -108,7 +111,9 @@ left open, most promising first.
 - **A Firefox session whose first page times out**: Firefox never reports its first page; the guest's kernel and
   shell are alive; the other pages then load normally. Three times in ~35 sessions on 2026-10-16, on three builds
   (WARM=32; the default before the foldable offsets; the posted modules): always the first page (wiki). Rerun such
-  a session under JIT-check, and look at what Firefox waits for (the guest's `ps`, its console) when it hangs.
+  a session under JIT-check, and look at what Firefox waits for (the guest's `ps`, its console) when it hangs. First
+  rerun such sessions on a build from 2026-11-03 on: until then a fast-completed ISB under the parallel JIT could run
+  code another vCPU had just rewritten ([platform.md](platform.md) "Broadcast maintenance"), a candidate cause.
 - **Which Blink object a vCPU thread's `new WebAssembly.Module` allocates in Oilpan** (`CppGC.SweepOnAllocation`
   inside `wasm.SyncCompile`; `bench/boot/REPORT.md` "M8: V8's GC on the vCPU threads"): left open when the vCPU
   workers began returning to their event loop. The wasm code GC that item also named no longer stops the vCPUs
@@ -997,6 +1002,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   fence) and `jit::steps`' re-entry (`key`'s translation of the PC, `Cache::enter`'s lookup, `fresh`). Profile it
   with perf and V8's `--perf-prof` on a loop of an always-exiting instruction (`mrs cntfrq_el0`) before changing
   any of it. The exits that remain frequent in a browser are syscalls (SVC), faults and IRQs.
+- **The ISB fix's cost is unmeasured** (2026-11-03, [platform.md](platform.md) "Broadcast maintenance"): a
+  fast-completed ISB now reads two counters (relaxed) and exits once per invalidation another vCPU made. Expected
+  below the noise; to confirm with `bench/run.ts`'s A/B in Chromium on the long workloads and the desktop guest's image
+  decoding (`bench/imgdecode/`, ~37K fast resyncs a second).
 - **WFE sleeping:** WFE yields (120K per vCPU in 7 s of churn on 4 vCPUs, ~0.1 s); sleep on the
   event word only if a workload shows yields costing.
 - **Parallel `make`** as a scaling workload (the image has no toolchain yet).

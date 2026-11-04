@@ -939,15 +939,23 @@ impl Vm {
     }
 
     /// Gives the xHCI's completed TDs their events once their latency passed (or, `force`, at
-    /// once); the `DEVICE` exit's value if that posted records.
+    /// once); the `DEVICE` exit's value if that posted records. Reads the clock only when a TD
+    /// waits (the round-robin loop calls it every iteration).
     fn xhci_tick(&mut self, force: bool) -> Option<u64> {
+        let due = match (&self.plat.get_mut().xhci, &self.shared.xhci) {
+            (Some(x), Some(_)) => x.due(),
+            _ => return None,
+        };
+        if due == u64::MAX {
+            return None;
+        }
         let ns = self.ns();
+        if !force && due > ns {
+            return None;
+        }
         let (Some(x), Some(sh)) = (&mut self.plat.get_mut().xhci, &self.shared.xhci) else {
             return None;
         };
-        if x.due() == u64::MAX || !force && x.due() > ns {
-            return None;
-        }
         let ev = x.tick(ns, force, &self.mem, sh);
         (ev != 0).then_some(xhci::EXIT_SLOT | (ev as u64) << 8)
     }
@@ -1192,14 +1200,7 @@ impl Vm {
         // Nothing runs: the xHCI's completions needn't wait (`xhci::LATENCY_NS`). Then as any
         // idle machine: their interrupt makes a vCPU ready, or nothing does (an endpoint that
         // walks on without one).
-        if self
-            .plat
-            .get_mut()
-            .xhci
-            .as_ref()
-            .is_some_and(|x| x.due() != u64::MAX)
-            && let Some(v) = self.xhci_tick(true)
-        {
+        if let Some(v) = self.xhci_tick(true) {
             self.exit.value = v;
             return Some(exit::DEVICE);
         }
