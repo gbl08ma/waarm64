@@ -1,0 +1,16 @@
+#version 450
+// tests/venus-driver.test.ts (GD G7, wg_test.c 89): storage images declared with a format, `b` bound to a view of
+// another (Godot's screen-space effects write r8 views of images their stages declare rgba8: native drivers write the
+// view's format, the descriptor's; WebGPU refused the bind group). `a` RGBA8 through an RGBA8 view, `b` declared
+// RGBA8 through an R8 view, `c` R32F through an R32_SFLOAT view; `a`'s size into the buffer.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0, rgba8) writeonly uniform image2D a;
+layout(set = 0, binding = 1, rgba8) writeonly uniform image2D b;
+layout(set = 0, binding = 2, r32f) uniform image2D c;
+layout(set = 0, binding = 3) buffer Out { uint v[4]; } o;
+void main() {
+  imageStore(a, ivec2(1, 0), vec4(1.0, 0.0, 1.0, 1.0));
+  imageStore(b, ivec2(0, 1), vec4(0.2, 0.8, 0.0, 0.0));
+  imageStore(c, ivec2(1, 1), imageLoad(c, ivec2(1, 1)) * 2.0 + 1.0);
+  o.v[0] = uint(imageSize(a).x);
+}

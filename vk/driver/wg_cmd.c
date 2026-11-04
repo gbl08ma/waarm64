@@ -1329,13 +1329,18 @@ program_keys(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program 
       keys[n].sampler = WGSL_NO_SAMPLER;
       padded_key_fill(t->view, &keys[n++]);
    }
-   /* A storage image declared without a format: the bound view's (GD G5, wgsl_print.c `image_format`). */
+   /* A storage image declared without a format: the bound view's (GD G5, wgsl_print.c `image_format`). And one written
+    * with a declared format bound to a view of another (sRGB aside: no storage image is), the view's too (GD G7:
+    * Godot's screen-space effects write r8 views of images their stages declare rgba8; WebGPU refuses the bind group). */
    for (uint32_t k = 0; k < p->resource_count; k++) {
-      if (!p->resources[k].formatless)
+      if (!wgsl_image_keyed(&p->resources[k]))
          continue;
       const uint32_t index = (uint32_t)p->resources[k].group << 16 | p->resources[k].binding;
       const struct wg_descriptor *t = pair_descriptor(cmd, point, p, index);
       if (!t || !t->view)
+         continue;
+      if (!p->resources[k].formatless &&
+          util_format_linear(vk_format_to_pipe_format(t->view->vk.view_format)) == util_format_linear(p->resources[k].format))
          continue;
       memset(&keys[n], 0, sizeof(keys[n]));
       keys[n].texture = index;
@@ -1445,9 +1450,9 @@ program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
       wg_program_mixed(p);
    mask[0] |= p->mixed[0], mask[1] |= p->mixed[1];
    struct wgsl_sampler_key keys[3 * WGSL_MAX_PAIRS + WGSL_MAX_RESOURCES];
-   bool formatless = false;
+   bool formatless = false; /* or a written storage texture, whose view may be of another format */
    for (uint32_t k = 0; k < p->resource_count; k++)
-      formatless |= p->resources[k].formatless;
+      formatless |= wgsl_image_keyed(&p->resources[k]);
    const uint32_t key_count = p->pair_count || p->int_pair_count || p->key_pair_count || dev_padded(cmd) || formatless
                                  ? program_keys(cmd, point, p, keys) : 0;
    struct wg_storage_alias aliases[8];

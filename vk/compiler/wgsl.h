@@ -99,7 +99,8 @@ struct wgsl_resource {
                            * storage texture's */
    bool formatless;       /* a storage image declared without a format and written or only asked its size: its format
                            * a key's (WGSL_IMAGE_KEY), the bound view's; without one, r32uint (wgsl_print.c
-                           * `image_format`) */
+                           * `image_format`). A storage texture written with a declared format takes a key's too, which
+                           * the driver gives it when the bound view's format is another (`wgsl_image_keyed`). */
    bool image_texture;    /* a storage image the stage only reads, as a texture (kind WGSL_TEXTURE: wgsl_print.c
                            * `texture_images`); `dim` as a storage texture's */
    uint8_t access;        /* storage textures */
@@ -230,6 +231,14 @@ void wgsl_link(nir_shader *vs, nir_shader *fs);
 /* Whether a stage's `access` (WGSL_ACCESS_*) of a storage image of this enum pipe_format goes by the image's words,
  * WebGPU having no storage texture of the format with that access. */
 bool wgsl_image_as_words(unsigned format, uint8_t access, unsigned features);
+
+/* A storage image whose format a key (WGSL_IMAGE_KEY) may give: declared without one, or a storage texture written with
+ * a declared one (bound to a view of another format, GD G7: the view's, as native drivers write the descriptor's). */
+static inline bool
+wgsl_image_keyed(const struct wgsl_resource *r)
+{
+   return r->formatless || (r->kind == WGSL_STORAGE_TEXTURE && (r->access & WGSL_ACCESS_WRITE));
+}
 
 /* What a stage is printed for besides itself. */
 struct wgsl_print_options {

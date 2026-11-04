@@ -3743,10 +3743,11 @@ g4_misc(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out
  * GD G4, wgt_misc's scenario 85, `cs` g4/views.comp: a 2x2 RGBA8 image of two layers, layer 1 cleared green, bound by a
  * 2D array view of layer 1 where the shader declares a 2D texture; a 2x2 R16_UINT mutable image cleared to 0x1234,
  * bound by an R4G4B4A4 view (0x44332211 packed: its nibbles 1, 2, 3, 4 of 15). Both fetched into the buffer's first
- * two words.
+ * two words. GD G7's scenario 90 (`many`): the first image of three layers, its view two (layers 1 and 2), where the
+ * shader declares 2D: the view's base layer, as native drivers read it (the GI demo's SDFGI binds an 8-layer view so).
  */
 static int
-g4_views(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+g4_views(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out, bool many)
 {
    PFN_vkCmdClearColorImage CmdClearColorImage =
       (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
@@ -3755,7 +3756,7 @@ g4_views(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer ou
       const VkImageCreateInfo info = {
          .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .flags = i ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0,
          .imageType = VK_IMAGE_TYPE_2D, .format = i ? VK_FORMAT_R16_UINT : VK_FORMAT_R8G8B8A8_UNORM,
-         .extent = { 2, 2, 1 }, .mipLevels = 1, .arrayLayers = i ? 1 : 2, .samples = VK_SAMPLE_COUNT_1_BIT,
+         .extent = { 2, 2, 1 }, .mipLevels = 1, .arrayLayers = i ? 1 : many ? 3 : 2, .samples = VK_SAMPLE_COUNT_1_BIT,
          .tiling = VK_IMAGE_TILING_OPTIMAL, .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
       };
       CHECK(CreateImage(dev, &info, NULL, &imgs[i]));
@@ -3768,7 +3769,7 @@ g4_views(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer ou
    }
    const VkImageViewCreateInfo vis[2] = {
       { .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = imgs[0], .viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY,
-        .format = VK_FORMAT_R8G8B8A8_UNORM, .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1, 1 } },
+        .format = VK_FORMAT_R8G8B8A8_UNORM, .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1, many ? 2 : 1 } },
       { .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = imgs[1], .viewType = VK_IMAGE_VIEW_TYPE_2D,
         .format = VK_FORMAT_R4G4B4A4_UNORM_PACK16, .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } },
    };
@@ -3938,14 +3939,14 @@ g4_limits(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer o
  * GD G5, wgt_misc's scenario 88, `cs` g5/formatless.comp: three 2x2 storage images the shader declares without a
  * format: RGBA8_UNORM cleared to 0, R8G8_UNORM cleared to 0, R32_SFLOAT cleared to 3. The shader writes (1, 0, 1, 1)
  * at (1, 0) of the first, (0.2, 0.8) at (0, 1) of the second and 2 c + 1 at (1, 1) of the third; each is copied out
- * (256, 512, 768) and the first's width is at the buffer's start.
+ * (256, 512, 768) and the first's width is at the buffer's start. GD G7's scenario 89 (g7/declared.comp, `formats`):
+ * the same with formats declared, the second R8_UNORM where the shader declares rgba8.
  */
 static int
-g5_formatless(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+g5_formatless(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out, const VkFormat formats[3])
 {
    PFN_vkCmdClearColorImage CmdClearColorImage =
       (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
-   static const VkFormat formats[3] = { VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8_UNORM, VK_FORMAT_R32_SFLOAT };
    VkImage imgs[3];
    VkImageView views[3];
    for (uint32_t i = 0; i < 3; i++) {
@@ -5556,14 +5557,16 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
    } else if (scenario == 84) {
       if (g4_misc(cs, cs_words, cmd, out))
          return 1;
-   } else if (scenario == 85) {
-      if (g4_views(cs, cs_words, cmd, out))
+   } else if (scenario == 85 || scenario == 90) {
+      if (g4_views(cs, cs_words, cmd, out, scenario == 90))
          return 1;
    } else if (scenario == 86 || scenario == 87) {
       if (g4_limits(cs, cs_words, cmd, out))
          return 1;
-   } else if (scenario == 88) {
-      if (g5_formatless(cs, cs_words, cmd, out))
+   } else if (scenario == 88 || scenario == 89) {
+      static const VkFormat g5[3] = { VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8_UNORM, VK_FORMAT_R32_SFLOAT };
+      static const VkFormat g7[3] = { VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8_UNORM, VK_FORMAT_R32_SFLOAT };
+      if (g5_formatless(cs, cs_words, cmd, out, scenario == 88 ? g5 : g7))
          return 1;
    } else if (scenario == 39 || scenario == 43) {
       if (t7_addresses(cs, cs_words, cmd, pool, scenario == 43))

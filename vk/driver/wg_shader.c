@@ -491,9 +491,9 @@ keyed_text(const struct wg_program *v, const struct wg_stage_nir *n, const struc
        * it samples nothing at all). */
       for (uint32_t i = 0; (v->keys[k].padded || v->keys[k].faces) && i < info->resource_count; i++)
          touched |= ((uint32_t)info->resources[i].group << 16 | info->resources[i].binding) == v->keys[k].texture;
-      /* A storage image without a format (GD G5). */
+      /* A storage image without a format (GD G5), or written through a view of another format (GD G7). */
       for (uint32_t i = 0; v->keys[k].sampler == WGSL_IMAGE_KEY && i < info->resource_count; i++)
-         touched |= info->resources[i].formatless &&
+         touched |= wgsl_image_keyed(&info->resources[i]) &&
                     ((uint32_t)info->resources[i].group << 16 | info->resources[i].binding) == v->keys[k].texture;
    }
    if (!touched)
@@ -726,7 +726,7 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl
          continue;
       for (uint32_t k = 0; k < v->resource_count; k++) {
          struct wgsl_resource *r = &v->resources[k];
-         if (res_index(r) != keys[i].texture || !r->formatless)
+         if (res_index(r) != keys[i].texture || !wgsl_image_keyed(r))
             continue;
          const uint8_t access = r->access ? r->access : WGSL_ACCESS_READ;
          const unsigned features = ((wg_features & WG_FEATURE_TIER1) ? WGSL_TIER1 : 0) |
@@ -1179,8 +1179,9 @@ push_storage(struct vk_descriptor_set_layout *const *layouts, uint32_t count)
 static struct wg_stage_nir *
 stage_nir_keep(const nir_shader *nir, const struct wgsl_varyings *fs)
 {
-   /* Any texture op: a padded texture's size query is printed against its key too; and a storage image declared without
-    * a format, printed against the bound view's (GD G5). */
+   /* Any texture op: a padded texture's size query is printed against its key too; a storage image declared without
+    * a format, printed against the bound view's (GD G5); and a store with a declared one, whose view may be of another
+    * format (GD G7). */
    bool samples = false;
    nir_foreach_function_impl (impl, nir)
       nir_foreach_block (block, impl)
@@ -1192,7 +1193,7 @@ stage_nir_keep(const nir_shader *nir, const struct wgsl_varyings *fs)
                samples |= (intr->intrinsic == nir_intrinsic_image_store || intr->intrinsic == nir_intrinsic_image_load ||
                            intr->intrinsic == nir_intrinsic_image_size) &&
                           nir_intrinsic_image_dim(intr) != GLSL_SAMPLER_DIM_BUF &&
-                          nir_intrinsic_format(intr) == PIPE_FORMAT_NONE;
+                          (nir_intrinsic_format(intr) == PIPE_FORMAT_NONE || intr->intrinsic == nir_intrinsic_image_store);
             }
    if (!samples)
       return NULL;

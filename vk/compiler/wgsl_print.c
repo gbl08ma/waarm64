@@ -567,7 +567,8 @@ texture_image(struct ctx *c, unsigned index, nir_intrinsic_instr *intr)
 static enum pipe_format
 image_format(const struct ctx *c, nir_intrinsic_instr *intr)
 {
-   if (nir_intrinsic_format(intr) != PIPE_FORMAT_NONE || !nir_src_is_const(intr->src[0]))
+   /* (A declared format a key overrides too: a written image bound to a view of another format, `gather`.) */
+   if (!nir_src_is_const(intr->src[0]))
       return nir_intrinsic_format(intr);
    const unsigned index = nir_src_as_uint(intr->src[0]);
    for (unsigned i = 0; i < c->formatless_count; i++)
@@ -965,8 +966,21 @@ gather(struct ctx *c, nir_function_impl *impl)
       }
    }
    /* An image declared without a format that the stage writes or only asks the size of: the key's format, or r32uint
-    * (image_format). */
+    * (image_format). One declared with a format that the stage writes, bound to a view of another (Godot's
+    * screen-space effects write an image declared rgba8 through an r8 view: native drivers write the view's format,
+    * the descriptor's), the key's too: the driver keys it only then (wg_cmd.c `program_keys`). */
    for (unsigned i = 0; i < image_count; i++) {
+      if (images[i].format && !images[i].atomic && !images[i].ms && (images[i].access & WGSL_ACCESS_WRITE)) {
+         for (unsigned k = 0; k < c->key_count; k++)
+            if (c->keys[k].sampler == WGSL_IMAGE_KEY && c->keys[k].texture == images[i].index && c->keys[k].format &&
+                c->formatless_count < WGSL_MAX_RESOURCES) {
+               c->formatless_images[c->formatless_count] = images[i].index;
+               c->formatless_format[c->formatless_count++] = c->keys[k].format;
+               images[i].format = c->keys[k].format;
+               break;
+            }
+         continue;
+      }
       if (images[i].format || images[i].atomic || images[i].ms ||
           (images[i].loaded && !(images[i].access & WGSL_ACCESS_WRITE)))
          continue;

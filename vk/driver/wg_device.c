@@ -1676,7 +1676,9 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
                      layered ? view->vk.base_array_layer : 0, layered ? view->vk.layer_count : 1);
       view->sampled = wg_create_json(WG_KIND_VIEW, &j);
    }
-   if (view->vk.view_type == VK_IMAGE_VIEW_TYPE_2D_ARRAY && view->vk.layer_count == 1 && layered &&
+   /* A 2D array view bound where a stage declares 2D: its base layer, as native drivers read it (GD G4: one layer,
+    * SDFGI's default texture; GD G7: the GI demo's SDFGI binds an 8-layer view so). */
+   if (view->vk.view_type == VK_IMAGE_VIEW_TYPE_2D_ARRAY && layered &&
        !strcmp(dim, "2d-array") && (view->vk.usage & VK_IMAGE_USAGE_SAMPLED_BIT)) {
       wg_json_printf(&j, "{\"texture\":%u,%s", tex, swizzle);
       if (!strcmp(aspect, "all"))

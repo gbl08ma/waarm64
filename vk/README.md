@@ -535,9 +535,10 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
     centre as a direction; the variant's layout says `2d-array`. A size is part of the key, so each size of such image
     a program samples is a variant. `texture-compression-unaligned` would do without all this, but Chromium offers it
     only behind `--enable-unsafe-webgpu`: tests would pass on it and users wouldn't.
-  **A 2D array view of one layer bound where the shader declares a 2D texture** (Vulkan wants the view's type to be the
-  shader's; Godot binds its 2D array default texture to SDFGI's 2D samplers, which native drivers read as the layer) is
-  bound by a 2D view of that layer (`wg_image_view.flat`, made with every sampled such view).
+  **A 2D array view bound where the shader declares a 2D texture** (Vulkan wants the view's type to be the shader's;
+  Godot binds its 2D array default texture, one layer, to SDFGI's 2D samplers, and in the GI demo an 8-layer view,
+  which native drivers read as the view's base layer) is bound by a 2D view of its base layer (`wg_image_view.flat`,
+  made with every sampled such view; driver tests 85 and, GD G7, 90 with two layers).
   **Component swizzles** are WebGPU's (`texture-component-swizzle`): such a view has a twin with the mapping (`sampled`,
   allowed only on a view that's just sampled), which sampled bindings take. Without the feature they are ignored and
   said once: it is in Chromium on every backend, and a fallback in the shader would need texel fetches too.
