@@ -2485,9 +2485,13 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.local_set(tr);
             vput(c, rd, q, tr);
         }
-        // FCVTL(2), single to double (exact): normal operands. FCVTN(2),
-        // double to single: normal operands, fast results. Half precision
-        // (sz = 0) and FCVTXN stay helper calls.
+        // The scalar FCVT's rule lane by lane. FCVTL(2), single to double:
+        // exact, so no FPOK; any lane but a NaN (or, under FZ, a denormal).
+        // FCVTN(2), double to single: under FPOK, a fast result or a zero
+        // from a zero (a NaN or infinite source makes a result the test
+        // rejects; a denormal or tiny one, a zero or denormal result that
+        // isn't a zero's). Half precision (sz = 0) and FCVTXN stay helper
+        // calls.
         FCVTL | FCVTN if d && !bit(i, 29) => {
             fpa_guard(c);
             if op == FCVTL {
@@ -2498,19 +2502,24 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 }
                 c.local_tee(ta).simd(op::PROMOTE).local_set(tr);
                 c.local_get(ta);
-                lanes_in(c, false, 1);
-                all_lanes(c, false, false, 1);
+                plain_lanes(c, false);
+                every_lane(c, false, false, 1);
                 guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, true, tr));
             } else {
                 vreg(c, rn);
-                c.simd(op::DEMOTE).local_set(ta);
-                vreg(c, rn);
-                lanes_in(c, true, 1);
-                all_lanes(c, true, true, 1);
-                c.local_get(ta);
+                c.simd(op::DEMOTE).local_tee(ta);
                 lanes_in(c, false, 2);
+                // The source's zero lanes, narrowed to the result's two.
+                vreg(c, rn);
+                zero_lanes(c, true);
+                c.v128_const(0);
+                c.shuffle(core::array::from_fn(|b| match b {
+                    0..4 => b as u8,
+                    4..8 => 4 + b as u8,
+                    _ => 16,
+                }));
+                c.simd(op::OR);
                 all_lanes(c, false, false, 1);
-                c.op(AND);
                 // FCVTN2 keeps Vd's low half.
                 if q {
                     vreg(c, rd);

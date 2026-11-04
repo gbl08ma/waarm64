@@ -916,11 +916,11 @@ interpreter's; the helper runs the instruction otherwise.
   -2^(N-1) and its Invalid are the helper's;
   FCVT to and from half (scalar), as the vector half forms below, single or double straight to half
   in integer arithmetic (no double rounding);
-  FCVT single↔double: the scalar form's widening is exact without FPOK for a zero, normal or
-  infinite operand, its narrowing takes FPOK, a normal or zero operand and a fast result or a zero;
-  the vector forms are narrower, every lane normal and under FPOK: FCVTL (widening) sends a zero or
-  infinite lane, or a block without FPOK (IXC clear), to the helper though it would be exact, and
-  FCVTN (narrowing) takes normal source lanes and fast results only, a zero lane going to the helper.
+  FCVT single↔double, scalar and vector (FCVTL/FCVTN, lane by lane): widening is exact, so it takes
+  any operand but a NaN (and, under FZ, a denormal) without FPOK; narrowing takes FPOK and a fast
+  result or a zero from a zero (a NaN, infinite, denormal or tiny operand makes a result the test
+  rejects). FCVTN tests the source's zeros in its 64-bit lanes and narrows that mask to the result's
+  two with one shuffle.
 - **Zero results** (FADD/FSUB/FMUL/FDIV scalar and vector, FNMUL, the FMA forms): taken where
   they're exact. A zero sum or difference is always exact (a nonzero exact sum rounds to a nonzero
   result); a zero product or quotient only with a zero operand (the dividend), and only when the

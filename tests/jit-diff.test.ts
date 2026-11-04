@@ -596,6 +596,18 @@ const FP_EDGES: [string, number, bigint[]][] = [
   ['fjcvtzs w0, d1 (infinity)', 0x1e7e0020, [0n, 0x7ffn << 52n]],
   ['fjcvtzs w0, d1 (a NaN)', 0x1e7e0020, [0n, (0x7ffn << 52n) | 1n]],
   ['fcvtzu w0, s1 (2^32)', 0x1e390020, [0n, 0x4f800000n]],
+  // FCVTL/FCVTN (single and double): zeros, infinities, denormals and underflows in every lane.
+  ['v fcvtl v0.2d, v1.2s (-0)', 0x0e617820, [0n, 1n << 31n]],
+  ['v fcvtl2 v0.2d, v1.4s (-inf)', 0x4e617820, [0n, 0xff800000n]],
+  ['v fcvtl v0.2d, v1.2s (a denormal)', 0x0e617820, [0n, 1n]],
+  ['v fcvtl v0.2d, v1.2s (a signalling NaN)', 0x0e617820, [0n, 0x7f800001n]],
+  ['w fcvtn v0.2s, v1.2d (-0)', 0x0e616820, [0n, 1n << 63n]],
+  ['w fcvtn2 v0.4s, v1.2d (0)', 0x4e616820, [f64bits(1.5), 0n]],
+  ['w fcvtn v0.2s, v1.2d (a denormal)', 0x0e616820, [0n, 1n]],
+  ['w fcvtn v0.2s, v1.2d (2^-160: underflows to zero)', 0x0e616820, [0n, f64bits(2 ** -160)]],
+  ['w fcvtn v0.2s, v1.2d (2^-130: a denormal result)', 0x0e616820, [0n, f64bits(2 ** -130)]],
+  ['w fcvtn v0.2s, v1.2d (2^200: overflows)', 0x0e616820, [0n, f64bits(2 ** 200)]],
+  ['w fcvtn v0.2s, v1.2d (-inf)', 0x0e616820, [0n, 0xfffn << 52n]],
   // The same midpoint case in every lane of a vector FMLA (the values replicated).
   ['v fmla v0.4s, v1.4s, v2.4s', 0x4e22cc20, [f32bits(1 + 2 ** -23), f32bits(1 + 2 ** -18), f32bits(2 ** -24 * (1 - 2 ** -18))]],
   ['v fmla v0.2s, v1.2s, v2.2s', 0x0e22cc20, [f32bits(1 + 2 ** -23), f32bits(1 + 2 ** -18), f32bits(2 ** -24 * (1 - 2 ** -18))]],
@@ -690,6 +702,46 @@ for (const fma of ARMS) test(`JIT vs interpreter: FP edge cases${armName(fma)}`,
     }
   });
   ex.jit_flush(jit);
+  assert.deepEqual(failures, []);
+});
+
+// FCVTL/FCVTN between single and double (REVIEW-20261103 P2): the scalar FCVT's rule lane by lane, so a zero or
+// infinite lane, or widening with FPSR.IXC clear, stays inline. Each word: V1's two 64-bit halves, FPCR, FPSR; the
+// run must match the interpreter and call no helper.
+const pair = (x: number, y: number) => f32bits(x) | (f32bits(y) << 32n);
+const FCVT_INLINE: [string, number, [bigint, bigint], bigint, bigint][] = [
+  ['fcvtl v0.2d, v1.2s (a zero lane)', 0x0e617820, [pair(0, 1.5), 0n], 0n, 16n],
+  ['fcvtl v0.2d, v1.2s (-0 and -inf)', 0x0e617820, [pair(-0, -Infinity), 0n], 0n, 16n],
+  ['fcvtl v0.2d, v1.2s (IXC clear)', 0x0e617820, [pair(1.5, 3), 0n], 0n, 0n],
+  ['fcvtl v0.2d, v1.2s (a denormal lane, no FZ)', 0x0e617820, [1n | (f32bits(1) << 32n), 0n], 0n, 0n],
+  ['fcvtl2 v0.2d, v1.4s (NaNs in the low half)', 0x4e617820, [pair(NaN, NaN), pair(0, Infinity)], 0n, 0n],
+  ['fcvtl v0.2d, v1.2s (a zero lane, FZ)', 0x0e617820, [pair(0, 1.5), 0n], 1n << 24n, 0n],
+  ['fcvtn v0.2s, v1.2d (a zero lane)', 0x0e616820, [0n, f64bits(1.5)], 0n, 16n],
+  ['fcvtn2 v0.4s, v1.2d (two zeros)', 0x4e616820, [1n << 63n, 0n], 0n, 16n],
+  ['fcvtn v0.2s, v1.2d (a zero lane, FZ)', 0x0e616820, [f64bits(-3), 0n], 1n << 24n, 16n],
+];
+test('JIT: FCVTL/FCVTN keep zero and infinite lanes, and widening without IXC, inline', () => {
+  const { ca32, cb32, cpus, run, helpers } = setup(8 * FCVT_INLINE.length);
+  const failures: string[] = [];
+  FCVT_INLINE.forEach(([, w], k) => {
+    ca32.set([w, BRK], 2 * k);
+    cb32.set([w, BRK], 2 * k);
+  });
+  helpers();
+  FCVT_INLINE.forEach(([name, , v1, fpcr, fpsr], k) => {
+    const [a, b] = cpus();
+    a.fill(0n);
+    a[32] = BigInt(8 * k);
+    const all = new BigUint64Array(a.buffer, a.byteOffset, CPU_BYTES / 8);
+    [all[38], all[39]] = [0x0123_4567_89ab_cdefn, 0xfedc_ba98_7654_3210n]; // V0: FCVTN2 keeps its low half
+    [all[40], all[41]] = v1;
+    [all[102], all[103]] = [fpcr, fpsr];
+    new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES));
+    const what = run(1n, false);
+    if (what) failures.push(`${name}: ${what} differs`);
+    const h = helpers();
+    if (h) failures.push(`${name}: helper calls ${h}`);
+  });
   assert.deepEqual(failures, []);
 });
 
