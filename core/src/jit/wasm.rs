@@ -220,10 +220,10 @@ impl Code {
         for &p in &self.locals {
             used[self.b[p] as usize] = true;
         }
-        let mut map = [0u8; 256];
+        let mut map = [0u16; 256];
         for (k, &p) in params.iter().enumerate() {
             used[p as usize] = false;
-            map[p as usize] = k as u8;
+            map[p as usize] = k as u16;
         }
         let mut decls = Vec::new();
         let mut next = params.len() as u32;
@@ -231,7 +231,7 @@ impl Code {
             let n = next;
             for i in 0..256 {
                 if used[i as usize] && ty(i) == t {
-                    map[i as usize] = next as u8;
+                    map[i as usize] = next as u16;
                     next += 1;
                 }
             }
@@ -239,10 +239,35 @@ impl Code {
                 decls.push((next - n, t));
             }
         }
-        assert!(next <= 128, "{next} locals: their indices take one byte");
-        for &p in &self.locals {
-            self.b[p] = map[self.b[p] as usize];
+        if next <= 128 {
+            for &p in &self.locals {
+                self.b[p] = map[self.b[p] as usize] as u8;
+            }
+            return decls;
         }
+        // More than one byte's worth (a region using nearly every local, with
+        // the block type's four parameters): every index takes two, padded
+        // LEB128 (valid wasm), and the hints move with the code after them.
+        assert!(next <= 1 << 14, "{next} locals");
+        let mut b = Vec::with_capacity(self.b.len() + self.locals.len());
+        let (mut from, mut shift) = (0, 0);
+        let mut hints = self.hints.iter_mut().peekable();
+        for &p in &self.locals {
+            while let Some(h) = hints.next_if(|h| h.0 <= p) {
+                h.0 += shift;
+            }
+            b.extend_from_slice(&self.b[from..p]);
+            let v = map[self.b[p] as usize] as u32;
+            b.extend([(v & 0x7f) as u8 | 0x80, (v >> 7) as u8]);
+            from = p + 1;
+            shift += 1;
+        }
+        for h in hints {
+            h.0 += shift;
+        }
+        b.extend_from_slice(&self.b[from..]);
+        self.b = b;
+        self.locals.clear();
         decls
     }
     pub fn call(&mut self, f: u32) -> &mut Self {
@@ -552,6 +577,28 @@ mod tests {
             s(i64::MIN),
             [0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x7f]
         );
+    }
+
+    #[test]
+    fn compact_locals_past_128() {
+        // 130 locals used besides 4 parameters: every index two bytes
+        // (padded LEB128), and a hint after them moved by as many bytes.
+        let mut c = Code::default();
+        for i in 0..4 {
+            c.local_get(i);
+        }
+        for i in 10..140 {
+            c.local_get(i);
+        }
+        c.hint(true).if_().end();
+        let before = c.b.len();
+        let decls = c.compact_locals(&[0, 1, 2, 3], |_| I64);
+        assert_eq!(decls, [(130, I64)]);
+        assert_eq!(c.b.len(), before + 134);
+        assert_eq!(&c.b[..4], &[0x20, 0x80, 0, 0x20]); // local.get 0, padded
+        let last = 3 * 133;
+        assert_eq!(&c.b[last..last + 4], &[0x20, 0x80 | (133 & 0x7f), 1, 0x04]); // local.get 133; if
+        assert_eq!(c.hints, [(last + 3, true)]);
     }
 
     #[test]

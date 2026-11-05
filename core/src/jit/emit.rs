@@ -1374,7 +1374,8 @@ fn args(c: &mut Func, len: u32, deeper: bool, to: To) {
         _ => {
             // (word >> ENTRY_SHIFT) << ENTRY_BIT
             to.word(c);
-            c.i32_const((super::ENTRY_SHIFT - ENTRY_BIT) as i32).op(SHR_U);
+            c.i32_const((super::ENTRY_SHIFT - ENTRY_BIT) as i32)
+                .op(SHR_U);
             c.i32_const(!((1 << ENTRY_BIT) - 1)).op(AND).op(OR);
             to.word(c);
             c.i32_const(super::IDX_MASK as i32).op(AND);
@@ -1636,7 +1637,10 @@ pub fn tier_up(c: &mut Func, word: u32, key: u64, ty: u32, hot: u32) {
     c.local_get(VCPU).i32_load(HOT_PTR).local_tee(H);
     c.i32_load(off).local_tee(V);
     c.i32_const(0).op(LT_S).if_();
-    c.local_get(VCPU).local_get(ACC).local_get(LEFT).local_get(DEPTH);
+    c.local_get(VCPU)
+        .local_get(ACC)
+        .local_get(LEFT)
+        .local_get(DEPTH);
     c.local_get(V).i32_const(!REDIRECT as i32).op(AND);
     c.return_call_indirect(ty).end();
     c.local_get(V).if_();

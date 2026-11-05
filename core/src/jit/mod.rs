@@ -1268,6 +1268,11 @@ impl Cache {
         let slot = self.alloc(n, budget, &mut t.stats);
         t.miss_functions(self, mem);
         let xmiss = self.xmiss.filter(|_| !self.off)?;
+        // A table index's bits above IDX_MASK hold an entry number (`ENTRY_SHIFT`).
+        assert!(
+            xmiss + slot + n <= IDX_MASK,
+            "table index past {IDX_MASK:#x}"
+        );
         let mut tiers = Vec::new();
         for (k, r) in regions.iter_mut().enumerate() {
             if r.tier.is_some() {
@@ -1330,7 +1335,9 @@ impl Cache {
         s.cond_memory += counts.cond_memory;
         (s.modules, s.blocks, s.bytes) = (s.modules + 1, s.blocks + n as u64, s.bytes + len);
         let heads: Vec<u64> = regions.iter().map(|r| r.blocks[0].key).collect();
-        for (k, (((r, inl), links), ents)) in regions.iter().zip(inl).zip(links).zip(entries).enumerate() {
+        for (k, (((r, inl), links), ents)) in
+            regions.iter().zip(inl).zip(links).zip(entries).enumerate()
+        {
             let size: u32 = r.blocks.iter().map(|b| b.words.len() as u32).sum();
             let s = &mut t.stats;
             (s.inline, s.helpers) = (s.inline + inl as u64, s.helpers + (size - inl) as u64);
@@ -1368,7 +1375,12 @@ impl Cache {
                 (i.idx, i.len, i.word, i.queued) = (at, mlen as u8, 0, false);
                 // Entered at m, the function runs the members after it too:
                 // the checker hashes the whole region, as at its head.
-                if let Some(s) = self.cfg.check.then(|| self.spans.get(&key).cloned()).flatten() {
+                if let Some(s) = self
+                    .cfg
+                    .check
+                    .then(|| self.spans.get(&key).cloned())
+                    .flatten()
+                {
                     self.spans.insert(m, s);
                 }
                 self.linkers.entry(key).or_default().push(m);
@@ -2232,7 +2244,10 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             // raw pointer. `mem` isn't in `*v`.
             let (f, entry) = (idx & IDX_MASK, idx >> ENTRY_SHIFT << emit::ENTRY_BIT);
             let k = unsafe { block(f)(v, 0, left.min(i32::MAX as u64) as u32, entry) } as u64;
-            debug_assert!(k < emit::RETURNED as u64, "block {key:#x} (index {idx:#x}, entry {entry:#x}) returned {k:#x}");
+            debug_assert!(
+                k < emit::RETURNED as u64,
+                "block {key:#x} (index {idx:#x}, entry {entry:#x}) returned {k:#x}"
+            );
             // SAFETY: the block has returned.
             let vr = unsafe { &mut *v };
             let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");

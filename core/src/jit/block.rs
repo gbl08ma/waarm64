@@ -407,7 +407,9 @@ pub fn forward(
                     }
                     // Where a host call of the callee returns to, unless
                     // the callee is a member (its `ret` predicts the return).
-                    let to = offsets(&b.words).first().map(|&o| b.va.wrapping_add(o as u64));
+                    let to = offsets(&b.words)
+                        .first()
+                        .map(|&o| b.va.wrapping_add(o as u64));
                     if !self.seen.iter().any(|&(_, v)| Some(v) == to) {
                         self.edge(&b, after, calls);
                     }
@@ -667,7 +669,8 @@ pub fn module(
             .zip(regions)
             .map(|(e, r)| {
                 let b = |j: usize| &r.blocks[j];
-                let at = |(n, &j): (usize, &usize)| (b(j).key, n as u32 + 1, b(j).words.len() as u32);
+                let at =
+                    |(n, &j): (usize, &usize)| (b(j).key, n as u32 + 1, b(j).words.len() as u32);
                 e.iter().enumerate().map(at).collect()
             })
             .collect(),
@@ -1124,7 +1127,13 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
             Next::One(o) => {
                 if leaves(o) {
                     if after.is_some() {
-                        call(e, &mut c, b, &mut |c| chain(e, c, b, o, Xfer::Call(0)), &mut cont);
+                        call(
+                            e,
+                            &mut c,
+                            b,
+                            &mut |c| chain(e, c, b, o, Xfer::Call(0)),
+                            &mut cont,
+                        );
                     } else {
                         chain(e, &mut c, b, o, Xfer::Tail);
                     }
@@ -1157,8 +1166,9 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
                     let miss = (b.key & KEY_MMU != 0).then(|| e.miss(b.key));
                     let (regime, bt, chk) = (b.key & 3, e.bt, e.checker);
                     if op == Some(Op::BLR) {
-                        let mut probe =
-                            |c: &mut emit::Func| emit::indirect(c, regime, miss, len, bt, chk, Xfer::Call(0));
+                        let mut probe = |c: &mut emit::Func| {
+                            emit::indirect(c, regime, miss, len, bt, chk, Xfer::Call(0))
+                        };
                         call(e, &mut c, b, &mut probe, &mut cont);
                     } else {
                         emit::indirect(&mut c, regime, miss, len, bt, chk, Xfer::Tail);
@@ -1634,7 +1644,10 @@ mod tests {
         assert!(has(&e.bytes, &tag));
         assert!(has(&e.bytes, &[0x12, 2, 0x0b])); // the tail call behind it
         // No jump cache here (a module built without one), so nothing else.
-        assert!(!has(&e.bytes, &[0x28, 2, 8, 0x41, 0xff, 0xff, 0xff, 7, 0x71, 0x13]));
+        assert!(!has(
+            &e.bytes,
+            &[0x28, 2, 8, 0x41, 0xff, 0xff, 0xff, 7, 0x71, 0x13]
+        ));
     }
 
     /// With the MMU on, a direct branch to another page finds its target by
@@ -1699,7 +1712,13 @@ mod tests {
             crate::cpu::FEATURES,
             Some(XMISS),
         );
-        assert!(!has(&e.bytes, &tag) && has(&e.bytes, &[0x28, 2, 8, 0x41, 0xff, 0xff, 0xff, 7, 0x71, 0x13]));
+        assert!(
+            !has(&e.bytes, &tag)
+                && has(
+                    &e.bytes,
+                    &[0x28, 2, 8, 0x41, 0xff, 0xff, 0xff, 7, 0x71, 0x13]
+                )
+        );
         // Something compiled at the PA that follows: the direct call behind
         // its check first, then the lookup by VA.
         let e = module(
@@ -1936,7 +1955,10 @@ mod tests {
             .bytes
             .windows(predicted.len())
             .position(|w| w == predicted);
-        let indirect = e.bytes.windows(10).rposition(|w| w == [0x28, 2, 8, 0x41, 0xff, 0xff, 0xff, 7, 0x71, 0x13]);
+        let indirect = e
+            .bytes
+            .windows(10)
+            .rposition(|w| w == [0x28, 2, 8, 0x41, 0xff, 0xff, 0xff, 7, 0x71, 0x13]);
         assert!(at.is_some() && at < indirect, "{at:?} {indirect:?}");
         assert_eq!(
             module(
@@ -2116,7 +2138,10 @@ mod tests {
             &e.bytes,
             &[3, b'e', b'n', b'v', 5, b't', b'a', b'b', b'l', b'e', 1]
         ));
-        assert!(has(&e.bytes, &[0xa7, 0x41, 0xff, 0xff, 0xff, 7, 0x71, 0x13, 0, 0, 0x0b]));
+        assert!(has(
+            &e.bytes,
+            &[0xa7, 0x41, 0xff, 0xff, 0xff, 7, 0x71, 0x13, 0, 0, 0x0b]
+        ));
         // A static successor that isn't compiled: probed in the jump cache
         // (the vCPU's table's) at its own entry, jc + ((key >> 2) & (JC - 1)) * 16.
         let b = Block {
@@ -2151,4 +2176,3 @@ mod tests {
         assert!(!has(&build(b).bytes, &[0x13, 0, 0]));
     }
 }
-

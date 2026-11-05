@@ -424,7 +424,7 @@ function calls(threshold: number, batch: number, check: number) {
 // The stale-code checker with host calls (docs/jit.md "Calls"), the MMU on so that a callee in another page is
 // called, not taken: H at 0x402100 calls f in the next page down; the block after the call (m) and its successor (k)
 // are H's members, m an entry.
-//   0x402100 H: bl f    0x402104 m: add x1, x1, #1; b k    0x40210c k: add x2, x2, #1; brk
+//   0x402100 H: bl f    0x402104 m: add x1, x1, #1; b k    (0x40210c: brk)    0x402110 k: add x2, x2, #1; brk
 //   0x401100 f: str w9, [x10]; ret
 // An entry at m runs k too, so its check covers k: k rewritten without an IC (from outside), a run that starts
 // at m must fail. A callee that rewrites m without an IC and returns: the caller's continuation is checked too.
@@ -441,7 +441,7 @@ function staleCalls() {
 
 test('with host calls, an entry at a member checks the members it runs', () => {
   const g = staleCalls();
-  g.code(0x610c, [0x91000842]); // k: add x2, x2, #2, without an IC
+  g.code(0x6110, [0x91000842]); // k: add x2, x2, #2, without an IC
   assert.throws(() => g.go(100n, 0x402104n), WebAssembly.RuntimeError);
 });
 
