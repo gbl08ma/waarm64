@@ -1,0 +1,18 @@
+{
+ "bench/results/local/xfer/c/count-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 86.76,
+   "flushes": 0,
+   "modules": 2734,
+   "mib": 127.7,
+   "overdue": 0,
+   "parks": 9395,
+   "locks": 18469882,
+   "interpGsteps": 3.46,
+   "share": 0.96,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

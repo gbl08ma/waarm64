@@ -1,0 +1,4 @@
+r0-1    busy 212 MiB 126.7 relinks 0 rssMax 3978 rssMed 3692 loads 9105/3954/2897/11285/2512
+r0-2    busy 205 MiB 126.3 relinks 0 rssMax 3885 rssMed 3668 loads 10240/4120/2990/11517/2772
+r256-1  busy 200 MiB 141.2 relinks 10113 rssMax 4129 rssMed 3791 loads 10795/4563/3060/10914/2866
+r64-1   busy 187 MiB 139.8 relinks 10477 rssMax 4001 rssMed 3758 loads 15121/4950/3380/12974/3081

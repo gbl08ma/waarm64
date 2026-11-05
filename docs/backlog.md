@@ -92,18 +92,18 @@ the steps, so an interpreted step costs ~3.5× a compiled one. The loads' new co
     calls"): returns' entry stalls fell from 42.5% of the kernel's to 17.5%, but the time reappeared at the
     continuation's code (guest code 61.3% → 59.6% of samples) and the code grew 12-32%, a third flush in Firefox.
     The stall is mostly fetching cold code, not predicting the branch.
-  - **Tails into code that was cold when its predecessor was compiled** (warm members only take what had run 16
-    times): re-emitting a hot region once its jump-cache targets are compiled. Likely to move the stall as host
-    returns did (above): first measure whether a direct tail call into code evicted from the caches stalls as much as
-    an indirect one (`chain.mjs` with the targets evicted). **Measured 2026-11-04** (`bench/boot/REPORT.md` "Where a busy vCPU's time goes in Firefox, again"): at 131,072
-    functions in a random order (TurboFan), an imported tail call costs 25 ns an entry against 84 for
-    `return_call_indirect` and 50 for a direct `return_call` in one module, near their warm 20-25: the cold cost is
-    the indirect transfer's loads, not the target's code, so re-emitting into imported tail calls is worth building
-    and A/B-ing on the pages session (a browser's bodies are larger and less alike than the microbenchmark's). A per-site slot in a module-local
-    table, filled on install, measured no cheaper than the jump cache (`chain.mjs` `local`, 35 against 37 ns).
-    Re-emitting would shrink the code too: a jump-cache tail is 61 B and a probe for a successor in another page 116,
-    against 22 for a direct call, 9.7% of Debian's code (the wasm size item below).
-  - The dispatcher's entries (13% of the stalls) and the signature check's table load (5.3% of the time).
+  - **Tails into code that was cold when its predecessor was compiled: re-emitting tried, not kept** (2026-11-05,
+    `bench/boot/REPORT.md` "Relinking a region once its successors are compiled"): those tails and the by-VA links
+    are 22% of the indirect entries (returns 49%, BLR 11%); compiling ~10,000 hot regions again with direct links
+    cost 11% more wasm and ran slower (the new copy starts in Liftoff, the old stays in use). Untried: rebinding a
+    module's imports by instantiating it again (V8 shares the compiled code between instances: no new code), behind an
+    import stub per uncompiled successor. An imported tail call stays at 25 ns an entry at 131,072 functions where
+    `return_call_indirect` costs 84 (the same report, "Where a busy vCPU's time goes in Firefox, again"). A per-site
+    slot in a module-local table, filled on install, measured no cheaper than the jump cache (`chain.mjs` `local`, 35
+    against 37 ns).
+  - The dispatcher's entries (15% of the entry stalls on 2026-11-04 for 4.7% of the indirect entries: about three
+    times the average stall each) and the signature check's table load (3.0% of the time; a typed table didn't make
+    the transfer cheaper in `chain.mjs`).
 - **Liftoff zero-fills its locals at every entry**, 4 bytes at a time (`str wzr, [x16], #4` in a loop): ~5% of
   Liftoff's samples in Firefox sit in prologues. Measured 2026-10-20 (`bench/boot/REPORT.md` "M8: what Liftoff runs
   that a static change could cut"): V8 zero-fills when a function has **more than 12 locals** besides its

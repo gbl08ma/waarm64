@@ -1120,7 +1120,13 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   in `bench/apps/results/m8-icrange/`; it also moves the stale-code checker's tolerated drop from
   the page's address to the block's, which a finer rule needs.
 - **Relinking** (recompiling a block once a successor it returned through is compiled): doubled
-  the blocks compiled and the flushes on Alpine for 9% fewer dispatches.
+  the blocks compiled and the flushes on Alpine for 9% fewer dispatches. **Selective relinking** (2026-11-05,
+  `bench/boot/REPORT.md` "Relinking a region once its successors are compiled"; the patch in
+  `bench/boot/results/m9-relink/`): a forward region's jump-cache tails and by-VA links counted their hits in its hot
+  word, and at 64 or 256 the region was compiled once more from its recipe with the successors compiled since as
+  imports, the tables' jump-cache entries repointed. Firefox's pages session relinked ~10,000 regions for 11% more wasm
+  and 3% more RSS and ran slower (busy MIPS 212 and 205 without, 200 at 256, 187 at 64): the new copy starts in Liftoff
+  while the old one stays in use through its direct importers and the transfer cache.
 - **Regions of every seen successor** (M5, loops; forward regions since M8 hold each block of a
   batch once, which is what this lacked) duplicated each block into ~5 regions and cost Buildroot
   25–40%; **regions at the first threshold** (no tier-up) cost the boots 10–14% (~930 lukewarm

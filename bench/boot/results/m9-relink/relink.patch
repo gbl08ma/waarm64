@@ -1,0 +1,859 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 8bac1b85..43b2fc5e 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -171,6 +171,9 @@ pub struct Region {
+     /// that call. When X30 holds it, the return is an edge to the member
+     /// there instead of an indirect branch.
+     pub returns: Vec<(u64, u64)>,
++    /// A region whose jump-cache tails and by-VA links count their hits
++    /// (docs/jit.md "Relinking"): its hot word's index (its slot), once it has one.
++    pub relink: Option<u32>,
+ }
+ 
+ impl From<Block> for Region {
+@@ -178,6 +181,7 @@ impl From<Block> for Region {
+         Region {
+             blocks: vec![b],
+             tier: None,
++            relink: None,
+             returns: vec![],
+         }
+     }
+@@ -188,6 +192,7 @@ impl Region {
+         Region {
+             blocks,
+             tier: None,
++            relink: None,
+             returns: vec![],
+         }
+     }
+@@ -417,6 +422,7 @@ pub fn forward(
+     Region {
+         blocks: w.post,
+         tier: None,
++        relink: None,
+         returns: w.returns,
+     }
+ }
+@@ -452,6 +458,9 @@ pub struct Emitted {
+     pub inl: Vec<u32>,
+     pub links: Vec<Vec<u64>>,
+     pub counts: emit::Counts,
++    /// Per region: whether it counts a jump-cache tail or by-VA link
++    /// ([`Region::relink`]).
++    pub relinks: Vec<bool>,
+ }
+ 
+ /// What every region of a module is emitted against.
+@@ -473,6 +482,9 @@ struct Env<'a> {
+     phys: u64,
+     /// Each member's groups of accesses ([`emit::plan`]).
+     plans: Vec<Vec<emit::Role>>,
++    /// The region counts its jump-cache tails and by-VA links
++    /// ([`Region::relink`]): (its hot word, its key, `jit_relink`).
++    relink: Option<(u32, u64, u32)>,
+ }
+ 
+ impl Env<'_> {
+@@ -548,6 +560,10 @@ pub fn module(
+         let t = m.ty(&[I32, I64, I64], &[]);
+         m.import_func("env", "jit_hot", t)
+     });
++    let relink = (jc && regions.iter().any(|r| r.relink.is_some())).then(|| {
++        let t = m.ty(&[I32, I64], &[]);
++        m.import_func("env", "jit_relink", t)
++    });
+     // Successors outside their region: this batch's heads, or imports.
+     let heads = |k| regions.iter().any(|r| r.blocks[0].key == k);
+     let mut funcs: HashMap<u64, (u32, u32)> = HashMap::new();
+@@ -609,6 +625,7 @@ pub fn module(
+         inl: Vec::with_capacity(regions.len()),
+         links: Vec::with_capacity(regions.len()),
+         counts: emit::Counts::default(),
++        relinks: Vec::with_capacity(regions.len()),
+     };
+     let (base, phys) = mem.base();
+     let pair_locks = mem.pair_locks() as usize as u32;
+@@ -662,6 +679,7 @@ pub fn module(
+             base: base as usize as u64,
+             phys,
+             plans: r.blocks.iter().map(|b| emit::plan(&b.words, &cx)).collect(),
++            relink: r.relink.zip(relink).map(|(w, f)| (w, head.key, f)),
+         };
+         // Twice: the first emission finds the registers to read plainly
+         // (`Func::plain`) and what each member's edges carry into it, which
+@@ -716,6 +734,7 @@ pub fn module(
+             assert!(!x.bad);
+         }
+         let (mut c, n) = (x.c, x.inl);
++        out.relinks.push(c.relinks);
+         let name = format!("{:#x}_pa{:#x}", head.va, head.key & !3);
+         let locals = c.locals();
+         m.func(bt, &locals, &c.c, &name);
+@@ -1075,6 +1094,8 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64) {
+         emit::indirect(c, b.key & 3, miss, len, e.bt, e.checker);
+     };
+     let Some(&(f, tlen)) = f else {
++        // Not compiled yet: the region counts these (`emit::relink_count`).
++        c.relink = e.relink;
+         if guarded {
+             return by_va(c);
+         }
+@@ -1769,6 +1790,7 @@ mod tests {
+                 })
+                 .into(),
+             tier: None,
++            relink: None,
+             returns: vec![],
+         };
+         // 0x7000 at PA 0x3000, 0x8000 at PA 0x9000, and back in the head's page.
+@@ -1854,6 +1876,7 @@ mod tests {
+                 words: vec![MOVZ, 0x14000002],
+             }],
+             tier: Some(0x2000),
++            relink: None,
+             returns: vec![],
+         };
+         let e = module(
+@@ -1949,4 +1972,44 @@ mod tests {
+         };
+         assert!(!has(&build(b).bytes, &[0x13, 0, 0]));
+     }
++
++    #[test]
++    fn a_region_counts_its_tails_to_successors_not_compiled() {
++        // docs/jit.md "Relinking": a region with a hot word (`relink`) counts
++        // the jump-cache tail to a successor that isn't compiled, calling
++        // jit_relink; one whose successor is compiled links it directly and
++        // counts nothing; an indirect branch counts nothing either.
++        let emit = |words: Vec<u32>, compiled: Option<(u32, u32)>| {
++            let b = Block {
++                key: 0x4000_0200,
++                va: 0,
++                words,
++            };
++            let mut r: Region = b.into();
++            r.relink = Some(7);
++            module(
++                &[r],
++                &test_mem(),
++                |_| compiled,
++                &Config::DEFAULT,
++                true,
++                crate::cpu::FEATURES,
++                None,
++            )
++        };
++        let name = b"jit_relink";
++        let e = emit(vec![MOVZ, 0x14000002], None); // b .+8
++        assert_eq!(e.relinks, [true]);
++        assert!(has(&e.bytes, name));
++        // The table's hot words, and its word's load at 4 × 7 from them
++        // (between them a `local.tee` of a scratch local, renumbered).
++        let mut words = vec![0x20, 0, 0x28, 2];
++        crate::jit::wasm::uleb(&mut words, emit::HOT_PTR as u64);
++        assert!(has(&e.bytes, &words));
++        assert!(has(&e.bytes, &[0x28, 2, 28, 0x22]));
++        let e = emit(vec![MOVZ, 0x14000002], Some((40, 1)));
++        assert_eq!(e.relinks, [false]);
++        let e = emit(vec![MOVZ, 0xd65f03c0], None); // ret
++        assert_eq!(e.relinks, [false]);
++    }
+ }
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index bc67a405..72ebad17 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -229,6 +229,11 @@ pub struct Func {
+     replay: bool,
+     sreads: u64,
+     swrites: u64,
++    /// The next jump-cache tail or by-VA link counts its hits in the region's
++    /// hot word ([`relink_count`]): (the word, the region's key, `jit_relink`).
++    /// Taken by the tail; `relinks` says one was emitted.
++    pub relink: Option<(u32, u64, u32)>,
++    pub relinks: bool,
+ }
+ 
+ /// Load and store failure exits that share their write-backs (docs/jit.md
+@@ -1313,6 +1318,7 @@ fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>) {
+     c.local_get(TO).i64_const(32).op(SHR_U + W).i32_wrap_i64();
+     c.i32_const(0xffff).op(AND).i32_const(len as i32).op(ADD);
+     c.op(GE_U).op(AND).hint(true).if_();
++    relink_count(c);
+     if let Some(chk) = check {
+         c.local_get(VCPU).i64_const(-1).call(chk);
+     }
+@@ -1454,6 +1460,7 @@ pub fn via_jc(c: &mut Func, key: Option<u64>, len: u32, ty: u32, check: Option<u
+         .i32_const(len as i32)
+         .op(ADD);
+     c.op(GE_U).op(AND).hint(true).if_();
++    relink_count(c);
+     if let Some(chk) = check {
+         c.local_get(VCPU);
+         match key {
+@@ -1468,6 +1475,29 @@ pub fn via_jc(c: &mut Func, key: Option<u64>, len: u32, ty: u32, check: Option<u
+     c.local_get(JCE).i32_load(8).return_call_indirect(ty).end();
+ }
+ 
++/// A jump-cache tail or by-VA link taken, in a region that counts them
++/// ([`Func::relink`]; docs/jit.md "Relinking"): its hot word counts the hits
++/// down, and the hit that takes it from 1 to 0 calls `jit_relink(vcpu, key)`,
++/// which queues the region to be compiled again, linked to the successors
++/// compiled since. 0 stays 0. Inside the tail's taken arm, where the i32
++/// scratch locals 8 and 9 are free.
++fn relink_count(c: &mut Func) {
++    const H: u32 = 8;
++    const V: u32 = 9;
++    let Some((word, key, relink)) = c.relink.take() else {
++        return;
++    };
++    c.relinks = true;
++    let off = 4 * word;
++    c.local_get(VCPU).i32_load(HOT_PTR).local_tee(H);
++    c.i32_load(off).local_tee(V).if_();
++    c.local_get(H).local_get(V).i32_const(1).op(SUB);
++    c.memarg(0x36, 2, off); // i32.store
++    c.local_get(V).i32_const(1).op(EQ).hint(false).if_();
++    c.local_get(VCPU).i64_const(key as i64).call(relink);
++    c.end().end();
++}
++
+ /// Pushes an i32 that is non-zero iff X30 is the entry PC + `off`: a return
+ /// that goes where the region predicted (`block::Region::returns`).
+ pub fn returns_to(c: &mut Func, off: i64) {
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 8987b544..55c0d836 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -123,6 +123,11 @@ pub struct Config {
+     pub warm: u32,
+     /// The host's relaxed-SIMD `madd` fuses (`VmConfig.fma`): the FMA forms use it, not their emulation.
+     pub fma: bool,
++    /// Relinking (docs/jit.md "Relinking"): a forward region whose jump-cache
++    /// tails and by-VA links (to successors not compiled when it was) have
++    /// been taken this many times is compiled again, once, linked to what is
++    /// compiled by then (0: never).
++    pub relink: u32,
+ }
+ 
+ impl Config {
+@@ -142,6 +147,7 @@ impl Config {
+         decoded: interp::block::MAX_BUDGET as u32,
+         warm: WARM,
+         fma: false,
++        relink: RELINK,
+     };
+     /// Compile everything on first sight, one block per module, and flush
+     /// constantly: room for 4 regions besides the miss functions.
+@@ -158,6 +164,7 @@ impl Config {
+         decoded: interp::block::MAX_BUDGET as u32,
+         warm: 0,
+         fma: false,
++        relink: 0,
+     };
+     /// JIT-check: compile everything on first sight into a full-size cache,
+     /// with the stale-code checker. JIT-stress's 4-region cache evicts most
+@@ -171,6 +178,7 @@ impl Config {
+         check: true,
+         region_after: 0,
+         warm: 0,
++        relink: 0,
+         ..Config::DEFAULT
+     };
+     /// The dispatcher without compiling: everything in the block interpreter
+@@ -290,6 +298,9 @@ pub struct Stats {
+     /// The ns the block map's prunes took, under the cache's lock (ABI 50;
+     /// 0 natively, which has no clock here).
+     pub prune_ns: u64,
++    /// Regions compiled again, linked to their successors compiled since
++    /// (ABI 61, docs/jit.md "Relinking").
++    pub relinks: u64,
+ }
+ 
+ /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
+@@ -334,6 +345,8 @@ struct Info {
+     /// A loop head that a region tiered up with it runs the loop of: it
+     /// doesn't tier up itself.
+     covered: bool,
++    /// Its region was queued to be compiled again ([`Cache::relink`]): once.
++    relinked: bool,
+     /// The cache's tick ([`Cache::tick`]) at its last report.
+     age: u8,
+ }
+@@ -425,6 +438,9 @@ pub const BATCH_TIMEOUT: u64 = 64_000_000;
+ /// [`Config::DEFAULT`]'s `warm`.
+ pub const WARM: u32 = 16;
+ 
++/// [`Config::DEFAULT`]'s `relink`.
++pub const RELINK: u32 = 256;
++
+ /// What a tier-up waiting for the next batch adds to the pending batch's
+ /// steps ([`BATCH_STEPS`]): how much sooner it brings the batch.
+ pub const TIER_STEPS: u64 = 1_562;
+@@ -459,6 +475,11 @@ pub struct Cache {
+     /// (key, VA) of loop heads compiled alone that got hot, whose regions
+     /// wait for the next batch ([`Cache::tier_up`]).
+     tierq: Vec<(u64, u64)>,
++    /// Regions to compile again, linked to what is compiled now
++    /// ([`Cache::relink`]), and how to form each again: its head's VA and its
++    /// members' (VA, key), for the regions that count their hits.
++    relinkq: Vec<u64>,
++    recipes: Map<Recipe>,
+     /// Steps the pending blocks have been dispatched for since they joined it
+     /// ([`BATCH_STEPS`]).
+     pending_steps: u64,
+@@ -570,6 +591,10 @@ struct Logged {
+     bytes: Arc<[u8]>,
+     /// The hot words of its loop heads compiled alone (their slots).
+     tiers: Vec<u32>,
++    /// The hot words of its regions that count their hits ([`Region::relink`]),
++    /// and the regions it compiles again: (key, the old table index, the new).
++    counters: Vec<u32>,
++    relinks: Vec<(u64, u32, u32)>,
+ }
+ 
+ /// A table's progress, as the cache records it.
+@@ -585,6 +610,13 @@ struct Seen {
+     ival: u64,
+ }
+ 
++/// How to form a region again ([`Cache::recipes`]): its head's VA and its
++/// members' (VA, key).
++struct Recipe {
++    va: u64,
++    members: Box<[(u64, u64)]>,
++}
++
+ /// A loop region compiled for a head compiled alone: its table index, the
+ /// head's hot word, and the hot words of members that stop counting.
+ struct Tier {
+@@ -606,6 +638,8 @@ impl Cache {
+             tiers: HashMap::default(),
+             pending: Vec::new(),
+             tierq: Vec::new(),
++            relinkq: Vec::new(),
++            recipes: Map::default(),
+             pending_steps: 0,
+             batch: 0,
+             next: MISS_SLOTS,
+@@ -815,6 +849,8 @@ impl Cache {
+         self.tiers.clear();
+         self.pending.clear();
+         self.tierq.clear();
++        self.relinkq.clear();
++        self.recipes.clear();
+         self.pending_steps = 0;
+         self.batch += 1;
+         self.next = MISS_SLOTS;
+@@ -853,6 +889,7 @@ impl Cache {
+                 self.map.remove(&k);
+                 self.spans.remove(&k);
+                 self.tiers.remove(&k);
++                self.recipes.remove(&k);
+                 gone.push(k);
+                 keys.extend(self.linkers.remove(&k).unwrap_or_default());
+             }
+@@ -984,13 +1021,14 @@ impl Cache {
+     /// Whether the pending batch (with the loop regions waiting) is due, by
+     /// table `t`'s clock.
+     fn due(&mut self, t: &mut Table) -> bool {
+-        if self.pending.is_empty() && self.tierq.is_empty() {
++        if self.pending.is_empty() && self.tierq.is_empty() && self.relinkq.is_empty() {
+             return false;
+         }
+         if t.since.0 != self.batch {
+             t.since = (self.batch, t.clock);
+         }
+         self.pending.len() >= self.cfg.batch as usize
++            || self.relinkq.len() >= self.cfg.batch as usize
+             || t.clock - t.since.1 >= BATCH_TIMEOUT
+             || self.pending_steps >= BATCH_STEPS
+     }
+@@ -1031,12 +1069,35 @@ impl Cache {
+             tiers.push((key, word, quiet));
+             regions.push(r);
+         }
++        // The regions compiled again (docs/jit.md "Relinking"): formed as
++        // before, from their recipes, now that more of what they reach is
++        // compiled; still compiled, and not tier-up heads.
++        let mut relinks = Vec::new();
++        for key in core::mem::take(&mut self.relinkq) {
++            let Some(&Info { idx, word: 0, .. }) = self.map.get(&key).filter(|i| i.idx != 0) else {
++                continue;
++            };
++            let Some(Recipe { va, members }) = self.recipes.remove(&key) else {
++                continue;
++            };
++            let r = block::forward(mem, key, va, &|va, near| match near {
++                Some(k) => members.iter().any(|m| m.1 == k).then_some(k),
++                None => members.iter().find(|m| m.0 == va).map(|m| m.1),
++            });
++            if r.blocks.is_empty() {
++                continue;
++            }
++            relinks.push((regions.len(), key, idx));
++            regions.push(r);
++        }
+         regions.extend(self.plan(mem));
+         t.stats.plan_ns += now_ns().saturating_sub(ns);
+         self.batch += 1;
+-        let Some(idx) = self.install(t, regions, mem, budget) else {
++        let n = relinks.len() as u64;
++        let Some(idx) = self.install(t, regions, relinks, mem, budget) else {
+             return;
+         };
++        t.stats.relinks += n;
+         for (k, (key, word, quiet)) in tiers.into_iter().enumerate() {
+             let idx = idx + k as u32;
+             quiet.iter().for_each(|&w| t.quiet(w));
+@@ -1118,6 +1179,9 @@ impl Cache {
+                     };
+                     free.then_some(k)
+                 });
++                // It may count its jump-cache tails and by-VA links (its
++                // word once it has a slot: `Cache::install`).
++                r.relink = Some(0);
+                 // (No blocks at all if another vCPU rewrote the head's code
+                 // since `loops` read it: parallel SMP.)
+                 for b in r.blocks.iter().skip(1) {
+@@ -1149,6 +1213,27 @@ impl Cache {
+         block::region(mem, key, va, &|k| all || map.contains_key(&k))
+     }
+ 
++    /// A region's jump-cache tails and by-VA links were taken
++    /// `Config::relink` times in table `t` (`jit_relink`, inside JIT code:
++    /// never a flush here): queues it to be compiled again with the next
++    /// batch, which it brings nearer, once (docs/jit.md "Relinking").
++    fn relink(&mut self, t: &mut Table, key: u64, mem: &Mem) {
++        let budget = self.budget();
++        let Some(i) = self.map.get_mut(&key).filter(|i| i.idx != 0 && !i.relinked) else {
++            return;
++        };
++        i.relinked = true;
++        if !self.recipes.contains_key(&key) {
++            return;
++        }
++        self.relinkq.push(key);
++        self.pending_steps += TIER_STEPS;
++        let n = (self.pending.len() + self.tierq.len() + self.relinkq.len()) as u32;
++        if self.due(t) && self.next + n <= self.cfg.capacity && self.live_bytes < budget {
++            self.emit_batch(t, mem, budget);
++        }
++    }
++
+     /// A loop head compiled alone got hot in table `t` (`jit_hot`, which runs
+     /// inside JIT code: never a flush here): finds its loop region compiled
+     /// already (it got hot in another table first) and points the head's hot
+@@ -1226,7 +1311,7 @@ impl Cache {
+             t.stats.plan_ns += now_ns().saturating_sub(ns);
+             self.batch += 1;
+         }
+-        let Some(idx) = self.install(t, regions, mem, budget) else {
++        let Some(idx) = self.install(t, regions, Vec::new(), mem, budget) else {
+             return;
+         };
+         t.redirect(word, idx, key);
+@@ -1243,6 +1328,7 @@ impl Cache {
+         &mut self,
+         t: &mut Table,
+         mut regions: Vec<block::Region>,
++        relinks: Vec<(usize, u64, u32)>,
+         mem: &Mem,
+         budget: u64,
+     ) -> Option<u32> {
+@@ -1266,6 +1352,7 @@ impl Cache {
+                 r.tier = Some(w);
+                 tiers.push(w);
+             }
++            r.relink = r.relink.filter(|_| self.cfg.relink > 0).map(|_| slot + k as u32);
+         }
+         let map = &self.map;
+         let compiled = |k| {
+@@ -1279,6 +1366,7 @@ impl Cache {
+             inl,
+             links,
+             counts,
++            relinks: counted,
+         } = block::module(
+             &regions,
+             mem,
+@@ -1299,16 +1387,22 @@ impl Cache {
+         } else {
+             0
+         };
++        let idx = xmiss + slot;
++        let counters = (0..n).filter(|&k| counted[k as usize]).map(|k| slot + k).collect();
+         self.log.push(Logged {
+             slot,
+             n,
+             seq,
+             bytes: bytes.into(),
+             tiers,
++            counters,
++            relinks: relinks
++                .iter()
++                .map(|&(k, key, old)| (key, old, idx + k as u32))
++                .collect(),
+         });
+         self.held += len;
+         self.shed();
+-        let idx = xmiss + slot;
+         self.live_bytes += len;
+         self.retune();
+         self.publish();
+@@ -1319,7 +1413,9 @@ impl Cache {
+         s.cond_computed += counts.cond_computed;
+         s.cond_memory += counts.cond_memory;
+         (s.modules, s.blocks, s.bytes) = (s.modules + 1, s.blocks + n as u64, s.bytes + len);
+-        for (k, ((r, inl), links)) in regions.iter().zip(inl).zip(links).enumerate() {
++        for (k, (((r, inl), links), counted)) in
++            regions.iter().zip(inl).zip(links).zip(counted).enumerate()
++        {
+             let size: u32 = r.blocks.iter().map(|b| b.words.len() as u32).sum();
+             let s = &mut t.stats;
+             (s.inline, s.helpers) = (s.inline + inl as u64, s.helpers + (size - inl) as u64);
+@@ -1338,6 +1434,11 @@ impl Cache {
+             };
+             let i = self.info(key, || 0);
+             (i.idx, i.len, i.word) = (idx + k as u32, len as u8, word);
++            if counted {
++                let members = r.blocks[1..].iter().map(|b| (b.va, b.key)).collect();
++                let va = r.blocks[0].va;
++                self.recipes.insert(key, Recipe { va, members });
++            }
+             if self.cfg.check {
+                 let spans = r.blocks.iter().map(|b| (b.key & !3, b.words.len() as u32));
+                 self.spans
+@@ -1546,6 +1647,8 @@ impl Table {
+                     seq: l.seq,
+                     bytes: l.bytes.clone(),
+                     tiers: l.tiers.clone(),
++                    counters: l.counters.clone(),
++                    relinks: l.relinks.clone(),
+                 });
+             }
+             self.installed = c.log.len();
+@@ -1625,6 +1728,20 @@ impl Table {
+             for &w in &m.tiers {
+                 self.hot[w as usize] = self.cfg.region_after;
+             }
++            for &w in &m.counters {
++                self.hot[w as usize] = self.cfg.relink;
++            }
++            // A region compiled again takes its key's entries where they
++            // still hold the old one (not one compiled since a drop).
++            for &(key, old, new) in &m.relinks {
++                let j = &mut self.jc[jc_index(key)];
++                if j.key == key && j.idx == old {
++                    j.idx = new;
++                }
++                if let Some(e) = self.known.get_mut(&key).filter(|e| e.0 == old) {
++                    e.0 = new;
++                }
++            }
+             self.limit = self.base + m.slot + m.n;
+             done += 1;
+         }
+@@ -1954,6 +2071,18 @@ impl Jit {
+         lock(&self.cache, &mut self.table.stats).check(key, mem, &mut self.table.stats)
+     }
+ 
++    /// [`Cache::relink`], unless this table's slots are an epoch behind.
++    fn relink(&mut self, key: u64, mem: &Mem) {
++        let mut c = lock(&self.cache, &mut self.table.stats);
++        if self.table.epoch != c.epoch {
++            return;
++        }
++        c.relink(&mut self.table, key, mem);
++        self.table.sync(&mut c, mem);
++        drop(c);
++        self.install();
++    }
++
+     /// [`Cache::tier_up`], unless this table's slots are an epoch behind
+     /// (the cache flushed since its vCPU entered JIT code): the head stays
+     /// alone until the next.
+@@ -2518,6 +2647,23 @@ pub unsafe extern "C" fn jit_hot(v: *mut Vcpu, key: u64, pc: u64) {
+         .tier_up(key, pc, mem);
+ }
+ 
++/// A region's jump-cache tails and by-VA links were taken often enough
++/// ([`emit::relink_count`]): it is compiled again with the next batch, linked
++/// to its successors compiled since (docs/jit.md "Relinking").
++///
++/// # Safety
++/// As for [`jit_exec_flat`].
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn jit_relink(v: *mut Vcpu, key: u64) {
++    // SAFETY: guaranteed by the caller.
++    let (mem, v) = unsafe { (&*(*v).jit.mem, &mut *v) };
++    v.jit
++        .cache
++        .as_deref_mut()
++        .expect("a JIT vCPU")
++        .relink(key, mem);
++}
++
+ #[cfg(target_arch = "wasm32")]
+ #[link(wasm_import_module = "env")]
+ unsafe extern "C" {
+@@ -2565,6 +2711,9 @@ struct Todo {
+     bytes: Arc<[u8]>,
+     /// The hot words of its loop heads compiled alone.
+     tiers: Vec<u32>,
++    /// As `Logged`'s.
++    counters: Vec<u32>,
++    relinks: Vec<(u64, u32, u32)>,
+ }
+ 
+ /// How long a table waits for the compile worker before it compiles a
+@@ -2652,6 +2801,7 @@ mod tests {
+             decoded: 0,
+             warm: 0,
+             fma: false,
++            relink: 0,
+         });
+         let s = &mut Stats::default();
+         c.map.insert(0x100, Info::default());
+@@ -3144,7 +3294,7 @@ mod tests {
+                 .iter()
+                 .all(|r| r.blocks.len() == 1 && r.tier.is_some())
+         );
+-        c.install(&mut t, regions, &mem, c.budget())
++        c.install(&mut t, regions, Vec::new(), &mem, c.budget())
+             .expect("installed");
+         let word = c.map[&a].word;
+         let modules = c.log.len();
+@@ -3211,7 +3361,7 @@ mod tests {
+                 c.pending.push((k, k));
+             }
+             let regions = c.plan(&mem);
+-            c.install(&mut t, regions, &mem, c.budget())
++            c.install(&mut t, regions, Vec::new(), &mem, c.budget())
+                 .expect("installed");
+             // A block waiting, so the tier-up plans a batch; due at once.
+             c.info(0x2000, || 2).queued = true;
+@@ -3473,6 +3623,8 @@ mod tests {
+                 seq: 0,
+                 bytes: vec![0u8; mib << 20].into(),
+                 tiers: Vec::new(),
++                counters: Vec::new(),
++                relinks: Vec::new(),
+             });
+             c.held += (mib as u64) << 20;
+             c.shed();
+diff --git a/core/src/lib.rs b/core/src/lib.rs
+index 529cdae7..7f45c381 100644
+--- a/core/src/lib.rs
++++ b/core/src/lib.rs
+@@ -34,7 +34,7 @@ pub mod xhci;
+ use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+ 
+ /// Bumped when the host/core ABI changes.
+-pub const ABI_VERSION: u32 = 60;
++pub const ABI_VERSION: u32 = 61;
+ 
+ #[unsafe(no_mangle)]
+ pub extern "C" fn abi_version() -> u32 {
+@@ -303,7 +303,8 @@ fn exit_code(r: Result<(), interp::Exit>) -> [u64; 2] {
+ /// block after `threshold` dispatches, `batch` blocks per module, into a code
+ /// cache of `capacity` blocks (`capacity` ≥ `batch` ≥ 1), with the stale-code
+ /// checker if `check` ≠ 0 (ABI 11), and a loop head's region after
+-/// `region_after` entries of the head compiled alone (0: at once; ABI 17).
++/// `region_after` entries of the head compiled alone (0: at once; ABI 17), and a region
++/// compiled again after `relink` hits of its jump-cache tails and by-VA links (0: never; ABI 61).
+ #[unsafe(no_mangle)]
+ pub extern "C" fn jit_new(
+     threshold: u32,
+@@ -311,6 +312,7 @@ pub extern "C" fn jit_new(
+     capacity: u32,
+     check: u32,
+     region_after: u32,
++    relink: u32,
+ ) -> *mut mmu::Vcpu {
+     let mut v = mmu::Vcpu::new(cpu::Cpu::default());
+     v.jit.cache = Some(Box::new(jit::Jit::new(jit::Cache::new(jit::Config {
+@@ -326,6 +328,7 @@ pub extern "C" fn jit_new(
+         decoded: interp::block::MAX_BUDGET as u32,
+         warm: 0,
+         fma: false,
++        relink,
+     }))));
+     Box::into_raw(v)
+ }
+diff --git a/core/src/vm.rs b/core/src/vm.rs
+index 8050eec6..048f596e 100644
+--- a/core/src/vm.rs
++++ b/core/src/vm.rs
+@@ -377,8 +377,9 @@ pub struct Counters {
+     /// table that lacked modules whose bytes were dropped; the heap bytes the
+     /// table's decoded blocks and its known blocks take.
+     /// Then (ABI 48) the misses that found the lock held and didn't wait;
+-    /// (ABI 50) the ns the block map's prunes took.
+-    pub jx: [AtomicU64; 13],
++    /// (ABI 50) the ns the block map's prunes took; (ABI 61) the regions
++    /// compiled again (docs/jit.md "Relinking").
++    pub jx: [AtomicU64; 14],
+ }
+ 
+ /// Indexes into [`Counters::par`].
+@@ -409,7 +410,7 @@ impl Default for Counters {
+             par: [const { AtomicU64::new(0) }; 10],
+             dec: [const { AtomicU64::new(0) }; 3],
+             cw: [const { AtomicU64::new(0) }; 4],
+-            jx: [const { AtomicU64::new(0) }; 13],
++            jx: [const { AtomicU64::new(0) }; 14],
+         }
+     }
+ }
+@@ -1719,6 +1720,7 @@ fn publish_jit(c: &Counters, s: &jit::Stats) {
+         s.known_bytes,
+         s.lock_skipped,
+         s.prune_ns,
++        s.relinks,
+     ];
+     for (a, v) in c.jx.iter().zip(jx) {
+         a.store(v, Ordering::Relaxed);
+diff --git a/docs/abi.md b/docs/abi.md
+index f029961d..8f2bed03 100644
+--- a/docs/abi.md
++++ b/docs/abi.md
+@@ -179,6 +179,7 @@ vCPU's own counts in its block; hosts sum them (`stats()`). Word 70 (PC) is per
+ | 114–118 | (47) the core's heap ([jit.md](jit.md) "Memory"): the block map's prunes; flushes because the heap had no room for a map to grow (the block map, a table's decoded or known blocks: those free their tables whole); flushes because a table lacked modules whose bytes were dropped; the heap bytes the table's decoded blocks (arena, map, page index) and its known blocks take, estimated |
+ | 119 | (48) jump-cache misses that found the JIT cache's lock held and ran their block interpreted instead of waiting ([jit.md](jit.md) "Sharing") |
+ | 120 | (50) the ns the JIT block map's prunes took, under the cache's lock ([jit.md](jit.md) "The core's heap"; 0 natively) |
++| 121 | (61) regions compiled again, linked to their successors compiled since ([jit.md](jit.md) "Relinking") |
+ 
+ TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one boot run +12%).
+ 
+@@ -583,6 +584,7 @@ implemented by this step).
+ | 58 | `VmConfig.fma` and `jit_fma(v, on)`: the JIT's FMA forms on the host's fused relaxed-SIMD `madd` (`web/fma.ts`; docs/jit.md "Floating point") |
+ | 59 | FEAT_JSCVT, FEAT_LRCPC, FEAT_SB, FEAT_FlagM/FlagM2, FEAT_DIT, FEAT_FRINTTS: `VmConfig.features` bits 4 to 9; their ID fields (ISAR0 TS, ISAR1 JSCVT, LRCPC, FRINTTS, SB, PFR0 DIT) |
+ | 60 | FEAT_DotProd: `VmConfig.features` bit 10; `ID_AA64ISAR0_EL1` DP = 1 |
++| 61 | relinking: the export `jit_relink(vcpu, key)` (JIT code calls it when a region's jump-cache tails and by-VA links have been taken `Config::relink` times; docs/jit.md "Relinking"); counter word 121 (the regions compiled again); `jit_new`'s sixth argument, `relink` |
+ | 54 | PSCI SYSTEM_SUSPEND in realtime mode: `vm_suspended`, `vm_wake`, `vm_clock_skip`; snapshot format 3 (a suspended guest) and `snapshot_version_min` (2: format 2 states still restore) |
+ | 52 | a JIT module on a machine with spill memory imports spill memory 1 as `env.ram1` (`coreImports(…, spill)` passes them on): loads and stores reach its pages inline |
+ | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |
+diff --git a/tests/browser.test.ts b/tests/browser.test.ts
+index a49cf47a..50093831 100644
+--- a/tests/browser.test.ts
++++ b/tests/browser.test.ts
+@@ -42,7 +42,7 @@ async function result(path: string, global: string) {
+ }
+ 
+ test('core wasm runs in a cross-origin isolated worker', async () => {
+-  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 60, counter: 2 });
++  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 61, counter: 2 });
+ });
+ 
+ test('the JIT\'s FMA forms: the fused arm and the emulation give the FP guest the same state', async () => {
+diff --git a/tests/jit.test.ts b/tests/jit.test.ts
+index ea8a728a..23769bff 100644
+--- a/tests/jit.test.ts
++++ b/tests/jit.test.ts
+@@ -163,6 +163,41 @@ test('a hot loop head compiled alone tiers up to its loop region', () => {
+   assert.ok(st[5] < 20n, `${st[5]} dispatches for ${done} steps`);
+ });
+ 
++// Relinking (docs/jit.md "Relinking"): a block compiled before its static successor reaches it through
++// the jump cache (a `return_call_indirect`); once those hits pass `relink`, its region is compiled again
++// with the successor as a direct link. A loop calls H through `blr x9`; H branches to B, which returns:
++//   0x1000 L: blr x9; subs x5, x5, #1; b.ne L; brk
++//   0x1100 H: add x1, x1, #1; b B
++//   0x1180 B: add x2, x2, #1; ret
++// With a threshold of 2 and a batch of 1, H is compiled on its second dispatch, B (not in H's batch)
++// on its own, so H's edge to B is a jump-cache tail until H is compiled again.
++function relinked(threshold: number, relink: number) {
++  const { ex, memory } = core(true);
++  const e = ex as unknown as Exports & Record<string, (...a: (number | bigint)[]) => number | bigint>;
++  const base = memory.grow(1) * 65536;
++  new Uint32Array(memory.buffer, base + 0x1000, 4).set([0xd63f0120, 0xf10004a5, 0x54ffffc1, 0xd4200000]);
++  new Uint32Array(memory.buffer, base + 0x1100, 2).set([0x91000421, 0x1400001f]);
++  new Uint32Array(memory.buffer, base + 0x1180, 2).set([0x91000442, 0xd65f03c0]);
++  const v = e.jit_new(threshold, 1, 64, 0, 1000, relink) as number;
++  const x = new BigUint64Array(memory.buffer, v, 33);
++  [x[5], x[9], x[32]] = [1000n, 0x1100n, 0x1000n];
++  const exit = e.vcpu_new() as number;
++  const done = e.jit_run_exit(v, e.mem_new(base, 65536n), 100_000_000n, exit) as bigint;
++  assert.equal(new BigUint64Array(memory.buffer, exit, 1)[0], 6n); // brk
++  const st = new BigUint64Array(memory.buffer, e.jit_stats(v) as number, 41);
++  return { done, x1: x[1], x2: x[2], x5: x[5], relinks: st[40] };
++}
++
++test('a region linked through the jump cache is compiled again once its successor is compiled, linked to it', () => {
++  const want = { done: 7000n, x1: 1000n, x2: 1000n, x5: 0n };
++  const { relinks: none, ...interpreted } = relinked(0xffff_ffff, 4);
++  assert.deepEqual([interpreted, none], [want, 0n]);
++  const { relinks: off, ...plain } = relinked(2, 0);
++  assert.deepEqual([plain, off], [want, 0n]);
++  const { relinks, ...jit } = relinked(2, 4);
++  assert.deepEqual([jit, relinks], [want, 1n], 'H, once');
++});
++
+ // Direct branches to another page with the MMU on (M8, bench/boot/REPORT.md "where the userspace
+ // benchmark's time goes"): a successor is where its VA maps, which is the block's PA plus the
+ // branch offset only if the two pages are physically contiguous. A loop at EL1 over two virtual
+@@ -180,7 +215,7 @@ test('a hot loop head compiled alone tiers up to its loop region', () => {
+ const PTE = 0xf03n; // a page: valid, AF, nG, inner shareable, EL1 read/write/execute
+ const BODY = (reg: number) => [0x91000400 | reg << 5 | reg, 0xf10004a5, 0x54ffff81, 0xd4200000]; // add reg; subs x5; b.ne .-16; brk
+ /** The two-page guest above on a JIT vCPU (`jit_new`'s arguments); each `run` is `turns` turns of the loop. */
+-function twoPages(jit: [number, number, number, number, number], turns: bigint) {
++function twoPages(jit: [number, number, number, number, number, number?], turns: bigint) {
+   const { ex, memory } = core(true);
+   const e = ex as unknown as Exports & Record<string, (...a: (number | bigint)[]) => number | bigint>;
+   const base = memory.grow(2) * 65536;
+@@ -236,8 +271,8 @@ function twoPages(jit: [number, number, number, number, number], turns: bigint)
+   };
+ }
+ 
+-function crossPage(threshold: number, check: number) {
+-  const g = twoPages([threshold, 1, 64, check, 0], 1000n);
++function crossPage(threshold: number, check: number, relink = 0) {
++  const g = twoPages([threshold, 1, 64, check, 0, relink], 1000n);
+   const out = [g.decoy(), g.run()];
+   g.remap(0x2000n);
+   out.push(g.run());
+@@ -263,6 +298,8 @@ test('with the MMU on, a direct branch to another page goes where its VA maps an
+     const r = crossPage(0, check);
+     assert.deepEqual(strip(r), want, `JIT${check ? ', with the stale-code checker' : ''}`);
+     for (const [i, p] of r.slice(1).entries()) assert.ok(p.dispatches < 20n, `run ${i + 1}: ${p.dispatches} dispatches for ${p.done} steps`);
++    // Compiled in turns, so links go by VA at first, and relinked (docs/jit.md "Relinking").
++    assert.deepEqual(strip(crossPage(2, check, 2)), want, `JIT, relinked${check ? ', with the stale-code checker' : ''}`);
+   }
+ });
+ 
+diff --git a/web/vm.ts b/web/vm.ts
+index f69f483e..f3e59556 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -24,7 +24,7 @@ import { spillImports } from './spill.ts';
+ import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES, ramLayout } from './ram.ts';
+ export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
+ 
+-export const ABI = 60;
++export const ABI = 61;
+ const RAM_BASE = 0x4000_0000;
+ /** The vCPU and compile workers' files for Node's worker_threads (a lookup, so the page's bundler doesn't copy them as assets). */
+ const NODE_WORKERS = { vcpu: './vcpu-worker.ts', compile: './jit-compile-worker.ts' };
+@@ -514,7 +514,9 @@ export const Counter = {
+   JIT_LOCK_SKIPPED: 119,
+   // ABI 50: ns the block map's prunes took (under the cache's lock).
+   JIT_PRUNE_NS: 120,
+-  LEN: 121,
++  // ABI 61: regions compiled again, linked to their successors compiled since (docs/jit.md "Relinking").
++  JIT_RELINKS: 121,
++  LEN: 122,
+ } as const;
+ 
+ /**
+@@ -1318,7 +1320,7 @@ function stats(n: (i: number) => number) {
+       locks: n(Counter.JIT_LOCKS), lockContended: n(Counter.JIT_LOCK_CONTENDED), lockWaitNs: n(Counter.JIT_LOCK_WAIT_NS),
+       emitNs: n(Counter.JIT_EMIT_NS), emitLockedNs: n(Counter.JIT_EMIT_LOCKED_NS), planNs: n(Counter.JIT_PLAN_NS),
+       prunes: n(Counter.JIT_PRUNES), rescues: n(Counter.JIT_RESCUES), lagFlushes: n(Counter.JIT_LAG_FLUSHES),
+-      decBytes: n(Counter.JIT_DEC_BYTES), knownBytes: n(Counter.JIT_KNOWN_BYTES), lockSkipped: n(Counter.JIT_LOCK_SKIPPED), pruneNs: n(Counter.JIT_PRUNE_NS),
++      decBytes: n(Counter.JIT_DEC_BYTES), knownBytes: n(Counter.JIT_KNOWN_BYTES), lockSkipped: n(Counter.JIT_LOCK_SKIPPED), pruneNs: n(Counter.JIT_PRUNE_NS), relinks: n(Counter.JIT_RELINKS),
+     },
+     par: {
+       dsbWaits: n(Counter.PAR_DSB_WAITS), dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS), tlbiIs: n(Counter.PAR_TLBI_IS), ic: n(Counter.PAR_IC),

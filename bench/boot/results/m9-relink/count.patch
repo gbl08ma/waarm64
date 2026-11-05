@@ -1,0 +1,142 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 8bac1b85..bf6057d5 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -1031,7 +1031,12 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+                 let op = b.words.last().map(|&w| decode(w));
+                 if e.jc && matches!(op, Some(Op::BR | Op::BLR | Op::RET)) {
+                     let miss = (b.key & KEY_MMU != 0).then(|| e.miss(b.key));
+-                    emit::indirect(&mut c, b.key & 3, miss, len, e.bt, e.checker);
++                    let kind = match op {
++                        Some(Op::RET) => 2,
++                        Some(Op::BR) => 3,
++                        _ => 4,
++                    };
++                    emit::indirect(&mut c, b.key & 3, miss, len, e.bt, e.checker, kind);
+                 }
+             }
+         }
+@@ -1072,7 +1077,7 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64) {
+     // The PC is in the `Cpu` by now: the successor's VA.
+     let by_va = |c: &mut emit::Func| {
+         let miss = Some(e.miss(b.key));
+-        emit::indirect(c, b.key & 3, miss, len, e.bt, e.checker);
++        emit::indirect(c, b.key & 3, miss, len, e.bt, e.checker, 5);
+     };
+     let Some(&(f, tlen)) = f else {
+         if guarded {
+@@ -1090,6 +1095,7 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64) {
+         c.op(0x71); // i32.and
+     }
+     c.hint(true).if_();
++    emit::count(c, if guarded { 9 } else { 8 });
+     if let Some(chk) = e.checker {
+         c.local_get(0).i64_const(k as i64).call(chk);
+     }
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index bc67a405..e2f6c63c 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -1269,6 +1269,7 @@ pub fn indirect(
+     len: u32,
+     ty: u32,
+     check: Option<u32>,
++    kind: u32,
+ ) {
+     const KEY: u32 = BASE; // i64 scratch
+     if core::mem::take(&mut c.pc_in_addr) {
+@@ -1278,7 +1279,7 @@ pub fn indirect(
+     }
+     c.i64_const(3).op(AND + W).op(EQZ + WC); // aligned
+     if let Some(miss) = miss {
+-        via_xc(c, regime, len, ty, check);
++        via_xc(c, regime, len, ty, check, kind);
+         c.local_get(VCPU);
+         c.local_get(ACC).i32_const(len as i32).op(ADD);
+         c.local_get(LEFT).i32_const(len as i32).op(SUB);
+@@ -1293,9 +1294,16 @@ pub fn indirect(
+     via_jc(c, None, len, ty, check);
+ }
+ 
++/// DIAGNOSTIC: counts a transfer of kind `k` in `Vcpu::xk`.
++pub fn count(c: &mut Func, k: u32) {
++    let off = (offset_of!(Vcpu, xk) + 8 * k as usize) as u32;
++    c.local_get(VCPU).local_get(VCPU).i64_load(off);
++    c.i64_const(1).op(ADD + W).i64_store(off);
++}
++
+ /// The transfer cache probe of [`indirect`], for the VA in `ADDR` and an i32
+ /// condition on the stack: the entry's tag, its generation and its length.
+-fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>) {
++fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>, kind: u32) {
+     const TO: u32 = BASE; // i64 scratch
+     // The entry, `vcpu + XC + ((va >> 2) & (XC_ENTRIES - 1)) * 16`.
+     xc_entry(c);
+@@ -1313,6 +1321,7 @@ fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>) {
+     c.local_get(TO).i64_const(32).op(SHR_U + W).i32_wrap_i64();
+     c.i32_const(0xffff).op(AND).i32_const(len as i32).op(ADD);
+     c.op(GE_U).op(AND).hint(true).if_();
++    count(c, kind);
+     if let Some(chk) = check {
+         c.local_get(VCPU).i64_const(-1).call(chk);
+     }
+@@ -1365,6 +1374,7 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>) ->
+     const JCE: u32 = HOST; // i32 scratch
+     let mut c = Func::default();
+     let (arr, base, phys) = tlb;
++    count(&mut c, 10);
+     c.local_get(VCPU).i64_load(PC).local_tee(ADDR);
+     c.i64_const(3).op(AND + W).op(EQZ + WC); // aligned
+     c.local_get(ADDR);
+@@ -1397,6 +1407,7 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>) ->
+         .op(GE_U)
+         .op(AND);
+     c.hint(true).if_();
++    count(&mut c, 6);
+     // The entry: tag, then idx | len << 32 | gen << 48.
+     xc_entry(&mut c);
+     c.local_get(ADDR)
+@@ -1454,6 +1465,7 @@ pub fn via_jc(c: &mut Func, key: Option<u64>, len: u32, ty: u32, check: Option<u
+         .i32_const(len as i32)
+         .op(ADD);
+     c.op(GE_U).op(AND).hint(true).if_();
++    count(c, if key.is_some() { 0 } else { 1 });
+     if let Some(chk) = check {
+         c.local_get(VCPU);
+         match key {
+@@ -1489,6 +1501,7 @@ pub fn tier_up(c: &mut Func, word: u32, key: u64, ty: u32, hot: u32) {
+     c.local_get(VCPU).i32_load(HOT_PTR).local_tee(H);
+     c.i32_load(off).local_tee(V);
+     c.i32_const(0).op(LT_S).if_();
++    count(c, 7);
+     c.local_get(VCPU).local_get(ACC).local_get(LEFT);
+     c.local_get(V).i32_const(!REDIRECT as i32).op(AND);
+     c.return_call_indirect(ty).end();
+diff --git a/core/src/mmu.rs b/core/src/mmu.rs
+index 7a772466..e7a98667 100644
+--- a/core/src/mmu.rs
++++ b/core/src/mmu.rs
+@@ -435,6 +435,8 @@ pub struct Vcpu {
+     pub tlb: Tlb,
+     /// FEAT_RNG's stream (`Vm::with_devices` keys it).
+     pub rng: crate::rng::Rng,
++    /// DIAGNOSTIC: transfer kinds taken (jit::emit::count).
++    pub xk: [u64; 12],
+ }
+ 
+ impl Vcpu {
+diff --git a/core/src/vm/parallel.rs b/core/src/vm/parallel.rs
+index 8ff60992..bbd537cd 100644
+--- a/core/src/vm/parallel.rs
++++ b/core/src/vm/parallel.rs
+@@ -1007,6 +1007,10 @@ impl Vm {
+         k.tlb_flushes.store(t.flushes, Ordering::Relaxed);
+         if let Some(j) = &v.jit.cache {
+             publish_jit(k, &j.table.stats());
++            // DIAGNOSTIC: the transfer kinds in the static counts' words (8, 9, 11-19).
++            for (w, x) in [8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19].into_iter().zip(v.xk) {
++                k.jit[w].store(x, Ordering::Relaxed);
++            }
+         }
+     }
+ }

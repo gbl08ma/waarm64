@@ -3329,3 +3329,54 @@ host calls" (the stall moved to the continuation's code), which was a different 
 imported tail calls) is the most promising lever (entries 22% of the samples, 27-29% in steady state); the block
 interpreter's cost in page loads (13% of the samples) is the second; Liftoff's zero-fill (Liftoff's bodies 6.3%), an
 exit's cost, the cache's lock and the 320 MiB budget fell to under 1% each in this session.
+
+## Relinking a region once its successors are compiled (2026-11-05)
+
+The backlog's "Tails into code that was cold when its predecessor was compiled", built and measured. The dev VM,
+Chromium 155.0.8059.84, core `6abf0919`; Firefox's pages session from `target/snapbench/pages.webpcsnap` (4 vCPUs)
+through `bench/gpu/ab.sh`. Data, patches and summaries in `results/m9-relink/` (README).
+
+**What the indirect entries are** (a diagnostic core counting each `return_call_indirect` taken by kind, `count.patch`,
+one session, `counts-session/`): of 3.84 G indirect entries plus 0.19 G from the dispatcher,
+
+| kind | entries | share |
+|---|---|---|
+| RET, through the transfer cache | 1,964 M | 48.7% |
+| a static successor not compiled when its predecessor was, through the jump cache | 470 M | 11.7% |
+| BLR | 454 M | 11.3% |
+| a successor in another page not compiled then, by its VA (transfer cache) | 407 M | 10.1% |
+| the dispatcher | 191 M | 4.7% |
+| a tier-up redirect (a head compiled alone, entered through a direct link made before its region) | 145 M | 3.6% |
+| BR | 108 M | 2.7% |
+| the miss function, after a fill | 102 M | 2.5% |
+
+Direct tail calls taken: 1,755 M, and 969 M behind the instruction-TLB check. So re-linking can reach at most the
+22% that are static tails and by-VA links; returns are half.
+
+**A typed table** (`(ref null $t)` defined in the module, so V8 could skip the signature check): no faster in
+`chain.mjs` at 131,072 functions (85 ns, the funcref table's 86; `chain2.mjs`). An imported tail call stays at 25 ns
+there even with its instances scattered through the heap: V8 keeps an import's target in the calling instance's data,
+which the function has in cache already.
+
+**The mechanism** (`relink.patch`, ABI 61 there): a forward region's hot word (its slot's, unused outside tier-ups)
+counted the jump-cache tails and by-VA links it took; the hit that reached zero called `jit_relink(vcpu, key)`, which
+queued the region; the next batch formed it again from its recipe (head VA, members' VA and key) and emitted it with
+the successors compiled since as imports, and each table, once it installed that module, repointed the key's
+jump-cache and known entries from the old index to the new one (where they still held the old). Once a region.
+Tested (a new `tests/jit.test.ts` case and the two-page MMU case with relinking, a planted off-by-one caught by both).
+
+**A/B**, one round each and the base twice (`summary.txt`; busy MIPS from `bench/gpu/stalls.ts`, RSS the renderer's
+in MB, loads in ms: wiki / mdn / github / bbc / hn):
+
+| | busy MIPS | wasm (MiB) | relinks | RSS median / max | loads |
+|---|---|---|---|---|---|
+| no relinking | 212, 205 | 126.7, 126.3 | 0 | 3,692 / 3,978, 3,668 / 3,885 | 9105/3954/2897/11285/2512, 10240/4120/2990/11517/2772 |
+| after 256 hits | 200 | 141.2 | 10,113 | 3,791 / 4,129 | 10795/4563/3060/10914/2866 |
+| after 64 hits | 187 | 139.8 | 10,477 | 3,758 / 4,001 | 15121/4950/3380/12974/3081 |
+
+Stopped after that (the second round's r256 session cut short): nothing gained, 11% more wasm, 3% more RSS, and the
+more eagerly it relinks the slower. A relinked region is new code: it starts in Liftoff again, and its old copy
+stays in use through its direct importers and the transfer cache's entries (two copies of hot code). Not kept
+(docs/jit.md "Tried and not kept"). Not tried: rebinding a module's imports by instantiating it again (no new code,
+V8 shares the compiled code between instances), which needs an import stub per uncompiled successor and
+re-instantiation in every table.
