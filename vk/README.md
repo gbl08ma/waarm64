@@ -292,8 +292,13 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   memory's bytes are in the arena (1,280 MiB of memory 1 with the module's own heap), which backs its heap (VK4 T19). An allocation past
   its heap, the largest GPUBuffer or the arena is refused; Venus's guest doesn't wait for that answer, imports' included, and an object vkr
   didn't make would end the context at its first use, so through vkr it is an empty memory (`memory_refused`, VK4 R6;
-  docs/backlog.md "Memory"), while host-visible memory past its heap with the arena's room is simply had. One queue
-  family. `tests/venus-renderer.test.ts` checks it against the Mac's and
+  docs/backlog.md "Memory"), while host-visible memory past its heap with the arena's room is simply had. Three queue
+  families (VK4 T22; `wg_queue_families`, `?gpu=vkqueues=1` for the first alone): graphics, compute and transfer;
+  compute and transfer; transfer, a queue each, every queue the WebGPU device's one: one order of submits, so
+  ownership transfers between families are no-ops (barriers ignore family indices) and a semaphore between queues is
+  met by that order. A held submit (below, "Waits before their signal") holds the ones after it on its own queue only, so another
+  queue may signal what it waits for; a wait on a binary semaphore whose signalling submit is held is held with it
+  (`held_signals`: Vulkan only has the signal submitted first, and one queue's order no longer keeps it). `tests/venus-renderer.test.ts` checks it against the Mac's and
   SwiftShader's recorded adapters.
 - **libplacebo's advanced path** (VK2 L7, VK3 L4–L4e; web/venus-gpu.ts `HELD_FEATURES`): `float32-blendable` and
   tier1's storage formats (bit 14 of `venus_init`'s flags, `WG_FEATURE_TIER1_STORAGE`, which also says
@@ -812,8 +817,9 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
 - **Waits before their signal** (VK3 L6a): syncs are advertised as waiting before their signal, so Mesa's runtime
   hands every submit to the driver at once (no submit thread: vkr has one); a submit with a timeline wait that isn't
   met, by the value or by a submit already replayed that will signal it, is held, with every later submit of its
-  device, and replayed in order once its waits are met: at the host's signal (`vkSignalSemaphore`) or at the end of a
-  completion. Binary waits are met in the queue's order. A submit of signals alone is held with the rest: Mesa's
+  queue, and each queue's replayed in order once their waits are met: at the host's signal (`vkSignalSemaphore`), after
+  a submit that ran (it may signal another queue's wait: VK4 T22) or at the end of a completion. Binary waits are met in
+  the queues' order, or held with a held submit that signals them. A submit of signals alone is held with the rest of its queue: Mesa's
   vkQueueWaitIdle and vkDeviceWaitIdle are such submits, and so is vkr's fence that retires a guest's ring fence, through
   which Venus's guest driver signals its timeline semaphores (a semaphore is a DRM syncobj in the guest, its point
   signalled by the fence of the execbuffer sent after each batch; a fence that went ahead said a batch's value was

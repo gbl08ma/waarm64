@@ -270,19 +270,29 @@ vkGetInstanceProcAddr(VkInstance instance, const char *pName)
 
 /* Physical device queries the runtime doesn't answer from its tables. */
 
+uint32_t wg_queue_families = WG_QUEUE_FAMILIES;
+
 VKAPI_ATTR void VKAPI_CALL
 wg_GetPhysicalDeviceQueueFamilyProperties2(VkPhysicalDevice physicalDevice, uint32_t *pCount,
                                            VkQueueFamilyProperties2 *pProps)
 {
+   /* WG_QUEUE_FAMILIES: a queue each, all of them the WebGPU queue (VK4 T22: dEQP-VK's commonest want, a family with
+    * compute and without graphics). */
+   static const VkQueueFlags flags[WG_QUEUE_FAMILIES] = {
+      VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT,
+      VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT,
+      VK_QUEUE_TRANSFER_BIT,
+   };
    VK_OUTARRAY_MAKE_TYPED(VkQueueFamilyProperties2, out, pProps, pCount);
-   vk_outarray_append_typed(VkQueueFamilyProperties2, &out, p) {
-      p->queueFamilyProperties = (VkQueueFamilyProperties){
-         .queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT,
-         .queueCount = 1,
-         .timestampValidBits = 64,
-         .minImageTransferGranularity = { 1, 1, 1 },
-      };
-   }
+   for (uint32_t f = 0; f < wg_queue_families; f++)
+      vk_outarray_append_typed(VkQueueFamilyProperties2, &out, p) {
+         p->queueFamilyProperties = (VkQueueFamilyProperties){
+            .queueFlags = flags[f],
+            .queueCount = 1,
+            .timestampValidBits = 64,
+            .minImageTransferGranularity = { 1, 1, 1 },
+         };
+      }
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -637,17 +647,30 @@ wg_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCrea
       .queueCount = 1,
       .pQueuePriorities = &priority,
    };
-   result = vk_queue_init(&dev->queue.vk, &dev->vk,
-                          pCreateInfo->queueCreateInfoCount ? &pCreateInfo->pQueueCreateInfos[0] : &none, 0);
+   /* A queue of each family asked for (one each: the families' queueCount). */
+   const uint32_t asked = pCreateInfo->queueCreateInfoCount;
+   for (uint32_t i = 0; i < MAX2(asked, 1) && result == VK_SUCCESS; i++) {
+      const VkDeviceQueueCreateInfo *info = asked ? &pCreateInfo->pQueueCreateInfos[i] : &none;
+      if (info->queueFamilyIndex >= wg_queue_families || info->queueCount != 1 ||
+          dev->queue_count == WG_QUEUE_FAMILIES) {
+         result = vk_error(pdev, VK_ERROR_INITIALIZATION_FAILED);
+         break;
+      }
+      result = vk_queue_init(&dev->queues[dev->queue_count].vk, &dev->vk, info, 0);
+      if (result == VK_SUCCESS)
+         dev->queues[dev->queue_count++].vk.driver_submit = wg_queue_submit;
+   }
    if (result != VK_SUCCESS) {
+      for (uint32_t i = 0; i < dev->queue_count; i++)
+         vk_queue_finish(&dev->queues[i].vk);
       vk_pipeline_cache_destroy(dev->vk.mem_cache, NULL);
       vk_device_finish(&dev->vk);
       vk_free(&dev->vk.alloc, dev);
       return result;
    }
-   dev->queue.vk.driver_submit = wg_queue_submit;
    if (!wg_device_register(dev, true)) {
-      vk_queue_finish(&dev->queue.vk);
+      for (uint32_t i = 0; i < dev->queue_count; i++)
+         vk_queue_finish(&dev->queues[i].vk);
       vk_pipeline_cache_destroy(dev->vk.mem_cache, NULL);
       vk_device_finish(&dev->vk);
       vk_free(&dev->vk.alloc, dev);
@@ -666,7 +689,8 @@ wg_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    wg_device_register(dev, false);
    wg_device_drain(dev);
    wg_pipeline_premake_finish(dev);
-   vk_queue_finish(&dev->queue.vk);
+   for (uint32_t i = 0; i < dev->queue_count; i++)
+      vk_queue_finish(&dev->queues[i].vk);
    wg_id_release(dev->push_buffer);
    wg_id_release(dev->fan_indices);
    for (uint32_t i = 0; i < 16; i++)

@@ -4860,11 +4860,12 @@ wait_met(const struct vk_sync_wait *w)
    return s->value >= w->wait_value || s->pending >= w->wait_value;
 }
 
-/* A submit held for its waits (Vulkan's wait before signal: the host, or another queue, signals the value later). The
- * runtime frees its vk_queue_submit when driver_submit returns: its command buffers and signals are copied (they stay
- * the application's while the submit is pending), and its timeline waits. */
+/* A submit held for its waits (Vulkan's wait before signal: the host, or another queue, signals the value later), or
+ * behind a held submit of its queue. The runtime frees its vk_queue_submit when driver_submit returns: its command
+ * buffers and signals are copied (they stay the application's while the submit is pending), and its waits. */
 struct held {
    struct list_head link;
+   const struct vk_queue *queue;
    uint32_t cmd_count, signal_count, wait_count;
    struct vk_command_buffer **cmds;
    struct vk_sync_signal *signals;
@@ -4884,7 +4885,39 @@ held_free(struct held *h)
    free(h);
 }
 
-/* Replays every device's held submits whose waits are met, oldest first (one not met holds those after it). */
+/* Whether a held submit of `dev` before `before` (NULL: any) signals the binary sync `sync`: a wait on it is met only
+ * once that submit runs (Vulkan's rule is that a binary semaphore's signal is submitted first, not that it ran: with
+ * one queue the order held it; another queue's wait would run ahead, VK4 T22). */
+static bool
+held_signals(struct wg_device *dev, const struct held *before, const struct vk_sync *sync)
+{
+   if (!sync || (sync->flags & VK_SYNC_IS_TIMELINE))
+      return false;
+   list_for_each_entry (struct held, h, &dev->held, link) {
+      if (h == before)
+         return false;
+      for (uint32_t k = 0; k < h->signal_count; k++)
+         if (h->signals[k].sync == sync)
+            return true;
+   }
+   return false;
+}
+
+/* Whether `queue` has a held submit before `before` (NULL: any). */
+static bool
+queue_held(struct wg_device *dev, const struct held *before, const struct vk_queue *queue)
+{
+   list_for_each_entry (struct held, h, &dev->held, link) {
+      if (h == before)
+         return false;
+      if (h->queue == queue)
+         return true;
+   }
+   return false;
+}
+
+/* Replays every device's held submits whose waits are met, each queue's oldest first (one not met holds those of its
+ * queue after it; the queues are one WebGPU queue, so any order of theirs is a right one). */
 static void
 flush_held(void)
 {
@@ -4892,18 +4925,20 @@ flush_held(void)
       progress = false;
       for (uint32_t i = 0; i < 16; i++) {
          struct wg_device *dev = devices[i];
-         while (dev && !list_is_empty(&dev->held)) {
-            struct held *h = list_first_entry(&dev->held, struct held, link);
-            bool met = true;
-            for (uint32_t k = 0; k < h->wait_count; k++)
-               met &= wait_met(&h->waits[k]);
+         if (!dev)
+            continue;
+         list_for_each_entry (struct held, h, &dev->held, link) {
+            bool met = !queue_held(dev, h, h->queue);
+            for (uint32_t k = 0; k < h->wait_count && met; k++)
+               met = wait_met(&h->waits[k]) && !held_signals(dev, h, h->waits[k].sync);
             if (!met)
-               break;
+               continue;
             list_del(&h->link);
             submit_now(dev, h->cmd_count, h->cmds, h->signal_count, h->signals);
             list_inithead(&h->link);
             held_free(h);
             progress = true;
+            break; /* the list changed, and what this submit signals may meet the waits before it */
          }
       }
    }
@@ -4913,15 +4948,22 @@ VkResult
 wg_queue_submit(struct vk_queue *queue, struct vk_queue_submit *submit)
 {
    struct wg_device *dev = container_of(queue->base.device, struct wg_device, vk);
-   /* Behind a held submit every submit is held, in order: a fence or semaphore a later submit signals says the earlier
-    * ones are done (Mesa's vkQueueWaitIdle and vkDeviceWaitIdle are such submits of a sync alone; vkr's fence that
-    * retires a guest's ring fence too, and through that fence Venus's guest driver signals its timeline semaphores). */
-   bool met = list_is_empty(&dev->held);
+   /* Behind a held submit of its queue a submit is held, in order: a fence or semaphore a later submit signals says the
+    * queue's earlier ones are done (Mesa's vkQueueWaitIdle and vkDeviceWaitIdle, a queue's at a time, are such submits
+    * of a sync alone; vkr's fence that retires a guest's ring fence, a ring a queue, too, and through that fence Venus's
+    * guest driver signals its timeline semaphores). Another queue's go on (VK4 T22: one may signal what the held one
+    * waits for), but for a wait on a binary semaphore a held submit signals. */
+   bool met = !queue_held(dev, NULL, queue);
    for (uint32_t i = 0; i < submit->wait_count && met; i++)
-      met = wait_met(&submit->waits[i]);
-   if (met)
-      return submit_now(dev, submit->command_buffer_count, submit->command_buffers, submit->signal_count,
-                        submit->signals);
+      met = wait_met(&submit->waits[i]) && !held_signals(dev, NULL, submit->waits[i].sync);
+   if (met) {
+      const VkResult result = submit_now(dev, submit->command_buffer_count, submit->command_buffers,
+                                         submit->signal_count, submit->signals);
+      /* Its signals, pending now, may meet another queue's held submits' waits. */
+      if (!list_is_empty(&dev->held) && !completing)
+         flush_held();
+      return result;
+   }
    struct held *h = calloc(1, sizeof(*h));
    if (!h)
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
@@ -4933,12 +4975,14 @@ wg_queue_submit(struct vk_queue *queue, struct vk_queue_submit *submit)
       held_free(h);
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
+   h->queue = queue;
    h->cmd_count = submit->command_buffer_count;
    memcpy(h->cmds, submit->command_buffers, h->cmd_count * sizeof(*h->cmds));
    h->signal_count = submit->signal_count;
    memcpy(h->signals, submit->signals, h->signal_count * sizeof(*h->signals));
+   /* Timeline waits, and binary ones (met once no held submit before it signals them). */
    for (uint32_t i = 0; i < submit->wait_count; i++)
-      if (is_wg_timeline(submit->waits[i].sync))
+      if (submit->waits[i].sync)
          h->waits[h->wait_count++] = submit->waits[i];
    list_addtail(&h->link, &dev->held);
    return VK_SUCCESS;

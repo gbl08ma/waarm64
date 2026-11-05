@@ -771,6 +771,41 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T22: queue families of compute and of transfer — 1,465 of the sample's 2,590 cases join the list; mpv the same
+
+2026-11-05. The device has three queue families now, a queue each: graphics, compute and transfer; compute and
+transfer; transfer. Every queue is the WebGPU device's one, so their submits have one order, ownership transfers
+between families are no-ops and a semaphore between queues is met by that order (vk/README.md "The driver"). What it
+took: submits held for a wait not yet met (VK3 L6a) held every later submit of the device, so a submit of the compute
+queue that signals what a held graphics one waits for waited behind it for ever (`tests/venus-driver.test.ts`
+"a held submit of the graphics queue runs once the compute queue signals what it waits for": a timeout before); now a
+held submit holds its own queue's alone, and is retried after every submit that runs. One queue's order also kept a
+binary semaphore's wait behind its held signal, which another queue's wait isn't any more: it is held with it ("the
+compute queue's wait on a binary semaphore a held submit signals waits for it"). Each test fails with its rule planted
+out. Venus's guest binds each queue to a ring of its own (vkr's `ring_idx`), whose fences retire through that queue: a
+fence of one queue no longer waits for another queue's held submits, as Vulkan has it. `?gpu=vkqueues=1` gives the
+first family alone (A/B). JSON in `results/vk4/t22/`.
+
+- **The reason's cases**: the census's sample has 2,590 cases NotSupported for a queue (1,984 "no matching queue" of
+  compute without graphics, 554 "exclusive compute queue", 63 a transfer-only one; `cases.txt`). Run once advertised:
+
+| host | pass | fail | not supported (other reasons) |
+|---|---|---|---|
+| SwiftShader (Chromium 155.0.8059.84; 83 s as one list) | 1,466 | 166 | 958 |
+| M4 (Chrome for Testing 157.0.8103.38) | 1,812 | 1 | 777 |
+
+  SwiftShader's 166 are its own: every case of a compressed format sampled in a compute stage (123; their fragment
+  twins pass there, and the M4 passes them all), `count_8`'s 8 storage images past the 4 it advertises (35; dEQP doesn't
+  check the limit), and its fetch from a view with a base level (7; filed before). The M4's one is
+  `texture.mipmap.cubemap.basic.nearest_nearest_linear_clamp_compute` (its fragment twin passes:
+  `m4-cube-compute.json`). Filed (docs/backlog.md). **1,465 pass on both and join `tests/deqp/vk.txt`** (pipeline
+  1,331, texture 55, api 48, ubo 22, glsl 8, memory 1; the list 28,575 → 30,040 cases).
+- **mpv** (libplacebo takes a dedicated compute and transfer queue where there is one): Sintel's H.264 trailer with
+  VA-API (`bench/audio/avsync.ts` through `bench/gpu/sway-mac.sh`, `--vo=gpu-next --gpu-api=vulkan`, `WARM_S=8`,
+  `PHASE_S=20`, the desktop guest, 4 vCPUs) on the M4, the three families against `vkqueues=1` in alternated sessions,
+  2 rounds: frames 529, 524 against 528, 529, **none dropped** in any; the guest 11% busy in all four; mpv's `vo` thread
+  149, 148 against 153, 149 ms a second; 624 `SUBMIT_3D`s a second each way (`mpv-mac-*.json`). No change.
+
 ## VK4 T21: the census's failures — a parameter table a group, 16-bit normalized resolves drawn, `&` for booleans; 861 cases join the list
 
 2026-11-05. The census's five failures (the section below) and its new passes, on the dev VM's SwiftShader (Chromium

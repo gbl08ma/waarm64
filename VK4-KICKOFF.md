@@ -121,7 +121,10 @@ the sample's on the M4 (×100 for the whole list, roughly); each starts by runni
   30 s go). The 861 sampled cases that pass on both hosts join `tests/deqp/vk.txt` (run as one list on SwiftShader
   first, as T1's; the list's time and its limit checked). *Done:* each fixed or filed with its cause.
   *Start:* REPORT.md "VK4: the census again", backlog "The M4's own failures".
-- **T22. A compute-only queue family** (S–M; 2,525, 20% of the not-supported): a second family, compute and transfer
+- **T22. A compute-only queue family** (done 2026-11-05: three families, compute and transfer ones beside graphics, all
+  the WebGPU queue; held submits hold their own queue's only, a binary wait held with its held signal; 2,590 sampled
+  cases ran: 1,465 pass on both hosts and join the list, SwiftShader's 166 failures its own and the M4's one filed; mpv
+  the same. Left: backlog "SwiftShader's compressed formats sampled in a compute stage") (S–M; 2,525, 20% of the not-supported): a second family, compute and transfer
   without graphics, whose queues are the same WebGPU queue (one order of submits, so ownership transfers between the
   families are no-ops); maybe a transfer-only third (50). Check what Venus's guest makes of two families on one queue
   (its ring per queue) and that semaphores across them hold. *Done:* the reason's cases run, failures fixed or filed.

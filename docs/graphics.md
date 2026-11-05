@@ -650,7 +650,7 @@ backlog.md "Godot on Venus, GD's leftovers"; bench/vulkan/godot.ts and godot-dis
   submit drawing with one not ready is held) and their WGSL kept across runs in the page's storage; descriptor sets
   become bind groups made at bind time and cached by content (8 sets advertised, sets 3 and up sharing WebGPU's
   fourth group); push constants are immediates, past them a push buffer of the driver's; barriers are accepted
-  (WebGPU tracks hazards); one queue family; fences complete on `onSubmittedWorkDone`. vk/README.md "The driver".
+  (WebGPU tracks hazards); three queue families (graphics; compute; transfer), a queue each, all the one WebGPU queue; fences complete on `onSubmittedWorkDone`. vk/README.md "The driver".
 - **Memory:** device-local memory is plain GPUBuffers and textures. Host-visible memory is the window (1,280 MiB of
   memory 1 after the arena: the 1 GiB host-visible heap whole, since Linux places each mappable blob there when it's made, GD G8, at the guest PA after RAM, outside guest RAM), which guest and renderer share; its pages are write-protected in the TLB
   and marked dirty on the first write (the write-watch), and the written ranges are uploaded at each submit.

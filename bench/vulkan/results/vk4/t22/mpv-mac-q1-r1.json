@@ -1,0 +1,518 @@
+{
+ "mode": "virgl",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "157.0.8103.38",
+ "phaseS": 20,
+ "info": "7.2.14-arch1-2linux 7.2.14.arch1-2 firefox 159.0-1 pipewire 1:1.6.10-1 wireplumber 0.5.18-1 mesa 1:26.2.6-1 webpc-va 3-1 virtio_snd 0 [SoundCard ]: virtio-snd - VirtIO SoundCard VirtIO SoundCard at platform/a000a00.virtio_mmio/virtio5",
+ "variants": [
+  {
+   "label": "",
+   "prefs": ""
+  }
+ ],
+ "sway": "",
+ "pipewire": "\u251c\u2500 Sinks: \u2502  \u251c\u2500 Sources:-- \u251c\u2500 Sinks: \u2502  \u251c\u2500 Sources:",
+ "mpvVariants": "",
+ "mpv-sintel_trailer-480p-mp4": {
+  "quality": {
+   "frames": 529,
+   "dropped": 0,
+   "decoderDropped": 0,
+   "hwdec": "vaapi"
+  },
+  "status": [
+   "MPV 153 1 0 vaapi",
+   "MPV 682 1 0 vaapi"
+  ],
+  "mpvLog": [
+   "[   0.021][v][cplayer] List of enabled features: alsa build-date cdda cplugins cuda-hwaccel cuda-interop dmabuf-interop-gl dmabuf-wayland drm dvbin dvdnav egl egl-drm egl-wayland egl-x11 ffmpeg ffnvco",
+   "[   0.041][w][input] No key binding found for key 'Ctrl+`'.",
+   "[   0.301][v][vo/gpu-next/libplacebo]     External API interop:",
+   "[   0.334][v][vo/gpu-next/vaapi] using libplacebo dmabuf interop",
+   "[   0.518][v][vo/gpu-next/libplacebo] Imported object requires 16384 bytes, larger than the provided size 8192!",
+   "[   0.595][i][vd] Using hardware decoding (vaapi)."
+  ],
+  "mpvArgs": "--vo=gpu-next --gpu-api=vulkan",
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 11,
+    "user": 1,
+    "sys": 9,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 11,
+    "user": 1,
+    "sys": 10,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 11,
+    "user": 1,
+    "sys": 9,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 11,
+    "user": 1,
+    "sys": 9,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 10,
+    "user": 1,
+    "sys": 9,
+    "iowait": 0
+   }
+  ],
+  "processes": [
+   {
+    "process": "mpv",
+    "cpu": 290,
+    "user": 76,
+    "sys": 214,
+    "threads": 23,
+    "runs": 553,
+    "wait": 11
+   },
+   {
+    "process": "sway",
+    "cpu": 70,
+    "user": 0,
+    "sys": 70,
+    "threads": 4,
+    "runs": 80,
+    "wait": 1
+   },
+   {
+    "process": "pipewire",
+    "cpu": 15,
+    "user": 0,
+    "sys": 15,
+    "threads": 3,
+    "runs": 95,
+    "wait": 1
+   },
+   {
+    "process": "kworker/0:0-events",
+    "cpu": 12,
+    "user": 0,
+    "sys": 12,
+    "threads": 1,
+    "runs": 623,
+    "wait": 28
+   },
+   {
+    "process": "kworker/u16:0-flush-254:0",
+    "cpu": 7,
+    "user": 0,
+    "sys": 7,
+    "threads": 1,
+    "runs": 64,
+    "wait": 0
+   },
+   {
+    "process": "script",
+    "cpu": 5,
+    "user": 0,
+    "sys": 5,
+    "threads": 1,
+    "runs": 24,
+    "wait": 0
+   },
+   {
+    "process": "sh",
+    "cpu": 3,
+    "user": 0,
+    "sys": 3,
+    "threads": 1,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "process": "kworker/u16:4-events_unbound",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "threads": 1,
+    "runs": 26,
+    "wait": 0
+   },
+   {
+    "process": "systemd-timesyn",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 0,
+    "wait": 0
+   },
+   {
+    "process": "systemd-resolve",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 1,
+    "wait": 0
+   },
+   {
+    "process": "rcu_preempt",
+    "cpu": 1,
+    "user": 0,
+    "sys": 1,
+    "threads": 1,
+    "runs": 31,
+    "wait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "mpv/vo",
+    "cpu": 149,
+    "user": 25,
+    "sys": 124,
+    "runs": 183,
+    "wait": 2
+   },
+   {
+    "thread": "mpv/mpv",
+    "cpu": 73,
+    "user": 36,
+    "sys": 36,
+    "runs": 149,
+    "wait": 2
+   },
+   {
+    "thread": "sway/sway",
+    "cpu": 70,
+    "user": 0,
+    "sys": 70,
+    "runs": 80,
+    "wait": 1
+   },
+   {
+    "thread": "mpv/lua/osc",
+    "cpu": 21,
+    "user": 6,
+    "sys": 15,
+    "runs": 52,
+    "wait": 2
+   },
+   {
+    "thread": "pipewire/data-loop.0",
+    "cpu": 15,
+    "user": 0,
+    "sys": 16,
+    "runs": 95,
+    "wait": 1
+   },
+   {
+    "thread": "mpv/demux",
+    "cpu": 14,
+    "user": 1,
+    "sys": 14,
+    "runs": 90,
+    "wait": 1
+   },
+   {
+    "thread": "mpv/data-loop.0",
+    "cpu": 11,
+    "user": 0,
+    "sys": 11,
+    "runs": 48,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/0:0-events/kworker/0:0-events",
+    "cpu": 11,
+    "user": 0,
+    "sys": 12,
+    "runs": 623,
+    "wait": 28
+   },
+   {
+    "thread": "kworker/u16:0-flush-254:0/kworker/u16:0-flush-254:0",
+    "cpu": 6,
+    "user": 0,
+    "sys": 7,
+    "runs": 64,
+    "wait": 0
+   },
+   {
+    "thread": "script/script",
+    "cpu": 5,
+    "user": 0,
+    "sys": 5,
+    "runs": 24,
+    "wait": 0
+   },
+   {
+    "thread": "mpv/av:h264:df3",
+    "cpu": 5,
+    "user": 1,
+    "sys": 3,
+    "runs": 6,
+    "wait": 0
+   },
+   {
+    "thread": "mpv/av:h264:df2",
+    "cpu": 5,
+    "user": 1,
+    "sys": 3,
+    "runs": 6,
+    "wait": 0
+   },
+   {
+    "thread": "mpv/av:h264:df1",
+    "cpu": 4,
+    "user": 1,
+    "sys": 3,
+    "runs": 7,
+    "wait": 0
+   },
+   {
+    "thread": "mpv/av:h264:df0",
+    "cpu": 4,
+    "user": 2,
+    "sys": 3,
+    "runs": 7,
+    "wait": 0
+   },
+   {
+    "thread": "sh/sh",
+    "cpu": 3,
+    "user": 0,
+    "sys": 3,
+    "runs": 2,
+    "wait": 0
+   },
+   {
+    "thread": "kworker/u16:4-events_unbound/kworker/u16:4-events_unbound",
+    "cpu": 2,
+    "user": 0,
+    "sys": 2,
+    "runs": 26,
+    "wait": 0
+   }
+  ],
+  "display": {
+   "seconds": 21,
+   "requests": 865.4285714285714,
+   "commands": {
+    "SET_SCANOUT": 23.999999999999993,
+    "RESOURCE_FLUSH": 23.999999999999993,
+    "CTX_ATTACH_RESOURCE": 95.99999999999996,
+    "CTX_DETACH_RESOURCE": 96.09523809523806,
+    "SUBMIT_3D": 625.3333333333333
+   },
+   "fences": {
+    "n": 48.095238095238095,
+    "meanMs": 0.31683663401273215,
+    "maxMs": 8.120000004768372,
+    "heldMs": 20.685476209436143,
+    "behindMs": 5.327142865884872,
+    "fullMs": 0,
+    "heldMax": 6,
+    "toGpuMs": 1.213317144484747,
+    "toGpuMaxMs": 9.294921875,
+    "backMs": 0.020736225532705647,
+    "backMaxMs": 7.71484375
+   },
+   "flushes": 24,
+   "submits": 625.3333333333334,
+   "submitKB": 403.36346726190476,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 9.455714268343788,
+   "draws": 24,
+   "renderer": {
+    "seconds": 21,
+    "busyMs": 8.572142812467757,
+    "submitMs": 8.185952369655881,
+    "drawMs": 0.5380952443395343,
+    "presents": 24,
+    "glDraws": 24,
+    "commands": 552,
+    "uploadKB": 34141.40625,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "shareRefreshes": 24,
+    "shareMs": 1.7959523626736231,
+    "importBinds": 48,
+    "importMade": 0,
+    "importPictures": 48,
+    "importKB": 14411.25,
+    "importMs": 5.0635714289687925,
+    "programs": 4,
+    "errors": 0,
+    "video": {
+     "frames": 24,
+     "decoded": 24,
+     "dropped": 0,
+     "errors": 0,
+     "latencyMs": 2.9385416667967563,
+     "latencyMaxMs": 6.919999986886978,
+     "writeMs": 0.24445436433667228,
+     "ahead": 0,
+     "maxWaitMs": 0
+    },
+    "venus": {
+     "polls": 2381.5238095238096,
+     "gapMs": 0.08542123562000839,
+     "gapMaxMs": 8.484999984502792,
+     "submits": 360,
+     "doneMs": 0.6990271166715988,
+     "doneMaxMs": 8.134999990463257,
+     "orderMs": 0.007106481299356178,
+     "nudges": 101.52380952380952,
+     "fences": 192,
+     "fenceMs": 0.7388640873370662,
+     "fenceMaxMs": 9.180000007152557,
+     "turnMs": 41.58833315542766,
+     "ticks": 2508.9523809523807,
+     "ticksBySecond": [
+      2731,
+      2507,
+      2481,
+      2478,
+      2407,
+      2328,
+      2611,
+      2468,
+      2459,
+      2656,
+      2485,
+      2519,
+      2577,
+      2320,
+      2478,
+      2531,
+      2438,
+      2524,
+      2480,
+      2555,
+      2655
+     ],
+     "pollsBySecond": [
+      2446,
+      2389,
+      2425,
+      2414,
+      2383,
+      2392,
+      2360,
+      2333,
+      2340,
+      2453,
+      2345,
+      2411,
+      2379,
+      2339,
+      2386,
+      2377,
+      2384,
+      2408,
+      2305,
+      2395,
+      2348
+     ],
+     "cmds": {
+      "ring": 3480,
+      "queue": 528.7142857142857,
+      "nested": 0,
+      "replies": 48,
+      "idles": 48.714285714285715,
+      "notifies": 240.71428571428572
+     },
+     "calls": {
+      "vkSubmitVirtqueueSeqnoMESA@queue": 288,
+      "vkWaitRingSeqnoMESA@queue": 192,
+      "vkNotifyRingMESA@queue": 48.7,
+      "vkGetMemoryResourcePropertiesMESA": 48
+     },
+     "doneMsBySecond": [
+      0.811,
+      0.706,
+      0.679,
+      0.65,
+      0.652,
+      0.653,
+      0.784,
+      0.762,
+      0.682,
+      0.605,
+      0.745,
+      0.675,
+      0.731,
+      0.677,
+      0.667,
+      0.707,
+      0.614,
+      0.667,
+      0.776,
+      0.68,
+      0.757
+     ],
+     "perSubmit": {
+      "encodeMs": 0.14833406410370653,
+      "submitCallMs": 0.005246345036559635,
+      "uploads": 0.34108187134502926,
+      "uploadKB": 1.1,
+      "readbacks": 0,
+      "passes": 0.26666666666666666,
+      "draws": 0.26666666666666666,
+      "bindGroups": 0.5333333333333333,
+      "withPass": 0.26666666666666666,
+      "withPassDoneMs": 0.9076151317639047,
+      "withPassDoneMsBySecond": [
+       0.913,
+       0.85,
+       0.9,
+       0.911,
+       0.866,
+       0.925,
+       0.859,
+       0.816,
+       1.058,
+       0.913,
+       0.943,
+       0.856,
+       0.824,
+       0.975,
+       0.828,
+       0.897,
+       0.975,
+       0.906,
+       1.029
+      ]
+     }
+    }
+   },
+   "vm": {
+    "seconds": 20.995395000010728,
+    "Msteps": 91.198312,
+    "irqs": 2948,
+    "exceptions": {
+     "0x0": 2,
+     "0x15": 9746,
+     "0x20": 64,
+     "0x24": 294,
+     "0x25": 19
+    },
+    "tlbMisses": 99706,
+    "tlbFlushes": 903,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 0.898525
+   }
+  }
+ },
+ "slow": []
+}

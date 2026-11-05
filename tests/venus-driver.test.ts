@@ -370,6 +370,9 @@ for (const [scenario, what] of [
   ['texelStorage', 'storage buffers and texel buffers past WebGPU\'s storage buffers are refused at pipeline creation, not submitted'],
   // VK4 T21 (dEQP-VK's descriptorset_random.sets4): a group's texel buffers' parameters are one uniform binding.
   ['texelUniforms', 'nine uniform texel buffers beside four uniform buffers in one stage'],
+  // VK4 T22: a compute-only queue family, its queues the WebGPU queue's.
+  ['queuesTimeline', 'a held submit of the graphics queue runs once the compute queue signals what it waits for'],
+  ['queuesBinary', 'the compute queue\'s wait on a binary semaphore a held submit signals waits for it'],
   ['dynamicUniforms', 'as many dynamic uniform buffers as advertised beside the push buffer'],
   ['writtenShared', 'a pipeline\'s writes come back after another\'s widened variant bound the same set'],
   ['immutableSampler', 'a combined image sampler written with another sampler keeps its immutable one'],

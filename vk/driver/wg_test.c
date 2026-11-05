@@ -95,6 +95,9 @@ FN(CmdCopyQueryPoolResults);
 static VkInstance instance;
 static VkDevice dev;
 static VkQueue queue;
+/* A queue of the compute-only family (VK4 T22), and that family (UINT32_MAX: the device has none). */
+static VkQueue queue2;
+static uint32_t compute_family = UINT32_MAX;
 static VkFence fence;
 static uint8_t *pixels, *storage, *filled, *imported;
 static char error[256];
@@ -209,13 +212,26 @@ init(void)
    uint32_t n = 1;
    CHECK(EnumeratePhysicalDevices(instance, &n, &pdev));
    const float priority = 1;
-   const VkDeviceQueueCreateInfo qi = { .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueCount = 1,
-                                        .pQueuePriorities = &priority };
+   /* A queue of family 0, and one of a family with compute and without graphics where there is one (VK4 T22). */
+   PFN_vkGetPhysicalDeviceQueueFamilyProperties GetFamilies = (PFN_vkGetPhysicalDeviceQueueFamilyProperties)
+      vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceQueueFamilyProperties");
+   VkQueueFamilyProperties families[8];
+   uint32_t family_count = 8;
+   GetFamilies(pdev, &family_count, families);
+   for (uint32_t f = 0; f < family_count && compute_family == UINT32_MAX; f++)
+      if ((families[f].queueFlags & VK_QUEUE_COMPUTE_BIT) && !(families[f].queueFlags & VK_QUEUE_GRAPHICS_BIT))
+         compute_family = f;
+   const VkDeviceQueueCreateInfo qis[2] = {
+      { .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueCount = 1, .pQueuePriorities = &priority },
+      { .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueFamilyIndex = compute_family, .queueCount = 1,
+        .pQueuePriorities = &priority },
+   };
    /* wgt_import's: dma-buf memory and the LINEAR modifier. */
    const char *exts[] = { "VK_KHR_external_memory_fd", "VK_EXT_external_memory_dma_buf",
                           "VK_EXT_image_drm_format_modifier", "VK_EXT_provoking_vertex", "VK_EXT_transform_feedback" };
-   const VkDeviceCreateInfo di = { .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .queueCreateInfoCount = 1,
-                                   .pQueueCreateInfos = &qi, .enabledExtensionCount = 5,
+   const VkDeviceCreateInfo di = { .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+                                   .queueCreateInfoCount = compute_family == UINT32_MAX ? 1 : 2,
+                                   .pQueueCreateInfos = qis, .enabledExtensionCount = 5,
                                    .ppEnabledExtensionNames = exts };
    CHECK(CreateDevice(pdev, &di, NULL, &dev));
 #define DLOAD(name) name = (PFN_vk##name)GetDeviceProcAddr(dev, "vk" #name)
@@ -233,6 +249,8 @@ init(void)
    DLOAD(GetPipelineCacheData); DLOAD(CreateQueryPool); DLOAD(DestroyQueryPool); DLOAD(CmdResetQueryPool);
    DLOAD(CmdBeginQuery); DLOAD(CmdEndQuery); DLOAD(CmdCopyQueryPoolResults);
    GetDeviceQueue(dev, 0, 0, &queue);
+   if (compute_family != UINT32_MAX)
+      GetDeviceQueue(dev, compute_family, 0, &queue2);
    return 0;
 }
 
@@ -4935,6 +4953,78 @@ t7_addresses(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkComma
    return 0;
 }
 
+/*
+ * VK4 T22, wgt_misc's scenarios 92 and 93: a queue of family 0 and one of the compute-only family, over one WebGPU queue.
+ * `cmd` (family 0's) copies 64 bytes of 0x33 to `out` (0xee, written by the host) at 0; family 1's command buffer copies
+ * `out`'s [0, 64) to [64, 128), waiting on a binary semaphore `cmd`'s submit signals, `misc.fence` its submit's. `cmd`'s
+ * submit waits for a timeline value:
+ * 92: signalled by a submit on the compute queue before family 1's copy: it ran only behind the held submit, which waits
+ *     for it (every submit was held behind a held one, whatever its queue).
+ * 93: signalled by the host after both are submitted: the copy waits for its binary semaphore's held signal (with one
+ *     order a queue, nothing else held it back).
+ * 0x33 at [0, 128) of `out` both ways.
+ */
+static int
+two_queues(uint32_t scenario, VkCommandBuffer cmd, VkBuffer out)
+{
+   if (compute_family == UINT32_MAX) {
+      snprintf(error, sizeof(error), "no queue family with compute and without graphics");
+      return 1;
+   }
+   PFN_vkCmdCopyBuffer CmdCopyBuffer = (PFN_vkCmdCopyBuffer)GetDeviceProcAddr(dev, "vkCmdCopyBuffer");
+   PFN_vkCreateSemaphore CreateSemaphore = (PFN_vkCreateSemaphore)GetDeviceProcAddr(dev, "vkCreateSemaphore");
+   PFN_vkSignalSemaphore SignalSemaphore = (PFN_vkSignalSemaphore)GetDeviceProcAddr(dev, "vkSignalSemaphore");
+   const VkCommandPoolCreateInfo cpo = { .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+                                         .queueFamilyIndex = compute_family };
+   VkCommandPool pool;
+   CHECK(CreateCommandPool(dev, &cpo, NULL, &pool));
+   VkCommandBuffer copy;
+   const VkCommandBufferAllocateInfo cbi = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                                             .commandPool = pool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                                             .commandBufferCount = 1 };
+   CHECK(AllocateCommandBuffers(dev, &cbi, &copy));
+   const VkCommandBufferBeginInfo begin = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+   CHECK(BeginCommandBuffer(copy, &begin));
+   CmdCopyBuffer(copy, out, out, 1, &(VkBufferCopy){ 0, 64, 64 });
+   CHECK(EndCommandBuffer(copy));
+   const VkSemaphoreTypeCreateInfo type = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+                                            .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE };
+   const VkSemaphoreCreateInfo tci = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = &type };
+   const VkSemaphoreCreateInfo bci = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+   VkSemaphore timeline, binary;
+   CHECK(CreateSemaphore(dev, &tci, NULL, &timeline));
+   CHECK(CreateSemaphore(dev, &bci, NULL, &binary));
+   const uint64_t one = 1, none = 0;
+   const VkPipelineStageFlags stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+   /* Family 0's copy: waits for the timeline's 1, signals the binary semaphore. */
+   const uint64_t waits0[1] = { one }, signals0[1] = { none };
+   const VkTimelineSemaphoreSubmitInfo t0 = { .sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+                                              .waitSemaphoreValueCount = 1, .pWaitSemaphoreValues = waits0,
+                                              .signalSemaphoreValueCount = 1, .pSignalSemaphoreValues = signals0 };
+   const VkSubmitInfo s0 = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .pNext = &t0, .waitSemaphoreCount = 1,
+                             .pWaitSemaphores = &timeline, .pWaitDstStageMask = &stage, .commandBufferCount = 1,
+                             .pCommandBuffers = &cmd, .signalSemaphoreCount = 1, .pSignalSemaphores = &binary };
+   CHECK(QueueSubmit(queue, 1, &s0, VK_NULL_HANDLE));
+   /* The timeline's 1 from the compute queue. */
+   const VkTimelineSemaphoreSubmitInfo t1 = { .sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+                                              .signalSemaphoreValueCount = 1, .pSignalSemaphoreValues = &one };
+   const VkSubmitInfo s1 = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .pNext = &t1, .signalSemaphoreCount = 1,
+                             .pSignalSemaphores = &timeline };
+   if (scenario == 92)
+      CHECK(QueueSubmit(queue2, 1, &s1, VK_NULL_HANDLE));
+   /* The compute queue's copy, after the binary semaphore. */
+   const VkSubmitInfo s2 = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .waitSemaphoreCount = 1,
+                             .pWaitSemaphores = &binary, .pWaitDstStageMask = &stage, .commandBufferCount = 1,
+                             .pCommandBuffers = &copy };
+   CHECK(QueueSubmit(queue2, 1, &s2, misc.fence));
+   if (scenario == 93) {
+      const VkSemaphoreSignalInfo signal = { .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, .semaphore = timeline,
+                                             .value = 1 };
+      CHECK(SignalSemaphore(dev, &signal));
+   }
+   return 0;
+}
+
 EXPORT int
 wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
 {
@@ -4968,7 +5058,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
    CHECK(AllocateCommandBuffers(dev, &cbi, &cmd));
    const VkCommandBufferBeginInfo begin = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
    CHECK(BeginCommandBuffer(cmd, &begin));
-   if (scenario != 3 && scenario != 4)
+   if (scenario == 92 || scenario == 93)
+      memset(misc.map, 0xee, 4096); /* not a fill: the other queue's copy may run first, if it is wrong */
+   else if (scenario != 3 && scenario != 4)
       CmdFillBuffer(cmd, out, 0, VK_WHOLE_SIZE, 0xeeeeeeee);
    if (scenario == 0) {
       VkBuffer src, local;
@@ -5065,6 +5157,11 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       if (buffer(4096, both, true, &misc13.src, (void **)&misc13.bytes))
          return 1;
       memset(misc13.bytes, 0x11, 64);
+      CmdCopyBuffer(cmd, misc13.src, out, 1, &(VkBufferCopy){ 0, 0, 64 });
+   } else if (scenario == 92 || scenario == 93) {
+      if (buffer(4096, both, true, &misc13.src, (void **)&misc13.bytes))
+         return 1;
+      memset(misc13.bytes, 0x33, 64);
       CmdCopyBuffer(cmd, misc13.src, out, 1, &(VkBufferCopy){ 0, 0, 64 });
    } else if (scenario == 8) {
       PFN_vkDestroyPipeline DestroyPipeline = (PFN_vkDestroyPipeline)GetDeviceProcAddr(dev, "vkDestroyPipeline");
@@ -5971,6 +6068,11 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       }
    }
    CHECK(EndCommandBuffer(cmd));
+   if (scenario == 92 || scenario == 93) {
+      if (two_queues(scenario, cmd, out))
+         return 1;
+      return 0;
+   }
    if (scenario == 13 || scenario == 19) {
       PFN_vkCreateSemaphore CreateSemaphore = (PFN_vkCreateSemaphore)GetDeviceProcAddr(dev, "vkCreateSemaphore");
       PFN_vkSignalSemaphore SignalSemaphore = (PFN_vkSignalSemaphore)GetDeviceProcAddr(dev, "vkSignalSemaphore");

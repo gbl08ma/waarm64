@@ -190,9 +190,15 @@ struct wg_queue {
    struct vk_queue vk;
 };
 
+/* The queue families (VK4 T22): graphics, compute and transfer; compute and transfer; transfer. Each has one queue,
+ * and every queue is the WebGPU device's one queue: one order of submits, in which ownership transfers between the
+ * families are no-ops. */
+#define WG_QUEUE_FAMILIES 3
+
 struct wg_device {
    struct vk_device vk;
-   struct wg_queue queue;
+   struct wg_queue queues[WG_QUEUE_FAMILIES]; /* of the families the device was made with, `queue_count` of them */
+   uint32_t queue_count;
    bool padded_views;   /* a view of a padded image was made: draws look for them (wg_cmd.c `program_keys`) */
    /* Host-visible memories (their writes are uploaded at each submit). */
    struct list_head host_memories;
@@ -204,8 +210,8 @@ struct wg_device {
    struct list_head shared_words;
    /* Submits whose work isn't done yet, oldest first (struct wg_submit). */
    struct list_head pending;
-   /* Submits held for a timeline value nothing has signalled or will signal yet (wg_cmd.c `struct held`), oldest
-    * first: replayed in order once their waits are met. */
+   /* Submits held for a timeline value nothing has signalled or will signal yet, or for a binary semaphore a held submit
+    * signals (wg_cmd.c `struct held`), oldest first: each queue's replayed in its order once their waits are met. */
    struct list_head held;
    /* The window's pages written since this device last uploaded (a bit each; wg_cmd.c `take_pages`: the write-watch is
     * the window's, so each look's pages go to every device), with the words [pages_lo, pages_hi) that may hold bits;
@@ -682,6 +688,8 @@ uint32_t wg_render_pipeline_premade(struct wg_program *p, const struct wg_pipeli
 void wg_pipeline_premake(struct wg_device *dev, VkPipeline pipeline, const VkGraphicsPipelineCreateInfo *info);
 void wg_pipeline_premake_finish(struct wg_device *dev);
 extern bool wg_premake_off;
+/* The queue families advertised (glue.c `venus_queue_families`; the page's `?gpu=vkqueues=`), WG_QUEUE_FAMILIES by default. */
+extern uint32_t wg_queue_families;
 /* WebGPU's vertex buffers for a draw: Vulkan's binding b is slot b, except that an attribute reaching past its
  * binding's stride (Vulkan allows offsets up to maxVertexInputAttributeOffset, WebGPU wants offset + size within the
  * stride) reads a slot of its own, a free one, bound to the same buffer `base` bytes further. A pulled binding

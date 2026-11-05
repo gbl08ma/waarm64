@@ -759,10 +759,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (`bench/vulkan/results/vk2/l5/deqp/`). The cases that fail stay out of `tests/deqp/vk.txt`:
   - **Not advertised, by what dEQP-VK asks** (the census of 2026-11-05, bench/vulkan/REPORT.md "VK4: the census
     again": 75% of the sample not supported on either host, against 0.2% of the M4's supported cases failing; its
-    reasons by `census.ts --reasons`): a queue family with compute and without graphics (2,525, 20%), formats
+    reasons by `census.ts --reasons`; a queue family with compute and without graphics, 2,525 of them, is VK4 T22's): formats
     (3,681 reasons name one), `VK_KHR_maintenance5`/`6`/`8`, min/max filtering, multi-draw, depth and stencil resolve
     modes, what reads its own attachment, writable storage in the vertex stage, mutable descriptors, 3D ASTC: each a
-    task of VK4-KICKOFF.md's T22–T35. No task: protected memory, cooperative matrices, ray tracing, mesh shaders, tile
+    task of VK4-KICKOFF.md's T23–T35. No task: protected memory, cooperative matrices, ray tracing, mesh shaders, tile
     images, fragment density, descriptor buffers, sparse (~1,600 of the sample) and pipeline statistics queries (188).
   - **`api.info.image_format_properties2.*` of the YCbCr formats time out** (VK4 T1's "crash" of `r12x4_unorm_pack16`,
     VK4 T2): with `DISJOINT` in its create flags the case makes ~340,000 synchronous queries, ~0.1 ms each through
@@ -833,6 +833,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     fail there only and stay out of `tests/deqp/vk.txt`, which SwiftShader runs. Lavapipe couldn't be put under Chromium
     to tell SwiftShader from Dawn's Vulkan backend: `bench/vulkan/nvidia.sh` `VK2_STEPS=t18` asks NVIDIA, in the next
     batch of the user's runs. Not looked for in SwiftShader's sources.
+  - **SwiftShader's compressed formats sampled in a compute stage** (VK4 T22, `results/vk4/t22/`): with the compute queue
+    family, `pipeline.monolithic.image` and `image_view`'s `*_compute` cases ran: on SwiftShader every one of a
+    compressed format fails (123 of the sample: ASTC, ETC2 and EAC, whole blocks or not; "Image mismatch"), where
+    their fragment twins pass there and the M4 passes them all. Not looked into (the translator prints the same sampling
+    for both stages but the compute stage's explicit LOD). Also SwiftShader's alone: the `count_8` compute cases bind 8
+    storage images (refused at their pipeline's creation, past the 4 advertised there, Vulkan's minimum; dEQP doesn't
+    check the limit; the M4 has 8).
   - **Shaders**: texture offsets that really aren't constants (`*_pcoffset`, 2,760 cases, need `maintenance8`, not
     advertised); derivatives in non-uniform control flow
     (`glsl.derivate.*dynamic_if`); `umulExtended`. From the out-of-context review of the translator (VK3 L4f left them):
@@ -931,7 +938,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **The M4's own failures** (out of `tests/deqp/vk.txt` until they're understood; none is what VK4 T12 fixed there,
     `generate_mipmaps.from_previous_level`): `fragment_operations.early_fragment.discard_no_early_fragment_tests_depth` (an
     occlusion count of 496 where 1,024 is right), `texture.mipmap.3d.projected.nearest_linear_mirror`,
-    `texture.mipmap.cubemap.projected.nearest_linear_linear_repeat`; 11 copies to or from `e5b9g9r9_ufloat_pack32`, compared
+    `texture.mipmap.cubemap.projected.nearest_linear_linear_repeat`, `texture.mipmap.cubemap.basic.nearest_nearest_linear_clamp_compute`
+    (VK4 T22's, the compute queue's: its fragment twin passes); 11 copies to or from `e5b9g9r9_ufloat_pack32`, compared
     bitwise (Metal looks to canonicalize the format's bits on upload: unconfirmed; a texture of `r32uint` would keep them,
     and no program depends on non-canonical bits); 4 `depth_stencil_resolve.*_stencil_samplemask` (the stencil reads 255
     where 1 is right). (`descriptorset_random.sets4`'s were bindings past WebGPU's, on SwiftShader too: "Texel buffers"

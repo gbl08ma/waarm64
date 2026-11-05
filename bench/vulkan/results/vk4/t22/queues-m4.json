@@ -1,0 +1,86 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "157.0.8103.38",
+ "stride": 50,
+ "offset": 0,
+ "adapter": "apple metal-3",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 2590,
+ "seconds": 233.676058041,
+ "pipelines": {
+  "pipelines": 3168,
+  "ready": 3168,
+  "readyMs": 264689.93499955535,
+  "deferred": 3541,
+  "deferredMs": 379719.3000008762,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 1974,
+  "translateMs": 786.1900000000122,
+  "cacheHits": 1867,
+  "cacheMisses": 1681,
+  "cacheStores": 1681,
+  "cacheBytes": 2392629,
+  "cacheHeld": 16984299,
+  "cacheEntries": 1681
+ },
+ "counts": {
+  "Fail": 1,
+  "NotSupported": 777,
+  "Pass": 1812
+ },
+ "notPassed": [
+  "dEQP-VK.texture.mipmap.cubemap.basic.nearest_nearest_linear_clamp_compute Fail"
+ ],
+ "slowest": [
+  "dEQP-VK.texture.explicit_lod.2d.sizes.32x32_linear_linear_mipmap_linear_repeat_compute Pass 4",
+  "dEQP-VK.pipeline.monolithic.image.suballocation.sampling_type.separate.view_type.cube_array.format.r5g5b5a1_unorm_pack16.count_8.size.32x32_array_of_36_compute Pass 2",
+  "dEQP-VK.memory.pipeline_barrier.compute.transfer_src_transfer_dst.1048576 Pass 2",
+  "dEQP-VK.ubo.random.16bit.all_shared_buffer.14 Pass 1",
+  "dEQP-VK.ubo.3_level_array.std430.mat3.compute Pass 1",
+  "dEQP-VK.texture.filtering.3d.formats.r5g5b5a1_unorm.r5g5b5a1_unorm_nearest_mipmap_nearest_compute Pass 1",
+  "dEQP-VK.texture.filtering.3d.combinations.nearest_mipmap_nearest.nearest.mirrored_repeat.mirror_clamp_to_edge.clamp_to_edge_compute Pass 1",
+  "dEQP-VK.texture.filtering.3d.combinations.nearest_mipmap_linear.linear.repeat.mirror_clamp_to_edge.clamp_to_edge_compute Pass 1",
+  "dEQP-VK.texture.filtering.3d.combinations.nearest.linear.clamp_to_border.mirror_clamp_to_edge.clamp_to_edge_compute Pass 1",
+  "dEQP-VK.texture.filtering.3d.combinations.linear_mipmap_linear.nearest.mirrored_repeat.mirror_clamp_to_edge.clamp_to_edge_compute Pass 1"
+ ],
+ "last": "dEQP-VK.ubo.random.all_shared_buffer.14 Pass 0dEQP-VK.ubo.random.nested_structs_arrays_compute.14 Pass 0dEQP-VK.ubo.random.scalar.6 Pass 0",
+ "kernel": [
+  "[    0.963744] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    0.963774] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    0.963800] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    0.963820] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    0.963844] psci_checker: Could not start suspend tests on any CPU",
+  "[    9.715500] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   22.512430] coredump: 423(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 181.8,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 24.8,
+  "arenaHighMiB": 49.6
+ },
+ "detail": [
+  "== dEQP-VK.texture.mipmap.cubemap.basic.nearest_nearest_linear_clamp_compute",
+  "<Text>u_sampler = 0</Text>",
+  "<Text>u_colorScale = (1, 1, 1, 1)</Text>",
+  "<Text>u_colorBias = (0, 0, 0, 0)</Text>",
+  "<Text>u_sampler = 0</Text>",
+  "<Text>u_colorScale = (1, 1, 1, 1)</Text>",
+  "<Text>u_colorBias = (0, 0, 0, 0)</Text>",
+  "<Text>u_sampler = 0</Text>",
+  "<Text>u_colorScale = (1, 1, 1, 1)</Text>",
+  "<Text>u_colorBias = (0, 0, 0, 0)</Text>",
+  "<Text>u_sampler = 0</Text>",
+  "<Text>u_colorScale = (1, 1, 1, 1)</Text>",
+  "<Text>u_colorBias = (0, 0, 0, 0)</Text>"
+ ],
+ "warnings": {
+  "venus: the WebGPU device's subgroups are wrong in divergent control flow: subgroups of one invocation": 1,
+  "venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies": 1
+ },
+ "notPassedTrimmed": "NotSupported cases left out"
+}
