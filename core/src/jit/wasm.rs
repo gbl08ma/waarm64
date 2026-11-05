@@ -181,8 +181,10 @@ impl Code {
         self.b.extend_from_slice(&[0xfe, 0x03, 0x00]);
         self
     }
+    /// A local's index as a placeholder byte (up to 255), which
+    /// [`Code::compact_locals`] renumbers to one under 128 (one byte of LEB128).
     fn local(&mut self, op: u8, i: u32) -> &mut Self {
-        assert!(i < 128);
+        assert!(i < 256);
         self.b.push(op);
         self.locals.push(self.b.len());
         self.b.push(i as u8);
@@ -214,11 +216,11 @@ impl Code {
     /// declared local costs Liftoff a zero-initialization per call). Returns
     /// the declarations.
     pub fn compact_locals(&mut self, params: &[u32], ty: impl Fn(u32) -> u8) -> Vec<(u32, u8)> {
-        let mut used = [false; 128];
+        let mut used = [false; 256];
         for &p in &self.locals {
             used[self.b[p] as usize] = true;
         }
-        let mut map = [0u8; 128];
+        let mut map = [0u8; 256];
         for (k, &p) in params.iter().enumerate() {
             used[p as usize] = false;
             map[p as usize] = k as u8;
@@ -227,7 +229,7 @@ impl Code {
         let mut next = params.len() as u32;
         for t in [I64, I32, F64, V128] {
             let n = next;
-            for i in 0..128 {
+            for i in 0..256 {
                 if used[i as usize] && ty(i) == t {
                     map[i as usize] = next as u8;
                     next += 1;
@@ -237,6 +239,7 @@ impl Code {
                 decls.push((next - n, t));
             }
         }
+        assert!(next <= 128, "{next} locals: their indices take one byte");
         for &p in &self.locals {
             self.b[p] = map[self.b[p] as usize];
         }
@@ -245,6 +248,13 @@ impl Code {
     pub fn call(&mut self, f: u32) -> &mut Self {
         self.b.push(0x10);
         uleb(&mut self.b, f as u64);
+        self
+    }
+    /// An indirect call of type `ty` through table 0.
+    pub fn call_indirect(&mut self, ty: u32) -> &mut Self {
+        self.b.push(0x11);
+        uleb(&mut self.b, ty as u64);
+        self.b.push(0);
         self
     }
     /// An indirect tail call of type `ty` through table 0.

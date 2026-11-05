@@ -391,3 +391,42 @@ test('the blocks of a batch that static edges join are one forward region, calls
   assert.deepEqual([regions, blocks], [2n, 7n], 'two functions: H with both calls, f and what follows the second; what follows the first');
   assert.ok(jitSteps > 1_500_000n && dispatches < 20n, `${dispatches} dispatches for ${jitSteps} steps in JIT code`);
 });
+
+// Guest calls as host calls (docs/jit.md "Calls"): a BL is a wasm `call` of its callee, and the
+// callee's `ret` a wasm `return` to the block after the call. A loop calls f (a leaf), g (which
+// recurses 100 deep, past the host calls' depth limit, keeping X30 on the stack) and h (which
+// returns elsewhere, to M, as a longjmp would: the caller finds the PC isn't its continuation):
+//   0x1000 H: bl f; add x6, x6, #1; mov x0, #100; bl g; bl h; add x7, x7, #1 (skipped)
+//   0x1018 M: subs x5, x5, #1; b.ne H; brk
+//   0x1024 f: add x3, x3, #1; ret
+//   0x102c g: stp x29, x30, [sp, #-16]!; subs x0, x0, #1; b.eq 1f; bl g
+//          1: add x4, x4, #1; ldp x29, x30, [sp], #16; ret
+//   0x1048 h: adr x9, M; ret x9
+// Each block compiled alone (a batch of 1) makes every call a host call; batches of 16 put the
+// blocks after the calls in their callers' regions.
+const CALLS = [0x94000009, 0x910004c6, 0xd2800c80, 0x94000008, 0x9400000e, 0x910004e7, 0xf10004a5, 0x54ffff21, 0xd4200000, 0x91000463, 0xd65f03c0, 0xa9bf7bfd, 0xf1000400, 0x54000040, 0x97fffffd, 0x91000484, 0xa8c17bfd, 0xd65f03c0, 0x10fffe89, 0xd65f0120];
+
+function calls(threshold: number, batch: number, check: number) {
+  const { ex, memory } = core(true);
+  const e = ex as unknown as Exports & Record<string, (...a: (number | bigint)[]) => number | bigint>;
+  const base = memory.grow(1) * 65536;
+  new Uint32Array(memory.buffer, base + 0x1000, CALLS.length).set(CALLS);
+  const v = e.jit_new(threshold, batch, 4096, check, 1000) as number;
+  const x = new BigUint64Array(memory.buffer, v, 33);
+  [x[5], x[31], x[32]] = [300n, 0xf000n, 0x1000n];
+  const exit = e.vcpu_new() as number;
+  const done = e.jit_run_exit(v, e.mem_new(base, 65536n), 100_000_000n, exit) as bigint;
+  assert.equal(new BigUint64Array(memory.buffer, exit, 1)[0], 6n); // brk
+  const st = new BigUint64Array(memory.buffer, e.jit_stats(v) as number, 19);
+  return { done, x3: x[3], x4: x[4], x6: x[6], x7: x[7], sp: x[31], dispatches: st[5], jitSteps: st[4] };
+}
+
+test('guest calls are host calls: leaf, deep recursion and a return elsewhere', () => {
+  const { dispatches: _d, jitSteps: _j, ...want } = calls(0xffff_ffff, 1, 0);
+  assert.deepEqual([want.x3, want.x4, want.x6, want.x7, want.sp], [300n, 30_000n, 300n, 0n, 0xf000n]);
+  for (const [threshold, batch, check] of [[2, 1, 0], [2, 16, 0], [0, 1, 1]]) {
+    const { dispatches, jitSteps, ...jit } = calls(threshold, batch, check);
+    assert.deepEqual(jit, want, `threshold ${threshold}, batch ${batch}, check ${check}`);
+    assert.ok(jitSteps > want.done / 2n, `${dispatches} dispatches for ${jitSteps} steps in JIT code`);
+  }
+});
