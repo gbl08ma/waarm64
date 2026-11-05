@@ -225,11 +225,11 @@ copy. Firefox and Safari have no such permission, so they rely on ways 2 and 3.
      editable and no `preventDefault` on the keydown.** Chrome fires `paste` at the canvas. Firefox fires it at
      `<body>`, not at the canvas: a listener on the canvas misses it, and one on the document catches it. So the
      page listens on the document and takes the event only while `document.activeElement` is the screen's
-     canvas. To confirm when it is built: that Firefox's event at `<body>` carries `clipboardData` as the
-     canvas's does in Chrome. The fallback, if it doesn't, is a hidden, focused `<textarea>` as the screen's key
-     sink. That works in both browsers: Firefox gave `string text/plain` with the text, and `file image/png`
-     (15300 B) for a copied image. The fallback costs moving the screen's key handling onto it, and it would
-     also bring composition input (IME) later.
+     canvas. Firefox's event at `<body>` carries the data (measured: `string text/plain` with the text, while
+     `document.activeElement` was the canvas). An image there is still to check. A hidden, focused `<textarea>`
+     as the screen's key sink isn't needed. It also works in both browsers (Firefox gave the text, and
+     `file image/png`, 15300 B, for a copied image), and it remains an option if composition input (IME) is
+     wanted later.
    - **What it can't do:** a paste from the guest's own menus gives no browser event. Without way 1, such a
      paste gets the guest's clipboard (the host's text from the last paste chord, or the guest's own last
      copy), unless the user sends the clipboard first with way 3.
