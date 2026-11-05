@@ -1,0 +1,9 @@
+{
+ "what": "createComputePipelineAsync of long_shader_bitwise_and's WGSL (target/vk/wgsl 5 of its GLSL, glslc -O; 372 KB) on the dev VM's headless Chromium 155.0.8059.84, SwiftShader; bench/results/local/t21-time.ts, ms",
+ "as printed before T21 (&& and ||)": 31578,
+ "booleans as & and |": 26446,
+ "& and |, Dawn's robustness off (allow_unsafe_apis,disable_robustness)": 26104,
+ "& and |, one u32 load a vec4 instead of four": 3148,
+ "& and |, no loads (the vec4 a value)": 111,
+ "the translator in the guest's run (translateMs)": 121
+}

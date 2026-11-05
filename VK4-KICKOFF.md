@@ -111,7 +111,11 @@ memory, cooperative matrices, ray tracing, mesh shaders, tile images, fragment d
 the sample's on the M4 (×100 for the whole list, roughly); each starts by running its reason's cases (`deqp-run.ts`'s
 `CASES`, from `census.ts --reasons`' examples or the sample's JSON) to see what they meet once advertised.
 
-- **T21. The census's failures and its new passes** (S): `descriptorset_random.sets4`'s two (a fragment stage's
+- **T21. The census's failures and its new passes** (done 2026-11-05: texel buffers' and word images' parameters one
+  uniform table a group (sets4's uniform buffers past 12), but sets4's 165 failures are all bindings past WebGPU's,
+  filed; the 16-bit normalized formats' resolves drawn (WebGPU doesn't resolve them: 438 multisampled cases pass on the
+  M4, none fail); long_shader_bitwise_and's 40 s are SwiftShader compiling 2,356 loads, booleans as `&` 16% off it,
+  filed; list +861. Left: backlog "Texel buffers", "SwiftShader compiles…") (S): `descriptorset_random.sets4`'s two (a fragment stage's
   output reads zeros; on SwiftShader too now, so CI's host can debug it), the M4's three multisampled `self_dep`
   passes of the snorm formats, SwiftShader's `ssbo.corner_case.long_shader_bitwise_and` past the watchdog (where its
   30 s go). The 861 sampled cases that pass on both hosts join `tests/deqp/vk.txt` (run as one list on SwiftShader

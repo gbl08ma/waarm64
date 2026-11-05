@@ -1,0 +1,66 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "155.0.8059.84",
+ "stride": 50,
+ "offset": 0,
+ "adapter": "google swiftshader",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 861,
+ "seconds": 95.430472586,
+ "pipelines": {
+  "pipelines": 683,
+  "ready": 683,
+  "readyMs": 24851.73000022769,
+  "deferred": 1210,
+  "deferredMs": 48181.09000048041,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 772,
+  "translateMs": 542.8550000000008,
+  "cacheHits": 1655,
+  "cacheMisses": 1037,
+  "cacheStores": 1037,
+  "cacheBytes": 1501566,
+  "cacheHeld": 11764015,
+  "cacheEntries": 1037
+ },
+ "counts": {
+  "Pass": 861
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-VK.api.info.image_format_properties2.2d.optimal.r12x4_unorm_pack16 Pass 10",
+  "dEQP-VK.draw.dynamic_rendering.partial_secondary_cmd_buff.instanced.draw_indexed_vk_primitive_topology_triangle_fan_multiview Pass 3",
+  "dEQP-VK.ssbo.phys.layout.3_level_unsized_array.scalar.row_major_mat3x4 Pass 2",
+  "dEQP-VK.ssbo.phys.layout.2_level_array.std430.row_major_mat4 Pass 2",
+  "dEQP-VK.ubo.single_basic_type.scalar.f16vec3.fragment Pass 1",
+  "dEQP-VK.ubo.2_level_array.scalar.mat2.both Pass 1",
+  "dEQP-VK.ssbo.phys.layout.unsized_nested_struct_array.per_block_buffer.std430_instance_array_comp_access_store_cols Pass 1",
+  "dEQP-VK.ssbo.phys.layout.single_nested_struct_array.single_buffer.std140_instance_array_comp_access Pass 1",
+  "dEQP-VK.ssbo.phys.layout.single_basic_type.std430.row_major_mediump_mat2x4_comp_access Pass 1",
+  "dEQP-VK.ssbo.phys.layout.random.scalar.10 Pass 1"
+ ],
+ "last": "dEQP-VK.ubo.single_basic_type.scalar.mediump.ivec2.fragment Pass 0dEQP-VK.ubo.single_basic_type.scalar.mediump.row_major_mat2x3.both Pass 0dEQP-VK.ubo.single_basic_type.scalar.mediump.vec2.fragment Pass 0",
+ "kernel": [
+  "[    1.147609] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    1.147659] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    1.147689] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    1.147709] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    1.147739] psci_checker: Could not start suspend tests on any CPU",
+  "[   12.502194] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   24.813524] coredump: 402(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 199.5,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 29.3,
+  "arenaHighMiB": 59.6
+ },
+ "detail": [],
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1
+ }
+}

@@ -31,6 +31,12 @@
 #define WGSL_PUSH_BINDING 998
 /* The device's address buffer's binding in group 3 (VK4 T7): physical pointers are words of it. */
 #define WGSL_ADDRESS_BINDING 996
+/* A group's parameter table (VK4 T21): the driver's two vec4s for each texel buffer and storage image as words of the
+ * group, a uniform buffer of vec4s where the resource at binding b has its parameters at b and b + 1 (b is a slot's,
+ * even). One uniform binding a group, however many of them: one each passed WebGPU's 12 (dEQP-VK's sets4). A slot's
+ * binding stays under it. */
+#define WGSL_TABLE_BINDING 994
+#define WGSL_TABLE_SIZE(binding) (16u * ((binding) + 2u))
 /* A vertex stage's draw parameters (BaseVertex, BaseInstance, DrawIndex: VK3 L7.5) are words of the push buffer at
  * this byte, past Vulkan's 128 bytes of push constants (the device's maxPushConstantsSize): a stage that reads them
  * reads its push constants from the push buffer too, and the driver writes them in each draw's place there. */

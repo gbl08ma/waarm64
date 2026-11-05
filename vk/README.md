@@ -139,9 +139,13 @@ the nearest level.
 
 **Texel buffers** (VK3 L6b): a texel buffer at slot s is its view's words, a storage buffer of `u32` at the slot's
 binding (read-only but written storage texel buffers, and as above in a dispatch that writes its memory elsewhere),
-and its view's parameters, a uniform buffer of two vec4s at the next binding (made with the `VkBufferView`,
+and its view's parameters, two vec4s of its group's **parameter table** (computed with the `VkBufferView`,
 `wg_texel_buffer_layout` in `wg_format.c`: the format's type, texel bytes and swizzle, each channel's width and first
-bit, the first texel's byte in the binding and the texel count). The format is the view's, so `texelFetch`,
+bit, the first texel's byte in the binding and the texel count). The table (VK4 T21) is one uniform buffer a group, at
+`WGSL_TABLE_BINDING` (994), whose vec4s b and b + 1 are the parameters of the resource at binding b, texel buffers' and
+storage images' as words; the driver writes a buffer of it with each bind group it makes (`param_table` in wg_cmd.c),
+released with the group, and slots' bindings stay under it. A uniform buffer a parameter each passed WebGPU's 12 with 12
+texel buffers in a stage (dEQP-VK's `descriptorset_random.sets4`). The format is the view's, so `texelFetch`,
 `imageLoad`, `imageStore` and the size queries print as calls of functions per binding (`wg_tb_load_g_b`,
 `wg_tb_store_g_b`, `wg_tb_size_g_b`) that decode and encode it from the parameters: unorm, snorm, uint, sint,
 uscaled, sscaled, 16- and 32-bit floats and the unsigned 11- and 10-bit ones; a texel past the count reads 0 and isn't
@@ -154,8 +158,8 @@ two past WebGPU's less the push buffer's binding (13 of 12) and the storage buff
 its stage's room is read as a read-only storage buffer (`lower_ubo_storage` in wgsl_nir.c turns its loads into SSBO
 loads, so it is `var<storage, read>` and its layout entry `read-only-storage`). The pipeline layout decides
 (wg_shader.c `fold_uniforms`), by the stages each binding's flags name, so every stage that sees a buffer reads it the
-same way: a stage's room is WebGPU's uniform buffers less one for the push buffer (counted always), its texel buffers'
-parameters and its dynamic uniform buffers (never folded: WebGPU's dynamic storage buffers are fewer); the rest, in
+same way: a stage's room is WebGPU's uniform buffers less one for the push buffer (counted always), one for each group
+with texel buffers or storage images (their parameter table: a storage image may be words) and its dynamic uniform buffers (never folded: WebGPU's dynamic storage buffers are fewer); the rest, in
 set and binding order, are storage (the set layouts' hash carries the stage flags, the shaders' keys with it).
 `maxDescriptorSetUniformBuffers` and the other set-wide limits are six times a stage's, as Vulkan's table of minimums is (VK4 R7): a set may spread its descriptors over stages, what one stage of a pipeline binds being held to a stage's.
 
@@ -457,7 +461,8 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   no bytes change on the way). A multisampled copy is WebGPU's own of a whole subresource, else draws shaded per sample
   (`sample_index`) reading the source's same sample, stencil by a draw a bit (`copyMultisampled`; multisampled images
   are sampled for it, so they carry `TEXTURE_BINDING`); within one image through a temporary texture. A resolve is
-  WebGPU's own of a whole level of one size, into a 2D texture, of a format it resolves; else a draw over the region
+  WebGPU's own of a whole level of one size, into a 2D texture, of a format it resolves (not the integer ones, the 32-bit
+  floats or texture-formats-tier1's 16-bit normalized ones, which render and multisample but don't resolve); else a draw over the region
   (`resolveByDraw`: the samples' average, or sample 0 of an integer format), for `vkCmdResolveImage` and for a render
   pass's attachment, which the pass's end resolves that way within its render area, stored whatever its store op, as
   depth's. Formats a multisampled copy can't cross (they differ other than by sRGB: bit patterns don't survive a draw)
@@ -561,15 +566,15 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   only asks the size of is the bound view's: the stage's own module takes `r32uint` (`formatless` on the resource),
   and every draw and dispatch takes a variant keyed by the view's format (a `wgsl_sampler_key` with `WGSL_IMAGE_KEY`,
   the image's index and the format), printed from the stage's kept NIR as if declared with it, a storage texture or
-  words as a declared format would be (`wg_program_variant` gives the variant's layout the same, words' parameters at
-  the next binding). Godot's post-processing writes such an image; vkd3d's UAV clears do too.
+  words as a declared format would be (`wg_program_variant` gives the variant's layout the same, words' parameters in
+  the group's table). Godot's post-processing writes such an image; vkd3d's UAV clears do too.
 - **Storage images as words** (VK4 T7, T11; `image_words` and `declare_word_images` in wgsl_print.c, `image_use` in
   wg_cmd.c). WGSL has no atomics on textures, and WebGPU's storage textures come one way for most formats: read-only and
   write-only in core or with `texture-formats-tier1`, read-write only for r32's and, with tier2, tier2's list; no format at all
   of tier1's without it. So a storage image a stage reaches by an atomic, or by an access its format has no texture for
   (`wgsl_image_as_words`: a load and a store in one stage, or any access of a tier1 format without tier1), is in that
-  stage its view's words: a storage buffer at its binding and the view's parameters (`view_word_params`: size, words
-  between rows and slices) a uniform buffer at the next, every load, store and size of that binding going through them
+  stage its view's words: a storage buffer at its binding and the view's parameters (`view_words`: size, words
+  between rows and slices) in its group's parameter table (above, "Texel buffers"), every load, store and size of that binding going through them
   (`wg_im_*`; a texel past the view is left alone and reads 0). The buffer holds the texels as Vulkan lays them out, and
   the format's encoding is printed from its `util_format_description`: normalized values clamped and rounded, integers cut
   to the channel, 16-bit and packed floats by hand from their bits (WGSL's `pack2x16float` is indeterminate past its range;
@@ -742,8 +747,8 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   workgroups looping over them. Host-visible buffers and counters are read back after the submit.
 - **Bindings past WebGPU's** (VK3 L7a, the reviews after L7; `wg_caps.c` "The bindings WebGPU takes", the one place
   that counts them): besides a descriptor's own binding, WebGPU binds the push buffer (a uniform buffer every stage
-  counts, dynamic in its layout), a texel buffer's two (a storage buffer and a uniform buffer, where Vulkan counts an
-  image), uniform buffers past a stage's room as storage, a YCbCr binding's other planes and an input attachment as
+  counts, dynamic in its layout), a texel buffer's words (a storage buffer, where Vulkan counts an image), a group's
+  parameter table (a uniform buffer, for its texel buffers and storage images as words), uniform buffers past a stage's room as storage, a YCbCr binding's other planes and an input attachment as
   textures, a capture's compute pass's three, and a split sampler's twin (below). The device advertises what fits
   whatever the program: each stage's uniform buffers less the push buffer's, all of WebGPU's dynamic uniform buffers
   (a layout with them all puts the push buffer on a dynamic storage binding, `wgsl_print_options.push_storage`; VK4 R7),
@@ -751,7 +756,7 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   uniform offset alignment the larger of the uniform and storage ones (a folded buffer is bound at it). What can't be
   advertised apart from what Vulkan counts with it (texel buffers beside a full count of storage buffers, input
   attachments beside 16 sampled images, more folded uniform buffers than the advertised two, binding numbers past
-  WebGPU's or on the push buffer's) is counted when a pipeline is made (`wg_bindings_fit`, after `program_create`):
+  WebGPU's or on the driver's, the parameter table's 994 and up) is counted when a pipeline is made (`wg_bindings_fit`, after `program_create`):
   a program that doesn't fit is refused, its stages drawing and dispatching nothing, the cause said ("wg: a shader
   didn't translate: the compute stage binds 11 storage buffers, past WebGPU's 10 (of them: 3 texel buffers'
   words)"), never an invalid submit (a `try/catch` can't catch WebGPU's validation, which is asynchronous). A

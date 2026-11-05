@@ -1,0 +1,59 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "155.0.8059.84",
+ "stride": 50,
+ "offset": 0,
+ "adapter": "google swiftshader",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 1,
+ "seconds": 39.75334057,
+ "pipelines": {
+  "pipelines": 1,
+  "ready": 0,
+  "readyMs": 0,
+  "deferred": 2,
+  "deferredMs": 0,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 1,
+  "translateMs": 121.14,
+  "cacheHits": 0,
+  "cacheMisses": 2,
+  "cacheStores": 2,
+  "cacheBytes": 120791,
+  "cacheHeld": 568503,
+  "cacheEntries": 2
+ },
+ "counts": {
+  "Pass": 1
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-VK.ssbo.corner_case.long_shader_bitwise_and Pass 38"
+ ],
+ "last": "dEQP-VK.ssbo.corner_case.long_shader_bitwise_and Pass 38",
+ "kernel": [
+  "[    1.141927] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    1.141972] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    1.141994] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    1.142030] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    1.142159] psci_checker: Could not start suspend tests on any CPU",
+  "[   12.482572] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   23.584394] coredump: 418(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 160.5,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 13.2,
+  "arenaHighMiB": 27.8
+ },
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1,
+  "virgl: fence 23 unanswered for 6 s (the guest's 3D waits behind it)": 1,
+  "venus: fence 2:1:2 unretired for 7 s (submits 18, GPU submits 0, completed 0, pending fences 1)": 1,
+  "virgl: fence 23 answered after 37 s": 1
+ }
+}

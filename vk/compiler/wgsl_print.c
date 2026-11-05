@@ -481,10 +481,26 @@ atomic_sign(struct ctx *c, nir_atomic_op op, bool *is_signed, bool *is_unsigned)
       failf(c, "signed and unsigned atomic min or max on one array");
 }
 
-/* A texel buffer (uniform or storage) at `index`: its words as a storage buffer there, and its view's parameters as a
- * uniform buffer at the next binding (the driver's, made with the VkBufferView: the format's layout, the first texel's
- * byte and the texel count). The format is the view's, known only when the descriptor is bound, so loads and stores
- * decode and encode it from the parameters (`wg_tb_*`). */
+/* The parameters of the resource at `index` (a texel buffer's, a storage image's as words): two vec4s of its group's
+ * table (WGSL_TABLE_BINDING), at its binding. */
+static void
+param_table(struct ctx *c, unsigned index)
+{
+   struct res_use *t = resource(c, (index >> 16) << 16 | WGSL_TABLE_BINDING, WGSL_UNIFORM);
+   t->r.size = MAX2(t->r.size, WGSL_TABLE_SIZE(index & 0xffff));
+}
+
+/* Its first or second vec4 (`i`). */
+static const char *
+param(struct ctx *c, const struct wgsl_resource *r, unsigned i)
+{
+   return fmt(c, "r%u_%u[%uu]", r->group, WGSL_TABLE_BINDING, r->binding + i);
+}
+
+/* A texel buffer (uniform or storage) at `index`: its words as a storage buffer there, and its view's parameters in
+ * its group's table (the driver's, from the VkBufferView: the format's layout, the first texel's byte and the texel
+ * count). The format is the view's, known only when the descriptor is bound, so loads and stores decode and encode it
+ * from the parameters (`wg_tb_*`). */
 static void
 texel_buffer(struct ctx *c, unsigned index, bool writes)
 {
@@ -492,15 +508,14 @@ texel_buffer(struct ctx *c, unsigned index, bool writes)
    r->texel = true;
    if (writes)
       r->r.kind = WGSL_STORAGE, r->r.written = true;
-   struct res_use *p = resource(c, index + 1, WGSL_UNIFORM);
-   p->r.size = 32;
+   param_table(c, index);
    c->uses_texel_buffers = true;
 }
 
 /* WGSL has no atomics on textures, and WebGPU binds most formats' storage textures one way or, without tier1, not at all,
  * so a storage image an atomic reaches, or one this stage accesses in a way WebGPU's texture of its format doesn't allow,
  * is in that stage its view's words: a storage buffer at its binding (of atomics where the stage writes it: a store under
- * a word shares it with other invocations' texels) and at the next the view's parameters, a uniform buffer of two vec4s
+ * a word shares it with other invocations' texels) and the view's parameters in its group's table, two vec4s
  * (p0 = (width, height, depth or layers, words between rows), p1.x = words between slices): the driver's, whose replay
  * keeps the words and the image's textures in step (vk/README.md "Storage images as words"). Every access of that
  * binding in the stage goes through them, the format's encoding printed from its description (declare_word_images). */
@@ -598,8 +613,7 @@ image_words(struct ctx *c, unsigned index, nir_intrinsic_instr *intr)
    r->r.dim = image_dim(c, nir_intrinsic_image_dim(intr), nir_intrinsic_image_array(intr));
    r->r.format = w < 0 ? nir_intrinsic_format(intr) : c->word_image_format[w];
    r->r.formatless = is_formatless(c, index);
-   struct res_use *p = resource(c, index + 1, WGSL_UNIFORM);
-   p->r.size = 32;
+   param_table(c, index);
    return r;
 }
 
@@ -1151,19 +1165,19 @@ declare_texel_buffers(struct ctx *c)
       if (!c->res[i].texel)
          continue;
       const struct wgsl_resource *r = &c->res[i].r;
-      const char *words = fmt(c, "r%u_%u", r->group, r->binding), *params = fmt(c, "r%u_%u", r->group, r->binding + 1);
+      const char *words = fmt(c, "r%u_%u", r->group, r->binding), *p0 = param(c, r, 0), *p1 = param(c, r, 1);
       const char *name = fmt(c, "%u_%u", r->group, r->binding);
       /* A buffer an atomic reaches is of atomics, its loads and stores too. */
       const char *load = r->atomic ? (c->res[i].signed_atomic ? "bitcast<u32>(atomicLoad(&" : "(atomicLoad(&") : "(";
       const char *load_end = r->atomic ? "))" : ")";
-      line(c, "fn wg_tb_size_%s() -> u32 { return %s[0].z; }", name, params);
+      line(c, "fn wg_tb_size_%s() -> u32 { return %s.z; }", name, p0);
       line(c, "fn wg_tb_word_%s(i: u32) -> u32 {", name);
-      line(c, "  let p0 = %s[0];", params);
+      line(c, "  let p0 = %s;", p0);
       line(c, "  if (i >= p0.z) { return 0xffffffffu; }");
       line(c, "  return (p0.y + i * ((p0.x >> 8u) & 0xffu)) >> 2u;");
       line(c, "}");
       line(c, "fn wg_tb_load_%s(i: u32) -> vec4<u32> {", name);
-      line(c, "  let p0 = %s[0]; let p1 = %s[1];", params, params);
+      line(c, "  let p0 = %s; let p1 = %s;", p0, p1);
       line(c, "  if (i >= p0.z) { return vec4<u32>(0u); }");
       line(c, "  let a = p0.y + i * ((p0.x >> 8u) & 0xffu); let ty = p0.x & 0xffu;");
       line(c, "  var ch = array<u32, 6>(0u, 0u, 0u, 0u, 0u, select(1u, 0x3f800000u, ty < 2u || ty >= 4u));");
@@ -1180,7 +1194,7 @@ declare_texel_buffers(struct ctx *c)
          continue;
       /* Only formats of whole words are offered for storage: a texel's words are written whole. */
       line(c, "fn wg_tb_store_%s(i: u32, v: vec4<u32>) {", name);
-      line(c, "  let p0 = %s[0]; let p1 = %s[1];", params, params);
+      line(c, "  let p0 = %s; let p1 = %s;", p0, p1);
       line(c, "  if (i >= p0.z) { return; }");
       line(c, "  let a = p0.y + i * ((p0.x >> 8u) & 0xffu); let ty = p0.x & 0xffu;");
       line(c, "  var w = array<u32, 4>(0u, 0u, 0u, 0u);");
@@ -1306,19 +1320,19 @@ declare_word_images(struct ctx *c)
       const struct util_format_description *d = util_format_description((enum pipe_format)r->format);
       const unsigned bytes = d->block.bits / 8, words = DIV_ROUND_UP(bytes, 4);
       const bool writes = r->kind == WGSL_STORAGE, pure = util_format_is_pure_integer((enum pipe_format)r->format);
-      const char *array = fmt(c, "r%u_%u", r->group, r->binding), *params = fmt(c, "r%u_%u", r->group, r->binding + 1);
+      const char *array = fmt(c, "r%u_%u", r->group, r->binding), *p0 = param(c, r, 0), *p1 = param(c, r, 1);
       const char *name = fmt(c, "%u_%u", r->group, r->binding);
       const bool is_signed = c->res[i].signed_atomic;
       for (unsigned k = 0; k < d->nr_channels; k++)
          small_floats |= d->channel[k].type == UTIL_FORMAT_TYPE_FLOAT && d->channel[k].size < 32;
-      line(c, "fn wg_im_size_%s() -> vec3<u32> { return %s[0].xyz; }", name, params);
+      line(c, "fn wg_im_size_%s() -> vec3<u32> { return %s.xyz; }", name, p0);
       line(c, "fn wg_im_word_%s(x: i32, y: i32, z: i32) -> u32 {", name);
-      line(c, "  let p0 = %s[0]; let a = vec3<u32>(bitcast<u32>(x), bitcast<u32>(y), bitcast<u32>(z));", params);
+      line(c, "  let p0 = %s; let a = vec3<u32>(bitcast<u32>(x), bitcast<u32>(y), bitcast<u32>(z));", p0);
       line(c, "  if (any(a >= p0.xyz)) { return 0xffffffffu; }");
       if (bytes < 4)
-         line(c, "  return a.x * %uu + (a.y * p0.w + a.z * %s[1].x) * 4u;", bytes, params);
+         line(c, "  return a.x * %uu + (a.y * p0.w + a.z * %s.x) * 4u;", bytes, p1);
       else
-         line(c, "  return a.x * %uu + a.y * p0.w + a.z * %s[1].x;", words, params);
+         line(c, "  return a.x * %uu + a.y * p0.w + a.z * %s.x;", words, p1);
       line(c, "}");
       /* The word at `i`, as a u32. */
       const char *word = writes ? fmt(c, "%s(atomicLoad(&%s[%%s]))", is_signed ? "bitcast<u32>" : "", array)
@@ -2036,14 +2050,16 @@ alu_comp(struct ctx *c, nir_alu_instr *alu, unsigned comp)
       return fmt(c, "select(%s, %s, %s)", src_comp(c, &alu->src[2].src, alu->src[2].swizzle[comp]),
                  src_comp(c, &alu->src[1].src, alu->src[1].swizzle[comp]), src_comp(c, &alu->src[0].src,
                                                                                     alu->src[0].swizzle[comp]));
+   /* WGSL's `&` and `|` on bools evaluate both sides, as NIR's do; `&&` and `||` short-circuit, a branch each in Tint's
+    * output (VK4 T21: dEQP-VK's long_shader_bitwise_and, 2,356 of them, compiled 16% slower on SwiftShader). */
    case nir_op_iand:
       if (boolean)
-         return fmt(c, "(%s && %s)", a, b);
+         return fmt(c, "(%s & %s)", a, b);
       BIN("&");
       break;
    case nir_op_ior:
       if (boolean)
-         return fmt(c, "(%s || %s)", a, b);
+         return fmt(c, "(%s | %s)", a, b);
       BIN("|");
       break;
    case nir_op_ixor:

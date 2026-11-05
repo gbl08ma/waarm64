@@ -1239,7 +1239,8 @@ test('an image loaded and stored by one stage holds each format\'s bytes in its 
       img.set(golden, row);
       const params = new Uint8Array(new Uint32Array([4, 2, 1, row / 4, row * 2 / 4, 0, 0, 0]).buffer);
       const input = new (image === f ? Float32Array : image === u ? Uint32Array : Int32Array)(values.flat());
-      const res = await runCompute(r.text, [{ binding: 0, init: img }, { binding: 1, init: params }, { binding: 2, init: new Uint8Array(input.buffer) }, { binding: 4, size: 64 }]);
+      // The view's parameters in the group's table (VK4 T21), at its binding's place.
+      const res = await runCompute(r.text, [{ binding: 0, init: img }, { binding: 994, init: params }, { binding: 2, init: new Uint8Array(input.buffer) }, { binding: 4, size: 64 }]);
       if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
       assert.deepEqual(res.errors, [], `${format}: ${r.text}`);
       const stored = res.out[0];
@@ -1266,8 +1267,9 @@ test('atomics reach a storage image through its words, its loads, stores and siz
     assert.equal(r.rc, 0, r.text);
     assert.match(r.text, /@binding\(0\) var<storage, read_write> r0_0: array<atomic<u32>>/);
     assert.match(r.text, /@binding\(2\) var<storage, read_write> r0_2: array<atomic<i32>>/);
-    assert.match(r.text, /@binding\(1\) var<uniform> r0_1:/);
-    assert.match(r.text, /@binding\(3\) var<uniform> r0_3:/);
+    // Both resources' parameters in the group's table (VK4 T21): the image's at 0 and 1, the texel buffer's at 2 and 3.
+    assert.match(r.text, /@binding\(994\) var<uniform> r0_994: array<vec4<u32>, 4>/);
+    assert.doesNotMatch(r.text, /@binding\([13]\) /);
     const words = (n: number, f: (i: number) => number) => new Uint8Array(new Uint32Array(n).map((_, i) => f(i)).buffer);
     // A view of 16x4x3, rows 32 words apart, slices 128 (as wg_cmd.c's view_words), its words offset by nothing.
     const params = words(8, (i) => [16, 4, 3, 32, 128, 0, 0, 0][i]);
@@ -1277,10 +1279,13 @@ test('atomics reach a storage image through its words, its loads, stores and siz
     const SWIZ = 0 | (4 << 3) | (4 << 6) | (5 << 9);
     const tp = words(8, (i) => [3 | (4 << 8) | (SWIZ << 16), 4, 8, 0, 32, 0, 0, 0][i]);
     const tb = words(10, () => 5);
-    const res = await runCompute(r.text, [{ binding: 0, init: image }, { binding: 1, init: params }, { binding: 2, init: tb }, { binding: 3, init: tp }, { binding: 4, size: 29 * 4 }]);
+    const table = new Uint8Array(64);
+    table.set(params, 0);
+    table.set(tp, 32);
+    const res = await runCompute(r.text, [{ binding: 0, init: image }, { binding: 994, init: table }, { binding: 2, init: tb }, { binding: 4, size: 29 * 4 }]);
     if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
     assert.deepEqual(res.errors, []);
-    const img = new Uint32Array(res.out[0].buffer), o = new Uint32Array(res.out[4].buffer), tw = new Int32Array(res.out[2].buffer);
+    const img = new Uint32Array(res.out[0].buffer), o = new Uint32Array(res.out[3].buffer), tw = new Int32Array(res.out[2].buffer);
     assert.deepEqual([...o.slice(0, 3)], [16, 4, 3], 'imageSize');
     // Each of texels 0-3 of row 1, slice 1 took two invocations' bits.
     const at = (x: number, y: number, z: number) => img[x + y * 32 + z * 128];

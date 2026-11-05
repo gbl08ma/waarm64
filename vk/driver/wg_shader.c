@@ -738,12 +738,22 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl
             r->kind = written ? WGSL_STORAGE : WGSL_STORAGE_READ;
             r->image_words = true;
             r->atomic = r->written = written;
-            struct wgsl_resource params = { .group = r->group, .binding = r->binding + 1, .kind = WGSL_UNIFORM, .size = 32 };
+            /* Its parameters in its group's table (made here if the group had none; program_layouts sorts it). */
             const uint8_t vis = v->vis[k];
-            const int set = v->res_set[k];
-            insert_resource(v, k + 1, &params);
-            v->vis[k + 1] = vis;
-            v->res_set[k + 1] = set;
+            const uint32_t size = WGSL_TABLE_SIZE(r->binding), group = r->group;
+            uint32_t t = 0;
+            while (t < v->resource_count &&
+                   (v->resources[t].group != group || v->resources[t].binding != WGSL_TABLE_BINDING))
+               t++;
+            if (t == v->resource_count) {
+               const struct wgsl_resource table = { .group = group, .binding = WGSL_TABLE_BINDING,
+                                                    .kind = WGSL_UNIFORM, .size = size };
+               insert_resource(v, t, &table);
+               v->vis[t] = 0;
+               v->res_set[t] = -1;
+            }
+            v->resources[t].size = MAX2(v->resources[t].size, size);
+            v->vis[t] |= vis;
          }
          break;
       }
@@ -871,7 +881,7 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
          r->size = p->push_ubo_size;
          continue;
       }
-      if (r->group == WGSL_MAX_GROUPS - 1 && r->binding == WGSL_ADDRESS_BINDING)
+      if ((r->group == WGSL_MAX_GROUPS - 1 && r->binding == WGSL_ADDRESS_BINDING) || r->binding == WGSL_TABLE_BINDING)
          continue;
       /* The set whose slots hold the binding: the last of its group starting at or before it. */
       const uint32_t at = r->binding / 2;
@@ -1094,9 +1104,9 @@ shader_destroy(struct vk_device *dev, struct vk_shader *vk, const VkAllocationCa
 }
 
 /* Uniform buffers past what WebGPU binds a stage (VK3 L7.4: ANGLE's ES3 wants 12 besides its own): read as read-only
- * storage (wgsl_nir.c `lower_ubo_storage`). A stage's uniform bindings are its uniform buffers, a texel buffer's
- * parameters each and the push buffer's (counted always: whether a stage reads push constants past the immediates
- * isn't known by the layout). The pipeline layout decides, by the stages each binding's flags name, so that every
+ * storage (wgsl_nir.c `lower_ubo_storage`). A stage's uniform bindings are its uniform buffers, a parameter table for
+ * each group with texel buffers or storage images (which may be words: VK4 T21) and the push buffer's (counted always:
+ * whether a stage reads push constants past the immediates isn't known by the layout). The pipeline layout decides, by the stages each binding's flags name, so that every
  * stage that sees a buffer reads it the same way: a uniform buffer past its stage's room, in set and binding order, is
  * storage in all of them (dynamic ones never: they take the room first, and WebGPU's dynamic storage buffers are fewer).
  * wg_caps.c reports the uniform buffers WG_FOLDED_UBOS more, less the push buffer's, and the storage buffers
@@ -1108,6 +1118,7 @@ fold_uniforms(struct wgsl_layout *out, struct vk_descriptor_set_layout *const *l
                                                 VK_SHADER_STAGE_COMPUTE_BIT };
    for (uint32_t st = 0; st < ARRAY_SIZE(stages); st++) {
       int32_t room = (int32_t)wg_limits.max_uniform_buffers - 1;
+      uint32_t tables = 0; /* the groups with a table, a bit each */
       for (int pass = 0; pass < 2; pass++) {
          for (uint32_t s = 0; s < out->set_count; s++) {
             if (!layouts[s])
@@ -1118,9 +1129,11 @@ fold_uniforms(struct wgsl_layout *out, struct vk_descriptor_set_layout *const *l
                   continue;
                const VkDescriptorType t = l->type[b];
                if (pass == 0) {
-                  if (t == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC || t == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER ||
-                      t == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER)
+                  if (t == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
                      room -= l->count[b];
+                  else if ((t == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER || t == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER ||
+                            t == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) && !(tables & (1u << out->sets[s].group)))
+                     room--, tables |= 1u << out->sets[s].group;
                   continue;
                }
                if (t != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER && t != VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)

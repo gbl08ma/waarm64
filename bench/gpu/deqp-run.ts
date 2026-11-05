@@ -106,6 +106,12 @@ const elapsed = await run('sh /tmp/deqp.sh', (LIMIT_S + 120) * 1000);
 const seconds = (performance.now() - t0) / 1000;
 results.seconds = seconds;
 log('ran', elapsed, seconds.toFixed(0), 's');
+// Venus's pipelines over the run (web/gpu-worker.ts `venusPipelines`: made, their ms until ready, the translator's
+// calls and ms): where a slow case's time goes (VK4 T21).
+if (vk) {
+  results.pipelines = await s.page.evaluate(() => ((window as unknown as { __renderStats?: { venusPipelines?: unknown }[] }).__renderStats ?? []).findLast((x) => x.venusPipelines)?.venusPipelines ?? null);
+  log('pipelines', JSON.stringify(results.pipelines));
+}
 results.counts = Object.fromEntries((await runLines("awk '{print $2}' /tmp/deqp.res | sort | uniq -c")).map((l) => l.split(/\s+/)).map(([c, k]) => [k, +c]));
 log('counts', JSON.stringify(results.counts));
 // Every case that didn't pass, and the slowest that did.

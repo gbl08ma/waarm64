@@ -1,0 +1,67 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "155.0.8059.84",
+ "stride": 50,
+ "offset": 0,
+ "adapter": "google swiftshader",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 1374,
+ "seconds": 4.493638577999998,
+ "pipelines": {
+  "pipelines": 0,
+  "ready": 0,
+  "readyMs": 0,
+  "deferred": 0,
+  "deferredMs": 0,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 0,
+  "translateMs": 0,
+  "cacheHits": 0,
+  "cacheMisses": 0,
+  "cacheStores": 0,
+  "cacheBytes": 0,
+  "cacheHeld": 0,
+  "cacheEntries": 0
+ },
+ "counts": {
+  "NotSupported": 1374
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-VK.renderpasses.renderpass2.suballocation.multisample_resolve.r16g16b16a16_unorm.samples_8_resolve_level_4 NotSupported 0",
+  "dEQP-VK.renderpasses.renderpass2.suballocation.multisample_resolve.r16g16b16a16_unorm.samples_8_resolve_level_3 NotSupported 0",
+  "dEQP-VK.renderpasses.renderpass2.suballocation.multisample_resolve.r16g16b16a16_unorm.samples_8_resolve_level_2 NotSupported 0",
+  "dEQP-VK.renderpasses.renderpass2.suballocation.multisample_resolve.r16g16b16a16_unorm.samples_8_baseLayer1 NotSupported 0",
+  "dEQP-VK.renderpasses.renderpass2.suballocation.multisample_resolve.r16g16b16a16_unorm.samples_8 NotSupported 0",
+  "dEQP-VK.renderpasses.renderpass2.suballocation.multisample_resolve.r16g16b16a16_unorm.samples_4_resolve_level_4 NotSupported 0",
+  "dEQP-VK.renderpasses.renderpass2.suballocation.multisample_resolve.r16g16b16a16_unorm.samples_4_resolve_level_3 NotSupported 0",
+  "dEQP-VK.renderpasses.renderpass2.suballocation.multisample_resolve.r16g16b16a16_unorm.samples_4_resolve_level_2 NotSupported 0",
+  "dEQP-VK.renderpasses.renderpass2.suballocation.multisample_resolve.r16g16b16a16_unorm.samples_4_baseLayer1 NotSupported 0",
+  "dEQP-VK.renderpasses.renderpass2.suballocation.multisample_resolve.r16g16b16a16_unorm.samples_4 NotSupported 0"
+ ],
+ "last": "dEQP-VK.renderpasses.renderpass2.suballocation.multisample_resolve.r16g16b16a16_unorm.samples_8_resolve_level_2 NotSupported 0dEQP-VK.renderpasses.renderpass2.suballocation.multisample_resolve.r16g16b16a16_unorm.samples_8_resolve_level_3 NotSupported 0dEQP-VK.renderpasses.renderpass2.suballocation.multisample_resolve.r16g16b16a16_unorm.samples_8_resolve_level_4 NotSupported 0",
+ "kernel": [
+  "[    1.166860] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    1.166895] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    1.166925] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    1.166945] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    1.166970] psci_checker: Could not start suspend tests on any CPU",
+  "[   11.839835] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   26.186885] coredump: 405(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 161.9,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 7.7,
+  "arenaHighMiB": 13.3
+ },
+ "detail": [],
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1
+ },
+ "notPassedTrimmed": "NotSupported cases left out"
+}

@@ -934,18 +934,20 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `texture.mipmap.cubemap.projected.nearest_linear_linear_repeat`; 11 copies to or from `e5b9g9r9_ufloat_pack32`, compared
     bitwise (Metal looks to canonicalize the format's bits on upload: unconfirmed; a texture of `r32uint` would keep them,
     and no program depends on non-canonical bits); 4 `depth_stencil_resolve.*_stencil_samplemask` (the stencil reads 255
-    where 1 is right); 2 of 3 `binding_model.descriptorset_random.sets4` cases (a fragment stage's output reads zeros: the
-    third passed in T12's run). The census of 2026-11-05 adds: the two `sets4` cases fail on SwiftShader too now
-    (`constant…frag.noia.9`, `noarray…frag.noia.7`), and 3 multisampled `self_dep` passes of `r16g16_snorm` and
-    `r16g16b16a16_snorm` fail on the M4 (`renderpass1…r16g16_snorm.input.clear.store.self_dep_draw_ms` and two of
-    `renderpass2`; the unorm and float ones pass): VK4-KICKOFF.md T21.
+    where 1 is right). (`descriptorset_random.sets4`'s were bindings past WebGPU's, on SwiftShader too: "Texel buffers"
+    below; the multisampled 16-bit normalized passes, which WebGPU doesn't resolve, are drawn resolves since VK4 T21.)
   - **SwiftShader compiles zero-initialized workgroup memory slowly** (VK4 T2): Dawn zeroes it through Vulkan's
     `VK_KHR_zero_initialize_workgroup_memory`, which costs SwiftShader ~17 s per pipeline with a 16 KiB array (19 ms
     with Tint's loop: `--disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension`, which the
     dEQP-VK runs pass). Only Chromium's SwiftShader WebGPU (`--enable-unsafe-webgpu`) meets it; a guest compute program
     with much workgroup memory waits that long for its pipeline there. Worth an upstream report (SwiftShader). Also slow
     there: `ssbo.corner_case.long_shader_bitwise_and` passes the M4 in 3 s and runs past dEQP's 30 s watchdog on
-    SwiftShader (the census of 2026-11-05; where the time goes is T21's).
+    SwiftShader (40 s without it), all but 0.1 s of it the pipeline's compile (VK4 T21; `results/vk4/t21/`): its 589
+    `ivec4` loads through a device address are 2,356 `u32` loads of the address buffer, and SwiftShader's compile grows
+    faster than they do (the same WGSL with one load a vec4: 3.1 s; with none: 0.1 s; Dawn's robustness off: no change).
+    T21 printed NIR's boolean `iand`/`ior` as `&`/`|` (they were `&&`/`||`, a branch each in Tint's SPIR-V: 31.6 → 26.4 s).
+    A vec4 view of the address buffer (a second binding, `array<vec4<u32>>`) for loads NIR says are 16-aligned would
+    make them one each, for a binding in group 3.
   - **What R7's limits leave** (VK4 R7, its review's B4, B8, D4): 16 vertex bindings need a free bind group and room in the
     vertex stage's storage buffers, or the draw is refused, said once (four groups in use, or a vertex stage's own storage
     buffers); 8 dynamic uniform buffers with push constants past the immediates or draw parameters put the push buffer on
@@ -970,11 +972,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   aside: ~+15–20% on the userspace benchmark on macOS (`--wasm-enforce-bounds-checks` as the stand-in), since V8 checks
   each memory64 access.
   - **Texel buffers** (VK3 L6b, vk/README.md "The shader path": a storage buffer of the view's words, its format
-    decoded in WGSL): each takes one of WebGPU's storage buffers a stage (10 on SwiftShader) and a uniform buffer,
-    which Vulkan counts with sampled or storage images, so a stage with many storage buffers and texel buffers is
+    decoded in WGSL): each takes one of WebGPU's storage buffers a stage (10 on SwiftShader, 8 by default), which
+    Vulkan counts with sampled or storage images (16 and 4), so a stage with many storage buffers and texel buffers is
     refused at its pipeline's creation (VK3 L7a, vk/README.md "Bindings past WebGPU's"; 2
-    `binding_model.descriptor_copy` cases: 13 storage buffers in the compute stage); their parameters as one uniform
-    buffer a group (written with the set) would give the uniform buffers back, their words would still be storage; a texel buffer whose range overlaps another writable binding of its memory in a dispatch (bound writable
+    `binding_model.descriptor_copy` cases: 13 storage buffers in the compute stage). Their parameters are one uniform
+    buffer a group since VK4 T21 (they were one each). **All 165 of `descriptorset_random.sets4`'s failures on
+    SwiftShader** (14,106 cases: 291 pass, 13,650 NotSupported; the census's two among them) are such refusals, read
+    as zeros: stages of up to 18 texel buffers' words (16 uniform texel buffers are within the 16 sampled images), and
+    fragment stages whose uniform buffers and 4 inline uniform blocks (1.3's minimum, counted apart in Vulkan) fold past
+    the advertised two into storage. Words of texel buffers of one memory could share a binding (a variant, as storage
+    aliases are: `descriptorset_random` binds its descriptors from few buffers; unmeasured), uniform texel buffers could
+    be r32uint textures (they count with sampled images in both: a copy whenever the buffer changes), and a set's inline
+    blocks one binding of its inline buffer, as the table is; a texel buffer whose range overlaps another writable binding of its memory in a dispatch (bound writable
     then, or else a usage-scope conflict) was refused by WebGPU's binding aliasing (16 of `descriptor_copy.compute`'s texel buffer
     cases: "Writable storage buffer binding aliasing", the dispatch dropped; since VK4 T3 a read-only one is copied
     instead: "Usage scopes' leftovers" above);
@@ -1020,8 +1029,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     beside 16 sampled images (Vulkan counts them apart, WebGPU as textures; the device keeps Vulkan's 16 and 4: ANGLE's
     ES3 wants 16 texture units), texel buffers beside a full count of storage buffers (above), more folded uniform
     buffers than the advertised two (folding goes by the layout: a stage that sees another's folded buffers),
-    binding numbers past WebGPU's 1,000 or on the push buffer's 998 (sets 3 and up share group 3: out of reach within
-    the advertised limits, a guard). `maxDescriptorSetUniformBuffersDynamic` is 7 where WebGPU has 8 (under Vulkan's
+    binding numbers past WebGPU's 1,000 or on the driver's from the parameter table's 994 on (sets 3 and up share
+    group 3: out of reach within the advertised limits, a guard). `maxDescriptorSetUniformBuffersDynamic` is 7 where WebGPU has 8 (under Vulkan's
     minimum of 8, like the descriptor-set limits that are a stage's: the push buffer is a dynamic uniform buffer of its
     own); a push buffer made a dynamic storage buffer where the layout has 8 would give it back. A captured vertex
     stage with four groups (the push buffer's, as with draw parameters, or sets 3 and up) loses its capture (refused

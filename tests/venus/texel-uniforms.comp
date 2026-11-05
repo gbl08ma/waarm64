@@ -1,0 +1,14 @@
+#version 450
+// tests/venus-driver.test.ts (misc: texelUniforms; VK4 T21, dEQP-VK's descriptorset_random.sets4): 9 uniform texel
+// buffers beside 4 uniform buffers and a storage buffer in one stage, within the advertised limits
+// (vk/driver/wg_test.c's scenario 91). Each texel buffer's parameters took a uniform buffer of their own, 13 with the
+// uniform buffers (two of them folded to storage, 12 storage buffers with the texel buffers' words), past WebGPU's
+// limits: the pipeline was refused. A group's parameters are one table now.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) buffer B { uint x[]; } b;
+layout(set = 0, binding = 1) uniform usamplerBuffer t[9];
+layout(set = 0, binding = 2) uniform U { uint v; } u[4];
+void main() {
+  for (int i = 0; i < 9; i++) b.x[i] = texelFetch(t[i], 0).x;
+  for (int j = 0; j < 4; j++) b.x[9 + j] = u[j].v;
+}

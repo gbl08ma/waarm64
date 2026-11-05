@@ -1471,8 +1471,9 @@ override bit: u32 = 8u;
       const [sx, sy] = j.from as number[], [dx, dy] = j.to as number[], [w, h] = j.size as number[];
       const sw = Math.max(1, S.width >> j.srcMip), sh = Math.max(1, S.height >> j.srcMip);
       const dw = Math.max(1, tex.width >> j.dstMip), dh = Math.max(1, tex.height >> j.dstMip);
-      // WebGPU's own resolve is of a whole level of one size, into a 2D texture, of what isn't an integer format.
-      if (!/int$|^r(g|gba)?32float$/.test(fmt) && tex.dimension !== '3d' && !sx && !sy && !dx && !dy && w === sw && h === sh && w === dw && h === dh && tex.usage & RENDER_ATTACHMENT)
+      // WebGPU's own resolve is of a whole level of one size, into a 2D texture, of a format it resolves (not an integer
+      // one, a 32-bit float or texture-formats-tier1's 16-bit normalized ones: VK4 T21).
+      if (!/int$|^r(g|gba)?32float$|^r(g|gba)?16[su]norm$/.test(fmt) && tex.dimension !== '3d' && !sx && !sy && !dx && !dy && w === sw && h === sh && w === dw && h === dh && tex.usage & RENDER_ATTACHMENT)
         enc.beginRenderPass({ colorAttachments: [{ view: this.viewOf(j.src, j.srcMip, j.srcLayer, ownFormat(S, j.srcFormat)), resolveTarget: this.viewOf(j.dst, j.dstMip, j.dstLayer, ownFormat(tex, fmt)), loadOp: 'load', storeOp: 'store' }] }).end();
       else this.resolveByDraw(j, sx, sy, dx, dy, w, h);
       return;

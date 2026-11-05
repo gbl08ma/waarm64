@@ -772,8 +772,9 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
       if (resolves)
          record_attachment_use(cmd, r, !partial && !crops[i] && !other_size(r, width, height));
       /* What WebGPU's resolve can't make (a format it doesn't resolve, part of the attachment, a 3D image) is the worker's draw
-       * at the pass's end, which reads the attachment: stored. */
-      const bool drawn = resolves && (!(v->fmt->flags & WG_FMT_BLEND) || (v->fmt->flags & WG_FMT_FLOAT32) || partial ||
+       * at the pass's end, which reads the attachment: stored. texture-formats-tier1's 16-bit normalized formats render,
+       * blend and multisample but don't resolve (VK4 T21: the M4's self_dep_*_ms submits were invalid). */
+      const bool drawn = resolves && (!(v->fmt->flags & WG_FMT_BLEND) || (v->fmt->flags & (WG_FMT_FLOAT32 | WG_FMT_TIER1)) || partial ||
                                       r->slice >= 0 || crops[i] || other_size(r, width, height));
       if (drawn) {
          cmd->pass.resolve_color_src[i] = v;
@@ -3199,24 +3200,7 @@ view_words(const struct wg_image_view *v, uint32_t *buffer, VkDeviceSize *at, Vk
    params[3] = row / 4, params[4] = row / 4 * h;
 }
 
-/* A view's parameters' buffer. */
-static uint32_t
-view_word_params(struct wg_image_view *v)
-{
-   if (!v->word_params) {
-      uint32_t buffer, params[8] = { 0 };
-      VkDeviceSize at, size;
-      view_words(v, &buffer, &at, &size, params);
-      struct wg_json j = { 0 };
-      wg_json_printf(&j, "{\"size\":32,\"usage\":%u}", 0x40 | 0x8); /* UNIFORM | COPY_DST */
-      v->word_params = wg_create_json(WG_KIND_BUFFER, &j);
-      gpu_write(v->word_params, 0, params, sizeof(params));
-   }
-   return v->word_params;
-}
-
-/* A buffer resource's binding: its GPUBuffer, its offset (before any dynamic offset) and size; false for none, and
- * for a texel buffer's or word image's parameters (the driver's own buffers). */
+/* A buffer resource's binding: its GPUBuffer, its offset (before any dynamic offset) and size; false for none. */
 static bool
 buffer_binding(const struct wg_program *p, uint32_t k, const struct wg_descriptor *d, uint32_t *buffer,
                VkDeviceSize *at, VkDeviceSize *size)
@@ -3237,7 +3221,7 @@ buffer_binding(const struct wg_program *p, uint32_t k, const struct wg_descripto
    }
    if (d->type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER || d->type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) {
       const struct wg_buffer_view *v = d->texel;
-      if (!v || !v->mem || !v->params || (res->binding & 1))
+      if (!v || !v->mem || !v->offered)
          return false;
       *buffer = wg_memory_buffer(v->mem);
       *at = v->at;
@@ -3619,6 +3603,40 @@ scope_shadows(struct replay *r)
    return util_dynarray_num_elements(&r->shadows, struct shadow) != 0;
 }
 
+/* A group's parameter table (WGSL_TABLE_BINDING, resource `t` of `p`): two vec4s at each texel buffer's and storage
+ * image as words' binding, from the descriptors `b` binds (a texel buffer view's, wg_CreateBufferView; a view's words'
+ * place, `view_words`). A buffer of its own, written now: the descriptors don't change under a bind group of them. */
+static uint32_t
+param_table(const struct op_bind *b, const struct wg_program *p, uint32_t t)
+{
+   const uint32_t size = p->resources[t].size;
+   uint32_t *words = calloc(1, size);
+   for (uint32_t k = 0; words && k < p->resource_count; k++) {
+      const struct wgsl_resource *res = &p->resources[k];
+      if (res->group != b->group || WGSL_TABLE_SIZE(res->binding) > size)
+         continue;
+      const struct wg_descriptor *d = bound_descriptor(b, p, k);
+      if (!d)
+         continue;
+      uint32_t *at = words + 4 * res->binding;
+      if ((d->type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER || d->type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) &&
+          d->texel && d->texel->offered) {
+         memcpy(at, d->texel->params, sizeof(d->texel->params));
+      } else if (d->type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE && res->image_words && d->view) {
+         uint32_t buffer;
+         VkDeviceSize place, bytes;
+         view_words(d->view, &buffer, &place, &bytes, at);
+      }
+   }
+   struct wg_json j = { 0 };
+   wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", size, 0x40 | 0x8); /* UNIFORM | COPY_DST */
+   const uint32_t table = wg_create_json(WG_KIND_BUFFER, &j);
+   if (words)
+      gpu_write(table, 0, words, size);
+   free(words);
+   return table;
+}
+
 /* A bind group for an op_bind, with `offsets` (the op_bind's) patched where a binding reads a shadow (its dynamic
  * offset is the shadow's place's, so 0). `transient`: released once the submit is encoded; `shadowed`: it reads a
  * shadow (a group of the scope's own). */
@@ -3703,6 +3721,7 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
          }
    struct wg_json j = { 0 };
    wg_json_printf(&j, "{\"layout\":%u,\"entries\":[", bgl);
+   uint32_t table = 0; /* the group's parameter table: released with it */
    bool first = true, push_only = b->group == WGSL_MAX_GROUPS - 1 && p->push_ubo_size;
    uint32_t n = 0;
    for (uint32_t k = 0; k < p->resource_count; k++) {
@@ -3726,6 +3745,13 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
          first = false;
          continue;
       }
+      if (res->binding == WGSL_TABLE_BINDING && res->kind == WGSL_UNIFORM) {
+         table = param_table(b, p, k);
+         wg_json_printf(&j, "%s{\"binding\":%u,\"buffer\":%u,\"offset\":0,\"size\":%u}", sep, res->binding, table,
+                        res->size);
+         first = false;
+         continue;
+      }
       const struct wg_descriptor *d = bound_descriptor(b, p, k);
       if (!d)
          continue;
@@ -3735,20 +3761,8 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
       case WGSL_STORAGE_READ: {
          uint32_t buffer;
          VkDeviceSize at, size;
-         if (!buffer_binding(p, k, d, &buffer, &at, &size)) {
-            /* A texel buffer's parameters (wgsl_print.c), at the binding after its words. */
-            const struct wg_buffer_view *v = d->texel;
-            if ((d->type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER ||
-                 d->type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) && v && v->mem && v->params)
-               wg_json_printf(&j, "%s{\"binding\":%u,\"buffer\":%u,\"offset\":0,\"size\":32}", sep, res->binding,
-                              v->params);
-            else if (d->type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE && d->view && res->kind == WGSL_UNIFORM)
-               wg_json_printf(&j, "%s{\"binding\":%u,\"buffer\":%u,\"offset\":0,\"size\":32}", sep, res->binding,
-                              view_word_params(d->view));
-            else
-               continue;
-            break;
-         }
+         if (!buffer_binding(p, k, d, &buffer, &at, &size))
+            continue;
          const struct wg_storage_alias *a = res->kind == WGSL_STORAGE ? storage_alias(p, k) : NULL;
          if (a && a->res != a->to) {
             /* Unused by the variant's text; a binding must be there, and not of what the run's first writes. */
@@ -3812,17 +3826,24 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
          return group;
       }
       *transient = true; /* an empty group, or the pointers' alone: released once the submit is encoded */
+      if (table)
+         util_dynarray_append_typed(&released_groups, uint32_t, table);
       if (res_written(p, b->group))
          goto found;
       return group;
    }
    if (*shadowed) {
       *transient = true;
+      if (table)
+         util_dynarray_append_typed(&released_groups, uint32_t, table);
    } else {
       const uint32_t i = holder->next_group++ % WG_SET_GROUPS;
       if (holder->groups[i].group)
          util_dynarray_append_typed(&released_groups, uint32_t, holder->groups[i].group);
+      if (holder->groups[i].table)
+         util_dynarray_append_typed(&released_groups, uint32_t, holder->groups[i].table);
       holder->groups[i].group = group;
+      holder->groups[i].table = table;
       holder->groups[i].bgl = bgl_uid;
       holder->groups[i].version = version;
    }

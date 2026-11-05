@@ -1832,7 +1832,6 @@ wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallb
    wg_id_release(view->sampled);
    wg_id_release(view->faces);
    wg_id_release(view->att);
-   wg_id_release(view->word_params);
    for (uint32_t i = 0; view->layer_atts && i < WG_MAX_LAYERS - 1; i++)
       wg_id_release(view->layer_atts[i]);
    free(view->layer_atts);
@@ -1859,7 +1858,8 @@ wg_CreateBufferView(VkDevice _device, const VkBufferViewCreateInfo *pCreateInfo,
    VK_FROM_HANDLE(wg_buffer, buffer, pCreateInfo->buffer);
    uint32_t x = 0, p1[3] = { 0 };
    bool storage;
-   if (!wg_texel_buffer_layout(view->vk.format, &x, p1, &storage))
+   view->offered = wg_texel_buffer_layout(view->vk.format, &x, p1, &storage);
+   if (!view->offered)
       fprintf(stderr, "wg: a buffer view of format %u, which texel buffers don't offer\n", view->vk.format);
    /* Its words bound from the memory's GPUBuffer at a storage-aligned offset; the parameters say where its first texel
     * is in that binding, and how many texels it has (a texel past them reads 0). */
@@ -1870,10 +1870,7 @@ wg_CreateBufferView(VkDevice _device, const VkBufferViewCreateInfo *pCreateInfo,
    if (view->mem && view->at + view->size > view->mem->gpu_at + view->mem->size)
       view->size = view->mem->gpu_at + view->mem->size > view->at ? view->mem->gpu_at + view->mem->size - view->at : 0;
    const uint32_t params[8] = { x, (uint32_t)(start - view->at), view->vk.elements, 0, p1[0], p1[1], p1[2], 0 };
-   struct wg_json j = { 0 };
-   wg_json_printf(&j, "{\"size\":32,\"usage\":%u}", 0x40 | 0x8); /* UNIFORM | COPY_DST */
-   view->params = wg_create_json(WG_KIND_BUFFER, &j);
-   gpu_write(view->params, 0, params, sizeof(params));
+   memcpy(view->params, params, sizeof(params));
    *pView = wg_buffer_view_to_handle(view);
    return VK_SUCCESS;
 }
@@ -1885,7 +1882,6 @@ wg_DestroyBufferView(VkDevice _device, VkBufferView _view, const VkAllocationCal
    VK_FROM_HANDLE(wg_buffer_view, view, _view);
    if (!view)
       return;
-   wg_id_release(view->params);
    vk_buffer_view_destroy(&dev->vk, pAllocator, &view->vk);
 }
 

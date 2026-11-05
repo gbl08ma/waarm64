@@ -421,8 +421,9 @@ wg_caps_properties(struct vk_properties *p)
  * stage and by pipeline layout, against WebGPU's limits. Besides a descriptor's own binding:
  * - the push buffer (push constants past the immediates, a vertex stage's draw parameters): a uniform buffer every
  *   stage counts (whether a stage reads it isn't known by the layout), dynamic in its layout;
- * - a texel buffer: a storage buffer (its words) and a uniform buffer (its view's parameters), where Vulkan counts a
- *   sampled or storage image;
+ * - a texel buffer: a storage buffer (its words), where Vulkan counts a sampled or storage image;
+ * - a group with texel buffers or storage images as words: a uniform buffer, their parameters' table (VK4 T21: one a
+ *   texel buffer passed WebGPU's 12, dEQP-VK's sets4);
  * - uniform buffers past a stage's room: storage buffers (WG_FOLDED_UBOS of them advertised, more refused);
  * - a YCbCr binding's planes past the first: textures (combinedImageSamplerDescriptorCount tells the program);
  * - an input attachment: a texture, where Vulkan counts it apart;
@@ -436,15 +437,18 @@ wg_caps_properties(struct vk_properties *p)
  * doesn't fit is refused at its creation, saying why (wg_bindings_fit), never an invalid submit.
  */
 enum { WG_COUNT_UNIFORM, WG_COUNT_STORAGE, WG_COUNT_TEXTURE, WG_COUNT_SAMPLER, WG_COUNT_STORAGE_TEXTURE, WG_COUNTS };
-enum { WG_HIDDEN_PUSH, WG_HIDDEN_TEXEL, WG_HIDDEN_FOLDED, WG_HIDDEN_PLANE, WG_HIDDEN_INPUT, WG_HIDDEN_XFB, WG_HIDDENS };
+enum { WG_HIDDEN_PUSH, WG_HIDDEN_TEXEL, WG_HIDDEN_FOLDED, WG_HIDDEN_PLANE, WG_HIDDEN_INPUT, WG_HIDDEN_XFB, WG_HIDDEN_TABLE,
+       WG_HIDDENS };
 
-/* What a program's resource is in its pipeline layout: the descriptor type, or WG_HIDDEN_PUSH, WG_HIDDEN_PLANE (-1:
- * not known). */
+/* What a program's resource is in its pipeline layout: the descriptor type, or WG_HIDDEN_PUSH, WG_HIDDEN_PLANE,
+ * WG_HIDDEN_TABLE (-1: not known). */
 static int
 resource_type(const struct wg_program *p, struct vk_descriptor_set_layout *const *layouts, uint32_t k)
 {
    if (p->dynamic[k] == WG_DYNAMIC_PUSH)
       return -2 - WG_HIDDEN_PUSH;
+   if (p->resources[k].binding == WGSL_TABLE_BINDING)
+      return -2 - WG_HIDDEN_TABLE;
    const int s = p->res_set[k];
    if (s < 0 || !layouts || !layouts[s])
       return -1;
@@ -467,7 +471,8 @@ wg_bindings_fit(const struct wg_program *p, struct vk_descriptor_set_layout *con
    static const char *const what[] = { "uniform buffers", "storage buffers", "textures", "samplers",
                                        "storage textures" };
    static const char *const hidden[] = { "the push buffer", "texel buffers'", "uniform buffers read as storage",
-                                         "YCbCr planes", "input attachments", "a capture's" };
+                                         "YCbCr planes", "input attachments", "a capture's",
+                                         "parameter tables (texel buffers', storage images as words')" };
    uint32_t dynamic_uniform = 0, dynamic_storage = 0;
    for (uint32_t k = 0; k < p->resource_count; k++) {
       const struct wgsl_resource *r = &p->resources[k];
@@ -475,12 +480,13 @@ wg_bindings_fit(const struct wg_program *p, struct vk_descriptor_set_layout *con
          dynamic_uniform++;
       else if (p->dynamic[k] != -1)
          dynamic_storage++;
-      /* Binding numbers past WebGPU's, or a set's slot on the push buffer's (sets 3 and up share group 3: the
-       * binding review's finding 8; out of reach within the advertised limits). */
-      if (r->binding >= L->max_bindings_per_bind_group ||
-          (r->group == WGSL_MAX_GROUPS - 1 && r->binding >= WGSL_PUSH_BINDING && p->dynamic[k] != WG_DYNAMIC_PUSH)) {
-         snprintf(error, error_size, "binding %u of bind group %u, past WebGPU's %u or on the push buffer's",
-                  r->binding, r->group, MIN2(L->max_bindings_per_bind_group, WGSL_PUSH_BINDING));
+      /* Binding numbers past WebGPU's, or a set's slot on the driver's bindings (the parameter table's and up; sets 3
+       * and up share group 3: the binding review's finding 8; out of reach within the advertised limits). */
+      const bool driver = p->dynamic[k] == WG_DYNAMIC_PUSH || (r->binding == WGSL_TABLE_BINDING && r->kind == WGSL_UNIFORM) ||
+                          (r->group == WGSL_MAX_GROUPS - 1 && r->binding == WGSL_ADDRESS_BINDING);
+      if (r->binding >= L->max_bindings_per_bind_group || (r->binding >= WGSL_TABLE_BINDING && !driver)) {
+         snprintf(error, error_size, "binding %u of bind group %u, past WebGPU's %u or on the driver's",
+                  r->binding, r->group, MIN2(L->max_bindings_per_bind_group, WGSL_TABLE_BINDING));
          return false;
       }
    }
@@ -508,6 +514,8 @@ wg_bindings_fit(const struct wg_program *p, struct vk_descriptor_set_layout *con
             h[c][WG_HIDDEN_PUSH]++;
          else if (t == -2 - WG_HIDDEN_PLANE)
             h[c][WG_HIDDEN_PLANE]++;
+         else if (t == -2 - WG_HIDDEN_TABLE)
+            h[c][WG_HIDDEN_TABLE]++;
          else if (t == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER || t == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER)
             h[c][WG_HIDDEN_TEXEL]++;
          else if ((t == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || t == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK) &&
@@ -538,12 +546,12 @@ wg_bindings_fit(const struct wg_program *p, struct vk_descriptor_set_layout *con
       for (uint32_t c = 0; c < WG_COUNTS; c++) {
          if (n[c] <= max[c])
             continue;
-         char why[160] = "";
+         char why[256] = "";
          size_t at = 0;
          for (uint32_t i = 0; i < WG_HIDDENS; i++)
             if (h[c][i] && at < sizeof(why))
                at += snprintf(why + at, sizeof(why) - at, "%s%u %s%s", at ? ", " : " (of them: ", h[c][i], hidden[i],
-                              i != WG_HIDDEN_TEXEL ? "" : c == WG_COUNT_STORAGE ? " words" : " parameters");
+                              i != WG_HIDDEN_TEXEL ? "" : " words");
          if (at && at < sizeof(why))
             snprintf(why + at, sizeof(why) - at, ")");
          snprintf(error, error_size, "the %s stage binds %u %s, past WebGPU's %u%s", stages[st], n[c], what[c], max[c],

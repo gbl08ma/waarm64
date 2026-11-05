@@ -410,7 +410,6 @@ struct wg_image_view {
    uint32_t twin_tex, twin, twin_mark;
    uint32_t *layer_atts;  /* multiview, layered passes: layers past the first as attachments (wg_view_att), WG_MAX_LAYERS - 1 of them */
    struct wg_view_crop *crops; /* the attachment in a pass smaller than it (wg_view_crop) */
-   uint32_t word_params; /* a word binding's parameters (wgsl_print.c `image_words`), made at the first (0: none) */
    /* A sampled 2D array view of one layer as a 2D view, for a shader that declares it 2D (0: none). Vulkan wants the
     * view's type to be the shader's; Godot binds its 2D array default texture to 2D samplers (SDFGI's compute stages),
     * which native drivers read as its layer, and WebGPU refuses the bind group (GD G4). */
@@ -434,12 +433,14 @@ uint32_t wg_crop_att(struct wg_image_view *view, struct wg_view_crop *crop, uint
 uint32_t wg_view_att(struct wg_image_view *view, uint32_t index);
 
 /* A texel buffer's view: where its words are bound from (the memory's GPUBuffer, at a storage-aligned offset) and
- * its parameters for the translator's loads and stores (a uniform buffer of 32 bytes: wg_texel_buffer_layout). */
+ * its parameters for the translator's loads and stores (wg_texel_buffer_layout: 32 bytes of its group's table, wg_cmd.c
+ * `param_table`); `offered`: of a format texel buffers offer. */
 struct wg_buffer_view {
    struct vk_buffer_view vk;
    struct wg_device_memory *mem;
    uint64_t at, size;
-   uint32_t params;
+   uint32_t params[8];
+   bool offered;
 };
 
 struct wg_sampler {
@@ -500,7 +501,7 @@ struct wg_descriptor_set {
    uint32_t inline_buffer;
    /* Bind groups made of it (and of the sets after it in group 3: their versions hashed), by bind group layout (its
     * uid), for the version they were made of. */
-   struct { uint32_t bgl, version, group; } groups[WG_SET_GROUPS];
+   struct { uint32_t bgl, version, group, table; } groups[WG_SET_GROUPS]; /* table: its parameter table's buffer */
    uint32_t next_group;
    struct wg_descriptor slots[];
 };

@@ -771,6 +771,49 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T21: the census's failures — a parameter table a group, 16-bit normalized resolves drawn, `&` for booleans; 861 cases join the list
+
+2026-11-05. The census's five failures (the section below) and its new passes, on the dev VM's SwiftShader (Chromium
+155.0.8059.84) and the M4 (Chrome for Testing 157.0.8103.38, macOS 26.6.2, `bench/gpu/sway-mac.sh`). JSON in
+`results/vk4/t21/`.
+
+- **`descriptorset_random.sets4`'s two** (a fragment stage's output read as zeros): their pipelines were refused at
+  creation, "the fragment stage binds 16 uniform buffers, past WebGPU's 12 (of them: 12 texel buffers' parameters)":
+  each texel buffer's parameters were a uniform buffer of their own. They are one **parameter table** a group now, a
+  uniform buffer at binding 994 holding every texel buffer's and storage image as words' two vec4s at its binding
+  (vk/README.md "Texel buffers"; `tests/venus-driver.test.ts` "nine uniform texel buffers beside four uniform buffers",
+  refused before: 9 words and 2 folded uniform buffers were 12 storage buffers). The two cases then meet the next
+  limit, their 12 to 16 texel buffers' words as storage buffers (WebGPU's 10 here), and so does all of the group:
+  `sets4` whole (14,106 cases) went 290 → 291 passing, **all 165 failures left being such refusals** (texel buffers'
+  words; uniform buffers and inline uniform blocks folded past the advertised two), filed (docs/backlog.md "Texel
+  buffers") with the ways out.
+- **The M4's multisampled `self_dep` passes of the 16-bit normalized formats**: WebGPU refused the submit, "the resolve
+  target format (RG16Snorm) does not support being used as resolve target" (`m4-self-dep-before.json`; the unorm ones
+  too, which the census hadn't sampled). texture-formats-tier1's `r16`, `rg16` and `rgba16` `unorm` and `snorm` render,
+  blend and multisample but don't resolve: their resolves are the worker's draws now, at a pass's end and for
+  `vkCmdResolveImage`. All 1,374 multisampled cases of those formats in `renderpasses`' formats and resolve groups and
+  `pipeline.monolithic.multisample`: **438 pass on the M4, none fail** (`m4-norm16-ms-after.json`); SwiftShader has no
+  tier1, so all are NotSupported there and none joins the list.
+- **`ssbo.corner_case.long_shader_bitwise_and` on SwiftShader**: 40 s with the watchdog off, of which the translator
+  took 0.12 s and the pipeline's compile the rest (`long-shader-nowatchdog.json`). The shader is 589 `ivec4` loads
+  through a device address and an AND of their compares; the WGSL, compiled alone (`long-shader-compile.json`):
+
+| the WGSL | `createComputePipelineAsync` on SwiftShader |
+|---|---|
+| as printed before (`&&`, `||`) | 31.6 s |
+| booleans as `&` and `|` (now) | 26.4 s |
+| the same, Dawn's robustness off | 26.1 s |
+| one `u32` load a vec4 instead of four | 3.1 s |
+| no loads | 0.1 s |
+
+  WGSL's `&&` short-circuits, a branch each in Tint's output; NIR's `iand` of booleans evaluates both, so `&` is
+  exact. The rest is SwiftShader's compile growing faster than the loads: 2,356 `u32` loads of the address buffer.
+  Filed (docs/backlog.md "SwiftShader compiles zero-initialized workgroup memory slowly", its "also slow"): a vec4 view
+  of the address buffer for 16-aligned loads would make them one each. The M4 passes it in 3 s.
+- **861 sampled cases that pass on both hosts** (pipeline 405, api 299, ssbo 65, renderpasses 47, ubo 25, binding_model
+  11, texture 7) pass as one list on SwiftShader in 95 s (`census-861-swiftshader.json`) and join `tests/deqp/vk.txt`
+  at its end (27,714 → 28,575 cases).
+
 ## VK4: the census again — 0.2% of the M4's supported cases fail, 0.9% of SwiftShader's; what's left is what isn't advertised
 
 **2026-11-05**, at the user's ask, after T2–T19, R1–R7 and GD. JSON in `results/vk4/census2/` (`swiftshader/`, `m4/`: one

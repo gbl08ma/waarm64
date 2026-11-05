@@ -2825,6 +2825,9 @@ misc_barrier(VkCommandBuffer cmd, VkImage image, VkImageLayout from, VkImageLayo
  *     128 KiB bound 64 KiB of a 192 KiB buffer (42 at word 1): 41, 42 at [0, 8) (finding 5).
  * 29: sampled.comp mode 1: the texture and a D32 view (cleared 0.25) sampled through one separate LINEAR sampler: 50 and
  *     25 at [0, 8) (finding 2: the depth view's nearest twin of the sampler filtered the texture too).
+ * 91: texel-uniforms.comp (a storage buffer, `out`; 9 uniform texel buffers of R32_UINT, 100(i + 1) at 256i of a buffer;
+ *     4 uniform buffers, 1000 + j at 256j of another): 100(i + 1) at word i of `out`, 1000 + j at word 9 + j (VK4 T21:
+ *     the texel buffers' parameters were a uniform buffer each, past WebGPU's limits, and the pipeline was refused).
  * 32: as 27, binding 0 then copied (vkUpdateDescriptorSets' copies) from a set whose combined image sampler isn't
  *     immutable, NEAREST: still 50 (VK3 L8a, the track-end review's finding 4: copies overwrote immutable samplers).
  */
@@ -2886,7 +2889,12 @@ l7a_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuff
    CHECK(CreateSampler(dev, &si, NULL, &nearest));
    const uint32_t dyn = props.limits.maxDescriptorSetUniformBuffersDynamic < 8 ? props.limits.maxDescriptorSetUniformBuffersDynamic : 8;
    uint32_t mode = 0;
-   if (scenario == 24) {
+   if (scenario == 91) {
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT };
+      b[nb++] =
+         (VkDescriptorSetLayoutBinding){ 1, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 9, VK_SHADER_STAGE_COMPUTE_BIT };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, VK_SHADER_STAGE_COMPUTE_BIT };
+   } else if (scenario == 24) {
       b[nb++] = (VkDescriptorSetLayoutBinding){ 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 8, VK_SHADER_STAGE_COMPUTE_BIT };
       b[nb++] =
          (VkDescriptorSetLayoutBinding){ 1, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 3, VK_SHADER_STAGE_COMPUTE_BIT };
@@ -2941,7 +2949,7 @@ l7a_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuff
       CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipelines[i]));
    }
    const VkDescriptorPoolSize ps[6] = { { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 16 },
-                                        { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 4 },
+                                        { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 9 },
                                         { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 8 },
                                         { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4 },
                                         { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2 },
@@ -2964,7 +2972,35 @@ l7a_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuff
    uint32_t push[32] = { 0 };
    uint32_t offsets[8] = { 0 }, offset_count = 0;
 
-   if (scenario == 24) {
+   if (scenario == 91) {
+      VkBuffer src, ubo;
+      uint32_t *w, *wu;
+      if (buffer(4096, both | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT, true, &src, (void **)&w) ||
+          buffer(1024, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true, &ubo, (void **)&wu))
+         return 1;
+      VkBufferView views[9];
+      for (uint32_t i = 0; i < 9; i++) {
+         w[64 * i] = 100 * (i + 1);
+         const VkBufferViewCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO, .buffer = src,
+                                             .format = VK_FORMAT_R32_UINT, .offset = 256 * i, .range = 16 };
+         CHECK(CreateBufferView(dev, &vi, NULL, &views[i]));
+      }
+      VkDescriptorBufferInfo ub[4];
+      for (uint32_t j = 0; j < 4; j++) {
+         wu[64 * j] = 1000 + j;
+         ub[j] = (VkDescriptorBufferInfo){ ubo, 256 * j, 16 };
+      }
+      const VkDescriptorBufferInfo ob = { out, 0, 64 };
+      const VkWriteDescriptorSet wr[3] = {
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &ob },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 1, .descriptorCount = 9,
+           .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, .pTexelBufferView = views },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 2, .descriptorCount = 4,
+           .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = ub },
+      };
+      UpdateDescriptorSets(dev, 3, wr, 0, NULL);
+   } else if (scenario == 24) {
       VkBuffer src;
       uint32_t *w;
       if (buffer(1024, both | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT, true, &src, (void **)&w))
@@ -5539,7 +5575,7 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          CmdDispatchIndirect(cmd, scenario == 18 ? in : out, 512);
       else
          CmdDispatch(cmd, 1, 1, 1);
-   } else if ((scenario >= 24 && scenario <= 29) || scenario == 32 || scenario == 77) {
+   } else if ((scenario >= 24 && scenario <= 29) || scenario == 32 || scenario == 77 || scenario == 91) {
       if (l7a_misc(scenario, cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 30 || scenario == 31) {

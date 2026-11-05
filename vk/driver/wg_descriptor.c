@@ -215,8 +215,10 @@ wg_CreateDescriptorPool(VkDevice _device, const VkDescriptorPoolCreateInfo *pCre
 static void
 set_destroy(struct wg_device *dev, struct wg_descriptor_set *set)
 {
-   for (uint32_t i = 0; i < WG_SET_GROUPS; i++)
+   for (uint32_t i = 0; i < WG_SET_GROUPS; i++) {
       wg_id_release(set->groups[i].group);
+      wg_id_release(set->groups[i].table);
+   }
    wg_id_release(set->inline_buffer);
    free(set->inline_data);
    list_del(&set->link);
