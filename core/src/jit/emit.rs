@@ -56,6 +56,25 @@ const ENTRY: u32 = 1;
 pub const ACC: u32 = 126;
 pub const LEFT: u32 = 127;
 pub const TAKEN: u32 = 125;
+/// The last parameter: how many host calls deep the function runs (0 from
+/// the dispatcher). A guest call (BL, BLR) below [`MAX_DEPTH`] is a wasm
+/// `call` with the depth + 1, and a `ret` at a depth above 0 a wasm `return`
+/// with [`RETURNED`] set in the result, so the host's own return predicts it
+/// and the caller's continuation stays in its function ([`call`]). Local 128
+/// as emitted ([`Func::locals`] makes it parameter 3), past the 0..=127 the
+/// other locals take: at 118 it was FPCR.FZ's ([`FZOK`]), which an FP guard
+/// overwrote, and a `ret` at depth 0 then returned as a host call's.
+pub const DEPTH: u32 = 128;
+const _: () = assert!(DEPTH >= 128, "the other locals take 0..=127");
+/// A function's result with this bit: it ended on a `ret` at a depth above 0
+/// (the PC in the `Cpu` is the return's target); without it, it stopped (an
+/// exit, the budget, a block not compiled) and every caller returns too.
+pub const RETURNED: u32 = 1 << 31;
+/// The deepest host call: frames past it would risk the host's stack (a
+/// guest's deep recursion), so a call there is a tail call as before.
+pub const MAX_DEPTH: u32 = 64;
+/// The i32 scratch local that holds a call's result ([`call`]).
+const RESULT: u32 = 9;
 /// A v128 scratch local (AdvSIMD reductions, M6 loop 4).
 pub const VTMP: u32 = 124;
 /// More v128 scratch locals (vector FP, M6 loop 6).
@@ -274,8 +293,9 @@ impl Func {
     /// Renumbers the function's locals to the ones it uses (i64s, then
     /// i32s) and returns their declarations, for `Module::func`.
     pub fn locals(&mut self) -> Vec<(u32, u8)> {
-        self.c.compact_locals(&[VCPU, ACC, LEFT], |i| {
+        self.c.compact_locals(&[VCPU, ACC, LEFT, DEPTH], |i| {
             if (6..=9).contains(&i)
+                || i == DEPTH
                 || (13..=16).contains(&i)
                 || i == TAKEN
                 || i == FPOK
@@ -706,6 +726,12 @@ pub fn pc_plus(c: &mut Func, off: i64) {
     if off != 0 {
         c.i64_const(off).i64_add();
     }
+}
+
+/// A function entered at the member `off` bytes after its head: the entry
+/// PC (local 1, read from the `Cpu`) becomes the head's.
+pub fn enter_at(c: &mut Func, off: i64) {
+    c.local_get(ENTRY).i64_const(off).op(0x7d).local_set(ENTRY); // i64.sub
 }
 
 /// Stores the entry PC + `off` to `Cpu::pc`.
@@ -1269,6 +1295,7 @@ pub fn indirect(
     len: u32,
     ty: u32,
     check: Option<u32>,
+    x: Xfer,
 ) {
     const KEY: u32 = BASE; // i64 scratch
     if core::mem::take(&mut c.pc_in_addr) {
@@ -1278,11 +1305,9 @@ pub fn indirect(
     }
     c.i64_const(3).op(AND + W).op(EQZ + WC); // aligned
     if let Some(miss) = miss {
-        via_xc(c, regime, len, ty, check);
-        c.local_get(VCPU);
-        c.local_get(ACC).i32_const(len as i32).op(ADD);
-        c.local_get(LEFT).i32_const(len as i32).op(SUB);
-        c.return_call(miss);
+        via_xc(c, regime, len, ty, check, x);
+        // A miss is a tail call even in a call (rare once the cache is warm).
+        transfer(c, Xfer::Tail, len, ty, To::Func(miss, 0), 0);
         return;
     }
     c.local_get(ADDR);
@@ -1290,12 +1315,142 @@ pub fn indirect(
         c.i64_const(regime as i64).op(OR + W);
     }
     c.local_set(KEY);
-    via_jc(c, None, len, ty, check);
+    via_jc(c, None, len, ty, check, x);
+}
+
+/// How a block leaves for another function: a tail call, or for a guest
+/// call below [`MAX_DEPTH`] a host call ([`DEPTH`]) whose result goes to
+/// [`RESULT`], followed by a `br` to the label this many levels out from
+/// where the transfer's probe starts (where the caller handles the result);
+/// at the limit, a tail call.
+#[derive(Clone, Copy)]
+pub enum Xfer {
+    Tail,
+    Call(u32),
+}
+
+/// What a transfer goes to: a function, or the table index in the low half
+/// of an i64 local, or an i32 loaded from an i32 local plus an offset (a
+/// jump or transfer cache entry's word: the table index, and the entry at
+/// [`super::ENTRY_SHIFT`]); a function is entered at entry `.1`.
+#[derive(Clone, Copy)]
+pub enum To {
+    Func(u32, u32),
+    Wrap(u32),
+    Load(u32, u32),
+}
+
+impl To {
+    /// Pushes the cache entry's word.
+    fn word(self, c: &mut Func) {
+        match self {
+            To::Func(..) => {}
+            To::Wrap(l) => {
+                c.local_get(l).i32_wrap_i64();
+            }
+            To::Load(l, o) => {
+                c.local_get(l).i32_load(o);
+            }
+        }
+    }
+}
+
+/// Pushes a transfer's arguments: the vCPU, `acc` and `left` with this
+/// block's `len` retired, and the depth plus `deeper` with the entry of `to`
+/// above [`ENTRY_BIT`]; then the table index for an indirect transfer.
+fn args(c: &mut Func, len: u32, deeper: bool, to: To) {
+    c.local_get(VCPU);
+    c.local_get(ACC).i32_const(len as i32).op(ADD);
+    c.local_get(LEFT).i32_const(len as i32).op(SUB);
+    c.local_get(DEPTH);
+    if deeper {
+        c.i32_const(1).op(ADD);
+    }
+    match to {
+        To::Func(_, 0) => {}
+        To::Func(_, e) => {
+            c.i32_const((e << ENTRY_BIT) as i32).op(OR);
+        }
+        _ => {
+            // (word >> ENTRY_SHIFT) << ENTRY_BIT
+            to.word(c);
+            c.i32_const((super::ENTRY_SHIFT - ENTRY_BIT) as i32)
+                .op(SHR_U);
+            c.i32_const(!((1 << ENTRY_BIT) - 1)).op(AND).op(OR);
+            to.word(c);
+            c.i32_const(super::IDX_MASK as i32).op(AND);
+        }
+    }
+}
+
+/// The transfer of a block of `len` to `to` (`ty`: the block type); `inner`:
+/// the blocks opened since the probe started.
+pub fn transfer(c: &mut Func, x: Xfer, len: u32, ty: u32, to: To, inner: u32) {
+    if let Xfer::Call(label) = x {
+        c.local_get(DEPTH)
+            .i32_const(MAX_DEPTH as i32)
+            .op(LT_U)
+            .hint(true)
+            .if_();
+        args(c, len, true, to);
+        match to {
+            To::Func(f, _) => c.call(f),
+            _ => c.call_indirect(ty),
+        };
+        c.local_set(RESULT).br(label + inner + 1).end();
+    }
+    args(c, len, false, to);
+    match to {
+        To::Func(f, _) => c.return_call(f),
+        _ => c.return_call_indirect(ty),
+    };
+}
+
+/// Where a function's entry number sits in its [`DEPTH`] parameter: a
+/// region entered at a member other than its head (a call's continuation,
+/// docs/jit.md "Calls") gets it there, and clears it.
+pub const ENTRY_BIT: u32 = 16;
+
+/// A `ret` at a depth above 0 (a host call's, [`DEPTH`]): returns the
+/// block's retired count with [`RETURNED`] (the PC is in the `Cpu`).
+pub fn ret_up(c: &mut Func, len: u32) {
+    c.local_get(DEPTH).if_();
+    c.local_get(ACC).i32_const(len as i32).op(ADD);
+    c.i32_const(RETURNED as i32).op(OR).return_();
+    c.end();
+}
+
+/// After a guest call's host call ([`Xfer::Call`]), with its result in
+/// [`RESULT`]: opens an `if` the callee returned ([`RETURNED`]), in which it
+/// sets `acc` and `left` to what they'd be at the calling block's entry
+/// (`len`: its length) had the callee's steps been the caller's, so the code
+/// after can retire the block again, and leaves an i32 on the stack, non-zero
+/// iff the PC is the entry PC + `off` (the call's continuation). [`unreturned`]
+/// closes it.
+pub fn returned(c: &mut Func, len: u32, off: i64) {
+    c.local_get(RESULT).i32_const(0).op(LT_S).hint(true).if_();
+    // left += acc - (result - len); acc = result - len, the flag dropped.
+    c.local_get(RESULT).i32_const(!RETURNED as i32).op(AND);
+    c.i32_const(len as i32).op(SUB).local_set(RESULT);
+    c.local_get(LEFT).local_get(ACC).op(ADD);
+    c.local_get(RESULT).op(SUB).local_set(LEFT);
+    c.local_get(RESULT).local_set(ACC);
+    c.local_get(VCPU).i64_load(PC);
+    pc_plus(c, off);
+    c.op(EQ + WC);
+}
+
+/// Closes [`returned`]'s `if` (whose code returned) and returns the callee's
+/// result: it stopped (an exit, the budget, a block not compiled), so every
+/// caller does.
+pub fn unreturned(c: &mut Func) {
+    c.end();
+    c.local_get(RESULT).return_();
 }
 
 /// The transfer cache probe of [`indirect`], for the VA in `ADDR` and an i32
 /// condition on the stack: the entry's tag, its generation and its length.
-fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>) {
+fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>, x: Xfer) {
     const TO: u32 = BASE; // i64 scratch
     // The entry, `vcpu + XC + ((va >> 2) & (XC_ENTRIES - 1)) * 16`.
     xc_entry(c);
@@ -1316,13 +1471,8 @@ fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>) {
     if let Some(chk) = check {
         c.local_get(VCPU).i64_const(-1).call(chk);
     }
-    c.local_get(VCPU);
-    c.local_get(ACC).i32_const(len as i32).op(ADD);
-    c.local_get(LEFT).i32_const(len as i32).op(SUB);
-    c.local_get(TO)
-        .i32_wrap_i64()
-        .return_call_indirect(ty)
-        .end();
+    transfer(c, x, len, ty, To::Wrap(TO), 1);
+    c.end();
 }
 
 /// The `Vcpu` offsets of the pointers to its table's jump cache and hot words
@@ -1414,8 +1564,8 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>) -> 
     if let Some(chk) = check {
         c.local_get(VCPU).local_get(KEY).call(chk);
     }
-    c.local_get(VCPU).local_get(ACC).local_get(LEFT);
-    c.local_get(JCE).i32_load(8).return_call_indirect(ty).end();
+    transfer(&mut c, Xfer::Tail, 0, ty, To::Load(JCE, 8), 1);
+    c.end();
     c.local_get(ACC).end();
     c
 }
@@ -1425,7 +1575,7 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>) -> 
 /// the i64 scratch local). With an i32 condition on the stack, tail-calls the
 /// block the entry holds if the condition holds, its key matches and `left`
 /// covers both blocks; otherwise falls through.
-pub fn via_jc(c: &mut Func, key: Option<u64>, len: u32, ty: u32, check: Option<u32>) {
+pub fn via_jc(c: &mut Func, key: Option<u64>, len: u32, ty: u32, check: Option<u32>, x: Xfer) {
     const KEY: u32 = BASE; // i64 scratch
     const JCE: u32 = HOST; // i32 scratch
     match key {
@@ -1462,10 +1612,8 @@ pub fn via_jc(c: &mut Func, key: Option<u64>, len: u32, ty: u32, check: Option<u
         };
         c.call(chk);
     }
-    c.local_get(VCPU);
-    c.local_get(ACC).i32_const(len as i32).op(ADD);
-    c.local_get(LEFT).i32_const(len as i32).op(SUB);
-    c.local_get(JCE).i32_load(8).return_call_indirect(ty).end();
+    transfer(c, x, len, ty, To::Load(JCE, 8), 1);
+    c.end();
 }
 
 /// Pushes an i32 that is non-zero iff X30 is the entry PC + `off`: a return
@@ -1489,7 +1637,10 @@ pub fn tier_up(c: &mut Func, word: u32, key: u64, ty: u32, hot: u32) {
     c.local_get(VCPU).i32_load(HOT_PTR).local_tee(H);
     c.i32_load(off).local_tee(V);
     c.i32_const(0).op(LT_S).if_();
-    c.local_get(VCPU).local_get(ACC).local_get(LEFT);
+    c.local_get(VCPU)
+        .local_get(ACC)
+        .local_get(LEFT)
+        .local_get(DEPTH);
     c.local_get(V).i32_const(!REDIRECT as i32).op(AND);
     c.return_call_indirect(ty).end();
     c.local_get(V).if_();

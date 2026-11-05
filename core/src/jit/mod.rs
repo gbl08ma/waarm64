@@ -24,11 +24,13 @@ use crate::mem::Mem;
 use crate::mmu::{Flat, Mmu, Vcpu};
 use crate::vm::Lock;
 
-/// A compiled block: `f(vcpu, acc, left) -> acc + retired`, equivalent to
-/// `interp::steps` for its length and the blocks it chains to within `left`
-/// steps (docs/jit.md): if fewer than all their instructions retired,
-/// the one that didn't left its exit in [`State::exit`] and the PC on it.
-pub type Block = unsafe extern "C" fn(*mut Vcpu, u32, u32) -> u32;
+/// A compiled block: `f(vcpu, acc, left, depth) -> acc + retired`,
+/// equivalent to `interp::steps` for its length and the blocks it chains to
+/// within `left` steps (docs/jit.md): if fewer than all their instructions
+/// retired, the one that didn't left its exit in [`State::exit`] and the PC
+/// on it. The dispatcher calls it at depth 0 (`emit::DEPTH`), where a result
+/// never has `emit::RETURNED`.
+pub type Block = unsafe extern "C" fn(*mut Vcpu, u32, u32, u32) -> u32;
 
 /// Per-vCPU JIT state, before the TLB in [`Vcpu`]. The helpers use the first
 /// two fields; the cache exists only while the JIT is on.
@@ -389,6 +391,13 @@ pub struct Jc {
     idx: u32,
     len: u32,
 }
+
+/// A compiled block's word (`Info::idx`, a jump or transfer cache entry's):
+/// its function's table index, and above this bit the entry it's at in that
+/// function (0: its head; else a member that a call returns to: docs/jit.md
+/// "Calls").
+pub const ENTRY_SHIFT: u32 = 24;
+pub const IDX_MASK: u32 = (1 << ENTRY_SHIFT) - 1;
 
 /// Direct-mapped jump cache in front of the map (as QEMU's `tb_jmp_cache`).
 pub const JC: usize = 65536;
@@ -1259,6 +1268,11 @@ impl Cache {
         let slot = self.alloc(n, budget, &mut t.stats);
         t.miss_functions(self, mem);
         let xmiss = self.xmiss.filter(|_| !self.off)?;
+        // A table index's bits above IDX_MASK hold an entry number (`ENTRY_SHIFT`).
+        assert!(
+            xmiss + slot + n <= IDX_MASK,
+            "table index past {IDX_MASK:#x}"
+        );
         let mut tiers = Vec::new();
         for (k, r) in regions.iter_mut().enumerate() {
             if r.tier.is_some() {
@@ -1279,6 +1293,7 @@ impl Cache {
             inl,
             links,
             counts,
+            entries,
         } = block::module(
             &regions,
             mem,
@@ -1319,7 +1334,10 @@ impl Cache {
         s.cond_computed += counts.cond_computed;
         s.cond_memory += counts.cond_memory;
         (s.modules, s.blocks, s.bytes) = (s.modules + 1, s.blocks + n as u64, s.bytes + len);
-        for (k, ((r, inl), links)) in regions.iter().zip(inl).zip(links).enumerate() {
+        let heads: Vec<u64> = regions.iter().map(|r| r.blocks[0].key).collect();
+        for (k, (((r, inl), links), ents)) in
+            regions.iter().zip(inl).zip(links).zip(entries).enumerate()
+        {
             let size: u32 = r.blocks.iter().map(|b| b.words.len() as u32).sum();
             let s = &mut t.stats;
             (s.inline, s.helpers) = (s.inline + inl as u64, s.helpers + (size - inl) as u64);
@@ -1345,6 +1363,27 @@ impl Cache {
             }
             for t in links {
                 self.linkers.entry(t).or_default().push(key);
+            }
+            // The members it can be entered at go with it.
+            for (m, e, mlen) in ents {
+                // (One that heads a region of its own keeps its function.)
+                if heads.contains(&m) {
+                    continue;
+                }
+                let i = self.info(m, || mlen);
+                let at = (idx + k as u32) | e << ENTRY_SHIFT;
+                (i.idx, i.len, i.word, i.queued) = (at, mlen as u8, 0, false);
+                // Entered at m, the function runs the members after it too:
+                // the checker hashes the whole region, as at its head.
+                if let Some(s) = self
+                    .cfg
+                    .check
+                    .then(|| self.spans.get(&key).cloned())
+                    .flatten()
+                {
+                    self.spans.insert(m, s);
+                }
+                self.linkers.entry(key).or_default().push(m);
             }
             // A region goes with any of its pages (`invalidate`).
             for b in r.blocks.iter().skip(1) {
@@ -1868,7 +1907,7 @@ impl Jit {
         drop(c);
         self.install();
         match r {
-            Ok((idx, len)) if idx < self.table.limit => {
+            Ok((idx, len)) if idx & IDX_MASK < self.table.limit => {
                 if self.table.known.try_reserve(1).is_err() {
                     // No room in the heap: it starts over (a clear keeps its table).
                     self.table.known = Map::default();
@@ -2203,7 +2242,12 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             // the blocks chained to them, before it reuses their slots), and no
             // reference into `*v` is live: the block and its helpers use the
             // raw pointer. `mem` isn't in `*v`.
-            let k = unsafe { block(idx)(v, 0, left.min(i32::MAX as u64) as u32) } as u64;
+            let (f, entry) = (idx & IDX_MASK, idx >> ENTRY_SHIFT << emit::ENTRY_BIT);
+            let k = unsafe { block(f)(v, 0, left.min(i32::MAX as u64) as u32, entry) } as u64;
+            debug_assert!(
+                k < emit::RETURNED as u64,
+                "block {key:#x} (index {idx:#x}, entry {entry:#x}) returned {k:#x}"
+            );
             // SAFETY: the block has returned.
             let vr = unsafe { &mut *v };
             let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
@@ -2617,7 +2661,7 @@ pub fn add_module(reg: u32, imm: i64) -> Vec<u8> {
     use wasm::{Code, I32, Module};
     let mut m = Module::default();
     m.import_memory("env", "memory", 0, 65536);
-    let t = m.ty(&[I32, I32, I32], &[I32]);
+    let t = m.ty(&[I32, I32, I32, I32], &[I32]);
     let mut c = Code::default();
     let off = 8 * reg;
     c.local_get(0).local_get(0).i64_load(off);

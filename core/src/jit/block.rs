@@ -8,6 +8,7 @@
 
 use super::Config;
 use super::emit;
+use super::emit::Xfer;
 use super::wasm::{F64, I32, I64, Module};
 use crate::decode::{Op, decode};
 use crate::mem::Mem;
@@ -225,6 +226,28 @@ impl Region {
         head.key & KEY_MMU != 0 && !follows(from) && !follows(head)
     }
 
+    /// The members a call in the region returns to, in its head's page: a
+    /// function's entries besides its head ([`emit::ENTRY_BIT`]), since a
+    /// return reaches them from outside too (after anything that unwound the
+    /// host calls: an exception, the chunk's end). None in a loop (its
+    /// members are inside the `loop`, which only its head enters).
+    pub fn entries(&self) -> Vec<usize> {
+        if self.looped() {
+            return vec![];
+        }
+        let head = self.blocks[0].key;
+        let mut v: Vec<usize> = (0..self.blocks.len())
+            .filter_map(|i| {
+                let a = call_after(&self.blocks[i].words)?;
+                self.target(i, a).filter(|&j| j > i)
+            })
+            .filter(|&j| (self.blocks[j].key ^ head) >> 12 == 0)
+            .collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    }
+
     /// The members that member `i`'s static edges go to.
     fn targets(&self, i: usize) -> impl Iterator<Item = usize> + '_ {
         offsets(&self.blocks[i].words)
@@ -325,7 +348,9 @@ pub fn region(mem: &Mem, key: u64, va: u64, hot: &dyn Fn(u64) -> bool) -> Region
 /// predicted to return after that call: the block there is taken as the
 /// `ret` block's successor ([`Region::returns`]), so a call and its return
 /// can both stay inside the function. A callee reached from a second call
-/// keeps its first prediction.
+/// keeps its first prediction. A callee not taken is called (a host call,
+/// docs/jit.md "Calls"), and the block after the call is taken as where
+/// that call returns: one of the region's entries ([`Region::entries`]).
 ///
 /// Where [`region`] is a loop, compiled once its head is hot, this is
 /// straight-line code, its branches and its calls, compiled together the
@@ -375,12 +400,21 @@ pub fn forward(
                 Op::BL => {
                     let k = succ(b.key, after);
                     let near = ((k ^ b.key) >> 12 == 0).then_some(k);
-                    let mut calls = calls.to_vec();
-                    calls.push((b.va.wrapping_add(after as u64), near));
+                    let mut inner = calls.to_vec();
+                    inner.push((b.va.wrapping_add(after as u64), near));
                     for o in offsets(&b.words) {
-                        self.edge(&b, o, &calls);
+                        self.edge(&b, o, &inner);
+                    }
+                    // Where a host call of the callee returns to, unless
+                    // the callee is a member (its `ret` predicts the return).
+                    let to = offsets(&b.words)
+                        .first()
+                        .map(|&o| b.va.wrapping_add(o as u64));
+                    if !self.seen.iter().any(|&(_, v)| Some(v) == to) {
+                        self.edge(&b, after, calls);
                     }
                 }
+                Op::BLR => self.edge(&b, after, calls),
                 Op::RET if crate::interp::bits(last, 9, 5) == 30 => {
                     if let Some((&(va, near), calls)) = calls.split_last() {
                         self.returns.push((b.key, va));
@@ -452,12 +486,16 @@ pub struct Emitted {
     pub inl: Vec<u32>,
     pub links: Vec<Vec<u64>>,
     pub counts: emit::Counts,
+    /// Each region's entries besides its head ([`Region::entries`]): the
+    /// member's key, its entry number and its length.
+    pub entries: Vec<Vec<(u64, u32, u32)>>,
 }
 
 /// What every region of a module is emitted against.
 struct Env<'a> {
-    /// The functions of successors outside a region: this batch's own, or imports.
-    funcs: &'a HashMap<u64, (u32, u32)>,
+    /// The functions of successors outside a region (this batch's own, or
+    /// imports), with the block's length and its entry in the function.
+    funcs: &'a HashMap<u64, (u32, u32, u32)>,
     cx: emit::Ctx,
     /// The block function type, the checker's import, whether there's a jump cache.
     bt: u32,
@@ -525,7 +563,7 @@ pub fn module(
     let jscvt = features & crate::cpu::FEATURE_JSCVT != 0;
     let parallel = features & crate::cpu::FEATURE_PARALLEL != 0;
     let mut m = Module::default();
-    let bt = m.ty(&[I32, I32, I32], &[I32]);
+    let bt = m.ty(&[I32, I32, I32, I32], &[I32]);
     let ht = m.ty(&[I32, I32, I64], &[I32]);
     let flat = m.import_func("env", "jit_exec_flat", ht);
     let mmu = m.import_func("env", "jit_exec_mmu", ht);
@@ -550,16 +588,26 @@ pub fn module(
     });
     // Successors outside their region: this batch's heads, or imports.
     let heads = |k| regions.iter().any(|r| r.blocks[0].key == k);
-    let mut funcs: HashMap<u64, (u32, u32)> = HashMap::new();
+    let entries: Vec<Vec<usize>> = regions.iter().map(|r| r.entries()).collect();
+    let local = |k: u64| {
+        heads(k)
+            || regions
+                .iter()
+                .zip(&entries)
+                .any(|(r, e)| e.iter().any(|&j| r.blocks[j].key == k))
+    };
+    let mut funcs: HashMap<u64, (u32, u32, u32)> = HashMap::new();
     for r in regions {
         for b in &r.blocks {
-            for k in succs(b.key, &b.words) {
-                if funcs.contains_key(&k) || heads(k) {
+            let after = call_after(&b.words).map(|a| succ(b.key, a));
+            for k in succs(b.key, &b.words).into_iter().chain(after) {
+                if funcs.contains_key(&k) || local(k) {
                     continue;
                 }
                 if let Some((idx, len)) = compiled(k) {
-                    let f = m.import_func("t", &idx.to_string(), bt);
-                    funcs.insert(k, (f, len));
+                    let name = (idx & super::IDX_MASK).to_string();
+                    let f = m.import_func("t", &name, bt);
+                    funcs.insert(k, (f, len, idx >> super::ENTRY_SHIFT));
                 }
             }
         }
@@ -601,7 +649,14 @@ pub fn module(
     let first = m.next_func();
     for (k, r) in regions.iter().enumerate() {
         let h = &r.blocks[0];
-        funcs.insert(h.key, (first + k as u32, h.words.len() as u32));
+        funcs.insert(h.key, (first + k as u32, h.words.len() as u32, 0));
+    }
+    for (k, (r, e)) in regions.iter().zip(&entries).enumerate() {
+        for (n, &j) in e.iter().enumerate() {
+            let b = &r.blocks[j];
+            let f = (first + k as u32, b.words.len() as u32, n as u32 + 1);
+            funcs.entry(b.key).or_insert(f);
+        }
     }
 
     let mut out = Emitted {
@@ -609,6 +664,16 @@ pub fn module(
         inl: Vec::with_capacity(regions.len()),
         links: Vec::with_capacity(regions.len()),
         counts: emit::Counts::default(),
+        entries: entries
+            .iter()
+            .zip(regions)
+            .map(|(e, r)| {
+                let b = |j: usize| &r.blocks[j];
+                let at =
+                    |(n, &j): (usize, &usize)| (b(j).key, n as u32 + 1, b(j).words.len() as u32);
+                e.iter().enumerate().map(at).collect()
+            })
+            .collect(),
     };
     let (base, phys) = mem.base();
     let pair_locks = mem.pair_locks() as usize as u32;
@@ -722,13 +787,16 @@ pub fn module(
         out.inl.push(n);
         let mut links = vec![];
         for (i, b) in r.blocks.iter().enumerate() {
-            for o in offsets(&b.words) {
+            let after = call_after(&b.words);
+            for o in offsets(&b.words).into_iter().chain(after) {
                 // What leaves the region for a compiled block, or may (an
-                // edge whose check fails).
+                // edge whose check fails); a call's continuation stays only
+                // in a later member.
                 let k = succ(b.key, o);
+                let back = after != Some(o);
                 let stays = r
                     .target(i, o)
-                    .is_some_and(|j| (j > i || j == 0) && !r.checked(i, j));
+                    .is_some_and(|j| (j > i || back && j == 0) && !r.checked(i, j));
                 if !stays && funcs.contains_key(&k) && !links.contains(&k) {
                     links.push(k);
                 }
@@ -747,7 +815,7 @@ pub fn module(
 /// optimized (a copy in each module stayed in Liftoff).
 pub fn miss_module(mem: &Mem, check: bool, pages: u32) -> Vec<u8> {
     let mut m = Module::default();
-    let bt = m.ty(&[I32, I32, I32], &[I32]);
+    let bt = m.ty(&[I32, I32, I32, I32], &[I32]);
     let checker = check.then(|| {
         let ct = m.ty(&[I32, I64], &[]);
         m.import_func("env", "jit_check", ct)
@@ -826,6 +894,35 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
     }
     for _ in 1..n {
         c.block();
+    }
+    // Entries besides the head: the entry number from the depth's high bits
+    // (cleared), the entry PC moved back to the head's, and on to the member
+    // with the registers it starts with. Its flags are in memory.
+    let ents = r.entries();
+    if !ents.is_empty() {
+        const E: u32 = 8; // i32 scratch
+        let here = c.regs;
+        c.local_get(emit::DEPTH)
+            .i32_const(emit::ENTRY_BIT as i32)
+            .op(0x76) // i32.shr_u
+            .local_tee(E)
+            .hint(false)
+            .if_();
+        c.local_get(emit::DEPTH)
+            .i32_const((1 << emit::ENTRY_BIT) - 1)
+            .op(0x71) // i32.and
+            .local_set(emit::DEPTH);
+        for (k, &j) in ents.iter().enumerate() {
+            c.local_get(E).i32_const(k as i32 + 1).op(0x46).if_(); // i32.eq
+            emit::enter_at(&mut c, r.blocks[j].va.wrapping_sub(head) as i64);
+            into[j] = into[j].merge(here, 0);
+            flags[j] = flags[j].merge(In::Mem);
+            c.conform(entry[j]);
+            // Member j's label, from inside the two `if`s.
+            c.br(j as u32 + 1).end();
+            c.regs = here;
+        }
+        c.op(0x00).end(); // unreachable
     }
     for (i, b) in r.blocks.iter().enumerate() {
         if i > 0 {
@@ -1002,18 +1099,52 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
             c.i64_store(emit::PC);
             c.defer_pc = false;
         }
+        // A call's continuation once its callee returned (an i32 on the
+        // stack: whether the PC is there): the member there, or its block's
+        // function.
+        let after = call_after(&b.words);
+        let mut cont = |c: &mut emit::Func| {
+            let a = after.expect("a call");
+            match r.target(i, a).filter(|&j| j > i) {
+                Some(j) => {
+                    // The callee may have rewritten what follows (the
+                    // checker's case): the region's code, checked as at an
+                    // entry, before the members run on.
+                    if let Some(chk) = e.checker {
+                        c.local_get(0).i64_const(r.blocks[0].key as i64).call(chk);
+                    }
+                    edge(c, j, 2, true)
+                }
+                None => {
+                    c.if_();
+                    chain(e, c, b, a, Xfer::Tail);
+                    c.end();
+                }
+            }
+        };
+        let op = b.words.last().map(|&w| decode(w));
         match succs {
             Next::One(o) => {
                 if leaves(o) {
-                    chain(e, &mut c, b, o);
+                    if after.is_some() {
+                        call(
+                            e,
+                            &mut c,
+                            b,
+                            &mut |c| chain(e, c, b, o, Xfer::Call(0)),
+                            &mut cont,
+                        );
+                    } else {
+                        chain(e, &mut c, b, o, Xfer::Tail);
+                    }
                 }
             }
             Next::Cond(t, o) => match (leaves(t), leaves(o)) {
                 (true, true) => {
                     c.local_get(emit::TAKEN).if_();
-                    chain(e, &mut c, b, t);
+                    chain(e, &mut c, b, t, Xfer::Tail);
                     c.else_();
-                    chain(e, &mut c, b, o);
+                    chain(e, &mut c, b, o, Xfer::Tail);
                     c.end();
                 }
                 (false, false) => {}
@@ -1023,15 +1154,25 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
                         c.op(0x45); // i32.eqz
                     }
                     c.if_();
-                    chain(e, &mut c, b, if lt { t } else { o });
+                    chain(e, &mut c, b, if lt { t } else { o }, Xfer::Tail);
                     c.end();
                 }
             },
             Next::None => {
-                let op = b.words.last().map(|&w| decode(w));
+                if op == Some(Op::RET) {
+                    emit::ret_up(&mut c, len);
+                }
                 if e.jc && matches!(op, Some(Op::BR | Op::BLR | Op::RET)) {
                     let miss = (b.key & KEY_MMU != 0).then(|| e.miss(b.key));
-                    emit::indirect(&mut c, b.key & 3, miss, len, e.bt, e.checker);
+                    let (regime, bt, chk) = (b.key & 3, e.bt, e.checker);
+                    if op == Some(Op::BLR) {
+                        let mut probe = |c: &mut emit::Func| {
+                            emit::indirect(c, regime, miss, len, bt, chk, Xfer::Call(0))
+                        };
+                        call(e, &mut c, b, &mut probe, &mut cont);
+                    } else {
+                        emit::indirect(&mut c, regime, miss, len, bt, chk, Xfer::Tail);
+                    }
                 }
             }
         }
@@ -1060,7 +1201,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
 /// that the VA maps there (the instruction TLB of the block's EL), and
 /// otherwise the successor is found as an indirect branch's target is, by
 /// its VA in the transfer cache.
-fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64) {
+fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
     let k = succ(b.key, off);
     let len = b.words.len() as u32;
     let f = e.funcs.get(&k);
@@ -1072,14 +1213,14 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64) {
     // The PC is in the `Cpu` by now: the successor's VA.
     let by_va = |c: &mut emit::Func| {
         let miss = Some(e.miss(b.key));
-        emit::indirect(c, b.key & 3, miss, len, e.bt, e.checker);
+        emit::indirect(c, b.key & 3, miss, len, e.bt, e.checker, x);
     };
-    let Some(&(f, tlen)) = f else {
+    let Some(&(f, tlen, entry)) = f else {
         if guarded {
             return by_va(c);
         }
         c.i32_const(1);
-        return emit::via_jc(c, Some(k), len, e.bt, e.checker);
+        return emit::via_jc(c, Some(k), len, e.bt, e.checker, x);
     };
     c.local_get(emit::LEFT)
         .i32_const((len + tlen) as i32)
@@ -1093,13 +1234,53 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64) {
     if let Some(chk) = e.checker {
         c.local_get(0).i64_const(k as i64).call(chk);
     }
-    c.local_get(0);
-    c.local_get(emit::ACC).i32_const(len as i32).op(0x6a); // i32.add
-    c.local_get(emit::LEFT).i32_const(len as i32).op(0x6b); // i32.sub
-    c.return_call(f).end();
+    emit::transfer(c, x, len, e.bt, emit::To::Func(f, entry), 1);
+    c.end();
     if guarded && e.jc {
         by_va(c);
     }
+}
+
+/// The byte offset of a call's continuation (the instruction after a BL or
+/// BLR that ends block `words`), if it ends on one.
+fn call_after(words: &[u32]) -> Option<i64> {
+    let w = *words.last()?;
+    matches!(decode(w), Op::BL | Op::BLR).then_some(4 * words.len() as i64)
+}
+
+/// A guest call's host call (docs/jit.md "Calls"): `probe` emits the
+/// transfers to block `b`'s callee as [`Xfer::Call`] to the label right
+/// outside it (a host call below [`emit::MAX_DEPTH`], else a tail call).
+/// When the callee returns ([`emit::RETURNED`]), `cont` continues at the
+/// call's continuation (an i32 on the stack: whether the PC is there; two
+/// blocks are open around it); if it doesn't, the PC's block is found
+/// through the transfer cache's miss function (MMU on; with it off, the
+/// block returns). If nothing was called, falls through.
+fn call(
+    e: &Env,
+    c: &mut emit::Func,
+    b: &Block,
+    probe: &mut dyn FnMut(&mut emit::Func),
+    cont: &mut dyn FnMut(&mut emit::Func),
+) {
+    let len = b.words.len() as u32;
+    let after = call_after(&b.words).expect("a call");
+    c.block().block();
+    probe(c);
+    c.br(1).end();
+    // The callee's registers are the `Cpu`'s now, and its flags.
+    let regs = c.regs;
+    c.forget(!0);
+    emit::returned(c, len, after);
+    cont(c);
+    if e.jc && b.key & KEY_MMU != 0 {
+        let miss = emit::To::Func(e.miss(b.key), 0);
+        emit::transfer(c, Xfer::Tail, len, e.bt, miss, 0);
+    }
+    c.ret(len);
+    emit::unreturned(c);
+    c.end();
+    c.regs = regs;
 }
 
 #[cfg(test)]
@@ -1208,10 +1389,10 @@ mod tests {
         #[rustfmt::skip]
         let body = [
             1, 2, I64,                              // locals: the entry PC and x1, all it uses
-            0x20, 0, 0x29, 3, 0x80, 2, 0x21, 3,     // local.get 0; i64.load 256; local.set 3
-            0x42, 3, 0x21, 4,                       // movz inline: x1 (local 4) = 3
-            0x20, 0, 0x20, 4, 0x37, 3, 8,           // written back before the helper
-            0x20, 0, 0x41, 0x80, 0x84, 0xed, 0xa8, 0x7d, 0x20, 3, 0x42, 4, 0x7c, // msr, pc + 4
+            0x20, 0, 0x29, 3, 0x80, 2, 0x21, 4,     // local.get 0; i64.load 256; local.set 4
+            0x42, 3, 0x21, 5,                       // movz inline: x1 (local 5) = 3
+            0x20, 0, 0x20, 5, 0x37, 3, 8,           // written back before the helper
+            0x20, 0, 0x41, 0x80, 0x84, 0xed, 0xa8, 0x7d, 0x20, 4, 0x42, 4, 0x7c, // msr, pc + 4
             0x10, 1, 0x04, 0x40,                    // call mmu; if (hinted unlikely, at 37):
             0x20, 1, 0x41, 1, 0x6a, 0x0f, 0x0b,     //   return acc + 1
             0x20, 1, 0x41, 2, 0x6a, 0x0f, 0x0b,     // return acc + 2 (MSR ends it: no chaining)
@@ -1220,7 +1401,7 @@ mod tests {
         #[rustfmt::skip]
         let mut want = vec![
             0, b'a', b's', b'm', 1, 0, 0, 0,
-            1, 15, 2, 0x60, 3, I32, I32, I32, 1, I32, 0x60, 3, I32, I32, I64, 1, I32, // types
+            1, 16, 2, 0x60, 4, I32, I32, I32, I32, 1, I32, 0x60, 3, I32, I32, I64, 1, I32, // types
             2, 57, 3, // imports
             3, b'e', b'n', b'v', 13, b'j', b'i', b't', b'_', b'e', b'x', b'e', b'c', b'_', b'f', b'l', b'a', b't', 0, 1,
             3, b'e', b'n', b'v', 12, b'j', b'i', b't', b'_', b'e', b'x', b'e', b'c', b'_', b'm', b'm', b'u', 0, 1,
@@ -1252,8 +1433,8 @@ mod tests {
         // next block isn't compiled: nothing to chain to)
         #[rustfmt::skip]
         let tail = [
-            0x20, 0, 0x20, 3, 0x42, 8, 0x7c, 0x37, 3, 0x80, 2,
-            0x20, 0, 0x20, 4, 0x37, 3, 8, 0x20, 1, 0x41, 2, 0x6a, 0x0f, 0x0b,
+            0x20, 0, 0x20, 4, 0x42, 8, 0x7c, 0x37, 3, 0x80, 2,
+            0x20, 0, 0x20, 5, 0x37, 3, 8, 0x20, 1, 0x41, 2, 0x6a, 0x0f, 0x0b,
         ];
         assert!(bytes.windows(tail.len()).any(|w| w == tail));
     }
@@ -1275,13 +1456,13 @@ mod tests {
         let Emitted { bytes, .. } = build(b);
         #[rustfmt::skip]
         let body = [
-            0x20, 0, 0x29, 3, 16, 0x42, 3, 0x7c, 0x21, 4, // x1 = x2 + 3
-            0x20, 4, 0x42, 1, 0x7c, 0x21, 5,              // x3 = x1 + 1
+            0x20, 0, 0x29, 3, 16, 0x42, 3, 0x7c, 0x21, 5, // x1 = x2 + 3
+            0x20, 5, 0x42, 1, 0x7c, 0x21, 6,              // x3 = x1 + 1
         ];
         assert!(has(&bytes, &body));
         assert!(has(
             &bytes,
-            &[0x20, 0, 0x20, 4, 0x37, 3, 8, 0x20, 0, 0x20, 5, 0x37, 3, 24]
+            &[0x20, 0, 0x20, 5, 0x37, 3, 8, 0x20, 0, 0x20, 6, 0x37, 3, 24]
         ));
         assert_eq!(bytes.windows(2).filter(|w| *w == [0x29, 3]).count(), 2); // the PC and x2
     }
@@ -1299,14 +1480,14 @@ mod tests {
         assert_eq!(inl, [2]);
         #[rustfmt::skip]
         let around = [
-            0x20, 0, 0x20, 4, 0x37, 3, 8,                    // x1 written back
+            0x20, 0, 0x20, 5, 0x37, 3, 8,                    // x1 written back
             0x20, 0, 0x41,                                    // helper(vcpu, insn, …)
         ];
         assert!(has(&bytes, &around));
         #[rustfmt::skip]
         let after = [
             0x0f, 0x0b,                                       // …; if: return 1; end
-            0x20, 0, 0x29, 3, 8, 0x22, 4, 0x42, 1, 0x7c, 0x21, 5, // x3 = x1 (reloaded) + 1
+            0x20, 0, 0x29, 3, 8, 0x22, 5, 0x42, 1, 0x7c, 0x21, 6, // x3 = x1 (reloaded) + 1
         ];
         assert!(has(&bytes, &after));
     }
@@ -1332,8 +1513,8 @@ mod tests {
         // b.lt is i64.lt_s on the second's operands, and NZCV is stored once,
         // at the end (live out of every block).
         let (bytes, counts) = one(&[0xeb02003f, 0xeb04007f, 0x5400000b]);
-        // Locals after compaction: entry, one scratch (for the store), the flag locals.
-        assert!(has(&bytes, &[0x20, 5, 0x20, 6, 0x53])); // i64.lt_s
+        // Locals after compaction (after the four parameters): entry, one scratch (for the store), the flag locals.
+        assert!(has(&bytes, &[0x20, 6, 0x20, 7, 0x53])); // i64.lt_s
         assert_eq!(nzcv_stores(&bytes), 1);
         assert!(!has(&bytes, &[0x28, 2, 0x88, 2])); // NZCV never loaded
         // Stored before the branch's PC store (`commit_flags`), not after it.
@@ -1349,10 +1530,10 @@ mod tests {
         assert_eq!(counts, want);
         // tst w1, #1; b.ne: the i32 result against zero (i32.ne).
         let (bytes, _) = one(&[0x7200003f, 0x54000001]);
-        assert!(has(&bytes, &[0x20, 4, 0x41, 0, 0x47])); // the i32 result, after the entry PC
+        assert!(has(&bytes, &[0x20, 5, 0x41, 0, 0x47])); // the i32 result, after the entry PC
         // adds x0, x1, x2; adc x3, x3, x3: the carry in is x + y < x, unsigned.
         let (bytes, counts) = one(&[0xab020020, 0x9a030063]);
-        assert!(has(&bytes, &[0x20, 7, 0x20, 8, 0x7c, 0x20, 7, 0x54])); // i64.lt_u
+        assert!(has(&bytes, &[0x20, 8, 0x20, 9, 0x7c, 0x20, 8, 0x54])); // i64.lt_u
         assert_eq!(counts.cond_direct, 1);
         // Flags from outside the block come from memory.
         let (_, counts) = one(&[0x5400000b]);
@@ -1416,7 +1597,7 @@ mod tests {
         #[rustfmt::skip]
         let tail = [
             0x20, 2, 0x41, 5, 0x4f, 0x04, 0x40,           // if left >= 5:
-            0x20, 0, 0x20, 1, 0x41, 2, 0x6a, 0x20, 2, 0x41, 2, 0x6b, 0x12, 2, 0x0b, // return_call
+            0x20, 0, 0x20, 1, 0x41, 2, 0x6a, 0x20, 2, 0x41, 2, 0x6b, 0x20, 3, 0x12, 2, 0x0b, // return_call
             0x20, 1, 0x41, 2, 0x6a, 0x0f, 0x0b,           // else return acc + 2
         ];
         assert!(has(&e.bytes, &tail));
@@ -1438,7 +1619,7 @@ mod tests {
         };
         let e = build(b);
         assert_eq!(e.links, [Vec::<u64>::new()]);
-        assert!(has(&e.bytes, &[0x20, 5, 0x04, 0x40])); // if TAKEN (compacted: after entry and x1)
+        assert!(has(&e.bytes, &[0x20, 6, 0x04, 0x40])); // if TAKEN (compacted: after entry and x1)
         assert!(has(&e.bytes, &[0x0c, 2, 0x0b])); // the loop, from inside `if TAKEN`
         assert_eq!(e.bytes.iter().filter(|&&b| b == 0x12).count(), 0);
         // With the MMU on, a successor in another page is chained only while
@@ -1463,7 +1644,10 @@ mod tests {
         assert!(has(&e.bytes, &tag));
         assert!(has(&e.bytes, &[0x12, 2, 0x0b])); // the tail call behind it
         // No jump cache here (a module built without one), so nothing else.
-        assert!(!has(&e.bytes, &[0x28, 2, 8, 0x13]));
+        assert!(!has(
+            &e.bytes,
+            &[0x28, 2, 8, 0x41, 0xff, 0xff, 0xff, 7, 0x71, 0x13]
+        ));
     }
 
     /// With the MMU on, a direct branch to another page finds its target by
@@ -1489,7 +1673,7 @@ mod tests {
         let tag = load(emit::XC_LO as u64);
         let to = load(emit::XC_LO as u64 + 8);
         let xgen = load(off(core::mem::offset_of!(crate::mmu::Tlb, xgen)));
-        let tail = [0xa7, 0x13, 0, 0]; // i32.wrap_i64, return_call_indirect
+        let tail = [0xa7, 0x41, 0xff, 0xff, 0xff, 7, 0x71, 0x13, 0, 0]; // i32.wrap_i64, & IDX_MASK, return_call_indirect
         // A miss tail-calls the cache's miss function for EL0, imported by
         // its table index.
         const XMISS: u32 = 40;
@@ -1528,7 +1712,13 @@ mod tests {
             crate::cpu::FEATURES,
             Some(XMISS),
         );
-        assert!(!has(&e.bytes, &tag) && has(&e.bytes, &[0x28, 2, 8, 0x13]));
+        assert!(
+            !has(&e.bytes, &tag)
+                && has(
+                    &e.bytes,
+                    &[0x28, 2, 8, 0x41, 0xff, 0xff, 0xff, 7, 0x71, 0x13]
+                )
+        );
         // Something compiled at the PA that follows: the direct call behind
         // its check first, then the lookup by VA.
         let e = module(
@@ -1542,7 +1732,7 @@ mod tests {
         );
         assert_eq!(e.links, [vec![0x4000_1204 | KEY_MMU]]);
         let call = e.bytes.windows(3).position(|w| w == [0x12, 2, 0x0b]);
-        let ind = e.bytes.windows(4).position(|w| w == tail);
+        let ind = e.bytes.windows(tail.len()).position(|w| w == tail);
         assert!(call.is_some() && call < ind, "{call:?} {ind:?}");
         assert!(by_va(&e.bytes));
     }
@@ -1678,6 +1868,36 @@ mod tests {
     }
 
     #[test]
+    fn a_call_not_taken_returns_to_an_entry() {
+        // 0x100: add x2, x2, #1; bl 0x204
+        // 0x108: add x2, x2, #2; ret
+        // 0x204: (not admitted: compiled elsewhere)
+        let words = [0x91000442, 0x94000040, 0x91000842, 0xd65f03c0];
+        let (_r, m) = mem_with(0x100, &words);
+        let r = forward(&m, 0x100, 0x100, &|_, k| k.filter(|&k| k != 0x204));
+        let keys: Vec<u64> = r.blocks.iter().map(|b| b.key).collect();
+        assert_eq!(keys, [0x100, 0x108]);
+        assert_eq!(r.entries(), [1]);
+        // The callee compiled (table index 9, entry 0): called directly, and
+        // the module reports the entry; the prologue branches to it.
+        let e = module(
+            &[r],
+            &test_mem(),
+            |k| (k == 0x204).then_some((9, 1)),
+            &Config::DEFAULT,
+            true,
+            crate::cpu::FEATURES,
+            None,
+        );
+        assert_eq!(e.entries, [vec![(0x108, 1, 2)]]);
+        assert!(has(&e.bytes, &[0x10, 2])); // call t.9 (function 2)
+        // A loop has no entries besides its head.
+        let (_r, m) = mem_with(0x100, &[0x94000040, 0x17ffffff]); // bl 0x200; b 0x100
+        let r = forward(&m, 0x100, 0x100, &|_, k| k.filter(|&k| k != 0x200));
+        assert!(r.looped() && r.entries().is_empty());
+    }
+
+    #[test]
     fn a_forward_region_is_the_blocks_in_reach_with_calls_and_their_returns() {
         // 0x100: cbz x1, 0x10c
         // 0x104: add x2, x2, #1; b 0x110
@@ -1728,14 +1948,17 @@ mod tests {
         assert!(!has(&e.bytes, &[0x03, 0x40]));
         #[rustfmt::skip]
         let predicted = [
-            0x20, 3, 0x42, 0x18, 0x7c, 0x51,          // … == entry PC + 0x18
+            0x20, 4, 0x42, 0x18, 0x7c, 0x51,          // … == entry PC + 0x18
             0x20, 2, 0x41, 2, 0x4f, 0x71, 0x04, 0x40, // and left >= 2: if
         ];
         let at = e
             .bytes
             .windows(predicted.len())
             .position(|w| w == predicted);
-        let indirect = e.bytes.windows(4).rposition(|w| w == [0x28, 2, 8, 0x13]);
+        let indirect = e
+            .bytes
+            .windows(10)
+            .rposition(|w| w == [0x28, 2, 8, 0x41, 0xff, 0xff, 0xff, 7, 0x71, 0x13]);
         assert!(at.is_some() && at < indirect, "{at:?} {indirect:?}");
         assert_eq!(
             module(
@@ -1872,7 +2095,7 @@ mod tests {
         ));
         // The entry PC, then the table's hot words (through the vCPU), and
         // word 0x2000 of them (locals are renumbered: not matched).
-        let mut head = vec![0x20, 0, 0x29, 3, 0x80, 2, 0x21, 3, 0x20, 0, 0x28, 2];
+        let mut head = vec![0x20, 0, 0x29, 3, 0x80, 2, 0x21, 4, 0x20, 0, 0x28, 2];
         crate::jit::wasm::uleb(&mut head, emit::HOT_PTR as u64);
         assert!(has(&e.bytes, &head));
         assert!(has(&e.bytes, &[0x28, 2, 0x80, 0x80, 2]));
@@ -1915,7 +2138,10 @@ mod tests {
             &e.bytes,
             &[3, b'e', b'n', b'v', 5, b't', b'a', b'b', b'l', b'e', 1]
         ));
-        assert!(has(&e.bytes, &[0xa7, 0x13, 0, 0, 0x0b]));
+        assert!(has(
+            &e.bytes,
+            &[0xa7, 0x41, 0xff, 0xff, 0xff, 7, 0x71, 0x13, 0, 0, 0x0b]
+        ));
         // A static successor that isn't compiled: probed in the jump cache
         // (the vCPU's table's) at its own entry, jc + ((key >> 2) & (JC - 1)) * 16.
         let b = Block {
