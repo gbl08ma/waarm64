@@ -1170,7 +1170,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     as orphaned there (a 3D machine on a browser without WebGL2 is another shape too: decided, machines.md §1).
 - **Clipboard for the screen:** paste into tty1 (typed through virtio-input, paced: its queue
   drops past 1024 events) and copy from fbcon; only the serial terminal has both (xterm.js).
-  Phase C, host integration.
+  Phase C, host integration; a plan: [plans/clipboard.md](plans/clipboard.md).
 - **Keyboard layouts' loose ends** (the setting: [frontend.md](frontend.md) "The keyboard layout"): GNOME and
   KDE untested; the console keymaps (`vc`) other than `de-latin1` and `pt-latin1` were picked from kbd's files and
   kbd-model-map, not typed on; non-Latin layouts (a

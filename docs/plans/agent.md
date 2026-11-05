@@ -23,7 +23,7 @@ So of what was measured, nothing follows the page's size by itself, and what can
 inside the session to say so: resize is an agent's job after all (GNOME and KDE may not need it). The
 rest of what a host wants from a guest:
 
-- **the clipboard**, both ways (backlog "Clipboard for the screen"), including text copied from a
+- **the clipboard**, both ways (backlog "Clipboard for the screen"; its own plan, [clipboard.md](clipboard.md), proposes our agent first), including text copied from a
   text console (`/dev/vcsN` is readable by a root agent: only an agent of ours could offer that);
 - **the time after a resume** (a restored or suspended machine's clock lags until something sets it:
   backlog "Snapshots");
