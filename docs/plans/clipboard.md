@@ -221,9 +221,15 @@ copy. Firefox and Safari have no such permission, so they rely on ways 2 and 3.
    offers it and waits for the agent's acknowledgement (bounded, about 300 ms) before it sends the held key.
    Otherwise it sends the key at once. With way 1 working, the data hardly ever differs. Without way 1
    (Firefox, Safari, a denied permission), this is how a key paste in the guest gets the host's copy.
-   - **Measured (the user's Chrome, 2026-11-05):** Chrome fires `paste`, with the text in `clipboardData`, at a
-     focused `<canvas tabindex=0>` that isn't editable, as long as no handler calls `preventDefault` on the
-     keydown. So the screen's canvas can take it, with no hidden text field. Firefox is still to check.
+   - **Measured (2026-11-05, the user's Chrome and Firefox), with a focused `<canvas tabindex=0>` that isn't
+     editable and no `preventDefault` on the keydown.** Chrome fires `paste` at the canvas. Firefox fires it at
+     `<body>`, not at the canvas: a listener on the canvas misses it, and one on the document catches it. So the
+     page listens on the document and takes the event only while `document.activeElement` is the screen's
+     canvas. To confirm when it is built: that Firefox's event at `<body>` carries `clipboardData` as the
+     canvas's does in Chrome. The fallback, if it doesn't, is a hidden, focused `<textarea>` as the screen's key
+     sink. That works in both browsers: Firefox gave `string text/plain` with the text, and `file image/png`
+     (15300 B) for a copied image. The fallback costs moving the screen's key handling onto it, and it would
+     also bring composition input (IME) later.
    - **What it can't do:** a paste from the guest's own menus gives no browser event. Without way 1, such a
      paste gets the guest's clipboard (the host's text from the last paste chord, or the guest's own last
      copy), unless the user sends the clipboard first with way 3.
@@ -296,8 +302,8 @@ Images are the same path as text with another type: lazy offers, streamed chunks
   an `OffscreenCanvas`, and `convertToBlob({type: 'image/png'})`, in a worker. Text that comes with the image
   (an `<img>`'s URL, `text/html`) goes in the same `ClipboardItem`, so the host's program picks what it takes.
 - **Host to guest:** way 1's `read()` gives a `Blob` of `image/png`. Way 2's `paste` event has it as a `File` in
-  `clipboardData.items`, with no permission (measured in the user's Chrome, 2026-11-05: a copied image arrived at
-  the focused canvas as one item, `file image/png`, 5561 B; Firefox is still to check). The page keeps the `Blob` and offers `image/png` to the guest. A guest program that asks
+  `clipboardData.items`, with no permission (measured 2026-11-05: in the user's Chrome a copied image arrived at
+  the focused canvas as one item, `file image/png`, 5561 B; in Firefox, in a textarea, as `file image/png`, 15300 B). The page keeps the `Blob` and offers `image/png` to the guest. A guest program that asks
   for the bytes gets them streamed. A program that wants only another type gets nothing, as on a desktop
   where the copying program offered only PNG. The agent offers the type's usual aliases (`image/png` is the
   only name programs ask for).
