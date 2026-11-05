@@ -1024,6 +1024,9 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
                 c.op(0x71); // i32.and
             }
             if r.checked(i, j) {
+                // The check's VA goes through ADDR: a RET's target is no
+                // longer there for `indirect`, which then loads the PC.
+                c.pc_in_addr = false;
                 let exec = emit::tlb_array(b.key & KEY_EL1, 2);
                 let host = e.base.wrapping_add((to.key & !3) - e.phys);
                 emit::maps_to(c, to.va.wrapping_sub(b.va) as i64, exec, host);

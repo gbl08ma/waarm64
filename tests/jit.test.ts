@@ -460,3 +460,39 @@ test('guest calls are host calls: leaf, deep recursion and a return elsewhere', 
     assert.ok(jitSteps > want.done / 2n, `${dispatches} dispatches for ${jitSteps} steps in JIT code`);
   }
 });
+
+// A `ret` predicted to its call's continuation in another page (the edge checks the page's mapping on the way, in
+// ADDR) and not taken there: at depth 0 its transfer probes the target the `ret` left in ADDR, which must be X30's, not
+// the continuation's VA that the mapping check put there. H's BL is its page's last word, so C starts the next page:
+//   0x401e00 P: add x7, x7, #1; b Q    0x401e40 Q: add x7, x7, #1; b R    0x401e80 R: br x8
+//   0x401f00 f: mov x30, x9; ret
+//   0x401ff8 H: add x1, x1, #1; bl f   0x402000 C: add x2, x2, #1; subs x5, x5, #1; b.ne H; brk
+//   0x402100 T: add x4, x4, #1; brk
+// With X9 = C, H's loop region takes f and C, f's `ret` predicted to C. P, Q and R then branch to C, compiled as a head of its own (a batch of 4 with them),
+// which puts C in the transfer cache. f then sends its `ret` to T: probing C's VA ran C's code at T. (Linux on 4 vCPUs
+// in parallel: a new task's first `ret` out of `cpu_switch_to`, predicted back into `__switch_to`, ran
+// `__switch_to`'s epilogue at `ret_from_fork` once its continuation was an entry with a function.)
+test("a predicted return that misses transfers to X30's target, not the continuation its page check read", () => {
+  const g = twoPages([2, 4, 64, 0, 1000], 0n);
+  g.code(0x5e00, [0x910004e7, 0x1400000f]); // add x7; b Q
+  g.code(0x5e40, [0x910004e7, 0x1400000f]); // add x7; b R
+  g.code(0x5e80, [0xd61f0100]); // br x8
+  g.code(0x5f00, [0xaa0903fe, 0xd65f03c0]);
+  g.code(0x5ff8, [0x91000421, 0x97ffffc1]);
+  g.code(0x6000, [0x91000442, 0xf10004a5, 0x54ffff81, 0xd4200000]);
+  g.code(0x6100, [0x91000484, 0xd4200000]);
+  const x = g.x;
+  [x[5], x[9]] = [100_000n, 0x402000n];
+  g.go(10_000_000n, 0x401ff8n); // H's region compiled and run
+  assert.deepEqual([x[1], x[2], x[5]], [100_000n, 100_000n, 0n]);
+  const before = g.stats()[0];
+  for (let k = 0; k < 20; k++) {
+    [x[5], x[8]] = [1n, 0x402000n];
+    g.go(100n, 0x401e00n);
+  }
+  assert.ok(g.stats()[0] > before, 'P, Q, R and C compiled');
+  // In one run (each starts the transfer cache over): R's branch puts C there, C loops to H, f returns to T.
+  [x[1], x[2], x[4], x[5], x[8], x[9]] = [0n, 0n, 0n, 2n, 0x402000n, 0x402100n];
+  g.go(100n, 0x401e00n);
+  assert.deepEqual({ x1: x[1], x2: x[2], x4: x[4], pc: x[32] }, { x1: 1n, x2: 1n, x4: 1n, pc: 0x402104n });
+});

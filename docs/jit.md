@@ -136,7 +136,14 @@ the interpreter's own code.
       what the call reaches is predicted to return after that call: the block there is taken
       too, and the `ret` is an edge to it when X30 holds that address, an indirect branch
       otherwise (`Region::returns`). Only for callees compiled in the same batch: one already
-      compiled keeps its own function, and is called as a host call ("Calls" below).
+      compiled keeps its own function, and is called as a host call ("Calls" below). The indirect
+      branch takes the target from `ADDR`, where the `ret` left it, unless a checked edge's page
+      check wrote its own VA there first; then it loads the PC again. Before that was handled
+      (2026-11-05), the branch probed the predicted block's VA, and when a function for that block
+      was in the transfer cache it ran there at the real target. Linux on 4 parallel vCPUs then
+      ran `__switch_to`'s epilogue at a new task's `ret_from_fork` and crashed at EL1 on a user PC,
+      about once in 40 litmus boots. That needed the continuation entries of host calls, which give
+      such blocks functions (`tests/jit.test.ts` "a predicted return that misses…").
     - Alpine's boot: 47,200 functions of 49,400 blocks became 26,000 of 56,000, in 29.6 MB of
       wasm instead of 23.6. JIT-stress compiles a block at a time, so it makes none; JIT-check
       and the tests' forced mode take any block in reach in the head's page (any page with the
