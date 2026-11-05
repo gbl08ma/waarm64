@@ -1,0 +1,10 @@
+rbmac2-nobind-1   busy 327 MiB 137.0 rebinds 0 applied 0 ms 0 loads 6951/2625/1676/6571/1444
+rbmac2-nobind-2   busy 320 MiB 137.0 rebinds 0 applied 0 ms 0 loads 6946/2885/1717/6502/1683
+rbmac2-off-1      busy 330 MiB 131.7 rebinds 0 applied 0 ms 0 loads 6299/2630/1604/5728/1418
+rbmac2-off-2      busy 330 MiB 131.8 rebinds 0 applied 0 ms 0 loads 6942/2600/1723/6032/1402
+rbmac-off-1       busy 330 MiB 132.5 rebinds 0 applied 0 ms 0 loads 7107/2717/1756/6032/1439
+rbmac-off-2       busy 333 MiB 131.9 rebinds 0 applied 0 ms 0 loads 6260/2708/1637/6005/1436
+rbmac-off-3       busy 335 MiB 132.4 rebinds 0 applied 0 ms 0 loads 6366/2649/1654/6068/1420
+rbmac-on-1        busy 316 MiB 137.0 rebinds 14197 applied 56788 ms 3940 loads 7243/2835/1700/6192/1491
+rbmac-on-2        busy 316 MiB 137.1 rebinds 14221 applied 56884 ms 3836 loads 7285/2712/1703/6196/1487
+rbmac-on-3        busy 316 MiB 137.1 rebinds 14409 applied 57636 ms 4002 loads 7684/2597/1729/6471/1494

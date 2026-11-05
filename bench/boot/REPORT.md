@@ -3526,3 +3526,41 @@ machine stops), not a guest process lost, so it doesn't explain the VM session t
 **Merged** into main (`f0e8c112`) on the user's call after they ran the branch themselves. The lost Firefox (1 of 10
 VM sessions, none since) stays in docs/backlog.md with what to read if it recurs.
 
+
+## Rebinding a module's tails once their blocks are compiled: 5% slower (2026-11-05)
+
+The backlog's untried idea for the tails into code that was cold when its predecessor was compiled (22% of the
+indirect entries: "Relinking a region once its successors are compiled"): instead of emitting the region again,
+instantiate its module again with the successor bound as an import, since V8 shares a module's code between its
+instances. Built on branch `wip/rebind` (`results/m9-rebind/rebind.patch`, README):
+
+- **A site** a tail to a successor not compiled yet: the module imports a function `s.<n>`, an i32 global `g.<n>`
+  (the bound block's length, `0x7fffffff` unbound) and, for a link by VA, an i64 global `h.<n>` (the host address the
+  VA must map to). The tail calls the import when `left` covers both blocks (and the VA maps there), else goes on
+  through the jump or transfer cache as before.
+- **The binding:** the cache keeps the sites waiting by key or VA; a module whose head is one logs a rebinding after
+  itself (a site by VA also binds at once to a head compiled at that VA already), and each table applies it in order
+  (`env.jit_rebind`: the module instantiated again with its bindings and its `t` imports resolved again, its functions
+  set back in their slots). The regions leaving for a bound block go with it (`Cache::linkers`).
+- Tested: a lap of a three-module loop takes one transfer through the table instead of two (every JIT slot wrapped
+  in a counting function), a rebound site dropped with its block after an IC, by VA with the page remapped; four
+  planted bugs caught. `scripts/ci.sh` passed (once of two: the first run's parallel litmus and stress in Chromium
+  timed out at 300 s, not seen again in 30 runs alone nor the second CI run).
+- **A limit found writing the tests:** an instance imports only instances that exist, so a loop through several
+  modules keeps one indirect edge a lap.
+
+**Firefox's pages session on the Mac host** (Chrome for Testing 157, from `pages.webpcsnap`; arms built from the same
+source, so the host and ABI are the same; `results/m9-rebind/mac/summary.txt`):
+
+| | busy MIPS | wasm (MiB) | rebindings logged / applied | their time (ms, 4 vCPUs) |
+|---|---|---|---|---|
+| no sites (`WEBPC_NO_REBIND`) | 330, 333, 335; 330, 330 | 131.7-132.5 | 0 | 0 |
+| sites, never bound (`WEBPC_NO_BIND`) | 327, 320 | 137.0 | 0 | 0 |
+| rebinding | **316, 316, 316** | 137.0-137.1 | 14,200-14,400 / 56,800-57,600 | 3,840-4,000 |
+
+Rebinding ran 5% slower with every round apart, the pages' loads slower in 13 of 15 pairs (wiki 7.2-7.7 s against
+6.3-7.1), no vCPU stall to speak of in either (one of 20 ms). The sites' code alone (4% more wasm, a global's load
+and a compare before each cold tail's probe) cost ~2%; binding them cost ~3% more, of which applying the rebindings
+was ~1.4% of the busy vCPU time (4 s over 4 × 257 s × 0.27). The rest is unexplained (V8 keeps a function's tier-up
+budget per instance: a module instantiated again may stay in Liftoff longer; not measured). Not kept: both halves
+lose and the bound tails won nothing back (docs/jit.md "Tried and not kept").

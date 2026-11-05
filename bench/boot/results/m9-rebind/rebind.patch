@@ -1,0 +1,1097 @@
+diff --git a/RB-HANDOVER.md b/RB-HANDOVER.md
+new file mode 100644
+index 00000000..014cbbc1
+--- /dev/null
++++ b/RB-HANDOVER.md
+@@ -0,0 +1,26 @@
++# RB: rebinding a module's tails once their blocks are compiled (handover)
++
++The user's brief (2026-11-05): work on the backlog's untried idea for tails into code that was cold when its
++predecessor was compiled, rebinding by instantiating a module again (docs/backlog.md, the cold tails' item).
++
++## State
++
++- **Built** on branch `wip/rebind` (ABI 61; docs/jit.md "Rebinding", docs/abi.md): a tail to a successor not compiled
++  yet is a site (an imported function, its length global, by VA a host address global); the cache binds it when the
++  block is compiled (or at once, by VA, to a head already compiled there) and logs a rebinding, which each table
++  applies by instantiating the module again (`env.jit_rebind`). Tests: three in `tests/jit.test.ts` (a lap's
++  transfers through the table counted, the drop, by VA with a remap), four planted bugs caught. `scripts/ci.sh`
++  passes (567 s).
++- **A limit found while testing:** a loop through several modules keeps one indirect edge a lap (an instance imports
++  only instances that exist), so the gain is on chains, not 2-cycles.
++- **Open:** the first CI run's parallel litmus and stress (4 vCPUs, JIT, Chromium) timed out at 300 s; not
++  reproduced in 30 runs alone (idle and under 6 busy loops) nor in the second CI run. Watch for it.
++- `WEBPC_NO_REBIND=1 scripts/build-wasm.sh` builds a core without sites (the A/B's base arm, same ABI and host).
++
++## Next
++
++1. A/B: Firefox's pages session on the Mac (`bench/results/local/xfer/mac-ab.sh`, arms `target/ab/rb-off.wasm` and
++   `rb-on.wasm`, 3 rounds), the same in the VM (`bench/gpu/ab.sh`, RSS), Alpine's boot and userspace benchmark
++   (`bench/run.ts`). Counter words 121–123 say how many rebindings and their cost.
++2. Kept only if it wins past the noise on the Mac; then the review, the gates, PLAN.md's row, and merge on the
++   user's call.
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index aabfd821..f088297e 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -489,6 +489,42 @@ pub struct Emitted {
+     /// Each region's entries besides its head ([`Region::entries`]): the
+     /// member's key, its entry number and its length.
+     pub entries: Vec<Vec<(u64, u32, u32)>>,
++    /// Its sites, in import order (`s.<n>`): successors not compiled yet that
++    /// the host binds once they are (docs/jit.md "Rebinding").
++    pub sites: Vec<Site>,
++}
++
++/// A successor that leaves its region and wasn't compiled when the module was
++/// emitted (docs/jit.md "Rebinding"): imported as a function `s.<n>`, the
++/// length of the block it's bound to `g.<n>` ([`UNBOUND`] until then) and,
++/// found by its VA (in another page, MMU on), the host address its VA must
++/// map to `h.<n>`. Until the host binds it, its tails go as before.
++#[derive(Clone, Debug, PartialEq, Eq)]
++pub struct Site {
++    /// Found by its VA (`id`: the VA and the regime bits), else by its key.
++    pub by_va: bool,
++    pub id: u64,
++    /// The regions (of the module, by index) that leave for it.
++    pub regions: Vec<usize>,
++}
++
++/// Whether modules have sites: a build with `WEBPC_NO_REBIND` set has none
++/// (the A/B's base arm, docs/jit.md "Rebinding").
++const REBIND: bool = option_env!("WEBPC_NO_REBIND").is_none();
++
++/// An unbound site's length: no `left` covers it.
++pub const UNBOUND: u32 = 0x7fff_ffff;
++
++/// A site's identity (see [`Site`]) for the successor at `off` from block `b`.
++fn site_id(b: &Block, off: i64) -> (bool, u64) {
++    let k = succ(b.key, off);
++    let by_va = b.key & KEY_MMU != 0 && (k ^ b.key) >> 12 != 0;
++    let id = if by_va {
++        b.va.wrapping_add(off as u64) & !3 | b.key & 3
++    } else {
++        k
++    };
++    (by_va, id)
+ }
+ 
+ /// What every region of a module is emitted against.
+@@ -511,6 +547,9 @@ struct Env<'a> {
+     phys: u64,
+     /// Each member's groups of accesses ([`emit::plan`]).
+     plans: Vec<Vec<emit::Role>>,
++    /// The sites' imports by identity ([`site_id`]): the function, the length
++    /// global and (by VA) the host address global.
++    sites: &'a HashMap<(bool, u64), (u32, u32, Option<u32>)>,
+ }
+ 
+ impl Env<'_> {
+@@ -612,6 +651,45 @@ pub fn module(
+             }
+         }
+     }
++    // Successors leaving a region that aren't compiled yet: sites, which the
++    // host binds once they are (docs/jit.md "Rebinding").
++    let mut sites: Vec<Site> = vec![];
++    let mut site_imps: HashMap<(bool, u64), (u32, u32, Option<u32>)> = HashMap::new();
++    if jc && REBIND {
++        let mut at: HashMap<(bool, u64), usize> = HashMap::new();
++        for (ri, r) in regions.iter().enumerate() {
++            for (i, b) in r.blocks.iter().enumerate() {
++                for o in offsets(&b.words).into_iter().chain(call_after(&b.words)) {
++                    let k = succ(b.key, o);
++                    if funcs.contains_key(&k) || local(k) || r.target(i, o).is_some() {
++                        continue;
++                    }
++                    let (by_va, id) = site_id(b, o);
++                    let n = *at.entry((by_va, id)).or_insert_with(|| {
++                        sites.push(Site {
++                            by_va,
++                            id,
++                            regions: vec![],
++                        });
++                        sites.len() - 1
++                    });
++                    if !sites[n].regions.contains(&ri) {
++                        sites[n].regions.push(ri);
++                    }
++                }
++            }
++        }
++        for (n, st) in sites.iter().enumerate() {
++            let f = m.import_func("s", &n.to_string(), bt);
++            site_imps.insert((st.by_va, st.id), (f, 0, None));
++        }
++        for (n, st) in sites.iter().enumerate() {
++            let g = m.import_global("g", &n.to_string(), I32);
++            let h = st.by_va.then(|| m.import_global("h", &n.to_string(), I64));
++            let imp = site_imps.get_mut(&(st.by_va, st.id)).expect("declared");
++            (imp.1, imp.2) = (g, h);
++        }
++    }
+     // The transfer cache's miss functions for the regimes with the MMU on.
+     let mut misses = [None; 2];
+     for (el, x) in misses.iter_mut().enumerate() {
+@@ -639,10 +717,7 @@ pub fn module(
+     for (k, &pages) in cfg.spill[..spill as usize].iter().enumerate() {
+         m.import_memory("env", &format!("ram{}", k + 1), pages, pages);
+     }
+-    if parallel {
+-        let z = m.zero_global();
+-        debug_assert_eq!(z, emit::ZERO_GLOBAL);
+-    }
++    let zero = if parallel { m.zero_global() } else { 0 };
+     if jc || tiers {
+         m.import_table("env", "table", 0);
+     }
+@@ -674,6 +749,7 @@ pub fn module(
+                 e.iter().enumerate().map(at).collect()
+             })
+             .collect(),
++        sites,
+     };
+     let (base, phys) = mem.base();
+     let pair_locks = mem.pair_locks() as usize as u32;
+@@ -696,6 +772,7 @@ pub fn module(
+                 spill,
+                 groups: emit::GROUPS,
+                 span: span.unwrap_or(0),
++                zero,
+             }
+         } else {
+             let (base, size) = (base as usize as u32, mem.size());
+@@ -714,6 +791,7 @@ pub fn module(
+                 spill: 0,
+                 groups: false,
+                 span: 0,
++                zero,
+             }
+         };
+         let env = Env {
+@@ -727,6 +805,7 @@ pub fn module(
+             base: base as usize as u64,
+             phys,
+             plans: r.blocks.iter().map(|b| emit::plan(&b.words, &cx)).collect(),
++            sites: &site_imps,
+         };
+         // Twice: the first emission finds the registers to read plainly
+         // (`Func::plain`) and what each member's edges carry into it, which
+@@ -1216,6 +1295,30 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
+         emit::indirect(c, b.key & 3, miss, len, e.bt, e.checker, x);
+     };
+     let Some(&(f, tlen, entry)) = f else {
++        // A site (docs/jit.md "Rebinding"): its import while bound (its
++        // length global then fits `left`), else as before.
++        let site = e.sites.get(&site_id(b, off));
++        if let Some(&(f, g, h)) = site {
++            c.local_get(emit::LEFT)
++                .global_get(g)
++                .i32_const(len as i32)
++                .op(0x6a) // i32.add
++                .op(0x4f); // i32.ge_u
++            if let Some(h) = h {
++                emit::maps_to_with(c, off, exec, |c| {
++                    c.global_get(h);
++                });
++                c.op(0x71); // i32.and
++            }
++            c.hint(true).if_();
++            if let Some(chk) = e.checker {
++                // By VA the key is the bound block's: `jit_check` finds it from the PC.
++                let key = if h.is_some() { u64::MAX } else { k };
++                c.local_get(0).i64_const(key as i64).call(chk);
++            }
++            emit::transfer(c, x, len, e.bt, emit::To::Func(f, 0), 1);
++            c.end();
++        }
+         if guarded {
+             return by_va(c);
+         }
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index 9788f0d0..d9eb9fd0 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -741,10 +741,6 @@ pub fn set_pc(c: &mut Func, off: i64) {
+     c.i64_store(PC);
+ }
+ 
+-/// The index of the module's mutable i64 global that holds 0 (parallel SMP
+-/// only: `Module::zero_global`, defined first).
+-pub const ZERO_GLOBAL: u32 = 0;
+-
+ /// Emits instruction `i` (the `k`-th of its block) inline if this step covers
+ /// it; false (and nothing emitted) if it stays a helper call.
+ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
+@@ -795,7 +791,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
+         // address dependency through it must survive (litmus MP+dmb.sy+addr;
+         // Linux's arch_counter_enforce_ordering): V8's optimizing tier folds
+         // `x ^ x` and `x - x` to 0 and then the host may reorder the loads.
+-        // `x & ZERO_GLOBAL` is zero, yet V8 can't fold it (jit.md "Atomics").
++        // `x & zero` (`Ctx::zero`) is zero, yet V8 can't fold it (jit.md "Atomics").
+         EOR_shift | SUB_shift
+             if cx.parallel
+                 && rn == rm
+@@ -805,7 +801,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
+         {
+             set(c, sf, rd, |c| {
+                 get(c, sf, rn);
+-                c.global_get(ZERO_GLOBAL);
++                c.global_get(cx.zero);
+                 if !sf {
+                     c.i32_wrap_i64();
+                 }
+@@ -1265,6 +1261,9 @@ pub struct Ctx {
+     pub groups: bool,
+     /// The span helper (`jit_exec_span`), for a group's cold arm ([`close`]).
+     pub span: u32,
++    /// The index of the module's mutable i64 global that holds 0 (parallel
++    /// SMP only: `Module::zero_global`, after the imported ones).
++    pub zero: u32,
+ }
+ 
+ #[derive(Clone, Copy, Debug)]
+@@ -1661,6 +1660,14 @@ pub const REDIRECT: u32 = 1 << 31;
+ /// hits the TLB array at `arr` (the block's EL's instruction TLB) and maps to
+ /// `host` (a successor's page, in another guest page than the block: step 7).
+ pub fn maps_to(c: &mut Func, off: i64, arr: u32, host: u64) {
++    maps_to_with(c, off, arr, |c| {
++        c.i64_const(host as i64);
++    });
++}
++
++/// [`maps_to`] with the host address pushed by `host` (a site's global:
++/// docs/jit.md "Rebinding").
++pub fn maps_to_with(c: &mut Func, off: i64, arr: u32, host: impl FnOnce(&mut Func)) {
+     pc_plus(c, off);
+     c.local_tee(ADDR);
+     tlb_entry(c);
+@@ -1670,7 +1677,8 @@ pub fn maps_to(c: &mut Func, off: i64, arr: u32, host: u64) {
+         .i64_load(arr + 8)
+         .local_get(ADDR)
+         .i64_add();
+-    c.i64_const(host as i64).op(EQ + WC).op(AND);
++    host(c);
++    c.op(EQ + WC).op(AND);
+ }
+ 
+ /// The `Vcpu` offset of TLB array `3 * el + u` (read 0, write 1) at index 0:
+@@ -4314,6 +4322,7 @@ mod tests {
+         spill: 0,
+         groups: true,
+         span: 0,
++        zero: 0,
+     };
+ 
+     /// Through the TLB at EL1.
+@@ -5005,6 +5014,7 @@ mod tests {
+             spill: 0,
+             groups: true,
+             span: 0,
++            zero: 0,
+         };
+         let b = emit_in(insn, 0, &tlb).unwrap();
+         for off in [read, read + 8] {
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 0e9b4448..571c10b9 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -292,6 +292,11 @@ pub struct Stats {
+     /// The ns the block map's prunes took, under the cache's lock (ABI 50;
+     /// 0 natively, which has no clock here).
+     pub prune_ns: u64,
++    /// Rebindings (ABI 61, docs/jit.md "Rebinding"): logged by this table's
++    /// compiles, applied in this table, and the ns applying them took.
++    pub rebinds: u64,
++    pub rebound: u64,
++    pub rebind_ns: u64,
+ }
+ 
+ /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
+@@ -457,6 +462,16 @@ pub struct Cache {
+     pages: PageIndex,
+     /// The compiled blocks that chain to a key (step 7), dropped with it.
+     linkers: Map<Vec<u64>>,
++    /// Sites waiting for a block (docs/jit.md "Rebinding"), by its key or by
++    /// its VA and regime bits: the module's first slot and the site's number.
++    wait_key: Map<Vec<(u32, u32)>>,
++    wait_va: Map<Vec<(u32, u32)>>,
++    /// The compiled heads by VA and regime bits (with the MMU on; the last
++    /// compiled at that VA), for a site by VA whose block is compiled already.
++    va_heads: Map<u64>,
++    /// Each module's sites (by its first slot): the regions that leave for
++    /// each, as (head key, table index), which a binding links to its block.
++    sites: Map<Vec<Vec<(u64, u32)>>>,
+     /// Each compiled region's words' hash and its blocks as (PA, length),
+     /// for the stale-code checker.
+     spans: Map<(u64, Vec<(u64, u32)>)>,
+@@ -579,8 +594,16 @@ struct Logged {
+     bytes: Arc<[u8]>,
+     /// The hot words of its loop heads compiled alone (their slots).
+     tiers: Vec<u32>,
++    /// A rebinding of the module at `slot` (docs/jit.md "Rebinding"), `bytes`
++    /// its bindings ([`BINDING`] bytes each), not a module.
++    rebind: bool,
+ }
+ 
++/// A binding's bytes in a rebinding (`env.jit_rebind`): the site's number,
++/// the block's table index, its length (u32 each, then 4 bytes of padding),
++/// and the host address its VA must map to (u64; 0 for a site by key).
++pub const BINDING: usize = 24;
++
+ /// A table's progress, as the cache records it.
+ #[derive(Default)]
+ struct Seen {
+@@ -611,6 +634,10 @@ impl Cache {
+             map: HashMap::default(),
+             pages: PageIndex::default(),
+             linkers: HashMap::default(),
++            wait_key: HashMap::default(),
++            wait_va: HashMap::default(),
++            va_heads: HashMap::default(),
++            sites: HashMap::default(),
+             spans: HashMap::default(),
+             tiers: HashMap::default(),
+             pending: Vec::new(),
+@@ -820,6 +847,10 @@ impl Cache {
+         self.map.clear();
+         self.pages.clear();
+         self.linkers.clear();
++        self.wait_key.clear();
++        self.wait_va.clear();
++        self.va_heads.clear();
++        self.sites.clear();
+         self.spans.clear();
+         self.tiers.clear();
+         self.pending.clear();
+@@ -1294,6 +1325,7 @@ impl Cache {
+             links,
+             counts,
+             entries,
++            sites,
+         } = block::module(
+             &regions,
+             mem,
+@@ -1320,6 +1352,7 @@ impl Cache {
+             seq,
+             bytes: bytes.into(),
+             tiers,
++            rebind: false,
+         });
+         self.held += len;
+         self.shed();
+@@ -1392,8 +1425,120 @@ impl Cache {
+                 }
+             }
+         }
++        self.bind_sites(t, &regions, idx, slot, &sites, mem);
+         Some(idx)
+     }
++
++    /// Binds the sites waiting for the heads of the module just logged
++    /// (`regions`, the first at table index `idx`), and its own sites whose
++    /// blocks are compiled already (by VA: compiled at another PA than the
++    /// emitter could know); the others wait. A rebinding is logged after it
++    /// for each module that has bindings (docs/jit.md "Rebinding"), whose
++    /// regions leaving for a block then go with it as if they had chained to it.
++    fn bind_sites(
++        &mut self,
++        t: &mut Table,
++        regions: &[block::Region],
++        idx: u32,
++        slot: u32,
++        sites: &[block::Site],
++        mem: &Mem,
++    ) {
++        // (A/B diagnostic: sites emitted, never bound.)
++        if option_env!("WEBPC_NO_BIND").is_some() {
++            return;
++        }
++        let (base, phys) = mem.base();
++        let host = |key: u64| (base as usize as u64).wrapping_add((key & !3) - phys);
++        let mut out: std::collections::BTreeMap<u32, Vec<u8>> = Default::default();
++        for (k, r) in regions.iter().enumerate() {
++            let h = &r.blocks[0];
++            let (key, len, at) = (h.key, h.words.len() as u32, idx + k as u32);
++            let by_key = self.wait_key.remove(&key).map(|w| (w, 0));
++            let mmu = key & block::KEY_MMU != 0;
++            let va = h.va & !3 | key & 3;
++            if mmu {
++                self.va_heads.insert(va, key);
++            }
++            let by_va = mmu
++                .then(|| self.wait_va.remove(&va))
++                .flatten()
++                .map(|w| (w, host(key)));
++            for (w, host) in by_key.into_iter().chain(by_va) {
++                for (s, n) in w {
++                    self.bind(s, n, (key, at, len, host), &mut out);
++                }
++            }
++        }
++        if !sites.is_empty() {
++            let heads: Vec<u64> = regions.iter().map(|r| r.blocks[0].key).collect();
++            let mut recs = Vec::with_capacity(sites.len());
++            for st in sites {
++                let at = |&k: &usize| (heads[k], idx + k as u32);
++                recs.push(st.regions.iter().map(at).collect());
++            }
++            self.sites.insert(slot as u64, recs);
++            for (n, st) in sites.iter().enumerate() {
++                let n = n as u32;
++                let found = st
++                    .by_va
++                    .then(|| self.va_heads.get(&st.id).copied())
++                    .flatten();
++                let head = found.and_then(|key| {
++                    let i = self.map.get(&key)?;
++                    (i.idx != 0 && i.idx >> ENTRY_SHIFT == 0).then_some((key, i.idx, i.len as u32))
++                });
++                match head {
++                    Some((key, at, len)) => self.bind(slot, n, (key, at, len, host(key)), &mut out),
++                    None if st.by_va => self.wait_va.entry(st.id).or_default().push((slot, n)),
++                    None => self.wait_key.entry(st.id).or_default().push((slot, n)),
++                }
++            }
++        }
++        for (slot, bytes) in out {
++            self.held += bytes.len() as u64;
++            self.log.push(Logged {
++                slot,
++                n: 0,
++                seq: 0,
++                bytes: bytes.into(),
++                tiers: vec![],
++                rebind: true,
++            });
++            t.stats.rebinds += 1;
++        }
++    }
++
++    /// Binds site `n` of the module at `slot` to the block `to` (its key,
++    /// table index, length and host address) in `out` ([`BINDING`] bytes each,
++    /// by module), if a region that leaves for it is still the one compiled;
++    /// those regions then go with the block ([`Cache::linkers`]).
++    fn bind(
++        &mut self,
++        slot: u32,
++        n: u32,
++        to: (u64, u32, u32, u64),
++        out: &mut std::collections::BTreeMap<u32, Vec<u8>>,
++    ) {
++        let (key, at, len, host) = to;
++        let Some(regs) = self.sites.get(&(slot as u64)) else {
++            return;
++        };
++        let live: Vec<u64> = regs[n as usize]
++            .iter()
++            .filter(|&&(rk, ri)| self.map.get(&rk).is_some_and(|i| i.idx == ri))
++            .map(|&(rk, _)| rk)
++            .collect();
++        if live.is_empty() {
++            return;
++        }
++        self.linkers.entry(key).or_default().extend(live);
++        let b = out.entry(slot).or_default();
++        for v in [n, at, len, 0] {
++            b.extend(v.to_le_bytes());
++        }
++        b.extend(host.to_le_bytes());
++    }
+ }
+ 
+ /// A function table's side of the JIT: a thread's (each vCPU worker's in
+@@ -1585,6 +1730,7 @@ impl Table {
+                     seq: l.seq,
+                     bytes: l.bytes.clone(),
+                     tiers: l.tiers.clone(),
++                    rebind: l.rebind,
+                 });
+             }
+             self.installed = c.log.len();
+@@ -1638,6 +1784,14 @@ impl Table {
+         }
+         let mut done = 0;
+         for m in &self.todo[..k] {
++            if m.rebind {
++                let ns = now_ns();
++                rebind(&m.bytes, m.slot);
++                self.stats.rebound += 1;
++                self.stats.rebind_ns += now_ns() - ns;
++                done += 1;
++                continue;
++            }
+             // The host takes the worker's compiled module, or compiles the
+             // bytes itself (seq 0: no worker, or waited too long).
+             let at = match install_seq(&m.bytes, m.slot, if overdue { 0 } else { m.seq }) {
+@@ -2569,6 +2723,11 @@ unsafe extern "C" {
+     /// exports `f0`, `f1`, … into the core's table from JIT slot `slot` on.
+     /// Returns the table index of `f0`, or -1 if the host has no JIT.
+     fn jit_install(ptr: *const u8, len: usize, slot: u32, seq: u32) -> i32;
++    /// Instantiates the module installed at JIT slot `slot` again with the
++    /// bindings at `ptr..ptr + len` ([`BINDING`] bytes each) and puts its
++    /// functions back in their slots (docs/jit.md "Rebinding"). Returns 0, or
++    /// -1 if the host has no JIT or doesn't have the module.
++    fn jit_rebind(ptr: *const u8, len: usize, slot: u32) -> i32;
+     /// Hands the module at `ptr..ptr + len` to the host's compile worker as
+     /// number `seq` of epoch `epoch`; the worker stores into the u32 at
+     /// `ready` the number up to which it has compiled every module. Returns
+@@ -2609,6 +2768,8 @@ struct Todo {
+     bytes: Arc<[u8]>,
+     /// The hot words of its loop heads compiled alone.
+     tiers: Vec<u32>,
++    /// A rebinding ([`Logged::rebind`]).
++    rebind: bool,
+ }
+ 
+ /// How long a table waits for the compile worker before it compiles a
+@@ -2625,6 +2786,22 @@ pub fn install(module: &[u8], slot: u32) -> Option<u32> {
+ #[derive(Debug)]
+ pub struct NotYet;
+ 
++/// Rebinds the sites of the module at `slot` (`env.jit_rebind`, docs/jit.md
++/// "Rebinding"): the host instantiates it again with `bindings` ([`BINDING`]
++/// bytes each) and puts its functions back in their slots. False without a
++/// JIT host, or one that doesn't have the module.
++pub fn rebind(bindings: &[u8], slot: u32) -> bool {
++    #[cfg(target_arch = "wasm32")]
++    // SAFETY: the host reads `bindings` and touches only its own table.
++    let i = unsafe { jit_rebind(bindings.as_ptr(), bindings.len(), slot) };
++    #[cfg(not(target_arch = "wasm32"))]
++    let i = {
++        let _ = (bindings, slot);
++        -1
++    };
++    i >= 0
++}
++
+ /// [`install`] of the module the compile worker compiled as number `seq`
+ /// (0: compile `module` here): the host instantiates the worker's compiled
+ /// module, which it receives through its event loop, without compiling or
+@@ -3517,6 +3694,7 @@ mod tests {
+                 seq: 0,
+                 bytes: vec![0u8; mib << 20].into(),
+                 tiers: Vec::new(),
++                rebind: false,
+             });
+             c.held += (mib as u64) << 20;
+             c.shed();
+diff --git a/core/src/jit/wasm.rs b/core/src/jit/wasm.rs
+index 9004d3a9..143a3d3d 100644
+--- a/core/src/jit/wasm.rs
++++ b/core/src/jit/wasm.rs
+@@ -392,6 +392,7 @@ pub struct Module {
+     code: Vec<u8>,
+     globals: Vec<u8>,
+     nglobals: usize,
++    nglobal_imports: u32,
+     names: Vec<u8>,
+     /// The branch-hint section's entries, and how many functions have some.
+     hints: Vec<u8>,
+@@ -425,6 +426,16 @@ impl Module {
+         self.nfunc_imports - 1
+     }
+ 
++    /// Imports an immutable global of type `ty` (`I32`, `I64`); returns its
++    /// index. Imports come before any defined global.
++    pub fn import_global(&mut self, module: &str, field: &str, ty: u8) -> u32 {
++        assert_eq!(self.nglobals, 0);
++        self.import(module, field, 3);
++        self.imports.extend([ty, 0]);
++        self.nglobal_imports += 1;
++        self.nglobal_imports - 1
++    }
++
+     /// Imports a funcref table with at least `min` elements, no maximum.
+     pub fn import_table(&mut self, module: &str, field: &str, min: u32) {
+         self.import(module, field, 1);
+@@ -455,7 +466,7 @@ impl Module {
+     pub fn zero_global(&mut self) -> u32 {
+         self.globals.extend([0x7e, 1, 0x42, 0, 0x0b]);
+         self.nglobals += 1;
+-        self.nglobals as u32 - 1
++        self.nglobal_imports + self.nglobals as u32 - 1
+     }
+ 
+     /// Adds a function of type `ty` with `locals` (count, type) runs and
+diff --git a/core/src/lib.rs b/core/src/lib.rs
+index dc3abc94..f77557a2 100644
+--- a/core/src/lib.rs
++++ b/core/src/lib.rs
+@@ -34,7 +34,7 @@ pub mod xhci;
+ use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+ 
+ /// Bumped when the host/core ABI changes.
+-pub const ABI_VERSION: u32 = 60;
++pub const ABI_VERSION: u32 = 61;
+ 
+ #[unsafe(no_mangle)]
+ pub extern "C" fn abi_version() -> u32 {
+diff --git a/core/src/vm.rs b/core/src/vm.rs
+index 8050eec6..12d6e8a0 100644
+--- a/core/src/vm.rs
++++ b/core/src/vm.rs
+@@ -377,8 +377,9 @@ pub struct Counters {
+     /// table that lacked modules whose bytes were dropped; the heap bytes the
+     /// table's decoded blocks and its known blocks take.
+     /// Then (ABI 48) the misses that found the lock held and didn't wait;
+-    /// (ABI 50) the ns the block map's prunes took.
+-    pub jx: [AtomicU64; 13],
++    /// (ABI 50) the ns the block map's prunes took; (ABI 61) the rebindings
++    /// logged, applied, and the ns applying them took (docs/jit.md "Rebinding").
++    pub jx: [AtomicU64; 16],
+ }
+ 
+ /// Indexes into [`Counters::par`].
+@@ -409,7 +410,7 @@ impl Default for Counters {
+             par: [const { AtomicU64::new(0) }; 10],
+             dec: [const { AtomicU64::new(0) }; 3],
+             cw: [const { AtomicU64::new(0) }; 4],
+-            jx: [const { AtomicU64::new(0) }; 13],
++            jx: [const { AtomicU64::new(0) }; 16],
+         }
+     }
+ }
+@@ -1719,6 +1720,9 @@ fn publish_jit(c: &Counters, s: &jit::Stats) {
+         s.known_bytes,
+         s.lock_skipped,
+         s.prune_ns,
++        s.rebinds,
++        s.rebound,
++        s.rebind_ns,
+     ];
+     for (a, v) in c.jx.iter().zip(jx) {
+         a.store(v, Ordering::Relaxed);
+diff --git a/docs/abi.md b/docs/abi.md
+index f029961d..49cea49b 100644
+--- a/docs/abi.md
++++ b/docs/abi.md
+@@ -13,7 +13,7 @@ Design notes for an ABI change go in this file before the code.
+   shared memory holds the core's static data, stack (1 MiB, `__stack_pointer`), heap, and guest
+   RAM, which the host places after the heap ([architecture.md](architecture.md)).
+ - Imports: `env.memory`, `env.now_ms() -> f64` (the realtime clock), `env.jit_compile(…)`, `env.jit_install(ptr, len,
+-  slot) -> i32` (below), and `ram.load(m, off, size) -> i64`, `ram.store(m, off, size, val)`, `ram.cas(m, off,
++  slot) -> i32`, `env.jit_rebind(ptr, len, slot) -> i32` (below), and `ram.load(m, off, size) -> i64`, `ram.store(m, off, size, val)`, `ram.cas(m, off,
+   size, expected, new) -> i64` (ABI 39): aligned single-copy-atomic accesses to spill memory `m` (1 and up), from a
+   module `web/spill.ts` makes over the spill memories (traps with none; [spill-memories.md](spill-memories.md)).
+   `web/vm.ts` `coreImports(memory, …, spill)` returns `{env, ram, jit}`; after instantiating, the host calls
+@@ -179,6 +179,7 @@ vCPU's own counts in its block; hosts sum them (`stats()`). Word 70 (PC) is per
+ | 114–118 | (47) the core's heap ([jit.md](jit.md) "Memory"): the block map's prunes; flushes because the heap had no room for a map to grow (the block map, a table's decoded or known blocks: those free their tables whole); flushes because a table lacked modules whose bytes were dropped; the heap bytes the table's decoded blocks (arena, map, page index) and its known blocks take, estimated |
+ | 119 | (48) jump-cache misses that found the JIT cache's lock held and ran their block interpreted instead of waiting ([jit.md](jit.md) "Sharing") |
+ | 120 | (50) the ns the JIT block map's prunes took, under the cache's lock ([jit.md](jit.md) "The core's heap"; 0 natively) |
++| 121–123 | (61) rebindings ([jit.md](jit.md) "Rebinding"): logged by this table's compiles, applied in this table, the ns applying them took |
+ 
+ TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one boot run +12%).
+ 
+@@ -241,6 +242,11 @@ puts its functions into the core's table.
+   run early with `BUDGET` (fewer steps than the budget): the host's vCPU worker then goes through
+   its event loop before it runs the vCPU again. Past a second it passes `seq` 0. A module that
+   doesn't compile is a JIT bug: the exception propagates and the run fails.
++- **`env.jit_rebind(ptr, len, slot) -> i32`** (ABI 61, [jit.md](jit.md) "Rebinding"): instantiates the module installed
++  at `slot` again with its sites bound as the bindings at `ptr..ptr + len` say (`jit::BINDING`, 24 bytes each: the
++  site's number, the block's table index, its length, 4 bytes of padding, the host address its VA must map to as a
++  u64) on top of those it had, its `t` imports resolved again, and sets its functions back at `base + slot + k`.
++  Returns 0, or −1 without the module (before `bind`, or a module without sites).
+ - **`env.jit_compile(ptr, len, seq, epoch, ready) -> i32`** (ABI 36): the core hands each module it
+   emits to the host's compile worker first (`web/jit-compile-worker.ts`, parallel SMP), as number
+   `seq` (from 1, by the cache) of code-cache epoch `epoch`. The host posts a copy and returns 1, or
+@@ -254,7 +260,10 @@ puts its functions into the core's table.
+   [spill-memories.md](spill-memories.md) "The JIT's spill arm"), `env.table`, any core export by
+   name (helpers are ordinary exports named `jit_*`, called as wasm imports: no JS in between), and
+   module `t`, whose imports are named by table index and resolved with `table.get` (links to
+-  already-compiled blocks).
++  already-compiled blocks). Its sites (ABI 61, [jit.md](jit.md) "Rebinding"), numbered from 0: a function `s.<n>` of
++  the block type, an immutable i32 global `g.<n>` (the bound block's length, `0x7fffffff` unbound) and, for a site by
++  VA, an immutable i64 global `h.<n>` (the host address its VA must map to, 0 unbound); unbound, `s.<n>` is any
++  function of the block type (the host's traps).
+ - Natively there's no wasm engine: `jit::install` returns `None` and the run loop interprets.
+ - `jit_helper_report(vcpu) -> *const u8`: NUL-terminated `<Op> <calls>` lines, most frequent
+   first (`web/vm.ts` `helperReport`; the benchmarks record it).
+@@ -583,6 +592,7 @@ implemented by this step).
+ | 58 | `VmConfig.fma` and `jit_fma(v, on)`: the JIT's FMA forms on the host's fused relaxed-SIMD `madd` (`web/fma.ts`; docs/jit.md "Floating point") |
+ | 59 | FEAT_JSCVT, FEAT_LRCPC, FEAT_SB, FEAT_FlagM/FlagM2, FEAT_DIT, FEAT_FRINTTS: `VmConfig.features` bits 4 to 9; their ID fields (ISAR0 TS, ISAR1 JSCVT, LRCPC, FRINTTS, SB, PFR0 DIT) |
+ | 60 | FEAT_DotProd: `VmConfig.features` bit 10; `ID_AA64ISAR0_EL1` DP = 1 |
++| 61 | `env.jit_rebind`: a module's sites (`s.<n>`, `g.<n>`, `h.<n>` imports) bound once their blocks are compiled; counter words 121–123 ([jit.md](jit.md) "Rebinding") |
+ | 54 | PSCI SYSTEM_SUSPEND in realtime mode: `vm_suspended`, `vm_wake`, `vm_clock_skip`; snapshot format 3 (a suspended guest) and `snapshot_version_min` (2: format 2 states still restore) |
+ | 52 | a JIT module on a machine with spill memory imports spill memory 1 as `env.ram1` (`coreImports(…, spill)` passes them on): loads and stores reach its pages inline |
+ | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |
+diff --git a/docs/jit.md b/docs/jit.md
+index 0e043432..0c6b23de 100644
+--- a/docs/jit.md
++++ b/docs/jit.md
+@@ -238,7 +238,8 @@ the interpreter's own code.
+   case: blocks compile in hotness order), and with the MMU off every BR/BLR/RET target (its PC is
+   its key), is probed in the jump cache from wasm and tail-called with `return_call_indirect` on a
+   hit that fits `left`. The jump cache only holds compiled blocks and is cleared by invalidation
+-  and flushes, so these links need no bookkeeping.
++  and flushes, so these links need no bookkeeping. A static successor's (and a by-VA link's) is a site the host binds
++  once its block is compiled ("Rebinding").
+ - **Indirect transfers** (MMU on: BR, BLR, RET and the by-VA links, 25 to 55 per 1000
+   instructions in user space) probe the vCPU's **transfer cache** (`mmu::Tlb::xc`, QEMU's
+   `tb_jmp_cache`): 16,384 direct-mapped entries by VA bits 15:2 of {VA | regime bits, table index
+@@ -313,6 +314,31 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
+   tier-up compiled at that depth added nothing measurable (`bench/boot/REPORT.md` "The host stack that host calls
+   take").
+ 
++## Rebinding
++
++A tail to a successor that isn't compiled yet when its block is (the jump cache's links, and the by-VA links to
++another page with the MMU on) is a **site** (`block::Site`): the module imports a function `s.<n>` for it, an i32
++global `g.<n>` (the length of the block it's bound to, `block::UNBOUND` until then) and, by VA, an i64 global `h.<n>`
++(the host address its VA must map to). The site's code tail-calls the import when `left` covers both blocks (and, by
++VA, the VA maps there: `emit::maps_to_with`), else goes on as before (the jump cache, or the transfer cache by VA), so
++an unbound site costs a global's load and a compare. Instantiating a module again with other imports compiles
++nothing (V8 shares a module's code between its instances), so a site gets an imported tail call (25 ns an entry in a
++code footprint that doesn't fit the caches, against 84 for a `return_call_indirect`: `bench/boot/REPORT.md` "Where a
++busy vCPU's time goes in Firefox, again") without the new code that re-emitting cost ("Tried and not kept",
++"Selective relinking").
++- **When:** a site waits in the cache (`Cache::wait_key`, `wait_va`) for its block; a module whose head is one binds
++  it (`Cache::bind_sites`), and so does a module whose site by VA finds a head compiled at that VA already
++  (`Cache::va_heads`: the emitter can only guess a PA). Only heads (entry 0) bind.
++- **Every table:** a binding is a **rebinding** logged after the module that made it (`Logged::rebind`), which each
++  table applies in order through `env.jit_rebind` ([abi.md](abi.md)): the host keeps each module with sites, and
++  instantiates it again with the bindings so far and its `t` imports resolved again (so it also takes the newer
++  instances of the blocks it chains to), then puts its functions back in their slots.
++- **Drops:** the regions that leave for a bound block go with it (`Cache::linkers`), as a direct link's do: the
++  import would run the old code.
++- **Cycles keep one indirect edge:** an instance imports only instances that exist, so a loop through several modules
++  keeps one transfer through the table a lap (the one into the block whose instance is older than its importer's).
++- Counter words 121–123: rebindings logged, applied, and the ns applying them took.
++
+ ## Sharing
+ 
+ A VM's vCPUs share **one code cache** (`jit::Cache`, behind a lock: the block map, the page index,
+diff --git a/tests/browser.test.ts b/tests/browser.test.ts
+index a49cf47a..50093831 100644
+--- a/tests/browser.test.ts
++++ b/tests/browser.test.ts
+@@ -42,7 +42,7 @@ async function result(path: string, global: string) {
+ }
+ 
+ test('core wasm runs in a cross-origin isolated worker', async () => {
+-  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 60, counter: 2 });
++  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 61, counter: 2 });
+ });
+ 
+ test('the JIT\'s FMA forms: the fused arm and the emulation give the FP guest the same state', async () => {
+diff --git a/tests/core-wasm.test.ts b/tests/core-wasm.test.ts
+index f084f318..6c245826 100644
+--- a/tests/core-wasm.test.ts
++++ b/tests/core-wasm.test.ts
+@@ -12,7 +12,7 @@ test('core instantiates on shared imported memory and uses atomics', () => {
+   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
+   assert.ok(mem.buffer instanceof SharedArrayBuffer);
+   const ex = new WebAssembly.Instance(mod, coreImports(mem)).exports as Record<string, (...a: number[]) => number | bigint>;
+-  assert.equal(ex.abi_version(), 60);
++  assert.equal(ex.abi_version(), 61);
+   // Scratch space past the core's own data and stack.
+   const scratch = mem.grow(1) * 65536;
+   const words = new BigUint64Array(mem.buffer, scratch, 3);
+diff --git a/tests/jit.test.ts b/tests/jit.test.ts
+index 6b4f61f2..72dda99f 100644
+--- a/tests/jit.test.ts
++++ b/tests/jit.test.ts
+@@ -460,3 +460,150 @@ test('guest calls are host calls: leaf, deep recursion and a return elsewhere',
+     assert.ok(jitSteps > want.done / 2n, `${dispatches} dispatches for ${jitSteps} steps in JIT code`);
+   }
+ });
++
++// Rebinding (docs/jit.md "Rebinding"): a tail to a block not compiled yet is a site, bound once the block is. A loop
++// of three blocks in three modules, compiled in order (a batch each): A's tail to B and B's to C are sites, C's to A a
++// direct import. Each transfer through the table is counted (every JIT slot wrapped in a counting function): without
++// rebinding a lap takes two (A to B and B to C through the jump cache); with it one (a loop across modules keeps one
++// indirect edge: instances import only what exists).
++//   0x1000 A: add x1, x1, #1; b B      0x1100 B: add x2, x2, #1; b C      0x1200 C: subs x5, x5, #1; b.ne A; brk
++const COUNTING = new Uint8Array([
++  0, 0x61, 0x73, 0x6d, 1, 0, 0, 0,
++  1, 9, 1, 0x60, 4, 0x7f, 0x7f, 0x7f, 0x7f, 1, 0x7f, // type: the block's
++  2, 7, 1, 1, 0x6d, 1, 0x6f, 0, 0, // import m.o
++  3, 2, 1, 0,
++  6, 6, 1, 0x7f, 1, 0x41, 0, 0x0b, // global n: mut i32 = 0
++  7, 9, 2, 1, 0x66, 0, 1, 1, 0x6e, 3, 0, // export f, n
++  // n += 1; return_call m.o
++  10, 21, 1, 19, 0, 0x23, 0, 0x41, 1, 0x6a, 0x24, 0, 0x20, 0, 0x20, 1, 0x20, 2, 0x20, 3, 0x12, 0, 0x0b,
++]);
++
++test('a tail to a block compiled later is rebound to it: one transfer through the table a lap, not two', () => {
++  const { ex, memory } = core(true);
++  const e = ex as unknown as Exports & Record<string, (...a: (number | bigint)[]) => number | bigint> & { __indirect_function_table: WebAssembly.Table };
++  const table = e.__indirect_function_table;
++  const jitBase = table.length;
++  const base = memory.grow(1) * 65536;
++  const code = (at: number, w: number[]) => new Uint32Array(memory.buffer, base + at, w.length).set(w);
++  code(0x1000, [0x91000421, 0x1400003f]);
++  code(0x1100, [0x91000442, 0x1400003f]);
++  code(0x1200, [0xf10004a5, 0x54ffefe1, 0xd4200000]);
++  const v = e.jit_new(2, 1, 4096, 0, 1_000_000) as number;
++  const x = new BigUint64Array(memory.buffer, v, 33);
++  const exit = e.vcpu_new() as number;
++  const m = e.mem_new(base, 65536n);
++  const run = (laps: bigint) => {
++    [x[5], x[32]] = [laps, 0x1000n];
++    e.jit_run_exit(v, m, 1_000_000n, exit);
++    assert.equal(new BigUint64Array(memory.buffer, exit, 1)[0], 6n); // brk
++  };
++  run(50n);
++  const st = new BigUint64Array(memory.buffer, e.jit_stats(v) as number, 43);
++  assert.ok(st[40] >= 2n && st[41] === st[40], `${st[40]} rebindings logged, ${st[41]} applied`);
++  const wrapping = new WebAssembly.Module(COUNTING);
++  const counts: WebAssembly.Global[] = [];
++  for (let i = jitBase; i < table.length; i++) {
++    const f = table.get(i);
++    if (!f) continue;
++    const w = new WebAssembly.Instance(wrapping, { m: { o: f } }).exports;
++    table.set(i, w.f);
++    counts.push(w.n as WebAssembly.Global);
++  }
++  run(20n);
++  const through = counts.reduce((s, g) => s + (g.value as number), 0);
++  // 20 laps, and the dispatcher's entry.
++  assert.ok(through <= 22, `${through} transfers through the table for 20 laps`);
++  assert.equal(x[1], 70n);
++});
++
++// A rebound site goes with its block (docs/jit.md "Rebinding"): B, in another page, rewritten and invalidated by
++// IC IVAU after A's tail to it was bound, drops A too (its import would run the old B).
++//   0x1000 A: add x1, x1, #1; b B      0x1200 C: subs x5, x5, #1; b.ne A; brk
++//   0x2100 B: add x2, x2, #1; b C      0x3000: ic ivau, x0; isb; brk
++test('a block that a rebound site leaves for, invalidated, drops the site with it', () => {
++  const { ex, memory } = core(true);
++  const e = ex as unknown as Exports & Record<string, (...a: (number | bigint)[]) => number | bigint>;
++  const base = memory.grow(1) * 65536;
++  const code = (at: number, w: number[]) => new Uint32Array(memory.buffer, base + at, w.length).set(w);
++  code(0x1000, [0x91000421, 0x1400043f]);
++  code(0x1200, [0xf10004a5, 0x54ffefe1, 0xd4200000]);
++  code(0x2100, [0x91000442, 0x17fffc3f]);
++  code(0x3000, [0xd50b7520, 0xd5033fdf, 0xd4200000]);
++  const v = e.jit_new(2, 1, 4096, 0, 1_000_000) as number;
++  const x = new BigUint64Array(memory.buffer, v, 33);
++  const exit = e.vcpu_new() as number;
++  const m = e.mem_new(base, 65536n);
++  const run = (pc: bigint, x5 = 0n) => {
++    [x[5], x[32]] = [x5, pc];
++    e.jit_run_exit(v, m, 1_000_000n, exit);
++    assert.equal(new BigUint64Array(memory.buffer, exit, 1)[0], 6n); // brk
++  };
++  run(0x1000n, 50n);
++  const st = new BigUint64Array(memory.buffer, e.jit_stats(v) as number, 43);
++  assert.ok(st[41] >= 2n, `${st[41]} rebindings applied`);
++  code(0x2100, [0x91001442]); // add x2, x2, #5
++  x[0] = 0x2100n;
++  run(0x3000n);
++  const x2 = x[2];
++  run(0x1000n, 10n);
++  assert.equal(x[2] - x2, 50n);
++});
++
++// Rebinding by VA (docs/jit.md "Rebinding"), the MMU on: a loop of three blocks in three pages that aren't contiguous
++// physically, so each tail is found by its VA; the one to a block compiled already (C's to A) is bound at once. One
++// transfer through the table a lap, not three. B's page then maps another page (B2: add 5): the bound tail's check of
++// the mapping fails and the new code runs.
++//   VA 0x400000 (PA 0x1000) A: add x1, x1, #1; b B     VA 0x401000 (PA 0x5000) B: add x2, x2, #1; b C
++//   VA 0x402000 (PA 0x6000) C: subs x5, x5, #1; b.ne A; brk     VA 0x403000 (PA 0x3000): tlbi vmalle1; dsb ish; isb; brk
++//   PA 0x2000 B2: add x2, x2, #5; b C
++test('a tail found by its VA is rebound behind a check of the mapping', () => {
++  const { ex, memory } = core(true);
++  const e = ex as unknown as Exports & Record<string, (...a: (number | bigint)[]) => number | bigint> & { __indirect_function_table: WebAssembly.Table };
++  const tbl = e.__indirect_function_table;
++  const jitBase = tbl.length;
++  const base = memory.grow(2) * 65536;
++  const code = (pa: number, words: number[]) => new Uint32Array(memory.buffer, base + pa, words.length).set(words);
++  code(0x1000, [0x91000421, 0x140003ff]);
++  code(0x5000, [0x91000442, 0x140003ff]);
++  code(0x6000, [0xf10004a5, 0x54feffe1, 0xd4200000]);
++  code(0x3000, [0xd508871f, 0xd5033b9f, 0xd5033fdf, 0xd4200000]);
++  code(0x2000, [0x91001442, 0x140003ff]);
++  const table = (pa: number) => new BigUint64Array(memory.buffer, base + pa, 512);
++  table(0x10000)[0] = 0x11003n;
++  table(0x11000)[0] = 0x12003n;
++  table(0x12000)[2] = 0x13003n;
++  const l3 = table(0x13000);
++  [l3[0], l3[1], l3[2], l3[3]] = [0x1000n | PTE, 0x5000n | PTE, 0x6000n | PTE, 0x3000n | PTE];
++  const v = e.jit_new(2, 1, 4096, 0, 1_000_000) as number;
++  const x = new BigUint64Array(memory.buffer, v, 134);
++  x[832 / 8] = 0x3c5n; // PSTATE: EL1h, DAIF masked
++  x[888 / 8] |= 1n; // SCTLR_EL1.M
++  x[904 / 8] = 16n | 1n << 23n | 2n << 32n; // TCR_EL1: T0SZ 16, EPD1, a 40-bit IPS
++  x[912 / 8] = 0x10000n; // TTBR0_EL1
++  const mem = e.mem_new(base, 2n * 65536n), exit = e.vcpu_new() as number;
++  const run = (pc: bigint, x5 = 0n) => {
++    [x[5], x[32]] = [x5, pc];
++    e.jit_run_exit(v, mem, 1_000_000n, exit);
++    assert.equal(new BigUint64Array(memory.buffer, exit, 1)[0], 6n); // brk
++  };
++  run(0x400000n, 50n);
++  const st = new BigUint64Array(memory.buffer, e.jit_stats(v) as number, 43);
++  assert.ok(st[41] >= 3n, `${st[41]} rebindings applied`);
++  const wrapping = new WebAssembly.Module(COUNTING);
++  const counts: WebAssembly.Global[] = [];
++  for (let i = jitBase; i < tbl.length; i++) {
++    const f = tbl.get(i);
++    if (!f) continue;
++    const w = new WebAssembly.Instance(wrapping, { m: { o: f } }).exports;
++    tbl.set(i, w.f);
++    counts.push(w.n as WebAssembly.Global);
++  }
++  run(0x400000n, 20n);
++  const through = counts.reduce((s, g) => s + (g.value as number), 0);
++  assert.ok(through <= 22, `${through} transfers through the table for 20 laps`);
++  l3[1] = 0x2000n | PTE;
++  run(0x403000n);
++  const x2 = x[2];
++  run(0x400000n, 10n);
++  assert.equal(x[2] - x2, 50n);
++});
+diff --git a/web/vm.ts b/web/vm.ts
+index f69f483e..40efe402 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -24,7 +24,7 @@ import { spillImports } from './spill.ts';
+ import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES, ramLayout } from './ram.ts';
+ export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
+ 
+-export const ABI = 60;
++export const ABI = 61;
+ const RAM_BASE = 0x4000_0000;
+ /** The vCPU and compile workers' files for Node's worker_threads (a lookup, so the page's bundler doesn't copy them as assets). */
+ const NODE_WORKERS = { vcpu: './vcpu-worker.ts', compile: './jit-compile-worker.ts' };
+@@ -83,7 +83,7 @@ export type Restore = { core: Uint8Array; host: VmState['host']; fill(ram: Uint8
+ 
+ /**
+  * The core's imports: the shared memory, the host clock for realtime mode,
+- * `jit_install` and `jit_compile` (core/src/jit). The JIT works once `jit.bind` has the core's
++ * `jit_install`, `jit_rebind` and `jit_compile` (core/src/jit). The JIT works once `jit.bind` has the core's
+  * instance; until then `jit_install` fails and the core only interprets. `compile`: this vCPU's
+  * port to the compile worker (web/jit-compile-worker.ts; parallel SMP). `ram`: the spill memories'
+  * accessor over `spill`, memory 1 first (web/spill.ts).
+@@ -93,7 +93,7 @@ export function coreImports(memory: WebAssembly.Memory, clock = performance.time
+   const wrap = <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F) => hooks.reduce((g, h) => h(where, g), f);
+   const now_ms = wrap('clock', () => clock + performance.now());
+   const jit = jitHost(memory, now_ms, compile, spill);
+-  return { env: { memory, now_ms, jit_install: wrap('install', jit.install), jit_compile: jit.compile }, ram: spillImports(spill), jit };
++  return { env: { memory, now_ms, jit_install: wrap('install', jit.install), jit_rebind: jit.rebind, jit_compile: jit.compile }, ram: spillImports(spill), jit };
+ }
+ 
+ /**
+@@ -378,6 +378,18 @@ function collect() {
+   }
+ }
+ 
++
++/** An unbound site's length (`block::UNBOUND`): no budget covers it (docs/jit.md "Rebinding"). */
++const UNBOUND = 0x7fff_ffff;
++/** A module with one function of the block type that traps (`f`): what an unbound site's import is. */
++const UNBOUND_FN = new Uint8Array([
++  0, 0x61, 0x73, 0x6d, 1, 0, 0, 0,
++  1, 9, 1, 0x60, 4, 0x7f, 0x7f, 0x7f, 0x7f, 1, 0x7f, // type: (i32, i32, i32, i32) -> i32
++  3, 2, 1, 0, // function
++  7, 5, 1, 1, 0x66, 0, 0, // export "f"
++  10, 5, 1, 3, 0, 0, 0x0b, // code: unreachable
++]);
++
+ /**
+  * The host half of the JIT: compiles a module the core generated,
+  * synchronously, and puts its exports f0, f1, … into the core's function table
+@@ -396,6 +408,27 @@ function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: Messag
+   // Slots the last install used up to (its end), and the highest slot end since the cache last flushed.
+   let lastEnd = 0;
+   let hi = 0;
++  // The installed modules by first slot, for rebinding (docs/jit.md "Rebinding"): each with its sites' bindings so far
++  // (site number → table index, length, host address).
++  const mods = new Map<number, { module: WebAssembly.Module; bound: Map<number, [number, number, bigint]> }>();
++  // An unbound site's function (never called: its length global, UNBOUND, fits no budget).
++  let unbound: WebAssembly.ExportValue | undefined;
++  // A module's imports from the table (`t`) and its sites (`s`, `g`, `h`), as bound now.
++  const linked = (module: WebAssembly.Module, bound: Map<number, [number, number, bigint]>) => {
++    const t: Record<string, WebAssembly.ExportValue> = {};
++    const s: Record<string, WebAssembly.ExportValue> = {};
++    const g: Record<string, number> = {};
++    const h: Record<string, bigint> = {};
++    for (const i of WebAssembly.Module.imports(module)) {
++      if (i.module === 't') t[i.name] = table!.get(Number(i.name));
++      else if (i.module === 's') {
++        const b = bound.get(Number(i.name));
++        s[i.name] = b ? table!.get(b[0]) : (unbound ??= new WebAssembly.Instance(new WebAssembly.Module(UNBOUND_FN)).exports.f);
++      } else if (i.module === 'g') g[i.name] = bound.get(Number(i.name))?.[1] ?? UNBOUND;
++      else if (i.module === 'h') h[i.name] = bound.get(Number(i.name))?.[2] ?? 0n;
++    }
++    return { ...imports, t, s, g, h } as unknown as WebAssembly.Imports; // (an i64 global takes a BigInt)
++  };
+   // The compile worker's compiled modules by number, as they arrive through the event loop (ABI 37): installing one
+   // skips V8's decoding and validating the bytes again, which `new WebAssembly.Module` does before it finds them in
+   // its cache (four fifths of an install: bench/boot/REPORT.md "M8: the compile worker's modules, posted").
+@@ -434,10 +467,9 @@ function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: Messag
+         module = new WebAssembly.Module(bytes);
+       }
+       const t1 = performance.now();
+-      // Blocks it chains to that are already compiled (M5 step 7): `t.<table index>`.
+-      const t: Record<string, WebAssembly.ExportValue> = {};
+-      for (const i of WebAssembly.Module.imports(module)) if (i.module === 't') t[i.name] = table.get(Number(i.name));
+-      const f = new WebAssembly.Instance(module, { ...imports, t }).exports;
++      // Blocks it chains to that are already compiled (M5 step 7): `t.<table index>`; its sites unbound.
++      const bound = new Map<number, [number, number, bigint]>();
++      const f = new WebAssembly.Instance(module, linked(module, bound)).exports;
+       const n = Object.keys(f).length;
+       const at = base + slot;
+       const t2 = performance.now();
+@@ -446,6 +478,7 @@ function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: Messag
+       // The slots start over from 0 when the cache flushes: its old blocks are dead, so the table lets go of
+       // the ones this module doesn't overwrite, and V8 can free their instances and code.
+       if (restart) {
++        mods.clear();
+         for (let k = slot + n; k < hi; k++) table.set(base + k, null);
+         // Only for a big cache (JIT-stress flushes every few blocks).
+         if (hi > NUDGE_SLOTS) {
+@@ -459,12 +492,32 @@ function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: Messag
+       hi = Math.max(hi, lastEnd);
+       if (table.length < at + n) table.grow(at + n - table.length);
+       for (let k = 0; k < n; k++) table.set(at + k, f[`f${k}`] as WebAssembly.ExportValue as never);
++      if (WebAssembly.Module.imports(module).some((i) => i.module === 's')) mods.set(slot, { module, bound });
+       // An install the vCPU felt (it runs on the vCPU's thread, the guest's clock running on): for the benchmarks'
+       // timelines (bench/gpu/guest-session.ts collects `webpc-slow` lines).
+       const ms = performance.now() - t0;
+       if (ms >= SLOW_INSTALL_MS) console.debug(`webpc-slow install ${ms.toFixed(1)} ms at ${(performance.timeOrigin + t0).toFixed(0)}: compile ${(t1 - t0).toFixed(1)} instantiate ${(t2 - t1).toFixed(1)} gc ${gc.toFixed(1)} bytes ${len} functions ${n}${restart ? ' (slots start over)' : ''}`);
+       return at;
+     },
++    /**
++     * `env.jit_rebind`: instantiates the module at `slot` again with its sites bound as the bindings at `ptr` say
++     * (24 bytes each: the site, the block's table index, its length, padding, the host address its VA must map to;
++     * `jit::BINDING`), and puts its functions back in their slots: V8 shares the module's code between its instances,
++     * so nothing compiles (docs/jit.md "Rebinding"). -1 without the module.
++     */
++    rebind(ptr: number, len: number, slot: number): number {
++      const m = table && mods.get(slot);
++      if (!m) return -1;
++      const v = new DataView(memory.buffer, ptr >>> 0, len);
++      for (let o = 0; o < len; o += 24) m.bound.set(v.getUint32(o, true), [v.getUint32(o + 4, true), v.getUint32(o + 8, true), v.getBigUint64(o + 16, true)]);
++      const f = new WebAssembly.Instance(m.module, linked(m.module, m.bound)).exports;
++      for (let k = 0; ; k++) {
++        const fk = f[`f${k}`];
++        if (!fk) break;
++        table!.set(base + slot + k, fk as never);
++      }
++      return 0;
++    },
+     /** `env.jit_compile`: posts a copy of the module to the compile worker; 0 without one. */
+     compile(ptr: number, len: number, seq: number, epoch: number, ready: number): number {
+       if (!port || !table) return 0;
+@@ -514,7 +567,10 @@ export const Counter = {
+   JIT_LOCK_SKIPPED: 119,
+   // ABI 50: ns the block map's prunes took (under the cache's lock).
+   JIT_PRUNE_NS: 120,
+-  LEN: 121,
++  // ABI 61: rebindings logged by this vCPU's compiles, applied in its table, and the ns applying them took
++  // (docs/jit.md "Rebinding").
++  JIT_REBINDS: 121, JIT_REBOUND: 122, JIT_REBIND_NS: 123,
++  LEN: 124,
+ } as const;
+ 
+ /**
+@@ -1319,6 +1375,7 @@ function stats(n: (i: number) => number) {
+       emitNs: n(Counter.JIT_EMIT_NS), emitLockedNs: n(Counter.JIT_EMIT_LOCKED_NS), planNs: n(Counter.JIT_PLAN_NS),
+       prunes: n(Counter.JIT_PRUNES), rescues: n(Counter.JIT_RESCUES), lagFlushes: n(Counter.JIT_LAG_FLUSHES),
+       decBytes: n(Counter.JIT_DEC_BYTES), knownBytes: n(Counter.JIT_KNOWN_BYTES), lockSkipped: n(Counter.JIT_LOCK_SKIPPED), pruneNs: n(Counter.JIT_PRUNE_NS),
++      rebinds: n(Counter.JIT_REBINDS), rebound: n(Counter.JIT_REBOUND), rebindNs: n(Counter.JIT_REBIND_NS),
+     },
+     par: {
+       dsbWaits: n(Counter.PAR_DSB_WAITS), dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS), tlbiIs: n(Counter.PAR_TLBI_IS), ic: n(Counter.PAR_IC),

@@ -1203,6 +1203,13 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   Forming the regions when the batch is compiled needs no prologue, no second compile and no
   redirect, and was faster everywhere (`bench/boot/REPORT.md` "M8: forward regions"). Tried with
   them and flat within noise: 8 or 32 blocks a region instead of 16.
+- **Rebinding a module's tails once their blocks are compiled** (2026-11-05, `bench/boot/REPORT.md` "Rebinding a
+  module's tails once their blocks are compiled: 5% slower"; the patch in `bench/boot/results/m9-rebind/`): a tail to
+  a successor not compiled yet imported as a function plus a length global (and by VA a host-address global), bound
+  once the block is compiled by instantiating the module again in every table (V8 shares the code: nothing compiles).
+  Firefox's pages session on the Mac: 316 busy MIPS against 330-335, 4% more wasm; the sites' code alone cost ~2%,
+  binding ~3% more (~14,000 rebindings, 57,000 instantiations, 1.4% of the busy time). And a loop through several
+  modules keeps one indirect edge a lap: an instance imports only instances that exist.
 - **Copies of compiled callees in their callers' regions** (M8, with calls followed): a callee
   that is already compiled (the usual case: a shared function is hot long before a given caller)
   copied into the caller's region so the call and its predicted return stay inside. Limited to
