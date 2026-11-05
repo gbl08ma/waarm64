@@ -1444,6 +1444,10 @@ impl Cache {
         sites: &[block::Site],
         mem: &Mem,
     ) {
+        // (A/B diagnostic: sites emitted, never bound.)
+        if option_env!("WEBPC_NO_BIND").is_some() {
+            return;
+        }
         let (base, phys) = mem.base();
         let host = |key: u64| (base as usize as u64).wrapping_add((key & !3) - phys);
         let mut out: std::collections::BTreeMap<u32, Vec<u8>> = Default::default();
