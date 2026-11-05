@@ -70,6 +70,22 @@ rgb9e5_key(const struct sampler_pass *s, const nir_tex_instr *tex)
    return NULL;
 }
 
+/* An offset that isn't a constant (maintenance8's `Offset` operand): WGSL takes only const-expressions, so such a sample
+ * comes from fetches, where the offset moves the texels at the level read (VK4 T24). A vector of constants is a vec of
+ * scalars here, each channel found through it, as the printer finds them. */
+static bool
+dynamic_offset(const nir_tex_instr *tex)
+{
+   const int i = nir_tex_instr_src_index(tex, nir_tex_src_offset);
+   if (i < 0)
+      return false;
+   nir_def *off = tex->src[i].src.ssa;
+   for (unsigned c = 0; c < off->num_components; c++)
+      if (!nir_scalar_is_const(nir_scalar_chase_movs(nir_get_scalar(off, c))))
+         return true;
+   return false;
+}
+
 static bool
 samples(const nir_tex_instr *tex)
 {
@@ -1050,6 +1066,19 @@ lower_tex(nir_builder *b, nir_tex_instr *tex, void *data)
       nir_def_replace(&tex->def, nir_trim_vector(b, fetched_sample(b, tex, key), tex->def.num_components));
       return true;
    }
+   /* An offset that isn't a constant: every float sample from fetches, as the sampler bound says (a module without a
+    * key is never drawn with). Cubes have no offsets. */
+   if (!is_integer(tex) && dynamic_offset(tex)) {
+      add_key_pair(s, tex, WGSL_KEY_ALWAYS);
+      /* Without a key, a shadow sample still compares (LESS_OR_EQUAL): NEVER would fold the texture away, and the
+       * program's layout, made from the stage's own module, would lack what the keyed variants bind. */
+      struct wgsl_sampler_key plain = plain_key;
+      plain.compare = 3;
+      const struct wgsl_sampler_key *k = key ? key : &plain;
+      nir_def *res = tex->op == nir_texop_tg4 ? gather_fetch(b, tex, k) : fetched_sample(b, tex, k);
+      nir_def_replace(&tex->def, nir_trim_vector(b, res, tex->def.num_components));
+      return true;
+   }
    if (is_integer(tex)) {
       bool known = false;
       for (uint32_t i = 0; i < s->info->int_pair_count; i++)
@@ -1064,7 +1093,8 @@ lower_tex(nir_builder *b, nir_tex_instr *tex, void *data)
          /* WGSL gathers integer textures: only what its samplers can't address goes through fetches, and a cube's
           * faces have no fetch that sees across them. */
          if (tex->sampler_dim == GLSL_SAMPLER_DIM_CUBE || (!uses_address(tex, key, WGSL_ADDRESS_BORDER) &&
-                                                           !uses_address(tex, key, WGSL_ADDRESS_MIRROR_ONCE)))
+                                                           !uses_address(tex, key, WGSL_ADDRESS_MIRROR_ONCE) &&
+                                                           !dynamic_offset(tex)))
             return false;
          nir_def_replace(&tex->def, nir_trim_vector(b, gather_fetch(b, tex, key), tex->def.num_components));
          return true;

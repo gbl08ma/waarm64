@@ -765,7 +765,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Not advertised, by what dEQP-VK asks** (the census of 2026-11-05, bench/vulkan/REPORT.md "VK4: the census
     again": 75% of the sample not supported on either host, against 0.2% of the M4's supported cases failing; its
     reasons by `census.ts --reasons`; a queue family with compute and without graphics, 2,525 of them, is VK4 T22's): formats
-    (3,681 reasons name one), `VK_KHR_maintenance5`/`6`/`8`, min/max filtering, multi-draw, depth and stencil resolve
+    (3,681 reasons name one), min/max filtering, multi-draw, depth and stencil resolve
     modes, what reads its own attachment, writable storage in the vertex stage, mutable descriptors, 3D ASTC: each a
     task of VK4-KICKOFF.md's T23–T35. No task: protected memory, cooperative matrices, ray tracing, mesh shaders, tile
     images, fragment density, descriptor buffers, sparse (~1,600 of the sample) and pipeline statistics queries (188).
@@ -850,8 +850,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     for both stages but the compute stage's explicit LOD). Also SwiftShader's alone: the `count_8` compute cases bind 8
     storage images (refused at their pipeline's creation, past the 4 advertised there, Vulkan's minimum; dEQP doesn't
     check the limit; the M4 has 8).
-  - **Shaders**: texture offsets that really aren't constants (`*_pcoffset`, 2,760 cases, need `maintenance8`, not
-    advertised); derivatives in non-uniform control flow
+  - **Shaders**: derivatives in non-uniform control flow
     (`glsl.derivate.*dynamic_if`); `umulExtended`. From the out-of-context review of the translator (VK3 L4f left them):
     signed and unsigned atomic min or max on one array (refused: WGSL's atomics have one
     type; shared memory is one array); flat
@@ -973,6 +972,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     pipeline is refused, said once; a push binding without a dynamic offset, a bind group per draw, would serve); a
     uniform block declared past its range and the 64 KiB pad at a memory's end loses its submit. A set with inline blocks
     has a GPUBuffer of 64 KiB more than them, for what its shaders may declare.
+  - **maintenance8's cases wait for the guest's Mesa 26.3** (VK4 T24): the device advertises `maintenance8` (offsets
+    that aren't constants from fetches, depth and stencil copied with colour images, blits between layers and slices),
+    but Mesa 26.2's Venus, the tests' guest's (Arch's 26.2.5; 26.2.6 the port's newest on 2026-11-05), leaves it out,
+    so its cases are NotSupported in CI. Through 26.3.0-rc3's Venus (`images/deqp/venus-icd.sh`, `DISK2`, `GUEST_ENV`)
+    they pass: `tests/deqp/vk-maintenance8.txt`, run by hand. Once the port has 26.3, rebuild the guest
+    (`images/deqp/build.sh vk`) and move that list into `tests/deqp/vk.txt`. A sample with such an offset costs the
+    fetches' filter (eight `textureLoad`s a trilinear sample) where WGSL's own would do: unmeasured, no program here
+    has one (vkd3d's D3D12 layering is what asks).
+  - **maintenance5's and 6's leftovers** (VK4 T24, `results/vk4/t24/`): their A8_UNORM (81 of the census's 688 cases)
+    and A1B5G5R5 (70; VK4 T30's) aren't offered (A8 as `r8unorm` with a swizzle, its attachments writing alpha to red,
+    would be a variant's); `maintenance6`'s `memory.binding.maintenance6.aliasing.suballocated.image_*` fail (9 of 9)
+    as the aliasing ones below; an index buffer bound null wants robustness2's `nullDescriptor`.
   - **Memory**: `memory.binding.aliasing.suballocated.image_*` fail (9 sampled by VK4 R6, 2 others pass): each image is a
     texture of its own, so two images bound to one range don't share texels. An allocation past the device-local heap, the largest
     GPUBuffer or the arena, which Venus's guest doesn't wait for, is an empty memory (`memory_refused`): a blob's map gives
@@ -1005,8 +1016,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     then, or else a usage-scope conflict) was refused by WebGPU's binding aliasing (16 of `descriptor_copy.compute`'s texel buffer
     cases: "Writable storage buffer binding aliasing", the dispatch dropped; since VK4 T3 a read-only one is copied
     instead: "Usage scopes' leftovers" above);
-    122 `api.buffer_view.access.uniform_storage_texel_buffer` cases are NotSupported for `VK_KHR_maintenance5` and
-    `VK_KHR_extended_flags` (not the without-format features, as this said before GD G5 offered them); storage texel buffers of formats under a word (r8, rg8, r16) and
+    122 `api.buffer_view.access.uniform_storage_texel_buffer` cases are NotSupported for `VK_KHR_extended_flags` (they
+    ask `VK_KHR_maintenance5` too, offered since VK4 T24; not the without-format features, as this said before GD G5
+    offered them); storage texel buffers of formats under a word (r8, rg8, r16) and
     texel buffer atomics (R32's, mandatory in 1.3) aren't offered; sRGB and 64-bit formats aren't either.
   - **`images/vkframes/venus-profile.json` predates VK4 T11** (2026-10-26; found by GD G6): it says R8_UINT and the
     other tier1 formats have no storage, which the device has offered since T11, so captures made through it (the

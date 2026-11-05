@@ -1341,6 +1341,34 @@ test('constant texture offsets are literals, whatever scalarizing made of them (
   }
 });
 
+test('offsets that aren\'t constants move fetches, and samples come from fetches at the level read (VK4 T24: maintenance8)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/t24/offset.comp', { sampler: key(ADDRESS.edge, { levels: 3 }) });
+    assert.equal(r.rc, 0, r.text);
+    // A 4×4 rgba8unorm image whose red is the texel's number: level 0's x + 4y, level 1's 100 + x + 2y, level 2's 200.
+    const texel = (v: number) => [v, 0, 0, 255];
+    const level = (n: number, base: number, row: number) => Array.from({ length: n * n }, (_, i) => texel(base + i % n + row * Math.floor(i / n))).flat();
+    const sampled = r.text.includes('@binding(1) var') ? { binding: 1, filter: 'nearest' } : undefined;
+    const res = await runSampled(r.text, [{ binding: 0, format: 'rgba8unorm', w: 4, h: 4, data: level(4, 0, 4), mips: [level(2, 100, 2), level(1, 200, 1)] }], sampled, { binding: 2, size: 8 * 16 });
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    const red = (i: number) => Math.round(res.out[i * 4] * 255);
+    assert.equal(red(0), 2, 'fetch: (1, 1) + (1, -1) of level 0');
+    assert.equal(red(1), 102, 'LOD 1: texel (1, 0) + (-1, 1) of level 1, not a level-0-sized step');
+    assert.equal(red(2), 6, 'gradients of 0: (0, 0) + (2, 1) of level 0');
+    // The gather's texels (i0 j1, i1 j1, i1 j0, i0 j0) around (1, 1), moved one right: (1, 1), (2, 1), (2, 0), (1, 0).
+    assert.deepEqual([12, 13, 14, 15].map((i) => Math.round(res.out[i] * 255)), [5, 6, 2, 1]);
+    // Without a key (the stage's own module, whose bindings make the program's layout) a shadow sample keeps its texture.
+    const shadow = glslStage(translate, tmp, 'tests/venus/t24/shadow.frag');
+    assert.equal(shadow.rc, 0, shadow.text);
+    assert.match(shadow.text, /@group\(0\) @binding\(0\) var r0_0: texture_depth_2d;/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('a shadow sample past level 0 compares each texel of its level and filters the results (VK4 T9)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
   try {

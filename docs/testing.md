@@ -69,7 +69,11 @@ only edits docs: `.md` files or code comments):
   dies between cases); deqp-vk's other lines (an assertion's, its watchdog's) are kept in
   `results.output`, and `WATCHDOG=disable` lifts its 30 s limit on a case's steps to time a slow one. Dawn zeroes
   workgroup memory with Tint's own loop on these runs (`--disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension`):
-  SwiftShader's take of Vulkan's extension costs ~17 s of compile for a 16 KiB array (VK4 T2).
+  SwiftShader's take of Vulkan's extension costs ~17 s of compile for a 16 KiB array (VK4 T2). Another Mesa's Venus in the
+  guest: `images/deqp/venus-icd.sh` puts Mesa 26.3's on a copy of the disk (`target/deqp/deqp-vk-venus.ext4`), and
+  `DISK2=` with `GUEST_ENV=VK_DRIVER_FILES=/mnt/vdb/venus/virtio_icd.json` runs deqp-vk through it (also through
+  `sway-mac.sh`); `tests/deqp/vk-maintenance8.txt` passes so, by hand, until the guest's own Mesa passes
+  `maintenance8` on (VK4 T24; docs/backlog.md).
 - **`scripts/ci-usb.sh`** runs the USB tests that need the dev VM's host rigs ([below](#usb-the-dev-vms-host-rigs)):
   WebUSB against dummy_hcd gadgets and WebHID against uhid devices in the pinned Chromium, and the guest through
   them. It must pass too when a change touches USB (the xHCI, its glue, the WebUSB and WebHID backends, the USB tab).

@@ -1,0 +1,71 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "157.0.8103.38",
+ "stride": 50,
+ "offset": 0,
+ "adapter": "apple metal-3",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 360,
+ "seconds": 32.459340792000006,
+ "pipelines": {
+  "pipelines": 323,
+  "ready": 323,
+  "readyMs": 17201.434999793768,
+  "deferred": 639,
+  "deferredMs": 34237.56000059843,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 323,
+  "translateMs": 251.67500000000004,
+  "cacheHits": 439,
+  "cacheMisses": 737,
+  "cacheStores": 737,
+  "cacheBytes": 802633,
+  "cacheHeld": 7251853,
+  "cacheEntries": 737
+ },
+ "counts": {
+  "Pass": 360
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-VK.pipeline.monolithic.sampler.border_swizzle.d32_sfloat_s8_uint_stencil.rg0a.opaque_white.gather_1.with_swizzle_hint Pass 1",
+  "dEQP-VK.pipeline.monolithic.sampler.border_swizzle.d32_sfloat_s8_uint.r1ba.custom.gather_1.with_swizzle_hint Pass 1",
+  "dEQP-VK.pipeline.monolithic.sampler.border_swizzle.d24_unorm_s8_uint_stencil.r0ba.opaque_white.gather_1.with_swizzle_hint Pass 1",
+  "dEQP-VK.pipeline.monolithic.sampler.border_swizzle.d24_unorm_s8_uint.rg1a.transparent_black.gather_3.with_swizzle_hint Pass 1",
+  "dEQP-VK.draw.dynamic_rendering.primary_cmd_buff.instanced.draw_indexed_vk_primitive_topology_triangle_list_multiview_maintenance_5 Pass 1",
+  "dEQP-VK.draw.dynamic_rendering.primary_cmd_buff.instanced.draw_indexed_indirect_vk_primitive_topology_line_list_multiview_maintenance_5 Pass 1",
+  "dEQP-VK.binding_model.shader_access.secondary_cmd_buf.bind2.with_template.uniform_buffer.no_access.multiple_descriptor_sets.multiple_arbitrary_descriptors.offset_view_zero Pass 1",
+  "dEQP-VK.binding_model.shader_access.secondary_cmd_buf.bind2.with_template.sampler_immutable.vertex_fragment.multiple_descriptor_sets.multiple_discontiguous_descriptors.1d Pass 1",
+  "dEQP-VK.binding_model.shader_access.secondary_cmd_buf.bind2.with_template.combined_image_sampler_mutable.fragment.multiple_descriptor_sets.single_descriptor.3d Pass 1",
+  "dEQP-VK.binding_model.shader_access.secondary_cmd_buf.bind2.with_push_template.sampler_mutable.vertex.multiple_contiguous_descriptors.cube_array Pass 1"
+ ],
+ "last": "dEQP-VK.pipeline.monolithic.sampler.border_swizzle.x8_d24_unorm_pack32.rgba.opaque_white.gather_1.with_swizzle_hint Pass 0dEQP-VK.pipeline.monolithic.sampler.border_swizzle.x8_d24_unorm_pack32.rgia.transparent_black.gather_3.with_swizzle_hint Pass 0dEQP-VK.pipeline.monolithic.sampler.border_swizzle.x8_d24_unorm_pack32.riba.custom.gather_1.with_swizzle_hint Pass 0",
+ "output": [
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    0.955395] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    0.955610] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    0.955640] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    0.955659] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    0.955689] psci_checker: Could not start suspend tests on any CPU",
+  "[   10.643584] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   22.036897] coredump: 421(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 173.4,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 13.5,
+  "arenaHighMiB": 32.5
+ },
+ "detail": [],
+ "warnings": {
+  "venus: the WebGPU device's subgroups are wrong in divergent control flow: subgroups of one invocation": 1,
+  "venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies": 1
+ }
+}

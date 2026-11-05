@@ -131,7 +131,8 @@ and a sampler array indexed apart get an `if` tree each (every texture with ever
 (`OpTerminateInvocation`) is `discard` and a return, a demote `discard` (WGSL's demotes) and a private `wg_helper` that
 `helperInvocationEXT()` and `gl_HelperInvocation` read, with an empty `sample_mask` (WGSL has no built-in: the
 rasterizer's helpers cover no sample); a texture offset is printed as literals, each channel found through the vec
-scalarizing left (WGSL wants a const-expression); `gl_ClipDistance` read by a fragment stage travels at free locations,
+scalarizing left (WGSL wants a const-expression); one that isn't a constant (maintenance8's `Offset` operand, VK4 T24)
+is a fetch's sum, and a sample with one comes from fetches ("Samplers in the shader"); `gl_ClipDistance` read by a fragment stage travels at free locations,
 a vec4 per slot, beside WGSL's `clip_distances` (`wgsl_varyings.clip`); a compute stage that reads workgroup or global
 ids adds `override wg_base_x/y/z`, a pipeline per `vkCmdDispatchBase` base (`wg_compute_based`); a cube or cube array storage image is its faces as a 2D array (the driver binds such views through a
 `2d-array` view of their own), its size counted in cubes; an explicit LOD on a depth texture without a comparison picks
@@ -286,7 +287,10 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   Venus's WSI shares through (dma-buf memory; one DRM modifier, LINEAR, with the optimal tiling's features; foreign
   queue transfers; sync-file semaphores). It reports an integrated GPU (libplacebo, GTK4 and wlroots turn CPUs away)
   whose vendor ID is the adapter's maker's (`VENDORS`: Apple's, NVIDIA's, Google's for SwiftShader; 0 for one not
-  listed), as Venus on a native host passes its GPU's on, named `webpc WebGPU`. Two memory types, each on a heap of its own (device-local, 2 GiB;
+  listed), as Venus on a native host passes its GPU's on, named `webpc WebGPU`. Vulkan 1.4's `maintenance5` and
+`maintenance6` and `maintenance8` (VK4 T24: mostly the runtime's and host-side; their A8_UNORM and A1B5G5R5 formats
+aren't offered, no WebGPU format holding them; `maintenance8` reaches a guest only through Mesa 26.3's Venus on: 26.2's
+leaves it out). Two memory types, each on a heap of its own (device-local, 2 GiB;
   host-visible, coherent, cached and device-local, 1 GiB: the least GFXReconstruct, VMA and DXVK take as general memory
   rather than a discrete GPU's BAR window), whose budget reports what's allocated from each (VK4 T2). Host-visible
   memory's bytes are in the arena (1,280 MiB of memory 1 with the module's own heap), which backs its heap (VK4 T19). An allocation past
@@ -448,7 +452,8 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   temporary texture first (VK3 L8a; the invalid copy lost the submit). An image clear of a
   format WebGPU can't render to (`rgb9e5ufloat`, the snorm8 formats without tier1, `rg11b10ufloat` without its
   feature) is its clear colour encoded in the worker (`encodeTexel`) and copied in; a 3D image's clear covers every
-  slice; a blit from a 3D image samples it as one, at the slice each destination slice maps to (VK3 L4c-F); a nearest blit finds its
+  slice; a blit from a 3D image samples it as one, at the slice each destination slice maps to (VK3 L4c-F), and between an
+array's layers and a 3D image's slices (maintenance8) a layer a slice, a draw each (VK4 T24); a nearest blit finds its
   texel by Vulkan's sum from the fragment's position (an interpolated coordinate came a hair short of whole texels on Metal:
   VK4 T12, `generate_mipmaps.from_previous_level`); Buffer ↔ image copies whose rows
   aren't 256 bytes apart go a row of blocks at a time, but for depth and stencil, which WebGPU copies only whole
@@ -461,7 +466,9 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   copy and written by draws over the region, one zeroing it and one a bit (`stencilByDraws`: each discards the texels
   whose byte lacks its bit and replaces that bit), and depth16unorm's part the same way, its half words read by the
   draw (VK4 T10). Whole depth and stencil subresources take WebGPU's own copy where the textures have the copy usages and
-  every aspect is copied. A copy between size-compatible formats, which WebGPU's texture copies refuse, is the blocks'
+  every aspect is copied. A copy between depth or stencil and a colour image of the texels' size (maintenance8:
+D32_SFLOAT and R32_SFLOAT, X8_D24 and R32_UINT, S8_UINT and R8_UINT, ...) goes through a temporary buffer, the depth or
+stencil side's copy as a buffer copy's above (`colorDepthStencil`, VK4 T24). A copy between size-compatible formats, which WebGPU's texture copies refuse, is the blocks'
   bytes through a temporary buffer (`copyBetweenFormats`: a compressed block is one texel of an uncompressed format, and
   no bytes change on the way). A multisampled copy is WebGPU's own of a whole subresource, else draws shaded per sample
   (`sample_index`) reading the source's same sample, stencil by a draw a bit (`copyMultisampled`; multisampled images
@@ -532,6 +539,12 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
     Anisotropy's lengthening of the footprint isn't kept.
   - **Offsets past a mirror-once reflection** (VK4 T9): in texels of the level before the wrap, so such a sample goes
     through the fetches.
+  - **Offsets that aren't constants** (VK4 T24, maintenance8's `Offset` operand; WGSL takes const-expressions only):
+    every float sample, gather and shadow sample with one comes from the fetches, the offset in texels of each level
+    read (`dynamic_offset`); a fetch adds it. They always want a key (`WGSL_KEY_ALWAYS`); without one a shadow sample
+    compares LESS_OR_EQUAL rather than NEVER, so the stage's own module, whose bindings make the program's layout, keeps
+    its texture (a NEVER one folded it away: the layout lacked the group its variants bind). An integer gather with
+    one takes them too. The fetches' cost, against WGSL's own sample, is unmeasured: no program replayed here has one.
   - Key LODs are clamped to ±1,000 at the sampler: `VK_LOD_CLAMP_NONE` and programs' infinities are indeterminate in
     WGSL's `min` and `max` (a `maxLod` of `inf` read the last level).
   - **Compressed images that aren't whole blocks** (VK4 T18): WebGPU wants a compressed texture's first level in whole

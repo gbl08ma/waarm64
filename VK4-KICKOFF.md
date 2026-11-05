@@ -43,7 +43,7 @@ T2–T14; the rest of the order is judgement, said with each.
 
 ## The tasks
 
-### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T23 (2026-10-29 to 2026-11-05)
+### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T24 (2026-10-29 to 2026-11-05)
 
 Each row's outcome in full is its section of bench/vulkan/REPORT.md ("VK4 T<n>") and its commit; what each left is in
 docs/backlog.md "The Vulkan driver's gaps" (the entry named) and, where it is a defect or drops work, in the tasks
@@ -83,6 +83,7 @@ R1–R4 and then of R5–R7, had its findings fixed or moved to the backlog the 
 | T21. The census's failures and its new passes | texel buffers' and word images' parameters one uniform table a group (sets4's uniform buffers past 12), but sets4's 165 failures are all bindings past WebGPU's, filed; the 16-bit normalized formats' resolves drawn (438 multisampled cases pass on the M4); long_shader_bitwise_and's 40 s are SwiftShader compiling 2,356 loads, booleans as `&` 16% off it; list +861 | "Texel buffers", "SwiftShader compiles zero-initialized workgroup memory slowly" |
 | T22. A compute-only queue family | three families (graphics; compute; transfer), all the WebGPU queue; held submits hold their own queue's only, a binary wait held with its held signal; of 2,590 sampled cases 1,465 pass on both hosts and join the list (SwiftShader's 166 failures its own, the M4's one filed); mpv the same | "SwiftShader's compressed formats sampled in a compute stage", "The M4's own failures" |
 | T23. What the emulations cost a program | the paths counted (`venusEmul`) and skippable in a run (`?gpu=vkskip=`, `bench/vulkan/t23.ts`); Godot's GI demo in SDFGI mode on the M4 and NVIDIA: SDFGI's rgb9e5 views of R32_UINT images copied ~34 MB a frame (2.8 ms of a 17 ms submit on NVIDIA, +12% frames/s left out), the rest small or none, no freeze; such views now decoded in the shader from the image's own texture (about even on the M4) | "Views in another format's leftovers" (the decode's gain on NVIDIA: the next NVIDIA run's `t23`) |
+| T24. `maintenance5`, `6` and `8` | the three advertised; 5 and 6 host-side (`vkGetDeviceImageSubresourceLayout`, their properties): 360 of the census's 688 cases pass on both hosts and join the list (30,039 → 30,399), the rest formats WebGPU lacks (A8, A1B5G5R5) and aliased images; 8's offsets that aren't constants from fetches, depth and stencil copied with colour images, blits between layers and slices: 2,246 of its 3,642 cases pass through Mesa 26.3's Venus (`images/deqp/venus-icd.sh`), 0 fail on either host, in `tests/deqp/vk-maintenance8.txt` until the guest's Mesa is 26.3 | "maintenance8's cases wait for the guest's Mesa 26.3", "maintenance5's and 6's leftovers" |
 
 ### Tier 3: performance on real workloads
 
@@ -104,11 +105,6 @@ memory, cooperative matrices, ray tracing, mesh shaders, tile images, fragment d
 the sample's on the M4 (×100 for the whole list, roughly); each starts by running its reason's cases (`deqp-run.ts`'s
 `CASES`, from `census.ts --reasons`' examples or the sample's JSON) to see what they meet once advertised.
 
-- **T24. `maintenance5`, `6` and `8`** (M; 454, 234, 34 here; maintenance8's texel offsets that aren't constants are
-  `_pcoffset`'s 2,760 cases of the whole list): 5 and 6 are host-side mostly (the `*2` commands, `A1B5G5R5` with T30,
-  their properties) and what Vulkan 1.4 requires; 8's offsets in the translator (a coordinate shifted by the offset at
-  the level's size, or T18's filter where two levels blend). Venus's guest must pass them through. *Done:* the three
-  advertised, their cases run. *Start:* backlog "Shaders" (`_pcoffset`).
 - **T25. Min/max filtering** (S–M; 396: `filterMinmaxImageComponentMapping` 195, formats 150, the extension 51):
   `VK_EXT_sampler_filter_minmax` through T8's sampler keys, T18's filter from fetches taking the texels' min or max
   instead of their weighted sum; vkd3d's 12_0 asks for it. *Done:* advertised, its cases run, a variant's cost on one

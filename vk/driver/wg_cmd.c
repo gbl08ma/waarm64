@@ -2408,6 +2408,24 @@ wg_CmdCopyImageToBuffer2(VkCommandBuffer commandBuffer, const VkCopyImageToBuffe
       copy_bt(cmd, OP_COPY_TB, buffer, image, &info->pRegions[i]);
 }
 
+/* A copy's aspect for the worker: of a depth-stencil texture, the one copied (1 depth, 2 stencil; 0 both); between a
+ * depth or stencil image and a colour one (maintenance8: R32_SFLOAT and D32_SFLOAT, R8_UINT and S8_UINT, ...), the
+ * depth or stencil side's, which the worker's copy through a buffer goes by (VK4 T24). */
+static uint32_t
+copy_aspect(const struct wg_image *src, VkImageAspectFlags src_aspect, const struct wg_image *dst,
+            VkImageAspectFlags dst_aspect)
+{
+   const uint32_t ds = WG_FMT_DEPTH | WG_FMT_STENCIL;
+   const bool sds = src->fmt->flags & ds, dds = dst->fmt->flags & ds;
+   if (sds != dds) {
+      const VkImageAspectFlags a = sds ? src_aspect : dst_aspect;
+      return a == VK_IMAGE_ASPECT_STENCIL_BIT ? 2 : 1;
+   }
+   if ((src->fmt->flags & ds) == ds)
+      return src_aspect == VK_IMAGE_ASPECT_STENCIL_BIT ? 2 : src_aspect == VK_IMAGE_ASPECT_DEPTH_BIT ? 1 : 0;
+   return 0;
+}
+
 VKAPI_ATTR void VKAPI_CALL
 wg_CmdCopyImage2(VkCommandBuffer commandBuffer, const VkCopyImageInfo2 *info)
 {
@@ -2434,9 +2452,7 @@ wg_CmdCopyImage2(VkCommandBuffer commandBuffer, const VkCopyImageInfo2 *info)
                                  .w = cols * sp->fmt->bw, .h = rows * sp->fmt->bh, .d = layers,
                                  .dst_w = cols * dp->fmt->bw, .dst_h = rows * dp->fmt->bh, .cols = cols, .rows = rows,
                                  .bytes = sp->fmt->bytes,
-                                 .aspect = (src->fmt->flags & WG_FMT_DEPTH) && (src->fmt->flags & WG_FMT_STENCIL)
-                                              ? (aspect == VK_IMAGE_ASPECT_STENCIL_BIT ? 2 : aspect == VK_IMAGE_ASPECT_DEPTH_BIT ? 1 : 0)
-                                              : 0 },
+                                 .aspect = copy_aspect(src, aspect, dst, r->dstSubresource.aspectMask) },
            sizeof(struct op_copy_tt));
    }
 }
@@ -2456,24 +2472,42 @@ wg_CmdBlitImage2(VkCommandBuffer commandBuffer, const VkBlitImageInfo2 *info)
    VK_FROM_HANDLE(wg_image, dst, info->dstImage);
    if ((src->fmt->flags | dst->fmt->flags) & (WG_FMT_DEPTH | WG_FMT_STENCIL))
       return; /* depth blits: not yet (docs/backlog.md) */
+   const bool s3 = src->vk.image_type == VK_IMAGE_TYPE_3D, d3 = dst->vk.image_type == VK_IMAGE_TYPE_3D;
    for (uint32_t i = 0; i < info->regionCount; i++) {
       const VkImageBlit2 *r = &info->pRegions[i];
-      const uint32_t layers = vk_image_subresource_layer_count(&src->vk, &r->srcSubresource);
+      const uint32_t src_layers = vk_image_subresource_layer_count(&src->vk, &r->srcSubresource);
+      const uint32_t dst_layers = vk_image_subresource_layer_count(&dst->vk, &r->dstSubresource);
       const VkExtent3D se = vk_image_mip_level_extent(&src->vk, r->srcSubresource.mipLevel);
       record_layers_use(cmd, src, &r->srcSubresource, false);
       record_layers_use(cmd, dst, &r->dstSubresource, true);
+      /* maintenance8 (VK4 T24): a 2D array's layers into a 3D image's slices, one each (the slices' span is the layer
+       * count), and a 3D image's slices into an array's layers; otherwise layer for layer. */
+      const bool to_slices = !s3 && d3 && src_layers > 1, to_layers = s3 && !d3 && dst_layers > 1;
+      const uint32_t layers = to_layers ? dst_layers : src_layers;
       for (uint32_t l = 0; l < layers; l++) {
+         int32_t sz[2] = { r->srcOffsets[0].z, r->srcOffsets[1].z }, dz[2] = { r->dstOffsets[0].z, r->dstOffsets[1].z };
+         if (to_slices) {
+            const int32_t span = dz[1] - dz[0];
+            dz[0] = r->dstOffsets[0].z + (int32_t)(l * span) / (int32_t)layers;
+            dz[1] = r->dstOffsets[0].z + (int32_t)((l + 1) * span) / (int32_t)layers;
+         } else if (to_layers) {
+            const int32_t span = sz[1] - sz[0];
+            sz[0] = r->srcOffsets[0].z + (int32_t)(l * span) / (int32_t)layers;
+            sz[1] = r->srcOffsets[0].z + (int32_t)((l + 1) * span) / (int32_t)layers;
+         }
+         const uint32_t src_layer = r->srcSubresource.baseArrayLayer + (to_layers ? 0 : l);
+         const uint32_t dst_layer = r->dstSubresource.baseArrayLayer + (to_slices ? 0 : l);
          struct wg_json j = { 0 };
          wg_json_printf(&j, "{\"op\":\"blit\",%s\"src\":%u,\"srcMip\":%u,\"srcLayer\":%u,\"srcFormat\":\"%s\",\"dst\":%u,"
                         "\"dstMip\":%u,\"dstLayer\":%u,\"format\":\"%s\",\"filter\":\"%s\",\"srcSize\":[%u,%u],"
                         "\"from\":[%d,%d,%d,%d],\"to\":[%d,%d,%d,%d],\"srcZ\":[%d,%d],\"dstZ\":[%d,%d],\"srcDepth\":%u}",
                         (src->fmt->flags & WG_FMT_OPAQUE) && (src->fmt->flags & WG_FMT_BC) ? "\"srcOpaque\":true," : "",
-                        src->tex, r->srcSubresource.mipLevel, r->srcSubresource.baseArrayLayer + l, src->fmt->name,
-                        dst->tex, r->dstSubresource.mipLevel, r->dstSubresource.baseArrayLayer + l, dst->fmt->name,
+                        src->tex, r->srcSubresource.mipLevel, src_layer, src->fmt->name,
+                        dst->tex, r->dstSubresource.mipLevel, dst_layer, dst->fmt->name,
                         info->filter == VK_FILTER_LINEAR ? "linear" : "nearest", se.width, se.height,
                         r->srcOffsets[0].x, r->srcOffsets[0].y, r->srcOffsets[1].x, r->srcOffsets[1].y,
                         r->dstOffsets[0].x, r->dstOffsets[0].y, r->dstOffsets[1].x, r->dstOffsets[1].y,
-                        r->srcOffsets[0].z, r->srcOffsets[1].z, r->dstOffsets[0].z, r->dstOffsets[1].z, se.depth);
+                        sz[0], sz[1], dz[0], dz[1], se.depth);
          meta(cmd, &j);
       }
    }

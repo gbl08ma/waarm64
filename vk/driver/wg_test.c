@@ -3580,6 +3580,110 @@ t4_misc(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out
 }
 
 /*
+ * VK4 T24 (maintenance8), wgt_misc's scenario 95, into `out` (filled 0xee): copies between depth or stencil and colour
+ * images of their texels' size, and blits between an array's layers and a 3D image's slices.
+ * - an R32_SFLOAT 4×4 image of 0.0625·i, its (1, 1) 2×2 copied to (0, 0) of a D32 image cleared to 1.0, whole → [0, 64);
+ *   then that D32's (0, 0) 2×2 to (2, 2) of an R32_SFLOAT image cleared to 0, whole → [256, 320);
+ * - an R8_UINT 4×4 image of 7i, its (0, 0) 2×2 copied to (2, 2) of an S8 image cleared to 0x33, whole → [512, 528);
+ *   then the S8 whole into an R8_UINT image, whole → [768, 784);
+ * - a 2×2 RGBA8 array of two layers (red, green) blitted into a 2×2×2 3D image's slices, whole → [1024, 1056); the 3D
+ *   image's slices blitted into another array's two layers, whole → [1280, 1312).
+ */
+static int
+t24_image(VkFormat format, VkImageType type, uint32_t w, uint32_t h, uint32_t depth, uint32_t layers, VkImage *out)
+{
+   const VkImageCreateInfo info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = type, .format = format, .extent = { w, h, depth },
+      .mipLevels = 1, .arrayLayers = layers, .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
+      .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+               ((format == VK_FORMAT_D32_SFLOAT || format == VK_FORMAT_S8_UINT) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+                                                                              : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT),
+   };
+   CHECK(CreateImage(dev, &info, NULL, out));
+   VkMemoryRequirements req;
+   GetImageMemoryRequirements(dev, *out, &req);
+   VkDeviceMemory mem;
+   if (memory_for(req, false, &mem, NULL))
+      return 1;
+   CHECK(BindImageMemory(dev, *out, mem, 0));
+   return 0;
+}
+
+static void
+t24_general(VkCommandBuffer cmd, VkImage image, VkImageAspectFlags aspect, uint32_t layers)
+{
+   const VkImageMemoryBarrier b = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                    .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT,
+                                    .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED, .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                    .image = image, .subresourceRange = { aspect, 0, 1, 0, layers } };
+   CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &b);
+}
+
+static int
+t24_misc(VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearDepthStencilImage CmdClearDepthStencilImage =
+      (PFN_vkCmdClearDepthStencilImage)GetDeviceProcAddr(dev, "vkCmdClearDepthStencilImage");
+   PFN_vkCmdClearColorImage CmdClearColorImage = (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   PFN_vkCmdCopyImage CmdCopyImage = (PFN_vkCmdCopyImage)GetDeviceProcAddr(dev, "vkCmdCopyImage");
+   PFN_vkCmdBlitImage CmdBlitImage = (PFN_vkCmdBlitImage)GetDeviceProcAddr(dev, "vkCmdBlitImage");
+   const VkImageLayout G = VK_IMAGE_LAYOUT_GENERAL;
+   VkImage r32, d32, r32b, r8, s8, r8b, arr, vol, arr2;
+   VkBuffer src;
+   uint8_t *sb;
+   if (t24_image(VK_FORMAT_R32_SFLOAT, VK_IMAGE_TYPE_2D, 4, 4, 1, 1, &r32) ||
+       t24_image(VK_FORMAT_D32_SFLOAT, VK_IMAGE_TYPE_2D, 4, 4, 1, 1, &d32) ||
+       t24_image(VK_FORMAT_R32_SFLOAT, VK_IMAGE_TYPE_2D, 4, 4, 1, 1, &r32b) ||
+       t24_image(VK_FORMAT_R8_UINT, VK_IMAGE_TYPE_2D, 4, 4, 1, 1, &r8) ||
+       t24_image(VK_FORMAT_S8_UINT, VK_IMAGE_TYPE_2D, 4, 4, 1, 1, &s8) ||
+       t24_image(VK_FORMAT_R8_UINT, VK_IMAGE_TYPE_2D, 4, 4, 1, 1, &r8b) ||
+       t24_image(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TYPE_2D, 2, 2, 1, 2, &arr) ||
+       t24_image(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TYPE_3D, 2, 2, 2, 1, &vol) ||
+       t24_image(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TYPE_2D, 2, 2, 1, 2, &arr2) ||
+       buffer(4096, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, &src, (void **)&sb))
+      return 1;
+   for (uint32_t i = 0; i < 16; i++) {
+      ((float *)sb)[i] = 0.0625f * (float)i;
+      sb[256 + i] = (uint8_t)(7 * i);
+   }
+   const VkImageAspectFlags C = VK_IMAGE_ASPECT_COLOR_BIT, D = VK_IMAGE_ASPECT_DEPTH_BIT, S = VK_IMAGE_ASPECT_STENCIL_BIT;
+   t24_general(cmd, r32, C, 1), t24_general(cmd, d32, D, 1), t24_general(cmd, r32b, C, 1);
+   t24_general(cmd, r8, C, 1), t24_general(cmd, s8, S, 1), t24_general(cmd, r8b, C, 1);
+   t24_general(cmd, arr, C, 2), t24_general(cmd, vol, C, 1), t24_general(cmd, arr2, C, 2);
+   const VkImageSubresourceLayers c1 = { C, 0, 0, 1 }, d1 = { D, 0, 0, 1 }, s1 = { S, 0, 0, 1 }, c2 = { C, 0, 0, 2 };
+
+   /* Depth with R32_SFLOAT. */
+   CmdCopyBufferToImage(cmd, src, r32, G, 1, &(VkBufferImageCopy){ .imageSubresource = c1, .imageExtent = { 4, 4, 1 } });
+   CmdClearDepthStencilImage(cmd, d32, G, &(VkClearDepthStencilValue){ 1.0f, 0 }, 1, &(VkImageSubresourceRange){ D, 0, 1, 0, 1 });
+   CmdClearColorImage(cmd, r32b, G, &(VkClearColorValue){ .float32 = { 0 } }, 1, &(VkImageSubresourceRange){ C, 0, 1, 0, 1 });
+   CmdCopyImage(cmd, r32, G, d32, G, 1, &(VkImageCopy){ .srcSubresource = c1, .srcOffset = { 1, 1, 0 }, .dstSubresource = d1, .extent = { 2, 2, 1 } });
+   CmdCopyImageToBuffer(cmd, d32, G, out, 1, &(VkBufferImageCopy){ .imageSubresource = d1, .imageExtent = { 4, 4, 1 } });
+   CmdCopyImage(cmd, d32, G, r32b, G, 1, &(VkImageCopy){ .srcSubresource = d1, .dstSubresource = c1, .dstOffset = { 2, 2, 0 }, .extent = { 2, 2, 1 } });
+   CmdCopyImageToBuffer(cmd, r32b, G, out, 1, &(VkBufferImageCopy){ .bufferOffset = 256, .imageSubresource = c1, .imageExtent = { 4, 4, 1 } });
+
+   /* Stencil with R8_UINT. */
+   CmdCopyBufferToImage(cmd, src, r8, G, 1, &(VkBufferImageCopy){ .bufferOffset = 256, .imageSubresource = c1, .imageExtent = { 4, 4, 1 } });
+   CmdClearDepthStencilImage(cmd, s8, G, &(VkClearDepthStencilValue){ 0, 0x33 }, 1, &(VkImageSubresourceRange){ S, 0, 1, 0, 1 });
+   CmdCopyImage(cmd, r8, G, s8, G, 1, &(VkImageCopy){ .srcSubresource = c1, .dstSubresource = s1, .dstOffset = { 2, 2, 0 }, .extent = { 2, 2, 1 } });
+   CmdCopyImageToBuffer(cmd, s8, G, out, 1, &(VkBufferImageCopy){ .bufferOffset = 512, .imageSubresource = s1, .imageExtent = { 4, 4, 1 } });
+   CmdCopyImage(cmd, s8, G, r8b, G, 1, &(VkImageCopy){ .srcSubresource = s1, .dstSubresource = c1, .extent = { 4, 4, 1 } });
+   CmdCopyImageToBuffer(cmd, r8b, G, out, 1, &(VkBufferImageCopy){ .bufferOffset = 768, .imageSubresource = c1, .imageExtent = { 4, 4, 1 } });
+
+   /* An array's layers into a 3D image's slices, and back into another array. */
+   CmdClearColorImage(cmd, arr, G, &(VkClearColorValue){ .float32 = { 1, 0, 0, 1 } }, 1, &(VkImageSubresourceRange){ C, 0, 1, 0, 1 });
+   CmdClearColorImage(cmd, arr, G, &(VkClearColorValue){ .float32 = { 0, 1, 0, 1 } }, 1, &(VkImageSubresourceRange){ C, 0, 1, 1, 1 });
+   CmdBlitImage(cmd, arr, G, vol, G, 1,
+                &(VkImageBlit){ .srcSubresource = c2, .srcOffsets = { { 0, 0, 0 }, { 2, 2, 1 } }, .dstSubresource = c1,
+                                .dstOffsets = { { 0, 0, 0 }, { 2, 2, 2 } } }, VK_FILTER_NEAREST);
+   CmdCopyImageToBuffer(cmd, vol, G, out, 1, &(VkBufferImageCopy){ .bufferOffset = 1024, .imageSubresource = c1, .imageExtent = { 2, 2, 2 } });
+   CmdBlitImage(cmd, vol, G, arr2, G, 1,
+                &(VkImageBlit){ .srcSubresource = c1, .srcOffsets = { { 0, 0, 0 }, { 2, 2, 2 } }, .dstSubresource = c2,
+                                .dstOffsets = { { 0, 0, 0 }, { 2, 2, 1 } } }, VK_FILTER_NEAREST);
+   CmdCopyImageToBuffer(cmd, arr2, G, out, 1, &(VkBufferImageCopy){ .bufferOffset = 1280, .imageSubresource = c2, .imageExtent = { 2, 2, 1 } });
+   return 0;
+}
+
+/*
  * VK4 T23, wgt_misc's scenario 94, `cs` t23-rgb9e5.comp: a 2x1 R32_UINT image (mutable, as Godot's SDFGI makes them)
  * given two E5B9G9R9 words, (1, 0.5, 0.25) and (3, 2, 0), by a copy from the buffer, then sampled through an
  * E5B9G9R9 view with a linear sampler halfway between them, (2, 1.25, 0.125, 1), and its second texel fetched, into the
@@ -5782,6 +5886,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 94) {
       if (t23_misc(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 95) {
+      if (t24_misc(cmd, out))
          return 1;
    } else if (scenario == 41 || scenario == 42) {
       if (t11_misc(scenario, cs, cs_words, cmd, out))

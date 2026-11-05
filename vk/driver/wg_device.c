@@ -1570,6 +1570,19 @@ wg_GetImageSubresourceLayout2(VkDevice _device, VkImage _image, const VkImageSub
                       &layout->subresourceLayout);
 }
 
+/* maintenance5's: the layout an image of this description would have, as GetImageSubresourceLayout2 says of one. */
+VKAPI_ATTR void VKAPI_CALL
+wg_GetDeviceImageSubresourceLayout(VkDevice _device, const VkDeviceImageSubresourceInfo *info, VkSubresourceLayout2 *layout)
+{
+   VK_FROM_HANDLE(wg_device, dev, _device);
+   struct wg_image image = { .plane_count = 1 };
+   vk_image_init(&dev->vk, &image.vk, info->pCreateInfo);
+   if (!wg_texture_format(image.vk.format) && wg_ycbcr_format(image.vk.format))
+      image.plane_count = wg_image_planes(&image.vk, image.planes);
+   wg_GetImageSubresourceLayout2(_device, wg_image_to_handle(&image), info->pSubresource, layout);
+   vk_image_finish(&image.vk);
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 wg_GetImageDrmFormatModifierPropertiesEXT(VkDevice _device, VkImage image,
                                           VkImageDrmFormatModifierPropertiesEXT *pProps)

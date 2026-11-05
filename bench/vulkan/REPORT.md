@@ -771,6 +771,58 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T24: maintenance5, 6 and 8 — 360 cases join the list; maintenance8's 2,246 pass through Mesa 26.3's Venus
+
+2026-11-05, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`, `VIRGL_GPU=virgl,vulkan`). JSON in `results/vk4/t24/`; the census's cases asking for each
+(`m56-cases.txt`: maintenance5's 454, 6's 234; maintenance8's 34 there, its whole groups below).
+
+- **maintenance5 and 6** were mostly there: the driver had the `*2` commands, index buffer ranges, `VkBindMemoryStatus`
+  and `VK_REMAINING_ARRAY_LAYERS` in copies, and Mesa's runtime takes shader modules chained to a stage and the flags2
+  words. Added: `vkGetDeviceImageSubresourceLayout`, the two extensions' properties (no early fragment tests, so the
+  sample-counting ones false; a swizzle of ONE on depth reads 1; a 3-plane format's 3 descriptors). Before, all 688
+  NotSupported; after:
+
+| host | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| SwiftShader (25 s as one list) | 688 | 360 | 1 | 327 |
+| M4, the 360 | 360 | 360 | 0 | 0 |
+
+  The not supported are formats: A8_UNORM 81 and A1B5G5R5 70 (maintenance5's own, not offered: no WebGPU format;
+  A1B5G5R5 is T30's), and others WebGPU lacks (3-channel, scaled, compressed 1D: 175), and robustness2's null index
+  buffer (1). The failure is `memory.binding.maintenance6.aliasing.suballocated.image_*` (9 of 9 of the group,
+  `m6-memory-swiftshader.json`): aliased images, the backlog's "Memory" gap, not maintenance6's. **The 360 join
+  `tests/deqp/vk.txt`** (`binding_model.shader_access` 227, `api.copy_and_blit` 67, `pipeline` 60 (57 border swizzles of depth and stencil
+  with `with_swizzle_hint`, 3 `dynamic_offset`), the rest 6; 30,039 → 30,399).
+- **maintenance8 needs the guest's Venus too**: Mesa 26.2's (the tests' guest's 26.2.5; the port's newest 26.2.6)
+  leaves `VK_KHR_maintenance8` out, 26.3's passes it on. `images/deqp/venus-icd.sh` builds 26.3.0-rc3's Venus in the
+  Arch container and puts it on a copy of dEQP-VK's disk; deqp-run.ts's `DISK2` and `GUEST_ENV` run deqp-vk through it.
+  What the device does for it: offsets that aren't constants (the `Offset` operand) move a fetch, and every sample,
+  gather or shadow sample with one comes from the fetches' filter (`wgsl_sampler.c` `dynamic_offset`: the offset in
+  texels of each level read); depth and stencil copied with a colour image of their texels' size through a buffer
+  (`colorDepthStencil`, on the depth and stencil copies VK3 L6b made); blits between an array's layers and a 3D image's
+  slices, a layer a slice (they drew every slice from each layer). SRem and SMod were already SPIR-V's. The groups
+  (every `*_pcoffset` case but sparse, every `ds_color_copy` case, every blit between `2d_array` and `3d`):
+
+| host | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| SwiftShader (55 s + 93 s) | 3,642 | 2,246 | 0 | 1,396 |
+| M4, every 4th of `pcoffset` and `ds_color_copy`, every blit | 1,130 | 790 | 0 | 340 |
+| M4, the rest | 2,512 | 1,482 | 0 | 1,030 |
+
+  The first sample's one failure, `textureprojlodoffset_pcoffset.*sampler2dshadow_fragment`, was a pipeline WebGPU
+  refused: without a key a shadow sample took `plain_key`'s NEVER, which folded the texture away, so the stage's own
+  module (whose bindings make the program's layout) had no group 0 while its keyed variant bound one; it now compares
+  LESS_OR_EQUAL there. The not supported: depth and stencil copies on transfer and compute queues (maintenance10's),
+  minLod clamps (`shaderResourceMinLod`), D24 and D16S8 formats. The M4's 2,272 passes hold SwiftShader's 2,246 (26 more its formats). **SwiftShader's passes are
+  `tests/deqp/vk-maintenance8.txt`**,
+  run by hand until the guest's Mesa is 26.3 (docs/backlog.md).
+- **Tests** (each failing with its rule planted out): `tests/wgsl.test.ts` "offsets that aren't constants" (a fetch, an
+  explicit LOD at level 1, gradients, a gather, run on Chromium's WebGPU; the keyless shadow keeps its texture);
+  `tests/venus-driver.test.ts` "misc: depth and stencil copied with colour images…" (wg_test.c 95: D32 ↔ R32_SFLOAT,
+  S8 ↔ R8_UINT, layers ↔ slices). Not measured: what a fetched sample costs against WGSL's own; no program here has a
+  dynamic offset (vkd3d's D3D12 layering asks for them).
+
 ## VK4 T23: what the emulations cost Godot's GI demo — SDFGI's rgb9e5 views copied ~34 MB a frame, now decoded in the shader
 
 2026-11-05. Godot 4.7.2's GI demo as it starts in SDFGI mode, vsync off (bench/vulkan/godot-disk.sh's `gi-sdfgi`; with

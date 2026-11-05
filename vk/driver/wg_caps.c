@@ -72,6 +72,15 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .KHR_maintenance2 = true,
       .KHR_maintenance3 = true,
       .KHR_maintenance4 = true,
+      /* 1.4's: the *2 commands, index buffer ranges, VkBindMemoryStatus, VK_REMAINING_ARRAY_LAYERS in copies, shader
+       * modules chained to a stage (Mesa's runtime), the flags2 words (VK4 T24). A8_UNORM and A1B5G5R5 aren't offered
+       * (wg_format.c: no WebGPU format; VK4 T30). */
+      .KHR_maintenance5 = true,
+      .KHR_maintenance6 = true,
+      /* Offsets that aren't constants from fetches (wgsl_sampler.c `dynamic_offset`), depth and stencil copied with
+       * colour formats of their size through a buffer (web/venus-gpu.ts `colorDepthStencil`), blits between a 3D
+       * image's slices and an array's layers, SPIR-V's SRem and SMod (WGSL's `%` and the printer's imod). */
+      .KHR_maintenance8 = true,
       .KHR_relaxed_block_layout = true,
       .KHR_storage_buffer_storage_class = true,
       .KHR_create_renderpass2 = true,
@@ -210,6 +219,9 @@ wg_caps_features(struct vk_features *f)
       .dynamicRendering = true,
       .shaderIntegerDotProduct = true,
       .maintenance4 = true,
+      .maintenance5 = true,
+      .maintenance6 = true,
+      .maintenance8 = true,
       .extendedDynamicState = true,
       .extendedDynamicState2 = true,
       .depthClipEnable = HAS(DEPTH_CLIP),
@@ -414,6 +426,19 @@ wg_caps_properties(struct vk_properties *p)
    p->maxTransformFeedbackStreamDataSize = 512;
    p->maxTransformFeedbackBufferDataSize = 512;
    p->maxTransformFeedbackBufferDataStride = 512;
+
+   /* maintenance5 (VK4 T24): no early fragment tests (docs/backlog.md "Rendering"), no points as polygons, lines of
+    * one pixel by WebGPU's rule (not a parallelogram); a swizzle of ONE on depth reads 1 (the view's mapping). */
+   p->earlyFragmentMultisampleCoverageAfterSampleCounting = false;
+   p->earlyFragmentSampleMaskTestBeforeSampleCounting = false;
+   p->depthStencilSwizzleOneSupport = true;
+   p->polygonModePointSize = false;
+   p->nonStrictSinglePixelWideLinesUseParallelogram = false;
+   p->nonStrictWideLinesUseParallelogram = false;
+   /* maintenance6: a 3-plane YCbCr format's three textures; no block-texel views of several layers. */
+   p->blockTexelViewCompatibleMultipleLayers = false;
+   p->maxCombinedImageSamplerDescriptorCount = 3;
+   p->fragmentShadingRateClampCombinerInputs = false;
 }
 
 /*

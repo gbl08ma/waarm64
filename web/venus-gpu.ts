@@ -523,6 +523,7 @@ export class VenusGpu {
         const S = self.get<GPUTexture>(src), D = self.get<GPUTexture>(dst);
         later(() => {
           self.touched.add(D);
+          if (isDepthStencil(S.format) !== isDepthStencil(D.format)) return self.colorDepthStencil(S, sm, sx, sy, sz, D, dm, dx, dy, dz, w, h, depth, aspect);
           const ps = self.packed.get(S), pd = self.packed.get(D);
           if ((ps || pd) && ps?.join() !== pd?.join() && S.sampleCount === 1) return self.copyPacked(ps, S, sm, sx, sy, sz, pd, D, dm, dx, dy, dz, w, h, depth);
           if (S.sampleCount > 1) {
@@ -1071,6 +1072,30 @@ export class VenusGpu {
       pass.end();
     }
     return true;
+  }
+
+  /** A copy between a depth or stencil aspect and a colour texture of its texels' size (maintenance8: D32_SFLOAT and
+   * R32_SFLOAT, S8_UINT and R8_UINT, ...; VK4 T24), which WebGPU has no copy for: through a temporary buffer, the depth
+   * or stencil side's copy as a buffer's (`depthStencilCopy`: by WebGPU where it can, else the worker's passes). */
+  private colorDepthStencil(S: GPUTexture, sm: number, sx: number, sy: number, sz: number, D: GPUTexture, dm: number, dx: number, dy: number, dz: number, w: number, h: number, layers: number, aspect: number) {
+    const fromDS = isDepthStencil(S.format), ds = fromDS ? S : D;
+    if (S.sampleCount > 1 || D.sampleCount > 1) {
+      this.warn(`a multisampled copy between ${S.format} and ${D.format}: skipped`);
+      return;
+    }
+    const stencil = aspect === 2 || ds.format === 'stencil8', bytes = stencil ? 1 : ds.format === 'depth16unorm' ? 2 : 4;
+    const pitch = Math.ceil(w * bytes / 256) * 256;
+    const temp = this.device!.createBuffer({ size: pitch * h * layers, usage: COPY_SRC | COPY_DST | STORAGE });
+    this.temps.push(temp);
+    const layout = { buffer: temp, offset: 0, bytesPerRow: pitch, rowsPerImage: h }, size = { width: w, height: h, depthOrArrayLayers: layers };
+    const a = stencil ? 2 : 1;
+    if (fromDS) {
+      this.depthStencilCopy(false, temp, 0, pitch, h, S, sm, sx, sy, sz, w, h, layers, a);
+      this.enc!.copyBufferToTexture(layout, this.texCopy(D, dm, dx, dy, dz, 0), size);
+    } else {
+      this.enc!.copyTextureToBuffer(this.texCopy(S, sm, sx, sy, sz, 0), layout, size);
+      this.depthStencilCopy(true, temp, 0, pitch, h, D, dm, dx, dy, dz, w, h, layers, a);
+    }
   }
 
   /** A copy between depth or stencil textures, which WebGPU makes only of whole subresources (VK3 L6b): true for the
@@ -2727,6 +2752,11 @@ function integerRange(f: string): [string, string] | undefined {
   if (!m) return undefined;
   const bits = Number(m[1]);
   return m[2] === 'u' ? ['0', String(2 ** bits - 1)] : [String(-(2 ** (bits - 1))), String(2 ** (bits - 1) - 1)];
+}
+
+/** A depth or stencil format's texture (WebGPU's: depth16unorm, depth24plus…, depth32float…, stencil8). */
+function isDepthStencil(f: string) {
+  return f.startsWith('depth') || f === 'stencil8';
 }
 
 function sampleKind(f: string): 'f32' | 'u32' | 'i32' {

@@ -2948,6 +2948,10 @@ tex_offset(struct ctx *c, nir_tex_instr *tex)
    for (unsigned i = 0; i < n; i++) {
       const nir_scalar s = nir_scalar_chase_movs(nir_get_scalar(off->ssa, i));
       if (!nir_scalar_is_const(s)) {
+         /* A fetch's offset is a sum: any value does (maintenance8's `Offset` operand, VK4 T24; a sample with one
+          * comes from fetches, wgsl_sampler.c `dynamic_offset`). */
+         if (tex->op == nir_texop_txf || tex->op == nir_texop_txf_ms)
+            return as_base(c, src_name(c, off), WGSL_I32, n);
          failf(c, "a texture offset that isn't a constant");
          return NULL;
       }
