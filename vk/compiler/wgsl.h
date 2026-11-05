@@ -191,7 +191,9 @@ struct wgsl_sampler_key {
    uint8_t faces;                  /* a cube bound as its faces (padded, or a shadow cube sampled from fetches) */
    uint8_t clamp_dref;             /* the reference clamped to 0..1: a fixed-point depth format */
    uint16_t format;                /* WGSL_IMAGE_KEY: the bound view's enum pipe_format */
-   uint16_t format_pad;            /* zero (keys are compared whole) */
+   uint8_t rgb9e5;                 /* an E5B9G9R9 view of a 32-bit integer image's own texture: fetched as words and
+                                    * decoded, the filter the shader's (VK4 T23: no copy into a texture of the format) */
+   uint8_t format_pad;             /* zero (keys are compared whole) */
    float bias, min_lod, max_lod;
    uint32_t border[4];             /* the border as the shader reads it: float bits, or integers on an integer texture */
    uint32_t size[3];               /* padded: the view's first level, as Vulkan has it */

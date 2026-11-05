@@ -330,7 +330,7 @@ for (const [mask, what] of [
 
 // VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for.
 // Each misc scenario's compute shader (tests/venus/<name>.comp), push.comp where it isn't named.
-const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', threeSame: 'three-writes', oddRange: 'two-writes', inlineBlocks: 'inline', packedFeedback: 'feedback.frag', feedbackLayer: 'feedback.frag', depthLess: 'r5/depthless.frag', depthAndCompare: 'r5/depth-and-compare.frag', intGather: 'r5/int-gather.frag', cubeSized: 'r5/cube-sized.frag', cubeGather: 'r5/cube-gather.frag', depthEight: 'r5/depth-eight.frag', inlineLong: 'r6/inline-long', immutableFreed: 'sampled', sixteenBindings: 'r7/sixteen.frag', sixteenThenOne: 'r7/sixteen.frag', cubePlain: 'r5/cube-plain.frag', vertexCompares: 'r7/vs-compare.frag', fourSets: 'r7/four-sets.frag', bc1Blit: 'r7/sixteen.frag', readOnlyImages: 'g4/read-only', g4Views: 'g4/views', texturesFull: 'g4/textures-full', sizeOnly: 'g4/size-only', formatless: 'g5/formatless', declaredOther: 'g7/declared', arrayAsFlat: 'g4/views', texelUniforms: 'texel-uniforms' } as const;
+const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', threeSame: 'three-writes', oddRange: 'two-writes', inlineBlocks: 'inline', packedFeedback: 'feedback.frag', feedbackLayer: 'feedback.frag', depthLess: 'r5/depthless.frag', depthAndCompare: 'r5/depth-and-compare.frag', intGather: 'r5/int-gather.frag', cubeSized: 'r5/cube-sized.frag', cubeGather: 'r5/cube-gather.frag', depthEight: 'r5/depth-eight.frag', inlineLong: 'r6/inline-long', immutableFreed: 'sampled', sixteenBindings: 'r7/sixteen.frag', sixteenThenOne: 'r7/sixteen.frag', cubePlain: 'r5/cube-plain.frag', vertexCompares: 'r7/vs-compare.frag', fourSets: 'r7/four-sets.frag', bc1Blit: 'r7/sixteen.frag', readOnlyImages: 'g4/read-only', g4Views: 'g4/views', texturesFull: 'g4/textures-full', sizeOnly: 'g4/size-only', formatless: 'g5/formatless', declaredOther: 'g7/declared', arrayAsFlat: 'g4/views', texelUniforms: 'texel-uniforms', rgb9e5Words: 't23-rgb9e5' } as const;
 for (const [scenario, what] of [
   ['copy', 'buffer copies at offsets and sizes that aren\'t 4-aligned, from host-visible, device-local and GPU-written memory'],
   ['clear', 'a clear of a format WebGPU can\'t render to, and of every slice of a 3D image'],
@@ -550,6 +550,8 @@ for (const [scenario, counts, skips] of [
   ['blit', ['blits'], ['meta']],
   ['msFormats', ['drawnResolves'], []],
   ['depthLess', ['variants', 'keyedDraws'], []],
+  // VK4 T23: an E5B9G9R9 view of an R32_UINT image sampled from its own texture (keyed: its words decoded), nothing copied.
+  ['rgb9e5Words', ['keyedDraws'], []],
 ] as const) {
   test(`emulated paths: ${scenario} counts ${counts.join(', ')}${skips.length ? `, and vkskip=${skips.join(',')} leaves them out` : ''}`, { skip, timeout: 60_000 }, async (t) => {
     const out = join(root, 'target/vk/test');
@@ -573,6 +575,10 @@ for (const [scenario, counts, skips] of [
     const emul = r.emul as Record<string, number>;
     console.log(scenario, JSON.stringify(Object.fromEntries(Object.entries(emul).filter(([, n]) => n))));
     for (const k of counts) assert.ok(emul[k] > 0, `${k}: ${emul[k]}`);
+    if (scenario === 'rgb9e5Words') {
+      assert.equal(emul.viewCopies, 0, 'copies into a texture of the view\'s format');
+      for (const [k, at] of Object.entries(r.checks as Record<string, number>)) assert.equal(at, -1, `${k}: the bytes differ from byte ${at} (${JSON.stringify(r.got)})`);
+    }
     if (!skips.length) return;
     const s = await run(skips);
     assert.equal(s.error, undefined, String(s.error));

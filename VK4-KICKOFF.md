@@ -43,7 +43,7 @@ T2–T14; the rest of the order is judgement, said with each.
 
 ## The tasks
 
-### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T22 (2026-10-29 to 2026-11-05)
+### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T23 (2026-10-29 to 2026-11-05)
 
 Each row's outcome in full is its section of bench/vulkan/REPORT.md ("VK4 T<n>") and its commit; what each left is in
 docs/backlog.md "The Vulkan driver's gaps" (the entry named) and, where it is a defect or drops work, in the tasks
@@ -82,6 +82,7 @@ R1–R4 and then of R5–R7, had its findings fixed or moved to the backlog the 
 | T17. Pipelines' loose ends | render pipelines made at creation lose (cold vkQuake 269 → 26 frames/s on the M4), so off by default (`?gpu=vkpremake=on`); the shader store deflated (7.4×), on the Machines page with a clear, its budget a Preference of 8–64 MiB | "Pipelines' loose ends" |
 | T21. The census's failures and its new passes | texel buffers' and word images' parameters one uniform table a group (sets4's uniform buffers past 12), but sets4's 165 failures are all bindings past WebGPU's, filed; the 16-bit normalized formats' resolves drawn (438 multisampled cases pass on the M4); long_shader_bitwise_and's 40 s are SwiftShader compiling 2,356 loads, booleans as `&` 16% off it; list +861 | "Texel buffers", "SwiftShader compiles zero-initialized workgroup memory slowly" |
 | T22. A compute-only queue family | three families (graphics; compute; transfer), all the WebGPU queue; held submits hold their own queue's only, a binary wait held with its held signal; of 2,590 sampled cases 1,465 pass on both hosts and join the list (SwiftShader's 166 failures its own, the M4's one filed); mpv the same | "SwiftShader's compressed formats sampled in a compute stage", "The M4's own failures" |
+| T23. What the emulations cost a program | the paths counted (`venusEmul`) and skippable in a run (`?gpu=vkskip=`, `bench/vulkan/t23.ts`); Godot's GI demo in SDFGI mode on the M4 and NVIDIA: SDFGI's rgb9e5 views of R32_UINT images copied ~34 MB a frame (2.8 ms of a 17 ms submit on NVIDIA, +12% frames/s left out), the rest small or none, no freeze; such views now decoded in the shader from the image's own texture (about even on the M4) | "Views in another format's leftovers" (the decode's gain on NVIDIA: the next NVIDIA run's `t23`) |
 
 ### Tier 3: performance on real workloads
 
@@ -103,14 +104,6 @@ memory, cooperative matrices, ray tracing, mesh shaders, tile images, fragment d
 the sample's on the M4 (×100 for the whole list, roughly); each starts by running its reason's cases (`deqp-run.ts`'s
 `CASES`, from `census.ts --reasons`' examples or the sample's JSON) to see what they meet once advertised.
 
-- **T23. What tier 2's emulations cost a program** (M; tier 3's T20 until 2026-11-05; before T30–T33, which add more
-  of these paths; T3's to T12's "the cost unmeasured", each task's leftover; its first program Godot on NVIDIA, whose
-  freezes and black windows the backlog's "GD's leftovers" lays on these paths): the shadow copies of usage scopes, the copies between view formats, pulled vertices, the sampler variants' compile
-  and their fetches, storage images as words, the drawn resolves and packed copies, all measured only on dEQP-VK or
-  not at all. A program that meets each (ffmpeg's and libplacebo's filters for views and words, DXVK or a VMA program
-  that writes storage for the shadows, vkd3d's tests for pulling, a replayed capture with border or mirror-once
-  samplers), its frame's GPU-worker and guest time measured with the path and with the case forced away, by
-  bench/run.ts's rules. *Done:* a table in REPORT.md, the costly ones filed or fixed.
 - **T24. `maintenance5`, `6` and `8`** (M; 454, 234, 34 here; maintenance8's texel offsets that aren't constants are
   `_pcoffset`'s 2,760 cases of the whole list): 5 and 6 are host-side mostly (the `*2` commands, `A1B5G5R5` with T30,
   their properties) and what Vulkan 1.4 requires; 8's offsets in the translator (a coordinate shifted by the offset at

@@ -1588,7 +1588,22 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
    struct wg_image *image = container_of(view->vk.image, struct wg_image, vk);
    view->fmt = wg_texture_format(view->vk.view_format);
-   if (image->plane_count < 2 && !(image->fmt->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)))
+   /* An E5B9G9R9 view of a 32-bit integer image (VK4 T23: Godot's SDFGI writes R32_UINT volumes and samples them so;
+    * WebGPU has no view between the two): a view of the image's own texture, which the shader fetches as words and
+    * decodes, its filter the shader's (wgsl_sampler.c), so no texture of the format is copied into at each use. Not a
+    * cube (WGSL fetches no cube) nor a swizzled view (its swizzle would move the word). */
+   const VkComponentSwizzle given[4] = { view->vk.swizzle.r, view->vk.swizzle.g, view->vk.swizzle.b, view->vk.swizzle.a };
+   bool unswizzled = true;
+   for (uint32_t i = 0; i < 4; i++) {
+      const VkComponentSwizzle m = given[i];
+      unswizzled &= m == VK_COMPONENT_SWIZZLE_IDENTITY || m == (VkComponentSwizzle)(VK_COMPONENT_SWIZZLE_R + i);
+   }
+   view->rgb9e5 = view->vk.view_format == VK_FORMAT_E5B9G9R9_UFLOAT_PACK32 && image->plane_count < 2 &&
+                  (image->vk.format == VK_FORMAT_R32_UINT || image->vk.format == VK_FORMAT_R32_SINT) &&
+                  image->vk.samples == 1 && unswizzled && view->vk.view_type != VK_IMAGE_VIEW_TYPE_CUBE &&
+                  view->vk.view_type != VK_IMAGE_VIEW_TYPE_CUBE_ARRAY && !(wg_emul_skip & WG_SKIP_RGB9E5);
+   dev->padded_views |= view->rgb9e5;
+   if (image->plane_count < 2 && !(image->fmt->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)) && !view->rgb9e5)
       view->alias = image_alias(dev, image, 0, view->vk.view_format);
    /* A mutable image's view that can go by the words. */
    if ((view->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT) && wg_storage_words(view->vk.view_format))
@@ -1658,10 +1673,11 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
       *pView = wg_image_view_to_handle(view);
       return VK_SUCCESS;
    }
-   /* An aspect's view takes the aspect's format: left to WebGPU. */
+   /* An aspect's view takes the aspect's format: left to WebGPU. An E5B9G9R9 view of words is of the words. */
+   const char *format = view->rgb9e5 ? image->fmt->name : view->fmt->name;
    wg_json_printf(&j, "{\"texture\":%u,", tex);
    if (!strcmp(aspect, "all"))
-      wg_json_printf(&j, "\"format\":\"%s\",", view->fmt->name);
+      wg_json_printf(&j, "\"format\":\"%s\",", format);
    wg_json_printf(&j, "\"dimension\":\"%s\",\"aspect\":\"%s\",\"baseMipLevel\":%u,"
                   "\"mipLevelCount\":%u,\"baseArrayLayer\":%u,\"arrayLayerCount\":%u}",
                   dim, aspect, view->vk.base_mip_level, view->vk.level_count,
@@ -1706,7 +1722,7 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
        !strcmp(dim, "2d-array") && (view->vk.usage & VK_IMAGE_USAGE_SAMPLED_BIT)) {
       wg_json_printf(&j, "{\"texture\":%u,%s", tex, swizzle);
       if (!strcmp(aspect, "all"))
-         wg_json_printf(&j, "\"format\":\"%s\",", view->fmt->name);
+         wg_json_printf(&j, "\"format\":\"%s\",", format);
       wg_json_printf(&j, "\"dimension\":\"2d\",\"aspect\":\"%s\",\"baseMipLevel\":%u,\"mipLevelCount\":%u,"
                      "\"baseArrayLayer\":%u,\"arrayLayerCount\":1}",
                      aspect, view->vk.base_mip_level, view->vk.level_count, view->vk.base_array_layer);

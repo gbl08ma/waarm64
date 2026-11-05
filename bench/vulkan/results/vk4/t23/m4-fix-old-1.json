@@ -1,0 +1,116 @@
+{
+ "chromium": "157.0.8103.38",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "gpuKnobs": "vkgputime,vkskip=rgb9e5",
+ "arms": [
+  "none"
+ ],
+ "rounds": 3,
+ "armS": 12,
+ "info": "7.2.14-arch1-24mesa 1:26.2.6-1 vulkan-virtio 1:26.2.6-1 sway 1:1.12-4",
+ "sway": "",
+ "gi-sdfgi": {
+  "importS": 27,
+  "firstFrameS": 8.1,
+  "rows": [
+   {
+    "round": 0,
+    "arm": "none",
+    "fps": 41.7,
+    "godotCpuMs": 2.81,
+    "godotGpuMs": 0.5,
+    "guestCpuPct": 55.3,
+    "workerBusyMsPerS": 11.9,
+    "screenFps": 43.3,
+    "frozenS": 0,
+    "submitsPerS": 216.1,
+    "doneMsPerSubmit": 11.33,
+    "encodeMsPerSubmit": 0.22,
+    "gpuMsPerSubmit": 2.69,
+    "emulPerFrame": {
+     "shadowCopies": 8.3,
+     "shadowBytes": 215128.32,
+     "viewCopies": 9.33,
+     "viewBytes": 33927216.27,
+     "keyedDraws": 7.26
+    }
+   },
+   {
+    "round": 1,
+    "arm": "none",
+    "fps": 40.4,
+    "godotCpuMs": 2.59,
+    "godotGpuMs": 0.45,
+    "guestCpuPct": 55.1,
+    "workerBusyMsPerS": 11.3,
+    "screenFps": 43.1,
+    "frozenS": 0,
+    "submitsPerS": 216.1,
+    "doneMsPerSubmit": 11.45,
+    "encodeMsPerSubmit": 0.23,
+    "gpuMsPerSubmit": 2.71,
+    "emulPerFrame": {
+     "shadowCopies": 8.55,
+     "shadowBytes": 221687.11,
+     "viewCopies": 9.62,
+     "viewBytes": 34961582.62,
+     "keyedDraws": 7.48
+    }
+   },
+   {
+    "round": 2,
+    "arm": "none",
+    "fps": 35.2,
+    "godotCpuMs": 3.86,
+    "godotGpuMs": 0.41,
+    "guestCpuPct": 56.7,
+    "workerBusyMsPerS": 14.2,
+    "screenFps": 38.7,
+    "frozenS": 0,
+    "submitsPerS": 193.9,
+    "doneMsPerSubmit": 11.35,
+    "encodeMsPerSubmit": 0.3,
+    "gpuMsPerSubmit": 2.75,
+    "emulPerFrame": {
+     "shadowCopies": 8.83,
+     "shadowBytes": 228838.06,
+     "viewCopies": 9.93,
+     "viewBytes": 36089336.39,
+     "keyedDraws": 7.72
+    }
+   }
+  ],
+  "summary": {
+   "none": {
+    "fps": 40.4,
+    "screenFps": 43.1,
+    "frozenS": 0,
+    "godotCpuMs": 2.81,
+    "godotGpuMs": 0.45,
+    "guestCpuPct": 55.3,
+    "workerBusyMsPerS": 11.9,
+    "doneMsPerSubmit": 11.35,
+    "encodeMsPerSubmit": 0.23,
+    "gpuMsPerSubmit": 2.71
+   }
+  },
+  "log": "Vulkan 1.3.296 - Forward+ - Using Device #0: Apple - Virtio-GPU Venus (webpc WebGPU)ERROR: PulseAudio: sink info error: No such entityERROR: PulseAudio: init_output_device failed to detect number of output channels   at: init_output_device (drivers/pulseaudio/audio_driver_pulseaudio.cpp:200)"
+ },
+ "warnings": {
+  "venus: the WebGPU device's subgroups are wrong in divergent control flow: subgroups of one invocation": 1,
+  "venus: vkskip=rgb9e5: that emulated work is left out (wrong pixels; an A/B only)": 1,
+  "venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies": 1,
+  "venus: wg: the device address buffer grows to 128 MiB": 1,
+  "venus: wg: the device address buffer grows to 256 MiB": 1,
+  "venus: wg: the device address buffer grows to 512 MiB": 1,
+  "venus: wg: the device address buffer grows to 1024 MiB": 1,
+  "venus-share: resource 50 (1152x648) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: the bitmap way checked right (3 frames)": 1,
+  "venus: vkr: destroying context 9 (Global Illumination) with a valid instance": 1,
+  "venus: vkr: destroying device with valid objects": 1,
+  "venus-share: resource 62 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: resource 63 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: resource 64 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: resource 65 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1
+ }
+}

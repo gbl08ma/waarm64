@@ -60,6 +60,16 @@ padded_key(const struct sampler_pass *s, const nir_tex_instr *tex)
    return NULL;
 }
 
+/* The key of an E5B9G9R9 view of a 32-bit integer texture, whatever the instruction (VK4 T23). */
+static const struct wgsl_sampler_key *
+rgb9e5_key(const struct sampler_pass *s, const nir_tex_instr *tex)
+{
+   for (uint32_t i = 0; i < s->key_count; i++)
+      if (s->keys[i].texture == tex->texture_index && s->keys[i].rgb9e5)
+         return &s->keys[i];
+   return NULL;
+}
+
 static bool
 samples(const nir_tex_instr *tex)
 {
@@ -303,6 +313,32 @@ fetch(nir_builder *b, const nir_tex_instr *tex, nir_def *coord, nir_def *lod, un
    return &f->def;
 }
 
+/* An E5B9G9R9 word as Vulkan decodes it: each 9-bit mantissa times 2^(exponent - 15 - 9), alpha 1. */
+static nir_def *
+rgb9e5_decode(nir_builder *b, nir_def *word)
+{
+   nir_def *scale = nir_fexp2(b, nir_fadd_imm(b, nir_u2f32(b, nir_ushr_imm(b, word, 27)), -24.0f));
+   nir_def *c[4];
+   for (unsigned i = 0; i < 3; i++)
+      c[i] = nir_fmul(b, nir_u2f32(b, nir_iand_imm(b, nir_ushr_imm(b, word, 9 * i), 0x1ff)), scale);
+   c[3] = nir_imm_float(b, 1.0f);
+   return nir_vec(b, c, 4);
+}
+
+/* `fetch`, or for a key's E5B9G9R9 view of a 32-bit integer texture (VK4 T23) its word fetched and decoded: every op
+ * on such a texture is a fetch of u32s (what the binding declares). */
+static nir_def *
+fetch_keyed(nir_builder *b, const nir_tex_instr *tex, const struct wgsl_sampler_key *key, nir_def *coord, nir_def *lod,
+            unsigned components, enum glsl_sampler_dim dim, bool array, unsigned coord_components)
+{
+   if (!key || !key->rgb9e5)
+      return fetch(b, tex, coord, lod, components, dim, array, coord_components);
+   nir_tex_instr words = *tex;
+   words.dest_type = nir_type_uint32;
+   words.is_shadow = false;
+   return rgb9e5_decode(b, nir_channel(b, fetch(b, &words, coord, lod, 4, dim, array, coord_components), 0));
+}
+
 /* Which of the coordinate's spatial channels `mode` addresses. */
 static bool
 uses_address(const nir_tex_instr *tex, const struct wgsl_sampler_key *key, unsigned mode)
@@ -461,7 +497,7 @@ gather_fetch(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key *
       nir_def *x = order[k][0] ? hi[0] : lo[0], *y = order[k][1] ? hi[1] : lo[1];
       nir_def *ox = order[k][0] ? out_hi[0] : out_lo[0], *oy = order[k][1] ? out_hi[1] : out_lo[1];
       nir_def *c[3] = { x, y, layer };
-      nir_def *texel = fetch(b, tex, nir_vec(b, c, layer ? 3 : 2), lod, 4, tex->sampler_dim, tex->is_array, layer ? 3 : 2);
+      nir_def *texel = fetch_keyed(b, tex, key, nir_vec(b, c, layer ? 3 : 2), lod, 4, tex->sampler_dim, tex->is_array, layer ? 3 : 2);
       nir_def *v = nir_bcsel(b, nir_ior(b, ox, oy), component, nir_channel(b, texel, dref ? 0 : tex->component));
       res[k] = dref ? compare_of(b, dref, v, key->compare) : v;
    }
@@ -515,8 +551,8 @@ fetched_texel(nir_builder *b, const struct fetched *p, nir_def *const *i, nir_de
       if (p->layer)
          c[count++] = p->layer;
    }
-   nir_def *texel = fetch(b, tex, nir_vec(b, c, count), p->level, 4, p->cube ? GLSL_SAMPLER_DIM_2D : tex->sampler_dim,
-                          p->cube || tex->is_array, count);
+   nir_def *texel = fetch_keyed(b, tex, p->key, nir_vec(b, c, count), p->level, 4, p->cube ? GLSL_SAMPLER_DIM_2D : tex->sampler_dim,
+                                p->cube || tex->is_array, count);
    if (uses_address(tex, p->key, WGSL_ADDRESS_BORDER))
       texel = nir_bcsel(b, outside, border_vec(b, tex, p->key), texel);
    if (!p->dref)
@@ -939,6 +975,15 @@ lower_tex(nir_builder *b, nir_tex_instr *tex, void *data)
    }
    if (shadow_past_first(tex))
       add_key_pair(s, tex, WGSL_KEY_LEVELS);
+   /* An E5B9G9R9 view of a 32-bit integer texture (VK4 T23): its own fetches decoded; its samples below, from fetches. */
+   const struct wgsl_sampler_key *words = rgb9e5_key(s, tex);
+   if (words && tex->op == nir_texop_txf) {
+      nir_def *lod = tex_source(tex, nir_tex_src_lod);
+      nir_def *res = fetch_keyed(b, tex, words, tex_source(tex, nir_tex_src_coord), lod ? lod : nir_imm_int(b, 0), 4,
+                                 tex->sampler_dim, tex->is_array, tex->coord_components);
+      nir_def_replace(&tex->def, nir_trim_vector(b, res, tex->def.num_components));
+      return true;
+   }
    /* Sizes and levels of a cube whose binding is its faces. */
    if (!samples(tex) && is_int_cube(s, tex)) {
       if (tex->op == nir_texop_query_levels) {
@@ -990,7 +1035,9 @@ lower_tex(nir_builder *b, nir_tex_instr *tex, void *data)
    if (!samples(tex) || tex->sampler_dim == GLSL_SAMPLER_DIM_MS)
       return false;
    const struct wgsl_sampler_key *key = find_key(s, tex);
-   if (key && key->padded) {
+   if (!key && words)
+      key = words;
+   if (key && (key->padded || key->rgb9e5)) {
       if (tex->op == nir_texop_tg4) {
          /* A cube's gather would need the corners' faces: rare enough on such an image to take the nearest face's. */
          if (tex->sampler_dim != GLSL_SAMPLER_DIM_CUBE) {

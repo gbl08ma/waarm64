@@ -23,7 +23,8 @@ const env = (k: string, d: string) => process.env[k] ?? d;
 const PROJECTS = env('PROJECTS', 'gi-sdfgi gi-sdfgi-ssil').split(/\s+/).filter(Boolean);
 const ARMS = env('ARMS', 'none views words feedback meta all').split(/\s+/).filter(Boolean);
 const ROUNDS = Number(env('ROUNDS', '3')), ARM_S = Number(env('ARM_S', '12')), SETTLE_S = Number(env('SETTLE_S', '60')), FIRST_S = Number(env('FIRST_S', '420'));
-const skipsOf = (arm: string) => (arm === 'none' ? [] : arm === 'all' ? Object.keys(SKIPS) : arm.split('+'));
+// `all`: every skip (`rgb9e5` isn't one: it chooses how views are made, before Godot starts: GPU_KNOBS=vkskip=rgb9e5).
+const skipsOf = (arm: string) => (arm === 'none' ? [] : arm === 'all' ? Object.keys(SKIPS).filter((k) => k !== 'rgb9e5') : arm.split('+'));
 for (const a of ARMS) for (const k of skipsOf(a)) if (!(k in SKIPS)) throw new Error(`t23: arm ${a}: ${k} isn't one of ${Object.keys(SKIPS).join(', ')}`);
 
 const s = await openSession({
@@ -57,7 +58,9 @@ for (const project of PROJECTS) {
   const importS = Math.round((performance.now() - t0) / 1000);
   log(project, 'imported in', importS, 's');
   await run('pkill -x godot; sleep 2; pkill -9 -x godot; true');
-  await run(asUser(`swaymsg exec 'env /mnt/godot/godot --path ${p} --rendering-driver vulkan > ${glog} 2>&1; echo godot exit status \\$? >> ${glog}'`));
+  // Started by sway from a script: sway's own parser splits a command at `;` (an `echo` after it was a sway command).
+  await run(`printf '%s\\n' '#!/bin/sh' '/mnt/godot/godot --path ${p} --rendering-driver vulkan > ${glog} 2>&1' 'echo godot exit status $? >> ${glog}' > /tmp/run-${project}.sh && chmod 755 /tmp/run-${project}.sh`);
+  await run(asUser(`swaymsg exec /tmp/run-${project}.sh`));
   const started = performance.now();
   let firstFrameS: number | undefined;
   while (firstFrameS === undefined && performance.now() - started < FIRST_S * 1000) {

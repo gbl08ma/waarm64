@@ -69,10 +69,11 @@
 # Xwayland, as on the user's desktop: the prime blit), the editor under Wayland, the Forward+ scene, the SDFGI scene,
 # and the Global Illumination demo in the editor (GD G8); GD's bar: a 3D viewport that draws, no stall over a second
 # after the first frame, no abort.
-# And VK2_STEPS="t23" (VK4 T23, ~35 min; the `--godot` bundle): Godot's GI demo as it starts in SDFGI mode, then with SSAO
+# And VK2_STEPS="t23" (VK4 T23, ~45 min; the `--godot` bundle): Godot's GI demo as it starts in SDFGI mode, then with SSAO
 # and SSIL too (bench/vulkan/godot-disk.sh's `gi-sdfgi`, `gi-sdfgi-ssil`), each in one run with arms alternated: the page
 # as it is and with each emulated path's work left out (bench/vulkan/t23.ts): its frames a second, those on the page's
-# screen and the seconds frozen, the GPU worker's time and the paths' counts a frame.
+# screen and the seconds frozen, the GPU worker's time and the paths' counts a frame; then the SDFGI mode again with
+# the rgb9e5 views' old copies (`vkskip=rgb9e5`), against which T23's decode is measured.
 # At the end it writes <dir>/vk3-nvidia-results.tar.gz (with results/summary.txt: each step's verdict, and whether the
 # page held the adapter's subgroups, VK3 L5): send that file back. VK2_KEEP=1 keeps an earlier run's results and adds
 # to them (VK2_KEEP=1 VK2_STEPS=none only writes the summary's last line, host.txt and the tarball). VK2_DRY=1 prints what each step would run (no bundle
@@ -297,7 +298,10 @@ if [ "${1:-}" = page ]; then
     # Godot's GI demo in SDFGI mode, and with SSAO and SSIL, arms alternated in one run each (bench/vulkan/t23.ts).
     if [ -n "$DRY" ] || [ -f "$P/target/godot/godot.ext4" ]; then
       step t23 3000 env ROUNDS=3 GPU_KNOBS=vkgputime node bench/vulkan/t23.ts target/arch/desktop.qcow2 "$R/t23"
-      [ -f "$R/t23/results.json" ] && node -e 'const r = require(process.argv[1]); for (const [k, v] of Object.entries(r)) if (v && v.summary) for (const [a, x] of Object.entries(v.summary)) console.log(`t23 ${k} ${a}: ${x.fps} frames/s, ${x.screenFps} on screen, ${x.frozenS} s frozen, worker ${x.workerBusyMsPerS} ms/s`); else if (v && "firstFrameS" in v && !v.summary) console.log(`t23 ${k}: no frame (imported in ${v.importS} s)`)' "$R/t23/results.json" | tee -a "$R/summary.txt" || true
+      # The rgb9e5 views' decode (VK4 T23's fix) against their old copies: the demo in SDFGI mode, the copies back.
+      step t23-copies 1200 env ROUNDS=3 ARMS=none PROJECTS=gi-sdfgi GPU_KNOBS=vkgputime,vkskip=rgb9e5 node bench/vulkan/t23.ts target/arch/desktop.qcow2 "$R/t23-copies"
+      [ -f "$R/t23/results.json" ] && node -e 'const r = require(process.argv[1]); for (const [k, v] of Object.entries(r)) if (!v || typeof v !== "object" || Array.isArray(v)) continue; else if (v.summary) for (const [a, x] of Object.entries(v.summary)) console.log(`t23 ${k} ${a}: ${x.fps} frames/s, ${x.screenFps} on screen, ${x.frozenS} s frozen, worker ${x.workerBusyMsPerS} ms/s`); else if (v && "firstFrameS" in v && !v.summary) console.log(`t23 ${k}: no frame (imported in ${v.importS} s)`)' "$R/t23/results.json" | tee -a "$R/summary.txt" || true
+      [ -f "$R/t23-copies/results.json" ] && node -e 'const x = require(process.argv[1])["gi-sdfgi"]?.summary?.none; console.log(`t23 gi-sdfgi with the rgb9e5 copies back: ${x ? `${x.fps} frames/s, ${x.screenFps} on screen, done ${x.doneMsPerSubmit} ms a submit` : "no frame"}`)' "$R/t23-copies/results.json" | tee -a "$R/summary.txt" || true
     else
       echo "t23: skipped (the bundle has no target/godot/godot.ext4: bench/vulkan/godot-disk.sh)" | tee -a "$R/summary.txt"
     fi

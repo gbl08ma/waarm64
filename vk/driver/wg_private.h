@@ -199,7 +199,8 @@ struct wg_device {
    struct vk_device vk;
    struct wg_queue queues[WG_QUEUE_FAMILIES]; /* of the families the device was made with, `queue_count` of them */
    uint32_t queue_count;
-   bool padded_views;   /* a view of a padded image was made: draws look for them (wg_cmd.c `program_keys`) */
+   bool padded_views;   /* a view of a padded image, or an E5B9G9R9 one of words, was made: draws look for them
+                         * (wg_cmd.c `program_keys`) */
    /* Host-visible memories (their writes are uploaded at each submit). */
    struct list_head host_memories;
    /* Memories with a shared image bound (wg_device_memory.image). */
@@ -401,6 +402,8 @@ struct wg_image_view {
                       * views); 0: `view` serves */
    uint32_t sampled; /* `view` with the component mapping, which WebGPU allows only on a view that's just sampled (0: none) */
    uint32_t faces;   /* an integer cube view's faces as a 2D array, sampled (the translator fetches: wgsl_sampler.c) */
+   bool rgb9e5;      /* an E5B9G9R9 view of a 32-bit integer image: `view` is of its own texture, which the shader
+                      * fetches as words and decodes (VK4 T23; wgsl_sampler.c `rgb9e5_decode`) */
    bool padded;      /* of a compressed image larger in its texture (whole blocks: the filter is the shader's, and a
                       * cube's `view` is its faces, a texture not square having no cube view) */
    uint32_t att;
@@ -719,6 +722,9 @@ enum {
    WG_SKIP_VIEWS = 1 << 0,
    WG_SKIP_WORDS = 1 << 1,
    WG_SKIP_FEEDBACK = 1 << 2,
+   /* Not a skip: E5B9G9R9 views of 32-bit integer images made from then on take a texture of their own and its copies,
+    * as before VK4 T23 (the decode's A/B). */
+   WG_SKIP_RGB9E5 = 1 << 3,
 };
 extern uint32_t wg_emul_skip;
 const double *wg_emul_counts(uint32_t *n);

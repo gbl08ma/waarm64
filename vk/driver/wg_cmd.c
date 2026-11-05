@@ -1253,8 +1253,9 @@ pair_key(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, 
          forced |= (p->key_pairs[i][2] & WGSL_KEY_ALWAYS) || view->vk.level_count > 1;
          faces = p->key_pairs[i][2] & WGSL_KEY_FACES;
       }
-   const bool padded = view && view->padded;
-   if (!sampler || !view || (!integer && !sampler->emulated && !padded && !forced))
+   /* An E5B9G9R9 view of words (VK4 T23) is sampled from fetches, as a padded one is. */
+   const bool padded = view && view->padded, words = view && view->rgb9e5;
+   if (!sampler || !view || (!integer && !sampler->emulated && !padded && !words && !forced))
       return false;
    const struct wgsl_sampler_key *k = &sampler->key;
    if (integer && !sampler->emulated && !padded && !forced && k->address[0] == WGSL_ADDRESS_EDGE && k->address[1] == WGSL_ADDRESS_EDGE &&
@@ -1270,6 +1271,7 @@ pair_key(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, 
    sampler_border(view, sampler, integer, key->border);
    if (padded)
       padded_key_fill(view, key);
+   key->rgb9e5 = words;
    /* `must`: a pair of a cube another pair binds as its faces. */
    key->faces |= faces || must;
    if (sampler->compare) {
@@ -1321,14 +1323,15 @@ program_keys(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program 
       if (bound && !keyed)
          n += pair_key(cmd, point, p, p->pairs[i], false, true, &keys[n]);
    }
-   /* A padded texture only asked its size: what it answers is the image's. */
+   /* A padded texture only asked its size: what it answers is the image's. An E5B9G9R9 view of words only fetched or
+    * asked its size: its fetches decoded, its binding the words'. */
    const struct wg_device *dev = container_of(cmd->vk.base.device, struct wg_device, vk);
    for (uint32_t k = 0; dev->padded_views && k < p->resource_count; k++) {
       const uint32_t index = (uint32_t)p->resources[k].group << 16 | p->resources[k].binding;
       if (p->resources[k].kind != WGSL_TEXTURE)
          continue;
       const struct wg_descriptor *t = pair_descriptor(cmd, point, p, index);
-      if (!t || !t->view || !t->view->padded)
+      if (!t || !t->view || (!t->view->padded && !t->view->rgb9e5))
          continue;
       bool keyed = false;
       for (uint32_t i = 0; i < n; i++)
@@ -1338,7 +1341,9 @@ program_keys(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program 
       memset(&keys[n], 0, sizeof(keys[n]));
       keys[n].texture = index;
       keys[n].sampler = WGSL_NO_SAMPLER;
-      padded_key_fill(t->view, &keys[n++]);
+      if (t->view->padded)
+         padded_key_fill(t->view, &keys[n]);
+      keys[n++].rgb9e5 = t->view->rgb9e5;
    }
    /* A storage image declared without a format: the bound view's (GD G5, wgsl_print.c `image_format`). And one written
     * with a declared format bound to a view of another (sRGB aside: no storage image is), the view's too (GD G7:

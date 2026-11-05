@@ -42,7 +42,9 @@ for (const r of RUNS) {
   current = r.tag;
   const args = r.args.replaceAll('{p}', '/home/arch/projects');
   await run('pkill -x godot; sleep 2; pkill -9 -x godot; true');
-  await run(asUser(`swaymsg exec 'env ${process.env.GODOT_ENV ?? ''} /mnt/godot/godot --verbose ${args} > /tmp/godot-${r.tag}.log 2>&1; echo godot exit status \\$? >> /tmp/godot-${r.tag}.log'`));
+  // Started by sway from a script: sway's own parser splits a command at `;` (an `echo` after it was a sway command).
+  await run(`printf '%s\\n' '#!/bin/sh' 'env ${process.env.GODOT_ENV ?? ''} /mnt/godot/godot --verbose ${args} > /tmp/godot-${r.tag}.log 2>&1' 'echo godot exit status $? >> /tmp/godot-${r.tag}.log' > /tmp/run-${r.tag}.sh && chmod 755 /tmp/run-${r.tag}.sh`);
+  await run(asUser(`swaymsg exec /tmp/run-${r.tag}.sh`));
   const t0 = performance.now();
   const shots: string[] = [];
   // The first frame (GD G7: the editor's start, cold and warm): the first second of the renderer's stats in which a

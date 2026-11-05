@@ -100,9 +100,10 @@ export type VenusOptions = { syncPipelines?: boolean;
 /**
  * The emulated paths' work `?gpu=vkskip=` can leave out (VK4 T23): the driver's (vk/driver/wg_private.h `WG_SKIP_*`:
  * the copies between view formats' textures, to and from an image's words, a feedback loop's) and the worker's (`meta`:
- * the blits and resolves it draws, web/venus-gpu.ts `skipMeta`).
+ * the blits and resolves it draws, web/venus-gpu.ts `skipMeta`). And `rgb9e5`, not a skip: E5B9G9R9 views of 32-bit
+ * integer images made from then on take a texture of their own and its copies, as before VK4 T23 (the decode's A/B).
  */
-export const SKIPS = { views: 1, words: 2, feedback: 4, meta: 0 } as const;
+export const SKIPS = { views: 1, words: 2, feedback: 4, meta: 0, rgb9e5: 8 } as const;
 /** The driver's counts (vk/driver/wg_private.h `enum wg_emul`), in its order. */
 export const EMUL_COUNTS = ['shadowCopies', 'shadowBytes', 'shadowBackBytes', 'scopeCuts', 'viewCopies', 'viewBytes', 'wordsCopies', 'wordsBytes',
   'feedbackCopies', 'feedbackBytes', 'pulledDraws', 'variants', 'keyedDraws', 'prepasses'] as const;

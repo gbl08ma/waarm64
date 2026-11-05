@@ -672,6 +672,13 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   packed format's view (16 bits a texel, in an rgba8unorm texture) of another 16-bit format's image, or the other way, is
   an alias too, copied through a buffer the worker packs and unpacks (`copyPacked`; GD G4: Godot's SDFGI writes an
   R16_UINT image and samples it as R4G4B4A4).
+  **An E5B9G9R9 view of a 32-bit integer image** (VK4 T23; `wg_image_view.rgb9e5`) is the exception: Godot's SDFGI
+  writes R32_UINT volumes and samples them as E5B9G9R9, and their copies were ~34 MB a frame (left out, the GI demo ran 12% faster on
+  NVIDIA; decoded, about even on the M4: bench/vulkan/REPORT.md "VK4 T23"). Such a view (not a cube, not swizzled) is a view of the image's own texture in its own format,
+  every pair through it keyed (`key.rgb9e5`, the texture's binding `uint` in the variant): the translator fetches its
+  words and decodes them (`rgb9e5_decode`: each 9-bit mantissa times 2^(e − 24), alpha 1), the filter from the fetches
+  as for a padded image ("Compressed images that aren't whole blocks"); its own fetches are decoded too. Nothing is
+  copied. `?gpu=vkskip=rgb9e5` makes views made after it the old way (A/B).
   `VK_IMAGE_CREATE_EXTENDED_USAGE_BIT`'s usage comes from the formats its views can have (`wg_view_formats_features`), and a
   sampled image takes samples where its format renders. Not backed (docs/backlog.md "Views in another format's
   leftovers"): shared and linear images, a block-size change, a multisampled copy between formats, a view format

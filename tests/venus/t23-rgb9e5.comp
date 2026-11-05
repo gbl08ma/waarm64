@@ -1,0 +1,10 @@
+#version 450
+// tests/venus-driver.test.ts (misc: rgb9e5Words): an R32_UINT image sampled through an E5B9G9R9 view (wg_test.c's
+// scenario 94, VK4 T23): a linear sample between its two texels and a fetch of the second, into the buffer.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform sampler2D image;
+layout(set = 0, binding = 1) buffer B { vec4 sampled; vec4 fetched; } b;
+void main() {
+  b.sampled = textureLod(image, vec2(0.5, 0.5), 0.0);
+  b.fetched = texelFetch(image, ivec2(1, 0), 0);
+}

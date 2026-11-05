@@ -3580,6 +3580,102 @@ t4_misc(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out
 }
 
 /*
+ * VK4 T23, wgt_misc's scenario 94, `cs` t23-rgb9e5.comp: a 2x1 R32_UINT image (mutable, as Godot's SDFGI makes them)
+ * given two E5B9G9R9 words, (1, 0.5, 0.25) and (3, 2, 0), by a copy from the buffer, then sampled through an
+ * E5B9G9R9 view with a linear sampler halfway between them, (2, 1.25, 0.125, 1), and its second texel fetched, into the
+ * buffer's first 32 bytes. The view is of the image's own texture, its words decoded in the shader: nothing is copied
+ * into a texture of the format.
+ */
+static int
+t23_misc(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdUpdateBuffer CmdUpdateBuffer = (PFN_vkCmdUpdateBuffer)GetDeviceProcAddr(dev, "vkCmdUpdateBuffer");
+   const VkImageCreateInfo info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT,
+      .imageType = VK_IMAGE_TYPE_2D, .format = VK_FORMAT_R32_UINT, .extent = { 2, 1, 1 }, .mipLevels = 1,
+      .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
+      .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+   };
+   VkImage img;
+   CHECK(CreateImage(dev, &info, NULL, &img));
+   VkMemoryRequirements req;
+   GetImageMemoryRequirements(dev, img, &req);
+   VkDeviceMemory mem;
+   if (memory_for(req, false, &mem, NULL))
+      return 1;
+   CHECK(BindImageMemory(dev, img, mem, 0));
+   const VkImageViewCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = img,
+                                      .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = VK_FORMAT_E5B9G9R9_UFLOAT_PACK32,
+                                      .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
+   VkImageView view;
+   CHECK(CreateImageView(dev, &vi, NULL, &view));
+   const VkSamplerCreateInfo si = { .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, .magFilter = VK_FILTER_LINEAR,
+                                    .minFilter = VK_FILTER_LINEAR, .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                    .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                    .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE };
+   VkSampler sampler;
+   CHECK(CreateSampler(dev, &si, NULL, &sampler));
+   VkShaderModule m;
+   if (shader(cs, cs_words, &m))
+      return 1;
+   const VkDescriptorSetLayoutBinding bindings[2] = {
+      { 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+      { 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+   };
+   const VkDescriptorSetLayoutCreateInfo li = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                .bindingCount = 2, .pBindings = bindings };
+   VkDescriptorSetLayout dsl;
+   CHECK(CreateDescriptorSetLayout(dev, &li, NULL, &dsl));
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                            .setLayoutCount = 1, .pSetLayouts = &dsl };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   const VkComputePipelineCreateInfo ci = {
+      .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = layout,
+      .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                 .module = m, .pName = "main" },
+   };
+   VkPipeline pipeline;
+   CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipeline));
+   const VkDescriptorPoolSize ps[2] = { { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
+                                        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 } };
+   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                            .poolSizeCount = 2, .pPoolSizes = ps };
+   VkDescriptorPool dp;
+   CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+   const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                             .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
+   VkDescriptorSet set;
+   CHECK(AllocateDescriptorSets(dev, &dai, &set));
+   const VkDescriptorImageInfo sampled = { sampler, view, VK_IMAGE_LAYOUT_GENERAL };
+   const VkDescriptorBufferInfo bi = { out, 0, 32 };
+   const VkWriteDescriptorSet wr[2] = {
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &sampled },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 1, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi },
+   };
+   UpdateDescriptorSets(dev, 2, wr, 0, NULL);
+   /* (1, 0.5, 0.25): mantissas 256, 128, 64 at exponent 16 (2^-8); (3, 2, 0): 384, 256, 0 at 17 (2^-7). */
+   const uint32_t words[2] = { 256u | 128u << 9 | 64u << 18 | 16u << 27, 384u | 256u << 9 | 17u << 27 };
+   CmdUpdateBuffer(cmd, out, 1024, sizeof(words), words);
+   const VkMemoryBarrier barrier = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                                     .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
+                                     .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT };
+   CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &barrier, 0,
+                      NULL, 0, NULL);
+   const VkBufferImageCopy up = { .bufferOffset = 1024, .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+                                  .imageExtent = { 2, 1, 1 } };
+   CmdCopyBufferToImage(cmd, out, img, VK_IMAGE_LAYOUT_GENERAL, 1, &up);
+   CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &barrier, 0,
+                      NULL, 0, NULL);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+   CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
+   CmdDispatch(cmd, 1, 1, 1);
+   return 0;
+}
+
+/*
  * VK4 T11, wgt_misc's scenarios 41 and 42, `cs` t11-rw-view.comp and t11-rw-wide.comp: a 130x4 image of two levels and
  * two layers, R8G8_UNORM or R32G32_SFLOAT, which no adapter's WebGPU loads and stores as a texture. Each texel of the
  * corner of level 1, layer 1 is cleared, then swapped by the shader, twice over (0.2, 0.8 or 0.25, 0.75, then cleared
@@ -5683,6 +5779,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 38) {
       if (t4_misc(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 94) {
+      if (t23_misc(cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 41 || scenario == 42) {
       if (t11_misc(scenario, cs, cs_words, cmd, out))

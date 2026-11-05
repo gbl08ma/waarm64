@@ -489,7 +489,7 @@ keyed_text(const struct wg_program *v, const struct wg_stage_nir *n, const struc
          touched |= info->key_pairs[i][0] == v->keys[k].texture && info->key_pairs[i][1] == v->keys[k].sampler;
       /* A padded texture's size queries, or a cube's bound as its faces, a stage that doesn't sample it (no NIR kept if
        * it samples nothing at all). */
-      for (uint32_t i = 0; (v->keys[k].padded || v->keys[k].faces) && i < info->resource_count; i++)
+      for (uint32_t i = 0; (v->keys[k].padded || v->keys[k].faces || v->keys[k].rgb9e5) && i < info->resource_count; i++)
          touched |= ((uint32_t)info->resources[i].group << 16 | info->resources[i].binding) == v->keys[k].texture;
       /* A storage image without a format (GD G5), or written through a view of another format (GD G7). */
       for (uint32_t i = 0; v->keys[k].sampler == WGSL_IMAGE_KEY && i < info->resource_count; i++)
@@ -720,6 +720,11 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl
       insert_resource(v, at, &twin);
    }
 #undef MASKED
+   /* An E5B9G9R9 view of words (VK4 T23): the shader fetches u32s of it (wgsl_sampler.c `fetch_keyed`). */
+   for (uint32_t i = 0; i < key_count; i++)
+      for (uint32_t k = 0; keys[i].rgb9e5 && k < v->resource_count; k++)
+         if (res_index(&v->resources[k]) == keys[i].texture && v->resources[k].kind == WGSL_TEXTURE)
+            v->resources[k].sample = WGSL_SAMPLE_UINT;
    /* A storage image without a format is the bound view's (GD G5): a storage texture of that format, or its words where
     * WebGPU has none for the access (as wgsl_print.c decides, `gather`), their parameters at the next binding. */
    for (uint32_t i = 0; i < key_count; i++) {

@@ -802,12 +802,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     another (no copies in a pass). `image.mutable`'s `store` and `load` cases are NotSupported here (dEQP asks for
     multisampled storage): checked once by reporting samples for storage in a throwaway build, 113 of 371 passing, none
     failing, the rest not supported (`results/vk4/t4/store-probe/`). **The copies' cost** (VK4 T23, REPORT.md "VK4
-    T23"): Godot's SDFGI writes `r32uint` storage images and samples them through `rgb9e5ufloat` views, so each frame
-    copies ~34 MB (three or four 128³ volumes, six 1.2 MiB layers): ~1.5–1.8 ms of each submit's GPU time on the M4.
-    The way out: such a view sampled from the image's own `r32uint` texture, the shared exponent decoded in the
-    shader and filtered from fetches (T18's machinery: a sampler key saying the view's format is the texture's
-    reinterpreted), so nothing is copied; `?gpu=vkskip=views` gives the gain's ceiling. Taken up if the NVIDIA run's
-    `t23` step says the copies cost a frame there. ffmpeg's and libplacebo's filters are not measured.
+    T23"): Godot's SDFGI writes `r32uint` storage images and samples them through `rgb9e5ufloat` views, which
+    copied ~34 MB a frame: fixed by decoding the words in the shader (vk/README.md "Views in another format"). What's
+    left copying: the GI demo's one `r16uint` volume read as `rgba8unorm` (once, at the start), and any other pair of
+    formats WebGPU can't view one as the other; ffmpeg's and libplacebo's filters are not measured. **For the next
+    NVIDIA run** (the user's call, 2026-11-05): `VK2_STEPS=t23` in it, whose `t23-copies` part puts the old copies
+    back, gives the decode's gain there (the `views` arm's ceiling was +12% frames/s, REPORT.md "VK4 T23").
   - **Multisampled arrays' leftovers** (VK4 T12; vk/README.md "Multisampled arrays"): a shader sampling a whole
     `sampler2DMSArray` reads the first layer (it needs a binding per layer and a switch on the layer in the translator). The
     48 of `multiview.*multisample*` ask for `r32g32b32a32_sfloat` and the `image.mutable` r32 ones for views WebGPU can't
