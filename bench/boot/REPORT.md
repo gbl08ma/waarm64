@@ -3377,7 +3377,10 @@ in MB, loads in ms: wiki / mdn / github / bbc / hn):
 Stopped after that (the second round's r256 session cut short): nothing gained, 11% more wasm, 3% more RSS, and the
 more eagerly it relinks the slower. A relinked region is new code: it starts in Liftoff again, and its old copy
 stays in use through its direct importers and the transfer cache's entries (two copies of hot code). Not kept
-(docs/jit.md "Tried and not kept"). Not tried: rebinding a module's imports by instantiating it again (no new code,
+(docs/jit.md "Tried and not kept"). **On the Mac host too** (2026-11-05, after "What a function's size costs, in the
+VM and on the Mac" showed code size costs nothing there; Chrome for Testing 157, `bench/gpu/sway-mac.sh`, the patch
+built at ABI 60, `mac/`): busy MIPS 304 at HEAD (304-306 in its five Mac sessions that night) against 296 after 256
+hits, 127.3 against 144.3 MiB of wasm; stopped after that round. Not tried: rebinding a module's imports by instantiating it again (no new code,
 V8 shares the compiled code between instances), which needs an import stub per uncompiled successor and
 re-instantiation in every table.
 
@@ -3423,3 +3426,25 @@ image to its own path there, since a snapshot loads only with the disk it was ta
 logs `virtio_gpu_dequeue_ctrl_func` errors while Firefox loads pages (`ERR_UNSPEC` to a `CTX_CREATE`, then
 `ERR_INVALID_CONTEXT_ID` to that context's `CTX_ATTACH_RESOURCE` and `SUBMIT_3D`), and they garble the console line the harness reads the loads from (results.json's `loadMs`
 holds them): backlog, graphics.
+
+## Chromium's own share of a vCPU thread, by its callers (2026-11-05)
+
+"Where a busy vCPU's time goes in Firefox, again" left 9.3% of the vCPU threads' samples in Chromium's binary
+unexplained: openSUSE ships no debuginfo for its aarch64 Chromium (`repo-debug` has none) and the binary has no symbols
+at all. The callers say instead: a pages session from the snapshot under `--perf-prof` with `perf record -g` (V8's
+code keeps frame pointers, `results/m9-native/run-g.sh`), and for each sample whose leaf is in Chromium, libc or the
+vDSO, the first JavaScript or wasm frame above it, resolved against the jitdump (`callers.mts.txt`). The dev VM,
+Chromium 155.0.8059.84, core `9becded1`; 454,630 vCPU-thread samples (`callers.txt`):
+
+| first frame above a native leaf | share of the vCPU threads' samples |
+|---|---|
+| `runCpu` (web/vcpu-worker.ts), JavaScript | 5.38% (+0.19% in its other tiers) |
+| `jit::steps` (the core's dispatcher) | 1.62% |
+| web/vm.ts's JIT host (`install`: a module instantiated and put in the table) | 1.40% + 0.15% |
+| unresolved, guest code, the rest | ~1.5% |
+
+The leaves: Chromium 9.26%, the vDSO 1.34%, libc 0.47%. What `runCpu` itself calls is its idle path: a vCPU that
+went idle polls its wake word with `performance.now()` (the vDSO's clock) for up to `SPIN_MS` (50 µs) and then
+sleeps in `Atomics.wait`. That is outside `vm_run_cpu`, so it costs host CPU, not busy MIPS (busy time is the time
+inside it). So none of the 9.3% is a lever for a busy vCPU's speed: instantiating modules (1.5%) is the part on the
+busy path, and the dispatcher's 1.6% is V8's runtime under the core's own calls (not attributable without symbols).

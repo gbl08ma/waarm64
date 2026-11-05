@@ -1126,7 +1126,8 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   word, and at 64 or 256 the region was compiled once more from its recipe with the successors compiled since as
   imports, the tables' jump-cache entries repointed. Firefox's pages session relinked ~10,000 regions for 11% more wasm
   and 3% more RSS and ran slower (busy MIPS 212 and 205 without, 200 at 256, 187 at 64): the new copy starts in Liftoff
-  while the old one stays in use through its direct importers and the transfer cache.
+  while the old one stays in use through its direct importers and the transfer cache. On the Mac host, where code size
+  costs nothing, still 296 against 304.
 - **Regions of every seen successor** (M5, loops; forward regions since M8 hold each block of a
   batch once, which is what this lacked) duplicated each block into ~5 regions and cost Buildroot
   25–40%; **regions at the first threshold** (no tier-up) cost the boots 10–14% (~930 lukewarm

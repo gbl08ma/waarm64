@@ -1,0 +1,69 @@
+// Who calls into Chromium's own code from the vCPU threads: for each sample whose leaf is in the chrome binary (or
+// libc, the vDSO), the first frame up its callchain that is JIT or core wasm code, resolved against V8's jitdump
+// (--perf-prof) at the sample's time. perf record -g (frame pointers); perf script -F tid,time,ip,dso.
+//   node callers.mts <jit-*.dump dir> <samples.txt> <vcpu tids,comma-separated>
+import { createReadStream, fstatSync, openSync, readSync, readdirSync } from 'node:fs';
+import { createInterface } from 'node:readline';
+const [dir, samplesFile, tidList] = process.argv.slice(2);
+const vcpu = new Set(tidList.split(','));
+type Rec = { addr: number; size: number; name: string; ts: number };
+const recs: Rec[] = [];
+for (const f of readdirSync(dir).filter((f) => f.startsWith('jit-') && f.endsWith('.dump'))) {
+  const fd = openSync(`${dir}/${f}`, 'r'); const len = fstatSync(fd).size; const W = 64 << 20; const buf = Buffer.alloc(W);
+  let base = 0, have = readSync(fd, buf, 0, W, 0), p = buf.readUInt32LE(8);
+  while (base + p + 16 <= len) {
+    if (p + 8192 > have && base + have < len) { base += p; have = readSync(fd, buf, 0, W, base); p = 0; }
+    const id = buf.readUInt32LE(p), total = buf.readUInt32LE(p + 4), ts = Number(buf.readBigUInt64LE(p + 8));
+    if (total === 0 || base + p + total > len) break;
+    if (id === 0) {
+      const addr = Number(buf.readBigUInt64LE(p + 24)), size = Number(buf.readBigUInt64LE(p + 40)); const s = p + 56;
+      recs.push({ addr, size, name: buf.toString('latin1', s, buf.indexOf(0, s)), ts });
+    }
+    p += total;
+  }
+}
+recs.sort((a, b) => a.ts - b.ts);
+type S = { tid: string; t: number; frames: { ip: number; dso: string }[] };
+const samples: S[] = [];
+let cur: S | undefined;
+for await (const l of createInterface({ input: createReadStream(samplesFile), crlfDelay: Infinity })) {
+  const h = /^\s*(\d+)\s+(\d+)\.(\d+):\s*$/.exec(l);
+  if (h) { cur = { tid: h[1], t: Number(h[2]) * 1e9 + Number(h[3].padEnd(9, '0')), frames: [] }; samples.push(cur); continue; }
+  const fr = /^\s+([0-9a-f]+)\s+\((.*)\)/.exec(l);
+  if (fr && cur) cur.frames.push({ ip: parseInt(fr[1], 16), dso: fr[2] });
+}
+samples.sort((a, b) => a.t - b.t);
+const pages = new Map<number, Rec[]>();
+let ri = 0;
+const look = (ip: number) => pages.get(Math.floor(ip / 4096))?.findLast((o) => ip >= o.addr && ip < o.addr + o.size);
+const native = /chrome|chromium|libc\.so|vdso|libstdc|libm\.so/;
+const by = new Map<string, number>(), leafBy = new Map<string, number>();
+let total = 0, nat = 0;
+for (const s of samples) {
+  while (ri < recs.length && recs[ri].ts <= s.t) {
+    const r = recs[ri++];
+    if (r.size > 1 << 22) continue;
+    for (let pg = Math.floor(r.addr / 4096); pg <= Math.floor((r.addr + r.size - 1) / 4096); pg++) {
+      const l = (pages.get(pg) ?? pages.set(pg, []).get(pg)!).filter((o) => o.addr + o.size <= r.addr || o.addr >= r.addr + r.size);
+      l.push(r); pages.set(pg, l);
+    }
+  }
+  if (!vcpu.has(s.tid) || !s.frames.length) continue;
+  total++;
+  if (!native.test(s.frames[0].dso)) continue;
+  nat++;
+  const leaf = s.frames[0].dso.replace(/.*\//, '');
+  leafBy.set(leaf, (leafBy.get(leaf) ?? 0) + 1);
+  let who = `(no wasm frame; ${s.frames.length} frames)`;
+  for (const f of s.frames.slice(1)) {
+    if (native.test(f.dso)) continue;
+    const r = look(f.ip);
+    if (r) { who = r.name.replace(/^JS:/, '').replace(/^0x[0-9a-f]+_pa0x[0-9a-f]+/, 'guest code').replace(/-\d+-\w+$/, '').slice(0, 100); break; }
+    who = `unresolved ${f.dso}`; break;
+  }
+  by.set(who, (by.get(who) ?? 0) + 1);
+}
+console.log(`vCPU samples ${total}, native leaf ${nat} (${(100 * nat / total).toFixed(1)}%)`);
+for (const [k, v] of [...leafBy].sort((a, b) => b[1] - a[1])) console.log(`  leaf ${k}: ${(100 * v / total).toFixed(2)}%`);
+console.log('first wasm frame above a native leaf (% of vCPU samples):');
+for (const [k, v] of [...by].sort((a, b) => b[1] - a[1]).slice(0, 30)) console.log(`${(100 * v / total).toFixed(2).padStart(6)}%  ${k}`);

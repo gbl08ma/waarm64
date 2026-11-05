@@ -1,0 +1,35 @@
+vCPU samples 454630, native leaf 50302 (11.1%)
+  leaf chrome: 9.26%
+  leaf [vdso]: 1.34%
+  leaf libc.so.6: 0.47%
+first wasm frame above a native leaf (% of vCPU samples):
+  5.38%  *'runCpu http://127.0.0.1:37271/web/vcpu-worker.ts?worker_file&type=module:40:22
+  1.62%  _RNvNtCsfyJ81pLjVxE_10webpc_core3jit5steps
+  1.40%  *' http://127.0.0.1:37271/web/vm.ts:49:31
+  0.81%  unresolved [unknown]
+  0.37%  guest code
+  0.22%  (no wasm frame; 19 frames)
+  0.17%  +'runCpu http://127.0.0.1:37271/web/vcpu-worker.ts?worker_file&type=module:40:22
+  0.15%  +'install http://127.0.0.1:37271/web/vm.ts:400:10
+  0.09%  wasm-to-js-<anonymous>-none
+  0.06%  _RNvMs2_NtNtCsfyJ81pLjVxE_10webpc_core2vm8parallelNtB7_2Vm10handle_par
+  0.04%  _RNvMs4_NtNtCsfyJ81pLjVxE_10webpc_core6interp5blockNtB5_5Cache9count_out
+  0.04%  unresolved /usr/lib64/libc++.so.1.0
+  0.03%  +'port.onmessage http://127.0.0.1:37271/web/vm.ts:375:20
+  0.03%  _RNvMs3_NtCsfyJ81pLjVxE_10webpc_core3jitNtB5_3Jit4miss
+  0.03%  (no wasm frame; 18 frames)
+  0.03%  (no wasm frame; 10 frames)
+  0.03%  _RINvNtCsfyJ81pLjVxE_10webpc_core3jit9interpretNtNtB4_3mmu3MmuEB4_
+  0.02%  o*runCpu http://127.0.0.1:37271/web/vcpu-worker.ts?worker_file&type=module:40:22
+  0.02%  _RNvMNtNtNtNtCs2ldmeKBd0pA_3std3sys4sync5mutex5futexNtB2_5Mutex14lock_contended
+  0.02%  (no wasm frame; 13 frames)
+  0.02%  (no wasm frame; 9 frames)
+  0.02%  +'pass http://127.0.0.1:37271/web/vcpu-worker.ts?worker_file&type=module:55:15
+  0.02%  _RNvMs1_NtCsfyJ81pLjVxE_10webpc_core3jitNtB5_5Cache7install
+  0.02%  (no wasm frame; 11 frames)
+  0.02%  (no wasm frame; 12 frames)
+  0.02%  (no wasm frame; 16 frames)
+  0.02%  _RNvMs4_NtNtCsfyJ81pLjVxE_10webpc_core6interp5blockNtB5_5Cache4miss
+  0.02%  _RINvNtNtCsfyJ81pLjVxE_10webpc_core6interp4ldst6singleNtNtB6_3mmu3MmuEB6_
+  0.01%  _RNvMs2_NtNtCsfyJ81pLjVxE_10webpc_core2vm8parallelNtB7_2Vm7run_cpu
+  0.01%  (no wasm frame; 15 frames)
