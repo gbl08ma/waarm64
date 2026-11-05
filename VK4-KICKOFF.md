@@ -43,11 +43,12 @@ T2–T14; the rest of the order is judgement, said with each.
 
 ## The tasks
 
-### Done: tiers 1, 2 and 2b (2026-10-29 to 2026-11-01)
+### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T22 (2026-10-29 to 2026-11-05)
 
 Each row's outcome in full is its section of bench/vulkan/REPORT.md ("VK4 T<n>") and its commit; what each left is in
 docs/backlog.md "The Vulkan driver's gaps" (the entry named) and, where it is a defect or drops work, in the tasks
-below. dEQP-VK's pass list went 4,725 → 26,002 over tiers 1 and 2, every new case passing on SwiftShader and the M4.
+below. dEQP-VK's pass list went 4,725 → 26,002 over tiers 1 and 2, and 27,714 → 30,040 with T21–T22, every new case
+passing on SwiftShader and the M4.
 Tier 2b (R1–R7) took the out-of-context review's findings ([VENUS-VK4-REVIEW.md](VENUS-VK4-REVIEW.md), ids by area:
 its triage at the top says which each fixed) before tier 3, which measures programs on this code; a second review, of
 R1–R4 and then of R5–R7, had its findings fixed or moved to the backlog the same way.
@@ -75,27 +76,18 @@ R1–R4 and then of R5–R7, had its findings fixed or moved to the backlog the 
 | R5. The translator's defects (C1–C7) | a variant's own depth-less module; depth textures' plain samples through fetches, a shared sampler split, borders across levels fetched, a variant that can't print refuses its draws; ufloats past range the largest finite | "Samplers' leftovers" |
 | R6. Memory and objects (O1–O3, O11, O12, O14–O17, H4) | an allocation past what there is refused (for Venus's guest an empty memory, not a lost context); imports keep device addresses and move with their blob; set layouts' sizes checked; `memory.*` and `api.external.memory.*` unchanged | "Memory", "External memory's leftovers" |
 | R7. What's advertised (O5, O6, O8, O9) | A8B8G8R8 and BC1_RGB formats, set-wide limits, all of WebGPU's dynamic uniform buffers, 16 vertex bindings; list +1,370; every `api.info` limit and format query passing on SwiftShader but two `r32g32*_sfloat` sample-count queries (the M4 not run) | "Sample counts Vulkan wants but WebGPU lacks", "What R7's limits leave" |
+| T13. What a guest's synchronous call waits for (with T14) | GSK's ~80 synchronous `vkAllocateDescriptorSets` a frame each waited a poll turn (1.33 ms on the Mac); the pump's turns timed by a ticker worker (0.08 ms); iconscroll 6.5 → 33 frames/s on the M4, past GL's 28–32; VK0's scene no worse | "GTK4 on Vulkan: the bar met on the M4, the default not taken" |
+| T14. The guest's submit path (with T13) | of 9 execbuffers a frame, 6 are 3 fenced submits' two each (Mesa 26's fences are DRM syncobjs, no feedback path), 1 a ring notify, the rest sway's; the guest's CPU a frame in GTK4's frames 2.01–2.08 → 1.91–1.96 ms, GL's; rings kept active no gain | — |
+| T16. Imports without rewrites | each virgl resource a texture of its own, an import writes nothing; mpv imports a surface once a picture anyway (600 KB a frame stay); the import's GPU-worker time a frame 0.22 → 0.18 ms on the M4 | "Imports' gaps" |
+| T17. Pipelines' loose ends | render pipelines made at creation lose (cold vkQuake 269 → 26 frames/s on the M4), so off by default (`?gpu=vkpremake=on`); the shader store deflated (7.4×), on the Machines page with a clear, its budget a Preference of 8–64 MiB | "Pipelines' loose ends" |
+| T21. The census's failures and its new passes | texel buffers' and word images' parameters one uniform table a group (sets4's uniform buffers past 12), but sets4's 165 failures are all bindings past WebGPU's, filed; the 16-bit normalized formats' resolves drawn (438 multisampled cases pass on the M4); long_shader_bitwise_and's 40 s are SwiftShader compiling 2,356 loads, booleans as `&` 16% off it; list +861 | "Texel buffers", "SwiftShader compiles zero-initialized workgroup memory slowly" |
+| T22. A compute-only queue family | three families (graphics; compute; transfer), all the WebGPU queue; held submits hold their own queue's only, a binary wait held with its held signal; of 2,590 sampled cases 1,465 pass on both hosts and join the list (SwiftShader's 166 failures its own, the M4's one filed); mpv the same | "SwiftShader's compressed formats sampled in a compute stage", "The M4's own failures" |
 
 ### Tier 3: performance on real workloads
 
-- **T13. What a guest's synchronous call waits for** (done 2026-11-02 with T14: GSK's ~80 synchronous `vkAllocateDescriptorSets` a frame each waited a poll turn, 1.33 ms on the Mac; the pump's turns timed by a ticker worker, 0.08 ms there; iconscroll 6.5 → 33 frames/s on the M4, past GL's 28–32; VK0's scene no worse. Left: backlog "GTK4 on Vulkan: the bar met on the M4, the default not taken") (M): GSK on Vulkan runs iconscroll at 9 frames a second against
-  GL's 28 with the guest 11% busy, waking ~1,800 times a second: a frame waits on ring round trips or fences, which
-  any program with synchronous Venus calls pays. Find which calls (a ring trace, `VN_DEBUG`) and shorten them. This
-  decides GTK4 on Vulkan and so the default. *Done:* iconscroll at GTK4's bar (REPORT.md G) or the cause measured
-  and filed. *Start:* backlog "GSK's Vulkan renderer on Venus misses GTK4's bar", REPORT.md "VK3 L7.3".
-- **T14. The guest's submit path** (done 2026-11-02 with T13: of 9 execbuffers a frame, 6 are 3 fenced submits' two each, Mesa 26's fences being DRM syncobjs with no feedback path, 1 a ring notify, the rest sway's; the guest's CPU a frame in GTK4's frames 2.01–2.08 → 1.91–1.96 ms, GL's; rings kept active no gain) (M): 9 execbuffers a frame against virgl's 4 (GTK4's frames +11%), a fenced
-  `SUBMIT_3D` every two frames through the virtqueue since VK2's external fences. Which Vulkan calls make them, and
-  whether the feedback path can serve. *Done:* the guest's CPU a frame measured before and after (bench/run.ts
-  rules). *Start:* backlog "Venus's submit path costs the guest", "The guest fences each frame".
 - **T15. Venus's submits ~2 ms later on NVIDIA** (M, needs the user's runs): a bundle carrying the page at several
   of the 34 commits between 4fdc69fb and c8087cb0, run as alternated arms in one session, or Dawn's trace categories
   at both. *Start:* backlog entry of that name, REPORT.md "VK3 L9a".
-- **T16. Imports without rewrites** (done 2026-11-03: each virgl resource a texture of its own, an import writes nothing; mpv imports a surface once a picture anyway, so 600 KB a frame stay, the import's GPU-worker time a frame 0.22 → 0.18 ms on the M4. Left: backlog "Imports' gaps") (S–M): every video frame's planes are written again (~0.2 ms and 0.6 MB a frame
-  at 480p, ~3 MB at 1080p); a Venus texture per resource written only when its picture changes. *Done:* mpv's GPU
-  worker time a frame before and after. *Start:* backlog "Imports' gaps".
-- **T17. Pipelines' loose ends** (done 2026-11-03: render pipelines made at creation lose, cold vkQuake 269 → 26 frames/s on the M4 (100 made, 8 drawn), so off by default behind `?gpu=vkpremake=on`; the shader store deflated (vkQuake's 7.4×), on the Machines page's storage line with a clear, its budget a Preference of 8–64 MiB. Left: backlog "Pipelines' loose ends") (S each): pipelines made at `vkCreateGraphicsPipelines` (a first frame's stalls),
-  the shader store compressed, shown on the Machines page and its budget configurable (the user's ask, 2026-10-26).
-  *Start:* backlog "Pipelines' loose ends after VK3 L3".
 
 ### The census's tasks (T21–T35, drafted 2026-11-05 at the user's ask; T23 was tier 3's T20)
 
@@ -111,24 +103,6 @@ memory, cooperative matrices, ray tracing, mesh shaders, tile images, fragment d
 the sample's on the M4 (×100 for the whole list, roughly); each starts by running its reason's cases (`deqp-run.ts`'s
 `CASES`, from `census.ts --reasons`' examples or the sample's JSON) to see what they meet once advertised.
 
-- **T21. The census's failures and its new passes** (done 2026-11-05: texel buffers' and word images' parameters one
-  uniform table a group (sets4's uniform buffers past 12), but sets4's 165 failures are all bindings past WebGPU's,
-  filed; the 16-bit normalized formats' resolves drawn (WebGPU doesn't resolve them: 438 multisampled cases pass on the
-  M4, none fail); long_shader_bitwise_and's 40 s are SwiftShader compiling 2,356 loads, booleans as `&` 16% off it,
-  filed; list +861. Left: backlog "Texel buffers", "SwiftShader compiles…") (S): `descriptorset_random.sets4`'s two (a fragment stage's
-  output reads zeros; on SwiftShader too now, so CI's host can debug it), the M4's three multisampled `self_dep`
-  passes of the snorm formats, SwiftShader's `ssbo.corner_case.long_shader_bitwise_and` past the watchdog (where its
-  30 s go). The 861 sampled cases that pass on both hosts join `tests/deqp/vk.txt` (run as one list on SwiftShader
-  first, as T1's; the list's time and its limit checked). *Done:* each fixed or filed with its cause.
-  *Start:* REPORT.md "VK4: the census again", backlog "The M4's own failures".
-- **T22. A compute-only queue family** (done 2026-11-05: three families, compute and transfer ones beside graphics, all
-  the WebGPU queue; held submits hold their own queue's only, a binary wait held with its held signal; 2,590 sampled
-  cases ran: 1,465 pass on both hosts and join the list, SwiftShader's 166 failures its own and the M4's one filed; mpv
-  the same. Left: backlog "SwiftShader's compressed formats sampled in a compute stage") (S–M; 2,525, 20% of the not-supported): a second family, compute and transfer
-  without graphics, whose queues are the same WebGPU queue (one order of submits, so ownership transfers between the
-  families are no-ops); maybe a transfer-only third (50). Check what Venus's guest makes of two families on one queue
-  (its ring per queue) and that semaphores across them hold. *Done:* the reason's cases run, failures fixed or filed.
-  *Start:* backlog "Not advertised, by what dEQP-VK asks", vk/README.md "The driver".
 - **T23. What tier 2's emulations cost a program** (M; tier 3's T20 until 2026-11-05; before T30–T33, which add more
   of these paths; T3's to T12's "the cost unmeasured", each task's leftover; its first program Godot on NVIDIA, whose
   freezes and black windows the backlog's "GD's leftovers" lays on these paths): the shadow copies of usage scopes, the copies between view formats, pulled vertices, the sampler variants' compile
