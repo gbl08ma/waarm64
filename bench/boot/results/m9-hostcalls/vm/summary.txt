@@ -1,0 +1,4 @@
+hc-2       busy 236 MiB 131.2 rssMed 3629 rssMax 3845 loads 10133/3849/2707/9140/2203
+head-1     busy 215 MiB 126.4 rssMed 3678 rssMax 3903 loads 9295/4105/2992/10574/2660
+head-2     busy 210 MiB 125.9 rssMed 3693 rssMax 3949 loads 9567/4887/2696/11120/2563
+hc-1: Firefox's process gone after the restore; the pages timed out (log.txt); the session hit 900 s

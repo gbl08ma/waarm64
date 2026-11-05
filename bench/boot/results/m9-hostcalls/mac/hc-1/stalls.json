@@ -1,0 +1,26 @@
+{
+ "bench/results/local/machf-hc-1/pages-all.timeline.json": {
+  "seconds": 252,
+  "mips": 345,
+  "busyMips": 332,
+  "busyShare": 0.26,
+  "stallsAtLeastMs": {
+   "20": 3,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 27,
+  "stalledMsPerSecondPerVcpu": 0.08,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

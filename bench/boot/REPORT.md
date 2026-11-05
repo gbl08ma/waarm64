@@ -3448,3 +3448,42 @@ went idle polls its wake word with `performance.now()` (the vDSO's clock) for up
 sleeps in `Atomics.wait`. That is outside `vm_run_cpu`, so it costs host CPU, not busy MIPS (busy time is the time
 inside it). So none of the 9.3% is a lever for a busy vCPU's speed: instantiating modules (1.5%) is the part on the
 busy path, and the dispatcher's 1.6% is V8's runtime under the core's own calls (not attributable without symbols).
+
+## Guest calls as host calls, again: +10% on the Mac, Firefox lost in the VM (2026-11-05)
+
+"M8: guest calls as host calls" (2026-10-16) was not kept on the dev VM's numbers: the returns' entry stalls moved
+into the callers' bodies, and 23% more wasm cost a third flush then. Two things changed: code size costs nothing on
+the Mac ("What a function's size costs, in the VM and on the Mac"), and from the snapshot the session doesn't flush.
+October's last variant (`results/m8-calls/host-calls.patch`: a BL/BLR a wasm `call` below a depth of 64, a `ret`
+at a depth above 0 a wasm `return` flagged `RETURNED`, a call's continuation a member and an entry of its caller's
+region) ported to `517ef961`, on branch `wip/host-calls` (XF-HANDOVER.md).
+
+**The port's bug:** its call depth's local (118) had become `FZOK`'s (FPCR.FZ clear) since October, so a block's FP
+guard overwrote the depth and a `ret` at depth 0 returned as a host call's; the dispatcher added the flagged result
+to its counts (the sound kernel's boot 91 M steps against 36.5 M, the litmus 3.65 G against 882 M; a first Mac run
+read 755 busy MIPS). The depth is local 128 now (the encoder's placeholders go to 255 and compact under 128). Then
+every Linux boot test (exact steps), the parallel boots, the JIT tests, the differential test and lockstep pass.
+
+**Firefox's pages session on the Mac host** (Chrome for Testing 157, its GPU, from `pages.webpcsnap`; `a2272932`, two
+rounds alternated, `results/m9-hostcalls/mac/`):
+
+| | busy MIPS | wasm (MiB) | loads (ms: wiki / mdn / github / bbc / hn) |
+|---|---|---|---|
+| HEAD | 302, 305 | 126.8, 127.0 | 7195/2798/1888/6653/1669, 6880/2862/1970/6825/1546 |
+| host calls | **332, 336** | 131.8, 132.2 | 6763/2565/1593/6432/1445, 6054/2593/1603/5752/1360 |
+
++10% busy MIPS with the rounds apart, every page faster (6-19%), 4% more wasm.
+
+**In the dev VM** (the same cores, `bench/gpu/ab.sh`, `results/m9-hostcalls/vm/`) the first host-calls session lost
+Firefox: its process was gone in both page windows (the guest's kernel and sway ran on), the pages timed out and the
+session hit its 900 s bound. A guest-visible bug the boots, the differential test and lockstep miss. The second
+host-calls session ran through: busy MIPS 236 against HEAD's 215 and 210 (+11%), the renderer's RSS median 3,629
+against 3,678 and 3,693 MB, 131.2 against 126.4 MiB of wasm, loads 10133/3849/2707/9140/2203 against
+9295/4105/2992/10574/2660 and 9567/4887/2696/11120/2563. So the gain holds in the VM too; the loss of Firefox (1 of 3
+host-calls sessions that night, 0 of 2 on the Mac) is what blocks it.
+
+**The out-of-context review** (on `a2272932`): five findings, in the branch's commit `337228d7`. The stale-code
+checker missed a host return's continuation (fixed, its test failing first) and an entry at a member's later
+members (its test written; the fix in `Cache::install` doesn't make it pass yet); a region using every local index
+would overflow 128 locals now; `MAX_DEPTH` 64's host stack is unmeasured in Chromium; table indices aren't asserted
+under 2^24. Not merged: XF-HANDOVER.md has the order.
