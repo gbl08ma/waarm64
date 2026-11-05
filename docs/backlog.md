@@ -123,7 +123,9 @@ the steps, so an interpreted step costs ~3.5× a compiled one. The loads' new co
   (WARM=32; the default before the foldable offsets; the posted modules): always the first page (wiki). Rerun such
   a session under JIT-check, and look at what Firefox waits for (the guest's `ps`, its console) when it hangs. First
   rerun such sessions on a build from 2026-11-03 on: until then a fast-completed ISB under the parallel JIT could run
-  code another vCPU had just rewritten ([platform.md](platform.md) "Broadcast maintenance"), a candidate cause.
+  code another vCPU had just rewritten ([platform.md](platform.md) "Broadcast maintenance"), a candidate cause. Since
+  (2026-11-04/05, builds from `6abf0919` on, from `pages.webpcsnap`): 13 whole sessions in the dev VM and 6 on the Mac
+  host, none timing out at its first page. If none does in the next ~20, drop the item.
 - **Which Blink object a vCPU thread's `new WebAssembly.Module` allocates in Oilpan** (`CppGC.SweepOnAllocation`
   inside `wasm.SyncCompile`; `bench/boot/REPORT.md` "M8: V8's GC on the vCPU threads"): left open when the vCPU
   workers began returning to their event loop. The wasm code GC that item also named no longer stops the vCPUs
