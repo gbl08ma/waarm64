@@ -87,12 +87,8 @@ the steps, so an interpreted step costs ~3.5× a compiled one. The loads' new co
   83% of it after a `return_call_indirect` (the code footprint defeats the branch predictor; direct and imported tail
   calls don't stall). Warm members took the jump-cache tails into warm code away (+18% busy MIPS). Re-profiled
   2026-11-04 (`bench/boot/REPORT.md` "Where a busy vCPU's time goes in Firefox, again"): entries 22.0% of the samples (27-29% while pages scroll), 80% of them after a
-  `return_call_indirect`, 15% from the dispatcher; the signature check 3.0%. What remains:
-  - **Returns as host returns: done** (2026-11-05, docs/jit.md "Calls"): +10% busy MIPS on the Mac host, +11% in
-    the VM. Open: **one VM session lost Firefox's process** with the first core of the port (1 of 10 sessions, none
-    of the later 9 nor the Mac's 2; the guest's kernel and sway ran on); `bench/gpu/firefox-load.ts` logs Firefox's
-    output, its processes and the kernel's messages when a page never gets ready (`not ready:`): if it recurs, read
-    that, then a core with `MAX_DEPTH` 0 (the entries without host calls) narrows it.
+  `return_call_indirect`, 15% from the dispatcher; the signature check 3.0%. Returns, 49% of those entries, are host returns now ([jit.md](jit.md) "Calls"). What
+  remains:
   - **Tails into code that was cold when its predecessor was compiled: re-emitting tried, not kept** (2026-11-05,
     `bench/boot/REPORT.md` "Relinking a region once its successors are compiled"): those tails and the by-VA links
     are 22% of the indirect entries (returns 49%, BLR 11%); compiling ~10,000 hot regions again with direct links
@@ -127,6 +123,11 @@ the steps, so an interpreted step costs ~3.5× a compiled one. The loads' new co
   code another vCPU had just rewritten ([platform.md](platform.md) "Broadcast maintenance"), a candidate cause. Since
   (2026-11-04/05, builds from `6abf0919` on, from `pages.webpcsnap`): 13 whole sessions in the dev VM and 6 on the Mac
   host, none timing out at its first page. If none does in the next ~20, drop the item.
+- **A VM session that lost Firefox's process** (2026-11-05, with the first core of host calls: `bench/boot/REPORT.md`
+  "Guest calls as host calls, again"): gone in both page windows, the guest's kernel and sway alive, the pages timed
+  out. 1 of 10 VM sessions with host calls, none of the later 9 nor the Mac's 2. `bench/gpu/firefox-load.ts` logs
+  Firefox's output, its processes and the kernel's messages when a page never gets ready (`not ready:` in a session's
+  log): if it recurs, read that, then a core with `MAX_DEPTH` 0 (the entries without host calls) narrows it.
 - **Which Blink object a vCPU thread's `new WebAssembly.Module` allocates in Oilpan** (`CppGC.SweepOnAllocation`
   inside `wasm.SyncCompile`; `bench/boot/REPORT.md` "M8: V8's GC on the vCPU threads"): left open when the vCPU
   workers began returning to their event loop. The wasm code GC that item also named no longer stops the vCPUs
