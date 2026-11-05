@@ -296,8 +296,8 @@ Images are the same path as text with another type: lazy offers, streamed chunks
   an `OffscreenCanvas`, and `convertToBlob({type: 'image/png'})`, in a worker. Text that comes with the image
   (an `<img>`'s URL, `text/html`) goes in the same `ClipboardItem`, so the host's program picks what it takes.
 - **Host to guest:** way 1's `read()` gives a `Blob` of `image/png`. Way 2's `paste` event has it as a `File` in
-  `clipboardData.items` (also with no permission: measure in Chrome and Firefox with an image copied, using the
-  same console test). The page keeps the `Blob` and offers `image/png` to the guest. A guest program that asks
+  `clipboardData.items`, with no permission (measured in the user's Chrome, 2026-11-05: a copied image arrived at
+  the focused canvas as one item, `file image/png`, 5561 B; Firefox is still to check). The page keeps the `Blob` and offers `image/png` to the guest. A guest program that asks
   for the bytes gets them streamed. A program that wants only another type gets nothing, as on a desktop
   where the copying program offered only PNG. The agent offers the type's usual aliases (`image/png` is the
   only name programs ask for).
