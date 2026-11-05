@@ -203,6 +203,8 @@ if (PHASES.includes('pages')) {
     await run('. /root/ff.sh; ffkill', 120_000);
     await run(`. /root/ff.sh; ffrun file:///mnt/ffpages/${file} ${tag}`);
     const started = await run(`. /root/ff.sh; ffwait ${tag}`, 330_000);
+    // Firefox never became ready: what it printed last, its processes (state, wait channel) and the kernel's messages.
+    if (/timeout/.test(started)) log(tag, 'not ready:', await run(`tail -25 /tmp/ff-${tag}.log; echo ---; ps -eo pid,stat,wchan:24,comm | grep -i -E 'firefox|web|socket|isolated|rdd|utility' | head -20; echo ---; dmesg | tail -15`, 60_000));
     const readyAt = Date.now(); // ~bench.js's t=0 (`ready`), on the host's clock: the timeline's
     const loadMs = Number(/FFBENCH load (\d+)/.exec(await run(`grep "FFBENCH load" /tmp/ff-${tag}.log`))?.[1] ?? NaN);
     log(tag, started, 'load', loadMs);

@@ -24,22 +24,27 @@ from "Where a busy vCPU's time goes in Firefox, again" (2026-11-04) to "Guest ca
   - The port's own bug, fixed: its `DEPTH` local (118) was `FZOK`'s since October, so an FP guard overwrote the
     call depth and a `ret` at depth 0 returned as a host call's (the exact-step boots caught it: steps inflated).
     `DEPTH` is local 128 now (placeholder bytes up to 255, compacted under 128), asserted past the others.
-  - The review (out of context, on `a2272932`; its findings in the branch's last commit message): **2** fixed (a
-    host return's continuation calls the stale-code checker), **1** tested but not fixed (an entry at a member is
-    checked against the head's spans in `Cache::install`, yet the test still finds no trap: why is open), **3**
-    (a region using every local index: 129 > 128 now; fall back instead of panicking), **4** (`MAX_DEPTH` 64's host
-    stack unmeasured in Chromium, helpers like `jit_hot` → install running on top), **5** (assert table indices
-    stay under 2^24 in `Cache::new`) open.
+  - The review (out of context, on `a2272932`; its findings in the branch's commit `337228d7`): **1** (an entry at
+    a member checked against only its own block) and **2** (a host return's continuation not checked) fixed, each
+    with a test that fails without the fix; **3** (a function past 128 locals with the fourth parameter) fixed by
+    two-byte padded local indices in that rare case; **5** (table indices under 2^24) asserted; **4** (the host
+    stack at `MAX_DEPTH` 64) reasoned, not measured: 64 frames of at most ~125 locals (32 of them v128) are a few
+    hundred KB at worst against V8's ~1 MB, plus a helper on top (a tier-up's install compiles on that stack when
+    the worker is overdue). Measure it in Chromium with a guest that recurses past 64 through heavy frames before
+    the merge, or lower the bound. `scripts/ci.sh` passes on `be42d12f` (622 s).
+  - **The Firefox loss's rate:** 1 of 6 VM sessions with host calls so far (0 of 3 with the branch's later cores,
+    0 of 2 on the Mac). An alternated run of 4 rounds (HEAD against `be42d12f`'s core) was started at the end of
+    the night (`bench/results/local/xfer/ab4/`); `bench/gpu/firefox-load.ts` now logs Firefox's output, its
+    processes and the kernel's messages when a page never gets ready (look for `not ready:` in a session's log).
 - The Mac host as an A/B target: `bench/gpu/sway-mac.sh` with `SCRIPT=firefox-load.ts WASM=<core>
   FROM_SNAPSHOT=<file>`, looped with `bench/gpu/mac-leftovers.sh --kill` after each session (the loop used tonight
   is `bench/results/local/xfer/mac-ab.sh`, local: worth committing as a tool if the Mac stays the ranking host).
 
 ## Next
 
-1. Reproduce the Firefox loss in the VM with the branch's current core (`337228d7`): a pages session from the
-   snapshot; if it reproduces, narrow it (MAX_DEPTH 0 keeps the entries but no host calls; entries off keeps the
-   calls) before reading code.
-2. Finding 1's open question, then 3-5; the branch's docs (jit.md "Calls" for the mechanism, out of "Tried and not
-   kept"), ABI note if any export changes (none so far).
+1. Read `ab4/`: whether HEAD loses Firefox too (the backlog's first-page timeout, 3 in ~35 sessions in October), or
+   only host calls do. If only host calls, narrow it (`MAX_DEPTH` 0 keeps the entries but no host calls) before
+   reading code.
+2. Finding 4's measurement; the branch's docs (jit.md "Calls" for the mechanism, out of "Tried and not kept").
 3. Then the gates (`scripts/ci.sh`, ci-debian, ci-graphics, ci-machines), the Mac A/B again and the VM's, and the
    merge.
