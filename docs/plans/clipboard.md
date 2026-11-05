@@ -226,7 +226,9 @@ copy. Firefox and Safari have no such permission, so they rely on ways 2 and 3.
      `<body>`, not at the canvas: a listener on the canvas misses it, and one on the document catches it. So the
      page listens on the document and takes the event only while `document.activeElement` is the screen's
      canvas. Firefox's event at `<body>` carries the data (measured: `string text/plain` with the text, while
-     `document.activeElement` was the canvas). An image there is still to check. A hidden, focused `<textarea>`
+     `document.activeElement` was the canvas; and a copied image as `file image/png`, 15294 B). Chrome on macOS
+     does the same with text copied from TextEdit, with no prompt from Chrome or macOS (`string text/plain`,
+     `string text/html`, `string text/rtf`). A hidden, focused `<textarea>`
      as the screen's key sink isn't needed. It also works in both browsers (Firefox gave the text, and
      `file image/png`, 15300 B, for a copied image), and it remains an option if composition input (IME) is
      wanted later.
@@ -269,8 +271,9 @@ covers it. Cases to recognise, and what the page does:
   it matters: there are types but no text (an image, which a later step may offer), or there are no types (hidden).
 - **The OS hides or asks:** macOS 15.4 and later alerts the user, or lets them deny, when an app reads the
   pasteboard programmatically without a paste-related UI action ("Paste from Other Apps" in Privacy &
-  Security). A focus read (way 1) is exactly that kind of read. What Chromium then returns (an error, `""`, or
-  stale content) is **to measure on the Mac host** (`macmini.lan`, the user's Chrome; not automatable). Way 2,
+  Security). A focus read (way 1) is exactly that kind of read. A real paste (way 2) is a paste-related action, and it
+  measured clean on the Mac (Chrome, text from TextEdit, 2026-11-05: no prompt). What Chromium returns to a focus
+  read (an error, `""`, or stale content) is still **to measure on the Mac host** (`macmini.lan`, the user's Chrome; not automatable). Way 2,
   a real paste, isn't affected. If focus reads on a Mac come back empty while `read()`'s types say there is
   text, the page counts it. After a few in a row it stops focus reads for the run and says why in the
   toolbar button's menu, and the paste chord carries on.
@@ -303,7 +306,7 @@ Images are the same path as text with another type: lazy offers, streamed chunks
   (an `<img>`'s URL, `text/html`) goes in the same `ClipboardItem`, so the host's program picks what it takes.
 - **Host to guest:** way 1's `read()` gives a `Blob` of `image/png`. Way 2's `paste` event has it as a `File` in
   `clipboardData.items`, with no permission (measured 2026-11-05: in the user's Chrome a copied image arrived at
-  the focused canvas as one item, `file image/png`, 5561 B; in Firefox, in a textarea, as `file image/png`, 15300 B). The page keeps the `Blob` and offers `image/png` to the guest. A guest program that asks
+  the focused canvas as one item, `file image/png`, 5561 B; in Firefox, at `<body>` with the canvas focused, as `file image/png`, 15294 B). The page keeps the `Blob` and offers `image/png` to the guest. A guest program that asks
   for the bytes gets them streamed. A program that wants only another type gets nothing, as on a desktop
   where the copying program offered only PNG. The agent offers the type's usual aliases (`image/png` is the
   only name programs ask for).
