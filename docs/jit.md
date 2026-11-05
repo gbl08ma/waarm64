@@ -295,7 +295,8 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
   the dispatcher). A call below `MAX_DEPTH` (**64**) passes the depth + 1; at the limit the call is a tail call as
   before, so a guest's deep recursion doesn't grow the host's stack past 64 frames. A `ret` at a depth above 0
   returns the retired count with `RETURNED` (bit 31) set and the target in the `Cpu`'s PC (`emit::ret_up`); at
-  depth 0 it's an indirect transfer as before.
+  depth 0 it's an indirect transfer as before. The dispatcher asserts (release builds too) that a block it called
+  returned without `RETURNED`: a depth that reached 0 with entry bits still set would count ~2³¹ steps.
 - **After the call** (`emit::returned`): a result without `RETURNED` means the callee stopped (an exit, the budget,
   a block not compiled), and every caller returns it in turn, unwinding to the dispatcher. A returned one moves
   `acc`/`left` as if the callee's steps were the caller's, and if the PC is the call's continuation (the instruction
@@ -303,7 +304,11 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
   through the transfer cache's miss function (with the MMU off, the block returns).
 - **Continuations are entries:** the block after a call is a member of the caller's region and an **entry** of its
   function (`Region::entries`; none in a loop region, whose members sit inside the `loop`), because a return also
-  reaches it from outside, at depth 0 after anything that unwound the host frames. A block's word in the jump and
+  reaches it from outside, at depth 0 after anything that unwound the host frames. Only a member where the head's
+  page has it is an entry (the head's PA page, at its PA offset from the head): entered by its own VA, the function
+  then has the head's mapping too, which the edges `Region::checked` leaves unchecked rely on. A continuation reached
+  through another VA page that maps the same PA page isn't one. A region with entries takes no hot word (asserted):
+  `emit::tier_up` runs before the entries' prologue. A block's word in the jump and
   transfer caches holds its function's table index in the low 24 bits (`IDX_MASK`, asserted) and its entry number
   above (`ENTRY_SHIFT`); a transfer passes the entry number above `ENTRY_BIT` (16) of the depth parameter, and the
   prologue clears it and branches to that member. Without the entry, a continuation ran interpreted until compiled
@@ -630,8 +635,10 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   no IRQ is signalled while IRQs are unmasked; any of those, and an SCTLR write that switches the interpreter copy,
   still end the chunk. An ISB also exits while the vCPU's table is behind the cache (`Jit::behind`: another vCPU's
   IC or a flush dropped blocks its links, jump cache and transfer cache may still reach), so the dispatcher catches
-  up and the code after it is the new code (tests/baremetal/isb.c); the test is two relaxed loads, and the exit
-  comes once per invalidation, not per ISB. In the desktop guest (2026-10-22, `bench/imgdecode/README.md`) a vDSO `clock_gettime` went
+  up and the code after it is the new code (tests/baremetal/isb.c); the test is two relaxed loads and a flag, and the
+  exit comes once per invalidation, not per ISB. A tier-up's catch-up inside JIT code (`jit_hot`) leaves the table
+  behind (the flag): the transfer cache and the callers' continuations in host frames still have the old code
+  until the dispatcher's catch-up. In the desktop guest (2026-10-22, `bench/imgdecode/README.md`) a vDSO `clock_gettime` went
   from 660 to ~250 ns (13.5 natively) and `isb; mrs cntvct_el0` from 613 to ~200 ns; Firefox showing images reads
   the counter ~12K times a second and takes ~37K such resyncs.
 - **Counter reads compiled inline** (parallel SMP in realtime mode, `emit::counter`): a block with an `MRS` of

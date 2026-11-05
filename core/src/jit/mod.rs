@@ -1790,6 +1790,10 @@ pub struct Jit {
     ivals: Arc<AtomicU64>,
     ready: Arc<AtomicU32>,
     gauge: Arc<Gauge>,
+    /// A tier-up in JIT code caught the table up with drops or invalidations
+    /// that the code on the vCPU's stack hasn't seen: behind until the
+    /// dispatcher's [`Jit::sync`] ([`Jit::behind`]).
+    hot_synced: bool,
 }
 
 impl Jit {
@@ -1809,6 +1813,7 @@ impl Jit {
             ivals,
             ready,
             gauge,
+            hot_synced: false,
         }
     }
 
@@ -1836,6 +1841,7 @@ impl Jit {
             ivals: self.ivals.clone(),
             ready: self.ready.clone(),
             gauge: self.gauge.clone(),
+            hot_synced: false,
         }
     }
 
@@ -1963,14 +1969,18 @@ impl Jit {
 
     /// Whether the cache dropped blocks (a flush, another vCPU's IC) that this
     /// table hasn't caught up with: its links, jump cache and transfer cache may
-    /// still reach them until the dispatcher's [`Jit::fresh`].
+    /// still reach them until the dispatcher's [`Jit::fresh`]. A catch-up
+    /// inside JIT code ([`Jit::tier_up`]) leaves it behind too: the callers'
+    /// continuations in host frames and the transfer cache still have the old.
     pub fn behind(&self) -> bool {
-        self.drops.load(Ordering::Relaxed) != self.table.drops
+        self.hot_synced
+            || self.drops.load(Ordering::Relaxed) != self.table.drops
             || self.ivals.load(Ordering::Relaxed) != self.table.ivals
     }
 
     #[inline(never)]
     fn sync(&mut self, mem: &Mem) {
+        self.hot_synced = false;
         let mut c = lock(&self.cache, &mut self.table.stats);
         self.table.catch_up(&mut c, mem);
         drop(c);
@@ -2004,7 +2014,9 @@ impl Jit {
         // The hot words it sets are read only when this returns, by then
         // with their region installed.
         c.tier_up(&mut self.table, key, va, mem);
+        let seen = (self.table.drops, self.table.ivals);
         self.table.sync(&mut c, mem);
+        self.hot_synced |= seen != (self.table.drops, self.table.ivals);
         drop(c);
         self.install();
     }
@@ -2244,7 +2256,10 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             // raw pointer. `mem` isn't in `*v`.
             let (f, entry) = (idx & IDX_MASK, idx >> ENTRY_SHIFT << emit::ENTRY_BIT);
             let k = unsafe { block(f)(v, 0, left.min(i32::MAX as u64) as u32, entry) } as u64;
-            debug_assert!(
+            // Not at depth 0 (`emit::DEPTH`): a depth that reached a function
+            // with entry bits still set would count ~2^31 steps and end the
+            // chunk, so it stops here instead, named.
+            assert!(
                 k < emit::RETURNED as u64,
                 "block {key:#x} (index {idx:#x}, entry {entry:#x}) returned {k:#x}"
             );
@@ -3124,6 +3139,26 @@ mod tests {
             assert_eq!(j.miss(0x2000, 0x2000, &mem), Err(1));
         }
         assert_eq!(locks(&j), 5);
+    }
+
+    /// A tier-up in JIT code (`jit_hot`) catches the table up with another
+    /// table's IC, but what that code reaches doesn't: its links, its vCPU's
+    /// transfer cache, the callers' continuations in host frames. So the
+    /// table stays behind (an ISB exits, `Vm::fast`) until the dispatcher's
+    /// [`Jit::fresh`].
+    #[test]
+    fn a_tier_up_in_jit_code_leaves_the_table_behind() {
+        let mut ram = vec![0u128; 0x2000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x2000) };
+        let mut j = Jit::new(Cache::new(Config::DEFAULT));
+        let mut other = j.join();
+        other.invalidate(0x1000);
+        assert!(j.behind());
+        j.tier_up(0x1000, 0x1000, &mem);
+        assert!(j.behind(), "caught up inside JIT code");
+        j.fresh(&mem);
+        assert!(!j.behind());
     }
 
     /// A miss that finds the lock held by another table runs its block

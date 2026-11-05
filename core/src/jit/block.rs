@@ -226,7 +226,8 @@ impl Region {
         head.key & KEY_MMU != 0 && !follows(from) && !follows(head)
     }
 
-    /// The members a call in the region returns to, in its head's page: a
+    /// The members a call in the region returns to, where the head's page has
+    /// them (its PA page, at their PA offset from the head): a
     /// function's entries besides its head ([`emit::ENTRY_BIT`]), since a
     /// return reaches them from outside too (after anything that unwound the
     /// host calls: an exception, the chunk's end). None in a loop (its
@@ -235,13 +236,19 @@ impl Region {
         if self.looped() {
             return vec![];
         }
-        let head = self.blocks[0].key;
+        let head = &self.blocks[0];
+        // Where the head's page has it: entered by its own VA, the function
+        // then has the head's mapping too, which `checked` relies on.
+        let at_head = |b: &Block| {
+            (b.key ^ head.key) >> 12 == 0
+                && (b.key & !3).wrapping_sub(head.key & !3) == b.va.wrapping_sub(head.va)
+        };
         let mut v: Vec<usize> = (0..self.blocks.len())
             .filter_map(|i| {
                 let a = call_after(&self.blocks[i].words)?;
                 self.target(i, a).filter(|&j| j > i)
             })
-            .filter(|&j| (self.blocks[j].key ^ head) >> 12 == 0)
+            .filter(|&j| at_head(&self.blocks[j]))
             .collect();
         v.sort_unstable();
         v.dedup();
@@ -884,6 +891,12 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
     let mut inl = 0;
     c.local_get(0).i64_load(emit::PC).local_set(1);
     if let (Some(word), Some(hot)) = (r.tier, e.hot) {
+        // It runs before the entries' prologue below, as at the head.
+        assert!(
+            r.entries().is_empty(),
+            "a hot word on a region with entries ({:#x})",
+            r.blocks[0].key
+        );
         emit::tier_up(&mut c, word, r.blocks[0].key, e.bt, hot);
     }
     // The head's state: loaded once, before the loop.
@@ -1868,6 +1881,54 @@ mod tests {
         // no region.
         let (_r, m) = mem_with(0x100, &[0xd4000001]); // svc #0
         assert!(region(&m, 0x100, 0, &|_| true).blocks.is_empty());
+    }
+
+    /// An entry is found by its own VA, never the head's, so a member is one
+    /// only where the head's page has it (its VA offset from the head is its
+    /// PA offset): the edges `Region::checked` leaves unchecked because the
+    /// head's page has their member then hold from the entry too. A
+    /// continuation in the head's PA page reached through another VA page (a
+    /// page mapped at two VAs) isn't an entry.
+    #[test]
+    fn an_aliased_continuation_is_no_entry() {
+        // 0x1ff8: add x2, x2, #1; bl 0x3000 (not taken). The continuation's VA
+        // 0x2000 maps to PA 0x1000, in the head's page: add x2, x2, #2; ret.
+        let (_r, m) = mem_with(0x1ff8, &[0x91000442, 0x94000401]);
+        m.write(0x1000, 4, 0x91000842).unwrap();
+        m.write(0x1004, 4, 0xd65f03c0).unwrap();
+        let alias = |va: u64, k: Option<u64>| match va {
+            0x3000 => None,
+            0x2000 => Some(0x1000 | KEY_MMU | KEY_EL1),
+            _ => k,
+        };
+        let head = 0x1ff8 | KEY_MMU | KEY_EL1;
+        let r = forward(&m, head, 0x1ff8, &alias);
+        let keys: Vec<u64> = r.blocks.iter().map(|b| b.key & !3).collect();
+        assert_eq!(keys, [0x1ff8, 0x1000]);
+        assert_eq!(r.entries(), [] as [usize; 0]);
+    }
+
+    /// A hot word's check runs before the entries' prologue (`emit::tier_up`
+    /// passes the depth on with the entry bits, and the PC as the head's), so
+    /// only a region without entries may have one: a loop head compiled
+    /// alone. Anything else is refused at emission.
+    #[test]
+    #[should_panic(expected = "a hot word on a region with entries")]
+    fn a_region_with_entries_takes_no_hot_word() {
+        let words = [0x91000442, 0x94000040, 0x91000842, 0xd65f03c0];
+        let (_r, m) = mem_with(0x100, &words);
+        let mut r = forward(&m, 0x100, 0x100, &|_, k| k.filter(|&k| k != 0x204));
+        assert_eq!(r.entries(), [1]);
+        r.tier = Some(1);
+        module(
+            &[r],
+            &test_mem(),
+            |k| (k == 0x204).then_some((9, 1)),
+            &Config::DEFAULT,
+            true,
+            crate::cpu::FEATURES,
+            None,
+        );
     }
 
     #[test]

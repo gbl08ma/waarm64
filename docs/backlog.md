@@ -124,18 +124,6 @@ the steps, so an interpreted step costs ~3.5× a compiled one. The loads' new co
   target ([jit.md](jit.md) "Compile policy", calls and returns). It crashed the litmus guest's kernel at EL1 in
   about 1 of 40 boots on 4 vCPUs, killing the process it ran for. If no session loses Firefox in the next ~20, drop
   the item.
-- **The host-calls review's open findings** (2026-11-05, a static review of `f0e8c112`; its first finding was the
-  fix above). Each is unconfirmed, and its fix starts with a failing test:
-  - *A caller's continuation after an ISB*: `jit_hot`'s tier-up catches the table up (`Table::sync`) with host
-    frames on the stack, so a later ISB completes in place, and a returned call still runs on in its caller's old
-    code without a lookup, even when another vCPU's IC dropped it. A narrow stale-code window.
-  - *An entry assumes its head's mapping*: `Region::checked` skips the check for members where the head's page
-    has them, because whatever entered the region found the head by its VA. A function entered at an entry never
-    checked the head's mapping. This matters when the same PA is mapped at two VAs.
-  - *Latent*: `emit::tier_up` runs before the entries prologue (the entry bits would go to the redirect, and the
-    member's PC to `jit_hot` as the head's). Only single-block loop heads tier up, and they have no entries.
-  - *Defensive*: `jit::steps` accepts a result with `RETURNED` at depth 0 in release builds (only a
-    `debug_assert`). A release check, or masking it, would surface a depth that reached 0 with entry bits set.
 - **Which Blink object a vCPU thread's `new WebAssembly.Module` allocates in Oilpan** (`CppGC.SweepOnAllocation`
   inside `wasm.SyncCompile`; `bench/boot/REPORT.md` "M8: V8's GC on the vCPU threads"): left open when the vCPU
   workers began returning to their event loop. The wasm code GC that item also named no longer stops the vCPUs
