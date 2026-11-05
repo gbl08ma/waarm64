@@ -60,9 +60,12 @@ pub const TAKEN: u32 = 125;
 /// the dispatcher). A guest call (BL, BLR) below [`MAX_DEPTH`] is a wasm
 /// `call` with the depth + 1, and a `ret` at a depth above 0 a wasm `return`
 /// with [`RETURNED`] set in the result, so the host's own return predicts it
-/// and the caller's continuation stays in its function ([`call`]). Local 118
-/// as emitted ([`Func::locals`] makes it parameter 3).
+/// and the caller's continuation stays in its function ([`call`]). Local 128
+/// as emitted ([`Func::locals`] makes it parameter 3), past the 0..=127 the
+/// other locals take: at 118 it was FPCR.FZ's ([`FZOK`]), which an FP guard
+/// overwrote, and a `ret` at depth 0 then returned as a host call's.
 pub const DEPTH: u32 = 128;
+const _: () = assert!(DEPTH >= 128, "the other locals take 0..=127");
 /// A function's result with this bit: it ended on a `ret` at a depth above 0
 /// (the PC in the `Cpu` is the return's target); without it, it stopped (an
 /// exit, the budget, a block not compiled) and every caller returns too.

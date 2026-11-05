@@ -1363,12 +1363,13 @@ impl Cache {
                 if heads.contains(&m) {
                     continue;
                 }
-                let words = &r.blocks.iter().find(|b| b.key == m).expect("a member").words;
                 let i = self.info(m, || mlen);
                 let at = (idx + k as u32) | e << ENTRY_SHIFT;
                 (i.idx, i.len, i.word, i.queued) = (at, mlen as u8, 0, false);
-                if self.cfg.check {
-                    self.spans.insert(m, (block::hash(words), vec![(m & !3, mlen)]));
+                // Entered at m, the function runs the members after it too:
+                // the checker hashes the whole region, as at its head.
+                if let Some(s) = self.cfg.check.then(|| self.spans.get(&key).cloned()).flatten() {
+                    self.spans.insert(m, s);
                 }
                 self.linkers.entry(key).or_default().push(m);
             }

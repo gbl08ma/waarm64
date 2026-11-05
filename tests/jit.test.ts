@@ -421,6 +421,36 @@ function calls(threshold: number, batch: number, check: number) {
   return { done, x3: x[3], x4: x[4], x6: x[6], x7: x[7], sp: x[31], dispatches: st[5], jitSteps: st[4] };
 }
 
+// The stale-code checker with host calls (docs/jit.md "Calls"), the MMU on so that a callee in another page is
+// called, not taken: H at 0x402100 calls f in the next page down; the block after the call (m) and its successor (k)
+// are H's members, m an entry.
+//   0x402100 H: bl f    0x402104 m: add x1, x1, #1; b k    0x40210c k: add x2, x2, #1; brk
+//   0x401100 f: str w9, [x10]; ret
+// An entry at m runs k too, so its check covers k: k rewritten without an IC (from outside), a run that starts
+// at m must fail. A callee that rewrites m without an IC and returns: the caller's continuation is checked too.
+const STALE_H = [0x97fffc00, 0x91000421, 0x14000002, 0xd4200000, 0x91000442, 0xd4200000];
+function staleCalls() {
+  const g = twoPages([0, 1, 64, 1, 0], 0n);
+  g.code(0x6100, STALE_H);
+  g.code(0x5100, [0xb9000149, 0xd65f03c0]); // str w9, [x10]; ret
+  [g.x[9], g.x[10]] = [0x91000421n, 0x402104n]; // m's own word: no change
+  assert.equal(g.go(100n, 0x402100n), 6n); // bl, str, ret, add, b, add
+  assert.deepEqual([g.x[1], g.x[2]], [1n, 1n]);
+  return g;
+}
+
+test('with host calls, an entry at a member checks the members it runs', () => {
+  const g = staleCalls();
+  g.code(0x610c, [0x91000842]); // k: add x2, x2, #2, without an IC
+  assert.throws(() => g.go(100n, 0x402104n), WebAssembly.RuntimeError);
+});
+
+test("with host calls, a callee's return into its caller is checked", () => {
+  const g = staleCalls();
+  g.x[9] = 0x91000821n; // f rewrites m to add x1, x1, #2, without an IC
+  assert.throws(() => g.go(100n, 0x402100n), WebAssembly.RuntimeError);
+});
+
 test('guest calls are host calls: leaf, deep recursion and a return elsewhere', () => {
   const { dispatches: _d, jitSteps: _j, ...want } = calls(0xffff_ffff, 1, 0);
   assert.deepEqual([want.x3, want.x4, want.x6, want.x7, want.sp], [300n, 30_000n, 300n, 0n, 0xf000n]);

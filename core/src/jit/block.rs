@@ -1103,7 +1103,15 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
         let mut cont = |c: &mut emit::Func| {
             let a = after.expect("a call");
             match r.target(i, a).filter(|&j| j > i) {
-                Some(j) => edge(c, j, 2, true),
+                Some(j) => {
+                    // The callee may have rewritten what follows (the
+                    // checker's case): the region's code, checked as at an
+                    // entry, before the members run on.
+                    if let Some(chk) = e.checker {
+                        c.local_get(0).i64_const(r.blocks[0].key as i64).call(chk);
+                    }
+                    edge(c, j, 2, true)
+                }
                 None => {
                     c.if_();
                     chain(e, c, b, a, Xfer::Tail);
