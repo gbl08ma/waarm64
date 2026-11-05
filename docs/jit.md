@@ -25,9 +25,10 @@ the interpreter's own code.
   wasm exception handling. Exits mid-block (MMIO via `vm::Io` after a helper's `Fault(Bus)`,
   timer registers, WFI, HVC, TX full, `DEVICE`) need nothing special. A counter read's exit costs ~180 ns, under 1%
   of a busy vCPU in every workload counted, so CNTVCT stays an exit (bench/boot/REPORT.md "counter reads, inline or not").
-- **Functions:** `f(vcpu, acc, left) -> acc + retired`, where `vcpu` points at the `Vcpu` (the
+- **Functions:** `f(vcpu, acc, left, depth) -> acc + retired`, where `vcpu` points at the `Vcpu` (the
   `Cpu` at 0, the crypto constants, `State`, the TLB's scalars, then its arrays and the transfer
-  cache), `left` is the step budget. Whatever JIT code loads at a fixed offset sits within the
+  cache), `left` is the step budget, `depth` the host calls under it with an entry number above (below,
+  "Calls"). Whatever JIT code loads at a fixed offset sits within the
   first 0x800 bytes, where V8 folds the offset into the load (past ~32 KiB it builds it with a
   `mov`+`movk` every time): the TLB arrays are interleaved (below, "Loads and stores"), and the
   transfer cache (at 0x80000 plus a small offset) is reached by ORing 0x80000 into its index.
@@ -135,7 +136,7 @@ the interpreter's own code.
       what the call reaches is predicted to return after that call: the block there is taken
       too, and the `ret` is an edge to it when X30 holds that address, an indirect branch
       otherwise (`Region::returns`). Only for callees compiled in the same batch: one already
-      compiled keeps its own function.
+      compiled keeps its own function, and is called as a host call ("Calls" below).
     - Alpine's boot: 47,200 functions of 49,400 blocks became 26,000 of 56,000, in 29.6 MB of
       wasm instead of 23.6. JIT-stress compiles a block at a time, so it makes none; JIT-check
       and the tests' forced mode take any block in reach in the head's page (any page with the
@@ -275,6 +276,42 @@ the interpreter's own code.
   ERET strip it themselves (`tests/jit.test.ts` "a branch through a tagged pointer").
 - Dropping a block drops the blocks chained to it, transitively (the cache records who chains to
   whom).
+
+## Calls
+
+A guest call whose callee isn't taken into the region (`BL`, `BLR`) is a **wasm `call`**, and the callee's `ret` a
+**wasm `return`**, so the host's own return predicts the guest's (`block::call`, `emit::transfer`). In Firefox's
+pages session that's +10% busy MIPS on the Mac host and +11% in the dev VM, every page faster, for ~4% more wasm and
+no more memory (`bench/boot/REPORT.md` "Guest calls as host calls, again"); the returns were 49% of the indirect
+entries, whose first-instruction stall was 22% of a busy vCPU's time.
+- **The depth:** every function takes a fourth parameter, how many host calls deep it runs (`emit::DEPTH`, 0 from
+  the dispatcher). A call below `MAX_DEPTH` (**64**) passes the depth + 1; at the limit the call is a tail call as
+  before, so a guest's deep recursion doesn't grow the host's stack past 64 frames. A `ret` at a depth above 0
+  returns the retired count with `RETURNED` (bit 31) set and the target in the `Cpu`'s PC (`emit::ret_up`); at
+  depth 0 it's an indirect transfer as before.
+- **After the call** (`emit::returned`): a result without `RETURNED` means the callee stopped (an exit, the budget,
+  a block not compiled), and every caller returns it in turn, unwinding to the dispatcher. A returned one moves
+  `acc`/`left` as if the callee's steps were the caller's, and if the PC is the call's continuation (the instruction
+  after the BL/BLR) the region runs on there; if it isn't (a longjmp, a coroutine switch), the PC's block is found
+  through the transfer cache's miss function (with the MMU off, the block returns).
+- **Continuations are entries:** the block after a call is a member of the caller's region and an **entry** of its
+  function (`Region::entries`; none in a loop region, whose members sit inside the `loop`), because a return also
+  reaches it from outside, at depth 0 after anything that unwound the host frames. A block's word in the jump and
+  transfer caches holds its function's table index in the low 24 bits (`IDX_MASK`, asserted) and its entry number
+  above (`ENTRY_SHIFT`); a transfer passes the entry number above `ENTRY_BIT` (16) of the depth parameter, and the
+  prologue clears it and branches to that member. Without the entry, a continuation ran interpreted until compiled
+  again as a head (54% more dispatches in Firefox).
+- **The stale-code checker** covers both new ways in: an entry at a member hashes the whole region (the members
+  after it run too), and a host return into its caller is checked as an entry before the members run on (the
+  callee may have rewritten them without an IC).
+- **Locals:** the depth is local 128 as emitted (the encoder's placeholder indices go up to 255 and compact under
+  128); a region that uses more than 127 locals besides the four parameters writes every index as two bytes
+  (padded LEB128).
+- **The host stack:** a dedicated worker's V8 stack leaves ~425 KB under the dispatcher in Chromium 155 (arm64). A
+  host-call frame took ~270 B under Liftoff and about half under TurboFan for a block using all 32 V registers
+  (~17 KB at depth 64, ~4%); a function with every local spilled would be ~1.6 KB, ~100 KB at 64, a quarter. A
+  tier-up compiled at that depth added nothing measurable (`bench/boot/REPORT.md` "The host stack that host calls
+  take").
 
 ## Sharing
 
@@ -1166,14 +1203,6 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   Forming the regions when the batch is compiled needs no prologue, no second compile and no
   redirect, and was faster everywhere (`bench/boot/REPORT.md` "M8: forward regions"). Tried with
   them and flat within noise: 8 or 32 blocks a region instead of 16.
-- **Guest calls as host calls** (M8, `bench/boot/REPORT.md` "M8: guest calls as host calls"): a `BL`/`BLR` as a
-  wasm `call` (a depth parameter, at most 64 deep) and a `ret` as a wasm `return`, so the host predicts guest
-  returns. The continuation must be in the caller's function (as its own function, the caller's jump to it stalled
-  as the `ret` had) and an entry of it (every exit unwinds the host frames, and returns then come through the
-  transfer cache; a member without an entry ran interpreted until compiled again: 54% more dispatches in Firefox).
-  Built that way it was even on the boots and the userspace benchmark (churn −11%), but in Firefox the returns'
-  entry stalls only moved into the callers' bodies (guest code 61.3% → 59.6% of samples: the stall is fetching cold
-  code), while 23% more wasm cost a third flush. The patch is in `bench/boot/results/m8-calls/`.
 - **Copies of compiled callees in their callers' regions** (M8, with calls followed): a callee
   that is already compiled (the usual case: a shared function is hot long before a given caller)
   copied into the caller's region so the call and its predicted return stay inside. Limited to

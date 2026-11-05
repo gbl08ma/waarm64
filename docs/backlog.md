@@ -88,11 +88,11 @@ the steps, so an interpreted step costs ~3.5× a compiled one. The loads' new co
   calls don't stall). Warm members took the jump-cache tails into warm code away (+18% busy MIPS). Re-profiled
   2026-11-04 (`bench/boot/REPORT.md` "Where a busy vCPU's time goes in Firefox, again"): entries 22.0% of the samples (27-29% while pages scroll), 80% of them after a
   `return_call_indirect`, 15% from the dispatcher; the signature check 3.0%. What remains:
-  - **Returns as host returns: in progress again** (2026-11-05, `bench/boot/REPORT.md` "Guest calls as host calls,
-    again", branch `wip/host-calls`, XF-HANDOVER.md): ported, +10% busy MIPS on the Mac host and +11% in the VM, but
-    one VM session lost Firefox. October's verdict (2026-10-16, "M8: guest calls as host calls"): returns' entry stalls fell from 42.5% of the kernel's to 17.5%, but the time reappeared at the
-    continuation's code (guest code 61.3% → 59.6% of samples) and the code grew 12-32%, a third flush in Firefox.
-    The stall is mostly fetching cold code, not predicting the branch.
+  - **Returns as host returns: done** (2026-11-05, docs/jit.md "Calls"): +10% busy MIPS on the Mac host, +11% in
+    the VM. Open: **one VM session lost Firefox's process** with the first core of the port (1 of 10 sessions, none
+    of the later 9 nor the Mac's 2; the guest's kernel and sway ran on); `bench/gpu/firefox-load.ts` logs Firefox's
+    output, its processes and the kernel's messages when a page never gets ready (`not ready:`): if it recurs, read
+    that, then a core with `MAX_DEPTH` 0 (the entries without host calls) narrows it.
   - **Tails into code that was cold when its predecessor was compiled: re-emitting tried, not kept** (2026-11-05,
     `bench/boot/REPORT.md` "Relinking a region once its successors are compiled"): those tails and the by-VA links
     are 22% of the indirect entries (returns 49%, BLR 11%); compiling ~10,000 hot regions again with direct links

@@ -3499,3 +3499,30 @@ under 2^24. Not merged: XF-HANDOVER.md has the order.
 
 +11% with every round apart, no more memory, every session's Firefox up: 1 lost of 10 host-calls sessions in the VM,
 none of the last 7.
+
+## The host stack that host calls take, and merged (2026-11-05)
+
+The review's finding 4: `MAX_DEPTH` 64 host-call frames sit on the vCPU worker's V8 stack, plus whatever a helper
+does at the deepest (`jit_hot` can emit and install a tier-up there). Measured in Chromium 155.0.8059.84 (the dev VM,
+arm64) with `results/m9-hostcalls/stack/` (`run.ts [js-flags]`): in a dedicated worker, a guest (`guest.s`) recurses
+100 deep through a block that ends in the `BL` and uses all 32 V registers and the FMA's locals, and a JS function
+pads the stack under the run. Each number is the deepest padding (frames of ~80 B: `calib.ts` in Node, 12,717 at
+`--stack-size=1000` and 25,517 at 2000) under which the run still fits; a fresh machine each probe:
+
+| | default tiering | `--liftoff-only` | `--no-liftoff` |
+|---|---|---|---|
+| an empty call | 5,322 | 5,322 | 5,322 |
+| the dispatcher alone (`brk`) | 5,300 | 5,300 | 5,300 |
+| recursion 16 / 32 / 64 / 100 deep | 5,249 / 5,196 / 5,215 / 5,214 | 5,247 / 5,193 / 5,087 / 5,083 | 5,279 / 5,257 / 5,215 / 5,213 |
+| batch 4, warm / with the tier-up in the run | 5,084 / 5,081 | 5,081 / 5,080 | 5,170 / 5,170 |
+
+So a worker leaves ~425 KB under the dispatcher. Under Liftoff a host-call frame of this block costs ~3.4 padding
+frames (~270 B), linear to 64 and flat past it (tail calls): ~17 KB, 4% of the headroom; TurboFan about half. A
+function using every local (38 v128, ~90 others, all spilled in Liftoff) would be ~1.6 KB a frame, ~100 KB at 64, a
+quarter of it. The tier-up emitted and installed during the run (the stats: 0 tier-ups after the warm-up, 1 after)
+added nothing measurable. `MAX_DEPTH` stays 64. A stack overflow would be a `RangeError` in the vCPU worker (the
+machine stops), not a guest process lost, so it doesn't explain the VM session that lost Firefox.
+
+**Merged** into main (`f0e8c112`) on the user's call after they ran the branch themselves. The lost Firefox (1 of 10
+VM sessions, none since) stays in docs/backlog.md with what to read if it recurs.
+
