@@ -193,7 +193,8 @@ struct wgsl_sampler_key {
    uint16_t format;                /* WGSL_IMAGE_KEY: the bound view's enum pipe_format */
    uint8_t rgb9e5;                 /* an E5B9G9R9 view of a 32-bit integer image's own texture: fetched as words and
                                     * decoded, the filter the shader's (VK4 T23: no copy into a texture of the format) */
-   uint8_t format_pad;             /* zero (keys are compared whole) */
+   uint8_t reduction;              /* VkSamplerReductionMode: 0 the weighted average, 1 the minimum, 2 the maximum of the
+                                    * footprint's texels (VK4 T25: from fetches) */
    float bias, min_lod, max_lod;
    uint32_t border[4];             /* the border as the shader reads it: float bits, or integers on an integer texture */
    uint32_t size[3];               /* padded: the view's first level, as Vulkan has it */

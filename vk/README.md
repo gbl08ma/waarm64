@@ -545,6 +545,18 @@ stencil side's copy as a buffer copy's above (`colorDepthStencil`, VK4 T24). A c
     compares LESS_OR_EQUAL rather than NEVER, so the stage's own module, whose bindings make the program's layout, keeps
     its texture (a NEVER one folded it away: the layout lacked the group its variants bind). An integer gather with
     one takes them too. The fetches' cost, against WGSL's own sample, is unmeasured: no program replayed here has one.
+  - **Min/max reductions** (VK4 T25, `VK_EXT_sampler_filter_minmax`, core 1.2's `samplerFilterMinmax`): WebGPU's
+    samplers only average, so a sampler with a MIN or MAX reduction and a linear filter (a nearest one reads its texel
+    whatever the reduction: no key) gives its pairs a key (`reduction`), and every sample through it comes from the
+    fetches below, which take the component-wise min or max of the footprint's texels with non-zero weights (a texel of
+    no weight is the type's extreme, finite) within a level, and of the two levels a linear mipmap reads where the second
+    has any (`reduce`). Integer textures too, with integer min and max: Vulkan's linear filter of one is a reduction's
+    only, and the format's `FILTER_MINMAX` bit doesn't ask for `FILTER_LINEAR`. A cube's are fetched from its faces (the
+    key's `faces`; every sampled cube view has the 2D array twin for it); a gather is WebGPU's (a reduction filters, a
+    gather doesn't). Every format sampled has `SAMPLED_IMAGE_FILTER_MINMAX`, depth (`filterMinmaxSingleComponentFormats`)
+    and integers among them; `filterMinmaxImageComponentMapping` is the browser's `texture-component-swizzle`, which the
+    fetches see. The cost, against WebGPU's own linear-mipmapped sample (8 fetches and the LOD's arithmetic for one):
+    3.5× on the M4, 3.2× on SwiftShader, on that pair alone (bench/vulkan/REPORT.md "VK4 T25").
   - Key LODs are clamped to ±1,000 at the sampler: `VK_LOD_CLAMP_NONE` and programs' infinities are indeterminate in
     WGSL's `min` and `max` (a `maxLod` of `inf` read the last level).
   - **Compressed images that aren't whole blocks** (VK4 T18): WebGPU wants a compressed texture's first level in whole

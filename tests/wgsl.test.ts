@@ -1147,6 +1147,35 @@ test('an image that is a corner of its texture is wrapped and filtered at its ow
   }
 });
 
+test('a min or max reduction takes the footprint\'s texels with non-zero weights, in a level and across two (VK4 T25)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    // 4×4, red 60 a column and 10 a row; level 1 all 200.
+    const data = Array.from({ length: 16 }, (_, i) => [(i % 4) * 60 + (i >> 2) * 10, 0, 0, 255]).flat();
+    const reds = async (sampler: Device['sampler'], webgpu?: Parameters<typeof runSampled>[2]) => {
+      const r = glslStage(translate, tmp, 'tests/venus/t25/minmax.comp', { sampler });
+      assert.equal(r.rc, 0, r.text);
+      const res = await runSampled(r.text, [{ binding: 0, format: 'rgba8unorm', w: 4, h: 4, data, mips: [Array(4).fill([200, 0, 0, 255]).flat()] }], webgpu, { binding: 2, size: 8 * 16 });
+      if (!res) return undefined;
+      assert.deepEqual(res.errors, []);
+      return [...res.out].filter((_, i) => i % 4 === 0).slice(0, 6).map((v) => Math.round(v * 255));
+    };
+    const linear = { flags: 16 | 1 | 2 | 4, levels: 2 };
+    // x·4 - 0.5: 0 (texel 0 alone: its neighbour's weight is 0), 0.5, 1.5, 3.1 (the edge's twice); the fifth at LOD 0.5
+    // with level 1; the sixth between rows 0 and 1 too.
+    const average = await reds(key(ADDRESS.edge, linear), { binding: 1, filter: 'linear' });
+    if (!average) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual([0, 1, 2, 3, 5].map((i) => average[i]), [0, 30, 90, 180, 35], 'the weighted average (WebGPU\'s)');
+    assert.deepEqual(await reds(key(ADDRESS.edge, { ...linear, flags: linear.flags | 256 })), [0, 0, 60, 180, 60, 0], 'min');
+    assert.deepEqual(await reds(key(ADDRESS.edge, { ...linear, flags: linear.flags | 512 })), [0, 60, 120, 180, 200, 70], 'max');
+    // Nearest: the texel, whatever the reduction.
+    assert.deepEqual(await reds(key(ADDRESS.edge, { levels: 2, flags: 16 | 512 })), [0, 60, 120, 180, 120, 70]);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('a padded cube filters across its faces (VK4 T18)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
   try {

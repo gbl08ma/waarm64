@@ -771,6 +771,58 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T25: min/max reductions — 1,908 cases join the list; a reduced sample ~3.5× WebGPU's own
+
+2026-11-05, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`, `VIRGL_GPU=virgl,vulkan`). JSON in `results/vk4/t25/`.
+
+- **What the device does**: `VK_EXT_sampler_filter_minmax` and `samplerFilterMinmax`, through T8's sampler keys and
+  T18's filter from fetches (vk/README.md "Samplers in the shader"): a sampler with a MIN or MAX reduction and a linear
+  filter keys its pairs (`wgsl_sampler_key.reduction`), and its samples come from fetches whose filter takes the
+  component-wise min or max of the footprint's texels with non-zero weights, in a level and across the two a linear
+  mipmap reads. Integer textures too (integer min and max: Vulkan lets a reduction filter one linearly); cubes from their
+  faces (every sampled cube view now has the 2D array twin). Every sampled format has the `FILTER_MINMAX` bit;
+  `filterMinmaxSingleComponentFormats`, and `filterMinmaxImageComponentMapping` where the browser has
+  `texture-component-swizzle`. Test: `tests/wgsl.test.ts` "a min or max reduction…" (min, max, a texel of no weight
+  left out, two levels, nearest; failing with the reduction planted out of `fetched_filter`).
+- **The census's cases** (`census-cases.txt`: the 504 of its sample whose names or reasons are min/max's; 396
+  NotSupported for min/max reasons before, all 504 not passing):
+
+| host | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| SwiftShader (17 s as one list) | 504 | 182 | 0 | 322 |
+| M4 | 504 | 192 | 0 | 312 |
+
+  The first SwiftShader run failed 26 cubes: their variants' layouts bound the faces, which only integer and depth
+  cube views had. The not supported: 200 `filterMinmaxImageComponentMapping` (195 of the census's count) are dEQP's own
+  refusal (`checkSupportImageSamplingInstance` throws for any reduction whose R mapping isn't identity, whatever the
+  property), formats WebGPU lacks (76–88: 3-channel, scaled, A8, the 4-bit packed orders, R8_SRGB, D16S8; T30's and
+  T31's), linear filtering's bit on depth formats (5) and, on the M4, R16_UNORM and SNORM (2), 3D compressed and depth
+  (9) and 3D ASTC (20, T35's).
+- **Every 10th of the list's reduction cases** (`tenth-cases.txt`: 3,057 of the 50,940 in `pipeline.monolithic.sampler`,
+  without the B and ONE mappings dEQP always refuses):
+
+| host | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| SwiftShader (78 s) | 3,057 | 1,797 | 0 | 1,260 |
+| M4 (72 s) | 3,057 | 1,864 | 0 | 1,193 |
+
+  The not supported are formats again (sampling 879–980, linear filtering 72–106, an image format 5, 3D compressed or
+  depth 96, 3D ASTC 107).
+  **The 1,908 cases SwiftShader passes of both runs (the M4 passes them all) join `tests/deqp/vk.txt`**, in mustpass
+  order at the end.
+- **The cost** (`cost/`): `cost/sample.comp`, 16 linear-mipmapped samples (LOD 0.4, two levels) an invocation over a
+  512×512 dispatch of a 512² RGBA8 texture, translated once against a key that averages (WebGPU's `textureSampleLevel`,
+  2.4 KB of WGSL) and once with MAX (8 `textureLoad`s and the LOD's arithmetic, 10.4 KB), timed in headless Chromium as
+  alternated rounds of 10 dispatches to `onSubmittedWorkDone` (an ad-hoc page; median of 7 rounds, of 5 on SwiftShader):
+
+| host | average (ms a dispatch) | max | × |
+|---|---|---|---|
+| M4 | 0.140 (0.13–0.22) | 0.490 (0.45–0.74) | 3.5 |
+| SwiftShader | 10.87 (10.20–11.10) | 34.90 (34.23–35.57) | 3.2 |
+
+  Only a pair whose sampler reduces pays; no replayed program has one (vkd3d's 12_0 asks for the feature).
+
 ## VK4 T24: maintenance5, 6 and 8 — 360 cases join the list; maintenance8's 2,246 pass through Mesa 26.3's Venus
 
 2026-11-05, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,

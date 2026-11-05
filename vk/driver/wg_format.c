@@ -330,6 +330,10 @@ wg_format_features(VkFormat format, VkFormatFeatureFlags *linear, VkFormatFeatur
          o |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_BLIT_SRC_BIT;
       if (wg_format_filterable(f))
          o |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+      /* A min/max reduction is the shader's filter from fetches (VK4 T25), so any format sampled has it, depth
+       * (filterMinmaxSingleComponentFormats) and integers too. */
+      if (f->flags & WG_FMT_SAMPLE)
+         o |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_MINMAX_BIT;
       if (f->flags & WG_FMT_RENDER)
          o |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
       if (f->flags & WG_FMT_BLEND)

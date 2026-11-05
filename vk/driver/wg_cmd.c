@@ -1265,9 +1265,14 @@ pair_key(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, 
    key->texture = pair[0];
    key->sampler = pair[1];
    key->levels = MIN2(view->vk.level_count, 255);
-   /* A depth view filters what a comparison gives. */
-   if ((!wg_format_filterable(view->fmt) && !sampler->compare) || integer)
+   /* A depth view filters what a comparison gives; a reduction is the shader's filter, from fetches, which any format
+    * takes, integers too (VK4 T25: Vulkan's linear filter of one is min/max only). An integer texture's is otherwise
+    * nearest. */
+   if ((!wg_format_filterable(view->fmt) && !sampler->compare && !k->reduction) || (integer && !k->reduction))
       key->mag_linear = key->min_linear = key->mip_linear = 0;
+   /* WGSL can't fetch from a cube: a reduced one is sampled from its faces. */
+   key->faces |= key->reduction && (view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE ||
+                                    view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY);
    sampler_border(view, sampler, integer, key->border);
    if (padded)
       padded_key_fill(view, key);

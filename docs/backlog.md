@@ -747,7 +747,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   adapter only), geometry and tessellation shaders, `multiDrawIndirect`, `multiViewport`, `occlusionQueryPrecise`,
   pipeline statistics queries, cull distances, `shaderImageGatherExtended` (`shaderStorageImageWriteWithoutFormat`, whose
   absence kept 10 of vkd3d's UAV-clear pipelines from translating, is offered since GD G5: unchecked with vkd3d since),
-  vertex attribute divisors, sampler min/max reduction. vkd3d's own tests (tests/d3d12, built by
+  vertex attribute divisors, sampler min/max reduction (advertised since VK4 T25; unchecked with vkd3d since). vkd3d's own tests (tests/d3d12, built by
   `target/vkd3d/build-tests.sh`: `TESTS=` in vkd3d.ts): test_draw_instanced, test_draw_indexed_instanced and
   test_root_constants pass; test_vertex_id fails 39 of 89 (as at L7.5 after VK3 L7b captured indirect draws, so not those alone: VK3 L8's check; and a
   capture of a program of four bind groups, which a vertex stage reading draw parameters makes likelier, since they
@@ -765,7 +765,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Not advertised, by what dEQP-VK asks** (the census of 2026-11-05, bench/vulkan/REPORT.md "VK4: the census
     again": 75% of the sample not supported on either host, against 0.2% of the M4's supported cases failing; its
     reasons by `census.ts --reasons`; a queue family with compute and without graphics, 2,525 of them, is VK4 T22's): formats
-    (3,681 reasons name one), min/max filtering, multi-draw, depth and stencil resolve
+    (3,681 reasons name one), multi-draw, depth and stencil resolve
     modes, what reads its own attachment, writable storage in the vertex stage, mutable descriptors, 3D ASTC: each a
     task of VK4-KICKOFF.md's T23–T35. No task: protected memory, cooperative matrices, ray tracing, mesh shaders, tile
     images, fragment density, descriptor buffers, sparse (~1,600 of the sample) and pipeline statistics queries (188).
@@ -836,6 +836,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     tiler's cost, not its results: `wg_compute_based`, the review's C7); a browser without `texture-component-swizzle` ignores mappings, said once
     (a fallback needs `texelFetch` keyed too, and every Chromium backend has the feature); the variants' compile on a
     program's first draw with such a sampler is unmeasured (no replayed program meets one).
+  - **Min/max reductions' leftovers** (VK4 T25; vk/README.md "Samplers in the shader"): a reduced sample comes from
+    fetches, so it loses anisotropy and costs ~3.5× WebGPU's sample on the M4 (no replayed program has one; vkd3d's 12_0
+    asks for the feature); a gather of a cube a reduced sample binds as its faces is refused, as for other faced cubes;
+    depth formats have no `FILTER_LINEAR` (WebGPU filters depth only by comparing), so a linear reduction of one runs but
+    dEQP's checks for linear filtering keep 5 of the census's cases out on both hosts (the M4 2 more, its 16-bit normalized
+    formats unfilterable there; backing depth's means every linear depth sample
+    from fetches). The census's 195 `filterMinmaxImageComponentMapping` cases are dEQP's own refusal: it throws
+    NotSupported for any reduction whose R mapping isn't identity, whatever the property says.
   - **SwiftShader's fetch from a view with a base level** (VK4 T8): `textureLoad` at a view's level 0 reads the level
     after it (a 16×16 image's view from level 2 reads level 3's texels, zeros past its size; level 1 reads right), where
     sampling is right and the M4 is too, so

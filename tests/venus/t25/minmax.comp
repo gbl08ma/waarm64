@@ -1,0 +1,13 @@
+#version 450
+// VK4 T25: a sampler's min/max reduction (VK_EXT_sampler_filter_minmax): the footprint's texels with non-zero weights
+// taken by their minimum or maximum, within a level and across two (tests/wgsl.test.ts).
+layout(local_size_x = 8) in;
+layout(set = 0, binding = 0) uniform sampler2D img;
+layout(set = 0, binding = 1, std430) buffer Out { vec4 o[8]; };
+const float xs[6] = float[](0.125, 0.25, 0.5, 0.9, 0.5, 0.25);
+const float lods[6] = float[](0.0, 0.0, 0.0, 0.0, 0.5, 0.0);
+void main() {
+  uint i = gl_LocalInvocationIndex;
+  if (i < 6u)
+    o[i] = textureLod(img, vec2(xs[i], i == 5u ? 0.25 : 0.125), lods[i]);
+}

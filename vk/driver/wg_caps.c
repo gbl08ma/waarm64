@@ -143,6 +143,8 @@ wg_caps_extensions(struct vk_device_extension_table *e)
        * an indirect draw's copied from its arguments before its render pass (wg_cmd.c `prepasses`; VK3 L7.5, vkd3d). */
       .KHR_shader_draw_parameters = true,
       .KHR_sampler_mirror_clamp_to_edge = true,
+      /* Min/max reductions: the shader's filter from fetches (VK4 T25, wgsl_sampler.c `reduce`; vkd3d's 12_0). */
+      .EXT_sampler_filter_minmax = true,
       /* The shader's borders take any colour, through the view's mapping (wgsl_sampler.c, wg_cmd.c `sampler_border`). */
       .EXT_custom_border_color = true,
       .EXT_border_color_swizzle = true,
@@ -230,6 +232,7 @@ wg_caps_features(struct vk_features *f)
        * misses its bar), held by `?gpu=vkycbcr=off`. Chromium's own Vulkan device refuses a device without them (VK3
        * L7.1b). */
       .samplerMirrorClampToEdge = true,
+      .samplerFilterMinmax = true,
       .customBorderColors = true,
       .customBorderColorWithoutFormat = true,
       .borderColorSwizzle = true,
@@ -346,6 +349,10 @@ wg_caps_properties(struct vk_properties *p)
    p->maxSamplerLodBias = WGSL_MAX_LOD_BIAS; /* WebGPU's samplers have no bias: the shader's (wgsl_sampler.c), WGSL's within 16 */
    p->maxSamplerAnisotropy = 16;
    p->maxCustomBorderColorSamplers = 4000;
+   /* Every format sampled has the min/max bit (fetched, wg_format.c), and the view's mapping is WebGPU's, which the
+    * fetches see (VK4 T25). */
+   p->filterMinmaxSingleComponentFormats = true;
+   p->filterMinmaxImageComponentMapping = HAS(SWIZZLE);
    p->maxViewports = 1;
    p->maxViewportDimensions[0] = p->maxViewportDimensions[1] = L->max_texture_2d;
    p->viewportBoundsRange[0] = -2.0f * L->max_texture_2d;

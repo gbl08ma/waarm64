@@ -1697,7 +1697,8 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
                   layered ? view->vk.base_array_layer : 0, layered ? view->vk.layer_count : 1);
    view->view = wg_create_json(WG_KIND_VIEW, &j);
    /* The component mapping: WebGPU's swizzle, on a view of its own (it allows only sampling through one). Cube views of
-    * integer formats have a 2D array twin: WGSL can only fetch from those, and has no fetch from cubes (wgsl_sampler.c). */
+    * integer formats, and any sampled, have a 2D array twin: WGSL can only fetch from those, and has no fetch from cubes
+    * (wgsl_sampler.c). */
    static const char channels[] = "rgba";
    char swizzle[32] = "";
    const VkComponentSwizzle mapping[4] = { view->vk.swizzle.r, view->vk.swizzle.g, view->vk.swizzle.b, view->vk.swizzle.a };
@@ -1741,9 +1742,10 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
                      aspect, view->vk.base_mip_level, view->vk.level_count, view->vk.base_array_layer);
       view->flat = wg_create_json(WG_KIND_VIEW, &j);
    }
+   /* Also any cube sampled: a min/max reduction's samples are fetched from its faces (VK4 T25). */
    if ((view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE || view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) &&
        (vk_format_is_int(view->vk.view_format) || aspects == VK_IMAGE_ASPECT_STENCIL_BIT ||
-        aspects == VK_IMAGE_ASPECT_DEPTH_BIT)) {
+        aspects == VK_IMAGE_ASPECT_DEPTH_BIT || (view->vk.usage & VK_IMAGE_USAGE_SAMPLED_BIT))) {
       wg_json_printf(&j, "{\"texture\":%u,%s", tex, swizzle);
       if (!strcmp(aspect, "all"))
          wg_json_printf(&j, "\"format\":\"%s\",", view->fmt->name);
@@ -1987,6 +1989,13 @@ wg_CreateSampler(VkDevice _device, const VkSamplerCreateInfo *pCreateInfo, const
       sampler->emulated |= sampler->key.address[i] == WGSL_ADDRESS_BORDER ||
                            sampler->key.address[i] == WGSL_ADDRESS_MIRROR_ONCE;
    sampler->emulated |= c->unnormalizedCoordinates || c->mipLodBias != 0.0f;
+   /* A min/max reduction (VK_EXT_sampler_filter_minmax, VK4 T25): the shader's filter from fetches. A nearest one reads
+    * the texel whatever the reduction: WebGPU's. */
+   if (sampler->vk.reduction_mode == VK_SAMPLER_REDUCTION_MODE_MIN || sampler->vk.reduction_mode == VK_SAMPLER_REDUCTION_MODE_MAX)
+      sampler->key.reduction = sampler->key.mag_linear || sampler->key.min_linear || sampler->key.mip_linear
+                                  ? (sampler->vk.reduction_mode == VK_SAMPLER_REDUCTION_MODE_MIN ? 1 : 2)
+                                  : 0;
+   sampler->emulated |= sampler->key.reduction != 0;
    if (c->compareEnable)
       wg_json_printf(&j, ",\"compare\":\"%s\"", compare[c->compareOp & 7]);
    wg_json_printf(&j, "}");
