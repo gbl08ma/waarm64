@@ -1,0 +1,26 @@
+{
+ "bench/results/local/macpad-head-1/pages-all.timeline.json": {
+  "seconds": 262,
+  "mips": 339,
+  "busyMips": 304,
+  "busyShare": 0.28,
+  "stallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 0,
+  "stalledMsPerSecondPerVcpu": 0,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

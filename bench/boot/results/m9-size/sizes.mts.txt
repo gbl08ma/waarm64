@@ -1,0 +1,20 @@
+// Machine code per guest function in a jitdump: count, total and median size by tier.
+import { fstatSync, openSync, readSync, readdirSync } from 'node:fs';
+const dir = process.argv[2];
+const by = new Map<string, number[]>();
+for (const f of readdirSync(dir).filter((f) => f.startsWith('jit-') && f.endsWith('.dump'))) {
+  const fd = openSync(`${dir}/${f}`, 'r'); const len = fstatSync(fd).size; const W = 64 << 20; const buf = Buffer.alloc(W);
+  let base = 0, have = readSync(fd, buf, 0, W, 0), p = buf.readUInt32LE(8);
+  while (base + p + 16 <= len) {
+    if (p + 8192 > have && base + have < len) { base += p; have = readSync(fd, buf, 0, W, base); p = 0; }
+    const id = buf.readUInt32LE(p), total = buf.readUInt32LE(p + 4);
+    if (total === 0 || base + p + total > len) break;
+    if (id === 0) {
+      const size = Number(buf.readBigUInt64LE(p + 40)); const s = p + 56; const name = buf.toString('latin1', s, buf.indexOf(0, s));
+      const m = /_pa0x[0-9a-f]+-\d+-(\w+)$/.exec(name);
+      if (m) (by.get(m[1]) ?? by.set(m[1], []).get(m[1])!).push(size);
+    }
+    p += total;
+  }
+}
+for (const [t, a] of by) { a.sort((x, y) => x - y); const sum = a.reduce((x, y) => x + y, 0); console.log(t, 'n', a.length, 'MB', (sum / 1e6).toFixed(1), 'mean', Math.round(sum / a.length), 'median', a[a.length >> 1], 'p90', a[Math.floor(a.length * 0.9)]); }

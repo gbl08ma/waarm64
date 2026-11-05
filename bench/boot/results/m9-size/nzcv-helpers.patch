@@ -1,0 +1,333 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 8bac1b85..968c1ed2 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -473,6 +473,8 @@ struct Env<'a> {
+     phys: u64,
+     /// Each member's groups of accesses ([`emit::plan`]).
+     plans: Vec<Vec<emit::Role>>,
++    /// The module's NZCV helpers ([`emit::nzcv_helper`]).
++    nzcv: Option<[u32; emit::NZCV_HELPERS]>,
+ }
+ 
+ impl Env<'_> {
+@@ -603,6 +605,11 @@ pub fn module(
+         let h = &r.blocks[0];
+         funcs.insert(h.key, (first + k as u32, h.words.len() as u32));
+     }
++    // The NZCV helpers follow the regions (docs/jit.md "Emission").
++    let helpers = first + regions.len() as u32;
++    let nzcv = NZCV_CALLS.then(|| core::array::from_fn(|k| helpers + k as u32));
++    // Defined only if a region calls one.
++    let mut nzcv_used = false;
+ 
+     let mut out = Emitted {
+         bytes: vec![],
+@@ -662,6 +669,7 @@ pub fn module(
+             base: base as usize as u64,
+             phys,
+             plans: r.blocks.iter().map(|b| emit::plan(&b.words, &cx)).collect(),
++            nzcv,
+         };
+         // Twice: the first emission finds the registers to read plainly
+         // (`Func::plain`) and what each member's edges carry into it, which
+@@ -716,6 +724,7 @@ pub fn module(
+             assert!(!x.bad);
+         }
+         let (mut c, n) = (x.c, x.inl);
++        nzcv_used |= c.nzcv_used;
+         let name = format!("{:#x}_pa{:#x}", head.va, head.key & !3);
+         let locals = c.locals();
+         m.func(bt, &locals, &c.c, &name);
+@@ -737,10 +746,21 @@ pub fn module(
+         out.links.push(links);
+         out.counts += c.counts;
+     }
++    if nzcv_used {
++        m.internal();
++        for k in 0..emit::NZCV_HELPERS {
++            let (_, code, t) = emit::nzcv_helper(k);
++            let ty = m.ty(&[t, t], &[I32]);
++            m.func(ty, &[(1, t)], &code, &format!("nzcv{k}"));
++        }
++    }
+     out.bytes = m.finish();
+     out
+ }
+ 
++/// Failure chains call the module's NZCV helpers ([`emit::nzcv_helper`]).
++const NZCV_CALLS: bool = true;
++
+ /// The transfer cache's miss functions (`emit::xmiss`) for a JIT cache: one
+ /// module, `f0` for EL0 and `f1` for EL1 (MMU on), and the stale-code
+ /// checker with `check`. A table installs it once, so it gets hot and
+@@ -808,6 +828,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+     let head = r.blocks[0].va;
+     let mut c = emit::Func::default();
+     c.plain = plain;
++    c.nzcv = e.nzcv;
+     c.page = (head & 0xfff) as i64;
+     let mut into = vec![emit::Regs::default(); n];
+     let mut flags = vec![In::Unset; n];
+@@ -1892,6 +1913,90 @@ mod tests {
+         assert!(!has(&e.bytes, b"jit_hot") && !has(&e.bytes, &hot));
+     }
+ 
++    /// The function imports of a module (its import section's entries of kind 0).
++    fn func_imports(m: &[u8]) -> u32 {
++        let uleb = |p: &mut usize| {
++            let (mut v, mut sh) = (0u64, 0);
++            loop {
++                let b = m[*p];
++                *p += 1;
++                v |= ((b & 0x7f) as u64) << sh;
++                sh += 7;
++                if b & 0x80 == 0 {
++                    return v;
++                }
++            }
++        };
++        let mut p = 8;
++        while p < m.len() {
++            let (id, size) = (m[p], {
++                p += 1;
++                uleb(&mut p) as usize
++            });
++            if id != 2 {
++                p += size;
++                continue;
++            }
++            let mut funcs = 0;
++            for _ in 0..uleb(&mut p) {
++                for _ in 0..2 {
++                    let n = uleb(&mut p) as usize;
++                    p += n;
++                }
++                let kind = m[p];
++                p += 1;
++                match kind {
++                    0 => {
++                        uleb(&mut p);
++                        funcs += 1;
++                    }
++                    1 => {
++                        p += 1; // the reftype
++                        let flags = m[p];
++                        p += 1;
++                        uleb(&mut p);
++                        if flags & 1 != 0 {
++                            uleb(&mut p);
++                        }
++                    }
++                    2 => {
++                        let flags = m[p];
++                        p += 1;
++                        uleb(&mut p);
++                        if flags & 1 != 0 {
++                            uleb(&mut p);
++                        }
++                    }
++                    _ => p += 2, // a global: its type and mutability
++                }
++            }
++            return funcs;
++        }
++        0
++    }
++
++    #[test]
++    fn failure_chains_take_nzcv_from_the_module_helpers() {
++        // subs x0, x1, x2; ldr x3, [x4]; b.eq .+8 (MMU on): the load's failure
++        // chain stores the SUBS's NZCV by calling the 64-bit SUBS helper
++        // (`nzcv1`, the second function after the module's one region); the
++        // commit before the branch stays inline. The helpers aren't exported:
++        // one export, f0.
++        let b = Block {
++            key: 0x4000_0200 | KEY_MMU,
++            va: 0,
++            words: vec![0xeb020020, 0xf9400083, 0x54000040],
++        };
++        let e = build(b);
++        assert!(has(&e.bytes, b"nzcv1"));
++        let at = e.bytes.windows(3).position(|w| w == [2, b'f', b'0']).expect("export f0");
++        assert_eq!(e.bytes[at - 1], 1, "one export");
++        let mut call = vec![0x10];
++        crate::jit::wasm::uleb(&mut call, func_imports(&e.bytes) as u64 + 2);
++        let calls = e.bytes.windows(call.len()).filter(|w| *w == &call[..]).count();
++        assert_eq!(calls, 1, "the chain's end calls nzcv1");
++    }
++
+     #[test]
+     fn indirect_branches_look_up_the_jump_cache() {
+         // movz x1, #3; ret with a jump cache: the module imports the
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index bc67a405..eff5b32b 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -229,6 +229,10 @@ pub struct Func {
+     replay: bool,
+     sreads: u64,
+     swrites: u64,
++    /// The module's NZCV helpers ([`nzcv_helper`], by [`nzcv_index`]), which
++    /// the failure chains call instead of computing NZCV inline.
++    pub nzcv: Option<[u32; NZCV_HELPERS]>,
++    pub nzcv_used: bool,
+ }
+ 
+ /// Load and store failure exits that share their write-backs (docs/jit.md
+@@ -480,10 +484,20 @@ impl Func {
+     /// Stores lazy flags to the `Cpu` on a path that returns (a load/store's
+     /// failure path), leaving them lazy for the other one.
+     pub fn store_flags(&mut self) {
++        self.store_flags_in(false);
++    }
++
++    /// [`Func::store_flags`] on a cold path (a slow arm, a trap): through the
++    /// module's NZCV helper where there is one ([`Func::nzcv`]).
++    pub fn store_flags_cold(&mut self) {
++        self.store_flags_in(true);
++    }
++
++    fn store_flags_in(&mut self, cold: bool) {
+         self.touched.get_or_insert(true);
+         if let Flags::Lazy { kind, sf, .. } = self.flags {
+             self.c.local_get(VCPU);
+-            nzcv_of(self, kind, sf);
++            self.push_nzcv(kind, sf, cold);
+             self.c.i64_extend_i32_u().i64_store(NZCV);
+             if let Flags::Lazy { stored, .. } = &mut self.flags {
+                 *stored = true;
+@@ -491,6 +505,19 @@ impl Func {
+         }
+     }
+ 
++    /// Pushes a lazy setter's NZCV ([`nzcv_of`]); on a cold path, a call of
++    /// the module's helper for it instead of its ~70 bytes inline.
++    fn push_nzcv(&mut self, kind: Kind, sf: bool, cold: bool) {
++        match (self.nzcv.filter(|_| cold), nzcv_index(kind, sf)) {
++            (Some(f), Some(k)) => {
++                let (x, y, _) = flag_locals(sf);
++                self.c.local_get(x).local_get(y).call(f[k]);
++                self.nzcv_used = true;
++            }
++            _ => nzcv_of(self, kind, sf),
++        }
++    }
++
+     /// Makes NZCV in the `Cpu` current on this path, the flags staying lazy
+     /// for the conditions that follow. The block does it before its last
+     /// instruction when that is a branch: the same NZCV computed after the
+@@ -609,7 +636,7 @@ impl Func {
+         }
+         if let Some((kind, sf)) = ch.flags {
+             self.c.local_get(VCPU);
+-            nzcv_of(self, kind, sf);
++            self.push_nzcv(kind, sf, true);
+             self.c.i64_extend_i32_u().i64_store(NZCV);
+         }
+         self.c.local_get(ACC).op(0x6a).return_(); // i32.add
+@@ -2123,7 +2150,7 @@ pub fn fp_guard(c: &mut Func, cx: &Ctx, i: u32, k: usize) {
+         .if_();
+     let saved = c.regs;
+     c.flush();
+-    c.store_flags();
++    c.store_flags_cold();
+     // acc + k, plus one if the helper retired it after all.
+     c.local_get(VCPU).i32_const(i as i32);
+     pc_plus(c, 4 * k as i64);
+@@ -3363,7 +3390,7 @@ fn fallback_with(
+     c.local_get(VCPU).i32_const(i as i32);
+     pc_plus(c, here);
+     c.call(cx.helper).hint(false).if_();
+-    c.store_flags();
++    c.store_flags_cold();
+     c.ret((here / 4) as u32);
+     c.end();
+     post(c);
+@@ -3786,6 +3813,37 @@ fn sub_nzcv(c: &mut Func, sf: bool, x: u32, y: u32, r: u32) {
+     c.op(OR);
+ }
+ 
++/// The NZCV helpers a module has ([`nzcv_helper`]): SUBS and ADDS, 32 and 64 bits.
++pub const NZCV_HELPERS: usize = 4;
++
++/// Which NZCV helper computes a lazy setter's NZCV: none for ADC (its
++/// carry in) and the logical setters (short already).
++fn nzcv_index(kind: Kind, sf: bool) -> Option<usize> {
++    match kind {
++        Kind::Sub => Some(sf as usize),
++        Kind::Add => Some(2 + sf as usize),
++        Kind::Adc | Kind::Logic => None,
++    }
++}
++
++/// NZCV helper `k` ([`nzcv_index`]): a function `(x, y) -> nzcv` of the
++/// operation size's type, returning SUBS's or ADDS's NZCV as [`nzcv_of`]
++/// pushes it; its body and its one local (the result).
++pub fn nzcv_helper(k: usize) -> (bool, Code, u8) {
++    let (sub, sf) = (k < 2, k % 2 == 1);
++    let mut c = Func::default();
++    c.local_get(0).local_get(1);
++    arith(&mut c, sf, if sub { SUB } else { ADD });
++    c.local_set(2);
++    if sub {
++        sub_nzcv(&mut c, sf, 0, 1, 2);
++    } else {
++        add_nzcv(&mut c, sf, 0, 1, 2, Carry::Zero);
++    }
++    c.end();
++    (sf, c.c, if sf { I64 } else { I32 })
++}
++
+ /// Pushes the NZCV of a lazy setter as an i32 (scratch: `tmp(sf, 2)`).
+ fn nzcv_of(c: &mut Func, kind: Kind, sf: bool) {
+     let (x, y, r) = flag_locals(sf);
+diff --git a/core/src/jit/wasm.rs b/core/src/jit/wasm.rs
+index cc379ed0..0d987f11 100644
+--- a/core/src/jit/wasm.rs
++++ b/core/src/jit/wasm.rs
+@@ -354,6 +354,8 @@ pub struct Module {
+     nimports: usize,
+     nfunc_imports: u32,
+     funcs: Vec<u32>,
++    /// Functions defined past these aren't exported ([`Module::internal`]).
++    nexported: Option<usize>,
+     code: Vec<u8>,
+     globals: Vec<u8>,
+     nglobals: usize,
+@@ -431,6 +433,12 @@ impl Module {
+         self.nfunc_imports + self.funcs.len() as u32
+     }
+ 
++    /// From here on, the functions defined aren't exported: the module's own
++    /// helpers (the host installs every export as a block, `jit_install`).
++    pub fn internal(&mut self) {
++        self.nexported.get_or_insert(self.funcs.len());
++    }
++
+     pub fn func(&mut self, ty: u32, locals: &[(u32, u8)], body: &Code, fname: &str) -> u32 {
+         let idx = self.nfunc_imports + self.funcs.len() as u32;
+         self.funcs.push(ty);
+@@ -472,15 +480,18 @@ impl Module {
+         section(&mut out, 2, self.nimports, &self.imports);
+         let mut funcs = Vec::new();
+         let mut exports = Vec::new();
++        let nexported = self.nexported.unwrap_or(self.funcs.len());
+         for (k, &t) in self.funcs.iter().enumerate() {
+             uleb(&mut funcs, t as u64);
+-            name(&mut exports, &format!("f{k}"));
+-            exports.push(0);
+-            uleb(&mut exports, self.nfunc_imports as u64 + k as u64);
++            if k < nexported {
++                name(&mut exports, &format!("f{k}"));
++                exports.push(0);
++                uleb(&mut exports, self.nfunc_imports as u64 + k as u64);
++            }
+         }
+         section(&mut out, 3, self.funcs.len(), &funcs);
+         section(&mut out, 6, self.nglobals, &self.globals);
+-        section(&mut out, 7, self.funcs.len(), &exports);
++        section(&mut out, 7, nexported, &exports);
+         if self.nhinted > 0 {
+             // Branch hints, before the code they describe.
+             let mut body = Vec::new();

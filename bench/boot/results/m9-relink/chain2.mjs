@@ -13,6 +13,10 @@ const sec = (id, b) => [id, ...leb(b.length)].concat(b);
 const vec = (xs) => leb(xs.length).concat(xs.flat());
 // type 0: (i32 n, i64 x) -> i64
 const TYPE = [0x60, 2, 0x7f, 0x7e, 1, 0x7e];
+let IF_AT = 0;
+const HINT = !!process.env.HINT;
+// HINT=1: a metadata.code.branch_hint section marking each function's padding `if` unlikely (as the JIT's cold paths).
+const hints = (first, n) => !HINT || !PAD ? [] : sec(0, [...str('metadata.code.branch_hint'), ...leb(n), ...Array.from({ length: n }, (_, k) => [...leb(first + k), 1, ...leb(IF_AT), 1, 0]).flat()]);
 function body(i, call) {
   const c = [];
   // if n == 0: return x
@@ -23,7 +27,9 @@ function body(i, call) {
   c.push(0x20, 1, 0x20, 1, 0x42, 17, 0x88, 0x42, ...sleb(0xfff8), 0x83, 0xa7, 0x29, 3, 0, 0x7c, 0x21, 1);
   // cold padding: if x == magic (never), PAD ops of arithmetic and a store
   if (PAD) {
-    c.push(0x20, 1, 0x42, ...sleb(0x123456789abcdn + BigInt(i)), 0x51, 0x04, 0x40);
+    c.push(0x20, 1, 0x42, ...sleb(0x123456789abcdn + BigInt(i)), 0x51);
+    IF_AT = 3 + c.length; // the `if`'s offset in the body (its locals' 3 bytes first)
+    c.push(0x04, 0x40);
     for (let k = 0; k < PAD; k++) c.push(0x20, 1, 0x42, ...sleb(k * 7 + 1), [0x7c, 0x7e, 0x85][k % 3], 0x21, 1);
     c.push(0x41, 0, 0x20, 1, 0x37, 3, 0, 0x0b);
   }
@@ -42,14 +48,30 @@ function module({ nfuncs, imports, calls, table, exportAll }) {
   m = m.concat(sec(3, vec(Array.from({ length: nfuncs }, () => [0]))));
   const ex = exportAll ? Array.from({ length: nfuncs }, (_, k) => [...str('g' + k), 0, ...leb(imports + k)]) : [[...str('g0'), 0, ...leb(imports)]];
   m = m.concat(sec(7, vec(ex)));
-  m = m.concat(sec(10, vec(Array.from({ length: nfuncs }, (_, k) => body(k, calls(k))))));
+  const code = sec(10, vec(Array.from({ length: nfuncs }, (_, k) => body(k, calls(k)))));
+  m = m.concat(hints(imports, nfuncs), code);
   return new WebAssembly.Module(new Uint8Array(m));
 }
 const memory = new WebAssembly.Memory({ initial: 1 });
 const perm = Array.from({ length: N }, (_, i) => i);
 for (let i = N - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [perm[i], perm[j]] = [perm[j], perm[i]]; }
 let entry;
-if (kind === 'typed') {
+if (kind === 'ref') {
+  // return_call_ref on a (ref $t) from table.get of a typed table defined in the module.
+  const next = new Map(perm.map((f, k) => [f, perm[(k + 1) % N]]));
+  let m = [0, 0x61, 0x73, 0x6d, 1, 0, 0, 0];
+  m = m.concat(sec(1, vec([TYPE])));
+  m = m.concat(sec(2, vec([[...str('e'), ...str('m'), 2, 0, ...leb(1)]])));
+  m = m.concat(sec(3, vec(Array.from({ length: N }, () => [0]))));
+  m = m.concat(sec(4, vec([[0x63, 0, 0, ...leb(N)]])));
+  const ex = Array.from({ length: N }, (_, k) => [...str('g' + k), 0, ...leb(k)]); ex.push([...str('t'), 1, 0]);
+  m = m.concat(sec(7, vec(ex)));
+  // table.get 0 (idx); ref.as_non_null; return_call_ref 0
+  m = m.concat(sec(10, vec(Array.from({ length: N }, (_, k) => body(k, [0x41, ...sleb(next.get(k)), 0x25, 0, 0xd4, 0x15, 0])))));
+  const inst = new WebAssembly.Instance(new WebAssembly.Module(new Uint8Array(m)), { e: { m: memory } });
+  for (let k = 0; k < N; k++) inst.exports.t.set(k, inst.exports['g' + k]);
+  entry = inst.exports['g' + perm[0]];
+} else if (kind === 'typed') {
   // A table of (ref null $t) defined in the module (exported), return_call_indirect through it.
   const next = new Map(perm.map((f, k) => [f, perm[(k + 1) % N]]));
   let m = [0, 0x61, 0x73, 0x6d, 1, 0, 0, 0];

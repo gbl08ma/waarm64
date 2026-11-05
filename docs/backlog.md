@@ -268,7 +268,11 @@ the steps, so an interpreted step costs ~3.5× a compiled one. The loads' new co
   probes, which no group can reach: the region's next lever if probes ever matter, though no time difference has
   come from removing them yet.
 
-- **Where the JIT's wasm bytes go, and what could shrink them** (2026-10-30, a static census of Debian's boot and a
+- **Where the JIT's wasm bytes go, and what could shrink them.** **Not a lever for users** (2026-11-05,
+  `bench/boot/REPORT.md` "What a function's size costs, in the VM and on the Mac"): ~20% more machine code a function
+  cost Firefox's pages session 3.5% of busy MIPS in the dev VM and nothing on the Mac host; cuts aimed at size are
+  screened on the Mac first (a first one, the cold paths' NZCV through small functions, is in
+  `bench/boot/results/m9-size/`). The census (2026-10-30, a static census of Debian's boot and a
   shell workload on the page: every module with each instruction's and each piece's byte ranges, 35.1 MB of function
   bodies; `bench/boot/results/wasm-size/` README, not weighted by execution, no timings; Firefox's pages session and
   Alpine weren't in that session, so check the shares there first). Block tails are 42% of the code, inline
@@ -320,6 +324,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `simd128` off.
 
 ## Platform and devices
+
+- **virtio-gpu errors in Firefox's pages session on the Mac's GPU** (2026-11-05, `bench/boot/REPORT.md` "What a function's
+  size costs, in the VM and on the Mac"): with `VIRGL_GPU=virgl` on the Mac host (Chrome for Testing 157, the M4's
+  GPU) the guest's kernel logs `virtio_gpu_dequeue_ctrl_func` errors while pages load: `ERR_UNSPEC` (0x1200) to a
+  `CTX_CREATE` (0x200), then `ERR_INVALID_CONTEXT_ID` (0x1204) to `CTX_ATTACH_RESOURCE` (0x202) and `SUBMIT_3D` (0x207):
+  a 3D context the host failed to create, whose commands then fail. Not seen in the dev VM's sessions (SwiftShader);
+  the pages render and the session runs on. Find why the context's creation fails there (the GPU worker's log for it).
 
 - **virgl's occlusion-query poll waits 4 ms a turn** (web/gpu-worker.ts `poll`, `setTimeout(poll, 4)`; what's left of
   "The host's pollers and their timers", VK3 L2): a GL program waiting on a query's result waits up to ~4.5 ms for the

@@ -3380,3 +3380,46 @@ stays in use through its direct importers and the transfer cache's entries (two 
 (docs/jit.md "Tried and not kept"). Not tried: rebinding a module's imports by instantiating it again (no new code,
 V8 shares the compiled code between instances), which needs an import stub per uncompiled successor and
 re-instantiation in every table.
+
+## What a function's size costs, in the VM and on the Mac (2026-11-05)
+
+Whether shrinking the JIT's code (the backlog's "Where the JIT's wasm bytes go") can pay, measured from the other
+side: every JIT function made bigger by a known amount. The dev VM (Chromium 155.0.8059.84) and the Mac host (Chrome
+for Testing 157.0.8103.38, its GPU, `bench/gpu/sway-mac.sh` with `SCRIPT=firefox-load.ts`), both from
+`pages.webpcsnap`, core `b7a813d0`; data in `results/m9-size/` (README).
+
+**The microbenchmark first** (`results/m9-relink/chain2.mjs`, Node 26.7.0, `--no-liftoff`): at a fixed number of
+functions, a `return_call_indirect` gets slower as each function's cold padding grows (32,000 functions: 24.6, 29.7,
+41.7 ns at 0, 40, 200 padding ops; 131,072: 41.8, 84.4), with `--no-wasm-lazy-compilation` too (30.0 and 54.5 ns at 0
+and 200), and the padding hinted unlikely barely helps (52.7 → 48.5 ns: TurboFan moves cold code to its function's
+end, but the next function's hot code comes after it). An imported tail call stays at 18-26 ns at every size. A
+padding op is ~6.7 bytes of TurboFan code (200 of them: 208 → 1,552 bytes).
+
+**Real functions are big:** in Firefox's pages session (the 2026-11-04 jitdump) 217,248 TurboFan compiles averaged
+4,958 bytes of machine code (median 2,880) and 425,472 Liftoff ones 5,923. In the 40 hottest functions (7.5 KB on
+average) the stores' bounds checks (`sub`, `cmp`, `b.hs`) are 15.8% of the instructions and their trap stubs 6.3%:
+code macOS and x86_64 don't have (guard pages there); a `call_indirect`'s signature sequence ~6.8%.
+
+**The A/B:** 150 dead ops at every function's entry behind `left == 0x7ffffff1` hinted unlikely (`pad.patch`), ~1 KB
+of TurboFan code a function (+~20%), +52% wasm. Two rounds each, alternated (busy MIPS from `bench/gpu/stalls.ts`;
+loads in ms, wiki / mdn / github / bbc / hn; RSS the renderer's, VM only):
+
+| | busy MIPS | wasm (MiB) | loads | RSS median |
+|---|---|---|---|---|
+| VM, HEAD | 215, 213 | 126.8, 126.5 | 9262/4190/2787/10488/2395, 9294/3836/2644/10846/2535 | 3,695, 3,686 |
+| VM, padded | 204, 207 | 192.7, 191.6 | 10315/4342/3033/11189/2861, 10790/4904/2750/11016/2530 | 3,775, 3,663 |
+| Mac, HEAD | 304, 305 | 127.1, 126.9 | 6616/2893/1949/6638/1645, 7062/2689/1863/6811/1613 | |
+| Mac, padded | 304, 306 | 198.4, 197.1 | 7116/2922/1792/6834/1619, 6790/2708/1770/7108/1653 | |
+
+In the VM 20% more machine code costs 3.5% (rounds apart), on the same M4 without the VM nothing: the VM's code is
+denser with bounds checks and its instruction-TLB misses cost more (nested paging), and neither reaches a macOS or
+x86_64 user. So shrinking the JIT's code is not a lever for users; cuts aimed at it are measured on the Mac first. A
+first cut was built and set aside without an A/B (`nzcv-helpers.patch`: the failure chains' and slow arms' NZCV
+through four small functions of the module, not exported; the JIT tests and the differential test pass).
+
+**Notes for the Mac:** `sway-mac.sh` now takes `WASM=` (a core) and `FROM_SNAPSHOT=` (copied once) and copies the
+image to its own path there, since a snapshot loads only with the disk it was taken on open, by its URL
+(`otherDisk`); `loadSnapshotFile` reports the page's details with its message. On the Mac's GPU the guest's kernel
+logs `virtio_gpu_dequeue_ctrl_func` errors while Firefox loads pages (`ERR_UNSPEC` to a `CTX_CREATE`, then
+`ERR_INVALID_CONTEXT_ID` to that context's `CTX_ATTACH_RESOURCE` and `SUBMIT_3D`), and they garble the console line the harness reads the loads from (results.json's `loadMs`
+holds them): backlog, graphics.

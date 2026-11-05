@@ -1,0 +1,59 @@
+diff --git a/bench/boot/results/m9-relink/chain2.mjs b/bench/boot/results/m9-relink/chain2.mjs
+index dc9ae13c..1bc9b21e 100644
+--- a/bench/boot/results/m9-relink/chain2.mjs
++++ b/bench/boot/results/m9-relink/chain2.mjs
+@@ -13,6 +13,10 @@ const sec = (id, b) => [id, ...leb(b.length)].concat(b);
+ const vec = (xs) => leb(xs.length).concat(xs.flat());
+ // type 0: (i32 n, i64 x) -> i64
+ const TYPE = [0x60, 2, 0x7f, 0x7e, 1, 0x7e];
++let IF_AT = 0;
++const HINT = !!process.env.HINT;
++// HINT=1: a metadata.code.branch_hint section marking each function's padding `if` unlikely (as the JIT's cold paths).
++const hints = (first, n) => !HINT || !PAD ? [] : sec(0, [...str('metadata.code.branch_hint'), ...leb(n), ...Array.from({ length: n }, (_, k) => [...leb(first + k), 1, ...leb(IF_AT), 1, 0]).flat()]);
+ function body(i, call) {
+   const c = [];
+   // if n == 0: return x
+@@ -23,7 +27,9 @@ function body(i, call) {
+   c.push(0x20, 1, 0x20, 1, 0x42, 17, 0x88, 0x42, ...sleb(0xfff8), 0x83, 0xa7, 0x29, 3, 0, 0x7c, 0x21, 1);
+   // cold padding: if x == magic (never), PAD ops of arithmetic and a store
+   if (PAD) {
+-    c.push(0x20, 1, 0x42, ...sleb(0x123456789abcdn + BigInt(i)), 0x51, 0x04, 0x40);
++    c.push(0x20, 1, 0x42, ...sleb(0x123456789abcdn + BigInt(i)), 0x51);
++    IF_AT = 3 + c.length; // the `if`'s offset in the body (its locals' 3 bytes first)
++    c.push(0x04, 0x40);
+     for (let k = 0; k < PAD; k++) c.push(0x20, 1, 0x42, ...sleb(k * 7 + 1), [0x7c, 0x7e, 0x85][k % 3], 0x21, 1);
+     c.push(0x41, 0, 0x20, 1, 0x37, 3, 0, 0x0b);
+   }
+@@ -42,7 +48,8 @@ function module({ nfuncs, imports, calls, table, exportAll }) {
+   m = m.concat(sec(3, vec(Array.from({ length: nfuncs }, () => [0]))));
+   const ex = exportAll ? Array.from({ length: nfuncs }, (_, k) => [...str('g' + k), 0, ...leb(imports + k)]) : [[...str('g0'), 0, ...leb(imports)]];
+   m = m.concat(sec(7, vec(ex)));
+-  m = m.concat(sec(10, vec(Array.from({ length: nfuncs }, (_, k) => body(k, calls(k))))));
++  const code = sec(10, vec(Array.from({ length: nfuncs }, (_, k) => body(k, calls(k)))));
++  m = m.concat(hints(imports, nfuncs), code);
+   return new WebAssembly.Module(new Uint8Array(m));
+ }
+ const memory = new WebAssembly.Memory({ initial: 1 });
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 8bac1b85..3ad622c9 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -815,6 +815,18 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+     let mut bad = false;
+     let mut inl = 0;
+     c.local_get(0).i64_load(emit::PC).local_set(1);
++    // DIAGNOSTIC (bench/boot/REPORT.md "What a function's size costs"): PAD_OPS ops of dead code behind a
++    // condition that never holds, hinted unlikely, as a cold path.
++    const PAD_OPS: u32 = 150;
++    if PAD_OPS > 0 {
++        c.local_get(emit::LEFT).i32_const(0x7fff_fff1).op(0x46).hint(false).if_();
++        c.local_get(1).local_set(2);
++        for k in 0..PAD_OPS {
++            c.local_get(2).i64_const(k as i64 * 7 + 1).op([0x7c, 0x7e, 0x85][k as usize % 3]).local_set(2);
++        }
++        c.local_get(0).local_get(2).i64_store(emit::PC);
++        c.end();
++    }
+     if let (Some(word), Some(hot)) = (r.tier, e.hot) {
+         emit::tier_up(&mut c, word, r.blocks[0].key, e.bt, hot);
+     }

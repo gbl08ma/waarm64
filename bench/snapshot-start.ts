@@ -84,7 +84,7 @@ export async function loadSnapshotFile(page: Page, path: string, core = CORE_PAT
   await page.waitForFunction(() => document.getElementById('boot-title')?.textContent?.startsWith('Loading '), null, { timeout: 60_000, polling: 20 });
   await page.waitForFunction(() => ['running', 'failed', 'crashed'].includes(document.body.dataset.state!), null, { timeout: 600_000, polling: 100 });
   const state = await page.evaluate(() => document.body.dataset.state);
-  if (state !== 'running') throw new Error(`the snapshot ${path} didn't load: ${await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '')}`);
+  if (state !== 'running') throw new Error(`the snapshot ${path} didn't load: ${await page.evaluate(() => [document.getElementById('message-text')?.textContent, document.getElementById('message-details')?.textContent].filter(Boolean).join(': '))}`);
   const running = sha(core);
   return {
     file: path, bytes: statSync(path).size, loadMs: Math.round(performance.now() - t0), created: header.created, coreVersion: header.coreVersion, abi: header.abi,

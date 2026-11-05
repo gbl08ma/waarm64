@@ -1,0 +1,4 @@
+macpad-head-1    busy 304 MiB 127.1 loads 6616/2893/1949/6638/1645
+macpad-head-2    busy 305 MiB 126.9 loads 7062/2689/1863/6811/1613
+macpad-pad-1     busy 304 MiB 198.4 loads 7116/2922/1792/6834/1619
+macpad-pad-2     busy 306 MiB 197.1 loads 6790/2708/1770/7108/1653
