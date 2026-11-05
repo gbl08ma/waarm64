@@ -690,6 +690,38 @@ void wg_pipeline_premake_finish(struct wg_device *dev);
 extern bool wg_premake_off;
 /* The queue families advertised (glue.c `venus_queue_families`; the page's `?gpu=vkqueues=`), WG_QUEUE_FAMILIES by default. */
 extern uint32_t wg_queue_families;
+/* What the emulated paths did since the start (VK4 T23; glue.c `venus_emul_counts`, the render stats' `venusEmul`):
+ * the copies a usage scope's shadows took and gave back and the passes its barriers cut (T3, R2), the copies between a
+ * view format's texture and another's (T4) and between a texture and its words (T11), a feedback loop's copies (T12),
+ * the draws whose vertices were pulled (T5), the variants made and the draws and dispatches through a keyed one (T8,
+ * T9, T18, G5), the passes made before a render pass (provoking vertices, indexed and indirect fans: VK3 L7.4, T12). */
+enum wg_emul {
+   WG_EMUL_SHADOW_COPIES,
+   WG_EMUL_SHADOW_BYTES,
+   WG_EMUL_SHADOW_BACK_BYTES,
+   WG_EMUL_SCOPE_CUTS,
+   WG_EMUL_VIEW_COPIES,
+   WG_EMUL_VIEW_BYTES,
+   WG_EMUL_WORDS_COPIES,
+   WG_EMUL_WORDS_BYTES,
+   WG_EMUL_FEEDBACK_COPIES,
+   WG_EMUL_FEEDBACK_BYTES,
+   WG_EMUL_PULLED_DRAWS,
+   WG_EMUL_VARIANTS,
+   WG_EMUL_KEYED_DRAWS,
+   WG_EMUL_PREPASSES,
+   WG_EMUL_COUNT,
+};
+extern double wg_emul[WG_EMUL_COUNT];
+/* The emulated work left out (glue.c `venus_emul_skip`; the page's `?gpu=vkskip=`, A/B only: what it leaves is wrong
+ * pixels, never a refused command): the copies between view formats, those to and from words, a feedback loop's. */
+enum {
+   WG_SKIP_VIEWS = 1 << 0,
+   WG_SKIP_WORDS = 1 << 1,
+   WG_SKIP_FEEDBACK = 1 << 2,
+};
+extern uint32_t wg_emul_skip;
+const double *wg_emul_counts(uint32_t *n);
 /* WebGPU's vertex buffers for a draw: Vulkan's binding b is slot b, except that an attribute reaching past its
  * binding's stride (Vulkan allows offsets up to maxVertexInputAttributeOffset, WebGPU wants offset + size within the
  * stride) reads a slot of its own, a free one, bound to the same buffer `base` bytes further. A pulled binding

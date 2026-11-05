@@ -539,3 +539,46 @@ for (const [scenario, frag, what, why] of [
     assert.ok(logs.some((l) => why.test(l)), `not refused: ${JSON.stringify(logs)}`);
   });
 }
+
+// VK4 T23: what the emulated paths did (web/venus-host.ts `emul`), counted where each meets its path, and `skip`'s
+// paths left out: no copy, no WebGPU error, the scenario's bytes then wrong (what it checks needs the copies).
+for (const [scenario, counts, skips] of [
+  ['mutableViews', ['viewCopies', 'viewBytes'], ['views']],
+  ['rwImage', ['wordsCopies', 'wordsBytes'], ['words']],
+  ['packedFeedback', ['feedbackCopies', 'feedbackBytes'], ['feedback']],
+  ['twoReads', ['shadowCopies', 'shadowBytes'], []],
+  ['blit', ['blits'], ['meta']],
+  ['msFormats', ['drawnResolves'], []],
+  ['depthLess', ['variants', 'keyedDraws'], []],
+] as const) {
+  test(`emulated paths: ${scenario} counts ${counts.join(', ')}${skips.length ? `, and vkskip=${skips.join(',')} leaves them out` : ''}`, { skip, timeout: 60_000 }, async (t) => {
+    const out = join(root, 'target/vk/test');
+    const name: string = source[scenario as keyof typeof source] ?? 'push';
+    const src = name.includes('.') ? name : `${name}.comp`;
+    for (const f of [src, ...(src.endsWith('.frag') ? ['feedback.vert'] : [])]) {
+      const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${f}.spv`), join(root, `tests/venus/${f}`)], { encoding: 'utf8' });
+      assert.equal(c.status, 0, c.stderr);
+    }
+    const run = async (skipped: readonly string[]) => {
+      const page = await browser.newPage();
+      await page.goto(`${base}/tests/browser/venus-driver.html`);
+      await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
+      const r = await page.evaluate((s) => (window as unknown as { venus: { runMisc(s: string, push: string, skip: string[]): Promise<Record<string, unknown>> } }).venus.runMisc(s.scenario, `/target/vk/test/${s.src}.spv`, s.skipped), { scenario, src, skipped: [...skipped] });
+      await page.close();
+      return r;
+    };
+    const r = await run([]);
+    if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
+    assert.equal(r.error, undefined, String(r.error));
+    const emul = r.emul as Record<string, number>;
+    console.log(scenario, JSON.stringify(Object.fromEntries(Object.entries(emul).filter(([, n]) => n))));
+    for (const k of counts) assert.ok(emul[k] > 0, `${k}: ${emul[k]}`);
+    if (!skips.length) return;
+    const s = await run(skips);
+    assert.equal(s.error, undefined, String(s.error));
+    assert.deepEqual(s.errors, [], 'WebGPU errors with the path left out');
+    const left = s.emul as Record<string, number>;
+    for (const k of counts) assert.equal(left[k], 0, `${k} with vkskip=${skips.join(',')}`);
+    assert.ok(Object.values(s.checks as Record<string, number>).some((at) => at !== -1), 'the bytes right without the copies: the scenario doesn\'t need them');
+  });
+}

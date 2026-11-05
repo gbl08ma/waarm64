@@ -6,7 +6,7 @@
 // driver takes the window's written pages (web/window.ts) and uploads them. Its submits complete later, and a fenced submit's fence retires only then:
 // `retired` says when a fence has.
 import type { ShaderCache } from './venus-cache.ts';
-import { gpuFeatures, gpuLimits, HELD_FEATURES, VenusGpu, type GpuCaps, type L9Suspect } from './venus-gpu.ts';
+import { gpuFeatures, gpuLimits, HELD_FEATURES, VenusGpu, type GpuCaps, type L9Suspect, type VenusEmulStats } from './venus-gpu.ts';
 import type { VenusCall } from './virgl-host.ts';
 import { VENUS_ARENA } from './ram.ts';
 import { WindowWatch } from './window.ts';
@@ -92,7 +92,23 @@ export type VenusOptions = { syncPipelines?: boolean;
   premake?: boolean;
   /** `?gpu=vkqueues=<n>` (1 to 3; A/B): the device's first n queue families, all of them by default (graphics; compute;
    * transfer: VK4 T22, vk/README.md "The driver"). */
-  queueFamilies?: number };
+  queueFamilies?: number;
+  /** `?gpu=vkskip=<path>` (A/B, VK4 T23): an emulated path's work left out (`SKIPS`): what it leaves is wrong pixels,
+   * never a command WebGPU refuses. */
+  skip?: readonly string[] };
+
+/**
+ * The emulated paths' work `?gpu=vkskip=` can leave out (VK4 T23): the driver's (vk/driver/wg_private.h `WG_SKIP_*`:
+ * the copies between view formats' textures, to and from an image's words, a feedback loop's) and the worker's (`meta`:
+ * the blits and resolves it draws, web/venus-gpu.ts `skipMeta`).
+ */
+export const SKIPS = { views: 1, words: 2, feedback: 4, meta: 0 } as const;
+/** The driver's counts (vk/driver/wg_private.h `enum wg_emul`), in its order. */
+export const EMUL_COUNTS = ['shadowCopies', 'shadowBytes', 'shadowBackBytes', 'scopeCuts', 'viewCopies', 'viewBytes', 'wordsCopies', 'wordsBytes',
+  'feedbackCopies', 'feedbackBytes', 'pulledDraws', 'variants', 'keyedDraws', 'prepasses'] as const;
+/** What the emulated paths did over a span (the render stats' `venusEmul`): the driver's counts and the worker's
+ * (web/venus-gpu.ts `VenusEmulStats`). */
+export type VenusEmul = Record<(typeof EMUL_COUNTS)[number], number> & VenusEmulStats;
 
 /** venus_init's flag for `VenusOptions.ycbcr` (vk/driver/wg_private.h `WG_FEATURE_YCBCR`). */
 const YCBCR = 1 << 30;
@@ -146,6 +162,10 @@ type Exports = {
   /** Absent from a module built before VK4 T17 (which makes pipelines at their draws only). */
   venus_premake?(on: number): void;
   venus_queue_families?(n: number): void;
+  /** Absent from a module built before VK4 T23. */
+  venus_emul_counts?(): number;
+  venus_emul_count?(): number;
+  venus_emul_skip?(mask: number): void;
   venus_arena_end(): number;
   venus_alloc(size: number): number;
   venus_free(p: number): void;
@@ -271,6 +291,7 @@ export class VenusRenderer {
     self.nudgeMs = options.nudgeMs ?? NUDGE_MS;
     self.ex.venus_premake?.(options.premake ? 1 : 0);
     if (options.queueFamilies) self.ex.venus_queue_families?.(options.queueFamilies);
+    if (options.skip?.length) self.skip(options.skip);
     self.cmdTypes = self.ex.venus_cmd_types();
     const idle = knob('vkidle', options.ringIdleMs, IDLE_RANGE);
     if (idle !== undefined) self.ex.venus_ring_idle(Math.round(idle * 1000));
@@ -501,6 +522,31 @@ export class VenusRenderer {
     const sum = (from: number, to: number) => cmds.subarray(from * CMD_TYPES, to * CMD_TYPES).reduce((n, x) => n + x, 0);
     // [where][reply][type]: where 0 the rings, 1 the virtqueue, 2 nested streams; reply 1 at odd rows.
     return { ringCmds: sum(0, 2), queueCmds: sum(2, 4), nestedCmds: sum(4, 6), replies: sum(1, 2) + sum(3, 4) + sum(5, 6), idles: events[0], notifies: events[1] };
+  }
+
+  /** The emulated work left out from now on (`VenusOptions.skip`; the bench hook `window.__webpcVkSkip`), none with []. */
+  skip(paths: readonly string[]) {
+    const known = paths.filter((k): k is keyof typeof SKIPS => k in SKIPS);
+    for (const k of paths) if (!(k in SKIPS)) console.warn(`venus: vkskip=${k} ignored (not one of ${Object.keys(SKIPS).join(', ')})`);
+    this.ex.venus_emul_skip?.(known.reduce((m, k) => m | SKIPS[k], 0));
+    this.gpu.skipMeta = known.includes('meta');
+    if (known.length) console.warn(`venus: vkskip=${known.join(',')}: that emulated work is left out (wrong pixels; an A/B only)`);
+  }
+
+  private lastEmul: number[] | undefined;
+  private lastGpuEmul: VenusEmulStats | undefined;
+  /** What the emulated paths did since the last call (VK4 T23): the driver's counts and the worker's; undefined from a
+   * module built before them. */
+  emul(): VenusEmul | undefined {
+    const n = this.ex.venus_emul_count?.();
+    if (!n) return undefined;
+    const now = [...new Float64Array(this.memory.buffer, this.ex.venus_emul_counts!() >>> 0, n)];
+    const last = this.lastEmul, lastGpu = this.lastGpuEmul, gpu = { ...this.gpu.emul };
+    [this.lastEmul, this.lastGpuEmul] = [now, gpu];
+    const out = {} as Record<string, number>;
+    EMUL_COUNTS.forEach((k, i) => { out[k] = (now[i] ?? 0) - (last?.[i] ?? 0); });
+    for (const k of Object.keys(gpu) as (keyof VenusEmulStats)[]) out[k] = gpu[k] - (lastGpu?.[k] ?? 0);
+    return out as VenusEmul;
   }
 
   private lastCalls: Float64Array | undefined;

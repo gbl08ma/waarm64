@@ -622,6 +622,7 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl
           !memcmp(v->aliases, aliases, alias_count * sizeof(*aliases)))
          return v;
    struct wg_program *v = malloc(sizeof(*v));
+   wg_emul[WG_EMUL_VARIANTS]++;
    memcpy(v, p, sizeof(*v));
    v->refs = 1;
    v->listed = false;

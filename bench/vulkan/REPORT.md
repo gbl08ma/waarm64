@@ -771,6 +771,61 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T23: what the emulations cost Godot's GI demo — the M4's half; SDFGI's rgb9e5 views copy ~34 MB a frame
+
+2026-11-05, the M4 (macOS 26.6.2, Chrome for Testing 157.0.8103.38, `?gpu=vkgputime`), the desktop guest (4 vCPUs,
+6 GiB), Godot 4.7.2's GI demo as it starts in SDFGI mode with vsync off (bench/vulkan/godot-disk.sh's `gi-sdfgi`; with
+SSAO and SSIL, `gi-sdfgi-ssil`). JSON: `results/vk4/t23/m4-a.json`, `m4-b.json`.
+
+**The method** (bench/vulkan/t23.ts). The driver and the worker now count each emulated path's work (vk/README.md
+"What the emulated paths do"; the render stats' `venusEmul`), and `?gpu=vkskip=<path>` leaves the work of those
+that can be left out without a refused command (the copies between view formats, to and from words, a feedback
+loop's; the worker's blits and resolves), switched in the run (`window.__webpcVkSkip`): one Godot, settled 60 s after
+its first frame, arms alternated, 12 s each, 2 rounds, medians. Shadows, pulled vertices and keyed variants have no
+skip (WebGPU would refuse their draws): their counts say what they do.
+
+**What the demo meets, a frame** (the same in every arm but the one that skips it):
+
+| path | `gi-sdfgi` | `gi-sdfgi-ssil` |
+| --- | --- | --- |
+| copies between view formats | 9.3, **34 MB** | 9.3, **34 MB** |
+| usage scopes' shadows | 8.3, 0.22 MB | 8.3, 0.22 MB |
+| draws and dispatches through a keyed variant | 7.4 | 30 |
+| words, feedback loops, pulled vertices, prepasses, blits, drawn resolves | 0 | 0 |
+
+The copies are SDFGI's: images Godot writes as `r32uint` storage and samples through `rgb9e5ufloat` views, which
+WebGPU can't view one as the other, so each frame each is copied whole into its alias: three or four 128³ volumes
+(8 MiB each), six layers of a 2312×136 array (1.2 MiB each), and once a 256×128×384 `r16uint` volume read as
+`rgba8unorm` (a trace in a throwaway build, `results/local/t23-m4-trace`).
+
+**What they cost** (medians of 2 rounds; `done` is the time from a submit to WebGPU's done, its GPU work):
+
+| arm | frames/s | on screen/s | Godot CPU ms a frame | worker busy ms/s | done ms a submit |
+| --- | --- | --- | --- | --- | --- |
+| `gi-sdfgi`, as it is | 39.7 | — | 2.71 | 12.8 | 11.33 |
+| views' copies left out | 39.9 | — | 2.85 | 14.3 | **9.85** |
+| words / feedback / meta left out | 36.8–37.5 | — | 2.82–2.88 | 13.9–14.3 | 11.34–11.39 |
+| all left out | 40.8 | — | 2.58 | 14.2 | 9.93 |
+| `gi-sdfgi-ssil`, as it is | 36.8 | 38.2 | 3.37 | 10.8 | 13.74 |
+| views' copies left out | 37.6 | 40.4 | 3.56 | 12.3 | **11.98** |
+| words / feedback / meta left out | 36.0–36.2 | 37.2–37.6 | 3.34–3.49 | 12.5–12.9 | 13.29–13.44 |
+| all left out | 38.4 | 39.8 | 3.48 | 13.0 | 11.77 |
+
+- **The view copies are ~1.5–1.8 ms of each submit's GPU time on the M4** (13% of it), in every round; the arms
+  that don't touch them stay within 0.1 ms. The frame rate moves 2–5% with them, inside the M4's noise here (the
+  rounds of one arm differ by up to 13%: the guest's CPU, ~55% of one for Godot, sets the pace). Pictures with and
+  without the copies look alike (the volumes change slowly; `gi-sdfgi-*.png` in the run).
+- **The rest is small or none here**: the shadows' 0.22 MB a frame, and nothing of words, feedback loops, pulling,
+  prepasses, blits or drawn resolves in either mode. The keyed variants' cost is in their shaders (fetches where a
+  sampler can't say it): not separable without a skip, and their passes' GPU time (`gpuMsPerSubmit`, the first 8
+  passes) is the same in every arm, 2.6–2.7 ms.
+- **No freeze** in either mode on the M4 (`frozenS` 0: every second had a Vulkan frame on the page's screen).
+
+**Next**: the NVIDIA half, nvidia.sh's `t23` step (the user's run): whether the copies cost a frame there, and whether
+the freezes of GD's leftovers show up in either mode. The copies have a fix in view, filed in docs/backlog.md
+("Views in another format's leftovers": SDFGI's rgb9e5 views read from the `r32uint` texture and decoded in the
+shader, T18's way), taken up if NVIDIA's frames say they cost one.
+
 ## VK4 T22: queue families of compute and of transfer — 1,465 of the sample's 2,590 cases join the list; mpv the same
 
 2026-11-05. The device has three queue families now, a queue each: graphics, compute and transfer; compute and

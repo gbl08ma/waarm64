@@ -26,6 +26,16 @@
 #include "wg_private.h"
 
 void (*wg_submitted)(void);
+double wg_emul[WG_EMUL_COUNT];
+uint32_t wg_emul_skip;
+
+/* glue.c's `venus_emul_counts`: the counts, and how many in `*n`. */
+const double *
+wg_emul_counts(uint32_t *n)
+{
+   *n = WG_EMUL_COUNT;
+   return wg_emul;
+}
 
 
 /* The ops. */
@@ -2967,6 +2977,7 @@ prepasses(struct replay *r, const struct wg_program **prog, const uint8_t *p, co
          break;
       if (h->op == OP_PROVOKE) {
          const struct op_provoke *o = d;
+         wg_emul[WG_EMUL_PREPASSES]++;
          gpu_provoke(ticket++, o->buffer, o->offset, o->size, o->wide, o->mode, o->restart, o->first, o->count,
                      o->prims);
       } else if (h->op == OP_PIPELINE) {
@@ -2985,9 +2996,11 @@ prepasses(struct replay *r, const struct wg_program **prog, const uint8_t *p, co
                memcpy(r->dev->push_data + at + WGSL_DRAW_PARAMS + 8, (uint32_t[2]){ i, 0 }, 8);
             }
             util_dynarray_append_typed(&r->dp_places, uint32_t, at);
-            if (a->fan)
+            if (a->fan) {
+               wg_emul[WG_EMUL_PREPASSES]++;
                gpu_fan_indirect(ticket++, a->buffer, a->offset + (double)i * a->stride, a->ib, a->ib_offset, a->ib_size,
                                 a->wide, a->restart);
+            }
          }
       } else if (h->op == OP_EXEC) {
          const struct wg_cmd_buffer *sec = *(struct wg_cmd_buffer *const *)d;
@@ -3274,8 +3287,13 @@ image_use(struct replay *r, const struct op_image_use *u)
             const uint32_t h = u_minify(image->plane_count > 1 ? plane->extent.height : image->vk.extent.height, m);
             const uint32_t d = image->vk.image_type == VK_IMAGE_TYPE_3D ? u_minify(image->vk.extent.depth, m) : 1;
             const uint32_t cols = DIV_ROUND_UP(w, f->bw), rows = DIV_ROUND_UP(h, f->bh);
-            end_pass(r);
-            if (to_words || from_words) {
+            const double bytes = (double)cols * rows * d * f->bytes;
+            if (wg_emul_skip & (to_words || from_words ? WG_SKIP_WORDS : WG_SKIP_VIEWS)) {
+               /* A/B (`?gpu=vkskip=`): its bytes left as they are, the place counted up to date. */
+            } else if (to_words || from_words) {
+               end_pass(r);
+               wg_emul[WG_EMUL_WORDS_COPIES]++;
+               wg_emul[WG_EMUL_WORDS_BYTES] += bytes;
                const uint32_t words = wg_image_words(image), row = wg_image_row_bytes(image, m);
                const double at = image->words_at[m] + (double)row * rows * l;
                if (to_words)
@@ -3283,6 +3301,9 @@ image_use(struct replay *r, const struct op_image_use *u)
                else
                   gpu_copy_bt(words, at, row, rows, dst, m, 0, 0, l, cols * f->bw, rows * f->bh, d, 0);
             } else {
+               end_pass(r);
+               wg_emul[WG_EMUL_VIEW_COPIES]++;
+               wg_emul[WG_EMUL_VIEW_BYTES] += bytes;
                gpu_copy_tt(src, m, 0, 0, l, dst, m, 0, 0, l, cols * f->bw, rows * f->bh, d, 0, cols * f->bw,
                            rows * f->bh, cols, rows, f->bytes);
             }
@@ -3593,6 +3614,8 @@ scope_shadows(struct replay *r)
       }
       const uint32_t buffer = (uint32_t)v[4 * first];
       gpu_copy_bb(buffer, lo, to, place, hi - lo);
+      wg_emul[WG_EMUL_SHADOW_COPIES]++;
+      wg_emul[WG_EMUL_SHADOW_BYTES] += hi - lo;
       util_dynarray_foreach (&r->uses, struct scope_use, u)
          if (u->buffer == buffer && u->writable == written && u->at >= lo && u->at + u->size <= hi && conflicts(r, u) &&
              !find_shadow(r, u->buffer, u->at, u->size, written))
@@ -3932,6 +3955,16 @@ feedback_copies(struct replay *r)
       const int a = d ? feedback_att(r, d) : -1;
       if (a < 0 || d->view->twin_mark == r->twin_mark)
          continue;
+      const struct wg_image_view *att = r->atts.views[a];
+      const VkExtent3D e = vk_image_mip_level_extent(att->vk.image, att->vk.base_mip_level);
+      if (wg_emul_skip & WG_SKIP_FEEDBACK) {
+         /* A/B (`?gpu=vkskip=`): the twin as it was. */
+         wg_view_twin(d->view);
+         d->view->twin_mark = r->twin_mark;
+         continue;
+      }
+      wg_emul[WG_EMUL_FEEDBACK_COPIES]++;
+      wg_emul[WG_EMUL_FEEDBACK_BYTES] += (double)e.width * e.height * att->fmt->bytes;
       if (!cut) {
          qp = r->qactive_pool;
          if (qp)
@@ -3939,8 +3972,6 @@ feedback_copies(struct replay *r)
          gpu_pass_end();
          cut = true;
       }
-      const struct wg_image_view *att = r->atts.views[a];
-      const VkExtent3D e = vk_image_mip_level_extent(att->vk.image, att->vk.base_mip_level);
       const uint32_t layer = att->vk.base_array_layer + (r->layered ? 0 : r->view);
       wg_view_twin(d->view);
       gpu_copy_tt(view_texture(att), att->vk.base_mip_level, 0, 0, layer, d->view->twin_tex, 0, 0, 0, 0, e.width, e.height,
@@ -3963,6 +3994,7 @@ static void
 scope_cut(struct replay *r, const uint8_t *p, const uint8_t *end)
 {
    struct wg_query_pool *qp = r->qactive_pool, *pool = r->qpool;
+   wg_emul[WG_EMUL_SCOPE_CUTS]++;
    if (qp)
       gpu_end_occlusion();
    gpu_pass_end();
@@ -4007,8 +4039,10 @@ scope_end(struct replay *r, uint32_t point)
          break;
       }
    util_dynarray_foreach (&r->shadows, struct shadow, s)
-      if (s->written)
+      if (s->written) {
          gpu_copy_bb(s->to, s->place, s->buffer, s->at, s->size);
+         wg_emul[WG_EMUL_SHADOW_BACK_BYTES] += s->size;
+      }
    util_dynarray_clear(&r->shadows);
    r->no_readback = true;
    for (uint32_t g = 0; g < WGSL_MAX_GROUPS; g++)
@@ -4150,6 +4184,10 @@ apply(struct replay *r, uint32_t point)
    /* After the groups: its group may be an empty one of the program's, set again with them. */
    if (point == 0 && r->pull && (r->dirty & (RD_PIPELINE | RD_GROUPS | RD_VB)))
       gpu_pull_bind(r->pull->group, r->pull->bgl, r->pull->slots);
+   if (point == 0 && r->pull)
+      wg_emul[WG_EMUL_PULLED_DRAWS]++;
+   if (p && p->key_count)
+      wg_emul[WG_EMUL_KEYED_DRAWS]++;
    const uint32_t immediates = p ? MIN2(r->push_size, p->immediate_size) : r->push_size;
    if ((r->dirty & (RD_PUSH | RD_PIPELINE)) && immediates)
       gpu_set_immediates(0, r->push, immediates);

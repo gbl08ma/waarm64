@@ -589,8 +589,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Freezes and black windows on NVIDIA** (the user, 2026-11-04): the GI demo in SDFGI mode freezes the guest's
     display at times (back when the mode is left), and Godot's window is sometimes black instead of the scene, under
     Wayland too; no WebGPU error since the last two fixes. All Venus contexts and the compositor share one GPU
-    process, so one program's long frames hold every window: VK4's T23 (what the emulations cost a program's frame)
-    should name the costly paths first; then the render stats' frame and pass times in that mode.
+    process, so one program's long frames hold every window. VK4 T23 measured the emulated paths in that mode on the
+    M4 (no freeze there; SDFGI's view copies the one cost: REPORT.md "VK4 T23"); nvidia.sh's `t23` step measures them
+    on NVIDIA with the seconds frozen.
   - **The device's address buffer** (seen on SwiftShader, `results/gd/g8/gi-editor-swiftshader.json`): every memory
     allocated with a device address is in one GPUBuffer that doubles by copy (old and new at once), up to
     `maxStorageBufferBindingSize`; VMA with buffer device addresses gives every block the flag, images' blocks too,
@@ -800,8 +801,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     compressed: `BLOCK_TEXEL_VIEW_COMPATIBLE`), and, in one render pass, a write through one format read through
     another (no copies in a pass). `image.mutable`'s `store` and `load` cases are NotSupported here (dEQP asks for
     multisampled storage): checked once by reporting samples for storage in a throwaway build, 113 of 371 passing, none
-    failing, the rest not supported (`results/vk4/t4/store-probe/`). The copies' cost on a program isn't measured
-    (ffmpeg's and libplacebo's filters are the ones to measure: whole subresources, per switch of format).
+    failing, the rest not supported (`results/vk4/t4/store-probe/`). **The copies' cost** (VK4 T23, REPORT.md "VK4
+    T23"): Godot's SDFGI writes `r32uint` storage images and samples them through `rgb9e5ufloat` views, so each frame
+    copies ~34 MB (three or four 128³ volumes, six 1.2 MiB layers): ~1.5–1.8 ms of each submit's GPU time on the M4.
+    The way out: such a view sampled from the image's own `r32uint` texture, the shared exponent decoded in the
+    shader and filtered from fetches (T18's machinery: a sampler key saying the view's format is the texture's
+    reinterpreted), so nothing is copied; `?gpu=vkskip=views` gives the gain's ceiling. Taken up if the NVIDIA run's
+    `t23` step says the copies cost a frame there. ffmpeg's and libplacebo's filters are not measured.
   - **Multisampled arrays' leftovers** (VK4 T12; vk/README.md "Multisampled arrays"): a shader sampling a whole
     `sampler2DMSArray` reads the first layer (it needs a binding per layer and a switch on the layer in the translator). The
     48 of `multiview.*multisample*` ask for `r32g32b32a32_sfloat` and the `image.mutable` r32 ones for views WebGPU can't

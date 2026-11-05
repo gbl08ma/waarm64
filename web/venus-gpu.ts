@@ -11,6 +11,13 @@ import type { ShaderCache } from './venus-cache.ts';
 /** GPUBufferUsage's and GPUMapMode's values (the worker may lack the globals in Node). */
 const INDEX = 16, INDIRECT = 256, COPY_SRC = 4, COPY_DST = 8, TEX_COPY_SRC = 1, TEX_COPY_DST = 2, TEXTURE_BINDING = 4, UNIFORM = 64, STORAGE = 128, RENDER_ATTACHMENT = 16, MAP_READ = 1, MAP_MODE_READ = 1;
 
+/**
+ * The worker's own emulated work (VK4 T23; with the driver's counts the render stats' `venusEmul`): Vulkan's blits
+ * (each a draw), resolves WebGPU makes and those drawn (VK4 T10, T21), depth and stencil resolves (drawn), clears and
+ * those encoded and copied in (a format WebGPU doesn't render), transform feedback's captures (VK3 L7.4).
+ */
+export type VenusEmulStats = { blits: number; resolves: number; drawnResolves: number; depthResolves: number; clears: number; copiedClears: number; xfb: number };
+
 export type VenusGpuStats = {
   submits: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number; pipelines: number; pipelineMs: number; bindGroups: number; errors: number; dirtyPages: number;
   /** Of a submit's way back (VK3 L2): submits done, the ms from `queue.submit` until WebGPU said done (its work and its
@@ -249,6 +256,9 @@ class Timing {
 
 export class VenusGpu {
   readonly stats: VenusGpuStats = { submits: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, pipelines: 0, pipelineMs: 0, bindGroups: 0, errors: 0, dirtyPages: 0, done: 0, doneMs: 0, doneMaxMs: 0, orderMs: 0, nudges: 0, pipelinesReady: 0, pipelineReadyMs: 0, deferred: 0, deferredMs: 0, syncPipelines: 0, premade: 0, premadeUsed: 0, translations: 0, translateMs: 0, cacheHits: 0, cacheMisses: 0, cacheStores: 0, encodeMs: 0, submitCallMs: 0, passes: 0, draws: 0, gpuTimed: 0, gpuMs: 0, workDone: 0, workDoneMs: 0 };
+  readonly emul: VenusEmulStats = { blits: 0, resolves: 0, drawnResolves: 0, depthResolves: 0, clears: 0, copiedClears: 0, xfb: 0 };
+  /** `?gpu=vkskip=meta` (VK4 T23's A/B): blits and resolves left out (their destination as it was). */
+  skipMeta = false;
   /** Submits not yet completed. */
   inFlight = 0;
   /** Called after each submit (the host's poller then runs until it completes: web/venus-host.ts). */
@@ -651,6 +661,7 @@ export class VenusGpu {
       },
       gpu_xfb(ptr: number, len: number) {
         const j = parseJson(self.text(ptr, len));
+        if (j.op === 'draw') self.emul.xfb++;
         // Its buffers now (ids are reused).
         if (j.ib) j.ib = buf(j.ib);
         if (j.indirect) j.indirect = [buf((j.indirect as number[])[0]), (j.indirect as number[])[1]];
@@ -1431,7 +1442,9 @@ override bit: u32 = 8u;
     this.touched.add(tex);
     const fmt = j.format as GPUTextureFormat;
     const depthy = /depth|stencil/.test(fmt);
+    if (this.skipMeta && j.op !== 'clear') return;
     if (j.op === 'clear') {
+      this.emul.clears++;
       const view = this.viewOf(j.dst, j.dstMip, j.dstLayer);
       if (depthy) {
         const ds: GPURenderPassDepthStencilAttachment = { view };
@@ -1440,6 +1453,7 @@ override bit: u32 = 8u;
         enc.beginRenderPass({ colorAttachments: [], depthStencilAttachment: ds }).end();
       } else if (!(tex.usage & RENDER_ATTACHMENT)) {
         // A format WebGPU can't render to (VK3 L4c-F): its texels encoded here and copied in.
+        this.emul.copiedClears++;
         this.clearByCopy(tex, j.dstMip, j.dstLayer, fmt, (j.color ?? [0, 0, 0, 0]) as number[]);
       } else {
         // A 3D texture: every slice of the level (Vulkan clears the whole subresource).
@@ -1463,6 +1477,7 @@ override bit: u32 = 8u;
       return;
     }
     if (j.op === 'resolveDepth') {
+      this.emul.depthResolves++;
       this.resolveDepth(j);
       return;
     }
@@ -1473,12 +1488,17 @@ override bit: u32 = 8u;
       const dw = Math.max(1, tex.width >> j.dstMip), dh = Math.max(1, tex.height >> j.dstMip);
       // WebGPU's own resolve is of a whole level of one size, into a 2D texture, of a format it resolves (not an integer
       // one, a 32-bit float or texture-formats-tier1's 16-bit normalized ones: VK4 T21).
-      if (!/int$|^r(g|gba)?32float$|^r(g|gba)?16[su]norm$/.test(fmt) && tex.dimension !== '3d' && !sx && !sy && !dx && !dy && w === sw && h === sh && w === dw && h === dh && tex.usage & RENDER_ATTACHMENT)
+      if (!/int$|^r(g|gba)?32float$|^r(g|gba)?16[su]norm$/.test(fmt) && tex.dimension !== '3d' && !sx && !sy && !dx && !dy && w === sw && h === sh && w === dw && h === dh && tex.usage & RENDER_ATTACHMENT) {
+        this.emul.resolves++;
         enc.beginRenderPass({ colorAttachments: [{ view: this.viewOf(j.src, j.srcMip, j.srcLayer, ownFormat(S, j.srcFormat)), resolveTarget: this.viewOf(j.dst, j.dstMip, j.dstLayer, ownFormat(tex, fmt)), loadOp: 'load', storeOp: 'store' }] }).end();
-      else this.resolveByDraw(j, sx, sy, dx, dy, w, h);
+      } else {
+        this.emul.drawnResolves++;
+        this.resolveByDraw(j, sx, sy, dx, dy, w, h);
+      }
       return;
     }
     // A blit: the source's region drawn into the destination's.
+    this.emul.blits++;
     const kind = sampleKind(fmt);
     const srcKind = sampleKind(j.srcFormat);
     // WebGPU doesn't filter these: weighed in the shader. An integer is clamped into the destination's range (Vulkan's).

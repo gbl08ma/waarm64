@@ -15,6 +15,8 @@
 extern bool wg_unwaited_allocations;
 extern bool wg_premake_off;
 extern uint32_t wg_queue_families;
+extern uint32_t wg_emul_skip;
+const double *wg_emul_counts(uint32_t *n);
 #define WG_QUEUE_FAMILIES 3
 void wg_memory_rebind(VkDeviceMemory memory, void *data);
 uint32_t wg_memory_texture(VkDeviceMemory memory);
@@ -37,6 +39,9 @@ int venus_init(uint32_t features, const uint32_t *limits, uint32_t nlimits, void
 const char *venus_build_id(void);
 void venus_premake(int on);
 void venus_queue_families(uint32_t n);
+const double *venus_emul_counts(void);
+uint32_t venus_emul_count(void);
+void venus_emul_skip(uint32_t mask);
 uint32_t venus_arena_end(void);
 void venus_complete(uint32_t serial);
 uint32_t venus_capset(void *out);
@@ -114,6 +119,30 @@ EXPORT void
 venus_queue_families(uint32_t n)
 {
    wg_queue_families = n >= 1 && n <= WG_QUEUE_FAMILIES ? n : WG_QUEUE_FAMILIES;
+}
+
+/* What the emulated paths did since the start (VK4 T23; wg_private.h `wg_emul`): `venus_emul_count` doubles. */
+EXPORT const double *
+venus_emul_counts(void)
+{
+   uint32_t n;
+   return wg_emul_counts(&n);
+}
+
+EXPORT uint32_t
+venus_emul_count(void)
+{
+   uint32_t n;
+   wg_emul_counts(&n);
+   return n;
+}
+
+/* `?gpu=vkskip=<path>,…` (A/B, VK4 T23): the emulated work left out (wg_private.h WG_SKIP_*): wrong pixels, never a
+ * refused command. */
+EXPORT void
+venus_emul_skip(uint32_t mask)
+{
+   wg_emul_skip = mask;
 }
 
 /* The driver's build ID (vk/gen.ts: a hash of vk/'s sources), a NUL-terminated string: the worker's shader store

@@ -3,7 +3,7 @@
 # one binary) at /godot and test projects at /projects/<name>/, the same scene (a box, a camera, a sun, a plain
 # background) under Forward+ (`forward`) and Mobile (`mobile`), a lit one with SDFGI on (`sdfgi`, Forward+), and Godot's
 # Global Illumination demo (`gi`: godot-demo-projects' 3d/global_illumination from Godot's asset store, MIT, sha256-pinned;
-# GD G8).
+# GD G8), and the demo as it starts in SDFGI mode, measured (`gi-sdfgi`, `gi-sdfgi-ssil`: VK4 T23).
 #   bench/vulkan/godot-disk.sh      -> target/godot/godot.ext4 (the download kept in target/godot/dl/)
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -123,6 +123,42 @@ if ! echo "$GI_SHA256  $gi" | sha256sum -c --quiet >/dev/null 2>&1; then
 fi
 python3 -I -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$gi" "$tree/gi"
 mv "$tree/gi/global_illumination" "$tree/projects/gi" && rmdir "$tree/gi"
+# VK4 T23 (bench/vulkan/t23.ts): the demo as it starts in SDFGI mode (`gi-sdfgi`), and with SSAO and SSIL on too
+# (`gi-sdfgi-ssil`), no key pressed; vsync off, so its frames a second say what a frame costs; and a line a second on
+# stdout: the frames drawn, Godot's own CPU and GPU ms a frame (its viewport's measured render times).
+for v in sdfgi sdfgi-ssil; do
+  d=$tree/projects/gi-$v
+  cp -r "$tree/projects/gi" "$d"
+  sed -i 's/^var gi_mode := GIMode.NONE$/var gi_mode := GIMode.SDFGI/' "$d/test.gd"
+  [ $v = sdfgi-ssil ] && sed -i 's/^var ssil_mode := SSILMode.NONE$/var ssil_mode := SSILMode.SSAO_AND_SSIL/' "$d/test.gd"
+  grep -q '^var gi_mode := GIMode.SDFGI$' "$d/test.gd" || { echo "godot-disk: the demo's test.gd changed (gi_mode)" >&2; exit 1; }
+  sed -i 's/^\[display\]$/[display]\nwindow\/vsync\/vsync_mode=0/' "$d/project.godot"
+  sed 's/^    /\t/; s/^\t    /\t\t/' >> "$d/test.gd" <<'EOF'
+
+
+# VK4 T23 (bench/vulkan/godot-disk.sh): a line a second of the frames drawn and Godot's CPU and GPU ms a frame.
+var t23_frames: int = 0
+var t23_at: int = 0
+var t23_cpu: float = 0.0
+var t23_gpu: float = 0.0
+
+func _process(_delta: float) -> void:
+    var vp: RID = get_viewport().get_viewport_rid()
+    if t23_at == 0:
+        RenderingServer.viewport_set_measure_render_time(vp, true)
+        t23_at = Time.get_ticks_msec()
+    t23_frames += 1
+    t23_cpu += RenderingServer.viewport_get_measured_render_time_cpu(vp) + RenderingServer.get_frame_setup_time_cpu()
+    t23_gpu += RenderingServer.viewport_get_measured_render_time_gpu(vp)
+    var now: int = Time.get_ticks_msec()
+    if now - t23_at >= 1000:
+        print("t23 frames=%d ms=%d cpu=%.2f gpu=%.2f" % [t23_frames, now - t23_at, t23_cpu / t23_frames, t23_gpu / t23_frames])
+        t23_frames = 0
+        t23_cpu = 0.0
+        t23_gpu = 0.0
+        t23_at = now
+EOF
+done
 rm -f "$OUT/godot.ext4"
 /sbin/mkfs.ext4 -q -d "$tree" "$OUT/godot.ext4" 400M
 echo "$OUT/godot.ext4"

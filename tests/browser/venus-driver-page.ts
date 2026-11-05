@@ -519,7 +519,7 @@ export async function runScope(spirv: { vert: string; frag: string; comp: string
  * freed; `dynamicStorage`: a dynamic storage buffer's writes read back at its offset; `oddStorage`: a storage buffer
  * of an odd size bound whole. Each check: the first byte that differs from what Vulkan says (-1: none).
  */
-export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mutableViews' | 'resolve3d' | 'msCopyWithin' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied' | 'uniformWritten' | 'indirectWritten' | 'readInPlace' | 'threeSame' | 'oddRange' | 'msLayersSrgb' | 'msLayersPacked' | 'oneRow' | 'resolveTwin' | 'msLayers' | 'msTwins' | 'msPacked' | 'msFormats' | 'attachmentSizes' | 'loadNone' | 'manyLayers' | 'packedFeedback' | 'feedbackLayer' | 'addresses' | 'addressesUniform' | 'twoReads' | 'sameRange' | 'overlappingRanges' | 'inlineBlocks' | 'depthLess' | 'depthAndCompare' | 'intGather' | 'cubeSized' | 'cubeGather' | 'depthEight' | 'inlineLong' | 'immutableFreed' | 'sixteenBindings' | 'sixteenThenOne' | 'cubePlain' | 'vertexCompares' | 'fourSets' | 'bc1Blit' | 'readOnlyImages' | 'g4Views' | 'texturesFull' | 'sizeOnly' | 'formatless' | 'declaredOther' | 'arrayAsFlat' | 'texelUniforms' | 'queuesTimeline' | 'queuesBinary', push: string) {
+export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mutableViews' | 'resolve3d' | 'msCopyWithin' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied' | 'uniformWritten' | 'indirectWritten' | 'readInPlace' | 'threeSame' | 'oddRange' | 'msLayersSrgb' | 'msLayersPacked' | 'oneRow' | 'resolveTwin' | 'msLayers' | 'msTwins' | 'msPacked' | 'msFormats' | 'attachmentSizes' | 'loadNone' | 'manyLayers' | 'packedFeedback' | 'feedbackLayer' | 'addresses' | 'addressesUniform' | 'twoReads' | 'sameRange' | 'overlappingRanges' | 'inlineBlocks' | 'depthLess' | 'depthAndCompare' | 'intGather' | 'cubeSized' | 'cubeGather' | 'depthEight' | 'inlineLong' | 'immutableFreed' | 'sixteenBindings' | 'sixteenThenOne' | 'cubePlain' | 'vertexCompares' | 'fourSets' | 'bc1Blit' | 'readOnlyImages' | 'g4Views' | 'texturesFull' | 'sizeOnly' | 'formatless' | 'declaredOther' | 'arrayAsFlat' | 'texelUniforms' | 'queuesTimeline' | 'queuesBinary', push: string, skip: string[] = []) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -528,7 +528,7 @@ export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mu
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
   const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
   // `ycbcr`: the device with `?gpu=vkycbcr`'s YCbCr conversions (VK3 L7.2).
-  const v = await VenusRenderer.create(module, memory, { at: VENUS_ARENA, bytes: 1 << 20, watch: 0 }, device, undefined, undefined, { ycbcr: scenario === 'ycbcr' });
+  const v = await VenusRenderer.create(module, memory, { at: VENUS_ARENA, bytes: 1 << 20, watch: 0 }, device, undefined, undefined, { ycbcr: scenario === 'ycbcr', skip });
   const ex = v.raw as unknown as Test;
   const text = (p: number) => { const u8 = new Uint8Array(memory.buffer); let e = p; while (u8[e]) e++; return new TextDecoder().decode(u8.slice(p, e)); };
   const words = new Uint8Array(await (await fetch(push)).arrayBuffer());
@@ -881,7 +881,7 @@ export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mu
     for (let i = from; i < to; i++) if (got[i] !== w[i]) { differs[k] = i; break; }
   }
   device.destroy();
-  return { checks: differs, errors, warnings: v.gpu.stats.errors, got: [...got.subarray(0, 16)], bindGroups: v.gpu.stats.bindGroups };
+  return { checks: differs, errors, warnings: v.gpu.stats.errors, got: [...got.subarray(0, 16)], bindGroups: v.gpu.stats.bindGroups, emul: v.emul() };
 }
 
 /**

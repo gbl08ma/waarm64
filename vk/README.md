@@ -807,6 +807,18 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   `maxBindingsPerBindGroup`), `bindgroups` (each pipeline's layouts their own uids), `pad` (no WG_MEMORY_PAD).
   On NVIDIA a frame's `Queue::Submit` in the GPU process took 2.5 ms of its CPU at c8087cb0 against 1.6 at 4fdc69fb,
   with the same WebGPU calls; SwiftShader's take ~0.1 ms either way (bench/vulkan/REPORT.md "VK3 L9a").
+- **What the emulated paths do** (VK4 T23): the driver counts each path's work since the start (`wg_emul`,
+  `enum wg_emul`; glue.c's `venus_emul_counts`): a usage scope's shadow copies and their bytes, the bytes written back,
+  the passes its barriers cut; copies between view formats' textures and to and from an image's words, and their
+  bytes; a feedback loop's copies; draws whose vertices are pulled; variants made, and draws and dispatches through a
+  keyed one (samplers, padded images, formatless storage); passes made before a render pass (provoking vertices,
+  indirect fans). The worker counts its own (web/venus-gpu.ts `VenusEmulStats`): blits, resolves WebGPU makes and
+  those drawn, depth resolves, clears and those copied in, transform feedback's draws. The render stats' `venusEmul`
+  has both, a second's. `?gpu=vkskip=<path>` (repeatable; the bench hook `window.__webpcVkSkip` changes it in a run)
+  leaves a path's work out, for A/B only: `views`, `words` and `feedback` (the driver's copies: the place is taken as
+  up to date) and `meta` (the worker's blits and resolves); what it leaves is wrong pixels, never a command WebGPU
+  refuses, which is why the shadows, pulled vertices and keyed variants have no skip (WebGPU would refuse their draws).
+  `bench/vulkan/t23.ts` measures them in Godot's GI demo (bench/vulkan/REPORT.md "VK4 T23").
 - **Shared images** (Venus's WSI): see "Presentation".
 - **Semaphores' exports** (VK3 L7.1b): a semaphore is made whatever handle types its `VkExportSemaphoreCreateInfo`
   names; those other than sync files are dropped (`wg_CreateSemaphore`). Venus's guest driver creates semaphores
