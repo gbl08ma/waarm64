@@ -23,7 +23,7 @@ So of what was measured, nothing follows the page's size by itself, and what can
 inside the session to say so: resize is an agent's job after all (GNOME and KDE may not need it). The
 rest of what a host wants from a guest:
 
-- **the clipboard**, both ways (backlog "Clipboard for the screen"; its own plan, [clipboard.md](clipboard.md), proposes our agent first), including text copied from a
+- **the clipboard**, both ways (backlog "Clipboard for the screen"; our own agent, the user's choice of 2026-11-05: [clipboard.md](clipboard.md)), including text copied from a
   text console (`/dev/vcsN` is readable by a root agent: only an agent of ours could offer that);
 - **the time after a resume** (a restored or suspended machine's clock lags until something sets it:
   backlog "Snapshots");
@@ -76,7 +76,9 @@ anything webpc-specific): a small static aarch64 binary (Rust, musl) on a port o
    echoing through a named port in every runner).
 2. qemu-guest-agent's host side: time after a resume, shutdown, the OS's name; a ready signal for
    the page and the tests where the agent is installed.
-3. spice-vdagent's host side: the clipboard, then monitor configuration for X11 sessions. (It won't resize sway:
+3. spice-vdagent's host side: monitor configuration for X11 sessions. (The clipboard left this list on 2026-11-05: the
+   user chose an agent of our own for it, delivered over fw_cfg with no install: [clipboard.md](clipboard.md). Its
+   binary and port are where this list's other jobs can go too.) (It won't resize sway:
    a wlroots session needs the command above, which is a reason for step 4 or for a note in the docs.)
 4. Only then, and only for a gap that is still wanted: the tools disk and our own agent.
 

@@ -115,7 +115,8 @@ even on the M4; NVIDIA's gain in its next run), the rest small, no freeze (REPOR
 | Rebinding (RB) | **Tried, not kept 2026-11-05**: a tail to a block compiled later bound by instantiating its module again (no new code); 5% slower in Firefox on the Mac (the sites' code ~2%, the rebindings ~3%) | [jit.md](docs/jit.md) "Tried and not kept", `bench/boot/REPORT.md` "Rebinding a module's tails once their blocks are compiled" |
 
 Proposed, not started: peer-to-peer rooms over WebRTC ([plans/networking-p2p.md](docs/plans/networking-p2p.md)); a guest agent and live resize
-([plans/agent.md](docs/plans/agent.md)); a preloaded image and snapshot loaded with the page (likely the Arch desktop
+([plans/agent.md](docs/plans/agent.md)); clipboard sharing through an agent of ours, the user's choices made 2026-11-05
+([plans/clipboard.md](docs/plans/clipboard.md)); a preloaded image and snapshot loaded with the page (likely the Arch desktop
 guest), a catalog of hosted images, and the stable embedding API, extracted from what the page ended up using
 ([machines.md](docs/machines.md)); Firefox and Safari (the user checks Firefox by hand; backlog).
 
