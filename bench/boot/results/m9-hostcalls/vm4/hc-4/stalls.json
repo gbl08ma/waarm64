@@ -1,0 +1,26 @@
+{
+ "bench/results/local/xfer/ab4/hc-4/pages-all.timeline.json": {
+  "seconds": 289,
+  "mips": 288,
+  "busyMips": 236,
+  "busyShare": 0.3,
+  "stallsAtLeastMs": {
+   "20": 2,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 22,
+  "stalledMsPerSecondPerVcpu": 0.04,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

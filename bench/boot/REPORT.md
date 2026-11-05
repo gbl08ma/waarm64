@@ -3487,3 +3487,15 @@ checker missed a host return's continuation (fixed, its test failing first) and 
 members (its test written; the fix in `Cache::install` doesn't make it pass yet); a region using every local index
 would overflow 128 locals now; `MAX_DEPTH` 64's host stack is unmeasured in Chromium; table indices aren't asserted
 under 2^24. Not merged: XF-HANDOVER.md has the order.
+
+**After the review** (the branch at `be42d12f`: findings 1, 2, 3 and 5 fixed, each with its test; `scripts/ci.sh` and
+`scripts/ci-debian.sh` pass there): three VM sessions with the fixes' first core ran through (busy MIPS 224, 233,
+231), and four alternated rounds against HEAD (`results/m9-hostcalls/vm4/`):
+
+| | busy MIPS | wasm (MiB) | RSS median (MB) |
+|---|---|---|---|
+| HEAD | 207, 212, 213, 210 | 126.4 | 3,618, 3,703, 3,688, 3,683 |
+| host calls | **235, 234, 230, 236** | 130.6-131.2 | 3,679, 3,668, 3,660, 3,696 |
+
++11% with every round apart, no more memory, every session's Firefox up: 1 lost of 10 host-calls sessions in the VM,
+none of the last 7.

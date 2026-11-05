@@ -1,0 +1,8 @@
+hc-1       busy 235 MiB 131.2 rssMed 3679 rssMax 3854 loads 9437/3877/3536/9536/2005
+hc-2       busy 234 MiB 130.6 rssMed 3668 rssMax 3843 loads 9866/3933/2556/9617/2267
+hc-3       busy 230 MiB 130.9 rssMed 3660 rssMax 3835 loads 10412/3970/2912/9050/2457
+hc-4       busy 236 MiB 131.0 rssMed 3696 rssMax 3897 loads 8758/3958/2777/10014/2256
+head-1     busy 207 MiB 126.4 rssMed 3618 rssMax 3883 loads 9632/4290/2945/10447/2610
+head-2     busy 212 MiB 126.4 rssMed 3703 rssMax 3914 loads 9540/4211/2809/10704/2681
+head-3     busy 213 MiB 126.3 rssMed 3688 rssMax 3904 loads 8673/4021/2898/10833/2535
+head-4     busy 210 MiB 126.4 rssMed 3683 rssMax 4017 loads 9664/4212/2927/10791/2811

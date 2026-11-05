@@ -32,19 +32,23 @@ from "Where a busy vCPU's time goes in Firefox, again" (2026-11-04) to "Guest ca
     hundred KB at worst against V8's ~1 MB, plus a helper on top (a tier-up's install compiles on that stack when
     the worker is overdue). Measure it in Chromium with a guest that recurses past 64 through heavy frames before
     the merge, or lower the bound. `scripts/ci.sh` passes on `be42d12f` (622 s).
-  - **The Firefox loss's rate:** 1 of 6 VM sessions with host calls so far (0 of 3 with the branch's later cores,
-    0 of 2 on the Mac). An alternated run of 4 rounds (HEAD against `be42d12f`'s core) was started at the end of
-    the night (`bench/results/local/xfer/ab4/`); `bench/gpu/firefox-load.ts` now logs Firefox's output, its
-    processes and the kernel's messages when a page never gets ready (look for `not ready:` in a session's log).
+  - **The Firefox loss's rate:** 1 of 10 VM sessions with host calls (`a2272932`'s core, the first), none of the
+    last 7 (4 of them alternated with HEAD at `be42d12f`: busy MIPS 230-236 against 207-213, RSS the same:
+    REPORT.md, `results/m9-hostcalls/vm4/`), 0 of 2 on the Mac. `scripts/ci-debian.sh` passes on `be42d12f` too.
+    `bench/gpu/firefox-load.ts` now logs Firefox's output, its processes and the kernel's messages when a page never
+    gets ready (`not ready:` in a session's log): the next loss says more.
+  - **Merging is the user's call**: the gain holds on both hosts and the gates pass; what's against it is the one
+    unexplained loss (it may be the backlog's first-page timeout, which HEAD has had too, though that one left
+    Firefox running and the later pages loading).
 - The Mac host as an A/B target: `bench/gpu/sway-mac.sh` with `SCRIPT=firefox-load.ts WASM=<core>
   FROM_SNAPSHOT=<file>`, looped with `bench/gpu/mac-leftovers.sh --kill` after each session (the loop used tonight
   is `bench/results/local/xfer/mac-ab.sh`, local: worth committing as a tool if the Mac stays the ranking host).
 
 ## Next
 
-1. Read `ab4/`: whether HEAD loses Firefox too (the backlog's first-page timeout, 3 in ~35 sessions in October), or
-   only host calls do. If only host calls, narrow it (`MAX_DEPTH` 0 keeps the entries but no host calls) before
-   reading code.
+1. If the user merges: the docs (jit.md "Calls" for the mechanism, out of "Tried and not kept"; v8.md's entry),
+   `scripts/ci-graphics.sh` and `scripts/ci-machines.sh` (track end), PLAN.md's row, and this handover retired. If a
+   loss recurs first: its `not ready:` log, then `MAX_DEPTH` 0 (the entries without host calls) to narrow it.
 2. Finding 4's measurement; the branch's docs (jit.md "Calls" for the mechanism, out of "Tried and not kept").
 3. Then the gates (`scripts/ci.sh`, ci-debian, ci-graphics, ci-machines), the Mac A/B again and the VM's, and the
    merge.
