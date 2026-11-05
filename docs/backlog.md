@@ -89,15 +89,14 @@ the steps, so an interpreted step costs ~3.5× a compiled one. The loads' new co
   2026-11-04 (`bench/boot/REPORT.md` "Where a busy vCPU's time goes in Firefox, again"): entries 22.0% of the samples (27-29% while pages scroll), 80% of them after a
   `return_call_indirect`, 15% from the dispatcher; the signature check 3.0%. Returns, 49% of those entries, are host returns now ([jit.md](jit.md) "Calls"). What
   remains:
-  - **Tails into code that was cold when its predecessor was compiled: re-emitting tried, not kept** (2026-11-05,
-    `bench/boot/REPORT.md` "Relinking a region once its successors are compiled"): those tails and the by-VA links
-    are 22% of the indirect entries (returns 49%, BLR 11%); compiling ~10,000 hot regions again with direct links
-    cost 11% more wasm and ran slower (the new copy starts in Liftoff, the old stays in use). Untried: rebinding a
-    module's imports by instantiating it again (V8 shares the compiled code between instances: no new code), behind an
-    import stub per uncompiled successor. An imported tail call stays at 25 ns an entry at 131,072 functions where
-    `return_call_indirect` costs 84 (the same report, "Where a busy vCPU's time goes in Firefox, again"). A per-site
-    slot in a module-local table, filled on install, measured no cheaper than the jump cache (`chain.mjs` `local`, 35
-    against 37 ns).
+  - **Tails into code that was cold when its predecessor was compiled, rebound by a second instance** (untried): those
+    tails and the by-VA links are 22% of the indirect entries (returns 49%, BLR 11%). Re-emitting them as direct links
+    lost ([jit.md](jit.md) "Tried and not kept", "Selective relinking"). Instead: an import stub per uncompiled
+    successor, and once it compiles, the module instantiated again with that import bound (V8 shares the compiled
+    code between instances: no new wasm). An imported tail call stays at 25 ns an entry at 131,072 functions where
+    `return_call_indirect` costs 84 (`bench/boot/REPORT.md` "Where a busy vCPU's time goes in Firefox, again"). A
+    per-site slot in a module-local table, filled on install, measured no cheaper than the jump cache (`chain.mjs`
+    `local`, 35 against 37 ns).
   - The dispatcher's entries (15% of the entry stalls on 2026-11-04 for 4.7% of the indirect entries: about three
     times the average stall each) and the signature check's table load (3.0% of the time; a typed table didn't make
     the transfer cheaper in `chain.mjs`).
