@@ -202,11 +202,14 @@ isn't paused.
    acknowledgement (bounded, about 300 ms), then sends the held key. The guest's program pastes what the user
    just copied on the host. Privacy is good: the host's clipboard reaches the guest only when the user pastes in
    it.
-   - **To measure first:** whether Chromium (and Firefox) fire `paste` at a focused `<canvas tabindex=0>` that
-     isn't editable. If they don't, the screen's key sink becomes a hidden, focused `contenteditable` or
-     `<textarea>` over the canvas, as web VNC clients do (it would also carry composition input later).
-   - **What is lost:** a paste from the guest's own menus (right-click, Paste) sees the guest's clipboard, not
-     the host's last copy. That is what option 2 fixes.
+   - **Measured (the user's Chrome, 2026-11-05):** Chrome fires `paste`, with the text in `clipboardData`, at a
+     focused `<canvas tabindex=0>` that isn't editable, as long as no handler calls `preventDefault` on the
+     keydown. So the screen's canvas can take it, with no hidden text field. Firefox is still to check.
+   - **What is lost:** a paste from the guest's own menus (right-click, Paste, or a middle click) gives no
+     browser event, so it gets the guest's clipboard: the host's text from the last paste chord, or the guest's
+     own last copy. Option 2 fixes that in Chromium, because the host's copy is already in the guest by the
+     time the user is back on the page. Without that permission, the user sends the clipboard from the
+     toolbar's menu (option 3) and then pastes from the guest's menu.
 2. **Sync on focus (opt-in, Chromium, one prompt).** While `clipboard-read` is `granted`
    (`navigator.permissions.query`), each time the page gets focus back (`focus`, `visibilitychange`), it reads
    the clipboard and offers it to the guest if it changed. Where `clipboardchange` exists, the page reads only
