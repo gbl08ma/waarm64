@@ -181,7 +181,7 @@ type Slot = { kind: DeviceKind; disk?: StartDisk; adapter?: number };
 
 /** The machine's transports in slot order (web/app/shape.ts `slots`): the kinds a snapshot's header lists, so a restore makes the same. */
 const layout = (m: StartMessage, machine: Machine): Slot[] =>
-  slots({ nets: machine.network ? (m.nets?.length ?? 0) : 0, display: usesGpu(m, machine) ? '2d' : 'none', mouse: !!m.mouse, touch: !!m.touch, clock: !!m.clock, shares: !!m.folders, attachments: m.disks }).map((s) => ({ kind: s.kind, disk: s.attachment === undefined ? undefined : m.disks[s.attachment], adapter: s.adapter }));
+  slots({ nets: machine.network ? (m.nets?.length ?? 0) : 0, display: usesGpu(m, machine) ? '2d' : 'none', mouse: !!m.mouse, touch: !!m.touch, clock: !!m.clock, shares: !!m.folders, clipboard: !!m.agent, attachments: m.disks }).map((s) => ({ kind: s.kind, disk: s.attachment === undefined ? undefined : m.disks[s.attachment], adapter: s.adapter }));
 
 /** A disk's device: its source, and its overlay (what the guest trims leaves it; a ramdisk gives the memory back). */
 function blkSpec(d: StartDisk, stats?: boolean, keep?: boolean): DeviceSpec {
@@ -195,6 +195,7 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
   switch (slot.kind) {
     case 'rng': return { type: 'rng' };
     case 'clock': return { type: 'clock' };
+    case 'agent': return { type: 'agent', port: m.agent };
     case '9p': {
       // `?sharesasync=<name>,…` (tests, measurements): folders in the browser served as a folder on the computer is.
       const asHost = (query.get('sharesasync') ?? '').split(',');

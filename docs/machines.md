@@ -182,7 +182,7 @@ changes; the drop-before-run discipline of the page before machines is kept besi
 ### 4.1 Many disks
 
 - **16 disks at most** (`shape.ts` `MAX_DISKS`). The page's machine has other transports (rng, keyboard, tablet, up
-  to four network adapters, gpu, snd, the mouse, the touchscreen, the clock, 9p) of the core's 32
+  to four network adapters, gpu, snd, the mouse, the touchscreen, the clock, 9p, clipboard sharing's agent) of the core's 32
   (`virtio::MAX_DEVICES`); 16 disks leaves room for devices to come without making a stored machine that used every
   slot one that a newer page can't make.
 - **Slots** (`shape.ts` `slots`): the other devices first, in a fixed order, then the disks; a new device kind joins
@@ -297,8 +297,8 @@ The file's format, what the core saves and the page's toolbar and header fields:
 - **The shape** (`shape.ts` `shapeOf`) is a canonical JSON of what the guest sees: vCPUs, RAM (and the memory
   split), the display (2D or 3D: different devices) and Vulkan, the transports in slot order, each disk's size,
   read-only flag, serial and base identity (and `swap: true` for a ramdisk the guest uses as swap, §4.3), the CPU features (`cpu`), the network adapters' MACs (left out for one adapter at the default MAC). **A feature that
-  came later joins only when it's on** (the USB controller as `usb: true`; the mouse, the touchscreen, the clock and
-  9p as transports on machines that have them), so machines made before it keep their hash; `sha3` among the CPU
+  came later joins only when it's on** (the USB controller as `usb: true`; the mouse, the touchscreen, the clock,
+  9p and clipboard sharing's `agent` as transports on machines that have them), so machines made before it keep their hash; `sha3` among the CPU
   features is left out of the hash for the same reason (the features after it, ABI 59's, are in it). Its SHA-256 is the **shape hash** (`shapeHash`). Names, the
   overlay chosen and writing in place aren't in it. The machine's JIT cache budget (`jitMiB`, when set) rides in the
   shape **outside the hash**: the guest doesn't see it and a state restores under any budget, so lowering it after a

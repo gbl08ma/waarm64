@@ -56,6 +56,7 @@ import { keyboardSetting, resolveKeyboard } from './keyboard.ts';
 import { parseLocalURL } from '../local-net.ts';
 import { installCopyEdit } from './copy-edit.ts';
 import { eventOf, keyOf, keymapOf, type Mods } from './osk.ts';
+import { AgentLink } from './agent-link.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -738,6 +739,11 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   // A relative mouse (the pointer while the screen holds the mouse) and a touchscreen, on machines that have them.
   const mouse = pointerOn('mouse') ? new MessageChannel() : undefined;
   const touch = pointerOn('touch') ? new MessageChannel() : undefined;
+  // Clipboard sharing's port to the guest's agent (docs/plans/clipboard.md), on machines that have it.
+  const agent = clipboardOn() ? new MessageChannel() : undefined;
+  agentLink?.close();
+  agentLink = agent && new AgentLink(agent.port1);
+  (window as unknown as { __agent?: AgentLink }).__agent = agentLink; // the tests' hook
   const locked = (on: boolean) => { ui.mouseLocked = on; placeCursor(); };
   const input = attachInput(canvas, kbd.port1, tablet.port1, { live: () => keyboardLive, send: (d) => term.input(d, true), usb: keyboardKey }, { mouse: mouse?.port1, touch: touch?.port1, locked });
   input.mouseLock(ui.mouseLock, ui.mouseLockMode);
@@ -887,7 +893,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
     const startLayout = await resolveKeyboard(keyboardSetting(params.get('keyboard'), stored?.record, params.has('machine')));
     ui.keyLayout = startLayout?.id;
-    worker.postMessage({ type: 'start', query: location.search, machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: startLayout?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0', jscvt: params.get('jscvt') !== '0', rcpc: params.get('rcpc') !== '0', sb: params.get('sb') !== '0', flagm: params.get('flagm') !== '0', dit: params.get('dit') !== '0', frintts: params.get('frintts') !== '0', dotprod: params.get('dotprod') !== '0' }, params: params.get('params') ?? undefined, credentials, guest: guestWords(startLayout), nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, folders: shares && { list: list!, port: shares.port2 }, sharesPath: shares ? sharesPath(stored!.record) : undefined, clock: stored ? !!stored.record.clock : params.get('clock') !== '0', sound, snapshot, resume, about, plan, ...three, vulkan: three && wantsVulkan() ? true : undefined } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(shares ? [shares.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : [])]);
+    worker.postMessage({ type: 'start', query: location.search, machine, ncpus, ramMiB, ramSplit, jitMiB: jitMiB || undefined, keyLayout: startLayout?.id, netConfig: (params.get('netconfig') ?? (stored?.record.netConfig === false ? '0' : '1')) !== '0', disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, ioStats: params.has('iostats') || undefined, noDiskCache: params.get('diskcache') === '0' || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0', sha3: params.get('sha3') !== '0', jscvt: params.get('jscvt') !== '0', rcpc: params.get('rcpc') !== '0', sb: params.get('sb') !== '0', flagm: params.get('flagm') !== '0', dit: params.get('dit') !== '0', frintts: params.get('frintts') !== '0', dotprod: params.get('dotprod') !== '0' }, params: params.get('params') ?? undefined, credentials, guest: guestWords(startLayout), nets, usb: usb?.port2, mouse: mouse?.port2, touch: touch?.port2, folders: shares && { list: list!, port: shares.port2 }, sharesPath: shares ? sharesPath(stored!.record) : undefined, clock: stored ? !!stored.record.clock : params.get('clock') !== '0', agent: agent?.port2, sound, snapshot, resume, about, plan, ...three, vulkan: three && wantsVulkan() ? true : undefined } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : []), ...(shares ? [shares.port2] : []), ...(mouse ? [mouse.port2] : []), ...(touch ? [touch.port2] : []), ...(agent ? [agent.port2] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.
@@ -1949,6 +1955,10 @@ if (params.has('snd')) (window as unknown as { __audio?: PageAudio }).__audio = 
 const usbOn = () => (stored ? !!stored.record.usb : params.get('usb') === '1');
 /** A relative mouse or a touchscreen: a stored machine's `mouse`, `touch`; a transient one's `?mouse=1`, `?touch=1`. */
 const pointerOn = (kind: 'mouse' | 'touch') => (stored ? !!stored.record[kind] : params.get(kind) === '1');
+/** Clipboard sharing (docs/plans/clipboard.md): a stored machine's `clipboard`, a transient one's `?clipboard=1`. */
+const clipboardOn = () => (stored ? !!stored.record.clipboard : params.get('clipboard') === '1');
+/** The running machine's end of the agent's port (web/app/agent-link.ts), while it has clipboard sharing. */
+let agentLink: AgentLink | undefined;
 /** A transient machine's remembered devices: this page's only, for its session. */
 let transientUsb: UsbEntry[] = [];
 const usbEntries = (): UsbEntry[] => (stored ? stored.record.usbDevices ?? [] : transientUsb);

@@ -99,6 +99,23 @@ the PL011, [platform.md](platform.md) "PL011"). virtio-rng:
 `crypto.getRandomValues` in the browser's realtime mode; **splitmix64 seeded 0** in deterministic
 mode (and natively in realtime mode: std has no CSPRNG).
 
+### agent (ID 3): clipboard sharing's virtio-console
+
+`{type: 'agent', port}` (`web/agent-device.ts`), only on a machine with clipboard sharing (`MachineRecord.clipboard`,
+a transient machine's `?clipboard=1`: its own transport kind, `agent`, after `9p` in the slots, so other machines'
+shapes don't move): a virtio-console with **MULTIPORT** (feature 1), one port (`max_nr_ports` 1, so four queues:
+port 0's receive and transmit, the control receive and transmit) named **`org.webpc.agent.0`**. Linux's
+virtio_console makes `/dev/vport<N>p0` of it and udev links `/dev/virtio-ports/org.webpc.agent.0`; no port is a console
+(no CONSOLE_PORT), so no hvc. The handshake is the driver's: control buffers and DEVICE_READY, then PORT_ADD from the
+device, PORT_READY from the driver, PORT_NAME and PORT_OPEN 1 (the host end is always open) from the device. The
+guest's PORT_OPEN (1 on its open, 0 on its last close) goes to the page as `open`; the page's bytes fill the port's
+receive buffers in order while the guest holds it open (dropped otherwise, as Linux drops them), at most `MAX_PENDING`
+(1 MiB) held. The page's end is `web/app/agent-link.ts` (`AgentLink`, the tests' `window.__agent`): frames
+(`web/agent-frame.ts`: a u32 length, a u8 type, the payload of at most 64 KiB and change) with at most `WINDOW` (256 KiB)
+in flight, from the device's `taken` counts. A snapshot keeps the port's state, the bytes not yet taken and control
+messages not yet sent; the guest's buffers come back with the core's held requests. What goes over it is the agent's:
+[plans/clipboard.md](plans/clipboard.md).
+
 ### clock (ID 17): virtio-rtc
 
 `{type: 'clock'}` (`web/clock.ts`; Linux's `virtio_rtc`, 6.16 and later, with `CONFIG_VIRTIO_RTC`, which Debian's

@@ -438,3 +438,15 @@ test("a machine's Vulkan setting: in its shape (with 3D only) and its definition
   assert.equal('vulkan' in (await exportDefinition(store, (await updateMachine(store, { ...saved, vulkan: false })).id)).machine, false);
   assert.throws(() => parseDefinition(JSON.stringify({ ...def, machine: { ...def.machine, vulkan: 'yes' } })), /damaged/);
 });
+
+test('the shape: clipboard sharing\'s device joins only machines that have it, after the other devices, and is said', async () => {
+  const s = shapeOf(machine(), (id) => DISKS.get(id));
+  const h = await shapeHash(s);
+  assert.equal(await shapeHash(shapeOf(machine({ clipboard: false }), (id) => DISKS.get(id))), h, 'off: the shape as it was');
+  const on = shapeOf(machine({ clipboard: true }), (id) => DISKS.get(id));
+  assert.deepEqual(on.devices, ['rng', 'keyboard', 'tablet', 'net', 'gpu', 'snd', 'agent', 'blk', 'blk']);
+  assert.deepEqual(slots({ nets: 0, display: 'none', clock: true, shares: true, clipboard: true, attachments: [0] }).map((x) => x.kind), ['rng', 'keyboard', 'tablet', 'snd', 'clock', '9p', 'agent', 'blk']);
+  assert.notEqual(await shapeHash(on), h);
+  assert.deepEqual(diffWords(s, on), [t('machines:shape.diff.clipboard.hadNo')]);
+  assert.deepEqual(diffWords(on, s), [t('machines:shape.diff.clipboard.had')]);
+});

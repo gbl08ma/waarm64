@@ -130,6 +130,11 @@ export type MachineRecord = {
    * their shape as it was. New machines have it.
    */
   shares?: boolean;
+  /**
+   * Clipboard sharing with the guest (docs/plans/clipboard.md): the agent's device (a virtio-console with its named
+   * port, web/agent-device.ts), and the agent the page gives the guest at boot. Off by default; in the shape when on.
+   */
+  clipboard?: boolean;
   /** False: the page doesn't mount them in the guest; absent: it does, at `sharesPath`. Not in the shape: the guest's disk decides what a path means. */
   sharesMount?: false;
   /** Where the guest finds them; absent: `DEFAULT_SHARES_PATH` (web/app/shares-mount.ts). Not in the shape. */
@@ -190,7 +195,7 @@ export const KEYBOARD_CONNECTOR = USB_CONNECTORS - 1;
 export const USER_CONNECTORS = KEYBOARD_CONNECTOR;
 
 /** The device kinds a machine's transports have, in slot order (`slots`). */
-export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'mouse' | 'touch' | 'clock' | '9p' | 'blk';
+export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'mouse' | 'touch' | 'clock' | '9p' | 'agent' | 'blk';
 /** The vCPUs' optional features (`BootOptions.rng`, `e0pd`, `sha3`, `jscvt`, `rcpc`, `sb`, `flagm`, `dit`, `frintts`, `dotprod`). */
 export type CpuFeature = 'rng' | 'e0pd' | 'sha3' | 'jscvt' | 'rcpc' | 'sb' | 'flagm' | 'dit' | 'frintts' | 'dotprod';
 export const CPU_FEATURES: CpuFeature[] = ['rng', 'e0pd', 'sha3', 'jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod'];
@@ -208,7 +213,7 @@ const hashedCpu = (cpu: CpuFeature[]) => cpu.filter((f) => !UNHASHED_CPU.include
  * that have it. The network adapters are where the one card was (network-adapters.md §4). `attachment` is the disk's
  * index in the machine's list, `adapter` the adapter's.
  */
-export function slots(m: { nets: number; display?: Display | 'none'; mouse?: boolean; touch?: boolean; clock?: boolean; shares?: boolean; attachments: unknown[] }): { kind: DeviceKind; attachment?: number; adapter?: number }[] {
+export function slots(m: { nets: number; display?: Display | 'none'; mouse?: boolean; touch?: boolean; clock?: boolean; shares?: boolean; clipboard?: boolean; attachments: unknown[] }): { kind: DeviceKind; attachment?: number; adapter?: number }[] {
   return [
     { kind: 'rng' }, { kind: 'keyboard' }, { kind: 'tablet' },
     ...Array.from({ length: m.nets }, (_, i) => ({ kind: 'net' as const, adapter: i })),
@@ -218,6 +223,7 @@ export function slots(m: { nets: number; display?: Display | 'none'; mouse?: boo
     ...(m.touch ? [{ kind: 'touch' as const }] : []),
     ...(m.clock ? [{ kind: 'clock' as const }] : []),
     ...(m.shares ? [{ kind: '9p' as const }] : []),
+    ...(m.clipboard ? [{ kind: 'agent' as const }] : []),
     ...m.attachments.map((_, i) => ({ kind: 'blk' as const, attachment: i })),
   ];
 }
@@ -266,7 +272,7 @@ export function shapeOf(m: MachineRecord, disks: (id: string) => DiskRecord | un
   // Vulkan needs 3D (`vulkan`: what the machine runs with when the page asks for it beside its record's).
   const vulkan = display === '3d' && (opts.vulkan ?? !!m.vulkan);
   const macs = adaptersOf(m).map((a) => a.mac.toLowerCase());
-  const list = slots({ nets: macs.length, display, mouse: m.mouse, touch: m.touch, clock: m.clock, shares: m.shares, attachments: m.attachments });
+  const list = slots({ nets: macs.length, display, mouse: m.mouse, touch: m.touch, clock: m.clock, shares: m.shares, clipboard: m.clipboard, attachments: m.attachments });
   return {
     version: SHAPE_VERSION,
     ncpus: m.ncpus,
@@ -314,6 +320,7 @@ const HAD = {
   touch: [msg('machines:shape.diff.touch.had'), msg('machines:shape.diff.touch.hadNo')],
   clock: [msg('machines:shape.diff.clock.had'), msg('machines:shape.diff.clock.hadNo')],
   '9p': [msg('machines:shape.diff.shares.had'), msg('machines:shape.diff.shares.hadNo')],
+  agent: [msg('machines:shape.diff.clipboard.had'), msg('machines:shape.diff.clipboard.hadNo')],
 } as const;
 
 /** What differs between two shapes, as messages for the snapshots view (an orphaned snapshot's reason): empty when they're the same. */
@@ -334,7 +341,7 @@ export function shapeDiff(was: Shape, now: Shape): Msg[] {
   if (macsWas.length !== macsNow.length) out.push(msg('machines:shape.diff.adapters', { was: macsWas.length, now: macsNow.length }));
   else for (let i = 0; i < macsWas.length; i++) if (macsWas[i] !== macsNow[i]) out.push(msg('machines:shape.diff.mac', { n: i + 1, was: macsWas[i], now: macsNow[i] }));
   if (!!was.usb !== !!now.usb) out.push(was.usb ? msg('machines:shape.diff.usb.had') : msg('machines:shape.diff.usb.hadNo'));
-  for (const k of ['mouse', 'touch', 'clock', '9p'] as const) {
+  for (const k of ['mouse', 'touch', 'clock', '9p', 'agent'] as const) {
     if (was.devices.includes(k) !== now.devices.includes(k)) out.push(HAD[k][was.devices.includes(k) ? 0 : 1]);
   }
   if (was.disks.length !== now.disks.length) out.push(msg('machines:shape.diff.disks', { was: was.disks.length, now: now.disks.length }));

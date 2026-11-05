@@ -57,6 +57,11 @@ export type ToWorker =
     touch?: MessagePort;
     /** The clock device (virtio-rtc): a stored machine's `clock`, a transient one's unless `?clock=0`. */
     clock?: boolean;
+    /**
+     * The agent's port (web/agent-device.ts; web/app/agent-link.ts has the page's end), for a machine with clipboard
+     * sharing (a stored machine's `clipboard`, a transient one's `?clipboard=1`): the machine gets the agent's device.
+     */
+    agent?: MessagePort;
     /** Bytes or strings for the PL011 (`BootOptions.serialIn`). */
     serial: MessagePort;
     /** The screen's canvas (`transferControlToOffscreen`, sized as the machine's framebuffer): the worker draws it (web/display.ts). Not on a 3D machine: the GPU worker has it. */

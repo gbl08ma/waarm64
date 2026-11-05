@@ -132,7 +132,7 @@ export async function updateMachine(store: Store, m: MachineRecord) {
   const was = await store.get('machines', m.id);
   if (!was) throw gone();
   // What takes a restart: the shape, and the JIT's budget (set when the machine starts; not the guest's).
-  const shape = (x: MachineRecord) => JSON.stringify([x.ncpus, x.ramMiB, x.ramSplit ?? null, x.display, !!x.vulkan, adaptersOf(x).map((a) => a.mac), !!x.usb, !!x.mouse, !!x.touch, !!x.clock, !!x.shares, x.jitMiB ?? 0]);
+  const shape = (x: MachineRecord) => JSON.stringify([x.ncpus, x.ramMiB, x.ramSplit ?? null, x.display, !!x.vulkan, adaptersOf(x).map((a) => a.mac), !!x.usb, !!x.mouse, !!x.touch, !!x.clock, !!x.shares, !!x.clipboard, x.jitMiB ?? 0]);
   if (shape(was) !== shape(m)) await needsOff(m.id, 'shape');
   // The remembered USB devices are the USB tab's (web/app/usb-ports.ts), edited while the machine runs: a settings draft doesn't carry them.
   m.usbDevices = was.usbDevices;

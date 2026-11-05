@@ -167,6 +167,14 @@
     "message": "it had no clock device",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine has the clock device now, not then."
   },
+  "shape.diff.clipboard.had": {
+    "message": "it shared the clipboard with the guest",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine shared the clipboard then (it had the device for it), not now."
+  },
+  "shape.diff.clipboard.hadNo": {
+    "message": "it didn't share the clipboard with the guest",
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine shares the clipboard now (it has the device for it), not then."
+  },
   "shape.diff.shares.had": {
     "message": "it had a shared folders device",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine had the shared folders device then, not now."

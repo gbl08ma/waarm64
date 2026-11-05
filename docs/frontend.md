@@ -42,7 +42,8 @@ default is `debian`), `?ncpus=N`, `?ram=MiB` (both over the toolbar's Machine me
 `init=/nonexistent` to make Buildroot panic, as a test does; Debian's bootloader owns its command
 line: edit it in GRUB), `?credential=name:value` (repeatable: a systemd credential over fw_cfg for a
 firmware machine; tests pass `tests/debian-unattended.ts`'s to boot Debian unattended, the page
-passes none), `?disk2=<url>` (a second,
+passes none), `?clipboard=1` (a transient machine with clipboard sharing's device, docs/devices.md "agent";
+`window.__agent` is the page's end of its port), `?disk2=<url>` (a second,
 read-only virtio-blk over HTTP ranges, `/dev/vdb` in the guest, no overlay; for tests: the stress
 test's `--disk2` gives it the Go toolchain image, docs/images.md "Stress workloads"), `?snd=stats[,timer]`
 (the sound device's completion timing once a second in `window.__audio.stats`, and the timer instead of the

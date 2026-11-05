@@ -1,7 +1,7 @@
-# Clipboard sharing between the host and the guest (a plan; not scheduled)
+# Clipboard sharing between the host and the guest (the CLIP track's plan)
 
-**Status:** written 2026-11-05 from a brainstorm with the user, who settled its choices the same day (§7). Nothing
-is built. The brief: share the clipboard both ways. On the guest side, use a no-disk-writes route like the network's
+**Status:** written 2026-11-05 from a brainstorm with the user, who settled its choices the same day (§7). Step 1
+(the channel) is built: docs/devices.md "agent", CLIP-HANDOVER.md. The brief: share the clipboard both ways. On the guest side, use a no-disk-writes route like the network's
 settings (a systemd credential). On the host side, manage the browser's permission prompts and detect when a browser
 hands back placeholder data (empty strings, in the user's experience) instead of the clipboard. The guest side is an
 **agent of our own**, which replaces [agent.md](agent.md)'s "stock agents first" for the clipboard (§3.4).
@@ -289,7 +289,7 @@ covers it. Cases to recognise, and what the page does:
   isn't needed.
 - **Refusals** (`NotAllowedError`, `DataError`) are never shown as errors in the middle of work. The toolbar button
   shows the permission's state ("Allowed in this browser", "Blocked: allow it in the site's settings") from the
-  permission's `change` event, the way USB and folders show "Allow…".
+  permission's `change` event, the way USB and folders show [Allow…](ui:usb:main.offer.allow).
 
 ### 4.4 Images
 

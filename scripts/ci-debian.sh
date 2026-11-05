@@ -18,5 +18,5 @@ platform=()
 [ "${1:-}" = --platform ] && platform=(tests/page-usb-keyboard.test.ts tests/page-clock.test.ts)
 export WEBPC_DISTROS=debian WEBPC_DEBIAN_SLOTS=${WEBPC_DEBIAN_SLOTS-2}
 step 'Debian on the page'
-node --disable-warning=ExperimentalWarning --test tests/page-debian.test.ts tests/page-disk.test.ts tests/start.test.ts tests/page-spill.test.ts "${platform[@]}"
+node --disable-warning=ExperimentalWarning --test tests/page-debian.test.ts tests/page-disk.test.ts tests/start.test.ts tests/page-spill.test.ts tests/page-agent.test.ts "${platform[@]}"
 printf '\nCI-DEBIAN OK (%d s)\n' "$SECONDS"
