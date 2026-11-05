@@ -585,7 +585,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Freezes and black windows on NVIDIA** (the user, 2026-11-04): the GI demo in SDFGI mode freezes the guest's
     display at times (back when the mode is left), and Godot's window is sometimes black instead of the scene, under
     Wayland too; no WebGPU error since the last two fixes. All Venus contexts and the compositor share one GPU
-    process, so one program's long frames hold every window: VK4's T20 (what the emulations cost a program's frame)
+    process, so one program's long frames hold every window: VK4's T23 (what the emulations cost a program's frame)
     should name the costly paths first; then the render stats' frame and pass times in that mode.
   - **The device's address buffer** (seen on SwiftShader, `results/gd/g8/gi-editor-swiftshader.json`): every memory
     allocated with a device address is in one GPUBuffer that doubles by copy (old and new at once), up to
@@ -762,7 +762,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     reasons by `census.ts --reasons`): a queue family with compute and without graphics (2,525, 20%), formats
     (3,681 reasons name one), `VK_KHR_maintenance5`/`6`/`8`, min/max filtering, multi-draw, depth and stencil resolve
     modes, what reads its own attachment, writable storage in the vertex stage, mutable descriptors, 3D ASTC: each a
-    task of VK4-KICKOFF.md's T22–T34. No task: protected memory, cooperative matrices, ray tracing, mesh shaders, tile
+    task of VK4-KICKOFF.md's T22–T35. No task: protected memory, cooperative matrices, ray tracing, mesh shaders, tile
     images, fragment density, descriptor buffers, sparse (~1,600 of the sample) and pipeline statistics queries (188).
   - **`api.info.image_format_properties2.*` of the YCbCr formats time out** (VK4 T1's "crash" of `r12x4_unorm_pack16`,
     VK4 T2): with `DISJOINT` in its create flags the case makes ~340,000 synchronous queries, ~0.1 ms each through

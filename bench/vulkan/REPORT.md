@@ -804,19 +804,19 @@ then stops at `vkEnumeratePhysicalDevices`, `VK_ERROR_INITIALIZATION_FAILED`, in
 | reason (the M4's) | cases | what would back it | task |
 |---|---|---|---|
 | a queue family with compute and without graphics (1,984 "No matching queue", 541 "Exclusive compute queue") | 2,525 | a second family over the same WebGPU queue | T22 |
-| formats not supported for sampling (1,559), transfer, as a source or destination (711), blending (82), vertex input (45), linear filtering (43) | ~2,450 | wider textures, packed and unpacked by copies (T12's packed formats' way) and decoded in the shader | T23, T24 |
-| `D16_UNORM_S8_UINT` (353 "Unsupported depth/stencil format") | 353 | a depth32float-stencil8 texture with its copies converting | T23 |
-| `VK_KHR_maintenance5`, `6`, `8`, `10` | 756 | host-side mostly; maintenance8's texel offsets that aren't constants in the translator | T25 |
-| min/max filtering (`filterMinmaxImageComponentMapping` 195, formats 150, `VK_EXT_sampler_filter_minmax` 51) | 396 | T8's filter from fetches, the min or max of the texels | T26 |
-| `VK_EXT_multi_draw` | 196 | a draw per element | T27 |
-| depth and stencil resolve modes (130, 46, `independentResolveNone` 19) | 195 | T10's drawn resolves | T28 |
-| what reads its own attachment: `VK_KHR_dynamic_rendering_local_read` 97, `multisampled_render_to_single_sampled` 95, advanced blends 94, `depthBounds` 113, `attachment_feedback_loop_layout` 48, logic ops 16 | 463 | T12's feedback copies in a cut pass; a multisampled texture resolved at the pass's end | T29 |
-| pipeline state: `vertex_input_dynamic_state` 85, `depth_bias_control` 81, `extended_dynamic_state3` 23, `primitive_restart_index` 16, `non_seamless_cube_map` 17 | 222 | pipeline variants; a seamless cube's filter in the shader | T30 |
-| shader types: `storageInputOutput16` 89, 8-bit storage 17, `shaderImageGatherExtended` 31 | 137 | the translator's lowerings (16-bit ones exist for storage) | T31 |
-| writable storage in the vertex stage (76, 87, 25, 18, 16 by descriptor type) | 222 | the vertex stage as a compute pre-pass (transform feedback's way) | T32 |
-| tessellation 172 + 21 + 21, geometry 86 + 70 | 370 | compute pre-passes too (tier 4) | T32's way |
-| mutable descriptor types | 143 | a bind group layout per written set of types | T33 |
-| `VK_EXT_texture_compression_astc_3d` | 187 | decoded to RGBA8 at upload | T34 |
+| formats not supported for sampling (1,559), transfer, as a source or destination (711), blending (82), vertex input (45), linear filtering (43) | ~2,450 | wider textures, packed and unpacked by copies (T12's packed formats' way) and decoded in the shader | T30, T31 |
+| `D16_UNORM_S8_UINT` (353 "Unsupported depth/stencil format") | 353 | a depth32float-stencil8 texture with its copies converting | T30 |
+| `VK_KHR_maintenance5`, `6`, `8`, `10` | 756 | host-side mostly; maintenance8's texel offsets that aren't constants in the translator | T24 |
+| min/max filtering (`filterMinmaxImageComponentMapping` 195, formats 150, `VK_EXT_sampler_filter_minmax` 51) | 396 | T8's filter from fetches, the min or max of the texels | T25 |
+| `VK_EXT_multi_draw` | 196 | a draw per element | T26 |
+| depth and stencil resolve modes (130, 46, `independentResolveNone` 19) | 195 | T10's drawn resolves | T27 |
+| what reads its own attachment: `VK_KHR_dynamic_rendering_local_read` 97, `multisampled_render_to_single_sampled` 95, advanced blends 94, `depthBounds` 113, `attachment_feedback_loop_layout` 48, logic ops 16 | 463 | T12's feedback copies in a cut pass; a multisampled texture resolved at the pass's end | T32 |
+| pipeline state: `vertex_input_dynamic_state` 85, `depth_bias_control` 81, `extended_dynamic_state3` 23, `primitive_restart_index` 16, `non_seamless_cube_map` 17 | 222 | pipeline variants; a seamless cube's filter in the shader | T28 |
+| shader types: `storageInputOutput16` 89, 8-bit storage 17, `shaderImageGatherExtended` 31 | 137 | the translator's lowerings (16-bit ones exist for storage) | T29 |
+| writable storage in the vertex stage (76, 87, 25, 18, 16 by descriptor type) | 222 | the vertex stage as a compute pre-pass (transform feedback's way) | T33 |
+| tessellation 172 + 21 + 21, geometry 86 + 70 | 370 | compute pre-passes too (tier 4) | T33's way |
+| mutable descriptor types | 143 | a bind group layout per written set of types | T34 |
+| `VK_EXT_texture_compression_astc_3d` | 187 | decoded to RGBA8 at upload | T35 |
 | pipeline statistics queries | 188 | none in WebGPU (counters in shader variants could give a few, clipping none) | — |
 | protected access 630, cooperative matrices 538, ray tracing ~180, mesh shaders 33, tile images 55, fragment density 33, shading rate 21, descriptor buffers and heaps 81, sparse 40 | ~1,600 | out of WebGPU's reach | — |
 
@@ -872,7 +872,7 @@ Such an image now takes a variant for the view's format (vk/README.md "Storage i
 where a compute stage declares a 2D texture. G4 bound one-layer views so; any such view now binds its base layer, as
 native drivers read it (driver test 90, the user's error before). No error since on the user's desktop; the mode
 still freezes the display at times, and Godot's window is sometimes black (Wayland too): docs/backlog.md "Godot on
-Venus, GD's leftovers", for VK4's T20 first.
+Venus, GD's leftovers", for VK4's T20 first (T23 since 2026-11-05).
 
 ## GD G4: SDFGI's stall on the M4 — Playwright's Chrome 153.0.8010.12 clobbered an indirect dispatch's immediates
 
