@@ -673,6 +673,19 @@ export class VenusGpu {
         const B = buf(b), I = buf(ib);
         later(() => self.fanIndirect(ticket, B, offset, I, ibOffset, ibSize, wide, restart));
       },
+      gpu_indirect_count(ticket: number, b: number, offset: number, stride: number, cb: number, countOffset: number, most: number, indexed: number) {
+        const B = buf(b), C = buf(cb);
+        later(() => self.indirectCount(ticket, B, offset, stride, C, countOffset, most, indexed));
+      },
+      gpu_draw_indirect_ticket(ticket: number, index: number, indexed: number) {
+        self.stats.draws++;
+        later(() => {
+          const t = self.tickets[ticket];
+          if (!t?.args) return;
+          if (indexed) rp().drawIndexedIndirect(t.args, t.argsAt! + index * 20);
+          else rp().drawIndirect(t.args, t.argsAt! + index * 16);
+        });
+      },
       gpu_draw_ticket_indirect(ticket: number) {
         self.stats.draws++;
         later(() => {
@@ -2245,6 +2258,57 @@ fn ix(k: u32) -> u32 {
   }
 
   /**
+   * A draw-indirect-count's records (wg_gpu.h `gpu_indirect_count`, VK4 T26), in a compute pass before the render pass:
+   * `most` of them from `a` at `offset` by `stride`, packed (16 or 20 bytes), each past the count at `c`'s `countOffset`
+   * written as zeros, so that it draws nothing; gpu_draw_indirect_ticket draws one.
+   */
+  private indirectCount(ticket: number, a: GPUBuffer, offset: number, stride: number, c: GPUBuffer, countOffset: number, most: number, indexed: number) {
+    const d = this.device!, enc = this.enc!;
+    let pipeline = this.metaComputes.get('indirectCount');
+    if (!pipeline) {
+      const code = `struct P { first: u32, stride: u32, at: u32, most: u32, words: u32, pad0: u32, pad1: u32, pad2: u32 }
+@group(0) @binding(0) var<storage, read> a: array<u32>;
+@group(0) @binding(1) var<storage, read> c: array<u32>;
+@group(0) @binding(2) var<storage, read_write> o: array<u32>;
+@group(0) @binding(3) var<uniform> p: P;
+@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) g: vec3u) {
+  let i = g.x;
+  if (i >= p.most) { return; }
+  let n = min(c[p.at], p.most);
+  for (var k = 0u; k < p.words; k++) {
+    o[i * p.words + k] = select(0u, a[p.first + i * p.stride + k], i < n);
+  }
+}`;
+      const m = d.createShaderModule({ code });
+      pipeline = d.createComputePipeline({ layout: 'auto', compute: { module: m, entryPoint: 'main' } });
+      this.metaComputes.set('indirectCount', pipeline);
+    }
+    const words = indexed ? 5 : 4;
+    const argFrom = offset - (offset % 256), countFrom = countOffset - (countOffset % 256);
+    const argEnd = Math.min(a.size, argFrom + d.limits.maxStorageBufferBindingSize, offset + (most - 1) * stride + words * 4);
+    // Records the binding can't reach aren't drawn (a count past them reads zeros).
+    const reach = Math.max(0, Math.min(most, Math.floor((argEnd - offset - words * 4) / stride) + 1));
+    const [out, at] = this.scratch(STORAGE | INDIRECT | COPY_DST, Math.max(1, most) * words * 4);
+    const [u, uat] = this.scratch(UNIFORM | COPY_DST, 32);
+    d.queue.writeBuffer(u, uat, new Uint32Array([(offset - argFrom) / 4, stride / 4, (countOffset - countFrom) / 4, reach, words, 0, 0, 0]));
+    if (reach < most) enc.clearBuffer(out, at + reach * words * 4, (most - reach) * words * 4);
+    const group = d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
+      { binding: 0, resource: { buffer: a, offset: argFrom, size: Math.max(4, Math.ceil((argEnd - argFrom) / 4) * 4) } },
+      { binding: 1, resource: { buffer: c, offset: countFrom, size: countOffset - countFrom + 4 } },
+      { binding: 2, resource: { buffer: out, offset: at, size: Math.max(1, most) * words * 4 } },
+      { binding: 3, resource: { buffer: u, offset: uat, size: 32 } },
+    ] });
+    if (reach) {
+      const pass = enc.beginComputePass();
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, group);
+      pass.dispatchWorkgroups(Math.ceil(reach / 64));
+      pass.end();
+    }
+    this.tickets[ticket] = { buffer: out, offset: at, size: most * words * 4, args: out, argsAt: at };
+  }
+
+  /**
    * A buffer's 16-bit packed texels into a packed format's rgba8unorm texture (wg_format.c `WG_FMT_PACKED`): `bpr` and
    * `rows` the buffer's, a compute pass unpacking them into a temporary buffer in the encoder's order, which is copied in.
    */
@@ -2767,5 +2831,5 @@ function sampleKind(f: string): 'f32' | 'u32' | 'i32' {
 const IMPORTS = ['gpu_create', 'gpu_shader', 'gpu_destroy', 'gpu_grow', 'gpu_write', 'gpu_dirty', 'gpu_encoder', 'gpu_copy_bb', 'gpu_copy_bt', 'gpu_copy_tb', 'gpu_copy_tt', 'gpu_fill',
   'gpu_update', 'gpu_blit', 'gpu_render_pass', 'gpu_compute_pass', 'gpu_pass_end', 'gpu_set_pipeline', 'gpu_pull_buffer', 'gpu_pull_bind', 'gpu_set_bind_group', 'gpu_set_vertex_buffer',
   'gpu_set_index_buffer', 'gpu_set_viewport', 'gpu_set_scissor', 'gpu_set_blend_constant', 'gpu_set_stencil_reference', 'gpu_set_immediates', 'gpu_draw',
-  'gpu_draw_indexed', 'gpu_draw_indirect', 'gpu_provoke', 'gpu_draw_ticket', 'gpu_fan_indirect', 'gpu_draw_ticket_indirect', 'gpu_xfb', 'gpu_dispatch', 'gpu_dispatch_indirect', 'gpu_clear_rects', 'gpu_begin_occlusion', 'gpu_end_occlusion',
+  'gpu_draw_indexed', 'gpu_draw_indirect', 'gpu_provoke', 'gpu_draw_ticket', 'gpu_fan_indirect', 'gpu_draw_ticket_indirect', 'gpu_indirect_count', 'gpu_draw_indirect_ticket', 'gpu_xfb', 'gpu_dispatch', 'gpu_dispatch_indirect', 'gpu_clear_rects', 'gpu_begin_occlusion', 'gpu_end_occlusion',
   'gpu_resolve_queries', 'gpu_query_add', 'gpu_readback', 'gpu_submit', 'gpu_readback_copy', 'gpu_texture_import', 'gpu_translated', 'gpu_cache_get', 'gpu_cache_read', 'gpu_cache_put'];

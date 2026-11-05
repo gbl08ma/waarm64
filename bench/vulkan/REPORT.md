@@ -771,6 +771,34 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T26: multi-draw — 1,344 cases join the list; the M4 fails `gl_DrawIndex` in a multi-draw indirect
+
+2026-11-05, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`, `VIRGL_GPU=virgl,vulkan`). JSON in `results/vk4/t26/`.
+
+- **What the device does** (vk/README.md "Commands", "Multi-draw"): `VK_EXT_multi_draw` as a draw per element with its
+  draw index; `multiDrawIndirect`, which the replay already drew a draw per record, each with its index (a place of the
+  push buffer each where draw parameters are read, now reserved); `drawIndirectCount` and `VK_KHR_draw_indirect_count`
+  as a compute pass before the render pass that copies `maxDrawCount` records and zeroes those past the count, each then
+  an indirect draw of its copy (web/venus-gpu.ts `indirectCount`). The census's 203 cases that ask for any (196
+  `VK_EXT_multi_draw`, 6 `drawIndirectCount`, 1 `multiDrawIndirect`), every `indirect_draw` and `shader_draw_parameters`
+  case of `draw.*` and every 20th `multi_draw` one (`cases.txt`, 2,757):
+
+| host | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| SwiftShader (118 s as one list) | 2,757 | 1,495 | 0 | 1,262 |
+| M4 (92 s) | 2,757 | 1,479 | 16 | 1,262 |
+
+  The not supported: tessellation (585), geometry (293), vertex attribute divisors (176), robustness2's null descriptor
+  (32). **The 1,344 both pass that weren't in the list join `tests/deqp/vk.txt`** (135 were). The M4's 16 failures are
+  every `shader_draw_parameters.draw_index` case (one indirect op of three draws, each coloured by `gl_DrawIndex`): the
+  quads are placed right but all read index 0 (`m4-draw-index-result.png` against `-reference.png`). A plain WebGPU page
+  doing the replay's calls (copies into three 256-byte places of a uniform buffer before the pass, three drawIndirects
+  with the group's dynamic offset set before each) draws right on the M4, so the cause is between the driver and the
+  worker; filed (docs/backlog.md "The M4's own failures").
+- **Planted** (`planted-swiftshader.json`): the count's gate left out of `indirectCount` and the draw index left out of
+  direct draws: of 114 `indirect_draw_count` cases (every 3rd) and 192 multi-draw cases reading the draw id, 187 fail.
+
 ## VK4 T25: min/max reductions — 1,908 cases join the list; a reduced sample ~3.5× WebGPU's own
 
 2026-11-05, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,

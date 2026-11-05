@@ -744,7 +744,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `VK_KHR_shader_draw_parameters`); 11_1 and up are refused. What vkd3d says 11_0 lacks (it makes the device anyway):
   `maxPushConstantsSize` (D3D's 256 bytes of root constants; Vulkan's 128 here), `viewportBoundsRange`,
   `viewportSubPixelBits`, `maxPerStageDescriptorUniformBuffers` (14 wanted, 13 here), dual-source blending (SwiftShader's
-  adapter only), geometry and tessellation shaders, `multiDrawIndirect`, `multiViewport`, `occlusionQueryPrecise`,
+  adapter only), geometry and tessellation shaders, `multiDrawIndirect` (advertised since VK4 T26, with
+  `drawIndirectCount`: unchecked with vkd3d since), `multiViewport`, `occlusionQueryPrecise`,
   pipeline statistics queries, cull distances, `shaderImageGatherExtended` (`shaderStorageImageWriteWithoutFormat`, whose
   absence kept 10 of vkd3d's UAV-clear pipelines from translating, is offered since GD G5: unchecked with vkd3d since),
   vertex attribute divisors, sampler min/max reduction (advertised since VK4 T25; unchecked with vkd3d since). vkd3d's own tests (tests/d3d12, built by
@@ -765,7 +766,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Not advertised, by what dEQP-VK asks** (the census of 2026-11-05, bench/vulkan/REPORT.md "VK4: the census
     again": 75% of the sample not supported on either host, against 0.2% of the M4's supported cases failing; its
     reasons by `census.ts --reasons`; a queue family with compute and without graphics, 2,525 of them, is VK4 T22's): formats
-    (3,681 reasons name one), multi-draw, depth and stencil resolve
+    (3,681 reasons name one), depth and stencil resolve
     modes, what reads its own attachment, writable storage in the vertex stage, mutable descriptors, 3D ASTC: each a
     task of VK4-KICKOFF.md's T23–T35. No task: protected memory, cooperative matrices, ray tracing, mesh shaders, tile
     images, fragment density, descriptor buffers, sparse (~1,600 of the sample) and pipeline statistics queries (188).
@@ -836,6 +837,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     tiler's cost, not its results: `wg_compute_based`, the review's C7); a browser without `texture-component-swizzle` ignores mappings, said once
     (a fallback needs `texelFetch` keyed too, and every Chromium backend has the feature); the variants' compile on a
     program's first draw with such a sampler is unmeasured (no replayed program meets one).
+  - **Multi-draw's leftovers** (VK4 T26; vk/README.md "Commands"): a draw-indirect-count of a triangle fan or under
+    transform feedback isn't drawn, said once (the fan's pre-pass and the capture read each record as it is; neither
+    met); an indirect op's draws are replayed one by one (a draw, and with draw parameters a 256-byte place of the push
+    buffer, each: `maxDrawIndirectCount` is Vulkan's least with the feature, 65,536), and a count's records go through a
+    compute pass before the render pass, so a program drawing thousands a frame (vkd3d's ExecuteIndirect) pays per
+    record: unmeasured, no replayed program has one.
   - **Min/max reductions' leftovers** (VK4 T25; vk/README.md "Samplers in the shader"): a reduced sample comes from
     fetches, so it loses anisotropy and costs ~3.5× WebGPU's sample on the M4 (no replayed program has one; vkd3d's 12_0
     asks for the feature); a gather of a cube a reduced sample binds as its faces is refused, as for other faced cubes;
@@ -953,7 +960,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     they go): `timestampComputeAndGraphics` with timestamps that are the CPU's (above). A program that relies on 1.3's
     guarantees without checking them fails at pipeline or descriptor creation.
   - **The M4's own failures** (out of `tests/deqp/vk.txt` until they're understood; none is what VK4 T12 fixed there,
-    `generate_mipmaps.from_previous_level`): `fragment_operations.early_fragment.discard_no_early_fragment_tests_depth` (an
+    `generate_mipmaps.from_previous_level`): the 16 `shader_draw_parameters.draw_index.*` (VK4 T26: one
+    vkCmdDraw*Indirect of three draws whose colour is `gl_DrawIndex`'s; SwiftShader passes them): the quads are where they
+    should be, but all three read draw index 0 (`results/vk4/t26/m4-draw-index-*.png`); a plain WebGPU page doing what the
+    replay does (a copy into each 256-byte place of a uniform buffer before the pass, three drawIndirects of one buffer
+    with the group's dynamic offset set before each) is right on the M4 (Chrome for Testing 157), so the difference is
+    between the driver's calls and the worker's: next, a log of the worker's setBindGroup offsets and the push buffer's
+    words at the draw, on both hosts; `fragment_operations.early_fragment.discard_no_early_fragment_tests_depth` (an
     occlusion count of 496 where 1,024 is right), `texture.mipmap.3d.projected.nearest_linear_mirror`,
     `texture.mipmap.cubemap.projected.nearest_linear_linear_repeat`, `texture.mipmap.cubemap.basic.nearest_nearest_linear_clamp_compute`
     (VK4 T22's, the compute queue's: its fragment twin passes); 11 copies to or from `e5b9g9r9_ufloat_pack32`, compared

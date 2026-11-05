@@ -759,9 +759,16 @@ stencil side's copy as a buffer copy's above (`colorDepthStencil`, VK4 T24). A c
   draw's place is its own, given before its render pass begins (`prepasses`, the render-pass rule: a copy, no break)
   with a copy of its arguments' base vertex and first instance (8 bytes from offset 8, or 12 for an indexed one) into
   it on the GPU, after the commands before the pass and after the queue's write of the push buffer; its draw index the
-  CPU's. The draw index is 0 but in a multi-draw indirect, which isn't advertised (`multiDrawIndirect`: dEQP-VK's
-  `shader_draw_parameters.draw_index` cases are not supported). A draw the capture records alone (transform feedback
-  with rasterization discarded) keeps the last draw's parameters.
+  CPU's. A draw the capture records alone (transform feedback with rasterization discarded) keeps the last draw's
+  parameters.
+- **Multi-draw** (VK4 T26): `VK_EXT_multi_draw`'s draws are a draw per element, each with its draw index
+  (`cmd->draw_index`, in the op: `gl_DrawIndex` in the push buffer's draw parameters); a multi-draw indirect
+  (`multiDrawIndirect`) is one op replayed a draw per record, each with its index (and, with draw parameters, a place of
+  its own: the reservation counts them); `maxDrawIndirectCount` and `maxMultiDrawCount` are 65,536. A draw-indirect-count
+  (`drawIndirectCount`, `VK_KHR_draw_indirect_count`) is drawn as `maxDrawCount` records from a ticket of the worker's:
+  a compute pass before the render pass copies them packed and zeroes those past the count (`gpu_indirect_count`,
+  web/venus-gpu.ts `indirectCount`; a record the binding can't reach is zeros too), and each is an indirect draw of
+  its copy (`gpu_draw_indirect_ticket`). One of a triangle fan or under transform feedback isn't drawn (said once).
 - **Transform feedback** (VK3 L7.4; one stream, `transformFeedbackQueries` and `transformFeedbackDraw` off): Vulkan
   reads no vertex captured in a render pass before the pass ends, and a capture's begin and end are inside one, so the
   capture runs after its pass (`gpu_xfb`'s jobs, run at the worker's pass end, `runXfb`): no break, no pre-pass. A

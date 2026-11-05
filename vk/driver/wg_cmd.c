@@ -56,7 +56,7 @@ enum op {
    OP_VB,              /* struct op_vb */
    OP_IB,              /* struct op_ib */
    OP_PUSH,            /* size, bytes */
-   OP_DRAW,            /* uint32_t[4] */
+   OP_DRAW,            /* uint32_t[5]: vkCmdDraw's, the draw index (VK_EXT_multi_draw's element) */
    OP_DRAW_INDEXED,    /* struct op_draw_indexed */
    OP_DRAW_INDIRECT,   /* struct op_indirect */
    OP_DISPATCH,        /* uint32_t[3] */
@@ -117,6 +117,7 @@ struct op_draw_indexed {
    uint32_t count, instances, first;
    int32_t base;
    uint32_t first_instance;
+   uint32_t draw_index; /* VK_EXT_multi_draw's element (VK4 T26) */
 };
 
 struct op_indirect {
@@ -128,6 +129,10 @@ struct op_indirect {
    uint8_t wide;
    uint32_t ib;
    double ib_offset, ib_size;
+   /* vkCmdDraw*IndirectCount (VK4 T26): the count's buffer (0: none) and place; `count` is then the most drawn, and
+    * the records come packed from a ticket of their own (gpu_indirect_count). */
+   uint32_t count_buffer;
+   double count_offset;
 };
 
 /* Transform feedback's begin, draw or end (gpu_xfb): its JSON follows; a begin's host-visible buffers are read back. */
@@ -145,7 +150,7 @@ struct op_provoke {
    uint8_t wide, mode, restart;  /* gpu_provoke's */
    uint32_t first, count, prims, instances;
    int32_t base;
-   uint32_t first_instance;
+   uint32_t first_instance, draw_index;
    double offset, size;
 };
 
@@ -1987,7 +1992,7 @@ provoke(struct wg_cmd_buffer *cmd, int mode, bool indexed, uint32_t face, uint32
       return;
    struct op_provoke o = { .wide = 2, .mode = mode, .first = indexed ? first : 0, .count = count, .prims = prims,
                            .instances = instances, .base = indexed ? base : (int32_t)first,
-                           .first_instance = first_instance };
+                           .first_instance = first_instance, .draw_index = cmd->draw_index };
    if (indexed) {
       o.buffer = buffer_gpu(cmd->ib);
       if (!o.buffer)
@@ -2027,11 +2032,12 @@ draw(struct wg_cmd_buffer *cmd, uint32_t vertices, uint32_t instances, uint32_t 
       struct op_ib ib = { .buffer = wg_fan_indices(dev), .wide = 1, .offset = 0, .size = (vertices - 2) * 12.0 };
       emit(cmd, OP_IB, &ib, sizeof(ib));
       cmd->emitted &= ~(1u << 16);
-      emit(cmd, OP_DRAW_INDEXED, &(struct op_draw_indexed){ (vertices - 2) * 3, instances, 0, (int32_t)first, first_instance },
+      emit(cmd, OP_DRAW_INDEXED,
+           &(struct op_draw_indexed){ (vertices - 2) * 3, instances, 0, (int32_t)first, first_instance, cmd->draw_index },
            sizeof(struct op_draw_indexed));
       return;
    }
-   emit(cmd, OP_DRAW, (uint32_t[]){ vertices, instances, first, first_instance }, 16);
+   emit(cmd, OP_DRAW, (uint32_t[]){ vertices, instances, first, first_instance, cmd->draw_index }, 20);
 }
 
 /* Transform feedback: a draw's vertices captured (gpu_xfb's "draw"), after the draw is recorded, or, where it
@@ -2198,15 +2204,46 @@ wg_CmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indices, uint32_t inst
       }
       if (!record_draw(cmd, true, face_of(faces, i), -1))
          break;
-      emit(cmd, OP_DRAW_INDEXED, &(struct op_draw_indexed){ indices, instances, first, base, first_instance },
+      emit(cmd, OP_DRAW_INDEXED, &(struct op_draw_indexed){ indices, instances, first, base, first_instance, cmd->draw_index },
            sizeof(struct op_draw_indexed));
    }
    xfb_draw(cmd, true, indices, instances, first, base, first_instance, NULL, 0);
 }
 
+static bool draw_params(const struct wg_program *p);
+
+/* VK_EXT_multi_draw (VK4 T26): a draw per element, each with its draw index (gl_DrawID), captured as its own. */
+VKAPI_ATTR void VKAPI_CALL
+wg_CmdDrawMultiEXT(VkCommandBuffer commandBuffer, uint32_t count, const VkMultiDrawInfoEXT *info, uint32_t instances,
+                   uint32_t first_instance, uint32_t stride)
+{
+   VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
+   for (uint32_t i = 0; i < count; i++) {
+      const VkMultiDrawInfoEXT *d = (const void *)((const uint8_t *)info + (size_t)i * stride);
+      cmd->draw_index = i;
+      wg_CmdDraw(commandBuffer, d->vertexCount, instances, d->firstVertex, first_instance);
+   }
+   cmd->draw_index = 0;
+}
+
+/* With `vertex_offset`, every element's vertex offset is it. */
+VKAPI_ATTR void VKAPI_CALL
+wg_CmdDrawMultiIndexedEXT(VkCommandBuffer commandBuffer, uint32_t count, const VkMultiDrawIndexedInfoEXT *info,
+                          uint32_t instances, uint32_t first_instance, uint32_t stride, const int32_t *vertex_offset)
+{
+   VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
+   for (uint32_t i = 0; i < count; i++) {
+      const VkMultiDrawIndexedInfoEXT *d = (const void *)((const uint8_t *)info + (size_t)i * stride);
+      cmd->draw_index = i;
+      wg_CmdDrawIndexed(commandBuffer, d->indexCount, instances, d->firstIndex,
+                        vertex_offset ? *vertex_offset : d->vertexOffset, first_instance);
+   }
+   cmd->draw_index = 0;
+}
+
 static void
 draw_indirect(VkCommandBuffer commandBuffer, VkBuffer _buffer, VkDeviceSize offset, uint32_t count, uint32_t stride,
-              bool indexed)
+              bool indexed, struct wg_buffer *count_buffer, VkDeviceSize count_offset)
 {
    VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
    VK_FROM_HANDLE(wg_buffer, buffer, _buffer);
@@ -2215,6 +2252,15 @@ draw_indirect(VkCommandBuffer commandBuffer, VkBuffer _buffer, VkDeviceSize offs
    const uint32_t faces = draw_faces(cmd);
    const struct vk_dynamic_graphics_state *dyn = &cmd->vk.dynamic_graphics_state;
    const bool fan = dyn->ia.primitive_topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
+   /* A fan's draws are worked out from their own records (`fanIndirect`), which a count would have to gate too, and a
+    * capture reads each record as it is: neither seen with a count. */
+   if (count_buffer && (fan || cmd->xfb_active)) {
+      static bool warned;
+      if (!warned)
+         fprintf(stderr, "wg: a draw-indirect-count of a triangle fan or under transform feedback isn't drawn\n");
+      warned = true;
+      return;
+   }
    if (provoke_mode(cmd, indexed) >= 0 && (!fan || dyn->rs.provoking_vertex == VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT)) {
       static bool warned;
       if (!warned)
@@ -2224,6 +2270,12 @@ draw_indirect(VkCommandBuffer commandBuffer, VkBuffer _buffer, VkDeviceSize offs
    stride = stride ? stride : (indexed ? 20 : 16);
    struct op_indirect op = { .buffer = buffer_gpu(buffer), .indexed = indexed, .count = count, .stride = stride,
                              .offset = buffer->offset + offset, .fan = fan, .wide = 2 };
+   if (count_buffer) {
+      op.count_buffer = buffer_gpu(count_buffer);
+      op.count_offset = count_buffer->offset + count_offset;
+      if (!op.buffer || !op.count_buffer)
+         return;
+   }
    if (fan && indexed) {
       op.ib = buffer_gpu(cmd->ib);
       if (!op.ib)
@@ -2236,10 +2288,16 @@ draw_indirect(VkCommandBuffer commandBuffer, VkBuffer _buffer, VkDeviceSize offs
       op.ib = wg_fan_indices(container_of(cmd->vk.base.device, struct wg_device, vk));
       op.ib_size = (WG_FAN_VERTICES - 2) * 12.0;
    }
+   /* A multi-draw indirect whose vertex stage reads its draw parameters takes a place a draw (`prepasses`), past the
+    * two emit counts. */
+   const struct wg_shader *vs = cmd->shaders[MESA_SHADER_VERTEX];
+   const bool params = vs && vs->program && draw_params(vs->program);
    for (uint32_t i = 0; i < faces; i++) {
       if (!record_draw(cmd, indexed, face_of(faces, i), -1))
          break;
       emit(cmd, OP_DRAW_INDIRECT, &op, sizeof(op));
+      if (params)
+         cmd->draws += (count - 1) * MAX2(util_bitcount(cmd->pass.view_mask), 1);
    }
    /* Captured with its arguments read at the capture (the counts here are only the most it may draw: none). */
    for (uint32_t i = 0; i < count; i++)
@@ -2250,14 +2308,29 @@ VKAPI_ATTR void VKAPI_CALL
 wg_CmdDrawIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t count,
                    uint32_t stride)
 {
-   draw_indirect(commandBuffer, buffer, offset, count, stride, false);
+   draw_indirect(commandBuffer, buffer, offset, count, stride, false, NULL, 0);
 }
 
 VKAPI_ATTR void VKAPI_CALL
 wg_CmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t count,
                           uint32_t stride)
 {
-   draw_indirect(commandBuffer, buffer, offset, count, stride, true);
+   draw_indirect(commandBuffer, buffer, offset, count, stride, true, NULL, 0);
+}
+
+/* drawIndirectCount (VK4 T26): `most` records, those past the count drawing nothing. */
+VKAPI_ATTR void VKAPI_CALL
+wg_CmdDrawIndirectCount(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, VkBuffer count_buffer,
+                        VkDeviceSize count_offset, uint32_t most, uint32_t stride)
+{
+   draw_indirect(commandBuffer, buffer, offset, most, stride, false, wg_buffer_from_handle(count_buffer), count_offset);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+wg_CmdDrawIndexedIndirectCount(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, VkBuffer count_buffer,
+                               VkDeviceSize count_offset, uint32_t most, uint32_t stride)
+{
+   draw_indirect(commandBuffer, buffer, offset, most, stride, true, wg_buffer_from_handle(count_buffer), count_offset);
 }
 
 /* Compute. */
@@ -3031,6 +3104,11 @@ prepasses(struct replay *r, const struct wg_program **prog, const uint8_t *p, co
           * arguments' base vertex and first instance copied there (the push buffer is written before the submit's
           * commands), its draw index written with the place. */
          const struct op_indirect *a = d;
+         if (a->count_buffer) {
+            wg_emul[WG_EMUL_PREPASSES]++;
+            gpu_indirect_count(ticket++, a->buffer, a->offset, a->stride, a->count_buffer, a->count_offset, a->count,
+                               a->indexed);
+         }
          for (uint32_t i = 0; i < a->count; i++) {
             uint32_t at = UINT32_MAX;
             if (*prog && draw_params(*prog) && a->buffer) {
@@ -3509,6 +3587,8 @@ scan_pass(struct replay *r, struct scan *s, const uint8_t *p, const uint8_t *end
          if (h->op == OP_DRAW_INDIRECT) {
             const struct op_indirect *a = d;
             use(r, a->buffer, a->offset, (a->count - 1) * (double)a->stride + (a->indexed ? 20 : 16), false);
+            if (a->count_buffer)
+               use(r, a->count_buffer, a->count_offset, 4, false);
          }
          break;
       case OP_EXEC: {
@@ -4509,7 +4589,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          const uint32_t *a = d;
          if (r->pass != RENDER)
             break;
-         set_draw_params(r, a[2], a[3], 0, UINT32_MAX);
+         set_draw_params(r, a[2], a[3], a[4], UINT32_MAX);
          apply(r, 0);
          gpu_draw(a[0], a[1], a[2], a[3]);
          break;
@@ -4518,7 +4598,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          const struct op_draw_indexed *a = d;
          if (r->pass != RENDER)
             break;
-         set_draw_params(r, a->base, a->first_instance, 0, UINT32_MAX);
+         set_draw_params(r, a->base, a->first_instance, a->draw_index, UINT32_MAX);
          apply(r, 0);
          gpu_draw_indexed(a->count, a->instances, a->first, a->base, a->first_instance);
          break;
@@ -4538,7 +4618,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          const struct op_provoke *o = d;
          if (r->pass != RENDER)
             break;
-         set_draw_params(r, o->base, o->first_instance, 0, UINT32_MAX);
+         set_draw_params(r, o->base, o->first_instance, o->draw_index, UINT32_MAX);
          apply(r, 0);
          gpu_draw_ticket(r->tickets++, o->instances, o->base, o->first_instance);
          r->dirty |= RD_IB;
@@ -4548,6 +4628,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          const struct op_indirect *a = d;
          if (r->pass != RENDER)
             break;
+         const uint32_t counted = a->count_buffer ? r->tickets++ : UINT32_MAX;
          for (uint32_t i = 0; i < a->count; i++) {
             const uint32_t at = r->dp_next < util_dynarray_num_elements(&r->dp_places, uint32_t)
                                    ? *util_dynarray_element(&r->dp_places, uint32_t, r->dp_next++) : UINT32_MAX;
@@ -4562,6 +4643,10 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
             if (a->fan) {
                gpu_draw_ticket_indirect(r->tickets++);
                r->dirty |= RD_IB;
+               continue;
+            }
+            if (counted != UINT32_MAX) {
+               gpu_draw_indirect_ticket(counted, i, a->indexed);
                continue;
             }
             const struct shadow *s =

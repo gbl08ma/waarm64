@@ -845,6 +845,7 @@ struct wg_cmd_buffer {
    struct wg_pipeline_key last_key;
    bool have_key;
    uint32_t draws;   /* draws and dispatches recorded (secondaries' included): at most a push buffer place each */
+   uint32_t draw_index; /* the next draw's gl_DrawID: VK_EXT_multi_draw's element (VK4 T26), else 0 */
    uint32_t emitted; /* WG_EMIT_* bits valid */
    uint8_t last_dyn[64];
    struct wg_descriptor_set *last_sets[2][WGSL_MAX_GROUPS][WG_GROUP_SETS];

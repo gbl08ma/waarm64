@@ -145,6 +145,11 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .KHR_sampler_mirror_clamp_to_edge = true,
       /* Min/max reductions: the shader's filter from fetches (VK4 T25, wgsl_sampler.c `reduce`; vkd3d's 12_0). */
       .EXT_sampler_filter_minmax = true,
+      /* Multi-draw: a draw per element, its draw index in the push buffer's draw parameters (VK4 T26, wg_cmd.c). */
+      .EXT_multi_draw = true,
+      /* Draw-indirect-count: the records gated by the count in a compute pass before the render pass (VK4 T26,
+       * web/venus-gpu.ts `indirectCount`; vkd3d's 11_1). */
+      .KHR_draw_indirect_count = true,
       /* The shader's borders take any colour, through the view's mapping (wgsl_sampler.c, wg_cmd.c `sampler_border`). */
       .EXT_custom_border_color = true,
       .EXT_border_color_swizzle = true,
@@ -166,6 +171,8 @@ wg_caps_features(struct vk_features *f)
       .dualSrcBlend = HAS(DUAL_SOURCE),
       /* Without WebGPU's, an indirect draw with a first instance draws nothing. */
       .drawIndirectFirstInstance = HAS(INDIRECT_FIRST_INSTANCE),
+      /* An indirect op's draws one by one in the replay, each with its draw index (VK4 T26). */
+      .multiDrawIndirect = true,
       .depthClamp = HAS(DEPTH_CLIP),
       .depthBiasClamp = true,
       .samplerAnisotropy = true,
@@ -233,6 +240,8 @@ wg_caps_features(struct vk_features *f)
        * L7.1b). */
       .samplerMirrorClampToEdge = true,
       .samplerFilterMinmax = true,
+      .multiDraw = true,
+      .drawIndirectCount = true,
       .customBorderColors = true,
       .customBorderColorWithoutFormat = true,
       .borderColorSwizzle = true,
@@ -345,7 +354,10 @@ wg_caps_properties(struct vk_properties *p)
    p->subTexelPrecisionBits = 4;
    p->mipmapPrecisionBits = 4;
    p->maxDrawIndexedIndexValue = 0xffffffffu;
-   p->maxDrawIndirectCount = 1;
+   /* An indirect op's draws one by one in the replay, each its draw index (VK4 T26): Vulkan's least with
+    * multiDrawIndirect, as each may take 256 bytes of the push buffer (its draw parameters). */
+   p->maxDrawIndirectCount = 1u << 16;
+   p->maxMultiDrawCount = 1u << 16;
    p->maxSamplerLodBias = WGSL_MAX_LOD_BIAS; /* WebGPU's samplers have no bias: the shader's (wgsl_sampler.c), WGSL's within 16 */
    p->maxSamplerAnisotropy = 16;
    p->maxCustomBorderColorSamplers = 4000;

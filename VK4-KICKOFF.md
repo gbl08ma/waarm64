@@ -43,7 +43,7 @@ T2–T14; the rest of the order is judgement, said with each.
 
 ## The tasks
 
-### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T25 (2026-10-29 to 2026-11-05)
+### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T26 (2026-10-29 to 2026-11-05)
 
 Each row's outcome in full is its section of bench/vulkan/REPORT.md ("VK4 T<n>") and its commit; what each left is in
 docs/backlog.md "The Vulkan driver's gaps" (the entry named) and, where it is a defect or drops work, in the tasks
@@ -85,6 +85,7 @@ R1–R4 and then of R5–R7, had its findings fixed or moved to the backlog the 
 | T23. What the emulations cost a program | the paths counted (`venusEmul`) and skippable in a run (`?gpu=vkskip=`, `bench/vulkan/t23.ts`); Godot's GI demo in SDFGI mode on the M4 and NVIDIA: SDFGI's rgb9e5 views of R32_UINT images copied ~34 MB a frame (2.8 ms of a 17 ms submit on NVIDIA, +12% frames/s left out), the rest small or none, no freeze; such views now decoded in the shader from the image's own texture (about even on the M4) | "Views in another format's leftovers" (the decode's gain on NVIDIA: the next NVIDIA run's `t23`) |
 | T24. `maintenance5`, `6` and `8` | the three advertised; 5 and 6 host-side (`vkGetDeviceImageSubresourceLayout`, their properties): 360 of the census's 688 cases pass on both hosts and join the list (30,039 → 30,399), the rest formats WebGPU lacks (A8, A1B5G5R5) and aliased images; 8's offsets that aren't constants from fetches, depth and stencil copied with colour images, blits between layers and slices: 2,246 of its 3,642 cases pass through Mesa 26.3's Venus (`images/deqp/venus-icd.sh`), 0 fail on either host, in `tests/deqp/vk-maintenance8.txt` until the guest's Mesa is 26.3 | "maintenance8's cases wait for the guest's Mesa 26.3", "maintenance5's and 6's leftovers" |
 | T25. Min/max filtering | `VK_EXT_sampler_filter_minmax` and `samplerFilterMinmax`: a reducing sampler's pairs keyed, their samples from fetches taking the min or max of the texels with weight (integers and cubes too), every sampled format's MINMAX bit; 182 of the census's 504 pass on SwiftShader (192 on the M4), 1,797 of every 10th of the list's 50,940; 0 fail; 1,908 join the list (→ 32,307); the census's 195 mapping cases are dEQP's own refusal; a reduced sample ~3.5× WebGPU's on the M4 | "Min/max reductions' leftovers" |
+| T26. Multi-draw | `VK_EXT_multi_draw` (a draw per element, its draw index), `multiDrawIndirect` (the replay's draw per record, its push places reserved), `drawIndirectCount` (records gated by the count in a compute pass before the render pass); of 2,757 cases (the census's 203, every indirect-draw and draw-parameters case, every 20th multi-draw) 1,495 pass on SwiftShader, 0 fail; the M4 fails the 16 `draw_index` cases (every draw reads index 0), filed; 1,344 join the list (→ 33,651) | "Multi-draw's leftovers", "The M4's own failures" |
 
 ### Tier 3: performance on real workloads
 
@@ -106,9 +107,6 @@ memory, cooperative matrices, ray tracing, mesh shaders, tile images, fragment d
 the sample's on the M4 (×100 for the whole list, roughly); each starts by running its reason's cases (`deqp-run.ts`'s
 `CASES`, from `census.ts --reasons`' examples or the sample's JSON) to see what they meet once advertised.
 
-- **T26. Multi-draw** (S; 196): `VK_EXT_multi_draw` as a draw per element on the host; with it `multiDrawIndirect`
-  and `drawIndirectCount` (vkd3d's 11_1) as T12's indirect fans' compute pass writing the draws' arguments, or a loop
-  of indirect draws. *Done:* advertised, its cases run. *Start:* vk/README.md "Commands".
 - **T27. Depth and stencil resolve modes** (S; 195: depth 130, stencil 46, `independentResolveNone` 19): MIN, MAX and
   AVERAGE as T10's drawn resolves. *Done:* advertised, its cases run. *Start:* backlog "Rendering" (SAMPLE_ZERO only).
 - **T28. Pipeline state as variants** (S each; 222): `VK_EXT_vertex_input_dynamic_state` (85), `depth_bias_control`

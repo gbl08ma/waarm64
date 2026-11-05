@@ -109,6 +109,13 @@ WG_IMPORT(gpu_xfb) void gpu_xfb(const char *json, uint32_t len);
 WG_IMPORT(gpu_fan_indirect) void gpu_fan_indirect(uint32_t ticket, uint32_t buffer, double offset, uint32_t ib, double ib_offset,
                                                   double ib_size, uint32_t wide, uint32_t restart);
 WG_IMPORT(gpu_draw_ticket_indirect) void gpu_draw_ticket_indirect(uint32_t ticket);
+/* A draw-indirect-count's records (VK4 T26): a compute pass before the render pass copies `most` of them from `buffer` at
+ * `offset` by `stride`, packed (16 bytes, 20 `indexed`), those past the count (`count_buffer`'s u32 at `count_offset`)
+ * zeros; gpu_draw_indirect_ticket draws the `index`th. */
+WG_IMPORT(gpu_indirect_count) void gpu_indirect_count(uint32_t ticket, uint32_t buffer, double offset, uint32_t stride,
+                                                      uint32_t count_buffer, double count_offset, uint32_t most,
+                                                      uint32_t indexed);
+WG_IMPORT(gpu_draw_indirect_ticket) void gpu_draw_indirect_ticket(uint32_t ticket, uint32_t index, uint32_t indexed);
 WG_IMPORT(gpu_draw_ticket) void gpu_draw_ticket(uint32_t ticket, uint32_t instances, int32_t base,
                                                 uint32_t first_instance);
 WG_IMPORT(gpu_dispatch) void gpu_dispatch(uint32_t x, uint32_t y, uint32_t z);
