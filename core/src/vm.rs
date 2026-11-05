@@ -377,8 +377,9 @@ pub struct Counters {
     /// table that lacked modules whose bytes were dropped; the heap bytes the
     /// table's decoded blocks and its known blocks take.
     /// Then (ABI 48) the misses that found the lock held and didn't wait;
-    /// (ABI 50) the ns the block map's prunes took.
-    pub jx: [AtomicU64; 13],
+    /// (ABI 50) the ns the block map's prunes took; (ABI 61) the rebindings
+    /// logged, applied, and the ns applying them took (docs/jit.md "Rebinding").
+    pub jx: [AtomicU64; 16],
 }
 
 /// Indexes into [`Counters::par`].
@@ -409,7 +410,7 @@ impl Default for Counters {
             par: [const { AtomicU64::new(0) }; 10],
             dec: [const { AtomicU64::new(0) }; 3],
             cw: [const { AtomicU64::new(0) }; 4],
-            jx: [const { AtomicU64::new(0) }; 13],
+            jx: [const { AtomicU64::new(0) }; 16],
         }
     }
 }
@@ -1719,6 +1720,9 @@ fn publish_jit(c: &Counters, s: &jit::Stats) {
         s.known_bytes,
         s.lock_skipped,
         s.prune_ns,
+        s.rebinds,
+        s.rebound,
+        s.rebind_ns,
     ];
     for (a, v) in c.jx.iter().zip(jx) {
         a.store(v, Ordering::Relaxed);

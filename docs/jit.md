@@ -238,7 +238,8 @@ the interpreter's own code.
   case: blocks compile in hotness order), and with the MMU off every BR/BLR/RET target (its PC is
   its key), is probed in the jump cache from wasm and tail-called with `return_call_indirect` on a
   hit that fits `left`. The jump cache only holds compiled blocks and is cleared by invalidation
-  and flushes, so these links need no bookkeeping.
+  and flushes, so these links need no bookkeeping. A static successor's (and a by-VA link's) is a site the host binds
+  once its block is compiled ("Rebinding").
 - **Indirect transfers** (MMU on: BR, BLR, RET and the by-VA links, 25 to 55 per 1000
   instructions in user space) probe the vCPU's **transfer cache** (`mmu::Tlb::xc`, QEMU's
   `tb_jmp_cache`): 16,384 direct-mapped entries by VA bits 15:2 of {VA | regime bits, table index
@@ -312,6 +313,31 @@ entries, whose first-instruction stall was 22% of a busy vCPU's time.
   (~17 KB at depth 64, ~4%); a function with every local spilled would be ~1.6 KB, ~100 KB at 64, a quarter. A
   tier-up compiled at that depth added nothing measurable (`bench/boot/REPORT.md` "The host stack that host calls
   take").
+
+## Rebinding
+
+A tail to a successor that isn't compiled yet when its block is (the jump cache's links, and the by-VA links to
+another page with the MMU on) is a **site** (`block::Site`): the module imports a function `s.<n>` for it, an i32
+global `g.<n>` (the length of the block it's bound to, `block::UNBOUND` until then) and, by VA, an i64 global `h.<n>`
+(the host address its VA must map to). The site's code tail-calls the import when `left` covers both blocks (and, by
+VA, the VA maps there: `emit::maps_to_with`), else goes on as before (the jump cache, or the transfer cache by VA), so
+an unbound site costs a global's load and a compare. Instantiating a module again with other imports compiles
+nothing (V8 shares a module's code between its instances), so a site gets an imported tail call (25 ns an entry in a
+code footprint that doesn't fit the caches, against 84 for a `return_call_indirect`: `bench/boot/REPORT.md` "Where a
+busy vCPU's time goes in Firefox, again") without the new code that re-emitting cost ("Tried and not kept",
+"Selective relinking").
+- **When:** a site waits in the cache (`Cache::wait_key`, `wait_va`) for its block; a module whose head is one binds
+  it (`Cache::bind_sites`), and so does a module whose site by VA finds a head compiled at that VA already
+  (`Cache::va_heads`: the emitter can only guess a PA). Only heads (entry 0) bind.
+- **Every table:** a binding is a **rebinding** logged after the module that made it (`Logged::rebind`), which each
+  table applies in order through `env.jit_rebind` ([abi.md](abi.md)): the host keeps each module with sites, and
+  instantiates it again with the bindings so far and its `t` imports resolved again (so it also takes the newer
+  instances of the blocks it chains to), then puts its functions back in their slots.
+- **Drops:** the regions that leave for a bound block go with it (`Cache::linkers`), as a direct link's do: the
+  import would run the old code.
+- **Cycles keep one indirect edge:** an instance imports only instances that exist, so a loop through several modules
+  keeps one transfer through the table a lap (the one into the block whose instance is older than its importer's).
+- Counter words 121–123: rebindings logged, applied, and the ns applying them took.
 
 ## Sharing
 

@@ -292,6 +292,11 @@ pub struct Stats {
     /// The ns the block map's prunes took, under the cache's lock (ABI 50;
     /// 0 natively, which has no clock here).
     pub prune_ns: u64,
+    /// Rebindings (ABI 61, docs/jit.md "Rebinding"): logged by this table's
+    /// compiles, applied in this table, and the ns applying them took.
+    pub rebinds: u64,
+    pub rebound: u64,
+    pub rebind_ns: u64,
 }
 
 /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
@@ -457,6 +462,16 @@ pub struct Cache {
     pages: PageIndex,
     /// The compiled blocks that chain to a key (step 7), dropped with it.
     linkers: Map<Vec<u64>>,
+    /// Sites waiting for a block (docs/jit.md "Rebinding"), by its key or by
+    /// its VA and regime bits: the module's first slot and the site's number.
+    wait_key: Map<Vec<(u32, u32)>>,
+    wait_va: Map<Vec<(u32, u32)>>,
+    /// The compiled heads by VA and regime bits (with the MMU on; the last
+    /// compiled at that VA), for a site by VA whose block is compiled already.
+    va_heads: Map<u64>,
+    /// Each module's sites (by its first slot): the regions that leave for
+    /// each, as (head key, table index), which a binding links to its block.
+    sites: Map<Vec<Vec<(u64, u32)>>>,
     /// Each compiled region's words' hash and its blocks as (PA, length),
     /// for the stale-code checker.
     spans: Map<(u64, Vec<(u64, u32)>)>,
@@ -579,7 +594,15 @@ struct Logged {
     bytes: Arc<[u8]>,
     /// The hot words of its loop heads compiled alone (their slots).
     tiers: Vec<u32>,
+    /// A rebinding of the module at `slot` (docs/jit.md "Rebinding"), `bytes`
+    /// its bindings ([`BINDING`] bytes each), not a module.
+    rebind: bool,
 }
+
+/// A binding's bytes in a rebinding (`env.jit_rebind`): the site's number,
+/// the block's table index, its length (u32 each, then 4 bytes of padding),
+/// and the host address its VA must map to (u64; 0 for a site by key).
+pub const BINDING: usize = 24;
 
 /// A table's progress, as the cache records it.
 #[derive(Default)]
@@ -611,6 +634,10 @@ impl Cache {
             map: HashMap::default(),
             pages: PageIndex::default(),
             linkers: HashMap::default(),
+            wait_key: HashMap::default(),
+            wait_va: HashMap::default(),
+            va_heads: HashMap::default(),
+            sites: HashMap::default(),
             spans: HashMap::default(),
             tiers: HashMap::default(),
             pending: Vec::new(),
@@ -820,6 +847,10 @@ impl Cache {
         self.map.clear();
         self.pages.clear();
         self.linkers.clear();
+        self.wait_key.clear();
+        self.wait_va.clear();
+        self.va_heads.clear();
+        self.sites.clear();
         self.spans.clear();
         self.tiers.clear();
         self.pending.clear();
@@ -1294,6 +1325,7 @@ impl Cache {
             links,
             counts,
             entries,
+            sites,
         } = block::module(
             &regions,
             mem,
@@ -1320,6 +1352,7 @@ impl Cache {
             seq,
             bytes: bytes.into(),
             tiers,
+            rebind: false,
         });
         self.held += len;
         self.shed();
@@ -1392,7 +1425,115 @@ impl Cache {
                 }
             }
         }
+        self.bind_sites(t, &regions, idx, slot, &sites, mem);
         Some(idx)
+    }
+
+    /// Binds the sites waiting for the heads of the module just logged
+    /// (`regions`, the first at table index `idx`), and its own sites whose
+    /// blocks are compiled already (by VA: compiled at another PA than the
+    /// emitter could know); the others wait. A rebinding is logged after it
+    /// for each module that has bindings (docs/jit.md "Rebinding"), whose
+    /// regions leaving for a block then go with it as if they had chained to it.
+    fn bind_sites(
+        &mut self,
+        t: &mut Table,
+        regions: &[block::Region],
+        idx: u32,
+        slot: u32,
+        sites: &[block::Site],
+        mem: &Mem,
+    ) {
+        let (base, phys) = mem.base();
+        let host = |key: u64| (base as usize as u64).wrapping_add((key & !3) - phys);
+        let mut out: std::collections::BTreeMap<u32, Vec<u8>> = Default::default();
+        for (k, r) in regions.iter().enumerate() {
+            let h = &r.blocks[0];
+            let (key, len, at) = (h.key, h.words.len() as u32, idx + k as u32);
+            let by_key = self.wait_key.remove(&key).map(|w| (w, 0));
+            let mmu = key & block::KEY_MMU != 0;
+            let va = h.va & !3 | key & 3;
+            if mmu {
+                self.va_heads.insert(va, key);
+            }
+            let by_va = mmu
+                .then(|| self.wait_va.remove(&va))
+                .flatten()
+                .map(|w| (w, host(key)));
+            for (w, host) in by_key.into_iter().chain(by_va) {
+                for (s, n) in w {
+                    self.bind(s, n, (key, at, len, host), &mut out);
+                }
+            }
+        }
+        if !sites.is_empty() {
+            let heads: Vec<u64> = regions.iter().map(|r| r.blocks[0].key).collect();
+            let mut recs = Vec::with_capacity(sites.len());
+            for st in sites {
+                let at = |&k: &usize| (heads[k], idx + k as u32);
+                recs.push(st.regions.iter().map(at).collect());
+            }
+            self.sites.insert(slot as u64, recs);
+            for (n, st) in sites.iter().enumerate() {
+                let n = n as u32;
+                let found = st
+                    .by_va
+                    .then(|| self.va_heads.get(&st.id).copied())
+                    .flatten();
+                let head = found.and_then(|key| {
+                    let i = self.map.get(&key)?;
+                    (i.idx != 0 && i.idx >> ENTRY_SHIFT == 0).then_some((key, i.idx, i.len as u32))
+                });
+                match head {
+                    Some((key, at, len)) => self.bind(slot, n, (key, at, len, host(key)), &mut out),
+                    None if st.by_va => self.wait_va.entry(st.id).or_default().push((slot, n)),
+                    None => self.wait_key.entry(st.id).or_default().push((slot, n)),
+                }
+            }
+        }
+        for (slot, bytes) in out {
+            self.held += bytes.len() as u64;
+            self.log.push(Logged {
+                slot,
+                n: 0,
+                seq: 0,
+                bytes: bytes.into(),
+                tiers: vec![],
+                rebind: true,
+            });
+            t.stats.rebinds += 1;
+        }
+    }
+
+    /// Binds site `n` of the module at `slot` to the block `to` (its key,
+    /// table index, length and host address) in `out` ([`BINDING`] bytes each,
+    /// by module), if a region that leaves for it is still the one compiled;
+    /// those regions then go with the block ([`Cache::linkers`]).
+    fn bind(
+        &mut self,
+        slot: u32,
+        n: u32,
+        to: (u64, u32, u32, u64),
+        out: &mut std::collections::BTreeMap<u32, Vec<u8>>,
+    ) {
+        let (key, at, len, host) = to;
+        let Some(regs) = self.sites.get(&(slot as u64)) else {
+            return;
+        };
+        let live: Vec<u64> = regs[n as usize]
+            .iter()
+            .filter(|&&(rk, ri)| self.map.get(&rk).is_some_and(|i| i.idx == ri))
+            .map(|&(rk, _)| rk)
+            .collect();
+        if live.is_empty() {
+            return;
+        }
+        self.linkers.entry(key).or_default().extend(live);
+        let b = out.entry(slot).or_default();
+        for v in [n, at, len, 0] {
+            b.extend(v.to_le_bytes());
+        }
+        b.extend(host.to_le_bytes());
     }
 }
 
@@ -1585,6 +1726,7 @@ impl Table {
                     seq: l.seq,
                     bytes: l.bytes.clone(),
                     tiers: l.tiers.clone(),
+                    rebind: l.rebind,
                 });
             }
             self.installed = c.log.len();
@@ -1638,6 +1780,14 @@ impl Table {
         }
         let mut done = 0;
         for m in &self.todo[..k] {
+            if m.rebind {
+                let ns = now_ns();
+                rebind(&m.bytes, m.slot);
+                self.stats.rebound += 1;
+                self.stats.rebind_ns += now_ns() - ns;
+                done += 1;
+                continue;
+            }
             // The host takes the worker's compiled module, or compiles the
             // bytes itself (seq 0: no worker, or waited too long).
             let at = match install_seq(&m.bytes, m.slot, if overdue { 0 } else { m.seq }) {
@@ -2569,6 +2719,11 @@ unsafe extern "C" {
     /// exports `f0`, `f1`, … into the core's table from JIT slot `slot` on.
     /// Returns the table index of `f0`, or -1 if the host has no JIT.
     fn jit_install(ptr: *const u8, len: usize, slot: u32, seq: u32) -> i32;
+    /// Instantiates the module installed at JIT slot `slot` again with the
+    /// bindings at `ptr..ptr + len` ([`BINDING`] bytes each) and puts its
+    /// functions back in their slots (docs/jit.md "Rebinding"). Returns 0, or
+    /// -1 if the host has no JIT or doesn't have the module.
+    fn jit_rebind(ptr: *const u8, len: usize, slot: u32) -> i32;
     /// Hands the module at `ptr..ptr + len` to the host's compile worker as
     /// number `seq` of epoch `epoch`; the worker stores into the u32 at
     /// `ready` the number up to which it has compiled every module. Returns
@@ -2609,6 +2764,8 @@ struct Todo {
     bytes: Arc<[u8]>,
     /// The hot words of its loop heads compiled alone.
     tiers: Vec<u32>,
+    /// A rebinding ([`Logged::rebind`]).
+    rebind: bool,
 }
 
 /// How long a table waits for the compile worker before it compiles a
@@ -2624,6 +2781,22 @@ pub fn install(module: &[u8], slot: u32) -> Option<u32> {
 /// The host hasn't received the compile worker's copy of module `seq` yet.
 #[derive(Debug)]
 pub struct NotYet;
+
+/// Rebinds the sites of the module at `slot` (`env.jit_rebind`, docs/jit.md
+/// "Rebinding"): the host instantiates it again with `bindings` ([`BINDING`]
+/// bytes each) and puts its functions back in their slots. False without a
+/// JIT host, or one that doesn't have the module.
+pub fn rebind(bindings: &[u8], slot: u32) -> bool {
+    #[cfg(target_arch = "wasm32")]
+    // SAFETY: the host reads `bindings` and touches only its own table.
+    let i = unsafe { jit_rebind(bindings.as_ptr(), bindings.len(), slot) };
+    #[cfg(not(target_arch = "wasm32"))]
+    let i = {
+        let _ = (bindings, slot);
+        -1
+    };
+    i >= 0
+}
 
 /// [`install`] of the module the compile worker compiled as number `seq`
 /// (0: compile `module` here): the host instantiates the worker's compiled
@@ -3517,6 +3690,7 @@ mod tests {
                 seq: 0,
                 bytes: vec![0u8; mib << 20].into(),
                 tiers: Vec::new(),
+                rebind: false,
             });
             c.held += (mib as u64) << 20;
             c.shed();

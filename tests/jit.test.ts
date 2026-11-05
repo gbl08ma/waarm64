@@ -460,3 +460,150 @@ test('guest calls are host calls: leaf, deep recursion and a return elsewhere', 
     assert.ok(jitSteps > want.done / 2n, `${dispatches} dispatches for ${jitSteps} steps in JIT code`);
   }
 });
+
+// Rebinding (docs/jit.md "Rebinding"): a tail to a block not compiled yet is a site, bound once the block is. A loop
+// of three blocks in three modules, compiled in order (a batch each): A's tail to B and B's to C are sites, C's to A a
+// direct import. Each transfer through the table is counted (every JIT slot wrapped in a counting function): without
+// rebinding a lap takes two (A to B and B to C through the jump cache); with it one (a loop across modules keeps one
+// indirect edge: instances import only what exists).
+//   0x1000 A: add x1, x1, #1; b B      0x1100 B: add x2, x2, #1; b C      0x1200 C: subs x5, x5, #1; b.ne A; brk
+const COUNTING = new Uint8Array([
+  0, 0x61, 0x73, 0x6d, 1, 0, 0, 0,
+  1, 9, 1, 0x60, 4, 0x7f, 0x7f, 0x7f, 0x7f, 1, 0x7f, // type: the block's
+  2, 7, 1, 1, 0x6d, 1, 0x6f, 0, 0, // import m.o
+  3, 2, 1, 0,
+  6, 6, 1, 0x7f, 1, 0x41, 0, 0x0b, // global n: mut i32 = 0
+  7, 9, 2, 1, 0x66, 0, 1, 1, 0x6e, 3, 0, // export f, n
+  // n += 1; return_call m.o
+  10, 21, 1, 19, 0, 0x23, 0, 0x41, 1, 0x6a, 0x24, 0, 0x20, 0, 0x20, 1, 0x20, 2, 0x20, 3, 0x12, 0, 0x0b,
+]);
+
+test('a tail to a block compiled later is rebound to it: one transfer through the table a lap, not two', () => {
+  const { ex, memory } = core(true);
+  const e = ex as unknown as Exports & Record<string, (...a: (number | bigint)[]) => number | bigint> & { __indirect_function_table: WebAssembly.Table };
+  const table = e.__indirect_function_table;
+  const jitBase = table.length;
+  const base = memory.grow(1) * 65536;
+  const code = (at: number, w: number[]) => new Uint32Array(memory.buffer, base + at, w.length).set(w);
+  code(0x1000, [0x91000421, 0x1400003f]);
+  code(0x1100, [0x91000442, 0x1400003f]);
+  code(0x1200, [0xf10004a5, 0x54ffefe1, 0xd4200000]);
+  const v = e.jit_new(2, 1, 4096, 0, 1_000_000) as number;
+  const x = new BigUint64Array(memory.buffer, v, 33);
+  const exit = e.vcpu_new() as number;
+  const m = e.mem_new(base, 65536n);
+  const run = (laps: bigint) => {
+    [x[5], x[32]] = [laps, 0x1000n];
+    e.jit_run_exit(v, m, 1_000_000n, exit);
+    assert.equal(new BigUint64Array(memory.buffer, exit, 1)[0], 6n); // brk
+  };
+  run(50n);
+  const st = new BigUint64Array(memory.buffer, e.jit_stats(v) as number, 43);
+  assert.ok(st[40] >= 2n && st[41] === st[40], `${st[40]} rebindings logged, ${st[41]} applied`);
+  const wrapping = new WebAssembly.Module(COUNTING);
+  const counts: WebAssembly.Global[] = [];
+  for (let i = jitBase; i < table.length; i++) {
+    const f = table.get(i);
+    if (!f) continue;
+    const w = new WebAssembly.Instance(wrapping, { m: { o: f } }).exports;
+    table.set(i, w.f);
+    counts.push(w.n as WebAssembly.Global);
+  }
+  run(20n);
+  const through = counts.reduce((s, g) => s + (g.value as number), 0);
+  // 20 laps, and the dispatcher's entry.
+  assert.ok(through <= 22, `${through} transfers through the table for 20 laps`);
+  assert.equal(x[1], 70n);
+});
+
+// A rebound site goes with its block (docs/jit.md "Rebinding"): B, in another page, rewritten and invalidated by
+// IC IVAU after A's tail to it was bound, drops A too (its import would run the old B).
+//   0x1000 A: add x1, x1, #1; b B      0x1200 C: subs x5, x5, #1; b.ne A; brk
+//   0x2100 B: add x2, x2, #1; b C      0x3000: ic ivau, x0; isb; brk
+test('a block that a rebound site leaves for, invalidated, drops the site with it', () => {
+  const { ex, memory } = core(true);
+  const e = ex as unknown as Exports & Record<string, (...a: (number | bigint)[]) => number | bigint>;
+  const base = memory.grow(1) * 65536;
+  const code = (at: number, w: number[]) => new Uint32Array(memory.buffer, base + at, w.length).set(w);
+  code(0x1000, [0x91000421, 0x1400043f]);
+  code(0x1200, [0xf10004a5, 0x54ffefe1, 0xd4200000]);
+  code(0x2100, [0x91000442, 0x17fffc3f]);
+  code(0x3000, [0xd50b7520, 0xd5033fdf, 0xd4200000]);
+  const v = e.jit_new(2, 1, 4096, 0, 1_000_000) as number;
+  const x = new BigUint64Array(memory.buffer, v, 33);
+  const exit = e.vcpu_new() as number;
+  const m = e.mem_new(base, 65536n);
+  const run = (pc: bigint, x5 = 0n) => {
+    [x[5], x[32]] = [x5, pc];
+    e.jit_run_exit(v, m, 1_000_000n, exit);
+    assert.equal(new BigUint64Array(memory.buffer, exit, 1)[0], 6n); // brk
+  };
+  run(0x1000n, 50n);
+  const st = new BigUint64Array(memory.buffer, e.jit_stats(v) as number, 43);
+  assert.ok(st[41] >= 2n, `${st[41]} rebindings applied`);
+  code(0x2100, [0x91001442]); // add x2, x2, #5
+  x[0] = 0x2100n;
+  run(0x3000n);
+  const x2 = x[2];
+  run(0x1000n, 10n);
+  assert.equal(x[2] - x2, 50n);
+});
+
+// Rebinding by VA (docs/jit.md "Rebinding"), the MMU on: a loop of three blocks in three pages that aren't contiguous
+// physically, so each tail is found by its VA; the one to a block compiled already (C's to A) is bound at once. One
+// transfer through the table a lap, not three. B's page then maps another page (B2: add 5): the bound tail's check of
+// the mapping fails and the new code runs.
+//   VA 0x400000 (PA 0x1000) A: add x1, x1, #1; b B     VA 0x401000 (PA 0x5000) B: add x2, x2, #1; b C
+//   VA 0x402000 (PA 0x6000) C: subs x5, x5, #1; b.ne A; brk     VA 0x403000 (PA 0x3000): tlbi vmalle1; dsb ish; isb; brk
+//   PA 0x2000 B2: add x2, x2, #5; b C
+test('a tail found by its VA is rebound behind a check of the mapping', () => {
+  const { ex, memory } = core(true);
+  const e = ex as unknown as Exports & Record<string, (...a: (number | bigint)[]) => number | bigint> & { __indirect_function_table: WebAssembly.Table };
+  const tbl = e.__indirect_function_table;
+  const jitBase = tbl.length;
+  const base = memory.grow(2) * 65536;
+  const code = (pa: number, words: number[]) => new Uint32Array(memory.buffer, base + pa, words.length).set(words);
+  code(0x1000, [0x91000421, 0x140003ff]);
+  code(0x5000, [0x91000442, 0x140003ff]);
+  code(0x6000, [0xf10004a5, 0x54feffe1, 0xd4200000]);
+  code(0x3000, [0xd508871f, 0xd5033b9f, 0xd5033fdf, 0xd4200000]);
+  code(0x2000, [0x91001442, 0x140003ff]);
+  const table = (pa: number) => new BigUint64Array(memory.buffer, base + pa, 512);
+  table(0x10000)[0] = 0x11003n;
+  table(0x11000)[0] = 0x12003n;
+  table(0x12000)[2] = 0x13003n;
+  const l3 = table(0x13000);
+  [l3[0], l3[1], l3[2], l3[3]] = [0x1000n | PTE, 0x5000n | PTE, 0x6000n | PTE, 0x3000n | PTE];
+  const v = e.jit_new(2, 1, 4096, 0, 1_000_000) as number;
+  const x = new BigUint64Array(memory.buffer, v, 134);
+  x[832 / 8] = 0x3c5n; // PSTATE: EL1h, DAIF masked
+  x[888 / 8] |= 1n; // SCTLR_EL1.M
+  x[904 / 8] = 16n | 1n << 23n | 2n << 32n; // TCR_EL1: T0SZ 16, EPD1, a 40-bit IPS
+  x[912 / 8] = 0x10000n; // TTBR0_EL1
+  const mem = e.mem_new(base, 2n * 65536n), exit = e.vcpu_new() as number;
+  const run = (pc: bigint, x5 = 0n) => {
+    [x[5], x[32]] = [x5, pc];
+    e.jit_run_exit(v, mem, 1_000_000n, exit);
+    assert.equal(new BigUint64Array(memory.buffer, exit, 1)[0], 6n); // brk
+  };
+  run(0x400000n, 50n);
+  const st = new BigUint64Array(memory.buffer, e.jit_stats(v) as number, 43);
+  assert.ok(st[41] >= 3n, `${st[41]} rebindings applied`);
+  const wrapping = new WebAssembly.Module(COUNTING);
+  const counts: WebAssembly.Global[] = [];
+  for (let i = jitBase; i < tbl.length; i++) {
+    const f = tbl.get(i);
+    if (!f) continue;
+    const w = new WebAssembly.Instance(wrapping, { m: { o: f } }).exports;
+    tbl.set(i, w.f);
+    counts.push(w.n as WebAssembly.Global);
+  }
+  run(0x400000n, 20n);
+  const through = counts.reduce((s, g) => s + (g.value as number), 0);
+  assert.ok(through <= 22, `${through} transfers through the table for 20 laps`);
+  l3[1] = 0x2000n | PTE;
+  run(0x403000n);
+  const x2 = x[2];
+  run(0x400000n, 10n);
+  assert.equal(x[2] - x2, 50n);
+});

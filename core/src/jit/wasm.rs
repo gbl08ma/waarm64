@@ -392,6 +392,7 @@ pub struct Module {
     code: Vec<u8>,
     globals: Vec<u8>,
     nglobals: usize,
+    nglobal_imports: u32,
     names: Vec<u8>,
     /// The branch-hint section's entries, and how many functions have some.
     hints: Vec<u8>,
@@ -425,6 +426,16 @@ impl Module {
         self.nfunc_imports - 1
     }
 
+    /// Imports an immutable global of type `ty` (`I32`, `I64`); returns its
+    /// index. Imports come before any defined global.
+    pub fn import_global(&mut self, module: &str, field: &str, ty: u8) -> u32 {
+        assert_eq!(self.nglobals, 0);
+        self.import(module, field, 3);
+        self.imports.extend([ty, 0]);
+        self.nglobal_imports += 1;
+        self.nglobal_imports - 1
+    }
+
     /// Imports a funcref table with at least `min` elements, no maximum.
     pub fn import_table(&mut self, module: &str, field: &str, min: u32) {
         self.import(module, field, 1);
@@ -455,7 +466,7 @@ impl Module {
     pub fn zero_global(&mut self) -> u32 {
         self.globals.extend([0x7e, 1, 0x42, 0, 0x0b]);
         self.nglobals += 1;
-        self.nglobals as u32 - 1
+        self.nglobal_imports + self.nglobals as u32 - 1
     }
 
     /// Adds a function of type `ty` with `locals` (count, type) runs and

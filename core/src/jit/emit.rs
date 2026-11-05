@@ -741,10 +741,6 @@ pub fn set_pc(c: &mut Func, off: i64) {
     c.i64_store(PC);
 }
 
-/// The index of the module's mutable i64 global that holds 0 (parallel SMP
-/// only: `Module::zero_global`, defined first).
-pub const ZERO_GLOBAL: u32 = 0;
-
 /// Emits instruction `i` (the `k`-th of its block) inline if this step covers
 /// it; false (and nothing emitted) if it stays a helper call.
 pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
@@ -795,7 +791,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         // address dependency through it must survive (litmus MP+dmb.sy+addr;
         // Linux's arch_counter_enforce_ordering): V8's optimizing tier folds
         // `x ^ x` and `x - x` to 0 and then the host may reorder the loads.
-        // `x & ZERO_GLOBAL` is zero, yet V8 can't fold it (jit.md "Atomics").
+        // `x & zero` (`Ctx::zero`) is zero, yet V8 can't fold it (jit.md "Atomics").
         EOR_shift | SUB_shift
             if cx.parallel
                 && rn == rm
@@ -805,7 +801,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         {
             set(c, sf, rd, |c| {
                 get(c, sf, rn);
-                c.global_get(ZERO_GLOBAL);
+                c.global_get(cx.zero);
                 if !sf {
                     c.i32_wrap_i64();
                 }
@@ -1265,6 +1261,9 @@ pub struct Ctx {
     pub groups: bool,
     /// The span helper (`jit_exec_span`), for a group's cold arm ([`close`]).
     pub span: u32,
+    /// The index of the module's mutable i64 global that holds 0 (parallel
+    /// SMP only: `Module::zero_global`, after the imported ones).
+    pub zero: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1661,6 +1660,14 @@ pub const REDIRECT: u32 = 1 << 31;
 /// hits the TLB array at `arr` (the block's EL's instruction TLB) and maps to
 /// `host` (a successor's page, in another guest page than the block: step 7).
 pub fn maps_to(c: &mut Func, off: i64, arr: u32, host: u64) {
+    maps_to_with(c, off, arr, |c| {
+        c.i64_const(host as i64);
+    });
+}
+
+/// [`maps_to`] with the host address pushed by `host` (a site's global:
+/// docs/jit.md "Rebinding").
+pub fn maps_to_with(c: &mut Func, off: i64, arr: u32, host: impl FnOnce(&mut Func)) {
     pc_plus(c, off);
     c.local_tee(ADDR);
     tlb_entry(c);
@@ -1670,7 +1677,8 @@ pub fn maps_to(c: &mut Func, off: i64, arr: u32, host: u64) {
         .i64_load(arr + 8)
         .local_get(ADDR)
         .i64_add();
-    c.i64_const(host as i64).op(EQ + WC).op(AND);
+    host(c);
+    c.op(EQ + WC).op(AND);
 }
 
 /// The `Vcpu` offset of TLB array `3 * el + u` (read 0, write 1) at index 0:
@@ -4314,6 +4322,7 @@ mod tests {
         spill: 0,
         groups: true,
         span: 0,
+        zero: 0,
     };
 
     /// Through the TLB at EL1.
@@ -5005,6 +5014,7 @@ mod tests {
             spill: 0,
             groups: true,
             span: 0,
+            zero: 0,
         };
         let b = emit_in(insn, 0, &tlb).unwrap();
         for off in [read, read + 8] {

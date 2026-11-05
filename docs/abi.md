@@ -13,7 +13,7 @@ Design notes for an ABI change go in this file before the code.
   shared memory holds the core's static data, stack (1 MiB, `__stack_pointer`), heap, and guest
   RAM, which the host places after the heap ([architecture.md](architecture.md)).
 - Imports: `env.memory`, `env.now_ms() -> f64` (the realtime clock), `env.jit_compile(…)`, `env.jit_install(ptr, len,
-  slot) -> i32` (below), and `ram.load(m, off, size) -> i64`, `ram.store(m, off, size, val)`, `ram.cas(m, off,
+  slot) -> i32`, `env.jit_rebind(ptr, len, slot) -> i32` (below), and `ram.load(m, off, size) -> i64`, `ram.store(m, off, size, val)`, `ram.cas(m, off,
   size, expected, new) -> i64` (ABI 39): aligned single-copy-atomic accesses to spill memory `m` (1 and up), from a
   module `web/spill.ts` makes over the spill memories (traps with none; [spill-memories.md](spill-memories.md)).
   `web/vm.ts` `coreImports(memory, …, spill)` returns `{env, ram, jit}`; after instantiating, the host calls
@@ -179,6 +179,7 @@ vCPU's own counts in its block; hosts sum them (`stats()`). Word 70 (PC) is per 
 | 114–118 | (47) the core's heap ([jit.md](jit.md) "Memory"): the block map's prunes; flushes because the heap had no room for a map to grow (the block map, a table's decoded or known blocks: those free their tables whole); flushes because a table lacked modules whose bytes were dropped; the heap bytes the table's decoded blocks (arena, map, page index) and its known blocks take, estimated |
 | 119 | (48) jump-cache misses that found the JIT cache's lock held and ran their block interpreted instead of waiting ([jit.md](jit.md) "Sharing") |
 | 120 | (50) the ns the JIT block map's prunes took, under the cache's lock ([jit.md](jit.md) "The core's heap"; 0 natively) |
+| 121–123 | (61) rebindings ([jit.md](jit.md) "Rebinding"): logged by this table's compiles, applied in this table, the ns applying them took |
 
 TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one boot run +12%).
 
@@ -241,6 +242,11 @@ puts its functions into the core's table.
   run early with `BUDGET` (fewer steps than the budget): the host's vCPU worker then goes through
   its event loop before it runs the vCPU again. Past a second it passes `seq` 0. A module that
   doesn't compile is a JIT bug: the exception propagates and the run fails.
+- **`env.jit_rebind(ptr, len, slot) -> i32`** (ABI 61, [jit.md](jit.md) "Rebinding"): instantiates the module installed
+  at `slot` again with its sites bound as the bindings at `ptr..ptr + len` say (`jit::BINDING`, 24 bytes each: the
+  site's number, the block's table index, its length, 4 bytes of padding, the host address its VA must map to as a
+  u64) on top of those it had, its `t` imports resolved again, and sets its functions back at `base + slot + k`.
+  Returns 0, or −1 without the module (before `bind`, or a module without sites).
 - **`env.jit_compile(ptr, len, seq, epoch, ready) -> i32`** (ABI 36): the core hands each module it
   emits to the host's compile worker first (`web/jit-compile-worker.ts`, parallel SMP), as number
   `seq` (from 1, by the cache) of code-cache epoch `epoch`. The host posts a copy and returns 1, or
@@ -254,7 +260,10 @@ puts its functions into the core's table.
   [spill-memories.md](spill-memories.md) "The JIT's spill arm"), `env.table`, any core export by
   name (helpers are ordinary exports named `jit_*`, called as wasm imports: no JS in between), and
   module `t`, whose imports are named by table index and resolved with `table.get` (links to
-  already-compiled blocks).
+  already-compiled blocks). Its sites (ABI 61, [jit.md](jit.md) "Rebinding"), numbered from 0: a function `s.<n>` of
+  the block type, an immutable i32 global `g.<n>` (the bound block's length, `0x7fffffff` unbound) and, for a site by
+  VA, an immutable i64 global `h.<n>` (the host address its VA must map to, 0 unbound); unbound, `s.<n>` is any
+  function of the block type (the host's traps).
 - Natively there's no wasm engine: `jit::install` returns `None` and the run loop interprets.
 - `jit_helper_report(vcpu) -> *const u8`: NUL-terminated `<Op> <calls>` lines, most frequent
   first (`web/vm.ts` `helperReport`; the benchmarks record it).
@@ -583,6 +592,7 @@ implemented by this step).
 | 58 | `VmConfig.fma` and `jit_fma(v, on)`: the JIT's FMA forms on the host's fused relaxed-SIMD `madd` (`web/fma.ts`; docs/jit.md "Floating point") |
 | 59 | FEAT_JSCVT, FEAT_LRCPC, FEAT_SB, FEAT_FlagM/FlagM2, FEAT_DIT, FEAT_FRINTTS: `VmConfig.features` bits 4 to 9; their ID fields (ISAR0 TS, ISAR1 JSCVT, LRCPC, FRINTTS, SB, PFR0 DIT) |
 | 60 | FEAT_DotProd: `VmConfig.features` bit 10; `ID_AA64ISAR0_EL1` DP = 1 |
+| 61 | `env.jit_rebind`: a module's sites (`s.<n>`, `g.<n>`, `h.<n>` imports) bound once their blocks are compiled; counter words 121–123 ([jit.md](jit.md) "Rebinding") |
 | 54 | PSCI SYSTEM_SUSPEND in realtime mode: `vm_suspended`, `vm_wake`, `vm_clock_skip`; snapshot format 3 (a suspended guest) and `snapshot_version_min` (2: format 2 states still restore) |
 | 52 | a JIT module on a machine with spill memory imports spill memory 1 as `env.ram1` (`coreImports(…, spill)` passes them on): loads and stores reach its pages inline |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

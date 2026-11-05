@@ -489,6 +489,42 @@ pub struct Emitted {
     /// Each region's entries besides its head ([`Region::entries`]): the
     /// member's key, its entry number and its length.
     pub entries: Vec<Vec<(u64, u32, u32)>>,
+    /// Its sites, in import order (`s.<n>`): successors not compiled yet that
+    /// the host binds once they are (docs/jit.md "Rebinding").
+    pub sites: Vec<Site>,
+}
+
+/// A successor that leaves its region and wasn't compiled when the module was
+/// emitted (docs/jit.md "Rebinding"): imported as a function `s.<n>`, the
+/// length of the block it's bound to `g.<n>` ([`UNBOUND`] until then) and,
+/// found by its VA (in another page, MMU on), the host address its VA must
+/// map to `h.<n>`. Until the host binds it, its tails go as before.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Site {
+    /// Found by its VA (`id`: the VA and the regime bits), else by its key.
+    pub by_va: bool,
+    pub id: u64,
+    /// The regions (of the module, by index) that leave for it.
+    pub regions: Vec<usize>,
+}
+
+/// Whether modules have sites: a build with `WEBPC_NO_REBIND` set has none
+/// (the A/B's base arm, docs/jit.md "Rebinding").
+const REBIND: bool = option_env!("WEBPC_NO_REBIND").is_none();
+
+/// An unbound site's length: no `left` covers it.
+pub const UNBOUND: u32 = 0x7fff_ffff;
+
+/// A site's identity (see [`Site`]) for the successor at `off` from block `b`.
+fn site_id(b: &Block, off: i64) -> (bool, u64) {
+    let k = succ(b.key, off);
+    let by_va = b.key & KEY_MMU != 0 && (k ^ b.key) >> 12 != 0;
+    let id = if by_va {
+        b.va.wrapping_add(off as u64) & !3 | b.key & 3
+    } else {
+        k
+    };
+    (by_va, id)
 }
 
 /// What every region of a module is emitted against.
@@ -511,6 +547,9 @@ struct Env<'a> {
     phys: u64,
     /// Each member's groups of accesses ([`emit::plan`]).
     plans: Vec<Vec<emit::Role>>,
+    /// The sites' imports by identity ([`site_id`]): the function, the length
+    /// global and (by VA) the host address global.
+    sites: &'a HashMap<(bool, u64), (u32, u32, Option<u32>)>,
 }
 
 impl Env<'_> {
@@ -612,6 +651,45 @@ pub fn module(
             }
         }
     }
+    // Successors leaving a region that aren't compiled yet: sites, which the
+    // host binds once they are (docs/jit.md "Rebinding").
+    let mut sites: Vec<Site> = vec![];
+    let mut site_imps: HashMap<(bool, u64), (u32, u32, Option<u32>)> = HashMap::new();
+    if jc && REBIND {
+        let mut at: HashMap<(bool, u64), usize> = HashMap::new();
+        for (ri, r) in regions.iter().enumerate() {
+            for (i, b) in r.blocks.iter().enumerate() {
+                for o in offsets(&b.words).into_iter().chain(call_after(&b.words)) {
+                    let k = succ(b.key, o);
+                    if funcs.contains_key(&k) || local(k) || r.target(i, o).is_some() {
+                        continue;
+                    }
+                    let (by_va, id) = site_id(b, o);
+                    let n = *at.entry((by_va, id)).or_insert_with(|| {
+                        sites.push(Site {
+                            by_va,
+                            id,
+                            regions: vec![],
+                        });
+                        sites.len() - 1
+                    });
+                    if !sites[n].regions.contains(&ri) {
+                        sites[n].regions.push(ri);
+                    }
+                }
+            }
+        }
+        for (n, st) in sites.iter().enumerate() {
+            let f = m.import_func("s", &n.to_string(), bt);
+            site_imps.insert((st.by_va, st.id), (f, 0, None));
+        }
+        for (n, st) in sites.iter().enumerate() {
+            let g = m.import_global("g", &n.to_string(), I32);
+            let h = st.by_va.then(|| m.import_global("h", &n.to_string(), I64));
+            let imp = site_imps.get_mut(&(st.by_va, st.id)).expect("declared");
+            (imp.1, imp.2) = (g, h);
+        }
+    }
     // The transfer cache's miss functions for the regimes with the MMU on.
     let mut misses = [None; 2];
     for (el, x) in misses.iter_mut().enumerate() {
@@ -639,10 +717,7 @@ pub fn module(
     for (k, &pages) in cfg.spill[..spill as usize].iter().enumerate() {
         m.import_memory("env", &format!("ram{}", k + 1), pages, pages);
     }
-    if parallel {
-        let z = m.zero_global();
-        debug_assert_eq!(z, emit::ZERO_GLOBAL);
-    }
+    let zero = if parallel { m.zero_global() } else { 0 };
     if jc || tiers {
         m.import_table("env", "table", 0);
     }
@@ -674,6 +749,7 @@ pub fn module(
                 e.iter().enumerate().map(at).collect()
             })
             .collect(),
+        sites,
     };
     let (base, phys) = mem.base();
     let pair_locks = mem.pair_locks() as usize as u32;
@@ -696,6 +772,7 @@ pub fn module(
                 spill,
                 groups: emit::GROUPS,
                 span: span.unwrap_or(0),
+                zero,
             }
         } else {
             let (base, size) = (base as usize as u32, mem.size());
@@ -714,6 +791,7 @@ pub fn module(
                 spill: 0,
                 groups: false,
                 span: 0,
+                zero,
             }
         };
         let env = Env {
@@ -727,6 +805,7 @@ pub fn module(
             base: base as usize as u64,
             phys,
             plans: r.blocks.iter().map(|b| emit::plan(&b.words, &cx)).collect(),
+            sites: &site_imps,
         };
         // Twice: the first emission finds the registers to read plainly
         // (`Func::plain`) and what each member's edges carry into it, which
@@ -1216,6 +1295,30 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
         emit::indirect(c, b.key & 3, miss, len, e.bt, e.checker, x);
     };
     let Some(&(f, tlen, entry)) = f else {
+        // A site (docs/jit.md "Rebinding"): its import while bound (its
+        // length global then fits `left`), else as before.
+        let site = e.sites.get(&site_id(b, off));
+        if let Some(&(f, g, h)) = site {
+            c.local_get(emit::LEFT)
+                .global_get(g)
+                .i32_const(len as i32)
+                .op(0x6a) // i32.add
+                .op(0x4f); // i32.ge_u
+            if let Some(h) = h {
+                emit::maps_to_with(c, off, exec, |c| {
+                    c.global_get(h);
+                });
+                c.op(0x71); // i32.and
+            }
+            c.hint(true).if_();
+            if let Some(chk) = e.checker {
+                // By VA the key is the bound block's: `jit_check` finds it from the PC.
+                let key = if h.is_some() { u64::MAX } else { k };
+                c.local_get(0).i64_const(key as i64).call(chk);
+            }
+            emit::transfer(c, x, len, e.bt, emit::To::Func(f, 0), 1);
+            c.end();
+        }
         if guarded {
             return by_va(c);
         }

@@ -24,7 +24,7 @@ import { spillImports } from './spill.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES, ramLayout } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 60;
+export const ABI = 61;
 const RAM_BASE = 0x4000_0000;
 /** The vCPU and compile workers' files for Node's worker_threads (a lookup, so the page's bundler doesn't copy them as assets). */
 const NODE_WORKERS = { vcpu: './vcpu-worker.ts', compile: './jit-compile-worker.ts' };
@@ -83,7 +83,7 @@ export type Restore = { core: Uint8Array; host: VmState['host']; fill(ram: Uint8
 
 /**
  * The core's imports: the shared memory, the host clock for realtime mode,
- * `jit_install` and `jit_compile` (core/src/jit). The JIT works once `jit.bind` has the core's
+ * `jit_install`, `jit_rebind` and `jit_compile` (core/src/jit). The JIT works once `jit.bind` has the core's
  * instance; until then `jit_install` fails and the core only interprets. `compile`: this vCPU's
  * port to the compile worker (web/jit-compile-worker.ts; parallel SMP). `ram`: the spill memories'
  * accessor over `spill`, memory 1 first (web/spill.ts).
@@ -93,7 +93,7 @@ export function coreImports(memory: WebAssembly.Memory, clock = performance.time
   const wrap = <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F) => hooks.reduce((g, h) => h(where, g), f);
   const now_ms = wrap('clock', () => clock + performance.now());
   const jit = jitHost(memory, now_ms, compile, spill);
-  return { env: { memory, now_ms, jit_install: wrap('install', jit.install), jit_compile: jit.compile }, ram: spillImports(spill), jit };
+  return { env: { memory, now_ms, jit_install: wrap('install', jit.install), jit_rebind: jit.rebind, jit_compile: jit.compile }, ram: spillImports(spill), jit };
 }
 
 /**
@@ -378,6 +378,18 @@ function collect() {
   }
 }
 
+
+/** An unbound site's length (`block::UNBOUND`): no budget covers it (docs/jit.md "Rebinding"). */
+const UNBOUND = 0x7fff_ffff;
+/** A module with one function of the block type that traps (`f`): what an unbound site's import is. */
+const UNBOUND_FN = new Uint8Array([
+  0, 0x61, 0x73, 0x6d, 1, 0, 0, 0,
+  1, 9, 1, 0x60, 4, 0x7f, 0x7f, 0x7f, 0x7f, 1, 0x7f, // type: (i32, i32, i32, i32) -> i32
+  3, 2, 1, 0, // function
+  7, 5, 1, 1, 0x66, 0, 0, // export "f"
+  10, 5, 1, 3, 0, 0, 0x0b, // code: unreachable
+]);
+
 /**
  * The host half of the JIT: compiles a module the core generated,
  * synchronously, and puts its exports f0, f1, … into the core's function table
@@ -396,6 +408,27 @@ function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: Messag
   // Slots the last install used up to (its end), and the highest slot end since the cache last flushed.
   let lastEnd = 0;
   let hi = 0;
+  // The installed modules by first slot, for rebinding (docs/jit.md "Rebinding"): each with its sites' bindings so far
+  // (site number → table index, length, host address).
+  const mods = new Map<number, { module: WebAssembly.Module; bound: Map<number, [number, number, bigint]> }>();
+  // An unbound site's function (never called: its length global, UNBOUND, fits no budget).
+  let unbound: WebAssembly.ExportValue | undefined;
+  // A module's imports from the table (`t`) and its sites (`s`, `g`, `h`), as bound now.
+  const linked = (module: WebAssembly.Module, bound: Map<number, [number, number, bigint]>) => {
+    const t: Record<string, WebAssembly.ExportValue> = {};
+    const s: Record<string, WebAssembly.ExportValue> = {};
+    const g: Record<string, number> = {};
+    const h: Record<string, bigint> = {};
+    for (const i of WebAssembly.Module.imports(module)) {
+      if (i.module === 't') t[i.name] = table!.get(Number(i.name));
+      else if (i.module === 's') {
+        const b = bound.get(Number(i.name));
+        s[i.name] = b ? table!.get(b[0]) : (unbound ??= new WebAssembly.Instance(new WebAssembly.Module(UNBOUND_FN)).exports.f);
+      } else if (i.module === 'g') g[i.name] = bound.get(Number(i.name))?.[1] ?? UNBOUND;
+      else if (i.module === 'h') h[i.name] = bound.get(Number(i.name))?.[2] ?? 0n;
+    }
+    return { ...imports, t, s, g, h } as unknown as WebAssembly.Imports; // (an i64 global takes a BigInt)
+  };
   // The compile worker's compiled modules by number, as they arrive through the event loop (ABI 37): installing one
   // skips V8's decoding and validating the bytes again, which `new WebAssembly.Module` does before it finds them in
   // its cache (four fifths of an install: bench/boot/REPORT.md "M8: the compile worker's modules, posted").
@@ -434,10 +467,9 @@ function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: Messag
         module = new WebAssembly.Module(bytes);
       }
       const t1 = performance.now();
-      // Blocks it chains to that are already compiled (M5 step 7): `t.<table index>`.
-      const t: Record<string, WebAssembly.ExportValue> = {};
-      for (const i of WebAssembly.Module.imports(module)) if (i.module === 't') t[i.name] = table.get(Number(i.name));
-      const f = new WebAssembly.Instance(module, { ...imports, t }).exports;
+      // Blocks it chains to that are already compiled (M5 step 7): `t.<table index>`; its sites unbound.
+      const bound = new Map<number, [number, number, bigint]>();
+      const f = new WebAssembly.Instance(module, linked(module, bound)).exports;
       const n = Object.keys(f).length;
       const at = base + slot;
       const t2 = performance.now();
@@ -446,6 +478,7 @@ function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: Messag
       // The slots start over from 0 when the cache flushes: its old blocks are dead, so the table lets go of
       // the ones this module doesn't overwrite, and V8 can free their instances and code.
       if (restart) {
+        mods.clear();
         for (let k = slot + n; k < hi; k++) table.set(base + k, null);
         // Only for a big cache (JIT-stress flushes every few blocks).
         if (hi > NUDGE_SLOTS) {
@@ -459,11 +492,31 @@ function jitHost(memory: WebAssembly.Memory, now_ms: () => number, port?: Messag
       hi = Math.max(hi, lastEnd);
       if (table.length < at + n) table.grow(at + n - table.length);
       for (let k = 0; k < n; k++) table.set(at + k, f[`f${k}`] as WebAssembly.ExportValue as never);
+      if (WebAssembly.Module.imports(module).some((i) => i.module === 's')) mods.set(slot, { module, bound });
       // An install the vCPU felt (it runs on the vCPU's thread, the guest's clock running on): for the benchmarks'
       // timelines (bench/gpu/guest-session.ts collects `webpc-slow` lines).
       const ms = performance.now() - t0;
       if (ms >= SLOW_INSTALL_MS) console.debug(`webpc-slow install ${ms.toFixed(1)} ms at ${(performance.timeOrigin + t0).toFixed(0)}: compile ${(t1 - t0).toFixed(1)} instantiate ${(t2 - t1).toFixed(1)} gc ${gc.toFixed(1)} bytes ${len} functions ${n}${restart ? ' (slots start over)' : ''}`);
       return at;
+    },
+    /**
+     * `env.jit_rebind`: instantiates the module at `slot` again with its sites bound as the bindings at `ptr` say
+     * (24 bytes each: the site, the block's table index, its length, padding, the host address its VA must map to;
+     * `jit::BINDING`), and puts its functions back in their slots: V8 shares the module's code between its instances,
+     * so nothing compiles (docs/jit.md "Rebinding"). -1 without the module.
+     */
+    rebind(ptr: number, len: number, slot: number): number {
+      const m = table && mods.get(slot);
+      if (!m) return -1;
+      const v = new DataView(memory.buffer, ptr >>> 0, len);
+      for (let o = 0; o < len; o += 24) m.bound.set(v.getUint32(o, true), [v.getUint32(o + 4, true), v.getUint32(o + 8, true), v.getBigUint64(o + 16, true)]);
+      const f = new WebAssembly.Instance(m.module, linked(m.module, m.bound)).exports;
+      for (let k = 0; ; k++) {
+        const fk = f[`f${k}`];
+        if (!fk) break;
+        table!.set(base + slot + k, fk as never);
+      }
+      return 0;
     },
     /** `env.jit_compile`: posts a copy of the module to the compile worker; 0 without one. */
     compile(ptr: number, len: number, seq: number, epoch: number, ready: number): number {
@@ -514,7 +567,10 @@ export const Counter = {
   JIT_LOCK_SKIPPED: 119,
   // ABI 50: ns the block map's prunes took (under the cache's lock).
   JIT_PRUNE_NS: 120,
-  LEN: 121,
+  // ABI 61: rebindings logged by this vCPU's compiles, applied in its table, and the ns applying them took
+  // (docs/jit.md "Rebinding").
+  JIT_REBINDS: 121, JIT_REBOUND: 122, JIT_REBIND_NS: 123,
+  LEN: 124,
 } as const;
 
 /**
@@ -1319,6 +1375,7 @@ function stats(n: (i: number) => number) {
       emitNs: n(Counter.JIT_EMIT_NS), emitLockedNs: n(Counter.JIT_EMIT_LOCKED_NS), planNs: n(Counter.JIT_PLAN_NS),
       prunes: n(Counter.JIT_PRUNES), rescues: n(Counter.JIT_RESCUES), lagFlushes: n(Counter.JIT_LAG_FLUSHES),
       decBytes: n(Counter.JIT_DEC_BYTES), knownBytes: n(Counter.JIT_KNOWN_BYTES), lockSkipped: n(Counter.JIT_LOCK_SKIPPED), pruneNs: n(Counter.JIT_PRUNE_NS),
+      rebinds: n(Counter.JIT_REBINDS), rebound: n(Counter.JIT_REBOUND), rebindNs: n(Counter.JIT_REBIND_NS),
     },
     par: {
       dsbWaits: n(Counter.PAR_DSB_WAITS), dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS), tlbiIs: n(Counter.PAR_TLBI_IS), ic: n(Counter.PAR_IC),
