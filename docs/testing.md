@@ -63,7 +63,8 @@ only edits docs: `.md` files or code comments):
   adapter. The list is the cases that passed of samples of the direct set's groups (`PREFIX`/`STRIDE` runs of
   `bench/gpu/deqp-run.ts vk`, `PASSED=1`), and since VK4 T1 of a census's (every 100th case of the whole list, `STRIDE=400`
   at four offsets, `DETAIL` for every case that didn't pass, classed by `bench/vulkan/census.ts`: bench/vulkan/REPORT.md
-  "VK4 T1"); what fails is in docs/backlog.md "The Vulkan driver's gaps", by cause. A case
+  "VK4 T1"; with `DETAIL_NOTSUPPORTED=1` too, `census.ts --reasons` counts why the rest aren't supported: "VK4: the
+  census again"; on the M4 through `bench/gpu/sway-mac.sh`, `VIRGL_GPU=virgl,vulkan`); what fails is in docs/backlog.md "The Vulkan driver's gaps", by cause. A case
   that crashes deqp-vk is recorded as `Crash` and the run goes on with the cases not recorded yet (also when deqp-vk
   dies between cases); deqp-vk's other lines (an assertion's, its watchdog's) are kept in
   `results.output`, and `WATCHDOG=disable` lifts its 30 s limit on a case's steps to time a slow one. Dawn zeroes

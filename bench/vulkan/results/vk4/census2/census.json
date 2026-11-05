@@ -1,0 +1,148 @@
+{
+ "totals": {
+  "swiftshader": {
+   "Crash": 1,
+   "Fail": 34,
+   "NotSupported": 12797,
+   "Pass": 3657
+  },
+  "m4": {
+   "Fail": 10,
+   "NotSupported": 12381,
+   "Pass": 4098
+  }
+ },
+ "causes": [
+  {
+   "id": "crash",
+   "what": "deqp-vk crashed or hung (a lost device)",
+   "task": "T2",
+   "tier": 1,
+   "counts": {
+    "swiftshader": 1,
+    "m4": 0
+   }
+  },
+  {
+   "id": "feedback-loop",
+   "what": "an attachment also read as an input attachment with a self-dependency (a feedback loop WebGPU refuses)",
+   "task": "T12",
+   "tier": 2,
+   "counts": {
+    "swiftshader": 0,
+    "m4": 3
+   }
+  },
+  {
+   "id": "int-cube",
+   "what": "integer cube textures sampled with a sampler (the stage refused: \"an integer texture sampled with a sampler\")",
+   "task": "T8",
+   "tier": 2,
+   "counts": {
+    "swiftshader": 3,
+    "m4": 0
+   }
+  },
+  {
+   "id": "int-sampler",
+   "what": "integer textures sampled with a sampler (address modes, LOD: fetched at clamp-to-edge)",
+   "task": "T8",
+   "tier": 3,
+   "counts": {
+    "swiftshader": 17,
+    "m4": 0
+   }
+  },
+  {
+   "id": "compressed",
+   "what": "compressed images whose size isn't whole blocks (ASTC's 5-, 6-, 10- and 12-texel blocks): the texture padded to whole blocks, so coordinates land wrong and cube views of it are refused",
+   "task": "T18",
+   "tier": 3,
+   "counts": {
+    "swiftshader": 12,
+    "m4": 0
+   }
+  },
+  {
+   "id": "blend-constants",
+   "what": "blends with both CONSTANT_COLOR and CONSTANT_ALPHA (WebGPU has one constant)",
+   "task": "T12",
+   "tier": 3,
+   "counts": {
+    "swiftshader": 0,
+    "m4": 5
+   }
+  },
+  {
+   "id": "descriptorset-random",
+   "what": "`descriptorset_random`'s sets of four (a copy buffer reads zeros)",
+   "task": "T12",
+   "tier": 3,
+   "counts": {
+    "swiftshader": 2,
+    "m4": 2
+   }
+  }
+ ],
+ "cases": {
+  "descriptorset-random": [
+   "swiftshader dEQP-VK.binding_model.descriptorset_random.sets4.constant.ubolimitlow.sbolimitlow.sampledimglow.outimgtexlow.noiub.nouab.frag.noia.9 Fail",
+   "swiftshader dEQP-VK.binding_model.descriptorset_random.sets4.noarray.ubolimitlow.sbolimitlow.sampledimglow.outimgtexlow.noiub.nouab.frag.noia.7 Fail",
+   "m4 dEQP-VK.binding_model.descriptorset_random.sets4.constant.ubolimitlow.sbolimitlow.sampledimglow.outimgtexlow.noiub.nouab.frag.noia.9 Fail",
+   "m4 dEQP-VK.binding_model.descriptorset_random.sets4.noarray.ubolimitlow.sbolimitlow.sampledimglow.outimgtexlow.noiub.nouab.frag.noia.7 Fail"
+  ],
+  "int-sampler": [
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.1d_array.format.r16g16b16a16_sint.subresource_range.lod_base_mip_level_array_size Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.1d_array.format.r32g32_uint.subresource_range.lod_base_mip_level_base_array_layer_remaining_levels_and_layers Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.2d.format.r16g16_sint.subresource_range.lod_base_mip_level_remaining_levels Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.2d.format.r8_uint.subresource_range.lod_base_mip_level_remaining_levels Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.2d_array.format.r16g16b16a16_uint.subresource_range.lod_base_mip_level_remaining_levels Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.2d_array.format.r8g8b8a8_uint.subresource_range.lod_base_mip_level_array_size Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.3d.format.r16g16_uint.subresource_range.lod_base_mip_level Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.3d.format.r32g32_uint.subresource_range.lod_base_mip_level_single_array_layer_remaining_levels_and_layers Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.2d.format.r32g32b32a32_sint.subresource_range.lod_base_mip_level_remaining_levels Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.2d_array.format.r32_uint.subresource_range.lod_base_mip_level_base_array_layer_remaining_levels_and_layers Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.3d.format.r16g16b16a16_sint.subresource_range.lod_base_mip_level_remaining_levels Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.1d.format.r32g32_uint.subresource_range.lod_base_mip_level_array_layer_last_remaining_levels_and_layers Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.1d_array.format.r16g16_sint.subresource_range.lod_base_mip_level_base_array_layer_remaining_levels_and_layers Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.2d.format.r16_uint.subresource_range.lod_base_mip_level_array_layer_second Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.2d.format.r8_sint.subresource_range.lod_base_mip_level_array_layer_second Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.2d_array.format.r8_sint.subresource_range.lod_base_mip_level_array_size Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.2d_array.format.r8g8_uint.subresource_range.lod_base_mip_level_base_array_layer_remaining_levels_and_layers Fail"
+  ],
+  "compressed": [
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.cube.format.astc_8x5_srgb_block.subresource_range.lod_base_mip_level_array_layer_last_remaining_levels_and_layers Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.cube_array.format.astc_10x5_srgb_block.subresource_range.lod_base_mip_level_base_array_layer_remaining_levels_and_layers Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.2d.format.astc_10x5_unorm_block.subresource_range.lod_base_mip_level_array_layer_second Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.2d.format.astc_5x5_unorm_block.subresource_range.lod_base_mip_level_remaining_levels Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.2d_array.format.astc_12x10_unorm_block.subresource_range.lod_base_mip_level_remaining_levels Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.cube_array.format.astc_5x5_srgb_block.subresource_range.lod_base_mip_level_array_size Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.2d.format.astc_10x8_unorm_block.subresource_range.lod_base_mip_level_remaining_levels Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.cube.format.astc_10x5_srgb_block.subresource_range.lod_base_mip_level_array_layer_last_remaining_levels_and_layers Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.2d.format.astc_8x5_unorm_block.subresource_range.lod_base_mip_level_array_layer_second Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.2d_array.format.astc_10x5_unorm_block.subresource_range.lod_base_mip_level_array_size Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.2d_array.format.astc_5x4_srgb_block.subresource_range.lod_base_mip_level_base_array_layer_remaining_levels_and_layers Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.cube_array.format.astc_8x5_srgb_block.subresource_range.lod_base_mip_level_remaining_levels Fail"
+  ],
+  "int-cube": [
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.cube_array.format.r32g32_sint.subresource_range.lod_base_mip_level_array_size Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.cube.format.r32g32_uint.subresource_range.lod_base_mip_level_array_layer_last_remaining_levels_and_layers Fail",
+   "swiftshader dEQP-VK.pipeline.monolithic.image_view.view_type.cube_array.format.r32g32b32a32_sint.subresource_range.lod_base_mip_level_remaining_levels Fail"
+  ],
+  "crash": [
+   "swiftshader dEQP-VK.ssbo.corner_case.long_shader_bitwise_and Crash"
+  ],
+  "blend-constants": [
+   "m4 dEQP-VK.pipeline.monolithic.blend.dual_source.format.r8_snorm.output_variable.states.color_cc_ca_sub_alpha_s1c_da_add-color_ca_dc_sub_alpha_s1a_sc_add-color_sc_sa_min_alpha_s1c_1mda_min-color_s1c_dc_rsub_alpha_1msc_1msc_add Fail",
+   "m4 dEQP-VK.pipeline.monolithic.blend.dual_source.format.a2b10g10r10_unorm_pack32.output_variable.states.color_1msa_1mca_add_alpha_dc_s1c_max-color_1msc_sc_sub_alpha_sa_s1a_rsub-color_o_1mcc_rsub_alpha_1mdc_s1a_rsub-color_ca_1mcc_sub_alpha_sas_1mca_max Fail",
+   "m4 dEQP-VK.pipeline.monolithic.blend.dual_source.format.r16g16b16a16_sfloat.output_array.states.color_1mca_1mdc_rsub_alpha_da_s1c_add-color_cc_ca_add_alpha_da_sas_max-color_z_1mcc_min_alpha_o_z_min-color_ca_s1a_add_alpha_1msc_1ms1a_sub Fail",
+   "m4 dEQP-VK.pipeline.monolithic.blend.dual_source.format.r32g32_sfloat.output_array.states.color_1ms1a_da_min_alpha_1msa_1msa_min-color_da_1ms1a_rsub_alpha_1msc_z_add-color_ca_sc_sub_alpha_cc_1ms1a_max-color_1mca_1mcc_add_alpha_1msa_s1a_max Fail",
+   "m4 dEQP-VK.pipeline.monolithic.blend.dual_source.format.r5g6b5_unorm_pack16.output_array.states.color_cc_1mca_add_alpha_o_1ms1c_sub-color_1mcc_1msc_max_alpha_1mdc_sas_sub-color_ca_1mdc_min_alpha_z_1mdc_max-color_s1c_1mdc_min_alpha_dc_o_min Fail"
+  ],
+  "feedback-loop": [
+   "m4 dEQP-VK.renderpasses.renderpass2.suballocation.formats.r16g16b16a16_snorm.input.dont_care.store.self_dep_clear_ms Fail",
+   "m4 dEQP-VK.renderpasses.renderpass1.suballocation.formats.r16g16_snorm.input.clear.store.self_dep_draw_ms Fail",
+   "m4 dEQP-VK.renderpasses.renderpass2.dedicated_allocation.formats.r16g16b16a16_snorm.input.load.store.self_dep_clear_ms Fail"
+  ]
+ }
+}

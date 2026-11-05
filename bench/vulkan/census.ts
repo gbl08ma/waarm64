@@ -4,7 +4,9 @@
 // that matches a case's name (and, where given, its messages) wins, so the rules go from the most specific.
 //   node bench/vulkan/census.ts <host>=<dir of deqp-run.ts's results.json files (any *.json), searched recursively>... [--cases <cause>] [--json <out>]
 // T1's: node bench/vulkan/census.ts swiftshader=bench/vulkan/results/vk4/t1/swiftshader m4=bench/vulkan/results/vk4/t1/m4
-// --cases prints the cases (and their first messages) of one cause ("other": those no rule takes).
+// --cases prints the cases (and their first messages) of one cause ("other": those no rule takes). --reasons [n] prints
+// the n commonest reasons dEQP gave for NotSupported (runs with DETAIL_NOTSUPPORTED=1; VK4's census of 2026-11-05),
+// per host, the format ones merged and split again by what dEQP asked of the format.
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -58,6 +60,8 @@ const args = process.argv.slice(2);
 const opt = (k: string) => { const i = args.indexOf(k); return i < 0 ? undefined : args.splice(i, 2)[1]; };
 const showCases = opt('--cases');
 const jsonOut = opt('--json');
+const reasonsAt = args.indexOf('--reasons');
+const reasonsN = reasonsAt < 0 ? 0 : /^\d+$/.test(args[reasonsAt + 1] ?? '') ? Number(args.splice(reasonsAt, 2)[1]) : (args.splice(reasonsAt, 1), 40);
 const hosts = args.map((a) => a.split('='));
 const files = (d: string): string[] => readdirSync(d).flatMap((f) => {
   const p = join(d, f);
@@ -65,6 +69,8 @@ const files = (d: string): string[] => readdirSync(d).flatMap((f) => {
 });
 
 const cases: Case[] = [];
+/** NotSupported reasons by host: dEQP's message without its source line, VK_FORMAT_ names as F. */
+const reasons: Record<string, Map<string, { n: number; example: string }>> = {};
 const totals: Record<string, Record<string, number>> = {};
 for (const [host, dir] of hosts) {
   const t: Record<string, number> = (totals[host] = {});
@@ -76,6 +82,15 @@ for (const [host, dir] of hosts) {
     for (const l of r.detail ?? []) {
       if (l.startsWith('== ')) detail.set(l.slice(3), (cur = []));
       else cur?.push(l);
+    }
+    const rs = (reasons[host] ??= new Map());
+    for (const [name, lines] of detail) {
+      const m = lines.map((l) => /StatusCode="NotSupported">(.*)<\/Result>/.exec(l)).find(Boolean);
+      if (!m) continue;
+      const why = m[1].replace(/ at [\w./]+:\d+$/, '').replace(/VK_FORMAT_\w+/g, 'F').slice(0, 110);
+      const e = rs.get(why) ?? { n: 0, example: name };
+      e.n++;
+      rs.set(why, e);
     }
     for (const np of r.notPassed) {
       const [name, status] = np.split(' ');
@@ -92,6 +107,15 @@ for (const c of cases) {
   byCause.set(id, [...(byCause.get(id) ?? []), c]);
 }
 
+if (reasonsN) {
+  for (const [host, rs] of Object.entries(reasons)) {
+    const all = [...rs.values()].reduce((a, e) => a + e.n, 0);
+    const formats = [...rs].filter(([w]) => /format/i.test(w)).reduce((a, [, e]) => a + e.n, 0);
+    console.log(`${host}: ${all} reasons of ${totals[host].NotSupported ?? 0} NotSupported; ${formats} name a format`);
+    for (const [w, e] of [...rs].sort((a, b) => b[1].n - a[1].n).slice(0, reasonsN)) console.log(`${String(e.n).padStart(6)} ${w}   [${e.example.replace('dEQP-VK.', '')}]`);
+  }
+  process.exit(0);
+}
 if (showCases) {
   for (const c of byCause.get(showCases) ?? []) console.log(`${c.host} ${c.name} ${c.status}\n    ${c.detail.slice(0, 2).join('\n    ')}`);
   process.exit(0);

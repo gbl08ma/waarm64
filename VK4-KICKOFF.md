@@ -4,6 +4,8 @@
 **Updated with the user's OK (2026-11-01)**: tiers 1 and 2 done and summarized; the out-of-context review's
 findings and the leftovers that drop work as tier 2b (R1–R7, before tier 3); T20 and the leftovers after tier 3.
 **Updated at the user's ask (2026-11-02)**: tier 2b done and summarized in the done table.
+**Updated at the user's ask (2026-11-05)**: the census again (bench/vulkan/REPORT.md "VK4: the census again") and
+the tasks it opens, T21–T34, after tier 3; tier 4's items they take point to them.
 
 ## How VK4 runs: tasks the user starts
 
@@ -103,11 +105,87 @@ R1–R4 and then of R5–R7, had its findings fixed or moved to the backlog the 
   samplers), its frame's GPU-worker and guest time measured with the path and with the case forced away, by
   bench/run.ts's rules. *Done:* a table in REPORT.md, the costly ones filed or fixed.
 
+### The census's tasks (T21–T34, drafted 2026-11-05 at the user's ask)
+
+The census again (bench/vulkan/REPORT.md "VK4: the census again"; T1's sample, 16,489 cases): 0.2% of the M4's
+supported cases fail and 0.9% of SwiftShader's, but 75% of the sample isn't supported, so dEQP-VK's cases are now
+mostly opened by advertising what WebGPU can be made to back. These tasks take the not-supported reasons by count,
+each on machinery a done task built; T21 first (its failures are defects), then by cases opened against cost, a
+program that asks for one (vkd3d, Dawn, ANGLE, Godot) moving it up. The reasons out of WebGPU's reach (protected
+memory, cooperative matrices, ray tracing, mesh shaders, tile images, fragment density, descriptor buffers, sparse:
+~1,600 of the sample) and pipeline statistics queries (188: WebGPU has none) get no task. Each task's counts are
+the sample's on the M4 (×100 for the whole list, roughly); each starts by running its reason's cases (`deqp-run.ts`'s
+`CASES`, from `census.ts --reasons`' examples or the sample's JSON) to see what they meet once advertised.
+
+- **T21. The census's failures and its new passes** (S): `descriptorset_random.sets4`'s two (a fragment stage's
+  output reads zeros; on SwiftShader too now, so CI's host can debug it), the M4's three multisampled `self_dep`
+  passes of the snorm formats, SwiftShader's `ssbo.corner_case.long_shader_bitwise_and` past the watchdog (where its
+  30 s go). The 861 sampled cases that pass on both hosts join `tests/deqp/vk.txt` (run as one list on SwiftShader
+  first, as T1's; the list's time and its limit checked). *Done:* each fixed or filed with its cause.
+  *Start:* REPORT.md "VK4: the census again", backlog "The M4's own failures".
+- **T22. A compute-only queue family** (S–M; 2,525, 20% of the not-supported): a second family, compute and transfer
+  without graphics, whose queues are the same WebGPU queue (one order of submits, so ownership transfers between the
+  families are no-ops); maybe a transfer-only third (50). Check what Venus's guest makes of two families on one queue
+  (its ring per queue) and that semaphores across them hold. *Done:* the reason's cases run, failures fixed or filed.
+  *Start:* backlog "Not advertised, by what dEQP-VK asks", vk/README.md "The driver".
+- **T23. Depth16 with stencil and the packed formats left** (M; 353 + those of ~2,450 below): `D16_UNORM_S8_UINT` as a
+  depth32float-stencil8 (or depth24plus-stencil8) texture whose copies convert the depth (T10's depth16 parts), its
+  precision 16 bits' where a test reads it back; `A4R4G4B4`, `A4B4G4R4`, `A1B5G5R5`, `R4G4` and the `A2R10G10B10`
+  orders through T12's packed formats' way (a wider texture, copies packing and unpacking in a compute pass).
+  *Done:* their cases run; the formats' features advertised only as far as they pass. *Start:* vk/README.md "Packed
+  16-bit formats", backlog "Packed 16-bit formats' leftovers".
+- **T24. Formats WebGPU has no texture of** (M–L; of the 1,559 "for sampling", 711 for transfer, 82 for blending, 45
+  for vertex input): 3-component formats (RGB8, RGB16, RGB32 of each type), scaled ones, BGRA's integer and snorm
+  orders, `R8_SRGB` and `R8G8_SRGB`: a wider texture with copies widening and narrowing, sampled with the shader's
+  decoding (scaled: an integer texture read as floats; sRGB of one or two channels: decoded before T18's filter from
+  fetches); vertex input's from T5's pulling. Which features each format can honestly have (linear filtering,
+  blending, attachment) decides what's advertised. *Done:* their cases run; the cost of the copies said for one.
+  *Start:* vk/README.md "Packed 16-bit formats", "Pulled vertices", "Samplers in the shader".
+- **T25. `maintenance5`, `6` and `8`** (M; 454, 234, 34 here; maintenance8's texel offsets that aren't constants are
+  `_pcoffset`'s 2,760 cases of the whole list): 5 and 6 are host-side mostly (the `*2` commands, `A1B5G5R5` with T23,
+  their properties) and what Vulkan 1.4 requires; 8's offsets in the translator (a coordinate shifted by the offset at
+  the level's size, or T18's filter where two levels blend). Venus's guest must pass them through. *Done:* the three
+  advertised, their cases run. *Start:* backlog "Shaders" (`_pcoffset`).
+- **T26. Min/max filtering** (S–M; 396: `filterMinmaxImageComponentMapping` 195, formats 150, the extension 51):
+  `VK_EXT_sampler_filter_minmax` through T8's sampler keys, T18's filter from fetches taking the texels' min or max
+  instead of their weighted sum; vkd3d's 12_0 asks for it. *Done:* advertised, its cases run, a variant's cost on one
+  case said. *Start:* vk/README.md "Samplers in the shader".
+- **T27. Multi-draw** (S; 196): `VK_EXT_multi_draw` as a draw per element on the host; with it `multiDrawIndirect`
+  and `drawIndirectCount` (vkd3d's 11_1) as T12's indirect fans' compute pass writing the draws' arguments, or a loop
+  of indirect draws. *Done:* advertised, its cases run. *Start:* vk/README.md "Commands".
+- **T28. Depth and stencil resolve modes** (S; 195: depth 130, stencil 46, `independentResolveNone` 19): MIN, MAX and
+  AVERAGE as T10's drawn resolves. *Done:* advertised, its cases run. *Start:* backlog "Rendering" (SAMPLE_ZERO only).
+- **T29. What reads the attachment it writes** (M; 463): `VK_KHR_dynamic_rendering_local_read` (97),
+  `VK_EXT_attachment_feedback_loop_layout` (48), advanced blends (94), `depthBounds` (113) and logic ops (16) through
+  T12's feedback copies in a cut pass (a copy per draw that reads: the cost said), and
+  `VK_EXT_multisampled_render_to_single_sampled` (95) as a multisampled texture of the pass's own resolved at its end.
+  Each advertised only if its cost on its cases is bearable. *Done:* their cases run. *Start:* vk/README.md "Feedback
+  loops" (T12).
+- **T30. Pipeline state as variants** (S each; 222): `VK_EXT_vertex_input_dynamic_state` (85), `depth_bias_control`
+  (81), what of `extended_dynamic_state3` WebGPU's pipelines can take as variants (23), `primitive_restart_index` (16),
+  `non_seamless_cube_map` (17, the cube's filter in the shader). *Done:* each advertised that passes. *Start:*
+  vk/README.md "Commands" (extended dynamic state as variants).
+- **T31. Shader types** (M; 137 here, more in groups that skip silently): `storageInputOutput16` (89: varyings widened
+  to 32 bits), 8-bit storage and `shaderInt8` (17+: words as `lower_16bit` does halves), `shaderImageGatherExtended`
+  (31: offsets that aren't constants as fetches), `shaderInt16` (the lowering exists; the advertising and its groups
+  don't), `shaderInt64` (`buffer_device_address`'s 504 of the whole list). *Done:* each advertised that passes; the
+  translator's tests for each. *Start:* backlog "What the device advertises, left for the translator".
+- **T32. Writable storage in the vertex stage** (L; 222 here, and `timeline_semaphore.wait_before_signal`): the vertex
+  stage run as a compute pre-pass (transform feedback's `runXfb` way) writing its outputs, a pass-through vertex stage
+  drawing them; `vertexPipelineStoresAndAtomics`. The same pre-pass is tier 4's way to geometry and tessellation (370
+  of the sample), so this task decides it for them. *Done:* advertised, its cases run, the pre-pass's cost on a draw
+  said. *Start:* vk/README.md "Transform feedback", backlog "Synchronization".
+- **T33. Mutable descriptor types** (M; 143): `VK_EXT_mutable_descriptor_type`, a bind group layout per set of types
+  the guest writes (a variant, as overlapping bindings are); vkd3d-proton leans on it. *Done:* advertised, its cases
+  run. *Start:* vk/README.md "Descriptors".
+- **T34. 3D ASTC** (M; 187): `VK_EXT_texture_compression_astc_3d` decoded to RGBA8 at upload in a compute pass. No
+  program asks; last. *Done:* advertised, its cases run.
+
 ### Tier 4: breadth (each its own task when a program asks for it)
 
-vkd3d's 11_1 and 12_0 gaps (256 bytes of push constants, multi-draw indirect, vertex attribute divisors, storage
-images without a format, min/max reduction, multiple viewports), then geometry and tessellation as compute
-pre-passes; transform feedback's leftovers; YCbCr's 10-bit formats; snapshots while Vulkan is in use; Dawn in the
+vkd3d's 11_1 and 12_0 gaps (256 bytes of push constants, multi-draw indirect (T27), vertex attribute divisors, min/max
+reduction (T26), multiple viewports; storage images without a format were GD G5's), then geometry and tessellation as
+compute pre-passes (T32 decides the pre-pass); transform feedback's leftovers; YCbCr's 10-bit formats; snapshots while Vulkan is in use; Dawn in the
 guest's Chromium (a guest Mesa patch for opaque-fd semaphores); a prebuilt renderer module for `npm start`; and **on
 by default**, per program that meets its bar (the track's end).
 
@@ -123,7 +201,8 @@ and the formats WebGPU's vertex buffers lack ("Pulled vertices' leftovers": the 
 ("Rendering"); D24's unit and RGB32 attachments ("Formats"); queries' precise counts and GPU timestamps ("Queries");
 a compute-only queue family, the commonest not-supported reason (T1); and the hosts' own: the M4's failures,
 SwiftShader's fetch from a base level and `buffer_1048577` on NVIDIA (the user's next NVIDIA run decides those and
-T2's `wg_complete` trap).
+T2's `wg_complete` trap). The census's tasks take some of these: the compute-only queue family (T22), the packed 1.3 orders
+(T23), `_pcoffset` (T25), MIN/MAX/AVERAGE resolves (T28), `shaderInt64` (T31).
 
 ## The gate (the track's end)
 

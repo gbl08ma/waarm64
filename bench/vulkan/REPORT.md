@@ -771,6 +771,59 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4: the census again — 0.2% of the M4's supported cases fail, 0.9% of SwiftShader's; what's left is what isn't advertised
+
+**2026-11-05**, at the user's ask, after T2–T19, R1–R7 and GD. JSON in `results/vk4/census2/` (`swiftshader/`, `m4/`: one
+file a boot; `census.json`: the failures by cause). T1's sample exactly (every 100th case of `vk-main.txt`, 16,489, as
+four boots of `bench/gpu/deqp-run.ts vk` at `STRIDE=400`, `OFFSET` 0, 100, 200, 300), with `DETAIL=20000
+DETAIL_NOTSUPPORTED=1` so one run gives the failures' messages and the NotSupported reasons; on the dev VM's SwiftShader
+(Chromium 155.0.8059.84, 111–170 s of deqp-vk a boot) and on the M4 (Chrome for Testing 157.0.8103.38, macOS 26.6.2,
+68–83 s) through `bench/gpu/sway-mac.sh` with `VIRGL_GPU=virgl,vulkan` (its default, `virgl-null`, has no Vulkan: deqp-vk
+then stops at `vkEnumeratePhysicalDevices`, `VK_ERROR_INITIALIZATION_FAILED`, in a second). Classed by
+`bench/vulkan/census.ts`; the reasons by its new `--reasons`.
+
+| host | cases | pass | fail | crash | not supported | not passed of supported | T1 (2026-10-29) |
+|---|---|---|---|---|---|---|---|
+| SwiftShader | 16,489 | 3,657 | 34 | 1 | 12,797 | 35 of 3,692 (0.9%) | 500 of 2,948 (17.0%) |
+| M4 | 16,489 | 4,098 | 10 | 0 | 12,381 | 10 of 4,108 (0.2%) | 545 of 3,296 (16.5%) |
+
+- **The failures** (each already filed but two): SwiftShader's 32 `image_view.*.subresource_range.lod_base_mip_level*`
+  of integer and padded ASTC formats are its fetch from a view with a base level (backlog; the rules file them under
+  T8 and T18, whose causes they aren't); the M4's 5 `blend.dual_source` with both blend constants (backlog
+  "Rendering"); `descriptorset_random.sets4`'s 2 on **both hosts** now (T1 saw them on the M4 only: "Failure in copy
+  buffer, ptr[0] = 0", a fragment stage's output read as zeros), so SwiftShader can debug it in CI's own host; **new**:
+  the M4's 3 multisampled `self_dep` passes of `r16g16_snorm` and `r16g16b16a16_snorm` (input attachments of their own
+  pass, 4 samples; the unorm and float ones pass), and SwiftShader's `ssbo.corner_case.long_shader_bitwise_and` past
+  dEQP's 30 s watchdog (3 s on the M4: the pipeline's compile on SwiftShader).
+- **861 cases of the sample pass on both hosts and aren't in `tests/deqp/vk.txt`** (`pipeline` 405, `api.copy_and_blit`
+  230, `api.image_clearing` 67, `ssbo.phys` 44, `renderpasses` 45), all of groups the tasks' lists sampled; 443 more
+  pass on the M4 only (formats SwiftShader's Vulkan lacks). No case of the list failed on either host.
+- **75% of the sample isn't supported on either host**, so that is where cases are left: by dEQP's reasons on the M4
+  (12,373 of its 12,381; SwiftShader's alike, with 418 more for its formats):
+
+| reason (the M4's) | cases | what would back it | task |
+|---|---|---|---|
+| a queue family with compute and without graphics (1,984 "No matching queue", 541 "Exclusive compute queue") | 2,525 | a second family over the same WebGPU queue | T22 |
+| formats not supported for sampling (1,559), transfer, as a source or destination (711), blending (82), vertex input (45), linear filtering (43) | ~2,450 | wider textures, packed and unpacked by copies (T12's packed formats' way) and decoded in the shader | T23, T24 |
+| `D16_UNORM_S8_UINT` (353 "Unsupported depth/stencil format") | 353 | a depth32float-stencil8 texture with its copies converting | T23 |
+| `VK_KHR_maintenance5`, `6`, `8`, `10` | 756 | host-side mostly; maintenance8's texel offsets that aren't constants in the translator | T25 |
+| min/max filtering (`filterMinmaxImageComponentMapping` 195, formats 150, `VK_EXT_sampler_filter_minmax` 51) | 396 | T8's filter from fetches, the min or max of the texels | T26 |
+| `VK_EXT_multi_draw` | 196 | a draw per element | T27 |
+| depth and stencil resolve modes (130, 46, `independentResolveNone` 19) | 195 | T10's drawn resolves | T28 |
+| what reads its own attachment: `VK_KHR_dynamic_rendering_local_read` 97, `multisampled_render_to_single_sampled` 95, advanced blends 94, `depthBounds` 113, `attachment_feedback_loop_layout` 48, logic ops 16 | 463 | T12's feedback copies in a cut pass; a multisampled texture resolved at the pass's end | T29 |
+| pipeline state: `vertex_input_dynamic_state` 85, `depth_bias_control` 81, `extended_dynamic_state3` 23, `primitive_restart_index` 16, `non_seamless_cube_map` 17 | 222 | pipeline variants; a seamless cube's filter in the shader | T30 |
+| shader types: `storageInputOutput16` 89, 8-bit storage 17, `shaderImageGatherExtended` 31 | 137 | the translator's lowerings (16-bit ones exist for storage) | T31 |
+| writable storage in the vertex stage (76, 87, 25, 18, 16 by descriptor type) | 222 | the vertex stage as a compute pre-pass (transform feedback's way) | T32 |
+| tessellation 172 + 21 + 21, geometry 86 + 70 | 370 | compute pre-passes too (tier 4) | T32's way |
+| mutable descriptor types | 143 | a bind group layout per written set of types | T33 |
+| `VK_EXT_texture_compression_astc_3d` | 187 | decoded to RGBA8 at upload | T34 |
+| pipeline statistics queries | 188 | none in WebGPU (counters in shader variants could give a few, clipping none) | — |
+| protected access 630, cooperative matrices 538, ray tracing ~180, mesh shaders 33, tile images 55, fragment density 33, shading rate 21, descriptor buffers and heaps 81, sparse 40 | ~1,600 | out of WebGPU's reach | — |
+
+- **What changed since T1's reasons**: custom border colours (151), mirror-clamp-to-edge (149), border colour swizzles
+  (104) and LOD biases past the limit (108) are gone (T8); the reasons that name a format went 4,310 → 3,681 (T1's
+  section rounded a narrower count of them to ~2,000), the queue family's 2,427 → 2,525.
+
 ## GD G7–G8: X11's windows (the prime blit's buffers shared) and the window that capped mapped memory
 
 2026-11-04, the dev VM (SwiftShader, Chromium 155), the tests' Debian rebuilt with Xwayland and python3

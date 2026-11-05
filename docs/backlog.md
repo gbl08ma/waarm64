@@ -757,10 +757,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   groups, 16,489; on SwiftShader 2,448 pass, 498 fail, 2 crash, the rest unsupported, the M4 alike) counts every cause
   in its table (`bench/vulkan/census.ts`); the counts below without a date are L5's samples
   (`bench/vulkan/results/vk2/l5/deqp/`). The cases that fail stay out of `tests/deqp/vk.txt`:
-  - **Not advertised, by what dEQP-VK asks** (VK4 T1's reasons, bench/vulkan/REPORT.md "VK4 T1"): a queue family
-    with compute and without graphics is the commonest (18% of the census's not-supported cases: `pipeline`'s compute
-    variants want one; a second queue family, compute-only, over the same WebGPU queue would serve them), then
-    `VK_KHR_maintenance*`, protected memory, cooperative matrices, formats, multi-draw, pipeline statistics queries.
+  - **Not advertised, by what dEQP-VK asks** (the census of 2026-11-05, bench/vulkan/REPORT.md "VK4: the census
+    again": 75% of the sample not supported on either host, against 0.2% of the M4's supported cases failing; its
+    reasons by `census.ts --reasons`): a queue family with compute and without graphics (2,525, 20%), formats
+    (3,681 reasons name one), `VK_KHR_maintenance5`/`6`/`8`, min/max filtering, multi-draw, depth and stencil resolve
+    modes, what reads its own attachment, writable storage in the vertex stage, mutable descriptors, 3D ASTC: each a
+    task of VK4-KICKOFF.md's T22–T34. No task: protected memory, cooperative matrices, ray tracing, mesh shaders, tile
+    images, fragment density, descriptor buffers, sparse (~1,600 of the sample) and pipeline statistics queries (188).
   - **`api.info.image_format_properties2.*` of the YCbCr formats time out** (VK4 T1's "crash" of `r12x4_unorm_pack16`,
     VK4 T2): with `DISJOINT` in its create flags the case makes ~340,000 synchronous queries, ~0.1 ms each through
     Venus's ring, so it passes in 34 s (`WATCHDOG=disable`) but past dEQP's 30 s watchdog; out of the list. A guest's
@@ -932,12 +935,17 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     bitwise (Metal looks to canonicalize the format's bits on upload: unconfirmed; a texture of `r32uint` would keep them,
     and no program depends on non-canonical bits); 4 `depth_stencil_resolve.*_stencil_samplemask` (the stencil reads 255
     where 1 is right); 2 of 3 `binding_model.descriptorset_random.sets4` cases (a fragment stage's output reads zeros: the
-    third passed in T12's run).
+    third passed in T12's run). The census of 2026-11-05 adds: the two `sets4` cases fail on SwiftShader too now
+    (`constant…frag.noia.9`, `noarray…frag.noia.7`), and 3 multisampled `self_dep` passes of `r16g16_snorm` and
+    `r16g16b16a16_snorm` fail on the M4 (`renderpass1…r16g16_snorm.input.clear.store.self_dep_draw_ms` and two of
+    `renderpass2`; the unorm and float ones pass): VK4-KICKOFF.md T21.
   - **SwiftShader compiles zero-initialized workgroup memory slowly** (VK4 T2): Dawn zeroes it through Vulkan's
     `VK_KHR_zero_initialize_workgroup_memory`, which costs SwiftShader ~17 s per pipeline with a 16 KiB array (19 ms
     with Tint's loop: `--disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension`, which the
     dEQP-VK runs pass). Only Chromium's SwiftShader WebGPU (`--enable-unsafe-webgpu`) meets it; a guest compute program
-    with much workgroup memory waits that long for its pipeline there. Worth an upstream report (SwiftShader).
+    with much workgroup memory waits that long for its pipeline there. Worth an upstream report (SwiftShader). Also slow
+    there: `ssbo.corner_case.long_shader_bitwise_and` passes the M4 in 3 s and runs past dEQP's 30 s watchdog on
+    SwiftShader (the census of 2026-11-05; where the time goes is T21's).
   - **What R7's limits leave** (VK4 R7, its review's B4, B8, D4): 16 vertex bindings need a free bind group and room in the
     vertex stage's storage buffers, or the draw is refused, said once (four groups in use, or a vertex stage's own storage
     buffers); 8 dynamic uniform buffers with push constants past the immediates or draw parameters put the push buffer on
