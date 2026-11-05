@@ -122,7 +122,8 @@ offered there.
   its queue drops past 1024 events, and the keyboard layout limits what can be typed), it is instant and takes
   any UTF-8 text. Copying from the console stays out of scope; the serial terminal already has both directions.
 - **MIME types:** `text/plain;charset=utf-8` (and its aliases `UTF8_STRING`, `TEXT`, `STRING` on X11) first;
-  `image/png` and `text/html` in a later step. A size cap is enforced on both sides (16 MiB to start).
+  then images (§4.4), then `text/html`. A size cap is enforced on both sides (16 MiB for text, 64 MiB for an
+  image), against the offer's size, before any bytes cross.
 - **Paused** (`PAUSE`, from the toolbar's switch): the agent stops answering and announcing. It drops its
   ownership of the guest's clipboard if the host's data was in it, so that a paste in the guest can't pull more
   from the host. It ignores the guest's changes until `RESUME`. Nothing is queued for later.
@@ -194,29 +195,38 @@ isn't paused.
 
 ### 4.1 Host to guest: three ways, from no prompt to full sync
 
-1. **The paste chord (the default; no prompt, every browser).** When the user presses a paste chord on the screen
+The page **asks for Chromium's `clipboard-read` permission** (the user's choice, 2026-11-05: asking is fine,
+even desirable), because only a page that may read the clipboard can have the guest's own menus paste the host's
+copy. Firefox and Safari have no such permission, so they rely on ways 2 and 3.
+
+1. **Sync on focus (Chromium, with the permission: the main way).** While `clipboard-read` is `granted`
+   (`navigator.permissions.query`), each time the page gets focus back (`focus`, `visibilitychange`), it reads
+   the clipboard and offers it to the guest if it changed. Where `clipboardchange` exists, the page reads only
+   when it fires, not on every focus. By the time the user is back on the screen, the host's copy is the guest's
+   clipboard. So every way of pasting in the guest gets it: a key, the guest's right-click menu, a middle click
+   (once PRIMARY is shared), and a program's own Paste button.
+   - **When it asks:** only in answer to the user's own click, so the prompt is never a surprise in the middle
+     of a boot or on a focus. The page asks when the user turns the machine's setting on (the click on the
+     switch), and, while the permission is still `prompt` (the prompt was dismissed, or the machine came from
+     another browser), from the toolbar button. That button's state then says the page needs the permission,
+     and its first menu item asks (§5). It never calls `read()` while the permission is `prompt` outside
+     those clicks.
+   - **Denied:** the toolbar button's state says so, and how to allow it in the site's settings. Sharing goes on
+     with ways 2 and 3. The permission's `change` event updates the button the moment the user changes it.
+2. **The paste chord (every browser, no permission).** When the user presses a paste chord on the screen
    (Ctrl+V, Ctrl+Shift+V, Shift+Insert; Cmd+V on a Mac, if the screen's keys pass Meta to the guest: check
    `web/input.ts`), `web/input.ts` holds the key and **doesn't call `preventDefault`**. The browser then fires
    `paste`, with `clipboardData` holding the host clipboard. This is the browser's own user-initiated paste, so
-   there's no permission check and no Paste button. The page offers the data to the guest, waits for the agent's
-   acknowledgement (bounded, about 300 ms), then sends the held key. The guest's program pastes what the user
-   just copied on the host. Privacy is good: the host's clipboard reaches the guest only when the user pastes in
-   it.
+   there's no permission check and no Paste button. If the data differs from what the guest has, the page
+   offers it and waits for the agent's acknowledgement (bounded, about 300 ms) before it sends the held key.
+   Otherwise it sends the key at once. With way 1 working, the data hardly ever differs. Without way 1
+   (Firefox, Safari, a denied permission), this is how a key paste in the guest gets the host's copy.
    - **Measured (the user's Chrome, 2026-11-05):** Chrome fires `paste`, with the text in `clipboardData`, at a
      focused `<canvas tabindex=0>` that isn't editable, as long as no handler calls `preventDefault` on the
      keydown. So the screen's canvas can take it, with no hidden text field. Firefox is still to check.
-   - **What is lost:** a paste from the guest's own menus (right-click, Paste, or a middle click) gives no
-     browser event, so it gets the guest's clipboard: the host's text from the last paste chord, or the guest's
-     own last copy. Option 2 fixes that in Chromium, because the host's copy is already in the guest by the
-     time the user is back on the page. Without that permission, the user sends the clipboard from the
-     toolbar's menu (option 3) and then pastes from the guest's menu.
-2. **Sync on focus (opt-in, Chromium, one prompt).** While `clipboard-read` is `granted`
-   (`navigator.permissions.query`), each time the page gets focus back (`focus`, `visibilitychange`), it reads
-   the clipboard and offers it to the guest if it changed. Where `clipboardchange` exists, the page reads only
-   when it fires, not on every focus. **The page never calls `read()` while the permission is `prompt`**,
-   except from the user's own click on the preference that turns it on (§5). That way the prompt appears once,
-   as the answer to that click, and never in the middle of a boot or on a focus. On `denied`, the preference
-   says so and the page falls back to option 1.
+   - **What it can't do:** a paste from the guest's own menus gives no browser event. Without way 1, such a
+     paste gets the guest's clipboard (the host's text from the last paste chord, or the guest's own last
+     copy), unless the user sends the clipboard first with way 3.
 3. **Items in the toolbar's clipboard menu** (§5): "Send the clipboard to the guest" (reads with the click's
    activation: Chromium's permission, or Firefox's Paste button) and "Type the clipboard" (to the console
    through the agent's `TYPE`).
@@ -226,15 +236,17 @@ isn't paused.
 When the guest's clipboard changes, the agent sends an `OFFER`. The page then:
 
 - **If the document has focus:** it writes at once. For text it uses `writeText`. For other types it uses
-  `write([new ClipboardItem({type: promise})])`, so the bytes are fetched from the guest only when the browser
-  asks: Chromium and Safari accept promises in `ClipboardItem`. In Chromium the write needs only focus. In
+  `write([new ClipboardItem({type: promise})])`, with the promise resolving to the bytes the page requests from
+  the guest. Chromium waits for the promise at the write itself, so the bytes cross then, not when the user
+  pastes (Chromium's delayed rendering is an experiment on Windows only). Safari needs the promise form to keep
+  the click's activation across the wait (§4.4). In Chromium the write needs only focus. In
   Firefox and Safari it needs transient activation. The guest's copy follows the user's Ctrl+C within a round
   trip (well under the activation window of about 5 s), so it usually still has it.
 - **Otherwise,** or if the write was refused (`NotAllowedError`): the offer is kept as pending, and the page
   writes it on the next focus (Chromium) or the next `keydown` or `pointerdown` on the page, which gives
   activation (Firefox, Safari). Only the newest pending offer is kept.
 - **The host's newer copy wins.** A guest change made while the page had no focus doesn't overwrite what the
-  user copied on the host since. On focus, the page reads the host clipboard first, where it may (option 2's
+  user copied on the host since. On focus, the page reads the host clipboard first, where it may (way 1's
   permission). If that has changed since the page last wrote it, the pending offer is dropped. Without the
   permission, the page can't tell, so the pending offer is written only on a key or pointer event on the
   screen, not on focus alone.
@@ -251,24 +263,57 @@ covers it. Cases to recognise, and what the page does:
   it matters: there are types but no text (an image, which a later step may offer), or there are no types (hidden).
 - **The OS hides or asks:** macOS 15.4 and later alerts the user, or lets them deny, when an app reads the
   pasteboard programmatically without a paste-related UI action ("Paste from Other Apps" in Privacy &
-  Security). A focus read (option 2) is exactly that kind of read. What Chromium then returns (an error, `""`, or
-  stale content) is **to measure on the Mac host** (`macmini.lan`, the user's Chrome; not automatable). Option
-  1, a real paste, isn't affected. If focus reads on a Mac come back empty while `read()`'s types say there is
+  Security). A focus read (way 1) is exactly that kind of read. What Chromium then returns (an error, `""`, or
+  stale content) is **to measure on the Mac host** (`macmini.lan`, the user's Chrome; not automatable). Way 2,
+  a real paste, isn't affected. If focus reads on a Mac come back empty while `read()`'s types say there is
   text, the page counts it. After a few in a row it stops focus reads for the run and says why in the
-  preference.
+  toolbar button's menu, and the paste chord carries on.
 - **Stale reads:** Chromium on a Linux Wayland host (and some remote-desktop hosts) can answer a read with an old
   clipboard when the window isn't focused at the OS level. The page reads only while `document.hasFocus()`, and
   dedupes by hash, so a stale read at worst repeats an old offer, which echo suppression drops.
 - **Concealed content:** password managers mark copies as concealed (`org.nspasteboard.ConcealedType` on macOS,
   `ExcludeClipboardContentFromMonitorProcessing` on Windows, `x-kde-passwordManagerHint` on Linux). The browser
-  may or may not expose them. The page can't tell, which is one more reason option 1 (sharing only on paste) is
-  the default, and why the toolbar's switch exists.
+  may or may not expose them. The page can't tell, which is why the toolbar's switch exists: pause the sharing before
+  copying a password on the host.
 - **Sanitising:** Chromium re-encodes images as PNG and sanitises `text/html` on `read()`, so what reaches the
   guest isn't byte-identical to what was copied. That is fine for a clipboard. `unsanitized: ['text/html']`
   isn't needed.
-- **Refusals** (`NotAllowedError`, `DataError`) are never shown as errors in the middle of work. The preference
+- **Refusals** (`NotAllowedError`, `DataError`) are never shown as errors in the middle of work. The toolbar button
   shows the permission's state ("Allowed in this browser", "Blocked: allow it in the site's settings") from the
   permission's `change` event, the way USB and folders show "Allow…".
+
+### 4.4 Images
+
+Images are the same path as text with another type: lazy offers, streamed chunks, and the size cap. What differs:
+
+- **One type on the host: `image/png`.** The Clipboard API reads and writes `image/png` in every browser that has
+  it, and Chromium re-encodes any image it reads as PNG. Chromium's other image types are "web custom formats"
+  (`web image/jpeg`), which other programs on the host don't read. So the page writes PNG, and reads PNG.
+- **Guest to host:** the agent offers what the guest's program offers. Programs that copy images (Firefox,
+  GIMP, grim and slurp, screenshot tools) offer `image/png` among their types, and the agent prefers it. If a
+  program offers only another image type (`image/jpeg`, `image/bmp`, `image/webp`), the agent doesn't convert:
+  that would cost the guest CPU and an image library. **The page converts:** `createImageBitmap` on the bytes,
+  an `OffscreenCanvas`, and `convertToBlob({type: 'image/png'})`, in a worker. Text that comes with the image
+  (an `<img>`'s URL, `text/html`) goes in the same `ClipboardItem`, so the host's program picks what it takes.
+- **Host to guest:** way 1's `read()` gives a `Blob` of `image/png`. Way 2's `paste` event has it as a `File` in
+  `clipboardData.items` (also with no permission: measure in Chrome and Firefox with an image copied, using the
+  same console test). The page keeps the `Blob` and offers `image/png` to the guest. A guest program that asks
+  for the bytes gets them streamed. A program that wants only another type gets nothing, as on a desktop
+  where the copying program offered only PNG. The agent offers the type's usual aliases (`image/png` is the
+  only name programs ask for).
+- **Size:** a 4K screenshot as PNG is about 5–15 MB. The cap becomes **64 MiB** for images (16 MiB for text),
+  checked against the offer's size before any bytes cross. The page holds at most one image `Blob` from each
+  side, and the agent holds none (it streams).
+- **Echo:** Chromium re-encodes what the page writes, so reading the host clipboard back gives other bytes, and
+  a hash of the bytes would see "new" content and send the guest's own image back to it. So after it writes an
+  image, the page reads the clipboard back once (way 1's permission; with focus, at once) and remembers *that*
+  hash as its own. Where `clipboardchange` exists, an unchanged clipboard isn't read at all. Without the
+  permission, nothing is read on focus, so there's no echo to suppress.
+- **Firefox and Safari:** writing `image/png` needs activation, as text does. The guest's copy after a key press
+  usually arrives within the activation window, as in §4.2. Safari needs the promise form of `ClipboardItem` for
+  that.
+- **The screen's own picture** (a "copy the screen" item in the toolbar's clipboard menu, from the display's
+  canvas) needs no agent. Worth a line when the menu is built.
 
 ## 5. The page
 
@@ -276,12 +321,13 @@ covers it. Cases to recognise, and what the page does:
   **off by default**, in the shape when on, §2). A draft of its words, for the catalog ([copy.md](../copy.md)),
   to be settled when it is built:
   - Label: **Share the clipboard with the guest**
-  - Note: "Copy on your computer and paste in the guest, and the other way around. At every boot, this emulator
+  - Note: "Copy text or an image on your computer and paste it in the guest, and the other way around. At every boot, this emulator
     starts a small program of its own in the guest, which passes the clipboard between the guest's desktop and
     this web app. In a Wayland session, the desktop must support the data-control protocol, as sway and KDE
     Plasma do. The guest must be running systemd version 256 or above. Nothing is written to the guest's disk,
-    so the program is gone when the guest shuts down. A switch in the toolbar pauses the sharing while the
-    machine runs."
+    so the program is gone when the guest shuts down. This browser may ask for permission to see the clipboard,
+    so that the guest can paste what you copy on your computer from its own menus too. A switch in the toolbar
+    pauses the sharing while the machine runs."
 
   The X11 sentence joins when X11 is built (§6 step 5), and so does a "text console" sentence when `TYPE` is
   offered.
@@ -294,11 +340,15 @@ covers it. Cases to recognise, and what the page does:
     chord goes to the guest as a plain key, the pending offer is dropped, and the agent gets `PAUSE` (§3.2).
     **Resume** sends nothing on its own: the next copy or paste does. A pause lasts for the run: the next start
     shares again, because the setting is what's remembered, and a forgotten pause would look like a bug.
-  - It is a menu, like USB's, with the switch first, then "Send the clipboard to the guest" and "Type the
-    clipboard" (§4.1, 3).
-- **A per-browser preference** (Preferences, since permissions belong to the browser): **Send the clipboard to
-  the guest when you return to this web app** (§4.1, 2). Turning it on is the click that shows Chromium's prompt.
-  Its note shows the permission's state, and it is offered only in a browser that has `clipboard-read`.
+  - **The permission:** in a browser with `clipboard-read`, while the permission is `prompt` or `denied`, the
+    button has a mark and says so in its tooltip: sharing still works through the paste chord, but the guest's
+    own menus don't get the host's copy. With `prompt`, the menu's first item is "Allow reading the
+    clipboard…", whose click asks. With `denied`, the menu says how to allow it in the site's settings.
+  - It is a menu, like USB's, with the permission's item when there is one, the switch, then "Send the
+    clipboard to the guest" and "Type the clipboard" (§4.1, 3).
+- **No preference of its own:** whether the page may read the clipboard is the browser's permission, kept per
+  browser by the browser. The machine's setting asks for it when it is turned on (§4.1, 1), and the toolbar
+  button asks while it is missing.
 - **Snapshots:** the agent lives in guest memory, so a restore brings it back. The host side keeps no state beyond
   the last hashes. The port's open state comes back with the backend's `save()`/`restore()`. The pause doesn't go
   into a snapshot.
@@ -322,9 +372,10 @@ Each step is one loop with its own tests at the cheapest layer:
    gives the host clipboard (Playwright with `clipboard-read`/`clipboard-write` granted), the host clipboard
    plus the paste chord gives `wl-paste` in the guest, the switch's pause stops both, and §3.3's targets hold
    while sway runs. On the Arch desktop, by hand: between foot and Firefox in the guest and the host.
-4. **The host's three ways, the toolbar button, the preference and the placeholder rules,** with the
+4. **The host's three ways, the permission's asking, the toolbar button and the placeholder rules,** with the
    measurements from §4.1 and §4.3 (the canvas's `paste` event, Firefox in the dev VM, the Mac by the user).
-5. **X11** (Xwayland and Xorg sessions), then `image/png` and `text/html`.
+5. **Images** (§4.4: the page's conversion to PNG, the read-back for echoes, a screenshot each way in the
+   Wayland test), then **X11** (Xwayland and Xorg sessions, INCR for large images), then `text/html`.
 6. **Optional:** spice-vdagent's port, GNOME through the portal, a ready signal and time after a resume from the
    same agent (agent.md).
 
@@ -339,10 +390,13 @@ the guest" and "The toolbar", [machines.md](../machines.md) (the shape), a new `
    dependencies' parts reimplemented where that helps. That led to hand-written Wayland and X11 and `rustix` only
    (§3.3).
 3. **Off by default per machine.** On a machine that has it, a **toolbar button** pauses the sharing for the
-   run, and it doubles as the reminder that sharing is on (§5). Host to guest goes only on a paste chord unless
-   the browser preference is on.
+   run, and it doubles as the reminder that sharing is on (§5).
 4. **The placeholder data seen** is empty strings, which §4.3's first rule covers.
 5. **The device only on machines with the setting**, as the clock, the USB controller and the touchscreen are
    (§2).
 6. **The setting's note** says what the other guest settings say about systemd, and also that a small program
    of ours runs in the guest (§5's draft).
+7. **Asking for the clipboard-read permission is fine, even desirable**, so that a paste from the guest's own
+   menus gets the host's copy. Sync on focus is the main way in Chromium, asked for when the setting is turned
+   on or from the toolbar button, never without a click. The paste chord serves the other browsers, or a denied
+   permission (§4.1).
