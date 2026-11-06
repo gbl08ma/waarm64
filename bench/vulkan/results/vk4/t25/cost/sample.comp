@@ -1,0 +1,12 @@
+#version 450
+// VK4 T25's cost: 16 linear-mipmapped samples an invocation (bench/results/local/t25/cost/translate.ts).
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform sampler2D img;
+layout(set = 0, binding = 1, std430) buffer Out { vec4 o[]; };
+void main() {
+  vec2 uv = (vec2(gl_GlobalInvocationID.xy) + 0.37) / 512.0;
+  vec4 s = vec4(0.0);
+  for (int i = 0; i < 16; i++)
+    s += textureLod(img, uv + vec2(i) * 0.0123, 0.4);
+  o[gl_GlobalInvocationID.y * 512u + gl_GlobalInvocationID.x] = s;
+}

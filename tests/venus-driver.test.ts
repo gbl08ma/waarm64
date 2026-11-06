@@ -448,6 +448,8 @@ for (const [scenario, what] of [
   ['cubeSized', 'a shadow cube from its faces: each sampler by its own state, and sized in another stage'],
   ['depthEight', 'a stage writing depth beside every colour location, without an attachment for it'],
   ['cubeGather', 'a keyed stage that can\'t be printed refuses its draw, with no invalid pipeline'],
+  // VK4 T24 (maintenance8): no dEQP-VK case runs them through the tests' guest's Venus (Mesa 26.2).
+  ['m8Copies', 'depth and stencil copied with colour images of their size, and blits between layers and slices'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.

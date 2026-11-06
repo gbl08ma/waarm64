@@ -4,6 +4,10 @@
 // machine with Vulkan on the page's WebGPU (SwiftShader's in the dev VM: `--enable-unsafe-webgpu`), on one machine or, with
 // the RAM for it, two at once (`SHARDS`); then tests/deqp/vk-ycbcr.txt (VK3 L7.2: YCbCr conversions, on by default since L7.3), another boot, ~1.5 min.
 // Opt-in with WEBPC_DEQP_VK=1 (scripts/ci-deqp-vk.sh); skipped where the page has no WebGPU adapter.
+// The direct list is sampled unless WEBPC_DEQP_VK_FULL=1 (`ci-deqp-vk.sh --full`): every STRIDE-th case of each group
+// (the name's first three parts) from an offset of its own drawn from a seed, at least one a group, in the list's
+// order, so runs together cover the list; the seed is printed, and WEBPC_DEQP_VK_SEED=<n> runs that sample again. A
+// case that fails in a sample is looked into at once, or filed in docs/backlog.md and taken out of the list.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -29,6 +33,40 @@ const BLOCK = 256;
 // before they're killed), where one peaks at 8.9.
 const SHARD_RAM_MIB = 1536;
 
+const FULL = process.env.WEBPC_DEQP_VK_FULL === '1';
+const STRIDE = 8;
+const SEED = process.env.WEBPC_DEQP_VK_SEED !== undefined ? Number(process.env.WEBPC_DEQP_VK_SEED) >>> 0 : (Math.random() * 2 ** 32) >>> 0;
+
+/** A seeded generator of 32-bit integers (mulberry32). */
+function random(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return (t ^ (t >>> 14)) >>> 0;
+  };
+}
+
+/** Every `stride`-th case of each group, from an offset per group the seed draws (a group shorter than its offset:
+ * one case of it), in the list's order. */
+export function sample(cases: string[], stride: number, seed: number): string[] {
+  const groups = new Map<string, number[]>();
+  cases.forEach((c, i) => {
+    const g = c.split('.').slice(1, 4).join('.');
+    let at = groups.get(g);
+    if (!at) groups.set(g, (at = []));
+    at.push(i);
+  });
+  const next = random(seed), keep = new Set<number>();
+  for (const at of groups.values()) {
+    const offset = next() % stride;
+    if (offset >= at.length) keep.add(at[next() % at.length]);
+    for (let k = offset; k < at.length; k += stride) keep.add(at[k]);
+  }
+  return cases.filter((_, i) => keep.has(i));
+}
+
 type Result = { adapter?: string | null; cases: number; counts: Record<string, number>; notPassed: string[]; stoppedAt?: string; detail?: string[] };
 
 /** One machine's run of `file`; its result, or an error with its output kept in `out`. */
@@ -51,8 +89,12 @@ function runShard(file: string, out: string, gpu: string | undefined, ramMiB?: n
 }
 
 /** Runs a pass list on the page in `shards` machines (`gpu`: the machine's ?gpu=, e.g. with `vkycbcr=off`); every case must pass. */
-async function passList(t: { skip(m: string): void }, list: string, shards: number, gpu?: string) {
-  const cases = readFileSync(list, 'utf8').split('\n').filter((l) => l && !l.startsWith('#'));
+async function passList(t: { skip(m: string): void; diagnostic(m: string): void }, list: string, shards: number, gpu?: string, sampled = false) {
+  const all = readFileSync(list, 'utf8').split('\n').filter((l) => l && !l.startsWith('#'));
+  const cases = sampled ? sample(all, STRIDE, SEED) : all;
+  const which = sampled ? `a sample of ${cases.length} of ${all.length} (WEBPC_DEQP_VK_SEED=${SEED})` : `all ${cases.length}`;
+  t.diagnostic(which);
+  console.log(`dEQP-VK: ${list.split('/').pop()}: ${which}`);
   const dir = mkdtempSync(join(tmpdir(), 'webpc-deqp-vk-'));
   let passed = false;
   try {
@@ -73,7 +115,7 @@ async function passList(t: { skip(m: string): void }, list: string, shards: numb
       assert.equal(r.stoppedAt, undefined, `dEQP stopped at ${r.stoppedAt} (shard ${i}: ${join(dir, String(i))})`);
     });
     const notPassed = results.flatMap((r) => r.notPassed);
-    assert.deepEqual(notPassed.slice(0, 30), [], `${notPassed.length} of ${cases.length} didn't pass: ${results.flatMap((r) => r.detail ?? []).join('\n').slice(0, 3000)}`);
+    assert.deepEqual(notPassed.slice(0, 30), [], `${notPassed.length} of ${cases.length} didn't pass (${which}): ${results.flatMap((r) => r.detail ?? []).join('\n').slice(0, 3000)}`);
     assert.equal(results.reduce((n, r) => n + (r.counts.Pass ?? 0), 0), cases.length);
     passed = true;
   } finally {
@@ -82,7 +124,7 @@ async function passList(t: { skip(m: string): void }, list: string, shards: numb
 }
 
 test('dEQP-VK\'s pass list passes on the page', { skip, timeout: (LIMIT_S + 420) * 1000 }, (t) => {
-  return passList(t, join(root, 'tests/deqp/vk.txt'), SHARDS);
+  return passList(t, join(root, 'tests/deqp/vk.txt'), SHARDS, undefined, !FULL);
 });
 
 // VK3 L7.2: YCbCr conversions (on by default since L7.3): a second, small run.

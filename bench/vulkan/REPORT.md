@@ -771,6 +771,211 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T28: pipeline state as variants — dynamic vertex input, depth bias control, the third dynamic state, non-seamless cubes
+
+2026-11-06, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t28/`.
+
+- **What the device does** (vk/README.md "Commands", "Samplers in the shader"): every draw's pipeline is already keyed
+  by the state it draws with, from the runtime's dynamic state, so the states WebGPU's pipelines hold can be dynamic:
+  `VK_EXT_vertex_input_dynamic_state`, `VK_EXT_depth_bias_control` (the format's representation only), and
+  `VK_EXT_extended_dynamic_state3` with the depth clamp and clip, sample mask, alpha to coverage, blend enables,
+  equations and write masks and the provoking vertex. Alpha to coverage at one sample, which WebGPU refuses (it was
+  dropped before, the static state too), is now the fragment stage's: an override discards a fragment whose location
+  0's alpha is under a half (the census's `single_sample_alpha_to_coverage_enable` failed first and passes). A pipeline
+  with alpha to coverage and no colour target at location 0, which WebGPU refuses, is made without it.
+  `VK_EXT_non_seamless_cube_map`: a sampler with the flag and a linear filter keys its cubes' pairs, sampled from the
+  faces' fetches, each texel kept on the sample's face and wrapped by U and V (tests/wgsl.test.ts "a non-seamless
+  cube...", whose planted bug, the face wrap left out, fails it).
+- **The census's cases** (222): 28 pass, 0 fail; the rest need what isn't offered: `VK_EXT_legacy_vertex_attributes`
+  (82 of the 85 that asked for dynamic vertex input), `VK_EXT_primitive_restart_index` (16: the guest's Venus, Mesa
+  26.2, doesn't pass it on, and WebGPU restarts only at the format's largest index), depth bias's other representations
+  and `depthBiasExact` (31), and other extensions besides the third dynamic state (21).
+- **The groups** (`cases.txt`, 7,956: every 4th `extended_dynamic_state` and `depth_bias_control` case, every dynamic
+  `input_attribute_offset` case, every alpha-to-coverage and non-seamless filtering case, every 10th `vertex_input`
+  case, the census's; 197 s as one list on SwiftShader):
+
+| group (SwiftShader) | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| extended_dynamic_state | 2,058 | 695 | 2 | 1,361 |
+| depth_bias_control | 2,091 | 468 | 0 | 1,623 |
+| input_attribute_offset, dynamic | 116 | 115 | 1 | 0 |
+| alpha to coverage (the rest) | 194 | 10 | 6 | 178 |
+| filtering.cube, non-seamless | 822 | 733 | 50 | 39 |
+| vertex_input | 2,659 | 498 | 0 | 2,161 |
+
+  The failures: the 50 cubes are nearest-filtered, nearest- or linear-mipmapped, U at clamp-to-border, and their
+  seamless twins fail alike (WebGPU's own sample on SwiftShader, not the fetches: docs/backlog.md "Samplers'
+  leftovers"); the 6 alpha-to-coverage ones (no colour attachment, an unused one, and `query_pool.discard`'s) failed
+  before T28 too, their dynamic twins now alike; the 3 dynamic vertex inputs draw past a vertex buffer's end, which
+  Vulkan's robust buffer access reads as zeros and WebGPU refuses (`input_attribute_offset.two_binds_vec4.*.dynamic`
+  by design; `extended_dynamic_state.*_draws_dynamic.vertex_input_multiple_bindings`: a slot bound past its buffer's
+  end, not looked into further). Since the run, a pipeline whose fragment stage writes `sample_mask` is made without
+  alpha to coverage too (WebGPU refused it: `query_pool.discard`'s draws were dropped); those cases still fail.
+- **The M4** (148 s): 2,525 pass, 59 fail, 5,372 not supported; its failures SwiftShader's but one each way
+  (`alpha_to_coverage_unused_attachment.samples_4.alpha_invisible` on the M4 only), so the 50 cubes too. **The 2,262 both
+  pass that weren't in the list join `tests/deqp/vk.txt`** (668 extended dynamic state, 468 depth bias control, 733
+  non-seamless cubes, 115 dynamic attribute offsets, 41 alpha to coverage, 269 vertex input, a part of them passing
+  before and unsampled; 256 were in it, none failing).
+
+## VK4 T27: depth and stencil resolve modes — 2,503 cases join the list
+
+2026-11-05, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`, `VIRGL_GPU=virgl,vulkan`). JSON in `results/vk4/t27/`.
+
+- **What the device does** (vk/README.md "Commands"): every resolve mode the spec allows is advertised, SAMPLE_ZERO,
+  MIN and MAX of both aspects and AVERAGE of depth, with `independentResolve` and `independentResolveNone`; the
+  worker's drawn resolve at the pass's end (web/venus-gpu.ts `resolveDepth`) folds the pixel's samples by the mode
+  before writing `frag_depth` or keeping a stencil bit.
+- **Confirming, failing first** (`confirm-cases.txt`, every 12th samples_4 case with a mode other than SAMPLE_ZERO and
+  NONE, 258): with the modes advertised and the draws still sample 0's, 44 fail (`before-swiftshader.json`); with the
+  draws', 0 fail, 171 pass.
+- **Every samples_4 and misc `depth_stencil_resolve` case** (`cases.txt`, 3,823; 20 s as one list on SwiftShader):
+
+| host | pass | fail | not supported |
+|---|---|---|---|
+| SwiftShader | 2,614 | 0 | 1,209 |
+| M4 (12 s) | 2,574 | 40 | 1,209 |
+
+  The not supported: `D16_UNORM_S8_UINT` (1,104, T30's) and geometry shaders (141). The M4's 40 are every
+  `*_testing_stencil_samplemask` of D24S8 and D32S8, SAMPLE_ZERO's as well as MIN's: the M4's known stencil failure
+  (docs/backlog.md "The M4's own failures", 4 of them before), not the modes. **The 2,503 both pass that weren't in the
+  list join `tests/deqp/vk.txt`** (71 were).
+- **Planted** (`planted-swiftshader.json`): MIN and MAX swapped and AVERAGE divided by one sample too many: 67 of the
+  confirming list's 171 fail.
+
+## VK4 T26: multi-draw — 1,344 cases join the list; the M4 fails `gl_DrawIndex` in a multi-draw indirect
+
+2026-11-05, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`, `VIRGL_GPU=virgl,vulkan`). JSON in `results/vk4/t26/`.
+
+- **What the device does** (vk/README.md "Commands", "Multi-draw"): `VK_EXT_multi_draw` as a draw per element with its
+  draw index; `multiDrawIndirect`, which the replay already drew a draw per record, each with its index (a place of the
+  push buffer each where draw parameters are read, now reserved); `drawIndirectCount` and `VK_KHR_draw_indirect_count`
+  as a compute pass before the render pass that copies `maxDrawCount` records and zeroes those past the count, each then
+  an indirect draw of its copy (web/venus-gpu.ts `indirectCount`). The census's 203 cases that ask for any (196
+  `VK_EXT_multi_draw`, 6 `drawIndirectCount`, 1 `multiDrawIndirect`), every `indirect_draw` and `shader_draw_parameters`
+  case of `draw.*` and every 20th `multi_draw` one (`cases.txt`, 2,757):
+
+| host | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| SwiftShader (118 s as one list) | 2,757 | 1,495 | 0 | 1,262 |
+| M4 (92 s) | 2,757 | 1,479 | 16 | 1,262 |
+
+  The not supported: tessellation (585), geometry (293), vertex attribute divisors (176), robustness2's null descriptor
+  (32). **The 1,344 both pass that weren't in the list join `tests/deqp/vk.txt`** (135 were). The M4's 16 failures are
+  every `shader_draw_parameters.draw_index` case (one indirect op of three draws, each coloured by `gl_DrawIndex`): the
+  quads are placed right but all read index 0 (`m4-draw-index-result.png` against `-reference.png`). A plain WebGPU page
+  doing the replay's calls (copies into three 256-byte places of a uniform buffer before the pass, three drawIndirects
+  with the group's dynamic offset set before each) draws right on the M4, so the cause is between the driver and the
+  worker; filed (docs/backlog.md "The M4's own failures").
+- **Planted** (`planted-swiftshader.json`): the count's gate left out of `indirectCount` and the draw index left out of
+  direct draws: of 114 `indirect_draw_count` cases (every 3rd) and 192 multi-draw cases reading the draw id, 187 fail.
+
+## VK4 T25: min/max reductions — 1,908 cases join the list; a reduced sample ~3.5× WebGPU's own
+
+2026-11-05, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`, `VIRGL_GPU=virgl,vulkan`). JSON in `results/vk4/t25/`.
+
+- **What the device does**: `VK_EXT_sampler_filter_minmax` and `samplerFilterMinmax`, through T8's sampler keys and
+  T18's filter from fetches (vk/README.md "Samplers in the shader"): a sampler with a MIN or MAX reduction and a linear
+  filter keys its pairs (`wgsl_sampler_key.reduction`), and its samples come from fetches whose filter takes the
+  component-wise min or max of the footprint's texels with non-zero weights, in a level and across the two a linear
+  mipmap reads. Integer textures too (integer min and max: Vulkan lets a reduction filter one linearly); cubes from their
+  faces (every sampled cube view now has the 2D array twin). Every sampled format has the `FILTER_MINMAX` bit;
+  `filterMinmaxSingleComponentFormats`, and `filterMinmaxImageComponentMapping` where the browser has
+  `texture-component-swizzle`. Test: `tests/wgsl.test.ts` "a min or max reduction…" (min, max, a texel of no weight
+  left out, two levels, nearest; failing with the reduction planted out of `fetched_filter`).
+- **The census's cases** (`census-cases.txt`: the 504 of its sample whose names or reasons are min/max's; 396
+  NotSupported for min/max reasons before, all 504 not passing):
+
+| host | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| SwiftShader (17 s as one list) | 504 | 182 | 0 | 322 |
+| M4 | 504 | 192 | 0 | 312 |
+
+  The first SwiftShader run failed 26 cubes: their variants' layouts bound the faces, which only integer and depth
+  cube views had. The not supported: 200 `filterMinmaxImageComponentMapping` (195 of the census's count) are dEQP's own
+  refusal (`checkSupportImageSamplingInstance` throws for any reduction whose R mapping isn't identity, whatever the
+  property), formats WebGPU lacks (76–88: 3-channel, scaled, A8, the 4-bit packed orders, R8_SRGB, D16S8; T30's and
+  T31's), linear filtering's bit on depth formats (5) and, on the M4, R16_UNORM and SNORM (2), 3D compressed and depth
+  (9) and 3D ASTC (20, T35's).
+- **Every 10th of the list's reduction cases** (`tenth-cases.txt`: 3,057 of the 50,940 in `pipeline.monolithic.sampler`,
+  without the B and ONE mappings dEQP always refuses):
+
+| host | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| SwiftShader (78 s) | 3,057 | 1,797 | 0 | 1,260 |
+| M4 (72 s) | 3,057 | 1,864 | 0 | 1,193 |
+
+  The not supported are formats again (sampling 879–980, linear filtering 72–106, an image format 5, 3D compressed or
+  depth 96, 3D ASTC 107).
+  **The 1,908 cases SwiftShader passes of both runs (the M4 passes them all) join `tests/deqp/vk.txt`**, in mustpass
+  order at the end.
+- **The cost** (`cost/`): `cost/sample.comp`, 16 linear-mipmapped samples (LOD 0.4, two levels) an invocation over a
+  512×512 dispatch of a 512² RGBA8 texture, translated once against a key that averages (WebGPU's `textureSampleLevel`,
+  2.4 KB of WGSL) and once with MAX (8 `textureLoad`s and the LOD's arithmetic, 10.4 KB), timed in headless Chromium as
+  alternated rounds of 10 dispatches to `onSubmittedWorkDone` (an ad-hoc page; median of 7 rounds, of 5 on SwiftShader):
+
+| host | average (ms a dispatch) | max | × |
+|---|---|---|---|
+| M4 | 0.140 (0.13–0.22) | 0.490 (0.45–0.74) | 3.5 |
+| SwiftShader | 10.87 (10.20–11.10) | 34.90 (34.23–35.57) | 3.2 |
+
+  Only a pair whose sampler reduces pays; no replayed program has one (vkd3d's 12_0 asks for the feature).
+
+## VK4 T24: maintenance5, 6 and 8 — 360 cases join the list; maintenance8's 2,246 pass through Mesa 26.3's Venus
+
+2026-11-05, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`, `VIRGL_GPU=virgl,vulkan`). JSON in `results/vk4/t24/`; the census's cases asking for each
+(`m56-cases.txt`: maintenance5's 454, 6's 234; maintenance8's 34 there, its whole groups below).
+
+- **maintenance5 and 6** were mostly there: the driver had the `*2` commands, index buffer ranges, `VkBindMemoryStatus`
+  and `VK_REMAINING_ARRAY_LAYERS` in copies, and Mesa's runtime takes shader modules chained to a stage and the flags2
+  words. Added: `vkGetDeviceImageSubresourceLayout`, the two extensions' properties (no early fragment tests, so the
+  sample-counting ones false; a swizzle of ONE on depth reads 1; a 3-plane format's 3 descriptors). Before, all 688
+  NotSupported; after:
+
+| host | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| SwiftShader (25 s as one list) | 688 | 360 | 1 | 327 |
+| M4, the 360 | 360 | 360 | 0 | 0 |
+
+  The not supported are formats: A8_UNORM 81 and A1B5G5R5 70 (maintenance5's own, not offered: no WebGPU format;
+  A1B5G5R5 is T30's), and others WebGPU lacks (3-channel, scaled, compressed 1D: 175), and robustness2's null index
+  buffer (1). The failure is `memory.binding.maintenance6.aliasing.suballocated.image_*` (9 of 9 of the group,
+  `m6-memory-swiftshader.json`): aliased images, the backlog's "Memory" gap, not maintenance6's. **The 360 join
+  `tests/deqp/vk.txt`** (`binding_model.shader_access` 227, `api.copy_and_blit` 67, `pipeline` 60 (57 border swizzles of depth and stencil
+  with `with_swizzle_hint`, 3 `dynamic_offset`), the rest 6; 30,039 → 30,399).
+- **maintenance8 needs the guest's Venus too**: Mesa 26.2's (the tests' guest's 26.2.5; the port's newest 26.2.6)
+  leaves `VK_KHR_maintenance8` out, 26.3's passes it on. `images/deqp/venus-icd.sh` builds 26.3.0-rc3's Venus in the
+  Arch container and puts it on a copy of dEQP-VK's disk; deqp-run.ts's `DISK2` and `GUEST_ENV` run deqp-vk through it.
+  What the device does for it: offsets that aren't constants (the `Offset` operand) move a fetch, and every sample,
+  gather or shadow sample with one comes from the fetches' filter (`wgsl_sampler.c` `dynamic_offset`: the offset in
+  texels of each level read); depth and stencil copied with a colour image of their texels' size through a buffer
+  (`colorDepthStencil`, on the depth and stencil copies VK3 L6b made); blits between an array's layers and a 3D image's
+  slices, a layer a slice (they drew every slice from each layer). SRem and SMod were already SPIR-V's. The groups
+  (every `*_pcoffset` case but sparse, every `ds_color_copy` case, every blit between `2d_array` and `3d`):
+
+| host | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| SwiftShader (55 s + 93 s) | 3,642 | 2,246 | 0 | 1,396 |
+| M4, every 4th of `pcoffset` and `ds_color_copy`, every blit | 1,130 | 790 | 0 | 340 |
+| M4, the rest | 2,512 | 1,482 | 0 | 1,030 |
+
+  The first sample's one failure, `textureprojlodoffset_pcoffset.*sampler2dshadow_fragment`, was a pipeline WebGPU
+  refused: without a key a shadow sample took `plain_key`'s NEVER, which folded the texture away, so the stage's own
+  module (whose bindings make the program's layout) had no group 0 while its keyed variant bound one; it now compares
+  LESS_OR_EQUAL there. The not supported: depth and stencil copies on transfer and compute queues (maintenance10's),
+  minLod clamps (`shaderResourceMinLod`), D24 and D16S8 formats. The M4's 2,272 passes hold SwiftShader's 2,246 (26 more its formats). **SwiftShader's passes are
+  `tests/deqp/vk-maintenance8.txt`**,
+  run by hand until the guest's Mesa is 26.3 (docs/backlog.md).
+- **Tests** (each failing with its rule planted out): `tests/wgsl.test.ts` "offsets that aren't constants" (a fetch, an
+  explicit LOD at level 1, gradients, a gather, run on Chromium's WebGPU; the keyless shadow keeps its texture);
+  `tests/venus-driver.test.ts` "misc: depth and stencil copied with colour images…" (wg_test.c 95: D32 ↔ R32_SFLOAT,
+  S8 ↔ R8_UINT, layers ↔ slices). Not measured: what a fetched sample costs against WGSL's own; no program here has a
+  dynamic offset (vkd3d's D3D12 layering asks for them).
+
 ## VK4 T23: what the emulations cost Godot's GI demo — SDFGI's rgb9e5 views copied ~34 MB a frame, now decoded in the shader
 
 2026-11-05. Godot 4.7.2's GI demo as it starts in SDFGI mode, vsync off (bench/vulkan/godot-disk.sh's `gi-sdfgi`; with

@@ -143,6 +143,8 @@ struct wgsl_info {
    bool writes_depth, writes_sample_mask, discards;
    bool uses_view;              /* reads the view (multiview): declares `override wg_view`, a pipeline's for each view */
    bool per_sample;             /* fragment: at the sample rate, declares `override wg_samples` (the pipeline's) */
+   bool a2c;                    /* fragment: location 0 a float, declares `override wg_a2c`: alpha to coverage at
+                                 * one sample (WebGPU's needs several), its fragments under half alpha discarded */
    bool dual_source;            /* fragment: location 0's second output (index 1) written: @blend_src */
    uint8_t dual_base;           /* its WGSL type */
    bool clip_distances;         /* uses `clip_distances` (vertex) */
@@ -193,7 +195,10 @@ struct wgsl_sampler_key {
    uint16_t format;                /* WGSL_IMAGE_KEY: the bound view's enum pipe_format */
    uint8_t rgb9e5;                 /* an E5B9G9R9 view of a 32-bit integer image's own texture: fetched as words and
                                     * decoded, the filter the shader's (VK4 T23: no copy into a texture of the format) */
-   uint8_t format_pad;             /* zero (keys are compared whole) */
+   uint8_t reduction;              /* VkSamplerReductionMode: 0 the weighted average, 1 the minimum, 2 the maximum of the
+                                    * footprint's texels (VK4 T25: from fetches) */
+   uint8_t non_seamless;           /* a cube's linear filter keeps to the face, wrapped by the address modes
+                                    * (VK_EXT_non_seamless_cube_map, VK4 T28: from its faces' fetches) */
    float bias, min_lod, max_lod;
    uint32_t border[4];             /* the border as the shader reads it: float bits, or integers on an integer texture */
    uint32_t size[3];               /* padded: the view's first level, as Vulkan has it */

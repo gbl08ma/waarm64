@@ -523,6 +523,7 @@ export class VenusGpu {
         const S = self.get<GPUTexture>(src), D = self.get<GPUTexture>(dst);
         later(() => {
           self.touched.add(D);
+          if (isDepthStencil(S.format) !== isDepthStencil(D.format)) return self.colorDepthStencil(S, sm, sx, sy, sz, D, dm, dx, dy, dz, w, h, depth, aspect);
           const ps = self.packed.get(S), pd = self.packed.get(D);
           if ((ps || pd) && ps?.join() !== pd?.join() && S.sampleCount === 1) return self.copyPacked(ps, S, sm, sx, sy, sz, pd, D, dm, dx, dy, dz, w, h, depth);
           if (S.sampleCount > 1) {
@@ -671,6 +672,19 @@ export class VenusGpu {
       gpu_fan_indirect(ticket: number, b: number, offset: number, ib: number, ibOffset: number, ibSize: number, wide: number, restart: number) {
         const B = buf(b), I = buf(ib);
         later(() => self.fanIndirect(ticket, B, offset, I, ibOffset, ibSize, wide, restart));
+      },
+      gpu_indirect_count(ticket: number, b: number, offset: number, stride: number, cb: number, countOffset: number, most: number, indexed: number) {
+        const B = buf(b), C = buf(cb);
+        later(() => self.indirectCount(ticket, B, offset, stride, C, countOffset, most, indexed));
+      },
+      gpu_draw_indirect_ticket(ticket: number, index: number, indexed: number) {
+        self.stats.draws++;
+        later(() => {
+          const t = self.tickets[ticket];
+          if (!t?.args) return;
+          if (indexed) rp().drawIndexedIndirect(t.args, t.argsAt! + index * 20);
+          else rp().drawIndirect(t.args, t.argsAt! + index * 16);
+        });
       },
       gpu_draw_ticket_indirect(ticket: number) {
         self.stats.draws++;
@@ -1071,6 +1085,30 @@ export class VenusGpu {
       pass.end();
     }
     return true;
+  }
+
+  /** A copy between a depth or stencil aspect and a colour texture of its texels' size (maintenance8: D32_SFLOAT and
+   * R32_SFLOAT, S8_UINT and R8_UINT, ...; VK4 T24), which WebGPU has no copy for: through a temporary buffer, the depth
+   * or stencil side's copy as a buffer's (`depthStencilCopy`: by WebGPU where it can, else the worker's passes). */
+  private colorDepthStencil(S: GPUTexture, sm: number, sx: number, sy: number, sz: number, D: GPUTexture, dm: number, dx: number, dy: number, dz: number, w: number, h: number, layers: number, aspect: number) {
+    const fromDS = isDepthStencil(S.format), ds = fromDS ? S : D;
+    if (S.sampleCount > 1 || D.sampleCount > 1) {
+      this.warn(`a multisampled copy between ${S.format} and ${D.format}: skipped`);
+      return;
+    }
+    const stencil = aspect === 2 || ds.format === 'stencil8', bytes = stencil ? 1 : ds.format === 'depth16unorm' ? 2 : 4;
+    const pitch = Math.ceil(w * bytes / 256) * 256;
+    const temp = this.device!.createBuffer({ size: pitch * h * layers, usage: COPY_SRC | COPY_DST | STORAGE });
+    this.temps.push(temp);
+    const layout = { buffer: temp, offset: 0, bytesPerRow: pitch, rowsPerImage: h }, size = { width: w, height: h, depthOrArrayLayers: layers };
+    const a = stencil ? 2 : 1;
+    if (fromDS) {
+      this.depthStencilCopy(false, temp, 0, pitch, h, S, sm, sx, sy, sz, w, h, layers, a);
+      this.enc!.copyBufferToTexture(layout, this.texCopy(D, dm, dx, dy, dz, 0), size);
+    } else {
+      this.enc!.copyTextureToBuffer(this.texCopy(S, sm, sx, sy, sz, 0), layout, size);
+      this.depthStencilCopy(true, temp, 0, pitch, h, D, dm, dx, dy, dz, w, h, layers, a);
+    }
   }
 
   /** A copy between depth or stencil textures, which WebGPU makes only of whole subresources (VK3 L6b): true for the
@@ -1624,10 +1662,11 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
   }
 
   /**
-   * A multisampled depth or stencil attachment's SAMPLE_ZERO resolve (WebGPU resolves colour only) within the render
-   * area (`area`, a scissor): a draw that writes each pixel's sample 0 as its depth (`frag_depth`), or, for stencil,
-   * which a shader can't write, the value zeroed by a draw (a reference of 0 replacing every bit) and then each bit set
-   * by a draw of its own (the bit's write mask, a reference of all ones) that keeps only the pixels whose sample 0 has it.
+   * A multisampled depth or stencil attachment's resolve (WebGPU resolves colour only) within the render area (`area`,
+   * a scissor), of the mode `mode` (`zero`: sample 0; `min`, `max`; `average`, depth's only): a draw that writes each
+   * pixel's resolved value as its depth (`frag_depth`), or, for stencil, which a shader can't write, the value zeroed by
+   * a draw (a reference of 0 replacing every bit) and then each bit set by a draw of its own (the bit's write mask, a
+   * reference of all ones) that keeps only the pixels whose resolved value has it (VK3 L4f; the modes VK4 T27).
    */
   private resolveDepth(j: Json) {
     const src = j.src as GPUTexture, dst = j.dst as GPUTexture;
@@ -1636,8 +1675,9 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
       this.warn(`a ${j.aspect} resolve of ${src.format} that can't be read: skipped`);
       return;
     }
+    const mode = (j.mode ?? 'zero') as 'zero' | 'min' | 'max' | 'average';
     const layout = (code: string, targetMask: number, bit = -1) => {
-      const key = `rdepth:${fmt}:${stencil}:${bit}`;
+      const key = `rdepth:${fmt}:${stencil}:${bit}:${mode}`;
       let pipeline = this.metaPipelines.get(key);
       if (!pipeline) {
         const m = this.device!.createShaderModule({ code });
@@ -1669,19 +1709,33 @@ struct V { @builtin(position) p: vec4<f32>, @location(0) q: vec2<f32> }
     if (x0 === x1 || y0 === y1) return;
     const pass = this.enc!.beginRenderPass({ colorAttachments: [], depthStencilAttachment: ds });
     pass.setScissorRect(x0, y0, x1 - x0, y1 - y0);
+    // The pixel's resolved value `v`: sample 0, or the samples folded (an average of stencil isn't Vulkan's).
+    const fold = mode === 'min' || mode === 'max' ? `v = ${mode}(v, x);` : mode === 'average' && !stencil ? 'v += x;' : '';
+    const value = (load: string) => `let c = vec2<i32>(p.xy);
+  var v = ${load}(c, 0);${fold ? `
+  for (var i = 1i; i < i32(textureNumSamples(t)); i++) { let x = ${load}(c, i); ${fold} }` : ''}${fold === 'v += x;' ? `
+  v /= f32(textureNumSamples(t));` : ''}`;
     const draws = stencil ? [-2, 0, 1, 2, 3, 4, 5, 6, 7] : [-1];
     for (const bit of draws) {
       const pipeline = bit === -1
         ? layout(`@group(0) @binding(0) var t: texture_depth_multisampled_2d;
+fn ld(c: vec2<i32>, i: i32) -> f32 { return textureLoad(t, c, i); }
 ${vs}
-@fragment fn fs(@builtin(position) p: vec4<f32>) -> @builtin(frag_depth) f32 { return textureLoad(t, vec2<i32>(p.xy), 0); }`, 0)
+@fragment fn fs(@builtin(position) p: vec4<f32>) -> @builtin(frag_depth) f32 {
+  ${value('ld')}
+  return v;
+}`, 0)
         : bit === -2
           ? layout(`@group(0) @binding(0) var t: texture_multisampled_2d<u32>;
 ${vs}
 @fragment fn fs(@builtin(position) p: vec4<f32>) { _ = textureLoad(t, vec2<i32>(p.xy), 0); }`, 0xff, bit)
           : layout(`@group(0) @binding(0) var t: texture_multisampled_2d<u32>;
+fn ld(c: vec2<i32>, i: i32) -> u32 { return textureLoad(t, c, i).x; }
 ${vs}
-@fragment fn fs(@builtin(position) p: vec4<f32>) { if ((textureLoad(t, vec2<i32>(p.xy), 0).x & ${1 << bit}u) == 0u) { discard; } }`, 1 << bit, bit);
+@fragment fn fs(@builtin(position) p: vec4<f32>) {
+  ${value('ld')}
+  if ((v & ${1 << bit}u) == 0u) { discard; }
+}`, 1 << bit, bit);
       pass.setPipeline(pipeline);
       pass.setBindGroup(0, this.device!.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: view }] }));
       if (stencil) pass.setStencilReference(bit === -2 ? 0 : 0xff);
@@ -2220,6 +2274,57 @@ fn ix(k: u32) -> u32 {
   }
 
   /**
+   * A draw-indirect-count's records (wg_gpu.h `gpu_indirect_count`, VK4 T26), in a compute pass before the render pass:
+   * `most` of them from `a` at `offset` by `stride`, packed (16 or 20 bytes), each past the count at `c`'s `countOffset`
+   * written as zeros, so that it draws nothing; gpu_draw_indirect_ticket draws one.
+   */
+  private indirectCount(ticket: number, a: GPUBuffer, offset: number, stride: number, c: GPUBuffer, countOffset: number, most: number, indexed: number) {
+    const d = this.device!, enc = this.enc!;
+    let pipeline = this.metaComputes.get('indirectCount');
+    if (!pipeline) {
+      const code = `struct P { first: u32, stride: u32, at: u32, most: u32, words: u32, pad0: u32, pad1: u32, pad2: u32 }
+@group(0) @binding(0) var<storage, read> a: array<u32>;
+@group(0) @binding(1) var<storage, read> c: array<u32>;
+@group(0) @binding(2) var<storage, read_write> o: array<u32>;
+@group(0) @binding(3) var<uniform> p: P;
+@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) g: vec3u) {
+  let i = g.x;
+  if (i >= p.most) { return; }
+  let n = min(c[p.at], p.most);
+  for (var k = 0u; k < p.words; k++) {
+    o[i * p.words + k] = select(0u, a[p.first + i * p.stride + k], i < n);
+  }
+}`;
+      const m = d.createShaderModule({ code });
+      pipeline = d.createComputePipeline({ layout: 'auto', compute: { module: m, entryPoint: 'main' } });
+      this.metaComputes.set('indirectCount', pipeline);
+    }
+    const words = indexed ? 5 : 4;
+    const argFrom = offset - (offset % 256), countFrom = countOffset - (countOffset % 256);
+    const argEnd = Math.min(a.size, argFrom + d.limits.maxStorageBufferBindingSize, offset + (most - 1) * stride + words * 4);
+    // Records the binding can't reach aren't drawn (a count past them reads zeros).
+    const reach = Math.max(0, Math.min(most, Math.floor((argEnd - offset - words * 4) / stride) + 1));
+    const [out, at] = this.scratch(STORAGE | INDIRECT | COPY_DST, Math.max(1, most) * words * 4);
+    const [u, uat] = this.scratch(UNIFORM | COPY_DST, 32);
+    d.queue.writeBuffer(u, uat, new Uint32Array([(offset - argFrom) / 4, stride / 4, (countOffset - countFrom) / 4, reach, words, 0, 0, 0]));
+    if (reach < most) enc.clearBuffer(out, at + reach * words * 4, (most - reach) * words * 4);
+    const group = d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
+      { binding: 0, resource: { buffer: a, offset: argFrom, size: Math.max(4, Math.ceil((argEnd - argFrom) / 4) * 4) } },
+      { binding: 1, resource: { buffer: c, offset: countFrom, size: countOffset - countFrom + 4 } },
+      { binding: 2, resource: { buffer: out, offset: at, size: Math.max(1, most) * words * 4 } },
+      { binding: 3, resource: { buffer: u, offset: uat, size: 32 } },
+    ] });
+    if (reach) {
+      const pass = enc.beginComputePass();
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, group);
+      pass.dispatchWorkgroups(Math.ceil(reach / 64));
+      pass.end();
+    }
+    this.tickets[ticket] = { buffer: out, offset: at, size: most * words * 4, args: out, argsAt: at };
+  }
+
+  /**
    * A buffer's 16-bit packed texels into a packed format's rgba8unorm texture (wg_format.c `WG_FMT_PACKED`): `bpr` and
    * `rows` the buffer's, a compute pass unpacking them into a temporary buffer in the encoder's order, which is copied in.
    */
@@ -2729,6 +2834,11 @@ function integerRange(f: string): [string, string] | undefined {
   return m[2] === 'u' ? ['0', String(2 ** bits - 1)] : [String(-(2 ** (bits - 1))), String(2 ** (bits - 1) - 1)];
 }
 
+/** A depth or stencil format's texture (WebGPU's: depth16unorm, depth24plus…, depth32float…, stencil8). */
+function isDepthStencil(f: string) {
+  return f.startsWith('depth') || f === 'stencil8';
+}
+
 function sampleKind(f: string): 'f32' | 'u32' | 'i32' {
   return /uint$/.test(f) ? 'u32' : /sint$/.test(f) ? 'i32' : 'f32';
 }
@@ -2737,5 +2847,5 @@ function sampleKind(f: string): 'f32' | 'u32' | 'i32' {
 const IMPORTS = ['gpu_create', 'gpu_shader', 'gpu_destroy', 'gpu_grow', 'gpu_write', 'gpu_dirty', 'gpu_encoder', 'gpu_copy_bb', 'gpu_copy_bt', 'gpu_copy_tb', 'gpu_copy_tt', 'gpu_fill',
   'gpu_update', 'gpu_blit', 'gpu_render_pass', 'gpu_compute_pass', 'gpu_pass_end', 'gpu_set_pipeline', 'gpu_pull_buffer', 'gpu_pull_bind', 'gpu_set_bind_group', 'gpu_set_vertex_buffer',
   'gpu_set_index_buffer', 'gpu_set_viewport', 'gpu_set_scissor', 'gpu_set_blend_constant', 'gpu_set_stencil_reference', 'gpu_set_immediates', 'gpu_draw',
-  'gpu_draw_indexed', 'gpu_draw_indirect', 'gpu_provoke', 'gpu_draw_ticket', 'gpu_fan_indirect', 'gpu_draw_ticket_indirect', 'gpu_xfb', 'gpu_dispatch', 'gpu_dispatch_indirect', 'gpu_clear_rects', 'gpu_begin_occlusion', 'gpu_end_occlusion',
+  'gpu_draw_indexed', 'gpu_draw_indirect', 'gpu_provoke', 'gpu_draw_ticket', 'gpu_fan_indirect', 'gpu_draw_ticket_indirect', 'gpu_indirect_count', 'gpu_draw_indirect_ticket', 'gpu_xfb', 'gpu_dispatch', 'gpu_dispatch_indirect', 'gpu_clear_rects', 'gpu_begin_occlusion', 'gpu_end_occlusion',
   'gpu_resolve_queries', 'gpu_query_add', 'gpu_readback', 'gpu_submit', 'gpu_readback_copy', 'gpu_texture_import', 'gpu_translated', 'gpu_cache_get', 'gpu_cache_read', 'gpu_cache_put'];

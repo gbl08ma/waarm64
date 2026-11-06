@@ -53,8 +53,15 @@ only edits docs: `.md` files or code comments):
   all the GPU's, after four fixes of ours that SwiftShader hid). The whole lists, or a pass list, run on the Mac host's
   GPU through `bench/gpu/sway-mac.sh` (`SCRIPT=deqp-run.ts`, mode `gles2`, `gles3` or `vk`, the last with `VIRGL_GPU=virgl,vulkan`, `STRIDE`/`OFFSET`/`CASES`
   passed on; a GLES3 slice ~7 min there); `bench/gpu/results/g5-deqp-metal/` has the Metal results to compare with.
-- **`scripts/ci-deqp-vk.sh`** (~28 min, 13.7 GiB at its peak: run it under a 14 GiB `MemoryMax`; two machines by default past 17 GiB of RAM, `WEBPC_DEQP_VK_SHARDS` to say otherwise, the list split in blocks of 256, each machine with 1,536 MiB of guest RAM; one machine takes ~40 min and 8.9 GiB; two under an 11 GiB cap were killed at the list's memory-heavy stretch at ~16 min, one GPU process going 0.9 → 2.3 GiB) runs dEQP-VK on the page (`page-deqp-vk`: the pass list `tests/deqp/vk.txt`,
-  every case expected to pass, one guest boot; then `tests/deqp/vk-ycbcr.txt` (YCbCr conversions, VK3 L7.2), a
+- **`scripts/ci-deqp-vk.sh`** (a sample of the list by default, ~12.5 min with YCbCr's list and the replays; `--full`, the whole list, ~28 min, 13.7 GiB at its peak: run it under a 14 GiB `MemoryMax`; two machines by default past 17 GiB of RAM, `WEBPC_DEQP_VK_SHARDS` to say otherwise, the list split in blocks of 256, each machine with 1,536 MiB of guest RAM; one machine takes ~40 min and 8.9 GiB; two under an 11 GiB cap were killed at the list's memory-heavy stretch at ~16 min, one GPU process going 0.9 → 2.3 GiB) runs dEQP-VK on the page (`page-deqp-vk`: the pass list `tests/deqp/vk.txt`,
+  every case expected to pass, one guest boot. By default a sample of it: every 8th case of each group (a name's first
+  three parts) from an offset per group a seed draws, at least one case a group, in the list's order: ~5,400 of
+  38,416, so runs together cover the list (40 seeds cover 99.9% of it). Each run prints its seed
+  (`WEBPC_DEQP_VK_SEED=<n>` runs that sample again). **A case that fails in a sample is looked into at once, or filed in
+  docs/backlog.md and taken out of the list** until it's fixed, flaky or not. `--full` (`WEBPC_DEQP_VK_FULL=1`) runs the whole
+  list: at a Vulkan track's end, before the user's NVIDIA runs, after a phase of tasks (VK4's census tasks), and for a
+  change that cuts across groups (the replay, the pipeline key, descriptors); a task proves its own new cases with runs
+  of its own (bench/gpu/deqp-run.ts `CASES`) before they join the list; then `tests/deqp/vk-ycbcr.txt` (YCbCr conversions, VK3 L7.2), a
   second boot), then `page-venus` (the programs' captures against lavapipe's frames,
   also ci-graphics.sh's: VK3 L5b broke vkQuake's first frame, and the three loops after it ran only dEQP-VK); it must pass too when a change touches Vulkan (the renderer's driver
   and translator in `vk/`, `web/venus-gpu.ts`, Venus's device), and at the end of a Vulkan track. It needs
@@ -69,7 +76,11 @@ only edits docs: `.md` files or code comments):
   dies between cases); deqp-vk's other lines (an assertion's, its watchdog's) are kept in
   `results.output`, and `WATCHDOG=disable` lifts its 30 s limit on a case's steps to time a slow one. Dawn zeroes
   workgroup memory with Tint's own loop on these runs (`--disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension`):
-  SwiftShader's take of Vulkan's extension costs ~17 s of compile for a 16 KiB array (VK4 T2).
+  SwiftShader's take of Vulkan's extension costs ~17 s of compile for a 16 KiB array (VK4 T2). Another Mesa's Venus in the
+  guest: `images/deqp/venus-icd.sh` puts Mesa 26.3's on a copy of the disk (`target/deqp/deqp-vk-venus.ext4`), and
+  `DISK2=` with `GUEST_ENV=VK_DRIVER_FILES=/mnt/vdb/venus/virtio_icd.json` runs deqp-vk through it (also through
+  `sway-mac.sh`); `tests/deqp/vk-maintenance8.txt` passes so, by hand, until the guest's own Mesa passes
+  `maintenance8` on (VK4 T24; docs/backlog.md).
 - **`scripts/ci-usb.sh`** runs the USB tests that need the dev VM's host rigs ([below](#usb-the-dev-vms-host-rigs)):
   WebUSB against dummy_hcd gadgets and WebHID against uhid devices in the pinned Chromium, and the guest through
   them. It must pass too when a change touches USB (the xHCI, its glue, the WebUSB and WebHID backends, the USB tab).

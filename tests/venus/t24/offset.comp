@@ -1,0 +1,15 @@
+#version 450
+// VK4 T24: maintenance8's offsets that aren't constants (tests/wgsl.test.ts). `one` is 1 at run time only: each offset
+// is in texels of the level read, so level 1's moves by half what level 0's would.
+#extension GL_EXT_texture_offset_non_const : require
+#extension GL_EXT_gpu_shader5 : require
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform sampler2D img;
+layout(set = 0, binding = 2, std430) buffer Out { vec4 o[8]; };
+void main() {
+  int one = int(gl_NumWorkGroups.x);
+  o[0] = texelFetchOffset(img, ivec2(1, 1), 0, ivec2(one, -one));
+  o[1] = textureLodOffset(img, vec2(0.75, 0.25), 1.0, ivec2(-one, one));
+  o[2] = textureGradOffset(img, vec2(0.125, 0.125), vec2(0.0), vec2(0.0), ivec2(2 * one, one));
+  o[3] = textureGatherOffset(img, vec2(0.25, 0.25), ivec2(one, 0));
+}

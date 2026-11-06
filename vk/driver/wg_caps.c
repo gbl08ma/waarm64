@@ -72,6 +72,15 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .KHR_maintenance2 = true,
       .KHR_maintenance3 = true,
       .KHR_maintenance4 = true,
+      /* 1.4's: the *2 commands, index buffer ranges, VkBindMemoryStatus, VK_REMAINING_ARRAY_LAYERS in copies, shader
+       * modules chained to a stage (Mesa's runtime), the flags2 words (VK4 T24). A8_UNORM and A1B5G5R5 aren't offered
+       * (wg_format.c: no WebGPU format; VK4 T30). */
+      .KHR_maintenance5 = true,
+      .KHR_maintenance6 = true,
+      /* Offsets that aren't constants from fetches (wgsl_sampler.c `dynamic_offset`), depth and stencil copied with
+       * colour formats of their size through a buffer (web/venus-gpu.ts `colorDepthStencil`), blits between a 3D
+       * image's slices and an array's layers, SPIR-V's SRem and SMod (WGSL's `%` and the printer's imod). */
+      .KHR_maintenance8 = true,
       .KHR_relaxed_block_layout = true,
       .KHR_storage_buffer_storage_class = true,
       .KHR_create_renderpass2 = true,
@@ -100,6 +109,14 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .KHR_zero_initialize_workgroup_memory = true,
       .EXT_extended_dynamic_state = true,
       .EXT_extended_dynamic_state2 = true,
+      /* Pipeline state as variants (VK4 T28): every draw's pipeline is keyed by the state it draws with (wg_cmd.c
+       * `draw_key`, from Mesa's dynamic state), so the states WebGPU's pipelines hold can be dynamic; of the third
+       * set, those the key reads. A depth bias is in the format's units only (WebGPU's integer `depthBias`). */
+      .EXT_extended_dynamic_state3 = true,
+      .EXT_vertex_input_dynamic_state = true,
+      .EXT_depth_bias_control = true,
+      /* A cube's linear filter kept to the face from fetches (wgsl_sampler.c, VK4 T28). */
+      .EXT_non_seamless_cube_map = true,
       .EXT_image_robustness = true,
       .EXT_pipeline_creation_cache_control = true,
       .EXT_pipeline_creation_feedback = true,
@@ -134,6 +151,13 @@ wg_caps_extensions(struct vk_device_extension_table *e)
        * an indirect draw's copied from its arguments before its render pass (wg_cmd.c `prepasses`; VK3 L7.5, vkd3d). */
       .KHR_shader_draw_parameters = true,
       .KHR_sampler_mirror_clamp_to_edge = true,
+      /* Min/max reductions: the shader's filter from fetches (VK4 T25, wgsl_sampler.c `reduce`; vkd3d's 12_0). */
+      .EXT_sampler_filter_minmax = true,
+      /* Multi-draw: a draw per element, its draw index in the push buffer's draw parameters (VK4 T26, wg_cmd.c). */
+      .EXT_multi_draw = true,
+      /* Draw-indirect-count: the records gated by the count in a compute pass before the render pass (VK4 T26,
+       * web/venus-gpu.ts `indirectCount`; vkd3d's 11_1). */
+      .KHR_draw_indirect_count = true,
       /* The shader's borders take any colour, through the view's mapping (wgsl_sampler.c, wg_cmd.c `sampler_border`). */
       .EXT_custom_border_color = true,
       .EXT_border_color_swizzle = true,
@@ -155,6 +179,8 @@ wg_caps_features(struct vk_features *f)
       .dualSrcBlend = HAS(DUAL_SOURCE),
       /* Without WebGPU's, an indirect draw with a first instance draws nothing. */
       .drawIndirectFirstInstance = HAS(INDIRECT_FIRST_INSTANCE),
+      /* An indirect op's draws one by one in the replay, each with its draw index (VK4 T26). */
+      .multiDrawIndirect = true,
       .depthClamp = HAS(DEPTH_CLIP),
       .depthBiasClamp = true,
       .samplerAnisotropy = true,
@@ -210,14 +236,31 @@ wg_caps_features(struct vk_features *f)
       .dynamicRendering = true,
       .shaderIntegerDotProduct = true,
       .maintenance4 = true,
+      .maintenance5 = true,
+      .maintenance6 = true,
+      .maintenance8 = true,
       .extendedDynamicState = true,
       .extendedDynamicState2 = true,
+      .extendedDynamicState3DepthClampEnable = HAS(DEPTH_CLIP),
+      .extendedDynamicState3DepthClipEnable = HAS(DEPTH_CLIP),
+      .extendedDynamicState3SampleMask = true,
+      .extendedDynamicState3AlphaToCoverageEnable = true,
+      .extendedDynamicState3ColorBlendEnable = true,
+      .extendedDynamicState3ColorBlendEquation = true,
+      .extendedDynamicState3ColorWriteMask = true,
+      .extendedDynamicState3ProvokingVertexMode = true,
+      .vertexInputDynamicState = true,
+      .depthBiasControl = true,
+      .nonSeamlessCubeMap = true,
       .depthClipEnable = HAS(DEPTH_CLIP),
       /* YCbCr conversions (VK3 L7.2: each plane sampled and converted in the WGSL, wgsl_lower_ycbcr), on by default
        * since L7.3 (GTK 4.24 asserts them on a device with dma-buf modifiers; GTK4 still takes GL: its Vulkan renderer
        * misses its bar), held by `?gpu=vkycbcr=off`. Chromium's own Vulkan device refuses a device without them (VK3
        * L7.1b). */
       .samplerMirrorClampToEdge = true,
+      .samplerFilterMinmax = true,
+      .multiDraw = true,
+      .drawIndirectCount = true,
       .customBorderColors = true,
       .customBorderColorWithoutFormat = true,
       .borderColorSwizzle = true,
@@ -330,10 +373,17 @@ wg_caps_properties(struct vk_properties *p)
    p->subTexelPrecisionBits = 4;
    p->mipmapPrecisionBits = 4;
    p->maxDrawIndexedIndexValue = 0xffffffffu;
-   p->maxDrawIndirectCount = 1;
+   /* An indirect op's draws one by one in the replay, each its draw index (VK4 T26): Vulkan's least with
+    * multiDrawIndirect, as each may take 256 bytes of the push buffer (its draw parameters). */
+   p->maxDrawIndirectCount = 1u << 16;
+   p->maxMultiDrawCount = 1u << 16;
    p->maxSamplerLodBias = WGSL_MAX_LOD_BIAS; /* WebGPU's samplers have no bias: the shader's (wgsl_sampler.c), WGSL's within 16 */
    p->maxSamplerAnisotropy = 16;
    p->maxCustomBorderColorSamplers = 4000;
+   /* Every format sampled has the min/max bit (fetched, wg_format.c), and the view's mapping is WebGPU's, which the
+    * fetches see (VK4 T25). */
+   p->filterMinmaxSingleComponentFormats = true;
+   p->filterMinmaxImageComponentMapping = HAS(SWIZZLE);
    p->maxViewports = 1;
    p->maxViewportDimensions[0] = p->maxViewportDimensions[1] = L->max_texture_2d;
    p->viewportBoundsRange[0] = -2.0f * L->max_texture_2d;
@@ -399,8 +449,12 @@ wg_caps_properties(struct vk_properties *p)
    p->maxMemoryAllocationSize = max_buffer;
    p->maxBufferSize = max_buffer;
 
-   p->supportedDepthResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
-   p->supportedStencilResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
+   /* The worker's draws at the pass's end (web/venus-gpu.ts resolveDepth), each aspect on its own (VK4 T27). */
+   p->supportedDepthResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT | VK_RESOLVE_MODE_AVERAGE_BIT | VK_RESOLVE_MODE_MIN_BIT |
+                                   VK_RESOLVE_MODE_MAX_BIT;
+   p->supportedStencilResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT | VK_RESOLVE_MODE_MIN_BIT | VK_RESOLVE_MODE_MAX_BIT;
+   p->independentResolveNone = true;
+   p->independentResolve = true;
    /* Every integer colour attachment's: WebGPU doesn't multisample r32uint, r32sint and the 32-bit ones of two or four
     * channels (wg_device.c's image formats), and Vulkan wants each format's sample counts to hold these. */
    p->framebufferIntegerColorSampleCounts = VK_SAMPLE_COUNT_1_BIT;
@@ -414,6 +468,19 @@ wg_caps_properties(struct vk_properties *p)
    p->maxTransformFeedbackStreamDataSize = 512;
    p->maxTransformFeedbackBufferDataSize = 512;
    p->maxTransformFeedbackBufferDataStride = 512;
+
+   /* maintenance5 (VK4 T24): no early fragment tests (docs/backlog.md "Rendering"), no points as polygons, lines of
+    * one pixel by WebGPU's rule (not a parallelogram); a swizzle of ONE on depth reads 1 (the view's mapping). */
+   p->earlyFragmentMultisampleCoverageAfterSampleCounting = false;
+   p->earlyFragmentSampleMaskTestBeforeSampleCounting = false;
+   p->depthStencilSwizzleOneSupport = true;
+   p->polygonModePointSize = false;
+   p->nonStrictSinglePixelWideLinesUseParallelogram = false;
+   p->nonStrictWideLinesUseParallelogram = false;
+   /* maintenance6: a 3-plane YCbCr format's three textures; no block-texel views of several layers. */
+   p->blockTexelViewCompatibleMultipleLayers = false;
+   p->maxCombinedImageSamplerDescriptorCount = 3;
+   p->fragmentShadingRateClampCombinerInputs = false;
 }
 
 /*

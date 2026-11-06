@@ -1570,6 +1570,19 @@ wg_GetImageSubresourceLayout2(VkDevice _device, VkImage _image, const VkImageSub
                       &layout->subresourceLayout);
 }
 
+/* maintenance5's: the layout an image of this description would have, as GetImageSubresourceLayout2 says of one. */
+VKAPI_ATTR void VKAPI_CALL
+wg_GetDeviceImageSubresourceLayout(VkDevice _device, const VkDeviceImageSubresourceInfo *info, VkSubresourceLayout2 *layout)
+{
+   VK_FROM_HANDLE(wg_device, dev, _device);
+   struct wg_image image = { .plane_count = 1 };
+   vk_image_init(&dev->vk, &image.vk, info->pCreateInfo);
+   if (!wg_texture_format(image.vk.format) && wg_ycbcr_format(image.vk.format))
+      image.plane_count = wg_image_planes(&image.vk, image.planes);
+   wg_GetImageSubresourceLayout2(_device, wg_image_to_handle(&image), info->pSubresource, layout);
+   vk_image_finish(&image.vk);
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 wg_GetImageDrmFormatModifierPropertiesEXT(VkDevice _device, VkImage image,
                                           VkImageDrmFormatModifierPropertiesEXT *pProps)
@@ -1684,7 +1697,8 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
                   layered ? view->vk.base_array_layer : 0, layered ? view->vk.layer_count : 1);
    view->view = wg_create_json(WG_KIND_VIEW, &j);
    /* The component mapping: WebGPU's swizzle, on a view of its own (it allows only sampling through one). Cube views of
-    * integer formats have a 2D array twin: WGSL can only fetch from those, and has no fetch from cubes (wgsl_sampler.c). */
+    * integer formats, and any sampled, have a 2D array twin: WGSL can only fetch from those, and has no fetch from cubes
+    * (wgsl_sampler.c). */
    static const char channels[] = "rgba";
    char swizzle[32] = "";
    const VkComponentSwizzle mapping[4] = { view->vk.swizzle.r, view->vk.swizzle.g, view->vk.swizzle.b, view->vk.swizzle.a };
@@ -1728,9 +1742,10 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
                      aspect, view->vk.base_mip_level, view->vk.level_count, view->vk.base_array_layer);
       view->flat = wg_create_json(WG_KIND_VIEW, &j);
    }
+   /* Also any cube sampled: a min/max reduction's samples are fetched from its faces (VK4 T25). */
    if ((view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE || view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) &&
        (vk_format_is_int(view->vk.view_format) || aspects == VK_IMAGE_ASPECT_STENCIL_BIT ||
-        aspects == VK_IMAGE_ASPECT_DEPTH_BIT)) {
+        aspects == VK_IMAGE_ASPECT_DEPTH_BIT || (view->vk.usage & VK_IMAGE_USAGE_SAMPLED_BIT))) {
       wg_json_printf(&j, "{\"texture\":%u,%s", tex, swizzle);
       if (!strcmp(aspect, "all"))
          wg_json_printf(&j, "\"format\":\"%s\",", view->fmt->name);
@@ -1974,6 +1989,17 @@ wg_CreateSampler(VkDevice _device, const VkSamplerCreateInfo *pCreateInfo, const
       sampler->emulated |= sampler->key.address[i] == WGSL_ADDRESS_BORDER ||
                            sampler->key.address[i] == WGSL_ADDRESS_MIRROR_ONCE;
    sampler->emulated |= c->unnormalizedCoordinates || c->mipLodBias != 0.0f;
+   /* A min/max reduction (VK_EXT_sampler_filter_minmax, VK4 T25): the shader's filter from fetches. A nearest one reads
+    * the texel whatever the reduction: WebGPU's. */
+   if (sampler->vk.reduction_mode == VK_SAMPLER_REDUCTION_MODE_MIN || sampler->vk.reduction_mode == VK_SAMPLER_REDUCTION_MODE_MAX)
+      sampler->key.reduction = sampler->key.mag_linear || sampler->key.min_linear || sampler->key.mip_linear
+                                  ? (sampler->vk.reduction_mode == VK_SAMPLER_REDUCTION_MODE_MIN ? 1 : 2)
+                                  : 0;
+   sampler->emulated |= sampler->key.reduction != 0;
+   /* A non-seamless cube (VK4 T28): a linear filter that keeps to the face, from fetches of its faces (wg_cmd.c
+    * `pair_key`, a cube's pairs only); a nearest one never leaves the face. */
+   sampler->key.non_seamless = (c->flags & VK_SAMPLER_CREATE_NON_SEAMLESS_CUBE_MAP_BIT_EXT) &&
+                               (sampler->key.mag_linear || sampler->key.min_linear);
    if (c->compareEnable)
       wg_json_printf(&j, ",\"compare\":\"%s\"", compare[c->compareOp & 7]);
    wg_json_printf(&j, "}");

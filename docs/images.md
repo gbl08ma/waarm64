@@ -78,6 +78,10 @@ the vtest oracle (`tools/virgl-oracle/deqp.sh`). It then makes the guest that ru
 (`images/arch/build.sh --packages "mesa libpng"`, ~4 min; `--guest-only` makes it alone), `scripts/ci-deqp.sh`'s. A case's capture (`CAPTURE=`) replays on Chromium with
 `bench/gpu/virgl-pairs.ts`, which diffs each read-back with the next (dEQP's result and its reference). The surfaceless target takes EGL's default display:
 `EGL_PLATFORM=surfaceless` picks it.
+`images/deqp/venus-icd.sh [mesa tag]` (VK4 T24, ~2 min) builds another Mesa's Venus guest driver (26.3.0-rc3 by
+default: 26.2's leaves out `maintenance8`) in a container of `localhost/arch-base` and puts it, with an ICD manifest, in
+`/venus` of a copy of dEQP-VK's disk, `target/deqp/deqp-vk-venus.ext4` (debugfs: no root), for `deqp-run.ts`'s `DISK2`
+and `GUEST_ENV` (testing.md "dEQP-VK").
 
 ## Vulkan programs' frames (`images/vkframes/build.sh`)
 

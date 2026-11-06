@@ -5,8 +5,10 @@
  * address modes and LOD worked out here. Runs when a stage is printed, so a stage's NIR kept across its compile takes
  * another key without another translation. No key (a stage's own module): integer textures at clamp-to-edge, and
  * everything else WebGPU's. Shadow samples at a LOD and LOD queries (VK4 T9) need a sampler's state too, whatever WebGPU
- * could do with it: `add_key_pair` says so.
+ * could do with it: `add_key_pair` says so. A min/max reduction (VK4 T25) is the fetches' filter's.
  */
+#include <float.h>
+
 #include "nir.h"
 #include "nir_builder.h"
 #include "util/u_math.h"
@@ -68,6 +70,22 @@ rgb9e5_key(const struct sampler_pass *s, const nir_tex_instr *tex)
       if (s->keys[i].texture == tex->texture_index && s->keys[i].rgb9e5)
          return &s->keys[i];
    return NULL;
+}
+
+/* An offset that isn't a constant (maintenance8's `Offset` operand): WGSL takes only const-expressions, so such a sample
+ * comes from fetches, where the offset moves the texels at the level read (VK4 T24). A vector of constants is a vec of
+ * scalars here, each channel found through it, as the printer finds them. */
+static bool
+dynamic_offset(const nir_tex_instr *tex)
+{
+   const int i = nir_tex_instr_src_index(tex, nir_tex_src_offset);
+   if (i < 0)
+      return false;
+   nir_def *off = tex->src[i].src.ssa;
+   for (unsigned c = 0; c < off->num_components; c++)
+      if (!nir_scalar_is_const(nir_scalar_chase_movs(nir_get_scalar(off, c))))
+         return true;
+   return false;
 }
 
 static bool
@@ -526,7 +544,12 @@ fetched_texel(nir_builder *b, const struct fetched *p, nir_def *const *i, nir_de
    nir_def *c[4];
    unsigned count = 0;
    nir_def *outside = nir_imm_false(b);
-   if (p->cube) {
+   if (p->cube && p->key->non_seamless) {
+      /* A non-seamless cube (VK4 T28): the texel on its own face, wrapped by the sampler's U and V. */
+      c[count++] = wrap(b, i[0], p->extent[0], p->key->address[0], &outside);
+      c[count++] = wrap(b, i[1], p->extent[0], p->key->address[1], &outside);
+      c[count++] = p->layer ? nir_iadd(b, nir_imul_imm(b, p->layer, 6), face) : face;
+   } else if (p->cube) {
       /* The centre on its face's plane, -1..1 within it; a past-the-edge one lands on another face. */
       nir_def *size = nir_i2f32(b, p->extent[0]);
       nir_def *sc = nir_fadd_imm(b, nir_fmul(b, nir_fmul_imm(b, nir_fadd_imm(b, nir_i2f32(b, i[0]), 0.5), 2.0), nir_frcp(b, size)), -1.0);
@@ -553,7 +576,10 @@ fetched_texel(nir_builder *b, const struct fetched *p, nir_def *const *i, nir_de
    }
    nir_def *texel = fetch_keyed(b, tex, p->key, nir_vec(b, c, count), p->level, 4, p->cube ? GLSL_SAMPLER_DIM_2D : tex->sampler_dim,
                                 p->cube || tex->is_array, count);
-   if (uses_address(tex, p->key, WGSL_ADDRESS_BORDER))
+   const bool border = uses_address(tex, p->key, WGSL_ADDRESS_BORDER) ||
+                       (p->cube && p->key->non_seamless &&
+                        (p->key->address[0] == WGSL_ADDRESS_BORDER || p->key->address[1] == WGSL_ADDRESS_BORDER));
+   if (border)
       texel = nir_bcsel(b, outside, border_vec(b, tex, p->key), texel);
    if (!p->dref)
       return texel;
@@ -561,7 +587,35 @@ fetched_texel(nir_builder *b, const struct fetched *p, nir_def *const *i, nir_de
                    nir_imm_float(b, 0.0f), nir_imm_float(b, 1.0f));
 }
 
-/* The image's sample at one level, nearest or linear. `u` in texels of the level: a cube's on `face`. */
+/* A min/max reduction (VK4 T25, VK_EXT_sampler_filter_minmax): Vulkan's "component-wise minimum (maximum) of values in
+ * the footprint with non-zero weights", within a level and across the two a linear mipmap reads. */
+static nir_def *
+reduce(nir_builder *b, const nir_tex_instr *tex, const struct wgsl_sampler_key *key, nir_def *x, nir_def *y)
+{
+   const nir_alu_type base = nir_alu_type_get_base_type(tex->dest_type);
+   const bool min = key->reduction == 1;
+   if (base == nir_type_int)
+      return min ? nir_imin(b, x, y) : nir_imax(b, x, y);
+   if (base == nir_type_uint)
+      return min ? nir_umin(b, x, y) : nir_umax(b, x, y);
+   return min ? nir_fmin(b, x, y) : nir_fmax(b, x, y);
+}
+
+/* What a texel of no weight is: the type's extreme (a float's finite, as WGSL's min and max are indeterminate on
+ * infinities). */
+static nir_def *
+reduction_identity(nir_builder *b, const nir_tex_instr *tex, const struct wgsl_sampler_key *key)
+{
+   const nir_alu_type base = nir_alu_type_get_base_type(tex->dest_type);
+   const bool min = key->reduction == 1;
+   nir_def *v = base == nir_type_int    ? nir_imm_int(b, min ? INT32_MAX : INT32_MIN)
+                : base == nir_type_uint ? nir_imm_int(b, min ? (int32_t)UINT32_MAX : 0)
+                                        : nir_imm_float(b, min ? FLT_MAX : -FLT_MAX);
+   return nir_vec4(b, v, v, v, v);
+}
+
+/* The image's sample at one level, nearest or linear, its texels weighted or reduced (`key->reduction`). `u` in
+ * texels of the level: a cube's on `face`. */
 static nir_def *
 fetched_filter(nir_builder *b, const struct fetched *p, nir_def *const *u, nir_def *face, bool linear)
 {
@@ -589,7 +643,14 @@ fetched_filter(nir_builder *b, const struct fetched *p, nir_def *const *u, nir_d
          i[k] = high ? hi[k] : lo[k];
          w = nir_fmul(b, w, high ? weight[k] : nir_fsub_imm(b, 1.0f, weight[k]));
       }
-      nir_def *texel = nir_fmul(b, fetched_texel(b, p, i, face), nir_vec4(b, w, w, w, w));
+      nir_def *texel = fetched_texel(b, p, i, face);
+      if (p->key->reduction) {
+         /* A texel of no weight takes no part (the reduction's identity in its place); one corner always has some. */
+         texel = nir_bcsel(b, nir_fgt_imm(b, w, 0.0f), texel, reduction_identity(b, p->tex, p->key));
+         sum = sum ? reduce(b, p->tex, p->key, sum, texel) : texel;
+         continue;
+      }
+      texel = nir_fmul(b, texel, nir_vec4(b, w, w, w, w));
       sum = sum ? nir_fadd(b, sum, texel) : texel;
    }
    return sum;
@@ -677,6 +738,8 @@ fetched_sample(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key
    }
    if (levels == 1)
       return res[0];
+   if (key->reduction)
+      return nir_bcsel(b, nir_fgt_imm(b, f, 0.0f), reduce(b, tex, key, res[0], res[1]), res[0]);
    nir_def *g = nir_fsub_imm(b, 1.0f, f);
    return nir_fadd(b, nir_fmul(b, res[0], nir_vec4(b, g, g, g, g)), nir_fmul(b, res[1], nir_vec4(b, f, f, f, f)));
 }
@@ -1050,6 +1113,35 @@ lower_tex(nir_builder *b, nir_tex_instr *tex, void *data)
       nir_def_replace(&tex->def, nir_trim_vector(b, fetched_sample(b, tex, key), tex->def.num_components));
       return true;
    }
+   /* A min/max reduction (VK4 T25): WebGPU's samplers only average, so the sample comes from fetches, as the sampler
+    * says. A gather reads the texels unfiltered: WebGPU's (or the fetches' below, for what else its key says). A sampler
+    * that compares has no reduction (Vulkan's rule). An integer texture's (which a linear filter reads only so) is
+    * below, among its fetches. */
+   /* A non-seamless cube's linear filter (VK4 T28, VK_EXT_non_seamless_cube_map): from its faces' fetches, each texel
+    * on the sample's face. */
+   if (key && key->non_seamless && !is_integer(tex) && !tex->is_shadow && tex->op != nir_texop_tg4 &&
+       tex->sampler_dim == GLSL_SAMPLER_DIM_CUBE && key->faces) {
+      nir_def_replace(&tex->def, nir_trim_vector(b, fetched_sample(b, tex, key), tex->def.num_components));
+      return true;
+   }
+   if (key && key->reduction && !is_integer(tex) && !tex->is_shadow && tex->op != nir_texop_tg4 &&
+       (tex->sampler_dim != GLSL_SAMPLER_DIM_CUBE || key->faces)) {
+      nir_def_replace(&tex->def, nir_trim_vector(b, fetched_sample(b, tex, key), tex->def.num_components));
+      return true;
+   }
+   /* An offset that isn't a constant: every float sample from fetches, as the sampler bound says (a module without a
+    * key is never drawn with). Cubes have no offsets. */
+   if (!is_integer(tex) && dynamic_offset(tex)) {
+      add_key_pair(s, tex, WGSL_KEY_ALWAYS);
+      /* Without a key, a shadow sample still compares (LESS_OR_EQUAL): NEVER would fold the texture away, and the
+       * program's layout, made from the stage's own module, would lack what the keyed variants bind. */
+      struct wgsl_sampler_key plain = plain_key;
+      plain.compare = 3;
+      const struct wgsl_sampler_key *k = key ? key : &plain;
+      nir_def *res = tex->op == nir_texop_tg4 ? gather_fetch(b, tex, k) : fetched_sample(b, tex, k);
+      nir_def_replace(&tex->def, nir_trim_vector(b, res, tex->def.num_components));
+      return true;
+   }
    if (is_integer(tex)) {
       bool known = false;
       for (uint32_t i = 0; i < s->info->int_pair_count; i++)
@@ -1064,12 +1156,15 @@ lower_tex(nir_builder *b, nir_tex_instr *tex, void *data)
          /* WGSL gathers integer textures: only what its samplers can't address goes through fetches, and a cube's
           * faces have no fetch that sees across them. */
          if (tex->sampler_dim == GLSL_SAMPLER_DIM_CUBE || (!uses_address(tex, key, WGSL_ADDRESS_BORDER) &&
-                                                           !uses_address(tex, key, WGSL_ADDRESS_MIRROR_ONCE)))
+                                                           !uses_address(tex, key, WGSL_ADDRESS_MIRROR_ONCE) &&
+                                                           !dynamic_offset(tex)))
             return false;
          nir_def_replace(&tex->def, nir_trim_vector(b, gather_fetch(b, tex, key), tex->def.num_components));
          return true;
       }
-      nir_def *res = int_sample(b, tex, key);
+      /* A min/max reduction with a linear filter: the filter from fetches, its texels reduced as integers. */
+      nir_def *res = key->reduction && (key->mag_linear || key->min_linear || key->mip_linear) ? fetched_sample(b, tex, key)
+                                                                                             : int_sample(b, tex, key);
       nir_def_replace(&tex->def, nir_trim_vector(b, res, tex->def.num_components));
       return true;
    }

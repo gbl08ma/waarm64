@@ -14,6 +14,8 @@
 // DETAIL=<n> (dEQP's messages for the first n cases that didn't pass; DETAIL_MATCH=<regex>: of those it names;
 // DETAIL_NOTSUPPORTED=1: NotSupported ones too, their reasons), VIRGL_GPU=virgl,debug (the renderer's trace,
 // <out>/virgl-debug.txt), CAPTURE=<file.vglt> (the 3D commands, web/virgl-trace.ts: fixtures for tests/virgl.test.ts),
+// DISK2=<the second disk, a path under the repo, default target/deqp's>, GUEST_ENV=<VAR=value ... for deqp-vk: e.g. a Venus
+// built from another Mesa on that disk, VK_DRIVER_FILES=/mnt/vdb/venus/virtio_icd.json (VK4 T24)>,
 // RAM_MIB=<the guest's RAM, default the session's>, LIMIT_S=<seconds the guest may run dEQP, default 1500>, WATCHDOG=disable (no 30 s limit on a case's steps: how long a slow one takes), PASSED=1 (results.passed: the cases that passed), QPA=1 (dEQP's
 // log with its images, <out>/deqp.qpa: for a few cases).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -35,7 +37,7 @@ const CAPTURE = process.env.CAPTURE;
 // costs SwiftShader ~17 s of compile for a 16 KiB array (VK4 T2: `max_workgroup_memory.*` timed out, a crash); Tint's
 // own loop instead takes 19 ms. Both zero it; Metal has no such extension.
 if (vk) process.env.CHROMIUM_ARGS = `${process.env.CHROMIUM_ARGS ?? ''} --disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension`;
-const s = await openSession({ gpu: (process.env.VIRGL_GPU ?? (vk ? 'virgl,vulkan' : 'virgl')) + (CAPTURE ? ',capture' : ''), image, out, disk2: vk ? '/target/deqp/deqp-vk.ext4' : '/target/deqp/deqp.ext4', ...(process.env.RAM_MIB ? { ramMiB: Number(process.env.RAM_MIB) } : {}) });
+const s = await openSession({ gpu: (process.env.VIRGL_GPU ?? (vk ? 'virgl,vulkan' : 'virgl')) + (CAPTURE ? ',capture' : ''), image, out, disk2: process.env.DISK2 ? `/${process.env.DISK2.replace(/^\/+/, '')}` : vk ? '/target/deqp/deqp-vk.ext4' : '/target/deqp/deqp.ext4', ...(process.env.RAM_MIB ? { ramMiB: Number(process.env.RAM_MIB) } : {}) });
 const { log, pasteSerial, rootShell, run, runLines } = s;
 const results: Record<string, unknown> = { api, gl: s.gl, chromium: s.browser.version(), stride: STRIDE, offset: OFFSET };
 const save = () => {
@@ -73,7 +75,7 @@ log('cases', results.cases);
 // the console (a hung task's stack: serial.txt when the run times out).
 // deqp-vk: no EGL; its compiled shaders cached in /tmp (the disk is read-only) for the boot.
 const command = vk
-  ? './deqp-vk --deqp-caselist-file=/tmp/cases.txt --deqp-shadercache-filename=/tmp/shadercache.bin'
+  ? `${process.env.GUEST_ENV ? `env ${process.env.GUEST_ENV} ` : ''}./deqp-vk --deqp-caselist-file=/tmp/cases.txt --deqp-shadercache-filename=/tmp/shadercache.bin`
   : `env EGL_PLATFORM=surfaceless ./deqp-${api} --deqp-caselist-file=/tmp/cases.txt --deqp-surface-type=pbuffer --deqp-gl-config-name=rgba8888d24s8ms0 --deqp-surface-width=256 --deqp-surface-height=256`;
 // A case that crashes dEQP (or hangs past its watchdog) is recorded as `Crash` and dEQP goes on from the next one,
 // until the list is done or LIMIT_S runs out; /tmp/deqp.cur names the case running.

@@ -1147,6 +1147,35 @@ test('an image that is a corner of its texture is wrapped and filtered at its ow
   }
 });
 
+test('a min or max reduction takes the footprint\'s texels with non-zero weights, in a level and across two (VK4 T25)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    // 4×4, red 60 a column and 10 a row; level 1 all 200.
+    const data = Array.from({ length: 16 }, (_, i) => [(i % 4) * 60 + (i >> 2) * 10, 0, 0, 255]).flat();
+    const reds = async (sampler: Device['sampler'], webgpu?: Parameters<typeof runSampled>[2]) => {
+      const r = glslStage(translate, tmp, 'tests/venus/t25/minmax.comp', { sampler });
+      assert.equal(r.rc, 0, r.text);
+      const res = await runSampled(r.text, [{ binding: 0, format: 'rgba8unorm', w: 4, h: 4, data, mips: [Array(4).fill([200, 0, 0, 255]).flat()] }], webgpu, { binding: 2, size: 8 * 16 });
+      if (!res) return undefined;
+      assert.deepEqual(res.errors, []);
+      return [...res.out].filter((_, i) => i % 4 === 0).slice(0, 6).map((v) => Math.round(v * 255));
+    };
+    const linear = { flags: 16 | 1 | 2 | 4, levels: 2 };
+    // x·4 - 0.5: 0 (texel 0 alone: its neighbour's weight is 0), 0.5, 1.5, 3.1 (the edge's twice); the fifth at LOD 0.5
+    // with level 1; the sixth between rows 0 and 1 too.
+    const average = await reds(key(ADDRESS.edge, linear), { binding: 1, filter: 'linear' });
+    if (!average) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual([0, 1, 2, 3, 5].map((i) => average[i]), [0, 30, 90, 180, 35], 'the weighted average (WebGPU\'s)');
+    assert.deepEqual(await reds(key(ADDRESS.edge, { ...linear, flags: linear.flags | 256 })), [0, 0, 60, 180, 60, 0], 'min');
+    assert.deepEqual(await reds(key(ADDRESS.edge, { ...linear, flags: linear.flags | 512 })), [0, 60, 120, 180, 200, 70], 'max');
+    // Nearest: the texel, whatever the reduction.
+    assert.deepEqual(await reds(key(ADDRESS.edge, { levels: 2, flags: 16 | 512 })), [0, 60, 120, 180, 120, 70]);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('a padded cube filters across its faces (VK4 T18)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
   try {
@@ -1162,6 +1191,34 @@ test('a padded cube filters across its faces (VK4 T18)', { skip: noGlslc, timeou
     assert.equal(Math.round(res.out[0] * 255), 0, 'within +X');
     // (1, 0, 0.99) is 0.01 of a texel from +X's edge with +Z: 0.51 of +X's 0, 0.49 of +Z's 160.
     assert.ok(Math.abs(res.out[4] * 255 - 78.4) < 1.5, `across the edge: ${res.out[4] * 255}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('a non-seamless cube filters within the face, wrapped by its address modes (VK4 T28)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    // Faces' reds 0, 40, 80, 120, 160, 200, 4×4 each; (1, 0, 0.99) is 0.02 of a texel from +X's edge with +Z: a linear filter reads 0.48 past it.
+    const data = Array.from({ length: 6 }, (_, f) => Array.from({ length: 16 }, () => [f * 40, 0, 0, 255]).flat()).flat();
+    const edge = async (sampler: Device['sampler']) => {
+      const r = glslStage(translate, tmp, 'tests/venus/t8/padded-cube.comp', { sampler });
+      assert.equal(r.rc, 0, r.text);
+      assert.match(r.text, /texture_2d_array<f32>/);
+      const res = await runSampled(r.text, [{ binding: 0, format: 'rgba8unorm', w: 4, h: 4, layers: 6, data }], undefined, { binding: 2, size: 2 * 16 });
+      if (!res) return undefined;
+      assert.deepEqual(res.errors, []);
+      assert.equal(Math.round(res.out[0] * 255), 0, 'within +X');
+      return res.out[4] * 255;
+    };
+    const seamless = await edge(key(ADDRESS.edge, { flags: 16 | 64 | 1 | 2 }));
+    if (seamless === undefined) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.ok(Math.abs(seamless - 76.8) < 1.5, `seamless: across the edge, 0.48 of +Z's 160: ${seamless}`);
+    assert.equal(Math.round((await edge(key(ADDRESS.edge, { flags: 16 | 64 | 1024 | 1 | 2 })))!), 0, 'non-seamless, clamped to the edge: +X only');
+    const white = 0x3f800000;
+    const border = await edge(key(ADDRESS.border, { v: ADDRESS.border, flags: 16 | 64 | 1024 | 1 | 2, border: [white, white, white, white] }));
+    assert.ok(Math.abs(border! - 122.4) < 1.5, `non-seamless at a border: 0.48 of the border's 255: ${border}`);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -1336,6 +1393,34 @@ test('constant texture offsets are literals, whatever scalarizing made of them (
     if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
     assert.deepEqual(res.errors, []);
     assert.equal(res.out[0], 1, 'the first texel');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('offsets that aren\'t constants move fetches, and samples come from fetches at the level read (VK4 T24: maintenance8)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/t24/offset.comp', { sampler: key(ADDRESS.edge, { levels: 3 }) });
+    assert.equal(r.rc, 0, r.text);
+    // A 4×4 rgba8unorm image whose red is the texel's number: level 0's x + 4y, level 1's 100 + x + 2y, level 2's 200.
+    const texel = (v: number) => [v, 0, 0, 255];
+    const level = (n: number, base: number, row: number) => Array.from({ length: n * n }, (_, i) => texel(base + i % n + row * Math.floor(i / n))).flat();
+    const sampled = r.text.includes('@binding(1) var') ? { binding: 1, filter: 'nearest' } : undefined;
+    const res = await runSampled(r.text, [{ binding: 0, format: 'rgba8unorm', w: 4, h: 4, data: level(4, 0, 4), mips: [level(2, 100, 2), level(1, 200, 1)] }], sampled, { binding: 2, size: 8 * 16 });
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    const red = (i: number) => Math.round(res.out[i * 4] * 255);
+    assert.equal(red(0), 2, 'fetch: (1, 1) + (1, -1) of level 0');
+    assert.equal(red(1), 102, 'LOD 1: texel (1, 0) + (-1, 1) of level 1, not a level-0-sized step');
+    assert.equal(red(2), 6, 'gradients of 0: (0, 0) + (2, 1) of level 0');
+    // The gather's texels (i0 j1, i1 j1, i1 j0, i0 j0) around (1, 1), moved one right: (1, 1), (2, 1), (2, 0), (1, 0).
+    assert.deepEqual([12, 13, 14, 15].map((i) => Math.round(res.out[i] * 255)), [5, 6, 2, 1]);
+    // Without a key (the stage's own module, whose bindings make the program's layout) a shadow sample keeps its texture.
+    const shadow = glslStage(translate, tmp, 'tests/venus/t24/shadow.frag');
+    assert.equal(shadow.rc, 0, shadow.text);
+    assert.match(shadow.text, /@group\(0\) @binding\(0\) var r0_0: texture_depth_2d;/);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
