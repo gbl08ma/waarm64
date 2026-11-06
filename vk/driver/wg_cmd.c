@@ -907,7 +907,8 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
             atts.depth = cmd->pass.depth_view = v;
          any_view = true;
       }
-      if (!v || !(v->vk.image->usage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) || v->slice >= 0 || atts.count == 10)
+      if (!v || !(v->vk.image->usage & (VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT)) ||
+          v->slice >= 0 || atts.count == 10)
          continue;
       VkImageAspectFlags written = v->vk.aspects;
       if (v->vk.aspects & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) {
@@ -3335,14 +3336,39 @@ bound_descriptor(const struct op_bind *b, const struct wg_program *p, uint32_t k
    return set && slot < set->layout->slot_count ? &set->slots[slot] : NULL;
 }
 
-/* The attachment of the pass an input attachment's descriptor reads, written by the pass, or -1. In a multiview pass
- * both are of the view's layer. */
+/* Whether a descriptor samples an image that is an attachment of its pass (VK_EXT_attachment_feedback_loop_layout): its
+ * view covers the attachment's level and layer. Not a view of another texture (an alias, the words of RGB9E5). */
+static bool
+sampled_loop(const struct wg_image_view *v, const struct wg_image_view *a, uint32_t layer)
+{
+   return a->vk.image == v->vk.image && !v->alias && !v->rgb9e5 && !v->plane_count &&
+          a->vk.base_mip_level >= v->vk.base_mip_level &&
+          a->vk.base_mip_level < v->vk.base_mip_level + v->vk.level_count &&
+          (v->vk.image->image_type == VK_IMAGE_TYPE_3D ||
+           (layer >= v->vk.base_array_layer && layer < v->vk.base_array_layer + v->vk.layer_count));
+}
+
+/* The attachment of the pass an input attachment's descriptor reads, or a sampled one's view covers, written by the
+ * pass, or -1. In a multiview pass both are of the view's layer. */
 static int
 feedback_att(const struct replay *r, const struct wg_descriptor *d)
 {
-   if (!r->atts.count || d->type != VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT || !d->view)
+   if (!r->atts.count || !d->view)
       return -1;
    const struct wg_image_view *v = d->view;
+   if (d->type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE || d->type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
+      if (!(v->vk.image->usage & VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT))
+         return -1;
+      for (uint32_t i = 0; i < r->atts.count; i++) {
+         const struct wg_image_view *a = r->atts.views[i];
+         const uint32_t layer = a->vk.base_array_layer + (r->layered ? 0 : r->view);
+         if ((r->atts.written[i] & v->vk.aspects) && sampled_loop(v, a, layer))
+            return i;
+      }
+      return -1;
+   }
+   if (d->type != VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT)
+      return -1;
    /* A WebGPU pass attaches one layer: the view's, or a layered pass's first, where it draws. What an input attachment
     * reads is its first layer, or its view's: the same layer only from the same base. */
    for (uint32_t i = 0; i < r->atts.count; i++) {
@@ -4027,21 +4053,26 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
          wg_json_printf(&j, "%s{\"binding\":%u,\"sampler\":%u}", sep, res->binding,
                         res->nonfiltering && d->sampler->nearest ? d->sampler->nearest : d->sampler->id);
          break;
-      default:
+      default: {
          if (!d->view)
             continue;
+         const int fa = res->kind == WGSL_TEXTURE ? feedback_att(r, d) : -1;
+         /* A sampled view covering an attachment: the same views, of the image's copy (`feedback_copies`). */
+         const struct wg_image_view *v = fa >= 0 && d->type != VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT ? wg_view_loop(d->view)
+                                                                                                    : d->view;
          wg_json_printf(&j, "%s{\"binding\":%u,\"view\":%u}", sep, res->binding,
-                        res->kind == WGSL_TEXTURE && feedback_att(r, d) >= 0 ? wg_view_twin(d->view)
+                        fa >= 0 && v == d->view ? wg_view_twin(d->view)
                         : r->view_mask && !r->layered && d->type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT ? wg_view_att(d->view, r->view)
-                        : (res->kind == WGSL_STORAGE_TEXTURE || res->image_texture) && d->view->storage ? d->view->storage
-                        : res->image_texture                                ? d->view->view
-                        : d->plane && d->plane < d->view->plane_count       ? d->view->planes[d->plane]
-                        : res->kind != WGSL_TEXTURE                         ? d->view->view
-                        : d->view->flat && res->dim == WGSL_DIM_2D && !res->multisampled ? d->view->flat
-                        : d->view->faces && res->dim == WGSL_DIM_2D_ARRAY   ? d->view->faces
-                        : d->view->sampled                                  ? d->view->sampled
-                                                                            : d->view->view);
+                        : (res->kind == WGSL_STORAGE_TEXTURE || res->image_texture) && v->storage ? v->storage
+                        : res->image_texture                                          ? v->view
+                        : d->plane && d->plane < v->plane_count                       ? v->planes[d->plane]
+                        : res->kind != WGSL_TEXTURE                                   ? v->view
+                        : v->flat && res->dim == WGSL_DIM_2D && !res->multisampled    ? v->flat
+                        : v->faces && res->dim == WGSL_DIM_2D_ARRAY                   ? v->faces
+                        : v->sampled                                                  ? v->sampled
+                                                                                      : v->view);
          break;
+      }
       }
       first = false;
    }
@@ -4160,10 +4191,38 @@ feedback_copies(struct replay *r)
       const struct op_bind *b = res->kind == WGSL_TEXTURE ? r->binds[0][res->group] : NULL;
       const struct wg_descriptor *d = b ? bound_descriptor(b, p, k) : NULL;
       const int a = d ? feedback_att(r, d) : -1;
-      if (a < 0 || d->view->twin_mark == r->twin_mark)
+      const bool sampled = a >= 0 && d->type != VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+      struct wg_image_view *mark = sampled ? wg_view_loop(d->view) : a >= 0 ? d->view : NULL;
+      if (!mark || mark->twin_mark == r->twin_mark)
          continue;
       const struct wg_image_view *att = r->atts.views[a];
       const VkExtent3D e = vk_image_mip_level_extent(att->vk.image, att->vk.base_mip_level);
+      if (sampled) {
+         /* The view's range, all of it: its levels and layers past the attachment's too (the copy is the image's
+          * shape: a 3D level's depth whole). */
+         const struct wg_image *image = container_of(d->view->vk.image, struct wg_image, vk);
+         const struct wg_image_view *v = d->view;
+         if (!(wg_emul_skip & WG_SKIP_FEEDBACK) && !cut) {
+            qp = r->qactive_pool;
+            if (qp)
+               gpu_end_occlusion();
+            gpu_pass_end();
+            cut = true;
+         }
+         for (uint32_t l = v->vk.base_mip_level; !(wg_emul_skip & WG_SKIP_FEEDBACK) && l < v->vk.base_mip_level + v->vk.level_count; l++) {
+            const VkExtent3D le = vk_image_mip_level_extent(&image->vk, l);
+            const bool three = image->vk.image_type == VK_IMAGE_TYPE_3D;
+            const uint32_t first = three ? 0 : v->vk.base_array_layer, count = three ? 1 : v->vk.layer_count;
+            for (uint32_t layer = first; layer < first + count; layer++) {
+               wg_emul[WG_EMUL_FEEDBACK_COPIES]++;
+               wg_emul[WG_EMUL_FEEDBACK_BYTES] += (double)le.width * le.height * (three ? le.depth : 1) * image->fmt->bytes;
+               gpu_copy_tt(image->tex, l, 0, 0, layer, image->loop_tex, l, 0, 0, layer, le.width, le.height,
+                           three ? le.depth : 1, 0, le.width, le.height, le.width, le.height, image->fmt->bytes);
+            }
+         }
+         mark->twin_mark = r->twin_mark;
+         continue;
+      }
       if (wg_emul_skip & WG_SKIP_FEEDBACK) {
          /* A/B (`?gpu=vkskip=`): the twin as it was. */
          wg_view_twin(d->view);

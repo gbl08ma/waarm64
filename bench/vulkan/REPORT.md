@@ -771,6 +771,40 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T32 (second part): an attachment sampled by its own pass's draws; 561 cases join the list
+
+2026-11-06, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t32/`: `cases-feedback-census.txt` (the census's 48),
+`cases-feedback.txt` (the sample, 430), `cases-feedback-all.txt` (the group, 2,387), `cases-feedback-pass-sw.txt`;
+`swiftshader-feedback-census-before.json`, `swiftshader-feedback-before.json` (advertised, no copy),
+`swiftshader-feedback.json`, `m4-feedback.json`, `swiftshader-feedback-all.json`, `m4-feedback-pass.json`.
+
+- **What the device does** (vk/README.md "Feedback loops"): `VK_EXT_attachment_feedback_loop_layout` and its dynamic
+  state are advertised. A draw sampling a view that covers an attachment of its pass (the image with
+  `ATTACHMENT_FEEDBACK_LOOP_BIT`) samples the view made again over a copy of the image's texture (`wg_view_loop`),
+  every level and layer of the view's range copied into it in a cut of the pass at the first such draw and after a
+  barrier or clear, as T12's input attachments' copies.
+- **Confirming, failing first**: the driver's scenario 99 (tests/venus-driver.test.ts "a feedback loop…": an image of
+  two layers, layer 0 the attachment, sampled through a 2D array view of both; a second draw after a barrier reads the
+  first's writes). With the sampled descriptors unmatched (the old code) WebGPU refuses the pass ("TextureBinding|
+  RenderAttachment includes writable usage"); `vkskip=feedback` leaves the bytes wrong.
+
+| set | host | pass | fail | not supported |
+|---|---|---|---|---|
+| the census's 48, advertised, no copy | SwiftShader | 10 | 1 | 37 |
+| the sample (every read-write case of the optimal layout but stencil's, the misc ones, every 8th read-only: 430), advertised, no copy | SwiftShader | 86 | 168 | 176 |
+| the sample | SwiftShader | 254 | 0 | 176 |
+| | M4 | 254 | 0 | 176 |
+| the whole group (2,387; the census's 48: 11 pass) | SwiftShader | 561 | 0 | 1,826 |
+| its 561 | M4 | 561 | 0 | 0 |
+
+  **The 561 join `tests/deqp/vk.txt`** (none was in it). The read-write cases are 1D and 2D views only; the read-only
+  ones (the image sampled, not attached) needed only the extension.
+- **What's left not supported** (the group's 1,826): the `general` layout's 1,190 want `VK_KHR_unified_image_layouts`,
+  which the tests' guest's Venus (Mesa 26.2) doesn't have (layouts are nothing to WebGPU: it would need only
+  advertising once Venus carries it); 300 stencil read-write and interleaved cases want `VK_EXT_shader_stencil_export`
+  (WebGPU has no stencil output); 336 image formats or types not offered (1D depth images, 3D depth).
+
 ## VK4 T32 (first part): depth bounds, logic ops, advanced blends and local read; 1,084 cases join the list
 
 2026-11-06, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,

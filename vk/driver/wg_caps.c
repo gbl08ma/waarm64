@@ -104,6 +104,10 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       /* Input attachments as T12's copies; the colour attachment map in the pipeline's key (VK4 T32, wg_shader.c
        * `mapped_text`). */
       .KHR_dynamic_rendering_local_read = true,
+      /* An attachment sampled by a draw of its own pass: the draw samples a copy of the view's range (VK4 T32, wg_cmd.c
+       * `feedback_copies`); whether the pipeline loops is no state of WebGPU's, so it may be dynamic. */
+      .EXT_attachment_feedback_loop_layout = true,
+      .EXT_attachment_feedback_loop_dynamic_state = true,
       /* NONE load and store ops: WebGPU's load and store (wg_cmd.c `load_op`). */
       .KHR_load_store_op_none = true,
       .EXT_load_store_op_none = true,
@@ -264,6 +268,8 @@ wg_caps_features(struct vk_features *f)
       .shaderZeroInitializeWorkgroupMemory = true,
       .dynamicRendering = true,
       .dynamicRenderingLocalRead = true,
+      .attachmentFeedbackLoopLayout = true,
+      .attachmentFeedbackLoopDynamicState = true,
       .shaderIntegerDotProduct = true,
       .maintenance4 = true,
       .maintenance5 = true,

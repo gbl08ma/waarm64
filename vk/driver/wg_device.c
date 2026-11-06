@@ -1244,8 +1244,9 @@ depth16_key(struct wg_json *j, const struct wg_texture_format *fmt)
       wg_json_printf(j, "\"depth16\":true,");
 }
 
+/* `loop`: the copy of the image a draw samples where the image is an attachment of its pass (wg_view_loop). */
 static uint32_t
-wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, VkExtent3D e)
+wg_texture_create_as(struct wg_image *image, const struct wg_texture_format *fmt, VkExtent3D e, bool loop)
 {
    const struct vk_image *vi = &image->vk;
    const uint32_t flags = fmt->flags;
@@ -1267,8 +1268,9 @@ wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, V
    /* A pass may draw it in a crop, copied from it and back (`crop_copies`), which for depth may be the worker's shader. */
    if (vi->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
       usage |= 1 | 2 | ((flags & WG_FMT_SAMPLE) ? 4 : 0);
-   /* A draw may read it as an input attachment while it's an attachment: from a copy (`feedback_copies`). */
-   if ((vi->usage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) &&
+   /* A draw may read it as an input attachment while it's an attachment, or sample it (a feedback loop): from a copy
+    * (`feedback_copies`). */
+   if ((vi->usage & (VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT)) &&
        (vi->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)))
       usage |= 1;
    /* A multisampled image is read by the draws of its resolves and copies (the worker's resolveDepth, resolveByDraw,
@@ -1296,6 +1298,10 @@ wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, V
       usage = (usage & ~8u) | 16;
    if (!usage)
       usage = 4;
+   /* TEXTURE_BINDING | COPY_DST, RENDER_ATTACHMENT where a copy into it is drawn (depth24plus takes no copies). */
+   if (loop)
+      usage = 4 | ((flags & WG_FMT_NOCOPY) && !(flags & WG_FMT_STENCIL) ? 0 : 2) |
+              ((flags & (WG_FMT_RENDER | WG_FMT_DEPTH | WG_FMT_STENCIL)) && !one_d ? 16 : 0);
    /* An image that may be shared (dma-buf memory: a WSI image, which the guest's compositor imports into virgl) is
     * copied and sampled from for the virgl renderer (web/venus-share.ts), through its linear view. */
    const bool shared = image->shared;
@@ -1326,6 +1332,12 @@ wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, V
    }
    wg_json_printf(&j, "]}");
    return wg_create_json(WG_KIND_TEXTURE, &j);
+}
+
+static uint32_t
+wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, VkExtent3D e)
+{
+   return wg_texture_create_as(image, fmt, e, false);
 }
 
 /* The replay keeps which of an image's places hold its bytes (`valid`). */
@@ -1461,6 +1473,7 @@ wg_DestroyImage(VkDevice _device, VkImage _image, const VkAllocationCallbacks *p
    if (image->imported)
       gpu_texture_import(image->tex, 0);
    wg_id_release(image->tex);
+   wg_id_release(image->loop_tex);
    for (uint32_t p = 1; p < image->plane_count; p++)
       wg_id_release(image->planes[p].tex);
    for (uint32_t i = 0; i < image->alias_count; i++)
@@ -1629,6 +1642,8 @@ wg_GetImageDrmFormatModifierPropertiesEXT(VkDevice _device, VkImage image,
    return VK_SUCCESS;
 }
 
+static void view_init(struct wg_device *dev, struct wg_image_view *view, uint32_t loop_tex);
+
 VKAPI_ATTR VkResult VKAPI_CALL
 wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
                    const VkAllocationCallbacks *pAllocator, VkImageView *pView)
@@ -1637,6 +1652,15 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
    struct wg_image_view *view = vk_image_view_create(&dev->vk, pCreateInfo, pAllocator, sizeof(*view));
    if (!view)
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
+   view_init(dev, view, 0);
+   *pView = wg_image_view_to_handle(view);
+   return VK_SUCCESS;
+}
+
+/* A view's WebGPU views, of the image's texture, or of `loop_tex` (wg_view_loop: no alias, no attachment). */
+static void
+view_init(struct wg_device *dev, struct wg_image_view *view, uint32_t loop_tex)
+{
    struct wg_image *image = container_of(view->vk.image, struct wg_image, vk);
    view->fmt = wg_texture_format(view->vk.view_format);
    /* An E5B9G9R9 view of a 32-bit integer image (VK4 T23: Godot's SDFGI writes R32_UINT volumes and samples them so;
@@ -1654,12 +1678,12 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
                   image->vk.samples == 1 && unswizzled && view->vk.view_type != VK_IMAGE_VIEW_TYPE_CUBE &&
                   view->vk.view_type != VK_IMAGE_VIEW_TYPE_CUBE_ARRAY && !(wg_emul_skip & WG_SKIP_RGB9E5);
    dev->padded_views |= view->rgb9e5;
-   if (image->plane_count < 2 && !(image->fmt->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)) && !view->rgb9e5)
+   if (image->plane_count < 2 && !(image->fmt->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)) && !view->rgb9e5 && !loop_tex)
       view->alias = image_alias(dev, image, 0, view->vk.view_format);
    /* A mutable image's view that can go by the words. */
-   if ((view->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT) && wg_storage_words(view->vk.view_format))
+   if ((view->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT) && wg_storage_words(view->vk.view_format) && !loop_tex)
       image_track(dev, image);
-   const uint32_t tex = view->alias ? image->aliases[view->alias - 1].tex : image->tex;
+   const uint32_t tex = loop_tex ? loop_tex : view->alias ? image->aliases[view->alias - 1].tex : image->tex;
    /* A depth or stencil aspect of a combined format is the image's format with an aspect in WebGPU (the runtime's
     * view format is the aspect's own). */
    if (!view->fmt || (image->fmt->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)))
@@ -1721,8 +1745,7 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
                                                                  : image->planes[first].fmt;
       view->view = view->planes[0];
       view->slice = -1;
-      *pView = wg_image_view_to_handle(view);
-      return VK_SUCCESS;
+      return;
    }
    /* An aspect's view takes the aspect's format: left to WebGPU. An E5B9G9R9 view of words is of the words. */
    const char *format = view->rgb9e5 ? image->fmt->name : view->fmt->name;
@@ -1805,6 +1828,8 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
    /* As an attachment: one level and one layer, 2D; a 3D image's level as a 3D view and the slice the view starts at
     * (a 2D view of a 3D image), the render pass's depthSlice. */
    view->slice = -1;
+   if (loop_tex)
+      return;
    if (!layered && image->vk.usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT && (view->fmt->flags & WG_FMT_RENDER)) {
       wg_json_printf(&j, "{\"texture\":%u,\"format\":\"%s\",\"dimension\":\"3d\",\"baseMipLevel\":%u,\"mipLevelCount\":1}",
                      tex, view->fmt->name, view->vk.base_mip_level);
@@ -1819,8 +1844,31 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
                      tex, view->fmt->name, view->vk.base_mip_level, view->vk.base_array_layer);
       view->att = wg_create_json(WG_KIND_VIEW, &j);
    }
-   *pView = wg_image_view_to_handle(view);
-   return VK_SUCCESS;
+}
+
+struct wg_image_view *
+wg_view_loop(struct wg_image_view *view)
+{
+   if (!view->loop) {
+      struct wg_device *dev = container_of(view->vk.base.device, struct wg_device, vk);
+      struct wg_image *image = container_of(view->vk.image, struct wg_image, vk);
+      if (!image->loop_tex)
+         image->loop_tex = wg_texture_create_as(image, image->fmt, image->vk.extent, true);
+      const VkImageViewCreateInfo info = {
+         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+         .image = vk_image_to_handle(view->vk.image),
+         .viewType = view->vk.view_type,
+         .format = view->vk.format,
+         .components = view->vk.swizzle,
+         .subresourceRange = { view->vk.aspects, view->vk.base_mip_level, view->vk.level_count,
+                               view->vk.base_array_layer, view->vk.layer_count },
+      };
+      view->loop = vk_image_view_create(&dev->vk, &info, NULL, sizeof(*view->loop));
+      if (!view->loop)
+         return view;
+      view_init(dev, view->loop, image->loop_tex);
+   }
+   return view->loop;
 }
 
 uint32_t
@@ -1939,6 +1987,8 @@ wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallb
    VK_FROM_HANDLE(wg_image_view, view, _view);
    if (!view)
       return;
+   if (view->loop)
+      wg_DestroyImageView(_device, wg_image_view_to_handle(view->loop), NULL);
    wg_id_release(view->twin);
    wg_id_release(view->twin_depth);
    wg_id_release(view->twin_tex);

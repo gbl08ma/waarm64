@@ -5078,6 +5078,132 @@ t32_misc(const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBuffer ou
    return 0;
 }
 
+/*
+ * VK4 T32, wgt_misc's scenario 99 (`fs`: tests/venus/t32/loop.frag): a feedback loop
+ * (VK_EXT_attachment_feedback_loop_layout). An RGBA8 image of two layers, layer 0 cleared to (51, 102, 153, 255) and 1
+ * to green, layer 0 the pass's attachment and the draw's sampled view both layers: the left half adds 64 to red of the
+ * texel it writes, the right half writes layer 1's. A second draw after a barrier (a feedback loop's self-dependency)
+ * on the left quarter adds again. Texels (2, 8), (6, 8) and (10, 8) at `out`'s 0, 4 and 8.
+ */
+static int
+t32_loop(const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage = (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   const uint32_t size = 16;
+   VkImage target;
+   VkImageView sampled, att;
+   if (layered_image(VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM, size, size, 2,
+                     VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                        VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT,
+                     0, &target, &sampled))
+      return 1;
+   const VkImageViewCreateInfo avi = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = target, .viewType = VK_IMAGE_VIEW_TYPE_2D,
+      .format = VK_FORMAT_R8G8B8A8_UNORM, .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
+   CHECK(CreateImageView(dev, &avi, NULL, &att));
+   const VkClearColorValue first = { .float32 = { 0.2f, 0.4f, 0.6f, 1 } }, second = { .float32 = { 0, 1, 0, 1 } };
+   const VkImageSubresourceRange l0 = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }, l1 = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1, 1 };
+   CmdClearColorImage(cmd, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &first, 1, &l0);
+   CmdClearColorImage(cmd, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &second, 1, &l1);
+   const VkImageLayout loop = VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT;
+   const VkAttachmentDescription ad = { 0, VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLE_COUNT_1_BIT, VK_ATTACHMENT_LOAD_OP_LOAD,
+                                        VK_ATTACHMENT_STORE_OP_STORE, VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                        VK_ATTACHMENT_STORE_OP_DONT_CARE, loop, loop };
+   const VkAttachmentReference cr = { 0, loop };
+   const VkSubpassDescription sub = { .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS, .colorAttachmentCount = 1,
+                                      .pColorAttachments = &cr };
+   const VkSubpassDependency self = { 0, 0, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                      VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                                      VK_DEPENDENCY_BY_REGION_BIT | VK_DEPENDENCY_FEEDBACK_LOOP_BIT_EXT };
+   const VkRenderPassCreateInfo rpi = { .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, .attachmentCount = 1,
+                                        .pAttachments = &ad, .subpassCount = 1, .pSubpasses = &sub,
+                                        .dependencyCount = 1, .pDependencies = &self };
+   VkRenderPass rp;
+   CHECK(CreateRenderPass(dev, &rpi, NULL, &rp));
+   const VkFramebufferCreateInfo fbi = { .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO, .renderPass = rp,
+                                         .attachmentCount = 1, .pAttachments = &att, .width = size, .height = size,
+                                         .layers = 1 };
+   VkFramebuffer fb;
+   CHECK(CreateFramebuffer(dev, &fbi, NULL, &fb));
+   const VkSamplerCreateInfo si = { .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+   VkSampler sampler;
+   CHECK(CreateSampler(dev, &si, NULL, &sampler));
+   const VkDescriptorSetLayoutBinding b = { 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL };
+   const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                 .bindingCount = 1, .pBindings = &b };
+   VkDescriptorSetLayout dsl;
+   CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1,
+                                            .pSetLayouts = &dsl };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   const VkDescriptorPoolSize ps = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 };
+   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                            .poolSizeCount = 1, .pPoolSizes = &ps };
+   VkDescriptorPool dp;
+   CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+   const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                             .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
+   VkDescriptorSet set;
+   CHECK(AllocateDescriptorSets(dev, &dai, &set));
+   const VkDescriptorImageInfo ii = { sampler, sampled, loop };
+   const VkWriteDescriptorSet wr = { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .descriptorCount = 1,
+                                     .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &ii };
+   UpdateDescriptorSets(dev, 1, &wr, 0, NULL);
+   VkShaderModule vm, fm;
+   if (shader(feedback_vs, feedback_vs_words, &vm) || shader(fs, fs_words, &fm))
+      return 1;
+   const VkPipelineShaderStageCreateInfo stages[2] = {
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = vm, .pName = "main" },
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = fm, .pName = "main" } };
+   const VkPipelineVertexInputStateCreateInfo vis = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+   const VkPipelineInputAssemblyStateCreateInfo ia = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                                                       .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
+   const VkViewport vp = { 0, 0, (float)size, (float)size, 0, 1 };
+   const VkRect2D area = { { 0, 0 }, { size, size } };
+   const VkPipelineViewportStateCreateInfo vs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1,
+                                                  .pViewports = &vp, .scissorCount = 1, .pScissors = &area };
+   const VkPipelineRasterizationStateCreateInfo rs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+                                                       .polygonMode = VK_POLYGON_MODE_FILL, .lineWidth = 1 };
+   const VkPipelineMultisampleStateCreateInfo ms = { .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                                                     .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT };
+   const VkPipelineColorBlendAttachmentState ba = { .colorWriteMask = 0xf };
+   const VkPipelineColorBlendStateCreateInfo bs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                                                    .attachmentCount = 1, .pAttachments = &ba };
+   const VkDynamicState dyns[1] = { VK_DYNAMIC_STATE_SCISSOR };
+   const VkPipelineDynamicStateCreateInfo dy = { .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+                                                 .dynamicStateCount = 1, .pDynamicStates = dyns };
+   const VkGraphicsPipelineCreateInfo gpi = {
+      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .flags = VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT,
+      .stageCount = 2, .pStages = stages, .pVertexInputState = &vis, .pInputAssemblyState = &ia, .pViewportState = &vs,
+      .pRasterizationState = &rs, .pMultisampleState = &ms, .pColorBlendState = &bs, .pDynamicState = &dy,
+      .layout = layout, .renderPass = rp };
+   VkPipeline p;
+   CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   const VkRenderPassBeginInfo rbi = { .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, .renderPass = rp, .framebuffer = fb,
+                                       .renderArea = area };
+   CmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+   CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &set, 0, NULL);
+   CmdSetScissor(cmd, 0, 1, &area);
+   CmdDraw(cmd, 3, 1, 0, 0);
+   const VkImageMemoryBarrier ib = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                     .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                                     .dstAccessMask = VK_ACCESS_SHADER_READ_BIT, .oldLayout = loop, .newLayout = loop,
+                                     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                     .image = target, .subresourceRange = l0 };
+   CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                      VK_DEPENDENCY_BY_REGION_BIT | VK_DEPENDENCY_FEEDBACK_LOOP_BIT_EXT, 0, NULL, 0, NULL, 1, &ib);
+   const VkRect2D quarter = { { 0, 0 }, { 4, size } };
+   CmdSetScissor(cmd, 0, 1, &quarter);
+   CmdDraw(cmd, 3, 1, 0, 0);
+   CmdEndRenderPass(cmd);
+   copy_texel(cmd, target, VK_IMAGE_ASPECT_COLOR_BIT, 0, 2, 8, out, 0);
+   copy_texel(cmd, target, VK_IMAGE_ASPECT_COLOR_BIT, 0, 6, 8, out, 4);
+   copy_texel(cmd, target, VK_IMAGE_ASPECT_COLOR_BIT, 0, 10, 8, out, 8);
+   return 0;
+}
+
 /* A 2D image of a sampling scenario: every layer and level in GENERAL, its depth cleared to 0.25 or its colour to `c`. */
 static int
 r5_image(VkCommandBuffer cmd, VkFormat format, uint32_t size, uint32_t layers, uint32_t levels, const VkClearColorValue *c,
@@ -6239,6 +6365,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 98) {
       if (t32_misc(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 99) {
+      if (t32_loop(cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 41 || scenario == 42) {
       if (t11_misc(scenario, cs, cs_words, cmd, out))

@@ -337,6 +337,7 @@ struct wg_image {
    VkDeviceSize size;
    const struct wg_texture_format *fmt;
    uint32_t tex;
+   uint32_t loop_tex; /* a copy of `tex` (wg_view_loop): what draws sample while it's an attachment of their pass */
    bool shared;     /* dma-buf memory or a DRM modifier: a WSI image the virgl renderer may sample */
    /* A linear image in host-visible memory, on the device's linear_images: its texture is loaded from the memory at
     * each submit's start and stored back at its end (wg_cmd.c), so the guest's maps see it. */
@@ -431,6 +432,9 @@ struct wg_image_view {
     * in wg_cmd.c), and the mark it was made at. */
    uint32_t twin_tex, twin, twin_mark;
    uint32_t twin_depth; /* the twin's depth aspect alone, of a depth and stencil view (wg_view_twin_depth) */
+   /* The view of a copy of the image's texture (wg_image.loop_tex), which a draw samples where the view covers an
+    * attachment of its pass (a feedback loop: wg_view_loop, `feedback_copies`); its twin_mark is the copy's. */
+   struct wg_image_view *loop;
    uint32_t *layer_atts;  /* multiview, layered passes: layers past the first as attachments (wg_view_att), WG_MAX_LAYERS - 1 of them */
    struct wg_view_crop *crops; /* the attachment in a pass smaller than it (wg_view_crop) */
    /* A sampled 2D array view of one layer as a 2D view, for a shader that declares it 2D (0: none). Vulkan wants the
@@ -441,6 +445,8 @@ struct wg_image_view {
 
 /* A view's attachment for multiview's view `view`: its layer past the view's first. */
 uint32_t wg_view_twin(struct wg_image_view *view);
+/* The view, of a copy of the image, that a feedback loop's draw samples (made at the first call). */
+struct wg_image_view *wg_view_loop(struct wg_image_view *view);
 /* The twin's view of its depth alone (a depth-only view's twin is that already). */
 uint32_t wg_view_twin_depth(struct wg_image_view *view);
 /*

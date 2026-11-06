@@ -678,7 +678,16 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   cut of the WebGPU pass (`begin_pass`'s `keep`: 1 the parts store whatever the store op, 2 later parts load) at the
   pass's first such draw and after a barrier or clear inside it (`OP_PASS_READ`; without one, reading what the pass
   wrote is undefined), through `gpu_copy_tt`, so multisampled and depth images take their usual paths. An occlusion
-  query carries on across a cut as across a clear. No sampled images: only input attachments reach this.
+  query carries on across a cut as across a clear. **Sampled** (VK4 T32, `VK_EXT_attachment_feedback_loop_layout` and
+  its dynamic state, which needs nothing: WebGPU's pipelines hold no such state): an image with
+  `VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT` is an attachment a draw may sample, through any view of it whose
+  levels and layers cover the attachment's (`feedback_att`). Such a draw samples the view's `loop`
+  (`wg_view_loop` in wg_device.c): the same view made by the same code over a copy of the image's texture
+  (`wg_image.loop_tex`, the image's shape, sampled and copied into), so its type, swizzle, faces and flat views are the
+  view's; at the same points as the input attachments' copies, every level and layer of the view's range is copied
+  into it, past the attachment's too. Not a view of another texture (an alias, RGB9E5's words). Layouts are nothing
+  to WebGPU, so `GENERAL` would do as well, but `VK_KHR_unified_image_layouts` isn't in the tests' guest's Venus (Mesa
+  26.2), and the stencil cases want stencil export, which WebGPU lacks.
 - **Reading the attachments** (VK4 T32; `fragment_dst` in wg_shader.c, `dst_copies` in wg_cmd.c): the depth bounds test
   (`depthBounds`), logic ops (`logicOp`) and advanced blends (`VK_EXT_blend_operation_advanced`) read what the attachment
   holds, which WebGPU's pipelines can't. A draw whose key has them (`depth_bounds`, `logic_op`, `adv`: the dynamic state's)

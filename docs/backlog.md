@@ -848,6 +848,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     isn't read (input attachments go by their descriptors), dual-source outputs aren't moved by the location map; of its
     sample `VK_EXT_dynamic_rendering_unused_attachments` (48), sample counts and `customResolve` are the commonest
     reasons left.
+  - **Feedback loops' leftovers** (VK4 T32; vk/README.md "Feedback loops"): `VK_KHR_unified_image_layouts` (the
+    `general` layout's 1,190 of `attachment_feedback_loop_layout`) needs only advertising, once the guest's Venus carries
+    it (Mesa 26.2's doesn't); stencil read-write (300) needs stencil export, which WebGPU lacks. A sampled view's copy
+    is its whole range at each renewal, however little the draw reads; a draw in a secondary command buffer whose pass
+    the primary began doesn't know the pass's attachments (as input attachments there).
   - **Multisampled arrays' leftovers** (VK4 T12; vk/README.md "Multisampled arrays"): a shader sampling a whole
     `sampler2DMSArray` reads the first layer (it needs a binding per layer and a switch on the layer in the translator). The
     48 of `multiview.*multisample*` ask for `r32g32b32a32_sfloat` and the `image.mutable` r32 ones for views WebGPU can't
