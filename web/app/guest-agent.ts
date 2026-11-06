@@ -60,6 +60,8 @@ exec /run/webpc/agent
  * a budget: plan §3.3) and first to go when the guest runs out. Sandboxed as far as what it does allows: TIOCSTI on the
  * foreground console needs CAP_SYS_ADMIN, the session children change uid (CAP_SETUID, CAP_SETGID; no NoNewPrivileges,
  * which would stop them) and are the user's processes then, which the agent stops (CAP_KILL); they read the session's files in /run/user and the home (read-only).
+ * The private /tmp keeps the host's X11 sockets' directory, bound in read-only (an X session's child connects to its
+ * display's socket there; `PrivateNetwork` hides the abstract ones; `-`: a guest without it starts all the same).
  * `modprobe` runs outside the sandbox (`+`), before it: Debian loads qemu_fw_cfg from the DT already. /run/webpc is a
  * tmpfs of the unit's own (gone when it stops), mounted `exec`: Debian 13 mounts /run `noexec`, where a
  * `RuntimeDirectory` can't run the binary (measured 2026-11-06: `exec` gave EACCES).
@@ -77,6 +79,7 @@ UMask=0077
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=yes
+BindReadOnlyPaths=-/tmp/.X11-unix
 PrivateNetwork=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes

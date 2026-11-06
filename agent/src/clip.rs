@@ -27,6 +27,16 @@ const IMAGES: [&str; 7] = [
     "image/avif",
 ];
 
+/// HTML (plan §3.2's last type): offered beside the text (and the image), both ways; its bytes cross as they are (the
+/// page's are Chromium's, sanitised: plan §4.3), within `TEXT_CAP`, never cached or hashed (the text stands for the
+/// content in the echo rule).
+pub const HTML: &str = "text/html";
+
+/// Whether `t` (a guest program's type, or the page's) is HTML.
+pub fn is_html(t: &str) -> bool {
+    t.eq_ignore_ascii_case(HTML)
+}
+
 /// Text up to this size comes inline in its OFFER (plan §2), saving a round trip.
 pub const INLINE: usize = 4096;
 /// The host's text up to this size is kept once it has crossed, so that repeated pastes don't cross again (plan
@@ -168,6 +178,8 @@ mod tests {
         assert_eq!((cap(PNG), cap("image/jpeg")), (IMAGE_CAP, IMAGE_CAP));
         assert_eq!(cap(TEXT), TEXT_CAP);
         assert!(is_image("image/png") && !is_image("image/") && !is_image(TEXT));
+        assert!(is_html("text/html") && is_html("TEXT/HTML") && !is_html("text/plain"));
+        assert_eq!(cap(HTML), TEXT_CAP);
     }
 
     #[test]

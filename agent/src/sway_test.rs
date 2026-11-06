@@ -844,6 +844,49 @@ fn shares_images_both_ways_streamed_and_capped() {
         Some(&frame::ack(24, ack::NO_TYPE)[..])
     );
 
+    // HTML (plan §3.2): a guest program's (wl-copy offers its text names too) after the text, requested by its type;
+    // the page's beside its text, requested by a paste.
+    copy(crate::clip::HTML, b"<b>bold</b>");
+    let (serial, offered, inline) = offer(&mut page);
+    assert_eq!(
+        offered,
+        vec![
+            (TEXT.to_owned(), 11),
+            (crate::clip::HTML.to_owned(), frame::UNKNOWN)
+        ]
+    );
+    assert_eq!(inline.as_deref(), Some(&b"<b>bold</b>"[..]));
+    assert_eq!(
+        fetch(&mut page, serial, 5, crate::clip::HTML).as_deref(),
+        Some(&b"<b>bold</b>"[..])
+    );
+    let mut o = Vec::new();
+    frame::Offer {
+        serial: 25,
+        types: vec![(TEXT, 4), (crate::clip::HTML, 11)],
+        inline: Some(b"bold"),
+    }
+    .encode(&mut o);
+    page.send(frame::OFFER, &o);
+    assert_eq!(
+        page.next(frame::ACK, 3000).as_deref(),
+        Some(&frame::ack(25, ack::HELD)[..])
+    );
+    assert!(
+        types().lines().any(|l| l == crate::clip::HTML),
+        "{}",
+        types()
+    );
+    let p = paste(crate::clip::HTML);
+    let q = page
+        .next(frame::REQUEST, 5000)
+        .expect("a REQUEST for the HTML");
+    let r = frame::Request::decode(&q).unwrap();
+    assert_eq!((r.serial, r.mime), (25, crate::clip::HTML));
+    answer(&mut page, r.id, b"<i>bold</i>");
+    assert_eq!(p.wait_with_output().unwrap().stdout, b"<i>bold</i>");
+    assert_eq!(sway.paste().as_deref(), Some(&b"bold"[..]));
+
     drop(page);
     assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
 }

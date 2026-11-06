@@ -155,14 +155,17 @@ on (skipped without it).
 ## Debian with sway (`images/debian-sway/build.sh`)
 
 On demand, as the one above: the pinned Debian with `sway` (1.10.1, wlroots 0.18.2), `wl-clipboard` (2.2.1) and `grim`
-(1.4.0, the screenshots of the clipboard's image test)
+(1.4.0, the screenshots of the clipboard's image test), and for X11 `xvfb`, `xauth` and `xclip` (test-only)
 installed by apt in QEMU without recommends (~2 min), then `images/debian-sway/setup.sh` run in the guest: the user
 `user` (uid 1000, no password), logged in on tty1 at boot by getty (`--autologin`, a drop-in of `getty@tty1`), whose
 `~/.bash_profile` there `exec`s a headless sway (`WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1`,
 its log `/tmp/sway.log`; `/tmp/no-sway` stops it starting) with a config of one line (no bar, nothing on a timer).
+With `/tmp/x11` (which `tests/page-clipboard-x11.test.ts` makes before it ends sway: the next login takes it), the login
+shell runs an X session instead, as startx makes one: a cookie added to `~/.Xauthority` by xauth, then
+`Xvfb :1 -auth ~/.Xauthority -nolisten tcp` (its log and its end in `/tmp/x11.log`).
 Its session is a tty's (`TYPE=tty`, seat0), as on the Arch desktop, so the clipboard agent's way to it is the real one;
 sway's end ends the session and getty logs the user in again. `target/images/debian-sway/disk.qcow2`, what
-`tests/page-clipboard.test.ts` runs on (skipped without it). Its wlroots has `zwlr_data_control_manager_v1` but not
+`tests/page-clipboard.test.ts` and `tests/page-clipboard-x11.test.ts` run on (skipped without it). Its wlroots has `zwlr_data_control_manager_v1` but not
 yet `ext_data_control_manager_v1` (0.19), so the agent's ext path is the Arch desktop's to check.
 
 ## Debian with Chromium (`images/debian-chromium/build.sh`)

@@ -142,10 +142,18 @@ offered there.
     `SelectionNotify` on CLIPBOARD, `ConvertSelection` to read it, and owning the selection to set it (with
     INCR for large transfers). The hard part is finding `DISPLAY` and the cookie (`XAUTHORITY` under the user's
     home or `$XDG_RUNTIME_DIR`, or Xwayland's `-auth` file). The child reads `/proc/<leader>/environ` of the
-    session's processes, which it may do as the same uid. **Not reachable under the unit as built:**
-    `PrivateTmp=yes` hides `/tmp/.X11-unix`, and `PrivateNetwork=yes` hides the abstract `@/tmp/.X11-unix/X<n>`
-    sockets (scoped to the network namespace), so the X11 step changes the sandbox (for example the X11 child
-    joining the session's namespaces, or the unit giving up those two settings) and measures what that costs.
+    session's processes, which it may do as the same uid. `PrivateTmp=yes` hides `/tmp/.X11-unix`, and
+    `PrivateNetwork=yes` the abstract `@/tmp/.X11-unix/X<n>` sockets (scoped to the network namespace). **Built (step
+    5):** the unit keeps both and binds the host's `/tmp/.X11-unix` into its private /tmp read-only
+    (`BindReadOnlyPaths=-/tmp/.X11-unix`: a path socket connects across network namespaces and on a read-only bind);
+    the child watches it with inotify. The display: the session file's `DISPLAY=` if it has one, else a socket that a
+    process of the user's names (`DISPLAY`, or a server's `:<n>` argument); the cookie from the server's `-auth`, a
+    process's `XAUTHORITY` or `~/.Xauthority`. X11 is taken only where Wayland has no data-control (no compositor, or
+    one whose registry lacks both managers). Seven InputOnly windows, not one: xclip keeps one INCR transfer per
+    requestor window, so a conversion while another's INCR runs (the probe's 4 KiB, then a REQUEST) never got an
+    answer from one window (found by the native test); a reader that goes mid-INCR leaves the transfer drained to its
+    end, for the same reason. INCR both ways (the threshold to requestors: the server's largest request, at most 256
+    KiB). `STRING` is answered in UTF-8, as wl-clipboard's aliases are (not Latin-1).
   - **GNOME (Mutter) has no data-control.** Its routes are the X11 one (Mutter syncs Xwayland's selections with
     its own, but whether a client without focus can read them there is unmeasured), or the portal's Clipboard
     interface (a RemoteDesktop session, which asks the user to consent). GNOME isn't one of our guests. It gets
@@ -159,7 +167,9 @@ offered there.
   shell waiting behind it, and pasted lines would run there once the compositor ends; the agent refuses then and
   says so (`TYPED`, devices.md), and the page's menu tells the user.
 - **MIME types:** `text/plain;charset=utf-8` (and its aliases `UTF8_STRING`, `TEXT`, `STRING` on X11) first;
-  then images (§4.4), then `text/html`. A size cap is enforced on both sides (16 MiB for text, 64 MiB for an
+  then images (§4.4), then `text/html` (**built, step 5**: both ways beside the text or the image, under text's cap,
+  never cached or hashed: the text stands for the content in the echo rule; a guest program's HTML alone is offered
+  and written alone; the page offers HTML only beside its text or image). A size cap is enforced on both sides (16 MiB for text, 64 MiB for an
   image), against the offer's size, before any bytes cross. **As built (step 5):** a guest program's offer has no
   size (Wayland says none), so for the guest's side the cap counts the bytes as they cross (both sides stop the
   transfer past it); the page's offers carry their sizes, which the agent checks first (ACK `TOO_LARGE`).
@@ -365,7 +375,8 @@ covers it. Cases to recognise, and what the page does:
   copying a password on the host.
 - **Sanitising:** Chromium re-encodes images as PNG and sanitises `text/html` on `read()`, so what reaches the
   guest isn't byte-identical to what was copied. That is fine for a clipboard. `unsanitized: ['text/html']`
-  isn't needed.
+  isn't needed. **Built (step 5):** the page writes the guest's HTML in the item with its text; HTML that doesn't
+  come (its program refused it) is the text, escaped, so the rest is still written.
 - **Refusals** (`NotAllowedError`, `DataError`) are never shown as errors in the middle of work. The toolbar button
   shows the permission's state ("Allowed in this browser", "Blocked: allow it in the site's settings") from the
   permission's `change` event, the way USB and folders show [Allow…](ui:usb:main.offer.allow).
@@ -441,7 +452,8 @@ Images are the same path as text with another type: lazy offers, streamed chunks
     so that the guest can paste what you copy on your computer from its own menus too. A switch in the toolbar
     pauses the sharing while the machine runs."
 
-  The X11 sentence joins when X11 is built (§6 step 5), and so does a "text console" sentence when `TYPE` is
+  The X11 sentence joins when X11 is built (§6 step 5; **joined**: "An X11 session works too, through the clipboard
+  that Copy and Paste use (not the middle-click selection)."), and so does a "text console" sentence when `TYPE` is
   offered. **Settled (step 4)** in the catalog (`machines:MachinesPage.clipboard.note`): "Copy text" (images came
   with step 5, which made it "Copy text or an image", as the draft has it), and the console's sentence joins, since the menu types:
   "On a text console, the toolbar's clipboard menu can type what you copied." Stored machines all boot through
@@ -497,7 +509,8 @@ Each step is one loop with its own tests at the cheapest layer:
    2026-11-06),** with the measurements from §4.1 and §4.3 (the canvas's `paste` event, Firefox in the dev VM, the
    Mac by the user: still to do).
 5. **Images** (built 2026-11-06; §4.4: the page's conversion to PNG, the read-back for echoes, a screenshot each way in the
-   Wayland test), then **X11** (Xwayland and Xorg sessions, INCR for large images), then `text/html`.
+   Wayland test), then **X11** (built 2026-11-06: Xorg sessions and Xwayland under a compositor without
+   data-control, INCR both ways; §3.2), then `text/html` (built 2026-11-06, Wayland and X11).
 6. **Optional:** spice-vdagent's port, GNOME through the portal, a ready signal and time after a resume from the
    same agent (agent.md).
 

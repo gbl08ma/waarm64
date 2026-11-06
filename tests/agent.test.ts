@@ -16,7 +16,7 @@ import { after, test } from 'node:test';
 import { AGENT_PORTS, agentDevice, agentEntry, CTL_RX, CTL_TX, DEVICE_READY, F_MULTIPORT, MAX_PENDING, PORT_ADD, PORT_NAME, PORT_OPEN, PORT_READY, type AgentFromDevice } from '../web/agent-device.ts';
 import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, FRAME, FrameReader, helloNonce, MAX_PAYLOAD, NONCE, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
 import { AgentLink, PAGE_CAPS, WINDOW } from '../web/app/agent-link.ts';
-import { ACK_WAIT, ClipboardShare, contentHash, EMPTY_RUN, IMAGE_CAP, imageHash, INLINE, isPasteChord, onMac, PASTE_WAIT, PNG, TEXT, TEXT_CAP, textHash, watchReadPermission, type ClipLink, type Host, type HostItem, type ReadPermission } from '../web/app/clipboard.ts';
+import { ACK_WAIT, ClipboardShare, contentHash, EMPTY_RUN, HTML, IMAGE_CAP, imageHash, INLINE, isPasteChord, onMac, PASTE_WAIT, PNG, TEXT, TEXT_CAP, textHash, watchReadPermission, type ClipLink, type Host, type HostItem, type ReadPermission } from '../web/app/clipboard.ts';
 import { AGENT_FILE, AGENT_PORT, agentBinary, agentCredentials, agentScript } from '../web/app/guest-agent.ts';
 import { oemStrings } from '../web/app/guest-unit.ts';
 import { guestWords } from '../web/app/guest-words.ts';
@@ -389,6 +389,9 @@ test("the guest agent's unit: a long-running root service, wanted by multi-user.
   assert.match(unit, /^CapabilityBoundingSet=.*\bCAP_SETUID\b.*\bCAP_SETGID\b/m);
   assert.match(unit, /^CapabilityBoundingSet=.*\bCAP_KILL\b/m, "the children are the user's: stopping one needs CAP_KILL");
   assert.doesNotMatch(unit, /^(NoNewPrivileges|PrivateDevices|PrivateUsers|DynamicUser)=/m);
+  // X11 (step 5): the private /tmp keeps the X server's sockets (read-only; none there is no failure).
+  assert.match(unit, /^PrivateTmp=yes$/m);
+  assert.match(unit, /^BindReadOnlyPaths=-\/tmp\/\.X11-unix$/m);
   assert.equal(c[2].data, '[Unit]\nWants=webpc-agent.service\nAfter=webpc-agent.service\n');
   for (const [i, x] of oemStrings(c).entries()) assert.equal(Buffer.from(x.split('=').slice(1).join('='), 'base64').toString(), c[i].data);
 });
@@ -1346,7 +1349,7 @@ test("images, guest to host: kept pending without focus (the newest only, a newe
   const { host, writes } = imageHost();
   const share = new ClipboardShare(link, host);
   // Through functions: an assertion would narrow the fields for good.
-  const [pendingSerial, pendingText] = [() => share.pendingImage?.serial, () => share.pending];
+  const [pendingSerial, pendingText] = [() => share.pendingItem?.serial, () => share.pending];
   host.focus = false;
   deliver(FRAME.OFFER, encodeOffer({ serial: 1, types: [{ type: PNG, size: UNKNOWN }] }));
   assert.deepEqual(take(FRAME.REQUEST), [], 'no focus: nothing requested (the bytes cross at the write)');
@@ -1455,4 +1458,86 @@ test('images: the hashes the page remembers (text, image, both)', async () => {
   assert.equal(contentHash(undefined, a), `/${a}`);
   assert.notEqual(contentHash('hi', a), contentHash('hi'));
   assert.equal(contentHash(''), contentHash(undefined), 'empty text is none');
+});
+
+// ---- HTML (docs/plans/clipboard.md §3.2, §4.3).
+
+test("HTML, guest to host: written with its text as one ClipboardItem, the HTML requested at the write; its text's hash stands for it (not offered back); without ClipboardItem writes, the text alone; HTML that doesn't come is the text's, escaped", async () => {
+  const { link, deliver, take } = fakeLink(IMAGES);
+  const { host, writes } = imageHost();
+  const share = new ClipboardShare(link, host);
+  const written: string[] = [];
+  share.onWritten = (s) => written.push(s);
+  deliver(FRAME.OFFER, encodeOffer({ serial: 1, types: [{ type: TEXT, size: 4 }, { type: HTML, size: UNKNOWN }], inline: utf8('bold') }));
+  const [r] = requests(take(FRAME.REQUEST));
+  assert.deepEqual({ serial: r.serial, type: r.type }, { serial: 1, type: HTML }, 'the text inline: only the HTML requested');
+  answerAll(deliver, take, r.id, utf8('<b>bold</b>'));
+  await until(() => writes.length === 1, 'the item written');
+  assert.deepEqual(Object.keys(writes[0]).sort(), ['text/html', 'text/plain']);
+  assert.equal(await writes[0]['text/html'].text(), '<b>bold</b>');
+  assert.equal(await writes[0]['text/plain'].text(), 'bold');
+  await until(() => written.length === 1, 'onWritten');
+  assert.deepEqual(written, ['bold']);
+  // A focus read of it (with the permission): the guest's own, not offered back.
+  share.setPermission('granted');
+  await share.focused();
+  await quiet();
+  assert.deepEqual(take(FRAME.OFFER), [], "the guest's HTML offered back");
+  // Long text and HTML: both requested; HTML that fails is the text's, escaped.
+  deliver(FRAME.OFFER, encodeOffer({ serial: 2, types: [{ type: TEXT, size: UNKNOWN }, { type: HTML, size: UNKNOWN }] }));
+  const rs = requests(take(FRAME.REQUEST));
+  assert.deepEqual(rs.map((x) => x.type).sort(), [HTML, TEXT].sort());
+  answerAll(deliver, take, rs.find((x) => x.type === TEXT)!.id, utf8('a < b'));
+  deliver(FRAME.DATA, encodeData(rs.find((x) => x.type === HTML)!.id, DATA_FAIL));
+  await until(() => writes.length === 2, 'the item written without the HTML');
+  assert.equal(await writes[1]['text/html'].text(), 'a &lt; b', 'the text, escaped');
+  // HTML past the cap by its size: the text alone (writeText).
+  deliver(FRAME.OFFER, encodeOffer({ serial: 3, types: [{ type: TEXT, size: 2 }, { type: HTML, size: TEXT_CAP + 1 }], inline: utf8('hi') }));
+  await until(() => Object.keys(host.clip).join() === 'text/plain', 'the text alone');
+  assert.equal(await host.clip['text/plain'].text(), 'hi');
+  assert.deepEqual(take(FRAME.REQUEST), []);
+  // A browser without ClipboardItem writes: the text alone.
+  const plain = fakeLink(IMAGES);
+  const f = fakeHost();
+  new ClipboardShare(plain.link, f.host);
+  plain.deliver(FRAME.OFFER, encodeOffer({ serial: 1, types: [{ type: TEXT, size: 2 }, { type: HTML, size: UNKNOWN }], inline: utf8('ok') }));
+  await quiet();
+  assert.deepEqual(f.written, ['ok']);
+  assert.deepEqual(plain.take(FRAME.REQUEST), []);
+});
+
+test("HTML, host to guest: offered after the text (and the image), answered when the agent requests it; the paste chord's HTML too; never alone, nor past the cap; the same text with other HTML is the same content", async () => {
+  const { link, sent, deliver, take } = fakeLink(IMAGES);
+  const { host } = imageHost();
+  host.changeEvents = true;
+  const share = new ClipboardShare(link, host);
+  host.clip = { 'text/plain': new Blob(['hello'], { type: 'text/plain' }), 'text/html': new Blob(['<i>hello</i>'], { type: HTML }) };
+  share.setPermission('granted');
+  await until(() => sent.some((f) => f.type === FRAME.OFFER), "the sync's offer");
+  const o = decodeOffer(take(FRAME.OFFER)[0].payload)!;
+  assert.deepEqual(o.types, [{ type: TEXT, size: 5 }, { type: HTML, size: 12 }]);
+  deliver(FRAME.REQUEST, encodeRequest({ serial: o.serial, id: 40, type: HTML }));
+  const [d] = take(FRAME.DATA).map((x) => decodeData(x.payload)!);
+  assert.equal(d.flags, DATA_END);
+  assert.equal(new TextDecoder().decode(d.bytes), '<i>hello</i>');
+  // Other HTML for the same text: the same content, not offered again.
+  host.clip = { 'text/plain': new Blob(['hello'], { type: 'text/plain' }), 'text/html': new Blob(['<b>hello</b>'], { type: HTML }) };
+  share.clipboardChanged();
+  await quiet();
+  assert.deepEqual(take(FRAME.OFFER), []);
+  // The paste chord's HTML, beside its text; with an image, after it.
+  const chord = { key: 'v', code: 'KeyV', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false };
+  let held = share.chord(chord)!;
+  share.pasted('pasted', undefined, '<p>pasted</p>');
+  await held;
+  assert.deepEqual(take(FRAME.OFFER).map((x) => decodeOffer(x.payload)!.types), [[{ type: TEXT, size: 6 }, { type: HTML, size: 13 }]]);
+  held = share.chord(chord)!;
+  share.pasted('', new Blob([PNG_BYTES], { type: PNG }), '<img>');
+  await held;
+  assert.deepEqual(take(FRAME.OFFER).map((x) => decodeOffer(x.payload)!.types.map((t) => t.type)), [[PNG, HTML]]);
+  // Never alone; past the cap, the text without it.
+  await share.paste({ html: '<p>alone</p>' }, true);
+  assert.deepEqual(take(FRAME.OFFER), []);
+  await share.paste({ text: 'small', html: 'x'.repeat(TEXT_CAP + 1) }, true);
+  assert.deepEqual(take(FRAME.OFFER).map((x) => decodeOffer(x.payload)!.types.map((t) => t.type)), [[TEXT]]);
 });

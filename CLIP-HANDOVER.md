@@ -41,10 +41,23 @@ screen** in the menu (3D: the GPU worker's `grab`; 2D: the display port's `png`)
 back, the cap). Measured: a 1.58 MB PNG from the host to wl-paste in 1.9–2.0 s (~0.8 MB/s, the channel's rate under
 the credit); planted bugs: docs/testing.md's step-5 row.
 
-## Next: step 5's X11, then `text/html`
+**Step 5's X11 and `text/html` done** (2026-11-06; plan §3.2 "Built (step 5)", devices.md "The guest's agent" X11,
+frontend.md "The toolbar"): `agent/src/x11.rs`, a hand-written X11 client the session child uses where Wayland has no
+data-control (no compositor, or one without either manager): the display from the session file's `DISPLAY=` or the
+user's processes, the cookie from `-auth`/`XAUTHORITY`/`~/.Xauthority`, XFixes on CLIPBOARD, conversions and our
+source as pipes (so the rest of session.rs is shared), INCR both ways, a window per conversion (xclip's INCR is per
+requestor window). The unit binds `/tmp/.X11-unix` into its private /tmp read-only. HTML both ways on Wayland and X11
+(the page: `text/html` beside the text or image, one `ClipboardItem`, not in the hashes). The setting's note has the
+X11 sentence. The test image (images/debian-sway) gained xvfb, xauth, xclip and an X login behind `/tmp/x11`. Tests:
+`agent/src/x11_test.rs` (Xvfb + xclip natively), the wire format's unit tests in x11.rs, `sway_test.rs` (HTML),
+`tests/agent.test.ts` (HTML), `tests/page-clipboard-x11.test.ts` (Debian, `ci-debian.sh --platform`). Binary 443,936
+bytes (+36.7 KiB for X11 and HTML). Planted bugs: docs/testing.md's X11 row.
 
-Plan §3.2 "X11" and §6 step 5: Xwayland and Xorg sessions (the sandbox's `PrivateTmp`/`PrivateNetwork` hide the
-sockets: the plan says what to measure), INCR for large images; then `text/html`.
+## Next: step 6 (optional) or the track's end
+
+Plan §6 step 6 is optional (spice-vdagent's port, GNOME through the portal, agent jobs: each needs the user's OK).
+Otherwise the track's end: the out-of-context review of steps 5's images, X11 and HTML (mid-track rule: X11 is a new
+subsystem), then the end's docs (`docs/clipboard.md`, plan §6 "When it ends").
 
 ## Open questions and left for the user
 
@@ -72,7 +85,7 @@ sockets: the plan says what to measure), INCR for large images; then `text/html`
   form), the Mac's pasteboard with images, and the Arch desktop (Firefox's and foot's image copies, GIMP) are by hand.
   Copy the screen is tested on Buildroot's framebuffer and on the page test's default display (3D where WebGL2 is,
   `WEBPC_PAGE_QUERY=gpu=2d` for virtio-gpu 2D's scanout path): which one ci-debian ran wasn't checked.
-- **The binary's size**: 407,200 bytes now (333 KiB at step 2, 403,000 at step 3): `#![no_std]` on rustix's runtime is still the lever
+- **The binary's size**: 443,936 bytes now (333 KiB at step 2, 403,000 at step 3, 407,200 with images): `#![no_std]` on rustix's runtime is still the lever
   (plan §3.3), not done.
 - **Not done from §3.3:** `splice` between the port and the pipes (the child reads and writes in 64 KiB chunks; the
   port's bytes cross the parent anyway); cancelling a page→guest answer that the guest's reader dropped is a MORE 0 the
@@ -81,6 +94,9 @@ sockets: the plan says what to measure), INCR for large images; then `text/html`
   truncated, with no way to say "failed" through a pipe.
 - **TYPE under a headless compositor** (the Debian sway test's: no DRM, so tty1 stays `KD_TEXT`) is typed into tty1's
   input like any typeahead; only a compositor on the VT (graphics mode) is refused.
+- **X11 not measured outside Xvfb:** a display manager's session (`TYPE=x11`, its cookie written late: the 25
+  retries cover 5 s), Xorg through startx, and Xwayland under a compositor without data-control are by hand (natively,
+  a fake compositor without data-control gives way to Xvfb). PRIMARY isn't shared. `STRING` goes out as UTF-8.
 - **Two compositors for one user** (two VTs with sway each): the child takes the first `wayland-<n>` that accepts; which
   socket belongs to the active session isn't known without reading the session's processes' environment.
 - **sway restarts at boot, seen twice:** in two runs the first sway of the boot ended within seconds and getty logged
@@ -98,7 +114,7 @@ sockets: the plan says what to measure), INCR for large images; then `text/html`
   own echo while it is typed (page-agent's slow reader did, and its long paste raced the reader's start: the first line
   lost, deterministically with step 3's agent). Keep `>>` out of such commands (`tee -a`).
 - The unit's root has only `CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_KILL`: no DAC override, so whatever it reads of a
-  user's it must reach by `stat` or as the child. X11 (step 5) needs `/tmp/.X11-unix`, which `PrivateTmp=yes` hides.
+  user's it must reach by `stat` or as the child. X11 reaches `/tmp/.X11-unix` through `BindReadOnlyPaths=`.
 - Planted bugs (all caught): the agent's echo rule, the DATA credit, its own selection offered back, PAUSE leaving the
   host's text, the cache, the host's hash, a greeter's session taken, strings without their NUL (cargo test); the page's
   echo rule, its MOREs, its credit, Cmd+V (tests/agent.test.ts); a held key's preventDefault (the page test); the

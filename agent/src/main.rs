@@ -3,7 +3,8 @@
 //! process holds the agent's port: it answers the page's HELLO, pastes TYPE's text on the foreground text console
 //! (src/console.rs), holds PAUSE until RESUME, and follows the active session on seat0 through logind's files
 //! (src/logind.rs). For that session's user it forks a child (no exec) that drops to the user's ids before it reads
-//! anything from the display, and shares the user's Wayland clipboard (src/session.rs); the clipboard's frames pass
+//! anything from the display, and shares the user's Wayland clipboard (src/session.rs), or the X server's where Wayland
+//! has no data-control (src/x11.rs); the clipboard's frames pass
 //! between the port and the child's socketpair. One thread in each process, blocked in `ppoll` with no timeout but
 //! while a paste is being typed (TYPE's text goes in bursts as the console's reader takes it, `console::Typist`, and
 //! the loop serves the rest meanwhile): an idle guest sees no CPU time from either (plan §3.3). The page hears what
@@ -21,6 +22,9 @@ mod session;
 #[cfg(test)]
 mod sway_test;
 mod wire;
+mod x11;
+#[cfg(test)]
+mod x11_test;
 
 use rustix::event::{PollFd, PollFlags, poll};
 use rustix::fd::{AsRawFd, OwnedFd, RawFd};
@@ -280,7 +284,12 @@ impl Agent {
             if rustix::process::getppid().is_none_or(|p| p.as_raw_nonzero().get() == 1) {
                 std::process::exit(0);
             }
-            session::run(theirs, a.runtime, base);
+            let at = session::Where {
+                runtime: a.runtime,
+                x11: session::X11_DIR.into(),
+                display: a.display,
+            };
+            session::run(theirs, at, base);
         }
         drop(theirs);
         self.started(Pid::from_raw(pid), mine, a);

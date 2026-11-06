@@ -1,6 +1,6 @@
 //! The active session on seat0, from logind's state files (docs/plans/clipboard.md §3.2), without D-Bus:
 //! `/run/systemd/seats/seat0` says `ACTIVE=<session id>`, and `/run/systemd/sessions/<id>` the session's `UID=` and
-//! `CLASS=`. logind writes each file whole and renames it into place, so the agent watches both directories for
+//! `CLASS=` (and an X11 session's `DISPLAY=`, the display a session child looks for first: src/x11.rs). logind writes each file whole and renames it into place, so the agent watches both directories for
 //! IN_MOVED_TO and IN_DELETE (not IN_CREATE, which its temporary files would wake it for). Whatever the session's
 //! TYPE (a user who logs in on a tty and runs sway has `TYPE=tty`), its user's runtime directory is where a display's
 //! socket is: `/run/user/<uid>`, once the user's tmpfs is mounted there (owned by the user), which the agent learns
@@ -38,6 +38,8 @@ pub struct Active {
     pub uid: u32,
     pub gid: u32,
     pub runtime: String,
+    /// The session file's `DISPLAY=` (a display manager's X11 session), as its number.
+    pub display: Option<u32>,
 }
 
 /// A `KEY=value` file's value for `key`.
@@ -73,7 +75,9 @@ pub fn valid_id(name: &str) -> bool {
 pub fn active(p: &Paths) -> Option<Active> {
     let seat = read_to_string(format!("{}/seat0", p.seats)).ok()?;
     let session = seat_active(&seat)?.to_owned();
-    let uid = session_uid(&read_to_string(format!("{}/{session}", p.sessions)).ok()?)?;
+    let file = read_to_string(format!("{}/{session}", p.sessions)).ok()?;
+    let uid = session_uid(&file)?;
+    let display = value(&file, "DISPLAY").and_then(crate::x11::display_number);
     let runtime = format!("{}/{uid}", p.users);
     // A stat, not an open: the directory is the user's alone (0700), and the agent's root has no CAP_DAC_OVERRIDE
     // (its unit's bounding set).
@@ -84,6 +88,7 @@ pub fn active(p: &Paths) -> Option<Active> {
         uid,
         gid: st.st_gid,
         runtime,
+        display,
     })
 }
 
@@ -131,6 +136,13 @@ mod tests {
             None
         );
         assert_eq!(session_uid("USER=x\n"), None);
+        // An X11 session's display (lightdm's: TYPE=x11, DISPLAY=:0).
+        let x = session.replace("TYPE=tty", "TYPE=x11\nDISPLAY=:0");
+        assert_eq!(
+            value(&x, "DISPLAY").and_then(crate::x11::display_number),
+            Some(0)
+        );
+        assert_eq!(value(session, "DISPLAY"), None);
         // `ACTIVE=` isn't `ACTIVE_UID=`.
         assert_eq!(value("ACTIVE_UID=5\nACTIVE=c2\n", "ACTIVE"), Some("c2"));
         assert!(valid_id("c12") && !valid_id("3.ref") && !valid_id(".#seat0abc") && !valid_id(""));

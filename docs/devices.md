@@ -131,8 +131,9 @@ gone with the unit), waits for udev's link (`udevadm wait`) and `exec`s it. `Nic
 `OOMScoreAdjust=500`, `Restart=on-failure` (`RestartSec=5s`) under a start limit it can reach, 5 starts in 10
 minutes (`StartLimitIntervalSec=`, `StartLimitBurst=`: systemd's default, 5 in 10 s, starts 5 s apart never reach,
 and a failure that lasts would restart for the boot, each start reading the binary out of fw_cfg again, 1.3 s of a
-vCPU); sandboxed (`ProtectSystem=strict`, `ProtectHome=read-only`, private /tmp
-and network, `RestrictAddressFamilies=AF_UNIX`, the kernel's tunables, modules, logs and clock protected, …:
+vCPU); sandboxed (`ProtectSystem=strict`, `ProtectHome=read-only`, private /tmp (with the host's `/tmp/.X11-unix`
+bound in read-only, `BindReadOnlyPaths=-`: an X session's socket, where a session child connects; `PrivateNetwork`
+hides the abstract sockets) and network, `RestrictAddressFamilies=AF_UNIX`, the kernel's tunables, modules, logs and clock protected, …:
 `systemd-analyze security` 3.7, "OK") with the capabilities it needs: `CAP_SYS_ADMIN` for
 TIOCSTI, `CAP_SETUID` and `CAP_SETGID` for the session children (no `NoNewPrivileges`), `CAP_KILL` to stop one (the
 user's process by then); no DAC override.
@@ -166,9 +167,42 @@ given up after them); it comes and goes
 with the compositor. Its Wayland client is written by hand (`agent/src/wire.rs`: the header, uint/object/new_id,
 strings, `SCM_RIGHTS` for the pipes): `wl_display.get_registry` and a `sync`; when the callback is done, it binds the
 first `wl_seat` (v1) and `ext_data_control_manager_v1` if the compositor has it, else `zwlr_data_control_manager_v1`
-(v1; their messages are the same), and gets the seat's data device; without either it logs once and idles. Object ids
-are never reused (a destroyed source is kept until `delete_id`, so a late `send`'s descriptor is still taken and
-closed).
+(v1; their messages are the same), and gets the seat's data device; without either it logs once and turns to X11
+(below). Object ids are never reused (a destroyed source is kept until `delete_id`, so a late `send`'s descriptor is
+still taken and closed).
+
+**X11** (`agent/src/x11.rs`, by hand: the core protocol, little-endian, no Xlib, xcb or x11rb) is the child's way where
+the session has no compositor, or one without data-control (its registry's roundtrip came without either manager);
+where data-control exists, Wayland's way stays, and an X connection gives way to a compositor's data device (the
+compositor syncs Xwayland's selection with its own). The child watches X11's sockets' directory, `/tmp/.X11-unix`
+(inotify `IN_CREATE`; the unit's bind of it), and takes **the session's display**: the one its session file names
+(`DISPLAY=`, a display manager's X11 session: logind's `DISPLAY=`, which the parent passes), else a socket `X<n>`
+that a process of the user's names (its `DISPLAY`, or an argument `:<n>` as a server's command line has it: Xorg's
+from startx, Xvfb's, Xwayland's; `/proc/<pid>/cmdline` and `environ`, read as the user, at each socket's coming).
+**The cookie** (`MIT-MAGIC-COOKIE-1`) comes from the server's `-auth` file, a process's `XAUTHORITY`, or the
+`.Xauthority` of a process's `HOME` or of the user's home (`/etc/passwd`): the entry for the display's number, this
+host's first, else any local one, else a wildcard; none if none has one (a server without access control: Xwayland
+under sway). A server that refuses the setup (the cookie not there yet) is tried again by the 25 retries, then left
+until its socket comes again. The connection: the setup, the atoms it knows types by (interned: the text's names,
+the images', `text/html`), XFixes' `QueryVersion` and `SelectSelectionInput` on **CLIPBOARD** (PRIMARY isn't
+shared), seven InputOnly windows (one owns the selection; one for each of six conversions at once, since an owner
+keeps one transfer per requestor window, as xclip's INCR does), and `GetSelectionOwner` (the owner when the watch
+began), after which SESSION. A new owner (XFixes' SelectionNotify; its window destroyed or its client gone: no owner)
+is a new offer, whose `TARGETS` are converted: the names known are its types, as a Wayland offer's. A **conversion**
+is a pipe, as Wayland's `receive`: ConvertSelection to a conversion window's property (with the owner's selection
+time), and at its SelectionNotify `GetProperty` in 64 KiB pieces from its offset (deleted with the last), the next
+asked only once the pipe took the last; an `INCR` property is read chunk by chunk as each new value comes
+(PropertyNotify), until an empty one; a reader that goes during INCR leaves the transfer read to its end into nothing
+(its owner waits for each chunk to be taken). **Our source**: `SetSelectionOwner`, then `GetSelectionOwner` says
+whether it took (ACK `HELD`); a SelectionRequest for a type the page's offer has (the text as `UTF8_STRING`,
+`text/plain;charset=utf-8`, `text/plain`, `TEXT`, answered as `UTF8_STRING`, and `STRING`, UTF-8 too; `text/html`;
+`image/png`) gives a pipe the paste fills as Wayland's `send` does, and the requestor's property gets its bytes
+whole if they fit under the server's largest request (at most 256 KiB), else by **INCR** (the size so far, then
+64 KiB values, each once the requestor deleted the last, and an empty one); `TARGETS` and `TIMESTAMP` are answered at
+once, `MULTIPLE` and other types refused. At most eight transfers to requestors at once (the oldest goes: a requestor
+gone mid-INCR leaves one behind). SelectionClear (another program copied) drops the source. The native tests
+(`agent/src/x11_test.rs`) run it against an Xvfb of their own with xclip; `tests/page-clipboard-x11.test.ts` against
+the Debian test image's Xvfb session.
 
 - **The guest's selection** (`selection` with a guest program's offer, not ours) with a text type (`clip::pick_text`:
   `text/plain;charset=utf-8`, then `UTF8_STRING`, `text/plain`, `STRING`/`TEXT`/`text`) is read at once up to 4 KiB and 1
@@ -185,14 +219,17 @@ closed).
   its bytes are read (`receive` of that type) only for a REQUEST of it, streamed within the credit as text is, at most
   64 MiB (`clip::IMAGE_CAP`, counted as they cross; the text's cap 16 MiB). An image alone is offered at once; with
   text, once the text's first bytes are read (the host's own text with an image: the image alone). Nothing of an image
-  is kept or hashed: the agent holds none.
-- **The page's OFFER** of text (`text/plain;charset=utf-8` or `text/plain`) and/or an image (`image/png`), each against
+  is kept or hashed: the agent holds none. **HTML** (`text/html`, plan §3.2) joins the OFFER after them in the same
+  way (unknown size, read only for a REQUEST of it, within text's cap; alone, offered at once; never hashed: the
+  text stands for the content in the echo rule, so HTML beside the host's own text back isn't offered either).
+- **The page's OFFER** of text (`text/plain;charset=utf-8` or `text/plain`), an image (`image/png`) and HTML
+  (`text/html`), any of them, each against
   its cap by the offer's size before any bytes cross (a type past it left out; none left: ACK `TOO_LARGE`; neither type:
   `NO_TYPE`), becomes a data source of ours offering `text/plain;charset=utf-8`, `text/plain`, `UTF8_STRING`, `TEXT`,
-  `STRING` and `text` for the text and `image/png` for the image, set as the selection, then a `sync`: its callback's
+  `STRING` and `text` for the text, `text/html` for the HTML and `image/png` for the image, set as the selection, then a `sync`: its callback's
   done sends ACK `HELD` (the page's paste chord waits for it). A guest program's paste (`send` with a pipe and the type
   it asks) gets the text's bytes from the cache (inline ones, or ones that crossed whole, up to 64 KiB) or a REQUEST to
-  the page, an image's always from a REQUEST (never cached), the page's DATA written into the pipe (nonblocking) and a
+  the page, an image's and HTML's always from a REQUEST (never cached), the page's DATA written into the pipe (nonblocking) and a
   MORE for each frame written whole; a reader that closes early gets the page a MORE 0; a type the source hasn't gets
   its pipe closed. `cancelled` (another program copied) drops the source.
 - **PAUSE**: the source's selection cleared (`set_selection(null)`) and the source destroyed, so a paste can't pull

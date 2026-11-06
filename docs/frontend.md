@@ -217,8 +217,10 @@ on the name). What the page does with it:
 - **Sync** (way 1): while the permission is `granted`, a focus of the page (`focus`, `visibilitychange` to visible,
   only while `document.hasFocus()`), the agent's HELLO and SESSION (the guest's clipboard changed hands) and the
   permission's becoming `granted` read the host's clipboard (`readText`; `read()` too after an empty one or a
-  `clipboardchange`, for the types and a PNG) and offer it to the guest (text and an image in one OFFER, the text
-  inline when short) if it changed since the page last knew it or the guest isn't known to have it; where
+  `clipboardchange`, for the types, a PNG and `text/html`) and offer it to the guest (text, an image and HTML in one
+  OFFER, the text inline when short; HTML only beside the text or the image, as Chromium sanitised it, and not in the
+  hashes: the same text with other HTML is the same content) if it changed since the page last knew it or the guest
+  isn't known to have it; where
   `clipboardchange` exists (Chromium 155 has it), a focus reads only after one (or after HELLO, SESSION, the port's
   opening), and the event reads at once. Never a read while it is `prompt` but on the user's clicks above.
 - **The guest's copies** (§4.2): written at once while the document has focus; otherwise (or refused: Firefox wants
@@ -227,7 +229,10 @@ on the name). What the page does with it:
   capture); a paste chord drops it instead. One with an image (§4.4) is written as one `ClipboardItem` of promises:
   its bytes requested from the guest at the write, a type other than PNG converted in a worker (`web/app/png.ts`
   `toPng`: `createImageBitmap`, `OffscreenCanvas`, `convertToBlob`; Chromium refuses to write `image/jpeg`, measured),
-  its text in the same item; a pending image is the guest's offer, not its bytes. After the write the clipboard is read
+  its text in the same item; one with HTML (plan §3.2) the same way, its text and HTML (and image) in one item, the
+  HTML requested at the write (HTML that doesn't come is the text's, escaped: the rest is written all the same; with no
+  image, the text's hash is the guest's, as `writeText`'s); a pending image or HTML is the guest's offer, not its
+  bytes. Without `ClipboardItem` writes, the text alone. After the write the clipboard is read
   back once (with the permission and focus): Chromium re-encodes the PNG it writes (measured: 3142 bytes written, 2630
   read, the same at each read, and the paste event's `File` the same bytes as `read()`), so that hash stands for the
   guest's image and the next sync doesn't send it back.
@@ -235,7 +240,7 @@ on the name). What the page does with it:
   `readText` asks `read()` for the types, and `EMPTY_RUN` (3) empties in a row while the types say text stop the
   focus reads for the run (the menu says why); refusals are silent.
 - A paste chord right after a sync of the same text waits for that offer's ACK instead of offering it again; the
-  chord's `paste` event gives the text and a PNG `File` among its items, offered together.
+  chord's `paste` event gives the text, a PNG `File` among its items and `text/html`, offered together.
 
 ### Icons
 

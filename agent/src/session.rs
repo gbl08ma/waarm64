@@ -3,14 +3,20 @@
 //! (`ext_data_control_manager_v1`, or `zwlr_data_control_manager_v1` where there is no ext one: the two protocols'
 //! messages are the same), a client written by hand (src/wire.rs). It finds the compositor's socket in the user's
 //! runtime directory, watched with inotify (a user starts sway from a tty long after the agent starts), and comes and
-//! goes with it. Its frames go to the page through the parent, over a socketpair, in the port's own format.
+//! goes with it. Where there is no compositor, or one without data-control, it shares the X server's CLIPBOARD
+//! instead (src/x11.rs: an Xorg session, or Xwayland under such a compositor), the display's socket watched in
+//! `/tmp/.X11-unix` the same way; where data-control exists, Wayland's way stays (the compositor syncs Xwayland's
+//! selection with its own). Its frames go to the page through the parent, over a socketpair, in the port's own format.
+//!
+//! The two ways are one to the rest of this file: a guest program's selection is an offer with types, read through a
+//! pipe (X11's conversions are pipes too, src/x11.rs); our source's bytes go into a pipe a paste reads.
 //!
 //! - **Guest to host:** a guest program's selection with text becomes an OFFER. Its first 4 KiB are read at once:
 //!   text that fits goes inline (`clip::INLINE`), unless it is what the host last gave (echo suppression: its hash);
 //!   longer text is offered without bytes and read when the page sends a REQUEST, in DATA frames as the page's MOREs
 //!   allow. An image (`clip::pick_image`: PNG first, else a type the page converts) joins the OFFER as its program's
-//!   type, never read but for a REQUEST (plan §4.4: the agent holds no image).
-//! - **Host to guest:** the page's OFFER (text, `image/png`, or both, each within its cap by the offer's size) becomes a
+//!   type, never read but for a REQUEST (plan §4.4: the agent holds no image). Its HTML too (`text/html`, after them).
+//! - **Host to guest:** the page's OFFER (text, `image/png`, `text/html`, or several, each within its cap by the offer's size) becomes a
 //!   data source of ours, set as the selection; ACK says so once the compositor has it. A guest program's paste
 //!   (`send`) streams the page's DATA into its pipe, requested each time but for text of 64 KiB or less, kept once it
 //!   has crossed (`clip::CACHE`; an image never). Our own source's selection isn't offered back.
@@ -28,6 +34,7 @@ use crate::clip::{self, Hash};
 use crate::frame::{self, ack};
 use crate::log;
 use crate::wire::{Args, Conn, Msg};
+use crate::x11::{self, X};
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::fd::{AsRawFd, OwnedFd, RawFd};
 use rustix::fs::inotify::{self, CreateFlags, ReadFlags, WatchFlags};
@@ -123,6 +130,8 @@ struct Wl {
     device: Option<u32>,
     /// The guest's selection (a guest program's offer), not ours.
     selection: Option<u32>,
+    /// The first roundtrip came: the globals are known (with no data-control among them, X11's way is tried).
+    inited: bool,
 }
 
 impl Wl {
@@ -160,6 +169,7 @@ struct Guest {
     /// as it is).
     text: Option<String>,
     image: Option<String>,
+    html: Option<String>,
 }
 
 /// The first bytes of the guest's selection's text, being read for its OFFER (with its image's type, if it has one).
@@ -168,17 +178,20 @@ struct Probe {
     offer: u32,
     mime: String,
     image: Option<String>,
+    html: Option<String>,
     fd: OwnedFd,
     buf: Vec<u8>,
 }
 
-/// The page's offer, as our source in the guest's clipboard: text (the page's type for it), an image (`image/png`), or
-/// both.
+/// The page's offer, as our source in the guest's clipboard: text (the page's type for it), an image (`image/png`), HTML,
+/// or several.
 struct Host {
     serial: u32,
+    /// Its source: a Wayland object's id, or X11's (src/x11.rs `own`).
     source: u32,
     text: Option<String>,
     image: bool,
+    html: bool,
     /// Its text once it crossed whole (up to `clip::CACHE`), or inline; images are never kept.
     cache: Option<Vec<u8>>,
 }
@@ -221,15 +234,38 @@ impl Xfer {
     }
 }
 
+/// Where a session's displays are: its runtime directory (Wayland's sockets), X11's sockets' directory (empty: none),
+/// and the display its session file names (`DISPLAY=`, an X11 session's).
+pub struct Where {
+    pub runtime: String,
+    pub x11: String,
+    pub display: Option<u32>,
+}
+
+/// X11's sockets.
+pub const X11_DIR: &str = "/tmp/.X11-unix";
+
 struct Child {
     parent: OwnedFd,
     pin: frame::Reader,
     pout: Vec<u8>,
     runtime: String,
     ino: OwnedFd,
+    /// The runtime directory's watch, and X11's sockets' (None: no such directory).
+    run_wd: i32,
+    x_wd: Option<i32>,
     wl: Option<Wl>,
     /// Tries left at a socket that refused.
     retries: u32,
+    /// The X server's connection, where Wayland has no data-control.
+    x: Option<X>,
+    x11: String,
+    x_hint: Option<u32>,
+    xretries: u32,
+    /// Displays whose servers refused us (a cookie not found yet): tried again only by the retries, or once their
+    /// socket comes again.
+    x_refused: Vec<u32>,
+    uid: u32,
     paused: bool,
     next: u32,
     guest: Option<Guest>,
@@ -250,11 +286,14 @@ enum Tag {
     Ino,
     Wl,
     Probe,
+    X,
+    /// A pipe of X11's transfers (src/x11.rs), by its descriptor.
+    XPipe(RawFd),
     /// A transfer, by its descriptor (transfers come and go while the events of one poll are handled).
     Xfer(RawFd),
 }
 
-fn nonblocking(fd: &OwnedFd) {
+pub fn nonblocking(fd: &OwnedFd) {
     if let Ok(f) = fcntl_getfl(fd) {
         let _ = fcntl_setfl(fd, f | OFlags::NONBLOCK);
     }
@@ -268,8 +307,8 @@ fn pipe() -> Option<(OwnedFd, OwnedFd)> {
 
 /// Serves the session's clipboard over `parent` until the parent goes or the runtime directory does. `base`: where its
 /// serials and request ids start, so that a later child's don't meet an earlier one's in the page.
-pub fn run(parent: OwnedFd, runtime: String, base: u32) -> ! {
-    match serve(parent, runtime, base) {
+pub fn run(parent: OwnedFd, at: Where, base: u32) -> ! {
+    match serve_at(parent, at, base) {
         Ok(why) => {
             log(why, None);
             std::process::exit(0)
@@ -281,29 +320,67 @@ pub fn run(parent: OwnedFd, runtime: String, base: u32) -> ! {
     }
 }
 
-/// `run`'s loop, which returns why it ended (the tests run it on a thread of theirs).
+/// `run`'s loop, which returns why it ended (the tests run it on a thread of theirs): Wayland's only (no X11
+/// directory).
+#[cfg(test)]
 pub fn serve(
     parent: OwnedFd,
     runtime: String,
     base: u32,
 ) -> Result<&'static str, (&'static str, Errno)> {
+    serve_at(
+        parent,
+        Where {
+            runtime,
+            x11: String::new(),
+            display: None,
+        },
+        base,
+    )
+}
+
+/// `run`'s loop, at `at`.
+pub fn serve_at(
+    parent: OwnedFd,
+    at: Where,
+    base: u32,
+) -> Result<&'static str, (&'static str, Errno)> {
     nonblocking(&parent);
     let ino = inotify::init(CreateFlags::CLOEXEC | CreateFlags::NONBLOCK)
         .map_err(|e| ("session: inotify", e))?;
-    inotify::add_watch(
+    let run_wd = inotify::add_watch(
         &ino,
-        runtime.as_str(),
+        at.runtime.as_str(),
         WatchFlags::CREATE | WatchFlags::MOVED_TO | WatchFlags::DELETE_SELF | WatchFlags::ONLYDIR,
     )
     .map_err(|e| ("session: can't watch the runtime directory", e))?;
+    // X11's sockets, if the directory is there (the unit binds it into its private /tmp).
+    let x_wd = if at.x11.is_empty() {
+        None
+    } else {
+        inotify::add_watch(
+            &ino,
+            at.x11.as_str(),
+            WatchFlags::CREATE | WatchFlags::MOVED_TO | WatchFlags::ONLYDIR,
+        )
+        .ok()
+    };
     let mut c = Child {
         parent,
         pin: frame::Reader::default(),
         pout: Vec::new(),
-        runtime,
+        runtime: at.runtime,
         ino,
+        run_wd,
+        x_wd,
         wl: None,
         retries: 0,
+        x: None,
+        x11: at.x11,
+        x_hint: at.display,
+        xretries: 0,
+        x_refused: Vec::new(),
+        uid: rustix::process::getuid().as_raw(),
         paused: false,
         next: base,
         guest: None,
@@ -315,6 +392,7 @@ pub fn serve(
         stop: None,
     };
     c.connect(true);
+    c.x_try(true, false);
     loop {
         c.flush();
         if let Some(why) = c.stop.take() {
@@ -340,6 +418,19 @@ pub fn serve(
             fds.push(PollFd::new(&wl.conn.fd, f));
             tags.push(Tag::Wl);
         }
+        if let Some(x) = &c.x {
+            let f = if x.pending() {
+                PollFlags::IN | PollFlags::OUT
+            } else {
+                PollFlags::IN
+            };
+            fds.push(PollFd::new(&x.fd, f));
+            tags.push(Tag::X);
+            for (fd, f) in x.polls() {
+                tags.push(Tag::XPipe(fd.as_raw_fd()));
+                fds.push(PollFd::from_borrowed_fd(fd, f));
+            }
+        }
         if let Some(p) = &c.probe {
             fds.push(PollFd::new(&p.fd, PollFlags::IN));
             tags.push(Tag::Probe);
@@ -355,12 +446,22 @@ pub fn serve(
             fds.push(PollFd::new(x.fd(), f));
             tags.push(Tag::Xfer(x.fd().as_raw_fd()));
         }
-        let timeout = (c.wl.is_none() && c.retries > 0).then_some(&RETRY);
+        let (wl_retry, x_retry) = (
+            c.wl.is_none() && c.retries > 0,
+            c.x.is_none() && c.xretries > 0,
+        );
+        let timeout = (wl_retry || x_retry).then_some(&RETRY);
         match poll(&mut fds, timeout) {
             Ok(0) => {
                 drop(fds);
-                c.retries -= 1;
-                c.connect(false);
+                if wl_retry {
+                    c.retries -= 1;
+                    c.connect(false);
+                }
+                if x_retry {
+                    c.xretries -= 1;
+                    c.x_try(false, true);
+                }
                 continue;
             }
             Ok(_) | Err(Errno::INTR) => {}
@@ -378,6 +479,14 @@ pub fn serve(
                 Tag::Ino => c.inotify(),
                 Tag::Wl => c.display_input(revents),
                 Tag::Probe => c.probe(),
+                Tag::X => c.x_input(revents),
+                Tag::XPipe(fd) => {
+                    let mut evs = Vec::new();
+                    if let Some(x) = c.x.as_mut() {
+                        x.pipe_ready(fd, &mut evs);
+                    }
+                    c.x_events(evs);
+                }
                 Tag::Xfer(fd) => {
                     if let Some(i) = c.xfers.iter().position(|x| x.fd().as_raw_fd() == fd)
                         && !c.transfer(i)
@@ -437,6 +546,14 @@ impl Child {
         if failed {
             self.disconnect("the compositor's connection failed");
         }
+        if let Some(x) = &mut self.x
+            && let Err(e) = x.flush()
+        {
+            self.x_disconnect(&format!(
+                "the X server's connection failed (errno {})",
+                e.raw_os_error()
+            ));
+        }
     }
 
     /// Connects to the first compositor's socket in the runtime directory that takes it. `arm`: a socket that refuses
@@ -482,6 +599,7 @@ impl Child {
                         manager: None,
                         device: None,
                         selection: None,
+                        inited: false,
                     };
                     let registry = wl.id(Obj::Registry);
                     wl.msg(DISPLAY, op::GET_REGISTRY).object(registry).done();
@@ -506,28 +624,176 @@ impl Child {
             log(&format!("session: {why}"), None);
             if wl.device.is_some() {
                 self.changed_hands();
+                self.host = None;
+                self.guest = None;
+                self.probe = None;
             }
         }
-        self.host = None;
-        self.guest = None;
-        self.probe = None;
         self.connect(true);
+        self.x_try(true, false);
+    }
+
+    // ---- X11's way (src/x11.rs): where Wayland has no data-control.
+
+    /// Whether the X server's clipboard is to be shared: no compositor, or one known to have no data-control.
+    fn x_wanted(&self) -> bool {
+        !self.x11.is_empty()
+            && self
+                .wl
+                .as_ref()
+                .is_none_or(|w| w.inited && w.device.is_none())
+    }
+
+    /// The X server's clipboard is the one shared (its connection set up).
+    fn x_ready(&self) -> bool {
+        self.x.as_ref().is_some_and(|x| x.ready)
+    }
+
+    /// Connects to the session's X server (`x11::displays`), with its cookie (`x11::cookie`). `arm`: a socket that
+    /// refuses is tried again `RETRIES` times; `retrying` (one of those tries): the displays that refused us too.
+    fn x_try(&mut self, arm: bool, retrying: bool) {
+        if self.x.is_some() || !self.x_wanted() {
+            return;
+        }
+        let procs = x11::processes("/proc", self.uid);
+        let mut refused = false;
+        for n in x11::displays(&self.x11, self.x_hint, &procs) {
+            if self.x_refused.contains(&n) && !retrying {
+                continue;
+            }
+            let home = x11::home_of(self.uid);
+            let cookie = x11::cookie(n, &procs, home.as_deref());
+            match X::connect(&self.x11, n, cookie.as_deref()) {
+                Ok(x) => {
+                    self.x = Some(x);
+                    self.xretries = 0;
+                    return;
+                }
+                Err(Errno::CONNREFUSED) | Err(Errno::AGAIN) => refused = true,
+                Err(_) => {}
+            }
+        }
+        if refused && arm && self.xretries == 0 {
+            self.xretries = RETRIES;
+        }
+    }
+
+    /// The X server's connection ends: if its clipboard was shared, the page hears SESSION. A server that refused us
+    /// (before the setup was done) is tried again by the retries, the first time.
+    fn x_disconnect(&mut self, why: &str) {
+        let Some(x) = self.x.take() else { return };
+        log(&format!("session: {why} (:{})", x.display), None);
+        if x.ready {
+            self.changed_hands();
+            self.host = None;
+            self.guest = None;
+            self.probe = None;
+            self.x_try(true, false);
+        } else if !self.x_refused.contains(&x.display) {
+            self.x_refused.push(x.display);
+            self.xretries = RETRIES;
+        }
+    }
+
+    fn x_input(&mut self, revents: PollFlags) {
+        let Some(x) = self.x.as_mut() else { return };
+        if revents.contains(PollFlags::OUT) && x.flush().is_err() {
+            return self.x_disconnect("the X server's connection failed");
+        }
+        if !revents.intersects(PollFlags::IN | PollFlags::HUP | PollFlags::ERR) {
+            return;
+        }
+        let mut evs = Vec::new();
+        let r = x.input(&mut evs);
+        self.x_events(evs);
+        if let Err(why) = r {
+            self.x_disconnect(&why);
+        }
+    }
+
+    fn x_events(&mut self, evs: Vec<x11::Ev>) {
+        for e in evs {
+            if self.x.is_none() {
+                return;
+            }
+            match e {
+                x11::Ev::Ready => {
+                    let n = self.x.as_ref().unwrap().display;
+                    log(
+                        &format!("session: on the X server's CLIPBOARD (:{n})"),
+                        None,
+                    );
+                    self.changed_hands();
+                }
+                x11::Ev::Selection { offer, types } => self.selection(offer, types),
+                x11::Ev::Send { source, mime, fd } => self.host_send(source, fd, &mime),
+                x11::Ev::Cancelled { source } => {
+                    if self.host.as_ref().is_some_and(|h| h.source == source) {
+                        self.host = None;
+                    }
+                }
+                x11::Ev::Held { serial } => {
+                    if self.host.as_ref().is_some_and(|h| h.serial == serial) {
+                        self.ack(serial, ack::HELD);
+                    }
+                }
+            }
+        }
+    }
+
+    /// A pipe that the guest's offer `offer`'s bytes as `mime` come out of (its reading end, nonblocking).
+    fn receive(&mut self, offer: u32, mime: &str) -> Option<OwnedFd> {
+        let fd = if self.x_ready() {
+            self.x.as_mut()?.receive(offer, mime)?
+        } else {
+            let wl = self.wl.as_mut()?;
+            let (r, w) = pipe()?;
+            wl.msg(offer, op::RECEIVE).string(mime).done();
+            wl.conn.push_fd(w);
+            r
+        };
+        nonblocking(&fd);
+        Some(fd)
+    }
+
+    /// The guest's current selection (a guest program's offer), if there is one.
+    fn current(&self) -> Option<u32> {
+        if self.x_ready() {
+            self.x.as_ref()?.selection()
+        } else {
+            self.wl.as_ref()?.selection
+        }
     }
 
     fn inotify(&mut self) {
         let mut buf = [MaybeUninit::uninit(); 1024];
         let mut r = inotify::Reader::new(&self.ino, &mut buf);
-        let mut socket = false;
+        let (mut socket, mut xsocket) = (false, false);
         loop {
             match r.next() {
                 Ok(e) => {
-                    if e.events().intersects(
-                        ReadFlags::DELETE_SELF | ReadFlags::IGNORED | ReadFlags::UNMOUNT,
-                    ) {
+                    let n = e.file_name().and_then(|n| n.to_str().ok()).unwrap_or("");
+                    let overflow = e.events().contains(ReadFlags::QUEUE_OVERFLOW);
+                    if overflow {
+                        // Events lost: a display's socket may have come (again).
+                        xsocket = true;
+                        self.x_refused.clear();
+                    } else if Some(e.wd()) == self.x_wd {
+                        // A display's socket came (again): a server that refused us is tried again.
+                        if x11::is_socket_name(n) {
+                            xsocket = true;
+                            self.x_refused.retain(|d| n[1..] != d.to_string());
+                        }
+                        continue;
+                    }
+                    if e.wd() == self.run_wd
+                        && e.events().intersects(
+                            ReadFlags::DELETE_SELF | ReadFlags::IGNORED | ReadFlags::UNMOUNT,
+                        )
+                    {
                         self.stop = Some("session: the runtime directory went");
                         return;
                     }
-                    let n = e.file_name().and_then(|n| n.to_str().ok()).unwrap_or("");
                     socket |= socket_event(e.events(), n);
                 }
                 Err(Errno::INTR) => {}
@@ -536,6 +802,9 @@ impl Child {
         }
         if socket {
             self.connect(true);
+        }
+        if xsocket {
+            self.x_try(true, false);
         }
     }
 
@@ -593,11 +862,15 @@ impl Child {
 
     fn pause(&mut self) {
         self.paused = true;
-        if let (Some(h), Some(wl)) = (self.host.take(), self.wl.as_mut()) {
-            if let Some(d) = wl.device {
-                wl.msg(d, op::SET_SELECTION).object(0).done();
+        if let Some(h) = self.host.take() {
+            if self.x_ready() {
+                self.x.as_mut().unwrap().disown(h.source, true);
+            } else if let Some(wl) = self.wl.as_mut() {
+                if let Some(d) = wl.device {
+                    wl.msg(d, op::SET_SELECTION).object(0).done();
+                }
+                wl.destroy_source(h.source);
             }
-            wl.destroy_source(h.source);
         }
         self.host = None;
         self.probe = None;
@@ -636,7 +909,8 @@ impl Child {
             .types
             .iter()
             .find(|(t, _)| t.eq_ignore_ascii_case(clip::PNG));
-        if text.is_none() && image.is_none() {
+        let html = o.types.iter().find(|(t, _)| clip::is_html(t));
+        if text.is_none() && image.is_none() && html.is_none() {
             return self.ack(o.serial, ack::NO_TYPE);
         }
         // Each type against its cap by the offer's size, before any bytes cross (plan §3.2, §4.4); inline bytes are the
@@ -646,11 +920,31 @@ impl Child {
             (size == frame::UNKNOWN || size as usize <= clip::cap(t))
                 && !(clip::is_page_text(t) && inline.is_some_and(|b| b.len() > clip::TEXT_CAP))
         };
-        let (text, image) = (text.filter(fits), image.filter(fits));
-        if text.is_none() && image.is_none() {
+        let (text, image, html) = (text.filter(fits), image.filter(fits), html.filter(fits));
+        if text.is_none() && image.is_none() && html.is_none() {
             return self.ack(o.serial, ack::TOO_LARGE);
         }
         let inline = inline.filter(|_| text.is_some());
+        let host = |source| Host {
+            serial: o.serial,
+            source,
+            text: text.map(|&(t, _)| t.to_owned()),
+            image: image.is_some(),
+            html: html.is_some(),
+            cache: inline.map(|b| b.to_vec()),
+        };
+        if self.x_ready() {
+            let x = self.x.as_mut().unwrap();
+            if let Some(h) = self.host.take() {
+                x.disown(h.source, false);
+            }
+            self.guest = None;
+            self.probe = None;
+            let source = x.own(o.serial, text.is_some(), image.is_some(), html.is_some());
+            self.last_host = inline.map(Hash::of);
+            self.host = Some(host(source));
+            return;
+        }
         let Some(wl) = self.wl.as_mut() else {
             return self.ack(o.serial, ack::NO_SESSION);
         };
@@ -674,6 +968,9 @@ impl Child {
                 wl.msg(source, op::OFFER).string(t).done();
             }
         }
+        if html.is_some() {
+            wl.msg(source, op::OFFER).string(clip::HTML).done();
+        }
         // `image/png` alone: the name programs ask an image by (plan §4.4).
         if image.is_some() {
             wl.msg(source, op::OFFER).string(clip::PNG).done();
@@ -683,13 +980,7 @@ impl Child {
         wl.msg(DISPLAY, op::SYNC).object(cb).done();
         // The guest's clipboard has the host's text now: its hash if known (else once a paste has it whole).
         self.last_host = inline.map(Hash::of);
-        self.host = Some(Host {
-            serial: o.serial,
-            source,
-            text: text.map(|&(t, _)| t.to_owned()),
-            image: image.is_some(),
-            cache: inline.map(|b| b.to_vec()),
-        });
+        self.host = Some(host(source));
     }
 
     /// A guest program pastes the host's offer as `mime`: its bytes into `fd` (closed at once for a type the offer
@@ -699,10 +990,12 @@ impl Child {
             return;
         };
         let image = clip::is_image(mime);
+        let html = clip::is_html(mime);
         let (serial, cache, mime) = match (&h.text, image) {
             (_, true) if h.image && mime.eq_ignore_ascii_case(clip::PNG) => {
                 (h.serial, None, clip::PNG.to_owned())
             }
+            (_, false) if h.html && html => (h.serial, None, clip::HTML.to_owned()),
             (Some(t), false) if clip::TEXT_ALIASES.contains(&mime) => {
                 (h.serial, h.cache.clone(), t.clone())
             }
@@ -745,10 +1038,10 @@ impl Child {
             serial,
             len: 0,
             cap: clip::cap(&mime),
-            text: !image,
+            text: !image && !html,
             hash: Hash::default(),
-            // An image is streamed, never kept (plan §4.4: the agent holds none).
-            copy: (!image).then(Vec::new),
+            // An image is streamed, never kept (plan §4.4: the agent holds none); HTML isn't kept either.
+            copy: (!image && !html).then(Vec::new),
         });
     }
 
@@ -802,19 +1095,32 @@ impl Child {
 
     // ---- The guest's selection: an offer to the page.
 
-    fn selection(&mut self, offer: u32) {
-        let Some(wl) = self.wl.as_mut() else { return };
+    /// The guest's selection changed hands: `offer` (0: none) with `types` (X11's; a Wayland offer's are its own,
+    /// `Wl::offers`).
+    fn selection(&mut self, offer: u32, types: Vec<String>) {
+        let x = self.x_ready();
+        if !x && self.wl.is_none() {
+            return;
+        }
         if self.host.is_some() {
             // Our own source's (or one the compositor sent before it took ours).
-            if offer != 0 {
+            if let Some(wl) = self.wl.as_mut().filter(|_| !x && offer != 0) {
                 wl.destroy_offer(offer);
             }
             return;
         }
-        if let Some(old) = wl.selection.take()
-            && old != offer
-        {
-            wl.destroy_offer(old);
+        let mut types = types;
+        if !x {
+            let wl = self.wl.as_mut().unwrap();
+            if let Some(old) = wl.selection.take()
+                && old != offer
+            {
+                wl.destroy_offer(old);
+            }
+            if offer != 0 {
+                wl.selection = Some(offer);
+                types = wl.offers.get(&offer).cloned().unwrap_or_default();
+            }
         }
         self.guest = None;
         self.probe = None;
@@ -823,34 +1129,34 @@ impl Child {
             self.last_host = None;
             return;
         }
-        wl.selection = Some(offer);
         if self.paused {
             return;
         }
-        let types: Vec<&str> = wl
-            .offers
-            .get(&offer)
-            .map_or(Vec::new(), |t| t.iter().map(|s| s.as_str()).collect());
+        let types: Vec<&str> = types.iter().map(|s| s.as_str()).collect();
         let image = clip::pick_image(&types).map(str::to_owned);
+        let html = types
+            .iter()
+            .find(|t| clip::is_html(t))
+            .map(|t| t.to_string());
         let Some(mime) = clip::pick_text(&types).map(str::to_owned) else {
-            // No text: an image is offered at once (its bytes when the page asks), else nothing.
+            // No text: an image or HTML is offered at once (its bytes when the page asks), else nothing.
             self.last_host = None;
-            if let Some(image) = image {
+            if image.is_some() || html.is_some() {
                 let serial = self.next();
-                self.offer_guest(serial, offer, None, Some(image));
+                self.offer_guest(serial, offer, None, image, html);
             }
             return;
         };
-        let Some((r, w)) = pipe() else { return };
-        nonblocking(&r);
-        wl.msg(offer, op::RECEIVE).string(&mime).done();
-        wl.conn.push_fd(w);
+        let Some(r) = self.receive(offer, &mime) else {
+            return;
+        };
         let serial = self.next();
         self.probe = Some(Probe {
             serial,
             offer,
             mime,
             image,
+            html,
             fd: r,
             buf: Vec::new(),
         });
@@ -866,9 +1172,9 @@ impl Child {
             Err(_) => {
                 // The text unread: its image, if it has one, is offered alone.
                 let p = self.probe.take().unwrap();
-                if p.image.is_some() {
+                if p.image.is_some() || p.html.is_some() {
                     self.last_host = None;
-                    self.offer_guest(p.serial, p.offer, None, p.image);
+                    self.offer_guest(p.serial, p.offer, None, p.image, p.html);
                 }
                 return;
             }
@@ -887,27 +1193,30 @@ impl Child {
                 if p.buf.is_empty() || p.image.is_some() {
                     self.last_host = None;
                 }
+                // HTML that came with the host's own text back is the host's too: not offered.
                 if p.image.is_some() {
-                    self.offer_guest(p.serial, p.offer, None, p.image);
+                    let html = p.html.filter(|_| p.buf.is_empty());
+                    self.offer_guest(p.serial, p.offer, None, p.image, html);
                 }
                 return;
             }
         };
         // Something else: the clipboard moved on from the host's text, which a guest program may copy again later.
         self.last_host = None;
-        self.offer_guest(p.serial, p.offer, text, p.image);
+        self.offer_guest(p.serial, p.offer, text, p.image, p.html);
     }
 
     /// The guest's selection `offer` to the page as OFFER `serial`: its text (the guest program's type, the size, the
-    /// bytes inline) first, then its image (unknown size: a guest program's offer says none).
+    /// bytes inline) first, then its image, then its HTML (unknown sizes: a guest program's offer says none).
     fn offer_guest(
         &mut self,
         serial: u32,
         offer: u32,
         text: Option<(String, u32, Option<Vec<u8>>)>,
         image: Option<String>,
+        html: Option<String>,
     ) {
-        let mut types = Vec::with_capacity(2);
+        let mut types = Vec::with_capacity(3);
         let mut inline = None;
         if let Some((_, size, bytes)) = &text {
             types.push((clip::TEXT, *size));
@@ -915,6 +1224,9 @@ impl Child {
         }
         if let Some(i) = &image {
             types.push((i.as_str(), frame::UNKNOWN));
+        }
+        if html.is_some() {
+            types.push((clip::HTML, frame::UNKNOWN));
         }
         let mut out = Vec::new();
         frame::Offer {
@@ -929,31 +1241,28 @@ impl Child {
             offer,
             text: text.map(|(t, _, _)| t),
             image,
+            html,
         });
     }
 
     fn page_request(&mut self, r: frame::Request<'_>) {
-        let (Some(g), Some(wl)) = (
-            self.guest.as_ref().filter(|_| !self.paused),
-            self.wl.as_mut(),
-        ) else {
+        let Some(g) = self.guest.as_ref().filter(|_| !self.paused) else {
             return self.fail(r.id);
         };
-        // The text as the page's type, the image as the guest program's.
-        let mime = match (&g.text, &g.image) {
-            (Some(t), _) if clip::is_page_text(r.mime) => t.clone(),
-            (_, Some(i)) if i.eq_ignore_ascii_case(r.mime) => i.clone(),
+        // The text as the page's type, the image and the HTML as the guest program's.
+        let mime = match (&g.text, &g.image, &g.html) {
+            (Some(t), _, _) if clip::is_page_text(r.mime) => t.clone(),
+            (_, Some(i), _) if i.eq_ignore_ascii_case(r.mime) => i.clone(),
+            (_, _, Some(h)) if clip::is_html(r.mime) => h.clone(),
             _ => return self.fail(r.id),
         };
-        if g.serial != r.serial || wl.selection != Some(g.offer) {
+        let offer = g.offer;
+        if g.serial != r.serial || self.current() != Some(offer) {
             return self.fail(r.id);
         }
-        let Some((rd, w)) = pipe() else {
+        let Some(rd) = self.receive(offer, &mime) else {
             return self.fail(r.id);
         };
-        nonblocking(&rd);
-        wl.msg(g.offer, op::RECEIVE).string(&mime).done();
-        wl.conn.push_fd(w);
         self.xfers.push(Xfer::Out {
             id: r.id,
             fd: rd,
@@ -1153,16 +1462,17 @@ impl Child {
             }
             (Obj::Init, op::DONE) => {
                 wl.objs.insert(object, Obj::Dead);
+                wl.inited = true;
                 let k = wl.managers.iter().position(Option::is_some);
                 let (Some(seat), Some(k)) = (wl.seat, k) else {
                     if !self.told {
                         self.told = true;
                         log(
-                            "session: the compositor has no data-control (ext_data_control_manager_v1, zwlr_data_control_manager_v1): no clipboard",
+                            "session: the compositor has no data-control (ext_data_control_manager_v1, zwlr_data_control_manager_v1): X11's clipboard, if there is one",
                             None,
                         );
                     }
-                    return;
+                    return self.x_try(true, false);
                 };
                 let seat_id = wl.id(Obj::Seat);
                 wl.msg(FIRST_ID, op::BIND)
@@ -1190,6 +1500,12 @@ impl Child {
                     &format!("session: on the compositor's {}", MANAGERS[k]),
                     None,
                 );
+                // The compositor shares its clipboard with Xwayland's: X11's way gives way.
+                if self.x.take().is_some_and(|x| x.ready) {
+                    self.host = None;
+                    self.guest = None;
+                    self.probe = None;
+                }
                 self.changed_hands();
             }
             (Obj::Ack(serial), op::DONE) => {
@@ -1206,7 +1522,7 @@ impl Child {
             }
             (Obj::Device, op::SELECTION) => {
                 if let Some(id) = a.object() {
-                    self.selection(id);
+                    self.selection(id, Vec::new());
                 }
             }
             (Obj::Device, op::PRIMARY_SELECTION) => {
@@ -1223,6 +1539,7 @@ impl Child {
                 self.guest = None;
                 self.probe = None;
                 self.changed_hands();
+                self.x_try(true, false);
             }
             (Obj::Offer, op::OFFER) => {
                 if let (Some(Some(t)), Some(types)) = (a.string(), wl.offers.get_mut(&object))

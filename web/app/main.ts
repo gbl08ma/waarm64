@@ -1973,13 +1973,13 @@ const clipboardOn = () => (stored ? !!stored.record.clipboard : params.get('clip
 let agentLink: AgentLink | undefined;
 /** Its clipboard sharing (web/app/clipboard.ts). */
 let clipboardShare: ClipboardShare | undefined;
-// The paste chord's text and image (docs/plans/clipboard.md §4.1, way 2, §4.4): the browser's own paste event while the
+// The paste chord's text, image and HTML (docs/plans/clipboard.md §4.1, way 2, §4.4): the browser's own paste event while the
 // screen holds a chord (web/input.ts), taken at the document (Firefox fires it at <body>, not at the focused canvas);
 // the image is a `File` among its items, taken during the event (the data is gone after it).
 document.addEventListener('paste', (e) => {
   if (!clipboardShare?.held || document.activeElement !== canvas) return;
   const image = [...(e.clipboardData?.items ?? [])].find((i) => i.kind === 'file' && i.type === PNG)?.getAsFile() ?? undefined;
-  clipboardShare.pasted(e.clipboardData?.getData('text/plain') ?? '', image);
+  clipboardShare.pasted(e.clipboardData?.getData('text/plain') ?? '', image, e.clipboardData?.getData('text/html'));
 });
 /** The browser runs on a Mac: its paste chord is Cmd+V. */
 const MAC = onMac(navigator as Navigator & { userAgentData?: { platform?: string } });
