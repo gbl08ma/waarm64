@@ -4,25 +4,31 @@
 
 /// Version and capabilities: each side's first frame (the agent's answers the page's).
 pub const HELLO: u8 = 1;
-/// A serial number and the MIME types a side has (step 3).
-#[allow(dead_code)] // the clipboard's frames: step 3
+/// A serial number and the MIME types a side's clipboard has (`Offer`).
 pub const OFFER: u8 = 2;
-/// A serial number and a type: the bytes of an offer, please (step 3).
-#[allow(dead_code)]
+/// A serial number, a request id and a type: the bytes of an offer, please (`Request`).
 pub const REQUEST: u8 = 3;
-/// A serial number, a type and bytes: an answer to a request (step 3).
-#[allow(dead_code)]
+/// A request id and bytes: an answer to a request, in chunks of at most `CHUNK` (`data`).
 pub const DATA: u8 = 4;
 /// UTF-8 text to paste on the guest's foreground console.
 pub const TYPE: u8 = 5;
 /// The toolbar's switch: stop sharing until RESUME.
 pub const PAUSE: u8 = 6;
 pub const RESUME: u8 = 7;
+/// A serial number and a status: what the agent did with the page's offer (`ack`).
+pub const ACK: u8 = 8;
+/// A request id and a count: how many more DATA frames the requester takes (`more`; 0 stops the answer).
+pub const MORE: u8 = 9;
 
 /// The largest payload: 64 KiB of data and room for a DATA frame's own fields.
 pub const MAX_PAYLOAD: usize = 65536 + 256;
 /// The length field's size.
 const LEN: usize = 4;
+
+/// The most bytes in a DATA frame.
+pub const CHUNK: usize = 65536;
+/// The DATA frames an answer may send before the requester's first MORE: what a REQUEST grants.
+pub const CREDIT: u32 = 4;
 
 /// The protocol's version: what a HELLO says. A side speaks the lower of the two versions; a newer version only adds
 /// frame types, capabilities and fields at a payload's end, which an older side ignores.
@@ -32,8 +38,30 @@ pub const VERSION: u16 = 1;
 pub mod cap {
     /// TYPE: text pasted on the foreground text console (the agent), or a page that sends it.
     pub const TYPE: u32 = 1 << 0;
-    // Reserved for the next steps: 1 << 1 the clipboard's text (OFFER, REQUEST, DATA), 1 << 2 images, 1 << 3
-    // text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session.
+    /// The clipboard's text: OFFER, REQUEST, DATA, ACK, MORE.
+    pub const TEXT: u32 = 1 << 1;
+    // Reserved for the next steps: 1 << 2 images, 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session.
+}
+
+/// OFFER's flag: the rest of the payload is the first type's bytes, whole.
+pub const OFFER_INLINE: u8 = 1 << 0;
+/// DATA's flags: the answer's last frame; the answer failed (what came before it is to be dropped).
+pub const DATA_END: u8 = 1 << 0;
+pub const DATA_FAIL: u8 = 1 << 1;
+/// A size an offer doesn't know.
+pub const UNKNOWN: u32 = u32::MAX;
+
+/// ACK's statuses.
+pub mod ack {
+    /// The guest's clipboard holds the offer.
+    pub const HELD: u8 = 0;
+    /// No session with a clipboard the agent can reach (none active, no display, no data-control).
+    pub const NO_SESSION: u8 = 1;
+    pub const PAUSED: u8 = 2;
+    /// Past the size cap.
+    pub const TOO_LARGE: u8 = 3;
+    /// No type the agent takes.
+    pub const NO_TYPE: u8 = 4;
 }
 
 /// A HELLO's payload: u16 version, u32 capabilities (little-endian); later versions append fields.
@@ -53,10 +81,150 @@ impl Hello {
 
     /// None if the payload is too short to be a HELLO.
     pub fn decode(p: &[u8]) -> Option<Hello> {
+        let mut r = Fields(p);
         Some(Hello {
-            version: u16::from_le_bytes(p.get(..2)?.try_into().ok()?),
-            caps: u32::from_le_bytes(p.get(2..6)?.try_into().ok()?),
+            version: u16::from_le_bytes(r.take(2)?.try_into().ok()?),
+            caps: r.u32()?,
         })
+    }
+}
+
+/// An OFFER's payload: u32 serial, u8 flags (`OFFER_INLINE`), u8 count, then for each type a u8 length, the type
+/// (ASCII) and a u32 size (`UNKNOWN`); with `OFFER_INLINE`, the rest is the first type's bytes, whole.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Offer<'a> {
+    pub serial: u32,
+    pub types: Vec<(&'a str, u32)>,
+    pub inline: Option<&'a [u8]>,
+}
+
+impl<'a> Offer<'a> {
+    pub fn encode(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&self.serial.to_le_bytes());
+        out.push(if self.inline.is_some() {
+            OFFER_INLINE
+        } else {
+            0
+        });
+        out.push(self.types.len() as u8);
+        for (t, size) in &self.types {
+            out.push(t.len() as u8);
+            out.extend_from_slice(t.as_bytes());
+            out.extend_from_slice(&size.to_le_bytes());
+        }
+        if let Some(b) = self.inline {
+            out.extend_from_slice(b);
+        }
+    }
+
+    pub fn decode(p: &'a [u8]) -> Option<Offer<'a>> {
+        let mut r = Fields(p);
+        let serial = r.u32()?;
+        let flags = r.u8()?;
+        let n = r.u8()?;
+        let mut types = Vec::with_capacity(n as usize);
+        for _ in 0..n {
+            let t = r.str()?;
+            types.push((t, r.u32()?));
+        }
+        let inline = (flags & OFFER_INLINE != 0).then_some(r.0);
+        Some(Offer {
+            serial,
+            types,
+            inline,
+        })
+    }
+}
+
+/// A REQUEST's payload: u32 serial, u32 id (the requester's: its answer's DATA and MORE carry it), u8 length, the
+/// type.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Request<'a> {
+    pub serial: u32,
+    pub id: u32,
+    pub mime: &'a str,
+}
+
+impl<'a> Request<'a> {
+    pub fn encode(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&self.serial.to_le_bytes());
+        out.extend_from_slice(&self.id.to_le_bytes());
+        out.push(self.mime.len() as u8);
+        out.extend_from_slice(self.mime.as_bytes());
+    }
+
+    pub fn decode(p: &'a [u8]) -> Option<Request<'a>> {
+        let mut r = Fields(p);
+        Some(Request {
+            serial: r.u32()?,
+            id: r.u32()?,
+            mime: r.str()?,
+        })
+    }
+}
+
+/// A DATA frame's payload: u32 id, u8 flags (`DATA_END`, `DATA_FAIL`), then at most `CHUNK` bytes.
+pub fn data(id: u32, flags: u8, bytes: &[u8], out: &mut Vec<u8>) {
+    out.extend_from_slice(&id.to_le_bytes());
+    out.push(flags);
+    out.extend_from_slice(bytes);
+}
+
+/// A DATA frame's id, flags and bytes.
+pub fn decode_data(p: &[u8]) -> Option<(u32, u8, &[u8])> {
+    let mut r = Fields(p);
+    Some((r.u32()?, r.u8()?, r.0))
+}
+
+/// ACK's payload: u32 serial (the page's offer), u8 status (`ack`).
+pub fn ack(serial: u32, status: u8) -> [u8; 5] {
+    let mut b = [0; 5];
+    b[..4].copy_from_slice(&serial.to_le_bytes());
+    b[4] = status;
+    b
+}
+
+#[cfg(test)] // the agent only sends ACK
+pub fn decode_ack(p: &[u8]) -> Option<(u32, u8)> {
+    let mut r = Fields(p);
+    Some((r.u32()?, r.u8()?))
+}
+
+/// MORE's payload: u32 id (the requester's), u32 count.
+pub fn more(id: u32, n: u32) -> [u8; 8] {
+    let mut b = [0; 8];
+    b[..4].copy_from_slice(&id.to_le_bytes());
+    b[4..].copy_from_slice(&n.to_le_bytes());
+    b
+}
+
+pub fn decode_more(p: &[u8]) -> Option<(u32, u32)> {
+    let mut r = Fields(p);
+    Some((r.u32()?, r.u32()?))
+}
+
+/// A payload read field by field (little-endian); None past its end.
+struct Fields<'a>(&'a [u8]);
+
+impl<'a> Fields<'a> {
+    fn take(&mut self, n: usize) -> Option<&'a [u8]> {
+        if self.0.len() < n {
+            return None;
+        }
+        let (a, b) = self.0.split_at(n);
+        self.0 = b;
+        Some(a)
+    }
+    fn u8(&mut self) -> Option<u8> {
+        Some(self.take(1)?[0])
+    }
+    fn u32(&mut self) -> Option<u32> {
+        Some(u32::from_le_bytes(self.take(4)?.try_into().ok()?))
+    }
+    /// A u8 length, then that many bytes of UTF-8.
+    fn str(&mut self) -> Option<&'a str> {
+        let n = self.u8()? as usize;
+        core::str::from_utf8(self.take(n)?).ok()
     }
 }
 
@@ -68,6 +236,22 @@ pub fn encode(kind: u8, payload: &[u8], out: &mut Vec<u8>) -> bool {
     out.extend_from_slice(&(1 + payload.len() as u32).to_le_bytes());
     out.push(kind);
     out.extend_from_slice(payload);
+    true
+}
+
+/// Appends a frame whose payload `f` writes in place (no copy of the payload); false (nothing appended) past
+/// `MAX_PAYLOAD`.
+pub fn encode_with(kind: u8, out: &mut Vec<u8>, f: impl FnOnce(&mut Vec<u8>)) -> bool {
+    let at = out.len();
+    out.extend_from_slice(&[0; LEN]);
+    out.push(kind);
+    f(out);
+    let len = out.len() - at - LEN;
+    if len - 1 > MAX_PAYLOAD {
+        out.truncate(at);
+        return false;
+    }
+    out[at..at + LEN].copy_from_slice(&(len as u32).to_le_bytes());
     true
 }
 
@@ -148,6 +332,77 @@ mod tests {
         assert_eq!(out, [1, 0, 0, 0, 6]);
         assert!(!encode(DATA, &vec![0; MAX_PAYLOAD + 1], &mut out));
         assert!(encode(DATA, &vec![0; MAX_PAYLOAD], &mut out));
+        out.clear();
+        assert!(encode_with(ACK, &mut out, |o| o.extend_from_slice(&ack(3, ack::HELD))));
+        assert_eq!(out, [6, 0, 0, 0, ACK, 3, 0, 0, 0, 0]);
+        assert!(!encode_with(DATA, &mut out, |o| o
+            .extend_from_slice(&vec![0; MAX_PAYLOAD + 1])));
+        assert_eq!(out.len(), 10, "a frame too long: nothing appended");
+    }
+
+    #[test]
+    fn clipboard_payloads_encode_as_the_page_does() {
+        // The same bytes as tests/agent.test.ts "frames: the clipboard's payloads".
+        let mut out = Vec::new();
+        Offer {
+            serial: 0x0102_0304,
+            types: vec![("text/plain", 3)],
+            inline: Some(b"abc"),
+        }
+        .encode(&mut out);
+        let mut want = vec![4, 3, 2, 1, OFFER_INLINE, 1, 10];
+        want.extend_from_slice(b"text/plain");
+        want.extend_from_slice(&[3, 0, 0, 0]);
+        want.extend_from_slice(b"abc");
+        assert_eq!(out, want);
+        assert_eq!(
+            Offer::decode(&out),
+            Some(Offer {
+                serial: 0x0102_0304,
+                types: vec![("text/plain", 3)],
+                inline: Some(&b"abc"[..])
+            })
+        );
+        out.clear();
+        let lazy = Offer {
+            serial: 9,
+            types: vec![
+                ("text/plain;charset=utf-8", UNKNOWN),
+                ("UTF8_STRING", UNKNOWN),
+            ],
+            inline: None,
+        };
+        lazy.encode(&mut out);
+        assert_eq!(Offer::decode(&out), Some(lazy));
+        assert_eq!(Offer::decode(&out[..out.len() - 1]), None, "cut short");
+        out.clear();
+        Request {
+            serial: 7,
+            id: 2,
+            mime: "text/plain",
+        }
+        .encode(&mut out);
+        let mut want = vec![7, 0, 0, 0, 2, 0, 0, 0, 10];
+        want.extend_from_slice(b"text/plain");
+        assert_eq!(out, want);
+        assert_eq!(
+            Request::decode(&out),
+            Some(Request {
+                serial: 7,
+                id: 2,
+                mime: "text/plain"
+            })
+        );
+        out.clear();
+        data(5, DATA_END, b"hi", &mut out);
+        assert_eq!(out, [5, 0, 0, 0, DATA_END, b'h', b'i']);
+        assert_eq!(decode_data(&out), Some((5, DATA_END, &b"hi"[..])));
+        assert_eq!(ack(3, ack::TOO_LARGE), [3, 0, 0, 0, 3]);
+        assert_eq!(decode_ack(&[3, 0, 0, 0, 3]), Some((3, ack::TOO_LARGE)));
+        assert_eq!(more(6, 1), [6, 0, 0, 0, 1, 0, 0, 0]);
+        assert_eq!(decode_more(&more(6, 1)), Some((6, 1)));
+        assert_eq!(decode_more(&[6, 0, 0, 0, 1]), None);
+        const { assert!(5 + CHUNK <= MAX_PAYLOAD) };
     }
 
     #[test]

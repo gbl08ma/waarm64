@@ -126,8 +126,12 @@ export function terminalBytes(e: KeyLike): string | null {
  * `text`: what takes the keys while the guest has no driver on its keyboard (`live` false): `usb`, the built-in USB
  * keyboard (web/usb-keyboard.ts: every key, down and up, by `KeyboardEvent.code`; '' releases them all), when it says
  * it took the key; else `send`, the serial console, as a terminal sends them (`terminalBytes`).
+ *
+ * `hooks.hold`: asked at each key down on the element (not a repeat); a promise holds the key: no `preventDefault`, so
+ * the browser's own action happens (a paste chord's `paste` event: web/app/clipboard.ts), and the key goes to the guest
+ * when the promise settles (its key up after it, if it came meanwhile). A release (a blur) drops a held key.
  */
-export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: MessagePort, text?: { live: () => boolean; send: (bytes: string) => void; usb?: (code: string, down: boolean) => boolean }, pointers: Pointers = {}): Input {
+export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: MessagePort, text?: { live: () => boolean; send: (bytes: string) => void; usb?: (code: string, down: boolean) => boolean }, pointers: Pointers = {}, hooks: { hold?: (e: KeyboardEvent) => Promise<void> | undefined } = {}): Input {
   const keys = new Set<number>(); // held, as the guest sees it
   const on = <T extends EventTarget, E extends Event>(target: T, type: string, f: (e: E) => void) => {
     target.addEventListener(type, f as EventListener);
@@ -180,7 +184,33 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     return deliver(name, false, e);
   };
   const typed: ((code: string) => void)[] = [];
+  /** Keys `hooks.hold` holds: their key up if it came meanwhile. */
+  const held = new Map<string, { up?: KeyboardEvent }>();
   const key = (down: number) => (e: KeyboardEvent) => {
+    const h = held.get(e.code);
+    if (h) {
+      // Held: its repeats go nowhere (no second paste event), its key up waits for the key down.
+      if (!down) h.up = e;
+      e.preventDefault();
+      return;
+    }
+    const wait = down && !e.repeat ? hooks.hold?.(e) : undefined;
+    if (wait) {
+      // No preventDefault: the browser's own action (its paste event) is what the holder waits for.
+      const entry: { up?: KeyboardEvent } = {};
+      held.set(e.code, entry);
+      const go = () => {
+        if (held.get(e.code) !== entry) return; // released meanwhile (a blur): the key never went down
+        held.delete(e.code);
+        press(e.code, true, e, 'screen');
+        if (entry.up) {
+          press(e.code, false, entry.up, 'screen');
+          for (const f of typed) f(e.code);
+        }
+      };
+      wait.then(go, go);
+      return;
+    }
     if (press(e.code, !!down, e, 'screen')) e.preventDefault();
     if (!down) for (const f of typed) f(e.code);
   };
@@ -303,6 +333,7 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     }
   };
   const releaseAll = () => {
+    held.clear();
     holders.clear();
     tabletTouch = undefined;
     onEl.clear();

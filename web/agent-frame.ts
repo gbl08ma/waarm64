@@ -2,8 +2,8 @@
 // over the agent's port (web/agent-device.ts), as frames: a u32 length (little-endian, the bytes after it: the type
 // and the payload), a u8 type, then the payload. This module cuts the byte stream into frames, both ways, and defines
 // the payloads: the page's half of the format the agent's own code speaks (agent/src/frame.rs, its Rust twin, which
-// pins the same bytes in its tests). HELLO, TYPE, PAUSE and RESUME are defined (step 2); OFFER, REQUEST and DATA come
-// with the clipboard itself (step 3), as a new capability.
+// pins the same bytes in its tests). HELLO, TYPE, PAUSE and RESUME (step 2); the clipboard's OFFER, REQUEST, DATA,
+// ACK and MORE (step 3), the capability `CAP.TEXT`.
 
 /** The frame types (docs/plans/clipboard.md §2). */
 export const FRAME = {
@@ -20,6 +20,34 @@ export const FRAME = {
   /** The toolbar's switch: stop sharing until RESUME. */
   PAUSE: 6,
   RESUME: 7,
+  /** A serial number and a status (`ACK`): what the agent did with the page's offer. */
+  ACK: 8,
+  /** A request id and a count: how many more DATA frames the requester takes (0 stops the answer). */
+  MORE: 9,
+} as const;
+
+/** The most bytes in a DATA frame. */
+export const CHUNK = 65536;
+/** The DATA frames an answer may send before the requester's first MORE: what a REQUEST grants. */
+export const CREDIT = 4;
+/** OFFER's flag: the rest of the payload is the first type's bytes, whole. */
+export const OFFER_INLINE = 1 << 0;
+/** DATA's flags: the answer's last frame; the answer failed. */
+export const DATA_END = 1 << 0;
+export const DATA_FAIL = 1 << 1;
+/** A size an offer doesn't know. */
+export const UNKNOWN = 0xffffffff;
+/** ACK's statuses. */
+export const ACK = {
+  /** The guest's clipboard holds the offer. */
+  HELD: 0,
+  /** No session with a clipboard the agent can reach (none active, no display, no data-control). */
+  NO_SESSION: 1,
+  PAUSED: 2,
+  /** Past the size cap. */
+  TOO_LARGE: 3,
+  /** No type the agent takes. */
+  NO_TYPE: 4,
 } as const;
 
 /** The largest payload: 64 KiB of data and room for a DATA frame's own fields. */
@@ -40,9 +68,137 @@ export const VERSION = 1;
 export const CAP = {
   /** TYPE: text pasted on the guest's foreground text console (the agent), or a page that sends it. */
   TYPE: 1 << 0,
-  // Reserved for the next steps: 1 << 1 the clipboard's text (OFFER, REQUEST, DATA), 1 << 2 images, 1 << 3 text/html,
-  // 1 << 8 a Wayland session, 1 << 9 an X11 session (agent/src/frame.rs has the same list).
+  /** The clipboard's text: OFFER, REQUEST, DATA, ACK, MORE. */
+  TEXT: 1 << 1,
+  // Reserved for the next steps: 1 << 2 images, 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session
+  // (agent/src/frame.rs has the same list).
 } as const;
+
+/** An OFFER: its serial, its types (and sizes, `UNKNOWN` where unknown), and the first type's bytes if inline. */
+export type Offer = { serial: number; types: { type: string; size: number }[]; inline?: Uint8Array };
+
+/**
+ * OFFER's payload: u32 serial, u8 flags (`OFFER_INLINE`), u8 count, then for each type a u8 length, the type (ASCII)
+ * and a u32 size; with `OFFER_INLINE`, the rest is the first type's bytes, whole.
+ */
+export function encodeOffer(o: Offer): Uint8Array {
+  const names = o.types.map((t) => new TextEncoder().encode(t.type));
+  const head = 6 + names.reduce((n, b) => n + 1 + b.length + 4, 0);
+  const out = new Uint8Array(head + (o.inline?.length ?? 0));
+  const v = new DataView(out.buffer);
+  v.setUint32(0, o.serial >>> 0, true);
+  out[4] = o.inline ? OFFER_INLINE : 0;
+  out[5] = o.types.length;
+  let at = 6;
+  names.forEach((b, i) => {
+    if (b.length > 255) throw new Error(`an agent offer's type of ${b.length} bytes`);
+    out[at] = b.length;
+    out.set(b, at + 1);
+    v.setUint32(at + 1 + b.length, o.types[i].size >>> 0, true);
+    at += 1 + b.length + 4;
+  });
+  if (o.inline) out.set(o.inline, at);
+  return out;
+}
+
+/** An OFFER's fields; undefined if the payload is cut short. */
+export function decodeOffer(p: Uint8Array): Offer | undefined {
+  const r = fields(p);
+  const serial = r.u32();
+  const flags = r.u8();
+  const n = r.u8();
+  if (serial === undefined || flags === undefined || n === undefined) return undefined;
+  const types: Offer['types'] = [];
+  for (let i = 0; i < n; i++) {
+    const type = r.str();
+    const size = r.u32();
+    if (type === undefined || size === undefined) return undefined;
+    types.push({ type, size });
+  }
+  return { serial, types, ...(flags & OFFER_INLINE ? { inline: r.rest() } : {}) };
+}
+
+/** A REQUEST: the offer's serial, the requester's id (its answer's DATA and MORE carry it) and the type. */
+export type Request = { serial: number; id: number; type: string };
+
+/** REQUEST's payload: u32 serial, u32 id, u8 length, the type. */
+export function encodeRequest(r: Request): Uint8Array {
+  const t = new TextEncoder().encode(r.type);
+  const out = new Uint8Array(9 + t.length);
+  const v = new DataView(out.buffer);
+  v.setUint32(0, r.serial >>> 0, true);
+  v.setUint32(4, r.id >>> 0, true);
+  out[8] = t.length;
+  out.set(t, 9);
+  return out;
+}
+
+export function decodeRequest(p: Uint8Array): Request | undefined {
+  const r = fields(p);
+  const [serial, id, type] = [r.u32(), r.u32(), r.str()];
+  return serial === undefined || id === undefined || type === undefined ? undefined : { serial, id, type };
+}
+
+/** DATA's payload: u32 id, u8 flags (`DATA_END`, `DATA_FAIL`), then at most `CHUNK` bytes. */
+export function encodeData(id: number, flags: number, bytes: Uint8Array = new Uint8Array(0)): Uint8Array {
+  const out = new Uint8Array(5 + bytes.length);
+  new DataView(out.buffer).setUint32(0, id >>> 0, true);
+  out[4] = flags;
+  out.set(bytes, 5);
+  return out;
+}
+
+export function decodeData(p: Uint8Array): { id: number; flags: number; bytes: Uint8Array } | undefined {
+  if (p.length < 5) return undefined;
+  return { id: new DataView(p.buffer, p.byteOffset, p.byteLength).getUint32(0, true), flags: p[4], bytes: p.subarray(5) };
+}
+
+/** ACK's payload: u32 serial (the page's offer), u8 status (`ACK`). */
+export function decodeAck(p: Uint8Array): { serial: number; status: number } | undefined {
+  if (p.length < 5) return undefined;
+  return { serial: new DataView(p.buffer, p.byteOffset, p.byteLength).getUint32(0, true), status: p[4] };
+}
+
+export function encodeAck(serial: number, status: number): Uint8Array {
+  const out = new Uint8Array(5);
+  new DataView(out.buffer).setUint32(0, serial >>> 0, true);
+  out[4] = status;
+  return out;
+}
+
+/** MORE's payload: u32 id (the requester's), u32 count. */
+export function encodeMore(id: number, n: number): Uint8Array {
+  const out = new Uint8Array(8);
+  const v = new DataView(out.buffer);
+  v.setUint32(0, id >>> 0, true);
+  v.setUint32(4, n >>> 0, true);
+  return out;
+}
+
+export function decodeMore(p: Uint8Array): { id: number; n: number } | undefined {
+  if (p.length < 8) return undefined;
+  const v = new DataView(p.buffer, p.byteOffset, p.byteLength);
+  return { id: v.getUint32(0, true), n: v.getUint32(4, true) };
+}
+
+/** A payload read field by field (little-endian); undefined past its end. */
+function fields(p: Uint8Array) {
+  const v = new DataView(p.buffer, p.byteOffset, p.byteLength);
+  let at = 0;
+  const has = (n: number) => at + n <= p.length;
+  return {
+    u8: () => (has(1) ? p[at++] : undefined),
+    u32: () => (has(4) ? ((at += 4), v.getUint32(at - 4, true)) : undefined),
+    str: () => {
+      if (!has(1)) return undefined;
+      const n = p[at];
+      if (!has(1 + n)) return undefined;
+      at += 1 + n;
+      return new TextDecoder().decode(p.subarray(at - n, at));
+    },
+    rest: () => p.slice(at),
+  };
+}
 
 /** A HELLO: the sender's version and capabilities. */
 export type Hello = { version: number; caps: number };

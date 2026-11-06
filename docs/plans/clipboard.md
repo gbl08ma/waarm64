@@ -1,7 +1,7 @@
 # Clipboard sharing between the host and the guest (the CLIP track's plan)
 
 **Status:** written 2026-11-05 from a brainstorm with the user, who settled its choices the same day (§7). Steps 1
-(the channel) and 2 (the agent on the console) are built: docs/devices.md "agent" and "The guest's agent",
+(the channel), 2 (the agent on the console) and 3 (Wayland, the paste chord) are built: docs/devices.md "agent" and "The guest's agent",
 CLIP-HANDOVER.md. The brief: share the clipboard both ways. On the guest side, use a no-disk-writes route like the network's
 settings (a systemd credential). On the host side, manage the browser's permission prompts and detect when a browser
 hands back placeholder data (empty strings, in the user's experience) instead of the clipboard. The guest side is an
@@ -47,7 +47,11 @@ a change of shape. Like those other switches, it asks first when it orphans snap
   bytes, in chunks of 64 KiB or less), `TYPE` (text to paste on the console), `PAUSE`/`RESUME` (the toolbar's
   switch). Offers are lazy: a side announces only what it has, and the other side asks for the bytes. A 20 MB
   screenshot then crosses the channel only if someone pastes it. A small text offer can carry its bytes inline
-  (below 4 KiB) to save a round trip.
+  (below 4 KiB) to save a round trip. **Built (step 3)** with two more types: `ACK` (the agent's answer to the page's
+  offer: the guest's clipboard holds it, or why not), which the paste chord waits for (§4.1), and `MORE` (a request's
+  credit: the answer sends 4 DATA frames, then one more for each MORE), so neither side holds more than a few chunks of
+  a transfer; serials belong to the side that offers, request ids to the side that requests; the capability is
+  `TEXT` (devices.md "The guest's agent" has the payloads).
 - **Echo suppression:** each side remembers the hash of the last thing it received. When the other side offers
   it back (for example, the host writes the guest's text, and the next focus reads the same text), nothing is
   sent.
@@ -103,7 +107,14 @@ offered there.
 - **One root process** owns the port. It follows the active session on seat0 through logind's state files
   (`/run/systemd/seats/seat0`: `ACTIVE=`, and `/run/systemd/sessions/<id>`: `UID=`, `TYPE=`, `DISPLAY=`), watched
   with inotify. That avoids a D-Bus client in the binary. If those files prove too unstable, fall back to a
-  hand-written minimal D-Bus call over `/run/dbus/system_bus_socket` (one method, one signal).
+  hand-written minimal D-Bus call over `/run/dbus/system_bus_socket` (one method, one signal). **Built (step 3):
+  the files suffice** (logind renames each into place: `IN_MOVED_TO` and `IN_DELETE` on the two directories). The
+  runtime directory's tmpfs is mounted after the session's files are written, so the agent also polls
+  `/proc/self/mountinfo` (POLLPRI on a change of the mount table) and starts the child once `/run/user/<uid>` is the
+  user's (a `stat`: the unit leaves root no `CAP_DAC_OVERRIDE`, so it can't open the 0700 directory). A child is the user's
+  process by then: the agent stops one by closing its socket (it ends by itself), then SIGKILL, for which the unit keeps
+  `CAP_KILL` (the first build killed first, without it, and its `waitpid` hung: found by the Wayland test's sway
+  restart).
 - **For a graphical session**, it `fork`s a child (no `exec`: it shares the parent's pages, so it costs little
   memory) that drops to the session's uid and gid (`setgroups`, `setresgid`, `setresuid`) before it parses
   anything a client hands it. The child talks to the parent over a socketpair. It finds the session's display
@@ -169,7 +180,10 @@ would bring if that is what it takes. So:
   ticks over a minute (`/proc/<pid>/stat`: utime and stime), no context switches while idle
   (`/proc/<pid>/status`: `voluntary_ctxt_switches`), and an idle RSS of about 1 MiB or less per process
   (`VmRSS`; the child shares the parent's text). A paste of 1 MiB of text costs a few milliseconds of guest CPU.
-  **Measured, step 2 (Debian 13, the console agent, 2026-11-06):** over 60 s idle, **0 ticks of CPU and 0 voluntary context switches; VmRSS 300 KiB** (18 ticks and ~30 switches from its start to the first measure, the HELLO and the boot's settling); `tests/page-agent.test.ts` keeps the
+  **Measured, step 3 (Debian 13, sway 1.10 headless, 2026-11-06):** over 20 s idle with sway running, 0 ticks and 0
+  voluntary switches for the agent and its session child; **VmRSS 572 KiB (the agent) and 516 KiB (the child)**.
+  **Size: 403,000 bytes** (the Podman build), +62 KiB for the Wayland client, logind and the session child (`std`'s
+  `HashMap`, `read_dir` and formatting among it). **Measured, step 2 (Debian 13, the console agent, 2026-11-06):** over 60 s idle, **0 ticks of CPU and 0 voluntary context switches; VmRSS 300 KiB** (18 ticks and ~30 switches from its start to the first measure, the HELLO and the boot's settling); `tests/page-agent.test.ts` keeps the
   check over 20 s. **Size:** 333 KiB (340,712 bytes, the Podman build), above the ~200 KiB aim, because `std` alone
   is ~320 KiB on this toolchain (an empty `fn main` with the same profile: 327,048 bytes); the agent's own code and
   `rustix` are ~13 KiB. `#![no_std]` would bring it to tens of KiB and the boot's fw_cfg read (§3.1) with it.
@@ -392,7 +406,7 @@ Each step is one loop with its own tests at the cheapest layer:
    `HELLO`, `TYPE` through TIOCSTI, `PAUSE`. The Debian page test types a string through the menu item and reads
    it back from the VT. This measures the binary's size and the fw_cfg read time, and it checks §3.3's idle
    targets.
-3. **Wayland:** our data-control client in the session's child, and logind tracking. The test image gains a
+3. **Wayland (built 2026-11-06):** our data-control client in the session's child, and logind tracking. The test image gains a
    headless sway (`WLR_BACKENDS=headless`) and `wl-clipboard`, test-only. The tests: `wl-copy` in the guest
    gives the host clipboard (Playwright with `clipboard-read`/`clipboard-write` granted), the host clipboard
    plus the paste chord gives `wl-paste` in the guest, the switch's pause stops both, and §3.3's targets hold

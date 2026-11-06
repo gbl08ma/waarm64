@@ -122,8 +122,9 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
     await page.waitForTimeout(500);
   }
   // A long paste (20 KiB in lines of 100 bytes) into a slow reader (the terminal not canonical, a dd of 512 bytes at a time):
-  // the terminal's 4 KiB buffer fills, and the agent waits for room rather than lose the rest.
-  await run(page, 'kill $(cat /tmp/reader); stty -F /dev/tty1 -icanon -echo min 1; setsid sh -c "while dd bs=512 count=1 status=none; do sleep 0.01; done >>/tmp/typed" </dev/tty1 >/dev/null 2>&1 & echo started');
+  // the terminal's 4 KiB buffer fills, and the agent waits for room rather than lose the rest. (No `>>` in a command: `run`
+  // would take its echo, as it is typed, for its output, and the paste would race the reader's start.)
+  await run(page, 'kill $(cat /tmp/reader); stty -F /dev/tty1 -icanon -echo min 1; setsid sh -c "while dd bs=512 count=1 status=none; do sleep 0.01; done | tee -a /tmp/typed >/dev/null" </dev/tty1 >/dev/null 2>&1 & echo started');
   const long = Array.from({ length: 200 }, (_, i) => `${String(i).padStart(4, '0')} ${'abcdefghij'.repeat(9)}abcd\n`).join('');
   assert.equal(await page.evaluate(([s]) => (window as unknown as { __agent: Link }).__agent.type(s), [long]), true);
   const wantLong = want + long;
@@ -134,7 +135,7 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
       t.diagnostic(`the long paste reached the slow reader whole in ${((performance.now() - t0) / 1000).toFixed(1)} s or less`);
       break;
     }
-    if (i > 120) assert.fail(`after the long paste tty1's reader has ${n} bytes, not ${Buffer.byteLength(wantLong)}`);
+    if (i > 120) assert.fail(`after the long paste tty1's reader has ${n} bytes, not ${Buffer.byteLength(wantLong)}; the first line missing or out of order: ${await run(page, 'grep -o "^[0-9][0-9][0-9][0-9] " /tmp/typed | awk "NR - 1 != \\$1 + 0 { print NR - 1, \\$1; exit }"')}; the agent says: ${await run(page, 'journalctl -b -u webpc-agent -o cat --no-pager | tail -3')}; its start: ${await run(page, 'head -c 160 /tmp/typed | od -An -c | tr -s " "')}; tty1 held by ${await run(page, 'for p in /proc/[0-9]*; do ls -l $p/fd 2>/dev/null | grep -q "/dev/tty1$" && echo $(basename $p) $(cat $p/comm); done')}; the session: ${await run(page, 'loginctl list-sessions --no-legend; cat /run/systemd/seats/seat0 | grep ACTIVE')}`);
     await page.waitForTimeout(1000);
   }
 

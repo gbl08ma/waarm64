@@ -58,8 +58,8 @@ exec /run/webpc/agent
 /**
  * The [Service] lines (plan §3.1): a long-running root process, low priority, its memory capped (a cap for a bug, not
  * a budget: plan §3.3) and first to go when the guest runs out. Sandboxed as far as what it does allows: TIOCSTI on the
- * foreground console needs CAP_SYS_ADMIN, the session children of the next steps change uid (CAP_SETUID, CAP_SETGID;
- * no NoNewPrivileges, which would stop them) and read the session's files in /run/user and the home (read-only).
+ * foreground console needs CAP_SYS_ADMIN, the session children change uid (CAP_SETUID, CAP_SETGID; no NoNewPrivileges,
+ * which would stop them) and are the user's processes then, which the agent stops (CAP_KILL); they read the session's files in /run/user and the home (read-only).
  * `modprobe` runs outside the sandbox (`+`), before it: Debian loads qemu_fw_cfg from the DT already. /run/webpc is a
  * tmpfs of the unit's own (gone when it stops), mounted `exec`: Debian 13 mounts /run `noexec`, where a
  * `RuntimeDirectory` can't run the binary (measured 2026-11-06: `exec` gave EACCES).
@@ -72,7 +72,7 @@ RestartSec=5s
 Nice=10
 MemoryMax=32M
 OOMScoreAdjust=500
-CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_KILL
 UMask=0077
 ProtectSystem=strict
 ProtectHome=read-only

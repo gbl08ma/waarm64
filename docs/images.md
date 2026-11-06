@@ -152,6 +152,18 @@ On demand, as the next section's: the pinned Debian with `gcc`, `libc6-dev`, `ma
 (~5 min): `target/images/debian-tools/disk.qcow2`, what `tests/page-folders.test.ts` builds and commits in a shared folder
 on (skipped without it).
 
+## Debian with sway (`images/debian-sway/build.sh`)
+
+On demand, as the one above: the pinned Debian with `sway` (1.10.1, wlroots 0.18.2) and `wl-clipboard` (2.2.1)
+installed by apt in QEMU without recommends (~2 min), then `images/debian-sway/setup.sh` run in the guest: the user
+`user` (uid 1000, no password), logged in on tty1 at boot by getty (`--autologin`, a drop-in of `getty@tty1`), whose
+`~/.bash_profile` there `exec`s a headless sway (`WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1`,
+its log `/tmp/sway.log`; `/tmp/no-sway` stops it starting) with a config of one line (no bar, nothing on a timer).
+Its session is a tty's (`TYPE=tty`, seat0), as on the Arch desktop, so the clipboard agent's way to it is the real one;
+sway's end ends the session and getty logs the user in again. `target/images/debian-sway/disk.qcow2`, what
+`tests/page-clipboard.test.ts` runs on (skipped without it). Its wlroots has `zwlr_data_control_manager_v1` but not
+yet `ext_data_control_manager_v1` (0.19), so the agent's ext path is the Arch desktop's to check.
+
 ## Debian with Chromium (`images/debian-chromium/build.sh`)
 
 **On demand only** (not `images/build.sh`, `SHA256SUMS` or CI): the disk of the complex-app benchmark

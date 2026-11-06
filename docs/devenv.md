@@ -36,7 +36,8 @@ From zypper (add what's missing with `sudo zypper in`, and note it here):
   oracle); for the virgl oracle virglrenderer-test-server (`virgl_test_server`, vtest), Mesa-demo (`eglinfo`,
   `es2_info`) and Mesa-libGLESv2-devel, Mesa-libEGL-devel, Mesa-KHR-devel (glcomp builds natively); glmark2, xvfb-run
   (glmark2-es2 on virpipe under Xvfb), meson, ninja, libepoxy-devel, libdrm-devel, libgbm-devel (a debug
-  virglrenderer for the oracle, graphics.md "Tools"), sway and foot. qemu-ui-opengl is installed but QEMU's
+  virglrenderer for the oracle, graphics.md "Tools"), sway and foot, and wl-clipboard (the clipboard agent's native test
+  against a headless sway, `agent/src/sway_test.rs`). qemu-ui-opengl is installed but QEMU's
   `virtio-gpu-gl` can't run (no DRM render node in the VM: graphics.md "Findings").
 - Vulkan, for VK0 (bench/vulkan/REPORT.md): vulkan-devel, vulkan-tools, vulkan-validationlayers, shaderc (glslc),
   spirv-tools, spirv-cross, Mesa-libGLESv3-devel, 7zip (unpacks the macOS SDK); for its tools (`tools/venus-oracle/`,

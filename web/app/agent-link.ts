@@ -3,9 +3,10 @@
 // takes the page's bytes as the guest posts buffers; the link keeps at most `WINDOW` bytes the guest hasn't taken
 // yet, so a guest that stops reading costs the page a queue of frames, not the device's memory.
 //
-// What it says (step 2): HELLO each time the agent opens its end (the agent answers with its own: `agent`), TYPE
-// (`type`), and the toolbar's switch (`pause`, `resume`), which it says again to an agent that reopens its end (a
-// restarted agent starts unpaused). No UI yet (step 4): the tests drive it through `window.__agent`.
+// What it says: HELLO each time the agent opens its end (the agent answers with its own: `agent`), TYPE (`type`), the
+// toolbar's switch (`pause`, `resume`), which it says again to an agent that reopens its end (a restarted agent starts
+// unpaused), and the clipboard's frames, which web/app/clipboard.ts speaks over it (`send`, `onFrame`). No UI yet (step
+// 4): the tests drive it through `window.__agent` and `window.__clipboard`.
 
 import { CAP, decodeHello, encodeFrame, encodeHello, FRAME, FrameReader, typePayloads, VERSION, type Frame, type Hello } from '../agent-frame.ts';
 import type { AgentFromDevice, AgentToDevice } from '../agent-device.ts';
@@ -14,7 +15,7 @@ import type { AgentFromDevice, AgentToDevice } from '../agent-device.ts';
 export const WINDOW = 256 << 10;
 
 /** What the page says it can do (web/agent-frame.ts `CAP`). */
-export const PAGE_CAPS = CAP.TYPE;
+export const PAGE_CAPS = CAP.TYPE | CAP.TEXT;
 
 export class AgentLink {
   /** The guest's agent holds its end of the port open. */

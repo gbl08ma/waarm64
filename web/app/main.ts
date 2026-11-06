@@ -57,6 +57,7 @@ import { parseLocalURL } from '../local-net.ts';
 import { installCopyEdit } from './copy-edit.ts';
 import { eventOf, keyOf, keymapOf, type Mods } from './osk.ts';
 import { AgentLink } from './agent-link.ts';
+import { ClipboardShare } from './clipboard.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -744,8 +745,10 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   agentLink?.close();
   agentLink = agent && new AgentLink(agent.port1);
   (window as unknown as { __agent?: AgentLink }).__agent = agentLink; // the tests' hook
+  const share = clipboardShare = agentLink && new ClipboardShare(agentLink, { clipboard: { writeText: (s) => (navigator.clipboard ? navigator.clipboard.writeText(s) : Promise.reject(new Error('no clipboard'))) }, hasFocus: () => document.hasFocus() }); // no navigator.clipboard outside a secure context
+  (window as unknown as { __clipboard?: ClipboardShare }).__clipboard = share; // the tests' hook
   const locked = (on: boolean) => { ui.mouseLocked = on; placeCursor(); };
-  const input = attachInput(canvas, kbd.port1, tablet.port1, { live: () => keyboardLive, send: (d) => term.input(d, true), usb: keyboardKey }, { mouse: mouse?.port1, touch: touch?.port1, locked });
+  const input = attachInput(canvas, kbd.port1, tablet.port1, { live: () => keyboardLive, send: (d) => term.input(d, true), usb: keyboardKey }, { mouse: mouse?.port1, touch: touch?.port1, locked }, { hold: share && ((e) => share.chord(e)) });
   input.mouseLock(ui.mouseLock, ui.mouseLockMode);
   input.onRelease(() => { ui.keysReleased++; });
   // The guest's LEDs on the virtio keyboard: its status events (EV_LED, code 0 Num, 1 Caps, 2 Scroll Lock).
@@ -1959,6 +1962,13 @@ const pointerOn = (kind: 'mouse' | 'touch') => (stored ? !!stored.record[kind] :
 const clipboardOn = () => (stored ? !!stored.record.clipboard : params.get('clipboard') === '1');
 /** The running machine's end of the agent's port (web/app/agent-link.ts), while it has clipboard sharing. */
 let agentLink: AgentLink | undefined;
+/** Its clipboard sharing (web/app/clipboard.ts). */
+let clipboardShare: ClipboardShare | undefined;
+// The paste chord's text (docs/plans/clipboard.md §4.1, way 2): the browser's own paste event while the screen holds a
+// chord (web/input.ts), taken at the document (Firefox fires it at <body>, not at the focused canvas).
+document.addEventListener('paste', (e) => {
+  if (clipboardShare?.held && document.activeElement === canvas) clipboardShare.pasted(e.clipboardData?.getData('text/plain') ?? '');
+});
 /** A transient machine's remembered devices: this page's only, for its session. */
 let transientUsb: UsbEntry[] = [];
 const usbEntries = (): UsbEntry[] => (stored ? stored.record.usbDevices ?? [] : transientUsb);

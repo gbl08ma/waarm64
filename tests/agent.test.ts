@@ -12,8 +12,9 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { AGENT_PORTS, agentDevice, agentEntry, CTL_RX, CTL_TX, DEVICE_READY, F_MULTIPORT, MAX_PENDING, PORT_ADD, PORT_NAME, PORT_OPEN, PORT_READY, type AgentFromDevice } from '../web/agent-device.ts';
-import { CAP, decodeHello, encodeFrame, encodeHello, FRAME, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, VERSION } from '../web/agent-frame.ts';
+import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, FRAME, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
 import { AgentLink, PAGE_CAPS, WINDOW } from '../web/app/agent-link.ts';
+import { ACK_WAIT, ClipboardShare, INLINE, isPasteChord, PASTE_WAIT, TEXT, TEXT_CAP, textHash, type ClipLink } from '../web/app/clipboard.ts';
 import { AGENT_FILE, AGENT_PORT, agentBinary, agentCredentials, agentScript } from '../web/app/guest-agent.ts';
 import { oemStrings } from '../web/app/guest-unit.ts';
 import { guestWords } from '../web/app/guest-words.ts';
@@ -332,7 +333,7 @@ test("the link: HELLO at each opening, the agent's answer; TYPE once it can; PAU
   port2.postMessage({ type: 'open', port: 0, open: true });
   await settle();
   assert.deepEqual(sent.map((f) => f.type), [FRAME.HELLO]);
-  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TYPE });
+  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TYPE | CAP.TEXT });
   assert.equal(link.type('ls\n'), false, "open, but the agent hasn't said it can");
   const hellos: unknown[] = [];
   link.onHello = (h) => hellos.push(h);
@@ -372,6 +373,7 @@ test("the guest agent's unit: a long-running root service, wanted by multi-user.
   // TIOCSTI as root needs CAP_SYS_ADMIN; the session children (step 3) change uid: no NoNewPrivileges, no PrivateDevices.
   assert.match(unit, /^CapabilityBoundingSet=.*\bCAP_SYS_ADMIN\b.*$/m);
   assert.match(unit, /^CapabilityBoundingSet=.*\bCAP_SETUID\b.*\bCAP_SETGID\b/m);
+  assert.match(unit, /^CapabilityBoundingSet=.*\bCAP_KILL\b/m, "the children are the user's: stopping one needs CAP_KILL");
   assert.doesNotMatch(unit, /^(NoNewPrivileges|PrivateDevices|PrivateUsers|DynamicUser)=/m);
   assert.equal(c[2].data, '[Unit]\nWants=webpc-agent.service\nAfter=webpc-agent.service\n');
   for (const [i, x] of oemStrings(c).entries()) assert.equal(Buffer.from(x.split('=').slice(1).join('='), 'base64').toString(), c[i].data);
@@ -422,4 +424,234 @@ test("the guest agent's binary: fetched whole if it is an ELF file, gzipped; oth
     console.warn = warn;
   }
   assert.equal(warned.length, 2);
+});
+
+test("frames: the clipboard's payloads (the bytes agent/src/frame.rs pins)", () => {
+  const ascii = (s: string) => [...s].map((c) => c.charCodeAt(0));
+  const o = encodeOffer({ serial: 0x01020304, types: [{ type: 'text/plain', size: 3 }], inline: new TextEncoder().encode('abc') });
+  assert.deepEqual([...o], [4, 3, 2, 1, 1, 1, 10, ...ascii('text/plain'), 3, 0, 0, 0, ...ascii('abc')]);
+  assert.deepEqual(decodeOffer(o), { serial: 0x01020304, types: [{ type: 'text/plain', size: 3 }], inline: new TextEncoder().encode('abc') });
+  const lazy = { serial: 9, types: [{ type: TEXT, size: UNKNOWN }, { type: 'UTF8_STRING', size: UNKNOWN }] };
+  assert.deepEqual(decodeOffer(encodeOffer(lazy)), lazy);
+  assert.equal(decodeOffer(encodeOffer(lazy).subarray(0, 20)), undefined, 'cut short');
+  const r = encodeRequest({ serial: 7, id: 2, type: 'text/plain' });
+  assert.deepEqual([...r], [7, 0, 0, 0, 2, 0, 0, 0, 10, ...ascii('text/plain')]);
+  assert.deepEqual(decodeRequest(r), { serial: 7, id: 2, type: 'text/plain' });
+  const d = encodeData(5, DATA_END, new TextEncoder().encode('hi'));
+  assert.deepEqual([...d], [5, 0, 0, 0, DATA_END, ...ascii('hi')]);
+  assert.deepEqual({ ...decodeData(d)!, bytes: [...decodeData(d)!.bytes] }, { id: 5, flags: DATA_END, bytes: ascii('hi') });
+  assert.deepEqual([...encodeAck(3, ACK.TOO_LARGE)], [3, 0, 0, 0, 3]);
+  assert.deepEqual(decodeAck(encodeAck(3, ACK.TOO_LARGE)), { serial: 3, status: ACK.TOO_LARGE });
+  assert.deepEqual([...encodeMore(6, 1)], [6, 0, 0, 0, 1, 0, 0, 0]);
+  assert.deepEqual(decodeMore(encodeMore(6, 1)), { id: 6, n: 1 });
+  assert.equal(decodeMore(new Uint8Array(5)), undefined);
+  assert.deepEqual([FRAME.ACK, FRAME.MORE, CAP.TEXT], [8, 9, 2]);
+  assert.ok(5 + CHUNK <= MAX_PAYLOAD);
+});
+
+/** A link as the clipboard sees it, the agent's side driven by hand: `sent` holds the page's frames. */
+function fakeLink(caps: number = CAP.TYPE | CAP.TEXT) {
+  const sent: Frame[] = [];
+  const link: ClipLink = {
+    open: true,
+    paused: false,
+    agent: { version: 1, caps },
+    send(type, payload = new Uint8Array(0)) {
+      if (!this.open) return false;
+      sent.push({ type, payload });
+      return true;
+    },
+  };
+  const deliver = (type: number, payload: Uint8Array) => link.onFrame!({ type, payload });
+  /** The page's frames of `type` sent since the last call, taken off `sent`. */
+  const take = (type: number) => {
+    const got = sent.filter((f) => f.type === type);
+    sent.splice(0, sent.length, ...sent.filter((f) => f.type !== type));
+    return got;
+  };
+  return { link, sent, deliver, take };
+}
+
+function fakeHost() {
+  const written: string[] = [];
+  const host = { focus: true, clipboard: { writeText: async (s: string) => void written.push(s) }, hasFocus: () => host.focus };
+  return { host, written };
+}
+
+const settle = () => new Promise((r) => setTimeout(r, 0));
+const utf8 = (s: string) => new TextEncoder().encode(s);
+const requests = (frames: Frame[]) => frames.map((f) => decodeRequest(f.payload)!);
+
+test("the host's clipboard: the guest's offer written while focused (inline, or requested under MOREs), kept without focus, capped; dropped while paused", async () => {
+  const { link, deliver, take } = fakeLink();
+  const { host, written } = fakeHost();
+  const share = new ClipboardShare(link, host);
+  assert.equal(share.active, true);
+  deliver(FRAME.OFFER, encodeOffer({ serial: 1, types: [{ type: TEXT, size: 5 }], inline: utf8('hello') }));
+  await settle();
+  assert.deepEqual(written, ['hello']);
+  assert.deepEqual(take(FRAME.REQUEST), [], 'inline: nothing requested');
+  // Lazy: requested; each DATA frame but the last answered with a MORE; the text written once whole.
+  deliver(FRAME.OFFER, encodeOffer({ serial: 2, types: [{ type: TEXT, size: UNKNOWN }] }));
+  const [req] = requests(take(FRAME.REQUEST));
+  assert.deepEqual({ ...req, id: 0 }, { serial: 2, id: 0, type: TEXT });
+  deliver(FRAME.DATA, encodeData(req.id, 0, utf8('wörld, ')));
+  assert.deepEqual(take(FRAME.MORE).map((f) => decodeMore(f.payload)), [{ id: req.id, n: 1 }]);
+  deliver(FRAME.DATA, encodeData(req.id, DATA_END, utf8('in two')));
+  await settle();
+  assert.deepEqual(take(FRAME.MORE), [], 'no MORE after the end');
+  assert.deepEqual(written, ['hello', 'wörld, in two']);
+  // A failed answer writes nothing; a newer offer stops the older request (MORE 0).
+  deliver(FRAME.OFFER, encodeOffer({ serial: 3, types: [{ type: 'text/plain', size: 10 }] }));
+  const [r3] = requests(take(FRAME.REQUEST));
+  deliver(FRAME.DATA, encodeData(r3.id, DATA_FAIL));
+  deliver(FRAME.OFFER, encodeOffer({ serial: 4, types: [{ type: TEXT, size: 10 }] }));
+  const [r4] = requests(take(FRAME.REQUEST));
+  deliver(FRAME.OFFER, encodeOffer({ serial: 5, types: [{ type: TEXT, size: 3 }], inline: utf8('new') }));
+  assert.deepEqual(take(FRAME.MORE).map((f) => decodeMore(f.payload)), [{ id: r4.id, n: 0 }]);
+  deliver(FRAME.DATA, encodeData(r4.id, DATA_END, utf8('too late')));
+  await settle();
+  assert.deepEqual(written, ['hello', 'wörld, in two', 'new']);
+  // Past the cap, or no text: not requested.
+  deliver(FRAME.OFFER, encodeOffer({ serial: 6, types: [{ type: TEXT, size: TEXT_CAP + 1 }] }));
+  deliver(FRAME.OFFER, encodeOffer({ serial: 7, types: [{ type: 'image/png', size: 10 }] }));
+  assert.deepEqual(take(FRAME.REQUEST), []);
+  // An answer that runs past the cap stops (MORE 0) and writes nothing.
+  deliver(FRAME.OFFER, encodeOffer({ serial: 8, types: [{ type: TEXT, size: UNKNOWN }] }));
+  const [r8] = requests(take(FRAME.REQUEST));
+  const chunk = new Uint8Array(CHUNK).fill(0x61);
+  for (let k = 0; k <= TEXT_CAP / CHUNK; k++) deliver(FRAME.DATA, encodeData(r8.id, 0, chunk));
+  assert.deepEqual(take(FRAME.MORE).map((f) => decodeMore(f.payload)!).at(-1), { id: r8.id, n: 0 });
+  await settle();
+  assert.equal(written.length, 3);
+  // No focus: kept as pending, not written.
+  host.focus = false;
+  deliver(FRAME.OFFER, encodeOffer({ serial: 9, types: [{ type: TEXT, size: 5 }], inline: utf8('later') }));
+  await settle();
+  assert.equal(written.length, 3);
+  assert.equal(share.pending, 'later');
+  // Paused: the guest's offers are dropped, the agent's requests fail.
+  host.focus = true;
+  link.paused = true;
+  assert.equal(share.active, false);
+  deliver(FRAME.OFFER, encodeOffer({ serial: 10, types: [{ type: TEXT, size: 6 }], inline: utf8('paused') }));
+  deliver(FRAME.REQUEST, encodeRequest({ serial: 1, id: 40, type: TEXT }));
+  await settle();
+  assert.equal(written.length, 3);
+  assert.deepEqual(take(FRAME.DATA).map((f) => decodeData(f.payload)!.flags), [DATA_FAIL]);
+});
+
+test("the host's clipboard: the page's offer, inline or answered under the agent's MOREs; ACK; echoes not offered back", async () => {
+  const { link, deliver, take } = fakeLink();
+  const { host, written } = fakeHost();
+  const share = new ClipboardShare(link, host);
+  const offers = () => take(FRAME.OFFER).map((f) => decodeOffer(f.payload)!);
+  // The guest's text, written to the host: pasting it back offers nothing.
+  deliver(FRAME.OFFER, encodeOffer({ serial: 1, types: [{ type: TEXT, size: 4 }], inline: utf8('mine') }));
+  await settle();
+  assert.deepEqual(written, ['mine']);
+  await share.paste('mine');
+  await share.paste('');
+  assert.deepEqual(offers(), [], "the guest's own text, and nothing: not offered");
+  // Short: inline; the ACK lets the paste go at once.
+  let t0 = performance.now();
+  const p = share.paste('from the host ✓');
+  const [o] = offers();
+  assert.deepEqual(o.types, [{ type: TEXT, size: utf8('from the host ✓').length }]);
+  assert.equal(new TextDecoder().decode(o.inline), 'from the host ✓');
+  deliver(FRAME.ACK, encodeAck(o.serial, ACK.HELD));
+  await p;
+  assert.ok(performance.now() - t0 < ACK_WAIT / 2, 'the ACK, not the wait');
+  await share.paste('from the host ✓');
+  assert.deepEqual(offers(), [], 'the guest has it');
+  // Long: offered with its size and no bytes; the agent's request gets CREDIT frames, then one more for each MORE.
+  const long = 'x'.repeat(CHUNK * 6 + 100);
+  void share.paste(long);
+  const [ol] = offers();
+  assert.equal(ol.inline, undefined);
+  assert.deepEqual(ol.types, [{ type: TEXT, size: long.length }]);
+  deliver(FRAME.REQUEST, encodeRequest({ serial: ol.serial, id: 77, type: TEXT }));
+  const frames = take(FRAME.DATA).map((f) => decodeData(f.payload)!);
+  assert.equal(frames.length, CREDIT);
+  assert.ok(frames.every((f) => f.id === 77 && f.flags === 0 && f.bytes.length === CHUNK));
+  deliver(FRAME.MORE, encodeMore(77, 2));
+  frames.push(...take(FRAME.DATA).map((f) => decodeData(f.payload)!));
+  assert.equal(frames.length, CREDIT + 2);
+  deliver(FRAME.MORE, encodeMore(77, 5));
+  frames.push(...take(FRAME.DATA).map((f) => decodeData(f.payload)!));
+  assert.deepEqual(frames.map((f) => f.flags), [0, 0, 0, 0, 0, 0, DATA_END]);
+  assert.equal(frames.reduce((n, f) => n + f.bytes.length, 0), long.length);
+  deliver(FRAME.MORE, encodeMore(77, 5));
+  assert.deepEqual(take(FRAME.DATA), [], 'answered whole: nothing more');
+  // Another request, stopped by MORE 0; one for an older offer, or for another type, fails.
+  deliver(FRAME.REQUEST, encodeRequest({ serial: ol.serial, id: 78, type: 'text/plain' }));
+  assert.equal(take(FRAME.DATA).length, CREDIT);
+  deliver(FRAME.MORE, encodeMore(78, 0));
+  deliver(FRAME.MORE, encodeMore(78, 3));
+  assert.deepEqual(take(FRAME.DATA), []);
+  deliver(FRAME.REQUEST, encodeRequest({ serial: o.serial, id: 79, type: TEXT }));
+  deliver(FRAME.REQUEST, encodeRequest({ serial: ol.serial, id: 80, type: 'image/png' }));
+  assert.deepEqual(take(FRAME.DATA).map((f) => decodeData(f.payload)), [{ id: 79, flags: DATA_FAIL, bytes: new Uint8Array(0) }, { id: 80, flags: DATA_FAIL, bytes: new Uint8Array(0) }]);
+  // No ACK: the paste goes after ACK_WAIT. An ACK that says the guest didn't take it: the next paste offers it again.
+  t0 = performance.now();
+  await share.paste('unanswered');
+  assert.ok(performance.now() - t0 >= ACK_WAIT - 5);
+  offers();
+  const q = share.paste('refused');
+  const [or] = offers();
+  deliver(FRAME.ACK, encodeAck(or.serial, ACK.NO_SESSION));
+  await q;
+  void share.paste('refused');
+  assert.equal(offers().length, 1, 'offered again');
+  // Past the cap: not offered.
+  await share.paste('y'.repeat(TEXT_CAP + 1));
+  assert.deepEqual(offers(), []);
+  assert.ok(INLINE < CHUNK);
+});
+
+test('the paste chord: which keys; held for the paste event and the ACK, or let go after PASTE_WAIT; not held while sharing is off', async () => {
+  const k = (key: string, mods: Partial<Record<'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey', boolean>> = {}, code = `Key${key.toUpperCase()}`) => ({ key, code, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, ...mods });
+  assert.ok(isPasteChord(k('v', { ctrlKey: true })));
+  assert.ok(isPasteChord(k('V', { ctrlKey: true, shiftKey: true })));
+  assert.ok(isPasteChord(k('v', { metaKey: true })));
+  assert.ok(isPasteChord(k('Insert', { shiftKey: true }, 'Insert')));
+  assert.ok(!isPasteChord(k('v')));
+  assert.ok(!isPasteChord(k('v', { ctrlKey: true, altKey: true })));
+  assert.ok(!isPasteChord(k('c', { ctrlKey: true })));
+  assert.ok(!isPasteChord(k('Insert', {}, 'Insert')));
+  // On a Dvorak layout Ctrl+V is the key that says 'v' (code Period): the browser's shortcut goes by the key.
+  assert.ok(isPasteChord(k('v', { ctrlKey: true }, 'Period')));
+
+  const { link, deliver, take } = fakeLink();
+  const share = new ClipboardShare(link, fakeHost().host);
+  const ctrlV = k('v', { ctrlKey: true });
+  assert.equal(share.chord(k('a')), undefined, 'not a paste chord');
+  // Held until the paste event, then until the ACK.
+  let done = false;
+  const held = share.chord(ctrlV)!.then(() => { done = true; });
+  assert.equal(share.held, true);
+  await new Promise((r) => setTimeout(r, 20));
+  share.pasted('chord text');
+  assert.equal(share.held, false);
+  const [o] = take(FRAME.OFFER).map((f) => decodeOffer(f.payload)!);
+  assert.equal(new TextDecoder().decode(o.inline), 'chord text');
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(done, false, 'waits for the ACK');
+  deliver(FRAME.ACK, encodeAck(o.serial, ACK.HELD));
+  await held;
+  // No paste event: let go after PASTE_WAIT, nothing offered; a paste event after it is no chord's.
+  const t0 = performance.now();
+  await share.chord(ctrlV);
+  assert.ok(performance.now() - t0 >= PASTE_WAIT - 5);
+  share.pasted('stray');
+  assert.deepEqual(take(FRAME.OFFER), []);
+  // Off: paused, the port closed, an agent without text.
+  link.paused = true;
+  assert.equal(share.chord(ctrlV), undefined);
+  link.paused = false;
+  link.open = false;
+  assert.equal(share.chord(ctrlV), undefined);
+  assert.equal(new ClipboardShare(fakeLink(CAP.TYPE).link, fakeHost().host).chord(ctrlV), undefined);
+  assert.notEqual(textHash('a'), textHash('b'));
+  assert.equal(textHash('☃'), textHash('☃'));
 });
