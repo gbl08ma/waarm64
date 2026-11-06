@@ -1694,7 +1694,8 @@ wg_vertex_pull(struct wg_pipeline_key *k, uint32_t inputs, const uint64_t *bound
       if (!k->attr[loc].format)
          continue;
       const uint32_t b = k->attr[loc].binding, size = vk_format_get_blocksize(k->attr[loc].format);
-      if (b >= MIN2(wg_limits.max_vertex_buffers, 8) || (k->vb[b].stride & 3) || (bound[b] & 3) || (k->attr[loc].offset % MIN2(size, 4)))
+      if (b >= MIN2(wg_limits.max_vertex_buffers, 8) || (k->vb[b].stride & 3) || (bound[b] & 3) ||
+          (k->attr[loc].offset % MIN2(size, 4)) || wg_vertex_format_pulled(k->attr[loc].format))
          k->vb[b].pull = 1;
       past |= k->vb[b].stride && k->attr[loc].offset + size > k->vb[b].stride;
    }
@@ -1913,7 +1914,7 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
          }
          const bool written = k->fs->info.outputs & (1u << i);
          wg_json_printf(&j, "%s{\"format\":\"%s\",\"writeMask\":%u", i ? "," : "", f->name,
-                        written ? k->blend[i].mask & ((f->flags & WG_FMT_OPAQUE) ? 7 : 15) : 0);
+                        written ? k->blend[i].mask & ~wg_format_lacks(f) & 15 : 0);
          if (written && k->blend[i].enable && (f->flags & WG_FMT_BLEND)) {
             const bool cmin = k->blend[i].op >= 3, amin = k->blend[i].aop >= 3;
             wg_json_printf(&j, ",\"blend\":{\"color\":{\"operation\":\"%s\",\"srcFactor\":\"%s\",\"dstFactor\":\"%s\"},"

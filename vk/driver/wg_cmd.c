@@ -772,7 +772,9 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
                                        !partial && !resumed && !crops[i]);
       cmd->pass.colors[i] = v->vk.format;
       const bool clear = !resumed && a->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
-      const VkClearColorValue *c = &a->clearValue.color;
+      VkClearColorValue cv;
+      wg_clear_color(v->fmt, &a->clearValue.color, &cv);
+      const VkClearColorValue *c = &cv;
       char value[160];
       /* The four numbers alone: a clear value's as an array, a clear rect's after the attachment's index. */
       if (v->fmt->flags & WG_FMT_UINT)
@@ -781,7 +783,7 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
          snprintf(value, sizeof(value), "%d,%d,%d,%d", c->int32[0], c->int32[1], c->int32[2], c->int32[3]);
       else
          snprintf(value, sizeof(value), "%.9g,%.9g,%.9g,%.9g", c->float32[0], c->float32[1], c->float32[2],
-                  (v->fmt->flags & WG_FMT_OPAQUE) ? 1.0f : c->float32[3]);
+                  c->float32[3]);
       VK_FROM_HANDLE(wg_image_view, r, a->resolveImageView);
       const bool resolves = r && r->att && a->resolveMode != VK_RESOLVE_MODE_NONE;
       if (resolves)
@@ -1059,7 +1061,10 @@ clear_rects(struct wg_cmd_buffer *cmd, uint32_t count, const VkClearAttachment *
       if (a >= cmd->pass.color_count || !cmd->pass.colors[a])
          continue;
       const struct wg_texture_format *f = wg_texture_format(cmd->pass.colors[a]);
-      const VkClearColorValue *c = &atts[i].clearValue.color;
+      VkClearColorValue cv = atts[i].clearValue.color;
+      if (f)
+         wg_clear_color(f, &atts[i].clearValue.color, &cv);
+      const VkClearColorValue *c = &cv;
       if (f && (f->flags & WG_FMT_UINT))
          wg_json_printf(&j, "%s[%u,%u,%u,%u,%u]", first ? "" : ",", a, c->uint32[0], c->uint32[1], c->uint32[2],
                         c->uint32[3]);
@@ -1068,7 +1073,7 @@ clear_rects(struct wg_cmd_buffer *cmd, uint32_t count, const VkClearAttachment *
                         c->int32[3]);
       else
          wg_json_printf(&j, "%s[%u,%.9g,%.9g,%.9g,%.9g]", first ? "" : ",", a, c->float32[0], c->float32[1],
-                        c->float32[2], f && (f->flags & WG_FMT_OPAQUE) ? 1.0f : c->float32[3]);
+                        c->float32[2], c->float32[3]);
       first = false;
    }
    wg_json_printf(&j, "]");
@@ -2636,6 +2641,11 @@ clear_image(struct wg_cmd_buffer *cmd, struct wg_image *image, const VkClearColo
             const VkClearDepthStencilValue *ds, uint32_t count, const VkImageSubresourceRange *ranges)
 {
    const struct wg_texture_format *f = image->fmt;
+   VkClearColorValue cv;
+   if (color) {
+      wg_clear_color(f, color, &cv);
+      color = &cv;
+   }
    for (uint32_t i = 0; i < count; i++) {
       const uint32_t levels = vk_image_subresource_level_count(&image->vk, &ranges[i]);
       const uint32_t layers = image->vk.image_type == VK_IMAGE_TYPE_3D
@@ -2654,7 +2664,7 @@ clear_image(struct wg_cmd_buffer *cmd, struct wg_image *image, const VkClearColo
                               color->int32[3]);
             else if (color)
                wg_json_printf(&j, ",\"color\":[%.9g,%.9g,%.9g,%.9g]", color->float32[0], color->float32[1],
-                              color->float32[2], (f->flags & WG_FMT_OPAQUE) ? 1.0f : color->float32[3]);
+                              color->float32[2], color->float32[3]);
             if (ds && (ranges[i].aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT) && (f->flags & WG_FMT_DEPTH))
                wg_json_printf(&j, ",\"depth\":%.9g", CLAMP(ds->depth, 0, 1));
             if (ds && (ranges[i].aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT) && (f->flags & WG_FMT_STENCIL))

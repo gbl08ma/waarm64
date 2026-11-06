@@ -844,8 +844,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Packed formats' leftovers** (VK4 T12, T30; vk/README.md "Packed formats"): a 16-bit format holds 8 bits a
     channel, so what's rendered is sampled unrounded and blends run at 8 bits; a multisampled copy between a packed
     format and another of its size that isn't (`A2R10G10B10` and `A2B10G10R10`, `R5G6B5` and `R16_UINT`) is skipped
-    with a warning. Not offered: `A2R10G10B10`'s and `A2B10G10R10`'s SNORM and SINT (WebGPU has no signed 10-bit
-    texture: `rgba16sint`/`rgba16snorm` through the same pass would take them) and the scaled orders (VK4 T31).
+    with a warning. Not offered: `A2R10G10B10`'s and `A2B10G10R10`'s SNORM (`rgba16snorm`, tier1 only, would take them
+    with the pass rescaling snorm widths); linear tiling of any packed format (~180 of VK4 T31's sample on the M4: a
+    linear image's copies to and from its memory would go through the pass); sampling scaled formats (VK4 T31: the spec
+    samples them as floats, dEQP-VK through integer samplers, and clears them with integers, which our clears follow:
+    offering either way fails the other; no program met samples one). sRGB vertex formats aren't offered (no driver has
+    them: 14 of T31's vertex sample).
     `D16_UNORM_S8_UINT` keeps depth24plus's 24 bits (Metal's depth32float) until copied out, so a depth test between
     two values one D16 unit apart can differ from real D16; its depth bias's ×256 is exact only for a 24-bit unorm.
   - **Depth comparison isn't reported** (VK4 T30): no depth format reports
@@ -857,15 +861,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     has none to pull from, and its pipeline stays refused (group 3 could take the bindings); more pulled bindings than
     the vertex stage's storage buffers left; a pulled range past `maxStorageBufferBindingSize` is cut there. What pulling
     could back next, each a few lines of the fetch: vertex attribute divisors (`iid / rate`: vkd3d's other 24 of
-    test_instance_id, tier 4), and formats WebGPU's vertex buffers lack (three-component 8- and 16-bit, scaled:
-    816 and 120 of `vertex_input`'s 10,825 cases not supported by their names; 4,080 are `legacy_vertex_attributes`,
-    an extension not advertised; the other reasons not looked into). A draw that reads past a vertex buffer's end, which
+    test_instance_id, tier 4); `legacy_vertex_attributes` (4,080 of `vertex_input`'s 10,825 cases), an extension not
+    advertised. Formats WebGPU's vertex buffers lack are pulled since VK4 T31. A draw that reads past a vertex buffer's end, which
     Vulkan's robust buffer access reads as zeros or in range, is refused by WebGPU (nothing drawn): VK4 T28's
     `input_attribute_offset.two_binds_vec4.*.dynamic` by design, `extended_dynamic_state.*_draws_dynamic.vertex_input_multiple_bindings`
     (a slot bound past its buffer's end: not looked into); pulling such a binding would read zeros. Its cost isn't measured: nothing we run meets it but dEQP-VK
     and vkd3d's tests (a bind group per change of the ranges, and a shader's bytes decoded per vertex).
   - **Formats**: (ASTC's failures on SwiftShader were the padded blocks above, on Metal too); D24 depth tests fail by one unit (depth24plus's precision);
-    3-component formats in images (`glsl.440.linkage` makes RGB32 attachments: `VK_ERROR_FORMAT_NOT_SUPPORTED`).
+    3-component formats in images are offered since VK4 T31 (RGB32 attachments in `rgba32*`), `glsl.440.linkage`'s
+    RGB32 attachments not run since.
   - **Samplers' leftovers** (VK4 T8, T9; vk/README.md "Samplers in the shader"): a border on a view of several levels, a
     shadow sample past level 0 and a mirror-once with an offset pick their levels in the shader, so those samples lose
     anisotropy; a texture of one level sampled at a LOD past 0 through a sampler whose mag and min filters differ reads the
@@ -908,7 +912,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     their fragment twins pass there and the M4 passes them all. Not looked into (the translator prints the same sampling
     for both stages but the compute stage's explicit LOD). Also SwiftShader's alone: the `count_8` compute cases bind 8
     storage images (refused at their pipeline's creation, past the 4 advertised there, Vulkan's minimum; dEQP doesn't
-    check the limit; the M4 has 8).
+    check the limit; the M4 has 8). And `pipeline.monolithic.sampler.view_type.cube*` linear and average-reduced
+    samples of `r8g8b8a8_snorm`, `r8g8b8a8_srgb` and their VK4 T31 twins (`b8g8r8_snorm`, `r8g8_srgb`) in a compute
+    stage (4 of T31's sample and their 4 twins: "Image mismatch"; the M4 passes them).
   - **Shaders**: derivatives in non-uniform control flow
     (`glsl.derivate.*dynamic_if`); `umulExtended`. From the out-of-context review of the translator (VK3 L4f left them):
     signed and unsigned atomic min or max on one array (refused: WGSL's atomics have one

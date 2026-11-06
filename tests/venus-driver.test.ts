@@ -452,6 +452,8 @@ for (const [scenario, what] of [
   ['m8Copies', 'depth and stencil copied with colour images of their size, and blits between layers and slices'],
   // VK4 T30.
   ['t30Formats', 'packed formats WebGPU hasn\'t (R4G4, A4R4G4B4, A1B5G5R5, A2R10G10B10) and D16S8 keep their texels\' bits'],
+  // VK4 T31.
+  ['t31Formats', 'formats WebGPU has no texture of (RGB8, RGB16, RGB32, scaled, BGRA integers, R8 sRGB, 10-bit signed) keep their texels through wider textures'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.

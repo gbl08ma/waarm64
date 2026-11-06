@@ -3812,6 +3812,107 @@ t30_misc(VkCommandBuffer cmd, VkBuffer out)
    return 0;
 }
 
+/* VK4 T31's images: transfers only (scaled formats offer nothing else). */
+static int
+t31_image(VkFormat format, uint32_t w, VkImage *out)
+{
+   const VkImageCreateInfo info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D, .format = format, .extent = { w, 1, 1 },
+      .mipLevels = 1, .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
+      .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+   };
+   CHECK(CreateImage(dev, &info, NULL, out));
+   VkMemoryRequirements req;
+   GetImageMemoryRequirements(dev, *out, &req);
+   VkDeviceMemory mem;
+   if (memory_for(req, false, &mem, NULL))
+      return 1;
+   CHECK(BindImageMemory(dev, *out, mem, 0));
+   return 0;
+}
+
+/*
+ * VK4 T31, wgt_misc's scenario 97: formats WebGPU has no texture of, in wider textures, keep their texels through
+ * copies in and out: RGB8 at a 3-byte offset, copied into B8G8R8_SNORM; RGB16 floats, RGB32 integers; USCALED bytes
+ * and their copy into R8G8B8A8_UINT; SSCALED halves; BGRA's SINT; A2B10G10R10_SINT's signed 10 bits; clears of RGB8
+ * (alpha dropped), R8_SRGB (0.5 encoded) and a USCALED one (integers, as dEQP-VK clears them: 300 clamped).
+ */
+static int
+t31_misc(VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage = (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   PFN_vkCmdCopyImage CmdCopyImage = (PFN_vkCmdCopyImage)GetDeviceProcAddr(dev, "vkCmdCopyImage");
+   const VkImageLayout G = VK_IMAGE_LAYOUT_GENERAL;
+   VkImage rgb8, bgr8, rgb16, rgb32, us8, u8, ss16, bgrai, a2i, rgb8c, srgb8, us8c;
+   VkBuffer src;
+   uint8_t *sb;
+   if (t31_image(VK_FORMAT_R8G8B8_UNORM, 4, &rgb8) || t31_image(VK_FORMAT_B8G8R8_SNORM, 4, &bgr8) ||
+       t31_image(VK_FORMAT_R16G16B16_SFLOAT, 3, &rgb16) || t31_image(VK_FORMAT_R32G32B32_UINT, 2, &rgb32) ||
+       t31_image(VK_FORMAT_R8G8B8A8_USCALED, 2, &us8) || t31_image(VK_FORMAT_R8G8B8A8_UINT, 2, &u8) ||
+       t31_image(VK_FORMAT_R16G16_SSCALED, 2, &ss16) || t31_image(VK_FORMAT_B8G8R8A8_SINT, 2, &bgrai) ||
+       t31_image(VK_FORMAT_A2B10G10R10_SINT_PACK32, 2, &a2i) || t31_image(VK_FORMAT_R8G8B8_UNORM, 1, &rgb8c) ||
+       t31_image(VK_FORMAT_R8_SRGB, 2, &srgb8) || t31_image(VK_FORMAT_R8G8B8A8_USCALED, 1, &us8c) ||
+       buffer(4096, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, &src, (void **)&sb))
+      return 1;
+   for (uint32_t i = 0; i < 12; i++)
+      sb[3 + i] = (uint8_t)(0x11 * i + 1);
+   static const uint16_t halves[9] = { 0x3c00, 0xc000, 0x3555, 0x7bff, 0x0001, 0x8000, 0x4248, 0x0000, 0xbc00 };
+   memcpy(sb + 32, halves, sizeof(halves));
+   static const uint32_t words[6] = { 0xdeadbeef, 0x00000001, 0xffffffff, 0x12345678, 0x80000000, 0x7fffffff };
+   memcpy(sb + 64, words, sizeof(words));
+   static const uint8_t bytes[8] = { 0, 1, 127, 128, 200, 254, 255, 3 };
+   memcpy(sb + 96, bytes, 8);
+   static const int16_t shorts[4] = { -32768, 32767, -1, 12345 };
+   memcpy(sb + 112, shorts, 8);
+   static const int8_t sbytes[8] = { -128, 127, -1, 5, 0, -77, 64, -2 };
+   memcpy(sb + 128, sbytes, 8);
+   /* A2B10G10R10_SINT: R -512, G 511, B -1, A -2; then R 1, G -300, B 0, A 1. */
+   const uint32_t a2[2] = { (512u) | (511u << 10) | (1023u << 20) | (2u << 30),
+                            1u | ((uint32_t)(-300 & 1023) << 10) | (0u << 20) | (1u << 30) };
+   memcpy(sb + 144, a2, 8);
+   const VkImageAspectFlags C = VK_IMAGE_ASPECT_COLOR_BIT;
+   const VkImage all[] = { rgb8, bgr8, rgb16, rgb32, us8, u8, ss16, bgrai, a2i, rgb8c, srgb8, us8c };
+   for (uint32_t i = 0; i < sizeof(all) / sizeof(all[0]); i++)
+      t24_general(cmd, all[i], C, 1);
+   const VkImageSubresourceLayers c1 = { C, 0, 0, 1 };
+   const VkImageSubresourceRange cr = { C, 0, 1, 0, 1 };
+#define UP(img, at, w)                                                                                                \
+   CmdCopyBufferToImage(cmd, src, img, G, 1,                                                                          \
+                        &(VkBufferImageCopy){ .bufferOffset = at, .imageSubresource = c1, .imageExtent = { w, 1, 1 } })
+#define DOWN(img, at, w)                                                                                              \
+   CmdCopyImageToBuffer(cmd, img, G, out, 1,                                                                          \
+                        &(VkBufferImageCopy){ .bufferOffset = at, .imageSubresource = c1, .imageExtent = { w, 1, 1 } })
+#define COPY(a, b, w) CmdCopyImage(cmd, a, G, b, G, 1, &(VkImageCopy){ .srcSubresource = c1, .dstSubresource = c1, .extent = { w, 1, 1 } })
+   UP(rgb8, 3, 4);
+   DOWN(rgb8, 3, 4);
+   COPY(rgb8, bgr8, 4);
+   DOWN(bgr8, 259, 4);
+   UP(rgb16, 32, 3);
+   DOWN(rgb16, 512, 3);
+   UP(rgb32, 64, 2);
+   DOWN(rgb32, 768, 2);
+   UP(us8, 96, 2);
+   DOWN(us8, 1024, 2);
+   COPY(us8, u8, 2);
+   DOWN(u8, 1032, 2);
+   UP(ss16, 112, 2);
+   DOWN(ss16, 1280, 2);
+   UP(bgrai, 128, 2);
+   DOWN(bgrai, 1536, 2);
+   UP(a2i, 144, 2);
+   DOWN(a2i, 1792, 2);
+   CmdClearColorImage(cmd, rgb8c, G, &(VkClearColorValue){ .float32 = { 1, 0, 0.2f, 0 } }, 1, &cr);
+   DOWN(rgb8c, 2048, 1);
+   CmdClearColorImage(cmd, srgb8, G, &(VkClearColorValue){ .float32 = { 0.5f, 1, 1, 0 } }, 1, &cr);
+   DOWN(srgb8, 2304, 2);
+   CmdClearColorImage(cmd, us8c, G, &(VkClearColorValue){ .uint32 = { 3, 300, 0, 7 } }, 1, &cr);
+   DOWN(us8c, 2560, 1);
+#undef UP
+#undef DOWN
+#undef COPY
+   return 0;
+}
+
 /*
  * VK4 T23, wgt_misc's scenario 94, `cs` t23-rgb9e5.comp: a 2x1 R32_UINT image (mutable, as Godot's SDFGI makes them)
  * given two E5B9G9R9 words, (1, 0.5, 0.25) and (3, 2, 0), by a copy from the buffer, then sampled through an
@@ -6021,6 +6122,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 96) {
       if (t30_misc(cmd, out))
+         return 1;
+   } else if (scenario == 97) {
+      if (t31_misc(cmd, out))
          return 1;
    } else if (scenario == 41 || scenario == 42) {
       if (t11_misc(scenario, cs, cs_words, cmd, out))

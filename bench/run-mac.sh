@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The boot and small-guest benchmarks on the Mac host's Chromium (Playwright's Chrome for Testing,
+# The boot and small-guest benchmarks (and bench/vulkan's pages) on the Mac host's Chromium (Playwright's Chrome for Testing,
 # headless, temporary profile): macOS has V8's wasm trap handler, so its numbers are without the
 # explicit bounds checks this Linux arm64 VM's carry (docs/v8.md "Bounds checks"). The pages, the
 # wasm core and the Alpine images are copied to ~/webpc-bench there (~600 MB), the packages installed there; it
@@ -13,7 +13,7 @@ HOST=${MAC_HOST:-macmini.lan}
 DEST=webpc-bench
 CORE=target/wasm32-unknown-unknown/release
 ssh "$HOST" "mkdir -p $DEST/bench $DEST/tools $DEST/$CORE $DEST/target/images $DEST/target/bench"
-rsync -a --delete --exclude results --exclude memory bench/boot bench/interp bench/spike bench/run.ts bench/stats.ts "$HOST:$DEST/bench/"
+rsync -a --delete --exclude results --exclude memory bench/boot bench/interp bench/spike bench/vulkan bench/run.ts bench/stats.ts "$HOST:$DEST/bench/"
 # The dev server (Vite: tools/serve.ts) and the packages, installed there (bench/mac-packages.sh).
 . bench/mac-packages.sh && mac_packages "$HOST" "$DEST"
 . bench/mac-chrome.sh && mac_chrome "$HOST"   # the current Stable Chrome for Testing there

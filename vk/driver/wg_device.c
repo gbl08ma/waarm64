@@ -389,6 +389,16 @@ wg_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice, VkFormat 
    }
 }
 
+/* Whether two formats' textures differ only in sRGB-ness (R8_SRGB's rgba8unorm-srgb and R8_UNORM's r8unorm don't:
+ * VK4 T31). */
+static bool
+textures_twins(const struct wg_texture_format *a, const struct wg_texture_format *b)
+{
+   const size_t n = strlen(a->name), m = strlen(b->name);
+   const char *longer = n > m ? a->name : b->name, *shorter = n > m ? b->name : a->name;
+   return n != m && !strncmp(longer, shorter, MIN2(n, m)) && !strcmp(longer + MIN2(n, m), "-srgb");
+}
+
 /* A view format WebGPU gives an image of `format`: its own, or its sRGB or linear twin. */
 static bool
 view_format_ok(VkFormat format, VkFormat view)
@@ -398,7 +408,8 @@ view_format_ok(VkFormat format, VkFormat view)
    const VkFormat twin = vk_format_is_srgb(format)
                             ? vk_format_srgb_to_linear(format)
                             : vk_format_from_pipe_format(util_format_srgb(vk_format_to_pipe_format(format)));
-   return view == twin;
+   const struct wg_texture_format *f = wg_texture_format(format), *v = wg_texture_format(view);
+   return view == twin && (!f || !v || textures_twins(f, v));
 }
 
 /* A view of `format` of a texture of `f`, which WebGPU refuses, that a texture of its own can back (VK4 T4): bytes for
@@ -1190,27 +1201,35 @@ srgb_twin(const struct wg_texture_format *fmt)
    const VkFormat twin = vk_format_is_srgb(fmt->vk) ? vk_format_srgb_to_linear(fmt->vk)
                                                     : vk_format_from_pipe_format(util_format_srgb(vk_format_to_pipe_format(fmt->vk)));
    const struct wg_texture_format *t = twin != fmt->vk ? wg_texture_format(twin) : NULL;
-   return t ? t->name : NULL;
+   return t && textures_twins(fmt, t) ? t->name : NULL;
 }
 
 /* What the worker's copies need of a packed format, as a texture's first JSON key: each of R, G, B, A's shift and bits,
- * then a texel's bytes in buffers. */
+ * a texel's bytes in buffers, then each channel's kind (0 unorm, 1 snorm, 2 unsigned, 3 signed integers, scaled
+ * ones too, 4 float), which the texture's may differ from (a scaled format's floats: VK4 T31). */
 static void
 packed_key(struct wg_json *j, const struct wg_texture_format *fmt)
 {
    wg_json_printf(j, "\"packed\":[");
    if (fmt->vk == VK_FORMAT_R4G4_UNORM_PACK8) {
       /* Mesa has no pipe format of it: R in the high nibble. */
-      wg_json_printf(j, "4,4,0,4,0,0,0,0");
-   } else {
-      const struct util_format_description *d = vk_format_description(fmt->vk);
-      for (uint32_t c = 0; c < 4; c++) {
-         const uint32_t k = d->swizzle[c];
-         wg_json_printf(j, "%s%u,%u", c ? "," : "", k <= PIPE_SWIZZLE_W ? d->channel[k].shift : 0,
-                        k <= PIPE_SWIZZLE_W ? d->channel[k].size : 0);
-      }
+      wg_json_printf(j, "4,4,0,4,0,0,0,0,1,0,0,0,0],");
+      return;
    }
-   wg_json_printf(j, ",%u],", wg_texel_bytes(fmt));
+   const struct util_format_description *d = vk_format_description(fmt->vk);
+   for (uint32_t c = 0; c < 4; c++) {
+      const uint32_t k = d->swizzle[c];
+      wg_json_printf(j, "%s%u,%u", c ? "," : "", k <= PIPE_SWIZZLE_W ? d->channel[k].shift : 0,
+                     k <= PIPE_SWIZZLE_W ? d->channel[k].size : 0);
+   }
+   wg_json_printf(j, ",%u", wg_texel_bytes(fmt));
+   for (uint32_t c = 0; c < 4; c++) {
+      const uint32_t k = d->swizzle[c];
+      const struct util_format_channel_description *ch = k <= PIPE_SWIZZLE_W ? &d->channel[k] : NULL;
+      const bool sign = ch && ch->type == UTIL_FORMAT_TYPE_SIGNED;
+      wg_json_printf(j, ",%u", !ch ? 0 : ch->type == UTIL_FORMAT_TYPE_FLOAT ? 4 : ch->normalized ? sign : 2 + sign);
+   }
+   wg_json_printf(j, "],");
 }
 
 /* A D16_UNORM_S8_UINT texture's key: the worker's copies take its depth as 16-bit unorm. */
@@ -1721,9 +1740,9 @@ wg_CreateImageView(VkDevice _device, const VkImageViewCreateInfo *pCreateInfo,
    char letters[5] = "";
    for (uint32_t i = 0; i < 4; i++) {
       VkComponentSwizzle m = mapping[i] == VK_COMPONENT_SWIZZLE_IDENTITY ? VK_COMPONENT_SWIZZLE_R + i : mapping[i];
-      /* Rendered alpha stays out of an opaque format's texture only by the write mask: reads say 1 whatever came in. */
-      if (m == VK_COMPONENT_SWIZZLE_A && (view->fmt->flags & WG_FMT_OPAQUE))
-         m = VK_COMPONENT_SWIZZLE_ONE;
+      /* What the format lacks stays out of its texture only by write masks: reads say 0 (alpha 1) whatever came in. */
+      if (m >= VK_COMPONENT_SWIZZLE_R && (wg_format_lacks(view->fmt) & (1u << (m - VK_COMPONENT_SWIZZLE_R))))
+         m = m == VK_COMPONENT_SWIZZLE_A ? VK_COMPONENT_SWIZZLE_ONE : VK_COMPONENT_SWIZZLE_ZERO;
       letters[i] = m == VK_COMPONENT_SWIZZLE_ZERO ? '0' : m == VK_COMPONENT_SWIZZLE_ONE ? '1' : channels[m - VK_COMPONENT_SWIZZLE_R];
       identity &= m == (VkComponentSwizzle)(VK_COMPONENT_SWIZZLE_R + i);
    }
@@ -1879,8 +1898,13 @@ wg_view_twin(struct wg_image_view *view)
                      4 | 16 | ((view->fmt->flags & WG_FMT_NOCOPY) && !(view->fmt->flags & WG_FMT_STENCIL) ? 0 : 2));
       view->twin_tex = wg_create_json(WG_KIND_TEXTURE, &j);
       j = (struct wg_json){ 0 };
+      const uint32_t lacks = wg_format_lacks(view->fmt);
+      char swizzle[40] = "";
+      if (lacks && (wg_features & WG_FEATURE_SWIZZLE))
+         snprintf(swizzle, sizeof(swizzle), ",\"swizzle\":\"%c%c%c%c\",\"usage\":4", lacks & 1 ? '0' : 'r',
+                  lacks & 2 ? '0' : 'g', lacks & 4 ? '0' : 'b', lacks & 8 ? '1' : 'a');
       wg_json_printf(&j, "{\"texture\":%u,\"dimension\":\"2d\",\"mipLevelCount\":1,\"arrayLayerCount\":1%s%s}", view->twin_tex,
-                     (view->fmt->flags & WG_FMT_OPAQUE) && (wg_features & WG_FEATURE_SWIZZLE) ? ",\"swizzle\":\"rgb1\",\"usage\":4" : "",
+                     swizzle,
                      !depth || view->vk.aspects == (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT) ? ""
                      : view->vk.aspects & VK_IMAGE_ASPECT_DEPTH_BIT ? ",\"aspect\":\"depth-only\""
                                                                     : ",\"aspect\":\"stencil-only\"");

@@ -57,6 +57,56 @@ static const struct wg_texture_format table[] = {
    F(R4G4_UNORM_PACK8, "rg8unorm", 2, 1, 1, CS | FL | RB | WG_FMT_PACKED),
    F(A2R10G10B10_UNORM_PACK32, "rgb10a2unorm", 4, 1, 1, CS | FL | RB | WG_FMT_PACKED),
    F(A2R10G10B10_UINT_PACK32, "rgb10a2uint", 4, 1, 1, CS | WG_FMT_RENDER | U | WG_FMT_PACKED),
+   /* Formats WebGPU has no texture of (VK4 T31), packed the same way into a wider texture: three channels in four (alpha
+    * kept 1: OPAQUE), BGRA's integer and snorm orders, R8 and R8G8 sRGB in rgba8unorm-srgb (the channels they lack kept
+    * 0), 10-bit signed integers in 16 bits. The scaled formats are their integer twins' textures, offered for transfers
+    * only: dEQP-VK samples and clears them as integers, the spec as floats (their clears take integers, dEQP's way). */
+#define P (WG_FMT_PACKED)
+#define PO (WG_FMT_PACKED | WG_FMT_OPAQUE)
+#define RGB3(rgb)                                                                                                     \
+   F(rgb##_UNORM, "rgba8unorm", 4, 1, 1, CS | FL | RB | PO), F(rgb##_SNORM, "rgba8snorm", 4, 1, 1, CS | FL | T1R | PO), \
+   F(rgb##_UINT, "rgba8uint", 4, 1, 1, CS | WG_FMT_RENDER | U | PO),                                                \
+   F(rgb##_SINT, "rgba8sint", 4, 1, 1, CS | WG_FMT_RENDER | S | PO),                                                \
+   F(rgb##_SRGB, "rgba8unorm-srgb", 4, 1, 1, CS | FL | RB | PO),                                                   \
+   F(rgb##_USCALED, "rgba8uint", 4, 1, 1, WG_FMT_COLOR | U | PO), F(rgb##_SSCALED, "rgba8sint", 4, 1, 1, WG_FMT_COLOR | S | PO)
+   RGB3(R8G8B8),
+   RGB3(B8G8R8),
+#undef RGB3
+   F(R16G16B16_UNORM, "rgba16unorm", 8, 1, 1, CS | T1R | WG_FMT_TIER1 | PO),
+   F(R16G16B16_SNORM, "rgba16snorm", 8, 1, 1, CS | T1R | WG_FMT_TIER1 | PO),
+   F(R16G16B16_UINT, "rgba16uint", 8, 1, 1, CS | WG_FMT_RENDER | U | PO),
+   F(R16G16B16_SINT, "rgba16sint", 8, 1, 1, CS | WG_FMT_RENDER | S | PO),
+   F(R16G16B16_SFLOAT, "rgba16float", 8, 1, 1, CS | FL | RB | PO),
+   F(R16G16B16_USCALED, "rgba16uint", 8, 1, 1, WG_FMT_COLOR | U | PO),
+   F(R16G16B16_SSCALED, "rgba16sint", 8, 1, 1, WG_FMT_COLOR | S | PO),
+   F(R32G32B32_UINT, "rgba32uint", 16, 1, 1, CS | WG_FMT_RENDER | U | PO),
+   F(R32G32B32_SINT, "rgba32sint", 16, 1, 1, CS | WG_FMT_RENDER | S | PO),
+   F(R32G32B32_SFLOAT, "rgba32float", 16, 1, 1, CS | WG_FMT_RENDER | WG_FMT_FLOAT32 | PO),
+   F(B8G8R8A8_SNORM, "rgba8snorm", 4, 1, 1, CS | FL | T1R | P),
+   F(B8G8R8A8_UINT, "rgba8uint", 4, 1, 1, CS | WG_FMT_RENDER | U | P),
+   F(B8G8R8A8_SINT, "rgba8sint", 4, 1, 1, CS | WG_FMT_RENDER | S | P),
+   F(R8_SRGB, "rgba8unorm-srgb", 4, 1, 1, CS | FL | RB | P),
+   F(R8G8_SRGB, "rgba8unorm-srgb", 4, 1, 1, CS | FL | RB | P),
+   F(A2R10G10B10_SINT_PACK32, "rgba16sint", 8, 1, 1, CS | WG_FMT_RENDER | S | P),
+   F(A2B10G10R10_SINT_PACK32, "rgba16sint", 8, 1, 1, CS | WG_FMT_RENDER | S | P),
+#define SCALED(fmt, u, s, bytes, flags)                                                                               \
+   F(fmt##_USCALED, u, bytes, 1, 1, WG_FMT_COLOR | U | (flags)), F(fmt##_SSCALED, s, bytes, 1, 1, WG_FMT_COLOR | S | (flags))
+   SCALED(R8, "r8uint", "r8sint", 1, 0),
+   SCALED(R8G8, "rg8uint", "rg8sint", 2, 0),
+   SCALED(R8G8B8A8, "rgba8uint", "rgba8sint", 4, 0),
+   SCALED(B8G8R8A8, "rgba8uint", "rgba8sint", 4, P),
+   F(A8B8G8R8_USCALED_PACK32, "rgba8uint", 4, 1, 1, WG_FMT_COLOR | U),
+   F(A8B8G8R8_SSCALED_PACK32, "rgba8sint", 4, 1, 1, WG_FMT_COLOR | S),
+   F(A2B10G10R10_USCALED_PACK32, "rgb10a2uint", 4, 1, 1, WG_FMT_COLOR | U),
+   F(A2B10G10R10_SSCALED_PACK32, "rgba16sint", 8, 1, 1, WG_FMT_COLOR | S | P),
+   F(A2R10G10B10_USCALED_PACK32, "rgb10a2uint", 4, 1, 1, WG_FMT_COLOR | U | P),
+   F(A2R10G10B10_SSCALED_PACK32, "rgba16sint", 8, 1, 1, WG_FMT_COLOR | S | P),
+   SCALED(R16, "r16uint", "r16sint", 2, 0),
+   SCALED(R16G16, "rg16uint", "rg16sint", 4, 0),
+   SCALED(R16G16B16A16, "rgba16uint", "rgba16sint", 8, 0),
+#undef SCALED
+#undef P
+#undef PO
    F(R16_UINT, "r16uint", 2, 1, 1, CS | WG_FMT_RENDER | U | T1S),
    F(R16_SINT, "r16sint", 2, 1, 1, CS | WG_FMT_RENDER | S | T1S),
    F(R16_SFLOAT, "r16float", 2, 1, 1, CS | FL | RB | T1S),
@@ -204,9 +254,40 @@ wg_texel_bytes(const struct wg_texture_format *f)
    return f->vk == VK_FORMAT_R4G4_UNORM_PACK8 ? 1 : vk_format_get_blocksize(f->vk);
 }
 
+uint32_t
+wg_format_lacks(const struct wg_texture_format *f)
+{
+   uint32_t lacks = (f->flags & WG_FMT_OPAQUE) ? 8 : 0;
+   if (!(f->flags & WG_FMT_PACKED) || f->vk == VK_FORMAT_R4G4_UNORM_PACK8)
+      return lacks;
+   const struct util_format_description *d = vk_format_description(f->vk);
+   const uint32_t texture = !strncmp(f->name, "rgb", 3) ? 15 : !strncmp(f->name, "rg", 2) ? 3 : 1;
+   for (uint32_t c = 0; c < 4; c++)
+      if (d->swizzle[c] > PIPE_SWIZZLE_W)
+         lacks |= (1u << c) & texture;
+   return lacks;
+}
+
+void
+wg_clear_color(const struct wg_texture_format *f, const VkClearColorValue *in, VkClearColorValue *out)
+{
+   *out = *in;
+   const uint32_t lacks = wg_format_lacks(f);
+   const bool integer = f->flags & (WG_FMT_UINT | WG_FMT_SINT);
+   for (uint32_t c = 0; c < 4; c++) {
+      if (lacks & (1u << c)) {
+         if (integer)
+            out->uint32[c] = c == 3;
+         else
+            out->float32[c] = c == 3 ? 1.0f : 0.0f;
+      }
+   }
+}
+
 static const struct {
    VkFormat vk;
    const char *name;
+   bool pulled;
 } vertex_formats[] = {
    { VK_FORMAT_R8_UINT, "uint8" }, { VK_FORMAT_R8G8_UINT, "uint8x2" }, { VK_FORMAT_R8G8B8A8_UINT, "uint8x4" },
    { VK_FORMAT_R8_SINT, "sint8" }, { VK_FORMAT_R8G8_SINT, "sint8x2" }, { VK_FORMAT_R8G8B8A8_SINT, "sint8x4" },
@@ -230,6 +311,57 @@ static const struct {
    { VK_FORMAT_R32_SINT, "sint32" }, { VK_FORMAT_R32G32_SINT, "sint32x2" }, { VK_FORMAT_R32G32B32_SINT, "sint32x3" },
    { VK_FORMAT_R32G32B32A32_SINT, "sint32x4" },
    { VK_FORMAT_A2B10G10R10_UNORM_PACK32, "unorm10-10-10-2" },
+   /* Formats WebGPU's vertex buffers lack (VK4 T31): their bindings always pulled ("Pulled vertices"), the names the
+    * worker's fetch decodes (web/venus-gpu.ts `vertexDecode`). */
+   { VK_FORMAT_R8G8B8_UNORM, "unorm8x3", true },
+   { VK_FORMAT_B8G8R8_UNORM, "unorm8x3-bgra", true },
+   { VK_FORMAT_R16G16B16_UNORM, "unorm16x3", true },
+   { VK_FORMAT_A2R10G10B10_UNORM_PACK32, "unorm10-10-10-2-bgra", true },
+   { VK_FORMAT_R8G8B8_SNORM, "snorm8x3", true },
+   { VK_FORMAT_B8G8R8_SNORM, "snorm8x3-bgra", true },
+   { VK_FORMAT_R16G16B16_SNORM, "snorm16x3", true },
+   { VK_FORMAT_B8G8R8A8_SNORM, "snorm8x4-bgra", true },
+   { VK_FORMAT_A2B10G10R10_SNORM_PACK32, "snorm10-10-10-2", true },
+   { VK_FORMAT_A2R10G10B10_SNORM_PACK32, "snorm10-10-10-2-bgra", true },
+   { VK_FORMAT_R8G8B8_UINT, "uint8x3", true },
+   { VK_FORMAT_B8G8R8_UINT, "uint8x3-bgra", true },
+   { VK_FORMAT_R16G16B16_UINT, "uint16x3", true },
+   { VK_FORMAT_B8G8R8A8_UINT, "uint8x4-bgra", true },
+   { VK_FORMAT_A2B10G10R10_UINT_PACK32, "uint10-10-10-2", true },
+   { VK_FORMAT_A2R10G10B10_UINT_PACK32, "uint10-10-10-2-bgra", true },
+   { VK_FORMAT_R8G8B8_SINT, "sint8x3", true },
+   { VK_FORMAT_B8G8R8_SINT, "sint8x3-bgra", true },
+   { VK_FORMAT_R16G16B16_SINT, "sint16x3", true },
+   { VK_FORMAT_B8G8R8A8_SINT, "sint8x4-bgra", true },
+   { VK_FORMAT_A2B10G10R10_SINT_PACK32, "sint10-10-10-2", true },
+   { VK_FORMAT_A2R10G10B10_SINT_PACK32, "sint10-10-10-2-bgra", true },
+   { VK_FORMAT_R8G8B8_USCALED, "uscaled8x3", true },
+   { VK_FORMAT_B8G8R8_USCALED, "uscaled8x3-bgra", true },
+   { VK_FORMAT_R16G16B16_USCALED, "uscaled16x3", true },
+   { VK_FORMAT_B8G8R8A8_USCALED, "uscaled8x4-bgra", true },
+   { VK_FORMAT_R8_USCALED, "uscaled8", true },
+   { VK_FORMAT_R8G8_USCALED, "uscaled8x2", true },
+   { VK_FORMAT_R8G8B8A8_USCALED, "uscaled8x4", true },
+   { VK_FORMAT_R16_USCALED, "uscaled16", true },
+   { VK_FORMAT_R16G16_USCALED, "uscaled16x2", true },
+   { VK_FORMAT_R16G16B16A16_USCALED, "uscaled16x4", true },
+   { VK_FORMAT_A8B8G8R8_USCALED_PACK32, "uscaled8x4", true },
+   { VK_FORMAT_A2B10G10R10_USCALED_PACK32, "uscaled10-10-10-2", true },
+   { VK_FORMAT_A2R10G10B10_USCALED_PACK32, "uscaled10-10-10-2-bgra", true },
+   { VK_FORMAT_R8G8B8_SSCALED, "sscaled8x3", true },
+   { VK_FORMAT_B8G8R8_SSCALED, "sscaled8x3-bgra", true },
+   { VK_FORMAT_R16G16B16_SSCALED, "sscaled16x3", true },
+   { VK_FORMAT_B8G8R8A8_SSCALED, "sscaled8x4-bgra", true },
+   { VK_FORMAT_R8_SSCALED, "sscaled8", true },
+   { VK_FORMAT_R8G8_SSCALED, "sscaled8x2", true },
+   { VK_FORMAT_R8G8B8A8_SSCALED, "sscaled8x4", true },
+   { VK_FORMAT_R16_SSCALED, "sscaled16", true },
+   { VK_FORMAT_R16G16_SSCALED, "sscaled16x2", true },
+   { VK_FORMAT_R16G16B16A16_SSCALED, "sscaled16x4", true },
+   { VK_FORMAT_A8B8G8R8_SSCALED_PACK32, "sscaled8x4", true },
+   { VK_FORMAT_A2B10G10R10_SSCALED_PACK32, "sscaled10-10-10-2", true },
+   { VK_FORMAT_A2R10G10B10_SSCALED_PACK32, "sscaled10-10-10-2-bgra", true },
+   { VK_FORMAT_R16G16B16_SFLOAT, "float16x3", true },
 };
 
 const char *
@@ -239,6 +371,15 @@ wg_vertex_format(VkFormat format)
       if (vertex_formats[i].vk == format)
          return vertex_formats[i].name;
    return NULL;
+}
+
+bool
+wg_vertex_format_pulled(VkFormat format)
+{
+   for (uint32_t i = 0; i < sizeof(vertex_formats) / sizeof(vertex_formats[0]); i++)
+      if (vertex_formats[i].vk == format)
+         return vertex_formats[i].pulled;
+   return false;
 }
 
 /* A texel buffer's format as the translator's loads and stores decode it (wgsl_print.c `texel_buffer_helpers`): p0's
@@ -356,7 +497,8 @@ wg_format_features(VkFormat format, VkFormatFeatureFlags *linear, VkFormatFeatur
          o |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_MINMAX_BIT;
       if (f->flags & WG_FMT_RENDER)
          o |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
-      if (f->flags & WG_FMT_BLEND)
+      /* A scaled format's 32-bit float texture blends with float32-blendable, but isn't rendered to. */
+      if ((f->flags & WG_FMT_BLEND) && (f->flags & WG_FMT_RENDER))
          o |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT;
       if (f->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL))
          o |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;

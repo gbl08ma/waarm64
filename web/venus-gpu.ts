@@ -2384,40 +2384,80 @@ fn ix(k: u32) -> u32 {
     else this.enc!.copyBufferToTexture({ buffer: temp, bytesPerRow: bpr, rowsPerImage: h }, this.texCopy(D, dm, dx, dy, dz, 0), size);
   }
 
-  /** `unpack` or `pack`'s compute pass: texels of layout `sl` into texels of layout `dl` (`[shift, bits]` of R, G, B, A,
-   * then a texel's bytes), each channel's value scaled to its bits there (a channel without bits there is skipped, one
-   * without bits here is 1); an invocation a row, `w` texels each, each buffer's rows and images its own; words shared
-   * with neighbours written by atomics. */
+  /** `unpack` or `pack`'s compute pass: texels of layout `sl` into texels of layout `dl` (`textureLayout`'s: `[shift,
+   * bits]` of R, G, B, A, a texel's bytes, each channel's kind), each channel's value converted to its bits and kind
+   * there (unorm widths scaled, signed integers extended, a scaled format's integers to and from floats: VK4 T31; a
+   * channel without bits there is skipped, one without bits here is 0, alpha 1); an invocation a texel, each buffer's
+   * rows and images its own; words shared with neighbours written by atomics. */
   private packPass(sl: number[], src: GPUBuffer, srcAt: number, srcBpr: number, srcRows: number, dl: number[], dst: GPUBuffer, dstAt: number, dstBpr: number, dstRows: number, w: number, h: number, depth: number) {
     const d = this.device!, enc = this.enc!;
     let pipeline = this.metaComputes.get('packbits');
     if (!pipeline) {
       const code = `struct P { w: u32, src_at: u32, src_bpr: u32, src_rows: u32, dst_at: u32, dst_bpr: u32, dst_rows: u32, sb: u32, db: u32, pad0: u32, pad1: u32, pad2: u32,
-  ss: vec4<u32>, sn: vec4<u32>, ds: vec4<u32>, dn: vec4<u32> }
+  ss: vec4<u32>, sn: vec4<u32>, ds: vec4<u32>, dn: vec4<u32>, sk: vec4<u32>, dk: vec4<u32>, fill: vec4<u32> }
 @group(0) @binding(0) var<storage, read> s: array<u32>;
 @group(0) @binding(1) var<storage, read_write> o: array<atomic<u32>>;
 @group(0) @binding(2) var<uniform> p: P;
-@compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-  let sa = p.src_at + (id.z * p.src_rows + id.y) * p.src_bpr;
-  let da = p.dst_at + (id.z * p.dst_rows + id.y) * p.dst_bpr;
-  let smask = select((1u << (p.sb * 8u)) - 1u, 0xffffffffu, p.sb == 4u);
-  for (var x = 0u; x < p.w; x++) {
-    let at = sa + x * p.sb;
-    let v = (s[at >> 2u] >> ((at & 3u) * 8u)) & smask;
-    var out = 0u;
-    for (var c = 0u; c < 4u; c++) {
-      if (p.dn[c] == 0u) { continue; }
-      let md = (1u << p.dn[c]) - 1u;
-      let ms = (1u << p.sn[c]) - 1u;
-      let k = select(md, (((v >> p.ss[c]) & ms) * md * 2u + ms) / (2u * ms), p.sn[c] != 0u);
-      out |= k << p.ds[c];
+fn ones(n: u32) -> u32 { return select((1u << n) - 1u, 0xffffffffu, n >= 32u); }
+fn word(i: u32) -> u32 { if (i < arrayLength(&s)) { return s[i]; } return 0u; }
+fn channel(at: u32, shift: u32, n: u32) -> u32 {
+  let b = (at & 3u) * 8u + shift;
+  let w = (at >> 2u) + (b >> 5u);
+  let k = b & 31u;
+  var v = word(w) >> k;
+  if (k + n > 32u) { v |= word(w + 1u) << (32u - k); }
+  return v & ones(n);
+}
+fn sext(v: u32, n: u32) -> i32 {
+  if (n >= 32u) { return bitcast<i32>(v); }
+  return bitcast<i32>(v << (32u - n)) >> (32u - n);
+}
+// Kinds: 0 unorm, 1 snorm, 2 unsigned and 3 signed integers, 4 float.
+fn conv(v: u32, sk: u32, sn: u32, dk: u32, dn: u32) -> u32 {
+  let md = ones(dn);
+  if (sk == 4u && dk != 4u) {
+    let f = select(bitcast<f32>(v), unpack2x16float(v).x, sn == 16u);
+    if (dk == 3u) { let top = f32(md >> 1u); return bitcast<u32>(i32(clamp(round(f), -top - 1.0, top))) & md; }
+    return u32(clamp(round(f), 0.0, f32(md)));
+  }
+  if (dk == 4u && sk != 4u) {
+    let f = select(f32(v), f32(sext(v, sn)), sk == 3u);
+    return select(bitcast<u32>(f), pack2x16float(vec2<f32>(f, 0.0)) & 0xffffu, dn == 16u);
+  }
+  if (sn == dn) { return v; }
+  if (sk == 0u) { let ms = ones(sn); return (v * md * 2u + ms) / (2u * ms); }
+  if (sk == 3u) { return bitcast<u32>(sext(v, sn)) & md; }
+  return v & md;
+}
+@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+  if (id.x >= p.w) { return; }
+  let sa = p.src_at + (id.z * p.src_rows + id.y) * p.src_bpr + id.x * p.sb;
+  let da = p.dst_at + (id.z * p.dst_rows + id.y) * p.dst_bpr + id.x * p.db;
+  var out = array<u32, 5>(0u, 0u, 0u, 0u, 0u);
+  var mask = array<u32, 5>(0u, 0u, 0u, 0u, 0u);
+  let base = (da & 3u) * 8u;
+  for (var c = 0u; c < 4u; c++) {
+    let dn = p.dn[c];
+    if (dn == 0u) { continue; }
+    var k = p.fill[c];
+    if (p.sn[c] != 0u) { k = conv(channel(sa, p.ss[c], p.sn[c]), p.sk[c], p.sn[c], p.dk[c], dn); }
+    k &= ones(dn);
+    let b = base + p.ds[c];
+    let i = b >> 5u;
+    let sh = b & 31u;
+    out[i] |= k << sh;
+    mask[i] |= ones(dn) << sh;
+    if (sh + dn > 32u) {
+      out[i + 1u] |= k >> (32u - sh);
+      mask[i + 1u] |= ones(dn) >> (32u - sh);
     }
-    let to = da + x * p.db;
-    if (p.db == 4u) { atomicStore(&o[to >> 2u], out); continue; }
-    let sh = (to & 3u) * 8u;
-    let dmask = (1u << (p.db * 8u)) - 1u;
-    atomicAnd(&o[to >> 2u], ~(dmask << sh));
-    atomicOr(&o[to >> 2u], out << sh);
+  }
+  let w0 = da >> 2u;
+  for (var i = 0u; i < 5u; i++) {
+    if (mask[i] == 0u) { continue; }
+    if (mask[i] == 0xffffffffu) { atomicStore(&o[w0 + i], out[i]); continue; }
+    atomicAnd(&o[w0 + i], ~mask[i]);
+    atomicOr(&o[w0 + i], out[i]);
   }
 }`;
       pipeline = d.createComputePipeline({ layout: 'auto', compute: { module: d.createShaderModule({ code }), entryPoint: 'main' } });
@@ -2430,16 +2470,23 @@ fn ix(k: u32) -> u32 {
       return { from, binding: { buffer: b, offset: from, size: Math.min(end - from, d.limits.maxStorageBufferBindingSize) } };
     };
     const a = range(src, srcAt, srcBpr, srcRows, srcTexel), c = range(dst, dstAt, dstBpr, dstRows, dstTexel);
-    const [u, uat] = this.scratch(UNIFORM | COPY_DST, 112);
+    const kinds = (l: number[]) => [0, 1, 2, 3].map((k) => l[9 + k] ?? 0);
+    // What a channel the source lacks reads: 0, alpha 1 in the destination's kind and bits.
+    const fill = [0, 1, 2, 3].map((k) => {
+      const bits = dl[2 * k + 1], kind = dl[9 + k] ?? 0;
+      if (k < 3 || !bits) return 0;
+      return kind === 0 ? 2 ** bits - 1 : kind === 1 ? 2 ** (bits - 1) - 1 : kind === 4 ? (bits === 16 ? 0x3c00 : 0x3f800000) : 1;
+    });
+    const [u, uat] = this.scratch(UNIFORM | COPY_DST, 160);
     d.queue.writeBuffer(u, uat, new Uint32Array([w, srcAt - a.from, srcBpr, srcRows, dstAt - c.from, dstBpr, dstRows, srcTexel, dstTexel, 0, 0, 0,
-      sl[0], sl[2], sl[4], sl[6], sl[1], sl[3], sl[5], sl[7], dl[0], dl[2], dl[4], dl[6], dl[1], dl[3], dl[5], dl[7]]));
+      sl[0], sl[2], sl[4], sl[6], sl[1], sl[3], sl[5], sl[7], dl[0], dl[2], dl[4], dl[6], dl[1], dl[3], dl[5], dl[7], ...kinds(sl), ...kinds(dl), ...fill]));
     const group = d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
-      { binding: 0, resource: a.binding }, { binding: 1, resource: c.binding }, { binding: 2, resource: { buffer: u, offset: uat, size: 112 } },
+      { binding: 0, resource: a.binding }, { binding: 1, resource: c.binding }, { binding: 2, resource: { buffer: u, offset: uat, size: 160 } },
     ] });
     const pass = enc.beginComputePass();
     pass.setPipeline(pipeline);
     pass.setBindGroup(0, group);
-    pass.dispatchWorkgroups(1, h, depth);
+    pass.dispatchWorkgroups(Math.ceil(w / 64), h, depth);
     pass.end();
   }
 
@@ -2683,6 +2730,37 @@ export function encodeTexel(fmt: string, c: number[]): Uint8Array | undefined {
     dv.setUint32(0, (uf(c[0], 6) | (uf(c[1], 6) << 11) | (uf(c[2], 5) << 22)) >>> 0, true);
     return out;
   }
+  if (fmt === 'rgb10a2uint') {
+    // A scaled format's texture (VK4 T31): the integers clamped to their bits.
+    const [r, g, b, a] = c.map((v, i) => Math.min(i < 3 ? 1023 : 3, Math.max(0, Math.trunc(v || 0))));
+    dv.setUint32(0, (r | (g << 10) | (b << 20) | (a << 30)) >>> 0, true);
+    return out;
+  }
+  // Float, unorm and integer formats WebGPU doesn't render to here (a scaled format's integer texture: VK4 T31).
+  const m = /^(r|rg|rgba)(8|16|32)(unorm|float|uint|sint)$/.exec(fmt);
+  if (m) {
+    const n = m[1].length, bytes = Number(m[2]) / 8, t = new Uint8Array(n * bytes);
+    const v = new DataView(t.buffer) as DataView & { setFloat16(at: number, x: number, le: boolean): void };
+    for (let i = 0; i < n; i++) {
+      const x = c[i] || 0, at = i * bytes;
+      if (m[3] === 'float') {
+        if (bytes === 2) v.setFloat16(at, x, true);
+        else v.setFloat32(at, x, true);
+      } else if (m[3] !== 'unorm') {
+        const bits = 8 * bytes, signed = m[3] === 'sint';
+        const q = Math.min(signed ? 2 ** (bits - 1) - 1 : 2 ** bits - 1, Math.max(signed ? -(2 ** (bits - 1)) : 0, Math.trunc(x)));
+        if (bytes === 1) v.setUint8(at, q & 0xff);
+        else if (bytes === 2) v.setUint16(at, q & 0xffff, true);
+        else v.setUint32(at, q >>> 0, true);
+      } else {
+        const q = Math.round(Math.min(1, Math.max(0, x)) * (2 ** (8 * bytes) - 1));
+        if (bytes === 1) v.setUint8(at, q);
+        else if (bytes === 2) v.setUint16(at, q, true);
+        else v.setUint32(at, q, true);
+      }
+    }
+    return t;
+  }
   return undefined;
 }
 
@@ -2699,9 +2777,12 @@ export const fanMost = (bytes: number, el: number) => Math.min(Math.floor(bytes 
 /** A packed format's texture's own layout (`[shift, bits]` of R, G, B, A, then a texel's bytes): what `packPass` unpacks
  * into and packs from. */
 export function textureLayout(f: string) {
-  if (f === 'rg8unorm') return [0, 8, 8, 8, 0, 0, 0, 0, 2];
-  if (f.startsWith('rgb10a2')) return [0, 10, 10, 10, 20, 10, 30, 2, 4];
-  return [0, 8, 8, 8, 16, 8, 24, 8, 4];
+  if (f.startsWith('rgb10a2')) return [0, 10, 10, 10, 20, 10, 30, 2, 4, ...Array(4).fill(f.endsWith('uint') ? 2 : 0)];
+  const m = /^(r|rg|rgba)(8|16|32)(unorm|snorm|uint|sint|float)(-srgb)?$/.exec(f);
+  if (!m) throw new Error(`a packed format in a ${f} texture`);
+  const n = m[1].length, bits = Number(m[2]), kind = ['unorm', 'snorm', 'uint', 'sint', 'float'].indexOf(m[3]);
+  const l = [0, 1, 2, 3].flatMap((c) => (c < n ? [c * bits, bits] : [0, 0]));
+  return [...l, (n * bits) / 8, ...[0, 1, 2, 3].map((c) => (c < n ? kind : 0))];
 }
 
 /** The swizzle of a copy between packed layouts (`[shift, bits]` of R, G, B, A; their textures are RGBA8): each channel
@@ -2810,12 +2891,29 @@ export function pulledCode(code: string, buffers: (PulledBuffer | null)[], group
 
 export function vertexDecode(format: string, word: (byte: number) => string, T: string): string | undefined {
   const bgra = format.endsWith('-bgra');
+  // A channel's value from its bits (`u` unsigned, `i` sign-extended) by kind; the scaled kinds and three channels of 8
+  // or 16 bits are formats WebGPU's vertex buffers lack, always pulled (wg_format.c, VK4 T31).
+  const value = (kind: string, bits: number, u: string, i: string) => {
+    switch (kind) {
+      case 'uint': return u;
+      case 'sint': return i;
+      case 'uscaled': return `f32(${u})`;
+      case 'sscaled': return `f32(${i})`;
+      case 'unorm': return `f32(${u}) / ${2 ** bits - 1}.0`;
+      case 'snorm': return `max(f32(${i}) / ${2 ** (bits - 1) - 1}.0, -1.0)`;
+      default: return bits === 32 ? `bitcast<f32>(${u})` : `unpack2x16float(${u}).x`;
+    }
+  };
   let comps: string[];
-  if (format.startsWith('unorm10-10-10-2')) {
+  const packed = /^(uint|sint|unorm|snorm|uscaled|sscaled)10-10-10-2/.exec(format);
+  if (packed) {
     const w = word(0);
-    comps = [0, 10, 20].map((o) => `f32(extractBits(${w}, ${o}u, 10u)) / 1023.0`).concat(`f32(extractBits(${w}, 30u, 2u)) / 3.0`);
+    comps = [0, 10, 20, 30].map((o) => {
+      const bits = o === 30 ? 2 : 10;
+      return value(packed[1], bits, `extractBits(${w}, ${o}u, ${bits}u)`, `extractBits(bitcast<i32>(${w}), ${o}u, ${bits}u)`);
+    });
   } else {
-    const m = /^(uint|sint|unorm|snorm|float)(8|16|32)(?:x([234]))?/.exec(format);
+    const m = /^(uint|sint|unorm|snorm|uscaled|sscaled|float)(8|16|32)(?:x([234]))?/.exec(format);
     if (!m) return undefined;
     const kind = m[1], bits = Number(m[2]), n = Number(m[3] ?? 1);
     comps = Array.from({ length: n }, (_, k) => {
@@ -2823,13 +2921,7 @@ export function vertexDecode(format: string, word: (byte: number) => string, T: 
       const off = bits === 32 ? 0 : bits === 16 ? 16 * (k & 1) : 8 * k;
       const u = bits === 32 ? w : `extractBits(${w}, ${off}u, ${bits}u)`;
       const i = bits === 32 ? `bitcast<i32>(${w})` : `extractBits(bitcast<i32>(${w}), ${off}u, ${bits}u)`;
-      switch (kind) {
-        case 'uint': return u;
-        case 'sint': return i;
-        case 'unorm': return `f32(${u}) / ${2 ** bits - 1}.0`;
-        case 'snorm': return `max(f32(${i}) / ${2 ** (bits - 1) - 1}.0, -1.0)`;
-        default: return bits === 32 ? `bitcast<f32>(${w})` : `unpack2x16float(${u}).x`;
-      }
+      return value(kind, bits, u, i);
     });
   }
   if (bgra) [comps[0], comps[2]] = [comps[2], comps[0]];

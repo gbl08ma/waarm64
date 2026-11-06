@@ -771,6 +771,65 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T31: formats WebGPU has no texture of, in wider textures; vertex formats it lacks pulled; 1,733 cases join the list
+
+2026-11-06, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t31/` (`cases.txt`: the 3,155 cases; `swiftshader-before.json`: the
+format cases before any change; `swiftshader-scaled-as-floats.json`: the first try, below; `swiftshader-vertex-input.json`;
+`cost-*.json`: the copies' cost).
+
+- **What the device does** (vk/README.md "Packed formats", "Pulled vertices"): T30's packed formats' way for every
+  format the census's "not supported for sampling / transfer / blending" named: the three-channel ones (`R8G8B8`,
+  `B8G8R8` of every type, `R16G16B16`, `R32G32B32`) in a four-channel texture with alpha kept 1, BGRA's UINT, SINT and
+  SNORM, `R8_SRGB` and `R8G8_SRGB` in `rgba8unorm-srgb` (G and B kept 0), the 10-bit SINT orders in `rgba16sint`, and the
+  scaled formats in their integer twins' textures, for transfers only. The worker's `packPass` now takes an invocation a
+  texel (was a row), texels up to 16 bytes at any byte, and each channel's kind, so it extends signs and converts
+  integers and floats. Vertex formats WebGPU lacks (three channels of 8 or 16 bits, scaled, BGRA's and the 10-bit packed
+  ones of every type) always pull their binding (T5's fetch).
+- **Confirming, failing first**: the 2,609 format cases (every 100th of the 260,518 in `vk-main.txt` naming one, without
+  protected memory's) were 2,557 not supported, 52 passing, 0 failing; the driver's scenario 97
+  (tests/venus-driver.test.ts "formats WebGPU has no texture of…") fails before the change (the images refused) and
+  passes after. Planted: `packPass`'s sign extension left out (a round trip through a copy hides it: the bits come back
+  masked) fails 10 of 12 `pipeline.monolithic.image` cases sampling the 10-bit SINT formats.
+- **Found by the cases: scaled formats**. The first try kept a scaled format's integers as floats (rgba16float,
+  rgba32float), sampled and filtered as the spec says (the shader's float sample of an integer converted). Of its 422
+  failures (`swiftshader-scaled-as-floats.json`) ~370 were scaled: dEQP-VK's reference treats SCALED as UINT and SINT
+  (tcu's channel types), so it samples them through `isampler`/`usampler` (a bind group refused: the float texture
+  against an integer binding) and clears them with `int32` values (read as floats: 0). The spec and dEQP disagree, and
+  no driver we know samples scaled images; so they are their integer twins' textures (the same bits: copies are plain or
+  packed), offered for transfers only, their clears taking integers. Sampling scaled images isn't offered.
+
+| set | host | pass | fail | not supported |
+|---|---|---|---|---|
+| formats (2,609) | SwiftShader, before | 52 | 0 | 2,557 |
+| | SwiftShader | 1,522 | 47 | 1,040 |
+| | M4 | 1,772 | 4 | 833 |
+| vertex input (542: every other `single_attribute` naming one, every 40th of `multiple_attributes`, `multiple_bindings`) | SwiftShader | 296 | 0 | 246 (`shaderFloat16` 232) |
+| | M4 | 528 | 0 | 14 |
+
+  SwiftShader's 47 are its own, filed: the `count_8` compute cases binding 8 storage images (30), integer views with a
+  base level (13), and 4 cube samples of `b8g8r8_snorm` and `r8g8_srgb` through a linear filter in a compute stage,
+  whose `r8g8b8a8_snorm` and `r8g8b8a8_srgb` twins (run beside them) fail the same. The M4's 4 are its filed ones: copies
+  from `e5b9g9r9_ufloat_pack32` (2) and dual-source blends with both blend constants (2). **The 1,733 that pass on
+  both and weren't in the list join `tests/deqp/vk.txt`** (42,933 → 44,666): `pipeline` 1,194, `api.copy_and_blit` 410,
+  `api.image_clearing` 99, the rest `api.info`, `texture.swizzle`, `renderpasses`; 488 more pass on the M4 only
+  (`shaderFloat16`'s vertex cases, SwiftShader's own).
+- **What's left not supported** on the M4 (833 of the format cases): scaled formats' sampling (most of the 347 "for
+  sampling", by choice), a copy's other format or linear tiling (~180: linear tiling isn't offered for these),
+  `VK_EXT_filter_cubic` (70), min/max reductions' component mapping (43, T25's), sample counts (26),
+  `legacy_vertex_attributes` (20), blit destinations of formats not rendered to (12); sRGB vertex formats (14 of the
+  vertex sample: no driver has them).
+- **The copies' cost** (`bench/vulkan/t31/suite.ts`, `cost-*.json`: a 1024×1024 image's copy in and out through the
+  worker's own imports, ms a copy, median of 10 samples of 20, back to back):
+
+| | R8G8B8A8_UNORM (one copy) | R8G8B8_UNORM (in rgba8unorm) | B8G8R8A8_UINT (in rgba8uint) |
+|---|---|---|---|
+| M4, upload / readback | 0.196 / 0.152 | 0.386 / 0.366 | 0.380 / 0.370 |
+| SwiftShader, upload / readback | 1.405 / 1.529 | 34.96 / 35.11 | 35.91 / 35.56 |
+
+  On the M4 a converting copy costs ~2× a plain one (the pass and the temporary buffer's copy); SwiftShader runs
+  compute on the CPU, 25× slower: what it costs a dEQP case, not a program.
+
 ## VK4 T30: D16_UNORM_S8_UINT and the packed formats left; 2,767 cases join the list
 
 2026-11-06, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,

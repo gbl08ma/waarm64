@@ -140,9 +140,9 @@ enum wg_format_flags {
    WG_FMT_BGRA8 = 1 << 20,      /* storage with bgra8unorm-storage */
    /* WebGPU has storage textures of it. WG_FMT_STORAGE alone: offered for storage all the same, by the image's words. */
    WG_FMT_STORAGE_TEXTURE = 1 << 21,
-   /* A format of packed texels (8, 16 or 32 bits), which WebGPU hasn't: a texture of its channels (rgba8unorm, rg8unorm,
-    * rgb10a2*), its texels unpacked and packed by the worker's copies (`packed` there); OPAQUE: without alpha, which
-    * stays 1. */
+   /* A format WebGPU has no texture of (packed texels of 8, 16 or 32 bits; three channels, scaled and the other orders:
+    * VK4 T31): a texture of its channels (rgba8unorm, rg8unorm, rgb10a2*, a wider one), its texels unpacked and packed
+    * by the worker's copies (`packed` there); OPAQUE: without alpha, which stays 1 (wg_format_lacks). */
    WG_FMT_PACKED = 1 << 22,
    WG_FMT_OPAQUE = 1 << 23,
    /* D16_UNORM_S8_UINT: a depth24plus-stencil8 texture whose depth a buffer holds as 16-bit unorm (the worker's
@@ -166,7 +166,14 @@ const struct wg_texture_format *wg_texture_format(VkFormat format);
 bool wg_format_filterable(const struct wg_texture_format *f);
 /* The bytes of a texel of `f` in the guest's buffers: a packed format's own (not its texture's), else the texture's. */
 uint32_t wg_texel_bytes(const struct wg_texture_format *f);
+/* The channels of `f`'s texture (bit i: R, G, B, A) its Vulkan format lacks (VK4 T31): kept 0 (colours) or 1 (alpha) by
+ * copies, clears and write masks, and read so through a view's swizzle. */
+uint32_t wg_format_lacks(const struct wg_texture_format *f);
+/* A clear value as `f`'s texture takes it: what the format lacks 0 or 1, a scaled format's integers rounded. */
+void wg_clear_color(const struct wg_texture_format *f, const VkClearColorValue *in, VkClearColorValue *out);
+/* A vertex format's WebGPU name, or the pulled fetch's for one WebGPU's vertex buffers lack (`*pulled`: VK4 T31). */
 const char *wg_vertex_format(VkFormat format);
+bool wg_vertex_format_pulled(VkFormat format);
 bool wg_texel_buffer_layout(VkFormat format, uint32_t *x, uint32_t p1[3], bool *storage);
 void wg_format_features(VkFormat format, VkFormatFeatureFlags *linear, VkFormatFeatureFlags *optimal,
                         VkFormatFeatureFlags *buffer);

@@ -697,6 +697,22 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   clears, a swizzle on reads. A view of another format of the texel's size is a texture of that format copied the same
   way (`image_alias`); a multisampled copy between a packed format and another that isn't is skipped (a draw can't move
   bits between their layouts). Mesa has no pipe format of `R4G4`: its key and border are written out.
+  **Formats WebGPU has no texture of** (VK4 T31) are packed formats the same way, in a wider texture: the three-channel
+  ones (`R8G8B8` and `B8G8R8` of every type in `rgba8*`, `R16G16B16` in `rgba16*`, `R32G32B32` in `rgba32*`; alpha kept 1,
+  `WG_FMT_OPAQUE`), BGRA's integer and snorm orders (`rgba8uint`, `rgba8sint`, `rgba8snorm`), `R8_SRGB` and `R8G8_SRGB` in
+  `rgba8unorm-srgb`, the 10-bit SINT orders in `rgba16sint`. The scaled formats are their integer twins' textures
+  (`rgba8uint`, `rgb10a2uint`, `rg16sint`…, packed where the order or the channels differ) and offer **transfers only**:
+  the spec samples them as floats and clears them with `float32`, dEQP-VK samples them through integer samplers and
+  clears them with integers (its reference treats them as UINT and SINT), so no sampling is offered, and a clear takes
+  the integers, dEQP's way (no program clears one). The key's last four numbers are each channel's kind (unorm, snorm,
+  unsigned or signed integer, float), and `packPass` (an invocation a texel, texels of up to 16 bytes at any byte,
+  channels straddling words) converts between the two: unorm widths scaled, signed integers extended, integers to and
+  from floats where the kinds differ. What a format lacks of its texture's channels (`wg_format_lacks`: R8_SRGB's G and
+  B, an RGB format's alpha) is kept 0, alpha 1: filled by the copies, set by clears (`wg_clear_color`), masked out of
+  pipelines' writes, and read so through the view's swizzle. A view of another format is an alias as above (`R8_SRGB`
+  and `R8_UNORM` aren't twins: their textures differ). Linear tiling and storage aren't offered; RGB16's unorm and
+  snorm only with `texture-formats-tier1`. A copy costs the compute pass and a copy through a temporary buffer
+  (bench/vulkan/REPORT.md "VK4 T31").
 - **Multiview** (VK4 T7; `begin_rendering` and `OP_VIEWS` in wg_cmd.c): WebGPU has no layered rendering, so a pass with a
   view mask (dynamic rendering's `viewMask`; legacy passes through the runtime's emulation, secondaries through their
   inheritance) is replayed once a view: `OP_PASS` holds each view's JSON one after another, each attachment that view's
@@ -768,7 +784,9 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   a bind group per change of the ranges); a pipeline after a pulling one sets its groups again. Usage scopes see a
   vertex read as before, so shadows serve it. Transform feedback reads the same ranges. Refused still: a program with
   no group free (four sets; said once on stderr), and more pulled bindings than the vertex stage has storage buffers
-  left. A range past `maxStorageBufferBindingSize` is cut there.
+  left. A range past `maxStorageBufferBindingSize` is cut there. Formats WebGPU's vertex buffers lack (VK4 T31: three
+  channels of 8 or 16 bits, the scaled ones, BGRA's and the 10-bit packed ones of every type) always pull their binding
+  (`wg_vertex_format_pulled`), decoded by `vertexDecode` from names of the fetch's own (`uscaled8x3`, `snorm10-10-10-2-bgra`).
 - **Draws through indices of their own** (VK3 L7.4): the provoking vertex's last (`VK_EXT_provoking_vertex`,
   `provokingVertexLast`, per pipeline: ANGLE's ES3, GL's convention) where the fragment shader reads a flat input
   (WebGPU's flat interpolation takes the first vertex), and indexed fans (WebGPU has none). Such a draw is an
