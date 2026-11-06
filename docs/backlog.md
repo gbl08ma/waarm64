@@ -471,11 +471,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   it by the sidebar's tile (843: two draws; no copy, upload or clear names it). Every texture in that frame is
   GPU-rastered, the read-backs are cursors only, no GL error on any call, the renderer logs nothing: the replay draws
   what the commands say, so the cause may be upstream (what the guest's Mesa or CEF decides from our caps or answers).
-  Not settled without a reference: an ad-hoc replayer through the oracle's libvirglrenderer on llvmpipe
-  (`bench/results/local/steam/oracle/replay.c`) runs the trace but draws nothing yet, even on glcomp's fixture (clears
-  land, draws don't: state it doesn't set up). Next: make it draw glcomp as `glcomp-128x96.llvmpipe.rgba` (compare
-  with vtest's sequence: caps, fences), then compare 508 and the tiles at submit 11,900; the ad-hoc scripts beside it
-  (`frames.ts`, `who.ts`, `when.ts`, `writes.ts`) read resources and per-draw state from a replay on Chromium.
+  **The reference draws them too**: the trace through the oracle's libvirglrenderer (vrend on llvmpipe's desktop GL;
+  `bench/results/local/steam/oracle/replay.c`, checked on glcomp's fixture: mean 1.1 a byte off llvmpipe's) gives the
+  same black block and the same faint copy of the header at the note, so the commands themselves draw them: the cause
+  is upstream, in what CEF or the guest's Mesa decides, likely from what our host answers differently from vrend's. One
+  such difference found: our caps offer `Z24_UNORM_S8_UINT` (19), which vrend has no format for (Skia's clip stencil,
+  resource 855; the replayer maps it to 20). Next: our caps against vrend's, and Steam with the suspects turned off.
+  (The replayer also needs: contexts' skip flags per incarnation, an iovec array per resource, kept: the library keeps
+  the pointer. Sway's and Xwayland's contexts die on llvmpipe at a GL_INVALID_OPERATION; Steam's run clean.)
 - **Chromium in the guest still steps back one frame now and then** (graphics.md "The call queue"): after the queue's fix,
   `bench/gpu/chromium-flicker.ts` saw one frame one step back in two of four runs (~1,000 frames each), none on
   `?gpu=2d`. Not traced: a remaining order between contexts (the decoder's context passes held ones), or the screen's
