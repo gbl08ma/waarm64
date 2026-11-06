@@ -582,6 +582,8 @@ enum Conv {
 /// The guest's selection being read into a sink, through one of our window's properties.
 struct Conversion {
     prop: u32,
+    /// The guest's owner it converts from.
+    owner: u32,
     sink: Sink,
     state: Conv,
     incr: bool,
@@ -647,6 +649,8 @@ pub struct X {
     /// The time our window took the selection (XFixes says it): TIMESTAMP's answer.
     owned_at: u32,
     convs: Vec<Conversion>,
+    /// Conversions waiting for the owner (`owner_busy`): the offer each is for, its target, its sink.
+    queue: VecDeque<(u32, u32, Sink)>,
     serves: Vec<Serve>,
 }
 
@@ -687,6 +691,7 @@ impl X {
             source: None,
             owned_at: 0,
             convs: Vec::new(),
+            queue: VecDeque::new(),
             serves: Vec::new(),
         })
     }
@@ -766,6 +771,9 @@ impl X {
         let inb = std::mem::take(&mut self.inb);
         let mut at = 0;
         let r = self.messages(&inb, &mut at, evs);
+        if self.ready {
+            self.start();
+        }
         self.inb = inb;
         self.inb.drain(..at);
         if self.inb.is_empty() && self.inb.capacity() > 4 * CHUNK {
@@ -1070,16 +1078,43 @@ impl X {
 
     /// ConvertSelection of the guest's selection to `target`, into a free property of ours; false if none is free.
     fn convert(&mut self, target: u32, sink: Sink) -> bool {
+        if self.queue.len() >= PROPS {
+            return false;
+        }
+        self.queue.push_back((self.offer, target, sink));
+        self.start();
+        true
+    }
+
+    /// Whether the guest's owner `owner` is in the middle of a transfer of ours: a conversion not answered yet, or an
+    /// INCR one not ended. Some owners serve one INCR at a time and drop the requests that come meanwhile (xclip 0.13,
+    /// Debian 13's: found by the page test), so a conversion waits for the owner to be free.
+    fn owner_busy(&self, owner: u32) -> bool {
+        self.convs.iter().any(|c| {
+            c.owner == owner && (c.state == Conv::Asked || (c.incr && c.state != Conv::Done))
+        })
+    }
+
+    /// Starts the queued conversion, if the owner is free and a slot is (a stale offer's are dropped: their pipes close).
+    fn start(&mut self) {
+        while self.queue.front().is_some_and(|q| q.0 != self.offer) {
+            self.queue.pop_front();
+        }
+        if self.queue.is_empty() || self.owner_busy(self.owner) {
+            return;
+        }
         let busy = |p: u32| self.convs.iter().any(|c| c.prop == p);
         let Some((win, prop)) = (0..PROPS).map(|k| self.slot(k)).find(|&(_, p)| !busy(p)) else {
-            return false;
+            return;
         };
-        let (clip, time) = (self.atom(CLIPBOARD), self.offer_time);
+        let (_, target, sink) = self.queue.pop_front().unwrap();
+        let (clip, time, owner) = (self.atom(CLIPBOARD), self.offer_time, self.owner);
         self.req(op::CONVERT_SELECTION, 0, None, |r| {
             r.u32(win).u32(clip).u32(target).u32(prop).u32(time)
         });
         self.convs.push(Conversion {
             prop,
+            owner,
             sink,
             state: Conv::Asked,
             incr: false,
@@ -1087,7 +1122,6 @@ impl X {
             buf: Vec::new(),
             at: 0,
         });
-        true
     }
 
     /// GetProperty of conversion `i`'s property: a `CHUNK` from its offset, deleted once read to its end.
@@ -1463,7 +1497,8 @@ impl X {
             _ => None,
         });
         if let Some(prop) = conv {
-            return self.pump_conv(prop, evs);
+            self.pump_conv(prop, evs);
+            return self.start();
         }
         if let Some(i) = self.serves.iter().position(|s| s.fd.as_raw_fd() == fd) {
             self.pump_serve(i);

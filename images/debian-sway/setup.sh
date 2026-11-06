@@ -33,5 +33,5 @@ mkdir -p /home/user/.config/sway
 # No bar, no background, nothing on a timer: an idle sway.
 echo 'output * resolution 800x600' > /home/user/.config/sway/config
 chown -R user:user /home/user
-echo ==x11 $(command -v Xvfb xauth xclip | tr '\n' ' ')$(dpkg-query -W -f='${Version} ' xvfb xauth xclip 2>/dev/null)
+echo ==x11 $(for c in Xvfb xauth xclip; do command -v $c; done | tr '\n' ' ')$(dpkg-query -W -f='${Version} ' xvfb xauth xclip 2>/dev/null)
 echo ==sway $(sway --version) $(dpkg-query -W -f='${Version} ' wl-clipboard grim libwlroots-0.18 2>/dev/null) $(id user)

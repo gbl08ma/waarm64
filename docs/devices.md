@@ -134,7 +134,7 @@ and a failure that lasts would restart for the boot, each start reading the bina
 vCPU); sandboxed (`ProtectSystem=strict`, `ProtectHome=read-only`, private /tmp (with the host's `/tmp/.X11-unix`
 bound in read-only, `BindReadOnlyPaths=-`: an X session's socket, where a session child connects; `PrivateNetwork`
 hides the abstract sockets) and network, `RestrictAddressFamilies=AF_UNIX`, the kernel's tunables, modules, logs and clock protected, …:
-`systemd-analyze security` 3.7, "OK") with the capabilities it needs: `CAP_SYS_ADMIN` for
+`systemd-analyze security` 3.8, "OK"; 3.7 before X11's bind) with the capabilities it needs: `CAP_SYS_ADMIN` for
 TIOCSTI, `CAP_SETUID` and `CAP_SETGID` for the session children (no `NoNewPrivileges`), `CAP_KILL` to stop one (the
 user's process by then); no DAC override.
 
@@ -193,7 +193,9 @@ is a pipe, as Wayland's `receive`: ConvertSelection to a conversion window's pro
 time), and at its SelectionNotify `GetProperty` in 64 KiB pieces from its offset (deleted with the last), the next
 asked only once the pipe took the last; an `INCR` property is read chunk by chunk as each new value comes
 (PropertyNotify), until an empty one; a reader that goes during INCR leaves the transfer read to its end into nothing
-(its owner waits for each chunk to be taken). **Our source**: `SetSelectionOwner`, then `GetSelectionOwner` says
+(its owner waits for each chunk to be taken). A conversion waits (queued, six at most) while the owner is busy with
+another of ours (one not answered yet, or an INCR not ended): Debian 13's xclip (0.13) serves one INCR at a time and
+drops the requests that come meanwhile, so a REQUEST behind the probe's INCR was never answered. **Our source**: `SetSelectionOwner`, then `GetSelectionOwner` says
 whether it took (ACK `HELD`); a SelectionRequest for a type the page's offer has (the text as `UTF8_STRING`,
 `text/plain;charset=utf-8`, `text/plain`, `TEXT`, answered as `UTF8_STRING`, and `STRING`, UTF-8 too; `text/html`;
 `image/png`) gives a pipe the paste fills as Wayland's `send` does, and the requestor's property gets its bytes

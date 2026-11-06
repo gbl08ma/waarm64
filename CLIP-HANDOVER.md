@@ -50,8 +50,10 @@ requestor window). The unit binds `/tmp/.X11-unix` into its private /tmp read-on
 (the page: `text/html` beside the text or image, one `ClipboardItem`, not in the hashes). The setting's note has the
 X11 sentence. The test image (images/debian-sway) gained xvfb, xauth, xclip and an X login behind `/tmp/x11`. Tests:
 `agent/src/x11_test.rs` (Xvfb + xclip natively), the wire format's unit tests in x11.rs, `sway_test.rs` (HTML),
-`tests/agent.test.ts` (HTML), `tests/page-clipboard-x11.test.ts` (Debian, `ci-debian.sh --platform`). Binary 443,936
-bytes (+36.7 KiB for X11 and HTML). Planted bugs: docs/testing.md's X11 row.
+`tests/agent.test.ts` (HTML), `tests/page-clipboard-x11.test.ts` (Debian, `ci-debian.sh --platform`), which found
+that Debian's xclip 0.13 drops requests during an INCR (conversions now wait while the owner is busy). Measured: idle
+with X 0 ticks/0 switches, VmRSS 604/704 KiB; `systemd-analyze security` 3.8 (was 3.7). Binary 445,128 bytes (+37
+KiB for X11 and HTML). Planted bugs: docs/testing.md's X11 row.
 
 ## Next: step 6 (optional) or the track's end
 
@@ -85,7 +87,7 @@ subsystem), then the end's docs (`docs/clipboard.md`, plan §6 "When it ends").
   form), the Mac's pasteboard with images, and the Arch desktop (Firefox's and foot's image copies, GIMP) are by hand.
   Copy the screen is tested on Buildroot's framebuffer and on the page test's default display (3D where WebGL2 is,
   `WEBPC_PAGE_QUERY=gpu=2d` for virtio-gpu 2D's scanout path): which one ci-debian ran wasn't checked.
-- **The binary's size**: 443,936 bytes now (333 KiB at step 2, 403,000 at step 3, 407,200 with images): `#![no_std]` on rustix's runtime is still the lever
+- **The binary's size**: 445,128 bytes now (333 KiB at step 2, 403,000 at step 3, 407,200 with images): `#![no_std]` on rustix's runtime is still the lever
   (plan §3.3), not done.
 - **Not done from §3.3:** `splice` between the port and the pipes (the child reads and writes in 64 KiB chunks; the
   port's bytes cross the parent anyway); cancelling a page→guest answer that the guest's reader dropped is a MORE 0 the

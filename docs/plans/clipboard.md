@@ -98,7 +98,7 @@ exec /run/webpc/agent
 unit and no binary. The unit is a `Type=simple` service, wanted by `multi-user.target`, unlike the network's oneshot.
 It also carries `Nice=10`, `MemoryMax=32M` (a cap for a bug, not a budget: §3.3), `OOMScoreAdjust=500`,
 `Restart=on-failure`, and the usual sandboxing that still allows what it needs (`NoNewPrivileges=` doesn't apply,
-because it changes uid on purpose; `systemd-analyze security` rates it 3.7, "OK"). Built in step 2
+because it changes uid on purpose; `systemd-analyze security` rates it 3.7, "OK"; 3.8 since step 5 bound X11's sockets in). Built in step 2
 (`web/app/guest-agent.ts`); measured on Debian 13 under the JIT (2026-11-06):
 
 - **The read's cost.** The fw_cfg data register takes 8-byte reads, but Linux's `qemu_fw_cfg` reads one byte at
@@ -152,7 +152,11 @@ offered there.
     one whose registry lacks both managers). Seven InputOnly windows, not one: xclip keeps one INCR transfer per
     requestor window, so a conversion while another's INCR runs (the probe's 4 KiB, then a REQUEST) never got an
     answer from one window (found by the native test); a reader that goes mid-INCR leaves the transfer drained to its
-    end, for the same reason. INCR both ways (the threshold to requestors: the server's largest request, at most 256
+    end, for the same reason; and a conversion waits while the owner is busy with one of ours (unanswered, or an INCR
+    not ended), since Debian's xclip 0.13 drops requests during an INCR (found by the page test). Measured (Debian
+    13, Xvfb, 2026-11-06): idle 20 s with X, 0 ticks and 0 voluntary switches for the agent and its child, VmRSS 604
+    and 704 KiB; a 1.58 MB PNG to xclip by INCR in 2.2 s (the channel's rate); `systemd-analyze security` 3.8 (3.7
+    before the bind). INCR both ways (the threshold to requestors: the server's largest request, at most 256
     KiB). `STRING` is answered in UTF-8, as wl-clipboard's aliases are (not Latin-1).
   - **GNOME (Mutter) has no data-control.** Its routes are the X11 one (Mutter syncs Xwayland's selections with
     its own, but whether a client without focus can read them there is unmeasured), or the portal's Clipboard
@@ -219,7 +223,8 @@ would bring if that is what it takes. So:
   **Measured, step 3 (Debian 13, sway 1.10 headless, 2026-11-06):** over 20 s idle with sway running, 0 ticks and 0
   voluntary switches for the agent and its session child; **VmRSS 572 KiB (the agent) and 516 KiB (the child)**.
   **Size: 403,000 bytes** (the Podman build), +62 KiB for the Wayland client, logind and the session child (`std`'s
-  `HashMap`, `read_dir` and formatting among it); **407,200 bytes with images** (step 5, +4.2 KiB). **Measured, step 2 (Debian 13, the console agent, 2026-11-06):** over 60 s idle, **0 ticks of CPU and 0 voluntary context switches; VmRSS 300 KiB** (18 ticks and ~30 switches from its start to the first measure, the HELLO and the boot's settling); `tests/page-agent.test.ts` keeps the
+  `HashMap`, `read_dir` and formatting among it); **407,200 bytes with images** (step 5, +4.2 KiB); **445,128 bytes with X11 and HTML** (+37 KiB: x11.rs's client,
+its /proc and Xauthority readers). **Measured, step 2 (Debian 13, the console agent, 2026-11-06):** over 60 s idle, **0 ticks of CPU and 0 voluntary context switches; VmRSS 300 KiB** (18 ticks and ~30 switches from its start to the first measure, the HELLO and the boot's settling); `tests/page-agent.test.ts` keeps the
   check over 20 s. **Size:** 333 KiB (340,712 bytes, the Podman build), above the ~200 KiB aim, because `std` alone
   is ~320 KiB on this toolchain (an empty `fn main` with the same profile: 327,048 bytes); the agent's own code and
   `rustix` are ~13 KiB. `#![no_std]` would bring it to tens of KiB and the boot's fw_cfg read (§3.1) with it.

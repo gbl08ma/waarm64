@@ -4,7 +4,7 @@
 // it is the real one: logind's files (a tty's session: no DISPLAY= in them), the X server found among the user's
 // processes, its cookie from its `-auth` file, its socket in /tmp/.X11-unix through the unit's private /tmp (bound in
 // read-only). The guest's side is xclip as the user, from the serial shell.
-// - Text both ways: short (inline), past xclip's chunk (2 MB, so xclip sends it by INCR) and past the agent's threshold
+// - Text both ways: short (inline), past xclip's chunk (2.7 MB, so xclip sends it by INCR) and past the agent's threshold
 //   (400 KB to xclip by INCR); the host's text copied back isn't offered back.
 // - Images both ways: a PNG copied with xclip reaches the host with its pixels; the host's 1.5 MB PNG reaches xclip by
 //   INCR, byte for byte.
@@ -173,15 +173,15 @@ test('clipboard sharing with an X11 session: xclip both ways, INCR, images, HTML
   });
   const counts = () => page.evaluate(() => { const w = window as unknown as { __writes: number; __images: number }; return { writes: w.__writes, images: w.__images }; });
 
-  // Guest to host: short text inline; 2 MB, which xclip sends by INCR.
+  // Guest to host: short text inline; 2.7 MB, which xclip sends by INCR.
   await run(page, 'printf "from X11 \\342\\230\\203" >/tmp/s; xc xclip -i -selection clipboard </tmp/s >/dev/null 2>&1; echo copied');
   await hostHas(page, 'from X11 ☃', 'xclip -i');
-  await run(page, 'seq 1 300000 >/tmp/huge; stat -c %s /tmp/huge; xc xclip -i -selection clipboard </tmp/huge >/dev/null 2>&1');
-  const huge = Array.from({ length: 300000 }, (_, i) => `${i + 1}\n`).join('');
+  await run(page, 'seq 1 400000 >/tmp/huge; stat -c %s /tmp/huge; xc xclip -i -selection clipboard </tmp/huge >/dev/null 2>&1');
+  const huge = Array.from({ length: 400000 }, (_, i) => `${i + 1}\n`).join('');
   assert.ok(huge.length > 2 << 20);
   const t0 = Date.now();
-  await hostHas(page, huge, 'xclip -i of 2 MB (INCR)', 120_000);
-  t.diagnostic(`2 MB from xclip (INCR) to the host: ${Date.now() - t0} ms`);
+  await hostHas(page, huge, 'xclip -i of 2.7 MB (INCR)', 120_000);
+  t.diagnostic(`2.7 MB from xclip (INCR) to the host: ${Date.now() - t0} ms`);
 
   // Host to guest: the paste chord, short (inline) and 400 KB (past the agent's threshold: to xclip by INCR).
   const short = 'from the host ✓ — π\n';
