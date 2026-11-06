@@ -63,6 +63,9 @@ const rootPage = (): Plugin => ({
   },
 });
 
+/** Assets' names in the copy: Vite's, but a file without an extension (the guest agent, webpc-agent) keeps none (no trailing dot after its hash). */
+const assetFileNames = (a: { names?: string[] }) => (/\.[^./]+$/.test(a.names?.[0] ?? '') ? 'assets/[name]-[hash][extname]' : 'assets/[name]-[hash]');
+
 // Mode `test` (tools/serve.ts `startServer`, the tests' and benchmarks' dev server): no watching or hot reloading, and
 // Svelte and the packages as the build has them (not their development builds), so a test runs the code a user gets.
 export default defineConfig(({ command, mode }) => ({
@@ -74,7 +77,7 @@ export default defineConfig(({ command, mode }) => ({
   publicDir: command === 'build' ? `${ROOT}web/app/public` : false,
   plugins: [svelte({ compilerOptions: { runes: true, discloseVersion: false, ...(mode === 'test' ? { dev: false, hmr: false } : {}) } }), stamp(), about(), rootPage(), nodeModules()],
   resolve: mode === 'test' ? { conditions: ['module', 'browser', 'production'] } : {},
-  worker: { format: 'es', plugins: () => [nodeModules()] },
+  worker: { format: 'es', plugins: () => [nodeModules()], rollupOptions: { output: { assetFileNames } } },
   // No pre-bundling: the few packages the page uses are ES modules, and every test process runs its own dev server (a
   // shared cache directory would race). Svelte's plugin adds Svelte unless it is excluded.
   optimizeDeps: { noDiscovery: true, include: [], exclude: ['svelte'] },
@@ -97,5 +100,6 @@ export default defineConfig(({ command, mode }) => ({
     // The core is ~5 MiB of wasm, the page's code under 1 MiB: nothing to warn about.
     chunkSizeWarningLimit: 2048,
     license: { fileName: 'THIRD-PARTY-LICENSES.md' },
+    rollupOptions: { output: { assetFileNames } },
   },
 }));

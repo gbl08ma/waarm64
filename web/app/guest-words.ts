@@ -10,5 +10,6 @@ export const guestWords = (layout?: KeyboardLayout): GuestWords => ({
   keyboard: unmarked(t('guest:guest-words.keyboard')),
   network: unmarked(t('guest:guest-words.network')),
   shares: unmarked(t('guest:guest-words.shares')),
+  agent: unmarked(t('guest:guest-words.agent')),
   ...(layout ? { layout: unmarked(text(layout.label)) } : {}),
 });

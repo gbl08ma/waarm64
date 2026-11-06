@@ -12,7 +12,7 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 export const FILE = `${ROOT}THIRD_PARTY.json`;
 
 /** The About pane's groups, in its order: where in webpc a project's code ends up (the catalog has their words). */
-export const GROUPS = ['page', 'core', 'graphics', 'vulkan', 'network', 'firmware'] as const;
+export const GROUPS = ['page', 'core', 'graphics', 'vulkan', 'network', 'firmware', 'agent'] as const;
 export type Group = (typeof GROUPS)[number];
 
 /**

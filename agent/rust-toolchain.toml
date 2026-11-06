@@ -1,0 +1,7 @@
+# The agent's toolchain: the stable release in the Podman build's image (images/build.sh AGENT_CONTAINER), so the
+# host-cargo fallback (no Podman: docs/images.md "agent") builds with the same compiler. Not the core's nightly.
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]
+targets = ["aarch64-unknown-linux-musl"]
+profile = "minimal"

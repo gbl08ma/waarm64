@@ -93,10 +93,13 @@ Alpine boots), which it already skips with a message when `images/build.sh --che
 that needs those (Buildroot/Alpine step counts, kernel changes) belongs in the local VM; a done
 milestone loop still needs a local `scripts/ci.sh` with all images.
 
-**The clipboard's guest agent** (`images/build.sh agent`, once it exists) is the one image built here: without
-Podman it falls back to the host's cargo (rustup's `aarch64-unknown-linux-musl` target, linked by `rust-lld`), so
-the page and its tests have it. That build is marked `HOST-BUILD` and isn't for distribution: `npm run dist` refuses
-it, and its size isn't the shipped binary's (docs/plans/clipboard.md §3.3).
+**The clipboard's guest agent** (`images/build.sh agent`) is the one image built here: without Podman it falls back
+to the host's cargo (rustup installs `agent/rust-toolchain.toml`'s stable with its `aarch64-unknown-linux-musl`
+target; `rust-lld` links it), so the page and its tests have it; `scripts/cloud-setup.sh` builds it (not fatal: its
+tests skip without it). That build is marked `HOST-BUILD` and isn't for distribution: `npm run dist` refuses it, and
+its size isn't the shipped binary's (docs/images.md "agent"). The same fallback runs on the dev VM (aarch64) when
+given the same commands by hand; on x86_64 (the cross link by `rust-lld`) it is unproven until a cloud session runs
+`scripts/cloud-setup.sh`.
 
 **The UEFI firmware** (`images/build.sh edk2`, Podman on arm64) can't be built here either, but its
 build is pinned and reproducible, so `scripts/cloud-setup.sh` fetches the deployed page's copy

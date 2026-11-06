@@ -1306,6 +1306,113 @@
       ]
     },
     {
+      "id": "rust-agent",
+      "title": "The guest agent's crates",
+      "intro": [
+        "Built into `target/images/agent/webpc-agent` by `images/build.sh agent` (`agent/`, docs/plans/clipboard.md §3.3), the clipboard sharing program the page gives a machine with the setting, which runs in the guest. Its one dependency, `rustix` (the user's choice), and the two crates `rustix` builds in on Linux (`agent/Cargo.lock` pins them; licenses as their Cargo.toml says them)."
+      ],
+      "columns": [
+        {
+          "key": "crate",
+          "title": "Crate"
+        },
+        {
+          "key": "version",
+          "title": "Version"
+        },
+        {
+          "key": "license",
+          "title": "License"
+        },
+        {
+          "key": "use",
+          "title": "Use"
+        }
+      ],
+      "entries": [
+        {
+          "id": "agent-crate-rustix",
+          "name": "rustix",
+          "about": "agent",
+          "url": "https://crates.io/crates/rustix/1.1.6",
+          "version": "1.1.6",
+          "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/rustix/1.1.6/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/rustix/1.1.6/source/LICENSE-APACHE"
+            },
+            {
+              "name": "LICENSE-Apache-2.0_WITH_LLVM-exception",
+              "url": "https://docs.rs/crate/rustix/1.1.6/source/LICENSE-Apache-2.0_WITH_LLVM-exception"
+            }
+          ],
+          "md": {
+            "crate": "`rustix`",
+            "version": "1.1.6",
+            "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+            "use": "the agent's system calls (open, read, write, ppoll, ioctl), raw: no libc wrapper"
+          }
+        },
+        {
+          "id": "agent-crate-linux-raw-sys",
+          "name": "linux-raw-sys",
+          "about": "agent",
+          "url": "https://crates.io/crates/linux-raw-sys/0.12.1",
+          "version": "0.12.1",
+          "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/linux-raw-sys/0.12.1/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/linux-raw-sys/0.12.1/source/LICENSE-APACHE"
+            },
+            {
+              "name": "LICENSE-Apache-2.0_WITH_LLVM-exception",
+              "url": "https://docs.rs/crate/linux-raw-sys/0.12.1/source/LICENSE-Apache-2.0_WITH_LLVM-exception"
+            }
+          ],
+          "md": {
+            "crate": "`linux-raw-sys`",
+            "version": "0.12.1",
+            "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+            "use": "Linux's constants and structures, for `rustix`"
+          }
+        },
+        {
+          "id": "agent-crate-bitflags",
+          "name": "bitflags",
+          "about": "agent",
+          "url": "https://crates.io/crates/bitflags/2.13.2",
+          "version": "2.13.2",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/bitflags/2.13.2/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/bitflags/2.13.2/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`bitflags`",
+            "version": "2.13.2",
+            "license": "MIT OR Apache-2.0",
+            "use": "`rustix`'s flags"
+          }
+        }
+      ]
+    },
+    {
       "id": "go-net-tailscale",
       "title": "Go dependencies of the Tailscale backend (`net/tailscale`, N2)",
       "intro": [
@@ -1481,6 +1588,50 @@
             "version": "the pinned nightly (`rust-toolchain.toml`: nightly-2026-09-24, `6eeff9a52`)",
             "license": "MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`; `compiler_builtins` also carries LLVM's compiler-rt parts, Apache-2.0 WITH LLVM-exception)",
             "use": "rebuilt by `-Zbuild-std` into the core (`webpc_core.wasm`) and the tailnet client (`ts.wasm`)"
+          }
+        },
+        {
+          "id": "rust-std-agent",
+          "name": "Rust's standard library",
+          "about": "agent",
+          "url": "https://github.com/rust-lang/rust/tree/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library",
+          "version": "1.99.0 (b940084d7)",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://github.com/rust-lang/rust/blob/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://github.com/rust-lang/rust/blob/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "library": "Rust's standard library (`core`, `alloc`, `std`) as the `aarch64-unknown-linux-musl` target ships it",
+            "version": "stable 1.99.0 (`agent/rust-toolchain.toml`, `b940084d7`)",
+            "license": "MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`; `compiler_builtins` also carries LLVM's compiler-rt parts, Apache-2.0 WITH LLVM-exception)",
+            "use": "linked statically into the guest agent (`webpc-agent`)"
+          }
+        },
+        {
+          "id": "musl-agent",
+          "name": "musl",
+          "about": "agent",
+          "url": "https://musl.libc.org/",
+          "version": "1.2.5",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "COPYRIGHT",
+              "url": "https://git.musl-libc.org/cgit/musl/tree/COPYRIGHT?h=v1.2.5"
+            }
+          ],
+          "md": {
+            "library": "musl, the C library (and its startup files) of Rust's `aarch64-unknown-linux-musl` target, \"self-contained\"",
+            "version": "1.2.5 with Rust's patches (`src/ci/docker/scripts/musl.sh` at `b940084d7`)",
+            "license": "MIT (`COPYRIGHT`)",
+            "use": "linked statically into the guest agent (`webpc-agent`): `std` runs on it"
           }
         }
       ]

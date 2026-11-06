@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the guest images in rootless Podman, never on the host (docs/images.md).
-#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, alpine-virgl, linux-crypto, linux-gpu, linux-snd, linux-usb, linux-usbhost, debian, ltp, litmus, fptest, edk2, alpine-uefi (default: all)
+#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, alpine-virgl, linux-crypto, linux-gpu, linux-snd, linux-usb, linux-usbhost, debian, ltp, litmus, fptest, edk2, alpine-uefi, agent (default: all)
 #   images/build.sh --check name   exit 0 if target/images/<name> is current, else say how to rebuild
 #   images/build.sh --inputs name  print the key of name's inputs (what --check compares with <name>/.inputs)
 # buildroot: Buildroot's BusyBox root filesystem (rootfs.ext4), with Buildroot's
@@ -70,6 +70,13 @@
 # alpine-uefi: Alpine's published UEFI cloud images (images/alpine-uefi.json,
 #   pinned by SHA512), which the firmware tests boot unmodified: alpine.qcow2
 #   (Limine) and alpine-grub.qcow2 (GRUB). Downloaded on the host, as debian.
+# agent: clipboard sharing's guest agent (agent/, docs/plans/clipboard.md §3.3),
+#   webpc-agent, a static aarch64-unknown-linux-musl binary the page ships: built
+#   natively in the Rust project's Alpine image (the toolchain agent/rust-toolchain.toml
+#   names), linked by rust-lld. The one image with a fallback: without Podman (a
+#   cloud session), the host's cargo builds it the same way (rustup's musl target,
+#   rust-lld: no cross gcc) and writes agent/HOST-BUILD beside it, a build for tests
+#   that `npm run dist` refuses (docs/images.md "agent"). Where Podman exists, never.
 # Outputs go to target/images/<name>/, downloads to target/images/dl/. Output
 # hashes are compared with images/SHA256SUMS (a mismatch warns: reproducibility
 # is best-effort).
@@ -112,13 +119,15 @@ EDK2_COMMIT=2970e5699ba6267f3384ffab20f96647578aebc8
 EDK2_CONTAINER=docker.io/library/debian@sha256:1808211ab6f37c6fc6a75368651697536f7bf47993f2797befa8908b1254979d # trixie, arm64
 EDK2_SNAPSHOT=20260924T000000Z
 EDK2_TOOLS="build-essential uuid-dev acpica-tools python3 python-is-python3 dosfstools mtools"
+AGENT_CONTAINER=docker.io/library/rust@sha256:0cce0a5e0e8ba67b455257a3a02a1d99005f382748789d6464460028810f1627 # 1.99.0-alpine3.24, multi-arch
+AGENT_TOOLCHAIN=1.99.0 # the image's, and agent/rust-toolchain.toml's
 USERLAND_CONTAINER=docker.io/library/alpine@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 # 3.24, multi-arch
 export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 
 cd "$(dirname "$0")/.."
 root=$PWD
 out=target/images
-NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-gl alpine-virgl linux-crypto linux-gpu linux-snd linux-usb linux-usbhost debian ltp litmus fptest edk2 alpine-uefi)
+NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-gl alpine-virgl linux-crypto linux-gpu linux-snd linux-usb linux-usbhost debian ltp litmus fptest edk2 alpine-uefi agent)
 
 # Buildroot (pinned by tag and checked against the commit) into $1 with the defconfig $2.
 buildroot() {
@@ -638,6 +647,26 @@ build_edk2() {
     done; } > "$dst/LICENSES.txt"
 }
 
+# The agent (agent/): in its image, the repository at a fixed path (/src) and the crates' cache under
+# target/images/build/agent, so the binary doesn't depend on the checkout's path. Without Podman, the host's cargo.
+build_agent() {
+  local dst=$out/agent b=$out/build/agent
+  [ "$(sed -n 's/^channel = "\(.*\)"$/\1/p' agent/rust-toolchain.toml)" = "$AGENT_TOOLCHAIN" ] || { echo "agent: agent/rust-toolchain.toml isn't $AGENT_TOOLCHAIN" >&2; exit 1; }
+  rm -rf "$dst" "$b/target"
+  mkdir -p "$dst" "$b"
+  local cargo=(cargo build --locked --release --target aarch64-unknown-linux-musl)
+  if command -v podman >/dev/null; then
+    podman run --rm --userns=keep-id -v "$root:/src:z" -w /src/agent -e RUSTUP_TOOLCHAIN="$AGENT_TOOLCHAIN" \
+      -e CARGO_HOME="/src/$b/cargo" -e CARGO_TARGET_DIR="/src/$b/target" "$AGENT_CONTAINER" "${cargo[@]}"
+  else
+    echo "agent: no Podman, so the host's cargo builds it (marked HOST-BUILD: for tests, not for distribution)" >&2
+    (cd agent && rustup toolchain install && CARGO_TARGET_DIR="$root/$b/target" "${cargo[@]}")
+    printf '%s\n' "Built by the host's cargo (images/build.sh agent without Podman): for tests only, not the shipped build." \
+      "npm run dist refuses it; images/build.sh agent where Podman is builds that one (docs/images.md \"agent\")." > "$dst/HOST-BUILD"
+  fi
+  cp "$b/target/aarch64-unknown-linux-musl/release/webpc-agent" "$dst/"
+}
+
 build_kvm-unit-tests() {
   local dst=$out/kvm-unit-tests src=$out/build/kvm-unit-tests
   rm -rf "$src" "$dst"
@@ -670,8 +699,9 @@ inputs() {
   [ "$1" = fptest ] && files+=($(find images/fptest -type f | sort)) && pins='^(FPTEST_|USERLAND_CONTAINER|LINUX)'
   [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh images/edk2/*.patch $(find images/edk2/WebpcXhciDxe -type f | sort)) && pins='^EDK2_'
   [ "$1" = alpine-uefi ] && files+=(images/alpine-uefi.json) && pins='^$'
+  [ "$1" = agent ] && files=(agent/Cargo.toml agent/Cargo.lock agent/rust-toolchain.toml agent/.cargo/config.toml $(find agent/src -type f | sort)) && pins='^AGENT_'
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
-  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd || $1 == linux-usb || $1 == linux-usbhost || $1 == fptest ]]; then declare -f linux_src; fi; if [[ $1 == alpine* ]]; then declare -f alpine_release; fi; } |
+  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd || $1 == linux-usb || $1 == linux-usbhost || $1 == fptest ]]; then declare -f linux_src; fi; if [[ $1 == alpine* ]]; then declare -f alpine_release; fi; if [ "$1" = agent ]; then command -v podman >/dev/null && echo podman || echo host; fi; } |
     sha256sum | cut -c1-16
 }
 
@@ -695,6 +725,7 @@ outputs() {
     fptest) echo fptest/initramfs.cpio fptest/fptest.tar ;;
     edk2) echo edk2/QEMU_EFI.fd edk2/LICENSES.txt edk2/shell.img ;;
     alpine-uefi) echo alpine-uefi/alpine.qcow2 alpine-uefi/alpine-grub.qcow2 ;;
+    agent) echo agent/webpc-agent ;;
   esac
 }
 
@@ -746,10 +777,10 @@ build() {
 }
 
 if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
-  rest=() br=() alpine= user= gl= virgl= crypto= gpu= snd= usb= usbhost= litmus= fptest= kernel= debian= edk2= alpine_uefi=
+  rest=() br=() alpine= user= gl= virgl= crypto= gpu= snd= usb= usbhost= litmus= fptest= kernel= debian= edk2= alpine_uefi= agent=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
-    if [ "$name" = alpine ]; then alpine=1; elif [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = linux-usb ]; then usb=1; elif [ "$name" = linux-usbhost ]; then usbhost=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = fptest ]; then fptest=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; elif [ "$name" = buildroot ] || [ "$name" = ltp ]; then br+=("$name"); else rest+=("$name"); fi
+    if [ "$name" = alpine ]; then alpine=1; elif [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = linux-usb ]; then usb=1; elif [ "$name" = linux-usbhost ]; then usbhost=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = fptest ]; then fptest=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; elif [ "$name" = agent ]; then agent=1; elif [ "$name" = buildroot ] || [ "$name" = ltp ]; then br+=("$name"); else rest+=("$name"); fi
   done
   # The Buildroot images, natively in the host's architecture.
   if [ ${#br[@]} -gt 0 ]; then
@@ -783,6 +814,7 @@ if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
   if [ -n "$litmus" ]; then build litmus; fi
   if [ -n "$fptest" ]; then build fptest; fi
   if [ -n "$edk2" ]; then build edk2; fi
+  if [ -n "$agent" ]; then build agent; fi # Podman, or the host's cargo without it
   exit 0
 fi
 

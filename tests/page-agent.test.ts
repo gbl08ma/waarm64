@@ -1,9 +1,15 @@
-// Clipboard sharing's channel on Debian (docs/plans/clipboard.md §2, step 1): a machine with `?clipboard=1` has the
-// agent's device (web/agent-device.ts), whose port Debian's virtio_console names and udev links as
-// /dev/virtio-ports/org.webpc.agent.0. The page's end (web/app/agent-link.ts, `window.__agent`) sees the guest open
-// and close it, and frames the page sends come back unchanged through `cat` echoing the port into itself: a small one,
-// and 320 KiB of 64 KiB frames, past the link's window, so the guest's buffers and the window's flow both turn over.
+// Clipboard sharing's guest agent on Debian (docs/plans/clipboard.md §2–§3, steps 1 and 2): a machine with
+// `?clipboard=1` has the agent's device (web/agent-device.ts), whose port Debian's virtio_console names and udev links
+// as /dev/virtio-ports/org.webpc.agent.0, and the agent (agent/, web/app/guest-agent.ts): over fw_cfg into /run, started
+// by its credential unit, it opens the port and answers the page's HELLO (web/app/agent-link.ts, `window.__agent`).
+// Then: what it costs idle (plan §3.3's targets: no CPU time, no wakeups, its RSS), TYPE's text on the foreground
+// console (a reader on tty1 writes what it gets to a file; a long paste arrives whole), PAUSE stopping TYPE and RESUME
+// restoring it, the page carrying on when the agent stops, and the port itself without the agent: `cat` echoing it into
+// itself (a small frame, and 320 KiB of 64 KiB frames past the link's window, so the guest's buffers and the window's
+// flow both turn over). The agent's start again at the end: its unit runs it anew.
+// WEBPC_AGENT_IDLE=<s> sets the idle window (default 20 s; the plan's measurement is 60).
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
@@ -16,7 +22,9 @@ import { answerAsks } from './page-ask.ts';
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
+const AGENT = new URL('../target/images/agent/webpc-agent', import.meta.url);
+const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE) || !existsSync(AGENT)) && 'SKIPPED: run images/build.sh debian edk2 agent';
+const IDLE_S = Number(process.env.WEBPC_AGENT_IDLE ?? 20);
 
 let browser: Browser;
 let base: string;
@@ -39,11 +47,27 @@ async function onSerial(page: Page, text: string) {
   await page.locator('.xterm').click();
   await page.keyboard.type(text, { delay: 10 });
 }
-type Link = { open: boolean; broken: boolean; backlog: number; send(type: number, payload?: Uint8Array): boolean; onFrame?: (f: { type: number; payload: Uint8Array }) => void };
+let runs = 0;
+/** Runs `cmd` on the serial shell: its output on one line (its lines joined by spaces), between markers of its own. */
+async function run(page: Page, cmd: string, ms = 60_000) {
+  const re = new RegExp(`<<${++runs}:([^<>]*)>>`);
+  await onSerial(page, `clear; echo "<<${runs}:$({ ${cmd}; } | tr '\\n<>' ' []')>"">"\n`);
+  await shows(page, re, ms);
+  return re.exec(await terminal(page))![1].trim();
+}
+type Hello = { version: number; caps: number };
+type Link = { open: boolean; broken: boolean; backlog: number; agent?: Hello; paused: boolean; send(type: number, payload?: Uint8Array): boolean; type(text: string): boolean; pause(): void; resume(): void; onFrame?: (f: { type: number; payload: Uint8Array }) => void };
+const link = <T>(page: Page, f: (l: Link) => T) => page.evaluate(`(${f})(window.__agent)`) as Promise<T>;
 const isOpen = (page: Page, open: boolean) =>
-  page.waitForFunction((want) => (window as unknown as { __agent?: Link }).__agent?.open === want, open, { timeout: 60_000, polling: 100 });
+  page.waitForFunction((want) => (window as unknown as { __agent?: Link }).__agent?.open === want, open, { timeout: 120_000, polling: 100 });
+const hello = (page: Page) =>
+  page.waitForFunction(() => (window as unknown as { __agent?: Link }).__agent?.agent, null, { timeout: 120_000, polling: 100 }).then((h) => h.jsonValue() as Promise<Hello>);
+const sha = (s: string) => createHash('sha256').update(s).digest('hex');
+/** The reader's file on the guest: its SHA-256 and size. */
+const typed = (page: Page) => run(page, 'sha256sum </tmp/typed | cut -c1-64; stat -c %s /tmp/typed').then((s) => s.split(/\s+/));
+const TYPE = 5;
 
-test('clipboard sharing\'s port: Debian names it; the page sees the guest open and close it; frames come back through it unchanged', { skip, timeout: 10 * 60_000 }, () => withDebianLock(async () => {
+test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing idle, types on the console, pauses; the page carries on without it; the port echoes', { skip, timeout: 15 * 60_000 }, (t) => withDebianLock(async () => {
   const page = await browser.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -51,15 +75,93 @@ test('clipboard sharing\'s port: Debian names it; the page sees the guest open a
   await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&clipboard=1&${unattendedQuery()}`);
   await page.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), null, { timeout: 300_000, polling: 250 });
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', await message(page));
+
+  // The agent: over fw_cfg, started by its unit, the port open, its HELLO (version 1, TYPE).
   await onSerial(page, 'root\n');
   await shows(page, /root@\S+:~# /);
+  const h = await hello(page).catch(async (e) => {
+    const why = await run(page, 'journalctl -b -u webpc-agent -o cat --no-pager | grep -vE "restart|Start|Consumed" | sort | uniq -c | tail -8');
+    throw new Error(`${e}; the guest says: ${why}`);
+  });
+  assert.equal(h.version, 1);
+  assert.ok(h.caps & 1, `the agent can TYPE (caps ${h.caps})`);
+  assert.equal(await run(page, 'ls /dev/virtio-ports/; cat /sys/class/virtio-ports/*/name'), 'org.webpc.agent.0 org.webpc.agent.0');
+  assert.equal(await run(page, 'systemctl is-active webpc-agent'), 'active');
+  const pid = await run(page, 'systemctl show -p MainPID --value webpc-agent');
+  assert.equal(await run(page, `readlink /proc/${pid}/exe`), '/run/webpc/agent');
+  const size = Number(await run(page, `stat -L -c %s /proc/${pid}/exe`));
+  assert.equal(size, (await import('node:fs')).statSync(AGENT).size, 'the binary the page served');
+  // The fw_cfg read's cost (plan §3.1: one MMIO exit a byte), measured in the guest.
+  const [gz, readUs, gunzipUs] = (await run(page, 'd=/sys/firmware/qemu_fw_cfg/by_name/opt/webpc/agent; cat $d/size; s=$(date +%s%N); cat $d/raw >/tmp/agent.gz; m=$(date +%s%N); gzip -dc /tmp/agent.gz >/dev/null; e=$(date +%s%N); echo $(( (m - s) / 1000 )) $(( (e - m) / 1000 ))')).split(/\s+/).map(Number);
+  t.diagnostic(`agent: ${size} bytes, ${gz} gzipped; fw_cfg read in the guest ${(readUs / 1000).toFixed(1)} ms (${(readUs * 1000 / gz).toFixed(0)} ns a byte), gunzip ${(gunzipUs / 1000).toFixed(1)} ms`);
 
-  // The port, by its name; no console on it (no hvc).
-  await onSerial(page, 'clear; ls /dev/virtio-ports/; cat /sys/class/virtio-ports/*/name; ls /dev/hvc0 2>&1 | wc -w; echo li""sted\n');
-  await shows(page, /org\.webpc\.agent\.0\s*org\.webpc\.agent\.0\s*(\d+)\s*listed/);
-  assert.equal(await page.evaluate(() => (window as unknown as { __agent?: Link }).__agent?.open), false, 'nobody holds it open yet');
+  // Idle (plan §3.3): no CPU time (utime + stime), no wakeups (voluntary context switches), VmRSS about 1 MiB or less.
+  const cost = async () => {
+    const [ticks, switches, rss] = (await run(page, `{ awk '{print $14 + $15}' /proc/${pid}/stat; awk '/^voluntary_ctxt_switches/ {print $2}' /proc/${pid}/status; awk '/^VmRSS/ {print $2}' /proc/${pid}/status; }`)).split(/\s+/).map(Number);
+    return { ticks, switches, rss };
+  };
+  const before = await cost();
+  await page.waitForTimeout(IDLE_S * 1000);
+  const idle = await cost();
+  t.diagnostic(`agent idle over ${IDLE_S} s: ${idle.ticks - before.ticks} ticks, ${idle.switches - before.switches} voluntary switches; VmRSS ${idle.rss} KiB (${before.ticks} ticks and ${before.switches} switches since its start)`);
+  assert.equal(idle.ticks, before.ticks, 'no CPU time while idle');
+  assert.equal(idle.switches, before.switches, 'no wakeups while idle');
+  assert.ok(idle.rss <= 1024, `VmRSS ${idle.rss} KiB`);
 
-  // `cat` holds it open, echoing it into itself.
+  // TYPE: a reader on tty1, the foreground console (getty stopped), writes what it gets to /tmp/typed. Line ends arrive
+  // as Enter (CR, which the terminal turns into NL); UTF-8 whole.
+  assert.equal(await run(page, 'cat /sys/class/tty/tty0/active'), 'tty1');
+  await run(page, 'systemctl stop getty@tty1; : >/tmp/typed; setsid sh -c "echo \\$\\$ >/tmp/reader; exec cat >>/tmp/typed" </dev/tty1 >/dev/tty1 2>&1 & echo started');
+  const text = 'héllo wörld ☃ 𝄞\r\nsecond line\n';
+  assert.equal(await link(page, (l) => l.type('héllo wörld ☃ 𝄞\r\nsecond line\n')), true);
+  const want = text.replace(/\r\n?/g, '\n');
+  for (let i = 0; ; i++) {
+    const [hash, n] = await typed(page);
+    if (hash === sha(want)) break;
+    if (i > 20) assert.fail(`tty1's reader got ${n} bytes, not ${Buffer.byteLength(want)} (${hash})`);
+    await page.waitForTimeout(500);
+  }
+  // A long paste (20 KiB in lines of 100 bytes) into a slow reader (the terminal not canonical, a dd of 512 bytes at a time):
+  // the terminal's 4 KiB buffer fills, and the agent waits for room rather than lose the rest.
+  await run(page, 'kill $(cat /tmp/reader); stty -F /dev/tty1 -icanon -echo min 1; setsid sh -c "while dd bs=512 count=1 status=none; do sleep 0.01; done >>/tmp/typed" </dev/tty1 >/dev/null 2>&1 & echo started');
+  const long = Array.from({ length: 200 }, (_, i) => `${String(i).padStart(4, '0')} ${'abcdefghij'.repeat(9)}abcd\n`).join('');
+  assert.equal(await page.evaluate(([s]) => (window as unknown as { __agent: Link }).__agent.type(s), [long]), true);
+  const wantLong = want + long;
+  const t0 = performance.now();
+  for (let i = 0; ; i++) {
+    const [hash, n] = await typed(page);
+    if (hash === sha(wantLong)) {
+      t.diagnostic(`the long paste reached the slow reader whole in ${((performance.now() - t0) / 1000).toFixed(1)} s or less`);
+      break;
+    }
+    if (i > 120) assert.fail(`after the long paste tty1's reader has ${n} bytes, not ${Buffer.byteLength(wantLong)}`);
+    await page.waitForTimeout(1000);
+  }
+
+  // PAUSE: the agent drops TYPE (sent as a raw frame: the link itself refuses to type while paused) until RESUME.
+  await link(page, (l) => l.pause());
+  assert.equal(await link(page, (l) => l.type('refused\n')), false, 'the link refuses while paused');
+  assert.equal(await page.evaluate((k) => (window as unknown as { __agent: Link }).__agent.send(k, new TextEncoder().encode('paused\n')), TYPE), true);
+  await page.waitForTimeout(3000);
+  assert.deepEqual(await typed(page), [sha(wantLong), String(Buffer.byteLength(wantLong))], 'nothing typed while paused');
+  await link(page, (l) => l.resume());
+  assert.equal(await link(page, (l) => l.type('resumed\n')), true);
+  const wantResumed = wantLong + 'resumed\n';
+  for (let i = 0; ; i++) {
+    const [hash, n] = await typed(page);
+    if (hash === sha(wantResumed)) break;
+    if (i > 20) assert.fail(`after RESUME tty1's reader has ${n} bytes, not ${Buffer.byteLength(wantResumed)}`);
+    await page.waitForTimeout(500);
+  }
+
+  // The agent stopped: the page hears the port close, the link refuses, the machine runs on.
+  await run(page, 'systemctl stop webpc-agent; echo stopped');
+  await isOpen(page, false);
+  assert.equal(await link(page, (l) => l.type('nobody\n')), false);
+  assert.equal(await link(page, (l) => l.agent), undefined);
+  assert.equal(await page.evaluate(() => document.body.dataset.state), 'running');
+
+  // The port without the agent: `cat` holds it open, echoing it into itself.
   await onSerial(page, 'clear; exec 3<>/dev/virtio-ports/org.webpc.agent.0; cat <&3 >&3 & echo st""arted\n');
   await shows(page, /started/);
   await isOpen(page, true);
@@ -71,11 +173,12 @@ test('clipboard sharing\'s port: Debian names it; the page sees the guest open a
     const done = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`${got.length} of ${sent.length} frames back after 120 s (broken: ${link.broken}, backlog ${link.backlog})`)), 120_000);
       link.onFrame = (f) => {
+        if (f.type === 1) return; // the link's own HELLO at the opening, echoed (whether before this or after)
         got.push([f.type, f.payload.length, sum(f.payload)]);
         if (got.length === sent.length) { clearTimeout(timer); resolve(); }
       };
     });
-    const frames: [number, Uint8Array][] = [[1, new TextEncoder().encode('hello from the page')]];
+    const frames: [number, Uint8Array][] = [[3, new TextEncoder().encode('hello from the page')]];
     for (let i = 0; i < 5; i++) frames.push([4, Uint8Array.from({ length: 65536 }, (_, k) => (k * 7 + i * 13) & 0xff)]);
     for (const [type, payload] of frames) {
       sent.push([type, payload.length, sum(payload)]);
@@ -85,11 +188,22 @@ test('clipboard sharing\'s port: Debian names it; the page sees the guest open a
     return { sent, got };
   });
   assert.deepEqual(echoed.got, echoed.sent);
-
-  // Closed: the page hears it.
   await onSerial(page, 'clear; kill %1; exec 3<&-; echo cl""osed\n');
   await shows(page, /closed/);
   await isOpen(page, false);
+
+  // Started again (its unit reads fw_cfg anew): HELLO again, and it types.
+  await run(page, 'systemctl start webpc-agent; echo started');
+  await hello(page);
+  assert.equal(await link(page, (l) => l.paused), false);
+  assert.equal(await link(page, (l) => l.type('again\n')), true);
+  const wantAgain = wantResumed + 'again\n';
+  for (let i = 0; ; i++) {
+    const [hash, n] = await typed(page);
+    if (hash === sha(wantAgain)) break;
+    if (i > 20) assert.fail(`after the restart tty1's reader has ${n} bytes, not ${Buffer.byteLength(wantAgain)}`);
+    await page.waitForTimeout(500);
+  }
   assert.deepEqual(errors, []);
   await page.close();
 }));

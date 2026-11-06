@@ -9,9 +9,10 @@ import type { Credential } from './machine.ts';
 /**
  * The credentials of unit `name` (`webpc-<what>.service`), a oneshot that runs `script` (a credential of its own: no
  * quoting in the unit). `unit`: its [Unit] lines past the description (ordering); `wantedBy`: the unit whose drop-in
- * wants it and orders itself after it (the generator can't read an [Install] section).
+ * wants it and orders itself after it (the generator can't read an [Install] section). `service`: its [Service] lines
+ * before the script's, in place of `Type=oneshot` (a long-running service: web/app/guest-agent.ts).
  */
-export function guestUnit(o: { name: string; description: string; script: string; unit: string; wantedBy: string }): Credential[] {
+export function guestUnit(o: { name: string; description: string; script: string; unit: string; wantedBy: string; service?: string }): Credential[] {
   const what = o.name.replace(/\.service$/, '');
   const sh = `${what.replace(/-/g, '.')}.sh`;
   return [
@@ -23,8 +24,7 @@ Description=${oneLine(o.description)}
 ConditionPathExists=!/etc/initrd-release
 ${o.unit}
 [Service]
-Type=oneshot
-ImportCredential=${sh}
+${o.service ?? 'Type=oneshot\n'}ImportCredential=${sh}
 ExecStart=/bin/sh %d/${sh}
 `,
     },
@@ -36,7 +36,7 @@ ExecStart=/bin/sh %d/${sh}
 export const oneLine = (s: string) => s.replace(/\s*\n\s*/g, ' ').trim();
 
 /** The units' descriptions, in the page's words (web/app/guest-words.ts renders them; the worker gets them with the start). */
-export type GuestWords = { keyboard: string; network: string; shares: string; /** The keyboard layout's name, for the comment atop its script. */ layout?: string };
+export type GuestWords = { keyboard: string; network: string; shares: string; agent: string; /** The keyboard layout's name, for the comment atop its script. */ layout?: string };
 
 /** The fw_cfg file the core moves into SMBIOS type 11 (core/src/smbios.rs `OEM_STRINGS`, ABI 49): NUL-separated strings. */
 export const OEM_STRINGS_FILE = 'opt/webpc/oem-strings';

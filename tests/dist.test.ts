@@ -3,12 +3,12 @@
 // Buildroot (its images linked into the copy for the test: the copy itself has none).
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
-import { BINARIES, VULKAN, writeDist } from '../tools/dist.ts';
+import { BINARIES, hostAgentProblem, VULKAN, writeDist } from '../tools/dist.ts';
 import { ROOT, startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { t } from '../web/i18n.ts';
@@ -26,7 +26,7 @@ let close: () => void;
 before(async () => {
   if (skipCopy) return;
   out = mkdtempSync(join(tmpdir(), 'webpc-dist-'));
-  await writeDist(out, { vulkan: false });
+  await writeDist(out, { vulkan: false, hostAgent: true });
   // The page's direct-boot machines find their images at target/images/ under the root (web/app/machine.ts).
   mkdirSync(join(out, 'target/images'), { recursive: true });
   if (buildroot) for (const d of ['linux', 'buildroot']) symlinkSync(join(ROOT, 'target/images', d), join(out, 'target/images', d));
@@ -44,6 +44,11 @@ test('the static copy is the page bundled: a few hashed files, its binaries amon
   for (const name of ['index', 'worker', 'vcpu-worker', 'device-worker', 'jit-compile-worker', 'gpu-worker', 'audio-worklet', 'webpc_core', 'ts', 'QEMU_EFI']) {
     assert.ok(files.some((f) => new RegExp(`^assets/${name}-[\\w-]{8}\\.(?:js|wasm|fd)$`).test(f)), `no assets/${name}-<hash>`);
   }
+  // Clipboard sharing's guest agent, which the worker fetches by its hashed name (web/app/guest-agent.ts).
+  const agent = files.find((f) => /^assets\/webpc-agent-[\w-]{8}$/.test(f));
+  assert.ok(agent, 'no assets/webpc-agent-<hash>');
+  assert.equal(Buffer.compare(readFileSync(join(out, agent)).subarray(0, 4), Buffer.from('\x7fELF', 'latin1')), 0, 'the agent is an ELF file');
+  assert.ok(files.some((f) => /^assets\/worker-[\w-]{8}\.js$/.test(f) && readFileSync(join(out, f), 'utf8').includes(agent.slice('assets/'.length))), "the worker doesn't name the agent's asset");
   const scripts = files.filter((f) => f.endsWith('.js'));
   assert.ok(scripts.length < 40, `${scripts.length} scripts: the page isn't bundled`);
   assert.match(readFileSync(join(out, 'THIRD-PARTY-LICENSES.md'), 'utf8'), /@xterm\/xterm[\s\S]*svelte/);
@@ -55,6 +60,18 @@ test('the static copy is the page bundled: a few hashed files, its binaries amon
     assert.match(readFileSync(join(out, 'VENUS-LICENSES.txt'), 'utf8'), /virglrenderer: COPYING[\s\S]*Mesa: docs\/license\.rst[\s\S]*SoftFloat[\s\S]*Apache License[\s\S]*LLVM Exceptions/);
     const worker = files.find((f) => /^assets\/gpu-worker-[\w-]{8}\.js$/.test(f))!;
     assert.match(readFileSync(join(out, worker), 'utf8'), /venus-[\w-]{8}\.wasm/);
+  }
+});
+
+test("npm run dist refuses a guest agent the host's cargo built (its HOST-BUILD marker); npm start and the tests take it", () => {
+  const root = mkdtempSync(join(tmpdir(), 'webpc-dist-agent-'));
+  try {
+    assert.equal(hostAgentProblem(`${root}/`), undefined, 'no marker: the build in Podman');
+    mkdirSync(join(root, 'target/images/agent'), { recursive: true });
+    writeFileSync(join(root, 'target/images/agent/HOST-BUILD'), 'host\n');
+    assert.match(hostAgentProblem(`${root}/`) ?? '', /HOST-BUILD.*for tests only.*images\/build\.sh agent/s);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

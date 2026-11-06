@@ -22,6 +22,7 @@
     vulkan: 'machines:About.group.vulkan',
     network: 'machines:About.group.network',
     firmware: 'machines:About.group.firmware',
+    agent: 'machines:About.group.agent',
   };
 
   const b = about.build;

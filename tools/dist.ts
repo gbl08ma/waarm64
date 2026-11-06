@@ -4,8 +4,9 @@
 //   index.html                        the page, the commit it was built from in a meta tag (tools/stamp.ts)
 //   assets/                           its code bundled (the page, each worker, the sound worklet; minified, with source
 //                                     maps), its CSS, and the binaries it fetches: the core (webpc_core.wasm), the
-//                                     tailnet client (ts.wasm), EDK2 (QEMU_EFI.fd), Vulkan's renderer (venus.wasm,
-//                                     fetched only by a machine with Vulkan on); every name hashed
+//                                     tailnet client (ts.wasm), EDK2 (QEMU_EFI.fd), clipboard sharing's guest agent
+//                                     (webpc-agent, fetched only by a machine with the setting), Vulkan's renderer
+//                                     (venus.wasm, fetched only by a machine with Vulkan on); every name hashed
 //   web/app/index.html                a redirect to the root (the page was there until 2026-10-23)
 //   _headers, .htaccess, .nojekyll    cross-origin isolation for hosts that read them (below; web/app/public/)
 //   THIRD-PARTY-LICENSES.md, EDK2-LICENSES.txt, VENUS-LICENSES.txt, LICENSE   the bundled packages' licenses, the
@@ -16,6 +17,8 @@
 // The server must send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy:
 // require-corp` with every file (SharedArrayBuffer). The page fetches its own files whole; disks need range requests.
 //   npm run dist [-- --out <dir>] [-- --no-prepare] [-- --no-vulkan] [-- --serve [--port <n>]]
+// The guest agent must be the build in Podman (images/build.sh agent): one by the host's cargo (no Podman: its
+// HOST-BUILD marker) is for tests and is refused (docs/images.md "agent").
 // The Vulkan renderer isn't built by the preparation (vk/build.sh: Mesa and virglrenderer built natively first, a few
 // minutes and their build tools; docs/devices.md "Venus"): `npm run dist` needs it built, `--no-vulkan` (and `npm
 // start`) make the copy without it, where a machine with Vulkan on fails to start its renderer.
@@ -25,7 +28,7 @@ import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { build } from 'vite';
 import { APP, ROOT, startServer } from './serve.ts';
-import { FIRMWARE, main as prepare, Stop, WASM } from './start.ts';
+import { AGENT, AGENT_HOST_BUILD, FIRMWARE, main as prepare, Stop, WASM } from './start.ts';
 import { BUNDLED } from './third-party.ts';
 
 export const OUT = join(ROOT, 'target/dist');
@@ -34,20 +37,28 @@ export const OUT = join(ROOT, 'target/dist');
 const MARK = '.webpc-dist';
 
 /** The binaries the page fetches, as paths in the repository. */
-export const BINARIES = [relative(ROOT, WASM), 'target/net/ts.wasm', FIRMWARE, BUNDLED['EDK2-LICENSES.txt']];
+export const BINARIES = [relative(ROOT, WASM), 'target/net/ts.wasm', FIRMWARE, BUNDLED['EDK2-LICENSES.txt'], AGENT];
 /** Vulkan's renderer and its licences (vk/build.sh). */
 export const VULKAN = ['target/vk/venus.wasm', BUNDLED['VENUS-LICENSES.txt']];
 
+/** Why the guest agent in `root`'s target/ can't go in a copy to distribute (a build by the host's cargo), or undefined. */
+export const hostAgentProblem = (root = ROOT) => existsSync(join(root, AGENT_HOST_BUILD))
+  ? `${AGENT} is a build by the host's cargo (${AGENT_HOST_BUILD}: there was no Podman), for tests only. Build it in Podman (images/build.sh agent, where Podman is installed) for a copy to distribute.`
+  : undefined;
+
 /**
  * Writes the static copy of the page to `out` (its binaries must be built; Vulkan's renderer too unless `vulkan` is
- * false, when it goes in only if built); returns the files written, relative to `out`.
+ * false, when it goes in only if built; the guest agent built in Podman unless `hostAgent`: `npm start`'s copy, for this
+ * machine only, takes the host's build too); returns the files written, relative to `out`.
  */
-export async function writeDist(out = OUT, { vulkan = true }: { vulkan?: boolean } = {}) {
+export async function writeDist(out = OUT, { vulkan = true, hostAgent = false }: { vulkan?: boolean; hostAgent?: boolean } = {}) {
   if (existsSync(out) && readdirSync(out).length && !existsSync(join(out, MARK))) {
     throw new Stop(`${out} exists and isn't a copy this script wrote: pick another --out, or empty it.`);
   }
   const missing = BINARIES.filter((f) => !existsSync(join(ROOT, f)));
   if (missing.length) throw new Stop(`Not built: ${missing.join(', ')} (\`npm run dist\` without --no-prepare builds them).`);
+  const host = hostAgent ? undefined : hostAgentProblem();
+  if (host) throw new Stop(host);
   const vk = VULKAN.every((f) => existsSync(join(ROOT, f)));
   if (vulkan && !vk) throw new Stop(`Not built: ${VULKAN.filter((f) => !existsSync(join(ROOT, f))).join(', ')} (vk/build.sh builds Vulkan's renderer; --no-vulkan leaves it out).`);
   await build({ configFile: join(ROOT, 'vite.config.ts'), build: { outDir: out }, logLevel: 'warn' });

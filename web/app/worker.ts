@@ -24,6 +24,7 @@ import { netCredentials } from './guest-net.ts';
 import { keyboardCredentials, keyboardLayout } from './keyboard.ts';
 import { SHARES_TAG, sharesCredentials } from './shares-mount.ts';
 import { swapCredentials } from './guest-swap.ts';
+import { AGENT_FILE, agentBinary, agentCredentials } from './guest-agent.ts';
 import { credentialFiles, MACHINES, readyWatcher, splitMsg, withParams, type Machine } from './machine.ts';
 import { Signal } from './memory.ts';
 import type { FromWorker, PowerState, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
@@ -413,6 +414,9 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   const flash = !snapshot && machine.firmware && home ? loadFlash(home).then((f) => (f?.length === FLASH_SIZE ? f : undefined), () => undefined) : undefined;
   const urls = m.disks.flatMap((d) => ('url' in d.source ? [new URL(d.source.url, self.location.href).href] : []));
   const disk = Promise.all(urls.map((url) => fetch(url, { method: 'HEAD' }).then((r) => { if (!r.ok) throw missing(url, machine, r.status); })));
+  // Clipboard sharing's guest agent, fetched only for a machine with the setting (web/app/guest-agent.ts); without it
+  // (not built) the machine runs as it would, its port unopened.
+  const agent = m.agent && machine.firmware ? agentBinary() : undefined;
   const [wasm, kernel = new Uint8Array(0), initrd] = await download([CORE, ...(snapshot ? [] : [machine.kernel, ...(machine.initrd ? [machine.initrd] : [])])], machine);
   await disk;
   if (stopping) return;
@@ -423,9 +427,10 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   savedFlash = await flash;
   // The units' credentials (the keyboard layout, the network's settings, swap ramdisks' fstab lines) are too long for fw_cfg's names: the core puts them in SMBIOS (core/src/smbios.rs).
   const keys = keyboardLayout(m.keyLayout);
-  const units = [...(keys ? keyboardCredentials(keys, m.guest.keyboard, m.guest.layout) : []), ...(net ? netCredentials(m.guest.network) : []), ...(m.sharesPath ? sharesCredentials(m.sharesPath, m.guest.shares) : []), ...swapCredentials(m.disks.flatMap((d) => ('swap' in d.source && d.source.swap ? [d.source.swap] : [])))];
+  const agentBytes = await agent;
+  const units = [...(keys ? keyboardCredentials(keys, m.guest.keyboard, m.guest.layout) : []), ...(net ? netCredentials(m.guest.network) : []), ...(m.sharesPath ? sharesCredentials(m.sharesPath, m.guest.shares) : []), ...swapCredentials(m.disks.flatMap((d) => ('swap' in d.source && d.source.swap ? [d.source.swap] : []))), ...(agentBytes ? agentCredentials(m.guest.agent) : [])];
   const oem = units.length ? [{ name: OEM_STRINGS_FILE, data: oemStrings(units).join('\0') }] : [];
-  const firmware = machine.firmware ? { flash: savedFlash, fwCfg: [...credentialFiles(credentials), ...oem] } : undefined;
+  const firmware = machine.firmware ? { flash: savedFlash, fwCfg: [...credentialFiles(credentials), ...oem, ...(agentBytes ? [{ name: AGENT_FILE, data: agentBytes }] : [])] } : undefined;
   if (stopping) return;
   let ncpus = m.ncpus;
   ramMiB = m.ramMiB;

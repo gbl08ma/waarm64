@@ -116,6 +116,37 @@ in flight, from the device's `taken` counts. A snapshot keeps the port's state, 
 messages not yet sent; the guest's buffers come back with the core's held requests. What goes over it is the agent's:
 [plans/clipboard.md](plans/clipboard.md).
 
+#### The guest's agent
+
+`webpc-agent` (`agent/`: a crate of its own, outside the core's workspace, with its own stable toolchain;
+`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency.
+A machine with clipboard sharing that has firmware fetches it (`web/app/guest-agent.ts` `agentBinary`: an ELF file or
+nothing) and hands it to the guest as the fw_cfg file **`opt/webpc/agent`**, with a unit as SMBIOS credentials
+(`agentCredentials`, frontend.md "What the page sets in the guest"); without the binary (not built) the machine starts
+without the unit, its port never opened. The unit, `webpc-agent.service` (`Type=simple`, wanted by
+`multi-user.target`): `modprobe -q qemu_fw_cfg` outside the sandbox (`ExecStartPre=-+`), then its script copies
+`/sys/firmware/qemu_fw_cfg/by_name/opt/webpc/agent/raw` into `/run/webpc/agent` (a tmpfs of the unit's own,
+`TemporaryFileSystem=` mode 0700 and `exec`: Debian 13 mounts /run `noexec`, so a `RuntimeDirectory` can't run it;
+gone with the unit), waits for udev's link (`udevadm wait`) and `exec`s it. `Nice=10`, `MemoryMax=32M`,
+`OOMScoreAdjust=500`, `Restart=on-failure`; sandboxed (`ProtectSystem=strict`, `ProtectHome=read-only`, private /tmp
+and network, `RestrictAddressFamilies=AF_UNIX`, the kernel's tunables, modules, logs and clock protected, …:
+`systemd-analyze security` 3.7, "OK") with the capabilities it needs and the next steps will: `CAP_SYS_ADMIN` for
+TIOCSTI, `CAP_SETUID` and `CAP_SETGID` for the session children (no `NoNewPrivileges`).
+
+The agent is one process and one thread blocked in `ppoll` on the port, no timeout. Its frames are
+`agent/src/frame.rs`, the twin of `web/agent-frame.ts` (both tests pin the same bytes):
+
+| Frame | Payload | |
+|---|---|---|
+| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each opening of the port (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0) |
+| TYPE (5) | UTF-8 text, at most 64 KiB a frame (`typePayloads` cuts between characters, never inside a CRLF) | the agent puts it in the foreground VT's input (`/dev/tty0`, TIOCSTI a byte at a time), line ends as Enter (CRLF and LF become CR, as terminal emulators paste); paced by the terminal's unread input (`FIONREAD`, every 256 bytes: the line discipline drops what doesn't fit its 4 KiB), so a long paste into a reader that keeps up arrives whole and one that stalls a second loses the rest. Not UTF-8: dropped |
+| PAUSE (6), RESUME (7) | none | while paused the agent drops TYPE (and, from step 3, the clipboard's frames); the link refuses `type()` while paused and says PAUSE again to an agent that reopens its end |
+| OFFER (2), REQUEST (3), DATA (4) | step 3 | |
+
+A frame's length that can't be (zero, past 64 KiB and 256) breaks the agent's reader: it closes and reopens the port,
+which starts both directions afresh (the link resets at each opening). Its log lines go to the journal
+(`webpc-agent: …`).
+
 ### clock (ID 17): virtio-rtc
 
 `{type: 'clock'}` (`web/clock.ts`; Linux's `virtio_rtc`, 6.16 and later, with `CONFIG_VIRTIO_RTC`, which Debian's

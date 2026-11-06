@@ -52,6 +52,10 @@ PATH=$NODE_DIR/bin:$PATH
 [ node_modules/.package-lock.json -nt package-lock.json ] || npm ci --no-fund --no-audit >/dev/null
 # Pre-fetch the pinned nightly and its std sources (the first cargo call would otherwise do it).
 rustc --version >/dev/null
+# Clipboard sharing's guest agent: without Podman, images/build.sh agent builds it with the host's cargo (rustup installs
+# agent/rust-toolchain.toml's stable with its aarch64-unknown-linux-musl target; rust-lld links it), marked HOST-BUILD
+# (docs/cloud.md). Not fatal: the tests that need it skip.
+images/build.sh agent >/dev/null || echo "the guest agent didn't build (images/build.sh agent): its tests skip" >&2
 # The UEFI firmware (EDK2) is built in Podman on arm64, which the cloud can't do; the build is
 # pinned and reproducible, so the deployed page's copy is fetched instead and kept only if both
 # files match images/SHA256SUMS (the guest's firmware is never one whose hash doesn't match).

@@ -1,12 +1,23 @@
 // Clipboard sharing's channel without a guest (docs/plans/clipboard.md §2): the agent's virtio-console
 // (web/agent-device.ts) driven through hand-built queues as Linux's virtio_console drives it (the control handshake,
 // the port's name, the guest's opens and closes, bytes both ways across buffers, a snapshot's state), the frames
-// (web/agent-frame.ts), and the page's end (web/app/agent-link.ts): its window of bytes in flight.
+// (web/agent-frame.ts) and their payloads (HELLO, TYPE: the same bytes as agent/src/frame.rs's tests), the page's end
+// (web/app/agent-link.ts): its window of bytes in flight, HELLO, TYPE, the pause; and the guest agent's unit and
+// script (web/app/guest-agent.ts), the script under dash on directories of its own.
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { gunzipSync, gzipSync } from 'node:zlib';
+import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { AGENT_PORTS, agentDevice, agentEntry, CTL_RX, CTL_TX, DEVICE_READY, F_MULTIPORT, MAX_PENDING, PORT_ADD, PORT_NAME, PORT_OPEN, PORT_READY, type AgentFromDevice } from '../web/agent-device.ts';
-import { encodeFrame, FRAME, FrameReader, MAX_PAYLOAD } from '../web/agent-frame.ts';
-import { AgentLink, WINDOW } from '../web/app/agent-link.ts';
+import { CAP, decodeHello, encodeFrame, encodeHello, FRAME, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, VERSION } from '../web/agent-frame.ts';
+import { AgentLink, PAGE_CAPS, WINDOW } from '../web/app/agent-link.ts';
+import { AGENT_FILE, AGENT_PORT, agentBinary, agentCredentials, agentScript } from '../web/app/guest-agent.ts';
+import { oemStrings } from '../web/app/guest-unit.ts';
+import { guestWords } from '../web/app/guest-words.ts';
+import { words } from './words.ts';
 import type { Ctx } from '../web/devices.ts';
 
 /** A guest's RAM and the device's completions; `at` hands out buffers, one region per call. */
@@ -244,6 +255,11 @@ test('the link: frames out only while the agent\'s end is open, at most WINDOW b
   port2.postMessage({ type: 'open', port: 0, open: true });
   await settle();
   assert.deepEqual(opens, [true]);
+  // The page's HELLO first, at each opening: taken by the guest at once here.
+  assert.deepEqual(sent.map((b) => b[4]), [FRAME.HELLO]);
+  port2.postMessage({ type: 'taken', port: 0, n: dev.bytes });
+  sent.length = 0;
+  dev.bytes = 0;
   // Six frames of 64 KiB (and 5 bytes of header each): sent until the bytes in flight reach WINDOW, the fourth past it.
   const payload = new Uint8Array(65536);
   for (let i = 0; i < 6; i++) assert.equal(link.send(FRAME.DATA, payload), true);
@@ -271,7 +287,139 @@ test('the link: frames out only while the agent\'s end is open, at most WINDOW b
   await settle();
   assert.deepEqual(opens, [true, false, true]);
   assert.deepEqual(frames, [FRAME.OFFER, FRAME.REQUEST, FRAME.HELLO]);
-  assert.equal(link.backlog, 0);
+  assert.equal(link.backlog, encodeFrame(FRAME.HELLO, encodeHello({ version: VERSION, caps: PAGE_CAPS })).length, 'only the new opening\'s HELLO');
   link.close();
   port2.close();
+});
+
+test("frames: HELLO's payload (version, capabilities: the bytes agent/src/frame.rs pins), longer ones from later versions", () => {
+  assert.deepEqual([...encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TYPE }))], [7, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0]);
+  assert.deepEqual([...encodeFrame(FRAME.PAUSE)], [1, 0, 0, 0, 6]);
+  const h = { version: 3, caps: 0x80000101 };
+  assert.deepEqual(decodeHello(encodeHello(h)), h);
+  assert.deepEqual(decodeHello(new Uint8Array([...encodeHello(h), 9, 9, 9])), h, "a later version's fields are ignored");
+  assert.equal(decodeHello(new Uint8Array([1, 0, 1, 0, 0])), undefined);
+});
+
+test("frames: TYPE's payloads, UTF-8 cut between characters and never inside a CRLF", () => {
+  const dec = new TextDecoder('utf-8', { fatal: true });
+  assert.deepEqual(typePayloads(''), []);
+  assert.deepEqual(typePayloads('ls\n').map((p) => dec.decode(p)), ['ls\n']);
+  const text = 'héllo ☃ 𝄞 wörld\r\nline two\r\n';
+  for (const max of [4, 5, 6, 7, 8, 13]) {
+    const parts = typePayloads(text, max);
+    assert.ok(parts.every((p) => p.length <= max && p.length > 0), `frames of ${max}: ${parts.map((p) => p.length)}`);
+    assert.equal(parts.map((p) => dec.decode(p)).join(''), text, `frames of ${max}: each is UTF-8 and they join up`);
+    assert.ok(parts.every((p, i) => !(p[p.length - 1] === 0x0d && parts[i + 1]?.[0] === 0x0a)), `frames of ${max}: a CRLF split`);
+  }
+  const long = 'x'.repeat(TYPE_CHUNK * 2 + 10);
+  assert.deepEqual(typePayloads(long).map((p) => p.length), [TYPE_CHUNK, TYPE_CHUNK, 10]);
+  assert.ok(TYPE_CHUNK <= MAX_PAYLOAD);
+  assert.throws(() => typePayloads('x', 3));
+});
+
+test("the link: HELLO at each opening, the agent's answer; TYPE once it can; PAUSE held over a reopening", async () => {
+  const { port1, port2 } = channel();
+  const link = new AgentLink(port1);
+  const sent: { type: number; payload: Uint8Array }[] = [];
+  const reader = new FrameReader();
+  port2.onmessage = (e) => {
+    sent.push(...reader.push(e.data.bytes));
+    port2.postMessage({ type: 'taken', port: 0, n: e.data.bytes.length });
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+  assert.equal(link.type('ls\n'), false, 'closed');
+  port2.postMessage({ type: 'open', port: 0, open: true });
+  await settle();
+  assert.deepEqual(sent.map((f) => f.type), [FRAME.HELLO]);
+  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TYPE });
+  assert.equal(link.type('ls\n'), false, "open, but the agent hasn't said it can");
+  const hellos: unknown[] = [];
+  link.onHello = (h) => hellos.push(h);
+  port2.postMessage({ type: 'data', port: 0, bytes: encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TYPE | 0x100 })) });
+  await settle();
+  assert.deepEqual(hellos, [{ version: 1, caps: CAP.TYPE | 0x100 }]);
+  assert.equal(link.canType, true);
+  assert.equal(link.type('héllo\n'), true);
+  await settle();
+  assert.deepEqual(sent.slice(1).map((f) => [f.type, new TextDecoder().decode(f.payload)]), [[FRAME.TYPE, 'héllo\n']]);
+  // Paused: nothing typed; the agent hears it, and again when it reopens its end (a restarted agent starts unpaused).
+  link.pause();
+  assert.equal(link.type('no'), false);
+  await settle();
+  assert.deepEqual(sent.slice(2).map((f) => f.type), [FRAME.PAUSE]);
+  port2.postMessage({ type: 'open', port: 0, open: false });
+  port2.postMessage({ type: 'open', port: 0, open: true });
+  await settle();
+  assert.equal(link.agent, undefined, "a new opening: the agent's HELLO is to come");
+  assert.deepEqual(sent.slice(3).map((f) => f.type), [FRAME.HELLO, FRAME.PAUSE]);
+  link.resume();
+  await settle();
+  assert.deepEqual(sent.slice(5).map((f) => f.type), [FRAME.RESUME]);
+  link.close();
+  port2.close();
+});
+
+test("the guest agent's unit: a long-running root service, wanted by multi-user.target, sandboxed but for what it needs", () => {
+  const c = agentCredentials(guestWords().agent);
+  assert.deepEqual(c.map((x) => x.name), ['webpc.agent.sh', 'systemd.extra-unit.webpc-agent.service', 'systemd.unit-dropin.multi-user.target~webpc-agent']);
+  const unit = c[1].data;
+  assert.match(unit, new RegExp(`^Description=${words('guest:guest-words.agent').source}$`, 'm'));
+  for (const line of ['Type=simple', 'ImportCredential=webpc.agent.sh', 'ExecStart=/bin/sh %d/webpc.agent.sh', 'ExecStartPre=-+modprobe -q qemu_fw_cfg', 'TemporaryFileSystem=/run/webpc:mode=0700,exec,nosuid', 'Nice=10', 'MemoryMax=32M', 'OOMScoreAdjust=500', 'ProtectSystem=strict', 'Restart=on-failure']) {
+    assert.match(unit, new RegExp(`^${line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'), line);
+  }
+  assert.doesNotMatch(unit, /^Type=oneshot$/m);
+  // TIOCSTI as root needs CAP_SYS_ADMIN; the session children (step 3) change uid: no NoNewPrivileges, no PrivateDevices.
+  assert.match(unit, /^CapabilityBoundingSet=.*\bCAP_SYS_ADMIN\b.*$/m);
+  assert.match(unit, /^CapabilityBoundingSet=.*\bCAP_SETUID\b.*\bCAP_SETGID\b/m);
+  assert.doesNotMatch(unit, /^(NoNewPrivileges|PrivateDevices|PrivateUsers|DynamicUser)=/m);
+  assert.equal(c[2].data, '[Unit]\nWants=webpc-agent.service\nAfter=webpc-agent.service\n');
+  for (const [i, x] of oemStrings(c).entries()) assert.equal(Buffer.from(x.split('=').slice(1).join('='), 'base64').toString(), c[i].data);
+});
+
+const hasDash = process.env.PATH?.split(':').some((p) => existsSync(join(p, 'dash')));
+
+test("the guest agent's script: the binary out of fw_cfg, gunzipped into /run/webpc, run in the script's place; without the file, nothing", { skip: !hasDash && 'no dash' }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'webpc-agent-'));
+  try {
+    const at = (p: string) => join(root, p);
+    // The script with its absolute paths moved under `root`, and udevadm a stub that says what it waited for.
+    mkdirSync(at('bin'));
+    writeFileSync(at('bin/udevadm'), `#!/bin/sh\necho "udevadm $*" >> ${at('log')}\n`);
+    chmodSync(at('bin/udevadm'), 0o755);
+    const script = join(root, 's.sh');
+    writeFileSync(script, agentScript().replace(/(?<=[ =>])\/(sys|run)\//g, `${root}/$1/`));
+    const run = () => execFileSync('dash', [script], { stdio: 'pipe', env: { PATH: `${at('bin')}:/usr/bin:/bin` } }).toString();
+    // No fw_cfg file (no setting, or a kernel without qemu_fw_cfg): exits, nothing run.
+    mkdirSync(at('run/webpc'), { recursive: true });
+    assert.equal(run(), '');
+    assert.equal(existsSync(at('run/webpc/agent')), false);
+    // The file: copied, made executable for root only, run with the script's place (exec), after udev's link.
+    const raw = at(`sys/firmware/qemu_fw_cfg/by_name/${AGENT_FILE}/raw`);
+    mkdirSync(raw.replace(/\/raw$/, ''), { recursive: true });
+    const program = `#!/bin/sh\necho "agent ran as $$ with $#"\n`;
+    writeFileSync(raw, gzipSync(program));
+    assert.match(run(), /^agent ran as \d+ with 0\n$/);
+    assert.equal(readFileSync(at('run/webpc/agent'), 'utf8'), program, 'gunzipped');
+    assert.equal(execFileSync('stat', ['-c', '%a', at('run/webpc/agent')]).toString().trim(), '500');
+    assert.equal(readFileSync(at('log'), 'utf8'), `udevadm wait --timeout=60 ${AGENT_PORT}\n`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the guest agent's binary: fetched whole if it is an ELF file, gzipped; otherwise none (the machine starts without it)", async () => {
+  const elf = new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1, 0]);
+  const at = (body: BodyInit | null, status = 200) => `data:application/octet-stream;base64,${status === 200 && body instanceof Uint8Array ? Buffer.from(body).toString('base64') : ''}`;
+  const warn = console.warn;
+  const warned: string[] = [];
+  console.warn = (m: string) => warned.push(m);
+  try {
+    assert.deepEqual(new Uint8Array(gunzipSync((await agentBinary(at(elf)))!)), elf, 'gzipped for fw_cfg');
+    assert.equal(await agentBinary(at(new TextEncoder().encode('<!doctype html>'))), undefined, "a server's page");
+    assert.equal(await agentBinary('http://127.0.0.1:1/webpc-agent'), undefined, 'nothing there');
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(warned.length, 2);
 });

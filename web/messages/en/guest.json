@@ -10,5 +10,9 @@
   "guest-words.shares": {
     "message": "Shared folders from the emulator",
     "note": "Inside the guest: the description of the mount and automount units of the shared folders (e.g. mnt-webpc.mount), as `systemctl status`, `mount` tools and the boot log show it. One line, no trailing period."
+  },
+  "guest-words.agent": {
+    "message": "Clipboard sharing with the emulator",
+    "note": "Inside the guest: the description of the systemd unit (webpc-agent.service) that runs the small program of the emulator's that shares the clipboard between the guest and the web app, as `systemctl status` and the boot log show it. One line, no trailing period."
   }
 }

@@ -1,6 +1,7 @@
 // `npm start` (M8 loop 5; docs/frontend.md "npm start"), after tools/start.js
 // checked Node's version: rustup, the npm packages, the wasm core, the tailnet client, the
-// UEFI firmware (EDK2, built in Podman: images/build.sh edk2), then the page's build (Vite, into target/dist/, as `npm run
+// UEFI firmware (EDK2, built in Podman: images/build.sh edk2), clipboard sharing's guest agent (images/build.sh agent:
+// Podman, or the host's cargo without it), then the page's build (Vite, into target/dist/, as `npm run
 // dist` writes it) served on 127.0.0.1 (Vite's preview server) and the URL. Each step but the page's build (~1 s) is
 // skipped when its output is current, so a second start takes about a second. No disk image: the page waits for the user's (docs/frontend.md).
 //   npm start [-- --host <addr>] [-- --port <n>] [-- --prepare-only]
@@ -65,6 +66,18 @@ export function firmwareStale(root = ROOT): string | undefined {
   if (!existsSync(join(root, FIRMWARE))) return "the UEFI firmware isn't built";
   const r = spawnSync('bash', ['images/build.sh', '--check', 'edk2'], { cwd: root, encoding: 'utf8' });
   return r.status === 0 ? undefined : 'the UEFI firmware is out of date';
+}
+
+/** Clipboard sharing's guest agent (agent/, docs/plans/clipboard.md §3.3), which the page hands a machine with the setting. */
+export const AGENT = 'target/images/agent/webpc-agent';
+/** Beside a build of the agent by the host's cargo (images/build.sh agent without Podman): for tests, not for `npm run dist`. */
+export const AGENT_HOST_BUILD = 'target/images/agent/HOST-BUILD';
+
+/** Why the agent has to be built (missing, or its inputs changed), or undefined if it is current. */
+export function agentStale(root = ROOT): string | undefined {
+  if (!existsSync(join(root, AGENT))) return "clipboard sharing's guest agent isn't built";
+  const r = spawnSync('bash', ['images/build.sh', '--check', 'agent'], { cwd: root, encoding: 'utf8' });
+  return r.status === 0 ? undefined : "clipboard sharing's guest agent is out of date";
 }
 
 /** What to do when building the firmware isn't possible here (no rootless Podman), or undefined if it is. */
@@ -132,13 +145,18 @@ export async function main(argv = process.argv.slice(2)) {
     console.log(`Building the UEFI firmware (${firmware}; EDK2 in a Podman container: ~1 min, the first time it also pulls the build image)…`);
     if (!run('bash', ['images/build.sh', 'edk2'], env) || firmwareStale()) stop("The UEFI firmware didn't build (the errors are above).");
   }
+  const agent = agentStale();
+  if (agent) {
+    console.log(`Building clipboard sharing's guest agent (${agent}; Rust in a Podman container: ~1 min the first time, which also pulls the build image)…`);
+    if (!run('bash', ['images/build.sh', 'agent'], env) || agentStale()) stop("Clipboard sharing's guest agent didn't build (the errors are above).");
+  }
   if (values['prepare-only']) {
     console.log(`Ready in ${((performance.now() - t0) / 1000).toFixed(1)} s (not serving: --prepare-only).`);
     return;
   }
   // The page, built (Vite, ~1 s; tools/dist.ts) and served as the static copy is: what a user should get.
   const { OUT, writeDist } = await import('./dist.ts');
-  await writeDist(OUT, { vulkan: false }); // Vulkan's renderer only if vk/build.sh built it
+  await writeDist(OUT, { vulkan: false, hostAgent: true }); // Vulkan's renderer only if vk/build.sh built it; the agent either way
   const { APP, startServer } = await import('./serve.ts');
   const port = Number(values.port);
   const server = await startServer(port, values.host, OUT).catch((e: NodeJS.ErrnoException) => stop(e.code === 'EADDRINUSE'

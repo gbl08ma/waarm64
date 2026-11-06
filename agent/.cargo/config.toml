@@ -1,0 +1,8 @@
+# Linked by rust-lld with the musl target's own startup files and libc (self-contained): the same linker in Podman
+# and on a host without a cross gcc (docs/images.md "agent"). Outputs under the repository's target/.
+[build]
+target-dir = "../target/agent"
+
+[target.aarch64-unknown-linux-musl]
+linker = "rust-lld"
+rustflags = ["-C", "target-feature=+crt-static"]

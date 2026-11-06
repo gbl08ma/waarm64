@@ -11,6 +11,8 @@ step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
 step rust fmt;    cargo fmt --all --check
 step rust clippy; cargo clippy --all-targets -q -- -D warnings
 step rust test;   cargo test -q
+# Clipboard sharing's guest agent (agent/: its own crate and toolchain), then its build (Podman; the host's cargo without it).
+step agent;       (cd agent && cargo fmt --check && cargo clippy --all-targets -q -- -D warnings && cargo test -q) && images/build.sh agent
 step testfloat;   scripts/testfloat.sh
 step wasm build;  scripts/build-wasm.sh -q
 step tailnet client; net/ts/build.sh

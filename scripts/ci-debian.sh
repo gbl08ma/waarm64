@@ -13,7 +13,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
 
-for name in debian edk2 linux-snd; do images/build.sh --check "$name" > /dev/null || { echo "ci-debian: the $name image is missing or stale (images/build.sh $name)"; exit 1; }; done
+for name in debian edk2 linux-snd agent; do images/build.sh --check "$name" > /dev/null || { echo "ci-debian: the $name image is missing or stale (images/build.sh $name)"; exit 1; }; done
 platform=()
 [ "${1:-}" = --platform ] && platform=(tests/page-usb-keyboard.test.ts tests/page-clock.test.ts)
 export WEBPC_DISTROS=debian WEBPC_DEBIAN_SLOTS=${WEBPC_DEBIAN_SLOTS-2}

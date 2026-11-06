@@ -1,0 +1,22 @@
+# The guest's clipboard agent (docs/plans/clipboard.md §3, docs/devices.md "The guest's agent"): a static aarch64 musl binary
+# the page delivers over fw_cfg. Its own workspace and toolchain (rust-toolchain.toml), outside the core's: built by
+# `images/build.sh agent` in rootless Podman (without Podman, with the host's cargo: docs/images.md "agent").
+[workspace]
+
+[package]
+name = "webpc-agent"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+# The one dependency (plan §3.3, the user's choice): raw Linux syscalls, no libc wrapper.
+rustix = { version = "1.1", default-features = false, features = ["std", "event", "fs"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

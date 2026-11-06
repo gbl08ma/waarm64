@@ -1020,6 +1020,11 @@ credential the same way, no unit ([machines.md](machines.md) §4.3 "As swap").
   that it ran and that networkd reads its drop-in for netplan's file. On the desktop guest (2026-10-23, by hand) networkd
   reads it for Arch's `/etc/systemd/network/20-en.network`; there the card's fw_cfg credential never arrives (no
   `card.network` in /run), while the SMBIOS ones do.
+- **Clipboard sharing's agent** (`web/app/guest-agent.ts`, a machine with `clipboard`): `webpc-agent.service`, a
+  long-running service (`guestUnit`'s `service` lines in place of `Type=oneshot`) wanted by `multi-user.target`,
+  whose script copies the agent's binary out of fw_cfg (`opt/webpc/agent`, not a credential: too big for SMBIOS) into
+  `/run/webpc` and runs it (docs/devices.md "The guest's agent"). Its description is
+  [Clipboard sharing with the emulator](ui:guest:guest-words.agent).
 - **The keyboard layout** writes to the guest's disk instead (`/etc/default/keyboard`, localed's files,
   `/etc/environment`): Xorg's `xorg.conf.d`, localed, console-setup and pam_env read `/etc` only, so nothing in `/run`
   would reach them, and turning it off leaves the last layout set.

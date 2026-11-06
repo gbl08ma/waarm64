@@ -879,6 +879,10 @@
     "message": "UEFI firmware",
     "note": "Machines page, About, Third-party software: heading of the table of the projects in the UEFI firmware the machines boot."
   },
+  "About.group.agent": {
+    "message": "Clipboard sharing in the guest",
+    "note": "Machines page, About, Third-party software: heading of the table of the projects in the small program the web app runs inside a guest that shares its clipboard (the guest agent)."
+  },
   "About.col.project": {
     "message": "Project",
     "note": "Machines page, About, Third-party software: column heading, the project's name (a link to it)."

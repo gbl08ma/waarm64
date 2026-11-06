@@ -1,7 +1,8 @@
 # Clipboard sharing between the host and the guest (the CLIP track's plan)
 
-**Status:** written 2026-11-05 from a brainstorm with the user, who settled its choices the same day (§7). Step 1
-(the channel) is built: docs/devices.md "agent", CLIP-HANDOVER.md. The brief: share the clipboard both ways. On the guest side, use a no-disk-writes route like the network's
+**Status:** written 2026-11-05 from a brainstorm with the user, who settled its choices the same day (§7). Steps 1
+(the channel) and 2 (the agent on the console) are built: docs/devices.md "agent" and "The guest's agent",
+CLIP-HANDOVER.md. The brief: share the clipboard both ways. On the guest side, use a no-disk-writes route like the network's
 settings (a systemd credential). On the host side, manage the browser's permission prompts and detect when a browser
 hands back placeholder data (empty strings, in the user's experience) instead of the clipboard. The guest side is an
 **agent of our own**, which replaces [agent.md](agent.md)'s "stock agents first" for the clipboard (§3.4).
@@ -68,26 +69,31 @@ itself is too big for SMBIOS strings, so it goes in as an **fw_cfg file of its o
 `core/src/fw_cfg.rs` already serves named files from the host. The unit's script does this:
 
 ```sh
-modprobe qemu_fw_cfg 2>/dev/null
 f=/sys/firmware/qemu_fw_cfg/by_name/opt/webpc/agent/raw
 [ -r "$f" ] || exit 0
-install -d -m 0700 /run/webpc && cat "$f" >/run/webpc/agent && chmod 0500 /run/webpc/agent
+gzip -dc "$f" >/run/webpc/agent && chmod 0500 /run/webpc/agent || exit 1
+udevadm wait --timeout=60 /dev/virtio-ports/org.webpc.agent.0
 exec /run/webpc/agent
 ```
 
-`/run` is tmpfs, so a boot without the setting has no unit and no binary. The unit is a `Type=simple` service,
-wanted by `multi-user.target`, unlike the network's oneshot. It also carries `Nice=10`, `MemoryMax=32M` (a cap
-for a bug, not a budget: §3.3), `OOMScoreAdjust=500`, and the usual sandboxing that still allows what it needs
-(`NoNewPrivileges=` doesn't apply, because it changes uid on purpose). Things to measure:
+(`modprobe -q qemu_fw_cfg` runs before it, outside the sandbox: `ExecStartPre=-+`.) A boot without the setting has no
+unit and no binary. The unit is a `Type=simple` service, wanted by `multi-user.target`, unlike the network's oneshot.
+It also carries `Nice=10`, `MemoryMax=32M` (a cap for a bug, not a budget: §3.3), `OOMScoreAdjust=500`,
+`Restart=on-failure`, and the usual sandboxing that still allows what it needs (`NoNewPrivileges=` doesn't apply,
+because it changes uid on purpose; `systemd-analyze security` rates it 3.7, "OK"). Built in step 2
+(`web/app/guest-agent.ts`); measured on Debian 13 under the JIT (2026-11-06):
 
 - **The read's cost.** The fw_cfg data register takes 8-byte reads, but Linux's `qemu_fw_cfg` reads one byte at
-  a time (`ioread8_rep`), so there is one MMIO exit per byte. §3.3 aims for a binary of about 200 KiB, which
-  makes this small; measure it anyway. If it matters, gzip the binary (`gzip -dc` is on every guest that has
-  systemd 256).
+  a time (`ioread8_rep`), so there is one MMIO exit per byte: **7–12 µs a byte**. The 333 KiB binary (§3.3) took
+  4.1 s; **gzipped by the page (187 KiB, `CompressionStream`), 1.3 s, and `gzip -dc` 23 ms**. So the page gzips it.
+  It costs the boot nothing it waits for (the unit is `Type=simple`, after the login prompt), but it is guest CPU at
+  every boot: a smaller binary (§3.3, `no_std`) is the next lever.
 - **Arch's kernel.** Debian loads `qemu_fw_cfg` (agent.md). Check that Arch's kernel loads it from the DT's
-  `qemu,fw-cfg-mmio` too.
-- **`noexec` on `/run`.** systemd mounts `/run` without `noexec`. If a guest does mount it `noexec`, fall back to
-  `memfd_create` and `fexecve` in a tiny loader. That is unlikely to be needed.
+  `qemu,fw-cfg-mmio` too (not checked: the dev VM has no desktop image; CLIP-HANDOVER.md).
+- **`noexec` on `/run`.** **Debian 13 mounts `/run` `noexec`** (measured: `rw,nosuid,nodev,noexec`; `exec` of a
+  binary in a `RuntimeDirectory` failed with EACCES). The unit gives the binary a tmpfs of its own instead,
+  `TemporaryFileSystem=/run/webpc:mode=0700,exec,nosuid` (in its mount namespace: gone when it stops, invisible to
+  other processes but through `/proc/<pid>/exe`). No `memfd_create` loader is needed.
 
 Machines without firmware (Buildroot, direct kernel boot) have no fw_cfg and no systemd 256. The setting isn't
 offered there.
@@ -163,6 +169,10 @@ would bring if that is what it takes. So:
   ticks over a minute (`/proc/<pid>/stat`: utime and stime), no context switches while idle
   (`/proc/<pid>/status`: `voluntary_ctxt_switches`), and an idle RSS of about 1 MiB or less per process
   (`VmRSS`; the child shares the parent's text). A paste of 1 MiB of text costs a few milliseconds of guest CPU.
+  **Measured, step 2 (Debian 13, the console agent, 2026-11-06):** over 60 s idle, **0 ticks of CPU and 0 voluntary context switches; VmRSS 300 KiB** (18 ticks and ~30 switches from its start to the first measure, the HELLO and the boot's settling); `tests/page-agent.test.ts` keeps the
+  check over 20 s. **Size:** 333 KiB (340,712 bytes, the Podman build), above the ~200 KiB aim, because `std` alone
+  is ~320 KiB on this toolchain (an empty `fn main` with the same profile: 327,048 bytes); the agent's own code and
+  `rustix` are ~13 KiB. `#![no_std]` would bring it to tens of KiB and the boot's fw_cfg read (§3.1) with it.
 - **Shipped** with the page (a build output Vite copies; `npm run dist` builds it first through `images/build.sh
   agent`), and fetched only when a machine has the setting on.
   Its row in `THIRD_PARTY.json` covers `rustix` (`about`).
@@ -378,7 +388,7 @@ Each step is one loop with its own tests at the cheapest layer:
    `clipboard: true`, and the framing in a shared TypeScript module. Unit tests on hand-built rings, and a
    Buildroot echo through `/dev/virtio-ports/org.webpc.agent.0` in every runner. No step counts move: the
    device is only on machines that ask for it.
-2. **The agent, console only:** the binary's build in Podman and its host-cargo fallback without Podman, delivery through fw_cfg and the credential unit,
+2. **The agent, console only (built 2026-11-06):** the binary's build in Podman and its host-cargo fallback without Podman, delivery through fw_cfg and the credential unit,
    `HELLO`, `TYPE` through TIOCSTI, `PAUSE`. The Debian page test types a string through the menu item and reads
    it back from the VT. This measures the binary's size and the fw_cfg read time, and it checks §3.3's idle
    targets.
