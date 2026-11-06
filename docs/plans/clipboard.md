@@ -371,7 +371,8 @@ covers it. Cases to recognise, and what the page does:
   pasteboard programmatically without a paste-related UI action ("Paste from Other Apps" in Privacy &
   Security). A focus read (way 1) is exactly that kind of read. A real paste (way 2) is a paste-related action, and it
   measured clean on the Mac (Chrome, text from TextEdit, 2026-11-05: no prompt). What Chromium returns to a focus
-  read (an error, `""`, or stale content) is still **to measure on the Mac host** (`macmini.lan`, the user's Chrome; not automatable). Way 2,
+  read: **measured 2026-11-07** on macOS 26.6.2 with default settings, the content itself and no alert (docs/clipboard.md
+  "On the Mac"). Way 2,
   a real paste, isn't affected. If focus reads on a Mac come back empty while `read()`'s types say there is
   text, the page counts it. After a few in a row it stops focus reads for the run and says why in the
   toolbar button's menu, and the paste chord carries on. **Built:** `EMPTY_RUN` (3) in a row; a read whose types

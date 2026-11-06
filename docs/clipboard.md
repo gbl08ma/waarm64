@@ -161,6 +161,13 @@ Measured on 2026-11-05 and 2026-11-06, headless on the dev VM (`bench/results/lo
 | The paste event at a focused, non-editable `<canvas>` | At the canvas, with the text and no grant; a copied image as one `file image/png`; on the Mac (TextEdit's text) `text/plain`, `text/html` and `text/rtf`, with no prompt from Chrome or macOS | At `<body>`, not the canvas, with the data (text, and `file image/png`), so the page listens on the document |
 | Writing `""` | `read()` gives an item with no types | `read()` gives an item whose types say `text/plain` |
 
+**On the Mac** (2026-11-07, the user, macOS 26.6.2 with default settings, Chrome, the Debian sway test image), with
+the read permission granted: a word copied in TextEdit reached the guest's `wl-paste` once the page's screen was
+clicked, with no alert or prompt from macOS (its "Paste from Other Apps" guard didn't step in for these reads). So
+focus reads get the real content there, and `EMPTY_RUN` never trips: it stays a guard for systems that do hide the
+clipboard. The guest's `wl-copy` reached TextEdit at once while Chrome was in front. Made while Chrome was in the
+background, it wasn't on the Mac's clipboard until Chrome got the focus back, which wrote it (the pending copy).
+
 In headless Chromium, `bringToFront` fires no `focus` event, so the tests dispatch one. Playwright's `evaluate`
 gives activation in Firefox's BiDi, so Firefox's activation rules were measured only from timers.
 
@@ -205,11 +212,8 @@ Each step's cases and planted bugs are in [testing.md](testing.md)'s clipboard r
 
 ## Not measured
 
-- **The Mac's focus reads.** macOS 15.4 and later can alert or deny when an app reads the pasteboard without a
-  paste-related action ("Paste from Other Apps"), which a focus read is. What Chrome returns there (an error, `""`,
-  stale content) hasn't been measured. The paste chord, a real paste, measured clean on the Mac. If focus reads come
-  back empty while `read()`'s types say text, `EMPTY_RUN` stops them. Concealed copies (password managers) and images
-  on the Mac's pasteboard are also unmeasured.
+- **On the Mac:** concealed copies (password managers) and images on the pasteboard. The focus reads and both
+  directions of text are measured ("On the Mac" above).
 - **The Arch desktop:** foot and Firefox both ways, GIMP's images, `qemu_fw_cfg` from Arch's kernel, and the unit
   there. Its sway has `ext_data_control_manager_v1`, which only the native test (sway 1.12) has exercised; the Debian
   test image's wlroots has only `zwlr`.
