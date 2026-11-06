@@ -22,10 +22,13 @@ and its words come with step 4, once the agent exists to make it mean something.
 
 ## Next: step 2 (needs the dev VM)
 
-The agent, console only: the Rust binary built in rootless Podman through `images/` (`images/build.sh agent`), delivered
+The agent, console only: the Rust binary built in rootless Podman through `images/` (`images/build.sh agent`; without
+Podman, the host's cargo with a `HOST-BUILD` marker that `npm run dist` refuses: plan §3.3), delivered
 over fw_cfg (`opt/webpc/agent`) by a credential unit (web/app/guest-unit.ts's pattern), HELLO, TYPE through TIOCSTI,
 PAUSE. Measure the binary's size and the fw_cfg read time; check §3.3's idle targets. The page's credentials for it
 are added only when the machine has `clipboard` (main.ts builds the start message: `agent` is set there).
+The fallback's cross build (rustup's musl target, `rust-lld`, on x86_64) is first proven in a cloud session, and
+`scripts/cloud-setup.sh` adds the target and runs it.
 
 ## Notes
 

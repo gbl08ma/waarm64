@@ -2,7 +2,9 @@
 
 Test and benchmark guests, built by `images/build.sh [name…]` into `target/images/<name>/`
 (downloads in `target/images/dl/`). **Build them only in rootless Podman through `images/`:**
-never install cross toolchains or build dependencies on the host, never use Docker. `images/`
+never install cross toolchains or build dependencies on the host, never use Docker. (One exception:
+without Podman, as in a cloud session, `agent` is built with the host's cargo and marked `HOST-BUILD`, for tests
+only; `npm run dist` refuses it: docs/plans/clipboard.md §3.3.) `images/`
 commits the configs, scripts and `SHA256SUMS`, never binaries. Guest images carry their own GPL
 obligations (publish the configs, point to the sources), separate from webpc's MIT license.
 

@@ -152,13 +152,19 @@ would bring if that is what it takes. So:
   This needs no async runtime, no allocator of our own, and no generated code. If even `std`'s share of the size
   matters (measured), `#![no_std]` with `rustix`'s runtime is the next step, but not the first.
 - **Build:** `aarch64-unknown-linux-musl`, static, `opt-level="z"`, LTO, `codegen-units=1`, `panic=abort`,
-  stripped. Built in rootless Podman through `images/` (`images/build.sh agent`), never on the host. The aim is
-  about 200 KiB, compared with a wayland-client and x11rb build in the high hundreds of KiB.
+  stripped. Built in rootless Podman through `images/` (`images/build.sh agent`): that build is the one the page
+  ships. The aim is about 200 KiB, compared with a wayland-client and x11rb build in the high hundreds of KiB.
+- **Without Podman** (a cloud session: docs/cloud.md), `images/build.sh agent` builds it with the host's cargo
+  instead (rustup's `aarch64-unknown-linux-musl` target, linked by `rust-lld`, so no cross gcc), so the page, its
+  tests and `scripts/ci.sh` work there as on the dev VM. That build is for tests only: it writes a `HOST-BUILD`
+  marker beside the binary, `npm run dist` refuses it, and the measurements of §3.3 (size above all) count only from
+  the Podman build. Where Podman exists the fallback is never taken (no switch to force it).
 - **Targets, measured in the Debian test guest and the Arch desktop** and kept in the plan's tests: idle CPU of 0
   ticks over a minute (`/proc/<pid>/stat`: utime and stime), no context switches while idle
   (`/proc/<pid>/status`: `voluntary_ctxt_switches`), and an idle RSS of about 1 MiB or less per process
   (`VmRSS`; the child shares the parent's text). A paste of 1 MiB of text costs a few milliseconds of guest CPU.
-- **Shipped** with the page (a build output Vite copies), and fetched only when a machine has the setting on.
+- **Shipped** with the page (a build output Vite copies; `npm run dist` builds it first through `images/build.sh
+  agent`), and fetched only when a machine has the setting on.
   Its row in `THIRD_PARTY.json` covers `rustix` (`about`).
 
 ### 3.4 Against the stock agents (the user's decision, 2026-11-05)
@@ -372,7 +378,7 @@ Each step is one loop with its own tests at the cheapest layer:
    `clipboard: true`, and the framing in a shared TypeScript module. Unit tests on hand-built rings, and a
    Buildroot echo through `/dev/virtio-ports/org.webpc.agent.0` in every runner. No step counts move: the
    device is only on machines that ask for it.
-2. **The agent, console only:** the binary's build in Podman, delivery through fw_cfg and the credential unit,
+2. **The agent, console only:** the binary's build in Podman and its host-cargo fallback without Podman, delivery through fw_cfg and the credential unit,
    `HELLO`, `TYPE` through TIOCSTI, `PAUSE`. The Debian page test types a string through the menu item and reads
    it back from the VT. This measures the binary's size and the fw_cfg read time, and it checks §3.3's idle
    targets.
