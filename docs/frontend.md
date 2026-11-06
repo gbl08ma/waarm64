@@ -188,10 +188,38 @@ five latest kept snapshots, orphaned ones disabled; All snapshots… (the Snapsh
 (Screen, Serial terminal, Both), **Screen** (size and HiDPI, virtio-gpu machines), **Keys**, **[Mouse lock](ui:statusbar:statusbar.kind.pointer)** (a menu: on or
 off, and Pointer or Raw, remembered per browser; the button looks pressed while it's on: "Input", "[Mouse lock](ui:statusbar:statusbar.kind.pointer)"), [Full screen](ui:toolbar:Toolbar.fullscreen),
 **Sound**, **Network**, **USB** (a machine with a USB controller: its remembered devices with attach toggles, the
-offers of a device that just appeared or has no permission here yet, Add a device…; [usb.md](usb.md) "The page"), and for a transient machine (a test's `?machine=`) the **Machine** menu (vCPUs, RAM, graphics);
+offers of a device that just appeared or has no permission here yet, Add a device…; [usb.md](usb.md) "The page"), **Folders**,
+**Clipboard** (below), and for a transient machine (a test's `?machine=`) the **Machine** menu (vCPUs, RAM, graphics);
 a stored machine's are its Settings. The power state (Booting, Running, Powered off…) is the status bar's first item
 by default (below, "The status bar"). Menus (`Menu.svelte`) keep the `<details>`/`<summary>` shape, close on a click
 elsewhere and open under their right edge (a page's Export menus under their left).
+
+**Clipboard** (`ClipboardMenu.svelte`, [plans/clipboard.md](plans/clipboard.md) §4–§5; the logic is
+`web/app/clipboard.ts`'s `ClipboardShare`, wired in `main.ts`): shown while the running machine has
+**[Share the clipboard with the guest](ui:machines:MachinesPage.clipboard)** (or `?clipboard=1`). The button's state (`data-state`): *sharing* (pressed), *paused*
+(the icon crossed out), or *waiting* for the guest's program (before its HELLO, or since its port closed), each with
+its tooltip; a mark (and its tooltip says what is limited) while it shares but Chromium's `clipboard-read` permission is
+`prompt` or `denied`, or the focus reads stopped (below). The menu: **[Allow seeing the clipboard…](ui:clipboard:ClipboardMenu.allow)** while the
+permission is `prompt` (its click's read is what makes Chromium ask), how to allow it in the site's settings while
+it is `denied`, a note while it is `granted`; **[Share the clipboard](ui:clipboard:ClipboardMenu.share)**, the switch, which pauses both ways for the run
+(PAUSE to the agent; the pending text dropped; the pause isn't in snapshots: the link says PAUSE or RESUME at every
+opening of the agent's port, so an agent restored paused is resumed); **[Send the clipboard to the guest](ui:clipboard:ClipboardMenu.send)** and
+**[Type the clipboard](ui:clipboard:ClipboardMenu.type)** (TYPE on the console), which read on their click. The permission is followed
+(`watchReadPermission`: `navigator.permissions.query`, its `change` event; `none` in Firefox and Safari, which throw
+on the name). What the page does with it:
+- **Sync** (way 1): while the permission is `granted`, a focus of the page (`focus`, `visibilitychange` to visible,
+  only while `document.hasFocus()`), the agent's HELLO and the permission's becoming `granted` read the host's
+  clipboard (`readText`) and offer it to the guest if it changed since the page last knew it; where `clipboardchange`
+  exists (Chromium 155 has it), a focus reads only after one, and the event reads at once. Never a read while it is
+  `prompt` but on the user's clicks above.
+- **The guest's copies** (§4.2): written at once while the document has focus; otherwise (or refused: Firefox wants
+  activation) the newest is pending, written on a focus whose read finds the host's clipboard unchanged (dropped if
+  it changed: the host's newer copy wins), or on the next key or pointer down on the screen (at the document's
+  capture); a paste chord drops it instead.
+- **Placeholders** (§4.3): an empty read is never offered and doesn't stand for the host's clipboard; an empty
+  `readText` asks `read()` for the types, and `EMPTY_RUN` (3) empties in a row while the types say text stop the
+  focus reads for the run (the menu says why); refusals are silent.
+- A paste chord right after a sync of the same text waits for that offer's ACK instead of offering it again.
 
 ### Icons
 
@@ -264,9 +292,10 @@ Duplicate, Export the definition, Delete; then tabs:
   automatic split and takes memory 0's size and the NUMA nodes' sizes (MiB, comma-separated), checked as typed
   (`ramSplitError`), the RAM then being their sum (the machine's `ramSplit`, in its shape and its definition), display,
   **keyboard layout** (a new machine's follows the browser; "Input" below, "The keyboard layout"). Save; on the machine running on this page it reads **[Save and restart](ui:machines:MachinesPage.saveRestart)**
-  (asked first), the USB controller, the **[Mouse (the mouse lock's Raw mode)](ui:machines:MachinesPage.mouse)** and the **[Touchscreen](ui:machines:MachinesPage.touch)**. A change of shape
+  (asked first), the USB controller, the **[Mouse (the mouse lock's Raw mode)](ui:machines:MachinesPage.mouse)** and the **[Touchscreen](ui:machines:MachinesPage.touch)**, and
+  **[Share the clipboard with the guest](ui:machines:MachinesPage.clipboard)** (off by default, its note under it; ticking it asks for the browser's read permission). A change of shape
   asks first when it orphans snapshots; a box whose change does (Vulkan, the USB controller, the mouse, touchscreen and
-  clock device, shared folders) warns under it only when the machine has snapshots, while the note under Save always says it. The three are peripherals the guest sees: absent on machines made before
+  clock device, clipboard sharing, shared folders) warns under it only when the machine has snapshots, while the note under Save always says it. The three are peripherals the guest sees: absent on machines made before
   them (off, so their shapes and snapshots stay as they were), on for new ones.
 - **Disks** (`Disks.svelte`): the attachments in slot order (read-only, write in place, up, down, Detach); per writable
   disk its overlays (switch, New empty, **[Overlays…](ui:disks:Disks.overlaysButton)**), **[Export](ui:disks:ExportMenu.label)** (a menu, `ExportMenu.svelte`: changes only, the
@@ -1024,7 +1053,9 @@ credential the same way, no unit ([machines.md](machines.md) §4.3 "As swap").
   long-running service (`guestUnit`'s `service` lines in place of `Type=oneshot`) wanted by `multi-user.target`,
   whose script copies the agent's binary out of fw_cfg (`opt/webpc/agent`, not a credential: too big for SMBIOS) into
   `/run/webpc` and runs it (docs/devices.md "The guest's agent"). Its description is
-  [Clipboard sharing with the emulator](ui:guest:guest-words.agent).
+  [Clipboard sharing with the emulator](ui:guest:guest-words.agent). The setting is the Settings tab's
+  **[Share the clipboard with the guest](ui:machines:MachinesPage.clipboard)** (off by default; a change of shape: the agent's device); ticking it is the click that asks
+  for the browser's read permission ("The toolbar", Clipboard).
 - **The keyboard layout** writes to the guest's disk instead (`/etc/default/keyboard`, localed's files,
   `/etc/environment`): Xorg's `xorg.conf.d`, localed, console-setup and pam_env read `/etc` only, so nothing in `/run`
   would reach them, and turning it off leaves the last layout set.

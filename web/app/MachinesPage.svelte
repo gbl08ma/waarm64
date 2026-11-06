@@ -140,6 +140,7 @@
     if (!m.keyboard) delete m.keyboard;
     if (m.netConfig !== false) delete m.netConfig;
     if (!m.shares) delete m.shares;
+    if (!m.clipboard) delete m.clipboard;
     if (m.sharesMount !== false) delete m.sharesMount;
     if (!m.sharesPath) delete m.sharesPath;
     const pathError = m.sharesPath ? sharesPathError(m.sharesPath) : undefined;
@@ -256,6 +257,15 @@
     <Check bind:checked={draft.touch} field="touch" title={t('machines:MachinesPage.touch.title')}>{t('machines:MachinesPage.touch')}</Check>
     <Check bind:checked={draft.clock} field="clock" title={t('machines:MachinesPage.clock.title')}>{t('machines:MachinesPage.clock')}</Check>
     {#if orphanable && (!!draft.mouse !== !!rec?.mouse || !!draft.touch !== !!rec?.touch || !!draft.clock !== !!rec?.clock)}<p class="note warn" data-pointer-orphans>{t('machines:MachinesPage.pointers.orphans')}</p>{/if}
+  {/if}
+{/snippet}
+
+{#snippet clipboardSwitch()}
+  {#if draft}
+    {@const rec = machines.find((x) => x.id === draft?.id)}
+    <!-- Turning it on is the click that asks for the browser's read permission (docs/plans/clipboard.md §4.1). -->
+    <Check bind:checked={draft.clipboard} field="clipboard" onchange={(on) => { if (on) page.clipboardAsk(); }} note={t('machines:MachinesPage.clipboard.note')}>{t('machines:MachinesPage.clipboard')}</Check>
+    {#if orphanable && !!draft.clipboard !== !!rec?.clipboard}<p class="note warn" data-clipboard-orphans>{draft.clipboard ? t('machines:MachinesPage.clipboard.orphans.on') : t('machines:MachinesPage.clipboard.orphans.off')}</p>{/if}
   {/if}
 {/snippet}
 
@@ -439,6 +449,7 @@
               {#if draft.keyboard === FOLLOW_BROWSER}<p class="note" data-keyboard-note>{browserNow ? t('machines:MachinesPage.keyboard.followNote.now', { layout: browserNow }) : t('machines:MachinesPage.keyboard.followNote')}</p>{:else if draft.keyboard}<p class="note" data-keyboard-note>{t('machines:MachinesPage.keyboard.setNote')}</p>{/if}
               {@render usbSwitch()}
               {@render pointerSwitches()}
+              {@render clipboardSwitch()}
               {@render saveRow()}
               <p class="note">{t('machines:MachinesPage.shape.note')}</p>
             </div>

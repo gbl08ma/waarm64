@@ -4,9 +4,10 @@
 // yet, so a guest that stops reading costs the page a queue of frames, not the device's memory.
 //
 // What it says: HELLO each time the agent opens its end (the agent answers with its own: `agent`), TYPE (`type`), the
-// toolbar's switch (`pause`, `resume`), which it says again to an agent that reopens its end (a restarted agent starts
-// unpaused), and the clipboard's frames, which web/app/clipboard.ts speaks over it (`send`, `onFrame`). No UI yet (step
-// 4): the tests drive it through `window.__agent` and `window.__clipboard`.
+// toolbar's switch (`pause`, `resume`), which it says again (PAUSE or RESUME) each time the agent opens its end (a
+// restarted agent starts unpaused, a restored one is as its snapshot was), and the clipboard's frames, which
+// web/app/clipboard.ts speaks over it (`send`, `onFrame`). The toolbar's clipboard menu (web/app/ClipboardMenu.svelte)
+// drives it through `ClipboardShare`; the tests through `window.__agent` and `window.__clipboard`.
 
 import { CAP, decodeHello, encodeFrame, encodeHello, FRAME, FrameReader, typePayloads, VERSION, type Frame, type Hello } from '../agent-frame.ts';
 import type { AgentFromDevice, AgentToDevice } from '../agent-device.ts';
@@ -111,7 +112,9 @@ export class AgentLink {
         this.inflight = 0;
         if (m.open) {
           this.send(FRAME.HELLO, encodeHello({ version: VERSION, caps: PAGE_CAPS }));
-          if (this.paused) this.send(FRAME.PAUSE);
+          // The switch, said either way: an agent restored from a snapshot taken while paused is paused, and the pause
+          // is the run's, not the snapshot's (plan §5).
+          this.send(this.paused ? FRAME.PAUSE : FRAME.RESUME);
         }
         this.onOpen?.(m.open);
         break;

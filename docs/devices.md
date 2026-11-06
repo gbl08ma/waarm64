@@ -187,7 +187,7 @@ to the side that offers, request ids to the side that requests:
 | ACK (8) | u32 serial, u8 status (0 HELD, 1 NO_SESSION, 2 PAUSED, 3 TOO_LARGE, 4 NO_TYPE) | the agent's answer to the page's OFFER |
 | MORE (9) | u32 id, u32 count | the requester takes `count` more DATA frames for request `id`; 0 stops the answer |
 | TYPE (5) | UTF-8 text, at most 64 KiB a frame (`typePayloads` cuts between characters, never inside a CRLF) | the agent puts it in the foreground VT's input (`/dev/tty0`, TIOCSTI a byte at a time), line ends as Enter (CRLF and LF become CR, as terminal emulators paste); paced by the terminal's unread input (`FIONREAD`, every 256 bytes: the line discipline drops what doesn't fit its 4 KiB), so a long paste into a reader that keeps up arrives whole and one that stalls a second loses the rest. Not UTF-8: dropped |
-| PAUSE (6), RESUME (7) | none | while paused the agent drops TYPE and the clipboard's frames (above); the link refuses `type()` while paused and says PAUSE again to an agent that reopens its end; the parent passes both to its child, and PAUSE first to a new child |
+| PAUSE (6), RESUME (7) | none | while paused the agent drops TYPE and the clipboard's frames (above); the link refuses `type()` while paused and says PAUSE or RESUME at every opening of the agent's end (a restarted agent starts unpaused; a restored one is as its snapshot was, and the pause is the run's); the parent passes both to its child, and PAUSE first to a new child |
 
 A frame's length that can't be (zero, past 64 KiB and 256) breaks the agent's reader: it closes and reopens the port,
 which starts both directions afresh (the link resets at each opening; the session child stays). A child's stream that

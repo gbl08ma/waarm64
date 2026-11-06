@@ -5,25 +5,44 @@ The track's brief is [docs/plans/clipboard.md](docs/plans/clipboard.md), with th
 
 ## Where it stands
 
-**Steps 1–3 done** (2026-11-05, 2026-11-06): the channel (`web/agent-device.ts`, docs/devices.md "agent"), the agent
-on the console (`agent/`, `images/build.sh agent`, `web/app/guest-agent.ts`), and **Wayland** (docs/devices.md "The
-guest's agent"): the root process follows seat0's active session through logind's files and the mount table, forks a
-session child that drops to the user and runs our hand-written data-control client (`agent/src/session.rs`,
-`wire.rs`; ext, else wlr); OFFER/REQUEST/DATA/ACK/MORE in both `frame` modules (capability `TEXT`); the page's side
-`web/app/clipboard.ts` (`ClipboardShare`, `window.__clipboard`): the guest's text written with `writeText` while
-focused (else `pending`), the paste chord held by `web/input.ts` (`hooks.hold`) for the browser's paste event and the
-agent's ACK. The test image `images/debian-sway/build.sh` (a tty autologin running headless sway) and
-`tests/page-clipboard.test.ts` (`scripts/ci-debian.sh --platform`, ~2 min); natively `agent/src/sway_test.rs` against
-the dev VM's sway 1.12 (ext data-control; wl-clipboard installed for it). No UI yet.
+**Steps 1–4 done** (2026-11-05, 2026-11-06): the channel (`web/agent-device.ts`, docs/devices.md "agent"), the agent
+on the console (`agent/`, `images/build.sh agent`, `web/app/guest-agent.ts`), **Wayland** (docs/devices.md "The
+guest's agent": logind tracking, a session child with a hand-written data-control client, text both ways, the paste
+chord), and **the host's side** (step 4; docs/frontend.md "The toolbar", Clipboard; plan §4.1–§4.3, §5):
+`web/app/clipboard.ts`'s `ClipboardShare` syncs with Chromium's `clipboard-read` (on focus, on `clipboardchange`, at
+HELLO, when it becomes granted), keeps the guest's newest copy pending under §4.2's rules, applies §4.3's placeholder
+rules, pauses for the run; `web/app/ClipboardMenu.svelte` is the toolbar's button and menu; the Machines page's
+**Share the clipboard with the guest** switch (`MachineRecord.clipboard`) asks for the permission when ticked; the
+link says PAUSE or RESUME at every opening (a restored agent isn't left paused). Tests: `tests/agent.test.ts`
+(Node), `tests/page-clipboard-ui.test.ts` (Chromium on Buildroot, the shell playing the agent; in `npm test`),
+`tests/page-clipboard.test.ts` and `tests/page-agent.test.ts` (Debian). Measured in headless Chromium 155 and
+Firefox 157 (plan §4.1).
 
-## Next: step 4 (the host's three ways and the toolbar)
+## Next: step 5 (images, then X11)
 
-Sync on focus with `clipboard-read` (and when it asks), the toolbar button and its states, the Machines page's switch,
-the placeholder rules (§4.3), `pending` written on the next focus/key (§4.2; `ClipboardShare.pending` holds it now),
-the measurements of §4.1 and §4.3 (Firefox in the dev VM, the Mac by the user). `ClipboardShare` is the module to
-extend; `PAGE_CAPS` already says `TEXT`.
+Plan §4.4 and §6 step 5: `image/png` both ways (the page's conversion to PNG in a worker, the read-back for echoes),
+a screenshot each way in the Wayland test; "copy the screen" joins there (the screen's canvas is a worker's: it needs
+a read-back, plan §4.4); then X11 (Xwayland, Xorg, INCR), then `text/html`. When images land, the setting's note
+says "text or an image" again (`machines:MachinesPage.clipboard.note`).
 
 ## Open questions and left for the user
+
+- **The Mac, by hand (plan §4.3; not automatable).** On `macmini.lan`, the user's Chrome (macOS 15.4 or later), with
+  a stored machine that has **Share the clipboard with the guest** on (the desktop guest, or Debian with sway):
+  1. Start it; in the toolbar's clipboard menu click **Allow seeing the clipboard…** and allow it in Chrome's prompt.
+     The menu should then say the web app may see the clipboard, and the button lose its mark.
+  2. In the page's console (DevTools undocked, so the page itself takes the focus back), log what a focus read gets:
+     `addEventListener('focus', async () => console.log(await navigator.clipboard.readText().catch((e) => e.name), (await navigator.clipboard.read().catch(() => [])).map((i) => i.types)))`.
+     Copy text in TextEdit, click back into the page's screen. Does macOS show its "Paste from Other Apps" alert
+     (Privacy & Security)? What did the log get: the text, `""` with `text/plain` among the types, or an error? Did
+     the guest's clipboard get the text (paste it in the guest from its own menu)?
+  3. Repeat 2 four times: if the reads come back empty while the types say text, the menu shows the note that the
+     focus reads stopped (after 3 in a row; `__clipboard.stopped` in the console) and the button has its mark;
+     Ctrl+V on the screen still pastes.
+  4. Copy text in the guest (foot, Firefox): it should be on the Mac's clipboard (Cmd+V in TextEdit), also after
+     copying it while Chrome is in the background and coming back (the pending text, written on the focus).
+  5. With a password manager's copy (concealed type): what does the guest get? (plan §4.3 "Concealed content").
+  Write the answers into plan §4.3 (dated) and adjust `EMPTY_RUN` or the rules if they differ.
 
 - **On the Arch desktop, by hand** (plan §6 step 3): foot and Firefox in the guest and the host, both ways; also the
   step-2 checks there (`qemu_fw_cfg` from Arch's kernel, `systemctl status webpc-agent`). Arch's sway has the ext

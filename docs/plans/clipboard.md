@@ -1,8 +1,9 @@
 # Clipboard sharing between the host and the guest (the CLIP track's plan)
 
 **Status:** written 2026-11-05 from a brainstorm with the user, who settled its choices the same day (§7). Steps 1
-(the channel), 2 (the agent on the console) and 3 (Wayland, the paste chord) are built: docs/devices.md "agent" and "The guest's agent",
-CLIP-HANDOVER.md. The brief: share the clipboard both ways. On the guest side, use a no-disk-writes route like the network's
+(the channel), 2 (the agent on the console), 3 (Wayland, the paste chord) and 4 (the host's ways, the permission, the
+toolbar's button, the Machines page's switch) are built: docs/devices.md "agent" and "The guest's agent",
+docs/frontend.md "The toolbar" (Clipboard), CLIP-HANDOVER.md. The brief: share the clipboard both ways. On the guest side, use a no-disk-writes route like the network's
 settings (a systemd credential). On the host side, manage the browser's permission prompts and detect when a browser
 hands back placeholder data (empty strings, in the user's experience) instead of the clipboard. The guest side is an
 **agent of our own**, which replaces [agent.md](agent.md)'s "stock agents first" for the clipboard (§3.4).
@@ -218,7 +219,7 @@ shape the design (MDN's Clipboard API page, "Security considerations"):
 | `writeText`/`write` | `clipboard-write` permission (granted to a focused page without a prompt) or transient activation; the document must have focus | transient activation |
 | `readText`/`read` | `clipboard-read` permission: **a prompt** on the first read; afterwards silent while the document has focus | transient activation, then **a "Paste" button the user must click** (enabled after 1 s), except for content the same origin wrote |
 | `paste` / `copy` events | the user's own paste or copy: `clipboardData` with no permission or prompt | the same |
-| `clipboardchange` | origin trial in 140–142, intent to ship 2025-10; types only, needs sticky activation or the read permission | not shipped |
+| `clipboardchange` | origin trial in 140–142, intent to ship 2025-10; types only, needs sticky activation or the read permission; **there in 155** (measured, headless) | not shipped (Firefox 157: measured) |
 
 Everything in this section happens only while the machine has the setting on **and** the toolbar's switch (§5)
 isn't paused.
@@ -243,6 +244,26 @@ copy. Firefox and Safari have no such permission, so they rely on ways 2 and 3.
      those clicks.
    - **Denied:** the toolbar button's state says so, and how to allow it in the site's settings. Sharing goes on
      with ways 2 and 3. The permission's `change` event updates the button the moment the user changes it.
+   - **Built (step 4):** the page reads on `focus`, on `visibilitychange` to visible (both only while
+     `document.hasFocus()`), on the agent's HELLO and when the permission becomes `granted`; with `clipboardchange`
+     (Chromium 155), a focus reads only after one, and the event reads at once. Sync is `readText`; `read()` only
+     after an empty `readText`, for the types (§4.3), so an image on the clipboard isn't re-encoded at every focus.
+   - **Measured (2026-11-06, the dev VM, Playwright `bench/results/local/clip-ways.ts`).** *Headless Chromium 155*:
+     the permission is `prompt` without a grant and `granted` with one; `clipboardchange` exists and fires for the
+     page's own writes and for another page's (seen once the page is in front again); a read while `prompt`, with or
+     without a click, is **denied at once** (headless has no prompt to show: the state becomes `denied`, which the
+     page tests use for the denied path); Ctrl+V at a focused canvas fires `paste` at the canvas with the text **with
+     no grant**; `bringToFront` fires no `focus` event in headless (the tests dispatch one); writing `""` leaves
+     `read()` an item with no types; a write from a timer 6 s after any input, without a grant, is refused.
+     *Headless Firefox 157* (Playwright's BiDi channel `moz-firefox` on the dev VM's `/usr/bin/firefox`):
+     `permissions.query({ name: 'clipboard-read' })` throws a `TypeError` (so `none`: no focus reads, ways 2 and 3
+     only); no `clipboardchange`; a read of what the same page wrote succeeds, of another page's copy without
+     activation is `NotAllowedError`, and with a click's activation it waits on the Paste button; a write and a
+     read from a timer 6 s after the last input are both `NotAllowedError` (the pending rule's activation is
+     needed); `paste` from Ctrl+V comes at `<body>` with the text while the canvas has focus; writing `""` leaves
+     `read()` an item whose types say `text/plain` (Firefox never reads on focus, so §4.3's count doesn't meet it).
+     Playwright's `evaluate` gives activation in Firefox's BiDi, so activation was measured only from timers. The
+     Mac is the user's to measure (CLIP-HANDOVER.md has the steps).
 2. **The paste chord (every browser, no permission).** When the user presses a paste chord on the screen
    (Ctrl+V, Ctrl+Shift+V, Shift+Insert; Cmd+V on a Mac, if the screen's keys pass Meta to the guest: check
    `web/input.ts`), `web/input.ts` holds the key and **doesn't call `preventDefault`**. The browser then fires
@@ -265,8 +286,8 @@ copy. Firefox and Safari have no such permission, so they rely on ways 2 and 3.
    - **What it can't do:** a paste from the guest's own menus gives no browser event. Without way 1, such a
      paste gets the guest's clipboard (the host's text from the last paste chord, or the guest's own last
      copy), unless the user sends the clipboard first with way 3.
-3. **Items in the toolbar's clipboard menu** (§5): "Send the clipboard to the guest" (reads with the click's
-   activation: Chromium's permission, or Firefox's Paste button) and "Type the clipboard" (to the console
+3. **Items in the toolbar's clipboard menu** (§5): [Send the clipboard to the guest](ui:clipboard:ClipboardMenu.send) (reads with the click's
+   activation: Chromium's permission, or Firefox's Paste button) and [Type the clipboard](ui:clipboard:ClipboardMenu.type) (to the console
    through the agent's `TYPE`).
 
 ### 4.2 Guest to host
@@ -306,7 +327,9 @@ covers it. Cases to recognise, and what the page does:
   read (an error, `""`, or stale content) is still **to measure on the Mac host** (`macmini.lan`, the user's Chrome; not automatable). Way 2,
   a real paste, isn't affected. If focus reads on a Mac come back empty while `read()`'s types say there is
   text, the page counts it. After a few in a row it stops focus reads for the run and says why in the
-  toolbar button's menu, and the paste chord carries on.
+  toolbar button's menu, and the paste chord carries on. **Built:** `EMPTY_RUN` (3) in a row; a read whose types
+  have no text (an image, nothing) breaks a run. An empty read also leaves the guest's pending text (§4.2) to a key
+  or pointer on the screen, as without the permission.
 - **Stale reads:** Chromium on a Linux Wayland host (and some remote-desktop hosts) can answer a read with an old
   clipboard when the window isn't focused at the OS level. The page reads only while `document.hasFocus()`, and
   dedupes by hash, so a stale read at worst repeats an old offer, which echo suppression drops.
@@ -352,14 +375,16 @@ Images are the same path as text with another type: lazy offers, streamed chunks
   usually arrives within the activation window, as in §4.2. Safari needs the promise form of `ClipboardItem` for
   that.
 - **The screen's own picture** (a "copy the screen" item in the toolbar's clipboard menu, from the display's
-  canvas) needs no agent. Worth a line when the menu is built.
+  canvas) needs no agent. **Not built in step 4:** the page's canvas is transferred to a worker
+  (`transferControlToOffscreen`), so the main thread can't `toBlob` it; the item needs a read-back from the display's
+  worker (2D) or the GPU worker (3D, which `window.__webpcGrab` already does for benchmarks). It joins with images.
 
 ## 5. The page
 
 - **The machine's setting** (the Machines page, next to the other devices' switches: `MachineRecord.clipboard`,
   **off by default**, in the shape when on, §2). A draft of its words, for the catalog ([copy.md](../copy.md)),
   to be settled when it is built:
-  - Label: **Share the clipboard with the guest**
+  - Label: [Share the clipboard with the guest](ui:machines:MachinesPage.clipboard)
   - Note: "Copy text or an image on your computer and paste it in the guest, and the other way around. At every boot, this emulator
     starts a small program of its own in the guest, which passes the clipboard between the guest's desktop and
     this web app. In a Wayland session, the desktop must support the data-control protocol, as sway and KDE
@@ -369,7 +394,11 @@ Images are the same path as text with another type: lazy offers, streamed chunks
     pauses the sharing while the machine runs."
 
   The X11 sentence joins when X11 is built (§6 step 5), and so does a "text console" sentence when `TYPE` is
-  offered.
+  offered. **Settled (step 4)** in the catalog (`machines:MachinesPage.clipboard.note`): "Copy text" (images come
+  with step 5, and the note says what is true now), and the console's sentence joins, since the menu types:
+  "On a text console, the toolbar's clipboard menu can type what you copied." Stored machines all boot through
+  UEFI, so the switch is always offered there; a transient machine has it only from `?clipboard=1` (the tests'),
+  whatever its kind.
 - **The toolbar's clipboard button:** next to the USB, network and folder buttons, **only while the running
   machine has the setting on**. It is a reminder that sharing is on, and a switch to pause it:
   - **States:** sharing (pressed); paused (not pressed, with a crossed-out icon); waiting for the guest's
@@ -383,14 +412,19 @@ Images are the same path as text with another type: lazy offers, streamed chunks
     button has a mark and says so in its tooltip: sharing still works through the paste chord, but the guest's
     own menus don't get the host's copy. With `prompt`, the menu's first item is "Allow reading the
     clipboard…", whose click asks. With `denied`, the menu says how to allow it in the site's settings.
-  - It is a menu, like USB's, with the permission's item when there is one, the switch, then "Send the
-    clipboard to the guest" and "Type the clipboard" (§4.1, 3).
+  - It is a menu, like USB's, with the permission's item when there is one, the switch, then
+    [Send the clipboard to the guest](ui:clipboard:ClipboardMenu.send) and [Type the clipboard](ui:clipboard:ClipboardMenu.type) (§4.1, 3).
+  - **Built (step 4)** as `web/app/ClipboardMenu.svelte` (docs/frontend.md "The toolbar"). The permission's item
+    reads [Allow seeing the clipboard…](ui:clipboard:ClipboardMenu.allow) ("see", as the setting's note says it); the switch is a box,
+    [Share the clipboard](ui:clipboard:ClipboardMenu.share). A paste chord pressed right after a sync of the same text waits for that
+    offer's ACK rather than offering it again.
 - **No preference of its own:** whether the page may read the clipboard is the browser's permission, kept per
   browser by the browser. The machine's setting asks for it when it is turned on (§4.1, 1), and the toolbar
   button asks while it is missing.
 - **Snapshots:** the agent lives in guest memory, so a restore brings it back. The host side keeps no state beyond
   the last hashes. The port's open state comes back with the backend's `save()`/`restore()`. The pause doesn't go
-  into a snapshot.
+  into a snapshot: the agent's own pause does (it is guest memory), so the page's link says PAUSE or RESUME at every
+  opening of the port, which a restore tells it again (built in step 4).
 - **Several tabs:** each tab runs its own machine. The host clipboard is shared between them, and only the
   focused tab reads or writes it, so nothing more is needed.
 
@@ -411,8 +445,9 @@ Each step is one loop with its own tests at the cheapest layer:
    gives the host clipboard (Playwright with `clipboard-read`/`clipboard-write` granted), the host clipboard
    plus the paste chord gives `wl-paste` in the guest, the switch's pause stops both, and §3.3's targets hold
    while sway runs. On the Arch desktop, by hand: between foot and Firefox in the guest and the host.
-4. **The host's three ways, the permission's asking, the toolbar button and the placeholder rules,** with the
-   measurements from §4.1 and §4.3 (the canvas's `paste` event, Firefox in the dev VM, the Mac by the user).
+4. **The host's three ways, the permission's asking, the toolbar button and the placeholder rules (built
+   2026-11-06),** with the measurements from §4.1 and §4.3 (the canvas's `paste` event, Firefox in the dev VM, the
+   Mac by the user: still to do).
 5. **Images** (§4.4: the page's conversion to PNG, the read-back for echoes, a screenshot each way in the
    Wayland test), then **X11** (Xwayland and Xorg sessions, INCR for large images), then `text/html`.
 6. **Optional:** spice-vdagent's port, GNOME through the portal, a ready signal and time after a resume from the

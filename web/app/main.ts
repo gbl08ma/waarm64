@@ -57,7 +57,7 @@ import { parseLocalURL } from '../local-net.ts';
 import { installCopyEdit } from './copy-edit.ts';
 import { eventOf, keyOf, keymapOf, type Mods } from './osk.ts';
 import { AgentLink } from './agent-link.ts';
-import { ClipboardShare } from './clipboard.ts';
+import { ClipboardShare, isPasteChord, watchReadPermission, type Host as ClipboardHost } from './clipboard.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -745,7 +745,14 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   agentLink?.close();
   agentLink = agent && new AgentLink(agent.port1);
   (window as unknown as { __agent?: AgentLink }).__agent = agentLink; // the tests' hook
-  const share = clipboardShare = agentLink && new ClipboardShare(agentLink, { clipboard: { writeText: (s) => (navigator.clipboard ? navigator.clipboard.writeText(s) : Promise.reject(new Error('no clipboard'))) }, hasFocus: () => document.hasFocus() }); // no navigator.clipboard outside a secure context
+  const share = clipboardShare = agentLink && new ClipboardShare(agentLink, clipboardHost());
+  if (share) {
+    share.setPermission(ui.clipboard.permission);
+    share.onChange = showClipboard;
+  }
+  ui.clipboard.on = !!share;
+  ui.clipboard.failed = false;
+  showClipboard();
   (window as unknown as { __clipboard?: ClipboardShare }).__clipboard = share; // the tests' hook
   const locked = (on: boolean) => { ui.mouseLocked = on; placeCursor(); };
   const input = attachInput(canvas, kbd.port1, tablet.port1, { live: () => keyboardLive, send: (d) => term.input(d, true), usb: keyboardKey }, { mouse: mouse?.port1, touch: touch?.port1, locked }, { hold: share && ((e) => share.chord(e)) });
@@ -1969,6 +1976,39 @@ let clipboardShare: ClipboardShare | undefined;
 document.addEventListener('paste', (e) => {
   if (clipboardShare?.held && document.activeElement === canvas) clipboardShare.pasted(e.clipboardData?.getData('text/plain') ?? '');
 });
+/** The browser's clipboard as clipboard sharing uses it (no `navigator.clipboard` outside a secure context). */
+function clipboardHost(): ClipboardHost {
+  const c = navigator.clipboard as Clipboard | undefined;
+  return {
+    clipboard: {
+      writeText: (s) => (c ? c.writeText(s) : Promise.reject(new Error('no clipboard'))),
+      readText: c?.readText && (() => c.readText()),
+      read: c?.read && (() => c.read()),
+    },
+    hasFocus: () => document.hasFocus(),
+    changeEvents: !!c && 'onclipboardchange' in c,
+  };
+}
+/** The toolbar's clipboard button follows the running machine's sharing. */
+function showClipboard() {
+  const s = clipboardShare;
+  ui.clipboard.state = s?.state ?? 'waiting';
+  ui.clipboard.stopped = !!s?.stopped;
+  ui.clipboard.canType = !!s?.canType;
+}
+// Sync on focus (plan §4.1, way 1): each time the page has focus again, and where the browser says the clipboard
+// changed; the read permission, followed (its `change` updates the button at once; granted, it syncs).
+window.addEventListener('focus', () => void clipboardShare?.focused());
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void clipboardShare?.focused(); });
+if (navigator.clipboard && 'onclipboardchange' in navigator.clipboard) navigator.clipboard.addEventListener('clipboardchange', () => clipboardShare?.clipboardChanged());
+void watchReadPermission(navigator.permissions, !!navigator.clipboard, (p) => {
+  ui.clipboard.permission = p;
+  clipboardShare?.setPermission(p);
+});
+// A key or pointer down on the screen (plan §4.2): the guest's pending text is written with its activation; a paste
+// chord drops it (the host's copy goes to the guest). At the document's capture, before web/input.ts takes the key.
+document.addEventListener('keydown', (e) => { if (e.target === canvas) clipboardShare?.activated(isPasteChord(e)); }, { capture: true });
+document.addEventListener('pointerdown', (e) => { if (e.target === canvas) clipboardShare?.activated(false); }, { capture: true });
 /** A transient machine's remembered devices: this page's only, for its session. */
 let transientUsb: UsbEntry[] = [];
 const usbEntries = (): UsbEntry[] => (stored ? stored.record.usbDevices ?? [] : transientUsb);
@@ -2395,6 +2435,11 @@ Object.assign(page, {
   netDelete,
   netNewAddress,
   netHolder: (id: string) => net.locks.holder(connectionLock(id)),
+  // A read while the permission is `prompt` is what makes Chromium ask; the text it gives is the sync's (granted: `setPermission`).
+  clipboardAsk: () => { if (ui.clipboard.permission === 'prompt') void navigator.clipboard.readText().catch(() => {}); },
+  clipboardPause: (paused: boolean) => (paused ? clipboardShare?.pause() : clipboardShare?.resume()),
+  clipboardSend: async () => { ui.clipboard.failed = !(await clipboardShare?.send()); },
+  clipboardType: async () => { ui.clipboard.failed = !(await clipboardShare?.typeIt()); },
 } satisfies typeof page);
 
 // Before starting: what the page can tell won't work.

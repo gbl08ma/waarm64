@@ -6,7 +6,10 @@
 // - `wl-copy` in the guest reaches the host's clipboard: short text inline, long text requested in DATA frames.
 // - The host's clipboard and the paste chord (Ctrl+V on the screen) reach `wl-paste`, short and long (streamed through
 //   the agent's MOREs), and a second paste of the same; the guest copying the host's text back isn't offered back.
-// - PAUSE drops the host's text from the guest's clipboard and stops both ways; RESUME brings them back.
+// - Sync with the read permission (plan §4.1, way 1): a copy on the host reaches wl-paste by itself (Chromium fires
+//   clipboardchange, on which the page reads; a focus with nothing new offers nothing).
+// - The toolbar's switch: PAUSE drops the host's text from the guest's clipboard and stops both ways; RESUME brings
+//   them back.
 // - The agent follows sway's end (the session's: `exec sway`) and its start in a new session.
 // - What the agent and its session child cost while sway runs (plan §3.3's targets: no CPU time, no wakeups, VmRSS).
 // WEBPC_AGENT_IDLE=<s> sets the idle window (default 20 s).
@@ -62,7 +65,6 @@ async function run(page: Page, cmd: string, ms = 60_000) {
 type Hello = { version: number; caps: number };
 type Link = { open: boolean; agent?: Hello; paused: boolean; pause(): void; resume(): void };
 type Share = { pending?: string; onWritten?: (s: string) => void };
-const link = <T>(page: Page, f: (l: Link) => T) => page.evaluate(`(${f})(window.__agent)`) as Promise<T>;
 const hello = (page: Page) =>
   page.waitForFunction(() => (window as unknown as { __agent?: Link }).__agent?.agent, null, { timeout: 120_000, polling: 100 }).then((h) => h.jsonValue() as Promise<Hello>);
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -100,6 +102,13 @@ const countWrites = (page: Page) => page.evaluate(() => {
   w.__clipboard.onWritten = () => { w.__writes++; };
 });
 const writes = (page: Page) => page.evaluate(() => (window as unknown as { __writes: number }).__writes);
+/** The toolbar's switch (the clipboard menu's Share the clipboard box), and the button's state after it. */
+async function share(page: Page, on: boolean) {
+  if (!(await page.evaluate(() => (document.getElementById('clipboard-menu') as HTMLDetailsElement).open))) await page.click('#clipboard-menu > summary');
+  await page.setChecked('#clipboard-on', on);
+  await page.click('#clipboard-menu > summary');
+  await page.waitForFunction((w) => document.getElementById('clipboard-menu')?.dataset.state === w, on ? 'sharing' : 'paused', { timeout: 10_000, polling: 100 });
+}
 // The guest's side: wl-clipboard as the user, on whichever socket sway has; and what the agent says in the journal.
 const W = 'wlc() { runuser -u user -- env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=$(cd /run/user/1000 && ls wayland-? | head -1) "$@"; }';
 const guestHas = (page: Page) => run(page, 'wlc wl-paste -n | sha256sum | cut -c1-64');
@@ -183,10 +192,28 @@ test('clipboard sharing with sway: wl-copy to the host, the paste chord to wl-pa
   await pasteChord(page, short);
   t.diagnostic(`the paste chord with what the guest has: ${Date.now() - t0} ms`);
 
-  // PAUSE: the host's text leaves the guest's clipboard; nothing either way until RESUME.
+  // Sync (way 1): the read permission is granted, so a copy on the host reaches the guest's clipboard with no paste:
+  // Chromium fires clipboardchange and the page reads on it. A focus with nothing new offers nothing.
+  assert.equal(await page.evaluate(() => document.getElementById('clipboard-menu')?.dataset.permission), 'granted');
+  const offers = () => page.evaluate(() => (window as unknown as { __offers?: number }).__offers ?? 0);
+  await page.evaluate(() => {
+    const w = window as unknown as { __offers: number; __agent: { send(type: number, p?: Uint8Array): boolean } };
+    w.__offers = 0;
+    const send = w.__agent.send.bind(w.__agent);
+    w.__agent.send = (type, p) => { if (type === 2) w.__offers++; return send(type, p); };
+  });
+  await page.evaluate((s) => navigator.clipboard.writeText(s), 'synced from the host');
+  await guestHasText(page, 'synced from the host', 'sync with the read permission');
+  assert.equal(await offers(), 1);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.waitForTimeout(1000);
+  assert.equal(await offers(), 1, 'a focus with the same clipboard: no offer');
+  assert.equal(await writes(page), 2, "the host's text isn't written back");
+
+  // PAUSE from the toolbar's switch: the host's text leaves the guest's clipboard; nothing either way until RESUME.
   await pasteChord(page, 'before the pause');
   await guestHasText(page, 'before the pause', 'the paste chord before the pause');
-  await link(page, (l) => l.pause());
+  await share(page, false);
   for (let i = 0; ; i++) {
     const s = await run(page, 'wlc wl-paste -n >/dev/null 2>&1 && echo has || echo empty');
     if (s === 'empty') break;
@@ -199,7 +226,7 @@ test('clipboard sharing with sway: wl-copy to the host, the paste chord to wl-pa
   await run(page, 'wlc wl-copy guest-during-pause >/dev/null 2>&1; echo copied');
   await page.waitForTimeout(3000);
   assert.equal(await hostText(page), 'during the pause', "paused: the guest's copy doesn't reach the host");
-  await link(page, (l) => l.resume());
+  await share(page, true);
   await run(page, 'wlc wl-copy guest-after-resume >/dev/null 2>&1; echo copied');
   await hostHas(page, 'guest-after-resume', 'wl-copy after RESUME');
   await pasteChord(page, 'host after resume');

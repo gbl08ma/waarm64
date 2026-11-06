@@ -1,14 +1,22 @@
 // Clipboard sharing's host side (docs/plans/clipboard.md §4): the browser's clipboard and the guest's, over the agent's
-// link (web/app/agent-link.ts, frames of web/agent-frame.ts). Step 3 has what the Wayland test needs:
+// link (web/app/agent-link.ts, frames of web/agent-frame.ts):
 // - **Guest to host** (§4.2): the guest's OFFER (its text inline, or requested in DATA frames as the page's MOREs
-//   allow) is written with `writeText` while the document has focus; without focus it is kept as `pending` (step 4
-//   writes it).
+//   allow) is written with `writeText` while the document has focus; otherwise (or refused) it is kept as `pending`,
+//   only the newest, and written on the next focus where the read permission shows the host's clipboard unchanged
+//   since the page last knew it (`focused`), or on the next key or pointer down on the screen (`activated`: the
+//   activation Firefox and Safari want). The host's newer copy wins: a focus read that finds it changed drops it, and
+//   so does a paste chord (the host's copy goes to the guest instead).
+// - **Sync on focus** (§4.1, way 1): while the browser's `clipboard-read` permission is `granted`, each focus of the
+//   page reads the host's clipboard and offers it to the guest if it changed (where `clipboardchange` exists, only after
+//   one); never while it is `prompt` (the reads that ask are the user's clicks: `askRead`, `send`, `typeIt`).
 // - **The paste chord** (§4.1, way 2): web/input.ts holds the key (`chord`) and lets the browser's `paste` event come;
 //   its text (`pasted`) is offered to the guest unless the guest has it already, and the key goes on once the agent
 //   says the guest's clipboard has it (ACK) or `ACK_WAIT` passed.
+// - **Placeholders** (§4.3): an empty read is never offered and leaves the hashes alone; `read()`'s types tell a
+//   hidden text (types say text, the text is empty: counted, and `EMPTY_RUN` in a row stop the focus reads for the
+//   run, `stopped`) from no text (an image, nothing). Refusals are silent.
 // - **Echo suppression** (§2): a hash of the last text each way; the same text isn't offered back.
-// Sharing stops while the link is paused (§3.2): nothing is offered, written or answered.
-// Step 4 adds sync on focus, the permission's asking, the toolbar button and the placeholder rules.
+// Sharing stops while paused (the toolbar's switch, §5: `pause`): nothing is read, offered, written or answered.
 
 import { ACK, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeMore, decodeOffer, decodeRequest, encodeData, encodeMore, encodeOffer, encodeRequest, FRAME, CAP, UNKNOWN, type Frame, type Hello } from '../agent-frame.ts';
 
@@ -29,12 +37,57 @@ export type ClipLink = {
   paused: boolean;
   agent?: Hello;
   send(type: number, payload?: Uint8Array): boolean;
+  pause(): void;
+  resume(): void;
+  /** TYPE: the text pasted on the guest's console (false: not sent). */
+  type?(text: string): boolean;
   onFrame?: (f: Frame) => void;
   onOpen?: (open: boolean) => void;
 };
 
-/** What the clipboard needs of the browser: its clipboard and whether the document has focus. */
-export type Host = { clipboard: { writeText(text: string): Promise<void> }; hasFocus: () => boolean };
+/** How many focus reads in a row may come back empty while their types say there is text before they stop (§4.3). */
+export const EMPTY_RUN = 3;
+
+/** A clipboard item as `read()` gives it: its types (`getType` isn't needed to tell them apart). */
+export type HostItem = { types: readonly string[] };
+
+/**
+ * What the clipboard needs of the browser: its clipboard (`readText` and `read` where it has them) and whether the
+ * document has focus.
+ */
+export type Host = {
+  clipboard: { writeText(text: string): Promise<void>; readText?(): Promise<string>; read?(): Promise<readonly HostItem[]> };
+  hasFocus: () => boolean;
+  /** The browser fires `clipboardchange` (the page then reads on it, not on every focus). */
+  changeEvents?: boolean;
+};
+
+/**
+ * Chromium's `clipboard-read` permission as the page knows it; `none` where the browser has no such permission (Firefox,
+ * Safari: a read wants a click and shows their Paste button) or there is no clipboard (not a secure context).
+ */
+export type ReadPermission = 'granted' | 'prompt' | 'denied' | 'none';
+
+/** What the toolbar's button shows (plan §5): sharing, paused for the run, or waiting for the guest's program (before its HELLO, or since its port closed). */
+export type ShareState = 'sharing' | 'paused' | 'waiting';
+
+/**
+ * The read permission, followed: `onChange` with each state, the first at once (`none` if the browser can't say).
+ * Resolves with the first.
+ */
+export async function watchReadPermission(permissions: Pick<Permissions, 'query'> | undefined, hasClipboard: boolean, onChange: (s: ReadPermission) => void): Promise<ReadPermission> {
+  let status: PermissionStatus | undefined;
+  try {
+    // Firefox and Safari throw: `clipboard-read` isn't a permission name there.
+    status = hasClipboard ? await permissions?.query({ name: 'clipboard-read' as PermissionName }) : undefined;
+  } catch {
+    status = undefined;
+  }
+  const state = (): ReadPermission => (status ? status.state : 'none');
+  status?.addEventListener('change', () => onChange(state()));
+  onChange(state());
+  return state();
+}
 
 /** Whether a key event is a paste chord: Ctrl+V, Ctrl+Shift+V, Shift+Insert, Cmd+V (by the key, as the browser's shortcut is). */
 export function isPasteChord(e: Pick<KeyboardEvent, 'key' | 'code' | 'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey'>): boolean {
@@ -65,6 +118,12 @@ export class ClipboardShare {
   pending?: string;
   /** Called with each text from the guest written to the host's clipboard (the tests' hook). */
   onWritten?: (text: string) => void;
+  /** Called when what the toolbar shows changes: `state`, `permission`, `stopped`, `canType`. */
+  onChange?: () => void;
+  /** The browser's read permission (`setPermission`). */
+  permission: ReadPermission = 'none';
+  /** Focus reads stopped for the run: they came back empty `EMPTY_RUN` times in a row while their types said text (§4.3). */
+  stopped = false;
   private link: ClipLink;
   private host: Host;
   private serial = 0;
@@ -72,6 +131,16 @@ export class ClipboardShare {
   /** The hashes of the last text from the guest, and of the last offered to it. */
   private fromGuest?: number;
   private toGuest?: number;
+  /** The hash of the host's clipboard as the page last knew it (read, pasted, or written by the page); undefined: never. */
+  private hostHash?: number;
+  /** Empty reads in a row whose types said text. */
+  private empties = 0;
+  /** A focus read in flight. */
+  private reading = false;
+  /** `clipboardchange` fired since the last read (true at first: the clipboard is unknown). */
+  private changed = true;
+  /** The page's offer whose ACK is awaited: its text's hash, and when the wait ends. */
+  private offering?: { hash: number; done: Promise<void> };
   /** The page's offer to the guest: its bytes, for the agent's requests. */
   private offered?: { serial: number; bytes: Uint8Array };
   /** The page's requests for the guest's offer's bytes. */
@@ -93,12 +162,160 @@ export class ClipboardShare {
     link.onOpen = (open) => {
       onOpen?.(open);
       this.reset();
+      this.onChange?.();
     };
   }
 
   /** Sharing works now: the agent is there and said it shares text, and the toolbar's switch isn't off. */
   get active() {
     return this.link.open && !this.link.paused && !!this.link.agent && (this.link.agent.caps & CAP.TEXT) !== 0;
+  }
+
+  /** What the toolbar's button shows. */
+  get state(): ShareState {
+    return this.link.paused ? 'paused' : this.link.open && this.link.agent ? 'sharing' : 'waiting';
+  }
+
+  /** The agent pastes on the console (TYPE) and sharing isn't paused: "Type the clipboard". */
+  get canType() {
+    return !this.link.paused && this.link.open && !!this.link.agent && (this.link.agent.caps & CAP.TYPE) !== 0;
+  }
+
+  /** The browser's read permission changed: becoming `granted` (the user allowed it just now) syncs at once. */
+  setPermission(p: ReadPermission) {
+    if (p === this.permission) return;
+    this.permission = p;
+    this.onChange?.();
+    if (p === 'granted') void this.focused();
+  }
+
+  /** The toolbar's switch (plan §5), for the run: everything stops at once, both ways, and the agent hears PAUSE. */
+  pause() {
+    this.link.pause();
+    this.pending = undefined;
+    this.holding?.();
+    // The agent drops the host's text from the guest's clipboard: what either side had is no longer known.
+    this.fromGuest = this.toGuest = undefined;
+    this.reset();
+    this.onChange?.();
+  }
+
+  /** Sharing again: nothing is sent on its own (the next copy or paste is). */
+  resume() {
+    this.link.resume();
+    this.onChange?.();
+  }
+
+  /**
+   * The page has focus (`focus`, or `visibilitychange` to visible): with the read permission, the host's clipboard is
+   * read, and offered to the guest if it changed since the page last knew it; if it didn't, the guest's pending text is
+   * written. Where `clipboardchange` exists, the read waits for one. Without the permission, nothing.
+   */
+  async focused(): Promise<void> {
+    if (!this.active || this.permission !== 'granted' || this.stopped || this.reading || !this.host.hasFocus()) return;
+    if (this.host.changeEvents && !this.changed) {
+      if (this.pending !== undefined) this.writePending();
+      return;
+    }
+    this.reading = true;
+    try {
+      this.changed = false;
+      const text = await this.readHost();
+      if (text === undefined || !this.active) return;
+      const h = textHash(text);
+      if (h !== this.hostHash) {
+        // The host's own copy, newer than the guest's pending one.
+        this.pending = undefined;
+        void this.paste(text);
+      } else if (this.pending !== undefined) {
+        this.writePending();
+      }
+    } finally {
+      this.reading = false;
+    }
+  }
+
+  /** `clipboardchange`: the host's clipboard changed; read now if the page has focus. */
+  clipboardChanged() {
+    this.changed = true;
+    void this.focused();
+  }
+
+  /**
+   * A key or pointer down on the screen (activation, which Firefox and Safari want for a write): the guest's pending
+   * text is written. A paste chord instead drops it: the host's copy goes to the guest, the newer.
+   */
+  activated(pasteChord: boolean) {
+    if (!this.active || this.pending === undefined) return;
+    if (pasteChord) this.pending = undefined;
+    else this.writePending();
+  }
+
+  /**
+   * "Send the clipboard to the guest" (the toolbar's menu, from its click: the activation and the prompt a read may
+   * want): the host's text offered even if the guest seems to have it. False if there was none to send.
+   */
+  async send(): Promise<boolean> {
+    const text = await this.readClick();
+    if (!text || !this.active) return false;
+    void this.paste(text, true);
+    return true;
+  }
+
+  /** "Type the clipboard": the host's text pasted on the guest's console (TYPE). False if there was none, or no agent that types. */
+  async typeIt(): Promise<boolean> {
+    const text = await this.readClick();
+    return !!text && this.canType && this.link.type?.(text) === true;
+  }
+
+  /** The host's text from a click's read; undefined if the browser gave none (refused, nothing, a dismissed Paste button). */
+  private async readClick(): Promise<string | undefined> {
+    try {
+      return (await this.host.clipboard.readText?.()) || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * The host's text for a focus read: undefined if there's nothing to sync (refused, empty, no text). An empty
+   * `readText` asks `read()` for the types: text among them is a hidden read (§4.3), counted.
+   */
+  private async readHost(): Promise<string | undefined> {
+    try {
+      const text = await this.host.clipboard.readText?.();
+      if (text) {
+        this.empties = 0;
+        return text;
+      }
+      const items = await this.host.clipboard.read?.().catch(() => undefined);
+      // Text among the types, yet none read: hidden. No types, or others (an image): nothing to sync, a run broken.
+      if (!items?.some((i) => i.types.some(isText))) this.empties = 0;
+      else if (++this.empties >= EMPTY_RUN) {
+        this.stopped = true;
+        this.onChange?.();
+      }
+    } catch {
+      // A refusal (NotAllowedError, DataError) is never an error mid-work.
+    }
+    return undefined;
+  }
+
+  /** Writes the guest's pending text to the host's clipboard (kept pending if refused). */
+  private writePending() {
+    const text = this.pending!;
+    this.pending = undefined;
+    this.write(text);
+  }
+
+  private write(text: string) {
+    this.host.clipboard.writeText(text).then(() => {
+      this.hostHash = textHash(text);
+      this.onWritten?.(text);
+    }, () => {
+      // Refused (no focus, no activation): the newest stays pending, unless a newer came meanwhile.
+      if (this.pending === undefined && this.fromGuest === textHash(text)) this.pending = text;
+    });
   }
 
   /**
@@ -137,13 +354,16 @@ export class ClipboardShare {
   }
 
   /**
-   * Offers `text` to the guest unless it has it already (the last text either way) or it is empty; resolves with the
-   * agent's ACK status, or undefined (nothing offered, or no ACK within `ACK_WAIT`).
+   * Offers the host's `text` to the guest unless it has it already (the last text either way; `force`: offered anyway)
+   * or it is empty; resolves once the agent's ACK came, or `ACK_WAIT` passed (or at once: nothing offered).
    */
-  async paste(text: string): Promise<void> {
+  async paste(text: string, force = false): Promise<void> {
     if (!this.active || text === '') return;
     const h = textHash(text);
-    if (h === this.fromGuest || h === this.toGuest) return;
+    this.hostHash = h;
+    // Offered already: a paste chord waits for that offer's ACK still (a sync's, a moment before the chord).
+    if (!force && h === this.toGuest && this.offering?.hash === h) return this.offering.done;
+    if (!force && (h === this.fromGuest || h === this.toGuest)) return;
     const bytes = new TextEncoder().encode(text);
     if (bytes.length > TEXT_CAP) return;
     const serial = this.serial = (this.serial + 1) >>> 0;
@@ -160,8 +380,11 @@ export class ClipboardShare {
         resolve(s);
       });
     });
+    const done = status.then(() => {});
+    this.offering = { hash: h, done };
     this.link.send(FRAME.OFFER, encodeOffer({ serial, types: [{ type: TEXT, size: bytes.length }], inline: bytes.length <= INLINE ? bytes : undefined }));
     const s = await status;
+    if (this.offering?.done === done) this.offering = undefined;
     // The guest didn't take it: the next paste offers it again.
     if (s !== undefined && s !== ACK.HELD && this.toGuest === h) this.toGuest = undefined;
   }
@@ -176,6 +399,11 @@ export class ClipboardShare {
 
   private frame(f: Frame) {
     switch (f.type) {
+      case FRAME.HELLO:
+        // The agent is there: the toolbar says so, and the host's clipboard goes to the guest if the page may read it.
+        this.onChange?.();
+        void this.focused();
+        return;
       case FRAME.OFFER: {
         const o = decodeOffer(f.payload);
         if (!o || !this.active) return;
@@ -251,16 +479,12 @@ export class ClipboardShare {
     }
   }
 
-  /** The guest's text: to the host's clipboard while the document has focus, else kept for later. */
+  /** The guest's text: to the host's clipboard while the document has focus, else kept for later (the newest only). */
   private received(text: string) {
     if (text === '') return;
     this.fromGuest = textHash(text);
     this.toGuest = undefined;
-    if (!this.host.hasFocus()) {
-      this.pending = text;
-      return;
-    }
-    this.pending = undefined;
-    this.host.clipboard.writeText(text).then(() => this.onWritten?.(text), () => { this.pending = text; });
+    this.pending = text;
+    if (this.host.hasFocus()) this.writePending();
   }
 }

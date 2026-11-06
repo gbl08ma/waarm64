@@ -2,8 +2,10 @@
 // (web/agent-device.ts) driven through hand-built queues as Linux's virtio_console drives it (the control handshake,
 // the port's name, the guest's opens and closes, bytes both ways across buffers, a snapshot's state), the frames
 // (web/agent-frame.ts) and their payloads (HELLO, TYPE: the same bytes as agent/src/frame.rs's tests), the page's end
-// (web/app/agent-link.ts): its window of bytes in flight, HELLO, TYPE, the pause; and the guest agent's unit and
-// script (web/app/guest-agent.ts), the script under dash on directories of its own.
+// (web/app/agent-link.ts): its window of bytes in flight, HELLO, TYPE, the pause; the guest agent's unit and
+// script (web/app/guest-agent.ts), the script under dash on directories of its own; and the page's clipboard sharing
+// (web/app/clipboard.ts) on a faked link and browser: both ways, the paste chord, sync on focus with the read
+// permission, the pending text's rules, the placeholders, the pause, the toolbar's state.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -14,7 +16,7 @@ import { after, test } from 'node:test';
 import { AGENT_PORTS, agentDevice, agentEntry, CTL_RX, CTL_TX, DEVICE_READY, F_MULTIPORT, MAX_PENDING, PORT_ADD, PORT_NAME, PORT_OPEN, PORT_READY, type AgentFromDevice } from '../web/agent-device.ts';
 import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, FRAME, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
 import { AgentLink, PAGE_CAPS, WINDOW } from '../web/app/agent-link.ts';
-import { ACK_WAIT, ClipboardShare, INLINE, isPasteChord, PASTE_WAIT, TEXT, TEXT_CAP, textHash, type ClipLink } from '../web/app/clipboard.ts';
+import { ACK_WAIT, ClipboardShare, EMPTY_RUN, INLINE, isPasteChord, PASTE_WAIT, TEXT, TEXT_CAP, textHash, watchReadPermission, type ClipLink, type ReadPermission } from '../web/app/clipboard.ts';
 import { AGENT_FILE, AGENT_PORT, agentBinary, agentCredentials, agentScript } from '../web/app/guest-agent.ts';
 import { oemStrings } from '../web/app/guest-unit.ts';
 import { guestWords } from '../web/app/guest-words.ts';
@@ -256,8 +258,8 @@ test('the link: frames out only while the agent\'s end is open, at most WINDOW b
   port2.postMessage({ type: 'open', port: 0, open: true });
   await settle();
   assert.deepEqual(opens, [true]);
-  // The page's HELLO first, at each opening: taken by the guest at once here.
-  assert.deepEqual(sent.map((b) => b[4]), [FRAME.HELLO]);
+  // The page's HELLO first, at each opening, and the switch: taken by the guest at once here.
+  assert.deepEqual(sent.map((b) => b[4]), [FRAME.HELLO, FRAME.RESUME]);
   port2.postMessage({ type: 'taken', port: 0, n: dev.bytes });
   sent.length = 0;
   dev.bytes = 0;
@@ -288,7 +290,7 @@ test('the link: frames out only while the agent\'s end is open, at most WINDOW b
   await settle();
   assert.deepEqual(opens, [true, false, true]);
   assert.deepEqual(frames, [FRAME.OFFER, FRAME.REQUEST, FRAME.HELLO]);
-  assert.equal(link.backlog, encodeFrame(FRAME.HELLO, encodeHello({ version: VERSION, caps: PAGE_CAPS })).length, 'only the new opening\'s HELLO');
+  assert.equal(link.backlog, encodeFrame(FRAME.HELLO, encodeHello({ version: VERSION, caps: PAGE_CAPS })).length + encodeFrame(FRAME.RESUME).length, 'only the new opening\'s HELLO and RESUME');
   link.close();
   port2.close();
 });
@@ -319,7 +321,7 @@ test("frames: TYPE's payloads, UTF-8 cut between characters and never inside a C
   assert.throws(() => typePayloads('x', 3));
 });
 
-test("the link: HELLO at each opening, the agent's answer; TYPE once it can; PAUSE held over a reopening", async () => {
+test("the link: HELLO and the switch at each opening, the agent's answer; TYPE once it can; PAUSE held over a reopening", async () => {
   const { port1, port2 } = channel();
   const link = new AgentLink(port1);
   const sent: { type: number; payload: Uint8Array }[] = [];
@@ -332,8 +334,10 @@ test("the link: HELLO at each opening, the agent's answer; TYPE once it can; PAU
   assert.equal(link.type('ls\n'), false, 'closed');
   port2.postMessage({ type: 'open', port: 0, open: true });
   await settle();
-  assert.deepEqual(sent.map((f) => f.type), [FRAME.HELLO]);
+  // The switch said at once: an agent restored from a snapshot taken while paused would be paused still.
+  assert.deepEqual(sent.map((f) => f.type), [FRAME.HELLO, FRAME.RESUME]);
   assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TYPE | CAP.TEXT });
+  sent.splice(1, 1);
   assert.equal(link.type('ls\n'), false, "open, but the agent hasn't said it can");
   const hellos: unknown[] = [];
   link.onHello = (h) => hellos.push(h);
@@ -461,6 +465,18 @@ function fakeLink(caps: number = CAP.TYPE | CAP.TEXT) {
       sent.push({ type, payload });
       return true;
     },
+    pause() {
+      this.paused = true;
+      this.send(FRAME.PAUSE);
+    },
+    resume() {
+      this.paused = false;
+      this.send(FRAME.RESUME);
+    },
+    type(text) {
+      if (this.paused || !this.agent || !(this.agent.caps & CAP.TYPE)) return false;
+      return this.send(FRAME.TYPE, new TextEncoder().encode(text));
+    },
   };
   const deliver = (type: number, payload: Uint8Array) => link.onFrame!({ type, payload });
   /** The page's frames of `type` sent since the last call, taken off `sent`. */
@@ -472,9 +488,33 @@ function fakeLink(caps: number = CAP.TYPE | CAP.TEXT) {
   return { link, sent, deliver, take };
 }
 
+/**
+ * The browser as the clipboard sees it: `text` is the host's clipboard (`types` what `read()` says it has: by default
+ * text when there is some), `focus` the document's, `refuse` makes writes fail (no activation), `reads` counts reads.
+ */
 function fakeHost() {
   const written: string[] = [];
-  const host = { focus: true, clipboard: { writeText: async (s: string) => void written.push(s) }, hasFocus: () => host.focus };
+  const host = {
+    focus: true,
+    text: '',
+    types: undefined as string[] | undefined,
+    refuse: false,
+    reads: 0,
+    changeEvents: false,
+    clipboard: {
+      writeText: async (s: string) => {
+        if (host.refuse) throw new DOMException('no activation', 'NotAllowedError');
+        written.push(s);
+        host.text = s;
+      },
+      readText: async () => {
+        host.reads++;
+        return host.text;
+      },
+      read: async () => [{ types: host.types ?? (host.text ? ['text/plain'] : []) }],
+    },
+    hasFocus: () => host.focus,
+  };
   return { host, written };
 }
 
@@ -654,4 +694,291 @@ test('the paste chord: which keys; held for the paste event and the ACK, or let 
   assert.equal(new ClipboardShare(fakeLink(CAP.TYPE).link, fakeHost().host).chord(ctrlV), undefined);
   assert.notEqual(textHash('a'), textHash('b'));
   assert.equal(textHash('☃'), textHash('☃'));
+});
+
+/** The page's offers' texts, taken off the link. */
+const offered = (take: (type: number) => Frame[]) => take(FRAME.OFFER).map((f) => new TextDecoder().decode(decodeOffer(f.payload)!.inline));
+const guestOffers = (deliver: (type: number, p: Uint8Array) => void, serial: number, text: string) => deliver(FRAME.OFFER, encodeOffer({ serial, types: [{ type: TEXT, size: utf8(text).length }], inline: utf8(text) }));
+
+test("sync on focus: only with the read permission granted and focus; the host's text offered when it changed, an unchanged one not; clipboardchange gates the reads", async () => {
+  const { link, take } = fakeLink();
+  const { host } = fakeHost();
+  const share = new ClipboardShare(link, host);
+  host.text = 'copied on the host';
+  // Without the permission (prompt, denied, a browser without it): no read at all.
+  for (const p of ['none', 'prompt', 'denied'] as ReadPermission[]) {
+    share.setPermission(p);
+    await share.focused();
+  }
+  assert.equal(host.reads, 0, 'never read without the permission');
+  share.setPermission('granted');
+  await settle();
+  assert.equal(host.reads, 1, 'granted just now: read at once');
+  assert.deepEqual(offered(take), ['copied on the host']);
+  await share.focused();
+  assert.deepEqual(offered(take), [], 'unchanged: not offered again');
+  host.text = 'another copy';
+  host.focus = false;
+  await share.focused();
+  assert.equal(host.reads, 2, 'no read without focus');
+  host.focus = true;
+  await share.focused();
+  assert.deepEqual(offered(take), ['another copy']);
+  // Paused, or the agent's end closed: no reads.
+  link.paused = true;
+  await share.focused();
+  link.paused = false;
+  link.open = false;
+  await share.focused();
+  link.open = true;
+  assert.equal(host.reads, 3);
+  // Where clipboardchange exists, a focus reads only after one.
+  const b = fakeLink();
+  const hb = fakeHost().host;
+  hb.changeEvents = true;
+  hb.text = 'first';
+  const sb = new ClipboardShare(b.link, hb);
+  sb.setPermission('granted');
+  await settle();
+  assert.equal(hb.reads, 1, 'the first read: the clipboard is unknown');
+  hb.text = 'second';
+  await sb.focused();
+  assert.equal(hb.reads, 1, 'no clipboardchange: no read');
+  sb.clipboardChanged();
+  await settle();
+  assert.equal(hb.reads, 2);
+  assert.deepEqual(offered(b.take), ['first', 'second']);
+});
+
+test("the guest's pending text: the newest only; written on focus when the host's clipboard is unchanged, dropped when it changed; on a key or pointer without the permission; a paste chord drops it", async () => {
+  const { link, deliver, take } = fakeLink();
+  const { host, written } = fakeHost();
+  const share = new ClipboardShare(link, host);
+  host.text = 'host one';
+  share.setPermission('granted');
+  await settle();
+  assert.deepEqual(offered(take), ['host one']);
+  // Two copies in the guest while the page has no focus: the newest is kept.
+  host.focus = false;
+  guestOffers(deliver, 1, 'guest one');
+  guestOffers(deliver, 2, 'guest two');
+  await settle();
+  assert.equal(share.pending, 'guest two');
+  // Focus, the host's clipboard as the page knew it: the pending text is written; reading it back offers nothing.
+  host.focus = true;
+  await share.focused();
+  await settle();
+  assert.deepEqual(written, ['guest two']);
+  assert.equal(share.pending, undefined);
+  await share.focused();
+  assert.deepEqual(offered(take), [], "the guest's own text isn't offered back");
+  // The host copied since: its text wins, the pending text is dropped.
+  host.focus = false;
+  guestOffers(deliver, 3, 'guest three');
+  await settle();
+  host.text = 'host two';
+  host.focus = true;
+  await share.focused();
+  await settle();
+  assert.equal(share.pending, undefined);
+  assert.deepEqual(written, ['guest two'], "not written over the host's newer copy");
+  assert.deepEqual(offered(take), ['host two']);
+  // Without the permission: focus writes nothing; a key or pointer on the screen does.
+  share.setPermission('prompt');
+  host.focus = false;
+  guestOffers(deliver, 4, 'guest four');
+  await settle();
+  host.focus = true;
+  await share.focused();
+  await settle();
+  assert.equal(share.pending, 'guest four', 'focus alone: kept');
+  share.activated(false);
+  await settle();
+  assert.deepEqual(written, ['guest two', 'guest four']);
+  // A refused write (no activation: Firefox) keeps it for the next key or pointer.
+  host.refuse = true;
+  guestOffers(deliver, 5, 'guest five');
+  await settle();
+  assert.equal(share.pending, 'guest five', 'refused: pending');
+  share.activated(false);
+  await settle();
+  assert.equal(share.pending, 'guest five', 'refused again: still pending');
+  host.refuse = false;
+  share.activated(false);
+  await settle();
+  assert.deepEqual(written, ['guest two', 'guest four', 'guest five']);
+  // A paste chord drops it: the host's copy goes to the guest instead.
+  host.focus = false;
+  guestOffers(deliver, 6, 'guest six');
+  await settle();
+  share.activated(true);
+  assert.equal(share.pending, undefined);
+  host.focus = true;
+  share.activated(false);
+  await settle();
+  assert.equal(written.length, 3);
+  // Paused: the pending text goes.
+  host.focus = false;
+  guestOffers(deliver, 7, 'guest seven');
+  await settle();
+  share.pause();
+  assert.equal(share.pending, undefined);
+});
+
+test("placeholders: an empty read is never offered and doesn't count as the host's; hidden reads in a run stop focus reads; refusals are silent", async () => {
+  const { link, deliver, take } = fakeLink();
+  const { host, written } = fakeHost();
+  const share = new ClipboardShare(link, host);
+  let changes = 0;
+  share.onChange = () => changes++;
+  share.setPermission('granted');
+  await settle();
+  // Nothing on the clipboard: nothing offered.
+  assert.deepEqual(offered(take), []);
+  host.text = 'real';
+  await share.focused();
+  assert.deepEqual(offered(take), ['real']);
+  // A guest copy kept pending; an empty read (an image: types without text) neither offers nor writes it, nor
+  // stands for the host's clipboard: the same text read after it is the one the page knew.
+  host.focus = false;
+  guestOffers(deliver, 1, 'from the guest');
+  await settle();
+  host.focus = true;
+  host.text = '';
+  host.types = ['image/png'];
+  await share.focused();
+  await settle();
+  assert.deepEqual(offered(take), []);
+  assert.deepEqual(written, []);
+  assert.equal(share.pending, 'from the guest', 'an empty read: the pending text waits for a key');
+  host.text = 'real';
+  host.types = undefined;
+  await share.focused();
+  await settle();
+  assert.deepEqual(offered(take), [], 'the same text as before the empty read: not new');
+  assert.deepEqual(written, ['from the guest']);
+  // Hidden: types say text, the text is empty. EMPTY_RUN in a row stop the focus reads, and the toolbar hears it;
+  // a read without text among its types breaks a run.
+  host.text = '';
+  host.types = ['text/plain'];
+  for (let i = 0; i < EMPTY_RUN - 1; i++) await share.focused();
+  host.types = ['image/png'];
+  await share.focused();
+  host.types = ['text/plain'];
+  for (let i = 0; i < EMPTY_RUN - 1; i++) await share.focused();
+  assert.equal(share.stopped, false, 'a run broken by an image');
+  const before = changes;
+  await share.focused();
+  assert.equal(share.stopped, true);
+  assert.ok(changes > before, 'the toolbar is told');
+  const reads = host.reads;
+  host.text = 'later';
+  host.types = undefined;
+  await share.focused();
+  assert.equal(host.reads, reads, 'stopped for the run');
+  assert.deepEqual(offered(take), []);
+  // Refusals: no throw, nothing offered.
+  const b = fakeLink();
+  const hb = fakeHost().host;
+  hb.clipboard.readText = async () => { throw new DOMException('not focused', 'NotAllowedError'); };
+  const sb = new ClipboardShare(b.link, hb);
+  sb.setPermission('granted');
+  await sb.focused();
+  await settle();
+  assert.deepEqual(offered(b.take), []);
+  assert.equal(await sb.send(), false);
+});
+
+test("the toolbar's state and actions: waiting, sharing, paused; pause stops both ways and says PAUSE, resume sends nothing else; Send and Type read on the click", async () => {
+  const { link, deliver, take, sent } = fakeLink();
+  const { host, written } = fakeHost();
+  const agent = link.agent;
+  link.agent = undefined;
+  const share = new ClipboardShare(link, host);
+  assert.equal(share.state, 'waiting', 'before HELLO');
+  let changes = 0;
+  share.onChange = () => changes++;
+  link.agent = agent;
+  deliver(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TYPE | CAP.TEXT }));
+  assert.equal(share.state, 'sharing');
+  assert.equal(changes, 1);
+  assert.equal(share.canType, true);
+  // Pause: PAUSE to the agent; nothing read, offered or written; the paste chord not held.
+  share.setPermission('granted');
+  host.text = 'host';
+  await settle();
+  take(FRAME.OFFER);
+  share.pause();
+  assert.equal(share.state, 'paused');
+  assert.equal(share.canType, false);
+  assert.equal(take(FRAME.PAUSE).length, 1);
+  host.text = 'host, while paused';
+  const reads = host.reads;
+  await share.focused();
+  assert.equal(host.reads, reads);
+  guestOffers(deliver, 1, 'guest, while paused');
+  await settle();
+  assert.deepEqual(written, []);
+  assert.equal(share.chord({ key: 'v', code: 'KeyV', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false }), undefined);
+  assert.equal(await share.send(), false);
+  // Resume: RESUME and nothing more until the next copy or focus.
+  share.resume();
+  assert.equal(share.state, 'sharing');
+  assert.deepEqual(sent.map((f) => f.type), [FRAME.RESUME]);
+  take(FRAME.RESUME);
+  // Send: the host's text offered on the click even when the guest has it; empty: nothing.
+  host.text = 'sent';
+  assert.equal(await share.send(), true);
+  assert.equal(await share.send(), true);
+  assert.deepEqual(offered(take), ['sent', 'sent']);
+  host.text = '';
+  assert.equal(await share.send(), false);
+  // Type: TYPE with the host's text.
+  host.text = 'typed\n';
+  assert.equal(await share.typeIt(), true);
+  assert.deepEqual(take(FRAME.TYPE).map((f) => new TextDecoder().decode(f.payload)), ['typed\n']);
+  // The agent's end closes: waiting again.
+  link.open = false;
+  link.onOpen!(false);
+  assert.equal(share.state, 'waiting');
+  assert.equal(share.canType, false);
+});
+
+test('the read permission, followed: its state at once and at each change; none where the browser has no such permission', async () => {
+  const status = new EventTarget() as EventTarget & { state: PermissionState };
+  status.state = 'prompt';
+  const seen: ReadPermission[] = [];
+  const first = await watchReadPermission({ query: async () => status as unknown as PermissionStatus }, true, (s) => seen.push(s));
+  assert.equal(first, 'prompt');
+  status.state = 'granted';
+  status.dispatchEvent(new Event('change'));
+  status.state = 'denied';
+  status.dispatchEvent(new Event('change'));
+  assert.deepEqual(seen, ['prompt', 'granted', 'denied']);
+  // Firefox and Safari: the name isn't a permission (a TypeError); no clipboard (not a secure context).
+  assert.equal(await watchReadPermission({ query: async () => { throw new TypeError('not a permission'); } }, true, () => {}), 'none');
+  assert.equal(await watchReadPermission({ query: async () => status as unknown as PermissionStatus }, false, () => {}), 'none');
+  assert.equal(await watchReadPermission(undefined, true, () => {}), 'none');
+});
+
+test("a paste chord right after a sync's offer of the same text waits for that offer's ACK, not offering it twice", async () => {
+  const { link, deliver, take } = fakeLink();
+  const { host } = fakeHost();
+  const share = new ClipboardShare(link, host);
+  host.text = 'just copied';
+  share.setPermission('granted');
+  await settle();
+  const [o] = take(FRAME.OFFER).map((f) => decodeOffer(f.payload)!);
+  let done = false;
+  const held = share.chord({ key: 'v', code: 'KeyV', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false })!.then(() => { done = true; });
+  share.pasted('just copied');
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(take(FRAME.OFFER), [], 'not offered again');
+  assert.equal(done, false, "the key waits for the sync's ACK");
+  deliver(FRAME.ACK, encodeAck(o.serial, ACK.HELD));
+  await held;
+  // Once acknowledged, the same text lets the key go at once.
+  const t0 = performance.now();
+  await share.paste('just copied');
+  assert.ok(performance.now() - t0 < ACK_WAIT / 2);
 });

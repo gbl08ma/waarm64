@@ -8,6 +8,7 @@ import type { DiskRecord, FolderAttachment, MachineRecord, Shape, UsbEntry } fro
 import type { EntryView } from './usb-live.ts';
 import type { ProblemWords } from './usb-ports.ts';
 import type { LockMode } from '../input.ts';
+import type { ReadPermission, ShareState } from './clipboard.ts';
 import type { ModifierMode, Mods } from './osk.ts';
 import { normalize, type Graphics, type Metrics } from './statusbar.ts';
 import { settings } from './settings.ts';
@@ -94,6 +95,12 @@ export const ui = $state({
    * `path` is where the guest finds them; `wanted` opens the menu (it clears it); `tick` when any of it changes.
    */
   folders: { on: false, path: '', wanted: false, tick: 0 },
+  /**
+   * Clipboard sharing (docs/plans/clipboard.md §5; the toolbar's clipboard menu): `on` while the page's machine has the
+   * setting (its button shows while it runs); its `state`, the browser's read `permission`, `stopped` (focus reads stopped
+   * for the run: they came back hidden), whether the agent types (`canType`), and `failed`: the last Send or Type got no text.
+   */
+  clipboard: { on: false, state: 'waiting' as ShareState, permission: 'none' as ReadPermission, stopped: false, canType: false, failed: false },
   /** The Folder wizard, open (web/app/FolderWizard.svelte): for `machine`, which has `attached`; none: it only makes a folder. `tick` opens it again. */
   folderWizard: undefined as undefined | { machine?: string; attached?: FolderAttachment[]; tick?: number },
   boot: { shown: true, done: false, title: '', progress: undefined as number | undefined, line: '', serial: false },
@@ -240,5 +247,14 @@ export type Page = {
   folderAllow(id: string): Promise<void>;
   /** Asks the user, then takes a folder another machine has. */
   folderUseHere(id: string): Promise<void>;
+  /**
+   * Clipboard sharing (docs/plans/clipboard.md §4–§5), from the user's clicks: `clipboardAsk` asks for the browser's
+   * read permission while it is `prompt` (a read the browser prompts for); the toolbar's switch (paused for the run);
+   * Send the clipboard to the guest, Type the clipboard (reads on the click).
+   */
+  clipboardAsk(): void;
+  clipboardPause(paused: boolean): void;
+  clipboardSend(): Promise<void>;
+  clipboardType(): Promise<void>;
 };
 export const page = {} as Page;

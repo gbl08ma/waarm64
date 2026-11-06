@@ -1,0 +1,66 @@
+{
+  "ClipboardMenu.title.sharing": {
+    "message": "Clipboard sharing is on. Text you copy on your computer reaches the guest, and text copied in the guest reaches your computer.",
+    "note": "Tooltip of the toolbar's clipboard button (shown while the running machine shares the clipboard), while it shares and nothing limits it."
+  },
+  "ClipboardMenu.title.limited": {
+    "message": "Clipboard sharing is on. Until this web app may see the clipboard, the guest gets what you copy on your computer only when you paste with the keyboard on the screen, not from the guest's own menus.",
+    "note": "Tooltip of the toolbar's clipboard button while it shares but the browser hasn't allowed reading the clipboard (asked or blocked), or the reads stopped (ClipboardMenu.stopped). The button has a mark then."
+  },
+  "ClipboardMenu.title.paused": {
+    "message": "Clipboard sharing is paused. Nothing passes between the guest and your computer until you resume it or the machine starts again.",
+    "note": "Tooltip of the toolbar's clipboard button while the user paused the sharing (its icon crossed out). The pause lasts until the machine starts again."
+  },
+  "ClipboardMenu.title.waiting": {
+    "message": "Clipboard sharing is waiting for this emulator's program in the guest. It starts once the guest has booted, if the guest is running systemd version 256 or above.",
+    "note": "Tooltip of the toolbar's clipboard button, and a note in its menu, while the guest's program isn't there: before it started, or since it stopped."
+  },
+  "ClipboardMenu.allow": {
+    "message": "Allow seeing the clipboard…",
+    "note": "The toolbar's clipboard menu: its first item while the browser hasn't decided whether this web app may read the clipboard. A click makes the browser ask."
+  },
+  "ClipboardMenu.allow.title": {
+    "message": "Ask this browser to let this web app see the clipboard, so that the guest can paste what you copy on your computer from its own menus too.",
+    "note": "The toolbar's clipboard menu: tooltip of ClipboardMenu.allow."
+  },
+  "ClipboardMenu.denied": {
+    "message": "This browser doesn't let this web app see the clipboard, so the guest gets what you copy on your computer only when you paste with the keyboard on the screen. To allow it, click the icon at the left of the address bar, and allow Clipboard in the site's settings.",
+    "note": "The toolbar's clipboard menu: a note at its top while the browser blocks reading the clipboard (the user said no, or the site's settings block it)."
+  },
+  "ClipboardMenu.granted": {
+    "message": "This web app may see the clipboard. What you copy on your computer reaches the guest when you come back to this page.",
+    "note": "The toolbar's clipboard menu: a note at its top while the browser allows reading the clipboard."
+  },
+  "ClipboardMenu.stopped": {
+    "message": "This browser gave this web app empty text several times while the clipboard held text, so the guest no longer gets what you copy when you come back to this page. Paste with the keyboard on the screen instead, or use Send the clipboard to the guest. This lasts until the machine starts again.",
+    "note": "The toolbar's clipboard menu: a note while the reads made each time the page gets the focus back stopped for the run, because the browser or the computer's system hid the clipboard's text from them (macOS can)."
+  },
+  "ClipboardMenu.share": {
+    "message": "Share the clipboard",
+    "note": "The toolbar's clipboard menu: the box that is ticked while the clipboard is shared; unticking it pauses the sharing until the machine starts again."
+  },
+  "ClipboardMenu.share.title": {
+    "message": "Untick to pause the sharing in both directions until the machine starts again, for example before you copy a password.",
+    "note": "The toolbar's clipboard menu: tooltip of ClipboardMenu.share."
+  },
+  "ClipboardMenu.send": {
+    "message": "Send the clipboard to the guest",
+    "note": "The toolbar's clipboard menu: button that gives the guest's clipboard what is on the computer's clipboard now (the browser may ask first)."
+  },
+  "ClipboardMenu.send.title": {
+    "message": "Put what you copied on your computer on the guest's clipboard now.",
+    "note": "The toolbar's clipboard menu: tooltip of ClipboardMenu.send."
+  },
+  "ClipboardMenu.type": {
+    "message": "Type the clipboard",
+    "note": "The toolbar's clipboard menu: button that pastes the computer's clipboard on the guest's text console (the browser may ask first)."
+  },
+  "ClipboardMenu.type.title": {
+    "message": "Paste what you copied on your computer at the guest's text console, as if typed.",
+    "note": "The toolbar's clipboard menu: tooltip of ClipboardMenu.type."
+  },
+  "ClipboardMenu.failed": {
+    "message": "This browser gave this web app no text from the clipboard.",
+    "note": "The toolbar's clipboard menu: a note after Send the clipboard to the guest or Type the clipboard found no text (the clipboard had none, or the browser refused)."
+  }
+}

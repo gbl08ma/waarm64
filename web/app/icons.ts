@@ -6,6 +6,8 @@ import IconArrowUp from '@tabler/icons-svelte-runes/icons/arrow-up';
 import IconAspectRatio from '@tabler/icons-svelte-runes/icons/aspect-ratio';
 import IconBolt from '@tabler/icons-svelte-runes/icons/bolt';
 import IconChevronDown from '@tabler/icons-svelte-runes/icons/chevron-down';
+import IconClipboard from '@tabler/icons-svelte-runes/icons/clipboard';
+import IconClipboardOff from '@tabler/icons-svelte-runes/icons/clipboard-off';
 import IconCopy from '@tabler/icons-svelte-runes/icons/copy';
 import IconCpu from '@tabler/icons-svelte-runes/icons/cpu';
 import IconDatabase from '@tabler/icons-svelte-runes/icons/database';
@@ -68,6 +70,8 @@ export const ICONS = {
   'aspect-ratio': IconAspectRatio,
   'bolt': IconBolt,
   'chevron-down': IconChevronDown,
+  'clipboard': IconClipboard,
+  'clipboard-off': IconClipboardOff,
   'copy': IconCopy,
   'cpu': IconCpu,
   'database': IconDatabase,

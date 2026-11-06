@@ -6,6 +6,7 @@
   import Icon from './Icon.svelte';
   import Menu from './Menu.svelte';
   import Check from './Check.svelte';
+  import ClipboardMenu from './ClipboardMenu.svelte';
   import FoldersMenu from './FoldersMenu.svelte';
   import Network from './Network.svelte';
   import Sound from './Sound.svelte';
@@ -162,6 +163,7 @@
   {#if ui.hasNetwork}<Network {net} />{/if}
   {#if ui.usb.on}<UsbMenu />{/if}
   {#if ui.folders.on}<FoldersMenu {folders} />{/if}
+  {#if ui.clipboard.on && running}<ClipboardMenu />{/if}
   {#if !ui.current}
     <Menu id="machine-menu" icon="cpu" title={t('toolbar:Toolbar.size.title')} bind:open={sizeOpen} panel>
       <label>{t('toolbar:Toolbar.size.cpus')}<select id="machine-cpus" bind:value={ncpus}>{#each ui.size.cpuChoices as n (n)}<option value={n}>{t('toolbar:Toolbar.size.cpu', { count: n })}</option>{/each}</select></label>

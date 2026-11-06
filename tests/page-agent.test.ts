@@ -3,8 +3,9 @@
 // as /dev/virtio-ports/org.webpc.agent.0, and the agent (agent/, web/app/guest-agent.ts): over fw_cfg into /run, started
 // by its credential unit, it opens the port and answers the page's HELLO (web/app/agent-link.ts, `window.__agent`).
 // Then: what it costs idle (plan §3.3's targets: no CPU time, no wakeups, its RSS), TYPE's text on the foreground
-// console (a reader on tty1 writes what it gets to a file; a long paste arrives whole), PAUSE stopping TYPE and RESUME
-// restoring it, the page carrying on when the agent stops, and the port itself without the agent: `cat` echoing it into
+// console (a reader on tty1 writes what it gets to a file; a long paste arrives whole), the toolbar's clipboard
+// button (sharing, then its switch: PAUSE stopping TYPE and RESUME restoring it; waiting once the agent stops), the
+// page carrying on when the agent stops, and the port itself without the agent: `cat` echoing it into
 // itself (a small frame, and 320 KiB of 64 KiB frames past the link's window, so the guest's buffers and the window's
 // flow both turn over). The agent's start again at the end: its unit runs it anew.
 // WEBPC_AGENT_IDLE=<s> sets the idle window (default 20 s; the plan's measurement is 60).
@@ -63,6 +64,16 @@ const isOpen = (page: Page, open: boolean) =>
 const hello = (page: Page) =>
   page.waitForFunction(() => (window as unknown as { __agent?: Link }).__agent?.agent, null, { timeout: 120_000, polling: 100 }).then((h) => h.jsonValue() as Promise<Hello>);
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
+/** The toolbar's clipboard button's state (web/app/ClipboardMenu.svelte), once it is `want`. */
+const buttonIs = (page: Page, want: string) =>
+  page.waitForFunction((w) => document.getElementById('clipboard-menu')?.dataset.state === w, want, { timeout: 30_000, polling: 100 })
+    .catch(async (e) => { throw new Error(`${e}; the clipboard button is ${await page.evaluate(() => document.getElementById('clipboard-menu')?.dataset.state)}`); });
+/** The toolbar's switch (the clipboard menu's Share the clipboard box). */
+async function share(page: Page, on: boolean) {
+  if (!(await page.evaluate(() => (document.getElementById('clipboard-menu') as HTMLDetailsElement).open))) await page.click('#clipboard-menu > summary');
+  await page.setChecked('#clipboard-on', on);
+  await page.click('#clipboard-menu > summary');
+}
 /** The reader's file on the guest: its SHA-256 and size. */
 const typed = (page: Page) => run(page, 'sha256sum </tmp/typed | cut -c1-64; stat -c %s /tmp/typed').then((s) => s.split(/\s+/));
 const TYPE = 5;
@@ -85,6 +96,7 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
   });
   assert.equal(h.version, 1);
   assert.ok(h.caps & 1, `the agent can TYPE (caps ${h.caps})`);
+  await buttonIs(page, 'sharing');
   assert.equal(await run(page, 'ls /dev/virtio-ports/; cat /sys/class/virtio-ports/*/name'), 'org.webpc.agent.0 org.webpc.agent.0');
   assert.equal(await run(page, 'systemctl is-active webpc-agent'), 'active');
   const pid = await run(page, 'systemctl show -p MainPID --value webpc-agent');
@@ -139,13 +151,16 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
     await page.waitForTimeout(1000);
   }
 
-  // PAUSE: the agent drops TYPE (sent as a raw frame: the link itself refuses to type while paused) until RESUME.
-  await link(page, (l) => l.pause());
+  // PAUSE from the toolbar's switch: the agent drops TYPE (sent as a raw frame: the link itself refuses to type while
+  // paused) until RESUME.
+  await share(page, false);
+  await buttonIs(page, 'paused');
   assert.equal(await link(page, (l) => l.type('refused\n')), false, 'the link refuses while paused');
   assert.equal(await page.evaluate((k) => (window as unknown as { __agent: Link }).__agent.send(k, new TextEncoder().encode('paused\n')), TYPE), true);
   await page.waitForTimeout(3000);
   assert.deepEqual(await typed(page), [sha(wantLong), String(Buffer.byteLength(wantLong))], 'nothing typed while paused');
-  await link(page, (l) => l.resume());
+  await share(page, true);
+  await buttonIs(page, 'sharing');
   assert.equal(await link(page, (l) => l.type('resumed\n')), true);
   const wantResumed = wantLong + 'resumed\n';
   for (let i = 0; ; i++) {
@@ -158,6 +173,7 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
   // The agent stopped: the page hears the port close, the link refuses, the machine runs on.
   await run(page, 'systemctl stop webpc-agent; echo stopped');
   await isOpen(page, false);
+  await buttonIs(page, 'waiting');
   assert.equal(await link(page, (l) => l.type('nobody\n')), false);
   assert.equal(await link(page, (l) => l.agent), undefined);
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'running');
@@ -174,7 +190,7 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
     const done = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`${got.length} of ${sent.length} frames back after 120 s (broken: ${link.broken}, backlog ${link.backlog})`)), 120_000);
       link.onFrame = (f) => {
-        if (f.type === 1) return; // the link's own HELLO at the opening, echoed (whether before this or after)
+        if (f.type === 1 || f.type === 7) return; // the link's own HELLO and RESUME at the opening, echoed (whether before this or after)
         got.push([f.type, f.payload.length, sum(f.payload)]);
         if (got.length === sent.length) { clearTimeout(timer); resolve(); }
       };
