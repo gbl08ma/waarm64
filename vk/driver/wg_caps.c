@@ -133,10 +133,11 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .GOOGLE_hlsl_functionality1 = true,
       .GOOGLE_user_type = true,
       .KHR_shader_relaxed_extended_instruction = true,
-      /* 16-bit floats with WebGPU's shader-f16 (no 8-bit integers); 16-bit storage everywhere (halves of words, its
-       * conversions integer code: wgsl_nir.c `lower_16bit`). */
-      .KHR_shader_float16_int8 = HAS(F16),
+      /* 16-bit floats with WebGPU's shader-f16; 8-bit integers everywhere, and 16- and 8-bit storage (halves and bytes
+       * of words, the arithmetic at 32 bits, conversions to halves integer code: wgsl_nir.c `lower_16bit`; VK4 T29). */
+      .KHR_shader_float16_int8 = true,
       .KHR_16bit_storage = true,
+      .KHR_8bit_storage = true,
       /* YCbCr conversions and the multi-planar formats (VK3 L7.2; on by default since L7.3, `?gpu=vkycbcr=off`). */
       .KHR_sampler_ycbcr_conversion = HAS(YCBCR),
       .EXT_ycbcr_image_arrays = HAS(YCBCR),
@@ -164,7 +165,7 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       /* A uniform buffer of the set's, written as the guest updates the blocks (wg_descriptor.c). */
       .EXT_inline_uniform_block = true,
       .KHR_buffer_device_address = true,
-      /* Not translated: 16-bit integers, texel buffers (EXT_texel_buffer_alignment). */
+      /* Not translated: texel buffers' alignment (EXT_texel_buffer_alignment). */
    };
 }
 
@@ -202,6 +203,12 @@ wg_caps_features(struct vk_features *f)
       .shaderStorageImageReadWithoutFormat = true,
       .shaderStorageImageWriteWithoutFormat = true,
       .shaderClipDistance = HAS(CLIP_DISTANCES),
+      /* A gather whose offset isn't a constant from fetches, ConstOffsets as four gathers (VK4 T24, T29). */
+      .shaderImageGatherExtended = true,
+      /* 16- and 8-bit integers at 32 bits in a word's low bits, 64-bit ones as pairs of words (wgsl_nir.c
+       * `split_64bit_access`, nir_lower_int64; VK4 T29). No 64-bit floats, no 64-bit atomics. */
+      .shaderInt16 = true,
+      .shaderInt64 = true,
       /* A tree of ifs over the elements (wgsl_nir.c; buffers and storage images since VK3 L7.1: Dawn's Vulkan
        * backend requires all four). */
       .shaderUniformBufferArrayDynamicIndexing = true,
@@ -216,9 +223,15 @@ wg_caps_features(struct vk_features *f)
       .scalarBlockLayout = true,
       .shaderSubgroupExtendedTypes = true,
       .shaderFloat16 = HAS(F16),
+      .shaderInt8 = true,
       .storageBuffer16BitAccess = true,
       .uniformAndStorageBuffer16BitAccess = true,
       .storagePushConstant16 = true,
+      /* Inputs and outputs widened to 32 bits where they're loaded and stored (wgsl_nir.c `widen_io16`; VK4 T29). */
+      .storageInputOutput16 = true,
+      .storageBuffer8BitAccess = true,
+      .uniformAndStorageBuffer8BitAccess = true,
+      .storagePushConstant8 = true,
       .separateDepthStencilLayouts = true,
       .hostQueryReset = true,
       .timelineSemaphore = true,

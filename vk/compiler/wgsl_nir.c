@@ -38,8 +38,10 @@ static const nir_shader_compiler_options options = {
    .lower_isign = true,
    .lower_fsign = false,
    .lower_fquantize2f16 = true,
-   .lower_pack_64_2x32_split = true,
-   .lower_unpack_64_2x32_split = true,
+   /* 64-bit integers are pairs of words (split_64bit_access): their packs stay whole for the algebraic rules to take
+    * apart, never 64-bit shifts. */
+   .lower_pack_64_2x32_split = false,
+   .lower_unpack_64_2x32_split = false,
    .lower_pack_64_2x32 = true,
    .lower_pack_64_4x16 = true,
    .lower_pack_split = true,
@@ -120,6 +122,126 @@ lower_global(nir_builder *b, nir_intrinsic_instr *intr, void *data)
    }
    default:
       return false;
+   }
+}
+
+/* 64-bit integers (shaderInt64, VK4 T29) as pairs of words, WGSL having no 64-bit type: a 64-bit load or store of
+ * memory is one of two words per component, each value packed from its two (pack_64_2x32_split), so that only ALU
+ * values are 64-bit; nir_lower_int64 lowers their arithmetic to 32 bits and nir_lower_64bit_phis their phis, and the
+ * algebraic rules and constant folding take the packs apart again. A 64-bit atomic stays, and the printer refuses it. */
+static bool
+split_64bit_access(nir_builder *b, nir_intrinsic_instr *intr, void *data)
+{
+   bool store;
+   switch (intr->intrinsic) {
+   case nir_intrinsic_load_ssbo:
+   case nir_intrinsic_load_ubo:
+   case nir_intrinsic_load_push_constant:
+   case nir_intrinsic_load_shared:
+   case nir_intrinsic_load_scratch:
+      if (intr->def.bit_size != 64)
+         return false;
+      store = false;
+      break;
+   case nir_intrinsic_store_ssbo:
+   case nir_intrinsic_store_shared:
+   case nir_intrinsic_store_scratch:
+      if (intr->src[0].ssa->bit_size != 64)
+         return false;
+      store = true;
+      break;
+   default:
+      return false;
+   }
+   b->cursor = nir_before_instr(&intr->instr);
+   nir_def *offset = nir_get_io_offset_src(intr)->ssa;
+   const bool aligned = nir_intrinsic_has_align_mul(intr);
+   const unsigned n = store ? intr->src[0].ssa->num_components : intr->def.num_components;
+   const unsigned mask = store ? nir_intrinsic_write_mask(intr) : (1u << n) - 1;
+   nir_def *parts[NIR_MAX_VEC_COMPONENTS];
+   for (unsigned i = 0; i < n; i++) {
+      if (!(mask & (1u << i)))
+         continue;
+      nir_intrinsic_instr *c = nir_instr_as_intrinsic(nir_instr_clone(b->shader, &intr->instr));
+      c->num_components = 2;
+      if (store) {
+         nir_def *v = nir_channel(b, intr->src[0].ssa, i);
+         c->src[0] = nir_src_for_ssa(nir_vec2(b, nir_unpack_64_2x32_split_x(b, v), nir_unpack_64_2x32_split_y(b, v)));
+         nir_intrinsic_set_write_mask(c, 0x3);
+      } else {
+         c->def.num_components = 2;
+         c->def.bit_size = 32;
+      }
+      *nir_get_io_offset_src(c) = nir_src_for_ssa(nir_iadd_imm(b, offset, 8 * i));
+      if (aligned)
+         nir_intrinsic_set_align(c, nir_intrinsic_align_mul(intr),
+                                 (nir_intrinsic_align_offset(intr) + 8 * i) % nir_intrinsic_align_mul(intr));
+      nir_builder_instr_insert(b, &c->instr);
+      if (!store)
+         parts[i] = nir_pack_64_2x32_split(b, nir_channel(b, &c->def, 0), nir_channel(b, &c->def, 1));
+   }
+   if (store)
+      nir_instr_remove(&intr->instr);
+   else
+      nir_def_replace(&intr->def, nir_vec(b, parts, n));
+   return true;
+}
+
+/* 16-bit inputs and outputs (storageInputOutput16, VK4 T29) as 32-bit ones: WGSL's inter-stage variables, vertex
+ * attributes and fragment outputs have no 16-bit types, and a 16-bit value in a 32-bit varying's bits would be
+ * interpolated as nonsense. Each is converted where it is loaded or stored (a 16-bit float exactly, an integer
+ * extended by its sign or truncated). */
+static bool
+widen_io16(nir_builder *b, nir_intrinsic_instr *intr, void *data)
+{
+   switch (intr->intrinsic) {
+   case nir_intrinsic_load_input:
+   case nir_intrinsic_load_interpolated_input:
+   case nir_intrinsic_load_per_vertex_input: {
+      if (intr->def.bit_size != 16)
+         return false;
+      const nir_alu_type t = nir_intrinsic_dest_type(intr);
+      const nir_alu_type wide = nir_alu_type_get_base_type(t) | 32;
+      intr->def.bit_size = 32;
+      nir_intrinsic_set_dest_type(intr, wide);
+      b->cursor = nir_after_instr(&intr->instr);
+      nir_def *v = nir_type_convert(b, &intr->def, wide, t, nir_rounding_mode_undef);
+      nir_def_rewrite_uses_after(&intr->def, v);
+      return true;
+   }
+   case nir_intrinsic_store_output:
+   case nir_intrinsic_store_per_vertex_output: {
+      nir_def *v = intr->src[0].ssa;
+      if (v->bit_size != 16)
+         return false;
+      const nir_alu_type t = nir_intrinsic_src_type(intr);
+      const nir_alu_type wide = nir_alu_type_get_base_type(t) | 32;
+      b->cursor = nir_before_instr(&intr->instr);
+      nir_src_rewrite(&intr->src[0], nir_type_convert(b, v, t, wide, nir_rounding_mode_undef));
+      nir_intrinsic_set_src_type(intr, wide);
+      return true;
+   }
+   default:
+      return false;
+   }
+}
+
+/* What is left of 64-bit values after the memory's split: their arithmetic and phis lowered to 32 bits, again until
+ * nothing is (the lowerings make what the next round lowers). */
+static void
+lower_64bit(nir_shader *nir)
+{
+   for (unsigned i = 0; i < 4; i++) {
+      bool progress = false;
+      NIR_PASS(progress, nir, nir_lower_int64);
+      NIR_PASS(progress, nir, nir_lower_64bit_phis);
+      NIR_PASS(progress, nir, nir_lower_alu);
+      NIR_PASS(progress, nir, nir_opt_algebraic);
+      NIR_PASS(progress, nir, nir_opt_constant_folding);
+      NIR_PASS(progress, nir, nir_opt_copy_prop);
+      NIR_PASS(progress, nir, nir_opt_dce);
+      if (!progress)
+         break;
    }
 }
 
@@ -660,6 +782,10 @@ static bool
 lower_subgroups_filter(const nir_intrinsic_instr *intr, const void *data)
 {
    const unsigned size = *(const unsigned *)data;
+   /* WGSL's reductions and scans take no 64-bit values: shuffles of words and the ALU's lowerings instead (VK4 T29). */
+   if ((intr->intrinsic == nir_intrinsic_reduce || intr->intrinsic == nir_intrinsic_inclusive_scan ||
+        intr->intrinsic == nir_intrinsic_exclusive_scan) && intr->def.bit_size == 64)
+      return true;
    switch (intr->intrinsic) {
    case nir_intrinsic_reduce: {
       const unsigned cluster = nir_intrinsic_cluster_size(intr);
@@ -703,6 +829,7 @@ lower_subgroups(nir_shader *nir, unsigned size)
       .lower_rotate_to_shuffle = true,
       .lower_inverse_ballot = true,
       .lower_reduce = true,
+      .lower_shuffle_to_32bit = true,
       .lower_read_first_invocation = size == 1,
    };
    /* What a lowering makes (masks, ballot queries, shuffles of vectors) is lowered by the next round. */
@@ -869,6 +996,7 @@ wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, unsigned subgroup_
    NIR_PASS(_, nir, nir_lower_vars_to_explicit_types, nir_var_function_temp, glsl_get_natural_size_align_bytes);
    NIR_PASS(_, nir, nir_lower_io, nir_var_shader_in | nir_var_shader_out, type_size_vec4,
             nir_lower_io_lower_64bit_to_32 | nir_lower_io_use_interpolated_input_intrinsics);
+   NIR_PASS(_, nir, nir_shader_intrinsics_pass, widen_io16, nir_metadata_control_flow, NULL);
    /* Transform feedback's outputs (the runtime gathered nir->xfb_info from the variables): on the stores, which keeps
     * them through linking (nir_opt_varyings) and tells the printer what each captures (VK3 L7.4). */
    if (nir->xfb_info && nir->info.stage == MESA_SHADER_VERTEX) {
@@ -888,7 +1016,8 @@ wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, unsigned subgroup_
    const nir_lower_compute_system_values_options csv2 = { 0 };
    NIR_PASS(_, nir, nir_lower_compute_system_values, &csv2);
    NIR_PASS(_, nir, nir_lower_global_vars_to_local);
-   NIR_PASS(_, nir, nir_lower_int64);
+   NIR_PASS(_, nir, nir_shader_intrinsics_pass, split_64bit_access, nir_metadata_control_flow, NULL);
+   lower_64bit(nir);
    lower_subgroups(nir, subgroup_size);
    optimize(nir);
 
@@ -920,8 +1049,9 @@ void
 wgsl_finish(nir_shader *nir)
 {
    optimize(nir);
-   /* The optimizations may fold 16-bit integer operations back. */
+   /* The optimizations may fold 16-bit integer operations back, and 64-bit ones. */
    lower_16bit(nir);
+   lower_64bit(nir);
    NIR_PASS(_, nir, nir_opt_shrink_stores, false);
    NIR_PASS(_, nir, nir_lower_load_const_to_scalar);
    NIR_PASS(_, nir, nir_convert_from_ssa, true, false);

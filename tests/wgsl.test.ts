@@ -621,6 +621,197 @@ test('16-bit storage on every adapter, 16-bit floats with shader-f16, and scratc
   }
 });
 
+test('8-bit storage and 8- and 16-bit integer arithmetic at 32 bits, bytes of words (VK4 T29)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/t29/int8.comp');
+    assert.equal(r.rc, 0, r.text);
+    // Byte stores to a buffer whose words other invocations share: atomics on the word.
+    assert.match(r.text, /var<storage, read_write> r0_4: array<atomic<u32>>;/);
+    // In { uint8_t u[64]; int8_t s[64]; i8vec4 v[64]; }, U { uint8_t k; int8_t ks; } (std140),
+    // Out { uint8_t u[64]; int8_t s[64]; int w[64]; uint x[64]; int16_t h[64]; float f[64]; }.
+    const input = new DataView(new ArrayBuffer(384));
+    for (let n = 0; n < 64; n++) {
+      input.setUint8(n, (n * 37 + 11) & 255);
+      input.setInt8(64 + n, ((n * 53) & 255) - 128);
+      for (let k = 0; k < 4; k++) input.setInt8(128 + 4 * n + k, ((n * 29 + k * 71) & 255) - 128);
+    }
+    const ubo = new Uint8Array(16);
+    ubo[0] = 200;
+    ubo[1] = 0x85; // -123
+    const res = await runCompute(r.text, [{ binding: 0, init: new Uint8Array(input.buffer) }, { binding: 2, init: ubo }, { binding: 4, size: 1024 }]);
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    const out = new DataView(res.out[2].buffer);
+    const bad: string[] = [];
+    for (let n = 0; n < 64; n++) {
+      const a = input.getUint8(n), b = (n * 7) & 255, c = input.getInt8(64 + n);
+      const v = [0, 1, 2, 3].map((k) => input.getInt8(128 + 4 * n + k));
+      const h = ((c * 300 + a) << 16) >> 16;
+      const want: [string, number, number][] = [
+        ['u', out.getUint8(n), (a * b + 200) & 255],
+        ['s', out.getInt8(64 + n), ((Math.trunc(c / 3) - (c >> 1) - 123) << 24) >> 24],
+        ['w', out.getInt32(128 + 4 * n, true), v[0] + v[1] * 2 + v[2] * 4 + v[3] * 8],
+        ['x', out.getUint32(384 + 4 * n, true), Math.max(a, b) | (c & 255) << 8],
+        ['h', out.getInt16(640 + 2 * n, true), ((Math.trunc(h / 7) + (h & 0xffff) % 5) << 16) >> 16],
+        ['f', out.getFloat32(768 + 4 * n, true), c + a * 0.5]];
+      for (const [k, got, w] of want) if (got !== w) bad.push(`${k}[${n}]: ${got}, not ${w}`);
+    }
+    assert.deepEqual(bad.slice(0, 8), [], `of ${bad.length}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('64-bit subgroup reductions and scans are shuffles of words, WGSL\'s built-ins taking none (VK4 T29)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const run = async (size: number) => {
+      const r = glslStage(translate, tmp, 'tests/venus/t29/subgroup64.comp', { features: WGSL.SUBGROUPS, subgroupSize: size });
+      assert.equal(r.rc, 0, r.text);
+      return runCompute(r.text, [{ binding: 0, size: 64 * 32 }], ['subgroups']);
+    };
+    let res = await run(4);
+    if (!res) return t.skip('SKIPPED: the adapter has no subgroups');
+    if (res.min !== res.max) return t.skip(`SKIPPED: the adapter's subgroups vary in size (${res.min}-${res.max})`);
+    if (res.min !== 4) res = (await run(res.min))!;
+    assert.deepEqual(res.errors, []);
+    // Subgroups as runs of local_invocation_index (as on SwiftShader and Metal: the subgroup test's).
+    const M = (1n << 64n) - 1n, size = res.min;
+    const value = (n: number) => (BigInt(Math.imul(n, 2654435761) >>> 0) << 32n) | BigInt(n ^ 0x5a);
+    const out = new DataView(res.out[0].buffer);
+    const bad: string[] = [];
+    for (let n = 0; n < 64; n++) {
+      const g = Array.from({ length: size }, (_, i) => (n - n % size) + i).map(value), mine = g.slice(0, n % size + 1);
+      const want = [g.reduce((a, b) => (a > b ? a : b)), g.reduce((a, b) => (a < b ? a : b)), g.reduce((a, b) => (a * (b | 1n)) & M, 1n), mine.reduce((a, b) => (a + b) & M, 0n)];
+      want.forEach((w, k) => { const got = out.getBigUint64(32 * n + 8 * k, true); if (got !== w) bad.push(`invocation ${n} result ${k}: ${got}, not ${w}`); });
+    }
+    assert.deepEqual(bad.slice(0, 8), [], `of ${bad.length}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('floats convert to 32-bit integers saturating exactly, a half\'s infinity too (VK4 T29)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/t29/fconvert.comp');
+    assert.equal(r.rc, 0, r.text);
+    // In { float f[16]; float16_t h[16]; }, Out { int fi[16]; uint fu[16]; int hi[16]; uint hu[16]; }: in range, at and
+    // past the bounds, infinities (negative values to uint are undefined in Vulkan: only 0 and up are checked there).
+    const fs = [0, 1.5, -1.5, 2147483520, 2147483648, 3.4e38, Infinity, -Infinity, -2147483648, -3e9, 4294967040, 4294967296, 1e20, 65504, 100.75, 7];
+    const hs = [0, 1.5, -1.5, 65504, -65504, Infinity, -Infinity, 1000, 2, 3, 4, 5, 6, 7, 8, 9];
+    const input = new DataView(new ArrayBuffer(96));
+    fs.forEach((f, n) => input.setFloat32(4 * n, f, true));
+    hs.forEach((h, n) => input.setUint16(64 + 2 * n, toHalf(h), true));
+    const res = await runCompute(r.text, [{ binding: 0, init: new Uint8Array(input.buffer) }, { binding: 2, size: 256 }]);
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    const out = new DataView(res.out[1].buffer);
+    const sat = (x: number, lo: number, hi: number) => Math.trunc(Math.min(hi, Math.max(lo, x)));
+    const bad: string[] = [];
+    for (let n = 0; n < 16; n++) {
+      const f = Math.fround(fs[n]), h = hs[n];
+      const want: [string, number, number | undefined][] = [
+        ['fi', out.getInt32(4 * n, true), sat(f, -2147483648, 2147483647)],
+        ['fu', out.getUint32(64 + 4 * n, true), f >= 0 ? sat(f, 0, 4294967295) : undefined],
+        ['hi', out.getInt32(128 + 4 * n, true), sat(h, -2147483648, 2147483647)],
+        ['hu', out.getUint32(192 + 4 * n, true), h >= 0 ? sat(h, 0, 4294967295) : undefined]];
+      for (const [k, got, w] of want) if (w !== undefined && got !== w) bad.push(`${k}[${n}] of ${k[0] === 'f' ? f : h}: ${got}, not ${w}`);
+    }
+    assert.deepEqual(bad, []);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+/** A 64-bit integer's nearest f32 (ties to even), as Vulkan's conversion rounds it. */
+function f32OfBig(x: bigint) {
+  const neg = x < 0n, m = neg ? -x : x;
+  const bits = m.toString(2).length;
+  if (bits <= 24) return Math.fround(Number(x));
+  const drop = BigInt(bits - 24), keep = m >> drop, rest = m & ((1n << drop) - 1n), half = 1n << (drop - 1n);
+  const r = rest > half || (rest === half && (keep & 1n) === 1n) ? keep + 1n : keep;
+  return (neg ? -1 : 1) * Number(r) * 2 ** Number(drop);
+}
+
+test('64-bit integers as pairs of words: arithmetic, comparisons, conversions, loads and stores (VK4 T29)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/t29/int64.comp');
+    assert.equal(r.rc, 0, r.text);
+    // In { uint64_t a[64]; int64_t b[64]; u64vec2 v[64]; },
+    // Out { uint64_t sum[64], mul[64]; int64_t div[64]; uint64_t shl[64], shr[64]; uint lt[64]; float f[64]; int64_t conv[64]; u64vec2 v[64]; }.
+    const M = (1n << 64n) - 1n;
+    let seed = 0x9e3779b97f4a7c15n;
+    const next = () => (seed = (seed * 6364136223846793005n + 1442695040888963407n) & M);
+    const input = new DataView(new ArrayBuffer(2048));
+    for (let n = 0; n < 64; n++) {
+      // Small, near a word's edge and anything, of either sign.
+      const a = n % 4 === 0 ? BigInt(n) : n % 4 === 1 ? 0xffffffffn + BigInt(n) : next();
+      const b = n % 3 === 0 ? -BigInt(n * 1000 + 1) : n % 3 === 1 ? BigInt.asIntN(64, next()) : BigInt(n) << 40n;
+      input.setBigUint64(8 * n, a, true);
+      input.setBigInt64(512 + 8 * n, b, true);
+      input.setBigUint64(1024 + 16 * n, next(), true);
+      input.setBigUint64(1024 + 16 * n + 8, next(), true);
+    }
+    const res = await runCompute(r.text, [{ binding: 0, init: new Uint8Array(input.buffer) }, { binding: 2, size: 4608 }]);
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    const out = new DataView(res.out[1].buffer);
+    const bad: string[] = [];
+    for (let n = 0; n < 64; n++) {
+      const a = input.getBigUint64(8 * n, true), b = input.getBigInt64(512 + 8 * n, true);
+      const v = [input.getBigUint64(1024 + 16 * n, true), input.getBigUint64(1024 + 16 * n + 8, true)];
+      const s = BigInt(n % 64);
+      const want: [string, bigint | number, bigint | number][] = [
+        ['sum', out.getBigUint64(8 * n, true), (a + BigInt.asUintN(64, b) - 1n) & M],
+        ['mul', out.getBigUint64(512 + 8 * n, true), (a * 0x100000001n + BigInt(n)) & M],
+        ['div', out.getBigInt64(1024 + 8 * n, true), BigInt.asIntN(64, b / BigInt(n + 1) + BigInt.asUintN(64, b) % 7n)],
+        ['shl', out.getBigUint64(1536 + 8 * n, true), (a << s) & M],
+        ['shr', out.getBigUint64(2048 + 8 * n, true), BigInt.asUintN(64, b >> s) ^ (a >> 3n)],
+        ['lt', out.getUint32(2560 + 4 * n, true), (a < BigInt.asUintN(64, b) ? 1 : 0) | (b < 0n ? 2 : 0) | (BigInt.asIntN(64, a) > b ? 4 : 0)],
+        ['f', out.getFloat32(2816 + 4 * n, true), f32OfBig(b)],
+        ['conv', out.getBigInt64(3072 + 8 * n, true), BigInt.asIntN(64, BigInt(n - 32) * (a & 0xffffffffn))],
+        ['v.x', out.getBigUint64(3584 + 16 * n, true), n % 2 === 0 ? v[1] : (v[0] + a) & M],
+        ['v.y', out.getBigUint64(3584 + 16 * n + 8, true), n % 2 === 0 ? v[0] : (v[1] + a) & M]];
+      for (const [k, got, w] of want) if (got !== w) bad.push(`${k}[${n}]: ${got}, not ${w}`);
+    }
+    assert.deepEqual(bad.slice(0, 8), [], `of ${bad.length}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('16-bit inputs and outputs are 32-bit ones, converted where loaded and stored (VK4 T29)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const vs = glslStage(translate, tmp, 'tests/venus/t29/io16.vert');
+    const fs = glslStage(translate, tmp, 'tests/venus/t29/io16.frag');
+    assert.equal(vs.rc, 0, vs.text);
+    assert.equal(fs.rc, 0, fs.text);
+    const compiled = await compile([vs.text, fs.text]);
+    if (!compiled) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(compiled, ['', ''], 'WGSL Chromium rejected');
+    // Run: the pixel centre's (u, v) through a 16-bit input and output, swapped and halved at 32 bits (a varying's
+    // bits taken as a half's, as before, read nonsense).
+    const run = glslStage(translate, tmp, 'tests/venus/t29/io16-run.frag');
+    assert.equal(run.rc, 0, run.text);
+    const res = await runFragment(run.text);
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    const want = Array.from({ length: 16 }, (_, i) => [Math.round(((i >> 2) + 0.5) / 8 * 255), Math.round(((i & 3) + 0.5) / 8 * 255), 0, 255]);
+    assert.deepEqual(res.pixels, want);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('shared memory of atomics filling the workgroup\'s storage, with a barrier under a uniform condition (VK3 L6c)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
   // The out-of-context review of L5-L6a's finding 6: maxComputeSharedMemorySize is WebGPU's whole, and this stage
   // failed to translate (the condition's word had nowhere to go). It borrows shared memory's first word through atomics.

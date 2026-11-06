@@ -274,30 +274,33 @@ to_storage(struct ctx *c, const char *e, unsigned base, unsigned n)
    return fmt(c, "bitcast<%s>(%s)", vec_of(c, "u32", n), e);
 }
 
-/* A 16-bit value is kept in a u32's low half (the high half zero). Its view as `base`: the half as an f16 (shader-f16's
- * arithmetic), or as a 32-bit integer, zero- or sign-extended. */
+/* A 16-bit value is kept in a u32's low half (the high half zero), an 8-bit one in its low byte (VK4 T29). Its view as
+ * `base`: the half as an f16 (shader-f16's arithmetic), or as a 32-bit integer, zero- or sign-extended. */
 static const char *
-view16(struct ctx *c, const char *raw, unsigned base)
+view_narrow(struct ctx *c, const char *raw, unsigned base, unsigned bits)
 {
    if (base == WGSL_F32) {
-      if (!c->f16)
+      if (bits != 16)
+         failf(c, "8-bit floats");
+      else if (!c->f16)
          failf(c, "16-bit float arithmetic without the device's shader-f16");
       return fmt(c, "bitcast<vec2<f16>>(%s).x", raw);
    }
    if (base == WGSL_I32)
-      return fmt(c, "(bitcast<i32>(%s << 16u) >> 16u)", raw);
+      return fmt(c, "(bitcast<i32>(%s << %uu) >> %uu)", raw, 32 - bits, 32 - bits);
    return raw;
 }
 
-/* And back: an expression of `base` (f16, or an integer whose low 16 bits are the value) to storage. */
+/* And back: an expression of `base` (f16, or an integer whose low bits are the value) to storage. */
 static const char *
-store16(struct ctx *c, const char *e, unsigned base)
+store_narrow(struct ctx *c, const char *e, unsigned base, unsigned bits)
 {
+   const char *mask = bits == 8 ? "0xffu" : "0xffffu";
    if (base == WGSL_F32)
       return fmt(c, "bitcast<u32>(vec2<f16>(%s, 0.0h))", e);
    if (base == WGSL_I32)
-      return fmt(c, "(bitcast<u32>(%s) & 0xffffu)", e);
-   return fmt(c, "(%s & 0xffffu)", e);
+      return fmt(c, "(bitcast<u32>(%s) & %s)", e, mask);
+   return fmt(c, "(%s & %s)", e, mask);
 }
 
 static const char *
@@ -647,8 +650,8 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
        * a vertex stage can't bind it read-write, and WebGPU wants each module's access to be the entry's). */
       if (writes)
          r->r.kind = WGSL_STORAGE, r->r.written = true;
-      /* A 16-bit store is two atomics on its word (emit_half_access). */
-      if (intr->intrinsic == nir_intrinsic_store_ssbo && intr->src[0].ssa->bit_size == 16)
+      /* A 16- or 8-bit store is two atomics on its word (emit_narrow_access). */
+      if (intr->intrinsic == nir_intrinsic_store_ssbo && intr->src[0].ssa->bit_size < 32)
          r->r.atomic = true;
       if (intr->intrinsic == nir_intrinsic_ssbo_atomic || intr->intrinsic == nir_intrinsic_ssbo_atomic_swap) {
          r->r.atomic = true;
@@ -662,7 +665,7 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       atomic_sign(c, nir_intrinsic_atomic_op(intr), &c->shm_signed, &c->shm_unsigned);
       break;
    case nir_intrinsic_store_shared:
-      if (intr->src[0].ssa->bit_size == 16)
+      if (intr->src[0].ssa->bit_size < 32)
          c->shm_atomic = true;
       break;
    case nir_intrinsic_image_load:
@@ -1044,7 +1047,7 @@ gather(struct ctx *c, nir_function_impl *impl)
             gather_tex(c, nir_instr_as_tex(instr));
          else if (instr->type == nir_instr_type_alu) {
             nir_alu_instr *alu = nir_instr_as_alu(instr);
-            if (alu->def.bit_size != 1 && alu->def.bit_size != 16 && alu->def.bit_size != 32)
+            if (alu->def.bit_size != 1 && alu->def.bit_size != 8 && alu->def.bit_size != 16 && alu->def.bit_size != 32)
                failf(c, "%u-bit values (%s)", alu->def.bit_size, nir_op_infos[alu->op].name);
          }
       }
@@ -1518,6 +1521,8 @@ literal(struct ctx *c, nir_load_const_instr *lc, unsigned comp)
       return lc->value[comp].b ? "true" : "false";
    if (lc->def.bit_size == 16)
       return fmt(c, "0x%xu", lc->value[comp].u16);
+   if (lc->def.bit_size == 8)
+      return fmt(c, "0x%xu", lc->value[comp].u8);
    return fmt(c, "0x%xu", lc->value[comp].u32);
 }
 
@@ -1781,7 +1786,7 @@ place_values(struct ctx *c, nir_function_impl *impl)
          if (!reg && (!def_needs_var(instr) || c->alias[def->index] >= 0))
             continue;
          const unsigned bits = reg ? nir_intrinsic_bit_size(nir_instr_as_intrinsic(instr)) : def->bit_size;
-         if (bits != 1 && bits != 16 && bits != 32) {
+         if (bits != 1 && bits != 8 && bits != 16 && bits != 32) {
             failf(c, "%u-bit values", bits);
             continue;
          }
@@ -1836,8 +1841,8 @@ alu_in(struct ctx *c, nir_alu_instr *alu, unsigned i, unsigned comp)
    const char *raw = src_comp(c, (nir_src *)&s->src, s->swizzle[comp]);
    if (s->src.ssa->bit_size == 1)
       return raw;
-   if (s->src.ssa->bit_size == 16)
-      return view16(c, raw, base_of(nir_op_infos[alu->op].input_types[i]));
+   if (s->src.ssa->bit_size < 32)
+      return view_narrow(c, raw, base_of(nir_op_infos[alu->op].input_types[i]), s->src.ssa->bit_size);
    const unsigned base = alu_sign_free(alu) ? WGSL_U32 : base_of(nir_op_infos[alu->op].input_types[i]);
    if (c->fdef && BITSET_TEST(c->fdef, s->src.ssa->index))
       return base == WGSL_F32 ? raw : fmt(c, "bitcast<%s>(%s)", base_name(base), raw);
@@ -1959,6 +1964,16 @@ alias_loads(struct ctx *c, nir_function_impl *impl)
    }
 }
 
+/* A float to a 32-bit integer, saturating exactly (VK4 T29: dEQP's precision_fconvert): WGSL's conversion clamps to
+ * the largest float under the bound (2147483520 for an i32), and a backend may take halves as finite (Metal gave an
+ * f16 infinity as 65504), so the bound is compared in f32. The lower bounds are floats WGSL's clamp reaches. */
+static const char *
+float_to_int(struct ctx *c, const char *f32, bool is_signed)
+{
+   return is_signed ? fmt(c, "select(i32(%s), 2147483647i, %s >= 2147483648.0f)", f32, f32)
+                    : fmt(c, "select(u32(%s), 4294967295u, %s >= 4294967296.0f)", f32, f32);
+}
+
 static const char *
 alu_comp(struct ctx *c, nir_alu_instr *alu, unsigned comp)
 {
@@ -1969,6 +1984,9 @@ alu_comp(struct ctx *c, nir_alu_instr *alu, unsigned comp)
       const char *raw = src_comp(c, &alu->src[0].src, alu->src[0].swizzle[comp]);
       switch (op) {
       case nir_op_f2f32: return fmt(c, "bitcast<u32>(unpack2x16float(%s).x)", raw);
+      case nir_op_f2i32:
+         return fmt(c, "bitcast<u32>(%s)", float_to_int(c, fmt(c, "unpack2x16float(%s).x", raw), true));
+      case nir_op_f2u32: return float_to_int(c, fmt(c, "unpack2x16float(%s).x", raw), false);
       case nir_op_fisfinite: return fmt(c, "((%s & 0x7c00u) != 0x7c00u)", raw);
       case nir_op_pack_32_2x16_split:
          return fmt(c, "(%s | (%s << 16u))", raw, src_comp(c, &alu->src[1].src, alu->src[1].swizzle[comp]));
@@ -2040,17 +2058,21 @@ alu_comp(struct ctx *c, nir_alu_instr *alu, unsigned comp)
    case nir_op_fisfinite:
       e = fmt(c, "((bitcast<u32>(%s) & 0x7f800000u) != 0x7f800000u)", a);
       break;
-   case nir_op_f2i32: case nir_op_f2i16: e = fmt(c, "i32(%s)", a); break;
-   case nir_op_f2u32: case nir_op_f2u16: e = fmt(c, "u32(%s)", a); break;
+   case nir_op_f2i32: e = float_to_int(c, a, true); break;
+   case nir_op_f2u32: e = float_to_int(c, a, false); break;
+   case nir_op_f2i16: case nir_op_f2i8: e = fmt(c, "i32(%s)", a); break;
+   case nir_op_f2u16: case nir_op_f2u8: e = fmt(c, "u32(%s)", a); break;
    case nir_op_i2f32: case nir_op_u2f32: e = fmt(c, "f32(%s)", a); break;
    case nir_op_i2f16: case nir_op_u2f16: e = fmt(c, "f16(%s)", a); break;
    case nir_op_f2f16: case nir_op_f2f16_rtne: e = fmt(c, "f16(%s)", a); break;
    case nir_op_f2f32: return a;
-   /* 16 bits to 32 (the view extends them) and back (store16 keeps the low half). */
-   case nir_op_i2i32: case nir_op_u2u32: case nir_op_i2i16: case nir_op_u2u16: e = a; break;
+   /* 8 and 16 bits to 32 (the view extends them) and back (store_narrow keeps the low bits). */
+   case nir_op_i2i32: case nir_op_u2u32: case nir_op_i2i16: case nir_op_u2u16: case nir_op_i2i8: case nir_op_u2u8:
+      e = a;
+      break;
    case nir_op_b2f32: return fmt(c, "select(0u, 0x3f800000u, %s)", a);
    case nir_op_b2f16: return fmt(c, "select(0u, 0x3c00u, %s)", a);
-   case nir_op_b2i32: case nir_op_b2i16: return fmt(c, "select(0u, 1u, %s)", a);
+   case nir_op_b2i32: case nir_op_b2i16: case nir_op_b2i8: return fmt(c, "select(0u, 1u, %s)", a);
    case nir_op_b2b32: return fmt(c, "select(0u, 0xffffffffu, %s)", a);
    case nir_op_b2b1:
       return alu->src[0].src.ssa->bit_size == 1 ? a : fmt(c, "(%s != 0u)", a);
@@ -2111,8 +2133,8 @@ alu_comp(struct ctx *c, nir_alu_instr *alu, unsigned comp)
    /* Comparisons give bools; the rest their output type, stored as u32 (a bitcast of a u32 to u32 is allowed). */
    if (boolean)
       return e;
-   if (alu->def.bit_size == 16)
-      return store16(c, e, out);
+   if (alu->def.bit_size < 32)
+      return store_narrow(c, e, out, alu->def.bit_size);
    if (c->fdef && BITSET_TEST(c->fdef, alu->def.index))
       return e;
    return to_storage(c, e, out, 1);
@@ -2185,13 +2207,15 @@ atomic_fn(struct ctx *c, nir_atomic_op op)
    }
 }
 
-/* 16-bit loads and stores (16-bit storage) on an array of words, at byte offset `byte`: a half of a word each. A store
- * to memory other invocations see is an atomicAnd of its half and an atomicOr (the gather made the array atomic), so
- * that a store to the word's other half by another invocation isn't lost. */
+/* 16- and 8-bit loads and stores (16- and 8-bit storage) on an array of words, at byte offset `byte`: a half or a byte
+ * of a word each. A store to memory other invocations see is an atomicAnd of its part and an atomicOr (the gather made
+ * the array atomic), so that a store to the word's other parts by another invocation isn't lost. */
 static void
-emit_half_access(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, bool atomic, bool signed_atomic,
-                 const char *byte)
+emit_narrow_access(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, bool atomic, bool signed_atomic,
+                   const char *byte, unsigned bits)
 {
+   const char *mask = bits == 8 ? "0xffu" : "0xffffu";
+   const unsigned step = bits / 8;
    const char *conv_in = signed_atomic ? "bitcast<i32>" : "";
    const char *conv_out = signed_atomic ? "bitcast<u32>" : "";
    const bool load = intr->intrinsic == nir_intrinsic_load_ssbo || intr->intrinsic == nir_intrinsic_load_shared ||
@@ -2199,31 +2223,31 @@ emit_half_access(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, bool
    if (load) {
       const char *words[4];
       for (unsigned i = 0; i < intr->def.num_components; i++) {
-         const char *b = fmt(c, "(%s + %uu)", byte, 2 * i);
+         const char *b = fmt(c, "(%s + %uu)", byte, step * i);
          const char *w = fmt(c, "%s[%s >> 2u]", arr, b);
          if (atomic)
             w = fmt(c, "%s(atomicLoad(&%s))", conv_out, w);
-         words[i] = fmt(c, "((%s >> ((%s & 2u) * 8u)) & 0xffffu)", w, b);
+         words[i] = fmt(c, "((%s >> ((%s & 3u) * 8u)) & %s)", w, b, mask);
       }
       assign_words(c, &intr->def, words);
       return;
    }
    if (intr->intrinsic != nir_intrinsic_store_ssbo && intr->intrinsic != nir_intrinsic_store_shared &&
        intr->intrinsic != nir_intrinsic_store_scratch) {
-      failf(c, "16-bit atomics");
+      failf(c, "%u-bit atomics", bits);
       return;
    }
    nir_src *value = &intr->src[0];
    u_foreach_bit(i, nir_intrinsic_write_mask(intr)) {
-      const char *b = fmt(c, "(%s + %uu)", byte, 2 * i);
+      const char *b = fmt(c, "(%s + %uu)", byte, step * i);
       const char *w = fmt(c, "%s[%s >> 2u]", arr, b);
-      const char *sh = fmt(c, "((%s & 2u) * 8u)", b);
-      const char *v = fmt(c, "((%s & 0xffffu) << %s)", src_comp(c, value, i), sh);
+      const char *sh = fmt(c, "((%s & 3u) * 8u)", b);
+      const char *v = fmt(c, "((%s & %s) << %s)", src_comp(c, value, i), mask, sh);
       if (atomic) {
-         line(c, "atomicAnd(&%s, %s(~(0xffffu << %s)));", w, conv_in, sh);
+         line(c, "atomicAnd(&%s, %s(~(%s << %s)));", w, conv_in, mask, sh);
          line(c, "atomicOr(&%s, %s(%s));", w, conv_in, v);
       } else {
-         line(c, "%s = (%s & ~(0xffffu << %s)) | %s;", w, w, sh, v);
+         line(c, "%s = (%s & ~(%s << %s)) | %s;", w, w, mask, sh, v);
       }
    }
 }
@@ -2257,8 +2281,8 @@ emit_word_access(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, bool
                  const char *byte)
 {
    const unsigned bits = nir_intrinsic_infos[intr->intrinsic].has_dest ? intr->def.bit_size : intr->src[0].ssa->bit_size;
-   if (bits == 16) {
-      emit_half_access(c, intr, arr, atomic, signed_atomic, byte);
+   if (bits < 32) {
+      emit_narrow_access(c, intr, arr, atomic, signed_atomic, byte, bits);
       return;
    }
    const char *word = fmt(c, "(%s >> 2u)", byte);
@@ -2462,8 +2486,8 @@ subgroup_value(struct ctx *c, nir_src *src, unsigned base)
 {
    if (src->ssa->bit_size == 1)
       return fmt(c, "select(0u, 1u, %s)", src_comp(c, src, 0));
-   if (src->ssa->bit_size == 16)
-      return view16(c, src_comp(c, src, 0), base);
+   if (src->ssa->bit_size < 32)
+      return view_narrow(c, src_comp(c, src, 0), base, src->ssa->bit_size);
    return as_base(c, src_comp(c, src, 0), base, 1);
 }
 
@@ -2603,20 +2627,21 @@ emit_subgroup(struct ctx *c, nir_intrinsic_instr *intr)
       e = fmt(c, "%s(%s, %s)", fn, subgroup_value(c, &intr->src[0], base), src_comp(c, &intr->src[1], 0));
    if (def->num_components != 1)
       failf(c, "a subgroup operation on vectors");
-   line(c, "t%u = %s;", def->index, boolean ? fmt(c, "(%s != 0u)", e) : def->bit_size == 16 ? store16(c, e, base)
+   line(c, "t%u = %s;", def->index, boolean ? fmt(c, "(%s != 0u)", e) : def->bit_size < 32 ? store_narrow(c, e, base, def->bit_size)
                                                                                          : to_storage(c, e, base, 1));
 }
 
-/* A load from an array of vec4<u32> (a uniform buffer, the push constants) at byte offset `byte`: words, or halves of
- * them (16-bit storage). */
+/* A load from an array of vec4<u32> (a uniform buffer, the push constants) at byte offset `byte`: words, or halves or
+ * bytes of them (16- and 8-bit storage). */
 static void
 emit_vec4_load(struct ctx *c, nir_def *def, const char *arr, const char *byte)
 {
    const char *words[4];
    for (unsigned i = 0; i < def->num_components; i++) {
-      if (def->bit_size == 16) {
-         const char *b = fmt(c, "(%s + %uu)", byte, 2 * i);
-         words[i] = fmt(c, "((%s[%s >> 4u][(%s >> 2u) & 3u] >> ((%s & 2u) * 8u)) & 0xffffu)", arr, b, b, b);
+      if (def->bit_size < 32) {
+         const char *b = fmt(c, "(%s + %uu)", byte, def->bit_size / 8 * i);
+         words[i] = fmt(c, "((%s[%s >> 4u][(%s >> 2u) & 3u] >> ((%s & 3u) * 8u)) & %s)", arr, b, b, b,
+                        def->bit_size == 8 ? "0xffu" : "0xffffu");
       } else {
          const char *w = fmt(c, "(%s >> 2u)", byte);
          words[i] = fmt(c, "%s[(%s + %uu) >> 2u][(%s + %uu) & 3u]", arr, w, i, w, i);

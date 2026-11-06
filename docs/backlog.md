@@ -624,9 +624,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   are WGSL's only where the adapter's have one size (Intel's and AMD's vary: there, subgroups of one invocation; a
   size the shader could ask for would need WebGPU's `subgroup-size-control`, which Chromium has as experimental), in
   compute and fragment shaders only, `gl_SubgroupID` assumes subgroups are runs of `local_invocation_index` (true on
-  SwiftShader and Metal; unchecked on NVIDIA), and a subgroup-scoped barrier is dropped; 8- and 64-bit types,
-  16-bit integer arithmetic (`shaderInt16`: the lowering to 32 bits exists, the advertising and its dEQP-VK groups
-  don't) and 16-bit inputs and outputs (`storageInputOutput16`: varyings are vec4s of 32-bit types). **Subgroups on
+  SwiftShader and Metal; unchecked on NVIDIA), and a subgroup-scoped barrier is dropped. Since VK4 T29 8-, 16- and
+  64-bit integers and 16-bit inputs and outputs are advertised (bench/vulkan/REPORT.md "VK4 T29"); left of them: no
+  64-bit floats or atomics (`shaderFloat64`, `shaderBufferInt64Atomics`), no 8- or 16-bit atomics. Failing on SwiftShader only (the M4
+  passes them; out of the list, which takes what passes on both): a 16-bit NaN through a vertex input
+  (`16bit_storage.input_output_float_16_to_32.vector6_vert`, 69696 for NaN), 9 compute cube gathers
+  (`texture_gather.compute.basic.cube.*`; their graphics twins pass), 2 dynamic-offset gathers of a view with a base
+  level ("SwiftShader's fetch from a view with a base level"), and `ssbo.layout.random.8bit.all_per_block_buffers.5`,
+  which passes in 56 s there (1 s on the M4; past dEQP's 30 s watchdog): an 8-bit store is two atomics on its word, and
+  16-bit random layouts take SwiftShader up to 11 s alike; a word written whole where a stage's stores cover it
+  (`nir_opt_load_store_vectorize`) might bring it under. **Subgroups on
   the Mac are held** (VK3 L5, bench/vulkan/REPORT.md "VK3 L5"): Chromium 153's Metal path hoists a ballot that is an
   `if`'s only subgroup operation out of the `if` (repro: `web/venus-gpu.ts` `subgroupsRight`'s kernel, 0xffffffff for
   an odd invocation where 0xaaaaaaaa is right); with the check off, 89 of 503 sampled subgroup cases failed there
@@ -759,7 +766,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `viewportSubPixelBits`, `maxPerStageDescriptorUniformBuffers` (14 wanted, 13 here), dual-source blending (SwiftShader's
   adapter only), geometry and tessellation shaders, `multiDrawIndirect` (advertised since VK4 T26, with
   `drawIndirectCount`: unchecked with vkd3d since), `multiViewport`, `occlusionQueryPrecise`,
-  pipeline statistics queries, cull distances, `shaderImageGatherExtended` (`shaderStorageImageWriteWithoutFormat`, whose
+  pipeline statistics queries, cull distances, `shaderImageGatherExtended` (advertised since VK4 T29: unchecked with vkd3d since; `shaderStorageImageWriteWithoutFormat`, whose
   absence kept 10 of vkd3d's UAV-clear pipelines from translating, is offered since GD G5: unchecked with vkd3d since),
   vertex attribute divisors, sampler min/max reduction (advertised since VK4 T25; unchecked with vkd3d since). vkd3d's own tests (tests/d3d12, built by
   `target/vkd3d/build-tests.sh`: `TESTS=` in vkd3d.ts): test_draw_instanced, test_draw_indexed_instanced and

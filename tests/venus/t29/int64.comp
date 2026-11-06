@@ -1,0 +1,22 @@
+#version 450
+// VK4 T29: 64-bit integers (shaderInt64) as two words in WGSL: arithmetic, comparisons, conversions, loads and stores
+// (tests/wgsl.test.ts).
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) buffer In { uint64_t a[64]; int64_t b[64]; u64vec2 v[64]; } i;
+layout(std430, binding = 1) buffer Out { uint64_t sum[64]; uint64_t mul[64]; int64_t div[64]; uint64_t shl[64]; uint64_t shr[64]; uint lt[64]; float f[64]; int64_t conv[64]; u64vec2 v[64]; } o;
+void main() {
+  uint n = gl_LocalInvocationIndex;
+  uint64_t a = i.a[n];
+  int64_t b = i.b[n];
+  o.sum[n] = a + uint64_t(b) - 1ul;
+  o.mul[n] = a * 0x100000001ul + uint64_t(n);
+  o.div[n] = b / int64_t(n + 1u) + int64_t(uint64_t(b) % 7ul);
+  o.shl[n] = a << (n % 64u);
+  o.shr[n] = uint64_t(b >> int64_t(n % 64u)) ^ (a >> 3ul);
+  o.lt[n] = (a < uint64_t(b) ? 1u : 0u) | (b < 0l ? 2u : 0u) | (int64_t(a) > b ? 4u : 0u);
+  o.f[n] = float(b);
+  o.conv[n] = int64_t(int(n) - 32) * int64_t(uint(a));
+  u64vec2 v = i.v[n];
+  o.v[n] = n % 2u == 0u ? v.yx : v + u64vec2(a);
+}

@@ -1,0 +1,15 @@
+#version 450
+// VK4 T29: floats to 32-bit integers saturate exactly, an f16's infinity too (dEQP's precision_fconvert;
+// tests/wgsl.test.ts).
+#extension GL_EXT_shader_16bit_storage : require
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+layout(local_size_x = 16) in;
+layout(std430, binding = 0) buffer In { float f[16]; float16_t h[16]; } i;
+layout(std430, binding = 1) buffer Out { int fi[16]; uint fu[16]; int hi[16]; uint hu[16]; } o;
+void main() {
+  uint n = gl_LocalInvocationIndex;
+  o.fi[n] = int(i.f[n]);
+  o.fu[n] = uint(i.f[n]);
+  o.hi[n] = int(i.h[n]);
+  o.hu[n] = uint(i.h[n]);
+}

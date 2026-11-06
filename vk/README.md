@@ -114,7 +114,9 @@ whole, VK3 L5b); a vertex shader's outputs are typed and interpolated as its
 fragment shader reads them, its y is negated by the override `wg_flip_y` (-1, or 1 for a flipped viewport) and its z
 mirrored (`w - z`) by `wg_flip_z` for an inverted depth range (WebGPU wants `minDepth <= maxDepth`: the range is set the
 right way round);
-`packHalf2x16` and `unpackHalf2x16` stay whole for WGSL's own (NIR's lowerings of them go through 16-bit values), and a
+a float's conversion to a 32-bit integer saturates exactly (VK4 T29: WGSL's clamps to the largest float under the
+bound, and Metal takes an f16 infinity as 65504; the bound is compared in f32, a half's bits through
+`unpack2x16float`); `packHalf2x16` and `unpackHalf2x16` stay whole for WGSL's own (NIR's lowerings of them go through 16-bit values), and a
 compare-exchange is a loop over WGSL's weak one until it exchanges or sees another value (SPIR-V's is strong). Location
 0's second source (`index = 1`) is WGSL's `@blend_src(1)` (`enable dual_source_blending`, where the device has it); a
 storage buffer is `read_write` only where the stage writes it (or declares it of atomics), else `read` (a vertex stage
@@ -131,7 +133,8 @@ and a sampler array indexed apart get an `if` tree each (every texture with ever
 (`OpTerminateInvocation`) is `discard` and a return, a demote `discard` (WGSL's demotes) and a private `wg_helper` that
 `helperInvocationEXT()` and `gl_HelperInvocation` read, with an empty `sample_mask` (WGSL has no built-in: the
 rasterizer's helpers cover no sample); a texture offset is printed as literals, each channel found through the vec
-scalarizing left (WGSL wants a const-expression); one that isn't a constant (maintenance8's `Offset` operand, VK4 T24)
+scalarizing left (WGSL wants a const-expression); one that isn't a constant (maintenance8's `Offset` operand, VK4 T24;
+a gather's, `shaderImageGatherExtended`, T29, whose `ConstOffsets` are four gathers: `lower_tg4_offsets`)
 is a fetch's sum, and a sample with one comes from fetches ("Samplers in the shader"); `gl_ClipDistance` read by a fragment stage travels at free locations,
 a vec4 per slot, beside WGSL's `clip_distances` (`wgsl_varyings.clip`); a compute stage that reads workgroup or global
 ids adds `override wg_base_x/y/z`, a pipeline per `vkCmdDispatchBase` base (`wg_compute_based`); a cube or cube array storage image is its faces as a 2D array (the driver binds such views through a
@@ -211,11 +214,20 @@ adapter) loads and stores halves of words, a store to a buffer or shared memory 
 its word (the array declared atomic: another invocation may store the other half); conversions to 16-bit floats are
 NIR's integer code (`nir_lower_fp16_casts`: WGSL's own may round either way), from them `unpack2x16float`; 16-bit
 integer arithmetic is done at 32 bits (`nir_lower_bit_size`). 16-bit float arithmetic (`shaderFloat16`) needs
-`shader-f16`: each value is viewed as `bitcast<vec2<f16>>(t).x`. A function-scope array NIR moves to scratch is
+`shader-f16`: each value is viewed as `bitcast<vec2<f16>>(t).x`. **8-bit values** (VK4 T29: `shaderInt8`, 8-bit
+storage) are kept in a u32's low byte the same way: loads and stores of bytes of words (a store an `atomicAnd` and an
+`atomicOr`), the arithmetic at 32 bits, a view sign-extended where the operation is signed. **16-bit inputs and
+outputs** (`storageInputOutput16`) are 32-bit ones, converted where they're loaded and stored (`widen_io16`, after
+`nir_lower_io`: a half's bits in a 32-bit varying would be interpolated as nonsense; vertex attributes and fragment
+outputs likewise). **64-bit integers** (`shaderInt64`) are pairs of words: a 64-bit load or store of memory is one of
+two words a component, packed into the value (`split_64bit_access`), so only ALU values are 64-bit, and
+`nir_lower_int64`, `nir_lower_64bit_phis` and `nir_lower_alu` (its multiply's `umul_high`) lower those to 32 bits until
+none is left (`lower_64bit`, again after the last optimizations; the options keep `pack_64_2x32_split` whole, which
+the algebraic rules take apart, never as 64-bit shifts). No 64-bit floats and no 64-bit atomics. A function-scope array NIR moves to scratch is
 addressed by its whole offset (scratch has no base: before L5 the printer read the alignment there, and the last
 element's last word of an array past 32 bytes indexed dynamically went past the array). What
-WGSL can't express fails the stage with a reason: 16-bit float arithmetic without `shader-f16`, 8- and 64-bit values,
-16-bit inputs and outputs, descriptors reached through pointers (variable pointers' selects), atomics on images but R32's.
+WGSL can't express fails the stage with a reason: 16-bit float arithmetic without `shader-f16`, 8-bit floats, 64-bit
+values left (atomics, floats), 8- and 16-bit atomics, descriptors reached through pointers (variable pointers' selects), atomics on images but R32's.
 A pipeline whose vertex stage reads a storage image its fragment stage writes is refused (one layout entry can't match
 both modules' access, and WebGPU has no writable storage in vertex shaders), and so is one whose fragment stage writes a
 storage buffer its vertex stage reads. A pipeline whose stage fails is still made, of shaders that draw and dispatch nothing: Venus's guest driver binds a
@@ -698,8 +710,8 @@ stencil side's copy as a buffer copy's above (`colorDepthStencil`, VK4 T24). A c
   a shader writes through pointers is read back from every host-visible memory with an address. Usage scopes see that
   binding as the whole buffer: other reads of address memory go to shadows when the pointers write, and a writable
   descriptor of address memory goes to a shadow copied back at the scope's end, which WebGPU's aliasing rule asks for
-  (bytes reached both ways in one scope don't see each other). `shaderInt64` isn't offered, so `OpConvertUToPtr`'s
-  programs don't run, only `uvec2` conversions; no capture and replay.
+  (bytes reached both ways in one scope don't see each other). A pointer converted to and from a 64-bit integer
+  (`OpConvertUToPtr`, since `shaderInt64`: VK4 T29) is its two words packed; no capture and replay.
 - **Views in another format** (VK4 T4): WebGPU's views differ only in sRGB-ness, and Vulkan's mutable images take any
   format of their class. A view it refuses is of a texture of that format (`image_alias`, at the first such view, the
   image's size and levels; a plane's too; and a storage view of an sRGB image's linear twin, sRGB having no storage).

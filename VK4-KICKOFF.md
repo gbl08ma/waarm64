@@ -46,7 +46,7 @@ T2–T14; the rest of the order is judgement, said with each.
 
 ## The tasks
 
-### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T28 (2026-10-29 to 2026-11-06)
+### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T29 (2026-10-29 to 2026-11-06)
 
 Each row's outcome in full is its section of bench/vulkan/REPORT.md ("VK4 T<n>") and its commit; what each left is in
 docs/backlog.md "The Vulkan driver's gaps" (the entry named) and, where it is a defect or drops work, in the tasks
@@ -91,6 +91,7 @@ R1–R4 and then of R5–R7, had its findings fixed or moved to the backlog the 
 | T26. Multi-draw | `VK_EXT_multi_draw` (a draw per element, its draw index), `multiDrawIndirect` (the replay's draw per record, its push places reserved), `drawIndirectCount` (records gated by the count in a compute pass before the render pass); of 2,757 cases (the census's 203, every indirect-draw and draw-parameters case, every 20th multi-draw) 1,495 pass on SwiftShader, 0 fail; the M4 fails the 16 `draw_index` cases (every draw reads index 0), filed; 1,344 join the list (→ 33,651) | "Multi-draw's leftovers", "The M4's own failures" |
 | T27. Depth and stencil resolve modes | MIN, MAX and AVERAGE (depth) advertised with `independentResolve` and `independentResolveNone`, the worker's drawn resolves folding the samples by the mode; of the 3,823 samples_4 and misc `depth_stencil_resolve` cases 2,614 pass on SwiftShader, 0 fail (the rest D16S8, T30's, and geometry); the M4 fails its 40 `stencil_samplemask` whatever the mode; 2,503 join the list (→ 36,155) | "Rendering", "The M4's own failures" |
 | T28. Pipeline state as variants | `VK_EXT_vertex_input_dynamic_state`, `VK_EXT_depth_bias_control` (the format's representation), the third dynamic state's depth clamp and clip, sample mask, alpha to coverage, blend and provoking vertex (the draw's key had them), alpha to coverage at one sample in the fragment stage, `VK_EXT_non_seamless_cube_map` from the faces' fetches; of 7,956 cases 2,519 pass on SwiftShader, 59 fail that failed before or their seamless twins do; 2,262 join the list (→ 38,417). Not done: `primitive_restart_index` (the guest's Venus doesn't pass it on), `legacy_vertex_attributes` (82 of the census's 85 dynamic vertex input cases) | "Not advertised, by what dEQP-VK asks", "Samplers' leftovers", "Pulled vertices' leftovers", "Rendering" |
+| T29. Shader types | `shaderInt8`, `shaderInt16`, `shaderInt64`, 8-bit storage, `storageInputOutput16`, `shaderImageGatherExtended`: bytes of words as halves are, 16-bit inputs and outputs widened, 64-bit integers pairs of words (64-bit subgroup reductions as shuffles); of 5,095 cases 1,877 pass on SwiftShader and 2,019 on the M4, 1,750 join the list (→ 40,166); float-to-integer conversions saturate exactly (WGSL clamps under the bound, Metal takes halves as finite); the 13 left failing are SwiftShader's own | "What the device advertises, left for the translator" |
 
 ### Tier 3: performance on real workloads
 
@@ -112,11 +113,6 @@ memory, cooperative matrices, ray tracing, mesh shaders, tile images, fragment d
 the sample's on the M4 (×100 for the whole list, roughly); each starts by running its reason's cases (`deqp-run.ts`'s
 `CASES`, from `census.ts --reasons`' examples or the sample's JSON) to see what they meet once advertised.
 
-- **T29. Shader types** (M; 137 here, more in groups that skip silently): `storageInputOutput16` (89: varyings widened
-  to 32 bits), 8-bit storage and `shaderInt8` (17+: words as `lower_16bit` does halves), `shaderImageGatherExtended`
-  (31: offsets that aren't constants as fetches), `shaderInt16` (the lowering exists; the advertising and its groups
-  don't), `shaderInt64` (`buffer_device_address`'s 504 of the whole list). *Done:* each advertised that passes; the
-  translator's tests for each. *Start:* backlog "What the device advertises, left for the translator".
 - **T30. Depth16 with stencil and the packed formats left** (M; 353 + those of ~2,450 below): `D16_UNORM_S8_UINT` as a
   depth32float-stencil8 (or depth24plus-stencil8) texture whose copies convert the depth (T10's depth16 parts), its
   precision 16 bits' where a test reads it back; `A4R4G4B4`, `A4B4G4R4`, `A1B5G5R5`, `R4G4` and the `A2R10G10B10`
@@ -168,7 +164,7 @@ and the formats WebGPU's vertex buffers lack ("Pulled vertices' leftovers": the 
 a compute-only queue family, the commonest not-supported reason (T1); and the hosts' own: the M4's failures,
 SwiftShader's fetch from a base level and `buffer_1048577` on NVIDIA (the user's next NVIDIA run decides those and
 T2's `wg_complete` trap). The census's tasks take some of these: the compute-only queue family (T22), the packed 1.3 orders
-(T30), `_pcoffset` (T24), MIN/MAX/AVERAGE resolves (T27, done), `shaderInt64` (T29).
+(T30), `_pcoffset` (T24), MIN/MAX/AVERAGE resolves (T27, done), `shaderInt64` (T29, done).
 
 ## The gate (the track's end)
 

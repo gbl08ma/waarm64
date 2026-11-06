@@ -771,6 +771,50 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T29: shader types — 8-, 16- and 64-bit integers, 16-bit inputs and outputs, gathers with offsets; 1,750 cases join the list
+
+2026-11-06, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t29/` (`swiftshader-rerun.json`: the subgroup cases and the failures
+again after the 64-bit reductions' fix).
+
+- **What the device does** (vk/README.md "The shader path"): advertises `shaderInt8`, `shaderInt16`, `shaderInt64`,
+  8-bit storage (buffers, uniform buffers, push constants; `VK_KHR_8bit_storage`, `VK_KHR_shader_float16_int8` now on
+  every adapter), `storageInputOutput16` and `shaderImageGatherExtended`. An 8-bit value is a word's low byte, as a
+  16-bit one is its low half (loads and stores of bytes of words, the arithmetic at 32 bits); a 16-bit input or output
+  is a 32-bit one, converted where it's loaded and stored (`widen_io16`: before, a half's bits went into a 32-bit
+  varying and were interpolated as nonsense); a 64-bit integer is a pair of words (`split_64bit_access` makes every
+  memory access 32-bit, `nir_lower_int64`, `nir_lower_64bit_phis` and `nir_lower_alu` the rest, the options keeping
+  `pack_64_2x32_split` whole: lowered, it became 64-bit shifts); a 64-bit subgroup reduction or scan, which WGSL's
+  built-ins don't take, is shuffles of words (the five `subgroups.arithmetic.*_u64vec2` of mul, min and max failed with
+  "64-bit values" until it was). Gathers whose offsets aren't constants were T24's fetches already.
+- **Confirming, failing first** (tests/wgsl.test.ts, run on SwiftShader): 8-bit storage and arithmetic, 64-bit
+  arithmetic, conversions, loads and stores, and 64-bit subgroup reductions failed to translate; a fragment stage's
+  16-bit input worked on at 32 bits drew 0 for 16; each passes now. Planted: the bytes' shift by `& 2u` and the 64-bit
+  split's second word at +4 fail the 8-bit test (224 values) and both 64-bit ones.
+- **The cases** (`cases.txt`, 5,095: the census's 162 that asked for these, every 10th `glsl.texture_gather`, every
+  8th `buffer_device_address`, every 5th 8- and 16-bit `ubo.random` and of the `ssbo` and `ubo` layouts' cases of the
+  types, every `precision_fconvert`, every 4th typed `spec_constant`, every 10th 16-bit `vertex_input`, every 25th typed
+  `spirv_assembly` and every 30th typed `subgroups` case; ~9 min as one list on SwiftShader):
+
+| host | pass | fail | not supported |
+|---|---|---|---|
+| SwiftShader | 1,877 (751 before the features were advertised) | 21 | 3,197 |
+| M4 | 2,019 | 14 | 3,062 |
+
+  The failures: `precision_fconvert`'s f32 (and, with shader-f16, f16) to integer cases of values past the integer's
+  range, on both hosts: WGSL's conversion clamps to the largest float under the bound (2147483520 for an i32), and
+  Metal took an f16 infinity as 65504. Since fixed: the bound compared in f32, a half converted through
+  `unpack2x16float` (tests/wgsl.test.ts "floats convert to 32-bit integers saturating exactly"; `fconvert-cases.txt`'s
+  756: of those supported, 16 on SwiftShader and 37 on the M4, all pass; the 8 both pass that weren't in the list join it). On SwiftShader only, each passing on the M4: 9
+  compute cube gathers, 2 dynamic-offset gathers of a view with a base level (its known fetch from a base level), a
+  16-bit NaN through a vertex input that came back 69696, and `ssbo.layout.random.8bit.all_per_block_buffers.5`,
+  which passes in 56 s without dEQP's watchdog (1 s on the M4). Filed (docs/backlog.md "What the device advertises,
+  left for the translator"). Of the
+  census's 166, 58 pass and 106 remain not supported, by what T29 doesn't take: vertex stores (T33), device addresses'
+  capture and replay, set numbers past `maxBoundDescriptorSets`. **The 1,767 both pass, 1,742 of them not in the list
+  before, join `tests/deqp/vk.txt`**, and 8 `precision_fconvert` cases after the fix below (→ 40,166; the subgroup cases pass on SwiftShader, but the Mac's subgroups are
+  held, so they wait for the M4's). 
+
 ## VK4 T28: pipeline state as variants — dynamic vertex input, depth bias control, the third dynamic state, non-seamless cubes
 
 2026-11-06, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
