@@ -3,10 +3,34 @@
 // GLES 3.0 host, less what WebGL2 lacks, at WebGL2's minimums); the limits come from the context, and the format
 // masks from the format table (web/virgl-formats.ts) with the extensions this browser has.
 import { E } from './gl-enums.ts';
-import { decodeCaps, encodeCaps, virglCaps, type CapsValue } from './virgl.ts';
+import { CAPS_FIELDS, decodeCaps, encodeCaps, virglCaps, type CapsValue } from './virgl.ts';
 import { FORMATS, VERTEX_FORMATS } from './virgl-formats.ts';
 import { readbackFormats } from './virgl-renderer.ts';
 import { decodeVideoCaps, encodeVideoCaps, type VideoCap } from './virgl-video.ts';
+
+/**
+ * The caps without the formats named (virgl's names, `FORMATS`' `name`: `Z24_UNORM_S8_UINT`…) in any of their masks:
+ * `?gpu=capsno=` (a developer's A/B of what the guest's Mesa and its programs choose; docs/frontend.md). Unknown names
+ * are returned, the caps without the known ones.
+ */
+export function withoutFormats(caps: Uint8Array, names: readonly string[]): { caps: Uint8Array; unknown: string[] } {
+  const ids = new Map([...FORMATS].map(([id, f]) => [f.name, id]));
+  const drop = new Set<number>(), unknown: string[] = [];
+  for (const n of names) {
+    const id = ids.get(n);
+    if (id === undefined) unknown.push(n);
+    else drop.add(id);
+  }
+  if (!drop.size) return { caps, unknown };
+  // Each mask's bits cleared in a copy: everything else as it was.
+  const out = caps.slice(), v = new DataView(out.buffer);
+  for (const [name, at, n, kind] of CAPS_FIELDS) {
+    if (kind !== 'm' || (at + n) * 4 > out.length) continue;
+    void name;
+    for (const id of drop) if (id < n * 32) v.setUint32((at + (id >>> 5)) * 4, v.getUint32((at + (id >>> 5)) * 4, true) & ~(1 << (id & 31)), true);
+  }
+  return { caps: out, unknown };
+}
 
 /** The uniform vectors the generated shaders keep for themselves (u_adjy, u_fbh, u_alpharef, u_psize, u_stipple's 32 words). */
 const SYS_VECTORS = 16;

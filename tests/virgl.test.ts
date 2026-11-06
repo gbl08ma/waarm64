@@ -9,8 +9,8 @@ import { test } from 'node:test';
 import { gunzipSync } from 'node:zlib';
 import { E } from '../web/gl-enums.ts';
 import { Gpu, gpuBackend } from '../web/gpu.ts';
-import { decodeCaps, virglCaps } from '../web/virgl.ts';
-import { capsBacked, capsFromGl } from '../web/virgl-caps.ts';
+import { CAPS_FIELDS, decodeCaps, virglCaps } from '../web/virgl.ts';
+import { capsBacked, capsFromGl, withoutFormats } from '../web/virgl-caps.ts';
 import { FORMATS } from '../web/virgl-formats.ts';
 import { clock, FenceGate, fenceSettled, localHost, portHost, type HostCall, type VirglHost } from '../web/virgl-host.ts';
 import { VirglRenderer, readbackOf, toHalf, type RendererSnapshot } from '../web/virgl-renderer.ts';
@@ -962,6 +962,24 @@ test('virgl caps: from the browser\'s WebGL2, formats only where their extension
 
 test('virgl renderer: half floats round to nearest even', () => {
   assert.deepEqual([1, -2, 0.5, 65504, 1e-8, Infinity, 1 + 2 ** -11, 1 + 3 * 2 ** -11].map(toHalf), [0x3c00, 0xc000, 0x3800, 0x7bff, 0, 0x7c00, 0x3c00, 0x3c02]);
+});
+
+test('virgl caps: `?gpu=capsno=` takes formats out of every mask and leaves the rest of the caps as they were', () => {
+  const caps = capsFromGl(mockGl({ extensions: [] }));
+  const { caps: cut, unknown } = withoutFormats(caps, ['Z24_UNORM_S8_UINT', 'X8B8G8R8_UNORM', 'NOT_A_FORMAT']);
+  assert.deepEqual(unknown, ['NOT_A_FORMAT']);
+  const id = (name: string) => [...FORMATS.values()].find((f) => f.name === name)!.id;
+  const a = decodeCaps(caps), b = decodeCaps(cut);
+  for (const mask of ['sampler', 'render', 'depthstencil', 'supported_multisample_formats', 'scanout', 'supported_readback_formats']) {
+    const want = (a[mask] as number[]).filter((f) => f !== id('Z24_UNORM_S8_UINT') && f !== id('X8B8G8R8_UNORM'));
+    assert.deepEqual(b[mask], want, mask);
+  }
+  assert.ok((a.depthstencil as number[]).includes(id('Z24_UNORM_S8_UINT')), 'it was there');
+  // Everything else byte for byte.
+  const masks = new Set<number>();
+  for (const [, at, n, kind] of CAPS_FIELDS) if (kind === 'm') for (let k = at * 4; k < (at + n) * 4; k++) masks.add(k);
+  for (let k = 0; k < caps.length; k++) if (!masks.has(k)) assert.equal(cut[k], caps[k], `byte ${k}`);
+  assert.equal(withoutFormats(caps, []).caps, caps);
 });
 
 test('virgl snapshots: contexts that never submitted are made again; one in use loads the renderer\'s state; caps this browser can\'t back turn 3D off', async () => {

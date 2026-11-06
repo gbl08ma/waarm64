@@ -476,7 +476,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   same black block and the same faint copy of the header at the note, so the commands themselves draw them: the cause
   is upstream, in what CEF or the guest's Mesa decides, likely from what our host answers differently from vrend's. One
   such difference found: our caps offer `Z24_UNORM_S8_UINT` (19), which vrend has no format for (Skia's clip stencil,
-  resource 855; the replayer maps it to 20). Next: our caps against vrend's, and Steam with the suspects turned off.
+  resource 855; the replayer maps it to 20). **Our caps against vrend's** (capset 2 on llvmpipe, desktop GL and GLES;
+  `bench/results/local/steam/oracle/diffcaps.ts`): no capability bit vrend lacks (we lack COPY_IMAGE, TGSI_FBFETCH,
+  SRGB_WRITE_CONTROL, 3D_ASTC, INDIRECT_INPUT_ADDR, CLIP_HALFZ, V2_BLEND_EQUATION, V2_TEXTURE_SHADOW_LOD,
+  V2_MIRROR_CLAMP_TO_EDGE: without framebuffer fetch and advanced blends Skia copies the destination for some blends,
+  a path real hosts never take); formats only we offer: `Z24_UNORM_S8_UINT` (sampled, depth, multisampled),
+  `X8B8G8R8_UNORM`, `I8_UNORM`, `L8A8_UNORM` (sampled and rendered). `?gpu=capsno=` takes formats out for the A/B in
+  Steam; the bits can't be given (nothing backs them).
   (The replayer also needs: contexts' skip flags per incarnation, an iovec array per resource, kept: the library keeps
   the pointer. Sway's and Xwayland's contexts die on llvmpipe at a GL_INVALID_OPERATION; Steam's run clean.)
 - **Chromium in the guest still steps back one frame now and then** (graphics.md "The call queue"): after the queue's fix,
