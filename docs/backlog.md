@@ -461,6 +461,21 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   rasterizer threads draw after the transfer. `WLR_RENDERER=pixman` in the guest avoids it. A display mode that
   samples the scanout's memory at each refresh and holds a flipped buffer until it is stable would hide it for
   unmodified guests: not built (a full compare per refresh; build it if GL compositors become fast enough to use).
+- **Steam's client UI (CEF, native aarch64, Arch guest, 3D) shows black areas and a shifted copy of its header**
+  (2026-11-06, the user's capture: `bench/results/local/steam.vglt`, 342 MB, local only, a `GLITCH VISIBLE` note at
+  submit 12,405). Gone with `-cef-disable-gpu-compositing` (the menus' brief black flash while fading in stays: a
+  second fault, untraced) and `-cef-disable-gpu`; the store pages never show it. Found so far, on SwiftShader (so not
+  the user's NVIDIA): the damage is already in the GPU process's composition of the page (resource 508 of the trace,
+  copied on through 506 → 692 → 758/901/736 whole); the band under the 66-row header is the header layer's tile (805),
+  which Skia clears to opaque black by a draw whose vertex colours say (0,0,0,255), with only a search box drawn over
+  it by the sidebar's tile (843: two draws; no copy, upload or clear names it). Every texture in that frame is
+  GPU-rastered, the read-backs are cursors only, no GL error on any call, the renderer logs nothing: the replay draws
+  what the commands say, so the cause may be upstream (what the guest's Mesa or CEF decides from our caps or answers).
+  Not settled without a reference: an ad-hoc replayer through the oracle's libvirglrenderer on llvmpipe
+  (`bench/results/local/steam/oracle/replay.c`) runs the trace but draws nothing yet, even on glcomp's fixture (clears
+  land, draws don't: state it doesn't set up). Next: make it draw glcomp as `glcomp-128x96.llvmpipe.rgba` (compare
+  with vtest's sequence: caps, fences), then compare 508 and the tiles at submit 11,900; the ad-hoc scripts beside it
+  (`frames.ts`, `who.ts`, `when.ts`, `writes.ts`) read resources and per-draw state from a replay on Chromium.
 - **Chromium in the guest still steps back one frame now and then** (graphics.md "The call queue"): after the queue's fix,
   `bench/gpu/chromium-flicker.ts` saw one frame one step back in two of four runs (~1,000 frames each), none on
   `?gpu=2d`. Not traced: a remaining order between contexts (the decoder's context passes held ones), or the screen's
