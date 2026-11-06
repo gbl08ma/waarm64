@@ -16,7 +16,7 @@ import { after, test } from 'node:test';
 import { AGENT_PORTS, agentDevice, agentEntry, CTL_RX, CTL_TX, DEVICE_READY, F_MULTIPORT, MAX_PENDING, PORT_ADD, PORT_NAME, PORT_OPEN, PORT_READY, type AgentFromDevice } from '../web/agent-device.ts';
 import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, FRAME, FrameReader, helloNonce, MAX_PAYLOAD, NONCE, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
 import { AgentLink, PAGE_CAPS, WINDOW } from '../web/app/agent-link.ts';
-import { ACK_WAIT, ClipboardShare, EMPTY_RUN, INLINE, isPasteChord, onMac, PASTE_WAIT, TEXT, TEXT_CAP, textHash, watchReadPermission, type ClipLink, type ReadPermission } from '../web/app/clipboard.ts';
+import { ACK_WAIT, ClipboardShare, contentHash, EMPTY_RUN, IMAGE_CAP, imageHash, INLINE, isPasteChord, onMac, PASTE_WAIT, PNG, TEXT, TEXT_CAP, textHash, watchReadPermission, type ClipLink, type Host, type HostItem, type ReadPermission } from '../web/app/clipboard.ts';
 import { AGENT_FILE, AGENT_PORT, agentBinary, agentCredentials, agentScript } from '../web/app/guest-agent.ts';
 import { oemStrings } from '../web/app/guest-unit.ts';
 import { guestWords } from '../web/app/guest-words.ts';
@@ -337,7 +337,7 @@ test("the link: HELLO and the switch at each opening, the agent's answer; TYPE o
   await settle();
   // The switch said at once: an agent restored from a snapshot taken while paused would be paused still.
   assert.deepEqual(sent.map((f) => f.type), [FRAME.HELLO, FRAME.RESUME]);
-  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TYPE | CAP.TEXT });
+  assert.deepEqual(decodeHello(sent[0].payload), { version: VERSION, caps: CAP.TYPE | CAP.TEXT | CAP.IMAGE });
   sent.splice(1, 1);
   assert.equal(link.type('ls\n'), false, "open, but the agent hasn't said it can");
   const hellos: unknown[] = [];
@@ -1204,4 +1204,255 @@ test('frames: SYNC and SESSION (the bytes agent/src/frame.rs pins)', () => {
   for (let k = 0; k < stream.length; k += 3) got.push(...r.push(stream.subarray(k, k + 3)));
   assert.deepEqual(got.map((f) => f.type), [FRAME.PAUSE]);
   assert.equal(r.syncing, false);
+});
+
+// ---- Images (docs/plans/clipboard.md §4.4).
+
+/** Small images' bytes, as their types begin (the page passes them on; the conversion is faked here, real in tests/page-clipboard-ui.test.ts). */
+const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+const JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0]);
+const BMP_BYTES = new Uint8Array([0x42, 0x4d, 0x3a, 0, 0, 0, 0, 0, 0, 0, 0x36]);
+/** `n` bytes of a picture (a pattern: compared with `Buffer.compare`, never deepEqual'd). */
+const picture = (n: number, seed = 1) => Uint8Array.from({ length: n }, (_, i) => (i * 31 + seed * 7 + (i >> 9)) & 0xff);
+const bytesOf = async (b: Blob) => new Uint8Array(await b.arrayBuffer());
+const same = (a: Uint8Array, b: Uint8Array) => Buffer.compare(a, b) === 0;
+/** Waits (bounded) until `f` holds: the image paths await the browser's promises and hashes. */
+async function until(f: () => boolean, what: string) {
+  for (let i = 0; i < 500; i++) {
+    if (f()) return;
+    await new Promise((r) => setTimeout(r, 2));
+  }
+  assert.fail(`never: ${what}`);
+}
+const quiet = () => new Promise((r) => setTimeout(r, 50));
+
+/**
+ * The browser with images: `clip` is the host's clipboard as one item (its types' Blobs), which `write` replaces after
+ * awaiting its promises, re-encoding a PNG as the browser does (other bytes, the same picture: here a byte prepended);
+ * `toPng` converts by prepending the PNG signature to the image (recorded in `converted`).
+ */
+function imageHost() {
+  const writes: Record<string, Blob>[] = [];
+  const converted: string[] = [];
+  type ImageHost = Host & { focus: boolean; refuse: boolean; clip: Record<string, Blob>; clipboard: Required<Host["clipboard"]> };
+  const h: ImageHost = {
+    focus: true,
+    refuse: false,
+    clip: {} as Record<string, Blob>,
+    changeEvents: false,
+    hasFocus: () => h.focus,
+    clipboard: {
+      writeText: async (s: string) => {
+        if (h.refuse) throw new DOMException('no activation', 'NotAllowedError');
+        h.clip = { 'text/plain': new Blob([s], { type: 'text/plain' }) };
+      },
+      readText: async () => (await h.clip['text/plain']?.text()) ?? '',
+      read: async (): Promise<HostItem[]> => [{ types: Object.keys(h.clip), getType: async (t: string) => h.clip[t] }],
+      write: async (item: Record<string, Promise<Blob>>) => {
+        if (h.refuse) throw new DOMException('no activation', 'NotAllowedError');
+        const got: Record<string, Blob> = {};
+        for (const [t, p] of Object.entries(item)) got[t] = await p;
+        writes.push(got);
+        const png = got[PNG] && new Blob([new Uint8Array([0]), await got[PNG].arrayBuffer()], { type: PNG });
+        h.clip = { ...got, ...(png ? { [PNG]: png } : {}) };
+      },
+    },
+    toPng: async (b: Blob) => {
+      converted.push(b.type);
+      return new Blob([PNG_BYTES.subarray(0, 8), await b.arrayBuffer()], { type: PNG });
+    },
+  };
+  return { host: h, writes, converted };
+}
+
+/** The agent answers the page's request `id` with `bytes`, in chunks, as the page's MOREs allow. */
+function answerAll(deliver: (type: number, p: Uint8Array) => void, take: (type: number) => Frame[], id: number, bytes: Uint8Array) {
+  const chunks: Uint8Array[] = [];
+  for (let at = 0; at < bytes.length || chunks.length === 0; at += CHUNK) chunks.push(bytes.subarray(at, at + CHUNK));
+  let credit = CREDIT;
+  for (let k = 0; k < chunks.length; k++) {
+    assert.ok(credit > 0, 'the page granted no more');
+    deliver(FRAME.DATA, encodeData(id, k === chunks.length - 1 ? DATA_END : 0, chunks[k]));
+    credit--;
+    for (const m of take(FRAME.MORE).map((f) => decodeMore(f.payload)!)) if (m.id === id) credit += m.n;
+  }
+}
+
+const IMAGES = CAP.TYPE | CAP.TEXT | CAP.IMAGE;
+
+test("images, guest to host: requested at the write as a ClipboardItem's promise (PNG as it is, another type converted to PNG, the text in the same item); none without CAP.IMAGE; capped", async () => {
+  const { link, deliver, take } = fakeLink(IMAGES);
+  const { host, writes, converted } = imageHost();
+  const share = new ClipboardShare(link, host);
+  const images: Blob[] = [];
+  share.onImage = (b) => images.push(b);
+  assert.equal(share.images, true);
+  // A PNG of 200 KiB, offered without its bytes: requested (as the guest's type) and streamed under the credit.
+  const big = picture(200 << 10);
+  deliver(FRAME.OFFER, encodeOffer({ serial: 1, types: [{ type: PNG, size: UNKNOWN }] }));
+  const [r1] = requests(take(FRAME.REQUEST));
+  assert.deepEqual({ serial: r1.serial, type: r1.type }, { serial: 1, type: PNG });
+  answerAll(deliver, take, r1.id, big);
+  await until(() => writes.length === 1, 'the PNG written');
+  assert.deepEqual(Object.keys(writes[0]), [PNG]);
+  assert.ok(same(await bytesOf(writes[0][PNG]), big), 'the PNG as it came');
+  assert.deepEqual(converted, [], 'a PNG: not converted');
+  await until(() => images.length === 1, 'onImage');
+  // A JPEG with text inline: one item, the JPEG converted to PNG in the worker, the text beside it.
+  deliver(FRAME.OFFER, encodeOffer({ serial: 2, types: [{ type: TEXT, size: 3 }, { type: 'image/jpeg', size: UNKNOWN }], inline: utf8('alt') }));
+  const [r2] = requests(take(FRAME.REQUEST));
+  assert.equal(r2.type, 'image/jpeg', 'the text inline: only the image requested');
+  answerAll(deliver, take, r2.id, JPEG_BYTES);
+  await until(() => writes.length === 2, 'the JPEG written');
+  assert.deepEqual(Object.keys(writes[1]).sort(), [PNG, 'text/plain']);
+  assert.equal(await writes[1]['text/plain'].text(), 'alt');
+  assert.deepEqual(converted, ['image/jpeg']);
+  const png = await bytesOf(writes[1][PNG]);
+  assert.ok(same(png.subarray(0, 8), PNG_BYTES.subarray(0, 8)) && same(png.subarray(8), JPEG_BYTES), 'the converted PNG');
+  // A BMP with long text: both requested, both in the item.
+  deliver(FRAME.OFFER, encodeOffer({ serial: 3, types: [{ type: TEXT, size: UNKNOWN }, { type: 'image/bmp', size: UNKNOWN }] }));
+  const rs = requests(take(FRAME.REQUEST));
+  assert.deepEqual(rs.map((r) => r.type).sort(), ['image/bmp', TEXT]);
+  const long = 'x'.repeat(5000);
+  answerAll(deliver, take, rs.find((r) => r.type === TEXT)!.id, utf8(long));
+  answerAll(deliver, take, rs.find((r) => r.type === 'image/bmp')!.id, BMP_BYTES);
+  await until(() => writes.length === 3, 'the BMP written');
+  assert.equal(await writes[2]['text/plain'].text(), long);
+  assert.deepEqual(converted, ['image/jpeg', 'image/bmp']);
+  // Past the cap by its size: not requested; an answer running past it stops (MORE 0), nothing written.
+  deliver(FRAME.OFFER, encodeOffer({ serial: 4, types: [{ type: PNG, size: IMAGE_CAP + 1 }] }));
+  assert.deepEqual(take(FRAME.REQUEST), []);
+  deliver(FRAME.OFFER, encodeOffer({ serial: 5, types: [{ type: PNG, size: UNKNOWN }] }));
+  const [r5] = requests(take(FRAME.REQUEST));
+  const chunk = encodeData(r5.id, 0, new Uint8Array(CHUNK));
+  for (let k = 0; k <= IMAGE_CAP / CHUNK; k++) deliver(FRAME.DATA, chunk);
+  assert.deepEqual(take(FRAME.MORE).map((f) => decodeMore(f.payload)!).at(-1), { id: r5.id, n: 0 });
+  await quiet();
+  assert.equal(writes.length, 3, 'nothing past the cap written');
+  // An agent without CAP.IMAGE (an older one): its image offers aren't taken; the text of one is.
+  const old = fakeLink(CAP.TYPE | CAP.TEXT);
+  const o = imageHost();
+  const s2 = new ClipboardShare(old.link, o.host);
+  assert.equal(s2.images, false);
+  old.deliver(FRAME.OFFER, encodeOffer({ serial: 1, types: [{ type: PNG, size: 10 }] }));
+  old.deliver(FRAME.OFFER, encodeOffer({ serial: 2, types: [{ type: TEXT, size: 2 }, { type: PNG, size: 10 }], inline: utf8('hi') }));
+  await quiet();
+  assert.deepEqual(old.take(FRAME.REQUEST), []);
+  assert.equal(await o.host.clipboard.readText(), 'hi');
+});
+
+test("images, guest to host: kept pending without focus (the newest only, a newer text replaces it), written on a key; a refused write stays pending; read back once after the write, so its re-encoding isn't sent back", async () => {
+  const { link, deliver, take } = fakeLink(IMAGES);
+  const { host, writes } = imageHost();
+  const share = new ClipboardShare(link, host);
+  // Through functions: an assertion would narrow the fields for good.
+  const [pendingSerial, pendingText] = [() => share.pendingImage?.serial, () => share.pending];
+  host.focus = false;
+  deliver(FRAME.OFFER, encodeOffer({ serial: 1, types: [{ type: PNG, size: UNKNOWN }] }));
+  assert.deepEqual(take(FRAME.REQUEST), [], 'no focus: nothing requested (the bytes cross at the write)');
+  assert.equal(pendingSerial(), 1);
+  deliver(FRAME.OFFER, encodeOffer({ serial: 2, types: [{ type: TEXT, size: 4 }], inline: utf8('text') }));
+  assert.equal(pendingSerial(), undefined, 'a newer text replaces it');
+  assert.equal(pendingText(), 'text');
+  deliver(FRAME.OFFER, encodeOffer({ serial: 3, types: [{ type: PNG, size: UNKNOWN }] }));
+  assert.equal(pendingText(), undefined);
+  assert.equal(pendingSerial(), 3);
+  // A key on the screen (activation), the write refused: requested, stopped (MORE 0), pending again.
+  host.refuse = true;
+  share.activated(false);
+  const [r] = requests(take(FRAME.REQUEST));
+  assert.equal(r.serial, 3);
+  await until(() => pendingSerial() !== undefined, 'pending again after the refusal');
+  assert.deepEqual(take(FRAME.MORE).map((f) => decodeMore(f.payload)), [{ id: r.id, n: 0 }]);
+  // Allowed, with the permission and focus: written on the next key, then read back: what the browser made of it is
+  // the guest's.
+  host.refuse = false;
+  host.focus = true;
+  share.setPermission('granted');
+  await quiet();
+  assert.deepEqual(take(FRAME.OFFER), [], 'the empty host clipboard: nothing offered');
+  share.activated(false);
+  const [r3] = requests(take(FRAME.REQUEST));
+  assert.equal(r3.serial, 3);
+  const pic = picture(70000, 3);
+  answerAll(deliver, take, r3.id, pic);
+  await until(() => writes.length === 1, 'written');
+  assert.equal((await bytesOf(host.clip[PNG])).length, pic.length + 1, 'the host re-encoded it');
+  await quiet();
+  // Focus reads of what the host has now (the guest's own image, re-encoded): not offered back.
+  for (let i = 0; i < 3; i++) await share.focused();
+  await quiet();
+  assert.deepEqual(take(FRAME.OFFER), [], "the guest's image, re-encoded by the browser, offered back");
+  // The host's own copy after it: offered.
+  host.clip = { [PNG]: new Blob([PNG_BYTES], { type: PNG }) };
+  await share.focused();
+  await until(() => take(FRAME.OFFER).length === 1, "the host's image offered");
+});
+
+test("images, host to guest: a sync's PNG and text offered together (the text inline), the PNG answered under the agent's MOREs; unchanged: not again; the paste chord's File; one image held; capped; text only for an agent without CAP.IMAGE", async () => {
+  const { link, sent, deliver, take } = fakeLink(IMAGES);
+  const { host } = imageHost();
+  host.changeEvents = true;
+  const share = new ClipboardShare(link, host);
+  const pic = picture(300 << 10, 5);
+  host.clip = { [PNG]: new Blob([pic], { type: PNG }), 'text/plain': new Blob(['a picture'], { type: 'text/plain' }) };
+  share.setPermission('granted');
+  await until(() => sent.some((f) => f.type === FRAME.OFFER), "the sync's offer");
+  const [f] = take(FRAME.OFFER);
+  const o = decodeOffer(f.payload)!;
+  assert.deepEqual(o.types, [{ type: TEXT, size: 9 }, { type: PNG, size: pic.length }]);
+  assert.equal(new TextDecoder().decode(o.inline), 'a picture', 'the text inline, the first type');
+  // A change event with the same clipboard: read, not offered again.
+  share.clipboardChanged();
+  await quiet();
+  assert.deepEqual(take(FRAME.OFFER), [], 'unchanged: not offered again');
+  // The agent requests the PNG: 4 frames, then one for each MORE.
+  deliver(FRAME.REQUEST, encodeRequest({ serial: o.serial, id: 70, type: PNG }));
+  let got = take(FRAME.DATA).map((d) => decodeData(d.payload)!);
+  assert.equal(got.length, CREDIT);
+  deliver(FRAME.MORE, encodeMore(70, 10));
+  got = got.concat(take(FRAME.DATA).map((d) => decodeData(d.payload)!));
+  assert.equal(got.at(-1)!.flags, DATA_END);
+  const all = new Uint8Array(got.reduce((n, d) => n + d.bytes.length, 0));
+  got.reduce((at, d) => (all.set(d.bytes, at), at + d.bytes.length), 0);
+  assert.ok(same(all, pic), 'the PNG answered whole');
+  // A type it hasn't: FAIL.
+  deliver(FRAME.REQUEST, encodeRequest({ serial: o.serial, id: 71, type: 'image/jpeg' }));
+  assert.deepEqual(take(FRAME.DATA).map((d) => decodeData(d.payload)!.flags), [DATA_FAIL]);
+  // An answer in progress when a newer image is offered (the paste chord's File): it fails, the page holding one image
+  // of its own.
+  deliver(FRAME.REQUEST, encodeRequest({ serial: o.serial, id: 72, type: PNG }));
+  take(FRAME.DATA);
+  const file = new Blob([PNG_BYTES], { type: PNG });
+  const held = share.chord({ key: 'v', code: 'KeyV', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false })!;
+  share.pasted('', file);
+  await until(() => sent.some((x) => x.type === FRAME.OFFER), "the paste chord's image offered");
+  assert.deepEqual(take(FRAME.OFFER).map((x) => decodeOffer(x.payload)!.types), [[{ type: PNG, size: PNG_BYTES.length }]]);
+  assert.deepEqual(take(FRAME.DATA).map((d) => decodeData(d.payload)!.flags), [DATA_FAIL]);
+  deliver(FRAME.MORE, encodeMore(72, 5));
+  assert.deepEqual(take(FRAME.DATA), [], 'the older answer ended');
+  await held;
+  // Past the cap: not offered (by its size, before any bytes are read).
+  const huge = { size: IMAGE_CAP + 1, arrayBuffer: () => assert.fail('read past the cap') } as unknown as Blob;
+  await share.paste({ image: huge }, true);
+  assert.deepEqual(take(FRAME.OFFER), []);
+  await share.paste({ text: 'beside', image: huge }, true);
+  assert.deepEqual(take(FRAME.OFFER).map((x) => decodeOffer(x.payload)!.types.map((t) => t.type)), [[TEXT]], 'the text alone');
+  // An agent without CAP.IMAGE: the text alone; an image alone: nothing.
+  const old = fakeLink(CAP.TYPE | CAP.TEXT);
+  const s2 = new ClipboardShare(old.link, imageHost().host);
+  await s2.paste({ text: 'words', image: file }, true);
+  assert.deepEqual(old.take(FRAME.OFFER).map((x) => decodeOffer(x.payload)!.types.map((t) => t.type)), [[TEXT]]);
+  await s2.paste({ image: file }, true);
+  assert.deepEqual(old.take(FRAME.OFFER), []);
+});
+
+test('images: the hashes the page remembers (text, image, both)', async () => {
+  const a = await imageHash(new Uint8Array(PNG_BYTES));
+  assert.match(a, /^[0-9a-f]{24}$/);
+  assert.notEqual(a, await imageHash(new Uint8Array(JPEG_BYTES)));
+  assert.equal(contentHash('hi'), `${textHash('hi')}/`);
+  assert.equal(contentHash(undefined, a), `/${a}`);
+  assert.notEqual(contentHash('hi', a), contentHash('hi'));
+  assert.equal(contentHash(''), contentHash(undefined), 'empty text is none');
 });

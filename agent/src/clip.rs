@@ -1,5 +1,5 @@
-//! What the clipboard's sharing decides, apart from its protocols (docs/plans/clipboard.md §2, §3.2): the types the
-//! agent takes and offers, the size caps, the hash that suppresses echoes.
+//! What the clipboard's sharing decides, apart from its protocols (docs/plans/clipboard.md §2, §3.2, §4.4): the types
+//! the agent takes and offers, the size caps, the hash that suppresses echoes.
 
 /// The page's type for text, and the one the agent offers it.
 pub const TEXT: &str = "text/plain;charset=utf-8";
@@ -11,6 +11,22 @@ pub const TEXT_ALIASES: [&str; 6] = [TEXT, "text/plain", "UTF8_STRING", "TEXT", 
 /// The most text that crosses (plan §3.2), checked against an offer's size before any bytes do, and against what
 /// has come so far while a size isn't known.
 pub const TEXT_CAP: usize = 16 << 20;
+/// The page's one image type, which the agent prefers among a guest program's (plan §4.4).
+pub const PNG: &str = "image/png";
+/// The most image bytes that cross (plan §4.4), checked as `TEXT_CAP` is.
+pub const IMAGE_CAP: usize = 64 << 20;
+/// The image types the page takes from the guest after PNG, which it converts to PNG (what `createImageBitmap`
+/// decodes): passed through as the guest's program offered them (the agent converts nothing).
+const IMAGES: [&str; 7] = [
+    "image/jpeg",
+    "image/webp",
+    "image/bmp",
+    "image/x-bmp",
+    "image/x-ms-bmp",
+    "image/gif",
+    "image/avif",
+];
+
 /// Text up to this size comes inline in its OFFER (plan §2), saving a round trip.
 pub const INLINE: usize = 4096;
 /// The host's text up to this size is kept once it has crossed, so that repeated pastes don't cross again (plan
@@ -18,7 +34,7 @@ pub const INLINE: usize = 4096;
 pub const CACHE: usize = 64 << 10;
 
 /// Of the types a guest program offers, the one the agent reads its text as: UTF-8 first, a name without a charset
-/// (taken as UTF-8, as wl-clipboard does) next. None: no text (an image alone: step 5).
+/// (taken as UTF-8, as wl-clipboard does) next. None: no text (an image alone: `pick_image`).
 pub fn pick_text<'a>(types: &[&'a str]) -> Option<&'a str> {
     let utf8 = |t: &str| {
         t.eq_ignore_ascii_case("text/plain;charset=utf-8")
@@ -38,6 +54,27 @@ pub fn pick_text<'a>(types: &[&'a str]) -> Option<&'a str> {
         .filter_map(|&t| Some((rank(t)?, t)))
         .min_by_key(|&(r, _)| r)
         .map(|(_, t)| t)
+}
+
+/// Of the types a guest program offers, the image the agent offers the page: `image/png` first, else the first of
+/// the others the page converts (`IMAGES`, in their order). None: no image the page takes (SVG, TIFF).
+pub fn pick_image<'a>(types: &[&'a str]) -> Option<&'a str> {
+    if let Some(&t) = types.iter().find(|t| t.eq_ignore_ascii_case(PNG)) {
+        return Some(t);
+    }
+    IMAGES
+        .iter()
+        .find_map(|i| types.iter().find(|t| t.eq_ignore_ascii_case(i)).copied())
+}
+
+/// Whether `t` is an image type (images pass through the agent: never cached, never hashed).
+pub fn is_image(t: &str) -> bool {
+    t.len() > 6 && t.as_bytes()[..6].eq_ignore_ascii_case(b"image/")
+}
+
+/// The most bytes of type `mime` that cross: an image's cap, else text's.
+pub fn cap(mime: &str) -> usize {
+    if is_image(mime) { IMAGE_CAP } else { TEXT_CAP }
 }
 
 /// What the guest's new selection becomes, from its first bytes (`first`, up to `INLINE` + 1 of them; `complete`: all
@@ -115,6 +152,22 @@ mod tests {
         assert_eq!(pick_text(&[]), None);
         assert!(TEXT_ALIASES.iter().all(|t| pick_text(&[t]).is_some()));
         assert!(is_page_text(TEXT) && is_page_text("text/plain") && !is_page_text("image/png"));
+    }
+
+    #[test]
+    fn picks_png_first_then_the_images_the_page_converts() {
+        assert_eq!(
+            pick_image(&["text/plain", "image/jpeg", "image/png"]),
+            Some("image/png")
+        );
+        assert_eq!(pick_image(&["image/bmp", "image/jpeg"]), Some("image/jpeg"));
+        assert_eq!(pick_image(&["IMAGE/PNG"]), Some("IMAGE/PNG"));
+        assert_eq!(pick_image(&["image/x-ms-bmp"]), Some("image/x-ms-bmp"));
+        assert_eq!(pick_image(&["image/svg+xml", "text/html"]), None);
+        assert_eq!(pick_image(&["image/tiff"]), None);
+        assert_eq!((cap(PNG), cap("image/jpeg")), (IMAGE_CAP, IMAGE_CAP));
+        assert_eq!(cap(TEXT), TEXT_CAP);
+        assert!(is_image("image/png") && !is_image("image/") && !is_image(TEXT));
     }
 
     #[test]

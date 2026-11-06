@@ -12,6 +12,9 @@
 //   them back.
 // - The agent follows sway's end (the session's: `exec sway`) and its start in a new session, where the page syncs the
 //   host's text again (the agent's SESSION).
+// - Images (plan §4.4): grim's screenshot copied as PNG reaches the host with grim's PPM's pixels, and isn't sent back;
+//   a JPEG arrives as a PNG of its pixels; Copy the screen and a 1.5 MB PNG of noise reach wl-paste byte for byte (and
+//   the noise back to the host); an offer past the 64 MiB cap is refused before any bytes cross.
 // - What the agent and its session child cost while sway runs (plan §3.3's targets: no CPU time, no wakeups, VmRSS).
 // WEBPC_AGENT_IDLE=<s> sets the idle window (default 20 s).
 import assert from 'node:assert/strict';
@@ -120,6 +123,46 @@ async function guestHasText(page: Page, want: string, what: string) {
     const got = await guestHas(page);
     if (got === sha(want)) return;
     if (i > 20) assert.fail(`${what}: the guest's clipboard isn't the host's text (${got}); the agent says: ${await journal(page)}`);
+    await page.waitForTimeout(500);
+  }
+}
+type HostImage = { types: string[]; size: number; sha: string; width: number; height: number; rgb: string; left: number[]; right: number[] };
+/**
+ * The host's clipboard's PNG, if it has one: its types, its bytes' size and SHA-256, its size in pixels, the SHA-256 of
+ * its pixels (RGB, row by row) and two of them (at an eighth of its width from each side, halfway down).
+ */
+const readHostImage = (page: Page) => page.evaluate(async (): Promise<HostImage | undefined> => {
+  const item = (await navigator.clipboard.read()).find((i) => i.types.includes('image/png'));
+  if (!item) return undefined;
+  const blob = await item.getType('image/png');
+  const hex = async (b: Uint8Array<ArrayBuffer>) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', b))].map((x) => x.toString(16).padStart(2, '0')).join('');
+  const bitmap = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+  const [w, h] = [bitmap.width, bitmap.height];
+  const c = new OffscreenCanvas(w, h);
+  const g = c.getContext('2d')!;
+  g.drawImage(bitmap, 0, 0);
+  const d = g.getImageData(0, 0, w, h).data;
+  const rgb = new Uint8Array(w * h * 3);
+  for (let k = 0, j = 0; k < d.length; k += 4, j += 3) rgb.set(d.subarray(k, k + 3), j);
+  const at = (x: number) => [...d.subarray(4 * ((h >> 1) * w + x), 4 * ((h >> 1) * w + x) + 3)];
+  return { types: [...item.types], size: blob.size, sha: await hex(new Uint8Array(await blob.arrayBuffer())), width: w, height: h, rgb: await hex(rgb), left: at(w >> 3), right: at(w - 1 - (w >> 3)) };
+});
+/** Waits until the host's clipboard has a PNG that `f` takes. */
+async function hostImage(page: Page, f: (x: HostImage) => boolean, what: string, ms = 60_000): Promise<HostImage> {
+  const end = Date.now() + ms;
+  for (;;) {
+    const got = await readHostImage(page);
+    if (got && f(got)) return got;
+    if (Date.now() > end) assert.fail(`${what}: the host's clipboard has ${JSON.stringify(got && { ...got, rgb: undefined })}; the guest's: ${await run(page, 'wlc wl-paste -l | tr "\\n" " "')}; the agent says: ${await journal(page)}`);
+    await page.waitForTimeout(250);
+  }
+}
+/** Waits until the guest's clipboard has a PNG whose SHA-256 is `want`. */
+async function guestHasImage(page: Page, want: string, what: string) {
+  for (let i = 0; ; i++) {
+    const got = await run(page, 'wlc wl-paste -n -t image/png 2>/dev/null | sha256sum | cut -c1-64');
+    if (got === want) return;
+    if (i > 40) assert.fail(`${what}: the guest's image/png is ${got}, not ${want}; its types: ${await run(page, 'wlc wl-paste -l | tr "\\n" " "')}; the agent says: ${await journal(page)}`);
     await page.waitForTimeout(500);
   }
 }
@@ -232,6 +275,98 @@ test('clipboard sharing with sway: wl-copy to the host, the paste chord to wl-pa
   await hostHas(page, 'guest-after-resume', 'wl-copy after RESUME');
   await pasteChord(page, 'host after resume');
   await guestHasText(page, 'host after resume', 'the paste chord after RESUME');
+
+  // Images (plan §4.4). Guest to host: a screenshot (grim) copied as PNG reaches the host's clipboard with the same
+  // pixels (against grim's PPM of the same screen); the page reads it back once, so the browser's re-encoding isn't
+  // offered back to the guest.
+  await page.evaluate(() => {
+    const w = window as unknown as { __images: number; __clipboard: { onImage?: () => void } };
+    w.__images = 0;
+    w.__clipboard.onImage = () => { w.__images++; };
+  });
+  const images = () => page.evaluate(() => (window as unknown as { __images: number }).__images);
+  const offersBefore = await offers();
+  await run(page, 'wlc grim /tmp/s.png && wlc grim -t ppm /tmp/s.ppm && wlc wl-copy --type image/png </tmp/s.png >/dev/null 2>&1; echo copied');
+  const ppm = await run(page, 'head -c 15 /tmp/s.ppm | tr "\\n" " "; tail -c 1440000 /tmp/s.ppm | sha256sum | cut -c1-64');
+  const shot = await hostImage(page, (x) => x.width === 800, 'the screenshot');
+  assert.equal(ppm, `P6 800 600 255 ${shot.rgb}`, "the screenshot's pixels on the host (grim's PPM)");
+  assert.equal(await images(), 1);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.waitForTimeout(2000);
+  assert.equal(await offers(), offersBefore, "the guest's screenshot, re-encoded by the browser, offered back");
+  // A JPEG alone (made on the host, typed in as base64): the page converts it, the host gets a PNG of its pixels.
+  const jpeg = await page.evaluate(async () => {
+    const c = new OffscreenCanvas(64, 32);
+    const g = c.getContext('2d')!;
+    g.fillStyle = '#f00';
+    g.fillRect(0, 0, 32, 32);
+    g.fillStyle = '#00f';
+    g.fillRect(32, 0, 32, 32);
+    const b = new Uint8Array(await (await c.convertToBlob({ type: 'image/jpeg', quality: 0.9 })).arrayBuffer());
+    return btoa(String.fromCharCode(...b));
+  });
+  assert.ok(jpeg.length < 3000, `a JPEG of ${jpeg.length} base64 characters`);
+  await run(page, `echo ${jpeg} | base64 -d >/tmp/p.jpg && wlc wl-copy --type image/jpeg </tmp/p.jpg >/dev/null 2>&1; echo copied`);
+  const converted = await hostImage(page, (x) => x.width === 64, 'the JPEG as PNG');
+  assert.deepEqual(converted.types, ['image/png']);
+  const near = (a: number[], b: number[]) => a.every((v, i) => Math.abs(v - b[i]) <= 12);
+  assert.ok(near(converted.left, [255, 0, 0]) && near(converted.right, [0, 0, 255]), `the JPEG's pixels: ${converted.left} ${converted.right}`);
+  assert.equal(await images(), 2);
+
+  // Host to guest: Copy the screen (the toolbar's menu) puts the page's display on the host's clipboard as PNG; the
+  // sync offers it, and wl-paste gets the bytes the browser gives.
+  await page.click('#clipboard-menu > summary');
+  await page.click('#clipboard-screen');
+  const screen = await hostImage(page, (x) => x.width !== 64, 'the screen copied');
+  t.diagnostic(`Copy the screen: ${screen.width}×${screen.height}, ${screen.size} bytes`);
+  await guestHasImage(page, screen.sha, 'the screen in the guest');
+  // A big picture (noise, 1024×512: past the 4 frames a request grants and the cap's checks), streamed; timed.
+  await page.evaluate(async () => {
+    const c = new OffscreenCanvas(1024, 512);
+    const g = c.getContext('2d')!;
+    const img = g.createImageData(1024, 512);
+    let x = 0x2545f491;
+    for (let k = 0; k < img.data.length; k++) {
+      x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
+      img.data[k] = k % 4 === 3 ? 255 : x & 0xff;
+    }
+    g.putImageData(img, 0, 0);
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': c.convertToBlob({ type: 'image/png' }) })]);
+  });
+  const t1 = Date.now();
+  const noise = await hostImage(page, (x) => x.width === 1024, 'the noise on the host');
+  await guestHasImage(page, noise.sha, 'the noise in the guest');
+  t.diagnostic(`a ${noise.size}-byte PNG to the guest's wl-paste: ${Date.now() - t1} ms`);
+  // The guest copies it back (wl-copy of the file): written whole, the same pixels.
+  await run(page, 'wlc wl-paste -n -t image/png >/tmp/big.png && wlc wl-copy --type image/png </tmp/big.png >/dev/null 2>&1; echo copied');
+  for (let i = 0; (await images()) < 3; i++) {
+    if (i > 120) assert.fail(`the guest's big PNG never written: ${await journal(page)}`);
+    await page.waitForTimeout(250);
+  }
+  assert.equal((await hostImage(page, (x) => x.width === 1024, 'the noise back')).rgb, noise.rgb);
+
+  // The cap, against the offer's size before any bytes cross (a page's offer past 64 MiB): the agent refuses it
+  // (ACK TOO_LARGE) and requests nothing; the guest's clipboard keeps what it had.
+  const before = await run(page, 'wlc wl-paste -l | tr "\\n" " "');
+  const refused = await page.evaluate(async () => {
+    const { encodeOffer, FRAME } = await import('/web/agent-frame.ts' as string) as typeof import('../web/agent-frame.ts');
+    const w = window as unknown as { __frames: number[]; __agent: { send(type: number, p?: Uint8Array): boolean; onFrame?: (f: { type: number; payload: Uint8Array }) => void } };
+    const requests = w.__frames.filter((k) => k === FRAME.REQUEST).length;
+    const ack = new Promise<number[]>((resolve) => {
+      const on = w.__agent.onFrame;
+      w.__agent.onFrame = (f) => {
+        on?.(f);
+        if (f.type === FRAME.ACK && new DataView(f.payload.buffer, f.payload.byteOffset).getUint32(0, true) === 0x7fff0001) resolve([...f.payload]);
+      };
+      setTimeout(() => resolve([]), 10_000);
+    });
+    w.__agent.send(FRAME.OFFER, encodeOffer({ serial: 0x7fff0001, types: [{ type: 'image/png', size: (64 << 20) + 1 }] }));
+    const a = await ack;
+    await new Promise((r) => setTimeout(r, 1000));
+    return { ack: a, requests: w.__frames.filter((k) => k === FRAME.REQUEST).length - requests };
+  });
+  assert.deepEqual(refused, { ack: [1, 0, 0xff, 0x7f, 3], requests: 0 }, 'ACK TOO_LARGE, no REQUEST');
+  assert.equal(await run(page, 'wlc wl-paste -l | tr "\\n" " "'), before, "the guest's clipboard after the refused offer");
 
   // Idle while sway runs (plan §3.3): the agent and its session child take no CPU time and no wakeups.
   const pid = await run(page, 'systemctl show -p MainPID --value webpc-agent');

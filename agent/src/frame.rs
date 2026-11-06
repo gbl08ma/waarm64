@@ -51,7 +51,9 @@ pub mod cap {
     pub const TYPE: u32 = 1 << 0;
     /// The clipboard's text: OFFER, REQUEST, DATA, ACK, MORE.
     pub const TEXT: u32 = 1 << 1;
-    // Reserved for the next steps: 1 << 2 images, 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session.
+    /// Images in the clipboard's frames: `image/png` from the page, the guest programs' image types to it.
+    pub const IMAGE: u32 = 1 << 2;
+    // Reserved for the next steps: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session.
 }
 
 /// OFFER's flag: the rest of the payload is the first type's bytes, whole.

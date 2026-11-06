@@ -13,6 +13,7 @@ import { msg, msgOf, MsgError, toWire, type Msg } from '../msg.ts';
 import { VENUS_RESERVE } from '../ram.ts';
 import { dropSuspend, fileWriter, loadFlash, overlayMeta, saveFlash, suspended, suspendWriter } from '../overlay.ts';
 import { showFramebuffer } from '../display.ts';
+import type { DisplayFromPage, ScreenPng } from '../gpu-present.ts';
 import { lzCodec } from '../lz.ts';
 import { openSnapshot, SnapshotError, type SnapshotHeader, type Sink } from '../snapshot-file.ts';
 import { readSnapshot, writeSnapshot, type SnapshotDisk } from '../snapshot.ts';
@@ -505,7 +506,17 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   // The resumed machine is about to write its disk: its suspended copy is void from here.
   if (resume) await dropSuspend(home!);
   if (restore) await keepFlash(vm, machine); // the restore deleted the copy beside the overlay: the bank the machine has goes back
-  if (vm.framebuffer && m.screen) showFramebuffer(m.screen, vm.memory, vm.framebuffer, () => post({ type: 'screen' })); // on this worker's animation frames
+  if (vm.framebuffer && m.screen) {
+    const screen = m.screen;
+    showFramebuffer(screen, vm.memory, vm.framebuffer, () => post({ type: 'screen' })); // on this worker's animation frames
+    // "Copy the screen" (docs/plans/clipboard.md §4.4): the framebuffer's canvas as it shows (a 2D context keeps its
+    // pixels). The display port is this worker's on a machine without virtio-gpu.
+    m.display.onmessage = (e: MessageEvent<DisplayFromPage>) => {
+      if (e.data?.type !== 'png') return;
+      const id = e.data.id;
+      void screen.convertToBlob({ type: 'image/png' }).catch(() => undefined).then((png) => m.display.postMessage({ type: 'png', id, png } satisfies ScreenPng));
+    };
+  }
   const t0 = performance.now();
   const ready = readyWatcher(machine.ready);
   let running = !!restore; // a restored machine is where it was: there's no marker to wait for

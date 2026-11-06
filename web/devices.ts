@@ -10,7 +10,7 @@ import { p9, type P9Files } from './9p.ts';
 import { folders9p, type FolderSpec } from './9p-folders.ts';
 import { echoBackend, echoLease, gateway, gatewayOf, portBackend } from './gateway.ts';
 import { busy, gpuBackend, type GpuOptions } from './gpu.ts';
-import { canvasPresenter, pagePresenter, type DisplayFromPage, type Screen2d } from './gpu-present.ts';
+import { canvasPresenter, pagePresenter, type DisplayFromPage, type Screen2d, type ScreenPng } from './gpu-present.ts';
 import { portHost } from './virgl-host.ts';
 import { loopback, portAdapter, type NetAdapter } from './net.ts';
 import { F_GUEST_CSUM, F_GUEST_TSO4, F_GUEST_TSO6, F_MRG_RXBUF, MAX_FRAME, MAX_GSO_FRAME, MAX_PORT_FRAME, NET_HDR, OFFLOADS, receive, transmit, type RxFrame } from './offload.ts';
@@ -1100,7 +1100,17 @@ export class Devices {
             b.gpu.host = host;
           }
           if (!d.renderer && d.canvas) console.info(`webpc: the 2D screen on ${b.gpu.hooks.raw ? 'WebGL2' : 'a 2D canvas'}`);
-          if (d.port) d.port.onmessage = (e: MessageEvent<DisplayFromPage>) => { if (e.data?.type === 'size') b.gpu.setSize(e.data.width, e.data.height); };
+          if (d.port) {
+            const port = d.port;
+            port.onmessage = (e: MessageEvent<DisplayFromPage>) => {
+              if (e.data?.type === 'size') b.gpu.setSize(e.data.width, e.data.height);
+              // "Copy the screen": a 2D machine's scanout as a PNG (a 3D machine's is the GPU worker's to read back).
+              if (e.data?.type === 'png') {
+                const id = e.data.id;
+                void Promise.resolve(b.gpu.hooks.png?.()).catch(() => undefined).then((png) => port.postMessage({ type: 'png', id, png } satisfies ScreenPng));
+              }
+            };
+          }
           if (d.capture && d.port) b.gpu.onCapture = (record) => d.port!.postMessage({ type: 'capture', record }, [record.buffer]);
           return b;
         }

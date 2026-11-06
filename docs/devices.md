@@ -178,13 +178,23 @@ closed).
   A selection while our own source holds the clipboard is ours: dropped. The host's hash stands for "the guest's
   clipboard still has the host's text": set by the page's inline offer (forgotten by one not inline, until a paste of
   it crosses whole, unless a newer offer replaced it meanwhile) and forgotten once the guest's clipboard holds anything
-  else (offered, emptied, no text), so the host's text copied again after that is news.
-- **The page's OFFER** of text (`text/plain;charset=utf-8` or `text/plain`, at most 16 MiB) becomes a data source of
-  ours offering `text/plain;charset=utf-8`, `text/plain`, `UTF8_STRING`, `TEXT`, `STRING` and `text`, set as the
-  selection, then a `sync`: its callback's done sends ACK `HELD` (the page's paste chord waits for it). A guest
-  program's paste (`send` with a pipe) gets the bytes from the cache (inline ones, or ones that crossed whole, up to 64
-  KiB) or a REQUEST to the page, the page's DATA written into the pipe (nonblocking) and a MORE for each frame written
-  whole; a reader that closes early gets the page a MORE 0. `cancelled` (another program copied) drops the source.
+  else (offered, emptied, no text, an image with it), so the host's text copied again after that is news.
+  **An image** among the selection's types (`clip::pick_image`: `image/png` first, else the first of `image/jpeg`,
+  `image/webp`, `image/bmp` and its `x-` names, `image/gif`, `image/avif`, which the page converts; not SVG or TIFF) joins
+  the OFFER after the text, as the program's type and of unknown size (Wayland says none), never read for the offer:
+  its bytes are read (`receive` of that type) only for a REQUEST of it, streamed within the credit as text is, at most
+  64 MiB (`clip::IMAGE_CAP`, counted as they cross; the text's cap 16 MiB). An image alone is offered at once; with
+  text, once the text's first bytes are read (the host's own text with an image: the image alone). Nothing of an image
+  is kept or hashed: the agent holds none.
+- **The page's OFFER** of text (`text/plain;charset=utf-8` or `text/plain`) and/or an image (`image/png`), each against
+  its cap by the offer's size before any bytes cross (a type past it left out; none left: ACK `TOO_LARGE`; neither type:
+  `NO_TYPE`), becomes a data source of ours offering `text/plain;charset=utf-8`, `text/plain`, `UTF8_STRING`, `TEXT`,
+  `STRING` and `text` for the text and `image/png` for the image, set as the selection, then a `sync`: its callback's
+  done sends ACK `HELD` (the page's paste chord waits for it). A guest program's paste (`send` with a pipe and the type
+  it asks) gets the text's bytes from the cache (inline ones, or ones that crossed whole, up to 64 KiB) or a REQUEST to
+  the page, an image's always from a REQUEST (never cached), the page's DATA written into the pipe (nonblocking) and a
+  MORE for each frame written whole; a reader that closes early gets the page a MORE 0; a type the source hasn't gets
+  its pipe closed. `cancelled` (another program copied) drops the source.
 - **PAUSE**: the source's selection cleared (`set_selection(null)`) and the source destroyed, so a paste can't pull
   more of the host's text; transfers end (DATA `FAIL`, MORE 0); the guest's selections are ignored until RESUME,
   which sends nothing.
@@ -201,10 +211,10 @@ to the side that offers, request ids to the side that requests:
 
 | Frame | Payload | |
 |---|---|---|
-| HELLO (1) | u16 version, u32 capabilities (LE); later versions append; the page's may append an 8-byte nonce | the page sends it at each opening of the port (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below) |
+| HELLO (1) | u16 version, u32 capabilities (LE); later versions append; the page's may append an 8-byte nonce | the page sends it at each opening of the port (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below), `CAP.IMAGE` (bit 2: images in them; the page offers an image only to an agent that says it, and takes one only from such an agent) |
 | SYNC (10) | the page's nonce | the agent's, before its HELLO when the page's HELLO had a nonce (`hello_answer`). The page sends one where the agent's stream may not begin at a frame: the port open in a restored snapshot (the device's `open` says `restored`: a snapshot can fall between the writes of one frame) and when its reader goes out of step; its reader then drops everything before the SYNC (`FrameReader.sync`) |
 | SESSION (11) | none | the agent's: the guest's clipboard changed hands (above). The page forgets its echo hashes, drops its transfers, and syncs the host's clipboard again if it may read it |
-| OFFER (2) | u32 serial, u8 flags (1: inline), u8 count, per type u8 length, the type, u32 size (`0xffffffff` unknown); inline: the rest is the first type's bytes | a side's clipboard changed: what it has. Text inline under 4 KiB (plan §2), else the other side REQUESTs it |
+| OFFER (2) | u32 serial, u8 flags (1: inline), u8 count, per type u8 length, the type, u32 size (`0xffffffff` unknown); inline: the rest is the first type's bytes | a side's clipboard changed: what it has. Text first, inline under 4 KiB (plan §2), else the other side REQUESTs it; an image after it, never inline |
 | REQUEST (3) | u32 serial, u32 id, u8 length, the type | the bytes of offer `serial`, please; the answer may send `CREDIT` (4) DATA frames before the requester's first MORE |
 | DATA (4) | u32 id, u8 flags (1 END, 2 FAIL), at most 64 KiB | an answer, in order; FAIL: none (a stale serial, a type not offered, paused, past the cap) |
 | ACK (8) | u32 serial, u8 status (0 HELD, 1 NO_SESSION, 2 PAUSED, 3 TOO_LARGE, 4 NO_TYPE) | the agent's answer to the page's OFFER |
@@ -232,6 +242,12 @@ for what the guest's clipboard has: an offer forgets the guest's, the guest's co
 or closing, HELLO, SESSION and the pause forget both (and drop the transfers). The page answers the agent's REQUESTs
 for its newest offer within their credit; its serials and request ids start at random (a restored agent may hold an
 earlier page's). Nothing of this happens while the link is paused, closed, or the agent's HELLO lacks `CAP.TEXT`.
+**Images** (plan §4.4, with `CAP.IMAGE` from both sides): the page offers a PNG (way 1's `read()`, the paste event's
+`File`, Send's `read()`) after its text in one OFFER, its size known (at most 64 MiB, else left out), and answers
+REQUESTs for `image/png` from its bytes, the one image it holds (a newer image's offer fails the older one's answers);
+the guest's image is requested at the write to the host's clipboard (frontend.md "The toolbar", Clipboard), each
+request with its type's cap. Its hashes cover text and image together (`contentHash`: the text's cyrb53, the image's
+SHA-256), and the guest's image stands as the host's read-back of it.
 
 ### clock (ID 17): virtio-rtc
 

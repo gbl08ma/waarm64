@@ -29,12 +29,22 @@ mounted on another device than `/run/user`), 14 (the plan's ports, X11 under the
 wakeups). The root loop has native tests now (`agent/src/serve_test.rs`: a socketpair for the port). Not done for 8:
 keeping the binary across restarts (each still reads fw_cfg: bounded by the limit). Next: step 5.
 
-## Next: step 5 (images, then X11)
+**Step 5's images done** (2026-11-06; plan §4.4 "Built", devices.md "The guest's agent", frontend.md "The toolbar"):
+`CAP.IMAGE` both sides; the agent offers a guest program's image (PNG first, else a type the page converts) after its
+text, streamed on request, never kept; takes the page's `image/png` within the 64 MiB cap (ACK `TOO_LARGE` past it);
+the page writes the guest's image as one `ClipboardItem` of promises (converted to PNG in `web/app/png-worker.ts`),
+reads it back once for the echo hash, offers the host's PNG from sync, Send and the paste chord's `File`; **Copy the
+screen** in the menu (3D: the GPU worker's `grab`; 2D: the display port's `png`). The sway image has `grim` now
+(rebuilt). Tests: `agent/src/sway_test.rs` (images both ways, the cap), `tests/agent.test.ts` (four image cases),
+`tests/page-clipboard-ui.test.ts` (Copy the screen on Buildroot's framebuffer, the PNG worker on a BMP, a JPEG, RGBA),
+`tests/page-clipboard.test.ts` (grim's PNG and a JPEG to the host, Copy the screen and a 1.5 MB PNG to the guest and
+back, the cap). Measured: a 1.58 MB PNG from the host to wl-paste in 1.9–2.0 s (~0.8 MB/s, the channel's rate under
+the credit); planted bugs: docs/testing.md's step-5 row.
 
-Plan §4.4 and §6 step 5: `image/png` both ways (the page's conversion to PNG in a worker, the read-back for echoes),
-a screenshot each way in the Wayland test; "copy the screen" joins there (the screen's canvas is a worker's: it needs
-a read-back, plan §4.4); then X11 (Xwayland, Xorg, INCR), then `text/html`. When images land, the setting's note
-says "text or an image" again (`machines:MachinesPage.clipboard.note`).
+## Next: step 5's X11, then `text/html`
+
+Plan §3.2 "X11" and §6 step 5: Xwayland and Xorg sessions (the sandbox's `PrivateTmp`/`PrivateNetwork` hide the
+sockets: the plan says what to measure), INCR for large images; then `text/html`.
 
 ## Open questions and left for the user
 
@@ -58,7 +68,11 @@ says "text or an image" again (`machines:MachinesPage.clipboard.note`).
 - **On the Arch desktop, by hand** (plan §6 step 3): foot and Firefox in the guest and the host, both ways; also the
   step-2 checks there (`qemu_fw_cfg` from Arch's kernel, `systemctl status webpc-agent`). Arch's sway has the ext
   protocol, which only the native test has exercised.
-- **The binary's size**: 403,000 bytes now (333 KiB at step 2): `#![no_std]` on rustix's runtime is still the lever
+- **Images not measured outside headless Chromium:** Firefox's and Safari's image writes (activation, the promise
+  form), the Mac's pasteboard with images, and the Arch desktop (Firefox's and foot's image copies, GIMP) are by hand.
+  Copy the screen is tested on Buildroot's framebuffer and on the page test's default display (3D where WebGL2 is,
+  `WEBPC_PAGE_QUERY=gpu=2d` for virtio-gpu 2D's scanout path): which one ci-debian ran wasn't checked.
+- **The binary's size**: 407,200 bytes now (333 KiB at step 2, 403,000 at step 3): `#![no_std]` on rustix's runtime is still the lever
   (plan §3.3), not done.
 - **Not done from §3.3:** `splice` between the port and the pipes (the child reads and writes in 64 KiB chunks; the
   port's bytes cross the parent anyway); cancelling a page→guest answer that the guest's reader dropped is a MORE 0 the

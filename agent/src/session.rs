@@ -8,11 +8,12 @@
 //! - **Guest to host:** a guest program's selection with text becomes an OFFER. Its first 4 KiB are read at once:
 //!   text that fits goes inline (`clip::INLINE`), unless it is what the host last gave (echo suppression: its hash);
 //!   longer text is offered without bytes and read when the page sends a REQUEST, in DATA frames as the page's MOREs
-//!   allow.
-//! - **Host to guest:** the page's OFFER becomes a data source of ours, set as the selection; ACK says so once the
-//!   compositor has it. A guest program's paste (`send`) streams the page's DATA into its pipe, requested each time
-//!   but for text of 64 KiB or less, kept once it has crossed (`clip::CACHE`). Our own source's selection isn't
-//!   offered back.
+//!   allow. An image (`clip::pick_image`: PNG first, else a type the page converts) joins the OFFER as its program's
+//!   type, never read but for a REQUEST (plan §4.4: the agent holds no image).
+//! - **Host to guest:** the page's OFFER (text, `image/png`, or both, each within its cap by the offer's size) becomes a
+//!   data source of ours, set as the selection; ACK says so once the compositor has it. A guest program's paste
+//!   (`send`) streams the page's DATA into its pipe, requested each time but for text of 64 KiB or less, kept once it
+//!   has crossed (`clip::CACHE`; an image never). Our own source's selection isn't offered back.
 //! - **PAUSE:** our source goes (the guest's clipboard is cleared if it held the host's data), transfers stop, the
 //!   guest's selections are ignored until RESUME.
 //! - **SESSION:** when the data device comes (a compositor's, bound) or goes (the compositor gone, its seat gone), the
@@ -155,24 +156,30 @@ impl Wl {
 struct Guest {
     serial: u32,
     offer: u32,
-    mime: String,
+    /// The guest program's types the page may request: its text's (offered as `clip::TEXT`) and its image's (offered
+    /// as it is).
+    text: Option<String>,
+    image: Option<String>,
 }
 
-/// The first bytes of the guest's selection, being read for its OFFER.
+/// The first bytes of the guest's selection's text, being read for its OFFER (with its image's type, if it has one).
 struct Probe {
     serial: u32,
     offer: u32,
     mime: String,
+    image: Option<String>,
     fd: OwnedFd,
     buf: Vec<u8>,
 }
 
-/// The page's offer, as our source in the guest's clipboard.
+/// The page's offer, as our source in the guest's clipboard: text (the page's type for it), an image (`image/png`), or
+/// both.
 struct Host {
     serial: u32,
     source: u32,
-    mime: String,
-    /// Its bytes once they crossed whole (up to `clip::CACHE`), or inline.
+    text: Option<String>,
+    image: bool,
+    /// Its text once it crossed whole (up to `clip::CACHE`), or inline; images are never kept.
     cache: Option<Vec<u8>>,
 }
 
@@ -183,6 +190,8 @@ enum Xfer {
         fd: OwnedFd,
         credit: u32,
         sent: usize,
+        /// The most it sends (`clip::cap` of its type).
+        cap: usize,
     },
     /// The page's bytes into a guest program's pipe: for our request `id` (0: from the cache, no request).
     In {
@@ -195,6 +204,10 @@ enum Xfer {
         ended: bool,
         serial: u32,
         len: usize,
+        /// The most it takes (`clip::cap` of its type).
+        cap: usize,
+        /// Text (its hash and its copy kept once whole), not an image (streamed, nothing kept).
+        text: bool,
         hash: Hash,
         copy: Option<Vec<u8>>,
     },
@@ -618,16 +631,26 @@ impl Child {
         if self.paused {
             return self.ack(o.serial, ack::PAUSED);
         }
-        let Some(&(mime, size)) = o.types.iter().find(|(t, _)| clip::is_page_text(t)) else {
+        let text = o.types.iter().find(|(t, _)| clip::is_page_text(t));
+        let image = o
+            .types
+            .iter()
+            .find(|(t, _)| t.eq_ignore_ascii_case(clip::PNG));
+        if text.is_none() && image.is_none() {
             return self.ack(o.serial, ack::NO_TYPE);
+        }
+        // Each type against its cap by the offer's size, before any bytes cross (plan §3.2, §4.4); inline bytes are the
+        // first type's. A type past its cap is left out; none left: too large.
+        let inline = text.and_then(|&(t, _)| o.inline.filter(|_| o.types[0].0 == t));
+        let fits = |&&(t, size): &&(&str, u32)| {
+            (size == frame::UNKNOWN || size as usize <= clip::cap(t))
+                && !(clip::is_page_text(t) && inline.is_some_and(|b| b.len() > clip::TEXT_CAP))
         };
-        // Inline bytes are the first type's.
-        let inline = o.inline.filter(|_| o.types[0].0 == mime);
-        if (size != frame::UNKNOWN && size as usize > clip::TEXT_CAP)
-            || inline.is_some_and(|b| b.len() > clip::TEXT_CAP)
-        {
+        let (text, image) = (text.filter(fits), image.filter(fits));
+        if text.is_none() && image.is_none() {
             return self.ack(o.serial, ack::TOO_LARGE);
         }
+        let inline = inline.filter(|_| text.is_some());
         let Some(wl) = self.wl.as_mut() else {
             return self.ack(o.serial, ack::NO_SESSION);
         };
@@ -646,8 +669,14 @@ impl Child {
         wl.msg(manager, op::CREATE_DATA_SOURCE)
             .object(source)
             .done();
-        for t in clip::TEXT_ALIASES {
-            wl.msg(source, op::OFFER).string(t).done();
+        if text.is_some() {
+            for t in clip::TEXT_ALIASES {
+                wl.msg(source, op::OFFER).string(t).done();
+            }
+        }
+        // `image/png` alone: the name programs ask an image by (plan §4.4).
+        if image.is_some() {
+            wl.msg(source, op::OFFER).string(clip::PNG).done();
         }
         wl.msg(device, op::SET_SELECTION).object(source).done();
         let cb = wl.id(Obj::Ack(o.serial));
@@ -657,18 +686,29 @@ impl Child {
         self.host = Some(Host {
             serial: o.serial,
             source,
-            mime: mime.to_owned(),
+            text: text.map(|&(t, _)| t.to_owned()),
+            image: image.is_some(),
             cache: inline.map(|b| b.to_vec()),
         });
     }
 
-    /// A guest program pastes the host's offer: its bytes into `fd`.
-    fn host_send(&mut self, source: u32, fd: OwnedFd) {
+    /// A guest program pastes the host's offer as `mime`: its bytes into `fd` (closed at once for a type the offer
+    /// hasn't).
+    fn host_send(&mut self, source: u32, fd: OwnedFd, mime: &str) {
         let Some(h) = self.host.as_ref().filter(|h| h.source == source) else {
             return;
         };
+        let image = clip::is_image(mime);
+        let (serial, cache, mime) = match (&h.text, image) {
+            (_, true) if h.image && mime.eq_ignore_ascii_case(clip::PNG) => {
+                (h.serial, None, clip::PNG.to_owned())
+            }
+            (Some(t), false) if clip::TEXT_ALIASES.contains(&mime) => {
+                (h.serial, h.cache.clone(), t.clone())
+            }
+            _ => return,
+        };
         nonblocking(&fd);
-        let (serial, cache, mime) = (h.serial, h.cache.clone(), h.mime.clone());
         if let Some(buf) = cache {
             self.xfers.push(Xfer::In {
                 id: 0,
@@ -678,6 +718,8 @@ impl Child {
                 ended: true,
                 serial,
                 len: buf.len(),
+                cap: clip::TEXT_CAP,
+                text: true,
                 hash: Hash::default(),
                 copy: None,
                 buf,
@@ -702,8 +744,11 @@ impl Child {
             ended: false,
             serial,
             len: 0,
+            cap: clip::cap(&mime),
+            text: !image,
             hash: Hash::default(),
-            copy: Some(Vec::new()),
+            // An image is streamed, never kept (plan §4.4: the agent holds none).
+            copy: (!image).then(Vec::new),
         });
     }
 
@@ -720,6 +765,7 @@ impl Child {
             ends,
             ended,
             len,
+            cap,
             hash,
             copy,
             ..
@@ -732,7 +778,7 @@ impl Child {
             return;
         }
         *len += b.len();
-        if *len > clip::TEXT_CAP {
+        if *len > *cap {
             self.xfers.remove(i);
             return self.send(frame::MORE, |o| o.extend_from_slice(&frame::more(id, 0)));
         }
@@ -785,8 +831,14 @@ impl Child {
             .offers
             .get(&offer)
             .map_or(Vec::new(), |t| t.iter().map(|s| s.as_str()).collect());
+        let image = clip::pick_image(&types).map(str::to_owned);
         let Some(mime) = clip::pick_text(&types).map(str::to_owned) else {
+            // No text: an image is offered at once (its bytes when the page asks), else nothing.
             self.last_host = None;
+            if let Some(image) = image {
+                let serial = self.next();
+                self.offer_guest(serial, offer, None, Some(image));
+            }
             return;
         };
         let Some((r, w)) = pipe() else { return };
@@ -798,6 +850,7 @@ impl Child {
             serial,
             offer,
             mime,
+            image,
             fd: r,
             buf: Vec::new(),
         });
@@ -811,7 +864,12 @@ impl Child {
             Ok(n) => n,
             Err(Errno::INTR) | Err(Errno::AGAIN) => return,
             Err(_) => {
-                self.probe = None;
+                // The text unread: its image, if it has one, is offered alone.
+                let p = self.probe.take().unwrap();
+                if p.image.is_some() {
+                    self.last_host = None;
+                    self.offer_guest(p.serial, p.offer, None, p.image);
+                }
                 return;
             }
         };
@@ -820,39 +878,72 @@ impl Child {
             return;
         }
         let p = self.probe.take().unwrap();
-        self.guest = Some(Guest {
-            serial: p.serial,
-            offer: p.offer,
-            mime: p.mime,
-        });
-        let serial = p.serial;
-        let (size, inline) = match clip::announce(&p.buf, n == 0, self.last_host) {
-            clip::Announce::Inline => (p.buf.len() as u32, Some(&p.buf[..])),
-            clip::Announce::Lazy => (frame::UNKNOWN, None),
+        let text = match clip::announce(&p.buf, n == 0, self.last_host) {
+            clip::Announce::Inline => Some((p.mime, p.buf.len() as u32, Some(p.buf))),
+            clip::Announce::Lazy => Some((p.mime, frame::UNKNOWN, None)),
             clip::Announce::Nothing => {
-                // The host's text back (the hash still stands), or nothing at all (it doesn't).
-                if p.buf.is_empty() {
+                // The host's text back (the hash still stands, unless an image came with it), or nothing at all (it
+                // doesn't).
+                if p.buf.is_empty() || p.image.is_some() {
                     self.last_host = None;
+                }
+                if p.image.is_some() {
+                    self.offer_guest(p.serial, p.offer, None, p.image);
                 }
                 return;
             }
         };
         // Something else: the clipboard moved on from the host's text, which a guest program may copy again later.
         self.last_host = None;
-        self.send(frame::OFFER, |o| {
-            frame::Offer {
-                serial,
-                types: vec![(clip::TEXT, size)],
-                inline,
-            }
-            .encode(o)
+        self.offer_guest(p.serial, p.offer, text, p.image);
+    }
+
+    /// The guest's selection `offer` to the page as OFFER `serial`: its text (the guest program's type, the size, the
+    /// bytes inline) first, then its image (unknown size: a guest program's offer says none).
+    fn offer_guest(
+        &mut self,
+        serial: u32,
+        offer: u32,
+        text: Option<(String, u32, Option<Vec<u8>>)>,
+        image: Option<String>,
+    ) {
+        let mut types = Vec::with_capacity(2);
+        let mut inline = None;
+        if let Some((_, size, bytes)) = &text {
+            types.push((clip::TEXT, *size));
+            inline = bytes.as_deref();
+        }
+        if let Some(i) = &image {
+            types.push((i.as_str(), frame::UNKNOWN));
+        }
+        let mut out = Vec::new();
+        frame::Offer {
+            serial,
+            types,
+            inline,
+        }
+        .encode(&mut out);
+        self.send(frame::OFFER, |o| o.extend_from_slice(&out));
+        self.guest = Some(Guest {
+            serial,
+            offer,
+            text: text.map(|(t, _, _)| t),
+            image,
         });
     }
 
     fn page_request(&mut self, r: frame::Request<'_>) {
-        let ok = !self.paused && clip::is_page_text(r.mime);
-        let (Some(g), Some(wl)) = (self.guest.as_ref().filter(|_| ok), self.wl.as_mut()) else {
+        let (Some(g), Some(wl)) = (
+            self.guest.as_ref().filter(|_| !self.paused),
+            self.wl.as_mut(),
+        ) else {
             return self.fail(r.id);
+        };
+        // The text as the page's type, the image as the guest program's.
+        let mime = match (&g.text, &g.image) {
+            (Some(t), _) if clip::is_page_text(r.mime) => t.clone(),
+            (_, Some(i)) if i.eq_ignore_ascii_case(r.mime) => i.clone(),
+            _ => return self.fail(r.id),
         };
         if g.serial != r.serial || wl.selection != Some(g.offer) {
             return self.fail(r.id);
@@ -861,13 +952,14 @@ impl Child {
             return self.fail(r.id);
         };
         nonblocking(&rd);
-        wl.msg(g.offer, op::RECEIVE).string(&g.mime).done();
+        wl.msg(g.offer, op::RECEIVE).string(&mime).done();
         wl.conn.push_fd(w);
         self.xfers.push(Xfer::Out {
             id: r.id,
             fd: rd,
             credit: frame::CREDIT,
             sent: 0,
+            cap: clip::cap(&mime),
         });
     }
 
@@ -894,6 +986,7 @@ impl Child {
                 fd,
                 credit,
                 sent,
+                cap,
             } => {
                 if *credit == 0 {
                     return true;
@@ -911,7 +1004,7 @@ impl Child {
                 let id = *id;
                 *sent += n;
                 *credit -= 1;
-                if *sent > clip::TEXT_CAP {
+                if *sent > *cap {
                     self.fail(id);
                     return false;
                 }
@@ -927,6 +1020,7 @@ impl Child {
                 ends,
                 ended,
                 serial,
+                text,
                 hash,
                 copy,
                 ..
@@ -963,8 +1057,10 @@ impl Child {
                     return false;
                 }
                 if done {
-                    // The host's text whole: its hash and its copy, unless a newer offer replaced it meanwhile.
+                    // The host's text whole: its hash and its copy, unless a newer offer replaced it meanwhile (an
+                    // image: nothing kept).
                     if id != 0
+                        && *text
                         && let Some(h) = self.host.as_mut().filter(|h| h.serial == serial)
                     {
                         h.cache = copy.take();
@@ -1136,8 +1232,8 @@ impl Child {
                 }
             }
             (Obj::Source, op::SEND) => {
-                if let (Some(fd), Some(Some(_mime))) = (fd, a.string()) {
-                    self.host_send(object, fd);
+                if let (Some(fd), Some(Some(mime))) = (fd, a.string()) {
+                    self.host_send(object, fd, mime);
                 }
             }
             (Obj::Source, op::CANCELLED) => {

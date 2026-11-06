@@ -572,3 +572,278 @@ fn the_hosts_hash_and_transfers_follow_the_clipboard() {
     drop(page);
     assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
 }
+
+/// The page's DATA for request `id`: `bytes` in chunks, within the credit (MOREs taken as they come).
+fn answer(page: &mut Page, id: u32, bytes: &[u8]) {
+    let chunks: Vec<&[u8]> = bytes.chunks(frame::CHUNK).collect();
+    let (mut sent, mut credit) = (0, frame::CREDIT as usize);
+    while sent < chunks.len() {
+        while credit > 0 && sent < chunks.len() {
+            let end = sent + 1 == chunks.len();
+            let mut d = Vec::new();
+            frame::data(
+                id,
+                if end { frame::DATA_END } else { 0 },
+                chunks[sent],
+                &mut d,
+            );
+            page.send(frame::DATA, &d);
+            sent += 1;
+            credit -= 1;
+        }
+        if sent < chunks.len() {
+            let m = page.next(frame::MORE, 5000).expect("a MORE");
+            let (i, n) = frame::decode_more(&m).unwrap();
+            if i == id {
+                credit += n as usize;
+            }
+        }
+    }
+}
+
+/// What the page gets for its REQUEST of offer `serial` as `mime` (id `id`), MOREs as it goes; None if it failed.
+fn fetch(page: &mut Page, serial: u32, id: u32, mime: &str) -> Option<Vec<u8>> {
+    let mut req = Vec::new();
+    frame::Request { serial, id, mime }.encode(&mut req);
+    page.send(frame::REQUEST, &req);
+    let mut got = Vec::new();
+    loop {
+        let p = page.next(frame::DATA, 5000).expect("DATA");
+        let (i, flags, b) = frame::decode_data(&p).unwrap();
+        assert_eq!(i, id);
+        if flags & frame::DATA_FAIL != 0 {
+            return None;
+        }
+        got.extend_from_slice(b);
+        if flags & frame::DATA_END != 0 {
+            return Some(got);
+        }
+        page.send(frame::MORE, &frame::more(id, 1));
+    }
+}
+
+/// Bytes that stand for an image: the agent passes them through, whatever they are.
+fn picture(n: usize, seed: u32) -> Vec<u8> {
+    let mut x = seed | 1;
+    (0..n)
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            x as u8
+        })
+        .collect()
+}
+
+#[test]
+fn shares_images_both_ways_streamed_and_capped() {
+    if !have("sway") || !have("wl-copy") {
+        eprintln!("SKIPPED: no sway or wl-clipboard (docs/devenv.md)");
+        return;
+    }
+    let sway = Sway::start("images");
+    let (mine, theirs) = socketpair(
+        AddressFamily::UNIX,
+        SocketType::STREAM,
+        SocketFlags::CLOEXEC,
+        None,
+    )
+    .unwrap();
+    let runtime = sway.dir.to_str().unwrap().to_owned();
+    let child = std::thread::spawn(move || session::serve(theirs, runtime, 0x0100_0000));
+    let mut page = Page {
+        fd: mine,
+        reader: frame::Reader::default(),
+        frames: Vec::new(),
+    };
+    assert!(page.next(frame::SESSION, 5000).is_some());
+    let copy = |mime: &str, bytes: &[u8]| {
+        let mut c = sway
+            .wl("wl-copy")
+            .args(["--type", mime])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        c.stdin.take().unwrap().write_all(bytes).unwrap();
+        assert!(c.wait().unwrap().success());
+    };
+    let paste = |mime: &str| {
+        sway.wl("timeout")
+            .args(["5", "wl-paste", "-n", "-t", mime])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap()
+    };
+    let types = || {
+        let out = sway.wl("wl-paste").arg("-l").output().unwrap();
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let offer = |page: &mut Page| {
+        let p = page.next(frame::OFFER, 5000).expect("an OFFER");
+        let o = frame::Offer::decode(&p).unwrap();
+        let types: Vec<(String, u32)> = o.types.iter().map(|(t, s)| (t.to_string(), *s)).collect();
+        (o.serial, types, o.inline.map(|b| b.to_vec()))
+    };
+
+    // Guest to host: a PNG offered at once, without its bytes (no size: Wayland says none), which a REQUEST streams
+    // under the credit (past CREDIT frames: 300 KiB).
+    let png = picture(300 << 10, 7);
+    copy("image/png", &png);
+    let (serial, offered, inline) = offer(&mut page);
+    assert_eq!(offered, vec![("image/png".to_owned(), frame::UNKNOWN)]);
+    assert_eq!(inline, None);
+    let got = fetch(&mut page, serial, 1, "image/png").expect("the PNG's bytes");
+    assert!(got == png, "the PNG: {} bytes of {}", got.len(), png.len());
+    // Asked as text, which it hasn't: FAIL.
+    assert_eq!(fetch(&mut page, serial, 2, TEXT), None);
+    // A JPEG alone: offered as it is (the page converts it), not as PNG.
+    let jpeg = picture(5000, 9);
+    copy("image/jpeg", &jpeg);
+    let (serial, offered, _) = offer(&mut page);
+    assert_eq!(offered, vec![("image/jpeg".to_owned(), frame::UNKNOWN)]);
+    assert_eq!(
+        fetch(&mut page, serial, 3, "image/png"),
+        None,
+        "no PNG offered"
+    );
+    assert!(fetch(&mut page, serial, 4, "image/jpeg").unwrap() == jpeg);
+    // An image the page can't take (SVG; wl-copy offers it as text too): its text alone.
+    copy("image/svg+xml", b"<svg/>");
+    let (_, offered, inline) = offer(&mut page);
+    assert_eq!(offered, vec![(TEXT.to_owned(), 6)]);
+    assert_eq!(inline.as_deref(), Some(&b"<svg/>"[..]));
+
+    // Host to guest: the page's PNG, held; offered to guest programs as image/png alone; each paste requests it (no
+    // cache for images), streamed within the credit.
+    let host = picture(400 << 10, 11);
+    let mut o = Vec::new();
+    frame::Offer {
+        serial: 20,
+        types: vec![("image/png", host.len() as u32)],
+        inline: None,
+    }
+    .encode(&mut o);
+    page.send(frame::OFFER, &o);
+    assert_eq!(
+        page.next(frame::ACK, 3000).as_deref(),
+        Some(&frame::ack(20, ack::HELD)[..])
+    );
+    assert_eq!(types().trim(), "image/png");
+    for _ in 0..2 {
+        let mut p = paste("image/png");
+        let q = page.next(frame::REQUEST, 5000).expect("a REQUEST");
+        let r = frame::Request::decode(&q).unwrap();
+        assert_eq!((r.serial, r.mime), (20, "image/png"));
+        let mut out = p.stdout.take().unwrap();
+        let reader = std::thread::spawn(move || {
+            let mut b = Vec::new();
+            out.read_to_end(&mut b).unwrap();
+            b
+        });
+        answer(&mut page, r.id, &host);
+        let b = reader.join().unwrap();
+        assert!(p.wait().unwrap().success());
+        assert!(
+            b == host,
+            "the pasted PNG: {} bytes of {}",
+            b.len(),
+            host.len()
+        );
+    }
+    // Text and an image: both offered (the text inline, from the cache; the image requested).
+    let mut o = Vec::new();
+    frame::Offer {
+        serial: 21,
+        types: vec![(TEXT, 5), ("image/png", 3)],
+        inline: Some(b"alt t"),
+    }
+    .encode(&mut o);
+    page.send(frame::OFFER, &o);
+    assert_eq!(
+        page.next(frame::ACK, 3000).as_deref(),
+        Some(&frame::ack(21, ack::HELD)[..])
+    );
+    let listed = types();
+    assert!(
+        listed.lines().any(|l| l == "image/png") && listed.lines().any(|l| l == TEXT),
+        "{listed}"
+    );
+    assert_eq!(sway.paste().as_deref(), Some(&b"alt t"[..]));
+    assert!(
+        page.next(frame::REQUEST, 300).is_none(),
+        "the text inline: no request"
+    );
+    let p = paste("image/png");
+    let q = page.next(frame::REQUEST, 5000).expect("a REQUEST");
+    let r = frame::Request::decode(&q).unwrap();
+    assert_eq!(r.mime, "image/png");
+    answer(&mut page, r.id, b"png");
+    assert_eq!(p.wait_with_output().unwrap().stdout, b"png");
+    // The image whole changed nothing of the text's cache, and isn't kept: pasted again, it is requested again.
+    assert_eq!(sway.paste().as_deref(), Some(&b"alt t"[..]));
+    let p = paste("image/png");
+    let q = page
+        .next(frame::REQUEST, 5000)
+        .expect("a REQUEST for the second paste");
+    let r = frame::Request::decode(&q).unwrap();
+    answer(&mut page, r.id, b"png");
+    assert_eq!(p.wait_with_output().unwrap().stdout, b"png");
+
+    // The cap, against the offer's size before any bytes cross: an image past it alone is refused; with text, the
+    // text alone is held.
+    let mut o = Vec::new();
+    frame::Offer {
+        serial: 22,
+        types: vec![("image/png", (crate::clip::IMAGE_CAP + 1) as u32)],
+        inline: None,
+    }
+    .encode(&mut o);
+    page.send(frame::OFFER, &o);
+    assert_eq!(
+        page.next(frame::ACK, 3000).as_deref(),
+        Some(&frame::ack(22, ack::TOO_LARGE)[..])
+    );
+    assert!(
+        types().lines().any(|l| l == "image/png"),
+        "the earlier offer still held"
+    );
+    let mut o = Vec::new();
+    frame::Offer {
+        serial: 23,
+        types: vec![
+            (TEXT, 4),
+            ("image/png", (crate::clip::IMAGE_CAP + 1) as u32),
+        ],
+        inline: Some(b"only"),
+    }
+    .encode(&mut o);
+    page.send(frame::OFFER, &o);
+    assert_eq!(
+        page.next(frame::ACK, 3000).as_deref(),
+        Some(&frame::ack(23, ack::HELD)[..])
+    );
+    assert!(
+        !types().lines().any(|l| l == "image/png"),
+        "the image past the cap offered"
+    );
+    assert_eq!(sway.paste().as_deref(), Some(&b"only"[..]));
+    // Neither text nor PNG: no type.
+    let mut o = Vec::new();
+    frame::Offer {
+        serial: 24,
+        types: vec![("image/jpeg", 3)],
+        inline: None,
+    }
+    .encode(&mut o);
+    page.send(frame::OFFER, &o);
+    assert_eq!(
+        page.next(frame::ACK, 3000).as_deref(),
+        Some(&frame::ack(24, ack::NO_TYPE)[..])
+    );
+
+    drop(page);
+    assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
+}

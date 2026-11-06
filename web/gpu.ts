@@ -182,6 +182,8 @@ export type GpuHooks = {
   cursor?(image: Uint8Array | null, hotX: number, hotY: number, x: number, y: number): void;
   /** A virtio reset: no cursor was ever set (a pointer over the firmware's screens is the host's own), unlike `cursor(null)`, which the guest asked for. */
   cursorReset?(): void;
+  /** The screen as it shows now, as a PNG ("Copy the screen"); undefined without a scanout. */
+  png?(): Promise<Blob> | undefined;
 };
 
 /** What `Gpu.state()` says: the display, the resources without their pixels, and the hashes of what is visible. */

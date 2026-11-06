@@ -1,6 +1,6 @@
 {
   "ClipboardMenu.title.sharing": {
-    "message": "Clipboard sharing is on. Text you copy on your computer reaches the guest, and text copied in the guest reaches your computer.",
+    "message": "Clipboard sharing is on. Text and images you copy on your computer reach the guest, and text and images copied in the guest reach your computer.",
     "note": "Tooltip of the toolbar's clipboard button (shown while the running machine shares the clipboard), while it shares and nothing limits it."
   },
   "ClipboardMenu.title.limited": {
@@ -59,9 +59,25 @@
     "message": "Paste what you copied on your computer at the guest's text console, as if typed.",
     "note": "The toolbar's clipboard menu: tooltip of ClipboardMenu.type."
   },
+  "ClipboardMenu.screen": {
+    "message": "Copy the screen",
+    "note": "The toolbar's clipboard menu: button that puts a picture of the guest's screen (what the page shows of it) on the computer's clipboard, as an image. It works without the guest's program."
+  },
+  "ClipboardMenu.screen.title": {
+    "message": "Put a picture of the guest's screen on your computer's clipboard, as an image you can paste in other programs.",
+    "note": "The toolbar's clipboard menu: tooltip of ClipboardMenu.screen."
+  },
+  "ClipboardMenu.screen.failed": {
+    "message": "There was no picture of the screen to copy, or this browser didn't let this web app put it on the clipboard.",
+    "note": "The toolbar's clipboard menu: a note after Copy the screen failed (the guest hadn't shown anything yet, or the browser refused the write)."
+  },
   "ClipboardMenu.failed": {
     "message": "This browser gave this web app no text from the clipboard.",
-    "note": "The toolbar's clipboard menu: a note after Send the clipboard to the guest or Type the clipboard found no text (the clipboard had none, or the browser refused)."
+    "note": "The toolbar's clipboard menu: a note after Type the clipboard found no text (the clipboard had none, or the browser refused)."
+  },
+  "ClipboardMenu.failed.send": {
+    "message": "This browser gave this web app no text or image from the clipboard.",
+    "note": "The toolbar's clipboard menu: a note after Send the clipboard to the guest found no text and no image (the clipboard had none, or the browser refused)."
   },
   "ClipboardMenu.notText": {
     "message": "The guest's screen shows a graphical desktop, not its text console, so nothing was typed. Paste with the keyboard on the screen instead.",

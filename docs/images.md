@@ -154,7 +154,8 @@ on (skipped without it).
 
 ## Debian with sway (`images/debian-sway/build.sh`)
 
-On demand, as the one above: the pinned Debian with `sway` (1.10.1, wlroots 0.18.2) and `wl-clipboard` (2.2.1)
+On demand, as the one above: the pinned Debian with `sway` (1.10.1, wlroots 0.18.2), `wl-clipboard` (2.2.1) and `grim`
+(1.4.0, the screenshots of the clipboard's image test)
 installed by apt in QEMU without recommends (~2 min), then `images/debian-sway/setup.sh` run in the guest: the user
 `user` (uid 1000, no password), logged in on tty1 at boot by getty (`--autologin`, a drop-in of `getty@tty1`), whose
 `~/.bash_profile` there `exec`s a headless sway (`WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1`,

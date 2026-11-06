@@ -35,7 +35,7 @@ use std::mem::MaybeUninit;
 const PORT: &str = "/dev/virtio-ports/org.webpc.agent.0";
 
 /// What the agent says it can do (frame.rs `cap`).
-const CAPS: u32 = frame::cap::TYPE | frame::cap::TEXT;
+const CAPS: u32 = frame::cap::TYPE | frame::cap::TEXT | frame::cap::IMAGE;
 
 /// The bytes queued for a child past which it is taken to be stuck (and stopped): the page's DATA is paced by the
 /// child's MOREs, so a child that keeps up never has this much waiting.

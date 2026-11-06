@@ -5,8 +5,10 @@
 // asks, which headless Chromium answers with a denial; denied: how to allow it; granted, by the test, updating the
 // button at once); sync with the permission (the host's copy offered on `clipboardchange`, which Chromium fires);
 // the switch saying PAUSE and RESUME, nothing offered while paused and nothing sent by the resume; Send the clipboard
-// to the guest and Type the clipboard. And the Machines page's switch: off for a machine that hasn't it, its note,
-// ticking it asks for the permission, the orphans' warning both ways, saved into the record.
+// to the guest and Type the clipboard; Copy the screen (the framebuffer the guest drew, as a PNG on the host's
+// clipboard, with no agent). The PNG worker (web/app/png.ts) on a BMP, a JPEG and RGBA pixels. And the Machines page's
+// switch: off for a machine that hasn't it, its note, ticking it asks for the permission, the orphans' warning both
+// ways, saved into the record.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
@@ -35,6 +37,8 @@ after(async () => { await browser?.close(); close?.(); });
 
 const terminal = (page: Page) => page.evaluate(() => document.querySelector('.xterm-rows')?.textContent ?? '');
 async function onSerial(page: Page, text: string) {
+  // The clipboard menu, left open, would cover the terminal.
+  await page.evaluate(() => { const m = document.getElementById('clipboard-menu') as HTMLDetailsElement | null; if (m) m.open = false; });
   await page.locator('.xterm').click();
   await page.keyboard.type(text, { delay: 5 });
 }
@@ -179,6 +183,94 @@ test("the toolbar's clipboard button: only with the setting; waiting, sharing, p
   await guestWrites(page, HELLO);
   const [atHello] = await guestReads(page, offerSize(during));
   assert.equal(inline(atHello), during);
+
+  // Copy the screen: a PNG of the framebuffer (640×480, the console's text on it) on the host's clipboard, no agent
+  // needed (the port closed: waiting).
+  await onSerial(page, 'exec 3>&-\n');
+  await waitButton(page, (x) => x.state === 'waiting', 'the port closed again');
+  // The guest draws its top 160 rows white (x8r8g8b8: 640 × 4 bytes a row); the rest stays black.
+  assert.equal(await run(page, "head -c 409600 /dev/zero | tr '\\000' '\\377' >/dev/fb0; echo drawn"), 'drawn');
+  await page.waitForTimeout(500);
+  await menu(page, true);
+  await page.click('#clipboard-screen');
+  const screenShot = () => page.evaluate(async () => {
+    const item = (await navigator.clipboard.read()).find((i) => i.types.includes('image/png'));
+    if (!item) return undefined;
+    const bitmap = await createImageBitmap(await item.getType('image/png'));
+    const c = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const g = c.getContext('2d')!;
+    g.drawImage(bitmap, 0, 0);
+    const d = g.getImageData(0, 0, bitmap.width, bitmap.height).data;
+    let [white, black] = [0, 0];
+    for (let k = 0; k < d.length; k += 4) {
+      if (d[k] === 255 && d[k + 1] === 255 && d[k + 2] === 255) white++;
+      else if (!(d[k] | d[k + 1] | d[k + 2])) black++;
+    }
+    return { width: bitmap.width, height: bitmap.height, white, black, top: [...d.subarray(0, 4)], opaque: d.every((v, k) => k % 4 !== 3 || v === 255) };
+  });
+  let shot = await screenShot();
+  for (let i = 0; !shot && i < 40; i++) {
+    await page.waitForTimeout(250);
+    shot = await screenShot();
+  }
+  assert.ok(shot, 'no image on the host\'s clipboard after Copy the screen');
+  assert.deepEqual(shot, { width: 640, height: 480, white: 640 * 160, black: 640 * 320, top: [255, 255, 255, 255], opaque: true }, 'the screen\'s PNG');
+  await menu(page, true);
+  assert.equal(await page.locator('#clipboard-failed').count(), 0);
+  await menu(page, false);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('the PNG worker (web/app/png.ts): a BMP, a JPEG and RGBA pixels as PNGs of the same pixels; what the browser can\'t decode refused', { timeout: 60_000 }, async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.route(`${base}/png.html`, (r) => r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>png</title>' }));
+  await page.goto(`${base}/png.html`);
+  const got = await page.evaluate(async () => {
+    const { rgbaPng, toPng } = await import('/web/app/png.ts' as string) as typeof import('../web/app/png.ts');
+    const pixels = async (b: Blob) => {
+      const bitmap = await createImageBitmap(b);
+      const c = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const g = c.getContext('2d')!;
+      g.drawImage(bitmap, 0, 0);
+      return { type: b.type, signature: [...new Uint8Array(await b.slice(0, 8).arrayBuffer())], width: bitmap.width, height: bitmap.height, rgba: [...g.getImageData(0, 0, bitmap.width, bitmap.height).data] };
+    };
+    // A 2×2 BMP, 24 bits, bottom-up rows of BGR padded to 4 bytes: blue, green over red, white.
+    const bmp = new Uint8Array(70);
+    const v = new DataView(bmp.buffer);
+    bmp.set([0x42, 0x4d]);
+    v.setUint32(2, 70, true);
+    v.setUint32(10, 54, true);
+    v.setUint32(14, 40, true);
+    v.setInt32(18, 2, true);
+    v.setInt32(22, 2, true);
+    v.setUint16(26, 1, true);
+    v.setUint16(28, 24, true);
+    v.setUint32(34, 16, true);
+    bmp.set([0, 0, 255, 255, 255, 255, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0], 54);
+    const fromBmp = await pixels(await toPng(new Blob([bmp], { type: 'image/bmp' })));
+    // A JPEG of a canvas, red on the left and blue on the right.
+    const c = new OffscreenCanvas(64, 32);
+    const g = c.getContext('2d')!;
+    g.fillStyle = '#f00';
+    g.fillRect(0, 0, 32, 32);
+    g.fillStyle = '#00f';
+    g.fillRect(32, 0, 32, 32);
+    const fromJpeg = await pixels(await toPng(await c.convertToBlob({ type: 'image/jpeg', quality: 0.95 })));
+    const fromRgba = await pixels(await rgbaPng(2, 1, new Uint8Array([10, 20, 30, 255, 200, 100, 50, 255])));
+    const refused = await toPng(new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' })).then(() => 'converted', (e) => (e as DOMException).name);
+    return { fromBmp, fromJpeg: { ...fromJpeg, rgba: undefined, left: fromJpeg.rgba.slice(4 * (16 * 64 + 8), 4 * (16 * 64 + 8) + 4), right: fromJpeg.rgba.slice(4 * (16 * 64 + 56), 4 * (16 * 64 + 56) + 4) }, fromRgba, refused };
+  });
+  const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  assert.deepEqual(got.fromBmp, { type: 'image/png', signature: PNG_SIGNATURE, width: 2, height: 2, rgba: [0, 0, 255, 255, 0, 255, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255] });
+  assert.deepEqual({ ...got.fromJpeg, left: undefined, right: undefined }, { type: 'image/png', signature: PNG_SIGNATURE, width: 64, height: 32, rgba: undefined, left: undefined, right: undefined });
+  const near = (a: number[], b: number[]) => a.every((x, i) => Math.abs(x - b[i]) <= 8);
+  assert.ok(near(got.fromJpeg.left, [255, 0, 0, 255]) && near(got.fromJpeg.right, [0, 0, 255, 255]), `the JPEG's pixels: ${got.fromJpeg.left} ${got.fromJpeg.right}`);
+  assert.deepEqual(got.fromRgba, { type: 'image/png', signature: PNG_SIGNATURE, width: 2, height: 1, rgba: [10, 20, 30, 255, 200, 100, 50, 255] });
+  assert.equal(got.refused, 'DataError');
   assert.deepEqual(errors, []);
   await context.close();
 });

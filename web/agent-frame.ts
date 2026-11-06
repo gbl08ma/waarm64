@@ -3,7 +3,7 @@
 // and the payload), a u8 type, then the payload. This module cuts the byte stream into frames, both ways, and defines
 // the payloads: the page's half of the format the agent's own code speaks (agent/src/frame.rs, its Rust twin, which
 // pins the same bytes in its tests). HELLO, TYPE, PAUSE and RESUME (step 2); the clipboard's OFFER, REQUEST, DATA,
-// ACK and MORE (step 3), the capability `CAP.TEXT`; SYNC (a stream begun afresh), SESSION and TYPED.
+// ACK and MORE (step 3), the capability `CAP.TEXT`; SYNC (a stream begun afresh), SESSION and TYPED; `CAP.IMAGE` (step 5).
 
 /** The frame types (docs/plans/clipboard.md §2). */
 export const FRAME = {
@@ -94,8 +94,10 @@ export const CAP = {
   TYPE: 1 << 0,
   /** The clipboard's text: OFFER, REQUEST, DATA, ACK, MORE. */
   TEXT: 1 << 1,
-  // Reserved for the next steps: 1 << 2 images, 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session
-  // (agent/src/frame.rs has the same list).
+  /** Images in the clipboard's frames: `image/png` from the page, the guest programs' image types to it (plan §4.4). */
+  IMAGE: 1 << 2,
+  // Reserved for the next steps: 1 << 3 text/html, 1 << 8 a Wayland session, 1 << 9 an X11 session (agent/src/frame.rs
+  // has the same list).
 } as const;
 
 /** An OFFER: its serial, its types (and sizes, `UNKNOWN` where unknown), and the first type's bytes if inline. */

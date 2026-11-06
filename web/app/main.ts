@@ -18,7 +18,7 @@ import { devText, fromWire, msgOf } from '../msg.ts';
 import { guestWords } from './guest-words.ts';
 import { clockSync, leaveWarning, remember, settings } from './settings.ts';
 import { page, ui, type Action, type MachinesTab, type PageState, type View } from './ui.svelte.ts';
-import type { DisplayToPage } from '../gpu-present.ts';
+import type { DisplayFromPage, DisplayToPage } from '../gpu-present.ts';
 import type { FromGpuWorker, ToGpuWorker } from '../gpu-worker.ts';
 import type { ShareMode } from '../venus-share.ts';
 import { attachInput, terminalBytes, type Input, type LockMode } from '../input.ts';
@@ -57,7 +57,8 @@ import { parseLocalURL } from '../local-net.ts';
 import { installCopyEdit } from './copy-edit.ts';
 import { eventOf, keyOf, keymapOf, type Mods } from './osk.ts';
 import { AgentLink } from './agent-link.ts';
-import { ClipboardShare, isPasteChord, onMac, watchReadPermission, type Host as ClipboardHost } from './clipboard.ts';
+import { ClipboardShare, isPasteChord, onMac, PNG, watchReadPermission, type Host as ClipboardHost } from './clipboard.ts';
+import { rgbaPng, toPng } from './png.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -710,6 +711,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   const display = new MessageChannel();
   display.port1.onmessage = (e: MessageEvent<DisplayToPage>) => {
     if (run?.display !== display.port1) return;
+    if (e.data.type === 'png') return void screens.get(e.data.id)?.(e.data.png);
     if (e.data.type === 'cursor') { guestCursor = e.data; showCursor(); return; }
     if (e.data.type === 'screen-stats') { showGraphics(e.data.screen, e.data); return; }
     if (e.data.type === 'cursor-at') { if (guestCursor) [guestCursor.x, guestCursor.y] = [e.data.x, e.data.y]; placeCursor(); return; }
@@ -751,7 +753,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     share.onChange = showClipboard;
   }
   ui.clipboard.on = !!share;
-  ui.clipboard.failed = false;
+  ui.clipboard.failed = undefined;
   showClipboard();
   (window as unknown as { __clipboard?: ClipboardShare }).__clipboard = share; // the tests' hook
   const locked = (on: boolean) => { ui.mouseLocked = on; placeCursor(); };
@@ -1971,10 +1973,13 @@ const clipboardOn = () => (stored ? !!stored.record.clipboard : params.get('clip
 let agentLink: AgentLink | undefined;
 /** Its clipboard sharing (web/app/clipboard.ts). */
 let clipboardShare: ClipboardShare | undefined;
-// The paste chord's text (docs/plans/clipboard.md §4.1, way 2): the browser's own paste event while the screen holds a
-// chord (web/input.ts), taken at the document (Firefox fires it at <body>, not at the focused canvas).
+// The paste chord's text and image (docs/plans/clipboard.md §4.1, way 2, §4.4): the browser's own paste event while the
+// screen holds a chord (web/input.ts), taken at the document (Firefox fires it at <body>, not at the focused canvas);
+// the image is a `File` among its items, taken during the event (the data is gone after it).
 document.addEventListener('paste', (e) => {
-  if (clipboardShare?.held && document.activeElement === canvas) clipboardShare.pasted(e.clipboardData?.getData('text/plain') ?? '');
+  if (!clipboardShare?.held || document.activeElement !== canvas) return;
+  const image = [...(e.clipboardData?.items ?? [])].find((i) => i.kind === 'file' && i.type === PNG)?.getAsFile() ?? undefined;
+  clipboardShare.pasted(e.clipboardData?.getData('text/plain') ?? '', image);
 });
 /** The browser runs on a Mac: its paste chord is Cmd+V. */
 const MAC = onMac(navigator as Navigator & { userAgentData?: { platform?: string } });
@@ -1986,11 +1991,45 @@ function clipboardHost(): ClipboardHost {
       writeText: (s) => (c ? c.writeText(s) : Promise.reject(new Error('no clipboard'))),
       readText: c?.readText && (() => c.readText()),
       read: c?.read && (() => c.read()),
+      // The promise form: the browser awaits the bytes at the write (Safari keeps the activation over the wait).
+      write: c?.write && typeof ClipboardItem !== 'undefined' ? (item) => c.write([new ClipboardItem(item)]) : undefined,
     },
     hasFocus: () => document.hasFocus(),
     changeEvents: !!c && 'onclipboardchange' in c,
     mac: MAC,
+    toPng,
   };
+}
+/** "Copy the screen"'s answers awaited, by id: the display's PNG, or none. */
+const screens = new Map<number, (png?: Blob) => void>();
+let screenId = 0;
+/**
+ * The screen as it shows now, as a PNG (docs/plans/clipboard.md §4.4): a 3D machine's read back by its GPU worker and
+ * encoded in a worker of its own; a 2D machine's (virtio-gpu or the framebuffer) from whoever draws it, over the
+ * display port. Undefined: nothing shown yet, or no machine.
+ */
+async function screenPng(): Promise<Blob | undefined> {
+  const r = run;
+  if (!r) return undefined;
+  if (r.gpu) {
+    const id = grabs.size + Math.random();
+    const g = await new Promise<{ width: number; height: number; pixels: Uint8Array }>((resolve) => {
+      grabs.set(id, resolve);
+      r.gpu!.postMessage({ type: 'grab', id } satisfies ToGpuWorker);
+    });
+    return g.width && g.height ? rgbaPng(g.width, g.height, new Uint8Array(g.pixels)) : undefined;
+  }
+  const id = ++screenId;
+  return new Promise<Blob | undefined>((resolve) => {
+    const timer = setTimeout(() => done(undefined), 10_000);
+    const done = (png?: Blob) => {
+      clearTimeout(timer);
+      screens.delete(id);
+      resolve(png);
+    };
+    screens.set(id, done);
+    r.display.postMessage({ type: 'png', id } satisfies DisplayFromPage);
+  });
 }
 /** The toolbar's clipboard button follows the running machine's sharing. */
 function showClipboard() {
@@ -2442,8 +2481,18 @@ Object.assign(page, {
   // A read while the permission is `prompt` is what makes Chromium ask; the text it gives is the sync's (granted: `setPermission`).
   clipboardAsk: () => { if (ui.clipboard.permission === 'prompt') void navigator.clipboard.readText().catch(() => {}); },
   clipboardPause: (paused: boolean) => (paused ? clipboardShare?.pause() : clipboardShare?.resume()),
-  clipboardSend: async () => { ui.clipboard.failed = !(await clipboardShare?.send()); },
-  clipboardType: async () => { ui.clipboard.failed = !(await clipboardShare?.typeIt()); },
+  clipboardSend: async () => { ui.clipboard.failed = (await clipboardShare?.send()) ? undefined : 'send'; },
+  clipboardType: async () => { ui.clipboard.failed = (await clipboardShare?.typeIt()) ? undefined : 'type'; },
+  clipboardScreen: async () => {
+    // The promise form keeps the click's activation (and the focus) over the read-back; Chromium awaits it at the write.
+    ui.clipboard.failed = undefined;
+    const png = screenPng().then((b) => b ?? Promise.reject(new DOMException('no picture of the screen', 'DataError')));
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ [PNG]: png })]);
+    } catch {
+      ui.clipboard.failed = 'screen';
+    }
+  },
 } satisfies typeof page);
 
 // Before starting: what the page can tell won't work.

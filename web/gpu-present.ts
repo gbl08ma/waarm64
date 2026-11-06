@@ -36,8 +36,32 @@ export type DisplayToPage =
    * whose WebGL2 renders on the CPU, or without one: no renderer to name).
    */
   | { type: 'screen-stats'; screen: 'webgl2' | 'canvas2d'; presents: number; renderer?: string; vendor?: string; software?: boolean }
+  | ScreenPng
   | { type: 'draw-stats'; n: number; median: number; max: number; lag: number; busy: { events?: number[]; request: number; transfer: number; draw: number; requests: number; transfers: number; pixels: number; flushes: number; submits: number; submitBytes: number; commands: Record<string, number>; fences: number; fenceMs: number; fenceMaxMs: number; heldMs: number; behindMs: number; fullMs: number; heldMax: number; fenceBack: { n: number; ms: number; maxMs: number } } };
-export type DisplayFromPage = { type: 'size'; width: number; height: number };
+export type DisplayFromPage = { type: 'size'; width: number; height: number } | /** "Copy the screen" (docs/plans/clipboard.md §4.4): the screen as a PNG, answered by `ScreenPng`. */ { type: 'png'; id: number };
+/** The answer to `png`: the screen as it shows now, as a PNG; none before the guest showed anything. */
+export type ScreenPng = { type: 'png'; id: number; png?: Blob };
+
+/**
+ * The scanout's visible rectangle as a PNG, from the host's copy of the guest's resource (`swizzle`d where it is the
+ * guest's bytes, `GpuHooks.raw`), opaque: what a WebGL2 canvas no longer holds once drawn. Undefined without a scanout.
+ */
+export function scanoutPng(src: ScanoutSource | null, width: number, height: number): Promise<Blob> | undefined {
+  if (!src || !width || !height || typeof OffscreenCanvas === 'undefined') return undefined;
+  const img = new ImageData(width, height);
+  const [ri, gi, bi] = src.swizzle ?? [0, 1, 2];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0, p = 4 * ((src.y + y) * src.width + src.x), q = 4 * y * width; x < width; x++, p += 4, q += 4) {
+      img.data[q] = src.pixels[p + ri];
+      img.data[q + 1] = src.pixels[p + gi];
+      img.data[q + 2] = src.pixels[p + bi];
+      img.data[q + 3] = 255;
+    }
+  }
+  const c = new OffscreenCanvas(width, height);
+  c.getContext('2d')!.putImageData(img, 0, 0);
+  return c.convertToBlob({ type: 'image/png' });
+}
 
 /** The guest's cursor to the page: its image when it changes (`cursor`), else its position when that changes and there is an image (`cursor-at`). */
 function cursorSender(port?: MessagePort) {
@@ -162,6 +186,7 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
     raw: !!gl,
     cursor: sendCursor,
     cursorReset: () => sendCursor(undefined, 0, 0, 0, 0),
+    png: () => scanoutPng(src, canvas.width, canvas.height),
     scanout(width, height, source) {
       src = source;
       img = source && !gl ? new ImageData(new Uint8ClampedArray(source.pixels.buffer as ArrayBuffer, source.pixels.byteOffset, source.pixels.length), source.width, source.height) : undefined;

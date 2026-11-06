@@ -98,10 +98,11 @@ export const ui = $state({
   /**
    * Clipboard sharing (docs/plans/clipboard.md §5; the toolbar's clipboard menu): `on` while the page's machine has the
    * setting (its button shows while it runs); its `state`, the browser's read `permission`, `stopped` (focus reads stopped
-   * for the run: they came back hidden), whether the agent types (`canType`), `failed`: the last Send or Type got no text,
-   * and `typed`: what became of the last Type (the agent's TYPED status: web/agent-frame.ts `TYPED`).
+   * for the run: they came back hidden), whether the agent types (`canType`), `failed`: which of the menu's actions last
+   * failed (Send got no text or image, Type no text, Copy the screen no picture or no write), and `typed`: what became
+   * of the last Type (the agent's TYPED status: web/agent-frame.ts `TYPED`).
    */
-  clipboard: { on: false, state: 'waiting' as ShareState, permission: 'none' as ReadPermission, stopped: false, canType: false, failed: false, typed: undefined as number | undefined },
+  clipboard: { on: false, state: 'waiting' as ShareState, permission: 'none' as ReadPermission, stopped: false, canType: false, failed: undefined as undefined | 'send' | 'type' | 'screen', typed: undefined as number | undefined },
   /** The Folder wizard, open (web/app/FolderWizard.svelte): for `machine`, which has `attached`; none: it only makes a folder. `tick` opens it again. */
   folderWizard: undefined as undefined | { machine?: string; attached?: FolderAttachment[]; tick?: number },
   boot: { shown: true, done: false, title: '', progress: undefined as number | undefined, line: '', serial: false },
@@ -251,11 +252,13 @@ export type Page = {
   /**
    * Clipboard sharing (docs/plans/clipboard.md §4–§5), from the user's clicks: `clipboardAsk` asks for the browser's
    * read permission while it is `prompt` (a read the browser prompts for); the toolbar's switch (paused for the run);
-   * Send the clipboard to the guest, Type the clipboard (reads on the click).
+   * Send the clipboard to the guest, Type the clipboard (reads on the click); Copy the screen (a PNG of the display
+   * written to the host's clipboard with the click's activation, no agent needed: plan §4.4).
    */
   clipboardAsk(): void;
   clipboardPause(paused: boolean): void;
   clipboardSend(): Promise<void>;
   clipboardType(): Promise<void>;
+  clipboardScreen(): Promise<void>;
 };
 export const page = {} as Page;

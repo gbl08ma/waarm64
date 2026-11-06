@@ -74,7 +74,7 @@ export type ToWorker =
     caps?: Uint8Array;
     /** Vulkan through Venus beside 3D (the machine's setting or `?gpu=vulkan`; docs/devices.md "Venus"). */
     vulkan?: boolean;
-    /** The display port (web/gpu-present.ts): `mode` messages from a virtio-gpu, and the page's `size` to it. */
+    /** The display port (web/gpu-present.ts): `mode` messages from a virtio-gpu, and the page's `size` to it; `png` ("Copy the screen") to whoever draws the screen, a virtio-gpu or the framebuffer here. */
     display: MessagePort;
     /** The display's size at the start (the page's screen box, `wantedSize` in main.ts): the console and the firmware get it with no event. Default: the machine's. */
     size?: { width: number; height: number };

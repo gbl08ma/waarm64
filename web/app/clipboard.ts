@@ -1,33 +1,44 @@
 // Clipboard sharing's host side (docs/plans/clipboard.md §4): the browser's clipboard and the guest's, over the agent's
 // link (web/app/agent-link.ts, frames of web/agent-frame.ts):
-// - **Guest to host** (§4.2): the guest's OFFER (its text inline, or requested in DATA frames as the page's MOREs
-//   allow) is written with `writeText` while the document has focus; otherwise (or refused) it is kept as `pending`,
-//   only the newest, and written on the next focus where the read permission shows the host's clipboard unchanged
-//   since the page last knew it (`focused`), or on the next key or pointer down on the screen (`activated`: the
-//   activation Firefox and Safari want). The host's newer copy wins: a focus read that finds it changed drops it, and
-//   so does a paste chord (the host's copy goes to the guest instead).
+// - **Guest to host** (§4.2): the guest's OFFER of text (inline, or requested in DATA frames as the page's MOREs allow)
+//   is written with `writeText` while the document has focus; one with an image (§4.4) is written as one
+//   `ClipboardItem` whose values are promises, the bytes requested from the guest at the write, the image converted to
+//   PNG in a worker if it isn't one (`Host.toPng`), its text in the same item. Otherwise (or refused) it is kept as
+//   `pending` (`pendingImage`), only the newest, and written on the next focus where the read permission shows the
+//   host's clipboard unchanged since the page last knew it (`focused`), or on the next key or pointer down on the
+//   screen (`activated`: the activation Firefox and Safari want). The host's newer copy wins: a focus read that finds
+//   it changed drops it, and so does a paste chord (the host's copy goes to the guest instead).
 // - **Sync on focus** (§4.1, way 1): while the browser's `clipboard-read` permission is `granted`, each focus of the
 //   page reads the host's clipboard and offers it to the guest if it changed (where `clipboardchange` exists, only after
-//   one); never while it is `prompt` (the reads that ask are the user's clicks: `askRead`, `send`, `typeIt`).
+//   one); never while it is `prompt` (the reads that ask are the user's clicks: `askRead`, `send`, `typeIt`). Its text
+//   is `readText`'s; `read()` is asked too after an empty `readText` or a `clipboardchange` (so an image on the
+//   clipboard isn't re-encoded at every focus), for the types (§4.3) and the image, a PNG offered with the text.
 // - **The paste chord** (§4.1, way 2): web/input.ts holds the key (`chord`) and lets the browser's `paste` event come;
-//   its text (`pasted`) is offered to the guest unless the guest has it already, and the key goes on once the agent
-//   says the guest's clipboard has it (ACK) or `ACK_WAIT` passed.
+//   its text and image (`pasted`) are offered to the guest unless the guest has them already, and the key goes on once
+//   the agent says the guest's clipboard has them (ACK) or `ACK_WAIT` passed.
 // - **Placeholders** (§4.3): an empty read is never offered and leaves the hashes alone; `read()`'s types tell a
 //   hidden text (types say text, the text is empty: counted, and `EMPTY_RUN` in a row stop the focus reads for the
 //   run, `stopped`) from no text (an image, nothing). Refusals are silent.
-// - **Echo suppression** (§2): a hash of the last text each way, which stands for "the guest's clipboard has it still":
-//   the same text isn't offered back. Each is forgotten when the clipboard moves on the other way (an offer to the
-//   guest forgets the guest's, the guest's copy the page's), when the agent refuses an offer (even after `ACK_WAIT`),
-//   when the port opens or closes, at the agent's HELLO and at its SESSION (the guest's clipboard changed hands: a
-//   session child, or its compositor, came or went), which also end the transfers in progress.
-// Sharing stops while paused (the toolbar's switch, §5: `pause`): nothing is read, offered, written or answered.
+// - **Echo suppression** (§2, §4.4): a hash of the last content each way (text, image or both: `contentHash`), which
+//   stands for "the guest's clipboard has it still": the same isn't offered back. The browser re-encodes an image it
+//   writes, so after writing the guest's image the page reads the clipboard back once (with the permission and focus)
+//   and that hash is the guest's. Each is forgotten when the clipboard moves on the other way (an offer to the guest
+//   forgets the guest's, the guest's copy the page's), when the agent refuses an offer (even after `ACK_WAIT`), when
+//   the port opens or closes, at the agent's HELLO and at its SESSION (the guest's clipboard changed hands: a session
+//   child, or its compositor, came or went), which also end the transfers in progress.
+// Sharing stops while paused (the toolbar's switch, §5: `pause`): nothing is read, offered, written or answered. The
+// page holds at most one image from each side (§4.4): the newest it offered, and a guest's while it is written.
 
 import { ACK, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeMore, decodeOffer, decodeRequest, encodeData, encodeMore, encodeOffer, encodeRequest, FRAME, CAP, UNKNOWN, type Frame, type Hello } from '../agent-frame.ts';
 
 /** The type text crosses as. */
 export const TEXT = 'text/plain;charset=utf-8';
+/** The page's one image type, both ways (plan §4.4). */
+export const PNG = 'image/png';
 /** The most text that crosses (plan §3.2), checked against an offer's size before any bytes do. */
 export const TEXT_CAP = 16 << 20;
+/** The most image bytes that cross (plan §4.4), checked as `TEXT_CAP` is. */
+export const IMAGE_CAP = 64 << 20;
 /** Text up to this size goes inline in its OFFER (plan §2). */
 export const INLINE = 4096;
 /** How long the paste chord's key waits for the agent's ACK (plan §4.1). */
@@ -52,21 +63,32 @@ export type ClipLink = {
 /** How many focus reads in a row may come back empty while their types say there is text before they stop (§4.3). */
 export const EMPTY_RUN = 3;
 
-/** A clipboard item as `read()` gives it: its types (`getType` isn't needed to tell them apart). */
-export type HostItem = { types: readonly string[] };
+/** A clipboard item as `read()` gives it: its types, and its data by type where the browser gives it. */
+export type HostItem = { types: readonly string[]; getType?(type: string): Promise<Blob> };
 
 /**
- * What the clipboard needs of the browser: its clipboard (`readText` and `read` where it has them) and whether the
- * document has focus.
+ * What the clipboard needs of the browser: its clipboard (`readText`, `read` and `write` where it has them) and
+ * whether the document has focus.
  */
 export type Host = {
-  clipboard: { writeText(text: string): Promise<void>; readText?(): Promise<string>; read?(): Promise<readonly HostItem[]> };
+  clipboard: {
+    writeText(text: string): Promise<void>;
+    readText?(): Promise<string>;
+    read?(): Promise<readonly HostItem[]>;
+    /** One `ClipboardItem` of these types, whose promises the browser awaits at the write (`write([new ClipboardItem(…)])`). */
+    write?(item: Record<string, Promise<Blob>>): Promise<void>;
+  };
   hasFocus: () => boolean;
   /** The browser fires `clipboardchange` (the page then reads on it, not on every focus). */
   changeEvents?: boolean;
   /** The browser runs on a Mac: its paste chord is Cmd+V (`isPasteChord`). */
   mac?: boolean;
+  /** An image (a JPEG, a BMP, …) as a PNG, converted in a worker (web/app/png.ts `toPng`). */
+  toPng?(image: Blob): Promise<Blob>;
 };
+
+/** What a side's clipboard holds as the page passes it: text, an image (a PNG), or both. */
+export type Content = { text?: string; image?: Blob };
 
 /**
  * Chromium's `clipboard-read` permission as the page knows it; `none` where the browser has no such permission (Firefox,
@@ -125,14 +147,45 @@ export function textHash(s: string): number {
   return 4294967296 * (2097151 & h2) + (h1 >>> 0);
 }
 
+/** An image's bytes, hashed (SHA-256, its first 96 bits in hex): what the page remembers of an image. */
+export async function imageHash(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return [...d.subarray(0, 12)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** What the page remembers of a clipboard's content: its text's hash and its image's (`imageHash`), either absent. */
+export function contentHash(text?: string, image?: string): string {
+  return `${text ? textHash(text) : ''}/${image ?? ''}`;
+}
+
 const isText = (t: string) => t === TEXT || t === 'text/plain';
+const isImage = (t: string) => /^image\/./i.test(t);
+
+/** The PNG of `read()`'s items, if one has it (and the browser gives its data). */
+async function pngOf(items: readonly HostItem[] | undefined): Promise<Blob | undefined> {
+  const item = items?.find((i) => i.types.includes(PNG) && i.getType);
+  return item?.getType!(PNG).catch(() => undefined);
+}
+
+/** The text of `read()`'s items, if one has it. */
+async function textOf(items: readonly HostItem[] | undefined): Promise<string | undefined> {
+  const item = items?.find((i) => i.types.includes('text/plain') && i.getType);
+  return (await item?.getType!('text/plain').then((b) => b.text(), () => undefined)) || undefined;
+}
+
+/** The guest's offer with an image, as the page writes it: its serial, the image's type, and its text (inline, or to request). */
+type GuestImage = { serial: number; image: string; text?: { type: string; inline?: string } };
 
 /** The page's clipboard sharing for one machine's link. */
 export class ClipboardShare {
   /** The guest's newest text not written to the host's clipboard (the document had no focus, or the write was refused). */
   pending?: string;
+  /** The guest's newest offer with an image not written (as `pending`; only one of the two is set, the newer). */
+  pendingImage?: GuestImage;
   /** Called with each text from the guest written to the host's clipboard (the tests' hook). */
   onWritten?: (text: string) => void;
+  /** Called with each image from the guest written to the host's clipboard, as the PNG written (the tests' hook). */
+  onImage?: (png: Blob) => void;
   /** Called when what the toolbar shows changes: `state`, `permission`, `stopped`, `canType`. */
   onChange?: () => void;
   /** The browser's read permission (`setPermission`). */
@@ -146,25 +199,29 @@ export class ClipboardShare {
   // From a random start: a restored guest's agent may hold transfers of an earlier page's ids.
   private serial = crypto.getRandomValues(new Uint32Array(1))[0];
   private id = crypto.getRandomValues(new Uint32Array(1))[0];
-  /** The hashes of the last text from the guest, and of the last offered to it. */
-  private fromGuest?: number;
-  private toGuest?: number;
+  /** The hashes (`contentHash`) of the last content from the guest, and of the last offered to it. */
+  private fromGuest?: string;
+  private toGuest?: string;
   /** The hash of the host's clipboard as the page last knew it (read, pasted, or written by the page); undefined: never. */
-  private hostHash?: number;
+  private hostHash?: string;
+  /** The serial of the guest's newest offer. */
+  private guestSerial?: number;
   /** Empty reads in a row whose types said text. */
   private empties = 0;
   /** A focus read in flight. */
   private reading = false;
+  /** An image being written to the host's clipboard (and read back): focus reads wait for it. */
+  private writing = false;
   /** `clipboardchange` fired since the last read (true at first: the clipboard is unknown). */
   private changed = true;
-  /** The page's offer whose ACK is awaited: its text's hash, and when the wait ends. */
-  private offering?: { hash: number; done: Promise<void> };
-  /** The page's offer to the guest: its bytes, for the agent's requests. */
-  private offered?: { serial: number; bytes: Uint8Array };
-  /** The page's requests for the guest's offer's bytes. */
-  private requests = new Map<number, { chunks: Uint8Array[]; len: number }>();
+  /** The page's offer whose ACK is awaited: its content's hash, and when the wait ends. */
+  private offering?: { hash: string; done: Promise<void> };
+  /** The page's offer to the guest: its text's bytes and its PNG's, for the agent's requests. */
+  private offered?: { serial: number; text?: Uint8Array; image?: Uint8Array };
+  /** The page's requests for the guest's offer's bytes: each ends with them whole, or undefined (failed, stopped, past its cap). */
+  private requests = new Map<number, { chunks: Uint8Array[]; len: number; cap: number; done: (bytes?: Uint8Array<ArrayBuffer>) => void }>();
   /** The agent's requests for the page's offer's bytes. */
-  private answers = new Map<number, { bytes: Uint8Array; at: number; credit: number }>();
+  private answers = new Map<number, { bytes: Uint8Array; at: number; credit: number; image: boolean }>();
   /** The page's offers' ACKs awaited (the newest only): each takes the status, or undefined (superseded). */
   private acks = new Map<number, (status?: number) => void>();
   /** The held paste chord's wait for the browser's paste event. */
@@ -190,6 +247,11 @@ export class ClipboardShare {
     return this.link.open && !this.link.paused && !!this.link.agent && (this.link.agent.caps & CAP.TEXT) !== 0;
   }
 
+  /** Images cross too: the agent said it shares them, and the browser writes a `ClipboardItem`. */
+  get images() {
+    return this.active && (this.link.agent!.caps & CAP.IMAGE) !== 0 && !!this.host.clipboard.write;
+  }
+
   /** What the toolbar's button shows. */
   get state(): ShareState {
     return this.link.paused ? 'paused' : this.link.open && this.link.agent ? 'sharing' : 'waiting';
@@ -198,6 +260,11 @@ export class ClipboardShare {
   /** The agent pastes on the console (TYPE) and sharing isn't paused: "Type the clipboard". */
   get canType() {
     return !this.link.paused && this.link.open && !!this.link.agent && (this.link.agent.caps & CAP.TYPE) !== 0;
+  }
+
+  /** The guest's newest copy waits to be written to the host's clipboard. */
+  get hasPending() {
+    return this.pending !== undefined || this.pendingImage !== undefined;
   }
 
   /** The browser's read permission changed: becoming `granted` (the user allowed it just now) syncs at once. */
@@ -211,7 +278,7 @@ export class ClipboardShare {
   /** The toolbar's switch (plan §5), for the run: everything stops at once, both ways, and the agent hears PAUSE. */
   pause() {
     this.link.pause();
-    this.pending = undefined;
+    this.pending = this.pendingImage = undefined;
     this.holding?.();
     // The agent drops the host's text from the guest's clipboard: what either side had is no longer known (`reset`).
     this.reset();
@@ -226,27 +293,28 @@ export class ClipboardShare {
 
   /**
    * The page has focus (`focus`, or `visibilitychange` to visible): with the read permission, the host's clipboard is
-   * read, and offered to the guest if it changed since the page last knew it; if it didn't, the guest's pending text is
+   * read, and offered to the guest if it changed since the page last knew it; if it didn't, the guest's pending copy is
    * written. Where `clipboardchange` exists, the read waits for one. Without the permission, nothing.
    */
   async focused(): Promise<void> {
-    if (!this.active || this.permission !== 'granted' || this.stopped || this.reading || !this.host.hasFocus()) return;
+    if (!this.active || this.permission !== 'granted' || this.stopped || this.reading || this.writing || !this.host.hasFocus()) return;
     if (this.host.changeEvents && !this.changed) {
-      if (this.pending !== undefined) this.writePending();
+      if (this.hasPending) this.writePending();
       return;
     }
     this.reading = true;
     try {
       this.changed = false;
-      const text = await this.readHost();
-      if (text === undefined || !this.active) return;
-      if (textHash(text) === this.hostHash && this.pending !== undefined) {
+      const got = await this.readHost();
+      if (got === undefined || !this.active) return;
+      const h = await this.hashOf(got);
+      if (h === this.hostHash && this.hasPending) {
         this.writePending();
       } else {
         // The host's own copy, newer than the guest's pending one; or unchanged, offered if the guest hasn't it (a
         // new session, a restarted agent: the echo hashes were forgotten).
-        this.pending = undefined;
-        void this.paste(text);
+        this.pending = this.pendingImage = undefined;
+        void this.paste(got);
       }
     } finally {
       this.reading = false;
@@ -261,22 +329,22 @@ export class ClipboardShare {
 
   /**
    * A key or pointer down on the screen (activation, which Firefox and Safari want for a write): the guest's pending
-   * text is written. A paste chord instead drops it: the host's copy goes to the guest, the newer.
+   * copy is written. A paste chord instead drops it: the host's copy goes to the guest, the newer.
    */
   activated(pasteChord: boolean) {
-    if (!this.active || this.pending === undefined) return;
-    if (pasteChord) this.pending = undefined;
+    if (!this.active || !this.hasPending) return;
+    if (pasteChord) this.pending = this.pendingImage = undefined;
     else this.writePending();
   }
 
   /**
    * "Send the clipboard to the guest" (the toolbar's menu, from its click: the activation and the prompt a read may
-   * want): the host's text offered even if the guest seems to have it. False if there was none to send.
+   * want): the host's text and image offered even if the guest seems to have them. False if there was none to send.
    */
   async send(): Promise<boolean> {
-    const text = await this.readClick();
-    if (!text || !this.active) return false;
-    void this.paste(text, true);
+    const got = await this.readClick(true);
+    if (!got || !this.active) return false;
+    void this.paste(got, true);
     return true;
   }
 
@@ -284,45 +352,68 @@ export class ClipboardShare {
   async typeIt(): Promise<boolean> {
     this.typed = undefined;
     this.onChange?.();
-    const text = await this.readClick();
+    const text = (await this.readClick(false))?.text;
     return !!text && this.canType && this.link.type?.(text) === true;
   }
 
-  /** The host's text from a click's read; undefined if the browser gave none (refused, nothing, a dismissed Paste button). */
-  private async readClick(): Promise<string | undefined> {
+  /**
+   * The host's clipboard from a click's read; undefined if the browser gave nothing (refused, nothing, a dismissed
+   * Paste button). With `image`, `read()` first, for the PNG and the text; else (or with neither) `readText`.
+   */
+  private async readClick(image: boolean): Promise<Content | undefined> {
     try {
-      return (await this.host.clipboard.readText?.()) || undefined;
+      if (image && this.images && this.host.clipboard.read) {
+        const items = await this.host.clipboard.read();
+        const [text, png] = [await textOf(items), await pngOf(items)];
+        if (text || png) return { text, image: png };
+      }
+      const text = await this.host.clipboard.readText?.();
+      return text ? { text } : undefined;
     } catch {
       return undefined;
     }
   }
 
   /**
-   * The host's text for a focus read: undefined if there's nothing to sync (refused, empty, no text). An empty
-   * `readText` asks `read()` for the types: text among them is a hidden read (§4.3), counted.
+   * The host's clipboard for a focus read: undefined if there's nothing to sync (refused, empty, no text or image). An
+   * empty `readText` asks `read()` for the types: text among them is a hidden read (§4.3), counted. After a
+   * `clipboardchange` (the only reads there are where it fires), `read()` is asked anyway, for an image.
    */
-  private async readHost(): Promise<string | undefined> {
+  private async readHost(): Promise<Content | undefined> {
     try {
       const text = await this.host.clipboard.readText?.();
+      const items = !text || this.host.changeEvents ? await this.host.clipboard.read?.().catch(() => undefined) : undefined;
+      const png = this.images ? await pngOf(items) : undefined;
+      const image = png && png.size <= IMAGE_CAP ? png : undefined;
       if (text) {
         this.empties = 0;
-        return text;
+        return { text, image };
       }
-      const items = await this.host.clipboard.read?.().catch(() => undefined);
       // Text among the types, yet none read: hidden. No types, or others (an image): nothing to sync, a run broken.
       if (!items?.some((i) => i.types.some(isText))) this.empties = 0;
       else if (++this.empties >= EMPTY_RUN) {
         this.stopped = true;
         this.onChange?.();
       }
+      if (image) return { image };
     } catch {
       // A refusal (NotAllowedError, DataError) is never an error mid-work.
     }
     return undefined;
   }
 
-  /** Writes the guest's pending text to the host's clipboard (kept pending if refused). */
+  /** The hash of content the host's clipboard has (its image's bytes read for it). */
+  private async hashOf(c: Content): Promise<string> {
+    return contentHash(c.text, c.image && (await imageHash(new Uint8Array(await c.image.arrayBuffer()))));
+  }
+
+  /** Writes the guest's pending copy to the host's clipboard (kept pending if refused). */
   private writePending() {
+    if (this.pendingImage) {
+      const g = this.pendingImage;
+      this.pendingImage = undefined;
+      return this.writeImage(g);
+    }
     const text = this.pending!;
     this.pending = undefined;
     this.write(text);
@@ -330,11 +421,66 @@ export class ClipboardShare {
 
   private write(text: string) {
     this.host.clipboard.writeText(text).then(() => {
-      this.hostHash = textHash(text);
+      this.hostHash = contentHash(text);
       this.onWritten?.(text);
     }, () => {
       // Refused (no focus, no activation): the newest stays pending, unless a newer came meanwhile.
-      if (this.pending === undefined && this.fromGuest === textHash(text)) this.pending = text;
+      if (!this.hasPending && this.fromGuest === contentHash(text)) this.pending = text;
+    });
+  }
+
+  /**
+   * Writes the guest's offer with an image: one `ClipboardItem`, its PNG (converted if the guest's type isn't PNG) and
+   * its text as promises the browser awaits, their bytes requested from the guest now. Then, with the permission and
+   * focus, the clipboard read back once: the browser re-encodes what it writes, so that hash is the guest's (§4.4). A
+   * refusal keeps it pending if it is still the newest.
+   */
+  private writeImage(g: GuestImage) {
+    const write = this.host.clipboard.write;
+    if (!write) return;
+    const ids: number[] = [];
+    let failed = false;
+    const fetch = (type: string, cap: number) => {
+      const r = this.request(g.serial, type, cap);
+      ids.push(r.id);
+      return r.bytes.then((b) => {
+        if (!b) {
+          failed = true;
+          throw new DOMException(`no ${type} from the guest`, 'DataError');
+        }
+        return b;
+      });
+    };
+    const image = fetch(g.image, IMAGE_CAP).then((bytes) => {
+      const b = new Blob([bytes], { type: g.image.toLowerCase() });
+      if (b.type === PNG) return b;
+      if (!this.host.toPng) throw new DOMException(`no conversion of ${b.type}`, 'DataError');
+      return this.host.toPng(b);
+    });
+    const text = g.text && (g.text.inline !== undefined ? Promise.resolve(g.text.inline) : fetch(g.text.type, TEXT_CAP).then((b) => new TextDecoder().decode(b)));
+    const item: Record<string, Promise<Blob>> = { [PNG]: image };
+    if (text) item['text/plain'] = text.then((s) => new Blob([s], { type: 'text/plain' }));
+    // A refused write leaves its promises to fail on their own (their requests stopped): not an error of the page's.
+    for (const p of Object.values(item)) p.catch(() => {});
+    this.writing = true;
+    write(item).then(async () => {
+      const [png, s] = [await image, await text];
+      this.hostHash = this.fromGuest = undefined;
+      if (this.permission === 'granted' && this.host.hasFocus() && this.host.clipboard.read) {
+        const items = await this.host.clipboard.read().catch(() => undefined);
+        const back = await pngOf(items);
+        if (back && this.guestSerial === g.serial) {
+          this.hostHash = this.fromGuest = contentHash(s ? await textOf(items) : undefined, await imageHash(new Uint8Array(await back.arrayBuffer())));
+        }
+      }
+      this.onImage?.(png);
+    }, () => {
+      for (const id of ids) this.stop(id);
+      // Refused (no focus, no activation): the newest stays pending, unless a newer came meanwhile or the guest no
+      // longer has it (a request failed).
+      if (!failed && !this.hasPending && this.guestSerial === g.serial && this.active) this.pendingImage = g;
+    }).finally(() => {
+      this.writing = false;
     });
   }
 
@@ -365,30 +511,49 @@ export class ClipboardShare {
 
   private waiting: Promise<void> = Promise.resolve();
 
-  /** The browser's `paste` event's text, while a paste chord is held: offered, and the chord let go after. */
-  pasted(text: string) {
+  /** The browser's `paste` event's text and image (a `File` of its items), while a paste chord is held: offered, and the chord let go after. */
+  pasted(text: string, image?: Blob) {
     const release = this.holding;
     if (!release) return;
-    this.waiting = this.paste(text);
+    this.waiting = this.paste({ text, image });
     release();
   }
 
   /**
-   * Offers the host's `text` to the guest unless it has it already (the last text either way; `force`: offered anyway)
-   * or it is empty; resolves once the agent's ACK came, or `ACK_WAIT` passed (or at once: nothing offered).
+   * Offers the host's content (text, or text and an image) to the guest unless it has it already (the last content
+   * either way; `force`: offered anyway) or it is empty; resolves once the agent's ACK came, or `ACK_WAIT` passed (or
+   * at once: nothing offered). An image goes only to an agent that takes images, at most `IMAGE_CAP`; text past
+   * `TEXT_CAP` doesn't go.
    */
-  async paste(text: string, force = false): Promise<void> {
-    if (!this.active || text === '') return;
-    const h = textHash(text);
+  async paste(content: string | Content, force = false): Promise<void> {
+    const c = typeof content === 'string' ? { text: content } : content;
+    const image = c.image && c.image.size <= IMAGE_CAP && this.images ? c.image : undefined;
+    let bytes = c.text ? new TextEncoder().encode(c.text) : undefined;
+    if (bytes && bytes.length > TEXT_CAP) bytes = undefined;
+    const text = bytes && c.text;
+    if (!this.active || (!text && !image)) return;
+    let png: Uint8Array<ArrayBuffer> | undefined;
+    let h = contentHash(text);
+    if (image) {
+      png = new Uint8Array(await image.arrayBuffer());
+      h = contentHash(text, await imageHash(png));
+      if (!this.active) return;
+    }
     this.hostHash = h;
     // Offered already: a paste chord waits for that offer's ACK still (a sync's, a moment before the chord).
     if (!force && h === this.toGuest && this.offering?.hash === h) return this.offering.done;
     if (!force && (h === this.fromGuest || h === this.toGuest)) return;
-    const bytes = new TextEncoder().encode(text);
-    if (bytes.length > TEXT_CAP) return;
     const serial = this.serial = (this.serial + 1) >>> 0;
-    // Requests for an older offer carry on (a guest program is reading it): their answers hold their own bytes.
-    this.offered = { serial, bytes };
+    // Requests for an older offer's text carry on (a guest program is reading it): their answers hold their own
+    // bytes. An older image's stop: the page holds one image of its own.
+    if (png) {
+      for (const [id, a] of this.answers) {
+        if (!a.image) continue;
+        this.answers.delete(id);
+        this.link.send(FRAME.DATA, encodeData(id, DATA_FAIL));
+      }
+    }
+    this.offered = { serial, text: bytes, image: png };
     // The guest's clipboard is to hold this one: the guest's last copy is no longer what it has.
     this.toGuest = h;
     this.fromGuest = undefined;
@@ -406,7 +571,8 @@ export class ClipboardShare {
     });
     const done = status.then(() => {});
     this.offering = { hash: h, done };
-    this.link.send(FRAME.OFFER, encodeOffer({ serial, types: [{ type: TEXT, size: bytes.length }], inline: bytes.length <= INLINE ? bytes : undefined }));
+    const types = [...(bytes ? [{ type: TEXT, size: bytes.length }] : []), ...(png ? [{ type: PNG, size: png.length }] : [])];
+    this.link.send(FRAME.OFFER, encodeOffer({ serial, types, inline: bytes && bytes.length <= INLINE ? bytes : undefined }));
     await status;
     if (this.offering?.done === done) this.offering = undefined;
   }
@@ -417,13 +583,33 @@ export class ClipboardShare {
    */
   private reset() {
     this.offered = undefined;
+    for (const r of this.requests.values()) r.done(undefined);
     this.requests.clear();
     this.answers.clear();
     for (const a of [...this.acks.values()]) a(ACK.NO_SESSION);
     this.acks.clear();
     this.offering = undefined;
     this.fromGuest = this.toGuest = undefined;
+    // The guest's image offer was its clipboard's then (its bytes are no longer to be had).
+    this.pendingImage = this.guestSerial = undefined;
     this.changed = true;
+  }
+
+  /** Requests the bytes of the guest's offer `serial` as `type`, at most `cap` of them: they come whole, or undefined. */
+  private request(serial: number, type: string, cap: number): { id: number; bytes: Promise<Uint8Array<ArrayBuffer> | undefined> } {
+    const id = this.id = (this.id + 1) >>> 0;
+    const bytes = new Promise<Uint8Array<ArrayBuffer> | undefined>((done) => this.requests.set(id, { chunks: [], len: 0, cap, done }));
+    this.link.send(FRAME.REQUEST, encodeRequest({ serial, id, type }));
+    return { id, bytes };
+  }
+
+  /** Stops the page's request `id` (MORE 0), if it is still going. */
+  private stop(id: number) {
+    const r = this.requests.get(id);
+    if (!r) return;
+    this.requests.delete(id);
+    this.link.send(FRAME.MORE, encodeMore(id, 0));
+    r.done(undefined);
   }
 
   private frame(f: Frame) {
@@ -446,28 +632,37 @@ export class ClipboardShare {
       case FRAME.OFFER: {
         const o = decodeOffer(f.payload);
         if (!o || !this.active) return;
-        const t = o.types.find((x) => isText(x.type));
-        if (!t || (t.size !== UNKNOWN && t.size > TEXT_CAP)) return;
+        const fits = (x: { size: number }, cap: number) => x.size === UNKNOWN || x.size <= cap;
+        const t = o.types.find((x) => isText(x.type) && fits(x, TEXT_CAP));
+        const img = this.images ? o.types.find((x) => isImage(x.type) && fits(x, IMAGE_CAP)) : undefined;
+        if (!t && !img) return;
         // The newest offer wins: requests for older ones stop.
-        for (const id of this.requests.keys()) this.link.send(FRAME.MORE, encodeMore(id, 0));
-        this.requests.clear();
-        if (o.inline && o.types[0] === t) return this.received(new TextDecoder().decode(o.inline));
-        const id = this.id = (this.id + 1) >>> 0;
-        this.requests.set(id, { chunks: [], len: 0 });
-        this.link.send(FRAME.REQUEST, encodeRequest({ serial: o.serial, id, type: t.type }));
+        for (const id of [...this.requests.keys()]) this.stop(id);
+        this.guestSerial = o.serial;
+        const inline = o.inline && o.types[0] === t ? new TextDecoder().decode(o.inline) : undefined;
+        if (img) {
+          // The guest's clipboard moved on; what the host will have of it is known once it is written (and read back).
+          this.fromGuest = this.toGuest = undefined;
+          this.pending = undefined;
+          this.pendingImage = { serial: o.serial, image: img.type, text: t && { type: t.type, inline } };
+          if (this.host.hasFocus()) this.writePending();
+          return;
+        }
+        if (inline !== undefined) return this.received(inline);
+        const r = this.request(o.serial, t!.type, TEXT_CAP);
+        void r.bytes.then((b) => b && this.received(new TextDecoder().decode(b)));
         return;
       }
       case FRAME.DATA: {
         const d = decodeData(f.payload);
         const r = d && this.requests.get(d.id);
         if (!d || !r) return;
-        if (d.flags & DATA_FAIL || !this.active) return void this.requests.delete(d.id);
-        r.len += d.bytes.length;
-        if (r.len > TEXT_CAP) {
+        if (d.flags & DATA_FAIL || !this.active) {
           this.requests.delete(d.id);
-          this.link.send(FRAME.MORE, encodeMore(d.id, 0));
-          return;
+          return r.done(undefined);
         }
+        r.len += d.bytes.length;
+        if (r.len > r.cap) return this.stop(d.id);
         r.chunks.push(d.bytes);
         if (!(d.flags & DATA_END)) return void this.link.send(FRAME.MORE, encodeMore(d.id, 1));
         this.requests.delete(d.id);
@@ -477,13 +672,15 @@ export class ClipboardShare {
           all.set(c, at);
           at += c.length;
         }
-        return this.received(new TextDecoder().decode(all));
+        return r.done(all);
       }
       case FRAME.REQUEST: {
         const r = decodeRequest(f.payload);
         if (!r) return;
-        if (!this.active || this.offered?.serial !== r.serial || !isText(r.type)) return void this.link.send(FRAME.DATA, encodeData(r.id, DATA_FAIL));
-        this.answers.set(r.id, { bytes: this.offered.bytes, at: 0, credit: CREDIT });
+        const o = this.active && this.offered?.serial === r.serial ? this.offered : undefined;
+        const bytes = isText(r.type) ? o?.text : r.type === PNG ? o?.image : undefined;
+        if (!bytes) return void this.link.send(FRAME.DATA, encodeData(r.id, DATA_FAIL));
+        this.answers.set(r.id, { bytes, at: 0, credit: CREDIT, image: r.type === PNG });
         return this.answer(r.id);
       }
       case FRAME.MORE: {
@@ -521,9 +718,10 @@ export class ClipboardShare {
   /** The guest's text: to the host's clipboard while the document has focus, else kept for later (the newest only). */
   private received(text: string) {
     if (text === '') return;
-    this.fromGuest = textHash(text);
+    this.fromGuest = contentHash(text);
     this.toGuest = undefined;
     this.pending = text;
+    this.pendingImage = undefined;
     if (this.host.hasFocus()) this.writePending();
   }
 }

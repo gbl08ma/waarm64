@@ -20,7 +20,7 @@ import type { AgentFromDevice, AgentToDevice } from '../agent-device.ts';
 export const WINDOW = 256 << 10;
 
 /** What the page says it can do (web/agent-frame.ts `CAP`). */
-export const PAGE_CAPS = CAP.TYPE | CAP.TEXT;
+export const PAGE_CAPS = CAP.TYPE | CAP.TEXT | CAP.IMAGE;
 
 export class AgentLink {
   /** The guest's agent holds its end of the port open. */

@@ -1,4 +1,4 @@
-# Run in the guest by images/debian-sway/build.sh (as root, after apt has installed sway and wl-clipboard): the user
+# Run in the guest by images/debian-sway/build.sh (as root, after apt has installed sway, wl-clipboard and grim): the user
 # `user` (uid 1000, no password), logged in on tty1 by getty at boot, whose login shell runs a headless sway there.
 set -e
 useradd -m -u 1000 -s /bin/bash user
@@ -25,4 +25,4 @@ mkdir -p /home/user/.config/sway
 # No bar, no background, nothing on a timer: an idle sway.
 echo 'output * resolution 800x600' > /home/user/.config/sway/config
 chown -R user:user /home/user
-echo ==sway $(sway --version) $(dpkg-query -W -f='${Version} ' wl-clipboard libwlroots-0.18 2>/dev/null) $(id user)
+echo ==sway $(sway --version) $(dpkg-query -W -f='${Version} ' wl-clipboard grim libwlroots-0.18 2>/dev/null) $(id user)

@@ -1,8 +1,8 @@
 # Clipboard sharing between the host and the guest (the CLIP track's plan)
 
 **Status:** written 2026-11-05 from a brainstorm with the user, who settled its choices the same day (§7). Steps 1
-(the channel), 2 (the agent on the console), 3 (Wayland, the paste chord) and 4 (the host's ways, the permission, the
-toolbar's button, the Machines page's switch) are built: docs/devices.md "agent" and "The guest's agent",
+(the channel), 2 (the agent on the console), 3 (Wayland, the paste chord), 4 (the host's ways, the permission, the
+toolbar's button, the Machines page's switch) and step 5's images with [Copy the screen](ui:clipboard:ClipboardMenu.screen) (§4.4) are built: docs/devices.md "agent" and "The guest's agent",
 docs/frontend.md "The toolbar" (Clipboard), CLIP-HANDOVER.md. The brief: share the clipboard both ways. On the guest side, use a no-disk-writes route like the network's
 settings (a systemd credential). On the host side, manage the browser's permission prompts and detect when a browser
 hands back placeholder data (empty strings, in the user's experience) instead of the clipboard. The guest side is an
@@ -60,7 +60,9 @@ a change of shape. Like those other switches, it asks first when it orphans snap
   agent's word that the guest's clipboard changed hands (a session child started or stopped, its compositor came
   or went): the page forgets what it knew of it, drops that clipboard's transfers and syncs again. The page's
   HELLO reaches the session child too, whose transfers in flight end (they were an earlier page's). And `TYPED`,
-  what became of `TYPE`'s text (typed, or why not: §3.2 "For a text console").
+  what became of `TYPE`'s text (typed, or why not: §3.2 "For a text console"). **Built (step 5)** with the capability
+  `IMAGE`: an OFFER lists its text first (inline when short) and its image after it, never inline; each REQUEST names
+  its type.
 - **Echo suppression:** each side remembers the hash of the last thing it received. When the other side offers
   it back (for example, the host writes the guest's text, and the next focus reads the same text), nothing is
   sent. The hash stands for "the clipboard still has it", so it is forgotten whenever that stops being known: the
@@ -158,7 +160,9 @@ offered there.
   says so (`TYPED`, devices.md), and the page's menu tells the user.
 - **MIME types:** `text/plain;charset=utf-8` (and its aliases `UTF8_STRING`, `TEXT`, `STRING` on X11) first;
   then images (§4.4), then `text/html`. A size cap is enforced on both sides (16 MiB for text, 64 MiB for an
-  image), against the offer's size, before any bytes cross.
+  image), against the offer's size, before any bytes cross. **As built (step 5):** a guest program's offer has no
+  size (Wayland says none), so for the guest's side the cap counts the bytes as they cross (both sides stop the
+  transfer past it); the page's offers carry their sizes, which the agent checks first (ACK `TOO_LARGE`).
 - **Paused** (`PAUSE`, from the toolbar's switch): the agent stops answering and announcing. It drops its
   ownership of the guest's clipboard if the host's data was in it, so that a paste in the guest can't pull more
   from the host. It ignores the guest's changes until `RESUME`. Nothing is queued for later.
@@ -205,7 +209,7 @@ would bring if that is what it takes. So:
   **Measured, step 3 (Debian 13, sway 1.10 headless, 2026-11-06):** over 20 s idle with sway running, 0 ticks and 0
   voluntary switches for the agent and its session child; **VmRSS 572 KiB (the agent) and 516 KiB (the child)**.
   **Size: 403,000 bytes** (the Podman build), +62 KiB for the Wayland client, logind and the session child (`std`'s
-  `HashMap`, `read_dir` and formatting among it). **Measured, step 2 (Debian 13, the console agent, 2026-11-06):** over 60 s idle, **0 ticks of CPU and 0 voluntary context switches; VmRSS 300 KiB** (18 ticks and ~30 switches from its start to the first measure, the HELLO and the boot's settling); `tests/page-agent.test.ts` keeps the
+  `HashMap`, `read_dir` and formatting among it); **407,200 bytes with images** (step 5, +4.2 KiB). **Measured, step 2 (Debian 13, the console agent, 2026-11-06):** over 60 s idle, **0 ticks of CPU and 0 voluntary context switches; VmRSS 300 KiB** (18 ticks and ~30 switches from its start to the first measure, the HELLO and the boot's settling); `tests/page-agent.test.ts` keeps the
   check over 20 s. **Size:** 333 KiB (340,712 bytes, the Podman build), above the ~200 KiB aim, because `std` alone
   is ~320 KiB on this toolchain (an empty `fn main` with the same profile: 327,048 bytes); the agent's own code and
   `rustix` are ~13 KiB. `#![no_std]` would bring it to tens of KiB and the boot's fw_cfg read (§3.1) with it.
@@ -397,9 +401,31 @@ Images are the same path as text with another type: lazy offers, streamed chunks
   usually arrives within the activation window, as in §4.2. Safari needs the promise form of `ClipboardItem` for
   that.
 - **The screen's own picture** (a "copy the screen" item in the toolbar's clipboard menu, from the display's
-  canvas) needs no agent. **Not built in step 4:** the page's canvas is transferred to a worker
-  (`transferControlToOffscreen`), so the main thread can't `toBlob` it; the item needs a read-back from the display's
-  worker (2D) or the GPU worker (3D, which `window.__webpcGrab` already does for benchmarks). It joins with images.
+  canvas) needs no agent. The page's canvas is transferred to a worker (`transferControlToOffscreen`), so the main
+  thread can't `toBlob` it: the picture is read back where the screen is drawn.
+- **Built (step 5, 2026-11-06)** as above (devices.md "The guest's agent", frontend.md "The toolbar"), with these
+  facts and choices:
+  - **Measured (headless Chromium 155, the dev VM, `bench/results/local/clip-images.ts`):** a PNG written comes back
+    re-encoded (3142 bytes written, 2630 read), the same bytes at every read; the paste event's `File` has the same
+    bytes as `read()`; writing `image/jpeg` is refused ("not supported on write"), so the conversion is needed;
+    `clipboardchange` fires for the page's own image write; a `ClipboardItem` promise that resolves 200 ms later is
+    awaited by the write (203 ms).
+  - **The capability `IMAGE`** (bit 2): the page offers images only to an agent that says it (an older agent
+    gets the text alone), and takes the guest's only from one.
+  - **The page holds one image of its own** (the bytes of its newest offer; a newer image's offer fails the older
+    one's answers), and of the guest's only the offer while it is pending: its bytes cross at the write. The worker
+    (`web/app/png-worker.ts`) is started for each conversion and ended after it.
+  - **Reads:** sync reads `read()` after an empty `readText` or a `clipboardchange` (where the event exists every read
+    follows one), so an image unchanged on the clipboard isn't re-encoded at every focus; without `clipboardchange`
+    (Chromium before 140) an image with text is offered by the paste chord and Send, not by a focus read.
+  - **Echo:** the hashes cover text and image together (`contentHash`); the agent has none for images (it never reads
+    one but for a request). An image the host sent and a guest program copies back is written to the host again (the
+    same picture: harmless); without the read permission the paste chord sends the guest's own image back re-encoded
+    (no read-back to know its bytes by), also harmless.
+  - **Copy the screen:** a 3D machine's picture from the GPU worker's read-back (`grab`), encoded in the PNG worker; a
+    2D machine's from virtio-gpu's scanout in the device worker or the framebuffer's canvas in the machine worker, over
+    the display port (`png`). It is written with the click's activation and works while sharing waits or is paused
+    (it isn't sharing: the host's clipboard is then synced to the guest like any copy).
 
 ## 5. The page
 
@@ -416,8 +442,8 @@ Images are the same path as text with another type: lazy offers, streamed chunks
     pauses the sharing while the machine runs."
 
   The X11 sentence joins when X11 is built (§6 step 5), and so does a "text console" sentence when `TYPE` is
-  offered. **Settled (step 4)** in the catalog (`machines:MachinesPage.clipboard.note`): "Copy text" (images come
-  with step 5, and the note says what is true now), and the console's sentence joins, since the menu types:
+  offered. **Settled (step 4)** in the catalog (`machines:MachinesPage.clipboard.note`): "Copy text" (images came
+  with step 5, which made it "Copy text or an image", as the draft has it), and the console's sentence joins, since the menu types:
   "On a text console, the toolbar's clipboard menu can type what you copied." Stored machines all boot through
   UEFI, so the switch is always offered there; a transient machine has it only from `?clipboard=1` (the tests'),
   whatever its kind.
@@ -470,7 +496,7 @@ Each step is one loop with its own tests at the cheapest layer:
 4. **The host's three ways, the permission's asking, the toolbar button and the placeholder rules (built
    2026-11-06),** with the measurements from §4.1 and §4.3 (the canvas's `paste` event, Firefox in the dev VM, the
    Mac by the user: still to do).
-5. **Images** (§4.4: the page's conversion to PNG, the read-back for echoes, a screenshot each way in the
+5. **Images** (built 2026-11-06; §4.4: the page's conversion to PNG, the read-back for echoes, a screenshot each way in the
    Wayland test), then **X11** (Xwayland and Xorg sessions, INCR for large images), then `text/html`.
 6. **Optional:** spice-vdagent's port, GNOME through the portal, a ready signal and time after a resume from the
    same agent (agent.md).
