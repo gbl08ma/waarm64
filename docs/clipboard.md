@@ -1,0 +1,221 @@
+# Clipboard sharing
+
+A machine with **[Share the clipboard with the guest](ui:machines:MachinesPage.clipboard)** shares the clipboard both
+ways between the user's computer and the guest: text, images and HTML, between the browser's Clipboard API and the
+guest's Wayland or X11 desktop, and text typed at a text console. The guest's side is a small program of ours that the
+page starts at every boot with nothing written to the guest's disk. This page is the topic's overview. The details are
+in [devices.md](devices.md) "agent" (the device), devices.md "The guest's agent" (the agent and its frames) and
+[frontend.md](frontend.md) "The toolbar", Clipboard (the page's rules). The design and the user's choices are in
+[plans/clipboard.md](plans/clipboard.md) (§7).
+
+## The shape
+
+```
+ host clipboard ── Clipboard API / paste event ── page (main thread) ── worker ── virtio-console port
+                                                                                   "org.webpc.agent.0"
+                                                                                        │
+ guest: webpc-agent.service (root; from fw_cfg into a tmpfs of its own, started by a credential unit)
+        └─ a session child for the active session on seat0 (its uid): Wayland data-control, else X11's CLIPBOARD
+        └─ text consoles: TYPE through TIOCSTI on the foreground VT
+```
+
+| Piece | Where | |
+|---|---|---|
+| The channel | `web/agent-device.ts` (the device), `web/app/agent-link.ts` (`AgentLink`), `web/agent-frame.ts` (the frames) | a virtio-console with MULTIPORT and one named port, transport kind `agent`, only on machines with the setting (so the other machines' shapes and step counts don't move) |
+| The page's side | `web/app/clipboard.ts` (`ClipboardShare`), `web/app/ClipboardMenu.svelte`, `web/input.ts` (the held paste chord), `web/app/png-worker.ts` (conversions to PNG) | the browser's clipboard, the permission, the rules below |
+| The agent | `agent/` (Rust, its own crate and stable toolchain, `rustix` its one dependency), `images/build.sh agent` | a static aarch64 musl binary: the root loop (`main.rs`, `logind.rs`, `console.rs`), the session child (`session.rs`), Wayland (`wire.rs`), X11 (`x11.rs`), the frames (`frame.rs`, the twin of `web/agent-frame.ts`) |
+| Its delivery | `web/app/guest-agent.ts` | the binary as the fw_cfg file `opt/webpc/agent` (gzipped by the page), the unit as SMBIOS credentials (systemd 256+) |
+
+The frames are length-prefixed (`u32` length, `u8` type, a payload of at most 64 KiB). Offers are lazy: a side says
+what types it has, and the other side REQUESTs the bytes, which come as DATA in 64 KiB chunks under a credit (4
+frames, then one for each MORE), so neither side holds more than a few chunks of a transfer. Text under 4 KiB goes
+inline in its OFFER. The table of frames (HELLO, SYNC, SESSION, OFFER, REQUEST, DATA, ACK, MORE, TYPE, TYPED, PAUSE,
+RESUME) is in devices.md "The guest's agent".
+
+## The setting and the toolbar
+
+- **The setting** is per machine, off by default, on the Machines page's Settings tab (`MachineRecord.clipboard`;
+  a transient machine has it only from `?clipboard=1`). Turning it on or off changes the machine's shape (it adds or
+  removes the device), so it warns when snapshots would be orphaned. Ticking it is the click that asks for Chromium's
+  `clipboard-read` permission. Its note says what the agent is, what the guest needs (systemd 256+, a Wayland desktop
+  with data-control or an X11 session), that nothing is written to the disk, and that the toolbar's menu pauses it.
+- **The toolbar's clipboard button** is shown while the running machine has the setting on. Its states are
+  *sharing*, *paused* (for the run: the next start shares again) and *waiting* (before the agent's HELLO, or after
+  its port closed). It has a mark while the read permission is `prompt` or `denied`, or after the focus reads have
+  stopped. Its menu has [Allow seeing the clipboard…](ui:clipboard:ClipboardMenu.allow) (while `prompt`), the
+  switch [Share the clipboard](ui:clipboard:ClipboardMenu.share),
+  [Send the clipboard to the guest](ui:clipboard:ClipboardMenu.send),
+  [Type the clipboard](ui:clipboard:ClipboardMenu.type) and [Copy the screen](ui:clipboard:ClipboardMenu.screen).
+  frontend.md "The toolbar" has each item's behavior.
+
+## The host's ways
+
+1. **Sync on focus** (Chromium with `clipboard-read` granted: the main way). The page reads the host's clipboard when
+   it gets the focus back (`focus`, `visibilitychange`, only while `document.hasFocus()`), at the agent's HELLO and
+   SESSION, and when the permission becomes `granted`. It offers what changed. Where `clipboardchange` exists
+   (Chromium 155), a focus reads only after one, and the event reads at once. Because the host's copy is already the
+   guest's clipboard when the user comes back, every way of pasting in the guest gets it, including its own menus.
+   The page never reads while the permission is `prompt`, except on the user's clicks (the setting, Allow…).
+2. **The paste chord** (every browser, no permission). Ctrl+V, Ctrl+Shift+V or Shift+Insert on the screen (on a Mac,
+   Cmd+V and Cmd+Shift+V only, since Ctrl+V is the guest's own key) is held without `preventDefault`, and the keys
+   that follow wait behind it. The browser's own `paste` event (listened for on the document, while the screen's
+   canvas has the focus) carries the clipboard. The page offers it, and sends the held key at the agent's ACK or
+   after 300 ms (`ACK_WAIT`; another 300 ms if no paste event comes, `PASTE_WAIT`). A paste from the guest's own menus
+   gives the browser no event, so without way 1 it gets whatever the guest's clipboard had.
+3. **The menu's items.** Send reads with the click's activation (`read()`, so an image goes too). Type sends the text
+   as TYPE to the foreground text console. Copy the screen writes a PNG of the display, and needs no agent: a 3D
+   machine's picture comes from the GPU worker's read-back, a 2D machine's from whoever draws its scanout.
+
+**Guest to host:** the agent OFFERs each change of the guest's clipboard. While the document has focus, the page
+writes it at once: `writeText` for text alone, and otherwise one `ClipboardItem` of promises whose bytes are
+requested from the guest at the write. Without focus, or when the write is refused (Firefox wants activation), the
+newest offer is kept pending. It is written on a focus whose read finds the host's clipboard unchanged (the host's
+newer copy wins, so a changed clipboard drops it), or on the next key or pointer down on the screen. A paste chord or
+the pause drops it.
+
+## The rules
+
+- **Placeholders.** An empty read is never offered and never stands for the host's clipboard. An empty `readText`
+  asks `read()` for the types. Three empties in a row while the types say text (`EMPTY_RUN`) stop the focus reads for
+  the run, and the menu says why. A read whose types have no text breaks a run. Refusals are silent.
+- **Echoes.** Each side keeps a hash of what it last received, so that the other side doesn't offer it back. The hash
+  stands for "the clipboard still has it", so it is forgotten whenever that stops being known: the clipboard moving
+  on the other way, a refusal, the port's opening or closing, HELLO, SESSION, the pause. The page's hashes cover text
+  and image together (`contentHash`). After writing a guest's image, the page reads the clipboard back once, because
+  Chromium re-encodes the PNG it writes, and keeps the read-back's hash as the guest's.
+- **Caps.** 16 MiB for text and HTML and 64 MiB for an image, on both sides. The page's offers carry their sizes,
+  which the agent checks before any bytes cross (ACK `TOO_LARGE`). A guest program's offer has no size (Wayland says
+  none), so its bytes are counted as they cross, and both sides stop the transfer past the cap.
+- **Images.** The host's side is `image/png` only: Chromium reads every image as PNG and refuses to write
+  `image/jpeg`. The agent prefers a program's `image/png`. Otherwise it offers the program's own type (JPEG, WebP,
+  BMP, GIF, AVIF), which the page converts to PNG in a worker. The agent never keeps or hashes an image: it streams it
+  for each request. The page holds one image of its own (its newest offer's bytes). Images need `CAP.IMAGE` from both
+  sides.
+- **HTML** goes both ways beside the text or the image, in the same OFFER and the same `ClipboardItem`, and is never
+  hashed (the text stands for the content). HTML from the guest that doesn't come is written as the text, escaped.
+  The page offers HTML only beside its text or image, as Chromium sanitised it.
+- **The pause** stops everything in both directions at once. The agent drops its ownership of the guest's clipboard
+  if the host's data was in it, ends the transfers, and ignores the guest's changes until RESUME, which sends
+  nothing. The link says PAUSE or RESUME at every opening of the port, since a restored agent is as its snapshot was.
+- **Restores and new pages.** The page's HELLO carries a nonce. The agent answers SYNC with it before its own HELLO,
+  and the page drops what came before (a snapshot can fall between the writes of one frame). The new page's HELLO ends
+  the session child's transfers in flight, drops the host's offer unless its text is whole in the agent's cache, and
+  offers the guest's selection again.
+- **Concealed copies** (password managers) can't be told apart by the page. The pause is for those.
+- **Several tabs** each run their own machine. Only the focused tab reads or writes the shared host clipboard.
+- **Not shared:** PRIMARY (the middle-click selection), and copying from a text console. The serial terminal has its
+  own copy and paste (xterm.js).
+
+## The guest's agent
+
+**Delivery.** `webpc-agent.service` (`Type=simple`, wanted by `multi-user.target`) runs
+`modprobe -q qemu_fw_cfg` outside its sandbox, then its script gunzips
+`/sys/firmware/qemu_fw_cfg/by_name/opt/webpc/agent/raw` into `/run/webpc` (a `TemporaryFileSystem=` of its own,
+mode 0700, `exec`), waits for udev's `/dev/virtio-ports/org.webpc.agent.0` and `exec`s it. A boot without the setting
+has no unit and no binary. Machines without firmware (direct kernel boots) have no fw_cfg file or credentials, and
+don't get the agent. The unit restarts on failure, 5 s apart, at most 5 starts in 10 minutes.
+
+**What it does** (devices.md "The guest's agent" has it all):
+
+- **The root process** owns the port. It follows the active session on seat0 through logind's state files
+  (`/run/systemd/seats/seat0`, `/run/systemd/sessions/<id>`, watched with inotify), and through
+  `/proc/self/mountinfo` for the user's runtime directory. It forks a **session child** (no exec) for that session,
+  which drops to the user's uid and gid before it reads anything from a display, and talks to the parent over a
+  socketpair in the port's own frames.
+- **Wayland:** the child connects to `$XDG_RUNTIME_DIR/wayland-<n>` and binds `ext_data_control_manager_v1`, else
+  `zwlr_data_control_manager_v1`, with a client written by hand. Sway and KDE Plasma have one of them. GNOME (Mutter)
+  has neither.
+- **X11:** where there is no compositor, or one without data-control (Xorg sessions, Xwayland under such a
+  compositor), the child uses CLIPBOARD through XFixes, with a client written by hand. The display comes from the
+  session file or the user's processes, and the cookie from the server's `-auth`, `XAUTHORITY` or `~/.Xauthority`.
+  INCR works both ways. `STRING` is answered in UTF-8.
+- **Text consoles:** TYPE goes into the foreground VT's input by TIOCSTI, a byte at a time, with line ends as Enter,
+  paced by the terminal's unread input. This happens only while the VT shows text (`KDGETMODE`): on a VT that a
+  compositor holds in graphics mode, the agent refuses and says so (TYPED `NOT_TEXT`), and the menu tells the user. A
+  headless compositor (the Debian test image's sway, with no DRM) leaves tty1 in text mode, so TYPE is typed into
+  tty1's input like any typeahead. A paste the agent's 1 MiB queue can't hold is typed as a prefix and ends `DROPPED`.
+
+**What it costs** (Debian 13 under the JIT, 2026-11-06):
+
+| | Measured |
+|---|---|
+| The binary | **449,264 bytes** (the Podman build of the current sources: the console 340,712, with Wayland 403,000, with images 407,200, with X11 and HTML 445,128). `std` alone is ~320 KiB on this toolchain (an empty `fn main` with the same profile builds to 327,048 bytes). Gzipped at gzip's default level, ~245 KB |
+| The boot's fw_cfg read | Linux's `qemu_fw_cfg` reads the data register a byte at a time (`ioread8_rep`), so there is one MMIO exit per byte: **7–12 µs a byte**. The 333 KiB console build took 4.1 s raw, and **1.3 s gzipped** (187 KiB), plus 23 ms of `gzip -dc`. The current binary's read wasn't timed again (`tests/page-agent.test.ts` logs it as a diagnostic). The unit is `Type=simple` after the login prompt, so the boot doesn't wait for it, but it is a vCPU's time at every boot and every restart |
+| Idle | 0 ticks of CPU and 0 voluntary context switches over 20–60 s, for the agent and its session child, with sway and with Xvfb. One thread each, blocked in `ppoll` with no timeout. The two bounded exceptions are a paste being typed (1 ms steps) and a compositor's socket that refuses (25 tries, 200 ms apart) |
+| Memory | VmRSS 300 KiB (the console agent); 572 KiB and 516 KiB (the agent and its child with sway); 604 KiB and 704 KiB (with X11). The unit's `MemoryMax=32M` is a cap for a bug, not a budget |
+| Throughput | ~0.8 MB/s, the channel's rate under the credit: a 1.58 MB PNG from the host to `wl-paste` in 1.9–2.0 s, to xclip by INCR in 2.2 s |
+| Sandbox | `systemd-analyze security` 3.8, "OK" (3.7 before X11's socket directory was bound in) |
+
+## What each browser does
+
+Measured on 2026-11-05 and 2026-11-06, headless on the dev VM (`bench/results/local/clip-ways.ts`,
+`clip-images.ts`), and by the user in their Chrome and Firefox and in Chrome on the Mac:
+
+| | Chromium | Firefox |
+|---|---|---|
+| The read permission | `clipboard-read`: `prompt` until granted. Headless has no prompt to show, so a read while `prompt` is denied at once and the state becomes `denied` (the tests' denied path) | `permissions.query({ name: 'clipboard-read' })` throws a `TypeError` (157), so there are no focus reads, only ways 2 and 3 |
+| `clipboardchange` | There (155). It fires for the page's own writes and for another page's, the latter once the page is in front again | Not there (157) |
+| Reads | Silent with the permission and focus | Reads what the same page wrote. Another page's copy needs activation and waits on the Paste button. From a timer 6 s after input, `NotAllowedError` |
+| Writes | Need focus only (granted `clipboard-write`). From a timer 6 s after input without a grant, refused. `image/jpeg` refused ("not supported on write"). A promise in a `ClipboardItem` is awaited by the write | Need activation, so the guest's copy is kept pending until a key or pointer |
+| An image written | Re-encoded: 3142 bytes written, 2630 read, the same at each read. The paste event's `File` has the same bytes as `read()` | Not measured |
+| The paste event at a focused, non-editable `<canvas>` | At the canvas, with the text and no grant; a copied image as one `file image/png`; on the Mac (TextEdit's text) `text/plain`, `text/html` and `text/rtf`, with no prompt from Chrome or macOS | At `<body>`, not the canvas, with the data (text, and `file image/png`), so the page listens on the document |
+| Writing `""` | `read()` gives an item with no types | `read()` gives an item whose types say `text/plain` |
+
+In headless Chromium, `bringToFront` fires no `focus` event, so the tests dispatch one. Playwright's `evaluate`
+gives activation in Firefox's BiDi, so Firefox's activation rules were measured only from timers.
+
+## Findings
+
+- **Debian 13 mounts `/run` `noexec`** (`rw,nosuid,nodev,noexec`): `exec` of a binary in a `RuntimeDirectory` fails
+  with EACCES. That is why the unit has a `TemporaryFileSystem=` of its own mounted `exec`, and needs no
+  `memfd_create` loader.
+- **Linux's virtio_console drops what arrives for a port nobody holds open**, and the device does the same on its
+  side. So the page learns that the agent is there from the port's `open`, and the link resets its reader and queue
+  at each opening.
+- **Port 0 needn't be a console:** Linux makes a port a console only on CONSOLE_PORT. So the single port is id 0 with
+  four queues. A second port (spice-vdagent's) would be id 1 at queues 4 and 5 (`portQueues`), with `max_nr_ports` 2.
+- **The unit's capabilities** are only `CAP_SYS_ADMIN` (TIOCSTI, which root keeps under
+  `dev.tty.legacy_tiocsti=0` through this check), `CAP_SETUID` and `CAP_SETGID` (the session children, hence no
+  `NoNewPrivileges`), and `CAP_KILL` (stopping a child, which is the user's process by then). There is no DAC
+  override, so whatever the agent reads of a user's it must reach by `stat` or as the child: root can't open the
+  user's 0700 runtime directory, so it learns that it is mounted from its owner. X11's sockets reach the private
+  /tmp through `BindReadOnlyPaths=-/tmp/.X11-unix` (a path socket connects across network namespaces and through a
+  read-only bind; `PrivateNetwork` hides the abstract ones).
+- **Stopping a child closes its socket first** (the child ends by itself), then SIGKILL. The first build killed first,
+  without `CAP_KILL`. The kill was refused and the agent's `waitpid` hung at sway's restart (found by the page test).
+- **Debian's xclip 0.13 drops requests that come during an INCR**, so a conversion waits while the owner is busy with
+  one of ours (the dev VM's newer xclip doesn't, so only the page test sees it). **xclip keeps one INCR per requestor
+  window**, so the child has six conversion windows. An owner that never answers is given 10 s (`OWNER_WAIT`) before
+  the conversion ends as refused.
+- **The serial tests' `run(cmd)`** matches `<<N:…>>` in the terminal for the command's output. A command with `>>` in
+  it matches its own echo while it is typed (page-agent's slow reader did, and its long paste raced the reader's
+  start). Keep `>>` out of such commands (use `tee -a`).
+
+## The tests
+
+| Where | What |
+|---|---|
+| `agent/` (`cargo test`, in `scripts/ci.sh`'s `agent` step with clippy and the build) | the frames, Wayland's and X11's wire formats, logind's files, the types and echo rules, the Typist on a fake n_tty; `serve_test.rs` (the root loop on a socketpair), `sway_test.rs` (the session child against a headless sway 1.12 with wl-clipboard: ext data-control), `x11_test.rs` (against an Xvfb of its own with xclip); each skipped without its programs |
+| `tests/agent.test.ts` (Node, `npm test`) | the device on hand-built queues, the link, the unit's lines and script, `ClipboardShare` on a faked link and browser (every rule above), the held paste chord |
+| `tests/page-clipboard-ui.test.ts` (Chromium on Buildroot, `npm test`) | the button's states and menu, the permission (headless: denied), the Machines page's switch, the PNG worker, Copy the screen on the framebuffer; the guest's shell plays the agent on the port |
+| `tests/page-agent.test.ts` (Debian, `scripts/ci-debian.sh`) | the agent over fw_cfg, its HELLO and unit, the fw_cfg read's time, idle CPU and RSS, TYPE onto tty1 (fast and slow readers, graphics mode refused), PAUSE, the port echoed by `cat` |
+| `tests/page-clipboard.test.ts`, `tests/page-clipboard-x11.test.ts` (`images/debian-sway/build.sh`'s Debian, `scripts/ci-debian.sh --platform`; skipped without the image) | sway 1.10 through `zwlr`, and Xvfb from a tty login: text, images and HTML both ways, the paste chord, echoes, the pause, idle costs, the session's end and a new one; Copy the screen on the default 3D path, and on virtio-gpu 2D's scanout with `WEBPC_DISTROS=debian WEBPC_PAGE_QUERY=gpu=2d` (passes, ~150 s) |
+
+Each step's cases and planted bugs are in [testing.md](testing.md)'s clipboard rows.
+
+## Not measured
+
+- **The Mac's focus reads.** macOS 15.4 and later can alert or deny when an app reads the pasteboard without a
+  paste-related action ("Paste from Other Apps"), which a focus read is. What Chrome returns there (an error, `""`,
+  stale content) hasn't been measured. The paste chord, a real paste, measured clean on the Mac. If focus reads come
+  back empty while `read()`'s types say text, `EMPTY_RUN` stops them. Concealed copies (password managers) and images
+  on the Mac's pasteboard are also unmeasured.
+- **The Arch desktop:** foot and Firefox both ways, GIMP's images, `qemu_fw_cfg` from Arch's kernel, and the unit
+  there. Its sway has `ext_data_control_manager_v1`, which only the native test (sway 1.12) has exercised; the Debian
+  test image's wlroots has only `zwlr`.
+- **Firefox's and Safari's image writes** (activation, the promise form of `ClipboardItem`), and Safari altogether.
+- **X11 outside Xvfb:** a display manager's session (`TYPE=x11`, its cookie written late), Xorg through startx, and
+  Xwayland under a compositor without data-control (natively, a fake compositor without data-control gives way to
+  Xvfb).
+- **GNOME and KDE:** GNOME has no data-control and isn't supported (only X11 apps under its Xwayland might be, which
+  is unmeasured). KDE Plasma has data-control and hasn't been run.

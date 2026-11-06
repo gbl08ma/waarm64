@@ -1,9 +1,6 @@
 # Clipboard sharing between the host and the guest (the CLIP track's plan)
 
-**Status:** written 2026-11-05 from a brainstorm with the user, who settled its choices the same day (§7). Steps 1
-(the channel), 2 (the agent on the console), 3 (Wayland, the paste chord), 4 (the host's ways, the permission, the
-toolbar's button, the Machines page's switch) and step 5's images with [Copy the screen](ui:clipboard:ClipboardMenu.screen) (§4.4) are built: docs/devices.md "agent" and "The guest's agent",
-docs/frontend.md "The toolbar" (Clipboard), CLIP-HANDOVER.md. The brief: share the clipboard both ways. On the guest side, use a no-disk-writes route like the network's
+**Status:** written 2026-11-05 from a brainstorm with the user, who settled its choices the same day (§7). **Built** (2026-11-07: the CLIP track, steps 1–5; step 6 stays optional): how it works now is [docs/clipboard.md](../clipboard.md), with the details in docs/devices.md "agent" and "The guest's agent" and docs/frontend.md "The toolbar" (Clipboard). The brief: share the clipboard both ways. On the guest side, use a no-disk-writes route like the network's
 settings (a systemd credential). On the host side, manage the browser's permission prompts and detect when a browser
 hands back placeholder data (empty strings, in the user's experience) instead of the clipboard. The guest side is an
 **agent of our own**, which replaces [agent.md](agent.md)'s "stock agents first" for the clipboard (§3.4).
@@ -109,7 +106,7 @@ because it changes uid on purpose; `systemd-analyze security` rates it 3.7, "OK"
   It costs the boot nothing it waits for (the unit is `Type=simple`, after the login prompt), but it is guest CPU at
   every boot: a smaller binary (§3.3, `no_std`) is the next lever.
 - **Arch's kernel.** Debian loads `qemu_fw_cfg` (agent.md). Check that Arch's kernel loads it from the DT's
-  `qemu,fw-cfg-mmio` too (not checked: the dev VM has no desktop image; CLIP-HANDOVER.md).
+  `qemu,fw-cfg-mmio` too (not checked: the dev VM has no desktop image; docs/clipboard.md "Not measured").
 - **`noexec` on `/run`.** **Debian 13 mounts `/run` `noexec`** (measured: `rw,nosuid,nodev,noexec`; `exec` of a
   binary in a `RuntimeDirectory` failed with EACCES). The unit gives the binary a tmpfs of its own instead,
   `TemporaryFileSystem=/run/webpc:mode=0700,exec,nosuid` (in its mount namespace: gone when it stops, invisible to
@@ -312,7 +309,7 @@ copy. Firefox and Safari have no such permission, so they rely on ways 2 and 3.
      needed); `paste` from Ctrl+V comes at `<body>` with the text while the canvas has focus; writing `""` leaves
      `read()` an item whose types say `text/plain` (Firefox never reads on focus, so §4.3's count doesn't meet it).
      Playwright's `evaluate` gives activation in Firefox's BiDi, so activation was measured only from timers. The
-     Mac is the user's to measure (CLIP-HANDOVER.md has the steps).
+     Mac is the user's to measure (docs/clipboard.md "Not measured").
 2. **The paste chord (every browser, no permission).** When the user presses a paste chord on the screen
    (Ctrl+V, Ctrl+Shift+V, Shift+Insert; on a Mac Cmd+V and Cmd+Shift+V only, the browser's paste there, while Ctrl+V
    is the guest's own key), `web/input.ts` holds the key and **doesn't call `preventDefault`**. The key events that

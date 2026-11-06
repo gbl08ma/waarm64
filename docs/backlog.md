@@ -1168,9 +1168,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     for it.
   - `?display=simple` runs (the tests') are another shape than the same machine on the page, so their snapshots show
     as orphaned there (a 3D machine on a browser without WebGL2 is another shape too: decided, machines.md §1).
-- **Clipboard for the screen:** paste into tty1 (typed through virtio-input, paced: its queue
-  drops past 1024 events) and copy from fbcon; only the serial terminal has both (xterm.js).
-  Phase C, host integration; a plan: [plans/clipboard.md](plans/clipboard.md).
 - **Keyboard layouts' loose ends** (the setting: [frontend.md](frontend.md) "The keyboard layout"): GNOME and
   KDE untested; the console keymaps (`vc`) other than `de-latin1` and `pt-latin1` were picked from kbd's files and
   kbd-model-map, not typed on; non-Latin layouts (a
@@ -1431,6 +1428,32 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   a game pad plugged in as far as the guest knows.
 - **Carry-over and sequence numbers:** a cancelled IN's data goes to the next read on that endpoint, which a
   protocol that cancels, then expects only fresh data with sequence numbers, would notice. None seen yet.
+
+## Clipboard sharing ([clipboard.md](clipboard.md))
+
+- **The agent's size, and the boot's fw_cfg read with it:** 449,264 bytes, of which `std` is ~320 KiB (an empty
+  `fn main` with the same profile: 327,048 bytes). Linux reads fw_cfg a byte at a time (7–12 µs a byte under the JIT),
+  so every boot spends ~1.3 s or more of a vCPU reading the gzipped binary (clipboard.md "What it costs").
+  `#![no_std]` on `rustix`'s runtime would bring it to tens of KiB (plan §3.3); not tried.
+- **Restarts read the binary again:** each of the unit's restarts (at most 5 in 10 minutes) gunzips it out of fw_cfg
+  anew. Keeping it across restarts (outside the unit's own tmpfs, or a unit that outlives the agent) would save that.
+- **Two compositors for one user** (sway on two VTs): the session child takes the first `wayland-<n>` that accepts.
+  Which socket is the active session's isn't known without reading the session's processes' environment
+  (`WAYLAND_DISPLAY`), as X11's display already is.
+- **A paste cut by a restore:** the page's HELLO (a restore mid-paste) ends the guest program's pipe, so it gets what
+  had crossed, truncated; a pipe has no way to say "failed". An X11 requestor under INCR is the same.
+- **No `splice`:** the child reads and writes the port's bytes in 64 KiB chunks between the port and the Wayland or
+  X11 pipes (they cross the parent anyway). And a page→guest answer that the guest's reader dropped is a MORE 0 the
+  page honours, but what the page already sent (at most the credit, 4 chunks) still crosses.
+- **The host-cargo fallback on x86_64** (`images/build.sh agent` without Podman: rustup's musl target, linked by
+  `rust-lld`) is unproven until a cloud session runs `scripts/cloud-setup.sh` (docs/cloud.md).
+- **sway restarted at boot, seen twice** in the Debian sway image's page test: the boot's first sway ended within
+  seconds and getty logged the user in again (the agent followed). Not seen since the image's profile logs how sway
+  ends (`/tmp/sway.log`, `== sway ended: N`): if it comes back, that line says why.
+- **The plan's optional step 6** (plans/clipboard.md §6; each needs the user's OK): spice-vdagent's port
+  (`com.redhat.spice.0`, a second port on the same device, for Xorg and GNOME guests that have it), GNOME on Wayland
+  through the portal's Clipboard interface (a RemoteDesktop session the user consents to), and other agent jobs in the
+  same binary and port (a ready signal, the time after a resume, sway's resize: plans/agent.md).
 
 ## Tests and tools
 
