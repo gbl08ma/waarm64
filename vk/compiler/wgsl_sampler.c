@@ -544,7 +544,12 @@ fetched_texel(nir_builder *b, const struct fetched *p, nir_def *const *i, nir_de
    nir_def *c[4];
    unsigned count = 0;
    nir_def *outside = nir_imm_false(b);
-   if (p->cube) {
+   if (p->cube && p->key->non_seamless) {
+      /* A non-seamless cube (VK4 T28): the texel on its own face, wrapped by the sampler's U and V. */
+      c[count++] = wrap(b, i[0], p->extent[0], p->key->address[0], &outside);
+      c[count++] = wrap(b, i[1], p->extent[0], p->key->address[1], &outside);
+      c[count++] = p->layer ? nir_iadd(b, nir_imul_imm(b, p->layer, 6), face) : face;
+   } else if (p->cube) {
       /* The centre on its face's plane, -1..1 within it; a past-the-edge one lands on another face. */
       nir_def *size = nir_i2f32(b, p->extent[0]);
       nir_def *sc = nir_fadd_imm(b, nir_fmul(b, nir_fmul_imm(b, nir_fadd_imm(b, nir_i2f32(b, i[0]), 0.5), 2.0), nir_frcp(b, size)), -1.0);
@@ -571,7 +576,10 @@ fetched_texel(nir_builder *b, const struct fetched *p, nir_def *const *i, nir_de
    }
    nir_def *texel = fetch_keyed(b, tex, p->key, nir_vec(b, c, count), p->level, 4, p->cube ? GLSL_SAMPLER_DIM_2D : tex->sampler_dim,
                                 p->cube || tex->is_array, count);
-   if (uses_address(tex, p->key, WGSL_ADDRESS_BORDER))
+   const bool border = uses_address(tex, p->key, WGSL_ADDRESS_BORDER) ||
+                       (p->cube && p->key->non_seamless &&
+                        (p->key->address[0] == WGSL_ADDRESS_BORDER || p->key->address[1] == WGSL_ADDRESS_BORDER));
+   if (border)
       texel = nir_bcsel(b, outside, border_vec(b, tex, p->key), texel);
    if (!p->dref)
       return texel;
@@ -1109,6 +1117,13 @@ lower_tex(nir_builder *b, nir_tex_instr *tex, void *data)
     * says. A gather reads the texels unfiltered: WebGPU's (or the fetches' below, for what else its key says). A sampler
     * that compares has no reduction (Vulkan's rule). An integer texture's (which a linear filter reads only so) is
     * below, among its fetches. */
+   /* A non-seamless cube's linear filter (VK4 T28, VK_EXT_non_seamless_cube_map): from its faces' fetches, each texel
+    * on the sample's face. */
+   if (key && key->non_seamless && !is_integer(tex) && !tex->is_shadow && tex->op != nir_texop_tg4 &&
+       tex->sampler_dim == GLSL_SAMPLER_DIM_CUBE && key->faces) {
+      nir_def_replace(&tex->def, nir_trim_vector(b, fetched_sample(b, tex, key), tex->def.num_components));
+      return true;
+   }
    if (key && key->reduction && !is_integer(tex) && !tex->is_shadow && tex->op != nir_texop_tg4 &&
        (tex->sampler_dim != GLSL_SAMPLER_DIM_CUBE || key->faces)) {
       nir_def_replace(&tex->def, nir_trim_vector(b, fetched_sample(b, tex, key), tex->def.num_components));

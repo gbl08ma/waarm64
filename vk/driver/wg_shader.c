@@ -1874,20 +1874,35 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
                         (int)k->bias_constant, k->bias_slope, k->bias_clamp);
       wg_json_printf(&j, "}");
    }
+   /* WebGPU's alpha to coverage wants several samples, a colour target at location 0 and no `sample_mask` output (else
+    * Vulkan's coverage from its alpha is lost: the draw covers its samples). */
+   const bool target0 = k->fs && k->color_count && k->colors[0] && wg_texture_format(k->colors[0]) &&
+                        (k->fs->info.outputs & 1u) && !k->fs->info.writes_sample_mask;
    wg_json_printf(&j, ",\"multisample\":{\"count\":%u,\"mask\":%u,\"alphaToCoverageEnabled\":%s}", MAX2(k->samples, 1),
-                  k->sample_mask, k->alpha_to_coverage ? "true" : "false");
+                  k->sample_mask, k->alpha_to_coverage && k->samples > 1 && target0 ? "true" : "false");
    if (k->fs) {
       const struct wg_texture_format *ds = k->depth ? wg_texture_format(k->depth) : NULL;
       const bool depth_dropped = k->fs->info.writes_depth && !(ds && (ds->flags & WG_FMT_DEPTH));
       wg_json_printf(&j, ",\"fragment\":{\"module\":%u,\"entryPoint\":\"main\",",
                      depth_dropped ? fragment_without_depth(p, k->fs) : p->fs_module ? p->fs_module : k->fs->module);
-      /* At the sample rate, the samples' positions follow the pipeline's count (wgsl_print.c `wg_sample_pos`). */
-      if (k->fs->info.per_sample && k->fs->info.uses_view)
-         wg_json_printf(&j, "\"constants\":{\"wg_samples\":%u,\"wg_view\":%u},", k->samples, k->view);
-      else if (k->fs->info.per_sample)
-         wg_json_printf(&j, "\"constants\":{\"wg_samples\":%u},", k->samples);
-      else if (k->fs->info.uses_view)
-         wg_json_printf(&j, "\"constants\":{\"wg_view\":%u},", k->view);
+      /* At the sample rate, the samples' positions follow the pipeline's count (wgsl_print.c `wg_sample_pos`); alpha
+       * to coverage at one sample is the stage's (`wg_a2c`). */
+      const bool a2c = k->alpha_to_coverage && k->samples <= 1 && k->fs->info.a2c;
+      if (k->fs->info.per_sample || k->fs->info.uses_view || a2c) {
+         wg_json_printf(&j, "\"constants\":{");
+         const char *sep = "";
+         if (k->fs->info.per_sample) {
+            wg_json_printf(&j, "\"wg_samples\":%u", k->samples);
+            sep = ",";
+         }
+         if (k->fs->info.uses_view) {
+            wg_json_printf(&j, "%s\"wg_view\":%u", sep, k->view);
+            sep = ",";
+         }
+         if (a2c)
+            wg_json_printf(&j, "%s\"wg_a2c\":1", sep);
+         wg_json_printf(&j, "},");
+      }
       wg_json_printf(&j, "\"targets\":[");
       for (uint32_t i = 0; i < k->color_count; i++) {
          const struct wg_texture_format *f = k->colors[i] ? wg_texture_format(k->colors[i]) : NULL;

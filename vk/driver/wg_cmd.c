@@ -839,7 +839,7 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
          ds_at++;
       ds_at = MIN2(ds_at, ARRAY_SIZE(crops) - 1);
       wg_json_printf(&j, ",\"depthStencilAttachment\":{\"view\":%u", ATT(ds_at, ds));
-      /* SAMPLE_ZERO resolves (the modes advertised) of a multisampled depth or stencil, done at the pass's end. */
+      /* Resolves of a multisampled depth or stencil (SAMPLE_ZERO, AVERAGE for depth, MIN, MAX), done at the pass's end. */
       for (uint32_t a = 0; a < 2; a++) {
          const VkRenderingAttachmentInfo *at = a ? s : d;
          VK_FROM_HANDLE(wg_image_view, src, at ? at->imageView : VK_NULL_HANDLE);
@@ -848,6 +848,7 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
              (flags & (a ? WG_FMT_STENCIL : WG_FMT_DEPTH))) {
             cmd->pass.resolve_src[a] = src;
             cmd->pass.resolve_dst[a] = dst;
+            cmd->pass.resolve_mode[a] = at->resolveMode;
          }
       }
       cmd->pass.depth_ro = (flags & WG_FMT_DEPTH) && dv && depth_read_only(d->imageLayout);
@@ -1012,9 +1013,15 @@ end_rendering(struct wg_cmd_buffer *cmd)
          const uint32_t l = layer_list[k];
          struct wg_json j = { 0 };
          /* Within the render area only. */
-         wg_json_printf(&j, "{\"op\":\"resolveDepth\",\"aspect\":\"%s\",\"format\":\"%s\",\"src\":%u,\"srcMip\":%u,"
+         const VkResolveModeFlagBits m = cmd->pass.resolve_mode[a];
+         wg_json_printf(&j, "{\"op\":\"resolveDepth\",\"aspect\":\"%s\",\"mode\":\"%s\",\"format\":\"%s\",\"src\":%u,\"srcMip\":%u,"
                         "\"srcLayer\":%u,\"dst\":%u,\"dstMip\":%u,\"dstLayer\":%u,\"area\":[%d,%d,%u,%u]}",
-                        a ? "stencil" : "depth", di->fmt->name, si->tex, src->vk.base_mip_level,
+                        a ? "stencil" : "depth",
+                        m == VK_RESOLVE_MODE_MIN_BIT       ? "min"
+                        : m == VK_RESOLVE_MODE_MAX_BIT     ? "max"
+                        : m == VK_RESOLVE_MODE_AVERAGE_BIT ? "average"
+                                                           : "zero",
+                        di->fmt->name, si->tex, src->vk.base_mip_level,
                         src->vk.base_array_layer + l, di->tex, dst->vk.base_mip_level, dst->vk.base_array_layer + l,
                         ra->offset.x, ra->offset.y, ra->extent.width, ra->extent.height);
          meta(cmd, &j);
@@ -1260,7 +1267,10 @@ pair_key(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, 
       }
    /* An E5B9G9R9 view of words (VK4 T23) is sampled from fetches, as a padded one is. */
    const bool padded = view && view->padded, words = view && view->rgb9e5;
-   if (!sampler || !view || (!integer && !sampler->emulated && !padded && !words && !forced))
+   const bool cube = view && (view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE || view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY);
+   /* A non-seamless cube's linear filter (VK4 T28): from its faces' fetches. */
+   const bool non_seamless = sampler && cube && !integer && !sampler->compare && sampler->key.non_seamless;
+   if (!sampler || !view || (!integer && !sampler->emulated && !padded && !words && !forced && !non_seamless))
       return false;
    const struct wgsl_sampler_key *k = &sampler->key;
    if (integer && !sampler->emulated && !padded && !forced && k->address[0] == WGSL_ADDRESS_EDGE && k->address[1] == WGSL_ADDRESS_EDGE &&
@@ -1284,6 +1294,8 @@ pair_key(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, 
    key->rgb9e5 = words;
    /* `must`: a pair of a cube another pair binds as its faces. */
    key->faces |= faces || must;
+   key->non_seamless = non_seamless;
+   key->faces |= non_seamless;
    if (sampler->compare) {
       key->clamp_dref = view->vk.view_format != VK_FORMAT_D32_SFLOAT && view->vk.view_format != VK_FORMAT_D32_SFLOAT_S8_UINT;
       /* WGSL can't fetch from a cube: past level 0 one is sampled from its faces. */
@@ -1605,7 +1617,8 @@ draw_key(struct wg_cmd_buffer *cmd, struct wg_shader *vs, struct wg_shader *fs, 
    k.flip_z = dyn->vp.viewport_count && dyn->vp.viewports[0].minDepth > dyn->vp.viewports[0].maxDepth;
    k.samples = cmd->pass.samples;
    k.sample_mask = dyn->ms.sample_mask == 0xffff ? 0xffffffffu : dyn->ms.sample_mask;
-   k.alpha_to_coverage = dyn->ms.alpha_to_coverage_enable && k.samples > 1;
+   /* At one sample, the fragment stage's (`wg_a2c`, wgsl_print.c): WebGPU's needs several. */
+   k.alpha_to_coverage = dyn->ms.alpha_to_coverage_enable;
    k.color_count = cmd->pass.color_count;
    memcpy(k.colors, cmd->pass.colors, sizeof(k.colors));
    k.depth = cmd->pass.depth ? cmd->pass.depth : cmd->pass.stencil;

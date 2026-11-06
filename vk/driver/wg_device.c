@@ -1996,6 +1996,10 @@ wg_CreateSampler(VkDevice _device, const VkSamplerCreateInfo *pCreateInfo, const
                                   ? (sampler->vk.reduction_mode == VK_SAMPLER_REDUCTION_MODE_MIN ? 1 : 2)
                                   : 0;
    sampler->emulated |= sampler->key.reduction != 0;
+   /* A non-seamless cube (VK4 T28): a linear filter that keeps to the face, from fetches of its faces (wg_cmd.c
+    * `pair_key`, a cube's pairs only); a nearest one never leaves the face. */
+   sampler->key.non_seamless = (c->flags & VK_SAMPLER_CREATE_NON_SEAMLESS_CUBE_MAP_BIT_EXT) &&
+                               (sampler->key.mag_linear || sampler->key.min_linear);
    if (c->compareEnable)
       wg_json_printf(&j, ",\"compare\":\"%s\"", compare[c->compareOp & 7]);
    wg_json_printf(&j, "}");

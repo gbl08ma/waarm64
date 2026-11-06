@@ -1196,6 +1196,34 @@ test('a padded cube filters across its faces (VK4 T18)', { skip: noGlslc, timeou
   }
 });
 
+test('a non-seamless cube filters within the face, wrapped by its address modes (VK4 T28)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    // Faces' reds 0, 40, 80, 120, 160, 200, 4×4 each; (1, 0, 0.99) is 0.02 of a texel from +X's edge with +Z: a linear filter reads 0.48 past it.
+    const data = Array.from({ length: 6 }, (_, f) => Array.from({ length: 16 }, () => [f * 40, 0, 0, 255]).flat()).flat();
+    const edge = async (sampler: Device['sampler']) => {
+      const r = glslStage(translate, tmp, 'tests/venus/t8/padded-cube.comp', { sampler });
+      assert.equal(r.rc, 0, r.text);
+      assert.match(r.text, /texture_2d_array<f32>/);
+      const res = await runSampled(r.text, [{ binding: 0, format: 'rgba8unorm', w: 4, h: 4, layers: 6, data }], undefined, { binding: 2, size: 2 * 16 });
+      if (!res) return undefined;
+      assert.deepEqual(res.errors, []);
+      assert.equal(Math.round(res.out[0] * 255), 0, 'within +X');
+      return res.out[4] * 255;
+    };
+    const seamless = await edge(key(ADDRESS.edge, { flags: 16 | 64 | 1 | 2 }));
+    if (seamless === undefined) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.ok(Math.abs(seamless - 76.8) < 1.5, `seamless: across the edge, 0.48 of +Z's 160: ${seamless}`);
+    assert.equal(Math.round((await edge(key(ADDRESS.edge, { flags: 16 | 64 | 1024 | 1 | 2 })))!), 0, 'non-seamless, clamped to the edge: +X only');
+    const white = 0x3f800000;
+    const border = await edge(key(ADDRESS.border, { v: ADDRESS.border, flags: 16 | 64 | 1024 | 1 | 2, border: [white, white, white, white] }));
+    assert.ok(Math.abs(border! - 122.4) < 1.5, `non-seamless at a border: 0.48 of the border's 255: ${border}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 // VK4 T11: what a format's words hold, against bytes worked out by hand (Vulkan's formats, section "Fixed-Point Data
 // Conversions"): an image of two rows, whatever is past the texels left alone. Each entry: the GLSL qualifier, the
 // image's type, a texel's bytes, four values stored and the bytes they make, then what those bytes load as.

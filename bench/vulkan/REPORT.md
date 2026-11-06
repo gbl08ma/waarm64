@@ -771,6 +771,79 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T28: pipeline state as variants — dynamic vertex input, depth bias control, the third dynamic state, non-seamless cubes
+
+2026-11-06, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t28/`.
+
+- **What the device does** (vk/README.md "Commands", "Samplers in the shader"): every draw's pipeline is already keyed
+  by the state it draws with, from the runtime's dynamic state, so the states WebGPU's pipelines hold can be dynamic:
+  `VK_EXT_vertex_input_dynamic_state`, `VK_EXT_depth_bias_control` (the format's representation only), and
+  `VK_EXT_extended_dynamic_state3` with the depth clamp and clip, sample mask, alpha to coverage, blend enables,
+  equations and write masks and the provoking vertex. Alpha to coverage at one sample, which WebGPU refuses (it was
+  dropped before, the static state too), is now the fragment stage's: an override discards a fragment whose location
+  0's alpha is under a half (the census's `single_sample_alpha_to_coverage_enable` failed first and passes). A pipeline
+  with alpha to coverage and no colour target at location 0, which WebGPU refuses, is made without it.
+  `VK_EXT_non_seamless_cube_map`: a sampler with the flag and a linear filter keys its cubes' pairs, sampled from the
+  faces' fetches, each texel kept on the sample's face and wrapped by U and V (tests/wgsl.test.ts "a non-seamless
+  cube...", whose planted bug, the face wrap left out, fails it).
+- **The census's cases** (222): 28 pass, 0 fail; the rest need what isn't offered: `VK_EXT_legacy_vertex_attributes`
+  (82 of the 85 that asked for dynamic vertex input), `VK_EXT_primitive_restart_index` (16: the guest's Venus, Mesa
+  26.2, doesn't pass it on, and WebGPU restarts only at the format's largest index), depth bias's other representations
+  and `depthBiasExact` (31), and other extensions besides the third dynamic state (21).
+- **The groups** (`cases.txt`, 7,956: every 4th `extended_dynamic_state` and `depth_bias_control` case, every dynamic
+  `input_attribute_offset` case, every alpha-to-coverage and non-seamless filtering case, every 10th `vertex_input`
+  case, the census's; 197 s as one list on SwiftShader):
+
+| group (SwiftShader) | cases | pass | fail | not supported |
+|---|---|---|---|---|
+| extended_dynamic_state | 2,058 | 695 | 2 | 1,361 |
+| depth_bias_control | 2,091 | 468 | 0 | 1,623 |
+| input_attribute_offset, dynamic | 116 | 115 | 1 | 0 |
+| alpha to coverage (the rest) | 194 | 10 | 6 | 178 |
+| filtering.cube, non-seamless | 822 | 733 | 50 | 39 |
+| vertex_input | 2,659 | 498 | 0 | 2,161 |
+
+  The failures: the 50 cubes are nearest-filtered, nearest- or linear-mipmapped, U at clamp-to-border, and their
+  seamless twins fail alike (WebGPU's own sample on SwiftShader, not the fetches: docs/backlog.md "Samplers'
+  leftovers"); the 6 alpha-to-coverage ones (no colour attachment, an unused one, and `query_pool.discard`'s) failed
+  before T28 too, their dynamic twins now alike; the 3 dynamic vertex inputs draw past a vertex buffer's end, which
+  Vulkan's robust buffer access reads as zeros and WebGPU refuses (`input_attribute_offset.two_binds_vec4.*.dynamic`
+  by design; `extended_dynamic_state.*_draws_dynamic.vertex_input_multiple_bindings`: a slot bound past its buffer's
+  end, not looked into further). Since the run, a pipeline whose fragment stage writes `sample_mask` is made without
+  alpha to coverage too (WebGPU refused it: `query_pool.discard`'s draws were dropped); those cases still fail.
+- **The M4** (148 s): 2,525 pass, 59 fail, 5,372 not supported; its failures SwiftShader's but one each way
+  (`alpha_to_coverage_unused_attachment.samples_4.alpha_invisible` on the M4 only), so the 50 cubes too. **The 2,262 both
+  pass that weren't in the list join `tests/deqp/vk.txt`** (668 extended dynamic state, 468 depth bias control, 733
+  non-seamless cubes, 115 dynamic attribute offsets, 41 alpha to coverage, 269 vertex input, a part of them passing
+  before and unsampled; 256 were in it, none failing).
+
+## VK4 T27: depth and stencil resolve modes — 2,503 cases join the list
+
+2026-11-05, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`, `VIRGL_GPU=virgl,vulkan`). JSON in `results/vk4/t27/`.
+
+- **What the device does** (vk/README.md "Commands"): every resolve mode the spec allows is advertised, SAMPLE_ZERO,
+  MIN and MAX of both aspects and AVERAGE of depth, with `independentResolve` and `independentResolveNone`; the
+  worker's drawn resolve at the pass's end (web/venus-gpu.ts `resolveDepth`) folds the pixel's samples by the mode
+  before writing `frag_depth` or keeping a stencil bit.
+- **Confirming, failing first** (`confirm-cases.txt`, every 12th samples_4 case with a mode other than SAMPLE_ZERO and
+  NONE, 258): with the modes advertised and the draws still sample 0's, 44 fail (`before-swiftshader.json`); with the
+  draws', 0 fail, 171 pass.
+- **Every samples_4 and misc `depth_stencil_resolve` case** (`cases.txt`, 3,823; 20 s as one list on SwiftShader):
+
+| host | pass | fail | not supported |
+|---|---|---|---|
+| SwiftShader | 2,614 | 0 | 1,209 |
+| M4 (12 s) | 2,574 | 40 | 1,209 |
+
+  The not supported: `D16_UNORM_S8_UINT` (1,104, T30's) and geometry shaders (141). The M4's 40 are every
+  `*_testing_stencil_samplemask` of D24S8 and D32S8, SAMPLE_ZERO's as well as MIN's: the M4's known stencil failure
+  (docs/backlog.md "The M4's own failures", 4 of them before), not the modes. **The 2,503 both pass that weren't in the
+  list join `tests/deqp/vk.txt`** (71 were).
+- **Planted** (`planted-swiftshader.json`): MIN and MAX swapped and AVERAGE divided by one sample too many: 67 of the
+  confirming list's 171 fail.
+
 ## VK4 T26: multi-draw — 1,344 cases join the list; the M4 fails `gl_DrawIndex` in a multi-draw indirect
 
 2026-11-05, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,

@@ -109,6 +109,14 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .KHR_zero_initialize_workgroup_memory = true,
       .EXT_extended_dynamic_state = true,
       .EXT_extended_dynamic_state2 = true,
+      /* Pipeline state as variants (VK4 T28): every draw's pipeline is keyed by the state it draws with (wg_cmd.c
+       * `draw_key`, from Mesa's dynamic state), so the states WebGPU's pipelines hold can be dynamic; of the third
+       * set, those the key reads. A depth bias is in the format's units only (WebGPU's integer `depthBias`). */
+      .EXT_extended_dynamic_state3 = true,
+      .EXT_vertex_input_dynamic_state = true,
+      .EXT_depth_bias_control = true,
+      /* A cube's linear filter kept to the face from fetches (wgsl_sampler.c, VK4 T28). */
+      .EXT_non_seamless_cube_map = true,
       .EXT_image_robustness = true,
       .EXT_pipeline_creation_cache_control = true,
       .EXT_pipeline_creation_feedback = true,
@@ -233,6 +241,17 @@ wg_caps_features(struct vk_features *f)
       .maintenance8 = true,
       .extendedDynamicState = true,
       .extendedDynamicState2 = true,
+      .extendedDynamicState3DepthClampEnable = HAS(DEPTH_CLIP),
+      .extendedDynamicState3DepthClipEnable = HAS(DEPTH_CLIP),
+      .extendedDynamicState3SampleMask = true,
+      .extendedDynamicState3AlphaToCoverageEnable = true,
+      .extendedDynamicState3ColorBlendEnable = true,
+      .extendedDynamicState3ColorBlendEquation = true,
+      .extendedDynamicState3ColorWriteMask = true,
+      .extendedDynamicState3ProvokingVertexMode = true,
+      .vertexInputDynamicState = true,
+      .depthBiasControl = true,
+      .nonSeamlessCubeMap = true,
       .depthClipEnable = HAS(DEPTH_CLIP),
       /* YCbCr conversions (VK3 L7.2: each plane sampled and converted in the WGSL, wgsl_lower_ycbcr), on by default
        * since L7.3 (GTK 4.24 asserts them on a device with dma-buf modifiers; GTK4 still takes GL: its Vulkan renderer
@@ -430,8 +449,12 @@ wg_caps_properties(struct vk_properties *p)
    p->maxMemoryAllocationSize = max_buffer;
    p->maxBufferSize = max_buffer;
 
-   p->supportedDepthResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
-   p->supportedStencilResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
+   /* The worker's draws at the pass's end (web/venus-gpu.ts resolveDepth), each aspect on its own (VK4 T27). */
+   p->supportedDepthResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT | VK_RESOLVE_MODE_AVERAGE_BIT | VK_RESOLVE_MODE_MIN_BIT |
+                                   VK_RESOLVE_MODE_MAX_BIT;
+   p->supportedStencilResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT | VK_RESOLVE_MODE_MIN_BIT | VK_RESOLVE_MODE_MAX_BIT;
+   p->independentResolveNone = true;
+   p->independentResolve = true;
    /* Every integer colour attachment's: WebGPU doesn't multisample r32uint, r32sint and the 32-bit ones of two or four
     * channels (wg_device.c's image formats), and Vulkan wants each format's sample counts to hold these. */
    p->framebufferIntegerColorSampleCounts = VK_SAMPLE_COUNT_1_BIT;

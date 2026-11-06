@@ -416,14 +416,24 @@ leaves it out). Two memory types, each on a heap of its own (device-local, 2 GiB
   nothing, one that suspends stores whatever its store op, since its WebGPU pass ends there (VK3 L4c-D); a depth or
   stencil attachment in a read-only layout is WebGPU's `depthReadOnly`/`stencilReadOnly` (so the pass may sample it; its
   pipelines then write neither); blits, resolves and image clears as the worker's draws, depth and stencil resolves too
-  (SAMPLE_ZERO, the modes advertised, at the end of the pass instance, within its render area: a draw writing sample 0
-  as `frag_depth`, and for stencil, which no shader writes, a draw zeroing it and eight draws, one a bit, each keeping
-  the pixels whose sample 0 has it; VK3 L4f; the attachment is stored whatever its store op, since Vulkan resolves
-  before the store op and the draws read it after the pass: L5b);
+  (at the end of the pass instance, within its render area: a draw writing the pixel's resolved value as `frag_depth`,
+  and for stencil, which no shader writes, a draw zeroing it and eight draws, one a bit, each keeping the pixels whose
+  resolved value has it; VK3 L4f; the attachment is stored whatever its store op, since Vulkan resolves before the
+  store op and the draws read it after the pass: L5b). Every mode is advertised (VK4 T27): SAMPLE_ZERO, MIN and MAX of
+  both aspects, AVERAGE of depth (the samples' mean, which the attachment's format rounds), each aspect on its own
+  (`independentResolve`, `independentResolveNone`: the draws are each aspect's);
   `CONSTANT_ALPHA` colour factors as WebGPU's one constant set to the constant's alpha (a draw mixing it with
   `CONSTANT_COLOR` in its colour can't be expressed: warned, the colour kept);
   pipelines as WebGPU takes them: an indexed strip always has its index format, depth bias only for polygons, and a
-  pipeline without a fragment shader in a pass with colour gets an empty one, its targets unwritten); stencil state per
+  pipeline without a fragment shader in a pass with colour gets an empty one, its targets unwritten); every draw's
+  pipeline is keyed by the state it draws with (`draw_key`, from the runtime's dynamic state), so what WebGPU's
+  pipelines hold can be dynamic, each value a variant (VK4 T28): extended dynamic state 1 and 2, the vertex input
+  (`VK_EXT_vertex_input_dynamic_state`), and of the third set the depth clamp and clip, sample mask, alpha to coverage,
+  colour blend enables, equations and write masks and the provoking vertex; a depth bias of the format's units only
+  (`VK_EXT_depth_bias_control` without its other representations or `depthBiasExact`: WebGPU's `depthBias` is an
+  integer); alpha to coverage at one sample, which WebGPU's pipelines refuse, is the fragment stage's (`wg_a2c`, an
+  override: a fragment whose location 0's alpha is under a half discarded), and without a colour target at location 0
+  or with a `sample_mask` output (WebGPU takes neither) it is left out; stencil state per
   face (WebGPU has one reference and one pair of masks, Vulkan a set a face): a draw whose faces both use one of them
   with different values (a reference compared or replaced, a compare mask compared, a write mask written), both faces
   drawn, is two draws, its front faces with the front's (the back culled) and then its back faces with the back's, so
@@ -557,6 +567,11 @@ stencil side's copy as a buffer copy's above (`colorDepthStencil`, VK4 T24). A c
     and integers among them; `filterMinmaxImageComponentMapping` is the browser's `texture-component-swizzle`, which the
     fetches see. The cost, against WebGPU's own linear-mipmapped sample (8 fetches and the LOD's arithmetic for one):
     3.5× on the M4, 3.2× on SwiftShader, on that pair alone (bench/vulkan/REPORT.md "VK4 T25").
+  - **Non-seamless cubes** (VK4 T28, `VK_EXT_non_seamless_cube_map`): a sampler with the flag and a linear filter keys
+    its cubes' pairs (`non_seamless`, the cube bound as its faces), and their samples come from the fetches, each texel
+    on the sample's face, wrapped by the sampler's U and V (the border's colour too); a nearest filter never leaves
+    the face (WebGPU's sample). A comparison through such a sampler is WebGPU's, seamless; a gather of such a cube
+    can't be printed (its draws refused, as a reduced cube's gather: "A variant that can't be printed").
   - Key LODs are clamped to ±1,000 at the sampler: `VK_LOD_CLAMP_NONE` and programs' infinities are indeterminate in
     WGSL's `min` and `max` (a `maxLod` of `inf` read the last level).
   - **Compressed images that aren't whole blocks** (VK4 T18): WebGPU wants a compressed texture's first level in whole

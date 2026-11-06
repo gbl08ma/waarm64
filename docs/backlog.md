@@ -325,6 +325,19 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Platform and devices
 
+- **dEQP-GLES: a census of the whole lists, and pass lists that grow to what passes** (the user's ask, 2026-11-06):
+  `tests/deqp/gles2.txt` and `gles3.txt` hold ~1,560 of the corpus's ~62,000 cases (17,165 GLES2, 44,768 GLES3):
+  every 50th case and a few whole groups that once caught bugs the sample missed, so `scripts/ci-deqp.sh` sees ~2.5% of
+  it and only broad regressions get caught. The whole lists last ran in G4 (2026-10-10, SwiftShader: GLES3 44,033 pass, 326
+  fail; its fixes after: occlusion queries, the colour mask, texture queries, then MSAA and DEPTH32F_STENCIL8;
+  `bench/gpu/results/g4-deqp/full-gles*`) and G5 (2026-10-19, ANGLE on Metal: GLES3 138 fail, GLES2 85, all but four put down
+  to the GPU; `results/g5-deqp-metal/full-gles*`); SwiftShader's leftovers after G4's fixes were never counted again,
+  and no report tallies those runs (their JSON and commit messages only). So there may be gaps nobody has seen since. The
+  task: (1) run both whole lists on SwiftShader again (slices, `bench/gpu/deqp-run.ts gles2|gles3` with `STRIDE`/`OFFSET`
+  or `PREFIX`) and class what fails, as VK4 T1's census did for dEQP-VK, each cause filed here; (2) grow the pass lists to
+  every case that passes (~60,000); (3) give `ci-deqp.sh` `ci-deqp-vk.sh`'s seeded sample (every 8th case of each group
+  from a drawn offset, the seed printed; `--full` the whole list) and its rule: a sample's failure is looked into at
+  once, or filed here and taken out of the list.
 - **virtio-gpu errors in Firefox's pages session on the Mac's GPU** (2026-11-05, `bench/boot/REPORT.md` "What a function's
   size costs, in the VM and on the Mac"): with `VIRGL_GPU=virgl` on the Mac host (Chrome for Testing 157, the M4's
   GPU) the guest's kernel logs `virtio_gpu_dequeue_ctrl_func` errors while pages load: `ERR_UNSPEC` (0x1200) to a
@@ -766,10 +779,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Not advertised, by what dEQP-VK asks** (the census of 2026-11-05, bench/vulkan/REPORT.md "VK4: the census
     again": 75% of the sample not supported on either host, against 0.2% of the M4's supported cases failing; its
     reasons by `census.ts --reasons`; a queue family with compute and without graphics, 2,525 of them, is VK4 T22's): formats
-    (3,681 reasons name one), depth and stencil resolve
-    modes, what reads its own attachment, writable storage in the vertex stage, mutable descriptors, 3D ASTC: each a
+    (3,681 reasons name one), what reads its own attachment, writable storage in the vertex stage, mutable descriptors, 3D ASTC: each a
     task of VK4-KICKOFF.md's T23–T35. No task: protected memory, cooperative matrices, ray tracing, mesh shaders, tile
     images, fragment density, descriptor buffers, sparse (~1,600 of the sample) and pipeline statistics queries (188).
+    Left by VK4 T28 (pipeline state as variants; the sample's counts): `VK_EXT_legacy_vertex_attributes` (82 of the 85
+    that asked for dynamic vertex input ask for it too: unaligned offsets and strides, and a shader's type that isn't
+    the format's, which T5's pulled vertices could read bytewise); `VK_EXT_primitive_restart_index` (16: the tests'
+    guest's Venus, Mesa 26.2, doesn't pass it on, and WebGPU restarts only at the format's largest index, so every
+    indexed draw with another would need its indices rewritten before its pass); depth bias control's other
+    representations and `depthBiasExact` (31 of its 81: WebGPU's `depthBias` is an integer of the format's units; a
+    float or forced-unorm one would be the fragment stage's depth moved); the third extended dynamic state's rest
+    (rasterization samples, alpha to one, polygon and line modes, logic ops, conservative rasterization: none WebGPU
+    has, 2 of the 23 asked only for them, the rest for other extensions too).
   - **`api.info.image_format_properties2.*` of the YCbCr formats time out** (VK4 T1's "crash" of `r12x4_unorm_pack16`,
     VK4 T2): with `DISJOINT` in its create flags the case makes ~340,000 synchronous queries, ~0.1 ms each through
     Venus's ring, so it passes in 34 s (`WATCHDOG=disable`) but past dEQP's 30 s watchdog; out of the list. A guest's
@@ -822,7 +843,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     could back next, each a few lines of the fetch: vertex attribute divisors (`iid / rate`: vkd3d's other 24 of
     test_instance_id, tier 4), and formats WebGPU's vertex buffers lack (three-component 8- and 16-bit, scaled:
     816 and 120 of `vertex_input`'s 10,825 cases not supported by their names; 4,080 are `legacy_vertex_attributes`,
-    an extension not advertised; the other reasons not looked into). Its cost isn't measured: nothing we run meets it but dEQP-VK
+    an extension not advertised; the other reasons not looked into). A draw that reads past a vertex buffer's end, which
+    Vulkan's robust buffer access reads as zeros or in range, is refused by WebGPU (nothing drawn): VK4 T28's
+    `input_attribute_offset.two_binds_vec4.*.dynamic` by design, `extended_dynamic_state.*_draws_dynamic.vertex_input_multiple_bindings`
+    (a slot bound past its buffer's end: not looked into); pulling such a binding would read zeros. Its cost isn't measured: nothing we run meets it but dEQP-VK
     and vkd3d's tests (a bind group per change of the ranges, and a shader's bytes decoded per vertex).
   - **Formats**: (ASTC's failures on SwiftShader were the padded blocks above, on Metal too); D24 depth tests fail by one unit (depth24plus's precision);
     3-component formats in images (`glsl.440.linkage` makes RGB32 attachments: `VK_ERROR_FORMAT_NOT_SUPPORTED`).
@@ -832,7 +856,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     mag filter (WGSL's compare is at level 0); `textureQueryLod` ignores anisotropy; a shadow cube's filter past a corner
     of three faces takes the two nearest; a depth texture sampled without a comparison in a stage that doesn't compare it
     picks the nearest level at an explicit LOD (a linear mip filter's blend is lost, WebGPU filtering no depth); a gather of a shadow cube bound as its faces
-    is refused; an integer cube both sampled and gathered is refused (its
+    is refused, as is a gather of a cube through a non-seamless sampler with a linear filter (VK4 T28), and a
+    comparison through one is seamless (`texture.shadow.cube*.non_seamless*` aren't supported for other reasons);
+    a cube sampled with nearest filters, a nearest or linear mipmap and U at clamp-to-border fails on SwiftShader,
+    seamless or not (50 of VK4 T28's `filtering.cube.combinations` non-seamless cases and their seamless twins: WebGPU's
+    own sample, not the fetches); an integer cube both sampled and gathered is refused (its
     one binding can't be both; none seen); each base of `vkCmdDispatchBase` is a compute pipeline, never evicted (a
     tiler's cost, not its results: `wg_compute_based`, the review's C7); a browser without `texture-component-swizzle` ignores mappings, said once
     (a fallback needs `texelFetch` keyed too, and every Chromium backend has the feature); the variants' compile on a
@@ -902,9 +930,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     stage writes and the vertex stage reads (refused: no writable storage in WebGPU's vertex stage); non-indexed fans
     past 65,536 vertices not drawn (said once), indirect ones cut there, indexed indirect ones too (their list is sized
     by a fan: VK4 R4); an indirect draw with the last vertex
-    provoking drawn as it is. Depth and stencil resolves: SAMPLE_ZERO only (VK3 L4f; a sixth of
-    dEQP-VK's SAMPLE_ZERO `depth_stencil_resolve` cases in the list since L7.1, stencil8's above); MIN, MAX and AVERAGE
-    aren't advertised.
+    provoking drawn as it is. Alpha to coverage without a colour target at location 0, or with a fragment stage that
+    writes `sample_mask` (WebGPU takes neither), covers every sample (VK4 T28: they were refused, nothing drawn;
+    `multisample.alpha_to_coverage_no_color_attachment`, `_unused_attachment` and `query_pool.discard.*alpha_to_coverage*`
+    fail: the fragment stage's own `sample_mask` could carry the coverage). Depth and stencil resolves of every mode are drawn (VK4 T27); `D16_UNORM_S8_UINT`'s
+    (1,104 of the samples_4 `depth_stencil_resolve` cases) wait for the format (VK4 T30).
   - **Usage scopes' leftovers** (VK4 T3, R2: vk/README.md "Usage scopes"): a pass or dispatch that writes storage of a
     memory it reads otherwise reads copies taken at its start. Left: writable bindings of one range, one an array of
     atomics and one not, or together past `maxStorageBufferBindingSize` (said once, refused by WebGPU); a descriptor
@@ -971,8 +1001,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `texture.mipmap.cubemap.projected.nearest_linear_linear_repeat`, `texture.mipmap.cubemap.basic.nearest_nearest_linear_clamp_compute`
     (VK4 T22's, the compute queue's: its fragment twin passes); 11 copies to or from `e5b9g9r9_ufloat_pack32`, compared
     bitwise (Metal looks to canonicalize the format's bits on upload: unconfirmed; a texture of `r32uint` would keep them,
-    and no program depends on non-canonical bits); 4 `depth_stencil_resolve.*_stencil_samplemask` (the stencil reads 255
-    where 1 is right). (`descriptorset_random.sets4`'s were bindings past WebGPU's, on SwiftShader too: "Texel buffers"
+    and no program depends on non-canonical bits); every `depth_stencil_resolve.*_testing_stencil_samplemask` of
+    D24S8 and D32S8 (the stencil reads 255 where 1 is right; 40 of VK4 T27's samples_4 run, SAMPLE_ZERO's and MIN's
+    alike, so the stencil's draws, not the mode). (`descriptorset_random.sets4`'s were bindings past WebGPU's, on SwiftShader too: "Texel buffers"
     below; the multisampled 16-bit normalized passes, which WebGPU doesn't resolve, are drawn resolves since VK4 T21.)
   - **SwiftShader compiles zero-initialized workgroup memory slowly** (VK4 T2): Dawn zeroes it through Vulkan's
     `VK_KHR_zero_initialize_workgroup_memory`, which costs SwiftShader ~17 s per pipeline with a 16 KiB array (19 ms

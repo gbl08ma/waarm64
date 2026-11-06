@@ -17,7 +17,10 @@ task T3"), in any order, several at once where they don't touch the same files. 
   task), and ends with **one commit or a few**, rebased onto origin/main and pushed: the fix, its tests, its dEQP-VK
   cases added to `tests/deqp/vk.txt`, the docs it changes, and its row below marked done with a line of outcome
   (numbers, what's left). What it leaves goes to docs/backlog.md, not here.
-- runs `scripts/ci.sh` and `scripts/ci-deqp-vk.sh` (and the CI scripts its area names in CLAUDE.md) before it's done.
+- runs `scripts/ci.sh` and `scripts/ci-deqp-vk.sh` (and the CI scripts its area names in CLAUDE.md) before it's done:
+  the latter's seeded sample of the pass list (docs/testing.md "dEQP-VK"), the task's own new cases proven by its own
+  runs; a sample's failure is looked into at once or filed and taken out of the list. `--full`, the whole list, runs
+  once after all the census's tasks (T21–T35) and at the track's end (the user's OK, 2026-11-06).
 - that outgrows one session leaves a short `VK4-HANDOVER.md` section under its id (state, next step), deleted when
   it's done.
 - that needs NVIDIA adds a step to `bench/vulkan/nvidia.sh` (`VK2_STEPS=<task>`); the user's runs are batched as
@@ -43,7 +46,7 @@ T2–T14; the rest of the order is judgement, said with each.
 
 ## The tasks
 
-### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T26 (2026-10-29 to 2026-11-05)
+### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T28 (2026-10-29 to 2026-11-06)
 
 Each row's outcome in full is its section of bench/vulkan/REPORT.md ("VK4 T<n>") and its commit; what each left is in
 docs/backlog.md "The Vulkan driver's gaps" (the entry named) and, where it is a defect or drops work, in the tasks
@@ -86,6 +89,8 @@ R1–R4 and then of R5–R7, had its findings fixed or moved to the backlog the 
 | T24. `maintenance5`, `6` and `8` | the three advertised; 5 and 6 host-side (`vkGetDeviceImageSubresourceLayout`, their properties): 360 of the census's 688 cases pass on both hosts and join the list (30,039 → 30,399), the rest formats WebGPU lacks (A8, A1B5G5R5) and aliased images; 8's offsets that aren't constants from fetches, depth and stencil copied with colour images, blits between layers and slices: 2,246 of its 3,642 cases pass through Mesa 26.3's Venus (`images/deqp/venus-icd.sh`), 0 fail on either host, in `tests/deqp/vk-maintenance8.txt` until the guest's Mesa is 26.3 | "maintenance8's cases wait for the guest's Mesa 26.3", "maintenance5's and 6's leftovers" |
 | T25. Min/max filtering | `VK_EXT_sampler_filter_minmax` and `samplerFilterMinmax`: a reducing sampler's pairs keyed, their samples from fetches taking the min or max of the texels with weight (integers and cubes too), every sampled format's MINMAX bit; 182 of the census's 504 pass on SwiftShader (192 on the M4), 1,797 of every 10th of the list's 50,940; 0 fail; 1,908 join the list (→ 32,307); the census's 195 mapping cases are dEQP's own refusal; a reduced sample ~3.5× WebGPU's on the M4 | "Min/max reductions' leftovers" |
 | T26. Multi-draw | `VK_EXT_multi_draw` (a draw per element, its draw index), `multiDrawIndirect` (the replay's draw per record, its push places reserved), `drawIndirectCount` (records gated by the count in a compute pass before the render pass); of 2,757 cases (the census's 203, every indirect-draw and draw-parameters case, every 20th multi-draw) 1,495 pass on SwiftShader, 0 fail; the M4 fails the 16 `draw_index` cases (every draw reads index 0), filed; 1,344 join the list (→ 33,651) | "Multi-draw's leftovers", "The M4's own failures" |
+| T27. Depth and stencil resolve modes | MIN, MAX and AVERAGE (depth) advertised with `independentResolve` and `independentResolveNone`, the worker's drawn resolves folding the samples by the mode; of the 3,823 samples_4 and misc `depth_stencil_resolve` cases 2,614 pass on SwiftShader, 0 fail (the rest D16S8, T30's, and geometry); the M4 fails its 40 `stencil_samplemask` whatever the mode; 2,503 join the list (→ 36,155) | "Rendering", "The M4's own failures" |
+| T28. Pipeline state as variants | `VK_EXT_vertex_input_dynamic_state`, `VK_EXT_depth_bias_control` (the format's representation), the third dynamic state's depth clamp and clip, sample mask, alpha to coverage, blend and provoking vertex (the draw's key had them), alpha to coverage at one sample in the fragment stage, `VK_EXT_non_seamless_cube_map` from the faces' fetches; of 7,956 cases 2,519 pass on SwiftShader, 59 fail that failed before or their seamless twins do; 2,262 join the list (→ 38,417). Not done: `primitive_restart_index` (the guest's Venus doesn't pass it on), `legacy_vertex_attributes` (82 of the census's 85 dynamic vertex input cases) | "Not advertised, by what dEQP-VK asks", "Samplers' leftovers", "Pulled vertices' leftovers", "Rendering" |
 
 ### Tier 3: performance on real workloads
 
@@ -107,12 +112,6 @@ memory, cooperative matrices, ray tracing, mesh shaders, tile images, fragment d
 the sample's on the M4 (×100 for the whole list, roughly); each starts by running its reason's cases (`deqp-run.ts`'s
 `CASES`, from `census.ts --reasons`' examples or the sample's JSON) to see what they meet once advertised.
 
-- **T27. Depth and stencil resolve modes** (S; 195: depth 130, stencil 46, `independentResolveNone` 19): MIN, MAX and
-  AVERAGE as T10's drawn resolves. *Done:* advertised, its cases run. *Start:* backlog "Rendering" (SAMPLE_ZERO only).
-- **T28. Pipeline state as variants** (S each; 222): `VK_EXT_vertex_input_dynamic_state` (85), `depth_bias_control`
-  (81), what of `extended_dynamic_state3` WebGPU's pipelines can take as variants (23), `primitive_restart_index` (16),
-  `non_seamless_cube_map` (17, the cube's filter in the shader). *Done:* each advertised that passes. *Start:*
-  vk/README.md "Commands" (extended dynamic state as variants).
 - **T29. Shader types** (M; 137 here, more in groups that skip silently): `storageInputOutput16` (89: varyings widened
   to 32 bits), 8-bit storage and `shaderInt8` (17+: words as `lower_16bit` does halves), `shaderImageGatherExtended`
   (31: offsets that aren't constants as fetches), `shaderInt16` (the lowering exists; the advertising and its groups
@@ -169,11 +168,12 @@ and the formats WebGPU's vertex buffers lack ("Pulled vertices' leftovers": the 
 a compute-only queue family, the commonest not-supported reason (T1); and the hosts' own: the M4's failures,
 SwiftShader's fetch from a base level and `buffer_1048577` on NVIDIA (the user's next NVIDIA run decides those and
 T2's `wg_complete` trap). The census's tasks take some of these: the compute-only queue family (T22), the packed 1.3 orders
-(T30), `_pcoffset` (T24), MIN/MAX/AVERAGE resolves (T27), `shaderInt64` (T29).
+(T30), `_pcoffset` (T24), MIN/MAX/AVERAGE resolves (T27, done), `shaderInt64` (T29).
 
 ## The gate (the track's end)
 
-- dEQP-VK's pass list grown by every task, passing on SwiftShader in CI, on the M4, and on NVIDIA in one user run.
+- dEQP-VK's pass list grown by every task, passing whole (`ci-deqp-vk.sh --full`) on SwiftShader after the census's
+  tasks and at the end, on the M4, and on NVIDIA in one user run.
 - T1's census again at the end: the not-passed share of supported cases, by cause, against T1's.
 - Every advertised feature backed (or no longer advertised).
 - The programs' replays within their tolerances; mpv and VK0's scene no worse than VK3's numbers on each host.

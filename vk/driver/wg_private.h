@@ -827,6 +827,7 @@ struct wg_cmd_buffer {
       bool depth_ro, stencil_ro; /* attached in a read-only layout: WebGPU's depthReadOnly, stencilReadOnly */
       /* The depth and stencil resolves at the pass's end (WebGPU resolves colour only: the worker's draws). */
       struct wg_image_view *resolve_src[2], *resolve_dst[2]; /* depth, stencil */
+      VkResolveModeFlagBits resolve_mode[2];
       struct wg_image_view *resolve_color_src[8], *resolve_color_dst[8]; /* what WebGPU's resolve can't make */
       VkRect2D area; /* the render area (depth and stencil resolves keep to it) */
       bool suspending;

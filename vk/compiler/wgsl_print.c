@@ -1487,6 +1487,12 @@ declare_io(struct ctx *c)
             line(c, "  @builtin(sample_mask) mask: u32,");
          line(c, "}");
          line(c, "var<private> o: Out;");
+         /* Alpha to coverage at one sample, which WebGPU's pipelines refuse: one sample's coverage from location 0's
+          * alpha, covered from a half (the driver's override, VK4 T28). */
+         if ((c->info->outputs & 1u) && c->info->output_base[0] == WGSL_F32) {
+            c->info->a2c = true;
+            line(c, "override wg_a2c: bool = false;");
+         }
       }
       c->info->varyings = c->vary;
    }
@@ -1498,6 +1504,8 @@ declare_io(struct ctx *c)
 static const char *
 fs_return(struct ctx *c)
 {
+   if (c->info->a2c)
+      return "if (wg_a2c && o.f0.a < 0.5) { discard; } return o;";
    return c->info->outputs || c->info->writes_depth || c->info->writes_sample_mask ? "return o;" : "return;";
 }
 
@@ -3524,7 +3532,7 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
    place_values(&c, impl);
    emit_cf_list(&c, &impl->body);
    if (has_out && stage != MESA_SHADER_VERTEX)
-      line(&c, "return o;");
+      line(&c, "%s", fs_return(&c));
    c.indent--;
    line(&c, "}");
    if (c.uniform_conds && c.uc && !strcmp(c.uc, "wg_uc"))
