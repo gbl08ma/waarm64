@@ -57,7 +57,7 @@ async function run(page: Page, cmd: string, ms = 60_000) {
   return re.exec(await terminal(page))![1].trim();
 }
 type Hello = { version: number; caps: number };
-type Link = { open: boolean; broken: boolean; backlog: number; agent?: Hello; paused: boolean; send(type: number, payload?: Uint8Array): boolean; type(text: string): boolean; pause(): void; resume(): void; onFrame?: (f: { type: number; payload: Uint8Array }) => void };
+type Link = { open: boolean; syncing: boolean; backlog: number; agent?: Hello; paused: boolean; send(type: number, payload?: Uint8Array): boolean; type(text: string): boolean; pause(): void; resume(): void; onFrame?: (f: { type: number; payload: Uint8Array }) => void };
 const link = <T>(page: Page, f: (l: Link) => T) => page.evaluate(`(${f})(window.__agent)`) as Promise<T>;
 const isOpen = (page: Page, open: boolean) =>
   page.waitForFunction((want) => (window as unknown as { __agent?: Link }).__agent?.open === want, open, { timeout: 120_000, polling: 100 });
@@ -188,7 +188,7 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
     const sent: [number, number, number][] = [];
     const got: [number, number, number][] = [];
     const done = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`${got.length} of ${sent.length} frames back after 120 s (broken: ${link.broken}, backlog ${link.backlog})`)), 120_000);
+      const timer = setTimeout(() => reject(new Error(`${got.length} of ${sent.length} frames back after 120 s (syncing: ${link.syncing}, backlog ${link.backlog})`)), 120_000);
       link.onFrame = (f) => {
         if (f.type === 1 || f.type === 7) return; // the link's own HELLO and RESUME at the opening, echoed (whether before this or after)
         got.push([f.type, f.payload.length, sum(f.payload)]);

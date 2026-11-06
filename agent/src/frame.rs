@@ -19,6 +19,14 @@ pub const RESUME: u8 = 7;
 pub const ACK: u8 = 8;
 /// A request id and a count: how many more DATA frames the requester takes (`more`; 0 stops the answer).
 pub const MORE: u8 = 9;
+/// The agent's, before its HELLO when the page's HELLO carried a nonce (`hello_answer`): the nonce, back, where the
+/// page's reader begins afresh (it drops what came before: the rest of a frame a snapshot cut).
+pub const SYNC: u8 = 10;
+/// The agent's: the guest's clipboard changed hands (a session child started or stopped, or its compositor came or
+/// went); the page forgets what it knew of it and the transfers of the one before.
+pub const SESSION: u8 = 11;
+/// The length of the nonce a page's HELLO may carry after its version and capabilities.
+pub const NONCE: usize = 8;
 
 /// The largest payload: 64 KiB of data and room for a DATA frame's own fields.
 pub const MAX_PAYLOAD: usize = 65536 + 256;
@@ -87,6 +95,26 @@ impl Hello {
             caps: r.u32()?,
         })
     }
+}
+
+/// The agent's answer to the page's HELLO `payload`: SYNC with the page's nonce if it has one, then the agent's HELLO;
+/// nothing if the payload isn't a HELLO.
+pub fn hello_answer(payload: &[u8], caps: u32, out: &mut Vec<u8>) {
+    if Hello::decode(payload).is_none() {
+        return;
+    }
+    if let Some(nonce) = payload.get(6..6 + NONCE) {
+        encode(SYNC, nonce, out);
+    }
+    encode(
+        HELLO,
+        &Hello {
+            version: VERSION,
+            caps,
+        }
+        .encode(),
+        out,
+    );
 }
 
 /// An OFFER's payload: u32 serial, u8 flags (`OFFER_INLINE`), u8 count, then for each type a u8 length, the type
@@ -403,6 +431,34 @@ mod tests {
         assert_eq!(decode_more(&more(6, 1)), Some((6, 1)));
         assert_eq!(decode_more(&[6, 0, 0, 0, 1]), None);
         const { assert!(5 + CHUNK <= MAX_PAYLOAD) };
+    }
+
+    #[test]
+    fn answers_a_hello_with_a_nonce_by_sync_first() {
+        // The same bytes as tests/agent.test.ts "frames: SYNC".
+        let mut out = Vec::new();
+        hello_answer(&[1, 0, 3, 0, 0, 0], cap::TYPE | cap::TEXT, &mut out);
+        assert_eq!(
+            out,
+            [7, 0, 0, 0, HELLO, 1, 0, 3, 0, 0, 0],
+            "no nonce: HELLO alone"
+        );
+        out.clear();
+        hello_answer(
+            &[1, 0, 3, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 99],
+            cap::TYPE | cap::TEXT,
+            &mut out,
+        );
+        assert_eq!(
+            out,
+            [
+                9, 0, 0, 0, SYNC, 1, 2, 3, 4, 5, 6, 7, 8, 7, 0, 0, 0, HELLO, 1, 0, 3, 0, 0, 0
+            ]
+        );
+        out.clear();
+        hello_answer(&[1, 0, 3, 0, 0], 3, &mut out);
+        assert!(out.is_empty(), "not a HELLO: no answer");
+        assert_eq!((SYNC, SESSION), (10, 11));
     }
 
     #[test]

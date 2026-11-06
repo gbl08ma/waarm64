@@ -14,9 +14,9 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { AGENT_PORTS, agentDevice, agentEntry, CTL_RX, CTL_TX, DEVICE_READY, F_MULTIPORT, MAX_PENDING, PORT_ADD, PORT_NAME, PORT_OPEN, PORT_READY, type AgentFromDevice } from '../web/agent-device.ts';
-import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, FRAME, FrameReader, MAX_PAYLOAD, TYPE_CHUNK, typePayloads, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
+import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, FRAME, FrameReader, helloNonce, MAX_PAYLOAD, NONCE, TYPE_CHUNK, typePayloads, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
 import { AgentLink, PAGE_CAPS, WINDOW } from '../web/app/agent-link.ts';
-import { ACK_WAIT, ClipboardShare, EMPTY_RUN, INLINE, isPasteChord, PASTE_WAIT, TEXT, TEXT_CAP, textHash, watchReadPermission, type ClipLink, type ReadPermission } from '../web/app/clipboard.ts';
+import { ACK_WAIT, ClipboardShare, EMPTY_RUN, INLINE, isPasteChord, onMac, PASTE_WAIT, TEXT, TEXT_CAP, textHash, watchReadPermission, type ClipLink, type ReadPermission } from '../web/app/clipboard.ts';
 import { AGENT_FILE, AGENT_PORT, agentBinary, agentCredentials, agentScript } from '../web/app/guest-agent.ts';
 import { oemStrings } from '../web/app/guest-unit.ts';
 import { guestWords } from '../web/app/guest-words.ts';
@@ -199,12 +199,13 @@ test('the agent device: a snapshot keeps the port open and the bytes not yet tak
   const state = structuredClone(await dev.save!());
   page.close();
 
-  // The restored device: the page hears that the port is open, and the guest's buffers (posted again) get the bytes.
+  // The restored device: the page hears that the port is open, restored (the guest's stream may begin inside a frame),
+  // and the guest's buffers (posted again) get the bytes.
   const { port1, port2 } = channel();
   const q = listen(port1);
   const again = agentDevice(g.ctx, { type: 'agent', port: port2 });
   again.restore!(state);
-  assert.deepEqual(await q.next((m) => m.type === 'open'), { type: 'open', port: 0, open: true });
+  assert.deepEqual(await q.next((m) => m.type === 'open'), { type: 'open', port: 0, open: true, restored: true });
   const rx = g.into(0, 16);
   again.request(rx);
   assert.deepEqual(await q.next((m) => m.type === 'taken'), { type: 'taken', port: 0, n: 3 });
@@ -653,7 +654,6 @@ test('the paste chord: which keys; held for the paste event and the ACK, or let 
   const k = (key: string, mods: Partial<Record<'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey', boolean>> = {}, code = `Key${key.toUpperCase()}`) => ({ key, code, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, ...mods });
   assert.ok(isPasteChord(k('v', { ctrlKey: true })));
   assert.ok(isPasteChord(k('V', { ctrlKey: true, shiftKey: true })));
-  assert.ok(isPasteChord(k('v', { metaKey: true })));
   assert.ok(isPasteChord(k('Insert', { shiftKey: true }, 'Insert')));
   assert.ok(!isPasteChord(k('v')));
   assert.ok(!isPasteChord(k('v', { ctrlKey: true, altKey: true })));
@@ -981,4 +981,207 @@ test("a paste chord right after a sync's offer of the same text waits for that o
   const t0 = performance.now();
   await share.paste('just copied');
   assert.ok(performance.now() - t0 < ACK_WAIT / 2);
+});
+
+test("the paste chord by the host: Cmd+V on a Mac (Ctrl+V is the guest's there, held for nothing), Ctrl+V elsewhere (Meta+V no paste)", async () => {
+  const k = (key: string, mods: Partial<Record<'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey', boolean>> = {}, code = `Key${key.toUpperCase()}`) => ({ key, code, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, ...mods });
+  assert.ok(!isPasteChord(k('v', { metaKey: true })), 'Meta+V off a Mac: no browser paste');
+  assert.ok(isPasteChord(k('v', { metaKey: true }), true));
+  assert.ok(isPasteChord(k('V', { metaKey: true, shiftKey: true }), true));
+  assert.ok(!isPasteChord(k('v', { ctrlKey: true }), true), "Ctrl+V on a Mac: the guest's");
+  assert.ok(!isPasteChord(k('Insert', { shiftKey: true }, 'Insert'), true));
+  assert.equal(onMac({ platform: 'MacIntel' }), true);
+  assert.equal(onMac({ platform: 'Linux aarch64', userAgentData: { platform: 'macOS' } }), true);
+  assert.equal(onMac({ platform: 'Win32' }), false);
+  assert.equal(onMac(undefined), false);
+  const { link } = fakeLink();
+  const share = new ClipboardShare(link, { ...fakeHost().host, mac: true });
+  assert.equal(share.chord(k('v', { ctrlKey: true })), undefined, 'a Mac: Ctrl+V not held');
+  assert.ok(share.chord(k('v', { metaKey: true })));
+});
+
+test("web/input.ts holds the paste chord's key: the keys after it wait behind it in order (Ctrl's release after V), a second press goes too, its repeats don't; a blur drops them", async () => {
+  const g = globalThis as Record<string, unknown>;
+  const saved = { window: g.window, document: g.document };
+  g.window = new EventTarget();
+  g.document = Object.assign(new EventTarget(), { pointerLockElement: null, hidden: false });
+  try {
+    const { attachInput, codeOf } = await import('../web/input.ts');
+    const el = new EventTarget() as unknown as HTMLElement;
+    const got: [number, number][] = [];
+    const keyboard = { postMessage: (m: number[][]) => got.push([m[0][1], m[0][2]]) } as unknown as MessagePort;
+    let release = () => {};
+    let holds = 0;
+    const input = attachInput(el, keyboard, undefined, undefined, {}, {
+      hold: (e) => (e.code === 'KeyV' && e.ctrlKey ? (holds++, new Promise<void>((r) => (release = r))) : undefined),
+    });
+    const key = (type: 'keydown' | 'keyup', code: string, ctrlKey = false, repeat = false) => {
+      const e = Object.assign(new Event(type, { cancelable: true }), { code, key: code === 'KeyV' ? 'v' : code === 'KeyA' ? 'a' : code, ctrlKey, shiftKey: false, altKey: false, metaKey: false, repeat });
+      el.dispatchEvent(e);
+      return e.defaultPrevented;
+    };
+    const [ctrl, v, a] = ['ControlLeft', 'KeyV', 'KeyA'].map((c) => codeOf(c)!);
+    key('keydown', 'ControlLeft', true);
+    assert.equal(key('keydown', 'KeyV', true), false, 'the held key: no preventDefault (its paste event comes)');
+    key('keydown', 'KeyV', true, true);
+    key('keyup', 'KeyV', true);
+    key('keydown', 'KeyV', true);
+    key('keyup', 'KeyV', true);
+    key('keyup', 'ControlLeft');
+    key('keydown', 'KeyA');
+    key('keyup', 'KeyA');
+    assert.deepEqual(got, [[ctrl, 1]], 'only Ctrl, while V is held');
+    release();
+    await settle();
+    assert.deepEqual(got, [[ctrl, 1], [v, 1], [v, 0], [v, 1], [v, 0], [ctrl, 0], [a, 1], [a, 0]], 'V with Ctrl down, twice, then the rest in order');
+    assert.equal(holds, 1, 'the second press: no second hold');
+    // A blur while held: the held key and the ones after it never go down; what was down goes up.
+    got.length = 0;
+    key('keydown', 'ControlLeft', true);
+    key('keydown', 'KeyV', true);
+    key('keydown', 'KeyA', true);
+    (g.window as EventTarget).dispatchEvent(new Event('blur'));
+    release();
+    await settle();
+    assert.deepEqual(got, [[ctrl, 1], [ctrl, 0]]);
+    input.detach();
+  } finally {
+    Object.assign(g, saved);
+  }
+});
+
+test("echoes: the guest's text is offered back once the host's went to it since; an ACK refusing after ACK_WAIT is still taken", async () => {
+  const { link, deliver, take } = fakeLink();
+  const { host } = fakeHost();
+  const share = new ClipboardShare(link, host);
+  const offers = () => take(FRAME.OFFER).map((f) => decodeOffer(f.payload)!);
+  // The guest copies X; the host's Y goes to the guest; the host copies X again: the guest has Y, so X is offered.
+  guestOffers(deliver, 1, 'X');
+  await settle();
+  const p = share.paste('Y');
+  deliver(FRAME.ACK, encodeAck(offers()[0].serial, ACK.HELD));
+  await p;
+  void share.paste('X');
+  assert.deepEqual(offers().map((o) => new TextDecoder().decode(o.inline)), ['X'], 'the guest holds Y: X offered');
+  // A refusal after the key went (the session not ready yet): the next paste offers it again.
+  await new Promise((r) => setTimeout(r, ACK_WAIT + 20));
+  await share.paste('late');
+  const [o] = offers();
+  deliver(FRAME.ACK, encodeAck(o.serial, ACK.NO_SESSION));
+  void share.paste('late');
+  assert.equal(offers().length, 1, 'refused late: offered again');
+});
+
+test("the guest's clipboard changed hands (the port reopened, HELLO, SESSION): the echo hashes forgotten, the transfers dropped, the host's text synced again", async () => {
+  const { link, deliver, take } = fakeLink();
+  const { host, written } = fakeHost();
+  const share = new ClipboardShare(link, host);
+  const offers = () => take(FRAME.OFFER).map((f) => decodeOffer(f.payload)!);
+  const held = async (text: string) => {
+    const p = share.paste(text);
+    const os = offers();
+    assert.equal(os.length, 1, `${text}: offered`);
+    deliver(FRAME.ACK, encodeAck(os[0].serial, ACK.HELD));
+    await p;
+  };
+  await held('A');
+  // The agent restarts (its port closes and opens): the guest's clipboard lost A, so the same paste offers it again.
+  link.open = false;
+  link.onOpen!(false);
+  link.open = true;
+  link.onOpen!(true);
+  await held('A');
+  // SESSION (sway restarted, a VT switch): the same.
+  deliver(FRAME.SESSION, new Uint8Array(0));
+  await held('A');
+  // ... and with the read permission, the host's text goes to the new session by itself.
+  host.text = 'A';
+  share.setPermission('granted');
+  await settle();
+  offers();
+  deliver(FRAME.SESSION, new Uint8Array(0));
+  await settle();
+  assert.deepEqual(offers().map((o) => new TextDecoder().decode(o.inline)), ['A'], 'synced to the new session');
+  // A dead child's transfers: an answer to its request stops (its MOREs find nothing), a request of ours too.
+  const long = 'x'.repeat(CHUNK * 6);
+  void share.paste(long);
+  const [ol] = offers();
+  deliver(FRAME.REQUEST, encodeRequest({ serial: ol.serial, id: 5, type: TEXT }));
+  assert.equal(take(FRAME.DATA).length, CREDIT);
+  deliver(FRAME.OFFER, encodeOffer({ serial: 9, types: [{ type: TEXT, size: UNKNOWN }] }));
+  const [r] = requests(take(FRAME.REQUEST));
+  deliver(FRAME.SESSION, new Uint8Array(0));
+  deliver(FRAME.MORE, encodeMore(5, 4));
+  assert.deepEqual(take(FRAME.DATA), [], "the dead child's request: nothing more");
+  deliver(FRAME.DATA, encodeData(r.id, DATA_END, utf8('stale')));
+  await settle();
+  assert.ok(!written.includes('stale'), "the dead child's answer: not written");
+});
+
+test("the link: a restored opening, or a stream out of step, begins afresh at the agent's SYNC (HELLO with a nonce); the bytes before it dropped", async () => {
+  const { port1, port2 } = channel();
+  const link = new AgentLink(port1);
+  const sent: Frame[] = [];
+  const reader = new FrameReader();
+  port2.onmessage = (e) => {
+    sent.push(...reader.push(e.data.bytes));
+    port2.postMessage({ type: 'taken', port: 0, n: e.data.bytes.length });
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+  const frames: number[] = [];
+  link.onFrame = (f) => frames.push(f.type);
+  /** The agent's answer to the page's last HELLO (agent/src/frame.rs `hello_answer`): SYNC with its nonce, then HELLO. */
+  const answer = () => {
+    const nonce = helloNonce(sent.filter((f) => f.type === FRAME.HELLO).at(-1)!.payload);
+    return new Uint8Array([...(nonce ? encodeFrame(FRAME.SYNC, nonce) : []), ...encodeFrame(FRAME.HELLO, encodeHello({ version: 1, caps: CAP.TYPE | CAP.TEXT }))]);
+  };
+  // Restored mid-frame: the guest's stream begins with the rest of a DATA frame (its bytes read as a length here).
+  port2.postMessage({ type: 'open', port: 0, open: true, restored: true });
+  await settle();
+  const tail = new Uint8Array(300).fill(0x41);
+  new DataView(tail.buffer).setUint32(0, 200, true);
+  port2.postMessage({ type: 'data', port: 0, bytes: tail });
+  port2.postMessage({ type: 'data', port: 0, bytes: answer() });
+  port2.postMessage({ type: 'data', port: 0, bytes: encodeFrame(FRAME.OFFER, new Uint8Array(6)) });
+  await settle();
+  assert.deepEqual(link.agent, { version: 1, caps: CAP.TYPE | CAP.TEXT }, "the agent's HELLO, past the half frame");
+  assert.deepEqual(frames, [FRAME.HELLO, FRAME.OFFER]);
+  // Out of step (a length that can't be): a new HELLO with a new nonce; its SYNC, cut anywhere, begins the stream again.
+  const before = sent.filter((f) => f.type === FRAME.HELLO).length;
+  port2.postMessage({ type: 'data', port: 0, bytes: new Uint8Array([0, 0, 0, 0, 1, 2, 3]) });
+  await settle();
+  assert.equal(link.syncing, true);
+  const hellos = sent.filter((f) => f.type === FRAME.HELLO);
+  assert.equal(hellos.length, before + 1, 'a HELLO to begin afresh');
+  assert.notDeepEqual(helloNonce(hellos.at(-1)!.payload), helloNonce(hellos.at(-2)!.payload));
+  const again = new Uint8Array([9, 9, 9, ...answer(), ...encodeFrame(FRAME.ACK, new Uint8Array(5))]);
+  for (let k = 0; k < again.length; k += 4) port2.postMessage({ type: 'data', port: 0, bytes: again.slice(k, k + 4) });
+  await settle();
+  assert.equal(link.syncing, false);
+  assert.deepEqual(frames, [FRAME.HELLO, FRAME.OFFER, FRAME.HELLO, FRAME.ACK]);
+  // A plain opening (the agent opened its end) has no nonce: its stream begins at a frame.
+  port2.postMessage({ type: 'open', port: 0, open: false });
+  port2.postMessage({ type: 'open', port: 0, open: true });
+  await settle();
+  assert.equal(helloNonce(sent.filter((f) => f.type === FRAME.HELLO).at(-1)!.payload), undefined);
+  link.close();
+  port2.close();
+});
+
+test('frames: SYNC and SESSION (the bytes agent/src/frame.rs pins)', () => {
+  const nonce = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual([...encodeHello({ version: 1, caps: 3 }, nonce)], [1, 0, 3, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual(helloNonce(encodeHello({ version: 1, caps: 3 }, nonce)), nonce);
+  assert.equal(helloNonce(encodeHello({ version: 1, caps: 3 })), undefined);
+  assert.deepEqual([...encodeFrame(FRAME.SYNC, nonce)], [9, 0, 0, 0, 10, 1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual([FRAME.SYNC, FRAME.SESSION, NONCE], [10, 11, 8]);
+  assert.throws(() => encodeHello({ version: 1, caps: 3 }, new Uint8Array(3)));
+  // The reader: everything before the SYNC dropped, the marker found across pieces.
+  const r = new FrameReader();
+  r.sync(nonce);
+  const stream = new Uint8Array([0, 0, 0, 0, 9, 0, 0, 0, 10, 1, 2, ...encodeFrame(FRAME.SYNC, nonce), ...encodeFrame(FRAME.PAUSE)]);
+  const got = [];
+  for (let k = 0; k < stream.length; k += 3) got.push(...r.push(stream.subarray(k, k + 3)));
+  assert.deepEqual(got.map((f) => f.type), [FRAME.PAUSE]);
+  assert.equal(r.syncing, false);
 });

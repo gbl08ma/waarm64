@@ -92,6 +92,9 @@ struct Agent {
     /// A session whose child ended by itself: not started again for it until the session changes.
     exited: Option<logind::Active>,
     generation: u32,
+    /// A child stopped or ended: the page hears SESSION (what it knew of the guest's clipboard, and that child's
+    /// transfers, are gone).
+    lost: bool,
 }
 
 impl Agent {
@@ -114,6 +117,7 @@ impl Agent {
             child: None,
             exited: None,
             generation: 0,
+            lost: false,
         };
         a.watch();
         a
@@ -190,6 +194,7 @@ impl Agent {
     /// agent CAP_KILL for it: the child is the user's process now), reaped.
     fn stop_child(&mut self) {
         if let Some(c) = self.child.take() {
+            self.lost = true;
             let pid = c.pid;
             drop(c);
             let _ = kill_process(pid, Signal::KILL);
@@ -200,6 +205,7 @@ impl Agent {
     /// The child ended by itself (its socket closed): reaped, and not started again for the same session.
     fn child_gone(&mut self) {
         if let Some(c) = self.child.take() {
+            self.lost = true;
             let _ = waitpid(Some(c.pid), WaitOptions::empty());
             log("session: its child ended", None);
             self.exited = Some(c.key);
@@ -402,6 +408,9 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         if track {
             s.agent.track(port.as_raw_fd());
         }
+        if std::mem::take(&mut s.agent.lost) {
+            frame::encode(frame::SESSION, &[], &mut s.out);
+        }
         if let Err(e) = s.flush() {
             return Stop::Failed("write", e);
         }
@@ -411,20 +420,9 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
 impl Session<'_> {
     fn frame(&mut self, kind: u8, payload: &[u8]) {
         match kind {
-            // The page's HELLO (it sends one each time it sees the port open): the agent's answers it.
-            frame::HELLO => {
-                if frame::Hello::decode(payload).is_some() {
-                    frame::encode(
-                        frame::HELLO,
-                        &frame::Hello {
-                            version: frame::VERSION,
-                            caps: CAPS,
-                        }
-                        .encode(),
-                        &mut self.out,
-                    );
-                }
-            }
+            // The page's HELLO (it sends one each time it sees the port open, and to begin the stream afresh): the
+            // agent's answers it, after a SYNC if it carried a nonce.
+            frame::HELLO => frame::hello_answer(payload, CAPS, &mut self.out),
             frame::TYPE if !self.agent.paused => self.type_text(payload),
             frame::PAUSE | frame::RESUME => {
                 self.agent.paused = kind == frame::PAUSE;
@@ -476,7 +474,12 @@ impl Session<'_> {
         c.reader.push(&buf[..n], |kind, payload| {
             if matches!(
                 kind,
-                frame::OFFER | frame::REQUEST | frame::DATA | frame::ACK | frame::MORE
+                frame::OFFER
+                    | frame::REQUEST
+                    | frame::DATA
+                    | frame::ACK
+                    | frame::MORE
+                    | frame::SESSION
             ) {
                 frame::encode(kind, payload, out);
             }

@@ -8,8 +8,12 @@
 // restarted agent starts unpaused, a restored one is as its snapshot was), and the clipboard's frames, which
 // web/app/clipboard.ts speaks over it (`send`, `onFrame`). The toolbar's clipboard menu (web/app/ClipboardMenu.svelte)
 // drives it through `ClipboardShare`; the tests through `window.__agent` and `window.__clipboard`.
+//
+// A stream from the guest that may not begin at a frame (the port open in a restored snapshot: the agent may have been
+// inside a frame's writes) or that went out of step (`broken`) is begun afresh: the page's HELLO carries a nonce, the
+// agent answers with SYNC carrying it before its HELLO, and the reader drops everything before that (`FrameReader.sync`).
 
-import { CAP, decodeHello, encodeFrame, encodeHello, FRAME, FrameReader, typePayloads, VERSION, type Frame, type Hello } from '../agent-frame.ts';
+import { CAP, decodeHello, encodeFrame, encodeHello, FRAME, FrameReader, NONCE, typePayloads, VERSION, type Frame, type Hello } from '../agent-frame.ts';
 import type { AgentFromDevice, AgentToDevice } from '../agent-device.ts';
 
 /** The most bytes in flight to the guest (sent to the device, not yet in the guest's buffers). */
@@ -82,9 +86,16 @@ export class AgentLink {
     return this.inflight + this.queue.reduce((n, b) => n + b.length, 0);
   }
 
-  /** Whether the stream from the guest went out of step (a frame's length that can't be): until the agent reopens its end. */
-  get broken() {
-    return this.reader.broken;
+  /** Whether the stream from the guest is being begun afresh (a restored opening, or out of step): until the agent's SYNC. */
+  get syncing() {
+    return this.reader.syncing;
+  }
+
+  /** HELLO, with a nonce whose SYNC the reader waits for: what came before it is dropped. */
+  private resync() {
+    const nonce = crypto.getRandomValues(new Uint8Array(NONCE));
+    this.reader.sync(nonce);
+    this.send(FRAME.HELLO, encodeHello({ version: VERSION, caps: PAGE_CAPS }, nonce));
   }
 
   close() {
@@ -103,7 +114,7 @@ export class AgentLink {
     if (m?.port !== this.id) return;
     switch (m.type) {
       case 'open':
-        if (m.open === this.open) return;
+        if (m.open === this.open && !m.restored) return;
         // A new opening is a new stream both ways: what was half read or queued belonged to the last one.
         this.open = m.open;
         this.agent = undefined;
@@ -111,7 +122,9 @@ export class AgentLink {
         this.queue = [];
         this.inflight = 0;
         if (m.open) {
-          this.send(FRAME.HELLO, encodeHello({ version: VERSION, caps: PAGE_CAPS }));
+          // Restored: the agent's stream may be inside a frame, so it is begun at a SYNC.
+          if (m.restored) this.resync();
+          else this.send(FRAME.HELLO, encodeHello({ version: VERSION, caps: PAGE_CAPS }));
           // The switch, said either way: an agent restored from a snapshot taken while paused is paused, and the pause
           // is the run's, not the snapshot's (plan §5).
           this.send(this.paused ? FRAME.PAUSE : FRAME.RESUME);
@@ -133,6 +146,8 @@ export class AgentLink {
           }
           this.onFrame?.(f);
         }
+        // Out of step (a frame's length that can't be): begun afresh, at the agent's SYNC.
+        if (this.reader.broken) this.resync();
         break;
     }
   }

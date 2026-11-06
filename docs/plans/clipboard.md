@@ -52,10 +52,17 @@ a change of shape. Like those other switches, it asks first when it orphans snap
   offer: the guest's clipboard holds it, or why not), which the paste chord waits for (§4.1), and `MORE` (a request's
   credit: the answer sends 4 DATA frames, then one more for each MORE), so neither side holds more than a few chunks of
   a transfer; serials belong to the side that offers, request ids to the side that requests; the capability is
-  `TEXT` (devices.md "The guest's agent" has the payloads).
+  `TEXT` (devices.md "The guest's agent" has the payloads). **Built (the review of steps 1–4)** with two more:
+  `SYNC`, which begins the agent's stream afresh where it may not start at a frame (a snapshot can fall between
+  the writes of one frame: the restored page's HELLO carries a nonce, the agent sends it back in SYNC before its
+  HELLO, and the page drops what came before; also when the page's reader goes out of step), and `SESSION`, the
+  agent's word that the guest's clipboard changed hands (a session child started or stopped, its compositor came
+  or went): the page forgets what it knew of it, drops that clipboard's transfers and syncs again.
 - **Echo suppression:** each side remembers the hash of the last thing it received. When the other side offers
   it back (for example, the host writes the guest's text, and the next focus reads the same text), nothing is
-  sent.
+  sent. The hash stands for "the clipboard still has it", so it is forgotten whenever that stops being known: the
+  clipboard moving on the other way, a refusal, the port's opening or closing, HELLO, SESSION, the pause (the page's
+  side: web/app/clipboard.ts).
 
 **Alternatives considered:**
 
@@ -265,8 +272,9 @@ copy. Firefox and Safari have no such permission, so they rely on ways 2 and 3.
      Playwright's `evaluate` gives activation in Firefox's BiDi, so activation was measured only from timers. The
      Mac is the user's to measure (CLIP-HANDOVER.md has the steps).
 2. **The paste chord (every browser, no permission).** When the user presses a paste chord on the screen
-   (Ctrl+V, Ctrl+Shift+V, Shift+Insert; Cmd+V on a Mac, if the screen's keys pass Meta to the guest: check
-   `web/input.ts`), `web/input.ts` holds the key and **doesn't call `preventDefault`**. The browser then fires
+   (Ctrl+V, Ctrl+Shift+V, Shift+Insert; on a Mac Cmd+V and Cmd+Shift+V only, the browser's paste there, while Ctrl+V
+   is the guest's own key), `web/input.ts` holds the key and **doesn't call `preventDefault`**. The key events that
+   come while it is held wait behind it, in order (Ctrl's release among them, so the guest gets Ctrl+V). The browser then fires
    `paste`, with `clipboardData` holding the host clipboard. This is the browser's own user-initiated paste, so
    there's no permission check and no Paste button. If the data differs from what the guest has, the page
    offers it and waits for the agent's acknowledgement (bounded, about 300 ms) before it sends the held key.

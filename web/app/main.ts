@@ -57,7 +57,7 @@ import { parseLocalURL } from '../local-net.ts';
 import { installCopyEdit } from './copy-edit.ts';
 import { eventOf, keyOf, keymapOf, type Mods } from './osk.ts';
 import { AgentLink } from './agent-link.ts';
-import { ClipboardShare, isPasteChord, watchReadPermission, type Host as ClipboardHost } from './clipboard.ts';
+import { ClipboardShare, isPasteChord, onMac, watchReadPermission, type Host as ClipboardHost } from './clipboard.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -1976,6 +1976,8 @@ let clipboardShare: ClipboardShare | undefined;
 document.addEventListener('paste', (e) => {
   if (clipboardShare?.held && document.activeElement === canvas) clipboardShare.pasted(e.clipboardData?.getData('text/plain') ?? '');
 });
+/** The browser runs on a Mac: its paste chord is Cmd+V. */
+const MAC = onMac(navigator as Navigator & { userAgentData?: { platform?: string } });
 /** The browser's clipboard as clipboard sharing uses it (no `navigator.clipboard` outside a secure context). */
 function clipboardHost(): ClipboardHost {
   const c = navigator.clipboard as Clipboard | undefined;
@@ -1987,6 +1989,7 @@ function clipboardHost(): ClipboardHost {
     },
     hasFocus: () => document.hasFocus(),
     changeEvents: !!c && 'onclipboardchange' in c,
+    mac: MAC,
   };
 }
 /** The toolbar's clipboard button follows the running machine's sharing. */
@@ -2007,7 +2010,7 @@ void watchReadPermission(navigator.permissions, !!navigator.clipboard, (p) => {
 });
 // A key or pointer down on the screen (plan §4.2): the guest's pending text is written with its activation; a paste
 // chord drops it (the host's copy goes to the guest). At the document's capture, before web/input.ts takes the key.
-document.addEventListener('keydown', (e) => { if (e.target === canvas) clipboardShare?.activated(isPasteChord(e)); }, { capture: true });
+document.addEventListener('keydown', (e) => { if (e.target === canvas) clipboardShare?.activated(isPasteChord(e, MAC)); }, { capture: true });
 document.addEventListener('pointerdown', (e) => { if (e.target === canvas) clipboardShare?.activated(false); }, { capture: true });
 /** A transient machine's remembered devices: this page's only, for its session. */
 let transientUsb: UsbEntry[] = [];

@@ -179,7 +179,7 @@ fn shares_sways_clipboard_both_ways() {
         eprintln!("SKIPPED: no sway or wl-clipboard (docs/devenv.md)");
         return;
     }
-    let sway = Sway::start();
+    let mut sway = Sway::start();
     let (mine, theirs) = socketpair(
         AddressFamily::UNIX,
         SocketType::STREAM,
@@ -195,8 +195,12 @@ fn shares_sways_clipboard_both_ways() {
         frames: Vec::new(),
     };
 
+    // On the compositor's data device: SESSION (the page forgets the guest's clipboard it knew).
+    assert!(
+        page.next(frame::SESSION, 5000).is_some(),
+        "SESSION once on the compositor"
+    );
     // Guest to host: short text inline (the serials the child's base's).
-    std::thread::sleep(Duration::from_millis(500));
     sway.copy("from the guest ☃".as_bytes());
     let (serial, inline, size) = page.offer(5000).expect("an OFFER for wl-copy");
     assert!(serial > 0x0100_0000);
@@ -400,6 +404,14 @@ fn shares_sways_clipboard_both_ways() {
     sway.copy(b"after the pause");
     let (_, inline, _) = page.offer(5000).expect("an OFFER after RESUME");
     assert_eq!(inline.as_deref(), Some(&b"after the pause"[..]));
+
+    // The compositor goes: SESSION again.
+    let _ = sway.sway.kill();
+    let _ = sway.sway.wait();
+    assert!(
+        page.next(frame::SESSION, 5000).is_some(),
+        "SESSION when the compositor went"
+    );
 
     // The page goes: the child's loop ends.
     drop(page);

@@ -174,13 +174,18 @@ closed).
 - **PAUSE**: the source's selection cleared (`set_selection(null)`) and the source destroyed, so a paste can't pull
   more of the host's text; transfers end (DATA `FAIL`, MORE 0); the guest's selections are ignored until RESUME,
   which sends nothing.
+- **SESSION**: when the data device is bound, and when it goes (the compositor's connection lost, the seat's
+  `finished`), the child's transfers end as at PAUSE and it sends SESSION; the parent sends one too when it stops a
+  child or one ends.
 
 Its frames are `agent/src/frame.rs`, the twin of `web/agent-frame.ts` (both tests pin the same bytes). Serials belong
 to the side that offers, request ids to the side that requests:
 
 | Frame | Payload | |
 |---|---|---|
-| HELLO (1) | u16 version, u32 capabilities (LE); later versions append | the page sends it at each opening of the port (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below) |
+| HELLO (1) | u16 version, u32 capabilities (LE); later versions append; the page's may append an 8-byte nonce | the page sends it at each opening of the port (`AgentLink`), the agent answers with its own; a side speaks the lower version and ignores capability bits it doesn't know. Version 1; `CAP.TYPE` (bit 0), `CAP.TEXT` (bit 1: the clipboard's frames below) |
+| SYNC (10) | the page's nonce | the agent's, before its HELLO when the page's HELLO had a nonce (`hello_answer`). The page sends one where the agent's stream may not begin at a frame: the port open in a restored snapshot (the device's `open` says `restored`: a snapshot can fall between the writes of one frame) and when its reader goes out of step; its reader then drops everything before the SYNC (`FrameReader.sync`) |
+| SESSION (11) | none | the agent's: the guest's clipboard changed hands (above). The page forgets its echo hashes, drops its transfers, and syncs the host's clipboard again if it may read it |
 | OFFER (2) | u32 serial, u8 flags (1: inline), u8 count, per type u8 length, the type, u32 size (`0xffffffff` unknown); inline: the rest is the first type's bytes | a side's clipboard changed: what it has. Text inline under 4 KiB (plan §2), else the other side REQUESTs it |
 | REQUEST (3) | u32 serial, u32 id, u8 length, the type | the bytes of offer `serial`, please; the answer may send `CREDIT` (4) DATA frames before the requester's first MORE |
 | DATA (4) | u32 id, u8 flags (1 END, 2 FAIL), at most 64 KiB | an answer, in order; FAIL: none (a stale serial, a type not offered, paused, past the cap) |
@@ -190,19 +195,24 @@ to the side that offers, request ids to the side that requests:
 | PAUSE (6), RESUME (7) | none | while paused the agent drops TYPE and the clipboard's frames (above); the link refuses `type()` while paused and says PAUSE or RESUME at every opening of the agent's end (a restarted agent starts unpaused; a restored one is as its snapshot was, and the pause is the run's); the parent passes both to its child, and PAUSE first to a new child |
 
 A frame's length that can't be (zero, past 64 KiB and 256) breaks the agent's reader: it closes and reopens the port,
-which starts both directions afresh (the link resets at each opening; the session child stays). A child's stream that
+which starts both directions afresh (the link resets at each opening; the session child stays). It breaks the page's
+reader too, which begins afresh at a SYNC (above). A child's stream that
 breaks, or more than 4 MiB queued for it, stops the child. The log lines of both go to the journal
 (`webpc-agent: …`, the child's `webpc-agent: session: …`).
 
 **The page's side** is `web/app/clipboard.ts` (`ClipboardShare`, the tests' `window.__clipboard`), over the link:
 the guest's OFFER is written with `writeText` while the document has focus (requested first if not inline; a MORE for
 each DATA frame), else kept as `pending` (what step 4 writes later); the page's own offers come from the **paste
-chord** (Ctrl+V, Ctrl+Shift+V, Shift+Insert, Cmd+V, by the key): `web/input.ts` holds the key without
-`preventDefault` (`hooks.hold`), the browser's `paste` event at the document while the screen's canvas has focus gives
-the text (`pasted`), the page offers it unless it is the last text either way (a hash of each) or empty, and the key
-goes to the guest at the agent's ACK or after 300 ms (`ACK_WAIT`; 300 ms more if no paste event comes,
-`PASTE_WAIT`). The page answers the agent's REQUESTs for its newest offer within their credit. Nothing of this happens
-while the link is paused, closed, or the agent's HELLO lacks `CAP.TEXT`.
+chord** (by the key: Ctrl+V, Ctrl+Shift+V, Shift+Insert; on a Mac Cmd+V and Cmd+Shift+V only, `isPasteChord`):
+`web/input.ts` holds the key without `preventDefault` (`hooks.hold`) and queues the key events that come meanwhile
+behind it (the chord's Ctrl released after the V; a second press a second press), the browser's `paste` event at the
+document while the screen's canvas has focus gives the text (`pasted`), the page offers it unless it is the last text
+either way (a hash of each) or empty, and the key goes to the guest at the agent's ACK or after 300 ms (`ACK_WAIT`;
+300 ms more if no paste event comes, `PASTE_WAIT`). An ACK that refuses is taken whenever it comes. The hashes stand
+for what the guest's clipboard has: an offer forgets the guest's, the guest's copy the page's, and the port's opening
+or closing, HELLO, SESSION and the pause forget both (and drop the transfers). The page answers the agent's REQUESTs
+for its newest offer within their credit; its serials and request ids start at random (a restored agent may hold an
+earlier page's). Nothing of this happens while the link is paused, closed, or the agent's HELLO lacks `CAP.TEXT`.
 
 ### clock (ID 17): virtio-rtc
 

@@ -129,7 +129,8 @@ export function terminalBytes(e: KeyLike): string | null {
  *
  * `hooks.hold`: asked at each key down on the element (not a repeat); a promise holds the key: no `preventDefault`, so
  * the browser's own action happens (a paste chord's `paste` event: web/app/clipboard.ts), and the key goes to the guest
- * when the promise settles (its key up after it, if it came meanwhile). A release (a blur) drops a held key.
+ * when the promise settles, and the element's key events that came meanwhile after it, in order (the chord's
+ * modifiers' releases among them; its own repeats dropped). A release (a blur) drops the held key and those.
  */
 export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: MessagePort, text?: { live: () => boolean; send: (bytes: string) => void; usb?: (code: string, down: boolean) => boolean }, pointers: Pointers = {}, hooks: { hold?: (e: KeyboardEvent) => Promise<void> | undefined } = {}): Input {
   const keys = new Set<number>(); // held, as the guest sees it
@@ -184,35 +185,40 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     return deliver(name, false, e);
   };
   const typed: ((code: string) => void)[] = [];
-  /** Keys `hooks.hold` holds: their key up if it came meanwhile. */
-  const held = new Map<string, { up?: KeyboardEvent }>();
+  /**
+   * The key `hooks.hold` holds, and the key events that came after it, in order: they wait behind it (a chord's
+   * modifiers' releases reach the guest after its key, a second press goes as a second press), but for its own
+   * repeats, which go nowhere (the guest's kernel repeats a held key itself).
+   */
+  type Holding = { code: string; after: { e: KeyboardEvent; down: boolean }[] };
+  let holding: Holding | undefined;
+  const screenKey = (e: KeyboardEvent, down: boolean) => {
+    const took = press(e.code, down, e, 'screen');
+    if (!down) for (const f of typed) f(e.code);
+    return took;
+  };
   const key = (down: number) => (e: KeyboardEvent) => {
-    const h = held.get(e.code);
-    if (h) {
-      // Held: its repeats go nowhere (no second paste event), its key up waits for the key down.
-      if (!down) h.up = e;
+    if (holding) {
+      if (!(down && e.repeat && e.code === holding.code)) holding.after.push({ e, down: !!down });
+      // Its own action now would come before the held key's (a second press: no second paste event).
       e.preventDefault();
       return;
     }
     const wait = down && !e.repeat ? hooks.hold?.(e) : undefined;
     if (wait) {
       // No preventDefault: the browser's own action (its paste event) is what the holder waits for.
-      const entry: { up?: KeyboardEvent } = {};
-      held.set(e.code, entry);
+      const entry: Holding = { code: e.code, after: [] };
+      holding = entry;
       const go = () => {
-        if (held.get(e.code) !== entry) return; // released meanwhile (a blur): the key never went down
-        held.delete(e.code);
-        press(e.code, true, e, 'screen');
-        if (entry.up) {
-          press(e.code, false, entry.up, 'screen');
-          for (const f of typed) f(e.code);
-        }
+        if (holding !== entry) return; // released meanwhile (a blur): the keys never went down
+        holding = undefined;
+        screenKey(e, true);
+        for (const a of entry.after) screenKey(a.e, a.down);
       };
       wait.then(go, go);
       return;
     }
-    if (press(e.code, !!down, e, 'screen')) e.preventDefault();
-    if (!down) for (const f of typed) f(e.code);
+    if (screenKey(e, !!down)) e.preventDefault();
   };
   const released: (() => void)[] = [];
   const at = (v: number, len: number) => Math.max(0, Math.min(32767, Math.round((v / len) * 32767)));
@@ -333,7 +339,7 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     }
   };
   const releaseAll = () => {
-    held.clear();
+    holding = undefined;
     holders.clear();
     tabletTouch = undefined;
     onEl.clear();

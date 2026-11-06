@@ -3,7 +3,7 @@
 // and the payload), a u8 type, then the payload. This module cuts the byte stream into frames, both ways, and defines
 // the payloads: the page's half of the format the agent's own code speaks (agent/src/frame.rs, its Rust twin, which
 // pins the same bytes in its tests). HELLO, TYPE, PAUSE and RESUME (step 2); the clipboard's OFFER, REQUEST, DATA,
-// ACK and MORE (step 3), the capability `CAP.TEXT`.
+// ACK and MORE (step 3), the capability `CAP.TEXT`; SYNC (a stream begun afresh) and SESSION.
 
 /** The frame types (docs/plans/clipboard.md §2). */
 export const FRAME = {
@@ -24,6 +24,16 @@ export const FRAME = {
   ACK: 8,
   /** A request id and a count: how many more DATA frames the requester takes (0 stops the answer). */
   MORE: 9,
+  /**
+   * The agent's, before its HELLO when the page's HELLO carried a nonce: the nonce, back. The page's reader skips the
+   * bytes before it (the rest of a frame a snapshot cut, or a stream out of step: `FrameReader.sync`).
+   */
+  SYNC: 10,
+  /**
+   * The agent's: the guest's clipboard changed hands (a session child started or stopped, or its compositor came or
+   * went). What the page knew of the guest's clipboard is gone, and so are the transfers of the one before.
+   */
+  SESSION: 11,
 } as const;
 
 /** The most bytes in a DATA frame. */
@@ -203,13 +213,26 @@ function fields(p: Uint8Array) {
 /** A HELLO: the sender's version and capabilities. */
 export type Hello = { version: number; caps: number };
 
-/** HELLO's payload: u16 version, u32 capabilities (little-endian); later versions append fields. */
-export function encodeHello(h: Hello): Uint8Array {
-  const b = new Uint8Array(6);
+/** The length of HELLO's nonce. */
+export const NONCE = 8;
+
+/**
+ * HELLO's payload: u16 version, u32 capabilities (little-endian); later versions append fields. The page's may append
+ * a nonce (`NONCE` bytes): the agent then sends SYNC with it before its own HELLO.
+ */
+export function encodeHello(h: Hello, nonce?: Uint8Array): Uint8Array {
+  if (nonce && nonce.length !== NONCE) throw new RangeError(`a HELLO nonce of ${nonce.length} bytes`);
+  const b = new Uint8Array(6 + (nonce?.length ?? 0));
   const v = new DataView(b.buffer);
   v.setUint16(0, h.version, true);
   v.setUint32(2, h.caps >>> 0, true);
+  if (nonce) b.set(nonce, 6);
   return b;
+}
+
+/** A HELLO's nonce, if it has one. */
+export function helloNonce(p: Uint8Array): Uint8Array | undefined {
+  return p.length >= 6 + NONCE ? p.slice(6, 6 + NONCE) : undefined;
 }
 
 /** A HELLO's fields; undefined if the payload is too short to be one. */
@@ -257,16 +280,44 @@ export function encodeFrame(type: number, payload: Uint8Array = new Uint8Array(0
 /**
  * Cuts a byte stream into frames, whatever pieces it arrives in. A length that can't be a frame's (zero, or past
  * `MAX_PAYLOAD`) means the stream is out of step: the reader is `broken` and drops everything until `reset`, which
- * the link does when the port closes (the agent starts its stream again when it opens it).
+ * the link does when the port closes (the agent starts its stream again when it opens it), or `sync`.
  */
 export class FrameReader {
   private buf = new Uint8Array(0);
   broken = false;
+  /** The SYNC frame's bytes `sync` waits for: everything before them is dropped. */
+  private marker?: Uint8Array;
+
+  /**
+   * Starts afresh at the SYNC frame carrying `nonce` (the agent's answer to a HELLO with it): the bytes before it are
+   * dropped, whatever they are (a frame begun before a snapshot, a stream out of step). The nonce is new, so nothing
+   * sent before the HELLO can hold it.
+   */
+  sync(nonce: Uint8Array) {
+    this.reset();
+    this.marker = encodeFrame(FRAME.SYNC, nonce);
+  }
+
+  /** Waiting for a SYNC (`sync`). */
+  get syncing() {
+    return !!this.marker;
+  }
 
   /** The frames `bytes` completes. */
   push(bytes: Uint8Array): Frame[] {
     if (this.broken) return [];
-    const all = this.buf.length ? concat(this.buf, bytes) : bytes;
+    let all = this.buf.length ? concat(this.buf, bytes) : bytes;
+    if (this.marker) {
+      const m = this.marker;
+      const i = find(all, m);
+      if (i < 0) {
+        // The marker's start may be at the end: kept.
+        this.buf = all.slice(Math.max(0, all.length - (m.length - 1)));
+        return [];
+      }
+      this.marker = undefined;
+      all = all.subarray(i + m.length);
+    }
     const out: Frame[] = [];
     let at = 0;
     while (all.length - at >= LEN) {
@@ -292,7 +343,17 @@ export class FrameReader {
   reset() {
     this.buf = new Uint8Array(0);
     this.broken = false;
+    this.marker = undefined;
   }
+}
+
+/** Where `m` first is in `a`, or -1. */
+function find(a: Uint8Array, m: Uint8Array) {
+  outer: for (let i = a.indexOf(m[0]); i >= 0 && i <= a.length - m.length; i = a.indexOf(m[0], i + 1)) {
+    for (let k = 1; k < m.length; k++) if (a[i + k] !== m[k]) continue outer;
+    return i;
+  }
+  return -1;
 }
 
 function concat(a: Uint8Array, b: Uint8Array) {

@@ -15,7 +15,11 @@
 // - **Placeholders** (§4.3): an empty read is never offered and leaves the hashes alone; `read()`'s types tell a
 //   hidden text (types say text, the text is empty: counted, and `EMPTY_RUN` in a row stop the focus reads for the
 //   run, `stopped`) from no text (an image, nothing). Refusals are silent.
-// - **Echo suppression** (§2): a hash of the last text each way; the same text isn't offered back.
+// - **Echo suppression** (§2): a hash of the last text each way, which stands for "the guest's clipboard has it still":
+//   the same text isn't offered back. Each is forgotten when the clipboard moves on the other way (an offer to the
+//   guest forgets the guest's, the guest's copy the page's), when the agent refuses an offer (even after `ACK_WAIT`),
+//   when the port opens or closes, at the agent's HELLO and at its SESSION (the guest's clipboard changed hands: a
+//   session child, or its compositor, came or went), which also end the transfers in progress.
 // Sharing stops while paused (the toolbar's switch, §5: `pause`): nothing is read, offered, written or answered.
 
 import { ACK, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeMore, decodeOffer, decodeRequest, encodeData, encodeMore, encodeOffer, encodeRequest, FRAME, CAP, UNKNOWN, type Frame, type Hello } from '../agent-frame.ts';
@@ -60,6 +64,8 @@ export type Host = {
   hasFocus: () => boolean;
   /** The browser fires `clipboardchange` (the page then reads on it, not on every focus). */
   changeEvents?: boolean;
+  /** The browser runs on a Mac: its paste chord is Cmd+V (`isPasteChord`). */
+  mac?: boolean;
 };
 
 /**
@@ -89,11 +95,20 @@ export async function watchReadPermission(permissions: Pick<Permissions, 'query'
   return state();
 }
 
-/** Whether a key event is a paste chord: Ctrl+V, Ctrl+Shift+V, Shift+Insert, Cmd+V (by the key, as the browser's shortcut is). */
-export function isPasteChord(e: Pick<KeyboardEvent, 'key' | 'code' | 'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey'>): boolean {
+/**
+ * Whether a key event is the browser's paste chord on this host (by the key, as the browser's shortcut is): Ctrl+V,
+ * Ctrl+Shift+V and Shift+Insert; on a Mac (`mac`), Cmd+V and Cmd+Shift+V only (Ctrl+V is the guest's own key there,
+ * and no paste event would come for it).
+ */
+export function isPasteChord(e: Pick<KeyboardEvent, 'key' | 'code' | 'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey'>, mac = false): boolean {
   if (e.altKey) return false;
-  if (e.key === 'v' || e.key === 'V') return e.ctrlKey !== e.metaKey;
-  return e.code === 'Insert' && e.shiftKey && !e.ctrlKey && !e.metaKey;
+  if (e.key === 'v' || e.key === 'V') return mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+  return !mac && e.code === 'Insert' && e.shiftKey && !e.ctrlKey && !e.metaKey;
+}
+
+/** Whether the browser runs on a Mac (its paste chord is Cmd+V): its client hints' platform, else `navigator.platform`. */
+export function onMac(nav: { platform?: string; userAgentData?: { platform?: string } } | undefined): boolean {
+  return /mac/i.test(nav?.userAgentData?.platform || nav?.platform || '');
 }
 
 /** A 53-bit hash of a string (cyrb53): what the page remembers of the last text each way. */
@@ -126,8 +141,9 @@ export class ClipboardShare {
   stopped = false;
   private link: ClipLink;
   private host: Host;
-  private serial = 0;
-  private id = 0;
+  // From a random start: a restored guest's agent may hold transfers of an earlier page's ids.
+  private serial = crypto.getRandomValues(new Uint32Array(1))[0];
+  private id = crypto.getRandomValues(new Uint32Array(1))[0];
   /** The hashes of the last text from the guest, and of the last offered to it. */
   private fromGuest?: number;
   private toGuest?: number;
@@ -147,7 +163,8 @@ export class ClipboardShare {
   private requests = new Map<number, { chunks: Uint8Array[]; len: number }>();
   /** The agent's requests for the page's offer's bytes. */
   private answers = new Map<number, { bytes: Uint8Array; at: number; credit: number }>();
-  private acks = new Map<number, (status: number) => void>();
+  /** The page's offers' ACKs awaited (the newest only): each takes the status, or undefined (superseded). */
+  private acks = new Map<number, (status?: number) => void>();
   /** The held paste chord's wait for the browser's paste event. */
   private holding?: () => void;
 
@@ -194,8 +211,7 @@ export class ClipboardShare {
     this.link.pause();
     this.pending = undefined;
     this.holding?.();
-    // The agent drops the host's text from the guest's clipboard: what either side had is no longer known.
-    this.fromGuest = this.toGuest = undefined;
+    // The agent drops the host's text from the guest's clipboard: what either side had is no longer known (`reset`).
     this.reset();
     this.onChange?.();
   }
@@ -222,13 +238,13 @@ export class ClipboardShare {
       this.changed = false;
       const text = await this.readHost();
       if (text === undefined || !this.active) return;
-      const h = textHash(text);
-      if (h !== this.hostHash) {
-        // The host's own copy, newer than the guest's pending one.
+      if (textHash(text) === this.hostHash && this.pending !== undefined) {
+        this.writePending();
+      } else {
+        // The host's own copy, newer than the guest's pending one; or unchanged, offered if the guest hasn't it (a
+        // new session, a restarted agent: the echo hashes were forgotten).
         this.pending = undefined;
         void this.paste(text);
-      } else if (this.pending !== undefined) {
-        this.writePending();
       }
     } finally {
       this.reading = false;
@@ -323,7 +339,7 @@ export class ClipboardShare {
    * promise settles: after the browser's `paste` event and the agent's ACK, or `PASTE_WAIT`); anything else, undefined.
    */
   chord(e: Pick<KeyboardEvent, 'key' | 'code' | 'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey'>): Promise<void> | undefined {
-    if (!this.active || !isPasteChord(e)) return undefined;
+    if (!this.active || !isPasteChord(e, this.host.mac)) return undefined;
     this.holding?.();
     let release = () => {};
     const event = new Promise<void>((resolve) => (release = resolve));
@@ -369,38 +385,50 @@ export class ClipboardShare {
     const serial = this.serial = (this.serial + 1) >>> 0;
     // Requests for an older offer carry on (a guest program is reading it): their answers hold their own bytes.
     this.offered = { serial, bytes };
+    // The guest's clipboard is to hold this one: the guest's last copy is no longer what it has.
     this.toGuest = h;
-    const status = new Promise<number | undefined>((resolve) => {
-      const timer = setTimeout(() => {
-        this.acks.delete(serial);
-        resolve(undefined);
-      }, ACK_WAIT);
-      this.acks.set(serial, (s) => {
-        clearTimeout(timer);
-        resolve(s);
-      });
+    this.fromGuest = undefined;
+    for (const a of [...this.acks.values()]) a(undefined);
+    let resolve!: (s?: number) => void;
+    const status = new Promise<number | undefined>((r) => (resolve = r));
+    // The key waits `ACK_WAIT` at most; the ACK is taken whenever it comes (until a newer offer, or a reset).
+    const timer = setTimeout(resolve, ACK_WAIT);
+    this.acks.set(serial, (s) => {
+      clearTimeout(timer);
+      this.acks.delete(serial);
+      // The guest didn't take it: the next paste offers it again.
+      if (s !== undefined && s !== ACK.HELD && this.toGuest === h) this.toGuest = undefined;
+      resolve(s);
     });
     const done = status.then(() => {});
     this.offering = { hash: h, done };
     this.link.send(FRAME.OFFER, encodeOffer({ serial, types: [{ type: TEXT, size: bytes.length }], inline: bytes.length <= INLINE ? bytes : undefined }));
-    const s = await status;
+    await status;
     if (this.offering?.done === done) this.offering = undefined;
-    // The guest didn't take it: the next paste offers it again.
-    if (s !== undefined && s !== ACK.HELD && this.toGuest === h) this.toGuest = undefined;
   }
 
+  /**
+   * The transfers end and what the page knew of the guest's clipboard is forgotten (the echo hashes; the host's
+   * clipboard is read again at the next sync): the port opened or closed, the agent said HELLO or SESSION, the pause.
+   */
   private reset() {
     this.offered = undefined;
     this.requests.clear();
     this.answers.clear();
-    for (const a of this.acks.values()) a(ACK.NO_SESSION);
+    for (const a of [...this.acks.values()]) a(ACK.NO_SESSION);
     this.acks.clear();
+    this.offering = undefined;
+    this.fromGuest = this.toGuest = undefined;
+    this.changed = true;
   }
 
   private frame(f: Frame) {
     switch (f.type) {
       case FRAME.HELLO:
-        // The agent is there: the toolbar says so, and the host's clipboard goes to the guest if the page may read it.
+      case FRAME.SESSION:
+        // The agent is there (its stream begun afresh), or the guest's clipboard changed hands: what the page knew of
+        // it is gone. The toolbar says so, and the host's clipboard goes to the guest if the page may read it.
+        this.reset();
         this.onChange?.();
         void this.focused();
         return;

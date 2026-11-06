@@ -208,9 +208,10 @@ opening of the agent's port, so an agent restored paused is resumed); **[Send th
 (`watchReadPermission`: `navigator.permissions.query`, its `change` event; `none` in Firefox and Safari, which throw
 on the name). What the page does with it:
 - **Sync** (way 1): while the permission is `granted`, a focus of the page (`focus`, `visibilitychange` to visible,
-  only while `document.hasFocus()`), the agent's HELLO and the permission's becoming `granted` read the host's
-  clipboard (`readText`) and offer it to the guest if it changed since the page last knew it; where `clipboardchange`
-  exists (Chromium 155 has it), a focus reads only after one, and the event reads at once. Never a read while it is
+  only while `document.hasFocus()`), the agent's HELLO and SESSION (the guest's clipboard changed hands) and the
+  permission's becoming `granted` read the host's clipboard (`readText`) and offer it to the guest if it changed since
+  the page last knew it or the guest isn't known to have it; where `clipboardchange` exists (Chromium 155 has it), a
+  focus reads only after one (or after HELLO, SESSION, the port's opening), and the event reads at once. Never a read while it is
   `prompt` but on the user's clicks above.
 - **The guest's copies** (§4.2): written at once while the document has focus; otherwise (or refused: Firefox wants
   activation) the newest is pending, written on a focus whose read finds the host's clipboard unchanged (dropped if

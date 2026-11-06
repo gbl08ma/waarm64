@@ -18,6 +18,16 @@ link says PAUSE or RESUME at every opening (a restored agent isn't left paused).
 `tests/page-clipboard.test.ts` and `tests/page-agent.test.ts` (Debian). Measured in headless Chromium 155 and
 Firefox 157 (plan §4.1).
 
+**The out-of-context review of steps 1–3** (`review/clip`, `REVIEW-CLIP.md` there): the page's findings are fixed
+(1 the chord's keys queued behind the held one, 2's page half, 6, 7, 9, 10, 13, and 5's page half: random serial and
+id bases). 7a was already gone with step 4. 6 and 7 brought two frames (plan §2, devices.md): SYNC (a restored
+opening or a reader out of step begins at the agent's SYNC) and SESSION (the parent's when a child stops or ends,
+the child's when its data device comes or goes, which also ends its transfers). **Next loop, the agent's findings:**
+2's agent half (`last_host` never cleared, set by a superseded transfer), 3 (TYPE into a VT under a compositor), 4
+(the endless 200 ms retries at a dead socket), 5's agent half (the child's transfers at the page's HELLO), 8 (the
+unit's endless restarts), 11 (TYPE blocking the root loop), 12 (inotify overflow, root's runtime directory), 14 (the
+plan's ports, X11 under the sandbox, `splice`). Then step 5.
+
 ## Next: step 5 (images, then X11)
 
 Plan §4.4 and §6 step 5: `image/png` both ways (the page's conversion to PNG in a worker, the read-back for echoes),

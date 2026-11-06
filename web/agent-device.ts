@@ -40,9 +40,12 @@ export function agentEntry(ports = AGENT_PORTS.length): { entry: bigint[]; confi
   return { entry: [3n, F_MULTIPORT, BigInt((ports + 1) * 2), 64n, 12n], config };
 }
 
-/** The device to the page: a port's guest end opened or closed, bytes the guest wrote, host bytes the guest took. */
+/**
+ * The device to the page: a port's guest end opened or closed (`restored`: open in a restored snapshot, whose stream
+ * from the guest may begin inside a frame), bytes the guest wrote, host bytes the guest took.
+ */
 export type AgentFromDevice =
-  | { type: 'open'; port: number; open: boolean }
+  | { type: 'open'; port: number; open: boolean; restored?: boolean }
   | { type: 'data'; port: number; bytes: Uint8Array }
   | { type: 'taken'; port: number; n: number };
 /** The page to the device: bytes for the guest's end of a port. */
@@ -174,7 +177,7 @@ export function agentDevice(ctx: Ctx, d: AgentSpec, names = AGENT_PORTS): Backen
         if (!ports[p]) return;
         const pending = x.pending instanceof Uint8Array && x.pending.length ? [x.pending] : [];
         ports[p] = { rx: [], pending, held: pending[0]?.length ?? 0, ready: !!x.ready, open: !!x.open };
-        if (ports[p].open) post({ type: 'open', port: p, open: true });
+        if (ports[p].open) post({ type: 'open', port: p, open: true, restored: true });
       });
       ctlOut = (s.control ?? []).filter((m) => m instanceof Uint8Array);
     },

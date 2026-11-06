@@ -10,7 +10,8 @@
 //   clipboardchange, on which the page reads; a focus with nothing new offers nothing).
 // - The toolbar's switch: PAUSE drops the host's text from the guest's clipboard and stops both ways; RESUME brings
 //   them back.
-// - The agent follows sway's end (the session's: `exec sway`) and its start in a new session.
+// - The agent follows sway's end (the session's: `exec sway`) and its start in a new session, where the page syncs the
+//   host's text again (the agent's SESSION).
 // - What the agent and its session child cost while sway runs (plan §3.3's targets: no CPU time, no wakeups, VmRSS).
 // WEBPC_AGENT_IDLE=<s> sets the idle window (default 20 s).
 import assert from 'node:assert/strict';
@@ -256,9 +257,14 @@ test('clipboard sharing with sway: wl-copy to the host, the paste chord to wl-pa
   }
 
   // sway ends (and with it the session: `exec sway`); getty logs the user in again and sway starts in a new session.
+  // The host's text the guest held goes with it; the agent says SESSION, and the page, which forgot what the guest
+  // had, syncs it to the new session.
+  await pasteChord(page, 'host before sway again');
+  await guestHasText(page, 'host before sway again', 'the paste chord before sway again');
   await run(page, 'pkill -x sway; echo stopped');
   const again = await swayUp(page, up.session);
   t.diagnostic(`sway again, session ${again.session}; its runs: ${await run(page, 'grep "^== sway" /tmp/sway.log')}`);
+  await guestHasText(page, 'host before sway again', "the host's text in the new session (SESSION)");
   await run(page, 'wlc wl-copy guest-after-sway-again >/dev/null 2>&1; echo copied');
   await hostHas(page, 'guest-after-sway-again', 'wl-copy with sway again');
   await pasteChord(page, 'host with sway again');

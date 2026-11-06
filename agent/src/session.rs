@@ -15,6 +15,8 @@
 //!   offered back.
 //! - **PAUSE:** our source goes (the guest's clipboard is cleared if it held the host's data), transfers stop, the
 //!   guest's selections are ignored until RESUME.
+//! - **SESSION:** when the data device comes (a compositor's, bound) or goes (the compositor gone, its seat gone), the
+//!   page hears SESSION and every transfer ends: the guest's clipboard the page knew is another's now.
 //!
 //! One thread in `ppoll` on the parent's socket, the inotify descriptor, the compositor's socket and the pipes of
 //! transfers in progress; no timeout but while a socket that exists refuses connections (a compositor between its
@@ -481,8 +483,11 @@ impl Child {
     }
 
     fn disconnect(&mut self, why: &str) {
-        if self.wl.take().is_some() {
+        if let Some(wl) = self.wl.take() {
             log(&format!("session: {why}"), None);
+            if wl.device.is_some() {
+                self.changed_hands();
+            }
         }
         self.host = None;
         self.guest = None;
@@ -575,6 +580,11 @@ impl Child {
         self.host = None;
         self.probe = None;
         self.guest = None;
+        self.end_xfers();
+    }
+
+    /// Every transfer ends: the page's requests fail (DATA FAIL), ours stop (MORE 0).
+    fn end_xfers(&mut self) {
         for x in std::mem::take(&mut self.xfers) {
             match x {
                 Xfer::Out { id, .. } => self.fail(id),
@@ -584,6 +594,13 @@ impl Child {
                 Xfer::In { .. } => {}
             }
         }
+    }
+
+    /// The guest's clipboard changed hands (a compositor's data device came or went): the page hears SESSION, and the
+    /// transfers of the one before end.
+    fn changed_hands(&mut self) {
+        self.end_xfers();
+        self.send(frame::SESSION, |_| {});
     }
 
     // ---- The page's offer: our source in the guest's clipboard.
@@ -1058,6 +1075,7 @@ impl Child {
                     &format!("session: on the compositor's {}", MANAGERS[k]),
                     None,
                 );
+                self.changed_hands();
             }
             (Obj::Ack(serial), op::DONE) => {
                 wl.objs.insert(object, Obj::Dead);
@@ -1089,6 +1107,7 @@ impl Child {
                 self.host = None;
                 self.guest = None;
                 self.probe = None;
+                self.changed_hands();
             }
             (Obj::Offer, op::OFFER) => {
                 if let (Some(Some(t)), Some(types)) = (a.string(), wl.offers.get_mut(&object))
