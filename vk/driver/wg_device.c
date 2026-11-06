@@ -351,6 +351,10 @@ wg_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice, VkFormat 
             p->bufferFeatures |= without;
          break;
       }
+      case VK_STRUCTURE_TYPE_SUBPASS_RESOLVE_PERFORMANCE_QUERY_EXT:
+         /* A pass rendering single-sampled attachments multisampled resolves as any other pass does. */
+         ((VkSubpassResolvePerformanceQueryEXT *)ext)->optimal = VK_TRUE;
+         break;
       case VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT: {
          /* One modifier, LINEAR, with the optimal tiling's features: the renderer owns the image as any other (WebGPU
           * has no tiling to choose), and Venus's WSI renders into images with a modifier. */
@@ -429,8 +433,8 @@ view_format_aliasable(const struct wg_texture_format *f, VkFormat view)
 }
 
 /* Whether WebGPU multisamples the format: not the 32-bit integer ones nor the float ones of two or four channels. */
-static bool
-format_multisamples(const struct wg_texture_format *f)
+bool
+wg_format_multisamples(const struct wg_texture_format *f)
 {
    return strncmp(f->name, "rg32", 4) && strncmp(f->name, "rgba32", 6) && strcmp(f->name, "r32uint") &&
           strcmp(f->name, "r32sint");
@@ -521,7 +525,7 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
    bool views_multisample = true;
    for (uint32_t i = 0; list && (info->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) && i < list->viewFormatCount; i++) {
       const struct wg_texture_format *v = wg_texture_format(list->pViewFormats[i]);
-      views_multisample &= !v || format_multisamples(v);
+      views_multisample &= !v || wg_format_multisamples(v);
    }
    pProps->imageFormatProperties = (VkImageFormatProperties){
       .maxExtent = { dim, info->type == VK_IMAGE_TYPE_1D ? 1 : dim, info->type == VK_IMAGE_TYPE_3D ? dim : 1 },
@@ -530,7 +534,7 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
       /* WebGPU's multisampled textures: 4 samples, 2D, one level and layer, never storage, and none of the 32-bit
        * integer formats nor the float ones of two or four channels. */
       .sampleCounts = info->tiling == VK_IMAGE_TILING_OPTIMAL && info->type == VK_IMAGE_TYPE_2D && attachment &&
-                            !(info->usage & VK_IMAGE_USAGE_STORAGE_BIT) && tf && format_multisamples(tf) && views_multisample &&
+                            !(info->usage & VK_IMAGE_USAGE_STORAGE_BIT) && tf && wg_format_multisamples(tf) && views_multisample &&
                             !(info->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)
                          ? VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_4_BIT
                          : VK_SAMPLE_COUNT_1_BIT,
@@ -1847,6 +1851,42 @@ view_init(struct wg_device *dev, struct wg_image_view *view, uint32_t loop_tex)
 }
 
 struct wg_image_view *
+wg_view_ms(struct wg_image_view *view, uint32_t samples)
+{
+   /* One count: WebGPU's 4 is the only one offered. */
+   if (view->ms)
+      return view->ms_samples == samples ? view->ms : NULL;
+   if (!wg_format_multisamples(view->fmt))
+      return NULL;
+   struct wg_device *dev = container_of(view->vk.base.device, struct wg_device, vk);
+   const VkDevice d = wg_device_to_handle(dev);
+   const struct vk_image *vi = view->vk.image;
+   const VkExtent3D e = vk_image_mip_level_extent(vi, view->vk.base_mip_level);
+   const bool ds = vk_format_is_depth_or_stencil(view->vk.format);
+   const VkImageCreateInfo ii = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D, .format = view->vk.format,
+      .extent = { e.width, e.height, 1 }, .mipLevels = 1, .arrayLayers = view->vk.layer_count, .samples = samples,
+      .tiling = VK_IMAGE_TILING_OPTIMAL,
+      .usage = (ds ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) |
+               VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT };
+   VkImage image;
+   if (wg_CreateImage(d, &ii, NULL, &image) != VK_SUCCESS)
+      return NULL;
+   const VkImageViewCreateInfo vi_info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = image,
+      .viewType = view->vk.layer_count > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D, .format = view->vk.format,
+      .subresourceRange = { vk_format_aspects(view->vk.format), 0, 1, 0, view->vk.layer_count } };
+   VkImageView v;
+   if (wg_CreateImageView(d, &vi_info, NULL, &v) != VK_SUCCESS) {
+      wg_DestroyImage(d, image, NULL);
+      return NULL;
+   }
+   view->ms = wg_image_view_from_handle(v);
+   view->ms_samples = samples;
+   return view->ms;
+}
+
+struct wg_image_view *
 wg_view_loop(struct wg_image_view *view)
 {
    if (!view->loop) {
@@ -1989,6 +2029,11 @@ wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallb
       return;
    if (view->loop)
       wg_DestroyImageView(_device, wg_image_view_to_handle(view->loop), NULL);
+   if (view->ms) {
+      const VkImage ms_image = vk_image_to_handle(view->ms->vk.image);
+      wg_DestroyImageView(_device, wg_image_view_to_handle(view->ms), NULL);
+      wg_DestroyImage(_device, ms_image, NULL);
+   }
    wg_id_release(view->twin);
    wg_id_release(view->twin_depth);
    wg_id_release(view->twin_tex);

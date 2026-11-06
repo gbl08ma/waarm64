@@ -20,6 +20,9 @@ scripts/ci-deqp-vk.sh                      # dEQP-VK's pass list on the page (im
 node bench/vulkan/dawn-frames.ts guest     # WebGPU samples in the desktop guest's Chromium (Dawn; not yet on Venus: docs/backlog.md)
 ```
 
+A failed build prints only the last lines of `target/vk/wasm-build.log`, which can be the protocol headers' warnings:
+check `vk/build.sh`'s exit code (and that log), or what runs next is the last driver that built.
+
 ## The build
 
 `vk/build.sh` fetches wasi-sdk 34 (sha256-pinned), clones Mesa `mesa-26.2.4` and virglrenderer `e0a1caf3b147` (the
@@ -713,6 +716,16 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   its outputs moved (an output no attachment takes goes to a private variable). Input attachments read through their
   descriptors as before (`feedback_copies`), so the input attachment map isn't read; a barrier inside the pass renews
   their copies. Dual-source outputs aren't moved.
+- **Multisampled rendering to single-sampled attachments** (VK4 T32; `VK_EXT_multisampled_render_to_single_sampled`,
+  `ms_attachment` in wg_cmd.c, `wg_view_ms` in wg_device.c): a pass (dynamic rendering's
+  `VkMultisampledRenderToSingleSampledInfoEXT`; a subpass's comes to it through the runtime) renders each
+  single-sampled attachment in a multisampled image of the view's format and level's size (4 samples, WebGPU's one
+  count; made at the first such pass, kept with the view), the rendering info rewritten so the attachment resolves into
+  the view: colour by WebGPU's resolve target (average, or sample zero for integers, as the runtime sets), depth and
+  stencil by the drawn resolves with the pass's modes (sample zero where it gives none). A LOAD fills every sample with
+  the attachment's texel first (the worker's `copyMultisampled` from a single-sampled source: a draw a sample), not on a
+  resumed part; the multisampled image is stored, so a suspended pass's parts carry it. One layer, no 3D slices; the
+  resolve performance query says optimal.
 - **Multisampled arrays** (VK4 T12; `MsLayers` in web/venus-gpu.ts): WebGPU's multisampled textures have one layer, so the
   worker makes a texture a layer behind one object, which the driver sees as one texture; every path takes a layer at a
   time (views, `texCopy`), so passes, resolves, clears and copies work as they do for any array. A view of several

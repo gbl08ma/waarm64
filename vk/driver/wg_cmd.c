@@ -960,10 +960,98 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
       wg_json_free(&clears);
 }
 
+/* VK_EXT_multisampled_render_to_single_sampled: a single-sampled attachment of a pass rendering at `samples` is drawn
+ * in a multisampled image of its own (wg_view_ms), loaded from it where the load op is LOAD (a draw a sample: the
+ * worker's copy into a multisampled texture) and resolved into it at the pass's end, its resolve mode the pass's (the
+ * runtime's for a subpass: average, or sample zero for integers), colour by WebGPU's resolve target, depth and stencil
+ * by the drawn resolves. The multisampled image is stored, so a suspended pass's parts carry it. */
+static void
+ms_attachment(struct wg_cmd_buffer *cmd, VkRenderingAttachmentInfo *a, uint32_t samples, bool resuming,
+              VkImageView *filled, uint32_t *filled_count, const VkRect2D *area)
+{
+   VK_FROM_HANDLE(wg_image_view, v, a->imageView);
+   if (!v || v->vk.image->samples != 1 || v->slice >= 0 || v->vk.layer_count != 1)
+      return;
+   struct wg_image_view *ms = wg_view_ms(v, samples);
+   /* A format WebGPU can't multisample: no draw of the pass may write it (its formats' sample counts say so), so the
+    * pass goes without it, which keeps what it holds (a pass may name attachments only another pass draws). */
+   if (!ms) {
+      /* Its clear, outside the pass: of the whole subresource, where the render area covers it. */
+      const VkExtent3D e = vk_image_mip_level_extent(v->vk.image, v->vk.base_mip_level);
+      if (a->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR && !resuming && !area->offset.x && !area->offset.y &&
+          area->extent.width >= e.width && area->extent.height >= e.height) {
+         const VkImageSubresourceRange range = { VK_IMAGE_ASPECT_COLOR_BIT, v->vk.base_mip_level, 1,
+                                                 v->vk.base_array_layer, v->vk.layer_count };
+         wg_CmdClearColorImage(wg_cmd_buffer_to_handle(cmd), vk_image_to_handle(v->vk.image), VK_IMAGE_LAYOUT_GENERAL,
+                               &a->clearValue.color, 1, &range);
+      }
+      a->imageView = VK_NULL_HANDLE;
+      a->resolveImageView = VK_NULL_HANDLE;
+      a->resolveMode = VK_RESOLVE_MODE_NONE;
+      return;
+   }
+   bool done = false;
+   for (uint32_t i = 0; i < *filled_count; i++)
+      done |= filled[i] == a->imageView;
+   if (a->loadOp == VK_ATTACHMENT_LOAD_OP_LOAD && !resuming && !done) {
+      const VkExtent3D e = vk_image_mip_level_extent(v->vk.image, v->vk.base_mip_level);
+      const struct op_copy_tt op = { .src = view_texture(v), .src_mip = v->vk.base_mip_level, .sz = v->vk.base_array_layer,
+                                     .dst = view_texture(ms), .w = e.width, .h = e.height, .d = 1, .dst_w = e.width,
+                                     .dst_h = e.height, .cols = e.width, .rows = e.height, .bytes = v->fmt->bytes };
+      emit(cmd, OP_COPY_TT, &op, sizeof(op));
+      filled[(*filled_count)++] = a->imageView;
+   }
+   if (a->resolveMode == VK_RESOLVE_MODE_NONE)
+      a->resolveMode = vk_format_is_int(v->vk.format) || vk_format_is_depth_or_stencil(v->vk.format)
+                          ? VK_RESOLVE_MODE_SAMPLE_ZERO_BIT : VK_RESOLVE_MODE_AVERAGE_BIT;
+   a->resolveImageView = a->imageView;
+   a->resolveImageLayout = a->imageLayout;
+   a->imageView = wg_image_view_to_handle(ms);
+   a->storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+}
+
+static void begin_rendering_views(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info);
+VKAPI_ATTR void VKAPI_CALL wg_CmdClearColorImage(VkCommandBuffer commandBuffer, VkImage _image, VkImageLayout layout,
+                                                 const VkClearColorValue *color, uint32_t count,
+                                                 const VkImageSubresourceRange *ranges);
+
 VKAPI_ATTR void VKAPI_CALL
 wg_CmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *info)
 {
    VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
+   const VkMultisampledRenderToSingleSampledInfoEXT *ms =
+      vk_find_struct_const(info->pNext, MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_INFO_EXT);
+   if (!ms || !ms->multisampledRenderToSingleSampledEnable || ms->rasterizationSamples <= 1) {
+      begin_rendering_views(cmd, info);
+      return;
+   }
+   VkRenderingInfo r = *info;
+   VkRenderingAttachmentInfo colors[MESA_VK_MAX_COLOR_ATTACHMENTS], depth, stencil;
+   VkImageView filled[MESA_VK_MAX_COLOR_ATTACHMENTS + 2];
+   uint32_t filled_count = 0;
+   const bool resuming = info->flags & VK_RENDERING_RESUMING_BIT;
+   r.colorAttachmentCount = MIN2(info->colorAttachmentCount, MESA_VK_MAX_COLOR_ATTACHMENTS);
+   for (uint32_t i = 0; i < r.colorAttachmentCount; i++) {
+      colors[i] = info->pColorAttachments[i];
+      ms_attachment(cmd, &colors[i], ms->rasterizationSamples, resuming, filled, &filled_count, &info->renderArea);
+   }
+   r.pColorAttachments = colors;
+   if (info->pDepthAttachment) {
+      depth = *info->pDepthAttachment;
+      ms_attachment(cmd, &depth, ms->rasterizationSamples, resuming, filled, &filled_count, &info->renderArea);
+      r.pDepthAttachment = &depth;
+   }
+   if (info->pStencilAttachment) {
+      stencil = *info->pStencilAttachment;
+      ms_attachment(cmd, &stencil, ms->rasterizationSamples, resuming, filled, &filled_count, &info->renderArea);
+      r.pStencilAttachment = &stencil;
+   }
+   begin_rendering_views(cmd, &r);
+}
+
+static void
+begin_rendering_views(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info)
+{
    /* Layers without multiview: no draw reaches past the first (nothing writes gl_Layer), but load ops, store ops and
     * vkCmdClearAttachments do, so the pass replays a layer at a time, as multiview's does. */
    const uint32_t layers = MIN2(info->layerCount, WG_MAX_LAYERS);

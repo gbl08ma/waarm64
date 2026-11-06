@@ -529,7 +529,7 @@ export class VenusGpu {
           if (isDepthStencil(S.format) !== isDepthStencil(D.format)) return self.colorDepthStencil(S, sm, sx, sy, sz, D, dm, dx, dy, dz, w, h, depth, aspect);
           const ps = self.packed.get(S), pd = self.packed.get(D);
           if ((ps || pd) && ps?.join() !== pd?.join() && S.sampleCount === 1) return self.copyPacked(ps, S, sm, sx, sy, sz, pd, D, dm, dx, dy, dz, w, h, depth);
-          if (S.sampleCount > 1) {
+          if (S.sampleCount > 1 || D.sampleCount > 1) {
             for (let l = 0; l < depth; l++) self.copyMultisampled(S, sm, sx, sy, sz + l, D, dm, dx, dy, dz + l, w, h, aspect);
             return;
           }
@@ -1255,13 +1255,15 @@ override bit: u32 = 8u;
    * A copy between multisampled textures: WebGPU's own for a whole subresource, else a draw per aspect, shaded per
    * sample (`sample_index`) so each sample takes the source's same sample; stencil, which a shader can't write, by a
    * draw zeroing it and a draw a bit, as `stencilByDraws`. Within one texture through a temporary one. Formats must
-   * match but for sRGB (bit patterns can't cross a draw): what doesn't is skipped with a warning.
+   * match but for sRGB (bit patterns can't cross a draw): what doesn't is skipped with a warning. A single-sampled
+   * source gives each sample its texel (VK_EXT_multisampled_render_to_single_sampled's load: VK4 T32).
    */
   private copyMultisampled(S: GPUTexture, sm: number, sx: number, sy: number, sz: number, D: GPUTexture, dm: number, dx: number, dy: number, dz: number, w: number, h: number, aspect: number) {
     const d = this.device!, f = D.format;
     const whole = (t: GPUTexture, m: number, x: number, y: number) => x === 0 && y === 0 && w === Math.max(1, t.width >> m) && h === Math.max(1, t.height >> m);
     const samePacking = this.packed.get(S)?.join() === this.packed.get(D)?.join();
-    if (S !== D && S.format === f && samePacking && !aspect && whole(S, sm, sx, sy) && whole(D, dm, dx, dy) && S.usage & TEX_COPY_SRC && D.usage & TEX_COPY_DST) {
+    const one = S.sampleCount === 1, ms = one ? '' : 'multisampled_', at = one ? '0' : 'i32(i)';
+    if (S !== D && S.sampleCount === D.sampleCount && S.format === f && samePacking && !aspect && whole(S, sm, sx, sy) && whole(D, dm, dx, dy) && S.usage & TEX_COPY_SRC && D.usage & TEX_COPY_DST) {
       this.enc!.copyTextureToTexture(this.texCopy(S, sm, sx, sy, sz, 0), this.texCopy(D, dm, dx, dy, dz, 0), { width: w, height: h, depthOrArrayLayers: 1 });
       return;
     }
@@ -1270,7 +1272,7 @@ override bit: u32 = 8u;
     const base = f.replace('-srgb', '') as GPUTextureFormat, sBase = S.format.replace('-srgb', '') as GPUTextureFormat;
     const swizzle = this.packed.get(S) || this.packed.get(D) ? packedSwizzle(this.packed.get(S), this.packed.get(D)) : 'rgba';
     const bits = sBase === base ? '' : bitsBetween(sBase, base);
-    if (swizzle === undefined || bits === undefined || D.sampleCount !== S.sampleCount || !(S.usage & TEXTURE_BINDING && D.usage & RENDER_ATTACHMENT)) {
+    if (swizzle === undefined || bits === undefined || (D.sampleCount !== S.sampleCount && !one) || !(S.usage & TEXTURE_BINDING && D.usage & RENDER_ATTACHMENT)) {
       this.warn(`a multisampled copy of ${S.format} into ${f} that WebGPU can't make: skipped`);
       return;
     }
@@ -1294,7 +1296,7 @@ override bit: u32 = 8u;
       let pipeline = this.metaPipelines.get(key);
       if (!pipeline) {
         const m = d.createShaderModule({ code });
-        pipeline = d.createRenderPipeline({ layout: 'auto', vertex: { module: m, entryPoint: 'vs' }, fragment: { module: m, entryPoint: 'fs', targets }, primitive: { topology: 'triangle-list' }, multisample: { count: S.sampleCount }, ...(depthStencil ? { depthStencil } : {}) });
+        pipeline = d.createRenderPipeline({ layout: 'auto', vertex: { module: m, entryPoint: 'vs' }, fragment: { module: m, entryPoint: 'fs', targets }, primitive: { topology: 'triangle-list' }, multisample: { count: D.sampleCount }, ...(depthStencil ? { depthStencil } : {}) });
         this.metaPipelines.set(key, pipeline);
       }
       return pipeline;
@@ -1309,10 +1311,10 @@ override bit: u32 = 8u;
     const dstView = D.createView({ dimension: '2d', baseMipLevel: dm, mipLevelCount: 1, baseArrayLayer: dz, arrayLayerCount: 1, ...(twins ? { format: base } : {}) });
     if (!depthy) {
       const kind = sampleKind(base), from = sampleKind(sBase);
-      const pipeline = pipelineFor(`mscopy:${sBase}:${base}:${swizzle}`, `${P}
-@group(0) @binding(1) var t: texture_multisampled_2d<${from}>;
+      const pipeline = pipelineFor(`mscopy:${sBase}:${base}:${swizzle}:${S.sampleCount}:${D.sampleCount}`, `${P}
+@group(0) @binding(1) var t: texture_${ms}2d<${from}>;
 @fragment fn fs(@builtin(position) q: vec4<f32>, @builtin(sample_index) i: u32) -> @location(0) vec4<${kind}> {
-  let v = textureLoad(t, vec2<i32>(q.xy) + p.at, i32(i));
+  let v = textureLoad(t, vec2<i32>(q.xy) + p.at, ${at});
   ${bits || `return v.${swizzle};`}
 }`, undefined, [{ format: base }]);
       const pass = this.enc!.beginRenderPass({ colorAttachments: [{ view: dstView, loadOp: 'load', storeOp: 'store' }] });
@@ -1328,21 +1330,21 @@ override bit: u32 = 8u;
     pass.setScissorRect(dx, dy, w, h);
     if (hasDepth && aspect !== 2) {
       const keep: GPUStencilFaceState = { compare: 'always', passOp: 'keep' };
-      const pipeline = pipelineFor(`mscopy-depth:${f}`, `${P}
-@group(0) @binding(1) var t: texture_depth_multisampled_2d;
-@fragment fn fs(@builtin(position) q: vec4<f32>, @builtin(sample_index) i: u32) -> @builtin(frag_depth) f32 { return textureLoad(t, vec2<i32>(q.xy) + p.at, i32(i)); }`,
+      const pipeline = pipelineFor(`mscopy-depth:${f}:${S.sampleCount}:${D.sampleCount}`, `${P}
+@group(0) @binding(1) var t: texture_depth_${ms}2d;
+@fragment fn fs(@builtin(position) q: vec4<f32>, @builtin(sample_index) i: u32) -> @builtin(frag_depth) f32 { _ = i; return textureLoad(t, vec2<i32>(q.xy) + p.at, ${at}); }`,
       { format: f, depthWriteEnabled: true, depthCompare: 'always', ...(hasStencil ? { stencilFront: keep, stencilBack: keep, stencilWriteMask: 0 } : {}) }, []);
       draw(pass, pipeline, srcView('depth-only'));
     }
     if (hasStencil && aspect !== 1) {
       const code = (test: string) => `${P}
-@group(0) @binding(1) var t: texture_multisampled_2d<u32>;
-@fragment fn fs(@builtin(position) q: vec4<f32>, @builtin(sample_index) i: u32) { ${test} }`;
+@group(0) @binding(1) var t: texture_${ms}2d<u32>;
+@fragment fn fs(@builtin(position) q: vec4<f32>, @builtin(sample_index) i: u32) { _ = i; ${test} }`;
       const view = srcView('stencil-only');
       for (const bit of [8, 0, 1, 2, 3, 4, 5, 6, 7]) {
         const face: GPUStencilFaceState = { compare: 'always', passOp: bit < 8 ? 'replace' : 'zero' };
-        const test = bit < 8 ? `if ((textureLoad(t, vec2<i32>(q.xy) + p.at, i32(i)).x & ${1 << bit}u) == 0u) { discard; }` : '_ = textureLoad(t, vec2<i32>(q.xy) + p.at, i32(i));';
-        const pipeline = pipelineFor(`mscopy-stencil:${f}:${bit}`, code(test), { format: f, ...(hasDepth ? { depthWriteEnabled: false, depthCompare: 'always' } : {}), stencilFront: face, stencilBack: face, stencilWriteMask: bit < 8 ? 1 << bit : 0xff }, []);
+        const test = bit < 8 ? `if ((textureLoad(t, vec2<i32>(q.xy) + p.at, ${at}).x & ${1 << bit}u) == 0u) { discard; }` : `_ = textureLoad(t, vec2<i32>(q.xy) + p.at, ${at});`;
+        const pipeline = pipelineFor(`mscopy-stencil:${f}:${bit}:${S.sampleCount}:${D.sampleCount}`, code(test), { format: f, ...(hasDepth ? { depthWriteEnabled: false, depthCompare: 'always' } : {}), stencilFront: face, stencilBack: face, stencilWriteMask: bit < 8 ? 1 << bit : 0xff }, []);
         pass.setStencilReference(0xff);
         draw(pass, pipeline, view);
       }

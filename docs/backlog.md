@@ -853,6 +853,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     it (Mesa 26.2's doesn't); stencil read-write (300) needs stencil export, which WebGPU lacks. A sampled view's copy
     is its whole range at each renewal, however little the draw reads; a draw in a secondary command buffer whose pass
     the primary began doesn't know the pass's attachments (as input attachments there).
+  - **Multisampled rendering to single-sampled attachments' leftovers** (VK4 T32; vk/README.md "Multisampled
+    rendering to single-sampled attachments"): 4 samples only; one layer, no 3D slice (other passes render single-sampled
+    as before); an attachment of a format WebGPU can't multisample is left out of the pass, its clear made outside it
+    only where the render area covers it. 70 of `multisampled_render_to_single_sampled` draw R32G32B32A32_UINT at 4
+    samples past the query (dEQP-VK checks the counts of every format only when the first float attachment is
+    single-sampled): they fail, out of the list.
   - **Multisampled arrays' leftovers** (VK4 T12; vk/README.md "Multisampled arrays"): a shader sampling a whole
     `sampler2DMSArray` reads the first layer (it needs a binding per layer and a switch on the layer in the translator). The
     48 of `multiview.*multisample*` ask for `r32g32b32a32_sfloat` and the `image.mutable` r32 ones for views WebGPU can't
@@ -1558,6 +1564,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
+- **`tests/page-copy-edit.test.ts` failed once in `scripts/ci.sh`** (2026-11-06, VK4 T32's run; passed alone at
+  once, and in the run before): "words changed where they are shown…" got an unexpected list of highlighted elements
+  (`BUTTON[title]`, `SUMMARY[aria-label]`…) where it expected fewer. Not traced: likely an element still rendering when
+  the test reads them, under the full run's load.
 - **`scripts/ci.sh`'s JS step runs close to its cap** (2026-11-04, GD G4's and the core review's #5 runs; the cap was
   10 GiB then, 11 GiB since, CLAUDE.md): three
   runs of nine were OOM-killed in `npm test` (one on a healthy host, two while the Mac's GPU was wedged), the others

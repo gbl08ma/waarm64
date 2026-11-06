@@ -1,0 +1,71 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "157.0.8103.38",
+ "stride": 50,
+ "offset": 0,
+ "adapter": "apple metal-3",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 1730,
+ "seconds": 158.34279583400001,
+ "pipelines": {
+  "pipelines": 4189,
+  "ready": 4189,
+  "readyMs": 221792.37500077486,
+  "deferred": 1600,
+  "deferredMs": 267035.3349992931,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 13780,
+  "translateMs": 1125.464999999954,
+  "cacheHits": 24820,
+  "cacheMisses": 1386,
+  "cacheStores": 1386,
+  "cacheBytes": 4002459,
+  "cacheHeld": 23475823,
+  "cacheEntries": 1386
+ },
+ "counts": {
+  "Pass": 1730
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-VK.pipeline.monolithic.multisample.multisampled_render_to_single_sampled.basic.r8g8b8a8_unorm_r16g16b16a16_sfloat_r16g16b16a16_sint_d16_unorm.4x.ds_resolve_max.sub_framebuffer.default Pass 2",
+  "dEQP-VK.pipeline.monolithic.multisample.multisampled_render_to_single_sampled.multi_subpass.r8g8b8a8_unorm_r16g16b16a16_sfloat_r32g32b32a32_uint_d24_unorm_s8_uint.random_954 Pass 1",
+  "dEQP-VK.pipeline.monolithic.multisample.multisampled_render_to_single_sampled.multi_subpass.r8g8b8a8_unorm_r16g16b16a16_sfloat_r32g32b32a32_uint_d24_unorm_s8_uint.random_770 Pass 1",
+  "dEQP-VK.pipeline.monolithic.multisample.multisampled_render_to_single_sampled.multi_subpass.r8g8b8a8_unorm_r16g16b16a16_sfloat_r32g32b32a32_uint_d24_unorm_s8_uint.random_466 Pass 1",
+  "dEQP-VK.pipeline.monolithic.multisample.multisampled_render_to_single_sampled.multi_subpass.r8g8b8a8_unorm_r16g16b16a16_sfloat_r32g32b32a32_uint_d24_unorm_s8_uint.random_362 Pass 1",
+  "dEQP-VK.pipeline.monolithic.multisample.multisampled_render_to_single_sampled.multi_subpass.r8g8b8a8_unorm_r16g16b16a16_sfloat_r32g32b32a32_uint_d24_unorm_s8_uint.random_254 Pass 1",
+  "dEQP-VK.pipeline.monolithic.multisample.multisampled_render_to_single_sampled.multi_subpass.r8g8b8a8_unorm_r16g16b16a16_sfloat_r32g32b32a32_uint_d16_unorm.random_876 Pass 1",
+  "dEQP-VK.pipeline.monolithic.multisample.multisampled_render_to_single_sampled.multi_subpass.r8g8b8a8_unorm_r16g16b16a16_sfloat_r32g32b32a32_uint_d16_unorm.random_760 Pass 1",
+  "dEQP-VK.pipeline.monolithic.multisample.multisampled_render_to_single_sampled.multi_subpass.r8g8b8a8_unorm_r16g16b16a16_sfloat_r32g32b32a32_uint_d16_unorm.random_732 Pass 1",
+  "dEQP-VK.pipeline.monolithic.multisample.multisampled_render_to_single_sampled.multi_subpass.r8g8b8a8_unorm_r16g16b16a16_sfloat_r32g32b32a32_uint_d16_unorm.random_652 Pass 1"
+ ],
+ "last": "dEQP-VK.pipeline.monolithic.multisample.multisampled_render_to_single_sampled.subpass_resolve_efficiency_query.r32g32b32a32_uint Pass 0dEQP-VK.pipeline.monolithic.multisample.multisampled_render_to_single_sampled.subpass_resolve_efficiency_query.r8g8b8a8_unorm Pass 0dEQP-VK.pipeline.monolithic.multisample.multisampled_render_to_single_sampled.subpass_resolve_efficiency_query.s8_uint Pass 0",
+ "output": [
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    0.943214] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    0.943244] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    0.943264] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    0.943284] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    0.943310] psci_checker: Could not start suspend tests on any CPU",
+  "[   10.020037] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   22.609407] coredump: 421(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 166.1,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 15.2,
+  "arenaHighMiB": 33.5
+ },
+ "detail": [],
+ "warnings": {
+  "venus: the WebGPU device's subgroups are wrong in divergent control flow: subgroups of one invocation": 1,
+  "venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies": 1
+ }
+}

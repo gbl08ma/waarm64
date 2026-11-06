@@ -108,6 +108,9 @@ wg_caps_extensions(struct vk_device_extension_table *e)
        * `feedback_copies`); whether the pipeline loops is no state of WebGPU's, so it may be dynamic. */
       .EXT_attachment_feedback_loop_layout = true,
       .EXT_attachment_feedback_loop_dynamic_state = true,
+      /* Single-sampled attachments rendered at 4 samples in multisampled images of their own, resolved into them (VK4
+       * T32, wg_cmd.c `ms_attachment`). */
+      .EXT_multisampled_render_to_single_sampled = true,
       /* NONE load and store ops: WebGPU's load and store (wg_cmd.c `load_op`). */
       .KHR_load_store_op_none = true,
       .EXT_load_store_op_none = true,
@@ -270,6 +273,7 @@ wg_caps_features(struct vk_features *f)
       .dynamicRenderingLocalRead = true,
       .attachmentFeedbackLoopLayout = true,
       .attachmentFeedbackLoopDynamicState = true,
+      .multisampledRenderToSingleSampled = true,
       .shaderIntegerDotProduct = true,
       .maintenance4 = true,
       .maintenance5 = true,

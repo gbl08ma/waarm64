@@ -5204,6 +5204,89 @@ t32_loop(const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBuffer ou
    return 0;
 }
 
+/*
+ * VK4 T32, wgt_misc's scenario 100 (`fs`: tests/venus/t32/dst.frag, (192, 64, 128, 255)): rendering a single-sampled
+ * attachment at 4 samples (VK_EXT_multisampled_render_to_single_sampled), dynamic rendering. An RGBA8 image cleared to
+ * (0, 0, 128, 255), loaded; a full-screen draw whose sample mask is 0b0011 writes 2 of the 4 samples, so the resolve
+ * averages the colour and the load's: (96, 32, 128, 255). Texel (3, 3) at `out`'s 0.
+ */
+static int
+t32_ms(const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage = (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   PFN_vkCmdBeginRendering BeginRendering = (PFN_vkCmdBeginRendering)GetDeviceProcAddr(dev, "vkCmdBeginRendering");
+   PFN_vkCmdEndRendering EndRendering = (PFN_vkCmdEndRendering)GetDeviceProcAddr(dev, "vkCmdEndRendering");
+   const uint32_t size = 8;
+   VkImage target;
+   VkImageView att;
+   const VkImageCreateInfo info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .flags = VK_IMAGE_CREATE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_BIT_EXT,
+      .imageType = VK_IMAGE_TYPE_2D, .format = VK_FORMAT_R8G8B8A8_UNORM, .extent = { size, size, 1 }, .mipLevels = 1,
+      .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
+      .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT };
+   CHECK(CreateImage(dev, &info, NULL, &target));
+   VkMemoryRequirements req;
+   GetImageMemoryRequirements(dev, target, &req);
+   VkDeviceMemory mem;
+   if (memory_for(req, false, &mem, NULL))
+      return 1;
+   CHECK(BindImageMemory(dev, target, mem, 0));
+   const VkImageViewCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = target,
+                                      .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = VK_FORMAT_R8G8B8A8_UNORM,
+                                      .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
+   CHECK(CreateImageView(dev, &vi, NULL, &att));
+   const VkClearColorValue blue = { .float32 = { 0, 0, 128.0f / 255, 1 } };
+   const VkImageSubresourceRange cr = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+   CmdClearColorImage(cmd, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &blue, 1, &cr);
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   VkShaderModule vm, fm;
+   if (shader(feedback_vs, feedback_vs_words, &vm) || shader(fs, fs_words, &fm))
+      return 1;
+   const VkPipelineShaderStageCreateInfo stages[2] = {
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = vm, .pName = "main" },
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = fm, .pName = "main" } };
+   const VkPipelineVertexInputStateCreateInfo vis = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+   const VkPipelineInputAssemblyStateCreateInfo ia = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                                                       .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
+   const VkViewport vp = { 0, 0, (float)size, (float)size, 0, 1 };
+   const VkRect2D area = { { 0, 0 }, { size, size } };
+   const VkPipelineViewportStateCreateInfo vs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1,
+                                                  .pViewports = &vp, .scissorCount = 1, .pScissors = &area };
+   const VkPipelineRasterizationStateCreateInfo rs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+                                                       .polygonMode = VK_POLYGON_MODE_FILL, .lineWidth = 1 };
+   const VkSampleMask mask = 0x3;
+   const VkPipelineMultisampleStateCreateInfo ms = { .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                                                     .rasterizationSamples = VK_SAMPLE_COUNT_4_BIT, .pSampleMask = &mask };
+   const VkPipelineColorBlendAttachmentState ba = { .colorWriteMask = 0xf };
+   const VkPipelineColorBlendStateCreateInfo bs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                                                    .attachmentCount = 1, .pAttachments = &ba };
+   const VkFormat cf = VK_FORMAT_R8G8B8A8_UNORM;
+   const VkPipelineRenderingCreateInfo pri = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+                                               .colorAttachmentCount = 1, .pColorAttachmentFormats = &cf };
+   const VkGraphicsPipelineCreateInfo gpi = {
+      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &pri, .stageCount = 2, .pStages = stages,
+      .pVertexInputState = &vis, .pInputAssemblyState = &ia, .pViewportState = &vs, .pRasterizationState = &rs,
+      .pMultisampleState = &ms, .pColorBlendState = &bs, .layout = layout };
+   VkPipeline p;
+   CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   const VkMultisampledRenderToSingleSampledInfoEXT mrtss = {
+      .sType = VK_STRUCTURE_TYPE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_INFO_EXT,
+      .multisampledRenderToSingleSampledEnable = VK_TRUE, .rasterizationSamples = VK_SAMPLE_COUNT_4_BIT };
+   const VkRenderingAttachmentInfo ca = { .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = att,
+                                          .imageLayout = VK_IMAGE_LAYOUT_GENERAL, .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+                                          .storeOp = VK_ATTACHMENT_STORE_OP_STORE };
+   const VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .pNext = &mrtss, .renderArea = area,
+                                .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &ca };
+   BeginRendering(cmd, &ri);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+   CmdDraw(cmd, 3, 1, 0, 0);
+   EndRendering(cmd);
+   copy_texel(cmd, target, VK_IMAGE_ASPECT_COLOR_BIT, 0, 3, 3, out, 0);
+   return 0;
+}
+
 /* A 2D image of a sampling scenario: every layer and level in GENERAL, its depth cleared to 0.25 or its colour to `c`. */
 static int
 r5_image(VkCommandBuffer cmd, VkFormat format, uint32_t size, uint32_t layers, uint32_t levels, const VkClearColorValue *c,
@@ -6368,6 +6451,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 99) {
       if (t32_loop(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 100) {
+      if (t32_ms(cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 41 || scenario == 42) {
       if (t11_misc(scenario, cs, cs_words, cmd, out))

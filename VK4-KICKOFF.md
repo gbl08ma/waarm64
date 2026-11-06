@@ -46,7 +46,7 @@ T2–T14; the rest of the order is judgement, said with each.
 
 ## The tasks
 
-### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T31 (2026-10-29 to 2026-11-06)
+### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T32 (2026-10-29 to 2026-11-06)
 
 Each row's outcome in full is its section of bench/vulkan/REPORT.md ("VK4 T<n>") and its commit; what each left is in
 docs/backlog.md "The Vulkan driver's gaps" (the entry named) and, where it is a defect or drops work, in the tasks
@@ -94,6 +94,7 @@ R1–R4 and then of R5–R7, had its findings fixed or moved to the backlog the 
 | T29. Shader types | `shaderInt8`, `shaderInt16`, `shaderInt64`, 8-bit storage, `storageInputOutput16`, `shaderImageGatherExtended`: bytes of words as halves are, 16-bit inputs and outputs widened, 64-bit integers pairs of words (64-bit subgroup reductions as shuffles); of 5,095 cases 1,877 pass on SwiftShader and 2,019 on the M4, 1,750 join the list (→ 40,166); float-to-integer conversions saturate exactly (WGSL clamps under the bound, Metal takes halves as finite); the 13 left failing are SwiftShader's own | "What the device advertises, left for the translator" |
 | T30. Depth16 with stencil and the packed formats left | `D16_UNORM_S8_UINT` a depth24plus-stencil8 texture, its depth 16-bit unorm in buffers (copies drawn in and computed out, the bias ×256); `A4R4G4B4`, `A4B4G4R4` (`VK_EXT_4444_formats`), `A1B5G5R5`, `R4G4` (rg8unorm) and `A2R10G10B10`'s UNORM and UINT (rgb10a2) packed, the worker's pass taking texels of 1, 2 or 4 bytes (vk/README.md "Packed formats", was "Packed 16-bit formats"); `A2R10G10B10_UINT`'s clears drawn past Dawn's 8-bit cut; of 4,197 cases 2,769 pass on SwiftShader and 2,906 on the M4, the rest of the fails filed hosts' own; 2,767 join the list (→ 42,933). Not done: the 10-bit SNORM and SINT orders | "Packed formats' leftovers", "Depth comparison isn't reported" |
 | T31. Formats WebGPU has no texture of | three-channel formats (RGB8 and BGR8 of every type, RGB16, RGB32) in four-channel textures with alpha kept 1, BGRA's UINT, SINT and SNORM, `R8_SRGB` and `R8G8_SRGB` in `rgba8unorm-srgb`, the 10-bit SINT orders in `rgba16sint`, the scaled ones in their integer twins' textures for transfers only (dEQP-VK samples and clears them as integers, the spec as floats), all by T30's packed way (`packPass` an invocation a texel, channel kinds converted); vertex formats WebGPU lacks pulled; of 3,155 cases 1,818 pass on SwiftShader and 2,300 on the M4, the failures the hosts' own; 1,733 join the list (→ 44,666); a converting copy ~2× a plain one on the M4 | "Packed formats' leftovers", "Pulled vertices' leftovers", "SwiftShader's compressed formats sampled in a compute stage" |
+| T32. What reads the attachment it writes | the depth bounds test, logic ops and advanced blends (every op, overlap and premultiplication) on a copy of the attachment made before each such draw (~0.1 ms a draw on the M4); local read's colour attachment map in the pipeline's key; `VK_EXT_attachment_feedback_loop_layout` and its dynamic state (a sampled view over a copy of the image's texture, renewed at barriers); `VK_EXT_multisampled_render_to_single_sampled` (4-sample images of the pass's own resolved into the attachments, LOAD filled by a draw a sample); 3,375 join the list (→ 48,041); 70 mrtss cases draw R32G32B32A32_UINT at 4 samples past dEQP's own check and fail. Not done: unified image layouts (the guest's Venus), stencil export, sample counts other than 4 | "Reading the attachments' leftovers", "Feedback loops' leftovers", "Multisampled rendering to single-sampled attachments' leftovers" |
 
 ### Tier 3: performance on real workloads
 
@@ -115,12 +116,6 @@ memory, cooperative matrices, ray tracing, mesh shaders, tile images, fragment d
 the sample's on the M4 (×100 for the whole list, roughly); each starts by running its reason's cases (`deqp-run.ts`'s
 `CASES`, from `census.ts --reasons`' examples or the sample's JSON) to see what they meet once advertised.
 
-- **T32. What reads the attachment it writes** (M; 463): `VK_KHR_dynamic_rendering_local_read` (97),
-  `VK_EXT_attachment_feedback_loop_layout` (48), advanced blends (94), `depthBounds` (113) and logic ops (16) through
-  T12's feedback copies in a cut pass (a copy per draw that reads: the cost said), and
-  `VK_EXT_multisampled_render_to_single_sampled` (95) as a multisampled texture of the pass's own resolved at its end.
-  Each advertised only if its cost on its cases is bearable. *Done:* their cases run. *Start:* vk/README.md "Feedback
-  loops" (T12).
 - **T33. Writable storage in the vertex stage** (L; 222 here, and `timeline_semaphore.wait_before_signal`): the vertex
   stage run as a compute pre-pass (transform feedback's `runXfb` way) writing its outputs, a pass-through vertex stage
   drawing them; `vertexPipelineStoresAndAtomics`. The same pre-pass is tier 4's way to geometry and tessellation (370

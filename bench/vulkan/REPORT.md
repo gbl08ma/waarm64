@@ -771,6 +771,45 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T32 (third part): single-sampled attachments rendered multisampled; 1,730 cases join the list, T32 done
+
+2026-11-06, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t32/`: `cases-mrtss-census.txt` (the census's 86),
+`cases-mrtss-all.txt` (the group, 4,290), `cases-mrtss-info.txt` (the format queries asking
+`VkSubpassResolvePerformanceQueryEXT`, 920), `cases-mrtss-pass-sw.txt`; `swiftshader-mrtss-census.json`,
+`swiftshader-mrtss-all-first.json` (before the fix below), `swiftshader-mrtss-all.json`, `swiftshader-mrtss-info.json`,
+`m4-mrtss-pass.json`.
+
+- **What the device does** (vk/README.md "Multisampled rendering to single-sampled attachments"):
+  `VK_EXT_multisampled_render_to_single_sampled` advertised. A pass with `VkMultisampledRenderToSingleSampledInfoEXT`
+  (a subpass's through Mesa's runtime) has its rendering info rewritten: each single-sampled attachment is drawn in a
+  4-sample image of its own (`wg_view_ms`) resolving into it, by WebGPU's resolve target for colour and the drawn
+  resolves (T27) for depth and stencil; a LOAD first fills every sample with the attachment's texel, the worker's
+  `copyMultisampled` now taking a single-sampled source. The resolve performance query says optimal. What it costs
+  is what any 4× pass with a resolve costs, and a draw per LOAD (no timing taken: nothing we run uses it).
+- **Confirming, failing first**: the driver's scenario 100 (tests/venus-driver.test.ts "a single-sampled attachment
+  rendered at 4 samples…": a sample mask of 2 of 4 samples over a loaded colour, the resolve their average). Planted:
+  without the fill, the unwritten samples are zeros (blue 64, alpha 128).
+- **Found by the cases**: an attachment of a format WebGPU can't multisample (R32G32B32A32_UINT) named by a pass that
+  doesn't draw it made an invalid texture and lost the pass (the first run's 9 WebGPU errors): the pass now goes without
+  it, its clear made outside the pass.
+
+| set | host | pass | fail | not supported |
+|---|---|---|---|---|
+| the census's 86 | SwiftShader | 18 | 0 | 68 |
+| the group (4,290) | SwiftShader | 810 | 70 | 3,410 |
+| the format queries (920) | SwiftShader | 920 | 0 | 0 |
+| the 1,730 that pass | M4 | 1,730 | 0 | 0 |
+
+  **The 1,730 join `tests/deqp/vk.txt`** (46,311 → 48,041).
+- **The 70 failures**: every one draws an R32G32B32A32_UINT attachment at 4 samples, which our query says it can't
+  take (sample counts 1); dEQP-VK checks each format's count only when its first float attachment is single-sampled
+  (`checkRequirements`'s `if (params.numFloatColor1Samples == VK_SAMPLE_COUNT_1_BIT)` around every format), so they run.
+  Refusing the create flag for such formats would make them not supported, and 151 passing cases with them too: left
+  as they are, out of the list.
+- **What's left not supported** (the census's reasons): sample counts other than 4 (2, 8 and 16: most), formats
+  WebGPU doesn't multisample, Android hardware buffers.
+
 ## VK4 T32 (second part): an attachment sampled by its own pass's draws; 561 cases join the list
 
 2026-11-06, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
