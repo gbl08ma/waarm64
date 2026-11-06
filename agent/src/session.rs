@@ -27,8 +27,11 @@
 //!
 //! One thread in `ppoll` on the parent's socket, the inotify descriptor, the compositor's socket and the pipes of
 //! transfers in progress; no timeout but for the `RETRIES` after a socket that refuses connections comes (a
-//! compositor between its bind and its listen; one killed leaves a socket that refuses for good, given up then).
-//! The page's HELLO (passed on by the parent) ends the transfers in flight: they were an earlier page's.
+//! compositor between its bind and its listen; one killed leaves a socket that refuses for good, given up then), and
+//! X11's wait for an owner that doesn't answer (`x11::OWNER_WAIT`). Its connects are nonblocking: a display stopped
+//! with its backlog full refuses rather than holding the thread. The page's HELLO (passed on by the parent) ends the
+//! transfers in flight (they were an earlier page's), drops the host's offer unless its text is whole in the cache, and
+//! offers the guest's selection again (`hello`).
 
 use crate::clip::{self, Hash};
 use crate::frame::{self, ack};
@@ -43,6 +46,7 @@ use rustix::io::{Errno, read, write};
 use rustix::net::{AddressFamily, SocketAddrUnix, SocketFlags, SocketType, connect, socket_with};
 use std::collections::{HashMap, VecDeque};
 use std::mem::MaybeUninit;
+use std::time::{Duration, Instant};
 
 /// wl_display's id, and the first a client allocates.
 const DISPLAY: u32 = 1;
@@ -88,12 +92,9 @@ mod op {
 const PARENT_HIGH: usize = 256 << 10;
 /// A socket that refuses: tries, this far apart.
 const RETRIES: u32 = 25;
-const RETRY: Timespec = Timespec {
-    tv_sec: 0,
-    tv_nsec: 200_000_000,
-};
+const RETRY: Duration = Duration::from_millis(200);
 #[cfg(test)]
-const RETRY_FOR: std::time::Duration = std::time::Duration::from_millis(RETRIES as u64 * 200);
+const RETRY_FOR: Duration = Duration::from_millis(RETRIES as u64 * 200);
 /// A guest program's types, and their length, past which the rest are ignored.
 const MAX_TYPES: usize = 32;
 
@@ -216,6 +217,8 @@ enum Xfer {
         ends: VecDeque<usize>,
         ended: bool,
         serial: u32,
+        /// X11's serve (src/x11.rs `served`), 0 on Wayland.
+        xserve: u32,
         len: usize,
         /// The most it takes (`clip::cap` of its type).
         cap: usize,
@@ -394,6 +397,14 @@ pub fn serve_at(
     c.connect(true);
     c.x_try(true, false);
     loop {
+        // X11's conversions whose owner never answered end (x11::OWNER_WAIT).
+        if let Some(x) = c.x.as_mut()
+            && x.deadline().is_some_and(|d| d <= Instant::now())
+        {
+            let mut evs = Vec::new();
+            x.expire(Instant::now(), &mut evs);
+            c.x_events(evs);
+        }
         c.flush();
         if let Some(why) = c.stop.take() {
             return Ok(why);
@@ -450,8 +461,23 @@ pub fn serve_at(
             c.wl.is_none() && c.retries > 0,
             c.x.is_none() && c.xretries > 0,
         );
-        let timeout = (wl_retry || x_retry).then_some(&RETRY);
-        match poll(&mut fds, timeout) {
+        // The retries' tick, or an X11 owner's wait ending sooner.
+        let retry = (wl_retry || x_retry).then_some(RETRY);
+        let due =
+            c.x.as_ref()
+                .and_then(|x| x.deadline())
+                .map(|d| d.saturating_duration_since(Instant::now()));
+        let wait = match (retry, due) {
+            (Some(r), Some(d)) => Some(r.min(d)),
+            (r, d) => r.or(d),
+        };
+        let by_retry = retry.is_some() && wait == retry;
+        let timeout = wait.map(|w| Timespec {
+            tv_sec: w.as_secs() as i64,
+            tv_nsec: w.subsec_nanos() as i64,
+        });
+        match poll(&mut fds, timeout.as_ref()) {
+            Ok(0) if !by_retry => continue,
             Ok(0) => {
                 drop(fds);
                 if wl_retry {
@@ -578,17 +604,18 @@ impl Child {
             let Ok(addr) = SocketAddrUnix::new(path.as_str()) else {
                 continue;
             };
+            // Nonblocking: a compositor stopped (SIGSTOP, a debugger) with its backlog full refuses (`AGAIN`) rather
+            // than holding the child's one thread in `connect`.
             let Ok(fd) = socket_with(
                 AddressFamily::UNIX,
                 SocketType::STREAM,
-                SocketFlags::CLOEXEC,
+                SocketFlags::CLOEXEC | SocketFlags::NONBLOCK,
                 None,
             ) else {
                 return;
             };
             match connect(&fd, &addr) {
                 Ok(()) => {
-                    nonblocking(&fd);
                     let mut wl = Wl {
                         conn: Conn::new(fd),
                         objs: HashMap::new(),
@@ -663,7 +690,7 @@ impl Child {
             }
             let home = x11::home_of(self.uid);
             let cookie = x11::cookie(n, &procs, home.as_deref());
-            match X::connect(&self.x11, n, cookie.as_deref()) {
+            match X::connect(&self.x11, n, cookie.as_deref(), self.uid) {
                 Ok(x) => {
                     self.x = Some(x);
                     self.xretries = 0;
@@ -726,7 +753,12 @@ impl Child {
                     self.changed_hands();
                 }
                 x11::Ev::Selection { offer, types } => self.selection(offer, types),
-                x11::Ev::Send { source, mime, fd } => self.host_send(source, fd, &mime),
+                x11::Ev::Send {
+                    source,
+                    mime,
+                    fd,
+                    serve,
+                } => self.host_send(source, fd, &mime, serve),
                 x11::Ev::Cancelled { source } => {
                     if self.host.as_ref().is_some_and(|h| h.source == source) {
                         self.host = None;
@@ -830,10 +862,7 @@ impl Child {
 
     fn frame(&mut self, kind: u8, p: &[u8]) {
         match kind {
-            // The page's HELLO, which the parent passes on (a new page, a restored one, the port reopened): the
-            // transfers in flight were the page's before, which won't answer them; they end, without a word to the
-            // new page. A guest program pasting gets its pipe's end rather than a wait for DATA that won't come.
-            frame::HELLO => self.xfers.clear(),
+            frame::HELLO => self.hello(),
             frame::PAUSE => self.pause(),
             frame::RESUME => self.paused = false,
             frame::OFFER => {
@@ -860,8 +889,35 @@ impl Child {
         }
     }
 
-    fn pause(&mut self) {
-        self.paused = true;
+    /// The page's HELLO, which the parent passes on (a new page, a restored one, the port reopened), whose page knows
+    /// nothing of the one before:
+    /// - The transfers in flight were the page's before, which won't answer them; they end, without a word to the new
+    ///   page. A guest program pasting gets its pipe's end rather than a wait for DATA that won't come.
+    /// - The host's offer goes (the guest's clipboard cleared), unless its pastes need no page (text only, whole in the
+    ///   cache): its other types' REQUESTs name a serial the new page never gave.
+    /// - The guest's selection is offered again, under a new serial: the new page never had it.
+    fn hello(&mut self) {
+        self.xfers.clear();
+        if self
+            .host
+            .as_ref()
+            .is_some_and(|h| h.image || h.html || h.cache.is_none())
+        {
+            self.clear_host();
+        }
+        if self.paused {
+            return;
+        }
+        if let Some(g) = self.guest.take()
+            && self.current() == Some(g.offer)
+        {
+            let types = [g.text, g.image, g.html].into_iter().flatten().collect();
+            self.selection(g.offer, types);
+        }
+    }
+
+    /// Our source goes, and the guest's clipboard with it if it holds it.
+    fn clear_host(&mut self) {
         if let Some(h) = self.host.take() {
             if self.x_ready() {
                 self.x.as_mut().unwrap().disown(h.source, true);
@@ -872,7 +928,11 @@ impl Child {
                 wl.destroy_source(h.source);
             }
         }
-        self.host = None;
+    }
+
+    fn pause(&mut self) {
+        self.paused = true;
+        self.clear_host();
         self.probe = None;
         self.guest = None;
         self.end_xfers();
@@ -984,8 +1044,8 @@ impl Child {
     }
 
     /// A guest program pastes the host's offer as `mime`: its bytes into `fd` (closed at once for a type the offer
-    /// hasn't).
-    fn host_send(&mut self, source: u32, fd: OwnedFd, mime: &str) {
+    /// hasn't). `xserve`: X11's serve it is (`x11::X::served` once the bytes came whole), 0 on Wayland.
+    fn host_send(&mut self, source: u32, fd: OwnedFd, mime: &str, xserve: u32) {
         let Some(h) = self.host.as_ref().filter(|h| h.source == source) else {
             return;
         };
@@ -1010,6 +1070,7 @@ impl Child {
                 at: 0,
                 ended: true,
                 serial,
+                xserve,
                 len: buf.len(),
                 cap: clip::TEXT_CAP,
                 text: true,
@@ -1036,6 +1097,7 @@ impl Child {
             ends: VecDeque::new(),
             ended: false,
             serial,
+            xserve,
             len: 0,
             cap: clip::cap(&mime),
             text: !image && !html,
@@ -1329,6 +1391,7 @@ impl Child {
                 ends,
                 ended,
                 serial,
+                xserve,
                 text,
                 hash,
                 copy,
@@ -1358,7 +1421,7 @@ impl Child {
                         *buf = Vec::new();
                     }
                 }
-                let (id, serial, done) = (*id, *serial, *ended && buf.is_empty());
+                let (id, serial, xserve, done) = (*id, *serial, *xserve, *ended && buf.is_empty());
                 if !ok {
                     if id != 0 && !*ended {
                         self.send(frame::MORE, |o| o.extend_from_slice(&frame::more(id, 0)));
@@ -1366,6 +1429,12 @@ impl Child {
                     return false;
                 }
                 if done {
+                    // X11's requestor gets the value (its pipe closes next), not a refusal.
+                    if xserve != 0
+                        && let Some(x) = self.x.as_mut()
+                    {
+                        x.served(xserve);
+                    }
                     // The host's text whole: its hash and its copy, unless a newer offer replaced it meanwhile (an
                     // image: nothing kept).
                     if id != 0
@@ -1550,7 +1619,7 @@ impl Child {
             }
             (Obj::Source, op::SEND) => {
                 if let (Some(fd), Some(Some(mime))) = (fd, a.string()) {
-                    self.host_send(object, fd, mime);
+                    self.host_send(object, fd, mime, 0);
                 }
             }
             (Obj::Source, op::CANCELLED) => {
@@ -1600,6 +1669,67 @@ mod tests {
             .trim()
             .parse()
             .unwrap()
+    }
+
+    /// A listening socket at `path` whose backlog is full (`listen(0)` and one connection never accepted): a server
+    /// stopped (SIGSTOP, a debugger) or wedged. The listener and the connection that fills it.
+    fn full_listener(path: &std::path::Path) -> (OwnedFd, std::os::unix::net::UnixStream) {
+        let fd = socket_with(
+            AddressFamily::UNIX,
+            SocketType::STREAM,
+            SocketFlags::CLOEXEC,
+            None,
+        )
+        .unwrap();
+        rustix::net::bind(&fd, &SocketAddrUnix::new(path).unwrap()).unwrap();
+        rustix::net::listen(&fd, 0).unwrap();
+        let filler = std::os::unix::net::UnixStream::connect(path).unwrap();
+        (fd, filler)
+    }
+
+    #[test]
+    fn a_display_with_a_full_backlog_does_not_hold_the_child() {
+        let dir = std::env::temp_dir().join(format!("webpc-agent-backlog-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("x11")).unwrap();
+        let wl = full_listener(&dir.join("wayland-1"));
+        let x = full_listener(&dir.join("x11/X5"));
+        let (mine, theirs) = rustix::net::socketpair(
+            AddressFamily::UNIX,
+            SocketType::STREAM,
+            SocketFlags::CLOEXEC,
+            None,
+        )
+        .unwrap();
+        let at = Where {
+            runtime: dir.to_str().unwrap().to_owned(),
+            x11: dir.join("x11").to_str().unwrap().to_owned(),
+            display: Some(5),
+        };
+        let child = std::thread::spawn(move || serve_at(theirs, at, 0));
+        let mut page = crate::sway_test::Page {
+            fd: mine,
+            reader: frame::Reader::default(),
+            frames: Vec::new(),
+        };
+        // The child answers the page: a request for an offer it never made fails at once.
+        let mut req = Vec::new();
+        frame::Request {
+            serial: 1,
+            id: 7,
+            mime: clip::TEXT,
+        }
+        .encode(&mut req);
+        page.send(frame::REQUEST, &req);
+        let got = page.next(frame::DATA, 2000);
+        // The servers go (a blocked connect returns), then the page: the child ends.
+        drop((wl, x));
+        drop(page);
+        assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (id, flags, _) =
+            frame::decode_data(&got.expect("no answer: the child held up in connect")).unwrap();
+        assert_eq!((id, flags & frame::DATA_FAIL), (7, frame::DATA_FAIL));
     }
 
     #[test]

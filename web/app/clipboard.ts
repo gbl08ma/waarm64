@@ -49,6 +49,13 @@ export const INLINE = 4096;
 export const ACK_WAIT = 300;
 /** How long a held paste chord waits for the browser's `paste` event (a browser may not fire one). */
 export const PASTE_WAIT = 300;
+/**
+ * How long the page's request for the guest's bytes waits for each DATA before it stops (MORE 0): a guest program
+ * that never serves its type (frozen, or an X11 owner that never answers) would otherwise hold the `ClipboardItem`
+ * write waiting on it, and the focus syncs behind that write, for good. Long enough for a guest program to encode a
+ * large image under the emulator.
+ */
+export const REQUEST_WAIT = 30_000;
 
 /** The link as the clipboard uses it (`AgentLink`). */
 export type ClipLink = {
@@ -204,6 +211,8 @@ export class ClipboardShare {
   stopped = false;
   /** What became of the last Type the clipboard, as the agent said (TYPED's status); undefined: nothing said since. */
   typed?: number;
+  /** `REQUEST_WAIT` (the tests' to shorten). */
+  requestWait = REQUEST_WAIT;
   private link: ClipLink;
   private host: Host;
   // From a random start: a restored guest's agent may hold transfers of an earlier page's ids.
@@ -229,13 +238,18 @@ export class ClipboardShare {
   /** The page's offer to the guest: its text's bytes, its PNG's and its HTML's, for the agent's requests. */
   private offered?: { serial: number; text?: Uint8Array; image?: Uint8Array; html?: Uint8Array };
   /** The page's requests for the guest's offer's bytes: each ends with them whole, or undefined (failed, stopped, past its cap). */
-  private requests = new Map<number, { chunks: Uint8Array[]; len: number; cap: number; done: (bytes?: Uint8Array<ArrayBuffer>) => void }>();
+  private requests = new Map<number, { chunks: Uint8Array[]; len: number; cap: number; done: (bytes?: Uint8Array<ArrayBuffer>) => void; timer: ReturnType<typeof setTimeout> }>();
   /** The agent's requests for the page's offer's bytes. */
   private answers = new Map<number, { bytes: Uint8Array; at: number; credit: number; image: boolean }>();
   /** The page's offers' ACKs awaited (the newest only): each takes the status, or undefined (superseded). */
   private acks = new Map<number, (status?: number) => void>();
   /** The held paste chord's wait for the browser's paste event. */
   private holding?: () => void;
+  /**
+   * Counts the page's offers as they begin (`paste`), before any wait: an offer that a newer one began during its waits
+   * (an image's bytes, its hash) isn't sent, nor is a focus read's whose read a paste began during.
+   */
+  private began = 0;
 
   constructor(link: ClipLink, host: Host) {
     [this.link, this.host] = [link, host];
@@ -315,9 +329,12 @@ export class ClipboardShare {
     this.reading = true;
     try {
       this.changed = false;
+      const began = this.began;
       const got = await this.readHost();
       if (got === undefined || !this.active) return;
       const h = await this.hashOf(got);
+      // A paste chord's offer began meanwhile: the host's clipboard as it read is the newer.
+      if (this.began !== began) return;
       if (h === this.hostHash && this.hasPending) {
         this.writePending();
       } else {
@@ -547,6 +564,7 @@ export class ClipboardShare {
    * same text with other HTML is the same content).
    */
   async paste(content: string | Content, force = false): Promise<void> {
+    const began = ++this.began;
     const c = typeof content === 'string' ? { text: content } : content;
     const image = c.image && c.image.size <= IMAGE_CAP && this.images ? c.image : undefined;
     let bytes = c.text ? new TextEncoder().encode(c.text) : undefined;
@@ -560,7 +578,8 @@ export class ClipboardShare {
     if (image) {
       png = new Uint8Array(await image.arrayBuffer());
       h = contentHash(text, await imageHash(png));
-      if (!this.active) return;
+      // A newer offer began while this one read its image: that one goes, not this older one after it.
+      if (!this.active || this.began !== began) return;
     }
     this.hostHash = h;
     // Offered already: a paste chord waits for that offer's ACK still (a sync's, a moment before the chord).
@@ -606,7 +625,10 @@ export class ClipboardShare {
    */
   private reset() {
     this.offered = undefined;
-    for (const r of this.requests.values()) r.done(undefined);
+    for (const r of this.requests.values()) {
+      clearTimeout(r.timer);
+      r.done(undefined);
+    }
     this.requests.clear();
     this.answers.clear();
     for (const a of [...this.acks.values()]) a(ACK.NO_SESSION);
@@ -618,21 +640,36 @@ export class ClipboardShare {
     this.changed = true;
   }
 
-  /** Requests the bytes of the guest's offer `serial` as `type`, at most `cap` of them: they come whole, or undefined. */
+  /**
+   * Requests the bytes of the guest's offer `serial` as `type`, at most `cap` of them: they come whole, or undefined
+   * (failed, stopped, past its cap, or no DATA for `requestWait`).
+   */
   private request(serial: number, type: string, cap: number): { id: number; bytes: Promise<Uint8Array<ArrayBuffer> | undefined> } {
     const id = this.id = (this.id + 1) >>> 0;
-    const bytes = new Promise<Uint8Array<ArrayBuffer> | undefined>((done) => this.requests.set(id, { chunks: [], len: 0, cap, done }));
+    const bytes = new Promise<Uint8Array<ArrayBuffer> | undefined>((done) => this.requests.set(id, { chunks: [], len: 0, cap, done, timer: this.waitFor(id) }));
     this.link.send(FRAME.REQUEST, encodeRequest({ serial, id, type }));
     return { id, bytes };
   }
 
-  /** Stops the page's request `id` (MORE 0), if it is still going. */
-  private stop(id: number) {
+  /** Request `id`'s wait for its next DATA. */
+  private waitFor(id: number) {
+    return setTimeout(() => this.stop(id), this.requestWait);
+  }
+
+  /** Request `id` ends: with its bytes, or undefined. */
+  private end(id: number, bytes?: Uint8Array<ArrayBuffer>) {
     const r = this.requests.get(id);
     if (!r) return;
+    clearTimeout(r.timer);
     this.requests.delete(id);
+    r.done(bytes);
+  }
+
+  /** Stops the page's request `id` (MORE 0), if it is still going. */
+  private stop(id: number) {
+    if (!this.requests.has(id)) return;
     this.link.send(FRAME.MORE, encodeMore(id, 0));
-    r.done(undefined);
+    this.end(id);
   }
 
   private frame(f: Frame) {
@@ -682,22 +719,22 @@ export class ClipboardShare {
         const d = decodeData(f.payload);
         const r = d && this.requests.get(d.id);
         if (!d || !r) return;
-        if (d.flags & DATA_FAIL || !this.active) {
-          this.requests.delete(d.id);
-          return r.done(undefined);
-        }
+        if (d.flags & DATA_FAIL || !this.active) return this.end(d.id);
         r.len += d.bytes.length;
         if (r.len > r.cap) return this.stop(d.id);
         r.chunks.push(d.bytes);
-        if (!(d.flags & DATA_END)) return void this.link.send(FRAME.MORE, encodeMore(d.id, 1));
-        this.requests.delete(d.id);
+        if (!(d.flags & DATA_END)) {
+          clearTimeout(r.timer);
+          r.timer = this.waitFor(d.id);
+          return void this.link.send(FRAME.MORE, encodeMore(d.id, 1));
+        }
         const all = new Uint8Array(r.len);
         let at = 0;
         for (const c of r.chunks) {
           all.set(c, at);
           at += c.length;
         }
-        return r.done(all);
+        return this.end(d.id, all);
       }
       case FRAME.REQUEST: {
         const r = decodeRequest(f.payload);

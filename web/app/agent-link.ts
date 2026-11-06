@@ -61,12 +61,14 @@ export class AgentLink {
   }
 
   /**
-   * Pastes `text` on the guest's foreground text console (TYPE, in frames of `TYPE_CHUNK` bytes); false (nothing
-   * sent) while paused, or before the agent said it can.
+   * Pastes `text` on the guest's foreground text console (TYPE, in frames of `TYPE_CHUNK` bytes, then an empty one:
+   * the paste's end, so that the agent drops the rest of a paste whose frame it had no room for, not a hole in it);
+   * false (nothing sent) while paused, or before the agent said it can.
    */
   type(text: string): boolean {
     if (this.paused || !this.canType) return false;
     for (const p of typePayloads(text)) this.send(FRAME.TYPE, p);
+    this.send(FRAME.TYPE);
     return true;
   }
 

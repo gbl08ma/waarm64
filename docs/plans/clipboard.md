@@ -59,7 +59,9 @@ a change of shape. Like those other switches, it asks first when it orphans snap
   HELLO, and the page drops what came before; also when the page's reader goes out of step), and `SESSION`, the
   agent's word that the guest's clipboard changed hands (a session child started or stopped, its compositor came
   or went): the page forgets what it knew of it, drops that clipboard's transfers and syncs again. The page's
-  HELLO reaches the session child too, whose transfers in flight end (they were an earlier page's). And `TYPED`,
+  HELLO reaches the session child too, whose transfers in flight end (they were an earlier page's); the host's offer
+  goes with them unless its text is whole in the agent's cache (its other types' REQUESTs would name a serial the new
+  page never gave), and the guest's selection is offered again (the final review, 2026-11-06). And `TYPED`,
   what became of `TYPE`'s text (typed, or why not: §3.2 "For a text console"). **Built (step 5)** with the capability
   `IMAGE`: an OFFER lists its text first (inline when short) and its image after it, never inline; each REQUEST names
   its type.
@@ -153,7 +155,11 @@ offered there.
     requestor window, so a conversion while another's INCR runs (the probe's 4 KiB, then a REQUEST) never got an
     answer from one window (found by the native test); a reader that goes mid-INCR leaves the transfer drained to its
     end, for the same reason; and a conversion waits while the owner is busy with one of ours (unanswered, or an INCR
-    not ended), since Debian's xclip 0.13 drops requests during an INCR (found by the page test). Measured (Debian
+    not ended), since Debian's xclip 0.13 drops requests during an INCR (found by the page test); a conversion whose
+  owner doesn't answer for 10 s ends as refused, or an owner that exits unanswered (or drops our request) held its
+  slot for good, and six of them stopped the guest's copies (the final review). The display's socket must be root's or
+  the user's (the cookie goes to it), and a failed host transfer is refused to the requestor (ICCCM's no property), not
+  pasted empty. Measured (Debian
     13, Xvfb, 2026-11-06): idle 20 s with X, 0 ticks and 0 voluntary switches for the agent and its child, VmRSS 604
     and 704 KiB; a 1.58 MB PNG to xclip by INCR in 2.2 s (the channel's rate); `systemd-analyze security` 3.8 (3.7
     before the bind). INCR both ways (the threshold to requestors: the server's largest request, at most 256
@@ -169,7 +175,10 @@ offered there.
   any UTF-8 text. Copying from the console stays out of scope; the serial terminal already has both directions.
   **Only on a VT that shows text** (`KDGETMODE`): a compositor started from a tty puts its VT in graphics mode, its
   shell waiting behind it, and pasted lines would run there once the compositor ends; the agent refuses then and
-  says so (`TYPED`, devices.md), and the page's menu tells the user.
+  says so (`TYPED`, devices.md), and the page's menu tells the user. **As built (the final review):** an empty TYPE
+  ends a paste, so that a frame the agent's 1 MiB queue has no room for drops the rest of its paste (a prefix typed,
+  `DROPPED` said), not a hole in it; and a reader in canonical mode (whose `FIONREAD` counts whole lines only) has the
+  line typed so far counted too, so a line past n_tty's 4 KiB is dropped and said, not cut short silently.
 - **MIME types:** `text/plain;charset=utf-8` (and its aliases `UTF8_STRING`, `TEXT`, `STRING` on X11) first;
   then images (§4.4), then `text/html` (**built, step 5**: both ways beside the text or the image, under text's cap,
   never cached or hashed: the text stands for the content in the echo rule; a guest program's HTML alone is offered

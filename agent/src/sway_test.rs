@@ -573,6 +573,80 @@ fn the_hosts_hash_and_transfers_follow_the_clipboard() {
     assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
 }
 
+#[test]
+fn a_new_pages_hello_drops_the_old_pages_offer_and_offers_the_guests_again() {
+    if !have("sway") || !have("wl-copy") {
+        eprintln!("SKIPPED: no sway or wl-clipboard (docs/devenv.md)");
+        return;
+    }
+    let sway = Sway::start("hello");
+    let (mine, theirs) = socketpair(
+        AddressFamily::UNIX,
+        SocketType::STREAM,
+        SocketFlags::CLOEXEC,
+        None,
+    )
+    .unwrap();
+    let runtime = sway.dir.to_str().unwrap().to_owned();
+    let child = std::thread::spawn(move || session::serve(theirs, runtime, 0x0400_0000));
+    let mut page = Page {
+        fd: mine,
+        reader: frame::Reader::default(),
+        frames: Vec::new(),
+    };
+    assert!(page.next(frame::SESSION, 5000).is_some());
+    let hello = |page: &Page| {
+        page.send(
+            frame::HELLO,
+            &frame::Hello {
+                version: 1,
+                caps: 3,
+            }
+            .encode(),
+        );
+        // The child takes it before the guest's programs act.
+        std::thread::sleep(Duration::from_millis(300));
+    };
+    // The host's text, lazy and not crossed yet: its pastes would ask the new page for a serial it never gave. Gone
+    // from the guest's clipboard instead.
+    host_offer(&mut page, 1, &text(5000), false);
+    hello(&page);
+    assert_eq!(
+        sway.paste(),
+        None,
+        "the old page's offer still in the clipboard"
+    );
+    assert!(
+        page.next(frame::REQUEST, 300).is_none(),
+        "a REQUEST for the old page's offer"
+    );
+    // Short text, inline (cached): its pastes need no page; it stays.
+    host_offer(&mut page, 2, b"cached", true);
+    hello(&page);
+    assert_eq!(sway.paste().as_deref(), Some(&b"cached"[..]));
+    // A guest program's copy, offered to the old page: offered to the new one too, under a new serial.
+    sway.copy(b"the guest's copy");
+    let (s1, inline, _) = page.offer(5000).expect("an OFFER of the guest's copy");
+    assert_eq!(inline.as_deref(), Some(&b"the guest's copy"[..]));
+    hello(&page);
+    let (s2, inline, _) = page
+        .offer(5000)
+        .expect("the guest's copy offered to the new page");
+    assert_eq!(inline.as_deref(), Some(&b"the guest's copy"[..]));
+    assert_ne!(s1, s2);
+    // Paused, nothing is offered again.
+    page.send(frame::PAUSE, &[]);
+    page.send(frame::RESUME, &[]);
+    sway.copy(b"another");
+    page.offer(5000).expect("an OFFER of another");
+    page.send(frame::PAUSE, &[]);
+    hello(&page);
+    assert!(page.offer(500).is_none(), "offered while paused");
+
+    drop(page);
+    assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
+}
+
 /// The page's DATA for request `id`: `bytes` in chunks, within the credit (MOREs taken as they come).
 fn answer(page: &mut Page, id: u32, bytes: &[u8]) {
     let chunks: Vec<&[u8]> = bytes.chunks(frame::CHUNK).collect();

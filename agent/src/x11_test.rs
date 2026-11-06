@@ -6,6 +6,7 @@ use crate::clip::{HTML, PNG, TEXT};
 use crate::frame::{self, ack};
 use crate::session::{self, Where};
 use crate::sway_test::Page;
+use crate::x11::{self, OWNER_WAIT};
 use rustix::net::{AddressFamily, SocketFlags, SocketType, socketpair};
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -512,5 +513,347 @@ fn a_compositor_without_data_control_gives_way_to_x11() {
     assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
     drop(x);
     let _ = compositor.join();
+    let _ = std::fs::remove_dir_all(&runtime);
+}
+
+/// A raw X client of the test's own: the guest's other programs where xclip can't play them (an owner that never
+/// answers, a requestor of two INCR transfers on one window). Blocking, its requests written by hand.
+struct Raw {
+    s: std::os::unix::net::UnixStream,
+    inb: Vec<u8>,
+    seq: u16,
+    base: u32,
+    root: u32,
+    next: u32,
+    /// Events read while waiting for something else.
+    events: Vec<Vec<u8>>,
+}
+
+const SELECTION_REQUEST: u8 = 30;
+const SELECTION_NOTIFY: u8 = 31;
+const PROPERTY_NOTIFY: u8 = 28;
+
+impl Raw {
+    fn connect(x: &Xvfb) -> Raw {
+        let mut s =
+            std::os::unix::net::UnixStream::connect(format!("/tmp/.X11-unix/X{}", x.n)).unwrap();
+        let cookie = x11::xauth_cookie(&std::fs::read(&x.auth).unwrap(), x.n, "");
+        let mut out = Vec::new();
+        x11::setup_request(cookie.as_deref(), &mut out);
+        s.write_all(&out).unwrap();
+        let mut r = Raw {
+            s,
+            inb: Vec::new(),
+            seq: 0,
+            base: 0,
+            root: 0,
+            next: 0,
+            events: Vec::new(),
+        };
+        loop {
+            match x11::setup_reply(&r.inb).unwrap() {
+                Some((x11::Setup::Ok { root, base, .. }, size)) => {
+                    r.inb.drain(..size);
+                    (r.root, r.base) = (root, base);
+                    return r;
+                }
+                Some((x11::Setup::Refused(why), _)) => panic!("the X server refused: {why}"),
+                None => assert!(r.fill(Duration::from_secs(5)), "no setup reply"),
+            }
+        }
+    }
+
+    /// Reads what came within `t`; false if nothing did.
+    fn fill(&mut self, t: Duration) -> bool {
+        self.s
+            .set_read_timeout(Some(t.max(Duration::from_millis(1))))
+            .unwrap();
+        let mut b = [0u8; 65536];
+        match self.s.read(&mut b) {
+            Ok(0) => panic!("the X server closed the connection"),
+            Ok(n) => {
+                self.inb.extend_from_slice(&b[..n]);
+                true
+            }
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                false
+            }
+            Err(e) => panic!("{e}"),
+        }
+    }
+
+    fn send(&mut self, opcode: u8, data: u8, f: impl FnOnce(x11::Req<'_>) -> x11::Req<'_>) -> u16 {
+        let mut out = Vec::new();
+        f(x11::Req::new(&mut out, opcode, data)).done();
+        self.s.write_all(&out).unwrap();
+        self.seq = self.seq.wrapping_add(1);
+        self.seq
+    }
+
+    /// The next message within `t`, whole.
+    fn message(&mut self, t: Duration) -> Option<Vec<u8>> {
+        let end = Instant::now() + t;
+        loop {
+            if let Some((_, size)) = x11::split(&self.inb).unwrap() {
+                return Some(self.inb.drain(..size).collect());
+            }
+            let left = end.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return None;
+            }
+            self.fill(left);
+        }
+    }
+
+    fn reply(&mut self, seq: u16) -> Vec<u8> {
+        loop {
+            let m = self.message(Duration::from_secs(5)).expect("a reply");
+            match m[0] {
+                0 => panic!("X error {} for request {}", m[1], m[10]),
+                1 if x11::u16_at(&m, 2) == seq => return m,
+                1 => {}
+                _ => self.events.push(m),
+            }
+        }
+    }
+
+    /// The next event that `f` takes (those it doesn't are kept), within `ms`.
+    fn event(&mut self, ms: u64, f: impl Fn(&[u8]) -> bool) -> Option<Vec<u8>> {
+        if let Some(i) = self.events.iter().position(|e| f(e)) {
+            return Some(self.events.remove(i));
+        }
+        let end = Instant::now() + Duration::from_millis(ms);
+        loop {
+            let m = self.message(end.saturating_duration_since(Instant::now()))?;
+            match m[0] {
+                0 => panic!("X error {} for request {}", m[1], m[10]),
+                1 => {}
+                _ if f(&m) => return Some(m),
+                _ => self.events.push(m),
+            }
+        }
+    }
+
+    fn atom(&mut self, name: &str) -> u32 {
+        let seq = self.send(16, 0, |r| {
+            r.u16(name.len() as u16).u16(0).bytes(name.as_bytes())
+        });
+        x11::u32_at(&self.reply(seq), 8)
+    }
+
+    /// An InputOnly window of ours, hearing `mask`'s events.
+    fn window(&mut self, mask: u32) -> u32 {
+        self.next += 1;
+        let (w, root) = (self.base | self.next, self.root);
+        self.send(1, 0, |r| {
+            r.u32(w)
+                .u32(root)
+                .u16(0)
+                .u16(0)
+                .u16(1)
+                .u16(1)
+                .u16(0)
+                .u16(2)
+                .u32(0)
+                .u32(1 << 11)
+                .u32(mask)
+        });
+        w
+    }
+
+    /// GetInputFocus's round trip: the requests before it are done.
+    fn sync(&mut self) {
+        let seq = self.send(43, 0, |r| r);
+        self.reply(seq);
+    }
+
+    /// Window `w`'s property `p`, deleted: its type and value.
+    fn take(&mut self, w: u32, p: u32) -> (u32, Vec<u8>) {
+        let seq = self.send(20, 1, |r| r.u32(w).u32(p).u32(0).u32(0).u32(1 << 20));
+        let reply = self.reply(seq);
+        let (ty, _, value) = x11::property(&reply).unwrap();
+        (ty, value.to_vec())
+    }
+
+    /// An INCR transfer into `w`'s property `p` (its INCR value taken already): each new value taken, until an empty
+    /// one; None if one didn't come within `ms`.
+    fn incr(&mut self, w: u32, p: u32, ms: u64) -> Option<Vec<u8>> {
+        let mut got = Vec::new();
+        loop {
+            self.event(ms, |e| {
+                e[0] & 0x7f == PROPERTY_NOTIFY
+                    && x11::u32_at(e, 4) == w
+                    && x11::u32_at(e, 8) == p
+                    && e[16] == 0
+            })?;
+            let (_, v) = self.take(w, p);
+            if v.is_empty() {
+                return Some(got);
+            }
+            got.extend_from_slice(&v);
+        }
+    }
+}
+
+/// A guest program that takes the clipboard and never answers a request for it: its connection and its window.
+fn silent_owner(x: &Xvfb) -> (Raw, u32) {
+    let mut o = Raw::connect(x);
+    let clip = o.atom("CLIPBOARD");
+    let w = o.window(0);
+    o.send(22, 0, |r| r.u32(w).u32(clip).u32(0));
+    o.sync();
+    (o, w)
+}
+
+#[test]
+fn owners_that_never_answer_hold_nothing_for_long() {
+    if skip() {
+        return;
+    }
+    let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
+    let x = Xvfb::start("silent");
+    let (mut page, child, runtime) = child(|r| x.at(r), "silent");
+    assert!(page.next(frame::SESSION, 5000).is_some());
+    let asked = |e: &[u8]| e[0] & 0x7f == SELECTION_REQUEST;
+    // Seven owners in turn (more than the conversions' slots) take the clipboard, get the agent's TARGETS and exit
+    // without an answer (the server answers only for an owner gone before the request).
+    for k in 0..7 {
+        let (mut o, _) = silent_owner(&x);
+        assert!(
+            o.event(5000, asked).is_some(),
+            "the agent's TARGETS never reached silent owner {k}"
+        );
+    }
+    x.copy(b"after the silent owners", "UTF8_STRING");
+    let (_, _, inline) = offer(&mut page, 5000).expect("an OFFER after owners that never answered");
+    assert_eq!(inline.as_deref(), Some(&b"after the silent owners"[..]));
+    // One that stays (as xclip does while it serves an INCR to another requestor) and takes the clipboard again: its
+    // second TARGETS comes once the first's wait ended.
+    let (mut o, w) = silent_owner(&x);
+    assert!(o.event(5000, asked).is_some(), "the first TARGETS");
+    let clip = o.atom("CLIPBOARD");
+    o.send(22, 0, |r| r.u32(w).u32(clip).u32(0));
+    o.sync();
+    assert!(
+        o.event(OWNER_WAIT.as_millis() as u64 + 3000, asked)
+            .is_some(),
+        "the owner's second TARGETS, behind the first that it never answered"
+    );
+    drop(o);
+    x.copy(b"and after", "UTF8_STRING");
+    let (_, _, inline) = offer(&mut page, 5000).expect("an OFFER after the one that stayed");
+    assert_eq!(inline.as_deref(), Some(&b"and after"[..]));
+    drop(page);
+    assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
+    let _ = std::fs::remove_dir_all(&runtime);
+}
+
+/// xclip pasting in the background: its exit code (None: killed) and output once it ends.
+fn paste_job(x: &Xvfb, target: &str) -> std::thread::JoinHandle<(Option<i32>, Vec<u8>)> {
+    let c = x
+        .cmd("timeout")
+        .args(["20", "xclip", "-o", "-selection", "clipboard", "-t", target])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    std::thread::spawn(move || {
+        let out = c.wait_with_output().unwrap();
+        (out.status.code(), out.stdout)
+    })
+}
+
+#[test]
+fn a_failed_host_transfer_is_refused_not_pasted_empty() {
+    if skip() {
+        return;
+    }
+    let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
+    let x = Xvfb::start("refuse");
+    let (mut page, child, runtime) = child(|r| x.at(r), "refuse");
+    assert!(page.next(frame::SESSION, 5000).is_some());
+    let t = text(5000);
+    host_offer(&mut page, 3, vec![(TEXT, t.len() as u32)], None);
+    // The page fails the request (its offer gone, a cap): the requestor hears a refusal (no property). xclip then asks
+    // for STRING, failed too.
+    let paste = paste_job(&x, "UTF8_STRING");
+    let mut failed = 0;
+    while let Some(p) = page.next(frame::REQUEST, if failed == 0 { 10_000 } else { 2000 }) {
+        let r = frame::Request::decode(&p).unwrap();
+        let mut d = Vec::new();
+        frame::data(r.id, frame::DATA_FAIL, &[], &mut d);
+        page.send(frame::DATA, &d);
+        failed += 1;
+    }
+    assert!(failed > 0, "no REQUEST");
+    let (code, out) = paste.join().unwrap();
+    assert_ne!(code, Some(124), "xclip hung");
+    assert_ne!(
+        code,
+        Some(0),
+        "xclip took a failed transfer for a paste of {} bytes",
+        out.len()
+    );
+    // Answered whole, the same offer pastes.
+    let paste = paste_job(&x, "UTF8_STRING");
+    answer(&mut page, 3, TEXT, &t);
+    let (code, out) = paste.join().unwrap();
+    assert!(
+        code == Some(0) && out == t,
+        "the paste after: {code:?}, {} bytes",
+        out.len()
+    );
+    drop(page);
+    assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
+    let _ = std::fs::remove_dir_all(&runtime);
+}
+
+#[test]
+fn two_incr_transfers_to_one_window_both_end() {
+    if skip() {
+        return;
+    }
+    let _one = ONE.lock().unwrap_or_else(|e| e.into_inner());
+    let x = Xvfb::start("twoincr");
+    let (mut page, child, runtime) = child(|r| x.at(r), "twoincr");
+    assert!(page.next(frame::SESSION, 5000).is_some());
+    // Past the threshold (the server's largest request, 256 KiB): by INCR; small enough that the agent holds it all
+    // before the requestor takes a chunk (the page answers both requests first).
+    let t = text(16000);
+    assert!(t.len() > 262_144 && t.len() < 480_000, "{}", t.len());
+    host_offer(&mut page, 4, vec![(TEXT, t.len() as u32)], None);
+    let mut r = Raw::connect(&x);
+    let (clip, utf8, incr) = (r.atom("CLIPBOARD"), r.atom("UTF8_STRING"), r.atom("INCR"));
+    let (pa, pb) = (r.atom("WEBPC_TEST_A"), r.atom("WEBPC_TEST_B"));
+    // One window, two properties (as a MULTIPLE does, or two pastes in a row from one program).
+    let w = r.window(1 << 22);
+    for p in [pa, pb] {
+        r.send(24, 0, |q| q.u32(w).u32(clip).u32(utf8).u32(p).u32(0));
+    }
+    answer(&mut page, 4, TEXT, &t);
+    answer(&mut page, 4, TEXT, &t);
+    for p in [pa, pb] {
+        r.event(5000, |e| {
+            e[0] & 0x7f == SELECTION_NOTIFY && x11::u32_at(e, 20) == p
+        })
+        .expect("a SelectionNotify");
+    }
+    // The INCR values' own PropertyNotify (before the SelectionNotify): not a chunk.
+    r.events.retain(|e| e[0] & 0x7f != PROPERTY_NOTIFY);
+    assert_eq!(r.take(w, pa).0, incr, "A by INCR");
+    let a = r.incr(w, pa, 5000).expect("A's chunks");
+    assert!(a == t, "A: {} bytes of {}", a.len(), t.len());
+    assert_eq!(r.take(w, pb).0, incr, "B by INCR");
+    let b = r
+        .incr(w, pb, 3000)
+        .expect("B's chunks: none came after A's transfer ended");
+    assert!(b == t, "B: {} bytes of {}", b.len(), t.len());
+    drop(page);
+    assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
     let _ = std::fs::remove_dir_all(&runtime);
 }

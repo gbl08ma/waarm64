@@ -160,12 +160,13 @@ test("the toolbar's clipboard button: only with the setting; waiting, sharing, p
   assert.equal(resume.type, FRAME.RESUME);
   assert.equal(sent.type, FRAME.OFFER, 'nothing between RESUME and Send');
   assert.equal(inline(sent), during);
-  // Type the clipboard: TYPE with the host's text.
+  // Type the clipboard: TYPE with the host's text, then the paste's end (an empty TYPE).
   await menu(page, true);
   await page.click('#clipboard-type');
-  const [typed] = await guestReads(page, 5 + Buffer.byteLength(during));
+  const [typed, end] = await guestReads(page, 5 + Buffer.byteLength(during) + 5);
   assert.equal(typed.type, FRAME.TYPE);
   assert.equal(new TextDecoder().decode(typed.payload), during);
+  assert.deepEqual([end.type, end.payload.length], [FRAME.TYPE, 0]);
   // The agent's word that the console under a compositor took none of it (TYPED): the menu says so.
   await guestWrites(page, encodeFrame(FRAME.TYPED, new Uint8Array([TYPED.NOT_TEXT])));
   await menu(page, true);

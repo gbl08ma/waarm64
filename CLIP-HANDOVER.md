@@ -27,7 +27,7 @@ reaches the child, whose transfers end), 8 (the unit's start limit, 5 in 10 min)
 between the loop's work: `console::Typist`), 12 (an inotify overflow is a change; root's runtime directory counts as
 mounted on another device than `/run/user`), 14 (the plan's ports, X11 under the sandbox, `splice`, the two bounded
 wakeups). The root loop has native tests now (`agent/src/serve_test.rs`: a socketpair for the port). Not done for 8:
-keeping the binary across restarts (each still reads fw_cfg: bounded by the limit). Next: step 5.
+keeping the binary across restarts (each still reads fw_cfg: bounded by the limit).
 
 **Step 5's images done** (2026-11-06; plan §4.4 "Built", devices.md "The guest's agent", frontend.md "The toolbar"):
 `CAP.IMAGE` both sides; the agent offers a guest program's image (PNG first, else a type the page converts) after its
@@ -55,11 +55,23 @@ that Debian's xclip 0.13 drops requests during an INCR (conversions now wait whi
 with X 0 ticks/0 switches, VmRSS 604/704 KiB; `systemd-analyze security` 3.8 (was 3.7). Binary 445,128 bytes (+37
 KiB for X11 and HTML). Planted bugs: docs/testing.md's X11 row.
 
-## Next: step 6 (optional) or the track's end
+**The final out-of-context review** (`review/clip-final`, `REVIEW-CLIP-FINAL.md` there; 2026-11-06): **all eleven
+fixed**, none to the backlog (docs/testing.md's "final review" row has the tests and planted bugs): 1 X11 conversions
+whose owner doesn't answer end after 10 s (`OWNER_WAIT`; a late answer told by its target); 2 the page's requests
+stop after 30 s without DATA (`REQUEST_WAIT`), so a guest image never served no longer holds the focus syncs;
+3 an empty TYPE ends a paste: a dropped frame drops the rest of its paste (a prefix, `DROPPED` at the end), and the
+typed bytes leave the queue; 4 the page's HELLO drops the host's offer unless cached text, and offers the guest's
+selection again; 5 TARGETS keeps the known atoms however long the list; 6 the X socket must be root's or the user's;
+7 a failed host transfer is refused to an X requestor (under INCR it still ends with what came); 8 the requestor's
+PropertyNotify stays on while another INCR to it goes on; 9 nonblocking connects; 10 canonical readers' lines count
+in TYPE's pacing; 11 an older offer isn't sent after a newer one began. The agent's rustix gained `termios` (the
+pre-approved dependency's feature, for `tcgetattr`).
 
-Plan §6 step 6 is optional (spice-vdagent's port, GNOME through the portal, agent jobs: each needs the user's OK).
-Otherwise the track's end: the out-of-context review of steps 5's images, X11 and HTML (mid-track rule: X11 is a new
-subsystem), then the end's docs (`docs/clipboard.md`, plan §6 "When it ends").
+## Next: the track's end
+
+Every step and both reviews are done. The track's end (plan §6 "When it ends"): `docs/clipboard.md` from the plan and
+devices.md, PLAN.md §3's row, this handover deleted. Plan §6 step 6 stays optional (spice-vdagent's port, GNOME
+through the portal, agent jobs: each needs the user's OK). The checks by hand below stay the user's.
 
 ## Open questions and left for the user
 

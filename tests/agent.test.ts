@@ -16,7 +16,7 @@ import { after, test } from 'node:test';
 import { AGENT_PORTS, agentDevice, agentEntry, CTL_RX, CTL_TX, DEVICE_READY, F_MULTIPORT, MAX_PENDING, PORT_ADD, PORT_NAME, PORT_OPEN, PORT_READY, type AgentFromDevice } from '../web/agent-device.ts';
 import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, FRAME, FrameReader, helloNonce, MAX_PAYLOAD, NONCE, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
 import { AgentLink, PAGE_CAPS, WINDOW } from '../web/app/agent-link.ts';
-import { ACK_WAIT, ClipboardShare, contentHash, EMPTY_RUN, HTML, IMAGE_CAP, imageHash, INLINE, isPasteChord, onMac, PASTE_WAIT, PNG, TEXT, TEXT_CAP, textHash, watchReadPermission, type ClipLink, type Host, type HostItem, type ReadPermission } from '../web/app/clipboard.ts';
+import { ACK_WAIT, ClipboardShare, contentHash, EMPTY_RUN, HTML, IMAGE_CAP, imageHash, INLINE, isPasteChord, onMac, PASTE_WAIT, PNG, REQUEST_WAIT, TEXT, TEXT_CAP, textHash, watchReadPermission, type ClipLink, type Host, type HostItem, type ReadPermission } from '../web/app/clipboard.ts';
 import { AGENT_FILE, AGENT_PORT, agentBinary, agentCredentials, agentScript } from '../web/app/guest-agent.ts';
 import { oemStrings } from '../web/app/guest-unit.ts';
 import { guestWords } from '../web/app/guest-words.ts';
@@ -348,7 +348,9 @@ test("the link: HELLO and the switch at each opening, the agent's answer; TYPE o
   assert.equal(link.canType, true);
   assert.equal(link.type('héllo\n'), true);
   await settle();
-  assert.deepEqual(sent.slice(1).map((f) => [f.type, new TextDecoder().decode(f.payload)]), [[FRAME.TYPE, 'héllo\n']]);
+  // Its frames, then an empty one: the paste's end (the agent drops the rest of a paste it had no room for).
+  assert.deepEqual(sent.slice(1).map((f) => [f.type, new TextDecoder().decode(f.payload)]), [[FRAME.TYPE, 'héllo\n'], [FRAME.TYPE, '']]);
+  sent.splice(2, 1);
   // Paused: nothing typed; the agent hears it, and again when it reopens its end (a restarted agent starts unpaused).
   link.pause();
   assert.equal(link.type('no'), false);
@@ -1540,4 +1542,67 @@ test("HTML, host to guest: offered after the text (and the image), answered when
   assert.deepEqual(take(FRAME.OFFER), []);
   await share.paste({ text: 'small', html: 'x'.repeat(TEXT_CAP + 1) }, true);
   assert.deepEqual(take(FRAME.OFFER).map((x) => decodeOffer(x.payload)!.types.map((t) => t.type)), [[TEXT]]);
+});
+
+test("a guest image whose bytes never come: its request stops after REQUEST_WAIT (MORE 0), and the focus syncs held behind its write go on", async () => {
+  assert.ok(REQUEST_WAIT >= 10_000, 'long enough for a guest program to encode a large image');
+  const { link, deliver, take } = fakeLink(IMAGES);
+  const { host, writes } = imageHost();
+  const share = new ClipboardShare(link, host);
+  share.requestWait = 100;
+  share.setPermission('granted');
+  await quiet();
+  take(FRAME.OFFER);
+  // A guest program offers an image and never serves it (frozen, or an X11 owner that never answers).
+  deliver(FRAME.OFFER, encodeOffer({ serial: 1, types: [{ type: PNG, size: UNKNOWN }] }));
+  const [r] = requests(take(FRAME.REQUEST));
+  assert.equal(r.type, PNG);
+  // A DATA before the wait ends keeps it going.
+  await new Promise((done) => setTimeout(done, 60));
+  deliver(FRAME.DATA, encodeData(r.id, 0, picture(1000)));
+  await new Promise((done) => setTimeout(done, 60));
+  assert.deepEqual(take(FRAME.MORE).map((f) => decodeMore(f.payload)), [{ id: r.id, n: 1 }], 'a DATA restarts the wait');
+  await new Promise((done) => setTimeout(done, 150));
+  assert.deepEqual(take(FRAME.MORE).map((f) => decodeMore(f.payload)), [{ id: r.id, n: 0 }], 'stopped once nothing came');
+  assert.equal(writes.length, 0);
+  // The host's own copy: the next focus offers it.
+  host.clip = { 'text/plain': new Blob(["the host's"], { type: 'text/plain' }) };
+  await share.focused();
+  await until(() => take(FRAME.OFFER).length === 1, "the host's text offered after the stuck write");
+});
+
+test("a focus read still reading its image when a paste chord's text comes: the chord's offer goes last", async () => {
+  const { link, take } = fakeLink(IMAGES);
+  let release!: () => void;
+  const late = new Promise<void>((r) => (release = r));
+  const pic = picture(1000, 9);
+  // The host's clipboard has an image whose bytes come late (a large one, read for its hash).
+  const slow = { size: pic.length, type: PNG, arrayBuffer: async () => (await late, pic.buffer) } as unknown as Blob;
+  const host: Host = {
+    hasFocus: () => true,
+    clipboard: { writeText: async () => {}, readText: async () => '', read: async () => [{ types: [PNG], getType: async () => slow }], write: async () => {} },
+  };
+  const share = new ClipboardShare(link, host);
+  // Becoming granted reads at once: that read is hashing the image when the chord's paste comes with new text.
+  share.setPermission('granted');
+  await settle();
+  const held = share.chord({ key: 'v', code: 'KeyV', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false });
+  assert.ok(held);
+  share.pasted('new text');
+  release();
+  await quiet();
+  const offers = take(FRAME.OFFER).map((f) => decodeOffer(f.payload)!);
+  assert.ok(offers.length > 0);
+  assert.equal(new TextDecoder().decode(offers.at(-1)!.inline), 'new text', `the offers: ${offers.map((o) => o.types.map((t) => t.type))}`);
+  // Two offers: an image read late, then text: the text's goes, not the image's after it.
+  let release2!: () => void;
+  const late2 = new Promise<void>((r) => (release2 = r));
+  const pic2 = picture(1000, 10);
+  const slow2 = { size: pic2.length, type: PNG, arrayBuffer: async () => (await late2, pic2.buffer) } as unknown as Blob;
+  const first = share.paste({ image: slow2 }, true);
+  const second = share.paste('later', true);
+  release2();
+  await Promise.all([first, second]);
+  const after = take(FRAME.OFFER).map((f) => decodeOffer(f.payload)!);
+  assert.deepEqual(after.map((o) => new TextDecoder().decode(o.inline)), ['later'], "the older image's offer sent after the text's");
 });

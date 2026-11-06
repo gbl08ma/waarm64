@@ -31,6 +31,7 @@ use rustix::fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use rustix::io::{Errno, read, write};
 use rustix::net::{AddressFamily, SocketAddrUnix, SocketFlags, SocketType, connect, socket_with};
 use std::collections::VecDeque;
+use std::time::{Duration, Instant};
 
 /// The bytes asked of a property at once, and written to a requestor's at once under `INCR`.
 pub const CHUNK: usize = 64 << 10;
@@ -42,6 +43,14 @@ const PROPS: usize = 6;
 const MAX_SERVES: usize = 8;
 /// A guest program's types, past which the rest are ignored (as Wayland's).
 const MAX_TYPES: usize = 64;
+/// How long a conversion waits for its owner (its SelectionNotify, or under INCR its next value) before it ends as
+/// refused: an owner that exits or crashes without answering, or drops our request (xclip 0.13 does during an INCR to
+/// another requestor), would otherwise hold its slot, and its owner's later conversions (`owner_busy`), for good. Xt's
+/// and Qt's requestors wait 5 s.
+#[cfg(not(test))]
+const OWNER_WAIT: Duration = Duration::from_secs(10);
+#[cfg(test)]
+pub const OWNER_WAIT: Duration = Duration::from_secs(1);
 
 /// The atoms interned at the start, by index: the names a selection's types are known by (others are ignored).
 pub const NAMES: [&str; 22 + PROPS] = [
@@ -438,6 +447,13 @@ pub fn displays(dir: &str, hint: Option<u32>, procs: &[Named]) -> Vec<u32> {
     ns
 }
 
+/// Whether a display's socket (its `stat`'s mode and owner) may be the server of the session's user `uid`: a socket of
+/// root's (Xorg) or the user's own (Xwayland, Xvfb, a user's Xorg); another user's is someone else's listener.
+pub fn trusted_socket(mode: u32, owner: u32, uid: u32) -> bool {
+    rustix::fs::FileType::from_raw_mode(mode) == rustix::fs::FileType::Socket
+        && (owner == 0 || owner == uid)
+}
+
 /// Whether `name` in the sockets' directory may be a display's socket.
 pub fn is_socket_name(name: &str) -> bool {
     name.strip_prefix('X')
@@ -524,11 +540,13 @@ pub enum Ev {
     Ready,
     /// The guest's selection changed hands: its offer's id (0: no owner) and types.
     Selection { offer: u32, types: Vec<String> },
-    /// A guest program pastes our source as `mime`: its bytes into `fd`.
+    /// A guest program pastes our source as `mime`: its bytes into `fd`, then `served(serve)` if they came whole (else
+    /// the paste is refused, or under INCR ends with what came).
     Send {
         source: u32,
         mime: String,
         fd: OwnedFd,
+        serve: u32,
     },
     /// Our source lost the selection to another program.
     Cancelled { source: u32 },
@@ -582,8 +600,11 @@ enum Conv {
 /// The guest's selection being read into a sink, through one of our window's properties.
 struct Conversion {
     prop: u32,
-    /// The guest's owner it converts from.
+    /// The guest's owner it converts from, and the target asked (its SelectionNotify names it).
     owner: u32,
+    target: u32,
+    /// Since when it waits for the owner (`OWNER_WAIT`), in `Asked` and `Waiting`.
+    since: Instant,
     sink: Sink,
     state: Conv,
     incr: bool,
@@ -605,6 +626,9 @@ enum Serving {
 
 /// Our source's bytes on their way to a requestor's property.
 struct Serve {
+    /// Its id (`Ev::Send`), and whether the bytes came whole (`served`): an EOF without it is a failed transfer.
+    id: u32,
+    ok: bool,
     requestor: u32,
     prop: u32,
     target: u32,
@@ -652,21 +676,28 @@ pub struct X {
     /// Conversions waiting for the owner (`owner_busy`): the offer each is for, its target, its sink.
     queue: VecDeque<(u32, u32, Sink)>,
     serves: Vec<Serve>,
+    /// The last serve's id.
+    serve_id: u32,
 }
 
 impl X {
-    /// Connects to display `n`'s socket in `dir` and sends the setup (with `cookie`, if there is one).
-    pub fn connect(dir: &str, n: u32, cookie: Option<&[u8]>) -> Result<X, Errno> {
+    /// Connects to display `n`'s socket in `dir` and sends the setup (with `cookie`, if there is one), if the socket is
+    /// root's or `uid`'s (the session's user: `/tmp/.X11-unix` is anyone's to bind in, and the cookie isn't anyone's to
+    /// see). Nonblocking: a server stopped with its backlog full refuses (`AGAIN`) rather than holding the child up.
+    pub fn connect(dir: &str, n: u32, cookie: Option<&[u8]>, uid: u32) -> Result<X, Errno> {
         let path = format!("{dir}/X{n}");
+        let st = rustix::fs::stat(path.as_str())?;
+        if !trusted_socket(st.st_mode, st.st_uid, uid) {
+            return Err(Errno::PERM);
+        }
         let addr = SocketAddrUnix::new(path.as_str())?;
         let fd = socket_with(
             AddressFamily::UNIX,
             SocketType::STREAM,
-            SocketFlags::CLOEXEC,
+            SocketFlags::CLOEXEC | SocketFlags::NONBLOCK,
             None,
         )?;
         connect(&fd, &addr)?;
-        crate::session::nonblocking(&fd);
         let mut out = Vec::new();
         setup_request(cookie, &mut out);
         Ok(X {
@@ -693,6 +724,7 @@ impl X {
             convs: Vec::new(),
             queue: VecDeque::new(),
             serves: Vec::new(),
+            serve_id: 0,
         })
     }
 
@@ -991,6 +1023,7 @@ impl X {
                         .find(|c| c.prop == atom && c.state == Conv::Waiting)
                     {
                         c.state = Conv::Came;
+                        c.since = Instant::now();
                         self.pump_conv(atom, evs);
                     }
                 } else if state == DELETED
@@ -1011,8 +1044,9 @@ impl X {
             }
             ev::SELECTION_REQUEST => self.request(e, evs),
             ev::SELECTION_NOTIFY => {
-                // To a conversion's window: it is answered (refused: no property).
-                let (requestor, prop) = (u32_at(e, 8), u32_at(e, 20));
+                // To a conversion's window: it is answered (refused: no property). Its target too: a late answer to a
+                // conversion that `expire` ended may come to a slot in use again.
+                let (requestor, target, prop) = (u32_at(e, 8), u32_at(e, 16), u32_at(e, 20));
                 let Some((_, slot)) = (0..PROPS)
                     .map(|k| self.slot(k))
                     .find(|&(w, _)| w == requestor)
@@ -1022,7 +1056,7 @@ impl X {
                 let found = self
                     .convs
                     .iter()
-                    .position(|c| c.state == Conv::Asked && c.prop == slot);
+                    .position(|c| c.state == Conv::Asked && c.prop == slot && c.target == target);
                 let Some(i) = found else { return };
                 if prop == 0 {
                     let c = self.convs.remove(i);
@@ -1115,6 +1149,8 @@ impl X {
         self.convs.push(Conversion {
             prop,
             owner,
+            target,
+            since: Instant::now(),
             sink,
             state: Conv::Asked,
             incr: false,
@@ -1156,6 +1192,7 @@ impl X {
             // (our GetProperty deleted it).
             c.incr = true;
             c.state = Conv::Waiting;
+            c.since = Instant::now();
             return;
         }
         if matches!(c.sink, Sink::Drain) && !c.incr {
@@ -1163,27 +1200,36 @@ impl X {
             c.state = Conv::Reading;
             return self.abort(prop, true);
         }
-        let cap = match &c.sink {
-            Sink::Targets(_) => 4 * MAX_TYPES,
-            Sink::Pipe(_) | Sink::Drain => usize::MAX,
-        };
-        if c.buf.len() - c.at + value.len() > cap {
-            c.state = Conv::Done;
+        let targets = matches!(c.sink, Sink::Targets(_));
+        c.state = if after > 0 && value.len() % 4 != 0 {
+            // A partial word before the end can't be: the property changed under us.
+            Conv::Done
+        } else if after > 0 {
+            c.offset += (value.len() / 4) as u32;
+            Conv::More
+        } else if c.incr && !value.is_empty() {
+            c.offset = 0;
+            c.since = Instant::now();
+            Conv::Waiting
         } else {
-            c.buf.extend_from_slice(value);
-            c.state = if after > 0 {
-                c.offset += (value.len() / 4) as u32;
-                Conv::More
-            } else if c.incr && !value.is_empty() {
-                c.offset = 0;
-                Conv::Waiting
-            } else {
-                Conv::Done
-            };
-            if after > 0 && value.len() % 4 != 0 {
-                // A partial word before the end can't be: the property changed under us.
+            Conv::Done
+        };
+        if targets {
+            // TARGETS: the atoms we know (`NAMES`), however many others it lists (GTK's image targets name every
+            // gdk-pixbuf writer, an office suite many formats), up to `MAX_TYPES`.
+            let atoms = self.atoms;
+            let c = &mut self.convs[i];
+            for w in value.as_chunks::<4>().0 {
+                if atoms.contains(&u32::from_le_bytes(*w)) {
+                    c.buf.extend_from_slice(w);
+                }
+            }
+            if c.buf.len() >= 4 * MAX_TYPES {
+                c.buf.truncate(4 * MAX_TYPES);
                 c.state = Conv::Done;
             }
+        } else {
+            c.buf.extend_from_slice(value);
         }
         self.pump_conv(prop, evs);
     }
@@ -1371,7 +1417,11 @@ impl X {
         if self.serves.len() >= MAX_SERVES {
             self.serves.remove(0);
         }
+        self.serve_id = self.serve_id.wrapping_add(1).max(1);
+        let serve = self.serve_id;
         self.serves.push(Serve {
+            id: serve,
+            ok: false,
             requestor,
             prop,
             target,
@@ -1386,6 +1436,7 @@ impl X {
             source: id,
             mime: mime.to_owned(),
             fd: w,
+            serve,
         });
     }
 
@@ -1446,9 +1497,15 @@ impl X {
                 self.notify(time, requestor, clip, target, prop);
             }
             Serving::Collect if s.eof => {
+                // All came (`served`), set whole; else the host's transfer failed (DATA FAIL, a cap, the page gone):
+                // refused, as ICCCM has it (no property), not an empty or partial value taken as the paste.
                 let s = self.serves.remove(i);
-                self.set_property(requestor, prop, ty, 8, &s.buf);
-                self.notify(time, requestor, clip, target, prop);
+                if s.ok {
+                    self.set_property(requestor, prop, ty, 8, &s.buf);
+                    self.notify(time, requestor, clip, target, prop);
+                } else {
+                    self.notify(time, requestor, clip, target, 0);
+                }
             }
             Serving::Ready if s.buf.len() >= CHUNK || (s.eof && !s.buf.is_empty()) => {
                 let n = s.buf.len().min(CHUNK);
@@ -1457,12 +1514,55 @@ impl X {
                 self.set_property(requestor, prop, ty, 8, &value);
             }
             Serving::Ready if s.eof => {
-                // The end: an empty value.
+                // The end: an empty value (a failed transfer's too: INCR has no way to say so once it began). The
+                // requestor's PropertyNotify stays selected while another INCR serve to it goes on (the mask is per
+                // window).
                 self.serves.remove(i);
                 self.set_property(requestor, prop, ty, 8, &[]);
-                self.select_property_changes(requestor, false);
+                if !self
+                    .serves
+                    .iter()
+                    .any(|s| s.requestor == requestor && s.state != Serving::Collect)
+                {
+                    self.select_property_changes(requestor, false);
+                }
             }
             _ => {}
+        }
+    }
+
+    /// Serve `serve`'s bytes came whole: its pipe's end is the value's end (else a refusal).
+    pub fn served(&mut self, serve: u32) {
+        if let Some(s) = self.serves.iter_mut().find(|s| s.id == serve) {
+            s.ok = true;
+        }
+    }
+
+    // ---- Owners that don't answer.
+
+    /// When the next conversion's wait for its owner ends (`OWNER_WAIT`), if one waits.
+    pub fn deadline(&self) -> Option<Instant> {
+        self.convs
+            .iter()
+            .filter(|c| matches!(c.state, Conv::Asked | Conv::Waiting))
+            .map(|c| c.since + OWNER_WAIT)
+            .min()
+    }
+
+    /// The conversions whose owner hasn't answered for `OWNER_WAIT` by `now` end as refused (their pipes closed, their
+    /// properties deleted, a TARGETS of the current offer's an offer without types); the queued ones start.
+    pub fn expire(&mut self, now: Instant, evs: &mut Vec<Ev>) {
+        while let Some(i) = self.convs.iter().position(|c| {
+            matches!(c.state, Conv::Asked | Conv::Waiting) && c.since + OWNER_WAIT <= now
+        }) {
+            let mut c = self.convs.remove(i);
+            let (win, prop) = (self.slot_win(c.prop), c.prop);
+            self.req(op::DELETE_PROPERTY, 0, None, |r| r.u32(win).u32(prop));
+            c.buf.clear();
+            self.finish(c, evs);
+        }
+        if self.ready {
+            self.start();
         }
     }
 
@@ -1753,6 +1853,89 @@ mod tests {
             "a cut entry ends it"
         );
         assert_eq!(xauth_cookie(&[], 0, "h"), None);
+    }
+
+    /// A listening socket `X<n>` in a directory of the test's own, and the directory.
+    fn listener(name: &str, n: u32) -> (std::os::unix::net::UnixListener, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("webpc-agent-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir(&dir).unwrap();
+        let l = std::os::unix::net::UnixListener::bind(dir.join(format!("X{n}"))).unwrap();
+        (l, dir)
+    }
+
+    #[test]
+    fn only_roots_or_the_users_display_socket_gets_the_cookie() {
+        let me = rustix::process::getuid().as_raw();
+        let (_l, dir) = listener("x11owner", 3);
+        let d = dir.to_str().unwrap();
+        assert!(
+            X::connect(d, 3, Some(&[7; 16]), me).is_ok(),
+            "the user's own"
+        );
+        assert!(
+            X::connect(d, 3, Some(&[7; 16]), me + 1).is_err(),
+            "another user's socket, bound first in the world-writable directory"
+        );
+        let sock = mode_of(rustix::fs::FileType::Socket);
+        assert!(trusted_socket(sock, 0, 1000), "Xorg's: root's");
+        assert!(!trusted_socket(sock, 1001, 1000));
+        assert!(
+            !trusted_socket(mode_of(rustix::fs::FileType::RegularFile), 1000, 1000),
+            "not a socket"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn mode_of(t: rustix::fs::FileType) -> u32 {
+        t.as_raw_mode() | 0o755
+    }
+
+    #[test]
+    fn a_long_targets_list_keeps_the_types_we_know() {
+        let me = rustix::process::getuid().as_raw();
+        let (_l, dir) = listener("x11targets", 4);
+        let mut x = X::connect(dir.to_str().unwrap(), 4, None, me).unwrap();
+        for (i, a) in x.atoms.iter_mut().enumerate() {
+            *a = 0x100 + i as u32;
+        }
+        (x.ready, x.owner, x.offer) = (true, 0x0040_0001, 5);
+        let prop = x.atom(PROP0);
+        x.convs.push(Conversion {
+            prop,
+            owner: x.owner,
+            target: x.atom(TARGETS),
+            since: Instant::now(),
+            sink: Sink::Targets(5),
+            state: Conv::Reading,
+            incr: false,
+            offset: 0,
+            buf: Vec::new(),
+            at: 0,
+        });
+        // GetProperty's reply: 70 atoms (format 32, type ATOM), UTF8_STRING the 6th, image/png the 69th, the rest
+        // ones we don't know (a GTK owner's pixbuf formats).
+        let mut atoms: Vec<u32> = (0..70).map(|i| 0x9000 + i).collect();
+        atoms[5] = x.atom(UTF8_STRING);
+        atoms[68] = x.atom(PNG);
+        let mut r = vec![1, 32, 0, 0];
+        r.extend_from_slice(&(atoms.len() as u32).to_le_bytes());
+        r.extend_from_slice(&x.atom(ATOM).to_le_bytes());
+        r.extend_from_slice(&0u32.to_le_bytes());
+        r.extend_from_slice(&(atoms.len() as u32).to_le_bytes());
+        r.resize(32, 0);
+        r.extend(atoms_bytes(&atoms));
+        let mut evs = Vec::new();
+        x.got_property(prop, &r, &mut evs);
+        let types = evs.iter().find_map(|e| match e {
+            Ev::Selection { offer: 5, types } => Some(types.clone()),
+            _ => None,
+        });
+        assert_eq!(
+            types.as_deref(),
+            Some(&["UTF8_STRING".to_owned(), "image/png".to_owned()][..])
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

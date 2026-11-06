@@ -12,7 +12,7 @@ publish = false
 
 [dependencies]
 # The one dependency (plan §3.3, the user's choice): raw Linux syscalls, no libc wrapper.
-rustix = { version = "1.1", default-features = false, features = ["std", "event", "fs", "net", "pipe", "process", "thread"] }
+rustix = { version = "1.1", default-features = false, features = ["std", "event", "fs", "net", "pipe", "process", "termios", "thread"] }
 
 [profile.release]
 opt-level = "z"

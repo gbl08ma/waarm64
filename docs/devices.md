@@ -161,9 +161,10 @@ their own, and a child on a thread that echoes what it gets.
 
 **The session child** (`agent/src/session.rs`, one thread in `ppoll`) watches the runtime directory (inotify,
 `IN_CREATE`, `IN_DELETE_SELF`: it ends when the directory goes) for a compositor's socket, `wayland-<n>`, and connects
-(a socket that refuses, between its bind and its listen: 25 tries 200 ms apart, the only timeout, armed when a socket
-comes or the connection goes, not again by a failed try: a killed compositor's socket, which refuses for good, is
-given up after them); it comes and goes
+(nonblocking: a compositor stopped with its backlog full refuses rather than holding the child's one thread; a socket
+that refuses, between its bind and its listen: 25 tries 200 ms apart, armed when a socket comes or the connection
+goes, not again by a failed try: a killed compositor's socket, which refuses for good, is given up after them; the
+only other timeout is X11's owner wait, below); it comes and goes
 with the compositor. Its Wayland client is written by hand (`agent/src/wire.rs`: the header, uint/object/new_id,
 strings, `SCM_RIGHTS` for the pipes): `wl_display.get_registry` and a `sync`; when the callback is done, it binds the
 first `wl_seat` (v1) and `ext_data_control_manager_v1` if the compositor has it, else `zwlr_data_control_manager_v1`
@@ -178,8 +179,9 @@ compositor syncs Xwayland's selection with its own). The child watches X11's soc
 (inotify `IN_CREATE`; the unit's bind of it), and takes **the session's display**: the one its session file names
 (`DISPLAY=`, a display manager's X11 session: logind's `DISPLAY=`, which the parent passes), else a socket `X<n>`
 that a process of the user's names (its `DISPLAY`, or an argument `:<n>` as a server's command line has it: Xorg's
-from startx, Xvfb's, Xwayland's; `/proc/<pid>/cmdline` and `environ`, read as the user, at each socket's coming).
-**The cookie** (`MIT-MAGIC-COOKIE-1`) comes from the server's `-auth` file, a process's `XAUTHORITY`, or the
+from startx, Xvfb's, Xwayland's; `/proc/<pid>/cmdline` and `environ`, read as the user, at each socket's coming),
+and only a socket of root's or the user's own (`/tmp/.X11-unix` is anyone's to bind in: another user's listener at a
+display not up yet would get the cookie); connected nonblocking, as Wayland's. **The cookie** (`MIT-MAGIC-COOKIE-1`) comes from the server's `-auth` file, a process's `XAUTHORITY`, or the
 `.Xauthority` of a process's `HOME` or of the user's home (`/etc/passwd`): the entry for the display's number, this
 host's first, else any local one, else a wildcard; none if none has one (a server without access control: Xwayland
 under sway). A server that refuses the setup (the cookie not there yet) is tried again by the 25 retries, then left
@@ -188,21 +190,29 @@ the images', `text/html`), XFixes' `QueryVersion` and `SelectSelectionInput` on 
 shared), seven InputOnly windows (one owns the selection; one for each of six conversions at once, since an owner
 keeps one transfer per requestor window, as xclip's INCR does), and `GetSelectionOwner` (the owner when the watch
 began), after which SESSION. A new owner (XFixes' SelectionNotify; its window destroyed or its client gone: no owner)
-is a new offer, whose `TARGETS` are converted: the names known are its types, as a Wayland offer's. A **conversion**
+is a new offer, whose `TARGETS` are converted: the names known are its types, as a Wayland offer's (however many
+others the list has: GTK's names every gdk-pixbuf format). A **conversion**
 is a pipe, as Wayland's `receive`: ConvertSelection to a conversion window's property (with the owner's selection
 time), and at its SelectionNotify `GetProperty` in 64 KiB pieces from its offset (deleted with the last), the next
 asked only once the pipe took the last; an `INCR` property is read chunk by chunk as each new value comes
 (PropertyNotify), until an empty one; a reader that goes during INCR leaves the transfer read to its end into nothing
 (its owner waits for each chunk to be taken). A conversion waits (queued, six at most) while the owner is busy with
 another of ours (one not answered yet, or an INCR not ended): Debian 13's xclip (0.13) serves one INCR at a time and
-drops the requests that come meanwhile, so a REQUEST behind the probe's INCR was never answered. **Our source**: `SetSelectionOwner`, then `GetSelectionOwner` says
+drops the requests that come meanwhile, so a REQUEST behind the probe's INCR was never answered. A conversion whose
+owner doesn't answer for 10 s (`OWNER_WAIT`: its SelectionNotify, or under INCR its next value) ends as refused (its
+pipe closed, its property deleted; a TARGETS an offer without types): an owner that exits without answering, or drops
+our request during another requestor's INCR, would otherwise hold a slot and its own later conversions for good (six
+such, and the guest's copies were never offered again); a late answer is told from a later conversion's by its
+target. **Our source**: `SetSelectionOwner`, then `GetSelectionOwner` says
 whether it took (ACK `HELD`); a SelectionRequest for a type the page's offer has (the text as `UTF8_STRING`,
 `text/plain;charset=utf-8`, `text/plain`, `TEXT`, answered as `UTF8_STRING`, and `STRING`, UTF-8 too; `text/html`;
 `image/png`) gives a pipe the paste fills as Wayland's `send` does, and the requestor's property gets its bytes
 whole if they fit under the server's largest request (at most 256 KiB), else by **INCR** (the size so far, then
-64 KiB values, each once the requestor deleted the last, and an empty one); `TARGETS` and `TIMESTAMP` are answered at
-once, `MULTIPLE` and other types refused. At most eight transfers to requestors at once (the oldest goes: a requestor
-gone mid-INCR leaves one behind). SelectionClear (another program copied) drops the source. The native tests
+64 KiB values, each once the requestor deleted the last, and an empty one; the requestor window's PropertyNotify
+stays selected while another INCR to it goes on); a transfer that fails (the page's DATA `FAIL`, a cap, HELLO, the
+pause) is refused while collecting (no property, as ICCCM has it, not an empty paste), and under INCR, which can't say
+so once begun, ends with what came; `TARGETS` and `TIMESTAMP` are answered at once, `MULTIPLE` and other types
+refused. At most eight transfers to requestors at once (the oldest goes: a requestor gone mid-INCR leaves one behind). SelectionClear (another program copied) drops the source. The native tests
 (`agent/src/x11_test.rs`) run it against an Xvfb of their own with xclip; `tests/page-clipboard-x11.test.ts` against
 the Debian test image's Xvfb session.
 
@@ -240,10 +250,13 @@ the Debian test image's Xvfb session.
 - **SESSION**: when the data device is bound, and when it goes (the compositor's connection lost, the seat's
   `finished`), the child's transfers end as at PAUSE and it sends SESSION; the parent sends one too when it stops a
   child or one ends.
-- **The page's HELLO** (passed on by the parent: a new page, a restored one, the port reopened): the transfers in
-  flight were an earlier page's, which won't answer them; they end without a word to the new page (a guest program
-  pasting gets its pipe's end, not a wait for DATA that won't come; a request's MORE from the new page with an earlier
-  page's id finds nothing).
+- **The page's HELLO** (passed on by the parent: a new page, a restored one, the port reopened), whose page knows
+  nothing of the one before: the transfers in flight were an earlier page's, which won't answer them; they end without
+  a word to the new page (a guest program pasting gets its pipe's end, not a wait for DATA that won't come; a
+  request's MORE from the new page with an earlier page's id finds nothing). The host's offer goes, its selection
+  cleared as at PAUSE (its REQUESTs would name a serial the new page never gave), unless it is text whole in the cache
+  (its pastes need no page). The guest's selection is offered again under a new serial (unless paused): the new page
+  never had it.
 
 Its frames are `agent/src/frame.rs`, the twin of `web/agent-frame.ts` (both tests pin the same bytes). Serials belong
 to the side that offers, request ids to the side that requests:
@@ -258,8 +271,8 @@ to the side that offers, request ids to the side that requests:
 | DATA (4) | u32 id, u8 flags (1 END, 2 FAIL), at most 64 KiB | an answer, in order; FAIL: none (a stale serial, a type not offered, paused, past the cap) |
 | ACK (8) | u32 serial, u8 status (0 HELD, 1 NO_SESSION, 2 PAUSED, 3 TOO_LARGE, 4 NO_TYPE) | the agent's answer to the page's OFFER |
 | MORE (9) | u32 id, u32 count | the requester takes `count` more DATA frames for request `id`; 0 stops the answer |
-| TYPE (5) | UTF-8 text, at most 64 KiB a frame (`typePayloads` cuts between characters, never inside a CRLF) | the agent puts it in the foreground VT's input (`/dev/tty0`, TIOCSTI a byte at a time), line ends as Enter (CRLF and LF become CR, as terminal emulators paste); queued (1 MiB at most) and typed in bursts of 4 KiB between the loop's other work (`console::Typist`, stepped every 1 ms while it has text), paced by the terminal's unread input (`FIONREAD`, every 256 bytes: the line discipline drops what doesn't fit its 4 KiB), so a long paste into a reader that keeps up arrives whole and one that stalls a second loses the rest. Only while the VT shows text (`KDGETMODE` is `KD_TEXT`, checked at each burst): a compositor running on it puts it in graphics mode, and the lines would wait in its input for the shell to run once the compositor ends. Not UTF-8: dropped. PAUSE drops what is queued |
-| TYPED (12) | u8 status (0 DONE, 1 NOT_TEXT, 2 REFUSED, 3 DROPPED) | the agent's: what became of TYPE's text, once it has nothing left to type (DONE) or as it drops it (NOT_TEXT: graphics on the console, none of it typed; REFUSED: the console can't be opened or refused it, or not UTF-8; DROPPED: the reader stalled or too much was queued). The page keeps the last for the clipboard menu (`ClipboardShare.typed`), which says why after Type the clipboard |
+| TYPE (5) | UTF-8 text, at most 64 KiB a frame (`typePayloads` cuts between characters, never inside a CRLF); empty: the paste's end (`AgentLink.type` sends one after each paste's frames) | the agent puts it in the foreground VT's input (`/dev/tty0`, TIOCSTI a byte at a time), line ends as Enter (CRLF and LF become CR, as terminal emulators paste); queued (1 MiB at most) and typed in bursts of 4 KiB between the loop's other work (`console::Typist`, stepped every 1 ms while it has text), paced by the terminal's unread input (`FIONREAD`, every 256 bytes: the line discipline drops what doesn't fit its 4 KiB; for a reader in canonical mode, whose `FIONREAD` counts whole lines only, the line typed so far counts too, so a line longer than the buffer stalls and is dropped, not cut short), so a long paste into a reader that keeps up arrives whole and one that stalls a second loses the rest. A frame with no room in the queue is dropped with the rest of its paste (up to the empty frame), so what is typed is a prefix, and the typed bytes go from the queue once they pass half of it (a long paste holds about 1 MiB, not itself). Only while the VT shows text (`KDGETMODE` is `KD_TEXT`, checked at each burst): a compositor running on it puts it in graphics mode, and the lines would wait in its input for the shell to run once the compositor ends. Not UTF-8: dropped. PAUSE drops what is queued |
+| TYPED (12) | u8 status (0 DONE, 1 NOT_TEXT, 2 REFUSED, 3 DROPPED) | the agent's: what became of TYPE's text, once it has nothing left to type (DONE) or as it drops it (NOT_TEXT: graphics on the console, none of it typed; REFUSED: the console can't be opened or refused it, or not UTF-8; DROPPED: the reader stalled or too much was queued, said as it happens and again as the queue's end). The page keeps the last for the clipboard menu (`ClipboardShare.typed`), which says why after Type the clipboard |
 | PAUSE (6), RESUME (7) | none | while paused the agent drops TYPE and the clipboard's frames (above); the link refuses `type()` while paused and says PAUSE or RESUME at every opening of the agent's end (a restarted agent starts unpaused; a restored one is as its snapshot was, and the pause is the run's); the parent passes both to its child, and PAUSE first to a new child |
 
 A frame's length that can't be (zero, past 64 KiB and 256) breaks the agent's reader: it closes and reopens the port,
@@ -278,9 +291,12 @@ document while the screen's canvas has focus gives the text (`pasted`), the page
 either way (a hash of each) or empty, and the key goes to the guest at the agent's ACK or after 300 ms (`ACK_WAIT`;
 300 ms more if no paste event comes, `PASTE_WAIT`). An ACK that refuses is taken whenever it comes. The hashes stand
 for what the guest's clipboard has: an offer forgets the guest's, the guest's copy the page's, and the port's opening
-or closing, HELLO, SESSION and the pause forget both (and drop the transfers). The page answers the agent's REQUESTs
-for its newest offer within their credit; its serials and request ids start at random (a restored agent may hold an
-earlier page's). Nothing of this happens while the link is paused, closed, or the agent's HELLO lacks `CAP.TEXT`.
+or closing, HELLO, SESSION and the pause forget both (and drop the transfers). An offer that a newer one began during
+its waits (reading an image's bytes for its hash) isn't sent, nor is a focus read's whose read a paste began during:
+the guest's clipboard ends with the newest. The page answers the agent's REQUESTs for its newest offer within their
+credit; its own requests stop (MORE 0) when no DATA came for 30 s (`REQUEST_WAIT`: a guest program that never serves
+its type would hold an image's write, and the focus syncs behind it, for good); its serials and request ids start at
+random (a restored agent may hold an earlier page's). Nothing of this happens while the link is paused, closed, or the agent's HELLO lacks `CAP.TEXT`.
 **Images** (plan §4.4, with `CAP.IMAGE` from both sides): the page offers a PNG (way 1's `read()`, the paste event's
 `File`, Send's `read()`) after its text in one OFFER, its size known (at most 64 MiB, else left out), and answers
 REQUESTs for `image/png` from its bytes, the one image it holds (a newer image's offer fails the older one's answers);
