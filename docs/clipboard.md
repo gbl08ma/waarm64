@@ -46,6 +46,8 @@ RESUME) is in devices.md "The guest's agent".
   switch [Share the clipboard](ui:clipboard:ClipboardMenu.share),
   [Send the clipboard to the guest](ui:clipboard:ClipboardMenu.send),
   [Type the clipboard](ui:clipboard:ClipboardMenu.type) and [Copy the screen](ui:clipboard:ClipboardMenu.screen).
+  The menu stays open while Send, Type or Copy the screen runs: it closes when the action succeeds (for Type, when
+  the agent's TYPED says it was typed whole), and a failure keeps it open with its note, where the click was.
   frontend.md "The toolbar" has each item's behavior.
 
 ## The host's ways
@@ -161,6 +163,12 @@ Measured on 2026-11-05 and 2026-11-06, headless on the dev VM (`bench/results/lo
 | The paste event at a focused, non-editable `<canvas>` | At the canvas, with the text and no grant; a copied image as one `file image/png`; on the Mac (TextEdit's text) `text/plain`, `text/html` and `text/rtf`, with no prompt from Chrome or macOS | At `<body>`, not the canvas, with the data (text, and `file image/png`), so the page listens on the document |
 | Writing `""` | `read()` gives an item with no types | `read()` gives an item whose types say `text/plain` |
 
+**On the Arch desktop** (2026-11-07, the user, on their Linux desktop's Chromium in a Wayland session; the guest's
+sway, so `ext_data_control_manager_v1`): text both ways between the guest's foot and the host; an image copied in
+the guest's Firefox reached the host, its file name too; the host's image pasted into a web app (Photopea) in the
+guest's Firefox; the menu's switch paused both ways and resumed them; Type the clipboard was refused with its note
+(sway owns the VT).
+
 **On the Mac** (2026-11-07, the user, macOS 26.6.2 with default settings, Chrome, the Debian sway test image), with
 the read permission granted: a word copied in TextEdit reached the guest's `wl-paste` once the page's screen was
 clicked, with no alert or prompt from macOS (its "Paste from Other Apps" guard didn't step in for these reads). So
@@ -214,9 +222,6 @@ Each step's cases and planted bugs are in [testing.md](testing.md)'s clipboard r
 
 - **On the Mac:** concealed copies (password managers) and images on the pasteboard. The focus reads and both
   directions of text are measured ("On the Mac" above).
-- **The Arch desktop:** foot and Firefox both ways, GIMP's images, `qemu_fw_cfg` from Arch's kernel, and the unit
-  there. Its sway has `ext_data_control_manager_v1`, which only the native test (sway 1.12) has exercised; the Debian
-  test image's wlroots has only `zwlr`.
 - **Firefox's and Safari's image writes** (activation, the promise form of `ClipboardItem`), and Safari altogether.
 - **X11 outside Xvfb:** a display manager's session (`TYPE=x11`, its cookie written late), Xorg through startx, and
   Xwayland under a compositor without data-control (natively, a fake compositor without data-control gives way to

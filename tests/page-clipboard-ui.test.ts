@@ -167,12 +167,24 @@ test("the toolbar's clipboard button: only with the setting; waiting, sharing, p
   assert.equal(typed.type, FRAME.TYPE);
   assert.equal(new TextDecoder().decode(typed.payload), during);
   assert.deepEqual([end.type, end.payload.length], [FRAME.TYPE, 0]);
-  // The agent's word that the console under a compositor took none of it (TYPED): the menu says so.
-  await guestWrites(page, encodeFrame(FRAME.TYPED, new Uint8Array([TYPED.NOT_TEXT])));
+  // What became of a paste (the agent's TYPED) shows in the menu the click left open: a failure keeps it open, where the
+  // user looks; typed whole, it closes. The guest's side is set up first, to answer in the background, because typing
+  // on the serial shell closes the menu (onSerial). The background job's output goes away from run()'s `$(…)`, which
+  // would otherwise wait for it (and it waits for the click's frames).
+  const isOpen = () => page.evaluate(() => (document.getElementById('clipboard-menu') as HTMLDetailsElement).open);
+  const answerLater = (typed: number) => run(page, `(sleep 3; dd bs=1 count=${5 + Buffer.byteLength(during) + 5} <&3 >/dev/null 2>&1; printf '${[...encodeFrame(FRAME.TYPED, new Uint8Array([typed]))].map((b) => `\\${b.toString(8).padStart(3, '0')}`).join('')}' >&3) </dev/null >/dev/null 2>&1 & echo later`);
+  await answerLater(TYPED.NOT_TEXT);
   await menu(page, true);
-  await page.waitForSelector('#clipboard-not-text', { timeout: 5000 });
+  await page.click('#clipboard-type');
+  assert.equal(await isOpen(), true, 'the menu closed at the click, before Type\'s outcome');
+  await page.waitForSelector('#clipboard-not-text', { timeout: 10_000 });
+  assert.equal(await isOpen(), true, 'the menu closed before Type\'s refusal showed');
   assert.equal(await page.textContent('#clipboard-not-text'), t('clipboard:ClipboardMenu.notText'));
-  await menu(page, false);
+  await answerLater(TYPED.DONE);
+  await menu(page, true);
+  await page.click('#clipboard-type');
+  assert.equal(await isOpen(), true, 'the menu closed at the click, before Type\'s outcome');
+  await page.waitForFunction(() => !(document.getElementById('clipboard-menu') as HTMLDetailsElement).open, undefined, { timeout: 10_000 });
 
   // The "agent" closes the port: waiting again.
   await onSerial(page, 'exec 3>&-\n');

@@ -204,7 +204,7 @@ permission is `prompt` (its click's read is what makes Chromium ask), how to all
 it is `denied`, a note while it is `granted`; **[Share the clipboard](ui:clipboard:ClipboardMenu.share)**, the switch, which pauses both ways for the run
 (PAUSE to the agent; the pending text dropped; the pause isn't in snapshots: the link says PAUSE or RESUME at every
 opening of the agent's port, so an agent restored paused is resumed); **[Send the clipboard to the guest](ui:clipboard:ClipboardMenu.send)** and
-**[Type the clipboard](ui:clipboard:ClipboardMenu.type)** (TYPE on the console), which read on their click (Send reads `read()`, for an image too); after Type, the menu says what went
+**[Type the clipboard](ui:clipboard:ClipboardMenu.type)** (TYPE on the console), which read on their click (Send reads `read()`, for an image too); the menu stays open while one runs and closes when it succeeds (for Type, at the agent's TYPED DONE), a failure keeping it open with its note; after Type, the menu says what went
 wrong as the agent's TYPED says it: "[Nothing was typed, because the guest is showing a graphical desktop rather than a text console. Paste with the keyboard while the guest's screen has the focus instead.](ui:clipboard:ClipboardMenu.notText)"
 or "[Some of the text wasn't typed, as the guest's console didn't consume all of it.](ui:clipboard:ClipboardMenu.untyped)"; and
 **[Copy the screen](ui:clipboard:ClipboardMenu.screen)**, which needs no agent (shown while waiting or paused too): a PNG of the display
