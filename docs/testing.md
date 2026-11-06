@@ -3,10 +3,10 @@
 Layered, cheapest first, in scripts by what a change touches (not needed for a change that
 only edits docs: `.md` files or code comments):
 
-- **`scripts/ci.sh`** (~6 min) must pass before any piece of work is done: every layer but the
-  Debian boots. It includes the heaviest multi-vCPU runs (`WEBPC_LONG_TESTS=1`: the parallel
-  litmus and atomics stress under JIT-check, the JIT's at `-r 50`, Node's Alpine on 4 parallel
-  vCPUs; a plain `npm test` leaves them out or runs `-r 10`), and the graphics and network tests
+- **`scripts/ci.sh`** (~8 min) must pass before any piece of work is done: every layer but the
+  Debian boots and the JIT's JIT-stress and JIT-check variants (`ci-jit.sh`, below). It includes the heaviest
+  multi-vCPU runs (`WEBPC_LONG_TESTS=1`: the parallel litmus and atomics stress under the JIT at `-r 50`, Node's
+  Alpine on 4 parallel vCPUs; a plain `npm test` leaves them out or runs `-r 10`), and the graphics and network tests
   that boot no Debian (the gpu guest natively, in Node and in Chromium, `gpu`, `gpu-present`,
   `display`; `network`, `gateway`, `net`, `devices`), and the sound device's (`snd`, the snd guest likewise).
 - **`scripts/ci-debian.sh`** boots Debian on the page: `page-debian`, `page-disk`, `start`'s run, `page-spill`, ~5 min in the dev VM ("Debian boots" below). Two run at a time
@@ -81,6 +81,15 @@ only edits docs: `.md` files or code comments):
   `DISK2=` with `GUEST_ENV=VK_DRIVER_FILES=/mnt/vdb/venus/virtio_icd.json` runs deqp-vk through it (also through
   `sway-mac.sh`); `tests/deqp/vk-maintenance8.txt` passes so, by hand, until the guest's own Mesa passes
   `maintenance8` on (VK4 T24; docs/backlog.md).
+- **`scripts/ci-jit.sh`** (~2 min, alone: the litmus run takes 4 vCPUs) runs the JIT's amplifying variants, which a plain
+  `npm test` and `ci.sh` skip (`WEBPC_JIT_VARIANTS=1`, `tests/jit-variants.ts`): JIT-stress on the bare-metal tests,
+  kvm-unit-tests' `cache` and `debug`, the golden corpus and lockstep, and JIT-check on the parallel bare-metal tests and
+  the parallel litmus and atomics stress on 4 vCPUs. It must pass too when a change touches the JIT (`core/src/jit/`,
+  its emitters and runtime, the dispatcher, the code cache, what compiled code reads of the `Cpu`, the TLB or memory)
+  and at the end of a JIT track. `ci.sh` keeps the plain JIT's runs (the default path, which every core change
+  meets), the differential test and lockstep. Split from `ci.sh` on 2026-11-06: those variants were ~480 s of the JS
+  tests' 3,015 s of test time (the litmus run under JIT-check 242 s alone, 100 s here), which ran in ~590 s of wall
+  time; after it the JS tests took 416 s (2,130 s of test time) and `ci.sh` 494 s (was 672), this script 104 s.
 - **`scripts/ci-usb.sh`** runs the USB tests that need the dev VM's host rigs ([below](#usb-the-dev-vms-host-rigs)):
   WebUSB against dummy_hcd gadgets and WebHID against uhid devices in the pinned Chromium, and the guest through
   them. It must pass too when a change touches USB (the xHCI, its glue, the WebUSB and WebHID backends, the USB tab).
@@ -91,8 +100,8 @@ only edits docs: `.md` files or code comments):
 Until 2026-10-08 `ci.sh` held the Debian boots and the long multi-vCPU runs had a script of
 their own: `ci.sh` took 765 s, of which the Debian queue was ~460. Without the Debian boots it
 takes 302 s, and 365 s with the long runs. JIT and core changes are covered in `ci.sh` by Buildroot, Alpine, Alpine
-userspace, Alpine through EDK2, the corpus, the differential test, lockstep and litmus; Debian
-comes with the end of their track.
+userspace, Alpine through EDK2, the corpus, the differential test, lockstep and litmus under the plain JIT; the JIT's
+stress and check variants are `ci-jit.sh`'s; Debian comes with the end of their track.
 
 **New behavior comes with tests at the cheapest layer that catches it.** Instruction
 semantics need golden-corpus coverage; JIT changes must pass the differential test, lockstep
@@ -105,16 +114,16 @@ and the exact-step boots.
 | Unit tests | `cargo test` (native) | decoder, ALU/flags, bitfields, FP core, crypto KATs, MMU walker, GIC, virtio rings, run loop, DTB, the JIT's structure (block formation, liveness, encoder bytes) |
 | TestFloat | `scripts/testfloat.sh` | `fp.rs` against TestFloat 3e, every op and FZ/DN combination (51.2M cases) |
 | FP suite ([below](#the-fp-suite-imagesbuildsh-fptest)) | `scripts/ci-fp.sh` (`tests/fptest.test.ts`, `WEBPC_FPTEST=1`; not in `scripts/ci.sh`) | TestFloat 3e's level-1 cases through all 482 scalar, vector, by-element, pairwise and general-register FP forms in a Linux guest under the JIT (4 parallel vCPUs), every FPCR rounding mode × FZ × DN, FPSR.IXC clear and set, against SoftFloat with ARM's rules, on both arms of the FMA where the host fuses (jit.md "Floating point"); ~300M checks an arm, ~1.5 min each |
-| Golden corpus | `core/tests/corpus.rs` (native interpreter); `tests/corpus-wasm.test.ts` (wasm: interpreter, JIT forced, JIT stress, block interpreter) | ~50,000 instruction tests with results from the M4 |
+| Golden corpus | `core/tests/corpus.rs` (native interpreter); `tests/corpus-wasm.test.ts` (wasm: interpreter, JIT forced, block interpreter; JIT stress in `ci-jit.sh`) | ~50,000 instruction tests with results from the M4 |
 | Block interpreter ([cpu.md](cpu.md) "The block interpreter") | `interp::block::tests` (`cargo test`); `core/tests/boot.rs` `linux_boots_through_the_block_interpreter`, `core/tests/distros.rs` `alpine_boots_through_the_block_interpreter` (native: there the dispatcher runs everything in it); `WEBPC_NATIVE_JIT=1` runs every native guest test through it; every JIT run's cold code | random blocks of the classes it has handlers for (and some it runs generically) from random states against `interp::steps`: steps, exit, registers, RAM; Buildroot on 1 and 4 vCPUs and Alpine with `tests/steps.txt`'s counts, Buildroot on 4 parallel vCPUs |
 | JIT differential | `tests/jit-diff.test.ts` | JIT vs interpreter on random words per inlined class, from 8 random states each, plus multi-instruction sequences and region shapes (branches, loops); on a host that fuses, the FMA forms' classes, FP edge cases and the NEON sequences again on the forced emulation |
-| Lockstep | `tests/jit-lockstep.test.ts` | the integer and FP guests (user mode) and the integer guest at EL1 (MMU off and on), JIT and JIT-stress vs interpreter, `Cpu` + RAM checksum every chunk; 20M steps per JIT case in CI |
+| Lockstep | `tests/jit-lockstep.test.ts` | the integer and FP guests (user mode) and the integer guest at EL1 (MMU off and on), JIT (and JIT-stress in `ci-jit.sh`) vs interpreter, `Cpu` + RAM checksum every chunk; 20M steps per JIT case in CI |
 | JIT compile worker | `tests/jit-compile-worker.test.ts` (its ready word); `tests/boot-node-suite.ts` "parallel: Buildroot on n vCPUs" (every module through the worker, none overdue); `core/src/jit/mod.rs` unit tests (redirects wait for their region) | the vCPUs install a module only once the worker has compiled it, interpreting its blocks until then (docs/jit.md "Sharing") |
 | Core instances on one memory | `tests/threads.test.ts` (Node workers); `tests/browser.test.ts` (Chromium workers) | three concurrent instances (interpreter, JIT, JIT) with their own stack, TLS and table run the integer guest to the reference's exact state (M7) |
 | JIT plumbing | `tests/jit.test.ts` | install, IC IVAU invalidation (also across chains), the stale-code checker, call/return chaining, tier-up, direct branches to another page under the MMU (pages that aren't contiguous physically, a decoy at the PA that would follow, a remap), a batch's blocks compiled as one forward region (two calls of one function with a predicted and a mispredicted return; a region across two pages: remapped, and rewritten with an `IC IVAU`) |
-| Bare-metal EL1 tests | `core/tests/baremetal.rs`; `tests/boot-node*.test.ts` (interpreter, JIT, JIT-stress) | exceptions, MMU, GICv3, timer, UART, SMP (4 vCPUs: CPU_ON, SGI ping-pong, per-CPU timers, CPU_OFF), broadcast maintenance (`maint`, 4 vCPUs: every TLBI …IS flavor, TLBI by ASID while the others run another ASID and against a global mapping, IC IVAU and IALLUIS on code the others run; its IC planted out, JIT-check's stale-code checker must trap), cross-modification seen through an ISB in a hot compiled loop (`isb`, 2 vCPUs: CPU 1 reads a flag, ISB, calls the rewritten function; under the parallel JIT a fast-completed ISB ran the old code until the table caught up, 3-8 stale calls in 8 rounds, every run), 128-bit atomics (`pairs`, 4 vCPUs: CASP and LDXP/STXP against each other and against plain stores to the same bytes), memory at the edges (`devmem`: LDAR and STLR on a device register, cache maintenance by VA and DC ZVA on Device mappings with a device behind them and without, Q registers under `SCTLR_EL1.A`, IC IALLU with Rt != 31 on code that ran; checked against the M4), self-hosted debug (`debug`: software step from EL0 through a load-exclusive, an SVC, an UNDEFINED instruction and an IRQ taken first; breakpoints by address, linked and unlinked context ID, PMC, KDE and `PSTATE.D`, the OS lock; watchpoints by byte, LSC, MASK and a store exclusive; planted: the dispatcher's test, `set_pstate` not following the EL, ERET dropping `SPSR.SS`, an arming MSR not ending the chunk, a restore dropping a comparator each fail it or kvm-unit-tests' `debug-*`), console input (`rx`, 2 vCPUs: a line through the PL011's RX interrupt while it waits in WFI with no timer; parallel mode needs `SIGNAL_RX` to wake it), the firmware configuration's CFI flash bank (`flash`: erase, word and buffered program, status, identifier and CFI query, as EDK2 drives it) |
+| Bare-metal EL1 tests | `core/tests/baremetal.rs`; `tests/boot-node*.test.ts` (interpreter, JIT; JIT-stress in `ci-jit.sh`) | exceptions, MMU, GICv3, timer, UART, SMP (4 vCPUs: CPU_ON, SGI ping-pong, per-CPU timers, CPU_OFF), broadcast maintenance (`maint`, 4 vCPUs: every TLBI …IS flavor, TLBI by ASID while the others run another ASID and against a global mapping, IC IVAU and IALLUIS on code the others run; its IC planted out, JIT-check's stale-code checker must trap), cross-modification seen through an ISB in a hot compiled loop (`isb`, 2 vCPUs: CPU 1 reads a flag, ISB, calls the rewritten function; under the parallel JIT a fast-completed ISB ran the old code until the table caught up, 3-8 stale calls in 8 rounds, every run), 128-bit atomics (`pairs`, 4 vCPUs: CASP and LDXP/STXP against each other and against plain stores to the same bytes), memory at the edges (`devmem`: LDAR and STLR on a device register, cache maintenance by VA and DC ZVA on Device mappings with a device behind them and without, Q registers under `SCTLR_EL1.A`, IC IALLU with Rt != 31 on code that ran; checked against the M4), self-hosted debug (`debug`: software step from EL0 through a load-exclusive, an SVC, an UNDEFINED instruction and an IRQ taken first; breakpoints by address, linked and unlinked context ID, PMC, KDE and `PSTATE.D`, the OS lock; watchpoints by byte, LSC, MASK and a store exclusive; planted: the dispatcher's test, `set_pstate` not following the EL, ERET dropping `SPSR.SS`, an arming MSR not ending the chunk, a restore dropping a comparator each fail it or kvm-unit-tests' `debug-*`), console input (`rx`, 2 vCPUs: a line through the PL011's RX interrupt while it waits in WFI with no timer; parallel mode needs `SIGNAL_RX` to wake it), the firmware configuration's CFI flash bank (`flash`: erase, word and buffered program, status, identifier and CFI query, as EDK2 drives it) |
 | kvm-unit-tests | `core/tests/kvm_unit_tests.rs`; `tests/boot-node*.test.ts` | selftest (incl. smp), psci, gicv3-ipi, gicv3-active, timer, cache, debug (breakpoints, watchpoints, single step, and through snapshots) |
-| Litmus and atomics stress (4 vCPUs) | `core/tests/litmus.rs` (interpreter: round-robin with exact steps, parallel); `tests/boot-node*.test.ts` (round-robin JIT with exact steps; parallel JIT and JIT-check); `tests/browser.test.ts` (parallel JIT); `scripts/tsan.sh` (parallel, small) | the memory model (no state herd7 forbids), LSE and LL/SC atomics, 128-bit CAS, futex wake-ups, spin-wait latency (M7) |
+| Litmus and atomics stress (4 vCPUs) | `core/tests/litmus.rs` (interpreter: round-robin with exact steps, parallel); `tests/boot-node*.test.ts` (round-robin JIT with exact steps; parallel JIT, and JIT-check in `ci-jit.sh`); `tests/browser.test.ts` (parallel JIT); `scripts/tsan.sh` (parallel, small) | the memory model (no state herd7 forbids), LSE and LL/SC atomics, 128-bit CAS, futex wake-ups, spin-wait latency (M7) |
 | Buildroot boot and device test | `core/tests/boot.rs`; `tests/boot-node*.test.ts`; `tests/browser.test.ts` | Linux boots, virtio console/rng/blk/net/9p/input, framebuffer, realtime mode, writable overlay, console input (`-- /bin/sh` reads 5.5 KB from the host at a fixed step: more than the RX ring; in parallel through a `MessagePort`) |
 | LTP subset + arm64 kselftests | `core/tests/ltp.rs` (interpreter, each result against its table); `tests/boot-node*.test.ts` (JIT) | 93 syscall tests; `syscall-abi`, `ptrace`, `hwcap`, `tpidr2`, `tags_test`, signal tests |
 | Crypto test kernel | `tests/boot-node*.test.ts` (JIT; interpreter with `WEBPC_INTERP=1`) | the arm64 CE drivers' full self-tests (sha3-ce among them), lib/crypto's SHA-1/224/256/384/512 KUnit suites, `/proc/cpuinfo` listing `sha3` and `sha512` |
@@ -415,7 +424,8 @@ start one target must get ALREADY_ON or ON_PENDING).
 - **Lockstep:** `WEBPC_LOCKSTEP_STEPS=300000000` for the long run, done at the end of every loop
   that touches semantics (stress runs a tenth).
 - **JIT-stress** (threshold 0, batch 1, a 4-region cache, tier-up after one entry, the stale-code
-  checker) runs in CI on the bare-metal tests, kvm-unit-tests `cache` and the corpus.
+  checker) runs in `scripts/ci-jit.sh` on the bare-metal tests, kvm-unit-tests `cache` and `debug`, the corpus
+  and lockstep.
   `WEBPC_JIT_STRESS=1` runs every Node boot under it (hours with LTP and Alpine). **The long
   stress runs aren't routine**: they ran once at M5's end (Alpine 4.25 h, LTP 2.9 h) and found
   nothing the short runs, the differential test and the exact-step boots hadn't. Run them only

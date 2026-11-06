@@ -11,6 +11,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { fusedFma } from '../web/fma.ts';
 import { coreImports } from '../web/vm.ts';
+import { jitVariantSkip } from './jit-variants.ts';
 import { CODE, DATA, DATA_SIZE, REGS, initialState, parseFile } from '../tools/corpus/corpus.ts';
 
 const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
@@ -49,7 +50,7 @@ function offset(name: string): number {
   return 8 * Number(name.slice(1));
 }
 
-for (const [mode, jit] of Object.entries(MODES)) test(`golden corpus on the wasm core: ${mode}`, () => {
+for (const [mode, jit] of Object.entries(MODES)) test(`golden corpus on the wasm core: ${mode}`, { skip: mode === 'JIT stress' && jitVariantSkip }, () => {
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const mod = new WebAssembly.Module(readFileSync(WASM));
   const imports = coreImports(memory);

@@ -3,7 +3,8 @@
 # docs/testing.md says which runner covers what. Distro boots: alpine, alpine-user and
 # alpine-uefi run when their images are current; WEBPC_DISTROS (a comma list) overrides which
 # ones. The Debian page boots are scripts/ci-debian.sh's, graphics' scripts/ci-graphics.sh's, the network
-# tests on Debian scripts/ci-net.sh's. The heaviest multi-vCPU runs (WEBPC_LONG_TESTS) are on.
+# tests on Debian scripts/ci-net.sh's, the JIT's JIT-stress and JIT-check variants scripts/ci-jit.sh's. The heaviest
+# multi-vCPU runs (WEBPC_LONG_TESTS) are on.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }

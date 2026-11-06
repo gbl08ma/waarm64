@@ -63,6 +63,7 @@ scripts/ci-audio.sh            # the realtime sound tests on the page (~1 min, a
 scripts/ci-deqp.sh             # dEQP's pass lists on the page (~6 min): also when a change touches 3D (renderer, translator, caps, GPU worker), graphics track ends; needs images/deqp/build.sh
 scripts/ci-deqp-vk.sh          # a seeded sample of dEQP-VK's pass list on two machines and the programs' replays on the page (~12.5 min, under a 14 GiB `MemoryMax`): also when a change touches Vulkan (vk/, web/venus-gpu.ts, Venus); --full the whole list (~28 min): Vulkan track ends, cross-cutting changes (docs/testing.md); a sample's failure is fixed at once or filed and taken out of the list; needs images/deqp/build.sh vk
 scripts/ci-usb.sh              # USB through the dev VM's host rigs (dummy_hcd gadgets, uhid; alone): also when a change touches USB; "skipped: <why>" without the rigs (docs/testing.md "USB")
+scripts/ci-jit.sh              # the JIT's JIT-stress and JIT-check variants (~2 min, alone): also when a change touches the JIT (its emitters, runtime, code cache, what compiled code reads), JIT track ends; ci.sh keeps the plain JIT's runs
 scripts/ci-fp.sh               # the FP suite in the guest (~5 min): TestFloat through every FP form under the JIT; also when a change touches floating point (the JIT's FP, the FP core); needs images/build.sh linux fptest
 scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/webpc_core.wasm
 cargo test                     # native core tests
@@ -76,7 +77,7 @@ Everything else (the corpus, the JIT's tests, the oracles, the USB rigs, the net
 benchmarks): [docs/devenv.md](docs/devenv.md) "Commands" and [docs/benchmarking.md](docs/benchmarking.md).
 **`scripts/ci.sh` must pass before any piece of work is considered done** (and `scripts/ci-debian.sh` when it touches the page, the firmware, the devices, disks, snapshots or
 the display, for guest-visible changes and at the end of a track; `scripts/ci-graphics.sh` when it touches the display, 3D or Venus's device and at the end of a track; `scripts/ci-machines.sh` when it touches stored machines, their disks or snapshots, or the Machines page; `scripts/ci-net.sh`
-when it touches the network; `scripts/ci-audio.sh` when it touches sound; `scripts/ci-deqp.sh` when it touches 3D; `scripts/ci-deqp-vk.sh` when it touches Vulkan; `scripts/ci-fp.sh` when it touches floating point; `scripts/ci-usb.sh` when it touches USB). **Exception:** a change that only edits docs (`.md` files or code comments)
+when it touches the network; `scripts/ci-audio.sh` when it touches sound; `scripts/ci-deqp.sh` when it touches 3D; `scripts/ci-deqp-vk.sh` when it touches Vulkan; `scripts/ci-jit.sh` when it touches the JIT; `scripts/ci-fp.sh` when it touches floating point; `scripts/ci-usb.sh` when it touches USB). **Exception:** a change that only edits docs (`.md` files or code comments)
 needs no CI run.
 
 ## Conventions
@@ -112,7 +113,7 @@ needs no CI run.
 **Testing** ([docs/testing.md](docs/testing.md))
 - New behavior comes with tests at the cheapest layer that catches it. Instruction semantics need
   golden-corpus coverage; JIT changes must pass the differential test, lockstep and the exact-step
-  boots.
+  boots (`scripts/ci.sh`), and their JIT-stress and JIT-check variants (`scripts/ci-jit.sh`).
 - Step counts live in `tests/steps.txt`; they move only with a guest-visible change, once, in its
   commit (and guest-visible changes need the user's OK).
 - Plant a bug for every new JIT rule and check the tests fail; restore the source **and rebuild
@@ -172,7 +173,7 @@ their code.**
   the native interpreter run doesn't test). Iterate on the Buildroot guest and Alpine under the
   JIT; Debian boots only through UEFI in Chromium (the page tests, ~1 min under the JIT), never natively, in Node or directly.
 - Multi-hour JIT-stress runs aren't routine: short stress variants catch what they catch.
-- **`scripts/ci.sh`, `scripts/ci-debian.sh`, `scripts/ci-graphics.sh`, `scripts/ci-machines.sh`, `scripts/ci-audio.sh`, `scripts/ci-deqp.sh`, `scripts/ci-deqp-vk.sh`, `scripts/ci-fp.sh` and `scripts/ci-usb.sh` run alone, one at a time, in the background** (each is at or over the
+- **`scripts/ci.sh`, `scripts/ci-debian.sh`, `scripts/ci-graphics.sh`, `scripts/ci-machines.sh`, `scripts/ci-audio.sh`, `scripts/ci-deqp.sh`, `scripts/ci-deqp-vk.sh`, `scripts/ci-jit.sh`, `scripts/ci-fp.sh` and `scripts/ci-usb.sh` run alone, one at a time, in the background** (each is at or over the
   Bash tool's cap): start it, wait for its notification, and run no other Chromium, QEMU or benchmark work beside it (a contended run was cancelled by a
   timeout; a timing-sensitive unit test failed only under its load). `cargo fmt --all` first: it is CI's first step.
 - `tsc` covers `bench/`, the git-ignored files under `bench/results/local/` too; `tests/browser.test.ts` pins the

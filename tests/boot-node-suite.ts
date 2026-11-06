@@ -7,6 +7,8 @@
 //   device test): the interpreter, then the JIT against it. JIT-stress only for
 //   the bare-metal tests and kvm-unit-tests `cache` (its IC maintenance), since
 //   a 4-block cache compiles on most dispatches; WEBPC_JIT_STRESS=1 runs the rest.
+//   JIT-stress and the parallel JIT-check runs only with WEBPC_JIT_VARIANTS=1
+//   (scripts/ci-jit.sh: tests/jit-variants.ts).
 // - Long guests (LTP and kselftests, the crypto test kernel, Alpine, Alpine's
 //   userspace benchmark): the JIT only, against tests/steps.txt. Their
 //   interpreter runs are native (core/tests: ltp.rs, distros.rs), or here with
@@ -27,6 +29,7 @@ import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
 import { checkSndGuest } from './snd/guest.ts';
 import { USB_CMDLINE, USB_HUBS_CMDLINE, USB_INITRD, USB_KERNEL, checkUsbGuest, checkUsbHubs, usbGuest } from './usb/guest.ts';
+import { jitVariantSkip } from './jit-variants.ts';
 import { STEPS } from './steps.ts';
 import { CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, guestDevices, runToPowerOff, testDevices, type BootOptions, type ConsoleInput } from '../web/vm.ts';
 
@@ -63,7 +66,7 @@ function guest(name: string, o: () => BootOptions, check: (r: Run) => void, { sk
     if (steps) assert.equal(want.steps, steps);
   });
   for (const [mode, jit] of [['JIT', 1], ['JIT-stress', 2]] as const) {
-    const off = skip || (jit === 2 && !stress && 'SKIPPED: set WEBPC_JIT_STRESS=1');
+    const off = skip || (jit === 2 && ((!stress && 'SKIPPED: set WEBPC_JIT_STRESS=1') || jitVariantSkip));
     test(`${name}: ${mode}`, { skip: off }, async () => {
       const r = await boot(o(), jit, max, input);
       const ref = want ? ` (interpreter ${(want.ms / 1000).toFixed(1)} s)` : '';
@@ -125,7 +128,7 @@ const parallel = async (o: BootOptions, jit: 0 | 1 | 2 | 3, check: (r: Run) => v
 };
 for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin') && !windowed(f)).sort()) {
   for (const [mode, jit] of [['JIT', 1], ['JIT-check', 3]] as const) {
-    test(`parallel: bare-metal ${f} (${mode})`, () => parallel(bareMetal(f), jit, (r) => {
+    test(`parallel: bare-metal ${f} (${mode})`, { skip: jit === 3 && jitVariantSkip }, () => parallel(bareMetal(f), jit, (r) => {
       poweredOff(r);
       assert.equal(r.x[1], 0n, r.console);
     }, inputOf(f)));
@@ -352,7 +355,7 @@ guest('litmus and stress on 4 vCPUs', () => litmus('-s,100,-r,1', '-n,20000'), l
 // The JIT's litmus at -r 50 caught V8 folding an address dependency (docs/jit.md "Atomics"; -r 10
 // caught it 1 run in 3); scripts/ci.sh runs -r 50, a plain npm test -r 10.
 for (const [mode, jit, l, s] of [['JIT', 1, longSkip ? '-s,1000,-r,10' : '-s,1000,-r,50', '-n,100000'], ['JIT-check', 3, '-s,100,-r,2', '-n,10000']] as const) {
-  test(`parallel: litmus and stress on 4 vCPUs (${mode})`, { skip: litmusSkip || (mode === 'JIT-check' && longSkip) }, async () => {
+  test(`parallel: litmus and stress on 4 vCPUs (${mode})`, { skip: litmusSkip || (mode === 'JIT-check' && (longSkip || jitVariantSkip)) }, async () => {
     const r = await boot({ ...litmus(l, s), parallel: true, idleLimitMs: 30_000 }, jit, 1e12);
     console.log(`# litmus and stress ${mode}: ${(r.ms / 1000).toFixed(1)} s; ${r.console.match(/stress: spin ok .*/g)?.join('; ')}`);
     litmusOk(r);

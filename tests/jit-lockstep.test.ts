@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { JIT_DEFAULT, JIT_STRESS, setup, setupVm } from '../bench/interp/suite.ts';
+import { jitVariantSkip } from './jit-variants.ts';
 
 const STEPS = Number(process.env.WEBPC_LOCKSTEP_STEPS ?? 20_000_000);
 const RAM = 16 << 20; // bench/interp/suite.ts
@@ -34,7 +35,7 @@ function lockstep(a: Side, b: Side, steps: number, chunk: number) {
 
 for (const [bin, what] of [['guest.bin', 'integer'], ['guest-fp.bin', 'FP/NEON']]) {
   for (const [mode, jit, steps] of [['JIT', JIT_DEFAULT, STEPS], ['JIT-stress', JIT_STRESS, STEPS / 10]] as const) {
-    test(`lockstep: ${what} guest, user mode, ${mode}`, async () => {
+    test(`lockstep: ${what} guest, user mode, ${mode}`, { skip: mode === 'JIT-stress' && jitVariantSkip }, async () => {
       const [a, b] = [await setup(bin), await setup(bin, jit)];
       lockstep({ ...a, ram: a.base }, { ...b, ram: b.base }, steps, 100_000);
       const c = b.counts!();
@@ -45,7 +46,7 @@ for (const [bin, what] of [['guest.bin', 'integer'], ['guest-fp.bin', 'FP/NEON']
 
 for (const mmu of [false, true]) {
   for (const [mode, jit, steps] of [['JIT', 1, STEPS], ['JIT-stress', 2, STEPS / 10]] as const) {
-    test(`lockstep: integer guest at EL1, MMU ${mmu ? 'on' : 'off'}, ${mode}`, async () => {
+    test(`lockstep: integer guest at EL1, MMU ${mmu ? 'on' : 'off'}, ${mode}`, { skip: mode === 'JIT-stress' && jitVariantSkip }, async () => {
       const [a, b] = [await setupVm(mmu), await setupVm(mmu, jit)];
       lockstep({ ...a.vm, ...a }, { ...b.vm, ...b }, steps, 100_000);
       const s = b.vm.stats();
