@@ -46,7 +46,7 @@ T2–T14; the rest of the order is judgement, said with each.
 
 ## The tasks
 
-### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T29 (2026-10-29 to 2026-11-06)
+### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T30 (2026-10-29 to 2026-11-06)
 
 Each row's outcome in full is its section of bench/vulkan/REPORT.md ("VK4 T<n>") and its commit; what each left is in
 docs/backlog.md "The Vulkan driver's gaps" (the entry named) and, where it is a defect or drops work, in the tasks
@@ -92,6 +92,7 @@ R1–R4 and then of R5–R7, had its findings fixed or moved to the backlog the 
 | T27. Depth and stencil resolve modes | MIN, MAX and AVERAGE (depth) advertised with `independentResolve` and `independentResolveNone`, the worker's drawn resolves folding the samples by the mode; of the 3,823 samples_4 and misc `depth_stencil_resolve` cases 2,614 pass on SwiftShader, 0 fail (the rest D16S8, T30's, and geometry); the M4 fails its 40 `stencil_samplemask` whatever the mode; 2,503 join the list (→ 36,155) | "Rendering", "The M4's own failures" |
 | T28. Pipeline state as variants | `VK_EXT_vertex_input_dynamic_state`, `VK_EXT_depth_bias_control` (the format's representation), the third dynamic state's depth clamp and clip, sample mask, alpha to coverage, blend and provoking vertex (the draw's key had them), alpha to coverage at one sample in the fragment stage, `VK_EXT_non_seamless_cube_map` from the faces' fetches; of 7,956 cases 2,519 pass on SwiftShader, 59 fail that failed before or their seamless twins do; 2,262 join the list (→ 38,417). Not done: `primitive_restart_index` (the guest's Venus doesn't pass it on), `legacy_vertex_attributes` (82 of the census's 85 dynamic vertex input cases) | "Not advertised, by what dEQP-VK asks", "Samplers' leftovers", "Pulled vertices' leftovers", "Rendering" |
 | T29. Shader types | `shaderInt8`, `shaderInt16`, `shaderInt64`, 8-bit storage, `storageInputOutput16`, `shaderImageGatherExtended`: bytes of words as halves are, 16-bit inputs and outputs widened, 64-bit integers pairs of words (64-bit subgroup reductions as shuffles); of 5,095 cases 1,877 pass on SwiftShader and 2,019 on the M4, 1,750 join the list (→ 40,166); float-to-integer conversions saturate exactly (WGSL clamps under the bound, Metal takes halves as finite); the 13 left failing are SwiftShader's own | "What the device advertises, left for the translator" |
+| T30. Depth16 with stencil and the packed formats left | `D16_UNORM_S8_UINT` a depth24plus-stencil8 texture, its depth 16-bit unorm in buffers (copies drawn in and computed out, the bias ×256); `A4R4G4B4`, `A4B4G4R4` (`VK_EXT_4444_formats`), `A1B5G5R5`, `R4G4` (rg8unorm) and `A2R10G10B10`'s UNORM and UINT (rgb10a2) packed, the worker's pass taking texels of 1, 2 or 4 bytes (vk/README.md "Packed formats", was "Packed 16-bit formats"); `A2R10G10B10_UINT`'s clears drawn past Dawn's 8-bit cut; of 4,197 cases 2,769 pass on SwiftShader and 2,906 on the M4, the rest of the fails filed hosts' own; 2,767 join the list (→ 42,933). Not done: the 10-bit SNORM and SINT orders | "Packed formats' leftovers", "Depth comparison isn't reported" |
 
 ### Tier 3: performance on real workloads
 
@@ -113,19 +114,13 @@ memory, cooperative matrices, ray tracing, mesh shaders, tile images, fragment d
 the sample's on the M4 (×100 for the whole list, roughly); each starts by running its reason's cases (`deqp-run.ts`'s
 `CASES`, from `census.ts --reasons`' examples or the sample's JSON) to see what they meet once advertised.
 
-- **T30. Depth16 with stencil and the packed formats left** (M; 353 + those of ~2,450 below): `D16_UNORM_S8_UINT` as a
-  depth32float-stencil8 (or depth24plus-stencil8) texture whose copies convert the depth (T10's depth16 parts), its
-  precision 16 bits' where a test reads it back; `A4R4G4B4`, `A4B4G4R4`, `A1B5G5R5`, `R4G4` and the `A2R10G10B10`
-  orders through T12's packed formats' way (a wider texture, copies packing and unpacking in a compute pass).
-  *Done:* their cases run; the formats' features advertised only as far as they pass. *Start:* vk/README.md "Packed
-  16-bit formats", backlog "Packed 16-bit formats' leftovers".
 - **T31. Formats WebGPU has no texture of** (M–L; of the 1,559 "for sampling", 711 for transfer, 82 for blending, 45
   for vertex input): 3-component formats (RGB8, RGB16, RGB32 of each type), scaled ones, BGRA's integer and snorm
   orders, `R8_SRGB` and `R8G8_SRGB`: a wider texture with copies widening and narrowing, sampled with the shader's
   decoding (scaled: an integer texture read as floats; sRGB of one or two channels: decoded before T18's filter from
   fetches); vertex input's from T5's pulling. Which features each format can honestly have (linear filtering,
   blending, attachment) decides what's advertised. *Done:* their cases run; the cost of the copies said for one.
-  *Start:* vk/README.md "Packed 16-bit formats", "Pulled vertices", "Samplers in the shader".
+  *Start:* vk/README.md "Packed formats", "Pulled vertices", "Samplers in the shader".
 - **T32. What reads the attachment it writes** (M; 463): `VK_KHR_dynamic_rendering_local_read` (97),
   `VK_EXT_attachment_feedback_loop_layout` (48), advanced blends (94), `depthBounds` (113) and logic ops (16) through
   T12's feedback copies in a cut pass (a copy per draw that reads: the cost said), and
@@ -164,7 +159,7 @@ and the formats WebGPU's vertex buffers lack ("Pulled vertices' leftovers": the 
 a compute-only queue family, the commonest not-supported reason (T1); and the hosts' own: the M4's failures,
 SwiftShader's fetch from a base level and `buffer_1048577` on NVIDIA (the user's next NVIDIA run decides those and
 T2's `wg_complete` trap). The census's tasks take some of these: the compute-only queue family (T22), the packed 1.3 orders
-(T30), `_pcoffset` (T24), MIN/MAX/AVERAGE resolves (T27, done), `shaderInt64` (T29, done).
+(T30, done), `_pcoffset` (T24), MIN/MAX/AVERAGE resolves (T27, done), `shaderInt64` (T29, done).
 
 ## The gate (the track's end)
 

@@ -450,6 +450,8 @@ for (const [scenario, what] of [
   ['cubeGather', 'a keyed stage that can\'t be printed refuses its draw, with no invalid pipeline'],
   // VK4 T24 (maintenance8): no dEQP-VK case runs them through the tests' guest's Venus (Mesa 26.2).
   ['m8Copies', 'depth and stencil copied with colour images of their size, and blits between layers and slices'],
+  // VK4 T30.
+  ['t30Formats', 'packed formats WebGPU hasn\'t (R4G4, A4R4G4B4, A1B5G5R5, A2R10G10B10) and D16S8 keep their texels\' bits'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.

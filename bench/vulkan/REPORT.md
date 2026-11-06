@@ -771,6 +771,50 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T30: D16_UNORM_S8_UINT and the packed formats left; 2,767 cases join the list
+
+2026-11-06, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t30/` (`swiftshader-before.json`: the sample before any change;
+`swiftshader-clears.json`: the 48 `a2r10g10b10`/`a2b10g10r10` UINT clear cases after the clear's fix;
+`d16-reasons-swiftshader.json` and `packed-reasons-swiftshader.json`: dEQP's reasons for the cases the M4 still
+doesn't support, D16S8's 342 and the others' 947).
+
+- **What the device does** (vk/README.md "Packed formats", "Transfers"): `D16_UNORM_S8_UINT` is a depth24plus-stencil8
+  texture whose depth is 16-bit unorm in buffers (the copy in draws from half words, the copy out a compute pass writing
+  `round(depth · 65535)` as halves, so an uploaded texel comes back with its bits; a depth bias's constant ×256 into
+  depth24plus's units). `A4R4G4B4` and `A4B4G4R4` (1.3, `VK_EXT_4444_formats` advertised), `A1B5G5R5` (maintenance5),
+  `R4G4` (an `rg8unorm` texture) and `A2R10G10B10`'s UNORM and UINT (`rgb10a2unorm`, `rgb10a2uint`) are packed formats as
+  T12's were: the texture holds the channels, and the worker's compute pass between buffer and texture now takes texels
+  of 1, 2 or 4 bytes on either side, moving each channel's bits and scaling them where widths differ (`packPass`, one
+  pipeline for both ways). A view of another format of the texel's size is a texture of its own, copied the same way.
+- **Confirming, failing first**: the 4,197 cases of the sample (`cases.txt`: every 40th D16S8 case of the direct set,
+  every 20th of the others', 141 s on SwiftShader) were 4,189 not supported and 8 passing before; the driver's scenario
+  96 (tests/venus-driver.test.ts "packed formats WebGPU hasn't...") uploads and reads back each format, a copy of R4G4
+  into R8, clears, and D16S8's depth and stencil whole, in part and image to image. Planted: a texel's byte offset by
+  `& 2u` in the pass fails R4G4, D16's `· 65534` fails its depth.
+- **Found by the cases**: Dawn cuts `rgb10a2uint`'s clear values to 8 bits a channel, which the driver already drew
+  past for `A2B10G10R10_UINT`; `A2R10G10B10_UINT` shares the texture and now does too (its 5 attachment clears failed
+  with blue 255 for 716; the scenario's load-op clear reproduced it).
+
+| host | pass | fail | not supported |
+|---|---|---|---|
+| SwiftShader (before) | 8 | 0 | 4,189 |
+| SwiftShader | 2,768 (+1 after the clear's fix) | 20 (19 after) | 1,409 |
+| M4 | 2,906 | 2 | 1,289 |
+
+  SwiftShader's 19 are its own, filed: the `count_8` compute cases that bind 8 storage images (12) and the integer
+  `lod_base_mip_level` views (7). The M4's 2 are copies from `e5b9g9r9_ufloat_pack32` (its filed failure, Metal's
+  canonical bits). **The 2,767 both pass join `tests/deqp/vk.txt`** (40,166 → 42,933): D16S8 1,020, R4G4 468,
+  A1B5G5R5 374, A2R10G10B10 UNORM 334 and UINT 195, A4R4G4B4 202, A4B4G4R4 201; 139 more pass on the M4 only (SwiftShader
+  lacks a pair's other format).
+- **What's left not supported**, of D16S8's (342 on the M4): sample counts WebGPU lacks (2, 8, 16: 106), `depthBounds`
+  and the feedback loop layout (70, T32's), the compute queue's depth formats (24, dEQP's own rule), image types the
+  resolve tests skip (30), shadow sampling (17: `VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_DEPTH_COMPARISON_BIT` isn't reported
+  for any depth format: filed), depth bias's other representations (24, T28's); of the packed formats' 947 on the M4
+  (`packed-reasons-swiftshader.json`), protected access 235, a copy's or blit's other format or linear tiling ~470 (T31's
+  3-component, scaled and BGRA orders, the 10-bit SNORM and SINT ones), cubic filtering 101, min/max reductions'
+  component mapping 73 (T25's), sample counts 18.
+
 ## VK4 T29: shader types — 8-, 16- and 64-bit integers, 16-bit inputs and outputs, gathers with offsets; 1,750 cases join the list
 
 2026-11-06, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,

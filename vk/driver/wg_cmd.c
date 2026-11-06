@@ -803,8 +803,8 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
       if (resolves && !drawn)
          wg_json_printf(&j, ",\"resolveTarget\":%u", wg_view_att(r, view));
       wg_json_printf(&j, "}");
-      /* Dawn cuts a clear value of this format to 8 bits a channel: a draw after it. */
-      const bool wide_clear = v->vk.format == VK_FORMAT_A2B10G10R10_UINT_PACK32 &&
+      /* Dawn cuts a clear value of rgb10a2uint to 8 bits a channel: a draw after it (A2R10G10B10's texture too). */
+      const bool wide_clear = !strcmp(v->fmt->name, "rgb10a2uint") &&
                               (c->uint32[0] > 255 || c->uint32[1] > 255 || c->uint32[2] > 255);
       if ((partial || wide_clear) && clear) {
          wg_json_printf(&clears, "%s[%u,%s]", first_clear ? "" : ",", i, value);
@@ -1218,7 +1218,9 @@ sampler_border(const struct wg_image_view *view, const struct wg_sampler *sample
    const uint32_t one = integer ? 1 : 0x3f800000u;
    const bool custom = vk_border_color_is_custom(sampler->vk.border_color);
    const uint8_t *c = colours[custom ? 0 : sampler->vk.border_color];
-   const struct util_format_description *d = vk_format_description(view->vk.view_format);
+   /* Mesa has no pipe format of R4G4: R8G8's channels are its. */
+   const VkFormat vf = view->vk.view_format == VK_FORMAT_R4G4_UNORM_PACK8 ? VK_FORMAT_R8G8_UNORM : view->vk.view_format;
+   const struct util_format_description *d = vk_format_description(vf);
    const bool zs = view->vk.aspects & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
    uint32_t have[6];
    for (uint32_t i = 0; i < 4; i++) {
@@ -2442,12 +2444,12 @@ copy_bt(struct wg_cmd_buffer *cmd, enum op op, struct wg_buffer *buffer, struct 
    /* A multi-planar image's plane (VK3 L7.2): its own texture, the region in its texels. */
    const struct wg_image_plane *plane = &image->planes[wg_image_plane(image, aspect)];
    const struct wg_texture_format *f = plane->fmt;
-   /* The buffer's texels are the format's, a packed one's 2 bytes (the worker unpacks them). */
-   uint32_t bytes = (f->flags & WG_FMT_PACKED) ? 2 : f->bytes;
+   /* The buffer's texels are the format's, a packed one's own (the worker unpacks them). */
+   uint32_t bytes = wg_texel_bytes(f);
    uint32_t a = 0;
    if ((f->flags & WG_FMT_DEPTH) && (f->flags & WG_FMT_STENCIL)) {
       a = aspect == VK_IMAGE_ASPECT_STENCIL_BIT ? 2 : 1;
-      bytes = a == 2 ? 1 : 4;
+      bytes = a == 2 ? 1 : (f->flags & WG_FMT_D16) ? 2 : 4;
    } else if (aspect == VK_IMAGE_ASPECT_STENCIL_BIT) {
       a = 2;
    } else if (aspect == VK_IMAGE_ASPECT_DEPTH_BIT) {

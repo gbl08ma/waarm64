@@ -1869,9 +1869,10 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
          wg_json_printf(&j, ",\"stencilReadMask\":%u,\"stencilWriteMask\":%u", k->stencil_read,
                         k->stencil_test ? k->stencil_write : 0);
       }
+      /* WebGPU's constant is in its texture's units: D16's in depth24plus's are 256 of them. */
       if (k->depth_bias && has_depth)
          wg_json_printf(&j, ",\"depthBias\":%d,\"depthBiasSlopeScale\":%g,\"depthBiasClamp\":%g",
-                        (int)k->bias_constant, k->bias_slope, k->bias_clamp);
+                        (int)(k->bias_constant * ((f->flags & WG_FMT_D16) ? 256 : 1)), k->bias_slope, k->bias_clamp);
       wg_json_printf(&j, "}");
    }
    /* WebGPU's alpha to coverage wants several samples, a colour target at location 0 and no `sample_mask` output (else

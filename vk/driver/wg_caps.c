@@ -73,8 +73,8 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .KHR_maintenance3 = true,
       .KHR_maintenance4 = true,
       /* 1.4's: the *2 commands, index buffer ranges, VkBindMemoryStatus, VK_REMAINING_ARRAY_LAYERS in copies, shader
-       * modules chained to a stage (Mesa's runtime), the flags2 words (VK4 T24). A8_UNORM and A1B5G5R5 aren't offered
-       * (wg_format.c: no WebGPU format; VK4 T30). */
+       * modules chained to a stage (Mesa's runtime), the flags2 words (VK4 T24). A8_UNORM isn't offered (no WebGPU
+       * format); A1B5G5R5 is a packed format (wg_format.c, VK4 T30). */
       .KHR_maintenance5 = true,
       .KHR_maintenance6 = true,
       /* Offsets that aren't constants from fetches (wgsl_sampler.c `dynamic_offset`), depth and stencil copied with
@@ -96,6 +96,8 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .KHR_uniform_buffer_standard_layout = true,
       .KHR_vulkan_memory_model = true,
       .EXT_host_query_reset = true,
+      /* Packed formats (wg_format.c `WG_FMT_PACKED`, VK4 T30); 1.3 has the formats without the features. */
+      .EXT_4444_formats = true,
       .EXT_separate_stencil_usage = true,
       .KHR_copy_commands2 = true,
       .KHR_dynamic_rendering = true,
@@ -264,6 +266,8 @@ wg_caps_features(struct vk_features *f)
       .extendedDynamicState3ProvokingVertexMode = true,
       .vertexInputDynamicState = true,
       .depthBiasControl = true,
+      .formatA4R4G4B4 = true,
+      .formatA4B4G4R4 = true,
       .nonSeamlessCubeMap = true,
       .depthClipEnable = HAS(DEPTH_CLIP),
       /* YCbCr conversions (VK3 L7.2: each plane sampled and converted in the WGSL, wgsl_lower_ycbcr), on by default

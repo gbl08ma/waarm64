@@ -283,8 +283,11 @@ export class VenusGpu {
   private readonly scratches = new Map<number, { buffer: GPUBuffer; at: number }>();
   private dummyStorage: GPUBuffer | undefined;
   private dummyWrite: GPUBuffer | undefined;
-  /** Textures of packed formats (wg_format.c `WG_FMT_PACKED`): each of R, G, B, A's shift and bits. */
+  /** Textures of packed formats (wg_format.c `WG_FMT_PACKED`): each of R, G, B, A's shift and bits, then a texel's
+   * bytes in buffers. */
   private readonly packed = new WeakMap<GPUTexture, number[]>();
+  /** D16_UNORM_S8_UINT's depth24plus-stencil8 textures (wg_format.c `WG_FMT_D16`): their depth is 16-bit unorm in buffers. */
+  private readonly depth16 = new WeakSet<GPUTexture>();
   /** Transform feedback (VK3 L7.4): a vertex module's WGSL where it captures (`wg_xo`), each render pipeline's capture
    * (its JSON's `xfb`, by id), what the render pass last set (a captured draw runs on it), and the pass's captures,
    * run as compute once it ends (`runXfb`). */
@@ -948,7 +951,7 @@ export class VenusGpu {
   private depthStencilCopy(toTexture: boolean, b: GPUBuffer, offset: number, bpr: number, rows: number, t: GPUTexture, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number, aspect: number) {
     const f = t.format;
     const stencil = aspect === 2 || f === 'stencil8', d16 = f === 'depth16unorm';
-    const bytes = stencil ? 1 : d16 ? 2 : 4;
+    const bytes = stencil ? 1 : this.half(t) ? 2 : 4;
     const whole = x === 0 && y === 0 && w === Math.max(1, t.width >> mip) && h === Math.max(1, t.height >> mip);
     const allowed = stencil || f === 'depth16unorm' || (!toTexture && f.startsWith('depth32float'));
     const row = w * bytes;
@@ -988,6 +991,11 @@ export class VenusGpu {
       each((to, from) => enc.copyBufferToBuffer(temp, from, src, to, row));
     }
   }
+  /** Whether a texture's depth is 16-bit unorm in buffers: depth16unorm's, and D16_UNORM_S8_UINT's depth24plus-stencil8. */
+  private half(t: GPUTexture) {
+    return t.format === 'depth16unorm' || this.depth16.has(t);
+  }
+
   /** A uniform buffer of these words, for one of the worker's passes (destroyed after the submit). */
   private params(words: number[]) {
     const u = this.device!.createBuffer({ size: Math.max(16, Math.ceil(words.length / 4) * 16), usage: UNIFORM, mappedAtCreation: true });
@@ -1002,17 +1010,17 @@ export class VenusGpu {
    * depth24plus's, part of a subresource. Into the texture a draw over the region writes `frag_depth` from the buffer's
    * words (the other aspect loaded and stored); out of it a compute pass loads the depth into them. A D24 texel is a
    * word's low 24 bits as unorm (Vulkan's X8_D24 layout; the X8 bits written 0), a D32 one the float's bits, a D16 one
-   * a half word as unorm (into the texture only: `partThroughBuffer` reads it). False (the caller warns) where the
-   * texels aren't aligned or the texture lacks the usage.
+   * a half word as unorm (out of depth16unorm `partThroughBuffer` reads it; out of D16_UNORM_S8_UINT's texture the compute
+   * pass writes halves). False (the caller warns) where the texels aren't aligned or the texture lacks the usage.
    */
   private depthByShader(toTexture: boolean, b: GPUBuffer, offset: number, bpr: number, rows: number, t: GPUTexture, mip: number, x: number, y: number, z: number, w: number, h: number, layers: number): boolean {
     const d = this.device!, enc = this.enc!;
-    const f = t.format, d16 = f === 'depth16unorm', d24 = f.startsWith('depth24plus') ? 1 : 0, bytes = d16 ? 2 : 4;
-    if ((d16 && !toTexture) || offset % bytes || bpr % bytes || !(t.usage & (toTexture ? RENDER_ATTACHMENT : TEXTURE_BINDING))) return false;
+    const f = t.format, d16 = this.half(t), d24 = f.startsWith('depth24plus') ? 1 : 0, bytes = d16 ? 2 : 4;
+    if ((f === 'depth16unorm' && !toTexture) || offset % bytes || bpr % bytes || !(t.usage & (toTexture ? RENDER_ATTACHMENT : TEXTURE_BINDING))) return false;
     const rowsPer = Math.max(rows, h);
     const from = offset & ~255, end = offset + ((layers - 1) * rowsPer + h - 1) * bpr + w * bytes;
     if (end - from > d.limits.maxStorageBufferBindingSize || end > b.size) return false;
-    const key = toTexture ? `depth-up:${f}` : 'depth-down';
+    const key = toTexture ? `depth-up:${f}` : d16 ? 'depth-down16' : 'depth-down';
     const P = 'struct P { base: u32, pitch: u32, x: u32, y: u32, d24: u32, w: u32, h: u32, pad: u32 }';
     if (toTexture) {
       let pipeline = this.metaPipelines.get(key);
@@ -1055,7 +1063,21 @@ export class VenusGpu {
     }
     let pipeline = this.metaComputes.get(key);
     if (!pipeline) {
-      const m = d.createShaderModule({ code: `${P}
+      // D16 in a wider texture: the half word that uploads (above) to this depth, written by atomics (its neighbour
+      // shares the word); its place in bytes.
+      const m = d.createShaderModule({ code: d16 ? `${P}
+@group(0) @binding(0) var t: texture_depth_2d;
+@group(0) @binding(1) var<storage, read_write> o: array<atomic<u32>>;
+@group(0) @binding(2) var<uniform> p: P;
+@compute @workgroup_size(8, 8) fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+  if (id.x >= p.w || id.y >= p.h) { return; }
+  let v = textureLoad(t, vec2<i32>(id.xy + vec2<u32>(p.x, p.y)), 0);
+  let n = u32(round(clamp(v, 0.0, 1.0) * 65535.0));
+  let a = p.base + id.y * p.pitch + id.x * 2u;
+  let sh = (a & 2u) * 8u;
+  atomicAnd(&o[a >> 2u], ~(0xffffu << sh));
+  atomicOr(&o[a >> 2u], n << sh);
+}` : `${P}
 @group(0) @binding(0) var t: texture_depth_2d;
 @group(0) @binding(1) var<storage, read_write> o: array<u32>;
 @group(0) @binding(2) var<uniform> p: P;
@@ -1076,7 +1098,8 @@ export class VenusGpu {
       this.metaComputes.set(key, pipeline);
     }
     for (let l = 0; l < layers; l++) {
-      const u = this.params([(offset - from) / 4 + l * rowsPer * bpr / 4, bpr / 4, x, y, d24, w, h, 0]);
+      const unit = d16 ? 1 : 4;
+      const u = this.params([(offset - from + l * rowsPer * bpr) / unit, bpr / unit, x, y, d24, w, h, 0]);
       const view = t.createView({ dimension: '2d', aspect: 'depth-only', baseMipLevel: mip, mipLevelCount: 1, baseArrayLayer: z + l, arrayLayerCount: 1 });
       const pass = enc.beginComputePass();
       pass.setPipeline(pipeline);
@@ -1096,7 +1119,7 @@ export class VenusGpu {
       this.warn(`a multisampled copy between ${S.format} and ${D.format}: skipped`);
       return;
     }
-    const stencil = aspect === 2 || ds.format === 'stencil8', bytes = stencil ? 1 : ds.format === 'depth16unorm' ? 2 : 4;
+    const stencil = aspect === 2 || ds.format === 'stencil8', bytes = stencil ? 1 : this.half(ds) ? 2 : 4;
     const pitch = Math.ceil(w * bytes / 256) * 256;
     const temp = this.device!.createBuffer({ size: pitch * h * layers, usage: COPY_SRC | COPY_DST | STORAGE });
     this.temps.push(temp);
@@ -1121,7 +1144,7 @@ export class VenusGpu {
     const f = S.format, depthAspect = !f.startsWith('stencil') && aspect !== 2, stencilAspect = f.includes('stencil') && aspect !== 1;
     let ok = S.sampleCount === 1 && D.sampleCount === 1;
     if (ok && depthAspect) {
-      const d16 = f === 'depth16unorm', pitch = Math.ceil(w * (d16 ? 2 : 4) / 256) * 256;
+      const d16 = f === 'depth16unorm', pitch = Math.ceil(w * (this.half(S) ? 2 : 4) / 256) * 256;
       const temp = this.device!.createBuffer({ size: pitch * h * layers, usage: COPY_SRC | COPY_DST | STORAGE });
       this.temps.push(temp);
       ok = (d16 ? this.partThroughBuffer(temp, 0, pitch, h, S, sm, sx, sy, sz, w, h, layers, false) : this.depthByShader(false, temp, 0, pitch, h, S, sm, sx, sy, sz, w, h, layers)) && this.depthByShader(true, temp, 0, pitch, h, D, dm, dx, dy, dz, w, h, layers);
@@ -1349,6 +1372,7 @@ override bit: u32 = 8u;
       case 1: {
         const tex = (j.sampleCount ?? 1) > 1 && (j.size as number[])[2] > 1 ? new MsLayers(d, j as GPUTextureDescriptor) as unknown as GPUTexture : d.createTexture(j as GPUTextureDescriptor);
         this.objs[id] = tex;
+        if (j.depth16) this.depth16.add(tex);
         if (j.packed) this.packed.set(tex, j.packed);
         else if ((j.sampleCount ?? 1) === 1 && (j.usage & TEX_COPY_DST)) this.descs.set(tex, j as GPUTextureDescriptor);
         return;
@@ -2325,31 +2349,32 @@ fn ix(k: u32) -> u32 {
   }
 
   /**
-   * A buffer's 16-bit packed texels into a packed format's rgba8unorm texture (wg_format.c `WG_FMT_PACKED`): `bpr` and
-   * `rows` the buffer's, a compute pass unpacking them into a temporary buffer in the encoder's order, which is copied in.
+   * A buffer's packed texels into a packed format's texture (wg_format.c `WG_FMT_PACKED`: its channels in rgba8unorm,
+   * rg8unorm or rgb10a2*): `bpr` and `rows` the buffer's, a compute pass unpacking them into a temporary buffer in the
+   * encoder's order, which is copied in.
    */
   private unpack(p: number[], b: GPUBuffer, offset: number, bpr: number, rows: number, t: GPUTexture, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number) {
-    const d = this.device!;
-    const tb = Math.ceil((w * 4) / 256) * 256;
+    const d = this.device!, l = textureLayout(t.format);
+    const tb = Math.ceil((w * l[8]) / 256) * 256;
     const temp = d.createBuffer({ size: tb * h * depth, usage: STORAGE | COPY_SRC });
     this.temps.push(temp);
-    this.packPass('unpack', p, b, offset, bpr, rows, temp, 0, tb, h, w, h, depth);
+    this.packPass(p, b, offset, bpr, rows, l, temp, 0, tb, h, w, h, depth);
     this.enc!.copyBufferToTexture({ buffer: temp, bytesPerRow: tb, rowsPerImage: h }, this.texCopy(t, mip, x, y, z, 0), { width: w, height: h, depthOrArrayLayers: depth });
   }
 
   /** The other way: the texture's texels into a temporary buffer, packed from there into the buffer's. */
   private pack(p: number[], b: GPUBuffer, offset: number, bpr: number, rows: number, t: GPUTexture, mip: number, x: number, y: number, z: number, w: number, h: number, depth: number) {
-    const d = this.device!;
-    const tb = Math.ceil((w * 4) / 256) * 256;
+    const d = this.device!, l = textureLayout(t.format);
+    const tb = Math.ceil((w * l[8]) / 256) * 256;
     const temp = d.createBuffer({ size: tb * h * depth, usage: STORAGE | COPY_DST });
     this.temps.push(temp);
     this.enc!.copyTextureToBuffer(this.texCopy(t, mip, x, y, z, 0), { buffer: temp, bytesPerRow: tb, rowsPerImage: h }, { width: w, height: h, depthOrArrayLayers: depth });
-    this.packPass('pack', p, temp, 0, tb, h, b, offset, bpr, rows, w, h, depth);
+    this.packPass(l, temp, 0, tb, h, p, b, offset, bpr, rows, w, h, depth);
   }
 
   /** A copy between images of size-compatible formats, a packed one among them: the bits through a temporary buffer. */
   private copyPacked(ps: number[] | undefined, S: GPUTexture, sm: number, sx: number, sy: number, sz: number, pd: number[] | undefined, D: GPUTexture, dm: number, dx: number, dy: number, dz: number, w: number, h: number, depth: number) {
-    const bpr = Math.ceil((w * 2) / 256) * 256;
+    const bpr = Math.ceil((w * (ps ?? pd)![8]) / 256) * 256;
     const temp = this.device!.createBuffer({ size: bpr * h * depth, usage: STORAGE | COPY_SRC | COPY_DST });
     this.temps.push(temp);
     const size = { width: w, height: h, depthOrArrayLayers: depth };
@@ -2359,55 +2384,57 @@ fn ix(k: u32) -> u32 {
     else this.enc!.copyBufferToTexture({ buffer: temp, bytesPerRow: bpr, rowsPerImage: h }, this.texCopy(D, dm, dx, dy, dz, 0), size);
   }
 
-  /** `unpack` or `pack`'s compute pass: an invocation a row, `w` texels each, each buffer's rows and images its own; 16-bit
-   * words shared with neighbours written by atomics. */
-  private packPass(way: 'pack' | 'unpack', p: number[], src: GPUBuffer, srcAt: number, srcBpr: number, srcRows: number, dst: GPUBuffer, dstAt: number, dstBpr: number, dstRows: number, w: number, h: number, depth: number) {
+  /** `unpack` or `pack`'s compute pass: texels of layout `sl` into texels of layout `dl` (`[shift, bits]` of R, G, B, A,
+   * then a texel's bytes), each channel's value scaled to its bits there (a channel without bits there is skipped, one
+   * without bits here is 1); an invocation a row, `w` texels each, each buffer's rows and images its own; words shared
+   * with neighbours written by atomics. */
+  private packPass(sl: number[], src: GPUBuffer, srcAt: number, srcBpr: number, srcRows: number, dl: number[], dst: GPUBuffer, dstAt: number, dstBpr: number, dstRows: number, w: number, h: number, depth: number) {
     const d = this.device!, enc = this.enc!;
-    let pipeline = this.metaComputes.get(way);
+    let pipeline = this.metaComputes.get('packbits');
     if (!pipeline) {
-      const unpack = way === 'unpack';
-      const code = `struct P { w: u32, src_at: u32, src_bpr: u32, src_rows: u32, dst_at: u32, dst_bpr: u32, dst_rows: u32, pad: u32, shift: vec4<u32>, bits: vec4<u32> }
+      const code = `struct P { w: u32, src_at: u32, src_bpr: u32, src_rows: u32, dst_at: u32, dst_bpr: u32, dst_rows: u32, sb: u32, db: u32, pad0: u32, pad1: u32, pad2: u32,
+  ss: vec4<u32>, sn: vec4<u32>, ds: vec4<u32>, dn: vec4<u32> }
 @group(0) @binding(0) var<storage, read> s: array<u32>;
-@group(0) @binding(1) var<storage, read_write> o: array<${unpack ? 'u32' : 'atomic<u32>'}>;
+@group(0) @binding(1) var<storage, read_write> o: array<atomic<u32>>;
 @group(0) @binding(2) var<uniform> p: P;
 @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id: vec3<u32>) {
   let sa = p.src_at + (id.z * p.src_rows + id.y) * p.src_bpr;
   let da = p.dst_at + (id.z * p.dst_rows + id.y) * p.dst_bpr;
+  let smask = select((1u << (p.sb * 8u)) - 1u, 0xffffffffu, p.sb == 4u);
   for (var x = 0u; x < p.w; x++) {
-${unpack ? `    let at = sa + x * 2u;
-    let v = (s[at >> 2u] >> ((at & 2u) * 8u)) & 0xffffu;
+    let at = sa + x * p.sb;
+    let v = (s[at >> 2u] >> ((at & 3u) * 8u)) & smask;
     var out = 0u;
     for (var c = 0u; c < 4u; c++) {
-      let m = (1u << p.bits[c]) - 1u;
-      let k = select(255u, (((v >> p.shift[c]) & m) * 510u + m) / (2u * m), p.bits[c] != 0u);
-      out |= k << (c * 8u);
+      if (p.dn[c] == 0u) { continue; }
+      let md = (1u << p.dn[c]) - 1u;
+      let ms = (1u << p.sn[c]) - 1u;
+      let k = select(md, (((v >> p.ss[c]) & ms) * md * 2u + ms) / (2u * ms), p.sn[c] != 0u);
+      out |= k << p.ds[c];
     }
-    o[(da + x * 4u) >> 2u] = out;` : `    let t = s[(sa + x * 4u) >> 2u];
-    var v = 0u;
-    for (var c = 0u; c < 4u; c++) {
-      let m = (1u << p.bits[c]) - 1u;
-      if (p.bits[c] != 0u) { v |= ((((t >> (c * 8u)) & 255u) * m * 2u + 255u) / 510u) << p.shift[c]; }
-    }
-    let at = da + x * 2u;
-    let sh = (at & 2u) * 8u;
-    atomicAnd(&o[at >> 2u], ~(0xffffu << sh));
-    atomicOr(&o[at >> 2u], v << sh);`}
+    let to = da + x * p.db;
+    if (p.db == 4u) { atomicStore(&o[to >> 2u], out); continue; }
+    let sh = (to & 3u) * 8u;
+    let dmask = (1u << (p.db * 8u)) - 1u;
+    atomicAnd(&o[to >> 2u], ~(dmask << sh));
+    atomicOr(&o[to >> 2u], out << sh);
   }
 }`;
       pipeline = d.createComputePipeline({ layout: 'auto', compute: { module: d.createShaderModule({ code }), entryPoint: 'main' } });
-      this.metaComputes.set(way, pipeline);
+      this.metaComputes.set('packbits', pipeline);
     }
-    const srcTexel = way === 'unpack' ? 2 : 4, dstTexel = way === 'unpack' ? 4 : 2;
+    const srcTexel = sl[8], dstTexel = dl[8];
     const range = (b: GPUBuffer, at: number, bpr: number, rows: number, texel: number) => {
       const from = at - (at % 256);
       const end = Math.min(b.size, Math.ceil((at + ((depth - 1) * rows + h - 1) * bpr + w * texel) / 4) * 4);
       return { from, binding: { buffer: b, offset: from, size: Math.min(end - from, d.limits.maxStorageBufferBindingSize) } };
     };
     const a = range(src, srcAt, srcBpr, srcRows, srcTexel), c = range(dst, dstAt, dstBpr, dstRows, dstTexel);
-    const [u, uat] = this.scratch(UNIFORM | COPY_DST, 64);
-    d.queue.writeBuffer(u, uat, new Uint32Array([w, srcAt - a.from, srcBpr, srcRows, dstAt - c.from, dstBpr, dstRows, 0, p[0], p[2], p[4], p[6], p[1], p[3], p[5], p[7]]));
+    const [u, uat] = this.scratch(UNIFORM | COPY_DST, 112);
+    d.queue.writeBuffer(u, uat, new Uint32Array([w, srcAt - a.from, srcBpr, srcRows, dstAt - c.from, dstBpr, dstRows, srcTexel, dstTexel, 0, 0, 0,
+      sl[0], sl[2], sl[4], sl[6], sl[1], sl[3], sl[5], sl[7], dl[0], dl[2], dl[4], dl[6], dl[1], dl[3], dl[5], dl[7]]));
     const group = d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
-      { binding: 0, resource: a.binding }, { binding: 1, resource: c.binding }, { binding: 2, resource: { buffer: u, offset: uat, size: 64 } },
+      { binding: 0, resource: a.binding }, { binding: 1, resource: c.binding }, { binding: 2, resource: { buffer: u, offset: uat, size: 112 } },
     ] });
     const pass = enc.beginComputePass();
     pass.setPipeline(pipeline);
@@ -2668,6 +2695,14 @@ const ownFormat = (t: GPUTexture, format: string | undefined) => (format && form
  * range, but no more than a fan may have (the bound range is often a whole shared buffer: VK4 R4, the review's X3); past that the fan is cut.
  */
 export const fanMost = (bytes: number, el: number) => Math.min(Math.floor(bytes / el), 65536);
+
+/** A packed format's texture's own layout (`[shift, bits]` of R, G, B, A, then a texel's bytes): what `packPass` unpacks
+ * into and packs from. */
+export function textureLayout(f: string) {
+  if (f === 'rg8unorm') return [0, 8, 8, 8, 0, 0, 0, 0, 2];
+  if (f.startsWith('rgb10a2')) return [0, 10, 10, 10, 20, 10, 30, 2, 4];
+  return [0, 8, 8, 8, 16, 8, 24, 8, 4];
+}
 
 /** The swizzle of a copy between packed layouts (`[shift, bits]` of R, G, B, A; their textures are RGBA8): each channel
  * of the destination takes the source's whose bits are where its are. Undefined: no such channels. */

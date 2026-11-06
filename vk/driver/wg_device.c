@@ -402,8 +402,8 @@ view_format_ok(VkFormat format, VkFormat view)
 }
 
 /* A view of `format` of a texture of `f`, which WebGPU refuses, that a texture of its own can back (VK4 T4): bytes for
- * bytes, a block for a block. A packed format's (16 bits a texel in an rgba8unorm texture) and another of 16 bits a
- * texel copy through a buffer, packed and unpacked by the worker (`copyPacked`): Godot's SDFGI writes an R16_UINT image
+ * bytes, a block for a block. A packed format's (its channels in a texture of their own) and another of its texel's size
+ * copy through a buffer, packed and unpacked by the worker (`copyPacked`): Godot's SDFGI writes an R16_UINT image
  * and samples it as R4G4B4A4 (GD G4). */
 static bool
 view_format_aliasable(const struct wg_texture_format *f, VkFormat view)
@@ -411,7 +411,7 @@ view_format_aliasable(const struct wg_texture_format *f, VkFormat view)
    const struct wg_texture_format *v = wg_texture_format(view);
    if (v && ((f->flags | v->flags) & WG_FMT_PACKED))
       return !((f->flags | v->flags) & (WG_FMT_DEPTH | WG_FMT_STENCIL)) && f->bw == 1 && v->bw == 1 &&
-             vk_format_get_blocksize(f->vk) == 2 && vk_format_get_blocksize(view) == 2;
+             wg_texel_bytes(f) == wg_texel_bytes(v);
    return v && !(f->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL | WG_FMT_PACKED)) &&
           !(v->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL | WG_FMT_PACKED)) && v->bytes == f->bytes && v->bw == f->bw &&
           v->bh == f->bh;
@@ -1193,18 +1193,32 @@ srgb_twin(const struct wg_texture_format *fmt)
    return t ? t->name : NULL;
 }
 
-/* What the worker's copies need of a packed format, as a texture's first JSON key: each of R, G, B, A's shift and bits. */
+/* What the worker's copies need of a packed format, as a texture's first JSON key: each of R, G, B, A's shift and bits,
+ * then a texel's bytes in buffers. */
 static void
 packed_key(struct wg_json *j, const struct wg_texture_format *fmt)
 {
-   const struct util_format_description *d = vk_format_description(fmt->vk);
    wg_json_printf(j, "\"packed\":[");
-   for (uint32_t c = 0; c < 4; c++) {
-      const uint32_t k = d->swizzle[c];
-      wg_json_printf(j, "%s%u,%u", c ? "," : "", k <= PIPE_SWIZZLE_W ? d->channel[k].shift : 0,
-                     k <= PIPE_SWIZZLE_W ? d->channel[k].size : 0);
+   if (fmt->vk == VK_FORMAT_R4G4_UNORM_PACK8) {
+      /* Mesa has no pipe format of it: R in the high nibble. */
+      wg_json_printf(j, "4,4,0,4,0,0,0,0");
+   } else {
+      const struct util_format_description *d = vk_format_description(fmt->vk);
+      for (uint32_t c = 0; c < 4; c++) {
+         const uint32_t k = d->swizzle[c];
+         wg_json_printf(j, "%s%u,%u", c ? "," : "", k <= PIPE_SWIZZLE_W ? d->channel[k].shift : 0,
+                        k <= PIPE_SWIZZLE_W ? d->channel[k].size : 0);
+      }
    }
-   wg_json_printf(j, "],");
+   wg_json_printf(j, ",%u],", wg_texel_bytes(fmt));
+}
+
+/* A D16_UNORM_S8_UINT texture's key: the worker's copies take its depth as 16-bit unorm. */
+static void
+depth16_key(struct wg_json *j, const struct wg_texture_format *fmt)
+{
+   if (fmt->flags & WG_FMT_D16)
+      wg_json_printf(j, "\"depth16\":true,");
 }
 
 static uint32_t
@@ -1272,6 +1286,7 @@ wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, V
    wg_json_printf(&j, "{");
    if (flags & WG_FMT_PACKED)
       packed_key(&j, fmt);
+   depth16_key(&j, fmt);
    {
       wg_json_printf(&j, "\"size\":[");
    }
@@ -1818,6 +1833,7 @@ wg_view_crop(struct wg_image_view *view, uint32_t width, uint32_t height)
    wg_json_printf(&j, "{");
    if (view->fmt->flags & WG_FMT_PACKED)
       packed_key(&j, view->fmt);
+   depth16_key(&j, view->fmt);
    /* COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT (the worker draws copies it can't make). */
    wg_json_printf(&j, "\"size\":[%u,%u,%u],\"format\":\"%s\",\"sampleCount\":%u,\"usage\":%u,\"viewFormats\":[",
                   width, height, layers, view->fmt->name, view->vk.image->samples,
@@ -1856,6 +1872,7 @@ wg_view_twin(struct wg_image_view *view)
       /* As the image's texture: the worker's copy between them is a packed format's own. */
       if (view->fmt->flags & WG_FMT_PACKED)
          packed_key(&j, view->fmt);
+      depth16_key(&j, view->fmt);
       /* TEXTURE_BINDING | COPY_DST | RENDER_ATTACHMENT (depth24plus takes no copies: drawn). */
       wg_json_printf(&j, "\"size\":{\"width\":%u,\"height\":%u},\"format\":\"%s\",\"sampleCount\":%u,\"usage\":%u}",
                      e.width, e.height, view->fmt->name, view->vk.image->samples,

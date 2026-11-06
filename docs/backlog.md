@@ -841,9 +841,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `sampler2DMSArray` reads the first layer (it needs a binding per layer and a switch on the layer in the translator). The
     48 of `multiview.*multisample*` ask for `r32g32b32a32_sfloat` and the `image.mutable` r32 ones for views WebGPU can't
     multisample, without a format list saying so: no texture can back those.
-  - **Packed 16-bit formats' leftovers** (VK4 T12; vk/README.md "Packed 16-bit formats"): the two 1.3 orders
-    `A4R4G4B4`, `A4B4G4R4` and `A1B5G5R5` aren't offered; the same path would take them. A view of another format of the
-    16-bit class isn't offered.
+  - **Packed formats' leftovers** (VK4 T12, T30; vk/README.md "Packed formats"): a 16-bit format holds 8 bits a
+    channel, so what's rendered is sampled unrounded and blends run at 8 bits; a multisampled copy between a packed
+    format and another of its size that isn't (`A2R10G10B10` and `A2B10G10R10`, `R5G6B5` and `R16_UINT`) is skipped
+    with a warning. Not offered: `A2R10G10B10`'s and `A2B10G10R10`'s SNORM and SINT (WebGPU has no signed 10-bit
+    texture: `rgba16sint`/`rgba16snorm` through the same pass would take them) and the scaled orders (VK4 T31).
+    `D16_UNORM_S8_UINT` keeps depth24plus's 24 bits (Metal's depth32float) until copied out, so a depth test between
+    two values one D16 unit apart can differ from real D16; its depth bias's ×256 is exact only for a 24-bit unorm.
+  - **Depth comparison isn't reported** (VK4 T30): no depth format reports
+    `VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_DEPTH_COMPARISON_BIT` in `VkFormatProperties3` (wg_device.c), so dEQP-VK's
+    `texture.shadow.*` skip every depth format ("Format does not support shadow sampling": 17 of T30's D16S8 sample,
+    672 D16S8 cases of the direct set and as many of each other depth format). WebGPU compares every depth format; the
+    bit is a line, but the cases it opens need their own run (the shadow samplers' leftovers above).
   - **Pulled vertices' leftovers** (VK4 T5; vk/README.md "Pulled vertices"): a program with four groups of resources
     has none to pull from, and its pipeline stays refused (group 3 could take the bindings); more pulled bindings than
     the vertex stage's storage buffers left; a pulled range past `maxStorageBufferBindingSize` is cut there. What pulling
@@ -940,8 +949,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     provoking drawn as it is. Alpha to coverage without a colour target at location 0, or with a fragment stage that
     writes `sample_mask` (WebGPU takes neither), covers every sample (VK4 T28: they were refused, nothing drawn;
     `multisample.alpha_to_coverage_no_color_attachment`, `_unused_attachment` and `query_pool.discard.*alpha_to_coverage*`
-    fail: the fragment stage's own `sample_mask` could carry the coverage). Depth and stencil resolves of every mode are drawn (VK4 T27); `D16_UNORM_S8_UINT`'s
-    (1,104 of the samples_4 `depth_stencil_resolve` cases) wait for the format (VK4 T30).
+    fail: the fragment stage's own `sample_mask` could carry the coverage). Depth and stencil resolves of every mode are drawn (VK4 T27), `D16_UNORM_S8_UINT`'s too (VK4 T30).
   - **Usage scopes' leftovers** (VK4 T3, R2: vk/README.md "Usage scopes"): a pass or dispatch that writes storage of a
     memory it reads otherwise reads copies taken at its start. Left: writable bindings of one range, one an array of
     atomics and one not, or together past `maxStorageBufferBindingSize` (said once, refused by WebGPU); a descriptor

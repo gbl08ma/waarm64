@@ -490,7 +490,10 @@ array's layers and a 3D image's slices (maintenance8) a layer a slice, a draw ea
   draw (VK4 T10). Whole depth and stencil subresources take WebGPU's own copy where the textures have the copy usages and
   every aspect is copied. A copy between depth or stencil and a colour image of the texels' size (maintenance8:
 D32_SFLOAT and R32_SFLOAT, X8_D24 and R32_UINT, S8_UINT and R8_UINT, ...) goes through a temporary buffer, the depth or
-stencil side's copy as a buffer copy's above (`colorDepthStencil`, VK4 T24). A copy between size-compatible formats, which WebGPU's texture copies refuse, is the blocks'
+stencil side's copy as a buffer copy's above (`colorDepthStencil`, VK4 T24). `D16_UNORM_S8_UINT`, which WebGPU hasn't, is a depth24plus-stencil8 texture
+whose depth is 16-bit unorm in buffers (`WG_FMT_D16`, the worker's `depth16`): into it the draw reads half words, out of it a
+compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes back with its bits; what's drawn keeps
+24 bits (32 on Metal) until it is copied out, and a depth bias's constant is scaled by 256 to D16's units (VK4 T30). A copy between size-compatible formats, which WebGPU's texture copies refuse, is the blocks'
   bytes through a temporary buffer (`copyBetweenFormats`: a compressed block is one texel of an uncompressed format, and
   no bytes change on the way). A multisampled copy is WebGPU's own of a whole subresource, else draws shaded per sample
   (`sample_index`) reading the source's same sample, stencil by a draw a bit (`copyMultisampled`; multisampled images
@@ -681,13 +684,19 @@ stencil side's copy as a buffer copy's above (`colorDepthStencil`, VK4 T24). A c
   time (views, `texCopy`), so passes, resolves, clears and copies work as they do for any array. A view of several
   layers shows its first: WGSL has no multisampled arrays to sample, a shader on `sampler2DMSArray` is out of reach.
   Formats WebGPU doesn't multisample stay out, also as a view's format where a format list says so (one sample then).
-- **Packed 16-bit formats** (VK4 T12; `WG_FMT_PACKED`, `packPass` in web/venus-gpu.ts): `R5G6B5`, `A1R5G5B5` and `B4G4R4A4`,
-  which Vulkan requires, and their four orders, are `rgba8unorm` textures, optimal tiling only. Buffer ↔ image copies are
-  2 bytes a texel and the worker unpacks or packs them in a compute pass in the encoder's order, through a temporary
-  buffer; copies with a size-compatible format (`r16_uint`, `r8g8_unorm`) keep their bits the same way. So a texture holds
-  8 bits a channel: sampling what was rendered reads it unrounded (4 `self_dep` cases of `r5g6b5` out of the list) and
-  blends run at 8 bits. Formats without alpha (`WG_FMT_OPAQUE`) keep it 1: masked in the pipeline, 1 in clears, a swizzle on
-  reads. A view of another format isn't offered.
+- **Packed formats** (VK4 T12, T30; `WG_FMT_PACKED`, `packPass` in web/venus-gpu.ts): `R5G6B5`, `A1R5G5B5` and `B4G4R4A4`,
+  which Vulkan requires, and their four orders, 1.3's `A4R4G4B4` and `A4B4G4R4` (`VK_EXT_4444_formats`) and
+  maintenance5's `A1B5G5R5` are `rgba8unorm` textures; `R4G4` is `rg8unorm`, `A2R10G10B10`'s UNORM and UINT are
+  `rgb10a2unorm` and `rgb10a2uint` (WebGPU's order is A2B10G10R10's); optimal tiling only. A texture holds the format's
+  channels, so sampling, rendering and blending need nothing; buffer ↔ image copies are the format's own texels (1, 2
+  or 4 bytes: the `packed` key's ninth number) and the worker moves each channel's bits between the two layouts in a
+  compute pass in the encoder's order, through a temporary buffer, scaled where their widths differ; copies with a
+  size-compatible format (`r16_uint`, `r8g8_unorm`, `r8_unorm`, `r32_uint`) keep their bits the same way. So a 16-bit
+  format holds 8 bits a channel: sampling what was rendered reads it unrounded (4 `self_dep` cases of `r5g6b5` out of
+  the list) and blends run at 8 bits. Formats without alpha (`WG_FMT_OPAQUE`) keep it 1: masked in the pipeline, 1 in
+  clears, a swizzle on reads. A view of another format of the texel's size is a texture of that format copied the same
+  way (`image_alias`); a multisampled copy between a packed format and another that isn't is skipped (a draw can't move
+  bits between their layouts). Mesa has no pipe format of `R4G4`: its key and border are written out.
 - **Multiview** (VK4 T7; `begin_rendering` and `OP_VIEWS` in wg_cmd.c): WebGPU has no layered rendering, so a pass with a
   view mask (dynamic rendering's `viewMask`; legacy passes through the runtime's emulation, secondaries through their
   inheritance) is replayed once a view: `OP_PASS` holds each view's JSON one after another, each attachment that view's

@@ -3596,8 +3596,9 @@ t24_image(VkFormat format, VkImageType type, uint32_t w, uint32_t h, uint32_t de
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = type, .format = format, .extent = { w, h, depth },
       .mipLevels = 1, .arrayLayers = layers, .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
       .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-               ((format == VK_FORMAT_D32_SFLOAT || format == VK_FORMAT_S8_UINT) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
-                                                                              : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT),
+               ((format == VK_FORMAT_D32_SFLOAT || format == VK_FORMAT_S8_UINT || format == VK_FORMAT_D16_UNORM_S8_UINT)
+                   ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+                   : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT),
    };
    CHECK(CreateImage(dev, &info, NULL, out));
    VkMemoryRequirements req;
@@ -3680,6 +3681,134 @@ t24_misc(VkCommandBuffer cmd, VkBuffer out)
                 &(VkImageBlit){ .srcSubresource = c1, .srcOffsets = { { 0, 0, 0 }, { 2, 2, 2 } }, .dstSubresource = c2,
                                 .dstOffsets = { { 0, 0, 0 }, { 2, 2, 1 } } }, VK_FILTER_NEAREST);
    CmdCopyImageToBuffer(cmd, arr2, G, out, 1, &(VkBufferImageCopy){ .bufferOffset = 1280, .imageSubresource = c2, .imageExtent = { 2, 2, 1 } });
+   return 0;
+}
+
+/*
+ * VK4 T30, wgt_misc's scenario 96, into `out` (filled 0xee): packed formats WebGPU hasn't and D16_UNORM_S8_UINT, their
+ * texels uploaded from `src` and read back (the bits kept through their textures' channels).
+ * - R4G4 4×1 (bytes 0x12 0x34 0xab 0xf0) → [0, 4); copied into an R8_UNORM image, read back → [256, 260);
+ * - A4R4G4B4 4×1 (0x1234 0x5678 0x9abc 0xdef0) → [512, 520); one cleared to (1, 0, 0, 1), 1×1 → [768, 770) (0xff00);
+ * - A1B5G5R5 4×1 (0x8001 0x7fff 0x0421 0xffff) → [1024, 1032);
+ * - A2R10G10B10_UNORM 2×1 (0xc0100401 0x3ff003ff) → [1280, 1288); one cleared to (1, 0, 0, 1) → [1536, 1540)
+ *   (0xfff00000); A2R10G10B10_UINT 2×1 (0x80300c03 0x12345678) → [1792, 1800), then cleared to (204, 102, 716, 2),
+ *   1×1 → [1800, 1804); another loaded by a pass cleared to that, its first texel the same by vkCmdClearAttachments →
+ *   [1808, 1816) (Dawn cuts rgb10a2uint's clear values to 8 bits: drawn);
+ * - D16S8 4×4, depth 0x1001·i, stencil 7i: depth whole → [2048, 2080), stencil whole → [2304, 2320), the depth's (1, 1)
+ *   2×2 → [2560, 2568); its (1, 1) 2×2 copied to (0, 0) of another cleared to (1.0, 0x33): depth → [2816, 2848),
+ *   stencil → [3072, 3088).
+ */
+static int
+t30_misc(VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearDepthStencilImage CmdClearDepthStencilImage =
+      (PFN_vkCmdClearDepthStencilImage)GetDeviceProcAddr(dev, "vkCmdClearDepthStencilImage");
+   PFN_vkCmdClearColorImage CmdClearColorImage = (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   PFN_vkCmdCopyImage CmdCopyImage = (PFN_vkCmdCopyImage)GetDeviceProcAddr(dev, "vkCmdCopyImage");
+   const VkImageLayout G = VK_IMAGE_LAYOUT_GENERAL;
+   VkImage r4g4, r8, argb4, argb4c, a1bgr5, a2u, a2uc, a2i, d16, d16b;
+   VkBuffer src;
+   uint8_t *sb;
+   if (t24_image(VK_FORMAT_R4G4_UNORM_PACK8, VK_IMAGE_TYPE_2D, 4, 1, 1, 1, &r4g4) ||
+       t24_image(VK_FORMAT_R8_UNORM, VK_IMAGE_TYPE_2D, 4, 1, 1, 1, &r8) ||
+       t24_image(VK_FORMAT_A4R4G4B4_UNORM_PACK16, VK_IMAGE_TYPE_2D, 4, 1, 1, 1, &argb4) ||
+       t24_image(VK_FORMAT_A4R4G4B4_UNORM_PACK16, VK_IMAGE_TYPE_2D, 1, 1, 1, 1, &argb4c) ||
+       t24_image(VK_FORMAT_A1B5G5R5_UNORM_PACK16_KHR, VK_IMAGE_TYPE_2D, 4, 1, 1, 1, &a1bgr5) ||
+       t24_image(VK_FORMAT_A2R10G10B10_UNORM_PACK32, VK_IMAGE_TYPE_2D, 2, 1, 1, 1, &a2u) ||
+       t24_image(VK_FORMAT_A2R10G10B10_UNORM_PACK32, VK_IMAGE_TYPE_2D, 1, 1, 1, 1, &a2uc) ||
+       t24_image(VK_FORMAT_A2R10G10B10_UINT_PACK32, VK_IMAGE_TYPE_2D, 2, 1, 1, 1, &a2i) ||
+       t24_image(VK_FORMAT_D16_UNORM_S8_UINT, VK_IMAGE_TYPE_2D, 4, 4, 1, 1, &d16) ||
+       t24_image(VK_FORMAT_D16_UNORM_S8_UINT, VK_IMAGE_TYPE_2D, 4, 4, 1, 1, &d16b) ||
+       buffer(4096, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, &src, (void **)&sb))
+      return 1;
+   static const uint8_t r4g4_texels[4] = { 0x12, 0x34, 0xab, 0xf0 };
+   static const uint16_t argb4_texels[4] = { 0x1234, 0x5678, 0x9abc, 0xdef0 }, a1_texels[4] = { 0x8001, 0x7fff, 0x0421, 0xffff };
+   static const uint32_t a2u_texels[2] = { 0xc0100401, 0x3ff003ff }, a2i_texels[2] = { 0x80300c03, 0x12345678 };
+   memcpy(sb, r4g4_texels, 4);
+   memcpy(sb + 16, argb4_texels, 8);
+   memcpy(sb + 32, a1_texels, 8);
+   memcpy(sb + 48, a2u_texels, 8);
+   memcpy(sb + 64, a2i_texels, 8);
+   for (uint32_t i = 0; i < 16; i++) {
+      ((uint16_t *)(sb + 512))[i] = (uint16_t)(0x1001 * i);
+      sb[768 + i] = (uint8_t)(7 * i);
+   }
+   const VkImageAspectFlags C = VK_IMAGE_ASPECT_COLOR_BIT, D = VK_IMAGE_ASPECT_DEPTH_BIT, S = VK_IMAGE_ASPECT_STENCIL_BIT;
+   const VkImage colours[] = { r4g4, r8, argb4, argb4c, a1bgr5, a2u, a2uc, a2i };
+   for (uint32_t i = 0; i < 8; i++)
+      t24_general(cmd, colours[i], C, 1);
+   t24_general(cmd, d16, D | S, 1), t24_general(cmd, d16b, D | S, 1);
+   const VkImageSubresourceLayers c1 = { C, 0, 0, 1 }, d1 = { D, 0, 0, 1 }, s1 = { S, 0, 0, 1 };
+#define UP(img, at, w, h)                                                                                             \
+   CmdCopyBufferToImage(cmd, src, img, G, 1,                                                                          \
+                        &(VkBufferImageCopy){ .bufferOffset = at, .imageSubresource = c1, .imageExtent = { w, h, 1 } })
+#define DOWN(img, sub, at, x, y, w, h)                                                                                \
+   CmdCopyImageToBuffer(cmd, img, G, out, 1,                                                                          \
+                        &(VkBufferImageCopy){ .bufferOffset = at, .imageSubresource = sub, .imageOffset = { x, y, 0 }, \
+                                              .imageExtent = { w, h, 1 } })
+   const VkClearColorValue red = { .float32 = { 1, 0, 0, 1 } };
+   const VkImageSubresourceRange cr = { C, 0, 1, 0, 1 };
+
+   UP(r4g4, 0, 4, 1);
+   DOWN(r4g4, c1, 0, 0, 0, 4, 1);
+   CmdCopyImage(cmd, r4g4, G, r8, G, 1, &(VkImageCopy){ .srcSubresource = c1, .dstSubresource = c1, .extent = { 4, 1, 1 } });
+   DOWN(r8, c1, 256, 0, 0, 4, 1);
+   UP(argb4, 16, 4, 1);
+   DOWN(argb4, c1, 512, 0, 0, 4, 1);
+   CmdClearColorImage(cmd, argb4c, G, &red, 1, &cr);
+   DOWN(argb4c, c1, 768, 0, 0, 1, 1);
+   UP(a1bgr5, 32, 4, 1);
+   DOWN(a1bgr5, c1, 1024, 0, 0, 4, 1);
+   UP(a2u, 48, 2, 1);
+   DOWN(a2u, c1, 1280, 0, 0, 2, 1);
+   CmdClearColorImage(cmd, a2uc, G, &red, 1, &cr);
+   DOWN(a2uc, c1, 1536, 0, 0, 1, 1);
+   UP(a2i, 64, 2, 1);
+   DOWN(a2i, c1, 1792, 0, 0, 2, 1);
+   CmdClearColorImage(cmd, a2i, G, &(VkClearColorValue){ .uint32 = { 204, 102, 716, 2 } }, 1, &cr);
+   DOWN(a2i, c1, 1800, 0, 0, 1, 1);
+   {
+      /* A pass loading it cleared to (204, 102, 716, 2), (204, 102, 716, 2) put into its first texel by vkCmdClearAttachments. */
+      PFN_vkCmdBeginRendering CmdBeginRendering = (PFN_vkCmdBeginRendering)GetDeviceProcAddr(dev, "vkCmdBeginRendering");
+      PFN_vkCmdEndRendering CmdEndRendering = (PFN_vkCmdEndRendering)GetDeviceProcAddr(dev, "vkCmdEndRendering");
+      PFN_vkCmdClearAttachments CmdClearAttachments =
+         (PFN_vkCmdClearAttachments)GetDeviceProcAddr(dev, "vkCmdClearAttachments");
+      VkImage img;
+      VkImageView view;
+      if (image(VK_FORMAT_A2R10G10B10_UINT_PACK32, 2, 1, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                C, &img, &view))
+         return 1;
+      t24_general(cmd, img, C, 1);
+      const VkRenderingAttachmentInfo att = {
+         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = view, .imageLayout = G,
+         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR, .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+         .clearValue = { .color = { .uint32 = { 204, 102, 716, 2 } } },
+      };
+      const VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = { { 0, 0 }, { 2, 1 } },
+                                   .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &att };
+      CmdBeginRendering(cmd, &ri);
+      CmdClearAttachments(cmd, 1,
+                          &(VkClearAttachment){ .aspectMask = C, .colorAttachment = 0,
+                                                .clearValue = { .color = { .uint32 = { 204, 102, 716, 2 } } } },
+                          1, &(VkClearRect){ .rect = { { 0, 0 }, { 1, 1 } }, .layerCount = 1 });
+      CmdEndRendering(cmd);
+      DOWN(img, c1, 1808, 0, 0, 2, 1);
+   }
+
+   CmdCopyBufferToImage(cmd, src, d16, G, 1, &(VkBufferImageCopy){ .bufferOffset = 512, .imageSubresource = d1, .imageExtent = { 4, 4, 1 } });
+   CmdCopyBufferToImage(cmd, src, d16, G, 1, &(VkBufferImageCopy){ .bufferOffset = 768, .imageSubresource = s1, .imageExtent = { 4, 4, 1 } });
+   DOWN(d16, d1, 2048, 0, 0, 4, 4);
+   DOWN(d16, s1, 2304, 0, 0, 4, 4);
+   DOWN(d16, d1, 2560, 1, 1, 2, 2);
+   CmdClearDepthStencilImage(cmd, d16b, G, &(VkClearDepthStencilValue){ 1.0f, 0x33 }, 1,
+                             &(VkImageSubresourceRange){ D | S, 0, 1, 0, 1 });
+   CmdCopyImage(cmd, d16, G, d16b, G, 1,
+                &(VkImageCopy){ .srcSubresource = { D | S, 0, 0, 1 }, .srcOffset = { 1, 1, 0 },
+                                .dstSubresource = { D | S, 0, 0, 1 }, .extent = { 2, 2, 1 } });
+   DOWN(d16b, d1, 2816, 0, 0, 4, 4);
+   DOWN(d16b, s1, 3072, 0, 0, 4, 4);
+#undef UP
+#undef DOWN
    return 0;
 }
 
@@ -5889,6 +6018,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 95) {
       if (t24_misc(cmd, out))
+         return 1;
+   } else if (scenario == 96) {
+      if (t30_misc(cmd, out))
          return 1;
    } else if (scenario == 41 || scenario == 42) {
       if (t11_misc(scenario, cs, cs_words, cmd, out))

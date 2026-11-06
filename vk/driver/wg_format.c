@@ -49,6 +49,14 @@ static const struct wg_texture_format table[] = {
    F(B5G5R5A1_UNORM_PACK16, "rgba8unorm", 4, 1, 1, CS | FL | RB | WG_FMT_PACKED),
    F(R4G4B4A4_UNORM_PACK16, "rgba8unorm", 4, 1, 1, CS | FL | RB | WG_FMT_PACKED),
    F(B4G4R4A4_UNORM_PACK16, "rgba8unorm", 4, 1, 1, CS | FL | RB | WG_FMT_PACKED),
+   /* 1.3's (VK_EXT_4444_formats) and maintenance5's, the same way (VK4 T30); R4G4's two channels in rg8unorm, and
+    * A2R10G10B10's in rgb10a2's, their bits moved by the copies. */
+   F(A4R4G4B4_UNORM_PACK16, "rgba8unorm", 4, 1, 1, CS | FL | RB | WG_FMT_PACKED),
+   F(A4B4G4R4_UNORM_PACK16, "rgba8unorm", 4, 1, 1, CS | FL | RB | WG_FMT_PACKED),
+   F(A1B5G5R5_UNORM_PACK16_KHR, "rgba8unorm", 4, 1, 1, CS | FL | RB | WG_FMT_PACKED),
+   F(R4G4_UNORM_PACK8, "rg8unorm", 2, 1, 1, CS | FL | RB | WG_FMT_PACKED),
+   F(A2R10G10B10_UNORM_PACK32, "rgb10a2unorm", 4, 1, 1, CS | FL | RB | WG_FMT_PACKED),
+   F(A2R10G10B10_UINT_PACK32, "rgb10a2uint", 4, 1, 1, CS | WG_FMT_RENDER | U | WG_FMT_PACKED),
    F(R16_UINT, "r16uint", 2, 1, 1, CS | WG_FMT_RENDER | U | T1S),
    F(R16_SINT, "r16sint", 2, 1, 1, CS | WG_FMT_RENDER | S | T1S),
    F(R16_SFLOAT, "r16float", 2, 1, 1, CS | FL | RB | T1S),
@@ -83,6 +91,9 @@ static const struct wg_texture_format table[] = {
    F(D16_UNORM, "depth16unorm", 2, 1, 1, WG_FMT_SAMPLE | WG_FMT_DEPTH),
    F(X8_D24_UNORM_PACK32, "depth24plus", 4, 1, 1, WG_FMT_SAMPLE | WG_FMT_DEPTH | WG_FMT_NOCOPY),
    F(D24_UNORM_S8_UINT, "depth24plus-stencil8", 4, 1, 1, WG_FMT_SAMPLE | WG_FMT_DEPTH | WG_FMT_STENCIL | WG_FMT_NOCOPY),
+   /* WebGPU has no 16-bit depth with stencil: D24S8's texture, the depth 16 bits in buffers (VK4 T30). */
+   F(D16_UNORM_S8_UINT, "depth24plus-stencil8", 4, 1, 1,
+     WG_FMT_SAMPLE | WG_FMT_DEPTH | WG_FMT_STENCIL | WG_FMT_NOCOPY | WG_FMT_D16),
    F(D32_SFLOAT, "depth32float", 4, 1, 1, WG_FMT_SAMPLE | WG_FMT_DEPTH),
    F(D32_SFLOAT_S8_UINT, "depth32float-stencil8", 4, 1, 1, WG_FMT_SAMPLE | WG_FMT_DEPTH | WG_FMT_STENCIL | WG_FMT_D32S8),
    /* Compressed: the adapter's texture-compression-* features. */
@@ -182,6 +193,15 @@ bool
 wg_format_filterable(const struct wg_texture_format *f)
 {
    return (f->flags & WG_FMT_FILTER) || ((f->flags & WG_FMT_FLOAT32) && (device_features & WG_FEATURE_FLOAT32_FILTER));
+}
+
+uint32_t
+wg_texel_bytes(const struct wg_texture_format *f)
+{
+   if (!(f->flags & WG_FMT_PACKED))
+      return f->bytes;
+   /* Mesa has no pipe format of R4G4. */
+   return f->vk == VK_FORMAT_R4G4_UNORM_PACK8 ? 1 : vk_format_get_blocksize(f->vk);
 }
 
 static const struct {
