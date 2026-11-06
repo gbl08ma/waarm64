@@ -679,6 +679,31 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   pass's first such draw and after a barrier or clear inside it (`OP_PASS_READ`; without one, reading what the pass
   wrote is undefined), through `gpu_copy_tt`, so multisampled and depth images take their usual paths. An occlusion
   query carries on across a cut as across a clear. No sampled images: only input attachments reach this.
+- **Reading the attachments** (VK4 T32; `fragment_dst` in wg_shader.c, `dst_copies` in wg_cmd.c): the depth bounds test
+  (`depthBounds`), logic ops (`logicOp`) and advanced blends (`VK_EXT_blend_operation_advanced`) read what the attachment
+  holds, which WebGPU's pipelines can't. A draw whose key has them (`depth_bounds`, `logic_op`, `adv`: the dynamic state's)
+  reads a copy of each attachment it needs (its twin, as `feedback_copies`'), made in a cut of the WebGPU pass before
+  **every** such draw, since these see each earlier draw's writes; a pass with one is begun storing (`pass_reads_dst`).
+  The copies are a bind group of their own (`wg_dst`: binding i colour attachment i, 8 depth), the first group free past
+  the program's and the pull's (none free: the draw is refused, said once). The fragment stage is printed for the key:
+  its `main` becomes `wg_fs`, and a new `main` tests the attachment's depth against the bounds (discarding), calls it,
+  and makes each output the logic op's or the blend's of it and the attachment's texel (`dst_text`); WebGPU's blend is off
+  on those targets. Depth bounds without a fragment shader take a stage of the test alone; a range of [0, 1] on a fixed-point
+  format can't fail and reads nothing. Logic ops work on the format's bits (normalized channels converted to and from
+  them, widths from the Vulkan format, so a packed format's 5 bits are 5) and turn blending off on every attachment, sRGB
+  and float ones written as they are. Advanced blends follow the extension's equations (dEQP-VK's reference: a
+  destination not premultiplied gets the result divided by its alpha), every op, overlap and premultiplication, each
+  attachment its own (`advancedBlendMaxColorAttachments` 8, independent); not coherent, though they are between draws:
+  overlapping primitives of one draw read what was there before the draw, for all three. Mesa's runtime drops a
+  pipeline's advanced state unless coherent blends are enabled, so the device enables that flag without advertising it
+  (wg_device.c). A copy costs a pass cut and a texture copy: ~0.1 ms a draw on the M4, at 256² and 1080p alike
+  (bench/vulkan/REPORT.md "VK4 T32").
+- **Colour attachment locations** (VK4 T32; `VK_KHR_dynamic_rendering_local_read`; `mapped_text` in wg_shader.c): a pass's
+  draws may send output L to attachment i (`vkCmdSetRenderingAttachmentLocationsKHR`, Mesa's `cal`, reset to the identity
+  at each vkCmdBeginRendering); WebGPU's target i is @location(i), so the key holds the map and the stage is printed with
+  its outputs moved (an output no attachment takes goes to a private variable). Input attachments read through their
+  descriptors as before (`feedback_copies`), so the input attachment map isn't read; a barrier inside the pass renews
+  their copies. Dual-source outputs aren't moved.
 - **Multisampled arrays** (VK4 T12; `MsLayers` in web/venus-gpu.ts): WebGPU's multisampled textures have one layer, so the
   worker makes a texture a layer behind one object, which the driver sees as one texture; every path takes a layer at a
   time (views, `texCopy`), so passes, resolves, clears and copies work as they do for any array. A view of several

@@ -81,6 +81,8 @@ struct op_pass_atts {
    struct wg_image_view *views[10]; /* colour, then depth, stencil */
    VkImageAspectFlags written[10];  /* what the pass may write of each */
    uint32_t count;
+   /* Every attachment, for the draws that read them (VK4 T32, `dst_copies`): by colour index, and depth. */
+   struct wg_image_view *colors[8], *depth;
 };
 
 struct op_head {
@@ -690,6 +692,11 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
 {
    memset(&cmd->pass, 0, sizeof(cmd->pass));
    cmd->pass.active = true;
+   /* A pass's colour attachments take their own locations until vkCmdSetRenderingAttachmentLocationsKHR says otherwise. */
+   const VkRenderingAttachmentLocationInfoKHR identity = { .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_LOCATION_INFO_KHR,
+                                                          .colorAttachmentCount = MESA_VK_MAX_COLOR_ATTACHMENTS };
+   if (!(info->flags & VK_RENDERING_RESUMING_BIT))
+      vk_cmd_set_rendering_attachment_locations(&cmd->vk, &identity);
    cmd->pass.samples = 1;
    cmd->pass.view_mask = info->viewMask;
    cmd->pass.layer_mask = info->viewMask;
@@ -887,10 +894,19 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
    wg_json_printf(&j, ",\"width\":%u,\"height\":%u}", width, height);
    wg_json_printf(&clears, "}");
    cmd->pass.width = width, cmd->pass.height = height;
-   /* A draw may read an attachment as an input attachment (`feedback_copies`). */
+   /* A draw may read an attachment as an input attachment (`feedback_copies`), or for its depth bounds, logic op or
+    * advanced blend (`dst_copies`). */
    struct op_pass_atts atts = { 0 };
+   bool any_view = false;
    for (uint32_t i = 0; i < n; i++) {
       VK_FROM_HANDLE(wg_image_view, v, atts_info[i]->imageView);
+      if (v && v->slice < 0 && !crops[i]) {
+         if (i < cmd->pass.color_count)
+            atts.colors[i] = cmd->pass.color_views[i] = v;
+         else if (v->vk.aspects & VK_IMAGE_ASPECT_DEPTH_BIT)
+            atts.depth = cmd->pass.depth_view = v;
+         any_view = true;
+      }
       if (!v || !(v->vk.image->usage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) || v->slice >= 0 || atts.count == 10)
          continue;
       VkImageAspectFlags written = v->vk.aspects;
@@ -906,7 +922,7 @@ begin_rendering(struct wg_cmd_buffer *cmd, const VkRenderingInfo *info, uint32_t
       atts.written[atts.count++] = written;
    }
 #undef ATT
-   if (atts.count && (!views || last_view))
+   if ((atts.count || any_view) && (!views || last_view))
       emit(cmd, OP_PASS_ATTS, &atts, sizeof(atts));
    if (!views || last_view)
       crop_copies(cmd, false);
@@ -1671,6 +1687,43 @@ draw_key(struct wg_cmd_buffer *cmd, struct wg_shader *vs, struct wg_shader *fs, 
          k.blend[i].aop = a->alpha_blend_op;
       }
    }
+   /* What the fragment stage reads of its attachments (VK4 T32, wg_shader.c `fragment_dst`). The depth bounds test where
+    * it can fail: a range short of [0, 1], or a float format's depth outside it. */
+   if (cmd->pass.depth && cmd->pass.depth_view && dyn->ds.depth.bounds_test.enable &&
+       (dyn->ds.depth.bounds_test.min > 0 || dyn->ds.depth.bounds_test.max < 1 || vk_format_is_float(cmd->pass.depth))) {
+      k.depth_bounds = 1;
+      k.bounds_min = dyn->ds.depth.bounds_test.min;
+      k.bounds_max = dyn->ds.depth.bounds_test.max;
+   }
+   /* Each attachment's location (VK_KHR_dynamic_rendering_local_read's map). */
+   if (!vk_color_attachment_location_state_is_identity(&dyn->cal)) {
+      k.mapped = 1;
+      memset(k.color_map, 0xff, sizeof(k.color_map));
+      for (uint32_t i = 0; i < k.color_count; i++)
+         k.color_map[i] = dyn->cal.color_map[i];
+   }
+   for (uint32_t i = 0; fs && i < k.color_count; i++) {
+      const struct vk_color_blend_attachment_state *a = &dyn->cb.attachments[i];
+      const VkFormat f = k.colors[i];
+      const uint8_t loc = wg_key_location(&k, i);
+      /* A logic op turns blending off on every attachment; it applies to integer and normalized ones, not sRGB (the
+       * others are written as they are). */
+      if (dyn->cb.logic_op_enable)
+         memset(&k.blend[i], 0, offsetof(__typeof__(k.blend[i]), mask));
+      if (!cmd->pass.color_views[i] || !f || !k.blend[i].mask || loc >= 8 || !(fs->info.outputs & (1u << loc)))
+         continue;
+      if (dyn->cb.logic_op_enable) {
+         if (!vk_format_is_float(f) && !vk_format_is_srgb(f)) {
+            k.logic_op = dyn->cb.logic_op + 1;
+            k.logic_mask |= 1u << i;
+         }
+      } else if (a->blend_enable && a->color_blend_op >= VK_BLEND_OP_ZERO_EXT && a->color_blend_op <= VK_BLEND_OP_BLUE_EXT) {
+         k.adv[i].op = a->color_blend_op - VK_BLEND_OP_ZERO_EXT + 1;
+         k.adv[i].flags = (a->src_premultiplied ? 1 : 0) | (a->dst_premultiplied ? 2 : 0) | (a->clamp_results ? 4 : 0);
+         k.adv[i].overlap = a->blend_overlap;
+         memset(&k.blend[i], 0, offsetof(__typeof__(k.blend[i]), mask));
+      }
+   }
    const struct vk_vertex_input_state *vi = dyn->vi;
    if (vi) {
       u_foreach_bit(b, vi->bindings_valid & BITFIELD_MASK(WG_VERTEX_BINDINGS)) {
@@ -1732,6 +1785,9 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
       unpulled = true;
       return false;
    }
+   /* One reading its attachments with no group left for them: likewise. */
+   if (wg_key_reads_dst(&k) && !wg_pipeline_dst(p, &k))
+      return false;
    if (!cmd->have_key || memcmp(&k, &cmd->last_key, sizeof(k)) || cmd->last_program[0] != p) {
       struct op_pipeline *op = emit(cmd, OP_PIPELINE, NULL, sizeof(*op));
       op->program = p;
@@ -2891,6 +2947,8 @@ struct replay {
    struct op_vb vb[WG_VERTEX_BINDINGS];
    uint32_t vb_mask;
    const struct wg_pull *pull; /* the render pipeline's */
+   const struct wg_dst *dst;   /* likewise: the attachments its fragment stage reads (`dst_copies`) */
+   uint32_t dst_group;         /* their copies' bind group for the next draw */
    struct op_ib ib;
    bool have_ib;
    uint8_t push[256];
@@ -4134,6 +4192,54 @@ feedback_copies(struct replay *r)
    }
 }
 
+/* A draw whose fragment stage reads the attachments it writes (VK4 T32: depth bounds, logic ops, advanced blends; the
+ * pipeline's `wg_dst`): each read is of a copy made in a cut of the WebGPU pass before the draw, after every earlier
+ * draw's writes (unlike an input attachment's, which a barrier renews). Overlapping primitives of one draw read what was
+ * there before it. */
+static void
+dst_copies(struct replay *r)
+{
+   const struct wg_dst *dst = r->dst;
+   struct wg_query_pool *qp = NULL;
+   const bool skip = wg_emul_skip & WG_SKIP_FEEDBACK;
+   if (!skip) {
+      qp = r->qactive_pool;
+      if (qp)
+         gpu_end_occlusion();
+      gpu_pass_end();
+   }
+   struct wg_json j = { 0 };
+   wg_json_printf(&j, "{\"layout\":%u,\"entries\":[", dst->bgl);
+   const char *sep = "";
+   for (uint32_t b = 0; b < 9; b++) {
+      if (!dst->types[b])
+         continue;
+      struct wg_image_view *att = b == WG_DST_DEPTH_BINDING ? r->atts.depth : r->atts.colors[b];
+      if (!att)
+         continue;
+      wg_view_twin(att);
+      if (!skip) {
+         const VkExtent3D e = vk_image_mip_level_extent(att->vk.image, att->vk.base_mip_level);
+         const uint32_t layer = att->vk.base_array_layer + (r->layered ? 0 : r->view);
+         wg_emul[WG_EMUL_FEEDBACK_COPIES]++;
+         wg_emul[WG_EMUL_FEEDBACK_BYTES] += (double)e.width * e.height * att->fmt->bytes;
+         gpu_copy_tt(view_texture(att), att->vk.base_mip_level, 0, 0, layer, att->twin_tex, 0, 0, 0, 0, e.width, e.height,
+                     1, 0, e.width, e.height, e.width, e.height, att->fmt->bytes);
+      }
+      wg_json_printf(&j, "%s{\"binding\":%u,\"view\":%u}", sep, b,
+                     b == WG_DST_DEPTH_BINDING ? wg_view_twin_depth(att) : att->twin);
+      sep = ",";
+   }
+   wg_json_printf(&j, "]}");
+   r->dst_group = wg_create_json(WG_KIND_BIND_GROUP, &j);
+   util_dynarray_append_typed(&released_groups, uint32_t, r->dst_group);
+   if (!skip) {
+      begin_pass(r, 2);
+      if (qp)
+         query_carry_on(r, qp);
+   }
+}
+
 /* A barrier inside a render pass with shadows: what a draw reads through one is what the scope's start left, so a later
  * draw would miss what an earlier one wrote through storage. The WebGPU pass ends here, what was written in shadows goes
  * back, and the rest of the pass (from `p`) is a scope of its own. A barrier of a secondary command buffer doesn't cut:
@@ -4216,6 +4322,21 @@ scope_pass(struct replay *r, const uint8_t *p, const uint8_t *end)
       rebind(r, 0, WGSL_MAX_GROUPS);
 }
 
+/* Whether the render pass from `p` on has a draw reading its attachments (`dst_copies`), which cuts it. */
+static bool
+pass_reads_dst(const uint8_t *p, const uint8_t *end)
+{
+   while (p < end) {
+      const struct op_head *h = (const void *)p;
+      if (h->op == OP_PASS || h->op == OP_PASS_END)
+         return false;
+      if (h->op == OP_PIPELINE && wg_key_reads_dst(&((const struct op_pipeline *)(h + 1))->key))
+         return true;
+      p += sizeof(*h) + h->size;
+   }
+   return false;
+}
+
 /* Whether the render pass from `p` on has a barrier in its own commands, where it can be cut (`scope_cut`). */
 static bool
 pass_has_barrier(const uint8_t *p, const uint8_t *end)
@@ -4270,6 +4391,8 @@ apply(struct replay *r, uint32_t point)
    if (point == 0) {
       if (r->atts.count)
          feedback_copies(r);
+      if (r->dst)
+         dst_copies(r);
       if (r->dirty & RD_PIPELINE)
          gpu_set_pipeline(r->pipeline);
       if (r->dirty & RD_DYN) {
@@ -4335,6 +4458,8 @@ apply(struct replay *r, uint32_t point)
       gpu_pull_bind(r->pull->group, r->pull->bgl, r->pull->slots);
    if (point == 0 && r->pull)
       wg_emul[WG_EMUL_PULLED_DRAWS]++;
+   if (point == 0 && r->dst)
+      gpu_set_bind_group(r->dst->group, r->dst_group, NULL, 0);
    if (p && p->key_count)
       wg_emul[WG_EMUL_KEYED_DRAWS]++;
    const uint32_t immediates = p ? MIN2(r->push_size, p->immediate_size) : r->push_size;
@@ -4485,8 +4610,9 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          r->pass_json = json;
          r->twin_mark = ++r->dev->twin_mark;
          r->cuts = !r->depth && util_dynarray_num_elements(&r->shadows, struct shadow) && pass_has_barrier(p, end);
-         if (r->qpool || r->atts.count || r->cuts)
-            begin_pass(r, r->atts.count || r->cuts ? 1 : 0);
+         const bool reads = pass_reads_dst(p, end);
+         if (r->qpool || r->atts.count || r->cuts || reads)
+            begin_pass(r, r->atts.count || r->cuts || reads ? 1 : 0);
          else
             gpu_render_pass(json, strlen(json));
          r->pass = RENDER;
@@ -4566,6 +4692,10 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
             r->dirty |= RD_GROUPS;
          const struct wg_pull *was = r->pull;
          r->pull = wg_pipeline_pull(op->program, &op->key);
+         /* Likewise the group of the attachments the last one read. */
+         if (r->dst)
+            r->dirty |= RD_GROUPS;
+         r->dst = wg_key_reads_dst(&op->key) ? wg_pipeline_dst(op->program, &op->key) : NULL;
          /* A slot it pulled has no vertex buffer set for one that doesn't. */
          if ((was ? was->slots : 0) != (r->pull ? r->pull->slots : 0))
             r->dirty |= RD_VB;

@@ -796,8 +796,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     indexed draw with another would need its indices rewritten before its pass); depth bias control's other
     representations and `depthBiasExact` (31 of its 81: WebGPU's `depthBias` is an integer of the format's units; a
     float or forced-unorm one would be the fragment stage's depth moved); the third extended dynamic state's rest
-    (rasterization samples, alpha to one, polygon and line modes, logic ops, conservative rasterization: none WebGPU
-    has, 2 of the 23 asked only for them, the rest for other extensions too).
+    (rasterization samples, alpha to one, polygon and line modes, conservative rasterization: none WebGPU has, 2 of the
+    23 asked only for them, the rest for other extensions too; logic ops since VK4 T32).
   - **`api.info.image_format_properties2.*` of the YCbCr formats time out** (VK4 T1's "crash" of `r12x4_unorm_pack16`,
     VK4 T2): with `DISJOINT` in its create flags the case makes ~340,000 synchronous queries, ~0.1 ms each through
     Venus's ring, so it passes in 34 s (`WATCHDOG=disable`) but past dEQP's 30 s watchdog; out of the list. A guest's
@@ -837,6 +837,17 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     formats WebGPU can't view one as the other; ffmpeg's and libplacebo's filters are not measured. **For the next
     NVIDIA run** (the user's call, 2026-11-05): `VK2_STEPS=t23` in it, whose `t23-copies` part puts the old copies
     back, gives the decode's gain there (the `views` arm's ceiling was +12% frames/s, REPORT.md "VK4 T23").
+  - **Reading the attachments' leftovers** (VK4 T32; vk/README.md "Reading the attachments", "Colour attachment
+    locations"): the depth bounds test, logic ops and advanced blends read a copy made before the draw, so overlapping
+    primitives of one draw see what was there before it (no dEQP-VK case draws so: a copy per primitive, or a pass per
+    draw's overlap, would be the fix); a draw recorded in a secondary command buffer whose pass the primary began reads
+    nothing (the pass's views aren't known there: drawn without the test, the op or the blend), nor does an attachment
+    drawn in a crop or a 3D image's slice; `advancedBlendCoherentOperations` isn't advertised. Not supported in its
+    samples: `VK_EXT_depth_range_unrestricted` (113 of the M4's 999, its depths and bounds past [0, 1]: WebGPU's viewport
+    depths stay in it), 16 attachments (65), 64-bit formats, mesh shaders. Local read: the input attachment index map
+    isn't read (input attachments go by their descriptors), dual-source outputs aren't moved by the location map; of its
+    sample `VK_EXT_dynamic_rendering_unused_attachments` (48), sample counts and `customResolve` are the commonest
+    reasons left.
   - **Multisampled arrays' leftovers** (VK4 T12; vk/README.md "Multisampled arrays"): a shader sampling a whole
     `sampler2DMSArray` reads the first layer (it needs a binding per layer and a switch on the layer in the translator). The
     48 of `multiview.*multisample*` ask for `r32g32b32a32_sfloat` and the `image.mutable` r32 ones for views WebGPU can't

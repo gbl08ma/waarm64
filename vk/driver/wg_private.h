@@ -430,6 +430,7 @@ struct wg_image_view {
    /* A copy of what the view shows, read where its image is an attachment of the pass (wg_view_twin, `feedback_copies`
     * in wg_cmd.c), and the mark it was made at. */
    uint32_t twin_tex, twin, twin_mark;
+   uint32_t twin_depth; /* the twin's depth aspect alone, of a depth and stencil view (wg_view_twin_depth) */
    uint32_t *layer_atts;  /* multiview, layered passes: layers past the first as attachments (wg_view_att), WG_MAX_LAYERS - 1 of them */
    struct wg_view_crop *crops; /* the attachment in a pass smaller than it (wg_view_crop) */
    /* A sampled 2D array view of one layer as a 2D view, for a shader that declares it 2D (0: none). Vulkan wants the
@@ -440,6 +441,8 @@ struct wg_image_view {
 
 /* A view's attachment for multiview's view `view`: its layer past the view's first. */
 uint32_t wg_view_twin(struct wg_image_view *view);
+/* The twin's view of its depth alone (a depth-only view's twin is that already). */
+uint32_t wg_view_twin_depth(struct wg_image_view *view);
 /*
  * WebGPU wants a render pass's attachments of one size; Vulkan only that the render area fits each. An attachment larger
  * than its pass's others is drawn in a texture of the pass's size, the crop, copied from it before the pass and back
@@ -616,6 +619,8 @@ struct wg_program {
    } *based;
    struct hash_table *pipelines;
    struct wg_pull *pulls;   /* wg_pipeline_pull's, by the bindings pulled */
+   struct wg_dst *dsts;     /* wg_pipeline_dst's */
+   struct wg_dst_module { struct wg_dst_module *next; uint32_t id; } *dst_modules; /* their fragment modules */
    /* What identifies the program across shaders (wg_shader.c `program_link`): its data and its stages' WGSL. Stages
     * compiled or loaded from a cache separately find their program by it (`programs`), so that a vertex and fragment
     * shader of one link share one program however they came. */
@@ -693,6 +698,19 @@ struct wg_pipeline_key {
       VkFormat format;
       uint32_t offset;
    } attr[32];
+   /* What the fragment stage reads of the attachments it writes (VK4 T32, wg_shader.c `fragment_dst`): the depth bounds
+    * test (the attachment's depth in [bounds_min, bounds_max]), a logic op (VkLogicOp + 1, 0 none) on the colour
+    * attachments in `logic_mask` (integer and normalized ones: blending off), and advanced blends by attachment
+    * (VkBlendOp - VK_BLEND_OP_ZERO_EXT + 1, 0 none; flags: 1 source premultiplied, 2 destination, 4 results clamped;
+    * overlap a VkBlendOverlapEXT). Each reads a copy of the attachment made before the draw. */
+   uint8_t depth_bounds, logic_op, logic_mask, dst_pad;
+   /* The colour attachments' locations (VK_KHR_dynamic_rendering_local read's map: attachment i takes the fragment
+    * output at color_map[i], 0xff none), where `mapped` (else attachment i takes location i). */
+   uint8_t mapped, color_map[8];
+   float bounds_min, bounds_max;
+   struct {
+      uint8_t op, flags, overlap, pad;
+   } adv[8];
 };
 
 uint32_t wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *key);
@@ -754,6 +772,36 @@ struct wg_vertex_slots {
    uint32_t stuck;          /* bindings with an attribute past the stride that no slot of its own serves */
 };
 void wg_vertex_slots(const struct wg_pipeline_key *k, uint32_t inputs, struct wg_vertex_slots *out);
+/* A pipeline whose fragment stage reads its attachments (VK4 T32): their copies in a bind group of their own, the first
+ * free one past the program's and the pull's (binding i colour attachment i, 8 depth). `types` by binding: 0 none, else
+ * WG_DST_* | WG_DST_MS. */
+enum { WG_DST_FLOAT = 1, WG_DST_SINT, WG_DST_UINT, WG_DST_DEPTH, WG_DST_MS = 8 };
+#define WG_DST_DEPTH_BINDING 8
+struct wg_dst {
+   struct wg_dst *next;
+   uint32_t pull_slots;
+   uint8_t types[9];
+   uint32_t group, bgl, layout;
+};
+/* The key's, or NULL: it reads none, or no group is free (its draw is refused). */
+const struct wg_dst *wg_pipeline_dst(struct wg_program *p, const struct wg_pipeline_key *key);
+/* The fragment output location attachment `i` takes (0xff: none). */
+static inline uint8_t
+wg_key_location(const struct wg_pipeline_key *k, uint32_t i)
+{
+   return k->mapped ? k->color_map[i] : (uint8_t)i;
+}
+/* Whether a key reads its attachments. */
+static inline bool
+wg_key_reads_dst(const struct wg_pipeline_key *k)
+{
+   if (k->depth_bounds || k->logic_op)
+      return true;
+   for (uint32_t i = 0; i < 8; i++)
+      if (k->adv[i].op)
+         return true;
+   return false;
+}
 /* Whether a key's pulled bindings can be, on `p`: else its draw is refused. */
 bool wg_pipeline_pull_ok(struct wg_program *p, const struct wg_pipeline_key *k);
 /* Sets the key's `pull` on the bindings WebGPU's vertex buffers can't take (VK4 T5; `bound`: each binding's byte in its
@@ -853,6 +901,7 @@ struct wg_cmd_buffer {
       uint32_t layer_mask;   /* multiview's views: what its resolves cover */
       uint32_t layer_count;  /* or a layered pass's layers */
       struct { struct wg_image_view *view; struct wg_view_crop *crop; } crops[10]; /* `crop_copies` */
+      struct wg_image_view *color_views[8], *depth_view; /* what a draw reading them reads (VK4 T32) */
       uint32_t crop_count;
    } pass;
    /* What was last recorded, so that unchanged state isn't recorded again. */

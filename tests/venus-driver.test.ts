@@ -330,7 +330,7 @@ for (const [mask, what] of [
 
 // VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for.
 // Each misc scenario's compute shader (tests/venus/<name>.comp), push.comp where it isn't named.
-const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', threeSame: 'three-writes', oddRange: 'two-writes', inlineBlocks: 'inline', packedFeedback: 'feedback.frag', feedbackLayer: 'feedback.frag', depthLess: 'r5/depthless.frag', depthAndCompare: 'r5/depth-and-compare.frag', intGather: 'r5/int-gather.frag', cubeSized: 'r5/cube-sized.frag', cubeGather: 'r5/cube-gather.frag', depthEight: 'r5/depth-eight.frag', inlineLong: 'r6/inline-long', immutableFreed: 'sampled', sixteenBindings: 'r7/sixteen.frag', sixteenThenOne: 'r7/sixteen.frag', cubePlain: 'r5/cube-plain.frag', vertexCompares: 'r7/vs-compare.frag', fourSets: 'r7/four-sets.frag', bc1Blit: 'r7/sixteen.frag', readOnlyImages: 'g4/read-only', g4Views: 'g4/views', texturesFull: 'g4/textures-full', sizeOnly: 'g4/size-only', formatless: 'g5/formatless', declaredOther: 'g7/declared', arrayAsFlat: 'g4/views', texelUniforms: 'texel-uniforms', rgb9e5Words: 't23-rgb9e5' } as const;
+const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', threeSame: 'three-writes', oddRange: 'two-writes', inlineBlocks: 'inline', packedFeedback: 'feedback.frag', feedbackLayer: 'feedback.frag', depthLess: 'r5/depthless.frag', depthAndCompare: 'r5/depth-and-compare.frag', intGather: 'r5/int-gather.frag', cubeSized: 'r5/cube-sized.frag', cubeGather: 'r5/cube-gather.frag', depthEight: 'r5/depth-eight.frag', inlineLong: 'r6/inline-long', immutableFreed: 'sampled', sixteenBindings: 'r7/sixteen.frag', sixteenThenOne: 'r7/sixteen.frag', cubePlain: 'r5/cube-plain.frag', vertexCompares: 'r7/vs-compare.frag', fourSets: 'r7/four-sets.frag', bc1Blit: 'r7/sixteen.frag', readOnlyImages: 'g4/read-only', g4Views: 'g4/views', texturesFull: 'g4/textures-full', sizeOnly: 'g4/size-only', formatless: 'g5/formatless', declaredOther: 'g7/declared', arrayAsFlat: 'g4/views', texelUniforms: 'texel-uniforms', rgb9e5Words: 't23-rgb9e5', t32Reads: 't32/dst.frag' } as const;
 for (const [scenario, what] of [
   ['copy', 'buffer copies at offsets and sizes that aren\'t 4-aligned, from host-visible, device-local and GPU-written memory'],
   ['clear', 'a clear of a format WebGPU can\'t render to, and of every slice of a 3D image'],
@@ -454,6 +454,8 @@ for (const [scenario, what] of [
   ['t30Formats', 'packed formats WebGPU hasn\'t (R4G4, A4R4G4B4, A1B5G5R5, A2R10G10B10) and D16S8 keep their texels\' bits'],
   // VK4 T31.
   ['t31Formats', 'formats WebGPU has no texture of (RGB8, RGB16, RGB32, scaled, BGRA integers, R8 sRGB, 10-bit signed) keep their texels through wider textures'],
+  // VK4 T32.
+  ['t32Reads', 'draws reading the attachments they write: a logic op, an advanced blend, the depth bounds test failing and passing'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.
@@ -467,6 +469,7 @@ for (const [scenario, what] of [
     mkdirSync(join(out, 'g4'), { recursive: true });
     mkdirSync(join(out, 'g5'), { recursive: true });
     mkdirSync(join(out, 'g7'), { recursive: true });
+    mkdirSync(join(out, 't32'), { recursive: true });
     for (const f of [src, ...(src.endsWith('.frag') ? ['feedback.vert', 'r5/cube-sized.vert', 'r7/sixteen.vert', 'r7/vs-compare.vert'] : [])]) {
       const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${f}.spv`), join(root, `tests/venus/${f}`)], { encoding: 'utf8' });
       assert.equal(c.status, 0, c.stderr);

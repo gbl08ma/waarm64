@@ -101,6 +101,9 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .EXT_separate_stencil_usage = true,
       .KHR_copy_commands2 = true,
       .KHR_dynamic_rendering = true,
+      /* Input attachments as T12's copies; the colour attachment map in the pipeline's key (VK4 T32, wg_shader.c
+       * `mapped_text`). */
+      .KHR_dynamic_rendering_local_read = true,
       /* NONE load and store ops: WebGPU's load and store (wg_cmd.c `load_op`). */
       .KHR_load_store_op_none = true,
       .EXT_load_store_op_none = true,
@@ -167,6 +170,10 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       /* A uniform buffer of the set's, written as the guest updates the blocks (wg_descriptor.c). */
       .EXT_inline_uniform_block = true,
       .KHR_buffer_device_address = true,
+      /* Advanced blends in the fragment stage on a copy of the attachment, made before each draw (VK4 T32, wg_shader.c
+       * `fragment_dst`): not coherent, the barrier between draws the spec then wants is what the copies are made at
+       * anyway. */
+      .EXT_blend_operation_advanced = true,
       /* Not translated: texel buffers' alignment (EXT_texel_buffer_alignment). */
    };
 }
@@ -179,6 +186,13 @@ wg_caps_features(struct vk_features *f)
       .fullDrawIndexUint32 = true,
       .imageCubeArray = true,
       .independentBlend = true,
+      /* The depth bounds test and logic ops in the fragment stage on a copy of the attachment, made before each draw
+       * (VK4 T32, wg_shader.c `fragment_dst`). */
+      .depthBounds = true,
+      .logicOp = true,
+      .extendedDynamicState2LogicOp = true,
+      .extendedDynamicState3LogicOpEnable = true,
+      .extendedDynamicState3ColorBlendAdvanced = true,
       .dualSrcBlend = HAS(DUAL_SOURCE),
       /* Without WebGPU's, an indirect draw with a first instance draws nothing. */
       .drawIndirectFirstInstance = HAS(INDIRECT_FIRST_INSTANCE),
@@ -249,6 +263,7 @@ wg_caps_features(struct vk_features *f)
       .synchronization2 = true,
       .shaderZeroInitializeWorkgroupMemory = true,
       .dynamicRendering = true,
+      .dynamicRenderingLocalRead = true,
       .shaderIntegerDotProduct = true,
       .maintenance4 = true,
       .maintenance5 = true,
@@ -479,6 +494,13 @@ wg_caps_properties(struct vk_properties *p)
    p->storageTexelBufferOffsetAlignmentBytes = L->min_storage_buffer_offset_alignment;
    p->uniformTexelBufferOffsetAlignmentBytes = L->min_storage_buffer_offset_alignment;
    p->provokingVertexModePerPipeline = true;
+   /* Advanced blends (VK4 T32): each attachment's own, on any of them, every op and overlap. */
+   p->advancedBlendMaxColorAttachments = 8;
+   p->advancedBlendIndependentBlend = true;
+   p->advancedBlendNonPremultipliedSrcColor = true;
+   p->advancedBlendNonPremultipliedDstColor = true;
+   p->advancedBlendCorrelatedOverlap = true;
+   p->advancedBlendAllOperations = true;
    p->maxTransformFeedbackStreams = 1;
    p->maxTransformFeedbackBuffers = 4;
    p->maxTransformFeedbackBufferSize = L->max_storage_buffer_binding_size;

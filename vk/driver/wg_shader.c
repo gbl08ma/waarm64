@@ -6,6 +6,7 @@
  * group layouts, a pipeline layout). A render pipeline bakes in what Vulkan 1.3 leaves dynamic, so it is made at the
  * first draw that needs it (wg_render_pipeline) and kept by that state. KosmicKrisp's kk_shader.c is the model (MIT).
  */
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -161,6 +162,17 @@ program_free(struct wg_program *p)
       next = u->next;
       wg_id_release(u->bgl);
       wg_id_release(u->layout);
+      free(u);
+   }
+   for (struct wg_dst *u = p->dsts, *next; u; u = next) {
+      next = u->next;
+      wg_id_release(u->bgl);
+      wg_id_release(u->layout);
+      free(u);
+   }
+   for (struct wg_dst_module *u = p->dst_modules, *next; u; u = next) {
+      next = u->next;
+      wg_id_release(u->id);
       free(u);
    }
    free(p->compute_wgsl);
@@ -629,6 +641,8 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl
    v->merged = NULL;
    v->pipelines = NULL;
    v->pulls = NULL;
+   v->dsts = NULL;
+   v->dst_modules = NULL;
    v->push_group = 0;
    v->push_group_gen = 0;
    v->compute = 0;
@@ -1767,11 +1781,25 @@ wg_pipeline_pull_ok(struct wg_program *p, const struct wg_pipeline_key *k)
 
 /* A fragment stage that writes depth into an attachment without a depth aspect: Vulkan drops the write, WebGPU refuses the
  * pipeline. The output, at a location no target takes, goes nowhere (a location past the stage's own). */
+static char *fragment_text(struct wg_program *p, const struct wg_shader *fs, bool drop_depth);
 static uint32_t
 fragment_without_depth(struct wg_program *p, const struct wg_shader *fs)
 {
    if (p->fs_no_depth && p->fs_no_depth_of == fs)
       return p->fs_no_depth;
+   char *text = fragment_text(p, fs, true);
+   wg_id_release(p->fs_no_depth);
+   p->fs_no_depth = wg_id();
+   p->fs_no_depth_of = fs;
+   gpu_shader(p->fs_no_depth, text, strlen(text));
+   free(text);
+   return p->fs_no_depth;
+}
+
+/* The fragment stage's text as the program prints it, without its depth output if `drop_depth`. */
+static char *
+fragment_text(struct wg_program *p, const struct wg_shader *fs, bool drop_depth)
+{
    char *keyed = keyed_text(p, fs->nir, &fs->info, NULL);
    char *text = p->split_count || p->alias_count ? variant_text(p->base, p, p->mask, keyed ? keyed : fs->wgsl) : NULL;
    if (!text)
@@ -1780,7 +1808,7 @@ fragment_without_depth(struct wg_program *p, const struct wg_shader *fs)
    /* With outputs, the member goes (a stage with 8, or dual-source's, has no location to spare); without, it is the
     * struct's only one: a location no target takes. */
    static const char from[] = "  @builtin(frag_depth) depth: f32,\n", to[] = "  @location(7) depth: f32,\n";
-   char *at = strstr(text, from);
+   char *at = drop_depth ? strstr(text, from) : NULL;
    if (at && !fs->info.outputs) {
       text = spliced(text, at - text, strlen(from), to);
    } else if (at) {
@@ -1789,12 +1817,488 @@ fragment_without_depth(struct wg_program *p, const struct wg_shader *fs)
       for (char *f; (f = strstr(text, store));)
          text = spliced(text, f - text, strlen(store), "_ = ");
    }
-   wg_id_release(p->fs_no_depth);
-   p->fs_no_depth = wg_id();
-   p->fs_no_depth_of = fs;
-   gpu_shader(p->fs_no_depth, text, strlen(text));
+   return text;
+}
+
+/*
+ * What a fragment stage reads of the attachments it writes (VK4 T32; vk/README.md "Reading the attachments"): the depth
+ * bounds test, logic ops and advanced blends, which WebGPU's pipelines don't have, done in the stage on a copy of each
+ * attachment made before the draw (wg_cmd.c `dst_copies`), bound in a group of their own. The stage's `main` becomes
+ * `wg_fs`, which a new `main` calls between the test and what it does with the outputs.
+ */
+static uint8_t
+dst_type(VkFormat format, uint32_t samples)
+{
+   const struct wg_texture_format *f = wg_texture_format(format);
+   const uint8_t ms = samples > 1 ? WG_DST_MS : 0;
+   if (!f)
+      return 0;
+   if (f->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL))
+      return WG_DST_DEPTH | ms;
+   return (f->flags & WG_FMT_UINT ? WG_DST_UINT : f->flags & WG_FMT_SINT ? WG_DST_SINT : WG_DST_FLOAT) | ms;
+}
+
+static void
+dst_types(const struct wg_pipeline_key *k, uint8_t types[9])
+{
+   memset(types, 0, 9);
+   for (uint32_t i = 0; i < MIN2(k->color_count, 8); i++)
+      if ((k->logic_mask & (1u << i)) || k->adv[i].op)
+         types[i] = dst_type(k->colors[i], k->samples);
+   if (k->depth_bounds)
+      types[WG_DST_DEPTH_BINDING] = dst_type(k->depth, k->samples);
+}
+
+const struct wg_dst *
+wg_pipeline_dst(struct wg_program *p, const struct wg_pipeline_key *k)
+{
+   if (!wg_key_reads_dst(k))
+      return NULL;
+   const struct wg_pull *pull = wg_pipeline_pull(p, k);
+   uint8_t types[9];
+   dst_types(k, types);
+   for (struct wg_dst *d = p->dsts; d; d = d->next)
+      if (d->pull_slots == (pull ? pull->slots : 0) && !memcmp(d->types, types, sizeof(types)))
+         return d;
+   uint32_t used = pull ? 1u << pull->group : 0;
+   for (uint32_t i = 0; i < p->resource_count; i++)
+      used |= 1u << p->resources[i].group;
+   const uint32_t groups = MAX2(p->group_count, pull ? pull->group + 1 : 0);
+   const uint32_t group = ffs(~used) - 1;
+   if (group > MIN2(groups, WGSL_MAX_GROUPS - 1)) {
+      static bool warned;
+      if (!warned)
+         fprintf(stderr, "wg: a draw refused: no bind group left for the attachments its depth bounds, logic op or advanced blend read\n");
+      warned = true;
+      return NULL;
+   }
+   struct wg_dst *d = calloc(1, sizeof(*d));
+   d->pull_slots = pull ? pull->slots : 0;
+   memcpy(d->types, types, sizeof(types));
+   d->group = group;
+   struct wg_json j = { 0 };
+   wg_json_printf(&j, "{\"entries\":[");
+   const char *sep = "";
+   for (uint32_t b = 0; b < 9; b++) {
+      if (!types[b])
+         continue;
+      static const char *const sample[] = { "", "unfilterable-float", "sint", "uint", "depth" };
+      wg_json_printf(&j, "%s{\"binding\":%u,\"visibility\":2,\"texture\":{\"sampleType\":\"%s\",\"multisampled\":%s}}", sep,
+                     b, sample[types[b] & 7], types[b] & WG_DST_MS ? "true" : "false");
+      sep = ",";
+   }
+   wg_json_printf(&j, "]}");
+   d->bgl = wg_create_json(WG_KIND_BGL, &j);
+   j = (struct wg_json){ 0 };
+   wg_json_printf(&j, "{\"bindGroupLayouts\":[");
+   for (uint32_t g = 0; g < MAX2(groups, group + 1); g++)
+      wg_json_printf(&j, "%s%u", g ? "," : "", g == group ? d->bgl : pull && g == pull->group ? pull->bgl : p->bgl[g]);
+   wg_json_printf(&j, "],\"immediateSize\":%u}", p->immediate_size);
+   d->layout = wg_create_json(WG_KIND_LAYOUT, &j);
+   d->next = p->dsts;
+   p->dsts = d;
+   return d;
+}
+
+/* The colour attachments the fragment stage writes, through the key's map (`wg_key_location`), and each one's WGSL type. */
+static uint32_t
+key_outputs(const struct wg_pipeline_key *k, uint8_t bases[8])
+{
+   uint32_t mask = 0;
+   for (uint32_t i = 0; k->fs && i < 8; i++) {
+      const uint8_t loc = wg_key_location(k, i);
+      if (loc < 8 && (k->fs->info.outputs & (1u << loc))) {
+         mask |= 1u << i;
+         if (bases)
+            bases[i] = k->fs->info.output_base[loc];
+      }
+   }
+   return mask;
+}
+
+/* The stage's text (`text`, freed) with its outputs at the attachments the key's map gives them (wg_key_location):
+ * output L, `fL` at @location(L), becomes `fi` at @location(i) for the attachment i that takes it, or a private
+ * variable where none does. NULL where it can't be (dual-source outputs). */
+static char *
+mapped_text(const struct wg_pipeline_key *k, char *text)
+{
+   if (!k->mapped)
+      return text;
+   if (k->fs->info.dual_source) {
+      free(text);
+      return NULL;
+   }
+   u_foreach_bit(loc, k->fs->info.outputs) {
+      int to = -1;
+      for (uint32_t i = 0; i < 8; i++)
+         if (k->color_map[i] == loc)
+            to = i;
+      char member[64], with[64], use[16], to_use[24];
+      snprintf(member, sizeof(member), "  @location(%u) f%u: ", loc, loc);
+      char *at = strstr(text, member);
+      if (!at)
+         continue;
+      char *eol = strchr(at, '\n');
+      const size_t n = eol ? (size_t)(eol + 1 - at) : strlen(at);
+      if (to >= 0) {
+         snprintf(with, sizeof(with), "  @location(%d) fZ%d: ", to, to);
+         text = spliced(text, at - text, strlen(member), with);
+         snprintf(to_use, sizeof(to_use), "o.fZ%d", to);
+      } else {
+         /* Its type, for the private variable it goes to. */
+         char type[32] = "";
+         sscanf(at + strlen(member), "%31[^,]", type);
+         snprintf(with, sizeof(with), "var<private> wg_unused%u: %s;\n", loc, type);
+         text = spliced(text, at - text, n, "");
+         char *out = strstr(text, "struct Out {");
+         text = spliced(text, out ? (size_t)(out - text) : 0, 0, with);
+         snprintf(to_use, sizeof(to_use), "wg_unused%u", loc);
+      }
+      snprintf(use, sizeof(use), "o.f%u", loc);
+      for (char *f = strstr(text, use); f; f = strstr(text, use)) {
+         const size_t at_f = f - text;
+         text = spliced(text, at_f, strlen(use), to_use);
+      }
+   }
+   for (char *f = strstr(text, "fZ"); f; f = strstr(f, "fZ"))
+      memmove(f + 1, f + 2, strlen(f + 2) + 1);
+   return text;
+}
+
+/* printf into one of a few rotating buffers: short-lived pieces of a line. */
+static const char *fmt_tmp(const char *f, ...) __attribute__((format(printf, 1, 2)));
+static const char *
+fmt_tmp(const char *f, ...)
+{
+   static char bufs[6][512];
+   static unsigned n;
+   char *b = bufs[n++ % 6];
+   va_list ap;
+   va_start(ap, f);
+   vsnprintf(b, 512, f, ap);
+   va_end(ap);
+   return b;
+}
+
+/* An f32's exact WGSL. */
+static const char *
+f32_lit(char *buf, float v)
+{
+   uint32_t u;
+   memcpy(&u, &v, 4);
+   sprintf(buf, "bitcast<f32>(0x%xu)", u);
+   return buf;
+}
+
+/* The advanced blends' functions (VK_EXT_blend_operation_advanced's equations, the spec's f(Cs, Cd) and its HSL helpers). */
+static const char dst_blend_lib[] =
+   "fn wg_lum(c: vec3<f32>) -> f32 { return dot(c, vec3<f32>(0.3, 0.59, 0.11)); }\n"
+   "fn wg_min3(c: vec3<f32>) -> f32 { return min(min(c.x, c.y), c.z); }\n"
+   "fn wg_max3(c: vec3<f32>) -> f32 { return max(max(c.x, c.y), c.z); }\n"
+   "fn wg_clipc(c0: vec3<f32>) -> vec3<f32> {\n"
+   "  var c = c0; let l = wg_lum(c0); let n = wg_min3(c0); let x = wg_max3(c0);\n"
+   "  if (n < 0.0) { c = l + (c - l) * l / (l - n); }\n"
+   "  if (x > 1.0) { c = l + (c - l) * (1.0 - l) / (x - l); }\n"
+   "  return c;\n"
+   "}\n"
+   "fn wg_setlum(b: vec3<f32>, l: vec3<f32>) -> vec3<f32> { return wg_clipc(b + vec3<f32>(wg_lum(l) - wg_lum(b))); }\n"
+   "fn wg_setlumsat(b: vec3<f32>, s: vec3<f32>, l: vec3<f32>) -> vec3<f32> {\n"
+   "  let sb = wg_max3(b) - wg_min3(b);\n"
+   "  var c = vec3<f32>(0.0);\n"
+   "  if (sb > 0.0) { c = (b - wg_min3(b)) * (wg_max3(s) - wg_min3(s)) / sb; }\n"
+   "  return wg_setlum(c, l);\n"
+   "}\n"
+   "fn wg_overlay(s: f32, d: f32) -> f32 { if (d <= 0.5) { return 2.0 * s * d; } return 1.0 - 2.0 * (1.0 - s) * (1.0 - d); }\n"
+   "fn wg_colordodge(s: f32, d: f32) -> f32 { if (d <= 0.0) { return 0.0; } if (s < 1.0) { return min(1.0, d / (1.0 - s)); } return 1.0; }\n"
+   "fn wg_colorburn(s: f32, d: f32) -> f32 { if (d >= 1.0) { return 1.0; } if (s > 0.0) { return 1.0 - min(1.0, (1.0 - d) / s); } return 0.0; }\n"
+   "fn wg_hardlight(s: f32, d: f32) -> f32 { if (s <= 0.5) { return 2.0 * s * d; } return 1.0 - 2.0 * (1.0 - s) * (1.0 - d); }\n"
+   "fn wg_softlight(s: f32, d: f32) -> f32 {\n"
+   "  if (s <= 0.5) { return d - (1.0 - 2.0 * s) * d * (1.0 - d); }\n"
+   "  if (d <= 0.25) { return d + (2.0 * s - 1.0) * d * ((16.0 * d - 12.0) * d + 3.0); }\n"
+   "  return d + (2.0 * s - 1.0) * (sqrt(d) - d);\n"
+   "}\n"
+   "fn wg_lineardodge(s: f32, d: f32) -> f32 { if (s + d <= 1.0) { return s + d; } return 1.0; }\n"
+   "fn wg_linearburn(s: f32, d: f32) -> f32 { if (s + d > 1.0) { return s + d - 1.0; } return 0.0; }\n"
+   "fn wg_vividlight(s: f32, d: f32) -> f32 {\n"
+   "  if (s <= 0.0) { return 0.0; }\n"
+   "  if (s < 0.5) { return 1.0 - min(1.0, (1.0 - d) / (2.0 * s)); }\n"
+   "  if (s < 1.0) { return min(1.0, d / (2.0 * (1.0 - s))); }\n"
+   "  return 1.0;\n"
+   "}\n"
+   "fn wg_linearlight(s: f32, d: f32) -> f32 { if (2.0 * s + d > 2.0) { return 1.0; } if (2.0 * s + d <= 1.0) { return 0.0; } return 2.0 * s + d - 1.0; }\n"
+   "fn wg_pinlight(s: f32, d: f32) -> f32 {\n"
+   "  if (2.0 * s - 1.0 > d) { if (s < 0.5) { return 0.0; } return 2.0 * s - 1.0; }\n"
+   "  if (s < 0.5 * d) { return 2.0 * s; }\n"
+   "  return d;\n"
+   "}\n"
+   "fn wg_hardmix(s: f32, d: f32) -> f32 { if (s + d < 1.0) { return 0.0; } return 1.0; }\n";
+
+/* An advanced blend op's body: `s` and `d` the fragment's and the attachment's colours (vec4<f32>). */
+static void
+dst_blend_fn(struct wg_json *j, uint32_t loc, uint8_t op, uint8_t flags, uint8_t overlap)
+{
+   const VkBlendOp o = (VkBlendOp)(VK_BLEND_OP_ZERO_EXT + op - 1);
+   const bool spre = flags & 1, dpre = flags & 2, clamp = flags & 4;
+   wg_json_printf(j, "fn wg_blend%u(s0: vec4<f32>, d0: vec4<f32>) -> vec4<f32> {\n", loc);
+   const char *res = NULL;
+   if (o >= VK_BLEND_OP_PLUS_EXT) {
+      /* The additional RGB ops: on premultiplied colours, without the overlap's weights. */
+      wg_json_printf(j, "  let s = %s;\n  let d = %s;\n", spre ? "s0" : "vec4<f32>(s0.rgb * s0.a, s0.a)",
+                     dpre ? "d0" : "vec4<f32>(d0.rgb * d0.a, d0.a)");
+      switch (o) {
+      case VK_BLEND_OP_PLUS_EXT: res = "s + d"; break;
+      case VK_BLEND_OP_PLUS_CLAMPED_EXT: res = "min(vec4<f32>(1.0), s + d)"; break;
+      case VK_BLEND_OP_PLUS_CLAMPED_ALPHA_EXT: res = "vec4<f32>(min(vec3<f32>(min(1.0, s.a + d.a)), s.rgb + d.rgb), min(1.0, s.a + d.a))"; break;
+      case VK_BLEND_OP_PLUS_DARKER_EXT: res = "vec4<f32>(max(vec3<f32>(0.0), vec3<f32>(min(1.0, s.a + d.a)) - ((vec3<f32>(s.a) - s.rgb) + (vec3<f32>(d.a) - d.rgb))), min(1.0, s.a + d.a))"; break;
+      case VK_BLEND_OP_MINUS_EXT: res = "d - s"; break;
+      case VK_BLEND_OP_MINUS_CLAMPED_EXT: res = "max(vec4<f32>(0.0), d - s)"; break;
+      case VK_BLEND_OP_CONTRAST_EXT: res = "vec4<f32>(vec3<f32>(d.a / 2.0) + 2.0 * (d.rgb - vec3<f32>(d.a / 2.0)) * (s.rgb - vec3<f32>(s.a / 2.0)), d.a)"; break;
+      case VK_BLEND_OP_INVERT_OVG_EXT: res = "vec4<f32>(s.a * (vec3<f32>(1.0) - d.rgb) + (1.0 - s.a) * d.rgb, s.a + d.a - s.a * d.a)"; break;
+      case VK_BLEND_OP_RED_EXT: res = "vec4<f32>(s.r, d.gba)"; break;
+      case VK_BLEND_OP_GREEN_EXT: res = "vec4<f32>(d.r, s.g, d.ba)"; break;
+      case VK_BLEND_OP_BLUE_EXT: res = "vec4<f32>(d.rg, s.b, d.a)"; break;
+      default: res = "d"; break;
+      }
+   } else {
+      static const char *const p[] = {
+         [VK_BLEND_OVERLAP_UNCORRELATED_EXT] = "vec3<f32>(s0.a * d0.a, s0.a * (1.0 - d0.a), d0.a * (1.0 - s0.a))",
+         [VK_BLEND_OVERLAP_DISJOINT_EXT] = "vec3<f32>(max(s0.a + d0.a - 1.0, 0.0), min(s0.a, 1.0 - d0.a), min(d0.a, 1.0 - s0.a))",
+         [VK_BLEND_OVERLAP_CONJOINT_EXT] = "vec3<f32>(min(s0.a, d0.a), max(s0.a - d0.a, 0.0), max(d0.a - s0.a, 0.0))",
+      };
+      wg_json_printf(j, "  let p = %s;\n", p[MIN2(overlap, 2)]);
+      /* The colours unpremultiplied (0 where alpha is). */
+      wg_json_printf(j, "  let s = %s;\n  let d = %s;\n",
+                     spre ? "select(vec3<f32>(0.0), s0.rgb / s0.a, s0.a != 0.0)" : "s0.rgb",
+                     dpre ? "select(vec3<f32>(0.0), d0.rgb / d0.a, d0.a != 0.0)" : "d0.rgb");
+      const char *f = "vec3<f32>(0.0)", *xyz = "1.0, 1.0, 1.0";
+#define PER(fn) "vec3<f32>(" fn "(s.x, d.x), " fn "(s.y, d.y), " fn "(s.z, d.z))"
+      switch (o) {
+      case VK_BLEND_OP_ZERO_EXT: xyz = "0.0, 0.0, 0.0"; break;
+      case VK_BLEND_OP_SRC_EXT: f = "s"; xyz = "1.0, 1.0, 0.0"; break;
+      case VK_BLEND_OP_DST_EXT: f = "d"; xyz = "1.0, 0.0, 1.0"; break;
+      case VK_BLEND_OP_SRC_OVER_EXT: f = "s"; break;
+      case VK_BLEND_OP_DST_OVER_EXT: f = "d"; break;
+      case VK_BLEND_OP_SRC_IN_EXT: f = "s"; xyz = "1.0, 0.0, 0.0"; break;
+      case VK_BLEND_OP_DST_IN_EXT: f = "d"; xyz = "1.0, 0.0, 0.0"; break;
+      case VK_BLEND_OP_SRC_OUT_EXT: xyz = "0.0, 1.0, 0.0"; break;
+      case VK_BLEND_OP_DST_OUT_EXT: xyz = "0.0, 0.0, 1.0"; break;
+      case VK_BLEND_OP_SRC_ATOP_EXT: f = "s"; xyz = "1.0, 0.0, 1.0"; break;
+      case VK_BLEND_OP_DST_ATOP_EXT: f = "d"; xyz = "1.0, 1.0, 0.0"; break;
+      case VK_BLEND_OP_XOR_EXT: xyz = "0.0, 1.0, 1.0"; break;
+      case VK_BLEND_OP_MULTIPLY_EXT: f = "s * d"; break;
+      case VK_BLEND_OP_SCREEN_EXT: f = "s + d - s * d"; break;
+      case VK_BLEND_OP_OVERLAY_EXT: f = PER("wg_overlay"); break;
+      case VK_BLEND_OP_DARKEN_EXT: f = "min(s, d)"; break;
+      case VK_BLEND_OP_LIGHTEN_EXT: f = "max(s, d)"; break;
+      case VK_BLEND_OP_COLORDODGE_EXT: f = PER("wg_colordodge"); break;
+      case VK_BLEND_OP_COLORBURN_EXT: f = PER("wg_colorburn"); break;
+      case VK_BLEND_OP_HARDLIGHT_EXT: f = PER("wg_hardlight"); break;
+      case VK_BLEND_OP_SOFTLIGHT_EXT: f = PER("wg_softlight"); break;
+      case VK_BLEND_OP_DIFFERENCE_EXT: f = "abs(d - s)"; break;
+      case VK_BLEND_OP_EXCLUSION_EXT: f = "s + d - 2.0 * s * d"; break;
+      case VK_BLEND_OP_INVERT_EXT: f = "vec3<f32>(1.0) - d"; xyz = "1.0, 0.0, 1.0"; break;
+      case VK_BLEND_OP_INVERT_RGB_EXT: f = "s * (vec3<f32>(1.0) - d)"; xyz = "1.0, 0.0, 1.0"; break;
+      case VK_BLEND_OP_LINEARDODGE_EXT: f = PER("wg_lineardodge"); break;
+      case VK_BLEND_OP_LINEARBURN_EXT: f = PER("wg_linearburn"); break;
+      case VK_BLEND_OP_VIVIDLIGHT_EXT: f = PER("wg_vividlight"); break;
+      case VK_BLEND_OP_LINEARLIGHT_EXT: f = PER("wg_linearlight"); break;
+      case VK_BLEND_OP_PINLIGHT_EXT: f = PER("wg_pinlight"); break;
+      case VK_BLEND_OP_HARDMIX_EXT: f = PER("wg_hardmix"); break;
+      case VK_BLEND_OP_HSL_HUE_EXT: f = "wg_setlumsat(s, d, d)"; break;
+      case VK_BLEND_OP_HSL_SATURATION_EXT: f = "wg_setlumsat(d, s, d)"; break;
+      case VK_BLEND_OP_HSL_COLOR_EXT: f = "wg_setlum(s, d)"; break;
+      case VK_BLEND_OP_HSL_LUMINOSITY_EXT: f = "wg_setlum(d, s)"; break;
+      default: break;
+      }
+#undef PER
+      wg_json_printf(j, "  let f = %s;\n  let xyz = vec3<f32>(%s);\n", f, xyz);
+      res = "vec4<f32>(f * p.x + xyz.y * s * p.y + xyz.z * d * p.z, dot(xyz, p))";
+   }
+   /* A destination not premultiplied takes the result's colour divided by its alpha. */
+   wg_json_printf(j, "  let r = %s;\n", res);
+   if (!dpre)
+      res = "vec4<f32>(select(r.rgb, r.rgb / r.a, r.a > 0.0), r.a)";
+   else
+      res = "r";
+   wg_json_printf(j, "  return %s%s%s;\n}\n", clamp ? "clamp(" : "", res, clamp ? ", vec4<f32>(0.0), vec4<f32>(1.0))" : "");
+}
+
+/* A logic op on vec4<u32>s `s` and `d`. */
+static const char *const logic_ops[16] = {
+   "vec4<u32>(0u)", "s & d", "s & ~d", "s", "~s & d", "d", "s ^ d", "s | d",
+   "~(s | d)", "~(s ^ d)", "~d", "s | ~d", "~s", "~s | d", "~(s & d)", "vec4<u32>(0xffffffffu)",
+};
+
+/* Location `loc`'s logic op: the fragment's output `r.f<loc>` (of WGSL type `base`) and the attachment's texel `t`, as
+ * the format's bits (normalized formats converted to and from them, as the attachment stores them). */
+static void
+dst_logic(struct wg_json *j, uint32_t loc, VkFormat format, uint8_t base, uint8_t op)
+{
+   const struct util_format_description *desc = vk_format_description(format);
+   uint32_t bits[4] = { 0 };
+   for (uint32_t c = 0; desc && c < 4; c++)
+      bits[c] = desc->swizzle[c] < 4 ? desc->channel[desc->swizzle[c]].size : 0;
+   char m[80], k[120], h[120], e[80];
+   snprintf(m, sizeof(m), "vec4<u32>(0x%xu, 0x%xu, 0x%xu, 0x%xu)", (uint32_t)BITFIELD_MASK(bits[0]),
+            (uint32_t)BITFIELD_MASK(bits[1]), (uint32_t)BITFIELD_MASK(bits[2]), (uint32_t)BITFIELD_MASK(bits[3]));
+   snprintf(k, sizeof(k), "vec4<f32>(%.1f, %.1f, %.1f, %.1f)", bits[0] ? (double)BITFIELD_MASK(bits[0]) : 1.0,
+            bits[1] ? (double)BITFIELD_MASK(bits[1]) : 1.0, bits[2] ? (double)BITFIELD_MASK(bits[2]) : 1.0,
+            bits[3] ? (double)BITFIELD_MASK(bits[3]) : 1.0);
+   snprintf(h, sizeof(h), "vec4<f32>(%.1f, %.1f, %.1f, %.1f)", bits[0] > 1 ? (double)BITFIELD_MASK(bits[0] - 1) : 1.0,
+            bits[1] > 1 ? (double)BITFIELD_MASK(bits[1] - 1) : 1.0, bits[2] > 1 ? (double)BITFIELD_MASK(bits[2] - 1) : 1.0,
+            bits[3] > 1 ? (double)BITFIELD_MASK(bits[3] - 1) : 1.0);
+   snprintf(e, sizeof(e), "vec4<u32>(%uu, %uu, %uu, %uu)", bits[0] ? 32 - bits[0] : 0, bits[1] ? 32 - bits[1] : 0,
+            bits[2] ? 32 - bits[2] : 0, bits[3] ? 32 - bits[3] : 0);
+   static const char *const types[] = { "f32", "i32", "u32" };
+   const char *ty = types[MIN2(base, 2)];
+   wg_json_printf(j, "  {\n");
+   const bool uns = vk_format_is_uint(format) || vk_format_is_unorm(format);
+   if (vk_format_is_unorm(format) || vk_format_is_snorm(format)) {
+      const bool unorm = vk_format_is_unorm(format);
+      const char *src = base == WGSL_F32 ? fmt_tmp("r.f%u", loc) : fmt_tmp("bitcast<vec4<f32>>(r.f%u)", loc);
+      if (unorm)
+         wg_json_printf(j, "    let s = vec4<u32>(round(clamp(%s, vec4<f32>(0.0), vec4<f32>(1.0)) * %s));\n"
+                        "    let d = vec4<u32>(round(clamp(wg_t, vec4<f32>(0.0), vec4<f32>(1.0)) * %s));\n", src, k, k);
+      else
+         wg_json_printf(j, "    let s = bitcast<vec4<u32>>(vec4<i32>(round(clamp(%s, vec4<f32>(-1.0), vec4<f32>(1.0)) * %s)));\n"
+                        "    let d = bitcast<vec4<u32>>(vec4<i32>(round(clamp(wg_t, vec4<f32>(-1.0), vec4<f32>(1.0)) * %s)));\n",
+                        src, h, h);
+      wg_json_printf(j, "    let v = (%s) & %s;\n", logic_ops[op & 15], m);
+      const char *out = unorm ? fmt_tmp("vec4<f32>(v) / %s", k)
+                              : fmt_tmp("max(vec4<f32>(bitcast<vec4<i32>>(v << %s) >> %s) / %s, vec4<f32>(-1.0))", e, e, h);
+      wg_json_printf(j, "    r.f%u = %s;\n", loc, base == WGSL_F32 ? out : fmt_tmp("bitcast<vec4<%s>>(%s)", ty, out));
+   } else {
+      wg_json_printf(j, "    let s = %s;\n    let d = %s;\n",
+                     base == WGSL_U32 ? fmt_tmp("r.f%u", loc) : fmt_tmp("bitcast<vec4<u32>>(r.f%u)", loc),
+                     uns ? "wg_t" : "bitcast<vec4<u32>>(wg_t)");
+      wg_json_printf(j, "    let v = (%s) & %s;\n", logic_ops[op & 15], m);
+      const char *out = uns ? "v" : fmt_tmp("bitcast<vec4<u32>>(bitcast<vec4<i32>>(v << %s) >> %s)", e, e);
+      wg_json_printf(j, "    r.f%u = %s;\n", loc, base == WGSL_U32 ? out : fmt_tmp("bitcast<vec4<%s>>(%s)", ty, out));
+   }
+   wg_json_printf(j, "  }\n");
+}
+
+/* The stage's text (`text`, freed) as the key's reads of its attachments want it, or NULL where it can't be. */
+static char *
+dst_text(const struct wg_pipeline_key *k, const struct wg_dst *dst, char *text)
+{
+   static const char head[] = "@fragment fn main(";
+   char *at = strstr(text, head);
+   char *eol = at ? strchr(at, '\n') : NULL;
+   if (!eol) {
+      free(text);
+      return NULL;
+   }
+   /* "@fragment fn main(<params>) -> Out {" or "... {" */
+   const bool has_out = eol - at > 10 && !strncmp(eol - 10, ") -> Out {", 10);
+   const char *close = has_out ? eol - 10 : eol - 3;
+   char params[1024];
+   const size_t plen = close - (at + sizeof(head) - 1);
+   if (plen >= sizeof(params) || strncmp(close, has_out ? ") -> Out {" : ") {", has_out ? 10 : 3)) {
+      free(text);
+      return NULL;
+   }
+   memcpy(params, at + sizeof(head) - 1, plen);
+   params[plen] = 0;
+   /* The arguments: each parameter's name. */
+   struct wg_json args = { 0 };
+   wg_json_printf(&args, "%s", "");
+   for (char *p = params; *p;) {
+      char *colon = strchr(p, ':');
+      if (!colon)
+         break;
+      char *name = colon;
+      while (name > p && name[-1] != ' ')
+         name--;
+      wg_json_printf(&args, "%s%.*s", args.len ? ", " : "", (int)(colon - name), name);
+      char *next = strstr(colon, ", ");
+      if (!next)
+         break;
+      p = next + 2;
+   }
+   const bool in_pos = strstr(params, "i: In") && strstr(text, "  @builtin(position) pos: vec4<f32>,\n");
+   bool ms = false;
+   for (uint32_t b = 0; b < 9; b++)
+      ms |= (dst->types[b] & WG_DST_MS) != 0;
+   const char *sid = strstr(params, "@builtin(sample_index) sid: u32") ? "sid" : "wg_sid";
+   struct wg_json j = { 0 };
+   wg_json_printf(&j, "%.*sfn wg_fs(%s)%s {%s", (int)(at - text), text, params, has_out ? " -> Out" : "", eol);
+   bool lib = false;
+   for (uint32_t i = 0; i < 8; i++)
+      if (k->adv[i].op && dst->types[i]) {
+         if (!lib)
+            wg_json_printf(&j, "%s", dst_blend_lib);
+         lib = true;
+         dst_blend_fn(&j, i, k->adv[i].op, k->adv[i].flags, k->adv[i].overlap);
+      }
+   static const char *const tex[] = { "", "texture_2d<f32>", "texture_2d<i32>", "texture_2d<u32>", "texture_depth_2d" };
+   static const char *const tex_ms[] = { "", "texture_multisampled_2d<f32>", "texture_multisampled_2d<i32>",
+                                         "texture_multisampled_2d<u32>", "texture_depth_multisampled_2d" };
+   for (uint32_t b = 0; b < 9; b++)
+      if (dst->types[b])
+         wg_json_printf(&j, "@group(%u) @binding(%u) var wg_dst%u: %s;\n", dst->group, b, b,
+                        (dst->types[b] & WG_DST_MS ? tex_ms : tex)[dst->types[b] & 7]);
+   wg_json_printf(&j, "@fragment fn main(%s%s%s%s%s)%s {\n", params, *params && !in_pos ? ", " : "",
+                  in_pos ? "" : "@builtin(position) wg_pos: vec4<f32>", ms && !strcmp(sid, "wg_sid") ? ", " : "",
+                  ms && !strcmp(sid, "wg_sid") ? "@builtin(sample_index) wg_sid: u32" : "", has_out ? " -> Out" : "");
+   wg_json_printf(&j, "  let wg_pc = vec2<i32>(%s.xy);\n", in_pos ? "i.pos" : "wg_pos");
+#define LOAD(b) fmt_tmp("textureLoad(wg_dst%u, wg_pc, %s)", (b), dst->types[b] & WG_DST_MS ? sid : "0")
+   if (k->depth_bounds && dst->types[WG_DST_DEPTH_BINDING]) {
+      char lo[40], hi[40];
+      wg_json_printf(&j, "  let wg_z = %s;\n  if (!(wg_z >= %s && wg_z <= %s)) { discard; }\n",
+                     LOAD(WG_DST_DEPTH_BINDING), f32_lit(lo, k->bounds_min), f32_lit(hi, k->bounds_max));
+   }
+   if (has_out)
+      wg_json_printf(&j, "  var r = wg_fs(%s);\n", args.data ? args.data : "");
+   else
+      wg_json_printf(&j, "  wg_fs(%s);\n", args.data ? args.data : "");
+   uint8_t bases[8] = { 0 };
+   const uint32_t outputs = key_outputs(k, bases);
+   for (uint32_t i = 0; has_out && i < 8; i++) {
+      if (!dst->types[i] || !(outputs & (1u << i)))
+         continue;
+      const uint8_t base = bases[i];
+      if (k->logic_mask & (1u << i)) {
+         wg_json_printf(&j, "  {\n  let wg_t = %s;\n", LOAD(i));
+         dst_logic(&j, i, k->colors[i], base, k->logic_op - 1);
+         wg_json_printf(&j, "  }\n");
+      } else if (k->adv[i].op && base == WGSL_F32) {
+         const bool unorm = vk_format_is_unorm(k->colors[i]) || vk_format_is_srgb(k->colors[i]);
+         wg_json_printf(&j, "  r.f%u = wg_blend%u(%s, %s);\n", i, i,
+                        unorm ? fmt_tmp("clamp(r.f%u, vec4<f32>(0.0), vec4<f32>(1.0))", i) : fmt_tmp("r.f%u", i),
+                        LOAD(i));
+      }
+   }
+#undef LOAD
+   wg_json_printf(&j, "%s}\n", has_out ? "  return r;\n" : "");
+   wg_json_free(&args);
    free(text);
-   return p->fs_no_depth;
+   return j.data;
+}
+
+/* A fragment module of a key reading its attachments (`dst_text`), kept with the program; 0 where it can't be. */
+static uint32_t
+fragment_dst_text(struct wg_program *p, const struct wg_pipeline_key *k, const struct wg_dst *dst, char *text)
+{
+   if (text && k->fs)
+      text = mapped_text(k, text);
+   if (text && dst)
+      text = dst_text(k, dst, text);
+   if (!text)
+      return 0;
+   struct wg_dst_module *m = malloc(sizeof(*m));
+   m->id = wg_id();
+   m->next = p->dst_modules;
+   p->dst_modules = m;
+   gpu_shader(m->id, text, strlen(text));
+   free(text);
+   return m->id;
+}
+
+static uint32_t
+fragment_dst(struct wg_program *p, const struct wg_pipeline_key *k, const struct wg_dst *dst, bool drop_depth)
+{
+   return fragment_dst_text(p, k, dst, fragment_text(p, k->fs, drop_depth));
 }
 
 static uint32_t
@@ -1809,8 +2313,10 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
 
    struct wg_json j = { 0 };
    const struct wg_pull *pull = wg_pipeline_pull(p, k);
+   const struct wg_dst *dst = wg_pipeline_dst(p, k);
    /* `premade`: the worker counts those a draw sets (web/venus-gpu.ts `premade`). */
-   wg_json_printf(&j, "{%s\"layout\":%u,", premade ? "\"premade\":true," : "", pull ? pull->layout : p->layout);
+   wg_json_printf(&j, "{%s\"layout\":%u,", premade ? "\"premade\":true," : "",
+                  dst ? dst->layout : pull ? pull->layout : p->layout);
    wg_json_printf(&j, "\"vertex\":{\"module\":%u,\"entryPoint\":\"main\","
                   "\"constants\":{\"wg_flip_y\":%d,\"wg_flip_z\":%d",
                   p->vs_module ? p->vs_module : k->vs->module, k->flip ? 1 : -1,
@@ -1885,8 +2391,12 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
    if (k->fs) {
       const struct wg_texture_format *ds = k->depth ? wg_texture_format(k->depth) : NULL;
       const bool depth_dropped = k->fs->info.writes_depth && !(ds && (ds->flags & WG_FMT_DEPTH));
+      /* A stage reading its attachments, or whose outputs the key's map moves, is printed for the key. */
+      const uint32_t dst_module = dst || k->mapped ? fragment_dst(p, k, dst, depth_dropped) : 0;
+      const uint32_t outputs = key_outputs(k, NULL);
       wg_json_printf(&j, ",\"fragment\":{\"module\":%u,\"entryPoint\":\"main\",",
-                     depth_dropped ? fragment_without_depth(p, k->fs) : p->fs_module ? p->fs_module : k->fs->module);
+                     dst_module ? dst_module : depth_dropped ? fragment_without_depth(p, k->fs)
+                     : p->fs_module ? p->fs_module : k->fs->module);
       /* At the sample rate, the samples' positions follow the pipeline's count (wgsl_print.c `wg_sample_pos`); alpha
        * to coverage at one sample is the stage's (`wg_a2c`). */
       const bool a2c = k->alpha_to_coverage && k->samples <= 1 && k->fs->info.a2c;
@@ -1912,10 +2422,12 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
             wg_json_printf(&j, "%snull", i ? "," : "");
             continue;
          }
-         const bool written = k->fs->info.outputs & (1u << i);
+         const bool written = outputs & (1u << i);
          wg_json_printf(&j, "%s{\"format\":\"%s\",\"writeMask\":%u", i ? "," : "", f->name,
                         written ? k->blend[i].mask & ~wg_format_lacks(f) & 15 : 0);
-         if (written && k->blend[i].enable && (f->flags & WG_FMT_BLEND)) {
+         /* A logic op or an advanced blend is the stage's (`fragment_dst`). */
+         const bool by_stage = dst && dst_module && ((k->logic_mask & (1u << i)) || k->adv[i].op);
+         if (written && k->blend[i].enable && (f->flags & WG_FMT_BLEND) && !by_stage) {
             const bool cmin = k->blend[i].op >= 3, amin = k->blend[i].aop >= 3;
             wg_json_printf(&j, ",\"blend\":{\"color\":{\"operation\":\"%s\",\"srcFactor\":\"%s\",\"dstFactor\":\"%s\"},"
                            "\"alpha\":{\"operation\":\"%s\",\"srcFactor\":\"%s\",\"dstFactor\":\"%s\"}}",
@@ -1933,7 +2445,24 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
       bool colour = false;
       for (uint32_t i = 0; i < k->color_count; i++)
          colour |= k->colors[i] && wg_texture_format(k->colors[i]);
-      if (colour) {
+      /* The depth bounds test without a fragment shader: a stage of the test alone (VK4 T32). */
+      uint32_t bounds = 0;
+      if (dst) {
+         struct wg_json t = { 0 };
+         wg_json_printf(&t, "@fragment fn main() {\n}\n");
+         bounds = fragment_dst_text(p, k, dst, t.data);
+      }
+      if (bounds) {
+         wg_json_printf(&j, ",\"fragment\":{\"module\":%u,\"entryPoint\":\"main\",\"targets\":[", bounds);
+         for (uint32_t i = 0; i < k->color_count; i++) {
+            const struct wg_texture_format *f = k->colors[i] ? wg_texture_format(k->colors[i]) : NULL;
+            if (f)
+               wg_json_printf(&j, "%s{\"format\":\"%s\",\"writeMask\":0}", i ? "," : "", f->name);
+            else
+               wg_json_printf(&j, "%snull", i ? "," : "");
+         }
+         wg_json_printf(&j, "]}");
+      } else if (colour) {
          if (!k->vs->empty_fs) {
             static const char empty[] = "@fragment fn main() {}\n";
             k->vs->empty_fs = wg_id();

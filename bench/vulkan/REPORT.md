@@ -771,6 +771,63 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T32 (first part): depth bounds, logic ops, advanced blends and local read; 1,084 cases join the list
+
+2026-11-06, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t32/` (`cases-dst.txt`, `cases-local-read.txt`: the cases;
+`swiftshader-dst-census.json`, `swiftshader-dst-sample.json`, `m4-dst.json`; `swiftshader-local-read.json` and its
+`-rerun` after the fix below, `m4-local-read.json`; `cost-*.json`: a reading draw's cost). Two of the task's six,
+`VK_EXT_attachment_feedback_loop_layout` and `VK_EXT_multisampled_render_to_single_sampled`, are left
+(VK4-HANDOVER.md "T32").
+
+- **What the device does** (vk/README.md "Reading the attachments", "Colour attachment locations"): a draw whose dynamic
+  state has the depth bounds test, a logic op or an advanced blend reads a copy of the attachment, made in a cut of the
+  WebGPU pass before every such draw (T12's twins, `dst_copies`), bound in a group of its own; its fragment stage is
+  printed for the key, the stage's `main` wrapped by one that tests the depth, calls it, and puts each output through
+  the op or the blend against the copy's texel. Local read is T12's input attachments (unchanged) and the colour
+  attachment map, which the key holds and the stage is printed for (outputs moved to the attachment that takes them).
+- **Confirming, failing first**: the census's 226 depth bounds, logic op and advanced blend cases and its 97 local read
+  ones were all not supported; the driver's scenario 98 (tests/venus-driver.test.ts "draws reading the attachments they
+  write…") draws each of the three into its own column of one pass. Planted: XOR printed as OR fails its logic op (byte
+  2: 204 | 128 is 204), MULTIPLY as a sum its blend.
+- **Found by the cases**: Mesa's runtime takes a pipeline's `VkPipelineColorBlendAdvancedStateCreateInfoEXT` as dynamic
+  state and drops it unless `advancedBlendCoherentOperations` is enabled, so every advanced blend ran uncorrelated and
+  premultiplied (the census's 69 failures): the device enables the flag without advertising it. A destination that
+  isn't premultiplied takes the result's colour divided by its alpha (dEQP-VK's reference; 32 failures). A logic op
+  turns blending off on every attachment, sRGB and float ones too, which it doesn't apply to (5). Without a fragment
+  shader, depth bounds take a stage of the test alone (the `nocolor` cases, 39). Local read's
+  `vkCmdSetRenderingAttachmentLocationsKHR` (the `remap`, `unused_writen_discarded` and `formats.*.input` cases: 8).
+
+| set | host | pass | fail | not supported |
+|---|---|---|---|---|
+| depth bounds, logic op, advanced blend: the census's 226 | SwiftShader, before | 0 | 0 | 226 |
+| | SwiftShader | 176 | 0 | 50 |
+| and every 10th `logic_op`, 40th `blend_operation_advanced`, 30th depth bounds case (999 in all) | SwiftShader | 783 | 0 | 216 |
+| | M4 | 783 | 0 | 216 |
+| local read: the census's 97 | SwiftShader | 31 | 0 | 66 |
+| every `local_read` case and every 25th `renderpasses.dynamic_rendering` one (1,088) | SwiftShader | 341 | 0 | 747 |
+| | M4 | 391 | 0 | 697 |
+
+  **The 1,084 that pass on both and weren't in the list join `tests/deqp/vk.txt`** (44,666 → 45,750): 783 of the
+  reading sample, 301 of local read's (40 more were in the list; 50 pass on the M4 only, formats SwiftShader lacks).
+- **What's left not supported**: of the reading sample, `VK_EXT_depth_range_unrestricted` (113: depths and bounds past
+  [0, 1], which WebGPU's viewport depths can't reach), 16 attachments (65: `advancedBlendMaxColorAttachments` is 8),
+  64-bit formats (27), mesh shaders; of local read's, graphics pipeline libraries, sample counts WebGPU lacks,
+  `VK_EXT_dynamic_rendering_unused_attachments` (48), `customResolve` (41), fragment density maps.
+- **A reading draw's cost** (`bench/vulkan/t32/suite.ts`, `cost-*.json`: in plain WebGPU, what `dst_copies` makes the
+  worker do — the pass ended, the attachment copied, the pass begun again loading it, the stage blending against the
+  copy — against WebGPU's own blend, 100 fullscreen draws on rgba8unorm, ms a draw, median of 10):
+
+| | 256×256, WebGPU's blend / read | 1920×1080, WebGPU's blend / read |
+|---|---|---|
+| M4 | 0.006 / 0.100 | 0.034 / 0.144 |
+| SwiftShader | 0.045 / 0.150 | 0.781 / 2.457 |
+
+  On the M4 a reading draw costs ~0.1 ms more whatever its size: the pass's cut, not the copy. Bearable for what uses
+  these sparingly (a depth bounds test for a light's pass, a logic op for a cursor or a selection), not for a program
+  that sets them on thousands of draws a frame; none of the programs we run does (VK0's scene, mpv, Godot, vkQuake,
+  GTK4 set none of them).
+
 ## VK4 T31: formats WebGPU has no texture of, in wider textures; vertex formats it lacks pulled; 1,733 cases join the list
 
 2026-11-06, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,

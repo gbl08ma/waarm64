@@ -640,6 +640,10 @@ wg_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCrea
    }
    dev->vk.command_buffer_ops = &wg_cmd_buffer_ops;
    dev->vk.shader_ops = &wg_device_shader_ops;
+   /* Mesa's runtime takes a pipeline's advanced blend state (VkPipelineColorBlendAdvancedStateCreateInfoEXT) as dynamic,
+    * and drops it, unless coherent advanced blends are enabled; nothing else reads the flag. Set here, not advertised
+    * (VK4 T32: the stage's blends are coherent between draws, not within one). */
+   dev->vk.enabled_features.advancedBlendCoherentOperations = true;
    list_inithead(&dev->host_memories);
    list_inithead(&dev->address_memories);
    list_inithead(&dev->linear_images);
@@ -1913,6 +1917,21 @@ wg_view_twin(struct wg_image_view *view)
    return view->twin;
 }
 
+uint32_t
+wg_view_twin_depth(struct wg_image_view *view)
+{
+   wg_view_twin(view);
+   if (view->vk.aspects != (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT))
+      return view->twin;
+   if (!view->twin_depth) {
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"texture\":%u,\"dimension\":\"2d\",\"mipLevelCount\":1,\"arrayLayerCount\":1,"
+                     "\"aspect\":\"depth-only\"}", view->twin_tex);
+      view->twin_depth = wg_create_json(WG_KIND_VIEW, &j);
+   }
+   return view->twin_depth;
+}
+
 VKAPI_ATTR void VKAPI_CALL
 wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallbacks *pAllocator)
 {
@@ -1921,6 +1940,7 @@ wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallb
    if (!view)
       return;
    wg_id_release(view->twin);
+   wg_id_release(view->twin_depth);
    wg_id_release(view->twin_tex);
    wg_id_release(view->flat);
    wg_id_release(view->view);
