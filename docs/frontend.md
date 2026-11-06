@@ -265,7 +265,9 @@ tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Pref
 - **Elements:** power state, vCPUs, RAM, uptime, clock, tab memory (the memory signal's estimate); MIPS and JIT share,
   IRQ/s, blocks compiled, compile time, the JIT cache against its budget; network traffic and totals, each adapter's
   connection; disk speed and totals; the renderer (3D or 2D, WebGL2 or a canvas, amber when WebGL2 is software), frame
-  rate, video decode (the streams' codecs, hardware as asked: WebCodecs doesn't say what a decoder got, and pictures a
+  rate, Vulkan activity (a Vulkan machine's: the guest's Venus contexts, roughly its programs holding a Vulkan device, and
+  the WebGPU submits a second, its draws and the adapter in the tooltip; amber on a software adapter, [Vulkan idle](ui:statusbar:statusbar.vulkan.idle) with
+  none, red without a WebGPU device: the worker's `stats` `vulkan`), video decode (the streams' codecs, hardware as asked: WebCodecs doesn't say what a decoder got, and pictures a
   second); mouse lock, keyboard (where keys go: the machine when the screen or the terminal has the focus, what the
   screen's [Click to type](ui:common:App.screen.hint) hint says otherwise, and its shortcuts too with full screen's Keyboard Lock), microphone (shown while it records);
   spacer and divider.

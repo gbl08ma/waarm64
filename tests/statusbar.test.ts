@@ -104,6 +104,23 @@ test('graphics: the renderer, frames and video streams a second', () => {
   assert.equal(text({ kind: 'video' }, undefined, { ...l, gpu: graphics('canvas2d', { presents: 1 }, 0) }), '', '2D: no video');
 });
 
+test('vulkan: the guest\'s programs using Venus and their submits a second, idle, or no WebGPU', () => {
+  const report = (contexts: number, submits: number, draws: number, more = {}) => ({ presents: 0, vulkan: { contexts, submits, draws, device: true, adapter: 'apple metal-3', software: false, ...more } });
+  const a = graphics('3d', report(2, 100, 1000), 0);
+  const g = graphics('3d', report(2, 160, 1840), 1000, { g: a, at: 0 });
+  const l = { ...live, gpu: g };
+  assert.equal(text({ kind: 'vulkan' }, undefined, l), t('statusbar:statusbar.vulkan.programs.rate', { count: 2, submits: '60' }));
+  const [p] = render({ kind: 'vulkan' }, undefined, l);
+  assert.equal(p.tone, 'ok');
+  assert.equal(p.title, [t('statusbar:statusbar.vulkan.title', { count: 2 }), t('statusbar:statusbar.vulkan.rates', { submits: '60', draws: '840' }), t('statusbar:statusbar.vulkan.adapter', { adapter: 'apple metal-3' })].join('\n'));
+  // The first report has no rates yet; no program; no device; software underneath; no Vulkan at all.
+  assert.equal(text({ kind: 'vulkan' }, undefined, { ...live, gpu: a }), t('statusbar:statusbar.vulkan.programs', { count: 2 }));
+  assert.equal(text({ kind: 'vulkan' }, undefined, { ...live, gpu: graphics('3d', report(0, 160, 1840), 0) }), t('statusbar:statusbar.vulkan.idle'));
+  assert.equal(render({ kind: 'vulkan' }, undefined, { ...live, gpu: graphics('3d', report(0, 0, 0, { device: false }), 0) })[0].tone, 'bad');
+  assert.equal(render({ kind: 'vulkan' }, undefined, { ...live, gpu: graphics('3d', report(1, 160, 1840, { software: true }), 1000, { g: a, at: 0 }) })[0].tone, 'busy');
+  assert.equal(text({ kind: 'vulkan' }, undefined, { ...live, gpu: graphics('3d', { presents: 0 }, 0) }), '', 'no Vulkan: nothing');
+});
+
 test('the palette names one chip per kind and scope', () => {
   const names = palette().flatMap((g) => g.items.map((i) => nameOf(i, true)));
   const name = (k: string) => msg(k);

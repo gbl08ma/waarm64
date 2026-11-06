@@ -187,6 +187,14 @@
     "message": "The video streams the guest decodes through this browser (VA-API over virgl, on 3D machines), with their codecs and pictures a second.",
     "note": "What the Video decode status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
+  "statusbar.kind.vulkan": {
+    "message": "Vulkan activity",
+    "note": "The name of a status bar element (the vulkan kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
+  },
+  "statusbar.kind.vulkan.about": {
+    "message": "The guest's programs using Vulkan (through Venus, on this browser's WebGPU), with their submits a second. Shown on machines with Vulkan.",
+    "note": "What the Vulkan activity status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
+  },
   "statusbar.kind.pointer": {
     "message": "Mouse lock",
     "note": "The name of a status bar element (the pointer kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
@@ -486,6 +494,62 @@
   "statusbar.video.errors": {
     "message": "{{errors}} decoder errors",
     "note": "Last line of the Video decode element's tooltip in the status bar (the page's footer), when the browser's decoders failed: {{errors}} is how many times."
+  },
+  "statusbar.vulkan.none": {
+    "message": "Vulkan: no WebGPU",
+    "note": "The Vulkan element in the status bar (the page's footer) when the browser gave the machine no WebGPU device: the guest's Vulkan programs draw nothing."
+  },
+  "statusbar.vulkan.none.title": {
+    "message": "This browser gave the machine no WebGPU device: the guest's Vulkan programs run but draw nothing.",
+    "note": "Tooltip of the Vulkan element in the status bar (the page's footer) when there is no WebGPU device."
+  },
+  "statusbar.vulkan.idle": {
+    "message": "Vulkan idle",
+    "note": "The Vulkan element in the status bar (the page's footer) while no guest program holds a Vulkan device."
+  },
+  "statusbar.vulkan.idle.title": {
+    "message": "No program in the guest is using Vulkan now.",
+    "note": "First line of the Vulkan element's tooltip in the status bar (the page's footer) while no guest program holds a Vulkan device; the adapter's line may follow."
+  },
+  "statusbar.vulkan.programs_one": {
+    "message": "Vulkan: {{count}} program",
+    "note": "The Vulkan element in the status bar (the page's footer) before its first second's count: {{count}} is the guest's programs using Vulkan now (Venus contexts)."
+  },
+  "statusbar.vulkan.programs_other": {
+    "message": "Vulkan: {{count}} programs",
+    "note": "The Vulkan element in the status bar (the page's footer) before its first second's count: {{count}} is the guest's programs using Vulkan now (Venus contexts)."
+  },
+  "statusbar.vulkan.programs.rate_one": {
+    "message": "Vulkan: {{count}} program, {{submits}}/s",
+    "note": "The Vulkan element in the status bar (the page's footer): {{count}} is the guest's programs using Vulkan now, {{submits}} the GPU submits it made in the last second."
+  },
+  "statusbar.vulkan.programs.rate_other": {
+    "message": "Vulkan: {{count}} programs, {{submits}}/s",
+    "note": "The Vulkan element in the status bar (the page's footer): {{count}} is the guest's programs using Vulkan now, {{submits}} the GPU submits they made in the last second."
+  },
+  "statusbar.vulkan.short": {
+    "message": "{{count}} · {{submits}}/s",
+    "note": "The Vulkan element's short value (next to its icon) in the status bar (the page's footer): {{count}} programs using Vulkan, {{submits}} GPU submits in the last second."
+  },
+  "statusbar.vulkan.title_one": {
+    "message": "{{count}} program in the guest is using Vulkan (each Vulkan instance counts as one).",
+    "note": "First line of the Vulkan element's tooltip in the status bar (the page's footer): {{count}} is the guest's Venus contexts now."
+  },
+  "statusbar.vulkan.title_other": {
+    "message": "{{count}} programs in the guest are using Vulkan (each Vulkan instance counts as one).",
+    "note": "First line of the Vulkan element's tooltip in the status bar (the page's footer): {{count}} is the guest's Venus contexts now."
+  },
+  "statusbar.vulkan.rates": {
+    "message": "{{submits}} GPU submits and {{draws}} draws in the last second.",
+    "note": "A line of the Vulkan element's tooltip in the status bar (the page's footer): what the guest's Vulkan programs sent to this browser's WebGPU in the last second."
+  },
+  "statusbar.vulkan.adapter": {
+    "message": "Drawn on this browser's WebGPU adapter: {{adapter}}.",
+    "note": "Last line of the Vulkan element's tooltip in the status bar (the page's footer): {{adapter}} is the WebGPU adapter's vendor, architecture and description as the browser gives them."
+  },
+  "statusbar.vulkan.adapter.software": {
+    "message": "Drawn on this browser's WebGPU adapter: {{adapter}}, which renders in software.",
+    "note": "Last line of the Vulkan element's tooltip in the status bar (the page's footer) when the WebGPU adapter is a software one (SwiftShader, a fallback adapter): {{adapter}} is its vendor, architecture and description."
   },
   "statusbar.vcpus_one": {
     "message": "{{count}} vCPU",

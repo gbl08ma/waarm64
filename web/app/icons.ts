@@ -47,6 +47,7 @@ import IconClock from '@tabler/icons-svelte-runes/icons/clock';
 import IconClockCode from '@tabler/icons-svelte-runes/icons/clock-code';
 import IconGauge from '@tabler/icons-svelte-runes/icons/gauge';
 import IconKeyframes from '@tabler/icons-svelte-runes/icons/keyframes';
+import IconCube from '@tabler/icons-svelte-runes/icons/cube';
 import IconMemory from '@tabler/icons-svelte-runes/icons/memory';
 import IconMouse from '@tabler/icons-svelte-runes/icons/mouse';
 import IconRefresh from '@tabler/icons-svelte-runes/icons/refresh';
@@ -111,6 +112,7 @@ export const ICONS = {
   'clock-code': IconClockCode,
   'gauge': IconGauge,
   'keyframes': IconKeyframes,
+  'cube': IconCube,
   'memory': IconMemory,
   'mouse': IconMouse,
   'refresh': IconRefresh,

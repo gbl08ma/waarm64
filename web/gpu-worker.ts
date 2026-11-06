@@ -40,7 +40,7 @@ export type FromGpuWorker =
    * the pictures the guest sent, `decoded` those written back, `dropped` those given up, `errors` the video errors and
    * `decoderErrors` the decoders' own (of `errors`).
    */
-  | { type: 'stats'; renderer: string; vendor: string; software: boolean; presents: number; submits: number; commands: number; draws: number; errors: number; video: GpuVideoStats }
+  | { type: 'stats'; renderer: string; vendor: string; software: boolean; presents: number; submits: number; commands: number; draws: number; errors: number; video: GpuVideoStats; vulkan?: VulkanReport }
   /** With `stats`, once a second: what the renderer did and the time it took (bench/gpu, `?displaystats`). */
   | { type: 'render-stats'; submits: number; draws: number; commands: number; busyMs: number; submitMs: number; presents: number; presentAt: number[]; drawMs: number; programs: number; errors: number; uploadBytes: number; readbacks: number; readbackBytes: number; fences: number; fenceMs: number; fenceMaxMs: number; compileMs: number; /** Vulkan's frames copied into virgl's textures (web/venus-share.ts) and the thread's ms for them, in the second. */ shareRefreshes: number; shareMs: number; /** Virgl's resources written into Vulkan's textures imported from them (web/venus-import.ts): binds, of them those that made a texture, pictures, bytes and the thread's ms, in the second. */ importBinds: number; importMade: number; importPictures: number; importBytes: number; importMs: number; /** How Vulkan's frames reach virgl now, and where the check of a GPU way stands (web/venus-share.ts). */ share?: ShareCheck & { checks: number; checksWrong: number; unshared: number; /** Prime blits' frames copied from their buffers (GD G7), in all. */ fromBuffers: number }; /** Venus's fences' way back in the second (web/venus-host.ts `VenusTimes`). */ venus?: VenusTimes; /** The Venus calls that asked for a reply in the second, and every command of the virtqueue's, by name (web/venus-host.ts `calls`). */ venusCalls?: Record<string, number>; /** What the emulated paths did in the second (web/venus-host.ts `emul`, VK4 T23). */ venusEmul?: VenusEmul; /** Venus's pipeline totals since it started (`venusPipelines`, VK3 L3). */ venusPipelines?: ReturnType<typeof venusPipelines> & { /** The store's bytes stored (deflated) and held in memory (web/venus-cache.ts). */ cacheBytes: number; cacheHeld: number; cacheEntries: number }; /** The renderer's video totals since it started (web/virgl-video.ts `VideoStats`), how many calls ran ahead of ones waiting for pictures, and the longest wait (ms) in the second (`latencyMaxMs` too is the second's). */ video: VideoStats & { ahead: number; maxWaitMs: number } };
 
@@ -51,6 +51,12 @@ let ram: Uint8Array[] = [];
 let snapshotBytes = () => 0;
 /** The Venus renderer's `skip`, once it runs (the `vkskip` bench hook). */
 let venusSkip: ((paths: string[]) => void) | undefined;
+/**
+ * A Vulkan machine's Venus, for the status bar: the guest's Venus contexts now (one a Vulkan instance: a program holding
+ * a device, roughly), the WebGPU submits and draws since it started, the adapter it draws on (`software` for a fallback
+ * or SwiftShader), `device` false where the browser gave it none (Vulkan then draws nothing).
+ */
+export type VulkanReport = { contexts: number; submits: number; draws: number; device: boolean; adapter?: string; software?: boolean };
 let grab = (id: number) => void (self as unknown as Worker).postMessage({ type: 'grab', id, width: 0, height: 0, pixels: new Uint8Array(0) } satisfies FromGpuWorker);
 
 self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
@@ -109,6 +115,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
   // Vulkan has one); its calls wait in order until then, and so do the fences behind them.
   let venus: VenusRenderer | undefined;
   let venusBacklog: VenusCall[] | undefined;
+  let vkAdapter: Pick<VulkanReport, 'device' | 'adapter' | 'software'> | undefined;
   // Vulkan's frames into virgl's textures (web/venus-share.ts), once the renderer and its device are made.
   let share: VenusShare | undefined;
   // Virgl's resources into Vulkan's textures (web/venus-import.ts: VA-API's surfaces into mpv on Vulkan).
@@ -144,6 +151,9 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
         const adapter = await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' }).catch(() => null);
         const device = adapter ? await adapter.requestDevice(deviceRequest(adapter, { gpuTime: vkGpuTime, l9: l9Suspects(vkL9 ?? []) })).catch((err) => { console.warn('venus: no WebGPU device', err); return undefined; }) : undefined;
         if (!device) console.warn('venus: this browser has no WebGPU adapter here: Vulkan draws nothing');
+        const ai = adapter?.info;
+        vkAdapter = { device: !!device, adapter: ai ? [ai.vendor, ai.architecture, ai.description].filter(Boolean).join(' ') || undefined : undefined,
+          software: ai ? (ai as GPUAdapterInfo & { isFallbackAdapter?: boolean }).isFallbackAdapter === true || ai.architecture === 'swiftshader' : undefined };
         device?.lost.then((info) => console.warn(`venus: the WebGPU device was lost: ${info.message}`));
         // What the device advertises follows the device's features and limits and the adapter's maker.
         // Its shaders of earlier runs (web/venus-cache.ts): IndexedDB, the origin's, for this build of the renderer.
@@ -289,7 +299,8 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
   const offered = (decoders?.caps ?? []).map((c) => ({ profile: profileName(c.profile), hardware: decoders!.hardware.includes(c.profile) }));
   const report = () => {
     const s = renderer.stats, v = renderer.videoStats;
-    post({ type: 'stats', ...info, presents: screen.presented, submits: s.submits, commands: s.commands, draws: s.draws, errors: s.errors, video: { enabled: offered.length > 0, offered, streams: renderer.videoStreams(), frames: v.frames, decoded: v.decoded, dropped: v.dropped, errors: v.errors, decoderErrors: v.decoderErrors } });
+    const vulkan: VulkanReport | undefined = venus && vkAdapter ? { ...vkAdapter, contexts: venus.stats.contexts, submits: venus.gpu.stats.submits, draws: venus.gpu.stats.draws } : undefined;
+    post({ type: 'stats', ...info, presents: screen.presented, submits: s.submits, commands: s.commands, draws: s.draws, errors: s.errors, video: { enabled: offered.length > 0, offered, streams: renderer.videoStreams(), frames: v.frames, decoded: v.decoded, dropped: v.dropped, errors: v.errors, decoderErrors: v.decoderErrors }, vulkan });
   };
   report();
   setInterval(report, 1000);

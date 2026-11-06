@@ -50,6 +50,7 @@ export const KINDS = {
   gpu: { name: 'statusbar:statusbar.kind.gpu', group: 'graphics', icon: 'device-desktop', look: 'text', about: 'statusbar:statusbar.kind.gpu.about' },
   fps: { name: 'statusbar:statusbar.kind.fps', group: 'graphics', icon: 'keyframes', look: 'text', about: 'statusbar:statusbar.kind.fps.about' },
   video: { name: 'statusbar:statusbar.kind.video', group: 'graphics', icon: 'player-play', look: 'text', about: 'statusbar:statusbar.kind.video.about' },
+  vulkan: { name: 'statusbar:statusbar.kind.vulkan', group: 'graphics', icon: 'cube', look: 'text', about: 'statusbar:statusbar.kind.vulkan.about' },
   pointer: { name: 'statusbar:statusbar.kind.pointer', group: 'input', icon: 'mouse', look: 'icon', about: 'statusbar:statusbar.kind.pointer.about' },
   keyboard: { name: 'statusbar:statusbar.kind.keyboard', group: 'input', icon: 'keyboard', look: 'icon', about: 'statusbar:statusbar.kind.keyboard.about' },
   mic: { name: 'statusbar:statusbar.kind.mic', group: 'input', icon: 'microphone', look: 'icon', about: 'statusbar:statusbar.kind.mic.about' },
@@ -165,8 +166,11 @@ export type Graphics = {
   presents: number;
   fps?: number;
   video?: { enabled: boolean; decoded: number; fps?: number; decoderErrors: number; streams: Stream[] };
+  /** A Vulkan machine's Venus (web/gpu-worker.ts `VulkanReport`), its submits and draws a second. */
+  vulkan?: Vulkan;
 };
-type GpuReport = { renderer?: string; vendor?: string; software?: boolean; presents: number; video?: { enabled: boolean; decoded: number; decoderErrors: number; streams: Omit<Stream, 'fps'>[] } };
+type Vulkan = { contexts: number; submits: number; draws: number; device: boolean; adapter?: string; software?: boolean; submitRate?: number; drawRate?: number };
+type GpuReport = { renderer?: string; vendor?: string; software?: boolean; presents: number; video?: { enabled: boolean; decoded: number; decoderErrors: number; streams: Omit<Stream, 'fps'>[] }; vulkan?: Omit<Vulkan, 'submitRate' | 'drawRate'> };
 /** A report received at `at` (ms), after `prev` (the same run's last). */
 export function graphics(mode: Graphics['mode'], m: GpuReport, at: number, prev?: { g: Graphics; at: number }): Graphics {
   const dt = prev && prev.g.mode === mode ? (at - prev.at) / 1000 : 0;
@@ -178,6 +182,7 @@ export function graphics(mode: Graphics['mode'], m: GpuReport, at: number, prev?
       enabled: v.enabled, decoded: v.decoded, decoderErrors: v.decoderErrors, fps: rate(v.decoded, prev?.g.video?.decoded),
       streams: v.streams.map((st) => ({ ...st, fps: rate(st.decoded, prev?.g.video?.streams.find((o) => o.id === st.id)?.decoded) })),
     },
+    vulkan: m.vulkan && { ...m.vulkan, submitRate: rate(m.vulkan.submits, prev?.g.vulkan?.submits), drawRate: rate(m.vulkan.draws, prev?.g.vulkan?.draws) },
   };
 }
 
@@ -345,6 +350,19 @@ export function render(i: Item, m: Metrics | undefined, live: Live): Piece[] {
       const title = [t('statusbar:statusbar.video.title'), ...lines, ...(v.decoderErrors ? [t('statusbar:statusbar.video.errors', { errors: v.decoderErrors })] : [])].join('\n');
       return one(text, short, title, { tone: hw ? 'ok' : undefined });
     }
+    case 'vulkan': {
+      const k = live.gpu?.vulkan;
+      if (!k) return [];
+      const on = k.adapter ? t(k.software ? 'statusbar:statusbar.vulkan.adapter.software' : 'statusbar:statusbar.vulkan.adapter', { adapter: k.adapter }) : '';
+      const titled = (first: string, ...more: string[]) => [first, ...more, ...(on ? [on] : [])].join('\n');
+      if (!k.device) return one(t('statusbar:statusbar.vulkan.none'), '', t('statusbar:statusbar.vulkan.none.title'), { tone: 'bad' });
+      if (!k.contexts) return one(t('statusbar:statusbar.vulkan.idle'), '', titled(t('statusbar:statusbar.vulkan.idle.title')), { tone: 'off' });
+      const submits = k.submitRate?.toFixed(0), draws = k.drawRate?.toFixed(0);
+      const text = submits === undefined ? t('statusbar:statusbar.vulkan.programs', { count: k.contexts }) : t('statusbar:statusbar.vulkan.programs.rate', { count: k.contexts, submits });
+      const lines = [t('statusbar:statusbar.vulkan.title', { count: k.contexts }), ...(submits === undefined ? [] : [t('statusbar:statusbar.vulkan.rates', { submits, draws: draws ?? '0' })])];
+      return one(text, submits === undefined ? `${k.contexts}` : t('statusbar:statusbar.vulkan.short', { count: k.contexts, submits }), titled(lines[0], ...lines.slice(1)),
+        { tone: k.software ? 'busy' : (k.submitRate ?? 0) > 0 ? 'ok' : undefined });
+    }
   }
   if (!m) return [];
   switch (i.kind) {
@@ -450,5 +468,6 @@ export const SAMPLE: { metrics: Metrics; disks: string[]; nets: Live['nets']; gp
   gpu: {
     mode: '3d', renderer: 'ANGLE (Apple, ANGLE Metal Renderer: Apple M4)', software: false, presents: 0, fps: 60,
     video: { enabled: true, decoded: 0, fps: 30, decoderErrors: 0, streams: [{ id: 1, profile: 'H.264 High', width: 1920, height: 1088, hardware: true, open: true, decoded: 0, fps: 30 }] },
+    vulkan: { contexts: 2, submits: 0, draws: 0, device: true, adapter: 'apple metal-3', software: false, submitRate: 60, drawRate: 840 },
   },
 };
