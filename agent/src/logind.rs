@@ -6,13 +6,30 @@
 //! socket is: `/run/user/<uid>`, once the user's tmpfs is mounted there (owned by the user), which the agent learns
 //! from its mount table changing (`/proc/self/mountinfo` polls POLLPRI then).
 
-use rustix::fs::{AtFlags, CWD, FileType, statat};
+use rustix::fs::{AtFlags, CWD, FileType, Stat, statat};
 use rustix::process::{Gid, Uid};
 use std::fs::read_to_string;
 
-pub const SEATS: &str = "/run/systemd/seats";
-pub const SESSIONS: &str = "/run/systemd/sessions";
 pub const MOUNTS: &str = "/proc/self/mountinfo";
+
+/// Where logind's files and the users' runtime directories are (the tests' own directories stand in for them).
+#[derive(Clone, Debug)]
+pub struct Paths {
+    pub seats: String,
+    pub sessions: String,
+    /// The users' runtime directories' parent: `<users>/<uid>`.
+    pub users: String,
+}
+
+impl Default for Paths {
+    fn default() -> Paths {
+        Paths {
+            seats: "/run/systemd/seats".into(),
+            sessions: "/run/systemd/sessions".into(),
+            users: "/run/user".into(),
+        }
+    }
+}
 
 /// The active session on seat0 whose user's runtime directory is ready: what a session child serves.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -52,24 +69,31 @@ pub fn valid_id(name: &str) -> bool {
     !name.is_empty() && name.len() <= 64 && name.bytes().all(|b| b.is_ascii_alphanumeric())
 }
 
-/// The active session now, as logind's files say, with its runtime directory ready (mounted: owned by its user).
-pub fn active() -> Option<Active> {
-    let seat = read_to_string(format!("{SEATS}/seat0")).ok()?;
+/// The active session now, as logind's files say, with its runtime directory ready (mounted: `ready`).
+pub fn active(p: &Paths) -> Option<Active> {
+    let seat = read_to_string(format!("{}/seat0", p.seats)).ok()?;
     let session = seat_active(&seat)?.to_owned();
-    let uid = session_uid(&read_to_string(format!("{SESSIONS}/{session}")).ok()?)?;
-    let runtime = format!("/run/user/{uid}");
+    let uid = session_uid(&read_to_string(format!("{}/{session}", p.sessions)).ok()?)?;
+    let runtime = format!("{}/{uid}", p.users);
     // A stat, not an open: the directory is the user's alone (0700), and the agent's root has no CAP_DAC_OVERRIDE
     // (its unit's bounding set).
     let st = statat(CWD, runtime.as_str(), AtFlags::SYMLINK_NOFOLLOW).ok()?;
-    // Before the user's tmpfs is mounted, the directory is root's.
-    (FileType::from_raw_mode(st.st_mode) == FileType::Directory && st.st_uid == uid).then_some(
-        Active {
-            session,
-            uid,
-            gid: st.st_gid,
-            runtime,
-        },
-    )
+    let users = statat(CWD, p.users.as_str(), AtFlags::SYMLINK_NOFOLLOW).ok()?;
+    ready(&st, &users, uid).then_some(Active {
+        session,
+        uid,
+        gid: st.st_gid,
+        runtime,
+    })
+}
+
+/// Whether `dir`, the runtime directory of `uid` in `users`, is the user's tmpfs, mounted. Before the mount, the bare
+/// directory is root's: its owner tells for every user but root, whose bare mount point is its own too; root's is
+/// mounted once it is on another device than its parent.
+pub fn ready(dir: &Stat, users: &Stat, uid: u32) -> bool {
+    FileType::from_raw_mode(dir.st_mode) == FileType::Directory
+        && dir.st_uid == uid
+        && (uid != 0 || dir.st_dev != users.st_dev)
 }
 
 /// The ids as rustix takes them.
@@ -110,5 +134,27 @@ mod tests {
         // `ACTIVE=` isn't `ACTIVE_UID=`.
         assert_eq!(value("ACTIVE_UID=5\nACTIVE=c2\n", "ACTIVE"), Some("c2"));
         assert!(valid_id("c12") && !valid_id("3.ref") && !valid_id(".#seat0abc") && !valid_id(""));
+    }
+
+    #[test]
+    fn a_runtime_directory_is_ready_once_mounted() {
+        // A directory and its parent as the tests find them (one device), owned as the cases want.
+        let dir = std::env::temp_dir();
+        let st = |uid: u32| {
+            let mut s = statat(CWD, &dir, AtFlags::empty()).unwrap();
+            s.st_uid = uid;
+            s
+        };
+        let users = statat(CWD, &dir, AtFlags::empty()).unwrap();
+        assert!(ready(&st(1000), &users, 1000), "the user's own");
+        assert!(!ready(&st(0), &users, 1000), "the bare mount point, root's");
+        // Root's: its bare mount point is root's too; only the device tells the tmpfs from it.
+        assert!(!ready(&st(0), &users, 0), "root's bare mount point");
+        let mut mounted = st(0);
+        mounted.st_dev = users.st_dev.wrapping_add(1);
+        assert!(ready(&mounted, &users, 0), "root's tmpfs, mounted");
+        let mut file = st(1000);
+        file.st_mode = (file.st_mode & !0o170000) | 0o100000;
+        assert!(!ready(&file, &users, 1000), "not a directory");
     }
 }

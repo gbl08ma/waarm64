@@ -98,9 +98,10 @@ export const ui = $state({
   /**
    * Clipboard sharing (docs/plans/clipboard.md §5; the toolbar's clipboard menu): `on` while the page's machine has the
    * setting (its button shows while it runs); its `state`, the browser's read `permission`, `stopped` (focus reads stopped
-   * for the run: they came back hidden), whether the agent types (`canType`), and `failed`: the last Send or Type got no text.
+   * for the run: they came back hidden), whether the agent types (`canType`), `failed`: the last Send or Type got no text,
+   * and `typed`: what became of the last Type (the agent's TYPED status: web/agent-frame.ts `TYPED`).
    */
-  clipboard: { on: false, state: 'waiting' as ShareState, permission: 'none' as ReadPermission, stopped: false, canType: false, failed: false },
+  clipboard: { on: false, state: 'waiting' as ShareState, permission: 'none' as ReadPermission, stopped: false, canType: false, failed: false, typed: undefined as number | undefined },
   /** The Folder wizard, open (web/app/FolderWizard.svelte): for `machine`, which has `attached`; none: it only makes a folder. `tick` opens it again. */
   folderWizard: undefined as undefined | { machine?: string; attached?: FolderAttachment[]; tick?: number },
   boot: { shown: true, done: false, title: '', progress: undefined as number | undefined, line: '', serial: false },

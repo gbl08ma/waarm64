@@ -31,8 +31,9 @@ struct Sway {
 }
 
 impl Sway {
-    fn start() -> Sway {
-        let dir = std::env::temp_dir().join(format!("webpc-agent-sway-{}", std::process::id()));
+    fn start(name: &str) -> Sway {
+        let dir =
+            std::env::temp_dir().join(format!("webpc-agent-sway-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir(&dir).unwrap();
         std::fs::write(dir.join("config"), "output * resolution 640x480\n").unwrap();
@@ -114,14 +115,14 @@ impl Drop for Sway {
 }
 
 /// The test's end of the socketpair: the page.
-struct Page {
-    fd: OwnedFd,
-    reader: frame::Reader,
-    frames: Vec<(u8, Vec<u8>)>,
+pub(crate) struct Page {
+    pub(crate) fd: OwnedFd,
+    pub(crate) reader: frame::Reader,
+    pub(crate) frames: Vec<(u8, Vec<u8>)>,
 }
 
 impl Page {
-    fn send(&self, kind: u8, payload: &[u8]) {
+    pub(crate) fn send(&self, kind: u8, payload: &[u8]) {
         let mut out = Vec::new();
         assert!(frame::encode(kind, payload, &mut out));
         let mut at = 0;
@@ -131,7 +132,7 @@ impl Page {
     }
 
     /// The next frame of type `kind` (others kept), within `ms`; None if none came.
-    fn next(&mut self, kind: u8, ms: u64) -> Option<Vec<u8>> {
+    pub(crate) fn next(&mut self, kind: u8, ms: u64) -> Option<Vec<u8>> {
         let end = Instant::now() + Duration::from_millis(ms);
         loop {
             if let Some(i) = self.frames.iter().position(|(k, _)| *k == kind) {
@@ -179,7 +180,7 @@ fn shares_sways_clipboard_both_ways() {
         eprintln!("SKIPPED: no sway or wl-clipboard (docs/devenv.md)");
         return;
     }
-    let mut sway = Sway::start();
+    let mut sway = Sway::start("both-ways");
     let (mine, theirs) = socketpair(
         AddressFamily::UNIX,
         SocketType::STREAM,
@@ -414,6 +415,160 @@ fn shares_sways_clipboard_both_ways() {
     );
 
     // The page goes: the child's loop ends.
+    drop(page);
+    assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
+}
+
+/// A page's OFFER of `text` (inline or not) as offer `serial`, held (ACK).
+fn host_offer(page: &mut Page, serial: u32, text: &[u8], inline: bool) {
+    let mut o = Vec::new();
+    frame::Offer {
+        serial,
+        types: vec![(TEXT, text.len() as u32)],
+        inline: inline.then_some(text),
+    }
+    .encode(&mut o);
+    page.send(frame::OFFER, &o);
+    assert_eq!(
+        page.next(frame::ACK, 3000).as_deref(),
+        Some(&frame::ack(serial, ack::HELD)[..])
+    );
+}
+
+#[test]
+fn the_hosts_hash_and_transfers_follow_the_clipboard() {
+    if !have("sway") || !have("wl-copy") {
+        eprintln!("SKIPPED: no sway or wl-clipboard (docs/devenv.md)");
+        return;
+    }
+    let sway = Sway::start("follow");
+    let (mine, theirs) = socketpair(
+        AddressFamily::UNIX,
+        SocketType::STREAM,
+        SocketFlags::CLOEXEC,
+        None,
+    )
+    .unwrap();
+    let runtime = sway.dir.to_str().unwrap().to_owned();
+    let child = std::thread::spawn(move || session::serve(theirs, runtime, 0x0100_0000));
+    let mut page = Page {
+        fd: mine,
+        reader: frame::Reader::default(),
+        frames: Vec::new(),
+    };
+    assert!(page.next(frame::SESSION, 5000).is_some());
+
+    // The host's hash stands for "the guest's clipboard still has it": once the guest copies something else, the
+    // host's text copied again is the guest's news.
+    host_offer(&mut page, 1, b"text A", true);
+    sway.copy(b"text B");
+    assert_eq!(
+        page.offer(5000).expect("an OFFER of B").1.as_deref(),
+        Some(&b"text B"[..])
+    );
+    sway.copy(b"text A");
+    assert_eq!(
+        page.offer(5000)
+            .expect("an OFFER of A, copied again after B")
+            .1
+            .as_deref(),
+        Some(&b"text A"[..])
+    );
+
+    // A paste of an offer that a newer one replaced, finishing: not the host's text any more.
+    host_offer(&mut page, 2, b"superseded", false);
+    let paste = sway
+        .wl("timeout")
+        .args(["5", "wl-paste", "-n"])
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let p = page.next(frame::REQUEST, 5000).expect("a REQUEST");
+    let r = frame::Request::decode(&p).unwrap();
+    assert_eq!(r.serial, 2);
+    host_offer(&mut page, 3, b"newer", true);
+    let mut d = Vec::new();
+    frame::data(r.id, frame::DATA_END, b"superseded", &mut d);
+    page.send(frame::DATA, &d);
+    assert_eq!(paste.wait_with_output().unwrap().stdout, b"superseded");
+    sway.copy(b"superseded");
+    assert_eq!(
+        page.offer(5000)
+            .expect("an OFFER of the superseded offer's text")
+            .1
+            .as_deref(),
+        Some(&b"superseded"[..])
+    );
+    // The host's text inline, then other text lazily (no hash yet): the first copied again in the guest is news.
+    host_offer(&mut page, 10, b"text C", true);
+    host_offer(&mut page, 11, &text(1000), false);
+    sway.copy(b"text C");
+    assert_eq!(
+        page.offer(5000)
+            .expect("an OFFER of the host's earlier text")
+            .1
+            .as_deref(),
+        Some(&b"text C"[..])
+    );
+
+    // The page's HELLO (a new page, a restored one, the port reopened): what was in flight belonged to the page before.
+    // A guest program pasting the host's text gets its end, not a wait for DATA that won't come.
+    let big = text(10000);
+    host_offer(&mut page, 4, &big, false);
+    let paste = sway
+        .wl("timeout")
+        .args(["5", "wl-paste", "-n"])
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let p = page.next(frame::REQUEST, 5000).expect("a REQUEST");
+    let r = frame::Request::decode(&p).unwrap();
+    let mut d = Vec::new();
+    frame::data(r.id, 0, &big[..frame::CHUNK], &mut d);
+    page.send(frame::DATA, &d);
+    page.send(
+        frame::HELLO,
+        &frame::Hello {
+            version: 1,
+            caps: 3,
+        }
+        .encode(),
+    );
+    let out = paste.wait_with_output().unwrap();
+    assert_ne!(
+        out.status.code(),
+        Some(124),
+        "the paste still waiting after HELLO"
+    );
+    // A guest program's text being read for the page's request: the new page's MORE for the same id takes nothing.
+    let long = text(20000);
+    sway.copy(&long);
+    let (serial, _, _) = page.offer(5000).expect("an OFFER for the long text");
+    let mut req = Vec::new();
+    frame::Request {
+        serial,
+        id: 9,
+        mime: TEXT,
+    }
+    .encode(&mut req);
+    page.send(frame::REQUEST, &req);
+    for _ in 0..frame::CREDIT {
+        page.next(frame::DATA, 5000).expect("DATA");
+    }
+    page.send(
+        frame::HELLO,
+        &frame::Hello {
+            version: 1,
+            caps: 3,
+        }
+        .encode(),
+    );
+    page.send(frame::MORE, &frame::more(9, 100));
+    assert!(
+        page.next(frame::DATA, 500).is_none(),
+        "a stale transfer answered the new page's MORE"
+    );
+
     drop(page);
     assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
 }

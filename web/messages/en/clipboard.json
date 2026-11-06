@@ -62,5 +62,13 @@
   "ClipboardMenu.failed": {
     "message": "This browser gave this web app no text from the clipboard.",
     "note": "The toolbar's clipboard menu: a note after Send the clipboard to the guest or Type the clipboard found no text (the clipboard had none, or the browser refused)."
+  },
+  "ClipboardMenu.notText": {
+    "message": "The guest's screen shows a graphical desktop, not its text console, so nothing was typed. Paste with the keyboard on the screen instead.",
+    "note": "The toolbar's clipboard menu: a note after Type the clipboard, when the guest's program refused it because a graphical desktop (a compositor) runs on the guest's screen: typed there, the text would wait and run as commands once the desktop ends."
+  },
+  "ClipboardMenu.untyped": {
+    "message": "The guest's text console didn't take all of the text, so some of it wasn't typed.",
+    "note": "The toolbar's clipboard menu: a note after Type the clipboard, when the guest's program couldn't type the text, or the program reading the console stopped taking it and the rest was dropped."
   }
 }

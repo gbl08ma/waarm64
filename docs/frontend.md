@@ -204,7 +204,9 @@ permission is `prompt` (its click's read is what makes Chromium ask), how to all
 it is `denied`, a note while it is `granted`; **[Share the clipboard](ui:clipboard:ClipboardMenu.share)**, the switch, which pauses both ways for the run
 (PAUSE to the agent; the pending text dropped; the pause isn't in snapshots: the link says PAUSE or RESUME at every
 opening of the agent's port, so an agent restored paused is resumed); **[Send the clipboard to the guest](ui:clipboard:ClipboardMenu.send)** and
-**[Type the clipboard](ui:clipboard:ClipboardMenu.type)** (TYPE on the console), which read on their click. The permission is followed
+**[Type the clipboard](ui:clipboard:ClipboardMenu.type)** (TYPE on the console), which read on their click; after Type, the menu says what went
+wrong as the agent's TYPED says it: "[The guest's screen shows a graphical desktop, not its text console, so nothing was typed. Paste with the keyboard on the screen instead.](ui:clipboard:ClipboardMenu.notText)"
+or "[The guest's text console didn't take all of the text, so some of it wasn't typed.](ui:clipboard:ClipboardMenu.untyped)". The permission is followed
 (`watchReadPermission`: `navigator.permissions.query`, its `change` event; `none` in Firefox and Safari, which throw
 on the name). What the page does with it:
 - **Sync** (way 1): while the permission is `granted`, a focus of the page (`focus`, `visibilitychange` to visible,

@@ -14,7 +14,7 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 import { AGENT_PORTS, agentDevice, agentEntry, CTL_RX, CTL_TX, DEVICE_READY, F_MULTIPORT, MAX_PENDING, PORT_ADD, PORT_NAME, PORT_OPEN, PORT_READY, type AgentFromDevice } from '../web/agent-device.ts';
-import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, FRAME, FrameReader, helloNonce, MAX_PAYLOAD, NONCE, TYPE_CHUNK, typePayloads, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
+import { ACK, CAP, CHUNK, CREDIT, DATA_END, DATA_FAIL, decodeAck, decodeData, decodeHello, decodeMore, decodeOffer, decodeRequest, encodeAck, encodeData, encodeFrame, encodeHello, encodeMore, encodeOffer, encodeRequest, FRAME, FrameReader, helloNonce, MAX_PAYLOAD, NONCE, TYPE_CHUNK, typePayloads, TYPED, UNKNOWN, VERSION, type Frame } from '../web/agent-frame.ts';
 import { AgentLink, PAGE_CAPS, WINDOW } from '../web/app/agent-link.ts';
 import { ACK_WAIT, ClipboardShare, EMPTY_RUN, INLINE, isPasteChord, onMac, PASTE_WAIT, TEXT, TEXT_CAP, textHash, watchReadPermission, type ClipLink, type ReadPermission } from '../web/app/clipboard.ts';
 import { AGENT_FILE, AGENT_PORT, agentBinary, agentCredentials, agentScript } from '../web/app/guest-agent.ts';
@@ -375,6 +375,15 @@ test("the guest agent's unit: a long-running root service, wanted by multi-user.
     assert.match(unit, new RegExp(`^${line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'), line);
   }
   assert.doesNotMatch(unit, /^Type=oneshot$/m);
+  // Restarts end: a failure that lasts (no port, the host's end closed) stops at systemd's start limit rather than
+  // restarting every RestartSec for the boot, each start reading the binary out of fw_cfg again (~1.3 s of a vCPU).
+  // The limit counts starts within its interval: they come RestartSec and a run (the read, at least 1.3 s) apart.
+  const [unitPart, servicePart] = unit.split(/^\[Service\]$/m);
+  const value = (part: string, key: string) => /^(\d+)(min|s)?$/.exec(new RegExp(`^${key}=(.*)$`, 'm').exec(part)?.[1] ?? '');
+  const seconds = (m: RegExpExecArray | null) => (m ? Number(m[1]) * (m[2] === 'min' ? 60 : 1) : NaN);
+  const interval = seconds(value(unitPart, 'StartLimitIntervalSec')), burst = Number(value(unitPart, 'StartLimitBurst')?.[1]);
+  const restart = seconds(value(servicePart, 'RestartSec'));
+  assert.ok(burst * (restart + 1.3) <= interval, `the start limit can't be reached: ${burst} starts in ${interval} s, ${restart} s apart`);
   // TIOCSTI as root needs CAP_SYS_ADMIN; the session children (step 3) change uid: no NoNewPrivileges, no PrivateDevices.
   assert.match(unit, /^CapabilityBoundingSet=.*\bCAP_SYS_ADMIN\b.*$/m);
   assert.match(unit, /^CapabilityBoundingSet=.*\bCAP_SETUID\b.*\bCAP_SETGID\b/m);
@@ -451,6 +460,8 @@ test("frames: the clipboard's payloads (the bytes agent/src/frame.rs pins)", () 
   assert.deepEqual(decodeMore(encodeMore(6, 1)), { id: 6, n: 1 });
   assert.equal(decodeMore(new Uint8Array(5)), undefined);
   assert.deepEqual([FRAME.ACK, FRAME.MORE, CAP.TEXT], [8, 9, 2]);
+  // TYPED and its statuses: the numbers agent/src/frame.rs pins.
+  assert.deepEqual([FRAME.TYPED, TYPED.DONE, TYPED.NOT_TEXT, TYPED.REFUSED, TYPED.DROPPED], [12, 0, 1, 2, 3]);
   assert.ok(5 + CHUNK <= MAX_PAYLOAD);
 });
 
@@ -937,6 +948,15 @@ test("the toolbar's state and actions: waiting, sharing, paused; pause stops bot
   host.text = 'typed\n';
   assert.equal(await share.typeIt(), true);
   assert.deepEqual(take(FRAME.TYPE).map((f) => new TextDecoder().decode(f.payload)), ['typed\n']);
+  // What became of it, as the agent says (TYPED): kept for the menu until the next Type.
+  assert.equal(share.typed, undefined);
+  deliver(FRAME.TYPED, new Uint8Array([TYPED.NOT_TEXT]));
+  assert.equal(share.typed, TYPED.NOT_TEXT);
+  assert.equal(await share.typeIt(), true);
+  assert.equal(share.typed, undefined, 'a new Type forgets the last one');
+  deliver(FRAME.TYPED, new Uint8Array([TYPED.DONE]));
+  assert.equal(share.typed, TYPED.DONE);
+  take(FRAME.TYPE);
   // The agent's end closes: waiting again.
   link.open = false;
   link.onOpen!(false);

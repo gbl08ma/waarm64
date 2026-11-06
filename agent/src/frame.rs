@@ -25,6 +25,9 @@ pub const SYNC: u8 = 10;
 /// The agent's: the guest's clipboard changed hands (a session child started or stopped, or its compositor came or
 /// went); the page forgets what it knew of it and the transfers of the one before.
 pub const SESSION: u8 = 11;
+/// The agent's: a u8 status (`typed`), what became of TYPE's text: typed whole once the agent has nothing left to
+/// type, or why it (or the rest of it) wasn't.
+pub const TYPED: u8 = 12;
 /// The length of the nonce a page's HELLO may carry after its version and capabilities.
 pub const NONCE: usize = 8;
 
@@ -70,6 +73,19 @@ pub mod ack {
     pub const TOO_LARGE: u8 = 3;
     /// No type the agent takes.
     pub const NO_TYPE: u8 = 4;
+}
+
+/// TYPED's statuses.
+pub mod typed {
+    /// All of it typed: the agent has nothing left to type.
+    pub const DONE: u8 = 0;
+    /// The foreground console shows graphics (a compositor runs on it), not text: dropped (its shell would run the
+    /// lines once the compositor ends).
+    pub const NOT_TEXT: u8 = 1;
+    /// The console can't be opened or refused the bytes.
+    pub const REFUSED: u8 = 2;
+    /// The console's reader stopped taking bytes, or too much was queued: the rest dropped.
+    pub const DROPPED: u8 = 3;
 }
 
 /// A HELLO's payload: u16 version, u32 capabilities (little-endian); later versions append fields.
@@ -459,6 +475,17 @@ mod tests {
         hello_answer(&[1, 0, 3, 0, 0], 3, &mut out);
         assert!(out.is_empty(), "not a HELLO: no answer");
         assert_eq!((SYNC, SESSION), (10, 11));
+        // TYPED and its statuses: the numbers tests/agent.test.ts pins.
+        assert_eq!(
+            (
+                TYPED,
+                typed::DONE,
+                typed::NOT_TEXT,
+                typed::REFUSED,
+                typed::DROPPED
+            ),
+            (12, 0, 1, 2, 3)
+        );
     }
 
     #[test]

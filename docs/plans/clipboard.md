@@ -38,9 +38,10 @@ without the setting keep their shape hash, their snapshots and their step counts
 a change of shape. Like those other switches, it asks first when it orphans snapshots.
 
 - **`VIRTIO_CONSOLE_F_MULTIPORT`:** the control queues (c_ivq/c_ovq) and the port messages (DEVICE_READY,
-  PORT_ADD, PORT_NAME, PORT_OPEN). Port 0 is a console port that nobody uses. Port 1 is named
-  `org.webpc.agent.0`, and udev links it as `/dev/virtio-ports/org.webpc.agent.0` (`virtio_console`, in every
-  distribution kernel). A device of its own leaves the tests' `console_` alone, so their steps don't move.
+  PORT_ADD, PORT_NAME, PORT_OPEN). **Built with one port,** port 0, named `org.webpc.agent.0` (Linux makes a
+  port a console only on CONSOLE_PORT, so port 0 needn't be one: `max_nr_ports` 1, four queues), and udev links it
+  as `/dev/virtio-ports/org.webpc.agent.0` (`virtio_console`, in every distribution kernel). A second port (spice's,
+  §3.4) would be port 1. A device of its own leaves the tests' `console_` alone, so their steps don't move.
 - **The receive path:** the backend fills held RX buffers from a queue of host bytes. The guest's PORT_OPEN
   tells the host that the agent is listening; the toolbar's state follows it (§5).
 - **Framing:** length-prefixed messages, `u32 len, u8 type, payload`. Types: `HELLO` (version, capabilities),
@@ -57,12 +58,15 @@ a change of shape. Like those other switches, it asks first when it orphans snap
   the writes of one frame: the restored page's HELLO carries a nonce, the agent sends it back in SYNC before its
   HELLO, and the page drops what came before; also when the page's reader goes out of step), and `SESSION`, the
   agent's word that the guest's clipboard changed hands (a session child started or stopped, its compositor came
-  or went): the page forgets what it knew of it, drops that clipboard's transfers and syncs again.
+  or went): the page forgets what it knew of it, drops that clipboard's transfers and syncs again. The page's
+  HELLO reaches the session child too, whose transfers in flight end (they were an earlier page's). And `TYPED`,
+  what became of `TYPE`'s text (typed, or why not: §3.2 "For a text console").
 - **Echo suppression:** each side remembers the hash of the last thing it received. When the other side offers
   it back (for example, the host writes the guest's text, and the next focus reads the same text), nothing is
   sent. The hash stands for "the clipboard still has it", so it is forgotten whenever that stops being known: the
   clipboard moving on the other way, a refusal, the port's opening or closing, HELLO, SESSION, the pause (the page's
-  side: web/app/clipboard.ts).
+  side: web/app/clipboard.ts). The agent's side the same: the host's hash goes once the guest's clipboard holds
+  anything else, and a transfer of an offer a newer one replaced doesn't set it.
 
 **Alternatives considered:**
 
@@ -136,7 +140,10 @@ offered there.
     `SelectionNotify` on CLIPBOARD, `ConvertSelection` to read it, and owning the selection to set it (with
     INCR for large transfers). The hard part is finding `DISPLAY` and the cookie (`XAUTHORITY` under the user's
     home or `$XDG_RUNTIME_DIR`, or Xwayland's `-auth` file). The child reads `/proc/<leader>/environ` of the
-    session's processes, which it may do as the same uid.
+    session's processes, which it may do as the same uid. **Not reachable under the unit as built:**
+    `PrivateTmp=yes` hides `/tmp/.X11-unix`, and `PrivateNetwork=yes` hides the abstract `@/tmp/.X11-unix/X<n>`
+    sockets (scoped to the network namespace), so the X11 step changes the sandbox (for example the X11 child
+    joining the session's namespaces, or the unit giving up those two settings) and measures what that costs.
   - **GNOME (Mutter) has no data-control.** Its routes are the X11 one (Mutter syncs Xwayland's selections with
     its own, but whether a client without focus can read them there is unmeasured), or the portal's Clipboard
     interface (a RemoteDesktop session, which asks the user to consent). GNOME isn't one of our guests. It gets
@@ -146,6 +153,9 @@ offered there.
   passes with `CAP_SYS_ADMIN`. Unlike typing through virtio-input (backlog "Clipboard for the screen": paced,
   its queue drops past 1024 events, and the keyboard layout limits what can be typed), it is instant and takes
   any UTF-8 text. Copying from the console stays out of scope; the serial terminal already has both directions.
+  **Only on a VT that shows text** (`KDGETMODE`): a compositor started from a tty puts its VT in graphics mode, its
+  shell waiting behind it, and pasted lines would run there once the compositor ends; the agent refuses then and
+  says so (`TYPED`, devices.md), and the page's menu tells the user.
 - **MIME types:** `text/plain;charset=utf-8` (and its aliases `UTF8_STRING`, `TEXT`, `STRING` on X11) first;
   then images (§4.4), then `text/html`. A size cap is enforced on both sides (16 MiB for text, 64 MiB for an
   image), against the offer's size, before any bytes cross.
@@ -161,9 +171,13 @@ would bring if that is what it takes. So:
 - **No idle cost.** One thread in each process, blocked in `ppoll` on its few descriptors: the port, the inotify
   descriptor and the children's socketpairs in the parent; the display's socket and the parent's socketpair in a
   child. No timers, no polling, no periodic wakeups. An idle guest sees no CPU time from the agent, and nothing
-  wakes it up but a clipboard change, a session change or the host.
-- **Streaming, not buffering.** Clipboard bytes go in 64 KiB chunks between the port and the Wayland or X11 pipe
-  (`splice` where both ends allow it), so the agent never holds a whole clipboard. Host data a guest program
+  wakes it up but a clipboard change, a session change or the host. **As built**, two bounded exceptions: a paste
+  being typed on the console steps every millisecond while the terminal's reader catches up (the root loop serves
+  the rest meanwhile), and a compositor's socket that refuses is tried 25 times 200 ms apart when it appears (then
+  given up until another comes).
+- **Streaming, not buffering.** Clipboard bytes go in 64 KiB chunks between the port and the Wayland or X11 pipe,
+  so the agent never holds a whole clipboard (**as built**, read and written by the child in 64 KiB chunks, no
+  `splice`: the port's bytes cross the parent anyway). Host data a guest program
   pastes is requested from the host each time it is pasted. Only text under 64 KiB is cached, so that repeated
   pastes don't cross the channel.
 - **Our own protocol code, no client libraries:**

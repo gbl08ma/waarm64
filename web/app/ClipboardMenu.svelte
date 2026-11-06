@@ -3,12 +3,13 @@
   machine shares the clipboard. The button says the state (sharing: pressed; paused: crossed out; waiting for the
   guest's program) and carries a mark while the browser's read permission is missing or the focus reads stopped. The
   menu: the permission's item (Allow… while `prompt`, how to allow it while `denied`), the switch (paused for the run),
-  Send the clipboard to the guest, Type the clipboard. Logic is web/app/clipboard.ts's, through `page`.
+  Send the clipboard to the guest, Type the clipboard (and what became of it: the agent's TYPED). Logic is web/app/clipboard.ts's, through `page`.
 -->
 <script lang="ts">
   import Check from './Check.svelte';
   import Menu from './Menu.svelte';
   import { t } from '../i18n.ts';
+  import { TYPED } from '../agent-frame.ts';
   import { page, ui } from './ui.svelte.ts';
 
   let open = $state(false);
@@ -36,6 +37,8 @@
   <button id="clipboard-send" disabled={c.state !== 'sharing'} title={t('clipboard:ClipboardMenu.send.title')} onclick={() => act(() => page.clipboardSend())}>{t('clipboard:ClipboardMenu.send')}</button>
   <button id="clipboard-type" disabled={!c.canType} title={t('clipboard:ClipboardMenu.type.title')} onclick={() => act(() => page.clipboardType())}>{t('clipboard:ClipboardMenu.type')}</button>
   {#if c.failed}<p class="hint warn" id="clipboard-failed">{t('clipboard:ClipboardMenu.failed')}</p>{/if}
+  {#if c.typed === TYPED.NOT_TEXT}<p class="hint warn" id="clipboard-not-text">{t('clipboard:ClipboardMenu.notText')}</p>
+  {:else if c.typed === TYPED.REFUSED || c.typed === TYPED.DROPPED}<p class="hint warn" id="clipboard-untyped">{t('clipboard:ClipboardMenu.untyped')}</p>{/if}
 </Menu>
 
 <style>

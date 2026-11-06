@@ -3,7 +3,7 @@
 // and the payload), a u8 type, then the payload. This module cuts the byte stream into frames, both ways, and defines
 // the payloads: the page's half of the format the agent's own code speaks (agent/src/frame.rs, its Rust twin, which
 // pins the same bytes in its tests). HELLO, TYPE, PAUSE and RESUME (step 2); the clipboard's OFFER, REQUEST, DATA,
-// ACK and MORE (step 3), the capability `CAP.TEXT`; SYNC (a stream begun afresh) and SESSION.
+// ACK and MORE (step 3), the capability `CAP.TEXT`; SYNC (a stream begun afresh), SESSION and TYPED.
 
 /** The frame types (docs/plans/clipboard.md §2). */
 export const FRAME = {
@@ -34,6 +34,20 @@ export const FRAME = {
    * went). What the page knew of the guest's clipboard is gone, and so are the transfers of the one before.
    */
   SESSION: 11,
+  /** The agent's: a u8 status (`TYPED`), what became of TYPE's text. */
+  TYPED: 12,
+} as const;
+
+/** TYPED's statuses. */
+export const TYPED = {
+  /** All of it typed: the agent has nothing left to type. */
+  DONE: 0,
+  /** The guest's console shows graphics (a compositor runs on it), not text: none of it typed. */
+  NOT_TEXT: 1,
+  /** The console can't be opened or refused the bytes. */
+  REFUSED: 2,
+  /** The console's reader stopped taking bytes, or too much was queued: the rest dropped. */
+  DROPPED: 3,
 } as const;
 
 /** The most bytes in a DATA frame. */

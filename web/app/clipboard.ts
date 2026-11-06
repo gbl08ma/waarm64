@@ -139,6 +139,8 @@ export class ClipboardShare {
   permission: ReadPermission = 'none';
   /** Focus reads stopped for the run: they came back empty `EMPTY_RUN` times in a row while their types said text (§4.3). */
   stopped = false;
+  /** What became of the last Type the clipboard, as the agent said (TYPED's status); undefined: nothing said since. */
+  typed?: number;
   private link: ClipLink;
   private host: Host;
   // From a random start: a restored guest's agent may hold transfers of an earlier page's ids.
@@ -280,6 +282,8 @@ export class ClipboardShare {
 
   /** "Type the clipboard": the host's text pasted on the guest's console (TYPE). False if there was none, or no agent that types. */
   async typeIt(): Promise<boolean> {
+    this.typed = undefined;
+    this.onChange?.();
     const text = await this.readClick();
     return !!text && this.canType && this.link.type?.(text) === true;
   }
@@ -424,6 +428,13 @@ export class ClipboardShare {
 
   private frame(f: Frame) {
     switch (f.type) {
+      case FRAME.TYPED:
+        // The console took a paste whole, or refused it (graphics on it: a compositor's) or dropped the rest.
+        if (f.payload.length >= 1) {
+          this.typed = f.payload[0];
+          this.onChange?.();
+        }
+        return;
       case FRAME.HELLO:
       case FRAME.SESSION:
         // The agent is there (its stream begun afresh), or the guest's clipboard changed hands: what the page knew of

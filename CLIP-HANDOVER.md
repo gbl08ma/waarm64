@@ -18,15 +18,16 @@ link says PAUSE or RESUME at every opening (a restored agent isn't left paused).
 `tests/page-clipboard.test.ts` and `tests/page-agent.test.ts` (Debian). Measured in headless Chromium 155 and
 Firefox 157 (plan §4.1).
 
-**The out-of-context review of steps 1–3** (`review/clip`, `REVIEW-CLIP.md` there): the page's findings are fixed
-(1 the chord's keys queued behind the held one, 2's page half, 6, 7, 9, 10, 13, and 5's page half: random serial and
-id bases). 7a was already gone with step 4. 6 and 7 brought two frames (plan §2, devices.md): SYNC (a restored
-opening or a reader out of step begins at the agent's SYNC) and SESSION (the parent's when a child stops or ends,
-the child's when its data device comes or goes, which also ends its transfers). **Next loop, the agent's findings:**
-2's agent half (`last_host` never cleared, set by a superseded transfer), 3 (TYPE into a VT under a compositor), 4
-(the endless 200 ms retries at a dead socket), 5's agent half (the child's transfers at the page's HELLO), 8 (the
-unit's endless restarts), 11 (TYPE blocking the root loop), 12 (inotify overflow, root's runtime directory), 14 (the
-plan's ports, X11 under the sandbox, `splice`). Then step 5.
+**The out-of-context review of steps 1–3** (`review/clip`, `REVIEW-CLIP.md` there): **all fixed**, none to the
+backlog. The page's (1, 2's page half, 5's page half, 6, 7, 9, 10, 13) brought SYNC and SESSION; the agent's: 2 (the
+host's hash forgotten once the guest's clipboard holds anything else, and not set by a superseded offer's transfer),
+3 (TYPE only while the foreground VT is `KD_TEXT`; the new TYPED frame says what became of a paste, the clipboard
+menu says why it wasn't typed), 4 (a refusing socket's retries armed only when a socket comes), 5 (the page's HELLO
+reaches the child, whose transfers end), 8 (the unit's start limit, 5 in 10 min), 11 (TYPE queued and typed in bursts
+between the loop's work: `console::Typist`), 12 (an inotify overflow is a change; root's runtime directory counts as
+mounted on another device than `/run/user`), 14 (the plan's ports, X11 under the sandbox, `splice`, the two bounded
+wakeups). The root loop has native tests now (`agent/src/serve_test.rs`: a socketpair for the port). Not done for 8:
+keeping the binary across restarts (each still reads fw_cfg: bounded by the limit). Next: step 5.
 
 ## Next: step 5 (images, then X11)
 
@@ -62,6 +63,10 @@ says "text or an image" again (`machines:MachinesPage.clipboard.note`).
 - **Not done from §3.3:** `splice` between the port and the pipes (the child reads and writes in 64 KiB chunks; the
   port's bytes cross the parent anyway); cancelling a page→guest answer that the guest's reader dropped is a MORE 0 the
   page honours, but the agent can't cancel what the page already sent (at most the credit, 4 chunks).
+- **A paste cut by the page's HELLO** (a restore mid-paste) ends the guest program's pipe: it gets what had crossed,
+  truncated, with no way to say "failed" through a pipe.
+- **TYPE under a headless compositor** (the Debian sway test's: no DRM, so tty1 stays `KD_TEXT`) is typed into tty1's
+  input like any typeahead; only a compositor on the VT (graphics mode) is refused.
 - **Two compositors for one user** (two VTs with sway each): the child takes the first `wayland-<n>` that accepts; which
   socket belongs to the active session isn't known without reading the session's processes' environment.
 - **sway restarts at boot, seen twice:** in two runs the first sway of the boot ended within seconds and getty logged
@@ -82,6 +87,8 @@ says "text or an image" again (`machines:MachinesPage.clipboard.note`).
   user's it must reach by `stat` or as the child. X11 (step 5) needs `/tmp/.X11-unix`, which `PrivateTmp=yes` hides.
 - Planted bugs (all caught): the agent's echo rule, the DATA credit, its own selection offered back, PAUSE leaving the
   host's text, the cache, the host's hash, a greeter's session taken, strings without their NUL (cargo test); the page's
-  echo rule, its MOREs, its credit, Cmd+V (tests/agent.test.ts); a held key's preventDefault (the page test). The page test also found the
+  echo rule, its MOREs, its credit, Cmd+V (tests/agent.test.ts); a held key's preventDefault (the page test); the
+  review's loop: the host's hash on a superseded transfer, a lazy offer keeping the old hash, the child ignoring HELLO
+  (the paste hangs) or keeping its Out transfers, TYPE without the mode check, the page ignoring TYPED. The page test also found the
   first build's stop of a child hanging the agent (SIGKILL refused without CAP_KILL, the socket closed only after the
   wait): the stop closes the socket first now (the child ends by itself), so CAP_KILL is a backup for a stuck child.

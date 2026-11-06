@@ -128,30 +128,41 @@ without the unit, its port never opened. The unit, `webpc-agent.service` (`Type=
 `/sys/firmware/qemu_fw_cfg/by_name/opt/webpc/agent/raw` into `/run/webpc/agent` (a tmpfs of the unit's own,
 `TemporaryFileSystem=` mode 0700 and `exec`: Debian 13 mounts /run `noexec`, so a `RuntimeDirectory` can't run it;
 gone with the unit), waits for udev's link (`udevadm wait`) and `exec`s it. `Nice=10`, `MemoryMax=32M`,
-`OOMScoreAdjust=500`, `Restart=on-failure`; sandboxed (`ProtectSystem=strict`, `ProtectHome=read-only`, private /tmp
+`OOMScoreAdjust=500`, `Restart=on-failure` (`RestartSec=5s`) under a start limit it can reach, 5 starts in 10
+minutes (`StartLimitIntervalSec=`, `StartLimitBurst=`: systemd's default, 5 in 10 s, starts 5 s apart never reach,
+and a failure that lasts would restart for the boot, each start reading the binary out of fw_cfg again, 1.3 s of a
+vCPU); sandboxed (`ProtectSystem=strict`, `ProtectHome=read-only`, private /tmp
 and network, `RestrictAddressFamilies=AF_UNIX`, the kernel's tunables, modules, logs and clock protected, …:
 `systemd-analyze security` 3.7, "OK") with the capabilities it needs: `CAP_SYS_ADMIN` for
 TIOCSTI, `CAP_SETUID` and `CAP_SETGID` for the session children (no `NoNewPrivileges`), `CAP_KILL` to stop one (the
 user's process by then); no DAC override.
 
-The root process is one thread blocked in `ppoll` with no timeout, on the port, an inotify descriptor watching
+The root process is one thread blocked in `ppoll` with no timeout (but 1 ms ticks while a paste is typed: TYPE
+below), on the port, an inotify descriptor watching
 logind's `/run/systemd/seats` and `/run/systemd/sessions` (`IN_MOVED_TO`, `IN_DELETE`: logind renames each file into
-place) and `/proc/self/mountinfo` (POLLPRI when the mount table changes). It follows **the active session on seat0**
+place; an `IN_Q_OVERFLOW` counts as a change) and `/proc/self/mountinfo` (POLLPRI when the mount table changes). It
+follows **the active session on seat0**
 (`agent/src/logind.rs`): `seat0`'s `ACTIVE=`, that session's `UID=` and `CLASS=` (a user's, not a greeter's), whatever
 its `TYPE` (a user logged in on a tty who runs sway has `TYPE=tty`), once the user's runtime directory
-`/run/user/<uid>` is mounted (its owner the user: a `stat`, the agent's root having no `CAP_DAC_OVERRIDE`; the mount
-is what the mount table's change says). For it the root process **forks a session child** (no exec), which closes the
+`/run/user/<uid>` is mounted (its owner the user: a `stat`, the agent's root having no `CAP_DAC_OVERRIDE`; root's
+bare mount point is root's too, so root's directory counts as mounted once it is on another device than `/run/user`;
+the mount is what the mount table's change says). For it the root process **forks a session child** (no exec), which closes the
 parent's descriptors, drops to the user (`setgroups` to none, `setresgid`, `setresuid` to the directory's gid and the
 uid) before it reads anything from the display, sets `PR_SET_PDEATHSIG`, and talks to the parent over a socketpair in
-the port's own frames; the parent passes the clipboard's frames between the two (from the child only OFFER, REQUEST,
-DATA, ACK, MORE) and answers them itself while there is no child (ACK `NO_SESSION`, DATA `FAIL`). A new active session
+the port's own frames; the parent passes the clipboard's frames between the two (to the child the page's HELLO too;
+from the child only OFFER, REQUEST, DATA, ACK, MORE, SESSION) and answers them itself while there is no child (ACK
+`NO_SESSION`, DATA `FAIL`). A new active session
 replaces the child (its socket closed, which ends it, then SIGKILL and reaped); a child that ends by itself (its runtime directory unmounted) isn't started again
 for the same session. Each child's serials and request ids start at a base of its own (the parent's count << 24), so
-a later child's never meet an earlier one's in the page.
+a later child's never meet an earlier one's in the page. Its tests (`agent/src/serve_test.rs`) run the root loop
+natively: a socketpair for the port, directories of their own for logind's and the runtime directories, a console of
+their own, and a child on a thread that echoes what it gets.
 
 **The session child** (`agent/src/session.rs`, one thread in `ppoll`) watches the runtime directory (inotify,
 `IN_CREATE`, `IN_DELETE_SELF`: it ends when the directory goes) for a compositor's socket, `wayland-<n>`, and connects
-(a socket that refuses, between its bind and its listen: 25 tries 200 ms apart, the only timeout); it comes and goes
+(a socket that refuses, between its bind and its listen: 25 tries 200 ms apart, the only timeout, armed when a socket
+comes or the connection goes, not again by a failed try: a killed compositor's socket, which refuses for good, is
+given up after them); it comes and goes
 with the compositor. Its Wayland client is written by hand (`agent/src/wire.rs`: the header, uint/object/new_id,
 strings, `SCM_RIGHTS` for the pipes): `wl_display.get_registry` and a `sync`; when the callback is done, it binds the
 first `wl_seat` (v1) and `ext_data_control_manager_v1` if the compositor has it, else `zwlr_data_control_manager_v1`
@@ -164,7 +175,10 @@ closed).
   byte (`receive` into a pipe): whole and under 4 KiB it is an OFFER with its bytes inline (empty: nothing), unless its
   FNV-1a hash is that of the host's last text (echo suppression); longer, an OFFER of `text/plain;charset=utf-8` of
   unknown size, its bytes read again (`receive`) for each REQUEST and sent as DATA within the request's credit.
-  A selection while our own source holds the clipboard is ours: dropped.
+  A selection while our own source holds the clipboard is ours: dropped. The host's hash stands for "the guest's
+  clipboard still has the host's text": set by the page's inline offer (forgotten by one not inline, until a paste of
+  it crosses whole, unless a newer offer replaced it meanwhile) and forgotten once the guest's clipboard holds anything
+  else (offered, emptied, no text), so the host's text copied again after that is news.
 - **The page's OFFER** of text (`text/plain;charset=utf-8` or `text/plain`, at most 16 MiB) becomes a data source of
   ours offering `text/plain;charset=utf-8`, `text/plain`, `UTF8_STRING`, `TEXT`, `STRING` and `text`, set as the
   selection, then a `sync`: its callback's done sends ACK `HELD` (the page's paste chord waits for it). A guest
@@ -177,6 +191,10 @@ closed).
 - **SESSION**: when the data device is bound, and when it goes (the compositor's connection lost, the seat's
   `finished`), the child's transfers end as at PAUSE and it sends SESSION; the parent sends one too when it stops a
   child or one ends.
+- **The page's HELLO** (passed on by the parent: a new page, a restored one, the port reopened): the transfers in
+  flight were an earlier page's, which won't answer them; they end without a word to the new page (a guest program
+  pasting gets its pipe's end, not a wait for DATA that won't come; a request's MORE from the new page with an earlier
+  page's id finds nothing).
 
 Its frames are `agent/src/frame.rs`, the twin of `web/agent-frame.ts` (both tests pin the same bytes). Serials belong
 to the side that offers, request ids to the side that requests:
@@ -191,7 +209,8 @@ to the side that offers, request ids to the side that requests:
 | DATA (4) | u32 id, u8 flags (1 END, 2 FAIL), at most 64 KiB | an answer, in order; FAIL: none (a stale serial, a type not offered, paused, past the cap) |
 | ACK (8) | u32 serial, u8 status (0 HELD, 1 NO_SESSION, 2 PAUSED, 3 TOO_LARGE, 4 NO_TYPE) | the agent's answer to the page's OFFER |
 | MORE (9) | u32 id, u32 count | the requester takes `count` more DATA frames for request `id`; 0 stops the answer |
-| TYPE (5) | UTF-8 text, at most 64 KiB a frame (`typePayloads` cuts between characters, never inside a CRLF) | the agent puts it in the foreground VT's input (`/dev/tty0`, TIOCSTI a byte at a time), line ends as Enter (CRLF and LF become CR, as terminal emulators paste); paced by the terminal's unread input (`FIONREAD`, every 256 bytes: the line discipline drops what doesn't fit its 4 KiB), so a long paste into a reader that keeps up arrives whole and one that stalls a second loses the rest. Not UTF-8: dropped |
+| TYPE (5) | UTF-8 text, at most 64 KiB a frame (`typePayloads` cuts between characters, never inside a CRLF) | the agent puts it in the foreground VT's input (`/dev/tty0`, TIOCSTI a byte at a time), line ends as Enter (CRLF and LF become CR, as terminal emulators paste); queued (1 MiB at most) and typed in bursts of 4 KiB between the loop's other work (`console::Typist`, stepped every 1 ms while it has text), paced by the terminal's unread input (`FIONREAD`, every 256 bytes: the line discipline drops what doesn't fit its 4 KiB), so a long paste into a reader that keeps up arrives whole and one that stalls a second loses the rest. Only while the VT shows text (`KDGETMODE` is `KD_TEXT`, checked at each burst): a compositor running on it puts it in graphics mode, and the lines would wait in its input for the shell to run once the compositor ends. Not UTF-8: dropped. PAUSE drops what is queued |
+| TYPED (12) | u8 status (0 DONE, 1 NOT_TEXT, 2 REFUSED, 3 DROPPED) | the agent's: what became of TYPE's text, once it has nothing left to type (DONE) or as it drops it (NOT_TEXT: graphics on the console, none of it typed; REFUSED: the console can't be opened or refused it, or not UTF-8; DROPPED: the reader stalled or too much was queued). The page keeps the last for the clipboard menu (`ClipboardShare.typed`), which says why after Type the clipboard |
 | PAUSE (6), RESUME (7) | none | while paused the agent drops TYPE and the clipboard's frames (above); the link refuses `type()` while paused and says PAUSE or RESUME at every opening of the agent's end (a restarted agent starts unpaused; a restored one is as its snapshot was, and the pause is the run's); the parent passes both to its child, and PAUSE first to a new child |
 
 A frame's length that can't be (zero, past 64 KiB and 256) breaks the agent's reader: it closes and reopens the port,

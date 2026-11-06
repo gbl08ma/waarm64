@@ -99,8 +99,11 @@ export const agentCredentials = (description: string): Credential[] =>
     name: 'webpc-agent.service',
     description,
     script: agentScript(),
-    // The port appears with the device, early; the unit waits for udev's link itself (the script).
-    unit: 'After=systemd-udev-trigger.service\n',
+    // The port appears with the device, early; the unit waits for udev's link itself (the script). A failure that lasts
+    // (no port, the host's end closed) ends at the start limit: 5 starts in 10 minutes, which starts RestartSec (5 s)
+    // apart can reach (systemd's default, 5 in 10 s, they never do), rather than a restart every 5 s for the boot, each
+    // reading the binary out of fw_cfg again (1.3 s of a vCPU).
+    unit: 'After=systemd-udev-trigger.service\nStartLimitIntervalSec=10min\nStartLimitBurst=5\n',
     wantedBy: 'multi-user.target',
     service: AGENT_SERVICE,
   });

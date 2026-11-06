@@ -19,8 +19,9 @@
 //!   page hears SESSION and every transfer ends: the guest's clipboard the page knew is another's now.
 //!
 //! One thread in `ppoll` on the parent's socket, the inotify descriptor, the compositor's socket and the pipes of
-//! transfers in progress; no timeout but while a socket that exists refuses connections (a compositor between its
-//! bind and its listen).
+//! transfers in progress; no timeout but for the `RETRIES` after a socket that refuses connections comes (a
+//! compositor between its bind and its listen; one killed leaves a socket that refuses for good, given up then).
+//! The page's HELLO (passed on by the parent) ends the transfers in flight: they were an earlier page's.
 
 use crate::clip::{self, Hash};
 use crate::frame::{self, ack};
@@ -83,6 +84,8 @@ const RETRY: Timespec = Timespec {
     tv_sec: 0,
     tv_nsec: 200_000_000,
 };
+#[cfg(test)]
+const RETRY_FOR: std::time::Duration = std::time::Duration::from_millis(RETRIES as u64 * 200);
 /// A guest program's types, and their length, past which the rest are ignored.
 const MAX_TYPES: usize = 32;
 
@@ -298,7 +301,7 @@ pub fn serve(
         told: false,
         stop: None,
     };
-    c.connect();
+    c.connect(true);
     loop {
         c.flush();
         if let Some(why) = c.stop.take() {
@@ -344,7 +347,7 @@ pub fn serve(
             Ok(0) => {
                 drop(fds);
                 c.retries -= 1;
-                c.connect();
+                c.connect(false);
                 continue;
             }
             Ok(_) | Err(Errno::INTR) => {}
@@ -423,8 +426,11 @@ impl Child {
         }
     }
 
-    /// Connects to the first compositor's socket in the runtime directory that takes it.
-    fn connect(&mut self) {
+    /// Connects to the first compositor's socket in the runtime directory that takes it. `arm`: a socket that refuses
+    /// is tried again `RETRIES` times (a compositor between its bind and its listen), the first time a socket comes
+    /// (or the connection went) only, so that one that refuses for good (its compositor killed: the file stays) is
+    /// given up.
+    fn connect(&mut self, arm: bool) {
         if self.wl.is_some() {
             return;
         }
@@ -477,7 +483,7 @@ impl Child {
                 Err(_) => {}
             }
         }
-        if refused && self.retries == 0 {
+        if refused && arm && self.retries == 0 {
             self.retries = RETRIES;
         }
     }
@@ -492,7 +498,7 @@ impl Child {
         self.host = None;
         self.guest = None;
         self.probe = None;
-        self.connect();
+        self.connect(true);
     }
 
     fn inotify(&mut self) {
@@ -508,16 +514,15 @@ impl Child {
                         self.stop = Some("session: the runtime directory went");
                         return;
                     }
-                    if let Some(n) = e.file_name().and_then(|n| n.to_str().ok()) {
-                        socket |= is_socket_name(n);
-                    }
+                    let n = e.file_name().and_then(|n| n.to_str().ok()).unwrap_or("");
+                    socket |= socket_event(e.events(), n);
                 }
                 Err(Errno::INTR) => {}
                 Err(_) => break,
             }
         }
         if socket {
-            self.connect();
+            self.connect(true);
         }
     }
 
@@ -543,6 +548,10 @@ impl Child {
 
     fn frame(&mut self, kind: u8, p: &[u8]) {
         match kind {
+            // The page's HELLO, which the parent passes on (a new page, a restored one, the port reopened): the
+            // transfers in flight were the page's before, which won't answer them; they end, without a word to the
+            // new page. A guest program pasting gets its pipe's end rather than a wait for DATA that won't come.
+            frame::HELLO => self.xfers.clear(),
             frame::PAUSE => self.pause(),
             frame::RESUME => self.paused = false,
             frame::OFFER => {
@@ -643,9 +652,8 @@ impl Child {
         wl.msg(device, op::SET_SELECTION).object(source).done();
         let cb = wl.id(Obj::Ack(o.serial));
         wl.msg(DISPLAY, op::SYNC).object(cb).done();
-        if let Some(b) = inline {
-            self.last_host = Some(Hash::of(b));
-        }
+        // The guest's clipboard has the host's text now: its hash if known (else once a paste has it whole).
+        self.last_host = inline.map(Hash::of);
         self.host = Some(Host {
             serial: o.serial,
             source,
@@ -765,6 +773,8 @@ impl Child {
         self.guest = None;
         self.probe = None;
         if offer == 0 {
+            // The clipboard emptied: it hasn't the host's text any more.
+            self.last_host = None;
             return;
         }
         wl.selection = Some(offer);
@@ -776,6 +786,7 @@ impl Child {
             .get(&offer)
             .map_or(Vec::new(), |t| t.iter().map(|s| s.as_str()).collect());
         let Some(mime) = clip::pick_text(&types).map(str::to_owned) else {
+            self.last_host = None;
             return;
         };
         let Some((r, w)) = pipe() else { return };
@@ -818,8 +829,16 @@ impl Child {
         let (size, inline) = match clip::announce(&p.buf, n == 0, self.last_host) {
             clip::Announce::Inline => (p.buf.len() as u32, Some(&p.buf[..])),
             clip::Announce::Lazy => (frame::UNKNOWN, None),
-            clip::Announce::Nothing => return,
+            clip::Announce::Nothing => {
+                // The host's text back (the hash still stands), or nothing at all (it doesn't).
+                if p.buf.is_empty() {
+                    self.last_host = None;
+                }
+                return;
+            }
         };
+        // Something else: the clipboard moved on from the host's text, which a guest program may copy again later.
+        self.last_host = None;
         self.send(frame::OFFER, |o| {
             frame::Offer {
                 serial,
@@ -944,12 +963,12 @@ impl Child {
                     return false;
                 }
                 if done {
-                    if id != 0 {
+                    // The host's text whole: its hash and its copy, unless a newer offer replaced it meanwhile.
+                    if id != 0
+                        && let Some(h) = self.host.as_mut().filter(|h| h.serial == serial)
+                    {
+                        h.cache = copy.take();
                         self.last_host = Some(*hash);
-                        let copy = copy.take();
-                        if let Some(h) = self.host.as_mut().filter(|h| h.serial == serial) {
-                            h.cache = copy;
-                        }
                     }
                     return false;
                 }
@@ -1133,6 +1152,12 @@ impl Child {
     }
 }
 
+/// Whether an inotify event on the runtime directory may be a compositor's socket coming (events lost to an
+/// overflow may have been).
+pub fn socket_event(events: ReadFlags, name: &str) -> bool {
+    events.contains(ReadFlags::QUEUE_OVERFLOW) || is_socket_name(name)
+}
+
 /// A compositor's socket in a runtime directory: `wayland-<n>` (not its `.lock`).
 pub fn is_socket_name(n: &str) -> bool {
     n.strip_prefix("wayland-")
@@ -1151,5 +1176,49 @@ mod tests {
                 && !is_socket_name("wayland-")
                 && !is_socket_name("pipewire-0")
         );
+    }
+
+    /// The thread's voluntary context switches: its wakeups.
+    fn wakeups(tid: i32) -> u64 {
+        let s = std::fs::read_to_string(format!("/proc/self/task/{tid}/status")).unwrap();
+        s.lines()
+            .find_map(|l| l.strip_prefix("voluntary_ctxt_switches:"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap()
+    }
+
+    #[test]
+    fn a_socket_that_refuses_for_good_is_given_up() {
+        // A compositor killed: its socket file stays, and refuses.
+        let dir = std::env::temp_dir().join(format!("webpc-agent-dead-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir(&dir).unwrap();
+        drop(std::os::unix::net::UnixListener::bind(dir.join("wayland-1")).unwrap());
+        let (mine, theirs) = rustix::net::socketpair(
+            AddressFamily::UNIX,
+            SocketType::STREAM,
+            SocketFlags::CLOEXEC,
+            None,
+        )
+        .unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let runtime = dir.to_str().unwrap().to_owned();
+        let child = std::thread::spawn(move || {
+            tx.send(rustix::thread::gettid().as_raw_nonzero().get())
+                .unwrap();
+            serve(theirs, runtime, 0)
+        });
+        let tid = rx.recv().unwrap();
+        // The retries (RETRIES of RETRY: 5 s) cover a compositor between its bind and its listen; then no more.
+        std::thread::sleep(RETRY_FOR + std::time::Duration::from_secs(1));
+        let before = wakeups(tid);
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let woke = wakeups(tid) - before;
+        drop(mine);
+        assert_eq!(child.join().unwrap(), Ok("session: the parent is gone"));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(woke <= 1, "{woke} wakeups in 2 s at a dead socket");
     }
 }

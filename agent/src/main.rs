@@ -4,8 +4,10 @@
 //! (src/console.rs), holds PAUSE until RESUME, and follows the active session on seat0 through logind's files
 //! (src/logind.rs). For that session's user it forks a child (no exec) that drops to the user's ids before it reads
 //! anything from the display, and shares the user's Wayland clipboard (src/session.rs); the clipboard's frames pass
-//! between the port and the child's socketpair. One thread in each process, blocked in `ppoll` with no timeout: an
-//! idle guest sees no CPU time from either (plan §3.3).
+//! between the port and the child's socketpair. One thread in each process, blocked in `ppoll` with no timeout but
+//! while a paste is being typed (TYPE's text goes in bursts as the console's reader takes it, `console::Typist`, and
+//! the loop serves the rest meanwhile): an idle guest sees no CPU time from either (plan §3.3). The page hears what
+//! became of a paste (TYPED: typed, or why not: a console that shows a compositor's graphics gets none of it).
 //!
 //!   webpc-agent [port]    the port's device (default /dev/virtio-ports/org.webpc.agent.0)
 
@@ -13,6 +15,8 @@ mod clip;
 mod console;
 mod frame;
 mod logind;
+#[cfg(test)]
+mod serve_test;
 mod session;
 #[cfg(test)]
 mod sway_test;
@@ -52,7 +56,7 @@ enum Stop {
 
 fn main() {
     let path = std::env::args().nth(1).unwrap_or_else(|| PORT.into());
-    let mut agent = Agent::new();
+    let mut agent = Agent::new(logind::Paths::default(), Box::new(console::Vt::default()));
     loop {
         let port = match open(
             path.as_str(),
@@ -74,7 +78,8 @@ fn main() {
 
 /// A session child: its process, its socketpair, the frames to and from it.
 struct Proc {
-    pid: Pid,
+    /// None: the tests' child, on a thread.
+    pid: Option<Pid>,
     sock: OwnedFd,
     reader: frame::Reader,
     out: Vec<u8>,
@@ -83,6 +88,12 @@ struct Proc {
 
 /// What lasts across the port's openings: the pause, the session tracking and its child.
 struct Agent {
+    paths: logind::Paths,
+    /// TYPE's text, on its way to the foreground console.
+    typist: console::Typist,
+    /// The tests': a function on a thread in place of the forked child.
+    #[cfg(test)]
+    test_child: Option<fn(OwnedFd, String, u32)>,
     paused: bool,
     ino: Option<OwnedFd>,
     /// The watches on logind's directories (None: not there yet; tried again at each event).
@@ -98,7 +109,7 @@ struct Agent {
 }
 
 impl Agent {
-    fn new() -> Agent {
+    fn new(paths: logind::Paths, console: Box<dyn console::Console>) -> Agent {
         let ino = inotify::init(CreateFlags::CLOEXEC | CreateFlags::NONBLOCK)
             .map_err(|e| log("inotify", Some(e)))
             .ok();
@@ -110,6 +121,10 @@ impl Agent {
         )
         .ok();
         let mut a = Agent {
+            paths,
+            typist: console::Typist::new(console),
+            #[cfg(test)]
+            test_child: None,
             paused: false,
             ino,
             watches: [None, None],
@@ -129,12 +144,12 @@ impl Agent {
         for (w, dir) in self
             .watches
             .iter_mut()
-            .zip([logind::SEATS, logind::SESSIONS])
+            .zip([&self.paths.seats, &self.paths.sessions])
         {
             if w.is_none() {
                 *w = inotify::add_watch(
                     ino,
-                    dir,
+                    dir.as_str(),
                     WatchFlags::MOVED_TO | WatchFlags::DELETE | WatchFlags::ONLYDIR,
                 )
                 .ok();
@@ -156,10 +171,9 @@ impl Agent {
                         for w in self.watches.iter_mut().filter(|w| **w == Some(wd)) {
                             *w = None;
                         }
-                        changed = true;
                     }
                     let name = e.file_name().and_then(|n| n.to_str().ok()).unwrap_or("");
-                    changed |= name == "seat0" || logind::valid_id(name);
+                    changed |= logind_change(e.events(), name);
                 }
                 Err(Errno::INTR) => {}
                 Err(_) => break,
@@ -171,7 +185,7 @@ impl Agent {
     /// Starts, stops or swaps the session child for the active session now. `port`: closed in a new child.
     fn track(&mut self, port: RawFd) {
         self.watch();
-        let want = logind::active();
+        let want = logind::active(&self.paths);
         if self
             .child
             .as_ref()
@@ -197,8 +211,10 @@ impl Agent {
             self.lost = true;
             let pid = c.pid;
             drop(c);
-            let _ = kill_process(pid, Signal::KILL);
-            let _ = waitpid(Some(pid), WaitOptions::empty());
+            if let Some(pid) = pid {
+                let _ = kill_process(pid, Signal::KILL);
+                let _ = waitpid(Some(pid), WaitOptions::empty());
+            }
         }
     }
 
@@ -206,7 +222,9 @@ impl Agent {
     fn child_gone(&mut self) {
         if let Some(c) = self.child.take() {
             self.lost = true;
-            let _ = waitpid(Some(c.pid), WaitOptions::empty());
+            if let Some(pid) = c.pid {
+                let _ = waitpid(Some(pid), WaitOptions::empty());
+            }
             log("session: its child ended", None);
             self.exited = Some(c.key);
         }
@@ -223,6 +241,12 @@ impl Agent {
         };
         self.generation = self.generation.wrapping_add(1);
         let base = self.generation << 24;
+        #[cfg(test)]
+        if let Some(f) = self.test_child {
+            let runtime = a.runtime.clone();
+            std::thread::spawn(move || f(theirs, runtime, base));
+            return self.started(None, mine, a);
+        }
         // SAFETY: the agent is one thread, so the child has the whole process's state in order (no lock held by
         // another thread); it never returns to the parent's frames (session::run exits).
         let pid = unsafe { fork() };
@@ -236,6 +260,7 @@ impl Agent {
             let mut close = vec![port, mine.as_raw_fd()];
             close.extend(self.ino.as_ref().map(|f| f.as_raw_fd()));
             close.extend(self.mounts.as_ref().map(|f| f.as_raw_fd()));
+            close.extend(self.typist.fd());
             for fd in close {
                 // SAFETY: the parent's descriptors, which this process (which never returns to their owners) no
                 // longer uses; their OwnedFds are never dropped here (session::run exits).
@@ -258,6 +283,10 @@ impl Agent {
             session::run(theirs, a.runtime, base);
         }
         drop(theirs);
+        self.started(Pid::from_raw(pid), mine, a);
+    }
+
+    fn started(&mut self, pid: Option<Pid>, mine: OwnedFd, a: logind::Active) {
         if let Ok(f) = fcntl_getfl(&mine) {
             let _ = fcntl_setfl(&mine, f | OFlags::NONBLOCK);
         }
@@ -266,7 +295,7 @@ impl Agent {
             None,
         );
         let mut c = Proc {
-            pid: Pid::from_raw(pid).unwrap(),
+            pid,
             sock: mine,
             reader: frame::Reader::default(),
             out: Vec::new(),
@@ -314,13 +343,8 @@ impl Agent {
 struct Session<'a> {
     port: &'a OwnedFd,
     agent: &'a mut Agent,
-    /// A TYPE frame ended in CR (console.rs `for_tty`).
-    cr: bool,
-    /// Frames to send, and TYPE's bytes for the terminal.
+    /// Frames to send.
     out: Vec<u8>,
-    tty: Vec<u8>,
-    /// The terminal refused TYPE once (logged once).
-    tty_failed: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -335,11 +359,9 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
     let mut s = Session {
         port,
         agent,
-        cr: false,
         out: Vec::new(),
-        tty: Vec::new(),
-        tty_failed: false,
     };
+    s.agent.typist.reset();
     s.agent.track(port.as_raw_fd());
     let mut reader = frame::Reader::default();
     // virtio_console hands a read one of the guest's receive buffers (a page) at most.
@@ -367,7 +389,9 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
             fds.push(PollFd::new(&c.sock, f));
             tags.push(Tag::Child);
         }
-        match poll(&mut fds, None) {
+        // No timeout but while a paste is being typed (its reader catching up).
+        let timeout = s.agent.typist.busy().then_some(&console::TICK);
+        match poll(&mut fds, timeout) {
             Ok(_) | Err(Errno::INTR) => {}
             Err(e) => return Stop::Failed("poll", e),
         }
@@ -411,6 +435,9 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         if std::mem::take(&mut s.agent.lost) {
             frame::encode(frame::SESSION, &[], &mut s.out);
         }
+        if let Some(status) = s.agent.typist.step() {
+            frame::encode(frame::TYPED, &[status], &mut s.out);
+        }
         if let Err(e) = s.flush() {
             return Stop::Failed("write", e);
         }
@@ -421,11 +448,24 @@ impl Session<'_> {
     fn frame(&mut self, kind: u8, payload: &[u8]) {
         match kind {
             // The page's HELLO (it sends one each time it sees the port open, and to begin the stream afresh): the
-            // agent's answers it, after a SYNC if it carried a nonce.
-            frame::HELLO => frame::hello_answer(payload, CAPS, &mut self.out),
-            frame::TYPE if !self.agent.paused => self.type_text(payload),
+            // agent's answers it, after a SYNC if it carried a nonce. The child hears it too: its transfers in flight
+            // were the page's before.
+            frame::HELLO => {
+                frame::hello_answer(payload, CAPS, &mut self.out);
+                if frame::Hello::decode(payload).is_some() {
+                    self.agent.for_child(kind, payload);
+                }
+            }
+            frame::TYPE if !self.agent.paused => {
+                if let Some(status) = self.agent.typist.push(payload) {
+                    frame::encode(frame::TYPED, &[status], &mut self.out);
+                }
+            }
             frame::PAUSE | frame::RESUME => {
                 self.agent.paused = kind == frame::PAUSE;
+                if self.agent.paused {
+                    self.agent.typist.reset();
+                }
                 self.agent.for_child(kind, &[]);
             }
             // The clipboard's: the session child's, which answers them; without one, the agent says it has no
@@ -493,30 +533,6 @@ impl Session<'_> {
         }
     }
 
-    fn type_text(&mut self, text: &[u8]) {
-        if core::str::from_utf8(text).is_err() {
-            log("TYPE: not UTF-8, dropped", None);
-            return;
-        }
-        self.tty.clear();
-        console::for_tty(text, &mut self.cr, &mut self.tty);
-        match console::type_bytes(&self.tty) {
-            Ok(n) if n < self.tty.len() => log(
-                "TYPE: the console's reader stalled; the rest was dropped",
-                None,
-            ),
-            Ok(_) => {}
-            Err(e) if !self.tty_failed => {
-                self.tty_failed = true;
-                log("TYPE: the console refused it", Some(e));
-            }
-            Err(_) => {}
-        }
-        if self.tty.capacity() > 65536 {
-            self.tty = Vec::new();
-        }
-    }
-
     fn flush(&mut self) -> Result<(), Errno> {
         let mut at = 0;
         while at < self.out.len() {
@@ -532,6 +548,14 @@ impl Session<'_> {
         }
         Ok(())
     }
+}
+
+/// Whether an inotify event on logind's directories may change the active session: a seat's file or a session's, a
+/// watch gone, or events lost (the queue overflowed).
+fn logind_change(events: ReadFlags, name: &str) -> bool {
+    events.intersects(ReadFlags::IGNORED | ReadFlags::QUEUE_OVERFLOW)
+        || name == "seat0"
+        || logind::valid_id(name)
 }
 
 /// A line on stderr (the journal's): `webpc-agent: <what>[ (errno N)]`.

@@ -1998,6 +1998,7 @@ function showClipboard() {
   ui.clipboard.state = s?.state ?? 'waiting';
   ui.clipboard.stopped = !!s?.stopped;
   ui.clipboard.canType = !!s?.canType;
+  ui.clipboard.typed = s?.typed;
 }
 // Sync on focus (plan §4.1, way 1): each time the page has focus again, and where the browser says the clipboard
 // changed; the read permission, followed (its `change` updates the button at once; granted, it syncs).

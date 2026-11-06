@@ -3,7 +3,8 @@
 // as /dev/virtio-ports/org.webpc.agent.0, and the agent (agent/, web/app/guest-agent.ts): over fw_cfg into /run, started
 // by its credential unit, it opens the port and answers the page's HELLO (web/app/agent-link.ts, `window.__agent`).
 // Then: what it costs idle (plan §3.3's targets: no CPU time, no wakeups, its RSS), TYPE's text on the foreground
-// console (a reader on tty1 writes what it gets to a file; a long paste arrives whole), the toolbar's clipboard
+// console (a reader on tty1 writes what it gets to a file; a long paste arrives whole; none of it while tty1 is in
+// graphics mode, as under a compositor: TYPED says why), the toolbar's clipboard
 // button (sharing, then its switch: PAUSE stopping TYPE and RESUME restoring it; waiting once the agent stops), the
 // page carrying on when the agent stops, and the port itself without the agent: `cat` echoing it into
 // itself (a small frame, and 320 KiB of 64 KiB frames past the link's window, so the guest's buffers and the window's
@@ -19,6 +20,7 @@ import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks } from './page-ask.ts';
+import { FRAME, TYPED } from '../web/agent-frame.ts';
 
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -170,6 +172,34 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
     await page.waitForTimeout(500);
   }
 
+  // tty1 in graphics mode, as a compositor that runs on it puts it (KDSETMODE KD_GRAPHICS, by perl as root): TYPE is
+  // refused, the page hears why (TYPED NOT_TEXT), and nothing waits in tty1's input for whatever reads it once the
+  // compositor ends. Back in text mode, TYPE types again (TYPED DONE).
+  await page.evaluate((k) => {
+    const w = window as unknown as { __typed: number[]; __agent: Link };
+    w.__typed = [];
+    const on = w.__agent.onFrame;
+    w.__agent.onFrame = (f) => { if (f.type === k) w.__typed.push(f.payload[0]); on?.(f); };
+  }, FRAME.TYPED);
+  const kdMode = (mode: number) => run(page, `perl -e 'open(my $t, "+<", "/dev/tty1") or die; ioctl($t, 0x4B3A, ${mode}) or die "$!"' && echo mode ${mode}`);
+  const typedSaid = (n: number) => page.waitForFunction((m) => (window as unknown as { __typed: number[] }).__typed.length >= m, n, { timeout: 10_000, polling: 100 })
+    .then(() => page.evaluate(() => (window as unknown as { __typed: number[] }).__typed.at(-1)));
+  assert.equal(await kdMode(1), 'mode 1');
+  assert.equal(await link(page, (l) => l.type('under graphics\n')), true);
+  assert.equal(await typedSaid(1), TYPED.NOT_TEXT);
+  await page.waitForTimeout(1000);
+  assert.deepEqual(await typed(page), [sha(wantResumed), String(Buffer.byteLength(wantResumed))], 'nothing typed in graphics mode');
+  assert.equal(await kdMode(0), 'mode 0');
+  assert.equal(await link(page, (l) => l.type('text again\n')), true);
+  assert.equal(await typedSaid(2), TYPED.DONE);
+  const wantText = wantResumed + 'text again\n';
+  for (let i = 0; ; i++) {
+    const [hash, n] = await typed(page);
+    if (hash === sha(wantText)) break;
+    if (i > 20) assert.fail(`back in text mode tty1's reader has ${n} bytes, not ${Buffer.byteLength(wantText)}`);
+    await page.waitForTimeout(500);
+  }
+
   // The agent stopped: the page hears the port close, the link refuses, the machine runs on.
   await run(page, 'systemctl stop webpc-agent; echo stopped');
   await isOpen(page, false);
@@ -214,7 +244,7 @@ test('clipboard sharing on Debian: the agent arrives, says HELLO, costs nothing 
   await hello(page);
   assert.equal(await link(page, (l) => l.paused), false);
   assert.equal(await link(page, (l) => l.type('again\n')), true);
-  const wantAgain = wantResumed + 'again\n';
+  const wantAgain = wantText + 'again\n';
   for (let i = 0; ; i++) {
     const [hash, n] = await typed(page);
     if (hash === sha(wantAgain)) break;

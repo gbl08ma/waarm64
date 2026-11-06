@@ -14,7 +14,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks, type Question } from './page-ask.ts';
-import { CAP, decodeOffer, encodeFrame, encodeHello, encodeOffer, FRAME, FrameReader, type Frame } from '../web/agent-frame.ts';
+import { CAP, decodeOffer, encodeFrame, encodeHello, encodeOffer, FRAME, FrameReader, TYPED, type Frame } from '../web/agent-frame.ts';
 import { PAGE_CAPS } from '../web/app/agent-link.ts';
 import { TEXT } from '../web/app/clipboard.ts';
 import { t } from '../web/i18n.ts';
@@ -162,6 +162,12 @@ test("the toolbar's clipboard button: only with the setting; waiting, sharing, p
   const [typed] = await guestReads(page, 5 + Buffer.byteLength(during));
   assert.equal(typed.type, FRAME.TYPE);
   assert.equal(new TextDecoder().decode(typed.payload), during);
+  // The agent's word that the console under a compositor took none of it (TYPED): the menu says so.
+  await guestWrites(page, encodeFrame(FRAME.TYPED, new Uint8Array([TYPED.NOT_TEXT])));
+  await menu(page, true);
+  await page.waitForSelector('#clipboard-not-text', { timeout: 5000 });
+  assert.equal(await page.textContent('#clipboard-not-text'), t('clipboard:ClipboardMenu.notText'));
+  await menu(page, false);
 
   // The "agent" closes the port: waiting again.
   await onSerial(page, 'exec 3>&-\n');
