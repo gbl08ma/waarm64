@@ -260,11 +260,14 @@
   {/if}
 {/snippet}
 
+<!-- The note names the toolbar's clipboard menu with its icon after the words (docs/copy.md "The elements"). -->
+{#snippet clipboardNote()}<T k="machines:MachinesPage.clipboard.note">{#snippet icon(words: string)}{words} <span class="inline-icon" aria-hidden="true"><Icon name="clipboard" size={14} /></span>{/snippet}</T>{/snippet}
+
 {#snippet clipboardSwitch()}
   {#if draft}
     {@const rec = machines.find((x) => x.id === draft?.id)}
     <!-- Turning it on is the click that asks for the browser's read permission (docs/plans/clipboard.md §4.1). -->
-    <Check bind:checked={draft.clipboard} field="clipboard" onchange={(on) => { if (on) page.clipboardAsk(); }} note={t('machines:MachinesPage.clipboard.note')}>{t('machines:MachinesPage.clipboard')}</Check>
+    <Check bind:checked={draft.clipboard} field="clipboard" onchange={(on) => { if (on) page.clipboardAsk(); }} note={clipboardNote}>{t('machines:MachinesPage.clipboard')}</Check>
     {#if orphanable && !!draft.clipboard !== !!rec?.clipboard}<p class="note warn" data-clipboard-orphans>{draft.clipboard ? t('machines:MachinesPage.clipboard.orphans.on') : t('machines:MachinesPage.clipboard.orphans.off')}</p>{/if}
   {/if}
 {/snippet}
@@ -586,5 +589,7 @@
   .adapters button { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
   .storage { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 6px 16px; border-top: 1px solid var(--line); background: var(--panel); font-size: 12px; color: var(--dim); }
   .storage details ul { margin: 4px 0; }
+  /* A toolbar button's icon named in a sentence (the clipboard note): on the text's line, the words' color. */
+  .inline-icon { display: inline-flex; vertical-align: -2px; }
   @media (max-width: 720px) { .panes { grid-template-columns: 1fr; } nav { border-right: 0; border-bottom: 1px solid var(--line); } }
 </style>

@@ -45,6 +45,8 @@ and the choices they made then; it grows as the user reviews more of the copy.
 | **this web app** | the emulator as a thing in the browser: its storage, the browser's permissions, files and tabs ("stored in this web app", "This web app needs cross-origin isolation") | "the page", "this page", the product's name |
 | **this emulator** | the emulator as the machine's maker: what it offers the guest, starting, stopping, devices ("This emulator configures the guest's network at every boot") | "the page" |
 | **this browser** | where things are stored and what asks for permission ("remains stored in this browser") | "the browser's storage" when "this browser" says it |
+| **a browser limitation** | something the browser didn't allow or give this web app, when nothing is stored and no permission can change it ("or this web app ran into a browser limitation"): "this browser" is for storage and permissions, and a sentence about what failed reads better with this web app as its subject | "this browser didn't let this web app…" |
+| **reopen this web app** | the user coming back to its tab or window ("when you reopen this web app") | "come back to this page" |
 | **your computer** | the user's physical device: its memory, its files, a USB device plugged into it | "this computer", "the host" |
 | **a computer**, **the computer running tailcat** | another physical device, by its role (a tailcat or helper end); "exit node" only where it's the tool's own term (`tailcat serve exit-node`, a tailnet's exit node setting) | "the exit node" as a general name, "the host" |
 | **machine**, **virtual machine** | a virtual machine as the user keeps it: its settings and disks; "virtual machine" where it must be explicit | "VM" in copy, "computer" |
@@ -83,6 +85,9 @@ actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
   Then the details, full sentences: what happened or why, then what the user can do. A message that is a cause
   (the details' line) is a full sentence too.
 - **Menu paths**: the items' own words joined with ›: "Add a disk… › A disk already in this browser".
+- **A toolbar button named in a sentence** may show its icon after its words, through a marker (`The <icon>clipboard
+  menu</icon> in the toolbar can pause the sharing…`: the words, then the icon); where only text fits (`plain()`), the
+  words stand alone. Other sentences that name toolbar buttons can take it later.
 - **Setup screens and wizards**: steps first, then the field they lead to. A choice the user makes is followed by
   numbered steps that end at its input, and a short note after only for consequences and warnings ("Keep the address
   to yourself, as it lets anyone use the connection."). No long explainer after a field.
@@ -101,6 +106,12 @@ actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
 | The guest's swap, turned on at every boot with nothing to do inside: the page formats the ramdisk as swap and tells systemd (254+: Debian 13, Arch; not Debian 12). It takes memory as the guest swaps and gives it back as the guest frees it. | Automatically configure the guest to use this ramdisk as swap. The guest must be running systemd version 254 or above. The memory usage of this ramdisk on the host will fluctuate as the guest uses the swap space. |
 | The image is copied into this browser's storage: no picking again, and it can take an overlay's changes into itself or be written in place. … | The image is copied into this browser's storage. You will not be asked to select a file or authorize access to it again. You will be able to merge overlays into the image, and optionally enable writing in place instead of using overlays. … |
 | Take the disk off this machine (it stays in this browser) | Take the disk off this machine. It remains stored in this browser. |
+| What you copy on your computer reaches the guest when you come back to this page. | What you copy on your computer reaches the guest when you reopen this web app. |
+| The guest's screen shows a graphical desktop, not its text console, so nothing was typed. | Nothing was typed, because the guest is showing a graphical desktop rather than a text console. |
+| The guest's text console didn't take all of the text, so some of it wasn't typed. | Some of the text wasn't typed, as the guest's console didn't consume all of it. |
+| There was no picture of the screen to copy, or this browser didn't let this web app put it on the clipboard. | The screen wasn't copied. There may have been no video output yet, or this web app ran into a browser limitation. |
+| This browser gave this web app no text from the clipboard. | Nothing was typed, because this web app couldn't get text from the clipboard. |
+| A switch in the toolbar pauses the sharing while the machine runs. | The clipboard menu [icon] in the toolbar can pause the sharing while the machine runs. |
 
 ## Open
 

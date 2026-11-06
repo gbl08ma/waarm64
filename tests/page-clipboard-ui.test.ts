@@ -19,7 +19,7 @@ import { answerAsks, type Question } from './page-ask.ts';
 import { CAP, decodeOffer, encodeFrame, encodeHello, encodeOffer, FRAME, FrameReader, TYPED, type Frame } from '../web/agent-frame.ts';
 import { PAGE_CAPS } from '../web/app/agent-link.ts';
 import { TEXT } from '../web/app/clipboard.ts';
-import { t } from '../web/i18n.ts';
+import { plain, t } from '../web/i18n.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const skip = !(existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES))) && 'SKIPPED: run images/build.sh';
@@ -299,7 +299,7 @@ test("the Machines page's clipboard switch: off by default, its note; ticking it
   await page.locator('.machines [data-selected] [data-tab=settings]').click();
   assert.equal(await page.isChecked('.machines [data-field=clipboard]'), false);
   const note = await page.locator('.machines .check-field', { has: page.locator('[data-field=clipboard]') }).locator('.note').textContent();
-  assert.equal(note, t('machines:MachinesPage.clipboard.note'));
+  assert.equal(note?.replace(/\s+/g, ' ').trim(), plain(t('machines:MachinesPage.clipboard.note')).replace(/\s+/g, ' ').trim());
   assert.equal(await page.locator('.machines [data-clipboard-orphans]').count(), 0);
   // Ticking it is the click that asks: Chromium prompts (headless: denied at once).
   assert.equal(await readState(page), 'prompt');

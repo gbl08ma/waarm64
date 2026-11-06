@@ -205,13 +205,13 @@ it is `denied`, a note while it is `granted`; **[Share the clipboard](ui:clipboa
 (PAUSE to the agent; the pending text dropped; the pause isn't in snapshots: the link says PAUSE or RESUME at every
 opening of the agent's port, so an agent restored paused is resumed); **[Send the clipboard to the guest](ui:clipboard:ClipboardMenu.send)** and
 **[Type the clipboard](ui:clipboard:ClipboardMenu.type)** (TYPE on the console), which read on their click (Send reads `read()`, for an image too); after Type, the menu says what went
-wrong as the agent's TYPED says it: "[The guest's screen shows a graphical desktop, not its text console, so nothing was typed. Paste with the keyboard on the screen instead.](ui:clipboard:ClipboardMenu.notText)"
-or "[The guest's text console didn't take all of the text, so some of it wasn't typed.](ui:clipboard:ClipboardMenu.untyped)"; and
+wrong as the agent's TYPED says it: "[Nothing was typed, because the guest is showing a graphical desktop rather than a text console. Paste with the keyboard while the guest's screen has the focus instead.](ui:clipboard:ClipboardMenu.notText)"
+or "[Some of the text wasn't typed, as the guest's console didn't consume all of it.](ui:clipboard:ClipboardMenu.untyped)"; and
 **[Copy the screen](ui:clipboard:ClipboardMenu.screen)**, which needs no agent (shown while waiting or paused too): a PNG of the display
 written to the host's clipboard (`write` with a promise, so the click's activation outlasts the read-back; `main.ts`
 `screenPng`): a 3D machine's screen read back by its GPU worker (`grab`) and encoded in `web/app/png-worker.ts`, a 2D
 machine's from whoever draws it over the display port (`png`: virtio-gpu's scanout in the device worker,
-`gpu-present.ts` `scanoutPng`, or the framebuffer's canvas in the machine worker); a failure says "[There was no picture of the screen to copy, or this browser didn't let this web app put it on the clipboard.](ui:clipboard:ClipboardMenu.screen.failed)". The permission is followed
+`gpu-present.ts` `scanoutPng`, or the framebuffer's canvas in the machine worker); a failure says "[The screen wasn't copied. There may have been no video output yet, or this web app ran into a browser limitation.](ui:clipboard:ClipboardMenu.screen.failed)". The permission is followed
 (`watchReadPermission`: `navigator.permissions.query`, its `change` event; `none` in Firefox and Safari, which throw
 on the name). What the page does with it:
 - **Sync** (way 1): while the permission is `granted`, a focus of the page (`focus`, `visibilitychange` to visible,

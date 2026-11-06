@@ -4,7 +4,7 @@
     "note": "Tooltip of the toolbar's clipboard button (shown while the running machine shares the clipboard), while it shares and nothing limits it."
   },
   "ClipboardMenu.title.limited": {
-    "message": "Clipboard sharing is on. Until this web app may see the clipboard, the guest gets what you copy on your computer only when you paste with the keyboard on the screen, not from the guest's own menus.",
+    "message": "Clipboard sharing is on. Until this web app may see the clipboard, the guest gets what you copy on your computer only when you paste with the keyboard while the guest's screen has the focus, not from the guest's own menus.",
     "note": "Tooltip of the toolbar's clipboard button while it shares but the browser hasn't allowed reading the clipboard (asked or blocked), or the reads stopped (ClipboardMenu.stopped). The button has a mark then."
   },
   "ClipboardMenu.title.paused": {
@@ -24,15 +24,15 @@
     "note": "The toolbar's clipboard menu: tooltip of ClipboardMenu.allow."
   },
   "ClipboardMenu.denied": {
-    "message": "This browser doesn't let this web app see the clipboard, so the guest gets what you copy on your computer only when you paste with the keyboard on the screen. To allow it, click the icon at the left of the address bar, and allow Clipboard in the site's settings.",
+    "message": "This browser doesn't let this web app see the clipboard, so the guest gets what you copy on your computer only when you paste with the keyboard while the guest's screen has the focus. To allow it, click the icon at the left of the address bar, and allow Clipboard in the site's settings.",
     "note": "The toolbar's clipboard menu: a note at its top while the browser blocks reading the clipboard (the user said no, or the site's settings block it)."
   },
   "ClipboardMenu.granted": {
-    "message": "This web app may see the clipboard. What you copy on your computer reaches the guest when you come back to this page.",
+    "message": "This web app may see the clipboard. What you copy on your computer reaches the guest when you reopen this web app.",
     "note": "The toolbar's clipboard menu: a note at its top while the browser allows reading the clipboard."
   },
   "ClipboardMenu.stopped": {
-    "message": "This browser gave this web app empty text several times while the clipboard held text, so the guest no longer gets what you copy when you come back to this page. Paste with the keyboard on the screen instead, or use Send the clipboard to the guest. This lasts until the machine starts again.",
+    "message": "This browser gave this web app empty text several times while the clipboard held text, so the guest no longer gets what you copy when you reopen this web app. Paste with the keyboard while the guest's screen has the focus instead, or use Send the clipboard to the guest. This lasts until the machine starts again.",
     "note": "The toolbar's clipboard menu: a note while the reads made each time the page gets the focus back stopped for the run, because the browser or the computer's system hid the clipboard's text from them (macOS can)."
   },
   "ClipboardMenu.share": {
@@ -68,23 +68,23 @@
     "note": "The toolbar's clipboard menu: tooltip of ClipboardMenu.screen."
   },
   "ClipboardMenu.screen.failed": {
-    "message": "There was no picture of the screen to copy, or this browser didn't let this web app put it on the clipboard.",
+    "message": "The screen wasn't copied. There may have been no video output yet, or this web app ran into a browser limitation.",
     "note": "The toolbar's clipboard menu: a note after Copy the screen failed (the guest hadn't shown anything yet, or the browser refused the write)."
   },
   "ClipboardMenu.failed": {
-    "message": "This browser gave this web app no text from the clipboard.",
+    "message": "Nothing was typed, because this web app couldn't get text from the clipboard.",
     "note": "The toolbar's clipboard menu: a note after Type the clipboard found no text (the clipboard had none, or the browser refused)."
   },
   "ClipboardMenu.failed.send": {
-    "message": "This browser gave this web app no text or image from the clipboard.",
+    "message": "Nothing was sent, because this web app couldn't get text or an image from the clipboard.",
     "note": "The toolbar's clipboard menu: a note after Send the clipboard to the guest found no text and no image (the clipboard had none, or the browser refused)."
   },
   "ClipboardMenu.notText": {
-    "message": "The guest's screen shows a graphical desktop, not its text console, so nothing was typed. Paste with the keyboard on the screen instead.",
+    "message": "Nothing was typed, because the guest is showing a graphical desktop rather than a text console. Paste with the keyboard while the guest's screen has the focus instead.",
     "note": "The toolbar's clipboard menu: a note after Type the clipboard, when the guest's program refused it because a graphical desktop (a compositor) runs on the guest's screen: typed there, the text would wait and run as commands once the desktop ends."
   },
   "ClipboardMenu.untyped": {
-    "message": "The guest's text console didn't take all of the text, so some of it wasn't typed.",
+    "message": "Some of the text wasn't typed, as the guest's console didn't consume all of it.",
     "note": "The toolbar's clipboard menu: a note after Type the clipboard, when the guest's program couldn't type the text, or the program reading the console stopped taking it and the rest was dropped."
   }
 }

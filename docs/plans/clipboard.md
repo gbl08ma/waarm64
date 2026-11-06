@@ -464,10 +464,11 @@ Images are the same path as text with another type: lazy offers, streamed chunks
     Plasma do. The guest must be running systemd version 256 or above. Nothing is written to the guest's disk,
     so the program is gone when the guest shuts down. This browser may ask for permission to see the clipboard,
     so that the guest can paste what you copy on your computer from its own menus too. A switch in the toolbar
-    pauses the sharing while the machine runs."
+    pauses the sharing while the machine runs." (The draft; the words as settled with the user, 2026-11-07, are
+    the catalog's `MachinesPage.clipboard.note`.)
 
   The X11 sentence joins when X11 is built (§6 step 5; **joined**: "An X11 session works too, through the clipboard
-  that Copy and Paste use (not the middle-click selection)."), and so does a "text console" sentence when `TYPE` is
+  that Copy and Paste use. The middle-click selection isn't shared."), and so does a "text console" sentence when `TYPE` is
   offered. **Settled (step 4)** in the catalog (`machines:MachinesPage.clipboard.note`): "Copy text" (images came
   with step 5, which made it "Copy text or an image", as the draft has it), and the console's sentence joins, since the menu types:
   "On a text console, the toolbar's clipboard menu can type what you copied." Stored machines all boot through
