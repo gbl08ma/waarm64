@@ -6,6 +6,8 @@ findings and the leftovers that drop work as tier 2b (R1–R7, before tier 3); T
 **Updated at the user's ask (2026-11-02)**: tier 2b done and summarized in the done table.
 **Updated at the user's ask (2026-11-05)**: the census again (bench/vulkan/REPORT.md "VK4: the census again") and
 the tasks it opens, T21–T35 (tier 3's T20 among them, as T23), after tier 3; tier 4's items they take point to them.
+**Updated at the user's ask (2026-11-07)**: docs/backlog.md's Vulkan entries that WebGPU can back made tasks, T36–T50
+(after the census's, grouped by the machinery they share; tier 4's and the leftovers' items they take point to them).
 
 ## How VK4 runs: tasks the user starts
 
@@ -126,6 +128,126 @@ the sample's on the M4 (×100 for the whole list, roughly); each starts by runni
   run. *Start:* vk/README.md "Descriptors".
 - **T35. 3D ASTC** (M; 187): `VK_EXT_texture_compression_astc_3d` decoded to RGBA8 at upload in a compute pass. No
   program asks; last. *Done:* advertised, its cases run.
+
+### The backlog's tasks (T36–T50, drafted 2026-11-07 at the user's ask)
+
+docs/backlog.md's Vulkan entries ("The Vulkan driver's gaps" and the entries around it), grouped so that each task
+works in one place of the code (the replay's draws, the bindings' count, a fetch in the translator, the worker's
+compute passes), numbered by the kickoff's ranking: a hang first, then work WebGPU drops, wrong pixels, what Vulkan 1.3
+requires, then features by what programs (DXVK, vkd3d, Godot, ANGLE) and dEQP-VK meet, performance last. Each task
+starts from the backlog entries it names, moves what it leaves back there, and runs its entries' dEQP-VK groups for
+the cases that join the list (as the census's tasks do). Out of WebGPU's reach, so no task: images sharing their
+memory's bytes (`memory.binding.aliasing`, `plane_view.memory_alias`, images on external memory: an image is a
+texture of its own), formats WebGPU can't multisample unless T39 decides an emulation, depths past [0, 1], 16
+attachments, stencil export, early fragment tests (WGSL has no attribute), both blend constants, one draw's front and
+back primitives in order, `occlusionQueryPrecise`, several viewports, 64-bit floats and atomics, and what VK4's
+decisions already leave (protected memory to sparse, pipeline statistics). Waiting on the guest's Mesa, not a task:
+maintenance8's list (a guest rebuild once Arch has Mesa 26.3), `VK_KHR_unified_image_layouts`,
+`VK_EXT_primitive_restart_index`'s cases.
+
+- **T36. Hangs and lost completions** (S): a guest waiting on a ring fence that gave its queue entry back, while the
+  ring's newest waits for what the guest does next, waits for ever (backlog "Synchronization", the review of R1–R4's
+  C2): signal such a fence once its own work is done, not with the ring's next; T33's run of
+  `timeline_semaphore.wait_before_signal` (now supported) confirms the held submits; Venus's use-after-free fix gets
+  its test (a recorded stream through `venus_submit`, backlog "Venus's use-after-free fix has no test"). *Done:* a
+  driver test of the C2 shape that hung before, the wait-before-signal cases in the list. *Start:* docs/devices.md
+  "Venus", backlog "Synchronization".
+- **T37. Commands WebGPU refuses that the driver can avoid** (M): each a submit or draw dropped today, made valid or
+  refused where it's made (saying why): a subresource read through a storage image bound as a texture and written in
+  one scope (`scope_images`), a 2D array view of one layer bound to a 2D storage image, stages from the cache that
+  disagree on an image's kind (`wg_program_merge` without `wg_shader_compile`'s checks), `packPass`'s clamp on a large
+  3D alias (backlog "Storage images read as textures' leftovers"); a storage image as words past
+  `maxStorageBufferBindingSize` (a binding per part) and `mismatched_formats` (a variant by the view's format;
+  "Storage images as words' leftovers", "`mismatched_formats`"); a vertex binding read past its buffer's end (pulled,
+  zeros past it: "Pulled vertices' leftovers"); a uniform block past its range at the 64 KiB pad, writable bindings of
+  one range one of atomics ("What R7's limits leave", "Usage scopes' leftovers"). *Done:* a driver test of each shape
+  with no WebGPU error, the groups' cases (`robustness`, `image.mismatched_formats`, `extended_dynamic_state`'s
+  bindings past the end) run. *Start:* vk/README.md "Usage scopes", "Storage images as words".
+- **T38. Formats and features a line or a fetch away** (M; Vulkan 1.3's first): R32 texel buffer atomics (required by
+  1.3: the texel buffer's words are a storage buffer already, `atomic<u32>` on them), storage texel buffers of formats
+  under a word (r8, rg8, r16: an atomic and-or on the word, as 8-bit storage), the depth comparison bit in
+  `VkFormatProperties3` (`texture.shadow.*`: ~700 cases a depth format), A8_UNORM (`r8unorm` swizzled; its attachments
+  a variant writing alpha to red) and A1B5G5R5 if T30 left it unoffered, the 10-bit SNORM orders in `rgba16snorm`
+  (tier1), sRGB and packed 16-bit storage images through words, `VK_EXT_image_2d_view_of_3d` (a slice in the shader).
+  *Done:* each advertised and its cases run. *Start:* backlog "Texel buffers", "Depth comparison isn't reported",
+  "maintenance5's and 6's leftovers", "Packed formats' leftovers", "Rendering".
+- **T39. Multisampling's gaps** (M): the multisampled clears of RGBA8 and its packed twins that read 0 or another
+  colour (a read of memory nothing wrote; every such case is out of the list), the 3 sRGB-twin resolves 0.26 off,
+  `sampler2DMSArray` sampled whole (a binding per layer, a switch on the layer), images made for sampling only
+  reporting 4 samples where the format multisamples (the driver adds the attachment usage), multisampled copies between
+  formats the bits shader skips (`rgb10a2`, packed layouts); and the decision on `R32G32_SFLOAT` and
+  `R32G32B32A32_SFLOAT` at 4 samples (Vulkan's mandatory attachments: a 4-layer texture resolved by a draw, measured,
+  or left). *Done:* the clears' cases back in the list, the rest run. *Start:* backlog "Multisampled image clears",
+  "Multisampled arrays' leftovers", "Sample counts Vulkan wants but WebGPU lacks", "Views in another format's leftovers".
+- **T40. Bindings past WebGPU's limits** (L; `descriptorset_random.sets4`'s 165 and T33's 2, `descriptor_copy`'s 2):
+  texel buffers' words of one memory sharing a storage binding (a variant keyed by the binding pattern, each view's
+  offset in the parameter table), uniform texel buffers as `r32uint` textures (counted with sampled images, as Vulkan
+  does), a set's inline uniform blocks one binding of its buffer (as the table is), the push buffer on a binding without
+  a dynamic offset where none is left (`maxDescriptorSetUniformBuffersDynamic` back to 8), and the four-group programs
+  whose extra bindings have no group (a capture's, pulled vertices', an attachment read's) joining a copy of group 3 as
+  T33's pre-pass does (`vsGroup3`). *Done:* sets4's refusals measured again (each one passing or filed with its count),
+  vkd3d's 14 uniform buffers a stage reconsidered. *Start:* backlog "Texel buffers", "Bindings past WebGPU's", "What
+  R7's limits leave", "Pulled vertices' leftovers", ANGLE's "Transform feedback".
+- **T41. Device addresses at a program's scale** (L; DXVK puts every allocation there, Godot's VMA grew the buffer to
+  512 MiB, which SwiftShader refused): a memory placed in the address buffer at its first bind of a buffer that asks
+  (images' memory left out), address memory past one storage binding (several bindings, picked by the address's high
+  bits), `OpConvertUToPtr` now that `shaderInt64` is offered (504 of `buffer_device_address`), capture and replay
+  (addresses a memory's opaque capture value fixes), loads NIR knows are 16-aligned through a vec4 view
+  (SwiftShader's 40 s compile), a descriptor beside the pointers' binding seeing its bytes in a scope (the review's
+  W2). *Done:* Godot's GI demo's editor on SwiftShader, the bda groups run, a DXVK-shaped allocation test. *Start:*
+  backlog "Device addresses' leftovers", "Godot on Venus, GD's leftovers" (the address buffer).
+- **T42. Shaders' and samplers' wrong results** (M): `umulExtended`, signed and unsigned atomic min or max on one
+  array (a compare-exchange loop for the other kind), derivatives in non-uniform control flow
+  (`glsl.derivate.*dynamic_if`: looked into first), a shadow cube's corner of three faces, a depth texture's linear mip
+  blend at an explicit LOD, gathers refused today (a shadow cube or a non-seamless linear cube bound as faces, an
+  integer cube both sampled and gathered, a padded compressed cube) and the padded cube's seam corner, an indexed f16
+  vector's `if` tree past Tint's 127, flat varyings of mixed types packed into one location. *Done:* each with its
+  translator test, its cases run. *Start:* backlog "Shaders", "Samplers' leftovers", "Compressed images that aren't
+  whole blocks' leftovers", "What the device advertises, left for the translator".
+- **T43. Rendering's rest** (M): `gl_Layer` (a layered pass drawn a layer at a time, the stage discarding other
+  layers' primitives), alpha to coverage without a colour target or with the stage's `sample_mask` (the coverage
+  through the stage's own mask), alpha to one, depth bias's float representations and `depthBiasExact` (the fragment
+  depth moved), polygon modes (`fillModeNonSolid`: lines and points as a list the provoking pass's way writes before the
+  pass), `load_store_op_none`'s 9 and the transfers' 3 (a 4-sample `b10g11r11` clear, a 3D `a2b10g10r10_uint` clear,
+  `push_constant.graphics_pipeline.overwrite`) looked into. *Done:* each advertised or fixed, its cases run. *Start:*
+  backlog "Rendering", "Not advertised, by what dEQP-VK asks" (T28's leftovers), "Transfers".
+- **T44. Vertex input's rest** (M): vertex attribute divisors (`VK_KHR_vertex_attribute_divisor`: `iid / rate` in the
+  pulled fetch; vkd3d's test_instance_id), `VK_EXT_legacy_vertex_attributes` (bytewise pulls; 4,080 of `vertex_input`),
+  16 vertex bindings without a free group (T40's group 3), a pulled range past `maxStorageBufferBindingSize` (several
+  bindings). *Done:* advertised, `vertex_input` and the divisor groups run, vkd3d's instance tests. *Start:* backlog
+  "Pulled vertices' leftovers", vk/README.md "Pulled vertices".
+- **T45. Transform feedback's and indirect draws' rest** (L; the worker's compute passes): transform feedback's queries
+  and `vkCmdDrawIndirectByteCountEXT` (`transformFeedbackQueries`, `transformFeedbackDraw`: the advance dispatch knows
+  the counts), restarts in a captured draw, `transformFeedbackPreservesProvokingVertex`, 16-bit outputs, records past
+  512 bytes, `gl_ClipDistance`'s capture, indexed and indirect captures bounded by their indices' range; indirect draws
+  that the replay draws as they are or not at all: the last vertex provoking, a vertex stage that stores (T33's
+  pre-pass on the GPU's counts), a draw-indirect-count of a fan or under transform feedback. *Done:* ANGLE's ES3 sample
+  page and the groups' cases. *Start:* backlog ANGLE's "Transform feedback", "The provoking vertex", "Multi-draw's
+  leftovers".
+- **T46. Queries and timestamps** (M): timestamps from the GPU where the adapter has `timestamp-query` (1.3's
+  `timestampComputeAndGraphics`, today the CPU's at replay), two occlusion queries active at once across pools and one
+  cut by a part of the pass counted rather than reported passing, queries past slot 4,096, `vkCmdCopyQueryPoolResults`
+  as one dispatch. *Done:* `query_pool` and `timestamp` groups run, VK0's scene's GPU time against `?gpu=vkgputime`.
+  *Start:* backlog "Queries".
+- **T47. vkd3d's feature levels** (M; after T40 and T44): 256 bytes of push constants (draw parameters moved past
+  them), the viewport limits vkd3d checks, the whole d3d12 suite run for a ranked list (`TESTS=` in vkd3d.ts), what
+  vkd3d still lacks rechecked against what VK4 has offered since VK3 L7.5. *Done:* feature level 11_1 or the reason
+  left, the suite's ranked failures fixed or filed. *Start:* backlog "vkd3d on Venus", tier 4.
+- **T48. Presentation and imports** (S): images written only by compute marked written (a WSI image a compute pass
+  draws isn't copied again: wrong pixels), WSI formats past 8-bit RGBA, `rgb10a2unorm` and `rgba16float`, an imported
+  image's texture made at its first use (two made and destroyed a frame for mpv), a multi-planar image on external
+  memory (each plane's region of the resource). *Done:* a compute-drawn swapchain test, mpv's import measured.
+  *Start:* backlog "Presentation's gaps", "Imports' gaps", "YCbCr's gaps".
+- **T49. A program's start: pipelines and WGSL** (M, performance: Godot's first frame ~35 s): which pipelines a
+  creation can make right (a count per program in the store, VK4 T17's 10 of 18 keys missed), the store held deflated
+  (a synchronous inflate), the printer's WGSL smaller for Tint (float vectors, uniform word indexing, single-use values
+  inlined), each measured by its gain on Godot's cold and warm start and vkQuake's cold frames. *Start:* backlog
+  "Pipelines' loose ends", "The printer's WGSL, what Tint still pays for".
+- **T50. The hosts' own failures** (M; the Mac, NVIDIA's batch): the M4's 16 `draw_index` (the difference between the
+  driver's calls and the worker's: likely ours), its stencil `samplemask` resolves, its `e5b9g9r9` copies (an
+  `r32uint` texture), SwiftShader's compressed samples in compute and its base-level fetch; NVIDIA's
+  `buffer_1048577` and T2's trap from the next run. *Done:* each fixed, or shown the host's and reported upstream.
+  *Start:* backlog "The M4's own failures", "SwiftShader's …" entries.
 
 ### Tier 4: breadth (each its own task when a program asks for it)
 

@@ -808,7 +808,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   d3d12 suite for a ranked list, multi-draw indirect (the driver already loops over a draw count, each draw with its
   own parameters' place), and a real program (vkd3d's demos need an X window: none in the guests). The draw
   parameters' cost (a push-buffer place and a bind of group 3 a draw whose bases change) isn't measured on a program.
-- **The Vulkan driver's gaps** (VK2 L2, L5; vk/README.md "The driver"), each for when a program or dEQP-VK needs it;
+- **The Vulkan driver's gaps** (VK2 L2, L5; vk/README.md "The driver"; VK4-KICKOFF.md's T36–T50 take what WebGPU can
+  back, each naming the entries it starts from), each for when a program or dEQP-VK needs it;
   dEQP-VK's failures by cause. VK4 T1's census (bench/vulkan/REPORT.md "VK4 T1": every 100th case of the direct set's
   groups, 16,489; on SwiftShader 2,448 pass, 498 fail, 2 crash, the rest unsupported, the M4 alike) counts every cause
   in its table (`bench/vulkan/census.ts`); the counts below without a date are L5's samples
