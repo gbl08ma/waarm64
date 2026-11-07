@@ -18,11 +18,12 @@ import { test } from 'node:test';
 const root = new URL('..', import.meta.url).pathname;
 const skip = process.env.WEBPC_DEQP_VK !== '1' ? 'SKIPPED: scripts/ci-deqp-vk.sh runs it (WEBPC_DEQP_VK=1)' : false;
 
-// The seconds dEQP may run the list: ~2 times what it takes, so a hung device (every later fence held: the guest waits
+// The seconds dEQP may run the list: ~2 times what it takes (a machine's half of the whole list: 2,113 s at 58,906 cases,
+// VK4 T34), so a hung device (every later fence held: the guest waits
 // for good) fails the test in minutes, with the guest's serial log kept.
-const LIMIT_S = 2400;
+const LIMIT_S = 4200;
 
-// The direct list runs as this many machines at once, each on its own server, browser and page: the script in 28 minutes, one machine ~38,
+// The direct list runs as this many machines at once, each on its own server, browser and page: the script in 28 minutes at ~40,000 cases (54 at 58,906, VK4 T34), one machine ~38,
 // at 13.7 GiB (one machine: 8.9). The list's memory-heavy stretch reaches both at once, at ~16 minutes: under an 11 GiB
 // cap they were killed there. WEBPC_DEQP_VK_SHARDS says otherwise.
 const SHARDS = Number(process.env.WEBPC_DEQP_VK_SHARDS ?? (availableParallelism() >= 8 && totalmem() >= 17 * 2 ** 30 ? 2 : 1));
