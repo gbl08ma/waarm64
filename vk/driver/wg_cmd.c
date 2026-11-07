@@ -75,6 +75,11 @@ enum op {
    OP_EXEC,            /* struct wg_cmd_buffer * */
    OP_PROVOKE,         /* struct op_provoke */
    OP_XFB,             /* struct op_xfb, then gpu_xfb's JSON */
+   /* The next draw's vertex stage writes storage (VK4 T33, `vs_prepass`): ONLY, it runs but rasterizes nothing
+    * (rasterizer discard, both faces culled); AGAIN, it draws the outputs the last one's pre-pass left (a draw split by
+    * face, `draw_faces`: the stage runs once). */
+   OP_VS_ONLY,
+   OP_VS_AGAIN,
 };
 
 struct op_pass_atts {
@@ -1657,8 +1662,8 @@ stencil_values(const struct vk_dynamic_graphics_state *dyn, uint32_t *ref, uint3
  * whose faces both use one of them with different values, with both faces drawn, is two: its front faces with the
  * front's (the back culled), then its back faces with the back's. That reorders its primitives where front and back
  * ones overlap: the later face's stencil ops run last, its colour blends over the other's, its depth wins ties under
- * LESS_OR_EQUAL or EQUAL; and the vertex stage runs twice (harmless while vertexPipelineStoresAndAtomics is off: turning
- * it on must not double a split draw's stores). Faces that differ only in what they don't use (a reference or compare
+ * LESS_OR_EQUAL or EQUAL; and the vertex stage runs twice, but one that writes storage once (VK4 T33: the later face
+ * draws the first's outputs, `vs_again`). Faces that differ only in what they don't use (a reference or compare
  * mask under ALWAYS or NEVER, a write mask with every op KEEP) draw once (VK3 L6c, the L5-L6a review's finding 7). */
 static uint32_t
 draw_faces(struct wg_cmd_buffer *cmd)
@@ -1845,8 +1850,10 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
    const struct vk_dynamic_graphics_state *dyn = &cmd->vk.dynamic_graphics_state;
    if (!vs || !vs->program || !cmd->pass.active)
       return false;
-   if (!cmd->xfb_record && (dyn->rs.rasterizer_discard_enable ||
-                            (dyn->rs.cull_mode == VK_CULL_MODE_FRONT_AND_BACK && dyn->ia.primitive_topology >= 3)))
+   /* What rasterizes nothing isn't drawn, but a vertex stage that stores still runs (VK4 T33). */
+   const bool unseen = dyn->rs.rasterizer_discard_enable ||
+                       (dyn->rs.cull_mode == VK_CULL_MODE_FRONT_AND_BACK && dyn->ia.primitive_topology >= 3);
+   if (!cmd->xfb_record && unseen && !vs->program->vs_stores)
       return false;
    /* Its stages on one program; if they came with different ones (wg_program_merge), a program of both's. */
    struct wg_program *base = vs->program;
@@ -1968,6 +1975,11 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
       }
    }
    record_push(cmd, p);
+   if (unseen && !cmd->xfb_record)
+      emit(cmd, OP_VS_ONLY, NULL, 0);
+   /* Its state is applied twice, before its pre-pass and in the pass's next part: a place of the push buffer more. */
+   if (p->vs_stores)
+      cmd->draws += MAX2(util_bitcount(cmd->pass.view_mask), 1);
    return true;
 }
 
@@ -2340,6 +2352,15 @@ face_of(uint32_t faces, uint32_t i)
    return faces == 2 ? i + 1 : 0;
 }
 
+/* A draw split by face (`draw_faces`) whose vertex stage writes storage: its later faces draw the first's outputs. */
+static void
+vs_again(struct wg_cmd_buffer *cmd, uint32_t face)
+{
+   struct wg_shader *vs = cmd->shaders[MESA_SHADER_VERTEX];
+   if (face && vs && vs->program && vs->program->vs_stores)
+      emit(cmd, OP_VS_AGAIN, NULL, 0);
+}
+
 VKAPI_ATTR void VKAPI_CALL
 wg_CmdDraw(VkCommandBuffer commandBuffer, uint32_t vertices, uint32_t instances, uint32_t first,
            uint32_t first_instance)
@@ -2348,8 +2369,10 @@ wg_CmdDraw(VkCommandBuffer commandBuffer, uint32_t vertices, uint32_t instances,
    if (!vertices || !instances)
       return;
    const uint32_t faces = draw_faces(cmd);
-   for (uint32_t i = 0; i < faces; i++)
+   for (uint32_t i = 0; i < faces; i++) {
+      vs_again(cmd, i);
       draw(cmd, vertices, instances, first, first_instance, face_of(faces, i));
+   }
    xfb_draw(cmd, false, vertices, instances, first, 0, first_instance, NULL, 0);
 }
 
@@ -2363,6 +2386,7 @@ wg_CmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indices, uint32_t inst
    const uint32_t faces = draw_faces(cmd);
    const int mode = provoke_mode(cmd, true);
    for (uint32_t i = 0; i < faces; i++) {
+      vs_again(cmd, i);
       if (mode >= 0) {
          provoke(cmd, mode, true, face_of(faces, i), indices, instances, first, base, first_instance);
          continue;
@@ -3021,6 +3045,8 @@ struct wg_submit {
 
 /* The replay's state: what the current pass has been given, applied at its draws and dispatches. */
 struct replay {
+   bool vs_resumed; /* the part of the pass after a vertex stage's pre-pass (`vs_prepass`): its draw's copies made */
+   bool vs_only, vs_again; /* OP_VS_ONLY's and OP_VS_AGAIN's, for the next draw */
    struct wg_device *dev;
    struct wg_submit *submit;
    enum { NONE, RENDER, COMPUTE } pass;
@@ -4484,6 +4510,66 @@ pass_reads_dst(const uint8_t *p, const uint8_t *end)
    return false;
 }
 
+/* Whether the render pass from `p` on (its secondaries' too) has a draw whose vertex stage writes storage
+ * (`vs_prepass`), which cuts it. */
+static bool
+pass_vs_stores(const uint8_t *p, const uint8_t *end, bool top)
+{
+   while (p < end) {
+      const struct op_head *h = (const void *)p;
+      if (top && (h->op == OP_PASS || h->op == OP_PASS_END))
+         return false;
+      if (h->op == OP_PIPELINE && ((const struct op_pipeline *)(h + 1))->program->vs_stores)
+         return true;
+      if (h->op == OP_EXEC) {
+         const struct wg_cmd_buffer *sec = *(struct wg_cmd_buffer *const *)(h + 1);
+         if (pass_vs_stores(sec->cmds.data, (const uint8_t *)sec->cmds.data + sec->cmds.size, false))
+            return true;
+      }
+      p += sizeof(*h) + h->size;
+   }
+   return false;
+}
+
+/* A draw whose vertex stage writes storage (VK4 T33; WebGPU's vertex stage can't), after its state is applied: the
+ * WebGPU pass cut, the stage run as compute for the draw's vertices on that state (the worker's `vsPrepass`, its
+ * outputs kept), the pass begun again and the state applied there, then the draw of those outputs (gpu_vs_draw).
+ * Vulkan orders a draw's vertex stage after the commands before it, so a cut is exact where a pre-pass before the
+ * pass isn't (an earlier draw's stores, read by this one's vertex stage after a barrier). */
+static void apply(struct replay *r, uint32_t point);
+static void
+vs_prepass(struct replay *r, uint32_t kind, uint32_t count, uint32_t instances, uint32_t first, int32_t base,
+           uint32_t first_instance, uint32_t ticket)
+{
+   const bool only = r->vs_only, again = r->vs_again;
+   r->vs_only = r->vs_again = false;
+   /* A later face of a split draw: the first's outputs, drawn with this face's state (applied already). */
+   if (again) {
+      if (!only) {
+         gpu_vs_draw();
+         r->dirty |= RD_VB | RD_IB;
+      }
+      return;
+   }
+   struct wg_query_pool *qp = r->qactive_pool;
+   wg_emul[WG_EMUL_VS_PREPASSES]++;
+   if (qp)
+      gpu_end_occlusion();
+   gpu_pass_end();
+   gpu_vs_prepass(kind, count, instances, first, base, first_instance, ticket);
+   begin_pass(r, 2);
+   if (qp)
+      query_carry_on(r, qp);
+   if (only)
+      return;
+   r->vs_resumed = true;
+   apply(r, 0);
+   r->vs_resumed = false;
+   gpu_vs_draw();
+   /* Its own vertex and index buffers were set for it. */
+   r->dirty |= RD_VB | RD_IB;
+}
+
 /* Whether the render pass from `p` on has a barrier in its own commands, where it can be cut (`scope_cut`). */
 static bool
 pass_has_barrier(const uint8_t *p, const uint8_t *end)
@@ -4538,7 +4624,7 @@ apply(struct replay *r, uint32_t point)
    if (point == 0) {
       if (r->atts.count)
          feedback_copies(r);
-      if (r->dst)
+      if (r->dst && !r->vs_resumed)
          dst_copies(r);
       if (r->dirty & RD_PIPELINE)
          gpu_set_pipeline(r->pipeline);
@@ -4704,7 +4790,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       /* A layered pass's layers past the first see its clears alone. */
       if (r->layered && r->view_order &&
           (h->op == OP_DRAW || h->op == OP_DRAW_INDEXED || h->op == OP_DRAW_INDIRECT || h->op == OP_PROVOKE ||
-           h->op == OP_XFB || h->op == OP_QUERY))
+           h->op == OP_XFB || h->op == OP_QUERY || h->op == OP_VS_ONLY || h->op == OP_VS_AGAIN))
          continue;
       switch ((enum op)h->op) {
       case OP_VIEWS:
@@ -4715,6 +4801,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          break;
       case OP_PASS: {
          end_pass(r);
+         r->vs_only = r->vs_again = false;
          r->pass_op = (const uint8_t *)h;
          const char *json = d;
          /* Multiview: this view's JSON, its layers. */
@@ -4757,7 +4844,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          r->pass_json = json;
          r->twin_mark = ++r->dev->twin_mark;
          r->cuts = !r->depth && util_dynarray_num_elements(&r->shadows, struct shadow) && pass_has_barrier(p, end);
-         const bool reads = pass_reads_dst(p, end);
+         const bool reads = pass_reads_dst(p, end) || pass_vs_stores(p, end, true);
          if (r->qpool || r->atts.count || r->cuts || reads)
             begin_pass(r, r->atts.count || r->cuts || reads ? 1 : 0);
          else
@@ -4796,6 +4883,12 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          break;
       case OP_PASS_ATTS:
          memcpy(&r->atts, d, sizeof(r->atts));
+         break;
+      case OP_VS_ONLY:
+         r->vs_only = true;
+         break;
+      case OP_VS_AGAIN:
+         r->vs_again = true;
          break;
       case OP_PASS_READ:
          r->twin_mark = ++r->dev->twin_mark;
@@ -4893,7 +4986,10 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
             break;
          set_draw_params(r, a[2], a[3], a[4], UINT32_MAX);
          apply(r, 0);
-         gpu_draw(a[0], a[1], a[2], a[3]);
+         if (r->program[0] && r->program[0]->vs_stores)
+            vs_prepass(r, 0, a[0], a[1], a[2], 0, a[3], 0);
+         else
+            gpu_draw(a[0], a[1], a[2], a[3]);
          break;
       }
       case OP_DRAW_INDEXED: {
@@ -4902,7 +4998,10 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
             break;
          set_draw_params(r, a->base, a->first_instance, a->draw_index, UINT32_MAX);
          apply(r, 0);
-         gpu_draw_indexed(a->count, a->instances, a->first, a->base, a->first_instance);
+         if (r->program[0] && r->program[0]->vs_stores)
+            vs_prepass(r, 1, a->count, a->instances, a->first, a->base, a->first_instance, 0);
+         else
+            gpu_draw_indexed(a->count, a->instances, a->first, a->base, a->first_instance);
          break;
       }
       case OP_XFB: {
@@ -4922,7 +5021,10 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
             break;
          set_draw_params(r, o->base, o->first_instance, o->draw_index, UINT32_MAX);
          apply(r, 0);
-         gpu_draw_ticket(r->tickets++, o->instances, o->base, o->first_instance);
+         if (r->program[0] && r->program[0]->vs_stores)
+            vs_prepass(r, 2, 0, o->instances, 0, o->base, o->first_instance, r->tickets++);
+         else
+            gpu_draw_ticket(r->tickets++, o->instances, o->base, o->first_instance);
          r->dirty |= RD_IB;
          break;
       }
@@ -4931,6 +5033,17 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          if (r->pass != RENDER)
             break;
          const uint32_t counted = a->count_buffer ? r->tickets++ : UINT32_MAX;
+         /* Its counts are on the GPU: a vertex stage that stores needs them for its pre-pass (VK4 T33). */
+         if (r->program[0] && r->program[0]->vs_stores) {
+            static bool warned;
+            if (!warned)
+               fprintf(stderr, "wg: an indirect draw whose vertex stage writes storage isn't drawn\n");
+            warned = true;
+            r->tickets += a->fan ? a->count : 0;
+            r->dp_next += a->count;
+            r->vs_only = r->vs_again = false;
+            break;
+         }
          for (uint32_t i = 0; i < a->count; i++) {
             const uint32_t at = r->dp_next < util_dynarray_num_elements(&r->dp_places, uint32_t)
                                    ? *util_dynarray_element(&r->dp_places, uint32_t, r->dp_next++) : UINT32_MAX;

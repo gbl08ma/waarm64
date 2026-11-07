@@ -9,14 +9,14 @@
 import type { ShaderCache } from './venus-cache.ts';
 
 /** GPUBufferUsage's and GPUMapMode's values (the worker may lack the globals in Node). */
-const INDEX = 16, INDIRECT = 256, COPY_SRC = 4, COPY_DST = 8, TEX_COPY_SRC = 1, TEX_COPY_DST = 2, TEXTURE_BINDING = 4, UNIFORM = 64, STORAGE = 128, RENDER_ATTACHMENT = 16, MAP_READ = 1, MAP_MODE_READ = 1;
+const INDEX = 16, VERTEX = 32, INDIRECT = 256, COPY_SRC = 4, COPY_DST = 8, TEX_COPY_SRC = 1, TEX_COPY_DST = 2, TEXTURE_BINDING = 4, UNIFORM = 64, STORAGE = 128, RENDER_ATTACHMENT = 16, MAP_READ = 1, MAP_MODE_READ = 1;
 
 /**
  * The worker's own emulated work (VK4 T23; with the driver's counts the render stats' `venusEmul`): Vulkan's blits
  * (each a draw), resolves WebGPU makes and those drawn (VK4 T10, T21), depth and stencil resolves (drawn), clears and
  * those encoded and copied in (a format WebGPU doesn't render), transform feedback's captures (VK3 L7.4).
  */
-export type VenusEmulStats = { blits: number; resolves: number; drawnResolves: number; depthResolves: number; clears: number; copiedClears: number; xfb: number };
+export type VenusEmulStats = { blits: number; resolves: number; drawnResolves: number; depthResolves: number; clears: number; copiedClears: number; xfb: number; vsPrepasses: number };
 
 export type VenusGpuStats = {
   submits: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number; pipelines: number; pipelineMs: number; bindGroups: number; errors: number; dirtyPages: number;
@@ -256,7 +256,7 @@ class Timing {
 
 export class VenusGpu {
   readonly stats: VenusGpuStats = { submits: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, pipelines: 0, pipelineMs: 0, bindGroups: 0, errors: 0, dirtyPages: 0, done: 0, doneMs: 0, doneMaxMs: 0, orderMs: 0, nudges: 0, pipelinesReady: 0, pipelineReadyMs: 0, deferred: 0, deferredMs: 0, syncPipelines: 0, premade: 0, premadeUsed: 0, translations: 0, translateMs: 0, cacheHits: 0, cacheMisses: 0, cacheStores: 0, encodeMs: 0, submitCallMs: 0, passes: 0, draws: 0, gpuTimed: 0, gpuMs: 0, workDone: 0, workDoneMs: 0 };
-  readonly emul: VenusEmulStats = { blits: 0, resolves: 0, drawnResolves: 0, depthResolves: 0, clears: 0, copiedClears: 0, xfb: 0 };
+  readonly emul: VenusEmulStats = { blits: 0, resolves: 0, drawnResolves: 0, depthResolves: 0, clears: 0, copiedClears: 0, xfb: 0, vsPrepasses: 0 };
   /** `?gpu=vkskip=meta` (VK4 T23's A/B): blits and resolves left out (their destination as it was). */
   skipMeta = false;
   /** Submits not yet completed. */
@@ -295,7 +295,21 @@ export class VenusGpu {
   /** Modules of a vertex stage with bindings pulled (`pulledCode`), by the stage and its buffers. */
   private readonly pulledModules = new WeakMap<GPUShaderModule, Map<string, GPUShaderModule>>();
   private readonly xfbByPipeline: (Xfb | undefined)[] = [];
-  private cur: { xfb?: Xfb; groups: ({ g: GPUBindGroup; offsets: number[] } | undefined)[]; vb: ({ b: GPUBuffer; offset: number; size: number } | undefined)[]; imm?: Uint8Array } = { groups: [], vb: [] };
+  private cur: {
+    xfb?: Xfb; vs?: VsStores; groups: ({ g: GPUBindGroup; offsets: number[] } | undefined)[]; vb: ({ b: GPUBuffer; offset: number; size: number } | undefined)[];
+    ib?: { b: GPUBuffer; wide: number; offset: number; size: number }; imm?: Uint8Array;
+  } = { groups: [], vb: [] };
+  /** Vertex stages that write storage (VK4 T33, wg_gpu.h `gpu_vs_prepass`): each render pipeline's pre-pass (its JSON's
+   * `stores`, by id), the pass-through stages by their stage's text, and the outputs the last pre-pass left for its
+   * draw (`vsDraw`). */
+  private readonly vsByPipeline: (VsStores | undefined)[] = [];
+  /** Bind group layouts' entries and bind groups' (the driver's), for a pre-pass whose program has four groups: its
+   * bindings join a copy of group 3's (`vsGroup3`). */
+  private readonly bglEntries = new WeakMap<GPUBindGroupLayout, GPUBindGroupLayoutEntry[]>();
+  private readonly groupEntries = new WeakMap<GPUBindGroup, { layout: GPUBindGroupLayout; entries: GPUBindGroupEntry[] }>();
+  private readonly vsLayouts = new WeakMap<GPUBindGroupLayout, GPUBindGroupLayout>();
+  private readonly passThroughs = new Map<string, PassThrough | null>();
+  private vsPending: { rec: GPUBuffer; words: number; count: number; instances: number; indexed: boolean; ixAt: number } | undefined;
   private xfbJobs: Json[] = [];
   private readonly metaModules = new Map<string, GPUShaderModule>();
   /** A bind group layout's bindings of storage textures a shader may write, and the textures a bind group binds
@@ -432,7 +446,8 @@ export class VenusGpu {
         const code = self.text(ptr, len);
         const m = d.createShaderModule({ code });
         self.objs[id] = m;
-        if (code.includes('var<private> wg_xo') || code.includes(PULLED_ENTRY)) self.vertexCode.set(m, code);
+        // A vertex stage that stores has no entry point of its own (wgsl_print.c: VK4 T33).
+        if (code.includes('var<private> wg_xo') || code.includes(PULLED_ENTRY) || (code.includes('\nfn wg_vs(') && !code.includes('@vertex'))) self.vertexCode.set(m, code);
         void m.getCompilationInfo().then((info) => {
           const errors = info.messages.filter((x) => x.type === 'error');
           if (errors.length) self.warn(`a shader didn't compile: ${errors.map((x) => `${x.lineNum}:${x.linePos} ${x.message}`).join('; ')}\n${code.split('\n').slice(0, 400).join('\n')}`);
@@ -616,16 +631,16 @@ export class VenusGpu {
           if (self.rec) {
             // Held: the submit goes once the pipeline is ready (`gpu_submit`).
             self.recWaits.push(o);
-            const xfb = self.xfbByPipeline[id];
-            return void self.rec.push(() => { (self.pass as GPURenderPassEncoder).setPipeline(o.value as GPURenderPipeline); self.cur.xfb = xfb; });
+            const xfb = self.xfbByPipeline[id], vs = self.vsByPipeline[id];
+            return void self.rec.push(() => { (self.pass as GPURenderPassEncoder).setPipeline(o.value as GPURenderPipeline); self.cur.xfb = xfb; self.cur.vs = vs; });
           }
           // Not held (it was made after this submit's encoder: the driver makes them before): made at once.
           self.stats.syncPipelines++;
           o.sync();
         }
         const p = (o instanceof Later ? o.value : o) as GPURenderPipeline;
-        const xfb = self.xfbByPipeline[id];
-        later(() => { (self.pass as GPURenderPassEncoder).setPipeline(p); self.cur.xfb = xfb; });
+        const xfb = self.xfbByPipeline[id], vs = self.vsByPipeline[id];
+        later(() => { (self.pass as GPURenderPassEncoder).setPipeline(p); self.cur.xfb = xfb; self.cur.vs = vs; });
       },
       gpu_set_bind_group(index: number, id: number, ptr: number, n: number) {
         const offsets = n ? Array.from(new Uint32Array(self.mem(), ptr >>> 0, n)) : [];
@@ -640,7 +655,7 @@ export class VenusGpu {
       gpu_set_vertex_buffer(slot: number, b: number, offset: number, size: number) { const B = buf(b); later(() => { rp().setVertexBuffer(slot, B, offset, size); self.cur.vb[slot] = { b: B, offset, size }; }); },
       gpu_pull_buffer(slot: number, b: number, offset: number, size: number) { const B = buf(b); later(() => { self.cur.vb[slot] = { b: B, offset, size }; }); },
       gpu_pull_bind(group: number, bgl: number, slots: number) { const layout = self.get<GPUBindGroupLayout>(bgl); later(() => self.pullBind(group, layout, slots)); },
-      gpu_set_index_buffer(b: number, wide: number, offset: number, size: number) { const B = buf(b); later(() => rp().setIndexBuffer(B, wide ? 'uint32' : 'uint16', offset, size)); },
+      gpu_set_index_buffer(b: number, wide: number, offset: number, size: number) { const B = buf(b); later(() => { rp().setIndexBuffer(B, wide ? 'uint32' : 'uint16', offset, size); self.cur.ib = { b: B, wide, offset, size }; }); },
       gpu_set_viewport(x: number, y: number, w: number, h: number, min: number, max: number) { later(() => rp().setViewport(x, y, w, h, min, max)); },
       gpu_set_scissor(x: number, y: number, w: number, h: number) { later(() => rp().setScissorRect(x, y, w, h)); },
       gpu_set_blend_constant(r: number, g: number, b: number, a: number) { later(() => rp().setBlendConstant([r, g, b, a])); },
@@ -672,6 +687,11 @@ export class VenusGpu {
         for (const k of ['buffers', 'counters']) if (j[k]) j[k] = (j[k] as (number[] | null)[]).map((e) => e && [buf(e[0]), ...e.slice(1)]);
         later(() => self.xfbJobs.push(j.op === 'draw' ? { ...j, xfb: self.cur.xfb, groups: [...self.cur.groups], vb: [...self.cur.vb], imm: self.cur.imm } : j));
       },
+      gpu_vs_prepass(kind: number, count: number, inst: number, first: number, base: number, firstInst: number, ticket: number) {
+        self.emul.vsPrepasses++;
+        later(() => self.vsPrepass(kind, count, inst, first, base, firstInst, ticket));
+      },
+      gpu_vs_draw() { self.stats.draws++; later(() => self.vsDraw()); },
       gpu_fan_indirect(ticket: number, b: number, offset: number, ib: number, ibOffset: number, ibSize: number, wide: number, restart: number) {
         const B = buf(b), I = buf(ib);
         later(() => self.fanIndirect(ticket, B, offset, I, ibOffset, ibSize, wide, restart));
@@ -838,6 +858,7 @@ export class VenusGpu {
     d.queue.submit([this.enc!.finish()]);
     this.stats.submitCallMs += performance.now() - s0;
     this.enc = undefined;
+    this.vsPending = undefined;
     this.stats.submits++;
     for (const t of this.touched) this.written.set(t, this.stats.submits);
     this.touched.clear();
@@ -1388,6 +1409,7 @@ override bit: u32 = 8u;
       case 3: this.objs[id] = d.createSampler(j as GPUSamplerDescriptor); return;
       case 4: {
         const layout = d.createBindGroupLayout(j as GPUBindGroupLayoutDescriptor);
+        this.bglEntries.set(layout, j.entries as GPUBindGroupLayoutEntry[]);
         const writable = (j.entries as Json[]).filter((e) => e.storageTexture && e.storageTexture.access !== 'read-only').map((e) => e.binding as number);
         if (writable.length) this.writableBindings.set(layout, new Set(writable));
         this.objs[id] = layout;
@@ -1406,6 +1428,24 @@ override bit: u32 = 8u;
         j.layout = this.objs[j.layout];
         if (kind === 6) {
           j.vertex.module = this.objs[j.vertex.module];
+          // A vertex stage that writes storage (VK4 T33): run as compute before each draw (`vsPrepass`), the pipeline's
+          // vertex stage a pass-through of its outputs, one vertex buffer of them (`vsDraw`).
+          const st = j.stores as Json | undefined;
+          delete j.stores;
+          this.vsByPipeline[id] = undefined;
+          if (st) {
+            const code = this.vertexCode.get(j.vertex.module);
+            const pt = code === undefined ? undefined : this.passThrough(code);
+            if (code === undefined || !pt) this.warn(code === undefined ? 'a vertex stage that stores, without its text' : 'a vertex stage that stores, its outputs past WebGPU\'s vertex attributes');
+            else {
+              const c = (j.vertex.constants ?? {}) as Record<string, number>;
+              this.vsByPipeline[id] = { code, bgls: ids(st.bgls) as GPUBindGroupLayout[], immediateSize: st.immediateSize, buffers: JSON.parse(JSON.stringify(j.vertex.buffers ?? [])),
+                constants: { ...c }, restart: !!j.primitive?.stripIndexFormat, words: pt.words };
+              j.vertex = { module: pt.module, entryPoint: 'main', constants: { wg_flip_y: c.wg_flip_y ?? -1, wg_flip_z: c.wg_flip_z ?? 0 },
+                buffers: [{ arrayStride: pt.words * 4, stepMode: 'vertex', attributes: Array.from({ length: pt.words / 4 }, (_, a) => ({ format: 'uint32x4', offset: 16 * a, shaderLocation: a })) }] };
+              if (j.primitive?.stripIndexFormat) j.primitive.stripIndexFormat = 'uint32';
+            }
+          }
           const x = j.xfb as Json | undefined;
           delete j.xfb;
           this.xfbByPipeline[id] = x && { stride: x.stride, base: x.base, words: x.words, bgls: ids(x.bgls) as GPUBindGroupLayout[], immediateSize: x.immediateSize,
@@ -1465,6 +1505,7 @@ override bit: u32 = 8u;
         d.pushErrorScope('validation');
         const group = d.createBindGroup({ layout, entries });
         this.objs[id] = group;
+        this.groupEntries.set(group, { layout, entries });
         const writable = this.writableBindings.get(layout);
         const writes = writable && (j.entries as Json[]).filter((e) => writable.has(e.binding) && e.view !== undefined).map((e) => this.get<View>(e.view).tex);
         this.groupWrites[id] = writes?.length ? writes : undefined;
@@ -1999,10 +2040,8 @@ ${vs}
   private xfbPipeline(x: Xfb): NonNullable<Xfb['pipelines']> | undefined {
     if (x.pipelines !== undefined) return x.pipelines ?? undefined;
     const d = this.device!, G = x.bgls.length, code = x.code!;
-    const base: Record<number, string> = {};
-    for (const m of code.matchAll(/@location\((\d+)\) a\d+: vec4<(f32|i32|u32)>/g)) base[Number(m[1])] = m[2];
-    const inputs = /fn wg_vs\(vid: u32, iid: u32, i: In\)/.test(code);
-    const slots: number[] = [], captured = [0, 1, 2, 3].filter((b) => x.stride[b]);
+    const { code: fetch, slots, inputs } = vertexFetch(code, x.buffers, 'wgx_p');
+    const captured = [0, 1, 2, 3].filter((b) => x.stride[b]);
     const lines: string[] = [];
     const L = (l: string) => lines.push(l);
     L(`struct WgxP { topo: u32, count: u32, instances: u32, first: u32, base: u32, firstInstance: u32, wide: u32, ibFirst: u32, prims: u32, vpp: u32, xs0: u32, xs1: u32, xs2: u32, xs3: u32, pad0: u32, pad1: u32, ${[0, 1, 2, 3, 4, 5, 6, 7].map((s) => `vbd${s}: u32`).join(', ')}, xo0: u32, xo1: u32, xo2: u32, xo3: u32 }`);
@@ -2010,18 +2049,6 @@ ${vs}
     L(`@group(${G}) @binding(12) var<storage, read_write> wgx_o: array<u32>;`);
     L(`@group(${G}) @binding(14) var<storage, read> wgx_in: array<u32>;`);
     L('fn wgx_ld(b: u32) -> u32 { let w = b >> 2u; let s = (b & 3u) * 8u; if (s == 0u) { return wgx_in[w]; } return (wgx_in[w] >> s) | (wgx_in[w + 1u] << (32u - s)); }');
-    let fetch = 'fn wgx_fetch(vid: u32, iid: u32) -> In {\n  var i: In;\n';
-    x.buffers.forEach((b, slot) => {
-      if (!b || !b.attributes?.length) return;
-      slots.push(slot);
-      for (const a of b.attributes as Json[]) {
-        const at = `(wgx_p.vbd${slot} + ${b.stepMode === 'instance' ? 'iid' : 'vid'} * ${b.arrayStride}u + ${a.offset}u)`;
-        const T = base[a.shaderLocation];
-        const v = T && vertexDecode(a.format as string, (k: number) => `wgx_ld(${at} + ${k}u)`, T);
-        if (v) fetch += `  i.a${a.shaderLocation} = ${v};\n`;
-      }
-    });
-    fetch += '  return i;\n}';
     if (inputs) L(fetch);
     const room = captured.map((b) => `fit = min(fit, (wgx_p.xs${b} - min(wgx_p.xs${b}, wgx_o[${b}])) / (${x.stride[b]}u * wgx_p.vpp));`).join(' ');
     L('fn wgx_prims() -> u32 { let c = wgx_p.count; switch wgx_p.topo { case 0u: { return c; } case 1u: { return c >> 1u; } case 2u: { return max(c, 1u) - 1u; } case 3u: { return c / 3u; } default: { return max(c, 2u) - 2u; } } }');
@@ -2076,6 +2103,235 @@ ${vs}
     void d.popErrorScope().then((e) => { if (e) this.warn(`transform feedback's pipelines: ${e.message.slice(0, 300)}`); });
     x.pipelines = { main, advance, layout, slots, captured };
     return x.pipelines;
+  }
+
+  /**
+   * A vertex stage that writes storage (VK4 T33, wg_cmd.c `vs_prepass`): run as compute for a draw's vertices, between
+   * two parts of its render pass, on the bind groups, vertex buffers, index buffer and immediates the pass last set (its
+   * resources are the compute stage's: wg_shader.c), each invocation one vertex of the draw in its order (an index each:
+   * an index met twice runs twice, as Vulkan runs it where it can't tell the results are the same) and its outputs (`o`,
+   * before the flips) a record of `words` words; an indexed draw's indices become a list of the records' places, a
+   * restart kept. The draw (`vsDraw`) reads them as one vertex buffer. `kind` 0 a draw, 1 an indexed draw, 2 the
+   * indices of a ticket (`provoke`'s: 32-bit, no restarts). The draw's vertex bindings and indices are copied into one
+   * buffer first (`wgx_in`, as transform feedback's are: no guest memory bound writable beside its other uses).
+   */
+  private vsPrepass(kind: number, count: number, instances: number, first: number, base: number, firstInstance: number, ticket: number) {
+    this.vsPending = undefined;
+    const v = this.cur.vs;
+    if (!v) return this.warn('a pre-pass for a vertex stage that doesn\'t store');
+    const d = this.device!, enc = this.enc!;
+    let ib: { b: GPUBuffer; offset: number; size: number } | undefined, wide = 2, restart = 0;
+    if (kind === 2) {
+      const t = this.tickets[ticket];
+      if (!t) return;
+      ib = { b: t.buffer, offset: t.offset, size: t.size };
+      wide = 1;
+      first = 0;
+      count = t.size / 4;
+    } else if (kind === 1) {
+      if (!this.cur.ib) return this.warn('an indexed draw without its index buffer, its vertex stage storing');
+      ib = this.cur.ib;
+      wide = this.cur.ib.wide ? 1 : 0;
+      restart = v.restart ? 1 : 0;
+    }
+    if (!count || !instances) return;
+    const p = this.vsPipeline(v);
+    if (!p) return;
+    const params = new Uint32Array(32);
+    const copies: { b: GPUBuffer; from: number; size: number; at: number }[] = [];
+    let bytes = 0;
+    const take = (b: GPUBuffer, offset: number, size: number) => {
+      const from = offset & ~3, n = Math.min((Math.max(offset + size - from, 4) + 3) & ~3, b.size - from);
+      const at = bytes;
+      if (n > 0) copies.push({ b, from, size: n, at });
+      bytes += Math.max(n, 0);
+      return at + (offset - from);
+    };
+    let ibFirst = 0;
+    if (ib) {
+      const el = wide ? 4 : 2, start = ib.offset + first * el;
+      ibFirst = (take(ib.b, start, Math.min(count * el, Math.max(ib.size - first * el, 0))) / el - first) >>> 0;
+    }
+    for (const slot of p.slots) {
+      const vb = this.cur.vb[slot];
+      if (!vb) return this.warn('a vertex stage that stores, drawn without its vertex buffer');
+      const b = v.buffers[slot] as Json;
+      const end = Math.max(0, ...(b.attributes as Json[]).map((a) => (a.offset as number) + 16));
+      const last = b.stepMode === 'instance' ? firstInstance + instances : wide === 2 ? first + count : Infinity;
+      params[16 + slot] = take(vb.b, vb.offset, Math.min(vb.size, last * (b.arrayStride as number) + end));
+    }
+    const n = count * instances, recBytes = n * v.words * 4, size = recBytes + (wide === 2 ? 0 : count * 4);
+    const most = d.limits.maxStorageBufferBindingSize;
+    if (bytes > most || size > most) return this.warn(`a vertex stage that stores, its draw's ${Math.max(bytes, size)} bytes past WebGPU's storage binding`);
+    const inb = d.createBuffer({ size: Math.max(bytes, 4), usage: STORAGE | COPY_DST });
+    const rec = d.createBuffer({ size: Math.max(size, 4), usage: STORAGE | VERTEX | INDEX });
+    this.temps.push(inb, rec);
+    for (const c of copies) enc.copyBufferToBuffer(c.b, c.from, inb, c.at, c.size);
+    params.set([count, instances, first, base >>> 0, firstInstance, wide, ibFirst, restart, recBytes / 4]);
+    const [u, uat] = this.scratch(UNIFORM | COPY_DST, params.byteLength);
+    d.queue.writeBuffer(u, uat, params);
+    const own: GPUBindGroupEntry[] = [
+      { binding: VS_BINDINGS[0], resource: { buffer: rec } },
+      { binding: VS_BINDINGS[1], resource: { buffer: u, offset: uat, size: params.byteLength } },
+      { binding: VS_BINDINGS[2], resource: { buffer: inb } },
+    ];
+    const G = v.bgls.length;
+    for (let g = 0; g < G; g++) if (!this.cur.groups[g]) return this.warn('a vertex stage that stores, drawn without its bind groups');
+    // Four groups: group 3's bindings and the pre-pass's in a group of their own (`vsGroup3`).
+    const last = G < 4 ? undefined : this.groupEntries.get(this.cur.groups[3]!.g);
+    if (G >= 4 && !last) return this.warn('a vertex stage that stores, its group 3 unknown');
+    const group = last ? d.createBindGroup({ layout: this.vsGroup3(last.layout), entries: [...last.entries, ...own] }) : d.createBindGroup({ layout: p.layout, entries: own });
+    const pass = enc.beginComputePass();
+    for (let g = 0; g < G; g++) pass.setBindGroup(g, g === 3 ? group : this.cur.groups[g]!.g, this.cur.groups[g]!.offsets);
+    if (G < 4) pass.setBindGroup(G, group);
+    if (v.immediateSize && this.cur.imm) (pass as unknown as { setImmediates(o: number, d: Uint8Array): void }).setImmediates(0, this.cur.imm);
+    pass.setPipeline(p.main);
+    const groups = Math.ceil(n / 64), across = Math.min(groups, d.limits.maxComputeWorkgroupsPerDimension);
+    pass.dispatchWorkgroups(across, Math.ceil(groups / across));
+    pass.end();
+    this.vsPending = { rec, words: v.words, count, instances, indexed: wide !== 2, ixAt: recBytes };
+  }
+
+  /** Group 3's layout with a pre-pass's bindings (`VS_BINDINGS`, past the driver's slots), for a program of four groups
+   * (its sets 3 and up, the push buffer or device addresses there: VK4 T33). */
+  private vsGroup3(base: GPUBindGroupLayout): GPUBindGroupLayout {
+    let l = this.vsLayouts.get(base);
+    if (!l) {
+      l = this.device!.createBindGroupLayout({ entries: [...(this.bglEntries.get(base) ?? []), ...VS_ENTRIES] });
+      this.vsLayouts.set(base, l);
+    }
+    return l;
+  }
+
+  /** The draw after its vertex stage's pre-pass (`vsPrepass`), in the next part of the render pass, with the pipeline's
+   * pass-through vertex stage: an instance at a time (the records of one follow another's), an indexed draw through
+   * the records' places. A draw split by face draws them again (wg_cmd.c `vs_prepass`). */
+  private vsDraw() {
+    const p = this.vsPending;
+    if (!p) return;
+    const pass = this.pass as GPURenderPassEncoder, bytes = p.count * p.words * 4;
+    if (p.indexed) pass.setIndexBuffer(p.rec, 'uint32', p.ixAt, p.count * 4);
+    for (let i = 0; i < p.instances; i++) {
+      pass.setVertexBuffer(0, p.rec, i * bytes, bytes);
+      if (p.indexed) pass.drawIndexed(p.count, 1, 0, 0, 0);
+      else pass.draw(p.count, 1, 0, 0);
+    }
+  }
+
+  /** A storing vertex stage's pass-through (`vsDraw`): its outputs (`struct Out`) from a vertex buffer of records, four
+   * words an attribute, then flipped as the stage's own entry point would; null past WebGPU's 16 vertex attributes. */
+  private passThrough(code: string): PassThrough | null {
+    let pt = this.passThroughs.get(code);
+    if (pt !== undefined) return pt;
+    const out = /\nstruct Out \{\n([\s\S]*?)\n\}/.exec(code);
+    const fields = (out?.[1] ?? '').split('\n').map((l) => /^\s*(.*?)\s*(\w+): (vec4<(f32|i32|u32)>|array<f32, (\d+)u?>),$/.exec(l)).filter((m) => !!m);
+    let words = 0;
+    const reads: string[] = [];
+    const word = (w: number) => `i.w${w >> 2}[${w & 3}]`;
+    for (const f of fields) {
+      if (f[5] !== undefined) {
+        const k = Number(f[5]);
+        for (let c = 0; c < k; c++) reads.push(`  o.${f[2]}[${c}] = bitcast<f32>(${word(words + c)});`);
+        words += k;
+      } else {
+        reads.push(`  o.${f[2]} = bitcast<vec4<${f[4]}>>(vec4<u32>(${[0, 1, 2, 3].map((c) => word(words + c)).join(', ')}));`);
+        words += 4;
+      }
+    }
+    words = (words + 3) & ~3;
+    pt = null;
+    if (fields.some((f) => f[2] === 'pos') && words / 4 <= this.device!.limits.maxVertexAttributes) {
+      const text = [
+        ...(code.includes('enable clip_distances;') ? ['enable clip_distances;'] : []),
+        'override wg_flip_y: f32 = -1.0;',
+        'override wg_flip_z: bool = false;',
+        `struct Out {\n${out![1]}\n}`,
+        `struct WgvIn { ${Array.from({ length: words / 4 }, (_, a) => `@location(${a}) w${a}: vec4<u32>`).join(', ')} }`,
+        '@vertex fn main(i: WgvIn) -> Out {',
+        '  var o: Out;',
+        ...reads,
+        '  o.pos.y = o.pos.y * wg_flip_y;',
+        '  if (wg_flip_z) { o.pos.z = o.pos.w - o.pos.z; }',
+        '  return o;',
+        '}',
+      ].join('\n');
+      const module = this.device!.createShaderModule({ code: text });
+      void module.getCompilationInfo().then((info) => {
+        const errors = info.messages.filter((m) => m.type === 'error');
+        if (errors.length) this.warn(`a pass-through vertex stage didn't compile: ${errors.map((m) => `${m.lineNum}:${m.linePos} ${m.message}`).join('; ')}`);
+      });
+      pt = { module, words };
+    }
+    this.passThroughs.set(code, pt);
+    return pt;
+  }
+
+  /** A storing vertex stage's compute pipeline (`wgv_main`, `vsPrepass`): its WGSL with the vertex fetch its render
+   * pipeline's buffers describe, writing each vertex's outputs as words, on the program's bind group layouts and one
+   * of its own after them (three bindings, transform feedback's: wg_caps.c `wg_bindings_fit` counts them). */
+  private vsPipeline(v: VsStores): NonNullable<VsStores['pipelines']> | undefined {
+    if (v.pipelines !== undefined) return v.pipelines ?? undefined;
+    const d = this.device!, G = v.bgls.length, code = v.code;
+    v.pipelines = null;
+    const pt = this.passThrough(code);
+    if (!pt) return undefined;
+    const lines: string[] = [];
+    const L = (l: string) => lines.push(l);
+    L(`struct WgvP { count: u32, instances: u32, first: u32, base: u32, firstInstance: u32, wide: u32, ibFirst: u32, restart: u32, ix: u32, ${Array.from({ length: 7 }, (_, k) => `pad${k}: u32`).join(', ')}, ${Array.from({ length: 16 }, (_, k) => `vbd${k}: u32`).join(', ')} }`);
+    const at = Math.min(G, 3);
+    L(`@group(${at}) @binding(${VS_BINDINGS[0]}) var<storage, read_write> wgv_r: array<u32>;`);
+    L(`@group(${at}) @binding(${VS_BINDINGS[1]}) var<uniform> wgv_p: WgvP;`);
+    L(`@group(${at}) @binding(${VS_BINDINGS[2]}) var<storage, read> wgx_in: array<u32>;`);
+    L('fn wgx_ld(b: u32) -> u32 { let w = b >> 2u; let s = (b & 3u) * 8u; if (s == 0u) { return wgx_in[w]; } return (wgx_in[w] >> s) | (wgx_in[w + 1u] << (32u - s)); }');
+    const f = vertexFetch(code, v.buffers, 'wgv_p');
+    if (f.inputs) L(f.code);
+    const out = /\nstruct Out \{\n([\s\S]*?)\n\}/.exec(code)![1];
+    const stores: string[] = [];
+    let w = 0;
+    for (const m of out.split('\n').map((l) => /^\s*(.*?)\s*(\w+): (vec4<(f32|i32|u32)>|array<f32, (\d+)u?>),$/.exec(l)).filter((x) => !!x)) {
+      if (m[5] !== undefined) {
+        for (let c = 0; c < Number(m[5]); c++) stores.push(`    wgv_r[at + ${w++}u] = bitcast<u32>(o.${m[2]}[${c}]);`);
+      } else {
+        stores.push(`    { let x = bitcast<vec4<u32>>(o.${m[2]}); wgv_r[at + ${w}u] = x.x; wgv_r[at + ${w + 1}u] = x.y; wgv_r[at + ${w + 2}u] = x.z; wgv_r[at + ${w + 3}u] = x.w; }`);
+        w += 4;
+      }
+    }
+    // An invocation a vertex, no loop around the stage's body: SwiftShader compiling a loop around a large one (dEQP-VK's
+    // buffer_device_address depth2 cases) took its GPU process past 4 GiB.
+    L('@compute @workgroup_size(64) fn wgv_main(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {');
+    L('  let t = gid.x + gid.y * nwg.x * 64u;');
+    L('  if (t >= wgv_p.count * wgv_p.instances) { return; }');
+    L('  let inst = t / wgv_p.count; let j = t % wgv_p.count;');
+    L('  var vid = wgv_p.first + j;');
+    L('  if (wgv_p.wide != 2u) {');
+    L('    let k = wgv_p.ibFirst + wgv_p.first + j;');
+    L('    var raw = wgx_in[k];');
+    L('    if (wgv_p.wide == 0u) { raw = extractBits(wgx_in[k >> 1u], (k & 1u) * 16u, 16u); }');
+    L('    let cut = wgv_p.restart != 0u && raw == select(0xffffu, 0xffffffffu, wgv_p.wide == 1u);');
+    L('    if (inst == 0u) { wgv_r[wgv_p.ix + j] = select(j, 0xffffffffu, cut); }');
+    L('    if (cut) { return; }');
+    L('    vid = raw + wgv_p.base;');
+    L('  }');
+    L('  let iid = wgv_p.firstInstance + inst;');
+    L(`  wg_vs(vid, iid${f.inputs ? ', wgx_fetch(vid, iid)' : ''});`);
+    L(`  let at = t * ${pt.words}u;`);
+    lines.push(...stores.map((x) => x.slice(2)));
+    L('}');
+    d.pushErrorScope('validation');
+    const layout = d.createBindGroupLayout({ entries: VS_ENTRIES });
+    const desc: Json = { bindGroupLayouts: G < 4 ? [...v.bgls, layout] : [...v.bgls.slice(0, 3), this.vsGroup3(v.bgls[3])] };
+    if (v.immediateSize) desc.immediateSize = v.immediateSize;
+    const pl = d.createPipelineLayout(desc as GPUPipelineLayoutDescriptor);
+    const module = d.createShaderModule({ code: `${code}\n${lines.join('\n')}\n` });
+    void module.getCompilationInfo().then((info) => {
+      const errors = info.messages.filter((m) => m.type === 'error');
+      if (errors.length) this.warn(`a storing vertex stage's pre-pass didn't compile: ${errors.map((m) => `${m.lineNum}:${m.linePos} ${m.message}`).join('; ')}`);
+    });
+    const constants = Object.fromEntries(Object.entries(v.constants).filter(([k]) => code.includes(`override ${k}:`)));
+    const main = d.createComputePipeline({ layout: pl, compute: { module, entryPoint: 'wgv_main', constants } });
+    void d.popErrorScope().then((e) => { if (e) this.warn(`a storing vertex stage's pre-pass: ${e.message.slice(0, 300)}`); });
+    v.pipelines = { main, layout, slots: f.slots };
+    return v.pipelines;
   }
 
   /** `bytes` at a 256-aligned place of the scratch buffer of `usage`, grown (the old one destroyed after the submit). */
@@ -2852,6 +3108,46 @@ type Xfb = {
   pipelines?: { main: GPUComputePipeline; advance: GPUComputePipeline; layout: GPUBindGroupLayout; slots: number[]; captured: number[] } | null;
 };
 
+/** A render pipeline's vertex stage that writes storage (its JSON's `stores`, VK4 T33): its text, the program's layouts,
+ * the vertex buffers its fetch reads, its constants, whether its strips restart, a vertex's record (`passThrough`), and
+ * its pre-pass's pipeline once made (null: refused). */
+type VsStores = {
+  code: string; bgls: GPUBindGroupLayout[]; immediateSize: number; buffers: (Json | null)[]; constants: Record<string, number>; restart: boolean; words: number;
+  pipelines?: { main: GPUComputePipeline; layout: GPUBindGroupLayout; slots: number[] } | null;
+};
+type PassThrough = { module: GPUShaderModule; words: number };
+/** A storing vertex stage's pre-pass's bindings (its records, parameters and inputs): free in group 3 too (wgsl.h's
+ * table 994, device addresses 996 and the push buffer 998 are the driver's there). */
+const VS_BINDINGS = [995, 997, 999] as const;
+const VS_ENTRIES: GPUBindGroupLayoutEntry[] = [
+  { binding: VS_BINDINGS[0], visibility: 4, buffer: { type: 'storage' } },
+  { binding: VS_BINDINGS[1], visibility: 4, buffer: { type: 'uniform' } },
+  { binding: VS_BINDINGS[2], visibility: 4, buffer: { type: 'read-only-storage' } },
+];
+
+/** A vertex stage's fetch of its inputs (`fn wgx_fetch(vid, iid) -> In`, from `wgx_ld`'s bytes) as its render
+ * pipeline's buffers describe them, each binding's first byte in `wgx_in` the parameter `<params>.vbd<slot>`
+ * (transform feedback's and a storing stage's pre-pass); the slots read, and whether the stage takes inputs. */
+function vertexFetch(code: string, buffers: (Json | null)[], params: string): { code: string; slots: number[]; inputs: boolean } {
+  const base: Record<number, string> = {};
+  for (const m of code.matchAll(/@location\((\d+)\) a\d+: vec4<(f32|i32|u32)>/g)) base[Number(m[1])] = m[2];
+  const inputs = /fn wg_vs\(vid: u32, iid: u32, i: In\)/.test(code);
+  const slots: number[] = [];
+  let fetch = 'fn wgx_fetch(vid: u32, iid: u32) -> In {\n  var i: In;\n';
+  buffers.forEach((b, slot) => {
+    if (!b || !b.attributes?.length) return;
+    slots.push(slot);
+    for (const a of b.attributes as Json[]) {
+      const at = `(${params}.vbd${slot} + ${b.stepMode === 'instance' ? 'iid' : 'vid'} * ${b.arrayStride}u + ${a.offset}u)`;
+      const T = base[a.shaderLocation];
+      const v = T && vertexDecode(a.format as string, (k: number) => `wgx_ld(${at} + ${k}u)`, T);
+      if (v) fetch += `  i.a${a.shaderLocation} = ${v};\n`;
+    }
+  });
+  fetch += '  return i;\n}';
+  return { code: fetch, slots, inputs };
+}
+
 /** A WebGPU vertex format's value as WGSL `vec4<T>` from the words `word(byte)` reads (transform feedback's fetch, VK3
  * L7.4); `undefined` for one it doesn't know. */
 /** Vertex bindings a pipeline may pull (wg_private.h `WG_VERTEX_BINDINGS`); past them, the bytes each starts past its offset. */
@@ -2976,5 +3272,5 @@ function sampleKind(f: string): 'f32' | 'u32' | 'i32' {
 const IMPORTS = ['gpu_create', 'gpu_shader', 'gpu_destroy', 'gpu_grow', 'gpu_write', 'gpu_dirty', 'gpu_encoder', 'gpu_copy_bb', 'gpu_copy_bt', 'gpu_copy_tb', 'gpu_copy_tt', 'gpu_fill',
   'gpu_update', 'gpu_blit', 'gpu_render_pass', 'gpu_compute_pass', 'gpu_pass_end', 'gpu_set_pipeline', 'gpu_pull_buffer', 'gpu_pull_bind', 'gpu_set_bind_group', 'gpu_set_vertex_buffer',
   'gpu_set_index_buffer', 'gpu_set_viewport', 'gpu_set_scissor', 'gpu_set_blend_constant', 'gpu_set_stencil_reference', 'gpu_set_immediates', 'gpu_draw',
-  'gpu_draw_indexed', 'gpu_draw_indirect', 'gpu_provoke', 'gpu_draw_ticket', 'gpu_fan_indirect', 'gpu_draw_ticket_indirect', 'gpu_indirect_count', 'gpu_draw_indirect_ticket', 'gpu_xfb', 'gpu_dispatch', 'gpu_dispatch_indirect', 'gpu_clear_rects', 'gpu_begin_occlusion', 'gpu_end_occlusion',
+  'gpu_draw_indexed', 'gpu_draw_indirect', 'gpu_provoke', 'gpu_draw_ticket', 'gpu_fan_indirect', 'gpu_draw_ticket_indirect', 'gpu_indirect_count', 'gpu_draw_indirect_ticket', 'gpu_xfb', 'gpu_vs_prepass', 'gpu_vs_draw', 'gpu_dispatch', 'gpu_dispatch_indirect', 'gpu_clear_rects', 'gpu_begin_occlusion', 'gpu_end_occlusion',
   'gpu_resolve_queries', 'gpu_query_add', 'gpu_readback', 'gpu_submit', 'gpu_readback_copy', 'gpu_texture_import', 'gpu_translated', 'gpu_cache_get', 'gpu_cache_read', 'gpu_cache_put'];

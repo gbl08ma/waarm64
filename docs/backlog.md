@@ -1043,16 +1043,26 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     multiple of 4 against WebGPU's copy and map alignment is the first suspect. Kept in the pass list (an
     adapter-only failure is filed, not removed).
   - **Synchronization**: a submit waiting on a timeline value nothing has signalled is held until the value is met
-    (VK3 L6a: `tests/venus-driver.test.ts` "waitBeforeSignal"); dEQP-VK's `synchronization*.timeline_semaphore.
-    wait_before_signal.*` can't check it here: every case is NotSupported for want of `vertexPipelineStoresAndAtomics`
-    (WebGPU's vertex stage has no writable storage; were it offered, a draw split by face for its stencil state, whose
-    vertex stage runs twice, would double its stores: vk/README.md "Commands"). A submit of signals alone behind held
+    (VK3 L6a: `tests/venus-driver.test.ts` "waitBeforeSignal"); of dEQP-VK's `synchronization*.timeline_semaphore.
+    wait_before_signal.*` (928 without geometry and tessellation in their names) 26 run since VK4 T33 offered
+    `vertexPipelineStoresAndAtomics`, and pass (in the list); the rest ask for tessellation whatever their stages
+    (tier 4). A submit of signals alone behind held
     ones is held too. With the control queue full and no ring fence retired and nothing sent for 250 ms, a fence gives its queue entry back
     and is signalled by the next one of its ring with an entry (VK4 R1, docs/devices.md "Venus"): **a guest waiting for such
     a fence alone, while the ring's newest waits for what it does next, waits for ever** (the review of R1 to R4's C2;
     none seen, and a stall of a full queue would have hung it anyway).
     A larger queue isn't the way out: that queue being full is what paces a compositor (docs/devices.md, "Flush replies
     are paced"), and 256 of them would put 4 s of replies ahead of each fence.
+  - **Vertex stages that store's leftovers** (VK4 T33; vk/README.md "Vertex stages that store"): such a draw cuts its
+    render pass and runs the stage as compute before it (`vs_prepass`), so each costs a pass's store and load (bench/
+    vulkan/REPORT.md "VK4 T33": fine for dEQP-VK's and a program's few, not for thousands a frame). Not drawn: an
+    indirect draw of such a stage (said once; its counts are on the GPU: VK4-KICKOFF.md T45). A transform feedback
+    capture of such a stage is dropped (said: the capture's pass would run it again). Refused: outputs past WebGPU's
+    16 vertex attributes (four words an attribute), a fragment stage reading storage the vertex stage writes (one
+    layout entry, two accesses), and stages past WebGPU's bindings with the pre-pass's three, which count as a
+    capture's: 55 of T33's 10,581 candidates (`descriptorset_random.sets4` and `sets8`, "Texel buffers" below: T40),
+    one of them over by the pre-pass's own uniform buffer alone (its parameters could ride in the records' buffer).
+    Geometry and tessellation, the same pre-pass's way, are tier 4's.
   - **Device addresses' leftovers** (VK4 T7; vk/README.md "Device addresses"): all address memory is one storage binding
     away, so an allocation with the flag past `maxStorageBufferBindingSize` fails though the heap has room: DXVK puts every
     allocation there (no shader of it reads through pointers, so it needs none of this but the place). Every use of a
@@ -1132,7 +1142,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     refused at its pipeline's creation (VK3 L7a, vk/README.md "Bindings past WebGPU's"; 2
     `binding_model.descriptor_copy` cases: 13 storage buffers in the compute stage). Their parameters are one uniform
     buffer a group since VK4 T21 (they were one each). **All 165 of `descriptorset_random.sets4`'s failures on
-    SwiftShader** (14,106 cases: 291 pass, 13,650 NotSupported; the census's two among them) are such refusals, read
+    SwiftShader** (14,106 cases: 291 pass, 13,650 NotSupported; the census's two among them; since VK4 T33 the vertex
+    stages that store add 55 of `sets4` and `sets8`) are such refusals, read
     as zeros: stages of up to 18 texel buffers' words (16 uniform texel buffers are within the 16 sampled images), and
     fragment stages whose uniform buffers and 4 inline uniform blocks (1.3's minimum, counted apart in Vulkan) fold past
     the advertised two into storage. Words of texel buffers of one memory could share a binding (a variant, as storage

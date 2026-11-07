@@ -213,6 +213,9 @@ wg_caps_features(struct vk_features *f)
       /* BC1's RGB formats need a view's swizzle (wg_format.c). */
       .textureCompressionBC = HAS(BC) && HAS(SWIZZLE),
       .fragmentStoresAndAtomics = true,
+      /* The vertex stage that writes storage run as compute before its draw, in a cut of the render pass, its outputs
+       * drawn by a pass-through vertex stage (VK4 T33: wg_cmd.c `vs_prepass`, web/venus-gpu.ts `vsPrepass`). */
+      .vertexPipelineStoresAndAtomics = true,
       .inlineUniformBlock = true,
       /* A pass per view (wg_cmd.c `begin_rendering`), no geometry or tessellation to multiply. */
       .multiview = true,
@@ -543,8 +546,9 @@ wg_caps_properties(struct vk_properties *p)
  * - uniform buffers past a stage's room: storage buffers (WG_FOLDED_UBOS of them advertised, more refused);
  * - a YCbCr binding's planes past the first: textures (combinedImageSamplerDescriptorCount tells the program);
  * - an input attachment: a texture, where Vulkan counts it apart;
- * - a captured vertex stage's compute pass: the stage's bindings and WG_XFB_STORAGE storage buffers and
- *   WG_XFB_UNIFORMS uniform buffers more (checked where the capture is made: wg_shader.c);
+ * - a captured vertex stage's compute pass, or a storing one's pre-pass (VK4 T33): the stage's bindings and
+ *   WG_XFB_STORAGE storage buffers and WG_XFB_UNIFORMS uniform buffers more (checked where the capture is made:
+ *   wg_shader.c; a pre-pass's with the program's);
  * - a split sampler's twin (wg_program_variant: a sampler for unfilterable and filterable textures): a sampler.
  * wg_caps_properties advertises what fits whatever the program: the push buffer's uniform buffer out of each stage's and
  * its dynamic one out of the layout's, the folded uniform buffers' storage out of each stage's, every stage's least.
@@ -587,7 +591,7 @@ wg_bindings_fit(const struct wg_program *p, struct vk_descriptor_set_layout *con
    static const char *const what[] = { "uniform buffers", "storage buffers", "textures", "samplers",
                                        "storage textures" };
    static const char *const hidden[] = { "the push buffer", "texel buffers'", "uniform buffers read as storage",
-                                         "YCbCr planes", "input attachments", "a capture's",
+                                         "YCbCr planes", "input attachments", "a capture's or vertex pre-pass's",
                                          "parameter tables (texel buffers', storage images as words')" };
    uint32_t dynamic_uniform = 0, dynamic_storage = 0;
    for (uint32_t k = 0; k < p->resource_count; k++) {
@@ -641,7 +645,7 @@ wg_bindings_fit(const struct wg_program *p, struct vk_descriptor_set_layout *con
             h[c][WG_HIDDEN_INPUT]++;
       }
       /* A captured vertex stage's resources are compute-visible too: its compute pass's own on top. */
-      bool xfb = false;
+      bool xfb = st == 2 && p->vs_stores;
       for (uint32_t k = 0; st == 2 && k < p->resource_count; k++)
          xfb |= (p->vis[k] & 5) == 5;
       if (xfb) {

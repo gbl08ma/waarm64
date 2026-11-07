@@ -148,6 +148,9 @@ struct wgsl_info {
    bool dual_source;            /* fragment: location 0's second output (index 1) written: @blend_src */
    uint8_t dual_base;           /* its WGSL type */
    bool clip_distances;         /* uses `clip_distances` (vertex) */
+   bool stores;                 /* vertex: writes storage (buffers, images, atomics: vertexPipelineStoresAndAtomics,
+                                 * VK4 T33), which WebGPU's vertex stage can't: printed without its @vertex entry point,
+                                 * `wg_vs` run as compute by the driver's pre-pass (web/venus-gpu.ts `vsPrepass`) */
    uint8_t clip_distance_count;
    uint16_t workgroup[3];
    /* Vertex, with transform feedback (VK3 L7.4): each captured vertex's words in `wg_xo` (a private array the outputs

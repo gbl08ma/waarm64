@@ -185,6 +185,13 @@ captured component's bits into `var<private> wg_xo`, the vertex's record (each b
 and written words in `wgsl_info`). The driver's compute pass ("The driver") calls `wg_vs` and writes the record out.
 32-bit outputs only, records up to 512 bytes.
 
+**Vertex stages that store** (VK4 T33, `vertexPipelineStoresAndAtomics`): WebGPU refuses writable storage reached from
+a vertex entry point, and the module that has one, so a vertex stage that writes a storage buffer or image or does
+atomics (`wgsl_info.stores`) is printed without its `@vertex` entry point: its body, `wg_vs`, runs as compute before
+its draw ("The driver", "Vertex stages that store"), and its resources are the compute stage's in its program (their
+visibility; `wg_bindings_fit` counts the pre-pass's three bindings as a capture's). A transform feedback capture of
+such a stage is dropped, said: the capture's pass would run it again.
+
 **Subgroups** (VK3 L5): with WebGPU's `subgroups` and an adapter whose subgroups have one size (`wg_subgroup_size`:
 SwiftShader's 4, Apple's and NVIDIA's 32; WGSL can't choose one, so an adapter whose sizes vary keeps subgroups of one
 invocation), `wgsl_lower` lowers for that size (`nir_lower_subgroups`, ballots of 4 × 32 bits) and the printer uses
@@ -890,6 +897,27 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   An indirect draw is captured too (VK3 L7b: it wasn't): its arguments copied over the capture's parameters on the GPU,
   its index buffer and vertex bindings taken whole, its primitives counted in the shader (`wgx_prims`), 1,024
   workgroups looping over them. Host-visible buffers and counters are read back after the submit.
+- **Vertex stages that store** (VK4 T33; "The shader path"): a draw whose program's vertex stage writes storage cuts its
+  render pass (begun storing every attachment, as for `dst_copies`: `pass_vs_stores`, secondaries' too). After the
+  draw's state is applied, `vs_prepass` ends the WebGPU pass and the worker runs the stage as compute for the draw's
+  vertices on the bind groups, vertex and index buffers and immediates last set (web/venus-gpu.ts `vsPrepass`): the
+  draw's vertex bindings and indices copied into one buffer first, as transform feedback's are; an invocation a
+  vertex in the draw's order, an index each (an index met twice runs twice, as Vulkan runs it where it can't tell the
+  results are the same; the indices of an `OP_PROVOKE`'s ticket likewise), with no loop around the stage's body
+  (SwiftShader compiling one around a large body took its GPU process past 4 GiB); each vertex's outputs (`struct
+  Out`, before the flips) a record of words, and an indexed draw's indices a list of the records' places, a restart
+  kept. The pass begins again loading, the state is applied there, and the draw reads the records as one vertex buffer
+  through the pipeline's pass-through vertex stage (the worker's, `passThrough`: four words an attribute, flipped as
+  the stage's own entry point would), an instance at a time. The pre-pass's bindings take a group after the program's,
+  or, where it has four (sets 3 and up, the push buffer or device addresses there), join a copy of group 3's at
+  bindings 995, 997 and 999 (`vsGroup3`, from the driver's layouts' and groups' entries). Vulkan orders a draw's vertex
+  stage after the commands before it, so the cut is exact where a pre-pass before the pass wouldn't be (an earlier
+  draw's stores, a barrier, then this one's reads). A draw that rasterizes nothing (rasterizer discard, both faces
+  culled) still runs its stage (`OP_VS_ONLY`), and a draw split by face (`draw_faces`) runs it once, its later face
+  drawing the first's records (`OP_VS_AGAIN`). Not drawn: an indirect draw of such a stage (its counts are on the GPU;
+  said once). Refused: outputs past WebGPU's 16 vertex attributes (said), and what "Bindings past WebGPU's" refuses.
+  A cut, the pre-pass and its draw cost ~0.12 ms a draw more on the M4, 0.07–0.14 on SwiftShader with ~0.3 µs a
+  vertex on top (bench/vulkan/REPORT.md "VK4 T33").
 - **Bindings past WebGPU's** (VK3 L7a, the reviews after L7; `wg_caps.c` "The bindings WebGPU takes", the one place
   that counts them): besides a descriptor's own binding, WebGPU binds the push buffer (a uniform buffer every stage
   counts, dynamic in its layout), a texel buffer's words (a storage buffer, where Vulkan counts an image), a group's
@@ -953,7 +981,8 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   bytes; a feedback loop's copies; draws whose vertices are pulled; variants made, and draws and dispatches through a
   keyed one (samplers, padded images, formatless storage); passes made before a render pass (provoking vertices,
   indirect fans). The worker counts its own (web/venus-gpu.ts `VenusEmulStats`): blits, resolves WebGPU makes and
-  those drawn, depth resolves, clears and those copied in, transform feedback's draws. The render stats' `venusEmul`
+  those drawn, depth resolves, clears and those copied in, transform feedback's draws, storing vertex stages'
+  pre-passes (the driver's `vsPrepasses` too: VK4 T33). The render stats' `venusEmul`
   has both, a second's. `?gpu=vkskip=<path>` (repeatable; the bench hook `window.__webpcVkSkip` changes it in a run)
   leaves a path's work out, for A/B only: `views`, `words` and `feedback` (the driver's copies: the place is taken as
   up to date) and `meta` (the worker's blits and resolves); what it leaves is wrong pixels, never a command WebGPU

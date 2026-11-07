@@ -277,6 +277,11 @@ extern bool wg_unwaited_allocations;
 #define WG_FAN_VERTICES 65536
 /* Whether a vertex shader's outputs are captured by transform feedback (wgsl_info.xfb_stride). */
 #define wg_shader_xfb(s) ((s)->info.xfb_stride[0] | (s)->info.xfb_stride[1] | (s)->info.xfb_stride[2] | (s)->info.xfb_stride[3])
+/* A vertex stage that writes storage (VK4 T33, vertexPipelineStoresAndAtomics): run as compute before its draw, in a
+ * cut of the render pass (wg_cmd.c `vs_prepass`), its outputs drawn by a pass-through vertex stage (web/venus-gpu.ts
+ * `vsPrepass`); its resources are the compute stage's, the pre-pass's own bindings WG_XFB_STORAGE and WG_XFB_UNIFORMS
+ * on top, in a group after the program's or, where it has four, in group 3 with its own. */
+#define wg_shader_stores(s) ((s)->info.stores)
 /* gpu_provoke's modes: each primitive's vertices rotated so that the one Vulkan provokes comes first (their order, and so
  * the winding, kept): the last vertex's of triangle lists, strips and fans and of line lists and strips, the first's of
  * indexed fans (WebGPU has no fans: their non-indexed draws take the device's fan indices). */
@@ -627,6 +632,7 @@ struct wg_program {
    uint32_t fs_no_depth;    /* the fragment module without its depth output, and whose it is (fragment_without_depth) */
    const struct wg_shader *fs_no_depth_of;
    uint32_t compute;        /* a compute pipeline */
+   bool vs_stores;          /* its vertex stage writes storage (wg_shader_stores) */
    bool uses_base;          /* its stage reads workgroup or global ids */
    struct wg_based {        /* the pipelines of vkCmdDispatchBase's bases */
       uint32_t base[3], pipeline;
@@ -759,6 +765,7 @@ enum wg_emul {
    WG_EMUL_VARIANTS,
    WG_EMUL_KEYED_DRAWS,
    WG_EMUL_PREPASSES,
+   WG_EMUL_VS_PREPASSES, /* draws whose vertex stage writes storage, run as compute before them (VK4 T33) */
    WG_EMUL_COUNT,
 };
 extern double wg_emul[WG_EMUL_COUNT];

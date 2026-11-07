@@ -106,7 +106,7 @@ export type VenusOptions = { syncPipelines?: boolean;
 export const SKIPS = { views: 1, words: 2, feedback: 4, meta: 0, rgb9e5: 8 } as const;
 /** The driver's counts (vk/driver/wg_private.h `enum wg_emul`), in its order. */
 export const EMUL_COUNTS = ['shadowCopies', 'shadowBytes', 'shadowBackBytes', 'scopeCuts', 'viewCopies', 'viewBytes', 'wordsCopies', 'wordsBytes',
-  'feedbackCopies', 'feedbackBytes', 'pulledDraws', 'variants', 'keyedDraws', 'prepasses'] as const;
+  'feedbackCopies', 'feedbackBytes', 'pulledDraws', 'variants', 'keyedDraws', 'prepasses', 'vsPrepasses'] as const;
 /** What the emulated paths did over a span (the render stats' `venusEmul`): the driver's counts and the worker's
  * (web/venus-gpu.ts `VenusEmulStats`). */
 export type VenusEmul = Record<(typeof EMUL_COUNTS)[number], number> & VenusEmulStats;

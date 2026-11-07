@@ -3500,17 +3500,28 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
       line(&c, "var<private> wg_xo: array<u32, %u>;", words);
    }
 
+   /* A vertex stage that writes storage (VK4 T33): its body runs as compute, its entry point a pass-through's. */
+   for (unsigned k = 0; stage == MESA_SHADER_VERTEX && k < c.res_count; k++)
+      info->stores |= (c.res[k].r.kind == WGSL_STORAGE && c.res[k].r.written) ||
+                      (c.res[k].r.kind == WGSL_STORAGE_TEXTURE && (c.res[k].r.access & WGSL_ACCESS_WRITE));
+   for (unsigned k = 0; stage == MESA_SHADER_VERTEX && k < c.word_image_count; k++)
+      info->stores |= c.word_image_written[k];
+
    const bool has_out = stage == MESA_SHADER_VERTEX ||
                         (stage == MESA_SHADER_FRAGMENT && (info->outputs || info->writes_depth || info->writes_sample_mask));
    if (stage == MESA_SHADER_VERTEX) {
-      /* The body a function of its own, which the driver's transform feedback pass calls too (VK3 L7.4). */
-      line(&c, "@vertex fn main(@builtin(vertex_index) vid: u32, @builtin(instance_index) iid: u32%s) -> Out {",
-           info->inputs ? ", i: In" : "");
-      line(&c, "  wg_vs(vid, iid%s);", info->inputs ? ", i" : "");
-      line(&c, "  o.pos.y = o.pos.y * wg_flip_y;");
-      line(&c, "  if (wg_flip_z) { o.pos.z = o.pos.w - o.pos.z; }");
-      line(&c, "  return o;");
-      line(&c, "}");
+      /* The body a function of its own, which the driver's transform feedback pass calls too (VK3 L7.4), and which
+       * alone a vertex stage that stores has (VK4 T33: WebGPU refuses writable storage reached from a vertex entry
+       * point, the module with it). */
+      if (!info->stores) {
+         line(&c, "@vertex fn main(@builtin(vertex_index) vid: u32, @builtin(instance_index) iid: u32%s) -> Out {",
+              info->inputs ? ", i: In" : "");
+         line(&c, "  wg_vs(vid, iid%s);", info->inputs ? ", i" : "");
+         line(&c, "  o.pos.y = o.pos.y * wg_flip_y;");
+         line(&c, "  if (wg_flip_z) { o.pos.z = o.pos.w - o.pos.z; }");
+         line(&c, "  return o;");
+         line(&c, "}");
+      }
       line(&c, "fn wg_vs(vid: u32, iid: u32%s) {", info->inputs ? ", i: In" : "");
    } else if (stage == MESA_SHADER_FRAGMENT) {
       const char *params = (c.vary.mask || c.uses_frag_coord) ? "i: In" : "";

@@ -1706,7 +1706,10 @@ wgt_angle_ubo(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_
  * (200), `b` at N's 3072; after the pass M's uniform updated to 31 and `cs` dispatched: N's word 768 231 (the pass's
  * copies are its own: the driver records a set's bind at the dispatch, outside the pass, which this keeps true). 128
  * (with 4 and 32, VK4 R2): 32's draw writes M's uniform (1230) rather than N's word, then a barrier, and the mask's draw
- * reads it: M's word 0 2430 (a pass's draws read copies taken at its start, and a barrier ends that scope). Each
+ * reads it: M's word 0 2430 (a pass's draws read copies taken at its start, and a barrier ends that scope). VK4 T33
+ * (vertexPipelineStoresAndAtomics), `vs` writing the storage binding (32 bytes then): 256, its draw writes words 1 to
+ * 4 there (1000, 1001, 1002, then 3 by atomics: tests/venus/t33/store.vert); 512 (with 256), rasterizer discard on
+ * (no fragment's write, the vertex stage's still); 1024 (with 256), vkCmdDraw of 3 vertices for the indexed draw. Each
  * VkDeviceMemory is one GPUBuffer, and WebGPU's usage scope (the whole pass) refuses a writable usage beside any other
  * of one buffer. M's and N's word 0 1230 where written, 0 where not; wgt_draw_done says when.
  */
@@ -1752,6 +1755,8 @@ scope_record(VkCommandBuffer cmd, bool in_pass)
    CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, sc.layout, 0, 1, &sc.sets[0], 0, NULL);
    if (sc.mask & 16)
       CmdDrawIndexedIndirect(cmd, sc.m, 2048, 1, 20);
+   else if (sc.mask & 1024)
+      CmdDraw(cmd, 3, 1, 0, 0);
    else
       CmdDrawIndexed(cmd, 3, 1, 0, 0, 0);
    if (sc.mask & 64) {
@@ -1851,7 +1856,7 @@ wgt_scope(uint32_t mask, const uint32_t *vs, uint32_t vs_words, const uint32_t *
                                              .descriptorPool = dp, .descriptorSetCount = 3, .pSetLayouts = dsls };
    CHECK(AllocateDescriptorSets(dev, &dai, sc.sets));
    const VkDescriptorBufferInfo bi[9] = {
-      { mask & 4 ? sc.m : sc.n, 256, 16 }, { mask & 8 ? sc.m : sc.n, 512, 16 }, { sc.m, 0, 16 },
+      { mask & 4 ? sc.m : sc.n, 256, 16 }, { mask & 8 ? sc.m : sc.n, 512, mask & 256 ? 32 : 16 }, { sc.m, 0, 16 },
       { sc.m, 256, 16 }, { sc.m, 512, 16 }, mask & 128 ? (VkDescriptorBufferInfo){ sc.m, 256, 16 } : (VkDescriptorBufferInfo){ sc.n, 0, 16 },
       { sc.m, 256, 16 }, { sc.m, 512, 16 }, { sc.n, 3072, 16 },
    };
@@ -1878,6 +1883,7 @@ wgt_scope(uint32_t mask, const uint32_t *vs, uint32_t vs_words, const uint32_t *
                                                        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
    VkPipelineRasterizationStateCreateInfo rs = *gpi.pRasterizationState;
    rs.cullMode = VK_CULL_MODE_NONE;
+   rs.rasterizerDiscardEnable = (mask & 512) != 0;
    VkPipelineDepthStencilStateCreateInfo ds = *gpi.pDepthStencilState;
    ds.depthTestEnable = ds.depthWriteEnable = VK_FALSE;
    gpi.pStages = stages;

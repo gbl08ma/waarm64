@@ -1126,6 +1126,27 @@ test('a vertex stage captured by transform feedback copies each output into its 
   }
 });
 
+test('a vertex stage that writes storage is printed without its entry point, its body run as compute by the driver (VK4 T33)', { skip: noGlslc, timeout: 120_000 }, async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    // A buffer's stores and an atomic, an image's store: WebGPU refuses a vertex entry point that reaches either.
+    for (const file of ['tests/venus/t33/store.vert', 'tests/venus/t33/image.vert']) {
+      const r = glslStage(translate, tmp, file);
+      assert.equal(r.rc, 0, r.text);
+      assert.doesNotMatch(r.text, /@vertex/, file);
+      assert.match(r.text, /\nfn wg_vs\(vid: u32, iid: u32(, i: In)?\) \{/, file);
+      assert.match(r.text, /\nstruct Out \{\n  @builtin\(position\) pos: vec4<f32>,/, `${file}: the outputs the pass-through reads`);
+    }
+    // Reading storage only, it keeps its entry point.
+    const r = glslStage(translate, tmp, 'tests/venus/scope.vert');
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /@vertex fn main\(/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('a vertex stage\'s draw parameters are read from the push buffer past the push constants, which go there with them (VK3 L7.5)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
   try {

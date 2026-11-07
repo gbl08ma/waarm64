@@ -843,8 +843,11 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
    uint8_t vis[WGSL_MAX_RESOURCES] = { 0 };
    for (uint32_t s = 0; s < count; s++) {
       const struct wgsl_info *info = &shaders[s]->info;
-      /* A vertex stage captured by transform feedback runs as compute too, on the draw's bind groups (VK3 L7.4). */
-      const uint8_t stage = shaders[s]->vk.stage == MESA_SHADER_VERTEX ? (wg_shader_xfb(shaders[s]) ? 1 | 4 : 1)
+      /* A vertex stage captured by transform feedback runs as compute too, on the draw's bind groups (VK3 L7.4); one
+       * that writes storage as compute only (VK4 T33: a pass-through vertex stage draws its outputs). */
+      const bool vs = shaders[s]->vk.stage == MESA_SHADER_VERTEX;
+      p->vs_stores |= vs && wg_shader_stores(shaders[s]);
+      const uint8_t stage = vs ? (wg_shader_stores(shaders[s]) ? 4 : wg_shader_xfb(shaders[s]) ? 1 | 4 : 1)
                             : shaders[s]->vk.stage == MESA_SHADER_FRAGMENT ? 2
                                                                             : 4;
       p->immediate_size = MAX2(p->immediate_size, info->immediate_size);
@@ -950,7 +953,7 @@ wg_compute_based(struct wg_program *p, uint32_t x, uint32_t y, uint32_t z)
 #define PROGRAM_FIELDS(X)                                                                                              \
    X(group_count) X(set_count) X(set_group) X(set_base) X(resource_count) X(dynamic) X(res_set) X(immediate_size)     \
    X(push_ubo_size) X(vis) X(pair_count) X(pairs) X(int_pair_count) X(int_pairs) X(key_pair_count) X(key_pairs)        \
-   X(uses_base)
+   X(uses_base) X(vs_stores)
 #define RESOURCE_FIELDS(X)                                                                                             \
    X(group) X(binding) X(kind) X(dim) X(sample) X(multisampled) X(atomic) X(signed_atomic) X(written) X(nonfiltering) X(image_words) X(image_texture) X(formatless) X(access) \
    X(format) X(size)
@@ -1042,6 +1045,7 @@ wg_program_merge(struct wg_program *a, const struct wg_program *b)
    m->group_count = MAX2(a->group_count, b->group_count);
    m->immediate_size = MAX2(a->immediate_size, b->immediate_size);
    m->push_ubo_size = MAX2(a->push_ubo_size, b->push_ubo_size);
+   m->vs_stores = a->vs_stores || b->vs_stores;
    for (uint32_t i = 0; i < b->resource_count; i++) {
       const struct wgsl_resource *r = &b->resources[i];
       uint32_t k = 0;
@@ -1364,6 +1368,12 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
       for (uint32_t i = 0; i < count; i++)
          if (infos[i].stage == MESA_SHADER_VERTEX && wg_shader_xfb(shaders[i]))
             xvs = shaders[i];
+      /* A vertex stage that stores runs once, before its draw (VK4 T33): a capture after the pass would run it again. */
+      if (xvs && wg_shader_stores(xvs)) {
+         fprintf(stderr, "wg: a vertex stage's transform feedback refused: the stage writes storage\n");
+         memset(xvs->info.xfb_stride, 0, sizeof(xvs->info.xfb_stride));
+         xvs = NULL;
+      }
       char why[256] = "";
       const bool fits = wg_bindings_fit(made, infos[0].set_layouts, why, sizeof(why));
       if (xvs && (!fits || made->group_count >= WGSL_MAX_GROUPS)) {
@@ -1437,7 +1447,7 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
 /* A shader across runs (Mesa's pipeline caches, the worker's store through vk/wasi/disk_cache.c; vk/README.md "The
  * shader cache"): its stage's WGSL and info and its program's data with its link. A stage that didn't translate is
  * kept as such (no WGSL, no program). The runtime's header around it carries the build's shaderBinaryUUID. */
-#define WG_SHADER_FORMAT 5
+#define WG_SHADER_FORMAT 6
 
 static bool
 wg_serialize(struct vk_device *device, const struct vk_shader *vk, struct blob *blob)
@@ -1728,7 +1738,8 @@ wg_pipeline_pull(struct wg_program *p, const struct wg_pipeline_key *k)
    u_foreach_bit(loc, k->vs->info.inputs)
       if (k->attr[loc].format && k->vb[k->attr[loc].binding].pull)
          mask |= 1u << k->attr[loc].binding;
-   if (!mask)
+   /* A vertex stage that stores fetches its vertices in its pre-pass, from copies (VK4 T33). */
+   if (!mask || p->vs_stores)
       return NULL;
    for (struct wg_pull *u = p->pulls; u; u = u->next)
       if (u->slots == mask)
@@ -1774,6 +1785,8 @@ bool
 wg_pipeline_pull_ok(struct wg_program *p, const struct wg_pipeline_key *k)
 {
    bool wanted = false;
+   if (p->vs_stores)
+      return true;
    u_foreach_bit(loc, k->vs->info.inputs)
       wanted |= k->attr[loc].format && k->vb[k->attr[loc].binding].pull;
    return !wanted || wg_pipeline_pull(p, k);
@@ -2490,6 +2503,14 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
          wg_json_printf(&j, "%s[%u,%u,%u,%u]", b ? "," : "", x->xfb_words[b][0], x->xfb_words[b][1],
                         x->xfb_words[b][2], x->xfb_words[b][3]);
       wg_json_printf(&j, "],\"bgls\":[");
+      for (uint32_t g = 0; g < p->group_count; g++)
+         wg_json_printf(&j, "%s%u", g ? "," : "", p->bgl[g]);
+      wg_json_printf(&j, "],\"immediateSize\":%u}", p->immediate_size);
+   }
+   /* A vertex stage that writes storage (VK4 T33): run as compute before each draw on the program's layouts, a
+    * pass-through vertex stage of the worker's drawing its outputs (web/venus-gpu.ts `vsPrepass`). */
+   if (p->vs_stores) {
+      wg_json_printf(&j, ",\"stores\":{\"bgls\":[");
       for (uint32_t g = 0; g < p->group_count; g++)
          wg_json_printf(&j, "%s%u", g ? "," : "", p->bgl[g]);
       wg_json_printf(&j, "],\"immediateSize\":%u}", p->immediate_size);

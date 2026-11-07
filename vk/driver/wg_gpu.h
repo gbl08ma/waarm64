@@ -102,6 +102,13 @@ WG_IMPORT(gpu_provoke) void gpu_provoke(uint32_t ticket, uint32_t buffer, double
  * offset, size, count, instances, first, base, firstInstance} (the vertex stage run as compute on the draw's bind groups,
  * vertex buffers and immediates, as the worker last set them), {op: "end", counters}. */
 WG_IMPORT(gpu_xfb) void gpu_xfb(const char *json, uint32_t len);
+/* A draw whose vertex stage writes storage (VK4 T33), outside the render pass (cut there): the stage run as compute on
+ * the bind groups, vertex buffers, index buffer and immediates last set, for the draw's vertices (`kind` 0 a draw, 1
+ * an indexed draw, 2 a ticket's indices: `ticket`), its outputs kept for gpu_vs_draw, which draws them in the next part
+ * of the pass through the pipeline's pass-through vertex stage (web/venus-gpu.ts `vsPrepass`). */
+WG_IMPORT(gpu_vs_prepass) void gpu_vs_prepass(uint32_t kind, uint32_t count, uint32_t instances, uint32_t first,
+                                              int32_t base, uint32_t first_instance, uint32_t ticket);
+WG_IMPORT(gpu_vs_draw) void gpu_vs_draw(void);
 /* In the pass: the ticket's indices drawn (an indexed draw, the index buffer the driver's to set again after). */
 /* An indirect fan's draw (`buffer` its arguments at `offset`): a compute pass before the render pass writes its triangles'
  * indices from `ib` (`wide` 0 or 1) or, with `wide` 2, its arguments for `ib`, the device's fan indices, and

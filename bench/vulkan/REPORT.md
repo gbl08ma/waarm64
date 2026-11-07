@@ -771,6 +771,73 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4 T33: writable storage in the vertex stage — the stage as compute in a cut of the pass; 7,314 cases join the list
+
+2026-11-07, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t33/`: `cases-census.txt` (the census's 232 that asked for
+`vertexPipelineStoresAndAtomics`, 143 of them without geometry, tessellation, task or mesh stages),
+`cases-candidates.txt` (11,271: every case of the groups those name whose vertex stage may store, not in the list),
+`cases-wait-before-signal.txt` (928), `cases-pass-sw.txt`; `swiftshader-census-before.json`, `swiftshader-census.json`,
+`swiftshader-candidates.json`, `swiftshader-wait-before-signal.json`, `m4-pass.json`; `cost-*.json`.
+
+- **What the device does** (vk/README.md "Vertex stages that store", both sections): WebGPU refuses writable storage
+  reached from a vertex entry point, so a vertex stage that writes a buffer or an image or does atomics is printed
+  without its entry point, its body (`wg_vs`, transform feedback's) run as compute. A draw of it cuts the WebGPU render
+  pass after its state is applied (`vs_prepass`); the worker runs the stage for the draw's vertices, an invocation a
+  vertex in the draw's order, on the bind groups, buffers and immediates the pass last set, and writes each vertex's
+  outputs as words; the pass begins again loading, and a pass-through vertex stage of the worker's draws the records
+  as a vertex buffer (an indexed draw through a list of the records' places, restarts kept). The pre-pass's bindings
+  take a group after the program's, or join a copy of group 3 where a program has four (device addresses, sets 3 and up
+  and the push buffer live there). Draws that rasterize nothing still run the stage; a draw split by stencil face runs
+  it once. Vulkan orders a draw's vertex stage after the commands before it, which the cut keeps (a pre-pass hoisted
+  before the pass, the render-pass rule's way, wouldn't see an earlier draw's stores after a barrier).
+- **Confirming, failing first**: the census's 143 were all not supported (`swiftshader-census-before.json`); the
+  driver's usage-scope scene with a storing vertex stage (tests/venus-driver.test.ts "usage scopes: … a storage buffer
+  the vertex stage writes", indexed, not indexed, beside the fragment stage's write, with rasterizer discard) and the
+  translator's test (tests/wgsl.test.ts "a vertex stage that writes storage is printed without its entry point").
+- **Found by the cases**: (1) the device-address cases' programs have four groups (the address binding is group 3's),
+  so the pre-pass had none of its own: its bindings now join a copy of group 3 (`vsGroup3`, from the driver's layouts'
+  and groups' entries); the 16 `atomic_operations.*_vertex_reference` cases failed so. (2) dEQP-VK's vertex cases that
+  write their results to an image draw with rasterizer discard, which the driver dropped before the vertex stage ran
+  (`OP_VS_ONLY`). (3) A grid-stride loop around the stage's body took SwiftShader's GPU process past 4 GiB compiling
+  `buffer_device_address.*.depth2.*convertcheckuv2.store.*vert_offset_nonzero` (and the run's 9 GiB cap with it): an
+  invocation a vertex over a 2D grid compiles at the usual 3 GiB of the run.
+
+| set | host | pass | fail | not supported |
+|---|---|---|---|---|
+| the census's 143 | SwiftShader, before | 0 | 0 | 143 |
+| | SwiftShader | 111 | 2 | 30 |
+| the candidates (10,581 the disk's list has) | SwiftShader | 7,311 | 55 | 3,215 |
+| SwiftShader's 7,311 | M4 | 7,311 | 0 | |
+| wait_before_signal's 26 | M4 | 26 | 0 | |
+| `timeline_semaphore.wait_before_signal` (928) | SwiftShader | 26 | 0 | 902 |
+
+  The candidates that pass by group: `binding_model.shader_access` 5,648, `buffer_device_address` 840,
+  `pipeline.monolithic.spec_constant` 522, `descriptorset_random` 169, `opaque_type_indexing` 100, `atomic_operations`
+  32. `scripts/ci-deqp-vk.sh` passed with them (a sample of 7,561 of 55,355, seed 1022338136, and YCbCr's list and the
+  replays). **The 7,314 that pass on both and weren't in the list join `tests/deqp/vk.txt`** (48,041 → 55,355; 23 were in it
+  already: 21 of the spec constants' compute and fragment cases and the two `host_wait_before_signal`). The 55 failures are all
+  `descriptorset_random.sets4` and `sets8` stages past WebGPU's bindings with the pre-pass's three (16 to 33 storage
+  buffers of 10, texel buffers' words most of them; one over by a uniform buffer: VK4-KICKOFF.md T40). The rest not
+  supported: geometry, tessellation, mesh and task stages, `bufferDeviceAddressCaptureReplay`, 64-bit atomics and float
+  atomics; every `wait_before_signal` case asks for tessellation whatever its stages, but its 26 of transfers alone.
+- **A storing draw's cost** (`bench/vulkan/t33/suite.ts`, `cost-*.json`: in plain WebGPU, the pass ended, a compute
+  pass writing each vertex's record and an atomic, the pass begun again loading, the records drawn through a
+  pass-through stage, against the same draws with an ordinary vertex stage; 100 draws of a full-target triangle list
+  on rgba8unorm, ms a draw, median of 10):
+
+| | 256×256, 3 vertices: plain / storing | 256×256, 3,000 | 1920×1080, 3 | 1920×1080, 3,000 |
+|---|---|---|---|---|
+| M4 | 0.006 / 0.143 | 0.206 / 0.201 | 0.009 / 0.123 | 5.07 / 4.23 |
+| SwiftShader | 0.024 / 0.093 | 7.08 / 7.92 | 0.256 / 0.398 | 224.8 / 230.4 |
+
+  A storing draw costs ~0.12 ms more on the M4 whatever its size, the pass's cut (as T32's reading draws: ~0.1 ms);
+  at 3,000 vertices of full-target triangles the fill hides it there (the storing arm's faster on the M4, within
+  what fill-bound draws vary: the Mac was loaded, 99% GPU busy from the VM's work beside, IQRs under 1%).
+  SwiftShader pays the cut (0.07–0.14 ms) and the compute's ~0.3 µs a vertex. Fine for what stores in the vertex
+  stage (dEQP-VK's, a debug counter, a particle system's few draws), not for thousands of draws a frame; no program we
+  run stores there (VK0's scene, mpv, vkQuake, GTK4, Godot).
+
 ## VK4 T32 (third part): single-sampled attachments rendered multisampled; 1,730 cases join the list, T32 done
 
 2026-11-06, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,

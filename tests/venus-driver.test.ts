@@ -306,12 +306,17 @@ for (const [mask, what] of [
   [32, 'what an earlier draw of the pass reads'],
   [4 | 64, 'a uniform buffer, with a compute set bound inside the pass dispatched after it'],
   [4 | 32 | 128, 'a uniform buffer written by an earlier draw of the pass, a barrier between them'],
+  // VK4 T33: a vertex stage that writes storage, run as compute in a cut of the pass, a pass-through drawing its outputs.
+  [256, 'a storage buffer the vertex stage writes'],
+  [256 | 8 | 1, 'a storage buffer the vertex stage writes, beside the vertex buffer and the fragment stage\'s write'],
+  [256 | 512, 'a storage buffer the vertex stage writes, the rasterizer discarding'],
+  [256 | 1024, 'a storage buffer the vertex stage writes, not indexed'],
 ] as const) {
   test(`usage scopes: a render pass writing storage of the memory of ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which compiled the scene's shaders.
     const out = join(root, 'target/vk/test');
-    for (const name of ['scope.vert', 'scope.frag', 'ubo-ssbo.comp']) {
-      const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${name}.spv`), join(root, `tests/venus/${name}`)], { encoding: 'utf8' });
+    for (const name of ['scope.vert', 'scope.frag', 'ubo-ssbo.comp', 't33/store.vert']) {
+      const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${name.replace(/.*\//, '')}.spv`), join(root, `tests/venus/${name}`)], { encoding: 'utf8' });
       assert.equal(c.status, 0, c.stderr);
     }
     const page = await browser.newPage();
@@ -324,7 +329,8 @@ for (const [mask, what] of [
     if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
     assert.equal(r.error, undefined, String(r.error));
     assert.deepEqual(r.errors, [], 'WebGPU errors');
-    assert.deepEqual(r.got, { m: mask & 128 ? 2430 : 1230, n: mask & 32 && !(mask & 128) ? 1230 : 0, ...(mask & 64 ? { dispatched: 231 } : {}) });
+    assert.deepEqual(r.got, { m: mask & 512 ? 0 : mask & 128 ? 2430 : 1230, n: mask & 32 && !(mask & 128) ? 1230 : 0, ...(mask & 64 ? { dispatched: 231 } : {}),
+      ...(mask & 256 ? { stored: [200, 1000, 1001, 1002, 3] } : {}) });
   });
 }
 

@@ -497,12 +497,14 @@ export async function runScope(spirv: { vert: string; frag: string; comp: string
   try {
     if (ex.wgt_run(vs, vn, fs, fn, cs, cn)) return { error: text(ex.wgt_error() >>> 0), errors };
     await wait(() => ex.wgt_done(), 'the scene');
-    const [sv, svn] = put(await words('/target/vk/test/scope.vert.spv')), [sf, sfn] = put(await words('/target/vk/test/scope.frag.spv'));
+    // VK4 T33: a vertex stage that writes the storage binding (wg_test.c's mask 256).
+    const [sv, svn] = put(await words(mask & 256 ? '/target/vk/test/store.vert.spv' : '/target/vk/test/scope.vert.spv')), [sf, sfn] = put(await words('/target/vk/test/scope.frag.spv'));
     const [sc, scn] = put(await words('/target/vk/test/ubo-ssbo.comp.spv'));
     if (ex.wgt_scope(mask, sv, svn, sf, sfn, sc, scn)) return { error: text(ex.wgt_error() >>> 0), errors };
     await wait(() => ex.wgt_draw_done(), 'the draw');
     const word = (which: number, at = 0) => new Uint32Array(memory.buffer, (ex.wgt_scope_map(which) >>> 0) + at, 1)[0];
-    const got = { m: word(0), n: word(1), ...(mask & 64 ? { dispatched: word(1, 3072) } : {}) };
+    const stored = mask & 256 ? { stored: [0, 1, 2, 3, 4].map((i) => word(mask & 8 ? 0 : 1, 512 + 4 * i)) } : {};
+    const got = { m: word(0), n: word(1), ...(mask & 64 ? { dispatched: word(1, 3072) } : {}), ...stored };
     device.destroy();
     return { got, errors };
   } catch (e) {
