@@ -1581,11 +1581,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   results in the completion, WebUSB's `isochronousTransferIn/Out`, and an isochronous alternate setting on Gadget
   Zero to test with (dummy_hcd has none). Few devices would gain: WebUSB protects audio and video, so it is
   vendor-class devices only (a wired Xbox controller's headset jack, some cameras).
-- **The game pad on real hardware:** tested with a faked Gamepad API, plus one user's pad on their host (the mapping
-  fix, 2026-11-07). Still to try: a DualSense and a pad without the standard mapping; check that Chromium updates a
-  pad's state at the feed's 8 ms, that rumble plays on a real pad, and that a game in the guest (SDL) maps it as a
-  game pad. Chromium in the guest reads it as standard (checked once in `images/debian-chromium`); Firefox in the
-  guest isn't checked.
+- **The game pad on real hardware:** works on the user's own pad and host, read by Chromium in the guest, rumble
+  included (2026-11-07). Still to try: a DualSense and a pad without the standard mapping; check that Chromium updates
+  a pad's state at the feed's 8 ms, and that a game in the guest (SDL) and Firefox in the guest map it as a game pad.
 - **The game pad isn't remembered:** a machine doesn't keep its pads, so each start attaches them again from the
   menu. A `Gamepad` has no identity past its `id` string and its index, and the browser lists it only after a button
   press, so an *attach at start* entry would wait for that press.
