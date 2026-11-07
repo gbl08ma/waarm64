@@ -655,7 +655,7 @@ wgt_imported(void)
  * maxPerStageDescriptorStorageImages, maxPerStageDescriptorSampledImages, maxStorageBufferRange, subgroupSize,
  * subgroupSupportedOperations, textureCompressionBC, shaderStorageImageExtendedFormats, depthClamp, then the optimal
  * tiling features of R16_SFLOAT, R16_UNORM, B10G11R11_UFLOAT_PACK32, R32_SFLOAT, vendorID and pipelineCacheUUID's first
- * word, the sample counts and features below, NV12's queries, maxPushDescriptors, then what's below it; NULL with wgt_error(). Its own instance: the
+ * word, the sample counts and features below, NV12's queries, maxPushDescriptors, then what's below it (36 words); NULL with wgt_error(). Its own instance: the
  * device's caps are read when the instance enumerates it. */
 EXPORT const uint32_t *
 wgt_caps(void)
@@ -778,6 +778,14 @@ wgt_caps(void)
    formats(pdev, VK_FORMAT_BC1_RGB_UNORM_BLOCK, &bc1);
    out[i++] = bc1.optimalTilingFeatures;
    out[i++] = s.properties.limits.maxVertexInputBindings;
+   /* R32G32B32_SFLOAT's optimal features (an rgba32float texture, which WebGPU doesn't multisample: no colour
+    * attachment, as Vulkan wants one at framebufferColorSampleCounts), and an input attachment of it (refused). */
+   VkFormatProperties rgb32;
+   formats(pdev, VK_FORMAT_R32G32B32_SFLOAT, &rgb32);
+   out[i++] = rgb32.optimalTilingFeatures;
+   VkImageFormatProperties rgb32_input;
+   out[i++] = (uint32_t)image_formats(pdev, VK_FORMAT_R32G32B32_SFLOAT, VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL,
+                                      VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, 0, &rgb32_input);
    destroy(inst, NULL);
    return out;
 }
@@ -4016,6 +4024,186 @@ t23_misc(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer ou
 }
 
 /*
+ * VK4 T34, wgt_misc's scenario 101, `cs` t34/mutable.comp: three bindings of mutable descriptors, each first written as
+ * another type of its list and then as the one the shader declares (a uniform buffer of (11, 12, 13, 14) at 1024, the
+ * output at 0, an R32_UINT image cleared to 77), dispatched writing (o[0], o[1]); a second set copied from the first,
+ * its uniform buffer then rewritten at 1280 (21..24), dispatched writing (o[2], o[3]). The device
+ * reports `mutableDescriptorType`.
+ */
+static int
+t34_misc(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdUpdateBuffer CmdUpdateBuffer = (PFN_vkCmdUpdateBuffer)GetDeviceProcAddr(dev, "vkCmdUpdateBuffer");
+   PFN_vkCmdClearColorImage CmdClearColorImage =
+      (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   PFN_vkEnumeratePhysicalDevices enumerate =
+      (PFN_vkEnumeratePhysicalDevices)vkGetInstanceProcAddr(instance, "vkEnumeratePhysicalDevices");
+   PFN_vkGetPhysicalDeviceFeatures2 features2 =
+      (PFN_vkGetPhysicalDeviceFeatures2)vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceFeatures2");
+   VkPhysicalDevice pdev;
+   uint32_t n = 1;
+   if (enumerate(instance, &n, &pdev) < 0 || n != 1) {
+      snprintf(error, sizeof(error), "no physical device");
+      return 1;
+   }
+   VkPhysicalDeviceMutableDescriptorTypeFeaturesEXT mf = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MUTABLE_DESCRIPTOR_TYPE_FEATURES_EXT };
+   VkPhysicalDeviceFeatures2 f = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &mf };
+   features2(pdev, &f);
+   if (!mf.mutableDescriptorType) {
+      snprintf(error, sizeof(error), "mutableDescriptorType isn't reported");
+      return 1;
+   }
+   VkImage img;
+   VkImageView view;
+   const VkImageCreateInfo info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D, .format = VK_FORMAT_R32_UINT,
+      .extent = { 1, 1, 1 }, .mipLevels = 1, .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT,
+      .tiling = VK_IMAGE_TILING_OPTIMAL, .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+   };
+   CHECK(CreateImage(dev, &info, NULL, &img));
+   VkMemoryRequirements req;
+   GetImageMemoryRequirements(dev, img, &req);
+   VkDeviceMemory mem;
+   if (memory_for(req, false, &mem, NULL))
+      return 1;
+   CHECK(BindImageMemory(dev, img, mem, 0));
+   const VkImageViewCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = img,
+                                      .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = VK_FORMAT_R32_UINT,
+                                      .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
+   CHECK(CreateImageView(dev, &vi, NULL, &view));
+   VkShaderModule m;
+   if (shader(cs, cs_words, &m))
+      return 1;
+   const VkDescriptorType list[] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                     VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE };
+   const VkMutableDescriptorTypeListEXT lists[3] = { { 3, list }, { 3, list }, { 3, list } };
+   const VkMutableDescriptorTypeCreateInfoEXT mi = { .sType = VK_STRUCTURE_TYPE_MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_EXT,
+                                                     .mutableDescriptorTypeListCount = 3,
+                                                     .pMutableDescriptorTypeLists = lists };
+   /* Out of binding order, as a program may give them (the lists go by the create info's order). */
+   const VkDescriptorSetLayoutBinding bindings[3] = {
+      { 2, VK_DESCRIPTOR_TYPE_MUTABLE_EXT, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+      { 0, VK_DESCRIPTOR_TYPE_MUTABLE_EXT, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+      { 1, VK_DESCRIPTOR_TYPE_MUTABLE_EXT, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+   };
+   const VkDescriptorSetLayoutCreateInfo li = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .pNext = &mi,
+                                                .bindingCount = 3, .pBindings = bindings };
+   /* Supported; an array of 200 that may be storage images (past any adapter's storage textures a stage) not, nor 200
+    * that may be texel buffers (storage buffers of words) beside 4 storage buffers. */
+   PFN_vkGetDescriptorSetLayoutSupport LayoutSupport =
+      (PFN_vkGetDescriptorSetLayoutSupport)GetDeviceProcAddr(dev, "vkGetDescriptorSetLayoutSupport");
+   VkDescriptorSetLayoutSupport support = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_SUPPORT };
+   LayoutSupport(dev, &li, &support);
+   const VkDescriptorType images[] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE };
+   const VkDescriptorType texels[] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER };
+   const VkMutableDescriptorTypeListEXT big_lists[2] = { { 2, images }, { 2, texels } };
+   const VkMutableDescriptorTypeCreateInfoEXT big_mi = { .sType = VK_STRUCTURE_TYPE_MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_EXT,
+                                                         .mutableDescriptorTypeListCount = 2,
+                                                         .pMutableDescriptorTypeLists = big_lists };
+   const VkDescriptorSetLayoutBinding big[2] = {
+      { 0, VK_DESCRIPTOR_TYPE_MUTABLE_EXT, 200, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+      { 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+   };
+   VkDescriptorSetLayoutCreateInfo big_li = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                              .pNext = &big_mi, .bindingCount = 1, .pBindings = big };
+   VkDescriptorSetLayoutSupport big_support = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_SUPPORT };
+   LayoutSupport(dev, &big_li, &big_support);
+   const VkDescriptorSetLayoutBinding texel_big[2] = {
+      { 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+      { 1, VK_DESCRIPTOR_TYPE_MUTABLE_EXT, 200, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
+   };
+   const VkMutableDescriptorTypeListEXT texel_lists[2] = { { 0, NULL }, { 2, texels } };
+   const VkMutableDescriptorTypeCreateInfoEXT texel_mi = { .sType = VK_STRUCTURE_TYPE_MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_EXT,
+                                                           .mutableDescriptorTypeListCount = 2,
+                                                           .pMutableDescriptorTypeLists = texel_lists };
+   const VkDescriptorSetLayoutCreateInfo texel_li = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                      .pNext = &texel_mi, .bindingCount = 2, .pBindings = texel_big };
+   VkDescriptorSetLayoutSupport texel_support = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_SUPPORT };
+   LayoutSupport(dev, &texel_li, &texel_support);
+   if (!support.supported || big_support.supported || texel_support.supported) {
+      snprintf(error, sizeof(error), "layout support: %u, of 200 storage images %u, of texel buffers %u",
+               support.supported, big_support.supported, texel_support.supported);
+      return 1;
+   }
+   VkDescriptorSetLayout dsl;
+   CHECK(CreateDescriptorSetLayout(dev, &li, NULL, &dsl));
+   const VkPushConstantRange pr = { VK_SHADER_STAGE_COMPUTE_BIT, 0, 4 };
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1,
+                                            .pSetLayouts = &dsl, .pushConstantRangeCount = 1, .pPushConstantRanges = &pr };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   const VkComputePipelineCreateInfo ci = {
+      .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = layout,
+      .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                 .module = m, .pName = "main" },
+   };
+   VkPipeline pipeline;
+   CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipeline));
+   const VkDescriptorPoolSize ps = { VK_DESCRIPTOR_TYPE_MUTABLE_EXT, 6 };
+   const VkMutableDescriptorTypeCreateInfoEXT pmi = { .sType = VK_STRUCTURE_TYPE_MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_EXT,
+                                                      .mutableDescriptorTypeListCount = 1,
+                                                      .pMutableDescriptorTypeLists = lists };
+   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .pNext = &pmi,
+                                            .maxSets = 2, .poolSizeCount = 1, .pPoolSizes = &ps };
+   VkDescriptorPool dp;
+   CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+   const VkDescriptorSetLayout two[2] = { dsl, dsl };
+   const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                             .descriptorPool = dp, .descriptorSetCount = 2, .pSetLayouts = two };
+   VkDescriptorSet sets[2];
+   CHECK(AllocateDescriptorSets(dev, &dai, sets));
+   const VkDescriptorImageInfo sampled = { VK_NULL_HANDLE, view, VK_IMAGE_LAYOUT_GENERAL };
+   const VkDescriptorBufferInfo ubo = { out, 1024, 16 }, ssbo = { out, 0, 64 }, other = { out, 2048, 16 };
+   /* Each binding first as another type (the image where the uniform buffer goes, buffers where the image goes). */
+   const VkWriteDescriptorSet before[3] = {
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = sets[0], .dstBinding = 0, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .pImageInfo = &sampled },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = sets[0], .dstBinding = 1, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &other },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = sets[0], .dstBinding = 2, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &other },
+   };
+   UpdateDescriptorSets(dev, 3, before, 0, NULL);
+   const VkWriteDescriptorSet wr[3] = {
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = sets[0], .dstBinding = 0, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &ubo },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = sets[0], .dstBinding = 1, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &ssbo },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = sets[0], .dstBinding = 2, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .pImageInfo = &sampled },
+   };
+   UpdateDescriptorSets(dev, 3, wr, 0, NULL);
+   const VkCopyDescriptorSet copy = { .sType = VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET, .srcSet = sets[0], .dstSet = sets[1],
+                                      .descriptorCount = 3 };
+   UpdateDescriptorSets(dev, 0, NULL, 1, &copy);
+   const VkDescriptorBufferInfo ubo2 = { out, 1280, 16 };
+   const VkWriteDescriptorSet wr2 = { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = sets[1], .dstBinding = 0,
+                                      .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                                      .pBufferInfo = &ubo2 };
+   UpdateDescriptorSets(dev, 1, &wr2, 0, NULL);
+   const uint32_t words[4] = { 11, 12, 13, 14 }, words2[4] = { 21, 22, 23, 24 };
+   CmdUpdateBuffer(cmd, out, 1024, sizeof(words), words);
+   CmdUpdateBuffer(cmd, out, 1280, sizeof(words2), words2);
+   const VkClearColorValue c77 = { .uint32 = { 77, 0, 0, 0 } };
+   const VkImageSubresourceRange all = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+   CmdClearColorImage(cmd, img, VK_IMAGE_LAYOUT_GENERAL, &c77, 1, &all);
+   const VkMemoryBarrier barrier = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                                     .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
+                                     .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT };
+   CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &barrier, 0,
+                      NULL, 0, NULL);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+   for (uint32_t i = 0; i < 2; i++) {
+      const uint32_t at = 2 * i;
+      CmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 4, &at);
+      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &sets[i], 0, NULL);
+      CmdDispatch(cmd, 1, 1, 1);
+   }
+   return 0;
+}
+
+/*
  * VK4 T11, wgt_misc's scenarios 41 and 42, `cs` t11-rw-view.comp and t11-rw-wide.comp: a 130x4 image of two levels and
  * two layers, R8G8_UNORM or R32G32_SFLOAT, which no adapter's WebGPU loads and stores as a texture. Each texel of the
  * corner of level 1, layer 1 is cleared, then swapped by the shader, twice over (0.2, 0.8 or 0.25, 0.75, then cleared
@@ -6460,6 +6648,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 100) {
       if (t32_ms(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 101) {
+      if (t34_misc(cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 41 || scenario == 42) {
       if (t11_misc(scenario, cs, cs_words, cmd, out))

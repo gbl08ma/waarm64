@@ -430,6 +430,13 @@ leaves it out). Two memory types, each on a heap of its own (device-local, 2 GiB
   changes it used to wrap, and earlier draws read later ones' constants). Bind groups of it are kept by the push
   buffer they name (`push_gen`); the replacement is made at once, so that the submit's first binds, before any draw,
   don't find groups of the old one (which invalidated that submit).
+  **Mutable descriptors** (VK4 T34, `VK_EXT_mutable_descriptor_type`): a slot takes any type of its binding's list
+  (`types`, a bit a type), keeping nothing of the type written before; since bind groups are made of the program's
+  declarations, each slot's descriptor as written, a mutable binding needs nothing more (a declaration of another type
+  than the one written is undefined in Vulkan). Vulkan's per-stage limits count only the types, so the layout's support
+  query says no to one that could take more of a kind of WebGPU binding than a stage has, a mutable descriptor counting
+  in every kind its list names (`wg_mutable_layout_fits`). Declarations of several types aliasing one binding need
+  `descriptorBindingPartiallyBound`, which isn't advertised (no descriptor indexing).
 - **Commands** (`wg_cmd.c`): recorded into a list of our own; each draw or dispatch records the state it needs where
   it changed. A submit replays the list into one encoder (passes opened and closed as the commands need; render passes
   from the runtime's dynamic rendering, with legacy passes through its emulation; clears as load ops, or draws for a
@@ -754,7 +761,7 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   **Formats WebGPU has no texture of** (VK4 T31) are packed formats the same way, in a wider texture: the three-channel
   ones (`R8G8B8` and `B8G8R8` of every type in `rgba8*`, `R16G16B16` in `rgba16*`, `R32G32B32` in `rgba32*`; alpha kept 1,
   `WG_FMT_OPAQUE`), BGRA's integer and snorm orders (`rgba8uint`, `rgba8sint`, `rgba8snorm`), `R8_SRGB` and `R8G8_SRGB` in
-  `rgba8unorm-srgb`, the 10-bit SINT orders in `rgba16sint`. The scaled formats are their integer twins' textures
+  `rgba8unorm-srgb`, the 10-bit SINT orders in `rgba16sint`. `R32G32B32_SFLOAT` isn't offered as a colour attachment (`WG_FMT_NO_ATTACHMENT`): Vulkan wants a colour attachment format at `framebufferColorSampleCounts`, and WebGPU multisamples no `rgba32float`; its texture is drawn to by the worker's clears and blits all the same. The scaled formats are their integer twins' textures
   (`rgba8uint`, `rgb10a2uint`, `rg16sint`…, packed where the order or the channels differ) and offer **transfers only**:
   the spec samples them as floats and clears them with `float32`, dEQP-VK samples them through integer samplers and
   clears them with integers (its reference treats them as UINT and SINT), so no sampling is offered, and a clear takes

@@ -129,6 +129,9 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .EXT_depth_bias_control = true,
       /* A cube's linear filter kept to the face from fetches (wgsl_sampler.c, VK4 T28). */
       .EXT_non_seamless_cube_map = true,
+      /* A slot takes any type of its list (VK4 T34): bind groups are made of the program's declarations, each slot's
+       * descriptor as written (wg_descriptor.c). */
+      .EXT_mutable_descriptor_type = true,
       .EXT_image_robustness = true,
       .EXT_pipeline_creation_cache_control = true,
       .EXT_pipeline_creation_feedback = true,
@@ -297,6 +300,7 @@ wg_caps_features(struct vk_features *f)
       .formatA4R4G4B4 = true,
       .formatA4B4G4R4 = true,
       .nonSeamlessCubeMap = true,
+      .mutableDescriptorType = true,
       .depthClipEnable = HAS(DEPTH_CLIP),
       /* YCbCr conversions (VK3 L7.2: each plane sampled and converted in the WGSL, wgsl_lower_ycbcr), on by default
        * since L7.3 (GTK 4.24 asserts them on a device with dma-buf modifiers; GTK4 still takes GL: its Vulkan renderer
@@ -559,6 +563,75 @@ wg_caps_properties(struct vk_properties *p)
 enum { WG_COUNT_UNIFORM, WG_COUNT_STORAGE, WG_COUNT_TEXTURE, WG_COUNT_SAMPLER, WG_COUNT_STORAGE_TEXTURE, WG_COUNTS };
 enum { WG_HIDDEN_PUSH, WG_HIDDEN_TEXEL, WG_HIDDEN_FOLDED, WG_HIDDEN_PLANE, WG_HIDDEN_INPUT, WG_HIDDEN_XFB, WG_HIDDEN_TABLE,
        WG_HIDDENS };
+
+/* A set layout with mutable descriptors (VK4 T34): Vulkan's per-stage limits count the types alone, so the layout's
+ * support query is the device's one say over them. Each of WebGPU's kinds of binding counts, a stage, the descriptors
+ * that may be of it: a mutable one in every kind its list names (one type at a time), a texel buffer as a storage
+ * buffer (its words), a combined image-sampler as a texture and a sampler; past the advertised count of the kind
+ * (wg_caps_properties's, every stage's least) the layout isn't supported, as its pipelines would be refused. */
+bool
+wg_mutable_layout_fits(const VkDescriptorSetLayoutCreateInfo *info)
+{
+   const VkMutableDescriptorTypeCreateInfoEXT *m = vk_find_struct_const(info->pNext, MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_EXT);
+   struct vk_properties p = { 0 };
+   wg_caps_properties(&p);
+   const uint32_t max[WG_COUNTS] = { p.maxPerStageDescriptorUniformBuffers, p.maxPerStageDescriptorStorageBuffers,
+                                     p.maxPerStageDescriptorSampledImages, p.maxPerStageDescriptorSamplers,
+                                     p.maxPerStageDescriptorStorageImages };
+   static const VkShaderStageFlags stages[] = { VK_SHADER_STAGE_VERTEX_BIT, VK_SHADER_STAGE_FRAGMENT_BIT,
+                                                VK_SHADER_STAGE_COMPUTE_BIT };
+   bool any = false;
+   for (uint32_t i = 0; i < info->bindingCount; i++)
+      any |= info->pBindings[i].descriptorType == VK_DESCRIPTOR_TYPE_MUTABLE_EXT;
+   for (uint32_t st = 0; any && st < ARRAY_SIZE(stages); st++) {
+      uint64_t n[WG_COUNTS] = { 0 };
+      for (uint32_t i = 0; i < info->bindingCount; i++) {
+         const VkDescriptorSetLayoutBinding *b = &info->pBindings[i];
+         if (!(b->stageFlags & stages[st]) || b->descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
+            continue;
+         const bool mut = b->descriptorType == VK_DESCRIPTOR_TYPE_MUTABLE_EXT;
+         const uint32_t count = mut && m && i < m->mutableDescriptorTypeListCount ? m->pMutableDescriptorTypeLists[i].descriptorTypeCount : 1;
+         uint32_t kinds = 0;
+         for (uint32_t t = 0; t < (mut ? count : 1); t++) {
+            const VkDescriptorType type = mut ? m->pMutableDescriptorTypeLists[i].pDescriptorTypes[t] : b->descriptorType;
+            switch (type) {
+            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+               kinds |= 1u << WG_COUNT_UNIFORM;
+               break;
+            case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+            case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+            case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+            case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+               kinds |= 1u << WG_COUNT_STORAGE;
+               break;
+            case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+               kinds |= 1u << WG_COUNT_SAMPLER;
+               FALLTHROUGH;
+            case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+            case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+               kinds |= 1u << WG_COUNT_TEXTURE;
+               break;
+            case VK_DESCRIPTOR_TYPE_SAMPLER:
+               kinds |= 1u << WG_COUNT_SAMPLER;
+               break;
+            case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+               kinds |= 1u << WG_COUNT_STORAGE_TEXTURE;
+               break;
+            default:
+               break;
+            }
+         }
+         for (uint32_t c = 0; c < WG_COUNTS; c++)
+            if (kinds & (1u << c))
+               n[c] += b->descriptorCount;
+      }
+      for (uint32_t c = 0; c < WG_COUNTS; c++)
+         if (n[c] > max[c])
+            return false;
+   }
+   return true;
+}
 
 /* What a program's resource is in its pipeline layout: the descriptor type, or WG_HIDDEN_PUSH, WG_HIDDEN_PLANE,
  * WG_HIDDEN_TABLE (-1: not known). */

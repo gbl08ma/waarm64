@@ -65,6 +65,22 @@ layout_destroy(struct vk_device *vk, struct vk_descriptor_set_layout *layout)
    vk_descriptor_set_layout_destroy(vk, layout);
 }
 
+/* The types a binding may hold, a bit each (wg_type_bit): its own, or a mutable one's list (VK4 T34;
+ * `binding` is of the sorted copy, so its list is found by its number in the create info's order). */
+static uint32_t
+wg_mutable_types(const VkDescriptorSetLayoutCreateInfo *info, const VkMutableDescriptorTypeCreateInfoEXT *m,
+                 const VkDescriptorSetLayoutBinding *binding)
+{
+   if (binding->descriptorType != VK_DESCRIPTOR_TYPE_MUTABLE_EXT)
+      return wg_type_bit(binding->descriptorType);
+   uint32_t types = 0;
+   for (uint32_t i = 0; m && i < info->bindingCount && i < m->mutableDescriptorTypeListCount; i++)
+      if (info->pBindings[i].binding == binding->binding)
+         for (uint32_t t = 0; t < m->pMutableDescriptorTypeLists[i].descriptorTypeCount; t++)
+            types |= wg_type_bit(m->pMutableDescriptorTypeLists[i].pDescriptorTypes[t]);
+   return types;
+}
+
 /* Binding numbers past this, and slots, refuse a layout: its tables go by binding number, and every process of every
  * context shares the module they'd overrun. Vulkan has no such ceiling; nothing seen comes near. */
 #define WG_MAX_BINDING 0xffffu
@@ -86,7 +102,7 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
    }
    const uint32_t all = slots + plane_slots;
    const size_t size = sizeof(struct wg_descriptor_set_layout) + bindings * (sizeof(int32_t) + sizeof(uint32_t) +
-                       sizeof(uint32_t) + sizeof(VkDescriptorType) + sizeof(VkShaderStageFlags)) + all * (sizeof(int16_t) + sizeof(struct wg_sampler *)) +
+                       sizeof(uint32_t) + sizeof(uint32_t) + sizeof(VkDescriptorType) + sizeof(VkShaderStageFlags)) + all * (sizeof(int16_t) + sizeof(struct wg_sampler *)) +
                        (plane_slots ? bindings * sizeof(int32_t) + all * (sizeof(void *) + sizeof(int32_t)) : 0) + 32;
    struct wg_descriptor_set_layout *l = vk_descriptor_set_layout_zalloc(&dev->vk, size, info);
    if (!l)
@@ -107,6 +123,7 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
    l->type = (VkDescriptorType *)p, p += bindings * sizeof(VkDescriptorType);
    l->stages = (VkShaderStageFlags *)p, p += bindings * sizeof(VkShaderStageFlags);
    l->inline_bytes = (uint32_t *)p, p += bindings * sizeof(uint32_t);
+   l->types = (uint32_t *)p, p += bindings * sizeof(uint32_t);
    l->dynamic = (int16_t *)p;
    l->binding_count = bindings;
    l->immutable_count = all;
@@ -120,6 +137,8 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
       vk_descriptor_set_layout_unref(&dev->vk, &l->vk);
       return NULL;
    }
+   const VkMutableDescriptorTypeCreateInfoEXT *mutable_info =
+      vk_find_struct_const(info->pNext, MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_EXT);
    struct mesa_blake3 hash;
    _mesa_blake3_init(&hash);
    uint32_t slot = 0, dynamic = 0, plane_slot = slots;
@@ -131,6 +150,7 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
          l->inline_bytes[b->binding] = b->descriptorCount;
       l->type[b->binding] = b->descriptorType;
       l->stages[b->binding] = b->stageFlags;
+      l->types[b->binding] = wg_mutable_types(info, mutable_info, b);
       /* Its bytes in the set's buffer, each block where a uniform binding can start. */
       if (b->descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
          l->inline_size += align(MAX2(b->descriptorCount, 16), 256);
@@ -160,6 +180,7 @@ layout_create(struct wg_device *dev, const VkDescriptorSetLayoutCreateInfo *info
       _mesa_blake3_update(&hash, &b->descriptorCount, sizeof(b->descriptorCount));
       /* Which uniform buffers are read as storage goes by the stages that see them (wg_shader.c `fold_uniforms`). */
       _mesa_blake3_update(&hash, &b->stageFlags, sizeof(b->stageFlags));
+      _mesa_blake3_update(&hash, &l->types[b->binding], sizeof(uint32_t));
    }
    free(sorted);
    l->slot_count = plane_slot;
@@ -189,7 +210,7 @@ wg_GetDescriptorSetLayoutSupport(VkDevice _device, const VkDescriptorSetLayoutCr
    uint32_t slots = 0;
    for (uint32_t i = 0; i < pCreateInfo->bindingCount; i++)
       slots += binding_slots(&pCreateInfo->pBindings[i]);
-   pSupport->supported = slots <= 1024;
+   pSupport->supported = slots <= 1024 && wg_mutable_layout_fits(pCreateInfo);
    VkDescriptorSetVariableDescriptorCountLayoutSupport *v =
       vk_find_struct(pSupport->pNext, DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_LAYOUT_SUPPORT);
    if (v)
@@ -368,6 +389,9 @@ write_one(struct wg_descriptor_set *set, struct wg_descriptor *d, VkDescriptorTy
           const VkDescriptorImageInfo *image, const VkDescriptorBufferInfo *buffer, const VkBufferView *texel)
 {
    const bool immutable = set->layout->immutable[d - set->slots] != NULL;
+   /* A mutable descriptor written as another type (VK4 T34) keeps nothing of the one before. */
+   if (d->type != type)
+      *d = (struct wg_descriptor){ .sampler = immutable ? d->sampler : NULL };
    d->type = type;
    switch (type) {
    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:

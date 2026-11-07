@@ -81,7 +81,7 @@ static const struct wg_texture_format table[] = {
    F(R16G16B16_SSCALED, "rgba16sint", 8, 1, 1, WG_FMT_COLOR | S | PO),
    F(R32G32B32_UINT, "rgba32uint", 16, 1, 1, CS | WG_FMT_RENDER | U | PO),
    F(R32G32B32_SINT, "rgba32sint", 16, 1, 1, CS | WG_FMT_RENDER | S | PO),
-   F(R32G32B32_SFLOAT, "rgba32float", 16, 1, 1, CS | WG_FMT_RENDER | WG_FMT_FLOAT32 | PO),
+   F(R32G32B32_SFLOAT, "rgba32float", 16, 1, 1, CS | WG_FMT_RENDER | WG_FMT_FLOAT32 | WG_FMT_NO_ATTACHMENT | PO),
    F(B8G8R8A8_SNORM, "rgba8snorm", 4, 1, 1, CS | FL | T1R | P),
    F(B8G8R8A8_UINT, "rgba8uint", 4, 1, 1, CS | WG_FMT_RENDER | U | P),
    F(B8G8R8A8_SINT, "rgba8sint", 4, 1, 1, CS | WG_FMT_RENDER | S | P),
@@ -496,9 +496,9 @@ wg_format_features(VkFormat format, VkFormatFeatureFlags *linear, VkFormatFeatur
       if (f->flags & WG_FMT_SAMPLE)
          o |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_MINMAX_BIT;
       if (f->flags & WG_FMT_RENDER)
-         o |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
+         o |= VK_FORMAT_FEATURE_BLIT_DST_BIT | (f->flags & WG_FMT_NO_ATTACHMENT ? 0 : VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
       /* A scaled format's 32-bit float texture blends with float32-blendable, but isn't rendered to. */
-      if ((f->flags & WG_FMT_BLEND) && (f->flags & WG_FMT_RENDER))
+      if ((f->flags & WG_FMT_BLEND) && (f->flags & WG_FMT_RENDER) && !(f->flags & WG_FMT_NO_ATTACHMENT))
          o |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT;
       if (f->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL))
          o |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;

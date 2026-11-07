@@ -1,0 +1,13 @@
+#version 450
+#extension GL_EXT_samplerless_texture_functions : require
+// tests/venus-driver.test.ts (misc: t34Mutable): three bindings of mutable descriptors (wg_test.c's scenario 101,
+// VK4 T34), each read as the type last written to it: a uniform buffer, a sampled image, and the output's storage buffer.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform U { uvec4 u; };
+layout(set = 0, binding = 1) buffer O { uvec4 o[]; };
+layout(set = 0, binding = 2) uniform utexture2D t;
+layout(push_constant) uniform P { uint at; };
+void main() {
+  o[at] = u;
+  o[at + 1] = texelFetch(t, ivec2(0, 0), 0);
+}

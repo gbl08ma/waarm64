@@ -502,7 +502,10 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
    if (features && tf && (info->flags & VK_IMAGE_CREATE_EXTENDED_USAGE_BIT) && info->tiling == VK_IMAGE_TILING_OPTIMAL)
       features |= wg_view_formats_features(tf, list && list->viewFormatCount ? list->pViewFormats : NULL,
                                            list ? list->viewFormatCount : 0);
-   if (!features || (features & needed) != needed || info->type > VK_IMAGE_TYPE_3D ||
+   /* An input attachment is an attachment of its format too (dEQP-VK's unsupported_image_usage). */
+   const bool input_ok = !(info->usage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) ||
+                         (features & (VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT));
+   if (!features || (features & needed) != needed || !input_ok || info->type > VK_IMAGE_TYPE_3D ||
        (info->type != VK_IMAGE_TYPE_2D && (depth || compressed))) {
       pProps->imageFormatProperties = (VkImageFormatProperties){ 0 };
       return VK_ERROR_FORMAT_NOT_SUPPORTED;

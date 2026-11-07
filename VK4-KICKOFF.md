@@ -48,7 +48,7 @@ T2–T14; the rest of the order is judgement, said with each.
 
 ## The tasks
 
-### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T33 (2026-10-29 to 2026-11-07)
+### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T34 (2026-10-29 to 2026-11-07)
 
 Each row's outcome in full is its section of bench/vulkan/REPORT.md ("VK4 T<n>") and its commit; what each left is in
 docs/backlog.md "The Vulkan driver's gaps" (the entry named) and, where it is a defect or drops work, in the tasks
@@ -98,6 +98,7 @@ R1–R4 and then of R5–R7, had its findings fixed or moved to the backlog the 
 | T31. Formats WebGPU has no texture of | three-channel formats (RGB8 and BGR8 of every type, RGB16, RGB32) in four-channel textures with alpha kept 1, BGRA's UINT, SINT and SNORM, `R8_SRGB` and `R8G8_SRGB` in `rgba8unorm-srgb`, the 10-bit SINT orders in `rgba16sint`, the scaled ones in their integer twins' textures for transfers only (dEQP-VK samples and clears them as integers, the spec as floats), all by T30's packed way (`packPass` an invocation a texel, channel kinds converted); vertex formats WebGPU lacks pulled; of 3,155 cases 1,818 pass on SwiftShader and 2,300 on the M4, the failures the hosts' own; 1,733 join the list (→ 44,666); a converting copy ~2× a plain one on the M4 | "Packed formats' leftovers", "Pulled vertices' leftovers", "SwiftShader's compressed formats sampled in a compute stage" |
 | T32. What reads the attachment it writes | the depth bounds test, logic ops and advanced blends (every op, overlap and premultiplication) on a copy of the attachment made before each such draw (~0.1 ms a draw on the M4); local read's colour attachment map in the pipeline's key; `VK_EXT_attachment_feedback_loop_layout` and its dynamic state (a sampled view over a copy of the image's texture, renewed at barriers); `VK_EXT_multisampled_render_to_single_sampled` (4-sample images of the pass's own resolved into the attachments, LOAD filled by a draw a sample); 3,375 join the list (→ 48,041); 70 mrtss cases draw R32G32B32A32_UINT at 4 samples past dEQP's own check and fail. Not done: unified image layouts (the guest's Venus), stencil export, sample counts other than 4 | "Reading the attachments' leftovers", "Feedback loops' leftovers", "Multisampled rendering to single-sampled attachments' leftovers" |
 | T33. Writable storage in the vertex stage | `vertexPipelineStoresAndAtomics`: such a stage printed without its entry point, run as compute for its draw's vertices in a cut of the render pass, a pass-through vertex stage drawing its outputs (an indexed draw through their places), its bindings in a group of their own or with group 3's; draws that rasterize nothing still run it, a split by face once; of 10,581 candidates (every vertex-stage case of the census's groups) 7,311 pass on SwiftShader and the M4, 55 fail on bindings past WebGPU's (T40), and `wait_before_signal`'s 26 transfer cases (the rest ask for tessellation); 7,314 join the list (→ 55,355); a storing draw ~0.12 ms more on the M4. The pre-pass decided for geometry and tessellation: this one, in the cut | "Vertex stages that store's leftovers", "Synchronization", "Texel buffers" |
+| T34. Mutable descriptors | `VK_EXT_mutable_descriptor_type`: a slot takes any type of its list, bound as the shader declares it (bind groups are made of the declarations: no variant needed without aliasing, which needs `descriptorBindingPartiallyBound`); the layout support query says no past a stage's WebGPU bindings, a mutable descriptor counted in every kind its list names; of the 10,500 cases without ray tracing stages 3,561 pass on SwiftShader and the M4, 0 fail, the rest update after bind, ray tracing, geometry, variable counts, aliasing; 3,561 join the list (→ 58,916; 58,906 with R32G32B32_SFLOAT no colour attachment, REPORT.md "VK4: R32G32B32_SFLOAT…") | "Mutable descriptors' leftovers" |
 
 ### Tier 3: performance on real workloads
 
@@ -119,9 +120,6 @@ memory, cooperative matrices, ray tracing, mesh shaders, tile images, fragment d
 the sample's on the M4 (×100 for the whole list, roughly); each starts by running its reason's cases (`deqp-run.ts`'s
 `CASES`, from `census.ts --reasons`' examples or the sample's JSON) to see what they meet once advertised.
 
-- **T34. Mutable descriptor types** (M; 143): `VK_EXT_mutable_descriptor_type`, a bind group layout per set of types
-  the guest writes (a variant, as overlapping bindings are); vkd3d-proton leans on it. *Done:* advertised, its cases
-  run. *Start:* vk/README.md "Descriptors".
 - **T35. 3D ASTC** (M; 187): `VK_EXT_texture_compression_astc_3d` decoded to RGBA8 at upload in a compute pass. No
   program asks; last. *Done:* advertised, its cases run.
 

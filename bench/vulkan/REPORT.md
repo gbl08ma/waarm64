@@ -771,6 +771,64 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## VK4: R32G32B32_SFLOAT no colour attachment (a sample's failure, found running T34's CI)
+
+2026-11-07, the dev VM (SwiftShader). `scripts/ci-deqp-vk.sh`'s sample (seed 1657927271) failed
+`api.info.image_format_properties.2d.optimal.r32g32b32_sfloat` ("Required sample counts not supported"), with T34's
+changes and without them: since T31 the format is an `rgba32float` texture reported as a colour attachment, and Vulkan
+wants every colour attachment format at `framebufferColorSampleCounts` (1 and 4), which WebGPU can't multisample.
+Vulkan doesn't require RGB32 colour attachments (most GPUs' drivers lack them), so the format is no colour attachment
+any more (`WG_FMT_NO_ATTACHMENT`; its texture still takes the worker's clears and blits), and an input attachment of
+it is refused (an input attachment needs a colour or depth attachment format: `unsupported_image_usage`'s query of
+it then passed too). Of the mustpass list's 10,987 cases naming the format, run before and after (8,242 reached in the
+run's time, then the 43 that didn't pass, on both builds), only 10 of the pass list changed, passing to not supported (58,916 → 58,906)
+(9 `blend` and `logic_op_na_formats` draws into it, one partial clear of it as an attachment), taken out of
+`tests/deqp/vk.txt`; the 32 failures (SwiftShader's `count_8` compute cases: docs/backlog.md) failed on both.
+Confirming test, failing first: tests/venus-renderer.test.ts "what the driver advertises…" (the format's features
+without the colour attachment, the input attachment's query refused).
+
+## VK4 T34: mutable descriptors — bind groups of the shader's declarations; 3,561 cases join the list
+
+2026-11-07, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t34/`: `cases-census.txt` (the census's 143 that asked for the
+extension), `cases-candidates.txt` (the 10,500 `binding_model.mutable_descriptor` cases without ray tracing stages),
+`cases-pass-sw.txt`; `swiftshader-first.json` (the census's and every 8th candidate before the support query),
+`swiftshader-candidates.json`, `m4-pass.json`.
+
+- **What the device does** (vk/README.md "Descriptors"): `VK_EXT_mutable_descriptor_type` and `mutableDescriptorType`.
+  A set layout keeps each binding's types (a mutable one's list); a slot written as another type than it holds keeps
+  nothing of the one before. Nothing else was needed for the kickoff's guess (a bind group layout per set of written
+  types): the driver's bind group layouts and groups are made of the program's declarations, each slot's descriptor as
+  written, so a mutable slot is bound as the type the shader declares, which Vulkan requires to be the one written.
+  A variant is needed only where declarations of several types alias one binding, which dEQP (and the spec's validity)
+  gate on `descriptorBindingPartiallyBound`, not advertised. Uniform buffers among a mutable binding's types count in
+  `fold_uniforms`' room, so all stages read it alike.
+- **Found by the cases**: the first run (606: the census's 143 and every 8th candidate) passed 482 and failed 18, all
+  arrays of 6 mutable descriptors read as storage images or texel buffers beside dEQP's own buffers, past the stage's
+  WebGPU bindings (refused at the pipeline, said why: nothing written). Vulkan's per-stage limits count only the types,
+  so the layout's support query is the device's say: it now answers no where a stage could take more of a kind of
+  WebGPU binding than it has, a mutable descriptor counted in every kind its list names, a texel buffer as a storage
+  buffer (`wg_mutable_layout_fits`); dEQP checks it and reports those cases not supported.
+- **Confirming, failing first**: tests/venus-driver.test.ts "misc: mutable descriptors read as the type last written
+  to them, written over another type and copied" (wg_test.c's scenario 101: three mutable bindings, each written as
+  another type first, a set copied from it, and the support query's yes and two no's) failed before ("mutableDescriptorType
+  isn't reported").
+
+| set | host | pass | fail | not supported |
+|---|---|---|---|---|
+| the census's 143 | SwiftShader, before (census) | 0 | 0 | 143 |
+| | SwiftShader | 37 | 0 | 106 |
+| the first sample (606) | SwiftShader, before the support query | 482 | 18 | 106 |
+| the candidates (10,500) | SwiftShader | 3,561 | 0 | 6,939 |
+| SwiftShader's 3,561 | M4 | 3,561 | 0 | |
+
+  The not supported: update after bind 4,557, acceleration structures 870 and ray-tracing intersection stages 270,
+  geometry and tessellation 810, variable descriptor counts 144, aliasing 108 (partially bound), the support query's
+  no 105, dynamic indexing of uniform texel buffer arrays 75 (not advertised: docs/backlog.md "Mutable descriptors'
+  leftovers"). **The 3,561 join `tests/deqp/vk.txt`** (55,355 → 58,916; none were in it); `scripts/ci-deqp-vk.sh` passed with them and the RGB32 change above
+  (seed 1657927271: 8,003 of 58,906, the sample that had failed). vkd3d-proton's descriptor
+  heaps (unbounded mutable arrays, update after bind) stay out of reach without WebGPU's binding arrays.
+
 ## VK4 T33: writable storage in the vertex stage — the stage as compute in a cut of the pass; 7,314 cases join the list
 
 2026-11-07, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,

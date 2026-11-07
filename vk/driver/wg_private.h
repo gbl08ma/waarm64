@@ -100,6 +100,8 @@ uint32_t wg_subgroup_size(void);
 void wg_caps_extensions(struct vk_device_extension_table *e);
 void wg_caps_features(struct vk_features *f);
 void wg_caps_properties(struct vk_properties *p);
+/* Whether a set layout with mutable descriptors fits a stage's bindings whatever types they're written as (VK4 T34). */
+bool wg_mutable_layout_fits(const VkDescriptorSetLayoutCreateInfo *info);
 struct wg_program;
 struct vk_descriptor_set_layout;
 /* Whether a program's bindings fit WebGPU's limits by stage and by layout (wg_caps.c, the one place that counts the
@@ -148,6 +150,10 @@ enum wg_format_flags {
    /* D16_UNORM_S8_UINT: a depth24plus-stencil8 texture whose depth a buffer holds as 16-bit unorm (the worker's
     * `depth16`), its depth bias in D16's units. */
    WG_FMT_D16 = 1 << 24,
+   /* Not advertised as a colour attachment (its texture is drawn to all the same: the worker's clears and blits). Vulkan
+    * wants every colour attachment format at framebufferColorSampleCounts, and WebGPU multisamples no 32-bit float
+    * texture of more than one channel; R32G32B32_SFLOAT isn't a required attachment, as most GPUs' drivers lack it. */
+   WG_FMT_NO_ATTACHMENT = 1 << 25,
 };
 
 struct wg_texture_format {
@@ -501,6 +507,13 @@ struct wg_sampler {
 };
 
 /* A set layout as slots: binding b's elements are slots first[b] .. first[b] + count[b] - 1 (wgsl.h). */
+/* A descriptor type's bit in a binding's `types`: the core types' own, inline uniform blocks 11, the rest 12. */
+static inline uint32_t
+wg_type_bit(VkDescriptorType t)
+{
+   return t <= VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT ? 1u << t : t == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK ? 1u << 11 : 1u << 12;
+}
+
 struct wg_descriptor_set_layout {
    struct vk_descriptor_set_layout vk;
    uint32_t binding_count;  /* the highest binding number + 1 */
@@ -512,6 +525,7 @@ struct wg_descriptor_set_layout {
    VkDescriptorType *type;  /* by binding */
    VkShaderStageFlags *stages; /* by binding */
    uint32_t *inline_bytes;  /* by binding: an inline uniform block's bytes */
+   uint32_t *types;         /* by binding: the types it may hold, wg_type_bit's (a mutable one's list: VK4 T34) */
    uint32_t inline_size;    /* a set's bytes of inline uniform blocks, each block 256-aligned */
    int16_t *dynamic;        /* by slot: its index among the dynamic offsets, or -1 */
    struct wg_sampler **immutable; /* by slot, or NULL */

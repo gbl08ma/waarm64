@@ -817,7 +817,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Not advertised, by what dEQP-VK asks** (the census of 2026-11-05, bench/vulkan/REPORT.md "VK4: the census
     again": 75% of the sample not supported on either host, against 0.2% of the M4's supported cases failing; its
     reasons by `census.ts --reasons`; a queue family with compute and without graphics, 2,525 of them, is VK4 T22's): formats
-    (3,681 reasons name one), what reads its own attachment, writable storage in the vertex stage, mutable descriptors, 3D ASTC: each a
+    (3,681 reasons name one), what reads its own attachment, writable storage in the vertex stage, 3D ASTC: each a
     task of VK4-KICKOFF.md's T23–T35. No task: protected memory, cooperative matrices, ray tracing, mesh shaders, tile
     images, fragment density, descriptor buffers, sparse (~1,600 of the sample) and pipeline statistics queries (188).
     Left by VK4 T28 (pipeline state as variants; the sample's counts): `VK_EXT_legacy_vertex_attributes` (82 of the 85
@@ -1024,7 +1024,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     1|4 (Vulkan's minimum) though `R32G32B32A32_SFLOAT` and `R32G32_SFLOAT` colour attachments have 1 sample (WebGPU
     multisamples neither): `api.info.image_format_properties.2d.optimal.r32g32_sfloat` and `.r32g32b32a32_sfloat` fail,
     the last of that group (VK4 R7), out of `tests/deqp/vk.txt`; an emulation (a 4-layer texture
-    resolved by a draw) or nothing. An image made for sampling only reports 1 sample, which falls short of
+    resolved by a draw) or nothing. `R32G32B32_SFLOAT` (VK4 T31's rgba32float texture) met the same check, and as no
+    program needs it rendered (Vulkan doesn't require it; most GPUs' drivers lack it) it is no colour attachment
+    (`WG_FMT_NO_ATTACHMENT`: its blend and logic-op cases, 10 of the list, report not supported). An image made for sampling only reports 1 sample, which falls short of
     `sampledImageColorSampleCounts` (1|4) for formats WebGPU multisamples (its textures are multisampled only as render
     attachments: the driver would add that usage). A multisampled image of more than one layer is accepted but invalid
     in WebGPU (no multisampled arrays; Vulkan's format query can't say so: `maxArrayLayers` is per format). The integer
@@ -1053,6 +1055,19 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     none seen, and a stall of a full queue would have hung it anyway).
     A larger queue isn't the way out: that queue being full is what paces a compositor (docs/devices.md, "Flush replies
     are paced"), and 256 of them would put 4 s of replies ahead of each fence.
+  - **Mutable descriptors' leftovers** (VK4 T34; vk/README.md "Descriptors"): of the 10,500 `mutable_descriptor`
+    cases without ray tracing stages 3,561 pass; the rest ask for update after bind (4,557), acceleration structures
+    and ray tracing (1,140), geometry and tessellation (810), variable descriptor counts (144), or aliasing (108:
+    several types declared on one binding, which needs `descriptorBindingPartiallyBound`: an unwritten descriptor has
+    no WebGPU binding to stand for it, so a dummy of the declared kind would be; and two kinds on one slot would need
+    a variant keyed by each slot's written type, the other declarations' accesses left out). Of the rest, 105 are
+    layouts the support query says no to (up to 6 mutable descriptors that may be storage images, or texel buffers
+    as storage beside storage buffers: past a stage's WebGPU bindings) and 75 ask for
+    `shaderUniformTexelBufferArrayDynamicIndexing` (and its storage twin), not advertised though the translator's
+    `if` trees take any descriptor array (a candidate: advertise both and run these). The query counts a mutable
+    descriptor in every kind its list names and a set alone: a pipeline whose sets together pass a stage's bindings is
+    still refused at its creation, said why. vkd3d-proton's use (descriptor heaps as huge unbounded mutable arrays,
+    update after bind) is past WebGPU without binding arrays, whatever this task did.
   - **Vertex stages that store's leftovers** (VK4 T33; vk/README.md "Vertex stages that store"): such a draw cuts its
     render pass and runs the stage as compute before it (`vs_prepass`), so each costs a pass's store and load (bench/
     vulkan/REPORT.md "VK4 T33": fine for dEQP-VK's and a program's few, not for thousands a frame). Not drawn: an

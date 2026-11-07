@@ -1151,16 +1151,18 @@ fold_uniforms(struct wgsl_layout *out, struct vk_descriptor_set_layout *const *l
             for (uint32_t b = 0; b < l->binding_count; b++) {
                if (l->first[b] < 0 || !(l->stages[b] & stages[st]))
                   continue;
-               const VkDescriptorType t = l->type[b];
+               /* A mutable binding by the types its list names (VK4 T34): a uniform buffer among them may be one. */
+               const uint32_t t = l->types[b];
                if (pass == 0) {
-                  if (t == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
+                  if (t & wg_type_bit(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC))
                      room -= l->count[b];
-                  else if ((t == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER || t == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER ||
-                            t == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) && !(tables & (1u << out->sets[s].group)))
+                  else if ((t & (wg_type_bit(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER) |
+                                 wg_type_bit(VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) |
+                                 wg_type_bit(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE))) && !(tables & (1u << out->sets[s].group)))
                      room--, tables |= 1u << out->sets[s].group;
                   continue;
                }
-               if (t != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER && t != VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
+               if (!(t & (wg_type_bit(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) | wg_type_bit(VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK))))
                   continue;
                for (uint32_t e = 0; e < l->count[b]; e++) {
                   if (room-- > 0)
