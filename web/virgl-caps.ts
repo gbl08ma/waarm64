@@ -32,6 +32,30 @@ export function withoutFormats(caps: Uint8Array, names: readonly string[]): { ca
   return { caps: out, unknown };
 }
 
+/** The capability bits `?gpu=capsyes=` can offer (virglrenderer's VIRGL_CAP_* and VIRGL_CAP_V2_* names, without the
+ * prefix), those vrend offers and we don't (web/virgl.ts `virglCaps`' "Out:"): word 0 `capability_bits`, 1 `_v2`. */
+const CAP_BITS: Record<string, [0 | 1, number]> = {
+  COPY_IMAGE: [0, 3], TGSI_FBFETCH: [0, 10], SRGB_WRITE_CONTROL: [0, 15], '3D_ASTC': [0, 24], INDIRECT_INPUT_ADDR: [0, 25],
+  CLIP_HALFZ: [0, 27], V2_BLEND_EQUATION: [1, 0], V2_TEXTURE_SHADOW_LOD: [1, 10], V2_MIRROR_CLAMP_TO_EDGE: [1, 16],
+};
+
+/**
+ * The caps with capability bits set that the renderer doesn't back (`CAP_BITS`' names): `?gpu=capsyes=`, a developer's
+ * A/B of the paths the guest's Mesa and its programs take when a host offers them (what needs them may then draw
+ * wrong). Unknown names are returned.
+ */
+export function withBits(caps: Uint8Array, names: readonly string[]): { caps: Uint8Array; unknown: string[] } {
+  const out = caps.slice(), v = new DataView(out.buffer), unknown: string[] = [];
+  const at = (k: string) => CAPS_FIELDS.find(([n]) => n === k)![1] * 4;
+  for (const n of names) {
+    const b = CAP_BITS[n];
+    if (!b) { unknown.push(n); continue; }
+    const off = at(b[0] ? 'capability_bits_v2' : 'capability_bits');
+    v.setUint32(off, (v.getUint32(off, true) | (1 << b[1])) >>> 0, true);
+  }
+  return { caps: names.length > unknown.length ? out : caps, unknown };
+}
+
 /** The uniform vectors the generated shaders keep for themselves (u_adjy, u_fbh, u_alpharef, u_psize, u_stipple's 32 words). */
 const SYS_VECTORS = 16;
 

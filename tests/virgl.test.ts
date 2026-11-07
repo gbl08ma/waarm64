@@ -10,7 +10,7 @@ import { gunzipSync } from 'node:zlib';
 import { E } from '../web/gl-enums.ts';
 import { Gpu, gpuBackend } from '../web/gpu.ts';
 import { CAPS_FIELDS, decodeCaps, virglCaps } from '../web/virgl.ts';
-import { capsBacked, capsFromGl, withoutFormats } from '../web/virgl-caps.ts';
+import { capsBacked, capsFromGl, withBits, withoutFormats } from '../web/virgl-caps.ts';
 import { FORMATS } from '../web/virgl-formats.ts';
 import { clock, FenceGate, fenceSettled, localHost, portHost, type HostCall, type VirglHost } from '../web/virgl-host.ts';
 import { VirglRenderer, readbackOf, toHalf, type RendererSnapshot } from '../web/virgl-renderer.ts';
@@ -980,6 +980,20 @@ test('virgl caps: `?gpu=capsno=` takes formats out of every mask and leaves the 
   for (const [, at, n, kind] of CAPS_FIELDS) if (kind === 'm') for (let k = at * 4; k < (at + n) * 4; k++) masks.add(k);
   for (let k = 0; k < caps.length; k++) if (!masks.has(k)) assert.equal(cut[k], caps[k], `byte ${k}`);
   assert.equal(withoutFormats(caps, []).caps, caps);
+});
+
+test('virgl caps: `?gpu=capsyes=` sets the bits named, in their words, and nothing else', () => {
+  const caps = capsFromGl(mockGl({ extensions: [] }));
+  const { caps: set, unknown } = withBits(caps, ['COPY_IMAGE', 'CLIP_HALFZ', 'V2_BLEND_EQUATION', 'NOT_A_BIT']);
+  assert.deepEqual(unknown, ['NOT_A_BIT']);
+  const a = decodeCaps(caps), b = decodeCaps(set);
+  assert.equal(b.capability_bits, ((a.capability_bits as number) | (1 << 3) | (1 << 27)) >>> 0);
+  assert.equal(b.capability_bits_v2, ((a.capability_bits_v2 as number) | 1) >>> 0);
+  assert.ok(!((a.capability_bits as number) & (1 << 3)), 'not offered before');
+  let differ = 0;
+  for (let k = 0; k < caps.length; k++) if (caps[k] !== set[k]) differ++;
+  assert.ok(differ <= 3, `${differ} bytes changed`);
+  assert.equal(withBits(caps, []).caps, caps);
 });
 
 test('virgl snapshots: contexts that never submitted are made again; one in use loads the renderer\'s state; caps this browser can\'t back turn 3D off', async () => {

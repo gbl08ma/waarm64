@@ -482,7 +482,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   V2_MIRROR_CLAMP_TO_EDGE: without framebuffer fetch and advanced blends Skia copies the destination for some blends,
   a path real hosts never take); formats only we offer: `Z24_UNORM_S8_UINT` (sampled, depth, multisampled),
   `X8B8G8R8_UNORM`, `I8_UNORM`, `L8A8_UNORM` (sampled and rendered). `?gpu=capsno=` takes formats out for the A/B in
-  Steam; the bits can't be given (nothing backs them).
+  Steam and `?gpu=capsyes=` offers the missing bits (unbacked: a diagnosis, not a fix). With the four formats taken
+  out (the console saying so) the glitches are the same (the user's run; a first run had taken nothing out: a `+`
+  in the query is a space, fixed). No context's rasterizer sets `clip_halfz`.
   (The replayer also needs: contexts' skip flags per incarnation, an iovec array per resource, kept: the library keeps
   the pointer. Sway's and Xwayland's contexts die on llvmpipe at a GL_INVALID_OPERATION; Steam's run clean.)
 - **Chromium in the guest still steps back one frame now and then** (graphics.md "The call queue"): after the queue's fix,
