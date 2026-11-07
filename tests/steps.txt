@@ -8,13 +8,14 @@
 # ABI 59 and 60: the guests' Linux detects SB, LRCPC, DIT and the rest, prints them and patches its alternatives.
 buildroot 40602487
 # devices: virtio-net offers its offloads (web/offload.ts), receive merging and MRG_RXBUF included, which the guest's driver negotiates;
-# the tablet has a mouse's back and forward buttons (BTN_SIDE, BTN_EXTRA).
-devices 113676750
+# the tablet has a mouse's back and forward buttons (BTN_SIDE, BTN_EXTRA);
+# the tablet and the mouse have the horizontal and high-resolution wheels.
+devices 113661405
 ltp 2792026865
 crypto 5565764105
 # alpine: its test devices have virtio-net, whose offloads (web/offload.ts) the guest's driver negotiates, and the tablet
-# with a mouse's back and forward buttons.
-alpine 2655076428
+# with a mouse's back and forward buttons; the tablet and the mouse have the horizontal and high-resolution wheels.
+alpine 2651383250
 alpine-user 10606597817
 # Alpine's userspace benchmark saved and restored into a new VM at a quarter, half (+1) and three
 # quarters (+2) of alpine-user's steps: a restored VM's TLBs are empty, which Linux can tell (it clears

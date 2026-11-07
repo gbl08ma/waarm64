@@ -1394,8 +1394,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   to the relative mouse even before the guest has its driver (the firmware has none for it nor for the tablet,
   so nothing is lost there today); the worker's `deviceStatus` (as the keyboard's `live`) could make the lock fall back
   to the tablet then. Raw asks for `unadjustedMovement`, which isn't on every platform (then the host's acceleration and
-  the guest's add up); unmeasured which. No wheel's horizontal axis (`REL_HWHEEL`) or high-resolution wheel on any pointer. The
-  touchscreen's contacts have no size or pressure (`ABS_MT_TOUCH_MAJOR`, `ABS_MT_PRESSURE`), and a pen is the tablet.
+  the guest's add up); unmeasured which. The horizontal and high-resolution wheels are unchecked in a compositor: that
+  sway and Firefox on the Arch desktop guest scroll a touchpad smoothly and sideways (`libinput debug-events` shows
+  `POINTER_SCROLL_WHEEL` with `v120` values off 120). The touchscreen's contacts have no size or pressure (`ABS_MT_TOUCH_MAJOR`, `ABS_MT_PRESSURE`), and a pen is the tablet.
   Checked on headless Chromium's synthetic events and on Debian's evdev, not on a real touchscreen or a desktop's
   compositor (GTK and Firefox on the Arch desktop guest).
 
