@@ -137,14 +137,14 @@ don't get the agent. The unit restarts on failure, 5 s apart, at most 5 starts i
   headless compositor (the Debian test image's sway, with no DRM) leaves tty1 in text mode, so TYPE is typed into
   tty1's input like any typeahead. A paste the agent's 1 MiB queue can't hold is typed as a prefix and ends `DROPPED`.
 
-**What it costs** (Debian 13 under the JIT, 2026-11-06):
+**What it costs** (Debian 13 under the JIT, 2026-11-06; the `no_std` build's rows 2026-11-07):
 
 | | Measured |
 |---|---|
-| The binary | **449,264 bytes** (the Podman build of the current sources: the console 340,712, with Wayland 403,000, with images 407,200, with X11 and HTML 445,128). `std` alone is ~320 KiB on this toolchain (an empty `fn main` with the same profile builds to 327,048 bytes). Gzipped at gzip's default level, ~245 KB |
-| The boot's fw_cfg read | Linux's `qemu_fw_cfg` reads the data register a byte at a time (`ioread8_rep`), so there is one MMIO exit per byte: **7–12 µs a byte**. The 333 KiB console build took 4.1 s raw, and **1.3 s gzipped** (187 KiB), plus 23 ms of `gzip -dc`. The current binary's read wasn't timed again (`tests/page-agent.test.ts` logs it as a diagnostic). The unit is `Type=simple` after the login prompt, so the boot doesn't wait for it, but it is a vCPU's time at every boot and every restart |
+| The binary | **130,064 bytes** (the Podman build), 81,680 gzipped by the page. It is `no_std` (`agent/src/rt.rs`): `core` and `alloc` on musl's `main`, `malloc`, `fork` and `exit`, an insertion sort for its few names (`core`'s sorts are ~3 KiB a type), and the unwind tables, which `panic=abort` never reads, dropped at the link (`agent/no-unwind.ld`, ~27 KiB). With `std` it was 449,264 bytes (~245 KB gzipped), ~320 KiB of it `std`'s (an empty `fn main` builds to 327,048). What's left: the agent's own code ~65 KiB, musl ~10 KiB, `core`'s formatting ~12 KiB (docs/backlog.md) |
+| The boot's fw_cfg read | Linux's `qemu_fw_cfg` reads the data register a byte at a time (`ioread8_rep`), so there is one MMIO exit per byte: 4–12 µs a byte. **332 ms for the `no_std` build's 81,680 bytes** (4.1 µs a byte), plus 32 ms of `gzip -dc` (`tests/page-agent.test.ts` logs both). With `std`, the 333 KiB console build had taken 4.1 s raw and 1.3 s gzipped (187 KiB, 7 µs a byte). The unit is `Type=simple` after the login prompt, so the boot doesn't wait for it, but it is a vCPU's time at every boot and every restart |
 | Idle | 0 ticks of CPU and 0 voluntary context switches over 20–60 s, for the agent and its session child, with sway and with Xvfb. One thread each, blocked in `ppoll` with no timeout. The two bounded exceptions are a paste being typed (1 ms steps) and a compositor's socket that refuses (25 tries, 200 ms apart) |
-| Memory | VmRSS 300 KiB (the console agent); 572 KiB and 516 KiB (the agent and its child with sway); 604 KiB and 704 KiB (with X11). The unit's `MemoryMax=32M` is a cap for a bug, not a budget |
+| Memory | VmRSS **168 KiB** (the console agent); **328 KiB and 264 KiB** (the agent and its child with sway); **320 KiB and 424 KiB** (with X11). With `std`: 300, 572 and 516, 604 and 704. The unit's `MemoryMax=32M` is a cap for a bug, not a budget |
 | Throughput | ~0.8 MB/s, the channel's rate under the credit: a 1.58 MB PNG from the host to `wl-paste` in 1.9–2.0 s, to xclip by INCR in 2.2 s |
 | Sandbox | `systemd-analyze security` 3.8, "OK" (3.7 before X11's socket directory was bound in) |
 

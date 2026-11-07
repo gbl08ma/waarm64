@@ -11,8 +11,14 @@ license = "MIT"
 publish = false
 
 [dependencies]
-# The one dependency (plan §3.3, the user's choice): raw Linux syscalls, no libc wrapper.
-rustix = { version = "1.1", default-features = false, features = ["std", "event", "fs", "net", "pipe", "process", "termios", "thread"] }
+# The one dependency (plan §3.3, the user's choice): raw Linux syscalls, no libc wrapper. Without `std`: the agent is
+# `no_std` (src/rt.rs).
+rustix = { version = "1.1", default-features = false, features = ["alloc", "event", "fs", "net", "pipe", "process", "termios", "thread", "time"] }
+
+
+# The binary has no unwinder (src/rt.rs), in every profile; the tests' harness unwinds whatever this says.
+[profile.dev]
+panic = "abort"
 
 [profile.release]
 opt-level = "z"

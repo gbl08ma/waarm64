@@ -4,11 +4,13 @@
 
 use crate::frame::typed;
 use crate::log;
+use crate::prelude::*;
+use crate::rt::Instant;
+use core::time::Duration;
 use rustix::fd::{AsRawFd, OwnedFd, RawFd};
 use rustix::fs::{Mode, OFlags, open};
 use rustix::io::{self, ioctl_fionread};
 use rustix::ioctl::{Getter, Opcode, Setter, ioctl};
-use std::time::{Duration, Instant};
 
 /// The foreground virtual terminal, whichever it is when the text arrives.
 const FOREGROUND: &str = "/dev/tty0";

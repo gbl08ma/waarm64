@@ -26,12 +26,14 @@
 //! the server's own command line has it); the cookie (`MIT-MAGIC-COOKIE-1`) from the server's `-auth` file, a process's
 //! `XAUTHORITY`, or `~/.Xauthority`; none (a server without access control, as Xwayland under sway is) if none has it.
 
+use crate::prelude::*;
+use crate::rt::{self, Instant};
+use alloc::collections::VecDeque;
+use core::time::Duration;
 use rustix::event::PollFlags;
 use rustix::fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use rustix::io::{Errno, read, write};
 use rustix::net::{AddressFamily, SocketAddrUnix, SocketFlags, SocketType, connect, socket_with};
-use std::collections::VecDeque;
-use std::time::{Duration, Instant};
 
 /// The bytes asked of a property at once, and written to a requestor's at once under `INCR`.
 pub const CHUNK: usize = 64 << 10;
@@ -373,7 +375,7 @@ pub fn named(cmdline: &[u8], environ: &[u8]) -> Named {
     let mut n = Named::default();
     let args: Vec<&str> = cmdline
         .split(|&b| b == 0)
-        .filter_map(|a| std::str::from_utf8(a).ok())
+        .filter_map(|a| core::str::from_utf8(a).ok())
         .collect();
     for (i, a) in args.iter().enumerate().skip(1) {
         if let Some(d) = a.strip_prefix(':').and_then(|d| d.parse().ok()) {
@@ -386,7 +388,7 @@ pub fn named(cmdline: &[u8], environ: &[u8]) -> Named {
         }
     }
     for kv in environ.split(|&b| b == 0) {
-        let Ok(kv) = std::str::from_utf8(kv) else {
+        let Ok(kv) = core::str::from_utf8(kv) else {
             continue;
         };
         if let Some(d) = kv.strip_prefix("DISPLAY=").and_then(display_number) {
@@ -402,25 +404,21 @@ pub fn named(cmdline: &[u8], environ: &[u8]) -> Named {
 
 /// The processes of `uid` under `proc` (/proc), as `named` reads them.
 pub fn processes(proc: &str, uid: u32) -> Vec<Named> {
-    let Ok(dir) = std::fs::read_dir(proc) else {
+    let Ok(dir) = rt::dir_names(proc) else {
         return Vec::new();
     };
     let mut out = Vec::new();
-    for e in dir.flatten() {
-        let name = e.file_name();
-        let Some(pid) = name
-            .to_str()
-            .filter(|p| p.bytes().all(|b| b.is_ascii_digit()))
-        else {
+    for pid in dir {
+        if !pid.bytes().all(|b| b.is_ascii_digit()) {
             continue;
-        };
+        }
         let path = format!("{proc}/{pid}");
         let ours = rustix::fs::stat(path.as_str()).is_ok_and(|s| s.st_uid == uid);
         if !ours {
             continue;
         }
-        let cmdline = std::fs::read(format!("{path}/cmdline")).unwrap_or_default();
-        let environ = std::fs::read(format!("{path}/environ")).unwrap_or_default();
+        let cmdline = rt::read_file(format!("{path}/cmdline")).unwrap_or_default();
+        let environ = rt::read_file(format!("{path}/environ")).unwrap_or_default();
         let n = named(&cmdline, &environ);
         if !n.display.is_empty() {
             out.push(n);
@@ -432,18 +430,18 @@ pub fn processes(proc: &str, uid: u32) -> Vec<Named> {
 /// The displays to try, lowest first: the sockets `X<n>` in `dir` that are the session's (`hint`, its session file's
 /// `DISPLAY`: that one only), else that a process of the user's names (`procs`).
 pub fn displays(dir: &str, hint: Option<u32>, procs: &[Named]) -> Vec<u32> {
-    let Ok(d) = std::fs::read_dir(dir) else {
+    let Ok(d) = rt::dir_names(dir) else {
         return Vec::new();
     };
     let mut ns: Vec<u32> = d
-        .flatten()
-        .filter_map(|e| e.file_name().to_str()?.strip_prefix('X')?.parse().ok())
+        .iter()
+        .filter_map(|e| e.strip_prefix('X')?.parse().ok())
         .filter(|n| match hint {
             Some(h) => *n == h,
             None => procs.iter().any(|p| p.display.contains(n)),
         })
         .collect();
-    ns.sort_unstable();
+    rt::sort(&mut ns);
     ns
 }
 
@@ -509,7 +507,7 @@ pub fn xauth_cookie(file: &[u8], n: u32, host: &str) -> Option<Vec<u8>> {
 /// Display `n`'s cookie, from the files the user's processes name (`procs`), then `home`'s `.Xauthority`; None: none
 /// found (a server without access control takes none).
 pub fn cookie(n: u32, procs: &[Named], home: Option<&str>) -> Option<Vec<u8>> {
-    let host = std::fs::read_to_string("/proc/sys/kernel/hostname").unwrap_or_default();
+    let host = rt::read_text("/proc/sys/kernel/hostname").unwrap_or_default();
     let mut files: Vec<String> = procs
         .iter()
         .filter(|p| p.display.contains(&n))
@@ -519,12 +517,12 @@ pub fn cookie(n: u32, procs: &[Named], home: Option<&str>) -> Option<Vec<u8>> {
     files.extend(homes.map(|h| format!("{h}/.Xauthority")));
     files
         .iter()
-        .find_map(|f| xauth_cookie(&std::fs::read(f).ok()?, n, host.trim()))
+        .find_map(|f| xauth_cookie(&rt::read_file(f).ok()?, n, host.trim()))
 }
 
 /// The home of `uid`, from /etc/passwd.
 pub fn home_of(uid: u32) -> Option<String> {
-    let passwd = std::fs::read_to_string("/etc/passwd").ok()?;
+    let passwd = rt::read_text("/etc/passwd").ok()?;
     passwd.lines().find_map(|l| {
         let f: Vec<&str> = l.split(':').collect();
         (f.len() >= 6 && f[2].parse() == Ok(uid)).then(|| f[5].to_owned())
@@ -800,7 +798,7 @@ impl X {
                 break;
             }
         }
-        let inb = std::mem::take(&mut self.inb);
+        let inb = core::mem::take(&mut self.inb);
         let mut at = 0;
         let r = self.messages(&inb, &mut at, evs);
         if self.ready {

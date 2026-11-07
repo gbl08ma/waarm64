@@ -1608,7 +1608,7 @@
             }
           ],
           "md": {
-            "library": "Rust's standard library (`core`, `alloc`, `std`) as the `aarch64-unknown-linux-musl` target ships it",
+            "library": "Rust's standard library (`core` and `alloc`: the agent is `no_std`) as the `aarch64-unknown-linux-musl` target ships it",
             "version": "stable 1.99.0 (`agent/rust-toolchain.toml`, `b940084d7`)",
             "license": "MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`; `compiler_builtins` also carries LLVM's compiler-rt parts, Apache-2.0 WITH LLVM-exception)",
             "use": "linked statically into the guest agent (`webpc-agent`)"
@@ -1631,7 +1631,7 @@
             "library": "musl, the C library (and its startup files) of Rust's `aarch64-unknown-linux-musl` target, \"self-contained\"",
             "version": "1.2.5 with Rust's patches (`src/ci/docker/scripts/musl.sh` at `b940084d7`)",
             "license": "MIT (`COPYRIGHT`)",
-            "use": "linked statically into the guest agent (`webpc-agent`): `std` runs on it"
+            "use": "linked statically into the guest agent (`webpc-agent`): its startup, `malloc` (the agent's allocator), `fork` and `exit` (`agent/src/rt.rs`)"
           }
         }
       ]

@@ -1610,10 +1610,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Clipboard sharing ([clipboard.md](clipboard.md))
 
-- **The agent's size, and the boot's fw_cfg read with it:** 449,264 bytes, of which `std` is ~320 KiB (an empty
-  `fn main` with the same profile: 327,048 bytes). Linux reads fw_cfg a byte at a time (7–12 µs a byte under the JIT),
-  so every boot spends ~1.3 s or more of a vCPU reading the gzipped binary (clipboard.md "What it costs").
-  `#![no_std]` on `rustix`'s runtime would bring it to tens of KiB (plan §3.3); not tried.
+- **The agent's size past `no_std`:** 130,064 bytes, ~79 KB gzipped (clipboard.md "What it costs"). What's left is
+  mostly its own code (~65 KiB, `session.rs` with X11's client inlined into it), musl's `malloc` and startup (~10 KiB),
+  and `core`'s formatting (~12 KiB), which `core`'s own panics (bounds checks, `str` slicing) keep linked whatever the
+  agent's own `format!`s do: only `-Zbuild-std` with `panic_immediate_abort` (a nightly, or `RUSTC_BOOTSTRAP` on the
+  stable toolchain) would drop it. Rewriting the agent's ~20 `format!`s saves ~2–3 KiB alone; not done.
 - **Restarts read the binary again:** each of the unit's restarts (at most 5 in 10 minutes) gunzips it out of fw_cfg
   anew. Keeping it across restarts (outside the unit's own tmpfs, or a unit that outlives the agent) would save that.
 - **Two compositors for one user** (sway on two VTs): the session child takes the first `wayland-<n>` that accepts.
