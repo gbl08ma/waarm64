@@ -139,6 +139,8 @@ export class Usb {
         dev = virtualDevice(device, connector);
         const kbd = dev instanceof UsbKeyboard ? dev : undefined;
         if (kbd) kbd.onLeds = (leds) => this.post({ type: 'usb-leds', connector, leds });
+        const pad = dev instanceof UsbGamepad ? dev : undefined;
+        if (pad) pad.onRumble = (strong, weak) => this.post({ type: 'usb-rumble', connector, strong, weak });
       } catch (e) {
         return fail(e);
       }

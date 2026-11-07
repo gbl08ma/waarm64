@@ -69,7 +69,7 @@ the tests, the built-in keyboard, a game pad fed from the Gamepad API). The devi
 |---|---|
 | Keyboards, mice, tablets | the page's input, as virtio-input (and the built-in USB keyboard in the firmware) |
 | Game pads and other HID | WebHID → the emulated HID device |
-| Game pads that aren't HID and that the host holds | the Gamepad API → the game pad of ours, a USB HID game pad with a fixed descriptor ("The game pad") |
+| Game pads that aren't HID and that the host holds | the Gamepad API → the game pad of ours, an emulated wired Xbox 360 controller ("The game pad") |
 | Flash drives, disks | the page's disks; a raw USB disk is out of reach in a browser |
 | Webcams, microphones, headsets | `getUserMedia` (the page already records through virtio-snd); a camera would be an emulated UVC device or virtio-video |
 | Serial adapters the host's driver holds | WebSerial → a virtio-console port (not built: backlog) |
@@ -696,29 +696,57 @@ by themselves.
 
 The game pad of ours (`web/usb-gamepad.ts`, `{api: 'virtual', kind: 'gamepad', index, name}`) is for a host's game pad
 that neither WebUSB nor WebHID reaches: a wired Xbox controller the host's driver keeps, or any pad the browser only
-gives as a `Gamepad`. The page reads the pad through the Gamepad API and the guest gets a USB HID game pad with a fixed
-report descriptor, which every kernel's `hid-generic` drives. Built 2026-11-07.
+gives as a `Gamepad`. The page reads the pad through the Gamepad API, and the guest gets an emulated **wired Xbox 360
+controller** (045e:028e), which Linux's `xpad` drives. The guest's rumble goes back to the host's pad. Built
+2026-11-07.
 
-- **The device:** a full-speed HID device on `VirtualDevice`, pid.codes' test IDs (1209:0002), as the keyboard's.
-  - Interface class 3, no boot protocol. One Game Pad application collection with one input report and no report
-    ID (13 bytes), on interrupt IN 0x81 (16 bytes, 4 ms).
-  - The product string is the host pad's name, the serial `webpc-pad-<connector>`. Linux names it "webpc *name*".
-  - GET_REPORT (input), GET_IDLE and SET_IDLE are answered (the idle rate is kept; a report goes out on a change
-    only). Each change is a report, sent in order to the IN TD the host keeps queued. Up to 32 wait while none is
-    queued; past that the oldest go.
-  - No output report, so no rumble: no guest driver would send one to a descriptor of ours (backlog).
-- **The report** is the Gamepad API's standard mapping, laid out for Linux's game pad convention
-  (`Documentation/input/gamepad.rst`), the codes `xpad` gives an Xbox controller:
-  - 15 buttons. hid-input makes button *n* of a Game Pad BTN_GAMEPAD + *n* − 1, so the standard buttons are placed
-    where BTN_A, B, X, Y, TL, TR, TL2, TR2, SELECT, START, MODE, THUMBL and THUMBR fall (`BUTTONS`). BTN_C and BTN_Z
-    are declared and never pressed.
-  - The D-pad (standard buttons 12–15) is a hat switch with a null state: ABS_HAT0X and ABS_HAT0Y. Opposite
-    directions cancel.
-  - The sticks are X, Y, Rx, Ry (16 bits, ±32767; up and left negative, as the Gamepad API has them). The triggers
-    (standard buttons 6 and 7) are Z and Rz (0–255) and also TL2 and TR2 while pressed.
+- **Why an Xbox 360 controller.** A guest's software maps a pad by its vendor and product. The first build was a HID
+  game pad with pid.codes' test IDs (1209:0002). hid-generic gave it the right evdev codes, but Chromium in the guest
+  gave it no standard mapping: Chromium's Linux mappings and its XInput list go by ID, or by the `xpad` driver. So a web
+  page in the guest saw joydev's raw order:
+  - the triggers where the right stick goes;
+  - BTN_C and BTN_Z shifting every button;
+  - the D-pad as two axes, which a tester decoded as a POV hat (up worked, down read as up+left, left and right did
+    nothing).
+
+  Every guest knows the wired Xbox 360 controller:
+  - `xpad` gives it Linux's game pad codes (`Documentation/input/gamepad.rst`) and force feedback;
+  - Chromium maps it by ID (`MapperXInputStyleGamepad`);
+  - Firefox maps it by its BTN_GAMEPAD codes;
+  - SDL and Steam have it in their databases.
+
+  It takes Microsoft's IDs and needs a guest kernel with `xpad` (Debian's, Arch's: a module).
+- **The device:** a full-speed device on `VirtualDevice`.
+  - Device class ff/ff/ff, bcdDevice 0x0114; one interface, vendor class ff/5d/01 (what `xpad` matches, with the
+    vendor). It has exactly two endpoints, as `xpad` requires: interrupt IN 0x81 (32 bytes, 4 ms) and interrupt
+    OUT 0x02 (32 bytes, 8 ms).
+  - The strings are "webpc", the host pad's name, and the serial `webpc-pad-<connector>`. `xpad` names the input
+    device "Microsoft X-Box 360 pad"; guest Chromium's `Gamepad.id` takes the USB strings ("webpc *name* (STANDARD
+    GAMEPAD Vendor: 045e Product: 028e)").
+  - Only one control request isn't standard: the vendor IN request `xpad` sends as its input starts (c1/01, value
+    0x100, 20 bytes). Some third-party pads need it; ours answers it with the report now.
+  - Each change is a report, sent in order to the IN TD the host keeps queued. Up to 32 wait while none is queued;
+    past that the oldest go.
+- **The report** (20 bytes) is the Gamepad API's standard mapping, in the pad's layout (`BUTTONS`, `padReport`):
+  - Byte 0 is 0x00 (the type); byte 1 is 0x14 (the length).
+  - Byte 2 holds D-pad up, down, left and right, start, back, and the left and right stick clicks (bits 0–7).
+  - Byte 3 holds LB, RB, guide, nothing (bit 3), then A, B, X and Y.
+  - Bytes 4–5 are the triggers (0–255, standard buttons 6 and 7). A trigger pressed with no value is all the way in.
+  - Bytes 6–13 are left X, left Y, right X and right Y (int16). Y is up-positive on the wire: `xpad` reports ABS_Y
+    as its complement, so the report carries `~y` and ABS_Y is the Gamepad API's value scaled (±32767, up and left
+    negative).
+  - `xpad` makes these BTN_A, B, X, Y, TL, TR, SELECT, START, MODE, THUMBL and THUMBR, ABS_HAT0X/Y for the D-pad,
+    ABS_X/Y/RX/RY for the sticks and ABS_Z/RZ for the triggers.
   - A pad without the standard mapping is read as if it had it: its first buttons and axes in that order.
+- **Rumble:** `xpad`'s force feedback sends `00 08 00 <strong> <weak> 00 00 00` on the OUT endpoint.
+  - The device sends each change as `usb-rumble` (`connector`, each motor 0–1; strong is the left, low-frequency
+    motor). A reset or an unplug sends the motors stopped. `01 03 <n>`, the ring's LEDs, is kept and not shown.
+  - The page plays it as a `dual-rumble` effect on the host pad's `vibrationActuator`. The guest's motors run until
+    it changes them, but an effect lasts at most 5 s (Chromium's limit), so a rumble that goes on is played again
+    every 4 s (`RUMBLE_MS`, `RUMBLE_AGAIN_MS`). It stops with `reset()` when the guest stops it or the pad is
+    detached.
 - **The page** (`web/app/gamepads.ts`, the USB menu): the Gamepad API is the Window's only, so the page reads the pads
-  and sends `usb-pad` messages (`connector`, the pad's `PadState`: the buttons pressed as bits, their values, four
+  and sends `usb-pad` messages (`connector`, and the pad's `PadState`: the buttons pressed as bits, their values, four
   axes) on the controller's port, with no answer.
   - The USB menu lists the pads under [Game pads](ui:usb:UsbMenu.pads), each with a checkbox that attaches the game
     pad on the first free connector. A browser lists a pad only once one of its buttons has been pressed while the
@@ -730,17 +758,30 @@ report descriptor, which every kernel's `hid-generic` drives. Built 2026-11-07.
   - A pad isn't remembered with the machine, nor attached at start. No lock is taken, so two tabs can both attach
     the same pad.
 - **Tests:**
-  - `tests/usb-gamepad.test.ts` (Node): the descriptors; the report read back through `parseReportDescriptor` of its
-    own descriptor; the standard mapping onto Linux's codes, the hat, scaling and clamping; reports in order and the
-    queue; GET_REPORT, idle, cancel and reset; `usb-pad` through the glue; the feed.
+  - `tests/usb-gamepad.test.ts` (Node):
+    - the descriptors, as `xpad` matches them;
+    - each standard button, the D-pad, the sticks and the triggers read as `xpad` reads the report, into evdev codes;
+    - the whole way to a web page in the guest: `xpad`'s codes, then joydev's order and scaling, then Chromium's
+      mapping for 045e:028e. Each button alone and the sticks and triggers come back as the host's state;
+    - reports in order and the queue, the start request, cancel and reset;
+    - the OUT endpoint's rumble and LEDs, and the motors stopped by a reset or an unplug;
+    - `usb-pad` and `usb-rumble` through the glue;
+    - the feed, and its rumble: played, played again, stopped, and stopped on a detach.
   - `tests/page-usb-gamepad.test.ts` (Chromium, Debian, `ci-debian.sh --platform`), with the Gamepad API faked:
     1. The menu's hint, then the pad listed after its connect event, and attached from its checkbox.
-    2. hid-generic binds it, with exactly BTN_A–BTN_THUMBR (0x130–0x13e) and ABS_X–RZ, HAT0X and HAT0Y.
-    3. A button, the left stick and the D-pad reach `/dev/input` as BTN_A, ABS_X and ABS_HAT0X, and back to rest.
-    4. The pad's disconnect unplugs it.
+    2. `xpad` binds it, with exactly its keys (BTN_A…BTN_THUMBR without C, Z, TL2 and TR2), ABS_X–RZ, HAT0X and HAT0Y,
+       and FF_RUMBLE.
+    3. A button, both sticks, a trigger and the D-pad (right and down) reach `/dev/input` as BTN_A, ABS_X, ABS_RY,
+       ABS_Z, ABS_HAT0X and ABS_HAT0Y, and go back to rest.
+    4. A rumble effect uploaded and played in the guest (EVIOCSFF through `perl`) plays on the fake pad, and stops
+       when its file closes.
+    5. The pad's disconnect unplugs it.
+  - Checked once by hand (2026-11-07, `images/debian-chromium`): headless Chromium in the guest reads the pad as
+    `mapping: "standard"`, with every D-pad direction, the left trigger and both sticks where the standard layout
+    puts them.
 
-  Planted: a button mapped to BTN_C, the hat's left and right swapped (Node, each caught); the feed sending only its
-  first state (the page test, caught).
+  Planted: two standard buttons swapped, and Y without its complement (Node, each caught by the `xpad` and Chromium
+  cases); the feed sending only its first state (the page test, caught).
 
 ## The page
 

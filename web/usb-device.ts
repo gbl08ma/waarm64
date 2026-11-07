@@ -96,8 +96,9 @@ export type UsbVirtual =
   /** The built-in boot keyboard (web/usb-keyboard.ts), fed by `usb-key` messages: the firmware's keyboard. */
   | { api: 'virtual'; kind: 'keyboard' }
   /**
-   * The game pad of ours (web/usb-gamepad.ts), fed by `usb-pad` messages from the page's Gamepad API: `index` is the
-   * page's `Gamepad.index` (the page's own, the device worker ignores it), `name` the host's pad's name (the product string).
+   * The game pad of ours (web/usb-gamepad.ts, a wired Xbox 360 controller), fed by `usb-pad` messages from the page's
+   * Gamepad API, its rumble sent back as `usb-rumble`: `index` is the page's `Gamepad.index` (the page's own, the device
+   * worker ignores it), `name` the host's pad's name (the product string).
    */
   | { api: 'virtual'; kind: 'gamepad'; index: number; name?: string };
 
@@ -116,7 +117,9 @@ export type UsbFromWorker =
   /** `message`: the error's text, a developer's; `error`: the error itself, for the page's words (web/msg.ts `toWire`). */
   | { type: 'usb-state'; connector: number; state: 'error'; message: string; error?: WireError; detail?: UsbProblem[] }
   /** The LEDs the guest set on the built-in keyboard (its output report: bit 0 Num, 1 Caps, 2 Scroll Lock), on a change. */
-  | { type: 'usb-leds'; connector: number; leds: number };
+  | { type: 'usb-leds'; connector: number; leds: number }
+  /** The guest's rumble on the game pad of ours (web/usb-gamepad.ts), on a change: each motor 0–1 (strong: the left, low-frequency one). */
+  | { type: 'usb-rumble'; connector: number; strong: number; weak: number };
 /** An attach's answer (`usb-state`). */
 export type UsbState = Extract<UsbFromWorker, { type: 'usb-state' }>;
 

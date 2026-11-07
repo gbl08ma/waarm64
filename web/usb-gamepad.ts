@@ -1,68 +1,54 @@
-// The game pad of ours (docs/usb.md "The game pad"): an emulated USB HID game pad with a fixed report descriptor,
-// fed from the page's Gamepad API, for a host's game pad that neither WebUSB nor WebHID can reach (a wired Xbox
-// controller the host's driver keeps, any pad the browser only offers as a `Gamepad`). The page polls
-// `navigator.getGamepads()` (Window only) and sends each change of the pad's state as a `usb-pad` message.
+// The game pad of ours (docs/usb.md "The game pad"): an emulated wired Xbox 360 controller fed from the page's Gamepad
+// API, for a host's game pad that neither WebUSB nor WebHID can reach (a wired Xbox controller the host's driver keeps,
+// any pad the browser only offers as a `Gamepad`). The page polls `navigator.getGamepads()` (Window only) and sends
+// each change of the pad's state as a `usb-pad` message; the guest's rumble comes back as `usb-rumble`.
 //
-// What the guest sees: a full-speed HID device (interface class 3, no boot protocol) whose one input report is the
-// Gamepad API's standard mapping, laid out so that Linux's hid-generic gives the evdev codes of its game pad
-// convention (Documentation/input/gamepad.rst), the codes `xpad` gives an Xbox controller:
-// - 15 buttons on the Button page. hid-input maps button n of a Game Pad application to BTN_GAMEPAD + n - 1 (BTN_A,
-//   BTN_B, BTN_C, BTN_X, BTN_Y, BTN_Z, BTN_TL, BTN_TR, BTN_TL2, BTN_TR2, BTN_SELECT, BTN_START, BTN_MODE, BTN_THUMBL,
-//   BTN_THUMBR), so the standard buttons go where those codes are and BTN_C and BTN_Z stay unused (`BUTTONS`).
-// - The D-pad as a hat switch (ABS_HAT0X/Y), 8 directions and a null state.
-// - The sticks as X, Y, Rx, Ry (16-bit, ±32767; up and left negative, as the Gamepad API has them).
-// - The triggers as Z and Rz (0–255), and also as buttons TL2 and TR2 while pressed.
+// Why an Xbox 360 controller and not a HID game pad of our own: what a guest's software makes of a pad goes by its
+// vendor and product. A HID pad with IDs of ours gets the right evdev codes from hid-generic, but Chromium in the guest
+// then gives it no standard mapping (its mappings and its XInput list are by ID, or by the xpad driver), so a web page
+// there sees joydev's raw order: the triggers where the right stick should be, the D-pad nowhere. The wired Xbox 360
+// controller (045e:028e) is the pad every guest knows: Linux's xpad drives it (BTN_A…BTN_THUMBR, the D-pad as
+// ABS_HAT0X/Y, the sticks as X/Y/RX/RY, the triggers as Z/RZ: Documentation/input/gamepad.rst), Chromium and Firefox
+// map it to the standard layout, SDL and Steam have it in their databases, and xpad's force feedback gives rumble.
+//
+// What the guest sees: a full-speed vendor-class device (interface ff/5d/01, as xpad matches it) with interrupt IN
+// 0x81 (the 20-byte input report) and interrupt OUT 0x02 (the host's LED and rumble commands). The input report:
+// - byte 0 type 0x00, byte 1 length 0x14;
+// - byte 2: D-pad up, down, left, right, start, back, left stick, right stick (bits 0–7);
+// - byte 3: LB, RB, guide, (none), A, B, X, Y (bits 0–7);
+// - bytes 4 and 5: the left and right triggers (0–255);
+// - bytes 6–13: left X, left Y, right X, right Y (int16; Y up positive: xpad reports ABS_Y as its complement).
+// The OUT commands: `00 08 00 <strong> <weak> 00 00 00` rumble (the left, low-frequency motor and the right one);
+// `01 03 <pattern>` the ring's LEDs (kept, not shown).
 // A pad without the standard mapping is read as if it had it (its first buttons and axes in that order).
-// No output report: rumble would need a driver of the guest's for it (docs/backlog.md "USB").
 
 import type { Setup, UsbResult, UsbTransfer } from './usb-device.ts';
 import { VirtualDevice, type ControlAnswer } from './usb-virtual.ts';
 
-/** pid.codes' test IDs (https://pid.codes/1209/0002/): not a real pad's, so no guest driver for one binds to it. */
-export const GAMEPAD_VENDOR = 0x1209;
-export const GAMEPAD_PRODUCT = 0x0002;
+/** The wired Xbox 360 controller's IDs: the ones xpad, Chromium, Firefox and SDL know it by. */
+export const GAMEPAD_VENDOR = 0x045e;
+export const GAMEPAD_PRODUCT = 0x028e;
 
 /** A pad's state as the page reads it from a `Gamepad`: the buttons pressed (bit i: button i), their values (0–1), the axes (−1–1). */
 export type PadState = { pressed: number; values: number[]; axes: number[] };
 
-/** The HID button (1–15) each standard-mapping button (0–16) is; 0: none (12–15 are the D-pad, the hat switch). */
-export const BUTTONS = [1, 2, 4, 5, 7, 8, 9, 10, 11, 12, 14, 15, 0, 0, 0, 0, 13];
-/** The standard mapping's D-pad buttons. */
-const UP = 12, DOWN = 13, LEFT = 14, RIGHT = 15;
-/** The report's length: 2 bytes of buttons, the hat's byte, four 16-bit sticks' axes, two 8-bit triggers. */
-export const REPORT_LENGTH = 13;
+/** The bit of the report (byte 2's bits 0–7, byte 3's 8–15) each standard-mapping button (0–16) is; −1: none (6 and 7, the triggers, are bytes of their own). */
+export const BUTTONS = [12, 13, 14, 15, 8, 9, -1, -1, 5, 4, 6, 7, 0, 1, 2, 3, 10];
+/** The input report's length. */
+export const REPORT_LENGTH = 20;
+/** The OUT endpoint's commands. */
+const RUMBLE = 0x08, LED = 0x03;
 
 const u16 = (v: number) => [v & 0xff, v >> 8 & 0xff];
-/** The report descriptor: one Game Pad application collection, one input report (no report ID). */
-export const PAD_REPORT = new Uint8Array([
-  0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, // Generic Desktop, Game Pad, Collection (Application)
-  0x05, 0x09, 0x19, 0x01, 0x29, 0x0f, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x0f, 0x81, 0x02, // buttons 1–15: 15 × 1 bit, Data Var Abs
-  0x95, 0x01, 0x81, 0x03, // 1 bit of padding: Constant
-  0x05, 0x01, 0x09, 0x39, 0x25, 0x07, 0x35, 0x00, 0x46, ...u16(315), 0x65, 0x14, 0x75, 0x04, 0x81, 0x42, // hat switch: 0–7 as 0–315°, Null state
-  0x45, 0x00, 0x65, 0x00, 0x81, 0x03, // 4 bits of padding (the physical range and the unit cleared)
-  0x09, 0x30, 0x09, 0x31, 0x09, 0x33, 0x09, 0x34, 0x16, ...u16(-32767), 0x26, ...u16(32767), 0x75, 0x10, 0x95, 0x04, 0x81, 0x02, // X, Y, Rx, Ry: 4 × 16 bits
-  0x09, 0x32, 0x09, 0x35, 0x15, 0x00, 0x26, ...u16(255), 0x75, 0x08, 0x95, 0x02, 0x81, 0x02, // Z, Rz: 2 × 8 bits
-  0xc0,
-]);
-
-const HID = [9, 0x21, ...u16(0x0111), 0, 1, 0x22, ...u16(PAD_REPORT.length)];
 const CONFIG = [
-  9, 4, 0, 0, 1, 3, 0, 0, 0, // interface 0: HID, no boot protocol
-  ...HID,
-  7, 5, 0x81, 3, ...u16(16), 4, // interrupt IN 0x81, 16 bytes, 4 ms
+  9, 4, 0, 0, 2, 0xff, 0x5d, 0x01, 0, // interface 0: vendor class, subclass 0x5d, protocol 1 (a wired controller's)
+  7, 5, 0x81, 3, ...u16(32), 4, // interrupt IN 0x81, 32 bytes, 4 ms
+  7, 5, 0x02, 3, ...u16(32), 8, // interrupt OUT 0x02, 32 bytes, 8 ms
 ];
-const DEVICE = new Uint8Array([18, 1, ...u16(0x0200), 0, 0, 0, 8, ...u16(GAMEPAD_VENDOR), ...u16(GAMEPAD_PRODUCT), ...u16(0x0100), 1, 2, 3, 1]);
-const CONFIGURATION = new Uint8Array([9, 2, ...u16(9 + CONFIG.length), 1, 1, 0, 0x80, 50, ...CONFIG]);
+const DEVICE = new Uint8Array([18, 1, ...u16(0x0200), 0xff, 0xff, 0xff, 8, ...u16(GAMEPAD_VENDOR), ...u16(GAMEPAD_PRODUCT), ...u16(0x0114), 1, 2, 3, 1]);
+const CONFIGURATION = new Uint8Array([9, 2, ...u16(9 + CONFIG.length), 1, 1, 0, 0x80, 250, ...CONFIG]);
 /** Reports kept for a host that isn't reading: past this, the oldest go (the newest says where the pad is). */
 const QUEUE = 32;
-
-/** The hat switch's value for the D-pad's buttons: 0 up, then clockwise in eighths; 8 (out of range: the null state) for none, or for opposite buttons alone. */
-export function hat(up: boolean, down: boolean, left: boolean, right: boolean): number {
-  const y = up === down ? 0 : up ? -1 : 1;
-  const x = left === right ? 0 : left ? -1 : 1;
-  if (!x && !y) return 8;
-  return [[7, 0, 1], [6, 8, 2], [5, 4, 3]][y + 1][x + 1];
-}
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 /** −1–1 → ±32767 (NaN and missing axes are centred). */
@@ -73,16 +59,18 @@ const trigger = (v: number | undefined) => Math.round(clamp(Number.isFinite(v) ?
 /** The input report for a pad's state. */
 export function padReport(s: PadState): Uint8Array {
   const r = new Uint8Array(REPORT_LENGTH);
+  r[1] = REPORT_LENGTH;
   const down = (i: number) => (s.pressed >>> i & 1) === 1;
   let bits = 0;
-  BUTTONS.forEach((b, i) => { if (b && down(i)) bits |= 1 << (b - 1); });
-  r[0] = bits & 0xff;
-  r[1] = bits >> 8;
-  r[2] = hat(down(UP), down(DOWN), down(LEFT), down(RIGHT));
+  BUTTONS.forEach((b, i) => { if (b >= 0 && down(i)) bits |= 1 << b; });
+  r[2] = bits & 0xff;
+  r[3] = bits >> 8;
+  // A trigger that says it's pressed without a value (a digital one) is all the way in.
+  r[4] = trigger(s.values[6]) || (down(6) ? 255 : 0);
+  r[5] = trigger(s.values[7]) || (down(7) ? 255 : 0);
   const v = new DataView(r.buffer);
-  for (let i = 0; i < 4; i++) v.setInt16(3 + 2 * i, axis(s.axes[i]), true);
-  r[11] = trigger(s.values[6]);
-  r[12] = trigger(s.values[7]);
+  // Y up positive on the wire, as xpad reads it (ABS_Y is its complement, so ABS_Y is the Gamepad API's value scaled).
+  [axis(s.axes[0]), ~axis(s.axes[1]), axis(s.axes[2]), ~axis(s.axes[3])].forEach((a, i) => v.setInt16(6 + 2 * i, a, true));
   return r;
 }
 
@@ -94,11 +82,16 @@ export class UsbGamepad extends VirtualDevice {
   /** Reports not yet taken, and the IN TDs waiting for one. */
   private queue: Uint8Array[] = [];
   private waiting: Held[] = [];
-  idle = 0;
+  /** The motors' strengths the host set last (0–255: the left, low-frequency one and the right one). */
+  private motors: [number, number] = [0, 0];
+  /** The LED pattern the host set last (xpad's: 2–5 the player's ring quarter lit). */
+  led = 0;
+  /** The host's rumble, on a change: each motor 0–1 (strong: the left, low-frequency motor; weak: the right one). */
+  onRumble: (strong: number, weak: number) => void = () => {};
 
   /** `name`: the product string (the host's pad's name). */
   constructor(o: { name?: string; serial?: string } = {}) {
-    super('full', { device: DEVICE, configs: [CONFIGURATION], strings: ['webpc', o.name?.trim() || 'webpc game pad', o.serial || 'webpc-pad'], extra: (type, index, s) => this.classDescriptor(type, index, s) });
+    super('full', { device: DEVICE, configs: [CONFIGURATION], strings: ['webpc', o.name?.trim() || 'webpc game pad', o.serial || 'webpc-pad'] });
   }
 
   /** The current input report. */
@@ -118,30 +111,33 @@ export class UsbGamepad extends VirtualDevice {
     if (this.queue.length > QUEUE) this.queue.shift();
   }
 
-  private classDescriptor(type: number, index: number, s: Setup): Uint8Array | undefined {
-    if ((s.requestType & 0x1f) !== 1 || (s.index & 0xff) !== 0 || index !== 0) return undefined;
-    if (type === 0x21) return new Uint8Array(HID);
-    if (type === 0x22) return PAD_REPORT;
-    return undefined;
-  }
-
   protected control(s: Setup): ControlAnswer {
-    // HID class requests to interface 0 (HID 1.11 §7.2); no boot protocol, so no GET/SET_PROTOCOL.
-    if ((s.requestType & 0x7f) !== 0x21 || (s.index & 0xff) !== 0) return undefined;
-    switch (s.request) {
-      case 0x01: // GET_REPORT: the one input report (ID 0)
-        return s.value === 0x0100 ? this.report() : undefined;
-      case 0x02: return new Uint8Array([this.idle]); // GET_IDLE
-      case 0x0a: this.idle = s.value >> 8; return true; // SET_IDLE (kept: a report goes out on a change only)
-    }
+    // The vendor request xpad sends when its input starts (some third-party pads need it to start reporting): the report now.
+    if (s.requestType === 0xc1 && s.request === 0x01 && s.value === 0x0100) return this.report();
     return undefined;
   }
 
   protected transfer(t: UsbTransfer, done: (r: UsbResult) => void) {
+    if (t.ep === 0x02) {
+      this.command(t.data ?? new Uint8Array());
+      return done({ code: 'success', actual: t.data?.length ?? 0 });
+    }
     if (t.ep !== 0x81) return done({ code: 'stall', actual: 0 });
     const r = this.queue.shift();
     if (r) return done({ code: 'success', actual: Math.min(REPORT_LENGTH, t.length), data: r.subarray(0, t.length) });
     this.waiting.push({ t, done });
+  }
+
+  /** A command on the OUT endpoint: rumble or the LEDs; others are ignored, as the pad does. */
+  private command(d: Uint8Array) {
+    if (d[0] === 0x00 && d[1] === RUMBLE && d.length >= 5) this.rumble(d[3], d[4]);
+    else if (d[0] === 0x01 && d[1] === LED && d.length >= 3) this.led = d[2];
+  }
+
+  private rumble(strong: number, weak: number) {
+    if (strong === this.motors[0] && weak === this.motors[1]) return;
+    this.motors = [strong, weak];
+    this.onRumble(strong / 255, weak / 255);
   }
 
   protected cancelled(ep: number, tags: number[]) {
@@ -149,15 +145,17 @@ export class UsbGamepad extends VirtualDevice {
   }
 
   protected changed() {
-    // Configured again or reset: what was queued is the old configuration's; the host asks again.
+    // Configured again or reset: what was queued is the old configuration's; the host asks again. The motors stop.
     this.queue = [];
     this.waiting = [];
-    if (this.configuration === 0) this.idle = 0;
+    this.rumble(0, 0);
+    if (this.configuration === 0) this.led = 0;
   }
 
   detach() {
     super.detach();
     this.queue = [];
     this.waiting = [];
+    this.rumble(0, 0);
   }
 }

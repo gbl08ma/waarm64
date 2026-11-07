@@ -2131,6 +2131,7 @@ function usbPorts(port: MessagePort) {
     leds.usb = l;
     showLeds();
   };
+  p.onRumble = (c, strong, weak) => padFeed.rumble(c, strong, weak);
   p.onGone = (connector, was, reason, error) => {
     if (reason === 'unplugged' && was.device.api !== 'virtual') {
       // It may come back as another device (a bootloader, after a firmware upload): the offer to attach that one there.

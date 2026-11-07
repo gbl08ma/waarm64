@@ -32,7 +32,7 @@ track lands, its outcome moves into the docs and its row here stays a line.
 | Graphics | **No software rendering or translation layers in the guest.** OpenGL ES through Mesa's upstream **virgl** onto **our virgl renderer on WebGL2** (the page's default where WebGL2 is; [docs/graphics.md](docs/graphics.md) "Decisions"). **Vulkan** (the user, 2026-10-25): Venus translated onto WebGPU, a per-machine choice until every program that switches to it is no slower than on virgl; a C toolchain for wasm allowed ([docs/plans/graphics.md](docs/plans/graphics.md) §2) |
 | Video | VA-API over virgl, decoded by the browser's WebCodecs (not V4L2); H.264, VP9, AV1; **HEVC dropped** ([docs/plans/video.md](docs/plans/video.md)) |
 | Audio | virtio-snd to an AudioWorklet; sound on by default (from the first click); the microphone opened when the guest records ([docs/audio.md](docs/audio.md)) |
-| USB | WebUSB passthrough and WebHID onto an emulated xHCI, and the Gamepad API onto a game pad of ours for pads neither reaches; isochronous transfers left out (WebUSB protects the classes that use them) ([docs/usb.md](docs/usb.md)) |
+| USB | WebUSB passthrough and WebHID onto an emulated xHCI, and the Gamepad API onto an emulated wired Xbox 360 controller (with rumble) for pads neither reaches; isochronous transfers left out (WebUSB protects the classes that use them) ([docs/usb.md](docs/usb.md)) |
 | Network | Raw Ethernet frames to a gateway in the page; our own tailnet client (Rust, wasm) for Tailscale and tailcat; IPv6 required; several adapters per machine on connections the browser keeps ([docs/tailnet.md](docs/tailnet.md), [docs/network-adapters.md](docs/network-adapters.md)) |
 
 Deferred: SVE, EL2, 16K/64K granules (needed for RHEL-family kernels), virtio-pci/MSI, GICv3 ITS and LPIs.
@@ -96,7 +96,7 @@ What each built is in its doc; numbers in the reports it names. Open loose ends:
 | Networking and the tailnet client | Done 2026-10-16, IPv6 among the loose ends | [plans/networking.md](docs/plans/networking.md), [tailnet.md](docs/tailnet.md) |
 | Several network adapters | Done 2026-10-19 | [network-adapters.md](docs/network-adapters.md) |
 | Machines as the unit (phase D's start) | Done 2026-10-17 (a cloud session) | [machines.md](docs/machines.md) |
-| USB (WebUSB, WebHID) | Done 2026-10-18; a game pad fed from the Gamepad API for pads neither reaches (2026-11-07) | [usb.md](docs/usb.md) |
+| USB (WebUSB, WebHID) | Done 2026-10-18; a game pad fed from the Gamepad API for pads neither reaches, an emulated wired Xbox 360 controller with rumble (2026-11-07) | [usb.md](docs/usb.md) |
 | Guest RAM past memory 0, the JIT's spill arm | Done 2026-10-19, 2026-10-24 | [spill-memories.md](docs/spill-memories.md) |
 | A browser's code in the JIT (cache size, the memory signal, the compile worker, the cache's lock) | Done 2026-10-20 to 10-23 | [jit.md](docs/jit.md) |
 | The block interpreter's speed | Done 2026-10-22 | [cpu.md](docs/cpu.md) "The block interpreter", `bench/interp/REPORT.md` |

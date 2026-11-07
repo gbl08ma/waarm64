@@ -1,13 +1,22 @@
 // The host's game pads as the Gamepad API gives them (docs/usb.md "The game pad"), for the game pad of ours
 // (web/usb-gamepad.ts): the pads the page can list, their names, and the feed that polls the attached ones and sends
-// each change of their state to the device worker (`usb-pad`). The Gamepad API is the Window's only, so the page reads
+// each change of their state to the device worker (`usb-pad`), and the guest's rumble played on the host's pad
+// (`vibrationActuator`). The Gamepad API is the Window's only, so the page reads
 // the pads and the device worker never sees a `Gamepad`. Chromium lists a pad only once one of its buttons has been
 // pressed while the page was visible, and it gives the page no state while the page is hidden: the feed sends the pad
 // at rest then, so nothing stays held in the guest.
 import type { PadState } from '../usb-gamepad.ts';
 
 /** What the feed reads of a `Gamepad`. */
-export type PadLike = { index: number; id: string; connected: boolean; buttons: readonly { pressed: boolean; value: number }[]; axes: readonly number[] };
+export type PadLike = {
+  index: number; id: string; connected: boolean; buttons: readonly { pressed: boolean; value: number }[]; axes: readonly number[];
+  vibrationActuator?: Rumbler | null;
+};
+/** What the feed uses of a `GamepadHapticActuator`. */
+type Rumbler = {
+  playEffect(type: 'dual-rumble', params: { startDelay?: number; duration?: number; strongMagnitude?: number; weakMagnitude?: number }): Promise<unknown>;
+  reset(): Promise<unknown>;
+};
 
 /** A pad at rest. */
 export const REST: PadState = { pressed: 0, values: [], axes: [] };
@@ -51,6 +60,12 @@ const same = (a: PadState, b: PadState) =>
 
 /** How often the attached pads are read: the device's endpoint interval (4 ms) would be the pad's own; 8 ms is ~120 Hz. */
 export const POLL_MS = 8;
+/**
+ * A rumble's effect length: the guest's motors run until it changes them, a `dual-rumble` effect for at most 5 s
+ * (Chromium's limit), so a rumble that goes on is played again every `RUMBLE_AGAIN_MS`, before the last one ends.
+ */
+export const RUMBLE_MS = 5000;
+export const RUMBLE_AGAIN_MS = 4000;
 
 /**
  * Polls the attached pads (`set`: connector → pad index) while there are any, and sends each one's state when it
@@ -60,12 +75,17 @@ export class PadFeed {
   private pads = new Map<number, number>();
   private last = new Map<number, PadState>();
   private timer: ReturnType<typeof setInterval> | undefined;
+  /** The rumbles going on, by connector: the host's pad, and the timer that plays it again. */
+  private rumbles = new Map<number, { index: number; timer: ReturnType<typeof setTimeout> }>();
   private readonly send: (connector: number, pad: PadState) => void;
   private readonly read: () => readonly (PadLike | null)[];
   private readonly hidden: () => boolean;
+  private readonly again: number;
 
-  constructor(send: (connector: number, pad: PadState) => void, o: { read?: () => readonly (PadLike | null)[]; hidden?: () => boolean } = {}) {
+  /** `again`: how often a rumble that goes on is played again (`RUMBLE_AGAIN_MS`; shorter in tests). */
+  constructor(send: (connector: number, pad: PadState) => void, o: { read?: () => readonly (PadLike | null)[]; hidden?: () => boolean; again?: number } = {}) {
     this.send = send;
+    this.again = o.again ?? RUMBLE_AGAIN_MS;
     this.read = o.read ?? readPads;
     this.hidden = o.hidden ?? (() => globalThis.document?.visibilityState === 'hidden');
   }
@@ -74,6 +94,7 @@ export class PadFeed {
   set(pads: Map<number, number>) {
     this.pads = new Map(pads);
     for (const c of this.last.keys()) if (!this.pads.has(c)) this.last.delete(c);
+    for (const c of this.rumbles.keys()) if (!this.pads.has(c)) this.rumble(c, 0, 0);
     if (this.pads.size && !this.timer) this.timer = setInterval(() => this.tick(), POLL_MS);
     else if (!this.pads.size && this.timer) { clearInterval(this.timer); this.timer = undefined; }
     if (this.pads.size) this.tick();
@@ -90,6 +111,28 @@ export class PadFeed {
       this.last.set(connector, s);
       this.send(connector, s);
     }
+  }
+
+  /** The guest's rumble on `connector`'s game pad (each motor 0–1), played on the host's pad until it changes. */
+  rumble(connector: number, strong: number, weak: number) {
+    const was = this.rumbles.get(connector);
+    if (was) clearTimeout(was.timer);
+    this.rumbles.delete(connector);
+    const actuator = (index: number) => {
+      const g = this.hidden() ? undefined : this.read()[index];
+      return g?.connected && g.index === index ? g.vibrationActuator ?? undefined : undefined;
+    };
+    if (!(strong > 0 || weak > 0)) {
+      if (was) actuator(was.index)?.reset().catch(() => {});
+      return;
+    }
+    const index = this.pads.get(connector);
+    if (index === undefined) return;
+    const play = () => {
+      actuator(index)?.playEffect('dual-rumble', { startDelay: 0, duration: RUMBLE_MS, strongMagnitude: Math.min(1, strong), weakMagnitude: Math.min(1, weak) }).catch(() => {});
+      this.rumbles.set(connector, { index, timer: setTimeout(play, this.again) });
+    };
+    play();
   }
 
   stop() {

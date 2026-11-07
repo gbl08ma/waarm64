@@ -144,6 +144,8 @@ export class UsbPorts {
   onChange = () => {};
   /** The guest set the LEDs of the keyboard on connector `c` (the built-in one's: bit 0 Num, 1 Caps, 2 Scroll Lock). */
   onLeds: (c: number, leds: number) => void = () => {};
+  /** The guest's rumble on the game pad of ours on connector `c` (each motor 0–1; web/usb-gamepad.ts). */
+  onRumble: (c: number, strong: number, weak: number) => void = () => {};
   /** `reason`: why it went (`usb-state` detached); `error`: the device worker's error, when it failed by itself. */
   onGone: (c: number, was: Connector, reason?: 'unplugged' | 'guest' | 'page', error?: Error) => void = () => {};
 
@@ -154,6 +156,7 @@ export class UsbPorts {
 
   private heard(m: UsbFromWorker) {
     if (m.type === 'usb-leds') return this.onLeds(m.connector, m.leds);
+    if (m.type === 'usb-rumble') return this.onRumble(m.connector, m.strong, m.weak);
     if (m.type !== 'usb-state') return;
     const c = this.connectors[m.connector];
     const p = this.pending.get(m.connector);
