@@ -793,6 +793,33 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` oth
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 T36: a fence given back is signalled once its work is done; four dEQP processes don't hang
+
+2026-11-07, the dev VM (SwiftShader, Chromium 155.0.8059.84). JSON in `results/vk4/t36/` (`ab.txt` the runs in order).
+A ring fence that gave its queue entry back (VK4 R1: the queue full and stalled for 250 ms) was signalled only by the
+next fence of its ring with an entry, so a guest waiting for it alone, while the ring's newest waited for what the guest
+did next, waited for ever (the review of R1 to R4's C2). Now, once its work is done, the next reply without a fence of
+its own carries it in its header (the kernel's dequeue signals a reply's fence whatever its command), and when the guest
+sends nothing for 20 ms the device raises the display event, whose GET_DISPLAY_INFO the kernel sends from its own work
+(web/gpu.ts `carry`; tests/gpu.test.ts "a fence that gave its entry back …", both failing before: fence 14 signalled of
+19). The section above's reproducer, dEQP-VK at `JOBS=4` over its 2,032-case slice on one machine of 1,536 MiB, which hung
+a `synchronization2.timeline_semaphore.device_host` case in both runs then, passes every case in three runs now; with
+`JOBS=2` alternated:
+
+| JOBS | dEQP's seconds | each process's | result |
+|---|---|---|---|
+| 4 | 143, 143, 143 | 137–144, 101–105 for the fourth | 2,032 pass |
+| 2 | 163, 162 | 143–164 | 2,032 pass |
+
+Four processes are 12% faster than two now that none waits out a watchdog (176 s before). `tests/page-deqp-vk.test.ts`
+stays at 2: the browser's peak was 6.1–6.3 GiB a machine at 4 against 5.6–5.7 at 2 (the section above), and
+`scripts/ci-deqp-vk.sh` runs two machines under a 14 GiB cap (docs/backlog.md "dEQP-VK's four processes a machine").
+
+Venus's fix for a memory freed while its blob is mapped (VK1 L8) has its test: the guest's commands encoded by hand
+(tests/venus-renderer.test.ts `VenusStream`: vkCreateInstance to vkAllocateMemory, vkFreeMemory, through `venus_submit`),
+the blob's unmap after the free filling the blob's storage, not the next memory's; with the fix's branch planted out of
+vkr (`vkr_wasi_memory_release`), the next memory got the freed storage and the test failed.
+
 ## VK4: R32G32B32_SFLOAT no colour attachment (a sample's failure, found running T34's CI)
 
 2026-11-07, the dev VM (SwiftShader). `scripts/ci-deqp-vk.sh`'s sample (seed 1657927271) failed

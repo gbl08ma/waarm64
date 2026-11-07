@@ -1,0 +1,78 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "155.0.8059.84",
+ "stride": 50,
+ "offset": 0,
+ "jobs": 4,
+ "adapter": "google swiftshader",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 2032,
+ "seconds": 144.157164411,
+ "pipelines": {
+  "pipelines": 3054,
+  "ready": 3054,
+  "readyMs": 61281.7450016737,
+  "deferred": 5842,
+  "deferredMs": 168952.75000095367,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 4074,
+  "translateMs": 1902.2300000000316,
+  "cacheHits": 5718,
+  "cacheMisses": 3961,
+  "cacheStores": 6126,
+  "cacheBytes": 4629085,
+  "cacheHeld": 43033952,
+  "cacheEntries": 3961
+ },
+ "counts": {
+  "Pass": 2032
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-VK.memory.pipeline_barrier.graphics.transfer_dst_uniform_texel_buffer.1048576 Pass 11",
+  "dEQP-VK.api.copy_and_blit.copy_commands2.blit_image.all_formats.generate_mipmaps.from_base_level.layercount_6.r32g32_sfloat.optimal_optimal_linear Pass 8",
+  "dEQP-VK.api.image_clearing.core.clear_color_image.1d.optimal.remaining_array_layers.b8g8r8a8_snorm Pass 6",
+  "dEQP-VK.api.copy_and_blit.core.blit_image.all_formats.generate_mipmaps.from_previous_level.layercount_6.b4g4r4a4_unorm_pack16.general_optimal_nearest Pass 6",
+  "dEQP-VK.draw.renderpass.instanced.draw_indexed_indirect_vk_primitive_topology_triangle_list Pass 5",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d24_unorm_s8_uint_stencil_read_dynamic_bad_static Pass 4",
+  "dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.nostore.single.scalar.vert Pass 4",
+  "dEQP-VK.api.copy_and_blit.core.blit_image.all_formats.color.2d.r32g32b32a32_sfloat.r16g16b16a16_sfloat.general_optimal_nearest Pass 4",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.2d_unnormalized.format.d24_unorm_s8_uint_stencil_read_write_same_pixel_interleave_read_write_components_dynamic_bad_static Pass 3",
+  "dEQP-VK.binding_model.mutable_descriptor.single.switches.uniform_texel_buffer_storage_image.update_write.no_source.no_source.pool_same_types.pre_update.no_array.comp Pass 3"
+ ],
+ "last": "dEQP-VK.pipeline.monolithic.spec_constant.graphics.vertex.composite.struct.mat4x3 Pass 0dEQP-VK.pipeline.monolithic.spec_constant.graphics.vertex.default_value.int64_packed Pass 0dEQP-VK.synchronization2.timeline_semaphore.wait_before_signal.write_copy_image_read_copy_image_to_buffer.image_128x128_s8_uint Pass 0",
+ "output": [
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!",
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!",
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!",
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    1.158145] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    1.158180] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    1.158209] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    1.158235] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    1.158272] psci_checker: Could not start suspend tests on any CPU",
+  "[   11.829107] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   26.932054] coredump: 408(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 303.4,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 36.1,
+  "arenaHighMiB": 240.4
+ },
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1,
+  "venus: wg: a draw's colour blends with both the constant's colour and its alpha: its colour taken": 1,
+  "venus-gpu: WebGPU: The texture usage (TextureUsage::(CopySrc|CopyDst|TextureBinding|RenderAttachment)) includes TextureUsage::RenderAttachment, which is incompatible with the non-renderable format (Te": 1
+ }
+}

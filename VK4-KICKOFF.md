@@ -142,7 +142,10 @@ decisions already leave (protected memory to sparse, pipeline statistics). Waiti
 maintenance8's list (a guest rebuild once Arch has Mesa 26.3), `VK_KHR_unified_image_layouts`,
 `VK_EXT_primitive_restart_index`'s cases.
 
-- **T36. Hangs and lost completions** (S): a guest waiting on a ring fence that gave its queue entry back, while the
+- **T36. Hangs and lost completions** (S): **done (2026-11-07)**: a fence given back is signalled, once its work is done,
+  by the next reply without a fence of its own or a display event's (web/gpu.ts `carry`); `JOBS=4` hangs nothing and is
+  12% faster than 2 (left at 2 for memory: backlog "dEQP-VK's four processes a machine"); the use-after-free fix tested
+  by hand-encoded Venus commands (REPORT.md "VK4 T36"). The brief: a guest waiting on a ring fence that gave its queue entry back, while the
   ring's newest waits for what the guest does next, waits for ever (backlog "Synchronization", the review of R1–R4's
   C2): signal such a fence once its own work is done, not with the ring's next (T33 put
   `timeline_semaphore.wait_before_signal`'s 26 that run in the list); Venus's use-after-free fix gets

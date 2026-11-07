@@ -234,6 +234,78 @@ test('a surviving import moves with its blob, and a blob unreferenced while mapp
   assert.deepEqual([...new Uint8Array(memory.buffer, storage, 2)], [7, 7]);
 });
 
+/**
+ * Venus commands as the guest's driver encodes them (Mesa's venus-protocol, vn_protocol_driver_*.h): a command's type and
+ * flags, then its arguments; handles are the guest's u64 ids, a pointer an array size of 1 (or 0 for none), a struct's
+ * sType and an empty pNext before its fields, arrays an u64 count before their elements.
+ */
+class VenusStream {
+  private words: number[] = [];
+  u32(v: number) { this.words.push(v >>> 0); return this; }
+  u64(v: bigint) { return this.u32(Number(v & 0xffff_ffffn)).u32(Number(v >> 32n)); }
+  /** A pointer present (1) or none (0), as `vn_encode_simple_pointer`; a NULL pNext, a NULL array. */
+  ptr(present: boolean) { return this.u64(present ? 1n : 0n); }
+  f32(v: number) { return this.u32(new Uint32Array(new Float32Array([v]).buffer)[0]); }
+  /** sType and an empty pNext. */
+  struct(sType: number) { return this.u32(sType).ptr(false); }
+  bytes() { return new Uint8Array(new Uint32Array(this.words).buffer); }
+
+  createInstance(id: bigint) {
+    // VkInstanceCreateInfo: flags, pApplicationInfo (no names, Vulkan 1.3), no layers, no extensions; no allocator.
+    this.u32(0).u32(0).ptr(true).struct(1).u32(0).ptr(true).struct(0).ptr(false).u32(0).ptr(false).u32(0).u32((1 << 22) | (3 << 12));
+    return this.u32(0).ptr(false).u32(0).ptr(false).ptr(false).ptr(true).u64(id);
+  }
+  enumeratePhysicalDevices(instance: bigint, id: bigint) {
+    return this.u32(2).u32(0).u64(instance).ptr(true).u32(1).u64(1n).u64(id);
+  }
+  createDevice(physical: bigint, id: bigint) {
+    // VkDeviceCreateInfo: one VkDeviceQueueCreateInfo (family 0, one queue at priority 1), no layers, extensions or features.
+    this.u32(11).u32(0).u64(physical).ptr(true).struct(3).u32(0).u32(1).u64(1n).struct(2).u32(0).u32(0).u32(1).u64(1n).f32(1);
+    return this.u32(0).ptr(false).u32(0).ptr(false).ptr(false).ptr(false).ptr(true).u64(id);
+  }
+  allocateMemory(device: bigint, id: bigint, size: bigint, type: number) {
+    return this.u32(21).u32(0).u64(device).ptr(true).struct(5).u64(size).u32(type).ptr(false).ptr(true).u64(id);
+  }
+  freeMemory(device: bigint, memory: bigint) {
+    return this.u32(22).u32(0).u64(device).u64(memory).ptr(false);
+  }
+  destroyDevice(device: bigint) { return this.u32(12).u32(0).u64(device).ptr(false); }
+  destroyInstance(instance: bigint) { return this.u32(1).u32(0).u64(instance).ptr(false); }
+}
+
+// VK1 L8: a device memory freed while its blob is mapped hands the blob its storage, so the unmap copies the window's
+// bytes there; it copied them into freed heap, which the next allocation took (vkr's objects were corrupted). The
+// guest's own commands, through venus_submit.
+test('a memory freed while its blob is mapped leaves the blob its storage, which the unmap fills', { skip }, async (t) => {
+  const { v, memory, window } = await renderer();
+  const warn = t.mock.method(console, 'warn', () => {});
+  const submit = (s: VenusStream) => v.call({ t: 'vsubmit', ctx: 7, bytes: s.bytes() });
+  const SIZE = 65536n, HOST_VISIBLE = 1; // wg_device.c's memory types: 1 is host-visible
+  v.call({ t: 'vctx', id: 7, create: true, name: 'test' });
+  submit(new VenusStream().createInstance(1n).enumeratePhysicalDevices(1n, 2n).createDevice(2n, 3n).allocateMemory(3n, 4n, SIZE, HOST_VISIBLE));
+  v.call({ t: 'blob', ctx: 7, res: 3, mem: 2, flags: 1, blobId: 4n, size: Number(SIZE) });
+  const storage = v.address(3);
+  assert.ok(storage > 0 && storage < VENUS_ARENA, `the memory's storage at ${storage.toString(16)}`);
+  v.call({ t: 'blob-map', res: 3, offset: 0x4000, size: Number(SIZE) });
+  const u8 = new Uint8Array(memory.buffer);
+  u8.set([9, 8, 7, 6], window.at + 0x4000);
+  // Freed, and another memory of its size, which the heap would give the freed storage.
+  submit(new VenusStream().freeMemory(3n, 4n).allocateMemory(3n, 5n, SIZE, HOST_VISIBLE));
+  v.call({ t: 'blob', ctx: 7, res: 4, mem: 2, flags: 1, blobId: 5n, size: Number(SIZE) });
+  const other = v.address(4);
+  assert.ok(other > 0, 'the second memory\'s blob');
+  assert.notEqual(other, storage, 'the blob still holds its storage');
+  v.call({ t: 'blob-unmap', res: 3 });
+  assert.equal(v.address(3), storage);
+  assert.deepEqual([...u8.subarray(storage, storage + 4)], [9, 8, 7, 6], 'the unmap copied into the blob\'s storage');
+  assert.deepEqual([...u8.subarray(other, other + 4)], [0, 0, 0, 0], 'and not into the second memory');
+  v.call({ t: 'blob-unref', res: 3 });
+  v.call({ t: 'blob-unref', res: 4 });
+  submit(new VenusStream().freeMemory(3n, 5n).destroyDevice(3n).destroyInstance(1n));
+  v.call({ t: 'vctx', id: 7, create: false });
+  assert.deepEqual(warn.mock.calls.map((c) => String(c.arguments[0])), [], 'every command and blob made');
+});
+
 // The review of R5 to R7: the import freed first takes nothing with it; a map that can't be leaves no other's bytes.
 test('an import freed first leaves its memory the storage, and a blob that can\'t be mapped reads zeros', { skip }, async () => {
   const { v, memory, window } = await renderer();

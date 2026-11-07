@@ -770,7 +770,12 @@ How the guest's 3D gets drawn (the GPU worker, the renderer on WebGL2, the caps,
   back, its fence stays unsignalled in the kernel, and the next fence of that ring to be answered signals it (a fence
   signals the earlier ones of its dma-fence context). The newest of a ring always keeps its entry. Only then, and one at a
   time: giving entries back whenever more than 8 were held hung dEQP's `timeline_semaphore.device_host`, whose guest waits
-  for such a fence alone while its fences go on retiring.
+  for such a fence alone while its fences go on retiring. Once a fence without its entry has retired, the next reply that
+  carries no fence of its own says it (the newest such of its ring, in the reply's header: the kernel signals a reply's
+  fence whatever the command was), so a guest waiting for it alone while the ring's newest waits for what the guest does
+  next isn't left waiting (VK4 T36); when the guest sends nothing for 20 ms (`CARRY_MS`), the device raises the display
+  event, and the kernel's GET_DISPLAY_INFO (and GET_EDID), sent from its own work, carry it (the cost a hotplug event's
+  re-probe of the outputs).
   A fenced `SUBMIT_3D`'s reply waits for vkr to retire its fence,
   which happens once the GPU's work before it on that context's ring is done (`VenusRenderer.retired`: the GPU worker
   holds the device's fence until then). A fence names its context, ring and id (`FenceScope`) and waits for itself alone, not for what's sent after it on its ring, and a ring is a lane of the GPU

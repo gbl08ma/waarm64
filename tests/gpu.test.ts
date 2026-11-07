@@ -702,6 +702,93 @@ test('gpu: ring fences that fill the queue and stall give entries back, the next
   b.reset();
 });
 
+// The review of R1 to R4's C2 (VK4 T36): a guest waiting for a fence that gave its entry back, alone, while the newest of
+// its ring waits for what the guest does next. Its work done, it is signalled by the next reply that has no fence of its
+// own: the guest's next command's, or, when the guest sends nothing, the display event's GET_DISPLAY_INFO (the kernel's
+// own command, from its config-change work), never by the ring's next alone.
+async function givenBack() {
+  const { gpuBackend } = await import('../web/gpu.ts');
+  const ram = new Uint8Array(RAM_SIZE);
+  const config = new Uint8Array(256);
+  let signalled = 0n, events = 0, w0 = 1000;
+  const answered = new Set<number>();
+  const at = (w: number) => 0x1000 + (w % 256) * 512;
+  const ctx = {
+    ram: () => [ram], layout: ramLayout(RAM_SIZE), untaken: () => 0, features: () => 0n,
+    // The kernel's dequeue: a reply with the fence flag signals its fence and the earlier ones of its ring (one here).
+    complete(w: number) {
+      answered.add(w);
+      const v = new DataView(ram.buffer, at(w));
+      if (v.getUint32(4, true) & 1 && v.getBigUint64(8, true) > signalled) signalled = v.getBigUint64(8, true);
+    },
+    config: () => config,
+    // The kernel's config-change work: GET_DISPLAY_INFO (and EDID) sent, the event cleared.
+    changeConfig(f: (c: Uint8Array) => void) {
+      f(config);
+      events++;
+      setTimeout(() => {
+        send(w0++, cmd(T.EDID, 0, 0));
+        send(w0++, cmd(T.INFO));
+        new DataView(config.buffer).setUint32(4, new DataView(config.buffer).getUint32(0, true), true);
+        b.config();
+      });
+    },
+  };
+  const b = gpuBackend(ctx, { width: 800, height: 600, virgl: true, venus: true });
+  const retire: (() => void)[] = [];
+  b.gpu.host = { call() {}, fence: () => new Promise<void>((r) => retire.push(r)) };
+  // A reply returned is completed at once, as the transport does.
+  const send = (w: number, c: Uint8Array) => {
+    ram.set(c, 0x100);
+    const n = b.request({ w0: w, queue: 0, read: [{ off: 0x100, len: c.length, mem: 0 }], write: [{ off: at(w), len: 512, mem: 0 }] });
+    if (n !== undefined) ctx.complete(w);
+    return n;
+  };
+  send(1, ctxCmd(3, V.CTX_CREATE, 0, 4));
+  answered.clear();
+  for (let i = 1; i <= 20; i++) {
+    const s = ctxCmd(3, V.SUBMIT_3D, 8, 0, 0x11223344, 5);
+    const v = new DataView(s.buffer);
+    v.setUint32(4, 1 | 2, true);
+    v.setBigUint64(8, BigInt(i), true);
+    v.setUint8(20, 1);
+    send(100 + i, s);
+  }
+  // Stalled: 5 entries come back (fences 15 to 19), the newest, 20, keeps its own.
+  for (let k = 0; k < 300 && !answered.has(119); k++) await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual([...answered].sort(), [115, 116, 117, 118, 119], 'given back');
+  return { b, send, retire, signalled: () => signalled, events: () => events };
+}
+
+test('gpu: a fence that gave its entry back is signalled once its work is done, by the guest\'s next reply', async () => {
+  const g = await givenBack();
+  try {
+    for (let i = 0; i < 19; i++) g.retire[i]();
+    await new Promise((r) => setTimeout(r));
+    assert.equal(g.signalled(), 14n, 'those with entries signal themselves');
+    assert.notEqual(g.send(500, ctxCmd(3, V.SUBMIT_3D, 8, 0, 0x11223344, 5)), undefined, 'an unfenced command, answered at once');
+    assert.equal(g.signalled(), 19n, 'its reply signals fence 19, whose work is done; 20\'s isn\'t');
+    assert.equal(g.events(), 0, 'no display event');
+  } finally {
+    g.b.reset();
+  }
+});
+
+test('gpu: a fence that gave its entry back is signalled once its work is done, by a display event\'s reply when the guest sends nothing', async () => {
+  const g = await givenBack();
+  try {
+    for (let i = 0; i < 19; i++) g.retire[i]();
+    for (let k = 0; k < 100 && g.signalled() < 19n; k++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(g.signalled(), 19n, 'the guest, waiting for fence 19 alone, gets it');
+    assert.equal(g.events(), 1, 'one display event');
+    g.retire[19]();
+    await new Promise((r) => setTimeout(r));
+    assert.equal(g.signalled(), 20n);
+  } finally {
+    g.b.reset();
+  }
+});
+
 // A timer may fire before `performance.now()` says it is due (a cloud host's mostly fired a fraction of a millisecond
 // early): the stall check then re-arms, and must re-arm for what is left of `RING_STALL_MS`, not all of it again, or the
 // guest's queue waits twice the stall (backlog "CPU and ISA" until 2026-11-02; it flaked the test above's fixed wait).

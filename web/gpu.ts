@@ -1135,7 +1135,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
   });
   // Replies not sent yet, in order: a fenced command's waits for the host (`ready` once it has run), and with
   // `paceFlushes` a flush that follows the last within a frame waits for the frame's end, with all behind it.
-  type Held = { w0: number; len: number; flush: boolean; ready: boolean; behind: boolean; at: number; type: number };
+  type Held = { w0: number; len: number; flush: boolean; ready: boolean; behind: boolean; at: number; type: number; write: Request['write']; reply: Uint8Array };
   let held: Held[] = [];
   // Replies to ring fences (Venus's), sent when their fence retires. They are out of line: such a fence stands for a
   // queue's work, which may wait for the guest's own signal, and the replies held behind it would fill the queue before
@@ -1145,12 +1145,37 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
   // for `RING_STALL_MS` neither has a ring fence retired nor has the guest sent anything, the second newest of the ring
   // with most gives its entry back: answered with no fence flag, its fence stays unsignalled in the kernel until the next
   // fence of that ring to be answered signals it (a fence signals the earlier ones of its dma-fence context). One entry
-  // at a time, and only then: a guest may wait for that fence alone, which then hangs if the ring's newest waits for
-  // what it does next (docs/backlog.md "Synchronization"; dEQP's timeline_semaphore.device_host hung when entries came
-  // back at any 8 held).
-  type Ringed = Held & { lane: string; write: Request['write']; reply: Uint8Array };
-  const QUEUE_FULL = 16, RING_STALL_MS = 250;
+  // at a time, and only then (dEQP's timeline_semaphore.device_host hung when entries came back at any 8 held).
+  // A guest may wait for such a fence alone while the ring's newest waits for what it does next, so once its own work is
+  // done (`loose`, `due`) the next reply that has no fence of its own says it (`carry`): the guest's next command's, or,
+  // when the guest sends nothing for `CARRY_MS`, the display event's GET_DISPLAY_INFO, which the kernel sends from its
+  // own work (the review of R1 to R4's C2, VK4 T36).
+  type Ringed = Held & { lane: string; id: bigint; seq: number; due: boolean };
+  const QUEUE_FULL = 16, RING_STALL_MS = 250, CARRY_MS = 20;
   const rings = new Set<Ringed>();
+  let loose: Ringed[] = [];
+  let ringSeq = 0;
+  let carryWatch: ReturnType<typeof setTimeout> | undefined;
+  // A reply that has no fence of its own takes the newest due fence of a ring (which signals the earlier ones of its
+  // dma-fence context, ring and all) before it is completed.
+  const carry = (write: Request['write'], reply: Uint8Array) => {
+    if (reply.length < 24) return;
+    const v = new DataView(reply.buffer, reply.byteOffset, reply.length);
+    if (v.getUint32(4, true) & FLAG_FENCE) return;
+    const due = loose.filter((l) => l.due);
+    if (!due.length) return;
+    const h = due.filter((l) => l.lane === due[0].lane).reduce((a, b) => (b.seq > a.seq ? b : a));
+    loose = loose.filter((l) => l.lane !== h.lane || l.seq > h.seq);
+    v.setUint32(4, v.getUint32(4, true) | FLAG_FENCE, true);
+    v.setBigUint64(8, h.id, true);
+    scatter(ctx.ram(), write, reply);
+  };
+  const askCarrier = () => {
+    carryWatch = undefined;
+    if (!loose.some((l) => l.due)) return;
+    gpu.raise?.();
+    carryWatch = setTimeout(askCarrier, CARRY_MS);
+  };
   let ringActive = 0;
   let ringWatch: ReturnType<typeof setTimeout> | undefined;
   const giveBack = () => {
@@ -1160,6 +1185,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
     if (most.length < 2) return;
     const h = most[most.length - 2];
     rings.delete(h);
+    loose.push(h);
     new DataView(h.reply.buffer, h.reply.byteOffset, h.reply.length).setUint32(4, 0, true);
     scatter(ctx.ram(), h.write, h.reply);
     ctx.complete(h.w0, h.len);
@@ -1210,6 +1236,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
         fromTimer = false;
       }
       held.shift();
+      carry(h.write, h.reply);
       busy.heldMs += performance.now() - h.at;
       if (h.behind) busy.behindMs += performance.now() - h.at;
       occupancy();
@@ -1240,18 +1267,25 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
       const now = performance.now();
       if (wait && type === SUBMIT_3D && new DataView(cmd.buffer, cmd.byteOffset, cmd.length).getUint32(4, true) & FLAG_INFO_RING_IDX) {
         const c = new DataView(cmd.buffer, cmd.byteOffset, cmd.length);
-        const h: Ringed = { w0: r.w0, len: reply.length, flush, ready: false, behind: false, at: now, type, lane: `${c.getUint32(16, true)}:${c.getUint8(20)}`, write: r.write, reply };
+        const h: Ringed = { w0: r.w0, len: reply.length, flush, ready: false, behind: false, at: now, type, lane: `${c.getUint32(16, true)}:${c.getUint8(20)}`, write: r.write, reply, id: c.getBigUint64(8, true), seq: ringSeq++, due: false };
         rings.add(h);
         void wait.then(() => {
           ringActive = performance.now();
-          if (rings.delete(h)) ctx.complete(h.w0, h.len);
+          if (rings.delete(h)) {
+            // It signals the earlier fences of its ring, those without an entry too.
+            loose = loose.filter((l) => l.lane !== h.lane || l.seq > h.seq);
+            ctx.complete(h.w0, h.len);
+          } else if (loose.includes(h)) {
+            h.due = true;
+            carryWatch ??= setTimeout(askCarrier, CARRY_MS);
+          }
         });
         armRings();
         return undefined;
       }
       if (held.length || wait || (flush && now - lastFlush < FRAME_MS)) {
         // `behind`: neither fenced nor a paced flush, held only for the replies before it.
-        const h: Held = { w0: r.w0, len: reply.length, flush, ready: !wait, behind: !wait && !flush, at: now, type };
+        const h: Held = { w0: r.w0, len: reply.length, flush, ready: !wait, behind: !wait && !flush, at: now, type, write: r.write, reply };
         held.push(h);
         occupancy();
         armRings();
@@ -1269,6 +1303,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
         return undefined;
       }
       if (flush) lastFlush = now;
+      carry(r.write, reply);
       return reply.length;
     },
     // events_clear: write-one-to-clear of events_read; the guest's write is taken and zeroed.
@@ -1287,6 +1322,9 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
       timer = undefined;
       held = [];
       rings.clear();
+      loose = [];
+      clearTimeout(carryWatch);
+      carryWatch = undefined;
       clearTimeout(ringWatch);
       ringWatch = undefined;
       fullSince = -1;

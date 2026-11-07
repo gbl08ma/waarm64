@@ -1,0 +1,5 @@
+j4a: ran elapsed 143; each: 143 137 141 105 144 s counts {"Pass":2032}
+j2b: ran elapsed 163; each: 163 143 164 s counts {"Pass":2032}
+j4b: ran elapsed 143; each: 143 137 141 102 144 s counts {"Pass":2032}
+j2c: ran elapsed 162; each: 162 147 163 s counts {"Pass":2032}
+j4c: ran elapsed 143; each: 142 135 139 101 143 s counts {"Pass":2032}

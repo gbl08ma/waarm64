@@ -599,9 +599,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Snapshots while Vulkan (Venus) is in use** (VK1, docs/devices.md "Venus"): refused while a Venus context exists.
   Needs the renderer's objects as data (as virgl's), the blobs' bytes (mapped ones are in the window, which a
   snapshot's RAM chunks don't cover yet) and the window itself: VK4's tier 4 (VK4-KICKOFF.md).
-- **Venus's use-after-free fix has no test** (VK1 L8, vk/patches/vkr-wasm.patch): a device memory freed while its blob
-  is mapped; covered only by the scene's probe (`bench/vulkan/guest.ts venus`). A unit test needs Venus commands
-  encoded by hand (or a recorded stream replayed through `venus_submit`).
 - **`npm start` doesn't build Vulkan's renderer** (VK2 L7, vk/README.md "On the page"): vk/build.sh clones and builds
   Mesa and virglrenderer natively first (minutes, meson and Mesa's build dependencies), so the preparation leaves it
   out and a user's copy has Vulkan only if they built it. A prebuilt module fetched by hash (as the firmware could be)
@@ -1050,9 +1047,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `vertexPipelineStoresAndAtomics`, and pass (in the list); the rest ask for tessellation whatever their stages
     (tier 4). A submit of signals alone behind held
     ones is held too. With the control queue full and no ring fence retired and nothing sent for 250 ms, a fence gives its queue entry back
-    and is signalled by the next one of its ring with an entry (VK4 R1, docs/devices.md "Venus"): **a guest waiting for such
-    a fence alone, while the ring's newest waits for what it does next, waits for ever** (the review of R1 to R4's C2;
-    none seen, and a stall of a full queue would have hung it anyway).
+    and, once retired, is signalled by the next reply without a fence of its own, or a display event's (VK4 R1 and T36,
+    docs/devices.md "Venus").
     A larger queue isn't the way out: that queue being full is what paces a compositor (docs/devices.md, "Flush replies
     are paced"), and 256 of them would put 4 s of replies ahead of each fence.
   - **3D ASTC** (VK4 T35, parked 2026-11-07: the census's 187, 18,908 cases of the mustpass list name a 3D ASTC format,
@@ -1630,6 +1626,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
+- **dEQP-VK's four processes a machine** (VK4 T36, bench/vulkan/REPORT.md "VK4 T36"): since T36 `JOBS=4` hangs no
+  case and runs the 2,032-case slice in 143 s against 162–163 at 2 (−12%, one machine of 1,536 MiB). `tests/page-deqp-vk.test.ts`
+  takes 2: at 4 the browser peaked at 6.1–6.3 GiB a machine (5.6–5.7 at 2), and `scripts/ci-deqp-vk.sh` runs two
+  machines under 14 GiB. Worth it once a `--full` run at 4 is seen under the cap (its peak measured), or with the
+  cap raised.
 - **`tests/page-copy-edit.test.ts` failed once in `scripts/ci.sh`** (2026-11-06, VK4 T32's run; passed alone at
   once, and in the run before): "words changed where they are shown…" got an unexpected list of highlighted elements
   (`BUTTON[title]`, `SUMMARY[aria-label]`…) where it expected fewer. Not traced: likely an element still rendering when
