@@ -1,5 +1,5 @@
 <!--
-  The on-screen keyboard (docs/frontend.md "The on-screen keyboard"): a US keyboard of 104 keys over the machine, or in
+  The on-screen keyboard (docs/frontend.md "The on-screen keyboard"): a PC keyboard of the machine's layout over the machine, or in
   a narrow window the compact one's pages chosen by tabs in its bar (web/app/osk.ts `PAGES`; the bar's button forces
   either), moved by its bar and resized by the grip in it (remembered; kept in the window). Each pointer on a key holds it until it lifts, so fingers chord as
   on a real keyboard (web/app/osk.ts `OskKeys`); the keys go to the guest through `send`. It never takes the focus: the
@@ -46,6 +46,7 @@
     NumpadEnter: 'osk:Osk.key.Enter', PrintScreen: 'osk:Osk.key.PrintScreen', ScrollLock: 'osk:Osk.key.ScrollLock',
     Pause: 'osk:Osk.key.Pause', Insert: 'osk:Osk.key.Insert', Home: 'osk:Osk.key.Home', PageUp: 'osk:Osk.key.PageUp',
     Delete: 'osk:Osk.key.Delete', End: 'osk:Osk.key.End', PageDown: 'osk:Osk.key.PageDown', NumLock: 'osk:Osk.key.NumLock',
+    NonConvert: 'osk:Osk.key.NonConvert', Convert: 'osk:Osk.key.Convert', KanaMode: 'osk:Osk.key.KanaMode',
     ArrowUp: 'osk:Osk.key.ArrowUp', ArrowDown: 'osk:Osk.key.ArrowDown', ArrowLeft: 'osk:Osk.key.ArrowLeft', ArrowRight: 'osk:Osk.key.ArrowRight',
   };
   // The keys and their legends, as the machine's layout has them.

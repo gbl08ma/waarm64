@@ -1,6 +1,7 @@
 // The on-screen keyboard's keys and what pressing them does (docs/frontend.md "The on-screen keyboard"; Osk.svelte draws
 // it): a PC keyboard by `KeyboardEvent.code` (US ANSI's 104 keys, and ISO's, ABNT2's or JIS's extra keys when the
-// machine's layout has them), the compact layout's pages of the same keys for a phone's width, the legends and
+// machine's layout has them, JIS's input-method keys), the compact layout's pages of the same keys for a phone's width
+// (the layout's letters beside US's), the legends and
 // characters of the machine's layout (web/app/keymaps.ts), and `OskKeys`, which turns pointers on the keys into the keys' downs and ups as a real keyboard's: each pointer
 // (a finger, the mouse, a pen) holds its key until it lifts, so several fingers chord; a modifier tapped alone stays
 // down (latched) for the keys that follow.
@@ -34,13 +35,20 @@ export const US: Keymap = KEYMAPS.us;
 /** Layout `id`'s characters (a `KEYBOARD_LAYOUTS` id), or the US layout's. */
 export const keymapOf = (id: string | undefined): Keymap => (id && KEYMAPS[id]) || US;
 
+/** JIS's input-method keys: Muhenkan, Henkan, Katakana/Hiragana (a JIS keyboard's, beside Space). */
+export const IME_KEYS = ['NonConvert', 'Convert', 'KanaMode'];
+/** Whether keymap `map` is a JIS keyboard's (its yen key): it has the input-method keys. */
+const isJis = (map: Keymap) => !!map.IntlYen;
+/** JIS's bottom row: Space narrowed for Muhenkan left of it, Henkan and Katakana/Hiragana right (15u, as US's). */
+const JIS_BOTTOM: [string, number][] = [['ControlLeft', 1.25], ['MetaLeft', 1], ['AltLeft', 1.25], ['NonConvert', 1.25], ['Space', 3.25], ['Convert', 1.25], ['KanaMode', 1.25], ['AltRight', 1.25], ['MetaRight', 1], ['ContextMenu', 1], ['ControlRight', 1.25]];
+
 /**
  * The full keyboard for keymap `map`: the main block (15u), the navigation block, the numeric keypad; ISO's key beside
- * the left Shift (IntlBackslash), ABNT2's and JIS's beside the right Shift (IntlRo) and JIS's beside Backspace (IntlYen)
- * where `map` has them, the keys beside them narrower.
+ * the left Shift (IntlBackslash), ABNT2's and JIS's beside the right Shift (IntlRo), JIS's beside Backspace (IntlYen)
+ * and its input-method keys beside Space (`IME_KEYS`) where `map` has them, the keys beside them narrower.
  */
 export function fullKeys(map: Keymap = US): Key[] {
-  const iso = !!map.IntlBackslash, ro = !!map.IntlRo, yen = !!map.IntlYen;
+  const iso = !!map.IntlBackslash, ro = !!map.IntlRo, yen = !!map.IntlYen, jis = isJis(map);
   return [
     ...row(0, 0, ['Escape', 1, ...F(1, 4), 0.5, ...F(5, 8), 0.5, ...F(9, 12), 0.5, 'PrintScreen', 'ScrollLock', 'Pause']),
     ...row(1.5, 0, ['Backquote', ...'1234567890'.split('').map((d) => `Digit${d}`), 'Minus', 'Equal', ...(yen ? ['IntlYen', ['Backspace', 1] as [string, number]] : [['Backspace', 2] as [string, number]]), 0.5, 'Insert', 'Home', 'PageUp', 0.5, 'NumLock', 'NumpadDivide', 'NumpadMultiply', 'NumpadSubtract']),
@@ -49,7 +57,7 @@ export function fullKeys(map: Keymap = US): Key[] {
     ...row(3.5, 0, [['CapsLock', 1.75], ...letters('ASDFGHJKL'), 'Semicolon', 'Quote', ['Enter', 2.25], 4, 'Numpad4', 'Numpad5', 'Numpad6']),
     ...row(4.5, 0, [...(iso ? [['ShiftLeft', 1.25] as [string, number], 'IntlBackslash'] : [['ShiftLeft', 2.25] as [string, number]]), ...letters('ZXCVBNM'), 'Comma', 'Period', 'Slash', ...(ro ? ['IntlRo', ['ShiftRight', 1.75] as [string, number]] : [['ShiftRight', 2.75] as [string, number]]), 1.5, 'ArrowUp', 1.5, 'Numpad1', 'Numpad2', 'Numpad3']),
     ...row(4.5, 22, ['NumpadEnter'], 2),
-    ...row(5.5, 0, [['ControlLeft', 1.25], ['MetaLeft', 1.25], ['AltLeft', 1.25], ['Space', 6.25], ['AltRight', 1.25], ['MetaRight', 1.25], ['ContextMenu', 1.25], ['ControlRight', 1.25], 0.5, 'ArrowLeft', 'ArrowDown', 'ArrowRight', 0.5, ['Numpad0', 2], 'NumpadDecimal']),
+    ...row(5.5, 0, [...(jis ? JIS_BOTTOM : [['ControlLeft', 1.25], ['MetaLeft', 1.25], ['AltLeft', 1.25], ['Space', 6.25], ['AltRight', 1.25], ['MetaRight', 1.25], ['ContextMenu', 1.25], ['ControlRight', 1.25]] as [string, number][]), 0.5, 'ArrowLeft', 'ArrowDown', 'ArrowRight', 0.5, ['Numpad0', 2], 'NumpadDecimal']),
   ];
 }
 /** The US keyboard's 104 keys. */
@@ -69,23 +77,49 @@ const bottom = () => row(4, 0, ['Escape', 'Tab', 'ControlLeft', 'MetaLeft', 'Alt
 /** The keypad's column width on its page (four in 6.5u, the arrows' block beside). */
 const NUM = 1.625;
 
+/** A lowercase letter with a capital (not ß, µ or º: no capital of their own), as a letter key's unshifted character. */
+const cased = (c: string | undefined) => !!c && c.toUpperCase() !== c && c.toUpperCase().toLowerCase() === c;
+
 /**
- * The compact layout's pages for keymap `map`, each 10u by 5: the letters and digits; the symbols (the layout's extra
- * keys with them), the right-hand modifiers and the arrows; the F keys and the navigation block; the numeric keypad.
+ * The compact letters' page's rows for keymap `map`: US's letter block (with `;`), and beside it, in the full
+ * keyboard's order, the keys of the same row whose character is a letter on `map` (German's Ü left of the letters'
+ * end, Ö and Ä after L; Turkish's Ö and Ç after M). Backslash is on the home row on an ISO keyboard, on Q's on ANSI.
+ */
+export function letterRows(map: Keymap = US): string[][] {
+  const iso = !!map.IntlBackslash;
+  const pick = (codes: string[]) => codes.filter((c) => map[c] && cased(map[c][0]));
+  return [
+    [...pick(['Backquote']), ...'1234567890'.split('').map((d) => `Digit${d}`), ...pick(['Minus', 'Equal'])],
+    [...letters('QWERTYUIOP'), ...pick(['BracketLeft', 'BracketRight', ...(iso ? [] : ['Backslash'])])],
+    [...letters('ASDFGHJKL'), 'Semicolon', ...pick(['Quote', ...(iso ? ['Backslash'] : [])])],
+    [...pick(['IntlBackslash']), ...letters('ZXCVBNM'), ...pick(['Comma', 'Period', 'Slash', 'IntlRo'])],
+  ];
+}
+
+/**
+ * The compact layout's pages for keymap `map`, each 10u by 5: the letters and digits (the layout's letters beside them,
+ * `letterRows`); the symbols (the punctuation keys the letters' page hasn't, the layout's extra keys, JIS's
+ * input-method keys), the right-hand modifiers and the arrows; the F keys and the navigation block; the numeric keypad.
  * Every key of `fullKeys(map)` is on one at least (Shift, Ctrl, Alt and the editing keys on several), so latched
  * modifiers carry from one page to the next.
  */
 export function pages(map: Keymap = US): Page[] {
-  // The symbols' page: the punctuation keys the letters' page hasn't, and the layout's extra keys, in two rows.
-  const punct = ['Backquote', 'Minus', 'Equal', 'BracketLeft', 'BracketRight', 'Backslash', 'Quote', 'Comma', 'Period', 'Slash', ...['IntlBackslash', 'IntlRo', 'IntlYen'].filter((c) => map[c])];
+  const [digits, top, home, low] = letterRows(map);
+  const onMain = new Set([digits, top, home, low].flat());
+  // The symbols' page: the punctuation keys the letters' page hasn't, the layout's extra keys and JIS's input-method keys, in two rows.
+  const punct = ['Backquote', 'Minus', 'Equal', 'BracketLeft', 'BracketRight', 'Backslash', 'Quote', 'Comma', 'Period', 'Slash', ...['IntlBackslash', 'IntlRo', 'IntlYen'].filter((c) => map[c]), ...(isJis(map) ? IME_KEYS : [])].filter((c) => !onMain.has(c));
   const half = Math.ceil(punct.length / 2);
-  const spread = (y: number, codes: string[]) => row(y, 0, codes.map((c) => [c, COMPACT_WIDTH / codes.length] as [string, number]));
+  const spread = (y: number, codes: string[]) => row(y, 0, codes.map((c) => [c, COMPACT_WIDTH / Math.max(codes.length, 1)] as [string, number]));
+  /** A row of keys 1u wide, narrower when more than ten. */
+  const fit = (y: number, codes: string[]) => (codes.length > COMPACT_WIDTH ? spread(y, codes) : row(y, 0, codes));
+  // Shift and Backspace beside the bottom letters: 1.5u each beside seven, 1.25u beside more (the letters narrower).
+  const side = Math.max(1.25, (COMPACT_WIDTH - low.length) / 2), lw = Math.min(1, (COMPACT_WIDTH - 2 * side) / low.length);
   return [
     { id: 'main', keys: [
-      ...row(0, 0, '1234567890'.split('').map((d) => `Digit${d}`)),
-      ...row(1, 0, letters('QWERTYUIOP')),
-      ...row(2, 0, [...letters('ASDFGHJKL'), 'Semicolon']),
-      ...row(3, 0, [['ShiftLeft', 1.5], ...letters('ZXCVBNM'), ['Backspace', 1.5]]),
+      ...fit(0, digits),
+      ...fit(1, top),
+      ...fit(2, home),
+      ...row(3, 0, [['ShiftLeft', side], ...low.map((c) => [c, lw] as [string, number]), ['Backspace', side]]),
       ...bottom(),
     ] },
     { id: 'symbols', keys: [

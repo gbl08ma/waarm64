@@ -99,6 +99,18 @@
     "message": "半/全",
     "note": "On-screen keyboard: the label of a Japanese keyboard's Hankaku/Zenkaku key (half-width/full-width input), left of 1, as the key is printed. Keep it as is unless the language's Japanese keyboards print it otherwise."
   },
+  "Osk.key.NonConvert": {
+    "message": "無変換",
+    "note": "On-screen keyboard: the label of a Japanese keyboard's Muhenkan key (no conversion), left of Space, as the key is printed. Keep it as is unless the language's Japanese keyboards print it otherwise."
+  },
+  "Osk.key.Convert": {
+    "message": "変換",
+    "note": "On-screen keyboard: the label of a Japanese keyboard's Henkan key (conversion), right of Space, as the key is printed. Keep it as is unless the language's Japanese keyboards print it otherwise."
+  },
+  "Osk.key.KanaMode": {
+    "message": "カタカナ ひらがな",
+    "note": "On-screen keyboard: the label of a Japanese keyboard's Katakana/Hiragana key (the kana input mode), right of Henkan, as the key is printed; the space lets it wrap on the narrow key. Keep it as is unless the language's Japanese keyboards print it otherwise."
+  },
   "Osk.key.Enter": {
     "message": "Enter",
     "note": "On-screen keyboard: the label of the Enter key and the keypad's Enter key."

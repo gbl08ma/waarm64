@@ -1265,9 +1265,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
-- **The on-screen keyboard's next steps** (frontend.md "The on-screen keyboard", "Not yet"): a compact letters' page per
-  layout (German's Ü and Ä beside the letters, not on the symbols' page); JIS's input-method keys.
-
 - **What the i18n checks can't see** (tools/i18n-check.ts, [i18n.md](i18n.md) "Checks"; 2026-11-02, when the
   headline-and-line errors were split and the AST rules added). Each needs data flow across functions or modules, which
   the checker doesn't have (it reads one file's syntax, no types):
