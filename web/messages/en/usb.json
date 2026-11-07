@@ -11,6 +11,14 @@
     "message": "a test device",
     "note": "A device's name for a virtual test device of another kind, where a sentence names the device (\"… couldn't be attached\"); lowercase, as it may stand mid-sentence."
   },
+  "usb-ports.gamepad": {
+    "message": "{{name}} (game pad)",
+    "note": "A device's name (USB menu, messages about attaching, Snapshot's question): the emulated USB game pad fed by one of your computer's game pads through the Gamepad API; {{name}} is that game pad's name as the browser gives it."
+  },
+  "usb-ports.gamepad.unnamed": {
+    "message": "Game pad",
+    "note": "{{name}} of usb-ports.gamepad when the browser gives the host's game pad no name."
+  },
   "usb-ports.usbDevice": {
     "message": "USB device {{ids}}",
     "note": "A WebUSB device's name when it gives no product name (USB menu, Machines page's USB tab, messages). {{ids}} is its vendor and product IDs as lsusb prints them, e.g. 2e8a:000a."
@@ -543,6 +551,18 @@
     "message": "No devices remembered yet.",
     "note": "The toolbar's USB menu's list when the machine remembers no device."
   },
+  "UsbMenu.pads": {
+    "message": "Game pads",
+    "note": "Heading in the toolbar's USB menu above the host's game pads that the browser lists (the Gamepad API), each with a checkbox that attaches it to the machine as a USB game pad."
+  },
+  "UsbMenu.pads.none": {
+    "message": "Press a button on a game pad to list it here.",
+    "note": "Hint under the USB menu's Game pads heading when the browser lists no game pad: browsers show a page a game pad only once one of its buttons has been pressed while the page is open."
+  },
+  "UsbMenu.pad.why": {
+    "message": "Attach a USB game pad to the machine that follows this game pad's buttons, sticks and triggers. Use it for a game pad that can't be added as a USB device.",
+    "note": "Tooltip of a game pad's line in the USB menu (under Game pads)."
+  },
   "UsbMenu.zero": {
     "message": "Gadget Zero",
     "note": "Name of the controller's test device in the USB menu (with ?usbzero=1), beside its checkbox."
@@ -746,5 +766,13 @@
   "main.zero.full": {
     "message": "Every connector is in use.",
     "note": "Error of the test device's switch (`?usbzero=1`, the USB menu) when no connector is free."
+  },
+  "main.pad.full": {
+    "message": "The game pad wasn't attached, because every USB connector is in use.",
+    "note": "Error of a game pad's checkbox in the USB menu when no USB connector is free."
+  },
+  "main.pad.gone": {
+    "message": "The game pad wasn't attached, because it is no longer connected to your computer.",
+    "note": "Error of a game pad's checkbox in the USB menu when the browser no longer lists that game pad."
   }
 }

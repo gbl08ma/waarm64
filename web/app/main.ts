@@ -44,6 +44,7 @@ import { forgetProfile, keptProfiles } from '../tailscale-state.ts';
 import type { FromWorker, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
 import { adaptersOf, CPU_FEATURES, DEFAULT_MAC, KEYBOARD_CONNECTOR, newId, serialOf, shapeDiff, USB_CONNECTORS, type DiskRecord, type FolderAttachment, type MachineRecord, type Shape, type UsbEntry } from './shape.ts';
 import { deviceName, entryOf, errorLines, identityKey, identityOf as usbIdentity, newEntry, problemText, usbLock } from './usb-ports.ts';
+import { listPads, PadFeed } from './gamepads.ts';
 import { browserApi, entryStates, filterFor, findDevices, granted, identityOfDevice, isGranted, requestDevices, ungranted, UsbError, UsbHeldError, UsbLocks, UsbPorts, type Api, type HostDevice } from './usb-live.ts';
 import type { UsbIdentity, UsbVirtual } from '../usb-device.ts';
 import { currentShape, planRestore } from './snapshots.ts';
@@ -2081,6 +2082,18 @@ const isCurrent = (id: string | undefined) => (stored ? stored.record.id === id 
 const usbRunning = () => !!run?.usb && (state === 'running' || state === 'booting');
 const usbLocks = new UsbLocks(store, () => machineTitle(), (lock) => void letGo(lock));
 
+// The game pad of ours (docs/usb.md "The game pad"): the host's pads as the Gamepad API lists them, attached from the
+// USB menu; the feed sends the attached ones' state to the device worker. A pad the browser loses is unplugged.
+/** The host pad (`Gamepad.index`) the game pad of ours on a connector is fed by, if it is one. */
+const padOf = (c?: { device: UsbIdentity | UsbVirtual } | null) => (c?.device.api === 'virtual' && c.device.kind === 'gamepad' ? c.device.index : undefined);
+const padFeed = new PadFeed((connector, pad) => run?.usb?.pad(connector, pad));
+addEventListener('gamepadconnected', () => syncUsb());
+addEventListener('gamepaddisconnected', (ev) => {
+  const p = run?.usb;
+  const index = (ev as GamepadEvent).gamepad.index;
+  p?.connectors.forEach((c, i) => { if (padOf(c) === index) void p.detach(i).catch(() => {}); });
+  syncUsb();
+});
 /** The page's machine's USB as the menu and the tab show it (`ui.usb`), read again now. */
 let usbReading: Promise<void> | undefined;
 let usbAgain = false;
@@ -2092,8 +2105,11 @@ function syncUsb() {
     const c = run?.usb?.connectors[i];
     const d = c?.device;
     const problems = c?.problems?.length && d && d.api !== 'virtual' ? c.problems.map((p) => problemText(p, d)) : undefined;
-    return c ? { name: c.name, state: c.state, entry: c.entry, virtual: c.device.api === 'virtual', builtin: isKeyboard(c), problems } : null;
+    return c ? { name: c.name, state: c.state, entry: c.entry, virtual: c.device.api === 'virtual', builtin: isKeyboard(c), pad: padOf(c), problems } : null;
   });
+  ui.usb.hasPads = typeof navigator.getGamepads === 'function';
+  ui.usb.pads = listPads();
+  padFeed.set(new Map((run?.usb?.connectors ?? []).flatMap((c, i) => (c?.state === 'attached' && padOf(c) !== undefined ? [[i, padOf(c)!] as const] : []))));
   ui.usb.offers = [...offers.values()].map(({ id, text, label }) => ({ id, text, label }));
   ui.usb.tick++;
   if (usbReading) { usbAgain = true; return; }
@@ -2295,6 +2311,8 @@ async function plugBack(r: Run, was: Unplugged | undefined) {
   for (const c of was ?? []) {
     if (run !== r || !usbRunning()) return;
     if (isKeyboard(c)) { await syncKeyboard(r); continue; }
+    const pad = padOf(c);
+    if (pad !== undefined && !listPads().some((x) => x.index === pad)) continue; // the host's pad left meanwhile
     await r.usb!.attach(c.connector, c.device, c.entry).catch((err) => notify(attachFailed(deviceName(c.device), err, true), 'error'));
   }
 }
@@ -2348,6 +2366,17 @@ const usbPage = {
     if (take && o) void o.run().catch((err) => notify(err, 'error')).finally(syncUsb);
   },
   usbStates: async (m: MachineRecord) => entryStates(m.usbDevices ?? [], isCurrent(m.id) ? run?.usb?.attachedEntries() ?? new Set<string>() : new Set<string>(), usbLocks),
+  usbPad: async (index: number) => {
+    const p = run?.usb;
+    if (!p || !usbRunning()) throw new MsgError('usb:main.stopped');
+    const at = p.connectors.findIndex((c) => padOf(c) === index);
+    if (at >= 0) return p.detach(at);
+    const free = p.connectors.findIndex((c, i) => !c && i !== KEYBOARD_CONNECTOR);
+    if (free < 0) throw new MsgError('usb:main.pad.full');
+    const pad = listPads().find((x) => x.index === index);
+    if (!pad) throw new MsgError('usb:main.pad.gone');
+    await p.attach(free, { api: 'virtual', kind: 'gamepad', index, name: pad.name });
+  },
   usbZero: async () => {
     const p = run?.usb;
     if (!p || !usbRunning()) throw new MsgError('usb:main.zero.stopped');

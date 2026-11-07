@@ -4,6 +4,7 @@
 // core's; the glue (web/usb.ts) turns its request records into `submit` calls and their results
 // into completion records. Devices never see TRBs, rings or guest addresses.
 import type { WireError } from './msg.ts';
+import type { PadState } from './usb-gamepad.ts';
 
 export type UsbSpeed = 'low' | 'full' | 'high' | 'super';
 
@@ -93,14 +94,21 @@ export type UsbOpener = (identity: UsbIdentity, ctx: UsbOpenerContext) => Promis
 export type UsbVirtual =
   | { api: 'virtual'; kind: 'gadget-zero'; speed?: UsbSpeed; pattern?: 0 | 1; serial?: string }
   /** The built-in boot keyboard (web/usb-keyboard.ts), fed by `usb-key` messages: the firmware's keyboard. */
-  | { api: 'virtual'; kind: 'keyboard' };
+  | { api: 'virtual'; kind: 'keyboard' }
+  /**
+   * The game pad of ours (web/usb-gamepad.ts), fed by `usb-pad` messages from the page's Gamepad API: `index` is the
+   * page's `Gamepad.index` (the page's own, the device worker ignores it), `name` the host's pad's name (the product string).
+   */
+  | { api: 'virtual'; kind: 'gamepad'; index: number; name?: string };
 
 /** Root connectors are numbered 0–3; each has a USB 2 and a USB 3 port behind it (docs/usb.md). */
 export type UsbToWorker =
   | { type: 'usb-attach'; connector: number; device: UsbIdentity | UsbVirtual }
   | { type: 'usb-detach'; connector: number }
   /** A key of the page's (`KeyboardEvent.code`) for the device on `connector` (the built-in keyboard); no answer. `code` '' releases every key. */
-  | { type: 'usb-key'; connector: number; code: string; down: boolean };
+  | { type: 'usb-key'; connector: number; code: string; down: boolean }
+  /** The state of the page's game pad for the game pad of ours on `connector` (web/usb-gamepad.ts), on a change; no answer. */
+  | { type: 'usb-pad'; connector: number; pad: PadState };
 
 export type UsbFromWorker =
   | { type: 'usb-state'; connector: number; state: 'attached'; device: UsbIdentity | UsbVirtual; speed: UsbSpeed; problems?: UsbProblem[] }

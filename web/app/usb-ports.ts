@@ -27,7 +27,8 @@ export function identityKey(i: Pick<UsbIdentity, 'api' | 'vendorId' | 'productId
 export const usbLock = (i: Pick<UsbIdentity, 'api' | 'vendorId' | 'productId' | 'serialNumber' | 'index'>) => `webpc-usb:${identityKey(i)}`;
 
 /** A device's name on the page: its product name, or its IDs. */
-export function deviceName(d: { api?: string; kind?: string; vendorId?: number; productId?: number; productName?: string | null }): string {
+export function deviceName(d: { api?: string; kind?: string; name?: string; vendorId?: number; productId?: number; productName?: string | null }): string {
+  if (d.api === 'virtual' && d.kind === 'gamepad') return t('usb:usb-ports.gamepad', { name: d.name || t('usb:usb-ports.gamepad.unnamed') });
   if (d.api === 'virtual') return t(d.kind === 'gadget-zero' ? 'usb:usb-ports.gadgetZero' : d.kind === 'keyboard' ? 'usb:usb-ports.builtinKeyboard' : 'usb:usb-ports.testDevice');
   const ids = `${hex4(d.vendorId ?? 0)}:${hex4(d.productId ?? 0)}`;
   return d.productName?.trim() || (d.api === 'hid' ? t('usb:usb-ports.hidDevice', { ids }) : t('usb:usb-ports.usbDevice', { ids }));

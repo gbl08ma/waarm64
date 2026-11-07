@@ -6,13 +6,14 @@
 // `Devices` (web/devices.ts), on the same doorbell as the virtio backends: in the device worker, or
 // inline where the vCPU's thread can't block.
 //
-// Devices come from openers by API: the virtual ones here (Gadget Zero), and the WebUSB and WebHID
+// Devices come from openers by API: the virtual ones here (Gadget Zero, the keyboard, the game pad), and the WebUSB and WebHID
 // ones a page registers in the device worker (`registerUsbOpener`). The page attaches and detaches
 // them with `usb-attach`/`usb-detach` messages on a port and hears `usb-state` back.
 
 import type { UsbDevice, UsbFromWorker, UsbIdentity, UsbState, UsbOpener, UsbProblem, UsbResult, UsbSpeed, UsbToWorker, UsbTransfer, UsbVirtual } from './usb-device.ts';
 import { GadgetZero } from './usb-gadget-zero.ts';
 import { UsbKeyboard } from './usb-keyboard.ts';
+import { UsbGamepad } from './usb-gamepad.ts';
 import { bytes, type Ram } from './ram.ts';
 import { MsgError, toWire } from './msg.ts';
 
@@ -47,9 +48,10 @@ export function registerUsbOpener(api: 'usb' | 'hid', open: UsbOpener) {
 }
 
 /** A virtual device of ours by its description (`UsbVirtual`). */
-export function virtualDevice(d: UsbVirtual): UsbDevice {
+export function virtualDevice(d: UsbVirtual, connector = 0): UsbDevice {
   if (d.kind === 'gadget-zero') return new GadgetZero({ speed: d.speed, pattern: d.pattern, serial: d.serial });
   if (d.kind === 'keyboard') return new UsbKeyboard();
+  if (d.kind === 'gamepad') return new UsbGamepad({ name: d.name, serial: `webpc-pad-${connector}` });
   throw new Error(`no virtual USB device ${(d as { kind: string }).kind}`);
 }
 
@@ -112,6 +114,9 @@ export class Usb {
         if (m.code) dev.key(m.code, m.down);
         else dev.releaseAll();
       }
+    } else if (m?.type === 'usb-pad') {
+      const dev = this.plugged[m.connector]?.dev;
+      if (dev instanceof UsbGamepad) dev.pad(m.pad);
     }
   }
 
@@ -131,7 +136,7 @@ export class Usb {
     let dev: UsbDevice;
     if (device.api === 'virtual') {
       try {
-        dev = virtualDevice(device);
+        dev = virtualDevice(device, connector);
         const kbd = dev instanceof UsbKeyboard ? dev : undefined;
         if (kbd) kbd.onLeds = (leds) => this.post({ type: 'usb-leds', connector, leds });
       } catch (e) {
