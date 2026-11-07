@@ -6,9 +6,10 @@
 //! socket is: `/run/user/<uid>`, once the user's tmpfs is mounted there (owned by the user), which the agent learns
 //! from its mount table changing (`/proc/self/mountinfo` polls POLLPRI then).
 
+use crate::prelude::*;
+use crate::rt::read_text as read_to_string;
 use rustix::fs::{AtFlags, CWD, FileType, Stat, statat};
 use rustix::process::{Gid, Uid};
-use std::fs::read_to_string;
 
 pub const MOUNTS: &str = "/proc/self/mountinfo";
 
@@ -151,7 +152,7 @@ mod tests {
     #[test]
     fn a_runtime_directory_is_ready_once_mounted() {
         // A directory and its parent as the tests find them (one device), owned as the cases want.
-        let dir = std::env::temp_dir();
+        let dir = std::env::temp_dir().to_str().unwrap().to_owned();
         let st = |uid: u32| {
             let mut s = statat(CWD, &dir, AtFlags::empty()).unwrap();
             s.st_uid = uid;

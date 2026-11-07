@@ -119,7 +119,7 @@ messages not yet sent; the guest's buffers come back with the core's held reques
 #### The guest's agent
 
 `webpc-agent` (`agent/`: a crate of its own, outside the core's workspace, with its own stable toolchain;
-`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency.
+`images/build.sh agent`, docs/images.md "agent") is a static aarch64 musl binary with `rustix` as its one dependency, `no_std` (`agent/src/rt.rs`: 130 KB).
 A machine with clipboard sharing that has firmware fetches it (`web/app/guest-agent.ts` `agentBinary`: an ELF file or
 nothing) and hands it to the guest as the fw_cfg file **`opt/webpc/agent`**, with a unit as SMBIOS credentials
 (`agentCredentials`, frontend.md "What the page sets in the guest"); without the binary (not built) the machine starts
@@ -130,7 +130,7 @@ without the unit, its port never opened. The unit, `webpc-agent.service` (`Type=
 gone with the unit), waits for udev's link (`udevadm wait`) and `exec`s it. `Nice=10`, `MemoryMax=32M`,
 `OOMScoreAdjust=500`, `Restart=on-failure` (`RestartSec=5s`) under a start limit it can reach, 5 starts in 10
 minutes (`StartLimitIntervalSec=`, `StartLimitBurst=`: systemd's default, 5 in 10 s, starts 5 s apart never reach,
-and a failure that lasts would restart for the boot, each start reading the binary out of fw_cfg again, 1.3 s of a
+and a failure that lasts would restart for the boot, each start reading the binary out of fw_cfg again, ~0.3 s of a
 vCPU); sandboxed (`ProtectSystem=strict`, `ProtectHome=read-only`, private /tmp (with the host's `/tmp/.X11-unix`
 bound in read-only, `BindReadOnlyPaths=-`: an X session's socket, where a session child connects; `PrivateNetwork`
 hides the abstract sockets) and network, `RestrictAddressFamilies=AF_UNIX`, the kernel's tunables, modules, logs and clock protected, …:

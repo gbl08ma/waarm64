@@ -104,7 +104,8 @@ because it changes uid on purpose; `systemd-analyze security` rates it 3.7, "OK"
   a time (`ioread8_rep`), so there is one MMIO exit per byte: **7–12 µs a byte**. The 333 KiB binary (§3.3) took
   4.1 s; **gzipped by the page (187 KiB, `CompressionStream`), 1.3 s, and `gzip -dc` 23 ms**. So the page gzips it.
   It costs the boot nothing it waits for (the unit is `Type=simple`, after the login prompt), but it is guest CPU at
-  every boot: a smaller binary (§3.3, `no_std`) is the next lever.
+  every boot: a smaller binary (§3.3, `no_std`) is the next lever. **Built (2026-11-07):** `no_std`, 81,680 bytes
+  gzipped, read in 332 ms (docs/clipboard.md "What it costs").
 - **Arch's kernel.** Debian loads `qemu_fw_cfg` (agent.md). Check that Arch's kernel loads it from the DT's
   `qemu,fw-cfg-mmio` too (not checked: the dev VM has no desktop image; docs/clipboard.md "Not measured").
 - **`noexec` on `/run`.** **Debian 13 mounts `/run` `noexec`** (measured: `rw,nosuid,nodev,noexec`; `exec` of a
@@ -213,7 +214,9 @@ would bring if that is what it takes. So:
     `SetSelectionOwner`, `SendEvent`, and INCR. About fifteen requests; no `x11rb`.
 - **The one dependency is `rustix`** (Apache-2.0/MIT; raw Linux syscalls, no libc wrapper), plus `std` on musl.
   This needs no async runtime, no allocator of our own, and no generated code. If even `std`'s share of the size
-  matters (measured), `#![no_std]` with `rustix`'s runtime is the next step, but not the first.
+  matters (measured), `#![no_std]` with `rustix`'s runtime is the next step, but not the first. **Built
+  (2026-11-07):** `no_std` on musl's runtime rather than `rustix`'s (its startup, `malloc`, `fork` and `exit` were
+  already the agent's; `agent/src/rt.rs`), 130,064 bytes.
 - **Build:** `aarch64-unknown-linux-musl`, static, `opt-level="z"`, LTO, `codegen-units=1`, `panic=abort`,
   stripped. Built in rootless Podman through `images/` (`images/build.sh agent`): that build is the one the page
   ships. The aim is about 200 KiB, compared with a wayland-client and x11rb build in the high hundreds of KiB.
@@ -234,6 +237,8 @@ its /proc and Xauthority readers). **Measured, step 2 (Debian 13, the console ag
   check over 20 s. **Size:** 333 KiB (340,712 bytes, the Podman build), above the ~200 KiB aim, because `std` alone
   is ~320 KiB on this toolchain (an empty `fn main` with the same profile: 327,048 bytes); the agent's own code and
   `rustix` are ~13 KiB. `#![no_std]` would bring it to tens of KiB and the boot's fw_cfg read (§3.1) with it.
+  **Built (2026-11-07):** 130,064 bytes with Wayland, X11 and HTML (their code ~65 KiB, so not tens of KiB); VmRSS
+  168 KiB (the console agent), 328 and 264 KiB with sway, 320 and 424 KiB with X11.
 - **Shipped** with the page (a build output Vite copies; `npm run dist` builds it first through `images/build.sh
   agent`), and fetched only when a machine has the setting on.
   Its row in `THIRD_PARTY.json` covers `rustix` (`about`).

@@ -699,7 +699,7 @@ inputs() {
   [ "$1" = fptest ] && files+=($(find images/fptest -type f | sort)) && pins='^(FPTEST_|USERLAND_CONTAINER|LINUX)'
   [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh images/edk2/*.patch $(find images/edk2/WebpcXhciDxe -type f | sort)) && pins='^EDK2_'
   [ "$1" = alpine-uefi ] && files+=(images/alpine-uefi.json) && pins='^$'
-  [ "$1" = agent ] && files=(agent/Cargo.toml agent/Cargo.lock agent/rust-toolchain.toml agent/.cargo/config.toml $(find agent/src -type f | sort)) && pins='^AGENT_'
+  [ "$1" = agent ] && files=(agent/Cargo.toml agent/Cargo.lock agent/rust-toolchain.toml agent/.cargo/config.toml agent/no-unwind.ld $(find agent/src -type f | sort)) && pins='^AGENT_'
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
   { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd || $1 == linux-usb || $1 == linux-usbhost || $1 == fptest ]]; then declare -f linux_src; fi; if [[ $1 == alpine* ]]; then declare -f alpine_release; fi; if [ "$1" = agent ]; then command -v podman >/dev/null && echo podman || echo host; fi; } |
     sha256sum | cut -c1-16

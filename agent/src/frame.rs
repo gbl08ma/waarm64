@@ -2,6 +2,7 @@
 //! the bytes after it: the type and the payload), a u8 type, then the payload. Both files define the same types, the
 //! same payloads and the same version; `tests/agent.test.ts` and this module's tests pin the same bytes.
 
+use crate::prelude::*;
 /// Version and capabilities: each side's first frame (the agent's answers the page's).
 pub const HELLO: u8 = 1;
 /// A serial number and the MIME types a side's clipboard has (`Offer`).

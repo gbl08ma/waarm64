@@ -12,10 +12,24 @@
 //!
 //!   webpc-agent [port]    the port's device (default /dev/virtio-ports/org.webpc.agent.0)
 
+#![cfg_attr(not(test), no_std, no_main)]
+
+extern crate alloc;
+
+/// What `std`'s prelude would bring (the shipped build is `no_std`: src/rt.rs); every module takes it.
+mod prelude {
+    pub use alloc::borrow::ToOwned;
+    pub use alloc::boxed::Box;
+    pub use alloc::string::{String, ToString};
+    pub use alloc::vec::Vec;
+    pub use alloc::{format, vec};
+}
+
 mod clip;
 mod console;
 mod frame;
 mod logind;
+mod rt;
 #[cfg(test)]
 mod serve_test;
 mod session;
@@ -26,6 +40,8 @@ mod x11;
 #[cfg(test)]
 mod x11_test;
 
+use core::mem::MaybeUninit;
+use prelude::*;
 use rustix::event::{PollFd, PollFlags, poll};
 use rustix::fd::{AsRawFd, OwnedFd, RawFd};
 use rustix::fs::inotify::{self, CreateFlags, ReadFlags, WatchFlags};
@@ -33,9 +49,8 @@ use rustix::fs::{Mode, OFlags, fcntl_getfl, fcntl_setfl, open};
 use rustix::io::{Errno, read, write};
 use rustix::net::{AddressFamily, SocketFlags, SocketType, socketpair};
 use rustix::process::{Pid, Signal, WaitOptions, kill_process, waitpid};
-use std::io::Write as _;
-use std::mem::MaybeUninit;
 
+#[cfg_attr(test, allow(dead_code))]
 const PORT: &str = "/dev/virtio-ports/org.webpc.agent.0";
 
 /// What the agent says it can do (frame.rs `cap`).
@@ -46,7 +61,7 @@ const CAPS: u32 = frame::cap::TYPE | frame::cap::TEXT | frame::cap::IMAGE;
 const CHILD_STUCK: usize = 4 << 20;
 
 unsafe extern "C" {
-    /// The C library's (musl's), which std links: a raw clone would leave its idea of the thread's id stale.
+    /// The C library's (musl's, which the agent links: src/rt.rs): a raw clone would leave its idea of the thread's id stale.
     fn fork() -> i32;
 }
 
@@ -58,12 +73,25 @@ enum Stop {
     Failed(&'static str, Errno),
 }
 
-fn main() {
-    let path = std::env::args().nth(1).unwrap_or_else(|| PORT.into());
+/// The C library's entry point: `webpc-agent [port]`.
+#[cfg(not(test))]
+#[unsafe(no_mangle)]
+extern "C" fn main(argc: i32, argv: *const *const core::ffi::c_char) -> i32 {
+    rt::bare::start();
+    let port = (argc > 1)
+        // SAFETY: the C library's `argv` holds `argc` NUL-terminated strings.
+        .then(|| unsafe { core::ffi::CStr::from_ptr(*argv.add(1)) })
+        .and_then(|a| a.to_str().ok());
+    run(port.unwrap_or(PORT))
+}
+
+/// Serves the port at `path`, reopening it when the page's stream goes out of step.
+#[cfg_attr(test, allow(dead_code))]
+fn run(path: &str) -> ! {
     let mut agent = Agent::new(logind::Paths::default(), Box::new(console::Vt::default()));
     loop {
         let port = match open(
-            path.as_str(),
+            path,
             OFlags::RDWR | OFlags::NOCTTY | OFlags::CLOEXEC,
             Mode::empty(),
         ) {
@@ -270,19 +298,19 @@ impl Agent {
                 // longer uses; their OwnedFds are never dropped here (session::run exits).
                 unsafe { rustix::io::close(fd) };
             }
-            std::mem::forget(mine);
+            core::mem::forget(mine);
             let (uid, gid) = logind::ids(&a);
             let dropped = rustix::thread::set_thread_groups(&[])
                 .and_then(|()| rustix::thread::set_thread_res_gid(gid, gid, gid))
                 .and_then(|()| rustix::thread::set_thread_res_uid(uid, uid, uid));
             if let Err(e) = dropped {
                 log("session: can't take the user's ids", Some(e));
-                std::process::exit(1);
+                rt::exit(1);
             }
             // After the ids change (which clears it): the child goes with the parent.
             let _ = rustix::process::set_parent_process_death_signal(Some(Signal::KILL));
             if rustix::process::getppid().is_none_or(|p| p.as_raw_nonzero().get() == 1) {
-                std::process::exit(0);
+                rt::exit(0);
             }
             let at = session::Where {
                 runtime: a.runtime,
@@ -441,7 +469,7 @@ fn serve(port: &OwnedFd, agent: &mut Agent) -> Stop {
         if track {
             s.agent.track(port.as_raw_fd());
         }
-        if std::mem::take(&mut s.agent.lost) {
+        if core::mem::take(&mut s.agent.lost) {
             frame::encode(frame::SESSION, &[], &mut s.out);
         }
         if let Some(status) = s.agent.typist.step() {
@@ -574,25 +602,14 @@ fn log(what: &str, e: Option<Errno>) {
     line.extend_from_slice(what.as_bytes());
     if let Some(e) = e {
         line.extend_from_slice(b" (errno ");
-        let mut n = e.raw_os_error().unsigned_abs();
-        let mut digits = [0u8; 10];
-        let mut k = digits.len();
-        loop {
-            k -= 1;
-            digits[k] = b'0' + (n % 10) as u8;
-            n /= 10;
-            if n == 0 {
-                break;
-            }
-        }
-        line.extend_from_slice(&digits[k..]);
+        line.extend_from_slice(rt::decimal(e.raw_os_error().unsigned_abs(), &mut [0; 10]));
         line.push(b')');
     }
     line.push(b'\n');
-    let _ = std::io::stderr().write_all(&line);
+    rt::stderr(&line);
 }
 
 fn fail(what: &str, e: Errno) -> ! {
     log(what, Some(e));
-    std::process::exit(1);
+    rt::exit(1);
 }

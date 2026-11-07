@@ -5,14 +5,15 @@
 //! beside the bytes, as SCM_RIGHTS, in the order of the messages that carry them. `Conn` holds a connection's buffers
 //! both ways (src/session.rs speaks the protocol over it).
 
+use crate::prelude::*;
+use alloc::collections::VecDeque;
+use core::mem::MaybeUninit;
 use rustix::fd::{AsFd, BorrowedFd, OwnedFd};
 use rustix::io::{Errno, IoSlice, IoSliceMut};
 use rustix::net::{
     RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, SendAncillaryBuffer,
     SendAncillaryMessage, SendFlags, recvmsg, sendmsg,
 };
-use std::collections::VecDeque;
-use std::mem::MaybeUninit;
 
 /// libwayland's limit on a message (and so ours): its buffers are 4 KiB.
 pub const MAX_MESSAGE: usize = 4096;

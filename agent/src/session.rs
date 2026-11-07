@@ -36,17 +36,19 @@
 use crate::clip::{self, Hash};
 use crate::frame::{self, ack};
 use crate::log;
+use crate::prelude::*;
+use crate::rt::{self, Instant};
 use crate::wire::{Args, Conn, Msg};
 use crate::x11::{self, X};
+use alloc::collections::{BTreeMap, VecDeque};
+use core::mem::MaybeUninit;
+use core::time::Duration;
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::fd::{AsRawFd, OwnedFd, RawFd};
 use rustix::fs::inotify::{self, CreateFlags, ReadFlags, WatchFlags};
 use rustix::fs::{OFlags, fcntl_getfl, fcntl_setfl};
 use rustix::io::{Errno, read, write};
 use rustix::net::{AddressFamily, SocketAddrUnix, SocketFlags, SocketType, connect, socket_with};
-use std::collections::{HashMap, VecDeque};
-use std::mem::MaybeUninit;
-use std::time::{Duration, Instant};
 
 /// wl_display's id, and the first a client allocates.
 const DISPLAY: u32 = 1;
@@ -121,9 +123,9 @@ enum Obj {
 /// The connection to the compositor and what is known of it.
 struct Wl {
     conn: Conn,
-    objs: HashMap<u32, Obj>,
+    objs: BTreeMap<u32, Obj>,
     /// The types of offers the compositor has introduced.
-    offers: HashMap<u32, Vec<String>>,
+    offers: BTreeMap<u32, Vec<String>>,
     next: u32,
     seat: Option<u32>,
     managers: [Option<u32>; 2],
@@ -314,11 +316,11 @@ pub fn run(parent: OwnedFd, at: Where, base: u32) -> ! {
     match serve_at(parent, at, base) {
         Ok(why) => {
             log(why, None);
-            std::process::exit(0)
+            crate::rt::exit(0)
         }
         Err((why, e)) => {
             log(why, Some(e));
-            std::process::exit(1)
+            crate::rt::exit(1)
         }
     }
 }
@@ -590,14 +592,11 @@ impl Child {
         if self.wl.is_some() {
             return;
         }
-        let Ok(dir) = std::fs::read_dir(&self.runtime) else {
+        let Ok(dir) = crate::rt::dir_names(&self.runtime) else {
             return;
         };
-        let mut names: Vec<String> = dir
-            .filter_map(|e| e.ok()?.file_name().into_string().ok())
-            .filter(|n| is_socket_name(n))
-            .collect();
-        names.sort();
+        let mut names: Vec<String> = dir.into_iter().filter(|n| is_socket_name(n)).collect();
+        rt::sort(&mut names);
         let mut refused = false;
         for n in names {
             let path = format!("{}/{n}", self.runtime);
@@ -618,8 +617,8 @@ impl Child {
                 Ok(()) => {
                     let mut wl = Wl {
                         conn: Conn::new(fd),
-                        objs: HashMap::new(),
-                        offers: HashMap::new(),
+                        objs: BTreeMap::new(),
+                        offers: BTreeMap::new(),
                         next: FIRST_ID,
                         seat: None,
                         managers: [None, None],
@@ -940,7 +939,7 @@ impl Child {
 
     /// Every transfer ends: the page's requests fail (DATA FAIL), ours stop (MORE 0).
     fn end_xfers(&mut self) {
-        for x in std::mem::take(&mut self.xfers) {
+        for x in core::mem::take(&mut self.xfers) {
             match x {
                 Xfer::Out { id, .. } => self.fail(id),
                 Xfer::In { id, ended, .. } if id != 0 && !ended => {
@@ -1497,9 +1496,9 @@ impl Child {
         if object == DISPLAY {
             match opcode {
                 op::ERROR => {
-                    let (o, code) = (a.object(), a.uint());
+                    let (o, code) = (a.object().unwrap_or(0), a.uint().unwrap_or(0));
                     let m = a.string().flatten().unwrap_or("");
-                    let why = format!("the compositor's error on object {o:?}, code {code:?}: {m}");
+                    let why = format!("the compositor's error on object {o}, code {code}: {m}");
                     self.disconnect(&why);
                 }
                 op::DELETE_ID => {
@@ -1681,7 +1680,7 @@ mod tests {
             None,
         )
         .unwrap();
-        rustix::net::bind(&fd, &SocketAddrUnix::new(path).unwrap()).unwrap();
+        rustix::net::bind(&fd, &SocketAddrUnix::new(path.to_str().unwrap()).unwrap()).unwrap();
         rustix::net::listen(&fd, 0).unwrap();
         let filler = std::os::unix::net::UnixStream::connect(path).unwrap();
         (fd, filler)

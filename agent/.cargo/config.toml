@@ -1,8 +1,9 @@
 # Linked by rust-lld with the musl target's own startup files and libc (self-contained): the same linker in Podman
-# and on a host without a cross gcc (docs/images.md "agent"). Outputs under the repository's target/.
+# and on a host without a cross gcc (docs/images.md "agent"). Outputs under the repository's target/. The linker
+# script (relative to agent/, where cargo runs rustc) drops the unwind tables: no-unwind.ld.
 [build]
 target-dir = "../target/agent"
 
 [target.aarch64-unknown-linux-musl]
 linker = "rust-lld"
-rustflags = ["-C", "target-feature=+crt-static"]
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=-Tno-unwind.ld"]
