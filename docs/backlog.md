@@ -448,6 +448,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   bytes answers `EIO` (its session can't open), and creating a name past 255 `EIO` rather than `ENAMETOOLONG`
   (bench/shares/REPORT.md). Write permission can't be granted headless, so the tests' host backend writes OPFS directories
   and `bench/shares/index.html` is opened by hand.
+- **The agent's tests as root** (docs/cloud.md): in a cloud session (root) `x11::tests::only_roots_or_the_users_display_socket_gets_the_cookie` and `serve_test::follows_the_session_and_passes_the_child_its_frames` fail, which stops `scripts/ci.sh` there. Either the tests take a non-root uid where they need one, or the agent's root rules are what fails: not yet looked at.
 - 9p: no HTTP-served tree, as v86's lazy filesystem. The memory tree's umask is the client's even under a default ACL
   (devices.md "9p"); shared folders have no xattrs (docs/shares.md §8).
 - Input: the keyboard layout reaches only guests with systemd 256+ (the firmware, GRUB and older guests type a US
