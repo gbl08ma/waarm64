@@ -97,7 +97,7 @@
   .offer { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid #5c4a1d; border-radius: 6px; background: #2a2412; }
   .offer p { margin: 0; }
   .device { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
-  .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .name { overflow-wrap: anywhere; }
   .dim { color: var(--dim); font-size: 12px; }
   .row { display: flex; gap: 6px; flex-wrap: wrap; }
   .count { min-width: 14px; padding: 0 4px; border-radius: 7px; background: #3b6db3; color: #fff; font-size: 10px; line-height: 14px; text-align: center; }
