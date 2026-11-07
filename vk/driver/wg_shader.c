@@ -1020,13 +1020,52 @@ program_objects(struct wg_program *p, uint32_t compute_module, const char *wgsl,
    }
 }
 
+/* Whether two stages' resources can share one layout entry each; else `error` says why (their pipeline refused). */
+static bool
+stages_agree(const struct wgsl_info *xs_info, const struct wgsl_info *ys_info, char *error, size_t size)
+{
+   for (uint32_t i = 0; i < xs_info->resource_count; i++)
+      for (uint32_t k = 0; k < ys_info->resource_count; k++) {
+         const struct wgsl_resource *x = &xs_info->resources[i], *y = &ys_info->resources[k];
+         if (x->group != y->group || x->binding != y->binding)
+            continue;
+         /* A storage image the stages bind with different access: its one layout entry can't match both modules'
+          * (WebGPU wants each module's access to be the entry's), so the pipeline would be invalid (VK3 L4c-F). Or one
+          * stage only reads it, as a texture (wgsl_print.c `texture_images`), and another writes it. */
+         const bool xi = x->kind == WGSL_STORAGE_TEXTURE || x->image_texture;
+         const bool yi = y->kind == WGSL_STORAGE_TEXTURE || y->image_texture;
+         if (xi && yi && (x->kind != y->kind || x->access != y->access || x->sample != y->sample)) {
+            snprintf(error, size, "a storage image the stages access differently (group %u binding %u)", x->group,
+                     x->binding);
+            return false;
+         }
+         /* A storage image one stage reaches as its words (a buffer) and another as a texture. */
+         if (x->image_words != y->image_words) {
+            snprintf(error, size, "a storage image as words in one stage only (group %u binding %u)", x->group,
+                     x->binding);
+            return false;
+         }
+         /* Likewise a storage buffer one stage writes and another only reads (the translator declares it read-only
+          * where it isn't written, but in compute): that is a vertex stage reading what the fragment stage writes,
+          * which WebGPU can't bind (no writable storage in vertex shaders). */
+         const bool xb = x->kind == WGSL_STORAGE || x->kind == WGSL_STORAGE_READ;
+         const bool yb = y->kind == WGSL_STORAGE || y->kind == WGSL_STORAGE_READ;
+         if (xb && yb && x->kind != y->kind) {
+            snprintf(error, size, "a storage buffer one stage writes and the vertex stage reads (group %u binding %u)",
+                     x->group, x->binding);
+            return false;
+         }
+      }
+   return true;
+}
+
 /* A program of two programs' stages (`a`'s, a draw's vertex shader's, and `b`'s, its fragment shader's), for a draw
  * whose stages came with different links: each stage is lowered against its pipeline's layout, so both programs' data
  * describe one layout, and the union of their bindings serves both modules. Equal stages always share a link (a cached
  * stage keeps the link of its first compile, its partner compiled again gets the same), so this takes a cache whose
  * entries disagree; it is said once. Kept on `a`, by `b`'s link, and freed with it. */
 struct wg_program *
-wg_program_merge(struct wg_program *a, const struct wg_program *b)
+wg_program_merge(struct wg_program *a, const struct wg_program *b, const struct wgsl_info *vs, const struct wgsl_info *fs)
 {
    for (struct wg_program *m = a->merged; m; m = m->merged)
       if (!memcmp(m->with, b->link, sizeof(blake3_hash)))
@@ -1100,10 +1139,43 @@ wg_program_merge(struct wg_program *a, const struct wg_program *b)
          m->resources[i].size = m->push_ubo_size;
    }
    program_layouts(m);
+   /* Stages that disagree on a resource (what wg_shader_compile refuses, for stages compiled together): their draws
+    * refused, saying why, not an invalid pipeline (VK4 T37). */
+   char error[160];
+   if (!stages_agree(vs, fs, error, sizeof(error)))
+      m->refused = strdup(error);
    memcpy(m->with, b->link, sizeof(blake3_hash));
    m->merged = a->merged;
    a->merged = m;
    return m;
+}
+
+/* VK4 T37's test (wg_test.c `wgt_merge_refused`): a program merged of stages that disagree on a storage image (the
+ * vertex stage reads it as a texture, the fragment stage writes it) is refused; of stages that agree, not. Bit 0 and bit
+ * 1 for each as it should be. */
+int
+wg_merge_refuses(void)
+{
+   int ok = 0;
+   for (uint32_t agree = 0; agree < 2; agree++) {
+      struct wg_program *a = calloc(1, sizeof(*a)), *b = calloc(1, sizeof(*b));
+      struct wgsl_info vi = { .resource_count = 1 }, fi = { .resource_count = 1 };
+      vi.resources[0] = (struct wgsl_resource){ .kind = WGSL_TEXTURE, .dim = WGSL_DIM_2D, .sample = WGSL_SAMPLE_UINT,
+                                                .image_texture = true, .format = PIPE_FORMAT_R32_UINT };
+      fi.resources[0] = agree ? vi.resources[0]
+                              : (struct wgsl_resource){ .kind = WGSL_STORAGE_TEXTURE, .dim = WGSL_DIM_2D,
+                                                        .access = WGSL_ACCESS_WRITE, .format = PIPE_FORMAT_R32_UINT };
+      a->refs = b->refs = 1;
+      a->resource_count = b->resource_count = 1;
+      a->group_count = b->group_count = a->set_count = b->set_count = 1;
+      a->resources[0] = vi.resources[0], b->resources[0] = fi.resources[0];
+      a->vis[0] = 1, b->vis[0] = 2;
+      a->dynamic[0] = b->dynamic[0] = -1;
+      b->link[0] = 1;
+      const struct wg_program *m = wg_program_merge(a, b, &vi, &fi);
+      ok |= (agree ? !m->refused : m->refused != NULL) << agree;
+   }
+   return ok;
 }
 
 /* Compiling. */
@@ -1326,40 +1398,9 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
             fs_reads = &s->info.varyings;
       }
    }
-   /* A storage image the stages bind with different access: its one layout entry can't match both modules' (WebGPU
-    * wants each module's access to be the entry's), so the pipeline would be invalid (VK3 L4c-F): refused. */
    for (uint32_t a = 0; ok && a < count; a++)
       for (uint32_t b = a + 1; ok && b < count; b++)
-         for (uint32_t i = 0; ok && i < shaders[a]->info.resource_count; i++)
-            for (uint32_t k = 0; ok && k < shaders[b]->info.resource_count; k++) {
-               const struct wgsl_resource *x = &shaders[a]->info.resources[i], *y = &shaders[b]->info.resources[k];
-               /* Or one stage only reads it, as a texture (wgsl_print.c `texture_images`), and another writes it. */
-               const bool xi = x->kind == WGSL_STORAGE_TEXTURE || x->image_texture;
-               const bool yi = y->kind == WGSL_STORAGE_TEXTURE || y->image_texture;
-               if (xi && yi && x->group == y->group && x->binding == y->binding &&
-                   (x->kind != y->kind || x->access != y->access || x->sample != y->sample)) {
-                  snprintf(error, sizeof(error), "a storage image the stages access differently (group %u binding %u)",
-                           x->group, x->binding);
-                  ok = false;
-               }
-               /* A storage image one stage reaches as its words (a buffer) and another as a texture. */
-               if (x->group == y->group && x->binding == y->binding && (x->image_words != y->image_words)) {
-                  snprintf(error, sizeof(error), "a storage image as words in one stage only (group %u binding %u)",
-                           x->group, x->binding);
-                  ok = false;
-               }
-               /* Likewise a storage buffer one stage writes and another only reads (the translator declares it
-                * read-only where it isn't written, but in compute): that is a vertex stage reading what the fragment
-                * stage writes, which WebGPU can't bind (no writable storage in vertex shaders). */
-               const bool xs = x->kind == WGSL_STORAGE || x->kind == WGSL_STORAGE_READ;
-               const bool ys = y->kind == WGSL_STORAGE || y->kind == WGSL_STORAGE_READ;
-               if (xs && ys && x->group == y->group && x->binding == y->binding && x->kind != y->kind) {
-                  snprintf(error, sizeof(error),
-                           "a storage buffer one stage writes and the vertex stage reads (group %u binding %u)",
-                           x->group, x->binding);
-                  ok = false;
-               }
-            }
+         ok = stages_agree(&shaders[a]->info, &shaders[b]->info, error, sizeof(error));
    /* The program, if its bindings fit WebGPU's limits (wg_caps.c `wg_bindings_fit`: else the pipeline is refused,
     * saying why, never an invalid submit; VK3 L7a). A captured vertex stage's compute pass that doesn't fit, or has
     * no bind group left (the push buffer's or sets 3 and up take the fourth), drops the capture instead. */

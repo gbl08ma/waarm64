@@ -1866,9 +1866,12 @@ ${vs}
       if (!((slots >>> slot) & 1)) continue;
       const v = this.cur.vb[slot];
       if (!v) { this.warn('vertices pulled from a binding without a buffer'); return; }
-      const from = Math.floor(v.offset / align) * align;
+      // A range of no bytes (bound at its buffer's end: VK4 T37) still binds a word, from below it: what the stage
+      // loads past the range reads 0 (`pulledCode`).
+      let from = Math.floor(v.offset / align) * align;
+      if (from + 4 > v.b.size) from = Math.max(0, from - align);
       into[slot] = v.offset - from;
-      const size = Math.min(Math.ceil((v.offset - from + v.size) / 4) * 4, v.b.size - from, d.limits.maxStorageBufferBindingSize);
+      const size = Math.max(Math.min(Math.ceil((v.offset - from + v.size) / 4) * 4, v.b.size - from, d.limits.maxStorageBufferBindingSize), 4);
       entries.push({ binding: slot, resource: { buffer: v.b, offset: from, size } });
     }
     const [u, at] = this.scratch(UNIFORM | COPY_DST, into.byteLength);
@@ -2649,6 +2652,24 @@ fn ix(k: u32) -> u32 {
    * rows and images its own; words shared with neighbours written by atomics. */
   private packPass(sl: number[], src: GPUBuffer, srcAt: number, srcBpr: number, srcRows: number, dl: number[], dst: GPUBuffer, dstAt: number, dstBpr: number, dstRows: number, w: number, h: number, depth: number) {
     const d = this.device!, enc = this.enc!;
+    // A binding is at most maxStorageBufferBindingSize (a large 3D image's or array's texels pass it: VK4 T37, they
+    // were cut there and copied wrong): slabs of slices, or of rows, whose ranges fit.
+    const most = d.limits.maxStorageBufferBindingSize;
+    const reach = (at: number, bpr: number, rows: number, texel: number, n: number, rh: number) => at % 256 + (n - 1) * rows * bpr + (rh - 1) * bpr + w * texel;
+    if (reach(srcAt, srcBpr, srcRows, sl[8], depth, h) > most || reach(dstAt, dstBpr, dstRows, dl[8], depth, h) > most) {
+      if (depth > 1) {
+        const half = Math.ceil(depth / 2);
+        this.packPass(sl, src, srcAt, srcBpr, srcRows, dl, dst, dstAt, dstBpr, dstRows, w, h, half);
+        this.packPass(sl, src, srcAt + half * srcRows * srcBpr, srcBpr, srcRows, dl, dst, dstAt + half * dstRows * dstBpr, dstBpr, dstRows, w, h, depth - half);
+        return;
+      }
+      if (h > 1) {
+        const half = Math.ceil(h / 2);
+        this.packPass(sl, src, srcAt, srcBpr, srcRows, dl, dst, dstAt, dstBpr, dstRows, w, half, 1);
+        this.packPass(sl, src, srcAt + half * srcBpr, srcBpr, srcRows, dl, dst, dstAt + half * dstBpr, dstBpr, dstRows, w, h - half, 1);
+        return;
+      }
+    }
     let pipeline = this.metaComputes.get('packbits');
     if (!pipeline) {
       const code = `struct P { w: u32, src_at: u32, src_bpr: u32, src_rows: u32, dst_at: u32, dst_bpr: u32, dst_rows: u32, sb: u32, db: u32, pad0: u32, pad1: u32, pad2: u32,
@@ -3172,7 +3193,8 @@ export function pulledCode(code: string, buffers: (PulledBuffer | null)[], group
   buffers.forEach((b, slot) => {
     if (!b?.pull) return;
     lines.push(`@group(${group}) @binding(${slot}) var<storage, read> wgv_b${slot}: array<u32>;`);
-    lines.push(`fn wgv_ld${slot}(b: u32) -> u32 { let w = b >> 2u; let s = (b & 3u) * 8u; if (s == 0u) { return wgv_b${slot}[w]; } return (wgv_b${slot}[w] >> s) | (wgv_b${slot}[w + 1u] << (32u - s)); }`);
+    // Past the bound range (a draw reading past its buffer's end, which Vulkan's robust buffer access allows: VK4 T37), 0.
+    lines.push(`fn wgv_ld${slot}(b: u32) -> u32 { let w = b >> 2u; let s = (b & 3u) * 8u; let n = arrayLength(&wgv_b${slot}); let lo = select(0u, wgv_b${slot}[w], w < n); if (s == 0u) { return lo; } return (lo >> s) | (select(0u, wgv_b${slot}[w + 1u], w + 1u < n) << (32u - s)); }`);
     for (const a of b.attributes) {
       pulled.add(a.shaderLocation);
       const at = `(wgv_at[${slot >> 2}u][${slot & 3}u] + ${b.stepMode === 'instance' ? 'iid' : 'vid'} * ${b.arrayStride}u + ${a.offset}u)`;

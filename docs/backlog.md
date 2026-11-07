@@ -912,11 +912,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     the vertex stage's storage buffers left; a pulled range past `maxStorageBufferBindingSize` is cut there. What pulling
     could back next, each a few lines of the fetch: vertex attribute divisors (`iid / rate`: vkd3d's other 24 of
     test_instance_id, tier 4); `legacy_vertex_attributes` (4,080 of `vertex_input`'s 10,825 cases), an extension not
-    advertised. Formats WebGPU's vertex buffers lack are pulled since VK4 T31. A draw that reads past a vertex buffer's end, which
-    Vulkan's robust buffer access reads as zeros or in range, is refused by WebGPU (nothing drawn): VK4 T28's
-    `input_attribute_offset.two_binds_vec4.*.dynamic` by design, `extended_dynamic_state.*_draws_dynamic.vertex_input_multiple_bindings`
-    (a slot bound past its buffer's end: not looked into); pulling such a binding would read zeros. Its cost isn't measured: nothing we run meets it but dEQP-VK
-    and vkd3d's tests (a bind group per change of the ranges, and a shader's bytes decoded per vertex).
+    advertised. Formats WebGPU's vertex buffers lack are pulled since VK4 T31. A direct draw that reads past a vertex buffer's end
+    (Vulkan's robust buffer access reads in range or zeros; WebGPU refused it) pulls that binding, zeros past it, since
+    VK4 T37; an indirect one isn't checked by WebGPU (its reads clamped in range). The cost of pulling isn't measured:
+    nothing we run meets it but dEQP-VK and vkd3d's tests (a bind group per change of the ranges, and a shader's bytes
+    decoded per vertex).
   - **Formats**: (ASTC's failures on SwiftShader were the padded blocks above, on Metal too); D24 depth tests fail by one unit (depth24plus's precision);
     3-component formats in images are offered since VK4 T31 (RGB32 attachments in `rgba32*`), `glsl.440.linkage`'s
     RGB32 attachments not run since.
@@ -1008,7 +1008,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     fail: the fragment stage's own `sample_mask` could carry the coverage). Depth and stencil resolves of every mode are drawn (VK4 T27), `D16_UNORM_S8_UINT`'s too (VK4 T30).
   - **Usage scopes' leftovers** (VK4 T3, R2: vk/README.md "Usage scopes"): a pass or dispatch that writes storage of a
     memory it reads otherwise reads copies taken at its start. Left: writable bindings of one range, one an array of
-    atomics and one not, or together past `maxStorageBufferBindingSize` (said once, refused by WebGPU); a descriptor
+    atomics and one not (or of signed and unsigned ones), or together past `maxStorageBufferBindingSize`, refuse their
+    draw or dispatch, said once (VK4 T37: WebGPU refused it, the submit lost); the plain one printed again from its NIR
+    with its array atomic (a stage that writes storage keeping its NIR) would let them be one binding; a descriptor
     beside a pointers' binding, and overlapping descriptors there, don't see each other's bytes in the scope, and its
     shadow's copy back overwrites what pointers wrote anywhere in its range (the review of R1 to R4's W2: going through the
     pointers' binding at the descriptor's distance, as `aliased_text` does, would serve); a variant per distinct
@@ -1132,8 +1134,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     buffers); 8 dynamic uniform buffers with push constants past the immediates or draw parameters put the push buffer on
     a dynamic storage binding, which a layout with all 4 of those, or a stage full of storage buffers, doesn't have (the
     pipeline is refused, said once; a push binding without a dynamic offset, a bind group per draw, would serve); a
-    uniform block declared past its range and the 64 KiB pad at a memory's end loses its submit. A set with inline blocks
-    has a GPUBuffer of 64 KiB more than them, for what its shaders may declare.
+    uniform block declared past its range and what its memory's GPUBuffer has past it (64 KiB, less near
+    `maxBufferSize`) reads a shadow of the block's size since VK4 T37, so its scope pays a copy (`has_big_uniform`
+    scans a dispatch for it). A set with inline blocks has a GPUBuffer of 64 KiB more than them, for what its shaders may
+    declare.
   - **maintenance8's cases wait for the guest's Mesa 26.3** (VK4 T24): the device advertises `maintenance8` (offsets
     that aren't constants from fetches, depth and stencil copied with colour images, blits between layers and slices),
     but Mesa 26.2's Venus, the tests' guest's (Arch's 26.2.5; 26.2.6 the port's newest on 2026-11-05), leaves it out,
@@ -1189,28 +1193,21 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     (`PROFILE=images/vkframes/venus-profile.json bench/vulkan/venus-run.ts`), rebuild the vkframes disk, check the
     replays' references still hold.
   - **Storage images read as textures' leftovers** (GD G4; vk/README.md "Storage images a stage only reads"; the
-    out-of-context review of 2026-11-04): a subresource read through such a texture and written through a storage
-    binding in one scope (a 3D image's level is one WebGPU subresource) invalidates the dispatch or pass, its submit
-    dropped, as a read-only storage binding beside a writable one did before (`scope_images` doesn't see it; a
-    texture can't be widened to read-write as `program_for` widens buffers); a 2D array view of one layer bound to a
-    storage image declared 2D still makes an invalid bind group (`wg_image_view.flat` is made for sampled views only and
-    storage bindings take `storage` or `view`); `wg_program_merge` (programs from the cache) skips the checks across
-    stages that `wg_shader_compile` makes, so stages that disagree on an image's kind there make an invalid pipeline
-    instead of a refused one; the worker's `packPass` clamps its bindings to `maxStorageBufferBindingSize`, so a packed
-    alias of a large 3D image is copied wrong, not refused, and an array's copies go a layer at a time through two
-    temporary buffers.
+    out-of-context review of 2026-11-04; VK4 T37 took its invalid commands): a subresource read as a texture and written
+    through a storage binding in one scope reads a copy of the image taken at the scope's start (`scope_reads`), but not
+    through a view of another format than the image's (an alias texture) or of a plane: said once, left to WebGPU, which
+    drops the submit; nor does such a read see what the scope wrote before a barrier inside a dispatch (a pass is cut at
+    them). An array's packed copies go a layer at a time through two temporary buffers.
   - **Storage images as words' leftovers** (VK4 T11; vk/README.md "Storage images as words"): a view past
-    `maxStorageBufferBindingSize` makes an invalid bind group, its submit dropped (WebGPU's minimum is 128 MiB: a 4096x4096
-    `rgba16float` level, loaded and stored); a stage of many such images meets the storage and uniform buffers a stage has
+    `maxStorageBufferBindingSize` (WebGPU's minimum is 128 MiB: a 4096x4096 `rgba16float` level, loaded and stored) refuses
+    its draws and dispatches, said once (VK4 T37: the submit was dropped); a binding a part would draw them. A stage of
+    many such images meets the storage and uniform buffers a stage has
     (refused, saying why, where it doesn't fit: `wg_bindings_fit`); two views of one image bound writable in one scope
     (WebGPU's writable aliasing, as "Usage scopes' leftovers"); a vertex stage reading a storage image the fragment stage
     writes stays refused (a second binding of the same image would take it); planes of multi-planar images aren't words; a
     shared image's flush has no test of its own; the words' and copies' cost on a real program is unmeasured (`rw.hook` shows
     it working, nothing in the images leans on it). With words, the formats Vulkan's storage doesn't need (sRGB, packed
     16-bit) become possible (`shaderStorageImage*WithoutFormat` are offered since GD G5: a variant per bound format).
-  - **`mismatched_formats`** (VK4 T11): a shader whose format isn't its view's (Vulkan leaves the values undefined): the bind
-    group is invalid (WebGPU wants the layout's format) and its submit dropped, where dEQP-VK only asks that nothing crashes:
-    not in the list, though they pass. A variant by the view's format, or words, would keep the rest of the submit.
   - **Storage images' cases failing before T11** (VK4 T11: the same on a build without it, 27 of a sample): `robustness.image_robustness`'s
     out-of-bounds accesses (`sampled_image` of `1d_array` and `3d`, `storage_image` of `r32f`), and `memory_model.message_passing.ext`'s
     `atomicwrite` with an image as the guard (invocations seeing the guard but not the payload). Neither group is in the list.

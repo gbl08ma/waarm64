@@ -1,0 +1,14 @@
+#version 450
+#extension GL_EXT_shader_image_load_formatted : require
+// tests/venus-driver.test.ts (VK4 T37, wg_test.c 102): 2D array views of one layer (layer 1) bound where the shader
+// declares 2D storage images: `img` loaded and stored (a storage texture), `ro` only loaded without a format (a texture,
+// GD G4). Their base layer's texels into the buffer, and 77 stored at (1, 1).
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0, r32ui) uniform uimage2D img;
+layout(set = 0, binding = 1) readonly uniform uimage2D ro;
+layout(set = 0, binding = 2) buffer Out { uint v[4]; } o;
+void main() {
+  o.v[0] = imageLoad(img, ivec2(0, 0)).x;
+  o.v[1] = imageLoad(ro, ivec2(1, 0)).x;
+  imageStore(img, ivec2(1, 1), uvec4(77));
+}

@@ -1,0 +1,10 @@
+#version 450
+// tests/venus-driver.test.ts (VK4 T37, wg_test.c 108): two writable storage buffers bound to one range, one an array of
+// atomics and one not (WebGPU's writable aliasing; one binding can't serve both).
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) buffer A { uint v[4]; } a;
+layout(set = 0, binding = 1) buffer B { uint v[4]; } b;
+void main() {
+  atomicAdd(a.v[0], 1u);
+  b.v[1] = 5u;
+}

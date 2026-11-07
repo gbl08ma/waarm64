@@ -105,8 +105,9 @@ struct wgsl_resource {
                            * storage texture's */
    bool formatless;       /* a storage image declared without a format and written or only asked its size: its format
                            * a key's (WGSL_IMAGE_KEY), the bound view's; without one, r32uint (wgsl_print.c
-                           * `image_format`). A storage texture written with a declared format takes a key's too, which
-                           * the driver gives it when the bound view's format is another (`wgsl_image_keyed`). */
+                           * `image_format`). A storage texture with a declared format, written or read, takes a key's
+                           * too, which the driver gives it when the bound view's format is another (`wgsl_image_keyed`;
+                           * read ones since VK4 T37). */
    bool image_texture;    /* a storage image the stage only reads, as a texture (kind WGSL_TEXTURE: wgsl_print.c
                            * `texture_images`); `dim` as a storage texture's */
    uint8_t access;        /* storage textures */
@@ -253,7 +254,7 @@ bool wgsl_image_as_words(unsigned format, uint8_t access, unsigned features);
 static inline bool
 wgsl_image_keyed(const struct wgsl_resource *r)
 {
-   return r->formatless || (r->kind == WGSL_STORAGE_TEXTURE && (r->access & WGSL_ACCESS_WRITE));
+   return r->formatless || r->kind == WGSL_STORAGE_TEXTURE;
 }
 
 /* What a stage is printed for besides itself. */

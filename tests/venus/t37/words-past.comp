@@ -1,0 +1,10 @@
+#version 450
+// tests/venus-driver.test.ts (VK4 T37, wg_test.c 105): an RG32_SFLOAT image loaded and stored in one stage (its words:
+// WebGPU has no read-write rg32float), its view past maxStorageBufferBindingSize; 1 into the buffer if it runs.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0, rg32f) uniform image2D img;
+layout(set = 0, binding = 1) buffer Out { uint v[4]; } o;
+void main() {
+  imageStore(img, ivec2(0, 0), imageLoad(img, ivec2(1, 1)) + vec4(1.0));
+  o.v[0] = 1u;
+}

@@ -1810,6 +1810,15 @@ view_init(struct wg_device *dev, struct wg_image_view *view, uint32_t loop_tex)
                      aspect, view->vk.base_mip_level, view->vk.level_count, view->vk.base_array_layer);
       view->flat = wg_create_json(WG_KIND_VIEW, &j);
    }
+   /* Likewise bound as a storage image the stage declares 2D, or reads as a texture (VK4 T37): its base layer, of one
+    * level (a storage binding's), in the view's format. */
+   if (view->vk.view_type == VK_IMAGE_VIEW_TYPE_2D_ARRAY && layered && !strcmp(dim, "2d-array") &&
+       (view->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
+      wg_json_printf(&j, "{\"texture\":%u,\"format\":\"%s\",\"dimension\":\"2d\",\"baseMipLevel\":%u,\"mipLevelCount\":1,"
+                     "\"baseArrayLayer\":%u,\"arrayLayerCount\":1}",
+                     tex, view->fmt->name, view->vk.base_mip_level, view->vk.base_array_layer);
+      view->flat_storage = wg_create_json(WG_KIND_VIEW, &j);
+   }
    /* Also any cube sampled: a min/max reduction's samples are fetched from its faces (VK4 T25). */
    if ((view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE || view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) &&
        (vk_format_is_int(view->vk.view_format) || aspects == VK_IMAGE_ASPECT_STENCIL_BIT ||
@@ -2041,6 +2050,7 @@ wg_DestroyImageView(VkDevice _device, VkImageView _view, const VkAllocationCallb
    wg_id_release(view->twin_depth);
    wg_id_release(view->twin_tex);
    wg_id_release(view->flat);
+   wg_id_release(view->flat_storage);
    wg_id_release(view->view);
    wg_id_release(view->storage);
    wg_id_release(view->sampled);

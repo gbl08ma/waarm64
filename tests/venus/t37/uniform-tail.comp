@@ -1,0 +1,12 @@
+#version 450
+// tests/venus-driver.test.ts (VK4 T37, wg_test.c 107): a uniform block declared past the 4 KiB range it's bound to,
+// at the end of a memory whose GPUBuffer has no room past it. Read at an index the buffer gives (0: the block declared
+// whole, as large as the device takes), two of its words in range into the buffer.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform A { uvec4 a[8192]; } ua;
+layout(set = 0, binding = 1) buffer Out { uint v[4]; } o;
+void main() {
+  const uint i = o.v[3];
+  o.v[0] = ua.a[i].x;
+  o.v[1] = ua.a[i + 100u].y;
+}

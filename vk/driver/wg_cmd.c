@@ -1484,9 +1484,10 @@ program_keys(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program 
          padded_key_fill(t->view, &keys[n]);
       keys[n++].rgb9e5 = t->view->rgb9e5;
    }
-   /* A storage image declared without a format: the bound view's (GD G5, wgsl_print.c `image_format`). And one written
-    * with a declared format bound to a view of another (sRGB aside: no storage image is), the view's too (GD G7:
-    * Godot's screen-space effects write r8 views of images their stages declare rgba8; WebGPU refuses the bind group). */
+   /* A storage image declared without a format: the bound view's (GD G5, wgsl_print.c `image_format`). And one with a
+    * declared format bound to a view of another (sRGB aside: no storage image is), the view's too (GD G7: Godot's
+    * screen-space effects write r8 views of images their stages declare rgba8; VK4 T37: read ones, dEQP-VK's
+    * image.mismatched_formats; WebGPU refuses the bind group). */
    for (uint32_t k = 0; k < p->resource_count; k++) {
       if (!wgsl_image_keyed(&p->resources[k]))
          continue;
@@ -1510,14 +1511,16 @@ program_keys(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program 
  * binding aliasing"), the two of them being one memory's GPUBuffer. Vulkan lets them: a shader that views one range
  * through two blocks. Each run of overlapping ranges becomes one binding, the lowest's widened over all of them, and
  * the others' accesses go through it (`wg_storage_alias`, wg_shader.c `aliased_text`). A shader's atomics are of its
- * array's type, so a run of atomic and plain arrays, or of signed and unsigned ones, stays as it is (WebGPU refuses it,
- * said once).
+ * array's type, so a run of atomic and plain arrays, or of signed and unsigned ones, or one past
+ * maxStorageBufferBindingSize, can't be one: its draw or dispatch is refused, said once (`aliases_refused`; WebGPU refused
+ * it, the submit lost, before VK4 T37).
  */
 static uint32_t
 storage_aliases(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, struct wg_storage_alias *out)
 {
    struct run { uint32_t k; VkDeviceSize lo, hi; const struct wg_device_memory *mem; } runs[8];
    uint32_t n = 0, count = 0;
+   cmd->aliases_refused = false;
    for (uint32_t k = 0; k < p->resource_count; k++) {
       const struct wgsl_resource *r = &p->resources[k];
       if (r->kind != WGSL_STORAGE || r->image_words || r->binding == WGSL_ADDRESS_BINDING)
@@ -1551,8 +1554,10 @@ storage_aliases(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_progr
       if (last > i + 1 && (mixed || wide)) {
          static bool warned;
          if (!warned)
-            fprintf(stderr, "wg: writable storage bindings of one range that can't be one binding\n");
+            fprintf(stderr, "wg: a draw or dispatch refused: writable storage bindings of one range that can't be one "
+                            "binding (%s)\n", mixed ? "an array of atomics and one not" : "past maxStorageBufferBindingSize");
          warned = true;
+         cmd->aliases_refused = true;
       } else if (last > i + 1) {
          for (uint32_t j = i; j < last; j++)
             out[count++] = (struct wg_storage_alias){ (uint32_t)p->resources[runs[j].k].group << 16 | p->resources[runs[j].k].binding,
@@ -1687,7 +1692,7 @@ draw_refused(const struct wg_program *p)
       return false;
    static bool warned;
    if (!warned)
-      fprintf(stderr, "wg: a draw or dispatch refused, its samplers don't translate: %s\n", p->refused);
+      fprintf(stderr, "wg: a draw or dispatch refused: %s\n", p->refused);
    warned = true;
    return true;
 }
@@ -1836,6 +1841,23 @@ draw_key(struct wg_cmd_buffer *cmd, struct wg_shader *vs, struct wg_shader *fs, 
          if (cmd->vbs[b].buffer)
             bound[b] = cmd->vbs[b].buffer->offset + cmd->vbs[b].offset;
       wg_vertex_pull(&k, vs->info.inputs, bound);
+      /* A binding the draw reads past its end (Vulkan's robust buffer access reads in range or 0; WebGPU refuses the
+       * draw, VK4 T37): pulled, its loads past the range 0 (venus-gpu.ts `pulledCode`). */
+      for (uint32_t b = 0; b < WG_VERTEX_BINDINGS; b++) {
+         uint32_t last = 0;
+         bool used = false;
+         u_foreach_bit(loc, vs->info.inputs)
+            if (k.attr[loc].format && k.attr[loc].binding == b) {
+               used = true;
+               last = MAX2(last, k.attr[loc].offset + vk_format_get_blocksize(k.attr[loc].format));
+            }
+         const uint64_t n = k.vb[b].instance ? (uint64_t)cmd->reach.first_instance + cmd->reach.instances
+                                             : cmd->reach.vertices ? (uint64_t)cmd->reach.first + cmd->reach.vertices : 0;
+         if (!used || k.vb[b].pull || !n || !cmd->vbs[b].buffer)
+            continue;
+         if ((n - 1) * k.vb[b].stride + last > cmd->vbs[b].size)
+            k.vb[b].pull = 1;
+      }
    }
    *out = k;
    *s_ref_out = s_ref;
@@ -1858,10 +1880,10 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
    /* Its stages on one program; if they came with different ones (wg_program_merge), a program of both's. */
    struct wg_program *base = vs->program;
    if (fs && fs->program && fs->program != base)
-      base = wg_program_merge(base, fs->program);
+      base = wg_program_merge(base, fs->program, &vs->info, &fs->info);
    struct wg_program *p = program_for(cmd, 0, base);
    wg_variant_modules(p, vs, fs && fs->program ? fs : NULL);
-   if (draw_refused(p))
+   if (draw_refused(base) || draw_refused(p) || cmd->aliases_refused)
       return false;
 
    dummy_samples(cmd, dyn->ms.rasterization_samples);
@@ -2122,10 +2144,10 @@ wg_pipeline_premake(struct wg_device *dev, VkPipeline handle, const VkGraphicsPi
    }
    struct wg_program *base = vs->program;
    if (fs && fs->program && fs->program != base)
-      base = wg_program_merge(base, fs->program);
+      base = wg_program_merge(base, fs->program, &vs->info, &fs->info);
    struct wg_program *p = program_for(cmd, 0, base);
    wg_variant_modules(p, vs, fs && fs->program ? fs : NULL);
-   if (p->refused)
+   if (base->refused || p->refused || cmd->aliases_refused)
       return;
    /* Not indexed (a strip's index format is the draw's), vertices from the bindings' start (none pulled for offsets). */
    struct wg_pipeline_key k;
@@ -2369,10 +2391,12 @@ wg_CmdDraw(VkCommandBuffer commandBuffer, uint32_t vertices, uint32_t instances,
    if (!vertices || !instances)
       return;
    const uint32_t faces = draw_faces(cmd);
+   cmd->reach = (__typeof__(cmd->reach)){ vertices, first, instances, first_instance };
    for (uint32_t i = 0; i < faces; i++) {
       vs_again(cmd, i);
       draw(cmd, vertices, instances, first, first_instance, face_of(faces, i));
    }
+   memset(&cmd->reach, 0, sizeof(cmd->reach));
    xfb_draw(cmd, false, vertices, instances, first, 0, first_instance, NULL, 0);
 }
 
@@ -2385,6 +2409,7 @@ wg_CmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indices, uint32_t inst
       return;
    const uint32_t faces = draw_faces(cmd);
    const int mode = provoke_mode(cmd, true);
+   cmd->reach = (__typeof__(cmd->reach)){ 0, 0, instances, first_instance };
    for (uint32_t i = 0; i < faces; i++) {
       vs_again(cmd, i);
       if (mode >= 0) {
@@ -2396,6 +2421,7 @@ wg_CmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indices, uint32_t inst
       emit(cmd, OP_DRAW_INDEXED, &(struct op_draw_indexed){ indices, instances, first, base, first_instance, cmd->draw_index },
            sizeof(struct op_draw_indexed));
    }
+   memset(&cmd->reach, 0, sizeof(cmd->reach));
    xfb_draw(cmd, true, indices, instances, first, base, first_instance, NULL, 0);
 }
 
@@ -2531,7 +2557,7 @@ record_dispatch(struct wg_cmd_buffer *cmd)
    if (!cs || !cs->program || !cs->program->compute)
       return false;
    struct wg_program *p = program_for(cmd, 1, cs->program);
-   if (draw_refused(p))
+   if (draw_refused(p) || cmd->aliases_refused)
       return false;
    if (cmd->last_compute != cs || cmd->last_program[1] != p) {
       emit(cmd, OP_COMPUTE, &p, sizeof(p));
@@ -3108,9 +3134,14 @@ struct replay {
     * (struct scope_use) and shadows (struct shadow); `no_readback` while the scope's end binds groups again. */
    const struct op_bind *binds[2][WGSL_MAX_GROUPS];
    bool shadowed[2][WGSL_MAX_GROUPS];
+   /* Each group binds a storage image as words whose view is past maxStorageBufferBindingSize (`words_past`). */
+   bool past[2][WGSL_MAX_GROUPS];
    bool no_readback;
    struct util_dynarray uses, written, shadows; /* `written`: the GPUBuffers among `uses` bound writable (uint32_t) */
    struct util_dynarray images;                 /* struct op_image_use: what the scope binds of aliased images */
+   /* The scope's op_binds (for `scope_reads`), and the views it reads as textures where it writes the same
+    * subresources through storage bindings, which read a copy of the image (wg_view_loop) taken at its start (VK4 T37). */
+   struct util_dynarray scope_binds, read_copies;
 };
 
 enum { RD_PIPELINE = 1, RD_DYN = 2, RD_GROUPS = 4, RD_VB = 8, RD_IB = 16, RD_PUSH = 32, RD_ALL = 63 };
@@ -3512,6 +3543,9 @@ struct scope_use {
    bool writable;
    double at, size;
    bool address; /* the pointers' binding, of the whole address buffer */
+   /* A uniform block declared past its range and what its GPUBuffer has past it (WG_MEMORY_PAD): the block's bytes, read
+    * from a shadow of that size (`scope_shadows`; VK4 T37: a binding smaller than the block lost its submit). */
+   double need;
 };
 
 struct shadow {
@@ -3575,6 +3609,9 @@ buffer_binding(const struct wg_program *p, uint32_t k, const struct wg_descripto
          return false;
       uint32_t words[5];
       view_words(d->view, buffer, at, size, words);
+      /* A view past what a binding takes: bound to that (a valid bind group), its draws and dispatches refused
+       * (`words_past`). */
+      *size = MIN2(*size, wg_limits.max_storage_buffer_binding_size & ~3ull);
       return true;
    }
    if (d->type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER || d->type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) {
@@ -3739,9 +3776,22 @@ bind_uses(struct replay *r, const struct op_bind *b)
       if (!d || !buffer_binding(p, k, d, &buffer, &at, &size))
          continue;
       const struct wg_storage_alias *a = storage_alias(p, k);
-      if (!a || a->res == a->to)
+      if (res->kind == WGSL_UNIFORM && size < res->size && d->type != VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
+         util_dynarray_append_typed(&r->uses, struct scope_use,
+                                    ((struct scope_use){ buffer, false, (double)at + dynamic, size, false, res->size }));
+      else if (!a || a->res == a->to)
          use(r, buffer, (double)at + dynamic, a ? a->reach : size, res->kind == WGSL_STORAGE);
    }
+}
+
+/* Whether a program declares a uniform block larger than what a memory's GPUBuffer has past its end (`scope_use.need`). */
+static bool
+has_big_uniform(const struct wg_program *p)
+{
+   for (uint32_t k = 0; p && k < p->resource_count; k++)
+      if (p->resources[k].kind == WGSL_UNIFORM && p->dynamic[k] != WG_DYNAMIC_PUSH && p->resources[k].size > WG_MEMORY_PAD)
+         return true;
+   return false;
 }
 
 static bool
@@ -3797,6 +3847,7 @@ scan_pass(struct replay *r, struct scan *s, const uint8_t *p, const uint8_t *end
          for (uint32_t g = 0; g < s->group_count; g++)
             if (s->binds[g] && !s->added[g]) {
                bind_uses(r, s->binds[g]);
+               util_dynarray_append_typed(&r->scope_binds, const struct op_bind *, s->binds[g]);
                if (r->dev->aliased)
                   bind_images(r, s->binds[g]);
                s->added[g] = true;
@@ -3839,6 +3890,8 @@ find_shadow(const struct replay *r, uint32_t buffer, double at, double size, boo
 static bool
 conflicts(const struct replay *r, const struct scope_use *u)
 {
+   if (u->need > u->size)
+      return true;
    /* The pointers' binding is the whole address buffer, so a writable descriptor of it would alias it, which WebGPU
     * refuses: that one goes to a shadow and comes back at the scope's end (bytes reached both ways in one scope don't
     * see each other), and reads conflict only with pointers that write. */
@@ -3867,7 +3920,10 @@ scope_conflicts(struct replay *r)
       if (!known)
          util_dynarray_append_typed(&r->written, uint32_t, u->buffer);
    }
-   if (!util_dynarray_num_elements(&r->written, uint32_t))
+   bool tails = false;
+   util_dynarray_foreach (&r->uses, struct scope_use, u)
+      tails |= u->need > u->size;
+   if (!util_dynarray_num_elements(&r->written, uint32_t) && !tails)
       return false;
    util_dynarray_foreach (&r->uses, struct scope_use, u)
       if (conflicts(r, u))
@@ -3937,7 +3993,7 @@ scope_shadows(struct replay *r)
    struct util_dynarray spans; /* (buffer, written, lo, hi) */
    util_dynarray_init(&spans, NULL);
    util_dynarray_foreach (&r->uses, struct scope_use, u)
-      if (conflicts(r, u)) {
+      if (conflicts(r, u) && u->need <= u->size) {
          const double span[4] = { u->buffer, u->writable, floor(u->at / 256) * 256, u->at + u->size };
          util_dynarray_append_array(&spans, double, span, 4);
       }
@@ -3965,11 +4021,32 @@ scope_shadows(struct replay *r)
       wg_emul[WG_EMUL_SHADOW_BYTES] += hi - lo;
       util_dynarray_foreach (&r->uses, struct scope_use, u)
          if (u->buffer == buffer && u->writable == written && u->at >= lo && u->at + u->size <= hi && conflicts(r, u) &&
-             !find_shadow(r, u->buffer, u->at, u->size, written))
+             u->need <= u->size && !find_shadow(r, u->buffer, u->at, u->size, written))
             util_dynarray_append_typed(&r->shadows, struct shadow,
                                        ((struct shadow){ buffer, to, u->at, u->size, place + (u->at - lo), written }));
    }
    util_dynarray_fini(&spans);
+   /* Uniform blocks past what their GPUBuffer has: a place of the block's size, the range's bytes copied in (what's
+    * past the range is out of bounds: Vulkan reads it as anything in range, or 0). */
+   util_dynarray_foreach (&r->uses, struct scope_use, u) {
+      if (u->need <= u->size || find_shadow(r, u->buffer, u->at, u->size, false))
+         continue;
+      uint32_t to;
+      double place;
+      if (!shadow_place(r->dev, false, u->need, &to, &place)) {
+         static bool warned;
+         if (!warned)
+            fprintf(stderr, "wg: a uniform block declared past its memory is too large to copy\n");
+         warned = true;
+         continue;
+      }
+      const double bytes = floor(u->size / 4) * 4;
+      if (bytes)
+         gpu_copy_bb(u->buffer, u->at, to, place, bytes);
+      wg_emul[WG_EMUL_SHADOW_COPIES]++;
+      wg_emul[WG_EMUL_SHADOW_BYTES] += bytes;
+      util_dynarray_append_typed(&r->shadows, struct shadow, ((struct shadow){ u->buffer, to, u->at, u->size, place, false }));
+   }
    return util_dynarray_num_elements(&r->shadows, struct shadow) != 0;
 }
 
@@ -4010,6 +4087,7 @@ param_table(const struct op_bind *b, const struct wg_program *p, uint32_t t)
 /* A bind group for an op_bind, with `offsets` (the op_bind's) patched where a binding reads a shadow (its dynamic
  * offset is the shadow's place's, so 0). `transient`: released once the submit is encoded; `shadowed`: it reads a
  * shadow (a group of the scope's own). */
+static bool read_copied(const struct replay *r, const struct wg_image_view *v);
 static uint32_t
 bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *transient, bool *shadowed)
 {
@@ -4082,6 +4160,12 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
                                          ? bound_descriptor(b, p, k) : NULL;
       *shadowed = d && feedback_att(r, d) >= 0;
    }
+   /* Or a view a scope's copy stands in for (`scope_reads`). */
+   for (uint32_t k = 0; util_dynarray_num_elements(&r->read_copies, struct wg_image_view *) && k < p->resource_count && !*shadowed; k++) {
+      const struct wg_descriptor *d = p->resources[k].group == b->group && p->resources[k].kind == WGSL_TEXTURE
+                                         ? bound_descriptor(b, p, k) : NULL;
+      *shadowed = d && d->view && read_copied(r, d->view);
+   }
    uint32_t group = 0;
    if (holder && !*shadowed)
       for (uint32_t i = 0; i < WG_SET_GROUPS; i++)
@@ -4153,6 +4237,9 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
          if (s) {
             buffer = s->to;
             at = (VkDeviceSize)s->place;
+            /* A uniform block past its memory's GPUBuffer: its shadow has room for the block. */
+            if (res->kind == WGSL_UNIFORM)
+               size = MAX2(size, res->size);
             if (p->dynamic[k] >= 0 && dyn_index < b->offset_count)
                offsets[dyn_index] = 0;
          }
@@ -4172,11 +4259,15 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
             continue;
          const int fa = res->kind == WGSL_TEXTURE ? feedback_att(r, d) : -1;
          /* A sampled view covering an attachment: the same views, of the image's copy (`feedback_copies`). */
-         const struct wg_image_view *v = fa >= 0 && d->type != VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT ? wg_view_loop(d->view)
-                                                                                                    : d->view;
+         const struct wg_image_view *v = (fa >= 0 && d->type != VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT) ||
+                                               (res->kind == WGSL_TEXTURE && read_copied(r, d->view))
+                                            ? wg_view_loop(d->view)
+                                            : d->view;
          wg_json_printf(&j, "%s{\"binding\":%u,\"view\":%u}", sep, res->binding,
                         fa >= 0 && v == d->view ? wg_view_twin(d->view)
                         : r->view_mask && !r->layered && d->type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT ? wg_view_att(d->view, r->view)
+                        : (res->kind == WGSL_STORAGE_TEXTURE || res->image_texture) && v->flat_storage &&
+                              res->dim == WGSL_DIM_2D                                     ? v->flat_storage
                         : (res->kind == WGSL_STORAGE_TEXTURE || res->image_texture) && v->storage ? v->storage
                         : res->image_texture                                          ? v->view
                         : d->plane && d->plane < v->plane_count                       ? v->planes[d->plane]
@@ -4437,6 +4528,24 @@ scope_cut(struct replay *r, const uint8_t *p, const uint8_t *end)
 }
 
 /* Binds an op_bind's group at its point (with the scope's shadows, if it reads any). */
+/* Whether the draw or dispatch (`point`) binds a storage image as words whose view's texels pass what a binding takes
+ * (maxStorageBufferBindingSize, WebGPU's least 128 MiB: a 4096x4096 rgba16float level): refused, said once, its submit
+ * kept (VK4 T37: an invalid bind group lost it). A binding a part would serve. */
+static bool
+words_past(const struct replay *r, uint32_t point)
+{
+   for (uint32_t g = 0; g < r->group_count[point]; g++)
+      if (r->binds[point][g] && r->past[point][g]) {
+         static bool said;
+         if (!said)
+            fprintf(stderr, "wg: a draw or dispatch refused: a storage image it reaches as words is past "
+                            "maxStorageBufferBindingSize\n");
+         said = true;
+         return true;
+      }
+   return false;
+}
+
 static void
 bind(struct replay *r, const struct op_bind *b)
 {
@@ -4451,15 +4560,116 @@ bind(struct replay *r, const struct op_bind *b)
    memcpy(r->groups[b->compute][b->group].offsets, offsets, b->offset_count * 4);
    r->binds[b->compute][b->group] = b;
    r->shadowed[b->compute][b->group] = shadowed;
+   r->past[b->compute][b->group] = false;
+   for (uint32_t k = 0; k < b->program->resource_count; k++) {
+      const struct wgsl_resource *res = &b->program->resources[k];
+      const struct wg_descriptor *dk = res->group == b->group && res->image_words ? bound_descriptor(b, b->program, k) : NULL;
+      if (dk && dk->type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE && dk->view) {
+         uint32_t buffer, params[5];
+         VkDeviceSize at, size;
+         view_words(dk->view, &buffer, &at, &size, params);
+         r->past[b->compute][b->group] |= size > wg_limits.max_storage_buffer_binding_size;
+      }
+   }
    r->dirty |= RD_GROUPS;
+}
+
+/* Whether a view's copy (wg_view_loop) stands in for it in this scope (`scope_reads`). */
+static bool
+read_copied(const struct replay *r, const struct wg_image_view *v)
+{
+   util_dynarray_foreach (&r->read_copies, struct wg_image_view *, c)
+      if (*c == v)
+         return true;
+   return false;
+}
+
+/* Whether two views of one texture share a subresource. */
+static bool
+views_overlap(const struct wg_image_view *a, const struct wg_image_view *b)
+{
+   if (a->vk.image != b->vk.image || view_texture(a) != view_texture(b))
+      return false;
+   const bool three = a->vk.image->image_type == VK_IMAGE_TYPE_3D;
+   return a->vk.base_mip_level < b->vk.base_mip_level + b->vk.level_count &&
+          b->vk.base_mip_level < a->vk.base_mip_level + a->vk.level_count &&
+          (three || (a->vk.base_array_layer < b->vk.base_array_layer + b->vk.layer_count &&
+                     b->vk.base_array_layer < a->vk.base_array_layer + a->vk.layer_count));
+}
+
+/* A scope's reads of subresources as textures that it writes through storage bindings too (`scope_binds`): WebGPU
+ * refuses a texture bound so in one usage scope (the dispatch or pass dropped with its submit), and Vulkan reads what
+ * they held, or what the scope wrote after a barrier. Each such view's range is copied (outside any pass) into the
+ * image's copy, which its binding reads in the scope (VK4 T37); whether there are any. A view of another format than the
+ * image's (an alias texture), or of a plane, is left to WebGPU, said once. */
+static bool
+scope_reads(struct replay *r)
+{
+   util_dynarray_clear(&r->read_copies);
+   struct util_dynarray writes; /* const struct wg_image_view * */
+   util_dynarray_init(&writes, NULL);
+   util_dynarray_foreach (&r->scope_binds, const struct op_bind *, bp) {
+      const struct op_bind *b = *bp;
+      for (uint32_t k = 0; k < b->program->resource_count; k++) {
+         const struct wgsl_resource *res = &b->program->resources[k];
+         if (res->group != b->group || res->kind != WGSL_STORAGE_TEXTURE || !(res->access & WGSL_ACCESS_WRITE))
+            continue;
+         const struct wg_descriptor *d = bound_descriptor(b, b->program, k);
+         if (d && d->view)
+            util_dynarray_append_typed(&writes, const struct wg_image_view *, d->view);
+      }
+   }
+   util_dynarray_foreach (&r->scope_binds, const struct op_bind *, bp) {
+      const struct op_bind *b = *bp;
+      for (uint32_t k = 0; util_dynarray_num_elements(&writes, const struct wg_image_view *) && k < b->program->resource_count; k++) {
+         const struct wgsl_resource *res = &b->program->resources[k];
+         if (res->group != b->group || res->kind != WGSL_TEXTURE)
+            continue;
+         const struct wg_descriptor *d = bound_descriptor(b, b->program, k);
+         struct wg_image_view *v = d && d->type != VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT ? d->view : NULL;
+         bool written = false;
+         util_dynarray_foreach (&writes, const struct wg_image_view *, w)
+            written |= v && views_overlap(v, *w);
+         if (!written || read_copied(r, v))
+            continue;
+         struct wg_image *image = container_of(v->vk.image, struct wg_image, vk);
+         if (v->alias || image->plane_count > 1 || wg_view_loop(v) == v) {
+            static bool said;
+            if (!said)
+               fprintf(stderr, "wg: an image read as a texture and written as storage in one dispatch or pass, through a "
+                               "view of another format: left to WebGPU, which refuses it\n");
+            said = true;
+            continue;
+         }
+         end_pass(r);
+         const bool three = image->vk.image_type == VK_IMAGE_TYPE_3D;
+         for (uint32_t l = v->vk.base_mip_level; l < v->vk.base_mip_level + v->vk.level_count; l++) {
+            const VkExtent3D e = vk_image_mip_level_extent(&image->vk, l);
+            const uint32_t first = three ? 0 : v->vk.base_array_layer, count = three ? 1 : v->vk.layer_count;
+            for (uint32_t layer = first; layer < first + count; layer++) {
+               wg_emul[WG_EMUL_FEEDBACK_COPIES]++;
+               wg_emul[WG_EMUL_FEEDBACK_BYTES] += (double)e.width * e.height * (three ? e.depth : 1) * image->fmt->bytes;
+               gpu_copy_tt(image->tex, l, 0, 0, layer, image->loop_tex, l, 0, 0, layer, e.width, e.height,
+                           three ? e.depth : 1, 0, e.width, e.height, e.width, e.height, image->fmt->bytes);
+            }
+         }
+         /* What a feedback loop's draw finds there is stale now. */
+         v->loop->twin_mark = 0;
+         util_dynarray_append_typed(&r->read_copies, struct wg_image_view *, v);
+      }
+   }
+   util_dynarray_fini(&writes);
+   return util_dynarray_num_elements(&r->read_copies, struct wg_image_view *) != 0;
 }
 
 /* A scope's end: its shadows dropped, the groups that read them bound again without (their readbacks taken already). */
 static void
 scope_end(struct replay *r, uint32_t point)
 {
-   if (!util_dynarray_num_elements(&r->shadows, struct shadow))
+   if (!util_dynarray_num_elements(&r->shadows, struct shadow) &&
+       !util_dynarray_num_elements(&r->read_copies, struct wg_image_view *))
       return;
+   util_dynarray_clear(&r->read_copies);
    /* What the scope wrote in a shadow, back where it belongs. */
    util_dynarray_foreach (&r->shadows, struct shadow, s)
       if (s->written) {
@@ -4486,12 +4696,14 @@ static void
 scope_pass(struct replay *r, const uint8_t *p, const uint8_t *end)
 {
    util_dynarray_clear(&r->uses);
+   util_dynarray_clear(&r->scope_binds);
    struct scan s = { .group_count = r->group_count[0], .vb_mask = r->vb_mask, .have_ib = r->have_ib, .ib = r->ib };
    memcpy(s.binds, r->binds[0], sizeof(s.binds));
    memcpy(s.vb, r->vb, sizeof(s.vb));
    scan_pass(r, &s, p, end, true);
    scope_images(r);
-   if (scope_conflicts(r) && scope_shadows(r))
+   const bool reads = scope_reads(r);
+   if ((scope_conflicts(r) && scope_shadows(r)) || reads)
       rebind(r, 0, WGSL_MAX_GROUPS);
 }
 
@@ -4590,7 +4802,7 @@ pass_has_barrier(const uint8_t *p, const uint8_t *end)
 static bool
 scope_dispatch(struct replay *r, const struct op_indirect *indirect)
 {
-   if (!has_writable(r->program[1]))
+   if (!has_writable(r->program[1]) && !has_big_uniform(r->program[1]))
       return false;
    util_dynarray_clear(&r->uses);
    for (uint32_t g = 0; g < r->group_count[1]; g++)
@@ -4843,7 +5055,10 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          r->tickets = 0;
          r->pass_json = json;
          r->twin_mark = ++r->dev->twin_mark;
-         r->cuts = !r->depth && util_dynarray_num_elements(&r->shadows, struct shadow) && pass_has_barrier(p, end);
+         r->cuts = !r->depth &&
+                   (util_dynarray_num_elements(&r->shadows, struct shadow) ||
+                    util_dynarray_num_elements(&r->read_copies, struct wg_image_view *)) &&
+                   pass_has_barrier(p, end);
          const bool reads = pass_reads_dst(p, end) || pass_vs_stores(p, end, true);
          if (r->qpool || r->atts.count || r->cuts || reads)
             begin_pass(r, r->atts.count || r->cuts || reads ? 1 : 0);
@@ -4982,7 +5197,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       }
       case OP_DRAW: {
          const uint32_t *a = d;
-         if (r->pass != RENDER)
+         if (r->pass != RENDER || words_past(r, 0))
             break;
          set_draw_params(r, a[2], a[3], a[4], UINT32_MAX);
          apply(r, 0);
@@ -4994,7 +5209,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       }
       case OP_DRAW_INDEXED: {
          const struct op_draw_indexed *a = d;
-         if (r->pass != RENDER)
+         if (r->pass != RENDER || words_past(r, 0))
             break;
          set_draw_params(r, a->base, a->first_instance, a->draw_index, UINT32_MAX);
          apply(r, 0);
@@ -5019,6 +5234,10 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          const struct op_provoke *o = d;
          if (r->pass != RENDER)
             break;
+         if (words_past(r, 0)) {
+            r->tickets++;
+            break;
+         }
          set_draw_params(r, o->base, o->first_instance, o->draw_index, UINT32_MAX);
          apply(r, 0);
          if (r->program[0] && r->program[0]->vs_stores)
@@ -5033,6 +5252,8 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          if (r->pass != RENDER)
             break;
          const uint32_t counted = a->count_buffer ? r->tickets++ : UINT32_MAX;
+         if (words_past(r, 0))
+            break;
          /* Its counts are on the GPU: a vertex stage that stores needs them for its pre-pass (VK4 T33). */
          if (r->program[0] && r->program[0]->vs_stores) {
             static bool warned;
@@ -5072,7 +5293,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       }
       case OP_DISPATCH:
       case OP_DISPATCH_INDIRECT: {
-         if (r->pass == RENDER)
+         if (r->pass == RENDER || words_past(r, 1))
             break;
          const struct op_indirect *a = h->op == OP_DISPATCH_INDIRECT ? d : NULL;
          if (r->dev->aliased) {
@@ -5081,7 +5302,14 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
                   bind_images(r, r->binds[1][g]);
             scope_images(r);
          }
-         const bool scoped = scope_dispatch(r, a);
+         util_dynarray_clear(&r->scope_binds);
+         for (uint32_t g = 0; g < r->group_count[1]; g++)
+            if (r->binds[1][g])
+               util_dynarray_append_typed(&r->scope_binds, const struct op_bind *, r->binds[1][g]);
+         const bool reads = scope_reads(r);
+         if (reads)
+            rebind(r, 1, r->group_count[1]);
+         const bool scoped = scope_dispatch(r, a) || reads;
          if (r->pass == NONE) {
             gpu_compute_pass();
             r->pass = COMPUTE;
@@ -5631,6 +5859,8 @@ submit_now(struct wg_device *dev, uint32_t cmd_count, struct vk_command_buffer *
    util_dynarray_fini(&r.written);
    util_dynarray_fini(&r.shadows);
    util_dynarray_fini(&r.images);
+   util_dynarray_fini(&r.scope_binds);
+   util_dynarray_fini(&r.read_copies);
    /* Ordered after the earlier submits' work and before this one's (queue.writeBuffer). */
    if (dev->push_used)
       gpu_write(dev->push_buffer, 0, dev->push_data, dev->push_used);

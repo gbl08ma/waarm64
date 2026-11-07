@@ -793,6 +793,39 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` oth
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 T37: commands WebGPU refused, made valid or refused where they're made
+
+2026-11-07, the dev VM (SwiftShader, Chromium 155.0.8059.84). JSON in `results/vk4/t37/` (`cases.txt` the list run:
+every `image.mismatched_formats` case, every 40th of `robustness`'s mustpass and the 22 `extended_dynamic_state` and
+`input_attribute_offset` cases whose bindings are read past their end; `before.json` before T37, without those 22).
+Nine shapes in which WebGPU refused a dispatch, draw or bind group and dropped its whole submit, each with a driver test
+(tests/venus-driver.test.ts, wg_test.c 102 to 108 and `pullPastEnd`) seen failing with its fix taken out and passing
+with it:
+
+| shape | now |
+|---|---|
+| a subresource read as a texture and written through a storage binding in one scope (a 3D level too) | the read takes a copy of the image made at the scope's start (`scope_reads`, `wg_view_loop`'s texture) |
+| a one-layer 2D array view bound to a storage image the stage declares 2D | a 2D view of its base layer (`flat_storage`) |
+| stages from a cache that disagree on an image (`wg_program_merge`) | the merged program refuses its draws, as compiling them together does (`stages_agree`; a hook in the module tests it, `wgt_merge_refused`: no Venus path makes such a cache) |
+| a packed format's copy past `maxStorageBufferBindingSize` (a 512x512x130 A4R4G4B4 3D image, 136 MB unpacked) | `packPass` in slabs that fit; on a device of WebGPU's least, 128 MiB, the last slice came back zeros |
+| a storage image as words past that limit (4100x4096 RG32_SFLOAT) | its draws and dispatches refused, said once, the rest of the submit kept (`words_past`) |
+| a storage image declared in another format than its view's, only read | keyed by the view's format, as written ones were (GD G7) |
+| a direct draw reading a vertex or instance binding past its buffer's end | that binding pulled, loads past its range 0 (`cmd->reach`, `pulledCode`) |
+| a uniform block past its range and its memory's pad (a memory within 64 KiB of `maxBufferSize`; the translator caps blocks at the adapter's `maxUniformBufferBindingSize`, 64 KiB on SwiftShader, which the pad covers otherwise) | read from a shadow of the block's size (`scope_use.need`) |
+| writable bindings of one range, one of atomics and one not, or past the limit | the draw or dispatch refused, said once (`aliases_refused`); one atomic binding for both needs the plain stage printed again from its NIR (backlog) |
+
+| run | cases | pass | fail | not supported | WebGPU errors |
+|---|---|---|---|---|---|
+| before (without the 22) | 2,776 | 190 | 39 | 2,547 | 0 |
+| after | 2,789 | 202 | 39 | 2,548 | 0 |
+
+The 39 failures are the same in both: `robustness.image_robustness`'s out-of-bounds accesses and one `vertex_access`
+case (backlog "Storage images' cases failing before T11"). `image.mismatched_formats` already passed where it ran (GD
+G7 keyed written images, G4 made formatless reads textures): the backlog's entry predated them; its not supported cases
+are formats offered no storage. `extended_dynamic_state.*vertex_input_multiple_bindings`, which failed (a slot bound
+with no bytes left), passes. **197 cases join `tests/deqp/vk.txt`** (→ 59,104), the passes not in it, on SwiftShader
+only (the M4 not run).
+
 ## VK4 T36: a fence given back is signalled once its work is done; four dEQP processes don't hang
 
 2026-11-07, the dev VM (SwiftShader, Chromium 155.0.8059.84). JSON in `results/vk4/t36/` (`ab.txt` the runs in order).

@@ -1,0 +1,13 @@
+#version 450
+// tests/venus-driver.test.ts (VK4 T37, wg_test.c 106): storage images whose declared format isn't their view's (Vulkan
+// leaves the values undefined; dEQP-VK's image.mismatched_formats asks only that nothing breaks): `ro` declared r32f,
+// only loaded, and `wo` declared rgba8, only stored, both bound to R32_UINT views. 1 into the buffer if it runs.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0, r32f) readonly uniform image2D ro;
+layout(set = 0, binding = 1, rgba8) writeonly uniform image2D wo;
+layout(set = 0, binding = 2) buffer Out { uint v[4]; } o;
+void main() {
+  o.v[1] = floatBitsToUint(imageLoad(ro, ivec2(1, 0)).x);
+  imageStore(wo, ivec2(0, 0), vec4(1.0, 0.0, 0.0, 1.0));
+  o.v[0] = 1u;
+}

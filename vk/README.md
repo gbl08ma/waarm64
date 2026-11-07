@@ -393,7 +393,12 @@ leaves it out). Two memory types, each on a heap of its own (device-local, 2 GiB
   `wg_storage_alias`, wg_shader.c `aliased_text`): the lowest binds the whole run, the others' accesses go through it at
   their distance, their `arrayLength`s the bound size as text, and their own bindings hold a small buffer of the device's
   no shader reads. A run of atomic and plain arrays can't be one (their arrays' types differ) and past
-  `maxStorageBufferBindingSize` neither: said once, dropped by WebGPU. A writable descriptor beside a pointers' binding
+  `maxStorageBufferBindingSize` neither: its draw or dispatch is refused, said once (`aliases_refused`; VK4 T37, WebGPU
+  dropped the submit before). A subresource read as a texture and written through a storage binding in one scope
+  (`scope_reads`; a 3D image's level is one WebGPU subresource) reads a copy of the image taken at the scope's start
+  (`wg_view_loop`'s, a feedback loop's texture: VK4 T37): WebGPU refuses a texture bound both ways. A uniform block
+  declared past its range and what its memory's GPUBuffer has past it (`WG_MEMORY_PAD`, cut short near
+  `maxBufferSize`) reads a shadow of the block's size, the range's bytes copied in (`scope_use.need`, VK4 T37). A writable descriptor beside a pointers' binding
   (below, "Device addresses") goes to a shadow written back at the scope's end; shadows a scope writes are in a GPUBuffer
   of their own, apart from those it only reads. A scope without such a conflict costs the scan alone.
 - **Shaders** (`wg_shader.c`): the runtime's `vk_shader` path. A pipeline's stages are compiled together
@@ -413,7 +418,8 @@ leaves it out). Two memory types, each on a heap of its own (device-local, 2 GiB
   of one link (`program_link`: a hash of its data and its stages' WGSL), however each stage came (compiled, or found in a
   cache while its partner was compiled): a draw needs its vertex and fragment shaders on one program. The link hashes
   the resources field by field (a struct's padding is indeterminate). Stages that still come with different programs
-  (a cache whose entries disagree) draw with a program of both's bindings (`wg_program_merge`, said once on stderr),
+  (a cache whose entries disagree) draw with a program of both's bindings (`wg_program_merge`, said once on stderr;
+  stages that disagree on a resource as `wg_shader_compile` refuses, `stages_agree`, refuse their draws: VK4 T37),
   where a draw used to lose its fragment shader silently (VK3 L4c-D).
 - **Descriptors** (`wg_descriptor.c`): a set's slots hold buffers, views, texel buffer views and samplers; bind groups
   are made at a replay, for the program's layout and the set's version (group 3's for its sets' uids and versions
@@ -620,7 +626,8 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   **A 2D array view bound where the shader declares a 2D texture** (Vulkan wants the view's type to be the shader's;
   Godot binds its 2D array default texture, one layer, to SDFGI's 2D samplers, and in the GI demo an 8-layer view,
   which native drivers read as the view's base layer) is bound by a 2D view of its base layer (`wg_image_view.flat`,
-  made with every sampled such view; driver tests 85 and, GD G7, 90 with two layers).
+  made with every sampled such view; driver tests 85 and, GD G7, 90 with two layers). Likewise bound as a storage image
+  the stage declares 2D, or reads as a texture: `flat_storage`, one level in the view's format (VK4 T37, driver test 102).
   **Component swizzles** are WebGPU's (`texture-component-swizzle`): such a view has a twin with the mapping (`sampled`,
   allowed only on a view that's just sampled), which sampled bindings take. Without the feature they are ignored and
   said once: it is in Chromium on every backend, and a fallback in the shader would need texel fetches too.
@@ -644,7 +651,9 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   and every draw and dispatch takes a variant keyed by the view's format (a `wgsl_sampler_key` with `WGSL_IMAGE_KEY`,
   the image's index and the format), printed from the stage's kept NIR as if declared with it, a storage texture or
   words as a declared format would be (`wg_program_variant` gives the variant's layout the same, words' parameters in
-  the group's table). Godot's post-processing writes such an image; vkd3d's UAV clears do too.
+  the group's table). Godot's post-processing writes such an image; vkd3d's UAV clears do too. One declared with a
+  format bound to a view of another takes the view's the same way, written (GD G7) or read (VK4 T37: dEQP-VK's
+  `image.mismatched_formats`; WebGPU refused the bind group, the submit lost).
 - **Storage images as words** (VK4 T7, T11; `image_words` and `declare_word_images` in wgsl_print.c, `image_use` in
   wg_cmd.c). WGSL has no atomics on textures, and WebGPU's storage textures come one way for most formats: read-only and
   write-only in core or with `texture-formats-tier1`, read-write only for r32's and, with tier2, tier2's list; no format at all
@@ -652,7 +661,9 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   (`wgsl_image_as_words`: a load and a store in one stage, or any access of a tier1 format without tier1), is in that
   stage its view's words: a storage buffer at its binding and the view's parameters (`view_words`: size, words
   between rows and slices) in its group's parameter table (above, "Texel buffers"), every load, store and size of that binding going through them
-  (`wg_im_*`; a texel past the view is left alone and reads 0). The buffer holds the texels as Vulkan lays them out, and
+  (`wg_im_*`; a texel past the view is left alone and reads 0). A view past `maxStorageBufferBindingSize` binds that
+  much, and its draws and dispatches are refused, said once (`words_past`, VK4 T37: an invalid bind group lost the
+  submit). The buffer holds the texels as Vulkan lays them out, and
   the format's encoding is printed from its `util_format_description`: normalized values clamped and rounded, integers cut
   to the channel, 16-bit and packed floats by hand from their bits (WGSL's `pack2x16float` is indeterminate past its range;
   a NaN keeps being a NaN). It is `array<atomic<u32>>` where the stage writes it: a texel under a word shares it with other
@@ -767,7 +778,8 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   clears them with integers (its reference treats them as UINT and SINT), so no sampling is offered, and a clear takes
   the integers, dEQP's way (no program clears one). The key's last four numbers are each channel's kind (unorm, snorm,
   unsigned or signed integer, float), and `packPass` (an invocation a texel, texels of up to 16 bytes at any byte,
-  channels straddling words) converts between the two: unorm widths scaled, signed integers extended, integers to and
+  channels straddling words; a pass a slab of slices or rows whose bindings fit `maxStorageBufferBindingSize`, VK4
+  T37) converts between the two: unorm widths scaled, signed integers extended, integers to and
   from floats where the kinds differ. What a format lacks of its texture's channels (`wg_format_lacks`: R8_SRGB's G and
   B, an RGB format's alpha) is kept 0, alpha 1: filled by the copies, set by clears (`wg_clear_color`), masked out of
   pipelines' writes, and read so through the view's swizzle. A view of another format is an alias as above (`R8_SRGB`
@@ -833,8 +845,10 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   past WebGPU's limit on those, or with no bind group left, is refused, said once (`wg_pipeline_pull_ok`).
 - **Pulled vertices** (VK4 T5): WebGPU wants strides and bound offsets in multiples of 4 and an attribute's offset in
   multiples of its size up to 4, and Vulkan doesn't. A binding that breaks one (`wg_vertex_pull`, at each draw: the
-  bound offset is part of the key, `vb[b].pull`), or with an attribute past its stride that no slot serves, is read by
-  the vertex stage from a read-only storage binding. Its pipeline is the worker's variant of the stage
+  bound offset is part of the key, `vb[b].pull`), or with an attribute past its stride that no slot serves, or that a
+  direct draw reads past its buffer's end (WebGPU checks a non-indexed draw's vertices and any draw's instances against
+  the bound size and refuses the draw; Vulkan's robust buffer access reads in range or zeros: `cmd->reach`, VK4 T37), is
+  read by the vertex stage from a read-only storage binding, its loads past the bound range 0. Its pipeline is the worker's variant of the stage
   (`pulledCode`): the entry point takes the bindings left as vertex buffers in a struct of their own, and fetches the
   rest from `vertex_index` or `instance_index`, the stride and the offset with `vertexDecode`, as transform feedback's
   compute pass does, the same modules kept per layout. Those bindings' bind group (`wg_pipeline_pull`: a storage buffer

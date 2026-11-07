@@ -983,11 +983,12 @@ gather(struct ctx *c, nir_function_impl *impl)
       }
    }
    /* An image declared without a format that the stage writes or only asks the size of: the key's format, or r32uint
-    * (image_format). One declared with a format that the stage writes, bound to a view of another (Godot's
-    * screen-space effects write an image declared rgba8 through an r8 view: native drivers write the view's format,
-    * the descriptor's), the key's too: the driver keys it only then (wg_cmd.c `program_keys`). */
+    * (image_format). One declared with a format, bound to a view of another (Godot's screen-space effects write an image
+    * declared rgba8 through an r8 view: native drivers write the view's format, the descriptor's; dEQP-VK's
+    * image.mismatched_formats reads them too, VK4 T37), the key's too: the driver keys it only then (wg_cmd.c
+    * `program_keys`). */
    for (unsigned i = 0; i < image_count; i++) {
-      if (images[i].format && !images[i].atomic && !images[i].ms && (images[i].access & WGSL_ACCESS_WRITE)) {
+      if (images[i].format && !images[i].atomic && !images[i].ms) {
          for (unsigned k = 0; k < c->key_count; k++)
             if (c->keys[k].sampler == WGSL_IMAGE_KEY && c->keys[k].texture == images[i].index && c->keys[k].format &&
                 c->formatless_count < WGSL_MAX_RESOURCES) {

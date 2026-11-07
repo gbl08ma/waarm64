@@ -354,7 +354,7 @@ export async function runInFlight(scenario: 'upload' | 'since') {
  * (`wgt_variant`, the out-of-context review of the driver): the scene's pipeline as an unrestarted strip, without a
  * fragment shader, as lines with depth bias. Named pixels of the image, and WebGPU's errors.
  */
-export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'facesUnused' | 'facesSplit' | 'flatLast' | 'flatFanLast' | 'flatFanFirst' | 'flatFanOdd' | 'flatListOdd' | 'flatRestart' | 'angleUniforms' | 'drawParams' | 'pullLayouts' | 'pullDrawParams' | 'pullGroups' | 'pullOffsets' | 'xfbList' | 'xfbOverflow' | 'xfbStrip' | 'xfbResume' | 'xfbMany' | 'xfbIndirect' | 'xfbIndexedIndirect' | 'xfbNullColors' | 'xfbPasses' | 'xfbPulled') {
+export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'facesUnused' | 'facesSplit' | 'flatLast' | 'flatFanLast' | 'flatFanFirst' | 'flatFanOdd' | 'flatListOdd' | 'flatRestart' | 'angleUniforms' | 'drawParams' | 'pullLayouts' | 'pullDrawParams' | 'pullGroups' | 'pullOffsets' | 'pullPastEnd' | 'xfbList' | 'xfbOverflow' | 'xfbStrip' | 'xfbResume' | 'xfbMany' | 'xfbIndirect' | 'xfbIndexedIndirect' | 'xfbNullColors' | 'xfbPasses' | 'xfbPulled') {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -439,11 +439,11 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
       if (ex.wgt_draw_params(dv, dvn, ff, ffn, adapter.features.has('indirect-first-instance') ? 1 : 0)) return { error: text(ex.wgt_error() >>> 0), errors };
       await wait(() => ex.wgt_draw_done(), 'the draws');
       at = ex.wgt_pixels() >>> 0;
-    } else if (scenario === 'pullLayouts' || scenario === 'pullDrawParams' || scenario === 'pullGroups' || scenario === 'pullOffsets') {
+    } else if (scenario === 'pullLayouts' || scenario === 'pullDrawParams' || scenario === 'pullGroups' || scenario === 'pullOffsets' || scenario === 'pullPastEnd') {
       // VK4 T5: vertex layouts WebGPU's vertex buffers refuse (wg_test.c's wgt_pull).
       const [pv, pvn] = put(await words(`/target/vk/test/vertex-pull${scenario === 'pullGroups' ? '-fixed' : ''}.vert.spv`)), [ff, ffn] = put(await words(`/target/vk/test/${scenario === 'pullGroups' ? 'vertex-pull0' : 'flat'}.frag.spv`)), [pf, pfn] = put(await words('/target/vk/test/vertex-pull.frag.spv'));
       new Uint8Array(memory.buffer, ex.wgt_pixels() >>> 0, 64 * 64 * 4).fill(0);
-      if (ex.wgt_pull(['pullLayouts', 'pullDrawParams', 'pullGroups', 'pullOffsets'].indexOf(scenario), pv, pvn, ff, ffn, pf, pfn)) return { error: text(ex.wgt_error() >>> 0), errors };
+      if (ex.wgt_pull(['pullLayouts', 'pullDrawParams', 'pullGroups', 'pullOffsets', 'pullPastEnd'].indexOf(scenario), pv, pvn, ff, ffn, pf, pfn)) return { error: text(ex.wgt_error() >>> 0), errors };
       await wait(() => ex.wgt_draw_done(), 'the draws');
       at = ex.wgt_pixels() >>> 0;
     } else if (scenario === 'link' || scenario === 'strip' || scenario === 'vertexOnly' || scenario === 'lineBias') {
@@ -521,10 +521,15 @@ export async function runScope(spirv: { vert: string; frag: string; comp: string
  * freed; `dynamicStorage`: a dynamic storage buffer's writes read back at its offset; `oddStorage`: a storage buffer
  * of an odd size bound whole. Each check: the first byte that differs from what Vulkan says (-1: none).
  */
-export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mutableViews' | 'resolve3d' | 'msCopyWithin' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied' | 'uniformWritten' | 'indirectWritten' | 'readInPlace' | 'threeSame' | 'oddRange' | 'msLayersSrgb' | 'msLayersPacked' | 'oneRow' | 'resolveTwin' | 'msLayers' | 'msTwins' | 'msPacked' | 'msFormats' | 'attachmentSizes' | 'loadNone' | 'manyLayers' | 'packedFeedback' | 'feedbackLayer' | 'addresses' | 'addressesUniform' | 'twoReads' | 'sameRange' | 'overlappingRanges' | 'inlineBlocks' | 'depthLess' | 'depthAndCompare' | 'intGather' | 'cubeSized' | 'cubeGather' | 'depthEight' | 'inlineLong' | 'immutableFreed' | 'sixteenBindings' | 'sixteenThenOne' | 'cubePlain' | 'vertexCompares' | 'fourSets' | 'bc1Blit' | 'readOnlyImages' | 'g4Views' | 'texturesFull' | 'sizeOnly' | 'formatless' | 'declaredOther' | 'arrayAsFlat' | 'texelUniforms' | 'queuesTimeline' | 'queuesBinary' | 'rgb9e5Words' | 'm8Copies' | 't30Formats' | 't31Formats' | 't32Reads' | 't32Loop' | 't32Ms' | 't34Mutable', push: string, skip: string[] = []) {
+export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mutableViews' | 'resolve3d' | 'msCopyWithin' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied' | 'uniformWritten' | 'indirectWritten' | 'readInPlace' | 'threeSame' | 'oddRange' | 'msLayersSrgb' | 'msLayersPacked' | 'oneRow' | 'resolveTwin' | 'msLayers' | 'msTwins' | 'msPacked' | 'msFormats' | 'attachmentSizes' | 'loadNone' | 'manyLayers' | 'packedFeedback' | 'feedbackLayer' | 'addresses' | 'addressesUniform' | 'twoReads' | 'sameRange' | 'overlappingRanges' | 'inlineBlocks' | 'depthLess' | 'depthAndCompare' | 'intGather' | 'cubeSized' | 'cubeGather' | 'depthEight' | 'inlineLong' | 'immutableFreed' | 'sixteenBindings' | 'sixteenThenOne' | 'cubePlain' | 'vertexCompares' | 'fourSets' | 'bc1Blit' | 'readOnlyImages' | 'g4Views' | 'texturesFull' | 'sizeOnly' | 'formatless' | 'declaredOther' | 'arrayAsFlat' | 'texelUniforms' | 'queuesTimeline' | 'queuesBinary' | 'rgb9e5Words' | 'm8Copies' | 't30Formats' | 't31Formats' | 't32Reads' | 't32Loop' | 't32Ms' | 't34Mutable' | 't37Flat' | 't37ReadWritten' | 't37BigPacked' | 't37WordsPast' | 't37Mismatched' | 't37UniformTail' | 't37AtomicAlias', push: string, skip: string[] = []) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
-  const device = await adapter.requestDevice(deviceRequest(adapter));
+  // `t37BigPacked`, `t37WordsPast`: WebGPU's least storage binding (128 MiB), which the adapter's (SwiftShader's 2 GiB and more) is past.
+  const request = deviceRequest(adapter);
+  if (scenario === 't37BigPacked' || scenario === 't37WordsPast' || scenario === 't37UniformTail') delete (request.requiredLimits as Record<string, number>).maxStorageBufferBindingSize;
+  // `t37UniformTail`: WebGPU's least buffer (256 MiB), which a memory of that size fills, no room past it.
+  if (scenario === 't37UniformTail') delete (request.requiredLimits as Record<string, number>).maxBufferSize;
+  const device = await adapter.requestDevice(request);
   const errors: string[] = [];
   device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
   const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
@@ -536,7 +541,7 @@ export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mu
   const words = new Uint8Array(await (await fetch(push)).arrayBuffer());
   const cs = ex.venus_alloc(words.length) >>> 0;
   new Uint8Array(memory.buffer, cs, words.length).set(words);
-  const index = { copy: 0, resolve3d: 36, msCopyWithin: 37, mutableViews: 38, rwImage: 41, rwImageWide: 42, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21, ycbcr: 22, manyUniforms: 23, texelStorage: 24, dynamicUniforms: 25, writtenShared: 26, immutableSampler: 27, bigUniform: 28, sharedSampler: 29, sameMemoryCopy: 30, sameImageCopy: 31, immutableCopied: 32, uniformWritten: 33, indirectWritten: 34, readInPlace: 35, addresses: 39, inlineBlocks: 40, addressesUniform: 43, twoReads: 44, sameRange: 45, overlappingRanges: 46, threeSame: 60, oddRange: 61, msLayersSrgb: 63, msLayersPacked: 64, oneRow: 52, resolveTwin: 53, msLayers: 55, msTwins: 56, msPacked: 57, msFormats: 59, attachmentSizes: 47, loadNone: 48, manyLayers: 49, packedFeedback: 50, feedbackLayer: 51, depthLess: 70, depthAndCompare: 71, intGather: 72, cubeSized: 73, cubeGather: 74, depthEight: 75, inlineLong: 76, immutableFreed: 77, sixteenBindings: 78, sixteenThenOne: 79, cubePlain: 80, vertexCompares: 81, fourSets: 82, bc1Blit: 83, readOnlyImages: 84, g4Views: 85, texturesFull: 86, sizeOnly: 87, formatless: 88, declaredOther: 89, arrayAsFlat: 90, texelUniforms: 91, queuesTimeline: 92, queuesBinary: 93, rgb9e5Words: 94, m8Copies: 95, t30Formats: 96, t31Formats: 97, t32Reads: 98, t32Loop: 99, t32Ms: 100, t34Mutable: 101 }[scenario];
+  const index = { copy: 0, resolve3d: 36, msCopyWithin: 37, mutableViews: 38, rwImage: 41, rwImageWide: 42, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21, ycbcr: 22, manyUniforms: 23, texelStorage: 24, dynamicUniforms: 25, writtenShared: 26, immutableSampler: 27, bigUniform: 28, sharedSampler: 29, sameMemoryCopy: 30, sameImageCopy: 31, immutableCopied: 32, uniformWritten: 33, indirectWritten: 34, readInPlace: 35, addresses: 39, inlineBlocks: 40, addressesUniform: 43, twoReads: 44, sameRange: 45, overlappingRanges: 46, threeSame: 60, oddRange: 61, msLayersSrgb: 63, msLayersPacked: 64, oneRow: 52, resolveTwin: 53, msLayers: 55, msTwins: 56, msPacked: 57, msFormats: 59, attachmentSizes: 47, loadNone: 48, manyLayers: 49, packedFeedback: 50, feedbackLayer: 51, depthLess: 70, depthAndCompare: 71, intGather: 72, cubeSized: 73, cubeGather: 74, depthEight: 75, inlineLong: 76, immutableFreed: 77, sixteenBindings: 78, sixteenThenOne: 79, cubePlain: 80, vertexCompares: 81, fourSets: 82, bc1Blit: 83, readOnlyImages: 84, g4Views: 85, texturesFull: 86, sizeOnly: 87, formatless: 88, declaredOther: 89, arrayAsFlat: 90, texelUniforms: 91, queuesTimeline: 92, queuesBinary: 93, rgb9e5Words: 94, m8Copies: 95, t30Formats: 96, t31Formats: 97, t32Reads: 98, t32Loop: 99, t32Ms: 100, t34Mutable: 101, t37Flat: 102, t37ReadWritten: 103, t37BigPacked: 104, t37WordsPast: 105, t37Mismatched: 106, t37UniformTail: 107, t37AtomicAlias: 108 }[scenario];
   if (push.endsWith('.frag.spv')) {
     const vert = new Uint8Array(await (await fetch(`/target/vk/test/${scenario === 'cubeSized' ? 'r5/cube-sized' : scenario === 'sixteenBindings' || scenario === 'sixteenThenOne' || scenario === 'fourSets' ? 'r7/sixteen' : scenario === 'vertexCompares' ? 'r7/vs-compare' : 'feedback'}.vert.spv`)).arrayBuffer());
     const vs = ex.venus_alloc(vert.length) >>> 0;
@@ -710,6 +715,43 @@ export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mu
     Object.assign(checks, { r4g4: [0, 4, want], r4g4AsR8: [256, 260, want], argb4: [512, 520, want], argb4Clear: [768, 770, want],
       a1bgr5: [1024, 1032, want], a2rgb10: [1280, 1288, want], a2rgb10Clear: [1536, 1540, want], a2rgb10Uint: [1792, 1804, want], a2rgb10UintPass: [1808, 1816, want],
       d16Depth: [2048, 2080, want], d16Stencil: [2304, 2320, want], d16Part: [2560, 2568, want], d16CopyDepth: [2816, 2848, want], d16CopyStencil: [3072, 4096, want] });
+  } else if (scenario === 't37AtomicAlias') {
+    // VK4 T37 (wg_test.c 108): the dispatch refused (its range as filled), the rest of its submit kept (0x77).
+    u32(want.subarray(256, 260))[0] = 0x77;
+    Object.assign(checks, { kept: [0, 512, want], refused: [512, 4096, want] });
+  } else if (scenario === 't37UniformTail') {
+    // VK4 T37 (wg_test.c 107): the block's two words in its buffer's range, at the index 0 the buffer gave.
+    u32(want.subarray(0, 16)).set([41, 42, 0xeeeeeeee, 0]);
+    Object.assign(checks, { read: [0, 4096, want] });
+  } else if (scenario === 't37Mismatched') {
+    // VK4 T37 (wg_test.c 106): the dispatch ran (1; what it read, at 4, undefined) and the rest of its submit (0x77).
+    u32(want.subarray(0, 4))[0] = 1;
+    got.set(want.subarray(4, 8), 4);
+    u32(want.subarray(256, 260))[0] = 0x77;
+    Object.assign(checks, { ran: [0, 256, want], kept: [256, 4096, want] });
+  } else if (scenario === 't37WordsPast') {
+    // VK4 T37 (wg_test.c 105): the dispatch refused (nothing at 0), the rest of its submit kept (0x77 at 256).
+    u32(want.subarray(256, 260))[0] = 0x77;
+    Object.assign(checks, { refused: [0, 256, want], kept: [256, 4096, want] });
+  } else if (scenario === 't37BigPacked') {
+    // VK4 T37 (wg_test.c 104): the fill's words, of two texels each, in the last slice (past 128 MiB unpacked) and the first.
+    u32(want.subarray(0, 16)).fill(0x12345678);
+    u32(want.subarray(256, 272)).fill(0x12345678);
+    Object.assign(checks, { lastSlice: [0, 256, want], firstSlice: [256, 4096, want] });
+  } else if (scenario === 't37ReadWritten') {
+    // VK4 T37 (wg_test.c 103): what the reads found (7, 3), then the 2D image with 42 and the 3D image's slice 1 with 43.
+    u32(want.subarray(0, 8)).set([7, 3]);
+    u32(want.subarray(256, 272)).set([42, 7, 7, 7]);
+    u32(want.subarray(512, 528)).set([3, 3, 3, 43]);
+    Object.assign(checks, { read: [0, 256, want], image2d: [256, 512, want], image3d: [512, 4096, want] });
+  } else if (scenario === 't37Flat') {
+    // VK4 T37 (wg_test.c 102): layer 1's texels through 2D views of it (5 loaded, 9 read as a texture), and its texels with 77 stored.
+    u32(want.subarray(0, 8)).set([5, 9]);
+    u32(want.subarray(256, 272)).set([5, 5, 5, 77]);
+    // And wg_shader.c's merge of stages from different programs: those that disagree on a storage image refused, 3.
+    got[128] = (ex as unknown as { wgt_merge_refused(): number }).wgt_merge_refused();
+    want[128] = 3;
+    Object.assign(checks, { loaded: [0, 128, want], merge: [128, 129, want], stored: [256, 4096, want] });
   } else if (scenario === 't34Mutable') {
     // VK4 T34 (wg_test.c 101): each set's uniform buffer, then the image's 77 (a uvec4 fetch: (77, 0, 0, 1)).
     u32(want.subarray(0, 64)).set([11, 12, 13, 14, 77, 0, 0, 1, 21, 22, 23, 24, 77, 0, 0, 1]);

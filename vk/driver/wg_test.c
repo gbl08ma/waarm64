@@ -74,6 +74,9 @@ int wgt_samples(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint3
 int wg_submits_pool_refs(const void *pool);
 bool wg_counts_sane(uint32_t resources, uint32_t pairs, uint32_t int_pairs, uint32_t key_pairs);
 int wgt_info_refused(void);
+int wgt_merge_refused(void);
+/* wg_shader.c: VK4 T37's test of its merge. */
+int wg_merge_refuses(void);
 /* wg_cmd.c: the syncs held submits signal or wait on. */
 int wg_held_syncs(void);
 
@@ -1416,6 +1419,10 @@ wgt_draw_params(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint3
  *    group the other's set 1 stays bound in: top left with set 1, top right pulled without it, bottom left with set 1.
  * 3: the top left's quad rebound at other offsets of one layout: drawn at bytes 0 (top left), 1 (top right), 2
  *    (bottom left), 3 (bottom right) of the buffer.
+ * 4: draws reading past their bindings' ends (Vulkan's robust buffer access; WebGPU refused them, the submit lost:
+ *    VK4 T37): top left, a stride of 8 bound 44 bytes before the buffer's end, 6 vertices (the last one's colour past
+ *    it), green; top right, corners from an ordinary binding and the colour from an instance binding of R8_UNORM bound
+ *    4 bytes before the end, a first instance of 4 (past it: black).
  */
 static struct {
    VkPipeline pipeline[4];
@@ -1452,7 +1459,19 @@ pull_record(VkCommandBuffer cmd, bool in_pass)
    static const float off[4][4] = { { -1, -1 }, { 0.05f, -1 }, { -1, 0.05f }, { 0.05f, 0.05f } };
    CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.pipeline[0]);
    const VkDeviceSize zero = 0, at[4] = { 0, 8192 + 2, 16384, 24576 }, whole = 8192;
-   if (pull.scenario == 1) {
+   if (pull.scenario == 4) {
+      const VkDeviceSize end44 = 32768 - 44, end4 = 32768 - 4;
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.pipeline[1]);
+      CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[0]);
+      CmdBindVertexBuffers(cmd, 0, 1, &pull.vb, &end44);
+      CmdDraw(cmd, 6, 1, 0, 0);
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.pipeline[3]);
+      CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[1]);
+      const VkBuffer two[2] = { pull.vb, pull.vb };
+      const VkDeviceSize places[2] = { at[3], end4 };
+      CmdBindVertexBuffers(cmd, 0, 2, two, places);
+      CmdDraw(cmd, 6, 1, 0, 4);
+   } else if (pull.scenario == 1) {
       CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[0]);
       CmdBindVertexBuffers(cmd, 0, 1, &pull.vb, &zero);
       CmdDraw(cmd, 6, 1, 0, 7);
@@ -1581,6 +1600,16 @@ wgt_pull(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_
    if (scenario == 3) {
       for (uint32_t i = 0; i < 4; i++)
          pull_stride7(1024 * i + i, i == 0 ? PULL_RED : i == 1 ? PULL_GREEN : i == 2 ? PULL_YELLOW : 0xffffffffu);
+   } else if (scenario == 4) {
+      for (uint32_t i = 0; i < 6; i++) {
+         const uint32_t at = 32768 - 44 + 8 * i, green = PULL_GREEN;
+         pull.map[at] = pull_corner[i][0] * 255;
+         pull.map[at + 1] = pull_corner[i][1] * 255;
+         if (at + 8 <= 32768)
+            memcpy(pull.map + at + 4, &green, 4);
+         pull.map[24576 + 8 * i] = pull_corner[i][0] * 255;
+         pull.map[24576 + 8 * i + 1] = pull_corner[i][1] * 255;
+      }
    } else {
       pull_stride7(0, PULL_RED);
       /* The indexed draw's base vertex of 3: its quad from the fourth stride. */
@@ -5969,6 +5998,384 @@ two_queues(uint32_t scenario, VkCommandBuffer cmd, VkBuffer out)
    return 0;
 }
 
+/*
+ * VK4 T37: commands WebGPU refuses that the driver can avoid, each one submit into `out` (wgt_misc's, filled 0xee). Its
+ * helpers: a compute pipeline over one set (binding i of `types[i]`, the set allocated), an image bound to memory, and
+ * a dispatch of one invocation after a barrier from everything before.
+ */
+struct t37_pipe {
+   VkPipeline pipeline;
+   VkPipelineLayout layout;
+   VkDescriptorSet set;
+};
+
+static int
+t37_compute(const uint32_t *cs, uint32_t cs_words, const VkDescriptorType *types, uint32_t n, struct t37_pipe *p)
+{
+   VkShaderModule m;
+   if (shader(cs, cs_words, &m))
+      return 1;
+   VkDescriptorSetLayoutBinding bindings[16];
+   VkDescriptorPoolSize sizes[16];
+   for (uint32_t i = 0; i < n; i++) {
+      bindings[i] = (VkDescriptorSetLayoutBinding){ i, types[i], 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL };
+      sizes[i] = (VkDescriptorPoolSize){ types[i], 1 };
+   }
+   const VkDescriptorSetLayoutCreateInfo li = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                .bindingCount = n, .pBindings = bindings };
+   VkDescriptorSetLayout dsl;
+   CHECK(CreateDescriptorSetLayout(dev, &li, NULL, &dsl));
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                            .setLayoutCount = 1, .pSetLayouts = &dsl };
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &p->layout));
+   const VkComputePipelineCreateInfo ci = {
+      .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = p->layout,
+      .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                 .module = m, .pName = "main" },
+   };
+   CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &p->pipeline));
+   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                            .poolSizeCount = n, .pPoolSizes = sizes };
+   VkDescriptorPool dp;
+   CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+   const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                             .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
+   CHECK(AllocateDescriptorSets(dev, &dai, &p->set));
+   return 0;
+}
+
+static int
+t37_image(VkImageType type, VkFormat format, VkExtent3D extent, uint32_t layers, VkImageUsageFlags usage,
+          VkImageCreateFlags flags, VkImage *out)
+{
+   const VkImageCreateInfo info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .flags = flags, .imageType = type, .format = format,
+      .extent = extent, .mipLevels = 1, .arrayLayers = layers, .samples = VK_SAMPLE_COUNT_1_BIT,
+      .tiling = VK_IMAGE_TILING_OPTIMAL, .usage = usage,
+   };
+   CHECK(CreateImage(dev, &info, NULL, out));
+   VkMemoryRequirements req;
+   GetImageMemoryRequirements(dev, *out, &req);
+   VkDeviceMemory mem;
+   if (memory_for(req, false, &mem, NULL))
+      return 1;
+   CHECK(BindImageMemory(dev, *out, mem, 0));
+   return 0;
+}
+
+static int
+t37_view(VkImage image, VkImageViewType type, VkFormat format, uint32_t layer, uint32_t layers, VkImageView *out)
+{
+   const VkImageViewCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = image,
+                                      .viewType = type, .format = format,
+                                      .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, layer, layers } };
+   CHECK(CreateImageView(dev, &vi, NULL, out));
+   return 0;
+}
+
+/* Everything before visible to a compute dispatch, and the dispatch's writes to transfers after. */
+static void
+t37_barrier(VkCommandBuffer cmd, bool after)
+{
+   const VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                                .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
+                                .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT };
+   CmdPipelineBarrier(cmd, after ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                      after ? VK_PIPELINE_STAGE_TRANSFER_BIT : VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0,
+                      NULL, 0, NULL);
+}
+
+static void
+t37_dispatch(VkCommandBuffer cmd, const struct t37_pipe *p)
+{
+   t37_barrier(cmd, false);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, p->pipeline);
+   CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, p->layout, 0, 1, &p->set, 0, NULL);
+   CmdDispatch(cmd, 1, 1, 1);
+   t37_barrier(cmd, true);
+}
+
+/* A layer of a 2x2 R32_UINT image (or the first `w` texels of one row) into `out` at `at`. */
+static void
+t37_read(VkCommandBuffer cmd, VkImage image, uint32_t layer, VkBuffer out, VkDeviceSize at, uint32_t w, uint32_t h)
+{
+   const VkBufferImageCopy c = { .bufferOffset = at,
+                                 .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, layer, 1 },
+                                 .imageExtent = { w, h, 1 } };
+   CmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_GENERAL, out, 1, &c);
+}
+
+/*
+ * 102, `cs` t37/flat-storage.comp: 2D array views of one layer bound where the shader declares 2D storage images (an
+ * invalid bind group before): two 2x2 R32_UINT images of two layers, layer 1 of the first cleared 5 (layer 0 1), of
+ * the second 9 (layer 0 3). The first loaded and stored (77 at (1, 1)), the second loaded as a texture: 5 and 9 at 0,
+ * the first's layer 1 at 256 (5, 5, 5, 77).
+ */
+static int
+t37_flat(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage =
+      (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   const VkImageUsageFlags usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+   VkImage imgs[2];
+   VkImageView views[2];
+   for (uint32_t i = 0; i < 2; i++) {
+      if (t37_image(VK_IMAGE_TYPE_2D, VK_FORMAT_R32_UINT, (VkExtent3D){ 2, 2, 1 }, 2, usage, 0, &imgs[i]) ||
+          t37_view(imgs[i], VK_IMAGE_VIEW_TYPE_2D_ARRAY, VK_FORMAT_R32_UINT, 1, 1, &views[i]))
+         return 1;
+      for (uint32_t l = 0; l < 2; l++) {
+         const VkImageSubresourceRange r = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, l, 1 };
+         const VkClearColorValue c = { .uint32 = { i ? (l ? 9 : 3) : (l ? 5 : 1) } };
+         CmdClearColorImage(cmd, imgs[i], VK_IMAGE_LAYOUT_GENERAL, &c, 1, &r);
+      }
+   }
+   static const VkDescriptorType types[3] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                                              VK_DESCRIPTOR_TYPE_STORAGE_BUFFER };
+   struct t37_pipe p;
+   if (t37_compute(cs, cs_words, types, 3, &p))
+      return 1;
+   const VkDescriptorImageInfo ii[2] = { { VK_NULL_HANDLE, views[0], VK_IMAGE_LAYOUT_GENERAL },
+                                         { VK_NULL_HANDLE, views[1], VK_IMAGE_LAYOUT_GENERAL } };
+   const VkDescriptorBufferInfo bi = { out, 0, 16 };
+   const VkWriteDescriptorSet wr[2] = {
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = p.set, .dstBinding = 0, .descriptorCount = 2,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .pImageInfo = ii },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = p.set, .dstBinding = 2, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi },
+   };
+   UpdateDescriptorSets(dev, 2, wr, 0, NULL);
+   t37_dispatch(cmd, &p);
+   t37_read(cmd, imgs[0], 1, out, 256, 2, 2);
+   return 0;
+}
+
+/*
+ * 103, `cs` t37/read-written.comp: subresources read as textures and written through storage bindings in one dispatch
+ * (WebGPU refused the dispatch, its submit dropped): a 2x2 R32_UINT image cleared 7, read at (0, 0) and 42 stored
+ * there; a 2x2x2 3D one cleared 3, read in slice 0 and 43 stored in slice 1 (its level one WebGPU subresource). The
+ * reads at 0 (7, 3), the 2D image at 256 (42, 7, 7, 7), the 3D image's slice 1 at 512 (3, 3, 3, 43).
+ */
+static int
+t37_read_written(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage =
+      (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   const VkImageUsageFlags usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+   VkImage imgs[2];
+   VkImageView views[2];
+   for (uint32_t i = 0; i < 2; i++) {
+      if (t37_image(i ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D, VK_FORMAT_R32_UINT, (VkExtent3D){ 2, 2, i ? 2 : 1 }, 1,
+                    usage, 0, &imgs[i]) ||
+          t37_view(imgs[i], i ? VK_IMAGE_VIEW_TYPE_3D : VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R32_UINT, 0, 1, &views[i]))
+         return 1;
+      const VkImageSubresourceRange r = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+      const VkClearColorValue c = { .uint32 = { i ? 3 : 7 } };
+      CmdClearColorImage(cmd, imgs[i], VK_IMAGE_LAYOUT_GENERAL, &c, 1, &r);
+   }
+   static const VkDescriptorType types[5] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                                              VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                                              VK_DESCRIPTOR_TYPE_STORAGE_BUFFER };
+   struct t37_pipe p;
+   if (t37_compute(cs, cs_words, types, 5, &p))
+      return 1;
+   const VkDescriptorImageInfo ii[4] = { { VK_NULL_HANDLE, views[0], VK_IMAGE_LAYOUT_GENERAL },
+                                         { VK_NULL_HANDLE, views[0], VK_IMAGE_LAYOUT_GENERAL },
+                                         { VK_NULL_HANDLE, views[1], VK_IMAGE_LAYOUT_GENERAL },
+                                         { VK_NULL_HANDLE, views[1], VK_IMAGE_LAYOUT_GENERAL } };
+   const VkDescriptorBufferInfo bi = { out, 0, 16 };
+   const VkWriteDescriptorSet wr[2] = {
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = p.set, .dstBinding = 0, .descriptorCount = 4,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .pImageInfo = ii },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = p.set, .dstBinding = 4, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi },
+   };
+   UpdateDescriptorSets(dev, 2, wr, 0, NULL);
+   t37_dispatch(cmd, &p);
+   t37_read(cmd, imgs[0], 0, out, 256, 2, 2);
+   const VkBufferImageCopy c = { .bufferOffset = 512, .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+                                 .imageOffset = { 0, 0, 1 }, .imageExtent = { 2, 2, 1 } };
+   CmdCopyImageToBuffer(cmd, imgs[1], VK_IMAGE_LAYOUT_GENERAL, out, 1, &c);
+   return 0;
+}
+
+/*
+ * 104: a packed format's 3D image whose texture's texels pass maxStorageBufferBindingSize (WebGPU's least, 128 MiB):
+ * a 512x512x130 A4R4G4B4_UNORM_PACK16 image (rgba8unorm, 136 MB) uploaded from a buffer filled 0x12345678, unpacked by
+ * the worker's compute pass (`packPass`, which cut its binding at the limit: the slices past it were left 0), then a
+ * 4x2 corner of its last slice and of its first copied out (packed back): the fill's words, at 0 and 256.
+ */
+static int
+t37_big_packed(VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdCopyBufferToImage CopyIn = CmdCopyBufferToImage;
+   const VkExtent3D e = { 512, 512, 130 };
+   VkImage img;
+   if (t37_image(VK_IMAGE_TYPE_3D, VK_FORMAT_A4R4G4B4_UNORM_PACK16, e, 1,
+                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 0, &img))
+      return 1;
+   VkBuffer src;
+   const VkDeviceSize bytes = (VkDeviceSize)e.width * e.height * e.depth * 2;
+   if (buffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, false, &src, NULL))
+      return 1;
+   CmdFillBuffer(cmd, src, 0, VK_WHOLE_SIZE, 0x12345678);
+   const VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
+                                .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT };
+   CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL,
+                      0, NULL);
+   const VkBufferImageCopy whole = { .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 }, .imageExtent = e };
+   CopyIn(cmd, src, img, VK_IMAGE_LAYOUT_GENERAL, 1, &whole);
+   CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL,
+                      0, NULL);
+   for (uint32_t i = 0; i < 2; i++) {
+      const VkBufferImageCopy c = { .bufferOffset = i ? 256 : 0,
+                                    .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+                                    .imageOffset = { 508, 510, i ? 0 : 129 }, .imageExtent = { 4, 2, 1 } };
+      CmdCopyImageToBuffer(cmd, img, VK_IMAGE_LAYOUT_GENERAL, out, 1, &c);
+   }
+   return 0;
+}
+
+/*
+ * 105, `cs` t37/words-past.comp: a storage image as words whose view is past maxStorageBufferBindingSize (the test's
+ * device has WebGPU's least, 128 MiB): a 4100x4096 RG32_SFLOAT image (135 MB of words), loaded and stored by a
+ * dispatch, which is refused (it wrote 1 at 0), then 0x77 written at 256 by the same submit (an invalid bind group lost
+ * the submit).
+ */
+static int
+t37_words_past(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdUpdateBuffer CmdUpdateBuffer = (PFN_vkCmdUpdateBuffer)GetDeviceProcAddr(dev, "vkCmdUpdateBuffer");
+   VkImage img;
+   VkImageView view;
+   if (t37_image(VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, (VkExtent3D){ 4100, 4096, 1 }, 1,
+                 VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 0, &img) ||
+       t37_view(img, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, 0, 1, &view))
+      return 1;
+   static const VkDescriptorType types[2] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER };
+   struct t37_pipe p;
+   if (t37_compute(cs, cs_words, types, 2, &p))
+      return 1;
+   const VkDescriptorImageInfo ii = { VK_NULL_HANDLE, view, VK_IMAGE_LAYOUT_GENERAL };
+   const VkDescriptorBufferInfo bi = { out, 0, 16 };
+   const VkWriteDescriptorSet wr[2] = {
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = p.set, .dstBinding = 0, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .pImageInfo = &ii },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = p.set, .dstBinding = 1, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi },
+   };
+   UpdateDescriptorSets(dev, 2, wr, 0, NULL);
+   t37_dispatch(cmd, &p);
+   static const uint32_t mark = 0x77;
+   CmdUpdateBuffer(cmd, out, 256, 4, &mark);
+   return 0;
+}
+
+/*
+ * 106, `cs` t37/mismatched.comp: storage images whose declared format isn't their view's (dEQP-VK's
+ * image.mismatched_formats): two 2x2 R32_UINT images cleared 0x3f800000, one read as declared r32f, one written as
+ * declared rgba8. The dispatch runs (1 at 0; what it read and wrote undefined), its submit kept (0x77 at 256).
+ */
+static int
+t37_mismatched(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage =
+      (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   PFN_vkCmdUpdateBuffer CmdUpdateBuffer = (PFN_vkCmdUpdateBuffer)GetDeviceProcAddr(dev, "vkCmdUpdateBuffer");
+   VkImage imgs[2];
+   VkImageView views[2];
+   for (uint32_t i = 0; i < 2; i++) {
+      if (t37_image(VK_IMAGE_TYPE_2D, VK_FORMAT_R32_UINT, (VkExtent3D){ 2, 2, 1 }, 1,
+                    VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 0, &imgs[i]) ||
+          t37_view(imgs[i], VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R32_UINT, 0, 1, &views[i]))
+         return 1;
+      const VkImageSubresourceRange r = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+      const VkClearColorValue c = { .uint32 = { 0x3f800000 } };
+      CmdClearColorImage(cmd, imgs[i], VK_IMAGE_LAYOUT_GENERAL, &c, 1, &r);
+   }
+   static const VkDescriptorType types[3] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                                              VK_DESCRIPTOR_TYPE_STORAGE_BUFFER };
+   struct t37_pipe p;
+   if (t37_compute(cs, cs_words, types, 3, &p))
+      return 1;
+   const VkDescriptorImageInfo ii[2] = { { VK_NULL_HANDLE, views[0], VK_IMAGE_LAYOUT_GENERAL },
+                                         { VK_NULL_HANDLE, views[1], VK_IMAGE_LAYOUT_GENERAL } };
+   const VkDescriptorBufferInfo bi = { out, 0, 16 };
+   const VkWriteDescriptorSet wr[2] = {
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = p.set, .dstBinding = 0, .descriptorCount = 2,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .pImageInfo = ii },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = p.set, .dstBinding = 2, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi },
+   };
+   UpdateDescriptorSets(dev, 2, wr, 0, NULL);
+   t37_dispatch(cmd, &p);
+   static const uint32_t mark = 0x77;
+   CmdUpdateBuffer(cmd, out, 256, 4, &mark);
+   return 0;
+}
+
+/*
+ * 107, `cs` t37/uniform-tail.comp: a uniform block declared whole (as large as the device takes: 64 KiB on SwiftShader)
+ * over the last 4 KiB of a 256 MiB device-local buffer of its own memory, on a device whose maxBufferSize is WebGPU's
+ * least, 256 MiB: its GPUBuffer has no room past the memory for the block (WG_MEMORY_PAD cut to none; WebGPU refused the
+ * binding, smaller than the block: the submit lost). 41 at the range's byte 0 and 42 at 1604, written by the submit,
+ * read at an index `out` gives (0 at byte 12): 41, 42 at 0.
+ */
+static int
+t37_uniform_tail(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdUpdateBuffer CmdUpdateBuffer = (PFN_vkCmdUpdateBuffer)GetDeviceProcAddr(dev, "vkCmdUpdateBuffer");
+   VkBuffer ub;
+   const VkDeviceSize size = 256u << 20, at = size - 4096;
+   if (buffer(size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, false, &ub, NULL))
+      return 1;
+   static const uint32_t a = 41, b = 42;
+   CmdFillBuffer(cmd, ub, at, 4096, 0);
+   CmdUpdateBuffer(cmd, ub, at, 4, &a);
+   CmdUpdateBuffer(cmd, ub, at + 1604, 4, &b);
+   static const uint32_t index = 0;
+   CmdUpdateBuffer(cmd, out, 12, 4, &index);
+   static const VkDescriptorType types[2] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER };
+   struct t37_pipe p;
+   if (t37_compute(cs, cs_words, types, 2, &p))
+      return 1;
+   const VkDescriptorBufferInfo bi[2] = { { ub, at, 4096 }, { out, 0, 16 } };
+   const VkWriteDescriptorSet wr[2] = {
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = p.set, .dstBinding = 0, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &bi[0] },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = p.set, .dstBinding = 1, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi[1] },
+   };
+   UpdateDescriptorSets(dev, 2, wr, 0, NULL);
+   t37_dispatch(cmd, &p);
+   return 0;
+}
+
+/*
+ * 108, `cs` t37/atomic-alias.comp: two writable storage buffers of one range (512 of `out`, 16 bytes), one an array of
+ * atomics and one not, which can't be one binding: the dispatch refused (the range as filled), its submit kept (0x77
+ * at 256; WebGPU refused the dispatch's writable aliasing, the submit lost).
+ */
+static int
+t37_atomic_alias(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdUpdateBuffer CmdUpdateBuffer = (PFN_vkCmdUpdateBuffer)GetDeviceProcAddr(dev, "vkCmdUpdateBuffer");
+   static const VkDescriptorType types[2] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER };
+   struct t37_pipe p;
+   if (t37_compute(cs, cs_words, types, 2, &p))
+      return 1;
+   const VkDescriptorBufferInfo bi[2] = { { out, 512, 16 }, { out, 512, 16 } };
+   const VkWriteDescriptorSet wr = { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = p.set, .dstBinding = 0,
+                                     .descriptorCount = 2, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                     .pBufferInfo = bi };
+   UpdateDescriptorSets(dev, 1, &wr, 0, NULL);
+   t37_dispatch(cmd, &p);
+   static const uint32_t mark = 0x77;
+   CmdUpdateBuffer(cmd, out, 256, 4, &mark);
+   return 0;
+}
+
 EXPORT int
 wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
 {
@@ -6652,6 +7059,27 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
    } else if (scenario == 101) {
       if (t34_misc(cs, cs_words, cmd, out))
          return 1;
+   } else if (scenario == 102) {
+      if (t37_flat(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 103) {
+      if (t37_read_written(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 104) {
+      if (t37_big_packed(cmd, out))
+         return 1;
+   } else if (scenario == 105) {
+      if (t37_words_past(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 106) {
+      if (t37_mismatched(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 107) {
+      if (t37_uniform_tail(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 108) {
+      if (t37_atomic_alias(cs, cs_words, cmd, out))
+         return 1;
    } else if (scenario == 41 || scenario == 42) {
       if (t11_misc(scenario, cs, cs_words, cmd, out))
          return 1;
@@ -7090,6 +7518,14 @@ EXPORT uint8_t *
 wgt_misc_map(void)
 {
    return misc.map;
+}
+
+/* wg_shader.c's merge of stages that came with different programs: whether it refuses stages that disagree on a
+ * resource and keeps those that agree (3; VK4 T37). */
+EXPORT int
+wgt_merge_refused(void)
+{
+   return wg_merge_refuses();
 }
 
 /* wg_shader.c's look at a shader store's counts: whether it refuses a count past its array. */

@@ -48,7 +48,7 @@ T2–T14; the rest of the order is judgement, said with each.
 
 ## The tasks
 
-### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T34, T36 (2026-10-29 to 2026-11-07); T35 parked
+### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T34, T36, T37 (2026-10-29 to 2026-11-07); T35 parked
 
 Each row's outcome in full is its section of bench/vulkan/REPORT.md ("VK4 T<n>") and its commit; what each left is in
 docs/backlog.md "The Vulkan driver's gaps" (the entry named) and, where it is a defect or drops work, in the tasks
@@ -100,7 +100,7 @@ R1–R4 and then of R5–R7, had its findings fixed or moved to the backlog the 
 | T33. Writable storage in the vertex stage | `vertexPipelineStoresAndAtomics`: such a stage printed without its entry point, run as compute for its draw's vertices in a cut of the render pass, a pass-through vertex stage drawing its outputs (an indexed draw through their places), its bindings in a group of their own or with group 3's; draws that rasterize nothing still run it, a split by face once; of 10,581 candidates (every vertex-stage case of the census's groups) 7,311 pass on SwiftShader and the M4, 55 fail on bindings past WebGPU's (T40), and `wait_before_signal`'s 26 transfer cases (the rest ask for tessellation); 7,314 join the list (→ 55,355); a storing draw ~0.12 ms more on the M4. The pre-pass decided for geometry and tessellation: this one, in the cut | "Vertex stages that store's leftovers", "Synchronization", "Texel buffers" |
 | T34. Mutable descriptors | `VK_EXT_mutable_descriptor_type`: a slot takes any type of its list, bound as the shader declares it (bind groups are made of the declarations: no variant needed without aliasing, which needs `descriptorBindingPartiallyBound`); the layout support query says no past a stage's WebGPU bindings, a mutable descriptor counted in every kind its list names; of the 10,500 cases without ray tracing stages 3,561 pass on SwiftShader and the M4, 0 fail, the rest update after bind, ray tracing, geometry, variable counts, aliasing; 3,561 join the list (→ 58,916; 58,906 with R32G32B32_SFLOAT no colour attachment, REPORT.md "VK4: R32G32B32_SFLOAT…") | "Mutable descriptors' leftovers" |
 | T36. Hangs and lost completions | a ring fence that gave its queue entry back is signalled once its work is done, by the next reply without a fence of its own or a display event's (web/gpu.ts `carry`; the review of R1–R4's C2 shape, which hung, a test in tests/gpu.test.ts); `JOBS=4` hangs no `timeline_semaphore.device_host` case and is 12% faster than 2 (left at 2 for memory); Venus's use-after-free fix tested by hand-encoded Venus commands through `venus_submit` | "dEQP-VK's four processes a machine" |
-
+| T37. Commands WebGPU refuses that the driver can avoid | nine shapes that lost their submits: texture reads of a subresource a scope writes read a copy; a one-layer 2D array view bound as a 2D storage image; stages from a cache that disagree refused; packed copies past `maxStorageBufferBindingSize` in slabs; word images past it refused, the submit kept; read-only storage images of another format than their view's keyed by it; direct draws reading a binding past its end pull it (zeros past it); uniform blocks past their memory's pad read a shadow; writable runs of atomic and plain arrays refused; a driver test of each, failing first; 197 cases join the list (→ 59,104; SwiftShader only) | "Storage images read as textures' leftovers", "Storage images as words' leftovers", "Usage scopes' leftovers", "What R7's limits leave" |
 ### Tier 3: performance on real workloads
 
 - **T15. Venus's submits ~2 ms later on NVIDIA** (M, needs the user's runs): a bundle carrying the page at several
@@ -143,17 +143,6 @@ decisions already leave (protected memory to sparse, pipeline statistics). Waiti
 maintenance8's list (a guest rebuild once Arch has Mesa 26.3), `VK_KHR_unified_image_layouts`,
 `VK_EXT_primitive_restart_index`'s cases.
 
-- **T37. Commands WebGPU refuses that the driver can avoid** (M): each a submit or draw dropped today, made valid or
-  refused where it's made (saying why): a subresource read through a storage image bound as a texture and written in
-  one scope (`scope_images`), a 2D array view of one layer bound to a 2D storage image, stages from the cache that
-  disagree on an image's kind (`wg_program_merge` without `wg_shader_compile`'s checks), `packPass`'s clamp on a large
-  3D alias (backlog "Storage images read as textures' leftovers"); a storage image as words past
-  `maxStorageBufferBindingSize` (a binding per part) and `mismatched_formats` (a variant by the view's format;
-  "Storage images as words' leftovers", "`mismatched_formats`"); a vertex binding read past its buffer's end (pulled,
-  zeros past it: "Pulled vertices' leftovers"); a uniform block past its range at the 64 KiB pad, writable bindings of
-  one range one of atomics ("What R7's limits leave", "Usage scopes' leftovers"). *Done:* a driver test of each shape
-  with no WebGPU error, the groups' cases (`robustness`, `image.mismatched_formats`, `extended_dynamic_state`'s
-  bindings past the end) run. *Start:* vk/README.md "Usage scopes", "Storage images as words".
 - **T38. Formats and features a line or a fetch away** (M; Vulkan 1.3's first): R32 texel buffer atomics (required by
   1.3: the texel buffer's words are a storage buffer already, `atomic<u32>` on them), storage texel buffers of formats
   under a word (r8, rg8, r16: an atomic and-or on the word, as 8-bit storage), the depth comparison bit in

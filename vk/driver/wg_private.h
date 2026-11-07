@@ -456,6 +456,7 @@ struct wg_image_view {
     * view's type to be the shader's; Godot binds its 2D array default texture to 2D samplers (SDFGI's compute stages),
     * which native drivers read as its layer, and WebGPU refuses the bind group (GD G4). */
    uint32_t flat;
+   uint32_t flat_storage; /* the same, for a storage binding (one level, the view's format: VK4 T37) */
 };
 
 /* A view's attachment for multiview's view `view`: its layer past the view's first. */
@@ -702,7 +703,10 @@ uint32_t wg_compute_based(struct wg_program *p, uint32_t x, uint32_t y, uint32_t
 struct wg_program *wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl_sampler_key *keys,
                                       uint32_t key_count, const struct wg_storage_alias *aliases, uint32_t alias_count);
 void wg_variant_modules(struct wg_program *v, const struct wg_shader *vs, const struct wg_shader *fs);
-struct wg_program *wg_program_merge(struct wg_program *a, const struct wg_program *b);
+struct wg_program *wg_program_merge(struct wg_program *a, const struct wg_program *b, const struct wgsl_info *vs,
+                                    const struct wgsl_info *fs);
+/* VK4 T37's test of the merge's refusal (wg_test.c `wgt_merge_refused`). */
+int wg_merge_refuses(void);
 
 /* The state a render pipeline is made with (wg_cmd.c fills it at each draw; zeroed whole so it hashes as bytes). */
 #define WG_VERTEX_BINDINGS 16
@@ -912,6 +916,14 @@ struct wg_cmd_buffer {
       struct wg_buffer *buffer;
       VkDeviceSize offset, size;
    } vbs[WG_VERTEX_BINDINGS];
+   /* The draw being recorded: what WebGPU checks its vertex buffers against (a non-indexed draw's vertices, 0 for an
+    * indexed one; any draw's instances, 0 for an indirect one): a binding it reads past is pulled (VK4 T37). */
+   struct {
+      uint32_t vertices, first, instances, first_instance;
+   } reach;
+   /* The last program_for's writable storage bindings of one range can't be one (wg_cmd.c `storage_aliases`): its draw
+    * or dispatch is refused (VK4 T37: WebGPU refused it, the submit lost). */
+   bool aliases_refused;
    struct wg_buffer *ib;
    VkDeviceSize ib_offset, ib_size;
    VkIndexType ib_type;

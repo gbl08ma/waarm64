@@ -1,0 +1,17 @@
+#version 450
+#extension GL_EXT_shader_image_load_formatted : require
+// tests/venus-driver.test.ts (VK4 T37, wg_test.c 103): subresources read as textures (storage images only loaded,
+// without a format) and written through storage bindings in one dispatch: a 2D image's texel (0, 0) read, then 42
+// stored there; a 3D image's slice 0 read (cleared 3) and 43 stored in slice 1 (one WebGPU subresource, its level).
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0, r32ui) uniform writeonly uimage2D img;
+layout(set = 0, binding = 1) readonly uniform uimage2D ro;
+layout(set = 0, binding = 2, r32ui) uniform writeonly uimage3D vol;
+layout(set = 0, binding = 3) readonly uniform uimage3D vol_ro;
+layout(set = 0, binding = 4) buffer Out { uint v[4]; } o;
+void main() {
+  o.v[0] = imageLoad(ro, ivec2(0, 0)).x;
+  o.v[1] = imageLoad(vol_ro, ivec3(1, 1, 0)).x;
+  imageStore(img, ivec2(0, 0), uvec4(42));
+  imageStore(vol, ivec3(1, 1, 1), uvec4(43));
+}

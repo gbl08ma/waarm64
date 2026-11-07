@@ -232,6 +232,8 @@ for (const [scenario, what, want] of [
   ['pullDrawParams', 'a pulled stage that reads draw parameters, two draws apart by those alone', { topLeft: [255, 0, 7, 255], topRight: [255, 0, 9, 255] }],
   ['pullGroups', 'a pulled draw between draws of a pipeline with a set where its group went', { topLeft: [0, 255, 0, 255], topRight: [255, 0, 0, 255], bottomLeft: [0, 255, 0, 255], bottomRight: [0, 0, 255, 255] }],
   ['pullOffsets', 'one layout bound at four offsets', { topLeft: [255, 0, 0, 255], topRight: [0, 255, 0, 255], bottomLeft: [255, 255, 0, 255], bottomRight: [255, 255, 255, 255] }],
+  // VK4 T37: draws reading past their bindings' ends, pulled (zeros past them).
+  ['pullPastEnd', 'draws reading their vertex and instance bindings past the buffer\'s end', { topLeft: [0, 255, 0, 255], topRight: [0, 0, 0, 255], bottomLeft: blue, bottomRight: blue }],
 ] as const) {
   test(`passes: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which compiled the shaders.
@@ -336,7 +338,7 @@ for (const [mask, what] of [
 
 // VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for.
 // Each misc scenario's compute shader (tests/venus/<name>.comp), push.comp where it isn't named.
-const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', threeSame: 'three-writes', oddRange: 'two-writes', inlineBlocks: 'inline', packedFeedback: 'feedback.frag', feedbackLayer: 'feedback.frag', depthLess: 'r5/depthless.frag', depthAndCompare: 'r5/depth-and-compare.frag', intGather: 'r5/int-gather.frag', cubeSized: 'r5/cube-sized.frag', cubeGather: 'r5/cube-gather.frag', depthEight: 'r5/depth-eight.frag', inlineLong: 'r6/inline-long', immutableFreed: 'sampled', sixteenBindings: 'r7/sixteen.frag', sixteenThenOne: 'r7/sixteen.frag', cubePlain: 'r5/cube-plain.frag', vertexCompares: 'r7/vs-compare.frag', fourSets: 'r7/four-sets.frag', bc1Blit: 'r7/sixteen.frag', readOnlyImages: 'g4/read-only', g4Views: 'g4/views', texturesFull: 'g4/textures-full', sizeOnly: 'g4/size-only', formatless: 'g5/formatless', declaredOther: 'g7/declared', arrayAsFlat: 'g4/views', texelUniforms: 'texel-uniforms', rgb9e5Words: 't23-rgb9e5', t32Reads: 't32/dst.frag', t32Loop: 't32/loop.frag', t32Ms: 't32/dst.frag', t34Mutable: 't34/mutable' } as const;
+const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', threeSame: 'three-writes', oddRange: 'two-writes', inlineBlocks: 'inline', packedFeedback: 'feedback.frag', feedbackLayer: 'feedback.frag', depthLess: 'r5/depthless.frag', depthAndCompare: 'r5/depth-and-compare.frag', intGather: 'r5/int-gather.frag', cubeSized: 'r5/cube-sized.frag', cubeGather: 'r5/cube-gather.frag', depthEight: 'r5/depth-eight.frag', inlineLong: 'r6/inline-long', immutableFreed: 'sampled', sixteenBindings: 'r7/sixteen.frag', sixteenThenOne: 'r7/sixteen.frag', cubePlain: 'r5/cube-plain.frag', vertexCompares: 'r7/vs-compare.frag', fourSets: 'r7/four-sets.frag', bc1Blit: 'r7/sixteen.frag', readOnlyImages: 'g4/read-only', g4Views: 'g4/views', texturesFull: 'g4/textures-full', sizeOnly: 'g4/size-only', formatless: 'g5/formatless', declaredOther: 'g7/declared', arrayAsFlat: 'g4/views', texelUniforms: 'texel-uniforms', rgb9e5Words: 't23-rgb9e5', t32Reads: 't32/dst.frag', t32Loop: 't32/loop.frag', t32Ms: 't32/dst.frag', t34Mutable: 't34/mutable', t37Flat: 't37/flat-storage', t37ReadWritten: 't37/read-written', t37WordsPast: 't37/words-past', t37Mismatched: 't37/mismatched', t37UniformTail: 't37/uniform-tail', t37AtomicAlias: 't37/atomic-alias' } as const;
 for (const [scenario, what] of [
   ['copy', 'buffer copies at offsets and sizes that aren\'t 4-aligned, from host-visible, device-local and GPU-written memory'],
   ['clear', 'a clear of a format WebGPU can\'t render to, and of every slice of a 3D image'],
@@ -466,6 +468,14 @@ for (const [scenario, what] of [
   ['t32Loop', 'a feedback loop: a draw sampling the image it writes, through a view of more layers, renewed after a barrier'],
   // VK4 T34.
   ['t34Mutable', 'mutable descriptors read as the type last written to them, written over another type and copied'],
+  // VK4 T37: commands WebGPU refused (their submits dropped), made valid.
+  ['t37ReadWritten', 'subresources read as textures and written as storage in one dispatch, of a 2D image and a 3D image\'s level'],
+  ['t37BigPacked', 'a packed format\'s 3D image past 128 MiB unpacked, uploaded whole'],
+  ['t37WordsPast', 'a dispatch reaching a storage image as words past maxStorageBufferBindingSize refused, its submit kept'],
+  ['t37Mismatched', 'storage images declared in another format than their views\', read and written'],
+  ['t37UniformTail', 'a uniform block declared past its range at the end of a memory whose GPUBuffer has no room past it'],
+  ['t37AtomicAlias', 'writable storage buffers of one range, one of atomics and one not, refused with their submit kept'],
+  ['t37Flat', 'a 2D array view of one layer bound where the shader declares a 2D storage image, stored and read as a texture; a merged program of stages that disagree refused'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.
@@ -481,6 +491,7 @@ for (const [scenario, what] of [
     mkdirSync(join(out, 'g7'), { recursive: true });
     mkdirSync(join(out, 't32'), { recursive: true });
     mkdirSync(join(out, 't34'), { recursive: true });
+    mkdirSync(join(out, 't37'), { recursive: true });
     for (const f of [src, ...(src.endsWith('.frag') ? ['feedback.vert', 'r5/cube-sized.vert', 'r7/sixteen.vert', 'r7/vs-compare.vert'] : [])]) {
       const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${f}.spv`), join(root, `tests/venus/${f}`)], { encoding: 'utf8' });
       assert.equal(c.status, 0, c.stderr);
@@ -504,7 +515,7 @@ for (const [scenario, what] of [
       delete checks.ran;
     }
     for (const [k, at] of Object.entries(checks)) assert.equal(at, -1, `${k}: the bytes differ from byte ${at} (${JSON.stringify(r.got)})`);
-    if (scenario === 'cubeGather' || scenario === 'fourSets') assert.ok(logs.some((l) => /refused/.test(l)), `not refused: ${JSON.stringify(logs)}`);
+    if (scenario === 'cubeGather' || scenario === 'fourSets' || scenario === 't37WordsPast' || scenario === 't37AtomicAlias') assert.ok(logs.some((l) => /refused/.test(l)), `not refused: ${JSON.stringify(logs)}`);
     assert.equal(r.warnings, 0, 'the worker warned');
     // The fill's and the six pipelines' one: not one a dispatch (a set keeps groups for 4 layouts).
     if (scenario === 'bindGroupsShared') assert.ok((r.bindGroups as number) <= 2, `${r.bindGroups} bind groups made`);
