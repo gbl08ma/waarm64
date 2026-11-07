@@ -1,8 +1,8 @@
 // The browser's storage full outside a guest's own disk writes (docs/machines.md "Storage"), in Chromium without a
 // guest: the origin's quota lowered through the DevTools protocol (`Storage.overrideQuotaForOrigin`), in a fresh
 // off-the-record context each (OPFS in memory; the override holds there, and counts the remote disks' Storage Bucket).
-// A kept snapshot's or a suspended machine's writer (web/overlay.ts `fileWriter`) gets the remote disks' kept blocks
-// out of the way and lands; still refused, it says the storage is full with `estimate()`'s numbers, as a stored disk's
+// A kept snapshot's or a suspended machine's writer (web/overlay.ts `fileWriter`), a stored disk's import and merge
+// and Import changes… (`withRoom`) get the remote disks' kept blocks out of the way and land; still refused, it says the storage is full with `estimate()`'s numbers, as a stored disk's
 // import does; an overlay whose creation was refused is made by the next opening. `estimate()` doesn't report the
 // override (its quota is still the profile's), so the numbers are checked against what `estimate()` says, not the
 // override. tests/page-quota.test.ts is the guest's side, tests/page-incognito.test.ts a kept snapshot's with a
@@ -80,6 +80,61 @@ test("a kept snapshot's writer finds the storage full: the remote disks' kept bl
     assert.ok(r.full.params!.used > 0);
   } finally {
     await context.close();
+  }
+});
+
+test("a stored disk's import and merge, and Import changes…, find the storage full: the remote disks' kept blocks give way and they land", async () => {
+  // Each writes 16 MiB with the cache holding 20 MiB, in a quota that has room for one but not both (the merge's
+  // overlay takes its 16 MiB beside them).
+  for (const [job, mib] of [['import', 32], ['merge', 40], ['changes', 32]] as const) {
+    const { context, page } = await quota(mib);
+    try {
+      const r = await inWorker<{ landed?: boolean; gaveUp?: boolean; said?: Said }>(page, `${SAID}
+        import { cacheKey, makeRoom, openBlockStore } from 'ORIGIN/web/diskcache.ts';
+        import { hashSource, loadChanges } from 'ORIGIN/web/changes.ts';
+        import { memFile, openOverlay, overlay } from 'ORIGIN/web/overlay.ts';
+        import { openDisk } from 'ORIGIN/web/qcow2.ts';
+        import { changedClusters, writeQcow2 } from 'ORIGIN/web/qcow2-write.ts';
+        import { importImage, mergeOverlay, openStoredForWriting, zeroDisk } from 'ORIGIN/web/stored.ts';
+        const MiB = 1 << 20, SIZE = 16 * MiB;
+        const source = (b) => ({ size: b.length, read: (off, len) => (off + len <= b.length ? b.slice(off, off + len) : undefined) });
+        // 16 MiB that isn't zeros (zero blocks aren't stored).
+        const bytes = Uint8Array.from({ length: SIZE }, (_, i) => ((i * 2654435761) >>> 24) | 1);
+        let changes;
+        if ('${job}' === 'merge') {
+          const f = await openStoredForWriting('disks/d', 'stored', 0);
+          await importImage(source(new Uint8Array(SIZE)), f);
+          f.close();
+          const o = await openOverlay('overlays/o', 'over-it');
+          if (!(await overlay(zeroDisk(SIZE), o.data, o.map, o.meta).write(0, bytes))) throw new Error("the overlay's write was refused");
+          o.close();
+        } else if ('${job}' === 'changes') {
+          const rw = overlay(openDisk((o, l) => new Uint8Array(l), SIZE), memFile(), memFile());
+          await rw.write(0, bytes);
+          const parts = [];
+          await writeQcow2({ size: SIZE, clusters: changedClusters(rw), backing: { name: 'base.img', format: 'raw', hash: await hashSource(source(new Uint8Array(SIZE)), () => {}) }, sink: (c, at) => { if (at === undefined) parts.push(c); else parts[0] = c; } });
+          changes = new Uint8Array(await new Blob(parts).arrayBuffer());
+        }
+        // The remote disks' cache holds 20 MiB.
+        const store = await openBlockStore(await cacheKey('an image'), 64 * MiB, MiB);
+        for (let b = 0; b < 20; b++) store.put(b, new Uint8Array(MiB).fill(b + 1));
+        try {
+          if ('${job}' === 'import') {
+            const f = await openStoredForWriting('disks/i', 'stored', 0);
+            try { await importImage(source(bytes), f, undefined, undefined, makeRoom); } finally { f.close(); }
+          } else if ('${job}' === 'merge') {
+            await mergeOverlay('disks/d', 'overlays/o', 'stored', SIZE, makeRoom);
+          } else {
+            await loadChanges({ changes: source(changes), base: source(new Uint8Array(SIZE)), label: 'a disk', overlay: 'overlays/c', identity: 'over-zeros', makeRoom });
+          }
+          postMessage({ landed: true, gaveUp: store.stats().gaveUp });
+        } catch (e) {
+          postMessage({ said: await said(e) });
+        }`);
+      assert.deepEqual([r.landed, r.gaveUp], [true, true], `${job}: ${r.said?.error ?? r.said?.key ?? ''}`);
+    } finally {
+      await context.close();
+    }
   }
 });
 

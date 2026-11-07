@@ -127,13 +127,14 @@ Since decided (the user, 2026-10-17):
   [Couldn't save the snapshot](ui:snapshots:worker.notSaved), [Couldn't suspend the machine](ui:machine:worker.suspend.failed),
   a restore's [The disk's changes couldn't be written to this browser's storage.](ui:snapshots:snapshot.storageFull), a
   stored disk's import or merge ([The disk can't be written to this browser's storage.](ui:disks:stored.writeFailed)), Import changes… and a
-  snapshot file's import ([Couldn't import {{file}}](ui:snapshots:snapshots.notKept)). A kept snapshot's and a suspended machine's
-  writer (`fileWriter`), a restore's fork and a snapshot file's import first get the remote disks' kept blocks out of the
-  way (`makeRoom`, web/diskcache.ts: every image's cache, as the page's Clear, those a running machine reads given up
-  by its device worker) and try again: off the record the browser refuses writes far below the quota `estimate()`
-  reports, which the cache's budget comes from (remote-disks.md "Off the record"). The numbers are `estimate()`'s:
+  snapshot file's import ([Couldn't import {{file}}](ui:snapshots:snapshots.notKept)). Each first gets the remote disks'
+  kept blocks out of the way (`makeRoom`, web/diskcache.ts: every image's cache, as the page's Clear, those a running
+  machine reads given up by its device worker) and tries again (a kept snapshot's and a suspended machine's writer
+  `fileWriter`, a snapshot file's import; the rest a refused block's write through `withRoom`, web/overlay.ts): off
+  the record the browser refuses writes far below the quota `estimate()` reports, which the cache's budget comes from
+  (remote-disks.md "Off the record"). The numbers are `estimate()`'s:
   off the record, and under a lowered quota, they say less is used than the browser refuses at
-  (tests/storage-full.test.ts checks them against `estimate()`, in Chromium without a guest).
+  (tests/storage-full.test.ts checks them against `estimate()`, and each writer's room, in Chromium without a guest).
 - **Transient machines:** the tests' query parameters (`?machine=debian`, `?disk=`, `?disk2=`, `?ncpus=`, `?ram=`)
   make a machine that is never stored. Its overlays keep their single names (`webpc-debian`, `webpc-buildroot`,
   `webpc-disk-<hash>` for `?disk=`), which the sweep never touches; its suspended copy is beside its overlay.

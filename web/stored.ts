@@ -7,7 +7,7 @@
 // opening (`resumeMerge`), before anything reads it. Workers only in a browser (sync access handles).
 import type { Source } from './devices.ts';
 import { MsgError } from './msg.ts';
-import { openOverlay, overlay, overlayMeta, readMeta, removeOverlay, storageFullError, writeMeta, type OverlayFiles, type SyncFile } from './overlay.ts';
+import { openOverlay, overlay, overlayMeta, readMeta, removeOverlay, storageFullError, withRoom, writeMeta, type OverlayFiles, type SyncFile } from './overlay.ts';
 import { openDisk, type Disk, type Inflater } from './qcow2.ts';
 
 const BLOCK = 4096;
@@ -62,11 +62,13 @@ export async function openStoredForWriting(path: string, identity: string, size:
 /**
  * Copies image `src` (qcow2 or raw: its virtual bytes, compressed clusters inflated) into the empty block store
  * `files`, leaving zero blocks out. `progress` gets the bytes done of the virtual size. Returns the size and the
- * blocks written. `inflater` unpacks compressed clusters (web/inflate-pool.ts in the disk worker).
+ * blocks written. `inflater` unpacks compressed clusters (web/inflate-pool.ts in the disk worker). A write the storage
+ * refuses asks `makeRoom` for room first (`withRoom`).
  */
-export async function importImage(src: Source, files: OverlayFiles, progress: (done: number, total: number) => void = () => {}, inflater?: Inflater) {
+export async function importImage(src: Source, files: OverlayFiles, progress: (done: number, total: number) => void = () => {}, inflater?: Inflater, makeRoom?: () => Promise<boolean>) {
   const image = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : src.read(off, len)), src.size, inflater);
   const store = overlay(zeroDisk(image.size), files.data, files.map, files.meta);
+  const lands = withRoom(makeRoom);
   const CHUNK = 1 << 20;
   let blocks = 0;
   for (let off = 0; off < image.size; off += CHUNK) {
@@ -79,7 +81,7 @@ export async function importImage(src: Source, files: OverlayFiles, progress: (d
       if (!nonzero(b)) { b++; continue; }
       let e = b + 1;
       while (nonzero(e)) e++;
-      if (!(await store.write(off + b * BLOCK, bytes.subarray(b * BLOCK, Math.min(len, e * BLOCK))))) throw new MsgError('disks:stored.writeFailed', undefined, { cause: await storageFullError() });
+      if (!(await lands(() => store.write(off + b * BLOCK, bytes.subarray(b * BLOCK, Math.min(len, e * BLOCK)))))) throw new MsgError('disks:stored.writeFailed', undefined, { cause: await storageFullError() });
       blocks += e - b;
       b = e;
     }
@@ -120,33 +122,34 @@ function qcow2Allocated(src: Source) {
  * Writes overlay `overlayPath`'s blocks into stored disk `diskPath` and deletes the overlay (docs/machines.md
  * §4.4: the page has deleted its record, and the disk's other overlays, first). The store's generation moves on and
  * its meta names the overlay while the blocks are copied: interrupted, the next opening of the store does it again
- * (`resumeMerge`: the same blocks written again are harmless). Returns the blocks merged.
+ * (`resumeMerge`: the same blocks written again are harmless). Returns the blocks merged. A write the storage refuses
+ * asks `makeRoom` for room first (`withRoom`).
  */
-export async function mergeOverlay(diskPath: string, overlayPath: string, identity: string, size: number) {
-  await resumeMerge(diskPath, size);
+export async function mergeOverlay(diskPath: string, overlayPath: string, identity: string, size: number, makeRoom?: () => Promise<boolean>) {
+  await resumeMerge(diskPath, size, makeRoom);
   const files = await openOverlay(diskPath, identity);
   try {
     const m = readMeta(files.meta);
     if (!writeMeta(files.meta, { generation: m.generation + 1, merging: overlayPath })) throw new MsgError('disks:stored.stateWriteFailed');
-    return await copyIn(files, overlayPath, size);
+    return await copyIn(files, overlayPath, size, makeRoom);
   } finally {
     files.close();
   }
 }
 
 /** Finishes a merge into stored disk `diskPath` that was interrupted (its meta names the overlay); nothing otherwise. */
-export async function resumeMerge(diskPath: string, size: number) {
+export async function resumeMerge(diskPath: string, size: number, makeRoom?: () => Promise<boolean>) {
   if (!(await overlayMeta(diskPath)).merging) return; // without opening it: readers may have it open
   const files = await openOverlay(diskPath, undefined);
   try {
-    if (readMeta(files.meta).merging) await copyIn(files, readMeta(files.meta).merging, size);
+    if (readMeta(files.meta).merging) await copyIn(files, readMeta(files.meta).merging, size, makeRoom);
   } finally {
     files.close();
   }
 }
 
 /** The merge's copy, with the store open and marked: the overlay's blocks in (its zero blocks as zeros), the overlay deleted, the mark cleared. */
-async function copyIn(files: OverlayFiles, overlayPath: string, size: number) {
+async function copyIn(files: OverlayFiles, overlayPath: string, size: number, makeRoom?: () => Promise<boolean>) {
   let blocks = 0;
   let ov: OverlayFiles | undefined;
   try {
@@ -158,10 +161,11 @@ async function copyIn(files: OverlayFiles, overlayPath: string, size: number) {
     try {
       const store = overlay(zeroDisk(size), files.data, files.map); // no meta: the merge moved the generation once
       const changes = overlay(zeroDisk(size), ov.data, ov.map);
+      const lands = withRoom(makeRoom);
       for (const b of changes.written()) {
         const at = b * BLOCK;
         const len = Math.min(BLOCK, size - at);
-        const ok = changes.zeroed(b) ? await store.zero(at, len) : await store.write(at, changes.block(b)!.subarray(0, len));
+        const ok = await lands(() => (changes.zeroed(b) ? store.zero(at, len) : store.write(at, changes.block(b)!.subarray(0, len))));
         if (!ok) throw new MsgError('disks:stored.writeFailed', undefined, { cause: await storageFullError() });
         blocks++;
       }

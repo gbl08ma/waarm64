@@ -1325,11 +1325,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     (the chunks' map lookup per request: kept if within noise). The cloud's boots written in place (221 s) and on a merged disk (290 s)
     were slower than its overlay boots (115–156 s), one run each on shared hardware; the user's boots of stored and
     merged disks by hand showed nothing like it. If anyone relies on in-place disks for speed, time those boots too.
-  - **The storage full, what's left** (machines.md "Storage"): a stored disk's import or merge and Import changes… say
-    the storage is full with its numbers but don't give the remote disks' cache its room back first, as a snapshot's
-    writers do (`makeRoom`). Off the record and under a lowered quota the numbers are `estimate()`'s, which say less is
-    used than where the browser refuses (nothing reports the real limit there); the cache isn't made smaller off the
-    record, as nothing tells a page it is.
   - A stored disk's SHA-256 isn't computed in the background (once would do: it never changes; machines.md §3.1), and a definition carries a file's hash only
     where the record has one: a definition's file is checked by name, size and date unless something hashed it.
   - **Chromium 153 crashes reading a file handle back from IndexedDB in an off-the-record context** (the whole

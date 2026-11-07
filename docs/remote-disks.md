@@ -50,7 +50,8 @@ sync handles refuse writes at ~0.8 GB in all while `estimate()` reports ~3.2 GB.
 from that estimate (a quarter of the free quota, web/diskcache.ts), so it can hold what was the room for everything
 else. Nothing tells a page it is off the record, so the cache isn't made smaller there; instead what needs the room
 gets it back: a guest's disk write that is refused empties the open stores (`releaseStores`) and is tried once more,
-and a kept snapshot, a Suspend, a Restore's fork and a snapshot file's import do the same through `makeRoom` (every
+and a kept snapshot, a Suspend, a Restore's fork, a snapshot file's import, a stored disk's import or merge and Import
+changes… do the same through `makeRoom` (every
 image's cache, as the Machines page's Clear: a running machine's device worker gives its store up over the
 BroadcastChannel). What they freed is fetched again from the server. Still refused, the error says the storage is
 full with `estimate()`'s numbers (docs/machines.md "Storage"). tests/page-incognito.test.ts reads a URL disk's whole

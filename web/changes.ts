@@ -4,7 +4,7 @@
 // to be the one it was made over. Workers only in a browser (sync access handles, synchronous reads).
 import type { Source } from './devices.ts';
 import { msg, MsgError, type Msg } from './msg.ts';
-import { openOverlay, overlay, removeOverlay, storageFullError } from './overlay.ts';
+import { openOverlay, overlay, removeOverlay, storageFullError, withRoom } from './overlay.ts';
 import { openDisk, readChanges } from './qcow2.ts';
 import { isZero } from './qcow2-write.ts';
 
@@ -37,7 +37,8 @@ export async function hashSource(src: Source, progress: (done: number) => void, 
  * the blocks of the changes file `changes`. The overlay, and the firmware's variable store beside
  * it, are deleted first: the changes are the whole of what the disk has written. Refuses, before
  * touching anything, a file that isn't one of ours or whose base isn't `base` (`hashSource` of its
- * bytes is compared), with a message for the user (a `MsgError`). `label` names `base` in it.
+ * bytes is compared), with a message for the user (a `MsgError`). `label` names `base` in it. A write the storage
+ * refuses asks `makeRoom` for room first (`withRoom`).
  */
 export async function loadChanges(o: {
   changes: Source;
@@ -46,6 +47,7 @@ export async function loadChanges(o: {
   overlay: string;
   identity: string;
   progress?: (phase: Msg, done: number, total: number) => void;
+  makeRoom?: () => Promise<boolean>;
 }) {
   const progress = o.progress ?? (() => {});
   const c = readChanges((off, len) => (len === 0 ? new Uint8Array(0) : o.changes.read(off, len)), o.changes.size);
@@ -61,10 +63,11 @@ export async function loadChanges(o: {
   const files = await openOverlay(o.overlay, o.identity);
   try {
     const disk = overlay(base, files.data, files.map, files.meta);
+    const lands = withRoom(o.makeRoom);
     const total = Math.ceil(c.size / 4096);
     let blocks = 0;
     for await (const { block, data } of c.blocks()) {
-      if (!(isZero(data) ? await disk.zero(block * 4096, data.length) : await disk.write(block * 4096, data))) throw new MsgError('disks:changes.blockWriteFailed', { block }, { cause: await storageFullError() });
+      if (!(await lands(() => (isZero(data) ? disk.zero(block * 4096, data.length) : disk.write(block * 4096, data))))) throw new MsgError('disks:changes.blockWriteFailed', { block }, { cause: await storageFullError() });
       if (++blocks % 256 === 0) progress(msg('disks:changes.loadingChanges'), block, total);
     }
     disk.flush();

@@ -70,6 +70,16 @@ export async function storageFullError(): Promise<MsgError> {
   return n ? new MsgError('disks:overlay.storageFull.numbers', { used: n.used, quota: n.quota }) : new MsgError('disks:overlay.storageFull');
 }
 
+/**
+ * Writes that make room when the storage refuses one (docs/machines.md "Storage"): `w` is tried, and refused, tried once
+ * more after `makeRoom` (the remote disks' kept blocks: `makeRoom` in web/diskcache.ts) made some; once it makes none,
+ * a refusal stands. Whether it landed. A write the overlay refused is safe to try again (its map is as it was).
+ */
+export function withRoom(makeRoom?: () => Promise<boolean>) {
+  let room = !!makeRoom;
+  return async (w: () => boolean | Promise<boolean>) => (await w()) || (room && (room = await makeRoom!().catch(() => false)) && (await w()));
+}
+
 /** An overlay's `meta` file: its generation (u64 LE at 0) and, for a stored disk, the overlay being merged into it (`merging`: its id, or empty). */
 export type Meta = { generation: number; merging: string };
 const META_SIZE = 32;

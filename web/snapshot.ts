@@ -12,7 +12,7 @@ import { diskIdentity, type BlkSpec, type DeviceSpec } from './devices.ts';
 import { ramDisk } from './ramdisk.ts';
 import { lzCodec } from './lz.ts';
 import { msg, MsgError, type Param } from './msg.ts';
-import { openOverlay, overlay, overlayMeta, removeOverlay, storageFullError, writeMeta, type WritableDisk } from './overlay.ts';
+import { openOverlay, overlay, overlayMeta, removeOverlay, storageFullError, withRoom, writeMeta, type WritableDisk } from './overlay.ts';
 import { makeRoom } from './diskcache.ts';
 import { isZero } from './qcow2-write.ts';
 import { ABI, bootVm, compileCore, Exit, type BootOptions, type ConsoleInput, type Restore, type Vm, type VmState } from './vm.ts';
@@ -229,8 +229,7 @@ export async function readSnapshot(
       const open = new Map<number, { disk: WritableDisk; close(): void; size: number } | 'skip'>();
       // A write the storage refused gets the remote disks' kept blocks out of the way (`makeRoom`) and is tried once more
       // (until there's nothing left to give).
-      let room = true;
-      const lands = async (w: () => boolean | Promise<boolean>) => (await w()) || (room && (room = await makeRoom().catch(() => false)) && (await w()));
+      const lands = withRoom(makeRoom);
       const full = async () => new MsgError('snapshots:snapshot.storageFull', undefined, { cause: await storageFullError() });
       const rams: { spec: BlkSpec; disk: ReturnType<typeof ramDisk> }[] = [];
       try {
