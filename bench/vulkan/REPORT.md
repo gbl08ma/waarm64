@@ -793,6 +793,51 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` oth
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 T39: multisampling's gaps — SwiftShader's short resolves into deep arrays worked around; 455 cases join the list
+
+2026-11-07, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t39/`: `clears-before.json` and `clears.json` the 588
+`clear_color_image.2d.optimal.{multiple_layers,remaining_array_layers}.*_sample_count_4` before and after,
+`attachments.json` the RGBA8 family's 720 layered multisampled `clear_color_attachment` cases with the 86 R4 took out of
+the list, `mutable-diffsize.json` T4's 485 failing multisampled `image.mutable` resolves and the 126
+`resolve_image.diff_image_size` ones, `regress.json` the list's 7,345 cases that resolve, clear or multisample (all
+pass), `m4.json` the joining cases on the M4, `join.txt` them; `repro.ts` and `repro-layers.ts` the raw WebGPU repros.
+
+**The multisampled clears weren't clears.** In vulkan-cts 1.4.7.0 these cases clear a 4-sample image of 8 layers
+whole, then some of its layers, resolve every layer into a single-sampled image and read it back (the source in the
+containers of an older CTS checked a single-sampled image; it misled the first hour). The driver's commands and the
+worker's were the same for R8 (passing) and RGBA8 (failing), and the resolved texel read back on the GPU was right:
+what failed was the last 508 texels of each 256x256 layer, `2 · width − 4` at every size from 16 to 256. A repro without
+the driver: **SwiftShader's WebGPU resolves into an `rgba8unorm` or `bgra8unorm` view of a texture of 6 layers or
+more leaves the level's last `2 · width − 4` texels unwritten** (4 layers and fewer, R8, RG8, sRGB, RGBA16F, level 1 of
+three: right; the view's format decides, not the texture's). Metal resolves every variant rightly. The bytes never
+written are whatever the memory held, which is why the backlog saw zeros, colours where zeros belong and colours of
+neither, varying with the cases run before. The worker now resolves such a view into a texture of its own and copies it
+into the layer (`shortResolve`; `vkCmdResolveImage`'s and a pass's resolve targets), on every adapter: a copy of a
+level beside a resolve, and resolves into arrays that deep are rare. It also took the 126 `diff_image_size` resolves
+(a destination of 11 layers), which pass now.
+
+| run (SwiftShader) | before | after |
+|---|---|---|
+| `clear_color_image` layered, 4 samples (588) | 89 fail, 271 pass | 0 fail, 360 pass |
+| the RGBA8 family's `clear_color_attachment` layered and R4's 86 (804) | (R4's failed) | 0 fail, 204 pass |
+| T4's failing multisampled `image.mutable` resolves (485, before T12) and `diff_image_size` (126) | 485 failed at T4 | 130 fail, 376 pass |
+| the list's resolving cases (7,345) | | 7,345 pass |
+
+**The rest of T39:** multisampled copies between a packed format and a plain one, and `rgb10a2` and another of 4 bytes,
+carry their bits (`texelFields`, `bitsBetween` over fields; SNORM layouts still skipped). Images made for sampling
+already reported 1|4 samples where their format renders (VK4 T4): the backlog's sentence was stale. Of the 130
+`image.mutable` failures left, 124 are views in formats WebGPU doesn't multisample (`r32_*`, `rg32_*`: their invalid
+textures lose the submit), and 6 are the sRGB twins' ~0.26 in green and blue: SwiftShader again, resolving a 4-sample sRGB
+texture through its UNORM view as sRGB (0.5 comes out 55; Metal gives 128): filed, not worked around. `R32G32_SFLOAT` and
+`R32G32B32A32_SFLOAT` at 4 samples are left, with the emulation's better shape written down (channels split into
+`r32float` attachments, an L task), as is `sampler2DMSArray` sampled whole (a variant keyed by the view's layers):
+docs/backlog.md "Sample counts Vulkan wants but WebGPU lacks", "Multisampled arrays' leftovers".
+
+**The list goes 65,546 → 66,001**: the 455 that passed and weren't in it (418 clears, 30 `image.mutable` resolves, 7
+`diff_image_size`), all passing on the M4 too (`m4.json`). `scripts/ci.sh` OK (581 s); `scripts/ci-deqp-vk.sh` OK (901 s: a sample of 8,900
+of 66,001, seed 2214960829, YCbCr's list and the replays).
+
 ## VK4 T38: formats and features a line or a fetch away; 6,443 cases join the list
 
 2026-11-07, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,

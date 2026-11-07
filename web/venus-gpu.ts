@@ -59,7 +59,7 @@ class Later {
 type Batch = { waits: Promise<void>[]; ops: (() => void)[]; at: number };
 
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-type View = { view: GPUTextureView; format: GPUTextureFormat; samples: number; tex: GPUTexture };
+type View = { view: GPUTextureView; format: GPUTextureFormat; samples: number; tex: GPUTexture; mip: number; layer: number };
 type Obj = GPUBuffer | GPUTexture | View | GPUSampler | GPUBindGroupLayout | GPUPipelineLayout | GPURenderPipeline | GPUComputePipeline | GPUBindGroup | GPUShaderModule | GPUQuerySet | Later;
 
 /** What the driver advertises follows (vk/driver/wg_caps.c): a device's features and limits, or a stand-in's in tests. */
@@ -338,6 +338,9 @@ export class VenusGpu {
    * web/venus-share.ts), not by a shader's storage writes. */
   private readonly written = new WeakMap<GPUTexture | GPUBuffer, number>();
   private touched = new Set<GPUTexture | GPUBuffer>();
+  /** `resolveTemp`'s textures, and the open render pass's resolves into them (`endPass` copies them out). */
+  private resolveTemps = new Map<string, GPUTexture>();
+  private passResolves: ShortResolve[] = [];
   /** A texture's bytes are another renderer's resource's from now on (`res`; 0: no longer): web/venus-import.ts, called at the bind (it
    * writes textures in the queue's order itself). `desc` is what the texture was made with; what it returns, the resource's own texture
    * (kept while the resource lives), takes the image's place under its id (VK4 T16). */
@@ -582,6 +585,7 @@ export class VenusGpu {
         const keepOps = j.keep ? { storeOp: 'store', ...(j.keep === 2 ? { loadOp: 'load' } : {}) } : {};
         const colors: (GPUTextureFormat | null)[] = [];
         const textures: GPUTexture[] = [];
+        const resolves: ShortResolve[] = [];
         let samples = 1;
         const desc: GPURenderPassDescriptor = {
           colorAttachments: (j.colorAttachments as (Json | null)[]).map((a) => {
@@ -590,8 +594,19 @@ export class VenusGpu {
             colors.push(v.format);
             samples = v.samples;
             textures.push(v.tex);
-            if (a.resolveTarget) textures.push(self.get<View>(a.resolveTarget).tex);
-            return { ...a, ...keepOps, view: v.view, resolveTarget: a.resolveTarget ? self.get<View>(a.resolveTarget).view : undefined } as GPURenderPassColorAttachment;
+            let resolveTarget: GPUTextureView | undefined;
+            if (a.resolveTarget) {
+              const r = self.get<View>(a.resolveTarget);
+              textures.push(r.tex);
+              resolveTarget = r.view;
+              if (shortResolve(r.tex, r.format)) {
+                const w = Math.max(1, r.tex.width >> r.mip), h = Math.max(1, r.tex.height >> r.mip);
+                const t = self.resolveTemp(r.format, w, h);
+                resolveTarget = t.createView();
+                resolves.push({ t, dst: r.tex, mip: r.mip, layer: r.layer, w, h });
+              }
+            }
+            return { ...a, ...keepOps, view: v.view, resolveTarget } as GPURenderPassColorAttachment;
           }),
         };
         let depth: GPUTextureFormat | undefined;
@@ -616,6 +631,7 @@ export class VenusGpu {
           // A later part of a Vulkan pass goes on with its capture.
           if (j.keep !== 2) self.flushXfb();
           self.pass = self.enc!.beginRenderPass(self.timed(desc));
+          self.passResolves = resolves;
           self.encPasses++;
         });
       },
@@ -1289,10 +1305,14 @@ override bit: u32 = 8u;
       return;
     }
     // Bits, not values: twins through their linear views, packed layouts' channels by where their bits are, other
-    // formats of a block's size through a shader that carries the bits (`bitsBetween`).
+    // layouts of a texel's size (a packed format and a plain one, rgb10a2: VK4 T39) through a shader that carries the
+    // bits (`bitsBetween`).
     const base = f.replace('-srgb', '') as GPUTextureFormat, sBase = S.format.replace('-srgb', '') as GPUTextureFormat;
-    const swizzle = this.packed.get(S) || this.packed.get(D) ? packedSwizzle(this.packed.get(S), this.packed.get(D)) : 'rgba';
-    const bits = sBase === base ? '' : bitsBetween(sBase, base);
+    const sp = this.packed.get(S), dp = this.packed.get(D);
+    let swizzle = sp || dp ? packedSwizzle(sp, dp) : 'rgba';
+    let bits = sBase === base && !sp && !dp ? '' : bitsBetween(sBase, base, sp, dp);
+    if (swizzle !== undefined && sp && dp) bits = '';
+    else if (swizzle === undefined && bits !== undefined) swizzle = 'rgba';
     if (swizzle === undefined || bits === undefined || (D.sampleCount !== S.sampleCount && !one) || !(S.usage & TEXTURE_BINDING && D.usage & RENDER_ATTACHMENT)) {
       this.warn(`a multisampled copy of ${S.format} into ${f} that WebGPU can't make: skipped`);
       return;
@@ -1403,7 +1423,7 @@ override bit: u32 = 8u;
       case 2: {
         const tex = this.get<GPUTexture>(j.texture);
         const { texture: _, ...desc } = j;
-        this.objs[id] = { view: tex.createView(desc as GPUTextureViewDescriptor), format: j.format ?? tex.format, samples: tex.sampleCount, tex };
+        this.objs[id] = { view: tex.createView(desc as GPUTextureViewDescriptor), format: j.format ?? tex.format, samples: tex.sampleCount, tex, mip: j.baseMipLevel ?? 0, layer: j.baseArrayLayer ?? 0 };
         return;
       }
       case 3: this.objs[id] = d.createSampler(j as GPUSamplerDescriptor); return;
@@ -1519,6 +1539,20 @@ override bit: u32 = 8u;
 
   // What the driver can't say as WebGPU commands: drawn here.
 
+  /** A texture of the worker's that a resolve `shortResolve` names goes into first, by format and size (kept). */
+  private resolveTemp(format: GPUTextureFormat, w: number, h: number) {
+    const key = `${format}:${w}x${h}`;
+    let t = this.resolveTemps.get(key);
+    if (!t) {
+      // A handful are enough (a program resolves into a few sizes): past them the oldest leaves the cache, not destroyed
+      // (a held submit may still name it: the collector takes it once nothing does).
+      if (this.resolveTemps.size >= 8) this.resolveTemps.delete(this.resolveTemps.keys().next().value!);
+      t = this.device!.createTexture({ size: [w, h], format, usage: RENDER_ATTACHMENT | TEX_COPY_SRC });
+      this.resolveTemps.set(key, t);
+    }
+    return t;
+  }
+
   private viewOf(t: GPUTexture, mip: number, layer: number, format?: string) {
     const key = `${mip}:${layer}:${format ?? ''}`;
     let views = this.views.get(t);
@@ -1595,7 +1629,14 @@ override bit: u32 = 8u;
       // one, a 32-bit float or texture-formats-tier1's 16-bit normalized ones: VK4 T21).
       if (!/int$|^r(g|gba)?32float$|^r(g|gba)?16[su]norm$/.test(fmt) && tex.dimension !== '3d' && !sx && !sy && !dx && !dy && w === sw && h === sh && w === dw && h === dh && tex.usage & RENDER_ATTACHMENT) {
         this.emul.resolves++;
-        enc.beginRenderPass({ colorAttachments: [{ view: this.viewOf(j.src, j.srcMip, j.srcLayer, ownFormat(S, j.srcFormat)), resolveTarget: this.viewOf(j.dst, j.dstMip, j.dstLayer, ownFormat(tex, fmt)), loadOp: 'load', storeOp: 'store' }] }).end();
+        const src = this.viewOf(j.src, j.srcMip, j.srcLayer, ownFormat(S, j.srcFormat));
+        if (shortResolve(tex, fmt)) {
+          const t = this.resolveTemp(fmt, dw, dh);
+          enc.beginRenderPass({ colorAttachments: [{ view: src, resolveTarget: t.createView(), loadOp: 'load', storeOp: 'store' }] }).end();
+          enc.copyTextureToTexture({ texture: t }, { texture: tex, mipLevel: j.dstMip, origin: { x: 0, y: 0, z: j.dstLayer } }, [dw, dh, 1]);
+        } else {
+          enc.beginRenderPass({ colorAttachments: [{ view: src, resolveTarget: this.viewOf(j.dst, j.dstMip, j.dstLayer, ownFormat(tex, fmt)), loadOp: 'load', storeOp: 'store' }] }).end();
+        }
       } else {
         this.emul.drawnResolves++;
         this.resolveByDraw(j, sx, sy, dx, dy, w, h);
@@ -1885,6 +1926,9 @@ ${vs}
     this.pass?.end();
     this.pass = undefined;
     this.passAtts = undefined;
+    // Resolves the pass made into a texture of the worker's (`shortResolve`): copied into their layers.
+    for (const r of this.passResolves) this.enc!.copyTextureToTexture({ texture: r.t }, { texture: r.dst, mipLevel: r.mip, origin: { x: 0, y: 0, z: r.layer } }, [r.w, r.h, 1]);
+    this.passResolves = [];
     // A capture still open is one a cut of the Vulkan pass divides (wg_cmd.c `begin_pass`): it goes on in the next part.
     if (!xfbOpen(this.xfbJobs)) this.flushXfb();
   }
@@ -3057,6 +3101,18 @@ export function encodeTexel(fmt: string, c: number[]): Uint8Array | undefined {
 const ownFormat = (t: GPUTexture, format: string | undefined) => (format && format !== t.format ? format : undefined);
 
 /**
+ * Whether a resolve into a view of format `format` of `tex` goes through a texture of the worker's (`resolveTemp`), then
+ * a copy into the layer (VK4 T39): SwiftShader's WebGPU resolves into an rgba8unorm or bgra8unorm view of a texture of 6
+ * layers or more short, the level's last 2 · width − 4 texels unwritten (each size measured, 16 to 256; 4 layers and
+ * fewer, other formats and Metal right), which `clear_color_image.*.multiple_layers.*_sample_count_4` met as zeros or
+ * old bytes. A copy of a level costs little beside a resolve, and such resolves are rare, so every adapter takes it.
+ */
+const shortResolve = (tex: GPUTexture, format: string) =>
+  (format === 'rgba8unorm' || format === 'bgra8unorm') && tex.dimension === '2d' && tex.depthOrArrayLayers >= 6 && (tex.usage & TEX_COPY_DST) !== 0;
+
+type ShortResolve = { t: GPUTexture; dst: GPUTexture; mip: number; layer: number; w: number; h: number };
+
+/**
  * The indices an indirect indexed fan's list has room for: its count is on the GPU, so the worst case, of the bound
  * range, but no more than a fan may have (the bound range is often a whole shared buffer: VK4 R4, the review's X3); past that the fan is cut.
  */
@@ -3087,40 +3143,67 @@ export function packedSwizzle(from?: number[], to?: number[]) {
   return s;
 }
 
-/** A format's channels as raw bits: their number and size, how a texel's value is one, and their order in memory. */
-function rawFormat(f: string) {
-  const m = /^(bgra|rgba|rg|r)(8|16|32)(unorm|uint|sint|float)$/.exec(f);
-  if (!m) return undefined;
-  const size = Number(m[2]), order = m[1] === 'bgra' ? [2, 1, 0, 3] : [0, 1, 2, 3].slice(0, m[1].length);
-  return { size, kind: m[3], order };
+/** A texel's channels as raw bits: each channel's place and width in the texel's bytes and how its value is one. */
+type TexelField = { c: number; at: number; n: number; kind: 'unorm' | 'uint' | 'sint' | 'float' };
+
+/**
+ * A texture format's texel as bit fields (the plain 8-, 16- and 32-bit ones, rgb10a2), or a packed format's from its key
+ * (`packed`: each channel's shift and size, the texel's bytes, each channel's kind: wg_device.c `packed_key`, its
+ * texture holding a channel's value). SNORM's aren't (VK4 T38's 10-bit orders mark their most negative code), nor are
+ * formats of other layouts: undefined.
+ */
+export function texelFields(format: string, packed?: number[]): { bytes: number; fields: TexelField[] } | undefined {
+  if (packed) {
+    const fields: TexelField[] = [];
+    for (let c = 0; c < 4; c++) {
+      const n = packed[2 * c + 1];
+      if (!n) continue;
+      const kind = (['unorm', undefined, 'uint', 'sint', 'float'] as const)[packed[9 + c] ?? 0];
+      if (!kind || (packed[2 * c] & 31) + n > 32) return undefined;
+      fields.push({ c, at: packed[2 * c], n, kind });
+    }
+    return { bytes: packed[8], fields };
+  }
+  const ten = /^rgb10a2(unorm|uint)$/.exec(format);
+  if (ten) {
+    const kind = ten[1] as 'unorm' | 'uint';
+    return { bytes: 4, fields: [0, 1, 2, 3].map((c) => ({ c, at: c * 10, n: c === 3 ? 2 : 10, kind })) };
+  }
+  const m = /^(bgra|rgba|rg|r)(8|16|32)(unorm|uint|sint|float)$/.exec(format);
+  if (!m || (m[3] === 'float' && m[2] === '8')) return undefined;
+  const n = Number(m[2]), order = m[1] === 'bgra' ? [2, 1, 0, 3] : [0, 1, 2, 3].slice(0, m[1].length);
+  return { bytes: (n * order.length) / 8, fields: order.map((c, k) => ({ c, at: k * n, n, kind: m[3] as TexelField['kind'] })) };
 }
 
 /**
- * WGSL taking `v` (a texel of `from`) to the same bits as a texel of `to`, for formats of one block size: channel by
- * channel to bits, to the block's two words, to `to`'s channels. '' for one format; undefined for what it doesn't take
- * apart. Floats go through values, so a NaN or a denormal of a float format may not keep its bits.
+ * A fragment shader's body that carries a texel's bits from one layout into another of its size (`v` the source's
+ * value): a multisampled copy between formats (`copyMultisampled`), which a draw makes. '' for one format, undefined
+ * where the layouts aren't both known (`texelFields`) or differ in size. A channel the destination has and the source
+ * lacks gets the bits there are (zero); one the destination lacks is 0, alpha 1. Floats go through values, so a NaN or a
+ * denormal of a float format may not keep its bits.
  */
-export function bitsBetween(from: string, to: string) {
-  if (from === to) return '';
-  const a = rawFormat(from), b = rawFormat(to);
-  if (!a || !b || a.size * a.order.length !== b.size * b.order.length || a.size * a.order.length > 64) return undefined;
+export function bitsBetween(from: string, to: string, fromPacked?: number[], toPacked?: number[]) {
+  if (from === to && fromPacked?.join() === toPacked?.join()) return '';
+  const a = texelFields(from, fromPacked), b = texelFields(to, toPacked);
+  if (!a || !b || a.bytes !== b.bytes || a.bytes > 8) return undefined;
   const mask = (n: number) => (n === 32 ? '0xffffffffu' : `${2 ** n - 1}u`);
-  const raw = (c: number) => (a.kind === 'unorm' ? `u32(round(v[${c}] * ${2 ** a.size - 1}.0))` : a.kind === 'float' ? (a.size === 32 ? `bitcast<u32>(v[${c}])` : `pack2x16float(vec2<f32>(v[${c}], 0.0))`) : `(u32(v[${c}]) & ${mask(a.size)})`);
+  const raw = (f: TexelField) => (f.kind === 'unorm' ? `u32(round(v[${f.c}] * ${2 ** f.n - 1}.0))`
+    : f.kind === 'float' ? (f.n === 32 ? `bitcast<u32>(v[${f.c}])` : `(pack2x16float(vec2<f32>(v[${f.c}], 0.0)) & 65535u)`)
+    : `(u32(v[${f.c}]) & ${mask(f.n)})`);
   const lines = ['var w = array<u32, 2>(0u, 0u);'];
-  a.order.forEach((c, k) => {
-    const at = k * a.size;
-    lines.push(`w[${at >> 5}] |= ${raw(c)} << ${at & 31}u;`);
-  });
+  for (const f of a.fields) lines.push(`w[${f.at >> 5}] |= ${raw(f)} << ${f.at & 31}u;`);
+  // The destination texture's kind: every field of a format is of one.
+  const kinds = new Set(b.fields.map((f) => f.kind));
+  if (kinds.size !== 1) return undefined;
+  const bk = [...kinds][0];
+  const kind = bk === 'unorm' || bk === 'float' ? 'f32' : bk === 'uint' ? 'u32' : 'i32';
   const out: string[] = ['0', '0', '0', '1'];
-  const kind = b.kind === 'unorm' || b.kind === 'float' ? 'f32' : b.kind === 'uint' ? 'u32' : 'i32';
-  if (kind !== 'f32') out[3] = '1';
-  b.order.forEach((c, k) => {
-    const at = k * b.size;
-    const bits = `((w[${at >> 5}] >> ${at & 31}u) & ${mask(b.size)})`;
-    out[c] = b.kind === 'unorm' ? `f32(${bits}) / ${2 ** b.size - 1}.0`
-      : b.kind === 'float' ? (b.size === 32 ? `bitcast<f32>(${bits})` : `unpack2x16float(${bits}).x`)
-      : b.kind === 'uint' ? bits : `(i32(${bits} << ${32 - b.size}u) >> ${32 - b.size}u)`;
-  });
+  for (const f of b.fields) {
+    const bits = `((w[${f.at >> 5}] >> ${f.at & 31}u) & ${mask(f.n)})`;
+    out[f.c] = f.kind === 'unorm' ? `f32(${bits}) / ${2 ** f.n - 1}.0`
+      : f.kind === 'float' ? (f.n === 32 ? `bitcast<f32>(${bits})` : `unpack2x16float(${bits}).x`)
+      : f.kind === 'uint' ? bits : `(i32(${bits} << ${32 - f.n}u) >> ${32 - f.n}u)`;
+  }
   lines.push(`return vec4<${kind}>(${out.map((x) => (/^[01]$/.test(x) ? (kind === 'f32' ? `${x}.0` : kind === 'u32' ? `${x}u` : x) : x)).join(', ')});`);
   return lines.join('\n  ');
 }

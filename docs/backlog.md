@@ -850,10 +850,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     paths (vkQuake's first replayed frame).
   - **Views in another format's leftovers** (VK4 T4; vk/README.md "Views in another format"): every failure left in
     `image.mutable` is multisampled: view formats WebGPU can't multisample
-    (`r32_sint`, `r32_uint`, the `rg32` ones: such an image's alias can't be made), in 2D and in arrays, and 3 sRGB-twin resolves, each in both,
-    (`b8g8r8a8_srgb_b8g8r8a8_unorm_draw_copy_resolve_mutable_color_att` and two more: colours off by ~0.26 in green and
-    blue, no WebGPU error, on SwiftShader; not run on the M4). Also not backed: a multisampled copy between
-    formats (bit patterns can't cross a draw; an attachment that keeps its contents meets it), a shared or linear
+    (`r32_sint`, `r32_uint`, the `rg32` ones: such an image's alias can't be made, and its invalid texture loses the
+    submit: 124 of VK4 T39's run), in 2D and in arrays, and 3 sRGB-twin resolves, each in both,
+    (`b8g8r8a8_srgb_b8g8r8a8_unorm_draw_copy_resolve_mutable_color_att` and two more: green and blue ~0.26 off).
+    Those are SwiftShader's (VK4 T39, `bench/results/local/t39/repro.ts`'s kind): it resolves a 4-sample sRGB texture
+    through its UNORM view as sRGB (0.5 comes out 55, not 128), Metal rightly; not worked around (a drawn resolve for
+    such a view would be). Also not backed: a multisampled copy between SNORM layouts (VK4 T39 carries the others'
+    bits, `bitsBetween`), a shared or linear
     image's view in another format (what others read is its own texture), views of another block size (uncompressed of
     compressed: `BLOCK_TEXEL_VIEW_COMPATIBLE`), and, in one render pass, a write through one format read through
     another (no copies in a pass). `image.mutable`'s `store` and `load` cases are NotSupported here (dEQP asks for
@@ -888,13 +891,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     samples past the query (dEQP-VK checks the counts of every format only when the first float attachment is
     single-sampled): they fail, out of the list.
   - **Multisampled arrays' leftovers** (VK4 T12; vk/README.md "Multisampled arrays"): a shader sampling a whole
-    `sampler2DMSArray` reads the first layer (it needs a binding per layer and a switch on the layer in the translator). The
+    `sampler2DMSArray` reads the first layer (it needs a binding per layer and a switch on the layer in the translator,
+    and the layer count is the bound view's: a variant keyed by it, its bindings past a stage's 16 textures for more
+    than a few; VK4 T39 left it, an L task: 18 of dEQP-VK's sources declare one, in pipeline, render pass, resolve and
+    fragment shading rate tests, not counted). The
     48 of `multiview.*multisample*` ask for `r32g32b32a32_sfloat` and the `image.mutable` r32 ones for views WebGPU can't
     multisample, without a format list saying so: no texture can back those.
   - **Packed formats' leftovers** (VK4 T12, T30; vk/README.md "Packed formats"): a 16-bit format holds 8 bits a
     channel, so what's rendered is sampled unrounded and blends run at 8 bits; a multisampled copy between a packed
-    format and another of its size that isn't (`A2R10G10B10` and `A2B10G10R10`, `R5G6B5` and `R16_UINT`) is skipped
-    with a warning. The 10-bit SNORM orders (VK4 T38) are `rgba16float`: what's rendered there stays unclamped and
+    SNORM order (the 10-bit ones) and another layout is skipped with a warning (VK4 T39 carries the others' bits). The 10-bit SNORM orders (VK4 T38) are `rgba16float`: what's rendered there stays unclamped and
     unquantized until copied out (sampled as rendered; Vulkan clamps and rounds at the write), and the most negative
     code (-512, alpha's -2) is -1 − 2⁻¹⁰ there so that copies keep it, which samples one step from Vulkan's -1:
     `texture.conversion.snorm_clamp.a2r10g10b10_snorm_pack32` fails on both hosts (a key clamping such views' samples
@@ -974,13 +979,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     type; shared memory is one array); flat
     varyings of 32-bit ints and floats that `nir_opt_varyings` packs into one location travel as the location's last
     load's type (bit-exact unless a backend canonicalizes NaNs or flushes denormals in varyings: not seen, untested).
-  - **Multisampled image clears** (VK4 T12, R4): 60 to 63 of 184 run of `clear_color_image.2d.optimal.{multiple_layers,
-    remaining_array_layers}.*_sample_count_4` read 0 where a colour is expected, or the reverse or a colour of neither,
-    which cases hanging on what ran before them, so likely a read of memory nothing wrote (3 of 26,337 failed in one full run, some of which pass in the list's order and fail run as a group): every
-    `r8g8b8a8_unorm`, `b8g8r8a8_unorm` and packed format (RGBA8 underneath) fails; `r8`, `rg8`, sRGB, integer and float
-    formats pass. Not the review's X4 (a copy of several layers) and not reproduced by `misc: a multisampled copy of two
-    layers`, which resolves a second layer rightly. Every case of those formats is out of the list (VK4 R4: some had been in it, passing by their order). Also 4
-    `resolve_image.diff_image_size.dst_256_256_11_4_bit*`.
   - **Queries** (occlusion queries count on the GPU since VK3 L6a: vk/README.md "The driver"): two queries active at once (Vulkan allows it across pools), one past slot 4,096, or
     one begun in a pass and cut by a WebGPU pass's end inside Vulkan's is reported as passing, warned once;
     `occlusionQueryPrecise` isn't advertised (WebGPU promises nonzero, not a count); the host's
@@ -1026,12 +1024,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Sample counts Vulkan wants but WebGPU lacks** (the review of L4f's finding 3): `framebufferColorSampleCounts` is
     1|4 (Vulkan's minimum) though `R32G32B32A32_SFLOAT` and `R32G32_SFLOAT` colour attachments have 1 sample (WebGPU
     multisamples neither): `api.info.image_format_properties.2d.optimal.r32g32_sfloat` and `.r32g32b32a32_sfloat` fail,
-    the last of that group (VK4 R7), out of `tests/deqp/vk.txt`; an emulation (a 4-layer texture
-    resolved by a draw) or nothing. `R32G32B32_SFLOAT` (VK4 T31's rgba32float texture) met the same check, and as no
+    the last of that group (VK4 R7), out of `tests/deqp/vk.txt`. **Left (VK4 T39's decision)**: an emulation would back
+    such an image by textures WebGPU multisamples, and every path would take them apart: a 4-layer texture (a layer a
+    sample) needs each draw replayed per sample with that sample's coverage and position by hand; the better shape is
+    channels split into `r32float` attachments, which WebGPU multisamples (two for RG32, four for RGBA32: the
+    translator's outputs, the pipeline's targets and blends, a stage's fetches of the image put back together, clears,
+    copies and the drawn resolves per texture, as "Multisampled arrays" does per layer), an L task for a format no
+    program met multisampled (DXVK, vkd3d, Godot and ANGLE render RGBA16F where they multisample). `R32G32B32_SFLOAT` (VK4 T31's rgba32float texture) met the same check, and as no
     program needs it rendered (Vulkan doesn't require it; most GPUs' drivers lack it) it is no colour attachment
-    (`WG_FMT_NO_ATTACHMENT`: its blend and logic-op cases, 10 of the list, report not supported). An image made for sampling only reports 1 sample, which falls short of
-    `sampledImageColorSampleCounts` (1|4) for formats WebGPU multisamples (its textures are multisampled only as render
-    attachments: the driver would add that usage). A multisampled image of more than one layer is accepted but invalid
+    (`WG_FMT_NO_ATTACHMENT`: its blend and logic-op cases, 10 of the list, report not supported). A multisampled image of more than one layer is accepted but invalid
     in WebGPU (no multisampled arrays; Vulkan's format query can't say so: `maxArrayLayers` is per format). The integer
     limits (`framebufferIntegerColorSampleCounts`, `sampledImageIntegerSampleCounts`) are 1 since L5b, as the 32-bit
     integer formats allow.

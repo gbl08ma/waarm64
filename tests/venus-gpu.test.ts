@@ -381,13 +381,25 @@ test('an indirect fan\'s list is sized by a fan, not by the bound index range', 
 });
 
 test('multisampled copies carry bits: packed layouts\' channels, other formats of a block\'s size', () => {
-  const r5g6b5 = [11, 5, 5, 6, 0, 5, 0, 0], b5g6r5 = [0, 5, 5, 6, 11, 5, 0, 0], a1r5g5b5 = [10, 5, 5, 5, 0, 5, 15, 1];
+  const r5g6b5 = [11, 5, 5, 6, 0, 5, 0, 0, 2, 0, 0, 0, 0], b5g6r5 = [0, 5, 5, 6, 11, 5, 0, 0, 2, 0, 0, 0, 0], a1r5g5b5 = [10, 5, 5, 5, 0, 5, 15, 1, 2, 0, 0, 0, 0];
   assert.equal(packedSwizzle(r5g6b5, b5g6r5), 'bgra');
   assert.equal(packedSwizzle(r5g6b5, r5g6b5), 'rgba');
   assert.equal(packedSwizzle(r5g6b5, a1r5g5b5), undefined, 'bits of another size');
   assert.equal(bitsBetween('rgba8unorm', 'rgba8unorm'), '');
   assert.equal(bitsBetween('rgba8unorm', 'r8unorm'), undefined, 'another block size');
-  assert.equal(bitsBetween('rgb10a2unorm', 'rgba8unorm'), undefined, 'channels this doesn\'t take apart');
+  assert.equal(bitsBetween('rgba8snorm', 'rgba8unorm'), undefined, 'channels this doesn\'t take apart');
+  // VK4 T39: rgb10a2 and packed formats by their fields.
+  const ten = bitsBetween('rgb10a2unorm', 'rgba8uint')!;
+  assert.match(ten, /round\(v\[0\] \* 1023\.0\)\) << 0u;/);
+  assert.match(ten, /round\(v\[3\] \* 3\.0\)\) << 30u;/);
+  assert.match(ten, /return vec4<u32>\(\(\(w\[0\] >> 0u\) & 255u\).*>> 24u\) & 255u\)\);/);
+  const r5 = bitsBetween('rgba8unorm', 'r16uint', r5g6b5)!;
+  assert.match(r5, /round\(v\[0\] \* 31\.0\)\) << 11u;/, 'red at bit 11');
+  assert.match(r5, /round\(v\[1\] \* 63\.0\)\) << 5u;/);
+  assert.ok(!/v\[3\]/.test(r5), 'R5G6B5 has no alpha');
+  const into = bitsBetween('r16uint', 'rgba8unorm', undefined, r5g6b5)!;
+  assert.match(into, /return vec4<f32>\(f32\(\(\(w\[0\] >> 11u\) & 31u\)\) \/ 31\.0, .*, 1\.0\);/, 'alpha 1');
+  assert.equal(bitsBetween('rgba8unorm', 'rgba8unorm', r5g6b5, a1r5g5b5)?.includes('<< 15u'), false, 'nothing of R5G6B5 at bit 15: A1R5G5B5\'s alpha bit stays 0');
   const c = bitsBetween('rgba8unorm', 'rg16uint')!;
   assert.match(c, /round\(v\[0\] \* 255\.0\)/);
   assert.match(c, /w\[0\] \|= .* << 24u;/);

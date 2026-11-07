@@ -4902,6 +4902,96 @@ copy_image(VkFormat format, uint32_t w, uint32_t h, uint32_t layers, VkSampleCou
    return 0;
 }
 
+/* VK4 T39 (`out` as wgt_misc's): 111, resolves into RGBA8 images of 8 layers, which SwiftShader's WebGPU leaves short (the
+ * last 2 * width - 4 texels of the layer unwritten: `clear_color_image.2d.optimal.multiple_layers.*_sample_count_4`'s
+ * failures). A 64x64 image of 4 samples and 8 layers cleared whole to zero, layers 2 to 6 to (0.25, 0.5, 0.75, 1), every
+ * layer resolved by one region: texels (5, 5) and (63, 63) of layers 0 to 7 at 0 to 28 and 32 to 60 (zero, zero, the colour
+ * five times, zero). Then a pass of a 4-sample attachment cleared to that colour, resolved into a 2D view of layer 3 of
+ * another such image: its (63, 63) at 64. */
+static int
+t39_resolves(VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage = (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   PFN_vkCmdResolveImage CmdResolveImage = (PFN_vkCmdResolveImage)GetDeviceProcAddr(dev, "vkCmdResolveImage");
+   PFN_vkCmdBeginRendering CmdBeginRendering = (PFN_vkCmdBeginRendering)GetDeviceProcAddr(dev, "vkCmdBeginRendering");
+   PFN_vkCmdEndRendering CmdEndRendering = (PFN_vkCmdEndRendering)GetDeviceProcAddr(dev, "vkCmdEndRendering");
+   const uint32_t size = 64, layers = 8;
+   VkImage ms, a, pass_ms, b;
+   if (copy_image(VK_FORMAT_R8G8B8A8_UNORM, size, size, layers, VK_SAMPLE_COUNT_4_BIT, &ms) ||
+       copy_image(VK_FORMAT_R8G8B8A8_UNORM, size, size, layers, VK_SAMPLE_COUNT_1_BIT, &a) ||
+       copy_image(VK_FORMAT_R8G8B8A8_UNORM, size, size, 1, VK_SAMPLE_COUNT_4_BIT, &pass_ms) ||
+       copy_image(VK_FORMAT_R8G8B8A8_UNORM, size, size, layers, VK_SAMPLE_COUNT_1_BIT, &b))
+      return 1;
+   const VkClearColorValue zero = { 0 }, v = { .float32 = { 0.25f, 0.5f, 0.75f, 1 } };
+   const VkImageSubresourceRange all = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS },
+                                 some = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 2, 5 };
+   CmdClearColorImage(cmd, ms, VK_IMAGE_LAYOUT_GENERAL, &zero, 1, &all);
+   CmdClearColorImage(cmd, ms, VK_IMAGE_LAYOUT_GENERAL, &v, 1, &some);
+   const VkImageResolve r = { .srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, layers },
+                              .dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, layers }, .extent = { size, size, 1 } };
+   CmdResolveImage(cmd, ms, VK_IMAGE_LAYOUT_GENERAL, a, VK_IMAGE_LAYOUT_GENERAL, 1, &r);
+   for (uint32_t l = 0; l < layers; l++) {
+      copy_texel(cmd, a, VK_IMAGE_ASPECT_COLOR_BIT, l, 5, 5, out, l * 4);
+      copy_texel(cmd, a, VK_IMAGE_ASPECT_COLOR_BIT, l, size - 1, size - 1, out, 32 + l * 4);
+   }
+   VkImageView views[2];
+   const VkImage of[2] = { pass_ms, b };
+   for (uint32_t i = 0; i < 2; i++) {
+      const VkImageViewCreateInfo vi = {
+         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = of[i], .viewType = VK_IMAGE_VIEW_TYPE_2D,
+         .format = VK_FORMAT_R8G8B8A8_UNORM, .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, i ? 3 : 0, 1 } };
+      CHECK(CreateImageView(dev, &vi, NULL, &views[i]));
+   }
+   const VkRenderingAttachmentInfo c = {
+      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = views[0],
+      .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, .resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT,
+      .resolveImageView = views[1], .resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR, .storeOp = VK_ATTACHMENT_STORE_OP_STORE, .clearValue = { .color = v } };
+   const VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = { { 0, 0 }, { size, size } },
+                                .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &c };
+   CmdBeginRendering(cmd, &ri);
+   CmdEndRendering(cmd);
+   copy_texel(cmd, b, VK_IMAGE_ASPECT_COLOR_BIT, 3, size - 1, size - 1, out, 64);
+   return 0;
+}
+
+/* VK4 T39 (`out` as wgt_misc's): 112, multisampled copies between layouts the bits shader didn't take apart (a packed
+ * format and a plain one, rgb10a2 and another of 4 bytes): 4-sample images cleared, copied into the other format's,
+ * resolved (sample 0 of an integer format) and read back. R5G6B5 cleared to red into R16_UINT: 0x00, 0xf8 at 0;
+ * A2B10G10R10_UNORM to (1, 0, 0, 1) into R8G8B8A8_UINT: 0xff, 0x03, 0x00, 0xc0 at 4; A2R10G10B10_UNORM (a packed format)
+ * to (1, 0, 0, 1) into R16G16_UINT: 0x00, 0x00, 0xf0, 0xff at 8 (red at bit 20); R16_UINT of 0x07ff into R5G6B5
+ * (red 0, green 63, blue 31): 0xff, 0x07 at 12. */
+static int
+t39_ms_bits(VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage = (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   PFN_vkCmdResolveImage CmdResolveImage = (PFN_vkCmdResolveImage)GetDeviceProcAddr(dev, "vkCmdResolveImage");
+   PFN_vkCmdCopyImage CmdCopyImage = (PFN_vkCmdCopyImage)GetDeviceProcAddr(dev, "vkCmdCopyImage");
+   static const struct { VkFormat from, to; VkClearColorValue v; } pairs[4] = {
+      { VK_FORMAT_R5G6B5_UNORM_PACK16, VK_FORMAT_R16_UINT, { .float32 = { 1, 0, 0, 1 } } },
+      { VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_FORMAT_R8G8B8A8_UINT, { .float32 = { 1, 0, 0, 1 } } },
+      { VK_FORMAT_A2R10G10B10_UNORM_PACK32, VK_FORMAT_R16G16_UINT, { .float32 = { 1, 0, 0, 1 } } },
+      { VK_FORMAT_R16_UINT, VK_FORMAT_R5G6B5_UNORM_PACK16, { .uint32 = { 0x07ff, 0, 0, 1 } } },
+   };
+   const uint32_t size = 8;
+   for (uint32_t i = 0; i < 4; i++) {
+      VkImage a, b, c;
+      if (copy_image(pairs[i].from, size, size, 1, VK_SAMPLE_COUNT_4_BIT, &a) || copy_image(pairs[i].to, size, size, 1, VK_SAMPLE_COUNT_4_BIT, &b) ||
+          copy_image(pairs[i].to, size, size, 1, VK_SAMPLE_COUNT_1_BIT, &c))
+         return 1;
+      const VkImageSubresourceRange r = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+      CmdClearColorImage(cmd, a, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &pairs[i].v, 1, &r);
+      const VkImageCopy copy = { .srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+                                 .dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 }, .extent = { size, size, 1 } };
+      CmdCopyImage(cmd, a, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, b, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+      const VkImageResolve res = { .srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+                                   .dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 }, .extent = { size, size, 1 } };
+      CmdResolveImage(cmd, b, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, c, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &res);
+      copy_texel(cmd, c, VK_IMAGE_ASPECT_COLOR_BIT, 0, 3, 3, out, i * 4);
+   }
+   return 0;
+}
+
 /* VK4 R4's transfers (`out` as wgt_misc's):
  * 52 (the review's X1): a 10x1 region of an RGBA8 image from [0, 40) (i + 1 a byte) with bufferImageHeight 4, and back
  *    to 64: the bytes.
@@ -7227,6 +7317,12 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 110) {
       if (t38_stores(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 111) {
+      if (t39_resolves(cmd, out))
+         return 1;
+   } else if (scenario == 112) {
+      if (t39_ms_bits(cmd, out))
          return 1;
    } else if (scenario == 108) {
       if (t37_atomic_alias(cs, cs_words, cmd, out))

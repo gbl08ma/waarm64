@@ -48,7 +48,7 @@ T2–T14; the rest of the order is judgement, said with each.
 
 ## The tasks
 
-### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T34, T36–T38 (2026-10-29 to 2026-11-07); T35 parked
+### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T34, T36–T39 (2026-10-29 to 2026-11-07); T35 parked
 
 Each row's outcome in full is its section of bench/vulkan/REPORT.md ("VK4 T<n>") and its commit; what each left is in
 docs/backlog.md "The Vulkan driver's gaps" (the entry named) and, where it is a defect or drops work, in the tasks
@@ -102,6 +102,7 @@ R1–R4 and then of R5–R7, had its findings fixed or moved to the backlog the 
 | T36. Hangs and lost completions | a ring fence that gave its queue entry back is signalled once its work is done, by the next reply without a fence of its own or a display event's (web/gpu.ts `carry`; the review of R1–R4's C2 shape, which hung, a test in tests/gpu.test.ts); `JOBS=4` hangs no `timeline_semaphore.device_host` case and is 12% faster than 2 (left at 2 for memory); Venus's use-after-free fix tested by hand-encoded Venus commands through `venus_submit` | "dEQP-VK's four processes a machine" |
 | T37. Commands WebGPU refuses that the driver can avoid | nine shapes that lost their submits: texture reads of a subresource a scope writes read a copy; a one-layer 2D array view bound as a 2D storage image; stages from a cache that disagree refused; packed copies past `maxStorageBufferBindingSize` in slabs; word images past it refused, the submit kept; read-only storage images of another format than their view's keyed by it; direct draws reading a binding past its end pull it (zeros past it); uniform blocks past their memory's pad read a shadow; writable runs of atomic and plain arrays refused; a driver test of each, failing first; 197 cases join the list (→ 59,104; SwiftShader only) | "Storage images read as textures' leftovers", "Storage images as words' leftovers", "Usage scopes' leftovers", "What R7's limits leave" |
 | T38. Formats and features a line or a fetch away | depth formats report comparison; storage texel buffers of 1- and 2-byte texels (an atomic and-or on the word); 8-bit sRGB and packed 16-bit storage images by words; A8_UNORM an `r8unorm` texture (alpha in red: a swizzle, clears, `wg_ar`), not blended or blitted; the 10-bit SNORM orders in `rgba16float` (rendered and filtered everywhere, not tier1's `rgba16snorm`), the most negative code kept by a marker; `VK_EXT_image_2d_view_of_3d` by a slice key on the level's 3D view; non-seamless cubes compared from fetches (360 shadow cases a host); of 16,159 cases 6,951 pass on SwiftShader and 7,338 on the M4 (2,092 before), 6,443 join the list (→ 65,547); R32 texel atomics were already there | "Colour formats aren't compared", "maintenance5's and 6's leftovers", "Packed formats' leftovers", "Rendering", "A render pass's JSON garbled" |
+| T39. Multisampling's gaps | SwiftShader's WebGPU resolves into an `rgba8unorm`/`bgra8unorm` view of a texture of 6+ layers short (the last 2 · width − 4 texels unwritten; Metal right): such resolves go through a texture of the worker's and a copy (`shortResolve`), which was every layered multisampled clear of the RGBA8 family and `diff_image_size`; multisampled copies between packed layouts, `rgb10a2` and plain formats carry bits; 455 cases join the list (→ 66,001), all passing on the M4. Left: the sRGB twins' 6 (SwiftShader's again), `R32G32(B32A32)_SFLOAT` at 4 samples (decided left: r32float channels the shape), `sampler2DMSArray` whole; sampled-only sample counts were done already | "Views in another format's leftovers", "Packed formats' leftovers", "Multisampled arrays' leftovers", "Sample counts Vulkan wants but WebGPU lacks" |
 ### Tier 3: performance on real workloads
 
 - **T15. Venus's submits ~2 ms later on NVIDIA** (M, needs the user's runs): a bundle carrying the page at several
@@ -144,14 +145,6 @@ decisions already leave (protected memory to sparse, pipeline statistics). Waiti
 maintenance8's list (a guest rebuild once Arch has Mesa 26.3), `VK_KHR_unified_image_layouts`,
 `VK_EXT_primitive_restart_index`'s cases.
 
-- **T39. Multisampling's gaps** (M): the multisampled clears of RGBA8 and its packed twins that read 0 or another
-  colour (a read of memory nothing wrote; every such case is out of the list), the 3 sRGB-twin resolves 0.26 off,
-  `sampler2DMSArray` sampled whole (a binding per layer, a switch on the layer), images made for sampling only
-  reporting 4 samples where the format multisamples (the driver adds the attachment usage), multisampled copies between
-  formats the bits shader skips (`rgb10a2`, packed layouts); and the decision on `R32G32_SFLOAT` and
-  `R32G32B32A32_SFLOAT` at 4 samples (Vulkan's mandatory attachments: a 4-layer texture resolved by a draw, measured,
-  or left). *Done:* the clears' cases back in the list, the rest run. *Start:* backlog "Multisampled image clears",
-  "Multisampled arrays' leftovers", "Sample counts Vulkan wants but WebGPU lacks", "Views in another format's leftovers".
 - **T40. Bindings past WebGPU's limits** (L; `descriptorset_random.sets4`'s 165 and T33's 55, `descriptor_copy`'s 2):
   texel buffers' words of one memory sharing a storage binding (a variant keyed by the binding pattern, each view's
   offset in the parameter table), uniform texel buffers as `r32uint` textures (counted with sampled images, as Vulkan

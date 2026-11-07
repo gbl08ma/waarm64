@@ -531,11 +531,18 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   (`sample_index`) reading the source's same sample, stencil by a draw a bit (`copyMultisampled`; multisampled images
   are sampled for it, so they carry `TEXTURE_BINDING`); within one image through a temporary texture. A resolve is
   WebGPU's own of a whole level of one size, into a 2D texture, of a format it resolves (not the integer ones, the 32-bit
-  floats or texture-formats-tier1's 16-bit normalized ones, which render and multisample but don't resolve); else a draw over the region
+  floats or texture-formats-tier1's 16-bit normalized ones, which render and multisample but don't resolve); one into an
+  `rgba8unorm` or `bgra8unorm` view of a texture of 6 layers or more, a pass's resolve target too, goes into a texture of
+  the worker's and is copied into its layer (`shortResolve`, VK4 T39: SwiftShader's WebGPU leaves the level's last
+  2 · width − 4 texels unwritten, which dEQP-VK's layered multisampled clears read as zeros or old bytes; Metal's is
+  right; every adapter takes the copy); else a draw over the region
   (`resolveByDraw`: the samples' average, or sample 0 of an integer format), for `vkCmdResolveImage` and for a render
   pass's attachment, which the pass's end resolves that way within its render area, stored whatever its store op, as
-  depth's. Formats a multisampled copy can't cross (they differ other than by sRGB: bit patterns don't survive a draw)
-  are skipped with a warning, since one invalid command invalidates the whole submit. A fragment stage writing depth
+  depth's. A multisampled copy between formats moves bits, not values: twins through their linear views, packed
+  layouts of one size by a swizzle, any other two layouts of a texel's size through a shader that takes the source's
+  channels apart into bits and puts them together as the destination's (`bitsBetween` over `texelFields`: the plain
+  formats, `rgb10a2`, a packed format by its key; VK4 T39 added the last two); SNORM layouts aren't taken apart, and
+  such a copy is skipped with a warning, since one invalid command invalidates the whole submit. A fragment stage writing depth
   into a pass without a depth aspect (Vulkan drops the write, WebGPU refuses the pipeline) gets a module without that
   output, or, if it was the stage's only one, with it at a location no target takes (`fragment_without_depth`). Barriers and events wait for nothing (WebGPU orders
   a queue). The worker's imports catch what WebGPU's API throws (a warning, the command dropped): an exception through
@@ -779,8 +786,8 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   format holds 8 bits a channel: sampling what was rendered reads it unrounded (4 `self_dep` cases of `r5g6b5` out of
   the list) and blends run at 8 bits. Formats without alpha (`WG_FMT_OPAQUE`) keep it 1: masked in the pipeline, 1 in
   clears, a swizzle on reads. A view of another format of the texel's size is a texture of that format copied the same
-  way (`image_alias`); a multisampled copy between a packed format and another that isn't is skipped (a draw can't move
-  bits between their layouts). Mesa has no pipe format of `R4G4`: its key and border are written out.
+  way (`image_alias`); a multisampled copy between a packed format and another moves the bits by a draw ("Commands",
+  `bitsBetween`; a 10-bit SNORM order's is skipped). Mesa has no pipe format of `R4G4`: its key and border are written out.
   **Formats WebGPU has no texture of** (VK4 T31) are packed formats the same way, in a wider texture: the three-channel
   ones (`R8G8B8` and `B8G8R8` of every type in `rgba8*`, `R16G16B16` in `rgba16*`, `R32G32B32` in `rgba32*`; alpha kept 1,
   `WG_FMT_OPAQUE`), BGRA's integer and snorm orders (`rgba8uint`, `rgba8sint`, `rgba8snorm`), `R8_SRGB` and `R8G8_SRGB` in

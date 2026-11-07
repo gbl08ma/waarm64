@@ -1,0 +1,72 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "157.0.8103.38",
+ "stride": 50,
+ "offset": 0,
+ "jobs": 1,
+ "adapter": "apple metal-3",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 455,
+ "seconds": 65.673948166,
+ "pipelines": {
+  "pipelines": 7,
+  "ready": 7,
+  "readyMs": 143.37499994039536,
+  "deferred": 14,
+  "deferredMs": 277.1599998474121,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 7,
+  "translateMs": 15.989999999999997,
+  "cacheHits": 24,
+  "cacheMisses": 4,
+  "cacheStores": 4,
+  "cacheBytes": 1151,
+  "cacheHeld": 24960,
+  "cacheEntries": 4
+ },
+ "counts": {
+  "Pass": 455
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-VK.image.mutable.2d_array.b8g8r8a8_srgb_r32_sfloat_draw_copy_resolve Pass 1",
+  "dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.remaining_array_layers.r8g8b8a8_unorm_clamp_input_sample_count_4 Pass 1",
+  "dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.remaining_array_layers.r8g8_srgb_sample_count_4 Pass 1",
+  "dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.remaining_array_layers.r5g5b5a1_unorm_pack16_sample_count_4 Pass 1",
+  "dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.remaining_array_layers.r16g16b16_sfloat_sample_count_4 Pass 1",
+  "dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.remaining_array_layers.b8g8r8_unorm_sample_count_4 Pass 1",
+  "dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.remaining_array_layers.b5g6r5_unorm_pack16_sample_count_4 Pass 1",
+  "dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.remaining_array_layers.b4g4r4a4_unorm_pack16_sample_count_4 Pass 1",
+  "dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.remaining_array_layers.a8_unorm_clamp_input_sample_count_4 Pass 1",
+  "dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_image.2d.optimal.multiple_layers.r8g8b8a8_unorm_sample_count_4 Pass 1"
+ ],
+ "last": "dEQP-VK.image.mutable.2d_array.r8g8b8a8_unorm_r32_sfloat_draw_copy_resolve Pass 0dEQP-VK.image.mutable.2d_array.r8g8b8a8_unorm_r32_sfloat_draw_copy_resolve_mutable_color_att Pass 0dEQP-VK.image.mutable.2d_array.r8g8b8a8_unorm_r32_sfloat_draw_copy_resolve_mutable_resolve_att Pass 0",
+ "output": [
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    0.936560] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    0.936600] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    0.936622] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    0.936649] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    0.936669] psci_checker: Could not start suspend tests on any CPU",
+  "[    9.762919] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   20.112899] coredump: 428(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 164.6,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 11.5,
+  "arenaHighMiB": 51.3
+ },
+ "detail": [],
+ "warnings": {
+  "venus: the WebGPU device's subgroups are wrong in divergent control flow: subgroups of one invocation": 1,
+  "venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies": 1
+ }
+}
