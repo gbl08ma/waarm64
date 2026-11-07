@@ -484,7 +484,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `X8B8G8R8_UNORM`, `I8_UNORM`, `L8A8_UNORM` (sampled and rendered). `?gpu=capsno=` takes formats out for the A/B in
   Steam and `?gpu=capsyes=` offers the missing bits (unbacked: a diagnosis, not a fix). With the four formats taken
   out (the console saying so) the glitches are the same (the user's run; a first run had taken nothing out: a `+`
-  in the query is a space, fixed). No context's rasterizer sets `clip_halfz`.
+  in the query is a space, fixed). With `capsyes=CLIP_HALFZ` alone, and `COPY_IMAGE` alone,
+  the same; all four bits at once crash Steam at its start (a bus error); `TGSI_FBFETCH` and `V2_BLEND_EQUATION` alone
+  untried. **Parked (2026-11-07, the user's call)**: Steam's CEF is old and recent Chromium in the guest shows nothing
+  like it; look again after Valve updates it (a new capture, the reference replay first). The ad-hoc replayer is worth
+  keeping as a tool (`tools/virgl-oracle/`) if a trace needs a reference again. No context's rasterizer sets `clip_halfz`.
   (The replayer also needs: contexts' skip flags per incarnation, an iovec array per resource, kept: the library keeps
   the pointer. Sway's and Xwayland's contexts die on llvmpipe at a GL_INVALID_OPERATION; Steam's run clean.)
 - **Chromium in the guest still steps back one frame now and then** (graphics.md "The call queue"): after the queue's fix,
