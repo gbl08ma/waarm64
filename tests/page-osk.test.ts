@@ -10,6 +10,7 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
+import { t } from '../web/i18n.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const skip = !(existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES))) && 'SKIPPED: run images/build.sh';
@@ -430,6 +431,31 @@ test('the machine\'s keyboard layout: German legends and ISO\'s key, its charact
   assert.equal(await serialIn(page, 4), 'zö<@');
   assert.deepEqual(errors, []);
   await context.close();
+});
+
+test('a layout\'s compact letters\' page: German\'s Ü, Ö and Ä beside the letters; JIS\'s input-method keys to the guest', { skip, timeout: 120_000 }, async () => {
+  const de = await open(true, { width: 390, height: 844 }, '&keyboard=de');
+  await showOsk(de.page);
+  assert.equal(await de.page.locator('#osk').getAttribute('data-layout'), 'compact');
+  for (const [code, main] of [['BracketLeft', 'Ü'], ['Semicolon', 'Ö'], ['Quote', 'Ä']]) assert.equal(await key(de.page, code).locator('.main').textContent(), main, code);
+  await key(de.page, 'Quote').click();
+  await settle(de.page, 2);
+  assert.deepEqual(await keys(de.page), ev([40, true], [40, false]));
+  await de.page.locator('#osk [data-page=symbols]').click();
+  assert.equal(await key(de.page, 'Quote').count(), 0, 'not on the symbols\' page too');
+  assert.equal(await key(de.page, 'Minus').count(), 1);
+  assert.deepEqual(de.errors, []);
+  await de.context.close();
+
+  // JIS: Muhenkan, Henkan, Katakana/Hiragana beside Space, their keycodes (KEY_MUHENKAN, KEY_HENKAN, KEY_KATAKANAHIRAGANA).
+  const jp = await open(true, undefined, '&keyboard=jp');
+  await showOsk(jp.page);
+  assert.equal(await key(jp.page, 'NonConvert').locator('.main').textContent(), t('osk:Osk.key.NonConvert'));
+  for (const code of ['NonConvert', 'Convert', 'KanaMode']) await key(jp.page, code).click();
+  await settle(jp.page, 6);
+  assert.deepEqual(await keys(jp.page), ev([94, true], [94, false], [92, true], [92, false], [93, true], [93, false]));
+  assert.deepEqual(jp.errors, []);
+  await jp.context.close();
 });
 
 test('the lock keys show the guest\'s LEDs: the virtio keyboard\'s with its driver, the built-in USB one\'s before', { skip, timeout: 120_000 }, async () => {

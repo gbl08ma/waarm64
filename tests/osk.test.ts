@@ -4,7 +4,7 @@
 // legends for each keymap.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { autoLayout, COMPACT_BELOW, COMPACT_HEIGHT, COMPACT_WIDTH, eventOf, fullKeys, HEIGHT, HOLD_MS, keymapOf, keyOf, KEYS, layoutOf, legends, MODIFIERS, OskKeys, pages, PAGES, REPEAT_DELAY_MS, REPEAT_MS, WIDTH, type Key, type ModifierMode, type Mods } from '../web/app/osk.ts';
+import { autoLayout, COMPACT_BELOW, IME_KEYS, letterRows, COMPACT_HEIGHT, COMPACT_WIDTH, eventOf, fullKeys, HEIGHT, HOLD_MS, keymapOf, keyOf, KEYS, layoutOf, legends, MODIFIERS, OskKeys, pages, PAGES, REPEAT_DELAY_MS, REPEAT_MS, WIDTH, type Key, type ModifierMode, type Mods } from '../web/app/osk.ts';
 import { KEYMAPS } from '../web/app/keymaps.ts';
 
 /** An `OskKeys` on a clock the test moves (its timers too), and what it sent (`+code` down, `-code` up, `*code` a repeat). */
@@ -99,7 +99,7 @@ test('every layout: the full keyboard with its extra keys, none overlapping; the
       assert.ok(codeOf(k.code) !== undefined, `${id} ${k.code}: a Linux keycode`);
       assert.ok(k.x >= 0 && k.x + k.w <= WIDTH + 1e-9 && k.y + k.h <= HEIGHT, `${id} ${k.code} inside`);
     }
-    const extra = ['IntlBackslash', 'IntlRo', 'IntlYen'].filter((c) => map[c]);
+    const extra = [...['IntlBackslash', 'IntlRo', 'IntlYen'].filter((c) => map[c]), ...(map.IntlYen ? IME_KEYS : [])];
     assert.equal(full.length, 104 + extra.length, id);
     const all = new Set<string>();
     for (const p of pages(map)) {
@@ -110,6 +110,17 @@ test('every layout: the full keyboard with its extra keys, none overlapping; the
       }
     }
     assert.deepEqual([...all].sort(), full.map((k) => k.code).sort(), id);
+    // Each page's rows reach its right edge (a key short of it at most: the arrows' inverted T), and the letters' page
+    // holds every key whose unshifted character is a letter with a capital.
+    for (const p of pages(map)) for (let y = 0; y < COMPACT_HEIGHT; y++) {
+      const right = Math.max(...p.keys.filter((k) => k.y <= y && y < k.y + k.h).map((k) => k.x + k.w));
+      assert.ok(right >= COMPACT_WIDTH - 1 - 1e-9, `${id} ${p.id} row ${y}: ${right}`);
+    }
+    const main = new Set(pages(map)[0].keys.map((k) => k.code));
+    for (const k of full) {
+      const c = map[k.code]?.[0];
+      if (c && /^\p{Ll}$/u.test(c) && c.toUpperCase().toLowerCase() === c) assert.ok(main.has(k.code), `${id} ${k.code} (${c}) on the letters' page`);
+    }
     // Every character key has a legend (JIS's Backquote, Hankaku/Zenkaku, none).
     for (const k of full) if (!MODIFIERS.has(k.code) && /^(Key|Digit|Intl)/.test(k.code)) assert.ok(legends(k.code, map)?.main, `${id} ${k.code}`);
   }
@@ -120,6 +131,30 @@ test('every layout: the full keyboard with its extra keys, none overlapping; the
   assert.ok(fullKeys(keymapOf('jp')).some((k) => k.code === 'IntlYen'));
   assert.ok(fullKeys(keymapOf('br')).some((k) => k.code === 'IntlRo'));
   assert.ok(!fullKeys(keymapOf('us-dvorak')).some((k) => k.code === 'IntlBackslash'));
+});
+
+test('the compact letters\' page per layout: German\'s Ü, Ö and Ä beside the letters, Turkish\'s Ö and Ç beside M; JIS\'s input-method keys', () => {
+  const us = letterRows(keymapOf('us'));
+  assert.deepEqual(us.map((r) => r.length), [10, 10, 10, 7]);
+  assert.equal(us[2].at(-1), 'Semicolon');
+  const de = letterRows(keymapOf('de'));
+  assert.deepEqual(de[1].slice(-1), ['BracketLeft']);
+  assert.deepEqual(de[2].slice(-3), ['KeyL', 'Semicolon', 'Quote']);
+  assert.deepEqual(de[0].length, 10, 'ß (no capital) stays with the symbols');
+  assert.deepEqual(letterRows(keymapOf('tr'))[3].slice(-2), ['Comma', 'Period']);
+  assert.deepEqual(letterRows(keymapOf('hu'))[2].slice(-2), ['Quote', 'Backslash'], 'ISO\'s Backslash on the home row');
+  assert.deepEqual(letterRows(keymapOf('hu'))[3][0], 'IntlBackslash');
+  assert.deepEqual(letterRows(keymapOf('fr'))[2].slice(-2), ['Semicolon', 'Quote']);
+  const de2 = pages(keymapOf('de'));
+  const sym = de2.find((p) => p.id === 'symbols')!.keys.map((k) => k.code);
+  assert.ok(!sym.includes('Quote') && !sym.includes('BracketLeft') && sym.includes('Minus') && sym.includes('IntlBackslash'));
+  // JIS: Muhenkan left of Space, Henkan and Katakana/Hiragana right; on the symbols' page compact. None elsewhere.
+  const jp = fullKeys(keymapOf('jp')).filter((k) => k.y === 5.5).map((k) => k.code);
+  assert.deepEqual(jp.slice(0, 11), ['ControlLeft', 'MetaLeft', 'AltLeft', 'NonConvert', 'Space', 'Convert', 'KanaMode', 'AltRight', 'MetaRight', 'ContextMenu', 'ControlRight']);
+  assert.equal(fullKeys(keymapOf('jp')).find((k) => k.code === 'ArrowLeft')!.x, KEYS.find((k) => k.code === 'ArrowLeft')!.x);
+  for (const c of IME_KEYS) assert.ok(pages(keymapOf('jp')).find((p) => p.id === 'symbols')!.keys.some((k) => k.code === c), c);
+  for (const id of Object.keys(KEYMAPS)) if (id !== 'jp') assert.ok(!fullKeys(keymapOf(id)).some((k) => IME_KEYS.includes(k.code)), id);
+  assert.equal(eventOf('Convert', { shift: false, ctrl: false, alt: false, meta: false, altGr: false }, keymapOf('jp')).key, 'Convert');
 });
 
 test('a layout\'s legends and characters: German, French, Dvorak; AltGr as the right Alt where a key has a third level', () => {
