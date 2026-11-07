@@ -25,6 +25,27 @@ the x86_64 desktop (which the user needs for other work).
 - Side checkouts: `../webpc-exp` and `../webpc-base` (detached worktrees for A/B experiments).
 - Benchmark numbers from the x86_64 desktop (M0 to M5 step 7) aren't comparable with the VM's.
 
+## Worktrees
+
+A session's worktree (`.claude/worktrees/<name>`) has none of the main checkout's untracked trees, and the page can't
+run on symlinks to them: Vite serves with `fs.strict`, which answers 403 for a file reached through a link out of the
+worktree (pages then fail in ways that look like code bugs). **`scripts/worktree-setup.sh [worktree]`** makes one
+ready: `node_modules` copied, `tools/svelte-check/node_modules` symlinked, `target/images/*` and `target/deqp/*`
+hard-linked (their builders delete or rename before writing, so a rebuild in the worktree never writes into the main
+checkout's copy), and `package-lock.json`'s mtime set old while it is the main checkout's (git resets it at checkout,
+and `scripts/ci.sh` runs `npm ci` when the lockfile is newer than `node_modules`; a branch that changed it keeps its
+mtime, so CI installs the branch's packages). Idempotent, and it never replaces what's there. Not linked: Cargo's and Vite's outputs (the wasm
+core, `venus.wasm`, `ts.wasm`), which a build could rewrite in place and which can be stale for the branch:
+`scripts/ci.sh` builds them, and `scripts/build-wasm.sh` (and `vk/build.sh`) before a page test run alone.
+
+It runs once, when the worktree is made: Claude Code's **`WorktreeCreate` hook**, `scripts/worktree-hook.sh
+create`, when it is in `.claude/settings.json`. CI doesn't run it: a worktree's own changes to `node_modules` or the
+lockfile are the work's. After a rebase resets the lockfile's mtime, `scripts/worktree-setup.sh` again saves CI an
+`npm ci` (it's harmless either way). That hook replaces Claude Code's own `git worktree add`, so it does the same (the
+worktree at `.claude/worktrees/<name>` on a new branch `worktree-<name>`, from origin's default branch after a
+fetch) and then the setup; `scripts/worktree-hook.sh remove` is its `WorktreeRemove` (the worktree removed, its
+branch kept). A worktree made with plain `git worktree add` gets the setup by hand.
+
 ## Packages
 
 From zypper (add what's missing with `sudo zypper in`, and note it here):
