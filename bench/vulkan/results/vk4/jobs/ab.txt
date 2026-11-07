@@ -1,0 +1,6 @@
+jobs 1: [237.5] ran elapsed 199; each: 199 199 s [239.8] counts {"Pass":2032}  peak 5413 MiB
+jobs 2: [199.9] ran elapsed 161; each: 161 140 162 s [202.3] counts {"Pass":2032}  peak 5706 MiB
+jobs 4: [215.6] ran elapsed 176; each: 176 138 142 103 177 s [217.9] counts {"Crash":1,"Pass":2031}  peak 6303 MiB
+jobs 4: [215.6] ran elapsed 176; each: 176 137 142 105 176 s [218.0] counts {"Crash":1,"Pass":2031}  peak 6101 MiB
+jobs 2: [209.7] ran elapsed 170; each: 170 148 171 s [212.1] counts {"Pass":2032}  peak 5630 MiB
+jobs 1: [238.8] ran elapsed 201; each: 200 202 s [241.0] counts {"Pass":2032}  peak 5398 MiB

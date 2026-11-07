@@ -16,7 +16,7 @@
 // <out>/virgl-debug.txt), CAPTURE=<file.vglt> (the 3D commands, web/virgl-trace.ts: fixtures for tests/virgl.test.ts),
 // DISK2=<the second disk, a path under the repo, default target/deqp's>, GUEST_ENV=<VAR=value ... for deqp-vk: e.g. a Venus
 // built from another Mesa on that disk, VK_DRIVER_FILES=/mnt/vdb/venus/virtio_icd.json (VK4 T24)>,
-// RAM_MIB=<the guest's RAM, default the session's>, LIMIT_S=<seconds the guest may run dEQP, default 1500>, WATCHDOG=disable (no 30 s limit on a case's steps: how long a slow one takes), PASSED=1 (results.passed: the cases that passed), QPA=1 (dEQP's
+// RAM_MIB=<the guest's RAM, default the session's>, JOBS=<n> (n dEQP processes at once, each a block of the list), LIMIT_S=<seconds the guest may run dEQP, default 1500>, WATCHDOG=disable (no 30 s limit on a case's steps: how long a slow one takes), PASSED=1 (results.passed: the cases that passed), QPA=1 (dEQP's
 // log with its images, <out>/deqp.qpa: for a few cases).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -32,6 +32,7 @@ mkdirSync(out, { recursive: true });
 const STRIDE = Number(process.env.STRIDE ?? 50);
 const OFFSET = Number(process.env.OFFSET ?? 0);
 const LIMIT_S = Number(process.env.LIMIT_S ?? 1500);
+const JOBS = Math.max(1, Number(process.env.JOBS ?? 1));
 const CAPTURE = process.env.CAPTURE;
 // Dawn zeroes workgroup memory through Vulkan's VK_KHR_zero_initialize_workgroup_memory where the device has it, which
 // costs SwiftShader ~17 s of compile for a 16 KiB array (VK4 T2: `max_workgroup_memory.*` timed out, a crash); Tint's
@@ -39,7 +40,7 @@ const CAPTURE = process.env.CAPTURE;
 if (vk) process.env.CHROMIUM_ARGS = `${process.env.CHROMIUM_ARGS ?? ''} --disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension`;
 const s = await openSession({ gpu: (process.env.VIRGL_GPU ?? (vk ? 'virgl,vulkan' : 'virgl')) + (CAPTURE ? ',capture' : ''), image, out, disk2: process.env.DISK2 ? `/${process.env.DISK2.replace(/^\/+/, '')}` : vk ? '/target/deqp/deqp-vk.ext4' : '/target/deqp/deqp.ext4', ...(process.env.RAM_MIB ? { ramMiB: Number(process.env.RAM_MIB) } : {}) });
 const { log, pasteSerial, rootShell, run, runLines } = s;
-const results: Record<string, unknown> = { api, gl: s.gl, chromium: s.browser.version(), stride: STRIDE, offset: OFFSET };
+const results: Record<string, unknown> = { api, gl: s.gl, chromium: s.browser.version(), stride: STRIDE, offset: OFFSET, jobs: JOBS };
 const save = () => {
   writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, warnings: Object.fromEntries(s.warnings) }, null, 1));
   if (s.debugLines.length) writeFileSync(`${out}/virgl-debug.txt`, s.debugLines.join('\n') + '\n');
@@ -75,34 +76,45 @@ log('cases', results.cases);
 // the console (a hung task's stack: serial.txt when the run times out).
 // deqp-vk: no EGL; its compiled shaders cached in /tmp (the disk is read-only) for the boot.
 const command = vk
-  ? `${process.env.GUEST_ENV ? `env ${process.env.GUEST_ENV} ` : ''}./deqp-vk --deqp-caselist-file=/tmp/cases.txt --deqp-shadercache-filename=/tmp/shadercache.bin`
+  ? `${process.env.GUEST_ENV ? `env ${process.env.GUEST_ENV} ` : ''}./deqp-vk --deqp-caselist-file=/tmp/cases.txt --deqp-shadercache-filename=$J/shadercache.bin`
   : `env EGL_PLATFORM=surfaceless ./deqp-${api} --deqp-caselist-file=/tmp/cases.txt --deqp-surface-type=pbuffer --deqp-gl-config-name=rgba8888d24s8ms0 --deqp-surface-width=256 --deqp-surface-height=256`;
 // A case that crashes dEQP (or hangs past its watchdog) is recorded as `Crash` and dEQP goes on from the next one,
 // until the list is done or LIMIT_S runs out; /tmp/deqp.cur names the case running.
-await pasteSerial(String.raw`cat > /tmp/deqp.sh <<'EOF'
+// JOBS=<n> (tests/page-deqp-vk.test.ts takes 2): n dEQP processes at once, each on a contiguous block of the list in a directory of its own ($J), their
+// statuses, logs and output joined after (one process waits on the device for most of a case: the guest's vCPUs idle).
+await pasteSerial(String.raw`cat > /tmp/deqp1.sh <<'EOF'
 cd /mnt/vdb/deqp/API
-echo core > /proc/sys/kernel/core_pattern; ulimit -c 0; dmesg -n 7
 start=$(date +%s)
-: > /tmp/deqp.res; : > /tmp/deqp.qpa; : > /tmp/deqp.out; cp /tmp/cases.txt /tmp/rest.txt
-while [ -s /tmp/rest.txt ]; do
+: > $J/deqp.res; : > $J/deqp.qpa; : > $J/deqp.out; cp $J/cases.txt $J/rest.txt
+while [ -s $J/rest.txt ]; do
   left=$(( LIMIT - ($(date +%s) - start) )); [ $left -gt 0 ] || break
-  : > /tmp/deqp.cur
+  : > $J/deqp.cur
   timeout $left COMMAND \
-    --deqp-log-filename=/tmp/deqp.part.qpa --deqp-log-images=IMAGES \
+    --deqp-log-filename=$J/deqp.part.qpa --deqp-log-images=IMAGES \
     --deqp-log-shader-sources=disable --deqp-watchdog=WATCHDOG --deqp-archive-dir=/mnt/vdb/deqp/API 2>&1 |
-    awk '/^Test case /{name=$3; sub(/^\047/, "", name); sub(/\047\.\.$/, "", name); t=systime(); print name > "/tmp/deqp.cur"; close("/tmp/deqp.cur"); next} /^  (Pass|Fail|NotSupported|QualityWarning|CompatibilityWarning|InternalError|Crash|Timeout|ResourceError) \(/{print name, $1, systime()-t; fflush(); name=""; printf "" > "/tmp/deqp.cur"; close("/tmp/deqp.cur"); next} !/^(  |$|Test run totals|Writing test log|DEQP Main|Testing |Test case duration)/ {print name ": " $0 >> "/tmp/deqp.out"; fflush("/tmp/deqp.out")}' >> /tmp/deqp.res
-  cat /tmp/deqp.part.qpa >> /tmp/deqp.qpa 2>/dev/null
-  cur=$(cat /tmp/deqp.cur)
+    awk -v cur=$J/deqp.cur -v out=$J/deqp.out '/^Test case /{name=$3; sub(/^\047/, "", name); sub(/\047\.\.$/, "", name); t=systime(); print name > cur; close(cur); next} /^  (Pass|Fail|NotSupported|QualityWarning|CompatibilityWarning|InternalError|Crash|Timeout|ResourceError) \(/{print name, $1, systime()-t; fflush(); name=""; printf "" > cur; close(cur); next} !/^(  |$|Test run totals|Writing test log|DEQP Main|Testing |Test case duration)/ {print name ": " $0 >> out; fflush(out)}' >> $J/deqp.res
+  cat $J/deqp.part.qpa >> $J/deqp.qpa 2>/dev/null
+  cur=$(cat $J/deqp.cur)
   left=$(( LIMIT - ($(date +%s) - start) )); [ $left -gt 0 ] || break
-  [ -z "$cur" ] || echo "$cur Crash 0" >> /tmp/deqp.res
+  [ -z "$cur" ] || echo "$cur Crash 0" >> $J/deqp.res
   # On with the cases not recorded yet (dEQP runs them in its own order, not the list's, and may also die between
   # cases, none running: e.g. a device lost at a case's end), until a run records nothing.
-  before=$(wc -l < /tmp/rest.txt)
-  awk 'NR == FNR {done[$1] = 1; next} !($0 in done)' /tmp/deqp.res /tmp/cases.txt > /tmp/rest.txt
-  [ "$(wc -l < /tmp/rest.txt)" -lt "$before" ] || break
+  before=$(wc -l < $J/rest.txt)
+  awk 'NR == FNR {done[$1] = 1; next} !($0 in done)' $J/deqp.res $J/cases.txt > $J/rest.txt
+  [ "$(wc -l < $J/rest.txt)" -lt "$before" ] || break
 done
-echo "elapsed $(( $(date +%s) - start ))"
-EOF`.replaceAll('API', api).replaceAll('LIMIT', String(LIMIT_S)).replace('IMAGES', process.env.QPA ? 'enable' : 'disable').replace('WATCHDOG', process.env.WATCHDOG ?? 'enable').replace('COMMAND', command.replace('/tmp/cases.txt', '/tmp/rest.txt')));
+echo "$(( $(date +%s) - start ))" > $J/elapsed
+EOF
+cat > /tmp/deqp.sh <<'EOF'
+echo core > /proc/sys/kernel/core_pattern; ulimit -c 0; dmesg -n 7
+start=$(date +%s)
+rm -rf /tmp/j[0-9]* /tmp/jcases.*
+split -n l/JOBS -d -a 2 /tmp/cases.txt /tmp/jcases.
+k=0; for f in /tmp/jcases.*; do mkdir -p /tmp/j$k; mv $f /tmp/j$k/cases.txt; J=/tmp/j$k sh /tmp/deqp1.sh & k=$((k + 1)); done
+wait
+cat /tmp/j[0-9]*/deqp.res > /tmp/deqp.res; cat /tmp/j[0-9]*/deqp.qpa > /tmp/deqp.qpa; cat /tmp/j[0-9]*/deqp.out > /tmp/deqp.out
+echo "elapsed $(( $(date +%s) - start )); each: $(cat /tmp/j[0-9]*/elapsed | tr '\n' ' ')"
+EOF`.replaceAll('API', api).replaceAll('LIMIT', String(LIMIT_S)).replace('JOBS', String(JOBS)).replace('IMAGES', process.env.QPA ? 'enable' : 'disable').replace('WATCHDOG', process.env.WATCHDOG ?? 'enable').replace('COMMAND', command.replace('/tmp/cases.txt', '$J/rest.txt')));
 const t0 = performance.now();
 const elapsed = await run('sh /tmp/deqp.sh', (LIMIT_S + 120) * 1000);
 const seconds = (performance.now() - t0) / 1000;

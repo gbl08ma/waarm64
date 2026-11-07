@@ -147,7 +147,10 @@ maintenance8's list (a guest rebuild once Arch has Mesa 26.3), `VK_KHR_unified_i
   C2): signal such a fence once its own work is done, not with the ring's next (T33 put
   `timeline_semaphore.wait_before_signal`'s 26 that run in the list); Venus's use-after-free fix gets
   its test (a recorded stream through `venus_submit`, backlog "Venus's use-after-free fix has no test"). *Done:* a
-  driver test of the C2 shape that hung before. *Start:* docs/devices.md
+  driver test of the C2 shape that hung before. A reproducer, maybe of this (2026-11-07): four dEQP processes in one guest
+  (`bench/gpu/deqp-run.ts JOBS=4`, bench/vulkan/REPORT.md "dEQP-VK's processes a machine") hung a
+  `synchronization2.timeline_semaphore.device_host` case each run, two runs of two; one or two processes none; once
+  fixed, JOBS 4 may pay. *Start:* docs/devices.md
   "Venus", backlog "Synchronization".
 - **T37. Commands WebGPU refuses that the driver can avoid** (M): each a submit or draw dropped today, made valid or
   refused where it's made (saying why): a subresource read through a storage image bound as a texture and written in

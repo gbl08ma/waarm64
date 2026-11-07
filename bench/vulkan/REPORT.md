@@ -771,6 +771,28 @@ repeatedly: every Venus window is likely black there (vkcube on the desktop wasn
 creating FBO texture! Disabling advanced rendering" (L7's held-back float formats) and "Imported object requires 16384
 bytes, larger than the provided size 8192" once a run, as on the M4.
 
+## dEQP-VK's processes a machine: two, the whole list 14% faster
+
+2026-11-07, the dev VM (SwiftShader, Chromium 155.0.8059.84). JSON in `results/vk4/jobs/`: `slice.txt` (every 29th case
+of the pass list, 2,032), a run's results each (`j<jobs>-<time>.json`), `ab.txt` (the arms in their order). A machine's
+guest has 4 vCPUs and dEQP-VK ran one case at a time, its process waiting on the device for most of each (the VM ~94%
+idle with two machines at once): `bench/gpu/deqp-run.ts JOBS=<n>` runs n processes, each on a contiguous block of the
+list (the shards' rule: a case keeps the cases before it), in a directory and shader cache of its own, their statuses
+joined. On one machine of 1,536 MiB (CI's), two alternated rounds:
+
+| JOBS | dEQP's seconds | each process's | result | the browser's peak RSS |
+|---|---|---|---|---|
+| 1 | 199, 201 | | 2,032 pass | 5.4 GiB |
+| 2 | 161, 170 | 161 and 140, 170 and 148 | 2,032 pass | 5.6–5.7 GiB |
+| 4 | 176, 176 | 176, 138, 142, 103 | a Crash each time | 6.1–6.3 GiB |
+
+At 4 the slowest block sets the time and two different `synchronization2.timeline_semaphore.device_host` cases hung
+past their watchdog (`write_copy_image_read_copy_image.image_128x128_r32g32b32a32_sfloat`,
+`write_blit_image_read_image_compute.image_64x64x8_r32_sfloat`): host waits on a timeline across contexts, VK4-KICKOFF.md
+T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` otherwise), for the sample and `--full`:
+the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
+sample's time at 2 isn't measured.
+
 ## VK4: R32G32B32_SFLOAT no colour attachment (a sample's failure, found running T34's CI)
 
 2026-11-07, the dev VM (SwiftShader). `scripts/ci-deqp-vk.sh`'s sample (seed 1657927271) failed

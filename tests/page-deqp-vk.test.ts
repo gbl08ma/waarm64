@@ -23,9 +23,14 @@ const skip = process.env.WEBPC_DEQP_VK !== '1' ? 'SKIPPED: scripts/ci-deqp-vk.sh
 // for good) fails the test in minutes, with the guest's serial log kept.
 const LIMIT_S = 4200;
 
-// The direct list runs as this many machines at once, each on its own server, browser and page: the script in 28 minutes at ~40,000 cases (54 at 58,906, VK4 T34), one machine ~38,
+// The direct list runs as this many machines at once, each on its own server, browser and page: the script in 28 minutes at ~40,000 cases (54 at 58,906, VK4 T34; 47 with JOBS 2), one machine ~38,
 // at 13.7 GiB (one machine: 8.9). The list's memory-heavy stretch reaches both at once, at ~16 minutes: under an 11 GiB
 // cap they were killed there. WEBPC_DEQP_VK_SHARDS says otherwise.
+// dEQP processes a machine runs at once, each a block of its cases (bench/gpu/deqp-run.ts JOBS): one waits on the device
+// for most of a case. On a machine of 1,536 MiB, a 2,032-case slice took 199/201 s at 1, 161/170 s at 2, 176 s at 4,
+// where a `synchronization2.timeline_semaphore.device_host` case hung each time (VK4-KICKOFF.md T36); the whole list 2,873 → 2,470 s at 2,
+// the browser's memory +0.3 GiB (bench/vulkan/REPORT.md "dEQP-VK's processes a machine"). WEBPC_DEQP_VK_JOBS says otherwise.
+const JOBS = Number(process.env.WEBPC_DEQP_VK_JOBS ?? 2);
 const SHARDS = Number(process.env.WEBPC_DEQP_VK_SHARDS ?? (availableParallelism() >= 8 && totalmem() >= 17 * 2 ** 30 ? 2 : 1));
 // Cases go to the shards in blocks: alternate ones would have every case follow others than the list's, which some
 // failures depend on (docs/testing.md "dEQP-VK"), and a shard of the list's first half would have its slow groups.
@@ -74,7 +79,7 @@ type Result = { adapter?: string | null; cases: number; counts: Record<string, n
 function runShard(file: string, out: string, gpu: string | undefined, ramMiB?: number) {
   return new Promise<Result>((resolve, reject) => {
     const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'bench/gpu/deqp-run.ts', 'vk', 'target/deqp/guest-vk.qcow2', out], {
-      cwd: root, env: { ...process.env, CHROMIUM_ARGS: `${process.env.CHROMIUM_ARGS ?? ''} --enable-unsafe-webgpu`, CASES: file, LIMIT_S: String(LIMIT_S), DETAIL: '20', ...(gpu ? { VIRGL_GPU: gpu } : {}), ...(ramMiB ? { RAM_MIB: String(ramMiB) } : {}) },
+      cwd: root, env: { ...process.env, CHROMIUM_ARGS: `${process.env.CHROMIUM_ARGS ?? ''} --enable-unsafe-webgpu`, CASES: file, LIMIT_S: String(LIMIT_S), JOBS: String(JOBS), DETAIL: '20', ...(gpu ? { VIRGL_GPU: gpu } : {}), ...(ramMiB ? { RAM_MIB: String(ramMiB) } : {}) },
       timeout: (LIMIT_S + 360) * 1000,
     });
     let output = '';
