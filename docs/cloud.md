@@ -98,8 +98,11 @@ to the host's cargo (rustup installs `agent/rust-toolchain.toml`'s stable with i
 target; `rust-lld` links it), so the page and its tests have it; `scripts/cloud-setup.sh` builds it (not fatal: its
 tests skip without it). That build is marked `HOST-BUILD` and isn't for distribution: `npm run dist` refuses it, and
 its size isn't the shipped binary's (docs/images.md "agent"). The same fallback runs on the dev VM (aarch64) when
-given the same commands by hand; on x86_64 (the cross link by `rust-lld`) it is unproven until a cloud session runs
-`scripts/cloud-setup.sh`.
+given the same commands by hand. On x86_64 it works (2026-11-07): ~7 s from a clean `target/images/build/agent`, no
+cross gcc on the host (the binary's `.comment` names LLD; its `GCC` line is the musl target's own startup files), a
+static aarch64 ELF of 129,808 bytes (the Podman build's 130,064; so `images/SHA256SUMS` warns, as expected), and
+`tests/page-agent.test.ts` passes with it on Debian (`WEBPC_DISTROS=debian`, after `images/build.sh debian`). The
+sway and X11 clipboard tests need `images/debian-sway/build.sh` (a QEMU install, not tried here).
 
 **The UEFI firmware** (`images/build.sh edk2`, Podman on arm64) can't be built here either, but its
 build is pinned and reproducible, so `scripts/cloud-setup.sh` fetches the deployed page's copy

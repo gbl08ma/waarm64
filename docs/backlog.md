@@ -1625,8 +1625,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **No `splice`:** the child reads and writes the port's bytes in 64 KiB chunks between the port and the Wayland or
   X11 pipes (they cross the parent anyway). And a page→guest answer that the guest's reader dropped is a MORE 0 the
   page honours, but what the page already sent (at most the credit, 4 chunks) still crosses.
-- **The host-cargo fallback on x86_64** (`images/build.sh agent` without Podman: rustup's musl target, linked by
-  `rust-lld`) is unproven until a cloud session runs `scripts/cloud-setup.sh` (docs/cloud.md).
 - **sway restarted at boot, seen twice** in the Debian sway image's page test: the boot's first sway ended within
   seconds and getty logged the user in again (the agent followed). Not seen since the image's profile logs how sway
   ends (`/tmp/sway.log`, `== sway ended: N`): if it comes back, that line says why.
