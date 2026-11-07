@@ -22,7 +22,7 @@ task T3"), in any order, several at once where they don't touch the same files. 
 - runs `scripts/ci.sh` and `scripts/ci-deqp-vk.sh` (and the CI scripts its area names in CLAUDE.md) before it's done:
   the latter's seeded sample of the pass list (docs/testing.md "dEQP-VK"), the task's own new cases proven by its own
   runs; a sample's failure is looked into at once or filed and taken out of the list. `--full`, the whole list, runs
-  once after all the census's tasks (T21–T35) and at the track's end (the user's OK, 2026-11-06).
+  once after all the census's tasks (T21–T34; T35 parked) and at the track's end (the user's OK, 2026-11-06).
 - that outgrows one session leaves a short `VK4-HANDOVER.md` section under its id (state, next step), deleted when
   it's done.
 - that needs NVIDIA adds a step to `bench/vulkan/nvidia.sh` (`VK2_STEPS=<task>`); the user's runs are batched as
@@ -48,7 +48,7 @@ T2–T14; the rest of the order is judgement, said with each.
 
 ## The tasks
 
-### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T34 (2026-10-29 to 2026-11-07)
+### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T34 (2026-10-29 to 2026-11-07); T35 parked
 
 Each row's outcome in full is its section of bench/vulkan/REPORT.md ("VK4 T<n>") and its commit; what each left is in
 docs/backlog.md "The Vulkan driver's gaps" (the entry named) and, where it is a defect or drops work, in the tasks
@@ -120,8 +120,11 @@ memory, cooperative matrices, ray tracing, mesh shaders, tile images, fragment d
 the sample's on the M4 (×100 for the whole list, roughly); each starts by running its reason's cases (`deqp-run.ts`'s
 `CASES`, from `census.ts --reasons`' examples or the sample's JSON) to see what they meet once advertised.
 
-- **T35. 3D ASTC** (M; 187): `VK_EXT_texture_compression_astc_3d` decoded to RGBA8 at upload in a compute pass. No
-  program asks; last. *Done:* advertised, its cases run.
+- **T35. 3D ASTC** (M; 187): **parked (2026-11-07, the user's call)**. No Venus carries
+  `VK_EXT_texture_compression_astc_3d` (Mesa main's guest driver doesn't list it, venus-protocol 1.1.3 has no encoding
+  of its feature struct, vkr's allowlist doesn't name it), so no guest would see it advertised, and no adapter the
+  user has offers it natively either. A WGSL port of dEQP's ASTC decoder (2D and 3D, LDR, sRGB, HDR; naga-validated,
+  never run) is on the branch `park/t35-astc-decoder`; the design and what it needs are in docs/backlog.md "3D ASTC".
 
 ### The backlog's tasks (T36–T50, drafted 2026-11-07 at the user's ask)
 

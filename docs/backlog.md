@@ -817,8 +817,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Not advertised, by what dEQP-VK asks** (the census of 2026-11-05, bench/vulkan/REPORT.md "VK4: the census
     again": 75% of the sample not supported on either host, against 0.2% of the M4's supported cases failing; its
     reasons by `census.ts --reasons`; a queue family with compute and without graphics, 2,525 of them, is VK4 T22's): formats
-    (3,681 reasons name one), what reads its own attachment, writable storage in the vertex stage, 3D ASTC: each a
-    task of VK4-KICKOFF.md's T23–T35. No task: protected memory, cooperative matrices, ray tracing, mesh shaders, tile
+    (3,681 reasons name one), what reads its own attachment, writable storage in the vertex stage: each a
+    task of VK4-KICKOFF.md's T23–T34; 3D ASTC (T35) parked, "3D ASTC" below. No task: protected memory, cooperative matrices, ray tracing, mesh shaders, tile
     images, fragment density, descriptor buffers, sparse (~1,600 of the sample) and pipeline statistics queries (188).
     Left by VK4 T28 (pipeline state as variants; the sample's counts): `VK_EXT_legacy_vertex_attributes` (82 of the 85
     that asked for dynamic vertex input ask for it too: unaligned offsets and strides, and a shader's type that isn't
@@ -1055,6 +1055,21 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     none seen, and a stall of a full queue would have hung it anyway).
     A larger queue isn't the way out: that queue being full is what paces a compositor (docs/devices.md, "Flush replies
     are paced"), and 256 of them would put 4 s of replies ahead of each fence.
+  - **3D ASTC** (VK4 T35, parked 2026-11-07: the census's 187, 18,908 cases of the mustpass list name a 3D ASTC format,
+    6,260 of them SFLOAT): no guest can see `VK_EXT_texture_compression_astc_3d`, whatever the device advertises:
+    Mesa's Venus (main, 2026-11-07) doesn't list it, venus-protocol 1.1.3 doesn't encode
+    `VkPhysicalDeviceTextureCompressionASTC3DFeaturesEXT`, and vkr's extension allowlist (`vkr_common.c`) doesn't name
+    it; nor does any of the user's adapters offer it. When Venus carries it (or worth patching all three, as T24's
+    `images/deqp/venus-icd.sh` did for a newer guest Venus): the image's own texture holds the blocks (`rgba32uint`,
+    a block a texel, a level-0 extent large enough for every level's blocks), which every transfer moves as an
+    `R32G32B32A32_UINT` image's; its views sample an alias (wg_device.c `image_alias`) of decoded texels
+    (`rgba16float` for UNORM, as the specification decodes it, and SFLOAT; `rgba8unorm-srgb` for SRGB), which
+    `image_use` refreshes by a decode pass of the worker's (a `gpu_blit` op: an invocation a block into a temporary
+    buffer, copied in) where a copy would go; blits sample the alias. The decoder, a WGSL port of VK-GL-CTS's
+    `tcuAstcUtil.cpp` (Apache-2.0: a THIRD_PARTY.json derived-code row with it), is on the branch
+    `park/t35-astc-decoder` (`web/astc.ts`, naga-validated, never run). The same decoder could back ASTC LDR on
+    adapters without `texture-compression-astc` (NVIDIA's) and `VK_EXT_texture_compression_astc_hdr`, which Venus
+    carries; the user's call (2026-11-07): not a priority while real adapters don't offer them.
   - **Mutable descriptors' leftovers** (VK4 T34; vk/README.md "Descriptors"): of the 10,500 `mutable_descriptor`
     cases without ray tracing stages 3,561 pass; the rest ask for update after bind (4,557), acceleration structures
     and ray tracing (1,140), geometry and tessellation (810), variable descriptor counts (144), or aliasing (108:
