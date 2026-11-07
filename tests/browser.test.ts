@@ -347,7 +347,7 @@ test('input events from the page reach the guest (keyboard LED to the page, keys
   const r = await bootPage('devices&realtime&script=/test-input.sh', 10);
   assert.equal(r.error, undefined);
   assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
-  for (const want of ['N: Name="webpc keyboard"\n', 'B: EV=120003\n', 'B: LED=7\n', 'N: Name="webpc tablet"\n', 'B: EV=f\n', 'B: ABS=3\n',
+  for (const want of ['N: Name="webpc keyboard"\n', 'B: EV=120003\n', 'B: LED=7\n', 'N: Name="webpc tablet"\n', 'B: EV=f\n', 'B: REL=1940\n', 'B: ABS=3\n',
     'input3: 1 30 1\n', 'input3: 1 30 0\n', 'input4: 3 0 16384\n', 'input4: 3 1 8192\n', 'input4: 1 272 1\n', 'input4: 1 272 0\n', 'webpc: test ok\n']) {
     assert.ok(r.console.includes(want), `missing ${JSON.stringify(want)}`);
   }

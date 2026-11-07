@@ -311,7 +311,7 @@ fn input_config(kbd: bool, select: u8, subsel: u8) -> Vec<u8> {
         (0x11, 0x11, true) => bitmap(&[0, 1, 2]),
         (0x11, 0x14, true) => vec![0],
         (0x11, 1, false) => bitmap(&[0x110, 0x111, 0x112, 0x113, 0x114]),
-        (0x11, 2, false) => bitmap(&[8]),
+        (0x11, 2, false) => bitmap(&[6, 8, 11, 12]), // REL_HWHEEL, REL_WHEEL and their high-resolution twins
         (0x11, 3, false) => bitmap(&[0, 1]),
         (0x12, 0 | 1, false) => [0u32, 32767, 0, 0, 0]
             .iter()

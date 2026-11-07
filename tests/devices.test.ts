@@ -367,7 +367,9 @@ test('virtio-input config answers', () => {
   // The pointers' buttons: left, right, middle, side and extra (0x110-0x114).
   assert.deepEqual([...inputConfig('tablet', 0x11, 1)].slice(0x110 >> 3), [0x1f]);
   assert.deepEqual([...inputConfig('mouse', 0x11, 1)].slice(0x110 >> 3), [0x1f]);
-  assert.deepEqual([...inputConfig('mouse', 0x11, 2)], [3, 1]); // REL_X, REL_Y, REL_WHEEL
+  // The wheels: REL_HWHEEL (6), REL_WHEEL (8), REL_WHEEL_HI_RES (11), REL_HWHEEL_HI_RES (12); the mouse's REL_X, REL_Y too.
+  assert.deepEqual([...inputConfig('mouse', 0x11, 2)], [0x43, 0x19]);
+  assert.deepEqual([...inputConfig('tablet', 0x11, 2)], [0x40, 0x19]);
   assert.equal(inputConfig('mouse', 0x11, 3).length, 0);
   assert.equal(new TextDecoder().decode(inputConfig('touch', 1, 0)), 'webpc touchscreen');
   assert.deepEqual([...inputConfig('touch', 0x10, 0)], [2]); // INPUT_PROP_DIRECT

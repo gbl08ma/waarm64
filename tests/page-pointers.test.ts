@@ -1,6 +1,7 @@
 // The screen's pointing devices on the page (docs/frontend.md "Mouse lock", "Touch"): a mouse's back and forward buttons
 // are the guest's (BTN_SIDE, BTN_EXTRA) and the browser doesn't navigate; a second button pressed while one is held is
-// pressed too; touches go to the touchscreen as multitouch slots; with the mouse lock on, a click takes the mouse, its
+// pressed too; touches go to the touchscreen as multitouch slots, the oldest finger also its single-touch position; the wheels
+// go in notches and high resolution, vertical and horizontal; with the mouse lock on, a click takes the mouse, its
 // motion goes to the relative mouse and the guest's cursor is drawn by the page; leaving a running machine asks first,
 // unless Preferences says not to. The tablet's, mouse's and touchscreen's ports are kept on the page (the start message
 // is intercepted) and the worker is stopped at once: nothing boots, so it takes no Debian lock (scripts/ci.sh runs it). ~15 s.
@@ -125,6 +126,29 @@ test('touches go to the touchscreen, one slot each', { skip, timeout: 120_000 },
   await context.close();
 });
 
+test('the single-touch position follows the oldest finger down, the next one when it lifts', { skip, timeout: 120_000 }, async () => {
+  const { context, page, errors, cdp, at } = await open();
+  const [a, b] = [at(0.25, 0.25), at(0.75, 0.5)];
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...a, id: 1 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...a, id: 1 }, { ...b, id: 2 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...a, id: 1 }, { x: b.x, y: b.y + 40, id: 2 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [{ ...a, id: 1 }] }); // the first finger lifts (touchEnd lists the points that end)
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: b.x, y: b.y + 80, id: 2 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.waitForTimeout(500);
+  const e = await events(page);
+  const xy = flat(e.touch).filter((x) => x[0] === EV_ABS && x[1] <= 1);
+  const near = (v: number, want: number) => Math.abs(v - want) < 300;
+  const xs = xy.filter((x) => x[1] === 0).map((x) => x[2]);
+  const ys = xy.filter((x) => x[1] === 1).map((x) => x[2]);
+  // The first finger's place while it's down (the second's move doesn't move it), then the second's, then where the second moves.
+  assert.ok(xs.length === 3 && near(xs[0], 8192) && near(xs[1], 24575) && near(xs[2], 24575), `ABS_X: ${xs}`);
+  assert.ok(ys.length === 3 && near(ys[0], 8192) && ys[2] > ys[1] && ys[1] > 16384, `ABS_Y: ${ys}`);
+  assert.deepEqual(keys(e.touch), [[EV_KEY, 0x14a, 1], [EV_KEY, 0x14a, 0]], 'BTN_TOUCH held throughout');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test("without a touchscreen the first finger is the tablet's and its left button; another finger is dropped", { skip, timeout: 120_000 }, async () => {
   const { context, page, errors, cdp, at } = await open('', false, 'mouse=1');
   const [a, b] = [at(0.25, 0.5), at(0.75, 0.5)];
@@ -144,19 +168,28 @@ test("without a touchscreen the first finger is the tablet's and its left button
   await context.close();
 });
 
-test("the wheel: a mouse's notch is one, a touchpad's small steps add up to notches", { skip, timeout: 120_000 }, async () => {
+test("the wheels: a mouse's notch is one, a touchpad's small steps add up, in high resolution too; horizontal as vertical", { skip, timeout: 120_000 }, async () => {
   const { context, page, errors, at } = await open();
   const p = at(0.5, 0.5);
   await page.mouse.move(p.x, p.y);
-  await page.mouse.wheel(0, 100); // a notch down: REL_WHEEL -1
+  await page.mouse.wheel(0, 100); // a notch down: REL_WHEEL -1 (REL_WHEEL_HI_RES -120)
   await page.mouse.wheel(0, -100);
   for (let i = 0; i < 10; i++) await page.mouse.wheel(0, 10); // 100 px in small steps: two notches
   await page.mouse.wheel(0, 30);
-  await page.mouse.wheel(0, -30); // turning back starts over: none
+  await page.mouse.wheel(0, -30); // turning back starts over: no notch
+  for (let i = 0; i < 5; i++) await page.mouse.wheel(0, 7); // 35 px: 84 units, the fractions carried
+  await page.mouse.wheel(100, 0); // a notch right: REL_HWHEEL +1
+  await page.mouse.wheel(-20, 0);
   await page.waitForTimeout(300);
   const e = await events(page);
-  const wheel = flat(e.tablet).filter((x) => x[0] === EV_REL && x[1] === 8).map((x) => x[2]);
-  assert.deepEqual(wheel, [-1, 1, -1, -1]);
+  const rel = (code: number) => flat(e.tablet).filter((x) => x[0] === EV_REL && x[1] === code).map((x) => x[2]);
+  assert.deepEqual(rel(8), [-1, 1, -1, -1], 'REL_WHEEL');
+  assert.deepEqual(rel(11), [-120, 120, ...Array(10).fill(-24), -72, 72, -16, -17, -17, -17, -17], 'REL_WHEEL_HI_RES');
+  assert.deepEqual(rel(6), [1], 'REL_HWHEEL');
+  assert.deepEqual(rel(12), [120, -48], 'REL_HWHEEL_HI_RES');
+  // A notch's REL_WHEEL comes in the same report as the high-resolution motion that made it.
+  const notches = e.tablet.filter((f) => f.some((x) => x[0] === EV_REL && x[1] === 8));
+  assert.ok(notches.every((f) => f.some((x) => x[0] === EV_REL && x[1] === 11)), JSON.stringify(notches));
   assert.deepEqual(errors, []);
   await context.close();
 });

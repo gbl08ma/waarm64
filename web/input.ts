@@ -37,7 +37,7 @@ const BTN_TOUCH = 0x14a;
 const ABS_MT_SLOT = 0x2f, ABS_MT_POSITION_X = 0x35, ABS_MT_POSITION_Y = 0x36, ABS_MT_TRACKING_ID = 0x39;
 /** The touchscreen's slots (web/devices.ts `TOUCH_SLOTS`). */
 const TOUCH_SLOTS = 10;
-/** A wheel's notch (REL_WHEEL 1) in CSS pixels: a mouse's notch comes as one event of at least this, a touchpad's motion as many small ones, summed. */
+/** A wheel's notch (REL_WHEEL 1, REL_WHEEL_HI_RES 120) in CSS pixels: a mouse's notch comes as one event of at least this, a touchpad's motion as many small ones, summed. */
 const NOTCH_PX = 50;
 
 /** What `attachInput` returns. */
@@ -269,37 +269,45 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     }
     if (events.length) port.postMessage([...events, [EV_SYN, 0, 0]]);
   };
-  // The touchscreen: each finger a slot (by pointer id), the first one also the single-touch position and BTN_TOUCH.
-  const fingers = new Map<number, number>();
+  // The touchscreen: each finger a slot (by pointer id); the oldest finger down is also the single-touch position (as
+  // Linux's pointer emulation, input_mt_report_pointer_emulation, picks it), and BTN_TOUCH is from the first down to the last up.
+  /** The fingers down, oldest first (a Map keeps its insertion order): their slots and last positions. */
+  const fingers = new Map<number, { slot: number; x: number; y: number }>();
   let tracking = 0;
   const finger = (e: PointerEvent, phase: 'down' | 'move' | 'up') => {
     const r = el.getBoundingClientRect();
     const [x, y] = [at(e.clientX - r.left, r.width), at(e.clientY - r.top, r.height)];
-    let slot = fingers.get(e.pointerId);
+    const lead = fingers.keys().next().value;
+    let f = fingers.get(e.pointerId);
     const ev: number[][] = [];
     if (phase === 'down') {
-      if (slot !== undefined) return;
-      slot = Array.from({ length: TOUCH_SLOTS }, (_, k) => k).find((k) => ![...fingers.values()].includes(k));
+      if (f) return;
+      const used = new Set([...fingers.values()].map((g) => g.slot));
+      const slot = Array.from({ length: TOUCH_SLOTS }, (_, k) => k).find((k) => !used.has(k));
       if (slot === undefined) return; // more fingers than slots
-      fingers.set(e.pointerId, slot);
+      fingers.set(e.pointerId, (f = { slot, x, y }));
       ev.push([EV_ABS, ABS_MT_SLOT, slot], [EV_ABS, ABS_MT_TRACKING_ID, tracking], [EV_ABS, ABS_MT_POSITION_X, x], [EV_ABS, ABS_MT_POSITION_Y, y]);
       tracking = (tracking + 1) & 0xffff;
       if (fingers.size === 1) ev.push([EV_KEY, BTN_TOUCH, 1]);
-    } else if (slot === undefined) {
+    } else if (!f) {
       return;
     } else if (phase === 'move') {
-      ev.push([EV_ABS, ABS_MT_SLOT, slot], [EV_ABS, ABS_MT_POSITION_X, x], [EV_ABS, ABS_MT_POSITION_Y, y]);
+      [f.x, f.y] = [x, y];
+      ev.push([EV_ABS, ABS_MT_SLOT, f.slot], [EV_ABS, ABS_MT_POSITION_X, x], [EV_ABS, ABS_MT_POSITION_Y, y]);
     } else {
       fingers.delete(e.pointerId);
-      ev.push([EV_ABS, ABS_MT_SLOT, slot], [EV_ABS, ABS_MT_TRACKING_ID, -1]);
+      ev.push([EV_ABS, ABS_MT_SLOT, f.slot], [EV_ABS, ABS_MT_TRACKING_ID, -1]);
       if (!fingers.size) ev.push([EV_KEY, BTN_TOUCH, 0]);
     }
-    if (e.isPrimary && phase !== 'up') ev.push([EV_ABS, 0, x], [EV_ABS, 1, y]);
+    // The single-touch position: the oldest finger's, when it moved or when it lifted and the next oldest took over.
+    const now = fingers.keys().next().value;
+    const p = now === undefined ? undefined : fingers.get(now);
+    if (p && (now !== lead || now === e.pointerId)) ev.push([EV_ABS, 0, p.x], [EV_ABS, 1, p.y]);
     touch!.postMessage([...ev, [EV_SYN, 0, 0]]);
   };
   const liftFingers = () => {
     if (!fingers.size) return;
-    touch!.postMessage([...[...fingers.values()].flatMap((slot) => [[EV_ABS, ABS_MT_SLOT, slot], [EV_ABS, ABS_MT_TRACKING_ID, -1]]), [EV_KEY, BTN_TOUCH, 0], [EV_SYN, 0, 0]]);
+    touch!.postMessage([...[...fingers.values()].flatMap(({ slot }) => [[EV_ABS, ABS_MT_SLOT, slot], [EV_ABS, ABS_MT_TRACKING_ID, -1]]), [EV_KEY, BTN_TOUCH, 0], [EV_SYN, 0, 0]]);
     fingers.clear();
   };
   const touched = (e: PointerEvent) => !!touch && e.pointerType === 'touch';
@@ -323,8 +331,8 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     }
     return !mine;
   };
-  /** The wheel's motion not yet a notch (CSS pixels; reset when it turns). */
-  let wheelPx = 0;
+  /** Each wheel's motion (vertical, horizontal) since it last turned: high-resolution units (120 a notch) not yet sent, and sent but not yet a notch. */
+  const wheels = [{ rest: 0, units: 0 }, { rest: 0, units: 0 }];
   const takeMouse = () => {
     // The pointer mode moves as the host's pointer does (the browser's motion is accelerated as it is).
     // A refusal (the browser's: too soon after Esc, no gesture) leaves the mouse the page's: the next click asks again.
@@ -378,14 +386,30 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     on(el, 'auxclick', sideButton),
     on(el, 'wheel', (e: WheelEvent) => {
       const port = raw() ? mouse : tablet;
-      if (!port || !e.deltaY) return;
+      if (!port || (!e.deltaY && !e.deltaX)) return;
       e.preventDefault();
-      // Lines and pages (Firefox's deltaMode 1, 2) are a notch each; pixels add up to one (a notch per event at most).
-      const px = e.deltaMode === 0 ? e.deltaY : Math.sign(e.deltaY) * NOTCH_PX;
-      wheelPx = Math.sign(px) === Math.sign(wheelPx) ? wheelPx + px : px;
-      if (Math.abs(wheelPx) < NOTCH_PX) return;
-      port.postMessage([[EV_REL, 8, wheelPx < 0 ? 1 : -1], [EV_SYN, 0, 0]]);
-      wheelPx = 0;
+      const ev: number[][] = [];
+      // Vertical: REL_WHEEL and REL_WHEEL_HI_RES, up positive (deltaY's opposite); horizontal: REL_HWHEEL and REL_HWHEEL_HI_RES, right positive.
+      for (const [k, delta, dir, notch, hiRes] of [[0, e.deltaY, -1, 8, 11], [1, e.deltaX, 1, 6, 12]] as const) {
+        if (!delta) continue;
+        const w = wheels[k];
+        // Lines and pages (Firefox's deltaMode 1, 2) are a notch each; pixels count at 120 units a notch, a notch per event at most.
+        // (`rest` counts units × NOTCH_PX, so whole pixels add up exactly.)
+        const scaled = dir * (e.deltaMode === 0 ? Math.max(-NOTCH_PX, Math.min(NOTCH_PX, delta)) : Math.sign(delta) * NOTCH_PX) * 120;
+        if (Math.sign(scaled) !== Math.sign(w.rest + w.units || scaled)) [w.rest, w.units] = [0, 0]; // turning back starts over
+        w.rest += scaled;
+        const hi = Math.trunc(w.rest / NOTCH_PX);
+        if (!hi) continue;
+        w.rest -= hi * NOTCH_PX;
+        w.units += hi;
+        ev.push([EV_REL, hiRes, hi]);
+        // The plain wheel's notch when the high-resolution motion makes one (Linux's rule for devices with both).
+        if (Math.abs(w.units) >= 120) {
+          ev.push([EV_REL, notch, Math.sign(w.units)]);
+          w.units -= Math.sign(w.units) * 120;
+        }
+      }
+      if (ev.length) port.postMessage([...ev, [EV_SYN, 0, 0]]);
     }),
     on(el, 'contextmenu', (e: Event) => e.preventDefault()),
     on(el, 'blur', releaseAll),
