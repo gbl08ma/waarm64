@@ -48,7 +48,7 @@ T2–T14; the rest of the order is judgement, said with each.
 
 ## The tasks
 
-### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T34 (2026-10-29 to 2026-11-07); T35 parked
+### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T34, T36 (2026-10-29 to 2026-11-07); T35 parked
 
 Each row's outcome in full is its section of bench/vulkan/REPORT.md ("VK4 T<n>") and its commit; what each left is in
 docs/backlog.md "The Vulkan driver's gaps" (the entry named) and, where it is a defect or drops work, in the tasks
@@ -99,6 +99,7 @@ R1–R4 and then of R5–R7, had its findings fixed or moved to the backlog the 
 | T32. What reads the attachment it writes | the depth bounds test, logic ops and advanced blends (every op, overlap and premultiplication) on a copy of the attachment made before each such draw (~0.1 ms a draw on the M4); local read's colour attachment map in the pipeline's key; `VK_EXT_attachment_feedback_loop_layout` and its dynamic state (a sampled view over a copy of the image's texture, renewed at barriers); `VK_EXT_multisampled_render_to_single_sampled` (4-sample images of the pass's own resolved into the attachments, LOAD filled by a draw a sample); 3,375 join the list (→ 48,041); 70 mrtss cases draw R32G32B32A32_UINT at 4 samples past dEQP's own check and fail. Not done: unified image layouts (the guest's Venus), stencil export, sample counts other than 4 | "Reading the attachments' leftovers", "Feedback loops' leftovers", "Multisampled rendering to single-sampled attachments' leftovers" |
 | T33. Writable storage in the vertex stage | `vertexPipelineStoresAndAtomics`: such a stage printed without its entry point, run as compute for its draw's vertices in a cut of the render pass, a pass-through vertex stage drawing its outputs (an indexed draw through their places), its bindings in a group of their own or with group 3's; draws that rasterize nothing still run it, a split by face once; of 10,581 candidates (every vertex-stage case of the census's groups) 7,311 pass on SwiftShader and the M4, 55 fail on bindings past WebGPU's (T40), and `wait_before_signal`'s 26 transfer cases (the rest ask for tessellation); 7,314 join the list (→ 55,355); a storing draw ~0.12 ms more on the M4. The pre-pass decided for geometry and tessellation: this one, in the cut | "Vertex stages that store's leftovers", "Synchronization", "Texel buffers" |
 | T34. Mutable descriptors | `VK_EXT_mutable_descriptor_type`: a slot takes any type of its list, bound as the shader declares it (bind groups are made of the declarations: no variant needed without aliasing, which needs `descriptorBindingPartiallyBound`); the layout support query says no past a stage's WebGPU bindings, a mutable descriptor counted in every kind its list names; of the 10,500 cases without ray tracing stages 3,561 pass on SwiftShader and the M4, 0 fail, the rest update after bind, ray tracing, geometry, variable counts, aliasing; 3,561 join the list (→ 58,916; 58,906 with R32G32B32_SFLOAT no colour attachment, REPORT.md "VK4: R32G32B32_SFLOAT…") | "Mutable descriptors' leftovers" |
+| T36. Hangs and lost completions | a ring fence that gave its queue entry back is signalled once its work is done, by the next reply without a fence of its own or a display event's (web/gpu.ts `carry`; the review of R1–R4's C2 shape, which hung, a test in tests/gpu.test.ts); `JOBS=4` hangs no `timeline_semaphore.device_host` case and is 12% faster than 2 (left at 2 for memory); Venus's use-after-free fix tested by hand-encoded Venus commands through `venus_submit` | "dEQP-VK's four processes a machine" |
 
 ### Tier 3: performance on real workloads
 
@@ -142,19 +143,6 @@ decisions already leave (protected memory to sparse, pipeline statistics). Waiti
 maintenance8's list (a guest rebuild once Arch has Mesa 26.3), `VK_KHR_unified_image_layouts`,
 `VK_EXT_primitive_restart_index`'s cases.
 
-- **T36. Hangs and lost completions** (S): **done (2026-11-07)**: a fence given back is signalled, once its work is done,
-  by the next reply without a fence of its own or a display event's (web/gpu.ts `carry`); `JOBS=4` hangs nothing and is
-  12% faster than 2 (left at 2 for memory: backlog "dEQP-VK's four processes a machine"); the use-after-free fix tested
-  by hand-encoded Venus commands (REPORT.md "VK4 T36"). The brief: a guest waiting on a ring fence that gave its queue entry back, while the
-  ring's newest waits for what the guest does next, waits for ever (backlog "Synchronization", the review of R1–R4's
-  C2): signal such a fence once its own work is done, not with the ring's next (T33 put
-  `timeline_semaphore.wait_before_signal`'s 26 that run in the list); Venus's use-after-free fix gets
-  its test (a recorded stream through `venus_submit`, backlog "Venus's use-after-free fix has no test"). *Done:* a
-  driver test of the C2 shape that hung before. A reproducer, maybe of this (2026-11-07): four dEQP processes in one guest
-  (`bench/gpu/deqp-run.ts JOBS=4`, bench/vulkan/REPORT.md "dEQP-VK's processes a machine") hung a
-  `synchronization2.timeline_semaphore.device_host` case each run, two runs of two; one or two processes none; once
-  fixed, JOBS 4 may pay. *Start:* docs/devices.md
-  "Venus", backlog "Synchronization".
 - **T37. Commands WebGPU refuses that the driver can avoid** (M): each a submit or draw dropped today, made valid or
   refused where it's made (saying why): a subresource read through a storage image bound as a texture and written in
   one scope (`scope_images`), a 2D array view of one layer bound to a 2D storage image, stages from the cache that
