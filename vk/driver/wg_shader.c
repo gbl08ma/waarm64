@@ -507,6 +507,9 @@ keyed_text(const struct wg_program *v, const struct wg_stage_nir *n, const struc
       for (uint32_t i = 0; v->keys[k].sampler == WGSL_IMAGE_KEY && i < info->resource_count; i++)
          touched |= wgsl_image_keyed(&info->resources[i]) &&
                     ((uint32_t)info->resources[i].group << 16 | info->resources[i].binding) == v->keys[k].texture;
+      /* A 2D view of a 3D image (VK4 T38), whatever the stage does with it. */
+      for (uint32_t i = 0; v->keys[k].sampler == WGSL_SLICE_KEY && i < info->resource_count; i++)
+         touched |= ((uint32_t)info->resources[i].group << 16 | info->resources[i].binding) == v->keys[k].texture;
    }
    if (!touched)
       return NULL;
@@ -778,11 +781,12 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl
          break;
       }
    }
-   /* A padded cube is bound as its faces (wgsl_sampler.c fetches from them). */
+   /* A padded cube is bound as its faces (wgsl_sampler.c fetches from them); a 2D view of a 3D image as the level's 3D
+    * view (WGSL_SLICE_KEY). */
    for (uint32_t i = 0; i < key_count; i++)
-      for (uint32_t k = 0; keys[i].faces && k < v->resource_count; k++)
-         if (res_index(&v->resources[k]) == keys[i].texture)
-            v->resources[k].dim = WGSL_DIM_2D_ARRAY;
+      for (uint32_t k = 0; k < v->resource_count; k++)
+         if (res_index(&v->resources[k]) == keys[i].texture && (keys[i].faces || keys[i].sampler == WGSL_SLICE_KEY))
+            v->resources[k].dim = keys[i].faces ? WGSL_DIM_2D_ARRAY : WGSL_DIM_3D;
    program_layouts(v);
    if ((widened || v->split_count || v->key_count || v->alias_count) && p->compute_wgsl) {
       const struct wgsl_info keyed = compute_pairs(p);
@@ -1301,10 +1305,13 @@ stage_nir_keep(const nir_shader *nir, const struct wgsl_varyings *fs)
                samples |= nir_instr_as_tex(instr)->sampler_dim != GLSL_SAMPLER_DIM_BUF;
             } else if (instr->type == nir_instr_type_intrinsic) {
                const nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-               samples |= (intr->intrinsic == nir_intrinsic_image_store || intr->intrinsic == nir_intrinsic_image_load ||
-                           intr->intrinsic == nir_intrinsic_image_size) &&
-                          nir_intrinsic_image_dim(intr) != GLSL_SAMPLER_DIM_BUF &&
-                          (nir_intrinsic_format(intr) == PIPE_FORMAT_NONE || intr->intrinsic == nir_intrinsic_image_store);
+               const bool image = intr->intrinsic == nir_intrinsic_image_store || intr->intrinsic == nir_intrinsic_image_load ||
+                                  intr->intrinsic == nir_intrinsic_image_size || intr->intrinsic == nir_intrinsic_image_atomic ||
+                                  intr->intrinsic == nir_intrinsic_image_atomic_swap;
+               /* A 2D image may be a 2D view of a 3D one (VK4 T38: printed against its slice). */
+               samples |= image && nir_intrinsic_image_dim(intr) != GLSL_SAMPLER_DIM_BUF &&
+                          (nir_intrinsic_format(intr) == PIPE_FORMAT_NONE || intr->intrinsic == nir_intrinsic_image_store ||
+                           (nir_intrinsic_image_dim(intr) == GLSL_SAMPLER_DIM_2D && !nir_intrinsic_image_array(intr)));
             }
    if (!samples)
       return NULL;
@@ -2456,7 +2463,14 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
       /* At the sample rate, the samples' positions follow the pipeline's count (wgsl_print.c `wg_sample_pos`); alpha
        * to coverage at one sample is the stage's (`wg_a2c`). */
       const bool a2c = k->alpha_to_coverage && k->samples <= 1 && k->fs->info.a2c;
-      if (k->fs->info.per_sample || k->fs->info.uses_view || a2c) {
+      /* A8's attachments take the output's alpha in their red (`wg_ar`, the stage's float outputs). */
+      uint32_t alpha_red = 0;
+      for (uint32_t i = 0; k->fs->info.alpha_red && i < k->color_count; i++) {
+         const struct wg_texture_format *f = k->colors[i] ? wg_texture_format(k->colors[i]) : NULL;
+         if (f && (f->flags & WG_FMT_ALPHA8) && (k->fs->info.alpha_red & (1u << i)))
+            alpha_red |= 1u << i;
+      }
+      if (k->fs->info.per_sample || k->fs->info.uses_view || a2c || alpha_red) {
          wg_json_printf(&j, "\"constants\":{");
          const char *sep = "";
          if (k->fs->info.per_sample) {
@@ -2467,8 +2481,12 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
             wg_json_printf(&j, "%s\"wg_view\":%u", sep, k->view);
             sep = ",";
          }
-         if (a2c)
+         if (a2c) {
             wg_json_printf(&j, "%s\"wg_a2c\":1", sep);
+            sep = ",";
+         }
+         if (alpha_red)
+            wg_json_printf(&j, "%s\"wg_ar\":%u", sep, alpha_red);
          wg_json_printf(&j, "},");
       }
       wg_json_printf(&j, "\"targets\":[");
@@ -2479,8 +2497,8 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
             continue;
          }
          const bool written = outputs & (1u << i);
-         wg_json_printf(&j, "%s{\"format\":\"%s\",\"writeMask\":%u", i ? "," : "", f->name,
-                        written ? k->blend[i].mask & ~wg_format_lacks(f) & 15 : 0);
+         const uint32_t mask = (f->flags & WG_FMT_ALPHA8) ? (k->blend[i].mask >> 3) & 1 : k->blend[i].mask & ~wg_format_lacks(f) & 15;
+         wg_json_printf(&j, "%s{\"format\":\"%s\",\"writeMask\":%u", i ? "," : "", f->name, written ? mask : 0);
          /* A logic op or an advanced blend is the stage's (`fragment_dst`). */
          const bool by_stage = dst && dst_module && ((k->logic_mask & (1u << i)) || k->adv[i].op);
          if (written && k->blend[i].enable && (f->flags & WG_FMT_BLEND) && !by_stage) {

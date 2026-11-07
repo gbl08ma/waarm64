@@ -1385,8 +1385,9 @@ pair_key(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, 
    /* An E5B9G9R9 view of words (VK4 T23) is sampled from fetches, as a padded one is. */
    const bool padded = view && view->padded, words = view && view->rgb9e5;
    const bool cube = view && (view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE || view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY);
-   /* A non-seamless cube's linear filter (VK4 T28): from its faces' fetches. */
-   const bool non_seamless = sampler && cube && !integer && !sampler->compare && sampler->key.non_seamless;
+   /* A non-seamless cube's linear filter (VK4 T28): from its faces' fetches; a comparing one's too, each texel compared
+    * (VK4 T38: the shadow cases, open since depth formats report comparison). */
+   const bool non_seamless = sampler && cube && !integer && sampler->key.non_seamless;
    if (!sampler || !view || (!integer && !sampler->emulated && !padded && !words && !forced && !non_seamless))
       return false;
    const struct wgsl_sampler_key *k = &sampler->key;
@@ -1503,6 +1504,23 @@ program_keys(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program 
       keys[n].sampler = WGSL_IMAGE_KEY;
       keys[n++].format = (uint16_t)vk_format_to_pipe_format(t->view->vk.view_format);
    }
+   /* A 2D view of a 3D image, sampled or storage (VK_EXT_image_2d_view_of_3d): its binding the level's 3D view, the
+    * slice the shader's (wgsl_sampler.c `lower_slice`). */
+   for (uint32_t k = 0; dev->slice_views && k < p->resource_count; k++) {
+      const struct wgsl_resource *r = &p->resources[k];
+      if ((r->kind != WGSL_TEXTURE && r->kind != WGSL_STORAGE_TEXTURE && !r->image_words) || r->dim != WGSL_DIM_2D)
+         continue;
+      const uint32_t index = (uint32_t)r->group << 16 | r->binding;
+      const struct wg_descriptor *t = pair_descriptor(cmd, point, p, index);
+      if (!t || !t->view || t->view->vk.image->image_type != VK_IMAGE_TYPE_3D ||
+          t->view->vk.view_type == VK_IMAGE_VIEW_TYPE_3D)
+         continue;
+      memset(&keys[n], 0, sizeof(keys[n]));
+      keys[n].texture = index;
+      keys[n].sampler = WGSL_SLICE_KEY;
+      keys[n].size[0] = u_minify(t->view->vk.image->extent.depth, t->view->vk.base_mip_level);
+      keys[n++].size[2] = t->view->vk.base_array_layer;
+   }
    return n;
 }
 
@@ -1609,11 +1627,12 @@ program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
    if (!p->mixed_known)
       wg_program_mixed(p);
    mask[0] |= p->mixed[0], mask[1] |= p->mixed[1];
-   struct wgsl_sampler_key keys[3 * WGSL_MAX_PAIRS + WGSL_MAX_RESOURCES];
+   struct wgsl_sampler_key keys[3 * WGSL_MAX_PAIRS + 2 * WGSL_MAX_RESOURCES];
    bool formatless = false; /* or a written storage texture, whose view may be of another format */
    for (uint32_t k = 0; k < p->resource_count; k++)
       formatless |= wgsl_image_keyed(&p->resources[k]);
-   const uint32_t key_count = p->pair_count || p->int_pair_count || p->key_pair_count || dev_padded(cmd) || formatless
+   const bool slices = container_of(cmd->vk.base.device, struct wg_device, vk)->slice_views;
+   const uint32_t key_count = p->pair_count || p->int_pair_count || p->key_pair_count || dev_padded(cmd) || formatless || slices
                                  ? program_keys(cmd, point, p, keys) : 0;
    struct wg_storage_alias aliases[8];
    const uint32_t alias_count = storage_aliases(cmd, point, p, aliases);
@@ -3584,7 +3603,8 @@ view_words(const struct wg_image_view *v, uint32_t *buffer, VkDeviceSize *at, Vk
    *buffer = wg_image_words(image);
    const uint32_t m = v->vk.base_mip_level, row = wg_image_row_bytes(image, m);
    const uint32_t h = DIV_ROUND_UP(u_minify(image->vk.extent.height, m), image->fmt->bh);
-   const bool is3d = v->vk.view_type == VK_IMAGE_VIEW_TYPE_3D;
+   /* A 2D view of a 3D image too: the shader's third coordinate is its slice (WGSL_SLICE_KEY). */
+   const bool is3d = image->vk.image_type == VK_IMAGE_TYPE_3D;
    const uint32_t n = is3d ? u_minify(image->vk.extent.depth, m) : v->vk.layer_count;
    *at = image->words_at[m] + (VkDeviceSize)row * h * (is3d ? 0 : v->vk.base_array_layer);
    *size = (VkDeviceSize)row * h * n;

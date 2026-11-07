@@ -146,6 +146,8 @@ struct wgsl_info {
    bool per_sample;             /* fragment: at the sample rate, declares `override wg_samples` (the pipeline's) */
    bool a2c;                    /* fragment: location 0 a float, declares `override wg_a2c`: alpha to coverage at
                                  * one sample (WebGPU's needs several), its fragments under half alpha discarded */
+   uint8_t alpha_red;           /* fragment: the float outputs (by location), declares `override wg_ar`: those whose
+                                 * alpha goes to red (an A8 attachment's texture, the pipeline's) */
    bool dual_source;            /* fragment: location 0's second output (index 1) written: @blend_src */
    uint8_t dual_base;           /* its WGSL type */
    bool clip_distances;         /* uses `clip_distances` (vertex) */
@@ -216,6 +218,10 @@ struct wgsl_sampler_key {
 /* A key's `sampler` for a storage image declared without a format (`texture` its index): `format` is the bound view's
  * (GD G5, wgsl_print.c `image_format`). */
 #define WGSL_IMAGE_KEY 0xfffffffeu
+/* A key's `sampler` for a 2D view of a 3D image (VK_EXT_image_2d_view_of_3d, VK4 T38), sampled or storage (`texture` its
+ * index): its binding is the level's 3D view, `size[2]` the slice and `size[0]` the level's depth (wgsl_sampler.c
+ * `lower_slice`). */
+#define WGSL_SLICE_KEY 0xfffffffdu
 
 /* The NIR options every stage is compiled with, and spirv_to_nir's. */
 const struct nir_shader_compiler_options *wgsl_nir_options(void);
@@ -248,6 +254,9 @@ void wgsl_link(nir_shader *vs, nir_shader *fs);
 /* Whether a stage's `access` (WGSL_ACCESS_*) of a storage image of this enum pipe_format goes by the image's words,
  * WebGPU having no storage texture of the format with that access. */
 bool wgsl_image_as_words(unsigned format, uint8_t access, unsigned features);
+/* Whether a storage image of this format can only go by its words: WebGPU has no storage texture of it in any tier
+ * (four-channel 8-bit sRGB, the packed 16-bit normalized formats). */
+bool wgsl_image_words_only(unsigned format);
 
 /* A storage image whose format a key (WGSL_IMAGE_KEY) may give: declared without one, or a storage texture written with
  * a declared one (bound to a view of another format, GD G7: the view's, as native drivers write the descriptor's). */

@@ -2647,7 +2647,8 @@ fn ix(k: u32) -> u32 {
 
   /** `unpack` or `pack`'s compute pass: texels of layout `sl` into texels of layout `dl` (`textureLayout`'s: `[shift,
    * bits]` of R, G, B, A, a texel's bytes, each channel's kind), each channel's value converted to its bits and kind
-   * there (unorm widths scaled, signed integers extended, a scaled format's integers to and from floats: VK4 T31; a
+   * there (unorm widths scaled, signed integers extended, a scaled format's integers to and from floats: VK4 T31;
+   * normalized values to and from floats: the 10-bit SNORM formats in rgba16float, VK4 T38; a
    * channel without bits there is skipped, one without bits here is 0, alpha 1); an invocation a texel, each buffer's
    * rows and images its own; words shared with neighbours written by atomics. */
   private packPass(sl: number[], src: GPUBuffer, srcAt: number, srcBpr: number, srcRows: number, dl: number[], dst: GPUBuffer, dstAt: number, dstBpr: number, dstRows: number, w: number, h: number, depth: number) {
@@ -2696,11 +2697,19 @@ fn conv(v: u32, sk: u32, sn: u32, dk: u32, dn: u32) -> u32 {
   let md = ones(dn);
   if (sk == 4u && dk != 4u) {
     let f = select(bitcast<f32>(v), unpack2x16float(v).x, sn == 16u);
+    if (dk == 0u) { return u32(round(clamp(f, 0.0, 1.0) * f32(md))); }
+    // A normalized format's most negative code (two of them read -1) is -1 - 2^-10 in a float texture, back as itself.
+    if (dk == 1u) {
+      if (abs(f + 1.0009765625) < 0.000244140625) { return (md >> 1u) + 1u; }
+      return bitcast<u32>(i32(round(clamp(f, -1.0, 1.0) * f32(md >> 1u)))) & md;
+    }
     if (dk == 3u) { let top = f32(md >> 1u); return bitcast<u32>(i32(clamp(round(f), -top - 1.0, top))) & md; }
     return u32(clamp(round(f), 0.0, f32(md)));
   }
   if (dk == 4u && sk != 4u) {
-    let f = select(f32(v), f32(sext(v, sn)), sk == 3u);
+    var f = select(f32(v), f32(sext(v, sn)), sk == 1u || sk == 3u);
+    if (sk == 0u) { f /= f32(ones(sn)); }
+    if (sk == 1u) { f = select(f / f32(ones(sn) >> 1u), -1.0009765625, f < -f32(ones(sn) >> 1u)); }
     return select(bitcast<u32>(f), pack2x16float(vec2<f32>(f, 0.0)) & 0xffffu, dn == 16u);
   }
   if (sn == dn) { return v; }

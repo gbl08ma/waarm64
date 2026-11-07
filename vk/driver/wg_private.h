@@ -154,6 +154,10 @@ enum wg_format_flags {
     * wants every colour attachment format at framebufferColorSampleCounts, and WebGPU multisamples no 32-bit float
     * texture of more than one channel; R32G32B32_SFLOAT isn't a required attachment, as most GPUs' drivers lack it. */
    WG_FMT_NO_ATTACHMENT = 1 << 25,
+   /* A8_UNORM (maintenance5, VK4 T38): an r8unorm texture whose red holds alpha. Sampled through a view's swizzle (with
+    * texture-component-swizzle only), cleared and drawn with alpha moved to red (the fragment stage's `wg_ar`); not
+    * blended (WebGPU's red would blend by the colour factors). */
+   WG_FMT_ALPHA8 = 1 << 26,
 };
 
 struct wg_texture_format {
@@ -220,6 +224,7 @@ struct wg_device {
    uint32_t queue_count;
    bool padded_views;   /* a view of a padded image, or an E5B9G9R9 one of words, was made: draws look for them
                          * (wg_cmd.c `program_keys`) */
+   bool slice_views;    /* a 2D view of a 3D image was made: draws look for them (WGSL_SLICE_KEY) */
    /* Host-visible memories (their writes are uploaded at each submit). */
    struct list_head host_memories;
    /* Memories with a shared image bound (wg_device_memory.image). */

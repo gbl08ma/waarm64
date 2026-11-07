@@ -453,11 +453,33 @@ storage_format(enum pipe_format f)
    }
 }
 
+/* A format WebGPU has no storage texture of in any tier that a storage image takes all the same, by its words (VK4
+ * T38): 8-bit sRGB of four channels (encoded and decoded in the shader) and the packed 16-bit normalized ones. */
+bool
+wgsl_image_words_only(unsigned format)
+{
+   const enum pipe_format f = format;
+   const struct util_format_description *d = f != PIPE_FORMAT_NONE ? util_format_description(f) : NULL;
+   if (!d || d->layout != UTIL_FORMAT_LAYOUT_PLAIN || d->block.width != 1 || d->block.height != 1 ||
+       d->block.depth != 1 || util_format_is_depth_or_stencil(f))
+      return false;
+   if (d->colorspace == UTIL_FORMAT_COLORSPACE_SRGB)
+      return d->block.bits == 32 && d->nr_channels == 4 && d->channel[0].size == 8;
+   if (d->colorspace != UTIL_FORMAT_COLORSPACE_RGB || d->block.bits != 16 || d->nr_channels < 3)
+      return false;
+   for (unsigned k = 0; k < d->nr_channels; k++)
+      if (d->channel[k].type != UTIL_FORMAT_TYPE_UNSIGNED || !d->channel[k].normalized)
+         return false;
+   return true;
+}
+
 bool
 wgsl_image_as_words(unsigned format, uint8_t access, unsigned features)
 {
    const char *name = storage_format(format);
-   return name && !storage_access_ok(name, access, features & WGSL_TIER1, features & WGSL_TIER2);
+   if (!name)
+      return wgsl_image_words_only(format);
+   return !storage_access_ok(name, access, features & WGSL_TIER1, features & WGSL_TIER2);
 }
 
 static unsigned
@@ -673,6 +695,13 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_image_size: {
       if (nir_intrinsic_image_dim(intr) == GLSL_SAMPLER_DIM_BUF) {
          texel_buffer(c, const_index(c, &intr->src[0]), intr->intrinsic == nir_intrinsic_image_store);
+         /* A store of a format under a word, or of one the shader doesn't declare (the view's, known when bound), may
+          * share its word with another invocation's texel: the buffer is of atomics (wg_tb_store). */
+         if (intr->intrinsic == nir_intrinsic_image_store) {
+            const enum pipe_format f = nir_intrinsic_format(intr);
+            if (f == PIPE_FORMAT_NONE || util_format_get_blocksize(f) < 4)
+               resource(c, const_index(c, &intr->src[0]), WGSL_STORAGE)->r.atomic = true;
+         }
          break;
       }
       if (is_tex_image(c, const_index(c, &intr->src[0]))) {
@@ -1196,7 +1225,9 @@ declare_texel_buffers(struct ctx *c)
       line(c, "}");
       if (r->kind != WGSL_STORAGE || !r->written)
          continue;
-      /* Only formats of whole words are offered for storage: a texel's words are written whole. */
+      /* A texel of whole words is written whole; one under a word (1 or 2 bytes, the only such sizes offered for
+       * storage) is an atomicAnd and an atomicOr on its word (the buffer is of atomics then), so that another
+       * invocation's texel in that word isn't lost. */
       line(c, "fn wg_tb_store_%s(i: u32, v: vec4<u32>) {", name);
       line(c, "  let p0 = %s; let p1 = %s;", p0, p1);
       line(c, "  if (i >= p0.z) { return; }");
@@ -1208,10 +1239,17 @@ declare_texel_buffers(struct ctx *c)
       line(c, "    let b = (p1.y >> (8u * k)) & 0xffu;");
       line(c, "    w[b >> 5u] = insertBits(w[b >> 5u], wg_tb_enc(v[(p1.z >> (3u * k)) & 3u], ty, n), b & 31u, n);");
       line(c, "  }");
-      if (r->atomic)
-         line(c, "  for (var k = 0u; k < ((p0.x >> 10u) & 0x3fu); k++) { atomicStore(&%s[(a >> 2u) + k], %s(w[k])); }", words,
-              c->res[i].signed_atomic ? "bitcast<i32>" : "");
-      else
+      if (r->atomic) {
+         const char *conv = c->res[i].signed_atomic ? "bitcast<i32>" : "";
+         line(c, "  let bytes = (p0.x >> 8u) & 0xffu;");
+         line(c, "  if (bytes < 4u) {");
+         line(c, "    let s = (a & 3u) * 8u; let m = (1u << (bytes * 8u)) - 1u;");
+         line(c, "    atomicAnd(&%s[a >> 2u], %s(~(m << s)));", words, conv);
+         line(c, "    atomicOr(&%s[a >> 2u], %s((w[0] & m) << s));", words, conv);
+         line(c, "    return;");
+         line(c, "  }");
+         line(c, "  for (var k = 0u; k < (bytes >> 2u); k++) { atomicStore(&%s[(a >> 2u) + k], %s(w[k])); }", words, conv);
+      } else
          line(c, "  for (var k = 0u; k < ((p0.x >> 10u) & 0x3fu); k++) { %s[(a >> 2u) + k] = w[k]; }", words);
       line(c, "}");
    }
@@ -1316,7 +1354,7 @@ declare_small_floats(struct ctx *c)
 static void
 declare_word_images(struct ctx *c)
 {
-   bool small_floats = false;
+   bool small_floats = false, srgb_helpers = false;
    for (unsigned i = 0; i < c->res_count; i++) {
       const struct wgsl_resource *r = &c->res[i].r;
       if (!r->image_words)
@@ -1327,6 +1365,19 @@ declare_word_images(struct ctx *c)
       const char *array = fmt(c, "r%u_%u", r->group, r->binding), *p0 = param(c, r, 0), *p1 = param(c, r, 1);
       const char *name = fmt(c, "%u_%u", r->group, r->binding);
       const bool is_signed = c->res[i].signed_atomic;
+      const bool srgb = d->colorspace == UTIL_FORMAT_COLORSPACE_SRGB;
+      if (srgb && !srgb_helpers) {
+         srgb_helpers = true;
+         /* Vulkan's sRGB transfer functions on a float's bits (the colour channels; alpha is linear). */
+         line(c, "fn wg_srgb_dec(x: u32) -> u32 {");
+         line(c, "  let v = bitcast<f32>(x);");
+         line(c, "  return bitcast<u32>(select(pow((v + 0.055) / 1.055, 2.4), v / 12.92, v <= 0.04045));");
+         line(c, "}");
+         line(c, "fn wg_srgb_enc(x: u32) -> u32 {");
+         line(c, "  let v = clamp(bitcast<f32>(x), 0.0, 1.0);");
+         line(c, "  return bitcast<u32>(select(1.055 * pow(v, 1.0 / 2.4) - 0.055, v * 12.92, v < 0.0031308));");
+         line(c, "}");
+      }
       for (unsigned k = 0; k < d->nr_channels; k++)
          small_floats |= d->channel[k].type == UTIL_FORMAT_TYPE_FLOAT && d->channel[k].size < 32;
       line(c, "fn wg_im_size_%s() -> vec3<u32> { return %s.xyz; }", name, p0);
@@ -1350,8 +1401,12 @@ declare_word_images(struct ctx *c)
          for (unsigned k = 0; k < words; k++)
             line(c, "  let w%u = %s;", k, fmt(c, word, fmt(c, "a + %uu", k)));
       }
-      line(c, "  return vec4<u32>(%s, %s, %s, %s);", channel_load(c, d, 0, pure), channel_load(c, d, 1, pure),
-           channel_load(c, d, 2, pure), channel_load(c, d, 3, pure));
+      if (srgb)
+         line(c, "  return vec4<u32>(wg_srgb_dec(%s), wg_srgb_dec(%s), wg_srgb_dec(%s), %s);", channel_load(c, d, 0, pure),
+              channel_load(c, d, 1, pure), channel_load(c, d, 2, pure), channel_load(c, d, 3, pure));
+      else
+         line(c, "  return vec4<u32>(%s, %s, %s, %s);", channel_load(c, d, 0, pure), channel_load(c, d, 1, pure),
+              channel_load(c, d, 2, pure), channel_load(c, d, 3, pure));
       line(c, "}");
       if (!writes)
          continue;
@@ -1369,7 +1424,8 @@ declare_word_images(struct ctx *c)
                comp++;
             if (comp == 4)
                continue;
-            const char *bits = channel_store(c, ch, fmt(c, "v.%c", "xyzw"[comp]));
+            const char *v = fmt(c, "v.%c", "xyzw"[comp]);
+            const char *bits = channel_store(c, ch, srgb && comp < 3 ? fmt(c, "wg_srgb_enc(%s)", v) : v);
             const unsigned low = ch->shift % 32;
             e = !strcmp(e, "0u") ? (low ? fmt(c, "(%s << %uu)", bits, low) : bits)
                 : fmt(c, "%s | (%s << %uu)", e, bits, low);
@@ -1497,6 +1553,12 @@ declare_io(struct ctx *c)
             c->info->a2c = true;
             line(c, "override wg_a2c: bool = false;");
          }
+         /* An A8 attachment is a red texture: the outputs the driver's override names write their alpha there (VK4 T38). */
+         u_foreach_bit(loc, c->info->outputs)
+            if (c->info->output_base[loc] == WGSL_F32 && !c->info->dual_source)
+               c->info->alpha_red |= 1u << loc;
+         if (c->info->alpha_red)
+            line(c, "override wg_ar: u32 = 0u;");
       }
       c->info->varyings = c->vary;
    }
@@ -1508,8 +1570,13 @@ declare_io(struct ctx *c)
 static const char *
 fs_return(struct ctx *c)
 {
+   const char *ar = "";
+   u_foreach_bit(loc, c->info->alpha_red)
+      ar = fmt(c, "%sif ((wg_ar & %uu) != 0u) { o.f%u.x = o.f%u.w; } ", ar, 1u << loc, loc, loc);
    if (c->info->a2c)
-      return "if (wg_a2c && o.f0.a < 0.5) { discard; } return o;";
+      return fmt(c, "%sif (wg_a2c && o.f0.a < 0.5) { discard; } return o;", ar);
+   if (*ar)
+      return fmt(c, "%sreturn o;", ar);
    return c->info->outputs || c->info->writes_depth || c->info->writes_sample_mask ? "return o;" : "return;";
 }
 

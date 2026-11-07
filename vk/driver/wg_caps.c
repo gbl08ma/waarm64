@@ -129,6 +129,8 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .EXT_depth_bias_control = true,
       /* A cube's linear filter kept to the face from fetches (wgsl_sampler.c, VK4 T28). */
       .EXT_non_seamless_cube_map = true,
+      /* 2D views of 3D images sampled and stored: the level's 3D view, the slice the shader's (WGSL_SLICE_KEY, VK4 T38). */
+      .EXT_image_2d_view_of_3d = true,
       /* A slot takes any type of its list (VK4 T34): bind groups are made of the program's declarations, each slot's
        * descriptor as written (wg_descriptor.c). */
       .EXT_mutable_descriptor_type = true,
@@ -300,6 +302,8 @@ wg_caps_features(struct vk_features *f)
       .formatA4R4G4B4 = true,
       .formatA4B4G4R4 = true,
       .nonSeamlessCubeMap = true,
+      .image2DViewOf3D = true,
+      .sampler2DViewOf3D = true,
       .mutableDescriptorType = true,
       .depthClipEnable = HAS(DEPTH_CLIP),
       /* YCbCr conversions (VK3 L7.2: each plane sampled and converted in the WGSL, wgsl_lower_ycbcr), on by default

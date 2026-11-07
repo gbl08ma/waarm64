@@ -793,6 +793,61 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` oth
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 T38: formats and features a line or a fetch away; 6,443 cases join the list
+
+2026-11-07, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t38/`: `cases.txt` the 16,159 run (every `texture.shadow` case, the
+texel buffer groups that store (`api.buffer_view`, `image.*` buffers) and every 20th other `storage_texel_buffer` case,
+every 4th case naming `a8_unorm`, every 10th naming a 10-bit SNORM format, the `image.*` storage groups' sRGB and packed
+16-bit cases (`texel_view_compatible` every 4th), every `image_2d_view_3d` case); `swiftshader-before.json` before the
+change (16,024: the same sets with a wider A8 pattern that also took `r8g8b8a8_unorm`); `swiftshader.json` and `m4.json`
+after; `*-rerun.json` the cases `rerun.txt` and `rerun-m4.txt` name, after the fixes below (each overrides its host's
+first run for them).
+
+- **What the device does** (vk/README.md "Texel buffers", "Storage images as words", "Packed formats", "Formats a texture
+  holds otherwise", "Memory"): depth formats report `SAMPLED_IMAGE_DEPTH_COMPARISON` in `VkFormatProperties3` (a line);
+  storage texel buffers take texels of 1 or 2 bytes, a store an `atomicAnd` and an `atomicOr` on its word, the binding
+  of atomics only where a store's format is under a word or not declared (R32's atomics were there since VK3 L6b);
+  four-channel 8-bit sRGB and the packed 16-bit normalized formats are storage images by their words (Vulkan's
+  transfer functions in the shader); `A8_UNORM` is an `r8unorm` texture whose red holds alpha (a view swizzle, clears,
+  `override wg_ar` moving the fragment output's alpha to red), not blended nor blitted; the 10-bit SNORM orders are
+  `rgba16float` textures through `packPass` (normalized values to and from floats); `VK_EXT_image_2d_view_of_3d`
+  (sampled and storage) binds the level's 3D view, a variant keyed by the slice giving every op its third coordinate.
+  The kickoff named `rgba16snorm` (tier1) for the SNORM formats: `rgba16float` renders, blends and filters on every
+  adapter, SwiftShader included, and holds a 10-bit step to an eighth.
+- **Confirming, failing first**: the driver's scenarios 109 (the advertised bits, 10-bit SNORM's texels and clamped clear)
+  and 110 (`t38/stores.comp`: four invocations' R8_UINT texel stores into one word, sRGB and R5G6B5 storage stores, an
+  A8 clear sampled, a 3D image's slice 2 fetched and slice 3 stored through 2D views) fail before the change (D32_SFLOAT
+  lacks the comparison bit; the images refused) and pass after. Planted: a sub-word store's shift taken as 0 fails 110's
+  texel bytes.
+- **Found by the cases**: non-seamless cubes compared (`texture.shadow.cube*.non_seamless_*`, 360 on each host) were
+  WebGPU's seamless samples: the faces' fetches took no comparing sampler (VK4 T28 left it out, its cases not
+  supported then); each texel is compared there now. Blits into or from A8 drew its red as colour (the worker's blit draws
+  know no swizzle: 73 and 23): its blit bits are off, the cases not supported; its input attachments in their own pass
+  read the twin view, whose swizzle didn't know A8 (28). Copies between a 10-bit SNORM format and a float one of its size lost the most negative
+  codes (-512, alpha's -2), read -1 as the next code is, back as that next one (26): such a code is -1 − 2⁻¹⁰ in the
+  half-float texture, back as itself; it samples one 10-bit step from -1, which `texture.conversion.snorm_clamp`'s
+  `a2r10g10b10` case sees (it passed before the fix on the M4): bits over that case.
+
+| set | SwiftShader before | SwiftShader | M4 |
+|---|---|---|---|
+| shadow (5,377) | 1 / 0 / 5,376 | 1,729 / 0 / 3,648 | 1,729 / 0 / 3,648 |
+| texel buffers (4,272) | 1,301 / 0 / 2,971 | 1,701 / 0 / 2,571 | 1,841 / 0 / 2,431 |
+| storage images as words (2,478) | 26 / 0 / 2,452 | 857 / 0 / 1,621 | 1,015 / 0 / 1,463 |
+| A8_UNORM (2,610) | not offered | 1,656 / 36 / 918 | 1,692 / 0 / 918 |
+| 10-bit SNORM (1,640) | 9 / 0 / 1,631 | 1,125 / 31 / 484 | 1,194 / 4 / 442 |
+| 2D views of 3D (98) | 2 / 0 / 96 | 50 / 0 / 48 | 50 / 0 / 48 |
+| all (16,159) | | 6,951 / 51 / 9,157 | 7,338 / 4 / 8,817 |
+
+  (pass / fail / not supported.) SwiftShader's 51: 44 its own (`count_8` compute stages binding 8 storage textures and
+  cube linear filters in compute, as T31's RGBA8 twins; 6 of 7 ASTC-to-SNORM linear blits that pass on the M4), and
+  `snorm_clamp`. The M4's 4: `snorm_clamp`, the ASTC 8x8 blit into A2B10G10R10_SNORM (both hosts), two copies from
+  `e5b9g9r9_ufloat_pack32` (the M4's own, filed). What stays not supported: 1D depth images and sparse ones (the shadow
+  set's), `r32_sfloat` and `r16_unorm` comparisons (1,344: a colour texture compared would be the shader's), storage
+  formats WebGPU has no texture or words of (3- and 6-byte texels, sRGB of fewer channels), A8's blits and the
+  formats' linear tiling. **The 6,443 that pass on both and weren't in the list join `tests/deqp/vk.txt`** (59,104 →
+  65,547).
+
 ## VK4 T37: commands WebGPU refused, made valid or refused where they're made
 
 2026-11-07, the dev VM (SwiftShader, Chromium 155.0.8059.84). JSON in `results/vk4/t37/` (`cases.txt` the list run:

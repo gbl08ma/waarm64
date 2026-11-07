@@ -1118,8 +1118,8 @@ lower_tex(nir_builder *b, nir_tex_instr *tex, void *data)
     * that compares has no reduction (Vulkan's rule). An integer texture's (which a linear filter reads only so) is
     * below, among its fetches. */
    /* A non-seamless cube's linear filter (VK4 T28, VK_EXT_non_seamless_cube_map): from its faces' fetches, each texel
-    * on the sample's face. */
-   if (key && key->non_seamless && !is_integer(tex) && !tex->is_shadow && tex->op != nir_texop_tg4 &&
+    * on the sample's face (a shadow sample's compared, then filtered). */
+   if (key && key->non_seamless && !is_integer(tex) && tex->op != nir_texop_tg4 &&
        tex->sampler_dim == GLSL_SAMPLER_DIM_CUBE && key->faces) {
       nir_def_replace(&tex->def, nir_trim_vector(b, fetched_sample(b, tex, key), tex->def.num_components));
       return true;
@@ -1238,10 +1238,112 @@ find_gathered(nir_builder *b, nir_tex_instr *tex, void *data)
    return false;
 }
 
+/* A 2D view of a 3D image (WGSL_SLICE_KEY): WebGPU has no 2D view of a 3D texture, so its binding is the level's 3D
+ * view and every op on it takes the slice as its third coordinate: (slice + 0.5) / depth where normalized (no filter
+ * reaches past the slice's centre), the slice where fetched or an image's; offsets and derivatives 0 there, size
+ * queries their first two. */
+static const struct wgsl_sampler_key *
+slice_key(const struct sampler_pass *s, uint32_t index)
+{
+   for (uint32_t i = 0; i < s->key_count; i++)
+      if (s->keys[i].sampler == WGSL_SLICE_KEY && s->keys[i].texture == index)
+         return &s->keys[i];
+   return NULL;
+}
+
+static nir_def *
+with_z(nir_builder *b, nir_def *v, nir_def *z)
+{
+   return nir_vec3(b, nir_channel(b, v, 0), nir_channel(b, v, 1), z);
+}
+
+static bool
+lower_slice(nir_builder *b, nir_instr *instr, void *data)
+{
+   const struct sampler_pass *s = data;
+   if (instr->type == nir_instr_type_tex) {
+      nir_tex_instr *tex = nir_instr_as_tex(instr);
+      const struct wgsl_sampler_key *k = slice_key(s, tex->texture_index);
+      if (!k || tex->sampler_dim != GLSL_SAMPLER_DIM_2D || tex->is_array)
+         return false;
+      tex->sampler_dim = GLSL_SAMPLER_DIM_3D;
+      if (tex->op == nir_texop_txs) {
+         tex->def.num_components = 3;
+         b->cursor = nir_after_instr(instr);
+         nir_def *xy = nir_trim_vector(b, &tex->def, 2);
+         nir_def_rewrite_uses_after(&tex->def, xy);
+         return true;
+      }
+      b->cursor = nir_before_instr(instr);
+      const bool fetch = tex->op == nir_texop_txf;
+      for (unsigned i = 0; i < tex->num_srcs; i++) {
+         nir_def *v = tex->src[i].src.ssa;
+         nir_def *z;
+         switch (tex->src[i].src_type) {
+         case nir_tex_src_coord:
+            z = fetch ? nir_imm_intN_t(b, k->size[2], v->bit_size)
+                      : nir_imm_floatN_t(b, (k->size[2] + 0.5) / MAX2(k->size[0], 1), v->bit_size);
+            break;
+         case nir_tex_src_offset:
+            z = nir_imm_intN_t(b, 0, v->bit_size);
+            break;
+         case nir_tex_src_ddx:
+         case nir_tex_src_ddy:
+            z = nir_imm_floatN_t(b, 0, v->bit_size);
+            break;
+         default:
+            continue;
+         }
+         nir_src_rewrite(&tex->src[i].src, with_z(b, v, z));
+      }
+      tex->coord_components = 3;
+      return true;
+   }
+   if (instr->type != nir_instr_type_intrinsic)
+      return false;
+   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+   switch (intr->intrinsic) {
+   case nir_intrinsic_image_load:
+   case nir_intrinsic_image_store:
+   case nir_intrinsic_image_atomic:
+   case nir_intrinsic_image_atomic_swap:
+   case nir_intrinsic_image_size:
+      break;
+   default:
+      return false;
+   }
+   if (nir_intrinsic_image_dim(intr) != GLSL_SAMPLER_DIM_2D || nir_intrinsic_image_array(intr) ||
+       !nir_src_is_const(intr->src[0]))
+      return false;
+   const struct wgsl_sampler_key *k = slice_key(s, nir_src_as_uint(intr->src[0]));
+   if (!k)
+      return false;
+   nir_intrinsic_set_image_dim(intr, GLSL_SAMPLER_DIM_3D);
+   if (intr->intrinsic == nir_intrinsic_image_size) {
+      intr->def.num_components = 3;
+      intr->num_components = 3;
+      b->cursor = nir_after_instr(instr);
+      nir_def *xy = nir_trim_vector(b, &intr->def, 2);
+      nir_def_rewrite_uses_after(&intr->def, xy);
+      return true;
+   }
+   b->cursor = nir_before_instr(instr);
+   nir_def *c = intr->src[1].ssa;
+   if (c->num_components < 3)
+      return false;
+   nir_src_rewrite(&intr->src[1], nir_vector_insert_imm(b, c, nir_imm_intN_t(b, k->size[2], c->bit_size), 2));
+   return true;
+}
+
 bool
 wgsl_lower_samplers(nir_shader *nir, const struct wgsl_print_options *o, struct wgsl_info *info)
 {
    struct sampler_pass s = { .keys = o->keys, .key_count = o->key_count, .info = info };
+   for (uint32_t i = 0; i < o->key_count; i++)
+      if (o->keys[i].sampler == WGSL_SLICE_KEY) {
+         NIR_PASS(_, nir, nir_shader_instructions_pass, lower_slice, nir_metadata_control_flow, &s);
+         break;
+      }
    for (uint32_t i = 0; i < MIN2(o->depth_count, ARRAY_SIZE(s.depths)); i++)
       s.depths[s.depth_count++] = o->depths[i];
    nir_shader_tex_pass(nir, find_depths, nir_metadata_all, &s);

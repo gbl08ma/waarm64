@@ -6376,6 +6376,151 @@ t37_atomic_alias(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkB
    return 0;
 }
 
+/*
+ * VK4 T38, wgt_misc's scenario 109: what T38 advertises (D32_SFLOAT's depth comparison in VkFormatProperties3, R8_UINT
+ * storage texel buffers, R8G8B8A8_SRGB and R5G6B5 storage images, A8_UNORM sampled and as a colour attachment, the
+ * 10-bit SNORM formats), else 1; and A2B10G10R10_SNORM's texels (in a half-float texture) back with their bits from
+ * an upload, -512 to 511, at 0 (8 bytes), and A2R10G10B10_SNORM cleared with (2, -0.25, 0.25, -3): clamped, rounded,
+ * at 256.
+ */
+static int
+t38_misc(VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage = (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   PFN_vkGetPhysicalDeviceFormatProperties2 FormatProps =
+      (PFN_vkGetPhysicalDeviceFormatProperties2)vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceFormatProperties2");
+   VkPhysicalDevice pdev;
+   uint32_t n = 1;
+   CHECK(EnumeratePhysicalDevices(instance, &n, &pdev));
+   static const struct { VkFormat f; int which; VkFormatFeatureFlags2 want; } asks[] = {
+      { VK_FORMAT_D32_SFLOAT, 1, VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_DEPTH_COMPARISON_BIT },
+      { VK_FORMAT_D16_UNORM, 1, VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_DEPTH_COMPARISON_BIT },
+      { VK_FORMAT_R8_UINT, 2, VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT },
+      { VK_FORMAT_R16_SFLOAT, 2, VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT },
+      { VK_FORMAT_R8G8B8A8_SRGB, 1, VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT },
+      { VK_FORMAT_R5G6B5_UNORM_PACK16, 1, VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT },
+      { VK_FORMAT_A8_UNORM_KHR, 1, VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT },
+      { VK_FORMAT_A2B10G10R10_SNORM_PACK32, 1, VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT },
+      { VK_FORMAT_A2R10G10B10_SNORM_PACK32, 1, VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT },
+   };
+   for (uint32_t i = 0; i < sizeof(asks) / sizeof(asks[0]); i++) {
+      VkFormatProperties3 p3 = { .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3 };
+      VkFormatProperties2 p = { .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2, .pNext = &p3 };
+      FormatProps(pdev, asks[i].f, &p);
+      const VkFormatFeatureFlags2 have = asks[i].which == 1 ? p3.optimalTilingFeatures : p3.bufferFeatures;
+      if ((have & asks[i].want) != asks[i].want) {
+         fprintf(stderr, "t38: format %d lacks 0x%llx\n", asks[i].f, (unsigned long long)(asks[i].want & ~have));
+         return 1;
+      }
+   }
+   VkImage sn, sc;
+   VkBuffer src;
+   uint32_t *sb;
+   if (t31_image(VK_FORMAT_A2B10G10R10_SNORM_PACK32, 2, &sn) || t31_image(VK_FORMAT_A2R10G10B10_SNORM_PACK32, 1, &sc) ||
+       buffer(256, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, &src, (void **)&sb))
+      return 1;
+   /* R -512 and A -2 (the most negative codes, read -1 as the next ones are), G 511, B 0; R 300, G -300, B -1, A -1. */
+   sb[0] = 0x200u | (0x1ffu << 10) | (0u << 20) | (2u << 30);
+   sb[1] = 300u | ((uint32_t)(-300 & 1023) << 10) | (0x3ffu << 20) | (3u << 30);
+   const VkImageAspectFlags C = VK_IMAGE_ASPECT_COLOR_BIT;
+   t24_general(cmd, sn, C, 1);
+   t24_general(cmd, sc, C, 1);
+   const VkImageSubresourceLayers c1 = { C, 0, 0, 1 };
+   CmdCopyBufferToImage(cmd, src, sn, VK_IMAGE_LAYOUT_GENERAL, 1,
+                        &(VkBufferImageCopy){ .imageSubresource = c1, .imageExtent = { 2, 1, 1 } });
+   CmdCopyImageToBuffer(cmd, sn, VK_IMAGE_LAYOUT_GENERAL, out, 1,
+                        &(VkBufferImageCopy){ .imageSubresource = c1, .imageExtent = { 2, 1, 1 } });
+   const VkImageSubresourceRange cr = { C, 0, 1, 0, 1 };
+   CmdClearColorImage(cmd, sc, VK_IMAGE_LAYOUT_GENERAL, &(VkClearColorValue){ .float32 = { 2, -0.25f, 0.25f, -3 } }, 1, &cr);
+   CmdCopyImageToBuffer(cmd, sc, VK_IMAGE_LAYOUT_GENERAL, out, 1,
+                        &(VkBufferImageCopy){ .bufferOffset = 256, .imageSubresource = c1, .imageExtent = { 1, 1, 1 } });
+   return 0;
+}
+
+/*
+ * 110, `cs` t38/stores.comp (its bindings 0-6): an R8_UINT storage texel buffer of 4 texels stored by 4 invocations, at
+ * 256; a 1x1 R8G8B8A8_SRGB storage image stored 0.5 (bc bc bc 80), at 512; a 2x1 R5G6B5 one stored red and cyan
+ * (f800 07ff), at 768; a 1x1 A8_UNORM image cleared to alpha 0.5, sampled (alpha 128 at 0, colour 0 at 4) and copied
+ * out at 1280 (0x80); a 1x1x4 R32_UINT 3D image of 10, 20, 30, 40 by slice through 2D views: slice 2 fetched (30 at 8),
+ * slice 3 stored 99, the image at 1024 (10 20 30 99).
+ */
+static int
+t38_stores(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage = (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   PFN_vkCreateBufferView CreateBufferView = (PFN_vkCreateBufferView)GetDeviceProcAddr(dev, "vkCreateBufferView");
+   PFN_vkCmdCopyBuffer CmdCopyBuffer = (PFN_vkCmdCopyBuffer)GetDeviceProcAddr(dev, "vkCmdCopyBuffer");
+   const VkImageUsageFlags SU = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+   VkImage srgb, packed, a8, vol;
+   VkImageView srgb_v, packed_v, a8_v, s2, s3;
+   VkBuffer tb, src;
+   uint32_t *sb;
+   if (t37_image(VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_SRGB, (VkExtent3D){ 1, 1, 1 }, 1, SU, 0, &srgb) ||
+       t37_view(srgb, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R8G8B8A8_SRGB, 0, 1, &srgb_v) ||
+       t37_image(VK_IMAGE_TYPE_2D, VK_FORMAT_R5G6B5_UNORM_PACK16, (VkExtent3D){ 2, 1, 1 }, 1, SU, 0, &packed) ||
+       t37_view(packed, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R5G6B5_UNORM_PACK16, 0, 1, &packed_v) ||
+       t37_image(VK_IMAGE_TYPE_2D, VK_FORMAT_A8_UNORM_KHR, (VkExtent3D){ 1, 1, 1 }, 1,
+                 VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 0, &a8) ||
+       t37_view(a8, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_A8_UNORM_KHR, 0, 1, &a8_v) ||
+       t37_image(VK_IMAGE_TYPE_3D, VK_FORMAT_R32_UINT, (VkExtent3D){ 1, 1, 4 }, 1, SU | VK_IMAGE_USAGE_SAMPLED_BIT,
+                 VK_IMAGE_CREATE_2D_VIEW_COMPATIBLE_BIT_EXT, &vol) ||
+       t37_view(vol, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R32_UINT, 2, 1, &s2) ||
+       t37_view(vol, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R32_UINT, 3, 1, &s3) ||
+       buffer(256, VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false, &tb, NULL) ||
+       buffer(256, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, &src, (void **)&sb))
+      return 1;
+   const VkBufferViewCreateInfo bvi = { .sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO, .buffer = tb,
+                                        .format = VK_FORMAT_R8_UINT, .offset = 0, .range = 4 };
+   VkBufferView tbv;
+   CHECK(CreateBufferView(dev, &bvi, NULL, &tbv));
+   const VkSamplerCreateInfo si = { .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                                    .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                    .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                    .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE };
+   VkSampler sampler;
+   CHECK(CreateSampler(dev, &si, NULL, &sampler));
+   CmdFillBuffer(cmd, tb, 0, 256, 0);
+   const VkImageAspectFlags C = VK_IMAGE_ASPECT_COLOR_BIT;
+   const VkImage all[] = { srgb, packed, a8, vol };
+   for (uint32_t i = 0; i < 4; i++)
+      t24_general(cmd, all[i], C, 1);
+   const VkImageSubresourceRange cr = { C, 0, 1, 0, 1 };
+   CmdClearColorImage(cmd, a8, VK_IMAGE_LAYOUT_GENERAL, &(VkClearColorValue){ .float32 = { 1, 1, 1, 0.5f } }, 1, &cr);
+   for (uint32_t i = 0; i < 4; i++)
+      sb[i] = 10 * (i + 1);
+   const VkImageSubresourceLayers c1 = { C, 0, 0, 1 };
+   CmdCopyBufferToImage(cmd, src, vol, VK_IMAGE_LAYOUT_GENERAL, 1,
+                        &(VkBufferImageCopy){ .imageSubresource = c1, .imageExtent = { 1, 1, 4 } });
+   static const VkDescriptorType types[7] = {
+      VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+      VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+   };
+   struct t37_pipe p;
+   if (t37_compute(cs, cs_words, types, 7, &p))
+      return 1;
+   const VkImageLayout G = VK_IMAGE_LAYOUT_GENERAL;
+   const VkDescriptorImageInfo ii[5] = { { VK_NULL_HANDLE, srgb_v, G }, { VK_NULL_HANDLE, packed_v, G },
+                                         { sampler, a8_v, G }, { sampler, s2, G }, { VK_NULL_HANDLE, s3, G } };
+   const VkDescriptorBufferInfo bi = { out, 0, 16 };
+   VkWriteDescriptorSet wr[7];
+   for (uint32_t i = 0; i < 7; i++)
+      wr[i] = (VkWriteDescriptorSet){ .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = p.set, .dstBinding = i,
+                                      .descriptorCount = 1, .descriptorType = types[i] };
+   wr[0].pTexelBufferView = &tbv;
+   for (uint32_t i = 1; i < 6; i++)
+      wr[i].pImageInfo = &ii[i - 1];
+   wr[6].pBufferInfo = &bi;
+   UpdateDescriptorSets(dev, 7, wr, 0, NULL);
+   t37_dispatch(cmd, &p);
+   CmdCopyBuffer(cmd, tb, out, 1, &(VkBufferCopy){ 0, 256, 4 });
+   CmdCopyImageToBuffer(cmd, srgb, G, out, 1, &(VkBufferImageCopy){ .bufferOffset = 512, .imageSubresource = c1, .imageExtent = { 1, 1, 1 } });
+   CmdCopyImageToBuffer(cmd, packed, G, out, 1, &(VkBufferImageCopy){ .bufferOffset = 768, .imageSubresource = c1, .imageExtent = { 2, 1, 1 } });
+   CmdCopyImageToBuffer(cmd, vol, G, out, 1, &(VkBufferImageCopy){ .bufferOffset = 1024, .imageSubresource = c1, .imageExtent = { 1, 1, 4 } });
+   CmdCopyImageToBuffer(cmd, a8, G, out, 1, &(VkBufferImageCopy){ .bufferOffset = 1280, .imageSubresource = c1, .imageExtent = { 1, 1, 1 } });
+   return 0;
+}
+
 EXPORT int
 wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
 {
@@ -7076,6 +7221,12 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 107) {
       if (t37_uniform_tail(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 109) {
+      if (t38_misc(cmd, out))
+         return 1;
+   } else if (scenario == 110) {
+      if (t38_stores(cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 108) {
       if (t37_atomic_alias(cs, cs_words, cmd, out))

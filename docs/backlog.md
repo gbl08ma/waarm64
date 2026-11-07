@@ -894,19 +894,22 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Packed formats' leftovers** (VK4 T12, T30; vk/README.md "Packed formats"): a 16-bit format holds 8 bits a
     channel, so what's rendered is sampled unrounded and blends run at 8 bits; a multisampled copy between a packed
     format and another of its size that isn't (`A2R10G10B10` and `A2B10G10R10`, `R5G6B5` and `R16_UINT`) is skipped
-    with a warning. Not offered: `A2R10G10B10`'s and `A2B10G10R10`'s SNORM (`rgba16snorm`, tier1 only, would take them
-    with the pass rescaling snorm widths); linear tiling of any packed format (~180 of VK4 T31's sample on the M4: a
+    with a warning. The 10-bit SNORM orders (VK4 T38) are `rgba16float`: what's rendered there stays unclamped and
+    unquantized until copied out (sampled as rendered; Vulkan clamps and rounds at the write), and the most negative
+    code (-512, alpha's -2) is -1 − 2⁻¹⁰ there so that copies keep it, which samples one step from Vulkan's -1:
+    `texture.conversion.snorm_clamp.a2r10g10b10_snorm_pack32` fails on both hosts (a key clamping such views' samples
+    would take it); `blit_image.*.astc_8x8_unorm_block.a2b10g10r10_snorm_pack32.general_general_linear` fails on both
+    hosts, its other ASTC blocks pass on the M4 (not looked into: SwiftShader fails 6 more of them). Not offered: linear tiling of any packed format (~180 of VK4 T31's sample on the M4: a
     linear image's copies to and from its memory would go through the pass); sampling scaled formats (VK4 T31: the spec
     samples them as floats, dEQP-VK through integer samplers, and clears them with integers, which our clears follow:
     offering either way fails the other; no program met samples one). sRGB vertex formats aren't offered (no driver has
     them: 14 of T31's vertex sample).
     `D16_UNORM_S8_UINT` keeps depth24plus's 24 bits (Metal's depth32float) until copied out, so a depth test between
     two values one D16 unit apart can differ from real D16; its depth bias's ×256 is exact only for a 24-bit unorm.
-  - **Depth comparison isn't reported** (VK4 T30): no depth format reports
-    `VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_DEPTH_COMPARISON_BIT` in `VkFormatProperties3` (wg_device.c), so dEQP-VK's
-    `texture.shadow.*` skip every depth format ("Format does not support shadow sampling": 17 of T30's D16S8 sample,
-    672 D16S8 cases of the direct set and as many of each other depth format). WebGPU compares every depth format; the
-    bit is a line, but the cases it opens need their own run (the shadow samplers' leftovers above).
+  - **Colour formats aren't compared** (VK4 T38): depth formats report `SAMPLED_IMAGE_DEPTH_COMPARISON` in
+    `VkFormatProperties3` since VK4 T38, colour ones don't (WebGPU compares depth textures only), so `texture.shadow.*`'s
+    `r32_sfloat` and `r16_unorm` cases (672 each) stay not supported. A comparison of a colour texture would be the
+    shader's, from fetches (as a shadow sample past level 0 is: "Samplers' leftovers"), keyed by the bound view's format.
   - **Pulled vertices' leftovers** (VK4 T5; vk/README.md "Pulled vertices"): a program with four groups of resources
     has none to pull from, and its pipeline stays refused (group 3 could take the bindings); more pulled bindings than
     the vertex stage's storage buffers left; a pulled range past `maxStorageBufferBindingSize` is cut there. What pulling
@@ -986,8 +989,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     would be one dispatch, for programs that copy thousands); timestamps are the CPU's at replay (`timestamp-query`): a
     program's "GPU time" under Venus, VK0's scene's included, is the replay's span, not the GPU's (VK3 L2b; the worker's
     `?gpu=vkgputime` measures the GPU's).
-  - **Rendering**: 2D views of 3D images are attachments only (`VK_EXT_image_2d_view_of_3d` isn't offered: dEQP-VK's
-    `image_2d_view_3d_image` not supported; sampling one needs a slice in the shader). Stencil state per face is a draw split by face (VK3 L6a), so the order between one draw's front
+  - **Rendering**: a 2D view of a 3D image sampled or stored (`VK_EXT_image_2d_view_of_3d`, VK4 T38) is the level's 3D
+    view and a variant keyed by the slice: a pipeline a slice bound (a program walking a volume's slices makes one each;
+    a slice in the group's parameter table, as texel buffers' are, would make one for all). Stencil state per face is a draw split by face (VK3 L6a), so the order between one draw's front
     and back primitives is lost where they overlap (not seen in dEQP-VK); with depth clipping off, WebGPU's clamp to the viewport's
     range stays, so a float depth past it isn't kept; `gl_Layer` isn't offered (layered passes reach their
     later layers by load ops and clears alone), depth and stencil blits, 34 of
@@ -1146,9 +1150,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     (`images/deqp/build.sh vk`) and move that list into `tests/deqp/vk.txt`. A sample with such an offset costs the
     fetches' filter (eight `textureLoad`s a trilinear sample) where WGSL's own would do: unmeasured, no program here
     has one (vkd3d's D3D12 layering is what asks).
-  - **maintenance5's and 6's leftovers** (VK4 T24, `results/vk4/t24/`): their A8_UNORM (81 of the census's 688 cases)
-    and A1B5G5R5 (70; VK4 T30's) aren't offered (A8 as `r8unorm` with a swizzle, its attachments writing alpha to red,
-    would be a variant's); `maintenance6`'s `memory.binding.maintenance6.aliasing.suballocated.image_*` fail (9 of 9)
+  - **maintenance5's and 6's leftovers** (VK4 T24, `results/vk4/t24/`): A8_UNORM is offered since VK4 T38 (an `r8unorm`
+    texture, vk/README.md "Formats a texture holds otherwise") without blending (WebGPU's red blends by the colour
+    factors: a variant with Vulkan's alpha factors as the colour's, `DST_ALPHA` as `dst`, the constant's alpha as its red,
+    would take it), blits (the worker's blit draws know no swizzle) or storage, and only with `texture-component-swizzle`;
+    `maintenance6`'s `memory.binding.maintenance6.aliasing.suballocated.image_*` fail (9 of 9)
     as the aliasing ones below; an index buffer bound null wants robustness2's `nullDescriptor`.
   - **Memory**: `memory.binding.aliasing.suballocated.image_*` fail (9 sampled by VK4 R6, 2 others pass): each image is a
     texture of its own, so two images bound to one range don't share texels. An allocation past the device-local heap, the largest
@@ -1166,8 +1172,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   0 and node 1 hold meets node 2: past ~7 GiB, ~5.5 GiB with Vulkan. Memory 0 as one memory64 was measured and set
   aside: ~+15–20% on the userspace benchmark on macOS (`--wasm-enforce-bounds-checks` as the stand-in), since V8 checks
   each memory64 access.
+  - **A render pass's JSON garbled** (seen in VK4 T38's SwiftShader runs, before and after its change, three times in
+    16,024 cases; the case not identified): `gpu_render_pass threw: SyntaxError` on fragments such as `}` and `eight"`,
+    so the pass's description reached the worker cut or overwritten (wg_cmd.c's `gpu_render_pass(json, strlen(json))`
+    at a pass's replay, or its JSON buffer reused). That pass is lost; nothing failed that names it. Next: run the
+    sample with `VIRGL_GPU=virgl,vulkan,debug` and find the case from the trace.
   - **Texel buffers** (VK3 L6b, vk/README.md "The shader path": a storage buffer of the view's words, its format
-    decoded in WGSL): each takes one of WebGPU's storage buffers a stage (10 on SwiftShader, 8 by default), which
+    decoded in WGSL; storage of texels under a word by atomics since VK4 T38, of 3- and 6-byte ones not offered): each takes one of WebGPU's storage buffers a stage (10 on SwiftShader, 8 by default), which
     Vulkan counts with sampled or storage images (16 and 4), so a stage with many storage buffers and texel buffers is
     refused at its pipeline's creation (VK3 L7a, vk/README.md "Bindings past WebGPU's"; 2
     `binding_model.descriptor_copy` cases: 13 storage buffers in the compute stage). Their parameters are one uniform

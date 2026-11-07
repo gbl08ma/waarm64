@@ -349,6 +349,11 @@ wg_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice, VkFormat 
             p->optimalTilingFeatures |= without;
          if (buffer & VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT)
             p->bufferFeatures |= without;
+         /* WebGPU compares every depth format it samples (a comparison sampler on a depth texture); a colour format's
+          * comparison would be the shader's, so it isn't offered (VK4 T38). */
+         const struct wg_texture_format *f = wg_texture_format(format);
+         if (f && (f->flags & WG_FMT_DEPTH) && (optimal & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT))
+            p->optimalTilingFeatures |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_DEPTH_COMPARISON_BIT;
          break;
       }
       case VK_STRUCTURE_TYPE_SUBPASS_RESOLVE_PERFORMANCE_QUERY_EXT:
@@ -1715,6 +1720,7 @@ view_init(struct wg_device *dev, struct wg_image_view *view, uint32_t loop_tex)
                                     VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT))
       dim = "2d";
    const bool layered = image->vk.image_type != VK_IMAGE_TYPE_3D;
+   dev->slice_views |= !layered && view->vk.view_type != VK_IMAGE_VIEW_TYPE_3D;
    /* A 2D view of a 3D image is an attachment (`slice` below; VK_EXT_image_2d_view_of_3d isn't offered): WebGPU has none. */
    if (!layered)
       dim = "3d";
@@ -1774,6 +1780,9 @@ view_init(struct wg_device *dev, struct wg_image_view *view, uint32_t loop_tex)
    char letters[5] = "";
    for (uint32_t i = 0; i < 4; i++) {
       VkComponentSwizzle m = mapping[i] == VK_COMPONENT_SWIZZLE_IDENTITY ? VK_COMPONENT_SWIZZLE_R + i : mapping[i];
+      /* A8's alpha is its texture's red, its colour 0. */
+      if ((view->fmt->flags & WG_FMT_ALPHA8) && m >= VK_COMPONENT_SWIZZLE_R)
+         m = m == VK_COMPONENT_SWIZZLE_A ? VK_COMPONENT_SWIZZLE_R : VK_COMPONENT_SWIZZLE_ZERO;
       /* What the format lacks stays out of its texture only by write masks: reads say 0 (alpha 1) whatever came in. */
       if (m >= VK_COMPONENT_SWIZZLE_R && (wg_format_lacks(view->fmt) & (1u << (m - VK_COMPONENT_SWIZZLE_R))))
          m = m == VK_COMPONENT_SWIZZLE_A ? VK_COMPONENT_SWIZZLE_ONE : VK_COMPONENT_SWIZZLE_ZERO;
@@ -2004,7 +2013,9 @@ wg_view_twin(struct wg_image_view *view)
       j = (struct wg_json){ 0 };
       const uint32_t lacks = wg_format_lacks(view->fmt);
       char swizzle[40] = "";
-      if (lacks && (wg_features & WG_FEATURE_SWIZZLE))
+      if (view->fmt->flags & WG_FMT_ALPHA8)
+         snprintf(swizzle, sizeof(swizzle), ",\"swizzle\":\"000r\",\"usage\":4");
+      else if (lacks && (wg_features & WG_FEATURE_SWIZZLE))
          snprintf(swizzle, sizeof(swizzle), ",\"swizzle\":\"%c%c%c%c\",\"usage\":4", lacks & 1 ? '0' : 'r',
                   lacks & 2 ? '0' : 'g', lacks & 4 ? '0' : 'b', lacks & 8 ? '1' : 'a');
       wg_json_printf(&j, "{\"texture\":%u,\"dimension\":\"2d\",\"mipLevelCount\":1,\"arrayLayerCount\":1%s%s}", view->twin_tex,

@@ -26,6 +26,7 @@ static const struct wg_texture_format table[] = {
    F(R8_UINT, "r8uint", 1, 1, 1, CS | WG_FMT_RENDER | U | T1S),
    F(R8_SINT, "r8sint", 1, 1, 1, CS | WG_FMT_RENDER | S | T1S),
    F(R8G8_UNORM, "rg8unorm", 2, 1, 1, CS | FL | RB | T1S),
+   F(A8_UNORM_KHR, "r8unorm", 1, 1, 1, CS | FL | WG_FMT_RENDER | WG_FMT_ALPHA8),
    F(R8G8_SNORM, "rg8snorm", 2, 1, 1, CS | FL | T1R | T1S),
    F(R8G8_UINT, "rg8uint", 2, 1, 1, CS | WG_FMT_RENDER | U | T1S),
    F(R8G8_SINT, "rg8sint", 2, 1, 1, CS | WG_FMT_RENDER | S | T1S),
@@ -89,6 +90,11 @@ static const struct wg_texture_format table[] = {
    F(R8G8_SRGB, "rgba8unorm-srgb", 4, 1, 1, CS | FL | RB | P),
    F(A2R10G10B10_SINT_PACK32, "rgba16sint", 8, 1, 1, CS | WG_FMT_RENDER | S | P),
    F(A2B10G10R10_SINT_PACK32, "rgba16sint", 8, 1, 1, CS | WG_FMT_RENDER | S | P),
+   /* 10-bit SNORM in half floats (VK4 T38): a 10-bit value within an eighth of a step and back exactly (the most
+    * negative code, which reads -1 as the next does, is -1 - 2^-10 there: web/venus-gpu.ts `conv`), rendered, blended
+    * and filtered on any adapter (rgba16snorm needs tier1 and isn't filterable); clears clamped. */
+   F(A2R10G10B10_SNORM_PACK32, "rgba16float", 8, 1, 1, CS | FL | RB | P),
+   F(A2B10G10R10_SNORM_PACK32, "rgba16float", 8, 1, 1, CS | FL | RB | P),
 #define SCALED(fmt, u, s, bytes, flags)                                                                               \
    F(fmt##_USCALED, u, bytes, 1, 1, WG_FMT_COLOR | U | (flags)), F(fmt##_SSCALED, s, bytes, 1, 1, WG_FMT_COLOR | S | (flags))
    SCALED(R8, "r8uint", "r8sint", 1, 0),
@@ -207,6 +213,10 @@ wg_format_init(uint32_t features)
          f->flags |= WG_FMT_BLEND;
       if ((features & WG_FEATURE_BGRA8_STORAGE) && (f->flags & WG_FMT_BGRA8))
          f->flags |= WG_FMT_STORAGE | WG_FMT_STORAGE_TEXTURE;
+      /* Storage WebGPU has no texture of in any tier, by the image's words (VK4 T38): 8-bit sRGB, packed 16-bit. */
+      if ((f->flags & WG_FMT_SAMPLE) && !(f->flags & (WG_FMT_DEPTH | WG_FMT_STENCIL)) &&
+          wgsl_image_words_only(vk_format_to_pipe_format(f->vk)))
+         f->flags |= WG_FMT_STORAGE;
    }
 }
 
@@ -232,6 +242,7 @@ wg_texture_format(VkFormat format)
           ((f->flags & WG_FMT_ETC2) && !(device_features & WG_FEATURE_ETC2)) ||
           ((f->flags & WG_FMT_ASTC) && !(device_features & WG_FEATURE_ASTC)) ||
           ((f->flags & WG_FMT_D32S8) && !(device_features & WG_FEATURE_D32S8)) ||
+          ((f->flags & WG_FMT_ALPHA8) && !(device_features & WG_FEATURE_SWIZZLE)) ||
           ((f->flags & WG_FMT_TIER1) && !(device_features & WG_FEATURE_TIER1)))
          return NULL;
       return f;
@@ -272,8 +283,19 @@ void
 wg_clear_color(const struct wg_texture_format *f, const VkClearColorValue *in, VkClearColorValue *out)
 {
    *out = *in;
+   if (f->flags & WG_FMT_ALPHA8) {
+      out->float32[0] = in->float32[3];
+      return;
+   }
    const uint32_t lacks = wg_format_lacks(f);
    const bool integer = f->flags & (WG_FMT_UINT | WG_FMT_SINT);
+   /* A normalized format in a float texture takes its range's values only. */
+   if ((f->flags & WG_FMT_PACKED) && !integer && strstr(f->name, "float")) {
+      const struct util_format_description *d = vk_format_description(f->vk);
+      const float lo = d->channel[0].type == UTIL_FORMAT_TYPE_SIGNED ? -1.0f : 0.0f;
+      for (uint32_t c = 0; d->channel[0].normalized && c < 4; c++)
+         out->float32[c] = out->float32[c] < lo ? lo : out->float32[c] > 1.0f ? 1.0f : out->float32[c];
+   }
    for (uint32_t c = 0; c < 4; c++) {
       if (lacks & (1u << c)) {
          if (integer)
@@ -385,7 +407,7 @@ wg_vertex_format_pulled(VkFormat format)
 /* A texel buffer's format as the translator's loads and stores decode it (wgsl_print.c `texel_buffer_helpers`): p0's
  * x (type, texel bytes, swizzle) and p1's x, y, z (channel widths, first bits, the components stored). False for a
  * format they can't read: not plain RGB, a channel past 32 bits or straddling a word, mixed channel types, sRGB;
- * `storage` says whether they can write it too (whole words, no packed floats). */
+ * `storage` says whether they can write it too (whole words or a texel of 1 or 2 bytes, no packed floats). */
 bool
 wg_texel_buffer_layout(VkFormat format, uint32_t *x, uint32_t p1[3], bool *storage)
 {
@@ -435,7 +457,8 @@ wg_texel_buffer_layout(VkFormat format, uint32_t *x, uint32_t p1[3], bool *stora
          p1[2] |= i << (3 * s);
    }
    *x = (uint32_t)type | bytes << 8 | swizzle << 16;
-   *storage = bytes % 4 == 0 && type != 5 && type < 6;
+   /* Under a word, a store is an atomic and-or on its word (VK4 T38); a texel of 3 or 6 bytes would straddle two. */
+   *storage = (bytes % 4 == 0 || bytes < 4) && bytes != 3 && type != 5 && type < 6;
    return true;
 }
 
@@ -487,8 +510,9 @@ wg_format_features(VkFormat format, VkFormatFeatureFlags *linear, VkFormatFeatur
       /* depth24plus's depth is copied by the worker's draws and compute passes (web/venus-gpu.ts `depthByShader`). */
       if (!(f->flags & WG_FMT_NOCOPY) || (f->flags & WG_FMT_DEPTH))
          o |= VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+      /* A8's blits would read and write its texture's red as colour (the worker's draws know no swizzle). */
       if (f->flags & WG_FMT_SAMPLE)
-         o |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_BLIT_SRC_BIT;
+         o |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | (f->flags & WG_FMT_ALPHA8 ? 0 : VK_FORMAT_FEATURE_BLIT_SRC_BIT);
       if (wg_format_filterable(f))
          o |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
       /* A min/max reduction is the shader's filter from fetches (VK4 T25), so any format sampled has it, depth
@@ -496,7 +520,8 @@ wg_format_features(VkFormat format, VkFormatFeatureFlags *linear, VkFormatFeatur
       if (f->flags & WG_FMT_SAMPLE)
          o |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_MINMAX_BIT;
       if (f->flags & WG_FMT_RENDER)
-         o |= VK_FORMAT_FEATURE_BLIT_DST_BIT | (f->flags & WG_FMT_NO_ATTACHMENT ? 0 : VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
+         o |= (f->flags & WG_FMT_ALPHA8 ? 0 : VK_FORMAT_FEATURE_BLIT_DST_BIT) |
+              (f->flags & WG_FMT_NO_ATTACHMENT ? 0 : VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
       /* A scaled format's 32-bit float texture blends with float32-blendable, but isn't rendered to. */
       if ((f->flags & WG_FMT_BLEND) && (f->flags & WG_FMT_RENDER) && !(f->flags & WG_FMT_NO_ATTACHMENT))
          o |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT;

@@ -157,8 +157,12 @@ texel buffers in a stage (dEQP-VK's `descriptorset_random.sets4`). The format is
 `wg_tb_store_g_b`, `wg_tb_size_g_b`) that decode and encode it from the parameters: unorm, snorm, uint, sint,
 uscaled, sscaled, 16- and 32-bit floats and the unsigned 11- and 10-bit ones; a texel past the count reads 0 and isn't
 written. Uniform texel buffers take every plain RGB format whose channels don't straddle a word (3-byte and 6-byte
-texels too), storage ones formats of whole words (a texel's words are written whole, so invocations never share one);
-no atomics (image atomics are refused).
+texels too), storage ones formats of whole words or texels of 1 or 2 bytes (VK4 T38: `r8`, `rg8`, `r16`, the packed
+16-bit ones; 3- and 6-byte texels would straddle words). A texel of whole words is written whole; one under a word is an
+`atomicAnd` and an `atomicOr` on its word, as a 16-bit store to a storage buffer is, so a store of a format under a word
+or of one the shader doesn't declare (the view's, known only when bound) makes the binding `array<atomic<u32>>`, and a
+store of a declared format of a word or more keeps it plain. Atomics take R32's (`STORAGE_TEXEL_BUFFER_ATOMIC`, 1.3's:
+`atomic<u32>` or `atomic<i32>` by the ops' sign).
 
 **Uniform buffers past WebGPU's** (VK3 L7.4, ANGLE's ES3): the device reports `maxPerStageDescriptorUniformBuffers`
 two past WebGPU's less the push buffer's binding (13 of 12) and the storage buffers two fewer; a uniform buffer past
@@ -310,9 +314,9 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   queue transfers; sync-file semaphores). It reports an integrated GPU (libplacebo, GTK4 and wlroots turn CPUs away)
   whose vendor ID is the adapter's maker's (`VENDORS`: Apple's, NVIDIA's, Google's for SwiftShader; 0 for one not
   listed), as Venus on a native host passes its GPU's on, named `webpc WebGPU`. Vulkan 1.4's `maintenance5` and
-`maintenance6` and `maintenance8` (VK4 T24: mostly the runtime's and host-side; their A8_UNORM and A1B5G5R5 formats
-aren't offered, no WebGPU format holding them; `maintenance8` reaches a guest only through Mesa 26.3's Venus on: 26.2's
-leaves it out). Two memory types, each on a heap of its own (device-local, 2 GiB;
+`maintenance6` and `maintenance8` (VK4 T24: mostly the runtime's and host-side; their A1B5G5R5 a packed format since
+VK4 T30, A8_UNORM an `r8unorm` texture since VK4 T38, "Formats a texture holds otherwise" below; `maintenance8` reaches
+a guest only through Mesa 26.3's Venus on: 26.2's leaves it out). Two memory types, each on a heap of its own (device-local, 2 GiB;
   host-visible, coherent, cached and device-local, 1 GiB: the least GFXReconstruct, VMA and DXVK take as general memory
   rather than a discrete GPU's BAR window), whose budget reports what's allocated from each (VK4 T2). Host-visible
   memory's bytes are in the arena (1,280 MiB of memory 1 with the module's own heap), which backs its heap (VK4 T19). An allocation past
@@ -361,7 +365,12 @@ leaves it out). Two memory types, each on a heap of its own (device-local, 2 GiB
   be; a compressed one's size rounded up to whole blocks, as WebGPU wants, and its copies with it, the shader sampling
   the corner that's the image ("Samplers in the shader"); a 1D one 2D),
   with views made as Vulkan made them (a depth or stencil aspect's with the image's format and the aspect) and, for
-  attachments, as one 2D level and layer, or a 3D image's level and the slice its 2D view starts at (`depthSlice`). Host-visible memory's bytes
+  attachments, as one 2D level and layer, or a 3D image's level and the slice its 2D view starts at (`depthSlice`).
+  WebGPU has no 2D view of a 3D texture, so one sampled or bound as a storage image (`VK_EXT_image_2d_view_of_3d`,
+  `image2DViewOf3D` and `sampler2DViewOf3D`, VK4 T38) is the level's 3D view, and the draw's variant takes a key of the
+  slice (`WGSL_SLICE_KEY`, `program_keys` in wg_cmd.c, once a device has made such a view): its binding declared 3D and
+  every op on it given the slice as its third coordinate (wgsl_sampler.c `lower_slice`: `(slice + 0.5) / depth`
+  normalized, the slice fetched or stored, size queries their first two); a pipeline a slice bound. Host-visible memory's bytes
   are in the module's memory (vkr's storage in the arena, or the window while its blob is mapped); at each submit the driver uploads the
   window's written pages of the memories mapped there, and the whole of those that moved or are new, each to its
   4-aligned size (an odd-sized memory's last bytes too). The write-watch is the window's, one for every device (each
@@ -608,7 +617,8 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   - **Non-seamless cubes** (VK4 T28, `VK_EXT_non_seamless_cube_map`): a sampler with the flag and a linear filter keys
     its cubes' pairs (`non_seamless`, the cube bound as its faces), and their samples come from the fetches, each texel
     on the sample's face, wrapped by the sampler's U and V (the border's colour too); a nearest filter never leaves
-    the face (WebGPU's sample). A comparison through such a sampler is WebGPU's, seamless; a gather of such a cube
+    the face (WebGPU's sample). A comparison through such a sampler is the fetches' too, each texel compared, then
+    filtered (VK4 T38: seamless before, unseen while depth formats reported no comparison); a gather of such a cube
     can't be printed (its draws refused, as a reduced cube's gather: "A variant that can't be printed").
   - Key LODs are clamped to ±1,000 at the sampler: `VK_LOD_CLAMP_NONE` and programs' infinities are indeterminate in
     WGSL's `min` and `max` (a `maxLod` of `inf` read the last level).
@@ -658,7 +668,9 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   wg_cmd.c). WGSL has no atomics on textures, and WebGPU's storage textures come one way for most formats: read-only and
   write-only in core or with `texture-formats-tier1`, read-write only for r32's and, with tier2, tier2's list; no format at all
   of tier1's without it. So a storage image a stage reaches by an atomic, or by an access its format has no texture for
-  (`wgsl_image_as_words`: a load and a store in one stage, or any access of a tier1 format without tier1), is in that
+  (`wgsl_image_as_words`: a load and a store in one stage, any access of a tier1 format without tier1, or any store of a
+  format WebGPU has no storage texture of in any tier, `wgsl_image_words_only`: four-channel 8-bit sRGB, encoded and
+  decoded in the shader by Vulkan's transfer functions, and the packed 16-bit normalized formats, VK4 T38), is in that
   stage its view's words: a storage buffer at its binding and the view's parameters (`view_words`: size, words
   between rows and slices) in its group's parameter table (above, "Texel buffers"), every load, store and size of that binding going through them
   (`wg_im_*`; a texel past the view is left alone and reads 0). A view past `maxStorageBufferBindingSize` binds that
@@ -772,20 +784,33 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   **Formats WebGPU has no texture of** (VK4 T31) are packed formats the same way, in a wider texture: the three-channel
   ones (`R8G8B8` and `B8G8R8` of every type in `rgba8*`, `R16G16B16` in `rgba16*`, `R32G32B32` in `rgba32*`; alpha kept 1,
   `WG_FMT_OPAQUE`), BGRA's integer and snorm orders (`rgba8uint`, `rgba8sint`, `rgba8snorm`), `R8_SRGB` and `R8G8_SRGB` in
-  `rgba8unorm-srgb`, the 10-bit SINT orders in `rgba16sint`. `R32G32B32_SFLOAT` isn't offered as a colour attachment (`WG_FMT_NO_ATTACHMENT`): Vulkan wants a colour attachment format at `framebufferColorSampleCounts`, and WebGPU multisamples no `rgba32float`; its texture is drawn to by the worker's clears and blits all the same. The scaled formats are their integer twins' textures
+  `rgba8unorm-srgb`, the 10-bit SINT orders in `rgba16sint`, and (VK4 T38) the 10-bit SNORM orders in `rgba16float`
+  (every adapter renders, blends and filters it, where `rgba16snorm` needs tier1 and doesn't filter; a 10-bit value is
+  within an eighth of a step there and comes back with its bits; clears clamped to [-1, 1], `wg_clear_color`; what's
+  rendered is kept unclamped until copied out). `R32G32B32_SFLOAT` isn't offered as a colour attachment (`WG_FMT_NO_ATTACHMENT`): Vulkan wants a colour attachment format at `framebufferColorSampleCounts`, and WebGPU multisamples no `rgba32float`; its texture is drawn to by the worker's clears and blits all the same. The scaled formats are their integer twins' textures
   (`rgba8uint`, `rgb10a2uint`, `rg16sint`…, packed where the order or the channels differ) and offer **transfers only**:
   the spec samples them as floats and clears them with `float32`, dEQP-VK samples them through integer samplers and
   clears them with integers (its reference treats them as UINT and SINT), so no sampling is offered, and a clear takes
   the integers, dEQP's way (no program clears one). The key's last four numbers are each channel's kind (unorm, snorm,
   unsigned or signed integer, float), and `packPass` (an invocation a texel, texels of up to 16 bytes at any byte,
   channels straddling words; a pass a slab of slices or rows whose bindings fit `maxStorageBufferBindingSize`, VK4
-  T37) converts between the two: unorm widths scaled, signed integers extended, integers to and
+  T37) converts between the two: unorm widths scaled, signed integers extended, integers and normalized values to and
   from floats where the kinds differ. What a format lacks of its texture's channels (`wg_format_lacks`: R8_SRGB's G and
   B, an RGB format's alpha) is kept 0, alpha 1: filled by the copies, set by clears (`wg_clear_color`), masked out of
   pipelines' writes, and read so through the view's swizzle. A view of another format is an alias as above (`R8_SRGB`
-  and `R8_UNORM` aren't twins: their textures differ). Linear tiling and storage aren't offered; RGB16's unorm and
+  and `R8_UNORM` aren't twins: their textures differ). Linear tiling isn't offered, storage only of the 16-bit packed
+  ones (by words, "Storage images as words"); RGB16's unorm and
   snorm only with `texture-formats-tier1`. A copy costs the compute pass and a copy through a temporary buffer
   (bench/vulkan/REPORT.md "VK4 T31").
+- **Formats a texture holds otherwise** (VK4 T38; `WG_FMT_ALPHA8`): `A8_UNORM` (maintenance5) is an `r8unorm` texture
+  whose red holds alpha, offered with `texture-component-swizzle`: sampled through its view's swizzle (the colour 0, alpha
+  red: composed with the view's mapping), cleared with alpha in red (`wg_clear_color`), written as an attachment by the
+  fragment stage moving its output's alpha to red (`override wg_ar`, the pipeline's bits of its A8 targets; every
+  stage with float outputs declares it) under the alpha bit of its write mask. Not blended (WebGPU's red would blend by
+  the colour factors, `DST_ALPHA` reading 1), blitted (the worker's blit draws know no swizzle) nor storage; its twin
+  view (an attachment sampled in its own pass) swizzled the same way. Copies are its bytes. **Depth comparison**: every depth
+  format WebGPU samples reports `SAMPLED_IMAGE_DEPTH_COMPARISON` in `VkFormatProperties3` (a comparison sampler on a
+  depth texture); colour formats don't (a comparison of one would be the shader's).
 - **Multiview** (VK4 T7; `begin_rendering` and `OP_VIEWS` in wg_cmd.c): WebGPU has no layered rendering, so a pass with a
   view mask (dynamic rendering's `viewMask`; legacy passes through the runtime's emulation, secondaries through their
   inheritance) is replayed once a view: `OP_PASS` holds each view's JSON one after another, each attachment that view's
