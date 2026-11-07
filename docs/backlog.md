@@ -1584,10 +1584,17 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   results in the completion, WebUSB's `isochronousTransferIn/Out`, and an isochronous alternate setting on Gadget
   Zero to test with (dummy_hcd has none). Few devices would gain: WebUSB protects audio and video, so it is
   vendor-class devices only (a wired Xbox controller's headset jack, some cameras).
-- **Game pads that aren't HID and that the host holds** (a wired Xbox controller where the host's driver keeps it):
-  the Gamepad API could feed an emulated USB HID game pad with a fixed descriptor of ours (its standard mapping,
-  rumble through `vibrationActuator`), on the same controller. Not built; where WebUSB gets the device, `xpad`
-  already works (docs/usb.md "Findings").
+- **The game pad's rumble** (docs/usb.md "The game pad"): the Gamepad API's `vibrationActuator` could play it, but no
+  guest driver sends rumble to a HID descriptor of ours. hid-generic's only force feedback is hid-pidff (the PID
+  page: effect blocks, a pool, block load and free reports, and no FF_RUMBLE). The other route is to be an Xbox 360
+  pad instead (vendor class, 045e:028e, `xpad`'s rumble), which takes Microsoft's IDs and a guest with `xpad`. Not
+  built.
+- **The game pad on real hardware:** built and tested with a faked Gamepad API only (a cloud session, 2026-11-07).
+  Try a wired Xbox controller the host's driver keeps, a DualSense and a pad without the standard mapping; check
+  that Chromium updates a pad's state at the feed's 8 ms, and that a game in the guest (SDL) maps it as a game pad.
+- **The game pad isn't remembered:** a machine doesn't keep its pads, so each start attaches them again from the
+  menu. A `Gamepad` has no identity past its `id` string and its index, and the browser lists it only after a button
+  press, so an *attach at start* entry would wait for that press.
 - **Serial adapters the host's driver holds** (Linux's `ftdi_sio`, `cp210x`, `cdc_acm` without a udev rule): WebSerial
   could feed a virtio-console port instead of the passthrough (the multiport console, plans/agent.md). Not built.
 - **A WebHID device across Suspend:** Snapshot and Suspend unplug every device first. The emulated HID device's

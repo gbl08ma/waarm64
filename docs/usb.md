@@ -3,7 +3,7 @@
 USB devices from the user's computer reach the guest through an emulated xHCI. The controller is the core's
 (`core/src/xhci.rs`). Its devices are backends in the device worker, behind the glue in `web/usb.ts`: a WebUSB
 passthrough, an emulated HID device rebuilt from what WebHID gives, and virtual devices of ours (Gadget Zero for
-the tests, the built-in keyboard). The device interface every backend implements is `UsbDevice` in
+the tests, the built-in keyboard, a game pad fed from the Gamepad API). The device interface every backend implements is `UsbDevice` in
 `web/usb-device.ts`, and the page's messages about the root connectors are defined there too. Built 2026-10-18
 (the plan, U0–U6, is in git history: `docs/plans/usb.md`); loose ends are in [backlog.md](backlog.md) "USB".
 
@@ -48,7 +48,8 @@ the tests, the built-in keyboard). The device interface every backend implements
 - **The host keeps its driver** (hidraw, IOHIDManager, the Windows HID driver): nothing is unbound, and on Linux the
   user needs access to `/dev/hidraw*`. `navigator.hid` works in dedicated workers too.
 - **Out of its reach:** devices whose only collections are protected, and game pads that aren't HID on the host
-  (wired Xbox controllers are vendor-class: WebUSB's, and `xpad` drives them: "Findings").
+  (wired Xbox controllers are vendor-class: WebUSB's, and `xpad` drives them: "Findings"). Where the host's driver
+  keeps such a pad, the Gamepad API still reads it ("The game pad").
 
 ## Why an xHCI, and on the DT
 
@@ -68,7 +69,7 @@ the tests, the built-in keyboard). The device interface every backend implements
 |---|---|
 | Keyboards, mice, tablets | the page's input, as virtio-input (and the built-in USB keyboard in the firmware) |
 | Game pads and other HID | WebHID → the emulated HID device |
-| Game pads that aren't HID and that the host holds | the Gamepad API → an emulated USB HID game pad with a fixed descriptor of ours (not built: backlog) |
+| Game pads that aren't HID and that the host holds | the Gamepad API → the game pad of ours, a USB HID game pad with a fixed descriptor ("The game pad") |
 | Flash drives, disks | the page's disks; a raw USB disk is out of reach in a browser |
 | Webcams, microphones, headsets | `getUserMedia` (the page already records through virtio-snd); a camera would be an emulated UVC device or virtio-video |
 | Serial adapters the host's driver holds | WebSerial → a virtio-console port (not built: backlog) |
@@ -691,12 +692,62 @@ by themselves.
   - In Node, the UEFI shell takes Esc and typed commands from the keyboard alone
     (`bench/results/local/fw-kbd.ts`, ad hoc).
 
+## The game pad
+
+The game pad of ours (`web/usb-gamepad.ts`, `{api: 'virtual', kind: 'gamepad', index, name}`) is for a host's game pad
+that neither WebUSB nor WebHID reaches: a wired Xbox controller the host's driver keeps, or any pad the browser only
+gives as a `Gamepad`. The page reads the pad through the Gamepad API and the guest gets a USB HID game pad with a fixed
+report descriptor, which every kernel's `hid-generic` drives. Built 2026-11-07.
+
+- **The device:** a full-speed HID device on `VirtualDevice`, pid.codes' test IDs (1209:0002), as the keyboard's.
+  - Interface class 3, no boot protocol. One Game Pad application collection with one input report and no report
+    ID (13 bytes), on interrupt IN 0x81 (16 bytes, 4 ms).
+  - The product string is the host pad's name, the serial `webpc-pad-<connector>`. Linux names it "webpc *name*".
+  - GET_REPORT (input), GET_IDLE and SET_IDLE are answered (the idle rate is kept; a report goes out on a change
+    only). Each change is a report, sent in order to the IN TD the host keeps queued. Up to 32 wait while none is
+    queued; past that the oldest go.
+  - No output report, so no rumble: no guest driver would send one to a descriptor of ours (backlog).
+- **The report** is the Gamepad API's standard mapping, laid out for Linux's game pad convention
+  (`Documentation/input/gamepad.rst`), the codes `xpad` gives an Xbox controller:
+  - 15 buttons. hid-input makes button *n* of a Game Pad BTN_GAMEPAD + *n* − 1, so the standard buttons are placed
+    where BTN_A, B, X, Y, TL, TR, TL2, TR2, SELECT, START, MODE, THUMBL and THUMBR fall (`BUTTONS`). BTN_C and BTN_Z
+    are declared and never pressed.
+  - The D-pad (standard buttons 12–15) is a hat switch with a null state: ABS_HAT0X and ABS_HAT0Y. Opposite
+    directions cancel.
+  - The sticks are X, Y, Rx, Ry (16 bits, ±32767; up and left negative, as the Gamepad API has them). The triggers
+    (standard buttons 6 and 7) are Z and Rz (0–255) and also TL2 and TR2 while pressed.
+  - A pad without the standard mapping is read as if it had it: its first buttons and axes in that order.
+- **The page** (`web/app/gamepads.ts`, the USB menu): the Gamepad API is the Window's only, so the page reads the pads
+  and sends `usb-pad` messages (`connector`, the pad's `PadState`: the buttons pressed as bits, their values, four
+  axes) on the controller's port, with no answer.
+  - The USB menu lists the pads under [Game pads](ui:usb:UsbMenu.pads), each with a checkbox that attaches the game
+    pad on the first free connector. A browser lists a pad only once one of its buttons has been pressed while the
+    page is open, so with none the menu says [Press a button on a game pad to list it here.](ui:usb:UsbMenu.pads.none)
+  - The feed (`PadFeed`) polls the attached pads every 8 ms (`POLL_MS`) and sends a pad's state when it changed. While
+    the page is hidden, or the pad is gone, it sends the pad at rest, so no button stays held in the guest.
+  - `gamepaddisconnected` unplugs the game pad. Snapshot and Suspend treat it as any device: named in the question,
+    unplugged, and attached again after a snapshot if the pad is still listed.
+  - A pad isn't remembered with the machine, nor attached at start. No lock is taken, so two tabs can both attach
+    the same pad.
+- **Tests:**
+  - `tests/usb-gamepad.test.ts` (Node): the descriptors; the report read back through `parseReportDescriptor` of its
+    own descriptor; the standard mapping onto Linux's codes, the hat, scaling and clamping; reports in order and the
+    queue; GET_REPORT, idle, cancel and reset; `usb-pad` through the glue; the feed.
+  - `tests/page-usb-gamepad.test.ts` (Chromium, Debian, `ci-debian.sh --platform`), with the Gamepad API faked:
+    1. The menu's hint, then the pad listed after its connect event, and attached from its checkbox.
+    2. hid-generic binds it, with exactly BTN_A–BTN_THUMBR (0x130–0x13e) and ABS_X–RZ, HAT0X and HAT0Y.
+    3. A button, the left stick and the D-pad reach `/dev/input` as BTN_A, ABS_X and ABS_HAT0X, and back to rest.
+    4. The pad's disconnect unplugs it.
+
+  Planted: a button mapped to BTN_C, the hat's left and right swapped (Node, each caught); the feed sending only its
+  first state (the page test, caught).
+
 ## The page
 
 Files: `web/app/usb-ports.ts` (DOM-free: identities, lock names, connectors, matching, the messages' words, the
 definition entries), `web/app/usb-live.ts` (the browser's devices and grants, the device locks, the running machine's
 ports), `Usb.svelte` (the Machines page's USB tab), `AddUsb.svelte` (the Add a device wizard), `UsbMenu.svelte` (the
-toolbar's USB menu), `UsbProblems.svelte` (a device's problems, with their remedies folded), and the USB block of `web/app/main.ts`.
+toolbar's USB menu, with the host's game pads: "The game pad"), `gamepads.ts` (the Gamepad API's pads and their feed), `UsbProblems.svelte` (a device's problems, with their remedies folded), and the USB block of `web/app/main.ts`.
 
 ### The controller and the shape
 

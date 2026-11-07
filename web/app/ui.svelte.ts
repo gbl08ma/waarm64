@@ -128,7 +128,7 @@ export const ui = $state({
   /**
    * The page's machine's USB (docs/usb.md "The page"): `on` when it has a controller (the toolbar's USB menu);
    * its remembered devices and their states, what is on each connector while it runs, the offers the menu makes (a
-   * device that just appeared, a grant to give), `zero` with `?usbzero=1` (Gadget Zero in the menu, for tests), and
+   * device that just appeared, a grant to give), the host's game pads, `zero` with `?usbzero=1` (Gadget Zero in the menu, for tests), and
    * `open`, bumped to open the menu (something to do there). `tick` is bumped whenever any of it changes.
    */
   usb: {
@@ -136,7 +136,10 @@ export const ui = $state({
     running: false,
     entries: [] as EntryView[],
     /** `problems`: what of an attached device the guest doesn't get, in words (web/app/usb-ports.ts `problemText`). */
-    connectors: [] as ({ name: string; state: string; entry?: string; virtual?: boolean; builtin?: boolean; problems?: ProblemWords[] } | null)[],
+    connectors: [] as ({ name: string; state: string; entry?: string; virtual?: boolean; builtin?: boolean; pad?: number; problems?: ProblemWords[] } | null)[],
+    /** The host's game pads the Gamepad API lists (`index`: `Gamepad.index`), for the game pad of ours (docs/usb.md "The game pad"); `hasPads`: the page has the API. */
+    pads: [] as { index: number; name: string }[],
+    hasPads: false,
     offers: [] as { id: string; text: string; label: string }[],
     zero: false,
     open: 0,
@@ -209,6 +212,8 @@ export type Page = {
   usbStates(m: MachineRecord): Promise<EntryView[]>;
   /** `?usbzero=1`: attaches Gadget Zero on a free connector, or detaches it. */
   usbZero(): Promise<void>;
+  /** Attaches the game pad of ours fed by the host's pad `index` (`Gamepad.index`) on a free connector, or detaches it. */
+  usbPad(index: number): Promise<void>;
   /**
    * The network (docs/network-adapters.md §3). `machine`: a stored machine's id, or undefined for the page's
    * transient one; `adapter`: its index. The page's machine connects what is attached to it at once (one another tab's

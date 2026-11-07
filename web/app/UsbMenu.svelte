@@ -1,6 +1,6 @@
 <!--
   The toolbar's USB menu (docs/usb.md "The page"): the running machine's remembered devices with
-  attach toggles, the offers (a device that just appeared, one that left and may come back as another, a permission to
+  attach toggles, the host's game pads (the game pad of ours: docs/usb.md "The game pad"), the offers (a device that just appeared, one that left and may come back as another, a permission to
   give), Add a device…, and the Machines page's USB tab. With `?usbzero=1`, Gadget Zero (the controller's test device).
   It opens by itself when there is something to do (`ui.usb.open`).
 -->
@@ -22,7 +22,7 @@
   });
   // The built-in keyboard is the machine's own, not a device of the user's: not counted, not listed.
   const attached = $derived(ui.usb.connectors.filter((c) => c && !c.builtin).length);
-  const zeroOn = $derived(ui.usb.connectors.some((c) => c?.virtual && !c.builtin));
+  const zeroOn = $derived(ui.usb.connectors.some((c) => c?.virtual && !c.builtin && c.pad === undefined));
 
   async function run(f: () => Promise<unknown>) {
     error = undefined;
@@ -68,6 +68,19 @@
   {:else}
     <p class="hint">{t('usb:UsbMenu.none')}</p>
   {/each}
+  {#if ui.usb.hasPads}
+    <p class="head">{t('usb:UsbMenu.pads')}</p>
+    {#each ui.usb.pads as g (g.index)}
+      {@const at = ui.usb.connectors.findIndex((c) => c?.pad === g.index)}
+      <label class="device" data-usb-pad={g.index} title={t('usb:UsbMenu.pad.why')}>
+        <input type="checkbox" checked={at >= 0} disabled={!ui.usb.running} onchange={() => run(() => page.usbPad(g.index))}>
+        <span class="name">{g.name}</span>
+        <span class="dim">{at >= 0 ? t('usb:UsbMenu.where.connector', { connector: at + 1 }) : ''}</span>
+      </label>
+    {:else}
+      <p class="hint">{t('usb:UsbMenu.pads.none')}</p>
+    {/each}
+  {/if}
   {#if ui.usb.zero}
     <label class="device" data-usb-zero><input type="checkbox" checked={zeroOn} disabled={!ui.usb.running} onchange={() => run(() => page.usbZero())}><span class="name">{t('usb:UsbMenu.zero')}</span><span class="dim">{t('usb:UsbMenu.zero.note')}</span></label>
   {/if}
@@ -88,6 +101,7 @@
   .dim { color: var(--dim); font-size: 12px; }
   .row { display: flex; gap: 6px; flex-wrap: wrap; }
   .count { min-width: 14px; padding: 0 4px; border-radius: 7px; background: #3b6db3; color: #fff; font-size: 10px; line-height: 14px; text-align: center; }
+  .head { margin: 4px 0 0; color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
   .warn { color: #ffb36b; font-size: 12px; margin: -4px 0 0 24px; max-width: 360px; }
   .error { display: flex; flex-direction: column; gap: 6px; color: #ff8f8f; white-space: pre-wrap; margin: 0; max-width: 360px; }
   .primary { background: #24406b; border-color: #3b6db3; color: #fff; }

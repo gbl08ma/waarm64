@@ -4,6 +4,7 @@
 // identity, held while a machine has the device; who holds one and "let it go" go over the store's channel), and the
 // running machine's ports: `usb-attach` and `usb-detach` to the device worker, `usb-state` back (web/usb-device.ts).
 // The words and the matching are web/app/usb-ports.ts's; web/app/main.ts drives these for the page's machine.
+import type { PadState } from '../usb-gamepad.ts';
 import type { UsbFromWorker, UsbIdentity, UsbProblem, UsbSpeed, UsbToWorker, UsbVirtual } from '../usb-device.ts';
 import { fromWire, MsgError, type Params } from '../msg.ts';
 import { USB_CONNECTORS, type UsbEntry } from './shape.ts';
@@ -219,6 +220,11 @@ export class UsbPorts {
   /** A key of the page's for the built-in keyboard on `connector` (`code` '': release them all); no answer. */
   key(connector: number, code: string, down: boolean) {
     this.port.postMessage({ type: 'usb-key', connector, code, down } satisfies UsbToWorker);
+  }
+
+  /** The page's game pad's state for the game pad of ours on `connector` (web/app/gamepads.ts); no answer. */
+  pad(connector: number, pad: PadState) {
+    this.port.postMessage({ type: 'usb-pad', connector, pad } satisfies UsbToWorker);
   }
 
   /** Detaches what is on `connector` (the guest sees an unplug); resolves once the worker says it's off. */
