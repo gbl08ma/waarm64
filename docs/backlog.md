@@ -1338,12 +1338,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   second, toggled layout and its `XKBOPTIONS`) not offered; `detectLayout`'s signatures are from the layouts' charts,
   checked against Chromium on one (US) keyboard only; a Mac's ISO keyboard swaps `Backquote` and `IntlBackslash` in
   Chromium's codes, which the guest then sees swapped.
-- **Restart's "disk in use"** (the user's pass after phase A, 2026-09-29; loop 8 made restarts
-  not overlap and ordered the overlay's hand-over with a Web Lock: [frontend.md](frontend.md)
-  "Overlay hand-over"): whether the user's failure was that overlap or a browser releasing a lock
-  before the handles is open (a `NoModificationAllowedError` in the message would say the latter;
-  then a short bounded retry after the lock is the fix). The in-use message comes after a 10 s
-  wait, with the page in Loading meanwhile: a "waiting for the disk" line would say why.
 - **The ready marker is a per-machine regexp** over the serial output (Debian: agetty's
   `login: ` at a line's start). A guest that prints after its prompt, logs in automatically or
   has no serial getty would need its own; a guest-side signal (a byte on a port the page owns, a
