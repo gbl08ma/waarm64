@@ -39,7 +39,7 @@ core, `venus.wasm`, `ts.wasm`), which a build could rewrite in place and which c
 `scripts/ci.sh` builds them, and `scripts/build-wasm.sh` (and `vk/build.sh`) before a page test run alone.
 
 It runs once, when the worktree is made: Claude Code's **`WorktreeCreate` hook**, `scripts/worktree-hook.sh
-create`, when it is in `.claude/settings.json`. CI doesn't run it: a worktree's own changes to `node_modules` or the
+create` (`.claude/settings.json`). CI doesn't run it: a worktree's own changes to `node_modules` or the
 lockfile are the work's. After a rebase resets the lockfile's mtime, `scripts/worktree-setup.sh` again saves CI an
 `npm ci` (it's harmless either way). That hook replaces Claude Code's own `git worktree add`, so it does the same (the
 worktree at `.claude/worktrees/<name>` on a new branch `worktree-<name>`, from origin's default branch after a
