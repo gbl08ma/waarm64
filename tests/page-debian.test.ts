@@ -293,12 +293,13 @@ for (let run = 1; run <= RUNS; run++) {
     // reads "Mitigation: CSV2, but not BHB": BHB is only cleared by CSV2_3, backlog "Spectre-BHB".)
     await onSerial(page, 'clear; echo ==ss""b $(cat /sys/devices/system/cpu/vulnerabilities/spec_store_bypass)\n');
     await shows(page, /==ssb Not affected/);
-    // The pointing devices (`?mouse=1&touch=1`, docs/frontend.md "Mouse lock", "Touch"): the tablet with the side buttons,
-    // the relative mouse, the multitouch screen (direct); a touch on the page's screen reaches the touchscreen's events.
+    // The pointing devices (`?mouse=1&touch=1`, docs/frontend.md "Mouse lock", "Touch"): the tablet with the side buttons
+    // and the horizontal and high-resolution wheels, the relative mouse (the same wheels), the multitouch screen (direct);
+    // a touch on the page's screen reaches the touchscreen's events.
     await onSerial(page, 'clear; for d in /sys/class/input/input*; do case "$(cat $d/name)" in webpc\\ t*|webpc\\ m*) echo "==$(tr " " _ <$d/name):p=$(cat $d/properties):r=$(cat $d/capabilities/rel):a=$(cat $d/capabilities/abs):k=$(cat $d/capabilities/key | tr " " .)";; esac; done; echo ==in""put\n');
     await shows(page, /==input/);
     const devices = (await terminal(page)).replace(/\s+/g, ' ');
-    for (const want of ['==webpc_tablet:p=0:r=100:a=3:k=1f0000.0.0.0.0', '==webpc_mouse:p=0:r=103:a=0:k=1f0000.0.0.0.0', '==webpc_touchscreen:p=2:r=0:a=260800000000003:k=400.0.0.0.0.0']) {
+    for (const want of ['==webpc_tablet:p=0:r=1940:a=3:k=1f0000.0.0.0.0', '==webpc_mouse:p=0:r=1943:a=0:k=1f0000.0.0.0.0', '==webpc_touchscreen:p=2:r=0:a=260800000000003:k=400.0.0.0.0.0']) {
       assert.ok(devices.includes(want), `missing ${want}: ${devices}`);
     }
     await onSerial(page, 'clear; e=$(grep -l touchscreen /sys/class/input/event*/device/name | cut -d/ -f5); (timeout 8 cat /dev/input/$e | wc -c >/tmp/touch.n &); sleep 1; echo ==touch""-wait\n');

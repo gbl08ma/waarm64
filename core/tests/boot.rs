@@ -235,7 +235,7 @@ fn input_events_reach_the_guest() {
         "B: LED=7\n",
         "N: Name=\"webpc tablet\"\n",
         "B: EV=f\n",
-        "B: REL=100\n",
+        "B: REL=1940\n", // REL_HWHEEL, REL_WHEEL, REL_WHEEL_HI_RES, REL_HWHEEL_HI_RES
         "B: ABS=3\n",
         "input3: 1 30 1\n",
         "input3: 1 30 0\n",

@@ -604,12 +604,12 @@ export function inputConfig(kind: InputSpec['kind'], select: number, subsel: num
           return none;
         case 'tablet':
           if (subsel === EV_KEY) return bitmap(POINTER_BUTTONS);
-          if (subsel === EV_REL) return bitmap([8]); // REL_WHEEL
+          if (subsel === EV_REL) return bitmap([6, 8, 11, 12]); // REL_HWHEEL, REL_WHEEL, REL_WHEEL_HI_RES, REL_HWHEEL_HI_RES
           if (subsel === EV_ABS) return bitmap([0, 1]); // ABS_X, ABS_Y
           return none;
         case 'mouse':
           if (subsel === EV_KEY) return bitmap(POINTER_BUTTONS);
-          if (subsel === EV_REL) return bitmap([0, 1, 8]); // REL_X, REL_Y, REL_WHEEL
+          if (subsel === EV_REL) return bitmap([0, 1, 6, 8, 11, 12]); // REL_X, REL_Y and the tablet's wheels
           return none;
         case 'touch':
           if (subsel === EV_KEY) return bitmap([0x14a]); // BTN_TOUCH

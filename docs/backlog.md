@@ -448,13 +448,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   bytes answers `EIO` (its session can't open), and creating a name past 255 `EIO` rather than `ENAMETOOLONG`
   (bench/shares/REPORT.md). Write permission can't be granted headless, so the tests' host backend writes OPFS directories
   and `bench/shares/index.html` is opened by hand.
+- **The agent's tests as root** (docs/cloud.md): in a cloud session (root) `x11::tests::only_roots_or_the_users_display_socket_gets_the_cookie` and `serve_test::follows_the_session_and_passes_the_child_its_frames` fail, which stops `scripts/ci.sh` there. Either the tests take a non-root uid where they need one, or the agent's root rules are what fails: not yet looked at.
 - 9p: no HTTP-served tree, as v86's lazy filesystem. The memory tree's umask is the client's even under a default ACL
   (devices.md "9p"); shared folders have no xattrs (docs/shares.md §8).
-- Input: the keyboard layout reaches only guests with systemd 256+ (the firmware, GRUB and older guests type a US
-  layout; Latin layouts only: frontend.md "The keyboard layout"); no horizontal wheel (the tablet and the mouse have
-  `REL_WHEEL` only: `REL_HWHEEL`, or the high-resolution wheels, would be guest-visible); the touchscreen's
-  single-touch `ABS_X/Y` follow the browser's primary finger only (they stay where it lifted while others remain:
-  multitouch readers don't care); events injected in deterministic mode land when they land. Past 1024 queued events the oldest are dropped, so
+- Input: events injected in deterministic mode land when they land. Past 1024 queued events the oldest are dropped, so
   anything that types a long string (a test agent, a paste into the screen) must pace itself.
 - **The firmware's keyboard on machines without the USB controller:** a machine with the controller has one since 2026-10-18 (the built-in USB keyboard on EDK2's USB stack, docs/usb.md "The keyboard"). One without it still gets the screen's keys on the serial console as a terminal sends them (`terminalBytes`: no key-up, no modifiers by themselves) until its virtio keyboard is live. A virtio-input DXE driver for the mmio transport (none to port from OvmfPkg) would cover those too; worth it only if machines without the controller stay common (new ones have it). The other way out removes the serial path instead: every page machine gets the controller (older ones at their next start, which orphans their snapshots once, so ask first) and the tests' transient guests take it by default (guest-visible: the user's OK); then `terminalBytes` and `attachInput`'s serial `text` path can go. Kept for now (2026-10-18) so machines from before USB don't lose their firmware keyboard.
 - **Guests that composite with llvmpipe show stale frames on virtio-gpu** (graphics.md "Guests that composite with llvmpipe"; devices.md): the
@@ -1398,8 +1395,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   to the relative mouse even before the guest has its driver (the firmware has none for it nor for the tablet,
   so nothing is lost there today); the worker's `deviceStatus` (as the keyboard's `live`) could make the lock fall back
   to the tablet then. Raw asks for `unadjustedMovement`, which isn't on every platform (then the host's acceleration and
-  the guest's add up); unmeasured which. No wheel's horizontal axis (`REL_HWHEEL`) or high-resolution wheel on any pointer. The
-  touchscreen's contacts have no size or pressure (`ABS_MT_TOUCH_MAJOR`, `ABS_MT_PRESSURE`), and a pen is the tablet.
+  the guest's add up); unmeasured which. The horizontal and high-resolution wheels are unchecked in a compositor: that
+  sway and Firefox on the Arch desktop guest scroll a touchpad smoothly and sideways (`libinput debug-events` shows
+  `POINTER_SCROLL_WHEEL` with `v120` values off 120). The touchscreen's contacts have no size or pressure (`ABS_MT_TOUCH_MAJOR`, `ABS_MT_PRESSURE`), and a pen is the tablet.
   Checked on headless Chromium's synthetic events and on Debian's evdev, not on a real touchscreen or a desktop's
   compositor (GTK and Firefox on the Arch desktop guest).
 
