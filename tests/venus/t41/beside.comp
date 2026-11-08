@@ -1,0 +1,18 @@
+#version 450
+// VK4 T41's follow-up (the review of R1 to R4's W2; wg_test.c 116): a writable descriptor of a memory beside pointers
+// into it, in one dispatch: each sees what the other wrote, what the pointers wrote in the descriptor's range stays, and
+// the descriptor's length is its own.
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+layout(local_size_x = 4) in;
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer Words { uint v[]; };
+layout(push_constant) uniform Push { Words from, to; } p;
+layout(set = 0, binding = 0, std430) buffer Out { uint o[]; } d;
+void main() {
+  uint i = gl_LocalInvocationIndex;
+  d.o[i] = 500 + i + p.from.v[i] - 40;
+  p.to.v[260 + i] = 200 + i;
+  p.to.v[264 + i] = p.to.v[256 + i];
+  p.to.v[268 + i] = d.o[4 + i];
+  p.to.v[272 + i] = d.o.length();
+}

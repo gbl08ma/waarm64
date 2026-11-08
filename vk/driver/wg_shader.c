@@ -394,6 +394,7 @@ declared(char *text, const char *decl)
 /* A variant's text for its shared words (`wg_share`): each one's words `rG_B[i]` read through its binding's, at its
  * place there, `rG_T[rG_994[B].w + (i)]` (wgsl_print.c names storage words so); that binding and the group's
  * parameter table declared where the stage didn't, the table as large as the variant's. */
+static uint32_t resource_at(const struct wg_program *v, uint32_t index);
 static char *
 shared_text(const struct wg_program *v, char *text)
 {
@@ -402,6 +403,21 @@ shared_text(const struct wg_program *v, char *text)
       const struct wg_share *sh = &v->share[i];
       const uint32_t g = sh->res >> 16, b = sh->res & 0xffff;
       char from[32], with[64];
+      if (sh->whole == WG_SHARE_ADDRESS) {
+         /* Through the pointers' binding (`address_shares`): its length its own, the binding read_write where the
+          * variant made it writable. */
+         snprintf(from, sizeof(from), "arrayLength(&r%u_%u)", g, b);
+         snprintf(with, sizeof(with), "r%u_%u[%uu].z", g, WGSL_TABLE_BINDING, b);
+         for (char *f; (f = word_at(text, text, from));) {
+            text = spliced(text, f - text, strlen(from), with);
+            touched = true;
+         }
+         char decl[96];
+         snprintf(decl, sizeof(decl), "@group(%u) @binding(%u) var<storage, read> ", sh->to >> 16, sh->to & 0xffff);
+         char *at = strstr(text, decl);
+         if (at && v->resources[resource_at(v, sh->to)].kind == WGSL_STORAGE)
+            text = spliced(text, at - text + strlen(decl) - strlen("read> "), strlen("read"), "read_write");
+      }
       snprintf(from, sizeof(from), "r%u_%u[", g, b);
       snprintf(with, sizeof(with), "r%u_%u[r%u_%u[%uu].w + (", sh->to >> 16, sh->to & 0xffff, g, WGSL_TABLE_BINDING, b);
       for (char *q = text, *f; (f = word_at(text, q, from));) {
@@ -759,6 +775,13 @@ share_resources(struct wg_program *v)
       v->resources[t].size = MAX2(v->resources[t].size, size);
       v->vis[t] |= vis;
       v->vis[resource_at(v, sh->to)] |= vis;
+      /* A writable descriptor through the pointers' binding (WG_SHARE_ADDRESS) makes it writable, and what it writes
+       * read back. */
+      struct wgsl_resource *to = &v->resources[resource_at(v, sh->to)];
+      if (sh->whole == WG_SHARE_ADDRESS && v->resources[at].kind == WGSL_STORAGE) {
+         to->kind = WGSL_STORAGE;
+         to->written |= v->resources[at].written;
+      }
    }
    for (uint32_t i = 0; i < v->share_count; i++)
       if (v->share[i].res != v->share[i].to && resource_at(v, v->share[i].res) < v->resource_count)

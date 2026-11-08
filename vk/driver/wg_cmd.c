@@ -1534,14 +1534,16 @@ program_keys(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program 
  * it, the submit lost, before VK4 T37).
  */
 static uint32_t
-storage_aliases(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, struct wg_storage_alias *out)
+storage_aliases(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, struct wg_storage_alias *out,
+                const uint64_t *skip)
 {
    struct run { uint32_t k; VkDeviceSize lo, hi; const struct wg_device_memory *mem; } runs[8];
    uint32_t n = 0, count = 0;
    cmd->aliases_refused = false;
    for (uint32_t k = 0; k < p->resource_count; k++) {
       const struct wgsl_resource *r = &p->resources[k];
-      if (r->kind != WGSL_STORAGE || r->image_words || wgsl_address_region(r->group, r->binding) >= 0)
+      if (r->kind != WGSL_STORAGE || r->image_words || wgsl_address_region(r->group, r->binding) >= 0 ||
+          (skip[k / 64] & (1ull << (k % 64))))
          continue;
       const struct wg_device_memory *mem = resource_memory(cmd, point, p, k);
       const int s = p->res_set[k];
@@ -1670,6 +1672,57 @@ shared_words(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program 
    return count;
 }
 
+/*
+ * Storage buffers of address memory beside the pointers' binding of their region (VK4 T41's follow-up, the review of R1
+ * to R4's W2). The pointers' binding is the region's whole GPUBuffer, and WebGPU refuses a writable binding overlapping
+ * another of its buffer in one draw or dispatch, so such a descriptor went to a shadow copied back at the scope's end:
+ * neither saw what the other wrote, and the copy back undid what the pointers wrote in its range. Each reads and writes
+ * through the pointers' binding instead (`wg_share`, WG_SHARE_ADDRESS: its place and length in its group's parameter
+ * table, so the variant is keyed by who, not where): a writable one, or a read one beside pointers that write; of the
+ * fragment stage or a dispatch, which declares the pointers' binding, of the same atomics (a read-only one widened where
+ * a writable descriptor needs it, if no vertex stage sees it). Not a dynamic one, whose place would change under its
+ * bind group. The others go to shadows as before. The resources in `out`, by resource index; `shared` their bits.
+ */
+static uint32_t
+address_shares(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, struct wg_share *out,
+               uint64_t *shared)
+{
+   const struct wg_device *dev = container_of(cmd->vk.base.device, struct wg_device, vk);
+   const uint8_t stage = point ? 4 : 2; /* GPUShaderStage: compute, fragment */
+   uint32_t count = 0;
+   for (uint32_t k = 0; k < p->resource_count; k++) {
+      const struct wgsl_resource *r = &p->resources[k];
+      const int s = p->res_set[k];
+      if ((r->kind != WGSL_STORAGE && r->kind != WGSL_STORAGE_READ) || r->image_words || s < 0 || p->dynamic[k] != -1 ||
+          p->vis[k] != stage || (shared[k / 64] & (1ull << (k % 64))))
+         continue;
+      const struct wg_descriptor_set *set = cmd->sets[point][s].set;
+      const uint32_t slot = r->binding / 2 - p->set_base[s];
+      if (!set || slot >= set->layout->slot_count || set->slots[slot].type != VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+         continue;
+      uint32_t buffer;
+      VkDeviceSize at, size;
+      if (!buffer_binding(p, k, &set->slots[slot], &buffer, &at, &size))
+         continue;
+      const int region = wg_address_region_of(dev, buffer);
+      uint32_t j = 0;
+      while (region >= 0 && j < p->resource_count &&
+             (p->resources[j].group != WGSL_MAX_GROUPS - 1 || p->resources[j].binding != wgsl_address_binding(region)))
+         j++;
+      if (region < 0 || j == p->resource_count)
+         continue;
+      const struct wgsl_resource *a = &p->resources[j];
+      if (!(p->vis[j] & stage) || a->atomic != r->atomic || a->signed_atomic != r->signed_atomic ||
+          (r->kind == WGSL_STORAGE_READ && a->kind != WGSL_STORAGE) ||
+          (r->kind == WGSL_STORAGE && a->kind != WGSL_STORAGE && (p->vis[j] & ~stage)))
+         continue;
+      out[count++] = (struct wg_share){ (uint32_t)r->group << 16 | r->binding, (uint32_t)a->group << 16 | a->binding,
+                                        (int8_t)s, WG_SHARE_ADDRESS, { 0, 0 } };
+      shared[k / 64] |= 1ull << (k % 64);
+   }
+   return count;
+}
+
 static struct wg_program *
 program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
 {
@@ -1716,14 +1769,15 @@ program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
    const bool slices = container_of(cmd->vk.base.device, struct wg_device, vk)->slice_views;
    const uint32_t key_count = p->pair_count || p->int_pair_count || p->key_pair_count || dev_padded(cmd) || formatless || slices
                                  ? program_keys(cmd, point, p, keys) : 0;
-   struct wg_storage_alias aliases[8];
-   const uint32_t alias_count = storage_aliases(cmd, point, p, aliases);
    /* Shared words stay read-only: a scope that writes their buffer reads them from its shadows. */
    struct wg_share share[WGSL_MAX_RESOURCES];
    uint64_t shared[2] = { 0 };
-   const uint32_t share_count = p->shares ? shared_words(cmd, point, p, share, shared) : 0;
+   uint32_t share_count = p->shares ? shared_words(cmd, point, p, share, shared) : 0;
+   share_count += address_shares(cmd, point, p, share + share_count, shared);
+   struct wg_storage_alias aliases[8];
+   const uint32_t alias_count = storage_aliases(cmd, point, p, aliases, shared);
    mask[0] &= ~shared[0], mask[1] &= ~shared[1];
-   return mask[0] | mask[1] || key_count || alias_count || p->shares
+   return mask[0] | mask[1] || key_count || alias_count || share_count || p->shares
              ? wg_program_variant(p, mask, keys, key_count, aliases, alias_count, share, share_count)
              : p;
 }
@@ -4243,6 +4297,18 @@ param_table(const struct op_bind *b, const struct wg_program *p, uint32_t t)
       uint32_t to = 0;
       while (to < p->resource_count && ((uint32_t)p->resources[to].group << 16 | p->resources[to].binding) != sh->to)
          to++;
+      if (sh->whole == WG_SHARE_ADDRESS) {
+         /* Through the pointers' binding, the region's whole (`address_shares`): its place there and its length. */
+         uint32_t buffer;
+         VkDeviceSize place, bytes;
+         if (d && to < p->resource_count && WGSL_TABLE_SIZE(sh->res & 0xffff) <= size &&
+             buffer_binding(p, to, d, &buffer, &place, &bytes)) {
+            uint32_t *at = words + 4 * (sh->res & 0xffff);
+            at[2] = (uint32_t)(bytes / 4);
+            at[3] = (uint32_t)(place / 4);
+         }
+         continue;
+      }
       /* A whole memory's place is from its start; a run's, from its first byte (its group's: this one's). */
       const struct wg_descriptor *dt = to < p->resource_count && !sh->whole ? bound_descriptor(b, p, to) : NULL;
       if (!d || (!dt && !sh->whole) || to == p->resource_count || WGSL_TABLE_SIZE(sh->res & 0xffff) > size)

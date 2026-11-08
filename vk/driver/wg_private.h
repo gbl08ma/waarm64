@@ -623,6 +623,10 @@ struct wg_share {
    uint8_t whole;
    uint8_t pad[2]; /* zero: variants compare wg_shares as bytes */
 };
+/* `wg_share.whole` of a storage buffer of address memory read and written through the pointers' binding of its region
+ * (`to`; VK4 T41's follow-up, wg_cmd.c `address_shares`): its place from the region's start, its length in words at its
+ * vec4's z. */
+#define WG_SHARE_ADDRESS 2
 
 struct wg_program {
    uint32_t refs;

@@ -5992,9 +5992,11 @@ r2_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuffe
  * buffer grown past it; then a dispatch reading it through a pointer, writing a host-visible memory through a pointer
  * and through a storage buffer descriptor of that memory, which would alias the pointers' binding. With `uniform` (VK4
  * R2, the review's R1; address-ubo.comp): the shader adds a uniform buffer of that memory at 2048 too, whose shadow is
- * only read while the descriptor's is written, in one usage scope. */
+ * only read while the descriptor's is written, in one usage scope. With `beside` (VK4 T41's follow-up, the review of R1
+ * to R4's W2; t41/beside.comp, scenario 116): the descriptor is 32 bytes, half of them written through it and half
+ * through the pointers, each half read the other way. */
 static int
-t7_addresses(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkCommandPool pool, bool uniform)
+t7_addresses(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkCommandPool pool, bool uniform, bool beside)
 {
    PFN_vkGetBufferDeviceAddress GetBufferDeviceAddress =
       (PFN_vkGetBufferDeviceAddress)GetDeviceProcAddr(dev, "vkGetBufferDeviceAddress");
@@ -6061,7 +6063,7 @@ t7_addresses(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkComma
                                              .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
    VkDescriptorSet set;
    CHECK(AllocateDescriptorSets(dev, &dai, &set));
-   const VkDescriptorBufferInfo bi[2] = { { host, 1024, 16 }, { host, 2048, 16 } };
+   const VkDescriptorBufferInfo bi[2] = { { host, 1024, beside ? 32 : 16 }, { host, 2048, 16 } };
    const VkWriteDescriptorSet wr[2] = {
       { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .descriptorCount = 1,
         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi[0] },
@@ -7605,8 +7607,8 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
       static const VkFormat g7[3] = { VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8_UNORM, VK_FORMAT_R32_SFLOAT };
       if (g5_formatless(cs, cs_words, cmd, out, scenario == 88 ? g5 : g7))
          return 1;
-   } else if (scenario == 39 || scenario == 43) {
-      if (t7_addresses(cs, cs_words, cmd, pool, scenario == 43))
+   } else if (scenario == 39 || scenario == 43 || scenario == 116) {
+      if (t7_addresses(cs, cs_words, cmd, pool, scenario == 43, scenario == 116))
          return 1;
    } else if (scenario == 115) {
       if (t41_regions(cs, cs_words, cmd, pool))

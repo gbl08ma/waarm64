@@ -1,0 +1,9 @@
+{
+ "what": "createComputePipelineAsync of ssbo.corner_case.long_shader_bitwise_and's WGSL (its GLSL from vktSSBOCornerCase.cpp, 589 ivec4 loads through a pointer, NIR's align 16; glslc -O, target/vk/wgsl 5) on the dev VM's headless Chromium 155.0.8059.84, SwiftShader, --disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension; bench/results/local/t41-time.ts (t21-time.ts's), ms, one module each in turn",
+ "as printed (four u32 loads a vec4 of array<u32>)": [26429, 26142, 26594],
+ "the pointers' binding array<vec4<u32>>, a vec4 load one index": [24538, 24923, 25036],
+ "a second binding of the region, array<vec4<u32>>, for the vec4 loads": [25499],
+ "the vec4 view, its index a base and a constant (r[b + K])": [27113],
+ "the vec4 view, Dawn's robustness off (allow_unsafe_apis,disable_robustness)": [21303],
+ "VK4 T21's, one u32 load a vec4 (the other three its copies)": 3148
+}

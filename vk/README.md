@@ -419,8 +419,9 @@ a guest only through Mesa 26.3's Venus on: 26.2's leaves it out). Two memory typ
   (`scope_reads`; a 3D image's level is one WebGPU subresource) reads a copy of the image taken at the scope's start
   (`wg_view_loop`'s, a feedback loop's texture: VK4 T37): WebGPU refuses a texture bound both ways. A uniform block
   declared past its range and what its memory's GPUBuffer has past it (`WG_MEMORY_PAD`, cut short near
-  `maxBufferSize`) reads a shadow of the block's size, the range's bytes copied in (`scope_use.need`, VK4 T37). A writable descriptor beside a pointers' binding
-  (below, "Device addresses") goes to a shadow written back at the scope's end; shadows a scope writes are in a GPUBuffer
+  `maxBufferSize`) reads a shadow of the block's size, the range's bytes copied in (`scope_use.need`, VK4 T37). A storage buffer beside a pointers' binding in one
+  draw or dispatch goes through that binding (below, "Device addresses"); other writable descriptors of address memory in
+  such a scope go to a shadow written back at the scope's end; shadows a scope writes are in a GPUBuffer
   of their own, apart from those it only reads. A scope without such a conflict costs the scan alone.
 - **Shaders** (`wg_shader.c`): the runtime's `vk_shader` path. A pipeline's stages are compiled together
   (`wgsl_lower` against its set layouts, `wgsl_link`, the fragment shader printed first), with what they share
@@ -859,9 +860,13 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   the region's binding: with more than one region an `if` tree on the high word, the last taking what's past them (the
   stage's hash keys the count). So 16-bit accesses and atomics work as they do. What a shader writes through pointers is
   read back from every host-visible memory of that region. Usage scopes see each region's binding as its whole buffer:
-  other reads of address memory go to shadows when the pointers write, and a writable descriptor of address memory goes
-  to a shadow copied back at the scope's end, which WebGPU's aliasing rule asks for (bytes reached both ways in one
-  scope don't see each other). A pointer converted to and from a 64-bit integer (`OpConvertUToPtr`, since `shaderInt64`:
+  other reads of address memory go to shadows when the pointers write. A storage buffer of address memory in a draw or
+  dispatch with its region's pointers' binding (writable, or read beside pointers that write) is read and written
+  through that binding (`address_shares` in wg_cmd.c, a `wg_share` of `WG_SHARE_ADDRESS`: its place and length in its
+  group's parameter table, so one variant serves every place), where WebGPU's aliasing rule refuses the two bindings:
+  each sees what the other wrote. Where it can't be (a dynamic one, atomics that differ, pointers a vertex stage sees
+  read-only, a descriptor in another draw of the pass) it goes to a shadow copied back at the scope's end (bytes reached
+  both ways in one scope don't see each other, and the copy back undoes what pointers wrote in its range). A pointer converted to and from a 64-bit integer (`OpConvertUToPtr`, since `shaderInt64`:
   VK4 T29) is its two words packed. **Capture and replay** (`bufferDeviceAddressCaptureReplay`): a memory allocated with
   `VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT` is placed at its allocation, at its
   `VkMemoryOpaqueCaptureAddressAllocateInfo` address if it has one (`VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS` if that's

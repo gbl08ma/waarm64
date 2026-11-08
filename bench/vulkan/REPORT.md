@@ -844,6 +844,34 @@ tree's cost); a memory whose GPUBuffer was made before a buffer of it asked for 
 other allocations; `set15`/`set31` (8 descriptor sets); a vec4 view for 16-aligned loads and a descriptor beside the
 pointers' binding (the review's W2) not done.
 
+**Follow-ups** (2026-11-08, the dev VM's SwiftShader, Chromium 155.0.8059.84):
+- **A vec4 view for 16-aligned loads: measured, lost, not landed** (`vec4-view-compile.json`).
+  `ssbo.corner_case.long_shader_bitwise_and`'s WGSL (its GLSL from vktSSBOCornerCase.cpp, glslc -O, `target/vk/wgsl`;
+  NIR has its 589 `ivec4` loads at align 16) compiled alone, by hand-edited forms, each in turn:
+
+| the WGSL | `createComputePipelineAsync`, ms |
+|---|---|
+| as printed: four `u32` loads of `array<u32>` a vec4 | 26,429, 26,142, 26,594 |
+| the pointers' binding as `array<vec4<u32>>`, one index a vec4 | 24,538, 24,923, 25,036 |
+| a second binding of the region as the vec4 view | 25,499 |
+| the view's index a base plus a constant | 27,113 |
+| the view, Dawn's robustness off | 21,303 |
+
+  About 5%: SwiftShader compiles a vec4 load from storage as four, so the case stays past dEQP's 30 s watchdog (40 s
+  whole). T21's 3.1 s was a quarter of the loads, not a wider one. A second binding would also have aliased a writable
+  pointers' binding (WebGPU refuses that), so a stage that writes through pointers couldn't have had it.
+- **A storage buffer beside the pointers' binding goes through it** (the review of R1 to R4's W2; vk/README.md "Device
+  addresses"): a writable descriptor of address memory in a dispatch or draw with its region's pointers' binding (or a
+  read one beside pointers that write) reads and writes through that binding, its place and length in its group's
+  parameter table (`address_shares`, a `wg_share` of `WG_SHARE_ADDRESS`), where it went to a shadow copied back at the
+  scope's end. The driver's test (`tests/venus-driver.test.ts` "a writable descriptor beside pointers into its memory
+  …", wg_test.c 116, t41/beside.comp: a 32-byte descriptor whose first half it writes and whose second half pointers
+  write, each half read the other way, and its length) failed before (the copy back undid the pointers' words from byte
+  1040) and passes; a planted bug in the place and one in the length each failed it. `buffer_device_address` whole on
+  SwiftShader (`w2-swiftshader.json`): 3,374 pass, 0 fail, 1,344 not supported, as before (678 s against 653 s). Left
+  (docs/backlog.md "Usage scopes' leftovers"): dynamic descriptors, atomics that differ, pointers a vertex stage sees
+  read-only, a descriptor in another draw of the pass.
+
 ## VK4 T40: bindings past WebGPU's limits — words of one memory share a binding; 744 cases join the list
 
 2026-11-08, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,

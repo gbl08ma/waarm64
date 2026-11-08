@@ -1011,10 +1011,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     memory it reads otherwise reads copies taken at its start. Left: writable bindings of one range, one an array of
     atomics and one not (or of signed and unsigned ones), or together past `maxStorageBufferBindingSize`, refuse their
     draw or dispatch, said once (VK4 T37: WebGPU refused it, the submit lost); the plain one printed again from its NIR
-    with its array atomic (a stage that writes storage keeping its NIR) would let them be one binding; a descriptor
-    beside a pointers' binding, and overlapping descriptors there, don't see each other's bytes in the scope, and its
-    shadow's copy back overwrites what pointers wrote anywhere in its range (the review of R1 to R4's W2: going through the
-    pointers' binding at the descriptor's distance, as `aliased_text` does, would serve); a variant per distinct
+    with its array atomic (a stage that writes storage keeping its NIR) would let them be one binding; a storage
+    buffer of address memory beside its region's pointers' binding goes through that binding since T41's follow-up (the
+    review of R1 to R4's W2), but not a dynamic one (its place would need the table made per offset), one whose atomics
+    differ from the pointers', one beside pointers a vertex stage sees read-only (the binding can't be made writable), nor
+    one in another draw of the pass than the pointers: those still go to a shadow, don't see what pointers write in the
+    scope, and its copy back undoes it (across draws a writable descriptor needs no shadow beside writable pointers, which
+    WebGPU takes as one usage: only beside read-only ones; unmet by anything measured); a variant per distinct
     offset between overlapping dynamic bindings, and a crop per size of a view, are kept until their program or view goes; a barrier
     of a secondary command buffer doesn't end the scope; a range past `maxBufferSize` isn't copied (warned, the
     scope dropped as before). Not met by anything measured (dEQP-VK's likeliest groups of the direct set, vkd3d's
@@ -1103,10 +1106,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     pipelines made for the regions in use, made again when another is first used, would let it reach the heaps. Capture and replay doesn't keep replays apart from other allocations (they'd be placed at a
     region's top, the region grown whole), so a replay's places can be taken by allocations that come in another order.
     Every use of a region's GPUBuffer counts as that buffer's, so a scope that writes storage of any address memory
-    copies its reads of all of that region's: unmeasured on a program. A descriptor beside a pointers' binding, and its
-    shadow's copy back (the review of R1 to R4's W2: "Usage scopes' leftovers"). `ivec4` loads through a pointer are four
-    `u32` loads (a vec4 view of each region for loads NIR says are 16-aligned: "SwiftShader compiles … slowly" below);
-    the 64 KiB past each memory bounds a uniform block widened past its range there. `buffer_device_address`'s `set15`
+    copies its reads of all of that region's: unmeasured on a program. Descriptors the pointers' binding can't take in
+    ("Usage scopes' leftovers"). The 64 KiB past each memory bounds a uniform block widened past its range there. `buffer_device_address`'s `set15`
     and `set31` (1,344 cases) need `maxBoundDescriptorSets` past the 8 sets the translator has (`WGSL_MAX_SETS`).
   - **API 1.3's required features** (the user, 2026-10-28: 1.3 stays advertised; the rest of VK3 and VK4 fill them as
     they go): `timestampComputeAndGraphics` with timestamps that are the CPU's (above). A program that relies on 1.3's
@@ -1137,8 +1138,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `ivec4` loads through a device address are 2,356 `u32` loads of the address buffer, and SwiftShader's compile grows
     faster than they do (the same WGSL with one load a vec4: 3.1 s; with none: 0.1 s; Dawn's robustness off: no change).
     T21 printed NIR's boolean `iand`/`ior` as `&`/`|` (they were `&&`/`||`, a branch each in Tint's SPIR-V: 31.6 → 26.4 s).
-    A vec4 view of the address buffer (a second binding, `array<vec4<u32>>`) for loads NIR says are 16-aligned would
-    make them one each, for a binding in group 3.
+    A vec4 view of the address buffer for loads NIR says are 16-aligned (T41's follow-up, measured by hand-edited WGSL,
+    `results/vk4/t41/vec4-view-compile.json`) loses: the pointers' binding as `array<vec4<u32>>` takes 24.5–25.0 s against
+    26.1–26.6 s, a second binding of the region as the view 25.5 s, the index a base plus a constant 27.1 s, robustness
+    off too 21.3 s: SwiftShader compiles a vec4 load from storage as four, so the case stays past the watchdog, and it
+    wasn't landed. What T21's 3.1 s had was a quarter of the loads; what's left is SwiftShader's (an upstream report).
   - **What R7's limits leave** (VK4 R7, its review's B4, B8, D4): 16 vertex bindings need a free bind group and room in the
     vertex stage's storage buffers, or the draw is refused, said once (four groups in use, or a vertex stage's own storage
     buffers; VK4-KICKOFF.md T44); 8 dynamic uniform buffers with push constants past the immediates or draw parameters
