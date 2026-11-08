@@ -126,3 +126,35 @@ vk/README.md ("the set's 4,096 run out (`timestamps_flush`)") vs `WG_TIMESTAMP_S
 - **Timestamps otherwise**: `ts_before` only when the next work op is a pass in the same command buffer; begin and end
   writes distinct; kept entries (`UINT32_MAX - 1`) survive a flush and get the next beginning write or a write of
   their own at the submit's end; scratch shared by occlusion resolves and timestamp flushes in encoder order.
+
+## Triage (2026-11-08, the fix loop)
+
+All five confirmed and fixed on main (commit ad089b3e), each with a driver test (tests/venus-driver.test.ts) that
+failed first and fails again with its fix planted out:
+
+1. **Fixed.** `timestamps_flush` frees the set's slots whether or not a timestamp reads them (it resolves and copies
+   only when one does). Test `misc: a timestamp after a render pass of 300 parts…` (wg_test.c 125: 300 logic-op draws,
+   then a bottom-of-pipe timestamp): before, WebGPU's "endOfPassWriteIndex (256) exceeds the number of queries (256)"
+   and the submit lost.
+2. **Fixed.** `begin_pass` takes the end and beginning slots together (`timestamp_slots(r, 2)`, flushing first when
+   fewer are left). Test `misc: timestamps around and in a render pass that begins at the device set's last slot…`
+   (wg_test.c 126: 255 timestamps, a top-of-pipe one, a pass with one inside, one after): before, 2 of 258 were 0.
+   The `end_pass` → `ts_after` path the review named is closed too: `ts_after` is dropped when the set was flushed
+   since the pass's slot was taken (`ts_flushes`).
+3. **Fixed (refused, not drawn).** `wg_pipeline_pull` counts the vertex stage's uniform buffers with the pull's one or
+   two against WebGPU's limit; past it the draw is refused by the driver (`wg_pipeline_pull_ok`'s message now names
+   uniform buffers). Test `passes: ANGLE's layout with a vertex input pulled…` (wgt_angle_ubo's `pulled`:
+   t46/angle-pull.vert, an instance binding with divisor 2 at an unaligned offset): before, WebGPU's "The number of
+   uniform buffers (13) in the Vertex stage exceeds the maximum per-stage limit (12)". Drawing it (the pull's
+   parameters as read-only storage where room is left) filed: docs/backlog.md "Pulled vertices' leftovers" (S).
+4. **Fixed (small).** A pass whose worker-side work follows its end write (captures run at `endPass`, shadow
+   write-backs in `scope_end`) sets `ts_tail`; a timestamp right after it is then a write of its own, after that work.
+   Test `transform feedback: a timestamp right after a pass with a capture follows the capture` (wgt_xfb 15: the
+   worker's timestamp writes 2, the pass's alone before). The mirror case (a top-of-pipe timestamp before a pass reads
+   its beginning write, after the pass's `prepasses` work) filed: docs/backlog.md "Queries" (XS).
+5. **Fixed.** vk/README.md says 256, and how the slots are freed.
+
+Runs: `scripts/ci.sh` all green except `tests/virgl-browser.test.ts`'s damaged-chunk video test (a call waited
+216–222 ms against its 200 ms bound, twice under the suite; passes alone; nothing in this loop reaches virgl's video:
+filed in docs/backlog.md "Tests and tools"), `scripts/ci-graphics.sh` OK (261 s), `scripts/ci-deqp-vk.sh` OK (1,100 s:
+a sample of 11,009 of 81,619, seed 3025452439, 0 failing).
