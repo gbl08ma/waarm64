@@ -754,10 +754,16 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   after (its resolves drawn, from the image). A draw reading such an attachment as an input attachment reads what it held
   before the pass.
 - **Layered passes** (VK4 T12; `OP_VIEWS`, `OP_CLEAR_LAYERS` in wg_cmd.c): a pass of several layers without multiview (a
-  framebuffer's layers, dynamic rendering's `layerCount`) has no draw past its first layer, nothing writing `gl_Layer`,
-  but its load and store ops reach every layer and `vkCmdClearAttachments` names layers, so it replays a layer at a time
-  as multiview does (up to `WG_MAX_LAYERS`, 32): the later layers see the clears whose range holds them, no draws, no
-  queries; resolves cover every layer (`layer_mask`).
+  framebuffer's layers, dynamic rendering's `layerCount`) reaches its later layers by its load and store ops, by
+  `vkCmdClearAttachments`, which names layers, and by draws whose vertex stage writes `gl_Layer`, so it replays a layer
+  at a time as multiview does (up to `WG_MAX_LAYERS`, 32): the later layers see the clears whose range holds them and
+  those draws alone, no queries; resolves cover every layer (`layer_mask`). **`gl_Layer`** (VK4 T43:
+  `shaderOutputLayer`, `VK_EXT_shader_viewport_index_layer`, one viewport so the index's writes go): the vertex stage's
+  write is kept in `wg_lo`, and its entry point puts a vertex whose layer isn't the pipeline's (`wg_layer`, an override:
+  the key's `view`, a pipeline per layer as per view) outside the clip volume (x = 2w), so each layer's draw keeps that
+  layer's primitives; a fragment stage reads `gl_Layer` as `wg_layer`. In the later layers an indirect draw that needs
+  what only the first layer's pass prepares (a count's or a fan's tickets, draw parameters' places) isn't drawn (said
+  once), nor is a storing vertex stage's (its pre-pass ignores `gl_Layer`: docs/backlog.md "Rendering").
 - **Feedback loops** (VK4 T12; `feedback_copies` in wg_cmd.c): Vulkan lets an input attachment read an attachment of its
   own pass, and WebGPU refuses a texture written and sampled in one pass. Where a pass's attachment can be an input
   attachment (`OP_PASS_ATTS`, none otherwise: ordinary passes pay nothing), a draw reading one reads a copy (the input view's

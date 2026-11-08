@@ -823,11 +823,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     that asked for dynamic vertex input ask for it too: unaligned offsets and strides, and a shader's type that isn't
     the format's, which T5's pulled vertices could read bytewise); `VK_EXT_primitive_restart_index` (16: the tests'
     guest's Venus, Mesa 26.2, doesn't pass it on, and WebGPU restarts only at the format's largest index, so every
-    indexed draw with another would need its indices rewritten before its pass); depth bias control's other
-    representations and `depthBiasExact` (31 of its 81: WebGPU's `depthBias` is an integer of the format's units; a
-    float or forced-unorm one would be the fragment stage's depth moved); the third extended dynamic state's rest
-    (rasterization samples, alpha to one, polygon and line modes, conservative rasterization: none WebGPU has, 2 of the
-    23 asked only for them, the rest for other extensions too; logic ops since VK4 T32).
+    indexed draw with another would need its indices rewritten before its pass); the third extended dynamic state's
+    rest (rasterization samples, polygon and line modes, conservative rasterization: none WebGPU has, 2 of the 23 asked
+    only for them, the rest for other extensions too; logic ops since VK4 T32, alpha to one and depth bias control's
+    other representations and `depthBiasExact` since VK4 T43: the fragment stage's, vk/README.md "Commands"). Polygon
+    modes: "Polygon modes" below.
   - **`api.info.image_format_properties2.*` of the YCbCr formats time out** (VK4 T1's "crash" of `r12x4_unorm_pack16`,
     VK4 T2): with `DISJOINT` in its create flags the case makes ~340,000 synchronous queries, ~0.1 ms each through
     Venus's ring, so it passes in 34 s (`WATCHDOG=disable`) but past dEQP's 30 s watchdog; out of the list. A guest's
@@ -987,23 +987,43 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     view and a variant keyed by the slice: a pipeline a slice bound (a program walking a volume's slices makes one each;
     a slice in the group's parameter table, as texel buffers' are, would make one for all). Stencil state per face is a draw split by face (VK3 L6a), so the order between one draw's front
     and back primitives is lost where they overlap (not seen in dEQP-VK); with depth clipping off, WebGPU's clamp to the viewport's
-    range stays, so a float depth past it isn't kept; `gl_Layer` isn't offered (layered passes reach their
-    later layers by load ops and clears alone), depth and stencil blits, 34 of
-    `renderpasses.*.load_store_op_none`'s 149 supported cases (VK3 L6a, after DONT_CARE stores over a partial render
-    area were made stores: WebGPU's discard is the whole attachment's): those of its 34 whose cause was a depth output
-    without a depth aspect or an integer resolve are fixed since VK4 T10 (not re-counted), 5 `*_alphablend` and
-    4 `color_load_op_load_store_op_none`/`color_load_op_none_store_op_dontcare` not looked into (none fail in VK4 T12's run of
-    the group), early fragment tests (`fragment_operations.early_fragment`: `samplemask_early_fragment_tests_depth_samples_4`
+    range stays, so a float depth past it isn't kept; `gl_Layer` from the vertex stage (VK4 T43) is drawn a layer at a
+    time, so a draw writing it is drawn once a layer (its vertex stage run as many times), a primitive whose vertices
+    disagree on the layer is clipped by the vertices of other layers (Vulkan takes the provoking vertex's), and in a
+    layered pass's later layers neither an indirect draw that needs what the first layer's pass prepares (a count, a
+    fan, draw parameters: said once) nor one whose vertex stage stores (T33's pre-pass, which ignores gl_Layer) is
+    drawn; depth and stencil blits; `renderpasses.*.load_store_op_none` passes whole (VK4 T43: its 62 cases not in the
+    list then, the 9 not looked into among them, joined it); early fragment tests (`fragment_operations.early_fragment`: `samplemask_early_fragment_tests_depth_samples_4`
     passed only while depth resolves were dropped, and is out of the list since L4f); a draw whose colour blends with both `CONSTANT_COLOR` and
     `CONSTANT_ALPHA` (WebGPU has one constant: the colour's taken, warned; 4 of the Mac's 49 supported
     `pipeline.*.blend.dual_source` samples, and the same states in `blend.format`); a storage buffer the fragment
     stage writes and the vertex stage reads (refused: no writable storage in WebGPU's vertex stage); non-indexed fans
     past 65,536 vertices not drawn (said once), indirect ones cut there, indexed indirect ones too (their list is sized
     by a fan: VK4 R4); an indirect draw with the last vertex
-    provoking drawn as it is. Alpha to coverage without a colour target at location 0, or with a fragment stage that
-    writes `sample_mask` (WebGPU takes neither), covers every sample (VK4 T28: they were refused, nothing drawn;
-    `multisample.alpha_to_coverage_no_color_attachment`, `_unused_attachment` and `query_pool.discard.*alpha_to_coverage*`
-    fail: the fragment stage's own `sample_mask` could carry the coverage). Depth and stencil resolves of every mode are drawn (VK4 T27), `D16_UNORM_S8_UINT`'s too (VK4 T30).
+    provoking drawn as it is. Alpha to coverage without a colour target at location 0, with a fragment stage that
+    writes `sample_mask` or with alpha to one is the stage's own `sample_mask` (VK4 T43), the first `round(alpha ·
+    samples)` samples where WebGPU's hardware may dither; not where the attachments' locations are remapped
+    (`VK_KHR_dynamic_rendering_local_read`'s map: WebGPU's, or none without a target). A depth bias the fragment stage
+    moves the depth for (VK4 T43: every one on D24, other representations, fractions, `depthBiasExact`) costs its
+    draws the early depth test and, without a fragment stage, a stage of its own; unmeasured on a program (a shadow
+    pass on D24 is the likeliest: DXVK's and vkd3d's depth formats are D24S8 or D32), and per pixel, not per sample, at
+    several samples; a float format's r from the fragment's own depth (Vulkan's is the primitive's largest exponent).
+    Depth and stencil resolves of every mode are drawn (VK4 T27), `D16_UNORM_S8_UINT`'s too (VK4 T30).
+  - **Polygon modes** (`fillModeNonSolid`, `extendedDynamicState3PolygonMode`; VK4 T43 looked into it, not advertised):
+    ~200 dEQP-VK cases (`rasterization.culling.*_line`/`_point`, `draw.*non_line_with_params`, `rasterization.primitive_size`,
+    `polygon_as_large_points`, `extended_dynamic_state.*polygon_mode_*`, `draw.*.depth_bias_triangle_list_line`); DXVK
+    requires the feature (with geometry shaders, which keep it out anyway), vkd3d and ANGLE use it for wireframe. The
+    kickoff's shape, a triangle draw's edges or corners as an index list a compute pass writes before the render pass
+    (as the provoking pass's lists are), is right only without culling: Vulkan culls a polygon by its facing before
+    drawing its edges, and its facing needs its vertices' positions, so the vertex stage has to run first. The shape
+    that does both is VK4 T33's pre-pass (`vsPrepass`: the stage as compute, its outputs records, a pass-through stage
+    drawing them) followed by a compute pass reading the records' positions, taking each triangle's facing with the
+    viewport (its flip) and front face, and writing a line list (each kept triangle's three edges) or a point list (its
+    corners) of the records' places for the pass-through draw (line-list or point-list topology), culled ones none: an
+    L task on T33's machinery (the pre-pass for every such draw, not only storing stages; indirect draws need their
+    counts, as T33's do). Also: flat varyings from the triangle's provoking vertex (a line's own first vertex
+    otherwise), and the depth bias of polygons drawn as lines (WebGPU refuses a bias on lines: the fragment stage's,
+    `post_text`).
   - **Usage scopes' leftovers** (VK4 T3, R2: vk/README.md "Usage scopes"): a pass or dispatch that writes storage of a
     memory it reads otherwise reads copies taken at its start. Left: writable bindings of one range, one an array of
     atomics and one not (or of signed and unsigned ones), or together past `maxStorageBufferBindingSize`, refuse their
@@ -1032,7 +1052,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     program met multisampled (DXVK, vkd3d, Godot and ANGLE render RGBA16F where they multisample). `R32G32B32_SFLOAT` (VK4 T31's rgba32float texture) met the same check, and as no
     program needs it rendered (Vulkan doesn't require it; most GPUs' drivers lack it) it is no colour attachment
     (`WG_FMT_NO_ATTACHMENT`: its blend and logic-op cases, 10 of the list, report not supported). A multisampled image of more than one layer is accepted but invalid
-    in WebGPU (no multisampled arrays; Vulkan's format query can't say so: `maxArrayLayers` is per format). The integer
+    in WebGPU (no multisampled arrays; Vulkan's format query can't say so: `maxArrayLayers` is per format):
+    `api.copy_and_blit.*.use_after_copy.*x2*_img2img_msaa` (24 of VK4 T43's run) fill a 4-sample `R32G32B32A32_SFLOAT`
+    image, invalid in WebGPU, and fail. The integer
     limits (`framebufferIntegerColorSampleCounts`, `sampledImageIntegerSampleCounts`) are 1 since L5b, as the 32-bit
     integer formats allow.
   - **A trap in the module's completion on NVIDIA** (VK3 L9b, seen once): `RuntimeError: table index is out of bounds`
@@ -1230,9 +1252,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Storage images' cases failing before T11** (VK4 T11: the same on a build without it, 27 of a sample): `robustness.image_robustness`'s
     out-of-bounds accesses (`sampled_image` of `1d_array` and `3d`, `storage_image` of `r32f`), and `memory_model.message_passing.ext`'s
     `atomicwrite` with an image as the guard (invocations seeing the guard but not the payload). Neither group is in the list.
-  - **Transfers**: VK3 L4c-F's dEQP-VK samples (`bench/vulkan/results/vk3/l4c/f-deqp/`) left, not looked into: a 4-sample
-    `b10g11r11` clear, a 3D `a2b10g10r10_uint` clear (its 10-bit channels clamped to 255),
-    `push_constant.graphics_pipeline.overwrite`.
   - **Bindings past WebGPU's** (VK3 L7a, vk/README.md "Bindings past WebGPU's"): what can't be advertised apart from
     what Vulkan counts with it is refused when a pipeline is made, saying why: a fragment stage's input attachments
     beside 16 sampled images (Vulkan counts them apart, WebGPU as textures; the device keeps Vulkan's 16 and 4: ANGLE's

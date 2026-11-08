@@ -1,0 +1,72 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "157.0.8103.38",
+ "stride": 50,
+ "offset": 0,
+ "jobs": 1,
+ "adapter": "apple metal-3",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 7981,
+ "seconds": 42.507654083000006,
+ "pipelines": {
+  "pipelines": 7858,
+  "ready": 7858,
+  "readyMs": 5179.4699993133545,
+  "deferred": 15460,
+  "deferredMs": 6971.5600036382675,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 7778,
+  "translateMs": 562.7699999999921,
+  "cacheHits": 30993,
+  "cacheMisses": 47,
+  "cacheStores": 47,
+  "cacheBytes": 43911,
+  "cacheHeld": 331525,
+  "cacheEntries": 47
+ },
+ "counts": {
+  "Pass": 7981
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-VK.rasterization.depth_bias_control.x8_d24_unorm_pack32.no_repr_info.constant.constant_depth_0_625.target_bias_0_125.dynamic_set_1_no_clamp Pass 1",
+  "dEQP-VK.rasterization.depth_bias_control.x8_d24_unorm_pack32.format_exact.constant.constant_depth_0_625.target_bias_0_0625.static_no_clamp_secondary_cmd_buffer_unspecified_fb Pass 1",
+  "dEQP-VK.rasterization.depth_bias_control.x8_d24_unorm_pack32.force_unorm_inexact.constant.constant_depth_0_125.target_bias_0_125.static_no_clamp_secondary_cmd_buffer Pass 1",
+  "dEQP-VK.rasterization.depth_bias_control.x8_d24_unorm_pack32.float_inexact.constant.constant_depth_0_625.target_bias_0_125.static_no_clamp_secondary_cmd_buffer Pass 1",
+  "dEQP-VK.rasterization.depth_bias_control.x8_d24_unorm_pack32.float_exact.constant.constant_depth_0_25.target_bias_0_125.static_no_clamp_secondary_cmd_buffer_inherit_renderpass Pass 1",
+  "dEQP-VK.rasterization.depth_bias_control.d32_sfloat_s8_uint.format_inexact.constant.constant_depth_0_3125.target_bias_0_0625.dynamic_set_2_no_clamp_secondary_cmd_buffer_unspecified_fb Pass 1",
+  "dEQP-VK.rasterization.depth_bias_control.d32_sfloat_s8_uint.format_exact.constant.constant_depth_0_125.target_bias_0_125.dynamic_set_2_no_effective_clamp Pass 1",
+  "dEQP-VK.rasterization.depth_bias_control.d32_sfloat_s8_uint.force_unorm_exact.constant.constant_depth_0_625.target_bias_0_125.static_clamp_to_half Pass 1",
+  "dEQP-VK.rasterization.depth_bias_control.d32_sfloat.no_repr_info.slope.slope_depth_1_0.target_bias_0_125.static_no_clamp Pass 1",
+  "dEQP-VK.rasterization.depth_bias_control.d32_sfloat.format_exact.slope.slope_depth_1_0.target_bias_0_125.dynamic_set_2_no_effective_clamp Pass 1"
+ ],
+ "last": "dEQP-VK.renderpasses.renderpass2.suballocation.load_store_op_none.stencil_d16_unorm_s8_uint_load_op_none_store_op_dontcare Pass 0dEQP-VK.renderpasses.renderpass2.suballocation.load_store_op_none.stencil_d16_unorm_s8_uint_load_op_none_store_op_none_write_off Pass 0dEQP-VK.renderpasses.renderpass2.suballocation.load_store_op_none.stencil_d16_unorm_s8_uint_load_op_none_store_op_store Pass 0",
+ "output": [
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    1.169854] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    1.169889] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    1.169915] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    1.169939] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    1.169969] psci_checker: Could not start suspend tests on any CPU",
+  "[   11.340882] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   41.056162] coredump: 431(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 185.8,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 21.2,
+  "arenaHighMiB": 51.2
+ },
+ "detail": [],
+ "warnings": {
+  "venus: the WebGPU device's subgroups are wrong in divergent control flow: subgroups of one invocation": 1,
+  "venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies": 1
+ }
+}

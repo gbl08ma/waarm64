@@ -793,6 +793,41 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` oth
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 T43: rendering's rest — depth bias's representations, alpha to one, alpha to coverage as the stage's mask, gl_Layer; 7,981 cases join the list
+
+2026-11-08, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t43/`.
+
+**What the items met** (`swiftshader-probe.json`: every 8th depth_bias_control case not in the list, every alpha to
+one, polygon mode, shader_layer, shader_viewport_index, alpha to coverage and load_store_op_none case not in it, the
+three transfers): 333 pass, 6 fail (the alpha to coverage cases without a colour target, with an unused one, and
+`query_pool.discard`'s), 1,359 not supported: depthBiasExact (447), floatRepresentation (147),
+leastRepresentableValueForceUnormRepresentation (141), alphaToOne (46), fillModeNonSolid and polygon modes (36),
+multiViewport (252: every shader_layer and shader_viewport_index case asks for it, WebGPU has one viewport).
+- **load_store_op_none and the transfers**: the 62 load_store_op_none cases not in the list (the backlog's 9 among
+  them) pass, and so do the three transfers (the 4-sample `b10g11r11` clear and `push_constant...overwrite` were in
+  the list already, the 3D `a2b10g10r10_uint` clear passes): fixed on the way since VK3, nothing to do.
+- **Depth bias and alpha** (wg_shader.c `post_text`: a wrapper of the fragment stage that moves its depth, sets its
+  `sample_mask` or its outputs' alpha). `bias-alpha-cases.txt` (2,407: every 4th depth_bias_control case, every
+  alpha to one, alpha to coverage and `query_pool.discard` case, every 3rd other depth bias case) with the features
+  advertised and the wrapper planted off: 1,066 fail (`swiftshader-bias-alpha-planted.json`); with it, 0
+  (`swiftshader-bias-alpha.json`). On the way: WebGPU's own integer bias failed the D24 cases (Dawn's depth24plus is a
+  float texture on SwiftShader, so its step isn't 2^-24) and the unorm exact ones (SwiftShader's step isn't exact), so
+  those go through the stage too; D24's depth and bias are added as whole words, else a bias of one step rounded
+  back to the same word in f32 (`rasterization.depth_bias.d24_unorm_constant_one_less`) or an exact 0.5 read back a
+  word low.
+- **gl_Layer** (the vertex stage's write kept, each layer's pipeline clipping other layers' primitives): dEQP-VK's
+  `shader_layer` group asks for multiViewport, so the cases are `api.copy_and_blit.*.use_after_copy`'s multi-slice
+  depth ones (`layer-cases.txt`): 96 pass (`swiftshader-layer.json`), all failing with the later layers' draws planted
+  off (`swiftshader-layer-planted.json`); their 24 `*_img2img_msaa` twins fill a 4-sample `R32G32B32A32_SFLOAT` image
+  WebGPU can't make (backlog "Sample counts Vulkan wants but WebGPU lacks").
+- **Polygon modes**: not advertised. Culling decides on a polygon's facing before its edges are drawn, which needs
+  its vertices' positions: the index list before the pass can't do it alone. Filed with its shape (T33's pre-pass and
+  a list pass after it; backlog "Polygon modes").
+
+**The list** (`cases.txt`, 7,981: every depth_bias_control case not in it, the probe's and runs' new passes): all
+pass on SwiftShader (70 s, `swiftshader.json`) and the M4 (43 s, `m4.json`); 70,852 → 78,833.
+
 ## VK4 T42: shaders' and samplers' wrong results — mixed-sign atomics, flat words, cube gathers and corners, depth's linear filter; 1,914 cases join the list
 
 2026-11-08, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
