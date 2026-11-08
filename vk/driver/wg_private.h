@@ -779,6 +779,7 @@ struct wg_pipeline_key {
       uint16_t stride;
       uint8_t instance;
       uint8_t pull;         /* read through a storage binding (wg_vertex_pull) */
+      uint32_t divisor;     /* an instance binding's divisor (VK_KHR_vertex_attribute_divisor; 0 else): not 1, pulled */
    } vb[WG_VERTEX_BINDINGS];
    struct {
       uint8_t binding, pad[3];
@@ -910,7 +911,23 @@ void wg_vertex_pull(struct wg_pipeline_key *k, uint32_t inputs, const uint64_t *
 struct wg_pull {
    struct wg_pull *next;
    uint32_t slots, group, bgl, layout;
+   /* A pulled binding has a divisor (VK4 T44): the draw's first instance read from a place of the push buffer, its draw
+    * parameters' (WGSL_DRAW_PARAMS), bound at binding WG_VERTEX_BINDINGS + 1 (`gpu_pull_bind`). */
+   bool first_instance;
+   /* A program of four groups pulls in its group 3, its bindings these on (WG_PULL_BASE: past the program's, below the
+    * driver's at 994; 0: a group of its own). */
+   uint32_t base;
 };
+#define WG_PULL_BASE 976
+/* Whether a key pulls a binding with a divisor (its fetch needs the draw's first instance). */
+static inline bool
+wg_key_divisors(const struct wg_pipeline_key *k)
+{
+   for (uint32_t b = 0; b < WG_VERTEX_BINDINGS; b++)
+      if (k->vb[b].pull && k->vb[b].instance && k->vb[b].divisor != 1)
+         return true;
+   return false;
+}
 /* The pipeline's, or NULL: nothing pulled, or no group free (four sets bound: the pipeline stays refused). */
 const struct wg_pull *wg_pipeline_pull(struct wg_program *p, const struct wg_pipeline_key *key);
 

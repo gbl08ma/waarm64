@@ -2036,6 +2036,7 @@ draw_key(struct wg_cmd_buffer *cmd, struct wg_shader *vs, struct wg_shader *fs, 
       u_foreach_bit(b, vi->bindings_valid & BITFIELD_MASK(WG_VERTEX_BINDINGS)) {
          k.vb[b].stride = dyn->vi_binding_strides[b];
          k.vb[b].instance = vi->bindings[b].input_rate == VK_VERTEX_INPUT_RATE_INSTANCE;
+         k.vb[b].divisor = k.vb[b].instance ? vi->bindings[b].divisor : 0;
       }
       u_foreach_bit(a, vi->attributes_valid & vs->info.inputs) {
          if (vi->attributes[a].binding >= WG_VERTEX_BINDINGS)
@@ -2224,6 +2225,9 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
       emit(cmd, OP_VS_ONLY, NULL, 0);
    /* Its state is applied twice, before its pre-pass and in the pass's next part: a place of the push buffer more. */
    if (p->vs_stores)
+      cmd->draws += pass_replays(cmd);
+   /* A pull with a divisor: a place for its first instance (VK4 T44). */
+   if (!p->vs_stores && wg_key_divisors(&k))
       cmd->draws += pass_replays(cmd);
    return true;
 }
@@ -2734,7 +2738,7 @@ draw_indirect(VkCommandBuffer commandBuffer, VkBuffer _buffer, VkDeviceSize offs
       if (!record_draw(cmd, indexed, face_of(faces, i), -1))
          break;
       emit(cmd, OP_DRAW_INDIRECT, &op, sizeof(op));
-      if (params)
+      if (params || wg_key_divisors(&cmd->last_key))
          cmd->draws += (count - 1) * pass_replays(cmd);
    }
    /* Captured with its arguments read at the capture (the counts here are only the most it may draw: none). */
@@ -3356,6 +3360,9 @@ struct replay {
    bool dp_valid;
    struct util_dynarray dp_places;
    uint32_t dp_next;
+   /* A pull with a divisor's first instance (VK4 T44): the place a direct draw's was written at and its value, and the
+    * place the pull's group was last bound with (UINT32_MAX: none). */
+   uint32_t fi_place, fi_value, fi_bound;
    /* Usage scopes (VK4 T3, `bind_group`): each group's op_bind and whether its group reads a shadow; the scope's uses
     * (struct scope_use) and shadows (struct shadow); `no_readback` while the scope's end binds groups again. */
    const struct op_bind *binds[2][WGSL_MAX_GROUPS];
@@ -3538,8 +3545,8 @@ static uint32_t push_place(struct wg_device *dev);
 static bool draw_params(const struct wg_program *p);
 
 static uint32_t
-prepasses(struct replay *r, const struct wg_program **prog, const uint8_t *p, const uint8_t *end, uint32_t ticket,
-          bool top)
+prepasses(struct replay *r, const struct wg_program **prog, bool *divisors, const uint8_t *p, const uint8_t *end,
+          uint32_t ticket, bool top)
 {
    while (p < end) {
       const struct op_head *h = (const void *)p;
@@ -3554,10 +3561,12 @@ prepasses(struct replay *r, const struct wg_program **prog, const uint8_t *p, co
                      o->prims);
       } else if (h->op == OP_PIPELINE) {
          *prog = ((const struct op_pipeline *)d)->program;
+         *divisors = !(*prog)->vs_stores && wg_key_divisors(&((const struct op_pipeline *)d)->key);
       } else if (h->op == OP_DRAW_INDIRECT) {
-         /* An indirect draw whose vertex stage reads its draw parameters: a place of the push buffer of its own, its
-          * arguments' base vertex and first instance copied there (the push buffer is written before the submit's
-          * commands), its draw index written with the place. */
+         /* An indirect draw whose vertex stage reads its draw parameters, or that pulls a binding with a divisor (its
+          * first instance: VK4 T44): a place of the push buffer of its own, its arguments' base vertex and first
+          * instance copied there (the push buffer is written before the submit's commands), its draw index written with
+          * the place. */
          const struct op_indirect *a = d;
          if (a->count_buffer) {
             wg_emul[WG_EMUL_PREPASSES]++;
@@ -3566,7 +3575,7 @@ prepasses(struct replay *r, const struct wg_program **prog, const uint8_t *p, co
          }
          for (uint32_t i = 0; i < a->count; i++) {
             uint32_t at = UINT32_MAX;
-            if (*prog && draw_params(*prog) && a->buffer) {
+            if (*prog && (draw_params(*prog) || *divisors) && a->buffer) {
                at = push_place(r->dev);
                gpu_copy_bb(a->buffer, a->offset + (double)i * a->stride + (a->indexed ? 12 : 8), push_buffer(r->dev),
                            at + WGSL_DRAW_PARAMS, 8);
@@ -3581,7 +3590,8 @@ prepasses(struct replay *r, const struct wg_program **prog, const uint8_t *p, co
          }
       } else if (h->op == OP_EXEC) {
          const struct wg_cmd_buffer *sec = *(struct wg_cmd_buffer *const *)d;
-         ticket = prepasses(r, prog, sec->cmds.data, (const uint8_t *)sec->cmds.data + sec->cmds.size, ticket, false);
+         ticket = prepasses(r, prog, divisors, sec->cmds.data, (const uint8_t *)sec->cmds.data + sec->cmds.size, ticket,
+                            false);
       }
    }
    return ticket;
@@ -5242,9 +5252,28 @@ apply(struct replay *r, uint32_t point)
    if (r->dirty & RD_GROUPS)
       for (uint32_t g = 0; g < r->group_count[point]; g++)
          gpu_set_bind_group(g, r->groups[point][g].group, r->groups[point][g].offsets, r->groups[point][g].n);
+   /* A pulled binding with a divisor reads the draw's first instance (VK4 T44) where its draw parameters go: an
+    * indirect draw's from the place `prepasses` copied its arguments' into, a direct one's from a place written here
+    * where it changes. */
+   uint32_t fi = UINT32_MAX;
+   if (point == 0 && r->pull && r->pull->first_instance) {
+      if (r->draw_place != UINT32_MAX) {
+         fi = r->draw_place;
+      } else {
+         if (r->fi_place == UINT32_MAX || r->fi_value != r->draw_dp[1]) {
+            r->fi_place = push_place(r->dev);
+            r->fi_value = r->draw_dp[1];
+            memcpy(r->dev->push_data + r->fi_place + WGSL_DRAW_PARAMS, (uint32_t[4]){ r->draw_dp[0], r->draw_dp[1], 0, 0 }, 16);
+         }
+         fi = r->fi_place;
+      }
+   }
    /* After the groups: its group may be an empty one of the program's, set again with them. */
-   if (point == 0 && r->pull && (r->dirty & (RD_PIPELINE | RD_GROUPS | RD_VB)))
-      gpu_pull_bind(r->pull->group, r->pull->bgl, r->pull->slots);
+   if (point == 0 && r->pull && ((r->dirty & (RD_PIPELINE | RD_GROUPS | RD_VB)) || fi != r->fi_bound)) {
+      gpu_pull_bind(r->pull->group, r->pull->bgl, r->pull->slots, fi != UINT32_MAX ? push_buffer(r->dev) : 0, fi,
+                    r->pull->base);
+      r->fi_bound = fi;
+   }
    if (point == 0 && r->pull)
       wg_emul[WG_EMUL_PULLED_DRAWS]++;
    if (point == 0 && r->dst)
@@ -5414,7 +5443,8 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          const struct wg_program *prog = r->program[0];
          if (draws) {
             struct wg_query_pool *pool = r->qpool;
-            prepasses(r, &prog, p, end, 0, true);
+            bool divisors = r->pull && r->pull->first_instance;
+            prepasses(r, &prog, &divisors, p, end, 0, true);
             scope_pass(r, p, end);
             r->qpool = pool;
          }
@@ -6215,7 +6245,8 @@ submit_now(struct wg_device *dev, uint32_t cmd_count, struct vk_command_buffer *
       wg_memory_buffer(image->mem);
    gpu_encoder();
    linear_images(dev, true, NULL);
-   struct replay r = { .dev = dev, .submit = s, .push_offset = UINT32_MAX, .draw_place = UINT32_MAX };
+   struct replay r = { .dev = dev, .submit = s, .push_offset = UINT32_MAX, .draw_place = UINT32_MAX,
+                       .fi_place = UINT32_MAX, .fi_bound = UINT32_MAX };
    uint64_t draws = 0;
    for (uint32_t i = 0; i < cmd_count; i++)
       draws += container_of(cmds[i], struct wg_cmd_buffer, vk)->draws;

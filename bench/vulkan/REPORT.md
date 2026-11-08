@@ -793,6 +793,42 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` oth
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 T44: vertex input's rest — divisors, legacy vertex attributes, pulls in a four-group program's group 3; 2,180 cases join the list
+
+2026-11-08, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t44/`.
+
+**Warm-up** (the review of T41–T43's loose end): an indirect fan refused by `words_past` left its fan tickets (and its
+records' draw-parameter places) untaken, so a later `OP_PROVOKE` draw of the pass drew through the refused fan's
+indices. Driver test `t44FanPast` (wg_test.c 124) drew the refused half before the fix; now it doesn't.
+
+**Divisors** (`VK_KHR_vertex_attribute_divisor`, the EXT; zero divisors, `maxVertexAttribDivisor` 2³²−1,
+`supportsNonZeroFirstInstance`): a binding with a divisor is pulled, its record `first + (iid - first) / divisor`, the
+first instance from a push-buffer place (an indirect draw's copied from its arguments before the pass). Of the
+divisor groups: `renderpass.vertex_attribute_divisor` 256 of 288 pass (`swiftshader-div-out.json`; the 32 others are
+`draw_indirect_byte_count`, transform feedback's: T45), two samples of the other divisor groups (every 8th, 264 cases:
+180 pass, 84 not supported, shader objects and byte counts; every 6th from the 3rd of those left, 468: 444 pass, 24
+not supported), 0 failing. Driver test `pullDivisors` (divisors 2 and 0, direct and indirect, first instances past 0)
+fails with the fetch's first instance planted out (`iid / divisor`: records 2, not 5). vkd3d's `test_instance_id`: 372
+checks, 0 failing (24 before; `vkd3d-instance-id.txt`).
+
+**`VK_EXT_legacy_vertex_attributes`**: unaligned strides and offsets pulled already (T5); a format of another numeric
+type than the shader's input now pulls, its values' bits as the input's (`vertexDecode`'s bitcast). Of the 4,080
+`vertex_input.legacy_vertex_attributes` cases, the 2,720 `_dac` ones need `VK_KHR_device_address_commands` (not
+supported); the 1,360 others all pass on SwiftShader (118 s as one list) and the M4 (23 s).
+
+**16 bindings with four groups** (T40's group 3): a program with no free group pulls in its group 3, the bindings from
+976 on, the bind group made of the program's group 3 entries and the pull's (its dynamic offsets kept). Driver test
+`pullFourSets` (pulled and ordinary draws in a layout of four sets) fails with the path planted off (the pulled draw
+refused). No dEQP-VK case seen meets it.
+
+**A pulled range past `maxStorageBufferBindingSize`**: not done (filed: docs/backlog.md "Pulled vertices' leftovers");
+the device asks for the adapter's limit, 1 GiB or more on the adapters we run.
+
+**Regressions**: the list's 2,132 `vertex_input`, instanced and divisor cases pass (`swiftshader-listed.json`).
+The 2,176 new cases pass on the M4 too (`m4-legacy.json`, `m4-divisor.json`); with the 4 API cases of the new features
+(`swiftshader-api.json`) 2,180 join the list (→ 81,013).
+
 ## VK4 T43: rendering's rest — depth bias's representations, alpha to one, alpha to coverage as the stage's mask, gl_Layer; 7,981 cases join the list
 
 2026-11-08, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,

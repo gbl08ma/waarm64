@@ -670,7 +670,7 @@ export class VenusGpu {
       },
       gpu_set_vertex_buffer(slot: number, b: number, offset: number, size: number) { const B = buf(b); later(() => { rp().setVertexBuffer(slot, B, offset, size); self.cur.vb[slot] = { b: B, offset, size }; }); },
       gpu_pull_buffer(slot: number, b: number, offset: number, size: number) { const B = buf(b); later(() => { self.cur.vb[slot] = { b: B, offset, size }; }); },
-      gpu_pull_bind(group: number, bgl: number, slots: number) { const layout = self.get<GPUBindGroupLayout>(bgl); later(() => self.pullBind(group, layout, slots)); },
+      gpu_pull_bind(group: number, bgl: number, slots: number, dpBuffer: number, dpPlace: number, base: number) { const layout = self.get<GPUBindGroupLayout>(bgl), dp = dpBuffer ? buf(dpBuffer) : undefined; later(() => self.pullBind(group, layout, slots, dp, dpPlace, base)); },
       gpu_set_index_buffer(b: number, wide: number, offset: number, size: number) { const B = buf(b); later(() => { rp().setIndexBuffer(B, wide ? 'uint32' : 'uint16', offset, size); self.cur.ib = { b: B, wide, offset, size }; }); },
       gpu_set_viewport(x: number, y: number, w: number, h: number, min: number, max: number) { later(() => rp().setViewport(x, y, w, h, min, max)); },
       gpu_set_scissor(x: number, y: number, w: number, h: number) { later(() => rp().setScissorRect(x, y, w, h)); },
@@ -1428,6 +1428,9 @@ override bit: u32 = 8u;
       }
       case 3: this.objs[id] = d.createSampler(j as GPUSamplerDescriptor); return;
       case 4: {
+        // `with`: another layout's entries first (a program's group 3 with its pulled bindings: VK4 T44).
+        if (j.with !== undefined) j.entries = [...(this.bglEntries.get(this.get<GPUBindGroupLayout>(j.with)) ?? []), ...j.entries];
+        delete j.with;
         const layout = d.createBindGroupLayout(j as GPUBindGroupLayoutDescriptor);
         this.bglEntries.set(layout, j.entries as GPUBindGroupLayoutEntry[]);
         const writable = (j.entries as Json[]).filter((e) => e.storageTexture && e.storageTexture.access !== 'read-only').map((e) => e.binding as number);
@@ -1471,11 +1474,12 @@ override bit: u32 = 8u;
           this.xfbByPipeline[id] = x && { stride: x.stride, base: x.base, words: x.words, bgls: ids(x.bgls) as GPUBindGroupLayout[], immediateSize: x.immediateSize,
             code: this.vertexCode.get(j.vertex.module), buffers: JSON.parse(JSON.stringify(j.vertex.buffers ?? [])) };
           if (j.vertex.pullGroup !== undefined) {
-            j.vertex.module = this.pulledModule(j.vertex.module, j.vertex.buffers, j.vertex.pullGroup);
+            j.vertex.module = this.pulledModule(j.vertex.module, j.vertex.buffers, j.vertex.pullGroup, j.vertex.pullBase ?? 0);
             j.vertex.buffers = j.vertex.buffers.map((b: Json | null) => (b?.pull ? null : b));
             // Bindings past WebGPU's vertex buffers are all pulled: nulls don't count, but do past the limit.
             while (j.vertex.buffers.length && !j.vertex.buffers[j.vertex.buffers.length - 1]) j.vertex.buffers.pop();
             delete j.vertex.pullGroup;
+            delete j.vertex.pullBase;
           }
           if (j.fragment) j.fragment.module = this.objs[j.fragment.module];
         } else {
@@ -1876,8 +1880,8 @@ ${vs}
    * the copy. On the GPU, in the encoder's order: the source's bytes are what earlier commands wrote.
    */
   /** A vertex stage's module with its pulled bindings' fetch (wg_shader.c `wg_vertex_pull`, VK4 T5). */
-  private pulledModule(m: GPUShaderModule, buffers: (PulledBuffer | null)[], group: number): GPUShaderModule {
-    const code = this.vertexCode.get(m), key = `${group} ${JSON.stringify(buffers)}`;
+  private pulledModule(m: GPUShaderModule, buffers: (PulledBuffer | null)[], group: number, base: number): GPUShaderModule {
+    const code = this.vertexCode.get(m), key = `${group} ${base} ${JSON.stringify(buffers)}`;
     if (!code) {
       this.warn('vertices pulled for a stage without inputs');
       return m;
@@ -1886,7 +1890,7 @@ ${vs}
     if (!made) this.pulledModules.set(m, (made = new Map()));
     let module = made.get(key);
     if (!module) {
-      const text = pulledCode(code, buffers, group);
+      const text = pulledCode(code, buffers, group, base);
       module = this.device!.createShaderModule({ code: text });
       made.set(key, module);
       void module.getCompilationInfo().then((info) => {
@@ -1899,8 +1903,10 @@ ${vs}
 
   /** The pipeline's pulled bindings' group (wg_pull's, its bindings the slots' and `PULL_SLOTS` the bytes each slot's range starts
    * past a storage offset WebGPU takes), from the ranges the driver last gave: to the end of each buffer's range, a
-   * whole number of words, as much of it as WebGPU's storage binding reaches. */
-  private pullBind(group: number, layout: GPUBindGroupLayout, slots: number) {
+   * whole number of words, as much of it as WebGPU's storage binding reaches. A pull with a divisor (VK4 T44) also binds
+   * the push buffer's place `dpPlace` of `dp`, the draw's parameters past its push constants (its first instance). A
+   * program of four groups pulls in its group 3 (VK4 T44), the bindings `base` on: that group's entries and these. */
+  private pullBind(group: number, layout: GPUBindGroupLayout, slots: number, dp: GPUBuffer | undefined, dpPlace: number, base: number) {
     const d = this.device!, align = d.limits.minStorageBufferOffsetAlignment, into = new Uint32Array(PULL_SLOTS);
     const entries: GPUBindGroupEntry[] = [];
     for (let slot = 0; slot < PULL_SLOTS; slot++) {
@@ -1913,11 +1919,18 @@ ${vs}
       if (from + 4 > v.b.size) from = Math.max(0, from - align);
       into[slot] = v.offset - from;
       const size = Math.max(Math.min(Math.ceil((v.offset - from + v.size) / 4) * 4, v.b.size - from, d.limits.maxStorageBufferBindingSize), 4);
-      entries.push({ binding: slot, resource: { buffer: v.b, offset: from, size } });
+      entries.push({ binding: base + slot, resource: { buffer: v.b, offset: from, size } });
     }
     const [u, at] = this.scratch(UNIFORM | COPY_DST, into.byteLength);
     d.queue.writeBuffer(u, at, into);
-    entries.push({ binding: PULL_SLOTS, resource: { buffer: u, offset: at, size: into.byteLength } });
+    entries.push({ binding: base + PULL_SLOTS, resource: { buffer: u, offset: at, size: into.byteLength } });
+    if (dp) entries.push({ binding: base + PULL_SLOTS + 1, resource: { buffer: dp, offset: dpPlace, size: PULL_DRAW_PARAMS + 16 } });
+    if (base) {
+      const cur = this.cur.groups[group], last = cur && this.groupEntries.get(cur.g);
+      if (!last) { this.warn('vertices pulled in group 3 without its bind group'); return; }
+      (this.pass as GPURenderPassEncoder).setBindGroup(group, d.createBindGroup({ layout, entries: [...last.entries, ...entries] }), cur.offsets);
+      return;
+    }
     (this.pass as GPURenderPassEncoder).setBindGroup(group, d.createBindGroup({ layout, entries }));
   }
 
@@ -3261,7 +3274,7 @@ function vertexFetch(code: string, buffers: (Json | null)[], params: string): { 
     if (!b || !b.attributes?.length) return;
     slots.push(slot);
     for (const a of b.attributes as Json[]) {
-      const at = `(${params}.vbd${slot} + ${b.stepMode === 'instance' ? 'iid' : 'vid'} * ${b.arrayStride}u + ${a.offset}u)`;
+      const at = `(${params}.vbd${slot} + ${recordIndex(b as { stepMode: string; divisor?: number }, `${params}.firstInstance`)} * ${b.arrayStride}u + ${a.offset}u)`;
       const T = base[a.shaderLocation];
       const v = T && vertexDecode(a.format as string, (k: number) => `wgx_ld(${at} + ${k}u)`, T);
       if (v) fetch += `  i.a${a.shaderLocation} = ${v};\n`;
@@ -3277,29 +3290,42 @@ function vertexFetch(code: string, buffers: (Json | null)[], params: string): { 
 const PULL_SLOTS = 16;
 
 /** A render pipeline's vertex buffer as its JSON gives it (`pull`: read from a storage binding). */
-type PulledBuffer = { pull?: boolean; arrayStride: number; stepMode: string; attributes: { format: string; offset: number; shaderLocation: number }[] };
+type PulledBuffer = { pull?: boolean; arrayStride: number; stepMode: string; divisor?: number; attributes: { format: string; offset: number; shaderLocation: number }[] };
+/** Where the push buffer's place holds a draw's parameters (wgsl.h `WGSL_DRAW_PARAMS`: base vertex, first instance, draw index). */
+const PULL_DRAW_PARAMS = 128;
+
+/** The record a binding's attributes are read from: the vertex's, or the instance's (`iid`, which counts from the draw's
+ * first instance `first`), past a divisor (VK4 T44: Vulkan's `first + (iid - first) / divisor`, 0 the first's for all). */
+function recordIndex(b: { stepMode: string; divisor?: number }, first: string): string {
+  if (b.stepMode !== 'instance') return 'vid';
+  if (b.divisor === undefined || b.divisor === 1) return 'iid';
+  return b.divisor === 0 ? first : `(${first} + (iid - ${first}) / ${b.divisor}u)`;
+}
 
 /** What a vertex stage's entry point starts with where it takes vertex inputs (wgsl_print.c). */
 const PULLED_ENTRY = 'iid: u32, i: In) -> Out {\n  wg_vs(vid, iid, i);';
 
 /** A vertex stage's WGSL with the bindings marked `pull` (the render pipeline's JSON, by slot) read from storage
  * bindings of `group` (`pullBind`) instead of vertex buffers: its other attributes come in as before, in a struct of
- * their own (`In` no longer the entry point's, its @location attributes ignored), and `wg_vs` is given both. */
-export function pulledCode(code: string, buffers: (PulledBuffer | null)[], group: number): string {
+ * their own (`In` no longer the entry point's, its @location attributes ignored), and `wg_vs` is given both. The
+ * bindings from `first` on (a program's group 3: VK4 T44). */
+export function pulledCode(code: string, buffers: (PulledBuffer | null)[], group: number, first = 0): string {
   const declared = [...code.matchAll(/^ {2}@location\((\d+)\) a\d+: vec4<(f32|i32|u32)>,$/gm)];
   const base: Record<number, string> = {};
   for (const m of declared) base[Number(m[1])] = m[2];
   const pulled = new Set<number>();
-  const lines = [`@group(${group}) @binding(${PULL_SLOTS}) var<uniform> wgv_at: array<vec4<u32>, ${PULL_SLOTS / 4}>;`];
+  const lines = [`@group(${group}) @binding(${first + PULL_SLOTS}) var<uniform> wgv_at: array<vec4<u32>, ${PULL_SLOTS / 4}>;`];
+  if (buffers.some((b) => b?.pull && b.stepMode === 'instance' && b.divisor !== undefined && b.divisor !== 1))
+    lines.push(`@group(${group}) @binding(${first + PULL_SLOTS + 1}) var<uniform> wgv_dp: array<vec4<u32>, ${PULL_DRAW_PARAMS / 16 + 1}>;`);
   let fetch = '';
   buffers.forEach((b, slot) => {
     if (!b?.pull) return;
-    lines.push(`@group(${group}) @binding(${slot}) var<storage, read> wgv_b${slot}: array<u32>;`);
+    lines.push(`@group(${group}) @binding(${first + slot}) var<storage, read> wgv_b${slot}: array<u32>;`);
     // Past the bound range (a draw reading past its buffer's end, which Vulkan's robust buffer access allows: VK4 T37), 0.
     lines.push(`fn wgv_ld${slot}(b: u32) -> u32 { let w = b >> 2u; let s = (b & 3u) * 8u; let n = arrayLength(&wgv_b${slot}); let lo = select(0u, wgv_b${slot}[w], w < n); if (s == 0u) { return lo; } return (lo >> s) | (select(0u, wgv_b${slot}[w + 1u], w + 1u < n) << (32u - s)); }`);
     for (const a of b.attributes) {
       pulled.add(a.shaderLocation);
-      const at = `(wgv_at[${slot >> 2}u][${slot & 3}u] + ${b.stepMode === 'instance' ? 'iid' : 'vid'} * ${b.arrayStride}u + ${a.offset}u)`;
+      const at = `(wgv_at[${slot >> 2}u][${slot & 3}u] + ${recordIndex(b, `wgv_dp[${PULL_DRAW_PARAMS / 16}u].y`)} * ${b.arrayStride}u + ${a.offset}u)`;
       fetch += `  i.a${a.shaderLocation} = ${vertexDecode(a.format, (k) => `wgv_ld${slot}(${at} + ${k}u)`, base[a.shaderLocation])};\n`;
     }
   });
@@ -3327,8 +3353,12 @@ export function vertexDecode(format: string, word: (byte: number) => string, T: 
     }
   };
   let comps: string[];
+  // The format's own type: where the shader's input is of another (VK_EXT_legacy_vertex_attributes, VK4 T44), its bits.
+  const own = (kind: string) => (kind === 'uint' ? 'u32' : kind === 'sint' ? 'i32' : 'f32');
+  let natural = 'f32';
   const packed = /^(uint|sint|unorm|snorm|uscaled|sscaled)10-10-10-2/.exec(format);
   if (packed) {
+    natural = own(packed[1]);
     const w = word(0);
     comps = [0, 10, 20, 30].map((o) => {
       const bits = o === 30 ? 2 : 10;
@@ -3338,6 +3368,7 @@ export function vertexDecode(format: string, word: (byte: number) => string, T: 
     const m = /^(uint|sint|unorm|snorm|uscaled|sscaled|float)(8|16|32)(?:x([234]))?/.exec(format);
     if (!m) return undefined;
     const kind = m[1], bits = Number(m[2]), n = Number(m[3] ?? 1);
+    natural = own(kind);
     comps = Array.from({ length: n }, (_, k) => {
       const w = bits === 32 ? word(4 * k) : bits === 16 ? word(4 * (k >> 1)) : word(0);
       const off = bits === 32 ? 0 : bits === 16 ? 16 * (k & 1) : 8 * k;
@@ -3348,7 +3379,8 @@ export function vertexDecode(format: string, word: (byte: number) => string, T: 
   }
   if (bgra) [comps[0], comps[2]] = [comps[2], comps[0]];
   const one = T === 'f32' ? '1.0' : T === 'i32' ? '1i' : '1u', zero = T === 'f32' ? '0.0' : T === 'i32' ? '0i' : '0u';
-  return `vec4<${T}>(${[0, 1, 2, 3].map((k) => (comps[k] ? `${T}(${comps[k]})` : k === 3 ? one : zero)).join(', ')})`;
+  const cast = natural === T ? T : `bitcast<${T}>`;
+  return `vec4<${T}>(${[0, 1, 2, 3].map((k) => (comps[k] ? `${cast}(${comps[k]})` : k === 3 ? one : zero)).join(', ')})`;
 }
 
 /** Linear filtering of a blit's source (`t`), clamped to its edges, for formats WebGPU doesn't filter. */

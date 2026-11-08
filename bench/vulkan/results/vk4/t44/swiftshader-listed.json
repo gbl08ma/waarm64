@@ -1,0 +1,73 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "155.0.8059.84",
+ "stride": 50,
+ "offset": 0,
+ "jobs": 2,
+ "adapter": "google swiftshader",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 2132,
+ "seconds": 133.129105214,
+ "pipelines": {
+  "pipelines": 2355,
+  "ready": 2355,
+  "readyMs": 19293.124999582767,
+  "deferred": 4276,
+  "deferredMs": 37830.210001170635,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 2392,
+  "translateMs": 1919.3299999999972,
+  "cacheHits": 5071,
+  "cacheMisses": 3955,
+  "cacheStores": 3955,
+  "cacheBytes": 4682500,
+  "cacheHeld": 45498302,
+  "cacheEntries": 3955
+ },
+ "counts": {
+  "Pass": 2132
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-VK.draw.renderpass.instanced.draw_indirect_vk_primitive_topology_triangle_fan_multiview Pass 2",
+  "dEQP-VK.draw.renderpass.instanced.draw_indexed_vk_primitive_topology_triangle_fan Pass 2",
+  "dEQP-VK.draw.renderpass.instanced.draw_indexed_vk_primitive_topology_line_strip Pass 2",
+  "dEQP-VK.draw.renderpass.instanced.draw_indexed_indirect_vk_primitive_topology_triangle_fan_multiview Pass 2",
+  "dEQP-VK.draw.renderpass.instanced.draw_indexed_indirect_vk_primitive_topology_triangle_fan Pass 2",
+  "dEQP-VK.draw.dynamic_rendering.primary_cmd_buff.instanced.draw_indirect_vk_primitive_topology_triangle_fan_multiview Pass 2",
+  "dEQP-VK.draw.dynamic_rendering.primary_cmd_buff.instanced.draw_indirect_vk_primitive_topology_triangle_fan Pass 2",
+  "dEQP-VK.draw.dynamic_rendering.primary_cmd_buff.instanced.draw_indexed_indirect_vk_primitive_topology_triangle_fan_multiview Pass 2",
+  "dEQP-VK.draw.dynamic_rendering.primary_cmd_buff.instanced.draw_indexed_indirect_vk_primitive_topology_triangle_fan Pass 2",
+  "dEQP-VK.draw.dynamic_rendering.primary_cmd_buff.instanced.draw_indexed_indirect_vk_primitive_topology_line_list_multiview_maintenance_5 Pass 2"
+ ],
+ "last": "dEQP-VK.pipeline.monolithic.vertex_input.single_attribute.vec4.as_r8g8b8a8_sscaled_rate_instance Pass 0dEQP-VK.pipeline.monolithic.vertex_input.single_attribute.vec4.as_r8g8b8a8_unorm_rate_vertex Pass 0dEQP-VK.pipeline.monolithic.vertex_input.single_attribute.vec4.as_r8g8b8a8_uscaled_rate_instance Pass 0",
+ "output": [
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!",
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    1.170314] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    1.170510] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    1.170542] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    1.170564] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    1.170599] psci_checker: Could not start suspend tests on any CPU",
+  "[   12.105827] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   27.300250] coredump: 425(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 169.8,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 16.3,
+  "arenaHighMiB": 50.9
+ },
+ "detail": [],
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1
+ }
+}

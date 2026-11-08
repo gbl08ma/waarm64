@@ -964,10 +964,23 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   first group without resources: past the program's, or an empty one below its push buffer's group 3. The replay
   (`apply`) gives the worker the ranges (`gpu_pull_buffer`, also for any bound offset no vertex buffer can take, unread
   or not) and has it set the group after the program's groups, which may have set an empty one there (`gpu_pull_bind`,
-  a bind group per change of the ranges); a pipeline after a pulling one sets its groups again. Usage scopes see a
-  vertex read as before, so shadows serve it. Transform feedback reads the same ranges. Refused still: a program with
-  no group free (four sets; said once on stderr), and more pulled bindings than the vertex stage has storage buffers
-  left. A range past `maxStorageBufferBindingSize` is cut there. Formats WebGPU's vertex buffers lack (VK4 T31: three
+  a bind group per change of the ranges); a pipeline after a pulling one sets its groups again. A program with no
+  group free (four groups) pulls in its group 3 (VK4 T44): the bindings from 976 on (`WG_PULL_BASE`, past the
+  program's, below the driver's 994–999) in a layout of group 3's entries and these (the BGL JSON's `with`), the bind
+  group made of the program's group 3 entries and the pull's at each bind (`pullBind`, the program's dynamic offsets
+  kept). Usage scopes see a
+  vertex read as before, so shadows serve it. Transform feedback reads the same ranges. Refused still: a program whose
+  group 3 bindings reach 976, and more pulled bindings than the vertex stage has storage buffers
+  left. A range past `maxStorageBufferBindingSize` is cut there. **Divisors** (VK4 T44, `VK_KHR_vertex_attribute_divisor`
+  and the EXT, `vertexAttributeInstanceRateZeroDivisor`, `maxVertexAttribDivisor` 2³²−1): an instance binding whose
+  divisor isn't 1 is pulled, its record Vulkan's `first + (iid - first) / divisor` (the first instance's for 0;
+  `recordIndex`), the first instance read from a place of the push buffer as draw parameters are (`WGSL_DRAW_PARAMS`,
+  bound in the pull's group at binding 17, `gpu_pull_bind`'s `dp_place`): a direct draw's written where it changes, an
+  indirect draw's copied from its arguments before the pass (`prepasses`, a place a record); a storing stage's
+  pre-pass and a capture take it from their parameters. **`VK_EXT_legacy_vertex_attributes`** (VK4 T44): unaligned
+  strides and offsets already pull; a format of another numeric type than the shader's input
+  (`wgsl_info.input_base`) pulls too, its decoded values' bits as the input's type (`vertexDecode`'s `bitcast`;
+  `nativeUnalignedPerformance` false). Formats WebGPU's vertex buffers lack (VK4 T31: three
   channels of 8 or 16 bits, the scaled ones, BGRA's and the 10-bit packed ones of every type) always pull their binding
   (`wg_vertex_format_pulled`), decoded by `vertexDecode` from names of the fetch's own (`uscaled8x3`, `snorm10-10-10-2-bgra`).
 - **Draws through indices of their own** (VK3 L7.4): the provoking vertex's last (`VK_EXT_provoking_vertex`,

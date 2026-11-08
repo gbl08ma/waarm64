@@ -32,8 +32,8 @@ after(async () => { await browser?.close(); close?.(); });
 
 test('the driver draws a scene, runs a compute pass and fills host-visible memory, read back before its fence', { skip, timeout: 120_000 }, async (t) => {
   const out = join(root, 'target/vk/test');
-  mkdirSync(out, { recursive: true });
-  for (const [src, name] of [['tests/venus/driver.vert', 'driver.vert'], ['tests/venus/driver.frag', 'driver.frag'], ['tests/venus/driver.comp', 'driver.comp'], ['bench/vulkan/costs/costs.frag', 'costs.frag'], ['tests/venus/flat.vert', 'flat.vert'], ['tests/venus/flat.frag', 'flat.frag'], ['tests/venus/xfb.vert', 'xfb.vert'], ['tests/venus/xfb-many.vert', 'xfb-many.vert'], ['tests/venus/draw-params.vert', 'draw-params.vert'], ['tests/venus/vertex-pull.vert', 'vertex-pull.vert'], ['tests/venus/vertex-pull-fixed.vert', 'vertex-pull-fixed.vert'], ['tests/venus/vertex-pull.frag', 'vertex-pull.frag'], ['tests/venus/vertex-pull0.frag', 'vertex-pull0.frag'], ['tests/venus/l7b/angle-ubo.vert', 'angle-ubo.vert'], ['tests/venus/l7b/angle-ubo.frag', 'angle-ubo.frag'], ['tests/venus/t40/xfb-four.vert', 'xfb-four.vert']]) {
+  mkdirSync(join(out, 't44'), { recursive: true });
+  for (const [src, name] of [['tests/venus/driver.vert', 'driver.vert'], ['tests/venus/driver.frag', 'driver.frag'], ['tests/venus/driver.comp', 'driver.comp'], ['bench/vulkan/costs/costs.frag', 'costs.frag'], ['tests/venus/flat.vert', 'flat.vert'], ['tests/venus/flat.frag', 'flat.frag'], ['tests/venus/xfb.vert', 'xfb.vert'], ['tests/venus/xfb-many.vert', 'xfb-many.vert'], ['tests/venus/draw-params.vert', 'draw-params.vert'], ['tests/venus/vertex-pull.vert', 'vertex-pull.vert'], ['tests/venus/vertex-pull-fixed.vert', 'vertex-pull-fixed.vert'], ['tests/venus/vertex-pull.frag', 'vertex-pull.frag'], ['tests/venus/vertex-pull0.frag', 'vertex-pull0.frag'], ['tests/venus/l7b/angle-ubo.vert', 'angle-ubo.vert'], ['tests/venus/l7b/angle-ubo.frag', 'angle-ubo.frag'], ['tests/venus/t40/xfb-four.vert', 'xfb-four.vert'], ['tests/venus/t44/four-sets.frag', 't44/four-sets.frag']]) {
     const r = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${name}.spv`), join(root, src)], { encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
   }
@@ -234,6 +234,9 @@ for (const [scenario, what, want] of [
   ['pullOffsets', 'one layout bound at four offsets', { topLeft: [255, 0, 0, 255], topRight: [0, 255, 0, 255], bottomLeft: [255, 255, 0, 255], bottomRight: [255, 255, 255, 255] }],
   // VK4 T37: draws reading past their bindings' ends, pulled (zeros past them).
   ['pullPastEnd', 'draws reading their vertex and instance bindings past the buffer\'s end', { topLeft: [0, 255, 0, 255], topRight: [0, 0, 0, 255], bottomLeft: blue, bottomRight: blue }],
+  // VK4 T44: pulled vertices in a program of four groups (group 3 shared), and divisors (records 5, 5, 3 and 0).
+  ['pullFourSets', 'pulled draws beside an ordinary one in a layout of four sets', { topLeft: [0, 255, 0, 255], topRight: [255, 0, 0, 255], bottomLeft: [0, 255, 0, 255], bottomRight: [0, 0, 255, 255] }],
+  ['pullDivisors', 'instance bindings with divisors of 2 and 0, direct and indirect, from first instances past 0', { topLeft: [255, 0, 0, 255], topRight: [255, 0, 0, 255], bottomLeft: [128, 0, 0, 255], bottomRight: [200, 0, 0, 255] }],
 ] as const) {
   test(`passes: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which compiled the shaders.

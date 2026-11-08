@@ -128,6 +128,13 @@ wg_caps_extensions(struct vk_device_extension_table *e)
        * set, those the key reads. A depth bias is in the format's units only (WebGPU's integer `depthBias`). */
       .EXT_extended_dynamic_state3 = true,
       .EXT_vertex_input_dynamic_state = true,
+      /* A binding with a divisor is pulled (VK4 T44, wg_shader.c `wg_vertex_pull`): its record `first + (iid - first) /
+       * divisor`, the first instance from the draw's parameters' place. */
+      .KHR_vertex_attribute_divisor = true,
+      .EXT_vertex_attribute_divisor = true,
+      /* Unaligned strides and offsets, and formats of another numeric type than the shader's input: pulled (VK4 T44),
+       * the values' bits as the input's type (web/venus-gpu.ts `vertexDecode`). */
+      .EXT_legacy_vertex_attributes = true,
       .EXT_depth_bias_control = true,
       /* A cube's linear filter kept to the face from fetches (wgsl_sampler.c, VK4 T28). */
       .EXT_non_seamless_cube_map = true,
@@ -310,6 +317,9 @@ wg_caps_features(struct vk_features *f)
       .extendedDynamicState3ColorWriteMask = true,
       .extendedDynamicState3ProvokingVertexMode = true,
       .vertexInputDynamicState = true,
+      .vertexAttributeInstanceRateDivisor = true,
+      .vertexAttributeInstanceRateZeroDivisor = true,
+      .legacyVertexAttributes = true,
       .depthBiasControl = true,
       /* Another representation than the format's, or a fraction of its step, moves the fragment's depth in the
        * fragment stage (VK4 T43, wg_shader.c `post_text`); r is always the format's least step, so exact. */
@@ -441,6 +451,9 @@ wg_caps_properties(struct vk_properties *p)
    p->maxVertexInputBindings = storage >= WG_VERTEX_BINDINGS - 8 ? WG_VERTEX_BINDINGS : MIN2(L->max_vertex_buffers, 8);
    p->maxVertexInputAttributeOffset = L->max_vertex_buffer_array_stride - 1;
    p->maxVertexInputBindingStride = L->max_vertex_buffer_array_stride;
+   p->maxVertexAttribDivisor = UINT32_MAX;
+   p->supportsNonZeroFirstInstance = true;
+   p->nativeUnalignedPerformance = false;
    p->maxVertexOutputComponents = 4 * L->max_inter_stage_shader_variables;
    p->maxFragmentInputComponents = 4 * L->max_inter_stage_shader_variables;
    p->maxFragmentOutputAttachments = L->max_color_attachments;

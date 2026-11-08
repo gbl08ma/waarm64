@@ -1423,13 +1423,21 @@ wgt_draw_params(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint3
  *    VK4 T37): top left, a stride of 8 bound 44 bytes before the buffer's end, 6 vertices (the last one's colour past
  *    it), green; top right, corners from an ordinary binding and the colour from an instance binding of R8_UNORM bound
  *    4 bytes before the end, a first instance of 4 (past it: black).
+ * 5: scenario 2's draws in a layout of four sets (`fs` four-sets.frag reads each), so no group is free for pulled
+ *    vertices but its group 3 (VK4 T44): top left not pulled, top right pulled, bottom left not again.
+ * 6: instance bindings with divisors (VK4 T44: VK_KHR_vertex_attribute_divisor), the colour from an R8_UNORM instance
+ *    binding of stride 1 at an odd offset, whose records 0 to 5 are 200, 16, 64, 128, 32, 255: top left, a divisor of 2
+ *    and a first instance of 5 (record 5, not 5 / 2); top right likewise indirectly; bottom left, a divisor of 0 and
+ *    two instances from 3 (both record 3: the second drawn over the first); bottom right, a divisor of 2 and two
+ *    instances from 0 (both record 0).
  */
 static struct {
    VkPipeline pipeline[4];
    VkBuffer vb, ib, args;
    uint8_t *map;
    uint32_t scenario;
-   VkPipelineLayout sets2;
+   VkPipelineLayout sets2, sets4;
+   uint32_t *args_map;
 } pull;
 
 static const uint8_t pull_corner[6][2] = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 0 }, { 1, 1 }, { 0, 1 } };
@@ -1477,11 +1485,26 @@ pull_record(VkCommandBuffer cmd, bool in_pass)
       CmdDraw(cmd, 6, 1, 0, 7);
       CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[1]);
       CmdDraw(cmd, 6, 1, 0, 9);
-   } else if (pull.scenario == 2) {
+   } else if (pull.scenario == 6) {
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.pipeline[3]);
+      const VkBuffer two[2] = { pull.vb, pull.vb };
+      const VkDeviceSize places[2] = { at[3], 28673 };
+      CmdBindVertexBuffers(cmd, 0, 2, two, places);
+      CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[0]);
+      CmdDraw(cmd, 6, 1, 0, 5);
+      CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[1]);
+      CmdDrawIndirect(cmd, pull.args, 0, 1, 16);
+      CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[3]);
+      CmdDraw(cmd, 6, 2, 0, 0);
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.pipeline[2]);
+      CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[2]);
+      CmdDraw(cmd, 6, 2, 0, 3);
+   } else if (pull.scenario == 2 || pull.scenario == 5) {
       const VkViewport quarter[3] = { { 0, 0, 32, 32, 0, 1 }, { 32, 0, 32, 32, 0, 1 }, { 0, 32, 32, 32, 0, 1 } };
-      const uint32_t offsets[2] = { 0, 0 };
-      const VkDescriptorSet sets[2] = { scene.set, scene.set };
-      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.sets2, 0, 2, sets, 2, offsets);
+      const uint32_t offsets[4] = { 0, 0, 0, 0 };
+      const VkDescriptorSet sets[4] = { scene.set, scene.set, scene.set, scene.set };
+      const uint32_t n = pull.scenario == 5 ? 4 : 2;
+      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, n == 4 ? pull.sets4 : pull.sets2, 0, n, sets, n, offsets);
       CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.pipeline[1]);
       CmdBindVertexBuffers(cmd, 0, 1, &pull.vb, &whole);
       CmdSetViewport(cmd, 0, 1, &quarter[0]);
@@ -1554,14 +1577,20 @@ wgt_pull(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_
          return 1;
       for (uint16_t i = 0; i < 6; i++)
          idx[i] = i;
-      memcpy(args, (uint32_t[4]){ 6, 1, 0, 0 }, 16);
+      pull.args_map = args;
       VkDescriptorSetLayout layouts[2] = { scene.set_layout, scene.set_layout };
       const VkPushConstantRange range = { VK_SHADER_STAGE_VERTEX_BIT, 0, 16 };
       const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 2,
                                                .pSetLayouts = layouts, .pushConstantRangeCount = 1,
                                                .pPushConstantRanges = &range };
       CHECK(CreatePipelineLayout(dev, &pli, NULL, &pull.sets2));
+      VkDescriptorSetLayout four[4] = { scene.set_layout, scene.set_layout, scene.set_layout, scene.set_layout };
+      VkPipelineLayoutCreateInfo pli4 = pli;
+      pli4.setLayoutCount = 4;
+      pli4.pSetLayouts = four;
+      CHECK(CreatePipelineLayout(dev, &pli4, NULL, &pull.sets4));
    }
+   memcpy(pull.args_map, scenario == 6 ? (uint32_t[4]){ 6, 1, 0, 5 } : (uint32_t[4]){ 6, 1, 0, 0 }, 16);
    memset(pull.map, 0, 32768);
    pull.scenario = scenario;
    /* Each shape's bindings and attributes (location 0 the corner, 1 the colour). */
@@ -1594,6 +1623,21 @@ wgt_pull(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_
          own[1].module = fs2_module;
          gpi.layout = pull.sets2;
       }
+      if (scenario == 5)
+         gpi.layout = pull.sets4;
+      /* Scenario 6: binding 1's divisor, 2 (pipeline 3) or 0 (pipeline 2, shape 3's). */
+      const VkVertexInputBindingDivisorDescriptionKHR divisor = { 1, i == 3 ? 2 : 0 };
+      const VkPipelineVertexInputDivisorStateCreateInfoKHR divided = {
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO_KHR, .vertexBindingDivisorCount = 1,
+         .pVertexBindingDivisors = &divisor };
+      VkPipelineVertexInputStateCreateInfo vis_divided = vis;
+      if (scenario == 6 && i >= 2) {
+         vis_divided.pVertexBindingDescriptions = shapes[3].b;
+         vis_divided.vertexBindingDescriptionCount = shapes[3].bindings;
+         vis_divided.pVertexAttributeDescriptions = shapes[3].a;
+         vis_divided.pNext = &divided;
+         gpi.pVertexInputState = &vis_divided;
+      }
       gpi.pStages = own;
       CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &pull.pipeline[i]));
    }
@@ -1614,7 +1658,7 @@ wgt_pull(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_
       pull_stride7(0, PULL_RED);
       /* The indexed draw's base vertex of 3: its quad from the fourth stride. */
       for (uint32_t i = 0; i < 6; i++) {
-         const uint32_t at = 8192 + (scenario == 2 ? 0 : 2 + 8 * 3) + 8 * i, green = PULL_GREEN;
+         const uint32_t at = 8192 + (scenario == 2 || scenario == 5 ? 0 : 2 + 8 * 3) + 8 * i, green = PULL_GREEN;
          pull.map[at] = pull_corner[i][0] * 255;
          pull.map[at + 1] = pull_corner[i][1] * 255;
          memcpy(pull.map + at + 4, &green, 4);
@@ -1626,6 +1670,8 @@ wgt_pull(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_
          pull.map[24576 + 8 * i + 1] = pull_corner[i][1] * 255;
       }
       pull.map[28673 + 2] = 128;
+      if (scenario == 6)
+         memcpy(pull.map + 28673, (const uint8_t[6]){ 200, 16, 64, 128, 32, 255 }, 6);
    }
    draw_custom = pull_record;
    const int r = draw_with(NULL, 0, 0, pull.pipeline[0]);

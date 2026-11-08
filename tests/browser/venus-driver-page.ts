@@ -354,7 +354,7 @@ export async function runInFlight(scenario: 'upload' | 'since') {
  * (`wgt_variant`, the out-of-context review of the driver): the scene's pipeline as an unrestarted strip, without a
  * fragment shader, as lines with depth bias. Named pixels of the image, and WebGPU's errors.
  */
-export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'facesUnused' | 'facesSplit' | 'flatLast' | 'flatFanLast' | 'flatFanFirst' | 'flatFanOdd' | 'flatListOdd' | 'flatRestart' | 'angleUniforms' | 'drawParams' | 'pullLayouts' | 'pullDrawParams' | 'pullGroups' | 'pullOffsets' | 'pullPastEnd' | 'xfbList' | 'xfbOverflow' | 'xfbStrip' | 'xfbResume' | 'xfbMany' | 'xfbIndirect' | 'xfbIndexedIndirect' | 'xfbNullColors' | 'xfbPasses' | 'xfbPulled' | 'xfbFourGroups') {
+export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'facesUnused' | 'facesSplit' | 'flatLast' | 'flatFanLast' | 'flatFanFirst' | 'flatFanOdd' | 'flatListOdd' | 'flatRestart' | 'angleUniforms' | 'drawParams' | 'pullLayouts' | 'pullDrawParams' | 'pullGroups' | 'pullOffsets' | 'pullPastEnd' | 'pullFourSets' | 'pullDivisors' | 'xfbList' | 'xfbOverflow' | 'xfbStrip' | 'xfbResume' | 'xfbMany' | 'xfbIndirect' | 'xfbIndexedIndirect' | 'xfbNullColors' | 'xfbPasses' | 'xfbPulled' | 'xfbFourGroups') {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -439,11 +439,12 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
       if (ex.wgt_draw_params(dv, dvn, ff, ffn, adapter.features.has('indirect-first-instance') ? 1 : 0)) return { error: text(ex.wgt_error() >>> 0), errors };
       await wait(() => ex.wgt_draw_done(), 'the draws');
       at = ex.wgt_pixels() >>> 0;
-    } else if (scenario === 'pullLayouts' || scenario === 'pullDrawParams' || scenario === 'pullGroups' || scenario === 'pullOffsets' || scenario === 'pullPastEnd') {
-      // VK4 T5: vertex layouts WebGPU's vertex buffers refuse (wg_test.c's wgt_pull).
-      const [pv, pvn] = put(await words(`/target/vk/test/vertex-pull${scenario === 'pullGroups' ? '-fixed' : ''}.vert.spv`)), [ff, ffn] = put(await words(`/target/vk/test/${scenario === 'pullGroups' ? 'vertex-pull0' : 'flat'}.frag.spv`)), [pf, pfn] = put(await words('/target/vk/test/vertex-pull.frag.spv'));
+    } else if (scenario === 'pullLayouts' || scenario === 'pullDrawParams' || scenario === 'pullGroups' || scenario === 'pullOffsets' || scenario === 'pullPastEnd' || scenario === 'pullFourSets' || scenario === 'pullDivisors') {
+      // VK4 T5: vertex layouts WebGPU's vertex buffers refuse (wg_test.c's wgt_pull); VK4 T44: four sets, divisors.
+      const fixed = scenario === 'pullGroups' || scenario === 'pullFourSets';
+      const [pv, pvn] = put(await words(`/target/vk/test/vertex-pull${fixed ? '-fixed' : ''}.vert.spv`)), [ff, ffn] = put(await words(`/target/vk/test/${scenario === 'pullGroups' ? 'vertex-pull0' : scenario === 'pullFourSets' ? 't44/four-sets' : 'flat'}.frag.spv`)), [pf, pfn] = put(await words('/target/vk/test/vertex-pull.frag.spv'));
       new Uint8Array(memory.buffer, ex.wgt_pixels() >>> 0, 64 * 64 * 4).fill(0);
-      if (ex.wgt_pull(['pullLayouts', 'pullDrawParams', 'pullGroups', 'pullOffsets', 'pullPastEnd'].indexOf(scenario), pv, pvn, ff, ffn, pf, pfn)) return { error: text(ex.wgt_error() >>> 0), errors };
+      if (ex.wgt_pull(['pullLayouts', 'pullDrawParams', 'pullGroups', 'pullOffsets', 'pullPastEnd', 'pullFourSets', 'pullDivisors'].indexOf(scenario), pv, pvn, ff, ffn, pf, pfn)) return { error: text(ex.wgt_error() >>> 0), errors };
       await wait(() => ex.wgt_draw_done(), 'the draws');
       at = ex.wgt_pixels() >>> 0;
     } else if (scenario === 'link' || scenario === 'strip' || scenario === 'vertexOnly' || scenario === 'lineBias') {

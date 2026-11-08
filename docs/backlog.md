@@ -797,12 +797,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `drawIndirectCount`: unchecked with vkd3d since), `multiViewport`, `occlusionQueryPrecise`,
   pipeline statistics queries, cull distances, `shaderImageGatherExtended` (advertised since VK4 T29: unchecked with vkd3d since; `shaderStorageImageWriteWithoutFormat`, whose
   absence kept 10 of vkd3d's UAV-clear pipelines from translating, is offered since GD G5: unchecked with vkd3d since),
-  vertex attribute divisors, sampler min/max reduction (advertised since VK4 T25; unchecked with vkd3d since). vkd3d's own tests (tests/d3d12, built by
+  sampler min/max reduction (advertised since VK4 T25; unchecked with vkd3d since). vkd3d's own tests (tests/d3d12, built by
   `target/vkd3d/build-tests.sh`: `TESTS=` in vkd3d.ts): test_draw_instanced, test_draw_indexed_instanced and
   test_root_constants pass; test_vertex_id fails 52 of 127 (39 of 89 before VK4 T40 captured its two programs of four
   bind groups: 75 checks pass against 50; the failures seen are its indirect draws' values, base vertices 3, 8 and 9:
-  bench/vulkan/REPORT.md "VK4 T40"), test_instance_id 24 of 372 (instance step rates of 0 and 2: divisors; its 1-byte
-  vertex stride pulled since VK4 T5), test_clear_render_target_view 16 of 280 (views of another format and 3D/array views:
+  bench/vulkan/REPORT.md "VK4 T40"), test_instance_id passes whole (its 372 checks since VK4 T44's divisors; its
+  1-byte vertex stride pulled since VK4 T5), test_clear_render_target_view 16 of 280 (views of another format and 3D/array views:
   "The Vulkan driver's gaps"). The next steps by promise: a run of the whole
   d3d12 suite for a ranked list, multi-draw indirect (the driver already loops over a draw count, each draw with its
   own parameters' place), and a real program (vkd3d's demos need an X window: none in the guests). The draw
@@ -919,12 +919,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `VkFormatProperties3` since VK4 T38, colour ones don't (WebGPU compares depth textures only), so `texture.shadow.*`'s
     `r32_sfloat` and `r16_unorm` cases (672 each) stay not supported. A comparison of a colour texture would be the
     shader's, from fetches (as a shadow sample past level 0 is: "Samplers' leftovers"), keyed by the bound view's format.
-  - **Pulled vertices' leftovers** (VK4 T5; vk/README.md "Pulled vertices"): a program with four groups of resources
-    has none to pull from, and its pipeline stays refused (group 3 could take the bindings); more pulled bindings than
-    the vertex stage's storage buffers left; a pulled range past `maxStorageBufferBindingSize` is cut there. What pulling
-    could back next, each a few lines of the fetch: vertex attribute divisors (`iid / rate`: vkd3d's other 24 of
-    test_instance_id, tier 4); `legacy_vertex_attributes` (4,080 of `vertex_input`'s 10,825 cases), an extension not
-    advertised. Formats WebGPU's vertex buffers lack are pulled since VK4 T31. A direct draw that reads past a vertex buffer's end
+  - **Pulled vertices' leftovers** (VK4 T5, T44; vk/README.md "Pulled vertices"): more pulled bindings than the
+    vertex stage's storage buffers left; a pulled range past `maxStorageBufferBindingSize` is cut there (several
+    bindings of one range would take it, a storage buffer each; the adapters we run offer 1 GiB or more, the device
+    asks for the adapter's, so only a 128 MiB adapter and a vertex range past it would); a four-group program whose
+    group 3 bindings reach 976 has no room to pull in it (refused). A pull with a divisor makes a bind group per change
+    of the first instance or the indirect record (unmeasured: vkd3d's instanced tests and dEQP-VK only). Formats WebGPU's vertex buffers lack are pulled since VK4 T31. A direct draw that reads past a vertex buffer's end
     (Vulkan's robust buffer access reads in range or zeros; WebGPU refused it) pulls that binding, zeros past it, since
     VK4 T37; an indirect one isn't checked by WebGPU (its reads clamped in range). The cost of pulling isn't measured:
     nothing we run meets it but dEQP-VK and vkd3d's tests (a bind group per change of the ranges, and a shader's bytes

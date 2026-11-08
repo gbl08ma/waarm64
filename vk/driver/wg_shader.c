@@ -1989,9 +1989,14 @@ wg_vertex_pull(struct wg_pipeline_key *k, uint32_t inputs, const uint64_t *bound
    u_foreach_bit(loc, inputs) {
       if (!k->attr[loc].format)
          continue;
-      const uint32_t b = k->attr[loc].binding, size = vk_format_get_blocksize(k->attr[loc].format);
+      const VkFormat f = k->attr[loc].format;
+      const uint32_t b = k->attr[loc].binding, size = vk_format_get_blocksize(f);
+      /* VK_EXT_legacy_vertex_attributes (VK4 T44): a format of another numeric type than the shader's input, its
+       * values' bits as the input's type (WebGPU's vertex buffers refuse the pipeline). */
+      const enum wgsl_base type = vk_format_is_sint(f) ? WGSL_I32 : vk_format_is_uint(f) ? WGSL_U32 : WGSL_F32;
       if (b >= MIN2(wg_limits.max_vertex_buffers, 8) || (k->vb[b].stride & 3) || (bound[b] & 3) ||
-          (k->attr[loc].offset % MIN2(size, 4)) || wg_vertex_format_pulled(k->attr[loc].format))
+          (k->attr[loc].offset % MIN2(size, 4)) || wg_vertex_format_pulled(f) ||
+          (k->vb[b].instance && k->vb[b].divisor != 1) || type != k->vs->info.input_base[loc])
          k->vb[b].pull = 1;
       past |= k->vb[b].stride && k->attr[loc].offset + size > k->vb[b].stride;
    }
@@ -2013,8 +2018,9 @@ wg_pipeline_pull(struct wg_program *p, const struct wg_pipeline_key *k)
    /* A vertex stage that stores fetches its vertices in its pre-pass, from copies (VK4 T33). */
    if (!mask || p->vs_stores)
       return NULL;
+   const bool first_instance = wg_key_divisors(k);
    for (struct wg_pull *u = p->pulls; u; u = u->next)
-      if (u->slots == mask)
+      if (u->slots == mask && u->first_instance == first_instance)
          return u;
    /* The vertex stage's storage buffers: its own and these, on WebGPU's limit. */
    uint32_t storage = util_bitcount(mask);
@@ -2026,22 +2032,37 @@ wg_pipeline_pull(struct wg_program *p, const struct wg_pipeline_key *k)
    uint32_t used = 0;
    for (uint32_t i = 0; i < p->resource_count; i++)
       used |= 1u << p->resources[i].group;
-   const uint32_t group = ffs(~used) - 1;
+   uint32_t group = ffs(~used) - 1, base = 0;
+   /* Four groups: group 3 with the program's own there (VK4 T44; T40's way for a capture), at bindings past them. */
    if (group > MIN2(p->group_count, WGSL_MAX_GROUPS - 1)) {
-      static bool warned;
-      if (!warned)
-         fprintf(stderr, "wg: no bind group left to pull a vertex binding WebGPU refuses from\n");
-      warned = true;
-      return NULL;
+      bool room = p->group_count == WGSL_MAX_GROUPS;
+      for (uint32_t i = 0; i < p->resource_count; i++)
+         room &= p->resources[i].group != WGSL_MAX_GROUPS - 1 || p->resources[i].binding < WG_PULL_BASE ||
+                 p->resources[i].binding > WG_PULL_BASE + WG_VERTEX_BINDINGS + 1;
+      if (!room) {
+         static bool warned;
+         if (!warned)
+            fprintf(stderr, "wg: no bind group left to pull a vertex binding WebGPU refuses from\n");
+         warned = true;
+         return NULL;
+      }
+      group = WGSL_MAX_GROUPS - 1, base = WG_PULL_BASE;
    }
    struct wg_pull *u = calloc(1, sizeof(*u));
    u->slots = mask;
    u->group = group;
+   u->first_instance = first_instance;
+   u->base = base;
    struct wg_json j = { 0 };
-   wg_json_printf(&j, "{\"entries\":[");
+   if (base)
+      wg_json_printf(&j, "{\"with\":%u,\"entries\":[", p->bgl[group]);
+   else
+      wg_json_printf(&j, "{\"entries\":[");
    u_foreach_bit(s, mask)
-      wg_json_printf(&j, "{\"binding\":%u,\"visibility\":1,\"buffer\":{\"type\":\"read-only-storage\"}},", s);
-   wg_json_printf(&j, "{\"binding\":%u,\"visibility\":1,\"buffer\":{\"type\":\"uniform\"}}]}", WG_VERTEX_BINDINGS);
+      wg_json_printf(&j, "{\"binding\":%u,\"visibility\":1,\"buffer\":{\"type\":\"read-only-storage\"}},", base + s);
+   if (first_instance)
+      wg_json_printf(&j, "{\"binding\":%u,\"visibility\":1,\"buffer\":{\"type\":\"uniform\"}},", base + WG_VERTEX_BINDINGS + 1);
+   wg_json_printf(&j, "{\"binding\":%u,\"visibility\":1,\"buffer\":{\"type\":\"uniform\"}}]}", base + WG_VERTEX_BINDINGS);
    u->bgl = wg_create_json(WG_KIND_BGL, &j);
    wg_json_printf(&j, "{\"bindGroupLayouts\":[");
    for (uint32_t g = 0; g < MAX2(p->group_count, group + 1); g++)
@@ -2800,7 +2821,7 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
       wg_json_printf(&j, ",\"wg_layer\":%u", k->view);
    wg_json_printf(&j, "},");
    if (pull)
-      wg_json_printf(&j, "\"pullGroup\":%u,", pull->group);
+      wg_json_printf(&j, "\"pullGroup\":%u,\"pullBase\":%u,", pull->group, pull->base);
    wg_json_printf(&j, "\"buffers\":[");
    /* A binding none of the shader's inputs reads is left out (else a draw would need its buffer). */
    const uint32_t inputs = k->vs->info.inputs;
@@ -2813,9 +2834,13 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
          continue;
       }
       const uint32_t binding = vs.binding[b];
-      wg_json_printf(&j, "%s{%s\"arrayStride\":%u,\"stepMode\":\"%s\",\"attributes\":[", b ? "," : "",
+      wg_json_printf(&j, "%s{%s\"arrayStride\":%u,\"stepMode\":\"%s\",", b ? "," : "",
                      pull && (pull->slots & (1u << b)) ? "\"pull\":true," : "", k->vb[binding].stride,
                      k->vb[binding].instance ? "instance" : "vertex");
+      /* Pulled (or a storing stage's pre-pass's): WebGPU's vertex buffers have none. */
+      if (k->vb[binding].instance && k->vb[binding].divisor != 1)
+         wg_json_printf(&j, "\"divisor\":%u,", k->vb[binding].divisor);
+      wg_json_printf(&j, "\"attributes\":[");
       bool first = true;
       u_foreach_bit(loc, inputs) {
          if (!k->attr[loc].format || vs.slot[loc] != b)
