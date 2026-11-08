@@ -489,11 +489,23 @@ a guest only through Mesa 26.3's Venus on: 26.2's leaves it out). Two memory typ
   pipeline is keyed by the state it draws with (`draw_key`, from the runtime's dynamic state), so what WebGPU's
   pipelines hold can be dynamic, each value a variant (VK4 T28): extended dynamic state 1 and 2, the vertex input
   (`VK_EXT_vertex_input_dynamic_state`), and of the third set the depth clamp and clip, sample mask, alpha to coverage,
-  colour blend enables, equations and write masks and the provoking vertex; a depth bias of the format's units only
-  (`VK_EXT_depth_bias_control` without its other representations or `depthBiasExact`: WebGPU's `depthBias` is an
-  integer); alpha to coverage at one sample, which WebGPU's pipelines refuse, is the fragment stage's (`wg_a2c`, an
-  override: a fragment whose location 0's alpha is under a half discarded), and without a colour target at location 0
-  or with a `sample_mask` output (WebGPU takes neither) it is left out; stencil state per
+  colour blend enables, equations and write masks, alpha to one and the provoking vertex; alpha to coverage at one
+  sample, which WebGPU's pipelines refuse, is the fragment stage's (`wg_a2c`, an override: a fragment whose location
+  0's alpha is under a half discarded). **What the fragment stage does past its outputs** (VK4 T43, wg_shader.c
+  `post_text`: the stage's `main` becomes `wg_fp`, which a new `main` calls, and the members it adds to `Out` it sets):
+  a depth bias WebGPU's integer `depthBias` (a whole number of its texture's least step) can't give is the rasterized
+  depth moved by `m · slope + r · constant`, clamped, written as `frag_depth` (`bias_frag` in the key, the slope `m`
+  from the depth's derivatives before the stage runs): every one but the format's representation's whole constants on
+  `D16_UNORM` and the float formats, so `VK_EXT_depth_bias_control`'s FLOAT (r 1) and FORCE_UNORM (2^-24 on a float
+  format) representations, fractions of a step, constants past an int32, `depthBiasExact` (SwiftShader's own isn't),
+  and every bias on D24 (a depth24plus texture may be a float one: Dawn's on SwiftShader; r 2^-24 there, the depth and
+  the bias added as whole words, each `round(x · (2^n − 1))`, so a step of one is one word whatever the depth and the
+  attachment holds what reads back as its word); a float format's r 2^(e − 23) from the fragment's own depth's
+  exponent (Vulkan's is the primitive's largest). Such a draw's fragments take no early depth test, and a pipeline
+  without a fragment stage gets one writing the depth. Alpha to coverage WebGPU can't take (no colour target at
+  location 0, a stage writing `sample_mask`, or alpha to one, whose alpha 1 its coverage would see) is the stage's
+  `sample_mask`, the first `round(alpha · samples)` samples (and the stage's own mask); alpha to one sets the float
+  outputs' alpha to 1 after the coverage is taken. Stencil state per
   face (WebGPU has one reference and one pair of masks, Vulkan a set a face): a draw whose faces both use one of them
   with different values (a reference compared or replaced, a compare mask compared, a write mask written), both faces
   drawn, is two draws, its front faces with the front's (the back culled) and then its back faces with the back's, so

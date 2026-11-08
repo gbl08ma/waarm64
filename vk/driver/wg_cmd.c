@@ -1925,6 +1925,28 @@ draw_key(struct wg_cmd_buffer *cmd, struct wg_shader *vs, struct wg_shader *fs, 
          k.bias_constant = dyn->rs.depth_bias.constant_factor;
          k.bias_slope = dyn->rs.depth_bias.slope_factor;
          k.bias_clamp = dyn->rs.depth_bias.clamp;
+         /* The bias's representation (VK_EXT_depth_bias_control, VK4 T43): WebGPU's `depthBias` is a whole number of
+          * its texture's least step, which is Vulkan's only where the texture is the format (depth16unorm, depth32float:
+          * Dawn may back depth24plus by a float format) and where it needn't be exact (SwiftShader's isn't). The rest,
+          * another representation's r (FLOAT's 1, FORCE_UNORM's 2^-24 on a float format), a fraction of a step or a
+          * constant past an int32, is the fragment stage's (`bias_frag`, wg_shader.c `post_text`): r the format's least
+          * step, so exact. */
+         const VkFormat df = cmd->pass.depth;
+         const bool fdepth = df == VK_FORMAT_D32_SFLOAT || df == VK_FORMAT_D32_SFLOAT_S8_UINT;
+         const uint32_t bits = df == VK_FORMAT_D16_UNORM || df == VK_FORMAT_D16_UNORM_S8_UINT ? 16 : 24;
+         VkDepthBiasRepresentationEXT repr = dyn->rs.depth_bias.representation;
+         if (repr == VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORCE_UNORM_EXT && !fdepth)
+            repr = VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT;
+         const bool whole = k.bias_constant == floorf(k.bias_constant) && fabsf(k.bias_constant) < 8388608.0f;
+         const bool native = df == VK_FORMAT_D16_UNORM || fdepth;
+         if (k.depth_test && (repr != VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT || !whole ||
+                              !native || dyn->rs.depth_bias.exact)) {
+            k.bias_frag = 1;
+            k.bias_bits = fdepth ? 0 : bits;
+            k.bias_r = repr == VK_DEPTH_BIAS_REPRESENTATION_FLOAT_EXT ? 1.0f
+                       : repr == VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORCE_UNORM_EXT ? ldexpf(1.0f, -24)
+                       : fdepth ? 0.0f : ldexpf(1.0f, -(int)bits);
+         }
       }
    }
    if (cmd->pass.stencil && dyn->ds.stencil.test_enable) {
@@ -2026,6 +2048,14 @@ draw_key(struct wg_cmd_buffer *cmd, struct wg_shader *vs, struct wg_shader *fs, 
          if ((n - 1) * k.vb[b].stride + last > cmd->vbs[b].size)
             k.vb[b].pull = 1;
       }
+   }
+   /* Alpha to one, and alpha to coverage where WebGPU's can't take it (VK4 T43, wg_shader.c `post_text`): no colour
+    * target at location 0, a stage writing `sample_mask`, or alpha to one (WebGPU's coverage would see its alpha 1). */
+   k.alpha_to_one = fs && dyn->ms.alpha_to_one_enable;
+   if (fs && k.alpha_to_coverage && k.samples > 1 && !k.mapped && (fs->info.outputs & 1u) &&
+       fs->info.output_base[0] == WGSL_F32 && !fs->info.dual_source) {
+      const bool target0 = k.color_count && k.colors[0] && wg_texture_format(k.colors[0]) && !fs->info.writes_sample_mask;
+      k.a2c_mask = !target0 || k.alpha_to_one;
    }
    *out = k;
    *s_ref_out = s_ref;
@@ -2213,7 +2243,7 @@ static const enum mesa_vk_dynamic_graphics_state premake_states[] = {
    MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY, MESA_VK_DYNAMIC_RS_RASTERIZER_DISCARD_ENABLE, MESA_VK_DYNAMIC_RS_CULL_MODE,
    MESA_VK_DYNAMIC_RS_FRONT_FACE, MESA_VK_DYNAMIC_RS_DEPTH_CLAMP_ENABLE, MESA_VK_DYNAMIC_RS_DEPTH_CLIP_ENABLE,
    MESA_VK_DYNAMIC_RS_PROVOKING_VERTEX, MESA_VK_DYNAMIC_MS_SAMPLE_MASK, MESA_VK_DYNAMIC_MS_ALPHA_TO_COVERAGE_ENABLE,
-   MESA_VK_DYNAMIC_VI, MESA_VK_DYNAMIC_VI_BINDING_STRIDES,
+   MESA_VK_DYNAMIC_MS_ALPHA_TO_ONE_ENABLE, MESA_VK_DYNAMIC_VI, MESA_VK_DYNAMIC_VI_BINDING_STRIDES,
 };
 static const enum mesa_vk_dynamic_graphics_state premake_depth[] = {
    MESA_VK_DYNAMIC_DS_DEPTH_TEST_ENABLE, MESA_VK_DYNAMIC_DS_DEPTH_WRITE_ENABLE, MESA_VK_DYNAMIC_DS_DEPTH_COMPARE_OP,

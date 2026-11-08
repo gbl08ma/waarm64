@@ -795,6 +795,15 @@ struct wg_pipeline_key {
    struct {
       uint8_t op, flags, overlap, pad;
    } adv[8];
+   /* What the fragment stage does past its own outputs (VK4 T43, wg_shader.c `post_text`): `bias_frag`, a depth bias
+    * WebGPU's integer `depthBias` can't give (a constant of another representation than the format's, or not a whole
+    * number), the fragment's depth moved by m · bias_slope + r · bias_constant (clamped) with r `bias_r` (0: the
+    * float format's, from the depth's exponent); `alpha_to_one`, the float outputs' alpha 1 after alpha to coverage;
+    * `a2c_mask`, alpha to coverage at `samples` as the stage's own `sample_mask` (no colour target at location 0, a
+    * stage that writes `sample_mask`, or alpha to one: WebGPU's takes none of them). `bias_bits`: a unorm format's
+    * bits, its depth rounded to them before the bias (as a fixed-point rasterizer's is), 0 for a float format. */
+   uint8_t bias_frag, alpha_to_one, a2c_mask, bias_bits;
+   float bias_r;
 };
 
 uint32_t wg_render_pipeline(struct wg_program *p, const struct wg_pipeline_key *key);

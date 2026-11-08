@@ -212,6 +212,8 @@ wg_caps_features(struct vk_features *f)
       .multiDrawIndirect = true,
       .depthClamp = HAS(DEPTH_CLIP),
       .depthBiasClamp = true,
+      /* The float outputs' alpha 1 in the fragment stage, alpha to coverage then its own (VK4 T43). */
+      .alphaToOne = true,
       .samplerAnisotropy = true,
       .textureCompressionETC2 = HAS(ETC2),
       .textureCompressionASTC_LDR = HAS(ASTC),
@@ -295,12 +297,18 @@ wg_caps_features(struct vk_features *f)
       .extendedDynamicState3DepthClipEnable = HAS(DEPTH_CLIP),
       .extendedDynamicState3SampleMask = true,
       .extendedDynamicState3AlphaToCoverageEnable = true,
+      .extendedDynamicState3AlphaToOneEnable = true,
       .extendedDynamicState3ColorBlendEnable = true,
       .extendedDynamicState3ColorBlendEquation = true,
       .extendedDynamicState3ColorWriteMask = true,
       .extendedDynamicState3ProvokingVertexMode = true,
       .vertexInputDynamicState = true,
       .depthBiasControl = true,
+      /* Another representation than the format's, or a fraction of its step, moves the fragment's depth in the
+       * fragment stage (VK4 T43, wg_shader.c `post_text`); r is always the format's least step, so exact. */
+      .leastRepresentableValueForceUnormRepresentation = true,
+      .floatRepresentation = true,
+      .depthBiasExact = true,
       .formatA4R4G4B4 = true,
       .formatA4B4G4R4 = true,
       .nonSeamlessCubeMap = true,

@@ -2453,43 +2453,61 @@ dst_logic(struct wg_json *j, uint32_t loc, VkFormat format, uint8_t base, uint8_
 }
 
 /* The stage's text (`text`, freed) as the key's reads of its attachments want it, or NULL where it can't be. */
-static char *
-dst_text(const struct wg_pipeline_key *k, const struct wg_dst *dst, char *text)
+/* A fragment stage's `main` line, "@fragment fn main(<params>) -> Out {" or "... {", for a new `main` that calls it
+ * (`dst_text`, `post_text`): where it is, its parameters and their names as arguments (`args`, freed by the caller).
+ * False where the text has none. */
+struct fs_main {
+   char *at, *eol;
+   bool has_out;
+   char params[1024];
+   struct wg_json args;
+};
+
+static bool
+fs_main(char *text, struct fs_main *m)
 {
    static const char head[] = "@fragment fn main(";
-   char *at = strstr(text, head);
-   char *eol = at ? strchr(at, '\n') : NULL;
-   if (!eol) {
-      free(text);
-      return NULL;
-   }
-   /* "@fragment fn main(<params>) -> Out {" or "... {" */
-   const bool has_out = eol - at > 10 && !strncmp(eol - 10, ") -> Out {", 10);
-   const char *close = has_out ? eol - 10 : eol - 3;
-   char params[1024];
-   const size_t plen = close - (at + sizeof(head) - 1);
-   if (plen >= sizeof(params) || strncmp(close, has_out ? ") -> Out {" : ") {", has_out ? 10 : 3)) {
-      free(text);
-      return NULL;
-   }
-   memcpy(params, at + sizeof(head) - 1, plen);
-   params[plen] = 0;
-   /* The arguments: each parameter's name. */
-   struct wg_json args = { 0 };
-   wg_json_printf(&args, "%s", "");
-   for (char *p = params; *p;) {
+   memset(m, 0, sizeof(*m));
+   m->at = strstr(text, head);
+   m->eol = m->at ? strchr(m->at, '\n') : NULL;
+   if (!m->eol)
+      return false;
+   m->has_out = m->eol - m->at > 10 && !strncmp(m->eol - 10, ") -> Out {", 10);
+   const char *close = m->has_out ? m->eol - 10 : m->eol - 3;
+   const size_t plen = close - (m->at + sizeof(head) - 1);
+   if (plen >= sizeof(m->params) || strncmp(close, m->has_out ? ") -> Out {" : ") {", m->has_out ? 10 : 3))
+      return false;
+   memcpy(m->params, m->at + sizeof(head) - 1, plen);
+   m->params[plen] = 0;
+   wg_json_printf(&m->args, "%s", "");
+   for (char *p = m->params; *p;) {
       char *colon = strchr(p, ':');
       if (!colon)
          break;
       char *name = colon;
       while (name > p && name[-1] != ' ')
          name--;
-      wg_json_printf(&args, "%s%.*s", args.len ? ", " : "", (int)(colon - name), name);
+      wg_json_printf(&m->args, "%s%.*s", m->args.len ? ", " : "", (int)(colon - name), name);
       char *next = strstr(colon, ", ");
       if (!next)
          break;
       p = next + 2;
    }
+   return true;
+}
+
+static char *
+dst_text(const struct wg_pipeline_key *k, const struct wg_dst *dst, char *text)
+{
+   struct fs_main fm;
+   if (!fs_main(text, &fm)) {
+      wg_json_free(&fm.args);
+      free(text);
+      return NULL;
+   }
+   char *const at = fm.at, *const eol = fm.eol, *const params = fm.params;
+   const bool has_out = fm.has_out;
+   struct wg_json args = fm.args;
    const bool in_pos = strstr(params, "i: In") && strstr(text, "  @builtin(position) pos: vec4<f32>,\n");
    bool ms = false;
    for (uint32_t b = 0; b < 9; b++)
@@ -2550,7 +2568,125 @@ dst_text(const struct wg_pipeline_key *k, const struct wg_dst *dst, char *text)
    return j.data;
 }
 
-/* A fragment module of a key reading its attachments (`dst_text`), kept with the program; 0 where it can't be. */
+/* The key's depth bias is the fragment stage's (`bias_frag`, wg_cmd.c `draw_key`): a depth aspect, and a stage that
+ * doesn't write its own depth (Vulkan's bias is the rasterized depth's). */
+static bool
+post_bias(const struct wg_pipeline_key *k)
+{
+   const struct wg_texture_format *ds = k->depth ? wg_texture_format(k->depth) : NULL;
+   return k->bias_frag && k->depth_bias && ds && (ds->flags & WG_FMT_DEPTH) && !(k->fs && k->fs->info.writes_depth);
+}
+
+/* The float colour outputs the stage writes (by attachment), which alpha to one sets the alpha of. */
+static uint32_t
+post_float_outputs(const struct wg_pipeline_key *k)
+{
+   uint8_t bases[8] = { 0 };
+   const uint32_t outputs = key_outputs(k, bases);
+   uint32_t mask = 0;
+   u_foreach_bit(i, outputs)
+      if (bases[i] == WGSL_F32 && k->colors[i] && wg_texture_format(k->colors[i]))
+         mask |= 1u << i;
+   return k->fs && k->fs->info.dual_source ? 0 : mask;
+}
+
+static bool
+key_posts(const struct wg_pipeline_key *k)
+{
+   return post_bias(k) || (k->fs && (k->a2c_mask || (k->alpha_to_one && post_float_outputs(k))));
+}
+
+/*
+ * What the fragment stage does past its outputs (VK4 T43; vk/README.md "Commands"), which WebGPU's pipelines don't: a
+ * depth bias of another representation than the format's, or of a fraction of its step (the rasterized depth moved by
+ * the bias, written as `frag_depth`); alpha to coverage where WebGPU's can't be (the coverage of location 0's alpha,
+ * `round(alpha · samples)` of the samples, in the stage's `sample_mask`); alpha to one (the float outputs' alpha 1,
+ * after the coverage is taken). The stage's `main` becomes `wg_fp`, which a new `main` calls; the members it adds to
+ * `Out` the stage leaves alone (zero), the new `main` sets them.
+ */
+static char *
+post_text(const struct wg_pipeline_key *k, char *text)
+{
+   struct fs_main fm;
+   if (!fs_main(text, &fm)) {
+      wg_json_free(&fm.args);
+      free(text);
+      return NULL;
+   }
+   static const char head[] = "@fragment fn main(";
+   char *const at = fm.at, *const params = fm.params;
+   const bool has_out = fm.has_out;
+   struct wg_json args = fm.args;
+   const bool in_pos = strstr(params, "i: In") && strstr(text, "  @builtin(position) pos: vec4<f32>,\n");
+   const bool wg_pos = strstr(params, "@builtin(position) wg_pos: vec4<f32>") != NULL; /* dst_text's */
+   const bool bias = post_bias(k), cover = k->fs && k->a2c_mask;
+   const bool own_mask = k->fs && k->fs->info.writes_sample_mask;
+   const uint32_t ones = k->alpha_to_one ? post_float_outputs(k) : 0;
+   /* `main` renamed, then Out's new members (or Out itself, for a stage without outputs). */
+   const size_t at_main = at - text;
+   text = spliced(text, at_main, sizeof(head) - 1, "fn wg_fp(");
+   char members[160];
+   snprintf(members, sizeof(members), "%s%s", bias ? "  @builtin(frag_depth) wg_depth: f32,\n" : "",
+            cover && !own_mask ? "  @builtin(sample_mask) wg_mask: u32,\n" : "");
+   if (has_out) {
+      char *out = strstr(text, "struct Out {\n");
+      if (!out) {
+         wg_json_free(&args);
+         free(text);
+         return NULL;
+      }
+      text = spliced(text, out - text + 13, 0, members);
+   } else {
+      char st[200];
+      snprintf(st, sizeof(st), "struct Out {\n%s}\n", members);
+      text = spliced(text, at_main, 0, st); /* past the directives, which come first */
+   }
+   struct wg_json j = { 0 };
+   wg_json_printf(&j, "%s@fragment fn main(%s%s%s) -> Out {\n", text, params, *params && !in_pos && !wg_pos ? ", " : "",
+                  in_pos || wg_pos ? "" : "@builtin(position) wg_pos: vec4<f32>");
+   const char *pos = in_pos ? "i.pos" : "wg_pos";
+   /* The slope where the control flow is uniform: before the stage, which may discard. */
+   if (bias) {
+      wg_json_printf(&j, "  let wg_m = max(abs(dpdx(%s.z)), abs(dpdy(%s.z)));\n", pos, pos);
+      wg_json_printf(&j, "  let wg_z = %s.z;\n", pos);
+   }
+   if (has_out)
+      wg_json_printf(&j, "  var r = wg_fp(%s);\n", args.data ? args.data : "");
+   else
+      wg_json_printf(&j, "  var r: Out;\n  wg_fp(%s);\n", args.data ? args.data : "");
+   if (cover)
+      wg_json_printf(&j, "  let wg_cov = (1u << u32(round(clamp(r.f0.a, 0.0, 1.0) * %u.0))) - 1u;\n  r.%s %s wg_cov;\n",
+                     MIN2(k->samples, 31u), own_mask ? "mask" : "wg_mask", own_mask ? "&=" : "=");
+   u_foreach_bit(i, ones)
+      wg_json_printf(&j, "  r.f%u.a = 1.0;\n", i);
+   if (bias) {
+      char slope[40], constant[40], r[40], clamp[40];
+      /* r: the representation's, or a float format's from the depth's exponent (2^(e - 23), e the exponent of
+       * 1.m · 2^e, frexp's less one). */
+      const char *rv = k->bias_r > 0 ? f32_lit(r, k->bias_r) : "exp2(f32(frexp(wg_z).exp - 24))";
+      wg_json_printf(&j, "  var wg_o = wg_m * %s + %s * %s;\n", f32_lit(slope, k->bias_slope), rv,
+                     f32_lit(constant, k->bias_constant));
+      if (k->bias_clamp > 0)
+         wg_json_printf(&j, "  wg_o = min(wg_o, %s);\n", f32_lit(clamp, k->bias_clamp));
+      else if (k->bias_clamp < 0)
+         wg_json_printf(&j, "  wg_o = max(wg_o, %s);\n", f32_lit(clamp, k->bias_clamp));
+      /* A unorm format's in its words, as a fixed-point rasterizer's: the depth's word and the bias's apart, each
+       * whole (in f32, z · N and the sum are exact), so a step of one is one word whatever the depth (a depth24plus
+       * texture may be a float one: Dawn's on SwiftShader), and what the attachment holds reads back as its word. */
+      if (k->bias_bits)
+         wg_json_printf(&j, "  r.wg_depth = (round(wg_z * %u.0) + round(wg_o * %u.0)) / %u.0;\n",
+                        (1u << k->bias_bits) - 1, (1u << k->bias_bits) - 1, (1u << k->bias_bits) - 1);
+      else
+         wg_json_printf(&j, "  r.wg_depth = wg_z + wg_o;\n");
+   }
+   wg_json_printf(&j, "  return r;\n}\n");
+   wg_json_free(&args);
+   free(text);
+   return j.data;
+}
+
+/* A fragment module of a key reading its attachments (`dst_text`), or doing more than its outputs (`post_text`), kept
+ * with the program; 0 where it can't be. */
 static uint32_t
 fragment_dst_text(struct wg_program *p, const struct wg_pipeline_key *k, const struct wg_dst *dst, char *text)
 {
@@ -2558,6 +2694,8 @@ fragment_dst_text(struct wg_program *p, const struct wg_pipeline_key *k, const s
       text = mapped_text(k, text);
    if (text && dst)
       text = dst_text(k, dst, text);
+   if (text && key_posts(k))
+      text = post_text(k, text);
    if (!text)
       return 0;
    struct wg_dst_module *m = malloc(sizeof(*m));
@@ -2651,9 +2789,10 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
                         k->stencil_test ? k->stencil_write : 0);
       }
       /* WebGPU's constant is in its texture's units: D16's in depth24plus's are 256 of them. */
-      if (k->depth_bias && has_depth)
+      if (k->depth_bias && has_depth && !k->bias_frag)
          wg_json_printf(&j, ",\"depthBias\":%d,\"depthBiasSlopeScale\":%g,\"depthBiasClamp\":%g",
-                        (int)(k->bias_constant * ((f->flags & WG_FMT_D16) ? 256 : 1)), k->bias_slope, k->bias_clamp);
+                        (int)CLAMP(k->bias_constant * ((f->flags & WG_FMT_D16) ? 256.0f : 1.0f), -2147483520.0f,
+                                   2147483520.0f), k->bias_slope, k->bias_clamp);
       wg_json_printf(&j, "}");
    }
    /* WebGPU's alpha to coverage wants several samples, a colour target at location 0 and no `sample_mask` output (else
@@ -2661,12 +2800,12 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
    const bool target0 = k->fs && k->color_count && k->colors[0] && wg_texture_format(k->colors[0]) &&
                         (k->fs->info.outputs & 1u) && !k->fs->info.writes_sample_mask;
    wg_json_printf(&j, ",\"multisample\":{\"count\":%u,\"mask\":%u,\"alphaToCoverageEnabled\":%s}", MAX2(k->samples, 1),
-                  k->sample_mask, k->alpha_to_coverage && k->samples > 1 && target0 ? "true" : "false");
+                  k->sample_mask, k->alpha_to_coverage && k->samples > 1 && target0 && !k->a2c_mask ? "true" : "false");
    if (k->fs) {
       const struct wg_texture_format *ds = k->depth ? wg_texture_format(k->depth) : NULL;
       const bool depth_dropped = k->fs->info.writes_depth && !(ds && (ds->flags & WG_FMT_DEPTH));
       /* A stage reading its attachments, or whose outputs the key's map moves, is printed for the key. */
-      const uint32_t dst_module = dst || k->mapped ? fragment_dst(p, k, dst, depth_dropped) : 0;
+      const uint32_t dst_module = dst || k->mapped || key_posts(k) ? fragment_dst(p, k, dst, depth_dropped) : 0;
       const uint32_t outputs = key_outputs(k, NULL);
       wg_json_printf(&j, ",\"fragment\":{\"module\":%u,\"entryPoint\":\"main\",",
                      dst_module ? dst_module : depth_dropped ? fragment_without_depth(p, k->fs)
@@ -2732,7 +2871,7 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
          colour |= k->colors[i] && wg_texture_format(k->colors[i]);
       /* The depth bounds test without a fragment shader: a stage of the test alone (VK4 T32). */
       uint32_t bounds = 0;
-      if (dst) {
+      if (dst || key_posts(k)) {
          struct wg_json t = { 0 };
          wg_json_printf(&t, "@fragment fn main() {\n}\n");
          bounds = fragment_dst_text(p, k, dst, t.data);
