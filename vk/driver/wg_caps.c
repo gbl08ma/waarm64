@@ -409,8 +409,9 @@ wg_caps_properties(struct vk_properties *p)
    p->maxTexelBufferElements = MIN2(L->max_storage_buffer_binding_size / 16, 1u << 27);
    p->maxUniformBufferRange = L->max_uniform_buffer_binding_size;
    p->maxStorageBufferRange = L->max_storage_buffer_binding_size;
-   /* Vulkan's minimum (past WebGPU's immediates they're read from a uniform buffer: wg_cmd.c). */
-   p->maxPushConstantsSize = 128;
+   /* Direct3D 12's root constants' 256 bytes (vkd3d's check, VK4 T47; past WebGPU's immediates they're read from a
+    * uniform buffer: wg_cmd.c), the draw parameters past them (wgsl.h WGSL_DRAW_PARAMS). */
+   p->maxPushConstantsSize = WGSL_DRAW_PARAMS;
    p->maxMemoryAllocationCount = 4096;
    p->maxSamplerAllocationCount = 4000;
    p->bufferImageGranularity = 64;

@@ -61,9 +61,10 @@ wgsl_address_region(unsigned group, unsigned binding)
 #define WGSL_TABLE_BINDING 994
 #define WGSL_TABLE_SIZE(binding) (16u * ((binding) + 2u))
 /* A vertex stage's draw parameters (BaseVertex, BaseInstance, DrawIndex: VK3 L7.5) are words of the push buffer at
- * this byte, past Vulkan's 128 bytes of push constants (the device's maxPushConstantsSize): a stage that reads them
- * reads its push constants from the push buffer too, and the driver writes them in each draw's place there. */
-#define WGSL_DRAW_PARAMS 128
+ * this byte, past the device's 256 bytes of push constants (its maxPushConstantsSize, Direct3D 12's root constants'
+ * size: VK4 T47): a stage that reads them reads its push constants from the push buffer too, and the driver writes
+ * them in each draw's place there. */
+#define WGSL_DRAW_PARAMS 256
 /* The slots a group's uniform buffers can be read as storage at (wgsl_layout.ubo_storage). */
 #define WGSL_UBO_STORAGE_WORDS 8
 

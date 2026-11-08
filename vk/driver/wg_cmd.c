@@ -3739,7 +3739,7 @@ query_count(struct replay *r, struct wg_query_pool *pool, uint32_t index, bool a
  * barriers inside a render pass reach no index buffer, so what a draw reads is what the commands before the pass left
  * (VK3 L7.4). Returns how many. */
 static uint32_t push_buffer(struct wg_device *dev);
-static uint32_t push_place(struct wg_device *dev);
+static uint32_t push_place(struct wg_device *dev, uint32_t bytes);
 static bool draw_params(const struct wg_program *p);
 
 static uint32_t
@@ -3781,7 +3781,7 @@ prepasses(struct replay *r, const struct wg_program **prog, bool *divisors, cons
             gpu_byte_count(ticket++, a->counter, a->counter_at, a->bias, a->vstride, a->instances, a->first_instance);
             uint32_t at = UINT32_MAX;
             if (*prog && (draw_params(*prog) || *divisors)) {
-               at = push_place(r->dev);
+               at = push_place(r->dev, WG_PUSH_PLACE_DP);
                memcpy(r->dev->push_data + at + WGSL_DRAW_PARAMS, (uint32_t[4]){ 0, a->first_instance, 0, 0 }, 16);
             }
             util_dynarray_append_typed(&r->dp_places, uint32_t, at);
@@ -3790,7 +3790,7 @@ prepasses(struct replay *r, const struct wg_program **prog, bool *divisors, cons
          for (uint32_t i = 0; i < a->count; i++) {
             uint32_t at = UINT32_MAX;
             if (*prog && (draw_params(*prog) || *divisors) && a->buffer) {
-               at = push_place(r->dev);
+               at = push_place(r->dev, WG_PUSH_PLACE_DP);
                timestamps_lead(r);
                gpu_copy_bb(a->buffer, a->offset + (double)i * a->stride + (a->indexed ? 12 : 8), push_buffer(r->dev),
                            at + WGSL_DRAW_PARAMS, 8);
@@ -3896,13 +3896,15 @@ push_reserve(struct wg_device *dev, uint64_t bytes)
    }
 }
 
-/* A place of the push buffer for one draw's or dispatch's push constants (and draw parameters): WebGPU's dynamic
- * uniform offsets are 256 bytes apart, and a place holds at most 144 bytes. */
+/* A place of the push buffer for one draw's or dispatch's `bytes` of push constants (and draw parameters, at
+ * WGSL_DRAW_PARAMS: WG_PUSH_PLACE_DP): WebGPU's dynamic uniform offsets are 256 bytes apart, so a place is 256 bytes,
+ * or 512 with the draw parameters past 256 bytes of push constants. */
 static uint32_t
-push_place(struct wg_device *dev)
+push_place(struct wg_device *dev, uint32_t bytes)
 {
    push_buffer(dev);
-   if (dev->push_used + 256 > dev->push_size) {
+   const uint32_t size = align(MAX2(bytes, 1), 256);
+   if (dev->push_used + size > dev->push_size) {
       static bool told;
       if (!told)
          fprintf(stderr, "wg: a submit's push constants overflow the push buffer\n");
@@ -3910,7 +3912,7 @@ push_place(struct wg_device *dev)
       dev->push_used = 0;
    }
    const uint32_t at = dev->push_used;
-   dev->push_used += 256;
+   dev->push_used += size;
    return at;
 }
 
@@ -5524,7 +5526,7 @@ apply(struct replay *r, uint32_t point)
       if ((r->dirty & (RD_PUSH | RD_PIPELINE)) || r->push_offset == UINT32_MAX || moved) {
          struct wg_device *dev = r->dev;
          const bool placed = params && r->draw_place != UINT32_MAX;
-         r->push_offset = placed ? r->draw_place : push_place(dev);
+         r->push_offset = placed ? r->draw_place : push_place(dev, p->push_ubo_size);
          memcpy(dev->push_data + r->push_offset, r->push, MIN2(align(p->push_ubo_size, 16), WGSL_DRAW_PARAMS));
          if (params && !placed)
             memcpy(dev->push_data + r->push_offset + WGSL_DRAW_PARAMS, (uint32_t[4]){ r->draw_dp[0], r->draw_dp[1], r->draw_dp[2], 0 }, 16);
@@ -5548,7 +5550,7 @@ apply(struct replay *r, uint32_t point)
          fi = r->draw_place;
       } else {
          if (r->fi_place == UINT32_MAX || r->fi_value != r->draw_dp[1]) {
-            r->fi_place = push_place(r->dev);
+            r->fi_place = push_place(r->dev, WG_PUSH_PLACE_DP);
             r->fi_value = r->draw_dp[1];
             memcpy(r->dev->push_data + r->fi_place + WGSL_DRAW_PARAMS, (uint32_t[4]){ r->draw_dp[0], r->draw_dp[1], 0, 0 }, 16);
          }
@@ -6655,7 +6657,7 @@ submit_now(struct wg_device *dev, uint32_t cmd_count, struct vk_command_buffer *
    uint64_t draws = 0;
    for (uint32_t i = 0; i < cmd_count; i++)
       draws += container_of(cmds[i], struct wg_cmd_buffer, vk)->draws;
-   push_reserve(dev, draws * 256);
+   push_reserve(dev, draws * align(WG_PUSH_PLACE_DP, 256));
    dev->push_used = 0;
    dev->shadow_used[0] = dev->shadow_used[1] = 0;
    for (uint32_t i = 0; i < cmd_count; i++) {

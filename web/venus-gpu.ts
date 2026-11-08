@@ -3531,7 +3531,7 @@ const PULL_SLOTS = 16;
 /** A render pipeline's vertex buffer as its JSON gives it (`pull`: read from a storage binding). */
 type PulledBuffer = { pull?: boolean; arrayStride: number; stepMode: string; divisor?: number; attributes: { format: string; offset: number; shaderLocation: number }[] };
 /** Where the push buffer's place holds a draw's parameters (wgsl.h `WGSL_DRAW_PARAMS`: base vertex, first instance, draw index). */
-const PULL_DRAW_PARAMS = 128;
+const PULL_DRAW_PARAMS = 256;
 
 /** The record a binding's attributes are read from: the vertex's, or the instance's (`iid`, which counts from the draw's
  * first instance `first`), past a divisor (VK4 T44: Vulkan's `first + (iid - first) / divisor`, 0 the first's for all). */

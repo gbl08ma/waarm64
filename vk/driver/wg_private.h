@@ -289,6 +289,8 @@ struct wg_device {
    bool premake_flip, premake_flip_z;
 };
 #define WG_PUSH_BUFFER_SIZE (1u << 20)
+/* A place of the push buffer with the draw parameters: the push constants', and the parameters' 16 bytes past them. */
+#define WG_PUSH_PLACE_DP (WGSL_DRAW_PARAMS + 16)
 /* The bytes a memory's GPUBuffer has past it, for a uniform block declared past the range bound. */
 uint32_t wg_address_buffer(struct wg_device *dev, uint32_t region);
 /* The regions of the address buffer a pointer reaches (wgsl_layout.address_regions), and the region a GPUBuffer is

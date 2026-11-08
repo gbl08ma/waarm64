@@ -1152,11 +1152,11 @@ test('a vertex stage\'s draw parameters are read from the push buffer past the p
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/l7/draw-params.vert');
     assert.equal(r.rc, 0, r.text);
-    // The push buffer (16 bytes of push constants would be immediates without them), 144 bytes: the parameters at
-    // byte 128 (wgsl.h's WGSL_DRAW_PARAMS), the base vertex, the base instance and the draw's index.
+    // The push buffer (16 bytes of push constants would be immediates without them), 272 bytes: the parameters at
+    // byte 256 (wgsl.h's WGSL_DRAW_PARAMS), the base vertex, the base instance and the draw's index.
     assert.match(r.text, /@group\(3\) @binding\(998\)/);
     assert.doesNotMatch(r.text, /var<immediate>/);
-    for (const c of [0, 1, 2]) assert.match(r.text, new RegExp(`= pc\\[8u\\]\\[${c}u\\];`), `the parameter in word ${32 + c}`);
+    for (const c of [0, 1, 2]) assert.match(r.text, new RegExp(`= pc\\[16u\\]\\[${c}u\\];`), `the parameter in word ${64 + c}`);
     const errors = await compile([r.text]);
     if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
     assert.deepEqual(errors, [''], 'WGSL Chromium rejected');

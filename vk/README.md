@@ -192,9 +192,9 @@ set and binding order, are storage (the set layouts' hash carries the stage flag
 **Draw parameters** (VK3 L7.5, `shaderDrawParameters`, vkd3d's row): WGSL has no built-ins for SPIR-V's `BaseVertex`,
 `BaseInstance` and `DrawIndex` (its `vertex_index` and `instance_index` include the bases, as Vulkan's `VertexIndex`
 and `InstanceIndex` do, so those stay WGSL's). A vertex stage that reads them reads three words of the push buffer
-at byte 128 (`WGSL_DRAW_PARAMS`, past Vulkan's 128 bytes of push constants: `pc[8u][0u]` to `[2u]`), so its push
+at byte 256 (`WGSL_DRAW_PARAMS`, past the device's 256 bytes of push constants: `pc[16u][0u]` to `[2u]`), so its push
 constants are in the push buffer too, never immediates (an indirect draw's parameters are written on the GPU); the
-driver knows such a program by its push buffer's size past 128 ("Commands").
+driver knows such a program by its push buffer's size past 256 ("Commands").
 
 **Transform feedback** (VK3 L7.4, `VK_EXT_transform_feedback`): a vertex stage's body is a function of its own,
 `wg_vs(vid, iid, i)`, which the entry point calls before it flips y and z; where the runtime gathered `nir->xfb_info`,
@@ -315,7 +315,8 @@ uniform buffers past WebGPU's ("The shader path", "Commands"); vkd3d's (VK3 L7.5
   from the features; `shaderStorageImageExtendedFormats` with `texture-formats-tier1` and unless held (below); `shaderFloat16` from `shader-f16`, real subgroups (size,
   stages and operations: "The shader path") from `subgroups` (VK3 L5), and 16-bit storage everywhere. Less what the
   translator can't do (8-bit and 64-bit types, 16-bit integers and inputs and outputs, YCbCr conversions with `?gpu=vkycbcr=off` (below); subgroups of one invocation with the basic
-  operations where the adapter has no `subgroups` or its sizes vary), with Vulkan's minimums of push constants (128 bytes) and bound sets (8,
+  operations where the adapter has no `subgroups` or its sizes vary), with Direct3D 12's root constants' 256 bytes of push constants (vkd3d's check, VK4 T47: past the immediates
+  they're read from the push buffer) and Vulkan's minimum of bound sets (8,
   as `WGSL_MAX_SETS`), dynamically indexed arrays of every kind of descriptor (`if` trees), formats from WebGPU's tables
   (`wg_format.c`: optimal tiling as WebGPU can sample, render, blend and store them, which `wg_format_init` resolves
   from `texture-formats-tier1` (the 16-bit normalized formats, unfilterable as WebGPU has them; snorm and
@@ -1024,10 +1025,10 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   `gpu_draw_ticket_indirect`): a compute pass before the render pass writes arguments for the device's fan indices or, with
   an index buffer, a list of its triangles (one invocation walks it; a restart ends a fan), and each draw is an indexed
   indirect draw of those. Other indirect draws with the last vertex provoking are drawn as they are, warned once.
-- **Draw parameters** (VK3 L7.5): a draw whose vertex stage reads them (its program's push buffer past 128 bytes,
+- **Draw parameters** (VK3 L7.5): a draw whose vertex stage reads them (its program's push buffer past 256 bytes,
   "The shader path") has its base vertex (the first vertex, or an indexed draw's vertex offset), first instance and
   draw index in its place of the push buffer after the push constants; a draw whose parameters differ from its place's
-  takes a new place (256 bytes, and group 3 bound again at its offset: a draw each where the bases change). An indirect
+  takes a new place (512 bytes, past the push constants' 256: a place without them is 256; and group 3 bound again at its offset: a draw each where the bases change). An indirect
   draw's place is its own, given before its render pass begins (`prepasses`, the render-pass rule: a copy, no break)
   with a copy of its arguments' base vertex and first instance (8 bytes from offset 8, or 12 for an indexed one) into
   it on the GPU, after the commands before the pass and after the queue's write of the push buffer; its draw index the

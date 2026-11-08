@@ -76,7 +76,7 @@ WG_IMPORT(gpu_set_vertex_buffer) void gpu_set_vertex_buffer(uint32_t slot, uint3
 /* A vertex binding the current pipeline reads through a storage binding (wg_vertex_pull), and that bind group set from
  * the slots' last ranges (bgl: wg_pull's), in the render pass (VK4 T5). A range WebGPU's vertex buffers refuse comes
  * this way whatever the pipeline. A pull with a divisor (VK4 T44) also binds the push buffer `dp_buffer` (0: none) at
- * `dp_place`, the draw's parameters 128 bytes past it (WGSL_DRAW_PARAMS: its first instance). `base`: the bindings'
+ * `dp_place`, the draw's parameters 256 bytes past it (WGSL_DRAW_PARAMS: its first instance). `base`: the bindings'
  * first, past a four-group program's own in its group 3 (0: the group is the pull's). */
 WG_IMPORT(gpu_pull_buffer) void gpu_pull_buffer(uint32_t slot, uint32_t buffer, double offset, double size);
 WG_IMPORT(gpu_pull_bind) void gpu_pull_bind(uint32_t group, uint32_t bgl, uint32_t slots, uint32_t dp_buffer, uint32_t dp_place,

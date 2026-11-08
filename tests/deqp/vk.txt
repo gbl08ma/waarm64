@@ -81799,3 +81799,22 @@ dEQP-VK.pipeline.monolithic.timestamp.misc_tests.timestamp_stage_late_fragment_t
 dEQP-VK.pipeline.monolithic.timestamp.misc_tests.timestamp_stage_top_of_pipe_stage
 dEQP-VK.pipeline.monolithic.timestamp.misc_tests.timestamp_stage_vertex_input_stage
 dEQP-VK.pipeline.monolithic.timestamp.misc_tests.timestamp_stage_vertex_shader_stage
+# VK4 T47: Direct3D 12's 256 bytes of push constants (maxPushConstantsSize, the draw parameters moved past them): the
+# pipeline.monolithic.push_constant.graphics_pipeline cases that pass on SwiftShader and the M4 and were not in the list
+# (vkCmdPushConstants2's, range_size_256).
+dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.count_1_shader_vert_frag_command2
+dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.count_2_shaders_vert_frag_command2
+dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.data_update_multiple_command2
+dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.data_update_partial_1_command2
+dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.data_update_partial_2_command2
+dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.dynamic_index_frag_command2
+dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.dynamic_index_vert_command2
+dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.overlap_2_shaders_vert_frag_command2
+dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_128_command2
+dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_16_command2
+dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_256
+dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_256_command2
+dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_4_command2
+dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.range_size_max_command2
+dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.unused_disjoint_2
+dEQP-VK.pipeline.monolithic.push_constant.graphics_pipeline.unused_overlap_2

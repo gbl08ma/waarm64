@@ -333,7 +333,8 @@ wgt_run(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_w
    const VkDescriptorSetLayoutCreateInfo eli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
    CHECK(CreateDescriptorSetLayout(dev, &eli, NULL, &empty));
    const VkDescriptorSetLayout clayouts[5] = { empty, empty, empty, empty, cset_layout };
-   const VkPushConstantRange push = { VK_SHADER_STAGE_VERTEX_BIT, 0, 16 };
+   /* The device's 256 bytes (VK4 T47: draw-params.vert reads its last 16). */
+   const VkPushConstantRange push = { VK_SHADER_STAGE_VERTEX_BIT, 0, 256 };
    const VkPushConstantRange cpush = { VK_SHADER_STAGE_COMPUTE_BIT, 0, 128 };
    VkPipelineLayout layout, clayout;
    const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1,
@@ -1327,7 +1328,8 @@ wgt_flat(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_
  * bottom left: vkCmdDrawIndexed (indices 0 to 5) at vertex offset 30, instance 40; top right: vkCmdDrawIndirect of
  * host-written arguments (vertex 50, instance 60); bottom right: vkCmdDrawIndexedIndirect of arguments written by
  * vkCmdUpdateBuffer before the pass (vertex offset 70, instance 80, or 0 without drawIndirectFirstInstance:
- * `first_instance`). Push constants place the quads, the first two's the same (the shader moves the second down).
+ * `first_instance`). Push constants place the quads, the first two's the same (the shader moves the second down): the
+ * last 16 of the device's 256 bytes (VK4 T47), which the draw parameters follow in the push buffer.
  */
 static struct {
    VkBuffer indices, args;
@@ -1357,13 +1359,13 @@ draw_params_record(VkCommandBuffer cmd, bool in_pass)
    }
    const float off[4][4] = { { -1, -1 }, { 0 }, { 0.05f, -1 }, { 0.05f, 0.05f } };
    CmdBindIndexBuffer(cmd, dp.indices, 0, VK_INDEX_TYPE_UINT16);
-   CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[0]);
+   CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 240, 16, off[0]);
    CmdDraw(cmd, 6, 1, 10, 20);
    /* The same push constants: the shader moves the quad down by its base vertex. */
    CmdDrawIndexed(cmd, 6, 1, 0, 30, 40);
-   CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[2]);
+   CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 240, 16, off[2]);
    CmdDrawIndirect(cmd, dp.args, 0, 1, 16);
-   CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[3]);
+   CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 240, 16, off[3]);
    CmdDrawIndexedIndirect(cmd, dp.args, 64, 1, 20);
 }
 

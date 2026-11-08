@@ -1,0 +1,7 @@
+dEQP-VK.pipeline.monolithic.push_constant.*
+dEQP-VK.pipeline.fast_linked_library.push_constant.*
+dEQP-VK.draw.renderpass.shader_draw_parameters.*
+dEQP-VK.draw.dynamic_rendering.primary_cmd_buff.shader_draw_parameters.*
+dEQP-VK.api.info.device_properties.*
+dEQP-VK.api.info.get_physical_device_properties2.*
+dEQP-VK.pipeline.monolithic.vertex_input.*divisor*
