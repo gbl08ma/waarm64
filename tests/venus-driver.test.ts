@@ -440,7 +440,7 @@ for (const [scenario, what] of [
   ['sixteenThenOne', 'pipelines that don\'t pull a binding after those that do, in a pass and the next'],
   ['cubePlain', 'a shadow cube of one level sampled plainly too'],
   ['vertexCompares', 'a texture the vertex stage compares and the fragment stage samples'],
-  ['fourSets', 'vertex bindings that can\'t be pulled refuse the draw'],
+  ['fourSets', 'sixteen vertex bindings pulled in the group 3 of a program of four groups'],
   ['bc1Blit', 'BC1\'s RGB format blitted keeps alpha 1'],
   // GD G4.
   ['readOnlyImages', 'ten storage images a stage only reads, past WebGPU\'s storage textures, beside one it writes'],
@@ -547,7 +547,7 @@ for (const [scenario, what] of [
       delete checks.ran;
     }
     for (const [k, at] of Object.entries(checks)) assert.equal(at, -1, `${k}: the bytes differ from byte ${at} (${JSON.stringify(r.got)})`);
-    if (scenario === 'fourSets' || scenario === 't37WordsPast' || scenario === 't44FanPast' || scenario === 't37AtomicAlias' || scenario === 't43MappedDual') assert.ok(logs.some((l) => /refused/.test(l)), `not refused: ${JSON.stringify(logs)}`);
+    if (scenario === 't37WordsPast' || scenario === 't44FanPast' || scenario === 't37AtomicAlias' || scenario === 't43MappedDual') assert.ok(logs.some((l) => /refused/.test(l)), `not refused: ${JSON.stringify(logs)}`);
     if (scenario === 't43PushLayers') assert.ok(!logs.some((l) => /overflow/.test(l)), `the push buffer overflowed: ${JSON.stringify(logs)}`);
     assert.equal(r.warnings, 0, 'the worker warned');
     // The fill's and the six pipelines' one: not one a dispatch (a set keeps groups for 4 layouts).

@@ -659,7 +659,7 @@ export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mu
     Object.assign(checks, { texels: [0, 64 * slices, want] });
   } else if (scenario === 'depthLess' || scenario === 'depthAndCompare' || scenario === 'intGather' || scenario === 'cubeSized' || scenario === 'cubeGather' || scenario === 'depthEight' || scenario === 'sixteenBindings' || scenario === 'sixteenThenOne' || scenario === 'cubePlain' || scenario === 'vertexCompares' || scenario === 'fourSets' || scenario === 'bc1Blit') {
     // VK4 R5 (wg_test.c 70 to 74): texel (1, 1), a filtered byte within 1.
-    const texel = { depthLess: [255, 255, 255, 255], depthAndCompare: [255, 64, 64, 128], intGather: [0, 128, 0, 255], cubeSized: [255, 0, 4, 255], cubeGather: [255, 255, 255, 255], depthEight: [255, 0, 0, 255], sixteenBindings: [255, 128, 64, 255], sixteenThenOne: [255, 128, 64, 255], cubePlain: [255, 64, 0, 255], vertexCompares: [255, 64, 0, 255], fourSets: [17, 17, 17, 17], bc1Blit: [0, 0, 0, 255] }[scenario];
+    const texel = { depthLess: [255, 255, 255, 255], depthAndCompare: [255, 64, 64, 128], intGather: [0, 128, 0, 255], cubeSized: [255, 0, 4, 255], cubeGather: [255, 255, 255, 255], depthEight: [255, 0, 0, 255], sixteenBindings: [255, 128, 64, 255], sixteenThenOne: [255, 128, 64, 255], cubePlain: [255, 64, 0, 255], vertexCompares: [255, 64, 0, 255], fourSets: [255, 128, 64, 255], bc1Blit: [0, 0, 0, 255] }[scenario];
     want.set(texel);
     for (let i = 0; i < 4; i++) if (Math.abs(got[i] - want[i]) <= 1) got[i] = want[i];
     if (scenario === 'depthEight') {

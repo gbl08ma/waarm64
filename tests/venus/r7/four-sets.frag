@@ -1,5 +1,6 @@
 #version 450
-// The review of VK4 R5 to R7 (B4): four bind groups taken, so vertex bindings can't be pulled: refused, not invalid.
+// The review of VK4 R5 to R7 (B4): four bind groups taken, so vertex bindings are pulled in group 3 (VK4 T44; refused
+// before, not invalid).
 layout(set = 0, binding = 0) uniform texture2D t0;
 layout(set = 1, binding = 0) uniform texture2D t1;
 layout(set = 2, binding = 0) uniform texture2D t2;

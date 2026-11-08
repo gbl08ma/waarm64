@@ -6352,7 +6352,8 @@ r5_image(VkCommandBuffer cmd, VkFormat format, uint32_t size, uint32_t layers, u
  * as 78, the vertex buffers past WebGPU's never set.
  * 80 (B2): cube-plain.frag on a cube of D32 of one level: 255, 64, 0, 255.
  * 81 (B6): r7/vs-compare.*, the depth image of 71: 255, 64, 0, 255.
- * 82 (B4): r7/four-sets.frag with 73's vertex inputs: refused, so not drawn: the clear.
+ * 82 (B4): r7/four-sets.frag with 73's vertex inputs: four groups taken, the bindings past WebGPU's pulled in group 3
+ *    (VK4 T44; refused before, not drawn): as 78.
  * 83 (C2): a block of BC1_RGB's transparent texels blitted: 0, 0, 0, 255. */
 static int
 r5_misc(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBuffer out)
