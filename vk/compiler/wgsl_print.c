@@ -725,6 +725,9 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_load_view_index:
       c->info->uses_view = true;
       break;
+   case nir_intrinsic_load_layer_id:
+      c->info->uses_layer = true;
+      break;
    case nir_intrinsic_image_atomic:
    case nir_intrinsic_image_atomic_swap: {
       const enum pipe_format f = nir_intrinsic_format(intr);
@@ -822,6 +825,8 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
          } else if (sem.location == VARYING_SLOT_CLIP_DIST0 || sem.location == VARYING_SLOT_CLIP_DIST1) {
             c->info->clip_distances = true;
             c->info->clip_distance_count = MAX2(c->info->clip_distance_count, nir->info.clip_distance_array_size);
+         } else if (sem.location == VARYING_SLOT_LAYER) {
+            c->info->writes_layer = true;
          } else if (sem.location != VARYING_SLOT_POS) {
             failf(c, "vertex output slot %s", gl_varying_slot_name_for_stage(sem.location, MESA_SHADER_VERTEX));
          }
@@ -2483,6 +2488,10 @@ emit_output(struct ctx *c, nir_intrinsic_instr *intr)
                     src_comp(c, value, k + n - first));
    }
    if (c->nir->info.stage == MESA_SHADER_VERTEX) {
+      if (sem.location == VARYING_SLOT_LAYER) {
+         line(c, "wg_lo = %s;", as_base(c, src_comp(c, value, 0), WGSL_U32, 1));
+         return;
+      }
       if (sem.location == VARYING_SLOT_POS) {
          field = "pos";
       } else if (sem.location == VARYING_SLOT_CLIP_DIST0 || sem.location == VARYING_SLOT_CLIP_DIST1) {
@@ -2820,7 +2829,7 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       line(c, "t%u = wg_view;", def->index);
       return;
    case nir_intrinsic_load_layer_id:
-      line(c, "t%u = 0u;", def->index);
+      line(c, "t%u = wg_layer;", def->index);
       return;
    /* WGSL has no built-in: demoted invocations are known (wg_helper), and the rasterizer's helpers cover no sample. */
    case nir_intrinsic_is_helper_invocation:
@@ -3563,6 +3572,11 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
    declare_resources(&c);
    if (c.info->uses_view)
       line(&c, "override wg_view: u32 = 0;");
+   /* gl_Layer (VK4 T43): the pipeline's layer, and what the vertex stage wrote. */
+   if (c.info->writes_layer || c.info->uses_layer)
+      line(&c, "override wg_layer: u32 = 0u;");
+   if (c.info->writes_layer)
+      line(&c, "var<private> wg_lo: u32;");
    declare_texel_buffers(&c);
    declare_word_images(&c);
    declare_io(&c);
@@ -3597,6 +3611,10 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
          line(&c, "@vertex fn main(@builtin(vertex_index) vid: u32, @builtin(instance_index) iid: u32%s) -> Out {",
               info->inputs ? ", i: In" : "");
          line(&c, "  wg_vs(vid, iid%s);", info->inputs ? ", i" : "");
+         /* A primitive of another layer than the pipeline's (its vertices', which Vulkan takes the provoking one's of)
+          * outside the clip volume, all its vertices past x = w: clipped whole. */
+         if (info->writes_layer)
+            line(&c, "  if (wg_lo != wg_layer) { o.pos = vec4<f32>(2.0, 2.0, 0.0, 1.0); }");
          line(&c, "  o.pos.y = o.pos.y * wg_flip_y;");
          line(&c, "  if (wg_flip_z) { o.pos.z = o.pos.w - o.pos.z; }");
          line(&c, "  return o;");

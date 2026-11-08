@@ -113,6 +113,8 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .EXT_multisampled_render_to_single_sampled = true,
       /* NONE load and store ops: WebGPU's load and store (wg_cmd.c `load_op`). */
       .KHR_load_store_op_none = true,
+      /* gl_Layer and gl_ViewportIndex from the vertex stage (VK4 T43: shaderOutputLayer's way, one viewport). */
+      .EXT_shader_viewport_index_layer = true,
       .EXT_load_store_op_none = true,
       .KHR_shader_integer_dot_product = true,
       .KHR_shader_non_semantic_info = true,
@@ -253,6 +255,11 @@ wg_caps_features(struct vk_features *f)
       /* Fragment shaders per sample (WGSL's inputs at their sample, wgsl_print.c; VK3 L7.1: Dawn's core needs it). */
       .sampleRateShading = true,
       .imagelessFramebuffer = true,
+      /* gl_Layer from the vertex stage (VK4 T43): a layered pass drawn a layer at a time, each layer's pipeline putting
+       * other layers' primitives outside the clip volume (wgsl_print.c `wg_layer`, wg_cmd.c `layer_draws`). */
+      .shaderOutputLayer = true,
+      /* One viewport: index 0, the only one, whatever the stage writes (its writes go: wgsl_nir.c). */
+      .shaderOutputViewportIndex = true,
       .uniformBufferStandardLayout = true,
       /* Every access is by words at explicit offsets. */
       .scalarBlockLayout = true,

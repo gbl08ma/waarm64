@@ -2735,6 +2735,9 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
                   k->flip_z ? 1 : 0);
    if (k->vs->info.uses_view)
       wg_json_printf(&j, ",\"wg_view\":%u", k->view);
+   /* gl_Layer (VK4 T43): the layer this pipeline draws (a layered pass's, its `view`). */
+   if (k->vs->info.writes_layer)
+      wg_json_printf(&j, ",\"wg_layer\":%u", k->view);
    wg_json_printf(&j, "},");
    if (pull)
       wg_json_printf(&j, "\"pullGroup\":%u,", pull->group);
@@ -2820,7 +2823,7 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
          if (f && (f->flags & WG_FMT_ALPHA8) && (k->fs->info.alpha_red & (1u << i)))
             alpha_red |= 1u << i;
       }
-      if (k->fs->info.per_sample || k->fs->info.uses_view || a2c || alpha_red) {
+      if (k->fs->info.per_sample || k->fs->info.uses_view || k->fs->info.uses_layer || a2c || alpha_red) {
          wg_json_printf(&j, "\"constants\":{");
          const char *sep = "";
          if (k->fs->info.per_sample) {
@@ -2829,6 +2832,10 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
          }
          if (k->fs->info.uses_view) {
             wg_json_printf(&j, "%s\"wg_view\":%u", sep, k->view);
+            sep = ",";
+         }
+         if (k->fs->info.uses_layer) {
+            wg_json_printf(&j, "%s\"wg_layer\":%u", sep, k->view);
             sep = ",";
          }
          if (a2c) {

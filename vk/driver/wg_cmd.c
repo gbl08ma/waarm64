@@ -1865,6 +1865,14 @@ draw_refused(const struct wg_program *p)
    return true;
 }
 
+/* A stage that reads the view, or writes or reads gl_Layer (VK4 T43): a pipeline for each view, or each layer of a
+ * layered pass (its `view`, the stages' `wg_view` and `wg_layer`). */
+static bool
+per_view(const struct wg_shader *vs, const struct wg_shader *fs)
+{
+   return vs->info.uses_view || vs->info.writes_layer || (fs && (fs->info.uses_view || fs->info.uses_layer));
+}
+
 /* A draw's render pipeline key from the command buffer's state (`vs` and `fs` its stages, `fs` NULL without a program;
  * `face` and `provoke` as record_draw's), and the stencil reference it draws with: record_draw's, and
  * wg_pipeline_premake's at a pipeline's creation. */
@@ -2112,7 +2120,7 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
        * is likely ready by the submit, which otherwise waits for it; the replay finds it by its key. */
       wg_render_pipeline(p, &k);
       /* A stage that reads the view: a pipeline per view (`wg_view`, an override). */
-      if (cmd->pass.view_mask && (vs->info.uses_view || (fs && fs->info.uses_view)))
+      if (cmd->pass.view_mask && per_view(vs, fs))
          u_foreach_bit(view, cmd->pass.view_mask) {
             struct wg_pipeline_key per_view = k;
             per_view.view = view;
@@ -2357,7 +2365,7 @@ wg_pipeline_premake(struct wg_device *dev, VkPipeline handle, const VkGraphicsPi
       if (!wg_pipeline_pull_ok(p, &k))
          return;
       wg_render_pipeline_premade(p, &k);
-      if (cmd->pass.view_mask && (vs->info.uses_view || (fs && fs->info.uses_view)))
+      if (cmd->pass.view_mask && per_view(vs, fs))
          u_foreach_bit(view, cmd->pass.view_mask) {
             struct wg_pipeline_key per_view = k;
             per_view.view = view;
@@ -3272,6 +3280,7 @@ struct wg_submit {
 struct replay {
    bool vs_resumed; /* the part of the pass after a vertex stage's pre-pass (`vs_prepass`): its draw's copies made */
    bool vs_only, vs_again; /* OP_VS_ONLY's and OP_VS_AGAIN's, for the next draw */
+   bool layer_draws;       /* the pipeline's vertex stage writes gl_Layer: drawn in each layer of a layered pass */
    struct wg_device *dev;
    struct wg_submit *submit;
    enum { NONE, RENDER, COMPUTE } pass;
@@ -5314,11 +5323,25 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       const struct op_head *h = (const void *)p;
       const void *d = h + 1;
       p += sizeof(*h) + h->size;
-      /* A layered pass's layers past the first see its clears alone. */
+      /* A layered pass's layers past the first see its clears alone, and the draws whose vertex stage writes gl_Layer
+       * (VK4 T43: each layer's pipeline keeps that layer's primitives). */
       if (r->layered && r->view_order &&
           (h->op == OP_DRAW || h->op == OP_DRAW_INDEXED || h->op == OP_DRAW_INDIRECT || h->op == OP_PROVOKE ||
-           h->op == OP_XFB || h->op == OP_QUERY || h->op == OP_VS_ONLY || h->op == OP_VS_AGAIN))
+           h->op == OP_XFB || h->op == OP_QUERY || h->op == OP_VS_ONLY || h->op == OP_VS_AGAIN) &&
+          !(r->layer_draws && (h->op == OP_DRAW || h->op == OP_DRAW_INDEXED || h->op == OP_DRAW_INDIRECT)))
          continue;
+      /* An indirect one needs what only the first layer's pass prepares (its count's or a fan's tickets, its draw
+       * parameters' places) unless it reads its buffer as it is. */
+      if (r->layered && r->view_order && h->op == OP_DRAW_INDIRECT) {
+         const struct op_indirect *a = (const void *)(h + 1);
+         if (a->fan || a->count_buffer || (r->program[0] && draw_params(r->program[0]))) {
+            static bool warned;
+            if (!warned)
+               fprintf(stderr, "wg: an indirect draw writing gl_Layer drawn in a layered pass's first layer alone\n");
+            warned = true;
+            continue;
+         }
+      }
       switch ((enum op)h->op) {
       case OP_VIEWS:
          r->view_mask = ((const uint32_t *)d)[0];
@@ -5449,7 +5472,8 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       case OP_PIPELINE: {
          const struct op_pipeline *op = d;
          r->pipeline = wg_render_pipeline(op->program, &op->key);
-         if (r->view && (op->key.vs->info.uses_view || (op->key.fs && op->key.fs->info.uses_view))) {
+         r->layer_draws = op->key.vs->info.writes_layer && !op->program->vs_stores;
+         if (r->view && per_view(op->key.vs, op->key.fs)) {
             struct wg_pipeline_key per_view = op->key;
             per_view.view = r->view;
             r->pipeline = wg_render_pipeline(op->program, &per_view);

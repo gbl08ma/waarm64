@@ -757,15 +757,14 @@ lower_dynamic_access_index(nir_builder *b, nir_intrinsic_instr *intr, void *data
 }
 
 /* Point size has no WGSL counterpart (points are a pixel), nor do primitive and viewport indices out of a vertex
- * shader: their writes go. */
+ * shader (one viewport): their writes go. The layer stays (the printer's `wg_layer`, VK4 T43). */
 static bool
 remove_unsupported_outputs(nir_builder *b, nir_intrinsic_instr *intr, void *data)
 {
    if (intr->intrinsic != nir_intrinsic_store_output)
       return false;
    const unsigned slot = nir_intrinsic_io_semantics(intr).location;
-   if (slot != VARYING_SLOT_PSIZ && slot != VARYING_SLOT_LAYER && slot != VARYING_SLOT_VIEWPORT &&
-       slot != VARYING_SLOT_PRIMITIVE_ID)
+   if (slot != VARYING_SLOT_PSIZ && slot != VARYING_SLOT_VIEWPORT && slot != VARYING_SLOT_PRIMITIVE_ID)
       return false;
    nir_instr_remove(&intr->instr);
    return true;

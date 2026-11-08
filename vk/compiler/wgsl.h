@@ -168,6 +168,10 @@ struct wgsl_info {
    uint8_t output_base[8];
    bool writes_depth, writes_sample_mask, discards;
    bool uses_view;              /* reads the view (multiview): declares `override wg_view`, a pipeline's for each view */
+   bool writes_layer;           /* vertex: writes gl_Layer (VK4 T43), declares `override wg_layer`: a primitive of
+                                 * another layer than the pipeline's is put outside the clip volume (a layered pass
+                                 * is drawn a layer at a time, a pipeline each) */
+   bool uses_layer;             /* fragment: reads gl_Layer, declares `override wg_layer` (the pipeline's layer) */
    bool per_sample;             /* fragment: at the sample rate, declares `override wg_samples` (the pipeline's) */
    bool a2c;                    /* fragment: location 0 a float, declares `override wg_a2c`: alpha to coverage at
                                  * one sample (WebGPU's needs several), its fragments under half alpha discarded */
