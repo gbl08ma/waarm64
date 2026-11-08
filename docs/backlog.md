@@ -879,7 +879,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     drawn in a crop or a 3D image's slice; `advancedBlendCoherentOperations` isn't advertised. Not supported in its
     samples: `VK_EXT_depth_range_unrestricted` (113 of the M4's 999, its depths and bounds past [0, 1]: WebGPU's viewport
     depths stay in it), 16 attachments (65), 64-bit formats, mesh shaders. Local read: the input attachment index map
-    isn't read (input attachments go by their descriptors), dual-source outputs aren't moved by the location map; of its
+    isn't read (input attachments go by their descriptors), dual-source outputs aren't moved by the location map (their
+    draw refused; WebGPU's dual-source blending takes one colour target, so a pass with more can't draw them at all); of its
     sample `VK_EXT_dynamic_rendering_unused_attachments` (48), sample counts and `customResolve` are the commonest
     reasons left.
   - **Feedback loops' leftovers** (VK4 T32; vk/README.md "Feedback loops"): `VK_KHR_unified_image_layouts` (the
@@ -1120,7 +1121,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     buffer at its GPUBuffer's making and can't move there later, so one whose GPUBuffer a linear image made first, or
     that has no room left, has buffers whose address is 0 (said once). Regions reach 1 GiB together (an adapter whose
     binding reaches 1 GiB has one, so address memory past it fails there as before): with more than one, every access
-    through a pointer is an `if` tree on the high word, a storage binding a region in each pointer-reading stage, and at
+    through a pointer is an `if` tree on the high word, a storage binding a region in each pointer-reading stage (those
+    past the first out of `maxPerStageDescriptorStorageBuffers`; the first isn't, so a stage of every advertised storage
+    buffer, the folded uniform buffers' bindings and a pointer is one binding past WebGPU's and refused), and at
     three SwiftShader's compiles of `buffer_device_address`'s depth3 stages ran past dEQP's 30 s watchdog. Programs'
     pipelines made for the regions in use, made again when another is first used, would let it reach the heaps. Capture and replay doesn't keep replays apart from other allocations (they'd be placed at a
     region's top, the region grown whole), so a replay's places can be taken by allocations that come in another order.

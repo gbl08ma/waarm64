@@ -418,14 +418,25 @@ shared_text(const struct wg_program *v, char *text)
          if (at && v->resources[resource_at(v, sh->to)].kind == WGSL_STORAGE)
             text = spliced(text, at - text + strlen(decl) - strlen("read> "), strlen("read"), "read_write");
       }
+      /* An address share's index held to its length (`.z`): the pointers' binding is the region's whole GPUBuffer, so
+       * WebGPU's robustness no longer keeps it in the descriptor's range (robustBufferAccess: a store past it must not
+       * reach other memories). */
+      char close[64] = ")]";
       snprintf(from, sizeof(from), "r%u_%u[", g, b);
-      snprintf(with, sizeof(with), "r%u_%u[r%u_%u[%uu].w + (", sh->to >> 16, sh->to & 0xffff, g, WGSL_TABLE_BINDING, b);
+      if (sh->whole == WG_SHARE_ADDRESS) {
+         snprintf(with, sizeof(with), "r%u_%u[r%u_%u[%uu].w + min(u32(", sh->to >> 16, sh->to & 0xffff, g,
+                  WGSL_TABLE_BINDING, b);
+         snprintf(close, sizeof(close), "), max(r%u_%u[%uu].z, 1u) - 1u)]", g, WGSL_TABLE_BINDING, b);
+      } else {
+         snprintf(with, sizeof(with), "r%u_%u[r%u_%u[%uu].w + (", sh->to >> 16, sh->to & 0xffff, g, WGSL_TABLE_BINDING,
+                  b);
+      }
       for (char *q = text, *f; (f = word_at(text, q, from));) {
          size_t end = f - text + strlen(from);
          for (int depth = 1; text[end] && depth; end++)
             depth += (text[end] == '[') - (text[end] == ']');
          const size_t head = f - text;
-         text = spliced(text, end - 1, 1, ")]");
+         text = spliced(text, end - 1, 1, close);
          text = spliced(text, head, strlen(from), with);
          q = text + head + strlen(with);
          touched = true;
@@ -2459,7 +2470,11 @@ dst_logic(struct wg_json *j, uint32_t loc, VkFormat format, uint8_t base, uint8_
 struct fs_main {
    char *at, *eol;
    bool has_out;
+   size_t plen;
    char params[1024];
+   /* The parameters without their attributes: what the function `main` becomes takes (WGSL allows @builtin and
+    * @location on an entry point's parameters alone). */
+   char bare[1024];
    struct wg_json args;
 };
 
@@ -2479,6 +2494,22 @@ fs_main(char *text, struct fs_main *m)
       return false;
    memcpy(m->params, m->at + sizeof(head) - 1, plen);
    m->params[plen] = 0;
+   m->plen = plen;
+   /* Each attribute, `@name(...) ` (the printer's and dst_text's have no commas or nesting in theirs), left out. */
+   char *b = m->bare;
+   for (const char *p = m->params; *p;) {
+      if (*p == '@') {
+         const char *close = strchr(p, ')');
+         if (!close)
+            return false;
+         p = close + 1;
+         while (*p == ' ')
+            p++;
+         continue;
+      }
+      *b++ = *p++;
+   }
+   *b = 0;
    wg_json_printf(&m->args, "%s", "");
    for (char *p = m->params; *p;) {
       char *colon = strchr(p, ':');
@@ -2514,7 +2545,7 @@ dst_text(const struct wg_pipeline_key *k, const struct wg_dst *dst, char *text)
       ms |= (dst->types[b] & WG_DST_MS) != 0;
    const char *sid = strstr(params, "@builtin(sample_index) sid: u32") ? "sid" : "wg_sid";
    struct wg_json j = { 0 };
-   wg_json_printf(&j, "%.*sfn wg_fs(%s)%s {%s", (int)(at - text), text, params, has_out ? " -> Out" : "", eol);
+   wg_json_printf(&j, "%.*sfn wg_fs(%s)%s {%s", (int)(at - text), text, fm.bare, has_out ? " -> Out" : "", eol);
    bool lib = false;
    for (uint32_t i = 0; i < 8; i++)
       if (k->adv[i].op && dst->types[i]) {
@@ -2622,9 +2653,11 @@ post_text(const struct wg_pipeline_key *k, char *text)
    const bool bias = post_bias(k), cover = k->fs && k->a2c_mask;
    const bool own_mask = k->fs && k->fs->info.writes_sample_mask;
    const uint32_t ones = k->alpha_to_one ? post_float_outputs(k) : 0;
-   /* `main` renamed, then Out's new members (or Out itself, for a stage without outputs). */
+   /* `main` renamed, its parameters bare, then Out's new members (or Out itself, for a stage without outputs). */
    const size_t at_main = at - text;
-   text = spliced(text, at_main, sizeof(head) - 1, "fn wg_fp(");
+   char renamed[sizeof(fm.bare) + 16];
+   snprintf(renamed, sizeof(renamed), "fn wg_fp(%s", fm.bare);
+   text = spliced(text, at_main, sizeof(head) - 1 + fm.plen, renamed);
    char members[160];
    snprintf(members, sizeof(members), "%s%s", bias ? "  @builtin(frag_depth) wg_depth: f32,\n" : "",
             cover && !own_mask ? "  @builtin(sample_mask) wg_mask: u32,\n" : "");
@@ -2654,9 +2687,20 @@ post_text(const struct wg_pipeline_key *k, char *text)
       wg_json_printf(&j, "  var r = wg_fp(%s);\n", args.data ? args.data : "");
    else
       wg_json_printf(&j, "  var r: Out;\n  wg_fp(%s);\n", args.data ? args.data : "");
-   if (cover)
-      wg_json_printf(&j, "  let wg_cov = (1u << u32(round(clamp(r.f0.a, 0.0, 1.0) * %u.0))) - 1u;\n  r.%s %s wg_cov;\n",
-                     MIN2(k->samples, 31u), own_mask ? "mask" : "wg_mask", own_mask ? "&=" : "=");
+   if (cover) {
+      /* Location 0's alpha: where the key's map put it (`mapped_text`: the attachment that takes it, else a private). */
+      char loc0[16] = "r.f0";
+      if (k->mapped) {
+         snprintf(loc0, sizeof(loc0), "wg_unused0");
+         for (uint32_t i = 0; i < 8; i++)
+            if (k->color_map[i] == 0) {
+               snprintf(loc0, sizeof(loc0), "r.f%u", i);
+               break;
+            }
+      }
+      wg_json_printf(&j, "  let wg_cov = (1u << u32(round(clamp(%s.a, 0.0, 1.0) * %u.0))) - 1u;\n  r.%s %s wg_cov;\n",
+                     loc0, MIN2(k->samples, 31u), own_mask ? "mask" : "wg_mask", own_mask ? "&=" : "=");
+   }
    u_foreach_bit(i, ones)
       wg_json_printf(&j, "  r.f%u.a = 1.0;\n", i);
    if (bias) {
@@ -2711,6 +2755,22 @@ static uint32_t
 fragment_dst(struct wg_program *p, const struct wg_pipeline_key *k, const struct wg_dst *dst, bool drop_depth)
 {
    return fragment_dst_text(p, k, dst, fragment_text(p, k->fs, drop_depth));
+}
+
+/* A key's pipeline that can't be made as it asks: 0, kept for the key (its draws dropped: wg_cmd.c `record_draw`), said
+ * once. */
+static uint32_t
+refused_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
+{
+   static bool warned;
+   if (!warned)
+      fprintf(stderr, "wg: a draw refused: its fragment stage can't be printed for what its pipeline asks (a depth bias, "
+                      "alpha to coverage or one, the attachments' reads or their locations' map)\n");
+   warned = true;
+   struct wg_pipeline_key *copy = malloc(sizeof(*copy));
+   memcpy(copy, k, sizeof(*copy));
+   _mesa_hash_table_insert(p->pipelines, copy, (void *)(uintptr_t)0);
+   return 0;
 }
 
 static uint32_t
@@ -2807,8 +2867,14 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
    if (k->fs) {
       const struct wg_texture_format *ds = k->depth ? wg_texture_format(k->depth) : NULL;
       const bool depth_dropped = k->fs->info.writes_depth && !(ds && (ds->flags & WG_FMT_DEPTH));
-      /* A stage reading its attachments, or whose outputs the key's map moves, is printed for the key. */
-      const uint32_t dst_module = dst || k->mapped || key_posts(k) ? fragment_dst(p, k, dst, depth_dropped) : 0;
+      /* A stage reading its attachments, or whose outputs the key's map moves, is printed for the key; where it can't
+       * be, the pipeline is refused (its draws dropped, said once), not made without what the key asks. */
+      const bool keyed = dst || k->mapped || key_posts(k);
+      const uint32_t dst_module = keyed ? fragment_dst(p, k, dst, depth_dropped) : 0;
+      if (keyed && !dst_module) {
+         wg_json_free(&j);
+         return refused_pipeline(p, k);
+      }
       const uint32_t outputs = key_outputs(k, NULL);
       wg_json_printf(&j, ",\"fragment\":{\"module\":%u,\"entryPoint\":\"main\",",
                      dst_module ? dst_module : depth_dropped ? fragment_without_depth(p, k->fs)
@@ -2882,6 +2948,10 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
          struct wg_json t = { 0 };
          wg_json_printf(&t, "@fragment fn main() {\n}\n");
          bounds = fragment_dst_text(p, k, dst, t.data);
+         if (!bounds) {
+            wg_json_free(&j);
+            return refused_pipeline(p, k);
+         }
       }
       if (bounds) {
          wg_json_printf(&j, ",\"fragment\":{\"module\":%u,\"entryPoint\":\"main\",\"targets\":[", bounds);

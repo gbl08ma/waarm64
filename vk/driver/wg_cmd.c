@@ -2058,11 +2058,13 @@ draw_key(struct wg_cmd_buffer *cmd, struct wg_shader *vs, struct wg_shader *fs, 
       }
    }
    /* Alpha to one, and alpha to coverage where WebGPU's can't take it (VK4 T43, wg_shader.c `post_text`): no colour
-    * target at location 0, a stage writing `sample_mask`, or alpha to one (WebGPU's coverage would see its alpha 1). */
+    * target at location 0 (WebGPU's takes target 0's alpha, Vulkan's location 0's, which the key's map may move), a
+    * stage writing `sample_mask`, or alpha to one (WebGPU's coverage would see its alpha 1). */
    k.alpha_to_one = fs && dyn->ms.alpha_to_one_enable;
-   if (fs && k.alpha_to_coverage && k.samples > 1 && !k.mapped && (fs->info.outputs & 1u) &&
-       fs->info.output_base[0] == WGSL_F32 && !fs->info.dual_source) {
-      const bool target0 = k.color_count && k.colors[0] && wg_texture_format(k.colors[0]) && !fs->info.writes_sample_mask;
+   if (fs && k.alpha_to_coverage && k.samples > 1 && (fs->info.outputs & 1u) && fs->info.output_base[0] == WGSL_F32 &&
+       !fs->info.dual_source) {
+      const bool target0 = k.color_count && k.colors[0] && wg_texture_format(k.colors[0]) && wg_key_location(&k, 0) == 0 &&
+                           !fs->info.writes_sample_mask;
       k.a2c_mask = !target0 || k.alpha_to_one;
    }
    *out = k;
@@ -2113,12 +2115,14 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
    if (wg_key_reads_dst(&k) && !wg_pipeline_dst(p, &k))
       return false;
    if (!cmd->have_key || memcmp(&k, &cmd->last_key, sizeof(k)) || cmd->last_program[0] != p) {
+      /* Made now, while the command buffer is recorded (WebGPU makes it asynchronously: web/venus-gpu.ts), so that it
+       * is likely ready by the submit, which otherwise waits for it; the replay finds it by its key. One that can't be
+       * made as its key asks (wg_shader.c `refused_pipeline`): the draw dropped. */
+      if (!wg_render_pipeline(p, &k))
+         return false;
       struct op_pipeline *op = emit(cmd, OP_PIPELINE, NULL, sizeof(*op));
       op->program = p;
       op->key = k;
-      /* Made now, while the command buffer is recorded (WebGPU makes it asynchronously: web/venus-gpu.ts), so that it
-       * is likely ready by the submit, which otherwise waits for it; the replay finds it by its key. */
-      wg_render_pipeline(p, &k);
       /* A stage that reads the view: a pipeline per view (`wg_view`, an override). */
       if (cmd->pass.view_mask && per_view(vs, fs))
          u_foreach_bit(view, cmd->pass.view_mask) {

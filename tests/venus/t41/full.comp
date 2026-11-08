@@ -1,0 +1,14 @@
+#version 450
+// The review of VK4 T41 to T43, finding 6 (wg_test.c 121): as many storage buffers as the device advertises a stage
+// (N, specialized), beside a pointer, where the address buffer has several regions (each a storage binding).
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+layout(local_size_x = 1) in;
+layout(constant_id = 0) const uint N = 4;
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer Words { uint v[]; };
+layout(push_constant) uniform Push { Words from; } p;
+layout(set = 0, binding = 0, std430) buffer B { uint v[]; } b[N];
+void main() {
+  for (uint k = 0; k < N; k++)
+    b[k].v[0] = p.from.v[0] + k;
+}

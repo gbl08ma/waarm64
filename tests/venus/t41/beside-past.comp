@@ -1,0 +1,16 @@
+#version 450
+// The review of VK4 T41 to T43, finding 5 (wg_test.c 120): a writable descriptor of a memory beside pointers into it
+// (its words read and written through the pointers' binding, the region's whole GPUBuffer) stores past its range:
+// robustBufferAccess keeps the store in the descriptor's range, not in the memory's bytes past it.
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+layout(local_size_x = 4) in;
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer Words { uint v[]; };
+layout(push_constant) uniform Push { Words from, to; } p;
+layout(set = 0, binding = 0, std430) buffer Out { uint o[]; } d;
+void main() {
+  uint i = gl_LocalInvocationIndex;
+  d.o[i] = p.from.v[i];
+  d.o[d.o.length() + 4 + i] = 0x11111111u;
+  p.to.v[300 + i] = d.o[d.o.length() + 8 + i];
+}

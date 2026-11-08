@@ -343,6 +343,28 @@ wg_caps_features(struct vk_features *f)
    };
 }
 
+/* A stage's storage bindings ("The bindings WebGPU takes", below: every stage's least), and those of them the uniform
+ * buffers past WebGPU's take (wg_shader.c `fold_uniforms`; VK3 L7.4, ANGLE's ES3 wants 13): WG_FOLDED_UBOS, and one
+ * more where 8 storage buffers are left beside them (VK4 T40: vkd3d's 14 a stage, D3D's at 11_0, where its 8 UAVs keep
+ * theirs; SwiftShader and the M4 have 10, so 13 there). */
+static uint32_t
+stage_storage(uint32_t *folded)
+{
+   const struct wg_limits *L = &wg_limits;
+   const uint32_t storage = MIN3(L->max_storage_buffers, L->max_storage_buffers_in_fragment_stage,
+                                 L->max_storage_buffers_in_vertex_stage);
+   *folded = storage >= 8 + WG_FOLDED_UBOS + 1 ? WG_FOLDED_UBOS + 1 : storage >= 4 + WG_FOLDED_UBOS ? WG_FOLDED_UBOS : 0;
+   return storage;
+}
+
+uint32_t
+wg_caps_storage_buffers(void)
+{
+   uint32_t folded;
+   const uint32_t storage = stage_storage(&folded);
+   return storage - folded;
+}
+
 void
 wg_caps_properties(struct vk_properties *p)
 {
@@ -351,16 +373,11 @@ wg_caps_properties(struct vk_properties *p)
    const uint32_t sampled = L->max_sampled_textures;
    const uint32_t storage_tex = MIN3(L->max_storage_textures, L->max_storage_textures_in_fragment_stage,
                                      L->max_storage_textures_in_vertex_stage);
-   const uint32_t storage = MIN3(L->max_storage_buffers, L->max_storage_buffers_in_fragment_stage,
-                                 L->max_storage_buffers_in_vertex_stage);
-   /* Uniform buffers past WebGPU's a stage (less the push buffer's binding) are read as storage (wg_shader.c
-    * `fold_uniforms`; VK3 L7.4, ANGLE's ES3 wants 13): WG_FOLDED_UBOS of the storage buffers are theirs, and one more
-    * where 8 storage buffers are left beside them (VK4 T40: vkd3d's 14 a stage, D3D's at 11_0, where its 8 UAVs keep
-    * theirs; SwiftShader and the M4 have 10, so 13 there). */
-   const uint32_t folded = storage >= 8 + WG_FOLDED_UBOS + 1 ? WG_FOLDED_UBOS + 1
-                           : storage >= 4 + WG_FOLDED_UBOS   ? WG_FOLDED_UBOS
-                                                             : 0;
-   const uint32_t ubo = L->max_uniform_buffers - 1 + folded, ssbo = storage - folded;
+   uint32_t folded;
+   const uint32_t storage = stage_storage(&folded);
+   /* The address buffer's regions past its first take a storage binding each in a stage reading pointers (wg_device.c
+    * `wg_address_regions`, which leaves Vulkan's least 4 here). */
+   const uint32_t ubo = L->max_uniform_buffers - 1 + folded, ssbo = storage - folded - (wg_address_regions() - 1);
    const uint32_t samples = VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_4_BIT;
    /* WebGPU's buffers are ranges of one GPUBuffer a memory: an allocation is at most a buffer (and a 32-bit size), which
     * has what room is left past it for a pad (wg_memory_pad). */

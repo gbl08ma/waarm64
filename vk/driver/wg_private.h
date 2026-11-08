@@ -100,6 +100,9 @@ uint32_t wg_subgroup_size(void);
 void wg_caps_extensions(struct vk_device_extension_table *e);
 void wg_caps_features(struct vk_features *f);
 void wg_caps_properties(struct vk_properties *p);
+/* The storage buffers a stage has for descriptors (WebGPU's, less the folded uniform buffers'), before the address
+ * buffer's regions past its first take theirs (wg_address_regions). */
+uint32_t wg_caps_storage_buffers(void);
 /* Whether a set layout with mutable descriptors fits a stage's bindings whatever types they're written as (VK4 T34). */
 bool wg_mutable_layout_fits(const VkDescriptorSetLayoutCreateInfo *info);
 struct wg_program;

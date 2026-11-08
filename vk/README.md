@@ -492,7 +492,10 @@ a guest only through Mesa 26.3's Venus on: 26.2's leaves it out). Two memory typ
   colour blend enables, equations and write masks, alpha to one and the provoking vertex; alpha to coverage at one
   sample, which WebGPU's pipelines refuse, is the fragment stage's (`wg_a2c`, an override: a fragment whose location
   0's alpha is under a half discarded). **What the fragment stage does past its outputs** (VK4 T43, wg_shader.c
-  `post_text`: the stage's `main` becomes `wg_fp`, which a new `main` calls, and the members it adds to `Out` it sets):
+  `post_text`: the stage's `main` becomes `wg_fp`, its parameters without their `@builtin` attributes (WGSL allows
+  them on an entry point's alone; `dst_text`'s `wg_fs` likewise), which a new `main` calls, and the members it adds to
+  `Out` it sets; a key whose stage can't be printed so is refused, its draws dropped and said once, not drawn without
+  what it asks: dual-source outputs a location map moves):
   a depth bias WebGPU's integer `depthBias` (a whole number of its texture's least step) can't give is the rasterized
   depth moved by `m · slope + r · constant`, clamped, written as `frag_depth` (`bias_frag` in the key, the slope `m`
   from the depth's derivatives before the stage runs): every one but the format's representation's whole constants on
@@ -503,8 +506,9 @@ a guest only through Mesa 26.3's Venus on: 26.2's leaves it out). Two memory typ
   attachment holds what reads back as its word); a float format's r 2^(e − 23) from the fragment's own depth's
   exponent (Vulkan's is the primitive's largest). Such a draw's fragments take no early depth test, and a pipeline
   without a fragment stage gets one writing the depth. Alpha to coverage WebGPU can't take (no colour target at
-  location 0, a stage writing `sample_mask`, or alpha to one, whose alpha 1 its coverage would see) is the stage's
-  `sample_mask`, the first `round(alpha · samples)` samples (and the stage's own mask); alpha to one sets the float
+  location 0, target 0 not location 0's under a location map, a stage writing `sample_mask`, or alpha to one, whose
+  alpha 1 its coverage would see) is the stage's `sample_mask`, the first `round(alpha · samples)` samples of location
+  0's alpha wherever the map puts it (and the stage's own mask); alpha to one sets the float
   outputs' alpha to 1 after the coverage is taken. Stencil state per
   face (WebGPU has one reference and one pair of masks, Vulkan a set a face): a draw whose faces both use one of them
   with different values (a reference compared or replaced, a compare mask compared, a write mask written), both faces
@@ -805,7 +809,8 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   at each vkCmdBeginRendering); WebGPU's target i is @location(i), so the key holds the map and the stage is printed with
   its outputs moved (an output no attachment takes goes to a private variable). Input attachments read through their
   descriptors as before (`feedback_copies`), so the input attachment map isn't read; a barrier inside the pass renews
-  their copies. Dual-source outputs aren't moved.
+  their copies. Dual-source outputs aren't moved: a map that moves them refuses the draw (WebGPU's dual-source blending
+  takes one target, so only a single attachment at no location gets there).
 - **Multisampled rendering to single-sampled attachments** (VK4 T32; `VK_EXT_multisampled_render_to_single_sampled`,
   `ms_attachment` in wg_cmd.c, `wg_view_ms` in wg_device.c): a pass (dynamic rendering's
   `VkMultisampledRenderToSingleSampledInfoEXT`; a subpass's comes to it through the runtime) renders each
@@ -884,7 +889,9 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   buffers whose address is 0 (said once), and is had all the same. The address buffer is **regions**, an address's high
   word (`wg_address_regions`: as many as reach 1 GiB together at one storage binding's reach, at most 4: one on the M4,
   NVIDIA and SwiftShader, four of 128 MiB on an adapter of WebGPU's least; at three regions SwiftShader's compiles of
-  dEQP-VK's deepest pointer stages ran past its 30 s watchdog), each a GPUBuffer at a binding of group 3 (region 0 at 996, then 990 up:
+  dEQP-VK's deepest pointer stages ran past its 30 s watchdog; those past the first come out of
+  `maxPerStageDescriptorStorageBuffers`, as each is a storage binding in a stage reading pointers, which keeps Vulkan's
+  least 4: three regions at WebGPU's least 8 storage bindings a stage), each a GPUBuffer at a binding of group 3 (region 0 at 996, then 990 up:
   wgsl.h `wgsl_address_binding`, a set's slots under 990) that starts at 64 KiB and grows in place (`gpu_grow`: a new
   buffer under the same id, in the queue's order, so recorded commands stay right and only bind groups are made again,
   `address_gen`), doubling from 64 MiB, up to `maxStorageBufferBindingSize`; the regions' places are one heap, each
@@ -897,7 +904,8 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   dispatch with its region's pointers' binding (writable, or read beside pointers that write) is read and written
   through that binding (`address_shares` in wg_cmd.c, a `wg_share` of `WG_SHARE_ADDRESS`: its place and length in its
   group's parameter table, so one variant serves every place), where WebGPU's aliasing rule refuses the two bindings:
-  each sees what the other wrote. Where it can't be (a dynamic one, atomics that differ, pointers a vertex stage sees
+  each sees what the other wrote. Its index is held to its length (`min(i, length − 1)`), as WebGPU's robustness held it
+  to its own binding's, so a store past it stays in it (robustBufferAccess). Where it can't be (a dynamic one, atomics that differ, pointers a vertex stage sees
   read-only, a descriptor in another draw of the pass) it goes to a shadow copied back at the scope's end (bytes reached
   both ways in one scope don't see each other, and the copy back undoes what pointers wrote in its range). A pointer converted to and from a 64-bit integer (`OpConvertUToPtr`, since `shaderInt64`:
   VK4 T29) is its two words packed. **Capture and replay** (`bufferDeviceAddressCaptureReplay`): a memory allocated with

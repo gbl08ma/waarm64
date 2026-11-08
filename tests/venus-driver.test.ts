@@ -340,7 +340,7 @@ for (const [mask, what] of [
 
 // VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for.
 // Each misc scenario's compute shader (tests/venus/<name>.comp), push.comp where it isn't named.
-const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', threeSame: 'three-writes', oddRange: 'two-writes', inlineBlocks: 'inline', packedFeedback: 'feedback.frag', feedbackLayer: 'feedback.frag', depthLess: 'r5/depthless.frag', depthAndCompare: 'r5/depth-and-compare.frag', intGather: 'r5/int-gather.frag', cubeSized: 'r5/cube-sized.frag', cubeGather: 'r5/cube-gather.frag', depthEight: 'r5/depth-eight.frag', inlineLong: 'r6/inline-long', immutableFreed: 'sampled', sixteenBindings: 'r7/sixteen.frag', sixteenThenOne: 'r7/sixteen.frag', cubePlain: 'r5/cube-plain.frag', vertexCompares: 'r7/vs-compare.frag', fourSets: 'r7/four-sets.frag', bc1Blit: 'r7/sixteen.frag', readOnlyImages: 'g4/read-only', g4Views: 'g4/views', texturesFull: 'g4/textures-full', sizeOnly: 'g4/size-only', formatless: 'g5/formatless', declaredOther: 'g7/declared', arrayAsFlat: 'g4/views', texelUniforms: 'texel-uniforms', rgb9e5Words: 't23-rgb9e5', t32Reads: 't32/dst.frag', t32Loop: 't32/loop.frag', t32Ms: 't32/dst.frag', t34Mutable: 't34/mutable', t37Flat: 't37/flat-storage', t37ReadWritten: 't37/read-written', t37WordsPast: 't37/words-past', t37Mismatched: 't37/mismatched', t37UniformTail: 't37/uniform-tail', t37AtomicAlias: 't37/atomic-alias', t38Stores: 't38/stores', t40Shared: 't40/shared', t40Dynamic: 't40/dynamic', t41Regions: 't41/regions', t41Beside: 't41/beside' } as const;
+const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', threeSame: 'three-writes', oddRange: 'two-writes', inlineBlocks: 'inline', packedFeedback: 'feedback.frag', feedbackLayer: 'feedback.frag', depthLess: 'r5/depthless.frag', depthAndCompare: 'r5/depth-and-compare.frag', intGather: 'r5/int-gather.frag', cubeSized: 'r5/cube-sized.frag', cubeGather: 'r5/cube-gather.frag', depthEight: 'r5/depth-eight.frag', inlineLong: 'r6/inline-long', immutableFreed: 'sampled', sixteenBindings: 'r7/sixteen.frag', sixteenThenOne: 'r7/sixteen.frag', cubePlain: 'r5/cube-plain.frag', vertexCompares: 'r7/vs-compare.frag', fourSets: 'r7/four-sets.frag', bc1Blit: 'r7/sixteen.frag', readOnlyImages: 'g4/read-only', g4Views: 'g4/views', texturesFull: 'g4/textures-full', sizeOnly: 'g4/size-only', formatless: 'g5/formatless', declaredOther: 'g7/declared', arrayAsFlat: 'g4/views', texelUniforms: 'texel-uniforms', rgb9e5Words: 't23-rgb9e5', t32Reads: 't32/dst.frag', t32Loop: 't32/loop.frag', t32Ms: 't32/dst.frag', t34Mutable: 't34/mutable', t37Flat: 't37/flat-storage', t37ReadWritten: 't37/read-written', t37WordsPast: 't37/words-past', t37Mismatched: 't37/mismatched', t37UniformTail: 't37/uniform-tail', t37AtomicAlias: 't37/atomic-alias', t38Stores: 't38/stores', t40Shared: 't40/shared', t40Dynamic: 't40/dynamic', t41Regions: 't41/regions', t41Beside: 't41/beside', t43Wrapped: 't43/wrapped.frag', t43MappedCoverage: 't43/a2c-mapped.frag', t43MappedDual: 't43/dual-mapped.frag', t41BesidePast: 't41/beside-past', t41Full: 't41/full' } as const;
 for (const [scenario, what] of [
   ['copy', 'buffer copies at offsets and sizes that aren\'t 4-aligned, from host-visible, device-local and GPU-written memory'],
   ['clear', 'a clear of a format WebGPU can\'t render to, and of every slice of a 3D image'],
@@ -490,6 +490,12 @@ for (const [scenario, what] of [
   // VK4 T41: device addresses at a program's scale.
   ['t41Regions', 'pointers into three regions of an address buffer past one storage binding, an image\'s memory taking no room, one memory at its captured address'],
   ['t41Beside', 'a writable descriptor beside pointers into its memory in one dispatch: each sees what the other wrote, nothing written back over the pointers\''],
+  // The review of VK4 T41 to T43.
+  ['t41BesidePast', 'a writable descriptor beside pointers into its memory stores and loads past its range: kept in it (robustBufferAccess)'],
+  ['t41Full', 'as many storage buffers as advertised beside a pointer, the address buffer in regions of 1 MiB'],
+  ['t43Wrapped', 'a stage reading gl_FrontFacing wrapped for a D24 depth bias, alone and with the depth bounds test'],
+  ['t43MappedCoverage', 'alpha to coverage and alpha to one with the outputs\' locations swapped: location 0\'s alpha covers'],
+  ['t43MappedDual', 'dual-source outputs that a map of locations moves, with a D24 depth bias, refused: the stage can\'t be printed for the map'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.
@@ -509,6 +515,7 @@ for (const [scenario, what] of [
     mkdirSync(join(out, 't38'), { recursive: true });
     mkdirSync(join(out, 't40'), { recursive: true });
     mkdirSync(join(out, 't41'), { recursive: true });
+    mkdirSync(join(out, 't43'), { recursive: true });
     for (const f of [src, ...(src.endsWith('.frag') ? ['feedback.vert', 'r5/cube-sized.vert', 'r7/sixteen.vert', 'r7/vs-compare.vert'] : [])]) {
       const c = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${f}.spv`), join(root, `tests/venus/${f}`)], { encoding: 'utf8' });
       assert.equal(c.status, 0, c.stderr);
@@ -532,7 +539,7 @@ for (const [scenario, what] of [
       delete checks.ran;
     }
     for (const [k, at] of Object.entries(checks)) assert.equal(at, -1, `${k}: the bytes differ from byte ${at} (${JSON.stringify(r.got)})`);
-    if (scenario === 'fourSets' || scenario === 't37WordsPast' || scenario === 't37AtomicAlias') assert.ok(logs.some((l) => /refused/.test(l)), `not refused: ${JSON.stringify(logs)}`);
+    if (scenario === 'fourSets' || scenario === 't37WordsPast' || scenario === 't37AtomicAlias' || scenario === 't43MappedDual') assert.ok(logs.some((l) => /refused/.test(l)), `not refused: ${JSON.stringify(logs)}`);
     assert.equal(r.warnings, 0, 'the worker warned');
     // The fill's and the six pipelines' one: not one a dispatch (a set keeps groups for 4 layouts).
     if (scenario === 'bindGroupsShared') assert.ok((r.bindGroups as number) <= 2, `${r.bindGroups} bind groups made`);

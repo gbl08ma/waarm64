@@ -755,13 +755,17 @@ address_most(void)
 /* As many regions as reach WG_ADDRESS_SPACE together, at most WGSL_ADDRESS_REGIONS: each pointer-reading stage binds
  * them all (a storage binding each) and picks one by an `if` tree at every access, which took SwiftShader's compiles
  * of dEQP-VK's depth3 stages past its 30 s watchdog at three regions. So one where a binding reaches 1 GiB (the M4,
- * NVIDIA, SwiftShader), four of 128 MiB where an adapter has WebGPU's least. */
+ * NVIDIA, SwiftShader), four of 128 MiB where an adapter has WebGPU's least. Those past the first come out of the storage
+ * buffers a stage is advertised (wg_caps.c), which keep Vulkan's least, 4: at WebGPU's least 8 storage bindings a
+ * stage (2 of them the folded uniform buffers'), three regions and 4 storage buffers. */
 #define WG_ADDRESS_SPACE (1ull << 30)
 uint32_t
 wg_address_regions(void)
 {
    const uint64_t most = address_most();
-   return most ? (uint32_t)CLAMP(DIV_ROUND_UP(WG_ADDRESS_SPACE, most), 1, WGSL_ADDRESS_REGIONS) : 1;
+   const uint32_t storage = wg_caps_storage_buffers();
+   const uint32_t room = storage > 4 ? storage - 4 : 0;
+   return most ? (uint32_t)CLAMP(DIV_ROUND_UP(WG_ADDRESS_SPACE, most), 1, MIN2(WGSL_ADDRESS_REGIONS, 1 + room)) : 1;
 }
 
 int
