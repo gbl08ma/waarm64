@@ -57,7 +57,9 @@ export function replayTrace64(trace: string, read?: number) {
  * visible `w`×`h` hashed as I420 (SHA-256). With `orig` (an H.264 stream's first pictures, Annex B), also the
  * browser's own decode of it, hashed the same way: what the planes must hold where its decoder isn't FFmpeg's.
  * `fault` damages the chunk of one picture (its index in decode order) before the decoder gets it: `garble` overwrites
- * its bytes after the first 8 with a pattern, `truncate` keeps its first 8 bytes.
+ * its bytes after the first 8 with a pattern, `truncate` keeps its first 8 bytes. With a fault, the queue's drain and
+ * give-up (CallQueue.tick) come only after 10 and 20 s, and `timedOut` counts them: what frees the guest after a
+ * fault must be the decoder's error, not a timer, however slow the host runs.
  */
 export type ChunkFault = { picture: number; how: 'garble' | 'truncate' };
 export async function replayVideo64(trace: string, w: number, h: number, orig?: string, fault?: ChunkFault) {
@@ -67,6 +69,7 @@ export async function replayVideo64(trace: string, w: number, h: number, orig?: 
   const shots: Promise<string>[] = [];
   let r!: VirglRenderer;
   let q!: CallQueue<HostCall>;
+  const timedOut = { drains: 0, giveUps: 0 };
   const t0 = performance.now();
   const timer = setInterval(() => q?.tick(), 20);
   const settled = async () => { while (q.length || r.videoWaiting) await new Promise((ok) => setTimeout(ok, 5)); };
@@ -81,7 +84,7 @@ export async function replayVideo64(trace: string, w: number, h: number, orig?: 
         shots.push(sha256(i420(planes.map((id) => ({ bytes: r.readResource(id)!, width: r.resources.get(id)!.width })), w, h)));
       };
       // `ctx` -1: the guest's read of a picture (below), which only waits.
-      q = new CallQueue<HostCall>({ run: (c) => { if (c.t !== 'transfer' || c.ctx !== -1) runCall(c, r); }, pending: r.videoPending, nudge: () => r.videoNudge(), drain: () => r.videoDrain(), giveUp: () => r.videoGiveUp() });
+      q = new CallQueue<HostCall>({ run: (c) => { if (c.t !== 'transfer' || c.ctx !== -1) runCall(c, r); }, pending: r.videoPending, nudge: () => r.videoNudge(), drain: () => { timedOut.drains++; r.videoDrain(); }, giveUp: () => { timedOut.giveUps++; r.videoGiveUp(); }, ...(fault ? { drainMs: 10_000, giveUpMs: 20_000 } : {}) });
       r.onVideoSettled = () => queueMicrotask(() => q.progress());
       return { call: (c) => q.push(c), fence: () => undefined };
     }, async () => { if (q.length) await settled(); });
@@ -94,7 +97,7 @@ export async function replayVideo64(trace: string, w: number, h: number, orig?: 
   } finally {
     clearInterval(timer);
   }
-  return { hashes: await Promise.all(shots), stats: { ...r.videoStats }, ahead: q.ahead, maxWaitMs: q.maxWaitMs, hardware, log, ms: performance.now() - t0, orig: orig ? await decodeOrig(fromBase64(orig), w, h, hardware) : null };
+  return { hashes: await Promise.all(shots), stats: { ...r.videoStats }, ahead: q.ahead, maxWaitMs: q.maxWaitMs, timedOut, hardware, log, ms: performance.now() - t0, orig: orig ? await decodeOrig(fromBase64(orig), w, h, hardware) : null };
 }
 
 /** WebCodecs' decoders with one chunk damaged (`ChunkFault`). */

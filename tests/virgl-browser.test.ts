@@ -64,7 +64,7 @@ test('virgl on WebGL2: every program of the TGSI corpus compiles and links', asy
   assert.ok(r.programs >= 35);
 });
 
-type VideoReplay = { hashes: string[]; stats: { frames: number; decoded: number; dropped: number; errors: number }; ahead: number; maxWaitMs: number; hardware: number[]; log: string[]; ms: number; orig: { hashes: string[]; errors: string[] } | null };
+type VideoReplay = { hashes: string[]; stats: { frames: number; decoded: number; dropped: number; errors: number }; ahead: number; maxWaitMs: number; timedOut: { drains: number; giveUps: number }; hardware: number[]; log: string[]; ms: number; orig: { hashes: string[]; errors: string[] } | null };
 async function replayVideo(name: string, orig?: string, fault?: ChunkFault): Promise<VideoReplay> {
   const ref = videoRef();
   return page.evaluate(([t, w, h, o, f]) => (window as unknown as { virgl: { replayVideo64(t: string, w: number, h: number, o?: string, f?: ChunkFault): Promise<VideoReplay> } }).virgl.replayVideo64(t, w, h, o, f),
@@ -144,8 +144,9 @@ test('video on WebGL2: a damaged chunk is a decoder error that ends its codec\'s
     // What came out before it is written (a software H.264 decoder may have held one or two for reordering: lost).
     assert.ok(r.stats.decoded <= 10 && r.stats.decoded >= 8, `${r.stats.decoded} written`);
     if (hashes) assert.deepEqual(r.hashes, hashes.slice(0, r.hashes.length));
-    // Nothing waited for the dropped pictures (the give-up after 1 s isn't what freed the guest).
-    assert.ok(r.maxWaitMs < 200, `a call waited ${r.maxWaitMs.toFixed(0)} ms`);
+    // Nothing waited for the dropped pictures: the error freed the guest, not the queue's drain or give-up (held off
+    // for 10 and 20 s here, so a host slowed by load doesn't fire them on a slow decode: replayVideo64).
+    assert.deepEqual(r.timedOut, { drains: 0, giveUps: 0 }, `the longest wait ${r.maxWaitMs.toFixed(0)} ms`);
   }
 });
 

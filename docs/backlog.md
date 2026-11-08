@@ -1685,11 +1685,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
-- **The damaged-chunk video test's 200 ms bound** (`tests/virgl-browser.test.ts`, "a damaged chunk is a decoder
-  error…"): `scripts/ci.sh` failed it twice in a row on 2026-11-08 (VK4's review of T44–T46: a call waited 216 and
-  222 ms) while it passed alone twice (3.8 s each); nothing that run changed reaches virgl's video. Load-sensitive: the
-  decoder error's arrival vs the bound. Next: log when the error comes relative to the waiting call, then either a
-  bound tied to the error's arrival or the call released at the error (S).
 - **dEQP-VK's four processes a machine** (VK4 T36, bench/vulkan/REPORT.md "VK4 T36"): since T36 `JOBS=4` hangs no
   case and runs the 2,032-case slice in 143 s against 162–163 at 2 (−12%, one machine of 1,536 MiB). `tests/page-deqp-vk.test.ts`
   takes 2: at 4 the browser peaked at 6.1–6.3 GiB a machine (5.6–5.7 at 2), and `scripts/ci-deqp-vk.sh` runs two
