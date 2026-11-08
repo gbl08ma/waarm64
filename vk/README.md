@@ -761,7 +761,11 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   framebuffer's layers, dynamic rendering's `layerCount`) reaches its later layers by its load and store ops, by
   `vkCmdClearAttachments`, which names layers, and by draws whose vertex stage writes `gl_Layer`, so it replays a layer
   at a time as multiview does (up to `WG_MAX_LAYERS`, 32): the later layers see the clears whose range holds them and
-  those draws alone, no queries; resolves cover every layer (`layer_mask`). **`gl_Layer`** (VK4 T43:
+  those draws alone (drawn through indices of their own too, `OP_PROVOKE`, by the first layer's tickets), with the
+  occlusion queries around them (a later layer's count in a spare slot of the pool, added to the first layer's);
+  resolves cover every layer (`layer_mask`). A draw's places in the push buffer are reserved for each layer
+  (`pass_replays`), and what a draw reads of the attachments (`dst_copies`' and `feedback_copies`' copies, an input
+  attachment's view) is of the layer being replayed (the review of T41–T43). **`gl_Layer`** (VK4 T43:
   `shaderOutputLayer`, `VK_EXT_shader_viewport_index_layer`, one viewport so the index's writes go): the vertex stage's
   write is kept in `wg_lo`, and its entry point puts a vertex whose layer isn't the pipeline's (`wg_layer`, an override:
   the key's `view`, a pipeline per layer as per view) outside the clip volume (x = 2w), so each layer's draw keeps that

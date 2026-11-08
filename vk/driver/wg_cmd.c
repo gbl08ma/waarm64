@@ -215,6 +215,16 @@ struct op_event {
    bool set;
 };
 
+/* How many times a draw of the pass is replayed: a pass a view with multiview, a pass a layer in a layered pass (VK4
+ * T43: a draw writing gl_Layer is drawn in each), each taking its own places of the push buffer. */
+static uint32_t
+pass_replays(const struct wg_cmd_buffer *cmd)
+{
+   if (cmd->pass.view_mask)
+      return util_bitcount(cmd->pass.view_mask);
+   return cmd->pass.active ? MAX2(cmd->pass.layer_count, 1) : 1;
+}
+
 static void *
 emit(struct wg_cmd_buffer *cmd, enum op op, const void *data, uint32_t size)
 {
@@ -223,7 +233,7 @@ emit(struct wg_cmd_buffer *cmd, enum op op, const void *data, uint32_t size)
    /* An indirect draw may take two places of the push buffer: its render pass's for its draw parameters (`prepasses`)
     * and one of its own. */
    if ((op >= OP_DRAW && op <= OP_DISPATCH_INDIRECT) || op == OP_PROVOKE || op == OP_XFB)
-      cmd->draws += (op == OP_DRAW_INDIRECT ? 2 : 1) * MAX2(util_bitcount(cmd->pass.view_mask), 1);
+      cmd->draws += (op == OP_DRAW_INDIRECT ? 2 : 1) * pass_replays(cmd);
    *h = (struct op_head){ .op = op, .size = padded };
    void *payload = h + 1;
    if (data)
@@ -2123,9 +2133,12 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
       struct op_pipeline *op = emit(cmd, OP_PIPELINE, NULL, sizeof(*op));
       op->program = p;
       op->key = k;
-      /* A stage that reads the view: a pipeline per view (`wg_view`, an override). */
-      if (cmd->pass.view_mask && per_view(vs, fs))
-         u_foreach_bit(view, cmd->pass.view_mask) {
+      /* A stage that reads the view: a pipeline per view (`wg_view`, an override); one writing gl_Layer, per layer of a
+       * layered pass (the layers past the first draw it alone). */
+      const uint32_t views = cmd->pass.view_mask ? cmd->pass.view_mask
+                             : cmd->pass.layer_count > 1 ? BITFIELD_MASK(MIN2(cmd->pass.layer_count, 32)) : 0;
+      if (views && (cmd->pass.view_mask ? per_view(vs, fs) : vs->info.writes_layer))
+         u_foreach_bit(view, views) {
             struct wg_pipeline_key per_view = k;
             per_view.view = view;
             wg_render_pipeline(p, &per_view);
@@ -2211,7 +2224,7 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
       emit(cmd, OP_VS_ONLY, NULL, 0);
    /* Its state is applied twice, before its pre-pass and in the pass's next part: a place of the push buffer more. */
    if (p->vs_stores)
-      cmd->draws += MAX2(util_bitcount(cmd->pass.view_mask), 1);
+      cmd->draws += pass_replays(cmd);
    return true;
 }
 
@@ -2722,7 +2735,7 @@ draw_indirect(VkCommandBuffer commandBuffer, VkBuffer _buffer, VkDeviceSize offs
          break;
       emit(cmd, OP_DRAW_INDIRECT, &op, sizeof(op));
       if (params)
-         cmd->draws += (count - 1) * MAX2(util_bitcount(cmd->pass.view_mask), 1);
+         cmd->draws += (count - 1) * pass_replays(cmd);
    }
    /* Captured with its arguments read at the capture (the counts here are only the most it may draw: none). */
    for (uint32_t i = 0; i < count; i++)
@@ -3217,7 +3230,8 @@ wg_CmdExecuteCommands(VkCommandBuffer commandBuffer, uint32_t count, const VkCom
       if (secondary->pass.active)
          dummy_samples(cmd, secondary->pass.samples);
       emit(cmd, OP_EXEC, &secondary, sizeof(secondary));
-      cmd->draws += secondary->draws;
+      /* A secondary's draws, counted for one layer (its inheritance has no layer count): each of a layered pass's. */
+      cmd->draws += secondary->draws * (cmd->pass.view_mask ? 1 : pass_replays(cmd));
    }
    forget(cmd);
 }
@@ -3706,7 +3720,8 @@ sampled_loop(const struct wg_image_view *v, const struct wg_image_view *a, uint3
 }
 
 /* The attachment of the pass an input attachment's descriptor reads, or a sampled one's view covers, written by the
- * pass, or -1. In a multiview pass both are of the view's layer. */
+ * pass, or -1. In a multiview pass both are of the view's layer, in a layered one of the layer being replayed (VK4 T43:
+ * its draws writing gl_Layer drawn in each). */
 static int
 feedback_att(const struct replay *r, const struct wg_descriptor *d)
 {
@@ -3718,7 +3733,7 @@ feedback_att(const struct replay *r, const struct wg_descriptor *d)
          return -1;
       for (uint32_t i = 0; i < r->atts.count; i++) {
          const struct wg_image_view *a = r->atts.views[i];
-         const uint32_t layer = a->vk.base_array_layer + (r->layered ? 0 : r->view);
+         const uint32_t layer = a->vk.base_array_layer + r->view;
          if ((r->atts.written[i] & v->vk.aspects) && sampled_loop(v, a, layer))
             return i;
       }
@@ -3726,8 +3741,8 @@ feedback_att(const struct replay *r, const struct wg_descriptor *d)
    }
    if (d->type != VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT)
       return -1;
-   /* A WebGPU pass attaches one layer: the view's, or a layered pass's first, where it draws. What an input attachment
-    * reads is its first layer, or its view's: the same layer only from the same base. */
+   /* A WebGPU pass attaches one layer: the view's, or the layer of a layered pass being replayed. What an input
+    * attachment reads is its view's (gl_Layer's), of its own base: the same layer only from the same base. */
    for (uint32_t i = 0; i < r->atts.count; i++) {
       const struct wg_image_view *a = r->atts.views[i];
       if (a->vk.image == v->vk.image && a->vk.base_mip_level == v->vk.base_mip_level &&
@@ -4462,9 +4477,9 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
    }
    /* Bindings a program's run of storage aliases binds for all of it: not the set's. */
    *shadowed |= p->alias_count != 0;
-   /* In a multiview pass an input attachment reads its view's layer (declared 2D, its binding that layer): a group a
-    * view, like a scope's own. */
-   for (uint32_t k = 0; r->view_mask && !r->layered && k < p->resource_count && !*shadowed; k++) {
+   /* In a multiview or layered pass an input attachment reads its view's layer (declared 2D, its binding that layer): a
+    * group a view, like a scope's own. */
+   for (uint32_t k = 0; r->view_mask && k < p->resource_count && !*shadowed; k++) {
       const struct wg_descriptor *d = p->resources[k].group == b->group && p->resources[k].kind == WGSL_TEXTURE
                                          ? bound_descriptor(b, p, k) : NULL;
       *shadowed = d && d->type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
@@ -4584,7 +4599,7 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
                                             : d->view;
          wg_json_printf(&j, "%s{\"binding\":%u,\"view\":%u}", sep, res->binding,
                         fa >= 0 && v == d->view ? wg_view_twin(d->view)
-                        : r->view_mask && !r->layered && d->type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT ? wg_view_att(d->view, r->view)
+                        : r->view_mask && d->type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT ? wg_view_att(d->view, r->view)
                         : (res->kind == WGSL_STORAGE_TEXTURE || res->image_texture) && v->flat_storage &&
                               res->dim == WGSL_DIM_2D                                     ? v->flat_storage
                         : (res->kind == WGSL_STORAGE_TEXTURE || res->image_texture) && v->storage ? v->storage
@@ -4763,7 +4778,7 @@ feedback_copies(struct replay *r)
          gpu_pass_end();
          cut = true;
       }
-      const uint32_t layer = att->vk.base_array_layer + (r->layered ? 0 : r->view);
+      const uint32_t layer = att->vk.base_array_layer + r->view;
       wg_view_twin(d->view);
       gpu_copy_tt(view_texture(att), att->vk.base_mip_level, 0, 0, layer, d->view->twin_tex, 0, 0, 0, 0, e.width, e.height,
                   1, 0, e.width, e.height, e.width, e.height, att->fmt->bytes);
@@ -4804,7 +4819,7 @@ dst_copies(struct replay *r)
       wg_view_twin(att);
       if (!skip) {
          const VkExtent3D e = vk_image_mip_level_extent(att->vk.image, att->vk.base_mip_level);
-         const uint32_t layer = att->vk.base_array_layer + (r->layered ? 0 : r->view);
+         const uint32_t layer = att->vk.base_array_layer + r->view;
          wg_emul[WG_EMUL_FEEDBACK_COPIES]++;
          wg_emul[WG_EMUL_FEEDBACK_BYTES] += (double)e.width * e.height * att->fmt->bytes;
          gpu_copy_tt(view_texture(att), att->vk.base_mip_level, 0, 0, layer, att->twin_tex, 0, 0, 0, 0, e.width, e.height,
@@ -5327,22 +5342,29 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       const struct op_head *h = (const void *)p;
       const void *d = h + 1;
       p += sizeof(*h) + h->size;
-      /* A layered pass's layers past the first see its clears alone, and the draws whose vertex stage writes gl_Layer
-       * (VK4 T43: each layer's pipeline keeps that layer's primitives). */
+      /* A layered pass's layers past the first see its clears alone, the draws whose vertex stage writes gl_Layer
+       * (VK4 T43: each layer's pipeline keeps that layer's primitives) and its occlusion queries (counting them). */
       if (r->layered && r->view_order &&
           (h->op == OP_DRAW || h->op == OP_DRAW_INDEXED || h->op == OP_DRAW_INDIRECT || h->op == OP_PROVOKE ||
-           h->op == OP_XFB || h->op == OP_QUERY || h->op == OP_VS_ONLY || h->op == OP_VS_AGAIN) &&
-          !(r->layer_draws && (h->op == OP_DRAW || h->op == OP_DRAW_INDEXED || h->op == OP_DRAW_INDIRECT)))
-         continue;
-      /* An indirect one needs what only the first layer's pass prepares (its count's or a fan's tickets, its draw
-       * parameters' places) unless it reads its buffer as it is. */
-      if (r->layered && r->view_order && h->op == OP_DRAW_INDIRECT) {
-         const struct op_indirect *a = (const void *)(h + 1);
-         if (a->fan || a->count_buffer || (r->program[0] && draw_params(r->program[0]))) {
+           h->op == OP_XFB || h->op == OP_VS_ONLY || h->op == OP_VS_AGAIN)) {
+         bool skip = !r->layer_draws || h->op == OP_XFB || h->op == OP_VS_ONLY || h->op == OP_VS_AGAIN;
+         /* An indirect one needs what only the first layer's pass prepares (its count's or a fan's tickets, its draw
+          * parameters' places) unless it reads its buffer as it is. */
+         const struct op_indirect *a = h->op == OP_DRAW_INDIRECT ? (const void *)(h + 1) : NULL;
+         if (!skip && a && (a->fan || a->count_buffer || (r->program[0] && draw_params(r->program[0])))) {
             static bool warned;
             if (!warned)
                fprintf(stderr, "wg: an indirect draw writing gl_Layer drawn in a layered pass's first layer alone\n");
             warned = true;
+            skip = true;
+         }
+         if (skip) {
+            /* The first layer's tickets (`prepasses`) are a draw's each: what this one took there, a later one
+             * doesn't. */
+            if (h->op == OP_PROVOKE)
+               r->tickets++;
+            else if (a)
+               r->tickets += (a->count_buffer ? 1 : 0) + (a->fan ? a->count : 0);
             continue;
          }
       }
@@ -5372,11 +5394,12 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
                json = next;
             }
          }
-         /* Its occlusion queries' set (WebGPU's pass takes one, at its start). */
+         /* Its occlusion queries' set (WebGPU's pass takes one, at its start): a layered pass's layers past the first
+          * count their draws too. */
          bool stop = false;
          const bool draws = !r->layered || !r->view_order;
          bool several = false;
-         r->qpool = draws ? pass_query_pool(p, end, &stop, r->qouter, &several) : NULL;
+         r->qpool = pass_query_pool(p, end, &stop, r->qouter, &several);
          r->qspares = 0;
          r->qmux = several;
          r->qmux_next = 0;
@@ -5720,7 +5743,23 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          struct wg_query_pool *pool = q->pool;
          const bool occlusion = pool->vk.query_type == VK_QUERY_TYPE_OCCLUSION;
          /* In a multiview pass a query is one a view, consecutive. */
-         const uint32_t first = q->first + (q->kind ? r->view_order : 0);
+         const uint32_t first = q->first + (q->kind && !r->layered ? r->view_order : 0);
+         if (r->layered && r->view_order) {
+            /* A layered pass's layer past the first (VK4 T43): an occlusion query's samples of this layer counted in a
+             * spare slot of its pool, added to what the first layer's resolve wrote; nothing else again. */
+            if (q->kind == 2 && occlusion && r->pass == RENDER && r->qpool && (pool == r->qpool || r->qmux) &&
+                !r->qactive_pool && first < WG_QUERY_SET_MAX && r->qspares < pool->spares &&
+                query_count(r, pool, pool->vk.query_count + r->qspares, first)) {
+               r->qspares++;
+               r->qactive_pool = pool;
+               r->qactive = first;
+            } else if (q->kind == 3 && occlusion && r->pass == RENDER && r->qactive_pool == pool &&
+                       r->qactive == first) {
+               gpu_end_occlusion();
+               r->qactive_pool = NULL;
+            }
+            break;
+         }
          if (q->kind == 0) {
             memset(&pool->values[q->first], 0, q->count * sizeof(uint64_t));
             memset(&pool->avail[q->first], 0, q->count);
