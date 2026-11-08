@@ -1,0 +1,39 @@
+; flat-mixed.frag.spvasm's inputs written: an int and a float at location 0, components 0 and 1 (VK4 T42).
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Vertex %main "main" %pos %glpos %n %f %vid
+               OpDecorate %pos Location 0
+               OpDecorate %glpos BuiltIn Position
+               OpDecorate %n Flat
+               OpDecorate %n Location 0
+               OpDecorate %n Component 0
+               OpDecorate %f Flat
+               OpDecorate %f Location 0
+               OpDecorate %f Component 1
+               OpDecorate %vid BuiltIn VertexIndex
+       %void = OpTypeVoid
+         %fn = OpTypeFunction %void
+      %float = OpTypeFloat 32
+        %int = OpTypeInt 32 1
+       %uint = OpTypeInt 32 0
+       %vec4 = OpTypeVector %float 4
+   %in_vec4 = OpTypePointer Input %vec4
+  %out_vec4 = OpTypePointer Output %vec4
+    %in_int = OpTypePointer Input %int
+   %out_int = OpTypePointer Output %int
+ %out_float = OpTypePointer Output %float
+        %pos = OpVariable %in_vec4 Input
+      %glpos = OpVariable %out_vec4 Output
+          %n = OpVariable %out_int Output
+          %f = OpVariable %out_float Output
+        %vid = OpVariable %in_int Input
+       %main = OpFunction %void None %fn
+         %l0 = OpLabel
+         %p = OpLoad %vec4 %pos
+               OpStore %glpos %p
+         %v = OpLoad %int %vid
+               OpStore %n %v
+         %x = OpCompositeExtract %float %p 0
+               OpStore %f %x
+               OpReturn
+               OpFunctionEnd

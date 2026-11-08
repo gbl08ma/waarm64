@@ -789,6 +789,10 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
             if (bary->intrinsic == nir_intrinsic_load_barycentric_at_sample)
                c->uses_interp_at_sample = true;
          }
+         /* A flat location travels as words: nir_opt_varyings packs flat ints and floats into one, and a float's bits
+          * through an f32 varying could be canonicalized. Its loads bitcast from u32 as from any storage. */
+         if (c->vary.interp[loc] == WGSL_INTERP_FLAT)
+            c->vary.base[loc] = WGSL_U32;
       }
       break;
    case nir_intrinsic_store_output: {
@@ -810,8 +814,11 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
          }
          if (sem.location >= VARYING_SLOT_VAR0 && sem.location < VARYING_SLOT_VAR0 + 32) {
             const unsigned loc = sem.location - VARYING_SLOT_VAR0;
+            /* Any integer component makes the location flat words (declare_io), whatever the other stores' types. */
+            const unsigned base = base_of(nir_intrinsic_src_type(intr));
+            if (!(c->vs_writes & (1u << loc)) || base != WGSL_F32)
+               c->vs_write_base[loc] = base == WGSL_F32 ? WGSL_F32 : WGSL_U32;
             c->vs_writes |= 1u << loc;
-            c->vs_write_base[loc] = base_of(nir_intrinsic_src_type(intr));
          } else if (sem.location == VARYING_SLOT_CLIP_DIST0 || sem.location == VARYING_SLOT_CLIP_DIST1) {
             c->info->clip_distances = true;
             c->info->clip_distance_count = MAX2(c->info->clip_distance_count, nir->info.clip_distance_array_size);

@@ -1,0 +1,36 @@
+; A flat int and a flat float at one location, components 0 and 1 (as nir_opt_varyings packs flat varyings; GLSL
+; refuses to write it; VK4 T42): the location travels as words, each component's bits as written.
+               OpCapability Shader
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %4 "main" %9 %12 %16
+               OpExecutionMode %4 OriginUpperLeft
+               OpDecorate %9 Location 0
+               OpDecorate %12 Flat
+               OpDecorate %12 Location 0
+               OpDecorate %12 Component 0
+               OpDecorate %16 Flat
+               OpDecorate %16 Location 0
+               OpDecorate %16 Component 1
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %6 = OpTypeFloat 32
+          %7 = OpTypeVector %6 4
+          %8 = OpTypePointer Output %7
+          %9 = OpVariable %8 Output
+         %10 = OpTypeInt 32 1
+         %11 = OpTypePointer Input %10
+         %12 = OpVariable %11 Input
+         %15 = OpTypePointer Input %6
+         %16 = OpVariable %15 Input
+         %18 = OpConstant %6 0
+         %19 = OpConstant %6 1
+          %4 = OpFunction %2 None %3
+          %5 = OpLabel
+         %13 = OpLoad %10 %12
+         %14 = OpConvertSToF %6 %13
+         %17 = OpLoad %6 %16
+         %20 = OpCompositeConstruct %7 %14 %17 %18 %19
+               OpStore %9 %20
+               OpReturn
+               OpFunctionEnd

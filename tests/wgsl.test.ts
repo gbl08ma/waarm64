@@ -382,11 +382,10 @@ test('the out-of-context review of the translator: what L4f fixed (VK3)', { skip
     const ssbo = ok(`${dir}/ssbo-read.frag`);
     assert.match(ssbo, /@group\(0\) @binding\(0\) var<storage, read> r0_0/);
     assert.match(ssbo, /texture_storage_2d<r32uint, write>/);
-    // 5: signed shared atomics on atomic<i32>; signed and unsigned ones on shared memory refused.
+    // 5: signed shared atomics on atomic<i32>; signed and unsigned ones on shared memory too, the unsigned ones a
+    // compare-exchange loop (refused until VK4 T42; its test runs them).
     assert.match(ok(`${dir}/shared-signed.comp`), /var<workgroup> shm: array<atomic<i32>, 1>;/);
-    const mixed = stage(`${dir}/shared-mixed.comp`);
-    assert.equal(mixed.rc, 3, mixed.text.slice(0, 200));
-    assert.equal(mixed.text, 'signed and unsigned atomic min or max on one array');
+    assert.match(ok(`${dir}/shared-mixed.comp`), /var<workgroup> shm: array<atomic<i32>, 2>;/);
     // 11: a terminate (SPIR-V 1.6's discard) leaves the shader; a demoted invocation is a helper.
     const term = ok(`${dir}/terminate.frag`, 'vulkan1.3');
     assert.match(term, /discard; return( o)?;/);
@@ -1836,6 +1835,33 @@ test('signed and unsigned atomic min and max on one array: the other kind a comp
     const want = [(-32) >>> 0, 31, 0, 0xffffffff];
     assert.deepEqual(v.slice(0, 4), want, 'the buffer\'s');
     assert.deepEqual(v.slice(8, 12), want, 'shared memory\'s');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('flat varyings of ints and floats at one location travel as words (VK4 T42)', { skip: noGlslc || (spawnSync('spirv-as', ['--version']).status !== 0 && 'SKIPPED: no spirv-as'), timeout: 120_000 }, async (t) => {
+  // The location was the type of its last load or store (a float's bits through an f32 varying, which a backend may
+  // canonicalize; an int's and a float's stores at one location gave the vertex stage an interpolated f32 output).
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const asm = (file: string, stage: number) => {
+      const spv = join(tmp, `${basename(file)}.spv`);
+      const r = spawnSync('spirv-as', ['--target-env', 'vulkan1.2', '-o', spv, join(root, file)], { encoding: 'utf8' });
+      assert.equal(r.status, 0, r.stderr);
+      const b = readFileSync(spv);
+      return translate({ name: file, stage, words: new Uint32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.length)) });
+    };
+    const fs = asm('tests/venus/t42/flat-mixed.frag.spvasm', 4);
+    const vs = asm('tests/venus/t42/flat-mixed.vert.spvasm', 0);
+    assert.equal(fs.rc, 0, fs.text);
+    assert.equal(vs.rc, 0, vs.text);
+    assert.match(fs.text, /@location\(0\) @interpolate\(flat\) v0: vec4<u32>/);
+    assert.match(vs.text, /@location\(0\) @interpolate\(flat\) v0: vec4<u32>/);
+    const errors = await compile([fs.text, vs.text]);
+    if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(errors, ['', ''], 'WGSL Chromium rejected');
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
