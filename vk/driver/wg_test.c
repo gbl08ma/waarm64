@@ -5921,6 +5921,131 @@ t43_push_layers(const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBu
 }
 
 /*
+ * VK4 T44's warm-up (docs/backlog.md "Rendering", the review of T41 to T43), wgt_misc's scenario 124 (`feedback_vs`:
+ * tests/venus/t44/fan.vert; `fs`: tests/venus/t44/fan-past.frag): two triangle fans in one pass of a 16x16 RGBA8 image
+ * cleared to zeros, each through indices of their own. The first, vkCmdDrawIndirect of the left half's quad, binds a
+ * 4100x4096 RG32_SFLOAT storage image the stage reaches as words (135 MB: past the test device's
+ * maxStorageBufferBindingSize, 128 MiB), so it is refused (`words_past`); the second, an indexed fan of the right half's
+ * quad (OP_PROVOKE), binds a 4x4 one and is drawn. Texel (4, 8) at `out`'s 0 (zeros), (12, 8) at 4 ((192, 64, 128, 255)).
+ */
+static int t37_image(VkImageType type, VkFormat format, VkExtent3D extent, uint32_t layers, VkImageUsageFlags usage,
+                     VkImageCreateFlags flags, VkImage *out);
+static int t37_view(VkImage image, VkImageViewType type, VkFormat format, uint32_t layer, uint32_t layers, VkImageView *out);
+
+static int
+t44_fan_past(const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage = (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   PFN_vkCmdDrawIndirect CmdDrawIndirect = (PFN_vkCmdDrawIndirect)GetDeviceProcAddr(dev, "vkCmdDrawIndirect");
+   const uint32_t size = 16;
+   const VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+   VkImage target;
+   VkImageView att;
+   if (layered_image(format, format, size, size, 1, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 0,
+                     &target, &att))
+      return 1;
+   const VkClearColorValue zero = { .float32 = { 0, 0, 0, 0 } };
+   const VkImageSubresourceRange whole = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+   CmdClearColorImage(cmd, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &whole);
+   VkImage imgs[2];
+   VkImageView views[2];
+   for (uint32_t i = 0; i < 2; i++)
+      if (t37_image(VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, i ? (VkExtent3D){ 4, 4, 1 } : (VkExtent3D){ 4100, 4096, 1 },
+                    1, VK_IMAGE_USAGE_STORAGE_BIT, 0, &imgs[i]) ||
+          t37_view(imgs[i], VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R32G32_SFLOAT, 0, 1, &views[i]))
+         return 1;
+   const VkAttachmentDescription ad = { 0, format, VK_SAMPLE_COUNT_1_BIT, VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_STORE_OP_STORE,
+                                        VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE, VK_IMAGE_LAYOUT_GENERAL,
+                                        VK_IMAGE_LAYOUT_GENERAL };
+   const VkAttachmentReference ref = { 0, VK_IMAGE_LAYOUT_GENERAL };
+   const VkSubpassDescription sub = { .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS, .colorAttachmentCount = 1,
+                                      .pColorAttachments = &ref };
+   const VkRenderPassCreateInfo rpi = { .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, .attachmentCount = 1,
+                                        .pAttachments = &ad, .subpassCount = 1, .pSubpasses = &sub };
+   VkRenderPass rp;
+   CHECK(CreateRenderPass(dev, &rpi, NULL, &rp));
+   const VkFramebufferCreateInfo fbi = { .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO, .renderPass = rp,
+                                         .attachmentCount = 1, .pAttachments = &att, .width = size, .height = size,
+                                         .layers = 1 };
+   VkFramebuffer fb;
+   CHECK(CreateFramebuffer(dev, &fbi, NULL, &fb));
+   const VkDescriptorSetLayoutBinding b = { 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL };
+   const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                 .bindingCount = 1, .pBindings = &b };
+   VkDescriptorSetLayout dsl;
+   CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1,
+                                            .pSetLayouts = &dsl };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   const VkDescriptorPoolSize ps = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2 };
+   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 2,
+                                            .poolSizeCount = 1, .pPoolSizes = &ps };
+   VkDescriptorPool dp;
+   CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+   const VkDescriptorSetLayout dsls[2] = { dsl, dsl };
+   const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                             .descriptorPool = dp, .descriptorSetCount = 2, .pSetLayouts = dsls };
+   VkDescriptorSet sets[2];
+   CHECK(AllocateDescriptorSets(dev, &dai, sets));
+   for (uint32_t i = 0; i < 2; i++) {
+      const VkDescriptorImageInfo ii = { VK_NULL_HANDLE, views[i], VK_IMAGE_LAYOUT_GENERAL };
+      const VkWriteDescriptorSet wr = { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = sets[i],
+                                        .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                                        .pImageInfo = &ii };
+      UpdateDescriptorSets(dev, 1, &wr, 0, NULL);
+   }
+   VkShaderModule vm, fm;
+   if (shader(feedback_vs, feedback_vs_words, &vm) || shader(fs, fs_words, &fm))
+      return 1;
+   const VkPipelineShaderStageCreateInfo stages[2] = {
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = vm, .pName = "main" },
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = fm, .pName = "main" } };
+   const VkPipelineVertexInputStateCreateInfo vis = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+   const VkPipelineInputAssemblyStateCreateInfo ia = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                                                       .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN };
+   const VkViewport vp = { 0, 0, (float)size, (float)size, 0, 1 };
+   const VkRect2D area = { { 0, 0 }, { size, size } };
+   const VkPipelineViewportStateCreateInfo vs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1,
+                                                  .pViewports = &vp, .scissorCount = 1, .pScissors = &area };
+   const VkPipelineRasterizationStateCreateInfo rs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+                                                       .polygonMode = VK_POLYGON_MODE_FILL, .lineWidth = 1 };
+   const VkPipelineMultisampleStateCreateInfo ms = { .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                                                     .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT };
+   const VkPipelineColorBlendAttachmentState ba = { .colorWriteMask = 0xf };
+   const VkPipelineColorBlendStateCreateInfo bs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                                                    .attachmentCount = 1, .pAttachments = &ba };
+   const VkGraphicsPipelineCreateInfo gpi = {
+      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .stageCount = 2, .pStages = stages, .pVertexInputState = &vis,
+      .pInputAssemblyState = &ia, .pViewportState = &vs, .pRasterizationState = &rs, .pMultisampleState = &ms,
+      .pColorBlendState = &bs, .layout = layout, .renderPass = rp };
+   VkPipeline pipe;
+   CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &pipe));
+   VkBuffer ib, args;
+   uint16_t *indices;
+   uint32_t *a;
+   if (buffer(8, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true, &ib, (void **)&indices) ||
+       buffer(16, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, true, &args, (void **)&a))
+      return 1;
+   for (uint16_t i = 0; i < 4; i++)
+      indices[i] = 4 + i;
+   memcpy(a, (const uint32_t[]){ 4, 1, 0, 0 }, 16);
+   const VkRenderPassBeginInfo rbi = { .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, .renderPass = rp, .framebuffer = fb,
+                                       .renderArea = area };
+   CmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);
+   CmdBindIndexBuffer(cmd, ib, 0, VK_INDEX_TYPE_UINT16);
+   CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &sets[0], 0, NULL);
+   CmdDrawIndirect(cmd, args, 0, 1, 16);
+   CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &sets[1], 0, NULL);
+   CmdDrawIndexed(cmd, 4, 1, 0, 0, 0);
+   CmdEndRenderPass(cmd);
+   copy_texel(cmd, target, VK_IMAGE_ASPECT_COLOR_BIT, 0, 4, 8, out, 0);
+   copy_texel(cmd, target, VK_IMAGE_ASPECT_COLOR_BIT, 0, 12, 8, out, 4);
+   return 0;
+}
+
+/*
  * VK4 T32, wgt_misc's scenario 99 (`fs`: tests/venus/t32/loop.frag): a feedback loop
  * (VK_EXT_attachment_feedback_loop_layout). An RGBA8 image of two layers, layer 0 cleared to (51, 102, 153, 255) and 1
  * to green, layer 0 the pass's attachment and the draw's sampled view both layers: the left half adds 64 to red of the
@@ -8107,6 +8232,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 123) {
       if (t43_push_layers(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 124) {
+      if (t44_fan_past(cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 99) {
       if (t32_loop(cs, cs_words, cmd, out))

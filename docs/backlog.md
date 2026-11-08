@@ -994,9 +994,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     layered pass's later layers neither an indirect draw that needs what the first layer's pass prepares (a count, a
     fan, draw parameters: said once) nor one whose vertex stage stores (T33's pre-pass, which ignores gl_Layer) is
     drawn; a pipeline writing gl_Layer gets its layers' pipelines when its first draw in a layered pass is recorded, not
-    at its creation (`wg_pipeline_premake` knows no layer count, so a submit soon after may wait on them); an
-    indirect fan that `words_past` drops leaves its fan tickets untaken, so a later draw of the pass through its own
-    indices draws another's (seen reading the code, not in a test); depth and stencil blits; `renderpasses.*.load_store_op_none` passes whole (VK4 T43: its 62 cases not in the
+    at its creation (`wg_pipeline_premake` knows no layer count, so a submit soon after may wait on them); depth and stencil blits; `renderpasses.*.load_store_op_none` passes whole (VK4 T43: its 62 cases not in the
     list then, the 9 not looked into among them, joined it); early fragment tests (`fragment_operations.early_fragment`: `samplemask_early_fragment_tests_depth_samples_4`
     passed only while depth resolves were dropped, and is out of the list since L4f); a draw whose colour blends with both `CONSTANT_COLOR` and
     `CONSTANT_ALPHA` (WebGPU has one constant: the colour's taken, warned; 4 of the Mac's 49 supported

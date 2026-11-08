@@ -5619,8 +5619,13 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          if (r->pass != RENDER)
             break;
          const uint32_t counted = a->count_buffer ? r->tickets++ : UINT32_MAX;
-         if (words_past(r, 0))
+         /* Refused, it takes what `prepasses` gave its records all the same: their fan tickets and draw parameters'
+          * places (a later draw of the pass through indices of its own would take a fan's). */
+         if (words_past(r, 0)) {
+            r->tickets += a->fan ? a->count : 0;
+            r->dp_next += a->count;
             break;
+         }
          /* Its counts are on the GPU: a vertex stage that stores needs them for its pre-pass (VK4 T33). */
          if (r->program[0] && r->program[0]->vs_stores) {
             static bool warned;
