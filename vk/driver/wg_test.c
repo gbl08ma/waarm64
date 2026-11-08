@@ -5633,6 +5633,9 @@ t32_misc(const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBuffer ou
  * 126: 255 bottom-of-pipe timestamps (the set's slots but its last), a top-of-pipe one right before a render pass of
  *      one draw with a timestamp inside, and one right after (finding 2: the pass's end slot taken first, 255, and the
  *      beginning one flushing the set, which left the pass's at a slot no flush resolved): queries 0 to 257 at 0.
+ * 127: a top-of-pipe timestamp right before a render pass of one indexed triangle fan (its indices made by a compute
+ *      pass of the worker's before the pass: `prepasses`) and a bottom-of-pipe one right after it: the first is a write
+ *      of its own before the fan's indices, not the pass's beginning write; queries 0 and 1 at 0.
  */
 static int
 t46_timestamps(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBuffer out)
@@ -5673,7 +5676,8 @@ t46_timestamps(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkComma
       { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = fm, .pName = "main" } };
    const VkPipelineVertexInputStateCreateInfo vis = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
    const VkPipelineInputAssemblyStateCreateInfo ia = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-                                                       .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
+                                                       .topology = scenario == 127 ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN
+                                                                                   : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
    const VkViewport vp = { 0, 0, (float)size, (float)size, 0, 1 };
    const VkRect2D area = { { 0, 0 }, { size, size } };
    const VkPipelineViewportStateCreateInfo vs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1,
@@ -5692,7 +5696,14 @@ t46_timestamps(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkComma
       .pColorBlendState = &bs, .layout = layout, .renderPass = rp };
    VkPipeline p;
    CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
-   const uint32_t count = scenario == 125 ? 1 : 258;
+   const uint32_t count = scenario == 125 ? 1 : scenario == 127 ? 2 : 258;
+   VkBuffer indices = VK_NULL_HANDLE;
+   if (scenario == 127) {
+      uint16_t *m;
+      if (buffer(64, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true, &indices, (void **)&m))
+         return 1;
+      m[0] = 0, m[1] = 1, m[2] = 2;
+   }
    const VkQueryPoolCreateInfo qi = { .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
                                       .queryType = VK_QUERY_TYPE_TIMESTAMP, .queryCount = count };
    VkQueryPool tp;
@@ -5701,18 +5712,22 @@ t46_timestamps(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkComma
    if (scenario == 126)
       for (uint32_t i = 0; i < 255; i++)
          CmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, tp, i);
-   if (scenario == 126)
-      CmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, tp, 255);
+   if (scenario == 126 || scenario == 127)
+      CmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, tp, scenario == 126 ? 255 : 0);
    const VkRenderPassBeginInfo rbi = { .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, .renderPass = rp, .framebuffer = fb,
                                        .renderArea = area };
    CmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
    CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
-   for (uint32_t i = 0; i < (scenario == 125 ? 300u : 1u); i++)
+   if (scenario == 127) {
+      CmdBindIndexBuffer(cmd, indices, 0, VK_INDEX_TYPE_UINT16);
+      CmdDrawIndexed(cmd, 3, 1, 0, 0, 0);
+   }
+   for (uint32_t i = 0; i < (scenario == 125 ? 300u : scenario == 127 ? 0u : 1u); i++)
       CmdDraw(cmd, 3, 1, 0, 0);
    if (scenario == 126)
       CmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, tp, 256);
    CmdEndRenderPass(cmd);
-   CmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, tp, scenario == 125 ? 0 : 257);
+   CmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, tp, scenario == 125 ? 0 : scenario == 127 ? 1 : 257);
    if (scenario == 125) {
       CmdCopyQueryPoolResults(cmd, tp, 0, 1, out, 0, 8, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
       copy_texel(cmd, target, VK_IMAGE_ASPECT_COLOR_BIT, 0, 8, 8, out, 16);
@@ -8505,7 +8520,7 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
    } else if (scenario == 124) {
       if (t44_fan_past(cs, cs_words, cmd, out))
          return 1;
-   } else if (scenario == 125 || scenario == 126) {
+   } else if (scenario == 125 || scenario == 126 || scenario == 127) {
       if (t46_timestamps(scenario, cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 99) {

@@ -539,7 +539,9 @@ a guest only through Mesa 26.3's Venus on: 26.2's leaves it out). Two memory typ
   `begin_pass`), so every timestamp of a part reads its end, later than the commands before it, as Vulkan allows. A
   timestamp right after a render pass (no work between) reads that pass's end write, unless the worker runs the pass's
   own work after it (its captures at `endPass`, its shadows' write-backs: `ts_tail`; a write of its own then, after
-  them), and one at the top of the pipe right before a pass its beginning write (`ts_after`, `ts_before`): on Metal a compute pass's write ran beside the
+  them), and one at the top of the pipe right before a pass its beginning write (`ts_after`, `ts_before`), unless the worker
+  runs work for the pass before it begins (`prepasses`' indices and indirect arguments, `scope_pass`' copies:
+  `timestamps_lead`, a write of its own before that work): on Metal a compute pass's write ran beside the
   render pass before it (VK0's scene read 0.04 ms for a pass the GPU took 0.5 ms over); a pass that carries the
   driver's writes isn't timed by `?gpu=vkgputime` (WebGPU's pass takes one set of writes). The
   slots are copied to their pools' buffers at the submit's end, before a copy of results, and when the set's 256 run

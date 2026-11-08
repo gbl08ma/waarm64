@@ -1001,11 +1001,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     (Dawn's `timestamp_quantization`, off under `--enable-unsafe-webgpu`), and `VK_KHR_calibrated_timestamps` (3
     `timestamp.calibrated` cases) would need the GPU's time now, which WebGPU can't give synchronously. Two occlusion
     queries active at once, which the backlog had as Vulkan's across pools, aren't valid Vulkan
-    (VUID-vkCmdBeginQuery-queryPool-01922: one active query of a type in a command buffer): reported as passing. A
-    top-of-pipe timestamp right before a render pass reads the pass's beginning write, which follows the worker's work
-    for that pass before it begins (`prepasses`: index conversions, indirect arguments' copies; `scope_pass`' copies):
-    a GPU timer of such a pass under-reports it by that work (the mirror of the review of T44–T46's finding 4, fixed
-    after a pass by `ts_tail`; XS: a flag where `prepasses` encodes work, the timestamp a write of its own then).
+    (VUID-vkCmdBeginQuery-queryPool-01922: one active query of a type in a command buffer): reported as passing.
   - **Rendering**: a 2D view of a 3D image sampled or stored (`VK_EXT_image_2d_view_of_3d`, VK4 T38) is the level's 3D
     view and a variant keyed by the slice: a pipeline a slice bound (a program walking a volume's slices makes one each;
     a slice in the group's parameter table, as texel buffers' are, would make one for all). Stencil state per face is a draw split by face (VK3 L6a), so the order between one draw's front

@@ -3644,6 +3644,22 @@ timestamp_slot(struct replay *r)
    return timestamp_slots(r, 1);
 }
 
+/* The worker's work for a render pass before it begins (`prepasses`, `scope_pass`' copies), about to be encoded: the
+ * timestamps waiting for the pass's beginning write (`ts_before`) are a write of their own before it, which the pass's
+ * would follow (the mirror of `ts_tail`). Called before each such piece of work; nothing to do past the first. */
+static void
+timestamps_lead(struct replay *r)
+{
+   if (!r->ts_before)
+      return;
+   const uint32_t slot = timestamp_slot(r);
+   gpu_timestamp(timestamp_set(r->dev), slot);
+   util_dynarray_foreach (&r->timestamps, struct timestamp_write, t)
+      if (t->slot == UINT32_MAX - 1)
+         t->slot = slot;
+   r->ts_before = 0;
+}
+
 static void
 end_pass(struct replay *r)
 {
@@ -3738,6 +3754,7 @@ prepasses(struct replay *r, const struct wg_program **prog, bool *divisors, cons
          break;
       if (h->op == OP_PROVOKE) {
          const struct op_provoke *o = d;
+         timestamps_lead(r);
          wg_emul[WG_EMUL_PREPASSES]++;
          gpu_provoke(ticket++, o->buffer, o->offset, o->size, o->wide, o->mode, o->restart, o->first, o->count,
                      o->prims);
@@ -3751,6 +3768,7 @@ prepasses(struct replay *r, const struct wg_program **prog, bool *divisors, cons
           * the place. */
          const struct op_indirect *a = d;
          if (a->count_buffer) {
+            timestamps_lead(r);
             wg_emul[WG_EMUL_PREPASSES]++;
             gpu_indirect_count(ticket++, a->buffer, a->offset, a->stride, a->count_buffer, a->count_offset, a->count,
                                a->indexed);
@@ -3758,6 +3776,7 @@ prepasses(struct replay *r, const struct wg_program **prog, bool *divisors, cons
          /* A draw by a byte count (VK4 T45): its arguments from the counter as the commands before the pass left it
           * (made again in a cut of the pass where a capture of it may have written it since: `byte_count_cut`). */
          if (a->counter) {
+            timestamps_lead(r);
             wg_emul[WG_EMUL_PREPASSES]++;
             gpu_byte_count(ticket++, a->counter, a->counter_at, a->bias, a->vstride, a->instances, a->first_instance);
             uint32_t at = UINT32_MAX;
@@ -3772,12 +3791,14 @@ prepasses(struct replay *r, const struct wg_program **prog, bool *divisors, cons
             uint32_t at = UINT32_MAX;
             if (*prog && (draw_params(*prog) || *divisors) && a->buffer) {
                at = push_place(r->dev);
+               timestamps_lead(r);
                gpu_copy_bb(a->buffer, a->offset + (double)i * a->stride + (a->indexed ? 12 : 8), push_buffer(r->dev),
                            at + WGSL_DRAW_PARAMS, 8);
                memcpy(r->dev->push_data + at + WGSL_DRAW_PARAMS + 8, (uint32_t[2]){ i, 0 }, 8);
             }
             util_dynarray_append_typed(&r->dp_places, uint32_t, at);
             if (a->fan) {
+               timestamps_lead(r);
                wg_emul[WG_EMUL_PREPASSES]++;
                gpu_fan_indirect(ticket++, a->buffer, a->offset + (double)i * a->stride, a->ib, a->ib_offset, a->ib_size,
                                 a->wide, a->restart);
@@ -4156,6 +4177,7 @@ image_use(struct replay *r, const struct op_image_use *u)
                /* A/B (`?gpu=vkskip=`): its bytes left as they are, the place counted up to date. */
             } else if (to_words || from_words) {
                end_pass(r);
+               timestamps_lead(r);
                wg_emul[WG_EMUL_WORDS_COPIES]++;
                wg_emul[WG_EMUL_WORDS_BYTES] += bytes;
                const uint32_t words = wg_image_words(image), row = wg_image_row_bytes(image, m);
@@ -4166,6 +4188,7 @@ image_use(struct replay *r, const struct op_image_use *u)
                   gpu_copy_bt(words, at, row, rows, dst, m, 0, 0, l, cols * f->bw, rows * f->bh, d, 0);
             } else {
                end_pass(r);
+               timestamps_lead(r);
                wg_emul[WG_EMUL_VIEW_COPIES]++;
                wg_emul[WG_EMUL_VIEW_BYTES] += bytes;
                gpu_copy_tt(src, m, 0, 0, l, dst, m, 0, 0, l, cols * f->bw, rows * f->bh, d, 0, cols * f->bw,
@@ -4502,6 +4525,7 @@ scope_shadows(struct replay *r)
          continue;
       }
       const uint32_t buffer = (uint32_t)v[4 * first];
+      timestamps_lead(r);
       gpu_copy_bb(buffer, lo, to, place, hi - lo);
       wg_emul[WG_EMUL_SHADOW_COPIES]++;
       wg_emul[WG_EMUL_SHADOW_BYTES] += hi - lo;
@@ -4527,8 +4551,10 @@ scope_shadows(struct replay *r)
          continue;
       }
       const double bytes = floor(u->size / 4) * 4;
-      if (bytes)
+      if (bytes) {
+         timestamps_lead(r);
          gpu_copy_bb(u->buffer, u->at, to, place, bytes);
+      }
       wg_emul[WG_EMUL_SHADOW_COPIES]++;
       wg_emul[WG_EMUL_SHADOW_BYTES] += bytes;
       util_dynarray_append_typed(&r->shadows, struct shadow, ((struct shadow){ u->buffer, to, u->at, u->size, place, false }));
@@ -5214,6 +5240,7 @@ scope_reads(struct replay *r)
             continue;
          }
          end_pass(r);
+         timestamps_lead(r);
          const bool three = image->vk.image_type == VK_IMAGE_TYPE_3D;
          for (uint32_t l = v->vk.base_mip_level; l < v->vk.base_mip_level + v->vk.level_count; l++) {
             const VkExtent3D e = vk_image_mip_level_extent(&image->vk, l);
