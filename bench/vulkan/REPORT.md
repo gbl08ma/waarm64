@@ -865,6 +865,8 @@ load passed. A top-of-pipe timestamp right before a render pass that the worker 
 `scope_pass`) is a write of its own before that work (`timestamps_lead`). Before, it read the pass's beginning write,
 which comes after that work. A driver test (`t46BeforePrepass`: an indexed fan's pass) failed first.
 
+**CI** (the code at eff2e82a): `scripts/ci.sh` OK (588 s), `scripts/ci-graphics.sh` OK (262 s), `scripts/ci-deqp-vk.sh` OK (1,092 s).
+
 ## VK4 T46: queries and timestamps — timestamps on the GPU, occlusion queries in the device's set, copies in one dispatch; 170 cases join the list
 
 2026-11-08, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
