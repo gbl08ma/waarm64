@@ -1,0 +1,46 @@
+{
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "157.0.8103.38",
+ "runS": 75,
+ "info": "7.2.14-arch1-24mesa 1:26.2.6-1 vulkan-virtio 1:26.2.6-1 sway 1:1.12-4",
+ "sway": "",
+ "vulkan": "apiVersion         = 1.3.296        deviceName         = Virtio-GPU Venus (webpc WebGPU)        driverName         = venus",
+ "cold": {
+  "args": "--path /home/arch/projects/forward --editor --rendering-driver vulkan",
+  "firstFrameS": 11.6,
+  "shots": [
+   "cold-075s alive 93.7       01:16"
+  ],
+  "display": "XInput: Absolute pointing device: xwayland-pointer:56XInput: Absolute pointing device: xwayland-pointer:56",
+  "errors": [
+   "Class 'ShaderBakerExportPluginPlatformVulkan' is not exposed, skipping.",
+   "ERROR: Failed to read setting org.freedesktop.appearance accent-color: Requested setting not found"
+  ]
+ },
+ "warm": {
+  "args": "--path /home/arch/projects/forward --editor --rendering-driver vulkan",
+  "firstFrameS": 2.1,
+  "shots": [
+   "warm-075s alive 57.2       01:16"
+  ],
+  "display": "XInput: Absolute pointing device: xwayland-pointer:56",
+  "errors": [
+   "ERROR: Failed to read setting org.freedesktop.appearance accent-color: Requested setting not found"
+  ]
+ },
+ "warnings": {
+  "venus: the WebGPU device's subgroups are wrong in divergent control flow: subgroups of one invocation": 1,
+  "venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies": 1,
+  "venus: wg: the device address buffer's region 0 grows to 128 MiB": 2,
+  "venus: wg: the device address buffer's region 0 grows to 256 MiB": 2,
+  "venus-share: resource 53 (1152x648) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: the bitmap way checked right (3 frames)": 1,
+  "venus: vkr: destroying context 9 (probe3d) with a valid instance": 1,
+  "venus: vkr: destroying device with valid objects": 1,
+  "venus-share: resource 68 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: resource 69 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: resource 70 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: resource 71 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: resource 105 (1152x648) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1
+ }
+}

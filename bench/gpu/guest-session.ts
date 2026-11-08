@@ -134,6 +134,8 @@ export async function openSession(o: SessionOptions) {
     if (t.startsWith('webpc-slow ')) return void slow.push(t.slice(11));
     if (t.startsWith('virgl') || t.startsWith('venus')) warnings.set(t.slice(0, 200), (warnings.get(t.slice(0, 200)) ?? 0) + 1);
     if (m.type() === 'error' || t.startsWith('venus')) console.log(`[page ${m.type()}] ${t.slice(0, 400)}`);
+    // CONSOLE_FILE=<path>: the renderers' lines whole (a shader that didn't compile comes with its code).
+    if (process.env.CONSOLE_FILE && (t.startsWith('virgl') || t.startsWith('venus'))) appendFileSync(process.env.CONSOLE_FILE, `${t}\n`);
   });
   page.on('pageerror', (e) => console.log(`[page error] ${e.message.slice(0, 400)}`));
   const t0 = performance.now();

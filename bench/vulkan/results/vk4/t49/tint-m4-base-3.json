@@ -1,0 +1,1287 @@
+{
+ "date": "2026-11-08T22:01:14.149Z",
+ "chromium": "157.0.8103.38",
+ "platform": "darwin",
+ "adapter": {
+  "vendor": "apple",
+  "architecture": "metal-3",
+  "device": "",
+  "description": "",
+  "features": [
+   "dual-source-blending",
+   "clip-distances",
+   "shader-f16",
+   "subgroups"
+  ]
+ },
+ "timeoutS": 60,
+ "repeat": 1,
+ "modules": 210,
+ "timeouts": 0,
+ "errors": 0,
+ "sumMs": 457.2,
+ "maxMs": 61.7,
+ "over100": 0,
+ "rows": [
+  {
+   "file": "0x01966983a3a42ca1f08ed582040551475283358b44fe825aecbdfbdc3346c535.vert.wgsl",
+   "bytes": 20944,
+   "ms": 1.5,
+   "errors": []
+  },
+  {
+   "file": "0x034ee823b831ba06237959f9faedff4297cf57a0c63e788263d58434232b6ddb.comp.wgsl",
+   "bytes": 2278,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0x0582fd2d931cd26b12b434147809c4f97a28a90df8b2588aa46ec94035d881c8.comp.wgsl",
+   "bytes": 27165,
+   "ms": 2,
+   "errors": []
+  },
+  {
+   "file": "0x068aad5bdbbc21a6a19c7c4bb5c7b1b1b636029a9389c0709e0db597bc6d35ba.comp.wgsl",
+   "bytes": 5378,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0x075c41193e07174be129178166d50df8b107827b925f9d8c3993a41975735f23.comp.wgsl",
+   "bytes": 90630,
+   "ms": 6.6,
+   "errors": []
+  },
+  {
+   "file": "0x084b938b38183921f6e357e6c1c0e77ec71a9185e7ed80dabdff9ce04a7f7932.comp.wgsl",
+   "bytes": 4551,
+   "ms": 0.5,
+   "errors": []
+  },
+  {
+   "file": "0x09755335cc6195ceb3b7abb0c1ac9aa964817ab35ca79abdf6c4c4d147951644.comp.wgsl",
+   "bytes": 3117,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x0a499ad3ca501a73116f2c10a11e6d65cb961408bec364c4fb9875e93b90a368.comp.wgsl",
+   "bytes": 16757,
+   "ms": 1,
+   "errors": []
+  },
+  {
+   "file": "0x0a83f65830249342b9671a79e46e03e9248a567d1b40b6cdaa1ebbaf4a80b27a.frag.wgsl",
+   "bytes": 6764,
+   "ms": 0.6,
+   "errors": []
+  },
+  {
+   "file": "0x0b47e12340dda4c9e1bdd512714fafd35709004b6285031d20a83d50e6b5d4d2.comp.wgsl",
+   "bytes": 29702,
+   "ms": 2.1,
+   "errors": []
+  },
+  {
+   "file": "0x0c7ca885494e47386996881e5fa9bed2982e2c0d37b9faafd2583b3312df0bb1.comp.wgsl",
+   "bytes": 7573,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0x0ccfd6f751d1678354eb3736b1e53a22b6a9388eb2451702c80e5fef779e1597.comp.wgsl",
+   "bytes": 56281,
+   "ms": 3.5,
+   "errors": []
+  },
+  {
+   "file": "0x0cdf11bbc8e6800f10956032d037ff9088cecf715aa9e8dae79e23147eace9ac.comp.wgsl",
+   "bytes": 23450,
+   "ms": 1.4,
+   "errors": []
+  },
+  {
+   "file": "0x102cd42b2ff96e305190ff986f05ef464c744d300b78ea18e635cd2efe03901e.comp.wgsl",
+   "bytes": 2270,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0x11783f69c8ec9d41f941ecba70c2766c2ec9c5ae8d6a2be5794ecb60134c4f40.frag.wgsl",
+   "bytes": 20205,
+   "ms": 1.4,
+   "errors": []
+  },
+  {
+   "file": "0x127ea707af0625af6bccc342e5a36ac9404f9dd950cfea94a6d196f99e108b1a.comp.wgsl",
+   "bytes": 12430,
+   "ms": 0.7,
+   "errors": []
+  },
+  {
+   "file": "0x130dbb57333ed721098c97f3713b07100f23042a921bff89fbf405ed5c818462.comp.wgsl",
+   "bytes": 4499,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x18f630043ce550326be99747f4383cec69d7169b2c696bd15871f6570f6ede48.comp.wgsl",
+   "bytes": 5532,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0x1a352422df08f476ddb2ccdc3a202471c47f5c08f7d9a25b43a3f2ef32719be1.frag.wgsl",
+   "bytes": 23003,
+   "ms": 1.8,
+   "errors": []
+  },
+  {
+   "file": "0x1bba94af945c44a9930909e29f39692c03a2d339565368d474dac090129e4e0b.comp.wgsl",
+   "bytes": 76895,
+   "ms": 5,
+   "errors": []
+  },
+  {
+   "file": "0x1d20bdaac794a638685197464c29c88ea15ba0f438d1f900e9aca0a607bec163.comp.wgsl",
+   "bytes": 17747,
+   "ms": 1.1,
+   "errors": []
+  },
+  {
+   "file": "0x1f70ed0cef1e1267d2c2518d9ea9eddca22ffd106be98fe7cef98865061dd39c.vert.wgsl",
+   "bytes": 1515,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x1fb0d8e59fa898c15f587b01e0449e1e9b187efebe7782a18c0acaac6ff02979.comp.wgsl",
+   "bytes": 20440,
+   "ms": 1.3,
+   "errors": []
+  },
+  {
+   "file": "0x2036b37d9c769713c1d56d9a1cda908cd2ced2961f6c3081890af437e2dd40c2.comp.wgsl",
+   "bytes": 2270,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0x2153547d97f6daf124d189e2b7dec8fb406a1b696d36b2defa4b8d32ae89ad95.comp.wgsl",
+   "bytes": 3389,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0x23c56c0059366edccfa6f0c51966de72d4a546b628cb765b8e99dad63fba038a.vert.wgsl",
+   "bytes": 20643,
+   "ms": 1.6,
+   "errors": []
+  },
+  {
+   "file": "0x248346086983354d27950a9427b906d8997f9182875a24a8bb14387357d84e3d.comp.wgsl",
+   "bytes": 44216,
+   "ms": 2.6,
+   "errors": []
+  },
+  {
+   "file": "0x29ec828ae8a2c35fe9d23d4b51705defa916184b88a79f60001f14d0141b8b29.comp.wgsl",
+   "bytes": 56315,
+   "ms": 3.6,
+   "errors": []
+  },
+  {
+   "file": "0x2a807a9a7dea8ff44e76b913460ff58d4d963c74636220b5a7d77cd91f86e63b.comp.wgsl",
+   "bytes": 21326,
+   "ms": 1.2,
+   "errors": []
+  },
+  {
+   "file": "0x2acebd2e76e9a3c568f50ba28d3351fb2471d6de1f18a889cf9f54b586174a5c.frag.wgsl",
+   "bytes": 739,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0x2af454f84a0e94f8c9a6cb79469ed371de9d4feede99a5119b5ab4776e86be5c.comp.wgsl",
+   "bytes": 3193,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x2dd0ba1e6803f6a02da312e308fde3737f172a51a7036d799d66ff5e65c9e3dc.comp.wgsl",
+   "bytes": 3492,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x2e6f8e536bf5b7fef30ade36503b744ded5b154fa651e6dd444a2129cb5cfe40.comp.wgsl",
+   "bytes": 36628,
+   "ms": 2.6,
+   "errors": []
+  },
+  {
+   "file": "0x31ce34611c288f568dd07055487dc503a3a10d95bab8ca7bc321b6056d240adf.vert.wgsl",
+   "bytes": 5868,
+   "ms": 0.5,
+   "errors": []
+  },
+  {
+   "file": "0x357240fcc1df0bb9fccc035c9c8523f143ac63191c9f7b680063ef1272639a4f.frag.wgsl",
+   "bytes": 1813,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0x36d6121af41f79335fe96529545239332a0f75fa0aed23b4603fe7b44dc36c28.comp.wgsl",
+   "bytes": 90719,
+   "ms": 5.9,
+   "errors": []
+  },
+  {
+   "file": "0x389d58ea4a681494c5795b71db6b6cba45cbcf528958756ae49c6e5d36d8b070.comp.wgsl",
+   "bytes": 56315,
+   "ms": 3.4,
+   "errors": []
+  },
+  {
+   "file": "0x38b60fd052f1ab33ef25ff8b9ca832899441dfbba9ab68b85996f9c3771edd4a.frag.wgsl",
+   "bytes": 3736,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x3be50c5b23c2984be30d57be91da9040c73a691e829afff9febf72e7f4d78483.comp.wgsl",
+   "bytes": 27159,
+   "ms": 1.7,
+   "errors": []
+  },
+  {
+   "file": "0x3d033c05eb06e0b21d7c54f99fb95166c74554e1665f20b9f59f3db8694a7921.comp.wgsl",
+   "bytes": 2270,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x3e633b98d9736c8e998a6b27c6a15f448b11220e629c043cefcb1b6de43d3a1e.comp.wgsl",
+   "bytes": 4361,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0x3f308e72114f6c06b78d1f727a7fd7ecaa10954e6afaae2bd65aa816b0a27757.comp.wgsl",
+   "bytes": 15175,
+   "ms": 0.9,
+   "errors": []
+  },
+  {
+   "file": "0x3f7b0f9fbd5488c3a422ed4a240ba0b1dc98c5e0f4d9f3f509608998f7795637.comp.wgsl",
+   "bytes": 8354,
+   "ms": 0.6,
+   "errors": []
+  },
+  {
+   "file": "0x3f9eb449157ffe2d4a59c95709bbdebfbf3d82a97ae7b21d5220891fee26a1fe.comp.wgsl",
+   "bytes": 3563,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0x40827949a0187d03c22f825dc249ee6de051bf8312d579a26b32d7b3ded55fb9.vert.wgsl",
+   "bytes": 22336,
+   "ms": 1.6,
+   "errors": []
+  },
+  {
+   "file": "0x414268eaf659cfffc74168ed2aafa68cfc8041de3eb921f17cb47a5e7556e4be.comp.wgsl",
+   "bytes": 5440,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0x416cf556728487da0b6cc2acddc97fddfd0dfba75b3731349b07310a6a6203b4.comp.wgsl",
+   "bytes": 4020,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x424428911b1285554fa23c5f6526c988578be54e93bcfeb9bfefa445b7eafee8.comp.wgsl",
+   "bytes": 57872,
+   "ms": 3.8,
+   "errors": []
+  },
+  {
+   "file": "0x450e02c9709f1a375afad3e393173c8a73ca4b13bd0b483a92dbeb6dff9c0e40.vert.wgsl",
+   "bytes": 4431,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0x4517b5dbaa236cd96f923757e95789e33140e0de0b750ff0ea5fe2e70cdc6c47.frag.wgsl",
+   "bytes": 2164,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x45e4442f2d3fbd09910910ec771456918ba58bb7b3dabd4215fb1c73abf4ea6f.comp.wgsl",
+   "bytes": 56315,
+   "ms": 3.5,
+   "errors": []
+  },
+  {
+   "file": "0x48365907452ad51baba07c18ea2c0deb0b8bfd75e95c12c28b4f7f37c32aa052.comp.wgsl",
+   "bytes": 5489,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0x49a25f94593294d3d87966cab92547a59a50d5990c39f89133228b068ed34b7e.comp.wgsl",
+   "bytes": 2931,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0x4a77020bed7c761ec9a505de1c1912360da6165eb5869bc73c58a19c5c15ce7b.comp.wgsl",
+   "bytes": 7589,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0x4a96649c8fa9656e830581a816fce0fbc60ca024019dbb039f95cb85b93864fd.comp.wgsl",
+   "bytes": 2094,
+   "ms": 0.1,
+   "errors": []
+  },
+  {
+   "file": "0x4d19b02cddcc7b7c83fe8dd7f3a709aa21be79d37be88a5ef30ccf785b5ad5a2.comp.wgsl",
+   "bytes": 4778,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x4d3e65a8337027d811b5be84ab93dcf9883f684454f8d3082b9bf8c67a7cbd84.comp.wgsl",
+   "bytes": 14026,
+   "ms": 0.8,
+   "errors": []
+  },
+  {
+   "file": "0x50ecc3c6178d943a188c5259f0c75a41d2765f04a531e10328126cd081fa3580.comp.wgsl",
+   "bytes": 162597,
+   "ms": 8.2,
+   "errors": []
+  },
+  {
+   "file": "0x52fa15be516f4a767d5241023bdb319523fc1fd37120ab6d0d312a8bf079d8f6.vert.wgsl",
+   "bytes": 34095,
+   "ms": 2,
+   "errors": []
+  },
+  {
+   "file": "0x53354f2cbd03f718964290f78c494e01f8f5838ddcc2af4278a551679bd52e2e.comp.wgsl",
+   "bytes": 6303,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x539e789b8603e911f2a04ffb5529f49ce267f1d12a4f3b43728004b283dcc479.frag.wgsl",
+   "bytes": 19574,
+   "ms": 1.2,
+   "errors": []
+  },
+  {
+   "file": "0x54b896f53daf788d4104e636988f7eabdb6cc17e273d09c03fc30970235921b4.frag.wgsl",
+   "bytes": 20301,
+   "ms": 1.2,
+   "errors": []
+  },
+  {
+   "file": "0x54f978b3a374519df48218ad44e50e37d0ae0c43131b93f85923980ba69a4eb9.comp.wgsl",
+   "bytes": 2270,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x571cd45772d560e1794d5ad76ae5199e9e3d994f3443550c129fa8fd2e706421.frag.wgsl",
+   "bytes": 20477,
+   "ms": 1.3,
+   "errors": []
+  },
+  {
+   "file": "0x5a15186b25da587a39ee55c8f4d2266e73617fb0968acf1391b792748009cc2d.comp.wgsl",
+   "bytes": 120748,
+   "ms": 6.7,
+   "errors": []
+  },
+  {
+   "file": "0x5c59be94dbd162f35844fad0932f35566efe8f93676262364e725fa750938cfb.comp.wgsl",
+   "bytes": 57864,
+   "ms": 3.2,
+   "errors": []
+  },
+  {
+   "file": "0x5d601bc890c5fb5bb45b70b63435349841af8e6e4582c91f9ec712caf5479413.comp.wgsl",
+   "bytes": 68107,
+   "ms": 3.9,
+   "errors": []
+  },
+  {
+   "file": "0x5e482f79d52cba41b835c2e3d3d77cdd63d6123701318a1e9ebca7e5982d8728.comp.wgsl",
+   "bytes": 2610,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0x5e61d1d191b856052fcf68a11461ffb869acb9778037f5d908a6cd0704a733b7.comp.wgsl",
+   "bytes": 315,
+   "ms": 0,
+   "errors": []
+  },
+  {
+   "file": "0x5ebd33c858ba0833e75c58c7dc7a6e1e476b2a0b1ae4ac18e11738e082ce055a.comp.wgsl",
+   "bytes": 5533,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0x5f51de2d1cd35b0bc887a9c0d474c06cd0bb222456c1c9e2a4744a4b8fde021f.comp.wgsl",
+   "bytes": 56315,
+   "ms": 3.1,
+   "errors": []
+  },
+  {
+   "file": "0x5f9ef21b05d625d81e22fbf9de334b1b3e0026957503373918048d5c46a004e1.vert.wgsl",
+   "bytes": 1613,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0x63d2678a3afdbb678d92f38ab3fd66d12fc810007c60d3ebe8a0b1e39d34847d.comp.wgsl",
+   "bytes": 31346,
+   "ms": 2,
+   "errors": []
+  },
+  {
+   "file": "0x64c6c2ee70f6303b1404ec6051614e81186c697c506a1d7ecc5878adac227ec5.frag.wgsl",
+   "bytes": 1813,
+   "ms": 0.1,
+   "errors": []
+  },
+  {
+   "file": "0x68fbf0e76f49c4b9ad0d13b925f943b89353bae7bd745dd8cafbd8e27f9e7417.comp.wgsl",
+   "bytes": 4450,
+   "ms": 0.5,
+   "errors": []
+  },
+  {
+   "file": "0x6a0420bc9bffea699aaf2e9cad30ea966d16cf6c4faef20c8cd8da6281206b59.comp.wgsl",
+   "bytes": 1961,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0x6cd75898a47e3e0d3aeb248f7fa5adbe02842a7326d2071762ccf6fd55618133.comp.wgsl",
+   "bytes": 15122,
+   "ms": 0.8,
+   "errors": []
+  },
+  {
+   "file": "0x6d97db27aae6ae4b2a0573dcb76bd74dd6e5261567d563bb933790a57654f242.comp.wgsl",
+   "bytes": 5757,
+   "ms": 0.5,
+   "errors": []
+  },
+  {
+   "file": "0x6efab4a695c28090f5e0eee9d3c0c581ddf6394b1498dc47a751955fbbc7af00.comp.wgsl",
+   "bytes": 26094,
+   "ms": 1.5,
+   "errors": []
+  },
+  {
+   "file": "0x6f2e1cf4a75d1467df0104a8aad0185bfd1736e5effc14c757bef520a71ba67d.comp.wgsl",
+   "bytes": 6119,
+   "ms": 0.5,
+   "errors": []
+  },
+  {
+   "file": "0x701ff12401266068aa127a1b46b31fd505fc00f3f4199a42b8358fa4df30f5a3.comp.wgsl",
+   "bytes": 21669,
+   "ms": 1.4,
+   "errors": []
+  },
+  {
+   "file": "0x712cea6d886ad5ab03589444bc25680c4139fe46e5bd6973e958e41f21be809b.comp.wgsl",
+   "bytes": 2918,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0x71357043d09e262d79edb2c831444c7fec60f7ee68a15ed5c477faab59079b8f.comp.wgsl",
+   "bytes": 13400,
+   "ms": 0.8,
+   "errors": []
+  },
+  {
+   "file": "0x71d3341c00f000a96b86b277b6c74e2771ad8eb0a0467897faeddf62f7e45266.vert.wgsl",
+   "bytes": 35668,
+   "ms": 2.4,
+   "errors": []
+  },
+  {
+   "file": "0x72e19de3fbbab67c269cb040a87367454634768e035bf9cbdffe84da56fbcd5b.comp.wgsl",
+   "bytes": 2556,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x74882fdb747dfb1ff72f7015c9346f5f0371bfd5c610ec2469887ff82fcf435c.comp.wgsl",
+   "bytes": 4358,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0x74d8055cd5c4966c762d190c5b1306f4343bfc0bbf382b09ef2d2161d1de0eaf.comp.wgsl",
+   "bytes": 2600,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0x74e471eb0bf83d472340762d838bf888c9e884b491cf40dca881b4eb9603e765.comp.wgsl",
+   "bytes": 137488,
+   "ms": 8.3,
+   "errors": []
+  },
+  {
+   "file": "0x7764459a90e55af510f411b129e80a1a25e0278cb099e9c903282a72e7748cef.comp.wgsl",
+   "bytes": 2270,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0x785c557f1233c5cad4cf0ecb0112cb5ccff5bda3278ffaa9d1e2ea856635c7f2.comp.wgsl",
+   "bytes": 17004,
+   "ms": 1,
+   "errors": []
+  },
+  {
+   "file": "0x79a4bef3728a3542a304ad7c893459c42e164472e00f678ebdac2a6020ae4332.comp.wgsl",
+   "bytes": 37140,
+   "ms": 1.9,
+   "errors": []
+  },
+  {
+   "file": "0x7c57df24ad828d7a21864a1988f8c631a29b92dcc9dc686777b72b89cbd60c1f.comp.wgsl",
+   "bytes": 17473,
+   "ms": 1.1,
+   "errors": []
+  },
+  {
+   "file": "0x7d2875d8a3ee96fbe66aa09ade67aaf2f75960c1a75e9fe1cbdf598f0cf5c5df.comp.wgsl",
+   "bytes": 42107,
+   "ms": 2.2,
+   "errors": []
+  },
+  {
+   "file": "0x7f0e0bb5e2d288109cf38c14e270710d7d2cc34737c4c27826c62d839eb851dd.comp.wgsl",
+   "bytes": 12819,
+   "ms": 0.7,
+   "errors": []
+  },
+  {
+   "file": "0x8104a0fcd8cc91501a1e62b2672504ff5b7517f8590aea9e5dd7d79d8ed94b06.comp.wgsl",
+   "bytes": 5190,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x810d57ae1a15444b0357be58e69c09e49451b7c1e1ed9b86c3b44434637cf690.frag.wgsl",
+   "bytes": 20698,
+   "ms": 1.4,
+   "errors": []
+  },
+  {
+   "file": "0x8257aa12b02f8030fee485ce71ce2600d80ccc72de9dbeccd2f2232b81172f74.comp.wgsl",
+   "bytes": 33076,
+   "ms": 2,
+   "errors": []
+  },
+  {
+   "file": "0x82642051b8643fc462a6d0614190d6a3df7f34d8cc8bfee15097f4dd7da1af46.frag.wgsl",
+   "bytes": 21751,
+   "ms": 1.5,
+   "errors": []
+  },
+  {
+   "file": "0x85771f3d04de65be2c214e43dd8580e680e3232307e2bbf13575977806cc1c3a.vert.wgsl",
+   "bytes": 25646,
+   "ms": 1.6,
+   "errors": []
+  },
+  {
+   "file": "0x860909aa62d8ff6b30652dfc211c1c5f8a4cd1655db5c3447b25b1c8643ec3d8.comp.wgsl",
+   "bytes": 5827,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0x86212ae454d15fd8be8866cee31e9b69a9481b15883d3a4e0b3fec28ea94b66e.comp.wgsl",
+   "bytes": 31352,
+   "ms": 2.1,
+   "errors": []
+  },
+  {
+   "file": "0x8749c280dc8bd7f695c1ada94a1162d1be95c0a5e71cf3c382f413e69caba5f6.comp.wgsl",
+   "bytes": 3297,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x87ef300d59f6cc17abc203968f78b97b866d14aea3801a42d3e6231be6bc7d8b.comp.wgsl",
+   "bytes": 46788,
+   "ms": 3,
+   "errors": []
+  },
+  {
+   "file": "0x8936938341dc4157d59bbcbc4a56a00bbc08266f042234a26f8542ccf6a4a5c3.vert.wgsl",
+   "bytes": 31262,
+   "ms": 2,
+   "errors": []
+  },
+  {
+   "file": "0x8a0c13369411a5a18cad57f08e804189ac2434eb619bbc90947ab569b49e8331.comp.wgsl",
+   "bytes": 3492,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x8a4cb23933f649f7b49b2c3260abe1da5772701de21ed487cfc431288a5ae9d8.comp.wgsl",
+   "bytes": 2534,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0x8ac77395a7edcda9521b18d1853290bf305b7ec9beef9719fd20c9271d005478.comp.wgsl",
+   "bytes": 5263,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0x8ae57741cb11b29911711ae5bffe88369c8f8c8ff2437bc7ce3b903bd314bcd0.comp.wgsl",
+   "bytes": 4044,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x8b27729f8e7afbd4175611397c763e5fba0045500ae383e281d6829cb719d270.comp.wgsl",
+   "bytes": 6227,
+   "ms": 0.5,
+   "errors": []
+  },
+  {
+   "file": "0x8b8790741db1d5475b75ab8cba7ecc77cd9180757dd30d447789d491b8bec61b.comp.wgsl",
+   "bytes": 7393,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0x8d820614000e7134bc464d9ea75b70e35ea61d6cb0437ab7124b391e23b98959.comp.wgsl",
+   "bytes": 5310,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0x8e91ad61614abea059d641217e85c002efeed1924460ef2cd6524f7793aaaedc.vert.wgsl",
+   "bytes": 8182,
+   "ms": 0.6,
+   "errors": []
+  },
+  {
+   "file": "0x9103e3eca6d0c1584f9e3b2132316df0576940c65a644a12f649d70f015d7231.comp.wgsl",
+   "bytes": 4905,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0x9109268aa82fc0f7da14938b459321fc6232f9a981b1b78ced0071f5a73c306c.frag.wgsl",
+   "bytes": 9725,
+   "ms": 0.6,
+   "errors": []
+  },
+  {
+   "file": "0x91cca36f3c01d460884402724c82bf1bafdcee57848f3509fb4e4b251f624f0e.comp.wgsl",
+   "bytes": 5984,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0x91d6152bcf5b57590eb24add7380973e3a3204458ae8a21f1cd0ab9bed352fb7.comp.wgsl",
+   "bytes": 21675,
+   "ms": 1.5,
+   "errors": []
+  },
+  {
+   "file": "0x92501a831196c62e75d5bad5cf03eb4dea6016341ca5e803bda613f70bc0c650.frag.wgsl",
+   "bytes": 221003,
+   "ms": 18.9,
+   "errors": []
+  },
+  {
+   "file": "0x9390ea35a13727076c5b7f1bc301f43820983e87ebca9b6a1a6a78c47ac9c003.frag.wgsl",
+   "bytes": 742698,
+   "ms": 58.9,
+   "errors": []
+  },
+  {
+   "file": "0x979fe9550ff7f90942fba89541f96c75eeec6040a223949ab5b23a46d8ed4871.comp.wgsl",
+   "bytes": 3117,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0x994938a0922dc5a03afb6b6fc21f154194cba51b37d68b48e5cc02ad33651ec2.vert.wgsl",
+   "bytes": 31772,
+   "ms": 2,
+   "errors": []
+  },
+  {
+   "file": "0x9ba24f3b3f12f412842eaf32d92579365f6a7cab62341cfd51ecb2bfceefd323.comp.wgsl",
+   "bytes": 221308,
+   "ms": 12.1,
+   "errors": []
+  },
+  {
+   "file": "0x9d3940bf0eadacdfea3587d7ffbb919419eac373add6cdf1498112f217b914f1.comp.wgsl",
+   "bytes": 17348,
+   "ms": 1,
+   "errors": []
+  },
+  {
+   "file": "0x9df3e3ec7f3edf6020d74f26772307b3a042211b52089cfb7dcbfbfba84804e1.comp.wgsl",
+   "bytes": 17479,
+   "ms": 1.1,
+   "errors": []
+  },
+  {
+   "file": "0x9e1b6f26b2c307b7aa60a0b37e3dea81540fe6ec30cb1a5b7038d54b19a4925b.frag.wgsl",
+   "bytes": 1167,
+   "ms": 0.1,
+   "errors": []
+  },
+  {
+   "file": "0xa1bc07de5fec2febeb7e473ff11b9483daf3c215a9bf75beca21cba0706e2f4b.comp.wgsl",
+   "bytes": 3958,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0xa28a71ea504c7a77951b0f57c1122584df2aa333424b5795fad44b54046e85d0.comp.wgsl",
+   "bytes": 16316,
+   "ms": 0.9,
+   "errors": []
+  },
+  {
+   "file": "0xa417dc52de8d700fa23acd842c22c1e9d3ca8ab4b10c4def6a6f8ae543c90bca.vert.wgsl",
+   "bytes": 29340,
+   "ms": 1.8,
+   "errors": []
+  },
+  {
+   "file": "0xa6fdf939e882ec64740113dae79933bda2c1c1be3ce3be6c092089b5265d8a92.frag.wgsl",
+   "bytes": 86800,
+   "ms": 5.7,
+   "errors": []
+  },
+  {
+   "file": "0xa76f7e67a83a7c1945bbcec26879218051c0ceb7787f053ffea1f955b55c8d1d.comp.wgsl",
+   "bytes": 5984,
+   "ms": 0.5,
+   "errors": []
+  },
+  {
+   "file": "0xa92d7c7c380a8d51a14a470d8fa909c11da29f439a5ecf60a1c196cdf234c3bd.comp.wgsl",
+   "bytes": 2270,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0xabbc9845f8e69a4c4f4c9c86c44b7da2bed861db308e0c0296403df0e078bf9c.comp.wgsl",
+   "bytes": 3961,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0xabf117266a8701cd462b8362c7d693d6b89180c6a24469ccfe6cd3310881fa58.frag.wgsl",
+   "bytes": 166992,
+   "ms": 11.2,
+   "errors": []
+  },
+  {
+   "file": "0xad01e31f835f7180c781837406cbc53c1aaa5a52f25ee822b93da6e8bbce1a33.comp.wgsl",
+   "bytes": 57829,
+   "ms": 3.2,
+   "errors": []
+  },
+  {
+   "file": "0xad9bcc4c0921532af06481885e63b30840825fd187fc56ade13afc45645152ed.comp.wgsl",
+   "bytes": 185228,
+   "ms": 9.9,
+   "errors": []
+  },
+  {
+   "file": "0xadb49ad69caea44d0c66e0ccfc565d47bd7859917be358cbcba48a59f09c8382.comp.wgsl",
+   "bytes": 17349,
+   "ms": 1.2,
+   "errors": []
+  },
+  {
+   "file": "0xb1ba74114c87f19937bb1b4e493729a146e219c9f5273fa859538ea88c1ec3f9.comp.wgsl",
+   "bytes": 233871,
+   "ms": 13.3,
+   "errors": []
+  },
+  {
+   "file": "0xb45f4a2dfb357fe569eef39b5d64bc99589c313dc94080b4ffbe6b523c4fd3df.frag.wgsl",
+   "bytes": 1481,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0xb48c82b285ae0bab122e98c1ca8e5d6bb885541b4b3e647b6c7027e119f1086c.frag.wgsl",
+   "bytes": 20801,
+   "ms": 1.3,
+   "errors": []
+  },
+  {
+   "file": "0xb50f99f2ac17df3c07b1321fbaa2af915036ceaeb1651e71d45130386c338fc5.frag.wgsl",
+   "bytes": 24511,
+   "ms": 1.7,
+   "errors": []
+  },
+  {
+   "file": "0xb58c3801bdf0c3f4c6ca968df3657a2088e54baa0b2a5d6d349340bf94dda607.comp.wgsl",
+   "bytes": 56323,
+   "ms": 3.4,
+   "errors": []
+  },
+  {
+   "file": "0xb650fe65f252359c01c8da284117f0359b82ed3d2a0065768ce5533f9a80117a.comp.wgsl",
+   "bytes": 4089,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0xb9eafb74043caf53c167b74d9df5062972d106373636b119c9a0f646dac3b2c1.comp.wgsl",
+   "bytes": 57864,
+   "ms": 3.4,
+   "errors": []
+  },
+  {
+   "file": "0xba7cfd39d5781cdf04d0b45aa0c1ce067b5013903a29f6dc55085d8df00c3b89.comp.wgsl",
+   "bytes": 55233,
+   "ms": 3.2,
+   "errors": []
+  },
+  {
+   "file": "0xbb1295e9e5a074b28419e2a94e491de6c6c03b95c7cc398536e69c00636d90ea.vert.wgsl",
+   "bytes": 8703,
+   "ms": 0.6,
+   "errors": []
+  },
+  {
+   "file": "0xbb3e5a5f89dacf018b3f1a62d27ace27827ac304bcf4cb05bb6d35efef948e54.comp.wgsl",
+   "bytes": 29095,
+   "ms": 1.7,
+   "errors": []
+  },
+  {
+   "file": "0xbe59513380e86669543754adcaf90b208f03d8dda4b2d6c8151ed5225c15e326.vert.wgsl",
+   "bytes": 20277,
+   "ms": 1.1,
+   "errors": []
+  },
+  {
+   "file": "0xc238f7b5c19850727a8ccd99f7218432393fbd96cc47277a8452b0f9aea2b940.comp.wgsl",
+   "bytes": 56315,
+   "ms": 3.6,
+   "errors": []
+  },
+  {
+   "file": "0xc288298cf50881577ea05f844aec0faf1fd9db7038a0563cbabd59ba2f0e2a62.vert.wgsl",
+   "bytes": 17775,
+   "ms": 1.2,
+   "errors": []
+  },
+  {
+   "file": "0xc4c683d3453a23a7b9c8fcfbf0dd093fd4591cf072900b607167809b937e1815.vert.wgsl",
+   "bytes": 4018,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0xc6ed5a8ae836abd0f84e783b9aba4614f9f385368e9876c183ae08062494af67.comp.wgsl",
+   "bytes": 8598,
+   "ms": 0.5,
+   "errors": []
+  },
+  {
+   "file": "0xc8156549b5f5fe52cdc1f50ff6160fc70f91fee3399c2e4a873ef3dfeb86d4ad.comp.wgsl",
+   "bytes": 12746,
+   "ms": 0.7,
+   "errors": []
+  },
+  {
+   "file": "0xc8f3e426891a7eeb836386b1c33a6af0cef48a686adaa10890d0959713ec8253.comp.wgsl",
+   "bytes": 14379,
+   "ms": 0.9,
+   "errors": []
+  },
+  {
+   "file": "0xc96ccab8387b11cd39423e70557d05de1130f9e4476a3eeecbcd83032c2bc074.comp.wgsl",
+   "bytes": 4499,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0xc9873d22a180a14cef342cca1a6f376fee5551f4a2c04d17ef8f5172cfdf9099.comp.wgsl",
+   "bytes": 44476,
+   "ms": 2.7,
+   "errors": []
+  },
+  {
+   "file": "0xca79ba9e83e758c92becf06774dabbd6350c9483b42d592d78ad2cd49ab458e2.comp.wgsl",
+   "bytes": 2153,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0xcacfb0303a4559f7fb077a480583b251bef6c454dc4ed4bfddcb63b481261a64.comp.wgsl",
+   "bytes": 3877,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0xcad32760661b3dd2125a53696d1578cba6e0973183564de2a8d850364560c070.comp.wgsl",
+   "bytes": 7684,
+   "ms": 0.5,
+   "errors": []
+  },
+  {
+   "file": "0xcae7ae56be90a1f50d5b920302a58ed1a040da6b03c62f20056871d70090f309.vert.wgsl",
+   "bytes": 4857,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0xcbce5a4f9553d9f458bfbb11cfea2267bb7bb0bec37ccaad8e5afb314c48753f.comp.wgsl",
+   "bytes": 8171,
+   "ms": 0.5,
+   "errors": []
+  },
+  {
+   "file": "0xcbe522c7294a5a3714afe166f7b0c2dedb67f358ab8e1956af4a634f7f8dbab7.vert.wgsl",
+   "bytes": 32497,
+   "ms": 2.2,
+   "errors": []
+  },
+  {
+   "file": "0xccd1e5899668057ff29ee2cc7173352c9ddce84b1c631128ba42e6a2f4e41d12.comp.wgsl",
+   "bytes": 16286,
+   "ms": 0.8,
+   "errors": []
+  },
+  {
+   "file": "0xccd7fbbfd9fed41757c8fdca47c84142ff786adce51e57d14bd47cf22f459580.comp.wgsl",
+   "bytes": 16039,
+   "ms": 1,
+   "errors": []
+  },
+  {
+   "file": "0xcd00424edce82ff28d45946a6b1228ed51fe9bb79e579ac6eef92518ab9af00e.comp.wgsl",
+   "bytes": 52581,
+   "ms": 3.1,
+   "errors": []
+  },
+  {
+   "file": "0xcfb2b2f90a0dfe6028e0349fd3147cb1000cb5d8ccb038365efacef2af4d216b.frag.wgsl",
+   "bytes": 3430,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0xd0b0af01df0542a7f2545b829bde1d047a377132391bfc13f431c2a5bfcee2e6.comp.wgsl",
+   "bytes": 57864,
+   "ms": 3.3,
+   "errors": []
+  },
+  {
+   "file": "0xd1d11ceb015b9d69b8e5f850dc974635fe961a46b9d2f6fe5f78a9b9521e5712.comp.wgsl",
+   "bytes": 1379,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0xd28f7f1bad33305a796323711209beb8086ef376a8dd0d93eff23b2b9cf07f00.comp.wgsl",
+   "bytes": 139007,
+   "ms": 9.3,
+   "errors": []
+  },
+  {
+   "file": "0xd5451e9a4456cad4f2700187087ec966c8dd707a262665ac1d47bc775bd967af.comp.wgsl",
+   "bytes": 16315,
+   "ms": 0.9,
+   "errors": []
+  },
+  {
+   "file": "0xd606d5931fb89fd89148933daa910b987e9036c0a6d085c2ed33787215bd6376.frag.wgsl",
+   "bytes": 384,
+   "ms": 0.1,
+   "errors": []
+  },
+  {
+   "file": "0xd741077babbcf79de5d43cb23eaa904ca88e3c3bbdfbd527fd3c418e0ae9b0a7.comp.wgsl",
+   "bytes": 4243,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0xd7771a74a2c32f64893df1c065fd56b5c757774351ee209fa67b08b1e5bc544d.comp.wgsl",
+   "bytes": 2221,
+   "ms": 0.1,
+   "errors": []
+  },
+  {
+   "file": "0xd8401a111b9d6fd9cb999614f7f91c794bf939511c5563d20c65b2c25a7b2211.comp.wgsl",
+   "bytes": 1962,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0xd9ad5a80250939b53696e43be86a23d9aa88570381c9b6aa246c591e5a2cd999.vert.wgsl",
+   "bytes": 20767,
+   "ms": 1.2,
+   "errors": []
+  },
+  {
+   "file": "0xda80587737e6bf978d602ac0b5c096ef685050dce75a8edde39068a3ffce3809.vert.wgsl",
+   "bytes": 29472,
+   "ms": 1.9,
+   "errors": []
+  },
+  {
+   "file": "0xda9aa8fb9bf2ebc7efdf475a78d2ebb48d44da61a26927bff29b97c6c8e65da2.vert.wgsl",
+   "bytes": 5123,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0xdc6e51bfa322fa021cca84c52d06e289dd141b421b08a6344b8905ec53f5efd2.comp.wgsl",
+   "bytes": 2854,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0xdccc63bca7d3cd8a8007350245014ab8d9edc77e810851663b11138993439c0a.comp.wgsl",
+   "bytes": 57864,
+   "ms": 3.5,
+   "errors": []
+  },
+  {
+   "file": "0xdd0587311e22d9066c6c5b5129ce5b6c72591a79c4f4afbe675ea3afc5067128.vert.wgsl",
+   "bytes": 9972,
+   "ms": 0.6,
+   "errors": []
+  },
+  {
+   "file": "0xddc8335819dabfefa9615e2103a6e6e47da1a4702fa3b8627cb6caf72ad105f0.comp.wgsl",
+   "bytes": 28669,
+   "ms": 1.7,
+   "errors": []
+  },
+  {
+   "file": "0xdf4b8475bd8f1bbc54099694e9244827a26c1570199a4c21a7237836b2cd8757.comp.wgsl",
+   "bytes": 154255,
+   "ms": 8,
+   "errors": []
+  },
+  {
+   "file": "0xdfcb9439f5da0483726b6a952baeaca749b8ddf623d43fe33d3bb5678bebf6a9.frag.wgsl",
+   "bytes": 747881,
+   "ms": 61.7,
+   "errors": []
+  },
+  {
+   "file": "0xe0546e84f2212aaa4689f44e0c2baa5cb584b50591955baf78fc4d71cde69602.comp.wgsl",
+   "bytes": 3277,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0xe38de77dec927cc98939a619a7f0f7abb7ddf28e0fa010e2e4aae1c6cc7a99ce.comp.wgsl",
+   "bytes": 139007,
+   "ms": 1,
+   "errors": []
+  },
+  {
+   "file": "0xe450a48b60bcbc7876e96a35c9f3c6fdb4547445ee0624afcfac345433376c98.comp.wgsl",
+   "bytes": 22031,
+   "ms": 1.4,
+   "errors": []
+  },
+  {
+   "file": "0xe643b059a3dc14e3506a8002a7ae974c4f792a776ba06340859a0b7eb2834bb8.comp.wgsl",
+   "bytes": 15408,
+   "ms": 1,
+   "errors": []
+  },
+  {
+   "file": "0xe7f5959847b437df92872f0986d788d8b5eded41b002d345aae6b63f8e07615a.comp.wgsl",
+   "bytes": 4095,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0xe9b51f0e50c1b3a8b1af3862ecbd56d63d16a96110f8014c61d3d86c5f4792ad.frag.wgsl",
+   "bytes": 1167,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0xea074cc6b1bb98d2aea538090efc98acdc29c4921a5cb677ab2ae9a6669cc818.comp.wgsl",
+   "bytes": 4421,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0xea8b1f4271d19df0ec58cfc4858976e5b88225149029fe3a7e1b727dc2aa8479.comp.wgsl",
+   "bytes": 158567,
+   "ms": 7.6,
+   "errors": []
+  },
+  {
+   "file": "0xeaaf2bd24fabe4015f3a8945dae9eaefa3abb0f414aa2c21968f54ed3f155613.comp.wgsl",
+   "bytes": 55233,
+   "ms": 0.5,
+   "errors": []
+  },
+  {
+   "file": "0xeab11c476086bf3ffc2a7fb3c5c3a90dcd03517a1ff77024f853ad2b2023d7b6.comp.wgsl",
+   "bytes": 18305,
+   "ms": 1.1,
+   "errors": []
+  },
+  {
+   "file": "0xecc1031f89a71cbe0b16537f6c894c1997d975fda90f6f9d52fe3be5545d2e19.comp.wgsl",
+   "bytes": 3113,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0xecc72929e5ffc0c15920b4e0842d0d646b9096f59dd63e64f06ee6e8fd413ab8.comp.wgsl",
+   "bytes": 13403,
+   "ms": 0.7,
+   "errors": []
+  },
+  {
+   "file": "0xecdc472d137e0136e12c920c2848282fae85e69e3b00904a0738e9293ff682ca.frag.wgsl",
+   "bytes": 7021,
+   "ms": 0.6,
+   "errors": []
+  },
+  {
+   "file": "0xed9a9555dd9ef2dd1aaeb7ab68d39c6da5c260243ff44d01d4bf0cdc398f34b4.frag.wgsl",
+   "bytes": 76,
+   "ms": 0,
+   "errors": []
+  },
+  {
+   "file": "0xee80a9306e397d708e66ec3066a9c60384b6d8c1c12bc839190e4cdb99d9aebe.comp.wgsl",
+   "bytes": 57864,
+   "ms": 3.2,
+   "errors": []
+  },
+  {
+   "file": "0xef43948306ae6d1f285192c84c51412fdbb702497740ca1c606e830cf3b1915b.vert.wgsl",
+   "bytes": 17597,
+   "ms": 1.1,
+   "errors": []
+  },
+  {
+   "file": "0xf22843c591fbd47f59c705544b922d146b735f63bedb566334116a5198643b60.comp.wgsl",
+   "bytes": 12431,
+   "ms": 0.6,
+   "errors": []
+  },
+  {
+   "file": "0xf41dc35364ede53c1027578812d30d68eabafdcd65edc66b86c6a0db0c48a7d6.comp.wgsl",
+   "bytes": 3807,
+   "ms": 0.2,
+   "errors": []
+  },
+  {
+   "file": "0xf47df8029dece8201cf14e620bf18d7e9f83187a3d3011965676bf2cba982714.comp.wgsl",
+   "bytes": 1669,
+   "ms": 0.1,
+   "errors": []
+  },
+  {
+   "file": "0xf4c6f9a3985d5d853276f9c580ca7def1c25e19fd1cca0f4f93f4102a800173c.comp.wgsl",
+   "bytes": 3390,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0xf714ca46e4a2a39291a1567a572d614ec78e0f03ad9ffaa06c828d0d56bc7a03.frag.wgsl",
+   "bytes": 26300,
+   "ms": 2.1,
+   "errors": []
+  },
+  {
+   "file": "0xf8213c3cd70a57d7bdca838c04f0681bb8df1aa64fbacaa7dd6e2626aeb3cbda.comp.wgsl",
+   "bytes": 3366,
+   "ms": 0.4,
+   "errors": []
+  },
+  {
+   "file": "0xf824b252e31087a65a8b1c4cc5aa0e187d76f5ee00385d96461500a0db720a87.comp.wgsl",
+   "bytes": 15760,
+   "ms": 0.8,
+   "errors": []
+  },
+  {
+   "file": "0xf880e572fb0d5e198a00f0124644c860815a2185b9fe17bfd00558a1008d422e.frag.wgsl",
+   "bytes": 19372,
+   "ms": 1.3,
+   "errors": []
+  },
+  {
+   "file": "0xfa8d732676ae0f30aef5909cdbbbeefd35da273b6088f73a95a9ae31daabe7dc.comp.wgsl",
+   "bytes": 50544,
+   "ms": 2.9,
+   "errors": []
+  },
+  {
+   "file": "0xfaeb2cf4f4316d7609c9757657acb46d45fc5781392340c883a435deb815d99e.comp.wgsl",
+   "bytes": 3188,
+   "ms": 0.3,
+   "errors": []
+  },
+  {
+   "file": "0xfd46b9e5efd00f5f56b68c35685e0e67232768b6742c086b904e69a15fe46f85.frag.wgsl",
+   "bytes": 19274,
+   "ms": 1.2,
+   "errors": []
+  },
+  {
+   "file": "0xfd9b72e164ec24b34f3500d5a22ee2fc68733787cd8adb5638afc25697b399f1.frag.wgsl",
+   "bytes": 19553,
+   "ms": 1.4,
+   "errors": []
+  },
+  {
+   "file": "0xfe824f6a32e7f6d6910357974e2b4a64730413b899323a25e15a6e72684169f2.comp.wgsl",
+   "bytes": 7825,
+   "ms": 0.5,
+   "errors": []
+  }
+ ]
+}

@@ -793,6 +793,78 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` oth
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 T49: a program's start — the printer's WGSL a third smaller (Tint −32% on the M4); made at creation, pipelines still lose; Godot's start is the guest's
+
+2026-11-08. The M4 (Chrome for Testing 157.0.8103.38, macOS 26.6.2) through `bench/gpu/sway-mac.sh`: Godot 4.7.2's
+editor on the Forward+ project (`bench/vulkan/godot.ts`, the desktop guest, 4 vCPUs; two runs of one RUNS line a
+session, the first cold, the second with Godot's shader cache, the page's store and Dawn's cache warm), vkQuake's
+capture replayed twice (`venus-run.ts`, Debian with Vulkan) and `bench/vulkan/mac-tint-time.sh` on Godot's 210 stages;
+the dev VM's SwiftShader (Chromium 155.0.8059.84) for `tint-time.ts`. Arms alternated, 3 rounds; medians, [min, max].
+JSON in `results/vk4/t49/`.
+
+**Metal's cache outlives the browser's profile.** Chrome for Testing's GPU helper keeps Metal's compiled shaders in
+`$(getconf DARWIN_USER_CACHE_DIR)/com.google.chrome.for.testing.helper/com.apple.metal` (958 MB here), whatever the
+profile: a session's "cold" start is cold in Dawn but warm in Metal unless that is emptied first, which the A/Bs below
+marked "Metal emptied" do before each session. Godot's first look: 13.5 s of submits held for pipelines with Metal
+cold, 1.5 s with it warm. vkQuake's cold 31 frames: 66 frames/s with Metal emptied, 269 with it warm (VK4 T17's).
+
+**Godot's start is the guest's.** `godot.ts` now polls the renderer's stats each second and records the start's end
+by the renderer's account, `lastHeldS`: the last second a submit waited for its pipelines (`deferredMs` grew).
+Cold, ~44 s after the launch; warm, ~24 s. The held submits (~13 s in all cold, Metal emptied) overlap Godot's own
+work: importing the project and compiling its shaders under emulation, which no arm below moves.
+
+| the printer (base → T49) | M4 | dev VM (SwiftShader) |
+| --- | --- | --- |
+| Godot's 210 stages, `createShaderModule` (ms, sum) | 475 [457, 499] → **323** [317, 345] | 1,106 [997, 1,109] → 901 [636, 912] |
+| the largest stage (ms, medians) | 65 → **41** | 119 → 84 |
+| their WGSL (MB) | 7.05 → 4.39 | |
+| the other programs' 108 stages' WGSL (MB) | 0.90 → 0.56 | |
+
+| Godot's editor, Metal emptied (base → T49) | cold | warm |
+| --- | --- | --- |
+| first frame (s) | 11.3 [10.4, 11.3] → 11.4 [11.4, 11.4] | 3.1 [2.0, 3.1] → 3.0 [3.0, 3.0] |
+| the start's end, `lastHeldS` (s) | 42.8 [42.8, 45.0] → 43.8 [42.7, 43.8] | 23.1 [22.1, 25.1] → 24.1 [23.1, 24.1] |
+| submits held for pipelines (s, in all) | 13.75 [13.22, 13.92] → **12.11** [11.87, 12.54] | 1.38 [1.18, 1.39] → **0.92** [0.78, 0.92] |
+
+| vkQuake's capture, Metal emptied (base → T49) | cold | again in the session |
+| --- | --- | --- |
+| the first 31 frames (frames/s) | 65.9 [63.3, 67.0] → 68.0 [66.2, 68.9] | 292 [264, 308] → 325 [307, 327] |
+| held for pipelines (ms) | 1,779 [1,717, 1,849] → 1,720 [1,701, 1,762] | 2.1 → 1.4 |
+
+- **The printer** (vk/README.md "The shader path"): a scalar ALU value read once, later in its block, is printed
+  inside its use instead of as a `let` (Godot's largest stage had ~11,000 lets): not past a store to a register its
+  text names (a register's load by its name, GD G2: vkQuake's bit-scan loops read the bit's index after the mask's
+  store), not with only constant sources (a use must never become a const-expression, which WGSL checks at the module's
+  creation), not past 160 characters, and a use whose text would hold it twice (an f2i's range check, a vector load's
+  offset per word) gets it as a let after all. A vector only float ops read is a `vecN<f32>` (~1,200 of the largest
+  stage's ~2,400 `bitcast<f32>(t.x)` gone). A uniform buffer's or the push constants' words at a constant offset are
+  read by literal indices, at an offset aligned to 16 as one vec4 swizzled. Tint takes a third less on the M4 (rounds
+  apart); Godot's submits wait 12% less cold and a third less warm (rounds apart); vkQuake's cold frames +3%
+  (overlapping). The start's end doesn't move: the guest's.
+- **Found by the subset of dEQP-VK run on it** (700 cases of the UBO, push-constant, arithmetic and texture groups):
+  `ubo.single_basic_type.scalar.u8vec4.both` failed: a copy inlined as `t1` was found inside `t12`, taken for a second
+  use, and its substitution renamed `t12` to `t22`, undeclared. Inlined text is now matched as a whole name only
+  (`tests/venus/t49/names.frag`, failing with the substring match); the subset passes 700 of 700.
+- **Made at creation, pipelines still lose.** Godot's editor makes 51 render pipelines at `vkCreateGraphicsPipelines`
+  (`?gpu=vkpremake=on`) and draws with 24 of them (47%, vkQuake's 8%):
+
+  | Godot's editor, premake (off → on) | Metal warm: the start's end (s) | held (s) | Metal emptied: the start's end (s) | held (s) |
+  | --- | --- | --- | --- | --- |
+  | cold | 44.7 [42.7, 47.7] → 42.7 [39.3, 47.7] | 1.48 → 0.80 | 44.8 [43.8, 44.9] → 47.6 [42.7, 51.7] | 13.85 → 8.34 |
+  | warm | 27.2 [25.1, 30.2] → 28.2 [25.1, 32.2] | 1.56 → 1.06 | 25.1 [24.1, 29.2] → 23.1 [23.1, 26.1] | 1.58 → 1.08 |
+
+  The submits wait about half as long, but the start ends no sooner (rounds overlapping; Metal emptied, later by its
+  median: the 27 compiles nothing draws queue ahead of the scene's). So premaking only for a program that draws most
+  of what it makes (a count kept per program in the store) wouldn't pay either; filed (docs/backlog.md "Pipelines'
+  loose ends").
+- **The store held deflated** (backlog, same entry): memory only. The entries are inflated once, when Vulkan starts
+  (not when a program does): Godot's 210 stages' WGSL, 7.0 MB held, 1.2 MB stored, take ~90-150 ms through
+  DecompressionStream (Node 26), 10-14 ms through a synchronous inflate. Holding them deflated needs that synchronous
+  inflate (a dependency or our own; the user's call), so it is filed with these numbers.
+- **CI**: `scripts/ci.sh` OK (514 s; a first run timed out once in `tests/page-clipboard-ui.test.ts`, which passed
+  alone twice and in the rerun: filed), `scripts/ci-deqp-vk.sh` OK (1,080 s, seed 3472807297), `scripts/ci-graphics.sh`
+  OK (260 s).
+
 ## VK4 T48: presentation and imports — every WSI format sway offers shared, an imported image makes no texture, NV12 imported plane by plane
 
 2026-11-08. The dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Chrome for Testing 157.0.8103.38) for the

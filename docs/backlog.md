@@ -600,26 +600,36 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   Mesa and virglrenderer natively first (minutes, meson and Mesa's build dependencies), so the preparation leaves it
   out and a user's copy has Vulkan only if they built it. A prebuilt module fetched by hash (as the firmware could be)
   would bring it to every `npm start`.
-- **Pipelines' loose ends** (REPORT.md "VK3 L3", "VK4 T17"; vk/README.md "Pipelines made asynchronously", "The shader
-  cache"): (1) render pipelines made at vkCreateGraphicsPipelines (`?gpu=vkpremake=on`, VK4 T17) lose: vkQuake's
-  capture makes 100 so and draws with 8, and the 92 compiles delay the first frames' (cold, 269 → 26 frames/s on the
-  M4). Of its 18 drawn pipelines, 10 have keys the creation's guesses miss (not looked into: the sampler variant, a
-  dynamic state's default, a read-only depth layout). What might win: making one at creation only for a program that
-  draws most of what it makes (a count kept per program in the store), or at a lower priority than a draw's, which
-  WebGPU can't say. (2) SwiftShader's compile isn't kept across a browser restart (Metal's and NVIDIA's are, through
-  Dawn's cache in the profile and the driver's own: REPORT.md "VK3: the NVIDIA run after L2b"). (3) The shader store
-  holds its entries inflated in memory, ~7× what's stored (vkQuake's): a store kept full at 64 MiB would hold ~450 MB in
-  the GPU worker; entries could be held deflated and inflated at a lookup if a synchronous inflate were at hand (the
-  lookups are synchronous). (4) A pipeline made at once by a submit (`syncPipelines`) is counted, never seen.
-- **The printer's WGSL, what Tint still pays for** (GD G2; vk/README.md "The shader path", bench/vulkan/REPORT.md "GD
-  G2"): Godot's largest stages take ~89 ms of `createShaderModule` on SwiftShader's path, ~65 ms on the M4, close to
-  linear in the text now (~120 ms a MB). Smaller next: vectors as f32 where only floats read them (inputs, buffer loads
-  and vecN constructions are still u32 read as `bitcast<f32>(t.x)`: ~2,400 a stage), the uniform buffers' word indexing
-  (`r[((t >> 2u) + 0u) >> 2u][((t >> 2u) + 0u) & 3u]` a word), a single-use value inlined into its use. Tint was read,
-  not profiled (building Dawn wasn't allowed in G2's session): a native Tint (Dawn's CMake, `tint` with the WGSL reader)
-  on these stages would say what the rest is. Seen beside it: a function-scope `var` declared in a loop came back with
-  the last iteration's value on SwiftShader's path, where WGSL zero-initializes it at each declaration (as far as read:
-  confirm against the spec, then report to Dawn); the printer no longer relies on either.
+- **Pipelines' loose ends** (REPORT.md "VK3 L3", "VK4 T17", "VK4 T49"; vk/README.md "Pipelines made asynchronously",
+  "The shader cache"): (1) render pipelines made at vkCreateGraphicsPipelines (`?gpu=vkpremake=on`, VK4 T17) lose for
+  both programs measured. vkQuake's capture makes 100 so and draws with 8 (cold, 269 → 26 frames/s on the M4). Godot's
+  editor (VK4 T49) makes 51 so and draws with 24: with Metal's cache emptied its submits wait half as long for
+  pipelines (13.9 → 8.3 s held, medians of 3) but its start ends no sooner (the last held submit at 44.8 s → 47.6 s,
+  rounds overlapping), the guest's own work (Godot importing and compiling its shaders under emulation) being the
+  start's length; with Metal's cache warm, 44.7 → 42.7 s, overlapping. So a count kept per program in the store, to
+  premake only for one that draws most of what it makes, would pay neither. Left: of vkQuake's 18 drawn pipelines, 10
+  have keys the creation's guesses miss (not looked into: the sampler variant, a dynamic state's default, a read-only
+  depth layout), which matters only if premaking ever wins. (2) SwiftShader's compile isn't kept across a browser
+  restart (Metal's and NVIDIA's are, through Dawn's cache in the profile and the driver's own: REPORT.md "VK3: the NVIDIA
+  run after L2b"). (3) The shader store holds its entries inflated in memory, ~5.8-7× what's stored (Godot's editor:
+  499 entries, 4.4 MB stored, 23 MB held; vkQuake's 7.4×): a store kept full at 64 MiB would hold ~450 MB in the GPU
+  worker. Entries could be held deflated and inflated at a lookup (the lookups are synchronous), which needs a
+  synchronous inflate: the platform has only DecompressionStream, so a dependency (fflate, MIT, ~8 KB) or our own
+  inflate, the user's call (CLAUDE.md "Ask before adding one"). It is memory only: the load's inflate happens once, at
+  Vulkan's start, not a program's (Godot's 210 stages' WGSL, 7.0 MB held: ~90-150 ms through DecompressionStream in
+  Node, 10-14 ms through zlib's synchronous inflate), so no program's start gains. (4) A pipeline made at once by a
+  submit (`syncPipelines`) is counted, never seen.
+- **The printer's WGSL, what Tint still pays for** (GD G2, VK4 T49; vk/README.md "The shader path",
+  bench/vulkan/REPORT.md "GD G2", "VK4 T49"): since T49 (values read once inlined, float vectors, uniform words by
+  literal or aligned indices) Godot's 210 stages take 323 ms of `createShaderModule` on the M4 (475 before), the largest
+  41 ms, their WGSL 4.4 MB (7.05). Left, smaller: ~1,200 `bitcast<f32>(t.x)` in the largest stage, of vectors that also
+  feed something other than float ALU ops (texture coordinates, stores; those could take the bitcast at that use
+  instead); 8- and 16-bit values aren't inlined; a value read twice stays a let. Tint was read, not profiled (building
+  Dawn wasn't allowed in G2's session): a native Tint (Dawn's CMake, `tint` with the WGSL reader) on these stages would
+  say what the rest is. A program's start barely moves with it now: Godot's editor's is the guest's own work
+  (REPORT.md "VK4 T49"). Seen beside it: a function-scope `var` declared in a loop came back with the last iteration's
+  value on SwiftShader's path, where WGSL zero-initializes it at each declaration (as far as read: confirm against the
+  spec, then report to Dawn); the printer no longer relies on either.
 - **Godot on Venus, GD's leftovers** (GD, ended 2026-11-04 for dEQP-VK's next tasks; bench/vulkan/REPORT.md "GD G4",
   "GD G7–G8"). Godot 4.7.2's editor, its Forward+ and SDFGI scenes and the Global Illumination demo run on the M4 and
   the user's NVIDIA desktop (the demo at 60 frames/s there), X11 and Wayland. Left, ranked:
@@ -637,9 +647,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     GPUBuffer each without growing by copy, would need pipelines remade per region count ("Device addresses' leftovers").
   - **Godot as a standing workload** (G7's rest): a GFXReconstruct capture of Godot's scene on the dev VM's lavapipe
     (images/vkframes/build.sh, as vkQuake's; under the Venus profile it takes Mobile: SwiftShader's 16 textures)
-    replayed in tests/page-venus.test.ts; the editor's first start cold and warm on the M4 (bench/vulkan/godot.ts
-    records `firstFrameS`; two runs of one RUNS line in one session: the second has Godot's shader cache and the
-    page's store warm); the first frame was ~35 s (editor) and ~41 s (SDFGI scene) after the start, its pipelines.
+    replayed in tests/page-venus.test.ts. The editor's start cold and warm on the M4 is measured since VK4 T49
+    (bench/vulkan/godot.ts: two runs of one RUNS line in a session; `lastHeldS`, the start's end by the renderer's
+    account): ~44 s cold, ~24 s warm, both the guest's own work (Godot importing its project and compiling its
+    shaders under emulation), the submits held for pipelines ~12 s of it cold with Metal's cache emptied, overlapped
+    (REPORT.md "VK4 T49"). Faster starts are the JIT's and the guest's, not the renderer's.
   - **nvidia.sh's `godot` step, not yet run by the user** (`nvidia-bundle.sh --godot`, then `VK2_STEPS=godot
     bench/vulkan/nvidia.sh page <bundle>`, ~20 min): the bar's NVIDIA half by the harness (the user's hand runs meet it).
   - **Why one refused bind group froze every window** (the screen-space effects' before the fix): not a held command's
@@ -1717,6 +1729,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **`baremetal_parallel_through_snapshots` failed once under `scripts/ci.sh`'s load** (2026-11-03, VK4 T16–T17's run;
   no core change): `smp: exit 5 (0x0) on vCPU 0 after 2016 steps`, the test past 60 s where alone it takes 2.4 s; it
   passed alone 5 times and in the next full run. A timing assumption in the test or the SMP snapshot path, unknown.
+- **`tests/page-clipboard-ui.test.ts`'s toolbar test timed out once under `scripts/ci.sh`'s load** (2026-11-08, VK4
+  T49's run; no page change): `page.waitForFunction` past 30 s in `guestReads` (line 51: the terminal never showed the
+  guest's read). It passed alone twice and in the next full run. A wait that assumes the guest's pace, likely.
 
 - **THIRD_PARTY.md from THIRD_PARTY.json** ([third-party.md](third-party.md)): a CI job or GitHub workflow that writes
   the Markdown (`node tools/third-party.ts --markdown`) whenever the JSON changes, if a readable page is wanted again.

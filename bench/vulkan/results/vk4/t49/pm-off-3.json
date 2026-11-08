@@ -1,0 +1,88 @@
+{
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "157.0.8103.38",
+ "runS": 80,
+ "info": "7.2.14-arch1-24mesa 1:26.2.6-1 vulkan-virtio 1:26.2.6-1 sway 1:1.12-4",
+ "sway": "",
+ "vulkan": "apiVersion         = 1.3.296        deviceName         = Virtio-GPU Venus (webpc WebGPU)        driverName         = venus",
+ "cold": {
+  "args": "--path /home/arch/projects/forward --editor --rendering-driver vulkan",
+  "firstFrameS": 10.1,
+  "lastHeldS": 44.7,
+  "lastPipelineS": 44.7,
+  "pipelines": {
+   "pipelines": 185,
+   "ready": 185,
+   "readyMs": 9242.1,
+   "deferred": 25,
+   "deferredMs": 1510.9,
+   "syncPipelines": 0,
+   "premade": 0,
+   "premadeUsed": 0,
+   "translations": 243,
+   "translateMs": 1847.1,
+   "cacheHits": 0,
+   "cacheMisses": 499,
+   "cacheStores": 499,
+   "cacheBytes": 4433042,
+   "cacheHeld": 23065116,
+   "cacheEntries": 499
+  },
+  "shots": [
+   "cold-040s alive 138       00:41",
+   "cold-080s alive 89.7       01:21"
+  ],
+  "display": "XInput: Absolute pointing device: xwayland-pointer:56XInput: Absolute pointing device: xwayland-pointer:56",
+  "errors": [
+   "Class 'ShaderBakerExportPluginPlatformVulkan' is not exposed, skipping.",
+   "ERROR: Failed to read setting org.freedesktop.appearance accent-color: Requested setting not found"
+  ]
+ },
+ "warm": {
+  "args": "--path /home/arch/projects/forward --editor --rendering-driver vulkan",
+  "firstFrameS": 4.1,
+  "lastHeldS": 30.2,
+  "lastPipelineS": 30.2,
+  "pipelines": {
+   "pipelines": 185,
+   "ready": 185,
+   "readyMs": 12764.1,
+   "deferred": 25,
+   "deferredMs": 1556,
+   "syncPipelines": 0,
+   "premade": 0,
+   "premadeUsed": 0,
+   "translations": 240,
+   "translateMs": 270.1,
+   "cacheHits": 499,
+   "cacheMisses": 0,
+   "cacheStores": 0,
+   "cacheBytes": 0,
+   "cacheHeld": 0,
+   "cacheEntries": 0
+  },
+  "shots": [
+   "warm-040s alive 88.5       00:41",
+   "warm-080s alive 63.7       01:21"
+  ],
+  "display": "XInput: Absolute pointing device: xwayland-pointer:56",
+  "errors": [
+   "ERROR: Failed to read setting org.freedesktop.appearance accent-color: Requested setting not found"
+  ]
+ },
+ "warnings": {
+  "venus: the WebGPU device's subgroups are wrong in divergent control flow: subgroups of one invocation": 1,
+  "venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies": 1,
+  "venus: wg: the device address buffer's region 0 grows to 128 MiB": 2,
+  "venus: wg: the device address buffer's region 0 grows to 256 MiB": 2,
+  "venus-share: resource 53 (1152x648) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: the bitmap way checked right (3 frames)": 1,
+  "venus: vkr: destroying context 9 (probe3d) with a valid instance": 1,
+  "venus: vkr: destroying device with valid objects": 1,
+  "venus-share: resource 68 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: resource 69 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: resource 70 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: resource 71 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: resource 109 (1152x648) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1
+ }
+}

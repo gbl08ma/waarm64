@@ -7,6 +7,9 @@
 // of RUN_S); `{p}` is the projects' copy in the guest's
 // home (~/projects, writable: the editor imports into a project). RUN_S (90), SHOT_S (15), NCPUS (4), RAM_MIB (6144),
 // SCREEN (e.g. 1280x720), GPU_KNOBS (more of `?gpu=`), GODOT_ENV (more of Godot's environment, e.g. `VN_DEBUG=…`).
+// Each run's results: its first frame, when its start ended by the renderer's account (`lastHeldS`: the last second a
+// submit waited for its pipelines) and its pipeline totals (VK4 T49: two runs of one RUNS line in a session are the
+// editor's cold and warm start).
 // bench/gpu/sway-mac.sh runs it on the Mac (SCRIPT=../vulkan/godot.ts, mode `-`; it copies the disk when it exists).
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { openSession } from '../gpu/guest-session.ts';
@@ -47,30 +50,40 @@ for (const r of RUNS) {
   await run(asUser(`swaymsg exec /tmp/run-${r.tag}.sh`));
   const t0 = performance.now();
   const shots: string[] = [];
-  // The first frame (GD G7: the editor's start, cold and warm): the first second of the renderer's stats in which a
-  // Vulkan frame reached virgl (`shareRefreshes`: Godot's window is the only Vulkan one), polled before the shots
-  // (those due meanwhile are taken at once after it) and for the run's time at most.
-  let firstFrameS: number | undefined;
-  while (firstFrameS === undefined && performance.now() - t0 < r.runS * 1000) {
-    await page.waitForTimeout(500);
-    const stats = await page.evaluate(() => ((window as unknown as { __renderStats?: unknown[] }).__renderStats ?? []).splice(0)) as { shareRefreshes?: number }[];
-    if (stats.length) appendFileSync(`${out}/render-${r.tag}.jsonl`, stats.map((x) => JSON.stringify({ shot: 0, ...x })).join('\n') + '\n');
-    if (stats.some((x) => (x.shareRefreshes ?? 0) > 0)) firstFrameS = Math.round((performance.now() - t0) / 100) / 10;
-  }
-  log(r.tag, 'first frame', firstFrameS === undefined ? `not within ${r.runS} s` : `${firstFrameS} s`);
-  for (let t = SHOT_S; t <= r.runS; t += SHOT_S) {
-    await page.waitForTimeout(Math.max(0, t0 + t * 1000 - performance.now()));
-    const name = `${r.tag}-${String(t).padStart(3, '0')}s`;
+  // The renderer's stats (web/gpu-worker.ts: a record a second), polled each second for the run's time, each stamped
+  // with the seconds since the start (`t`) and kept raw; the shots every SHOT_S seconds between them. The first frame
+  // (GD G7: the editor's start, cold and warm): the first second in which a Vulkan frame reached virgl (`shareRefreshes`:
+  // Godot's window is the only Vulkan one). The start's end (VK4 T49): the last second in which a submit held for its
+  // pipelines went (`venusPipelines.deferredMs` grew: a draw waited for a compile), and the last a pipeline was made.
+  type Rec = { t: number; shareRefreshes?: number; venusPipelines?: Record<string, number> };
+  let firstFrameS: number | undefined, lastHeldS: number | undefined, lastPipelineS: number | undefined, base: Record<string, number> | undefined, last: Record<string, number> | undefined;
+  let nextShot = SHOT_S, alive = true;
+  while (alive && performance.now() - t0 < r.runS * 1000) {
+    await page.waitForTimeout(Math.max(0, Math.min(1000, t0 + nextShot * 1000 - performance.now())));
+    const t = Math.round((performance.now() - t0) / 100) / 10;
+    const stats = (await page.evaluate(() => ((window as unknown as { __renderStats?: unknown[] }).__renderStats ?? []).splice(0)) as Omit<Rec, 't'>[]).map((x) => ({ t, ...x }));
+    if (stats.length) appendFileSync(`${out}/render-${r.tag}.jsonl`, stats.map((x) => JSON.stringify(x)).join('\n') + '\n');
+    for (const x of stats) {
+      if (firstFrameS === undefined && (x.shareRefreshes ?? 0) > 0) firstFrameS = t;
+      const p = x.venusPipelines;
+      if (!p) continue;
+      base ??= p;
+      if (last && p.deferredMs > last.deferredMs) lastHeldS = t;
+      if (last && p.pipelines > last.pipelines) lastPipelineS = t;
+      last = p;
+    }
+    if (performance.now() - t0 < nextShot * 1000) continue;
+    const name = `${r.tag}-${String(nextShot).padStart(3, '0')}s`;
     await page.locator('#screen').screenshot({ path: `${out}/${name}.png` }).catch((e) => log('screenshot', String(e).slice(0, 200)));
-    const alive = (await run('pgrep -x godot | wc -l')).trim() !== '0';
+    alive = (await run('pgrep -x godot | wc -l')).trim() !== '0';
     const cpu = (await run('ps -o pcpu=,etime= -C godot | head -1')).trim();
     shots.push(`${name} ${alive ? 'alive' : 'EXITED'} ${cpu}`);
-    // The renderer's stats since the last shot (web/gpu-worker.ts: a record a second), raw.
-    const stats = await page.evaluate(() => ((window as unknown as { __renderStats?: unknown[] }).__renderStats ?? []).splice(0));
-    appendFileSync(`${out}/render-${r.tag}.jsonl`, stats.map((x) => JSON.stringify({ shot: t, ...(x as object) })).join('\n') + '\n');
-    log(r.tag, `${t} s`, alive ? 'alive' : 'EXITED', cpu);
-    if (!alive) break;
+    log(r.tag, `${nextShot} s`, alive ? 'alive' : 'EXITED', cpu);
+    nextShot += SHOT_S;
   }
+  // The run's pipeline totals (`venusPipelines` counts since Vulkan started: the run's are the difference).
+  const pipelines = base && last ? Object.fromEntries(Object.keys(last).map((k) => [k, Math.round((last![k] - (base![k] ?? 0)) * 10) / 10])) : undefined;
+  log(r.tag, 'first frame', firstFrameS === undefined ? `not within ${r.runS} s` : `${firstFrameS} s`, 'last held', lastHeldS, 'last pipeline', lastPipelineS, JSON.stringify(pipelines));
   // What each of Godot's threads waits on: its state, wait channel and kernel stack.
   const threads = await runLines(`(for t in /proc/$(pgrep -x godot | head -1)/task/*; do echo "T $(cat $t/comm) $(awk '{print $3}' $t/stat) $(cat $t/wchan)"; sed 's/^/  /' $t/stack | head -8; done 2>/dev/null)`, 60_000);
   writeFileSync(`${out}/threads-${r.tag}.txt`, threads.join('\n') + '\n');
@@ -81,7 +94,7 @@ for (const r of RUNS) {
   // Which display server Godot took (X11 through Xwayland where DISPLAY is set and Xwayland installed, else Wayland:
   // under X11 Mesa's WSI copies each frame into a buffer, the prime blit, GD G7) and its first lines about Vulkan.
   const display = (await run(`grep -m4 -iE 'display (driver|server)|x11|wayland' /tmp/godot-${r.tag}.log | cut -c1-160`)).trim();
-  results[r.tag] = { args, firstFrameS, shots, display, errors: godotLog.filter((l) => /ERROR|error|WARNING|Vulkan|Device/.test(l)).slice(-30) };
+  results[r.tag] = { args, firstFrameS, lastHeldS, lastPipelineS, pipelines, shots, display, errors: godotLog.filter((l) => /ERROR|error|WARNING|Vulkan|Device/.test(l)).slice(-30) };
   save();
 }
 save();

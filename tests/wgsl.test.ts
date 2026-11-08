@@ -502,17 +502,18 @@ test('values are lets where their uses allow, vars where they leave their scope 
     const translate = await translator();
     const r = glslStage(translate, tmp, 'tests/venus/g2/values.comp');
     assert.equal(r.rc, 0, r.text);
-    // Few vars (Tint's uniformity analysis visits each in scope at every loop, break and if), no run-once loop (pick's
-    // early returns), floats as f32 values.
+    // Few vars (Tint's uniformity analysis visits each in scope at every loop, break and if; the lets fewer since VK4
+    // T49 inlines a value read once), no run-once loop (pick's early returns), floats as f32 values.
     const vars = r.text.match(/\bvar t\d+/g)?.length ?? 0, lets = r.text.match(/\blet t\d+/g)?.length ?? 0;
-    assert.ok(lets > 4 * vars, `${lets} lets, ${vars} vars`);
+    assert.ok(lets > 2 * vars, `${lets} lets, ${vars} vars`);
     assert.equal(r.text.match(/\bloop \{/g)?.length, 5, 'the program\'s five loops (no loop that runs once)');
     assert.match(r.text, /let t\d+: f32 = /);
     // `last`, which its loop carries from an undefined first value (no store before the loop), declared outside the
     // loop: inside, each iteration would start it at 0 (WGSL's zero value; SwiftShader's path happens to keep it).
     const lines = r.text.split('\n'), indent = (l: string) => l.length - l.trimStart().length;
     const tag = lines.find((l) => /= 0x1234u;$/.test(l))?.match(/t\d+/)?.[0];
-    const sum = tag && lines.find((l) => new RegExp(`^ *let (t\\d+): u32 = \\((t\\d+ \\+ ${tag}|${tag} \\+ t\\d+)\\);$`).test(l))?.match(/let (t\d+)/)?.[1];
+    // The sum stored to `last` (inlined into its store, VK4 T49).
+    const sum = tag && `\\((.+ \\+ ${tag}|${tag} \\+ .+)\\)`;
     const store = sum ? lines.findIndex((l) => new RegExp(`^ *t\\d+ = ${sum};$`).test(l)) : -1;
     assert.ok(store > 0, 'last\'s store');
     const reg = lines[store].trim().split(' ')[0];
@@ -550,6 +551,44 @@ test('values are lets where their uses allow, vars where they leave their scope 
       for (let i = 0; i < (n & 3) + 3; i++) [x, y] = [y + i, x];
       want.push(x * 100 + y);
       want.forEach((w, k) => { if (o[n * 9 + k] !== w) bad.push(`invocation ${n} result ${k}: ${o[n * 9 + k]}, not ${w}`); });
+    }
+    assert.deepEqual(bad.slice(0, 8), [], `of ${bad.length}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('values read once are inlined into their use, not past a store to a register they read (VK4 T49)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const r = glslStage(translate, tmp, 'tests/venus/t49/inline.comp');
+    assert.equal(r.rc, 0, r.text);
+    // A chain read once is one expression (`float(n) * 0.75 - 3.0`), the bit's index a let before the mask's store.
+    assert.match(r.text, /let t\d+: f32 = \(\(f32\(t\d+\) \* t\d+\) \+ t\d+\);/);
+    assert.match(r.text, /let (t\d+): u32 = bitcast<u32>\(firstTrailingBit\(bitcast<i32>\((t\d+)\)\)\);\n(.*\n)*? *\2 = /);
+    // A value inlined as a name (a copy's `t1`) found only as a whole name, not inside `t12`.
+    const names = glslStage(translate, tmp, 'tests/venus/t49/names.frag');
+    assert.equal(names.rc, 0, names.text);
+    const compiled = await compile([names.text]);
+    if (compiled) assert.equal(compiled[0], '', names.text);
+    const res = await runCompute(r.text, [{ binding: 0, size: 64 * 5 * 4 }]);
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    const o = new Uint32Array(res.out[0].buffer);
+    const bad: string[] = [];
+    for (let n = 0; n < 64; n++) {
+      let x = n, y = 1, z = 7;
+      for (let i = 0; i < (n & 3) + 3; i++) [x, y, z] = [((y ^ i) + z) >>> 0, (Math.imul(x, 3) + i) >>> 0, (x + y) >>> 0];
+      const f = Math.fround(Math.fround(n * 0.75) - 3), c = Math.trunc(Math.fround(Math.fround(f * f) - 2));
+      let m = (Math.imul(n, 2654435761) | 0x80000001) >>> 0, acc = 0;
+      while (m !== 0) {
+        const b = 31 - Math.clz32(m & -m);
+        m = (m & (m - 1)) >>> 0;
+        acc = (Math.imul(acc, 3) + b * 5) >>> 0;
+      }
+      const want = [x, (Math.imul(y, 1000) + z) >>> 0, c >>> 0, acc, (Math.imul(n, 5) & 7) > 3 ? n + 100 : 0];
+      want.forEach((w, k) => { if (o[n * 5 + k] !== w) bad.push(`invocation ${n} result ${k}: ${o[n * 5 + k]}, not ${w}`); });
     }
     assert.deepEqual(bad.slice(0, 8), [], `of ${bad.length}`);
   } finally {

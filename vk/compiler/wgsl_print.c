@@ -116,6 +116,14 @@ struct ctx {
    /* A run-once loop's final break, not printed (loop_once); the list to print next continuing its scope. */
    nir_instr *skip_jump;
    bool in_scope;
+   /* By value: the expression a single-use value is printed as at its use instead of a let (inline_value), or NULL. */
+   const char **inl, **inl_type;
+   nir_instr *inl_end; /* the use inline_ok found (NULL: an if's condition) */
+   /* The inlined values the instruction being printed named (inl_count: whether listed yet; a use whose text holds one
+    * twice gets it as a let after all: inline_dups; past the list's length, one held twice stays doubled, still right). */
+   unsigned *inl_count;
+   int inl_used[16];
+   unsigned inl_nused;
 };
 
 static void
@@ -238,6 +246,11 @@ def_name(struct ctx *c, nir_def *def)
 {
    if (c->alias && c->alias[def->index] >= 0)
       return fmt(c, "t%d", c->alias[def->index]);
+   if (c->inl && c->inl[def->index]) {
+      if (!c->inl_count[def->index]++ && c->inl_nused < ARRAY_SIZE(c->inl_used))
+         c->inl_used[c->inl_nused++] = def->index;
+      return c->inl[def->index];
+   }
    return fmt(c, "t%u", def->index);
 }
 
@@ -1656,7 +1669,7 @@ value_type(struct ctx *c, nir_def *def)
       return storage_type(c, nir_intrinsic_bit_size(decl), nir_intrinsic_num_components(decl));
    }
    if (c->fdef && BITSET_TEST(c->fdef, def->index))
-      return "f32";
+      return vec_of(c, "f32", def->num_components);
    return storage_type(c, def->bit_size, def->num_components);
 }
 
@@ -2012,6 +2025,67 @@ float_values(struct ctx *c, nir_function_impl *impl)
             BITSET_SET(c->fdef, def->index);
       }
    }
+}
+
+/* Vectors only floats read (VK4 T49), as vecN<f32>: a 32-bit vector a let holds (place_values) whose every use is an
+ * ALU op reading its component as a float, made by an intrinsic (a load, an input) or a vecN. Read so, a component is
+ * `t.x`, not `bitcast<f32>(t.x)` (Godot's Forward+ fragment stage had ~2,400). Its instruction's line is rewritten to a
+ * bitcast of the whole (float_vector_line); one that prints otherwise keeps u32s (its uses come later). */
+static void
+float_vectors(struct ctx *c, nir_function_impl *impl)
+{
+   nir_foreach_block (block, impl) {
+      nir_foreach_instr (instr, block) {
+         nir_def *def = nir_instr_def(instr);
+         if (!def || def->bit_size != 32 || def->num_components < 2 || c->decl_scope[def->index] >= 0 ||
+             c->alias[def->index] >= 0 || !def_needs_var(instr))
+            continue;
+         if (instr->type == nir_instr_type_alu) {
+            const nir_op op = nir_instr_as_alu(instr)->op;
+            if (op != nir_op_vec2 && op != nir_op_vec3 && op != nir_op_vec4)
+               continue;
+         } else if (instr->type != nir_instr_type_intrinsic ||
+                    nir_instr_as_intrinsic(instr)->intrinsic == nir_intrinsic_load_reg) {
+            continue;
+         }
+         bool ok = true;
+         nir_foreach_use_including_if (src, def) {
+            if (nir_src_is_if(src) || nir_src_use_instr(src)->type != nir_instr_type_alu) {
+               ok = false;
+               break;
+            }
+            nir_alu_instr *use = nir_instr_as_alu(nir_src_use_instr(src));
+            const unsigned i = (const nir_alu_src *)src - use->src;
+            if (!alu_reads_typed(use->op, i) || base_of(nir_op_infos[use->op].input_types[i]) != WGSL_F32 ||
+                use->src[i].src.ssa->bit_size != 32) {
+               ok = false;
+               break;
+            }
+         }
+         if (ok)
+            BITSET_SET(c->fdef, def->index);
+      }
+   }
+}
+
+/* A float vector's instruction (float_vectors) printed one line, `tN = E;`: E's bits as floats. Else its uses read u32s
+ * after all. */
+static void
+float_vector_line(struct ctx *c, nir_def *def, uint32_t start)
+{
+   const char *text = c->out->buf + start;
+   const size_t len = c->out->length - start;
+   const unsigned ind = 2 * c->indent;
+   char name[16];
+   const size_t nlen = snprintf(name, sizeof(name), "t%u", def->index);
+   if (len < ind + nlen + 5 || strncmp(text + ind, name, nlen) || strncmp(text + ind + nlen, " = ", 3) ||
+       strcmp(text + len - 2, ";\n") || memchr(text, '\n', len - 1)) {
+      BITSET_CLEAR(c->fdef, def->index);
+      return;
+   }
+   const char *e = fmt(c, "bitcast<vec%u<f32>>(%.*s)", def->num_components, (int)(len - 2 - (ind + nlen + 3)),
+                       text + ind + nlen + 3);
+   splice(c, start + ind + nlen + 3, len - 2 - (ind + nlen + 3), e);
 }
 
 /* Counts the sources of an instruction that read `data`'s value. */
@@ -2754,12 +2828,30 @@ emit_subgroup(struct ctx *c, nir_intrinsic_instr *intr)
 }
 
 /* A load from an array of vec4<u32> (a uniform buffer, the push constants) at byte offset `byte`: words, or halves or
- * bytes of them (16- and 8-bit storage). */
+ * bytes of them (16- and 8-bit storage). 32-bit words that lie in one vec4 (VK4 T49: a uniform word was
+ * `r[((t >> 2u) + 0u) >> 2u][((t >> 2u) + 0u) & 3u]`): at a constant offset inside the array (`vec4s` long; a constant
+ * index past it is an error at the module's creation) its literal indices, at an offset of a known alignment to 16
+ * (`align_mul`, `align_offset`; 0 unknown) the vec4 indexed once and swizzled. */
 static void
-emit_vec4_load(struct ctx *c, nir_def *def, const char *arr, const char *byte)
+emit_vec4_load(struct ctx *c, nir_def *def, const char *arr, const char *byte, int64_t constant, unsigned vec4s,
+               unsigned align_mul, unsigned align_offset)
 {
    const char *words[4];
-   for (unsigned i = 0; i < def->num_components; i++) {
+   const unsigned n = def->num_components;
+   if (def->bit_size == 32) {
+      static const char comps[] = "xyzw";
+      if (constant >= 0 && constant % 4 == 0 && (uint64_t)constant / 16 < vec4s && (constant / 4) % 4 + n <= 4) {
+         line(c, "t%u = %s[%" PRId64 "]%s%.*s;", def->index, arr, constant / 16, n == 4 ? "" : ".", n == 4 ? 0 : n,
+              comps + (constant / 4) % 4);
+         return;
+      }
+      if (align_mul >= 16 && align_mul % 16 == 0 && align_offset % 4 == 0 && (align_offset % 16) / 4 + n <= 4) {
+         line(c, "t%u = %s[%s >> 4u]%s%.*s;", def->index, arr, byte, n == 4 ? "" : ".", n == 4 ? 0 : n,
+              comps + (align_offset % 16) / 4);
+         return;
+      }
+   }
+   for (unsigned i = 0; i < n; i++) {
       if (def->bit_size < 32) {
          const char *b = fmt(c, "(%s + %uu)", byte, def->bit_size / 8 * i);
          words[i] = fmt(c, "((%s[%s >> 4u][(%s >> 2u) & 3u] >> ((%s & 3u) * 8u)) & %s)", arr, b, b, b,
@@ -2878,8 +2970,10 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       return;
    }
    case nir_intrinsic_load_ubo: {
-      const char *arr = res_name(c, const_index(c, &intr->src[0]));
-      emit_vec4_load(c, def, arr, src_comp(c, &intr->src[1], 0));
+      const unsigned b = const_index(c, &intr->src[0]);
+      emit_vec4_load(c, def, res_name(c, b), src_comp(c, &intr->src[1], 0),
+                     nir_src_is_const(intr->src[1]) ? (int64_t)nir_src_as_uint(intr->src[1]) : -1,
+                     find_res(c, b)->r.size / 16, nir_intrinsic_align_mul(intr), nir_intrinsic_align_offset(intr));
       return;
    }
    case nir_intrinsic_load_ssbo:
@@ -2917,7 +3011,9 @@ emit_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       emit_word_access(c, intr, "scratch", false, false, src_comp(c, &intr->src[1], 0));
       return;
    case nir_intrinsic_load_push_constant:
-      emit_vec4_load(c, def, "pc", fmt(c, "(%s + %uu)", src_comp(c, &intr->src[0], 0), nir_intrinsic_base(intr)));
+      emit_vec4_load(c, def, "pc", fmt(c, "(%s + %uu)", src_comp(c, &intr->src[0], 0), nir_intrinsic_base(intr)),
+                     nir_src_is_const(intr->src[0]) ? (int64_t)nir_src_as_uint(intr->src[0]) + nir_intrinsic_base(intr) : -1,
+                     c->info->immediate_size / 16, 0, 0);
       return;
    case nir_intrinsic_barrier: {
       const mesa_scope exec = nir_intrinsic_execution_scope(intr);
@@ -3306,6 +3402,149 @@ place_value(struct ctx *c, nir_def *def, uint32_t start)
    splice(c, start, 0, decl);
 }
 
+/* Single-use values inlined into their use (VK4 T49): Godot's largest stages were ~11,000 lets, most of them read once
+ * by the next few instructions, and Tint's cost is close to linear in the text. A scalar ALU result whose one use is
+ * later in its block (an instruction, or the condition of the if after it), with no register its expression names (a
+ * load by the register's name, alias_loads) stored in between (inline_value), and at least one source that isn't a
+ * constant (so the use never becomes a const-expression, which WGSL checks at the module's creation: a shift past the
+ * width, a division by zero). */
+static bool
+inline_ok(struct ctx *c, nir_instr *instr)
+{
+   if (!c->inl || instr->type != nir_instr_type_alu)
+      return false;
+   nir_alu_instr *alu = nir_instr_as_alu(instr);
+   if (alu->def.num_components != 1 || (alu->def.bit_size != 32 && alu->def.bit_size != 1) ||
+       !list_is_singular(&alu->def.uses))
+      return false;
+   bool runtime = false;
+   for (unsigned i = 0; i < nir_op_infos[alu->op].num_inputs; i++)
+      runtime |= !nir_src_is_const(alu->src[i].src);
+   if (!runtime)
+      return false;
+   nir_src *use = list_first_entry(&alu->def.uses, nir_src, use_link);
+   nir_instr *end = NULL;
+   if (nir_src_is_if(use)) {
+      nir_cf_node *prev = nir_cf_node_prev(&nir_src_use_if(use)->cf_node);
+      if (!prev || prev->type != nir_cf_node_block || nir_cf_node_as_block(prev) != instr->block)
+         return false;
+   } else {
+      end = nir_src_use_instr(use);
+      if (end->block != instr->block)
+         return false;
+   }
+   c->inl_end = end;
+   return true;
+}
+
+/* Whether `e` names value `v` (a register, `tV`) as a whole word. */
+static bool
+names(const char *e, size_t n, unsigned v)
+{
+   char name[16];
+   const size_t len = snprintf(name, sizeof(name), "t%u", v);
+   for (const char *s = e; s + len <= e + n && (s = memmem(s, e + n - s, name, len)); s += len)
+      if ((s == e || (!isalnum((unsigned char)s[-1]) && s[-1] != '_')) &&
+          (s + len == e + n || !isdigit((unsigned char)s[len])))
+         return true;
+   return false;
+}
+
+/* The value's instruction printed one line, `tN = E;`: E kept for its use and the line taken back. A long E stays a let
+ * (a use that names its source twice would double it at each step). */
+static bool
+inline_value(struct ctx *c, nir_def *def, uint32_t start)
+{
+   const char *text = c->out->buf + start;
+   const size_t len = c->out->length - start;
+   const unsigned ind = 2 * c->indent;
+   if (c->track_count != 1 || c->track_other || c->track_off != start + ind || len < ind + c->track_len + 5 ||
+       strncmp(text + ind + c->track_len, " = ", 3) || strcmp(text + len - 2, ";\n") || memchr(text, '\n', len - 1))
+      return false;
+   const char *e = text + ind + c->track_len + 3;
+   const size_t n = len - 2 - (ind + c->track_len + 3);
+   if (n > 160)
+      return false;
+   /* A register it names (a load by the register's name, alias_loads) stored before its use: it reads the value before. */
+   for (nir_instr *i = nir_instr_next(nir_def_instr(def)); i && i != c->inl_end; i = nir_instr_next(i))
+      if (i->type == nir_instr_type_intrinsic && nir_instr_as_intrinsic(i)->intrinsic == nir_intrinsic_store_reg &&
+          names(e, n, nir_instr_as_intrinsic(i)->src[1].ssa->index))
+         return false;
+   /* Its own parentheses where it isn't a primary expression already: a name, a call or a parenthesized whole. */
+   bool primary = true;
+   int depth = 0;
+   for (size_t i = 0; i < n && primary; i++) {
+      if (e[i] == '(')
+         depth++;
+      else if (e[i] == ')')
+         depth--;
+      else if (!depth && !isalnum((unsigned char)e[i]) && e[i] != '_' && e[i] != '<' && e[i] != '>' && e[i] != '.')
+         primary = false;
+      if (!depth && e[i] == ')' && i + 1 < n)
+         primary = false;
+   }
+   c->inl_type[def->index] = value_type(c, def);
+   c->inl[def->index] = primary ? ralloc_strndup(c->mem, e, n) : ralloc_asprintf(c->mem, "(%.*s)", (int)n, e);
+   c->out->length = start;
+   c->out->buf[start] = 0;
+   return true;
+}
+
+/* Where the output from `s` next holds `e` whole (not a part of a longer name: `t1` in `t12`), or NULL. */
+static const char *
+find_whole(const char *s, const char *e, size_t len)
+{
+   for (const char *at = s; (at = strstr(at, e)); at++)
+      if ((at == s || (!isalnum((unsigned char)at[-1]) && at[-1] != '_' && at[-1] != '.')) &&
+          !isalnum((unsigned char)at[len]) && at[len] != '_')
+         return at;
+   return NULL;
+}
+
+/* How often the output since `start` holds `e`. */
+static unsigned
+inline_uses(struct ctx *c, uint32_t start, const char *e)
+{
+   unsigned n = 0;
+   const size_t len = strlen(e);
+   for (const char *s = c->out->buf + start; (s = find_whole(s, e, len)); s += len)
+      n++;
+   return n;
+}
+
+/* An inlined value its use named more than once (an f2i's range check, a vector load's offset per word): a let before
+ * the use after all, the use's text naming it. */
+static void
+inline_dups(struct ctx *c, uint32_t start)
+{
+   for (unsigned u = 0; u < c->inl_nused; u++) {
+      const int v = c->inl_used[u];
+      c->inl_count[v] = 0;
+      const char *e = c->inl[v];
+      if (!e || inline_uses(c, start, e) < 2)
+         continue;
+      const size_t elen = strlen(e);
+      const char *name = fmt(c, "t%d", v);
+      struct _mesa_string_buffer *b = _mesa_string_buffer_create(c->mem, c->out->length - start + 64);
+      for (const char *s = c->out->buf + start; *s;) {
+         const char *hit = find_whole(s, e, elen);
+         if (!hit) {
+            _mesa_string_buffer_append(b, s);
+            break;
+         }
+         _mesa_string_buffer_append_len(b, s, hit - s);
+         _mesa_string_buffer_append(b, name);
+         s = hit + elen;
+      }
+      c->out->length = start;
+      c->out->buf[start] = 0;
+      _mesa_string_buffer_printf(c->out, "%*slet %s: %s = %s;\n", 2 * c->indent, "", name, c->inl_type[v], e);
+      _mesa_string_buffer_append(c->out, b->buf);
+      c->inl[v] = NULL;
+   }
+   c->inl_nused = 0;
+}
+
 static void
 emit_block(struct ctx *c, nir_block *block)
 {
@@ -3314,6 +3553,9 @@ emit_block(struct ctx *c, nir_block *block)
          return;
       nir_def *def = nir_instr_def(instr);
       const uint32_t start = c->out->length;
+      for (unsigned u = 0; u < c->inl_nused; u++)
+         c->inl_count[c->inl_used[u]] = 0;
+      c->inl_nused = 0;
       c->track = def && def_needs_var(instr) && c->decl_scope[def->index] < 0 && c->alias[def->index] < 0;
       if (c->track) {
          c->track_len = snprintf(c->track_name, sizeof(c->track_name), "t%u", def->index);
@@ -3343,10 +3585,17 @@ emit_block(struct ctx *c, nir_block *block)
          failf(c, "an instruction of type %d", instr->type);
          break;
       }
+      if (def && def->num_components > 1 && BITSET_TEST(c->fdef, def->index))
+         float_vector_line(c, def, start);
+      bool dups = false;
+      for (unsigned u = 0; u < c->inl_nused; u++)
+         dups |= c->inl[c->inl_used[u]] && inline_uses(c, start, c->inl[c->inl_used[u]]) > 1;
       if (c->track) {
          c->track = false;
-         place_value(c, def, start);
+         if (dups || !(inline_ok(c, instr) && inline_value(c, def, start)))
+            place_value(c, def, start);
       }
+      inline_dups(c, start);
    }
 }
 
@@ -3699,6 +3948,10 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
    float_values(&c, impl);
    alias_loads(&c, impl);
    place_values(&c, impl);
+   float_vectors(&c, impl);
+   c.inl = rzalloc_array(c.mem, const char *, impl->ssa_alloc);
+   c.inl_type = rzalloc_array(c.mem, const char *, impl->ssa_alloc);
+   c.inl_count = rzalloc_array(c.mem, unsigned, impl->ssa_alloc);
    emit_cf_list(&c, &impl->body);
    if (has_out && stage != MESA_SHADER_VERTEX)
       line(&c, "%s", fs_return(&c));

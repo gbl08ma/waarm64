@@ -17,7 +17,8 @@
 // DISK2=<the second disk, a path under the repo, default target/deqp's>, GUEST_ENV=<VAR=value ... for deqp-vk: e.g. a Venus
 // built from another Mesa on that disk, VK_DRIVER_FILES=/mnt/vdb/venus/virtio_icd.json (VK4 T24)>,
 // RAM_MIB=<the guest's RAM, default the session's>, JOBS=<n> (n dEQP processes at once, each a block of the list), LIMIT_S=<seconds the guest may run dEQP, default 1500>, WATCHDOG=disable (no 30 s limit on a case's steps: how long a slow one takes), PASSED=1 (results.passed: the cases that passed), QPA=1 (dEQP's
-// log with its images, <out>/deqp.qpa: for a few cases).
+// log with its images, <out>/deqp.qpa: for a few cases), CONSOLE_FILE=<path> (guest-session.ts: the renderers' console
+// lines whole, a shader that didn't compile with its WGSL).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { encodeTrace } from '../../web/virgl-trace.ts';

@@ -1,0 +1,35 @@
+#version 450
+// VK4 T49: values read once, inlined into their use (tests/wgsl.test.ts runs it against the same worked out in JS):
+// loops whose carried values are each made of the others' old values (out of SSA, a register's load read after a
+// store to it: such a value can't move past the store), chains of single-use arithmetic, a value read twice by its use
+// (an f2i's range check), a bit scan whose index is read after the mask's store, and an if's condition.
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) buffer Out { uint o[]; };
+
+void main() {
+  uint n = gl_LocalInvocationIndex, k = n * 5u;
+  uint x = n, y = 1u, z = 7u;
+  for (uint i = 0u; i < (n & 3u) + 3u; i++) {
+    uint t = x * 3u + i;
+    uint u = (y ^ i) + z;
+    z = x + y;
+    x = u;
+    y = t;
+  }
+  o[k + 0u] = x;
+  o[k + 1u] = y * 1000u + z;
+  float f = float(n) * 0.75 - 3.0;
+  int c = int(f * f - 2.0);
+  o[k + 2u] = uint(c);
+  // A bit scan (vkQuake's lights): the bit's index is read after the mask's store.
+  uint m = (n * 2654435761u) | 0x80000001u, acc = 0u;
+  while (m != 0u) {
+    uint b = uint(findLSB(m));
+    m &= m - 1u;
+    acc = acc * 3u + b * 5u;
+  }
+  o[k + 3u] = acc;
+  uint r = 0u;
+  if (((n * 5u) & 7u) > 3u) r = n + 100u;
+  o[k + 4u] = r;
+}
