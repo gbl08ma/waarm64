@@ -837,6 +837,14 @@ docs/backlog.md "Queries"), which makes VK0's scene's number above the GPU-times
 (`m4.json`; `m4-gpu-timestamps.json` a run with them on that passed). 170 timestamp cases join the list (it
 had every third: → 81,619).
 
+**CI**: `scripts/ci.sh` OK (512 s; the first run's one failure was tests/venus-gpu.test.ts pinning the device's
+features, `timestamp-query` now among them), `scripts/ci-deqp-vk.sh` OK (1,086 s: a sample of 10,997 of 81,619, YCbCr's
+list, the replays), `scripts/ci-graphics.sh` OK (261 s).
+
+**Left** (docs/backlog.md "Queries"): the M4's device loss with GPU timestamps (held there), past 4,096 counts in one
+pass, `occlusionQueryPrecise`, Chromium's quantization, calibrated timestamps, a timestamp next to a compute pass (not
+taking its writes as one next to a render pass does).
+
 ## VK4 T45: transform feedback's and indirect draws' rest — queries, draws by a byte count, restarts, the provoking vertex's order; 437 cases join the list
 
 2026-11-08, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
