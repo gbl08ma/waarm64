@@ -72,11 +72,12 @@ export class VenusImport {
   }
 
   /**
-   * The driver bound `texture`'s image to memory imported from virgl resource `res` (0: the image is destroyed); `desc`,
-   * what the texture was made with. Returns the resource's own texture for that description, which the image takes in
-   * place of `texture` (undefined: it keeps `texture`, written here).
+   * The driver bound an image to memory imported from virgl resource `res` (0: the image is destroyed); `image`, its own
+   * texture, or what makes it (an image made at its bind has none until one is needed: VK4 T48); `desc`, what that
+   * texture is made with. Returns the resource's own texture for that description, which the image takes in place of
+   * its own (none made); undefined: it keeps its own, written here.
    */
-  bind(texture: GPUTexture, res: number, desc?: GPUTextureDescriptor): GPUTexture | undefined {
+  bind(image: GPUTexture | (() => GPUTexture), res: number, desc?: GPUTextureDescriptor): GPUTexture | undefined {
     if (res && desc && !this.rewrite && BYTES[desc.format] !== undefined) {
       this.stats.binds++;
       const key = descKey(desc);
@@ -94,6 +95,7 @@ export class VenusImport {
       });
       return t;
     }
+    const texture = typeof image === 'function' ? image() : image;
     const resets = this.resets, ends = this.ends.get(res) ?? 0;
     this.later(() => {
       this.untrack(texture);

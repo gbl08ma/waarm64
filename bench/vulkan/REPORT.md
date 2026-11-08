@@ -793,6 +793,40 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` oth
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 T48: presentation and imports — every WSI format sway offers shared, an imported image makes no texture, NV12 imported plane by plane
+
+2026-11-08. The dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Chrome for Testing 157.0.8103.38) for the
+share test's GPU ways. JSON in `results/vk4/t48/`.
+
+- **Warm-up: integer outputs clamped to their attachment's range** (vk/README.md "Formats a texture holds
+  otherwise"). vkd3d's test_output_merger_logic_op failed 28 of 354 checks: its draw before the logic ops writes
+  0xffffffff into RGBA8_UINT, which SwiftShader stores as 0 (Vulkan: undefined; Direct3D: clamped). An `override
+  wg_ic` the pipeline sets only for targets narrower than 32 bits clamps each integer output (`t48IntClamp`: RGBA8_UINT,
+  RG16_SINT, A2B10G10R10_UINT clamped, R32_UINT as written). The test now passes 354 of 354 (`TESTS=` in
+  bench/vulkan/vkd3d.ts); the suite 136 of 174.
+- **A swapchain image drawn by compute alone**: already counted as written since VK3 L4c-F (a pass that sets a bind group
+  writable to it); the backlog's entry was stale. `t48ComputeShared` (tests/venus-driver.test.ts) pins it: shared
+  RGBA8 and BGRA8 images a dispatch writes, their bytes and their textures said written by that submit (with the
+  marking planted out, the test fails).
+- **The WSI formats**: under sway on GLES, the desktop guest's Vulkan offers B8G8R8A8, R8G8B8A8 (and sRGB),
+  A2B10G10R10, A2R10G10B10, R16G16B16A16_SFLOAT and R5G6B5 (`vulkaninfo`'s surface formats: `surface-formats.txt`).
+  Two weren't right: R5G6B5's packed `rgba8unorm` texture wasn't shared at all (a warning, a black window), and
+  A2R10G10B10's (`rgb10a2unorm`, R in red) reached virgl's B10G10R10A2 with red and blue swapped every way. The
+  stored channels now follow the virgl format (web/venus-share.ts `stored`), and where the texture's bytes aren't
+  virgl's the readback way and the check draw it into a texture that holds them first. tests/venus-share.test.ts:
+  both formats byte for byte the readback way in the VM, and within 8 bits the bitmap and canvas ways on the M4, their
+  checks right (`checksWrong` 0).
+- **An imported image's texture made at its bind**: a shared image's texture waits for its bind, and bound to
+  imported memory the worker gives it the resource's (`"import"` in its `gpu_create`). mpv on Vulkan with VA-API
+  (`bench/audio/avsync.ts`, Sintel's H.264 trailer, `WARM_S=8 PHASE_S=20`, the desktop guest on SwiftShader, one session
+  each): the textures the driver made, `venusTextures`, **22.7 a second → 0** at mpv's 11.5 frames a second (two a
+  frame: each bind's image made one at `vkCreateImage`, destroyed at the bind), binds 22.7 and 22.9, the import's ms a
+  second 5.2 and 5.5 (SwiftShader's; one session each, no difference claimed), frames 552 and 550, dropped 290 and 288
+  (SwiftShader's pace). `mpv-vm-before.json`, `mpv-vm-after.json`.
+- **A multi-planar image on external memory**: imported disjoint, a dma-buf a plane, each plane's texture its resource's
+  (`wgt_import_planes`: a disjoint NV12 image on two imported resources, R8 and RG8, each plane's bytes its resource's).
+  Not offered: one memory of several planes, an export, a DRM modifier (backlog "YCbCr's gaps").
+
 ## VK4 T47: vkd3d's feature levels — 256 bytes of push constants, a hang fixed; 11_1 out of reach (geometry, tessellation)
 
 **2026-11-08**, the dev VM (SwiftShader, Chromium 155.0.8059.84) for vkd3d's suite in the desktop guest (Arch, Mesa

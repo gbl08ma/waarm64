@@ -1327,8 +1327,17 @@ image into the virgl texture made at the import (web/virgl-renderer.ts `External
   dma-buf memory or a modifier), vkr the memory a resource was exported from, so `venus_resource_texture(ctx, res)`
   names the WebGPU texture. Shared images are made with `COPY_SRC` and `TEXTURE_BINDING` and their sRGB twin as a view
   format. web/venus-gpu.ts records the submit that last wrote each texture (attachments, copies and blits into it,
-  and storage textures a pass sets a bind group writable to: VK3 L4c-F): an image is copied only when it was written
-  since its last copy.
+  and storage textures a pass sets a bind group writable to: VK3 L4c-F, so a swapchain image a compute pass alone draws
+  counts, `t48ComputeShared` in tests/venus-driver.test.ts): an image is copied only when it was written since its last
+  copy.
+- **Which formats** (VK4 T48): the desktop guest's WSI offers under sway what the device renders and virgl imports
+  (`bench/vulkan/results/vk4/t48/surface-formats.txt`): B8G8R8A8 and R8G8B8A8 (and their sRGB), A2B10G10R10,
+  A2R10G10B10, R16G16B16A16_SFLOAT and R5G6B5. What the virgl texture stores follows the virgl format the compositor
+  typed the import with (web/venus-share.ts `stored`: its `sample` swizzle inverted, so B8G8R8A8's and B10G10R10A2's
+  stored red is the image's blue), whatever the image's texture is: A2R10G10B10's packed texture (`rgb10a2unorm` with R
+  in red) and R5G6B5's (`rgba8unorm`) hold colours, not virgl's bytes. Where the texture's bytes aren't virgl's, the
+  readback way and the check first draw the image into a texture of virgl's bytes (`storedOf`: `rgb10a2unorm` swizzled,
+  5-6-5 packed into `r16uint`); the GPU ways draw it swizzled into their canvas as before, and WebGL converts.
 - **Not NVIDIA's vendor ID:** the device reports the adapter's maker as its vendor (web/venus-gpu.ts `VENDORS`), but
   never NVIDIA's 0x10de: Venus's guest driver (Mesa 26's `vn_wsi_init`) then takes the device for Venus on NVIDIA's own
   driver, which can't render to linear images, and its WSI renders into an optimal image and copies each frame into a
@@ -1404,7 +1413,7 @@ of 5 rounds, IQR ≤ 0.07 ms; `bench/vulkan/results/vk2/l4/`):
 1080p screen on the M4 holds 60 frames/s both ways; the bitmap way takes ~0.08 ms of the GPU worker's thread a frame,
 the readback way ~0.7 ms and holds the compositor's submit up to 8 ms (bench/vulkan/REPORT.md "VK2 L4").
 
-`tests/venus-share.test.ts` checks the bytes every way (the GPU ways only where the page doesn't render in software:
+`tests/venus-share.test.ts` checks the bytes every way, R5G6B5's and A2R10G10B10's packed textures among them (the GPU ways only where the page doesn't render in software:
 on the Mac, not in the dev VM), the check's fallback with the GPU ways broken (everywhere) and its verdicts (Node);
 `tests/page-venus.test.ts` checks vkcube's frames on a GLES sway with grim, the page's GPU ways broken so its check
 falls back to the readback way. `bench/vulkan/present.ts` compares the page's screen (`window.__webpcGrab`: the
@@ -1436,8 +1445,15 @@ two images, a draw, and the images and memories freed again.
 - **The texture** (web/venus-import.ts `VenusImport`, VK4 T16): each resource has a WebGPU texture of its own, one per
   texture description (an image of another format or size on the same memory gets another), made at its first import
   and destroyed at the resource's end (`unref`, a reset); an image bound to the resource's memory takes it in place of
-  its own under its id (web/venus-gpu.ts `onImport`; the image's own texture is destroyed, and an image's end leaves
-  the resource's). A surface imported again (libplacebo imports it at every frame it shows) is a bind that writes
+  its own under its id (web/venus-gpu.ts `onImport`; an image's end leaves the resource's). A shared image's texture is
+  made at its bind (VK4 T48: the driver's `gpu_create` names the resource, `"import"`), so an imported one makes none of
+  its own: mpv's two a frame, made at `vkCreateImage` and destroyed at the bind before, are gone (`venusTextures` in the
+  render stats: 22.7 a second → 0 at mpv's 11.5 frames a second on SwiftShader, bench/vulkan/REPORT.md "VK4 T48").
+- **A multi-planar image** (VK4 T48) is imported disjoint, each plane bound to memory imported from a dma-buf of its
+  own (a resource a plane, as VA-API's surfaces are: an R8 luma and an RG8 chroma), the plane's texture the resource's
+  (`gpu_texture_import` of the plane's texture at its bind); the image-format query offers it importable only, with
+  `DISJOINT`, optimal tiling (no DRM modifier for multi-planar formats). One memory holding several planes isn't
+  offered: a resource is one plane's texture. A surface imported again (libplacebo imports it at every frame it shows) is a bind that writes
   nothing, and what Vulkan draws into a resource stays in it across imports. `?gpu=vkimport=rewrite` gives each image
   its own texture, written at its bind, as before T16 (A/B).
 - **The bytes**: `queue.writeTexture` into the resource's texture, so in the queue's order before the submits that
@@ -1463,7 +1479,8 @@ two images, a draw, and the images and memories freed again.
 
 `tests/venus-driver.test.ts` imports a resource in the driver's test program (`wgt_import`: an R8G8 image with the
 LINEAR modifier on imported memory, copied to a buffer) through `VenusImport` with a fake renderer, before and after a
-picture, the image on the resource's own texture; `tests/venus-import.test.ts` checks the order (pending pictures, held
+picture, the image on the resource's own texture and none of its own made, and a disjoint NV12 image's planes on two
+(`wgt_import_planes`); `tests/venus-import.test.ts` checks the order (pending pictures, held
 binds and pictures across a resource's end, resets) and the resources' textures (kept across imports, one per
 description, destroyed at the end in order), `tests/virgl-video.test.ts` the call queue's; `tests/gpu.test.ts` checks the device's hand-over. mpv's playback is measured by
 `bench/audio/avsync.ts` (`MPV_VARIANTS`): bench/vulkan/REPORT.md "VK2 L6".

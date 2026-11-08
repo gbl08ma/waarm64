@@ -18,7 +18,7 @@ type Test = {
   wgt_fl_init(window: number): number; wgt_fl_map(which: number): number; wgt_fl_submit(i: number): number;
   wgt_fl_done(i: number): number;
   wgt_link(): number; wgt_variant(scenario: number): number; wgt_flat(scenario: number, vs: number, vn: number, fs: number, fn: number): number; wgt_draw_params(vs: number, vn: number, fs: number, fn: number, firstInstance: number): number; wgt_angle_ubo(vs: number, vn: number, fs: number, fn: number, pulled: number): number; wgt_pull(scenario: number, vs: number, vn: number, fs: number, fn: number, fs2: number, fn2: number): number; wgt_scope(mask: number, vs: number, vn: number, fs: number, fn: number, cs: number, cn: number): number; wgt_scope_map(which: number): number; wgt_xfb(scenario: number, vs: number, vn: number): number; wgt_xfb_map(): number; wgt_xfb_done(): number; wgt_pass(scenario: number): number; wgt_pass_pixels(): number; wgt_pass_done(): number; wgt_pass_query(): number;
-  wgt_misc(scenario: number, cs: number, cn: number): number; wgt_misc_map(): number; wgt_misc_done(): number; wgt_misc_signal(): number; wgt_misc_pool_refs(): number;
+  wgt_misc(scenario: number, cs: number, cn: number): number; wgt_misc_map(): number; wgt_misc_done(): number; wgt_misc_signal(): number; wgt_misc_pool_refs(): number; wgt_misc_textures(): number; wgt_init(): number; wgt_import_planes(y: number, uv: number): number;
   wgt_fits(scenario: number, vs: number, vn: number, fs: number, fn: number): number;
   wgt_samples(vs: number, vn: number, fs: number, fn: number): number;
 };
@@ -99,11 +99,45 @@ export async function runImport() {
     if (!ex.wgt_done()) return { error: 'the fence never signalled' };
     return { bytes: [...new Uint8Array(memory.buffer, ex.wgt_imported() >>> 0, 16)] };
   };
+  // The textures the driver makes for the import: none of the image's own (VK4 T48: made at its bind, the resource's).
+  if (ex.wgt_init()) return { error: text(ex.wgt_error() >>> 0) };
+  const textures = v.gpu.stats.textures;
   const a = await copy();
+  const imageTextures = v.gpu.stats.textures - textures;
   // A picture's plane (rows of 4 texels of 2 bytes, 2 rows) written into resource 7.
   importer.plane(7, Uint8Array.from({ length: 16 }, (_, i) => 200 + i), 4, 2, 2);
   const b = await copy();
-  return { first: a, second: b, binds, stats: importer.stats, errors };
+  return { first: a, second: b, binds, stats: importer.stats, imageTextures, errors };
+}
+
+/**
+ * VK4 T48: a disjoint NV12 image whose planes are bound to memories imported from virgl resources 7 (R8, 4×2) and 8
+ * (RG8, 2×1: a fake renderer's, read back), each plane copied to a buffer: the bytes each plane read, and the binds.
+ */
+export async function runImportPlanes() {
+  const adapter = await navigator.gpu?.requestAdapter();
+  if (!adapter) return { skipped: 'no WebGPU adapter' };
+  const device = await adapter.requestDevice(deviceRequest(adapter));
+  const errors: string[] = [];
+  device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
+  const memory = new WebAssembly.Memory({ initial: 65536, maximum: 65536, shared: true });
+  const module = await WebAssembly.compileStreaming(fetch('/target/vk/venus.wasm'));
+  const v = await VenusRenderer.create(module, memory, { at: VENUS_ARENA, bytes: 1 << 20, watch: 0 }, device);
+  const ex = v.raw as unknown as Test;
+  const R8 = 64, RG8 = 65;
+  const luma = Uint8Array.from({ length: 8 }, (_, i) => 30 + i), chroma = Uint8Array.from({ length: 4 }, (_, i) => 90 + i);
+  const importer = new VenusImport(device, {
+    resourceInfo: (id) => (id === 7 ? { format: R8, width: 4, height: 2 } : id === 8 ? { format: RG8, width: 2, height: 1 } : undefined),
+    readResource: (id) => (id === 7 ? luma.slice() : id === 8 ? chroma.slice() : null),
+    videoPending: { res: () => false },
+  }, (f) => v.gpu.later(f));
+  const binds: number[] = [];
+  v.gpu.onImport = (t, res, desc) => { binds.push(res); return importer.bind(t, res, desc); };
+  const text = (p: number) => { const u8 = new Uint8Array(memory.buffer); let e = p; while (u8[e]) e++; return new TextDecoder().decode(u8.slice(p, e)); };
+  if (ex.wgt_import_planes(7, 8)) return { error: text(ex.wgt_error() >>> 0), errors };
+  for (let k = 0; k < 500 && !ex.wgt_done(); k++) await new Promise((r) => setTimeout(r, 10));
+  if (!ex.wgt_done()) return { error: 'the fence never signalled', errors };
+  return { bytes: [...new Uint8Array(memory.buffer, ex.wgt_imported() >>> 0, 12)], binds, stats: importer.stats, errors };
 }
 
 /**
@@ -548,7 +582,7 @@ export async function runScope(spirv: { vert: string; frag: string; comp: string
  * freed; `dynamicStorage`: a dynamic storage buffer's writes read back at its offset; `oddStorage`: a storage buffer
  * of an odd size bound whole. Each check: the first byte that differs from what Vulkan says (-1: none).
  */
-export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mutableViews' | 'resolve3d' | 'msCopyWithin' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied' | 'uniformWritten' | 'indirectWritten' | 'readInPlace' | 'threeSame' | 'oddRange' | 'msLayersSrgb' | 'msLayersPacked' | 'oneRow' | 'resolveTwin' | 'msLayers' | 'msTwins' | 'msPacked' | 'msFormats' | 'attachmentSizes' | 'loadNone' | 'manyLayers' | 'packedFeedback' | 'feedbackLayer' | 'addresses' | 'addressesUniform' | 'twoReads' | 'sameRange' | 'overlappingRanges' | 'inlineBlocks' | 'depthLess' | 'depthAndCompare' | 'intGather' | 'cubeSized' | 'cubeGather' | 'depthEight' | 'inlineLong' | 'immutableFreed' | 'sixteenBindings' | 'sixteenThenOne' | 'cubePlain' | 'vertexCompares' | 'fourSets' | 'bc1Blit' | 'readOnlyImages' | 'g4Views' | 'texturesFull' | 'sizeOnly' | 'formatless' | 'declaredOther' | 'arrayAsFlat' | 'texelUniforms' | 'queuesTimeline' | 'queuesBinary' | 'rgb9e5Words' | 'm8Copies' | 't30Formats' | 't31Formats' | 't32Reads' | 't32Loop' | 't32Ms' | 't34Mutable' | 't37Flat' | 't37ReadWritten' | 't37BigPacked' | 't37WordsPast' | 't37Mismatched' | 't37UniformTail' | 't37AtomicAlias' | 't38Formats' | 't38Stores' | 't39Resolves' | 't39MsBits' | 't40Shared' | 't40Dynamic' | 't41Regions' | 't41Beside' | 't43Wrapped' | 't43MappedCoverage' | 't43MappedDual' | 't41BesidePast' | 't41Full' | 't43Layered' | 't43PushLayers' | 't44FanPast' | 't46SlotsPast' | 't46SlotsBetween' | 't46BeforePrepass' | 't48IntClamp', push: string, skip: string[] = []) {
+export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mutableViews' | 'resolve3d' | 'msCopyWithin' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied' | 'uniformWritten' | 'indirectWritten' | 'readInPlace' | 'threeSame' | 'oddRange' | 'msLayersSrgb' | 'msLayersPacked' | 'oneRow' | 'resolveTwin' | 'msLayers' | 'msTwins' | 'msPacked' | 'msFormats' | 'attachmentSizes' | 'loadNone' | 'manyLayers' | 'packedFeedback' | 'feedbackLayer' | 'addresses' | 'addressesUniform' | 'twoReads' | 'sameRange' | 'overlappingRanges' | 'inlineBlocks' | 'depthLess' | 'depthAndCompare' | 'intGather' | 'cubeSized' | 'cubeGather' | 'depthEight' | 'inlineLong' | 'immutableFreed' | 'sixteenBindings' | 'sixteenThenOne' | 'cubePlain' | 'vertexCompares' | 'fourSets' | 'bc1Blit' | 'readOnlyImages' | 'g4Views' | 'texturesFull' | 'sizeOnly' | 'formatless' | 'declaredOther' | 'arrayAsFlat' | 'texelUniforms' | 'queuesTimeline' | 'queuesBinary' | 'rgb9e5Words' | 'm8Copies' | 't30Formats' | 't31Formats' | 't32Reads' | 't32Loop' | 't32Ms' | 't34Mutable' | 't37Flat' | 't37ReadWritten' | 't37BigPacked' | 't37WordsPast' | 't37Mismatched' | 't37UniformTail' | 't37AtomicAlias' | 't38Formats' | 't38Stores' | 't39Resolves' | 't39MsBits' | 't40Shared' | 't40Dynamic' | 't41Regions' | 't41Beside' | 't43Wrapped' | 't43MappedCoverage' | 't43MappedDual' | 't41BesidePast' | 't41Full' | 't43Layered' | 't43PushLayers' | 't44FanPast' | 't46SlotsPast' | 't46SlotsBetween' | 't46BeforePrepass' | 't48IntClamp' | 't48ComputeShared', push: string, skip: string[] = []) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   if (scenario === 't43MappedDual' && !adapter.features.has('dual-source-blending')) return { skipped: 'no dual-source-blending (SwiftShader\'s)' };
@@ -571,7 +605,7 @@ export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mu
   const words = new Uint8Array(await (await fetch(push)).arrayBuffer());
   const cs = ex.venus_alloc(words.length) >>> 0;
   new Uint8Array(memory.buffer, cs, words.length).set(words);
-  const index = { copy: 0, resolve3d: 36, msCopyWithin: 37, mutableViews: 38, rwImage: 41, rwImageWide: 42, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21, ycbcr: 22, manyUniforms: 23, texelStorage: 24, dynamicUniforms: 25, writtenShared: 26, immutableSampler: 27, bigUniform: 28, sharedSampler: 29, sameMemoryCopy: 30, sameImageCopy: 31, immutableCopied: 32, uniformWritten: 33, indirectWritten: 34, readInPlace: 35, addresses: 39, inlineBlocks: 40, addressesUniform: 43, twoReads: 44, sameRange: 45, overlappingRanges: 46, threeSame: 60, oddRange: 61, msLayersSrgb: 63, msLayersPacked: 64, oneRow: 52, resolveTwin: 53, msLayers: 55, msTwins: 56, msPacked: 57, msFormats: 59, attachmentSizes: 47, loadNone: 48, manyLayers: 49, packedFeedback: 50, feedbackLayer: 51, depthLess: 70, depthAndCompare: 71, intGather: 72, cubeSized: 73, cubeGather: 74, depthEight: 75, inlineLong: 76, immutableFreed: 77, sixteenBindings: 78, sixteenThenOne: 79, cubePlain: 80, vertexCompares: 81, fourSets: 82, bc1Blit: 83, readOnlyImages: 84, g4Views: 85, texturesFull: 86, sizeOnly: 87, formatless: 88, declaredOther: 89, arrayAsFlat: 90, texelUniforms: 91, queuesTimeline: 92, queuesBinary: 93, rgb9e5Words: 94, m8Copies: 95, t30Formats: 96, t31Formats: 97, t32Reads: 98, t32Loop: 99, t32Ms: 100, t34Mutable: 101, t37Flat: 102, t37ReadWritten: 103, t37BigPacked: 104, t37WordsPast: 105, t37Mismatched: 106, t37UniformTail: 107, t37AtomicAlias: 108, t38Formats: 109, t38Stores: 110, t39Resolves: 111, t39MsBits: 112, t40Shared: 113, t40Dynamic: 114, t41Regions: 115, t41Beside: 116, t43Wrapped: 117, t43MappedCoverage: 118, t43MappedDual: 119, t41BesidePast: 120, t41Full: 121, t43Layered: 122, t43PushLayers: 123, t44FanPast: 124, t46SlotsPast: 125, t46SlotsBetween: 126, t46BeforePrepass: 127, t48IntClamp: 128 }[scenario];
+  const index = { copy: 0, resolve3d: 36, msCopyWithin: 37, mutableViews: 38, rwImage: 41, rwImageWide: 42, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21, ycbcr: 22, manyUniforms: 23, texelStorage: 24, dynamicUniforms: 25, writtenShared: 26, immutableSampler: 27, bigUniform: 28, sharedSampler: 29, sameMemoryCopy: 30, sameImageCopy: 31, immutableCopied: 32, uniformWritten: 33, indirectWritten: 34, readInPlace: 35, addresses: 39, inlineBlocks: 40, addressesUniform: 43, twoReads: 44, sameRange: 45, overlappingRanges: 46, threeSame: 60, oddRange: 61, msLayersSrgb: 63, msLayersPacked: 64, oneRow: 52, resolveTwin: 53, msLayers: 55, msTwins: 56, msPacked: 57, msFormats: 59, attachmentSizes: 47, loadNone: 48, manyLayers: 49, packedFeedback: 50, feedbackLayer: 51, depthLess: 70, depthAndCompare: 71, intGather: 72, cubeSized: 73, cubeGather: 74, depthEight: 75, inlineLong: 76, immutableFreed: 77, sixteenBindings: 78, sixteenThenOne: 79, cubePlain: 80, vertexCompares: 81, fourSets: 82, bc1Blit: 83, readOnlyImages: 84, g4Views: 85, texturesFull: 86, sizeOnly: 87, formatless: 88, declaredOther: 89, arrayAsFlat: 90, texelUniforms: 91, queuesTimeline: 92, queuesBinary: 93, rgb9e5Words: 94, m8Copies: 95, t30Formats: 96, t31Formats: 97, t32Reads: 98, t32Loop: 99, t32Ms: 100, t34Mutable: 101, t37Flat: 102, t37ReadWritten: 103, t37BigPacked: 104, t37WordsPast: 105, t37Mismatched: 106, t37UniformTail: 107, t37AtomicAlias: 108, t38Formats: 109, t38Stores: 110, t39Resolves: 111, t39MsBits: 112, t40Shared: 113, t40Dynamic: 114, t41Regions: 115, t41Beside: 116, t43Wrapped: 117, t43MappedCoverage: 118, t43MappedDual: 119, t41BesidePast: 120, t41Full: 121, t43Layered: 122, t43PushLayers: 123, t44FanPast: 124, t46SlotsPast: 125, t46SlotsBetween: 126, t46BeforePrepass: 127, t48IntClamp: 128, t48ComputeShared: 129 }[scenario];
   if (push.endsWith('.frag.spv')) {
     const vert = new Uint8Array(await (await fetch(`/target/vk/test/${scenario === 'cubeSized' ? 'r5/cube-sized' : scenario === 'sixteenBindings' || scenario === 'sixteenThenOne' || scenario === 'fourSets' ? 'r7/sixteen' : scenario === 'vertexCompares' ? 'r7/vs-compare' : scenario === 't43Layered' ? 't43/layer' : scenario === 't43PushLayers' ? 't43/points' : scenario === 't44FanPast' ? 't44/fan' : 'feedback'}.vert.spv`)).arrayBuffer());
     const vs = ex.venus_alloc(vert.length) >>> 0;
@@ -872,6 +906,19 @@ export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mu
     // location 1's green, attachment 1 location 0's red at alpha 1 (all four before: WebGPU's coverage saw alpha 1).
     want.set([0, 64, 0, 64, 64, 0, 0, 64], 0);
     Object.assign(checks, { location1: [0, 4, want], location0: [4, 8, want] });
+  } else if (scenario === 't48ComputeShared') {
+    // VK4 T48 (wg_test.c 129): a compute pass's writes in shared images (what web/venus-share.ts copies for the
+    // compositor): their bytes, and each texture said written by this submit, so that it is copied again.
+    want.set([51, 102, 153, 255, 102, 153, 204, 255], 0);
+    Object.assign(checks, { rgba8: [0, 4, want], bgra8: [4, 8, want] });
+    const ids = new Uint32Array(memory.buffer, ex.wgt_misc_textures() >>> 0, 2).slice();
+    const sub = v.gpu.stats.submits;
+    for (const [k, id] of [...ids].entries()) {
+      const t = v.gpu.texture(id);
+      got.set([t ? 1 : 0, t && t.written === sub ? 1 : 0], 16 + 2 * k);
+      want.set([1, 1], 16 + 2 * k);
+    }
+    Object.assign(checks, { writtenRgba8: [16, 18, want], writtenBgra8: [18, 20, want] });
   } else if (scenario === 't48IntClamp') {
     // VK4 T48 (wg_test.c 128): each integer output clamped to its attachment's range: RGBA8_UINT (255, 255, 7, 255),
     // RG16_SINT (-32768, 32767), A2B10G10R10_UINT (1023, 5, 1023, 3), R32_UINT as written (SwiftShader stored the first's

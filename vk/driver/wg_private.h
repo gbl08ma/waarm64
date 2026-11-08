@@ -405,6 +405,7 @@ struct wg_image {
       VkDeviceSize offset, size;  /* in the image's bytes */
       struct wg_device_memory *mem;
       VkDeviceSize mem_offset;
+      bool imported; /* a disjoint plane on memory imported from a resource: its texture the resource's (VK4 T48) */
    } planes[3];
 };
 /* The plane an aspect names (PLANE_n, or 0). */

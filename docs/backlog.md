@@ -679,10 +679,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   only (a linear image can't be sampled here anyway); no explicit chroma reconstruction nor a chroma filter apart from
   the sampler's (Mesa's implicit reconstruction, which dEQP-VK's conversion cases pass); planes aren't attachments or
   storage images. Failing (out of `tests/deqp/vk-ycbcr.txt`): **an image aliasing a
-  plane's memory** (48 `plane_view.memory_alias`: images are textures of their own, never their memory's bytes). **No
-  multi-planar image on external memory** (VK3 L7b, the review of L6b-L7.3's finding 4: refused by the image-format
-  query, since its planes' textures were neither imported from an imported memory's resource nor registered as
-  shared): an import would take each plane's region of the resource (`gpu_texture_import` at the plane's offset).
+  plane's memory** (48 `plane_view.memory_alias`: images are textures of their own, never their memory's bytes). **A
+  multi-planar image on external memory only disjoint, a resource a plane** (VK4 T48: each plane's texture its
+  resource's; vk/README.md "Imports"): not exported (the virgl renderer imports one plane an image), not one memory of
+  several planes (a resource is one texture: each plane's region of one resource would need its bytes from an offset,
+  `VenusImport` fills a texture from a resource's start), and not with a DRM modifier (ffmpeg's `hwmap` from VA-API to
+  Vulkan makes a disjoint image with the planes' explicit layouts: the modifier list leaves the multi-planar formats out).
 - **GTK4 on Vulkan: the bar met on the M4, the default not taken** (VK4 T13, bench/vulkan/REPORT.md "VK4 T13–T14"; GTK
   takes GL by default, so only `GSK_RENDERER=vulkan` meets Venus). Since the pump's ticker, iconscroll runs at 33 frames/s
   on the M4 against GL's 28–32, frames at GL's CPU a frame, fishbowl at 60. Left: (1) NVIDIA and SwiftShader not
@@ -711,11 +713,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   Next: a bisect on NVIDIA itself, a bundle carrying the page at several of the 34 commits between them (`git log
   4fdc69fb..c8087cb0 -- vk web`: the images shared, ~20 MB a page) run as alternated arms in one session; or Dawn's
   own trace categories (`dawn.validation`, per-command timings) at both commits, which would name the slower command.
-- **Presentation's gaps** (VK2 L4, vk/README.md "Presentation"): a fullscreen Vulkan window isn't tried (wlroots may
+- **Presentation's gaps** (VK2 L4, VK4 T48; vk/README.md "Presentation"): a fullscreen Vulkan window isn't tried (wlroots may
   scan a client's dma-buf out directly: `SET_SCANOUT_BLOB` of a Venus blob, `ERR_UNSPEC` today, would need the
-  screen to draw a WebGPU texture); images written only by compute (storage) aren't marked written, so they aren't
-  copied again; WSI formats other than 8-bit RGBA, `rgb10a2unorm` and `rgba16float` aren't shared (a warning, a black
-  window); a browser that renders with a GPU but whose WebGPU canvases fail would lose its GPU channel on the bitmap
+  screen to draw a WebGPU texture); a WSI format the guest's sway doesn't offer today isn't shared (the 4444 and 5551
+  formats, R16G16B16A16_UNORM: a warning, a black window), nor a prime blit's buffer of R5G6B5 (X11's WSI; `bufferFormat`
+  has no 16-bit texture of its bytes); a browser that renders with a GPU but whose WebGPU canvases fail would lose its GPU channel on the bitmap
   way (`shareMode` decides by the renderer's name: no such browser seen; `?gpu=vkreadback` is the way out); the
   readback way holds the compositor's submit for its wait (7–10 ms a frame at 1080p on SwiftShader).
 - **Imports' gaps** (VK2 L6, vk/README.md "Imports"; mpv on Vulkan meets its bar regardless):
@@ -732,8 +734,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     import writes nothing; bench/vulkan/REPORT.md "VK4 T16"): 0.6 MB and ~0.18 ms of the GPU worker a frame at 480p
     (~3 MB at 1080p), the bytes the host decoded anyway, copied by `queue.writeTexture`. Fewer would need the picture
     on the GPU (WebCodecs' frame into WebGPU: `importExternalTexture` gives RGB, not the planes, so a plane would be a
-    compute pass's output from it). And an imported image still makes its own texture at `vkCreateImage`, destroyed at
-    its bind (two a frame for mpv; the driver would have to make an image's texture lazily, at its first use).
+    compute pass's output from it). (An imported image no longer makes a texture of its own: VK4 T48.) A disjoint
+    multi-planar image's planes on imported memories still make theirs at `vkCreateImage` (no program meets it).
   - A resource with no picture written yet is read back once at its first import (WebGL's synchronous `readPixels`);
     what the guest renders into a virgl resource after it is imported (rather than a decoder's picture) never reaches
     Venus's copy. Nothing makes the guest wait for a picture before it samples the import (`vaSyncSurface` waits for

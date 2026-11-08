@@ -19,7 +19,7 @@ const INDEX = 16, VERTEX = 32, INDIRECT = 256, COPY_SRC = 4, COPY_DST = 8, TEX_C
 export type VenusEmulStats = { blits: number; resolves: number; drawnResolves: number; depthResolves: number; clears: number; copiedClears: number; xfb: number; vsPrepasses: number; /** Passes that write Vulkan's timestamps on the GPU (VK4 T46). */ timestamps: number };
 
 export type VenusGpuStats = {
-  submits: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number; pipelines: number; pipelineMs: number; bindGroups: number; errors: number; dirtyPages: number;
+  submits: number; textures: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number; pipelines: number; pipelineMs: number; bindGroups: number; errors: number; dirtyPages: number;
   /** Of a submit's way back (VK3 L2): submits done, the ms from `queue.submit` until WebGPU said done (its work and its
    * readbacks' maps), the longest, and the ms from then until it completed in submit order; empty submits sent to
    * make the browser look at the GPU sooner (`nudge`). */
@@ -255,7 +255,7 @@ class Timing {
 }
 
 export class VenusGpu {
-  readonly stats: VenusGpuStats = { submits: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, pipelines: 0, pipelineMs: 0, bindGroups: 0, errors: 0, dirtyPages: 0, done: 0, doneMs: 0, doneMaxMs: 0, orderMs: 0, nudges: 0, pipelinesReady: 0, pipelineReadyMs: 0, deferred: 0, deferredMs: 0, syncPipelines: 0, premade: 0, premadeUsed: 0, translations: 0, translateMs: 0, cacheHits: 0, cacheMisses: 0, cacheStores: 0, encodeMs: 0, submitCallMs: 0, passes: 0, draws: 0, gpuTimed: 0, gpuMs: 0, workDone: 0, workDoneMs: 0 };
+  readonly stats: VenusGpuStats = { submits: 0, textures: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, pipelines: 0, pipelineMs: 0, bindGroups: 0, errors: 0, dirtyPages: 0, done: 0, doneMs: 0, doneMaxMs: 0, orderMs: 0, nudges: 0, pipelinesReady: 0, pipelineReadyMs: 0, deferred: 0, deferredMs: 0, syncPipelines: 0, premade: 0, premadeUsed: 0, translations: 0, translateMs: 0, cacheHits: 0, cacheMisses: 0, cacheStores: 0, encodeMs: 0, submitCallMs: 0, passes: 0, draws: 0, gpuTimed: 0, gpuMs: 0, workDone: 0, workDoneMs: 0 };
   readonly emul: VenusEmulStats = { blits: 0, resolves: 0, drawnResolves: 0, depthResolves: 0, clears: 0, copiedClears: 0, xfb: 0, vsPrepasses: 0, timestamps: 0 };
   /** `?gpu=vkskip=meta` (VK4 T23's A/B): blits and resolves left out (their destination as it was). */
   skipMeta = false;
@@ -345,8 +345,9 @@ export class VenusGpu {
   private passResolves: ShortResolve[] = [];
   /** A texture's bytes are another renderer's resource's from now on (`res`; 0: no longer): web/venus-import.ts, called at the bind (it
    * writes textures in the queue's order itself). `desc` is what the texture was made with; what it returns, the resource's own texture
-   * (kept while the resource lives), takes the image's place under its id (VK4 T16). */
-  onImport: ((texture: GPUTexture, res: number, desc: GPUTextureDescriptor | undefined) => GPUTexture | undefined) | undefined;
+   * (kept while the resource lives), takes the image's place under its id (VK4 T16). `texture()` is the image's own,
+   * made when first called: an image bound to imported memory is made at its bind and has none otherwise (VK4 T48). */
+  onImport: ((texture: () => GPUTexture, res: number, desc: GPUTextureDescriptor | undefined) => GPUTexture | undefined) | undefined;
   /** Render pipelines made at vkCreateGraphicsPipelines that no draw has set yet (`stats.premade`). */
   private readonly unusedPremade = new WeakSet<object>();
   /** Each texture that may be imported into (single-sampled, `COPY_DST`): what it was made with. */
@@ -493,7 +494,7 @@ export class VenusGpu {
         if (!(t instanceof GPUTexture)) return;
         // web/venus-import.ts writes textures in the queue's order (`later`). The resource's own texture, if it gives one,
         // is the image's from now on (no command can have named the image's before its memory was bound).
-        const own = self.onImport?.(t, res, self.descs.get(t));
+        const own = self.onImport?.(() => t, res, self.descs.get(t));
         if (own && own !== t) {
           self.objs[tex] = own;
           self.borrowed.add(own);
@@ -1448,11 +1449,24 @@ override bit: u32 = 8u;
     switch (kind) {
       case 0: this.objs[id] = d.createBuffer({ size: j.size, usage: j.usage }); return;
       case 1: {
-        const tex = (j.sampleCount ?? 1) > 1 && (j.size as number[])[2] > 1 ? new MsLayers(d, j as GPUTextureDescriptor) as unknown as GPUTexture : d.createTexture(j as GPUTextureDescriptor);
-        this.objs[id] = tex;
-        if (j.depth16) this.depth16.add(tex);
-        if (j.packed) this.packed.set(tex, j.packed);
-        else if ((j.sampleCount ?? 1) === 1 && (j.usage & TEX_COPY_DST)) this.descs.set(tex, j as GPUTextureDescriptor);
+        // An image bound to memory imported from virgl resource `import` (made at its bind: VK4 T48) takes the
+        // resource's texture where it gives one, no texture of its own made.
+        const res = j.import as number | undefined;
+        delete j.import;
+        const desc = !j.packed && (j.sampleCount ?? 1) === 1 && (j.usage & TEX_COPY_DST) ? j as GPUTextureDescriptor : undefined;
+        let made: GPUTexture | undefined;
+        const make = () => {
+          if (made) return made;
+          this.stats.textures++;
+          const tex = made = (j.sampleCount ?? 1) > 1 && (j.size as number[])[2] > 1 ? new MsLayers(d, j as GPUTextureDescriptor) as unknown as GPUTexture : d.createTexture(j as GPUTextureDescriptor);
+          if (j.depth16) this.depth16.add(tex);
+          if (j.packed) this.packed.set(tex, j.packed);
+          else if (desc) this.descs.set(tex, desc);
+          return tex;
+        };
+        const own = res !== undefined ? this.onImport?.(make, res, desc) : undefined;
+        if (own && own !== made) this.borrowed.add(own);
+        this.objs[id] = own ?? make();
         return;
       }
       case 2: {

@@ -37,6 +37,41 @@ function floats() {
   return b;
 }
 
+/** R5G6B5 values as an `rgba8unorm` texture holds them (the driver's packed texture: VK4 T48), each channel's bits
+ * replicated into 8, and the B5G6R5 words virgl stores (R high). */
+function rgb565() {
+  const t = new Uint8Array(W * H * 4), w = new Uint16Array(W * H);
+  for (let k = 0; k < W * H; k++) {
+    const r = (k * 7) & 31, g = (k * 5 + 3) & 63, b = (k * 3 + 1) & 31;
+    t.set([(r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2), 255], k * 4);
+    w[k] = (r << 11) | (g << 5) | b;
+  }
+  return { texels: t, words: new Uint8Array(w.buffer) };
+}
+
+/** A2R10G10B10 values as an `rgb10a2unorm` texture holds them (packed: R in red), and the B10G10R10A2 words virgl stores
+ * (B in the low bits). */
+function bgr10() {
+  const t = new Uint32Array(W * H), w = new Uint32Array(W * H);
+  for (let k = 0; k < W * H; k++) {
+    const r = (k * 37) & 1023, g = (k * 11 + 5) & 1023, b = (k * 23 + 9) & 1023;
+    t[k] = (r | (g << 10) | (b << 20) | (3 << 30)) >>> 0;
+    w[k] = (b | (g << 10) | (r << 20) | (3 << 30)) >>> 0;
+  }
+  return { texels: new Uint8Array(t.buffer), words: new Uint8Array(w.buffer) };
+}
+
+/** Whether 10-10-10-2 or 5-6-5 words match channel for channel within `tol` of 1 (the GPU ways go through 8 bits). */
+function sameWords(got: Uint8Array, want: Uint8Array, kind: 10 | 565, tol: number) {
+  const n = want.length / (kind === 10 ? 4 : 2), dg = new DataView(got.buffer, got.byteOffset), dw = new DataView(want.buffer, want.byteOffset);
+  const ch = (v: number) => (kind === 10 ? [v & 1023, (v >>> 10) & 1023, (v >>> 20) & 1023].map((c) => c / 1023) : [v >>> 11, (v >>> 5) & 63, v & 31].map((c, i) => c / (i === 1 ? 63 : 31)));
+  for (let k = 0; k < n; k++) {
+    const a = ch(kind === 10 ? dg.getUint32(k * 4, true) : dg.getUint16(k * 2, true)), b = ch(kind === 10 ? dw.getUint32(k * 4, true) : dw.getUint16(k * 2, true));
+    for (let c = 0; c < 3; c++) if (Math.abs(a[c] - b[c]) > tol) return `texel ${k} channel ${c}: ${a[c]} for ${b[c]}`;
+  }
+  return 'same';
+}
+
 /** Whether R16G16B16X16_FLOAT texels match colour for colour, within `tol` (the bitmap way goes through 8 bits). */
 function sameFloats(got: Uint8Array, want: Uint16Array, tol: number) {
   const g = new Uint16Array(got.buffer, got.byteOffset, got.byteLength / 2);
@@ -64,6 +99,9 @@ export async function run(modes: ShareMode[]) {
     const r = new VirglRenderer(gl, { ram: () => [], log: (m) => log.push(m) });
     const tex = (format: GPUTextureFormat) => device.createTexture({ size: [W, H], format, usage: 1 | 2 | 4 | 16, viewFormats: [format.replace('-srgb', '') as GPUTextureFormat] });
     const sources = new Map<number, SharedTexture | SharedBuffer>([[7, { texture: tex('bgra8unorm-srgb'), written: 1 }], [8, { texture: tex('bgra8unorm'), written: 1 }], [9, { texture: tex('rgba8unorm'), written: 1 }], [10, { texture: tex('rgba16float'), written: 1 }]]);
+    // VK4 T48: R5G6B5's packed texture (virgl's B5G6R5) and A2R10G10B10's (virgl's B10G10R10A2), WSI formats sway offers.
+    sources.set(13, { texture: tex('rgba8unorm'), written: 1 });
+    sources.set(14, { texture: tex('rgb10a2unorm'), written: 1 });
     // Prime blits' buffers: B8G8R8A8 rows 256 bytes apart (Mesa's), R8G8B8A8 rows 240 bytes apart (tight).
     const BLIT = 256;
     sources.set(11, { buffer: device.createBuffer({ size: BLIT * H, usage: 4 | 8 }), written: 1 });
@@ -97,14 +135,18 @@ export async function run(modes: ShareMode[]) {
     put(10, pf);
     putBuffer(11, p2, BLIT);
     putBuffer(12, p1, W * 4);
-    await submit([...setType(7, 1), ...setType(8, 2), ...setType(9, 67), ...setType(10, 236), ...setType(11, 1, BLIT), ...setType(12, 67)]);
+    const c565 = rgb565(), c10 = bgr10();
+    put(13, c565.texels);
+    put(14, c10.texels);
+    await submit([...setType(7, 1), ...setType(8, 2), ...setType(9, 67), ...setType(10, 236), ...setType(11, 1, BLIT), ...setType(12, 67), ...setType(13, 7, W * 2), ...setType(14, 131)]);
     await submit([0]);
     const read = (id: number) => r.readResource(id)!;
     const same = (a: Uint8Array, b: Uint8Array, rgbOnly = false) => {
       for (let k = 0; k < a.length; k++) if ((!rgbOnly || k % 4 !== 3) && a[k] !== b[k]) return `byte ${k}: ${a[k]} for ${b[k]} (${[...a.subarray(k & ~3, (k & ~3) + 4)]} for ${[...b.subarray(k & ~3, (k & ~3) + 4)]})`;
       return 'same';
     };
-    const res: Record<string, string> = { first: same(read(7), p1), x: same(read(8), px, true), rgba: same(read(9), p2), float: sameFloats(read(10), pf, mode === 'readback' ? 0 : 0.6 / 255), blit: same(read(11), p2), blitRows: same(read(12), p1) };
+    const res: Record<string, string> = { first: same(read(7), p1), x: same(read(8), px, true), rgba: same(read(9), p2), float: sameFloats(read(10), pf, mode === 'readback' ? 0 : 0.6 / 255), blit: same(read(11), p2), blitRows: same(read(12), p1),
+      rgb565: sameWords(read(13), c565.words, 565, mode === 'readback' ? 0 : 1.5 / 31), bgr10: sameWords(read(14), c10.words, 10, mode === 'readback' ? 0 : 1.5 / 255) };
     // A buffer written but not said to be: not copied again; then said, copied.
     putBuffer(11, p1, BLIT);
     await submit([0]);

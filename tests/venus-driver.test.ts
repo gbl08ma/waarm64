@@ -90,7 +90,7 @@ test('a second run translates nothing the first did: its shaders come from the s
   assert.deepEqual(second.errors, []);
 });
 
-test('an image bound to imported dma-buf memory has its resource\'s bytes, and a picture written into it after', { skip, timeout: 60_000 }, async (t) => {
+test('an image bound to imported dma-buf memory has its resource\'s bytes, and a picture written into it after, no texture of its own made', { skip, timeout: 60_000 }, async (t) => {
   const page = await browser.newPage();
   page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
   await page.goto(`${base}/tests/browser/venus-driver.html`);
@@ -105,9 +105,27 @@ test('an image bound to imported dma-buf memory has its resource\'s bytes, and a
   assert.deepEqual(r.binds, [7]);
   // The image took resource 7's own texture (VK4 T16): made once, its bytes written once at the bind and once at the picture.
   assert.equal((r.stats as { made: number }).made, 1);
+  // The image's own texture never made (VK4 T48: made at the bind, it took the resource's at once).
+  assert.equal(r.imageTextures, 0, 'textures the driver made for the image');
   // At the bind: the resource's bytes read back; after a picture: the picture's.
   assert.deepEqual(first.bytes, Array.from({ length: 16 }, (_, i) => 10 + i));
   assert.deepEqual(second.bytes, Array.from({ length: 16 }, (_, i) => 200 + i));
+});
+
+test('a disjoint NV12 image whose planes are bound to imported dma-buf memories has each resource\'s bytes', { skip, timeout: 60_000 }, async (t) => {
+  const page = await browser.newPage();
+  page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
+  await page.goto(`${base}/tests/browser/venus-driver.html`);
+  await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
+  const r = await page.evaluate(() => (window as unknown as { venus: { runImportPlanes(): Promise<Record<string, unknown>> } }).venus.runImportPlanes());
+  await page.close();
+  if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
+  assert.equal(r.error, undefined, String(r.error));
+  assert.deepEqual(r.errors, [], 'WebGPU errors');
+  // VK4 T48: each plane took its resource's own texture (refused by the image-format query before).
+  assert.deepEqual(r.binds, [7, 8]);
+  assert.equal((r.stats as { made: number }).made, 2);
+  assert.deepEqual(r.bytes, [...Array.from({ length: 8 }, (_, i) => 30 + i), ...Array.from({ length: 4 }, (_, i) => 90 + i)]);
 });
 
 test('a submit\'s fence comes back without waiting for the browser\'s slow look at the GPU (the pump nudges it), with the pump\'s turns its own or a ticker\'s', { skip, timeout: 120_000 }, async (t) => {
@@ -376,7 +394,7 @@ for (const [mask, what] of [
 
 // VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for.
 // Each misc scenario's compute shader (tests/venus/<name>.comp), push.comp where it isn't named.
-const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', threeSame: 'three-writes', oddRange: 'two-writes', inlineBlocks: 'inline', packedFeedback: 'feedback.frag', feedbackLayer: 'feedback.frag', depthLess: 'r5/depthless.frag', depthAndCompare: 'r5/depth-and-compare.frag', intGather: 'r5/int-gather.frag', cubeSized: 'r5/cube-sized.frag', cubeGather: 'r5/cube-gather.frag', depthEight: 'r5/depth-eight.frag', inlineLong: 'r6/inline-long', immutableFreed: 'sampled', sixteenBindings: 'r7/sixteen.frag', sixteenThenOne: 'r7/sixteen.frag', cubePlain: 'r5/cube-plain.frag', vertexCompares: 'r7/vs-compare.frag', fourSets: 'r7/four-sets.frag', bc1Blit: 'r7/sixteen.frag', readOnlyImages: 'g4/read-only', g4Views: 'g4/views', texturesFull: 'g4/textures-full', sizeOnly: 'g4/size-only', formatless: 'g5/formatless', declaredOther: 'g7/declared', arrayAsFlat: 'g4/views', texelUniforms: 'texel-uniforms', rgb9e5Words: 't23-rgb9e5', t32Reads: 't32/dst.frag', t32Loop: 't32/loop.frag', t32Ms: 't32/dst.frag', t34Mutable: 't34/mutable', t37Flat: 't37/flat-storage', t37ReadWritten: 't37/read-written', t37WordsPast: 't37/words-past', t37Mismatched: 't37/mismatched', t37UniformTail: 't37/uniform-tail', t37AtomicAlias: 't37/atomic-alias', t38Stores: 't38/stores', t40Shared: 't40/shared', t40Dynamic: 't40/dynamic', t41Regions: 't41/regions', t41Beside: 't41/beside', t43Wrapped: 't43/wrapped.frag', t43MappedCoverage: 't43/a2c-mapped.frag', t43MappedDual: 't43/dual-mapped.frag', t41BesidePast: 't41/beside-past', t41Full: 't41/full', t43Layered: 't43/layered.frag', t43PushLayers: 't43/points.frag', t44FanPast: 't44/fan-past.frag', t46SlotsPast: 't32/dst.frag', t46SlotsBetween: 't32/dst.frag', t46BeforePrepass: 't32/dst.frag', t48IntClamp: 't48/int-clamp.frag' } as const;
+const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', threeSame: 'three-writes', oddRange: 'two-writes', inlineBlocks: 'inline', packedFeedback: 'feedback.frag', feedbackLayer: 'feedback.frag', depthLess: 'r5/depthless.frag', depthAndCompare: 'r5/depth-and-compare.frag', intGather: 'r5/int-gather.frag', cubeSized: 'r5/cube-sized.frag', cubeGather: 'r5/cube-gather.frag', depthEight: 'r5/depth-eight.frag', inlineLong: 'r6/inline-long', immutableFreed: 'sampled', sixteenBindings: 'r7/sixteen.frag', sixteenThenOne: 'r7/sixteen.frag', cubePlain: 'r5/cube-plain.frag', vertexCompares: 'r7/vs-compare.frag', fourSets: 'r7/four-sets.frag', bc1Blit: 'r7/sixteen.frag', readOnlyImages: 'g4/read-only', g4Views: 'g4/views', texturesFull: 'g4/textures-full', sizeOnly: 'g4/size-only', formatless: 'g5/formatless', declaredOther: 'g7/declared', arrayAsFlat: 'g4/views', texelUniforms: 'texel-uniforms', rgb9e5Words: 't23-rgb9e5', t32Reads: 't32/dst.frag', t32Loop: 't32/loop.frag', t32Ms: 't32/dst.frag', t34Mutable: 't34/mutable', t37Flat: 't37/flat-storage', t37ReadWritten: 't37/read-written', t37WordsPast: 't37/words-past', t37Mismatched: 't37/mismatched', t37UniformTail: 't37/uniform-tail', t37AtomicAlias: 't37/atomic-alias', t38Stores: 't38/stores', t40Shared: 't40/shared', t40Dynamic: 't40/dynamic', t41Regions: 't41/regions', t41Beside: 't41/beside', t43Wrapped: 't43/wrapped.frag', t43MappedCoverage: 't43/a2c-mapped.frag', t43MappedDual: 't43/dual-mapped.frag', t41BesidePast: 't41/beside-past', t41Full: 't41/full', t43Layered: 't43/layered.frag', t43PushLayers: 't43/points.frag', t44FanPast: 't44/fan-past.frag', t46SlotsPast: 't32/dst.frag', t46SlotsBetween: 't32/dst.frag', t46BeforePrepass: 't32/dst.frag', t48IntClamp: 't48/int-clamp.frag', t48ComputeShared: 't48/compute-shared' } as const;
 for (const [scenario, what] of [
   ['copy', 'buffer copies at offsets and sizes that aren\'t 4-aligned, from host-visible, device-local and GPU-written memory'],
   ['clear', 'a clear of a format WebGPU can\'t render to, and of every slice of a 3D image'],
@@ -541,6 +559,7 @@ for (const [scenario, what] of [
   ['t46SlotsBetween', 'timestamps around and in a render pass that begins at the device set\'s last slot, in order'],
   ['t46BeforePrepass', 'a timestamp right before a render pass whose fan the worker indexes first comes before that work'],
   // VK4 T48 (vkd3d's test_output_merger_logic_op).
+  ['t48ComputeShared', 'shared images a compute pass alone writes are said written by its submit (a WSI image drawn by compute: copied again)'],
   ['t48IntClamp', 'integer outputs past their attachments\' ranges clamped to them (Direct3D\'s)'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {

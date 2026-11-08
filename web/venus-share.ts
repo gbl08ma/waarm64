@@ -28,8 +28,9 @@ export type ShareMode = 'bitmap' | 'canvas' | 'readback';
 /** The ways in the order they are tried. */
 export const SHARE_WAYS: readonly ShareMode[] = ['bitmap', 'canvas', 'readback'];
 
-/** What a Venus texture is: the WebGPU texture and the submit that last wrote it (web/venus-gpu.ts `texture`). */
-export type SharedTexture = { texture: GPUTexture; written: number };
+/** What a Venus texture is: the WebGPU texture and the submit that last wrote it (web/venus-gpu.ts `texture`); `bytes`:
+ * its texels are the virgl texture's stored bytes already (a prime blit's, `fromBuffer`), not an image's colours. */
+export type SharedTexture = { texture: GPUTexture; written: number; bytes?: boolean };
 /** A buffer Venus's driver wrote a frame into (Mesa's prime blit), and the submit that last wrote it (web/venus-gpu.ts `buffer`). */
 export type SharedBuffer = { buffer: GPUBuffer; written: number };
 
@@ -47,19 +48,35 @@ const TOLERANCE = 1.5 / 255;
 /** A check whose sampled texels are all darker than this says nothing (a black frame looks the same either way). */
 const DARK = 8 / 255;
 
+/** How texels decode (`decode`): 8-bit channels, 10-10-10-2 packed, half floats, or 5-6-5 in 16 bits (R high). */
+type Kind = 8 | 10 | 16 | 565;
+
+/** The texture formats of WSI images whose samples are the image's colours: a packed format's texture holds them as
+ * values (the driver's `WG_FMT_PACKED`: R5G6B5 an `rgba8unorm` texture, A2R10G10B10 an `rgb10a2unorm` one with R in
+ * red). The surface formats the desktop guest's WSI offers under sway: these and those two (VK4 T48). */
+const SAMPLED = new Set<string>(['bgra8unorm', 'bgra8unorm-srgb', 'rgba8unorm', 'rgba8unorm-srgb', 'rgb10a2unorm', 'rgba16float']);
+
 /**
- * What a shared texture format is to the virgl texture: the swizzle of its sampled colour that gives the texture's
- * stored channels (virgl keeps B8G8R8A8 as its bytes: R is B), and its bytes a texel; undefined for a format not
- * shared (WebGPU's formats a WSI image can have: Mesa's offers every renderable format, and vkcube picks
- * R16G16B16A16_SFLOAT when it's there).
+ * What a shared image is to the virgl texture it is copied into: `swizzle`, of its sampled colour, gives the virgl
+ * texture's stored channels (virgl keeps B8G8R8A8 and B10G10R10A2 as their bytes: R is B; from the virgl format's
+ * `sample`); `kind` and `bytes`, how those are stored; `target`, a WebGPU format of those bytes (`r16uint` for 5-6-5,
+ * packed in the shader); `raw`, whether the image's texture already holds them, so that a copy of it is the virgl
+ * texture's bytes. Undefined: not shared.
  */
-function shared(format: GPUTextureFormat): { swizzle: string; bytes: number } | undefined {
-  switch (format) {
-    case 'bgra8unorm': case 'bgra8unorm-srgb': return { swizzle: 'bgra', bytes: 4 };
-    case 'rgba8unorm': case 'rgba8unorm-srgb': case 'rgb10a2unorm': return { swizzle: 'rgba', bytes: 4 };
-    case 'rgba16float': return { swizzle: 'rgba', bytes: 8 };
-    default: return undefined;
+export function stored(texture: GPUTextureFormat, virgl: number): { swizzle: string; kind: Kind; bytes: number; target: GPUTextureFormat; raw: boolean } | undefined {
+  const f = FORMATS.get(virgl);
+  if (!SAMPLED.has(texture) || !f || f.block !== 1) return undefined;
+  const kind = glKind(f.type, f.bpp);
+  if (!kind) return undefined;
+  let swizzle = '';
+  for (let i = 0; i < 4; i++) {
+    const j = f.sample.indexOf(i);
+    swizzle += 'rgba'[j < 0 ? 3 : j];
   }
+  const target: GPUTextureFormat = kind === 8 ? 'rgba8unorm' : kind === 10 ? 'rgb10a2unorm' : kind === 16 ? 'rgba16float' : 'r16uint';
+  const linear = texture.replace('-srgb', '');
+  const raw = (linear === target && swizzle === 'rgba') || (linear === 'bgra8unorm' && kind === 8 && swizzle === 'bgra');
+  return { swizzle, kind, bytes: kind === 16 ? 8 : kind === 565 ? 2 : 4, target, raw };
 }
 
 /**
@@ -82,15 +99,16 @@ function unhalf(h: number) {
 
 /**
  * Texels' channels in memory order (the stored channels both renderers agree on), each in [0, 1] and clamped: 4 a
- * texel. `kind`: 8 for 8-bit channels, 10 for 10-10-10-2 packed, 16 for half floats.
+ * texel. `kind`: 8 for 8-bit channels, 10 for 10-10-10-2 packed, 16 for half floats, 565 for 5-6-5 (alpha 1).
  */
-function decode(bytes: Uint8Array, texels: number, kind: 8 | 10 | 16): Float32Array {
+function decode(bytes: Uint8Array, texels: number, kind: Kind): Float32Array {
   const out = new Float32Array(texels * 4);
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   for (let i = 0; i < texels; i++) {
     for (let c = 0; c < 4; c++) {
       let v: number;
       if (kind === 8) v = bytes[i * 4 + c] / 255;
+      else if (kind === 565) { const w = dv.getUint16(i * 2, true); v = c === 0 ? (w >>> 11) / 31 : c === 1 ? ((w >>> 5) & 63) / 63 : c === 2 ? (w & 31) / 31 : 1; }
       else if (kind === 10) { const w = dv.getUint32(i * 4, true); v = c < 3 ? ((w >>> (10 * c)) & 1023) / 1023 : (w >>> 30) / 3; }
       else v = unhalf(dv.getUint16(i * 8 + c * 2, true));
       out[i * 4 + c] = Math.min(1, Math.max(0, Number.isNaN(v) ? 0 : v));
@@ -99,9 +117,8 @@ function decode(bytes: Uint8Array, texels: number, kind: 8 | 10 | 16): Float32Ar
   return out;
 }
 
-/** How a WebGPU format's and a GL type's texels decode (`decode`'s kind), or undefined. */
-const sourceKind = (f: GPUTextureFormat): 8 | 10 | 16 | undefined => (f.startsWith('bgra8') || f.startsWith('rgba8') ? 8 : f === 'rgb10a2unorm' ? 10 : f === 'rgba16float' ? 16 : undefined);
-const glKind = (type: number, bpp: number): 8 | 10 | 16 | undefined => (type === 0x1401 && bpp === 4 ? 8 : type === 0x8368 && bpp === 4 ? 10 : type === 0x140b && bpp === 8 ? 16 : undefined);
+/** How a GL type's texels decode (`decode`'s kind), or undefined. */
+const glKind = (type: number, bpp: number): Kind | undefined => (type === 0x1401 && bpp === 4 ? 8 : type === 0x8368 && bpp === 4 ? 10 : type === 0x140b && bpp === 8 ? 16 : type === 0x8363 && bpp === 2 ? 565 : undefined);
 
 /**
  * The verdict of a check: the image's texels (`want`) against the virgl texture's (`got`), both decoded; `x`: the
@@ -151,6 +168,9 @@ export class VenusShare {
   private readonly unshared = new Set<number>();
   /** Readback buffers by resource id (`staging`). */
   private readonly buffers = new Map<number, GPUBuffer>();
+  /** The texture an image whose texture doesn't hold the virgl texture's bytes is drawn into first, by resource id
+   * (`storedOf`: the readback way's and a check's). */
+  private readonly converted = new Map<number, GPUTexture>();
   /** The texture a prime blit's buffer is copied into, by resource id, and the buffer's write it holds (`fromBuffer`). */
   private readonly blits = new Map<number, SharedTexture>();
   /** The way in use and where its check stands. */
@@ -227,7 +247,7 @@ export class VenusShare {
     }
     if (!t || t.texture.width !== w || t.texture.height !== h || t.texture.format !== f.format) {
       t?.texture.destroy();
-      t = { texture: this.device.createTexture({ size: [w, h], format: f.format, usage: TEX_COPY_SRC | TEX_COPY_DST | TEXTURE_BINDING }), written: -1 };
+      t = { texture: this.device.createTexture({ size: [w, h], format: f.format, usage: TEX_COPY_SRC | TEX_COPY_DST | TEXTURE_BINDING }), written: -1, bytes: true };
       this.blits.set(r.id, t);
     }
     const enc = this.device.createCommandEncoder();
@@ -283,6 +303,8 @@ export class VenusShare {
     this.copied.delete(id);
     this.blits.get(id)?.texture.destroy();
     this.blits.delete(id);
+    this.converted.get(id)?.destroy();
+    this.converted.delete(id);
     if (!this.inFlight.has(id)) this.dropStaging(id);
   }
 
@@ -291,15 +313,15 @@ export class VenusShare {
     const way = this.mode;
     if (!this.copyGpu(r, src)) return;
     this.copied.set(r.id, src.written);
-    const kind = sourceKind(src.texture.format), fmt = FORMATS.get(r.format), gk = fmt && glKind(fmt.type, fmt.bpp);
-    if (!kind || !gk) return;
+    const fmt = FORMATS.get(r.format), st = this.storedOf(r, src);
+    if (!fmt || !st) return;
+    const { kind, bytes } = st;
     const w = Math.min(r.width, src.texture.width), h = Math.min(r.height, src.texture.height);
     const ys = [...new Set(Array.from({ length: CHECK_ROWS }, (_, k) => Math.floor((k + 0.5) * h / CHECK_ROWS)))];
-    const bytes = src.texture.format === 'rgba16float' ? 8 : 4;
     const bpr = Math.ceil(w * bytes / 256) * 256;
     const buffer = this.device.createBuffer({ size: bpr * ys.length, usage: MAP_READ | COPY_DST });
     const enc = this.device.createCommandEncoder();
-    ys.forEach((y, i) => enc.copyTextureToBuffer({ texture: src.texture, origin: [0, y] }, { buffer, offset: i * bpr, bytesPerRow: bpr }, [w, 1]));
+    ys.forEach((y, i) => enc.copyTextureToBuffer({ texture: st.texture, origin: [0, y] }, { buffer, offset: i * bpr, bytesPerRow: bpr }, [w, 1]));
     this.device.queue.submit([enc.finish()]);
     this.inFlight.add(r.id);
     this.hold(r.id);
@@ -313,7 +335,7 @@ export class VenusShare {
       const want = new Float32Array(ys.length * w * 4), have = new Float32Array(ys.length * w * 4);
       ys.forEach((_, i) => {
         want.set(decode(mapped.subarray(i * bpr, i * bpr + w * bytes), w, kind), i * w * 4);
-        have.set(decode(got[i], w, gk), i * w * 4);
+        have.set(decode(got[i], w, kind), i * w * 4);
       });
       const v = compareTexels(want, have, !!fmt.x);
       this.stats.checks++;
@@ -355,9 +377,9 @@ export class VenusShare {
   /** The bitmap way's or the canvas way's copy. */
   private copyGpu(r: ExternalResource, src: SharedTexture): boolean {
     const way = this.mode;
-    const kind = shared(src.texture.format);
+    const kind = stored(src.texture.format, r.format);
     if (!kind) {
-      this.warn(`a ${src.texture.format} image isn't shared`);
+      this.warn(`a ${src.texture.format} image isn't shared as virgl's format ${FORMATS.get(r.format)?.name ?? r.format}`);
       return false;
     }
     if (this.options.broken?.has(way)) {
@@ -367,7 +389,7 @@ export class VenusShare {
       this.stats.refreshes++;
       return true;
     }
-    const order = kind.swizzle;
+    const order = src.bytes ? 'rgba' : kind.swizzle;
     const w = Math.min(r.width, src.texture.width), h = Math.min(r.height, src.texture.height);
     const key = `${w}x${h}`;
     let c = this.canvases.get(key);
@@ -427,8 +449,8 @@ export class VenusShare {
   }
 
   private readback(r: ExternalResource, src: SharedTexture) {
-    const kind = shared(src.texture.format);
-    if (!kind || kind.bytes !== (FORMATS.get(r.format)?.bpp ?? 0)) {
+    const kind = this.storedOf(r, src);
+    if (!kind) {
       this.warn(`a ${src.texture.format} image isn't shared as virgl's format ${FORMATS.get(r.format)?.name ?? r.format}`);
       this.copied.set(r.id, src.written);
       return;
@@ -437,7 +459,7 @@ export class VenusShare {
     const bpr = Math.ceil(w * kind.bytes / 256) * 256;
     const buffer = this.staging(r.id, bpr * h);
     const enc = this.device.createCommandEncoder();
-    enc.copyTextureToBuffer({ texture: src.texture }, { buffer, bytesPerRow: bpr }, [w, h]);
+    enc.copyTextureToBuffer({ texture: kind.texture }, { buffer, bytesPerRow: bpr }, [w, h]);
     this.device.queue.submit([enc.finish()]);
     const written = src.written;
     this.inFlight.add(r.id);
@@ -458,6 +480,57 @@ export class VenusShare {
       this.inFlight.delete(r.id);
       this.unhold(r.id);
     });
+  }
+
+  /**
+   * The image's texels as the virgl texture stores them (`stored`): its own texture where that holds them, else a
+   * texture of the resource's that a draw (in the queue's order, before what reads it) fills with the image's colours
+   * swizzled to the stored channels, 5-6-5 packed in 16 bits, an X format's alpha 1.
+   */
+  private storedOf(r: ExternalResource, src: SharedTexture) {
+    const st = stored(src.texture.format, r.format);
+    if (!st) return undefined;
+    if (st.raw || src.bytes) return { ...st, swizzle: 'rgba', raw: true, texture: src.texture };
+    const w = Math.min(r.width, src.texture.width), h = Math.min(r.height, src.texture.height);
+    let t = this.converted.get(r.id);
+    if (!t || t.width !== w || t.height !== h || t.format !== st.target) {
+      t?.destroy();
+      t = this.device.createTexture({ size: [w, h], format: st.target, usage: RENDER_ATTACHMENT | TEX_COPY_SRC });
+      this.converted.set(r.id, t);
+    }
+    const x = !!FORMATS.get(r.format)?.x;
+    const key = `stored:${st.target}:${st.swizzle}${x}`;
+    let pipeline = this.pipelines.get(key);
+    if (!pipeline) {
+      const c = `textureLoad(src, vec2u(p.xy), 0).${st.swizzle}`;
+      const ret = st.kind === 565
+        ? 'vec4u((u32(round(c.r * 31.0)) << 11u) | (u32(round(c.g * 63.0)) << 5u) | u32(round(c.b * 31.0)), 0u, 0u, 0u)'
+        : x ? 'vec4f(c.rgb, 1.0)' : 'c';
+      const module = this.device.createShaderModule({ code: `
+@group(0) @binding(0) var src: texture_2d<f32>;
+@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
+  return vec4f(f32(i & 1u) * 4.0 - 1.0, f32(i >> 1u) * 4.0 - 1.0, 0.0, 1.0);
+}
+@fragment fn fs(@builtin(position) p: vec4f) -> @location(0) ${st.kind === 565 ? 'vec4u' : 'vec4f'} {
+  let c = clamp(${c}, vec4f(0.0), vec4f(1.0));
+  return ${ret};
+}` });
+      pipeline = this.device.createRenderPipeline({ layout: 'auto', vertex: { module, entryPoint: 'vs' }, fragment: { module, entryPoint: 'fs', targets: [{ format: st.target }] }, primitive: { topology: 'triangle-list' } });
+      this.pipelines.set(key, pipeline);
+    }
+    let view = this.views.get(src.texture);
+    if (!view) {
+      view = src.texture.createView({ format: src.texture.format.replace('-srgb', '') as GPUTextureFormat });
+      this.views.set(src.texture, view);
+    }
+    const enc = this.device.createCommandEncoder();
+    const pass = enc.beginRenderPass({ colorAttachments: [{ view: t.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 0] }] });
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, this.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: view }] }));
+    pass.draw(3);
+    pass.end();
+    this.device.queue.submit([enc.finish()]);
+    return { ...st, texture: t };
   }
 
   /**

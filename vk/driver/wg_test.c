@@ -26,6 +26,9 @@ const uint8_t *wgt_filled(void);
 const char *wgt_error(void);
 int wgt_import(uint32_t res);
 const uint8_t *wgt_imported(void);
+const uint32_t *wgt_misc_textures(void);
+int wgt_init(void);
+int wgt_import_planes(uint32_t res_y, uint32_t res_uv);
 const uint32_t *wgt_caps(void);
 int wgt_semaphores(void);
 const uint32_t *wgt_heaps(void);
@@ -571,6 +574,13 @@ wgt_error(void)
    return error;
 }
 
+/* The device made, if it isn't yet (a test counts what a call makes past it). */
+EXPORT int
+wgt_init(void)
+{
+   return !dev && init();
+}
+
 /* A dma-buf import (vk/README.md "Imports"): an R8G8 image of 4×2 texels with the LINEAR modifier, bound to memory
  * imported from "dma-buf" `res` (another renderer's resource: the GPU worker writes its bytes into the image's texture,
  * web/venus-import.ts), copied into a host-visible buffer (wgt_imported, 16 bytes) by a submit; wgt_done then says
@@ -652,6 +662,98 @@ EXPORT const uint8_t *
 wgt_imported(void)
 {
    return imported;
+}
+
+/* VK4 T48: a disjoint NV12 image (G8_B8R8_2PLANE_420, 4×2) on external memory, each plane bound to memory imported
+ * from a "dma-buf" of its own (`res_y`: an R8 4×2 resource, `res_uv`: an RG8 2×1 one), its planes copied into
+ * wgt_imported's buffer (plane 0's 8 bytes at 0, plane 1's 4 at 8) by a submit; wgt_done then says when. Fails if the
+ * image-format query refuses it. */
+EXPORT int
+wgt_import_planes(uint32_t res_y, uint32_t res_uv)
+{
+   if (!dev && init())
+      return 1;
+   PFN_vkGetImageMemoryRequirements2 GetImageMemoryRequirements2 =
+      (PFN_vkGetImageMemoryRequirements2)GetDeviceProcAddr(dev, "vkGetImageMemoryRequirements2");
+   PFN_vkBindImageMemory2 BindImageMemory2 = (PFN_vkBindImageMemory2)GetDeviceProcAddr(dev, "vkBindImageMemory2");
+   PFN_vkGetPhysicalDeviceImageFormatProperties2 FormatProperties2 =
+      (PFN_vkGetPhysicalDeviceImageFormatProperties2)vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceImageFormatProperties2");
+   const VkFormat nv12 = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+   const VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+   const VkPhysicalDeviceExternalImageFormatInfo efi = { .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO,
+                                                          .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT };
+   const VkPhysicalDeviceImageFormatInfo2 fi = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2, .pNext = &efi, .format = nv12,
+      .type = VK_IMAGE_TYPE_2D, .tiling = VK_IMAGE_TILING_OPTIMAL, .usage = usage, .flags = VK_IMAGE_CREATE_DISJOINT_BIT };
+   VkExternalImageFormatProperties ep = { .sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES };
+   VkImageFormatProperties2 ip = { .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2, .pNext = &ep };
+   VkPhysicalDevice pdev;
+   uint32_t n = 1;
+   EnumeratePhysicalDevices(instance, &n, &pdev);
+   CHECK(FormatProperties2(pdev, &fi, &ip));
+   if (!(ep.externalMemoryProperties.externalMemoryFeatures & VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT)) {
+      snprintf(error, sizeof(error), "a disjoint NV12 image on a dma-buf isn't importable");
+      return 1;
+   }
+   const VkExternalMemoryImageCreateInfo ext = { .sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
+                                                  .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT };
+   const VkImageCreateInfo info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .pNext = &ext, .flags = VK_IMAGE_CREATE_DISJOINT_BIT,
+      .imageType = VK_IMAGE_TYPE_2D, .format = nv12, .extent = { 4, 2, 1 }, .mipLevels = 1, .arrayLayers = 1,
+      .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL, .usage = usage,
+   };
+   VkImage img;
+   CHECK(CreateImage(dev, &info, NULL, &img));
+   VkBindImageMemoryInfo binds[2];
+   VkBindImagePlaneMemoryInfo planes[2];
+   for (uint32_t p = 0; p < 2; p++) {
+      const VkImageAspectFlagBits aspect = p ? VK_IMAGE_ASPECT_PLANE_1_BIT : VK_IMAGE_ASPECT_PLANE_0_BIT;
+      const VkImagePlaneMemoryRequirementsInfo pri = { .sType = VK_STRUCTURE_TYPE_IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO,
+                                                       .planeAspect = aspect };
+      const VkImageMemoryRequirementsInfo2 ri = { .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2,
+                                                  .pNext = &pri, .image = img };
+      VkMemoryRequirements2 req = { .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2 };
+      GetImageMemoryRequirements2(dev, &ri, &req);
+      const VkImportMemoryFdInfoKHR fd = { .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
+                                           .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
+                                           .fd = (int)(p ? res_uv : res_y) };
+      const VkMemoryAllocateInfo ai = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .pNext = &fd,
+                                        .allocationSize = req.memoryRequirements.size > 4096 ? req.memoryRequirements.size : 4096,
+                                        .memoryTypeIndex = 0 };
+      VkDeviceMemory mem;
+      CHECK(AllocateMemory(dev, &ai, NULL, &mem));
+      planes[p] = (VkBindImagePlaneMemoryInfo){ .sType = VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO, .planeAspect = aspect };
+      binds[p] = (VkBindImageMemoryInfo){ .sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO, .pNext = &planes[p],
+                                          .image = img, .memory = mem };
+   }
+   CHECK(BindImageMemory2(dev, 2, binds));
+   static VkBuffer buf;
+   if (!buf && buffer(16, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, &buf, (void **)&imported))
+      return 1;
+   VkCommandPool pool;
+   const VkCommandPoolCreateInfo cpo = { .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+   CHECK(CreateCommandPool(dev, &cpo, NULL, &pool));
+   const VkCommandBufferAllocateInfo cbi = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, .commandPool = pool,
+                                             .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 1 };
+   VkCommandBuffer cmd;
+   CHECK(AllocateCommandBuffers(dev, &cbi, &cmd));
+   const VkCommandBufferBeginInfo begin = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+   CHECK(BeginCommandBuffer(cmd, &begin));
+   const VkBufferImageCopy regions[2] = {
+      { .bufferOffset = 0, .imageSubresource = { VK_IMAGE_ASPECT_PLANE_0_BIT, 0, 0, 1 }, .imageExtent = { 4, 2, 1 } },
+      { .bufferOffset = 8, .imageSubresource = { VK_IMAGE_ASPECT_PLANE_1_BIT, 0, 0, 1 }, .imageExtent = { 2, 1, 1 } },
+   };
+   CmdCopyImageToBuffer(cmd, img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buf, 2, regions);
+   CHECK(EndCommandBuffer(cmd));
+   if (fence) {
+      CHECK(ResetFences(dev, 1, &fence));
+   } else {
+      const VkFenceCreateInfo fci = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+      CHECK(CreateFence(dev, &fci, NULL, &fence));
+   }
+   const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1, .pCommandBuffers = &cmd };
+   CHECK(QueueSubmit(queue, 1, &submit, fence));
+   return 0;
 }
 
 /* What the device advertises (tests/venus-renderer.test.ts: it follows the WebGPU device's features and limits), as
@@ -7905,6 +8007,65 @@ t38_stores(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer 
    return 0;
 }
 
+/* VK4 T48: the textures of scenario 129's shared images (web/venus-gpu.ts ids), for the test to ask when each was written. */
+uint32_t wg_memory_texture(VkDeviceMemory mem);
+static uint32_t t48_textures[2];
+
+EXPORT const uint32_t *
+wgt_misc_textures(void)
+{
+   return t48_textures;
+}
+
+/*
+ * VK4 T48, wgt_misc's scenario 129 (`cs`: tests/venus/t48/compute-shared.comp): a compute pass alone writes two shared
+ * 4x4 images (dma-buf memory, as a WSI's swapchain images: what web/venus-share.ts copies for the compositor), R8G8B8A8
+ * and B8G8R8A8, storage images of a dispatch. Texel (1, 1) of each at `out`'s 0 and 4; their textures in
+ * wgt_misc_textures.
+ */
+static int
+t48_compute_shared(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   const VkFormat formats[2] = { VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM };
+   VkImage img[2];
+   VkImageView view[2];
+   for (uint32_t i = 0; i < 2; i++) {
+      const VkExternalMemoryImageCreateInfo ext = { .sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
+                                                    .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT };
+      const VkImageCreateInfo info = {
+         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .pNext = &ext, .imageType = VK_IMAGE_TYPE_2D, .format = formats[i],
+         .extent = { 4, 4, 1 }, .mipLevels = 1, .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT,
+         .tiling = VK_IMAGE_TILING_OPTIMAL,
+         .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT };
+      CHECK(CreateImage(dev, &info, NULL, &img[i]));
+      VkMemoryRequirements req;
+      GetImageMemoryRequirements(dev, img[i], &req);
+      VkDeviceMemory mem;
+      if (memory_for(req, false, &mem, NULL))
+         return 1;
+      CHECK(BindImageMemory(dev, img[i], mem, 0));
+      t48_textures[i] = wg_memory_texture(mem);
+      if (t37_view(img[i], VK_IMAGE_VIEW_TYPE_2D, formats[i], 0, 1, &view[i]))
+         return 1;
+      t24_general(cmd, img[i], VK_IMAGE_ASPECT_COLOR_BIT, 1);
+   }
+   static const VkDescriptorType types[2] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE };
+   struct t37_pipe p;
+   if (t37_compute(cs, cs_words, types, 2, &p))
+      return 1;
+   const VkDescriptorImageInfo ii[2] = { { VK_NULL_HANDLE, view[0], VK_IMAGE_LAYOUT_GENERAL },
+                                         { VK_NULL_HANDLE, view[1], VK_IMAGE_LAYOUT_GENERAL } };
+   VkWriteDescriptorSet wr[2];
+   for (uint32_t i = 0; i < 2; i++)
+      wr[i] = (VkWriteDescriptorSet){ .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = p.set, .dstBinding = i,
+                                      .descriptorCount = 1, .descriptorType = types[i], .pImageInfo = &ii[i] };
+   UpdateDescriptorSets(dev, 2, wr, 0, NULL);
+   t37_dispatch(cmd, &p);
+   for (uint32_t i = 0; i < 2; i++)
+      copy_texel(cmd, img[i], VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1, out, 4 * i);
+   return 0;
+}
+
 EXPORT int
 wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
 {
@@ -8584,6 +8745,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 118 || scenario == 119) {
       if (t43_mapped(scenario, cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 129) {
+      if (t48_compute_shared(cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 128) {
       if (t48_int_clamp(cs, cs_words, cmd, out))

@@ -491,11 +491,14 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
          }
       }
    }
-   /* A multi-planar image on external memory: its planes' textures are neither imported nor exported
-    * (wg_BindImageMemory2; the review of L6b-L7.3's finding 4): refused. */
+   /* A multi-planar image on external memory (the review of L6b-L7.3's finding 4; VK4 T48): imported only, a dma-buf
+    * a plane, disjoint (each plane's memory another renderer's resource, whose texture is the plane's: wg_BindImageMemory2).
+    * Its planes are never exported (the virgl renderer imports images of one plane), nor imported from one memory. */
    const VkPhysicalDeviceExternalImageFormatInfo *external =
       vk_find_struct_const(info->pNext, PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO);
-   if (ycbcr && external && external->handleType) {
+   const bool planes_imported = ycbcr && external && external->handleType;
+   if (planes_imported && (external->handleType != VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT ||
+                           !(info->flags & VK_IMAGE_CREATE_DISJOINT_BIT))) {
       pProps->imageFormatProperties = (VkImageFormatProperties){ 0 };
       return VK_ERROR_FORMAT_NOT_SUPPORTED;
    }
@@ -553,7 +556,8 @@ wg_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
          /* Venus's guest shares images as blobs: whatever the guest asks for, the renderer's memory is exportable. */
          VkExternalImageFormatProperties *e = (void *)ext;
          e->externalMemoryProperties = (VkExternalMemoryProperties){
-            .externalMemoryFeatures = VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT,
+            .externalMemoryFeatures = planes_imported ? VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT
+                                                      : VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT,
             .exportFromImportedHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT |
                                              VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT,
             .compatibleHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT |
@@ -1342,9 +1346,12 @@ depth16_key(struct wg_json *j, const struct wg_texture_format *fmt)
       wg_json_printf(j, "\"depth16\":true,");
 }
 
-/* `loop`: the copy of the image a draw samples where the image is an attachment of its pass (wg_view_loop). */
+/* `loop`: the copy of the image a draw samples where the image is an attachment of its pass (wg_view_loop).
+ * `import_res`: the virgl resource whose memory the image is bound to (0: none), whose texture the worker may give it
+ * in place of one of its own (web/venus-gpu.ts `onImport`: made at the bind, VK4 T48). */
 static uint32_t
-wg_texture_create_as(struct wg_image *image, const struct wg_texture_format *fmt, VkExtent3D e, bool loop)
+wg_texture_create_as(struct wg_image *image, const struct wg_texture_format *fmt, VkExtent3D e, bool loop,
+                     uint32_t import_res)
 {
    const struct vk_image *vi = &image->vk;
    const uint32_t flags = fmt->flags;
@@ -1428,14 +1435,17 @@ wg_texture_create_as(struct wg_image *image, const struct wg_texture_format *fmt
       if (twin)
          wg_json_printf(&j, "\"%s\"", twin);
    }
-   wg_json_printf(&j, "]}");
+   wg_json_printf(&j, "]");
+   if (import_res)
+      wg_json_printf(&j, ",\"import\":%u", import_res);
+   wg_json_printf(&j, "}");
    return wg_create_json(WG_KIND_TEXTURE, &j);
 }
 
 static uint32_t
 wg_texture_create(struct wg_image *image, const struct wg_texture_format *fmt, VkExtent3D e)
 {
-   return wg_texture_create_as(image, fmt, e, false);
+   return wg_texture_create_as(image, fmt, e, false, 0);
 }
 
 /* The replay keeps which of an image's places hold its bytes (`valid`). */
@@ -1480,7 +1490,9 @@ wg_CreateImage(VkDevice _device, const VkImageCreateInfo *pCreateInfo, const VkA
                                                                 image->planes[p].extent.height, 1 });
       image->tex = image->planes[0].tex;
    } else {
-      image->tex = wg_texture_create(image, image->fmt, image->vk.extent);
+      /* A shared image's texture is made at its bind (VK4 T48): bound to imported memory, it takes the resource's
+       * (mpv's two images a frame made two textures and destroyed them unused). Nothing names it before. */
+      image->tex = image->shared ? 0 : wg_texture_create(image, image->fmt, image->vk.extent);
       image->planes[0] = (struct wg_image_plane){ .tex = image->tex, .fmt = image->fmt,
                                                   .extent = { image->vk.extent.width, image->vk.extent.height },
                                                   .size = image->size };
@@ -1570,6 +1582,9 @@ wg_DestroyImage(VkDevice _device, VkImage _image, const VkAllocationCallbacks *p
       list_del(&image->words_link);
    if (image->imported)
       gpu_texture_import(image->tex, 0);
+   for (uint32_t p = 0; p < image->plane_count && image->plane_count > 1; p++)
+      if (image->planes[p].imported)
+         gpu_texture_import(image->planes[p].tex, 0);
    wg_id_release(image->tex);
    wg_id_release(image->loop_tex);
    for (uint32_t p = 1; p < image->plane_count; p++)
@@ -1646,6 +1661,19 @@ wg_BindImageMemory2(VkDevice _device, uint32_t count, const VkBindImageMemoryInf
                continue;
             image->planes[p].mem = mem;
             image->planes[p].mem_offset = infos[i].memoryOffset + (plane ? 0 : image->planes[p].offset);
+            /* A disjoint plane on memory imported from a resource takes the resource's texture (VK4 T48), its bytes
+             * the resource's from its start. */
+            if (mem->import_res && plane) {
+               if (infos[i].memoryOffset) {
+                  static bool warned;
+                  if (!warned)
+                     fprintf(stderr, "wg: a plane bound %llu bytes into imported memory takes the resource's bytes from "
+                                     "its start\n", (unsigned long long)infos[i].memoryOffset);
+                  warned = true;
+               }
+               image->planes[p].imported = true;
+               gpu_texture_import(image->planes[p].tex, mem->import_res);
+            }
          }
          if (!plane || wg_image_plane(image, plane->planeAspect) == 0) {
             image->mem = mem;
@@ -1663,10 +1691,15 @@ wg_BindImageMemory2(VkDevice _device, uint32_t count, const VkBindImageMemoryInf
          image->linear_host = true;
          list_addtail(&image->linear_link, &dev->linear_images);
       }
-      if (mem->import_res) {
+      if (!image->tex) {
+         image->tex = wg_texture_create_as(image, image->fmt, image->vk.extent, false, mem->import_res);
+         image->planes[0].tex = image->tex;
+         image->imported = mem->import_res != 0;
+      } else if (mem->import_res) {
          image->imported = true;
          gpu_texture_import(image->tex, mem->import_res);
-      } else if (image->shared) {
+      }
+      if (!mem->import_res && image->shared) {
          if (!mem->image)
             list_addtail(&mem->shared_link, &dev->shared_memories);
          mem->image = image;
@@ -2000,7 +2033,7 @@ wg_view_loop(struct wg_image_view *view)
       struct wg_device *dev = container_of(view->vk.base.device, struct wg_device, vk);
       struct wg_image *image = container_of(view->vk.image, struct wg_image, vk);
       if (!image->loop_tex)
-         image->loop_tex = wg_texture_create_as(image, image->fmt, image->vk.extent, true);
+         image->loop_tex = wg_texture_create_as(image, image->fmt, image->vk.extent, true, 0);
       const VkImageViewCreateInfo info = {
          .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
          .image = vk_image_to_handle(view->vk.image),
