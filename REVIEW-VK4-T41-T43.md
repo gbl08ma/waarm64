@@ -197,3 +197,23 @@ parameters longer than 1024 bytes) takes this path.
   Its test needs `dual-source-blending` (skipped on SwiftShader, run on the M4). Finding 6: the regions past the first
   come out of `maxPerStageDescriptorStorageBuffers` (keeping Vulkan's 4); the first still isn't (backlog).
 - 2, 3, 4: the second loop's. 7: already in the backlog.
+
+## Triage (the second fix loop, d4322dd0 and cc2d95e7 on main)
+
+- **2, 3, 4: confirmed and fixed**, by two driver tests that failed first (`tests/venus-driver.test.ts` misc
+  `t43Layered`, `t43PushLayers`; wg_test.c 122, 123), each fix's planted bug failing its check.
+  - 2: in layer 1 a logic op read layer 0's copy (XOR with layer 0's clear) and an input attachment read layer 0; both
+    of layer 1 now (`dst_copies`, `feedback_copies`, `feedback_att` take `r->view`; an input attachment in a layered
+    pass binds its layer's view, a group a layer). The sampled feedback-loop's check (`sampled_loop` at the replayed
+    layer) changed with them but has no test of its own.
+  - 3: confirmed only with push constants past the immediates (64 bytes in Chromium; smaller ones never take a push
+    buffer place): 1000 draws × 6 layers wrapped the buffer, layer 0's draws drew others' constants. `pass_replays`
+    counts a layer each (a secondary's draws by the executing pass's layers). The related premake: the layers'
+    pipelines are made when the draw is recorded; at pipeline creation the layer count is unknown (backlog).
+  - 4: narrower than stated: a non-indexed fan is an indexed draw through the device's fan indices, not OP_PROVOKE,
+    and was drawn already; an indexed fan (and last-vertex provoking with flat reads) was dropped in layer 1, and is
+    drawn now by the first layer's tickets (a skipped draw advances them as it did there). Occlusion queries counted
+    nothing in layer 1; the later layers' samples now go to a spare slot of the pool, added to the first layer's
+    count (past the pool's 64 spares a layer's samples are left out).
+- Seen while fixing, filed in docs/backlog.md "Rendering": an indirect fan that `words_past` drops doesn't take its
+  fan tickets, so a later OP_PROVOKE of the pass would draw another's indices.
