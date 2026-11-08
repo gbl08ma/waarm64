@@ -801,7 +801,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   ±2×`maxTextureDimension2D`, ±16,384 on SwiftShader; met at 16,384), `viewportSubPixelBits` (0: WebGPU doesn't say;
   SwiftShader rounds a viewport's origin to 1/16), 13 uniform buffers a stage on SwiftShader's and the M4's 10 storage
   buffers, and dual-source blending on SwiftShader. Its d3d12 suite (`TESTS=all`, 73 s; `FAILED=<n>` for each test's
-  first failures): 135 of 174 pass, 36 fail, 3 crash. The failures by cause, the larger first:
+  first failures): 136 of 174 pass, 35 fail, 3 crash (T48 clamped integer outputs to their attachments' range:
+  test_output_merger_logic_op's 354 checks pass). The failures by cause, the larger first:
   - test_gather_c (42 checks): GatherCmp on an R32_FLOAT view. WebGPU compares only depth textures, so the bind group
     is refused. Vulkan wants the format's depth-comparison feature, which the device doesn't report, and vkd3d uses it
     anyway. A compare done in the stage (a variant keyed by the view's format not being depth) would back it (M).
@@ -813,10 +814,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - test_vertex_id (52 of 127): its indirect draws' values in stream output, base vertices 3, 8 and 9 (VK4 T40's).
   - test_fractional_viewports (5,120 of 20,594): SwiftShader's (the texcoords of an origin rounded to 1/16; fragment
     positions exact). Worth a run on the M4.
-  - test_output_merger_logic_op (28 of 354): each logic op is right for the destination it finds. The draw before it
-    writes 0xffffffff into RGBA8_UINT, which SwiftShader stores as 0. Vulkan leaves an out-of-range integer write
-    undefined, and Direct3D clamps. A clamp in the fragment stage for narrow integer targets would match Direct3D (S, a
-    key bit).
   - test_register_space (10): a compute stage of 16 texel buffers' words, past WebGPU's 10 storage buffers.
   - test_multisample_array_texture (9 of 147): a multisampled array's other layers ("Multisampled arrays' leftovers").
   - test_shader_instructions (5): `ne` with a NaN operand, and log of 0 giving -127 where -inf is wanted (Tint's or

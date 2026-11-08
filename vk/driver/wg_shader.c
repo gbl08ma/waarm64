@@ -2798,6 +2798,28 @@ refused_pipeline(struct wg_program *p, const struct wg_pipeline_key *k)
    return 0;
 }
 
+/* The range an integer colour format's channels hold, as `wg_ic` names it (wgsl.h `int_clamp`): 1 for 8 bits, 2 for 16,
+ * 3 for 10-10-10-2, 0 for 32 bits (the output's own) or a format that isn't an integer one. */
+static uint32_t
+int_range(VkFormat format)
+{
+   if (!vk_format_is_int(format))
+      return 0;
+   const struct util_format_description *d = vk_format_description(format);
+   if (!d)
+      return 0;
+   switch (d->channel[0].size) {
+   case 8:
+      return 1;
+   case 16:
+      return 2;
+   case 10:
+      return 3;
+   default:
+      return 0;
+   }
+}
+
 static uint32_t
 render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool premade)
 {
@@ -2918,7 +2940,13 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
          if (f && (f->flags & WG_FMT_ALPHA8) && (k->fs->info.alpha_red & (1u << i)))
             alpha_red |= 1u << i;
       }
-      if (k->fs->info.per_sample || k->fs->info.uses_view || k->fs->info.uses_layer || a2c || alpha_red) {
+      /* An integer attachment narrower than the output's 32 bits takes it clamped to its range (`wg_ic`: two bits an
+       * attachment, wgsl.h `int_clamp`), as Direct3D has it: Vulkan leaves such a write undefined. */
+      uint32_t int_clamp = 0;
+      for (uint32_t i = 0; k->fs->info.int_clamp && i < k->color_count && i < 8; i++)
+         if (k->colors[i] && (k->fs->info.int_clamp & (1u << i)))
+            int_clamp |= int_range(k->colors[i]) << (2 * i);
+      if (k->fs->info.per_sample || k->fs->info.uses_view || k->fs->info.uses_layer || a2c || alpha_red || int_clamp) {
          wg_json_printf(&j, "\"constants\":{");
          const char *sep = "";
          if (k->fs->info.per_sample) {
@@ -2937,8 +2965,12 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
             wg_json_printf(&j, "%s\"wg_a2c\":1", sep);
             sep = ",";
          }
-         if (alpha_red)
+         if (alpha_red) {
             wg_json_printf(&j, "%s\"wg_ar\":%u", sep, alpha_red);
+            sep = ",";
+         }
+         if (int_clamp)
+            wg_json_printf(&j, "%s\"wg_ic\":%u", sep, int_clamp);
          wg_json_printf(&j, "},");
       }
       wg_json_printf(&j, "\"targets\":[");

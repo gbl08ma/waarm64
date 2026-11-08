@@ -1572,6 +1572,12 @@ declare_io(struct ctx *c)
                c->info->alpha_red |= 1u << loc;
          if (c->info->alpha_red)
             line(c, "override wg_ar: u32 = 0u;");
+         /* An integer attachment narrower than 32 bits takes the output clamped to its range (the driver's override). */
+         u_foreach_bit(loc, c->info->outputs)
+            if (c->info->output_base[loc] != WGSL_F32 && !c->info->dual_source)
+               c->info->int_clamp |= 1u << loc;
+         if (c->info->int_clamp)
+            line(c, "override wg_ic: u32 = 0u;");
       }
       c->info->varyings = c->vary;
    }
@@ -1586,6 +1592,18 @@ fs_return(struct ctx *c)
    const char *ar = "";
    u_foreach_bit(loc, c->info->alpha_red)
       ar = fmt(c, "%sif ((wg_ar & %uu) != 0u) { o.f%u.x = o.f%u.w; } ", ar, 1u << loc, loc, loc);
+   u_foreach_bit(loc, c->info->int_clamp) {
+      /* The range's top (and for a signed output its bottom, one below its negation). */
+      const char *top = fmt(c, "select(select(vec4<u32>(1023, 1023, 1023, 3), vec4<u32>(65535), wg_k%u == 2u), "
+                            "vec4<u32>(255), wg_k%u == 1u)", loc, loc);
+      if (c->info->output_base[loc] == WGSL_U32)
+         ar = fmt(c, "%s{ let wg_k%u = (wg_ic >> %uu) & 3u; if (wg_k%u != 0u) { o.f%u = min(o.f%u, %s); } } ", ar, loc, 2 * loc,
+                  loc, loc, loc, top);
+      else
+         ar = fmt(c, "%s{ let wg_k%u = (wg_ic >> %uu) & 3u; if (wg_k%u != 0u) { let wg_m%u = vec4<i32>(%s >> vec4<u32>(1u)); "
+                  "o.f%u = clamp(o.f%u, -wg_m%u - vec4<i32>(1), wg_m%u); } } ",
+                  ar, loc, 2 * loc, loc, loc, top, loc, loc, loc, loc);
+   }
    if (c->info->a2c)
       return fmt(c, "%sif (wg_a2c && o.f0.a < 0.5) { discard; } return o;", ar);
    if (*ar)

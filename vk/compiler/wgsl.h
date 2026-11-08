@@ -178,6 +178,10 @@ struct wgsl_info {
                                  * one sample (WebGPU's needs several), its fragments under half alpha discarded */
    uint8_t alpha_red;           /* fragment: the float outputs (by location), declares `override wg_ar`: those whose
                                  * alpha goes to red (an A8 attachment's texture, the pipeline's) */
+   uint8_t int_clamp;           /* fragment: the integer outputs (by location), declares `override wg_ic`: two bits a
+                                 * location, the range its attachment's format holds (1: 8 bits, 2: 16, 3: 10-10-10-2;
+                                 * 0: the output's own), each channel clamped to it (Direct3D's; Vulkan leaves an
+                                 * out-of-range write undefined, and SwiftShader stores 0xffffffff in 8 bits as 0) */
    bool dual_source;            /* fragment: location 0's second output (index 1) written: @blend_src */
    uint8_t dual_base;           /* its WGSL type */
    bool clip_distances;         /* uses `clip_distances` (vertex) */

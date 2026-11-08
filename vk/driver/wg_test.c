@@ -5985,6 +5985,78 @@ t43_mapped(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBu
 }
 
 /*
+ * VK4 T48, wgt_misc's scenario 128 (`fs`: tests/venus/t48/int-clamp.frag): integer outputs past their attachments'
+ * ranges, one draw on 4x4 attachments cleared to zeros: R8G8B8A8_UINT given (0xffffffff, 300, 7, 256), R16G16_SINT
+ * (-70000, 70000), A2B10G10R10_UINT_PACK32 (2000, 5, 1023, 9) and R32_UINT 0xffffffff, each clamped to its format's
+ * range (Direct3D's: Vulkan leaves it undefined). Texel (1, 1) of each at `out`'s 4i.
+ */
+static int
+t48_int_clamp(const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdBeginRendering CmdBeginRendering = (PFN_vkCmdBeginRendering)GetDeviceProcAddr(dev, "vkCmdBeginRendering");
+   PFN_vkCmdEndRendering CmdEndRendering = (PFN_vkCmdEndRendering)GetDeviceProcAddr(dev, "vkCmdEndRendering");
+   const VkFormat formats[4] = { VK_FORMAT_R8G8B8A8_UINT, VK_FORMAT_R16G16_SINT, VK_FORMAT_A2B10G10R10_UINT_PACK32,
+                                 VK_FORMAT_R32_UINT };
+   VkImage color[4];
+   VkImageView cview[4];
+   for (uint32_t i = 0; i < 4; i++)
+      if (t43_image(formats[i], VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_IMAGE_ASPECT_COLOR_BIT,
+                    &color[i], &cview[i]))
+         return 1;
+   const VkPushConstantRange range = { VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4 };
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                            .pushConstantRangeCount = 1, .pPushConstantRanges = &range };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   VkShaderModule vm, fm;
+   if (shader(feedback_vs, feedback_vs_words, &vm) || shader(fs, fs_words, &fm))
+      return 1;
+   const VkPipelineShaderStageCreateInfo stages[2] = {
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = vm, .pName = "main" },
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = fm, .pName = "main" } };
+   const VkPipelineVertexInputStateCreateInfo vis = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+   const VkPipelineInputAssemblyStateCreateInfo ia = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                                                       .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
+   const VkViewport vp = { 0, 0, 4, 4, 0, 1 };
+   const VkRect2D area = { { 0, 0 }, { 4, 4 } };
+   const VkPipelineViewportStateCreateInfo vs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1,
+                                                  .pViewports = &vp, .scissorCount = 1, .pScissors = &area };
+   const VkPipelineRasterizationStateCreateInfo rs = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, .polygonMode = VK_POLYGON_MODE_FILL, .lineWidth = 1 };
+   const VkPipelineMultisampleStateCreateInfo mss = { .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                                                      .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT };
+   VkPipelineColorBlendAttachmentState ba[4];
+   for (uint32_t i = 0; i < 4; i++)
+      ba[i] = (VkPipelineColorBlendAttachmentState){ .colorWriteMask = 0xf };
+   const VkPipelineColorBlendStateCreateInfo bs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                                                    .attachmentCount = 4, .pAttachments = ba };
+   const VkPipelineRenderingCreateInfo pri = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+                                               .colorAttachmentCount = 4, .pColorAttachmentFormats = formats };
+   const VkGraphicsPipelineCreateInfo gpi = {
+      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &pri, .stageCount = 2, .pStages = stages,
+      .pVertexInputState = &vis, .pInputAssemblyState = &ia, .pViewportState = &vs, .pRasterizationState = &rs,
+      .pMultisampleState = &mss, .pColorBlendState = &bs, .layout = layout };
+   VkPipeline p;
+   CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   VkRenderingAttachmentInfo att[4];
+   for (uint32_t i = 0; i < 4; i++)
+      att[i] = (VkRenderingAttachmentInfo){ .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = cview[i],
+                                            .imageLayout = VK_IMAGE_LAYOUT_GENERAL, .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                            .storeOp = VK_ATTACHMENT_STORE_OP_STORE };
+   const VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = area, .layerCount = 1,
+                                .colorAttachmentCount = 4, .pColorAttachments = att };
+   CmdBeginRendering(cmd, &ri);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+   const uint32_t big = 0xffffffffu;
+   CmdPushConstants(cmd, layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 4, &big);
+   CmdDraw(cmd, 3, 1, 0, 0);
+   CmdEndRendering(cmd);
+   for (uint32_t i = 0; i < 4; i++)
+      copy_texel(cmd, color[i], VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1, out, 4 * i);
+   return 0;
+}
+
+/*
  * The review of VK4 T41 to T43 (findings 2 and 4), wgt_misc's scenario 122 (`feedback_vs`: tests/venus/t43/layer.vert,
  * gl_Layer = 1; `fs`: tests/venus/t43/layered.frag): draws in layer 1 of a layered pass (a framebuffer of two layers of
  * a 16x16 RGBA8 image, layer 0 cleared to (51, 153, 204, 255), layer 1 to (204, 102, 51, 255), the colour attachment
@@ -8512,6 +8584,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 118 || scenario == 119) {
       if (t43_mapped(scenario, cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 128) {
+      if (t48_int_clamp(cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 122) {
       if (t43_layered(cs, cs_words, cmd, out))

@@ -896,6 +896,12 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   view (an attachment sampled in its own pass) swizzled the same way. Copies are its bytes. **Depth comparison**: every depth
   format WebGPU samples reports `SAMPLED_IMAGE_DEPTH_COMPARISON` in `VkFormatProperties3` (a comparison sampler on a
   depth texture); colour formats don't (a comparison of one would be the shader's).
+- **Integer outputs past their attachment's range** (VK4 T48): an integer output is clamped to its attachment format's
+  range, as Direct3D has it (Vulkan leaves such a write undefined; SwiftShader stores 0xffffffff into `rgba8uint` as 0,
+  which vkd3d's `test_output_merger_logic_op` met): every stage with integer outputs declares `override wg_ic`, two
+  bits an attachment for its range (8 bits, 16, or 10-10-10-2; signed ones from one below their negated top), which the
+  pipeline sets only for its targets narrower than 32 bits (0 leaves the outputs alone). Before a logic op, which reads
+  the clamped value.
 - **Multiview** (VK4 T7; `begin_rendering` and `OP_VIEWS` in wg_cmd.c): WebGPU has no layered rendering, so a pass with a
   view mask (dynamic rendering's `viewMask`; legacy passes through the runtime's emulation, secondaries through their
   inheritance) is replayed once a view: `OP_PASS` holds each view's JSON one after another, each attachment that view's
