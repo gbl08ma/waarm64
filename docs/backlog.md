@@ -826,7 +826,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **`api.info.image_format_properties2.*` of the YCbCr formats time out** (VK4 T1's "crash" of `r12x4_unorm_pack16`,
     VK4 T2): with `DISJOINT` in its create flags the case makes ~340,000 synchronous queries, ~0.1 ms each through
     Venus's ring, so it passes in 34 s (`WATCHDOG=disable`) but past dEQP's 30 s watchdog; out of the list. A guest's
-    synchronous calls' latency is T13's.
+    synchronous calls' latency is T13's. `2d.optimal.r12x4_unorm_pack16` came back into the list with VK4 T38 (13 s
+    alone, before and after T41) and crossed the watchdog under `ci-deqp-vk.sh`'s two machines (VK4 T41's runs, seed
+    1434936936 twice): out again.
   - **External memory's leftovers** (VK4 T2, R6): the guest's export imported again aliases its memory while the
     memory or an import of it lives, on its own device; otherwise (every one freed before a new import, another
     device) the import is a memory of its own whose bytes aren't shared (vkr's patch, `wg_AllocateMemory`; not met by

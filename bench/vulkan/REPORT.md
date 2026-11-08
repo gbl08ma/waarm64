@@ -827,7 +827,7 @@ set numbers past `maxBoundDescriptorSets`' 8).
 | M4, the 2,196 new | 2,196 | 0 | |
 
 The 2,196 that pass on both and weren't in the list join `tests/deqp/vk.txt` (66,745 → 68,941: 840 replays, the 10
-stress cases and 1,346 that passed before, not sampled into the list). The driver's test (`tests/venus-driver.test.ts`
+stress cases and 1,346 that passed before, not sampled into the list; 68,940 with `image_format_properties2.2d.optimal.r12x4_unorm_pack16` out again, which crossed dEQP's watchdog under `ci-deqp-vk.sh`'s load, 13 s alone before the change too: docs/backlog.md). The driver's test (`tests/venus-driver.test.ts`
 "pointers into three regions …": the page tells the driver a binding reaches 1 MiB, so four regions of 1 MiB; a 2 MiB
 image memory made for addresses, 600 KiB memories in regions 0 and 1, two more for capture and replay in 2 and 3, freed
 and made again in the other order, a dispatch through pointers of three regions) failed before (the second memory refused) and
