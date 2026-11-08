@@ -827,6 +827,10 @@ share test's GPU ways. JSON in `results/vk4/t48/`.
   (`wgt_import_planes`: a disjoint NV12 image on two imported resources, R8 and RG8, each plane's bytes its resource's).
   Not offered: one memory of several planes, an export, a DRM modifier (backlog "YCbCr's gaps").
 
+CI: `scripts/ci.sh` (511 s; a first run's `testusb_passes_in_parallel_smp` hung under the JS tests' load and passed
+alone in 4 s, then the whole script again), `ci-graphics.sh` (260 s), `ci-debian.sh` (312 s), `ci-deqp-vk.sh`'s sample
+(1,121 s), all OK; tests/venus-share.test.ts on the M4 (all three ways).
+
 ## VK4 T47: vkd3d's feature levels — 256 bytes of push constants, a hang fixed; 11_1 out of reach (geometry, tessellation)
 
 **2026-11-08**, the dev VM (SwiftShader, Chromium 155.0.8059.84) for vkd3d's suite in the desktop guest (Arch, Mesa
