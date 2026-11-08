@@ -17,7 +17,7 @@ type Test = {
   wgt_two_submit(d: number): number; wgt_two_done(d: number): number;
   wgt_fl_init(window: number): number; wgt_fl_map(which: number): number; wgt_fl_submit(i: number): number;
   wgt_fl_done(i: number): number;
-  wgt_link(): number; wgt_variant(scenario: number): number; wgt_flat(scenario: number, vs: number, vn: number, fs: number, fn: number): number; wgt_draw_params(vs: number, vn: number, fs: number, fn: number, firstInstance: number): number; wgt_angle_ubo(vs: number, vn: number, fs: number, fn: number): number; wgt_pull(scenario: number, vs: number, vn: number, fs: number, fn: number, fs2: number, fn2: number): number; wgt_scope(mask: number, vs: number, vn: number, fs: number, fn: number, cs: number, cn: number): number; wgt_scope_map(which: number): number; wgt_xfb(scenario: number, vs: number, vn: number): number; wgt_xfb_map(): number; wgt_xfb_done(): number; wgt_pass(scenario: number): number; wgt_pass_pixels(): number; wgt_pass_done(): number; wgt_pass_query(): number;
+  wgt_link(): number; wgt_variant(scenario: number): number; wgt_flat(scenario: number, vs: number, vn: number, fs: number, fn: number): number; wgt_draw_params(vs: number, vn: number, fs: number, fn: number, firstInstance: number): number; wgt_angle_ubo(vs: number, vn: number, fs: number, fn: number, pulled: number): number; wgt_pull(scenario: number, vs: number, vn: number, fs: number, fn: number, fs2: number, fn2: number): number; wgt_scope(mask: number, vs: number, vn: number, fs: number, fn: number, cs: number, cn: number): number; wgt_scope_map(which: number): number; wgt_xfb(scenario: number, vs: number, vn: number): number; wgt_xfb_map(): number; wgt_xfb_done(): number; wgt_pass(scenario: number): number; wgt_pass_pixels(): number; wgt_pass_done(): number; wgt_pass_query(): number;
   wgt_misc(scenario: number, cs: number, cn: number): number; wgt_misc_map(): number; wgt_misc_done(): number; wgt_misc_signal(): number; wgt_misc_pool_refs(): number;
   wgt_fits(scenario: number, vs: number, vn: number, fs: number, fn: number): number;
   wgt_samples(vs: number, vn: number, fs: number, fn: number): number;
@@ -354,7 +354,7 @@ export async function runInFlight(scenario: 'upload' | 'since') {
  * (`wgt_variant`, the out-of-context review of the driver): the scene's pipeline as an unrestarted strip, without a
  * fragment shader, as lines with depth bias. Named pixels of the image, and WebGPU's errors.
  */
-export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'manyQueries' | 'facesUnused' | 'facesSplit' | 'flatLast' | 'flatFanLast' | 'flatFanFirst' | 'flatFanOdd' | 'flatListOdd' | 'flatRestart' | 'angleUniforms' | 'drawParams' | 'pullLayouts' | 'pullDrawParams' | 'pullGroups' | 'pullOffsets' | 'pullPastEnd' | 'pullFourSets' | 'pullDivisors' | 'xfbList' | 'xfbOverflow' | 'xfbStrip' | 'xfbResume' | 'xfbMany' | 'xfbIndirect' | 'xfbIndexedIndirect' | 'xfbNullColors' | 'xfbPasses' | 'xfbPulled' | 'xfbFourGroups' | 'xfbByteCount' | 'xfbByteCountInPass' | 'xfbQuery' | 'xfbQueryOutside') {
+export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'manyQueries' | 'facesUnused' | 'facesSplit' | 'flatLast' | 'flatFanLast' | 'flatFanFirst' | 'flatFanOdd' | 'flatListOdd' | 'flatRestart' | 'angleUniforms' | 'angleUniformsPulled' | 'drawParams' | 'pullLayouts' | 'pullDrawParams' | 'pullGroups' | 'pullOffsets' | 'pullPastEnd' | 'pullFourSets' | 'pullDivisors' | 'xfbList' | 'xfbOverflow' | 'xfbStrip' | 'xfbResume' | 'xfbMany' | 'xfbIndirect' | 'xfbIndexedIndirect' | 'xfbNullColors' | 'xfbPasses' | 'xfbPulled' | 'xfbFourGroups' | 'xfbByteCount' | 'xfbByteCountInPass' | 'xfbQuery' | 'xfbQueryOutside' | 'xfbTimestamp') {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -399,7 +399,7 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
       device.destroy();
       return { differs, got: [...new Float32Array(got.buffer, 0, 48)], counter: new Uint32Array(got.buffer, 2048, 1)[0], errors, warnings: v.gpu.stats.errors };
     }
-    if (scenario === 'xfbList' || scenario === 'xfbOverflow' || scenario === 'xfbStrip' || scenario === 'xfbResume' || scenario === 'xfbIndirect' || scenario === 'xfbIndexedIndirect' || scenario === 'xfbPulled' || scenario === 'xfbNullColors' || scenario === 'xfbPasses' || scenario === 'xfbFourGroups' || scenario === 'xfbByteCount' || scenario === 'xfbByteCountInPass' || scenario === 'xfbQuery' || scenario === 'xfbQueryOutside') {
+    if (scenario === 'xfbList' || scenario === 'xfbOverflow' || scenario === 'xfbStrip' || scenario === 'xfbResume' || scenario === 'xfbIndirect' || scenario === 'xfbIndexedIndirect' || scenario === 'xfbPulled' || scenario === 'xfbNullColors' || scenario === 'xfbPasses' || scenario === 'xfbFourGroups' || scenario === 'xfbByteCount' || scenario === 'xfbByteCountInPass' || scenario === 'xfbQuery' || scenario === 'xfbQueryOutside' || scenario === 'xfbTimestamp') {
       // wgt_xfb's records: each vertex's (x, y, z, 1) and (u, v, its index, 7), from the scene's vertices (wg_test.c).
       const quad = [[-1.5, -1, 0.5, 0, 0], [-0.5, -1, 0.5, 1, 0], [-0.5, 1, 0.5, 1, 1], [-1.5, 1, 0.5, 0, 1], [-1, -1, 0.75, 0, 0], [1, -1, 0.75, 0, 0]];
       const order = scenario === 'xfbOverflow' || scenario === 'xfbQuery' ? [0, 1, 2] : scenario === 'xfbStrip' ? [0, 1, 2, 1, 3, 2]
@@ -420,14 +420,22 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
         new Uint32Array(want.buffer, 3104, 3).set([written, needed, 1]);
       }
       const [xv, xvn] = put(await words(`/target/vk/test/${scenario === 'xfbFourGroups' ? 'xfb-four' : 'xfb'}.vert.spv`));
-      const xi = { xfbList: 0, xfbOverflow: 1, xfbStrip: 2, xfbResume: 3, xfbIndirect: 5, xfbIndexedIndirect: 6, xfbNullColors: 7, xfbPasses: 8, xfbPulled: 9, xfbFourGroups: 10, xfbByteCount: 11, xfbByteCountInPass: 12, xfbQuery: 13, xfbQueryOutside: 14 }[scenario];
+      const xi = { xfbList: 0, xfbOverflow: 1, xfbStrip: 2, xfbResume: 3, xfbIndirect: 5, xfbIndexedIndirect: 6, xfbNullColors: 7, xfbPasses: 8, xfbPulled: 9, xfbFourGroups: 10, xfbByteCount: 11, xfbByteCountInPass: 12, xfbQuery: 13, xfbQueryOutside: 14, xfbTimestamp: 15 }[scenario];
       if (ex.wgt_xfb(xi, xv, xvn)) return { error: text(ex.wgt_error() >>> 0), errors };
       await wait(() => ex.wgt_xfb_done(), 'the capture');
       const got = new Uint8Array(memory.buffer, ex.wgt_xfb_map() >>> 0, 4096).slice();
+      // The review of VK4 T44 to T46 (finding 4): the timestamp after the pass, available (its value the test's), and
+      // the timestamps the worker wrote.
+      const stamp = scenario === 'xfbTimestamp' ? new BigUint64Array(got.buffer, 3072, 1)[0].toString() : undefined;
+      if (scenario === 'xfbTimestamp') {
+        want.set(got.subarray(3072, 3080), 3072);
+        new BigUint64Array(want.buffer, 3080, 1)[0] = 1n;
+      }
       let differs = -1;
       for (let i = 0; i < 4096; i++) if (got[i] !== want[i]) { differs = i; break; }
+      const timestamps = v.gpu.emul.timestamps, timestampQuery = device.features.has('timestamp-query');
       device.destroy();
-      return { differs, got: [...new Float32Array(got.buffer, 0, 48)], counter: new Uint32Array(got.buffer, 2048, 1)[0], errors, warnings: v.gpu.stats.errors };
+      return { differs, got: [...new Float32Array(got.buffer, 0, 48)], counter: new Uint32Array(got.buffer, 2048, 1)[0], errors, warnings: v.gpu.stats.errors, stamp, timestamps, timestampQuery };
     }
     if (scenario === 'flatLast' || scenario === 'flatFanLast' || scenario === 'flatFanFirst' || scenario === 'flatFanOdd' || scenario === 'flatListOdd' || scenario === 'flatRestart') {
       const [fv, fvn] = put(await words('/target/vk/test/flat.vert.spv')), [ff, ffn] = put(await words('/target/vk/test/flat.frag.spv'));
@@ -435,11 +443,13 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
       if (ex.wgt_flat(flat[scenario], fv, fvn, ff, ffn)) return { error: text(ex.wgt_error() >>> 0), errors };
       await wait(() => ex.wgt_draw_done(), 'the draw');
       at = ex.wgt_pixels() >>> 0;
-    } else if (scenario === 'angleUniforms') {
-      // VK3 L7b: ANGLE's ES3 layout of uniform buffers (wg_test.c's wgt_angle_ubo).
-      const [av, avn] = put(await words('/target/vk/test/angle-ubo.vert.spv')), [af, afn] = put(await words('/target/vk/test/angle-ubo.frag.spv'));
+    } else if (scenario === 'angleUniforms' || scenario === 'angleUniformsPulled') {
+      // VK3 L7b: ANGLE's ES3 layout of uniform buffers (wg_test.c's wgt_angle_ubo); the review of VK4 T44 to T46
+      // (finding 3): with a vertex input pulled.
+      const pulled = scenario === 'angleUniformsPulled';
+      const [av, avn] = put(await words(`/target/vk/test/${pulled ? 't46/angle-pull' : 'angle-ubo'}.vert.spv`)), [af, afn] = put(await words('/target/vk/test/angle-ubo.frag.spv'));
       new Uint8Array(memory.buffer, ex.wgt_pixels() >>> 0, 64 * 64 * 4).fill(0);
-      if (ex.wgt_angle_ubo(av, avn, af, afn)) return { error: text(ex.wgt_error() >>> 0), errors };
+      if (ex.wgt_angle_ubo(av, avn, af, afn, pulled ? 1 : 0)) return { error: text(ex.wgt_error() >>> 0), errors };
       await wait(() => ex.wgt_draw_done(), 'the draw');
       at = ex.wgt_pixels() >>> 0;
     } else if (scenario === 'drawParams') {
@@ -538,7 +548,7 @@ export async function runScope(spirv: { vert: string; frag: string; comp: string
  * freed; `dynamicStorage`: a dynamic storage buffer's writes read back at its offset; `oddStorage`: a storage buffer
  * of an odd size bound whole. Each check: the first byte that differs from what Vulkan says (-1: none).
  */
-export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mutableViews' | 'resolve3d' | 'msCopyWithin' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied' | 'uniformWritten' | 'indirectWritten' | 'readInPlace' | 'threeSame' | 'oddRange' | 'msLayersSrgb' | 'msLayersPacked' | 'oneRow' | 'resolveTwin' | 'msLayers' | 'msTwins' | 'msPacked' | 'msFormats' | 'attachmentSizes' | 'loadNone' | 'manyLayers' | 'packedFeedback' | 'feedbackLayer' | 'addresses' | 'addressesUniform' | 'twoReads' | 'sameRange' | 'overlappingRanges' | 'inlineBlocks' | 'depthLess' | 'depthAndCompare' | 'intGather' | 'cubeSized' | 'cubeGather' | 'depthEight' | 'inlineLong' | 'immutableFreed' | 'sixteenBindings' | 'sixteenThenOne' | 'cubePlain' | 'vertexCompares' | 'fourSets' | 'bc1Blit' | 'readOnlyImages' | 'g4Views' | 'texturesFull' | 'sizeOnly' | 'formatless' | 'declaredOther' | 'arrayAsFlat' | 'texelUniforms' | 'queuesTimeline' | 'queuesBinary' | 'rgb9e5Words' | 'm8Copies' | 't30Formats' | 't31Formats' | 't32Reads' | 't32Loop' | 't32Ms' | 't34Mutable' | 't37Flat' | 't37ReadWritten' | 't37BigPacked' | 't37WordsPast' | 't37Mismatched' | 't37UniformTail' | 't37AtomicAlias' | 't38Formats' | 't38Stores' | 't39Resolves' | 't39MsBits' | 't40Shared' | 't40Dynamic' | 't41Regions' | 't41Beside' | 't43Wrapped' | 't43MappedCoverage' | 't43MappedDual' | 't41BesidePast' | 't41Full' | 't43Layered' | 't43PushLayers' | 't44FanPast', push: string, skip: string[] = []) {
+export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mutableViews' | 'resolve3d' | 'msCopyWithin' | 'clear' | 'blit' | 'push' | 'pushGrown' | 'freedImage' | 'dynamicStorage' | 'oddStorage' | 'freedModule' | 'depthResolve' | 'depthResolveDiscard' | 'depthResolveArea' | 'storageAliased' | 'waitBeforeSignal' | 'texelBuffer' | 'bindGroupsShared' | 'depthCopies' | 'uniformBeside' | 'indirectBeside' | 'emptyAfterHeld' | 'queryAfterDispatch' | 'poolFreed' | 'ycbcr' | 'manyUniforms' | 'texelStorage' | 'dynamicUniforms' | 'writtenShared' | 'immutableSampler' | 'bigUniform' | 'sharedSampler' | 'sameMemoryCopy' | 'sameImageCopy' | 'immutableCopied' | 'uniformWritten' | 'indirectWritten' | 'readInPlace' | 'threeSame' | 'oddRange' | 'msLayersSrgb' | 'msLayersPacked' | 'oneRow' | 'resolveTwin' | 'msLayers' | 'msTwins' | 'msPacked' | 'msFormats' | 'attachmentSizes' | 'loadNone' | 'manyLayers' | 'packedFeedback' | 'feedbackLayer' | 'addresses' | 'addressesUniform' | 'twoReads' | 'sameRange' | 'overlappingRanges' | 'inlineBlocks' | 'depthLess' | 'depthAndCompare' | 'intGather' | 'cubeSized' | 'cubeGather' | 'depthEight' | 'inlineLong' | 'immutableFreed' | 'sixteenBindings' | 'sixteenThenOne' | 'cubePlain' | 'vertexCompares' | 'fourSets' | 'bc1Blit' | 'readOnlyImages' | 'g4Views' | 'texturesFull' | 'sizeOnly' | 'formatless' | 'declaredOther' | 'arrayAsFlat' | 'texelUniforms' | 'queuesTimeline' | 'queuesBinary' | 'rgb9e5Words' | 'm8Copies' | 't30Formats' | 't31Formats' | 't32Reads' | 't32Loop' | 't32Ms' | 't34Mutable' | 't37Flat' | 't37ReadWritten' | 't37BigPacked' | 't37WordsPast' | 't37Mismatched' | 't37UniformTail' | 't37AtomicAlias' | 't38Formats' | 't38Stores' | 't39Resolves' | 't39MsBits' | 't40Shared' | 't40Dynamic' | 't41Regions' | 't41Beside' | 't43Wrapped' | 't43MappedCoverage' | 't43MappedDual' | 't41BesidePast' | 't41Full' | 't43Layered' | 't43PushLayers' | 't44FanPast' | 't46SlotsPast' | 't46SlotsBetween', push: string, skip: string[] = []) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   if (scenario === 't43MappedDual' && !adapter.features.has('dual-source-blending')) return { skipped: 'no dual-source-blending (SwiftShader\'s)' };
@@ -561,7 +571,7 @@ export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mu
   const words = new Uint8Array(await (await fetch(push)).arrayBuffer());
   const cs = ex.venus_alloc(words.length) >>> 0;
   new Uint8Array(memory.buffer, cs, words.length).set(words);
-  const index = { copy: 0, resolve3d: 36, msCopyWithin: 37, mutableViews: 38, rwImage: 41, rwImageWide: 42, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21, ycbcr: 22, manyUniforms: 23, texelStorage: 24, dynamicUniforms: 25, writtenShared: 26, immutableSampler: 27, bigUniform: 28, sharedSampler: 29, sameMemoryCopy: 30, sameImageCopy: 31, immutableCopied: 32, uniformWritten: 33, indirectWritten: 34, readInPlace: 35, addresses: 39, inlineBlocks: 40, addressesUniform: 43, twoReads: 44, sameRange: 45, overlappingRanges: 46, threeSame: 60, oddRange: 61, msLayersSrgb: 63, msLayersPacked: 64, oneRow: 52, resolveTwin: 53, msLayers: 55, msTwins: 56, msPacked: 57, msFormats: 59, attachmentSizes: 47, loadNone: 48, manyLayers: 49, packedFeedback: 50, feedbackLayer: 51, depthLess: 70, depthAndCompare: 71, intGather: 72, cubeSized: 73, cubeGather: 74, depthEight: 75, inlineLong: 76, immutableFreed: 77, sixteenBindings: 78, sixteenThenOne: 79, cubePlain: 80, vertexCompares: 81, fourSets: 82, bc1Blit: 83, readOnlyImages: 84, g4Views: 85, texturesFull: 86, sizeOnly: 87, formatless: 88, declaredOther: 89, arrayAsFlat: 90, texelUniforms: 91, queuesTimeline: 92, queuesBinary: 93, rgb9e5Words: 94, m8Copies: 95, t30Formats: 96, t31Formats: 97, t32Reads: 98, t32Loop: 99, t32Ms: 100, t34Mutable: 101, t37Flat: 102, t37ReadWritten: 103, t37BigPacked: 104, t37WordsPast: 105, t37Mismatched: 106, t37UniformTail: 107, t37AtomicAlias: 108, t38Formats: 109, t38Stores: 110, t39Resolves: 111, t39MsBits: 112, t40Shared: 113, t40Dynamic: 114, t41Regions: 115, t41Beside: 116, t43Wrapped: 117, t43MappedCoverage: 118, t43MappedDual: 119, t41BesidePast: 120, t41Full: 121, t43Layered: 122, t43PushLayers: 123, t44FanPast: 124 }[scenario];
+  const index = { copy: 0, resolve3d: 36, msCopyWithin: 37, mutableViews: 38, rwImage: 41, rwImageWide: 42, clear: 1, blit: 2, push: 3, pushGrown: 4, freedImage: 5, dynamicStorage: 6, oddStorage: 7, freedModule: 8, depthResolve: 9, depthResolveDiscard: 10, depthResolveArea: 11, storageAliased: 12, waitBeforeSignal: 13, texelBuffer: 14, bindGroupsShared: 15, depthCopies: 16, uniformBeside: 17, indirectBeside: 18, emptyAfterHeld: 19, queryAfterDispatch: 20, poolFreed: 21, ycbcr: 22, manyUniforms: 23, texelStorage: 24, dynamicUniforms: 25, writtenShared: 26, immutableSampler: 27, bigUniform: 28, sharedSampler: 29, sameMemoryCopy: 30, sameImageCopy: 31, immutableCopied: 32, uniformWritten: 33, indirectWritten: 34, readInPlace: 35, addresses: 39, inlineBlocks: 40, addressesUniform: 43, twoReads: 44, sameRange: 45, overlappingRanges: 46, threeSame: 60, oddRange: 61, msLayersSrgb: 63, msLayersPacked: 64, oneRow: 52, resolveTwin: 53, msLayers: 55, msTwins: 56, msPacked: 57, msFormats: 59, attachmentSizes: 47, loadNone: 48, manyLayers: 49, packedFeedback: 50, feedbackLayer: 51, depthLess: 70, depthAndCompare: 71, intGather: 72, cubeSized: 73, cubeGather: 74, depthEight: 75, inlineLong: 76, immutableFreed: 77, sixteenBindings: 78, sixteenThenOne: 79, cubePlain: 80, vertexCompares: 81, fourSets: 82, bc1Blit: 83, readOnlyImages: 84, g4Views: 85, texturesFull: 86, sizeOnly: 87, formatless: 88, declaredOther: 89, arrayAsFlat: 90, texelUniforms: 91, queuesTimeline: 92, queuesBinary: 93, rgb9e5Words: 94, m8Copies: 95, t30Formats: 96, t31Formats: 97, t32Reads: 98, t32Loop: 99, t32Ms: 100, t34Mutable: 101, t37Flat: 102, t37ReadWritten: 103, t37BigPacked: 104, t37WordsPast: 105, t37Mismatched: 106, t37UniformTail: 107, t37AtomicAlias: 108, t38Formats: 109, t38Stores: 110, t39Resolves: 111, t39MsBits: 112, t40Shared: 113, t40Dynamic: 114, t41Regions: 115, t41Beside: 116, t43Wrapped: 117, t43MappedCoverage: 118, t43MappedDual: 119, t41BesidePast: 120, t41Full: 121, t43Layered: 122, t43PushLayers: 123, t44FanPast: 124, t46SlotsPast: 125, t46SlotsBetween: 126 }[scenario];
   if (push.endsWith('.frag.spv')) {
     const vert = new Uint8Array(await (await fetch(`/target/vk/test/${scenario === 'cubeSized' ? 'r5/cube-sized' : scenario === 'sixteenBindings' || scenario === 'sixteenThenOne' || scenario === 'fourSets' ? 'r7/sixteen' : scenario === 'vertexCompares' ? 'r7/vs-compare' : scenario === 't43Layered' ? 't43/layer' : scenario === 't43PushLayers' ? 't43/points' : scenario === 't44FanPast' ? 't44/fan' : 'feedback'}.vert.spv`)).arrayBuffer());
     const vs = ex.venus_alloc(vert.length) >>> 0;
@@ -842,6 +852,14 @@ export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mu
     // other (the refused half drawn too before: its fan's ticket wasn't taken, so the indexed fan drew through its indices).
     want.set([0, 0, 0, 0, 192, 64, 128, 255], 0);
     Object.assign(checks, { refused: [0, 4, want], drawn: [4, 8, want] });
+  } else if (scenario === 't46SlotsPast') {
+    // The review of VK4 T44 to T46, finding 1 (wg_test.c 125): the timestamp after 300 parts of a pass available (its
+    // value checked by the test), and the texel as cleared (300 XORs; 0xee before: slot 256 of the device's 256 made
+    // the submit's encoder invalid).
+    want.set([1, 0, 0, 0, 0, 0, 0, 0, 51, 153, 204, 255], 8);
+    Object.assign(checks, { available: [8, 16, want], texel: [16, 20, want] });
+  } else if (scenario === 't46SlotsBetween') {
+    // Finding 2 (wg_test.c 126): the 258 timestamps' values, checked by the test.
   } else if (scenario === 't43PushLayers') {
     // Finding 3 (wg_test.c 123): draw i's number at texel i of layer 0, zeros past 1000 (draws past 904 drew others'
     // before: the push buffer wrapped, its places counted once for the six layers).
@@ -1113,8 +1131,11 @@ export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mu
     differs[k] = -1;
     for (let i = from; i < to; i++) if (got[i] !== w[i]) { differs[k] = i; break; }
   }
+  // VK4 T46's review: the timestamps' 64-bit values.
+  const stamps = scenario === 't46SlotsPast' || scenario === 't46SlotsBetween' ? [...new BigUint64Array(got.buffer, 0, scenario === 't46SlotsPast' ? 1 : 258)].map(String) : undefined;
+  const timestampQuery = device.features.has('timestamp-query');
   device.destroy();
-  return { checks: differs, errors, warnings: v.gpu.stats.errors, got: [...got.subarray(0, 16)], bindGroups: v.gpu.stats.bindGroups, emul: v.emul() };
+  return { checks: differs, errors, warnings: v.gpu.stats.errors, got: [...got.subarray(0, 16)], bindGroups: v.gpu.stats.bindGroups, emul: v.emul(), stamps, timestampQuery };
 }
 
 /**

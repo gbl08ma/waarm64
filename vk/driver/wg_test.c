@@ -51,7 +51,7 @@ int wgt_xfb(uint32_t scenario, const uint32_t *vs, uint32_t vs_words);
 uint8_t *wgt_xfb_map(void);
 int wgt_xfb_done(void);
 int wgt_flat(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words);
-int wgt_angle_ubo(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words);
+int wgt_angle_ubo(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words, uint32_t pulled);
 int wgt_scope(uint32_t mask, const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words,
               const uint32_t *cs, uint32_t cs_words);
 uint8_t *wgt_scope_map(uint32_t which);
@@ -1685,10 +1685,15 @@ wgt_pull(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_
  * full-screen triangle; set 0 a dynamic uniform buffer for each stage (the default blocks: 100 and 44, at dynamic
  * offsets), set 1 12 blocks each stage alone sees (the vertex stage's k + 1, the fragment stage's 2k + 2): 13 uniform
  * buffers a stage, past WebGPU's 12. The image (178, 200, 0, 255) everywhere; wgt_draw_done says when.
+ * `pulled` (the review of VK4 T44 to T46, finding 3; `vs` t46/angle-pull.vert): its vertex stage reads a uint at byte 2
+ * of an instance binding of zeros (stride 4, divisor 2), which WebGPU's vertex buffers refuse: pulled, its two uniform
+ * buffers (the binding's places, the divisors' first instance) past the stage's 12 with the layout's 11, so the draw is
+ * refused by the driver (the image as cleared), not by WebGPU.
  */
 static struct {
    VkPipelineLayout layout;
    VkDescriptorSet sets[2];
+   VkBuffer vb;
 } au;
 
 static void
@@ -1698,11 +1703,15 @@ angle_record(VkCommandBuffer cmd, bool in_pass)
       return;
    const uint32_t offsets[2] = { 256, 512 };
    CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, au.layout, 0, 2, au.sets, 2, offsets);
+   if (au.vb) {
+      const VkDeviceSize zero = 0;
+      CmdBindVertexBuffers(cmd, 0, 1, &au.vb, &zero);
+   }
    CmdDraw(cmd, 3, 1, 0, 0);
 }
 
 EXPORT int
-wgt_angle_ubo(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words)
+wgt_angle_ubo(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_t fs_words, uint32_t pulled)
 {
    if (!scene.pipeline) {
       snprintf(error, sizeof(error), "wgt_run first");
@@ -1765,6 +1774,23 @@ wgt_angle_ubo(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint32_
       return 1;
    gpi.pStages = stages;
    gpi.layout = au.layout;
+   const VkVertexInputBindingDescription vb = { 0, 4, VK_VERTEX_INPUT_RATE_INSTANCE };
+   const VkVertexInputAttributeDescription va = { 0, 0, VK_FORMAT_R32_UINT, 2 };
+   const VkVertexInputBindingDivisorDescriptionKHR divisor = { 0, 2 };
+   const VkPipelineVertexInputDivisorStateCreateInfoKHR divided = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO_KHR, .vertexBindingDivisorCount = 1,
+      .pVertexBindingDivisors = &divisor };
+   const VkPipelineVertexInputStateCreateInfo vis = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, .pNext = &divided, .vertexBindingDescriptionCount = 1,
+      .pVertexBindingDescriptions = &vb, .vertexAttributeDescriptionCount = 1, .pVertexAttributeDescriptions = &va };
+   au.vb = VK_NULL_HANDLE;
+   if (pulled) {
+      uint8_t *m;
+      if (buffer(64, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true, &au.vb, (void **)&m))
+         return 1;
+      memset(m, 0, 64);
+      gpi.pVertexInputState = &vis;
+   }
    VkPipelineRasterizationStateCreateInfo rs = *gpi.pRasterizationState;
    rs.cullMode = VK_CULL_MODE_NONE;
    gpi.pRasterizationState = &rs;
@@ -2014,6 +2040,9 @@ wgt_scope(uint32_t mask, const uint32_t *vs, uint32_t vs_words, const uint32_t *
  * 13: as 1 inside a transform feedback query (begun and ended in the pass): its results copied to 3072 (64-bit, with
  *     availability: 1 written, 2 needed, 1) and 3104 (32-bit, the same);
  * 14: as 3 inside a query begun before the render pass and ended after it: its results at 3072 and 3104 (2, 2, 1).
+ * The review of VK4 T44 to T46 (finding 4):
+ * 15: as 0 with a bottom-of-pipe timestamp right after the render pass (a pool of one), copied to 3072 (64-bit, with
+ *     availability): the capture runs after the pass's end write, so the timestamp is a write of its own after it.
  */
 static struct {
    VkFence fence;
@@ -2113,9 +2142,11 @@ wgt_xfb(uint32_t scenario, const uint32_t *vs, uint32_t vs_words)
                                        .clearValueCount = 2, .pClearValues = clears };
    const VkDeviceSize zero = 0, size = scenario == 1 || scenario == 13 ? 160 : 1024, counter_at = 2048;
    VkQueryPool qp = VK_NULL_HANDLE;
-   if (scenario == 13 || scenario == 14) {
+   if (scenario == 13 || scenario == 14 || scenario == 15) {
       const VkQueryPoolCreateInfo qi = { .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
-                                         .queryType = VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT, .queryCount = 2 };
+                                         .queryType = scenario == 15 ? VK_QUERY_TYPE_TIMESTAMP
+                                                                     : VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT,
+                                         .queryCount = 2 };
       CHECK(CreateQueryPool(dev, &qi, NULL, &qp));
       CmdResetQueryPool(cmd, qp, 0, 2);
    }
@@ -2239,7 +2270,10 @@ wgt_xfb(uint32_t scenario, const uint32_t *vs, uint32_t vs_words)
       CmdEndRenderPass(cmd);
    if (scenario == 14)
       CmdEndQuery(cmd, qp, 1);
-   if (qp) {
+   if (scenario == 15) {
+      CmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, qp, 0);
+      CmdCopyQueryPoolResults(cmd, qp, 0, 1, out, 3072, 16, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+   } else if (qp) {
       CmdCopyQueryPoolResults(cmd, qp, 1, 1, out, 3072, 24, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
       CmdCopyQueryPoolResults(cmd, qp, 1, 1, out, 3104, 12, VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
    }
@@ -5591,6 +5625,104 @@ t32_misc(const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBuffer ou
 }
 
 /*
+ * The review of VK4 T44 to T46 (findings 1 and 2), wgt_misc's scenarios 125 and 126 (`fs`: tests/venus/t32/dst.frag),
+ * on a 16x16 RGBA8 image in GENERAL, timestamps of a pool copied to `out` (64-bit, 8 bytes apart):
+ * 125: a render pass of 300 full-screen draws through a logic op (XOR: each a part of the WebGPU pass of its own), then a
+ *      bottom-of-pipe timestamp after it, the submit's first (finding 1: the device set's 256 slots taken by the parts
+ *      without a timestamp to copy, slot 256 handed out): query 0 at 0 with its availability at 8; the texel (8, 8) at 16.
+ * 126: 255 bottom-of-pipe timestamps (the set's slots but its last), a top-of-pipe one right before a render pass of
+ *      one draw with a timestamp inside, and one right after (finding 2: the pass's end slot taken first, 255, and the
+ *      beginning one flushing the set, which left the pass's at a slot no flush resolved): queries 0 to 257 at 0.
+ */
+static int
+t46_timestamps(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdClearColorImage CmdClearColorImage = (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   const uint32_t size = 16;
+   VkImage target;
+   VkImageView att;
+   if (layered_image(VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM, size, size, 1,
+                     VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 0, &target, &att))
+      return 1;
+   const VkClearColorValue c = { .float32 = { 0.2f, 0.6f, 0.8f, 1 } };
+   const VkImageSubresourceRange cr = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+   CmdClearColorImage(cmd, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &c, 1, &cr);
+   const VkAttachmentDescription ad = { 0, VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLE_COUNT_1_BIT, VK_ATTACHMENT_LOAD_OP_LOAD,
+                                        VK_ATTACHMENT_STORE_OP_STORE, VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                        VK_ATTACHMENT_STORE_OP_DONT_CARE, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL };
+   const VkAttachmentReference cref = { 0, VK_IMAGE_LAYOUT_GENERAL };
+   const VkSubpassDescription sub = { .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS, .colorAttachmentCount = 1,
+                                      .pColorAttachments = &cref };
+   const VkRenderPassCreateInfo rpi = { .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, .attachmentCount = 1,
+                                        .pAttachments = &ad, .subpassCount = 1, .pSubpasses = &sub };
+   VkRenderPass rp;
+   CHECK(CreateRenderPass(dev, &rpi, NULL, &rp));
+   const VkFramebufferCreateInfo fbi = { .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO, .renderPass = rp,
+                                         .attachmentCount = 1, .pAttachments = &att, .width = size, .height = size,
+                                         .layers = 1 };
+   VkFramebuffer fb;
+   CHECK(CreateFramebuffer(dev, &fbi, NULL, &fb));
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   VkShaderModule vm, fm;
+   if (shader(feedback_vs, feedback_vs_words, &vm) || shader(fs, fs_words, &fm))
+      return 1;
+   const VkPipelineShaderStageCreateInfo stages[2] = {
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = vm, .pName = "main" },
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = fm, .pName = "main" } };
+   const VkPipelineVertexInputStateCreateInfo vis = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+   const VkPipelineInputAssemblyStateCreateInfo ia = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                                                       .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
+   const VkViewport vp = { 0, 0, (float)size, (float)size, 0, 1 };
+   const VkRect2D area = { { 0, 0 }, { size, size } };
+   const VkPipelineViewportStateCreateInfo vs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1,
+                                                  .pViewports = &vp, .scissorCount = 1, .pScissors = &area };
+   const VkPipelineRasterizationStateCreateInfo rs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+                                                       .polygonMode = VK_POLYGON_MODE_FILL, .lineWidth = 1 };
+   const VkPipelineMultisampleStateCreateInfo ms = { .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                                                     .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT };
+   const VkPipelineColorBlendAttachmentState ba = { .colorWriteMask = 0xf };
+   const VkPipelineColorBlendStateCreateInfo bs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                                                    .logicOpEnable = scenario == 125, .logicOp = VK_LOGIC_OP_XOR,
+                                                    .attachmentCount = 1, .pAttachments = &ba };
+   const VkGraphicsPipelineCreateInfo gpi = {
+      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .stageCount = 2, .pStages = stages, .pVertexInputState = &vis,
+      .pInputAssemblyState = &ia, .pViewportState = &vs, .pRasterizationState = &rs, .pMultisampleState = &ms,
+      .pColorBlendState = &bs, .layout = layout, .renderPass = rp };
+   VkPipeline p;
+   CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   const uint32_t count = scenario == 125 ? 1 : 258;
+   const VkQueryPoolCreateInfo qi = { .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+                                      .queryType = VK_QUERY_TYPE_TIMESTAMP, .queryCount = count };
+   VkQueryPool tp;
+   CHECK(CreateQueryPool(dev, &qi, NULL, &tp));
+   CmdResetQueryPool(cmd, tp, 0, count);
+   if (scenario == 126)
+      for (uint32_t i = 0; i < 255; i++)
+         CmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, tp, i);
+   if (scenario == 126)
+      CmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, tp, 255);
+   const VkRenderPassBeginInfo rbi = { .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, .renderPass = rp, .framebuffer = fb,
+                                       .renderArea = area };
+   CmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+   for (uint32_t i = 0; i < (scenario == 125 ? 300u : 1u); i++)
+      CmdDraw(cmd, 3, 1, 0, 0);
+   if (scenario == 126)
+      CmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, tp, 256);
+   CmdEndRenderPass(cmd);
+   CmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, tp, scenario == 125 ? 0 : 257);
+   if (scenario == 125) {
+      CmdCopyQueryPoolResults(cmd, tp, 0, 1, out, 0, 8, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+      copy_texel(cmd, target, VK_IMAGE_ASPECT_COLOR_BIT, 0, 8, 8, out, 16);
+   } else {
+      CmdCopyQueryPoolResults(cmd, tp, 0, count, out, 0, 8, VK_QUERY_RESULT_64_BIT);
+   }
+   return 0;
+}
+
+/*
  * The review of VK4 T41 to T43 (finding 1), wgt_misc's scenario 117 (`fs`: tests/venus/t43/wrapped.frag, reading
  * gl_FrontFacing): draws whose fragment stage the driver wraps (wg_shader.c `post_text`: a depth bias on D24, which
  * WebGPU's can't give), in one render pass on an RGBA8 image cleared to (51, 153, 204, 255) and a D24S8 one cleared to
@@ -8372,6 +8504,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 124) {
       if (t44_fan_past(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 125 || scenario == 126) {
+      if (t46_timestamps(scenario, cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 99) {
       if (t32_loop(cs, cs_words, cmd, out))

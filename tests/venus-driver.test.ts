@@ -33,7 +33,8 @@ after(async () => { await browser?.close(); close?.(); });
 test('the driver draws a scene, runs a compute pass and fills host-visible memory, read back before its fence', { skip, timeout: 120_000 }, async (t) => {
   const out = join(root, 'target/vk/test');
   mkdirSync(join(out, 't44'), { recursive: true });
-  for (const [src, name] of [['tests/venus/driver.vert', 'driver.vert'], ['tests/venus/driver.frag', 'driver.frag'], ['tests/venus/driver.comp', 'driver.comp'], ['bench/vulkan/costs/costs.frag', 'costs.frag'], ['tests/venus/flat.vert', 'flat.vert'], ['tests/venus/flat.frag', 'flat.frag'], ['tests/venus/xfb.vert', 'xfb.vert'], ['tests/venus/xfb-many.vert', 'xfb-many.vert'], ['tests/venus/draw-params.vert', 'draw-params.vert'], ['tests/venus/vertex-pull.vert', 'vertex-pull.vert'], ['tests/venus/vertex-pull-fixed.vert', 'vertex-pull-fixed.vert'], ['tests/venus/vertex-pull.frag', 'vertex-pull.frag'], ['tests/venus/vertex-pull0.frag', 'vertex-pull0.frag'], ['tests/venus/l7b/angle-ubo.vert', 'angle-ubo.vert'], ['tests/venus/l7b/angle-ubo.frag', 'angle-ubo.frag'], ['tests/venus/t40/xfb-four.vert', 'xfb-four.vert'], ['tests/venus/t44/four-sets.frag', 't44/four-sets.frag']]) {
+  mkdirSync(join(out, 't46'), { recursive: true });
+  for (const [src, name] of [['tests/venus/driver.vert', 'driver.vert'], ['tests/venus/driver.frag', 'driver.frag'], ['tests/venus/driver.comp', 'driver.comp'], ['bench/vulkan/costs/costs.frag', 'costs.frag'], ['tests/venus/flat.vert', 'flat.vert'], ['tests/venus/flat.frag', 'flat.frag'], ['tests/venus/xfb.vert', 'xfb.vert'], ['tests/venus/xfb-many.vert', 'xfb-many.vert'], ['tests/venus/draw-params.vert', 'draw-params.vert'], ['tests/venus/vertex-pull.vert', 'vertex-pull.vert'], ['tests/venus/vertex-pull-fixed.vert', 'vertex-pull-fixed.vert'], ['tests/venus/vertex-pull.frag', 'vertex-pull.frag'], ['tests/venus/vertex-pull0.frag', 'vertex-pull0.frag'], ['tests/venus/l7b/angle-ubo.vert', 'angle-ubo.vert'], ['tests/venus/l7b/angle-ubo.frag', 'angle-ubo.frag'], ['tests/venus/t40/xfb-four.vert', 'xfb-four.vert'], ['tests/venus/t44/four-sets.frag', 't44/four-sets.frag'], ['tests/venus/t46/angle-pull.vert', 't46/angle-pull.vert']]) {
     const r = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${name}.spv`), join(root, src)], { encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
   }
@@ -226,6 +227,8 @@ for (const [scenario, what, want] of [
   ['flatRestart', 'an indexed strip with primitive restart whose last vertex provokes', { topLeft: yellow, bottomLeft: green, topRight: blue, bottomRight: blue }],
   // L7b (the review's finding 9): ANGLE's ES3 uniform buffers, 13 a stage, each stage's its own, a default block dynamic.
   ['angleUniforms', 'ANGLE\'s layout of 13 uniform buffers in each of two stages', { topLeft: [178, 200, 0, 255], bottomLeft: [178, 200, 0, 255], topRight: [178, 200, 0, 255], bottomRight: [178, 200, 0, 255] }],
+  // The review of VK4 T44 to T46 (finding 3): the pull's uniform buffer past the vertex stage's, refused by the driver.
+  ['angleUniformsPulled', 'ANGLE\'s layout with a vertex input pulled, refused by the driver, not by WebGPU', { topLeft: blue, bottomLeft: blue, topRight: blue, bottomRight: blue }],
   // L7.5: draw parameters (each quad's base vertex, base instance, 200 + its draw's index; indirect first instances
   // 0 where the adapter has none: checked below).
   ['drawParams', 'the base vertex, base instance and draw index of direct, indexed and indirect draws in one pass', { topLeft: [10, 20, 200, 255], bottomLeft: [30, 40, 200, 255] }],
@@ -243,7 +246,8 @@ for (const [scenario, what, want] of [
   test(`passes: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which compiled the shaders.
     const page = await browser.newPage();
-    page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
+    const logs: string[] = [];
+    page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') { logs.push(m.text()); console.log(`page: ${m.text().slice(0, 2000)}`); } });
     await page.goto(`${base}/tests/browser/venus-driver.html`);
     await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
     const r = await page.evaluate((s) => (window as unknown as { venus: { runPass(spirv: object, s: string): Promise<Record<string, unknown>> } }).venus.runPass({
@@ -259,6 +263,7 @@ for (const [scenario, what, want] of [
       assert.deepEqual(pixels.topRight, [50, fi ? 60 : 0, 200, 255], `topRight: ${JSON.stringify(pixels)}`);
       assert.deepEqual(pixels.bottomRight, [70, fi ? 80 : 0, 200, 255], `bottomRight: ${JSON.stringify(pixels)}`);
     }
+    if (scenario === 'angleUniformsPulled') assert.ok(logs.some((l) => /refused: its pulled vertex bindings/.test(l)), `not refused: ${JSON.stringify(logs)}`);
     if (scenario === 'facesUnused' || scenario === 'facesSplit') assert.equal(r.draws, scenario === 'facesUnused' ? 1 : 2, 'the quad\'s draws');
     if (scenario === 'clearQuery') {
       const [clear, both, quad] = r.query as number[];
@@ -303,6 +308,8 @@ for (const [scenario, what] of [
   ['xfbByteCountInPass', 'a draw by a capture\'s byte count, in the same pass, captured'],
   ['xfbQuery', 'a transform feedback query of a capture past its buffer, in the pass'],
   ['xfbQueryOutside', 'a transform feedback query begun before the pass and ended after it, around two captures'],
+  // The review of VK4 T44 to T46 (finding 4).
+  ['xfbTimestamp', 'a timestamp right after a pass with a capture follows the capture'],
 ] as const) {
   test(`transform feedback: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which compiled the shaders.
@@ -318,6 +325,12 @@ for (const [scenario, what] of [
     assert.deepEqual(r.errors, [], 'WebGPU errors');
     assert.equal(r.differs, -1, `the capture differs from byte ${r.differs}: ${JSON.stringify(r.got)}, counter ${r.counter}`);
     assert.equal(r.warnings, 0, 'the worker warned');
+    if (scenario === 'xfbTimestamp') {
+      assert.ok(BigInt(r.stamp as string) > 0n, `the timestamp written: ${r.stamp}`);
+      // The pass's end write and a write of its own after the capture (the pass's alone before, which the worker's
+      // capture, run at the pass's end, follows).
+      if (r.timestampQuery) assert.equal(r.timestamps, 2, 'the timestamp a write of its own');
+    }
   });
 }
 
@@ -363,7 +376,7 @@ for (const [mask, what] of [
 
 // VK3 L4c-F (the static review's "other real defects"): transfers and pushes WebGPU has no direct form for.
 // Each misc scenario's compute shader (tests/venus/<name>.comp), push.comp where it isn't named.
-const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', threeSame: 'three-writes', oddRange: 'two-writes', inlineBlocks: 'inline', packedFeedback: 'feedback.frag', feedbackLayer: 'feedback.frag', depthLess: 'r5/depthless.frag', depthAndCompare: 'r5/depth-and-compare.frag', intGather: 'r5/int-gather.frag', cubeSized: 'r5/cube-sized.frag', cubeGather: 'r5/cube-gather.frag', depthEight: 'r5/depth-eight.frag', inlineLong: 'r6/inline-long', immutableFreed: 'sampled', sixteenBindings: 'r7/sixteen.frag', sixteenThenOne: 'r7/sixteen.frag', cubePlain: 'r5/cube-plain.frag', vertexCompares: 'r7/vs-compare.frag', fourSets: 'r7/four-sets.frag', bc1Blit: 'r7/sixteen.frag', readOnlyImages: 'g4/read-only', g4Views: 'g4/views', texturesFull: 'g4/textures-full', sizeOnly: 'g4/size-only', formatless: 'g5/formatless', declaredOther: 'g7/declared', arrayAsFlat: 'g4/views', texelUniforms: 'texel-uniforms', rgb9e5Words: 't23-rgb9e5', t32Reads: 't32/dst.frag', t32Loop: 't32/loop.frag', t32Ms: 't32/dst.frag', t34Mutable: 't34/mutable', t37Flat: 't37/flat-storage', t37ReadWritten: 't37/read-written', t37WordsPast: 't37/words-past', t37Mismatched: 't37/mismatched', t37UniformTail: 't37/uniform-tail', t37AtomicAlias: 't37/atomic-alias', t38Stores: 't38/stores', t40Shared: 't40/shared', t40Dynamic: 't40/dynamic', t41Regions: 't41/regions', t41Beside: 't41/beside', t43Wrapped: 't43/wrapped.frag', t43MappedCoverage: 't43/a2c-mapped.frag', t43MappedDual: 't43/dual-mapped.frag', t41BesidePast: 't41/beside-past', t41Full: 't41/full', t43Layered: 't43/layered.frag', t43PushLayers: 't43/points.frag', t44FanPast: 't44/fan-past.frag' } as const;
+const source = { rwImage: 't11-rw-view', rwImageWide: 't11-rw-wide', mutableViews: 'mutable-view', freedModule: 'depth-read', storageAliased: 'ssbo-copy', texelBuffer: 'texel-buffer', bindGroupsShared: 'spec-add', uniformBeside: 'ubo-ssbo', indirectBeside: 'ubo-ssbo', ycbcr: 'ycbcr', manyUniforms: 'many-ubo', texelStorage: 'texel-many', dynamicUniforms: 'dyn-ubo', writtenShared: 'spec-mode', immutableSampler: 'sampled', bigUniform: 'sampled', sharedSampler: 'sampled', immutableCopied: 'sampled', uniformWritten: 'ubo-ssbo', indirectWritten: 'ubo-ssbo', readInPlace: 'ubo-ssbo', addresses: 'address', addressesUniform: 'address-ubo', twoReads: 'two-reads', sameRange: 'two-writes', overlappingRanges: 'two-writes', threeSame: 'three-writes', oddRange: 'two-writes', inlineBlocks: 'inline', packedFeedback: 'feedback.frag', feedbackLayer: 'feedback.frag', depthLess: 'r5/depthless.frag', depthAndCompare: 'r5/depth-and-compare.frag', intGather: 'r5/int-gather.frag', cubeSized: 'r5/cube-sized.frag', cubeGather: 'r5/cube-gather.frag', depthEight: 'r5/depth-eight.frag', inlineLong: 'r6/inline-long', immutableFreed: 'sampled', sixteenBindings: 'r7/sixteen.frag', sixteenThenOne: 'r7/sixteen.frag', cubePlain: 'r5/cube-plain.frag', vertexCompares: 'r7/vs-compare.frag', fourSets: 'r7/four-sets.frag', bc1Blit: 'r7/sixteen.frag', readOnlyImages: 'g4/read-only', g4Views: 'g4/views', texturesFull: 'g4/textures-full', sizeOnly: 'g4/size-only', formatless: 'g5/formatless', declaredOther: 'g7/declared', arrayAsFlat: 'g4/views', texelUniforms: 'texel-uniforms', rgb9e5Words: 't23-rgb9e5', t32Reads: 't32/dst.frag', t32Loop: 't32/loop.frag', t32Ms: 't32/dst.frag', t34Mutable: 't34/mutable', t37Flat: 't37/flat-storage', t37ReadWritten: 't37/read-written', t37WordsPast: 't37/words-past', t37Mismatched: 't37/mismatched', t37UniformTail: 't37/uniform-tail', t37AtomicAlias: 't37/atomic-alias', t38Stores: 't38/stores', t40Shared: 't40/shared', t40Dynamic: 't40/dynamic', t41Regions: 't41/regions', t41Beside: 't41/beside', t43Wrapped: 't43/wrapped.frag', t43MappedCoverage: 't43/a2c-mapped.frag', t43MappedDual: 't43/dual-mapped.frag', t41BesidePast: 't41/beside-past', t41Full: 't41/full', t43Layered: 't43/layered.frag', t43PushLayers: 't43/points.frag', t44FanPast: 't44/fan-past.frag', t46SlotsPast: 't32/dst.frag', t46SlotsBetween: 't32/dst.frag' } as const;
 for (const [scenario, what] of [
   ['copy', 'buffer copies at offsets and sizes that aren\'t 4-aligned, from host-visible, device-local and GPU-written memory'],
   ['clear', 'a clear of a format WebGPU can\'t render to, and of every slice of a 3D image'],
@@ -523,6 +536,9 @@ for (const [scenario, what] of [
   ['t43PushLayers', 'a thousand draws writing gl_Layer, each with its push constants, in a layered pass of six layers'],
   // VK4 T44.
   ['t44FanPast', 'an indirect fan refused for a storage image past its binding\'s limit, then an indexed fan of the pass drawn through its own indices'],
+  // The review of VK4 T44 to T46 (findings 1 and 2).
+  ['t46SlotsPast', 'a timestamp after a render pass of 300 parts, the submit\'s first, within the device\'s 256 slots'],
+  ['t46SlotsBetween', 'timestamps around and in a render pass that begins at the device set\'s last slot, in order'],
 ] as const) {
   test(`misc: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which made target/vk/test.
@@ -568,6 +584,13 @@ for (const [scenario, what] of [
     }
     for (const [k, at] of Object.entries(checks)) assert.equal(at, -1, `${k}: the bytes differ from byte ${at} (${JSON.stringify(r.got)})`);
     if (scenario === 't37WordsPast' || scenario === 't44FanPast' || scenario === 't37AtomicAlias' || scenario === 't43MappedDual') assert.ok(logs.some((l) => /refused/.test(l)), `not refused: ${JSON.stringify(logs)}`);
+    if (scenario === 't46SlotsPast' || scenario === 't46SlotsBetween') {
+      const stamps = (r.stamps as string[]).map(BigInt);
+      assert.ok(stamps.every((x) => x > 0n), `timestamps written: ${stamps.filter((x) => x === 0n).length} of ${stamps.length} are 0`);
+      const back = stamps.findIndex((x, i) => i > 0 && x < stamps[i - 1]);
+      assert.equal(back, -1, `timestamps in order: ${stamps[back - 1]} then ${stamps[back]} at ${back}`);
+      t.diagnostic(`timestamps on the GPU: ${r.timestampQuery}, the last ${stamps.slice(-3).join(', ')}`);
+    }
     if (scenario === 't43PushLayers') assert.ok(!logs.some((l) => /overflow/.test(l)), `the push buffer overflowed: ${JSON.stringify(logs)}`);
     assert.equal(r.warnings, 0, 'the worker warned');
     // The fill's and the six pipelines' one: not one a dispatch (a set keeps groups for 4 layouts).

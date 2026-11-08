@@ -537,12 +537,14 @@ a guest only through Mesa 26.3's Venus on: 26.2's leaves it out). Two memory typ
   for an empty pass) into the device's timestamp set; inside one the
   end of the WebGPU pass's part it is in (each part of a Vulkan pass whose commands write timestamps ends with a write:
   `begin_pass`), so every timestamp of a part reads its end, later than the commands before it, as Vulkan allows. A
-  timestamp right after a render pass (no work between) reads that pass's end write, and one at the top of the pipe
-  right before a pass its beginning write (`ts_after`, `ts_before`): on Metal a compute pass's write ran beside the
+  timestamp right after a render pass (no work between) reads that pass's end write, unless the worker runs the pass's
+  own work after it (its captures at `endPass`, its shadows' write-backs: `ts_tail`; a write of its own then, after
+  them), and one at the top of the pipe right before a pass its beginning write (`ts_after`, `ts_before`): on Metal a compute pass's write ran beside the
   render pass before it (VK0's scene read 0.04 ms for a pass the GPU took 0.5 ms over); a pass that carries the
   driver's writes isn't timed by `?gpu=vkgputime` (WebGPU's pass takes one set of writes). The
-  slots are copied to their pools' buffers at the submit's end, before a copy of results, and when the set's 4,096 run
-  out (`timestamps_flush`). Chromium may quantize them (Dawn's `timestamp_quantization`, which
+  slots are copied to their pools' buffers at the submit's end, before a copy of results, and when the set's 256 run
+  out (`timestamps_flush`: free again whether or not a timestamp reads them, a pass's end and beginning slots taken
+  together, so a flush never resolves a slot before its write). Chromium may quantize them (Dawn's `timestamp_quantization`, which
   `timestampPeriod` 1 doesn't say; the tests' `--enable-unsafe-webgpu` gets them to the nanosecond). Without the feature they are the CPU's at the replay), copies
   what the GPU wrote to host-visible memory into staging buffers, and submits. Buffer copies WebGPU can't make (an
   offset or size not 4-aligned) go through a compute pass of the worker's: the source's words copied to a temporary
@@ -987,8 +989,9 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   group made of the program's group 3 entries and the pull's at each bind (`pullBind`, the program's dynamic offsets
   kept). Usage scopes see a
   vertex read as before, so shadows serve it. Transform feedback reads the same ranges. Refused still: a program whose
-  group 3 bindings reach 976, and more pulled bindings than the vertex stage has storage buffers
-  left. A range past `maxStorageBufferBindingSize` is cut there. **Divisors** (VK4 T44, `VK_KHR_vertex_attribute_divisor`
+  group 3 bindings reach 976, more pulled bindings than the vertex stage has storage buffers
+  left, and a vertex stage whose uniform buffers leave no room for the pull's one or two (the bindings' places, the
+  divisors' first instance: a layout at `maxPerStageDescriptorUniformBuffers`' edge; the review of T44–T46). A range past `maxStorageBufferBindingSize` is cut there. **Divisors** (VK4 T44, `VK_KHR_vertex_attribute_divisor`
   and the EXT, `vertexAttributeInstanceRateZeroDivisor`, `maxVertexAttribDivisor` 2³²−1): an instance binding whose
   divisor isn't 1 is pulled, its record Vulkan's `first + (iid - first) / divisor` (the first instance's for 0;
   `recordIndex`), the first instance read from a place of the push buffer as draw parameters are (`WGSL_DRAW_PARAMS`,

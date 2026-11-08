@@ -2022,11 +2022,15 @@ wg_pipeline_pull(struct wg_program *p, const struct wg_pipeline_key *k)
    for (struct wg_pull *u = p->pulls; u; u = u->next)
       if (u->slots == mask && u->first_instance == first_instance)
          return u;
-   /* The vertex stage's storage buffers: its own and these, on WebGPU's limit. */
-   uint32_t storage = util_bitcount(mask);
-   for (uint32_t k = 0; k < p->resource_count; k++)
+   /* The vertex stage's storage buffers: its own and these, on WebGPU's limit; and its uniform buffers, its own and the
+    * pull's (the bindings' places, the divisors' first instance: the review of VK4 T44 to T46's finding 3). */
+   uint32_t storage = util_bitcount(mask), uniform = 1 + first_instance;
+   for (uint32_t k = 0; k < p->resource_count; k++) {
       storage += (p->vis[k] & 1) && (p->resources[k].kind == WGSL_STORAGE || p->resources[k].kind == WGSL_STORAGE_READ);
-   if (storage > MIN2(wg_limits.max_storage_buffers, wg_limits.max_storage_buffers_in_vertex_stage))
+      uniform += (p->vis[k] & 1) && p->resources[k].kind == WGSL_UNIFORM;
+   }
+   if (storage > MIN2(wg_limits.max_storage_buffers, wg_limits.max_storage_buffers_in_vertex_stage) ||
+       uniform > wg_limits.max_uniform_buffers)
       return NULL;
    /* The first group without resources: past the program's, or one it leaves empty below its push buffer's group 3. */
    uint32_t used = 0;

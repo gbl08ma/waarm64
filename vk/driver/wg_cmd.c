@@ -2124,7 +2124,7 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
    static bool unpulled;
    if (!wg_pipeline_pull_ok(p, &k)) {
       if (!unpulled)
-         fprintf(stderr, "wg: a draw refused: its pulled vertex bindings don't fit (no bind group left, or past the vertex stage's storage buffers)\n");
+         fprintf(stderr, "wg: a draw refused: its pulled vertex bindings don't fit (no bind group left, or past the vertex stage's storage or uniform buffers)\n");
       unpulled = true;
       return false;
    }
@@ -3405,8 +3405,11 @@ struct replay {
    /* A timestamp next to a render pass, with no work between, reads the pass's own write (VK4 T46: a compute pass's
     * on Metal ran beside the render pass before it, 0.04 ms for a 0.5 ms pass): `ts_after`, the end slot of the
     * render pass just ended (UINT32_MAX: work since, or none); `ts_before`, timestamps waiting for the next pass's
-    * beginning write. */
-   uint32_t ts_after, ts_before;
+    * beginning write; `ts_flushes`, the set's flushes so far (a slot taken before one is another's after it); `ts_tail`,
+    * the render pass has work the worker runs after its end write (its captures, `endPass`; its shadows' write-backs,
+    * `scope_end`), which a timestamp after it must follow (the review of T44 to T46's finding 4). */
+   uint32_t ts_after, ts_before, ts_flushes;
+   bool ts_tail;
    uint32_t tickets; /* the render pass's draws through indices of their own so far (OP_PROVOKE: `prepasses`) */
    /* Multiview: the pass's mask, how many of its views have been replayed, this one, and where the pass starts again. */
    uint32_t view_mask, view_order, view, view_count;
@@ -3596,35 +3599,49 @@ resolve_queries(struct replay *r)
 }
 
 /* The timestamps written so far copied from the device's set into their pools' buffers (outside a pass), its slots
- * free again; those still waiting for a slot are kept. */
+ * free again; those still waiting for a slot are kept. The slots are free again even when no timestamp reads them (a
+ * render pass's parts each take one where a timestamp follows the pass: the review of T44 to T46's finding 1). */
 static void
 timestamps_flush(struct replay *r)
 {
    struct wg_device *dev = r->dev;
    const uint32_t n = util_dynarray_num_elements(&r->timestamps, struct timestamp_write);
-   if (!n || !r->ts_next)
-      return;
-   const uint32_t scratch = query_scratch(dev);
-   gpu_resolve_queries(timestamp_set(dev), 0, r->ts_next, scratch, 0);
    struct timestamp_write *t = r->timestamps.data;
-   uint32_t kept = 0;
-   for (uint32_t i = 0; i < n; i++) {
-      if (t[i].slot >= UINT32_MAX - 1)
-         t[kept++] = t[i];
-      else
-         gpu_copy_bb(scratch, t[i].slot * 8.0, t[i].pool->buf, t[i].index * 8.0, 8);
+   bool resolve = false;
+   for (uint32_t i = 0; i < n; i++)
+      resolve |= t[i].slot < UINT32_MAX - 1;
+   if (resolve && r->ts_next) {
+      const uint32_t scratch = query_scratch(dev);
+      gpu_resolve_queries(timestamp_set(dev), 0, r->ts_next, scratch, 0);
+      uint32_t kept = 0;
+      for (uint32_t i = 0; i < n; i++) {
+         if (t[i].slot >= UINT32_MAX - 1)
+            t[kept++] = t[i];
+         else
+            gpu_copy_bb(scratch, t[i].slot * 8.0, t[i].pool->buf, t[i].index * 8.0, 8);
+      }
+      r->timestamps.size = kept * sizeof(struct timestamp_write);
    }
-   r->timestamps.size = kept * sizeof(struct timestamp_write);
    r->ts_next = 0;
+   r->ts_flushes++;
 }
 
-/* A timestamp slot of the device's set taken (outside a pass: the set's slots copied out first if none are left). */
+/* `count` consecutive timestamp slots of the device's set taken, the first returned (outside a pass: the set's slots
+ * copied out first if fewer are left, so that no slot taken earlier is resolved before it is written: finding 2). */
+static uint32_t
+timestamp_slots(struct replay *r, uint32_t count)
+{
+   if (r->ts_next + count > WG_TIMESTAMP_SET)
+      timestamps_flush(r);
+   const uint32_t slot = r->ts_next;
+   r->ts_next += count;
+   return slot;
+}
+
 static uint32_t
 timestamp_slot(struct replay *r)
 {
-   if (r->ts_next >= WG_TIMESTAMP_SET)
-      timestamps_flush(r);
-   return r->ts_next++;
+   return timestamp_slots(r, 1);
 }
 
 static void
@@ -4884,14 +4901,16 @@ begin_pass(struct replay *r, uint32_t keep)
    wg_json_printf(&j, "{");
    if (r->qpass)
       wg_json_printf(&j, "\"occlusionQuerySet\":%u,", occlusion_set(r->dev));
-   /* Each part of a pass that writes timestamps ends with one (VK4 T46): its timestamps' value. */
+   /* Each part of a pass that writes timestamps ends with one (VK4 T46): its timestamps' value. Its slots taken
+    * together (a flush between them would resolve the end's before the pass wrote it). */
+   const bool begins = r->ts_before && keep != 2;
    if (r->ts_pass || r->ts_before) {
-      r->ts_part = timestamp_slot(r);
+      r->ts_part = timestamp_slots(r, begins ? 2 : 1);
       wg_json_printf(&j, "\"timestampSet\":%u,\"timestampEnd\":%u,", timestamp_set(r->dev), r->ts_part);
    }
    /* The timestamps just before the pass read its beginning. */
-   if (r->ts_before && keep != 2) {
-      const uint32_t slot = timestamp_slot(r);
+   if (begins) {
+      const uint32_t slot = r->ts_part + 1;
       wg_json_printf(&j, "\"timestampBegin\":%u,", slot);
       util_dynarray_foreach (&r->timestamps, struct timestamp_write, t)
          if (t->slot == UINT32_MAX - 1)
@@ -5233,6 +5252,7 @@ scope_end(struct replay *r, uint32_t point)
       if (s->written) {
          gpu_copy_bb(s->to, s->place, s->buffer, s->at, s->size);
          wg_emul[WG_EMUL_SHADOW_BACK_BYTES] += s->size;
+         r->ts_tail = true;
       }
    util_dynarray_clear(&r->shadows);
    r->no_readback = true;
@@ -5788,6 +5808,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          const bool reads = pass_reads_dst(p, end) || pass_vs_stores(p, end, true) ||
                             pass_byte_count_cut(p, end, true, &(bool){ false });
          r->xfb_counted = false;
+         r->ts_tail = false;
          if (r->qpass || r->ts_pass || r->ts_before || r->atts.count || r->cuts || reads)
             begin_pass(r, r->atts.count || r->cuts || reads ? 1 : 0);
          else
@@ -5812,10 +5833,11 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          break;
       }
       case OP_PASS_END: {
-         /* What a timestamp right after it reads (`ts_after`). */
-         const uint32_t last = r->pass == RENDER ? r->ts_part : UINT32_MAX;
+         /* What a timestamp right after it reads (`ts_after`): none where the pass's own work runs after its end write,
+          * or where the set's slots were flushed since. */
+         const uint32_t last = r->pass == RENDER ? r->ts_part : UINT32_MAX, flushes = r->ts_flushes;
          end_pass(r);
-         r->ts_after = last;
+         r->ts_after = r->ts_tail || r->ts_flushes != flushes ? UINT32_MAX : last;
          /* The next view replays the pass, its commands holding all they need since `forget`. */
          if (r->view_mask) {
             if (++r->view_order < r->view_count) {
@@ -5962,6 +5984,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
             readback(r, x->readback[i].mem, x->readback[i].offset, x->readback[i].size);
          gpu_xfb((const char *)(x + 1), strlen((const char *)(x + 1)));
          r->xfb_counted |= x->counted;
+         r->ts_tail = true;
          break;
       }
       case OP_PROVOKE: {

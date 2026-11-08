@@ -929,7 +929,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     vertex stage's storage buffers left; a pulled range past `maxStorageBufferBindingSize` is cut there (several
     bindings of one range would take it, a storage buffer each; the adapters we run offer 1 GiB or more, the device
     asks for the adapter's, so only a 128 MiB adapter and a vertex range past it would); a four-group program whose
-    group 3 bindings reach 976 has no room to pull in it (refused). A pull with a divisor makes a bind group per change
+    group 3 bindings reach 976 has no room to pull in it (refused); a vertex stage whose uniform buffers leave no room
+    for the pull's one or two (its bindings' places, a divisor's first instance: at `maxPerStageDescriptorUniformBuffers`'
+    edge, e.g. ANGLE's 13 with a divisor) is refused (the review of T44–T46's finding 3: WebGPU refused its pipeline
+    before); the pull's parameters as read-only storage where the stage has storage room left would draw it (S: the
+    BGL's type and `pulledCode`'s declaration; nothing we run meets it). A pull with a divisor makes a bind group per change
     of the first instance or the indirect record (unmeasured: vkd3d's instanced tests and dEQP-VK only). Formats WebGPU's vertex buffers lack are pulled since VK4 T31. A direct draw that reads past a vertex buffer's end
     (Vulkan's robust buffer access reads in range or zeros; WebGPU refused it) pulls that binding, zeros past it, since
     VK4 T37; an indirect one isn't checked by WebGPU (its reads clamped in range). The cost of pulling isn't measured:
@@ -997,7 +1001,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     (Dawn's `timestamp_quantization`, off under `--enable-unsafe-webgpu`), and `VK_KHR_calibrated_timestamps` (3
     `timestamp.calibrated` cases) would need the GPU's time now, which WebGPU can't give synchronously. Two occlusion
     queries active at once, which the backlog had as Vulkan's across pools, aren't valid Vulkan
-    (VUID-vkCmdBeginQuery-queryPool-01922: one active query of a type in a command buffer): reported as passing.
+    (VUID-vkCmdBeginQuery-queryPool-01922: one active query of a type in a command buffer): reported as passing. A
+    top-of-pipe timestamp right before a render pass reads the pass's beginning write, which follows the worker's work
+    for that pass before it begins (`prepasses`: index conversions, indirect arguments' copies; `scope_pass`' copies):
+    a GPU timer of such a pass under-reports it by that work (the mirror of the review of T44–T46's finding 4, fixed
+    after a pass by `ts_tail`; XS: a flag where `prepasses` encodes work, the timestamp a write of its own then).
   - **Rendering**: a 2D view of a 3D image sampled or stored (`VK_EXT_image_2d_view_of_3d`, VK4 T38) is the level's 3D
     view and a variant keyed by the slice: a pipeline a slice bound (a program walking a volume's slices makes one each;
     a slice in the group's parameter table, as texel buffers' are, would make one for all). Stencil state per face is a draw split by face (VK3 L6a), so the order between one draw's front
