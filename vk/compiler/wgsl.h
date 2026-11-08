@@ -29,8 +29,31 @@
 #define WGSL_MAX_PAIRS 128
 /* The push constants' uniform buffer's binding in group 3 (WebGPU's bindings stay under 1000). */
 #define WGSL_PUSH_BINDING 998
-/* The device's address buffer's binding in group 3 (VK4 T7): physical pointers are words of it. */
+/* The device's address buffer's binding in group 3 (VK4 T7): physical pointers are words of it. Past one storage
+ * binding's reach (VK4 T41) the address's high word is a region of it, each its own GPUBuffer and binding: region 0 at
+ * WGSL_ADDRESS_BINDING, region r > 0 at WGSL_ADDRESS_MORE + r - 1 (wgsl_layout.address_regions of them). */
 #define WGSL_ADDRESS_BINDING 996
+#define WGSL_ADDRESS_MORE 990
+#define WGSL_ADDRESS_REGIONS 4
+/* The driver's binding numbers in a group start here: a set's slot stays under it. */
+#define WGSL_DRIVER_BINDING 990
+static inline uint32_t
+wgsl_address_binding(unsigned region)
+{
+   return region ? WGSL_ADDRESS_MORE + region - 1 : WGSL_ADDRESS_BINDING;
+}
+/* The region of the address buffer a resource is the binding of, or -1. */
+static inline int
+wgsl_address_region(unsigned group, unsigned binding)
+{
+   if (group != WGSL_MAX_GROUPS - 1)
+      return -1;
+   if (binding == WGSL_ADDRESS_BINDING)
+      return 0;
+   return binding >= WGSL_ADDRESS_MORE && binding < WGSL_ADDRESS_MORE + WGSL_ADDRESS_REGIONS - 1
+             ? (int)(binding - WGSL_ADDRESS_MORE + 1)
+             : -1;
+}
 /* A group's parameter table (VK4 T21): the driver's two vec4s for each texel buffer and storage image as words of the
  * group, a uniform buffer of vec4s where the resource at binding b has its parameters at b and b + 1 (b is a slot's,
  * even). One uniform binding a group, however many of them: one each passed WebGPU's 12 (dEQP-VK's sets4). A slot's
@@ -67,6 +90,8 @@ struct wgsl_layout {
    /* Uniform buffers read as read-only storage buffers (VK3 L7.4: past WebGPU's uniform buffers a stage, the driver's
     * `fold_uniforms`): by group, a bit for each WGSL slot (binding / 2) there. */
    uint64_t ubo_storage[WGSL_MAX_GROUPS][WGSL_UBO_STORAGE_WORDS];
+   /* The address buffer's regions a global access may reach (WGSL_ADDRESS_BINDING; 0 is 1). */
+   uint32_t address_regions;
 };
 
 enum wgsl_resource_kind {

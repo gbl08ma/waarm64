@@ -224,8 +224,10 @@ wg_caps_features(struct vk_features *f)
       .inlineUniformBlock = true,
       /* A pass per view (wg_cmd.c `begin_rendering`), no geometry or tessellation to multiply. */
       .multiview = true,
-      /* Bytes of one GPUBuffer (wgsl_nir.c `lower_global`). */
+      /* Bytes of the address buffer's regions (wgsl_nir.c `lower_global`); a memory's address is captured and placed
+       * there again (VK4 T41: wg_device.c `address_place`). */
       .bufferDeviceAddress = true,
+      .bufferDeviceAddressCaptureReplay = true,
       /* Its list has the 16-bit normalized formats, which only tier1 has at all. */
       .shaderStorageImageExtendedFormats = HAS(TIER1_STORAGE) && HAS(TIER1),
       /* A storage image without a format is printed for the bound view's (GD G5: a variant keyed by it, wgsl_print.c
@@ -673,7 +675,7 @@ bool
 wg_shareable(const struct wg_program *p, uint32_t k, int t)
 {
    const struct wgsl_resource *r = &p->resources[k];
-   return r->kind == WGSL_STORAGE_READ && !r->image_words && p->dynamic[k] == -1 && r->binding < WGSL_TABLE_BINDING &&
+   return r->kind == WGSL_STORAGE_READ && !r->image_words && p->dynamic[k] == -1 && r->binding < WGSL_DRIVER_BINDING &&
           (t == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER || t == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER ||
            t == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || t == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK);
 }
@@ -788,10 +790,10 @@ wg_bindings_fit(const struct wg_program *p, struct vk_descriptor_set_layout *con
       /* Binding numbers past WebGPU's, or a set's slot on the driver's bindings (the parameter table's and up; sets 3
        * and up share group 3: the binding review's finding 8; out of reach within the advertised limits). */
       const bool driver = p->dynamic[k] == WG_DYNAMIC_PUSH || (r->binding == WGSL_TABLE_BINDING && r->kind == WGSL_UNIFORM) ||
-                          (r->group == WGSL_MAX_GROUPS - 1 && r->binding == WGSL_ADDRESS_BINDING);
-      if (r->binding >= L->max_bindings_per_bind_group || (r->binding >= WGSL_TABLE_BINDING && !driver)) {
+                          wgsl_address_region(r->group, r->binding) >= 0;
+      if (r->binding >= L->max_bindings_per_bind_group || (r->binding >= WGSL_DRIVER_BINDING && !driver)) {
          snprintf(error, error_size, "binding %u of bind group %u, past WebGPU's %u or on the driver's",
-                  r->binding, r->group, MIN2(L->max_bindings_per_bind_group, WGSL_TABLE_BINDING));
+                  r->binding, r->group, MIN2(L->max_bindings_per_bind_group, WGSL_DRIVER_BINDING));
          return false;
       }
    }

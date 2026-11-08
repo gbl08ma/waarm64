@@ -793,6 +793,57 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` oth
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 T41: device addresses at a program's scale — placed at a buffer's bind, regions past a binding, capture and replay; 2,196 cases join the list
+
+2026-11-08, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t41/`: `swiftshader-before.json` and `swiftshader-after.json` every case of
+`binding_model.buffer_device_address` (4,718), `m4.json` the 2,196 new ones on the M4, `regions3-sample-swiftshader.json`
+and `regions1-sample-swiftshader.json` 24 replay cases at three regions and at one, `gi-editor-swiftshader.json` (and its
+last screenshot) Godot's GI demo's editor (`bench/vulkan/godot.ts`, 300 s, as GD G8's).
+
+**What was there.** Before, every case of the group that ran passed (2,524; 1,179 of them in the list): `shaderInt64`
+(VK4 T29) had already made `OpConvertUToPtr`'s 504 and the other conversions pass. The rest were not supported: the
+1,176 replays and 10 `capture_replay_stress` (no `bufferDeviceAddressCaptureReplay`) and `set15`/`set31` (1,344: their
+set numbers past `maxBoundDescriptorSets`' 8).
+
+**What was done** (vk/README.md "Device addresses"):
+- **Placed at its GPUBuffer's making.** A memory allocated for addresses goes into the address buffer at its first
+  buffer's bind (or a linear image's use), not at its allocation: memory only images use takes no room. It can't move
+  there later (commands name a memory's GPUBuffer), so a memory without room has buffers whose address is 0.
+- **Regions.** The address buffer is up to four GPUBuffers, an address's high word picking one, each at a binding of
+  group 3 (996, then 990 up: the driver's bindings now start at 990), each grown in place to `maxStorageBufferBindingSize`.
+  An access through a pointer is an `if` tree on the high word where there are more than one. **At three regions
+  (SwiftShader's 1 GiB bindings against the 3 GiB of heaps) 9 of 24 replay cases crashed on dEQP's 30 s watchdog**, the
+  pipelines' compile 122 s for 25 against 5.2 s for 28 at one region (the same cases, all passing): SwiftShader's
+  compile grows with the loads, and the tree triples them. So the regions reach 1 GiB together: one on SwiftShader, the
+  M4 and NVIDIA (whose bindings reach that), four of 128 MiB on an adapter of WebGPU's least.
+- **Capture and replay**: a memory allocated with the capture-replay flag is placed at once, at its opaque capture
+  address when it has one (the address itself; a buffer's opaque address is 0).
+
+| the 4,718 cases | Pass | Fail | NotSupported |
+|---|---|---|---|
+| SwiftShader, before | 2,524 | 0 | 2,194 |
+| SwiftShader, after | 3,374 | 0 | 1,344 |
+| M4, the 2,196 new | 2,196 | 0 | |
+
+The 2,196 that pass on both and weren't in the list join `tests/deqp/vk.txt` (66,745 → 68,941: 840 replays, the 10
+stress cases and 1,346 that passed before, not sampled into the list). The driver's test (`tests/venus-driver.test.ts`
+"pointers into three regions …": the page tells the driver a binding reaches 1 MiB, so four regions of 1 MiB; a 2 MiB
+image memory made for addresses, 600 KiB memories in regions 0 and 1, two more for capture and replay in 2 and 3, freed
+and made again in the other order, a dispatch through pointers of three regions) failed before (the second memory refused) and
+passes; a planted bug in the tree (one region) and in the replay's place (the next free one) each failed it.
+
+**Godot's GI demo's editor on SwiftShader** (GD G8's run: black, Dawn's `CreateBuffer` refused growing the buffer to
+512 MiB): the editor draws (`gi-editor-swiftshader-300s.png`), no WebGPU error, no refused memory. The address buffer
+still grew to 512 MiB (128, 256, 512 MiB over the run), so most of what Godot's VMA placed there is its buffers' blocks
+(or blocks shared with them), and SwiftShader took the grow this time: the refusal can come back at a larger scene.
+
+**Left** (docs/backlog.md "Device addresses' leftovers"): address memory past 1 GiB where a binding reaches 1 GiB
+(pipelines made for the regions in use, made again when another is first used, would reach the heaps without the
+tree's cost); a memory whose GPUBuffer was made before a buffer of it asked for an address; replays not kept apart from
+other allocations; `set15`/`set31` (8 descriptor sets); a vec4 view for 16-aligned loads and a descriptor beside the
+pointers' binding (the review's W2) not done.
+
 ## VK4 T40: bindings past WebGPU's limits — words of one memory share a binding; 744 cases join the list
 
 2026-11-08, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,

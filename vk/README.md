@@ -839,21 +839,35 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   per view, only for such stages. A query is one a view, consecutive, as Vulkan allows (`q->first + view_order`). An input
   attachment binds its view's layer, 2D as declared, in a group per view. Eight views. Multisampled multiview passes
   go by "Multisampled arrays"; dEQP-VK's 48 ask for `r32g32b32a32_sfloat`, which WebGPU doesn't multisample.
-- **Device addresses** (VK4 T7; `address_place` in wg_device.c, `lower_global` in wgsl_nir.c): WGSL has no pointers, and a
-  stage could reach more memories than WebGPU binds, so memory allocated with `VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT` is
-  all in one GPUBuffer of the device's (`util_vma_heap`, each memory 256-aligned with 64 KiB past it for widened uniform
-  blocks; `wg_device_memory.gpu_at`, and `wg_buffer.offset` is GPU-relative while `mem_offset` is the CPU's), and an address
-  is a byte of it, 0 never. It starts at 64 MiB and doubles in place (`gpu_grow`: a new buffer under the same id, in the
-  queue's order, so recorded commands stay right and only bind groups are made again, `address_gen`), up to what one
-  storage binding reaches (`maxStorageBufferBindingSize`, under 4 GiB): past that an allocation with the flag fails with
-  `VK_ERROR_OUT_OF_DEVICE_MEMORY`, whatever the heap says. SPIR-V's pointers are two 32-bit words
-  (`nir_address_format_2x32bit_global`: no 64-bit integers, so they keep their 8 bytes in memory), and a global access is
-  a storage buffer's at the low word, at `@group(3) @binding(996)`, so 16-bit accesses and atomics work as they do. What
-  a shader writes through pointers is read back from every host-visible memory with an address. Usage scopes see that
-  binding as the whole buffer: other reads of address memory go to shadows when the pointers write, and a writable
-  descriptor of address memory goes to a shadow copied back at the scope's end, which WebGPU's aliasing rule asks for
-  (bytes reached both ways in one scope don't see each other). A pointer converted to and from a 64-bit integer
-  (`OpConvertUToPtr`, since `shaderInt64`: VK4 T29) is its two words packed; no capture and replay.
+- **Device addresses** (VK4 T7, T41; `address_place` in wg_device.c, `lower_global` in wgsl_nir.c): WGSL has no pointers,
+  and a stage could reach more memories than WebGPU binds, so memory allocated with `VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT`
+  is in the device's address buffer (`util_vma_heap`, each memory 256-aligned with 64 KiB past it for widened uniform
+  blocks; `wg_device_memory.gpu_at`, and `wg_buffer.offset` is GPU-relative while `mem_offset` is the CPU's), and an
+  address is a byte of it, 0 never. A memory is placed there when its GPUBuffer is made (`wg_memory_buffer`: its first
+  buffer's bind, or a linear image's use), so memory only images use takes no room (VMA and DXVK give every allocation
+  the flag; Godot's GI demo's editor grew the buffer to 512 MiB, mostly images', which SwiftShader refused: GD G8). It
+  can't move there later, as commands name its GPUBuffer and offsets: a memory with no room left, or past a region, has
+  buffers whose address is 0 (said once), and is had all the same. The address buffer is **regions**, an address's high
+  word (`wg_address_regions`: as many as reach 1 GiB together at one storage binding's reach, at most 4: one on the M4,
+  NVIDIA and SwiftShader, four of 128 MiB on an adapter of WebGPU's least; at three regions SwiftShader's compiles of
+  dEQP-VK's deepest pointer stages ran past its 30 s watchdog), each a GPUBuffer at a binding of group 3 (region 0 at 996, then 990 up:
+  wgsl.h `wgsl_address_binding`, a set's slots under 990) that starts at 64 KiB and grows in place (`gpu_grow`: a new
+  buffer under the same id, in the queue's order, so recorded commands stay right and only bind groups are made again,
+  `address_gen`), doubling from 64 MiB, up to `maxStorageBufferBindingSize`; the regions' places are one heap, each
+  region's end to the next's start held. SPIR-V's pointers are two 32-bit words (`nir_address_format_2x32bit_global`: no
+  64-bit integers, so they keep their 8 bytes in memory), and a global access is a storage buffer's at the low word, of
+  the region's binding: with more than one region an `if` tree on the high word, the last taking what's past them (the
+  stage's hash keys the count). So 16-bit accesses and atomics work as they do. What a shader writes through pointers is
+  read back from every host-visible memory of that region. Usage scopes see each region's binding as its whole buffer:
+  other reads of address memory go to shadows when the pointers write, and a writable descriptor of address memory goes
+  to a shadow copied back at the scope's end, which WebGPU's aliasing rule asks for (bytes reached both ways in one
+  scope don't see each other). A pointer converted to and from a 64-bit integer (`OpConvertUToPtr`, since `shaderInt64`:
+  VK4 T29) is its two words packed. **Capture and replay** (`bufferDeviceAddressCaptureReplay`): a memory allocated with
+  `VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT` is placed at its allocation, at its
+  `VkMemoryOpaqueCaptureAddressAllocateInfo` address if it has one (`VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS` if that's
+  taken), its address the opaque value; a buffer's is 0, its address being its memory's and its offset. Replays aren't
+  kept apart from other allocations (that would place them at the top of a region, grown whole), so a replay whose other
+  allocations come in another order than the capture's can find its places taken.
 - **Views in another format** (VK4 T4): WebGPU's views differ only in sRGB-ness, and Vulkan's mutable images take any
   format of their class. A view it refuses is of a texture of that format (`image_alias`, at the first such view, the
   image's size and levels; a plane's too; and a storage view of an sRGB image's linear twin, sRGB having no storage).

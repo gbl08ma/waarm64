@@ -67,6 +67,8 @@ wg_hash_state(struct vk_physical_device *pdev, const struct vk_graphics_pipeline
     * them); render pipelines take the rest at draw time. */
    memset(out, 0, sizeof(blake3_hash));
    out[0] = (stages & (VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT)) && sample_shading(state);
+   /* The address buffer's regions a pointer's access picks from (the adapter's storage binding size). */
+   out[1] = (uint8_t)wg_address_regions();
 }
 
 /* Programs. */
@@ -1062,7 +1064,7 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
          r->size = p->push_ubo_size;
          continue;
       }
-      if ((r->group == WGSL_MAX_GROUPS - 1 && r->binding == WGSL_ADDRESS_BINDING) || r->binding == WGSL_TABLE_BINDING)
+      if (wgsl_address_region(r->group, r->binding) >= 0 || r->binding == WGSL_TABLE_BINDING)
          continue;
       /* The set whose slots hold the binding: the last of its group starting at or before it. */
       const uint32_t at = r->binding / 2;
@@ -1457,6 +1459,7 @@ layout_of(struct wgsl_layout *out, struct vk_descriptor_set_layout *const *layou
                                                .planes = l->planes };
    }
    fold_uniforms(out, layouts);
+   out->address_regions = wg_address_regions();
 }
 
 /* Whether a layout's dynamic uniform buffers take all of WebGPU's, so that the push buffer, a dynamic binding of its own

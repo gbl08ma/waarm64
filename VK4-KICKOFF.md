@@ -48,7 +48,7 @@ T2–T14; the rest of the order is judgement, said with each.
 
 ## The tasks
 
-### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T34, T36–T40 (2026-10-29 to 2026-11-08); T35 parked
+### Done: tiers 1, 2 and 2b, tier 3 but T15, T21–T34, T36–T41 (2026-10-29 to 2026-11-08); T35 parked
 
 Each row's outcome in full is its section of bench/vulkan/REPORT.md ("VK4 T<n>") and its commit; what each left is in
 docs/backlog.md "The Vulkan driver's gaps" (the entry named) and, where it is a defect or drops work, in the tasks
@@ -104,6 +104,7 @@ R1–R4 and then of R5–R7, had its findings fixed or moved to the backlog the 
 | T38. Formats and features a line or a fetch away | depth formats report comparison; storage texel buffers of 1- and 2-byte texels (an atomic and-or on the word); 8-bit sRGB and packed 16-bit storage images by words; A8_UNORM an `r8unorm` texture (alpha in red: a swizzle, clears, `wg_ar`), not blended or blitted; the 10-bit SNORM orders in `rgba16float` (rendered and filtered everywhere, not tier1's `rgba16snorm`), the most negative code kept by a marker; `VK_EXT_image_2d_view_of_3d` by a slice key on the level's 3D view; non-seamless cubes compared from fetches (360 shadow cases a host); of 16,159 cases 6,951 pass on SwiftShader and 7,338 on the M4 (2,092 before), 6,443 join the list (→ 65,547); R32 texel atomics were already there | "Colour formats aren't compared", "maintenance5's and 6's leftovers", "Packed formats' leftovers", "Rendering", "A render pass's JSON garbled" |
 | T39. Multisampling's gaps | SwiftShader's WebGPU resolves into an `rgba8unorm`/`bgra8unorm` view of a texture of 6+ layers short (the last 2 · width − 4 texels unwritten; Metal right): such resolves go through a texture of the worker's and a copy (`shortResolve`), which was every layered multisampled clear of the RGBA8 family and `diff_image_size`; multisampled copies between packed layouts, `rgb10a2` and plain formats carry bits; 455 cases join the list (→ 66,001), all passing on the M4. Left: the sRGB twins' 6 (SwiftShader's again), `R32G32(B32A32)_SFLOAT` at 4 samples (decided left: r32float channels the shape), `sampler2DMSArray` whole; sampled-only sample counts were done already | "Views in another format's leftovers", "Packed formats' leftovers", "Multisampled arrays' leftovers", "Sample counts Vulkan wants but WebGPU lacks" |
 | T40. Bindings past WebGPU's limits | the read-only words of one memory's texel buffers and folded uniform buffers read through one binding of it in a draw's variant, each one's place in its group's parameter table (a program that fits only so has no layouts of its own; a variant that doesn't fit refuses its draws); a storing vertex stage's pre-pass of one binding and a capture of two, their parameters in their inputs, a capture of four groups in a copy of group 3 (vkd3d's test_vertex_id 50 → 75 checks passing); dynamic buffers past WebGPU's (with the push buffer's) at their offsets, a bind group each; 14 uniform buffers a stage where 11 storage buffers allow (13 on SwiftShader and the M4). All 256 failures of sets4, sets8 and descriptor_copy pass on both; 744 cases join the list (→ 66,745). Left: written texel buffers a binding each, an attachment read's and pulled vertices' four groups (T44's), r32uint uniform texel buffers and one-binding inline blocks not needed | "Texel buffers", "Bindings past WebGPU's", "What R7's limits leave" |
+| T41. Device addresses at a program's scale | a memory for addresses placed at its first buffer's bind (images' memory left out); the address buffer regions, an address's high word, a GPUBuffer and binding each, an `if` tree on the high word, as many as reach 1 GiB (one on SwiftShader, the M4, NVIDIA: at three, SwiftShader's compiles of depth3 stages ran past dEQP's watchdog, 122 s of pipelines against 5.2 s); capture and replay (a memory at its opaque address); `OpConvertUToPtr` already passed (T29). Of `buffer_device_address`'s 4,718, 3,374 pass on SwiftShader (2,524 before), 0 fail; the 2,196 new pass on the M4 and join the list (→ 68,941); Godot's GI editor draws on SwiftShader (the buffer at 512 MiB, taken). Left: memory past 1 GiB where a binding reaches it, `set15`/`set31` (8 sets), replays not kept apart, the vec4 view and W2 | "Device addresses' leftovers", "Godot on Venus, GD's leftovers" |
 ### Tier 3: performance on real workloads
 
 - **T15. Venus's submits ~2 ms later on NVIDIA** (M, needs the user's runs): a bundle carrying the page at several
@@ -146,14 +147,6 @@ decisions already leave (protected memory to sparse, pipeline statistics). Waiti
 maintenance8's list (a guest rebuild once Arch has Mesa 26.3), `VK_KHR_unified_image_layouts`,
 `VK_EXT_primitive_restart_index`'s cases.
 
-- **T41. Device addresses at a program's scale** (L; DXVK puts every allocation there, Godot's VMA grew the buffer to
-  512 MiB, which SwiftShader refused): a memory placed in the address buffer at its first bind of a buffer that asks
-  (images' memory left out), address memory past one storage binding (several bindings, picked by the address's high
-  bits), `OpConvertUToPtr` now that `shaderInt64` is offered (504 of `buffer_device_address`), capture and replay
-  (addresses a memory's opaque capture value fixes), loads NIR knows are 16-aligned through a vec4 view
-  (SwiftShader's 40 s compile), a descriptor beside the pointers' binding seeing its bytes in a scope (the review's
-  W2). *Done:* Godot's GI demo's editor on SwiftShader, the bda groups run, a DXVK-shaped allocation test. *Start:*
-  backlog "Device addresses' leftovers", "Godot on Venus, GD's leftovers" (the address buffer).
 - **T42. Shaders' and samplers' wrong results** (M): `umulExtended`, signed and unsigned atomic min or max on one
   array (a compare-exchange loop for the other kind), derivatives in non-uniform control flow
   (`glsl.derivate.*dynamic_if`: looked into first), a shadow cube's corner of three faces, a depth texture's linear mip

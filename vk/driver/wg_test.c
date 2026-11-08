@@ -6079,6 +6079,114 @@ t7_addresses(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkComma
    return 0;
 }
 
+/* VK4 T41, wgt_misc's scenario 115 (tests/venus/t41/regions.comp), on a device that takes the adapter's storage
+ * binding to be 1 MiB (the test page's caps), so that the address buffer is regions of 1 MiB: an image's memory made
+ * for addresses, of 2 MiB, is had and takes no room there (DXVK and VMA give all memory the flag); a device-local memory of 600 KiB (40s) is in region 0, a host-visible one (zeros)
+ * in region 1, two for capture and replay in regions 2 and 3, freed and made again in the other order at their captured
+ * addresses (the first, 70s, read). The
+ * dispatch writes b[i] = a[i] + d[i] + i and counts itself at b[16], all through pointers. */
+static int
+t41_regions(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkCommandPool pool)
+{
+   PFN_vkGetBufferDeviceAddress GetBufferDeviceAddress =
+      (PFN_vkGetBufferDeviceAddress)GetDeviceProcAddr(dev, "vkGetBufferDeviceAddress");
+   PFN_vkGetDeviceMemoryOpaqueCaptureAddress GetMemoryCapture =
+      (PFN_vkGetDeviceMemoryOpaqueCaptureAddress)GetDeviceProcAddr(dev, "vkGetDeviceMemoryOpaqueCaptureAddress");
+   PFN_vkFreeMemory FreeMemory = (PFN_vkFreeMemory)GetDeviceProcAddr(dev, "vkFreeMemory");
+   const VkBufferUsageFlags usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                    VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+   const VkMemoryAllocateFlagsInfo flags = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO,
+                                             .flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT };
+   memory_next = &flags;
+   VkImage img;
+   VkImageView view;
+   VkBuffer a, b;
+   void *map;
+   const int made = image(VK_FORMAT_R8G8B8A8_UNORM, 512, 1024, VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT, &img, &view) ||
+                    buffer(600u << 10, usage, false, &a, NULL) || buffer(600u << 10, usage, true, &b, &map);
+   memory_next = NULL;
+   if (made)
+      return 1;
+   misc.map = map;
+   memset(map, 0, 4096);
+   /* Capture and replay: a memory's address captured, the memory freed and made again there. */
+   VkMemoryOpaqueCaptureAddressAllocateInfo replay = { .sType = VK_STRUCTURE_TYPE_MEMORY_OPAQUE_CAPTURE_ADDRESS_ALLOCATE_INFO };
+   const VkMemoryAllocateFlagsInfo capture = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO, .pNext = &replay,
+      .flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT | VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT };
+   VkMemoryAllocateInfo ai = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .pNext = &capture,
+                               .allocationSize = 600u << 10, .memoryTypeIndex = 0 };
+   /* Two, made again in the other order (as dEQP's replays do): the second's place is the first free one. */
+   VkDeviceMemory first[2], again[2];
+   uint64_t captured[2];
+   for (uint32_t i = 0; i < 2; i++) {
+      CHECK(AllocateMemory(dev, &ai, NULL, &first[i]));
+      const VkDeviceMemoryOpaqueCaptureAddressInfo ci = {
+         .sType = VK_STRUCTURE_TYPE_DEVICE_MEMORY_OPAQUE_CAPTURE_ADDRESS_INFO, .memory = first[i] };
+      captured[i] = GetMemoryCapture(dev, &ci);
+   }
+   FreeMemory(dev, first[0], NULL);
+   FreeMemory(dev, first[1], NULL);
+   for (uint32_t i = 2; i-- > 0;) {
+      replay.opaqueCaptureAddress = captured[i];
+      CHECK(AllocateMemory(dev, &ai, NULL, &again[i]));
+      const VkDeviceMemoryOpaqueCaptureAddressInfo ci = {
+         .sType = VK_STRUCTURE_TYPE_DEVICE_MEMORY_OPAQUE_CAPTURE_ADDRESS_INFO, .memory = again[i] };
+      if (GetMemoryCapture(dev, &ci) != captured[i]) {
+         snprintf(error, sizeof(error), "a memory made again at %llx is at %llx", (unsigned long long)captured[i],
+                  (unsigned long long)GetMemoryCapture(dev, &ci));
+         return 1;
+      }
+   }
+   replay.opaqueCaptureAddress = captured[0];
+   const VkBufferCreateInfo bci = { .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = 600u << 10, .usage = usage,
+                                    .flags = VK_BUFFER_CREATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT };
+   VkBuffer d;
+   CHECK(CreateBuffer(dev, &bci, NULL, &d));
+   CHECK(BindBufferMemory(dev, d, again[0], 0));
+   VkBufferDeviceAddressInfo bi = { .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, .buffer = a };
+   uint64_t push[3];
+   push[0] = GetBufferDeviceAddress(dev, &bi);
+   bi.buffer = b;
+   push[1] = GetBufferDeviceAddress(dev, &bi);
+   bi.buffer = d;
+   push[2] = GetBufferDeviceAddress(dev, &bi);
+   if (push[0] >> 32 != 0 || push[1] >> 32 != 1 || push[2] >> 32 != 2 || !replay.opaqueCaptureAddress ||
+       push[2] != replay.opaqueCaptureAddress) {
+      snprintf(error, sizeof(error), "addresses %llx %llx %llx, captured %llx: not regions 0, 1 and 2 and the capture's",
+               (unsigned long long)push[0], (unsigned long long)push[1], (unsigned long long)push[2],
+               (unsigned long long)replay.opaqueCaptureAddress);
+      return 1;
+   }
+   CmdFillBuffer(cmd, a, 0, 4096, 40);
+   CmdFillBuffer(cmd, d, 0, 4096, 70);
+   const VkMemoryBarrier barrier = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                     .dstAccessMask = VK_ACCESS_SHADER_READ_BIT };
+   PFN_vkCmdPipelineBarrier CmdPipelineBarrier = (PFN_vkCmdPipelineBarrier)GetDeviceProcAddr(dev, "vkCmdPipelineBarrier");
+   CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, NULL, 0,
+                      NULL);
+   const VkPushConstantRange range = { VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push) };
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                            .pushConstantRangeCount = 1, .pPushConstantRanges = &range };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   VkShaderModule module;
+   if (shader(cs, cs_words, &module))
+      return 1;
+   const VkComputePipelineCreateInfo pci = {
+      .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+      .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                 .module = module, .pName = "main" },
+      .layout = layout };
+   VkPipeline pipeline;
+   CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &pci, NULL, &pipeline));
+   PFN_vkCmdPushConstants CmdPushConstants = (PFN_vkCmdPushConstants)GetDeviceProcAddr(dev, "vkCmdPushConstants");
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+   CmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), push);
+   CmdDispatch(cmd, 1, 1, 1);
+   return 0;
+}
+
 /*
  * VK4 T22, wgt_misc's scenarios 92 and 93: a queue of family 0 and one of the compute-only family, over one WebGPU queue.
  * `cmd` (family 0's) copies 64 bytes of 0x33 to `out` (0xee, written by the host) at 0; family 1's command buffer copies
@@ -7499,6 +7607,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 39 || scenario == 43) {
       if (t7_addresses(cs, cs_words, cmd, pool, scenario == 43))
+         return 1;
+   } else if (scenario == 115) {
+      if (t41_regions(cs, cs_words, cmd, pool))
          return 1;
    } else if (scenario == 53) {
       if (r4_resolve(cmd, out))

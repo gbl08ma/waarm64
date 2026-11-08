@@ -1,0 +1,12 @@
+#version 450
+// VK4 T41 (wg_test.c 115): pointers into three regions of the address buffer, read, written and an atomic.
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+layout(local_size_x = 4) in;
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer Words { uint v[]; };
+layout(push_constant) uniform Push { Words a, b, d; } p;
+void main() {
+  uint i = gl_LocalInvocationIndex;
+  p.b.v[i] = p.a.v[i] + p.d.v[i] + i;
+  atomicAdd(p.b.v[16], 1u);
+}

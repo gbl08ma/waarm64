@@ -1,0 +1,72 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "155.0.8059.84",
+ "stride": 50,
+ "offset": 0,
+ "jobs": 1,
+ "adapter": "google swiftshader",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 24,
+ "seconds": 16.284321255000002,
+ "pipelines": {
+  "pipelines": 28,
+  "ready": 28,
+  "readyMs": 5191.529999911785,
+  "deferred": 56,
+  "deferredMs": 10357.219999790192,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 28,
+  "translateMs": 161.85499999999996,
+  "cacheHits": 20,
+  "cacheMisses": 50,
+  "cacheStores": 50,
+  "cacheBytes": 476803,
+  "cacheHeld": 2674980,
+  "cacheEntries": 50
+ },
+ "counts": {
+  "Pass": 24
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertchecku64.nostore.replay.std140.comp Pass 3",
+  "dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convert.store.replay.std140.vert Pass 2",
+  "dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.crossconvertp2u.store.replay.scalar.frag Pass 2",
+  "dEQP-VK.binding_model.buffer_device_address.set7.depth2.basessbo.convert.store.replay.std140.comp Pass 1",
+  "dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.crossconvertp2u.nostore.replay.std140.comp Pass 1",
+  "dEQP-VK.binding_model.buffer_device_address.set3.depth2.baseubo.convertchecku64.store.replay.scalar.frag Pass 1",
+  "dEQP-VK.binding_model.buffer_device_address.set3.depth2.basessbo.convertchecku64.store.replay.std140.vert Pass 1",
+  "dEQP-VK.binding_model.buffer_device_address.set3.depth1.basessbo.convertcheckuv2.store.replay.scalar.frag Pass 1",
+  "dEQP-VK.binding_model.buffer_device_address.capture_replay_stress.seed_2 Pass 1",
+  "dEQP-VK.binding_model.buffer_device_address.set7.depth2.baseubo.load.store.replay.std140.vert Pass 0"
+ ],
+ "last": "dEQP-VK.binding_model.buffer_device_address.set7.depth2.basessbo.convert.store.replay.std140.comp Pass 1dEQP-VK.binding_model.buffer_device_address.set7.depth2.baseubo.convert.nostore.replay.std140.frag Pass 0dEQP-VK.binding_model.buffer_device_address.set7.depth2.baseubo.load.store.replay.std140.vert Pass 0",
+ "output": [
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    1.194962] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    1.195000] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    1.195025] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    1.195055] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    1.195090] psci_checker: Could not start suspend tests on any CPU",
+  "[   11.807297] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   23.296922] coredump: 423(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 163.7,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 15.6,
+  "arenaHighMiB": 104.8
+ },
+ "detail": [],
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1,
+  "venus: wg: the device address buffer's region 0 grows to 128 MiB": 3
+ }
+}

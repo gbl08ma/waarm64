@@ -1541,7 +1541,7 @@ storage_aliases(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_progr
    cmd->aliases_refused = false;
    for (uint32_t k = 0; k < p->resource_count; k++) {
       const struct wgsl_resource *r = &p->resources[k];
-      if (r->kind != WGSL_STORAGE || r->image_words || r->binding == WGSL_ADDRESS_BINDING)
+      if (r->kind != WGSL_STORAGE || r->image_words || wgsl_address_region(r->group, r->binding) >= 0)
          continue;
       const struct wg_device_memory *mem = resource_memory(cmd, point, p, k);
       const int s = p->res_set[k];
@@ -3679,7 +3679,7 @@ static bool
 res_written(const struct wg_program *p, uint32_t group)
 {
    for (uint32_t k = 0; k < p->resource_count; k++)
-      if (p->resources[k].group == group && p->resources[k].binding == WGSL_ADDRESS_BINDING &&
+      if (p->resources[k].group == group && wgsl_address_region(group, p->resources[k].binding) >= 0 &&
           p->resources[k].kind == WGSL_STORAGE)
          return true;
    return false;
@@ -3923,10 +3923,11 @@ bind_uses(struct replay *r, const struct op_bind *b)
       if ((res->kind != WGSL_UNIFORM && res->kind != WGSL_STORAGE && res->kind != WGSL_STORAGE_READ) ||
           p->dynamic[k] == WG_DYNAMIC_PUSH)
          continue;
-      if (res->binding == WGSL_ADDRESS_BINDING) {
+      const int region = wgsl_address_region(res->group, res->binding);
+      if (region >= 0) {
          util_dynarray_append_typed(&r->uses, struct scope_use,
-                                    ((struct scope_use){ wg_address_buffer(r->dev), res->kind == WGSL_STORAGE, 0,
-                                                         r->dev->address_size, true }));
+                                    ((struct scope_use){ wg_address_buffer(r->dev, region), res->kind == WGSL_STORAGE, 0,
+                                                         r->dev->address_size[region], true }));
          continue;
       }
       const struct wg_descriptor *d = bound_descriptor(b, p, k);
@@ -4054,7 +4055,7 @@ conflicts(const struct replay *r, const struct scope_use *u)
    /* The pointers' binding is the whole address buffer, so a writable descriptor of it would alias it, which WebGPU
     * refuses: that one goes to a shadow and comes back at the scope's end (bytes reached both ways in one scope don't
     * see each other), and reads conflict only with pointers that write. */
-   if (r->address_use && u->buffer == r->dev->address_buffer)
+   if (r->address_use && wg_address_region_of(r->dev, u->buffer) >= 0)
       return !u->address && (u->writable || r->address_use == 2);
    if (u->writable)
       return false;
@@ -4392,9 +4393,10 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
          continue;
       }
       push_only = false;
-      if (res->binding == WGSL_ADDRESS_BINDING) {
+      const int region = wgsl_address_region(res->group, res->binding);
+      if (region >= 0) {
          wg_json_printf(&j, "%s{\"binding\":%u,\"buffer\":%u,\"offset\":0,\"size\":%llu}", sep, res->binding,
-                        wg_address_buffer(r->dev), (unsigned long long)r->dev->address_size);
+                        wg_address_buffer(r->dev, region), (unsigned long long)r->dev->address_size[region]);
          first = false;
          continue;
       }
@@ -4531,9 +4533,10 @@ found:
       if (res->kind != WGSL_STORAGE || !res->written)
          continue;
       /* Written through pointers, wherever they lead. */
-      if (res->binding == WGSL_ADDRESS_BINDING) {
+      const int region = wgsl_address_region(res->group, res->binding);
+      if (region >= 0) {
          list_for_each_entry (struct wg_device_memory, mem, &r->dev->address_memories, address_link)
-            if (mem->host)
+            if (mem->host && mem->region == region)
                readback(r, mem, 0, mem->size);
          continue;
       }

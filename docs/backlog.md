@@ -629,12 +629,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     process, so one program's long frames hold every window. VK4 T23 measured the emulated paths in that mode on the
     M4 (no freeze there; SDFGI's view copies the one cost: REPORT.md "VK4 T23"); nvidia.sh's `t23` step measures them
     on NVIDIA with the seconds frozen.
-  - **The device's address buffer** (seen on SwiftShader, `results/gd/g8/gi-editor-swiftshader.json`): every memory
-    allocated with a device address is in one GPUBuffer that doubles by copy (old and new at once), up to
-    `maxStorageBufferBindingSize`; VMA with buffer device addresses gives every block the flag, images' blocks too,
-    whose bytes the driver never uses. The demo's editor grew it to 512 MiB, which SwiftShader's Vulkan refused (the
-    editor black). Placing a memory there only at its first buffer bind would leave images' memory out; the driver
-    says each grow (`wg: the device address buffer grows to N MiB`).
+  - **The device's address buffer** (seen on SwiftShader, `results/gd/g8/gi-editor-swiftshader.json`): it grows by copy
+    (old and new at once), and the demo's editor grew it to 512 MiB, which SwiftShader's Vulkan refused (the editor
+    black). Since VK4 T41 a memory is placed there at its first buffer's bind (images' blocks left out) and the editor
+    draws (`results/vk4/t41/gi-editor-swiftshader.json`), but the buffer still grows to 512 MiB, now taken: Godot's
+    buffers' blocks are most of it, so a larger scene can meet the refusal again. Regions of a fixed size, a
+    GPUBuffer each without growing by copy, would need pipelines remade per region count ("Device addresses' leftovers").
   - **Godot as a standing workload** (G7's rest): a GFXReconstruct capture of Godot's scene on the dev VM's lavapipe
     (images/vkframes/build.sh, as vkQuake's; under the Venus profile it takes Mobile: SwiftShader's 16 textures)
     replayed in tests/page-venus.test.ts; the editor's first start cold and warm on the M4 (bench/vulkan/godot.ts
@@ -1092,13 +1092,20 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     layout entry, two accesses), and stages past WebGPU's bindings with the pre-pass's one (its parameters, inputs and
     records in one storage buffer since VK4 T40, which passed T33's 55 such failures of `descriptorset_random.sets4`
     and `sets8`). Geometry and tessellation, the same pre-pass's way, are tier 4's.
-  - **Device addresses' leftovers** (VK4 T7; vk/README.md "Device addresses"): all address memory is one storage binding
-    away, so an allocation with the flag past `maxStorageBufferBindingSize` fails though the heap has room: DXVK puts every
-    allocation there (no shader of it reads through pointers, so it needs none of this but the place). Every use of a
-    GPUBuffer shared by all address memory counts as that buffer's, so a scope that writes storage of any address memory
-    copies its reads of all of it: unmeasured on a program. `shaderInt64` (`OpConvertUToPtr`, 504 of
-    `buffer_device_address`) and capture and replay (`bufferDeviceAddressCaptureReplay`) aren't offered; the 64 KiB past each
-    memory bounds a uniform block widened past its range there.
+  - **Device addresses' leftovers** (VK4 T7, T41; vk/README.md "Device addresses"): a memory is placed in the address
+    buffer at its GPUBuffer's making and can't move there later, so one whose GPUBuffer a linear image made first, or
+    that has no room left, has buffers whose address is 0 (said once). Regions reach 1 GiB together (an adapter whose
+    binding reaches 1 GiB has one, so address memory past it fails there as before): with more than one, every access
+    through a pointer is an `if` tree on the high word, a storage binding a region in each pointer-reading stage, and at
+    three SwiftShader's compiles of `buffer_device_address`'s depth3 stages ran past dEQP's 30 s watchdog. Programs'
+    pipelines made for the regions in use, made again when another is first used, would let it reach the heaps. Capture and replay doesn't keep replays apart from other allocations (they'd be placed at a
+    region's top, the region grown whole), so a replay's places can be taken by allocations that come in another order.
+    Every use of a region's GPUBuffer counts as that buffer's, so a scope that writes storage of any address memory
+    copies its reads of all of that region's: unmeasured on a program. A descriptor beside a pointers' binding, and its
+    shadow's copy back (the review of R1 to R4's W2: "Usage scopes' leftovers"). `ivec4` loads through a pointer are four
+    `u32` loads (a vec4 view of each region for loads NIR says are 16-aligned: "SwiftShader compiles … slowly" below);
+    the 64 KiB past each memory bounds a uniform block widened past its range there. `buffer_device_address`'s `set15`
+    and `set31` (1,344 cases) need `maxBoundDescriptorSets` past the 8 sets the translator has (`WGSL_MAX_SETS`).
   - **API 1.3's required features** (the user, 2026-10-28: 1.3 stays advertised; the rest of VK3 and VK4 fill them as
     they go): `timestampComputeAndGraphics` with timestamps that are the CPU's (above). A program that relies on 1.3's
     guarantees without checking them fails at pipeline or descriptor creation.

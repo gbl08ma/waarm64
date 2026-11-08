@@ -87,42 +87,63 @@ wgsl_spirv_options(struct spirv_to_nir_options *out)
    };
 }
 
-/* Physical pointers: memory with device addresses is one GPUBuffer, at a binding of its own (vk/README.md "Device
- * addresses"), so a global access is a storage buffer's at the pointer's low word. */
-static bool
-lower_global(nir_builder *b, nir_intrinsic_instr *intr, void *data)
+/* Physical pointers: memory with device addresses is in the device's address buffer, at a binding of its own (vk/README.md
+ * "Device addresses"), so a global access is a storage buffer's at the pointer's low word; past one region (VK4 T41) the
+ * high word picks the region's binding, the last taking what's past them. */
+static nir_def *
+global_access(nir_builder *b, nir_intrinsic_instr *intr, unsigned region)
 {
-   b->cursor = nir_before_instr(&intr->instr);
-   nir_def *index = nir_imm_int(b, (WGSL_MAX_GROUPS - 1) << 16 | WGSL_ADDRESS_BINDING);
+   nir_def *index = nir_imm_int(b, (WGSL_MAX_GROUPS - 1) << 16 | wgsl_address_binding(region));
    switch (intr->intrinsic) {
-   case nir_intrinsic_load_global_2x32: {
-      nir_def *v = nir_load_ssbo(b, intr->def.num_components, intr->def.bit_size, index,
-                                 nir_channel(b, intr->src[0].ssa, 0), .align_mul = nir_intrinsic_align_mul(intr),
-                                 .align_offset = nir_intrinsic_align_offset(intr), .access = nir_intrinsic_access(intr));
-      nir_def_replace(&intr->def, v);
-      return true;
-   }
+   case nir_intrinsic_load_global_2x32:
+      return nir_load_ssbo(b, intr->def.num_components, intr->def.bit_size, index, nir_channel(b, intr->src[0].ssa, 0),
+                           .align_mul = nir_intrinsic_align_mul(intr), .align_offset = nir_intrinsic_align_offset(intr),
+                           .access = nir_intrinsic_access(intr));
    case nir_intrinsic_store_global_2x32:
       nir_store_ssbo(b, intr->src[0].ssa, index, nir_channel(b, intr->src[1].ssa, 0),
                      .write_mask = nir_intrinsic_write_mask(intr), .align_mul = nir_intrinsic_align_mul(intr),
                      .align_offset = nir_intrinsic_align_offset(intr), .access = nir_intrinsic_access(intr));
-      nir_instr_remove(&intr->instr);
-      return true;
-   case nir_intrinsic_global_atomic_2x32: {
-      nir_def *v = nir_ssbo_atomic(b, intr->def.bit_size, index, nir_channel(b, intr->src[0].ssa, 0), intr->src[1].ssa,
-                                   .atomic_op = nir_intrinsic_atomic_op(intr));
-      nir_def_replace(&intr->def, v);
-      return true;
-   }
-   case nir_intrinsic_global_atomic_swap_2x32: {
-      nir_def *v = nir_ssbo_atomic_swap(b, intr->def.bit_size, index, nir_channel(b, intr->src[0].ssa, 0),
-                                        intr->src[1].ssa, intr->src[2].ssa, .atomic_op = nir_intrinsic_atomic_op(intr));
-      nir_def_replace(&intr->def, v);
-      return true;
-   }
+      return NULL;
+   case nir_intrinsic_global_atomic_2x32:
+      return nir_ssbo_atomic(b, intr->def.bit_size, index, nir_channel(b, intr->src[0].ssa, 0), intr->src[1].ssa,
+                             .atomic_op = nir_intrinsic_atomic_op(intr));
+   case nir_intrinsic_global_atomic_swap_2x32:
+      return nir_ssbo_atomic_swap(b, intr->def.bit_size, index, nir_channel(b, intr->src[0].ssa, 0), intr->src[1].ssa,
+                                  intr->src[2].ssa, .atomic_op = nir_intrinsic_atomic_op(intr));
    default:
-      return false;
+      UNREACHABLE("not a global access");
    }
+}
+
+static nir_def *
+global_regions(nir_builder *b, nir_intrinsic_instr *intr, nir_def *hi, unsigned region, unsigned regions)
+{
+   if (region + 1 >= regions)
+      return global_access(b, intr, region);
+   nir_push_if(b, nir_ieq_imm(b, hi, region));
+   nir_def *x = global_access(b, intr, region);
+   nir_push_else(b, NULL);
+   nir_def *y = global_regions(b, intr, hi, region + 1, regions);
+   nir_pop_if(b, NULL);
+   return x ? nir_if_phi(b, x, y) : NULL;
+}
+
+static bool
+lower_global(nir_builder *b, nir_intrinsic_instr *intr, void *data)
+{
+   const struct wgsl_layout *layout = data;
+   const bool store = intr->intrinsic == nir_intrinsic_store_global_2x32;
+   if (!store && intr->intrinsic != nir_intrinsic_load_global_2x32 && intr->intrinsic != nir_intrinsic_global_atomic_2x32 &&
+       intr->intrinsic != nir_intrinsic_global_atomic_swap_2x32)
+      return false;
+   b->cursor = nir_before_instr(&intr->instr);
+   const unsigned regions = CLAMP(layout ? layout->address_regions : 1, 1, WGSL_ADDRESS_REGIONS);
+   nir_def *v = global_regions(b, intr, nir_channel(b, intr->src[store].ssa, 1), 0, regions);
+   if (v)
+      nir_def_replace(&intr->def, v);
+   else
+      nir_instr_remove(&intr->instr);
+   return true;
 }
 
 /* 64-bit integers (shaderInt64, VK4 T29) as pairs of words, WGSL having no 64-bit type: a 64-bit load or store of
@@ -985,7 +1006,7 @@ wgsl_lower(nir_shader *nir, const struct wgsl_layout *layout, unsigned subgroup_
    NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_mem_push_const, nir_address_format_32bit_offset);
    NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_mem_ubo | nir_var_mem_ssbo, nir_address_format_32bit_index_offset);
    NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_mem_global, nir_address_format_2x32bit_global);
-   NIR_PASS(_, nir, nir_shader_intrinsics_pass, lower_global, nir_metadata_control_flow, NULL);
+   NIR_PASS(_, nir, nir_shader_intrinsics_pass, lower_global, nir_metadata_none, (void *)layout);
    if (nir->info.stage == MESA_SHADER_COMPUTE) {
       if (!nir->info.shared_memory_explicit_layout) {
          nir->info.shared_size = 0;

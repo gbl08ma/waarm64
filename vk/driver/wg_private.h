@@ -266,10 +266,11 @@ struct wg_device {
    uint64_t shadow_size[2], shadow_used[2];
    /* What storage bindings a program's variant doesn't read bind, each its own 256 bytes (`storage_alias` in wg_cmd.c). */
    uint32_t alias_dummy;
-   /* Memory with device addresses (VK4 T7; vk/README.md "Device addresses"): all of it in one GPUBuffer, grown in place
-    * (`address_gen` counts that, for the bind groups that name it), an address being a byte of it. */
-   uint32_t address_buffer, address_gen;
-   uint64_t address_size;
+   /* Memory with device addresses (VK4 T7, T41; vk/README.md "Device addresses"): in the device's address buffer, a
+    * GPUBuffer a region (an address's high word: wg_address_regions of them), each grown in place (`address_gen` counts
+    * that, for the bind groups that name them), an address's low word being a byte of its region's. */
+   uint32_t address_buffer[WGSL_ADDRESS_REGIONS], address_gen;
+   uint64_t address_size[WGSL_ADDRESS_REGIONS];
    struct util_vma_heap address_heap;
    bool address_heap_made;
    struct list_head address_memories;
@@ -282,7 +283,11 @@ struct wg_device {
 };
 #define WG_PUSH_BUFFER_SIZE (1u << 20)
 /* The bytes a memory's GPUBuffer has past it, for a uniform block declared past the range bound. */
-uint32_t wg_address_buffer(struct wg_device *dev);
+uint32_t wg_address_buffer(struct wg_device *dev, uint32_t region);
+/* The regions of the address buffer a pointer reaches (wgsl_layout.address_regions), and the region a GPUBuffer is
+ * (-1: none). */
+uint32_t wg_address_regions(void);
+int wg_address_region_of(const struct wg_device *dev, uint32_t buffer);
 /* (A memory the size of the largest GPUBuffer has what's left.) */
 #define wg_memory_pad(mem) ((mem)->address ? (uint64_t)(64u << 10) : MIN2(WG_MEMORY_PAD, (uint64_t)wg_limits.max_buffer_size - MIN2((mem)->size, (uint64_t)wg_limits.max_buffer_size)))
 /* Whether Venus's guest doesn't wait for an allocation's result, as vkr's users don't: wg_AllocateMemory. */
@@ -312,7 +317,9 @@ struct wg_device_memory {
    uint32_t gpu;
    uint64_t gpu_at; /* where it starts in `gpu`: 0 but in the device's address buffer (`address`) */
    uint64_t size;   /* the buffer's (4-byte aligned) */
-   bool address;    /* allocated for device addresses */
+   bool address;    /* in the address buffer: its address is region << 32 | gpu_at */
+   bool address_wanted; /* allocated for device addresses: placed at its GPUBuffer's making (VK4 T41) */
+   uint8_t region;      /* of the address buffer */
    struct list_head address_link;
    bool host;
    bool dirty;      /* all of it written (made, moved): uploaded whole at the next submit */

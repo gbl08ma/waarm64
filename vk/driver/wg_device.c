@@ -727,7 +727,8 @@ wg_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    wg_id_release(dev->shadow[0]);
    wg_id_release(dev->shadow[1]);
    wg_id_release(dev->alias_dummy);
-   wg_id_release(dev->address_buffer);
+   for (uint32_t r = 0; r < WGSL_ADDRESS_REGIONS; r++)
+      wg_id_release(dev->address_buffer[r]);
    if (dev->address_heap_made)
       util_vma_heap_finish(&dev->address_heap);
    free(dev->push_data);
@@ -740,66 +741,119 @@ wg_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
 
 /* Memory. */
 
-/* Room in the device's address buffer (vk/README.md "Device addresses"), which starts small and grows in place: false
- * past what one storage binding can reach. An address is a byte of it, never 0. */
+/* Room in the device's address buffer (vk/README.md "Device addresses"): regions (an address's high word), each a
+ * GPUBuffer that starts small and grows in place up to what one storage binding can reach. An address is never 0. */
 #define WG_ADDRESS_FIRST (64ull << 20)
 #define WG_ADDRESS_PAD (64ull << 10) /* past each memory: a uniform binding widened to its block (wg_memory_pad) */
 static uint64_t
 address_most(void)
 {
    return MIN3((uint64_t)wg_limits.max_storage_buffer_binding_size, (uint64_t)wg_limits.max_buffer_size,
-               0xffff0000ull) & ~3ull;
+               0xffff0000ull) & ~255ull;
+}
+
+/* As many regions as reach WG_ADDRESS_SPACE together, at most WGSL_ADDRESS_REGIONS: each pointer-reading stage binds
+ * them all (a storage binding each) and picks one by an `if` tree at every access, which took SwiftShader's compiles
+ * of dEQP-VK's depth3 stages past its 30 s watchdog at three regions. So one where a binding reaches 1 GiB (the M4,
+ * NVIDIA, SwiftShader), four of 128 MiB where an adapter has WebGPU's least. */
+#define WG_ADDRESS_SPACE (1ull << 30)
+uint32_t
+wg_address_regions(void)
+{
+   const uint64_t most = address_most();
+   return most ? (uint32_t)CLAMP(DIV_ROUND_UP(WG_ADDRESS_SPACE, most), 1, WGSL_ADDRESS_REGIONS) : 1;
+}
+
+int
+wg_address_region_of(const struct wg_device *dev, uint32_t buffer)
+{
+   for (uint32_t r = 0; buffer && r < WGSL_ADDRESS_REGIONS; r++)
+      if (dev->address_buffer[r] == buffer)
+         return (int)r;
+   return -1;
 }
 
 static void
-address_grow(struct wg_device *dev, uint64_t size)
+address_grow(struct wg_device *dev, uint32_t region, uint64_t size)
 {
-   if (dev->address_buffer) {
-      /* Said: a grow needs the old and the new buffer at once, and every memory with an address is in it (VMA with
-       * device addresses gives all of a program's memory the flag, its images' too: GD G8). */
-      fprintf(stderr, "wg: the device address buffer grows to %llu MiB\n", (unsigned long long)(size >> 20));
-      gpu_grow(dev->address_buffer, size);
+   if (dev->address_buffer[region]) {
+      /* Said: a grow needs the old and the new buffer at once (GD G8: SwiftShader refused 512 MiB). */
+      if (size >= WG_ADDRESS_FIRST)
+         fprintf(stderr, "wg: the device address buffer's region %u grows to %llu MiB\n", region,
+                 (unsigned long long)(size >> 20));
+      gpu_grow(dev->address_buffer[region], size);
       dev->address_gen++;
    } else {
       struct wg_json j = { 0 };
       wg_json_printf(&j, "{\"size\":%llu,\"usage\":%u}", (unsigned long long)size, 4 | 8 | 16 | 32 | 64 | 128 | 256 | 512);
-      dev->address_buffer = wg_create_json(WG_KIND_BUFFER, &j);
+      dev->address_buffer[region] = wg_create_json(WG_KIND_BUFFER, &j);
    }
-   dev->address_size = size;
+   dev->address_size[region] = size;
 }
 
-/* The address buffer for a binding of it, made if no memory has yet (a pipeline may read through pointers of nothing). */
+/* A region's GPUBuffer for a binding of it, made small if no memory is there yet (a pipeline may read through pointers
+ * of nothing). */
 uint32_t
-wg_address_buffer(struct wg_device *dev)
+wg_address_buffer(struct wg_device *dev, uint32_t region)
 {
-   if (!dev->address_buffer)
-      address_grow(dev, WG_ADDRESS_FIRST);
-   return dev->address_buffer;
+   if (!dev->address_buffer[region])
+      address_grow(dev, region, MIN2(WG_ADDRESS_PAD, address_most()));
+   return dev->address_buffer[region];
 }
 
+/* Places a memory in the address buffer, at `want` (a capture's address, VK4 T41) or where there is room: the regions'
+ * places are one heap, each region's end to the next's start held. */
 static bool
-address_place(struct wg_device *dev, struct wg_device_memory *mem)
+address_place(struct wg_device *dev, struct wg_device_memory *mem, uint64_t want)
 {
-   const uint64_t most = address_most();
+   const uint64_t most = address_most(), regions = wg_address_regions();
    if (!dev->address_heap_made) {
-      util_vma_heap_init(&dev->address_heap, 4096, most - 4096);
+      util_vma_heap_init(&dev->address_heap, 4096, (regions << 32) - 4096);
       dev->address_heap.alloc_high = false;
+      for (uint64_t r = 0; r < regions; r++)
+         util_vma_heap_alloc_addr(&dev->address_heap, (r << 32) + most, (1ull << 32) - most);
       dev->address_heap_made = true;
    }
-   const uint64_t at = util_vma_heap_alloc(&dev->address_heap, mem->size + WG_ADDRESS_PAD, 256);
+   const uint64_t size = mem->size + WG_ADDRESS_PAD;
+   uint64_t at;
+   if (want)
+      at = want % 256 == 0 && util_vma_heap_alloc_addr(&dev->address_heap, want, size) ? want : 0;
+   else
+      at = util_vma_heap_alloc(&dev->address_heap, size, 256);
    if (!at)
       return false;
-   if (at + mem->size + WG_ADDRESS_PAD > dev->address_size) {
-      uint64_t size = MAX2(dev->address_size, WG_ADDRESS_FIRST);
-      while (size < at + mem->size + WG_ADDRESS_PAD)
-         size *= 2;
-      address_grow(dev, MIN2(size, most));
+   const uint32_t region = (uint32_t)(at >> 32);
+   const uint64_t local = at & 0xffffffffull;
+   if (local + size > dev->address_size[region]) {
+      uint64_t grown = MAX2(dev->address_size[region], WG_ADDRESS_FIRST);
+      while (grown < local + size)
+         grown *= 2;
+      address_grow(dev, region, MIN2(grown, most));
    }
-   mem->gpu = dev->address_buffer;
-   mem->gpu_at = at;
+   mem->gpu = dev->address_buffer[region];
+   mem->gpu_at = local;
+   mem->region = (uint8_t)region;
    mem->address = true;
    list_addtail(&mem->address_link, &dev->address_memories);
    return true;
+}
+
+static void
+address_free(struct wg_device *dev, struct wg_device_memory *mem)
+{
+   util_vma_heap_free(&dev->address_heap, (uint64_t)mem->region << 32 | mem->gpu_at, mem->size + WG_ADDRESS_PAD);
+   list_del(&mem->address_link);
+   mem->address = false;
+   mem->gpu = 0;
+   mem->gpu_at = 0;
+   mem->region = 0;
+}
+
+/* A memory's device address: 0 without one. */
+static uint64_t
+memory_address(const struct wg_device_memory *mem)
+{
+   return mem && mem->address ? (uint64_t)mem->region << 32 | mem->gpu_at : 0;
 }
 
 /* A memory that can't be had: past its heap, the largest GPUBuffer, the address buffer or the arena. The error, unless
@@ -810,13 +864,8 @@ address_place(struct wg_device *dev, struct wg_device_memory *mem)
 static VkResult
 memory_refused(struct wg_device *dev, struct wg_device_memory *mem, const VkAllocationCallbacks *pAllocator, VkDeviceMemory *pMem)
 {
-   if (mem->address) {
-      util_vma_heap_free(&dev->address_heap, mem->gpu_at, mem->size + WG_ADDRESS_PAD);
-      list_del(&mem->address_link);
-      mem->address = false;
-      mem->gpu = 0;
-      mem->gpu_at = 0;
-   }
+   if (mem->address)
+      address_free(dev, mem);
    if (!wg_unwaited_allocations) {
       vk_device_memory_destroy(&dev->vk, pAllocator, &mem->vk);
       return vk_error(dev, VK_ERROR_OUT_OF_DEVICE_MEMORY);
@@ -854,7 +903,7 @@ wg_AllocateMemory(VkDevice _device, const VkMemoryAllocateInfo *pAllocateInfo,
           * (an import's as any other: memory_refused) the import all the same, its pointers null. */
          const VkMemoryAllocateFlagsInfo *wanted = vk_find_struct_const(pAllocateInfo->pNext, MEMORY_ALLOCATE_FLAGS_INFO);
          if (wanted && (wanted->flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT) && !src->address &&
-             (src->gpu || src->placeholder || !address_place(dev, src))) {
+             (src->gpu || src->placeholder || !address_place(dev, src, 0))) {
             if (!wg_unwaited_allocations)
                return vk_error(dev, VK_ERROR_INVALID_EXTERNAL_HANDLE);
             static bool warned;
@@ -878,9 +927,24 @@ wg_AllocateMemory(VkDevice _device, const VkMemoryAllocateInfo *pAllocateInfo,
    const bool dmabuf = fd_info && fd_info->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT && fd_info->fd > 0;
    /* vkr's storage already had (mem->vk.host_ptr) is memory all the same, whatever the heap says: the arena was its limit. */
    const bool past_heap = heap_used[type] + pAllocateInfo->allocationSize > heap_sizes[type] && !mem->vk.host_ptr;
-   if ((!dmabuf && (past_heap || pAllocateInfo->allocationSize > MIN2((uint64_t)wg_limits.max_buffer_size, 0xffffffffu))) ||
-       (flags && (flags->flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT) && !address_place(dev, mem)))
+   /* A memory for device addresses is placed in the address buffer when its GPUBuffer is made (wg_memory_buffer: at
+    * its first buffer's bind), so that one only images use takes no room there (VMA gives every block the flag: GD G8);
+    * one for capture and replay at once, at its capture's address if it has one (VK4 T41). One past a region is had all
+    * the same (it may hold only images), its buffers without addresses. */
+   const bool address = flags && (flags->flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+   const VkMemoryOpaqueCaptureAddressAllocateInfo *replay =
+      vk_find_struct_const(pAllocateInfo->pNext, MEMORY_OPAQUE_CAPTURE_ADDRESS_ALLOCATE_INFO);
+   const bool capture = address && (flags->flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT);
+   if (!dmabuf && (past_heap || pAllocateInfo->allocationSize > MIN2((uint64_t)wg_limits.max_buffer_size, 0xffffffffu)))
       return memory_refused(dev, mem, pAllocator, pMem);
+   if (capture && !address_place(dev, mem, replay ? replay->opaqueCaptureAddress : 0)) {
+      if (replay && replay->opaqueCaptureAddress && !wg_unwaited_allocations) {
+         vk_device_memory_destroy(&dev->vk, pAllocator, &mem->vk);
+         return vk_error(dev, VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS);
+      }
+      return memory_refused(dev, mem, pAllocator, pMem);
+   }
+   mem->address_wanted = address && !dmabuf;
    if (dmabuf) {
       /* A dma-buf is another renderer's resource, by id (vkr's patch): its bytes are the GPU worker's to write into
        * the textures bound here; it has no storage of ours, even in a host-visible type. */
@@ -910,6 +974,20 @@ wg_AllocateMemory(VkDevice _device, const VkMemoryAllocateInfo *pAllocateInfo,
 uint32_t
 wg_memory_buffer(struct wg_device_memory *mem)
 {
+   /* Its first buffer's bind (or a linear image's use) places a memory for device addresses: once a GPUBuffer is made,
+    * commands name it and its offsets, so a memory can't move into the address buffer later. Past what it has room
+    * for, a GPUBuffer of its own, its buffers without addresses (said once). */
+   if (!mem->gpu && mem->address_wanted && !mem->placeholder) {
+      struct wg_device *dev = container_of(mem->vk.base.device, struct wg_device, vk);
+      mem->address_wanted = false;
+      if (address_place(dev, mem, 0))
+         return mem->gpu;
+      static bool warned;
+      if (!warned)
+         fprintf(stderr, "wg: no room in the device address buffer for a memory of %llu bytes: its buffers have no addresses\n",
+                 (unsigned long long)mem->size);
+      warned = true;
+   }
    if (!mem->gpu) {
       /* MAP_READ can't go with other usages: readbacks go through staging buffers (gpu_readback). WG_MEMORY_PAD
        * bytes past the memory's end: a uniform binding is widened to the block its shader declares (std140 rounds up,
@@ -950,12 +1028,10 @@ wg_FreeMemory(VkDevice _device, VkDeviceMemory _mem, const VkAllocationCallbacks
       free(mem->data);
    if (!mem->placeholder)
       heap_used[mem->vk.memory_type_index] -= mem->vk.size;
-   if (mem->address) {
-      util_vma_heap_free(&dev->address_heap, mem->gpu_at, mem->size + WG_ADDRESS_PAD);
-      list_del(&mem->address_link);
-   } else {
+   if (mem->address)
+      address_free(dev, mem);
+   else
       wg_id_release(mem->gpu);
-   }
    vk_device_memory_destroy(&dev->vk, pAllocator, &mem->vk);
 }
 
@@ -983,7 +1059,7 @@ wg_memory_shared_buffer(VkDeviceMemory _mem)
 {
    VK_FROM_HANDLE(wg_device_memory, mem, _mem);
    /* Not an image's, nor another renderer's, nor a share of the device's address buffer (its bytes start past 0). */
-   if (!mem || mem->image || mem->import_res || mem->placeholder || mem->address)
+   if (!mem || mem->image || mem->import_res || mem->placeholder || mem->address || mem->address_wanted)
       return 0;
    return wg_memory_buffer(mem);
 }
@@ -1099,9 +1175,11 @@ wg_GetBufferDeviceAddress(VkDevice _device, const VkBufferDeviceAddressInfo *pIn
 {
    VK_FROM_HANDLE(wg_buffer, buffer, pInfo->buffer);
    /* A memory without addresses (an import refused them): null, not a byte of another's. */
-   return buffer->mem && buffer->mem->address ? buffer->offset : 0;
+   return buffer->mem && buffer->mem->address ? (uint64_t)buffer->mem->region << 32 | buffer->offset : 0;
 }
 
+/* Capture and replay (VK4 T41): a buffer's address is its memory's and its offset, so only the memory's is captured;
+ * a buffer's is 0 (asked before its bind, as dEQP does). */
 VKAPI_ATTR uint64_t VKAPI_CALL
 wg_GetBufferOpaqueCaptureAddress(VkDevice _device, const VkBufferDeviceAddressInfo *pInfo)
 {
@@ -1111,7 +1189,11 @@ wg_GetBufferOpaqueCaptureAddress(VkDevice _device, const VkBufferDeviceAddressIn
 VKAPI_ATTR uint64_t VKAPI_CALL
 wg_GetDeviceMemoryOpaqueCaptureAddress(VkDevice _device, const VkDeviceMemoryOpaqueCaptureAddressInfo *pInfo)
 {
-   return 0;
+   VK_FROM_HANDLE(wg_device_memory, mem, pInfo->memory);
+   /* Placed now if it isn't yet (a memory made for addresses without capture and replay). */
+   if (mem && !mem->address && !mem->gpu && mem->address_wanted)
+      wg_memory_buffer(mem);
+   return memory_address(mem);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -1122,8 +1204,8 @@ wg_BindBufferMemory2(VkDevice _device, uint32_t count, const VkBindBufferMemoryI
       VK_FROM_HANDLE(wg_device_memory, mem, infos[i].memory);
       buffer->mem = mem;
       buffer->mem_offset = infos[i].memoryOffset;
+      wg_memory_buffer(mem); /* (placing a memory for addresses: gpu_at) */
       buffer->offset = mem->gpu_at + infos[i].memoryOffset;
-      wg_memory_buffer(mem);
       const VkBindMemoryStatus *status = vk_find_struct_const(infos[i].pNext, BIND_MEMORY_STATUS);
       if (status)
          *status->pResult = VK_SUCCESS;
