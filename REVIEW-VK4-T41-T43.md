@@ -187,3 +187,13 @@ parameters longer than 1024 bytes) takes this path.
 - **post_text ordering**: the slope is taken in uniform control flow before the stage. Coverage is taken before
   alpha-to-one. The coverage mask is ANDed with the stage's own `sample_mask`. The depth-bias constant is clamped into
   an int32 for the native path.
+
+## Triage (the first fix loop, eaa7aba6 on main)
+
+- **1, 9, 8, 5, 6: confirmed and fixed**, each by a driver test that failed first (`tests/venus-driver.test.ts` misc
+  `t43Wrapped`, `t43MappedDual`, `t43MappedCoverage`, `t41BesidePast`, `t41Full`; wg_test.c 117 to 121). Finding 9's
+  reachable path is dual-source outputs that a location map moves (a single attachment at no location: WebGPU's
+  dual-source blending takes one target, so no other map draws at all), whose D24 bias was dropped; it is refused now.
+  Its test needs `dual-source-blending` (skipped on SwiftShader, run on the M4). Finding 6: the regions past the first
+  come out of `maxPerStageDescriptorStorageBuffers` (keeping Vulkan's 4); the first still isn't (backlog).
+- 2, 3, 4: the second loop's. 7: already in the backlog.
