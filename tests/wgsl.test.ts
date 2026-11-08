@@ -1897,6 +1897,21 @@ test('a fragment stage\'s unsigned atomic min and max on an array of atomic<i32>
   }
 });
 
+test('a multisampled array is its first layer: its size one layer, its texels that layer\'s, a stage Tint compiles (VK4 T47)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const r = glslStage(await translator(), tmp, 'tests/venus/t47/ms-array-size.frag');
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /texture_multisampled_2d/);
+    assert.doesNotMatch(r.text, /textureNumLayers/);
+    const errors = await compile([r.text]);
+    if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(errors, [''], 'WGSL Chromium rejected');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('flat varyings of ints and floats at one location travel as words (VK4 T42)', { skip: noGlslc || (spawnSync('spirv-as', ['--version']).status !== 0 && 'SKIPPED: no spirv-as'), timeout: 120_000 }, async (t) => {
   // The location was the type of its last load or store (a float's bits through an f32 varying, which a backend may
   // canonicalize; an int's and a float's stores at one location gave the vertex stage an interpolated f32 output).

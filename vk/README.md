@@ -850,7 +850,8 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
 - **Multisampled arrays** (VK4 T12; `MsLayers` in web/venus-gpu.ts): WebGPU's multisampled textures have one layer, so the
   worker makes a texture a layer behind one object, which the driver sees as one texture; every path takes a layer at a
   time (views, `texCopy`), so passes, resolves, clears and copies work as they do for any array. A view of several
-  layers shows its first: WGSL has no multisampled arrays to sample, a shader on `sampler2DMSArray` is out of reach.
+  layers shows its first: WGSL has no multisampled arrays to sample, so a shader's `sampler2DMSArray` is that layer, its
+  texel fetches and size of it (one layer; VK4 T47: Tint refused such a stage).
   Formats WebGPU doesn't multisample stay out, also as a view's format where a format list says so (one sample then).
 - **Packed formats** (VK4 T12, T30; `WG_FMT_PACKED`, `packPass` in web/venus-gpu.ts): `R5G6B5`, `A1R5G5B5` and `B4G4R4A4`,
   which Vulkan requires, and their four orders, 1.3's `A4R4G4B4` and `A4B4G4R4` (`VK_EXT_4444_formats`) and

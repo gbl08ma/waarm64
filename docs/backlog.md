@@ -901,7 +901,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     samples past the query (dEQP-VK checks the counts of every format only when the first float attachment is
     single-sampled): they fail, out of the list.
   - **Multisampled arrays' leftovers** (VK4 T12; vk/README.md "Multisampled arrays"): a shader sampling a whole
-    `sampler2DMSArray` reads the first layer (it needs a binding per layer and a switch on the layer in the translator,
+    `sampler2DMSArray` reads the first layer, whatever the layer asked, and its size says one layer (VK4 T47: vkd3d's
+    test_multisample_array_texture 9 of 147 checks fail, its other layers'; it needs a binding per layer and a switch on the layer in the translator,
     and the layer count is the bound view's: a variant keyed by it, its bindings past a stage's 16 textures for more
     than a few; VK4 T39 left it, an L task: 18 of dEQP-VK's sources declare one, in pipeline, render pass, resolve and
     fragment shading rate tests, not counted). The

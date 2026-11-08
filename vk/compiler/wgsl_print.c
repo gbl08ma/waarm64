@@ -951,8 +951,9 @@ gather_tex(struct ctx *c, nir_tex_instr *tex)
    const bool sampled = tex->op != nir_texop_txf && tex->op != nir_texop_txf_ms && tex->op != nir_texop_txs &&
                         tex->op != nir_texop_query_levels && tex->op != nir_texop_texture_samples;
    struct res_use *t = resource(c, tex->texture_index, WGSL_TEXTURE);
-   t->r.dim = tex_dim(c, tex->sampler_dim, tex->is_array);
    t->r.multisampled = tex->sampler_dim == GLSL_SAMPLER_DIM_MS || tex->op == nir_texop_txf_ms;
+   /* A multisampled array is its first layer (WebGPU has none: vk/README.md "Multisampled arrays"). */
+   t->r.dim = tex_dim(c, tex->sampler_dim, tex->is_array && !t->r.multisampled);
    if (tex->op == nir_texop_txs || tex->op == nir_texop_query_levels) {
       if (tex->component)
          t->r.sample = tex->component == 1 ? WGSL_SAMPLE_SINT : WGSL_SAMPLE_UINT;
@@ -3125,8 +3126,11 @@ emit_tex(struct ctx *c, nir_tex_instr *tex)
       const char *dims = r->r.multisampled || !lod ? fmt(c, "textureDimensions(%s)", t)
                                                    : fmt(c, "textureDimensions(%s, %s)", t, src_comp(c, lod, 0));
       /* The channels asked: optimization shrinks the value to those it uses. */
+      /* A multisampled array is bound as its first layer (WebGPU has no multisampled arrays: vk/README.md
+       * "Multisampled arrays"), whose layer count WGSL can't ask: 1, as what the stage reads of it (VK4 T47: vkd3d's
+       * test_multisample_array_texture, the stage refused by Tint before). */
       if (tex->is_array && def->num_components == 3)
-         dims = fmt(c, "vec3<u32>(%s, textureNumLayers(%s))", dims, t);
+         dims = r->r.multisampled ? fmt(c, "vec3<u32>(%s, 1u)", dims) : fmt(c, "vec3<u32>(%s, textureNumLayers(%s))", dims, t);
       else if (def->num_components == 1 && tex->sampler_dim != GLSL_SAMPLER_DIM_1D)
          dims = fmt(c, "%s.x", dims);
       line(c, "t%u = %s;", def->index, dims);
@@ -3151,7 +3155,8 @@ emit_tex(struct ctx *c, nir_tex_instr *tex)
    if (tex->op == nir_texop_txf || tex->op == nir_texop_txf_ms) {
       const char *ci = as_base(c, src_name(c, coord), WGSL_I32, cn);
       cbase = cn == 1 ? ci : dn == 1 ? fmt(c, "%s.x", ci) : fmt(c, "%s.%s", ci, comps(c, 0, dn));
-      if (tex->is_array)
+      /* A multisampled array's layer: its first is bound, whatever the layer (VK4 T47: Tint refused the stage). */
+      if (tex->is_array && !r->r.multisampled)
          layer = fmt(c, "%s.%s", ci, swz(dn));
       if (offset)
          cbase = fmt(c, "(%s + %s)", cbase, offset);
