@@ -758,9 +758,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     needed, a query's two values would be its sums), `vkCmdDrawIndirectByteCountEXT` (`transformFeedbackDraw`),
     primitive restart in a captured draw (captured without restarts, warned), streams past 0,
     `transformFeedbackPreservesProvokingVertex` (the records in Vulkan's order whatever the provoking vertex:
-    `rasterization.provoking_vertex.transform_feedback.*` not supported), 16-bit outputs, records past 512 bytes, a
-    program of four bind groups (the capture's own takes one: push constants past the immediates or draw parameters in
-    group 3 with sets 0 to 2 used; the capture refused at the pipeline's creation since VK3 L7a), and `gl_ClipDistance`'s capture (`transform_feedback.simple.xfb_clipdistance_*`: the 8th
+    `rasterization.provoking_vertex.transform_feedback.*` not supported), 16-bit outputs, records past 512 bytes (a
+    program of four bind groups is captured since VK4 T40, its capture's bindings in a copy of group 3), and `gl_ClipDistance`'s capture (`transform_feedback.simple.xfb_clipdistance_*`: the 8th
     distance reads 0). Each captured draw is a compute pass of its own with a copy of its index and vertex ranges (VK3 L7a: one storage
     binding for them all), and a copy of each bound range in and out per capture: fine for dEQP's sizes, not measured
     on a real program. An indexed or indirect captured draw copies its vertex bindings whole from their offsets (an
@@ -787,16 +786,17 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   vkd3d 1.19 makes a Direct3D 12 device at feature level 11_0 in the desktop guest (without them it stops at
   `VK_KHR_shader_draw_parameters`); 11_1 and up are refused. What vkd3d says 11_0 lacks (it makes the device anyway):
   `maxPushConstantsSize` (D3D's 256 bytes of root constants; Vulkan's 128 here), `viewportBoundsRange`,
-  `viewportSubPixelBits`, `maxPerStageDescriptorUniformBuffers` (14 wanted, 13 here), dual-source blending (SwiftShader's
+  `viewportSubPixelBits`, `maxPerStageDescriptorUniformBuffers` (14 wanted, 13 on adapters of 10 storage buffers a
+  stage, SwiftShader's and the M4's; 14 since VK4 T40 where there are 11 or more: "Bindings past WebGPU's"), dual-source blending (SwiftShader's
   adapter only), geometry and tessellation shaders, `multiDrawIndirect` (advertised since VK4 T26, with
   `drawIndirectCount`: unchecked with vkd3d since), `multiViewport`, `occlusionQueryPrecise`,
   pipeline statistics queries, cull distances, `shaderImageGatherExtended` (advertised since VK4 T29: unchecked with vkd3d since; `shaderStorageImageWriteWithoutFormat`, whose
   absence kept 10 of vkd3d's UAV-clear pipelines from translating, is offered since GD G5: unchecked with vkd3d since),
   vertex attribute divisors, sampler min/max reduction (advertised since VK4 T25; unchecked with vkd3d since). vkd3d's own tests (tests/d3d12, built by
   `target/vkd3d/build-tests.sh`: `TESTS=` in vkd3d.ts): test_draw_instanced, test_draw_indexed_instanced and
-  test_root_constants pass; test_vertex_id fails 39 of 89 (as at L7.5 after VK3 L7b captured indirect draws, so not those alone: VK3 L8's check; and a
-  capture of a program of four bind groups, which a vertex stage reading draw parameters makes likelier, since they
-  bring the push buffer's group 3), test_instance_id 24 of 372 (instance step rates of 0 and 2: divisors; its 1-byte
+  test_root_constants pass; test_vertex_id fails 52 of 127 (39 of 89 before VK4 T40 captured its two programs of four
+  bind groups: 75 checks pass against 50; the failures seen are its indirect draws' values, base vertices 3, 8 and 9:
+  bench/vulkan/REPORT.md "VK4 T40"), test_instance_id 24 of 372 (instance step rates of 0 and 2: divisors; its 1-byte
   vertex stride pulled since VK4 T5), test_clear_render_target_view 16 of 280 (views of another format and 3D/array views:
   "The Vulkan driver's gaps"). The next steps by promise: a run of the whole
   d3d12 suite for a ranked list, multi-draw indirect (the driver already loops over a draw count, each draw with its
@@ -1089,10 +1089,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     indirect draw of such a stage (said once; its counts are on the GPU: VK4-KICKOFF.md T45). A transform feedback
     capture of such a stage is dropped (said: the capture's pass would run it again). Refused: outputs past WebGPU's
     16 vertex attributes (four words an attribute), a fragment stage reading storage the vertex stage writes (one
-    layout entry, two accesses), and stages past WebGPU's bindings with the pre-pass's three, which count as a
-    capture's: 55 of T33's 10,581 candidates (`descriptorset_random.sets4` and `sets8`, "Texel buffers" below: T40),
-    one of them over by the pre-pass's own uniform buffer alone (its parameters could ride in the records' buffer).
-    Geometry and tessellation, the same pre-pass's way, are tier 4's.
+    layout entry, two accesses), and stages past WebGPU's bindings with the pre-pass's one (its parameters, inputs and
+    records in one storage buffer since VK4 T40, which passed T33's 55 such failures of `descriptorset_random.sets4`
+    and `sets8`). Geometry and tessellation, the same pre-pass's way, are tier 4's.
   - **Device addresses' leftovers** (VK4 T7; vk/README.md "Device addresses"): all address memory is one storage binding
     away, so an allocation with the flag past `maxStorageBufferBindingSize` fails though the heap has room: DXVK puts every
     allocation there (no shader of it reads through pointers, so it needs none of this but the place). Every use of a
@@ -1133,9 +1132,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     make them one each, for a binding in group 3.
   - **What R7's limits leave** (VK4 R7, its review's B4, B8, D4): 16 vertex bindings need a free bind group and room in the
     vertex stage's storage buffers, or the draw is refused, said once (four groups in use, or a vertex stage's own storage
-    buffers); 8 dynamic uniform buffers with push constants past the immediates or draw parameters put the push buffer on
-    a dynamic storage binding, which a layout with all 4 of those, or a stage full of storage buffers, doesn't have (the
-    pipeline is refused, said once; a push binding without a dynamic offset, a bind group per draw, would serve); a
+    buffers; VK4-KICKOFF.md T44); 8 dynamic uniform buffers with push constants past the immediates or draw parameters
+    put the push buffer on a dynamic storage binding, and a layout with all 4 of those too has its last one a plain
+    binding at the offset bound (VK4 T40, `wg_bake_dynamic`: a bind group per offset, its cost unmeasured; a stage full
+    of storage buffers is still refused); a
     uniform block declared past its range and what its memory's GPUBuffer has past it (64 KiB, less near
     `maxBufferSize`) reads a shadow of the block's size since VK4 T37, so its scope pays a copy (`has_big_uniform`
     scans a dispatch for it). A set with inline blocks has a GPUBuffer of 64 KiB more than them, for what its shaders may
@@ -1176,26 +1176,24 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     at a pass's replay, or its JSON buffer reused). That pass is lost; nothing failed that names it. Next: run the
     sample with `VIRGL_GPU=virgl,vulkan,debug` and find the case from the trace.
   - **Texel buffers** (VK3 L6b, vk/README.md "The shader path": a storage buffer of the view's words, its format
-    decoded in WGSL; storage of texels under a word by atomics since VK4 T38, of 3- and 6-byte ones not offered): each takes one of WebGPU's storage buffers a stage (10 on SwiftShader, 8 by default), which
-    Vulkan counts with sampled or storage images (16 and 4), so a stage with many storage buffers and texel buffers is
-    refused at its pipeline's creation (VK3 L7a, vk/README.md "Bindings past WebGPU's"; 2
-    `binding_model.descriptor_copy` cases: 13 storage buffers in the compute stage). Their parameters are one uniform
-    buffer a group since VK4 T21 (they were one each). **All 165 of `descriptorset_random.sets4`'s failures on
-    SwiftShader** (14,106 cases: 291 pass, 13,650 NotSupported; the census's two among them; since VK4 T33 the vertex
-    stages that store add 55 of `sets4` and `sets8`) are such refusals, read
-    as zeros: stages of up to 18 texel buffers' words (16 uniform texel buffers are within the 16 sampled images), and
-    fragment stages whose uniform buffers and 4 inline uniform blocks (1.3's minimum, counted apart in Vulkan) fold past
-    the advertised two into storage. Words of texel buffers of one memory could share a binding (a variant, as storage
-    aliases are: `descriptorset_random` binds its descriptors from few buffers; unmeasured), uniform texel buffers could
-    be r32uint textures (they count with sampled images in both: a copy whenever the buffer changes), and a set's inline
-    blocks one binding of its inline buffer, as the table is; a texel buffer whose range overlaps another writable binding of its memory in a dispatch (bound writable
-    then, or else a usage-scope conflict) was refused by WebGPU's binding aliasing (16 of `descriptor_copy.compute`'s texel buffer
-    cases: "Writable storage buffer binding aliasing", the dispatch dropped; since VK4 T3 a read-only one is copied
-    instead: "Usage scopes' leftovers" above);
-    122 `api.buffer_view.access.uniform_storage_texel_buffer` cases are NotSupported for `VK_KHR_extended_flags` (they
-    ask `VK_KHR_maintenance5` too, offered since VK4 T24; not the without-format features, as this said before GD G5
-    offered them); storage texel buffers of formats under a word (r8, rg8, r16) and
-    texel buffer atomics (R32's, mandatory in 1.3) aren't offered; sRGB and 64-bit formats aren't either.
+    decoded in WGSL; storage of texels under a word by atomics since VK4 T38, of 3- and 6-byte ones not offered): each
+    takes one of WebGPU's storage buffers a stage (10 on SwiftShader and the M4, 8 by default), which Vulkan counts with
+    sampled or storage images (16 and 4). Since VK4 T40 a program whose stages fit only so has the words a stage only
+    reads of one memory, texel buffers' and folded uniform buffers', read through one binding of it ("Shared words";
+    bench/vulkan/REPORT.md "VK4 T40": all 250 of `descriptorset_random.sets4`'s and `sets8`'s failures pass, and
+    `descriptor_copy`'s). Left: written storage texel buffers take a binding each (sharing one would need the run's
+    readback and one atomic type); a stage whose words of several memories still don't fit refuses its draws (said
+    once); the variants are one per who-shares-with-whom (dEQP's few; a program that rebinds its views among many
+    memories would make many, unmeasured); a whole memory bound read-only beside a write of it in one scope is copied
+    whole into a shadow (its cost unmeasured: only programs past the limits share). Not done, not needed by what was
+    measured: uniform texel buffers as r32uint textures (with sampled images, a copy whenever the buffer changes) and a
+    set's inline blocks as one uniform binding (they fold and share instead). A texel buffer whose range overlaps
+    another writable binding of its memory in a dispatch (bound writable then, or else a usage-scope conflict) was
+    refused by WebGPU's binding aliasing (16 of `descriptor_copy.compute`'s texel buffer cases: "Writable storage
+    buffer binding aliasing", the dispatch dropped; since VK4 T3 a read-only one is copied instead: "Usage scopes'
+    leftovers" above); 122 `api.buffer_view.access.uniform_storage_texel_buffer` cases are NotSupported for
+    `VK_KHR_extended_flags` (they ask `VK_KHR_maintenance5` too, offered since VK4 T24; not the without-format
+    features, as this said before GD G5 offered them); sRGB and 64-bit formats aren't offered.
   - **`images/vkframes/venus-profile.json` predates VK4 T11** (2026-10-26; found by GD G6): it says R8_UINT and the
     other tier1 formats have no storage, which the device has offered since T11, so captures made through it (the
     programs' frames, `bench/vulkan/translate/programs.sh` with that profile) see an older device. Remake it
@@ -1226,14 +1224,17 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Bindings past WebGPU's** (VK3 L7a, vk/README.md "Bindings past WebGPU's"): what can't be advertised apart from
     what Vulkan counts with it is refused when a pipeline is made, saying why: a fragment stage's input attachments
     beside 16 sampled images (Vulkan counts them apart, WebGPU as textures; the device keeps Vulkan's 16 and 4: ANGLE's
-    ES3 wants 16 texture units), texel buffers beside a full count of storage buffers (above), more folded uniform
-    buffers than the advertised two (folding goes by the layout: a stage that sees another's folded buffers),
-    binding numbers past WebGPU's 1,000 or on the driver's from the parameter table's 994 on (sets 3 and up share
-    group 3: out of reach within the advertised limits, a guard). `maxDescriptorSetUniformBuffersDynamic` is 7 where WebGPU has 8 (under Vulkan's
-    minimum of 8, like the descriptor-set limits that are a stage's: the push buffer is a dynamic uniform buffer of its
-    own); a push buffer made a dynamic storage buffer where the layout has 8 would give it back. A captured vertex
-    stage with four groups (the push buffer's, as with draw parameters, or sets 3 and up) loses its capture (refused
-    at creation): the capture's three bindings in one of the program's groups would do it. Not covered by a test of
+    ES3 wants 16 texture units), texel buffers beside a full count of storage buffers that don't share a binding (above),
+    more folded uniform buffers than the advertised (folding goes by the layout: a stage that sees another's folded
+    buffers), binding numbers past WebGPU's 1,000 or on the driver's from the parameter table's 994 on (sets 3 and up
+    share group 3: out of reach within the advertised limits, a guard). A program of four groups (sets 3 and up, the
+    push buffer or device addresses in group 3) has a capture's and a storing vertex stage's pre-pass's bindings in a
+    copy of group 3 at its free 995, 997 and 999 (VK4 T33, T40), but no room there for an attachment read's textures
+    (T32's `wg_dst`, up to 9: the draw is refused, said once) or pulled vertices' bindings (up to 16:
+    VK4-KICKOFF.md T44); those would need binding numbers group 3's slots leave (below 994), or, for pulled ones, the
+    copies into one buffer the pre-pass makes. maxPerStageDescriptorUniformBuffers is 14 (vkd3d's) only where 8 storage
+    buffers are left beside the three folded ones, an adapter of 11 or more (VK4 T40): SwiftShader's and the M4's 10 keep
+    13, D3D's 8 UAVs at 11_0 taking the eighth storage buffer. Not covered by a test of
     its own: a draw of more than 64 resources (variants' masks were 64 bits: the masks are 128 now, a render harness
     with that many bindings would check it) and the split sampler in a render pipeline (`wg_variant_modules`; the
     compute path is `tests/venus-driver.test.ts` "sharedSampler").
@@ -1631,8 +1632,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   takes 2: at 4 the browser peaked at 6.1–6.3 GiB a machine (5.6–5.7 at 2), and `scripts/ci-deqp-vk.sh` runs two
   machines under 14 GiB. Worth it once a `--full` run at 4 is seen under the cap (its peak measured), or with the
   cap raised.
-- **`tests/page-copy-edit.test.ts` failed once in `scripts/ci.sh`** (2026-11-06, VK4 T32's run; passed alone at
-  once, and in the run before): "words changed where they are shown…" got an unexpected list of highlighted elements
+- **`tests/page-copy-edit.test.ts` failed twice in `scripts/ci.sh`** (2026-11-06, VK4 T32's run; 2026-11-08, VK4
+  T40's, one of four; passed alone at once, three times the second): "words changed where they are shown…" got an unexpected list of highlighted elements
   (`BUTTON[title]`, `SUMMARY[aria-label]`…) where it expected fewer. Not traced: likely an element still rendering when
   the test reads them, under the full run's load.
 - **`scripts/ci.sh`'s JS step runs close to its cap** (2026-11-04, GD G4's and the core review's #5 runs; the cap was

@@ -1,0 +1,23 @@
+#version 450
+// tests/venus-driver.test.ts (misc: t40Shared; VK4 T40, dEQP-VK's descriptorset_random.sets4): 12 uniform texel
+// buffers (10 views of one buffer, 2 of another), 13 uniform buffers (the advertised most, of one buffer) and 4 inline
+// uniform blocks beside a storage buffer in one stage (vk/driver/wg_test.c's scenario 113). The texel buffers' words
+// and the uniform buffers and blocks past WebGPU's room read as storage were 20 storage buffers with the output, past
+// SwiftShader's 10: the pipeline was refused. The words of one memory share a binding of all of it now, the blocks one
+// of their set's buffer's range of them, each one's place in its group's parameter table.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) buffer B { uint x[]; } b;
+layout(set = 0, binding = 1) uniform usamplerBuffer t[12];
+layout(set = 0, binding = 2) uniform U { uint v; } u[13];
+layout(set = 0, binding = 3) uniform I0 { uint v; } i0;
+layout(set = 0, binding = 4) uniform I1 { uint v; } i1;
+layout(set = 0, binding = 5) uniform I2 { uint v; } i2;
+layout(set = 0, binding = 6) uniform I3 { uint v; } i3;
+void main() {
+  for (int i = 0; i < 12; i++) b.x[i] = texelFetch(t[i], 0).x + texelFetch(t[i], 1).x;
+  for (int j = 0; j < 13; j++) b.x[12 + j] = u[j].v;
+  b.x[25] = i0.v;
+  b.x[26] = i1.v;
+  b.x[27] = i2.v;
+  b.x[28] = i3.v;
+}

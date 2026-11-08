@@ -107,12 +107,14 @@ struct vk_descriptor_set_layout;
 /* Whether a program's bindings fit WebGPU's limits by stage and by layout (wg_caps.c, the one place that counts the
  * bindings WebGPU takes for what Vulkan binds, which the advertised limits follow), with `xfb_storage` storage buffers
  * more in the compute stage (a capture's); else false, with the cause in `error`. */
-bool wg_bindings_fit(const struct wg_program *p, struct vk_descriptor_set_layout *const *layouts, char *error,
+bool wg_shareable(const struct wg_program *p, uint32_t k, int type);
+bool wg_bindings_fit(const struct wg_program *p, struct vk_descriptor_set_layout *const *layouts, bool *shares, char *error,
                      size_t error_size);
-/* The storage buffers and uniform buffers a captured vertex stage's compute pass takes besides the stage's
- * (web/venus-gpu.ts `xfbPipeline`). */
+/* The storage buffers a captured vertex stage's compute pass takes besides the stage's (web/venus-gpu.ts `xfbPipeline`:
+ * its records, and its inputs after its parameters). */
 #define WG_XFB_STORAGE 2
-#define WG_XFB_UNIFORMS 1
+/* A storing vertex stage's pre-pass's (`vsPrepass`: its parameters, inputs and records in one buffer). */
+#define WG_VS_STORAGE 1
 
 extern uint32_t wg_features, wg_max_immediates;
 
@@ -290,8 +292,8 @@ extern bool wg_unwaited_allocations;
 #define wg_shader_xfb(s) ((s)->info.xfb_stride[0] | (s)->info.xfb_stride[1] | (s)->info.xfb_stride[2] | (s)->info.xfb_stride[3])
 /* A vertex stage that writes storage (VK4 T33, vertexPipelineStoresAndAtomics): run as compute before its draw, in a
  * cut of the render pass (wg_cmd.c `vs_prepass`), its outputs drawn by a pass-through vertex stage (web/venus-gpu.ts
- * `vsPrepass`); its resources are the compute stage's, the pre-pass's own bindings WG_XFB_STORAGE and WG_XFB_UNIFORMS
- * on top, in a group after the program's or, where it has four, in group 3 with its own. */
+ * `vsPrepass`); its resources are the compute stage's, the pre-pass's own WG_VS_STORAGE bindings on top, in a group
+ * after the program's or, where it has four, in group 3 with its own. */
 #define wg_shader_stores(s) ((s)->info.stores)
 /* gpu_provoke's modes: each primitive's vertices rotated so that the one Vulkan provokes comes first (their order, and so
  * the winding, kept): the last vertex's of triangle lists, strips and fans and of line lists and strips, the first's of
@@ -599,6 +601,22 @@ struct wg_storage_alias {
    uint32_t delta, bytes, reach;
 };
 
+/*
+ * Words a variant reads through another binding (VK4 T40, wg_caps.c `wg_shareable`: a texel buffer's or a uniform buffer's
+ * read as storage): `res` (as wg_storage_alias's) reads through `to`'s binding, which binds the bytes of every one
+ * sharing it, and each one's first word there is the `.w` of its vec4 in its group's parameter table (`binding` of
+ * it); `set` is the base's res_set of `res`. `to` shares with itself.
+ */
+struct wg_share {
+   uint32_t res, to;
+   int8_t set;
+   /* The binding is its memory's whole (bytes [gpu_at, gpu_at + size) of its GPUBuffer), and a place is from the
+    * memory's start: shared across groups, each group's places its own descriptors' (else from the run's first byte,
+    * the run within one group). */
+   uint8_t whole;
+   uint8_t pad[2]; /* zero: variants compare wg_shares as bytes */
+};
+
 struct wg_program {
    uint32_t refs;
    uint32_t bgl[WGSL_MAX_GROUPS];
@@ -612,6 +630,9 @@ struct wg_program {
    struct wgsl_resource resources[WGSL_MAX_RESOURCES]; /* by group, then binding */
    int16_t dynamic[WGSL_MAX_RESOURCES];                /* the slot's dynamic index in its set, -1, or WG_DYNAMIC_PUSH */
    int8_t res_set[WGSL_MAX_RESOURCES];                 /* the set a resource is of (-1: the push constants') */
+   /* A dynamic buffer past WebGPU's dynamic ones (VK4 T40: the push buffer takes one more): a plain binding, its dynamic
+    * offset its bind group's (`wg_bake_dynamic`); never the push buffer. */
+   uint8_t baked[WGSL_MAX_RESOURCES];
    uint32_t immediate_size;
    uint32_t push_ubo_size;  /* push constants read from the device's push buffer */
    uint32_t push_group;     /* a group 3 of the push buffer alone (no set there) */
@@ -641,6 +662,11 @@ struct wg_program {
    /* Writable storage bindings of one range (`wg_storage_alias`). */
    struct wg_storage_alias *aliases;
    uint32_t alias_count;
+   /* A base whose bindings fit only with words shared (wg_bindings_fit's `shares`): its draws and dispatches go through
+    * variants that share them (`share`), and it has no layouts of its own. */
+   bool shares;
+   struct wg_share *share;
+   uint32_t share_count;
    struct wg_program *variants;
    struct wg_program *base;  /* a variant's program */
    /* A variant's split samplers (wg_program_variant): (group, texture's binding, sampler's binding), the texture
@@ -703,11 +729,14 @@ void wg_program_unref(struct wg_program *p);
 const char *wg_build_id(void);
 /* The variant of a program whose textures in `mask` (by resource index) are bound as unfilterable float, and the
  * samplers they're sampled with as non-filtering, whose read-only storage buffers in it as writable storage, and whose
- * stages print against `keys`; made at its first use, kept with the program. */
+ * stages print against `keys`, with its storage `aliases` and its words shared as `share` says; made at its first use,
+ * kept with the program. */
 uint32_t wg_compute_based(struct wg_program *p, uint32_t x, uint32_t y, uint32_t z);
 struct wg_program *wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl_sampler_key *keys,
-                                      uint32_t key_count, const struct wg_storage_alias *aliases, uint32_t alias_count);
+                                      uint32_t key_count, const struct wg_storage_alias *aliases, uint32_t alias_count,
+                                      const struct wg_share *share, uint32_t share_count);
 void wg_variant_modules(struct wg_program *v, const struct wg_shader *vs, const struct wg_shader *fs);
+void wg_bake_dynamic(struct wg_program *p);
 struct wg_program *wg_program_merge(struct wg_program *a, const struct wg_program *b, const struct wgsl_info *vs,
                                     const struct wgsl_info *fs);
 /* VK4 T37's test of the merge's refusal (wg_test.c `wgt_merge_refused`). */

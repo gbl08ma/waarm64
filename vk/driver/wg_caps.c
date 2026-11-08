@@ -337,8 +337,12 @@ wg_caps_properties(struct vk_properties *p)
    const uint32_t storage = MIN3(L->max_storage_buffers, L->max_storage_buffers_in_fragment_stage,
                                  L->max_storage_buffers_in_vertex_stage);
    /* Uniform buffers past WebGPU's a stage (less the push buffer's binding) are read as storage (wg_shader.c
-    * `fold_uniforms`; VK3 L7.4, ANGLE's ES3 wants 13): WG_FOLDED_UBOS of the storage buffers are theirs. */
-   const uint32_t folded = storage >= 4 + WG_FOLDED_UBOS ? WG_FOLDED_UBOS : 0;
+    * `fold_uniforms`; VK3 L7.4, ANGLE's ES3 wants 13): WG_FOLDED_UBOS of the storage buffers are theirs, and one more
+    * where 8 storage buffers are left beside them (VK4 T40: vkd3d's 14 a stage, D3D's at 11_0, where its 8 UAVs keep
+    * theirs; SwiftShader and the M4 have 10, so 13 there). */
+   const uint32_t folded = storage >= 8 + WG_FOLDED_UBOS + 1 ? WG_FOLDED_UBOS + 1
+                           : storage >= 4 + WG_FOLDED_UBOS   ? WG_FOLDED_UBOS
+                                                             : 0;
    const uint32_t ubo = L->max_uniform_buffers - 1 + folded, ssbo = storage - folded;
    const uint32_t samples = VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_4_BIT;
    /* WebGPU's buffers are ranges of one GPUBuffer a memory: an allocation is at most a buffer (and a 32-bit size), which
@@ -551,18 +555,21 @@ wg_caps_properties(struct vk_properties *p)
  * - a texel buffer: a storage buffer (its words), where Vulkan counts a sampled or storage image;
  * - a group with texel buffers or storage images as words: a uniform buffer, their parameters' table (VK4 T21: one a
  *   texel buffer passed WebGPU's 12, dEQP-VK's sets4);
- * - uniform buffers past a stage's room: storage buffers (WG_FOLDED_UBOS of them advertised, more refused);
+ * - uniform buffers past a stage's room: storage buffers (WG_FOLDED_UBOS of them advertised, or one more: wg_caps_properties; more refused);
  * - a YCbCr binding's planes past the first: textures (combinedImageSamplerDescriptorCount tells the program);
  * - an input attachment: a texture, where Vulkan counts it apart;
- * - a captured vertex stage's compute pass, or a storing one's pre-pass (VK4 T33): the stage's bindings and
- *   WG_XFB_STORAGE storage buffers and WG_XFB_UNIFORMS uniform buffers more (checked where the capture is made:
- *   wg_shader.c; a pre-pass's with the program's);
+ * - a captured vertex stage's compute pass: the stage's bindings and WG_XFB_STORAGE storage buffers more (checked where
+ *   the capture is made: wg_shader.c); a storing one's pre-pass (VK4 T33): the stage's bindings and WG_VS_STORAGE
+ *   storage buffers (both with their parameters in a storage buffer since VK4 T40, a uniform one before);
+ * - words of one buffer that share a binding (VK4 T40, wg_cmd.c `shared_words`): one storage buffer, and the group's
+ *   parameter table where it had none;
  * - a split sampler's twin (wg_program_variant: a sampler for unfilterable and filterable textures): a sampler.
  * wg_caps_properties advertises what fits whatever the program: the push buffer's uniform buffer out of each stage's and
  * its dynamic one out of the layout's, the folded uniform buffers' storage out of each stage's, every stage's least.
  * The rest (texel buffers and input attachments beside full counts of their own kind, a capture's, folded uniform
- * buffers past WG_FOLDED_UBOS) can't be advertised apart from what Vulkan counts with them: a pipeline whose program
- * doesn't fit is refused at its creation, saying why (wg_bindings_fit), never an invalid submit.
+ * buffers past the advertised) can't be advertised apart from what Vulkan counts with them: a pipeline whose program
+ * doesn't fit is refused at its creation, saying why (wg_bindings_fit), or where its words of one memory would fit
+ * shared, its draws' variants that don't (VK4 T40); never an invalid submit.
  */
 enum { WG_COUNT_UNIFORM, WG_COUNT_STORAGE, WG_COUNT_TEXTURE, WG_COUNT_SAMPLER, WG_COUNT_STORAGE_TEXTURE, WG_COUNTS };
 enum { WG_HIDDEN_PUSH, WG_HIDDEN_TEXEL, WG_HIDDEN_FOLDED, WG_HIDDEN_PLANE, WG_HIDDEN_INPUT, WG_HIDDEN_XFB, WG_HIDDEN_TABLE,
@@ -659,9 +666,24 @@ resource_type(const struct wg_program *p, struct vk_descriptor_set_layout *const
    return -1;
 }
 
+/* Whether a program's resource `k` may share a binding with others of its group (`wg_program_variant`'s `shares`, VK4
+ * T40): words a stage only reads, of a texel buffer or a uniform buffer read as storage (whose places can be the
+ * parameter table's), not at a dynamic offset. `t` is its descriptor type (resource_type's, or the bound one's). */
 bool
-wg_bindings_fit(const struct wg_program *p, struct vk_descriptor_set_layout *const *layouts, char *error,
-                size_t error_size)
+wg_shareable(const struct wg_program *p, uint32_t k, int t)
+{
+   const struct wgsl_resource *r = &p->resources[k];
+   return r->kind == WGSL_STORAGE_READ && !r->image_words && p->dynamic[k] == -1 && r->binding < WGSL_TABLE_BINDING &&
+          (t == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER || t == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER ||
+           t == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || t == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK);
+}
+
+/* Whether each stage's bindings fit WebGPU's (else `error` says why). `best`: with the shareable words one binding (the
+ * best a draw's variant can do, all of them of one memory: the draw's own count decides, wg_cmd.c `shared_words`), and a
+ * parameter table more in each group of them that has none in the stage. */
+static bool
+stages_fit(const struct wg_program *p, struct vk_descriptor_set_layout *const *layouts, bool best, char *error,
+           size_t error_size)
 {
    const struct wg_limits *L = &wg_limits;
    static const char *const stages[] = { "vertex", "fragment", "compute" };
@@ -670,32 +692,9 @@ wg_bindings_fit(const struct wg_program *p, struct vk_descriptor_set_layout *con
    static const char *const hidden[] = { "the push buffer", "texel buffers'", "uniform buffers read as storage",
                                          "YCbCr planes", "input attachments", "a capture's or vertex pre-pass's",
                                          "parameter tables (texel buffers', storage images as words')" };
-   uint32_t dynamic_uniform = 0, dynamic_storage = 0;
-   for (uint32_t k = 0; k < p->resource_count; k++) {
-      const struct wgsl_resource *r = &p->resources[k];
-      if (p->dynamic[k] != -1 && r->kind == WGSL_UNIFORM)
-         dynamic_uniform++;
-      else if (p->dynamic[k] != -1)
-         dynamic_storage++;
-      /* Binding numbers past WebGPU's, or a set's slot on the driver's bindings (the parameter table's and up; sets 3
-       * and up share group 3: the binding review's finding 8; out of reach within the advertised limits). */
-      const bool driver = p->dynamic[k] == WG_DYNAMIC_PUSH || (r->binding == WGSL_TABLE_BINDING && r->kind == WGSL_UNIFORM) ||
-                          (r->group == WGSL_MAX_GROUPS - 1 && r->binding == WGSL_ADDRESS_BINDING);
-      if (r->binding >= L->max_bindings_per_bind_group || (r->binding >= WGSL_TABLE_BINDING && !driver)) {
-         snprintf(error, error_size, "binding %u of bind group %u, past WebGPU's %u or on the driver's",
-                  r->binding, r->group, MIN2(L->max_bindings_per_bind_group, WGSL_TABLE_BINDING));
-         return false;
-      }
-   }
-   if (dynamic_uniform > L->max_dynamic_uniform_buffers || dynamic_storage > L->max_dynamic_storage_buffers) {
-      const bool u = dynamic_uniform > L->max_dynamic_uniform_buffers;
-      snprintf(error, error_size, "%u dynamic %s buffers in the layout, past WebGPU's %u%s", u ? dynamic_uniform : dynamic_storage,
-               u ? "uniform" : "storage", u ? L->max_dynamic_uniform_buffers : L->max_dynamic_storage_buffers,
-               u && p->push_ubo_size ? " (one of them the push buffer)" : "");
-      return false;
-   }
    for (uint32_t st = 0; st < 3; st++) {
       uint32_t n[WG_COUNTS] = { 0 }, h[WG_COUNTS][WG_HIDDENS] = { { 0 } };
+      uint32_t shared_groups = 0, tables = 0;
       for (uint32_t k = 0; k < p->resource_count; k++) {
          if (!(p->vis[k] & (1u << st)))
             continue;
@@ -705,8 +704,16 @@ wg_bindings_fit(const struct wg_program *p, struct vk_descriptor_set_layout *con
                             : r->kind == WGSL_TEXTURE                                       ? WG_COUNT_TEXTURE
                             : r->kind == WGSL_SAMPLER || r->kind == WGSL_SAMPLER_COMPARE    ? WG_COUNT_SAMPLER
                                                                                             : WG_COUNT_STORAGE_TEXTURE;
-         n[c]++;
          const int t = resource_type(p, layouts, k);
+         if (best && wg_shareable(p, k, t)) {
+            if (!shared_groups)
+               n[c]++, h[c][WG_HIDDEN_TEXEL]++;
+            shared_groups |= 1u << r->group;
+            continue;
+         }
+         if (t == -2 - WG_HIDDEN_TABLE)
+            tables |= 1u << r->group;
+         n[c]++;
          if (t == -2 - WG_HIDDEN_PUSH)
             h[c][WG_HIDDEN_PUSH]++;
          else if (t == -2 - WG_HIDDEN_PLANE)
@@ -721,13 +728,17 @@ wg_bindings_fit(const struct wg_program *p, struct vk_descriptor_set_layout *con
          else if (t == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT)
             h[c][WG_HIDDEN_INPUT]++;
       }
-      /* A captured vertex stage's resources are compute-visible too: its compute pass's own on top. */
-      bool xfb = st == 2 && p->vs_stores;
+      /* A captured vertex stage's resources are compute-visible too: its compute pass's own on top; a storing one's
+       * the pre-pass's. */
+      bool xfb = false;
       for (uint32_t k = 0; st == 2 && k < p->resource_count; k++)
          xfb |= (p->vis[k] & 5) == 5;
+      if (st == 2 && p->vs_stores && !xfb)
+         n[WG_COUNT_STORAGE] += WG_VS_STORAGE, h[WG_COUNT_STORAGE][WG_HIDDEN_XFB] += WG_VS_STORAGE;
+      n[WG_COUNT_UNIFORM] += util_bitcount(shared_groups & ~tables);
+      h[WG_COUNT_UNIFORM][WG_HIDDEN_TABLE] += util_bitcount(shared_groups & ~tables);
       if (xfb) {
          n[WG_COUNT_STORAGE] += WG_XFB_STORAGE, h[WG_COUNT_STORAGE][WG_HIDDEN_XFB] += WG_XFB_STORAGE;
-         n[WG_COUNT_UNIFORM] += WG_XFB_UNIFORMS, h[WG_COUNT_UNIFORM][WG_HIDDEN_XFB] += WG_XFB_UNIFORMS;
       }
       const uint32_t max[WG_COUNTS] = {
          L->max_uniform_buffers,
@@ -757,4 +768,46 @@ wg_bindings_fit(const struct wg_program *p, struct vk_descriptor_set_layout *con
       }
    }
    return true;
+}
+
+bool
+wg_bindings_fit(const struct wg_program *p, struct vk_descriptor_set_layout *const *layouts, bool *shares, char *error,
+                size_t error_size)
+{
+   if (shares)
+      *shares = false;
+   const struct wg_limits *L = &wg_limits;
+   uint32_t dynamic_uniform = 0, dynamic_storage = 0;
+   for (uint32_t k = 0; k < p->resource_count; k++) {
+      const struct wgsl_resource *r = &p->resources[k];
+      /* Those past WebGPU's are plain bindings (`baked`: VK4 T40). */
+      if (p->dynamic[k] != -1 && !p->baked[k] && r->kind == WGSL_UNIFORM)
+         dynamic_uniform++;
+      else if (p->dynamic[k] != -1 && !p->baked[k])
+         dynamic_storage++;
+      /* Binding numbers past WebGPU's, or a set's slot on the driver's bindings (the parameter table's and up; sets 3
+       * and up share group 3: the binding review's finding 8; out of reach within the advertised limits). */
+      const bool driver = p->dynamic[k] == WG_DYNAMIC_PUSH || (r->binding == WGSL_TABLE_BINDING && r->kind == WGSL_UNIFORM) ||
+                          (r->group == WGSL_MAX_GROUPS - 1 && r->binding == WGSL_ADDRESS_BINDING);
+      if (r->binding >= L->max_bindings_per_bind_group || (r->binding >= WGSL_TABLE_BINDING && !driver)) {
+         snprintf(error, error_size, "binding %u of bind group %u, past WebGPU's %u or on the driver's",
+                  r->binding, r->group, MIN2(L->max_bindings_per_bind_group, WGSL_TABLE_BINDING));
+         return false;
+      }
+   }
+   if (dynamic_uniform > L->max_dynamic_uniform_buffers || dynamic_storage > L->max_dynamic_storage_buffers) {
+      const bool u = dynamic_uniform > L->max_dynamic_uniform_buffers;
+      snprintf(error, error_size, "%u dynamic %s buffers in the layout, past WebGPU's %u%s", u ? dynamic_uniform : dynamic_storage,
+               u ? "uniform" : "storage", u ? L->max_dynamic_uniform_buffers : L->max_dynamic_storage_buffers,
+               u && p->push_ubo_size ? " (one of them the push buffer)" : "");
+      return false;
+   }
+   /* As the program is, or, where `shares` is asked, its words shared (`wg_program_variant`'s `shares`, VK4 T40): the
+    * program's draws make their variants, and the error says why the program as it is didn't fit. */
+   if (stages_fit(p, layouts, false, error, error_size))
+      return true;
+   char why[8];
+   if (shares && stages_fit(p, layouts, true, why, sizeof(why)))
+      return *shares = true;
+   return false;
 }

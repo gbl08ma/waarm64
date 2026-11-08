@@ -1,0 +1,14 @@
+#version 450
+// tests/venus-driver.test.ts (misc: t40Dynamic; VK4 T40, R7's leftover): WebGPU's 8 dynamic uniform buffers and its 4
+// dynamic storage buffers (SwiftShader's; the M4 has 8) beside push constants past the immediates, whose push buffer,
+// a dynamic binding of its own, had none left: the pipeline was refused (vk/driver/wg_test.c's scenario 114). A
+// dynamic buffer past WebGPU's is a plain binding now, its offset the bind group's. Two dispatches at other offsets.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform U { uint k; } u[8];
+layout(set = 0, binding = 1) buffer S { uint k; } s[4];
+layout(set = 0, binding = 2) buffer Out { uint b[]; } o;
+layout(push_constant) uniform P { uint base; uint pad[30]; uint add; } pc;
+void main() {
+  for (int i = 0; i < 8; i++) o.b[pc.base + i] = u[i].k + pc.add;
+  for (int j = 0; j < 4; j++) o.b[pc.base + 8 + j] = s[j].k + pc.add;
+}

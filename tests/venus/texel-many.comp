@@ -1,7 +1,8 @@
 #version 450
 // tests/venus-driver.test.ts (misc: texelStorage; VK3 L7a, the L6b-L7.3 review's finding 2): 8 storage buffers and 3
 // uniform texel buffers, within Vulkan's advertised limits, are 11 of WebGPU's storage buffers (vk/driver/wg_test.c's
-// scenario 24): refused at pipeline creation where the adapter has fewer, never an invalid submit.
+// scenario 24): refused where the adapter has fewer, never an invalid submit (at the dispatch since VK4 T40: the texel
+// buffers are views of three buffers, and the words of one would share a binding).
 layout(local_size_x = 1) in;
 layout(set = 0, binding = 0) buffer B { uint x[]; } b[8];
 layout(set = 0, binding = 1) uniform usamplerBuffer t[3];

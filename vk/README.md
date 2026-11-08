@@ -162,10 +162,22 @@ texels too), storage ones formats of whole words or texels of 1 or 2 bytes (VK4 
 `atomicAnd` and an `atomicOr` on its word, as a 16-bit store to a storage buffer is, so a store of a format under a word
 or of one the shader doesn't declare (the view's, known only when bound) makes the binding `array<atomic<u32>>`, and a
 store of a declared format of a word or more keeps it plain. Atomics take R32's (`STORAGE_TEXEL_BUFFER_ATOMIC`, 1.3's:
-`atomic<u32>` or `atomic<i32>` by the ops' sign).
+`atomic<u32>` or `atomic<i32>` by the ops' sign). **Shared words** (VK4 T40, dEQP-VK's `descriptorset_random`, which binds a stage's
+texel buffers and uniform buffers from one buffer): a texel buffer's words take a storage buffer where Vulkan counts an
+image, so a stage of many, beside folded uniform buffers, passed WebGPU's storage buffers. Where a program's bindings
+fit only so (`wg_bindings_fit`'s `shares`), it has no layouts of its own and each draw or dispatch takes a variant
+(wg_cmd.c `shared_words`) in which the words a stage only reads of texel buffers and of uniform buffers read as storage
+(`wg_shareable`) read through one binding a memory: the memory's whole (`wg_share.whole`, every group's that bind it), or,
+where it's past what a binding takes or isn't one (a set's inline uniform blocks, of its own buffer), a run of one
+group's places within `maxStorageBufferBindingSize`. The variant's text reads each one's `rG_B[i]` as
+`rT[rG_994[B].w + (i)]` (wg_shader.c `shared_text`): its place in the binding is the `.w` of its first vec4 in its
+group's parameter table (made where the group had none), written with the bind group, so the variant is keyed by who
+shares with whom, not by the places; a draw whose variant still doesn't fit (words of several memories) is refused,
+said once. Shared words stay read-only: a scope that writes their memory reads them from its shadows.
 
 **Uniform buffers past WebGPU's** (VK3 L7.4, ANGLE's ES3): the device reports `maxPerStageDescriptorUniformBuffers`
-two past WebGPU's less the push buffer's binding (13 of 12) and the storage buffers two fewer; a uniform buffer past
+two past WebGPU's less the push buffer's binding (13 of 12) and the storage buffers two fewer, or three where 8 storage
+buffers are left beside them (VK4 T40: vkd3d's 14, on an adapter of 11 or more; SwiftShader and the M4 have 10); a uniform buffer past
 its stage's room is read as a read-only storage buffer (`lower_ubo_storage` in wgsl_nir.c turns its loads into SSBO
 loads, so it is `var<storage, read>` and its layout entry `read-only-storage`). The pipeline layout decides
 (wg_shader.c `fold_uniforms`), by the stages each binding's flags name, so every stage that sees a buffer reads it the
@@ -193,7 +205,7 @@ and written words in `wgsl_info`). The driver's compute pass ("The driver") call
 a vertex entry point, and the module that has one, so a vertex stage that writes a storage buffer or image or does
 atomics (`wgsl_info.stores`) is printed without its `@vertex` entry point: its body, `wg_vs`, runs as compute before
 its draw ("The driver", "Vertex stages that store"), and its resources are the compute stage's in its program (their
-visibility; `wg_bindings_fit` counts the pre-pass's three bindings as a capture's). A transform feedback capture of
+visibility; `wg_bindings_fit` counts the pre-pass's binding, `WG_VS_STORAGE`). A transform feedback capture of
 such a stage is dropped, said: the capture's pass would run it again.
 
 **Subgroups** (VK3 L5): with WebGPU's `subgroups` and an adapter whose subgroups have one size (`wg_subgroup_size`:
@@ -936,15 +948,18 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   begin copies its counters (bytes written a buffer) and each bound buffer's range into one buffer of the worker's (a
   dispatch then never binds a guest memory writable beside its other uses); a draw copies its index range (a direct
   draw's indices only, VK3 L8a: the bound range's rest of a big buffer went past `maxStorageBufferBindingSize`) and each
-  vertex binding's reachable range (past its last vertex or instance where it isn't indexed) into another, so the
-  capture's group is three bindings whatever its buffers (VK3 L7a, the binding review's finding 1: one a buffer and a
-  vertex binding went past WebGPU's storage buffers a stage, and lost the submit); a draw runs the
+  vertex binding's reachable range (past its last vertex or instance where it isn't indexed) into another, after the
+  draw's parameters (its first 112 bytes, `wgx_p`: a uniform binding before VK4 T40), so the capture's bindings are two
+  whatever its buffers (VK3 L7a, the binding review's finding 1: one a buffer and a vertex binding went past WebGPU's
+  storage buffers a stage, and lost the submit); a draw runs the
   vertex stage as compute (`xfbPipeline`: the module's WGSL with a vertex fetch made from its render pipeline's vertex
   buffers, each WebGPU vertex format decoded from storage words, `vertexDecode`, and a loop over the draw's primitives'
   vertices in Vulkan's order, as many whole primitives as every buffer has room for) on the bind groups, vertex
   buffers and immediates the worker last set in the pass (the vertex stage's resources are visible to compute too:
-  `program_create`), its own group after the program's (so a program of four groups isn't captured: refused at the
-  pipeline's creation, as one whose stage's bindings and the capture's don't fit, "Bindings past WebGPU's"); then one
+  `program_create`), its own group after the program's, or, where it has four (sets 3 and up, the push buffer or device
+  addresses there: vkd3d's draw parameters), at bindings 997 and 999 of a copy of group 3's (`group3With`; refused at the
+  pipeline's creation before VK4 T40, as one whose stage's bindings and the capture's don't fit still is, "Bindings past
+  WebGPU's"); then one
   invocation advances the state; an end copies the ranges back and the state into its counters. A draw that
   rasterizes nothing (rasterizer discard, both faces culled) records its state for the capture alone (`xfb_record`).
   An indirect draw is captured too (VK3 L7b: it wasn't): its arguments copied over the capture's parameters on the GPU,
@@ -954,16 +969,19 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   render pass (begun storing every attachment, as for `dst_copies`: `pass_vs_stores`, secondaries' too). After the
   draw's state is applied, `vs_prepass` ends the WebGPU pass and the worker runs the stage as compute for the draw's
   vertices on the bind groups, vertex and index buffers and immediates last set (web/venus-gpu.ts `vsPrepass`): the
-  draw's vertex bindings and indices copied into one buffer first, as transform feedback's are; an invocation a
+  draw's vertex bindings and indices copied into one buffer first, after the draw's parameters and its records (one
+  storage binding, VK4 T40: three before, which a vertex stage of the advertised storage buffers, or of WebGPU's 12
+  uniform buffers, had no room for; the inputs last, so that a read past them, an index out of bounds, stays in them
+  as WebGPU keeps a binding's reads, as `robustness.vertex_access` wants); an invocation a
   vertex in the draw's order, an index each (an index met twice runs twice, as Vulkan runs it where it can't tell the
   results are the same; the indices of an `OP_PROVOKE`'s ticket likewise), with no loop around the stage's body
   (SwiftShader compiling one around a large body took its GPU process past 4 GiB); each vertex's outputs (`struct
   Out`, before the flips) a record of words, and an indexed draw's indices a list of the records' places, a restart
   kept. The pass begins again loading, the state is applied there, and the draw reads the records as one vertex buffer
   through the pipeline's pass-through vertex stage (the worker's, `passThrough`: four words an attribute, flipped as
-  the stage's own entry point would), an instance at a time. The pre-pass's bindings take a group after the program's,
-  or, where it has four (sets 3 and up, the push buffer or device addresses there), join a copy of group 3's at
-  bindings 995, 997 and 999 (`vsGroup3`, from the driver's layouts' and groups' entries). Vulkan orders a draw's vertex
+  the stage's own entry point would), an instance at a time. The pre-pass's binding takes a group after the program's,
+  or, where it has four (sets 3 and up, the push buffer or device addresses there), joins a copy of group 3's at
+  binding 995 (`group3With`, from the driver's layouts' and groups' entries). Vulkan orders a draw's vertex
   stage after the commands before it, so the cut is exact where a pre-pass before the pass wouldn't be (an earlier
   draw's stores, a barrier, then this one's reads). A draw that rasterizes nothing (rasterizer discard, both faces
   culled) still runs its stage (`OP_VS_ONLY`), and a draw split by face (`draw_faces`) runs it once, its later face
@@ -975,9 +993,12 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   that counts them): besides a descriptor's own binding, WebGPU binds the push buffer (a uniform buffer every stage
   counts, dynamic in its layout), a texel buffer's words (a storage buffer, where Vulkan counts an image), a group's
   parameter table (a uniform buffer, for its texel buffers and storage images as words), uniform buffers past a stage's room as storage, a YCbCr binding's other planes and an input attachment as
-  textures, a capture's compute pass's three, and a split sampler's twin (below). The device advertises what fits
-  whatever the program: each stage's uniform buffers less the push buffer's, all of WebGPU's dynamic uniform buffers
-  (a layout with them all puts the push buffer on a dynamic storage binding, `wgsl_print_options.push_storage`; VK4 R7),
+  textures, a capture's compute pass's two (a storing vertex stage's pre-pass's one), and a split sampler's twin
+  (below). The device advertises what fits whatever the program: each stage's uniform buffers less the push buffer's,
+  all of WebGPU's dynamic uniform buffers (a layout with them all puts the push buffer on a dynamic storage binding,
+  `wgsl_print_options.push_storage`; VK4 R7; a dynamic buffer past WebGPU's dynamic ones, with the push buffer's or
+  past them, as dEQP-VK's `descriptor_copy` counts Vulkan's limit by the set, is a plain binding at the offset bound,
+  its bind group's, a group for each offset: `baked`, `wg_bake_dynamic`, VK4 T40),
   storage buffers less the folded ones, every stage's least (the vertex and fragment stages' own limits too), the
   uniform offset alignment the larger of the uniform and storage ones (a folded buffer is bound at it). What can't be
   advertised apart from what Vulkan counts with it (texel buffers beside a full count of storage buffers, input
@@ -985,8 +1006,9 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   WebGPU's or on the driver's, the parameter table's 994 and up) is counted when a pipeline is made (`wg_bindings_fit`, after `program_create`):
   a program that doesn't fit is refused, its stages drawing and dispatching nothing, the cause said ("wg: a shader
   didn't translate: the compute stage binds 11 storage buffers, past WebGPU's 10 (of them: 3 texel buffers'
-  words)"), never an invalid submit (a `try/catch` can't catch WebGPU's validation, which is asynchronous). A
-  captured vertex stage whose capture doesn't fit keeps its draw and loses its capture, said too. Variants
+  words)"), never an invalid submit (a `try/catch` can't catch WebGPU's validation, which is asynchronous); one that
+  fits with the words of one memory shared ("The shader path", "Texel buffers") draws through its variants, each refused
+  where it doesn't fit. A captured vertex stage whose capture doesn't fit keeps its draw and loses its capture, said too. Variants
   (`wg_program_variant`) see all of a program's resources (a mask of 128); a sampler that samples an unfilterable
   texture and a filterable one is split (VK3 L7a, the binding review's finding 2: its nearest twin made every
   texture it sampled nearest): its twin at the even binding of its slot (a separate sampler's is free) for the

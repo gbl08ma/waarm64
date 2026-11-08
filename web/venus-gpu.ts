@@ -304,12 +304,12 @@ export class VenusGpu {
    * draw (`vsDraw`). */
   private readonly vsByPipeline: (VsStores | undefined)[] = [];
   /** Bind group layouts' entries and bind groups' (the driver's), for a pre-pass whose program has four groups: its
-   * bindings join a copy of group 3's (`vsGroup3`). */
+   * bindings join a copy of group 3's (`group3With`). */
   private readonly bglEntries = new WeakMap<GPUBindGroupLayout, GPUBindGroupLayoutEntry[]>();
   private readonly groupEntries = new WeakMap<GPUBindGroup, { layout: GPUBindGroupLayout; entries: GPUBindGroupEntry[] }>();
-  private readonly vsLayouts = new WeakMap<GPUBindGroupLayout, GPUBindGroupLayout>();
+  private readonly vsLayouts = new WeakMap<GPUBindGroupLayout, Map<GPUBindGroupLayoutEntry[], GPUBindGroupLayout>>();
   private readonly passThroughs = new Map<string, PassThrough | null>();
-  private vsPending: { rec: GPUBuffer; words: number; count: number; instances: number; indexed: boolean; ixAt: number } | undefined;
+  private vsPending: { rec: GPUBuffer; recAt: number; words: number; count: number; instances: number; indexed: boolean; ixAt: number } | undefined;
   private xfbJobs: Json[] = [];
   private readonly metaModules = new Map<string, GPUShaderModule>();
   /** A bind group layout's bindings of storage textures a shader may write, and the textures a bind group binds
@@ -2000,8 +2000,8 @@ ${vs}
   private xfbDraw(session: XfbSession, job: Json) {
     const x = job.xfb as Xfb | undefined;
     const vpp = [1, 2, 2, 3, 3, 3][job.topology as number];
-    if (!x?.code || vpp === undefined || x.bgls.length >= 4) {
-      this.warn(!x?.code ? 'transform feedback of a vertex stage that captures nothing' : vpp === undefined ? `transform feedback of topology ${job.topology}` : 'transform feedback with four bind groups');
+    if (!x?.code || vpp === undefined) {
+      this.warn(!x?.code ? 'transform feedback of a vertex stage that captures nothing' : `transform feedback of topology ${job.topology}`);
       return;
     }
     const d = this.device!, enc = this.enc!;
@@ -2011,10 +2011,11 @@ ${vs}
     const indirect = job.indirect as [GPUBuffer, number] | undefined;
     const prims = [count, count >> 1, Math.max(count - 1, 0), Math.floor(count / 3), Math.max(count - 2, 0), Math.max(count - 2, 0)][job.topology as number];
     if (!prims && !indirect) return;
+    // The parameters are `wgx_in`'s first words (`wgx_p`: no uniform binding, VK4 T40).
     const params = new Uint32Array(28);
     // The copies into `wgx_in`: from 4-aligned offsets, whole words, each at a word of its own.
     const copies: { b: GPUBuffer; from: number; size: number; at: number }[] = [];
-    let bytes = 0;
+    let bytes = params.byteLength;
     const take = (b: GPUBuffer, offset: number, size: number) => {
       const from = offset & ~3, n = Math.min((Math.max(offset + size - from, 4) + 3) & ~3, b.size - from);
       const at = bytes;
@@ -2043,7 +2044,7 @@ ${vs}
       this.warn(`transform feedback of a draw reaching ${bytes} bytes of vertices and indices, past WebGPU's storage binding`);
       return;
     }
-    const inb = d.createBuffer({ size: Math.max(bytes, 4), usage: STORAGE | COPY_DST });
+    const inb = d.createBuffer({ size: bytes, usage: STORAGE | COPY_DST });
     this.temps.push(inb);
     for (const c of copies) enc.copyBufferToBuffer(c.b, c.from, inb, c.at, c.size);
     for (const b of p.captured) {
@@ -2053,25 +2054,29 @@ ${vs}
       params[24 + b] = s.word;
     }
     params.set([job.topology, count, instances, job.first, (job.base as number) >>> 0, job.firstInstance, wide, ibFirst, prims, vpp]);
-    const [u, uat] = this.scratch(UNIFORM | COPY_DST, params.byteLength);
-    d.queue.writeBuffer(u, uat, params);
+    d.queue.writeBuffer(inb, 0, params);
     if (indirect) {
       // VkDrawIndexedIndirectCommand's five words are the parameters' count to firstInstance; VkDrawIndirectCommand's
       // the count, instances and first, then firstInstance (its base vertex 0).
-      enc.copyBufferToBuffer(indirect[0], indirect[1], u, uat + 4, wide === 2 ? 12 : 20);
-      if (wide === 2) enc.copyBufferToBuffer(indirect[0], indirect[1] + 12, u, uat + 20, 4);
+      enc.copyBufferToBuffer(indirect[0], indirect[1], inb, 4, wide === 2 ? 12 : 20);
+      if (wide === 2) enc.copyBufferToBuffer(indirect[0], indirect[1] + 12, inb, 20, 4);
     }
-    const entries: GPUBindGroupEntry[] = [
-      { binding: 12, resource: { buffer: session.out } },
-      { binding: 13, resource: { buffer: u, offset: uat, size: params.byteLength } },
-      { binding: 14, resource: { buffer: inb } },
+    const G = x.bgls.length;
+    const own: GPUBindGroupEntry[] = [
+      { binding: XFB_BINDINGS[G < 4 ? 0 : 1][0], resource: { buffer: session.out } },
+      { binding: XFB_BINDINGS[G < 4 ? 0 : 1][1], resource: { buffer: inb } },
     ];
-    const group = d.createBindGroup({ layout: p.layout, entries });
     const groups = job.groups as ({ g: GPUBindGroup; offsets: number[] } | undefined)[];
-    for (let g = 0; g < x.bgls.length; g++) if (!groups[g]) { this.warn('transform feedback without its bind groups'); return; }
+    for (let g = 0; g < G; g++) if (!groups[g]) { this.warn('transform feedback without its bind groups'); return; }
+    // Four groups (sets 3 and up, the push buffer or device addresses in group 3): group 3's bindings and the capture's
+    // in a group of their own, as a storing vertex stage's pre-pass's (`group3With`).
+    const last = G < 4 ? undefined : this.groupEntries.get(groups[3]!.g);
+    if (G >= 4 && !last) { this.warn('transform feedback with four bind groups, its group 3 unknown'); return; }
+    const group = last ? d.createBindGroup({ layout: this.group3With(last.layout, XFB_ENTRIES[1]), entries: [...last.entries, ...own] })
+      : d.createBindGroup({ layout: p.layout, entries: own });
     const pass = enc.beginComputePass();
-    for (let g = 0; g < x.bgls.length; g++) pass.setBindGroup(g, groups[g]!.g, groups[g]!.offsets);
-    pass.setBindGroup(x.bgls.length, group);
+    for (let g = 0; g < G; g++) pass.setBindGroup(g, g === 3 ? group : groups[g]!.g, groups[g]!.offsets);
+    if (G < 4) pass.setBindGroup(G, group);
     if (x.immediateSize && job.imm) (pass as unknown as { setImmediates(o: number, d: Uint8Array): void }).setImmediates(0, job.imm as Uint8Array);
     pass.setPipeline(p.main);
     // An indirect draw's count is on the GPU: as many workgroups as a large draw's (each invocation loops).
@@ -2092,9 +2097,12 @@ ${vs}
     const lines: string[] = [];
     const L = (l: string) => lines.push(l);
     L(`struct WgxP { topo: u32, count: u32, instances: u32, first: u32, base: u32, firstInstance: u32, wide: u32, ibFirst: u32, prims: u32, vpp: u32, xs0: u32, xs1: u32, xs2: u32, xs3: u32, pad0: u32, pad1: u32, ${[0, 1, 2, 3, 4, 5, 6, 7].map((s) => `vbd${s}: u32`).join(', ')}, xo0: u32, xo1: u32, xo2: u32, xo3: u32 }`);
-    L(`@group(${G}) @binding(13) var<uniform> wgx_p: WgxP;`);
-    L(`@group(${G}) @binding(12) var<storage, read_write> wgx_o: array<u32>;`);
-    L(`@group(${G}) @binding(14) var<storage, read> wgx_in: array<u32>;`);
+    // Its group after the program's, or group 3 with the program's own there (`group3With`); its parameters `wgx_in`'s
+    // first words.
+    const at = Math.min(G, 3), [ob, ib] = XFB_BINDINGS[G < 4 ? 0 : 1];
+    L(`@group(${at}) @binding(${ob}) var<storage, read_write> wgx_o: array<u32>;`);
+    L(`@group(${at}) @binding(${ib}) var<storage, read> wgx_in: array<u32>;`);
+    L('var<private> wgx_p: WgxP;');
     L('fn wgx_ld(b: u32) -> u32 { let w = b >> 2u; let s = (b & 3u) * 8u; if (s == 0u) { return wgx_in[w]; } return (wgx_in[w] >> s) | (wgx_in[w + 1u] << (32u - s)); }');
     if (inputs) L(fetch);
     const room = captured.map((b) => `fit = min(fit, (wgx_p.xs${b} - min(wgx_p.xs${b}, wgx_o[${b}])) / (${x.stride[b]}u * wgx_p.vpp));`).join(' ');
@@ -2107,7 +2115,9 @@ ${vs}
     L('  if (wgx_p.wide == 0u) { v = extractBits(wgx_in[k >> 1u], (k & 1u) * 16u, 16u); }');
     L('  return v + wgx_p.base;');
     L('}');
+    const load = `wgx_p = WgxP(${Array.from({ length: 28 }, (_, k) => `wgx_in[${k}u]`).join(', ')});`;
     L('@compute @workgroup_size(64) fn wgx_main(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {');
+    L(`  ${load}`);
     L('  let n = wgx_fit() * wgx_p.vpp; let prims = wgx_prims();');
     L('  for (var t = gid.x; t < n; t += nwg.x * 64u) {');
     L('    let g = t / wgx_p.vpp; let k = t % wgx_p.vpp; let inst = g / prims; let p = g % prims;');
@@ -2128,16 +2138,11 @@ ${vs}
     }
     L('  }');
     L('}');
-    L(`@compute @workgroup_size(1) fn wgx_advance() { let fit = wgx_fit(); ${captured.map((b) => `wgx_o[${b}] = wgx_o[${b}] + fit * wgx_p.vpp * ${x.stride[b]}u;`).join(' ')} }`);
-    const entries: GPUBindGroupLayoutEntry[] = [
-      { binding: 12, visibility: 4, buffer: { type: 'storage' } },
-      { binding: 13, visibility: 4, buffer: { type: 'uniform' } },
-      { binding: 14, visibility: 4, buffer: { type: 'read-only-storage' } },
-    ];
+    L(`@compute @workgroup_size(1) fn wgx_advance() { ${load} let fit = wgx_fit(); ${captured.map((b) => `wgx_o[${b}] = wgx_o[${b}] + fit * wgx_p.vpp * ${x.stride[b]}u;`).join(' ')} }`);
     // The driver made the capture only where its bindings fit (wg_bindings_fit); a WebGPU error here is still said.
     d.pushErrorScope('validation');
-    const layout = d.createBindGroupLayout({ entries });
-    const desc: Json = { bindGroupLayouts: [...x.bgls, layout] };
+    const layout = d.createBindGroupLayout({ entries: XFB_ENTRIES[0] });
+    const desc: Json = { bindGroupLayouts: G < 4 ? [...x.bgls, layout] : [...x.bgls.slice(0, 3), this.group3With(x.bgls[3], XFB_ENTRIES[1])] };
     if (x.immediateSize) desc.immediateSize = x.immediateSize;
     const pl = d.createPipelineLayout(desc as GPUPipelineLayoutDescriptor);
     const module = d.createShaderModule({ code: `${code}\n${lines.join('\n')}\n` });
@@ -2184,9 +2189,13 @@ ${vs}
     if (!count || !instances) return;
     const p = this.vsPipeline(v);
     if (!p) return;
+    // One buffer (one binding, VK4 T40: a vertex stage of the advertised storage buffers had room for one more): the
+    // parameters (`wgv_p`, 128 bytes), the records, an indexed draw's places of them, then the inputs, last so that a
+    // read past them (an index out of bounds) is past the binding, which WebGPU keeps within it: in the inputs.
     const params = new Uint32Array(32);
+    const n = count * instances, recBytes = n * v.words * 4, recAt = params.byteLength, ixAt = recAt + recBytes;
     const copies: { b: GPUBuffer; from: number; size: number; at: number }[] = [];
-    let bytes = 0;
+    let bytes = ixAt + (wide === 2 ? 0 : count * 4);
     const take = (b: GPUBuffer, offset: number, size: number) => {
       const from = offset & ~3, n = Math.min((Math.max(offset + size - from, 4) + 3) & ~3, b.size - from);
       const at = bytes;
@@ -2207,27 +2216,21 @@ ${vs}
       const last = b.stepMode === 'instance' ? firstInstance + instances : wide === 2 ? first + count : Infinity;
       params[16 + slot] = take(vb.b, vb.offset, Math.min(vb.size, last * (b.arrayStride as number) + end));
     }
-    const n = count * instances, recBytes = n * v.words * 4, size = recBytes + (wide === 2 ? 0 : count * 4);
+    const size = bytes;
     const most = d.limits.maxStorageBufferBindingSize;
-    if (bytes > most || size > most) return this.warn(`a vertex stage that stores, its draw's ${Math.max(bytes, size)} bytes past WebGPU's storage binding`);
-    const inb = d.createBuffer({ size: Math.max(bytes, 4), usage: STORAGE | COPY_DST });
-    const rec = d.createBuffer({ size: Math.max(size, 4), usage: STORAGE | VERTEX | INDEX });
-    this.temps.push(inb, rec);
-    for (const c of copies) enc.copyBufferToBuffer(c.b, c.from, inb, c.at, c.size);
-    params.set([count, instances, first, base >>> 0, firstInstance, wide, ibFirst, restart, recBytes / 4]);
-    const [u, uat] = this.scratch(UNIFORM | COPY_DST, params.byteLength);
-    d.queue.writeBuffer(u, uat, params);
-    const own: GPUBindGroupEntry[] = [
-      { binding: VS_BINDINGS[0], resource: { buffer: rec } },
-      { binding: VS_BINDINGS[1], resource: { buffer: u, offset: uat, size: params.byteLength } },
-      { binding: VS_BINDINGS[2], resource: { buffer: inb } },
-    ];
+    if (size > most) return this.warn(`a vertex stage that stores, its draw's ${size} bytes past WebGPU's storage binding`);
+    const rec = d.createBuffer({ size, usage: STORAGE | VERTEX | INDEX | COPY_DST });
+    this.temps.push(rec);
+    params.set([count, instances, first, base >>> 0, firstInstance, wide, ibFirst, restart, ixAt / 4, recAt / 4]);
+    d.queue.writeBuffer(rec, 0, params);
+    for (const c of copies) enc.copyBufferToBuffer(c.b, c.from, rec, c.at, c.size);
+    const own: GPUBindGroupEntry[] = [{ binding: VS_BINDING, resource: { buffer: rec } }];
     const G = v.bgls.length;
     for (let g = 0; g < G; g++) if (!this.cur.groups[g]) return this.warn('a vertex stage that stores, drawn without its bind groups');
-    // Four groups: group 3's bindings and the pre-pass's in a group of their own (`vsGroup3`).
+    // Four groups: group 3's bindings and the pre-pass's in a group of their own (`group3With`).
     const last = G < 4 ? undefined : this.groupEntries.get(this.cur.groups[3]!.g);
     if (G >= 4 && !last) return this.warn('a vertex stage that stores, its group 3 unknown');
-    const group = last ? d.createBindGroup({ layout: this.vsGroup3(last.layout), entries: [...last.entries, ...own] }) : d.createBindGroup({ layout: p.layout, entries: own });
+    const group = last ? d.createBindGroup({ layout: this.group3With(last.layout, VS_ENTRIES), entries: [...last.entries, ...own] }) : d.createBindGroup({ layout: p.layout, entries: own });
     const pass = enc.beginComputePass();
     for (let g = 0; g < G; g++) pass.setBindGroup(g, g === 3 ? group : this.cur.groups[g]!.g, this.cur.groups[g]!.offsets);
     if (G < 4) pass.setBindGroup(G, group);
@@ -2236,16 +2239,18 @@ ${vs}
     const groups = Math.ceil(n / 64), across = Math.min(groups, d.limits.maxComputeWorkgroupsPerDimension);
     pass.dispatchWorkgroups(across, Math.ceil(groups / across));
     pass.end();
-    this.vsPending = { rec, words: v.words, count, instances, indexed: wide !== 2, ixAt: recBytes };
+    this.vsPending = { rec, recAt, words: v.words, count, instances, indexed: wide !== 2, ixAt };
   }
 
-  /** Group 3's layout with a pre-pass's bindings (`VS_BINDINGS`, past the driver's slots), for a program of four groups
-   * (its sets 3 and up, the push buffer or device addresses there: VK4 T33). */
-  private vsGroup3(base: GPUBindGroupLayout): GPUBindGroupLayout {
-    let l = this.vsLayouts.get(base);
+  /** Group 3's layout with a pre-pass's or a capture's bindings (`VS_ENTRIES`, `XFB_ENTRIES`, past the driver's slots),
+   * for a program of four groups (its sets 3 and up, the push buffer or device addresses there: VK4 T33, T40). */
+  private group3With(base: GPUBindGroupLayout, extra: GPUBindGroupLayoutEntry[]): GPUBindGroupLayout {
+    let byExtra = this.vsLayouts.get(base);
+    if (!byExtra) this.vsLayouts.set(base, byExtra = new Map());
+    let l = byExtra.get(extra);
     if (!l) {
-      l = this.device!.createBindGroupLayout({ entries: [...(this.bglEntries.get(base) ?? []), ...VS_ENTRIES] });
-      this.vsLayouts.set(base, l);
+      l = this.device!.createBindGroupLayout({ entries: [...(this.bglEntries.get(base) ?? []), ...extra] });
+      byExtra.set(extra, l);
     }
     return l;
   }
@@ -2259,7 +2264,7 @@ ${vs}
     const pass = this.pass as GPURenderPassEncoder, bytes = p.count * p.words * 4;
     if (p.indexed) pass.setIndexBuffer(p.rec, 'uint32', p.ixAt, p.count * 4);
     for (let i = 0; i < p.instances; i++) {
-      pass.setVertexBuffer(0, p.rec, i * bytes, bytes);
+      pass.setVertexBuffer(0, p.rec, p.recAt + i * bytes, bytes);
       if (p.indexed) pass.drawIndexed(p.count, 1, 0, 0, 0);
       else pass.draw(p.count, 1, 0, 0);
     }
@@ -2324,12 +2329,12 @@ ${vs}
     if (!pt) return undefined;
     const lines: string[] = [];
     const L = (l: string) => lines.push(l);
-    L(`struct WgvP { count: u32, instances: u32, first: u32, base: u32, firstInstance: u32, wide: u32, ibFirst: u32, restart: u32, ix: u32, ${Array.from({ length: 7 }, (_, k) => `pad${k}: u32`).join(', ')}, ${Array.from({ length: 16 }, (_, k) => `vbd${k}: u32`).join(', ')} }`);
+    L(`struct WgvP { count: u32, instances: u32, first: u32, base: u32, firstInstance: u32, wide: u32, ibFirst: u32, restart: u32, ix: u32, rec: u32, ${Array.from({ length: 6 }, (_, k) => `pad${k}: u32`).join(', ')}, ${Array.from({ length: 16 }, (_, k) => `vbd${k}: u32`).join(', ')} }`);
     const at = Math.min(G, 3);
-    L(`@group(${at}) @binding(${VS_BINDINGS[0]}) var<storage, read_write> wgv_r: array<u32>;`);
-    L(`@group(${at}) @binding(${VS_BINDINGS[1]}) var<uniform> wgv_p: WgvP;`);
-    L(`@group(${at}) @binding(${VS_BINDINGS[2]}) var<storage, read> wgx_in: array<u32>;`);
-    L('fn wgx_ld(b: u32) -> u32 { let w = b >> 2u; let s = (b & 3u) * 8u; if (s == 0u) { return wgx_in[w]; } return (wgx_in[w] >> s) | (wgx_in[w + 1u] << (32u - s)); }');
+    // Its parameters, records and inputs (`wgx_in`'s, last) in one binding (`vsPrepass`).
+    L(`@group(${at}) @binding(${VS_BINDING}) var<storage, read_write> wgv_r: array<u32>;`);
+    L('var<private> wgv_p: WgvP;');
+    L('fn wgx_ld(b: u32) -> u32 { let w = b >> 2u; let s = (b & 3u) * 8u; if (s == 0u) { return wgv_r[w]; } return (wgv_r[w] >> s) | (wgv_r[w + 1u] << (32u - s)); }');
     const f = vertexFetch(code, v.buffers, 'wgv_p');
     if (f.inputs) L(f.code);
     const out = /\nstruct Out \{\n([\s\S]*?)\n\}/.exec(code)![1];
@@ -2346,14 +2351,15 @@ ${vs}
     // An invocation a vertex, no loop around the stage's body: SwiftShader compiling a loop around a large one (dEQP-VK's
     // buffer_device_address depth2 cases) took its GPU process past 4 GiB.
     L('@compute @workgroup_size(64) fn wgv_main(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {');
+    L(`  wgv_p = WgvP(${Array.from({ length: 32 }, (_, k) => `wgv_r[${k}u]`).join(', ')});`);
     L('  let t = gid.x + gid.y * nwg.x * 64u;');
     L('  if (t >= wgv_p.count * wgv_p.instances) { return; }');
     L('  let inst = t / wgv_p.count; let j = t % wgv_p.count;');
     L('  var vid = wgv_p.first + j;');
     L('  if (wgv_p.wide != 2u) {');
     L('    let k = wgv_p.ibFirst + wgv_p.first + j;');
-    L('    var raw = wgx_in[k];');
-    L('    if (wgv_p.wide == 0u) { raw = extractBits(wgx_in[k >> 1u], (k & 1u) * 16u, 16u); }');
+    L('    var raw = wgv_r[k];');
+    L('    if (wgv_p.wide == 0u) { raw = extractBits(wgv_r[k >> 1u], (k & 1u) * 16u, 16u); }');
     L('    let cut = wgv_p.restart != 0u && raw == select(0xffffu, 0xffffffffu, wgv_p.wide == 1u);');
     L('    if (inst == 0u) { wgv_r[wgv_p.ix + j] = select(j, 0xffffffffu, cut); }');
     L('    if (cut) { return; }');
@@ -2361,12 +2367,12 @@ ${vs}
     L('  }');
     L('  let iid = wgv_p.firstInstance + inst;');
     L(`  wg_vs(vid, iid${f.inputs ? ', wgx_fetch(vid, iid)' : ''});`);
-    L(`  let at = t * ${pt.words}u;`);
+    L(`  let at = wgv_p.rec + t * ${pt.words}u;`);
     lines.push(...stores.map((x) => x.slice(2)));
     L('}');
     d.pushErrorScope('validation');
     const layout = d.createBindGroupLayout({ entries: VS_ENTRIES });
-    const desc: Json = { bindGroupLayouts: G < 4 ? [...v.bgls, layout] : [...v.bgls.slice(0, 3), this.vsGroup3(v.bgls[3])] };
+    const desc: Json = { bindGroupLayouts: G < 4 ? [...v.bgls, layout] : [...v.bgls.slice(0, 3), this.group3With(v.bgls[3], VS_ENTRIES)] };
     if (v.immediateSize) desc.immediateSize = v.immediateSize;
     const pl = d.createPipelineLayout(desc as GPUPipelineLayoutDescriptor);
     const module = d.createShaderModule({ code: `${code}\n${lines.join('\n')}\n` });
@@ -3229,14 +3235,18 @@ type VsStores = {
   pipelines?: { main: GPUComputePipeline; layout: GPUBindGroupLayout; slots: number[] } | null;
 };
 type PassThrough = { module: GPUShaderModule; words: number };
-/** A storing vertex stage's pre-pass's bindings (its records, parameters and inputs): free in group 3 too (wgsl.h's
- * table 994, device addresses 996 and the push buffer 998 are the driver's there). */
-const VS_BINDINGS = [995, 997, 999] as const;
-const VS_ENTRIES: GPUBindGroupLayoutEntry[] = [
-  { binding: VS_BINDINGS[0], visibility: 4, buffer: { type: 'storage' } },
-  { binding: VS_BINDINGS[1], visibility: 4, buffer: { type: 'uniform' } },
-  { binding: VS_BINDINGS[2], visibility: 4, buffer: { type: 'read-only-storage' } },
-];
+/** A storing vertex stage's pre-pass's binding (its parameters, inputs and records: one storage buffer since VK4 T40,
+ * where a stage of WebGPU's 12 uniform buffers or of the advertised storage buffers had no room for its three): free
+ * in group 3 too (wgsl.h's table 994, device addresses 996 and the push buffer 998 are the driver's there). */
+const VS_BINDING = 995;
+const VS_ENTRIES: GPUBindGroupLayoutEntry[] = [{ binding: VS_BINDING, visibility: 4, buffer: { type: 'storage' } }];
+/** A capture's bindings (its records and its inputs after its parameters): in a group of its own, or in group 3 with the
+ * program's (VK4 T40: it was refused), at bindings free there (a pre-pass is never a capture's). */
+const XFB_BINDINGS = [[12, 14], [997, 999]] as const;
+const XFB_ENTRIES: GPUBindGroupLayoutEntry[][] = XFB_BINDINGS.map(([o, i]) => [
+  { binding: o, visibility: 4, buffer: { type: 'storage' } },
+  { binding: i, visibility: 4, buffer: { type: 'read-only-storage' } },
+]);
 
 /** A vertex stage's fetch of its inputs (`fn wgx_fetch(vid, iid) -> In`, from `wgx_ld`'s bytes) as its render
  * pipeline's buffers describe them, each binding's first byte in `wgx_in` the parameter `<params>.vbd<slot>`

@@ -297,8 +297,8 @@ test('a captured indexed draw copies the indices it reads, so a big index buffer
   // 3 16-bit indices from index 10 of a buffer bound whole.
   g.xfbDraw(session, { xfb: x, topology: 3, count: 3, instances: 1, wide: 0, ib, offset: 0, size: 1 << 30, first: 10, base: 0, firstInstance: 0, vb: [], groups: [] });
   assert.deepEqual(warnings, []);
-  // The indices' copy into the draw's inputs: bytes [20, 26) as two words.
-  assert.deepEqual(copies[0], [20, 0, 8]);
+  // The indices' copy into the draw's inputs, after its 112 bytes of parameters (VK4 T40): bytes [20, 26) as two words.
+  assert.deepEqual(copies[0], [20, 112, 8]);
 });
 
 test('?gpu=vkl9=… asks for the device as at 4fdc69fb, suspect by suspect (VK3 L9a\'s NVIDIA arms); none by default', () => {

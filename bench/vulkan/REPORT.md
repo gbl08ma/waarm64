@@ -793,6 +793,66 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` oth
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 T40: bindings past WebGPU's limits — words of one memory share a binding; 744 cases join the list
+
+2026-11-08, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t40/`: `swiftshader-before.json` and `swiftshader-after.json` every case
+of `binding_model.descriptorset_random.sets4` and `sets8` and `binding_model.descriptor_copy` (21,409; NotSupported
+cases left out of the lists), `m4.json` the same on the M4.
+
+**What the refusals were.** Run again before the change, the three groups failed 256 cases (`sets4` 210, `sets8` 40,
+`descriptor_copy` 6), every one a pipeline refused at its creation: stages of 11 to 33 storage buffers where
+SwiftShader and the M4 have 10, of them up to 19 texel buffers' words and up to 9 uniform buffers read as storage (a
+stage's 13 uniform buffers and 4 inline blocks past WebGPU's 12 less the push buffer and the parameter table), and a
+storing vertex stage's pre-pass's three bindings (T33's 55); and 4 `descriptor_copy` layouts of 5 or 6 dynamic storage
+buffers (dEQP checks Vulkan's limit by the set, not the layout) against WebGPU's 4. `descriptorset_random` binds a
+stage's buffers and texel buffer views from one buffer, at `align · d`.
+
+**What was done** (vk/README.md "Texel buffers", "Bindings past WebGPU's", "Transform feedback", "Vertex stages that
+store"):
+- **Shared words.** A program whose stages fit only with them shared (`wg_bindings_fit`'s best case: a stage's
+  shareable words one binding, a parameter table more in each group that has none) has no layouts of its own; each
+  draw or dispatch takes a variant (`shared_words`) where the read-only words of texel buffers and folded uniform
+  buffers of one memory read through one binding of the whole memory, every group's, each one's place in the binding
+  the `.w` of its first vec4 in its group's parameter table, written with the bind group (so the variant is keyed by
+  who shares with whom, not by the offsets, and the bind groups stay cached by their sets). A memory past what a
+  binding takes, or a set's inline blocks (their set's buffer), share in runs within a group. A variant that still
+  doesn't fit refuses its draws, said once.
+- **The pre-pass and the capture without a uniform binding.** Their parameters are the first words of their inputs'
+  buffer; the pre-pass's inputs and records are one buffer (one binding, three before), the capture's two bindings
+  (three before). A capture of a program of four groups joins a copy of group 3 at bindings 997 and 999, as the pre-pass
+  does at 995 (it was refused at the pipeline's creation: vkd3d's `test_vertex_id` had two).
+- **Dynamic buffers past WebGPU's** (and with the push buffer's: R7's leftover, 8 dynamic uniform buffers and 4 dynamic
+  storage ones beside push constants past the immediates) are plain bindings at the offset bound, a bind group each.
+- **vkd3d's 14 uniform buffers a stage** are advertised where 8 storage buffers are left beside a third folded one (an
+  adapter of 11 or more); SwiftShader's and the M4's 10 keep 13, D3D's 8 UAVs at 11_0 taking the eighth.
+
+| the 21,409 cases | Pass | Fail | NotSupported |
+|---|---|---|---|
+| SwiftShader, before | 700 | 256 | 20,453 |
+| SwiftShader, after | 956 | 0 | 20,453 |
+| M4, after | 974 | 0 | 20,435 |
+
+The 744 that pass on both and weren't in the list join `tests/deqp/vk.txt` (66,001 → 66,745: `sets4` 497, `sets8` 105,
+`descriptor_copy` 142; 488 of them passed before too, not sampled into the list). Driver tests
+(`tests/venus-driver.test.ts`): "12 uniform texel buffers of two buffers, 13 uniform buffers and 4 inline uniform
+blocks" (both kinds of sharing), "dynamic uniform and storage buffers beside push constants past the immediates, at two
+offsets" and "a capture of a vertex stage of four bind groups" failed before (refused) and pass; a planted bug in each
+(the places, a run's places, the baked offsets' cache key, the capture's refusal) failed them. `texelStorage`'s three
+texel buffers are of three buffers now (of one, they'd share): refused at the dispatch.
+
+**vkd3d** (`bench/vulkan/vkd3d.ts`, `TESTS=test_vertex_id,test_instance_id`, the desktop guest on SwiftShader):
+`test_vertex_id` runs 127 checks, 52 failing (89 and 39 at VK3 L8, its two captures of four groups refused): 75 pass
+against 50; the failures seen are the indirect draws' values (base vertices 3, 8, 9), VK4-KICKOFF.md T47's.
+`test_instance_id` 24 of 372, as before (divisors: T44).
+
+**Left** (docs/backlog.md "Texel buffers", "Bindings past WebGPU's", "What R7's limits leave"): written storage texel
+buffers take a binding each; words of several memories that still don't fit refuse their draws; an attachment read's
+textures and pulled vertices' bindings with four groups have no binding numbers left in group 3 (T44 takes the pulled
+ones); uniform texel buffers as r32uint textures and inline blocks as one uniform binding weren't needed. The cost of a
+variant per sharing pattern, of a whole memory copied into a shadow beside its writes, and of a bind group per baked
+offset is unmeasured: only programs past the limits pay them.
+
 ## VK4 T39: multisampling's gaps — SwiftShader's short resolves into deep arrays worked around; 455 cases join the list
 
 2026-11-07, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,

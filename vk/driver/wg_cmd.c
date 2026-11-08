@@ -1588,6 +1588,88 @@ storage_aliases(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_progr
    return count;
 }
 
+static bool buffer_binding(const struct wg_program *p, uint32_t k, const struct wg_descriptor *d, uint32_t *buffer,
+                           VkDeviceSize *at, VkDeviceSize *size);
+
+/* The memory a shareable descriptor's words are of (NULL: none, as an inline uniform block's), if the whole of it is a
+ * binding WebGPU takes (`wg_share.whole`). */
+static const struct wg_device_memory *
+whole_memory(const struct wg_descriptor *d)
+{
+   const struct wg_device_memory *mem =
+      d->type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER || d->type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER
+         ? (d->texel ? d->texel->mem : NULL)
+      : d->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ? (d->buffer ? d->buffer->mem : NULL)
+                                                     : NULL;
+   return mem && align64(mem->size, 4) <= wg_limits.max_storage_buffer_binding_size &&
+                !(mem->gpu_at % wg_limits.min_storage_buffer_offset_alignment)
+             ? mem
+             : NULL;
+}
+
+/*
+ * A program whose words fit only shared (wg_caps.c `wg_bindings_fit`'s `shares`, VK4 T40: dEQP-VK's descriptorset_random
+ * binds a stage's texel buffers and uniform buffers from one buffer): the words a stage reads of texel buffers and of
+ * uniform buffers read as storage (`wg_shareable`) read through one binding a memory, the whole of it (`whole`), in every
+ * group; or, where the memory is past what a binding takes (or isn't one: inline uniform blocks), those of a GPUBuffer
+ * in a group, in runs of their places that a binding reaches (maxStorageBufferBindingSize). Each run reads through its
+ * first resource's binding (`wg_share`). The variant is keyed by who shares with whom, not by the places, which the
+ * parameter table carries (`param_table`). The resources in `out`, by resource index; `shared` their bits.
+ */
+static uint32_t
+shared_words(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, struct wg_share *out, uint64_t *shared)
+{
+   struct word { uint32_t k, buffer, group; VkDeviceSize lo, hi; const struct wg_device_memory *mem; } words[WGSL_MAX_RESOURCES];
+   uint32_t n = 0, count = 0;
+   for (uint32_t k = 0; k < p->resource_count; k++) {
+      const int s = p->res_set[k];
+      const struct wg_descriptor_set *set = s >= 0 ? cmd->sets[point][s].set : NULL;
+      const uint32_t slot = p->resources[k].binding / 2 - (s >= 0 ? p->set_base[s] : 0);
+      if (!set || slot >= set->layout->slot_count || !wg_shareable(p, k, set->slots[slot].type))
+         continue;
+      uint32_t buffer;
+      VkDeviceSize at, size;
+      if (!buffer_binding(p, k, &set->slots[slot], &buffer, &at, &size) || !buffer)
+         continue;
+      const struct wg_device_memory *mem = whole_memory(&set->slots[slot]);
+      /* By memory (the whole ones across groups) or group and buffer, then place. */
+      const struct word w = { k, buffer, mem ? 0 : p->resources[k].group + 1u, at, at + size, mem };
+#define BEFORE(x, y) ((x).group != (y).group ? (x).group < (y).group : (x).mem != (y).mem ? (uintptr_t)(x).mem < (uintptr_t)(y).mem \
+                      : (x).buffer != (y).buffer ? (x).buffer < (y).buffer : (x).lo < (y).lo)
+      uint32_t i = n++;
+      for (; i && BEFORE(w, words[i - 1]); i--)
+         words[i] = words[i - 1];
+#undef BEFORE
+      words[i] = w;
+   }
+   for (uint32_t i = 0; i < n;) {
+      uint32_t last = i + 1, to = words[i].k;
+      VkDeviceSize hi = words[i].hi;
+      const bool whole = words[i].mem;
+      for (; last < n && words[last].group == words[i].group && words[last].mem == words[i].mem &&
+             words[last].buffer == words[i].buffer &&
+             (whole || MAX2(hi, words[last].hi) - words[i].lo <= (wg_limits.max_storage_buffer_binding_size & ~3ull));
+           last++)
+         hi = MAX2(hi, words[last].hi), to = MIN2(to, words[last].k);
+      for (uint32_t j = i; last > i + 1 && j < last; j++) {
+         const uint32_t k = words[j].k;
+         out[count++] = (struct wg_share){ (uint32_t)p->resources[k].group << 16 | p->resources[k].binding,
+                                           (uint32_t)p->resources[to].group << 16 | p->resources[to].binding,
+                                           p->res_set[k], whole, { 0, 0 } };
+         shared[k / 64] |= 1ull << (k % 64);
+      }
+      i = last;
+   }
+   /* In resource order: the variant's key. */
+   for (uint32_t i = 1; i < count; i++)
+      for (uint32_t j = i; j && out[j - 1].res > out[j].res; j--) {
+         const struct wg_share t = out[j];
+         out[j] = out[j - 1];
+         out[j - 1] = t;
+      }
+   return count;
+}
+
 static struct wg_program *
 program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
 {
@@ -1636,7 +1718,14 @@ program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
                                  ? program_keys(cmd, point, p, keys) : 0;
    struct wg_storage_alias aliases[8];
    const uint32_t alias_count = storage_aliases(cmd, point, p, aliases);
-   return mask[0] | mask[1] || key_count || alias_count ? wg_program_variant(p, mask, keys, key_count, aliases, alias_count) : p;
+   /* Shared words stay read-only: a scope that writes their buffer reads them from its shadows. */
+   struct wg_share share[WGSL_MAX_RESOURCES];
+   uint64_t shared[2] = { 0 };
+   const uint32_t share_count = p->shares ? shared_words(cmd, point, p, share, shared) : 0;
+   mask[0] &= ~shared[0], mask[1] &= ~shared[1];
+   return mask[0] | mask[1] || key_count || alias_count || p->shares
+             ? wg_program_variant(p, mask, keys, key_count, aliases, alias_count, share, share_count)
+             : p;
 }
 
 /* Whether a draw may go ahead (false: it draws nothing), its state recorded. */
@@ -2573,7 +2662,8 @@ static bool
 record_dispatch(struct wg_cmd_buffer *cmd)
 {
    struct wg_shader *cs = cmd->shaders[MESA_SHADER_COMPUTE];
-   if (!cs || !cs->program || !cs->program->compute)
+   /* A base whose words fit only shared has no pipeline of its own: its variants do. */
+   if (!cs || !cs->program || (!cs->program->compute && !cs->program->shares))
       return false;
    struct wg_program *p = program_for(cmd, 1, cs->program);
    if (draw_refused(p) || cmd->aliases_refused)
@@ -3658,6 +3748,55 @@ buffer_binding(const struct wg_program *p, uint32_t k, const struct wg_descripto
    return true;
 }
 
+/* The descriptor of a variant's shared words (`wg_share`) among an op_bind's sets. */
+static const struct wg_descriptor *
+share_descriptor(const struct op_bind *b, const struct wg_program *p, const struct wg_share *sh)
+{
+   const int s = sh->set;
+   if (s < 0 || s < b->group || s - b->group >= WG_GROUP_SETS || (sh->res >> 16) != b->group)
+      return NULL;
+   const struct wg_descriptor_set *set = b->sets[s - b->group];
+   const uint32_t slot = (sh->res & 0xffff) / 2 - p->set_base[s];
+   return set && slot < set->layout->slot_count ? &set->slots[slot] : NULL;
+}
+
+/* The bytes resource `k` of an op_bind's program binds (buffer_binding's), or, where others' words share its binding
+ * (`wg_share`), all of theirs in its buffer: from the first's place to the last's end, within what a binding takes. */
+static bool
+binding_range(const struct op_bind *b, const struct wg_program *p, uint32_t k, const struct wg_descriptor *d,
+              uint32_t *buffer, VkDeviceSize *at, VkDeviceSize *size)
+{
+   if (!buffer_binding(p, k, d, buffer, at, size))
+      return false;
+   const uint32_t res = (uint32_t)p->resources[k].group << 16 | p->resources[k].binding;
+   VkDeviceSize lo = *at, hi = *at + *size;
+   bool shared = false;
+   for (uint32_t i = 0; i < p->share_count; i++)
+      if (p->share[i].to == res && p->share[i].whole) {
+         /* Its memory's whole (`whole_memory`). */
+         const struct wg_device_memory *mem = whole_memory(d);
+         if (mem) {
+            *at = mem->gpu_at;
+            *size = align64(mem->size, 4);
+         }
+         return true;
+      }
+   for (uint32_t i = 0; i < p->share_count; i++) {
+      const struct wg_descriptor *m = p->share[i].to == res ? share_descriptor(b, p, &p->share[i]) : NULL;
+      uint32_t mb;
+      VkDeviceSize ma, ms;
+      if (!m || !buffer_binding(p, k, m, &mb, &ma, &ms) || mb != *buffer)
+         continue;
+      lo = MIN2(lo, ma), hi = MAX2(hi, ma + ms);
+      shared = true;
+   }
+   if (shared) {
+      *at = lo;
+      *size = MIN2(align64(hi - lo, 4), wg_limits.max_storage_buffer_binding_size & ~3ull);
+   }
+   return true;
+}
+
 static void
 use(struct replay *r, uint32_t buffer, double at, double size, bool writable)
 {
@@ -3793,7 +3932,7 @@ bind_uses(struct replay *r, const struct op_bind *b)
       const struct wg_descriptor *d = bound_descriptor(b, p, k);
       uint32_t buffer;
       VkDeviceSize at, size;
-      if (!d || !buffer_binding(p, k, d, &buffer, &at, &size))
+      if (!d || !binding_range(b, p, k, d, &buffer, &at, &size))
          continue;
       const struct wg_storage_alias *a = storage_alias(p, k);
       if (res->kind == WGSL_UNIFORM && size < res->size && d->type != VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
@@ -4095,6 +4234,32 @@ param_table(const struct op_bind *b, const struct wg_program *p, uint32_t t)
          view_words(d->view, &buffer, &place, &bytes, at);
       }
    }
+   /* Shared words (`wg_share`): each one's parameters (a texel buffer's) at its binding, and its first word in the binding
+    * it reads through at their vec4's w. */
+   for (uint32_t i = 0; words && i < p->share_count; i++) {
+      const struct wg_share *sh = &p->share[i];
+      const struct wg_descriptor *d = share_descriptor(b, p, sh);
+      uint32_t to = 0;
+      while (to < p->resource_count && ((uint32_t)p->resources[to].group << 16 | p->resources[to].binding) != sh->to)
+         to++;
+      /* A whole memory's place is from its start; a run's, from its first byte (its group's: this one's). */
+      const struct wg_descriptor *dt = to < p->resource_count && !sh->whole ? bound_descriptor(b, p, to) : NULL;
+      if (!d || (!dt && !sh->whole) || to == p->resource_count || WGSL_TABLE_SIZE(sh->res & 0xffff) > size)
+         continue;
+      uint32_t *at = words + 4 * (sh->res & 0xffff);
+      if ((d->type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER || d->type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) &&
+          d->texel && d->texel->offered)
+         memcpy(at, d->texel->params, sizeof(d->texel->params));
+      uint32_t buffer, run;
+      VkDeviceSize place, bytes, lo, reach;
+      const struct wg_device_memory *mem = sh->whole ? whole_memory(d) : NULL;
+      if (!buffer_binding(p, to, d, &buffer, &place, &bytes))
+         continue;
+      if (mem && place >= mem->gpu_at)
+         at[3] = (uint32_t)((place - mem->gpu_at) / 4);
+      else if (dt && binding_range(b, p, to, dt, &run, &lo, &reach) && buffer == run && place >= lo)
+         at[3] = (uint32_t)((place - lo) / 4);
+   }
    struct wg_json j = { 0 };
    wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", size, 0x40 | 0x8); /* UNIFORM | COPY_DST */
    const uint32_t table = wg_create_json(WG_KIND_BUFFER, &j);
@@ -4145,6 +4310,20 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
       const uint32_t words[2] = { version, r->dev->address_gen };
       version = _mesa_hash_data(words, sizeof(words)) | 1u << 31;
    }
+   /* A group of dynamic buffers past WebGPU's binds them at their offsets: a group each (`wg_bake_dynamic`). */
+   if (holder) {
+      uint32_t n = 0, words[1 + 32] = { version };
+      bool baked = false;
+      for (uint32_t k = 0, i = 0; k < p->resource_count; k++) {
+         if (p->resources[k].group != b->group || p->dynamic[k] == -1)
+            continue;
+         if (p->baked[k] && i < b->offset_count)
+            words[1 + n++] = b->offsets[i], baked = true;
+         i++;
+      }
+      if (baked)
+         version = _mesa_hash_data(words, 4 * (1 + n)) | 1u << 31;
+   }
    /* A group reading a shadow is the scope's own. */
    if (util_dynarray_num_elements(&r->shadows, struct shadow)) {
       uint32_t n = 0;
@@ -4160,7 +4339,7 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
          const struct wg_descriptor *d = bound_descriptor(b, p, k);
          uint32_t buffer;
          VkDeviceSize at, size;
-         const bool bound = d && buffer_binding(p, k, d, &buffer, &at, &size);
+         const bool bound = d && binding_range(b, p, k, d, &buffer, &at, &size);
          const struct wg_storage_alias *a = bound ? storage_alias(p, k) : NULL;
          *shadowed = bound && find_shadow(r, buffer, (double)at + dynamic, a ? a->reach : size, res->kind == WGSL_STORAGE);
       }
@@ -4235,7 +4414,7 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
       case WGSL_STORAGE_READ: {
          uint32_t buffer;
          VkDeviceSize at, size;
-         if (!buffer_binding(p, k, d, &buffer, &at, &size))
+         if (!binding_range(b, p, k, d, &buffer, &at, &size))
             continue;
          const struct wg_storage_alias *a = res->kind == WGSL_STORAGE ? storage_alias(p, k) : NULL;
          if (a && a->res != a->to) {
@@ -4262,6 +4441,9 @@ bind_group(struct replay *r, const struct op_bind *b, uint32_t *offsets, bool *t
                size = MAX2(size, res->size);
             if (p->dynamic[k] >= 0 && dyn_index < b->offset_count)
                offsets[dyn_index] = 0;
+         } else if (p->baked[k]) {
+            /* A dynamic buffer past WebGPU's: at its offset (`wg_bake_dynamic`). */
+            at += dynamic;
          }
          wg_json_printf(&j, "%s{\"binding\":%u,\"buffer\":%u,\"offset\":%llu,\"size\":%llu}", sep, res->binding,
                         buffer, (unsigned long long)at, (unsigned long long)size);
@@ -4576,8 +4758,16 @@ bind(struct replay *r, const struct op_bind *b)
    if (transient)
       util_dynarray_append_typed(&released_groups, uint32_t, group);
    r->groups[b->compute][b->group].group = group;
-   r->groups[b->compute][b->group].n = b->offset_count;
-   memcpy(r->groups[b->compute][b->group].offsets, offsets, b->offset_count * 4);
+   /* Without those of baked buffers (in the bind group: `wg_bake_dynamic`). */
+   uint32_t n = 0;
+   for (uint32_t k = 0, i = 0; k < b->program->resource_count && i < b->offset_count; k++) {
+      if (b->program->resources[k].group != b->group || b->program->dynamic[k] == -1)
+         continue;
+      if (!b->program->baked[k])
+         r->groups[b->compute][b->group].offsets[n++] = offsets[i];
+      i++;
+   }
+   r->groups[b->compute][b->group].n = n;
    r->binds[b->compute][b->group] = b;
    r->shadowed[b->compute][b->group] = shadowed;
    r->past[b->compute][b->group] = false;

@@ -1959,6 +1959,8 @@ wgt_scope(uint32_t mask, const uint32_t *vs, uint32_t vs_words, const uint32_t *
  *    into its own 96 bytes (at 96 * i): 17 times the first triangle's 3 records, the counter 96.
  * VK4 T5:
  * 9: as 0, the vertices bound at byte 2 of a buffer of their own (pulled from a storage binding).
+ * VK4 T40:
+ * 10: as 0, `vs` t40/xfb-four.vert (a draw parameter read: the push buffer in group 3, four bind groups).
  */
 static struct {
    VkFence fence;
@@ -2871,9 +2873,10 @@ misc_barrier(VkCommandBuffer cmd, VkImage image, VkImageLayout from, VkImageLayo
 /*
  * VK3 L7a (the binding model's limits and identities: the out-of-context reviews after L7), wgt_misc's scenarios 24 to
  * 29, each a compute pipeline of `cs` on one set layout of compute bindings, into `out` (filled 0xee):
- * 24: texel-many.comp (8 storage buffers, at 256i of `out`, and 3 uniform texel buffers of R32_UINT, 100, 200, 300):
- *     WebGPU's storage buffers 11, past SwiftShader's 10 (the L6b-L7.3 review's finding 2): refused at pipeline
- *     creation, `out` untouched; or, where the adapter has 11, (100, 200, 300)[i % 3] + i at 256i.
+ * 24: texel-many.comp (8 storage buffers, at 256i of `out`, and 3 uniform texel buffers of R32_UINT, 100, 200, 300, each
+ *     of a buffer of its own): WebGPU's storage buffers 11, past SwiftShader's 10 (the L6b-L7.3 review's finding 2):
+ *     refused, `out` untouched (at the dispatch since VK4 T40: words of one buffer would have shared a binding); or,
+ *     where the adapter has 11, (100, 200, 300)[i % 3] + i at 256i.
  * 25: dyn-ubo.comp with as many dynamic uniform buffers as the device advertises (100 + i at 256i of one memory; binding 1
  *     dynamic only where it advertises 8) and 128 bytes of push constants, 5 pushed: 105 to 112 at [0, 32) (the L7.4-L7.5
  *     review's finding 5: the push buffer was a ninth dynamic uniform buffer).
@@ -2889,6 +2892,12 @@ misc_barrier(VkCommandBuffer cmd, VkImage image, VkImageLayout from, VkImageLayo
  * 91: texel-uniforms.comp (a storage buffer, `out`; 9 uniform texel buffers of R32_UINT, 100(i + 1) at 256i of a buffer;
  *     4 uniform buffers, 1000 + j at 256j of another): 100(i + 1) at word i of `out`, 1000 + j at word 9 + j (VK4 T21:
  *     the texel buffers' parameters were a uniform buffer each, past WebGPU's limits, and the pipeline was refused).
+ * 113: t40/shared.comp (a storage buffer, `out`; 12 uniform texel buffers of R32_UINT, two texels each: 10 of a buffer,
+ *     100(i + 1) and i at 256i, 2 of another, 5000 + i and 1 at 256i; 13 uniform buffers, 1000 + j at 256j of a third;
+ *     4 inline uniform blocks, 7000 + k): 100(i + 1) + i at word i of `out` (5000 + i + 1 for 10 and 11), 1000 + j at
+ *     word 12 + j, 7000 + k at word 25 + k (VK4 T40: 20 storage buffers, the texel buffers' words, 3 folded uniform
+ *     buffers and the 4 blocks, past SwiftShader's 10: the pipeline was refused; the blocks share their set's buffer's
+ *     binding, the rest their memories').
  * 32: as 27, binding 0 then copied (vkUpdateDescriptorSets' copies) from a set whose combined image sampler isn't
  *     immutable, NEAREST: still 50 (VK3 L8a, the track-end review's finding 4: copies overwrote immutable samplers).
  */
@@ -2950,7 +2959,15 @@ l7a_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuff
    CHECK(CreateSampler(dev, &si, NULL, &nearest));
    const uint32_t dyn = props.limits.maxDescriptorSetUniformBuffersDynamic < 8 ? props.limits.maxDescriptorSetUniformBuffersDynamic : 8;
    uint32_t mode = 0;
-   if (scenario == 91) {
+   if (scenario == 113) {
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT };
+      b[nb++] =
+         (VkDescriptorSetLayoutBinding){ 1, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 12, VK_SHADER_STAGE_COMPUTE_BIT };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 13, VK_SHADER_STAGE_COMPUTE_BIT };
+      for (uint32_t k = 0; k < 4; k++)
+         b[nb++] = (VkDescriptorSetLayoutBinding){ 3 + k, VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK, 16,
+                                                   VK_SHADER_STAGE_COMPUTE_BIT };
+   } else if (scenario == 91) {
       b[nb++] = (VkDescriptorSetLayoutBinding){ 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT };
       b[nb++] =
          (VkDescriptorSetLayoutBinding){ 1, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 9, VK_SHADER_STAGE_COMPUTE_BIT };
@@ -3010,17 +3027,21 @@ l7a_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuff
       CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipelines[i]));
    }
    const VkDescriptorPoolSize ps[6] = { { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 16 },
-                                        { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 9 },
+                                        { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 12 },
                                         { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 8 },
-                                        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4 },
+                                        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 13 },
                                         { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2 },
                                         { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 4 } };
    const VkDescriptorPoolSize ps2 = { VK_DESCRIPTOR_TYPE_SAMPLER, 2 };
-   VkDescriptorPoolSize all[7];
+   VkDescriptorPoolSize all[8];
    memcpy(all, ps, sizeof(ps));
    all[6] = ps2;
-   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
-                                            .poolSizeCount = 7, .pPoolSizes = all };
+   all[7] = (VkDescriptorPoolSize){ VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK, 64 };
+   const VkDescriptorPoolInlineUniformBlockCreateInfo ipi = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_INLINE_UNIFORM_BLOCK_CREATE_INFO, .maxInlineUniformBlockBindings = 4 };
+   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+                                            .pNext = scenario == 113 ? &ipi : NULL, .maxSets = 1,
+                                            .poolSizeCount = scenario == 113 ? 8 : 7, .pPoolSizes = all };
    VkDescriptorPool dp;
    CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
    const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -3033,7 +3054,48 @@ l7a_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuff
    uint32_t push[32] = { 0 };
    uint32_t offsets[8] = { 0 }, offset_count = 0;
 
-   if (scenario == 91) {
+   if (scenario == 113) {
+      VkBuffer src, other, ubo;
+      uint32_t *w, *wo, *wu;
+      if (buffer(4096, both | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT, true, &src, (void **)&w) ||
+          buffer(1024, both | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT, true, &other, (void **)&wo) ||
+          buffer(4096, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true, &ubo, (void **)&wu))
+         return 1;
+      VkBufferView views[12];
+      for (uint32_t i = 0; i < 12; i++) {
+         uint32_t *at = i < 10 ? &w[64 * i] : &wo[64 * (i - 10)];
+         at[0] = i < 10 ? 100 * (i + 1) : 5000 + i;
+         at[1] = i < 10 ? i : 1;
+         const VkBufferViewCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO,
+                                             .buffer = i < 10 ? src : other, .format = VK_FORMAT_R32_UINT,
+                                             .offset = 256 * (i < 10 ? i : i - 10), .range = 16 };
+         CHECK(CreateBufferView(dev, &vi, NULL, &views[i]));
+      }
+      VkDescriptorBufferInfo ub[13];
+      for (uint32_t j = 0; j < 13; j++) {
+         wu[64 * j] = 1000 + j;
+         ub[j] = (VkDescriptorBufferInfo){ ubo, 256 * j, 16 };
+      }
+      const VkDescriptorBufferInfo ob = { out, 0, 128 };
+      static const uint32_t blocks[4][4] = { { 7000 }, { 7001 }, { 7002 }, { 7003 } };
+      VkWriteDescriptorSetInlineUniformBlock iw[4];
+      VkWriteDescriptorSet wr[7] = {
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0, .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &ob },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 1, .descriptorCount = 12,
+           .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, .pTexelBufferView = views },
+         { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 2, .descriptorCount = 13,
+           .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = ub },
+      };
+      for (uint32_t k = 0; k < 4; k++) {
+         iw[k] = (VkWriteDescriptorSetInlineUniformBlock){
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK, .dataSize = 16, .pData = blocks[k] };
+         wr[3 + k] = (VkWriteDescriptorSet){ .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .pNext = &iw[k], .dstSet = set,
+                                             .dstBinding = 3 + k, .descriptorCount = 16,
+                                             .descriptorType = VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK };
+      }
+      UpdateDescriptorSets(dev, 7, wr, 0, NULL);
+   } else if (scenario == 91) {
       VkBuffer src, ubo;
       uint32_t *w, *wu;
       if (buffer(4096, both | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT, true, &src, (void **)&w) ||
@@ -3062,15 +3124,16 @@ l7a_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words, VkCommandBuff
       };
       UpdateDescriptorSets(dev, 3, wr, 0, NULL);
    } else if (scenario == 24) {
-      VkBuffer src;
-      uint32_t *w;
-      if (buffer(1024, both | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT, true, &src, (void **)&w))
-         return 1;
+      /* Three buffers: the words of one would share a binding (VK4 T40). */
+      VkBuffer src[3];
       VkBufferView views[3];
       for (uint32_t i = 0; i < 3; i++) {
-         w[64 * i] = 100 * (i + 1);
-         const VkBufferViewCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO, .buffer = src,
-                                             .format = VK_FORMAT_R32_UINT, .offset = 256 * i, .range = 16 };
+         uint32_t *w;
+         if (buffer(256, both | VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT, true, &src[i], (void **)&w))
+            return 1;
+         w[0] = 100 * (i + 1);
+         const VkBufferViewCreateInfo vi = { .sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO, .buffer = src[i],
+                                             .format = VK_FORMAT_R32_UINT, .offset = 0, .range = 16 };
          CHECK(CreateBufferView(dev, &vi, NULL, &views[i]));
       }
       VkDescriptorBufferInfo bi[8];
@@ -6534,6 +6597,93 @@ t38_misc(VkCommandBuffer cmd, VkBuffer out)
  * out at 1280 (0x80); a 1x1x4 R32_UINT 3D image of 10, 20, 30, 40 by slice through 2D views: slice 2 fetched (30 at 8),
  * slice 3 stored 99, the image at 1024 (10 20 30 99).
  */
+/* VK4 T40 (`out` as wgt_misc's): 114, t40/dynamic.comp: 8 dynamic uniform buffers (100 + i at 512i of a buffer, 132 + i
+ * at 512i + 256) and 4 dynamic storage buffers (200 + j at 512j of another, 232 + j at 512j + 256) beside 128 bytes of
+ * push constants, dispatched at dynamic offsets 0 with base 0 and add 1, then at 256 with base 16 and add 2: words
+ * [0, 12) 101 + i, 201 + j; [16, 28) 134 + i, 234 + j. WebGPU's dynamic buffers are 8 and 4 on SwiftShader, and the
+ * push buffer a dynamic one more: a storage buffer's offset is its bind group's (the pipeline was refused). */
+static int
+t40_dynamic(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   VkBuffer ubo, ssbo;
+   uint32_t *wu, *ws;
+   if (buffer(4096, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true, &ubo, (void **)&wu) ||
+       buffer(4096, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, &ssbo, (void **)&ws))
+      return 1;
+   for (uint32_t i = 0; i < 8; i++)
+      wu[128 * i] = 100 + i, wu[128 * i + 64] = 132 + i;
+   for (uint32_t j = 0; j < 4; j++)
+      ws[128 * j] = 200 + j, ws[128 * j + 64] = 232 + j;
+   VkShaderModule m;
+   if (shader(cs, cs_words, &m))
+      return 1;
+   const VkDescriptorSetLayoutBinding b[3] = {
+      { 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 8, VK_SHADER_STAGE_COMPUTE_BIT },
+      { 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 4, VK_SHADER_STAGE_COMPUTE_BIT },
+      { 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
+   };
+   const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                 .bindingCount = 3, .pBindings = b };
+   VkDescriptorSetLayout dsl;
+   CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
+   const VkPushConstantRange range = { VK_SHADER_STAGE_COMPUTE_BIT, 0, 128 };
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                            .setLayoutCount = 1, .pSetLayouts = &dsl, .pushConstantRangeCount = 1,
+                                            .pPushConstantRanges = &range };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   const VkComputePipelineCreateInfo ci = {
+      .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = layout,
+      .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                 .module = m, .pName = "main" },
+   };
+   VkPipeline pipeline;
+   CHECK(CreateComputePipelines(dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipeline));
+   const VkDescriptorPoolSize ps[3] = { { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 8 },
+                                        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 4 },
+                                        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 } };
+   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                            .poolSizeCount = 3, .pPoolSizes = ps };
+   VkDescriptorPool dp;
+   CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+   const VkDescriptorSetAllocateInfo dai = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                             .descriptorPool = dp, .descriptorSetCount = 1, .pSetLayouts = &dsl };
+   VkDescriptorSet set;
+   CHECK(AllocateDescriptorSets(dev, &dai, &set));
+   VkDescriptorBufferInfo ub[8], sb[4];
+   for (uint32_t i = 0; i < 8; i++)
+      ub[i] = (VkDescriptorBufferInfo){ ubo, 512 * i, 16 };
+   for (uint32_t j = 0; j < 4; j++)
+      sb[j] = (VkDescriptorBufferInfo){ ssbo, 512 * j, 16 };
+   const VkDescriptorBufferInfo ob = { out, 0, 256 };
+   const VkWriteDescriptorSet wr[3] = {
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 0, .descriptorCount = 8,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, .pBufferInfo = ub },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 1, .descriptorCount = 4,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, .pBufferInfo = sb },
+      { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 2, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &ob },
+   };
+   UpdateDescriptorSets(dev, 3, wr, 0, NULL);
+   const VkMemoryBarrier mb = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                                .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT };
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+   for (uint32_t d = 0; d < 2; d++) {
+      uint32_t offsets[12], push[32] = { 0 };
+      for (uint32_t i = 0; i < 12; i++)
+         offsets[i] = 256 * d;
+      push[0] = 16 * d;
+      push[31] = 1 + d;
+      if (d)
+         CmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0,
+                            NULL, 0, NULL);
+      CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 12, offsets);
+      CmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 128, push);
+      CmdDispatch(cmd, 1, 1, 1);
+   }
+   return 0;
+}
+
 static int
 t38_stores(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer out)
 {
@@ -7258,7 +7408,7 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          CmdDispatchIndirect(cmd, scenario == 18 ? in : out, 512);
       else
          CmdDispatch(cmd, 1, 1, 1);
-   } else if ((scenario >= 24 && scenario <= 29) || scenario == 32 || scenario == 77 || scenario == 91) {
+   } else if ((scenario >= 24 && scenario <= 29) || scenario == 32 || scenario == 77 || scenario == 91 || scenario == 113) {
       if (l7a_misc(scenario, cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 30 || scenario == 31) {
@@ -7323,6 +7473,9 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 112) {
       if (t39_ms_bits(cmd, out))
+         return 1;
+   } else if (scenario == 114) {
+      if (t40_dynamic(cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 108) {
       if (t37_atomic_alias(cs, cs_words, cmd, out))

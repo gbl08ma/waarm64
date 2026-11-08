@@ -179,6 +179,7 @@ program_free(struct wg_program *p)
    stage_nir_free(p->compute_nir);
    free(p->keys);
    free(p->aliases);
+   free(p->share);
    free(p->refused);
    free(p);
 }
@@ -283,7 +284,7 @@ program_layouts(struct wg_program *p)
          case WGSL_STORAGE_READ:
             wg_json_printf(&j, "\"buffer\":{\"type\":\"%s\",\"hasDynamicOffset\":%s}}",
                            r->kind == WGSL_UNIFORM ? "uniform" : r->kind == WGSL_STORAGE ? "storage" : "read-only-storage",
-                           p->dynamic[k] != -1 ? "true" : "false");
+                           p->dynamic[k] != -1 && !p->baked[k] ? "true" : "false");
             break;
          case WGSL_SAMPLER:
          case WGSL_SAMPLER_COMPARE:
@@ -380,6 +381,78 @@ aliased_text(const struct wg_program *v, char *text)
    return text;
 }
 
+/* `decl` (a line) where the module's declarations start, at its first binding's. */
+static char *
+declared(char *text, const char *decl)
+{
+   const char *at = strstr(text, "@group(");
+   return spliced(text, at ? (size_t)(at - text) : 0, 0, decl);
+}
+
+/* A variant's text for its shared words (`wg_share`): each one's words `rG_B[i]` read through its binding's, at its
+ * place there, `rG_T[rG_994[B].w + (i)]` (wgsl_print.c names storage words so); that binding and the group's
+ * parameter table declared where the stage didn't, the table as large as the variant's. */
+static char *
+shared_text(const struct wg_program *v, char *text)
+{
+   bool touched = false;
+   for (uint32_t i = 0; i < v->share_count; i++) {
+      const struct wg_share *sh = &v->share[i];
+      const uint32_t g = sh->res >> 16, b = sh->res & 0xffff;
+      char from[32], with[64];
+      snprintf(from, sizeof(from), "r%u_%u[", g, b);
+      snprintf(with, sizeof(with), "r%u_%u[r%u_%u[%uu].w + (", sh->to >> 16, sh->to & 0xffff, g, WGSL_TABLE_BINDING, b);
+      for (char *q = text, *f; (f = word_at(text, q, from));) {
+         size_t end = f - text + strlen(from);
+         for (int depth = 1; text[end] && depth; end++)
+            depth += (text[end] == '[') - (text[end] == ']');
+         const size_t head = f - text;
+         text = spliced(text, end - 1, 1, ")]");
+         text = spliced(text, head, strlen(from), with);
+         q = text + head + strlen(with);
+         touched = true;
+      }
+   }
+   if (!touched)
+      return text;
+   uint32_t groups = 0; /* whose tables are declared */
+   for (uint32_t i = 0; i < v->share_count; i++) {
+      const struct wg_share *sh = &v->share[i];
+      char use[32], decl[128];
+      if (sh->res == sh->to) {
+         const uint32_t g = sh->to >> 16, b = sh->to & 0xffff;
+         snprintf(use, sizeof(use), "r%u_%u[", g, b);
+         snprintf(decl, sizeof(decl), "var<storage, read> r%u_%u: array<u32>;", g, b);
+         if (word_at(text, text, use) && !strstr(text, decl)) {
+            snprintf(decl, sizeof(decl), "@group(%u) @binding(%u) var<storage, read> r%u_%u: array<u32>;\n", g, b, g, b);
+            text = declared(text, decl);
+         }
+      }
+      /* Each sharer's group's table. */
+      const uint32_t g = sh->res >> 16;
+      snprintf(use, sizeof(use), "r%u_%u[", g, WGSL_TABLE_BINDING);
+      if ((groups & (1u << g)) || !word_at(text, text, use))
+         continue;
+      groups |= 1u << g;
+      uint32_t size = 0;
+      for (uint32_t k = 0; k < v->resource_count; k++)
+         if (v->resources[k].group == g && v->resources[k].binding == WGSL_TABLE_BINDING)
+            size = v->resources[k].size;
+      char table[96];
+      snprintf(table, sizeof(table), "@group(%u) @binding(%u) var<uniform> r%u_%u: array<vec4<u32>, ", g,
+               WGSL_TABLE_BINDING, g, WGSL_TABLE_BINDING);
+      char *t = strstr(text, table);
+      snprintf(decl, sizeof(decl), "%s%u>;\n", table, size / 16);
+      if (!t) {
+         text = declared(text, decl);
+         continue;
+      }
+      const size_t at = t - text, n = strchr(t, '\n') - t + 1;
+      text = spliced(text, at, n, decl);
+   }
+   return text;
+}
+
 /* A module's WGSL as a variant binds it (wgsl_print.c declares each `@group(g) @binding(b) var rG_B…` and samples as
  * `rG_T, rG_S, …`): widened storage buffers `read_write` (WebGPU wants a binding's access in the module to be its layout
  * entry's), each split sampler's unfilterable textures sampled through its twin at the binding before it, and storage
@@ -445,6 +518,10 @@ variant_text(const struct wg_program *p, const struct wg_program *v, const uint6
    }
    if (v->alias_count) {
       text = aliased_text(v, text);
+      changed = true;
+   }
+   if (v->share_count) {
+      text = shared_text(v, text);
       changed = true;
    }
    if (!changed) {
@@ -559,7 +636,7 @@ variant_module(const struct wg_program *p, struct wg_program *v, const uint64_t 
 void
 wg_variant_modules(struct wg_program *v, const struct wg_shader *vs, const struct wg_shader *fs)
 {
-   if ((!v->split_count && !v->key_count && !v->alias_count) || v->stage_modules_made)
+   if ((!v->split_count && !v->key_count && !v->alias_count && !v->share_count) || v->stage_modules_made)
       return;
    v->stage_modules_made = true;
    v->vs_module = vs ? variant_module(v->base, v, v->mask, vs->wgsl, vs->nir, &vs->info) : 0;
@@ -575,9 +652,11 @@ insert_resource(struct wg_program *v, uint32_t at, const struct wgsl_resource *t
       v->dynamic[i] = v->dynamic[i - 1];
       v->res_set[i] = v->res_set[i - 1];
       v->vis[i] = v->vis[i - 1];
+      v->baked[i] = v->baked[i - 1];
    }
    v->resources[at] = *twin;
    v->dynamic[at] = -1;
+   v->baked[at] = 0;
    v->resource_count++;
 }
 
@@ -627,14 +706,74 @@ wg_program_mixed(struct wg_program *p)
    }
 }
 
+/* `v`'s resource at `at` out (a shared word's binding: `wg_share`). */
+static void
+remove_resource(struct wg_program *v, uint32_t at)
+{
+   for (uint32_t i = at; i + 1 < v->resource_count; i++) {
+      v->resources[i] = v->resources[i + 1];
+      v->dynamic[i] = v->dynamic[i + 1];
+      v->res_set[i] = v->res_set[i + 1];
+      v->vis[i] = v->vis[i + 1];
+      v->baked[i] = v->baked[i + 1];
+   }
+   v->resource_count--;
+}
+
+static uint32_t
+resource_at(const struct wg_program *v, uint32_t index)
+{
+   uint32_t k = 0;
+   while (k < v->resource_count && res_index(&v->resources[k]) != index)
+      k++;
+   return k;
+}
+
+/* A variant's shared words (VK4 T40, `wg_share`): every one but the binding it reads through out of the layout, that one
+ * seen by each stage that saw one of them, and the group's parameter table, which holds their places, as large as the
+ * last of them needs and seen by those stages too (made where the group had none, after the group's slots). */
+static void
+share_resources(struct wg_program *v)
+{
+   for (uint32_t i = 0; i < v->share_count; i++) {
+      const struct wg_share *sh = &v->share[i];
+      const uint32_t g = sh->res >> 16, at = resource_at(v, sh->res);
+      if (at == v->resource_count || resource_at(v, sh->to) == v->resource_count)
+         continue;
+      const uint8_t vis = v->vis[at];
+      const uint32_t size = WGSL_TABLE_SIZE(sh->res & 0xffff);
+      uint32_t t = resource_at(v, g << 16 | WGSL_TABLE_BINDING);
+      if (t == v->resource_count) {
+         t = 0;
+         while (t < v->resource_count && (v->resources[t].group < g ||
+                                          (v->resources[t].group == g && v->resources[t].binding < WGSL_TABLE_BINDING)))
+            t++;
+         const struct wgsl_resource table = { .group = g, .binding = WGSL_TABLE_BINDING, .kind = WGSL_UNIFORM,
+                                              .size = size };
+         insert_resource(v, t, &table);
+         v->vis[t] = 0;
+         v->res_set[t] = -1;
+      }
+      v->resources[t].size = MAX2(v->resources[t].size, size);
+      v->vis[t] |= vis;
+      v->vis[resource_at(v, sh->to)] |= vis;
+   }
+   for (uint32_t i = 0; i < v->share_count; i++)
+      if (v->share[i].res != v->share[i].to && resource_at(v, v->share[i].res) < v->resource_count)
+         remove_resource(v, resource_at(v, v->share[i].res));
+}
+
 struct wg_program *
 wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl_sampler_key *keys, uint32_t key_count,
-                   const struct wg_storage_alias *aliases, uint32_t alias_count)
+                   const struct wg_storage_alias *aliases, uint32_t alias_count, const struct wg_share *share,
+                   uint32_t share_count)
 {
    for (struct wg_program *v = p->variants; v; v = v->variants)
       if (v->mask[0] == mask[0] && v->mask[1] == mask[1] && v->key_count == key_count &&
-          v->alias_count == alias_count && !memcmp(v->keys, keys, key_count * sizeof(*keys)) &&
-          !memcmp(v->aliases, aliases, alias_count * sizeof(*aliases)))
+          v->alias_count == alias_count && v->share_count == share_count &&
+          !memcmp(v->keys, keys, key_count * sizeof(*keys)) &&
+          !memcmp(v->aliases, aliases, alias_count * sizeof(*aliases)) &&
+          !memcmp(v->share, share, share_count * sizeof(*share)))
          return v;
    struct wg_program *v = malloc(sizeof(*v));
    wg_emul[WG_EMUL_VARIANTS]++;
@@ -660,6 +799,10 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl
    v->alias_count = alias_count;
    v->aliases = malloc(MAX2(alias_count, 1) * sizeof(*aliases));
    memcpy(v->aliases, aliases, alias_count * sizeof(*aliases));
+   v->shares = false;
+   v->share_count = share_count;
+   v->share = malloc(MAX2(share_count, 1) * sizeof(*share));
+   memcpy(v->share, share, share_count * sizeof(*share));
    v->split_count = 0;
    v->vs_module = v->fs_module = 0;
    v->fs_no_depth = 0; /* the base's is printed without this variant's keys */
@@ -787,8 +930,19 @@ wg_program_variant(struct wg_program *p, const uint64_t *mask, const struct wgsl
       for (uint32_t k = 0; k < v->resource_count; k++)
          if (res_index(&v->resources[k]) == keys[i].texture && (keys[i].faces || keys[i].sampler == WGSL_SLICE_KEY))
             v->resources[k].dim = keys[i].faces ? WGSL_DIM_2D_ARRAY : WGSL_DIM_3D;
-   program_layouts(v);
-   if ((widened || v->split_count || v->key_count || v->alias_count) && p->compute_wgsl) {
+   share_resources(v);
+   /* A base whose words fit only shared: its draws' variants that don't fit (words of several buffers) refused. */
+   char why[256];
+   const bool fits = !p->shares || wg_bindings_fit(v, NULL, NULL, why, sizeof(why));
+   if (!fits) {
+      free(v->refused);
+      v->refused = malloc(strlen(why) + 64);
+      sprintf(v->refused, "%s, with the words of one buffer shared", why);
+   }
+   /* Nor has such a variant layouts: they'd be past WebGPU's limits too (its draws and dispatches go nowhere). */
+   if (fits)
+      program_layouts(v);
+   if ((widened || v->split_count || v->key_count || v->alias_count || v->share_count) && p->compute_wgsl) {
       const struct wgsl_info keyed = compute_pairs(p);
       const uint32_t m = variant_module(p, v, mask, p->compute_wgsl, p->compute_nir, &keyed);
       if (m) {
@@ -927,7 +1081,30 @@ program_create(struct wg_shader **shaders, uint32_t count, struct vk_descriptor_
 
    for (uint32_t i = 0; i < p->resource_count; i++)
       p->vis[i] = vis[i];
+   wg_bake_dynamic(p);
    return p;
+}
+
+/* A program's dynamic buffers past WebGPU's dynamic uniform or storage buffers a pipeline layout (VK4 T40): the push
+ * buffer is one of them (a uniform one, or a storage one where the layout has all of WebGPU's uniform ones: R7's
+ * `push_storage`), so a layout with all of either kind besides it, or past them (dEQP-VK's descriptor_copy counts
+ * Vulkan's limit by the set), has the last of that kind's guest buffers baked (`baked`): a plain binding at the offset
+ * bound, a bind group for each (wg_cmd.c `bind_group`). */
+void
+wg_bake_dynamic(struct wg_program *p)
+{
+   uint32_t uniform = 0, storage = 0;
+   memset(p->baked, 0, sizeof(p->baked));
+   for (uint32_t k = 0; k < p->resource_count; k++)
+      if (p->dynamic[k] != -1)
+         *(p->resources[k].kind == WGSL_UNIFORM ? &uniform : &storage) += 1;
+   for (uint32_t k = p->resource_count; k-- > 0;) {
+      uint32_t *n = p->resources[k].kind == WGSL_UNIFORM ? &uniform : &storage;
+      const uint32_t max = p->resources[k].kind == WGSL_UNIFORM ? wg_limits.max_dynamic_uniform_buffers
+                                                                : wg_limits.max_dynamic_storage_buffers;
+      if (p->dynamic[k] >= 0 && *n > max)
+         p->baked[k] = 1, --*n;
+   }
 }
 
 /* The compute pipeline of a dispatch from a base (vkCmdDispatchBase): WebGPU's start at workgroup 0, so the ids the
@@ -956,8 +1133,8 @@ wg_compute_based(struct wg_program *p, uint32_t x, uint32_t y, uint32_t z)
  * stages of one link would otherwise get different programs, and a draw would lose its fragment shader). */
 #define PROGRAM_FIELDS(X)                                                                                              \
    X(group_count) X(set_count) X(set_group) X(set_base) X(resource_count) X(dynamic) X(res_set) X(immediate_size)     \
-   X(push_ubo_size) X(vis) X(pair_count) X(pairs) X(int_pair_count) X(int_pairs) X(key_pair_count) X(key_pairs)        \
-   X(uses_base) X(vs_stores)
+   X(push_ubo_size) X(vis) X(baked) X(pair_count) X(pairs) X(int_pair_count) X(int_pairs) X(key_pair_count) X(key_pairs)        \
+   X(uses_base) X(vs_stores) X(shares)
 #define RESOURCE_FIELDS(X)                                                                                             \
    X(group) X(binding) X(kind) X(dim) X(sample) X(multisampled) X(atomic) X(signed_atomic) X(written) X(nonfiltering) X(image_words) X(image_texture) X(formatless) X(access) \
    X(format) X(size)
@@ -1012,10 +1189,16 @@ program_link(struct wg_program *p, struct wg_shader *const *shaders, uint32_t co
 static void
 program_objects(struct wg_program *p, uint32_t compute_module, const char *wgsl, const struct wg_stage_nir *nir)
 {
-   program_layouts(p);
+   /* A program whose words fit only shared has none: its layouts would be past WebGPU's limits (its variants', made
+    * at its draws, aren't). */
+   if (!p->shares)
+      program_layouts(p);
    if (compute_module) {
       p->compute_wgsl = strdup(wgsl);
       p->compute_nir = stage_nir_copy(nir);
+      p->compute_module = compute_module;
+      if (p->shares)
+         return;
       struct wg_json j = { 0 };
       wg_json_printf(&j, "{\"layout\":%u,\"compute\":{\"module\":%u,\"entryPoint\":\"main\"}}", p->layout,
                      compute_module);
@@ -1142,7 +1325,10 @@ wg_program_merge(struct wg_program *a, const struct wg_program *b, const struct 
       if (m->dynamic[i] == WG_DYNAMIC_PUSH)
          m->resources[i].size = m->push_ubo_size;
    }
-   program_layouts(m);
+   m->shares = a->shares || b->shares;
+   wg_bake_dynamic(m);
+   if (!m->shares)
+      program_layouts(m);
    /* Stages that disagree on a resource (what wg_shader_compile refuses, for stages compiled together): their draws
     * refused, saying why, not an invalid pipeline (VK4 T37). */
    char error[160];
@@ -1209,8 +1395,8 @@ shader_destroy(struct vk_device *dev, struct vk_shader *vk, const VkAllocationCa
  * whether a stage reads push constants past the immediates isn't known by the layout). The pipeline layout decides, by the stages each binding's flags name, so that every
  * stage that sees a buffer reads it the same way: a uniform buffer past its stage's room, in set and binding order, is
  * storage in all of them (dynamic ones never: they take the room first, and WebGPU's dynamic storage buffers are fewer).
- * wg_caps.c reports the uniform buffers WG_FOLDED_UBOS more, less the push buffer's, and the storage buffers
- * WG_FOLDED_UBOS fewer. */
+ * wg_caps.c reports the uniform buffers WG_FOLDED_UBOS (or one more) more, less the push buffer's, and the storage
+ * buffers as many fewer. */
 static void
 fold_uniforms(struct wgsl_layout *out, struct vk_descriptor_set_layout *const *layouts)
 {
@@ -1409,8 +1595,8 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
       for (uint32_t b = a + 1; ok && b < count; b++)
          ok = stages_agree(&shaders[a]->info, &shaders[b]->info, error, sizeof(error));
    /* The program, if its bindings fit WebGPU's limits (wg_caps.c `wg_bindings_fit`: else the pipeline is refused,
-    * saying why, never an invalid submit; VK3 L7a). A captured vertex stage's compute pass that doesn't fit, or has
-    * no bind group left (the push buffer's or sets 3 and up take the fourth), drops the capture instead. */
+    * saying why, never an invalid submit; VK3 L7a). A captured vertex stage's compute pass that doesn't fit drops the
+    * capture instead. */
    struct wg_program *made = NULL;
    if (ok) {
       made = program_create(shaders, count, infos[0].set_layouts, infos[0].set_layout_count);
@@ -1425,11 +1611,10 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
          xvs = NULL;
       }
       char why[256] = "";
-      const bool fits = wg_bindings_fit(made, infos[0].set_layouts, why, sizeof(why));
-      if (xvs && (!fits || made->group_count >= WGSL_MAX_GROUPS)) {
-         if (fits)
-            snprintf(why, sizeof(why), "its compute pass needs a fifth bind group (the push buffer's or sets 3 and up "
-                                       "take the fourth)");
+      const bool fits = wg_bindings_fit(made, infos[0].set_layouts, NULL, why, sizeof(why));
+      /* A program of four groups: the capture's bindings join a copy of group 3 (web/venus-gpu.ts `group3With`; VK4 T40:
+       * it was refused). */
+      if (xvs && !fits) {
          fprintf(stderr, "wg: a vertex stage's transform feedback refused: %s\n", why);
          memset(xvs->info.xfb_stride, 0, sizeof(xvs->info.xfb_stride));
          free(made);
@@ -1440,7 +1625,7 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
          free(made);
          made = NULL;
          ok = false;
-      } else if (!wg_bindings_fit(made, infos[0].set_layouts, error, sizeof(error))) {
+      } else if (!wg_bindings_fit(made, infos[0].set_layouts, &made->shares, error, sizeof(error))) {
          free(made);
          made = NULL;
          ok = false;
@@ -1497,7 +1682,7 @@ wg_compile(struct vk_device *device, uint32_t count, struct vk_shader_compile_in
 /* A shader across runs (Mesa's pipeline caches, the worker's store through vk/wasi/disk_cache.c; vk/README.md "The
  * shader cache"): its stage's WGSL and info and its program's data with its link. A stage that didn't translate is
  * kept as such (no WGSL, no program). The runtime's header around it carries the build's shaderBinaryUUID. */
-#define WG_SHADER_FORMAT 6
+#define WG_SHADER_FORMAT 7
 
 static bool
 wg_serialize(struct vk_device *device, const struct vk_shader *vk, struct blob *blob)
@@ -1864,7 +2049,7 @@ static char *
 fragment_text(struct wg_program *p, const struct wg_shader *fs, bool drop_depth)
 {
    char *keyed = keyed_text(p, fs->nir, &fs->info, NULL);
-   char *text = p->split_count || p->alias_count ? variant_text(p->base, p, p->mask, keyed ? keyed : fs->wgsl) : NULL;
+   char *text = p->split_count || p->alias_count || p->share_count ? variant_text(p->base, p, p->mask, keyed ? keyed : fs->wgsl) : NULL;
    if (!text)
       text = keyed ? strdup(keyed) : strdup(fs->wgsl);
    free(keyed);
