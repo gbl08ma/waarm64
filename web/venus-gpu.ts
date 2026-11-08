@@ -16,7 +16,7 @@ const INDEX = 16, VERTEX = 32, INDIRECT = 256, COPY_SRC = 4, COPY_DST = 8, TEX_C
  * (each a draw), resolves WebGPU makes and those drawn (VK4 T10, T21), depth and stencil resolves (drawn), clears and
  * those encoded and copied in (a format WebGPU doesn't render), transform feedback's captures (VK3 L7.4).
  */
-export type VenusEmulStats = { blits: number; resolves: number; drawnResolves: number; depthResolves: number; clears: number; copiedClears: number; xfb: number; vsPrepasses: number };
+export type VenusEmulStats = { blits: number; resolves: number; drawnResolves: number; depthResolves: number; clears: number; copiedClears: number; xfb: number; vsPrepasses: number; /** Passes that write Vulkan's timestamps on the GPU (VK4 T46). */ timestamps: number };
 
 export type VenusGpuStats = {
   submits: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number; pipelines: number; pipelineMs: number; bindGroups: number; errors: number; dirtyPages: number;
@@ -91,7 +91,7 @@ export const HELD_FEATURES = ['float32-blendable', 'tier1-storage'];
 const FEATURES = ['texture-compression-bc', 'texture-compression-etc2', 'texture-compression-astc', 'depth32float-stencil8', 'float32-filterable',
   'depth-clip-control', 'dual-source-blending', 'clip-distances', 'indirect-first-instance', 'texture-formats-tier1', 'texture-formats-tier2',
   'rg11b10ufloat-renderable', 'float32-blendable', 'bgra8unorm-storage'];
-const MORE_FEATURES = ['subgroups', 'shader-f16', 'texture-component-swizzle'];
+const MORE_FEATURES = ['subgroups', 'shader-f16', 'texture-component-swizzle', 'timestamp-query'];
 export function gpuFeatures(caps: GpuCaps | undefined, device: boolean, hold: readonly string[] = []) {
   let flags = device ? 1 << 31 : 0;
   const has = (f: string) => !!caps?.features.has(f) && !hold.includes(f);
@@ -217,7 +217,7 @@ export function deviceRequest(adapter: GPUAdapter, options: { gpuTime?: boolean;
   if (typeof limits.maxColorAttachmentBytesPerSample === 'number') requiredLimits.maxColorAttachmentBytesPerSample = limits.maxColorAttachmentBytesPerSample;
   const features = [...FEATURES, ...(options.l9?.includes('features') ? [] : MORE_FEATURES)].filter((f) => adapter.features.has(f)) as GPUFeatureName[];
   // `?gpu=vkgputime`: timestamp queries for the worker's own measurement (VK3 L2b), not the driver's.
-  if (options.gpuTime && adapter.features.has('timestamp-query')) features.push('timestamp-query');
+  if (options.gpuTime && adapter.features.has('timestamp-query') && !features.includes('timestamp-query')) features.push('timestamp-query');
   return { requiredFeatures: features, requiredLimits };
 }
 
@@ -256,7 +256,7 @@ class Timing {
 
 export class VenusGpu {
   readonly stats: VenusGpuStats = { submits: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, pipelines: 0, pipelineMs: 0, bindGroups: 0, errors: 0, dirtyPages: 0, done: 0, doneMs: 0, doneMaxMs: 0, orderMs: 0, nudges: 0, pipelinesReady: 0, pipelineReadyMs: 0, deferred: 0, deferredMs: 0, syncPipelines: 0, premade: 0, premadeUsed: 0, translations: 0, translateMs: 0, cacheHits: 0, cacheMisses: 0, cacheStores: 0, encodeMs: 0, submitCallMs: 0, passes: 0, draws: 0, gpuTimed: 0, gpuMs: 0, workDone: 0, workDoneMs: 0 };
-  readonly emul: VenusEmulStats = { blits: 0, resolves: 0, drawnResolves: 0, depthResolves: 0, clears: 0, copiedClears: 0, xfb: 0, vsPrepasses: 0 };
+  readonly emul: VenusEmulStats = { blits: 0, resolves: 0, drawnResolves: 0, depthResolves: 0, clears: 0, copiedClears: 0, xfb: 0, vsPrepasses: 0, timestamps: 0 };
   /** `?gpu=vkskip=meta` (VK4 T23's A/B): blits and resolves left out (their destination as it was). */
   skipMeta = false;
   /** Submits not yet completed. */
@@ -624,6 +624,13 @@ export class VenusGpu {
           desc.depthStencilAttachment = ds;
         }
         if (j.occlusionQuerySet) desc.occlusionQuerySet = self.get<GPUQuerySet>(j.occlusionQuerySet);
+        // A part of a Vulkan pass that writes timestamps, or that one follows, ends with one, and a pass a timestamp at
+        // the top of the pipe comes just before begins with one (VK4 T46, wg_cmd.c `begin_pass`).
+        if (j.timestampSet) {
+          desc.timestampWrites = { querySet: self.get<GPUQuerySet>(j.timestampSet), endOfPassWriteIndex: j.timestampEnd as number,
+            ...(j.timestampBegin !== undefined ? { beginningOfPassWriteIndex: j.timestampBegin as number } : {}) };
+          self.emul.timestamps++;
+        }
         const atts = { colors, depth, samples, width: j.width as number, height: j.height as number };
         self.stats.passes++;
         later(() => {
@@ -765,7 +772,21 @@ export class VenusGpu {
         const Q = self.get<GPUQuerySet>(set), B = buf(b);
         later(() => self.enc!.resolveQuerySet(Q, first, count, B, offset));
       },
-      gpu_query_add(b: number, dst: number, src: number) { const B = buf(b); later(() => self.queryAdd(B, dst, src)); },
+      gpu_query_add(ptr: number, len: number) {
+        const j = parseJson(self.text(ptr, len)), D = buf(j.dst as number), S = buf(j.src as number);
+        later(() => self.queryAdd(D, S, j.pairs as number[]));
+      },
+      gpu_timestamp(set: number, index: number) {
+        const Q = self.get<GPUQuerySet>(set);
+        self.emul.timestamps++;
+        later(() => self.timestamp(Q, index));
+      },
+      gpu_copy_queries(ptr: number, len: number) {
+        const j = parseJson(self.text(ptr, len));
+        j.src = buf(j.src as number);
+        j.dst = buf(j.dst as number);
+        later(() => self.copyQueries(j));
+      },
       gpu_readback(b: number, offset: number, size: number) {
         const staging = d.createBuffer({ size, usage: MAP_READ | COPY_DST });
         const B = buf(b);
@@ -915,7 +936,8 @@ export class VenusGpu {
   /** A pass descriptor with timestamp writes into the open encoder's timing, while it has room (`?gpu=vkgputime`). */
   private timed<T extends GPURenderPassDescriptor | GPUComputePassDescriptor>(desc: T): T {
     const t = this.timing;
-    if (!t || t.n >= Timing.PASSES) return desc;
+    // A pass whose timestamps are the driver's (VK4 T46) keeps them.
+    if (!t || t.n >= Timing.PASSES || desc.timestampWrites) return desc;
     const i = t.n++;
     return { ...desc, timestampWrites: { querySet: t.set, beginningOfPassWriteIndex: 2 * i, endOfPassWriteIndex: 2 * i + 1 } };
   }
@@ -3044,39 +3066,124 @@ fn conv(v: u32, sk: u32, sn: u32, dk: u32, dn: u32) -> u32 {
   }
 
   /**
-   * An occlusion query's 64-bit value at `src` of a buffer added to the one at `dst` (bytes, 8-aligned): what a clear
-   * cut a query into, carried on in a spare slot (vk/driver/wg_cmd.c `OP_CLEAR_RECTS`). A compute pass of one
-   * invocation, in the encoder's order.
+   * A timestamp at this point of the encoder (wg_gpu.h `gpu_timestamp`): a compute pass's end write. The pass runs a
+   * dispatch of one invocation that does nothing: Metal writes no timestamps for an empty pass (0 came back on the M4,
+   * Chrome for Testing 157; a render pass's end, or a pass with a dispatch, writes them).
    */
-  private queryAdd(b: GPUBuffer, dst: number, src: number) {
+  private timestamp(set: GPUQuerySet, index: number) {
+    const d = this.device!;
+    let pipeline = this.metaComputes.get('timestamp');
+    if (!pipeline) {
+      const m = d.createShaderModule({ code: '@compute @workgroup_size(1) fn main() {}' });
+      pipeline = d.createComputePipeline({ layout: 'auto', compute: { module: m, entryPoint: 'main' } });
+      this.metaComputes.set('timestamp', pipeline);
+    }
+    const pass = this.enc!.beginComputePass({ timestampWrites: { querySet: set, endOfPassWriteIndex: index } });
+    pass.setPipeline(pipeline);
+    pass.dispatchWorkgroups(1);
+    pass.end();
+  }
+
+  /**
+   * Occlusion queries' 64-bit values added to others (wg_gpu.h `gpu_query_add`): each pair's src words' value (of `src`,
+   * the resolved set) added to its dst words' (of `dst`, a pool's buffer), in their order: what a render pass's later
+   * slots counted of a query cut by a clear or a part of the pass (vk/driver/wg_cmd.c `resolve_queries`). A compute
+   * pass of one invocation (two pairs may add to one query), in the encoder's order.
+   */
+  private queryAdd(dst: GPUBuffer, src: GPUBuffer, pairs: number[]) {
     const d = this.device!, enc = this.enc!;
+    if (!pairs.length) return;
     let pipeline = this.metaComputes.get('queryAdd');
     if (!pipeline) {
-      const code = `struct P { dst: u32, src: u32, pad0: u32, pad1: u32 }
-@group(0) @binding(0) var<storage, read_write> q: array<u32>;
-@group(0) @binding(1) var<uniform> p: P;
+      const code = `@group(0) @binding(0) var<storage, read_write> q: array<u32>;
+@group(0) @binding(1) var<storage, read> s: array<u32>;
+@group(0) @binding(2) var<storage, read> p: array<u32>;
 @compute @workgroup_size(1) fn main() {
-  let a = q[p.dst];
-  let lo = a + q[p.src];
-  q[p.dst + 1u] = q[p.dst + 1u] + q[p.src + 1u] + select(0u, 1u, lo < a);
-  q[p.dst] = lo;
+  for (var i = 0u; i < arrayLength(&p); i += 2u) {
+    let dst = p[i];
+    let src = p[i + 1u];
+    let a = q[dst];
+    let lo = a + s[src];
+    q[dst + 1u] = q[dst + 1u] + s[src + 1u] + select(0u, 1u, lo < a);
+    q[dst] = lo;
+  }
 }`;
       const m = d.createShaderModule({ code });
       pipeline = d.createComputePipeline({ layout: 'auto', compute: { module: m, entryPoint: 'main' } });
       this.metaComputes.set('queryAdd', pipeline);
     }
-    const u = d.createBuffer({ size: 16, usage: UNIFORM, mappedAtCreation: true });
-    new Uint32Array(u.getMappedRange()).set([dst / 4, src / 4, 0, 0]);
+    const u = d.createBuffer({ size: pairs.length * 4, usage: STORAGE, mappedAtCreation: true });
+    new Uint32Array(u.getMappedRange()).set(pairs);
     u.unmap();
     this.temps.push(u);
     const group = d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
-      { binding: 0, resource: { buffer: b } },
-      { binding: 1, resource: { buffer: u } },
+      { binding: 0, resource: { buffer: dst } },
+      { binding: 1, resource: { buffer: src } },
+      { binding: 2, resource: { buffer: u } },
     ] });
     const pass = enc.beginComputePass();
     pass.setPipeline(pipeline);
     pass.setBindGroup(0, group);
     pass.dispatchWorkgroups(1);
+    pass.end();
+  }
+
+  /**
+   * vkCmdCopyQueryPoolResults in one dispatch (VK4 T46, wg_gpu.h `gpu_copy_queries`): each query's values (64-bit in
+   * the pool's buffer, `vals` a query) and availability (`bits`, the replay's) written at `at` + its index × `stride` of
+   * `dst`, 32 or 64 bits each (flags 1), its availability after them (flags 2); an unavailable query's values left
+   * untouched unless partial (flags 4: 0). The binding a window of `dst` from 256 bytes below `at`.
+   */
+  private copyQueries(j: Json) {
+    const d = this.device!, enc = this.enc!;
+    const src = j.src as GPUBuffer, dst = j.dst as GPUBuffer, bits = j.bits as number[];
+    const at = j.at as number, stride = j.stride as number, count = j.count as number, vals = j.vals as number, flags = j.flags as number;
+    const each = ((flags & 1) ? 8 : 4) * (vals + ((flags & 2) ? 1 : 0));
+    const start = Math.floor(at / 256) * 256, end = Math.min(dst.size, at + (count - 1) * stride + each);
+    let pipeline = this.metaComputes.get('copyQueries');
+    if (!pipeline) {
+      const code = `struct P { first: u32, count: u32, stride: u32, at: u32, vals: u32, flags: u32, pad0: u32, pad1: u32, bits: array<u32> }
+@group(0) @binding(0) var<storage, read> q: array<u32>;
+@group(0) @binding(1) var<storage, read_write> o: array<u32>;
+@group(0) @binding(2) var<storage, read> p: P;
+@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) g: vec3u) {
+  let i = g.x;
+  if (i >= p.count) { return; }
+  let a = (p.bits[i >> 5u] >> (i & 31u)) & 1u;
+  let wide = (p.flags & 1u) != 0u;
+  let w = select(1u, 2u, wide);
+  let at = p.at + i * p.stride;
+  if (a == 1u || (p.flags & 4u) != 0u) {
+    for (var k = 0u; k < p.vals; k++) {
+      let s = ((p.first + i) * p.vals + k) * 2u;
+      o[at + k * w] = select(0u, q[s], a == 1u);
+      if (wide) { o[at + k * w + 1u] = select(0u, q[s + 1u], a == 1u); }
+    }
+  }
+  if ((p.flags & 2u) != 0u) {
+    o[at + p.vals * w] = a;
+    if (wide) { o[at + p.vals * w + 1u] = 0u; }
+  }
+}`;
+      const m = d.createShaderModule({ code });
+      pipeline = d.createComputePipeline({ layout: 'auto', compute: { module: m, entryPoint: 'main' } });
+      this.metaComputes.set('copyQueries', pipeline);
+    }
+    const u = d.createBuffer({ size: 32 + bits.length * 4, usage: STORAGE, mappedAtCreation: true });
+    const words = new Uint32Array(u.getMappedRange());
+    words.set([j.first as number, count, stride / 4, (at - start) / 4, vals, flags, 0, 0]);
+    words.set(bits, 8);
+    u.unmap();
+    this.temps.push(u);
+    const group = d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
+      { binding: 0, resource: { buffer: src } },
+      { binding: 1, resource: { buffer: dst, offset: start, size: Math.ceil((end - start) / 4) * 4 } },
+      { binding: 2, resource: { buffer: u } },
+    ] });
+    const pass = enc.beginComputePass();
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, group);
+    pass.dispatchWorkgroups(Math.ceil(count / 64));
     pass.end();
   }
 
@@ -3561,4 +3668,4 @@ const IMPORTS = ['gpu_create', 'gpu_shader', 'gpu_destroy', 'gpu_grow', 'gpu_wri
   'gpu_update', 'gpu_blit', 'gpu_render_pass', 'gpu_compute_pass', 'gpu_pass_end', 'gpu_set_pipeline', 'gpu_pull_buffer', 'gpu_pull_bind', 'gpu_set_bind_group', 'gpu_set_vertex_buffer',
   'gpu_set_index_buffer', 'gpu_set_viewport', 'gpu_set_scissor', 'gpu_set_blend_constant', 'gpu_set_stencil_reference', 'gpu_set_immediates', 'gpu_draw',
   'gpu_draw_indexed', 'gpu_draw_indirect', 'gpu_provoke', 'gpu_draw_ticket', 'gpu_fan_indirect', 'gpu_draw_ticket_indirect', 'gpu_indirect_count', 'gpu_draw_indirect_ticket', 'gpu_byte_count', 'gpu_xfb', 'gpu_vs_prepass', 'gpu_vs_draw', 'gpu_dispatch', 'gpu_dispatch_indirect', 'gpu_clear_rects', 'gpu_begin_occlusion', 'gpu_end_occlusion',
-  'gpu_resolve_queries', 'gpu_query_add', 'gpu_readback', 'gpu_submit', 'gpu_readback_copy', 'gpu_texture_import', 'gpu_translated', 'gpu_cache_get', 'gpu_cache_read', 'gpu_cache_put'];
+  'gpu_resolve_queries', 'gpu_query_add', 'gpu_timestamp', 'gpu_copy_queries', 'gpu_readback', 'gpu_submit', 'gpu_readback_copy', 'gpu_texture_import', 'gpu_translated', 'gpu_cache_get', 'gpu_cache_read', 'gpu_cache_put'];

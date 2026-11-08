@@ -1,0 +1,169 @@
+{
+ "arm": "guest-venus",
+ "info": "7.2.14-arch1-2mesa 1:26.2.6-1 vulkan-virtio 1:26.2.6-1 aquarium.pack gles gles-shaders shaders sweep.sh vk",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "browser": "157.0.8103.38",
+ "ncpus": 4,
+ "scene": "aquarium",
+ "fish": 1,
+ "quads": 0,
+ "width": 1920,
+ "height": 1080,
+ "msaa": 1,
+ "warmup": 200,
+ "samples": 5,
+ "frames": 300,
+ "frameMs": {
+  "median": 1.087,
+  "iqr": 0.027
+ },
+ "guestCpuMs": 0.385,
+ "line": "venus aquarium: 1.087 ms a frame (IQR 0.027), CPU 0.385 ms, GPU 0.040 ms, 120 draws a frame",
+ "seconds": 4.035484667,
+ "renderer": {
+  "seconds": 4,
+  "busyMs": 1.1799999922513962,
+  "submitMs": 0,
+  "drawMs": 0.16624997556209564,
+  "presents": 5,
+  "glDraws": 0,
+  "commands": 0,
+  "uploadKB": 0,
+  "readbacks": 0,
+  "readbackKB": 0,
+  "compileMs": 0,
+  "shareRefreshes": 0,
+  "shareMs": 0,
+  "importBinds": 0,
+  "importMade": 0,
+  "importPictures": 0,
+  "importKB": 0,
+  "importMs": 0,
+  "programs": 0,
+  "errors": 0,
+  "video": {
+   "frames": 0,
+   "decoded": 0,
+   "dropped": 0,
+   "errors": 0,
+   "latencyMs": 0,
+   "latencyMaxMs": 0,
+   "writeMs": 0,
+   "ahead": 0,
+   "maxWaitMs": 0
+  },
+  "venus": {
+   "polls": 5583.75,
+   "gapMs": 0.08549439162250853,
+   "gapMaxMs": 5.985000014305115,
+   "submits": 672.75,
+   "doneMs": 1.3214121143953457,
+   "doneMaxMs": 7.064999997615814,
+   "orderMs": 0.002411742672872384,
+   "nudges": 420,
+   "fences": 336.5,
+   "fenceMs": 1.9911589897936557,
+   "fenceMaxMs": 284.55000001192093,
+   "turnMs": 87.82375006377697,
+   "ticks": 5580.5,
+   "ticksBySecond": [
+    3411,
+    0,
+    7099,
+    11812
+   ],
+   "pollsBySecond": [
+    3357,
+    0,
+    6880,
+    12098
+   ],
+   "cmds": {
+    "ring": 4853.5,
+    "queue": 728,
+    "nested": 96732.75,
+    "replies": 17.5,
+    "idles": 35.5,
+    "notifies": 391.25
+   },
+   "calls": {
+    "vkWaitRingSeqnoMESA@queue": 356,
+    "vkSubmitVirtqueueSeqnoMESA@queue": 336.5,
+    "vkNotifyRingMESA@queue": 35.3,
+    "vkCreateImage": 5,
+    "vkGetImageMemoryRequirements2": 5,
+    "vkCreateBuffer": 1.8,
+    "vkGetBufferMemoryRequirements2": 1.8,
+    "vkEnumeratePhysicalDevices": 0.5,
+    "vkEnumerateDeviceExtensionProperties": 0.5,
+    "vkEnumeratePhysicalDeviceGroups": 0.5,
+    "vkGetPhysicalDeviceQueueFamilyProperties2": 0.5,
+    "vkCreateInstance": 0.3,
+    "vkGetPhysicalDeviceProperties": 0.3,
+    "vkCreateDevice": 0.3,
+    "vkEnumerateInstanceVersion": 0.3,
+    "vkGetPhysicalDeviceFeatures2": 0.3,
+    "vkGetPhysicalDeviceProperties2": 0.3,
+    "vkGetPhysicalDeviceMemoryProperties2": 0.3,
+    "vkGetDeviceQueue2": 0.3,
+    "vkCreateRingMESA@queue": 0.3
+   },
+   "doneMsBySecond": [
+    1.551,
+    0,
+    1.345,
+    1.308
+   ],
+   "perSubmit": {
+    "encodeMs": 0.1433927229670591,
+    "submitCallMs": 0.003287696829435974,
+    "uploads": 1.4576144036009002,
+    "uploadKB": 36.88250187546887,
+    "readbacks": 0.9564891222805701,
+    "passes": 0.4782445611402851,
+    "draws": 57.389347336834206,
+    "bindGroups": 2.8840960240060016,
+    "withPass": 0.47822822822822825,
+    "withPassDoneMs": 1.3688186805701144,
+    "withPassDoneMsBySecond": [
+     1.426,
+     1.348
+    ]
+   }
+  }
+ },
+ "display": {
+  "submits": 552.5,
+  "submitKB": 13.005859375,
+  "fences": {
+   "n": 128.75,
+   "meanMs": 0.13912621354593813,
+   "maxMs": 1.6550000309944153,
+   "heldMs": 23.763750225305557,
+   "behindMs": 5.691250175237656,
+   "fullMs": 0.2537499964237213,
+   "heldMax": 16,
+   "toGpuMs": 1.888791819162913,
+   "toGpuMaxMs": 289.905029296875,
+   "backMs": 0.01979344444326662,
+   "backMaxMs": 0.179931640625
+  }
+ },
+ "vm": {
+  "seconds": 3.99940499997139,
+  "Msteps": 164.497938,
+  "irqs": 2725,
+  "exceptions": {
+   "0x0": 1,
+   "0x15": 5313,
+   "0x20": 103,
+   "0x24": 9740,
+   "0x25": 122
+  },
+  "tlbMisses": 102938,
+  "tlbFlushes": 17721,
+  "jitFlushes": 0,
+  "jitInvalidations": 0,
+  "jitCompileMs": 1.995177
+ }
+}

@@ -210,6 +210,8 @@ for (const [scenario, what, want] of [
   ['readOnlyDepth', 'a depth attachment in a read-only layout sampled by the pass\'s draw', { topLeft: [191, 0, 0, 255], bottomLeft: [191, 0, 0, 255], topRight: blue, bottomRight: blue }],
   // L6c (the review of L5-L6a: finding 4): the worker's clear draws aren't counted by occlusion queries.
   ['clearQuery', 'occlusion queries count draws, not vkCmdClearAttachments', { topLeft: red, bottomLeft: red }],
+  // VK4 T46: queries cut by many clears, past slot 4,096, and timestamps on the GPU, copied with their availability.
+  ['manyQueries', 'occlusion queries cut by 100 clears and past slot 4,096 count, and timestamps come from the GPU', { topLeft: red, bottomLeft: red }],
   // L6c (the review of L5-L6a: finding 7): a draw split by face only where its faces' stencil state conflicts.
   ['facesUnused', 'faces whose stencil references differ but go unused draw once', { topLeft: red, bottomLeft: green, topRight: blue, bottomRight: blue }],
   ['facesSplit', 'faces whose stencil references both compare draw as two, front faces passing', { topLeft: red, bottomLeft: green, topRight: blue, bottomRight: blue }],
@@ -262,6 +264,19 @@ for (const [scenario, what, want] of [
       const [clear, both, quad] = r.query as number[];
       assert.ok(quad > 0, `the quad's query: ${quad}`);
       assert.deepEqual([clear, both], [0, quad], 'a clear alone, and clears around the quad');
+    }
+    if (scenario === 'manyQueries') {
+      const { wide, narrow } = r.query as { wide: string[]; narrow: number[] };
+      const [q1, a1, q2, a2, q4500, a4500, q4999, a4999, t0, ta0, t1, ta1, t2, ta2] = wide.map(BigInt);
+      // The quad covers the right half: 32 × 64 samples (WebGPU's count is exact on SwiftShader and the M4).
+      assert.ok(q1 > 1n, `query 1 counted, not reported passing: ${wide}`);
+      assert.deepEqual([q4500, q4999], [q1, q1], `queries past slot 4,096 count as query 1: ${wide}`);
+      assert.deepEqual([a1, a4500, a4999, ta0, ta1, ta2], [1n, 1n, 1n, 1n, 1n, 1n], `available: ${wide}`);
+      assert.deepEqual([q2, a2], [0xeeeeeeeeeeeeeeeen, 0n], `an unavailable query's value untouched: ${wide}`);
+      assert.deepEqual(narrow, [Number(q1), 1], 'query 1 in 32 bits with its availability');
+      assert.ok(t0 > 0n && t0 <= t1 && t1 <= t2, `timestamps in order: ${t0}, ${t1}, ${t2}`);
+      t.diagnostic(`timestamps ${t0}, ${t1}, ${t2}`);
+      if (r.timestampQuery) assert.ok((r.timestamps as number) > 0, 'timestamps written on the GPU');
     }
   });
 }

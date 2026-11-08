@@ -723,7 +723,7 @@ wg_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    for (uint32_t i = 0; i < 16; i++)
       wg_dummy_unref(dev->dummies[i]);
    wg_id_release(dev->query_scratch);
-   wg_id_release(dev->query_mux);
+   wg_id_release(dev->query_set);
    wg_id_release(dev->shadow[0]);
    wg_id_release(dev->shadow[1]);
    wg_id_release(dev->alias_dummy);
@@ -2322,14 +2322,12 @@ wg_CreateQueryPool(VkDevice _device, const VkQueryPoolCreateInfo *pCreateInfo,
       vk_query_pool_destroy(&dev->vk, pAllocator, &pool->vk);
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
-   if (pCreateInfo->queryType == VK_QUERY_TYPE_OCCLUSION) {
+   if (pCreateInfo->queryType == VK_QUERY_TYPE_OCCLUSION ||
+       (pCreateInfo->queryType == VK_QUERY_TYPE_TIMESTAMP && (wg_features & WG_FEATURE_TIMESTAMP))) {
+      /* Their values on the GPU (the device's sets resolved into it, wg_cmd.c `resolve_queries`, `timestamps_flush`).
+       * STORAGE (gpu_query_add, gpu_copy_queries) | COPY_SRC | COPY_DST */
       struct wg_json j = { 0 };
-      /* 64 spare slots where WebGPU's 4096 leave room. */
-      pool->spares = n < 4096 ? MIN2(4096 - n, 64) : 0;
-      wg_json_printf(&j, "{\"type\":\"occlusion\",\"count\":%u}", MIN2(n, 4096) + pool->spares);
-      pool->set = wg_create_json(WG_KIND_QUERY_SET, &j);
-      /* QUERY_RESOLVE | STORAGE (gpu_query_add) | COPY_SRC | COPY_DST */
-      wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", (n + pool->spares) * 8, 0x200 | 0x80 | 4 | 8);
+      wg_json_printf(&j, "{\"size\":%llu,\"usage\":%u}", (unsigned long long)MAX2(n, 1) * 8, 0x80 | 4 | 8);
       pool->buf = wg_create_json(WG_KIND_BUFFER, &j);
    } else if (pool->vals == 2) {
       struct wg_json j = { 0 };
@@ -2350,7 +2348,6 @@ wg_DestroyQueryPool(VkDevice _device, VkQueryPool _pool, const VkAllocationCallb
       return;
    /* Vulkan says its submits are done by now; were they not, their completion mustn't write into it. */
    wg_submits_forget_pool(dev, pool);
-   wg_id_release(pool->set);
    wg_id_release(pool->buf);
    free(pool->values), free(pool->avail), free(pool->ended);
    vk_query_pool_destroy(&dev->vk, pAllocator, &pool->vk);

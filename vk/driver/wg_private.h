@@ -60,6 +60,7 @@ enum wg_feature {
    WG_FEATURE_SUBGROUPS = 1 << 15,     /* subgroups (the translator's subgroup operations: wg_subgroup_size) */
    WG_FEATURE_F16 = 1 << 16,           /* shader-f16 (16-bit floats in the translator) */
    WG_FEATURE_SWIZZLE = 1 << 17,       /* texture-component-swizzle (image views' component mappings) */
+   WG_FEATURE_TIMESTAMP = 1 << 18,     /* timestamp-query (Vulkan's timestamps written on the GPU, VK4 T46) */
    /* Not the adapter's: VK3 L9a's suspects back at 4fdc69fb's behaviour for the NVIDIA run's A/B (`?gpu=vkl9=…`,
     * web/venus-gpu.ts `L9_SUSPECTS`; never by default): each pipeline's bind group layouts their own uids (wg_shader.c
     * `bgl_uid`), memories' GPUBuffers without WG_MEMORY_PAD. */
@@ -259,8 +260,11 @@ struct wg_device {
    /* Attachments of passes that have none (WebGPU's passes need one; wg_cmd.c `dummy_attachment`): by size and samples. */
    struct wg_dummy *dummies[16];
    uint32_t twin_mark; /* feedback_copies' marks: taken in order, across command buffers */
-   uint32_t query_mux; /* the query set of a pass of several pools' queries (`query_count` in wg_cmd.c) */
-   uint32_t query_scratch, query_scratch_size; /* where a pass's occlusion queries are resolved (wg_cmd.c end_pass) */
+   /* The device's occlusion query set (VK4 T46): every render pass's queries in its slots (`query_count` in wg_cmd.c;
+    * the timestamp set is the module's, `timestamp_set`); where both are resolved before their values go to their
+    * pools' buffers. */
+   uint32_t query_set;
+   uint32_t query_scratch;
    bool aliased;           /* an image has aliases: the replay looks at what each scope binds (wg_cmd.c `scope_images`) */
    /* Copies of what a usage scope reads from a GPUBuffer it also binds as writable storage (VK4 T3; wg_cmd.c
     * `shadow_place`): `shadow_size` bytes, places taken in order within a submit from `shadow_used`. [0] those only read,
@@ -931,20 +935,18 @@ wg_key_divisors(const struct wg_pipeline_key *k)
 /* The pipeline's, or NULL: nothing pulled, or no group free (four sets bound: the pipeline stays refused). */
 const struct wg_pull *wg_pipeline_pull(struct wg_program *p, const struct wg_pipeline_key *key);
 
-/* A query pool. Occlusion queries count on the GPU: the WebGPU query set `set` (a slot a query), resolved at the end of
- * each pass that used it into `buf` (each query's last value, 8 bytes a query), which vkCmdCopyQueryPoolResults copies
- * from; a submit reads back what its queries wrote into `values` at its completion. Timestamps are the CPU's at the
- * replay (`values`). `avail`: a query's availability in the queue's order (the replay's: what a copy sees); `ended`:
- * the serial of the submit that last ended it (0: reset since), available to the host once that submit completed. */
+/* A query pool. Occlusion queries count on the GPU, in slots of the device's set (`query_set`) a render pass takes in
+ * its order, resolved at its end into `buf` (each query's last value, 8 bytes a query), which vkCmdCopyQueryPoolResults
+ * copies from; a submit reads back what its queries wrote into `values` at its completion. Timestamps likewise, from
+ * the device's timestamp set, where the device has timestamp-query (VK4 T46), else the CPU's at the replay (`values`,
+ * no `buf`). `avail`: a query's availability in the queue's order (the replay's: what a copy sees); `ended`: the
+ * serial of the submit that last ended it (0: reset since), available to the host once that submit completed. */
 struct wg_query_pool {
    struct vk_query_pool vk;
    uint64_t *values;
    uint8_t *avail;
    uint32_t *ended;
-   uint32_t set, buf;
-   /* Occlusion: slots of the set past the pool's queries, each render pass's to carry on a query a clear draw cut
-    * (wg_cmd.c `OP_CLEAR_RECTS`); the buffer holds their values too. */
-   uint32_t spares;
+   uint32_t buf;
    /* Values a query: 2 for transform feedback's (VK4 T45: the primitives written and needed, counted on the GPU by the
     * captures, web/venus-gpu.ts `runXfb`; `buf` 16 bytes a query, then 8 a query of the counts at its begin), else 1. */
    uint32_t vals;

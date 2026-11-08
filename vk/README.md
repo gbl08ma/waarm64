@@ -515,18 +515,35 @@ a guest only through Mesa 26.3's Venus on: 26.2's leaves it out). Two memory typ
   drawn, is two draws, its front faces with the front's (the back culled) and then its back faces with the back's, so
   the order between its front and back primitives is lost where they overlap (stencil ops, blending, depth ties) and
   its vertex stage runs twice; faces differing only in what they don't use draw once (VK3 L6c); with one face culled
-  the other's is used (VK3 L6a); occlusion queries on the GPU (VK3 L6a): a pool is a WebGPU query set and a buffer of each query's last value;
-  a render pass whose commands begin a query takes the pool's set, or with queries of several pools the device's own
-  (`query_mux`: WebGPU's pass takes one set; each query a slot of it, resolved one by one into its pool's buffer, VK4 T12),
-  and a query begun outside a pass counts each pass it spans, added up (none: 0); a pass's queries are resolved into the
-  buffer at its end (consecutive ones together, through the device's scratch buffer); a `vkCmdClearAttachments` inside a query (the
-  worker's draw, which Vulkan doesn't count) ends the WebGPU query and carries it on in one of the set's 64 spare slots,
-  whose count the worker adds to the query's on the GPU at the resolve (VK3 L6c; past the spares, passing), and `vkCmdCopyQueryPoolResults` copies each value
-  from it on the GPU, with each availability (the queue's order: what the replay has seen ended and not reset since),
-  leaving the bytes between results untouched and an unavailable query's value unwritten without `PARTIAL_BIT`; a
-  submit reads the values its queries ended back for `vkGetQueryPoolResults`, which reports a query available once that
-  submit completed (`VK_NOT_READY` before, `WAIT_BIT` too: the host can't wait for a completion; Venus's guest driver
-  reads its feedback buffers, which the copies fill, instead); timestamps are the CPU's at the replay), copies
+  the other's is used (VK3 L6a); occlusion queries on the GPU (VK3 L6a; VK4 T46's shape): a pool is a buffer of each
+  query's last value (8 bytes a query, any number of queries); a render pass whose commands begin a query takes the
+  device's occlusion set (`query_set`: WebGPU's pass takes one set, at its start), each of its counts the next of its
+  4,096 slots whatever the query's pool and index (`query_count`), and a query begun outside a pass counts each pass it
+  spans, added up (none: 0). A `vkCmdClearAttachments` inside a query (the worker's draw, which Vulkan doesn't count) and
+  every cut of the WebGPU pass inside Vulkan's (a feedback loop's or a draw's attachment copies, a scope's barrier, a
+  vertex stage's pre-pass, a byte count) end the WebGPU query and carry it on in the next slot (VK3 L6c), as a layered
+  pass's later layers count theirs (VK4 T43). At the pass's end its slots are resolved at once into the device's scratch
+  buffer, each query's own count copied to its place (runs of consecutive slots to consecutive queries in one copy), and
+  the later slots' counts added to their queries' by one dispatch a pool (`gpu_query_add`, in their order); past 4,096
+  counts in a pass a query is reported as passing, said once. `vkCmdCopyQueryPoolResults` is one dispatch (VK4 T46,
+  `gpu_copy_queries`): each query's values from its pool's buffer and its availability (the queue's order: what the
+  replay has seen ended and not reset since, passed as bits) where Vulkan puts them, the bytes between results
+  untouched and an unavailable query's values unwritten without `PARTIAL_BIT`; a submit reads the values its queries
+  ended back for `vkGetQueryPoolResults`, which reports a query available once that submit completed (`VK_NOT_READY`
+  before, `WAIT_BIT` too: the host can't wait for a completion; Venus's guest driver reads its feedback buffers, which
+  the copies fill, instead). **Timestamps** are the GPU's where the adapter has `timestamp-query` (VK4 T46; the device
+  asks for it), but on Apple's GPUs, where they are held (web/venus-host.ts: with them the M4 lost its device in 3 of
+  6 runs of dEQP's query cases, docs/backlog.md "Queries"): outside a render pass the end write of a compute pass of one invocation that does nothing (Metal writes none
+  for an empty pass) into the device's timestamp set; inside one the
+  end of the WebGPU pass's part it is in (each part of a Vulkan pass whose commands write timestamps ends with a write:
+  `begin_pass`), so every timestamp of a part reads its end, later than the commands before it, as Vulkan allows. A
+  timestamp right after a render pass (no work between) reads that pass's end write, and one at the top of the pipe
+  right before a pass its beginning write (`ts_after`, `ts_before`): on Metal a compute pass's write ran beside the
+  render pass before it (VK0's scene read 0.04 ms for a pass the GPU took 0.5 ms over); a pass that carries the
+  driver's writes isn't timed by `?gpu=vkgputime` (WebGPU's pass takes one set of writes). The
+  slots are copied to their pools' buffers at the submit's end, before a copy of results, and when the set's 4,096 run
+  out (`timestamps_flush`). Chromium may quantize them (Dawn's `timestamp_quantization`, which
+  `timestampPeriod` 1 doesn't say; the tests' `--enable-unsafe-webgpu` gets them to the nanosecond). Without the feature they are the CPU's at the replay), copies
   what the GPU wrote to host-visible memory into staging buffers, and submits. Buffer copies WebGPU can't make (an
   offset or size not 4-aligned) go through a compute pass of the worker's: the source's words copied to a temporary
   buffer, then each destination word the copy touches written, its other bytes kept; on the GPU in the encoder's
@@ -762,7 +779,7 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   `vkCmdClearAttachments`, which names layers, and by draws whose vertex stage writes `gl_Layer`, so it replays a layer
   at a time as multiview does (up to `WG_MAX_LAYERS`, 32): the later layers see the clears whose range holds them and
   those draws alone (drawn through indices of their own too, `OP_PROVOKE`, by the first layer's tickets), with the
-  occlusion queries around them (a later layer's count in a spare slot of the pool, added to the first layer's);
+  occlusion queries around them (a later layer's count in a slot of the device's set, added to the first layer's);
   resolves cover every layer (`layer_mask`). A draw's places in the push buffer are reserved for each layer
   (`pass_replays`), and what a draw reads of the attachments (`dst_copies`' and `feedback_copies`' copies, an input
   attachment's view) is of the layer being replayed (the review of T41–T43). **`gl_Layer`** (VK4 T43:
@@ -1179,7 +1196,7 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   that doesn't wait) is dropped from the submit's signals and waits (`wg_sync_finish`; VK4 T2): its completion called
   the freed sync's type through a stale pointer, a trap (`tests/venus-renderer.test.ts`: "function signature
   mismatch"; NVIDIA's "table index is out of bounds" in `wg_complete`, VK3 L9b, was likely it).
-- **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): timestamps on the GPU, depth blits.
+- **Not yet** (docs/backlog.md "The Vulkan driver's gaps", with what dEQP-VK found): depth blits.
 
 ## Pipelines made asynchronously
 

@@ -204,6 +204,7 @@ struct op_query {
    struct wg_query_pool *pool;
    uint32_t first, count;
    uint8_t kind; /* 0 reset, 1 timestamp, 2 begin, 3 end */
+   bool top;     /* a timestamp at the top of the pipe (or NONE): it needn't wait for the commands before it */
 };
 
 struct op_copy_query {
@@ -3203,7 +3204,8 @@ VKAPI_ATTR void VKAPI_CALL
 wg_CmdWriteTimestamp2(VkCommandBuffer commandBuffer, VkPipelineStageFlags2 stage, VkQueryPool pool, uint32_t query)
 {
    emit(wg_cmd_buffer_from_handle(commandBuffer), OP_QUERY,
-        &(struct op_query){ .pool = wg_query_pool_from_handle(pool), .first = query, .count = 1, .kind = 1 },
+        &(struct op_query){ .pool = wg_query_pool_from_handle(pool), .first = query, .count = 1, .kind = 1,
+                            .top = stage == VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT || stage == VK_PIPELINE_STAGE_2_NONE },
         sizeof(struct op_query));
 }
 
@@ -3317,14 +3319,20 @@ struct query_readback {
    uint32_t slot;
 };
 
-/* An occlusion query of the current render pass (resolved at its end); `passing`: one WebGPU couldn't count (begun
- * outside the pass or beside another pool's queries, or cut by the pass's end), reported as passing. */
+/* What a slot of the device's occlusion set counted in the current render pass (resolved at its end): query `index`'s
+ * count, or with `add` a part of it (a cut's: added to it); `passing`: one WebGPU couldn't count (past the set's slots,
+ * or cut by the pass's end), reported as passing. */
 struct pass_query {
    struct wg_query_pool *pool;
-   uint32_t index;
-   bool passing;
-   uint32_t of; /* a spare slot's: the query it carries on (its value added to that one's), else UINT32_MAX */
-   uint32_t mux; /* in a pass of several pools: its slot of the device's set, whose value goes to `index`; else UINT32_MAX */
+   uint32_t index, slot;
+   bool passing, add;
+};
+
+/* A timestamp the replay wrote (VK4 T46): its slot of the device's timestamp set (UINT32_MAX: one of a render pass
+ * part without an end write, written after it), copied into query `index`'s place at the next `timestamps_flush`. */
+struct timestamp_write {
+   struct wg_query_pool *pool;
+   uint32_t index, slot;
 };
 
 struct cpu_write {
@@ -3377,18 +3385,28 @@ struct replay {
    uint32_t push_size;
    uint32_t push_offset; /* where in the device's push buffer the current push constants are (UINT32_MAX: none yet) */
    uint32_t dirty; /* RD_* */
-   /* Occlusion queries: the pool whose set the render pass counts into, the query counting (none: `qactive_pool`
-    * NULL), the pass's queries (struct pass_query). */
-   struct wg_query_pool *qpool, *qactive_pool;
+   /* Occlusion queries: whether the render pass counts them (it has the device's set), the query counting (none:
+    * `qactive_pool` NULL), the set's slots it has taken, what they counted (struct pass_query). */
+   bool qpass;
+   struct wg_query_pool *qactive_pool;
    uint32_t qactive;
-   uint32_t qspares; /* the pass's spare slots taken */
+   uint32_t qnext;
    /* A query begun outside a render pass: it counts the passes it spans, each one's count added to it. */
    struct wg_query_pool *qouter;
    uint32_t qouter_index;
    bool qouter_counted;
-   bool qmux;        /* the pass's queries are of several pools: all in the device's set (`qslot`), `qmux_next` taken */
-   uint32_t qmux_next;
    struct util_dynarray pass_queries;
+   /* Timestamps on the GPU (VK4 T46): the writes not yet copied to their pools (struct timestamp_write), the device
+    * set's slots taken, whether the render pass writes some (each of its parts then ends with a write, `ts_part`'s slot;
+    * UINT32_MAX none), and how many of its writes wait for a slot (`ts_pending`). */
+   struct util_dynarray timestamps;
+   uint32_t ts_next, ts_part, ts_pending;
+   bool ts_pass;
+   /* A timestamp next to a render pass, with no work between, reads the pass's own write (VK4 T46: a compute pass's
+    * on Metal ran beside the render pass before it, 0.04 ms for a 0.5 ms pass): `ts_after`, the end slot of the
+    * render pass just ended (UINT32_MAX: work since, or none); `ts_before`, timestamps waiting for the next pass's
+    * beginning write. */
+   uint32_t ts_after, ts_before;
    uint32_t tickets; /* the render pass's draws through indices of their own so far (OP_PROVOKE: `prepasses`) */
    /* Multiview: the pass's mask, how many of its views have been replayed, this one, and where the pass starts again. */
    uint32_t view_mask, view_order, view, view_count;
@@ -3449,6 +3467,9 @@ readback(struct replay *r, struct wg_device_memory *mem, VkDeviceSize offset, Vk
 }
 
 #define WG_QUERY_SET_MAX 4096 /* WebGPU's largest query set */
+/* The device's timestamp set (VK4 T46): Metal's counter sample buffers are small, and a submit's timestamps past it
+ * are copied out first (`timestamp_slot`). */
+#define WG_TIMESTAMP_SET 256
 
 static void end_pass(struct replay *r);
 static void scope_end(struct replay *r, uint32_t point);
@@ -3460,7 +3481,7 @@ query_passing(struct replay *r, struct wg_query_pool *pool, uint32_t index)
 {
    if (r->pass == RENDER) {
       util_dynarray_append_typed(&r->pass_queries, struct pass_query,
-                                 ((struct pass_query){ pool, index, true, UINT32_MAX, UINT32_MAX }));
+                                 ((struct pass_query){ pool, index, UINT32_MAX, true, false }));
       return;
    }
    if (r->pass != NONE)
@@ -3476,47 +3497,134 @@ cmp_u32(const void *a, const void *b)
    return x < y ? -1 : x > y;
 }
 
-/* The pass's occlusion queries resolved into their pool's buffer: a run of consecutive queries at a time, through the
- * device's scratch buffer (a resolve's destination offset must be 256-aligned). */
+/* Where the device's sets are resolved (a resolve's destination offset must be 256-aligned), read by the copies and
+ * adds that take the values to their pools. */
+static uint32_t
+query_scratch(struct wg_device *dev)
+{
+   if (!dev->query_scratch) {
+      struct wg_json j = { 0 };
+      /* QUERY_RESOLVE | STORAGE (gpu_query_add) | COPY_SRC */
+      wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", WG_QUERY_SET_MAX * 8, 0x200 | 0x80 | 4);
+      dev->query_scratch = wg_create_json(WG_KIND_BUFFER, &j);
+   }
+   return dev->query_scratch;
+}
+
+/* The device's occlusion set: a render pass with queries takes it (WebGPU's pass takes one set, at its start), each of
+ * its queries' counts a slot in their order, whatever their pools and indices (VK4 T46). */
+static uint32_t
+occlusion_set(struct wg_device *dev)
+{
+   if (!dev->query_set) {
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"type\":\"occlusion\",\"count\":%u}", WG_QUERY_SET_MAX);
+      dev->query_set = wg_create_json(WG_KIND_QUERY_SET, &j);
+   }
+   return dev->query_set;
+}
+
+/* The timestamp set, one for the module's devices (the replays are one at a time, and each submit's are copied out at
+ * its end): the M4 lost its WebGPU device ("Insufficient Memory") at the first timestamps after ~700 dEQP cases, each
+ * a device, with a set made and destroyed by each. */
+static uint32_t the_timestamp_set;
+static uint32_t
+timestamp_set(struct wg_device *dev)
+{
+   (void)dev;
+   if (!the_timestamp_set) {
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"type\":\"timestamp\",\"count\":%u}", WG_TIMESTAMP_SET);
+      the_timestamp_set = wg_create_json(WG_KIND_QUERY_SET, &j);
+   }
+   return the_timestamp_set;
+}
+
+/* The render pass's occlusion counts into their pools' buffers, at its end: its slots resolved at once, each query's
+ * count copied to its place (runs of consecutive slots to consecutive queries of one pool together), those reported
+ * passing written, then what later slots counted of a cut query added to it, in their order. */
 static void
 resolve_queries(struct replay *r)
 {
    struct wg_device *dev = r->dev;
-   const uint32_t n = util_dynarray_num_elements(&r->pass_queries, struct pass_query);
-   if (!n)
+   if (!util_dynarray_num_elements(&r->pass_queries, struct pass_query))
       return;
-   if (!dev->query_scratch) {
-      struct wg_json j = { 0 };
-      dev->query_scratch_size = WG_QUERY_SET_MAX * 8;
-      wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", dev->query_scratch_size, 0x200 | 4); /* QUERY_RESOLVE | COPY_SRC */
-      dev->query_scratch = wg_create_json(WG_KIND_BUFFER, &j);
-   }
-   uint32_t *idx = malloc(n * sizeof(uint32_t)), k = 0;
+   const uint32_t scratch = query_scratch(dev);
+   if (r->qnext)
+      gpu_resolve_queries(occlusion_set(dev), 0, r->qnext, scratch, 0);
+   const struct pass_query *run = NULL;
+   uint32_t len = 0;
    util_dynarray_foreach (&r->pass_queries, struct pass_query, q) {
-      if (q->passing) {
-         query_passing(r, q->pool, q->index);
-      } else if (q->mux != UINT32_MAX) {
-         gpu_resolve_queries(dev->query_mux, q->mux, 1, dev->query_scratch, 0);
-         gpu_copy_bb(dev->query_scratch, 0, q->pool->buf, q->index * 8.0, 8);
-      } else if (idx) {
-         idx[k++] = q->index;
+      if (q->passing || q->add)
+         continue;
+      if (run && q->pool == run->pool && q->index == run->index + len && q->slot == run->slot + len) {
+         len++;
+         continue;
       }
+      if (run)
+         gpu_copy_bb(scratch, run->slot * 8.0, run->pool->buf, run->index * 8.0, len * 8.0);
+      run = q, len = 1;
    }
-   if (idx && k) {
-      qsort(idx, k, sizeof(uint32_t), cmp_u32);
-      for (uint32_t a = 0, b; a < k; a = b) {
-         for (b = a + 1; b < k && idx[b] == idx[b - 1] + 1; b++)
-            ;
-         gpu_resolve_queries(r->qpool->set, idx[a], b - a, dev->query_scratch, 0);
-         gpu_copy_bb(dev->query_scratch, 0, r->qpool->buf, idx[a] * 8.0, (b - a) * 8.0);
-      }
-   }
-   free(idx);
-   /* What clears cut a query into: each spare's count added to its query's. */
+   if (run)
+      gpu_copy_bb(scratch, run->slot * 8.0, run->pool->buf, run->index * 8.0, len * 8.0);
    util_dynarray_foreach (&r->pass_queries, struct pass_query, q)
-      if (q->of != UINT32_MAX && !q->passing)
-         gpu_query_add(q->pool->buf, q->of * 8.0, q->index * 8.0);
+      if (q->passing && !q->add)
+         query_passing(r, q->pool, q->index);
+   /* The adds, a call a pool (each in the order of the pass's slots). */
+   const uint32_t n = util_dynarray_num_elements(&r->pass_queries, struct pass_query);
+   struct pass_query *qs = r->pass_queries.data;
+   for (uint32_t i = 0; i < n; i++) {
+      if (!qs[i].add || qs[i].passing || !qs[i].pool)
+         continue;
+      struct wg_query_pool *pool = qs[i].pool;
+      struct wg_json j = { 0 };
+      wg_json_printf(&j, "{\"dst\":%u,\"src\":%u,\"pairs\":[", pool->buf, scratch);
+      const char *sep = "";
+      for (uint32_t k = i; k < n; k++) {
+         if (qs[k].pool != pool || !qs[k].add || qs[k].passing)
+            continue;
+         wg_json_printf(&j, "%s%u,%u", sep, qs[k].index * 2, qs[k].slot * 2);
+         sep = ",";
+         if (k > i)
+            qs[k].passing = true; /* taken */
+      }
+      wg_json_printf(&j, "]}");
+      gpu_query_add(j.data, j.len);
+      wg_json_free(&j);
+   }
    util_dynarray_clear(&r->pass_queries);
+}
+
+/* The timestamps written so far copied from the device's set into their pools' buffers (outside a pass), its slots
+ * free again; those still waiting for a slot are kept. */
+static void
+timestamps_flush(struct replay *r)
+{
+   struct wg_device *dev = r->dev;
+   const uint32_t n = util_dynarray_num_elements(&r->timestamps, struct timestamp_write);
+   if (!n || !r->ts_next)
+      return;
+   const uint32_t scratch = query_scratch(dev);
+   gpu_resolve_queries(timestamp_set(dev), 0, r->ts_next, scratch, 0);
+   struct timestamp_write *t = r->timestamps.data;
+   uint32_t kept = 0;
+   for (uint32_t i = 0; i < n; i++) {
+      if (t[i].slot >= UINT32_MAX - 1)
+         t[kept++] = t[i];
+      else
+         gpu_copy_bb(scratch, t[i].slot * 8.0, t[i].pool->buf, t[i].index * 8.0, 8);
+   }
+   r->timestamps.size = kept * sizeof(struct timestamp_write);
+   r->ts_next = 0;
+}
+
+/* A timestamp slot of the device's set taken (outside a pass: the set's slots copied out first if none are left). */
+static uint32_t
+timestamp_slot(struct replay *r)
+{
+   if (r->ts_next >= WG_TIMESTAMP_SET)
+      timestamps_flush(r);
+   return r->ts_next++;
 }
 
 static void
@@ -3538,51 +3646,57 @@ end_pass(struct replay *r)
       resolve_queries(r);
       scope_end(r, 0);
    }
-   r->qpool = NULL;
+   /* Timestamps of the pass written where it had no end write: a compute pass's after it. */
+   if (r->ts_pending) {
+      const uint32_t slot = timestamp_slot(r);
+      gpu_timestamp(timestamp_set(r->dev), slot);
+      util_dynarray_foreach (&r->timestamps, struct timestamp_write, t)
+         if (t->slot == UINT32_MAX)
+            t->slot = slot;
+      r->ts_pending = 0;
+   }
+   r->ts_after = UINT32_MAX;
+   r->qpass = r->ts_pass = false;
+   r->ts_part = UINT32_MAX;
 }
 
-/* The pool whose occlusion queries the render pass starting at `p` begins (the first), NULL for none; `*several`: it
- * begins queries of another too. */
-static struct wg_query_pool *
-pass_query_pool(const uint8_t *p, const uint8_t *end, bool *stop, struct wg_query_pool *pool, bool *several)
+/* Whether the render pass starting at `p` begins occlusion queries; `*timestamps`: it writes timestamps. */
+static bool
+pass_queries(const uint8_t *p, const uint8_t *end, bool *stop, bool *timestamps)
 {
+   bool any = false;
    while (p < end) {
       const struct op_head *h = (const void *)p;
       const void *d = h + 1;
       p += sizeof(*h) + h->size;
       if (h->op == OP_PASS || h->op == OP_PASS_END) {
          *stop = true;
-         return pool;
+         return any;
       }
       if (h->op == OP_QUERY) {
          const struct op_query *q = d;
-         if (q->kind == 2 && q->pool->set && q->first < WG_QUERY_SET_MAX) {
-            *several |= pool && pool != q->pool;
-            pool = pool ? pool : q->pool;
-         }
+         any |= q->kind == 2 && q->pool->vk.query_type == VK_QUERY_TYPE_OCCLUSION;
+         *timestamps |= q->kind == 1 && q->pool->buf;
       } else if (h->op == OP_EXEC) {
          const struct wg_cmd_buffer *sec = *(struct wg_cmd_buffer *const *)d;
-         pool = pass_query_pool(sec->cmds.data, (const uint8_t *)sec->cmds.data + sec->cmds.size, stop, pool, several);
+         any |= pass_queries(sec->cmds.data, (const uint8_t *)sec->cmds.data + sec->cmds.size, stop, timestamps);
          if (*stop)
-            return pool;
+            return any;
       }
    }
-   return pool;
+   return any;
 }
 
-/* An occlusion query begins counting, in its slot of its pool's set or, in a pass of several pools, the device's
- * (WebGPU's pass takes one set). False past that set's slots. */
+/* An occlusion query of `pool` begins counting (`add`: a part of it, added to what it counted before) in the next
+ * slot of the device's set. False past the set's slots. */
 static bool
-query_count(struct replay *r, struct wg_query_pool *pool, uint32_t index, uint32_t of)
+query_count(struct replay *r, struct wg_query_pool *pool, uint32_t index, bool add)
 {
-   uint32_t mux = UINT32_MAX;
-   if (r->qmux) {
-      if (r->qmux_next >= WG_QUERY_SET_MAX)
-         return false;
-      mux = r->qmux_next++;
-   }
-   gpu_begin_occlusion(r->qmux ? mux : index);
-   util_dynarray_append_typed(&r->pass_queries, struct pass_query, ((struct pass_query){ pool, index, false, of, mux }));
+   if (r->qnext >= WG_QUERY_SET_MAX)
+      return false;
+   const uint32_t slot = r->qnext++;
+   gpu_begin_occlusion(slot);
+   util_dynarray_append_typed(&r->pass_queries, struct pass_query, ((struct pass_query){ pool, index, slot, false, add }));
    return true;
 }
 
@@ -4768,8 +4882,22 @@ begin_pass(struct replay *r, uint32_t keep)
 {
    struct wg_json j = { 0 };
    wg_json_printf(&j, "{");
-   if (r->qpool)
-      wg_json_printf(&j, "\"occlusionQuerySet\":%u,", r->qmux ? r->dev->query_mux : r->qpool->set);
+   if (r->qpass)
+      wg_json_printf(&j, "\"occlusionQuerySet\":%u,", occlusion_set(r->dev));
+   /* Each part of a pass that writes timestamps ends with one (VK4 T46): its timestamps' value. */
+   if (r->ts_pass || r->ts_before) {
+      r->ts_part = timestamp_slot(r);
+      wg_json_printf(&j, "\"timestampSet\":%u,\"timestampEnd\":%u,", timestamp_set(r->dev), r->ts_part);
+   }
+   /* The timestamps just before the pass read its beginning. */
+   if (r->ts_before && keep != 2) {
+      const uint32_t slot = timestamp_slot(r);
+      wg_json_printf(&j, "\"timestampBegin\":%u,", slot);
+      util_dynarray_foreach (&r->timestamps, struct timestamp_write, t)
+         if (t->slot == UINT32_MAX - 1)
+            t->slot = slot;
+      r->ts_before = 0;
+   }
    if (keep)
       wg_json_printf(&j, "\"keep\":%u,", keep);
    wg_json_printf(&j, "%s", r->pass_json + 1);
@@ -4778,16 +4906,18 @@ begin_pass(struct replay *r, uint32_t keep)
    r->dirty = RD_ALL;
 }
 
-/* A query cut around something the pass mustn't count (a clear's draw, a part of the pass ended): it carries on in a
- * spare slot of the set (WebGPU can't take a query's index again in one pass), added to it at the resolve. Past the
- * spares, the query is reported as passing. */
+/* A query cut around something the pass mustn't count (a clear's draw, a part of the pass ended): it carries on in the
+ * next slot of the device's set (WebGPU can't take a slot again in one pass), added to it at the resolve. Past the
+ * set's 4,096 slots, the query is reported as passing. */
 static void
 query_carry_on(struct replay *r, struct wg_query_pool *qp)
 {
-   if (r->qspares < qp->spares && query_count(r, qp, qp->vk.query_count + r->qspares, r->qactive)) {
-      r->qspares++;
+   if (query_count(r, qp, r->qactive, true))
       return;
-   }
+   static bool warned;
+   if (!warned)
+      fprintf(stderr, "wg: a render pass's occlusion queries past 4,096 counts: reported as passing\n");
+   warned = true;
    util_dynarray_foreach (&r->pass_queries, struct pass_query, q)
       if (q->pool == qp && q->index == r->qactive)
          q->passing = true;
@@ -4925,7 +5055,8 @@ static void scope_pass(struct replay *r, const uint8_t *p, const uint8_t *end);
 static void
 scope_cut(struct replay *r, const uint8_t *p, const uint8_t *end)
 {
-   struct wg_query_pool *qp = r->qactive_pool, *pool = r->qpool;
+   struct wg_query_pool *qp = r->qactive_pool;
+   const bool qpass = r->qpass, ts_pass = r->ts_pass;
    wg_emul[WG_EMUL_SCOPE_CUTS]++;
    if (qp)
       gpu_end_occlusion();
@@ -4933,7 +5064,8 @@ scope_cut(struct replay *r, const uint8_t *p, const uint8_t *end)
    r->pass = NONE;
    scope_end(r, 0);
    scope_pass(r, p, end);
-   r->qpool = pool; /* a copy of the scope's ends what `end_pass` keeps of the pass */
+   /* A copy of the scope's ends what `end_pass` keeps of the pass. */
+   r->qpass = qpass, r->ts_pass = ts_pass;
    r->pass = RENDER;
    begin_pass(r, 2);
    if (qp)
@@ -5405,9 +5537,88 @@ cpu_write(struct replay *r, struct wg_device_memory *mem, VkDeviceSize offset, c
    util_dynarray_append_typed(&r->submit->writes, struct cpu_write, w);
 }
 
-/* vkCmdCopyQueryPoolResults: each query's value (an occlusion query's from its pool's buffer, on the GPU; a
- * timestamp's from the CPU) and availability where Vulkan puts them, the bytes between them untouched. An unavailable
- * query's value isn't written, unless PARTIAL_BIT asks for one (0). */
+/* An op that does no GPU work outside a render pass (state for later work, the CPU's own, timestamps). */
+static bool
+op_no_work(const struct op_head *h)
+{
+   switch ((enum op)h->op) {
+   case OP_VIEWS: case OP_PASS_ATTS: case OP_PIPELINE: case OP_COMPUTE: case OP_COMPUTE_BASED: case OP_DYN:
+   case OP_BIND: case OP_VB: case OP_IB: case OP_PUSH: case OP_EVENT:
+      return true;
+   case OP_QUERY:
+      return ((const struct op_query *)(h + 1))->kind <= 1;
+   default:
+      return false;
+   }
+}
+
+/* Whether a render pass begins at `p` (the op after the current one) with no work before it. */
+static bool
+next_is_pass(const uint8_t *p, const uint8_t *end)
+{
+   while (p < end) {
+      const struct op_head *h = (const void *)p;
+      if (h->op == OP_PASS)
+         return true;
+      if (!op_no_work(h))
+         return false;
+      p += sizeof(*h) + h->size;
+   }
+   return false;
+}
+
+/* Whether the render pass starting at `p` (its first op after OP_PASS) is followed, with no work between, by a
+ * timestamp on the GPU: its last part then ends with a write, which the timestamp reads. */
+static bool
+timestamp_after(const uint8_t *p, const uint8_t *end)
+{
+   while (p < end) {
+      const struct op_head *h = (const void *)p;
+      p += sizeof(*h) + h->size;
+      if (h->op == OP_PASS_END)
+         break;
+   }
+   while (p < end) {
+      const struct op_head *h = (const void *)p;
+      if (h->op == OP_QUERY && ((const struct op_query *)(h + 1))->kind == 1 &&
+          ((const struct op_query *)(h + 1))->pool->buf)
+         return true;
+      if (!op_no_work(h))
+         return false;
+      p += sizeof(*h) + h->size;
+   }
+   return false;
+}
+
+/* A timestamp on the GPU (VK4 T46): in a render pass, the end of its current part (each part ends with a write where
+ * the scan saw timestamps: `pass_queries`; else a compute pass's after it, `ts_pending`); outside one, the end of a
+ * compute pass of the worker's (gpu_timestamp). Copied to the pool's buffer at the next `timestamps_flush`. */
+static void
+timestamp(struct replay *r, struct wg_query_pool *pool, uint32_t index, bool top, const uint8_t *p, const uint8_t *end)
+{
+   uint32_t slot = UINT32_MAX;
+   if (r->pass == RENDER) {
+      slot = r->ts_part;
+      if (slot == UINT32_MAX)
+         r->ts_pending++;
+   } else if (r->pass == NONE && r->ts_after != UINT32_MAX) {
+      slot = r->ts_after;
+   } else if (r->pass == NONE && top && next_is_pass(p, end)) {
+      slot = UINT32_MAX - 1;
+      r->ts_before++;
+   } else {
+      if (r->pass == COMPUTE)
+         end_pass(r);
+      slot = timestamp_slot(r);
+      gpu_timestamp(timestamp_set(r->dev), slot);
+   }
+   util_dynarray_append_typed(&r->timestamps, struct timestamp_write, ((struct timestamp_write){ pool, index, slot }));
+}
+
+/* vkCmdCopyQueryPoolResults: each query's values and availability where Vulkan puts them, the bytes between them
+ * untouched; an unavailable query's values aren't written, unless PARTIAL_BIT asks for them (0). A pool whose values
+ * are the GPU's (occlusion, transform feedback, timestamps with timestamp-query) is copied by one dispatch (VK4 T46:
+ * each query's availability the replay's, in the queue's order); timestamps of the CPU's from its values. */
 static void
 copy_queries(struct replay *r, const struct op_copy_query *q)
 {
@@ -5419,19 +5630,34 @@ copy_queries(struct replay *r, const struct op_copy_query *q)
    const VkDeviceSize base = q->dst->offset + q->offset;
    if (!q->count)
       return;
+   if (gpu) {
+      if (buf) {
+         struct wg_json j = { 0 };
+         wg_json_printf(&j, "{\"src\":%u,\"dst\":%u,\"at\":%.0f,\"stride\":%.0f,\"first\":%u,\"count\":%u,\"vals\":%u,"
+                        "\"flags\":%u,\"bits\":[", pool->buf, buf, (double)base, (double)q->stride, q->first, q->count,
+                        vals, (wide ? 1 : 0) | (with_avail ? 2 : 0) | (partial ? 4 : 0));
+         for (uint32_t w = 0; w < DIV_ROUND_UP(q->count, 32); w++) {
+            uint32_t bits = 0;
+            for (uint32_t b = 0; b < 32 && w * 32 + b < q->count; b++)
+               bits |= (uint32_t)pool->avail[q->first + w * 32 + b] << b;
+            wg_json_printf(&j, "%s%u", w ? "," : "", bits);
+         }
+         wg_json_printf(&j, "]}");
+         gpu_copy_queries(j.data, j.len);
+         wg_json_free(&j);
+      }
+      /* What the copy wrote to host-visible memory, read back. */
+      if (host_mem(q->dst))
+         readback(r, q->dst->mem, base - q->dst->mem->gpu_at, (q->count - 1) * q->stride + each);
+      return;
+   }
    for (uint32_t i = 0; i < q->count; i++) {
       const uint32_t index = q->first + i;
       const VkDeviceSize at = base + i * q->stride;
       const bool avail = pool->avail[index];
       uint8_t bytes[24] = { 0 };
       uint32_t from = 0, to = 0; /* the CPU's bytes: [from, to) of the query's */
-      if (avail && gpu) {
-         /* Each value's (a 32-bit result its low word: little-endian). */
-         if (buf)
-            for (uint32_t k = 0; k < vals; k++)
-               gpu_copy_bb(pool->buf, (index * vals + k) * 8.0, buf, at + k * size, size);
-         from = to = vals * size;
-      } else if (avail || partial) {
+      if (avail || partial) {
          for (uint32_t k = 0; k < vals; k++) {
             const uint64_t v = avail ? pool->values[index * vals + k] : 0;
             memcpy(bytes + k * size, &v, size);
@@ -5447,13 +5673,10 @@ copy_queries(struct replay *r, const struct op_copy_query *q)
       if (to > from) {
          if (buf)
             gpu_update(buf, at + from, bytes + from, to - from);
-         if (!gpu && host_mem(q->dst))
+         if (host_mem(q->dst))
             cpu_write(r, q->dst->mem, at - q->dst->mem->gpu_at + from, bytes + from, to - from, false, 0);
       }
    }
-   /* An occlusion query's value is the GPU's: read back what the copy wrote to host-visible memory. */
-   if (gpu && host_mem(q->dst))
-      readback(r, q->dst->mem, base - q->dst->mem->gpu_at, (q->count - 1) * q->stride + each);
 }
 
 static void
@@ -5484,6 +5707,8 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       const struct op_head *h = (const void *)p;
       const void *d = h + 1;
       p += sizeof(*h) + h->size;
+      if (!op_no_work(h) && h->op != OP_PASS_END)
+         r->ts_after = UINT32_MAX;
       /* A layered pass's layers past the first see its clears alone, the draws whose vertex stage writes gl_Layer
        * (VK4 T43: each layer's pipeline keeps that layer's primitives) and its occlusion queries (counting them). */
       if (r->layered && r->view_order &&
@@ -5536,30 +5761,23 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
                json = next;
             }
          }
-         /* Its occlusion queries' set (WebGPU's pass takes one, at its start): a layered pass's layers past the first
-          * count their draws too. */
-         bool stop = false;
+         /* Whether it counts occlusion queries (the device's set: WebGPU's pass takes one, at its start; a layered
+          * pass's layers past the first count their draws too) and writes timestamps (each part's end write). */
+         bool stop = false, timestamps = false;
          const bool draws = !r->layered || !r->view_order;
-         bool several = false;
-         r->qpool = pass_query_pool(p, end, &stop, r->qouter, &several);
-         r->qspares = 0;
-         r->qmux = several;
-         r->qmux_next = 0;
-         if (several && !r->dev->query_mux) {
-            struct wg_json j = { 0 };
-            wg_json_printf(&j, "{\"type\":\"occlusion\",\"count\":%u}", WG_QUERY_SET_MAX);
-            r->dev->query_mux = wg_create_json(WG_KIND_QUERY_SET, &j);
-         }
+         const bool qpass = pass_queries(p, end, &stop, &timestamps) || r->qouter;
          util_dynarray_clear(&r->dp_places);
          r->dp_next = 0;
          const struct wg_program *prog = r->program[0];
          if (draws) {
-            struct wg_query_pool *pool = r->qpool;
             bool divisors = r->pull && r->pull->first_instance;
             prepasses(r, &prog, &divisors, p, end, 0, true);
             scope_pass(r, p, end);
-            r->qpool = pool;
          }
+         r->qpass = qpass;
+         r->qnext = 0;
+         r->ts_pass = timestamps || (!r->view_mask && timestamp_after(p, end));
+         r->ts_part = UINT32_MAX;
          r->tickets = 0;
          r->pass_json = json;
          r->twin_mark = ++r->dev->twin_mark;
@@ -5570,17 +5788,17 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          const bool reads = pass_reads_dst(p, end) || pass_vs_stores(p, end, true) ||
                             pass_byte_count_cut(p, end, true, &(bool){ false });
          r->xfb_counted = false;
-         if (r->qpool || r->atts.count || r->cuts || reads)
+         if (r->qpass || r->ts_pass || r->ts_before || r->atts.count || r->cuts || reads)
             begin_pass(r, r->atts.count || r->cuts || reads ? 1 : 0);
          else
             gpu_render_pass(json, strlen(json));
          r->pass = RENDER;
-         if (r->qouter && r->qpool) {
+         if (r->qouter) {
             r->qactive_pool = r->qouter;
             r->qactive = r->qouter_index;
             if (r->qouter_counted)
                query_carry_on(r, r->qouter);
-            else if (query_count(r, r->qouter, r->qouter_index, UINT32_MAX))
+            else if (query_count(r, r->qouter, r->qouter_index, false))
                r->qouter_counted = true;
             else
                r->qactive_pool = NULL;
@@ -5593,8 +5811,11 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          r->dirty = RD_ALL;
          break;
       }
-      case OP_PASS_END:
+      case OP_PASS_END: {
+         /* What a timestamp right after it reads (`ts_after`). */
+         const uint32_t last = r->pass == RENDER ? r->ts_part : UINT32_MAX;
          end_pass(r);
+         r->ts_after = last;
          /* The next view replays the pass, its commands holding all they need since `forget`. */
          if (r->view_mask) {
             if (++r->view_order < r->view_count) {
@@ -5606,6 +5827,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          }
          r->atts.count = 0;
          break;
+      }
       case OP_PASS_ATTS:
          memcpy(&r->atts, d, sizeof(r->atts));
          break;
@@ -5899,11 +6121,9 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          const uint32_t first = q->first + (q->kind && !r->layered ? r->view_order : 0);
          if (r->layered && r->view_order) {
             /* A layered pass's layer past the first (VK4 T43): an occlusion query's samples of this layer counted in a
-             * spare slot of its pool, added to what the first layer's resolve wrote; nothing else again. */
-            if (q->kind == 2 && occlusion && r->pass == RENDER && r->qpool && (pool == r->qpool || r->qmux) &&
-                !r->qactive_pool && first < WG_QUERY_SET_MAX && r->qspares < pool->spares &&
-                query_count(r, pool, pool->vk.query_count + r->qspares, first)) {
-               r->qspares++;
+             * slot of the device's set, added to what the first layer's counted; nothing else again. */
+            if (q->kind == 2 && occlusion && r->pass == RENDER && r->qpass && !r->qactive_pool &&
+                query_count(r, pool, first, true)) {
                r->qactive_pool = pool;
                r->qactive = first;
             } else if (q->kind == 3 && occlusion && r->pass == RENDER && r->qactive_pool == pool &&
@@ -5918,7 +6138,10 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
             memset(&pool->avail[q->first], 0, q->count);
             memset(&pool->ended[q->first], 0, q->count * sizeof(uint32_t));
          } else if (q->kind == 1) {
-            pool->values[first] = os_time_get_nano();
+            if (pool->buf)
+               timestamp(r, pool, first, q->top, p, end);
+            else
+               pool->values[first] = os_time_get_nano();
             query_ended(r, pool, first);
          } else if (q->kind >= 2 && pool->vals == 2) {
             /* Transform feedback's (VK4 T45): the captures' counts at its begin and at its end, its value their
@@ -5933,18 +6156,19 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
             if (q->kind == 3)
                query_ended(r, pool, first);
          } else if (q->kind == 2 && occlusion) {
-            if (r->pass == RENDER && r->qpool && (pool == r->qpool || r->qmux) && !r->qactive_pool &&
-                first < WG_QUERY_SET_MAX && query_count(r, pool, first, UINT32_MAX)) {
+            if (r->pass == RENDER && r->qpass && !r->qactive_pool && query_count(r, pool, first, false)) {
                r->qactive_pool = pool;
                r->qactive = first;
-            } else if (r->pass != RENDER && !r->qouter && pool->set && first < WG_QUERY_SET_MAX) {
+            } else if (r->pass != RENDER && !r->qouter) {
                r->qouter = pool;
                r->qouter_index = first;
                r->qouter_counted = false;
             } else {
+               /* Two at once (Vulkan says no: VUID-vkCmdBeginQuery-queryPool-01922, one active query of a type), or
+                * past the set's slots. */
                static bool warned;
                if (!warned)
-                  fprintf(stderr, "wg: an occlusion query begun inside another: reported as passing\n");
+                  fprintf(stderr, "wg: an occlusion query begun inside another or past a pass's 4,096: reported as passing\n");
                warned = true;
             }
          } else if (q->kind == 3) {
@@ -5971,6 +6195,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
       }
       case OP_COPY_QUERY:
          end_pass(r);
+         timestamps_flush(r);
          copy_queries(r, d);
          break;
       case OP_EVENT: {
@@ -6375,7 +6600,8 @@ submit_now(struct wg_device *dev, uint32_t cmd_count, struct vk_command_buffer *
    gpu_encoder();
    linear_images(dev, true, NULL);
    struct replay r = { .dev = dev, .submit = s, .push_offset = UINT32_MAX, .draw_place = UINT32_MAX,
-                       .fi_place = UINT32_MAX, .fi_bound = UINT32_MAX };
+                       .fi_place = UINT32_MAX, .fi_bound = UINT32_MAX, .ts_part = UINT32_MAX,
+                       .ts_after = UINT32_MAX };
    uint64_t draws = 0;
    for (uint32_t i = 0; i < cmd_count; i++)
       draws += container_of(cmds[i], struct wg_cmd_buffer, vk)->draws;
@@ -6388,6 +6614,16 @@ submit_now(struct wg_device *dev, uint32_t cmd_count, struct vk_command_buffer *
       end_pass(&r);
       r.dirty = RD_ALL;
    }
+   /* The submit's timestamps into their pools' buffers, before the readbacks take them (one waiting for a pass that
+    * never began, a write of its own). */
+   if (r.ts_before) {
+      const uint32_t slot = timestamp_slot(&r);
+      gpu_timestamp(timestamp_set(dev), slot);
+      util_dynarray_foreach (&r.timestamps, struct timestamp_write, t)
+         if (t->slot == UINT32_MAX - 1)
+            t->slot = slot;
+   }
+   timestamps_flush(&r);
    linear_images(dev, false, &r);
    /* What another renderer reads of a shared image is its texture. */
    list_for_each_entry (struct wg_image, image, &dev->shared_words, words_link) {
@@ -6402,6 +6638,7 @@ submit_now(struct wg_device *dev, uint32_t cmd_count, struct vk_command_buffer *
    util_dynarray_foreach (&s->queries, struct query_readback, q)
       q->slot = gpu_readback(q->pool->buf, q->lo * 8.0 * q->pool->vals, (q->hi - q->lo) * 8 * q->pool->vals);
    util_dynarray_fini(&r.pass_queries);
+   util_dynarray_fini(&r.timestamps);
    util_dynarray_fini(&r.dp_places);
    util_dynarray_fini(&r.uses);
    util_dynarray_fini(&r.written);

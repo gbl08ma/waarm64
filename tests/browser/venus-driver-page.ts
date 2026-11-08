@@ -354,7 +354,7 @@ export async function runInFlight(scenario: 'upload' | 'since') {
  * (`wgt_variant`, the out-of-context review of the driver): the scene's pipeline as an unrestarted strip, without a
  * fragment shader, as lines with depth bias. Named pixels of the image, and WebGPU's errors.
  */
-export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'facesUnused' | 'facesSplit' | 'flatLast' | 'flatFanLast' | 'flatFanFirst' | 'flatFanOdd' | 'flatListOdd' | 'flatRestart' | 'angleUniforms' | 'drawParams' | 'pullLayouts' | 'pullDrawParams' | 'pullGroups' | 'pullOffsets' | 'pullPastEnd' | 'pullFourSets' | 'pullDivisors' | 'xfbList' | 'xfbOverflow' | 'xfbStrip' | 'xfbResume' | 'xfbMany' | 'xfbIndirect' | 'xfbIndexedIndirect' | 'xfbNullColors' | 'xfbPasses' | 'xfbPulled' | 'xfbFourGroups' | 'xfbByteCount' | 'xfbByteCountInPass' | 'xfbQuery' | 'xfbQueryOutside') {
+export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'manyQueries' | 'facesUnused' | 'facesSplit' | 'flatLast' | 'flatFanLast' | 'flatFanFirst' | 'flatFanOdd' | 'flatListOdd' | 'flatRestart' | 'angleUniforms' | 'drawParams' | 'pullLayouts' | 'pullDrawParams' | 'pullGroups' | 'pullOffsets' | 'pullPastEnd' | 'pullFourSets' | 'pullDivisors' | 'xfbList' | 'xfbOverflow' | 'xfbStrip' | 'xfbResume' | 'xfbMany' | 'xfbIndirect' | 'xfbIndexedIndirect' | 'xfbNullColors' | 'xfbPasses' | 'xfbPulled' | 'xfbFourGroups' | 'xfbByteCount' | 'xfbByteCountInPass' | 'xfbQuery' | 'xfbQueryOutside') {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -375,7 +375,7 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
   try {
     if (ex.wgt_run(vs, vn, fs, fn, cs, cn)) return { error: text(ex.wgt_error() >>> 0), errors };
     await wait(() => ex.wgt_done(), 'the scene');
-    const index = { none: 0, partial: 1, resume: 2, resumePartial: 3, readOnlyDepth: 4, clearQuery: 5, facesUnused: 6, facesSplit: 7 } as const;
+    const index = { none: 0, partial: 1, resume: 2, resumePartial: 3, readOnlyDepth: 4, clearQuery: 5, facesUnused: 6, facesSplit: 7, manyQueries: 8 } as const;
     const variant = { strip: 0, vertexOnly: 1, lineBias: 2 } as const;
     const flat = { flatLast: 0, flatFanLast: 1, flatFanFirst: 2, flatFanOdd: 3, flatListOdd: 4, flatRestart: 5 } as const;
     let at: number, draws = 0;
@@ -473,10 +473,15 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
     const px = (x: number, y: number) => [...new Uint8Array(memory.buffer, at + (y * 64 + x) * 4, 4)];
     const pixels = { topLeft: px(16, 8), bottomLeft: px(16, 56), topRight: px(48, 8), bottomRight: px(48, 56) };
     // clearQuery's occlusion values (wgt_pass_query).
-    const query = scenario === 'clearQuery' ? [...new BigUint64Array(memory.buffer, ex.wgt_pass_query() >>> 0, 3)].map(Number) : undefined;
+    // manyQueries' copies (VK4 T46): 16 words of 64 bits, then query 1's two words of 32 at 112.
+    const q = ex.wgt_pass_query() >>> 0;
+    const query = scenario === 'clearQuery' ? [...new BigUint64Array(memory.buffer, q, 3)].map(Number)
+      : scenario === 'manyQueries' ? { wide: [...new BigUint64Array(memory.buffer, q, 14)].map((x) => x.toString()), narrow: [...new Uint32Array(memory.buffer, q + 112, 2)] } : undefined;
+    // VK4 T46: timestamps written on the GPU (the adapter's `timestamp-query`).
+    const timestamps = v.gpu.emul.timestamps;
     const firstInstance = adapter.features.has('indirect-first-instance');
     device.destroy();
-    return { pixels, errors, query, draws, firstInstance };
+    return { pixels, errors, query, draws, firstInstance, timestamps, timestampQuery: adapter.features.has('timestamp-query') };
   } catch (e) {
     return { error: String(e), errors };
   }

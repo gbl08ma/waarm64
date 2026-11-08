@@ -982,14 +982,22 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Shaders**: derivatives in non-uniform control flow (`glsl.derivate.*dynamic_*`) pass on SwiftShader (VK4 T42) and
     aren't supported on the M4, where dEQP asks for quad subgroup operations and the Mac's subgroups are held (VK3 L5:
     "What the device advertises, left for the translator").
-  - **Queries** (occlusion queries count on the GPU since VK3 L6a: vk/README.md "The driver"): two queries active at once (Vulkan allows it across pools), one past slot 4,096, or
-    one begun in a pass and cut by a WebGPU pass's end inside Vulkan's is reported as passing, warned once;
-    `occlusionQueryPrecise` isn't advertised (WebGPU promises nonzero, not a count); the host's
-    `vkGetQueryPoolResults` can't wait (`WAIT_BIT` answers `VK_NOT_READY` until the submit completes; Venus's guest
-    reads its feedback buffers instead); `vkCmdCopyQueryPoolResults` makes a copy and a write a query (a compute pass
-    would be one dispatch, for programs that copy thousands); timestamps are the CPU's at replay (`timestamp-query`): a
-    program's "GPU time" under Venus, VK0's scene's included, is the replay's span, not the GPU's (VK3 L2b; the worker's
-    `?gpu=vkgputime` measures the GPU's).
+  - **Queries** (occlusion queries count on the GPU since VK3 L6a, in the device's set since VK4 T46: vk/README.md "The
+    driver"): past 4,096 counts in one render pass (a query and each of its cuts by a clear, a part of the pass or a
+    layer take one each) a query is reported as passing, warned once (a pass would be cut and its slots resolved
+    there); `occlusionQueryPrecise` isn't advertised (WebGPU promises nonzero, not a count: 121 of dEQP's
+    `query_pool.occlusion_query` cases and 16 of `query_pool.discard`'s); the host's `vkGetQueryPoolResults` can't wait (`WAIT_BIT` answers
+    `VK_NOT_READY` until the submit completes; Venus's guest driver reads its feedback buffers instead). Timestamps are
+    the GPU's where the adapter has `timestamp-query` (VK4 T46), else the CPU's at replay, and the CPU's on Apple's
+    GPUs: with them on the GPU the M4 (Chrome for Testing 157) lost its WebGPU device ("Insufficient Memory", Metal's
+    command buffer) in 3 of 6 runs of T46's query cases (`bench/vulkan/results/vk4/t46/m4-lost.json`), always at the
+    first timestamp case after the same 740 others (alone, those timestamp cases passed; the renderer before T46 passed
+    2 of 2; one timestamp set for the module instead of a device's didn't help): a counter sample buffer made late,
+    or Dawn's Metal timestamps over many devices, untried (S–M, the Mac); Chromium may quantize them
+    (Dawn's `timestamp_quantization`, off under `--enable-unsafe-webgpu`), and `VK_KHR_calibrated_timestamps` (3
+    `timestamp.calibrated` cases) would need the GPU's time now, which WebGPU can't give synchronously. Two occlusion
+    queries active at once, which the backlog had as Vulkan's across pools, aren't valid Vulkan
+    (VUID-vkCmdBeginQuery-queryPool-01922: one active query of a type in a command buffer): reported as passing.
   - **Rendering**: a 2D view of a 3D image sampled or stored (`VK_EXT_image_2d_view_of_3d`, VK4 T38) is the level's 3D
     view and a variant keyed by the slice: a pipeline a slice bound (a program walking a volume's slices makes one each;
     a slice in the group's parameter table, as texel buffers' are, would make one for all). Stencil state per face is a draw split by face (VK3 L6a), so the order between one draw's front

@@ -288,7 +288,11 @@ export class VenusRenderer {
     if (missing.length) throw new Error(`Vulkan's renderer (target/vk/venus.wasm) is older than this page (no ${missing.join(', ')}): rebuild it (vk/build.sh)`);
     const instance = await WebAssembly.instantiate(module, imports);
     if ((instance.exports as unknown as Exports).venus_arena_end() >>> 0 !== VENUS_ARENA) throw new Error(stale);
-    self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.heldFormats ? HELD_FEATURES : []), ...(options.hold ?? [])], options.ycbcr ?? true, options.l9);
+    // VK4 T46: Vulkan's timestamps stay the CPU's on Apple's GPUs: with them on the GPU the M4 lost its WebGPU device
+    // ("Insufficient Memory") in 3 of 6 runs of dEQP's query cases, at the first timestamps after ~740 other cases, and
+    // never without (docs/backlog.md "Queries").
+    const apple = caps?.adapterInfo?.vendor.toLowerCase() === 'apple' ? ['timestamp-query'] : [];
+    self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.heldFormats ? HELD_FEATURES : []), ...apple, ...(options.hold ?? [])], options.ycbcr ?? true, options.l9);
     self.nudgeMs = options.nudgeMs ?? NUDGE_MS;
     self.ex.venus_premake?.(options.premake ? 1 : 0);
     if (options.queueFamilies) self.ex.venus_queue_families?.(options.queueFamilies);

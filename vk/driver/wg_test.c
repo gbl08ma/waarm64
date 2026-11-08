@@ -93,7 +93,7 @@ FN(CmdPushConstants); FN(CmdDrawIndexed); FN(CmdDraw); FN(CmdSetViewport); FN(Cm
 FN(CmdDispatch); FN(CmdFillBuffer); FN(CreateFence); FN(GetFenceStatus); FN(QueueSubmit); FN(ResetFences);
 FN(GetMemoryFdPropertiesKHR); FN(CreatePipelineCache); FN(GetPipelineCacheData);
 FN(CreateQueryPool); FN(DestroyQueryPool); FN(CmdResetQueryPool); FN(CmdBeginQuery); FN(CmdEndQuery);
-FN(CmdCopyQueryPoolResults);
+FN(CmdCopyQueryPoolResults); FN(CmdWriteTimestamp);
 
 static VkInstance instance;
 static VkDevice dev;
@@ -250,7 +250,7 @@ init(void)
    DLOAD(CmdCopyImageToBuffer); DLOAD(CmdDispatch); DLOAD(CmdFillBuffer); DLOAD(CreateFence); DLOAD(GetFenceStatus);
    DLOAD(QueueSubmit); DLOAD(ResetFences); DLOAD(GetMemoryFdPropertiesKHR); DLOAD(CreatePipelineCache);
    DLOAD(GetPipelineCacheData); DLOAD(CreateQueryPool); DLOAD(DestroyQueryPool); DLOAD(CmdResetQueryPool);
-   DLOAD(CmdBeginQuery); DLOAD(CmdEndQuery); DLOAD(CmdCopyQueryPoolResults);
+   DLOAD(CmdBeginQuery); DLOAD(CmdEndQuery); DLOAD(CmdCopyQueryPoolResults); DLOAD(CmdWriteTimestamp);
    GetDeviceQueue(dev, 0, 0, &queue);
    if (compute_family != UINT32_MAX)
       GetDeviceQueue(dev, compute_family, 0, &queue2);
@@ -2283,6 +2283,11 @@ wgt_xfb_done(void)
  *    faces, the front's reference 1 and the back's 2 (VK3 L6c, the L5-L6a review's finding 7: one draw, since neither
  *    face uses its reference, and a split one reorders the draw's primitives).
  * 7: as 6 with EQUAL on both faces, the front's reference 0: the quad (front faces) drawn, in two draws.
+ * 8: as 5 with a pool of 5,000 occlusion queries and one of 3 timestamps (VK4 T46): 1 around the quad with 100
+ *    vkCmdClearAttachments before and after it, 4500 around the quad alone, 4999 around 70 clears and the quad; the
+ *    timestamps before the pass, inside it and after it; copied to wgt_pass_query 64-bit with their availability, 16
+ *    bytes apart (queries 1 and 2, 2 never begun: its value's bytes left 0xee; 4500 at 32, 4999 at 48, the timestamps
+ *    at 64), and query 1 in 32 bits with its availability at 112.
  * All in one submit, the image then copied into wgt_pass_pixels (rows of 256 bytes); wgt_pass_done says when.
  */
 static struct {
@@ -2417,7 +2422,7 @@ wgt_pass(uint32_t scenario)
       CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, right);
       CmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
       CmdEndRendering(cmd);
-   } else if (scenario == 4 || scenario == 5) {
+   } else if (scenario == 4 || scenario == 5 || scenario == 8) {
       if (!scene.pipeline) {
          snprintf(error, sizeof(error), "wgt_run first");
          return 1;
@@ -2427,17 +2432,26 @@ wgt_pass(uint32_t scenario)
       if (image(VK_FORMAT_D32_SFLOAT, 64, 64, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                 VK_IMAGE_ASPECT_DEPTH_BIT, &depth, &dview))
          return 1;
-      VkQueryPool qp = VK_NULL_HANDLE;
-      if (scenario == 5) {
+      VkQueryPool qp = VK_NULL_HANDLE, tp = VK_NULL_HANDLE;
+      if (scenario == 5 || scenario == 8) {
          const VkQueryPoolCreateInfo qi = { .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
-                                            .queryType = VK_QUERY_TYPE_OCCLUSION, .queryCount = 3 };
+                                            .queryType = VK_QUERY_TYPE_OCCLUSION,
+                                            .queryCount = scenario == 8 ? 5000 : 3 };
          CHECK(CreateQueryPool(dev, &qi, NULL, &qp));
-         CmdResetQueryPool(cmd, qp, 0, 3);
+         CmdResetQueryPool(cmd, qp, 0, qi.queryCount);
+      }
+      if (scenario == 8) {
+         const VkQueryPoolCreateInfo ti = { .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+                                            .queryType = VK_QUERY_TYPE_TIMESTAMP, .queryCount = 3 };
+         CHECK(CreateQueryPool(dev, &ti, NULL, &tp));
+         CmdResetQueryPool(cmd, tp, 0, 3);
+         CmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, tp, 0);
+         memset(lo.values, 0xee, 256);
       }
       VkRenderingAttachmentInfo d = {
          .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = dview,
          .imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-         .storeOp = VK_ATTACHMENT_STORE_OP_STORE, .clearValue = { .depthStencil = { scenario == 5 ? 1.0f : 0.75f, 0 } } };
+         .storeOp = VK_ATTACHMENT_STORE_OP_STORE, .clearValue = { .depthStencil = { scenario != 4 ? 1.0f : 0.75f, 0 } } };
       VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = full, .layerCount = 1,
                              .pDepthAttachment = &d };
       static PFN_vkCmdBeginRendering CmdBeginRendering;
@@ -2508,12 +2522,45 @@ wgt_pass(uint32_t scenario)
          CmdEndQuery(cmd, qp, 1);
          CmdBeginQuery(cmd, qp, 2, 0);
       }
+      if (scenario == 8) {
+         /* VK4 T46: a query cut by 100 clears on each side of the quad (past what spare slots a pool had), one past
+          * slot 4,096 around the quad alone, one past it cut by 70 clears, and a timestamp inside the pass. */
+         const VkClearAttachment ca = { VK_IMAGE_ASPECT_COLOR_BIT, 0, { .color = { .float32 = { 1, 0, 0, 1 } } } };
+         const VkClearRect rect = { { { 0, 0 }, { 32, 64 } }, 0, 1 };
+         CmdBeginQuery(cmd, qp, 1, 0);
+         for (int k = 0; k < 100; k++)
+            CmdClearAttachments(cmd, 1, &ca, 1, &rect);
+         CmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+         for (int k = 0; k < 100; k++)
+            CmdClearAttachments(cmd, 1, &ca, 1, &rect);
+         CmdEndQuery(cmd, qp, 1);
+         CmdBeginQuery(cmd, qp, 4500, 0);
+         CmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+         CmdEndQuery(cmd, qp, 4500);
+         CmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, tp, 1);
+         CmdBeginQuery(cmd, qp, 4999, 0);
+         for (int k = 0; k < 70; k++)
+            CmdClearAttachments(cmd, 1, &ca, 1, &rect);
+      }
       CmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
       if (scenario == 5)
          CmdEndQuery(cmd, qp, 2);
+      if (scenario == 8)
+         CmdEndQuery(cmd, qp, 4999);
       CmdEndRendering(cmd);
       if (scenario == 5)
          CmdCopyQueryPoolResults(cmd, qp, 0, 3, lo.query, 0, 8, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+      if (scenario == 8) {
+         CmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, tp, 2);
+         /* Each 64-bit with its availability, 16 bytes apart: queries 1 and 2 (2 never begun: its value's bytes
+          * untouched, availability 0), 4500 and 4999 at 32, the timestamps at 64; query 1 again in 32 bits at 112. */
+         const VkQueryResultFlags f = VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT;
+         CmdCopyQueryPoolResults(cmd, qp, 1, 2, lo.query, 0, 16, f);
+         CmdCopyQueryPoolResults(cmd, qp, 4500, 1, lo.query, 32, 16, f);
+         CmdCopyQueryPoolResults(cmd, qp, 4999, 1, lo.query, 48, 16, f);
+         CmdCopyQueryPoolResults(cmd, tp, 0, 3, lo.query, 64, 16, f);
+         CmdCopyQueryPoolResults(cmd, qp, 1, 1, lo.query, 112, 8, VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+      }
    } else {
       const VkRect2D area = scenario == 2 ? full : top;
       rendering(cmd, area, VK_RENDERING_SUSPENDING_BIT, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_DONT_CARE,

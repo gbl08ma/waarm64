@@ -309,7 +309,8 @@ test('?gpu=vkl9=… asks for the device as at 4fdc69fb, suspect by suspect (VK3 
   } as unknown as GPUAdapter;
   const asked = (l9: string[]) => { const d = deviceRequest(adapter, { l9: l9Suspects(l9) }); return { features: [...(d.requiredFeatures ?? [])].sort(), limits: Object.keys(d.requiredLimits ?? {}).sort() }; };
   const now = asked([]);
-  assert.deepEqual(now.features, ['shader-f16', 'subgroups', 'texture-compression-bc']);
+  // timestamp-query since VK4 T46 (Vulkan's timestamps on the GPU), one of MORE_FEATURES (the `features` suspect's).
+  assert.deepEqual(now.features, ['shader-f16', 'subgroups', 'texture-compression-bc', 'timestamp-query']);
   for (const k of L9_LIMITS) assert.ok(now.limits.includes(k), k);
   assert.deepEqual(asked(['features']).features, ['texture-compression-bc']);
   assert.deepEqual(asked(['features']).limits, now.limits);

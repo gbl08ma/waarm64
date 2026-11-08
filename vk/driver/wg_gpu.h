@@ -142,9 +142,17 @@ WG_IMPORT(gpu_begin_occlusion) void gpu_begin_occlusion(uint32_t index);
 WG_IMPORT(gpu_end_occlusion) void gpu_end_occlusion(void);
 WG_IMPORT(gpu_resolve_queries) void gpu_resolve_queries(uint32_t set, uint32_t first, uint32_t count, uint32_t buffer,
                                                         double offset);
-/* A query's 64-bit value at `src` (bytes) of a buffer added to the one at `dst` of the same buffer, on the GPU (a
- * compute pass of the worker's; outside a pass). */
-WG_IMPORT(gpu_query_add) void gpu_query_add(uint32_t buffer, double dst, double src);
+/* Queries' 64-bit values added to others on the GPU, in their order (a compute pass of the worker's; outside a pass):
+ * JSON {dst, src: buffers, pairs: [dst word, src word, ...]}, each src's value added to its dst's (VK4 T46: what a
+ * render pass's later slots counted of a query cut, wg_cmd.c `resolve_queries`). */
+WG_IMPORT(gpu_query_add) void gpu_query_add(const char *json, uint32_t len);
+/* A timestamp written into slot `index` of a timestamp query set at this point of the encoder (a trivial compute pass's
+ * end; outside a pass; VK4 T46). */
+WG_IMPORT(gpu_timestamp) void gpu_timestamp(uint32_t set, uint32_t index);
+/* vkCmdCopyQueryPoolResults in one dispatch (VK4 T46, wg_cmd.c `copy_queries`; outside a pass): JSON {src: the pool's
+ * buffer, dst, at, stride (bytes), first, count, vals, flags (1 64-bit, 2 with availability, 4 partial), bits: each
+ * query's availability, 32 a word}. */
+WG_IMPORT(gpu_copy_queries) void gpu_copy_queries(const char *json, uint32_t len);
 
 /* A buffer range copied to a staging buffer at this point of the encoder, to be read at completion: its slot. */
 WG_IMPORT(gpu_readback) uint32_t gpu_readback(uint32_t buffer, double offset, uint32_t size);

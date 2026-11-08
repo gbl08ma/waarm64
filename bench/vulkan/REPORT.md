@@ -793,6 +793,50 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` oth
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 T46: queries and timestamps — timestamps on the GPU, occlusion queries in the device's set, copies in one dispatch; 170 cases join the list
+
+2026-11-08, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t46/`.
+
+**Before** (`swiftshader-before.json`, `before-cases.txt`: `query_pool`'s occlusion, discard, concurrent and
+maintenance7 cases, every `pipeline.monolithic.timestamp` case): 541 pass, 0 fail, 214 not supported
+(`occlusionQueryPrecise`, maintenance7 and 9, device address commands, calibrated timestamps, tessellation and
+geometry). dEQP's groups didn't reach the backlog's gaps, so the driver test did: a query with 100 clears each side of its draw and queries
+past slot 4,096 read 1 (reported passing), and the timestamps were the CPU's at the replay.
+
+**What landed** (vk/README.md "The driver"): a pool is a buffer; a render pass's occlusion queries count in the
+device's set of 4,096 slots in their order, whatever their pools and indices, each cut (a clear, a part of the pass, a
+later layer) the next slot, resolved at once at the pass's end and added on the GPU by one dispatch a pool; timestamps
+on the GPU where the adapter has `timestamp-query` (the device asks for it), a render pass part's end write inside a
+pass and next to one, its beginning write for a timestamp at the top of the pipe just before it, a one-invocation
+dispatch's pass elsewhere; `vkCmdCopyQueryPoolResults` one dispatch with the availability as bits.
+"Two occlusion queries active at once across pools" isn't valid Vulkan (VUID-vkCmdBeginQuery-queryPool-01922): the
+backlog's premise was wrong, and such a begin stays reported as passing.
+
+**Metal's timestamps** (`tsprobe.mjs`, `m4-tsprobe.json`): an empty compute pass's write is never made (0 resolved;
+the first M4 runs, `m4-empty-passes.json`, lost the device, "Insufficient Memory", at the first timestamp case and
+failed every one after); a render pass's, or a compute pass with a dispatch, are. And **a compute pass's write after a
+render pass ran beside it**: VK0's scene (1 fish, 1080p, `m4-scene-base.json`) read 0.040 ms of GPU a frame from its
+two timestamps around its pass, where `?gpu=vkgputime` timed the pass at 0.519 ms (`m4-scene-gpu.json`, whose scene
+read garbage, 6·10^10 ms, with both on). With the timestamps next to a pass taking its own writes: **0.522 ms**
+(`m4-scene2-base.json`; 0.523 with `vkgputime` on, `m4-scene2-gpu.json`), the GPU's time.
+
+**Driver tests** (`tests/venus-driver.test.ts` "passes: occlusion queries cut by 100 clears…", wg_test.c `wgt_pass`
+8): a pool of 5,000: a query around the quad with 100 clears each side, one at 4500, one at 4999 cut by 70 clears,
+all the quad's 2,048 samples; three timestamps in order, written on the GPU; an unavailable query's value left as it
+was, its availability 0; 32-bit copies. Planted: queries past slot 4,096 refused fails it ("queries past slot 4,096
+count"), the timestamps held on the CPU fails it ("timestamps written on the GPU").
+
+**After** (`swiftshader.json`, `m4.json` (timestamps held: below), `cases.txt`: the before cases and every pass-list case with queries or
+timestamps, 1,614): 1,400 pass on both, 0 fail, 214 not supported. But with GPU timestamps the M4 lost its device in
+3 of 6 runs (`m4-lost.json`: "Insufficient Memory", Metal's command buffer, always at the first timestamp case after
+the same 740 others, every timestamp case failing after it), where the renderer before T46 passed 2 of 2; the timestamp
+cases alone passed, and one timestamp set for the module (instead of one a device, made and destroyed with each dEQP
+case) didn't help. **So Apple's GPUs keep the CPU's timestamps** (web/venus-host.ts holds `timestamp-query` there;
+docs/backlog.md "Queries"), which makes VK0's scene's number above the GPU-timestamp arm's, not the default's. With the hold, 2 of 2 M4 runs pass every case
+(`m4.json`; `m4-gpu-timestamps.json` a run with them on that passed). 170 timestamp cases join the list (it
+had every third: → 81,619).
+
 ## VK4 T45: transform feedback's and indirect draws' rest — queries, draws by a byte count, restarts, the provoking vertex's order; 437 cases join the list
 
 2026-11-08, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
