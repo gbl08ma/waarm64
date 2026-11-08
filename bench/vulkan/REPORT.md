@@ -824,7 +824,10 @@ ARMS='--use-angle=vulkan' node bench/vulkan/dawn-frames.ts guest`): flat, captur
 
 **After** (`swiftshader.json`, `m4.json`, 1,159 cases: the 413, `provoking_vertex.transform_feedback`, every third fuzz
 case, every byte-count divisor draw but shader objects'): 437 pass on both, 0 fail; 722 not supported (geometry,
-tessellation, device address commands, cull distances, shader objects, adjacency). All 437 join the list (→ 81,450).
+tessellation, device address commands, cull distances, shader objects, adjacency). All 437 join the list (→ 81,449).
+
+**CI**: `scripts/ci.sh` OK (589 s), `scripts/ci-deqp-vk.sh` OK (1,084 s: a sample of 10,990 of 81,449, seed
+829388804, YCbCr's list, the replays), `scripts/ci-graphics.sh` OK (261 s).
 
 **Left** (docs/backlog.md "Transform feedback", "The provoking vertex", "Vertex stages that store's leftovers"):
 streams past 0, 16-bit outputs, records past 512 bytes (unreachable but through padded strides), primitives-generated
