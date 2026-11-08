@@ -1186,6 +1186,13 @@ lower_tex(nir_builder *b, nir_tex_instr *tex, void *data)
       nir_def_replace(&tex->def, nir_trim_vector(b, fetched_sample(b, tex, key), tex->def.num_components));
       return true;
    }
+   /* A depth view's linear filter without a comparison (VK4 T42): WebGPU filters depth only by comparing, so the
+    * sample comes from fetches (a gather reads the texels unfiltered: WebGPU's, or the fetches' above). */
+   if (key && key->fetched && !tex->is_shadow && tex->op != nir_texop_tg4 &&
+       (tex->sampler_dim != GLSL_SAMPLER_DIM_CUBE || key->faces)) {
+      nir_def_replace(&tex->def, nir_trim_vector(b, fetched_sample(b, tex, key), tex->def.num_components));
+      return true;
+   }
    /* A min/max reduction (VK4 T25): WebGPU's samplers only average, so the sample comes from fetches, as the sampler
     * says. A gather reads the texels unfiltered: WebGPU's (or the fetches' below, for what else its key says). A sampler
     * that compares has no reduction (Vulkan's rule). An integer texture's (which a linear filter reads only so) is

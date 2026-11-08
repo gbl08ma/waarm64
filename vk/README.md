@@ -114,7 +114,8 @@ shared memory's spare word where it has one (WebGPU counts each workgroup var ro
 its own, `wg_uc`, where the workgroup's storage has room, else shared memory's first word, saved and restored between
 barriers, through atomics where shared memory is of atomics (VK3 L6c; WGSL's `workgroupUniformLoad` takes one); the device advertises WebGPU's workgroup storage
 whole, VK3 L5b); a vertex shader's outputs are typed and interpolated as its
-fragment shader reads them, its y is negated by the override `wg_flip_y` (-1, or 1 for a flipped viewport) and its z
+fragment shader reads them (a flat location as `u32` words: `nir_opt_varyings` packs flat ints and floats into one
+location, and a float's bits through an f32 varying could be canonicalized; VK4 T42), its y is negated by the override `wg_flip_y` (-1, or 1 for a flipped viewport) and its z
 mirrored (`w - z`) by `wg_flip_z` for an inverted depth range (WebGPU wants `minDepth <= maxDepth`: the range is set the
 right way round);
 a float's conversion to a 32-bit integer saturates exactly (VK4 T29: WGSL's clamps to the largest float under the
@@ -130,8 +131,9 @@ whose read-only storage buffer shares its memory with a storage buffer it writes
 of its program (`program_for` in wg_cmd.c): that binding `storage` in the layout and `read_write` in a module of the
 variant's own (the program keeps its WGSL for that), which costs nothing; read-only elsewhere, and where its range
 overlaps the written one (WebGPU refuses two writable bindings of one range), where the replay copies it as it does a
-scope's other reads ("The driver", "Usage scopes"); shared memory's atomics are `atomic<i32>` when they compare signed (imin, imax), and an
-array (shared memory is one, every SSBO another) that needs both signed and unsigned min or max is refused; a texture
+scope's other reads ("The driver", "Usage scopes"); shared memory's atomics are `atomic<i32>` when they compare signed (imin, imax), and on an
+array (shared memory is one, every SSBO another) that needs both signed and unsigned min or max the unsigned ones are
+compare-exchange loops (VK4 T42); a texture
 and a sampler array indexed apart get an `if` tree each (every texture with every sampler); a terminate
 (`OpTerminateInvocation`) is `discard` and a return, a demote `discard` (WGSL's demotes) and a private `wg_helper` that
 `helperInvocationEXT()` and `gl_HelperInvocation` read, with an empty `sample_mask` (WGSL has no built-in: the
@@ -142,7 +144,8 @@ is a fetch's sum, and a sample with one comes from fetches ("Samplers in the sha
 a vec4 per slot, beside WGSL's `clip_distances` (`wgsl_varyings.clip`); a compute stage that reads workgroup or global
 ids adds `override wg_base_x/y/z`, a pipeline per `vkCmdDispatchBase` base (`wg_compute_based`); a cube or cube array storage image is its faces as a 2D array (the driver binds such views through a
 `2d-array` view of their own), its size counted in cubes; an explicit LOD on a depth texture without a comparison picks
-the nearest level.
+the nearest level in a module without keys, which is never drawn with (the keyed variants' fetches blend the levels a
+linear mipmap reads: "Samplers in the shader").
 
 **Texel buffers** (VK3 L6b): a texel buffer at slot s is its view's words, a storage buffer of `u32` at the slot's
 binding (read-only but written storage texel buffers, and as above in a dispatch that writes its memory elsewhere),
@@ -577,7 +580,7 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
     array (`faces` on the view, the size and level queries rewritten with it): its face and place come from Vulkan's
     table, its λ from derivatives of the place on the face this invocation is on, which seams don't disturb. A
     **gather** of an integer texture is WGSL's own, through a non-filtering sampler; a cube's that is also sampled
-    is refused (its one binding can't be both).
+    comes from its faces' fetches, as below.
   - **Border colours**: the sampler's clamp-to-edge sample, blended towards the border by how much of the filter's
     footprint fell past the edge (per axis, nearest in or out, linear `clamp(u + 0.5)`·`clamp(size - u + 0.5)` in
     texels), which is exact: past the edge a linear filter reads the edge texel and the border, and clamp-to-edge has
@@ -597,7 +600,7 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
     filtered, as Vulkan does, the reference clamped for fixed-point formats (`clamp_dref`). Their pairs ask for a key
     where the sampler wouldn't (`wgsl_info.key_pairs`, `WGSL_KEY_LEVELS`). A view of one level, the usual shadow map,
     and a constant LOD of 0 stay WGSL's and make no variant. A shadow cube of several levels with a key is bound as its
-    faces (`key.faces`, every op on it fetched; a gather of one is refused). A key on a multi-level shadow sample takes
+    faces (`key.faces`, every op on it fetched, a gather too: below). A key on a multi-level shadow sample takes
     this path too: borders, mirror-once and bias all come with it. Every pair of a cube bound so has a key of its own, its
     sampler's, and a stage that only asks its size or levels is printed against the keys too (VK4 R5).
   - **A depth texture also sampled without a comparison** (VK4 R5): WGSL declares a binding one way, and on
@@ -608,8 +611,20 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   - **A sampler shared by an integer or depth texture and a float one** (VK4 R5): the former want it non-filtering, so the
     program's variants split it as they do for unfilterable textures (`wg_program_mixed`, the twin at the binding
     before): the float textures keep their filters.
-  - **A variant that can't be printed** (VK4 R5, a gather of a cube bound as its faces): its draws and dispatches are
-    dropped, said once (`draw_refused`), not drawn with a module that doesn't match its layout.
+  - **A cube bound as its faces, gathered** (VK4 T42: a shadow cube past level 0, a non-seamless or reduced sampler's, a
+    padded image, an integer cube also sampled; each refused before): the footprint's four texels at the view's first
+    level from the faces' fetches (`cube_gather_fetch`), a neighbour past an edge on the next face, by its own pair's key
+    (compared for a shadow gather). **A seamless cube's corner**, where a linear footprint's or a gather's texel is past
+    both of its face's edges and no face has it, is the other three texels' average (OpenGL's recommendation, which
+    Vulkan leaves to the implementation, and llvmpipe's; fetched, it was one face's texel), in every sample from the
+    faces' fetches; an integer's keeps the face's texel.
+  - **A depth view's linear filter without a comparison** (VK4 T42): WebGPU filters depth only by comparing, so such a
+    pair's key is `fetched` (`pair_key`), the binding takes the sampler's nearest twin and the sample comes from the
+    fetches below (a cube's of its faces); depth formats report `SAMPLED_IMAGE_FILTER_LINEAR` for it. A gather stays
+    WebGPU's. Its cost against WebGPU's own sample is a reduction's (above: ~3.5× on the pair alone), unmeasured in a
+    program.
+  - **A variant that can't be printed** (VK4 R5): its draws and dispatches are dropped, said once (`draw_refused`), not
+    drawn with a module that doesn't match its layout.
   - **`textureQueryLod`** (VK4 T9): λ from the coordinate's derivatives and the view's size, x the level or levels the
     sampler's mode reads after its clamps, y the LOD before them (dEQP's reading). WGSL has no query, so such a pair
     always takes a key (`WGSL_KEY_ALWAYS`), its sampler known by no binding. The coordinate has no layer (SPIR-V's).
@@ -639,7 +654,7 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
     on the sample's face, wrapped by the sampler's U and V (the border's colour too); a nearest filter never leaves
     the face (WebGPU's sample). A comparison through such a sampler is the fetches' too, each texel compared, then
     filtered (VK4 T38: seamless before, unseen while depth formats reported no comparison); a gather of such a cube
-    can't be printed (its draws refused, as a reduced cube's gather: "A variant that can't be printed").
+    comes from its faces' fetches (VK4 T42), each texel on the face, wrapped.
   - Key LODs are clamped to ±1,000 at the sampler: `VK_LOD_CLAMP_NONE` and programs' infinities are indeterminate in
     WGSL's `min` and `max` (a `maxLod` of `inf` read the last level).
   - **Compressed images that aren't whole blocks** (VK4 T18): WebGPU wants a compressed texture's first level in whole

@@ -1,0 +1,10 @@
+#version 450
+// VK4 T42: a depth texture sampled through a linear sampler (no comparison, the stage comparing nothing): WebGPU
+// filters depth only by comparing, so the filter is the shader's, from fetches (the key's `fetched`).
+layout(local_size_x = 3) in;
+layout(set = 0, binding = 0) uniform sampler2D img;
+layout(set = 0, binding = 1, std430) buffer Out { vec4 o[3]; };
+void main() {
+  const uint i = gl_LocalInvocationIndex;
+  o[i] = i == 0u ? textureLod(img, vec2(0.5, 0.25), 0.0) : i == 1u ? textureLod(img, vec2(0.5), 0.5) : textureLod(img, vec2(0.5), 1.0);
+}

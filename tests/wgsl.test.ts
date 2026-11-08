@@ -1921,3 +1921,25 @@ test('a gather of a cube bound as its faces comes from its faces\' fetches, acro
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('a depth texture sampled through a linear sampler is filtered from fetches (VK4 T42)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const FETCHED = 2048;
+    const r = glslStage(translate, tmp, 'tests/venus/t42/depth-linear.comp', { sampler: key(ADDRESS.edge, { levels: 2, flags: 16 | 1 | 2 | 4 | FETCHED }) });
+    assert.equal(r.rc, 0, r.text);
+    assert.doesNotMatch(r.text, /textureSample/);
+    // depth16unorm 2×2: level 0 columns 0 and 1; level 1 0.75. At (0.5, 0.25) of level 0: half of each column; LOD
+    // 0.5: half of level 0's 0.5 and of level 1's 0.75; LOD 1: 0.75.
+    const u16 = (v: number) => [v & 255, v >> 8];
+    const level0 = [...u16(0), ...u16(65535), ...u16(0), ...u16(65535)];
+    const res = await runSampled(r.text, [{ binding: 0, format: 'depth16unorm', w: 2, h: 2, data: level0, mips: [u16(49152)] }], undefined, { binding: 2, size: 16 * 3 });
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    const v = [...res.out].filter((_, i) => i % 4 === 0).slice(0, 3);
+    assert.ok([0.5, 0.625, 0.75].every((want, i) => Math.abs(v[i] - want) < 0.01), `${v}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});

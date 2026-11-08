@@ -513,7 +513,9 @@ wg_format_features(VkFormat format, VkFormatFeatureFlags *linear, VkFormatFeatur
       /* A8's blits would read and write its texture's red as colour (the worker's draws know no swizzle). */
       if (f->flags & WG_FMT_SAMPLE)
          o |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | (f->flags & WG_FMT_ALPHA8 ? 0 : VK_FORMAT_FEATURE_BLIT_SRC_BIT);
-      if (wg_format_filterable(f))
+      /* A depth view's linear filter is the shader's, from fetches, where it doesn't compare (VK4 T42: wg_cmd.c
+       * `pair_key`'s `fetched`); WebGPU's where it does. */
+      if (wg_format_filterable(f) || ((f->flags & WG_FMT_DEPTH) && (f->flags & WG_FMT_SAMPLE)))
          o |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
       /* A min/max reduction is the shader's filter from fetches (VK4 T25), so any format sampled has it, depth
        * (filterMinmaxSingleComponentFormats) and integers too. */

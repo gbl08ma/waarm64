@@ -1388,7 +1388,11 @@ pair_key(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, 
    /* A non-seamless cube's linear filter (VK4 T28): from its faces' fetches; a comparing one's too, each texel compared
     * (VK4 T38: the shadow cases, open since depth formats report comparison). */
    const bool non_seamless = sampler && cube && !integer && sampler->key.non_seamless;
-   if (!sampler || !view || (!integer && !sampler->emulated && !padded && !words && !forced && !non_seamless))
+   /* A depth view's linear filter without a comparison (VK4 T42): from fetches (WebGPU filters depth only by comparing;
+    * its binding takes the sampler's nearest twin), a cube's of its faces. */
+   const bool fetched = sampler && view && !integer && !sampler->compare && (view->vk.aspects & VK_IMAGE_ASPECT_DEPTH_BIT) &&
+                        (sampler->key.mag_linear || sampler->key.min_linear || sampler->key.mip_linear) && !sampler->key.reduction;
+   if (!sampler || !view || (!integer && !sampler->emulated && !padded && !words && !forced && !non_seamless && !fetched))
       return false;
    const struct wgsl_sampler_key *k = &sampler->key;
    if (integer && !sampler->emulated && !padded && !forced && k->address[0] == WGSL_ADDRESS_EDGE && k->address[1] == WGSL_ADDRESS_EDGE &&
@@ -1401,8 +1405,10 @@ pair_key(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program *p, 
    /* A depth view filters what a comparison gives; a reduction is the shader's filter, from fetches, which any format
     * takes, integers too (VK4 T25: Vulkan's linear filter of one is min/max only). An integer texture's is otherwise
     * nearest. */
-   if ((!wg_format_filterable(view->fmt) && !sampler->compare && !k->reduction) || (integer && !k->reduction))
+   if ((!wg_format_filterable(view->fmt) && !sampler->compare && !k->reduction && !fetched) || (integer && !k->reduction))
       key->mag_linear = key->min_linear = key->mip_linear = 0;
+   key->fetched = fetched;
+   key->faces |= fetched && cube;
    /* WGSL can't fetch from a cube: a reduced one is sampled from its faces. */
    key->faces |= key->reduction && (view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE ||
                                     view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY);

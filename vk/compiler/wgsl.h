@@ -230,6 +230,8 @@ struct wgsl_sampler_key {
                                     * footprint's texels (VK4 T25: from fetches) */
    uint8_t non_seamless;           /* a cube's linear filter keeps to the face, wrapped by the address modes
                                     * (VK_EXT_non_seamless_cube_map, VK4 T28: from its faces' fetches) */
+   uint8_t fetched;                /* a linear filter of a depth view without a comparison (WebGPU filters depth only
+                                    * by comparing): from fetches, a cube's of its faces (VK4 T42) */
    float bias, min_lod, max_lod;
    uint32_t border[4];             /* the border as the shader reads it: float bits, or integers on an integer texture */
    uint32_t size[3];               /* padded: the view's first level, as Vulkan has it */
