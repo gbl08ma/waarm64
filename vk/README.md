@@ -1027,7 +1027,7 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   dispatch then never binds a guest memory writable beside its other uses); a draw copies its index range (a direct
   draw's indices only, VK3 L8a: the bound range's rest of a big buffer went past `maxStorageBufferBindingSize`) and each
   vertex binding's reachable range (past its last vertex or instance where it isn't indexed) into another, after the
-  draw's parameters (its first 112 bytes, `wgx_p`: a uniform binding before VK4 T40), so the capture's bindings are two
+  draw's parameters (its first 128 bytes, `wgx_p`: a uniform binding before VK4 T40, 112 bytes before T45), so the capture's bindings are two
   whatever its buffers (VK3 L7a, the binding review's finding 1: one a buffer and a vertex binding went past WebGPU's
   storage buffers a stage, and lost the submit); a draw runs the
   vertex stage as compute (`xfbPipeline`: the module's WGSL with a vertex fetch made from its render pipeline's vertex
