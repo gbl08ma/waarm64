@@ -2350,12 +2350,18 @@ emit_atomic(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, const cha
       line(c, "}");
    } else if (signed_atomic && (nir_intrinsic_atomic_op(intr) == nir_atomic_op_umin ||
                                 nir_intrinsic_atomic_op(intr) == nir_atomic_op_umax)) {
-      /* An unsigned min or max on an array of atomic<i32> (one that also compares signed: atomic_sign). */
-      line(c, "loop {");
-      line(c, "  let wg_old = atomicLoad(&%s[%s]);", arr, word);
-      line(c, "  let wg_cas = atomicCompareExchangeWeak(&%s[%s], wg_old, bitcast<i32>(%s(bitcast<u32>(wg_old), %s)));", arr,
+      /* An unsigned min or max on an array of atomic<i32> (one that also compares signed: atomic_sign), each try from
+       * the value the last one saw: a fragment stage's helper invocation writes nothing and SwiftShader returns 0 for
+       * its old value, so a loop that loaded the word again never exchanged (VK4 T47: vkd3d's test_atomic_instructions
+       * hung the GPU's queue). */
+      line(c, "{");
+      line(c, "  var wg_old = atomicLoad(&%s[%s]);", arr, word);
+      line(c, "  loop {");
+      line(c, "    let wg_cas = atomicCompareExchangeWeak(&%s[%s], wg_old, bitcast<i32>(%s(bitcast<u32>(wg_old), %s)));", arr,
            word, nir_intrinsic_atomic_op(intr) == nir_atomic_op_umin ? "min" : "max", src_name(c, data));
-      line(c, "  if (wg_cas.exchanged) { t%u = bitcast<u32>(wg_old); break; }", intr->def.index);
+      line(c, "    if (wg_cas.exchanged) { t%u = bitcast<u32>(wg_old); break; }", intr->def.index);
+      line(c, "    wg_old = wg_cas.old_value;");
+      line(c, "  }");
       line(c, "}");
    } else {
       line(c, "t%u = %s(%s(&%s[%s], %s(%s)));", intr->def.index, conv_out, atomic_fn(c, nir_intrinsic_atomic_op(intr)),

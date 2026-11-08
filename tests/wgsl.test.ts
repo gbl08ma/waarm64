@@ -1840,6 +1840,63 @@ test('signed and unsigned atomic min and max on one array: the other kind a comp
   }
 });
 
+test('a fragment stage\'s unsigned atomic min and max on an array of atomic<i32>: its helper invocations\' compare-exchange loops end (VK4 T47)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const r = glslStage(await translator(), tmp, 'tests/venus/t47/minmax-helpers.frag');
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /array<atomic<i32>>/);
+    // One pixel of a 4x4 target covered: its quad's three others are helper invocations.
+    const server = createServer((_req, res) => { res.setHeader('content-type', 'text/html'); res.end('<!doctype html><title>wgsl</title>'); });
+    await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
+    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium',
+      args: (process.env.CHROMIUM_ARGS ?? '--enable-unsafe-webgpu --enable-features=Vulkan').split(' ').filter(Boolean) });
+    try {
+      const page = await browser.newPage();
+      await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/`);
+      const res = await page.evaluate(async (code) => {
+        const adapter = await navigator.gpu?.requestAdapter();
+        if (!adapter) return undefined;
+        const device = await adapter.requestDevice();
+        const errors: string[] = [];
+        device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
+        const fs = device.createShaderModule({ code });
+        const vs = device.createShaderModule({ code: `@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
+  return array(vec4<f32>(-1.0, 1.0, 0.0, 1.0), vec4<f32>(-0.4, 1.0, 0.0, 1.0), vec4<f32>(-1.0, 0.4, 0.0, 1.0))[i];
+}` });
+        const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module: vs, entryPoint: 'vs' },
+          fragment: { module: fs, entryPoint: 'main', targets: [{ format: 'rgba8unorm' }] }, primitive: { topology: 'triangle-list' } });
+        const buffer = device.createBuffer({ size: 16, usage: 0x80 | 0x4 | 0x8 /* STORAGE | COPY_SRC | COPY_DST */ });
+        device.queue.writeBuffer(buffer, 0, new Int32Array([-5, 9, 0, 0]));
+        const read = device.createBuffer({ size: 16, usage: 0x1 | 0x8 /* MAP_READ | COPY_DST */ });
+        const target = device.createTexture({ size: [4, 4], format: 'rgba8unorm', usage: 0x10 /* RENDER_ATTACHMENT */ });
+        const enc = device.createCommandEncoder();
+        const pass = enc.beginRenderPass({ colorAttachments: [{ view: target.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(0, device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer } }] }));
+        pass.draw(3);
+        pass.end();
+        enc.copyBufferToBuffer(buffer, 0, read, 0, 16);
+        device.queue.submit([enc.finish()]);
+        // A hung queue never maps: say so rather than wait out the test.
+        const done = await Promise.race([read.mapAsync(1 /* GPUMapMode.READ */).then(() => true), new Promise<false>((ok) => setTimeout(() => ok(false), 20_000))]);
+        if (!done) return { errors, hung: true, out: [] as number[] };
+        return { errors, hung: false, out: [...new Int32Array(read.getMappedRange())] };
+      }, r.text);
+      if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+      assert.equal(res.hung, false, 'the GPU\'s queue hung');
+      assert.deepEqual(res.errors, []);
+      // max(-5, 0), min(9, 0xffffffff), max(0, 1).
+      assert.deepEqual(res.out.slice(0, 3), [0, 9, 1]);
+    } finally {
+      await browser.close();
+      server.close();
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('flat varyings of ints and floats at one location travel as words (VK4 T42)', { skip: noGlslc || (spawnSync('spirv-as', ['--version']).status !== 0 && 'SKIPPED: no spirv-as'), timeout: 120_000 }, async (t) => {
   // The location was the type of its last load or store (a float's bits through an f32 varying, which a backend may
   // canonicalize; an int's and a float's stores at one location gave the vertex stage an interpolated f32 output).
