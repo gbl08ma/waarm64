@@ -460,7 +460,7 @@ for (const [scenario, what] of [
   ['intGather', 'a sampler gathering an integer texture still filters a float one'],
   ['cubeSized', 'a shadow cube from its faces: each sampler by its own state, and sized in another stage'],
   ['depthEight', 'a stage writing depth beside every colour location, without an attachment for it'],
-  ['cubeGather', 'a keyed stage that can\'t be printed refuses its draw, with no invalid pipeline'],
+  ['cubeGather', 'a shadow cube bound as its faces is gathered from their fetches, its comparisons 1 (VK4 T42: refused before)'],
   // VK4 T24 (maintenance8): no dEQP-VK case runs them through the tests' guest's Venus (Mesa 26.2).
   ['m8Copies', 'depth and stencil copied with colour images of their size, and blits between layers and slices'],
   // VK4 T30.
@@ -532,7 +532,7 @@ for (const [scenario, what] of [
       delete checks.ran;
     }
     for (const [k, at] of Object.entries(checks)) assert.equal(at, -1, `${k}: the bytes differ from byte ${at} (${JSON.stringify(r.got)})`);
-    if (scenario === 'cubeGather' || scenario === 'fourSets' || scenario === 't37WordsPast' || scenario === 't37AtomicAlias') assert.ok(logs.some((l) => /refused/.test(l)), `not refused: ${JSON.stringify(logs)}`);
+    if (scenario === 'fourSets' || scenario === 't37WordsPast' || scenario === 't37AtomicAlias') assert.ok(logs.some((l) => /refused/.test(l)), `not refused: ${JSON.stringify(logs)}`);
     assert.equal(r.warnings, 0, 'the worker warned');
     // The fill's and the six pipelines' one: not one a dispatch (a set keeps groups for 4 layouts).
     if (scenario === 'bindGroupsShared') assert.ok((r.bindGroups as number) <= 2, `${r.bindGroups} bind groups made`);
