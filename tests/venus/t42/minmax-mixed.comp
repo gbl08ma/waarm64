@@ -1,0 +1,24 @@
+#version 450
+// Signed and unsigned atomic min and max on one array: shared memory (one array in WGSL) and one SSBO (VK4 T42).
+// Each of 64 invocations folds its value v = i - 32 (as int and as its uint bits) into four words of shared memory and
+// of the buffer; the buffer's words 8.. are what shared memory ended with.
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) buffer B { int smin; int smax; uint umin; uint umax; uint pad[4]; uint shared_out[4]; } b;
+shared int s_smin, s_smax;
+shared uint s_umin, s_umax;
+void main() {
+  const uint i = gl_LocalInvocationIndex;
+  if (i == 0) { s_smin = 0x7fffffff; s_smax = int(0x80000000u); s_umin = 0xffffffffu; s_umax = 0u; }
+  barrier();
+  const int v = int(i) - 32;
+  atomicMin(s_smin, v);
+  atomicMax(s_smax, v);
+  atomicMin(s_umin, uint(v));
+  atomicMax(s_umax, uint(v));
+  atomicMin(b.smin, v);
+  atomicMax(b.smax, v);
+  atomicMin(b.umin, uint(v));
+  atomicMax(b.umax, uint(v));
+  barrier();
+  if (i == 0) { b.shared_out[0] = uint(s_smin); b.shared_out[1] = uint(s_smax); b.shared_out[2] = s_umin; b.shared_out[3] = s_umax; }
+}

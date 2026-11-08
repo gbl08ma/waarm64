@@ -1821,3 +1821,22 @@ test('gl_ClipDistance read by a fragment stage comes in at a free location, by i
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('signed and unsigned atomic min and max on one array: the other kind a compare-exchange loop (VK4 T42)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const r = glslStage(await translator(), tmp, 'tests/venus/t42/minmax-mixed.comp');
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /var<workgroup> shm: array<atomic<i32>/);
+    const res = await runCompute(r.text, [{ binding: 0, init: new Uint8Array(new Uint32Array([0x7fffffff, 0x80000000, 0xffffffff, 0, 0, 0, 0, 0, 0, 0, 0, 0]).buffer) }]);
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    const v = [...new Uint32Array(res.out[0].buffer)];
+    // v from -32 to 31: signed -32 and 31, unsigned 0 and 0xffffffff (-1's bits).
+    const want = [(-32) >>> 0, 31, 0, 0xffffffff];
+    assert.deepEqual(v.slice(0, 4), want, 'the buffer\'s');
+    assert.deepEqual(v.slice(8, 12), want, 'shared memory\'s');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});

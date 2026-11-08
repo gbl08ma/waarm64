@@ -494,16 +494,14 @@ image_dim(struct ctx *c, enum glsl_sampler_dim dim, bool array)
 }
 
 /* An array's atomics compare signed (imin, imax: atomic<i32>) or unsigned (umin, umax: atomic<u32>); WGSL's atomics
- * have one type, so an array that needs both is refused. */
+ * have one type, so an array that needs both is of atomic<i32>, its umin and umax compare-exchange loops (emit_atomic). */
 static void
-atomic_sign(struct ctx *c, nir_atomic_op op, bool *is_signed, bool *is_unsigned)
+atomic_sign(nir_atomic_op op, bool *is_signed, bool *is_unsigned)
 {
    if (op == nir_atomic_op_imin || op == nir_atomic_op_imax)
       *is_signed = true;
    else if (op == nir_atomic_op_umin || op == nir_atomic_op_umax)
       *is_unsigned = true;
-   if (*is_signed && *is_unsigned)
-      failf(c, "signed and unsigned atomic min or max on one array");
 }
 
 /* The parameters of the resource at `index` (a texel buffer's, a storage image's as words): two vec4s of its group's
@@ -677,14 +675,14 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
          r->r.atomic = true;
       if (intr->intrinsic == nir_intrinsic_ssbo_atomic || intr->intrinsic == nir_intrinsic_ssbo_atomic_swap) {
          r->r.atomic = true;
-         atomic_sign(c, nir_intrinsic_atomic_op(intr), &r->signed_atomic, &r->unsigned_atomic);
+         atomic_sign(nir_intrinsic_atomic_op(intr), &r->signed_atomic, &r->unsigned_atomic);
       }
       break;
    }
    case nir_intrinsic_shared_atomic:
    case nir_intrinsic_shared_atomic_swap:
       c->shm_atomic = true;
-      atomic_sign(c, nir_intrinsic_atomic_op(intr), &c->shm_signed, &c->shm_unsigned);
+      atomic_sign(nir_intrinsic_atomic_op(intr), &c->shm_signed, &c->shm_unsigned);
       break;
    case nir_intrinsic_store_shared:
       if (intr->src[0].ssa->bit_size < 32)
@@ -743,7 +741,7 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
       } else {
          r = image_words(c, index, intr);
       }
-      atomic_sign(c, nir_intrinsic_atomic_op(intr), &r->signed_atomic, &r->unsigned_atomic);
+      atomic_sign(nir_intrinsic_atomic_op(intr), &r->signed_atomic, &r->unsigned_atomic);
       break;
    }
    case nir_intrinsic_load_input:
@@ -2335,6 +2333,15 @@ emit_atomic(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, const cha
            conv_in, src_name(c, data + 1));
       line(c, "  if (wg_cas.exchanged || wg_cas.old_value != %s(%s)) { t%u = %s(wg_cas.old_value); break; }", conv_in,
            src_name(c, data), intr->def.index, conv_out);
+      line(c, "}");
+   } else if (signed_atomic && (nir_intrinsic_atomic_op(intr) == nir_atomic_op_umin ||
+                                nir_intrinsic_atomic_op(intr) == nir_atomic_op_umax)) {
+      /* An unsigned min or max on an array of atomic<i32> (one that also compares signed: atomic_sign). */
+      line(c, "loop {");
+      line(c, "  let wg_old = atomicLoad(&%s[%s]);", arr, word);
+      line(c, "  let wg_cas = atomicCompareExchangeWeak(&%s[%s], wg_old, bitcast<i32>(%s(bitcast<u32>(wg_old), %s)));", arr,
+           word, nir_intrinsic_atomic_op(intr) == nir_atomic_op_umin ? "min" : "max", src_name(c, data));
+      line(c, "  if (wg_cas.exchanged) { t%u = bitcast<u32>(wg_old); break; }", intr->def.index);
       line(c, "}");
    } else {
       line(c, "t%u = %s(%s(&%s[%s], %s(%s)));", intr->def.index, conv_out, atomic_fn(c, nir_intrinsic_atomic_op(intr)),
