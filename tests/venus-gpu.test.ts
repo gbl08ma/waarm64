@@ -366,11 +366,15 @@ test('a completion that throws neither completes the next submit before its read
 
 // VK4 R3 (the review's R5): a cut of a Vulkan pass (a feedback copy, a barrier's scope) ends a WebGPU pass with its
 // capture open: its jobs wait for the next part, whose draws would otherwise have no session.
+// VK4 T45: the jobs before the open capture's begin (captures ended, queries) run at the cut, so a draw by a byte count
+// in the next part reads their counters; a query's job neither opens nor closes a capture.
 test('a capture open at a WebGPU pass\'s end goes on in the next part', () => {
-  assert.equal(xfbOpen([]), false);
-  assert.equal(xfbOpen([{ op: 'begin' }, { op: 'draw' }]), true);
-  assert.equal(xfbOpen([{ op: 'begin' }, { op: 'draw' }, { op: 'end' }]), false);
-  assert.equal(xfbOpen([{ op: 'begin' }, { op: 'end' }, { op: 'begin' }]), true);
+  assert.equal(xfbOpen([]), -1);
+  assert.equal(xfbOpen([{ op: 'begin' }, { op: 'draw' }]), 0);
+  assert.equal(xfbOpen([{ op: 'begin' }, { op: 'draw' }, { op: 'end' }]), -1);
+  assert.equal(xfbOpen([{ op: 'begin' }, { op: 'end' }, { op: 'begin' }]), 2);
+  assert.equal(xfbOpen([{ op: 'begin' }, { op: 'draw' }, { op: 'query' }]), 0);
+  assert.equal(xfbOpen([{ op: 'begin' }, { op: 'end' }, { op: 'query' }]), -1);
 });
 
 // VK4 R4 (the review's X3): the bound index range of an indirect fan is often a whole shared buffer.

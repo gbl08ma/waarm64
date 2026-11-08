@@ -827,7 +827,9 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
             c->info->clip_distance_count = MAX2(c->info->clip_distance_count, nir->info.clip_distance_array_size);
          } else if (sem.location == VARYING_SLOT_LAYER) {
             c->info->writes_layer = true;
-         } else if (sem.location != VARYING_SLOT_POS) {
+         } else if (sem.location != VARYING_SLOT_POS && sem.location != VARYING_SLOT_PSIZ &&
+                    sem.location != VARYING_SLOT_VIEWPORT && sem.location != VARYING_SLOT_PRIMITIVE_ID) {
+            /* (Those three only where transform feedback captures them: wgsl_nir.c `remove_unsupported_outputs`.) */
             failf(c, "vertex output slot %s", gl_varying_slot_name_for_stage(sem.location, MESA_SHADER_VERTEX));
          }
       } else if (nir->info.stage == MESA_SHADER_FRAGMENT) {
@@ -2486,6 +2488,10 @@ emit_output(struct ctx *c, nir_intrinsic_instr *intr)
             if (k + n >= first && (mask & (1u << (k + n - first))))
                line(c, "wg_xo[%uu] = %s;", c->info->xfb_base[x.out[k].buffer] + x.out[k].offset + n,
                     src_comp(c, value, k + n - first));
+      /* An output WebGPU has no place for, kept for its capture (wgsl_nir.c `remove_unsupported_outputs`). */
+      if (sem.location == VARYING_SLOT_PSIZ || sem.location == VARYING_SLOT_VIEWPORT ||
+          sem.location == VARYING_SLOT_PRIMITIVE_ID)
+         return;
    }
    if (c->nir->info.stage == MESA_SHADER_VERTEX) {
       if (sem.location == VARYING_SLOT_LAYER) {

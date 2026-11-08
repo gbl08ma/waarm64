@@ -1,0 +1,24 @@
+{
+ "chromium": "155.0.8059.84",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "info": "5468chromium 153.0.8010.36-1 mesa 1:26.2.6-1 vulkan-virtio 1:26.2.6-1 xorg-xwayland 24.1.14-1",
+ "sway": "",
+ "vulkan": "deviceName = Virtio-GPU Venus (webpc WebGPU); sampleRateShading = true; shaderStorageBufferArrayDynamicIndexing = true; shaderStorageImageArrayDynamicIndexing = true; shaderUniformBufferArrayDynamicIndexing = true;",
+ "runs": [
+  {
+   "flags": "--use-angle=vulkan",
+   "log": "\"dawn: adapter ANGLE (Google, Vulkan 1.3.296 (Virtio-GPU Venus (webpc WebGPU) (0x00000000)), venus) | WebGL 2.0 (OpenGL ES 3.0 Chromium)\" \"dawn: limits 12,12,60,128\" \"dawn: flat 0,0,255,255\" \"dawn: xfb 0,0,7,1,1,2,7,1,2,4,7,1,3,6,7,1\" \"dawn: ubo 156,0,0,255\" \"dawn: glerror 0\" \"dawn: xfbq 4\" \"dawn: done\"",
+   "gpuLog": "ING:ui/ozone/platform/wayland/host/wayland_surface.cc:185] Server doesn't support overlay_prioritizer.      1 WARNING:ui/ozone/platform/wayland/host/wayland_surface.cc:170] Server doesn't support zcr_alpha_compositing_v1.      1 WARNING:ui/ozone/platform/wayland/host/org_gnome_mutter_idle_monitor.cc:87] org.gnome.Mutter.IdleMonitor D-Bus service does not exist      1 WARNING:ui/ozone/platform/wayland/common/wayland_object.cc:119] Binding to zwp_pointer_gestures_v1 version 1 but version 3 is available.      1 WARNING:ui/ozone/platform/wayland/common/wayland_object.cc:119] Binding to zwp_linux_dmabuf_v1 version 4 but version 5 is available.      1 WARNING:ui/ozone/platform/wayland/common/wayland_object.cc:119] Binding to wp_cursor_shape_manager_v1 version 1 but version 2 is available.      1 WARNING:ui/ozone/platform/wayland/common/wayland_object.cc:119] Binding to wl_shm version 1 but version 2 is available.      1 WARNING:ui/gl/angle_platform_impl.cc:42] vk_renderer.cpp:5617 (initFeatures): Unknown GPU architecture      1 WARNING:ui/base/idle/idle_linux.cc:111] None of the known D-Bus ScreenSaver services could be used.      1 WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.      1 WARNING:chrome/browser/signin/account_consistency_mode_manager.cc:74] Desktop Identity Consistency cannot be enabled as no OAuth client ID and client secret have been configured.",
+   "screen": {
+    "width": 1376,
+    "height": 762
+   },
+   "adapter": "ANGLE (Google, Vulkan 1.3.296 (Virtio-GPU Venus (webpc WebGPU) (0x00000000)), venus) "
+  }
+ ],
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1,
+  "venus: vkr: destroying context 9 (chromium) with a valid instance": 1,
+  "venus: vkr: destroying device with valid objects": 1
+ }
+}

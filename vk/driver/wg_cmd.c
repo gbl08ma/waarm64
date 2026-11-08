@@ -140,11 +140,16 @@ struct op_indirect {
     * the records come packed from a ticket of their own (gpu_indirect_count). */
    uint32_t count_buffer;
    double count_offset;
+   /* vkCmdDrawIndirectByteCountEXT (VK4 T45): the counter's buffer (0: none) and place, a draw of
+    * (counter - bias) / vstride vertices from a ticket of its own (gpu_byte_count; `count` 1, `buffer` 0). */
+   uint32_t counter, bias, vstride, instances, first_instance;
+   double counter_at;
 };
 
 /* Transform feedback's begin, draw or end (gpu_xfb): its JSON follows; a begin's host-visible buffers are read back. */
 struct op_xfb {
    uint32_t kind; /* 0 begin, 1 draw, 2 end */
+   bool counted;  /* an end that writes a counter (a later draw by a byte count in the pass cuts it: VK4 T45) */
    struct {
       struct wg_device_memory *mem;
       VkDeviceSize offset, size;
@@ -2470,7 +2475,8 @@ draw(struct wg_cmd_buffer *cmd, uint32_t vertices, uint32_t instances, uint32_t 
  * rasterizes nothing (rasterizer discard, both faces culled), its state recorded for it (VK3 L7.4). */
 static void
 xfb_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t count, uint32_t instances, uint32_t first, int32_t base,
-         uint32_t first_instance, struct wg_buffer *indirect, VkDeviceSize indirect_offset)
+         uint32_t first_instance, struct wg_buffer *indirect, VkDeviceSize indirect_offset,
+         const struct op_indirect *bytes, struct wg_buffer *count_buffer, VkDeviceSize count_offset, uint32_t record)
 {
    struct wg_shader *vs = cmd->shaders[MESA_SHADER_VERTEX];
    if (!cmd->xfb_active || !vs || !vs->program || !wg_shader_xfb(vs))
@@ -2492,21 +2498,26 @@ xfb_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t count, uint32_t insta
          return;
       ib_offset = cmd->ib->offset + cmd->ib_offset;
       ib_size = cmd->ib_size;
-      if (dyn->ia.primitive_restart_enable) {
-         static bool warned;
-         if (!warned)
-            fprintf(stderr, "wg: transform feedback of a draw with primitive restart: captured without restarts\n");
-         warned = true;
-      }
    }
    struct wg_json j = { 0 };
    wg_json_printf(&j, "{\"op\":\"draw\",\"topology\":%u,\"wide\":%u,\"ib\":%u,\"offset\":%.0f,\"size\":%.0f,"
-                  "\"count\":%u,\"instances\":%u,\"first\":%u,\"base\":%d,\"firstInstance\":%u",
+                  "\"count\":%u,\"instances\":%u,\"first\":%u,\"base\":%d,\"firstInstance\":%u,\"restart\":%u,\"last\":%u",
                   dyn->ia.primitive_topology, indexed ? cmd->ib_type == VK_INDEX_TYPE_UINT32 : 2, ib, ib_offset,
-                  ib_size, count, instances, first, base, first_instance);
+                  ib_size, count, instances, first, base, first_instance,
+                  /* Restarts (VK4 T45) and the provoking vertex's order (transformFeedbackPreservesProvokingVertex). */
+                  indexed && dyn->ia.primitive_restart_enable,
+                  dyn->rs.provoking_vertex == VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT);
    /* An indirect draw's (VK3 L7b, the review of L7.4-L7.5's finding 2): its arguments copied over the parameters. */
-   if (indirect && buffer_gpu(indirect))
+   if (indirect && buffer_gpu(indirect) && count_buffer && buffer_gpu(count_buffer))
+      /* A draw-indirect-count's record (VK4 T45): none past the count, which the capture reads. */
+      wg_json_printf(&j, ",\"indirect\":[%u,%.0f],\"drawCount\":[%u,%.0f,%u]}", buffer_gpu(indirect),
+                     (double)(indirect->offset + indirect_offset), buffer_gpu(count_buffer),
+                     (double)(count_buffer->offset + count_offset), record);
+   else if (indirect && buffer_gpu(indirect))
       wg_json_printf(&j, ",\"indirect\":[%u,%.0f]}", buffer_gpu(indirect), (double)(indirect->offset + indirect_offset));
+   /* A draw by a byte count (VK4 T45): its count from the counter at the capture, (counter - bias) / stride. */
+   else if (bytes)
+      wg_json_printf(&j, ",\"byteCount\":[%u,%.0f,%u,%u]}", bytes->counter, bytes->counter_at, bytes->bias, bytes->vstride);
    else
       wg_json_printf(&j, "}");
    struct op_xfb *o = emit(cmd, OP_XFB, NULL, sizeof(struct op_xfb) + j.len + 1);
@@ -2548,6 +2559,7 @@ xfb_mark(struct wg_cmd_buffer *cmd, uint32_t kind, uint32_t first, uint32_t coun
          wg_json_printf(&j, "%s[%u,%llu]", b ? "," : "", buffer_gpu(c), (unsigned long long)at);
          if (kind && c->mem->host)
             o.readback[n].mem = c->mem, o.readback[n].offset = at - c->mem->gpu_at, o.readback[n++].size = 4;
+         o.counted |= kind == 2;
       } else {
          wg_json_printf(&j, "%snull", b ? "," : "");
       }
@@ -2624,7 +2636,7 @@ wg_CmdDraw(VkCommandBuffer commandBuffer, uint32_t vertices, uint32_t instances,
       draw(cmd, vertices, instances, first, first_instance, face_of(faces, i));
    }
    memset(&cmd->reach, 0, sizeof(cmd->reach));
-   xfb_draw(cmd, false, vertices, instances, first, 0, first_instance, NULL, 0);
+   xfb_draw(cmd, false, vertices, instances, first, 0, first_instance, NULL, 0, NULL, NULL, 0, 0);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -2649,7 +2661,7 @@ wg_CmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indices, uint32_t inst
            sizeof(struct op_draw_indexed));
    }
    memset(&cmd->reach, 0, sizeof(cmd->reach));
-   xfb_draw(cmd, true, indices, instances, first, base, first_instance, NULL, 0);
+   xfb_draw(cmd, true, indices, instances, first, base, first_instance, NULL, 0, NULL, NULL, 0, 0);
 }
 
 static bool draw_params(const struct wg_program *p);
@@ -2694,12 +2706,12 @@ draw_indirect(VkCommandBuffer commandBuffer, VkBuffer _buffer, VkDeviceSize offs
    const uint32_t faces = draw_faces(cmd);
    const struct vk_dynamic_graphics_state *dyn = &cmd->vk.dynamic_graphics_state;
    const bool fan = dyn->ia.primitive_topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
-   /* A fan's draws are worked out from their own records (`fanIndirect`), which a count would have to gate too, and a
-    * capture reads each record as it is: neither seen with a count. */
-   if (count_buffer && (fan || cmd->xfb_active)) {
+   /* A fan's draws are worked out from their own records (`fanIndirect`), which a count would have to gate too: not
+    * seen with a count. (A capture reads the count since VK4 T45.) */
+   if (count_buffer && fan) {
       static bool warned;
       if (!warned)
-         fprintf(stderr, "wg: a draw-indirect-count of a triangle fan or under transform feedback isn't drawn\n");
+         fprintf(stderr, "wg: a draw-indirect-count of a triangle fan isn't drawn\n");
       warned = true;
       return;
    }
@@ -2743,7 +2755,7 @@ draw_indirect(VkCommandBuffer commandBuffer, VkBuffer _buffer, VkDeviceSize offs
    }
    /* Captured with its arguments read at the capture (the counts here are only the most it may draw: none). */
    for (uint32_t i = 0; i < count; i++)
-      xfb_draw(cmd, indexed, 0, 0, 0, 0, 0, buffer, offset + (VkDeviceSize)i * stride);
+      xfb_draw(cmd, indexed, 0, 0, 0, 0, 0, buffer, offset + (VkDeviceSize)i * stride, NULL, count_buffer, count_offset, i);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -2773,6 +2785,44 @@ wg_CmdDrawIndexedIndirectCount(VkCommandBuffer commandBuffer, VkBuffer buffer, V
                                VkDeviceSize count_offset, uint32_t most, uint32_t stride)
 {
    draw_indirect(commandBuffer, buffer, offset, most, stride, true, wg_buffer_from_handle(count_buffer), count_offset);
+}
+
+/* transformFeedbackDraw (VK4 T45): (counter - counter_offset) / stride vertices, the counter read on the GPU by a
+ * compute pass before the render pass (gpu_byte_count, a ticket as a draw-indirect-count's), or, where an earlier
+ * capture of the pass may have written it, in a cut of the pass at the draw (`byte_count_cut`). */
+VKAPI_ATTR void VKAPI_CALL
+wg_CmdDrawIndirectByteCountEXT(VkCommandBuffer commandBuffer, uint32_t instances, uint32_t first_instance,
+                               VkBuffer _counter, VkDeviceSize counter_offset, uint32_t bias, uint32_t stride)
+{
+   VK_FROM_HANDLE(wg_cmd_buffer, cmd, commandBuffer);
+   VK_FROM_HANDLE(wg_buffer, counter, _counter);
+   const struct vk_dynamic_graphics_state *dyn = &cmd->vk.dynamic_graphics_state;
+   if (!instances || !stride || !counter || !buffer_gpu(counter))
+      return;
+   /* A fan's draws are worked out from their arguments' records (`fanIndirect`): none here. */
+   if (dyn->ia.primitive_topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN) {
+      static bool warned;
+      if (!warned)
+         fprintf(stderr, "wg: a triangle fan drawn by a byte count isn't drawn\n");
+      warned = true;
+      return;
+   }
+   if (provoke_mode(cmd, false) >= 0) {
+      static bool warned;
+      if (!warned)
+         fprintf(stderr, "wg: a draw by a byte count whose provoking vertex is the last: drawn as is\n");
+      warned = true;
+   }
+   const struct op_indirect op = { .count = 1, .stride = 16, .wide = 2, .counter = buffer_gpu(counter),
+                                   .counter_at = (double)(counter->offset + counter_offset), .bias = bias,
+                                   .vstride = stride, .instances = instances, .first_instance = first_instance };
+   const uint32_t faces = draw_faces(cmd);
+   for (uint32_t i = 0; i < faces; i++) {
+      if (!record_draw(cmd, false, face_of(faces, i), -1))
+         break;
+      emit(cmd, OP_DRAW_INDIRECT, &op, sizeof(op));
+   }
+   xfb_draw(cmd, false, 0, instances, 0, 0, first_instance, NULL, 0, &op, NULL, 0, 0);
 }
 
 /* Compute. */
@@ -3302,6 +3352,7 @@ struct wg_submit {
 struct replay {
    bool vs_resumed; /* the part of the pass after a vertex stage's pre-pass (`vs_prepass`): its draw's copies made */
    bool vs_only, vs_again; /* OP_VS_ONLY's and OP_VS_AGAIN's, for the next draw */
+   bool xfb_counted; /* a capture of the render pass so far ended writing a counter (`byte_count_cut`) */
    bool layer_draws;       /* the pipeline's vertex stage writes gl_Layer: drawn in each layer of a layered pass */
    struct wg_device *dev;
    struct wg_submit *submit;
@@ -3572,6 +3623,19 @@ prepasses(struct replay *r, const struct wg_program **prog, bool *divisors, cons
             wg_emul[WG_EMUL_PREPASSES]++;
             gpu_indirect_count(ticket++, a->buffer, a->offset, a->stride, a->count_buffer, a->count_offset, a->count,
                                a->indexed);
+         }
+         /* A draw by a byte count (VK4 T45): its arguments from the counter as the commands before the pass left it
+          * (made again in a cut of the pass where a capture of it may have written it since: `byte_count_cut`). */
+         if (a->counter) {
+            wg_emul[WG_EMUL_PREPASSES]++;
+            gpu_byte_count(ticket++, a->counter, a->counter_at, a->bias, a->vstride, a->instances, a->first_instance);
+            uint32_t at = UINT32_MAX;
+            if (*prog && (draw_params(*prog) || *divisors)) {
+               at = push_place(r->dev);
+               memcpy(r->dev->push_data + at + WGSL_DRAW_PARAMS, (uint32_t[4]){ 0, a->first_instance, 0, 0 }, 16);
+            }
+            util_dynarray_append_typed(&r->dp_places, uint32_t, at);
+            continue;
          }
          for (uint32_t i = 0; i < a->count; i++) {
             uint32_t at = UINT32_MAX;
@@ -4148,9 +4212,12 @@ scan_pass(struct replay *r, struct scan *s, const uint8_t *p, const uint8_t *end
          s->ib_added = true;
          if (h->op == OP_DRAW_INDIRECT) {
             const struct op_indirect *a = d;
-            use(r, a->buffer, a->offset, (a->count - 1) * (double)a->stride + (a->indexed ? 20 : 16), false);
+            if (a->buffer)
+               use(r, a->buffer, a->offset, (a->count - 1) * (double)a->stride + (a->indexed ? 20 : 16), false);
             if (a->count_buffer)
                use(r, a->count_buffer, a->count_offset, 4, false);
+            if (a->counter)
+               use(r, a->counter, a->counter_at, 4, false);
          }
          break;
       case OP_EXEC: {
@@ -5136,6 +5203,47 @@ vs_prepass(struct replay *r, uint32_t kind, uint32_t count, uint32_t instances, 
    r->dirty |= RD_VB | RD_IB;
 }
 
+/* Whether the render pass from `p` on (its secondaries' too) has a draw by a byte count after a capture's end that writes
+ * a counter, which cuts it (`byte_count_cut`). */
+static bool
+pass_byte_count_cut(const uint8_t *p, const uint8_t *end, bool top, bool *counted)
+{
+   while (p < end) {
+      const struct op_head *h = (const void *)p;
+      if (top && (h->op == OP_PASS || h->op == OP_PASS_END))
+         return false;
+      if (h->op == OP_XFB)
+         *counted |= ((const struct op_xfb *)(h + 1))->counted;
+      if (h->op == OP_DRAW_INDIRECT && *counted && ((const struct op_indirect *)(h + 1))->counter)
+         return true;
+      if (h->op == OP_EXEC) {
+         const struct wg_cmd_buffer *sec = *(struct wg_cmd_buffer *const *)(h + 1);
+         if (pass_byte_count_cut(sec->cmds.data, (const uint8_t *)sec->cmds.data + sec->cmds.size, false, counted))
+            return true;
+      }
+      p += sizeof(*h) + h->size;
+   }
+   return false;
+}
+
+/* A draw by a byte count (VK4 T45) whose counter a capture earlier in its render pass may have written (Vulkan's
+ * barrier from transform feedback's counter write to the draw's indirect read, inside the pass): the WebGPU pass cut,
+ * which runs the captures ended so far (web/venus-gpu.ts `endPass`), its arguments made again from the counter then,
+ * and the pass begun again. */
+static void
+byte_count_cut(struct replay *r, const struct op_indirect *a, uint32_t ticket)
+{
+   struct wg_query_pool *qp = r->qactive_pool;
+   wg_emul[WG_EMUL_PREPASSES]++;
+   if (qp)
+      gpu_end_occlusion();
+   gpu_pass_end();
+   gpu_byte_count(ticket, a->counter, a->counter_at, a->bias, a->vstride, a->instances, a->first_instance);
+   begin_pass(r, 2);
+   if (qp)
+      query_carry_on(r, qp);
+}
+
 /* Whether the render pass from `p` on has a barrier in its own commands, where it can be cut (`scope_cut`). */
 static bool
 pass_has_barrier(const uint8_t *p, const uint8_t *end)
@@ -5306,7 +5414,7 @@ copy_queries(struct replay *r, const struct op_copy_query *q)
    struct wg_query_pool *pool = q->pool;
    const bool wide = q->flags & VK_QUERY_RESULT_64_BIT, with_avail = q->flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT;
    const bool partial = q->flags & VK_QUERY_RESULT_PARTIAL_BIT, gpu = pool->buf;
-   const uint32_t size = wide ? 8 : 4, each = size * (with_avail ? 2 : 1);
+   const uint32_t vals = pool->vals, size = wide ? 8 : 4, each = size * (vals + (with_avail ? 1 : 0));
    const uint32_t buf = buffer_gpu(q->dst);
    const VkDeviceSize base = q->dst->offset + q->offset;
    if (!q->count)
@@ -5315,21 +5423,25 @@ copy_queries(struct replay *r, const struct op_copy_query *q)
       const uint32_t index = q->first + i;
       const VkDeviceSize at = base + i * q->stride;
       const bool avail = pool->avail[index];
-      uint8_t bytes[16] = { 0 };
+      uint8_t bytes[24] = { 0 };
       uint32_t from = 0, to = 0; /* the CPU's bytes: [from, to) of the query's */
       if (avail && gpu) {
+         /* Each value's (a 32-bit result its low word: little-endian). */
          if (buf)
-            gpu_copy_bb(pool->buf, index * 8.0, buf, at, size);
-         from = to = size;
+            for (uint32_t k = 0; k < vals; k++)
+               gpu_copy_bb(pool->buf, (index * vals + k) * 8.0, buf, at + k * size, size);
+         from = to = vals * size;
       } else if (avail || partial) {
-         const uint64_t v = avail ? pool->values[index] : 0;
-         memcpy(bytes, &v, size); /* little-endian: a 32-bit result is the value's low word */
-         to = size;
+         for (uint32_t k = 0; k < vals; k++) {
+            const uint64_t v = avail ? pool->values[index * vals + k] : 0;
+            memcpy(bytes + k * size, &v, size);
+         }
+         to = vals * size;
       } else {
-         from = to = size;
+         from = to = vals * size;
       }
       if (with_avail) {
-         memcpy(bytes + size, &(uint64_t){ avail }, size);
+         memcpy(bytes + vals * size, &(uint64_t){ avail }, size);
          to = each;
       }
       if (to > from) {
@@ -5381,7 +5493,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          /* An indirect one needs what only the first layer's pass prepares (its count's or a fan's tickets, its draw
           * parameters' places) unless it reads its buffer as it is. */
          const struct op_indirect *a = h->op == OP_DRAW_INDIRECT ? (const void *)(h + 1) : NULL;
-         if (!skip && a && (a->fan || a->count_buffer || (r->program[0] && draw_params(r->program[0])))) {
+         if (!skip && a && (a->fan || a->count_buffer || a->counter || (r->program[0] && draw_params(r->program[0])))) {
             static bool warned;
             if (!warned)
                fprintf(stderr, "wg: an indirect draw writing gl_Layer drawn in a layered pass's first layer alone\n");
@@ -5394,7 +5506,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
             if (h->op == OP_PROVOKE)
                r->tickets++;
             else if (a)
-               r->tickets += (a->count_buffer ? 1 : 0) + (a->fan ? a->count : 0);
+               r->tickets += (a->count_buffer || a->counter ? 1 : 0) + (a->fan ? a->count : 0);
             continue;
          }
       }
@@ -5455,7 +5567,9 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
                    (util_dynarray_num_elements(&r->shadows, struct shadow) ||
                     util_dynarray_num_elements(&r->read_copies, struct wg_image_view *)) &&
                    pass_has_barrier(p, end);
-         const bool reads = pass_reads_dst(p, end) || pass_vs_stores(p, end, true);
+         const bool reads = pass_reads_dst(p, end) || pass_vs_stores(p, end, true) ||
+                            pass_byte_count_cut(p, end, true, &(bool){ false });
+         r->xfb_counted = false;
          if (r->qpool || r->atts.count || r->cuts || reads)
             begin_pass(r, r->atts.count || r->cuts || reads ? 1 : 0);
          else
@@ -5625,6 +5739,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          for (uint32_t i = 0; i < 8 && x->readback[i].mem; i++)
             readback(r, x->readback[i].mem, x->readback[i].offset, x->readback[i].size);
          gpu_xfb((const char *)(x + 1), strlen((const char *)(x + 1)));
+         r->xfb_counted |= x->counted;
          break;
       }
       case OP_PROVOKE: {
@@ -5648,7 +5763,7 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          const struct op_indirect *a = d;
          if (r->pass != RENDER)
             break;
-         const uint32_t counted = a->count_buffer ? r->tickets++ : UINT32_MAX;
+         const uint32_t counted = a->count_buffer || a->counter ? r->tickets++ : UINT32_MAX;
          /* Refused, it takes what `prepasses` gave its records all the same: their fan tickets and draw parameters'
           * places (a later draw of the pass through indices of its own would take a fan's). */
          if (words_past(r, 0)) {
@@ -5676,6 +5791,8 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
                   fprintf(stderr, "wg: an indirect draw's parameters weren't copied before its pass: drawn with 0\n");
                warned = true;
             }
+            if (a->counter && r->xfb_counted)
+               byte_count_cut(r, a, counted);
             set_draw_params(r, 0, 0, i, at);
             apply(r, 0);
             if (a->fan) {
@@ -5797,12 +5914,24 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
             break;
          }
          if (q->kind == 0) {
-            memset(&pool->values[q->first], 0, q->count * sizeof(uint64_t));
+            memset(&pool->values[q->first * pool->vals], 0, q->count * pool->vals * sizeof(uint64_t));
             memset(&pool->avail[q->first], 0, q->count);
             memset(&pool->ended[q->first], 0, q->count * sizeof(uint32_t));
          } else if (q->kind == 1) {
             pool->values[first] = os_time_get_nano();
             query_ended(r, pool, first);
+         } else if (q->kind >= 2 && pool->vals == 2) {
+            /* Transform feedback's (VK4 T45): the captures' counts at its begin and at its end, its value their
+             * difference, in the queue's order with the captures' (gpu_xfb's "query"; outside a render pass, at once). */
+            if (r->pass == COMPUTE)
+               end_pass(r);
+            struct wg_json j = { 0 };
+            wg_json_printf(&j, "{\"op\":\"query\",\"end\":%u,\"buf\":%u,\"at\":%u,\"snap\":%u}", q->kind == 3,
+                           pool->buf, first * 16, pool->vk.query_count * 16 + first * 8);
+            gpu_xfb(j.data, j.len);
+            wg_json_free(&j);
+            if (q->kind == 3)
+               query_ended(r, pool, first);
          } else if (q->kind == 2 && occlusion) {
             if (r->pass == RENDER && r->qpool && (pool == r->qpool || r->qmux) && !r->qactive_pool &&
                 first < WG_QUERY_SET_MAX && query_count(r, pool, first, UINT32_MAX)) {
@@ -6271,7 +6400,7 @@ submit_now(struct wg_device *dev, uint32_t cmd_count, struct vk_command_buffer *
    util_dynarray_foreach (&s->readbacks, struct readback, b)
       b->slot = gpu_readback(b->mem->gpu, b->mem->gpu_at + b->offset, b->size);
    util_dynarray_foreach (&s->queries, struct query_readback, q)
-      q->slot = gpu_readback(q->pool->buf, q->lo * 8.0, (q->hi - q->lo) * 8);
+      q->slot = gpu_readback(q->pool->buf, q->lo * 8.0 * q->pool->vals, (q->hi - q->lo) * 8 * q->pool->vals);
    util_dynarray_fini(&r.pass_queries);
    util_dynarray_fini(&r.dp_places);
    util_dynarray_fini(&r.uses);
@@ -6509,7 +6638,7 @@ complete(uint32_t serial)
          }
          util_dynarray_foreach (&s->queries, struct query_readback, q)
             if (q->pool)
-               gpu_readback_copy(q->slot, &q->pool->values[q->lo], (q->hi - q->lo) * 8);
+               gpu_readback_copy(q->slot, &q->pool->values[q->lo * q->pool->vals], (q->hi - q->lo) * 8 * q->pool->vals);
          wg_completed_serial = serial;
          util_dynarray_foreach (&s->signals, struct vk_sync_signal, sig)
             if (sig->sync)

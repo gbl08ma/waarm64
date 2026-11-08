@@ -126,6 +126,11 @@ WG_IMPORT(gpu_indirect_count) void gpu_indirect_count(uint32_t ticket, uint32_t 
                                                       uint32_t count_buffer, double count_offset, uint32_t most,
                                                       uint32_t indexed);
 WG_IMPORT(gpu_draw_indirect_ticket) void gpu_draw_indirect_ticket(uint32_t ticket, uint32_t index, uint32_t indexed);
+/* A draw by a byte count (VK4 T45, vkCmdDrawIndirectByteCountEXT): a compute pass outside the render pass writes its
+ * arguments, (the u32 at `counter`'s `at` - `bias`) / `stride` vertices (none below the bias), `instances` from
+ * `first_instance`; gpu_draw_indirect_ticket draws them (index 0). */
+WG_IMPORT(gpu_byte_count) void gpu_byte_count(uint32_t ticket, uint32_t counter, double at, uint32_t bias,
+                                              uint32_t stride, uint32_t instances, uint32_t first_instance);
 WG_IMPORT(gpu_draw_ticket) void gpu_draw_ticket(uint32_t ticket, uint32_t instances, int32_t base,
                                                 uint32_t first_instance);
 WG_IMPORT(gpu_dispatch) void gpu_dispatch(uint32_t x, uint32_t y, uint32_t z);

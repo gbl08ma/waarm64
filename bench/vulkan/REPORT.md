@@ -793,6 +793,44 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` oth
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 T45: transform feedback's and indirect draws' rest — queries, draws by a byte count, restarts, the provoking vertex's order; 437 cases join the list
+
+2026-11-08, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t45/`.
+
+**Before** (`swiftshader-before.json`, 413 cases: `transform_feedback.simple` but geometry's, tessellation's and the
+query cases, which all need geometry shaders; `primitive_restart`; the renderpass byte-count divisor draws): 158 pass,
+58 fail (gl_PointSize captured as 0 in every `xfb_pointsize` case and in `xfb_clipdistance`'s point-size variants, the
+8th float the backlog took for a clip distance; `primitive_restart` captured without restarts, 432 bytes for 240),
+197 not supported (the `transformFeedbackDraw` ones among them).
+
+**What landed** (vk/README.md "Commands"): `transformFeedbackDraw` (vkCmdDrawIndirectByteCountEXT: arguments from the
+counter in a dispatch before the pass, or in a cut of the pass after a capture ended writing a counter, which runs the
+captures closed so far at the cut; a captured one reads the counter in its capture); `transformFeedbackQueries` (the
+captures' advance dispatch counts the primitives written and needed, a query's begin and end jobs among the captures',
+its values their difference); restarts in a captured draw (one invocation walks the segments);
+`transformFeedbackPreservesProvokingVertex` and the fans' property (strips' and fans' records in the provoking vertex's
+order); gl_PointSize kept on its store for its capture; a draw-indirect-count under transform feedback (each record's
+capture reads the count).
+
+**Driver tests** (`tests/venus-driver.test.ts`, wg_test.c `wgt_xfb` 11–14): a draw by a byte count in a later pass and
+in the same pass, captured; a query of a capture past its buffer (1 written, 2 needed, 64- and 32-bit copies with
+availability) and one begun before the pass and ended after it around two captures (2, 2). Planted: the advance's
+written count dropped fails the query test, the byte count's stride doubled the byte-count test.
+
+**ANGLE's ES3 page** (`bench/vulkan/angle/es3.html`, a `TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN` query added; `PAGE=…
+ARMS='--use-angle=vulkan' node bench/vulkan/dawn-frames.ts guest`): flat, capture, uniform blocks as before, and
+`xfbq 4`.
+
+**After** (`swiftshader.json`, `m4.json`, 1,159 cases: the 413, `provoking_vertex.transform_feedback`, every third fuzz
+case, every byte-count divisor draw but shader objects'): 437 pass on both, 0 fail; 722 not supported (geometry,
+tessellation, device address commands, cull distances, shader objects, adjacency). All 437 join the list (→ 81,450).
+
+**Left** (docs/backlog.md "Transform feedback", "The provoking vertex", "Vertex stages that store's leftovers"):
+streams past 0, 16-bit outputs, records past 512 bytes (unreachable but through padded strides), primitives-generated
+queries, indexed and indirect captures bounded by their indices, an indirect or byte-count draw with the last vertex
+provoking, an indirect draw of a storing vertex stage, a fan by a byte count or a count.
+
 ## VK4 T44: vertex input's rest — divisors, legacy vertex attributes, pulls in a four-group program's group 3; 2,180 cases join the list
 
 2026-11-08, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,

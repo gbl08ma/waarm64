@@ -354,7 +354,7 @@ export async function runInFlight(scenario: 'upload' | 'since') {
  * (`wgt_variant`, the out-of-context review of the driver): the scene's pipeline as an unrestarted strip, without a
  * fragment shader, as lines with depth bias. Named pixels of the image, and WebGPU's errors.
  */
-export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'facesUnused' | 'facesSplit' | 'flatLast' | 'flatFanLast' | 'flatFanFirst' | 'flatFanOdd' | 'flatListOdd' | 'flatRestart' | 'angleUniforms' | 'drawParams' | 'pullLayouts' | 'pullDrawParams' | 'pullGroups' | 'pullOffsets' | 'pullPastEnd' | 'pullFourSets' | 'pullDivisors' | 'xfbList' | 'xfbOverflow' | 'xfbStrip' | 'xfbResume' | 'xfbMany' | 'xfbIndirect' | 'xfbIndexedIndirect' | 'xfbNullColors' | 'xfbPasses' | 'xfbPulled' | 'xfbFourGroups') {
+export async function runPass(spirv: { vert: string; frag: string; comp: string }, scenario: 'link' | 'none' | 'partial' | 'resume' | 'resumePartial' | 'strip' | 'vertexOnly' | 'lineBias' | 'readOnlyDepth' | 'clearQuery' | 'facesUnused' | 'facesSplit' | 'flatLast' | 'flatFanLast' | 'flatFanFirst' | 'flatFanOdd' | 'flatListOdd' | 'flatRestart' | 'angleUniforms' | 'drawParams' | 'pullLayouts' | 'pullDrawParams' | 'pullGroups' | 'pullOffsets' | 'pullPastEnd' | 'pullFourSets' | 'pullDivisors' | 'xfbList' | 'xfbOverflow' | 'xfbStrip' | 'xfbResume' | 'xfbMany' | 'xfbIndirect' | 'xfbIndexedIndirect' | 'xfbNullColors' | 'xfbPasses' | 'xfbPulled' | 'xfbFourGroups' | 'xfbByteCount' | 'xfbByteCountInPass' | 'xfbQuery' | 'xfbQueryOutside') {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -399,17 +399,28 @@ export async function runPass(spirv: { vert: string; frag: string; comp: string 
       device.destroy();
       return { differs, got: [...new Float32Array(got.buffer, 0, 48)], counter: new Uint32Array(got.buffer, 2048, 1)[0], errors, warnings: v.gpu.stats.errors };
     }
-    if (scenario === 'xfbList' || scenario === 'xfbOverflow' || scenario === 'xfbStrip' || scenario === 'xfbResume' || scenario === 'xfbIndirect' || scenario === 'xfbIndexedIndirect' || scenario === 'xfbPulled' || scenario === 'xfbNullColors' || scenario === 'xfbPasses' || scenario === 'xfbFourGroups') {
+    if (scenario === 'xfbList' || scenario === 'xfbOverflow' || scenario === 'xfbStrip' || scenario === 'xfbResume' || scenario === 'xfbIndirect' || scenario === 'xfbIndexedIndirect' || scenario === 'xfbPulled' || scenario === 'xfbNullColors' || scenario === 'xfbPasses' || scenario === 'xfbFourGroups' || scenario === 'xfbByteCount' || scenario === 'xfbByteCountInPass' || scenario === 'xfbQuery' || scenario === 'xfbQueryOutside') {
       // wgt_xfb's records: each vertex's (x, y, z, 1) and (u, v, its index, 7), from the scene's vertices (wg_test.c).
       const quad = [[-1.5, -1, 0.5, 0, 0], [-0.5, -1, 0.5, 1, 0], [-0.5, 1, 0.5, 1, 1], [-1.5, 1, 0.5, 0, 1], [-1, -1, 0.75, 0, 0], [1, -1, 0.75, 0, 0]];
-      const order = scenario === 'xfbOverflow' ? [0, 1, 2] : scenario === 'xfbStrip' ? [0, 1, 2, 1, 3, 2]
+      const order = scenario === 'xfbOverflow' || scenario === 'xfbQuery' ? [0, 1, 2] : scenario === 'xfbStrip' ? [0, 1, 2, 1, 3, 2]
         : scenario === 'xfbIndexedIndirect' ? [0, 1, 2, 0, 2, 3] : scenario === 'xfbPasses' ? Array.from({ length: 17 }, () => [0, 1, 2]).flat() : [0, 1, 2, 3, 4, 5];
       const want = new Uint8Array(4096).fill(0xee);
       const f = new Float32Array(want.buffer, 0, order.length * 8);
       order.forEach((v, k) => f.set([quad[v][0], quad[v][1], quad[v][2], 1, quad[v][3], quad[v][4], v, 7], 8 * k));
       new Uint32Array(want.buffer, 2048, 1)[0] = scenario === 'xfbPasses' ? 96 : order.length * 32;
+      // VK4 T45: the 6 vertices again at 1024, drawn by the first capture's byte count, their counter at 2052.
+      if (scenario === 'xfbByteCount' || scenario === 'xfbByteCountInPass') {
+        want.copyWithin(1024, 0, order.length * 32);
+        new Uint32Array(want.buffer, 2052, 1)[0] = order.length * 32;
+      }
+      // VK4 T45: the query's primitives written and needed, and its availability, in 64 and 32 bits.
+      if (scenario === 'xfbQuery' || scenario === 'xfbQueryOutside') {
+        const [written, needed] = scenario === 'xfbQuery' ? [1, 2] : [2, 2];
+        new BigUint64Array(want.buffer, 3072, 3).set([BigInt(written), BigInt(needed), 1n]);
+        new Uint32Array(want.buffer, 3104, 3).set([written, needed, 1]);
+      }
       const [xv, xvn] = put(await words(`/target/vk/test/${scenario === 'xfbFourGroups' ? 'xfb-four' : 'xfb'}.vert.spv`));
-      const xi = { xfbList: 0, xfbOverflow: 1, xfbStrip: 2, xfbResume: 3, xfbIndirect: 5, xfbIndexedIndirect: 6, xfbNullColors: 7, xfbPasses: 8, xfbPulled: 9, xfbFourGroups: 10 }[scenario];
+      const xi = { xfbList: 0, xfbOverflow: 1, xfbStrip: 2, xfbResume: 3, xfbIndirect: 5, xfbIndexedIndirect: 6, xfbNullColors: 7, xfbPasses: 8, xfbPulled: 9, xfbFourGroups: 10, xfbByteCount: 11, xfbByteCountInPass: 12, xfbQuery: 13, xfbQueryOutside: 14 }[scenario];
       if (ex.wgt_xfb(xi, xv, xvn)) return { error: text(ex.wgt_error() >>> 0), errors };
       await wait(() => ex.wgt_xfb_done(), 'the capture');
       const got = new Uint8Array(memory.buffer, ex.wgt_xfb_map() >>> 0, 4096).slice();

@@ -945,6 +945,9 @@ struct wg_query_pool {
    /* Occlusion: slots of the set past the pool's queries, each render pass's to carry on a query a clear draw cut
     * (wg_cmd.c `OP_CLEAR_RECTS`); the buffer holds their values too. */
    uint32_t spares;
+   /* Values a query: 2 for transform feedback's (VK4 T45: the primitives written and needed, counted on the GPU by the
+    * captures, web/venus-gpu.ts `runXfb`; `buf` 16 bytes a query, then 8 a query of the counts at its begin), else 1. */
+   uint32_t vals;
 };
 /* The serial of the last submit completed (submits complete in their order). */
 extern uint32_t wg_completed_serial;

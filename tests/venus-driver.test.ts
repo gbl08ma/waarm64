@@ -283,6 +283,11 @@ for (const [scenario, what] of [
   ['xfbPulled', 'a capture of vertices bound at an offset WebGPU\'s vertex buffers refuse'],
   // VK4 T40.
   ['xfbFourGroups', 'a capture of a vertex stage of four bind groups (a draw parameter: the push buffer in group 3)'],
+  // VK4 T45.
+  ['xfbByteCount', 'a draw by a capture\'s byte count, in a later pass, captured'],
+  ['xfbByteCountInPass', 'a draw by a capture\'s byte count, in the same pass, captured'],
+  ['xfbQuery', 'a transform feedback query of a capture past its buffer, in the pass'],
+  ['xfbQueryOutside', 'a transform feedback query begun before the pass and ended after it, around two captures'],
 ] as const) {
   test(`transform feedback: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which compiled the shaders.

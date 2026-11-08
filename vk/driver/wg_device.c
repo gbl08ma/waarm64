@@ -2313,7 +2313,8 @@ wg_CreateQueryPool(VkDevice _device, const VkQueryPoolCreateInfo *pCreateInfo,
    if (!pool)
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
    const uint32_t n = pCreateInfo->queryCount;
-   pool->values = calloc(n, sizeof(uint64_t));
+   pool->vals = pCreateInfo->queryType == VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT ? 2 : 1;
+   pool->values = calloc((size_t)n * pool->vals, sizeof(uint64_t));
    pool->avail = calloc(n, 1);
    pool->ended = calloc(n, sizeof(uint32_t));
    if (!pool->values || !pool->avail || !pool->ended) {
@@ -2329,6 +2330,11 @@ wg_CreateQueryPool(VkDevice _device, const VkQueryPoolCreateInfo *pCreateInfo,
       pool->set = wg_create_json(WG_KIND_QUERY_SET, &j);
       /* QUERY_RESOLVE | STORAGE (gpu_query_add) | COPY_SRC | COPY_DST */
       wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", (n + pool->spares) * 8, 0x200 | 0x80 | 4 | 8);
+      pool->buf = wg_create_json(WG_KIND_BUFFER, &j);
+   } else if (pool->vals == 2) {
+      struct wg_json j = { 0 };
+      /* STORAGE (the end's difference) | COPY_SRC | COPY_DST */
+      wg_json_printf(&j, "{\"size\":%u,\"usage\":%u}", MAX2(n, 1) * 24, 0x80 | 4 | 8);
       pool->buf = wg_create_json(WG_KIND_BUFFER, &j);
    }
    *pPool = wg_query_pool_to_handle(pool);
@@ -2359,6 +2365,7 @@ wg_GetQueryPoolResults(VkDevice _device, VkQueryPool _pool, uint32_t first, uint
 {
    VK_FROM_HANDLE(wg_query_pool, pool, _pool);
    const bool wide = flags & VK_QUERY_RESULT_64_BIT;
+   const uint32_t size = wide ? 8 : 4, vals = pool->vals;
    VkResult result = VK_SUCCESS;
    for (uint32_t i = 0; i < count; i++) {
       uint8_t *out = (uint8_t *)pData + stride * i;
@@ -2366,19 +2373,13 @@ wg_GetQueryPoolResults(VkDevice _device, VkQueryPool _pool, uint32_t first, uint
       const bool avail = e && (int32_t)(wg_completed_serial - e) >= 0;
       if (!avail)
          result = VK_NOT_READY;
-      const uint64_t v = avail ? pool->values[first + i] : 0;
-      if (avail || (flags & VK_QUERY_RESULT_PARTIAL_BIT)) {
-         if (wide)
-            memcpy(out, &v, 8);
-         else
-            memcpy(out, &(uint32_t){ (uint32_t)v }, 4);
+      for (uint32_t k = 0; k < vals; k++) {
+         const uint64_t v = avail ? pool->values[(first + i) * vals + k] : 0;
+         if (avail || (flags & VK_QUERY_RESULT_PARTIAL_BIT))
+            memcpy(out + k * size, &v, size); /* little-endian: a 32-bit result is the value's low word */
       }
-      if (flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT) {
-         if (wide)
-            memcpy(out + 8, &(uint64_t){ avail }, 8);
-         else
-            memcpy(out + 4, &(uint32_t){ avail }, 4);
-      }
+      if (flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT)
+         memcpy(out + vals * size, &(uint64_t){ avail }, size);
    }
    return result;
 }
@@ -2387,7 +2388,7 @@ VKAPI_ATTR void VKAPI_CALL
 wg_ResetQueryPool(VkDevice _device, VkQueryPool _pool, uint32_t first, uint32_t count)
 {
    VK_FROM_HANDLE(wg_query_pool, pool, _pool);
-   memset(&pool->values[first], 0, count * sizeof(uint64_t));
+   memset(&pool->values[first * pool->vals], 0, count * pool->vals * sizeof(uint64_t));
    memset(&pool->avail[first], 0, count);
    memset(&pool->ended[first], 0, count * sizeof(uint32_t));
 }

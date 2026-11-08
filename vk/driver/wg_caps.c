@@ -171,8 +171,8 @@ wg_caps_extensions(struct vk_device_extension_table *e)
        * each primitive's rotated (wg_cmd.c `provoke`; VK3 L7.4, ANGLE's ES3: GL's convention). */
       .EXT_provoking_vertex = true,
       /* Transform feedback: the vertex stage run as compute at its render pass's end, on the draw's bind groups and
-       * vertex buffers (web/venus-gpu.ts `runXfb`; VK3 L7.4, ANGLE's ES3). One stream, no queries, no draws by the
-       * captured count. */
+       * vertex buffers (web/venus-gpu.ts `runXfb`; VK3 L7.4, ANGLE's ES3). One stream; queries and draws by the
+       * captured count since VK4 T45. */
       .EXT_transform_feedback = true,
       /* Draw parameters: the push buffer's words past the push constants, each draw's written in its place there,
        * an indirect draw's copied from its arguments before its render pass (wg_cmd.c `prepasses`; VK3 L7.5, vkd3d). */
@@ -348,6 +348,8 @@ wg_caps_features(struct vk_features *f)
       .samplerYcbcrConversion = HAS(YCBCR),
       .ycbcrImageArrays = HAS(YCBCR),
       .provokingVertexLast = true,
+      /* A capture's records in the provoking vertex's order (VK4 T45: web/venus-gpu.ts `wgx_j`). */
+      .transformFeedbackPreservesProvokingVertex = true,
       .transformFeedback = true,
       .shaderDrawParameters = true,
    };
@@ -566,6 +568,7 @@ wg_caps_properties(struct vk_properties *p)
    p->storageTexelBufferOffsetAlignmentBytes = L->min_storage_buffer_offset_alignment;
    p->uniformTexelBufferOffsetAlignmentBytes = L->min_storage_buffer_offset_alignment;
    p->provokingVertexModePerPipeline = true;
+   p->transformFeedbackPreservesTriangleFanProvokingVertex = true;
    /* Advanced blends (VK4 T32): each attachment's own, on any of them, every op and overlap. */
    p->advancedBlendMaxColorAttachments = 8;
    p->advancedBlendIndependentBlend = true;
@@ -579,6 +582,12 @@ wg_caps_properties(struct vk_properties *p)
    p->maxTransformFeedbackStreamDataSize = 512;
    p->maxTransformFeedbackBufferDataSize = 512;
    p->maxTransformFeedbackBufferDataStride = 512;
+   /* Draws by a byte count (VK4 T45): their arguments from the counter in a compute pass (wg_cmd.c
+    * `wg_CmdDrawIndirectByteCountEXT`). */
+   p->transformFeedbackDraw = true;
+   /* Queries (VK4 T45): the primitives the captures wrote and needed, counted by them on the GPU (web/venus-gpu.ts
+    * `runXfb`). */
+   p->transformFeedbackQueries = true;
 
    /* maintenance5 (VK4 T24): no early fragment tests (docs/backlog.md "Rendering"), no points as polygons, lines of
     * one pixel by WebGPU's rule (not a parallelogram); a swizzle of ONE on depth reads 1 (the view's mapping). */

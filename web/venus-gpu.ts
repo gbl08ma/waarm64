@@ -311,6 +311,8 @@ export class VenusGpu {
   private readonly passThroughs = new Map<string, PassThrough | null>();
   private vsPending: { rec: GPUBuffer; recAt: number; words: number; count: number; instances: number; indexed: boolean; ixAt: number } | undefined;
   private xfbJobs: Json[] = [];
+  /** The primitives captures wrote and needed (`runXfb`, VK4 T45). */
+  private xfbCounts?: GPUBuffer;
   private readonly metaModules = new Map<string, GPUShaderModule>();
   /** A bind group layout's bindings of storage textures a shader may write, and the textures a bind group binds
    * there: a pass that sets the group writes them (`touched`, for presentation). */
@@ -700,8 +702,15 @@ export class VenusGpu {
         // Its buffers now (ids are reused).
         if (j.ib) j.ib = buf(j.ib);
         if (j.indirect) j.indirect = [buf((j.indirect as number[])[0]), (j.indirect as number[])[1]];
+        if (j.byteCount) j.byteCount = [buf((j.byteCount as number[])[0]), ...(j.byteCount as number[]).slice(1)];
+        if (j.drawCount) j.drawCount = [buf((j.drawCount as number[])[0]), ...(j.drawCount as number[]).slice(1)];
+        if (j.op === 'query') j.buf = buf(j.buf as number);
         for (const k of ['buffers', 'counters']) if (j[k]) j[k] = (j[k] as (number[] | null)[]).map((e) => e && [buf(e[0]), ...e.slice(1)]);
-        later(() => self.xfbJobs.push(j.op === 'draw' ? { ...j, xfb: self.cur.xfb, groups: [...self.cur.groups], vb: [...self.cur.vb], imm: self.cur.imm } : j));
+        // A query's begin or end outside a render pass (VK4 T45) runs at once: no capture is open there.
+        later(() => {
+          if (j.op === 'query' && !self.pass) return self.runXfb([j]);
+          self.xfbJobs.push(j.op === 'draw' ? { ...j, xfb: self.cur.xfb, groups: [...self.cur.groups], vb: [...self.cur.vb], imm: self.cur.imm } : j);
+        });
       },
       gpu_vs_prepass(kind: number, count: number, inst: number, first: number, base: number, firstInst: number, ticket: number) {
         self.emul.vsPrepasses++;
@@ -715,6 +724,10 @@ export class VenusGpu {
       gpu_indirect_count(ticket: number, b: number, offset: number, stride: number, cb: number, countOffset: number, most: number, indexed: number) {
         const B = buf(b), C = buf(cb);
         later(() => self.indirectCount(ticket, B, offset, stride, C, countOffset, most, indexed));
+      },
+      gpu_byte_count(ticket: number, cb: number, at: number, bias: number, stride: number, instances: number, firstInstance: number) {
+        const C = buf(cb);
+        later(() => self.byteCount(ticket, C, at, bias, stride, instances, firstInstance));
       },
       gpu_draw_indirect_ticket(ticket: number, index: number, indexed: number) {
         self.stats.draws++;
@@ -1942,8 +1955,11 @@ ${vs}
     // Resolves the pass made into a texture of the worker's (`shortResolve`): copied into their layers.
     for (const r of this.passResolves) this.enc!.copyTextureToTexture({ texture: r.t }, { texture: r.dst, mipLevel: r.mip, origin: { x: 0, y: 0, z: r.layer } }, [r.w, r.h, 1]);
     this.passResolves = [];
-    // A capture still open is one a cut of the Vulkan pass divides (wg_cmd.c `begin_pass`): it goes on in the next part.
-    if (!xfbOpen(this.xfbJobs)) this.flushXfb();
+    // A capture still open is one a cut of the Vulkan pass divides (wg_cmd.c `begin_pass`): it goes on in the next part,
+    // and the captures ended before it run now (VK4 T45: a later draw by a byte count may read their counters).
+    const open = xfbOpen(this.xfbJobs);
+    if (open < 0) this.flushXfb();
+    else if (open > 0) this.runXfb(this.xfbJobs.splice(0, open));
   }
 
   /** The transform feedback of the render pass that ended. */
@@ -1961,23 +1977,30 @@ ${vs}
    * the counters out. The capture's own bindings are three whatever its buffers (VK3 L7a, the binding review's finding
    * 1: a storage buffer a captured buffer and a vertex binding went past WebGPU's storage buffers a stage, and the
    * invalid pass lost the submit): that one (`wgx_o`), the draw's inputs (`wgx_in`) and its parameters; the driver
-   * counts them with the stage's (wg_caps.c `wg_bindings_fit`).
+   * counts them with the stage's (wg_caps.c `wg_bindings_fit`). The primitives captures wrote and needed (VK4 T45:
+   * transform feedback's queries) are counted in `xfbCounts` (two words, from the device's start), in the session's
+   * words 4 and 5 while it's open; a query's job (`xfbQuery`) takes them at its begin and end.
    */
   private runXfb(jobs: Json[]) {
     const d = this.device!, enc = this.enc!;
     type Bound = { guest: GPUBuffer; at: number; size: number; word: number } | null;
     let session: XfbSession | undefined;
+    this.xfbCounts ??= d.createBuffer({ size: 16, usage: STORAGE | COPY_SRC | COPY_DST });
+    const counts = this.xfbCounts;
     const finish = (counters?: ([GPUBuffer, number] | null)[]) => {
       if (!session) return;
       for (const b of session.bufs) if (b) enc.copyBufferToBuffer(session.out, 4 * b.word, b.guest, b.at, b.size);
       const out = session.out;
       counters?.forEach((c, i) => { if (c) enc.copyBufferToBuffer(out, 4 * i, c[0], c[1], 4); });
+      enc.copyBufferToBuffer(out, 16, counts, 0, 8);
       session = undefined;
     };
     for (const job of jobs) {
-      if (job.op === 'begin') {
+      if (job.op === 'query') {
+        this.xfbQuery(job, session ? [session.out, 16] : [counts, 0]);
+      } else if (job.op === 'begin') {
         finish();
-        let words = 4;
+        let words = 8;
         const bufs = (job.buffers as ([GPUBuffer, number, number] | null)[]).map((b): Bound => {
           if (!b) return null;
           const size = Math.min(b[2], b[0].size - b[1]) & ~3;
@@ -1992,7 +2015,8 @@ ${vs}
         }
         const out = d.createBuffer({ size: 4 * words, usage: STORAGE | COPY_SRC | COPY_DST });
         this.temps.push(out);
-        enc.clearBuffer(out, 0, 16);
+        enc.clearBuffer(out, 0, 32);
+        enc.copyBufferToBuffer(counts, 0, out, 16, 8);
         for (const b of bufs) if (b) enc.copyBufferToBuffer(b.guest, b.at, out, 4 * b.word, b.size);
         (job.counters as ([GPUBuffer, number] | null)[]).forEach((c, i) => { if (c && bufs[i]) enc.copyBufferToBuffer(c[0], c[1], out, 4 * i, 4); });
         session = { bufs, out };
@@ -2003,6 +2027,40 @@ ${vs}
       }
     }
     finish();
+  }
+
+  /** A transform feedback query's begin or end (VK4 T45, wg_cmd.c `OP_QUERY`): the primitives written and needed so far
+   * (`from`: two words) copied at its begin to the pool's `snap`, and at its end their difference since then written as
+   * its two 64-bit values at `at`. */
+  private xfbQuery(job: Json, from: [GPUBuffer, number]) {
+    const d = this.device!, enc = this.enc!, pool = job.buf as GPUBuffer, snap = job.snap as number;
+    if (!job.end) return enc.copyBufferToBuffer(from[0], from[1], pool, snap, 8);
+    let pipeline = this.metaComputes.get('xfbQuery');
+    if (!pipeline) {
+      const code = `@group(0) @binding(0) var<storage, read_write> q: array<u32>;
+@group(0) @binding(1) var<storage, read> now: array<u32, 2>;
+@group(0) @binding(2) var<uniform> p: vec4u;
+@compute @workgroup_size(1) fn main() {
+  q[p.x] = now[0] - q[p.y]; q[p.x + 1u] = 0u;
+  q[p.x + 2u] = now[1] - q[p.y + 1u]; q[p.x + 3u] = 0u;
+}`;
+      const m = d.createShaderModule({ code });
+      pipeline = d.createComputePipeline({ layout: 'auto', compute: { module: m, entryPoint: 'main' } });
+      this.metaComputes.set('xfbQuery', pipeline);
+    }
+    const [now, nat] = this.scratch(STORAGE | COPY_DST, 8);
+    enc.copyBufferToBuffer(from[0], from[1], now, nat, 8);
+    const [u, uat] = this.scratch(UNIFORM | COPY_DST, 16);
+    d.queue.writeBuffer(u, uat, new Uint32Array([(job.at as number) / 4, snap / 4, 0, 0]));
+    const pass = enc.beginComputePass();
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
+      { binding: 0, resource: { buffer: pool } },
+      { binding: 1, resource: { buffer: now, offset: nat, size: 8 } },
+      { binding: 2, resource: { buffer: u, offset: uat, size: 16 } },
+    ] }));
+    pass.dispatchWorkgroups(1);
+    pass.end();
   }
 
   /** A captured draw: its vertex stage (`wg_vs`) run as compute for its primitives' vertices, in Vulkan's order, as many
@@ -2022,10 +2080,12 @@ ${vs}
     if (!p) return;
     const count = job.count as number, instances = job.instances as number, wide = job.wide as number;
     const indirect = job.indirect as [GPUBuffer, number] | undefined;
+    // A draw by a byte count (VK4 T45): its count the counter's word, which the shader turns into vertices.
+    const byteCount = job.byteCount as [GPUBuffer, number, number, number] | undefined;
     const prims = [count, count >> 1, Math.max(count - 1, 0), Math.floor(count / 3), Math.max(count - 2, 0), Math.max(count - 2, 0)][job.topology as number];
-    if (!prims && !indirect) return;
+    if (!prims && !indirect && !byteCount) return;
     // The parameters are `wgx_in`'s first words (`wgx_p`: no uniform binding, VK4 T40).
-    const params = new Uint32Array(28);
+    const params = new Uint32Array(32);
     // The copies into `wgx_in`: from 4-aligned offsets, whole words, each at a word of its own.
     const copies: { b: GPUBuffer; from: number; size: number; at: number }[] = [];
     let bytes = params.byteLength;
@@ -2050,7 +2110,7 @@ ${vs}
       // What the draw can reach of it: past its last vertex or instance (non-indexed), or all of it.
       const b = x.buffers[slot] as Json;
       const end = Math.max(0, ...(b.attributes as Json[]).map((a) => (a.offset as number) + 16));
-      const last = indirect ? Infinity : b.stepMode === 'instance' ? (job.firstInstance as number) + instances : wide === 2 ? (job.first as number) + count : Infinity;
+      const last = indirect || (byteCount && b.stepMode !== 'instance') ? Infinity : b.stepMode === 'instance' ? (job.firstInstance as number) + instances : wide === 2 ? (job.first as number) + count : Infinity;
       params[16 + slot] = take(v.b, v.offset, Math.min(v.size, last * (b.arrayStride as number) + end));
     }
     if (bytes > d.limits.maxStorageBufferBindingSize) {
@@ -2067,12 +2127,21 @@ ${vs}
       params[24 + b] = s.word;
     }
     params.set([job.topology, count, instances, job.first, (job.base as number) >>> 0, job.firstInstance, wide, ibFirst, prims, vpp]);
+    if (byteCount) params.set([byteCount[3], byteCount[2]], 14);
+    params.set([job.restart ? 1 : 0, job.last ? 1 : 0], 28);
+    // A draw-indirect-count's record (VK4 T45): its index + 1 in pad3, the count over pad2 (`wgx_load`).
+    const drawCount = job.drawCount as [GPUBuffer, number, number] | undefined;
+    if (drawCount) params[31] = drawCount[2] + 1;
     d.queue.writeBuffer(inb, 0, params);
     if (indirect) {
       // VkDrawIndexedIndirectCommand's five words are the parameters' count to firstInstance; VkDrawIndirectCommand's
       // the count, instances and first, then firstInstance (its base vertex 0).
       enc.copyBufferToBuffer(indirect[0], indirect[1], inb, 4, wide === 2 ? 12 : 20);
       if (wide === 2) enc.copyBufferToBuffer(indirect[0], indirect[1] + 12, inb, 20, 4);
+      if (drawCount) enc.copyBufferToBuffer(drawCount[0], drawCount[1], inb, 30 * 4, 4);
+    } else if (byteCount) {
+      // The counter over the count (its stride and bias in the parameters' spare words: `wgx_load`).
+      enc.copyBufferToBuffer(byteCount[0], byteCount[1], inb, 4, 4);
     }
     const G = x.bgls.length;
     const own: GPUBindGroupEntry[] = [
@@ -2093,7 +2162,7 @@ ${vs}
     if (x.immediateSize && job.imm) (pass as unknown as { setImmediates(o: number, d: Uint8Array): void }).setImmediates(0, job.imm as Uint8Array);
     pass.setPipeline(p.main);
     // An indirect draw's count is on the GPU: as many workgroups as a large draw's (each invocation loops).
-    pass.dispatchWorkgroups(indirect ? 1024 : Math.min(65535, Math.ceil((prims * instances * vpp) / 64)));
+    pass.dispatchWorkgroups(indirect || byteCount ? 1024 : Math.min(65535, Math.ceil((prims * instances * vpp) / 64)));
     pass.setPipeline(p.advance);
     pass.dispatchWorkgroups(1);
     pass.end();
@@ -2109,7 +2178,7 @@ ${vs}
     const captured = [0, 1, 2, 3].filter((b) => x.stride[b]);
     const lines: string[] = [];
     const L = (l: string) => lines.push(l);
-    L(`struct WgxP { topo: u32, count: u32, instances: u32, first: u32, base: u32, firstInstance: u32, wide: u32, ibFirst: u32, prims: u32, vpp: u32, xs0: u32, xs1: u32, xs2: u32, xs3: u32, pad0: u32, pad1: u32, ${[0, 1, 2, 3, 4, 5, 6, 7].map((s) => `vbd${s}: u32`).join(', ')}, xo0: u32, xo1: u32, xo2: u32, xo3: u32 }`);
+    L(`struct WgxP { topo: u32, count: u32, instances: u32, first: u32, base: u32, firstInstance: u32, wide: u32, ibFirst: u32, prims: u32, vpp: u32, xs0: u32, xs1: u32, xs2: u32, xs3: u32, pad0: u32, pad1: u32, ${[0, 1, 2, 3, 4, 5, 6, 7].map((s) => `vbd${s}: u32`).join(', ')}, xo0: u32, xo1: u32, xo2: u32, xo3: u32, restart: u32, last: u32, pad2: u32, pad3: u32 }`);
     // Its group after the program's, or group 3 with the program's own there (`group3With`); its parameters `wgx_in`'s
     // first words.
     const at = Math.min(G, 3), [ob, ib] = XFB_BINDINGS[G < 4 ? 0 : 1];
@@ -2119,39 +2188,61 @@ ${vs}
     L('fn wgx_ld(b: u32) -> u32 { let w = b >> 2u; let s = (b & 3u) * 8u; if (s == 0u) { return wgx_in[w]; } return (wgx_in[w] >> s) | (wgx_in[w + 1u] << (32u - s)); }');
     if (inputs) L(fetch);
     const room = captured.map((b) => `fit = min(fit, (wgx_p.xs${b} - min(wgx_p.xs${b}, wgx_o[${b}])) / (${x.stride[b]}u * wgx_p.vpp));`).join(' ');
-    L('fn wgx_prims() -> u32 { let c = wgx_p.count; switch wgx_p.topo { case 0u: { return c; } case 1u: { return c >> 1u; } case 2u: { return max(c, 1u) - 1u; } case 3u: { return c / 3u; } default: { return max(c, 2u) - 2u; } } }');
+    // A segment's primitives; with a restart (VK4 T45) the draw's are its segments', each ended by the format's largest
+    // index, walked by one invocation (`wgx_serial`).
+    L('fn wgx_segprims(c: u32) -> u32 { switch wgx_p.topo { case 0u: { return c; } case 1u: { return c >> 1u; } case 2u: { return max(c, 1u) - 1u; } case 3u: { return c / 3u; } default: { return max(c, 2u) - 2u; } } }');
+    L('fn wgx_raw(j: u32) -> u32 { let k = wgx_p.ibFirst + wgx_p.first + j; if (wgx_p.wide == 0u) { return extractBits(wgx_in[k >> 1u], (k & 1u) * 16u, 16u); } return wgx_in[k]; }');
+    L('fn wgx_cut(j: u32) -> bool { return wgx_raw(j) == select(0xffffffffu, 0xffffu, wgx_p.wide == 0u); }');
+    L('fn wgx_prims() -> u32 { if (wgx_p.restart == 0u) { return wgx_segprims(wgx_p.count); } var n = 0u; var s = 0u; for (var j = 0u; j <= wgx_p.count; j++) { if (j == wgx_p.count || wgx_cut(j)) { n += wgx_segprims(j - s); s = j + 1u; } } return n; }');
     L(`fn wgx_fit() -> u32 { var fit = wgx_prims() * wgx_p.instances; ${room} return fit; }`);
-    L('fn wgx_vertex(j: u32) -> u32 {');
-    L('  if (wgx_p.wide == 2u) { return wgx_p.first + j; }');
-    L('  let k = wgx_p.ibFirst + wgx_p.first + j;');
-    L('  var v = wgx_in[k];');
-    L('  if (wgx_p.wide == 0u) { v = extractBits(wgx_in[k >> 1u], (k & 1u) * 16u, 16u); }');
-    L('  return v + wgx_p.base;');
+    L('fn wgx_vertex(j: u32) -> u32 { if (wgx_p.wide == 2u) { return wgx_p.first + j; } return wgx_raw(j) + wgx_p.base; }');
+    // Primitive p's vertex k in Vulkan's order: a strip's and a fan's by the provoking vertex where the last provokes
+    // (`last`: transformFeedbackPreservesProvokingVertex, VK4 T45).
+    L('fn wgx_j(p: u32, k: u32) -> u32 {');
+    L('  let o = p & 1u;');
+    L('  switch wgx_p.topo {');
+    L('    case 1u: { return 2u * p + k; }');
+    L('    case 2u: { return p + k; }');
+    L('    case 3u: { return 3u * p + k; }');
+    L('    case 4u: { if (wgx_p.last != 0u) { return p + select(select(2u, 1u - o, k == 1u), o, k == 0u); } return p + select(select(2u - o, 1u + o, k == 1u), 0u, k == 0u); }');
+    L('    case 5u: { if (wgx_p.last != 0u) { return select(p + k, 0u, k == 0u); } return select(p + 1u + k, 0u, k == 2u); }');
+    L('    default: { return p; }');
+    L('  }');
     L('}');
-    const load = `wgx_p = WgxP(${Array.from({ length: 28 }, (_, k) => `wgx_in[${k}u]`).join(', ')});`;
+    // A draw by a byte count's (VK4 T45): its count the counter's bytes (pad1 its bias) by pad0, its vertex stride.
+    L(`fn wgx_load() { wgx_p = WgxP(${Array.from({ length: 32 }, (_, k) => `wgx_in[${k}u]`).join(', ')}); if (wgx_p.pad0 != 0u) { wgx_p.count = select(0u, (wgx_p.count - wgx_p.pad1) / wgx_p.pad0, wgx_p.count >= wgx_p.pad1); } if (wgx_p.pad3 > wgx_p.pad2) { wgx_p.count = 0u; } }`);
+    const load = 'wgx_load();';
+    // Vertex t of the capture: the stage run for it and its record written.
+    L('fn wgx_emit(t: u32, vid: u32, iid: u32) {');
+    L(`  wg_vs(vid, iid${inputs ? ', wgx_fetch(vid, iid)' : ''});`);
+    for (const b of captured) {
+      L(`  let at${b} = wgx_p.xo${b} + wgx_o[${b}] / 4u + t * ${x.stride[b] >> 2}u;`);
+      for (let w = 0; w < 128; w++) if ((x.words[b][w >> 5] >>> (w & 31)) & 1) L(`  wgx_o[at${b} + ${w}u] = wg_xo[${x.base[b] + w}u];`);
+    }
+    L('}');
+    L('fn wgx_serial() {');
+    L('  let n = wgx_fit() * wgx_p.vpp; var t = 0u;');
+    L('  for (var inst = 0u; inst < wgx_p.instances; inst++) {');
+    L('    var s = 0u;');
+    L('    for (var j = 0u; j <= wgx_p.count; j++) {');
+    L('      if (j < wgx_p.count && !wgx_cut(j)) { continue; }');
+    L('      let np = wgx_segprims(j - s);');
+    L('      for (var p = 0u; p < np; p++) { for (var k = 0u; k < wgx_p.vpp; k++) { if (t >= n) { return; } wgx_emit(t, wgx_vertex(s + wgx_j(p, k)), wgx_p.firstInstance + inst); t++; } }');
+    L('      s = j + 1u;');
+    L('    }');
+    L('  }');
+    L('}');
     L('@compute @workgroup_size(64) fn wgx_main(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {');
     L(`  ${load}`);
+    L('  if (wgx_p.restart != 0u) { if (gid.x == 0u) { wgx_serial(); } return; }');
     L('  let n = wgx_fit() * wgx_p.vpp; let prims = wgx_prims();');
     L('  for (var t = gid.x; t < n; t += nwg.x * 64u) {');
     L('    let g = t / wgx_p.vpp; let k = t % wgx_p.vpp; let inst = g / prims; let p = g % prims;');
-    L('    var j = p;');
-    L('    switch wgx_p.topo {');
-    L('      case 1u: { j = 2u * p + k; }');
-    L('      case 2u: { j = p + k; }');
-    L('      case 3u: { j = 3u * p + k; }');
-    L('      case 4u: { j = p + select(select(2u - (p & 1u), 1u + (p & 1u), k == 1u), 0u, k == 0u); }');
-    L('      case 5u: { j = select(p + 1u + k, 0u, k == 2u); }');
-    L('      default: {}');
-    L('    }');
-    L('    let vid = wgx_vertex(j); let iid = wgx_p.firstInstance + inst;');
-    L(`    wg_vs(vid, iid${inputs ? ', wgx_fetch(vid, iid)' : ''});`);
-    for (const b of captured) {
-      L(`    let at${b} = wgx_p.xo${b} + wgx_o[${b}] / 4u + t * ${x.stride[b] >> 2}u;`);
-      for (let w = 0; w < 128; w++) if ((x.words[b][w >> 5] >>> (w & 31)) & 1) L(`    wgx_o[at${b} + ${w}u] = wg_xo[${x.base[b] + w}u];`);
-    }
+    L('    wgx_emit(t, wgx_vertex(wgx_j(p, k)), wgx_p.firstInstance + inst);');
     L('  }');
     L('}');
-    L(`@compute @workgroup_size(1) fn wgx_advance() { ${load} let fit = wgx_fit(); ${captured.map((b) => `wgx_o[${b}] = wgx_o[${b}] + fit * wgx_p.vpp * ${x.stride[b]}u;`).join(' ')} }`);
+    // The counters past what it wrote, and the primitives written and needed (transform feedback's queries, VK4 T45).
+    L(`@compute @workgroup_size(1) fn wgx_advance() { ${load} let fit = wgx_fit(); ${captured.map((b) => `wgx_o[${b}] = wgx_o[${b}] + fit * wgx_p.vpp * ${x.stride[b]}u;`).join(' ')} wgx_o[4] += fit; wgx_o[5] += wgx_prims() * wgx_p.instances; }`);
     // The driver made the capture only where its bindings fit (wg_bindings_fit); a WebGPU error here is still said.
     d.pushErrorScope('validation');
     const layout = d.createBindGroupLayout({ entries: XFB_ENTRIES[0] });
@@ -2670,6 +2761,44 @@ fn ix(k: u32) -> u32 {
       pass.end();
     }
     this.tickets[ticket] = { buffer: out, offset: at, size: most * words * 4, args: out, argsAt: at };
+  }
+
+  /**
+   * A draw by a byte count's arguments (wg_gpu.h `gpu_byte_count`, VK4 T45), in a compute pass outside the render pass:
+   * (the counter's u32 - `bias`) / `stride` vertices (none below the bias), `instances` from `firstInstance`, drawn by
+   * gpu_draw_indirect_ticket.
+   */
+  private byteCount(ticket: number, c: GPUBuffer, at: number, bias: number, stride: number, instances: number, firstInstance: number) {
+    const d = this.device!, enc = this.enc!;
+    let pipeline = this.metaComputes.get('byteCount');
+    if (!pipeline) {
+      const code = `struct P { at: u32, bias: u32, stride: u32, instances: u32, first: u32, pad0: u32, pad1: u32, pad2: u32 }
+@group(0) @binding(0) var<storage, read> c: array<u32>;
+@group(0) @binding(1) var<storage, read_write> o: array<u32, 4>;
+@group(0) @binding(2) var<uniform> p: P;
+@compute @workgroup_size(1) fn main() {
+  let n = c[p.at];
+  o = array<u32, 4>(select(0u, (n - p.bias) / p.stride, n >= p.bias), p.instances, 0u, p.first);
+}`;
+      const m = d.createShaderModule({ code });
+      pipeline = d.createComputePipeline({ layout: 'auto', compute: { module: m, entryPoint: 'main' } });
+      this.metaComputes.set('byteCount', pipeline);
+    }
+    const from = at - (at % 256);
+    const [out, oat] = this.scratch(STORAGE | INDIRECT | COPY_DST, 16);
+    const [u, uat] = this.scratch(UNIFORM | COPY_DST, 32);
+    d.queue.writeBuffer(u, uat, new Uint32Array([(at - from) / 4, bias, stride, instances, firstInstance, 0, 0, 0]));
+    const group = d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
+      { binding: 0, resource: { buffer: c, offset: from, size: at - from + 4 } },
+      { binding: 1, resource: { buffer: out, offset: oat, size: 16 } },
+      { binding: 2, resource: { buffer: u, offset: uat, size: 32 } },
+    ] });
+    const pass = enc.beginComputePass();
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, group);
+    pass.dispatchWorkgroups(1);
+    pass.end();
+    this.tickets[ticket] = { buffer: out, offset: oat, size: 16, args: out, argsAt: oat };
   }
 
   /**
@@ -3228,7 +3357,10 @@ export function bitsBetween(from: string, to: string, fromPacked?: number[], toP
 }
 
 /** Whether a render pass's capture jobs end in a capture still open: a cut of the pass divides it (VK4 R3, the review's R5). */
-export const xfbOpen = (jobs: { op?: unknown }[]) => jobs.findLast((j) => j.op !== 'draw')?.op === 'begin';
+export const xfbOpen = (jobs: { op?: unknown }[]) => {
+  const i = jobs.findLastIndex((j) => j.op === 'begin' || j.op === 'end');
+  return i >= 0 && jobs[i].op === 'begin' ? i : -1;
+};
 
 /** A render pass's capture (`runXfb`): its buffers' places in `out` (by word; the counters its first 4). */
 type XfbSession = { bufs: ({ guest: GPUBuffer; at: number; size: number; word: number } | null)[]; out: GPUBuffer };
@@ -3428,5 +3560,5 @@ function sampleKind(f: string): 'f32' | 'u32' | 'i32' {
 const IMPORTS = ['gpu_create', 'gpu_shader', 'gpu_destroy', 'gpu_grow', 'gpu_write', 'gpu_dirty', 'gpu_encoder', 'gpu_copy_bb', 'gpu_copy_bt', 'gpu_copy_tb', 'gpu_copy_tt', 'gpu_fill',
   'gpu_update', 'gpu_blit', 'gpu_render_pass', 'gpu_compute_pass', 'gpu_pass_end', 'gpu_set_pipeline', 'gpu_pull_buffer', 'gpu_pull_bind', 'gpu_set_bind_group', 'gpu_set_vertex_buffer',
   'gpu_set_index_buffer', 'gpu_set_viewport', 'gpu_set_scissor', 'gpu_set_blend_constant', 'gpu_set_stencil_reference', 'gpu_set_immediates', 'gpu_draw',
-  'gpu_draw_indexed', 'gpu_draw_indirect', 'gpu_provoke', 'gpu_draw_ticket', 'gpu_fan_indirect', 'gpu_draw_ticket_indirect', 'gpu_indirect_count', 'gpu_draw_indirect_ticket', 'gpu_xfb', 'gpu_vs_prepass', 'gpu_vs_draw', 'gpu_dispatch', 'gpu_dispatch_indirect', 'gpu_clear_rects', 'gpu_begin_occlusion', 'gpu_end_occlusion',
+  'gpu_draw_indexed', 'gpu_draw_indirect', 'gpu_provoke', 'gpu_draw_ticket', 'gpu_fan_indirect', 'gpu_draw_ticket_indirect', 'gpu_indirect_count', 'gpu_draw_indirect_ticket', 'gpu_byte_count', 'gpu_xfb', 'gpu_vs_prepass', 'gpu_vs_draw', 'gpu_dispatch', 'gpu_dispatch_indirect', 'gpu_clear_rects', 'gpu_begin_occlusion', 'gpu_end_occlusion',
   'gpu_resolve_queries', 'gpu_query_add', 'gpu_readback', 'gpu_submit', 'gpu_readback_copy', 'gpu_texture_import', 'gpu_translated', 'gpu_cache_get', 'gpu_cache_read', 'gpu_cache_put'];

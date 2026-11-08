@@ -758,22 +758,28 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   dev VM's; `CHROMIUM_ARGS="--enable-unsafe-webgpu --enable-features=Vulkan"` for the host's side.
 - **ANGLE's row's gaps** (VK3 L7.4; vk/README.md "The shader path", "Commands"), each for when a program or dEQP-VK
   needs it:
-  - **Transform feedback**: queries (`transformFeedbackQueries`: `VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT`, ES3's
-    `TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN` through ANGLE; the advance dispatch knows the primitives written and
-    needed, a query's two values would be its sums), `vkCmdDrawIndirectByteCountEXT` (`transformFeedbackDraw`),
-    primitive restart in a captured draw (captured without restarts, warned), streams past 0,
-    `transformFeedbackPreservesProvokingVertex` (the records in Vulkan's order whatever the provoking vertex:
-    `rasterization.provoking_vertex.transform_feedback.*` not supported), 16-bit outputs, records past 512 bytes (a
-    program of four bind groups is captured since VK4 T40, its capture's bindings in a copy of group 3), and `gl_ClipDistance`'s capture (`transform_feedback.simple.xfb_clipdistance_*`: the 8th
-    distance reads 0). Each captured draw is a compute pass of its own with a copy of its index and vertex ranges (VK3 L7a: one storage
+  - **Transform feedback** (queries, draws by a byte count, restarts, the provoking vertex's order and gl_PointSize's
+    capture since VK4 T45; vk/README.md "Commands"): streams past 0 (and so `geometryStreams`; dEQP's query cases all
+    need geometry shaders, so the queries are proven by the driver's tests and ANGLE's ES3 page only), 16-bit outputs,
+    records past 512 bytes (`maxTransformFeedbackBufferDataSize`: NIR's offsets reach 1 KiB, `wgsl_info.xfb_words`
+    holds 512 bytes; unreachable but through padded strides, as 64 output components fill 256 bytes, so not raised),
+    `VK_EXT_primitives_generated_query` (107,866 dEQP cases, most needing geometry shaders: it counts every draw's
+    primitives, captured or not, which the captures' counts don't cover: each draw would need its count, the CPU's
+    or an indirect one's on the GPU). A captured indexed draw with primitive restart runs in one invocation (`wgx_serial`):
+    fine for dEQP's few vertices, slow for a large one (unmeasured; no program met). Each captured draw is a compute
+    pass of its own with a copy of its index and vertex ranges (VK3 L7a: one storage
     binding for them all), and a copy of each bound range in and out per capture: fine for dEQP's sizes, not measured
     on a real program. An indexed or indirect captured draw copies its vertex bindings whole from their offsets (an
     indirect one its index range too: the CPU knows neither the indices nor the count), so one past
     `maxStorageBufferBindingSize` (a big shared vertex buffer bound whole) is skipped with a warning (VK3 L8a, the
     track-end review's finding 2, which fixed a direct draw's index range); bounding them would take the indices'
-    range from a compute pass first, or a capture that reads the vertex buffers through bindings of their own.
-  - **The provoking vertex**: indirect draws whose last vertex provokes (drawn as they are, warned; a pass would write
-    their indices and arguments), adjacency topologies (not supported), and a compute pass and a scratch range per such
+    range from a compute pass first, or a capture that reads the vertex buffers through bindings of their own (left by
+    VK4 T45: no program met it, and either way is a pass of its own per draw). A draw-indirect-count under transform
+    feedback is captured a record at a time (each capture reading the count: `maxDrawCount` compute passes), and a
+    triangle fan drawn by a byte count isn't drawn (said once; neither met by a program).
+  - **The provoking vertex**: indirect draws whose last vertex provokes, and draws by a byte count (drawn as they are,
+    warned; a pass would write their indices and arguments from the GPU's count: `provoke` sizes its list on the CPU;
+    left by VK4 T45, no program met one: ANGLE draws flat varyings directly), adjacency topologies (not supported), and a compute pass and a scratch range per such
     draw (ANGLE draws with flat varyings only where a shader has them: not measured).
   - **ANGLE with Chromium's own Vulkan device too** (`--use-angle=vulkan --enable-features=Vulkan` in the desktop
     guest; bench/vulkan/angle/es3.html through `PAGE=… bench/vulkan/dawn-frames.ts guest`, results/vk3/l74/): its 24
@@ -945,9 +951,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     tiler's cost, not its results: `wg_compute_based`, the review's C7); a browser without `texture-component-swizzle` ignores mappings, said once
     (a fallback needs `texelFetch` keyed too, and every Chromium backend has the feature); the variants' compile on a
     program's first draw with such a sampler is unmeasured (no replayed program meets one).
-  - **Multi-draw's leftovers** (VK4 T26; vk/README.md "Commands"): a draw-indirect-count of a triangle fan or under
-    transform feedback isn't drawn, said once (the fan's pre-pass and the capture read each record as it is; neither
-    met); an indirect op's draws are replayed one by one (a draw, and with draw parameters a 256-byte place of the push
+  - **Multi-draw's leftovers** (VK4 T26; vk/README.md "Commands"): a draw-indirect-count of a triangle fan isn't
+    drawn, said once (the fan's pre-pass reads each record as it is; not met; under transform feedback it is since VK4
+    T45); an indirect op's draws are replayed one by one (a draw, and with draw parameters a 256-byte place of the push
     buffer, each: `maxDrawIndirectCount` is Vulkan's least with the feature, 65,536), and a count's records go through a
     compute pass before the render pass, so a program drawing thousands a frame (vkd3d's ExecuteIndirect) pays per
     record: unmeasured, no replayed program has one.
@@ -1112,7 +1118,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Vertex stages that store's leftovers** (VK4 T33; vk/README.md "Vertex stages that store"): such a draw cuts its
     render pass and runs the stage as compute before it (`vs_prepass`), so each costs a pass's store and load (bench/
     vulkan/REPORT.md "VK4 T33": fine for dEQP-VK's and a program's few, not for thousands a frame). Not drawn: an
-    indirect draw of such a stage (said once; its counts are on the GPU: VK4-KICKOFF.md T45). A transform feedback
+    indirect draw of such a stage (said once; its counts are on the GPU, and `vsPrepass` sizes its records on the CPU:
+    a pre-pass taking the most the binding allows and the GPU's count would do; left by VK4 T45, no program met one). A transform feedback
     capture of such a stage is dropped (said: the capture's pass would run it again). Refused: outputs past WebGPU's
     16 vertex attributes (four words an attribute), a fragment stage reading storage the vertex stage writes (one
     layout entry, two accesses), and stages past WebGPU's bindings with the pre-pass's one (its parameters, inputs and

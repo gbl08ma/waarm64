@@ -202,7 +202,7 @@ driver knows such a program by its push buffer's size past 128 ("Commands").
 a matrix's or array's slot offset into its location: the pass matches by location), and the printer copies each
 captured component's bits into `var<private> wg_xo`, the vertex's record (each buffer's from `xfb_base[b]`, its stride
 and written words in `wgsl_info`). The driver's compute pass ("The driver") calls `wg_vs` and writes the record out.
-32-bit outputs only, records up to 512 bytes.
+32-bit outputs only, records up to 512 bytes; gl_PointSize captured too (VK4 T45: kept on its store for the capture alone).
 
 **Vertex stages that store** (VK4 T33, `vertexPipelineStoresAndAtomics`): WebGPU refuses writable storage reached from
 a vertex entry point, and the module that has one, so a vertex stage that writes a storage buffer or image or does
@@ -1018,8 +1018,9 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   (`drawIndirectCount`, `VK_KHR_draw_indirect_count`) is drawn as `maxDrawCount` records from a ticket of the worker's:
   a compute pass before the render pass copies them packed and zeroes those past the count (`gpu_indirect_count`,
   web/venus-gpu.ts `indirectCount`; a record the binding can't reach is zeros too), and each is an indirect draw of
-  its copy (`gpu_draw_indirect_ticket`). One of a triangle fan or under transform feedback isn't drawn (said once).
-- **Transform feedback** (VK3 L7.4; one stream, `transformFeedbackQueries` and `transformFeedbackDraw` off): Vulkan
+  its copy (`gpu_draw_indirect_ticket`). One of a triangle fan isn't drawn (said once); one under transform feedback is
+  captured a record at a time, each record's capture reading the count and capturing nothing past it (VK4 T45).
+- **Transform feedback** (VK3 L7.4; one stream; queries and draws by a byte count since VK4 T45): Vulkan
   reads no vertex captured in a render pass before the pass ends, and a capture's begin and end are inside one, so the
   capture runs after its pass (`gpu_xfb`'s jobs, run at the worker's pass end, `runXfb`): no break, no pre-pass. A
   begin copies its counters (bytes written a buffer) and each bound buffer's range into one buffer of the worker's (a
@@ -1041,7 +1042,24 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   rasterizes nothing (rasterizer discard, both faces culled) records its state for the capture alone (`xfb_record`).
   An indirect draw is captured too (VK3 L7b: it wasn't): its arguments copied over the capture's parameters on the GPU,
   its index buffer and vertex bindings taken whole, its primitives counted in the shader (`wgx_prims`), 1,024
-  workgroups looping over them. Host-visible buffers and counters are read back after the submit.
+  workgroups looping over them. Host-visible buffers and counters are read back after the submit. A captured indexed
+  draw with primitive restart (VK4 T45) is walked by one invocation, segment by segment (`wgx_serial`: restarts are
+  rare in captures, and the walk is what knows each primitive's place); a strip's or fan's records follow the provoking
+  vertex where the last provokes (`wgx_j`: `transformFeedbackPreservesProvokingVertex`, fans' too), and gl_PointSize,
+  which WebGPU has no place for, is kept for its capture alone (wgsl_nir.c `remove_unsupported_outputs`).
+  **Queries** (VK4 T45, `transformFeedbackQueries`: `VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT`, ES3's
+  `TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN` through ANGLE): each capture's advance dispatch adds the primitives it wrote
+  and needed to two words of the worker's (`xfbCounts`, the session's words 4 and 5 while it's open); a query's begin
+  and end are jobs among the captures' in the queue's order (outside a render pass, at once): the begin copies the two
+  words to the pool's buffer (past its results, 8 bytes a query), the end writes their difference since as its two
+  64-bit values (`xfbQuery`, a dispatch), which copies, readbacks and vkGetQueryPoolResults take as an occlusion
+  query's (the pool's `vals`: two values a query). **Draws by a byte count** (VK4 T45, `transformFeedbackDraw`,
+  vkCmdDrawIndirectByteCountEXT): their arguments, (counter - offset) / stride vertices, written by a dispatch before
+  the render pass (`gpu_byte_count`: a ticket, as a draw-indirect-count's), or, where a capture earlier in the pass
+  ended writing a counter (Vulkan's barrier inside the pass), in a cut of the pass at the draw (`byte_count_cut`: the
+  WebGPU pass ended runs the captures closed so far, `endPass`, then the arguments, then the pass begun again; the pass
+  begun storing its attachments for it, `pass_byte_count_cut`); a captured one reads the counter in its capture
+  (`wgx_load`). A triangle fan drawn by a byte count isn't drawn (said once: its indices would come from arguments).
 - **Vertex stages that store** (VK4 T33; "The shader path"): a draw whose program's vertex stage writes storage cuts its
   render pass (begun storing every attachment, as for `dst_copies`: `pass_vs_stores`, secondaries' too). After the
   draw's state is applied, `vs_prepass` ends the WebGPU pass and the worker runs the stage as compute for the draw's

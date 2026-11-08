@@ -1,7 +1,8 @@
 <!doctype html>
 <!-- VK3 L7.4: ANGLE's ES3 row's program, a WebGL2 page for the guest's Chromium (bench/vulkan/dawn-frames.ts guest with
      PAGE=bench/vulkan/angle/es3.html): its renderer, ES3's limits, a flat varying from the last vertex (GL's
-     convention), transform feedback and 13 uniform blocks a stage, each logged as "dawn: <what> <value>". -->
+     convention), transform feedback and 13 uniform blocks a stage, each logged as "dawn: <what> <value>";
+     VK4 T45: the capture's TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN query (Venus's transform feedback queries), "xfbq 4". -->
 <meta charset="utf-8">
 <canvas id="c" width="64" height="64"></canvas>
 <script>
@@ -50,9 +51,12 @@ try {
   gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, tf);
   gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, buf);
   gl.enable(gl.RASTERIZER_DISCARD);
+  const query = gl.createQuery();
+  gl.beginQuery(gl.TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, query);
   gl.beginTransformFeedback(gl.POINTS);
   gl.drawArrays(gl.POINTS, 0, 4);
   gl.endTransformFeedback();
+  gl.endQuery(gl.TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN);
   gl.disable(gl.RASTERIZER_DISCARD);
   gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
   const got = new Float32Array(16);
@@ -81,7 +85,20 @@ try {
   gl.readPixels(32, 32, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
   log(`ubo ${[...px].join(',')}`);
   log(`glerror ${gl.getError()}`);
-  log('done');
+  // The query's result once available (a later frame's).
+  let frames = 0;
+  const poll = () => {
+    if (gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE)) {
+      log(`xfbq ${gl.getQueryParameter(query, gl.QUERY_RESULT)}`);
+      log('done');
+    } else if (++frames > 600) {
+      log('xfbq unavailable');
+      log('done');
+    } else {
+      requestAnimationFrame(poll);
+    }
+  };
+  requestAnimationFrame(poll);
 } catch (e) {
   log(`failed ${e}`);
 }

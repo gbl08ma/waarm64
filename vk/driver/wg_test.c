@@ -2007,6 +2007,13 @@ wgt_scope(uint32_t mask, const uint32_t *vs, uint32_t vs_words, const uint32_t *
  * 9: as 0, the vertices bound at byte 2 of a buffer of their own (pulled from a storage binding).
  * VK4 T40:
  * 10: as 0, `vs` t40/xfb-four.vert (a draw parameter read: the push buffer in group 3, four bind groups).
+ * VK4 T45:
+ * 11: as 0, then in a second render pass a draw by the counter's byte count (stride 32: the 6 vertices again) captured
+ *     at 1024, its counter at 2052;
+ * 12: as 11, both in one render pass (the second capture's count is the first's counter, written in the pass).
+ * 13: as 1 inside a transform feedback query (begun and ended in the pass): its results copied to 3072 (64-bit, with
+ *     availability: 1 written, 2 needed, 1) and 3104 (32-bit, the same);
+ * 14: as 3 inside a query begun before the render pass and ended after it: its results at 3072 and 3104 (2, 2, 1).
  */
 static struct {
    VkFence fence;
@@ -2026,7 +2033,9 @@ wgt_xfb(uint32_t scenario, const uint32_t *vs, uint32_t vs_words)
       (PFN_vkCmdBeginTransformFeedbackEXT)GetDeviceProcAddr(dev, "vkCmdBeginTransformFeedbackEXT");
    PFN_vkCmdEndTransformFeedbackEXT End =
       (PFN_vkCmdEndTransformFeedbackEXT)GetDeviceProcAddr(dev, "vkCmdEndTransformFeedbackEXT");
-   if (!Bind || !Begin || !End) {
+   PFN_vkCmdDrawIndirectByteCountEXT ByteCount =
+      (PFN_vkCmdDrawIndirectByteCountEXT)GetDeviceProcAddr(dev, "vkCmdDrawIndirectByteCountEXT");
+   if (!Bind || !Begin || !End || !ByteCount) {
       snprintf(error, sizeof(error), "no transform feedback entry points");
       return 1;
    }
@@ -2102,7 +2111,16 @@ wgt_xfb(uint32_t scenario, const uint32_t *vs, uint32_t vs_words)
    const VkRenderPassBeginInfo rbi = { .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, .renderPass = scene.rp,
                                        .framebuffer = scene.fb, .renderArea = { { 0, 0 }, { scene.w, scene.h } },
                                        .clearValueCount = 2, .pClearValues = clears };
-   const VkDeviceSize zero = 0, size = scenario == 1 ? 160 : 1024, counter_at = 2048;
+   const VkDeviceSize zero = 0, size = scenario == 1 || scenario == 13 ? 160 : 1024, counter_at = 2048;
+   VkQueryPool qp = VK_NULL_HANDLE;
+   if (scenario == 13 || scenario == 14) {
+      const VkQueryPoolCreateInfo qi = { .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+                                         .queryType = VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT, .queryCount = 2 };
+      CHECK(CreateQueryPool(dev, &qi, NULL, &qp));
+      CmdResetQueryPool(cmd, qp, 0, 2);
+   }
+   if (scenario == 14)
+      CmdBeginQuery(cmd, qp, 1, 0);
    if (scenario == 8) {
       static PFN_vkCmdBeginRendering BeginRendering;
       static PFN_vkCmdEndRendering EndRendering;
@@ -2177,7 +2195,9 @@ wgt_xfb(uint32_t scenario, const uint32_t *vs, uint32_t vs_words)
    } else {
       Bind(cmd, 0, 1, &out, &zero, &size);
    }
-   if (scenario == 3) {
+   if (scenario == 13)
+      CmdBeginQuery(cmd, qp, 1, 0);
+   if (scenario == 3 || scenario == 14) {
       Begin(cmd, 0, 0, NULL, NULL);
       CmdDraw(cmd, 3, 1, 0, 0);
       End(cmd, 0, 1, &out, &counter_at);
@@ -2196,10 +2216,33 @@ wgt_xfb(uint32_t scenario, const uint32_t *vs, uint32_t vs_words)
       CmdDraw(cmd, scenario == 2 ? 4 : 6, 1, 0, 0);
    }
    End(cmd, 0, 1, &out, &counter_at);
+   if (scenario == 11 || scenario == 12) {
+      if (scenario == 11) {
+         CmdEndRenderPass(cmd);
+         CmdBeginRenderPass(cmd, &rbi, VK_SUBPASS_CONTENTS_INLINE);
+         CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+         CmdSetViewport(cmd, 0, 1, &viewport);
+         CmdSetScissor(cmd, 0, 1, &scissor);
+         CmdBindVertexBuffers(cmd, 0, 1, &scene.vertices, &zero);
+      }
+      const VkDeviceSize second = 1024, second_counter = 2052;
+      Bind(cmd, 0, 1, &out, &second, &size);
+      Begin(cmd, 0, 0, NULL, NULL);
+      ByteCount(cmd, 1, 0, out, counter_at, 0, 32);
+      End(cmd, 0, 1, &out, &second_counter);
+   }
+   if (scenario == 13)
+      CmdEndQuery(cmd, qp, 1);
    if (scenario == 7)
       EndRendering(cmd);
    else
       CmdEndRenderPass(cmd);
+   if (scenario == 14)
+      CmdEndQuery(cmd, qp, 1);
+   if (qp) {
+      CmdCopyQueryPoolResults(cmd, qp, 1, 1, out, 3072, 24, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+      CmdCopyQueryPoolResults(cmd, qp, 1, 1, out, 3104, 12, VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+   }
    CHECK(EndCommandBuffer(cmd));
    const VkSubmitInfo submit = { .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1,
                                  .pCommandBuffers = &cmd };

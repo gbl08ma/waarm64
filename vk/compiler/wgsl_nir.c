@@ -766,6 +766,14 @@ remove_unsupported_outputs(nir_builder *b, nir_intrinsic_instr *intr, void *data
    const unsigned slot = nir_intrinsic_io_semantics(intr).location;
    if (slot != VARYING_SLOT_PSIZ && slot != VARYING_SLOT_VIEWPORT && slot != VARYING_SLOT_PRIMITIVE_ID)
       return false;
+   /* One that transform feedback captures (gl_PointSize: VK4 T45) stays for the capture alone (wgsl_print.c
+    * `emit_output`). */
+   if (nir_intrinsic_has_io_xfb(intr)) {
+      const nir_io_xfb x = nir_intrinsic_io_xfb(intr);
+      for (unsigned k = 0; k < 4; k++)
+         if (x.out[k].num_components)
+            return false;
+   }
    nir_instr_remove(&intr->instr);
    return true;
 }
