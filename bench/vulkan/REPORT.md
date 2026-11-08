@@ -793,6 +793,50 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` oth
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 T42: shaders' and samplers' wrong results — mixed-sign atomics, flat words, cube gathers and corners, depth's linear filter; 1,914 cases join the list
+
+2026-11-08, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). JSON in `results/vk4/t42/`.
+
+**What the items met.** Each was run first (dEQP-VK subsets by `CASES=`):
+- **Derivatives in non-uniform control flow and `umulExtended`** (looked into first): every `glsl.derivate` case
+  (1,674) and every `*mulextended` (50) passes on SwiftShader (`swiftshader-derivate-mulext.json`: 1,592 pass, 132 not
+  supported: 2-sample targets, `linear_vec8`, geometry and tessellation stages). VK2 L5's failures were fixed on the way
+  (VK4 T29's 64-bit integers for `umulExtended`). On the M4 (`m4-derivate-mulext.json`) the 1,554 not in the list:
+  1,284 pass, 0 fail, 270 not supported (`dynamic_*` and `*subgroup*`: dEQP wants quad subgroup operations there, and
+  the Mac's subgroups are held since VK3 L5). The 1,554 join the list.
+- **Signed and unsigned atomic min or max on one array** (refused): an array that needs both is `atomic<i32>`, its
+  unsigned ones a compare-exchange loop. No dEQP-VK case meets it (`glsl.atomic_operations` keeps one variable a case);
+  the translator test runs 64 invocations' four folds into shared memory and a buffer.
+- **Flat varyings of mixed types at one location**: a flat location now travels as `u32` words. The test (SPIR-V
+  assembly: GLSL refuses the aliasing nir_opt_varyings makes) showed an int's bits through an `f32` varying, and a
+  vertex stage whose int and float stores at one location gave it an interpolated `f32` output.
+- **A depth texture's linear mip blend at an explicit LOD**: already right through a key since VK4 R5 (the test,
+  written to fail first, passed); the printer's nearest level is the keyless module's, never drawn with.
+- **Gathers of a cube bound as its faces** (a shadow cube past level 0, a non-seamless or reduced sampler, a padded
+  image, an integer cube also sampled: each refused) come from the faces' fetches; **a seamless cube's corner** in those
+  fetches (a linear footprint's or a gather's texel past both edges) is the other three's average (OpenGL's
+  recommendation; Vulkan leaves it to the implementation and dEQP's gather cases skip corners: no case moved). The
+  tests' corner values were chosen so the face's texel and the average differ (a first choice coincided), and a
+  planted bug (no average) failed both.
+- **Depth formats' linear filter** (the min/max entry's "backing depth"): a depth view sampled through a linear sampler
+  without a comparison is filtered from fetches (`fetched` in the pair's key, the binding the sampler's nearest twin),
+  and depth formats report `SAMPLED_IMAGE_FILTER_LINEAR`. `swiftshader-depth-linear.json`: 1,681 cases (every depth
+  case of the main list with `linear` in its name, and every third of the list's depth sampler, shadow, gather and
+  min/max cases): 1,294 pass, 0 fail, 387 not supported (3D depth views, separate stencil usage, sparse); 360 not in the
+  list, all passing on the M4 too (`m4-depth-and-sample.json`), join it.
+- **The f16 vector's `if` tree past Tint's 127** (Mac only: SwiftShader has no `shader-f16`): 7
+  `float16.opvectorshuffle` cases on the M4 (`m4-f16-shuffle.json`) all fail, every stage refused by Tint at 64 levels
+  of `if`; a GLSL switch of 140 cases prints flat, so it wasn't reproduced without the stage's own SPIR-V. Filed.
+
+**The list**: 68,941 → 70,852 (the 1,554 and the 360 join; the 3 M4 cases out).
+
+**Regressions.** SwiftShader: the list's cube cases and every third of its other cube cases, all
+`texture_gather.*cube*` and its flat and interpolation cases (4,993, two halves: `swiftshader-regression-*.json`) fail
+only where they did before (67 compute cube gathers: backlog "What the device advertises, left for the translator").
+The M4, a quarter of it with the 360: 3 `robustness.image_robustness` storage-image cube cases fail, the same with the
+renderer before T42 (`m4-robustness-before.json`): the M4's own, out of the list.
+
 ## VK4 T41: device addresses at a program's scale — placed at a buffer's bind, regions past a binding, capture and replay; 2,196 cases join the list
 
 2026-11-08, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,

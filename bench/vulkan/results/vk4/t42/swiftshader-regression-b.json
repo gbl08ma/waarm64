@@ -1,0 +1,73 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "155.0.8059.84",
+ "stride": 50,
+ "offset": 0,
+ "jobs": 2,
+ "adapter": "google swiftshader",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 2493,
+ "seconds": 221.672718463,
+ "pipelines": {
+  "pipelines": 2962,
+  "ready": 2962,
+  "readyMs": 29588.024998426437,
+  "deferred": 5772,
+  "deferredMs": 43753.1949981451,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 2965,
+  "translateMs": 1066.7700000000013,
+  "cacheHits": 8462,
+  "cacheMisses": 1364,
+  "cacheStores": 1364,
+  "cacheBytes": 1912229,
+  "cacheHeld": 15827349,
+  "cacheEntries": 1364
+ },
+ "counts": {
+  "Pass": 2493
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.combined_image_sampler.image_type.cube_array.format.d24_unorm_s8_uint_stencil_read_dynamic_zero_static Pass 4",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.combined_image_sampler.image_type.cube_array.format.d16_unorm_s8_uint_stencil_read_dynamic_bad_static Pass 4",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d32_sfloat_s8_uint_stencil_read_dynamic_zero_static Pass 3",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d32_sfloat_s8_uint_stencil_read Pass 3",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d32_sfloat_s8_uint_depth_read_dynamic_bad_static Pass 3",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d24_unorm_s8_uint_stencil_read_dynamic_zero_static Pass 3",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d24_unorm_s8_uint_stencil_read_dynamic_bad_static Pass 3",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d24_unorm_s8_uint_stencil_read Pass 3",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d24_unorm_s8_uint_depth_read_dynamic_bad_static Pass 3",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d16_unorm_s8_uint_stencil_read_dynamic_zero_static Pass 3"
+ ],
+ "last": "dEQP-VK.subgroups.size_control.compute.allow_varying_subgroup_size Pass 0dEQP-VK.subgroups.size_control.compute.require_full_subgroups_allow_varying_subgroup_size Pass 1dEQP-VK.subgroups.size_control.graphics.allow_varying_subgroup_size Pass 0",
+ "output": [
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!",
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    1.159655] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    1.159690] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    1.159715] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    1.159745] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    1.159775] psci_checker: Could not start suspend tests on any CPU",
+  "[   11.941450] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   29.000367] coredump: 425(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 191.8,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 43.2,
+  "arenaHighMiB": 175.3
+ },
+ "detail": [],
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1
+ }
+}

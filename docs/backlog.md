@@ -666,7 +666,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   beside each ballot in an `if`), then lift the hold where the check passes. On the Mac with `shader-f16`, 226 of 233
   sampled `spirv_assembly.*.float16` cases pass: 6 fail on 16-bit infinities and NaNs (WGSL lets a backend assume
   none: values come back 0) and one graphics shuffle's WGSL nests ifs past Tint's 127 (an indexed f16 vector's `if`
-  tree). The per-stage descriptor limits follow one count of what WebGPU takes since VK3 L7a ("Bindings past
+  tree). VK4 T42 ran 7 `float16.opvectorshuffle` cases on the M4 (`results/vk4/t42/m4-f16-shuffle.json`): all fail, every
+  stage refused by Tint ("statement nesting depth / chaining length exceeds limit of 127", a `let` at 64 levels of
+  `if`), compute and graphics alike. Not reproduced off the Mac: a GLSL switch of 140 cases prints flat (NIR's switch is
+  a run of ifs, not a chain), and the cases' SPIR-V is dEQP's own, built at run time (no CTS source here); the next step
+  is the stage's WGSL whole (the worker's warning keeps 400 lines, the run's log a line of them) or its SPIR-V from
+  the guest, then a flat print of what nests (the tree's leaves as a `switch`). The per-stage descriptor limits follow one count of what WebGPU takes since VK3 L7a ("Bindings past
   WebGPU's" below).
 - **YCbCr's gaps** (VK3 L7.2; vk/README.md "YCbCr conversions"; on by default since L7.3, `?gpu=vkycbcr=off`): only the 8-bit multi-planar formats (2- and 3-plane 420, 422, 444): WebGPU's 16-bit normalized formats
   (tier1's) are unfilterable, so P010 and the 10-, 12- and 16-bit formats would need a nearest-only offer or filtering
@@ -838,9 +843,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     share.
   - **Compressed images that aren't whole blocks' leftovers** (VK4 T18; vk/README.md "Samplers in the shader"): each
     size of such an image a program samples is a variant of its program (the size is in the key; a texture's real size
-    can't tell it, a uniform would cost a binding); a padded cube's gather is refused; anisotropy is lost on them; the
-    shader's filter's cost on a program is unmeasured (none replayed has such an image). A corner of the cube's seam
-    takes one face's texel, not Vulkan's three. `texture-compression-unaligned`, if Chromium ships it, replaces all of
+    can't tell it, a uniform would cost a binding); anisotropy is lost on them; the
+    shader's filter's cost on a program is unmeasured (none replayed has such an image). `texture-compression-unaligned`, if Chromium ships it, replaces all of
     it (`padded` false).
   - **Copies WebGPU refuses**, what VK4 T10 left: a multisampled copy between formats of a block's size goes through a shader that
     carries the bits (VK4 R4, `bitsBetween` in web/venus-gpu.ts), for 8-, 16- and 32-bit channels of unorm, uint, sint and
@@ -930,15 +934,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Samplers' leftovers** (VK4 T8, T9; vk/README.md "Samplers in the shader"): a border on a view of several levels, a
     shadow sample past level 0 and a mirror-once with an offset pick their levels in the shader, so those samples lose
     anisotropy; a texture of one level sampled at a LOD past 0 through a sampler whose mag and min filters differ reads the
-    mag filter (WGSL's compare is at level 0); `textureQueryLod` ignores anisotropy; a shadow cube's filter past a corner
-    of three faces takes the two nearest; a depth texture sampled without a comparison in a stage that doesn't compare it
-    picks the nearest level at an explicit LOD (a linear mip filter's blend is lost, WebGPU filtering no depth); a gather of a shadow cube bound as its faces
-    is refused, as is a gather of a cube through a non-seamless sampler with a linear filter (VK4 T28), and a
-    comparison through one is seamless (`texture.shadow.cube*.non_seamless*` aren't supported for other reasons);
+    mag filter (WGSL's compare is at level 0); `textureQueryLod` ignores anisotropy; a cube's corner (VK4 T42: the
+    other three texels' average) holds only in samples from its faces' fetches, WebGPU's own cube samples doing what the
+    adapter does (Vulkan leaves it to the implementation; dEQP's gather cases skip corners); a comparison through a
+    non-seamless sampler with a nearest filter is seamless (`texture.shadow.cube*.non_seamless*` aren't supported for other reasons);
     a cube sampled with nearest filters, a nearest or linear mipmap and U at clamp-to-border fails on SwiftShader,
     seamless or not (50 of VK4 T28's `filtering.cube.combinations` non-seamless cases and their seamless twins: WebGPU's
-    own sample, not the fetches); an integer cube both sampled and gathered is refused (its
-    one binding can't be both; none seen); each base of `vkCmdDispatchBase` is a compute pipeline, never evicted (a
+    own sample, not the fetches); each base of `vkCmdDispatchBase` is a compute pipeline, never evicted (a
     tiler's cost, not its results: `wg_compute_based`, the review's C7); a browser without `texture-component-swizzle` ignores mappings, said once
     (a fallback needs `texelFetch` keyed too, and every Chromium backend has the feature); the variants' compile on a
     program's first draw with such a sampler is unmeasured (no replayed program meets one).
@@ -950,11 +952,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     record: unmeasured, no replayed program has one.
   - **Min/max reductions' leftovers** (VK4 T25; vk/README.md "Samplers in the shader"): a reduced sample comes from
     fetches, so it loses anisotropy and costs ~3.5× WebGPU's sample on the M4 (no replayed program has one; vkd3d's 12_0
-    asks for the feature); a gather of a cube a reduced sample binds as its faces is refused, as for other faced cubes;
-    depth formats have no `FILTER_LINEAR` (WebGPU filters depth only by comparing), so a linear reduction of one runs but
-    dEQP's checks for linear filtering keep 5 of the census's cases out on both hosts (the M4 2 more, its 16-bit normalized
-    formats unfilterable there; backing depth's means every linear depth sample
-    from fetches). The census's 195 `filterMinmaxImageComponentMapping` cases are dEQP's own refusal: it throws
+    asks for the feature); the M4's 16-bit normalized formats are unfilterable there, which keeps 2 of the census's
+    linear-filtering cases out on it (depth formats report `FILTER_LINEAR` since VK4 T42, their linear samples from
+    fetches). The census's 195 `filterMinmaxImageComponentMapping` cases are dEQP's own refusal: it throws
     NotSupported for any reduction whose R mapping isn't identity, whatever the property says.
   - **SwiftShader's fetch from a view with a base level** (VK4 T8): `textureLoad` at a view's level 0 reads the level
     after it (a 16×16 image's view from level 2 reads level 3's texels, zeros past its size; level 1 reads right), where
@@ -972,12 +972,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     check the limit; the M4 has 8). And `pipeline.monolithic.sampler.view_type.cube*` linear and average-reduced
     samples of `r8g8b8a8_snorm`, `r8g8b8a8_srgb` and their VK4 T31 twins (`b8g8r8_snorm`, `r8g8_srgb`) in a compute
     stage (4 of T31's sample and their 4 twins: "Image mismatch"; the M4 passes them).
-  - **Shaders**: derivatives in non-uniform control flow
-    (`glsl.derivate.*dynamic_if`); `umulExtended`. From the out-of-context review of the translator (VK3 L4f left them):
-    signed and unsigned atomic min or max on one array (refused: WGSL's atomics have one
-    type; shared memory is one array); flat
-    varyings of 32-bit ints and floats that `nir_opt_varyings` packs into one location travel as the location's last
-    load's type (bit-exact unless a backend canonicalizes NaNs or flushes denormals in varyings: not seen, untested).
+  - **Shaders**: derivatives in non-uniform control flow (`glsl.derivate.*dynamic_*`) pass on SwiftShader (VK4 T42) and
+    aren't supported on the M4, where dEQP asks for quad subgroup operations and the Mac's subgroups are held (VK3 L5:
+    "What the device advertises, left for the translator").
   - **Queries** (occlusion queries count on the GPU since VK3 L6a: vk/README.md "The driver"): two queries active at once (Vulkan allows it across pools), one past slot 4,096, or
     one begun in a pass and cut by a WebGPU pass's end inside Vulkan's is reported as passing, warned once;
     `occlusionQueryPrecise` isn't advertised (WebGPU promises nonzero, not a count); the host's
@@ -1126,7 +1123,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     bitwise (Metal looks to canonicalize the format's bits on upload: unconfirmed; a texture of `r32uint` would keep them,
     and no program depends on non-canonical bits); every `depth_stencil_resolve.*_testing_stencil_samplemask` of
     D24S8 and D32S8 (the stencil reads 255 where 1 is right; 40 of VK4 T27's samples_4 run, SAMPLE_ZERO's and MIN's
-    alike, so the stencil's draws, not the mode). (`descriptorset_random.sets4`'s were bindings past WebGPU's, on SwiftShader too: "Texel buffers"
+    alike, so the stencil's draws, not the mode); 3 `robustness.image_robustness` storage-image cube cases (two
+    `rgba32f`/`rgba32ui` `cube_array.comp_compute`, one `rgba32i` `cube.vert`; VK4 T42's sample, the same with the renderer
+    before T42: `results/vk4/t42/m4-robustness-*.json`), out of the list since. (`descriptorset_random.sets4`'s were bindings past WebGPU's, on SwiftShader too: "Texel buffers"
     below; the multisampled 16-bit normalized passes, which WebGPU doesn't resolve, are drawn resolves since VK4 T21.)
   - **SwiftShader compiles zero-initialized workgroup memory slowly** (VK4 T2): Dawn zeroes it through Vulkan's
     `VK_KHR_zero_initialize_workgroup_memory`, which costs SwiftShader ~17 s per pipeline with a 16 KiB array (19 ms

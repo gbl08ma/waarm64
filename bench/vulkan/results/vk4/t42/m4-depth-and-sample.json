@@ -1,0 +1,88 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "157.0.8103.38",
+ "stride": 50,
+ "offset": 0,
+ "jobs": 1,
+ "adapter": "apple metal-3",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 1608,
+ "seconds": 219.962419042,
+ "pipelines": {
+  "pipelines": 2263,
+  "ready": 2263,
+  "readyMs": 40721.06000137329,
+  "deferred": 4042,
+  "deferredMs": 79416.26500165462,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 17236,
+  "translateMs": 975.0749999996569,
+  "cacheHits": 35590,
+  "cacheMisses": 1194,
+  "cacheStores": 1194,
+  "cacheBytes": 1116873,
+  "cacheHeld": 11389632,
+  "cacheEntries": 1194
+ },
+ "counts": {
+  "Fail": 3,
+  "NotSupported": 3,
+  "Pass": 1602
+ },
+ "notPassed": [
+  "dEQP-VK.glsl.texture_gather.graphics.basic.cube.rgba8.base_level.level_1_amd_bias NotSupported",
+  "dEQP-VK.glsl.texture_gather.graphics.basic.cube.rgba8.base_level.level_2_amd_lod NotSupported",
+  "dEQP-VK.glsl.texture_gather.graphics.basic.cube.rgba8i.base_level.level_2_amd_bias NotSupported",
+  "dEQP-VK.robustness.image_robustness.bind.notemplate.rgba32f.unroll.nonvolatile.storage_image.fmt_qual.img.samples_1.cube_array.comp_compute Fail",
+  "dEQP-VK.robustness.image_robustness.bind.notemplate.rgba32ui.unroll.nonvolatile.storage_image.fmt_qual.img.samples_1.cube_array.comp_compute Fail",
+  "dEQP-VK.robustness.image_robustness.push.notemplate.rgba32i.unroll.volatile.storage_image.no_fmt_qual.img.samples_1.cube.vert Fail"
+ ],
+ "slowest": [
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.combined_image_sampler.image_type.cube_array.format.d24_unorm_s8_uint_stencil_read Pass 4",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d32_sfloat_s8_uint_depth_read_dynamic_zero_static Pass 3",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d24_unorm_s8_uint_stencil_read Pass 3",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d16_unorm_s8_uint_stencil_read_dynamic_zero_static Pass 3",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.combined_image_sampler.image_type.cube_array.format.d16_unorm_s8_uint_stencil_read_dynamic_zero_static Pass 3",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.sampled_image.image_type.cube_array.format.d16_unorm_s8_uint_depth_read_dynamic_bad_static Pass 2",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.combined_image_sampler.image_type.cube_array.format.d32_sfloat_s8_uint_depth_read_dynamic_zero_static Pass 2",
+  "dEQP-VK.pipeline.monolithic.attachment_feedback_loop_layout.sampler.attachment_feedback_loop_optimal.combined_image_sampler.image_type.cube_array.format.d16_unorm_s8_uint_depth_read_dynamic_bad_static Pass 2",
+  "dEQP-VK.texture.shadow.cube_array.nearest_mipmap_nearest.not_equal_d24_unorm_s8_uint Pass 1",
+  "dEQP-VK.texture.shadow.cube_array.nearest_mipmap_nearest.non_seamless_less_or_equal_x8_d24_unorm_pack32 Pass 1"
+ ],
+ "last": "dEQP-VK.texture.shadow.cube_array.nearest_mipmap_nearest.non_seamless_less_or_equal_x8_d24_unorm_pack32 Pass 1dEQP-VK.texture.shadow.cube_array.nearest_mipmap_nearest.non_seamless_not_equal_d16_unorm Pass 0dEQP-VK.texture.shadow.cube_array.nearest_mipmap_nearest.not_equal_d24_unorm_s8_uint Pass 1",
+ "output": [
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    1.036987] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    1.037032] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    1.037060] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    1.037082] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    1.037107] psci_checker: Could not start suspend tests on any CPU",
+  "[   10.501464] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   24.424390] coredump: 429(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 189.9,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 17.3,
+  "arenaHighMiB": 59.7
+ },
+ "detail": [
+  "== dEQP-VK.robustness.image_robustness.bind.notemplate.rgba32f.unroll.nonvolatile.storage_image.fmt_qual.img.samples_1.cube_array.comp_compute",
+  "<Result StatusCode=\"Fail\">Fail</Result>",
+  "== dEQP-VK.robustness.image_robustness.bind.notemplate.rgba32ui.unroll.nonvolatile.storage_image.fmt_qual.img.samples_1.cube_array.comp_compute",
+  "<Result StatusCode=\"Fail\">Fail</Result>",
+  "== dEQP-VK.robustness.image_robustness.push.notemplate.rgba32i.unroll.volatile.storage_image.no_fmt_qual.img.samples_1.cube.vert",
+  "<Result StatusCode=\"Fail\">Fail</Result>"
+ ],
+ "warnings": {
+  "venus: the WebGPU device's subgroups are wrong in divergent control flow: subgroups of one invocation": 1,
+  "venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies": 1
+ }
+}
