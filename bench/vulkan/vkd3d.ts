@@ -3,7 +3,8 @@
 // (target/vkd3d/vkd3d.ext4, made by `bench/vulkan/vkd3d.ts disk` in rootless Podman), installed at boot; then
 // D3D12CreateDevice at each feature level with vkd3d's warnings (bench/vulkan/REPORT.md "VK3 L7.5"); then, where the disk
 // has it, vkd3d's own Direct3D 12 tests (tests/d3d12 of vkd3d 1.19, built by `target/vkd3d/build-tests.sh` in an Arch
-// container: offscreen, no window) for each name in TESTS (comma-separated; VKD3D_TEST_FILTER matches a part of a name).
+// container: offscreen, no window) for each name in TESTS (comma-separated; VKD3D_TEST_FILTER matches a part of a name;
+// FAILED=<n> prints each one's first n failures and its summary instead).
 //   node bench/vulkan/vkd3d.ts disk
 //   CHROMIUM_ARGS="--enable-unsafe-webgpu --enable-features=Vulkan" node bench/vulkan/vkd3d.ts [image] [outdir]
 // TESTS=all runs the whole suite (LIMIT_S, default 1500), keeping its summary and failures by d3d12.c line; then
@@ -70,7 +71,10 @@ try {
     }
   }
   for (const name of (process.env.TESTS ?? '').split(',').filter((n) => n && n !== 'all')) {
-    const t = await s.run(`cd /tmp && VKD3D_TEST_FILTER=${name} timeout 120 /mnt/vkd3d/d3d12 > /tmp/t.txt 2>&1; echo "${name} rc=$?"; grep -v -e "Optional user instance extension" -e "^vkd3d:.*:warn:vkd3d_init" /tmp/t.txt | tail -8`, 180_000);
+    // FAILED=<n>: the test's first n failures (VK4 T47) and its summary, in place of its last lines (the console keeps
+    // a command's last bytes).
+    const first = Number(process.env.FAILED ?? 0);
+    const t = await s.run(`cd /tmp && VKD3D_TEST_FILTER=${name} timeout 120 /mnt/vkd3d/d3d12 > /tmp/t.txt 2>&1; echo "${name} rc=$?"; ${first ? `grep -m ${first} -e 'Test failed' -e 'err:' /tmp/t.txt | sed -e 's/Test failed: //' -e 's/^d3d12\\.c://' | cut -c1-140; tail -1 /tmp/t.txt` : `grep -v -e "Optional user instance extension" -e "^vkd3d:.*:warn:vkd3d_init" /tmp/t.txt | tail -8`}`, 180_000);
     console.log(t);
     tests.push(t);
   }

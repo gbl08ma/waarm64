@@ -793,26 +793,42 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - **Uniform buffers**: 13 a stage (WebGPU's 12, less the push buffer's, and 2 of the storage buffers); a layout's
     texel buffers take uniform bindings too (their parameters), which can push more uniform buffers into storage than
     the 2 the storage count gives up (refused at the pipeline's creation since VK3 L7a, saying why).
-- **vkd3d on Venus** (VK3 L7.5; bench/vulkan/vkd3d.ts, bench/vulkan/REPORT.md "VK3 L7.5"). With draw parameters, Arch's
-  vkd3d 1.19 makes a Direct3D 12 device at feature level 11_0 in the desktop guest (without them it stops at
-  `VK_KHR_shader_draw_parameters`); 11_1 and up are refused. What vkd3d says 11_0 lacks (it makes the device anyway):
-  `maxPushConstantsSize` (D3D's 256 bytes of root constants; Vulkan's 128 here), `viewportBoundsRange`,
-  `viewportSubPixelBits`, `maxPerStageDescriptorUniformBuffers` (14 wanted, 13 on adapters of 10 storage buffers a
-  stage, SwiftShader's and the M4's; 14 since VK4 T40 where there are 11 or more: "Bindings past WebGPU's"), dual-source blending (SwiftShader's
-  adapter only), geometry and tessellation shaders, `multiDrawIndirect` (advertised since VK4 T26, with
-  `drawIndirectCount`: unchecked with vkd3d since), `multiViewport`, `occlusionQueryPrecise`,
-  pipeline statistics queries, cull distances, `shaderImageGatherExtended` (advertised since VK4 T29: unchecked with vkd3d since; `shaderStorageImageWriteWithoutFormat`, whose
-  absence kept 10 of vkd3d's UAV-clear pipelines from translating, is offered since GD G5: unchecked with vkd3d since),
-  sampler min/max reduction (advertised since VK4 T25; unchecked with vkd3d since). vkd3d's own tests (tests/d3d12, built by
-  `target/vkd3d/build-tests.sh`: `TESTS=` in vkd3d.ts): test_draw_instanced, test_draw_indexed_instanced and
-  test_root_constants pass; test_vertex_id fails 52 of 127 (39 of 89 before VK4 T40 captured its two programs of four
-  bind groups: 75 checks pass against 50; the failures seen are its indirect draws' values, base vertices 3, 8 and 9:
-  bench/vulkan/REPORT.md "VK4 T40"), test_instance_id passes whole (its 372 checks since VK4 T44's divisors; its
-  1-byte vertex stride pulled since VK4 T5), test_clear_render_target_view 16 of 280 (views of another format and 3D/array views:
-  "The Vulkan driver's gaps"). The next steps by promise: a run of the whole
-  d3d12 suite for a ranked list, multi-draw indirect (the driver already loops over a draw count, each draw with its
-  own parameters' place), and a real program (vkd3d's demos need an X window: none in the guests). The draw
-  parameters' cost (a push-buffer place and a bind of group 3 a draw whose bases change) isn't measured on a program.
+- **vkd3d on Venus** (VK3 L7.5, VK4 T47; bench/vulkan/vkd3d.ts, bench/vulkan/REPORT.md "VK4 T47"): Arch's vkd3d 1.19
+  makes a Direct3D 12 device at feature level 11_0 in the desktop guest. 11_1 and up are refused, since vkd3d grants
+  11_1 only with every 11_0 feature: geometry and tessellation shaders (tier 4's compute pre-passes), `multiViewport`,
+  `occlusionQueryPrecise`, pipeline statistics and cull distances, plus 64 storage buffers and images a stage (WebGPU
+  has 8 to 10), are out of reach or a whole emulation each. Warnings that block no level: `viewportBoundsRange` (WebGPU's
+  ±2×`maxTextureDimension2D`, ±16,384 on SwiftShader; met at 16,384), `viewportSubPixelBits` (0: WebGPU doesn't say;
+  SwiftShader rounds a viewport's origin to 1/16), 13 uniform buffers a stage on SwiftShader's and the M4's 10 storage
+  buffers, and dual-source blending on SwiftShader. Its d3d12 suite (`TESTS=all`, 73 s; `FAILED=<n>` for each test's
+  first failures): 135 of 174 pass, 36 fail, 3 crash. The failures by cause, the larger first:
+  - test_gather_c (42 checks): GatherCmp on an R32_FLOAT view. WebGPU compares only depth textures, so the bind group
+    is refused. Vulkan wants the format's depth-comparison feature, which the device doesn't report, and vkd3d uses it
+    anyway. A compare done in the stage (a variant keyed by the view's format not being depth) would back it (M).
+  - The three crashes (test_clear_unordered_access_view_image, test_depth_load, test_typed_uav_store) are vkd3d's tests
+    dereferencing textures that failed to be made: R16_UNORM and R16G16_UNORM storage images, which only
+    `texture-formats-tier1` has as textures at all (SwiftShader's adapter lacks it). Direct3D 12 wants their typed UAV
+    stores at 11_0. Without tier1, such an image would need a texture of another format behind it, as packed formats
+    have (M). Unchecked on the M4.
+  - test_vertex_id (52 of 127): its indirect draws' values in stream output, base vertices 3, 8 and 9 (VK4 T40's).
+  - test_fractional_viewports (5,120 of 20,594): SwiftShader's (the texcoords of an origin rounded to 1/16; fragment
+    positions exact). Worth a run on the M4.
+  - test_output_merger_logic_op (28 of 354): each logic op is right for the destination it finds. The draw before it
+    writes 0xffffffff into RGBA8_UINT, which SwiftShader stores as 0. Vulkan leaves an out-of-range integer write
+    undefined, and Direct3D clamps. A clamp in the fragment stage for narrow integer targets would match Direct3D (S, a
+    key bit).
+  - test_register_space (10): a compute stage of 16 texel buffers' words, past WebGPU's 10 storage buffers.
+  - test_multisample_array_texture (9 of 147): a multisampled array's other layers ("Multisampled arrays' leftovers").
+  - test_shader_instructions (5): `ne` with a NaN operand, and log of 0 giving -127 where -inf is wanted (Tint's or
+    SwiftShader's; unchecked elsewhere). One each in test_clear_render_target_view (a view of another format),
+    test_primitive_restart, test_early_depth_stencil_tests, test_64kb_texture_alignment and test_sample_instructions;
+    two in test_clear_unordered_access_view_buffer and test_shader_eval_attribute (an attribute at a snapped offset).
+  - Not advertised: geometry and tessellation (test_clip_distance's PSOs with those stages, and 12 tessellation and hull
+    tests), cull distances (12), conditional rendering (5), pipeline statistics (6), calibrated timestamps (2), 8
+    samples (1), descriptor indexing's arrays (test_resource_arrays), and textures the CPU writes
+    (test_read_write_subresource, vkd3d's E_NOTIMPL).
+  A real program is still unrun (vkd3d's demos need an X window, which no guest has). The draw parameters' cost (a
+  push-buffer place, and group 3 bound again for each draw whose bases change) hasn't been measured on a program.
 - **The Vulkan driver's gaps** (VK2 L2, L5; vk/README.md "The driver"; VK4-KICKOFF.md's T36–T50 take what WebGPU can
   back, each naming the entries it starts from), each for when a program or dEQP-VK needs it;
   dEQP-VK's failures by cause. VK4 T1's census (bench/vulkan/REPORT.md "VK4 T1": every 100th case of the direct set's

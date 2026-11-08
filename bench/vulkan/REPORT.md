@@ -793,6 +793,78 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` oth
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 T47: vkd3d's feature levels — 256 bytes of push constants, a hang fixed; 11_1 out of reach (geometry, tessellation)
+
+**2026-11-08**, the dev VM (SwiftShader, Chromium 155.0.8059.84) for vkd3d's suite in the desktop guest (Arch, Mesa
+26.2.6, vkd3d 1.19: `TESTS=all node bench/vulkan/vkd3d.ts`, each of d3d12.c's 174 tests a process of its own) and
+dEQP-VK; the M4 (Metal, Chrome for Testing 157.0.8103.38, `bench/gpu/sway-mac.sh` with `VIRGL_GPU=virgl,vulkan`) for
+the push-constant cases. Results in `results/vk4/t47/`.
+
+**Feature level 11_1 is left, for what WebGPU can't give.** vkd3d 1.19 grants 11_1 only to a device with every 11_0
+feature it checks (`vkd3d_init_feature_level`), plus logic ops, `vertexPipelineStoresAndAtomics` and 64 storage
+buffers and storage images a stage. Venus's device lacks geometry and tessellation shaders, `multiViewport`,
+`occlusionQueryPrecise`, pipeline statistics queries and cull distances (and dual-source blending on SwiftShader), and
+WebGPU gives 8 to 10 storage buffers a stage, not 64. Each of those is a whole emulation (tier 4: geometry and
+tessellation as compute pre-passes) or out of WebGPU's reach (precise occlusion counts, several viewports, 64 storage
+bindings). So 11_0 stays the device's level, as in VK3 L7.5. Of what L7.5 listed, these are no longer missing:
+multi-draw indirect (T26), extended gathers (T29), storage writes without a format (GD G5), min/max reduction (T25),
+vertex attribute divisors (T44), 14 uniform buffers where the adapter has 11 or more storage buffers (T40), and now
+256 bytes of push constants. What still draws a warning without blocking a level: `viewportBoundsRange` (WebGPU's
+±2×`maxTextureDimension2D`: ±16,384 on SwiftShader, ±32,768 wanted, met where the adapter has 16,384),
+`viewportSubPixelBits` (0: WebGPU doesn't give it; SwiftShader rounds a viewport's origin to 1/16, see
+test_fractional_viewports below) and `maxPerStageDescriptorUniformBuffers` (13 on SwiftShader's 10 storage buffers).
+
+- **256 bytes of push constants** (`maxPushConstantsSize`, Direct3D 12's root constants): the draw parameters move to
+  byte 256 of a push-buffer place (`WGSL_DRAW_PARAMS`, the pull's `PULL_DRAW_PARAMS`). A place that holds them is 512
+  bytes; one without them stays 256 (`push_place`). The driver's drawParams test reads its quad's offset from the last
+  16 of the 256 bytes, and fails with the parameters still at 128. dEQP-VK's push-constant and draw-parameter groups
+  (`push-cases.txt`): 2,309 pass and 24 are not supported (geometry and tessellation stages, and 128-byte long vectors),
+  on SwiftShader (`push-swiftshader.json`) and on the M4 (2,301 pass, `push-m4.json`; its 8 `draw_index` failures are
+  T50's). 16 push-constant cases join the list (vkCmdPushConstants2's and `range_size_256`).
+- **A hang** (warm-up run, `vkd3d-before.txt`): test_atomic_instructions hung the GPU's queue at its second input, and
+  every test after it timed out, so the run reached 103 of 174 tests. An unsigned atomic min or max on an array that
+  signed ones share is a compare-exchange loop, which loaded the word again on each try. A fragment stage's helper
+  invocations write nothing, and SwiftShader returns 0 as their old value, so where the word wasn't 0 the loop never
+  exchanged. It now retries from the value the compare-exchange saw (the usual loop). A Chromium test of one covered
+  pixel's quad hung first (`tests/wgsl.test.ts`).
+- **Multisampled arrays** (test_multisample_array_texture, 19 failures → 9): a `sampler2DMSArray` is bound as its
+  first layer (vk/README.md "Multisampled arrays"), but the translator still passed the fetch a layer and asked the size
+  for `textureNumLayers`, so Tint refused the stage and every draw that used it was dropped. Now the stage reads the
+  first layer and reports one layer. The 9 failures left are the other layers' texels and the array size.
+
+**The suite now** (`vkd3d-after.txt`, 73 s for the whole suite): 135 pass, 36 fail and 3 crash in the guest. VK4 T3 had
+109 pass, 58 fail and 9 crash. The failures ranked by consequence, each with its cause (`vkd3d-failures.txt`; first
+failures with `FAILED=<n>`):
+
+1. *Crashes* (3: test_clear_unordered_access_view_image, test_depth_load, test_typed_uav_store): the test dereferences
+   a texture whose creation failed with `VK_ERROR_FORMAT_NOT_SUPPORTED`. The formats are R16_UNORM and R16G16_UNORM
+   with storage, which only `texture-formats-tier1` has, and SwiftShader's adapter doesn't. Direct3D 12 wants typed
+   UAV stores of them at 11_0. Not checked on the M4.
+2. *Draws dropped*: test_gather_c (42: GatherCmp on an R32_FLOAT view; WebGPU compares only depth textures, and the bind
+   group is refused, "expected sample types (Depth)". Vulkan wants the format's depth-comparison feature, which the
+   device doesn't report, and vkd3d uses it anyway); test_register_space (10: a compute stage of 16 texel buffers' words,
+   past WebGPU's 10 storage buffers); test_dual_source_blending (3: SwiftShader's adapter has none, and vkd3d makes the
+   pipeline anyway); test_resource_arrays (1: vkd3d wants `VK_EXT_descriptor_indexing`'s arrays); the geometry and
+   tessellation PSOs of test_clip_distance (10) and the 12 tessellation and hull-shader tests (not advertised).
+3. *Wrong pixels*: test_fractional_viewports (5,120 of 20,594: the texcoords of viewports offset by 1/32 to 1/256 and
+   63/128 are those of the offset rounded to 1/16. SwiftShader's rasterizer does this: the fragment positions are
+   exact, and the driver passes the offset as given); test_output_merger_logic_op (28: every logic op's result is right
+   for the destination it found. The plain draw before each, which writes 0xffffffff into an RGBA8_UINT target, wrote 0
+   on SwiftShader, and Vulkan leaves out-of-range integer writes undefined); test_vertex_id (52: filed under "vkd3d on
+   Venus"); test_multisample_array_texture (9, above); test_shader_instructions (5: `ne` with a NaN, and log of 0
+   giving -127 for -inf); test_clear_render_target_view (1: a view of another format); test_clear_unordered_access_view_buffer
+   (2); test_primitive_restart, test_early_depth_stencil_tests, test_64kb_texture_alignment, test_sample_instructions (1
+   each); test_shader_eval_attribute (2: an attribute evaluated at a snapped offset).
+4. *Not advertised*: cull distances (test_combined_clip_and_cull_distances, 12), conditional rendering (5), pipeline
+   statistics (6), calibrated timestamps (test_clock_calibration, 2), 8 samples (test_shader_get_render_target_sample_count:
+   WebGPU has 4), and textures the CPU reads and writes (test_read_write_subresource, 12: vkd3d's E_NOTIMPL).
+
+**Warm-ups.** The damaged-chunk video test (`tests/virgl-browser.test.ts`) now holds off the queue's drain and give-up
+for 10 and 20 s and checks that neither fired, where it had bounded the longest wait at 200 ms, which `scripts/ci.sh`'s
+load passed. A top-of-pipe timestamp right before a render pass that the worker does work for first (`prepasses`,
+`scope_pass`) is a write of its own before that work (`timestamps_lead`). Before, it read the pass's beginning write,
+which comes after that work. A driver test (`t46BeforePrepass`: an indexed fan's pass) failed first.
+
 ## VK4 T46: queries and timestamps — timestamps on the GPU, occlusion queries in the device's set, copies in one dispatch; 170 cases join the list
 
 2026-11-08, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
