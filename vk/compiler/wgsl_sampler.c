@@ -24,8 +24,6 @@ struct sampler_pass {
    /* Textures of a stage's comparisons (texture indices): declared depth, whatever else samples them. */
    uint32_t depths[WGSL_MAX_PAIRS];
    uint32_t depth_count;
-   bool cube_gathered;
-   bool padded_cube_gather; /* can't be fetched: refused */
 };
 
 static const struct wgsl_sampler_key plain_key = {
@@ -614,6 +612,67 @@ reduction_identity(nir_builder *b, const nir_tex_instr *tex, const struct wgsl_s
    return nir_vec4(b, v, v, v, v);
 }
 
+/* A seamless cube's 2×2 footprint (`texels` by corner: bit 0 the high s, bit 1 the high t) where one texel is past both
+ * of its face's edges, at the cube's corner: no face has it, so it is the other three's average (OpenGL's
+ * recommendation, which Vulkan leaves to the implementation; llvmpipe's). Fetched, it would be one face's texel. A
+ * float's or a comparison's; an integer's keeps that face's. */
+static void
+cube_corner(nir_builder *b, const struct fetched *p, nir_def *const *lo, nir_def *const *hi, nir_def **texels)
+{
+   if (p->key->non_seamless || (is_integer(p->tex) && !p->dref))
+      return;
+   nir_def *out[2][2];
+   for (unsigned k = 0; k < 2; k++) {
+      out[k][0] = nir_ilt_imm(b, lo[k], 0);
+      out[k][1] = nir_ige(b, hi[k], p->extent[0]);
+   }
+   nir_def *fixed[4];
+   for (unsigned c = 0; c < 4; c++) {
+      nir_def *avg = nir_fmul_imm(b, nir_fadd(b, nir_fadd(b, texels[c ^ 1], texels[c ^ 2]), texels[c ^ 3]), 1.0 / 3.0);
+      fixed[c] = nir_bcsel(b, nir_iand(b, out[0][c & 1], out[1][(c >> 1) & 1]), avg, texels[c]);
+   }
+   for (unsigned c = 0; c < 4; c++)
+      texels[c] = fixed[c];
+}
+
+/* A cube's gather from its faces' fetches (a cube bound as its faces: a shadow sample past level 0, a non-seamless
+ * sampler, a padded image, an integer cube also sampled): the footprint's four texels at the view's first level, a
+ * neighbour past an edge on the next face, the corner's the other three's average; in OpImageGather's order (i0 j1, i1
+ * j1, i1 j0, i0 j0), compared for a shadow gather. */
+static nir_def *
+cube_gather_fetch(nir_builder *b, nir_tex_instr *tex, const struct wgsl_sampler_key *key)
+{
+   nir_def *coord = tex_source(tex, nir_tex_src_coord);
+   struct fetched p = { .tex = tex, .key = key, .n = 2, .cube = true, .dref = reference(b, tex, key), .level = nir_imm_int(b, 0) };
+   nir_tex_instr view = *tex;
+   view.sampler_dim = GLSL_SAMPLER_DIM_2D;
+   view.is_array = true;
+   nir_def *size = query(b, &view, nir_texop_txs, nir_imm_int(b, 0), 3);
+   for (unsigned i = 0; i < 2; i++)
+      p.extent[i] = key->padded ? nir_imm_int(b, key->size[i]) : nir_channel(b, size, i);
+   if (tex->is_array) {
+      nir_def *layers = nir_udiv(b, nir_channel(b, size, 2), nir_imm_int(b, 6));
+      p.layer = nir_imin(b, nir_imax(b, nir_f2i32(b, nir_fround_even(b, nir_channel(b, coord, 3))), nir_imm_int(b, 0)),
+                         nir_iadd_imm(b, layers, -1));
+   }
+   const struct cube_place place = cube_place(b, coord, NULL, NULL);
+   nir_def *lo[2], *hi[2];
+   for (unsigned i = 0; i < 2; i++) {
+      nir_def *u = nir_fadd_imm(b, nir_fmul(b, i ? place.t : place.s, nir_i2f32(b, p.extent[i])), -0.5);
+      lo[i] = nir_f2i32(b, nir_ffloor(b, u));
+      hi[i] = nir_iadd_imm(b, lo[i], 1);
+   }
+   nir_def *texels[4];
+   for (unsigned c = 0; c < 4; c++) {
+      nir_def *i[2] = { c & 1 ? hi[0] : lo[0], c & 2 ? hi[1] : lo[1] };
+      texels[c] = fetched_texel(b, &p, i, place.face);
+   }
+   cube_corner(b, &p, lo, hi, texels);
+   const unsigned component = p.dref ? 0 : tex->component;
+   return nir_vec4(b, nir_channel(b, texels[2], component), nir_channel(b, texels[3], component),
+                   nir_channel(b, texels[1], component), nir_channel(b, texels[0], component));
+}
+
 /* The image's sample at one level, nearest or linear, its texels weighted or reduced (`key->reduction`). `u` in
  * texels of the level: a cube's on `face`. */
 static nir_def *
@@ -635,15 +694,23 @@ fetched_filter(nir_builder *b, const struct fetched *p, nir_def *const *u, nir_d
    }
    if (!linear)
       return fetched_texel(b, p, lo, face);
+   nir_def *texels[8];
+   for (unsigned corner = 0; corner < (1u << n); corner++) {
+      nir_def *i[3];
+      for (unsigned k = 0; k < n; k++)
+         i[k] = corner & (1u << k) ? hi[k] : lo[k];
+      texels[corner] = fetched_texel(b, p, i, face);
+   }
+   if (p->cube && !p->key->reduction)
+      cube_corner(b, p, lo, hi, texels);
    nir_def *sum = NULL;
    for (unsigned corner = 0; corner < (1u << n); corner++) {
-      nir_def *i[3], *w = nir_imm_float(b, 1.0f);
+      nir_def *w = nir_imm_float(b, 1.0f);
       for (unsigned k = 0; k < n; k++) {
          const bool high = corner & (1u << k);
-         i[k] = high ? hi[k] : lo[k];
          w = nir_fmul(b, w, high ? weight[k] : nir_fsub_imm(b, 1.0f, weight[k]));
       }
-      nir_def *texel = fetched_texel(b, p, i, face);
+      nir_def *texel = texels[corner];
       if (p->key->reduction) {
          /* A texel of no weight takes no part (the reduction's identity in its place); one corner always has some. */
          texel = nir_bcsel(b, nir_fgt_imm(b, w, 0.0f), texel, reduction_identity(b, p->tex, p->key));
@@ -1100,15 +1167,21 @@ lower_tex(nir_builder *b, nir_tex_instr *tex, void *data)
    const struct wgsl_sampler_key *key = find_key(s, tex);
    if (!key && words)
       key = words;
+   /* A gather of a cube bound as its faces: from their fetches, by its own pair's key (every pair of such a cube has
+    * one: wg_cmd.c `program_keys`; a module without is never drawn with). */
+   if (tex->op == nir_texop_tg4 && tex->sampler_dim == GLSL_SAMPLER_DIM_CUBE && is_int_cube(s, tex)) {
+      const struct wgsl_sampler_key *k = key ? key : faces_key(s, tex) ? faces_key(s, tex) : &plain_key;
+      nir_def_replace(&tex->def, nir_trim_vector(b, cube_gather_fetch(b, tex, k), tex->def.num_components));
+      return true;
+   }
    if (key && (key->padded || key->rgb9e5)) {
       if (tex->op == nir_texop_tg4) {
-         /* A cube's gather would need the corners' faces: rare enough on such an image to take the nearest face's. */
          if (tex->sampler_dim != GLSL_SAMPLER_DIM_CUBE) {
             nir_def_replace(&tex->def, nir_trim_vector(b, gather_fetch(b, tex, key), tex->def.num_components));
             return true;
          }
-         s->padded_cube_gather = true;
-         return false;
+         nir_def_replace(&tex->def, nir_trim_vector(b, cube_gather_fetch(b, tex, key), tex->def.num_components));
+         return true;
       }
       nir_def_replace(&tex->def, nir_trim_vector(b, fetched_sample(b, tex, key), tex->def.num_components));
       return true;
@@ -1211,7 +1284,7 @@ find_cubes(nir_builder *b, nir_tex_instr *tex, void *data)
       return false;
    const struct wgsl_sampler_key *faces = faces_key(s, tex);
    const bool bound = faces && !faces->padded;
-   /* A size or levels asked of what's bound as its faces, in a stage that may not sample it; a gather refused below. */
+   /* A size or levels asked of what's bound as its faces, in a stage that may not sample it; a gather from its fetches (cube_gather_fetch). */
    const bool wanted = tex->op == nir_texop_txs || tex->op == nir_texop_query_levels || tex->op == nir_texop_tg4
                           ? bound
                           : (samples(tex) || tex->op == nir_texop_lod) && (is_integer(tex) || bound);
@@ -1226,15 +1299,6 @@ find_depths(nir_builder *b, nir_tex_instr *tex, void *data)
    struct sampler_pass *s = data;
    if (tex->is_shadow && !is_depth(s, tex) && s->depth_count < ARRAY_SIZE(s->depths))
       s->depths[s->depth_count++] = tex->texture_index;
-   return false;
-}
-
-static bool
-find_gathered(nir_builder *b, nir_tex_instr *tex, void *data)
-{
-   struct sampler_pass *s = data;
-   if (tex->op == nir_texop_tg4 && is_int_cube(s, tex))
-      s->cube_gathered = true;
    return false;
 }
 
@@ -1335,7 +1399,7 @@ lower_slice(nir_builder *b, nir_instr *instr, void *data)
    return true;
 }
 
-bool
+void
 wgsl_lower_samplers(nir_shader *nir, const struct wgsl_print_options *o, struct wgsl_info *info)
 {
    struct sampler_pass s = { .keys = o->keys, .key_count = o->key_count, .info = info };
@@ -1348,7 +1412,5 @@ wgsl_lower_samplers(nir_shader *nir, const struct wgsl_print_options *o, struct 
       s.depths[s.depth_count++] = o->depths[i];
    nir_shader_tex_pass(nir, find_depths, nir_metadata_all, &s);
    nir_shader_tex_pass(nir, find_cubes, nir_metadata_all, &s);
-   nir_shader_tex_pass(nir, find_gathered, nir_metadata_all, &s);
    NIR_PASS(_, nir, nir_shader_tex_pass, lower_tex, nir_metadata_control_flow, &s);
-   return !s.cube_gathered && !s.padded_cube_gather;
 }

@@ -1866,3 +1866,58 @@ test('flat varyings of ints and floats at one location travel as words (VK4 T42)
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('a depth texture sampled plainly at an explicit LOD blends its levels through a linear mipmap (VK4 T42)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    // depth16unorm 2×2, level 0 all 0.25, level 1 0.75: LOD 0, 0.5 and 1.
+    const u16 = (v: number) => [v & 255, v >> 8];
+    const r = glslStage(translate, tmp, 'tests/venus/t42/depth-lod.comp', { sampler: key(ADDRESS.edge, { levels: 2, flags: 16 | 4 }) });
+    assert.equal(r.rc, 0, r.text);
+    const res = await runSampled(r.text, [{ binding: 0, format: 'depth16unorm', w: 2, h: 2, data: Array.from({ length: 4 }, () => u16(16384)).flat(), mips: [u16(49152)] }], undefined, { binding: 6, size: 16 * 4 });
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(res.errors, []);
+    const v = [...res.out].filter((_, i) => i % 4 === 0).slice(0, 3).map((x) => Math.round(x * 1000) / 1000);
+    assert.deepEqual(v, [0.25, 0.5, 0.75]);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('a gather of a cube bound as its faces comes from its faces\' fetches, across edges and corners (VK4 T42)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const FACES = 64, PADDED = 32;
+    const r = glslStage(translate, tmp, 'tests/venus/t42/cube-gather.comp', { sampler: key(ADDRESS.edge, { flags: 16 | 1 | 2 | FACES }) });
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /texture_2d_array<f32>/);
+    // Kinds that were refused: a shadow cube past level 0 and an integer cube also sampled, a padded cube.
+    const kinds = glslStage(translate, tmp, 'tests/venus/t42/cube-gather-kinds.frag', { sampler: key(ADDRESS.edge, { levels: 2, compare: 1, flags: 16 | 1 | 2 | FACES }) });
+    assert.equal(kinds.rc, 0, kinds.text);
+    const padded = glslStage(translate, tmp, 'tests/venus/t42/cube-gather.comp', { sampler: key(ADDRESS.edge, { flags: 16 | 1 | 2 | FACES | PADDED, size: [3, 3] }) });
+    assert.equal(padded.rc, 0, padded.text);
+    const errors = await compile([kinds.text, padded.text]);
+    if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(errors, ['', '']);
+    // 2×2 faces, each of one red: +X 10, +Y 60, +Z 80.
+    const red = [10, 20, 60, 40, 80, 100];
+    const data = [...Array(6).keys()].flatMap((f) => Array.from({ length: 4 }, () => [red[f], 0, 0, 255]).flat());
+    const res = await runSampled(r.text, [{ binding: 0, format: 'rgba8unorm', w: 2, h: 2, layers: 6, data }], undefined, { binding: 2, size: 16 * 3 });
+    assert.deepEqual(res?.errors, []);
+    const v = [...res!.out].slice(0, 12).map((x) => Math.round(x * 255));
+    // In OpImageGather's order (i0 j1, i1 j1, i1 j0, i0 j0): +X's; i0 past s = 0 on +Z; the corner's i0 j0 past both
+    // edges, (+Y's 60 + +Z's 80 + +X's 10) / 3 (one face's, +Y's, without the average).
+    assert.deepEqual(v, [10, 10, 10, 10, 80, 10, 10, 80, 80, 10, 60, 50]);
+    // A linear sample there (a padded cube's, as a shadow cube's past level 0 is): weights 0.49 and 0.51 a side, so
+    // 0.2401 × 50 (the corner's) + 0.2499 × (60 + 80) + 0.2601 × 10 (51.99 with +Y's 60 for the corner).
+    const lin = glslStage(translate, tmp, 'tests/venus/t42/cube-corner.comp', { sampler: key(ADDRESS.edge, { flags: 16 | 1 | 2 | FACES | PADDED, size: [2, 2] }) });
+    assert.equal(lin.rc, 0, lin.text);
+    const at = await runSampled(lin.text, [{ binding: 0, format: 'rgba8unorm', w: 2, h: 2, layers: 6, data }], undefined, { binding: 2, size: 16 });
+    assert.deepEqual(at?.errors, []);
+    assert.ok(Math.abs(at!.out[0] * 255 - 49.59) < 1, `the corner's linear sample: ${at!.out[0] * 255}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});

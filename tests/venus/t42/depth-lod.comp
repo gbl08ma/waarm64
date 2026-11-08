@@ -1,0 +1,14 @@
+#version 450
+// VK4 T42: a depth texture the stage also compares (so WGSL's depth texture) sampled plainly at explicit LODs
+// between its two levels, through a sampler with a linear mipmap: Vulkan blends the levels.
+layout(local_size_x = 4) in;
+layout(set = 0, binding = 0) uniform texture2D t;
+layout(set = 0, binding = 1) uniform sampler s;
+layout(set = 0, binding = 2) uniform samplerShadow sc;
+layout(set = 0, binding = 3, std430) buffer Out { vec4 o[4]; };
+void main() {
+  const vec2 uv = vec2(0.5);
+  const uint i = gl_LocalInvocationIndex;
+  if (i == 3) { o[3].x = texture(sampler2DShadow(t, sc), vec3(uv, 0.5)); return; }
+  o[i].x = textureLod(sampler2D(t, s), uv, float(i) * 0.5).r;
+}

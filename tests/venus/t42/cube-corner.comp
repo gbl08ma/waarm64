@@ -1,0 +1,7 @@
+#version 450
+// VK4 T42: a linear sample of a cube bound as its faces (padded here) at +X's corner with +Y and +Z, where the
+// footprint's texel past both edges is the other three's average.
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform samplerCube img;
+layout(set = 0, binding = 1, std430) buffer Out { vec4 o[1]; };
+void main() { o[0] = textureLod(img, vec3(1.0, 0.99, 0.99), 0.0); }

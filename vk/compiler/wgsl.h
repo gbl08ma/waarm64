@@ -323,9 +323,8 @@ struct wgsl_print_options {
 char *wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *options, struct wgsl_info *info,
                  char *error, size_t error_size);
 
-/* wgsl_print's first step: sampling as the keys say, and integer textures' fetches (recorded in info->int_pairs). False
- * for what it can't do (a gather of an integer cube that is also sampled: the one binding can't be both). */
-bool wgsl_lower_samplers(nir_shader *nir, const struct wgsl_print_options *o, struct wgsl_info *info);
+/* wgsl_print's first step: sampling as the keys say, and integer textures' fetches (recorded in info->int_pairs). */
+void wgsl_lower_samplers(nir_shader *nir, const struct wgsl_print_options *o, struct wgsl_info *info);
 
 /* The test entry points (wgsl_test.c, exported from the renderer module for tests/wgsl.test.ts). */
 void wgsl_test_init(void);

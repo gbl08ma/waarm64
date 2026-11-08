@@ -3460,7 +3460,7 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
    const uint32_t max_immediates = o->max_immediates;
    const unsigned features = o->features;
    memset(info, 0, sizeof(*info));
-   const bool samplers_ok = wgsl_lower_samplers(nir, o, info);
+   wgsl_lower_samplers(nir, o, info);
    wgsl_finish(nir);
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
    nir_index_ssa_defs(impl);
@@ -3487,8 +3487,6 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
    };
    error[0] = 0;
    c.out = _mesa_string_buffer_create(c.mem, 4096);
-   if (!samplers_ok)
-      failf(&c, "a cube bound as its faces, gathered");
    /* Transform feedback (VK3 L7.4): each captured buffer's record in `wg_xo`, one after another. */
    if (nir->info.stage == MESA_SHADER_VERTEX && nir->xfb_info) {
       unsigned words = 0;
