@@ -44,26 +44,54 @@ pub fn end(w: u32) -> End {
     end_op(decode(w), w)
 }
 
-/// [`end`] of `w`, whose class is `op`.
+/// [`end`] of `w`, whose class is `op`: one load from [`ENDS`] (a match over
+/// the classes was a tree of compares, 13% of decoding a block natively:
+/// bench/interp/REPORT.md "The block interpreter on the Mac, loop 4").
+#[inline]
 pub fn end_op(op: Op, w: u32) -> End {
+    match ENDS[op as usize] {
+        END_MSR if crate::interp::sys::msr_continues(w) => End::No,
+        END_MSR | END_AFTER => End::After,
+        END_BEFORE => End::Before,
+        _ => End::No,
+    }
+}
+
+const END_NO: u8 = 0;
+const END_AFTER: u8 = 1;
+const END_BEFORE: u8 = 2;
+/// An MSR: [`End::After`] unless [`crate::interp::sys::msr_continues`].
+const END_MSR: u8 = 3;
+
+/// [`end_op`] by class, made at compile time from [`end_class`].
+static ENDS: [u8; Op::ALL.len()] = {
+    let mut t = [END_NO; Op::ALL.len()];
+    let mut i = 0;
+    while i < t.len() {
+        t[Op::ALL[i] as usize] = end_class(Op::ALL[i]);
+        i += 1;
+    }
+    t
+};
+
+const fn end_class(op: Op) -> u8 {
     use Op::*;
     match op {
         // DAIF masking and plain registers (M6 loop 7): inline or a helper
         // call that returns mid-block if it leaves.
-        MSR_reg | MSR_imm if crate::interp::sys::msr_continues(w) => End::No,
+        MSR_reg | MSR_imm => END_MSR,
         // MRS, the data barriers and DC ZVA don't end a block (M6 loop 1):
         // the barriers are no-ops for one vCPU, MRS changes nothing but its
         // register, DC ZVA is a 64-byte store, and one that leaves (a timer,
         // a trap, a fault) returns from the block through its helper call,
         // as a load from MMIO does.
-        B_uncond | BL | B_cond | CBZ | CBNZ | TBZ | TBNZ | BR | BLR | RET | ERET | MSR_reg
-        | MSR_imm | SYS | SYSL | DC_IVAC | DC_ISW | DC_CSW | DC_CISW | DC_CVAC | DC_CVAU
-        | DC_CIVAC | IC_IALLU | IC_IALLUIS | IC_IVAU | WFE | WFI | YIELD | SEV | SEVL | CLREX
-        | ISB => End::After,
+        B_uncond | BL | B_cond | CBZ | CBNZ | TBZ | TBNZ | BR | BLR | RET | ERET | SYS | SYSL
+        | DC_IVAC | DC_ISW | DC_CSW | DC_CISW | DC_CVAC | DC_CVAU | DC_CIVAC | IC_IALLU
+        | IC_IALLUIS | IC_IVAU | WFE | WFI | YIELD | SEV | SEVL | CLREX | ISB => END_AFTER,
         SVC | HVC | SMC | BRK | HLT | DCPS1 | DCPS2 | DCPS3 | DRPS | UnallocatedEncoding => {
-            End::Before
+            END_BEFORE
         }
-        _ => End::No,
+        _ => END_NO,
     }
 }
 
@@ -74,8 +102,16 @@ pub fn form(mem: &Mem, pa: u64) -> Vec<u32> {
 
 /// [`form`], each word (with its class) mapped through `f`: one decode a word
 /// (the block interpreter's micro-ops).
-pub fn form_with<T>(mem: &Mem, pa: u64, mut f: impl FnMut(u32, Op) -> T) -> Vec<T> {
+pub fn form_with<T>(mem: &Mem, pa: u64, f: impl FnMut(u32, Op) -> T) -> Vec<T> {
     let mut out = Vec::new();
+    form_into(mem, pa, &mut out, f);
+    out
+}
+
+/// [`form_with`] into `out` (cleared first), so that a caller decoding block
+/// after block reuses one buffer.
+pub fn form_into<T>(mem: &Mem, pa: u64, out: &mut Vec<T>, mut f: impl FnMut(u32, Op) -> T) {
+    out.clear();
     let mut a = pa;
     while let Ok(w) = mem.read(a, 4) {
         let (w, op) = (w as u32, decode(w as u32));
@@ -92,7 +128,6 @@ pub fn form_with<T>(mem: &Mem, pa: u64, mut f: impl FnMut(u32, Op) -> T) -> Vec<
             break;
         }
     }
-    out
 }
 
 /// `n` words at `pa` (fewer if they leave RAM).

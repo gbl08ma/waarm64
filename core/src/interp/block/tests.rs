@@ -548,3 +548,42 @@ fn an_empty_block_is_remembered_until_its_page_goes() {
     assert_eq!(c.get(CODE, &t.mem).map(<[Uop]>::len), Some(2));
     assert_eq!(c.decoded, 1);
 }
+
+/// What decoding costs (bench/interp/REPORT.md "The block interpreter on the Mac, loop 4"): every
+/// 16th word of the guest kernel's first 4 MiB decoded as a block start, ns a block.
+/// `cargo test --release -p webpc-core decode_speed -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn decode_speed() {
+    let img = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../target/images/linux/Image"
+    ))
+    .expect("images/build.sh linux");
+    let n = img.len().min(4 << 20) & !7;
+    let t = TestRam::new(n);
+    for (i, w) in img[..n].as_chunks::<8>().0.iter().enumerate() {
+        t.mem
+            .write(8 * i as u64, 8, u64::from_le_bytes(*w))
+            .unwrap();
+    }
+    let mut best = f64::MAX;
+    let (mut blocks, mut uops) = (0, 0);
+    let passes = std::env::var("DECODE_PASSES").map_or(5, |v| v.parse().unwrap());
+    for _ in 0..passes {
+        let mut c = Cache::new(MAX_BUDGET);
+        let t0 = std::time::Instant::now();
+        (blocks, uops) = (0, 0);
+        for key in (0..n as u64).step_by(64) {
+            if let Some(len) = c.decode(key, &t.mem) {
+                blocks += 1;
+                uops += len as u64;
+            }
+        }
+        best = best.min(t0.elapsed().as_nanos() as f64 / blocks as f64);
+    }
+    println!(
+        "decode_speed: {blocks} blocks, {:.2} micro-ops each, {best:.1} ns a block",
+        uops as f64 / blocks as f64
+    );
+}

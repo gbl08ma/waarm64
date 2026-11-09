@@ -2168,3 +2168,30 @@ Done instead: `hot` hands the dispatcher the key of the compiled block it stoppe
 `jit::interpret`'s jump-cache hit after a slot miss), so it skips `key`'s TLB lookup (~0.25%: not measured, under
 what the pages session resolves). A debug assertion checks it against `key`; a planted key from the next page failed
 the lockstep test (the FP guest, after 100,000 steps); no native test reaches it (compiled blocks exist only in wasm).
+
+## The block interpreter on the Mac, loop 4: decoding without allocations (2026-11-09)
+
+Decoding is `Cache::miss` and its closure, 1.64% of the pages session's busy ticks (loop 3). Measured natively
+(`interp::block::tests::decode_speed`, `#[ignore]`: every 16th word of the guest kernel's first 4 MiB decoded as a
+block start, 65,536 blocks of 4.2 micro-ops; Firefox's average is 5.2) and profiled with `perf`: 182 ns a block,
+`Cache::miss` with the decoder inlined 24%, `pack` 18%, `end_op` 13%, `uop_op` 8%, `mov_runs` 7%, allocation
+(malloc, realloc, `finish_grow`, memcpy) ~10%.
+
+- `end_op` was a tree of compares over the ~900 classes, called a word: now a table made at compile time (`ENDS`,
+  `end_class` holding the old match; an MSR keeps its test of the word), inlined: 182 → 176 ns.
+- `form_with` grew a `Vec` from empty and `pack` made two more a block, copied into the arena: now `form_into` and
+  `pack_into` fill two scratch vectors the `Cache` keeps, and a block's constants (at most `CAP`, 32) sit on the stack:
+  176 → 149 ns. `pack` and `form_with` stay, as wrappers, for the tests and the JIT.
+- One RAM lookup a block instead of a word (`mem.host` for the block's span): 149 → 150 ns natively, not kept.
+
+**182 → 148 ns a block natively (−19%).** In Chromium on the Mac it doesn't resolve, as expected of ~0.3% of busy time
+(`results/m9-interp-mac/decode/`, three rounds alternated against `5dcc1021`): Alpine's boot through the block
+interpreter 253.9 → 253.6 MIPS (−0.1%, overlapping), `dec_mips` and `vm_dec_mmu_mips` even, the first-run `*_cold`
+numbers even. Kept for what it is: no allocation a decode, no memory. A planted bug (the constants' offset one too far
+in `pack_into`) failed three of the block interpreter's tests. What's left of decoding is compute: the decoder, `pack_into`
+and `uop_op`'s matches.
+
+Two A/A runs came first: a build in the side checkout `../webpc-base` (whose `target/` is this one's) left its core
+in the shared output, the main checkout's next build counted as fresh, and the "change" arm was the base (`cmp` didn't
+tell: the two checkouts' builds differ in their debug info's paths). Both arms agreed within ~0.2% on Alpine's boot,
+which is this screen's noise. An arm is now checked by a changed function's size (`tools/wasm-sizes.ts`).

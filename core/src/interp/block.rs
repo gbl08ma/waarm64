@@ -25,6 +25,7 @@ use crate::cpu::{Cpu, sctlr};
 use crate::decode::Op;
 use crate::mem::{self, Host, Mem};
 use crate::mmu::{Bus, Entry, Flat, Mmu, Slots, TLB_ENTRIES, Use};
+use core::mem::take;
 use std::collections::HashMap;
 
 /// Micro-op kinds. Field use is listed per kind; `x` holds flags packed as
@@ -440,13 +441,23 @@ fn ubfm_mask(w: u32) -> u64 {
 /// - Lse, Ldx, Stx, DMB, DC ZVA: `w` the word (their `x` is in it); Generic:
 ///   the word, and `d` and `n` its `Op`; Mrs: `n` its `x`, `w` the offset or
 ///   a constant.
+#[cfg(test)]
 pub fn pack(b: &[Wide]) -> Vec<Uop> {
     let mut out = Vec::with_capacity(b.len());
-    let mut consts = Vec::new();
+    pack_into(b, &mut out);
+    out
+}
+
+/// [`pack`] into `out` (cleared first): a block of at most
+/// `jit::block::CAP` micro-ops, so its constants fit on the stack.
+pub fn pack_into(b: &[Wide], out: &mut Vec<Uop>) {
+    out.clear();
+    let (mut consts, mut nk) = ([0u64; crate::jit::block::CAP], 0);
     for (i, u) in b.iter().enumerate() {
         let mut kv = |v: u64| {
-            consts.push(v);
-            (b.len() + consts.len() - 1 - i) as u32
+            consts[nk] = v;
+            nk += 1;
+            (b.len() + nk - 1 - i) as u32
         };
         let p = |d: u8, n: u8, m: u8, w: u32| Uop {
             k: u.k as u8,
@@ -539,8 +550,7 @@ pub fn pack(b: &[Wide]) -> Vec<Uop> {
             },
         });
     }
-    out.extend(consts.into_iter().map(Uop::of));
-    out
+    out.extend(consts[..nk].iter().map(|&v| Uop::of(v)));
 }
 
 /// [`uop_op`] at the block's EL (`el1`): an MRS of a register `sys::plain`
@@ -2561,6 +2571,10 @@ pub struct Cache {
     pub decoded: u64,
     pub clears: u64,
     pub rescues: u64,
+    /// Scratch for [`Cache::miss`]: a block's wide micro-ops and its packed
+    /// ones, reused from block to block (no allocation a decode).
+    wide: Vec<Wide>,
+    packed: Vec<Uop>,
 }
 
 #[inline(always)]
@@ -2585,6 +2599,8 @@ impl Cache {
             decoded: 0,
             clears: 0,
             rescues: 0,
+            wide: Vec::with_capacity(crate::jit::block::CAP),
+            packed: Vec::with_capacity(2 * crate::jit::block::CAP),
         }
     }
 
@@ -2607,13 +2623,15 @@ impl Cache {
             Some(e) if e.len() == 0 => return None,
             Some(_) => {}
             None => {
-                let mut wide = crate::jit::block::form_with(mem, key & !3, |w, op| {
+                let (mut wide, mut uops) = (take(&mut self.wide), take(&mut self.packed));
+                crate::jit::block::form_into(mem, key & !3, &mut wide, |w, op| {
                     uop_el(w, op, key & 1 != 0)
                 });
                 mov_runs(&mut wide);
                 let len = wide.len();
                 // Its micro-ops, then its constants.
-                let uops = pack(&wide);
+                pack_into(&wide, &mut uops);
+                self.wide = wide;
                 // Full (its micro-ops, or its keys: blocks of one or none
                 // fill the map before the arena), it starts over; with no
                 // room in the heap for it to grow, it frees its memory too.
@@ -2637,10 +2655,12 @@ impl Cache {
                 let next = self.pages.insert(key >> 12, low).unwrap_or(low);
                 if len == 0 {
                     self.map.insert(key, Known::new(0, 0, next));
+                    self.packed = uops;
                     return None;
                 }
                 let start = self.arena.len() as u32;
-                self.arena.extend(uops);
+                self.arena.extend_from_slice(&uops);
+                self.packed = uops;
                 self.decoded += 1;
                 self.map.insert(key, Known::new(start, len as u32, next));
             }
