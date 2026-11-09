@@ -328,20 +328,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Platform and devices
 
-- **virgl's caps from WebGL2's extensions, by what dEQP-GLES asks** (bench/gpu/REPORT.md "dEQP-GLES's census",
-  2026-11-09): `capsFromGl` (web/virgl-caps.ts) takes limits and formats from the browser's context but no capability
-  bit from an extension, and part of the census's "not supported" is what Chromium's WebGL2 offers on SwiftShader:
-  independent blending and per-buffer enables (`OES_draw_buffers_indexed`: GLES3's 79 `draw_buffers_indexed`,
-  `state_query.indexed` and `negative_api.fragment.blend_*i` cases; `virglCaps` leaves independent blending out as
-  if WebGL2 couldn't back it), clip control (`EXT_clip_control`, `VIRGL_CAP_CLIP_HALFZ`: GLES2's 8 `clip_control`
-  cases) and multiview (`OVR_multiview2`: GLES3's 3 `fbo.multiview` cases). `EXT_debug_marker` (GLES2's 3
-  `debug_marker` cases) is the guest's Mesa's: why it isn't exposed with `STRING_MARKER` advertised is to check. Each:
-  the renderer's side of its state (the blend state's per-target functions and enables, the rasterizer's clip
-  control), the bit set only where the browser has the extension (`capsBacked` then refuses a snapshot on a browser
-  without it), a test, and its cases into the pass lists (`bench/gpu/deqp-census.ts --lists` after a run of the group).
-  Desktop GL's programs gain too ("Desktop GL 3.0 and 3.1 on WebGL2" below has the rest of that list).
-- **dEQP-GLES's "not supported" that WebGL2 can't back as it is** (the census, as above): separate depth and stencil
-  attachments (GLES2's 91 `fbo.render.*depth_component16_stencil_index8`, GLES3's 12 `fbo.blit.depth_stencil`; WebGL
+- **dEQP-GLES's "not supported" that WebGL2 can't back as it is** (bench/gpu/REPORT.md "dEQP-GLES's census",
+  2026-11-09): separate depth and stencil attachments (GLES2's 91 `fbo.render.*depth_component16_stencil_index8`, GLES3's 12 `fbo.blit.depth_stencil`; WebGL
   allows only one depth-stencil attachment: one `DEPTH24_STENCIL8` behind both would do) and sRGB R8 and RG8 textures
   (GLES3's 64 `EXT_texture_sRGB_R8`/`RG8` cases: an `SRGB8_ALPHA8` texture with the channels expanded on upload). No
   known program uses either; only if one does. The rest is beyond WebGL2 (wide lines, 8 samples, advanced blending,
@@ -479,7 +467,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   such difference found: our caps offer `Z24_UNORM_S8_UINT` (19), which vrend has no format for (Skia's clip stencil,
   resource 855; the replayer maps it to 20). **Our caps against vrend's** (capset 2 on llvmpipe, desktop GL and GLES;
   `bench/results/local/steam/oracle/diffcaps.ts`): no capability bit vrend lacks (we lack COPY_IMAGE, TGSI_FBFETCH,
-  SRGB_WRITE_CONTROL, 3D_ASTC, INDIRECT_INPUT_ADDR, CLIP_HALFZ, V2_BLEND_EQUATION, V2_TEXTURE_SHADOW_LOD,
+  SRGB_WRITE_CONTROL, 3D_ASTC, INDIRECT_INPUT_ADDR, CLIP_HALFZ (offered since with `EXT_clip_control`), V2_BLEND_EQUATION, V2_TEXTURE_SHADOW_LOD,
   V2_MIRROR_CLAMP_TO_EDGE: without framebuffer fetch and advanced blends Skia copies the destination for some blends,
   a path real hosts never take); formats only we offer: `Z24_UNORM_S8_UINT` (sampled, depth, multisampled),
   `X8B8G8R8_UNORM`, `I8_UNORM`, `L8A8_UNORM` (sampled and rendered). `?gpu=capsno=` takes formats out for the A/B in

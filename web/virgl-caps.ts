@@ -1,7 +1,8 @@
 // The caps a 3D machine advertises, from the browser's WebGL2 (the G3 kickoff's decision 1; docs/devices.md
 // "virgl"): never more than the renderer backs here. The base is `virglCaps` (web/virgl.ts: virglrenderer's caps on a
-// GLES 3.0 host, less what WebGL2 lacks, at WebGL2's minimums); the limits come from the context, and the format
-// masks from the format table (web/virgl-formats.ts) with the extensions this browser has.
+// GLES 3.0 host, less what WebGL2 lacks, at WebGL2's minimums); the limits come from the context, the format masks
+// from the format table (web/virgl-formats.ts) with the extensions this browser has, and the capability bits an
+// extension backs (`EXTENSION_BITS`) where the browser has it.
 import { E } from './gl-enums.ts';
 import { CAPS_FIELDS, decodeCaps, encodeCaps, virglCaps, type CapsValue } from './virgl.ts';
 import { FORMATS, VERTEX_FORMATS } from './virgl-formats.ts';
@@ -36,7 +37,7 @@ export function withoutFormats(caps: Uint8Array, names: readonly string[]): { ca
  * prefix), those vrend offers and we don't (web/virgl.ts `virglCaps`' "Out:"): word 0 `capability_bits`, 1 `_v2`. */
 const CAP_BITS: Record<string, [0 | 1, number]> = {
   COPY_IMAGE: [0, 3], TGSI_FBFETCH: [0, 10], SRGB_WRITE_CONTROL: [0, 15], '3D_ASTC': [0, 24], INDIRECT_INPUT_ADDR: [0, 25],
-  CLIP_HALFZ: [0, 27], V2_BLEND_EQUATION: [1, 0], V2_TEXTURE_SHADOW_LOD: [1, 10], V2_MIRROR_CLAMP_TO_EDGE: [1, 16],
+  V2_BLEND_EQUATION: [1, 0], V2_TEXTURE_SHADOW_LOD: [1, 10], V2_MIRROR_CLAMP_TO_EDGE: [1, 16],
 };
 
 /**
@@ -55,6 +56,18 @@ export function withBits(caps: Uint8Array, names: readonly string[]): { caps: Ui
   }
   return { caps: names.length > unknown.length ? out : caps, unknown };
 }
+
+/**
+ * Capability bits a WebGL2 extension backs (web/virgl-renderer.ts uses it where the browser has it): which caps field,
+ * its bits, and what the guest's Mesa makes of them.
+ */
+const EXTENSION_BITS: [ext: string, field: 'bset' | 'capability_bits', bits: number][] = [
+  // virgl_caps_bool_set1's indep_blend_enable (0) and indep_blend_func (1): per-buffer blend enables, functions and
+  // color masks (GLES's OES/EXT_draw_buffers_indexed).
+  ['OES_draw_buffers_indexed', 'bset', 0b11],
+  // VIRGL_CAP_CLIP_HALFZ: the rasterizer's 0-to-1 clip-space depth (GLES's EXT_clip_control).
+  ['EXT_clip_control', 'capability_bits', 1 << 27],
+];
 
 /** The uniform vectors the generated shaders keep for themselves (u_adjy, u_fbh, u_alpharef, u_psize, u_stipple's 32 words). */
 const SYS_VECTORS = 16;
@@ -107,6 +120,7 @@ export function capsFromGl(gl: WebGL2RenderingContext): Uint8Array {
     max_texture_samplers: Math.min(p(E.MAX_TEXTURE_IMAGE_UNITS), p(E.MAX_VERTEX_TEXTURE_IMAGE_UNITS), 16),
     max_const_buffer_size: [Math.max(0, p(E.MAX_VERTEX_UNIFORM_VECTORS) - SYS_VECTORS) * 16, Math.max(0, p(E.MAX_FRAGMENT_UNIFORM_VECTORS) - SYS_VECTORS) * 16, 0, 0, 0, 0],
   });
+  for (const [e, field, b] of EXTENSION_BITS) if (ext.has(e)) caps[field] = ((caps[field] as number) | b) >>> 0;
   return encodeCaps(caps);
 }
 

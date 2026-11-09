@@ -1,0 +1,50 @@
+{
+ "api": "gles2",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "155.0.8059.84",
+ "stride": 50,
+ "offset": 0,
+ "jobs": 1,
+ "jobsBlock": 0,
+ "info": "7.2.9-arch1-1mesa 1:26.2.4-1 gles2 gles2-main.txt gles3 gles3-main.txt",
+ "cases": 8,
+ "seconds": 2.8663498619999954,
+ "counts": {
+  "Pass": 8
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-GLES2.functional.clip_control.face_culling Pass 1",
+  "dEQP-GLES2.functional.clip_control.viewport_bounds Pass 0",
+  "dEQP-GLES2.functional.clip_control.origin Pass 0",
+  "dEQP-GLES2.functional.clip_control.modify_get Pass 0",
+  "dEQP-GLES2.functional.clip_control.initial Pass 0",
+  "dEQP-GLES2.functional.clip_control.errors Pass 0",
+  "dEQP-GLES2.functional.clip_control.depth_mode_zero_to_one Pass 0",
+  "dEQP-GLES2.functional.clip_control.depth_mode_one_to_one Pass 0"
+ ],
+ "last": "dEQP-GLES2.functional.clip_control.depth_mode_one_to_one Pass 0dEQP-GLES2.functional.clip_control.face_culling Pass 1dEQP-GLES2.functional.clip_control.viewport_bounds Pass 0",
+ "output": [
+  ": dEQP Core opengl-cts-4.6.8.1-0-g067e8832315e79817ede1c4863804e440f5d1c80 (0x067e8832) starting..",
+  ": ERROR: Waiver file '' could not be opened. No tests will be waived.",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    1.123582] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    1.123617] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    1.123647] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    1.123672] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    1.123702] psci_checker: Could not start suspend tests on any CPU",
+  "[   12.356395] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   24.105192] coredump: 426(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 161.1,
+  "arenaMiB": 0,
+  "arenaTouchedMiB": 0,
+  "arenaHighMiB": 0
+ },
+ "detail": [],
+ "warnings": {}
+}

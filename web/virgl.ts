@@ -162,8 +162,9 @@ export function virglCaps(capset: 1 | 2): Uint8Array {
     sampler: [1, 2, 7, 8, 9, 10, 16, 17, 18, 20, 21, 28, 29, 30, 31, 64, 65, 67, 74, 75, 77, 91, 92, 94, 95, 100, 101, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 124, 125, 126, 131, 134, 148, 156, 160, 177, 178, 180, 181, 182, 184, 185, 186, 188, 189, 190, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 203, 205, 207, 209, 211, 213, 215, 217, 219, 221, 223, 227, 229, 230, 231, 232, 233, 236, 237, 238, 253, 255, 256, 257, 258, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 308, 311, 312, 313],
     render: [1, 2, 7, 8, 9, 28, 29, 31, 64, 65, 67, 74, 75, 77, 91, 92, 94, 100, 101, 104, 124, 131, 134, 148, 156, 160, 177, 178, 180, 181, 182, 184, 185, 186, 188, 189, 190, 192, 193, 194, 196, 197, 198, 200, 201, 203, 205, 207, 209, 211, 213, 215, 217, 219, 221, 223, 227, 229, 230, 231, 232, 233, 236, 237, 238, 253, 308, 311],
     // virgl_caps_bool_set1: primitive_restart (6), instanceid (8), seamless_cube_map (10), occlusion_query (11),
-    // streamout_pause_resume (13). Out: independent blending, conditional render, start_instance, timer queries,
-    // depth clamp, mirror clamp, textureQueryLod, sample shading, cull distance, polygon offset clamp.
+    // streamout_pause_resume (13). Out: conditional render, start_instance, timer queries, depth clamp, mirror clamp,
+    // textureQueryLod, sample shading, cull distance, polygon offset clamp; independent blending (0, 1) is the
+    // browser's (web/virgl-caps.ts `EXTENSION_BITS`).
     bset: bits(6, 8, 10, 11, 13),
     glsl_level: 130,
     max_texture_array_layers: 256,
@@ -185,7 +186,8 @@ export function virglCaps(capset: 1 | 2): Uint8Array {
     uniform_buffer_offset_alignment: 256,
     // VIRGL_CAP_*: TGSI_INVARIANT, SET_MIN_SAMPLES, TGSI_PRECISE, ROBUST_BUFFER_ACCESS, TGSI_COMPONENTS,
     // GUEST_MAY_INIT_LOG, TRANSFER, FBO_MIXED_COLOR_FORMATS, HOST_IS_GLES, COPY_TRANSFER, APP_TWEAK_SUPPORT. Out:
-    // COPY_IMAGE, TGSI_FBFETCH, SRGB_WRITE_CONTROL, 3D_ASTC, INDIRECT_INPUT_ADDR, CLIP_HALFZ.
+    // COPY_IMAGE, TGSI_FBFETCH, SRGB_WRITE_CONTROL, 3D_ASTC, INDIRECT_INPUT_ADDR; CLIP_HALFZ is the browser's
+    // (web/virgl-caps.ts `EXTENSION_BITS`).
     capability_bits: bits(0, 2, 4, 9, 13, 14, 17, 18, 19, 26, 28),
     max_vertex_attrib_stride: 2048,
     max_texture_2d_size: 8192,

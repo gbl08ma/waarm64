@@ -267,3 +267,25 @@ dEQP-VK's runs keep contiguous blocks (its neighbours as in the list).
 | before (the fixed lists) | 342 + 1,214 | ~360 |
 | a sample (seed 3630069298) | 2,221 + 5,739 | 546 |
 | `--full` | 17,027 + 44,399 | 2,873 (GLES2 1,085 s, GLES3 2,890 s, at once) |
+
+## virgl's caps from WebGL2's extensions (2026-11-09)
+
+The census's "not supported" rows marked backlog, taken (the same VM, Chromium 155.0.8059.84 on SwiftShader, the same
+guest; `results/gles-caps-ext/`):
+
+- **Independent blending** (`OES_draw_buffers_indexed`): `bset`'s `indep_blend_enable` and `indep_blend_func`, which
+  give the guest's Mesa `OES`/`EXT_draw_buffers_indexed`; the renderer sets each buffer's blend, equation and color
+  mask through its own layout (`enableiOES`, `blendFuncSeparateiOES`…). Of the 89 cases asked for, 77 pass and 12 are
+  still not supported: they want `KHR_blend_equation_advanced` (WebGL2 has none). Two `random` cases failed first: the
+  one blend color went through the first blended buffer's layout, an RGB565's, which stores no alpha, so the constant
+  alpha became 1. Its alpha is now the guest's wherever the layout stores no channel there (one RGB565 target with
+  `CONSTANT_ALPHA` was as wrong before).
+- **Clip control** (`EXT_clip_control`): `CLIP_HALFZ`; the rasterizer's `clip_halfz` sets clip control's 0-to-1 depth,
+  an inverted depth range turned round as `w - z`. GLES2's 8 `clip_control` cases pass.
+- **Not reachable**: multiview (`OVR_multiview2` is there, but Mesa 26.2.4's virgl driver sets no `multiview` cap and
+  virgl's protocol has no views) and `EXT_debug_marker` (Mesa 26.2.4 has none).
+
+The pass lists take the 85: 17,035 and 44,476. Beside them, the groups the change could break (`grep`ped from the pass
+lists: blending, `fragment_out`, depth ranges, clipping, draw buffers, polygon offset, `rasterization.fbo`), JOBS=4:
+GLES3's 4,025 all pass but one, `rasterization.fbo.rbo_multisample_4.interpolation.triangles`, which uses neither and
+passed alone and in two runs of its group at four processes; GLES2's 1,826 all pass.

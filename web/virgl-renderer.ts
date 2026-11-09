@@ -14,7 +14,7 @@
 // rebased on the CPU); no border colors (edge clamp); one blend state for all color buffers.
 import { E } from './gl-enums.ts';
 import { FORMATS, GL, VERTEX_FORMATS, boxBytes, type Format, SW_0, SW_1 } from './virgl-formats.ts';
-import { generate, parseTgsi, samplerUnit, uboBinding, type ProgramKey, type ProgramLayout, type SamplerKey, type Tgsi } from './virgl-tgsi.ts';
+import { generate, parseTgsi, samplerUnit, uboBinding, type ColorKey, type ProgramKey, type ProgramLayout, type SamplerKey, type Tgsi } from './virgl-tgsi.ts';
 import { padPlane, VideoContext, videoStats, type DecodedPicture, type DecoderFactory, type VideoStats, type VideoStream } from './virgl-video.ts';
 import { bytes, type Ram, type Segment } from './ram.ts';
 import { walk } from './virgl.ts';
@@ -85,7 +85,7 @@ export type ExternalSource = {
 type Blend = { independent: boolean; logicop: boolean; alphaToCoverage: boolean; rt: { enable: boolean; rgbFunc: number; rgbSrc: number; rgbDst: number; aFunc: number; aSrc: number; aDst: number; mask: number }[] };
 type Dsa = { depth: { enabled: boolean; write: boolean; func: number }; alpha: { enabled: boolean; func: number; ref: number }; stencil: { enabled: boolean; func: number; fail: number; zpass: number; zfail: number; valueMask: number; writeMask: number }[] };
 type Rasterizer = {
-  flatshade: boolean; depthClip: boolean; discard: boolean; lightTwoSide: boolean; spriteUpperLeft: boolean; pointQuad: boolean;
+  flatshade: boolean; depthClip: boolean; clipHalfz: boolean; discard: boolean; lightTwoSide: boolean; spriteUpperLeft: boolean; pointQuad: boolean;
   cullFace: number; scissor: boolean; frontCcw: boolean; clampFragmentColor: boolean; offsetTri: boolean; stipple: boolean;
   pointSizePerVertex: boolean; multisample: boolean; pointSize: number; spriteCoordEnable: number; lineWidth: number;
   offsetUnits: number; offsetScale: number;
@@ -195,9 +195,11 @@ const BLEND_FACTOR: Record<number, number> = {
 };
 const BLEND_FUNC = [E.FUNC_ADD, E.FUNC_SUBTRACT, E.FUNC_REVERSE_SUBTRACT, E.MIN, E.MAX];
 const COMPARE = [E.NEVER, E.LESS, E.EQUAL, E.LEQUAL, E.GREATER, E.NOTEQUAL, E.GEQUAL, E.ALWAYS];
-/** A blend's source RGB factor to fold into the shader (`ProgramKey.blendSrc`): when it and the destination's mix constant color and constant alpha. */
-function foldedBlend(blend?: Blend): number | undefined {
-  const rt = blend?.rt[0];
+/**
+ * A blend target's source RGB factor to fold into the shader (`ColorKey.blendSrc`): when it and the destination's mix
+ * constant color and constant alpha.
+ */
+function foldedBlend(rt?: Blend['rt'][number]): number | undefined {
   if (!rt?.enable) return undefined;
   const kind = (g: number) => (g === 7 || g === 0x17 ? 'color' : g === 8 || g === 0x18 ? 'alpha' : undefined);
   const s = kind(rt.rgbSrc), d = kind(rt.rgbDst);
@@ -267,6 +269,11 @@ export class VirglRenderer {
   private blitProg?: { prog: WebGLProgram; loc: Map<string, WebGLUniformLocation | null> };
   private anisotropy: boolean;
   private colorBufferFloat: boolean;
+  /** Per-buffer blending and color masks (the caps' independent blending: web/virgl-caps.ts), if the browser has them. */
+  private indexed: OES_draw_buffers_indexed | null;
+  /** Clip control (the caps' CLIP_HALFZ), if the browser has it, and whether it's at 0 to 1 now. */
+  private clipControl: { clipControlEXT(origin: number, depth: number): void } | null;
+  private halfz = false;
   private readonly maxSamples: number;
   /** WebGL's limits on a texture's size (what the caps offer: web/virgl-caps.ts), checked at a resource's creation. */
   private readonly limits: { size: number; size3d: number; cube: number; layers: number };
@@ -304,6 +311,8 @@ export class VirglRenderer {
     this.readFbo = gl.createFramebuffer()!;
     this.anisotropy = !!gl.getExtension('EXT_texture_filter_anisotropic');
     this.colorBufferFloat = !!gl.getExtension('EXT_color_buffer_float');
+    this.indexed = gl.getExtension('OES_draw_buffers_indexed') as OES_draw_buffers_indexed | null;
+    this.clipControl = gl.getExtension('EXT_clip_control') as { clipControlEXT(origin: number, depth: number): void } | null;
     this.maxSamples = gl.getParameter(E.MAX_SAMPLES) as number;
     const p = (n: number) => gl.getParameter(n) as number;
     this.limits = { size: p(E.MAX_TEXTURE_SIZE), size3d: p(E.MAX_3D_TEXTURE_SIZE), cube: p(E.MAX_CUBE_MAP_TEXTURE_SIZE), layers: p(E.MAX_ARRAY_TEXTURE_LAYERS) };
@@ -1278,7 +1287,7 @@ export class VirglRenderer {
         const t = p[1];
         const bit = (b: number) => !!((t >>> b) & 1);
         o = { kind: 'rs', v: {
-          flatshade: bit(0), depthClip: bit(1), discard: bit(3), lightTwoSide: bit(5), spriteUpperLeft: bit(6), pointQuad: bit(7),
+          flatshade: bit(0), depthClip: bit(1), clipHalfz: bit(2), discard: bit(3), lightTwoSide: bit(5), spriteUpperLeft: bit(6), pointQuad: bit(7),
           cullFace: (t >>> 8) & 3, scissor: bit(14), frontCcw: bit(15), clampFragmentColor: bit(17), offsetTri: bit(20), stipple: bit(22),
           pointSizePerVertex: bit(24), multisample: bit(25), pointSize: uif(p[2]), spriteCoordEnable: p[3], lineWidth: uif(p[5]),
           offsetUnits: uif(p[6]), offsetScale: uif(p[7]),
@@ -1937,6 +1946,11 @@ void main() {
     return { type, swizzle, gl, rect: r.target === PIPE_TEXTURE_RECT, oneD: r.target === PIPE_TEXTURE_1D || r.target === PIPE_TEXTURE_1D_ARRAY };
   }
 
+  /** Color buffer `k`'s blend target: its own with independent blending (where the browser backs it), else the first's. */
+  private blendTarget(blend: Blend | undefined, k: number) {
+    return blend?.rt[blend.independent && this.indexed ? k : 0];
+  }
+
   private program(vs: Shader, fs: Shader, key: ProgramKey): Program | null {
     const id = `${vs.serial}/${fs.serial}/${JSON.stringify(key)}`;
     const cached = this.programs.get(id);
@@ -2094,14 +2108,15 @@ void main() {
     const key: ProgramKey = {
       attribs: s.ve.map((e) => VERTEX_FORMATS.get(e.format)?.int ?? 'f'),
       samplers: { vs: s.views.vs.map((v) => this.samplerKey(c, v)), fs: s.views.fs.map((v) => this.samplerKey(c, v)) },
-      cbufs: s.fb.cbufs.map((sf) => {
+      cbufs: s.fb.cbufs.map((sf, k) => {
         if (!sf) return undefined;
         const f = FORMATS.get(sf.format) ?? this.resources.get(sf.res)?.fmt;
         if (!f) return undefined;
-        return { type: f.kind === 'uint' ? 'u' : f.kind === 'sint' ? 'i' : 'f', write: [...(f.write ?? [0, 1, 2, 3])] };
+        const type = f.kind === 'uint' ? 'u' : f.kind === 'sint' ? 'i' : 'f';
+        return { type, write: [...(f.write ?? [0, 1, 2, 3])], blendSrc: type === 'f' ? foldedBlend(this.blendTarget(blend, k)) : undefined };
       }),
       alphaFunc: dsa?.alpha.enabled ? dsa.alpha.func : undefined,
-      flatshade: rs?.flatshade, twoSide: rs?.lightTwoSide, clampColor: rs?.clampFragmentColor, stipple: rs?.stipple, blendSrc: foldedBlend(blend),
+      flatshade: rs?.flatshade, twoSide: rs?.lightTwoSide, clampColor: rs?.clampFragmentColor, stipple: rs?.stipple,
       points: mode === 0, pointSizePerVertex: rs?.pointSizePerVertex,
       spriteCoordEnable: mode === 0 && rs?.pointQuad ? rs.spriteCoordEnable : undefined, spriteUpperLeft: rs?.spriteUpperLeft,
       ...(so ? { so: so.outputs.map(({ reg, start, comps }) => ({ reg, start, comps })) } : vs.so ? this.soKey(vs.so) : {}),
@@ -2121,7 +2136,16 @@ void main() {
     const negative = vp.scale[1] < 0;
     const set1 = (n: string, v: number) => { const l = prog.loc.get(n); if (l) gl.uniform1f(l, v); };
     set1('u_adjy', negative ? -1 : 1);
-    set1('u_adjz', s.viewport.scale[2] < 0 ? -1 : 1);
+    // Clip control's 0-to-1 depth (the rasterizer's clip_halfz, CLIP_HALFZ in the caps), where the browser has it.
+    const halfz = !!rs?.clipHalfz && !!this.clipControl;
+    if (halfz !== this.halfz) {
+      this.clipControl?.clipControlEXT(E.LOWER_LEFT_EXT, halfz ? E.ZERO_TO_ONE_EXT : E.NEGATIVE_ONE_TO_ONE_EXT);
+      this.halfz = halfz;
+    }
+    const inverted = s.viewport.scale[2] < 0;
+    const adjz = prog.loc.get('u_adjz');
+    // An inverted depth range turns z round: -z between -1 and 1, w - z between 0 and 1.
+    if (adjz) gl.uniform2f(adjz, inverted ? -1 : 1, inverted && halfz ? 1 : 0);
     set1('u_fbh', fb.height);
     if (dsa) set1('u_alpharef', dsa.alpha.ref);
     const lbc = prog.loc.get('u_blendc');
@@ -2171,7 +2195,7 @@ void main() {
     gl.viewport(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
     // WebGL refuses a depth range whose near is above its far (GLES allows it): such a range goes the right way round,
     // with z negated in the vertex shader (u_adjz), which lands every depth where the inverted range would.
-    const near = vp.translate[2] - vp.scale[2], far = vp.translate[2] + vp.scale[2];
+    const near = halfz ? vp.translate[2] : vp.translate[2] - vp.scale[2], far = vp.translate[2] + vp.scale[2];
     const clamp01 = (v: number) => Math.min(Math.max(v, 0), 1);
     gl.depthRange(clamp01(Math.min(near, far)), clamp01(Math.max(near, far)));
     if (rs?.scissor) {
@@ -2188,33 +2212,49 @@ void main() {
     if (rs?.offsetTri) { gl.enable(E.POLYGON_OFFSET_FILL); gl.polygonOffset(rs.offsetScale, rs.offsetUnits); } else gl.disable(E.POLYGON_OFFSET_FILL);
     if (rs?.discard || captureOnly) gl.enable(E.RASTERIZER_DISCARD); else gl.disable(E.RASTERIZER_DISCARD);
     gl.disable(E.DITHER);
-    // Blend (render target 0's for all: WebGL2 blends all buffers alike), through the first buffer's layout.
-    const cb0 = key.cbufs.find((k) => k);
-    const f0 = s.fb.cbufs[0] && (FORMATS.get(s.fb.cbufs[0].format) ?? this.resources.get(s.fb.cbufs[0].res)?.fmt);
-    const rt = blend?.rt[0];
-    if (rt?.enable && cb0?.type === 'f') {
-      gl.enable(E.BLEND);
-      const noAlpha = !!f0?.x;
-      const fac = (g: number) => {
-        let v = BLEND_FACTOR[g] ?? E.ONE;
-        if (noAlpha) v = v === E.DST_ALPHA ? E.ONE : v === E.ONE_MINUS_DST_ALPHA ? E.ZERO : v;
-        return v;
-      };
-      // A constant color and a constant alpha together, which WebGL refuses: the source RGB factor is the shader's
-      // (`ProgramKey.blendSrc`); on alpha, constant color is constant alpha.
-      const asAlpha = (g: number) => (g === 7 ? 8 : g === 0x17 ? 0x18 : g);
-      gl.blendFuncSeparate(key.blendSrc ? E.ONE : fac(rt.rgbSrc), fac(rt.rgbDst), fac(asAlpha(rt.aSrc)), fac(asAlpha(rt.aDst)));
-      gl.blendEquationSeparate(BLEND_FUNC[rt.rgbFunc] ?? E.FUNC_ADD, BLEND_FUNC[rt.aFunc] ?? E.FUNC_ADD);
-      const bc = s.blendColor, wr = cb0.write;
-      gl.blendColor(...([0, 1, 2, 3].map((q) => (wr[q] === undefined || wr[q] < 0 ? 1 : bc[wr[q]])) as [number, number, number, number]));
-    } else gl.disable(E.BLEND);
-    // The color mask goes through the stored layout too. A component the first buffer doesn't store stays on: WebGL2
-    // has one mask for all buffers, and another may store it (an RG target first masked an RGBA one's B and A:
-    // dEQP-GLES3 fragment_out.random).
-    const m = rt ? rt.mask : 0xf;
-    const wr = cb0?.write ?? [0, 1, 2, 3];
-    const bit = (q: number) => (wr[q] === undefined || wr[q] < 0 ? true : !!(m & (1 << wr[q])));
-    gl.colorMask(bit(0), bit(1), bit(2), bit(3));
+    // Blend and color mask, through each buffer's stored layout: per buffer where the browser can
+    // (OES_draw_buffers_indexed, which backs the caps' independent blending and leaves an integer buffer beside a float
+    // one unblended); otherwise the first buffer's for all.
+    const ix = this.indexed && key.cbufs.length > 1 ? this.indexed : null;
+    const first = key.cbufs.findIndex((k) => k);
+    const targets = ix ? key.cbufs.flatMap((cb, k) => (cb ? [k] : [])) : [Math.max(first, 0)];
+    let blendColorOf: ColorKey | undefined;
+    for (const k of targets) {
+      const cb = key.cbufs[k];
+      const rt = this.blendTarget(blend, ix ? k : 0);
+      if (rt?.enable && cb?.type === 'f') {
+        const sf = s.fb.cbufs[k];
+        const noAlpha = !!(sf && (FORMATS.get(sf.format) ?? this.resources.get(sf.res)?.fmt))?.x;
+        const fac = (g: number) => {
+          let v = BLEND_FACTOR[g] ?? E.ONE;
+          if (noAlpha) v = v === E.DST_ALPHA ? E.ONE : v === E.ONE_MINUS_DST_ALPHA ? E.ZERO : v;
+          return v;
+        };
+        // A constant color and a constant alpha together, which WebGL refuses: the source RGB factor is the shader's
+        // (`ColorKey.blendSrc`); on alpha, constant color is constant alpha.
+        const asAlpha = (g: number) => (g === 7 ? 8 : g === 0x17 ? 0x18 : g);
+        const func = [cb.blendSrc ? E.ONE : fac(rt.rgbSrc), fac(rt.rgbDst), fac(asAlpha(rt.aSrc)), fac(asAlpha(rt.aDst))] as const;
+        const eq = [BLEND_FUNC[rt.rgbFunc] ?? E.FUNC_ADD, BLEND_FUNC[rt.aFunc] ?? E.FUNC_ADD] as const;
+        if (ix) { ix.enableiOES(E.BLEND, k); ix.blendFuncSeparateiOES(k, ...func); ix.blendEquationSeparateiOES(k, ...eq); }
+        else { gl.enable(E.BLEND); gl.blendFuncSeparate(...func); gl.blendEquationSeparate(...eq); }
+        blendColorOf ??= cb;
+      } else if (ix) ix.disableiOES(E.BLEND, k);
+      else gl.disable(E.BLEND);
+      // A component the buffer doesn't store stays on. Without per-buffer masks, another buffer may store it (an RG
+      // target first masked an RGBA one's B and A: dEQP-GLES3 fragment_out.random).
+      const m = rt ? rt.mask : 0xf;
+      const wr = cb?.write ?? [0, 1, 2, 3];
+      const bit = (q: number) => (wr[q] === undefined || wr[q] < 0 ? true : !!(m & (1 << wr[q])));
+      if (ix) ix.colorMaskiOES(k, bit(0), bit(1), bit(2), bit(3));
+      else gl.colorMask(bit(0), bit(1), bit(2), bit(3));
+    }
+    // One blend color for all buffers, through the first blended buffer's layout. Its alpha is a factor (CONSTANT_ALPHA),
+    // not a stored component: the guest's where the layout stores no channel there (RGB565, an X: dEQP-GLES3
+    // draw_buffers_indexed.random.max_implementation_draw_buffers.0, an RGB565 buffer first).
+    if (blendColorOf) {
+      const bc = s.blendColor, wr = blendColorOf.write;
+      gl.blendColor(...([0, 1, 2, 3].map((q) => (wr[q] !== undefined && wr[q] >= 0 ? bc[wr[q]] : q === 3 ? bc[3] : 1)) as [number, number, number, number]));
+    }
     if (blend?.alphaToCoverage) gl.enable(E.SAMPLE_ALPHA_TO_COVERAGE); else gl.disable(E.SAMPLE_ALPHA_TO_COVERAGE);
     this.sampleMask(c, s);
     // Depth and stencil.

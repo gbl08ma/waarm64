@@ -169,12 +169,16 @@ test('virgl tgsi: a constant blend factor WebGL can\'t pair is applied in the sh
   const fs = parseTgsi('FRAG\nDCL OUT[0], COLOR\nIMM[0] FLT32 {1.0, 0.5, 0.25, 1.0}\n  0: MOV OUT[0], IMM[0]\n  1: END');
   const plain = generate(vs, fs, { ...KEY, attribs: ['f'] });
   assert.ok(!plain.fs.includes('u_blendc'));
-  assert.ok(plain.vs.includes('gl_Position.z *= u_adjz;'));
+  assert.ok(plain.vs.includes('gl_Position.z = gl_Position.z * u_adjz.x + gl_Position.w * u_adjz.y;'));
   for (const [f, e] of [[7, 'u_blendc.rgb'], [0x17, '(1.0 - u_blendc.rgb)'], [8, 'vec3(u_blendc.a)'], [0x18, 'vec3(1.0 - u_blendc.a)']] as const) {
-    const p = generate(vs, fs, { ...KEY, attribs: ['f'], blendSrc: f });
+    const p = generate(vs, fs, { ...KEY, attribs: ['f'], cbufs: [{ type: 'f', write: [0, 1, 2, 3], blendSrc: f }] });
     assert.ok(p.fs.includes('uniform vec4 u_blendc;'), p.fs);
     assert.ok(p.fs.includes(`vec4(col0.rgb * ${e}, col0.a)`), p.fs);
   }
+  // Per buffer (independent blending): only the buffer whose blend pairs them.
+  const fs2 = parseTgsi('FRAG\nDCL OUT[0], COLOR\nDCL OUT[1], COLOR[1]\nIMM[0] FLT32 {1.0, 0.5, 0.25, 1.0}\n  0: MOV OUT[0], IMM[0]\n  1: MOV OUT[1], IMM[0]\n  2: END');
+  const two = generate(vs, fs2, { ...KEY, attribs: ['f'], cbufs: [{ type: 'f', write: [0, 1, 2, 3] }, { type: 'f', write: [0, 1, 2, 3], blendSrc: 7 }] });
+  assert.ok(two.fs.includes('o0 = vec4(col0.x, col0.y, col0.z, col0.w);') && two.fs.includes('vec4(col1.rgb * u_blendc.rgb, col1.a)') && !two.fs.includes('col0.rgb *'), two.fs);
   // A target without alpha (RGB565, R8) still gets the fragment's alpha in the output's fourth component: blending reads it.
   for (const [write, out] of [[[0, 1, 2], 'o0 = vec4(col0.x, col0.y, col0.z, col0.w);'], [[0], 'o0 = vec4(col0.x, 0.0, 0.0, col0.w);']] as const) {
     const p = generate(vs, fs, { ...KEY, attribs: ['f'], cbufs: [{ type: 'f', write: [...write] }] });
@@ -542,6 +546,82 @@ function drawable(r: VirglRenderer, ctx = 1) {
   cmd(6, 0, 16, 0, 1);
   return { setup: words, draw: [8 | 12 << 16, 0, 3, 4, 0, 1, 0, 0, 0, 0, 0, 2, 0] };
 }
+
+test('virgl renderer: independent blending and clip control through the browser\'s extensions, the first buffer\'s state for all without them (dEQP-GLES3 draw_buffers_indexed, dEQP-GLES2 clip_control)', () => {
+  const f = (x: number) => new Uint32Array(new Float32Array([x]).buffer)[0];
+  const run = (extensions?: string[]) => {
+    const gl = mockGl(extensions ? { extensions } : {});
+    gl.keepLog = true;
+    const errors: string[] = [];
+    const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
+    r.createContext(1);
+    const d = drawable(r);
+    r.createResource({ id: 4, target: 2, format: 67, bind: 2, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+    r.attach(1, 4);
+    const words: number[] = [];
+    const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+    const text = (src: string) => { const b = new TextEncoder().encode(src + '\0'); const w = new Uint32Array(Math.ceil(b.length / 4)); new Uint8Array(w.buffer).set(b); return [b.length, ...w]; };
+    const [len, ...t] = text('FRAG\nDCL OUT[0], COLOR\nDCL OUT[1], COLOR[1]\nIMM[0] FLT32 {1.0, 0.0, 0.0, 0.5}\n  0: MOV OUT[0], IMM[0]\n  1: MOV OUT[1], IMM[0]\n  2: END\n');
+    cmd(1, 4, 12, 1, len, 0, 0, ...t); cmd(31, 0, 12, 1);
+    cmd(1, 8, 23, 4, 67, 0, 0);
+    cmd(5, 0, 2, 0, 22, 23);
+    // Independent: buffer 0 blends SRC_ALPHA, ONE_MINUS_SRC_ALPHA (all of RGBA written); buffer 1 constant color with
+    // one minus constant alpha (which WebGL can't pair: folded into the shader), only R written.
+    const rt = (on: number, src: number, dst: number, mask: number) => on | src << 4 | dst << 9 | 1 << 17 | 0x11 << 22 | mask << 27;
+    cmd(1, 1, 30, 1, 0, rt(1, 0x3, 0x13, 0xf), rt(1, 0x7, 0x18, 0x1), 0, 0, 0, 0, 0, 0); cmd(2, 1, 30);
+    // A rasterizer with clip_halfz (bit 2), and a depth range inverted: z 0.75 at clip z 0, 0.25 at clip z 1.
+    cmd(1, 2, 24, 1 << 1 | 1 << 2, f(1), 0, 0, f(1), 0, 0, 0); cmd(2, 2, 24);
+    cmd(4, 0, 0, f(2), f(2), f(-0.5), f(2), f(2), f(0.75));
+    r.submit(1, new Uint32Array([...d.setup, ...words, ...d.draw]));
+    assert.deepEqual(errors, []);
+    const at = gl.log.findIndex(([n]) => n === 'drawArrays');
+    assert.ok(at >= 0, 'drawn');
+    const before = gl.log.slice(0, at);
+    const calls = (n: string) => before.filter(([m]) => m === n).map(([, a]) => a);
+    const fs = calls('shaderSource').map((a) => String(a[1])).find((x) => x.includes('out vec4 o1'))!;
+    return { calls, fs };
+  };
+  const ext = run(['OES_draw_buffers_indexed', 'EXT_clip_control']);
+  assert.deepEqual(ext.calls('enableiOES'), [[E.BLEND, 0], [E.BLEND, 1]]);
+  assert.deepEqual(ext.calls('blendFuncSeparateiOES'), [[0, E.SRC_ALPHA, E.ONE_MINUS_SRC_ALPHA, E.ONE, E.ZERO], [1, E.ONE, E.ONE_MINUS_CONSTANT_ALPHA, E.ONE, E.ZERO]]);
+  assert.ok(ext.fs.includes('vec4(col1.rgb * u_blendc.rgb, col1.a)') && !ext.fs.includes('col0.rgb *'), ext.fs);
+  assert.deepEqual(ext.calls('colorMaskiOES'), [[0, true, true, true, true], [1, true, false, false, false]]);
+  assert.deepEqual(ext.calls('clipControlEXT'), [[E.LOWER_LEFT_EXT, E.ZERO_TO_ONE_EXT]]);
+  // 0 to 1 turned round by z' = w - z, into the range the right way round.
+  assert.deepEqual(ext.calls('uniform2f').map((a) => a.slice(1)), [[-1, 1]]);
+  assert.deepEqual(ext.calls('depthRange'), [[0.25, 0.75]]);
+  // Without: the first buffer's blend and mask for all, -1 to 1 (the caps then offer neither).
+  const plain = run();
+  assert.deepEqual(plain.calls('enableiOES'), []);
+  assert.deepEqual(plain.calls('blendFuncSeparate'), [[E.SRC_ALPHA, E.ONE_MINUS_SRC_ALPHA, E.ONE, E.ZERO]]);
+  assert.deepEqual(plain.calls('colorMask').at(-1), [true, true, true, true]);
+  assert.ok(!plain.fs.includes('u_blendc'), plain.fs);
+  assert.deepEqual(plain.calls('clipControlEXT'), []);
+  assert.deepEqual(plain.calls('uniform2f').map((a) => a.slice(1)), [[-1, 0]]);
+});
+
+test('virgl renderer: the blend color\'s alpha is the guest\'s on a target that stores no alpha (dEQP-GLES3 draw_buffers_indexed.random, RGB565 first)', () => {
+  const f = (x: number) => new Uint32Array(new Float32Array([x]).buffer)[0];
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => [new Uint8Array(0)], log: (m) => errors.push(m) });
+  r.createContext(1);
+  const d = drawable(r);
+  r.createResource({ id: 4, target: 2, format: 7, bind: 2, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(1, 4);
+  const words: number[] = [];
+  const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+  cmd(1, 8, 23, 4, 7, 0, 0);
+  cmd(5, 0, 1, 0, 23);
+  // ONE_MINUS_DST_ALPHA, ONE_MINUS_CONSTANT_ALPHA on B5G6R5, the blend color (0.1, 0.2, 0.3, 0.25).
+  cmd(1, 1, 30, 0, 0, 1 | 0x14 << 4 | 0x18 << 9 | 1 << 17 | 0x11 << 22 | 0xf << 27, 0, 0, 0, 0, 0, 0, 0); cmd(2, 1, 30);
+  cmd(14, 0, f(0.1), f(0.2), f(0.3), f(0.25));
+  r.submit(1, new Uint32Array([...d.setup, ...words, ...d.draw]));
+  assert.deepEqual(errors, []);
+  const bc = gl.log.filter(([n]) => n === 'blendColor').at(-1)![1] as number[];
+  assert.deepEqual(bc.map((x) => Math.round(x * 100) / 100), [0.1, 0.2, 0.3, 0.25]);
+});
 
 test('virgl renderer: a fence waits for the occlusion queries before it (dEQP-GLES3 occlusion_query: results after glFinish)', () => {
   const gl = mockGl();
@@ -954,6 +1034,13 @@ test('virgl caps: from the browser\'s WebGL2, formats only where their extension
   assert.ok((plain.bset as number) & (1 << 14));
   assert.ok(!((decodeCaps(capsFromGl(mockGl({ params: { [E.MAX_SAMPLES]: 1 } }))).bset as number) & (1 << 14)));
   assert.ok(has(plain, 'supported_multisample_formats', 'R8G8B8A8_UNORM') && has(plain, 'supported_multisample_formats', 'Z24_UNORM_S8_UINT'));
+  // Independent blending and clip control where the browser has their extensions.
+  const ext = decodeCaps(capsFromGl(mockGl({ extensions: ['OES_draw_buffers_indexed', 'EXT_clip_control'] })));
+  assert.equal((ext.bset as number) & 3, 3);
+  assert.equal((plain.bset as number) & 3, 0);
+  assert.ok((ext.capability_bits as number) & (1 << 27) && !((plain.capability_bits as number) & (1 << 27)));
+  assert.match(capsBacked(capsFromGl(mockGl({ extensions: ['OES_draw_buffers_indexed'] })), capsFromGl(mockGl({ extensions: [] })))!, /bset lacks 3/);
+  assert.match(capsBacked(capsFromGl(mockGl({ extensions: ['EXT_clip_control'] })), capsFromGl(mockGl({ extensions: [] })))!, /capability_bits lacks 8000000/);
   // A machine saved where s3tc was there doesn't restore its 3D where it isn't.
   assert.equal(capsBacked(capsFromGl(mockGl({ extensions: [] })), capsFromGl(mockGl({ extensions: ['WEBGL_compressed_texture_s3tc'] }))), null);
   assert.match(capsBacked(capsFromGl(mockGl({ extensions: ['WEBGL_compressed_texture_s3tc'] })), capsFromGl(mockGl({ extensions: [] })))!, /sampler lacks formats/);
@@ -984,10 +1071,10 @@ test('virgl caps: `?gpu=capsno=` takes formats out of every mask and leaves the 
 
 test('virgl caps: `?gpu=capsyes=` sets the bits named, in their words, and nothing else', () => {
   const caps = capsFromGl(mockGl({ extensions: [] }));
-  const { caps: set, unknown } = withBits(caps, ['COPY_IMAGE', 'CLIP_HALFZ', 'V2_BLEND_EQUATION', 'NOT_A_BIT']);
+  const { caps: set, unknown } = withBits(caps, ['COPY_IMAGE', 'INDIRECT_INPUT_ADDR', 'V2_BLEND_EQUATION', 'NOT_A_BIT']);
   assert.deepEqual(unknown, ['NOT_A_BIT']);
   const a = decodeCaps(caps), b = decodeCaps(set);
-  assert.equal(b.capability_bits, ((a.capability_bits as number) | (1 << 3) | (1 << 27)) >>> 0);
+  assert.equal(b.capability_bits, ((a.capability_bits as number) | (1 << 3) | (1 << 25)) >>> 0);
   assert.equal(b.capability_bits_v2, ((a.capability_bits_v2 as number) | 1) >>> 0);
   assert.ok(!((a.capability_bits as number) & (1 << 3)), 'not offered before');
   let differ = 0;

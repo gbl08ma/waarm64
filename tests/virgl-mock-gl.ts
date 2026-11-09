@@ -25,7 +25,8 @@ export function mockGl(o: { extensions?: string[]; params?: Record<number, unkno
   const canvas = { width: 300, height: 150 };
   const answers: Record<string, (...a: unknown[]) => unknown> = {
     getParameter: (p) => o.params?.[p as number] ?? PARAMS[p as number] ?? 0,
-    getExtension: (name) => (extensions.has(name as string) ? {} : null),
+    // An extension's functions are recorded as the context's are (`enableiOES`, `clipControlEXT`…).
+    getExtension: (name) => (extensions.has(name as string) ? recorder({}) : null),
     getSupportedExtensions: () => [...extensions],
     checkFramebufferStatus: () => E.FRAMEBUFFER_COMPLETE,
     getProgramParameter: () => true,
@@ -38,17 +39,20 @@ export function mockGl(o: { extensions?: string[]; params?: Record<number, unkno
     isContextLost: () => false,
   };
   const target = { calls, log, keepLog: false, canvas } as unknown as MockGl;
-  return new Proxy(target, {
-    get(t, name: string) {
-      if (name in t) return (t as unknown as Record<string, unknown>)[name];
-      if (/^[A-Z_0-9]+$/.test(name)) return (E as Record<string, number>)[name] ?? 0;
-      return (...a: unknown[]) => {
-        calls.set(name, (calls.get(name) ?? 0) + 1);
-        if (t.keepLog) log.push([name, a]);
-        if (answers[name]) return answers[name](...a);
-        if (name.startsWith('create')) return { obj: name.slice(6), id: ++serial };
-        return undefined;
-      };
-    },
-  });
+  function recorder<T extends object>(o: T): T {
+    return new Proxy(o, {
+      get(t, name: string) {
+        if (name in t) return (t as unknown as Record<string, unknown>)[name];
+        if (/^[A-Z_0-9]+$/.test(name)) return (E as Record<string, number>)[name] ?? 0;
+        return (...a: unknown[]) => {
+          calls.set(name, (calls.get(name) ?? 0) + 1);
+          if (target.keepLog) log.push([name, a]);
+          if (answers[name]) return answers[name](...a);
+          if (name.startsWith('create')) return { obj: name.slice(6), id: ++serial };
+          return undefined;
+        };
+      },
+    });
+  }
+  return recorder(target);
 }

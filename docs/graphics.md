@@ -254,9 +254,10 @@ screen than on the simple framebuffer (backlog).
 
 - **The floor is `virglCaps`** (`web/virgl.ts`): virglrenderer `c8e3fc3b`'s own caps on a GLES 3.0 host
   (`virgl_test_server --use-gles` on llvmpipe with `MESA_GLES_VERSION_OVERRIDE=3.0`): GLSL level 130, `HOST_IS_GLES`,
-  VIRGL v1 (308 bytes) and VIRGL2 (1408 bytes), **minus what WebGL2 can't back** (independent blending, conditional
-  rendering, `start_instance`, timer queries, depth clamp, `textureQueryLod`, sample shading, cull distance, fbfetch,
-  sRGB write control, ASTC, half-z clip, dual-source blending, advanced blend equations) and at WebGL2's minimum limits.
+  VIRGL v1 (308 bytes) and VIRGL2 (1408 bytes), **minus what WebGL2 can't back** (conditional rendering,
+  `start_instance`, timer queries, depth clamp, `textureQueryLod`, sample shading, cull distance, fbfetch, sRGB write
+  control, ASTC, dual-source blending, advanced blend equations) or backs only as an extension (independent blending,
+  half-z clip: below), and at WebGL2's minimum limits.
 - **A page machine's caps follow its browser** (`capsFromGl`, `web/virgl-caps.ts`; never more than the renderer backs
   there): the context's limits; the format masks from the format table, a format only with its extension
   (`R16_UNORM` with `EXT_texture_norm16`, float render targets with `EXT_color_buffer_float`, each compressed family
@@ -264,7 +265,13 @@ screen than on the simple framebuffer (backlog).
   attachments; the read-back formats the renderer can read here; **`texture_multisample` where `MAX_SAMPLES` is above
   1**, with the color and depth formats WebGL2 multisamples. Without that bit Mesa makes no multisampled renderbuffer at
   all, though GLES 3.0 requires 4 samples (vrend sets it only on GLES 3.1, so vtest on a GLES 3.0 host fails dEQP's
-  MSAA cases). The video decoders are added by `withVideo` (plans/video.md).
+  MSAA cases). **The capability bits an extension backs** (`EXTENSION_BITS`) where the browser has it: independent
+  blending (`indep_blend_enable` and `_func`, which give the guest `OES`/`EXT_draw_buffers_indexed`) with
+  `OES_draw_buffers_indexed`, and `CLIP_HALFZ` (`EXT_clip_control`) with `EXT_clip_control`. The renderer then sets each
+  buffer's blend, equation and color mask through its own stored layout (without the extension, the first buffer's for
+  all, as Gallium's non-independent blend is), and the rasterizer's `clip_halfz` as clip control's 0-to-1 depth (an
+  inverted depth range turned round as `w - z`, as `-z` is between -1 and 1). The video decoders are added by
+  `withVideo` (plans/video.md).
 - **No lower-left origin** (no `fragment_coord_conventions`, as vrend on GLES): Mesa lowers `gl_FragCoord` to
   upper-left itself, so the translator ignores the TGSI's `FS_COORD_ORIGIN` (honouring it flipped y twice).
 - **`capsBacked`**: a snapshot restored in a browser that can't back the caps its guest was given keeps them for the
@@ -600,6 +607,9 @@ Firefox makes 10–25 resources a second, where the state is bounded by what the
 The guest gets GLES 3.0 and GL 2.1; none of this is advertised, or it is refused with a reason: conditional rendering,
 user clip planes, cull distances, indirect draws, depth read-backs, indexed or strip stream output, timer
 queries, images, buffer textures, `IMUL_HI`, cube arrays, multisampled textures sampled exactly (the average above).
+Two extensions WebGL2 has can't reach the guest through virgl: multiview (`OVR_multiview2`: the guest's Mesa sets no
+`multiview` cap for virgl, and virgl's protocol has no views) and `EXT_debug_marker` (Mesa 26.2 has none; virgl's
+`STRING_MARKER` serves `KHR_debug`'s messages).
 Beyond GLES 3.0 (compute, GLES 3.1) would be a WebGPU backend, and desktop GL 3.0 and 3.1 extensions WebGL2 has only
 as extensions (backlog.md "Platform and devices"); desktop GL past 3.1 needs geometry and tessellation, which neither
 WebGL2 nor WebGPU has.
@@ -950,9 +960,10 @@ Results on SwiftShader (`bench/gpu/results/g4-deqp/`):
 Better than the oracle (`tools/virgl-oracle/deqp.sh`: the same binaries on Mesa's virpipe against vtest on llvmpipe's
 GLES 3.0), which fails MSAA. The warnings left are timing (`flush_finish`) and highp `floor`'s precision on SwiftShader.
 The census of 2026-11-09 (bench/gpu/REPORT.md "dEQP-GLES's census") ran both lists again: the same counts, no case
-failing, every "not supported" WebGL2's limit, the run's configuration or a cap we don't take from WebGL2's extensions
-yet (backlog). **`scripts/ci-deqp.sh`** runs the pass lists in `tests/deqp/`, every case that passed there (17,027
-and 44,399): a seeded sample by default, `--full` the whole lists (docs/testing.md). Groups that caught regressions
+failing, every "not supported" WebGL2's limit, the run's configuration or a cap we didn't take from WebGL2's
+extensions; independent blending and clip control from them since (REPORT.md "virgl's caps from WebGL2's extensions")
+pass 85 more. **`scripts/ci-deqp.sh`** runs the pass lists in `tests/deqp/`, every case that passes (17,035 and
+44,476): a seeded sample by default, `--full` the whole lists (docs/testing.md). Groups that caught regressions
 a thin sample missed: GLES3's `lifetime`, `occlusion_query` and `texstorage2d/3d.format` (a query destroyed while
 pending hung the guest; the drawn depth upload's `UNPACK_ALIGNMENT`); a sample takes an eighth of each.
 

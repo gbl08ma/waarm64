@@ -49,7 +49,7 @@ only edits docs: `.md` files or code comments):
   virgl renderer, the TGSI translator, the caps, the GPU worker, virtio-gpu's 3D commands), and at the end of a
   graphics track. It needs `images/deqp/build.sh`'s disk and guest (on demand, ~15 min once). The lists are every
   case of dEQP's mustpass lists that passed on SwiftShader in the census of 2026-11-09 (17,027 and 44,399:
-  bench/gpu/REPORT.md "dEQP-GLES's census"; `bench/gpu/deqp-census.ts --lists` makes them from a whole run's results).
+  bench/gpu/REPORT.md "dEQP-GLES's census"; 17,035 and 44,476 with the cases the caps from WebGL2's extensions added; `bench/gpu/deqp-census.ts --lists` makes them from a whole run's results).
   By default a sample of each, as `ci-deqp-vk.sh`'s: every 8th case of each group (a name's second to fourth parts)
   from an offset per group a seed draws, at least one case a group, in the list's order (`tests/deqp-lists.ts`), so
   runs together cover the lists; each run prints its seed (`WEBPC_DEQP_SEED=<n>` runs that sample again). **A case
