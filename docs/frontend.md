@@ -263,8 +263,11 @@ a dot; a spacer is `flex: 1`; no element that shows anything, no bar, and `#stat
 tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Preferences' editor.
 - **Elements:** power state, vCPUs, RAM, uptime, clock, tab memory (the memory signal's estimate); MIPS and JIT share,
   IRQ/s, blocks compiled, compile time, the JIT cache against its budget; network traffic and totals, each adapter's
-  connection; disk speed and totals; the renderer (3D or 2D, WebGL2 or a canvas, amber when WebGL2 is software), frame
-  rate, Vulkan activity (a Vulkan machine's: the guest's Venus contexts, roughly its programs holding a Vulkan device, and
+  connection; disk speed and totals; USB traffic and totals (a machine with the USB controller: its devices together,
+  in and out as the guest sees them, counted as the xHCI's transfers complete, `web/usb.ts`); the renderer (3D or 2D,
+  WebGL2 or a canvas, amber when WebGL2 is software; [Framebuffer](ui:statusbar:statusbar.gpu.framebuffer) on a machine
+  without virtio-gpu, `?display=simple`), frame rate (frames that drew something a second: the GPU worker's or
+  presenter's, or the simple framebuffer's draws, which the machine worker counts and reports as `screen-stats`), Vulkan activity (a Vulkan machine's: the guest's Venus contexts, roughly its programs holding a Vulkan device, and
   the WebGPU submits a second, its draws and the adapter in the tooltip; amber on a software adapter, [Vulkan idle](ui:statusbar:statusbar.vulkan.idle) with
   none, red without a WebGPU device: the worker's `stats` `vulkan`), video decode (the streams' codecs, hardware as asked: WebCodecs doesn't say what a decoder got, and pictures a
   second); mouse lock, keyboard (where keys go: the machine when the screen or the terminal has the focus, what the
@@ -273,16 +276,20 @@ tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Pref
 - **Per device:** MIPS, the JIT share, and the network's and disks' elements come summed (`all`), for `each` device
   (vCPUs as bars or numbers; adapters and disks one after another) or for `one`, by its number: vCPUs from 0, as the
   guest names them, adapters and disks from 1, as the machine's tabs list them. An element whose device the running
-  machine hasn't isn't drawn (dimmed in the editor). USB devices aren't counted (attached while running).
+  machine hasn't isn't drawn (dimmed in the editor). USB devices count only together, in the USB elements (they come
+  and go while the machine runs): not in the disks' or adapters' (a USB stick isn't a disk of the machine's).
 - **Looks:** words (`812 MIPS`), an icon and the bare value (the words for screen readers and in the tooltip), or both;
   the states (mouse lock, keyboard, the connection, the microphone) default to the icon, coloured by their tone.
 - **The editor:** a copy of the bar, its elements as chips that draw what the running machine shows (a made-up
   machine's numbers, `SAMPLE`, while none runs): dragged to move (Alt+←/→ with the focus on one), × or dragged onto the
-  palette to remove, chosen to set their look, bars or numbers and device number. The palette under it adds an element
+  palette to remove, chosen to set their look, bars or numbers and device number (and its ←/→ buttons move it: the
+  way on a touchscreen, which HTML5 drag and drop doesn't serve). The palette under it adds an element
   at the end on a click, where it's dropped on a drag. Restore defaults forgets the kept list.
 - **In full screen:** off by default (the machine alone, edge to edge: full screen is `<main>`'s); Preferences' [Show the
   status bar in full screen](ui:machines:MachinesPage.statusFullscreen) (`statusFullscreen`) makes it the page's, without its toolbar and message bar (index.html).
-- **Costs:** none to the emulation: the per-vCPU steps were counted already; the disk and adapter bytes are one add per
+- **Per-vCPU bars** are drawn against the run's highest vCPU MIPS so far (`cpuPeak`): a fixed scale wouldn't fit
+  every host and guest, whose rates differ by far more than the bars could show (decided 2026-11-09).
+- **Costs:** none to the emulation: the per-vCPU steps were counted already; the disk, adapter and USB bytes are one add per
   completed request in the device worker, into a shared buffer the machine worker reads once a second (devices.md
   "Threads and determinism"); the GPU's numbers are increments where the work already happens, posted once a second.
 

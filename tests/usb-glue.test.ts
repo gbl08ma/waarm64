@@ -64,7 +64,8 @@ test('the glue turns request records into TDs and results into completion record
   const channel = new MessageChannel();
   const states: UsbState[] = [];
   channel.port2.onmessage = (e) => states.push(e.data);
-  const usb = new Usb({ memory, shared: 0, ram: RAM, ramSize: 65536, deterministic: true, kick: () => kicks++, port: channel.port1 });
+  const io = new Float64Array(2); // the status bar's bytes IN and OUT
+  const usb = new Usb({ memory, shared: 0, ram: RAM, ramSize: 65536, deterministic: true, kick: () => kicks++, port: channel.port1, io });
   // The ports keep the process alive: closed whatever happens, or a failed assertion hangs the file instead of failing.
   t.after(() => { usb.close(); channel.port2.close(); });
   const CPL = (8 + 8 + 4 * 4096) / 4;
@@ -91,6 +92,7 @@ test('the glue turns request records into TDs and results into completion record
   usb.poll();
   assert.deepEqual(completions(), [[7, 13 << 8, 18]]);
   assert.deepEqual([...new Uint8Array(memory.buffer, RAM + 0x100, 4)], [18, 1, 0, 2]);
+  assert.deepEqual([...io], [18, 0], 'the bytes the guest got, counted');
   // SET_CONFIGURATION(3), then a bulk OUT (DCI 2: OUT 1) of immediate data whose last byte breaks the pattern.
   post([8, 0 | 1 << 8, 4, 0 | 4 << 16 | 1 << 24, 0, 0x0003_0900, 0]);
   post([9, 0 | 2 << 8, 6, 1 | 2 << 16, 8, 0, 8 | 0x8000_0000, 0x03020100, 0x08060504]);
@@ -102,6 +104,7 @@ test('the glue turns request records into TDs and results into completion record
   post([10, 0 | 3 << 8, 4, 1 | 6 << 16, 512, 0x200, 512]);
   usb.poll();
   assert.deepEqual(completions(), []);
+  assert.deepEqual([...io], [18, 0], 'a stalled OUT and a dropped record count nothing');
   // The states arrive through the port: under load, later than any fixed wait (a 10 ms one failed in ci.sh).
   for (const t0 = Date.now(); states.length < 4 && Date.now() - t0 < 5000;) await new Promise((r) => setTimeout(r, 5));
   assert.deepEqual(states.map((s) => s.state), ['attached', 'error', 'error', 'detached']);
