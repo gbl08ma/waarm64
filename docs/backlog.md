@@ -263,14 +263,6 @@ the steps, so an interpreted step costs ~3.5× a compiled one. The loads' new co
 - Buildroot's warm boot under the JIT has a 10× wider IQR than the interpreter's (V8 tiering
   hundreds of modules at different points, presumably).
 
-- **Groups of accesses' leftovers** (docs/jit.md "Loads and stores", `bench/boot/REPORT.md` "Groups of accesses,
-  measured"). Probes left on Firefox's pages session, of those with no groups at all: 74% with today's rule. Untried: two
-  or three probes in one `if` (accesses off another base inside a group: 72%, 71%; followers need a second `HOST`) and
-  instructions with flags among a group's (SUBS, CSEL: 72.3% with any instruction, the bound). Register offsets (5.6% of
-  accesses) have no static span. Across blocks, 46% of probes land on the page of one of the function's last two
-  probes, which no group can reach: the region's next lever if probes ever matter, though no time difference has
-  come from removing them yet.
-
 - **Where the JIT's wasm bytes go, and what could shrink them.** **Not a lever for users** (2026-11-05,
   `bench/boot/REPORT.md` "What a function's size costs, in the VM and on the Mac"): ~20% more machine code a function
   cost Firefox's pages session 3.5% of busy MIPS in the dev VM and nothing on the Mac host; cuts aimed at size are

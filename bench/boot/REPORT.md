@@ -3045,6 +3045,16 @@ and with the load only inside the group the plant still passed, for a reason not
 call made it fail).
 
 
+## Groups of accesses: the leftovers closed (2026-11-09)
+
+The backlog's leftovers, decided from the analysis above (`results/accstat/pages.txt`) without new runs. Probes left
+of every immediate access's: mixed groups with 4 others (today) 73.8%; any instruction among them, 16 at most, 72.3%
+(the flag setters and readers, SUBS 29% and CSEL & co 7% of what ends a group, MRS 14%); two probes in one `if`
+71.8%; three and any instruction 70.0%. With probes ~10.3% of the wasm (the census in `results/wasm-size/`), ~5% fewer
+probes is ~0.5% of the wasm, under what the size work found users feel (docs/backlog.md "Where the JIT's wasm bytes
+go"), and the two rounds of groups (~26 points of probes) moved no time. Not built, by the user's call; docs/jit.md
+"Tried and not kept" keeps the numbers and the one lever left (probes across blocks).
+
 ## FEAT_DotProd and FEAT_JSCVT, measured (2026-11-02)
 
 The dev VM (8 vCPUs, the M4 under Lima), Chromium 153.0.8010.52 headless, the guest on 4 vCPUs, alternating arms, a boot

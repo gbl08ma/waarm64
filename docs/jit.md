@@ -731,7 +731,8 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   before it leaves, or the chain would undo what the instructions before it retired. A load into the base ends its
   group; LDTR/STTR, exclusives and register offsets never join one. Measured on Firefox's pages session
   (`bench/boot/REPORT.md` "Groups of accesses, measured"): 32.6% of guest instructions are loads and stores, 92.8% of
-  those immediate forms; groups leave 74-75% of their probes; 0.58% of group runs straddle a page.
+  those immediate forms; groups leave 74-75% of their probes; 0.58% of group runs straddle a page. What's left
+  isn't built ([Tried and not kept](#tried-and-not-kept), "Wider groups of accesses").
   **The slow arms share their failure exits** (`emit::Chain`, `fallback_chain`): the arm writes back only the
   dirty registers the instruction reads (its fast path's reads, `Func::ireads`) or writes, calls the helper, and
   if that doesn't retire branches with its retired count to its segment of the block's failure chain. A segment
@@ -1259,6 +1260,16 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   of its steps. **Decaying a block's count** while it isn't reported changed nothing. **Without the pressure rule**
   (a flat 2000) the wasm fell 9-11% but Alpine's boot ran 2.8% slower and Firefox's pages interpreted 27% more steps:
   a cold boot wants 1000, a browser's working set under pressure 2000, which the rule gives.
+- **Wider groups of accesses** (closed 2026-11-09 unbuilt; `bench/boot/REPORT.md` "Groups of accesses, measured" and
+  "Groups of accesses: the leftovers closed"; the analysis in `bench/boot/results/accstat/pages.txt`). Of every
+  immediate access's probe on Firefox's pages session, today's groups leave 73.8%; all the untried rules together
+  reach 70.0%: flag setters and readers among a group (SUBS, CSEL & co, MRS) 72.3%, two probes in one `if` (a second
+  `HOST` through the bodies) 71.8%, three probes and any instruction 70.0%. Probes being ~10% of the wasm, that's
+  ~0.5% at best, and the ~26 points the groups removed moved no time. Flag setters inside a span would also need
+  the cold arm's failure exit to re-derive the setter's lazy flags (the chain's return stores the flag locals,
+  stale once the helper retired the setter): the failure-chain class of bug. Register offsets (5.6% of accesses) have
+  no static span. The one larger lever, if probes ever cost time: across blocks, 46% of probes land on the page of
+  one of the function's last two probes, which no group reaches.
 - **Larger batches in a browser** (2026-11-03; `bench/boot/REPORT.md` "The wasm code GC today, and larger batches in
   a browser"): `BATCH_STEPS` 200K and 800K against 50K, two sessions each of Firefox's pages session and the churn
   screen. Modules fell 45% and 67% (pages) and 31% and 57% (churn) for the same wasm on the pages session, but
