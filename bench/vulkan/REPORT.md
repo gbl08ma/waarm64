@@ -816,6 +816,67 @@ that needs update after bind, partially bound descriptors and runtime arrays (th
 cases passed on the M4 too (`m4-joined.json`). `scripts/ci.sh` (513 s), `scripts/ci-graphics.sh` (258 s) and
 `scripts/ci-deqp-vk.sh` (a sample of 11,008, seed 3855661911, 1,062 s) passed.
 
+### The second batch: the M4's subgroups anchored, the linkage cases joined, six items checked
+
+2026-11-09, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+macOS 26.6.2, `bench/gpu/sway-mac.sh`). Eight more [A] items; JSON in `results/vk4/easy2/`.
+
+- **Subgroups on the Mac: anchored, no longer held.** Rechecked on 157: still wrong. Narrowed with kernels on the
+  Mac's WebGPU: a `subgroupBallot`, `subgroupElect` or `subgroupBroadcastFirst` whose `if` holds no other subgroup
+  operation and whose value is stored to a `var` read past the `if` is computed with every invocation (ballot
+  0xffffffff for 0xaaaaaaaa, the first invocation 0 for 1: if-converted as if side-effect free); a store inside the
+  `if` is right, and so is an add of the subgroup *in the operand* (`subgroupBallot(p & (subgroupAdd(1u) != 0u))`),
+  where one beside it whose value is unused or folded (`>> 31u`) isn't. Every other operation alone in an `if` was
+  right (min, max, scans, any/all, or, shuffles, quads). The translator now anchors the three that way
+  (`WGSL_SUBGROUP_ANCHOR`, wgsl_print.c `SG_ANCHOR`; reads of the first invocation as a shuffle from the anchored first
+  index) where the GPU worker's check (`subgroupsRight`, now plain then anchored kernels) finds the plain kernel wrong
+  and the anchored one right. The confirming test (tests/wgsl.test.ts, `tests/venus/easy/sg-anchor.comp`) failed
+  first; its plain WGSL is wrong on the M4 (66 of 96 results), the anchored right.
+- A first M4 run of the 2,081 cases SwiftShader passes (its 1,865 subgroup passes of VK3 L5 and the 216
+  `glsl.derivate.*dynamic_*`) found the shuffles up, down and by xor wrong too (144 cases): Metal's take a delta that
+  varies across the subgroup wrong (WGSL asks it uniform, Vulkan doesn't; a hand kernel's `subgroupShuffleUp(v, (inv >>
+  2u) & 1u)` was wrong for 16 of 64). Anchored, they are shuffles by the invocation's index (`sg_inv - d`, `+ d`,
+  `^ m`), and the kernel checks one too. Then (`m4-subgroups-linkage.json`, 155 s of dEQP): **1,955 pass**, 32 NotSupported
+  (`ballot_broadcast`'s required size 4), **94 fail: float `subgroups.arithmetic`** (add, mul, min, max and scans,
+  compute and graphics; the integer twins pass, a hand kernel's float add, min and max are right: filed, docs/backlog.md
+  "Float subgroup arithmetic on the Mac"). Before: every subgroup case NotSupported on the M4 (held since VK3 L5). The
+  216 derivative cases (already in the list from SwiftShader) pass on both now; the 39 float arithmetic cases in the
+  list stay (SwiftShader passes them). No subgroup case was added: the list's thinning of those groups (VK3 L5) stands.
+- **`glsl.440.linkage`**: all 68 pass on the M4 (same run) as on SwiftShader: the 66 not in the list joined it.
+- **vkd3d on the M4** (`m4-vkd3d.txt`; `bench/gpu/sway-mac.sh` runs `vkd3d.ts` now, TESTS and FAILED passed on): the
+  three tests that crash on SwiftShader (R16 storage images, which need tier1) pass, 40,677, 103 and 83 checks;
+  test_fractional_viewports passes all 20,594, so its 5,120 failures on SwiftShader are SwiftShader's rounding.
+- **SwiftShader's `var` in a loop**: WGSL § 7.3 confirms a function-scope `var` without an initializer is the zero
+  value at each execution of its declaration. `for (…) { var v: u32; o[i] = v; v = i + 1u; }` writes 0,1,2,3 on
+  SwiftShader, 0,0,0,0 on the M4: filed in docs/backlog.md "Upstream reports" with the repro.
+- **A refused bind group and the other windows**: tests/venus-driver.test.ts "two devices: a device whose bind
+  groups WebGPU refuses leaves the others' submits and fences alone" (every bind group of a third device's scene made
+  invalid, as WebGPU refused Godot's; its submit refused too, its fence signalled): devices 0 and 1 read back their own
+  bytes after it. With a planted defect (submits dropped after a refusal) it fails. The renderer's queue isn't what
+  froze Godot's display (GD G4); not reproduced since the format fix, so the entry is closed.
+- **mpv on Vulkan and SIGTERM** (`mpv-sigterm-sw.json`, the desktop guest with `VN_PERF=no_async_present`, Mesa
+  26.2.6): mpv held past its screenshot, both arms (VA-API's surfaces imported, software decode) exited on `timeout`'s
+  TERM at 40 s, none needed its KILL.
+- **The vkframes profile remade** (`PROFILE=… bench/vulkan/venus-run.ts` on SwiftShader): the old one dated from VK2
+  L7. Now 81 extensions (56 before; `VK_EXT_depth_clip_enable` gone, SwiftShader's adapter has no `depth-clip-control`),
+  32 storage formats (17: T11's packed and sRGB formats by their words; SwiftShader has no tier1, so R8_UINT still has
+  none), `sampleRateShading`, transform feedback, 8- and 16-bit storage, YCbCr; `images/vkframes/build.sh` captured all
+  15 programs again with it.
+- **GTK4's iconscroll on SwiftShader** (`gtk4-sw-*.json`; `bench/gpu/gtk4-load.ts`, the desktop guest, GTK 4.24, 4
+  vCPUs, iconscroll then frames left 20 s and measured 10, GSK on Vulkan then on GL in each session; T13–T14's arms,
+  the pump `?gpu=vkpoll=pump` against the default ticker, alternated, 3 rounds; the Mac idle):
+
+  | SwiftShader, the compositor's frames/s | the pump | the ticker |
+  | --- | --- | --- |
+  | iconscroll, GSK on Vulkan | 16.0, 14.8, 14.4 | **18.2, 18.5, 18.2** |
+  | iconscroll, GSK on GL (same sessions) | 7.8, 7.7, 7.7 | 7.8, 8.0, 7.8 |
+  | frames, GSK on Vulkan (60 a second) | 58.7, 59.1, 59.8 | 59.3, 59.5, 59.8 |
+  | gtk4-demo's CPU in iconscroll, Vulkan (% of a vCPU) | 493, 495, 498 | 466, 471, 466 |
+
+  The ticker is ~20% faster on iconscroll (the rounds don't overlap): the shorter period's gain alone on Linux, where
+  `waitAsync` isn't stretched (T13). GSK on Vulkan draws iconscroll at 2.3× its GL renderer here (on the M4 33 against
+  GL's 28–32), and frames at 60 both ways.
+
 ## VK4 T49 follow-up: the shader store held deflated — fflate's inflateSync, 19 → 3.8 MB for Godot's editor
 
 2026-11-09. The stores Godot 4.7.2's editor (the Forward+ project, `godot.ts`) and vkQuake's two replays

@@ -691,11 +691,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   texture: each plane's region of one resource would need its bytes from an offset, `VenusImport` fills a texture from
   a resource's start), and not with a DRM modifier (ffmpeg's `hwmap` from VA-API to Vulkan makes a disjoint image with
   the planes' explicit layouts: the modifier list leaves the multi-planar formats out).
-- [A, B, C] **GTK4 on Vulkan: the bar met on the M4, the default not taken** (VK4 T13, bench/vulkan/REPORT.md "VK4 T13–T14"; GTK
+- [B, C] **GTK4 on Vulkan: the bar met on the M4, the default not taken** (VK4 T13, bench/vulkan/REPORT.md "VK4 T13–T14"; GTK
   takes GL by default, so only `GSK_RENDERER=vulkan` meets Venus). Since the pump's ticker, iconscroll runs at 33 frames/s
-  on the M4 against GL's 28–32, frames at GL's CPU a frame, fishbowl at 60. Left: (1) [C] NVIDIA and [A] SwiftShader not
-  measured (Linux's `waitAsync` was never stretched: there the gain is the shorter period's alone; SwiftShader's is a
-  run of bench/vulkan/REPORT.md "VK4 T13–T14"'s iconscroll arms in the dev VM); (2) [B] GTK takes Vulkan
+  on the M4 against GL's 28–32, frames at GL's CPU a frame, fishbowl at 60. Left: (1) [C] NVIDIA not measured (SwiftShader, VK4's backlog easy wins: iconscroll at 18.2–18.5 frames/s with
+  the ticker, 14.4–16.0 with the pump, GL's 7.7–8.0: REPORT.md "VK4 backlog easy wins"); (2) [B] GTK takes Vulkan
   by default only with a dma-buf modifier other than LINEAR (sway on virgl would have to import it): the decision that
   makes GTK4 Vulkan's, VK4's tier 4; (3) [B] each fenced queue submit costs the guest two execbuffers (Mesa 26's fences are
   DRM syncobjs signalled through the virtqueue; no feedback path), 3 a GTK4 frame, and GSK's ~70 synchronous
@@ -727,14 +726,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   has no 16-bit texture of its bytes); [C] a browser that renders with a GPU but whose WebGPU canvases fail would lose its GPU channel on the bitmap
   way (`shareMode` decides by the renderer's name: no such browser seen; `?gpu=vkreadback` is the way out); [B] the
   readback way holds the compositor's submit for its wait (7–10 ms a frame at 1080p on SwiftShader).
-- [A, B, C] **Imports' gaps** (VK2 L6, vk/README.md "Imports"; mpv on Vulkan meets its bar regardless):
-  - [A, B, C] **Mesa's async present drops a present after a failed one** (VK3 L4e, REPORT.md "VK3 L4e"; vk/README.md "The
+- [B, C] **Imports' gaps** (VK2 L6, vk/README.md "Imports"; mpv on Vulkan meets its bar regardless):
+  - [B, C] **Mesa's async present drops a present after a failed one** (VK3 L4e, REPORT.md "VK3 L4e"; vk/README.md "The
     guest's Mesa"): Venus's `vn_wsi_present_async` (Mesa 26.x, main as of 8598bb5c) returns the previous present's
     error for the next present, of any swapchain, and drops that one unsubmitted (frame never shown, present fence
     never signalled): a cold mpv's fullscreen window froze and it couldn't exit, also at a file's end. The desktop image
     works around it with `VN_PERF=no_async_present`. Left: [B] drop the workaround once Arch ships a fix (filed in
-    "Upstream reports" below; Arch has 26.2.6 on 2026-11-09); [A] mpv on SIGTERM wasn't rechecked (S: the desktop
-    guest, mpv on Vulkan, `kill -TERM`). [C] **The hosted desktop disk needs replacing** with one built since L4e (the
+    "Upstream reports" below; Arch has 26.2.6 on 2026-11-09) (mpv on Vulkan exits on SIGTERM with it: REPORT.md "VK4 backlog
+    easy wins"). [C] **The hosted desktop disk needs replacing** with one built since L4e (the
     local one is) before a deploy of the page, which since L4e takes libplacebo's advanced path by default
     (`?gpu=vkformats=held`: off), so that an old disk's first cold mpv doesn't meet the freeze.
   - [B] **Each picture is still written into Venus's texture** (VK4 T16 gave each resource a texture of its own, so an
@@ -841,7 +840,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (Xwayland), but Arch's package may not carry them (M: a program built or packaged in the image). The draw parameters'
   cost (a push-buffer place, and group 3 bound again for each draw whose bases change) hasn't been measured on a
   program.
-- [A, B, C] **The Vulkan driver's gaps** (VK2 L2, L5; vk/README.md "The driver"; VK4-KICKOFF.md's T36–T50 took what
+- [B, C] **The Vulkan driver's gaps** (VK2 L2, L5; vk/README.md "The driver"; VK4-KICKOFF.md's T36–T50 took what
   WebGPU can back, each naming the entries it started from), each for when a program or dEQP-VK needs it;
   dEQP-VK's failures by cause. VK4 T1's census (bench/vulkan/REPORT.md "VK4 T1": every 100th case of the direct set's
   groups, 16,489; on SwiftShader 2,448 pass, 498 fail, 2 crash, the rest unsupported, the M4 alike) counts every cause
@@ -1257,11 +1256,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `VK_KHR_extended_flags` (they ask `VK_KHR_maintenance5` too, offered since VK4 T24; not the without-format
     features, as this said before GD G5 offered them); sRGB and 64-bit formats aren't offered (64-bit ones as pairs of
     words, without their atomics).
-  - [A] **`images/vkframes/venus-profile.json` predates VK4 T11** (2026-10-26; found by GD G6; still its last commit on 2026-11-09): it says R8_UINT and the
-    other tier1 formats have no storage, which the device has offered since T11, so captures made through it (the
-    programs' frames, `bench/vulkan/translate/programs.sh` with that profile) see an older device. Remake it
-    (`PROFILE=images/vkframes/venus-profile.json bench/vulkan/venus-run.ts`), rebuild the vkframes disk, check the
-    replays' references still hold (S: the profile, a Podman rebuild, `tests/page-venus.test.ts`'s replays).
   - [B] **Storage images read as textures' leftovers** (GD G4; vk/README.md "Storage images a stage only reads"; the
     out-of-context review of 2026-11-04; VK4 T37 took its invalid commands): a subresource read as a texture and written
     through a storage binding in one scope reads a copy of the image taken at the scope's start (`scope_reads`), but not
