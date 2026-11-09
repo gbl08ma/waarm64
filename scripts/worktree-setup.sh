@@ -6,7 +6,8 @@
 #
 # - node_modules copied (cp -a): Vite serves with fs.strict, which refuses a symlink out of the worktree (403s that
 #   look like code bugs). tools/svelte-check/node_modules is a symlink (svelte-check isn't page code).
-# - The guest images hard-linked (cp -al): target/images/* and target/deqp/*. Their builders delete or rename before
+# - The guest images hard-linked (cp -al): target/images/* (but build/, the work trees) and target/deqp/*; an entry that
+#   can't be linked is left out with a warning, not a failure. Their builders delete or rename before
 #   writing (images/build.sh's `rm -rf "$dst"`, images/deqp/build.sh's `.new` + mv), so a rebuild in the worktree
 #   never writes through a link into the main checkout's copy. Cargo's and Vite's outputs (the wasm core, venus.wasm,
 #   ts.wasm) are not linked: a build there could rewrite a shared file in place, and a main checkout's output can be
@@ -38,7 +39,15 @@ for tree in images deqp; do
   for d in "$main/target/$tree"/*; do
     [ -e "$d" ] || continue
     n=$(basename "$d")
-    [ -e "$wt/target/$tree/$n" ] || cp -al "$d" "$wt/target/$tree/$n"
+    # target/images/build holds images/build.sh's work trees (kernels, Buildroot, venus's Mesa and wasi-sdk), which
+    # make writes in place (a link would carry a worktree's build into the main checkout's tree), partly owned by
+    # Podman's subordinate uids (fs.protected_hardlinks refuses links to them). A worktree's image build starts its own.
+    [ "$tree/$n" = images/build ] && continue
+    [ -e "$wt/target/$tree/$n" ] && continue
+    if ! cp -al "$d" "$wt/target/$tree/$n" 2>/dev/null; then
+      rm -rf "$wt/target/$tree/$n"
+      echo "worktree-setup: target/$tree/$n not linked (a file can't be hard-linked: another owner?); build it here if needed" >&2
+    fi
   done
 done
 

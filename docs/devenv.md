@@ -32,7 +32,10 @@ run on symlinks to them: Vite serves with `fs.strict`, which answers 403 for a f
 worktree (pages then fail in ways that look like code bugs). **`scripts/worktree-setup.sh [worktree]`** makes one
 ready: `node_modules` copied, `tools/svelte-check/node_modules` symlinked, `target/images/*` and `target/deqp/*`
 hard-linked (their builders delete or rename before writing, so a rebuild in the worktree never writes into the main
-checkout's copy), and `package-lock.json`'s mtime set old while it is the main checkout's (git resets it at checkout,
+checkout's copy), except `target/images/build/`: `images/build.sh`'s work trees (kernels, Buildroot, venus's Mesa and
+wasi-sdk), which `make` writes in place and which are partly owned by Podman's subordinate uids (so
+`fs.protected_hardlinks` refuses links to them; the hook once failed on 18,000 such files); a worktree's image build
+starts its own. An entry that can't be linked is left out with a warning, not a failure. And `package-lock.json`'s mtime set old while it is the main checkout's (git resets it at checkout,
 and `scripts/ci.sh` runs `npm ci` when the lockfile is newer than `node_modules`; a branch that changed it keeps its
 mtime, so CI installs the branch's packages). Idempotent, and it never replaces what's there. Not linked: Cargo's and Vite's outputs (the wasm
 core, `venus.wasm`, `ts.wasm`), which a build could rewrite in place and which can be stale for the branch:
