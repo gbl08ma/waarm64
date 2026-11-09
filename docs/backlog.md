@@ -563,19 +563,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   scan of the whole buffer per animation frame to find the changed rows (~0.4 ms at 1024×768, on the machine
   worker), x8r8g8b8 only, fixed size. Guests with the driver use virtio-gpu ([devices.md](devices.md)); nothing
   is planned for the rest.
-- **Requests no Linux driver sends:** the TS backends (`web/devices.ts`, `web/9p.ts`) see only well-formed requests
-  from a guest: Linux's drivers in the boots (the Buildroot device test, the Debian page tests), which test them
-  better than a driver of ours could (it would share their assumptions), and those are where new cases go. The core's
-  ring checks have unit tests (`core/src/virtio/tests.rs`: indirect chains, malformed rings), and `tests/devices.test.ts`
-  calls the backends directly, with some bad requests (9p's truncated and unsupported messages, blk's DISCARD and
-  WRITE_ZEROES segments) handed over as parsed chains. What no test does is
-  send a buggy or hostile driver's requests through the whole path: a blk header shorter than 16 bytes or split
-  across descriptors, no writable status byte, a read or write past the disk's end or with a sector whose byte offset
-  is past 2^53 (`T_IN`/`T_OUT` leave the bounds to the disk layer; DISCARD checks its own), a T_OUT on a read-only
-  disk, data in the wrong direction; 9p's and net's own (lengths past the buffers, a short frame). The expectation:
-  an error status or a dropped request, never a host exception or a failed device. A bare-metal guest
-  (`tests/baremetal/`) that drives the device through a hand-built queue would send them in Node (the native runs have
-  Rust twins, `core/tests/common/`, not these backends) in milliseconds and with no boot; blk first.
+- **Requests no Linux driver sends, past blk:** blk has its bare-metal driver (`tests/baremetal/virtio/blk.c`,
+  `tests/virtio-guest.test.ts`; [testing.md](testing.md) "Bare-metal device tests"). 9p and net don't: their hostile
+  requests reach the backends only as parsed chains in `tests/devices.test.ts` (9p's truncated and unsupported
+  messages), never through a queue. The cases: 9p's `size` past the readable bytes or short of them, a reply with
+  less writable room than `msize` or the `Tread`'s count (`Rread` cut to the room?), a message split over buffers;
+  net's transmit chain shorter than the 12-byte header or past the MTU, receive buffers smaller than a header or a
+  frame (web/devices.ts says such frames are dropped). The same shape: a `virtio/9p.c` and a `virtio/net.c` beside
+  `blk.c` (its init and `submit` are what they need), cases in the test's table, the same three runs.
 
 - **HEVC on the host** (dropped with the video track's end, 2026-10-15, the user: H.264, VP9 and AV1 cover what the
   web serves; Chromium on Linux has no HEVC decoder of its own, so only hosts with hardware HEVC would offer it; HEVC
