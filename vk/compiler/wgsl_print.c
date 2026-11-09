@@ -2440,19 +2440,33 @@ emit_narrow_access(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, bo
 
 /* An atomic on word `word` of an array of atomics; `data` its operand (of a swap, the compared value, the new one
  * after it). SPIR-V's compare-exchange is strong and WGSL's may fail spuriously: tried again until it exchanged or saw
- * another value. */
+ * another value.
+ * In a fragment stage each loop also ends after WG_CAS_STALLS tries in a row that failed seeing the value they
+ * compared (and the min or max's after WG_CAS_TRIES tries): a helper invocation's atomic does nothing and its result
+ * is indeterminate, and where the backend has no demote of its own Tint guards each atomic after a discard with the
+ * invocation's flag (DemoteToHelper), so a demoted invocation's compare-exchange returns zeros, `exchanged` false,
+ * every time (the review of VK4 T47-T49, finding 2: the loops never ended). A real invocation only stalls by failing
+ * spuriously, that many times in a row. */
+#define WG_CAS_STALLS "1024u"
+#define WG_CAS_TRIES "65536u"
+
 static void
 emit_atomic(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, const char *word, nir_src *data, bool signed_atomic)
 {
    const char *conv_in = signed_atomic ? "bitcast<i32>" : "";
    const char *conv_out = signed_atomic ? "bitcast<u32>" : "";
+   const bool bound = c->nir->info.stage == MESA_SHADER_FRAGMENT;
    if (intr->intrinsic == nir_intrinsic_ssbo_atomic_swap || intr->intrinsic == nir_intrinsic_shared_atomic_swap ||
        intr->intrinsic == nir_intrinsic_image_atomic_swap) {
-      line(c, "loop {");
+      /* Each try that goes round failed seeing the compared value. */
+      if (bound)
+         line(c, "for (var wg_n = 0u; ; wg_n++) {");
+      else
+         line(c, "loop {");
       line(c, "  let wg_cas = atomicCompareExchangeWeak(&%s[%s], %s(%s), %s(%s));", arr, word, conv_in, src_name(c, data),
            conv_in, src_name(c, data + 1));
-      line(c, "  if (wg_cas.exchanged || wg_cas.old_value != %s(%s)) { t%u = %s(wg_cas.old_value); break; }", conv_in,
-           src_name(c, data), intr->def.index, conv_out);
+      line(c, "  if (wg_cas.exchanged || wg_cas.old_value != %s(%s)%s) { t%u = %s(wg_cas.old_value); break; }", conv_in,
+           src_name(c, data), bound ? " || wg_n >= " WG_CAS_STALLS : "", intr->def.index, conv_out);
       line(c, "}");
    } else if (signed_atomic && (nir_intrinsic_atomic_op(intr) == nir_atomic_op_umin ||
                                 nir_intrinsic_atomic_op(intr) == nir_atomic_op_umax)) {
@@ -2462,10 +2476,22 @@ emit_atomic(struct ctx *c, nir_intrinsic_instr *intr, const char *arr, const cha
        * hung the GPU's queue). */
       line(c, "{");
       line(c, "  var wg_old = atomicLoad(&%s[%s]);", arr, word);
-      line(c, "  loop {");
+      if (bound) {
+         line(c, "  var wg_stalls = 0u;");
+         line(c, "  for (var wg_n = 0u; ; wg_n++) {");
+      } else {
+         line(c, "  loop {");
+      }
       line(c, "    let wg_cas = atomicCompareExchangeWeak(&%s[%s], wg_old, bitcast<i32>(%s(bitcast<u32>(wg_old), %s)));", arr,
            word, nir_intrinsic_atomic_op(intr) == nir_atomic_op_umin ? "min" : "max", src_name(c, data));
-      line(c, "    if (wg_cas.exchanged) { t%u = bitcast<u32>(wg_old); break; }", intr->def.index);
+      if (bound) {
+         line(c, "    wg_stalls = select(0u, wg_stalls + 1u, wg_cas.old_value == wg_old);");
+         line(c, "    if (wg_cas.exchanged || wg_stalls >= " WG_CAS_STALLS " || wg_n >= " WG_CAS_TRIES
+                 ") { t%u = bitcast<u32>(wg_old); break; }",
+              intr->def.index);
+      } else {
+         line(c, "    if (wg_cas.exchanged) { t%u = bitcast<u32>(wg_old); break; }", intr->def.index);
+      }
       line(c, "    wg_old = wg_cas.old_value;");
       line(c, "  }");
       line(c, "}");

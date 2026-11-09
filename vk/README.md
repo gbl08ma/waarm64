@@ -126,7 +126,7 @@ right way round);
 a float's conversion to a 32-bit integer saturates exactly (VK4 T29: WGSL's clamps to the largest float under the
 bound, and Metal takes an f16 infinity as 65504; the bound is compared in f32, a half's bits through
 `unpack2x16float`); `packHalf2x16` and `unpackHalf2x16` stay whole for WGSL's own (NIR's lowerings of them go through 16-bit values), and a
-compare-exchange is a loop over WGSL's weak one until it exchanges or sees another value (SPIR-V's is strong). Location
+compare-exchange is a loop over WGSL's weak one until it exchanges or sees another value (SPIR-V's is strong; in a fragment stage also after 1,024 tries in a row that saw the value they compared, and an unsigned min or max's loop after 65,536 tries: a helper invocation's atomics do nothing and return what they like, a demoted one's zeros under Tint's DemoteToHelper, which Dawn uses on Metal, where the loops lost the device: the review of VK4 T47-T49). Location
 0's second source (`index = 1`) is WGSL's `@blend_src(1)` (`enable dual_source_blending`, where the device has it); a
 storage buffer is `read_write` only where the stage writes it (or declares it of atomics), else `read` (a vertex stage
 can then read what the fragment stage only reads, and a render pass's draws, whose scope is the whole pass, agree with

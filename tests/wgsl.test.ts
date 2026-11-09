@@ -1905,6 +1905,56 @@ test('signed and unsigned atomic min and max on one array: the other kind a comp
   }
 });
 
+/**
+ * Draws a triangle over the top left pixel of a 4x4 target (`whole`: over all of it) with fragment stage `code`, its
+ * storage buffer at binding 0 four words from `init`, in headless Chromium (`args` past the usual), and reads the
+ * buffer back; `hung` where the queue didn't finish in 20 s. Undefined without an adapter.
+ */
+async function runAtomicFragment(code: string, init: number[], whole = false, args: string[] = []) {
+  const server = createServer((_req, res) => { res.setHeader('content-type', 'text/html'); res.end('<!doctype html><title>wgsl</title>'); });
+  await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium',
+    args: [...(process.env.CHROMIUM_ARGS ?? '--enable-unsafe-webgpu --enable-features=Vulkan').split(' ').filter(Boolean), ...args] });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/`);
+    return await page.evaluate(async ({ code, init, whole }) => {
+      const adapter = await navigator.gpu?.requestAdapter();
+      if (!adapter) return undefined;
+      const device = await adapter.requestDevice();
+      const errors: string[] = [];
+      device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
+      const fs = device.createShaderModule({ code });
+      const vs = device.createShaderModule({ code: whole ? `@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
+  return array(vec4<f32>(-1.0, -1.0, 0.0, 1.0), vec4<f32>(3.0, -1.0, 0.0, 1.0), vec4<f32>(-1.0, 3.0, 0.0, 1.0))[i];
+}` : `@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
+  return array(vec4<f32>(-1.0, 1.0, 0.0, 1.0), vec4<f32>(-0.4, 1.0, 0.0, 1.0), vec4<f32>(-1.0, 0.4, 0.0, 1.0))[i];
+}` });
+      const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module: vs, entryPoint: 'vs' },
+        fragment: { module: fs, entryPoint: 'main', targets: [{ format: 'rgba8unorm' }] }, primitive: { topology: 'triangle-list' } });
+      const buffer = device.createBuffer({ size: 16, usage: 0x80 | 0x4 | 0x8 /* STORAGE | COPY_SRC | COPY_DST */ });
+      device.queue.writeBuffer(buffer, 0, new Int32Array(init));
+      const read = device.createBuffer({ size: 16, usage: 0x1 | 0x8 /* MAP_READ | COPY_DST */ });
+      const target = device.createTexture({ size: [4, 4], format: 'rgba8unorm', usage: 0x10 /* RENDER_ATTACHMENT */ });
+      const enc = device.createCommandEncoder();
+      const pass = enc.beginRenderPass({ colorAttachments: [{ view: target.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer } }] }));
+      pass.draw(3);
+      pass.end();
+      enc.copyBufferToBuffer(buffer, 0, read, 0, 16);
+      device.queue.submit([enc.finish()]);
+      // A hung queue never maps: say so rather than wait out the test.
+      const done = await Promise.race([read.mapAsync(1 /* GPUMapMode.READ */).then(() => true), new Promise<false>((ok) => setTimeout(() => ok(false), 20_000))]);
+      if (!done) return { errors, hung: true, out: [] as number[] };
+      return { errors, hung: false, out: [...new Int32Array(read.getMappedRange())] };
+    }, { code, init, whole });
+  } finally {
+    await browser.close();
+    server.close();
+  }
+}
+
 test('a fragment stage\'s unsigned atomic min and max on an array of atomic<i32>: its helper invocations\' compare-exchange loops end (VK4 T47)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
   try {
@@ -1912,50 +1962,32 @@ test('a fragment stage\'s unsigned atomic min and max on an array of atomic<i32>
     assert.equal(r.rc, 0, r.text);
     assert.match(r.text, /array<atomic<i32>>/);
     // One pixel of a 4x4 target covered: its quad's three others are helper invocations.
-    const server = createServer((_req, res) => { res.setHeader('content-type', 'text/html'); res.end('<!doctype html><title>wgsl</title>'); });
-    await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
-    const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium',
-      args: (process.env.CHROMIUM_ARGS ?? '--enable-unsafe-webgpu --enable-features=Vulkan').split(' ').filter(Boolean) });
-    try {
-      const page = await browser.newPage();
-      await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/`);
-      const res = await page.evaluate(async (code) => {
-        const adapter = await navigator.gpu?.requestAdapter();
-        if (!adapter) return undefined;
-        const device = await adapter.requestDevice();
-        const errors: string[] = [];
-        device.addEventListener('uncapturederror', (e) => errors.push((e as GPUUncapturedErrorEvent).error.message));
-        const fs = device.createShaderModule({ code });
-        const vs = device.createShaderModule({ code: `@vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
-  return array(vec4<f32>(-1.0, 1.0, 0.0, 1.0), vec4<f32>(-0.4, 1.0, 0.0, 1.0), vec4<f32>(-1.0, 0.4, 0.0, 1.0))[i];
-}` });
-        const pipeline = device.createRenderPipeline({ layout: 'auto', vertex: { module: vs, entryPoint: 'vs' },
-          fragment: { module: fs, entryPoint: 'main', targets: [{ format: 'rgba8unorm' }] }, primitive: { topology: 'triangle-list' } });
-        const buffer = device.createBuffer({ size: 16, usage: 0x80 | 0x4 | 0x8 /* STORAGE | COPY_SRC | COPY_DST */ });
-        device.queue.writeBuffer(buffer, 0, new Int32Array([-5, 9, 0, 0]));
-        const read = device.createBuffer({ size: 16, usage: 0x1 | 0x8 /* MAP_READ | COPY_DST */ });
-        const target = device.createTexture({ size: [4, 4], format: 'rgba8unorm', usage: 0x10 /* RENDER_ATTACHMENT */ });
-        const enc = device.createCommandEncoder();
-        const pass = enc.beginRenderPass({ colorAttachments: [{ view: target.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
-        pass.setPipeline(pipeline);
-        pass.setBindGroup(0, device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer } }] }));
-        pass.draw(3);
-        pass.end();
-        enc.copyBufferToBuffer(buffer, 0, read, 0, 16);
-        device.queue.submit([enc.finish()]);
-        // A hung queue never maps: say so rather than wait out the test.
-        const done = await Promise.race([read.mapAsync(1 /* GPUMapMode.READ */).then(() => true), new Promise<false>((ok) => setTimeout(() => ok(false), 20_000))]);
-        if (!done) return { errors, hung: true, out: [] as number[] };
-        return { errors, hung: false, out: [...new Int32Array(read.getMappedRange())] };
-      }, r.text);
+    const res = await runAtomicFragment(r.text, [-5, 9, 0, 0]);
+    if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.equal(res.hung, false, 'the GPU\'s queue hung');
+    assert.deepEqual(res.errors, []);
+    // max(-5, 0), min(9, 0xffffffff), max(0, 1).
+    assert.deepEqual(res.out.slice(0, 3), [0, 9, 1]);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('demoted invocations\' compare-exchange loops end where their atomics return zeros (Tint\'s DemoteToHelper), and the others\' results stay (the review of VK4 T47-T49, finding 2)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const r = glslStage(await translator(), tmp, 'tests/venus/t47/minmax-demote.frag');
+    assert.equal(r.rc, 0, r.text);
+    assert.match(r.text, /discard;/);
+    // Natively (SwiftShader's demote), then with Dawn's Vulkan backend told not to use it: Tint's DemoteToHelper guards
+    // each atomic after the discard with the invocation's flag, as Dawn does on backends without a demote of their own.
+    for (const args of [[], ['--disable-dawn-features=vulkan_use_demote_to_helper_invocation_extension']]) {
+      const res = await runAtomicFragment(r.text, [-5, 9, 0, 0], true, args);
       if (!res) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
-      assert.equal(res.hung, false, 'the GPU\'s queue hung');
+      assert.equal(res.hung, false, `the GPU's queue hung (${args.join(' ') || 'native demote'})`);
       assert.deepEqual(res.errors, []);
-      // max(-5, 0), min(9, 0xffffffff), max(0, 1).
-      assert.deepEqual(res.out.slice(0, 3), [0, 9, 1]);
-    } finally {
-      await browser.close();
-      server.close();
+      // max(-5, 0), min(9, 7), max(0, 1), the compare-exchange of 0 for 1.
+      assert.deepEqual(res.out, [0, 7, 1, 1], args.join(' ') || 'native demote');
     }
   } finally {
     rmSync(tmp, { recursive: true, force: true });
