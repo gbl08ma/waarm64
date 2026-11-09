@@ -162,7 +162,9 @@ the steps, so an interpreted step costs ~3.5× a compiled one. The loads' new co
 - **The FP fast paths' lane ops** (2026-10-18: `bench/interp/REPORT.md` "M8: the FP fast paths' SIMD ops"). On
   the M4 the paths are bound by the SIMD pipes, not by their branches or reductions ([jit.md](jit.md) "What the
   checks cost"; one check for a run of instructions saved nothing: "Tried and not kept"). With every check forced
-  true (wrong) the FP guest ran 33% faster in Node, and llvmpipe 8% faster a frame without its FZ operand tests.
+  true (wrong) the FP guest ran 33% faster in Node, and llvmpipe 8% faster a frame without its FZ operand tests
+  (since cut to two ops an operand, which left its frames even: `bench/interp/REPORT.md` "FZ's operand tests and
+  vector FMUL's zero clause"; `jit_fz_mips` is a shader-like kernel under FZ).
   By gain against work:
   - **Scalar FP in f64 and f32 locals** (a scalar shadow per V register): a scalar FADD is still five lane ops for
     one (two lane extracts, the result's move to a general register for its check, `movi` and `ins` to write it
@@ -171,13 +173,9 @@ the steps, so an interpreted step costs ~3.5× a compiled one. The loads' new co
     indices (the TLB memo's patch has them, [jit.md](jit.md) "Tried and not kept"). Counted 2026-10-20: inline
     scalar FP is 0.5% of the instructions compiled in Firefox's pages session (14,500 of 2.9 M) and none to speak of
     in Alpine's userspace benchmark (30), so it's for the FP guest and FP-heavy guests, not the ranking workloads.
-  - **FZ's operand tests** (llvmpipe's 8%): about five lane ops an operand (the `movi`s included); for singles, an
-    unsigned min of every operand's `(x << 1) - 1` before one compare saves about a third.
   - **The single FMA's midpoint test** (the emulated arm only: the fused arm has none, so this now reaches only hosts
     without FMA3 or relaxed SIMD; not worth doing for them): folded into the result's mask and reduction, with the
     round-to-odd redo in the failure arm before the helper; saves a reduction (two lane ops), not the test.
-  - **Vector FMUL's zero clause** in a branch on a zero result lane, as the scalar form's: about two lane ops a
-    product (the FP guest has none to measure it on; llvmpipe's shaders do).
   - **`relaxed_trunc` for the FCVTZS/FCVTZU fast path**: only worth it if it measures on x86, where the deterministic
     saturating truncation costs extra ops (on arm64 `fcvtzs` already saturates, so it can't gain here). Unmeasured: the
     dev VM has no x86 Chromium. The FMA forms took relaxed SIMD's other useful op (jit.md "Floating point").

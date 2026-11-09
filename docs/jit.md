@@ -878,7 +878,16 @@ interpreter's; the helper runs the instruction otherwise.
     promoted copy;
   - without FZ, the lane tests' FZ branch passes the mask through (VTMP) instead of clearing no lanes
     with an `andnot` of a zero;
-  - the single FMA's midpoint test is the sums' low words shifted left by 3 against the sign bit.
+  - the single FMA's midpoint test is the sums' low words shifted left by 3 against the sign bit;
+  - FZ's lane tests (`denormal_any`) are each operand's bits shifted left once less one, below the smallest normal's
+    so shifted less one, unsigned (a zero wraps to all ones): singles take the operands' unsigned `min` before one
+    compare, doubles compare each (signed, the sign flip in the subtraction's constant): two ops an operand where
+    `and`, subtract, compare and three constants took six (llvmpipe's frames even; a shader-like kernel +15%:
+    bench/interp/REPORT.md "FZ's operand tests and vector FMUL's zero clause");
+  - vector FMUL, FMULX and FDIV test the fast results alone first and their zero clause (a zero result with a zero
+    factor or dividend) only in a branch on some lane failing, as the scalar forms: llvmpipe's frames 2.5% faster,
+    and the same kernel, whose clamped products have a zero lane in nearly every vector, 6% slower (kept: the real
+    workload ranks).
 - **FMA** (FMADD/FMSUB/FNMADD/FNMSUB, FMLA/FMLS vector and by element, FRECPS/FRSQRTS, single and
   double) has two arms: the host's relaxed-SIMD `madd` where it fuses, else an emulation in RNE f64
   operations. They give the same bits, flags and steps; only how often the helper runs differs.

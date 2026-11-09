@@ -180,6 +180,8 @@ const vmFlatMips = async (o: Options) => mipsOf(o, 'vm_flat_mips', 'bench/interp
 const vmMmuMips = async (o: Options) => mipsOf(o, 'vm_mmu_mips', 'bench/interp/guest.c EL1 MMU on', await setupVm(true));
 const jitMips = async (o: Options) => placed(o, 'jit_mips', 'bench/interp/guest.c', (pad) => setup('guest.bin', JIT_DEFAULT, pad));
 const jitFpMips = async (o: Options) => placed(o, 'jit_fp_mips', 'bench/interp/guest-fp.c', (pad) => setup('guest-fp.bin', JIT_DEFAULT, pad));
+// The FP guest's FZ mode (-DFZ): FPCR.FZ set, a shader-like NEON kernel (FZ's operand tests, zero lanes).
+const jitFzMips = async (o: Options) => placed(o, 'jit_fz_mips', 'bench/interp/guest-fp.c -DFZ', (pad) => setup('guest-fz.bin', JIT_DEFAULT, pad));
 const vmJitFlatMips = async (o: Options) => mipsOf(o, 'vm_jit_flat_mips', 'bench/interp/guest.c EL1 MMU off', await setupVm(false, 1));
 const vmJitMmuMips = async (o: Options) => mipsOf(o, 'vm_jit_mmu_mips', 'bench/interp/guest.c EL1 MMU on', await setupVm(true, 1));
 // The block interpreter (interp::block): the dispatcher, never compiling.
@@ -226,7 +228,7 @@ const coremarkJit = async (o: Options) => coremark(o, 'jit_coremark_mips', JIT_D
 
 export const suite = {
   interp_mips: interpMips, interp_fp_mips: interpFpMips, vm_flat_mips: vmFlatMips, vm_mmu_mips: vmMmuMips,
-  jit_mips: jitMips, jit_fp_mips: jitFpMips, vm_jit_flat_mips: vmJitFlatMips, vm_jit_mmu_mips: vmJitMmuMips,
+  jit_mips: jitMips, jit_fp_mips: jitFpMips, jit_fz_mips: jitFzMips, vm_jit_flat_mips: vmJitFlatMips, vm_jit_mmu_mips: vmJitMmuMips,
   coremark_mips: coremarkInterp, jit_coremark_mips: coremarkJit,
   dec_mips: decMips, dec_fp_mips: decFpMips, vm_dec_flat_mips: vmDecFlatMips, vm_dec_mmu_mips: vmDecMmuMips,
 };

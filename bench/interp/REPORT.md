@@ -2015,3 +2015,50 @@ No gain shows, as expected: ~25M byte checks are a few ms of a 5 s boot. The use
 noise floor; Lua (compute, few TLBIs) moved as much, so it reads
 as the build's layout rather than the hash in `fill` and `drop_slot`. Kept for the cases it targets: flushes in a
 half with live block entries (always, in the kernel's), and a 1 GiB block's 16,384 indices.
+
+## FZ's operand tests and vector FMUL's zero clause (2026-11-09)
+
+The dev VM, Chromium 155.0.8059.84, at `1c76a1c8`; core builds alternated in place of the served one, five rounds
+(`bench/interp/ab.sh`); raw data `results/fz-ops/` (a: the commit, b: the FZ tests) and `results/fmul-zero/` (b, c:
+b with FMUL's zero clause in a branch). Two backlog items from "M8: the FP fast paths' SIMD ops" above.
+
+**A benchmark for FZ.** Neither small guest ran under FZ, and llvmpipe's frame is too coarse to show a few lane ops
+(below). `jit_fz_mips` runs the FP guest built with `-DFZ` (`guest-fz.bin`): FPCR.FZ set and a shader-like NEON loop
+over 64 pixels of four single lanes (a light's dot product by element, clamped at zero, so about half the lanes are
+zeros; FMLA by vector and by element; the clamped values' products; min, max) and a double FMLA loop.
+
+**FZ's operand tests** (`denormal_any`): each operand's bits shifted left once less one, below the smallest
+normal's so shifted less one, unsigned; singles take the operands' unsigned `min` before one compare, doubles
+compare each with the sign flip folded into the subtraction's constant. Two lane ops an operand (singles, plus a
+`min` past the first; doubles three) where `and`, subtract and compare with their three `movi` constants (doubles a
+flip more) took six.
+
+| | a (median of rounds) | b |
+|---|---|---|
+| `jit_fz_mips` | 1459.6, 1455.6, 1446.9, 1438.6, 1437.8; **1446.9** | 1668.4, 1668.4, 1655.6, 1660.4, 1653.2; **1660.4** (+14.8%) |
+| `jit_fp_mips` (no FZ) | **2726.7** | **2731.3** (even) |
+| `gl_llvmpipe_jit` ms a frame | 242.0, 245.9, 246.5, 245.4, 245.0; **245.4** | 240.5, 245.3, 242.6, 248.3, 243.6; **243.6** (overlapping: even) |
+
+So the 8% llvmpipe gained with no operand tests at all wasn't the tests' lane ops: their branch, or what TurboFan
+does around it, if anything. Kept on the kernel's gain.
+
+**Vector FMUL's zero clause in a branch** (FMUL, FMULX, FDIV, by vector and by element): the fast results' mask
+(FZ's test in it) is kept in a local and reduced alone; only when some lane fails does a branch add the exact zero
+lanes (zero result, zero factor or dividend, no denormal operand under FZ) and reduce again, as the scalar forms do.
+
+| | b | c |
+|---|---|---|
+| `gl_llvmpipe_jit` ms a frame | 244.5, 244.3, 246.1, 244.0, 248.7; **244.5** | 238.3, 239.0, 238.3, 239.5, 239.7; **239.0** (−2.3%) |
+| `jit_fz_mips` | 1654.3, 1644.4, 1648.8, 1647.1, 1645.8; **1647.1** | 1550.7, 1546.5, 1543.8, 1545.9, 1545.0; **1545.9** (−6.1%) |
+| `jit_fp_mips` | **2679.2** (two rounds' IQR ~300) | **2710.9** (even) |
+
+The kernel is the branch's worst case: its clamped products have a zero lane in nearly every vector, in a pattern a
+predictor can't learn, so it pays the second reduction and mispredicts. llvmpipe's shaders, the real workload,
+gain; kept.
+
+Correctness: the differential test with new edge cases (the largest denormals of either sign beside zeros and the
+smallest normals, in any operand; vector products and quotients that underflow to zero beside exact zeros) and a
+test that under FZ zero and smallest-normal lanes and exact zero products stay inline. Planted bugs, each failing:
+the singles' or doubles' bound one exponent short (the edge cases), `max_u` for `min_u` (edge cases), a zero counted
+as a denormal in singles or doubles (the inline test), no zero clause (the inline test), the zero clause on a zero
+result alone and without FZ's test (the differential test's by-element and three-same FP runs, 4-8 tests).

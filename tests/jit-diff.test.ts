@@ -467,6 +467,8 @@ test('JIT vs interpreter: system registers and barriers', () => {
 const f32bits = (x: number) => { const d = new DataView(new ArrayBuffer(4)); d.setFloat32(0, x, true); return BigInt(d.getUint32(0, true)); };
 const f64bits = (x: number) => { const d = new DataView(new ArrayBuffer(8)); d.setFloat64(0, x, true); return d.getBigUint64(0, true); };
 const lanes = (...l: number[]) => l.map(f32bits) as unknown as bigint;
+/** The largest single denormal. */
+const DMAX = (2 ** 23 - 1) * 2 ** -149;
 const FP_EDGES: [string, number, bigint[]][] = [
   // Exact product just below the smallest normal, rounding up to it: tiny (Underflow).
   ['fmul s0, s1, s2', 0x1e220820, [0n, 0x3f7fffffn, 0x00800000n]],
@@ -672,6 +674,21 @@ const FP_EDGES: [string, number, bigint[]][] = [
   ['x fmla v0.2s (a NaN in lanes it ignores)', 0x0e22cc20, [lanes(1, 1, NaN, 2 ** -149), lanes(1.5, 1.5, NaN, 2 ** -80), lanes(1.5, 1.5, NaN, 2 ** -80)]],
   ['x fmla v0.2s (a zero lane, an underflow in lanes it ignores)', 0x0e22cc20, [lanes(0, 1, 0, 0), lanes(0, 1.5, 2 ** -80, 2 ** -80), lanes(1.5, 1.5, 2 ** -80, 2 ** -80)]],
   ['x fmla s0 by element, junk above lane 0', 0x5fa21020, [lanes(1, NaN, Infinity, 2 ** -149), lanes(1.5, NaN, 2 ** -149, Infinity), lanes(1, 1.5, NaN, Infinity)]],
+  // FZ's operand tests at their edges: the largest denormals (either sign) beside zeros and the smallest normals, in
+  // any one operand of a lane.
+  ['x fadd v0.4s (the largest denormals)', 0x4e22d420, [lanes(0, 0, 0, 0), lanes(1.5, DMAX, -DMAX, 2 ** -126), lanes(DMAX, 1.5, 1.5, -0)]],
+  ['x fmax v0.4s (negative denormals beside zeros)', 0x4e22f420, [lanes(0, 0, 0, 0), lanes(-0, -DMAX, 0, -(2 ** -149)), lanes(-DMAX, -0, 2 ** -126, 0)]],
+  ['x fmla v0.4s (a largest denormal in each operand)', 0x4e22cc20, [lanes(DMAX, 1.5, 1.5, 1.5), lanes(1.5, -DMAX, 1.5, 2 ** -126), lanes(1.5, 1.5, DMAX, 1.5)]],
+  ['w fadd v0.2d (the largest denormal)', 0x4e62d420, [0n, (1n << 52n) - 1n, f64bits(1.5)]],
+  ['w fmla v0.2d (a negative largest denormal addend)', 0x4e62cc20, [(1n << 63n) | ((1n << 52n) - 1n), f64bits(1.5), f64bits(1.5)]],
+  ['w fmax v0.2d (the smallest normal, a negative zero)', 0x4e62f420, [0n, 1n << 52n, 1n << 63n]],
+  // Vector products and quotients that underflow to zero beside exact zeros (the zero clause's branch).
+  ['x fmul v0.4s (underflows to zero beside exact zeros)', 0x6e22dc20, [lanes(0, 0, 0, 0), lanes(2 ** -100, 0, -0, -(2 ** -80)), lanes(2 ** -100, 1.5, 2 ** -100, 2 ** -80)]],
+  ['x fmul v0.4s, v1.4s, v2.s[1] (a zero element, a tiny one)', 0x4fa29020, [lanes(0, 0, 0, 0), lanes(1.5, 2 ** -100, -3, 0), lanes(2 ** -100, 0, 1, 1)]],
+  ['x fmul v0.4s, v1.4s, v2.s[0] (an underflow by element)', 0x4f829020, [lanes(0, 0, 0, 0), lanes(1.5, 2 ** -100, -3, 0), lanes(2 ** -100, 0, 1, 1)]],
+  ['x fdiv v0.4s (a quotient underflows to zero, a zero dividend)', 0x6e22fc20, [lanes(0, 0, 0, 0), lanes(0, 2 ** -100, -0, 1.5), lanes(1.5, 2 ** 100, 3, 2)]],
+  ['w fmul v0.2d (underflow to zero)', 0x6e62dc20, [0n, f64bits(2 ** -600), f64bits(2 ** -600)]],
+  ['w fmul v0.2d (a zero factor)', 0x6e62dc20, [0n, 1n << 63n, f64bits(1.5)]],
 ];
 test('the probe finds the fused madd on arm64', { skip: process.arch !== 'arm64' }, () => {
   // arm64's relaxed madd is always FMLA. If the probe broke, every host would quietly lose the fused arm.
@@ -741,6 +758,47 @@ test('JIT: FCVTL/FCVTN keep zero and infinite lanes, and widening without IXC, i
     [all[38], all[39]] = [0x0123_4567_89ab_cdefn, 0xfedc_ba98_7654_3210n]; // V0: FCVTN2 keeps its low half
     [all[40], all[41]] = v1;
     [all[102], all[103]] = [fpcr, fpsr];
+    new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES));
+    const what = run(1n, false);
+    if (what) failures.push(`${name}: ${what} differs`);
+    const h = helpers();
+    if (h) failures.push(`${name}: helper calls ${h}`);
+  });
+  assert.deepEqual(failures, []);
+});
+
+// Under FZ, vector lanes that are zeros (either sign) or the smallest normals, and no denormal, stay inline: the
+// operand tests flush nothing else; and exact zero products and quotients stay inline. Each word: V0, V1, V2 (four single lanes, or two doubles as 64-bit values).
+const FZ_INLINE: [string, number, unknown[]][] = [
+  ['fadd v0.4s', 0x4e22d420, [[0n, 0n], lanes(-0, 2 ** -126, 1.5, -(2 ** -126)), lanes(1.5, 1.5, -0, 3)]],
+  ['fmax v0.4s', 0x4e22f420, [[0n, 0n], lanes(-0, 2 ** -126, 0, 1.5), lanes(0, 2 ** -126, -0, -(2 ** 127))]],
+  ['fmla v0.4s', 0x4e22cc20, [lanes(1.5, 1.5, -0, 2 ** -126), lanes(0, 2 ** -126, 1.5, 1.5), lanes(1.5, -0, 1, 2 ** 100)]],
+  ['fadd v0.2d', 0x4e62d420, [[0n, 0n], [1n << 63n, 1n << 52n], [f64bits(1.5), f64bits(1.5)]]],
+  ['fmla v0.2d', 0x4e62cc20, [[f64bits(1.5), 1n << 52n], [0n, f64bits(1.5)], [f64bits(1.5), f64bits(2 ** 100)]]],
+  // Exact zero products and quotients: the zero clause's branch keeps them inline.
+  ['fmul v0.4s (zero factors)', 0x6e22dc20, [[0n, 0n], lanes(0, 1.5, -0, 2), lanes(1.5, -0, 3, 2 ** -126)]],
+  ['fmul v0.4s, v1.4s, v2.s[1] (a zero element)', 0x4fa29020, [[0n, 0n], lanes(1.5, -3, 2 ** -126, 0), lanes(1, 0, 1, 1)]],
+  ['fdiv v0.4s (zero dividends)', 0x6e22fc20, [[0n, 0n], lanes(0, -0, 3, 1.5), lanes(1.5, 2, 1.5, 3)]],
+  ['fmul v0.2d (a zero factor)', 0x6e62dc20, [[0n, 0n], [1n << 63n, f64bits(1.5)], [f64bits(1.5), 0n]]],
+];
+test('JIT: under FZ, zero and smallest-normal lanes, and exact zero products, stay inline', () => {
+  const { ca32, cb32, cpus, run, helpers } = setup(8 * FZ_INLINE.length);
+  const failures: string[] = [];
+  FZ_INLINE.forEach(([, w], k) => {
+    ca32.set([w, BRK], 2 * k);
+    cb32.set([w, BRK], 2 * k);
+  });
+  helpers();
+  FZ_INLINE.forEach(([name, , vs], k) => {
+    const [a, b] = cpus();
+    a.fill(0n);
+    a[32] = BigInt(8 * k);
+    const all = new BigUint64Array(a.buffer, a.byteOffset, CPU_BYTES / 8);
+    vs.forEach((l, r) => {
+      const v = l as bigint[];
+      [all[38 + 2 * r], all[39 + 2 * r]] = v.length === 4 ? [v[0] | (v[1] << 32n), v[2] | (v[3] << 32n)] : [v[0], v[1]];
+    });
+    [all[102], all[103]] = [1n << 24n, 16n];
     new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES));
     const what = run(1n, false);
     if (what) failures.push(`${name}: ${what} differs`);

@@ -5,6 +5,10 @@
 // and conversions) and NEON integer intrinsics (a u8 image kernel with
 // widening multiply-accumulate, saturating narrowing, TBL and CNT), and counts
 // rounds at ROUNDS. Built for plain ARMv8.0 (no FP16, dot product or crypto).
+// With -DFZ (guest-fz.bin) it sets FPCR.FZ, as llvmpipe's shaders run, and loops
+// over a shader-like NEON kernel instead: per pixel, a lit color from dot
+// products clamped at zero (zero lanes beside normal ones), FMLA by vector and
+// by element, products of those zeros, min and max; and a double FMLA loop.
 // Build: bench/interp/build.sh
 
 #include <arm_neon.h>
@@ -87,6 +91,59 @@ static int convert(void) {
     return s;
 }
 
+#ifdef FZ
+#define PIX 64
+static float32x4_t nx[PIX], ny[PIX], nz[PIX], albedo[PIX], col[PIX];
+static float64x2_t acc2[PIX], w2[PIX];
+
+static void fz_init(void) {
+    __asm__ volatile("msr fpcr, %0" ::"r"((u64)1 << 24)); // FZ
+    for (int i = 0; i < PIX; i++) {
+        float32x4_t v[4];
+        for (int k = 0; k < 4; k++) v[k] = (float32x4_t){frand(), frand(), frand(), frand()};
+        nx[i] = vmulq_n_f32(v[0], 0.1f), ny[i] = vmulq_n_f32(v[1], 0.1f), nz[i] = vmulq_n_f32(v[2], 0.1f);
+        albedo[i] = vabsq_f32(vmulq_n_f32(v[3], 0.1f));
+        acc2[i] = (float64x2_t){frand(), frand()}, w2[i] = (float64x2_t){frand() * 0.01, frand() * 0.01};
+    }
+}
+
+static float shade(void) {
+    const float32x4_t light = {0.48f, 0.6f, 0.64f, 0.25f}, amb = vdupq_n_f32(0.05f);
+    const float32x4_t zero = vdupq_n_f32(0), one = vdupq_n_f32(1), ks = vdupq_n_f32(0.7f);
+    float32x4_t sum = zero;
+    for (int i = 0; i < PIX; i++) {
+        float32x4_t d = vmulq_laneq_f32(nx[i], light, 0);
+        d = vfmaq_laneq_f32(d, ny[i], light, 1);
+        d = vfmaq_laneq_f32(d, nz[i], light, 2);
+        float32x4_t diff = vmaxq_f32(d, zero); // about half the lanes zero
+        float32x4_t c = vfmaq_f32(amb, albedo[i], diff);
+        float32x4_t sp = vmulq_f32(diff, diff);
+        sp = vmulq_f32(sp, sp);
+        c = vfmaq_f32(c, sp, ks);
+        c = vfmaq_laneq_f32(c, diff, light, 3);
+        c = vminq_f32(c, one);
+        col[i] = c;
+        sum = vaddq_f32(sum, c);
+        // The normals drift, bounded: n' = n·0.999 + c·0.001 - 0.0005.
+        float32x4_t dr = vfmaq_n_f32(vdupq_n_f32(-0.0005f), c, 0.001f);
+        nx[i] = vfmaq_n_f32(dr, nx[i], 0.999f);
+        ny[i] = vfmaq_n_f32(vnegq_f32(dr), ny[i], 0.999f);
+    }
+    return vaddvq_f32(sum);
+}
+
+static double fz_double(void) {
+    float64x2_t s = vdupq_n_f64(0);
+    for (int i = 0; i < PIX; i++) {
+        float64x2_t a = vfmaq_f64(acc2[i], w2[i], vdupq_n_f64(0.5));
+        a = vmulq_f64(vmaxq_f64(a, vdupq_n_f64(0)), vdupq_n_f64(0.999));
+        acc2[i] = vaddq_f64(a, w2[i]);
+        s = vfmaq_f64(s, a, w2[i]);
+    }
+    return vaddvq_f64(s);
+}
+#endif
+
 static u32 image(void) {
     // out = sat(img * 3 / 4 + 16), then a byte shuffle and a popcount.
     const uint8x8_t k3 = vdup_n_u8(3);
@@ -109,6 +166,14 @@ static u32 image(void) {
 __attribute__((noreturn)) void guest_main(void) {
     init();
     u32 sink = 0;
+#ifdef FZ
+    fz_init();
+    for (;;) {
+        sink ^= (u32)(int)(shade() * 1000.0f) + (u32)(long)(fz_double() * 1000.0);
+        *ROUNDS += 1;
+        ((volatile u32 *)ROUNDS)[2] = sink;
+    }
+#endif
     for (;;) {
         float m = matmul();
         double e = nbody() + horner();

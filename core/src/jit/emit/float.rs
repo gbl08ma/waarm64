@@ -237,7 +237,7 @@ fn under_fz(c: &mut Func, test: impl FnOnce(&mut Func)) {
 }
 
 /// [`under_fz`] for lane masks: clears the lanes of the mask `test` pushes
-/// (the lanes FZ would flush: [`denormal_lanes`]) in the one on the stack,
+/// (the lanes FZ would flush: [`denormal_any`]) in the one on the stack,
 /// none without FZ, so one reduction tests both. The mask goes through VTMP,
 /// so without FZ it costs no lane op (an `andnot` of a zero did: SIMD ops
 /// are what the FP paths are bound by, bench/interp/REPORT.md "M8: the FP
@@ -253,27 +253,44 @@ fn under_fz_bad(c: &mut Func, test: impl FnOnce(&mut Func)) {
     c.end();
 }
 
-/// Replaces the v128 on the stack with a lane mask: all ones where the lane is
-/// a denormal: |x| - 1, as an integer, below the smallest normal's - 1,
-/// unsigned (doubles: signed, with the sign bits flipped).
-fn denormal_lanes(c: &mut Func, d: bool) {
-    if d {
-        let s = 1u64 << 63;
-        c.v128_const(splat(true, !s)).simd(op::AND);
-        c.v128_const(splat(true, 1)).simd(op::I64X2_SUB);
-        c.v128_const(splat(true, s)).simd(op::XOR);
-        c.v128_const(splat(true, ((1u64 << 52) - 1) ^ s))
-            .simd(op::I64X2_LT_S);
-    } else {
-        c.v128_const(splat(false, 0x7fff_ffff)).simd(op::AND);
-        c.v128_const(splat(false, 1)).simd(op::I32X4_SUB);
-        c.v128_const(splat(false, (1 << 23) - 1))
+/// Pushes a lane mask: all ones where a lane of any of the v128s `xs` push is
+/// a denormal. A lane's bits shifted left once (the sign gone) less one, as an
+/// integer, are below the smallest normal's so shifted less one, unsigned (a
+/// zero wraps to all ones): singles take the lanes' unsigned minimum over the
+/// operands before one compare; doubles (no 64-bit unsigned minimum) compare
+/// each, signed with the sign bits flipped (the flip folded into the
+/// subtraction's constant). Two ops a single (with a `min_u` per operand past
+/// the first), three a double, where an `and`, a subtraction and a compare
+/// (and doubles' flip) each took one more, and a constant each (V8
+/// rematerializes one per use: a `movi`, a SIMD op too).
+fn denormal_any(c: &mut Func, d: bool, xs: &[&dyn Fn(&mut Func)]) {
+    let s = 1u64 << 63;
+    for (k, x) in xs.iter().enumerate() {
+        x(c);
+        if d {
+            c.i32_const(1).simd(op::I64X2_SHL);
+            c.v128_const(splat(true, 1 ^ s)).simd(op::I64X2_SUB);
+            c.v128_const(splat(true, ((1u64 << 53) - 1) ^ s))
+                .simd(op::I64X2_LT_S);
+            if k > 0 {
+                c.simd(op::OR);
+            }
+        } else {
+            c.i32_const(1).simd(op::I32X4_SHL);
+            c.v128_const(splat(false, 1)).simd(op::I32X4_SUB);
+            if k > 0 {
+                c.simd(op::I32X4_MIN_U);
+            }
+        }
+    }
+    if !d {
+        c.v128_const(splat(false, (1 << 24) - 1))
             .simd(op::I32X4_LT_U);
     }
 }
 
-/// Pushes an i32: the float bits in local `l` are a denormal (as
-/// [`denormal_lanes`]).
+/// Pushes an i32: the float bits in local `l` are a denormal: |x| - 1, as an
+/// integer, below the smallest normal's - 1, unsigned.
 fn scalar_denormal(c: &mut Func, f: F, l: u32) {
     c.local_get(l);
     if f.d {
@@ -1489,6 +1506,7 @@ mod op {
     pub const I32X4_SHR_U: u32 = 0xad;
     pub const I32X4_SUB: u32 = 0xb1;
     pub const I32X4_LT_U: u32 = 0x3a;
+    pub const I32X4_MIN_U: u32 = 0xb7;
     pub const I64X2_SHR_U: u32 = 0xcd;
     pub const I64X2_SUB: u32 = 0xd1;
     pub const I64X2_LT_S: u32 = 0xd8;
@@ -1607,8 +1625,13 @@ fn plain_lanes(c: &mut Func, d: bool) {
     c.local_tee(tt).local_get(tt);
     c.simd(op::CMP[d as usize][0]); // x == x
     under_fz_bad(c, |c| {
-        c.local_get(tt);
-        denormal_lanes(c, d);
+        denormal_any(
+            c,
+            d,
+            &[&|c| {
+                c.local_get(tt);
+            }],
+        );
     });
 }
 
@@ -1709,9 +1732,24 @@ fn arith(
     // zero factor, a quotient's with a zero dividend (0 × ∞ and 0 / 0 are NaNs).
     c.local_get(tr);
     lanes_in(c, d, 2);
-    c.local_get(tr);
-    zero_lanes(c, d);
-    if kk >= 2 {
+    if kk < 2 {
+        c.local_get(tr);
+        zero_lanes(c, d);
+        c.simd(op::OR);
+        under_fz_bad(c, |c| denormal_any(c, d, &[a, b]));
+        all_lanes(c, d, q, 1);
+    } else {
+        // Products and quotients: the zero clause in a branch on some lane not
+        // being a fast result, as the scalar forms', so a block of plain lanes
+        // pays one reduction and no zero tests. The fast lanes' mask is kept
+        // (`m`): the branch adds the exact zero lanes to it.
+        let m = VT[0];
+        under_fz_bad(c, |c| denormal_any(c, d, &[a, b]));
+        c.local_tee(m);
+        every_lane(c, d, q, 1);
+        c.if_t(super::I32).i32_const(1).else_();
+        c.local_get(tr);
+        zero_lanes(c, d);
         a(c);
         zero_lanes(c, d);
         if kk == 2 {
@@ -1720,16 +1758,12 @@ fn arith(
             c.simd(op::OR);
         }
         c.simd(op::AND);
+        under_fz_bad(c, |c| denormal_any(c, d, &[a, b]));
+        c.local_get(m).simd(op::OR);
+        every_lane(c, d, q, 1);
+        c.end();
+        c.local_get(FPOK).op(AND);
     }
-    c.simd(op::OR);
-    under_fz_bad(c, |c| {
-        a(c);
-        denormal_lanes(c, d);
-        b(c);
-        denormal_lanes(c, d);
-        c.simd(op::OR);
-    });
-    all_lanes(c, d, q, 1);
     guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
 }
 
@@ -1757,11 +1791,7 @@ fn minmax(
     // a denormal.
     c.local_get(tr).simd(op::CMP[d as usize][0]);
     under_fz_bad(c, |c| {
-        a(c);
-        denormal_lanes(c, d);
-        b(c);
-        denormal_lanes(c, d);
-        c.simd(op::OR);
+        denormal_any(c, d, &[a, b]);
     });
     every_lane(c, d, q, 1);
     guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
@@ -2026,13 +2056,7 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.local_set(tr);
             let fz = |c: &mut Func| {
                 under_fz_bad(c, |c| {
-                    vreg(c, rn);
-                    denormal_lanes(c, d);
-                    factor(c);
-                    denormal_lanes(c, d);
-                    acc(c);
-                    denormal_lanes(c, d);
-                    c.simd(op::OR).simd(op::OR);
+                    denormal_any(c, d, &[&|c| vreg(c, rn), &factor, &acc]);
                 })
             };
             c.local_get(tr);
@@ -2210,13 +2234,7 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.local_get(tr);
             lanes_in(c, true, 2);
             under_fz_bad(c, |c| {
-                vreg(c, rn);
-                denormal_lanes(c, true);
-                fb(c);
-                denormal_lanes(c, true);
-                acc(c);
-                denormal_lanes(c, true);
-                c.simd(op::OR).simd(op::OR);
+                denormal_any(c, true, &[&|c| vreg(c, rn), &fb, &acc]);
             });
             all_lanes(c, true, q, 2);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
@@ -2344,13 +2362,7 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.shuffle(core::array::from_fn(|b| (b as u8 / 4) * 8 + b as u8 % 4));
             c.simd(op::OR);
             under_fz_bad(c, |c| {
-                vreg(c, rn);
-                denormal_lanes(c, false);
-                factor(c);
-                denormal_lanes(c, false);
-                acc(c);
-                denormal_lanes(c, false);
-                c.simd(op::OR).simd(op::OR);
+                denormal_any(c, false, &[&|c| vreg(c, rn), &factor, &acc]);
             });
             all_lanes(c, false, q, 1);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
@@ -2429,8 +2441,7 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 c.simd(op::CMP[d as usize][cmp]); // ge, lt
             }
             under_fz_bad(c, |c| {
-                vreg(c, rn);
-                denormal_lanes(c, d);
+                denormal_any(c, d, &[&|c| vreg(c, rn)]);
             });
             all_lanes(c, d, q, 2);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
@@ -2475,8 +2486,7 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 c.simd_lane(0x1c, lane + 2 * q as u8).local_set(tr); // i32x4.replace_lane
             }
             under_fz(c, |c| {
-                vreg(c, rn);
-                denormal_lanes(c, true);
+                denormal_any(c, true, &[&|c| vreg(c, rn)]);
                 c.simd(op::ANY_TRUE).op(EQZ);
             });
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, true, tr));
