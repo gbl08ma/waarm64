@@ -676,7 +676,8 @@ backlog.md "Godot on Venus, GD's leftovers"; bench/vulkan/godot.ts and godot-dis
 | **Passes and bytes of the driver's** (VK4 T7) | Multiview (a pass per view); atomics on R32 images (the image's words in a buffer, copied to and from its texture); inline uniform blocks (a uniform buffer of the set's); device addresses (address memory placed at its first buffer's bind in an address buffer of regions, a GPUBuffer and binding each, a pointer's high word its region and its low word a byte of it; VK4 T41); the depth bounds test, logic ops and advanced blends (VK4 T32: the attachment copied before each such draw, in a cut of the pass, the stage testing or blending against the copy) | |
 | **Not offered** | Sparse resources; 64-bit floats and 64-bit atomics in shaders; pipeline statistics queries; sample counts other than 1 and 4; full bindless (until WebGPU's binding arrays); geometry and tessellation (compute pre-passes, as libpoly does, when a program asks: VK4) | |
 
-What each row still misses is in backlog.md "The Vulkan driver's gaps", "ANGLE's row's gaps", "YCbCr's gaps".
+What each row still misses is in backlog.md "The Vulkan driver's gaps", "ANGLE's row's gaps", "YCbCr's gaps"; what
+WebGPU itself stops is "Permanent limitations" below.
 
 **The render-pass rule** (VK0 C): WebGPU can't run compute inside a render pass, and ending one to run a pre-pass,
 then reopening it, stores and reloads every attachment (a break per object made a frame 10× the hoisted one on the
@@ -737,6 +738,75 @@ bar** (bench/vulkan/REPORT.md G), or GTK4 moves to the slower path.
 - **The arena**: memory 1's first 1,280 MiB (web/ram.ts `VENUS_ARENA`) caps the renderer's heap, blob storage
   included (dEQP-VK's pass list took 137 MiB: bench/vulkan/REPORT.md "The renderer's arena"); the window and node 1
   follow it in memory 1 (VK4 T19).
+
+### Permanent limitations
+
+What WebGPU doesn't allow at an acceptable cost, so not on the backlog: each line says what, why WebGPU stops it,
+and what the device does instead. What is only expensive (geometry and tessellation as compute pre-passes, polygon
+modes, several viewports, formats WebGPU can't multisample, update after bind) stays in backlog.md as an L task. The
+census's no-task reasons (VK4-KICKOFF.md, "The census's tasks") are the first lines.
+
+- **Sparse binding and residency**: WebGPU has no tiled or partly resident resources. Not advertised.
+- **Protected memory**: no protected allocations or queues in WebGPU. Not advertised.
+- **Ray tracing (pipelines, ray queries, acceleration structures)**: WebGPU has no ray tracing, and a BVH walk in
+  compute would be a renderer of its own. Not advertised (and so mutable descriptors of acceleration structures).
+- **Cooperative matrices**: WGSL has no matrix-unit operations, and loops of plain ALU work give none of the speed they
+  exist for. Not advertised.
+- **Tile images and fragment density maps or shading rates**: WebGPU exposes neither tile memory nor variable-rate
+  shading. Not advertised.
+- **Descriptor buffers**: descriptors as bytes in memory, where WebGPU's bind groups are opaque objects. Not advertised.
+- **Pipeline statistics queries**: WebGPU counts no invocations or primitives, and counting them in the shaders needs
+  writable storage in the vertex stage, which it lacks. `pipelineStatisticsQuery` isn't advertised.
+- **`occlusionQueryPrecise`**: WebGPU's occlusion query promises nonzero, not a count, and a count of its own in the
+  fragment stage would come before the depth test (WGSL has no early fragment tests). Counts are the adapter's.
+- **Calibrated timestamps** (`VK_KHR_calibrated_timestamps`): WebGPU can't give the GPU's time now, synchronously. Not
+  advertised. Timestamps are the GPU's where the adapter has `timestamp-query` (Chromium may quantize them: Dawn's
+  `timestamp_quantization`, off only under `--enable-unsafe-webgpu`), else the CPU's at replay.
+- **64-bit floats and 64-bit atomics in shaders** (`shaderFloat64`, `shaderBufferInt64Atomics` and the like): WGSL has
+  neither; soft floats would cost every operation tens of instructions, and two 32-bit words can't be swapped as one.
+  Not advertised (64-bit integers are pairs of words: VK4 T29).
+- **Sample counts other than 1 and 4**: WebGPU multisamples at 4 only. Not advertised (every sample-count limit and
+  format query is 1|4; vkd3d's 8-sample tests don't run).
+- **More than 8 colour attachments** (Vulkan's 16): WebGPU's pass takes 8, and a pass replayed for the rest would run
+  each draw's side effects (storage, atomics) twice. `maxColorAttachments` is the adapter's.
+- **Depths past [0, 1]** (`VK_EXT_depth_range_unrestricted`; a float depth kept past the viewport's range with depth
+  clipping off): WebGPU's viewport depths, and the fragment depth, are clamped to [0, 1] and the viewport's range.
+  Not advertised; with clipping off the clamp to the viewport's range stays.
+- **Stencil export** (a shader-written stencil reference): WGSL has no stencil output. Not advertised, so neither are
+  stencil read-write feedback loops (300 of `attachment_feedback_loop_layout`).
+- **Early fragment tests** (`early_fragment_tests`): WGSL has no attribute for them; whether depth tests run early is the
+  adapter's. The execution mode is ignored (`fragment_operations.early_fragment` cases that count on it, such as
+  `samplemask_early_fragment_tests_depth_samples_4`, stay out of the list).
+- **One draw's front and back primitives in order with per-face stencil state**: WebGPU's stencil reference and masks
+  are one for both faces, so such a draw is split by face (VK3 L6a), and where its front and back primitives overlap
+  their order is lost.
+- **Coherent advanced blends, logic ops and the depth bounds test within one draw**: WebGPU has no framebuffer fetch or
+  raster-order guarantee, so they read a copy of the attachment made before each draw (VK4 T32) and overlapping
+  primitives of one draw see what was there before it. `advancedBlendCoherentOperations` isn't advertised.
+- **Images sharing their memory's bytes** (`memory.binding.aliasing.*.image_*`, maintenance6's aliasing, YCbCr's
+  `plane_view.memory_alias`, images on external memory): a WebGPU texture is storage of its own, which no buffer or
+  other texture can alias, and copies at every use would cost every image. Each image is a texture of its own; images
+  on external memory aren't offered (`api.external.memory.*.image.*`).
+- **Storage the fragment stage writes and the vertex stage reads in one draw**: WebGPU's vertex stage has no writable
+  storage, and a buffer bound writable for the fragment stage can't be bound read-only for the vertex stage in the
+  same usage scope. Refused at the pipeline's creation, saying why (a vertex stage that writes storage itself runs as
+  compute before its draw: VK4 T33).
+- **Subgroups beyond WGSL's**: WGSL has them in compute and fragment stages only, has no subgroup-scoped barrier, and
+  gives a size the shader can ask for only through `subgroup-size-control` (experimental in Chromium). Subgroups are
+  advertised in those stages only, of one invocation where the adapter's size varies (Intel's, AMD's), and a
+  subgroup barrier is dropped.
+- **Infinities and NaNs as values** (16-bit ones through `shader-f16`, a comparison with a NaN, log of 0): WGSL lets a
+  backend assume none, so results differ by adapter (6 of 233 sampled `spirv_assembly.*.float16` cases on the Mac,
+  vkd3d's `test_shader_instructions` `ne` and `log`). Nothing is changed.
+- **The viewport's bounds and subpixel precision**: WebGPU's viewport range is ±2×`maxTextureDimension2D` and it states
+  no subpixel bits, so `viewportBoundsRange` follows it and `viewportSubPixelBits` is 0 (vkd3d warns, at no cost to a
+  feature level).
+- **A pipeline cache the driver keeps**: WebGPU has no pipeline cache object, so a compile is kept only where the
+  browser's own cache keeps it (Metal's and NVIDIA's across restarts, SwiftShader's not). The WGSL is kept in the page's
+  storage (vk/README.md "The shader cache").
+- **Bindless descriptor heaps** (vkd3d-proton's: huge unbounded mutable arrays updated after bind): WebGPU has no
+  binding arrays yet, and a tree of ifs over thousands of descriptors in every access isn't a cost to pay. Not
+  advertised past the per-stage limits (descriptor indexing's arrays are the translator's `if` trees).
 
 ### What VK0 to VK3 found
 

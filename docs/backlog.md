@@ -4,6 +4,11 @@ Open items no milestone owns yet, by area. Pick one up when a milestone touches 
 measurement says it matters, and move it into that milestone's plan when it's scheduled. **Add to
 this list rather than leaving TODOs in code** (the code marks a few with `ponytail:`).
 
+Vulkan's (Venus's) entries carry a tag, on the entry or on each of its items: **[A]** an easy win (S or less, the
+approach clear), **[B]** M or more, an L/XL change or another architecture (or waiting on another project, said so),
+**[C]** needs the user, their NVIDIA desktop or other hardware (the Mac's runs are the agents' own: those are A or B).
+What WebGPU can't allow at an acceptable cost isn't here: graphics.md "Permanent limitations".
+
 ## CPU and ISA
 
 - **Unadvertised extensions the M4 has**, in case real workloads benefit: FP16 (scalar and
@@ -593,14 +598,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   to the byte on the M4), on the Mac and SwiftShader alike. Playback looks right; not looked into (a stale plane
   sampled through the picture texture, `Res.picture`, or mpv's own GL interop at a seek are the candidates).
 
-- **Snapshots while Vulkan (Venus) is in use** (VK1, docs/devices.md "Venus"): refused while a Venus context exists.
+- [B] **Snapshots while Vulkan (Venus) is in use** (VK1, docs/devices.md "Venus"): refused while a Venus context exists.
   Needs the renderer's objects as data (as virgl's), the blobs' bytes (mapped ones are in the window, which a
   snapshot's RAM chunks don't cover yet) and the window itself: VK4's tier 4 (VK4-KICKOFF.md).
-- **`npm start` doesn't build Vulkan's renderer** (VK2 L7, vk/README.md "On the page"): vk/build.sh clones and builds
+- [B] **`npm start` doesn't build Vulkan's renderer** (VK2 L7, vk/README.md "On the page"): vk/build.sh clones and builds
   Mesa and virglrenderer natively first (minutes, meson and Mesa's build dependencies), so the preparation leaves it
   out and a user's copy has Vulkan only if they built it. A prebuilt module fetched by hash (as the firmware could be)
   would bring it to every `npm start`.
-- **Pipelines' loose ends** (REPORT.md "VK3 L3", "VK4 T17", "VK4 T49"; vk/README.md "Pipelines made asynchronously",
+- [B] **Pipelines' loose ends** (REPORT.md "VK3 L3", "VK4 T17", "VK4 T49"; vk/README.md "Pipelines made asynchronously",
   "The shader cache"): (1) render pipelines made at vkCreateGraphicsPipelines (`?gpu=vkpremake=on`, VK4 T17) lose for
   both programs measured. vkQuake's capture makes 100 so and draws with 8 (cold, 269 → 26 frames/s on the M4). Godot's
   editor (VK4 T49) makes 51 so and draws with 24: with Metal's cache emptied its submits wait half as long for
@@ -609,100 +614,98 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   start's length; with Metal's cache warm, 44.7 → 42.7 s, overlapping. So a count kept per program in the store, to
   premake only for one that draws most of what it makes, would pay neither. Left: of vkQuake's 18 drawn pipelines, 10
   have keys the creation's guesses miss (not looked into: the sampler variant, a dynamic state's default, a read-only
-  depth layout), which matters only if premaking ever wins. (2) SwiftShader's compile isn't kept across a browser
-  restart (Metal's and NVIDIA's are, through Dawn's cache in the profile and the driver's own: REPORT.md "VK3: the NVIDIA
-  run after L2b"). (3) A pipeline made at once by a
-  submit (`syncPipelines`) is counted, never seen.
-- **The printer's WGSL, what Tint still pays for** (GD G2, VK4 T49; vk/README.md "The shader path",
+  depth layout), which matters only if premaking ever wins. (2) A pipeline made at once by a submit (`syncPipelines`)
+  is counted, never seen in a program. (SwiftShader's compiles not kept across a restart: graphics.md "Permanent
+  limitations".)
+- [A, B] **The printer's WGSL, what Tint still pays for** (GD G2, VK4 T49; vk/README.md "The shader path",
   bench/vulkan/REPORT.md "GD G2", "VK4 T49"): since T49 (values read once inlined, float vectors, uniform words by
   literal or aligned indices) Godot's 210 stages take 323 ms of `createShaderModule` on the M4 (475 before), the largest
-  41 ms, their WGSL 4.4 MB (7.05). Left, smaller: ~1,200 `bitcast<f32>(t.x)` in the largest stage, of vectors that also
+  41 ms, their WGSL 4.4 MB (7.05). [B] Left, smaller: ~1,200 `bitcast<f32>(t.x)` in the largest stage, of vectors that also
   feed something other than float ALU ops (texture coordinates, stores; those could take the bitcast at that use
   instead); 8- and 16-bit values aren't inlined; a value read twice stays a let. Tint was read, not profiled (building
   Dawn wasn't allowed in G2's session): a native Tint (Dawn's CMake, `tint` with the WGSL reader) on these stages would
   say what the rest is. A program's start barely moves with it now: Godot's editor's is the guest's own work
-  (REPORT.md "VK4 T49"). Seen beside it: a function-scope `var` declared in a loop came back with the last iteration's
+  (REPORT.md "VK4 T49"). [A] Seen beside it: a function-scope `var` declared in a loop came back with the last iteration's
   value on SwiftShader's path, where WGSL zero-initializes it at each declaration (as far as read: confirm against the
   spec, then report to Dawn); the printer no longer relies on either.
-- **Godot on Venus, GD's leftovers** (GD, ended 2026-11-04 for dEQP-VK's next tasks; bench/vulkan/REPORT.md "GD G4",
+- [B, C] **Godot on Venus, GD's leftovers** (GD, ended 2026-11-04 for dEQP-VK's next tasks; bench/vulkan/REPORT.md "GD G4",
   "GD G7–G8"). Godot 4.7.2's editor, its Forward+ and SDFGI scenes and the Global Illumination demo run on the M4 and
   the user's NVIDIA desktop (the demo at 60 frames/s there), X11 and Wayland. Left, ranked:
-  - **Freezes and black windows on NVIDIA** (the user, 2026-11-04): the GI demo in SDFGI mode freezes the guest's
+  - [C] **Freezes and black windows on NVIDIA** (the user, 2026-11-04): the GI demo in SDFGI mode freezes the guest's
     display at times (back when the mode is left), and Godot's window is sometimes black instead of the scene, under
     Wayland too; no WebGPU error since the last two fixes. All Venus contexts and the compositor share one GPU
     process, so one program's long frames hold every window. VK4 T23 measured the emulated paths in that mode on the
     M4 (no freeze there; SDFGI's view copies the one cost: REPORT.md "VK4 T23"); nvidia.sh's `t23` step measures them
     on NVIDIA with the seconds frozen.
-  - **The device's address buffer** (seen on SwiftShader, `results/gd/g8/gi-editor-swiftshader.json`): it grows by copy
+  - [B] **The device's address buffer** (seen on SwiftShader, `results/gd/g8/gi-editor-swiftshader.json`): it grows by copy
     (old and new at once), and the demo's editor grew it to 512 MiB, which SwiftShader's Vulkan refused (the editor
     black). Since VK4 T41 a memory is placed there at its first buffer's bind (images' blocks left out) and the editor
     draws (`results/vk4/t41/gi-editor-swiftshader.json`), but the buffer still grows to 512 MiB, now taken: Godot's
     buffers' blocks are most of it, so a larger scene can meet the refusal again. Regions of a fixed size, a
     GPUBuffer each without growing by copy, would need pipelines remade per region count ("Device addresses' leftovers").
-  - **Godot as a standing workload** (G7's rest): a GFXReconstruct capture of Godot's scene on the dev VM's lavapipe
+  - [B] **Godot as a standing workload** (G7's rest): a GFXReconstruct capture of Godot's scene on the dev VM's lavapipe
     (images/vkframes/build.sh, as vkQuake's; under the Venus profile it takes Mobile: SwiftShader's 16 textures)
     replayed in tests/page-venus.test.ts. The editor's start cold and warm on the M4 is measured since VK4 T49
     (bench/vulkan/godot.ts: two runs of one RUNS line in a session; `lastHeldS`, the start's end by the renderer's
     account): ~44 s cold, ~24 s warm, both the guest's own work (Godot importing its project and compiling its
     shaders under emulation), the submits held for pipelines ~12 s of it cold with Metal's cache emptied, overlapped
     (REPORT.md "VK4 T49"). Faster starts are the JIT's and the guest's, not the renderer's.
-  - **nvidia.sh's `godot` step, not yet run by the user** (`nvidia-bundle.sh --godot`, then `VK2_STEPS=godot
+  - [C] **nvidia.sh's `godot` step, not yet run by the user** (`nvidia-bundle.sh --godot`, then `VK2_STEPS=godot
     bench/vulkan/nvidia.sh page <bundle>`, ~20 min): the bar's NVIDIA half by the harness (the user's hand runs meet it).
-  - **Why one refused bind group froze every window** (the screen-space effects' before the fix): not a held command's
+  - [A] **Why one refused bind group froze every window** (the screen-space effects' before the fix): not a held command's
     throw (`runOp` catches); a test that a refused bind group leaves the compositor alone would say.
-- **What the device advertises, left for the translator** (VK2 L7, VK3 L5; vk/README.md "The shader path"): subgroups
-  are WGSL's only where the adapter's have one size (Intel's and AMD's vary: there, subgroups of one invocation; a
-  size the shader could ask for would need WebGPU's `subgroup-size-control`, which Chromium has as experimental), in
-  compute and fragment shaders only, `gl_SubgroupID` assumes subgroups are runs of `local_invocation_index` (true on
-  SwiftShader and Metal; unchecked on NVIDIA), and a subgroup-scoped barrier is dropped. Since VK4 T29 8-, 16- and
-  64-bit integers and 16-bit inputs and outputs are advertised (bench/vulkan/REPORT.md "VK4 T29"); left of them: no
-  64-bit floats or atomics (`shaderFloat64`, `shaderBufferInt64Atomics`), no 8- or 16-bit atomics. Failing on SwiftShader only (the M4
-  passes them; out of the list, which takes what passes on both): a 16-bit NaN through a vertex input
-  (`16bit_storage.input_output_float_16_to_32.vector6_vert`, 69696 for NaN), 9 compute cube gathers
-  (`texture_gather.compute.basic.cube.*`; their graphics twins pass), 2 dynamic-offset gathers of a view with a base
-  level ("SwiftShader's fetch from a view with a base level"), and `ssbo.layout.random.8bit.all_per_block_buffers.5`,
-  which passes in 56 s there (1 s on the M4; past dEQP's 30 s watchdog): an 8-bit store is two atomics on its word, and
-  16-bit random layouts take SwiftShader up to 11 s alike; a word written whole where a stage's stores cover it
-  (`nir_opt_load_store_vectorize`) might bring it under. **Subgroups on
-  the Mac are held** (VK3 L5, bench/vulkan/REPORT.md "VK3 L5"): Chromium 153's Metal path hoists a ballot that is an
-  `if`'s only subgroup operation out of the `if` (repro: `web/venus-gpu.ts` `subgroupsRight`'s kernel, 0xffffffff for
-  an odd invocation where 0xaaaaaaaa is right); with the check off, 89 of 503 sampled subgroup cases failed there
-  (`bench/vulkan/results/vk3/l5/mac-before-check.json`), arithmetic and f16 shuffles in graphics. To do: report it
-  to Chromium (Tint's MSL or Apple's compiler: unknown), and try a translator workaround (another subgroup operation
-  beside each ballot in an `if`), then lift the hold where the check passes. On the Mac with `shader-f16`, 226 of 233
-  sampled `spirv_assembly.*.float16` cases pass: 6 fail on 16-bit infinities and NaNs (WGSL lets a backend assume
-  none: values come back 0) and one graphics shuffle's WGSL nests ifs past Tint's 127 (an indexed f16 vector's `if`
-  tree). VK4 T42 ran 7 `float16.opvectorshuffle` cases on the M4 (`results/vk4/t42/m4-f16-shuffle.json`): all fail, every
-  stage refused by Tint ("statement nesting depth / chaining length exceeds limit of 127", a `let` at 64 levels of
-  `if`), compute and graphics alike. Not reproduced off the Mac: a GLSL switch of 140 cases prints flat (NIR's switch is
-  a run of ifs, not a chain), and the cases' SPIR-V is dEQP's own, built at run time (no CTS source here); the next step
-  is the stage's WGSL whole (the worker's warning keeps 400 lines, the run's log a line of them) or its SPIR-V from
-  the guest, then a flat print of what nests (the tree's leaves as a `switch`). The per-stage descriptor limits follow one count of what WebGPU takes since VK3 L7a ("Bindings past
-  WebGPU's" below).
-- **YCbCr's gaps** (VK3 L7.2; vk/README.md "YCbCr conversions"; on by default since L7.3, `?gpu=vkycbcr=off`): only the 8-bit multi-planar formats (2- and 3-plane 420, 422, 444): WebGPU's 16-bit normalized formats
-  (tier1's) are unfilterable, so P010 and the 10-, 12- and 16-bit formats would need a nearest-only offer or filtering
-  in the shader; no single-plane 422 formats (YUY2: WebGPU has none, they would be decoded from words); optimal tiling
-  only (a linear image can't be sampled here anyway); no explicit chroma reconstruction nor a chroma filter apart from
-  the sampler's (Mesa's implicit reconstruction, which dEQP-VK's conversion cases pass); planes aren't attachments or
-  storage images. Failing (out of `tests/deqp/vk-ycbcr.txt`): **an image aliasing a
-  plane's memory** (48 `plane_view.memory_alias`: images are textures of their own, never their memory's bytes). **A
-  multi-planar image on external memory only disjoint, a resource a plane** (VK4 T48: each plane's texture its
-  resource's; vk/README.md "Imports"): not exported (the virgl renderer imports one plane an image), not one memory of
-  several planes (a resource is one texture: each plane's region of one resource would need its bytes from an offset,
-  `VenusImport` fills a texture from a resource's start), and not with a DRM modifier (ffmpeg's `hwmap` from VA-API to
-  Vulkan makes a disjoint image with the planes' explicit layouts: the modifier list leaves the multi-planar formats out).
-- **GTK4 on Vulkan: the bar met on the M4, the default not taken** (VK4 T13, bench/vulkan/REPORT.md "VK4 T13–T14"; GTK
+- [A, B, C] **What the device advertises, left for the translator** (VK2 L7, VK3 L5; vk/README.md "The shader path";
+  what WGSL's subgroups, floats and atomics can't give: graphics.md "Permanent limitations"). [C] `gl_SubgroupID`
+  assumes subgroups are runs of `local_invocation_index` (true on SwiftShader and Metal; unchecked on NVIDIA). [B] No 8-
+  or 16-bit atomics (a compare-exchange on the word would give them; no program asks). Failing on SwiftShader only (the
+  M4 passes them; out of the list, which takes what passes on both), each [B] (not looked into, SwiftShader's at
+  first sight): a 16-bit NaN through a vertex input (`16bit_storage.input_output_float_16_to_32.vector6_vert`, 69696
+  for NaN), 9 compute cube gathers (`glsl.texture_gather.compute.basic.cube.*`; their graphics twins pass; still
+  failing 2026-11-09), 2 dynamic-offset gathers of a view with a base level ("SwiftShader's fetch from a view with a
+  base level"), and `ssbo.layout.random.8bit.all_per_block_buffers.5`, which passes in 56 s there (1 s on the M4; past
+  dEQP's 30 s watchdog, still 2026-11-09): an 8-bit store is two atomics on its word, and 16-bit random layouts take
+  SwiftShader up to 11 s alike; a word written whole where a stage's stores cover it (`nir_opt_load_store_vectorize`)
+  might bring it under. [A] **Subgroups on the Mac are held** (VK3 L5, bench/vulkan/REPORT.md "VK3 L5"): Chromium
+  153's Metal path hoists a ballot that is an `if`'s only subgroup operation out of the `if` (repro: `web/venus-gpu.ts`
+  `subgroupsRight`'s kernel, 0xffffffff for an odd invocation where 0xaaaaaaaa is right; filed in "Upstream reports"
+  below); with the check off, 89 of 503 sampled subgroup cases failed there
+  (`bench/vulkan/results/vk3/l5/mac-before-check.json`), arithmetic and f16 shuffles in graphics. To do: recheck on
+  the current Chrome for Testing (bench/mac-chrome.sh), and try a translator workaround (another subgroup operation
+  beside each ballot in an `if`, wgsl_print.c), then lift the hold where the check passes (S, on the Mac; it also opens
+  `glsl.derivate.*dynamic_*` there: "Shaders" below). [B] On the Mac with `shader-f16`, one graphics shuffle's WGSL
+  nests ifs past Tint's 127 (an indexed f16 vector's `if` tree). VK4 T42 ran 7 `float16.opvectorshuffle` cases on the
+  M4 (`results/vk4/t42/m4-f16-shuffle.json`): all fail, every stage refused by Tint ("statement nesting depth /
+  chaining length exceeds limit of 127", a `let` at 64 levels of `if`), compute and graphics alike. Not reproduced off
+  the Mac: a GLSL switch of 140 cases prints flat (NIR's switch is a run of ifs, not a chain), and the cases' SPIR-V is
+  dEQP's own, built at run time (no CTS source here); the next step is the stage's WGSL whole (the worker's warning
+  keeps 400 lines, the run's log a line of them) or its SPIR-V from the guest, then a flat print of what nests (the
+  tree's leaves as a `switch`). The per-stage descriptor limits follow one count of what WebGPU takes since VK3 L7a
+  ("Bindings past WebGPU's" below).
+- [B] **YCbCr's gaps** (VK3 L7.2; vk/README.md "YCbCr conversions"; on by default since L7.3, `?gpu=vkycbcr=off`):
+  only the 8-bit multi-planar formats (2- and 3-plane 420, 422, 444): WebGPU's 16-bit normalized formats (tier1's) are
+  unfilterable, so P010 and the 10-, 12- and 16-bit formats would need a nearest-only offer or filtering in the shader;
+  no single-plane 422 formats (YUY2: WebGPU has none, they would be decoded from words); optimal tiling only (a linear
+  image can't be sampled here anyway); no explicit chroma reconstruction nor a chroma filter apart from the sampler's
+  (Mesa's implicit reconstruction, which dEQP-VK's conversion cases pass); planes aren't attachments or storage images.
+  (An image aliasing a plane's memory: graphics.md "Permanent limitations".) **A multi-planar image on external memory
+  only disjoint, a resource a plane** (VK4 T48: each plane's texture its resource's; vk/README.md "Imports"): not
+  exported (the virgl renderer imports one plane an image), not one memory of several planes (a resource is one
+  texture: each plane's region of one resource would need its bytes from an offset, `VenusImport` fills a texture from
+  a resource's start), and not with a DRM modifier (ffmpeg's `hwmap` from VA-API to Vulkan makes a disjoint image with
+  the planes' explicit layouts: the modifier list leaves the multi-planar formats out).
+- [A, B, C] **GTK4 on Vulkan: the bar met on the M4, the default not taken** (VK4 T13, bench/vulkan/REPORT.md "VK4 T13–T14"; GTK
   takes GL by default, so only `GSK_RENDERER=vulkan` meets Venus). Since the pump's ticker, iconscroll runs at 33 frames/s
-  on the M4 against GL's 28–32, frames at GL's CPU a frame, fishbowl at 60. Left: (1) NVIDIA and SwiftShader not
-  measured (Linux's `waitAsync` was never stretched: there the gain is the shorter period's alone); (2) GTK takes Vulkan
+  on the M4 against GL's 28–32, frames at GL's CPU a frame, fishbowl at 60. Left: (1) [C] NVIDIA and [A] SwiftShader not
+  measured (Linux's `waitAsync` was never stretched: there the gain is the shorter period's alone; SwiftShader's is a
+  run of bench/vulkan/REPORT.md "VK4 T13–T14"'s iconscroll arms in the dev VM); (2) [B] GTK takes Vulkan
   by default only with a dma-buf modifier other than LINEAR (sway on virgl would have to import it): the decision that
-  makes GTK4 Vulkan's, VK4's tier 4; (3) each fenced queue submit costs the guest two execbuffers (Mesa 26's fences are
+  makes GTK4 Vulkan's, VK4's tier 4; (3) [B] each fenced queue submit costs the guest two execbuffers (Mesa 26's fences are
   DRM syncobjs signalled through the virtqueue; no feedback path), 3 a GTK4 frame, and GSK's ~70 synchronous
   `vkAllocateDescriptorSets` a frame (Venus's pools go synchronous once sets of mixed layouts are freed) each a ring
-  round trip: both the guest's Mesa's, which a guest patch could change; (4) the ticker's busy cost (~50 ms a second of
+  round trip: both the guest's Mesa's, which a guest patch could change; (4) [B] the ticker's busy cost (~50 ms a second of
   the GPU worker at iconscroll) could drop if the ticker read the rings' tails itself and woke the pump only for work;
   a submit held for the guest's own signal keeps the pump turning at the ticker's pace as long as it's held.
-- **Venus at 1 fish on NVIDIA: 2.4–2.6 ms a frame against virgl's 1.5, parked by the user** (2026-10-26: 1 fish isn't
+- [C] **Venus at 1 fish on NVIDIA: 2.4–2.6 ms a frame against virgl's 1.5, parked by the user** (2026-10-26: 1 fish isn't
   representative; likely NVIDIA's driver latency or its GPU leaving low power slowly; Venus is ahead at 1,000 fish and
   the toolkit). The leads: Chromium notices a lone pass done ~2.2 ms late there (1.2 nudged, at once under load), the
   scene's pass ~0.9 ms of GPU (the M4's 0.41), a frame's `Queue::Submit` ~1.55 ms in the GPU process (REPORT.md "VK3:
@@ -710,7 +713,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   same WebGPU calls: the next entry). The floor before it (~4.5 ms
   a frame: a ring poller on a clamped `setTimeout(0)`, Dawn's slow look at a done submit) was fixed in VK3 L2 and
   confirmed there (REPORT.md "VK3 L2", "VK3: the NVIDIA run after L2").
-- **Venus's submits ~2 ms later on NVIDIA since 4fdc69fb** (VK3's final NVIDIA run; REPORT.md "VK3: the final NVIDIA
+- [C] **Venus's submits ~2 ms later on NVIDIA since 4fdc69fb** (VK3's final NVIDIA run; REPORT.md "VK3: the final NVIDIA
   run", "VK3 L9a", "VK3: the NVIDIA run for L9"): at c8087cb0 a scene submit is done 5.4 ms after it's made at 1 fish
   (3.3 at 4fdc69fb), 6.9 at the toolkit (4.9), mpv's 4.9 (3.9); a frame 5–40% dearer, still under virgl's at 1,000
   fish and the toolkit. The GPU's pass and the encoding unchanged, a frame's Dawn `Queue::Submit` 1.56 → 2.53 ms of the
@@ -719,34 +722,34 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   Next: a bisect on NVIDIA itself, a bundle carrying the page at several of the 34 commits between them (`git log
   4fdc69fb..c8087cb0 -- vk web`: the images shared, ~20 MB a page) run as alternated arms in one session; or Dawn's
   own trace categories (`dawn.validation`, per-command timings) at both commits, which would name the slower command.
-- **Presentation's gaps** (VK2 L4, VK4 T48; vk/README.md "Presentation"): a fullscreen Vulkan window isn't tried (wlroots may
+- [B, C] **Presentation's gaps** (VK2 L4, VK4 T48; vk/README.md "Presentation"): [B] a fullscreen Vulkan window isn't tried (wlroots may
   scan a client's dma-buf out directly: `SET_SCANOUT_BLOB` of a Venus blob, `ERR_UNSPEC` today, would need the
   screen to draw a WebGPU texture); a WSI format the guest's sway doesn't offer today isn't shared (the 4444 and 5551
   formats, R16G16B16A16_UNORM: a warning, a black window), nor a prime blit's buffer of R5G6B5 (X11's WSI; `bufferFormat`
-  has no 16-bit texture of its bytes); a browser that renders with a GPU but whose WebGPU canvases fail would lose its GPU channel on the bitmap
-  way (`shareMode` decides by the renderer's name: no such browser seen; `?gpu=vkreadback` is the way out); the
+  has no 16-bit texture of its bytes); [C] a browser that renders with a GPU but whose WebGPU canvases fail would lose its GPU channel on the bitmap
+  way (`shareMode` decides by the renderer's name: no such browser seen; `?gpu=vkreadback` is the way out); [B] the
   readback way holds the compositor's submit for its wait (7–10 ms a frame at 1080p on SwiftShader).
-- **Imports' gaps** (VK2 L6, vk/README.md "Imports"; mpv on Vulkan meets its bar regardless):
-  - **Mesa's async present drops a present after a failed one** (VK3 L4e, REPORT.md "VK3 L4e"; vk/README.md "The
+- [A, B, C] **Imports' gaps** (VK2 L6, vk/README.md "Imports"; mpv on Vulkan meets its bar regardless):
+  - [A, B, C] **Mesa's async present drops a present after a failed one** (VK3 L4e, REPORT.md "VK3 L4e"; vk/README.md "The
     guest's Mesa"): Venus's `vn_wsi_present_async` (Mesa 26.x, main as of 8598bb5c) returns the previous present's
     error for the next present, of any swapchain, and drops that one unsubmitted (frame never shown, present fence
     never signalled): a cold mpv's fullscreen window froze and it couldn't exit, also at a file's end. The desktop image
-    works around it with `VN_PERF=no_async_present`. Left: report it upstream ("Upstream reports" below), and drop the
-    workaround once Arch ships a fix;
-    mpv on SIGTERM wasn't rechecked. **The hosted desktop disk needs replacing** with one built since L4e (the
+    works around it with `VN_PERF=no_async_present`. Left: [B] drop the workaround once Arch ships a fix (filed in
+    "Upstream reports" below; Arch has 26.2.6 on 2026-11-09); [A] mpv on SIGTERM wasn't rechecked (S: the desktop
+    guest, mpv on Vulkan, `kill -TERM`). [C] **The hosted desktop disk needs replacing** with one built since L4e (the
     local one is) before a deploy of the page, which since L4e takes libplacebo's advanced path by default
     (`?gpu=vkformats=held`: off), so that an old disk's first cold mpv doesn't meet the freeze.
-  - **Each picture is still written into Venus's texture** (VK4 T16 gave each resource a texture of its own, so an
+  - [B] **Each picture is still written into Venus's texture** (VK4 T16 gave each resource a texture of its own, so an
     import writes nothing; bench/vulkan/REPORT.md "VK4 T16"): 0.6 MB and ~0.18 ms of the GPU worker a frame at 480p
     (~3 MB at 1080p), the bytes the host decoded anyway, copied by `queue.writeTexture`. Fewer would need the picture
     on the GPU (WebCodecs' frame into WebGPU: `importExternalTexture` gives RGB, not the planes, so a plane would be a
     compute pass's output from it). (An imported image no longer makes a texture of its own: VK4 T48.) A disjoint
     multi-planar image's planes on imported memories still make theirs at `vkCreateImage` (no program meets it).
-  - A resource with no picture written yet is read back once at its first import (WebGL's synchronous `readPixels`);
+  - [B] A resource with no picture written yet is read back once at its first import (WebGL's synchronous `readPixels`);
     what the guest renders into a virgl resource after it is imported (rather than a decoder's picture) never reaches
     Venus's copy. Nothing makes the guest wait for a picture before it samples the import (`vaSyncSurface` waits for
     nothing): a draw queued before the picture lands samples the texture's earlier bytes (vk/README.md "Imports").
-- **Dawn in the guest's Chromium on Venus** (VK3 L7.1's remainder: bench/vulkan/REPORT.md "VK3 L7.1", "VK3 L7.1b").
+- [B] **Dawn in the guest's Chromium on Venus** (VK3 L7.1's remainder: bench/vulkan/REPORT.md "VK3 L7.1", "VK3 L7.1b").
   The device has what Dawn's backend needs (the indexed arrays, sample-rate shading), but Chromium's Dawn takes a
   system Vulkan device only with `--enable-features=Vulkan`, and then Chromium's own Vulkan device needs
   (1) `samplerYcbcrConversion` (`vulkan_device_queue.cc` refuses a device without it; backed since VK3 L7.2, by
@@ -759,14 +762,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   or Venus backing opaque-fd semaphores (a Mesa change: VK3 L7.2 found the guest's Venus offers sync files only,
   hard-coded, and never passes the export or the fd request to the host, so neither vkr nor the driver can answer
   it; the patch would offer `OPAQUE_FD` where the renderer has external sync and export the semaphore's DRM syncobj
-  as an opaque fd, `vn_renderer_sync_export_syncobj(…, false)`, in a patched Mesa in the guest images); an upstream report for the fd 0 at least (an error, not a
-  descriptor it doesn't own). (3) A window: Chromium calls Wayland incompatible with Vulkan, and the desktop image has no Xwayland;
+  as an opaque fd, `vn_renderer_sync_export_syncobj(…, false)`, in a patched Mesa in the guest images); the fd 0 is filed in "Upstream reports" below. (3) A window: Chromium calls Wayland incompatible with Vulkan; the desktop image has
+  Xwayland since GD G7 (`xorg-xwayland`: Godot's X11 windows), untried with `--ozone-platform=x11` here;
   `--headless=new` starts (its frames would come out through the page's log). `bench/vulkan/dawn-frames.ts guest` runs
   the samples (ARMS: the flags; CR_ENV: the environment; LOGBEFORE: the log up to a line) and compares them with the
   dev VM's; `CHROMIUM_ARGS="--enable-unsafe-webgpu --enable-features=Vulkan"` for the host's side.
-- **ANGLE's row's gaps** (VK3 L7.4; vk/README.md "The shader path", "Commands"), each for when a program or dEQP-VK
+- [B] **ANGLE's row's gaps** (VK3 L7.4; vk/README.md "The shader path", "Commands"), each for when a program or dEQP-VK
   needs it:
-  - **Transform feedback** (queries, draws by a byte count, restarts, the provoking vertex's order and gl_PointSize's
+  - [B] **Transform feedback** (queries, draws by a byte count, restarts, the provoking vertex's order and gl_PointSize's
     capture since VK4 T45; vk/README.md "Commands"): streams past 0 (and so `geometryStreams`; dEQP's query cases all
     need geometry shaders, so the queries are proven by the driver's tests and ANGLE's ES3 page only), 16-bit outputs,
     records past 512 bytes (`maxTransformFeedbackBufferDataSize`: NIR's offsets reach 1 KiB, `wgsl_info.xfb_words`
@@ -785,11 +788,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     VK4 T45: no program met it, and either way is a pass of its own per draw). A draw-indirect-count under transform
     feedback is captured a record at a time (each capture reading the count: `maxDrawCount` compute passes), and a
     triangle fan drawn by a byte count isn't drawn (said once; neither met by a program).
-  - **The provoking vertex**: indirect draws whose last vertex provokes, and draws by a byte count (drawn as they are,
+  - [B] **The provoking vertex**: indirect draws whose last vertex provokes, and draws by a byte count (drawn as they are,
     warned; a pass would write their indices and arguments from the GPU's count: `provoke` sizes its list on the CPU;
     left by VK4 T45, no program met one: ANGLE draws flat varyings directly), adjacency topologies (not supported), and a compute pass and a scratch range per such
     draw (ANGLE draws with flat varyings only where a shader has them: not measured).
-  - **ANGLE with Chromium's own Vulkan device too** (`--use-angle=vulkan --enable-features=Vulkan` in the desktop
+  - [B] **ANGLE with Chromium's own Vulkan device too** (`--use-angle=vulkan --enable-features=Vulkan` in the desktop
     guest; bench/vulkan/angle/es3.html through `PAGE=… bench/vulkan/dawn-frames.ts guest`, results/vk3/l74/): its 24
     uniform blocks' sum draws 205, not 156 as with `--use-angle=vulkan` alone and on GL (the flat varying and the
     capture right in all three). Not the uniform buffers (VK3 L7a, bench/vulkan/REPORT.md "VK3 L7a"): 205 is 156
@@ -798,94 +801,99 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     (`results/vk3/l7a/angle-es3-vulkan-views.log`, a debug build's). Next: why ANGLE renders the resolve through the
     sRGB view there (Chromium's SharedImage format with Vulkan, ANGLE's sRGB write control), against ANGLE on lavapipe
     through Venus's advertised set (bench/vulkan/profiles/run.sh).
-  - **Uniform buffers**: 13 a stage (WebGPU's 12, less the push buffer's, and 2 of the storage buffers); a layout's
+  - [B] **Uniform buffers**: 13 a stage (WebGPU's 12, less the push buffer's, and 2 of the storage buffers; 14 where
+    the adapter has 11 storage buffers or more, VK4 T40); a layout's
     texel buffers take uniform bindings too (their parameters), which can push more uniform buffers into storage than
     the 2 the storage count gives up (refused at the pipeline's creation since VK3 L7a, saying why).
-- **vkd3d on Venus** (VK3 L7.5, VK4 T47; bench/vulkan/vkd3d.ts, bench/vulkan/REPORT.md "VK4 T47"): Arch's vkd3d 1.19
-  makes a Direct3D 12 device at feature level 11_0 in the desktop guest. 11_1 and up are refused, since vkd3d grants
-  11_1 only with every 11_0 feature: geometry and tessellation shaders (tier 4's compute pre-passes), `multiViewport`,
-  `occlusionQueryPrecise`, pipeline statistics and cull distances, plus 64 storage buffers and images a stage (WebGPU
-  has 8 to 10), are out of reach or a whole emulation each. Warnings that block no level: `viewportBoundsRange` (WebGPU's
-  ±2×`maxTextureDimension2D`, ±16,384 on SwiftShader; met at 16,384), `viewportSubPixelBits` (0: WebGPU doesn't say;
-  SwiftShader rounds a viewport's origin to 1/16), 13 uniform buffers a stage on SwiftShader's and the M4's 10 storage
-  buffers, and dual-source blending on SwiftShader. Its d3d12 suite (`TESTS=all`, 73 s; `FAILED=<n>` for each test's
-  first failures): 136 of 174 pass, 35 fail, 3 crash (T48 clamped integer outputs to their attachments' range:
-  test_output_merger_logic_op's 354 checks pass). The failures by cause, the larger first:
-  - test_gather_c (42 checks): GatherCmp on an R32_FLOAT view. WebGPU compares only depth textures, so the bind group
-    is refused. Vulkan wants the format's depth-comparison feature, which the device doesn't report, and vkd3d uses it
-    anyway. A compare done in the stage (a variant keyed by the view's format not being depth) would back it (M).
-  - The three crashes (test_clear_unordered_access_view_image, test_depth_load, test_typed_uav_store) are vkd3d's tests
-    dereferencing textures that failed to be made: R16_UNORM and R16G16_UNORM storage images, which only
+- [A, B] **vkd3d on Venus** (VK3 L7.5, VK4 T47; bench/vulkan/vkd3d.ts, bench/vulkan/REPORT.md "VK4 T47"): Arch's vkd3d
+  1.19 makes a Direct3D 12 device at feature level 11_0 in the desktop guest. [B] 11_1 and up are refused, since vkd3d
+  grants 11_1 only with every 11_0 feature: geometry and tessellation shaders (tier 4's compute pre-passes),
+  `multiViewport` (a draw per viewport, as `gl_Layer`'s per layer), cull distances, and 64 storage buffers and images a
+  stage (WebGPU has 8 to 10: only through one binding of many, as the address buffer's regions), each a whole emulation;
+  `occlusionQueryPrecise` and pipeline statistics never (graphics.md "Permanent limitations"). Warnings that block no
+  level: the viewport's bounds and subpixel bits (graphics.md "Permanent limitations"; SwiftShader rounds a viewport's
+  origin to 1/16), 13 uniform buffers a stage on SwiftShader's and the M4's 10 storage buffers, and dual-source blending
+  on SwiftShader (the adapters'). Its d3d12 suite (`TESTS=all`, 73 s; `FAILED=<n>` for each test's first failures): 136
+  of 174 pass, 35 fail, 3 crash (T48 clamped integer outputs to their attachments' range: test_output_merger_logic_op's
+  354 checks pass). The failures by cause, the larger first:
+  - [B] test_gather_c (42 checks): GatherCmp on an R32_FLOAT view. WebGPU compares only depth textures, so the bind
+    group is refused. Vulkan wants the format's depth-comparison feature, which the device doesn't report, and vkd3d
+    uses it anyway. A compare done in the stage (a variant keyed by the view's format not being depth) would back it
+    (M; the same as "Colour formats aren't compared" below).
+  - [A, B] The three crashes (test_clear_unordered_access_view_image, test_depth_load, test_typed_uav_store) are vkd3d's
+    tests dereferencing textures that failed to be made: R16_UNORM and R16G16_UNORM storage images, which only
     `texture-formats-tier1` has as textures at all (SwiftShader's adapter lacks it). Direct3D 12 wants their typed UAV
-    stores at 11_0. Without tier1, such an image would need a texture of another format behind it, as packed formats
-    have (M). Unchecked on the M4.
-  - test_vertex_id (52 of 127): its indirect draws' values in stream output, base vertices 3, 8 and 9 (VK4 T40's).
-  - test_fractional_viewports (5,120 of 20,594): SwiftShader's (the texcoords of an origin rounded to 1/16; fragment
-    positions exact). Worth a run on the M4.
-  - test_register_space (10): a compute stage of 16 texel buffers' words, past WebGPU's 10 storage buffers.
-  - test_multisample_array_texture (9 of 147): a multisampled array's other layers ("Multisampled arrays' leftovers").
-  - test_shader_instructions (5): `ne` with a NaN operand, and log of 0 giving -127 where -inf is wanted (Tint's or
-    SwiftShader's; unchecked elsewhere). One each in test_clear_render_target_view (a view of another format),
-    test_primitive_restart, test_early_depth_stencil_tests, test_64kb_texture_alignment and test_sample_instructions;
-    two in test_clear_unordered_access_view_buffer and test_shader_eval_attribute (an attribute at a snapped offset).
-  - Not advertised: geometry and tessellation (test_clip_distance's PSOs with those stages, and 12 tessellation and hull
-    tests), cull distances (12), conditional rendering (5), pipeline statistics (6), calibrated timestamps (2), 8
-    samples (1), descriptor indexing's arrays (test_resource_arrays), and textures the CPU writes
-    (test_read_write_subresource, vkd3d's E_NOTIMPL).
-  A real program is still unrun (vkd3d's demos need an X window, which no guest has). The draw parameters' cost (a
-  push-buffer place, and group 3 bound again for each draw whose bases change) hasn't been measured on a program.
-- **The Vulkan driver's gaps** (VK2 L2, L5; vk/README.md "The driver"; VK4-KICKOFF.md's T36–T50 take what WebGPU can
-  back, each naming the entries it starts from), each for when a program or dEQP-VK needs it;
+    stores at 11_0. [B] Without tier1, such an image would need a texture of another format behind it, as packed
+    formats have (M). [A] Unchecked on the M4 (S: `bench/vulkan/vkd3d.ts` there, these three tests).
+  - [B] test_vertex_id (52 of 127): its indirect draws' values in stream output, base vertices 3, 8 and 9 (VK4 T40's).
+  - [A] test_fractional_viewports (5,120 of 20,594): SwiftShader's (the texcoords of an origin rounded to 1/16;
+    fragment positions exact). Worth a run on the M4 (S).
+  - [B] test_register_space (10): a compute stage of 16 texel buffers' words, past WebGPU's 10 storage buffers.
+  - [B] test_multisample_array_texture (9 of 147): a multisampled array's other layers ("Multisampled arrays'
+    leftovers").
+  - [B] test_shader_instructions (5): `ne` with a NaN operand and log of 0 giving -127 where -inf is wanted are WGSL's
+    (graphics.md "Permanent limitations"); the rest not looked into. One each in test_clear_render_target_view (a view
+    of another format), test_primitive_restart, test_early_depth_stencil_tests, test_64kb_texture_alignment and
+    test_sample_instructions; two in test_clear_unordered_access_view_buffer and test_shader_eval_attribute (an
+    attribute at a snapped offset).
+  - [B] Not advertised: geometry and tessellation (test_clip_distance's PSOs with those stages, and 12 tessellation and
+    hull tests), cull distances (12), conditional rendering (5: draws gated by a buffer's word, as a count's records
+    are), descriptor indexing's arrays (test_resource_arrays), and textures the CPU writes (test_read_write_subresource,
+    vkd3d's E_NOTIMPL); pipeline statistics (6), calibrated timestamps (2) and 8 samples (1) never.
+  [B] A real program is still unrun: vkd3d's demos need an X window, which the desktop image has had since GD G7
+  (Xwayland), but Arch's package may not carry them (M: a program built or packaged in the image). The draw parameters'
+  cost (a push-buffer place, and group 3 bound again for each draw whose bases change) hasn't been measured on a
+  program.
+- [A, B, C] **The Vulkan driver's gaps** (VK2 L2, L5; vk/README.md "The driver"; VK4-KICKOFF.md's T36–T50 took what
+  WebGPU can back, each naming the entries it started from), each for when a program or dEQP-VK needs it;
   dEQP-VK's failures by cause. VK4 T1's census (bench/vulkan/REPORT.md "VK4 T1": every 100th case of the direct set's
   groups, 16,489; on SwiftShader 2,448 pass, 498 fail, 2 crash, the rest unsupported, the M4 alike) counts every cause
   in its table (`bench/vulkan/census.ts`); the counts below without a date are L5's samples
   (`bench/vulkan/results/vk2/l5/deqp/`). The cases that fail stay out of `tests/deqp/vk.txt`:
-  - **Not advertised, by what dEQP-VK asks** (the census of 2026-11-05, bench/vulkan/REPORT.md "VK4: the census
+  - [B] **Not advertised, by what dEQP-VK asks** (the census of 2026-11-05, bench/vulkan/REPORT.md "VK4: the census
     again": 75% of the sample not supported on either host, against 0.2% of the M4's supported cases failing; its
-    reasons by `census.ts --reasons`; a queue family with compute and without graphics, 2,525 of them, is VK4 T22's): formats
-    (3,681 reasons name one), what reads its own attachment, writable storage in the vertex stage: each a
-    task of VK4-KICKOFF.md's T23–T34; 3D ASTC (T35) parked, "3D ASTC" below. No task: protected memory, cooperative matrices, ray tracing, mesh shaders, tile
-    images, fragment density, descriptor buffers, sparse (~1,600 of the sample) and pipeline statistics queries (188).
-    Left by VK4 T28 (pipeline state as variants; the sample's counts): `VK_EXT_legacy_vertex_attributes` (82 of the 85
-    that asked for dynamic vertex input ask for it too: unaligned offsets and strides, and a shader's type that isn't
-    the format's, which T5's pulled vertices could read bytewise); `VK_EXT_primitive_restart_index` (16: the tests'
-    guest's Venus, Mesa 26.2, doesn't pass it on, and WebGPU restarts only at the format's largest index, so every
-    indexed draw with another would need its indices rewritten before its pass); the third extended dynamic state's
-    rest (rasterization samples, polygon and line modes, conservative rasterization: none WebGPU has, 2 of the 23 asked
-    only for them, the rest for other extensions too; logic ops since VK4 T32, alpha to one and depth bias control's
-    other representations and `depthBiasExact` since VK4 T43: the fragment stage's, vk/README.md "Commands"). Polygon
-    modes: "Polygon modes" below.
-  - **`api.info.image_format_properties2.*` of the YCbCr formats time out** (VK4 T1's "crash" of `r12x4_unorm_pack16`,
+    reasons by `census.ts --reasons`; what the census's and the backlog's tasks T22–T49 took is advertised since; what
+    WebGPU stops, protected memory to pipeline statistics, is graphics.md "Permanent limitations"). Left: mesh shaders
+    (a compute pre-pass, as geometry's would be: tier 4's shape); 3D ASTC (T35, parked: "3D ASTC" below);
+    `VK_EXT_primitive_restart_index` (16: the tests' guest's Venus, Mesa 26.2, doesn't pass it on, and WebGPU restarts
+    only at the format's largest index, so every indexed draw with another would need its indices rewritten before its
+    pass); the third extended dynamic state's rest (rasterization samples, polygon and line modes, conservative
+    rasterization: none WebGPU has, 2 of the 23 asked only for them, the rest for other extensions too). Polygon modes:
+    "Polygon modes" below.
+  - [B] **`api.info.image_format_properties2.*` of the YCbCr formats time out** (VK4 T1's "crash" of `r12x4_unorm_pack16`,
     VK4 T2): with `DISJOINT` in its create flags the case makes ~340,000 synchronous queries, ~0.1 ms each through
     Venus's ring, so it passes in 34 s (`WATCHDOG=disable`) but past dEQP's 30 s watchdog; out of the list. A guest's
     synchronous calls' latency is T13's. `2d.optimal.r12x4_unorm_pack16` came back into the list with VK4 T38 (13 s
     alone, before and after T41) and crossed the watchdog under `ci-deqp-vk.sh`'s two machines (VK4 T41's runs, seed
     1434936936 twice): out again.
-  - **External memory's leftovers** (VK4 T2, R6): the guest's export imported again aliases its memory while the
+  - [B] **External memory's leftovers** (VK4 T2, R6): the guest's export imported again aliases its memory while the
     memory or an import of it lives, on its own device; otherwise (every one freed before a new import, another
     device) the import is a memory of its own whose bytes aren't shared (vkr's patch, `wg_AllocateMemory`; not met by
     dEQP-VK). An import that wants device addresses of a memory that hasn't any and already has a buffer is refused
-    (`VK_ERROR_INVALID_EXTERNAL_HANDLE`: the buffer's GPUBuffer is in use). Images on external
-    memory (`api.external.memory.*.image.*`) aren't offered: an image is a texture of its own, which an import can't
-    share.
-  - **Compressed images that aren't whole blocks' leftovers** (VK4 T18; vk/README.md "Samplers in the shader"): each
+    (`VK_ERROR_INVALID_EXTERNAL_HANDLE`: the buffer's GPUBuffer is in use). (Images on external memory: graphics.md
+    "Permanent limitations".)
+  - [B] **Compressed images that aren't whole blocks' leftovers** (VK4 T18; vk/README.md "Samplers in the shader"): each
     size of such an image a program samples is a variant of its program (the size is in the key; a texture's real size
     can't tell it, a uniform would cost a binding); anisotropy is lost on them; the
     shader's filter's cost on a program is unmeasured (none replayed has such an image). `texture-compression-unaligned`, if Chromium ships it, replaces all of
     it (`padded` false).
-  - **Copies WebGPU refuses**, what VK4 T10 left: a multisampled copy between formats of a block's size goes through a shader that
-    carries the bits (VK4 R4, `bitsBetween` in web/venus-gpu.ts), for 8-, 16- and 32-bit channels of unorm, uint, sint and
-    float; others (`rgb10a2`, packed layouts whose fields differ) are skipped with a warning. A float16's signalling NaN
+  - [B] **Copies WebGPU refuses**, what VK4 T10 left: a multisampled copy between formats of a block's size goes
+    through a shader that carries the bits (VK4 R4, T39: `bitsBetween` in web/venus-gpu.ts), for 8-, 16- and 32-bit
+    channels of unorm, uint, sint and float, `rgb10a2` and packed layouts; SNORM layouts (`texelFields` leaves them out:
+    VK4 T38's 10-bit orders mark their most negative code) and a multisampled copy between a depth or stencil aspect
+    and a colour format are skipped with a warning. A float16's signalling NaN
     doesn't survive it. A linear blit from a padded compressed image filters into the padding at its last texels. GFXReconstruct's trimmed captures restore their depth images through the worker's
     paths (vkQuake's first replayed frame).
-  - **Views in another format's leftovers** (VK4 T4; vk/README.md "Views in another format"): every failure left in
-    `image.mutable` is multisampled: view formats WebGPU can't multisample
+  - [A, B, C] **Views in another format's leftovers** (VK4 T4; vk/README.md "Views in another format"): every failure left in
+    `image.mutable` is multisampled: [B] view formats WebGPU can't multisample
     (`r32_sint`, `r32_uint`, the `rg32` ones: such an image's alias can't be made, and its invalid texture loses the
-    submit: 124 of VK4 T39's run), in 2D and in arrays, and 3 sRGB-twin resolves, each in both,
+    submit: 124 of VK4 T39's run; channels split into `r32float` textures, "Sample counts Vulkan wants" below, is the
+    shape), in 2D and in arrays, and [A] 3 sRGB-twin resolves, each in both,
     (`b8g8r8a8_srgb_b8g8r8a8_unorm_draw_copy_resolve_mutable_color_att` and two more: green and blue ~0.26 off).
     Those are SwiftShader's (VK4 T39, `bench/results/local/t39/repro.ts`'s kind): it resolves a 4-sample sRGB texture
-    through its UNORM view as sRGB (0.5 comes out 55, not 128), Metal rightly; not worked around (a drawn resolve for
-    such a view would be). Also not backed: a multisampled copy between SNORM layouts (VK4 T39 carries the others'
+    through its UNORM view as sRGB (0.5 comes out 55, not 128), Metal rightly; not worked around (S: a drawn resolve
+    for a multisampled sRGB texture resolved through a UNORM view, as `shortResolve` routes SwiftShader's short ones,
+    web/venus-gpu.ts; the 6 cases then join the list). [B] Also not backed: a multisampled copy between SNORM layouts (VK4 T39 carries the others'
     bits, `bitsBetween`), a shared or linear
     image's view in another format (what others read is its own texture), views of another block size (uncompressed of
     compressed: `BLOCK_TEXEL_VIEW_COMPATIBLE`), and, in one render pass, a write through one format read through
@@ -895,108 +903,109 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     T23"): Godot's SDFGI writes `r32uint` storage images and samples them through `rgb9e5ufloat` views, which
     copied ~34 MB a frame: fixed by decoding the words in the shader (vk/README.md "Views in another format"). What's
     left copying: the GI demo's one `r16uint` volume read as `rgba8unorm` (once, at the start), and any other pair of
-    formats WebGPU can't view one as the other; ffmpeg's and libplacebo's filters are not measured. **For the next
+    formats WebGPU can't view one as the other; ffmpeg's and libplacebo's filters are not measured. [C] **For the next
     NVIDIA run** (the user's call, 2026-11-05): `VK2_STEPS=t23` in it, whose `t23-copies` part puts the old copies
     back, gives the decode's gain there (the `views` arm's ceiling was +12% frames/s, REPORT.md "VK4 T23").
-  - **Reading the attachments' leftovers** (VK4 T32; vk/README.md "Reading the attachments", "Colour attachment
-    locations"): the depth bounds test, logic ops and advanced blends read a copy made before the draw, so overlapping
-    primitives of one draw see what was there before it (no dEQP-VK case draws so: a copy per primitive, or a pass per
-    draw's overlap, would be the fix); a draw recorded in a secondary command buffer whose pass the primary began reads
-    nothing (the pass's views aren't known there: drawn without the test, the op or the blend), nor does an attachment
-    drawn in a crop or a 3D image's slice; `advancedBlendCoherentOperations` isn't advertised. Not supported in its
-    samples: `VK_EXT_depth_range_unrestricted` (113 of the M4's 999, its depths and bounds past [0, 1]: WebGPU's viewport
-    depths stay in it), 16 attachments (65), 64-bit formats, mesh shaders. Local read: the input attachment index map
+  - [B] **Reading the attachments' leftovers** (VK4 T32; vk/README.md "Reading the attachments", "Colour attachment
+    locations"; one draw's overlapping primitives, unrestricted depth ranges and 16 attachments: graphics.md "Permanent
+    limitations"): a draw recorded in a secondary command buffer whose pass the primary began reads nothing (the pass's
+    views aren't known there: drawn without the test, the op or the blend), nor does an attachment drawn in a crop or a
+    3D image's slice. Not supported in its samples beside those: 64-bit formats, mesh shaders. Local read: the input attachment index map
     isn't read (input attachments go by their descriptors), dual-source outputs aren't moved by the location map (their
     draw refused; WebGPU's dual-source blending takes one colour target, so a pass with more can't draw them at all); of its
     sample `VK_EXT_dynamic_rendering_unused_attachments` (48), sample counts and `customResolve` are the commonest
     reasons left.
-  - **Feedback loops' leftovers** (VK4 T32; vk/README.md "Feedback loops"): `VK_KHR_unified_image_layouts` (the
+  - [B] **Feedback loops' leftovers** (VK4 T32; vk/README.md "Feedback loops"): `VK_KHR_unified_image_layouts` (the
     `general` layout's 1,190 of `attachment_feedback_loop_layout`) needs only advertising, once the guest's Venus carries
-    it (Mesa 26.2's doesn't); stencil read-write (300) needs stencil export, which WebGPU lacks. A sampled view's copy
+    it (Mesa 26.2's doesn't: waiting on Mesa); stencil read-write (300) needs stencil export (graphics.md "Permanent
+    limitations"). A sampled view's copy
     is its whole range at each renewal, however little the draw reads; a draw in a secondary command buffer whose pass
     the primary began doesn't know the pass's attachments (as input attachments there).
-  - **Multisampled rendering to single-sampled attachments' leftovers** (VK4 T32; vk/README.md "Multisampled
-    rendering to single-sampled attachments"): 4 samples only; one layer, no 3D slice (other passes render single-sampled
+  - [B] **Multisampled rendering to single-sampled attachments' leftovers** (VK4 T32; vk/README.md "Multisampled
+    rendering to single-sampled attachments"): 4 samples only (WebGPU's); one layer, no 3D slice (other passes render single-sampled
     as before); an attachment of a format WebGPU can't multisample is left out of the pass, its clear made outside it
     only where the render area covers it. 70 of `multisampled_render_to_single_sampled` draw R32G32B32A32_UINT at 4
     samples past the query (dEQP-VK checks the counts of every format only when the first float attachment is
     single-sampled): they fail, out of the list.
-  - **Multisampled arrays' leftovers** (VK4 T12; vk/README.md "Multisampled arrays"): a shader sampling a whole
+  - [B] **Multisampled arrays' leftovers** (VK4 T12; vk/README.md "Multisampled arrays"): a shader sampling a whole
     `sampler2DMSArray` reads the first layer, whatever the layer asked, and its size says one layer (VK4 T47: vkd3d's
     test_multisample_array_texture 9 of 147 checks fail, its other layers'; it needs a binding per layer and a switch on the layer in the translator,
     and the layer count is the bound view's: a variant keyed by it, its bindings past a stage's 16 textures for more
     than a few; VK4 T39 left it, an L task: 18 of dEQP-VK's sources declare one, in pipeline, render pass, resolve and
     fragment shading rate tests, not counted). The
     48 of `multiview.*multisample*` ask for `r32g32b32a32_sfloat` and the `image.mutable` r32 ones for views WebGPU can't
-    multisample, without a format list saying so: no texture can back those.
-  - **Packed formats' leftovers** (VK4 T12, T30; vk/README.md "Packed formats"): a 16-bit format holds 8 bits a
+    multisample, without a format list saying so: no texture can back those (only the channels split, "Sample counts
+    Vulkan wants but WebGPU lacks").
+  - [A, B] **Packed formats' leftovers** (VK4 T12, T30; vk/README.md "Packed formats"): [B] a 16-bit format holds 8 bits a
     channel, so what's rendered is sampled unrounded and blends run at 8 bits; a multisampled copy between a packed
     SNORM order (the 10-bit ones) and another layout is skipped with a warning (VK4 T39 carries the others' bits). The 10-bit SNORM orders (VK4 T38) are `rgba16float`: what's rendered there stays unclamped and
     unquantized until copied out (sampled as rendered; Vulkan clamps and rounds at the write), and the most negative
     code (-512, alpha's -2) is -1 − 2⁻¹⁰ there so that copies keep it, which samples one step from Vulkan's -1:
-    `texture.conversion.snorm_clamp.a2r10g10b10_snorm_pack32` fails on both hosts (a key clamping such views' samples
-    would take it); `blit_image.*.astc_8x8_unorm_block.a2b10g10r10_snorm_pack32.general_general_linear` fails on both
-    hosts, its other ASTC blocks pass on the M4 (not looked into: SwiftShader fails 6 more of them). Not offered: linear tiling of any packed format (~180 of VK4 T31's sample on the M4: a
+    [A] `texture.conversion.snorm_clamp.a2r10g10b10_snorm_pack32` fails on both hosts (still 2026-11-09; S: a sampler
+    key bit clamping such views' samples to [-1, 1], wgsl_sampler.c); [B]
+    `blit_image.*.astc_8x8_unorm_block.a2b10g10r10_snorm_pack32.general_general_linear` fails on both hosts (still
+    2026-11-09), its other ASTC blocks pass on the M4 (not looked into: SwiftShader fails 6 more of them). [B] Not offered: linear tiling of any packed format (~180 of VK4 T31's sample on the M4: a
     linear image's copies to and from its memory would go through the pass); sampling scaled formats (VK4 T31: the spec
     samples them as floats, dEQP-VK through integer samplers, and clears them with integers, which our clears follow:
     offering either way fails the other; no program met samples one). sRGB vertex formats aren't offered (no driver has
     them: 14 of T31's vertex sample).
     `D16_UNORM_S8_UINT` keeps depth24plus's 24 bits (Metal's depth32float) until copied out, so a depth test between
     two values one D16 unit apart can differ from real D16; its depth bias's ×256 is exact only for a 24-bit unorm.
-  - **Colour formats aren't compared** (VK4 T38): depth formats report `SAMPLED_IMAGE_DEPTH_COMPARISON` in
+  - [B] **Colour formats aren't compared** (VK4 T38): depth formats report `SAMPLED_IMAGE_DEPTH_COMPARISON` in
     `VkFormatProperties3` since VK4 T38, colour ones don't (WebGPU compares depth textures only), so `texture.shadow.*`'s
     `r32_sfloat` and `r16_unorm` cases (672 each) stay not supported. A comparison of a colour texture would be the
-    shader's, from fetches (as a shadow sample past level 0 is: "Samplers' leftovers"), keyed by the bound view's format.
-  - **Pulled vertices' leftovers** (VK4 T5, T44; vk/README.md "Pulled vertices"): more pulled bindings than the
+    shader's, from fetches (as a shadow sample past level 0 is: "Samplers' leftovers"), keyed by the bound view's format
+    (M; vkd3d's test_gather_c too).
+  - [A, B] **Pulled vertices' leftovers** (VK4 T5, T44; vk/README.md "Pulled vertices"): [B] more pulled bindings than the
     vertex stage's storage buffers left; a pulled range past `maxStorageBufferBindingSize` is cut there (several
     bindings of one range would take it, a storage buffer each; the adapters we run offer 1 GiB or more, the device
     asks for the adapter's, so only a 128 MiB adapter and a vertex range past it would); a four-group program whose
     group 3 bindings reach 976 has no room to pull in it (refused); a vertex stage whose uniform buffers leave no room
     for the pull's one or two (its bindings' places, a divisor's first instance: at `maxPerStageDescriptorUniformBuffers`'
     edge, e.g. ANGLE's 13 with a divisor) is refused (the review of T44–T46's finding 3: WebGPU refused its pipeline
-    before); the pull's parameters as read-only storage where the stage has storage room left would draw it (S: the
-    BGL's type and `pulledCode`'s declaration; nothing we run meets it). A pull with a divisor makes a bind group per change
+    before); [A] the pull's parameters as read-only storage where the stage has storage room left would draw it (S: the
+    BGL's type and `pulledCode`'s declaration; nothing we run meets it). [B] A pull with a divisor makes a bind group per change
     of the first instance or the indirect record (unmeasured: vkd3d's instanced tests and dEQP-VK only). Formats WebGPU's vertex buffers lack are pulled since VK4 T31. A direct draw that reads past a vertex buffer's end
     (Vulkan's robust buffer access reads in range or zeros; WebGPU refused it) pulls that binding, zeros past it, since
     VK4 T37; an indirect one isn't checked by WebGPU (its reads clamped in range). The cost of pulling isn't measured:
     nothing we run meets it but dEQP-VK and vkd3d's tests (a bind group per change of the ranges, and a shader's bytes
     decoded per vertex).
-  - **Formats**: (ASTC's failures on SwiftShader were the padded blocks above, on Metal too); D24 depth tests fail by one unit (depth24plus's precision);
-    3-component formats in images are offered since VK4 T31 (RGB32 attachments in `rgba32*`), `glsl.440.linkage`'s
-    RGB32 attachments not run since.
-  - **Samplers' leftovers** (VK4 T8, T9; vk/README.md "Samplers in the shader"): a border on a view of several levels, a
+  - [A, B] **Formats**: [B] D24 depth tests fail by one unit (depth24plus's precision: a fragment depth quantized to 24
+    bits would cost the early depth test). [A] `glsl.440.linkage`: all 68 cases pass on SwiftShader (2026-11-09, its
+    RGB32 attachments in `rgba32*` since VK4 T31), 2 of them in `tests/deqp/vk.txt`: run the 68 on the M4 and add those
+    that pass on both (S).
+  - [B] **Samplers' leftovers** (VK4 T8, T9; vk/README.md "Samplers in the shader"): a border on a view of several levels, a
     shadow sample past level 0 and a mirror-once with an offset pick their levels in the shader, so those samples lose
     anisotropy; a texture of one level sampled at a LOD past 0 through a sampler whose mag and min filters differ reads the
-    mag filter (WGSL's compare is at level 0); `textureQueryLod` ignores anisotropy; a cube's corner (VK4 T42: the
-    other three texels' average) holds only in samples from its faces' fetches, WebGPU's own cube samples doing what the
-    adapter does (Vulkan leaves it to the implementation; dEQP's gather cases skip corners); a comparison through a
+    mag filter (WGSL's compare is at level 0); `textureQueryLod` ignores anisotropy; a comparison through a
     non-seamless sampler with a nearest filter is seamless (`texture.shadow.cube*.non_seamless*` aren't supported for other reasons);
     a cube sampled with nearest filters, a nearest or linear mipmap and U at clamp-to-border fails on SwiftShader,
     seamless or not (50 of VK4 T28's `filtering.cube.combinations` non-seamless cases and their seamless twins: WebGPU's
     own sample, not the fetches); each base of `vkCmdDispatchBase` is a compute pipeline, never evicted (a
-    tiler's cost, not its results: `wg_compute_based`, the review's C7); a browser without `texture-component-swizzle` ignores mappings, said once
-    (a fallback needs `texelFetch` keyed too, and every Chromium backend has the feature); the variants' compile on a
+    tiler's cost, not its results: `wg_compute_based`, the review's C7); a browser without `texture-component-swizzle`
+    ignores mappings, said once (a fallback needs `texelFetch` keyed too, and every Chromium backend has the feature);
+    the variants' compile on a
     program's first draw with such a sampler is unmeasured (no replayed program meets one).
-  - **Multi-draw's leftovers** (VK4 T26; vk/README.md "Commands"): a draw-indirect-count of a triangle fan isn't
+  - [B] **Multi-draw's leftovers** (VK4 T26; vk/README.md "Commands"): a draw-indirect-count of a triangle fan isn't
     drawn, said once (the fan's pre-pass reads each record as it is; not met; under transform feedback it is since VK4
     T45); an indirect op's draws are replayed one by one (a draw, and with draw parameters a 256-byte place of the push
     buffer, each: `maxDrawIndirectCount` is Vulkan's least with the feature, 65,536), and a count's records go through a
     compute pass before the render pass, so a program drawing thousands a frame (vkd3d's ExecuteIndirect) pays per
     record: unmeasured, no replayed program has one.
-  - **Min/max reductions' leftovers** (VK4 T25; vk/README.md "Samplers in the shader"): a reduced sample comes from
+  - [B] **Min/max reductions' leftovers** (VK4 T25; vk/README.md "Samplers in the shader"): a reduced sample comes from
     fetches, so it loses anisotropy and costs ~3.5× WebGPU's sample on the M4 (no replayed program has one; vkd3d's 12_0
-    asks for the feature); the M4's 16-bit normalized formats are unfilterable there, which keeps 2 of the census's
-    linear-filtering cases out on it (depth formats report `FILTER_LINEAR` since VK4 T42, their linear samples from
-    fetches). The census's 195 `filterMinmaxImageComponentMapping` cases are dEQP's own refusal: it throws
+    asks for the feature); the M4's 16-bit normalized formats are unfilterable there (the adapter's), which keeps 2 of
+    the census's linear-filtering cases out on it. The census's 195 `filterMinmaxImageComponentMapping` cases are dEQP's
+    own refusal (nothing to do): it throws
     NotSupported for any reduction whose R mapping isn't identity, whatever the property says.
-  - **SwiftShader's fetch from a view with a base level** (VK4 T8): `textureLoad` at a view's level 0 reads the level
+  - [C] **SwiftShader's fetch from a view with a base level** (VK4 T8; still failing 2026-11-09): `textureLoad` at a view's level 0 reads the level
     after it (a 16×16 image's view from level 2 reads level 3's texels, zeros past its size; level 1 reads right), where
     sampling is right and the M4 is too, so
     `image_view.*.subresource_range.lod_base_mip_level*` of integer and (VK4 T18, fetched too) padded compressed formats
     fail there only and stay out of `tests/deqp/vk.txt`, which SwiftShader runs. Lavapipe couldn't be put under Chromium
     to tell SwiftShader from Dawn's Vulkan backend: `bench/vulkan/nvidia.sh` `VK2_STEPS=t18` asks NVIDIA, in the next
     batch of the user's runs. Not looked for in SwiftShader's sources.
-  - **SwiftShader's compressed formats sampled in a compute stage** (VK4 T22, `results/vk4/t22/`): with the compute queue
+  - [B] **SwiftShader's compressed formats sampled in a compute stage** (VK4 T22; ETC2's still failing 2026-11-09; `results/vk4/t22/`): with the compute queue
     family, `pipeline.monolithic.image` and `image_view`'s `*_compute` cases ran: on SwiftShader every one of a
     compressed format fails (123 of the sample: ASTC, ETC2 and EAC, whole blocks or not; "Image mismatch"), where
     their fragment twins pass there and the M4 passes them all. Not looked into (the translator prints the same sampling
@@ -1005,53 +1014,49 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     check the limit; the M4 has 8). And `pipeline.monolithic.sampler.view_type.cube*` linear and average-reduced
     samples of `r8g8b8a8_snorm`, `r8g8b8a8_srgb` and their VK4 T31 twins (`b8g8r8_snorm`, `r8g8_srgb`) in a compute
     stage (4 of T31's sample and their 4 twins: "Image mismatch"; the M4 passes them).
-  - **Shaders**: derivatives in non-uniform control flow (`glsl.derivate.*dynamic_*`) pass on SwiftShader (VK4 T42) and
+  - [A] **Shaders**: derivatives in non-uniform control flow (`glsl.derivate.*dynamic_*`) pass on SwiftShader (VK4 T42) and
     aren't supported on the M4, where dEQP asks for quad subgroup operations and the Mac's subgroups are held (VK3 L5:
-    "What the device advertises, left for the translator").
-  - **Queries** (occlusion queries count on the GPU since VK3 L6a, in the device's set since VK4 T46: vk/README.md "The
-    driver"): past 4,096 counts in one render pass (a query and each of its cuts by a clear, a part of the pass or a
-    layer take one each) a query is reported as passing, warned once (a pass would be cut and its slots resolved
-    there); `occlusionQueryPrecise` isn't advertised (WebGPU promises nonzero, not a count: 121 of dEQP's
-    `query_pool.occlusion_query` cases and 16 of `query_pool.discard`'s); the host's `vkGetQueryPoolResults` can't wait (`WAIT_BIT` answers
-    `VK_NOT_READY` until the submit completes; Venus's guest driver reads its feedback buffers instead). Timestamps are
-    the GPU's where the adapter has `timestamp-query` (VK4 T46), else the CPU's at replay, and the CPU's on Apple's
-    GPUs: with them on the GPU the M4 (Chrome for Testing 157) lost its WebGPU device ("Insufficient Memory", Metal's
-    command buffer) in 3 of 6 runs of T46's query cases (`bench/vulkan/results/vk4/t46/m4-lost.json`), always at the
-    first timestamp case after the same 740 others (alone, those timestamp cases passed; the renderer before T46 passed
-    2 of 2; one timestamp set for the module instead of a device's didn't help): a counter sample buffer made late,
-    or Dawn's Metal timestamps over many devices, untried (S–M, the Mac); Chromium may quantize them
-    (Dawn's `timestamp_quantization`, off under `--enable-unsafe-webgpu`), and `VK_KHR_calibrated_timestamps` (3
-    `timestamp.calibrated` cases) would need the GPU's time now, which WebGPU can't give synchronously. Two occlusion
-    queries active at once, which the backlog had as Vulkan's across pools, aren't valid Vulkan
-    (VUID-vkCmdBeginQuery-queryPool-01922: one active query of a type in a command buffer): reported as passing.
-  - **Rendering**: a 2D view of a 3D image sampled or stored (`VK_EXT_image_2d_view_of_3d`, VK4 T38) is the level's 3D
-    view and a variant keyed by the slice: a pipeline a slice bound (a program walking a volume's slices makes one each;
-    a slice in the group's parameter table, as texel buffers' are, would make one for all). Stencil state per face is a draw split by face (VK3 L6a), so the order between one draw's front
-    and back primitives is lost where they overlap (not seen in dEQP-VK); with depth clipping off, WebGPU's clamp to the viewport's
-    range stays, so a float depth past it isn't kept; `gl_Layer` from the vertex stage (VK4 T43) is drawn a layer at a
-    time, so a draw writing it is drawn once a layer (its vertex stage run as many times), a primitive whose vertices
-    disagree on the layer is clipped by the vertices of other layers (Vulkan takes the provoking vertex's), and in a
-    layered pass's later layers neither an indirect draw that needs what the first layer's pass prepares (a count, a
-    fan, draw parameters: said once) nor one whose vertex stage stores (T33's pre-pass, which ignores gl_Layer) is
-    drawn; a pipeline writing gl_Layer gets its layers' pipelines when its first draw in a layered pass is recorded, not
-    at its creation (`wg_pipeline_premake` knows no layer count, so a submit soon after may wait on them); depth and stencil blits; `renderpasses.*.load_store_op_none` passes whole (VK4 T43: its 62 cases not in the
-    list then, the 9 not looked into among them, joined it); early fragment tests (`fragment_operations.early_fragment`: `samplemask_early_fragment_tests_depth_samples_4`
-    passed only while depth resolves were dropped, and is out of the list since L4f); a draw whose colour blends with both `CONSTANT_COLOR` and
-    `CONSTANT_ALPHA` (WebGPU has one constant: the colour's taken, warned; 4 of the Mac's 49 supported
-    `pipeline.*.blend.dual_source` samples, and the same states in `blend.format`); a storage buffer the fragment
-    stage writes and the vertex stage reads (refused: no writable storage in WebGPU's vertex stage); non-indexed fans
-    past 65,536 vertices not drawn (said once), indirect ones cut there, indexed indirect ones too (their list is sized
-    by a fan: VK4 R4); an indirect draw with the last vertex
-    provoking drawn as it is. Alpha to coverage without a colour target at location 0, with a fragment stage that
-    writes `sample_mask` or with alpha to one is the stage's own `sample_mask` (VK4 T43), the first `round(alpha ·
-    samples)` samples where WebGPU's hardware may dither; not where the attachments' locations are remapped
-    (`VK_KHR_dynamic_rendering_local_read`'s map: WebGPU's, or none without a target). A depth bias the fragment stage
-    moves the depth for (VK4 T43: every one on D24, other representations, fractions, `depthBiasExact`) costs its
-    draws the early depth test and, without a fragment stage, a stage of its own; unmeasured on a program (a shadow
-    pass on D24 is the likeliest: DXVK's and vkd3d's depth formats are D24S8 or D32), and per pixel, not per sample, at
-    several samples; a float format's r from the fragment's own depth (Vulkan's is the primitive's largest exponent).
-    Depth and stencil resolves of every mode are drawn (VK4 T27), `D16_UNORM_S8_UINT`'s too (VK4 T30).
-  - **Polygon modes** (`fillModeNonSolid`, `extendedDynamicState3PolygonMode`; VK4 T43 looked into it, not advertised):
+    "What the device advertises, left for the translator": its Mac subgroup workaround would open them).
+  - [B] **Queries** (occlusion queries count on the GPU since VK3 L6a, in the device's set since VK4 T46: vk/README.md
+    "The driver"; precise counts, calibrated timestamps and Chromium's quantization: graphics.md "Permanent
+    limitations"): past 4,096 counts in one render pass (a query and each of its cuts by a clear, a part of the pass or
+    a layer take one each) a query is reported as passing, warned once (a pass would be cut and its slots resolved
+    there); the host's `vkGetQueryPoolResults` can't wait (`WAIT_BIT` answers `VK_NOT_READY` until the submit
+    completes; Venus's guest driver reads its feedback buffers instead, so no guest meets it). Timestamps are the GPU's
+    where the adapter has `timestamp-query` (VK4 T46), else the CPU's at replay, and the CPU's on Apple's GPUs: with
+    them on the GPU the M4 (Chrome for Testing 157) lost its WebGPU device ("Insufficient Memory", Metal's command
+    buffer) in 3 of 6 runs of T46's query cases (`bench/vulkan/results/vk4/t46/m4-lost.json`), always at the first
+    timestamp case after the same 740 others (alone, those timestamp cases passed; the renderer before T46 passed 2 of
+    2; one timestamp set for the module instead of a device's didn't help): a counter sample buffer made late, or Dawn's
+    Metal timestamps over many devices, untried (S–M, the Mac, no clear lead). Two occlusion queries active at once
+    aren't valid Vulkan (VUID-vkCmdBeginQuery-queryPool-01922): reported as passing, nothing to do.
+  - [B] **Rendering** (one draw's front and back primitives' order, float depths past the viewport's range, early
+    fragment tests and storage the fragment stage writes for the vertex stage: graphics.md "Permanent limitations"): a
+    2D view of a 3D image sampled or stored (`VK_EXT_image_2d_view_of_3d`, VK4 T38) is the level's 3D view and a
+    variant keyed by the slice: a pipeline a slice bound (a program walking a volume's slices makes one each; a slice in
+    the group's parameter table, as texel buffers' are, would make one for all). `gl_Layer` from the vertex stage (VK4
+    T43) is drawn a layer at a time, so a draw writing it is drawn once a layer (its vertex stage run as many times), a
+    primitive whose vertices disagree on the layer is clipped by the vertices of other layers (Vulkan takes the
+    provoking vertex's), and in a layered pass's later layers neither an indirect draw that needs what the first layer's
+    pass prepares (a count, a fan, draw parameters: said once) nor one whose vertex stage stores (T33's pre-pass, which
+    ignores gl_Layer) is drawn; a pipeline writing gl_Layer gets its layers' pipelines when its first draw in a layered
+    pass is recorded, not at its creation (`wg_pipeline_premake` knows no layer count, so a submit soon after may wait
+    on them). Depth and stencil blits aren't drawn (wg_cmd.c `wg_CmdBlitImage2` returns; depth formats report
+    `BLIT_SRC` only, Vulkan's minimum, and no `BLIT_DST`, so no valid blit meets it). A draw whose colour blends with both
+    `CONSTANT_COLOR` and `CONSTANT_ALPHA` (WebGPU has one constant: the colour's taken, warned; 4 of the Mac's 49
+    supported `pipeline.*.blend.dual_source` samples, and the same states in `blend.format`): a blend in the fragment
+    stage on VK4 T32's attachment copy would take it. Non-indexed fans past 65,536 vertices not drawn (said once),
+    indirect ones cut there, indexed indirect ones too (their list is sized by a fan: VK4 R4); an indirect draw with the
+    last vertex provoking drawn as it is ("The provoking vertex" above). Alpha to coverage without a colour target at
+    location 0, with a fragment stage that writes `sample_mask` or with alpha to one is the stage's own `sample_mask`
+    (VK4 T43), the first `round(alpha · samples)` samples where WebGPU's hardware may dither; not where the attachments'
+    locations are remapped (`VK_KHR_dynamic_rendering_local_read`'s map: WebGPU's, or none without a target). A depth
+    bias the fragment stage moves the depth for (VK4 T43: every one on D24, other representations, fractions,
+    `depthBiasExact`) costs its draws the early depth test and, without a fragment stage, a stage of its own; unmeasured
+    on a program (a shadow pass on D24 is the likeliest: DXVK's and vkd3d's depth formats are D24S8 or D32), and per
+    pixel, not per sample, at several samples; a float format's r from the fragment's own depth (Vulkan's is the
+    primitive's largest exponent).
+  - [B] **Polygon modes** (`fillModeNonSolid`, `extendedDynamicState3PolygonMode`; VK4 T43 looked into it, not advertised):
     ~200 dEQP-VK cases (`rasterization.culling.*_line`/`_point`, `draw.*non_line_with_params`, `rasterization.primitive_size`,
     `polygon_as_large_points`, `extended_dynamic_state.*polygon_mode_*`, `draw.*.depth_bias_triangle_list_line`); DXVK
     requires the feature (with geometry shaders, which keep it out anyway), vkd3d and ANGLE use it for wireframe. The
@@ -1066,7 +1071,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     counts, as T33's do). Also: flat varyings from the triangle's provoking vertex (a line's own first vertex
     otherwise), and the depth bias of polygons drawn as lines (WebGPU refuses a bias on lines: the fragment stage's,
     `post_text`).
-  - **Usage scopes' leftovers** (VK4 T3, R2: vk/README.md "Usage scopes"): a pass or dispatch that writes storage of a
+  - [B] **Usage scopes' leftovers** (VK4 T3, R2: vk/README.md "Usage scopes"): a pass or dispatch that writes storage of a
     memory it reads otherwise reads copies taken at its start. Left: writable bindings of one range, one an array of
     atomics and one not (or of signed and unsigned ones), or together past `maxStorageBufferBindingSize`, refuse their
     draw or dispatch, said once (VK4 T37: WebGPU refused it, the submit lost); the plain one printed again from its NIR
@@ -1082,7 +1087,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     scope dropped as before). Not met by anything measured (dEQP-VK's likeliest groups of the direct set, vkd3d's
     suite: bench/vulkan/REPORT.md "VK4 T3"), so the copies' cost is unmeasured on a program: DXVK or a VMA-based
     program whose shaders write storage would show it (vkQuake met the dispatch's shape in VK3 L6c).
-  - **Sample counts Vulkan wants but WebGPU lacks** (the review of L4f's finding 3): `framebufferColorSampleCounts` is
+  - [B] **Sample counts Vulkan wants but WebGPU lacks** (the review of L4f's finding 3): `framebufferColorSampleCounts` is
     1|4 (Vulkan's minimum) though `R32G32B32A32_SFLOAT` and `R32G32_SFLOAT` colour attachments have 1 sample (WebGPU
     multisamples neither): `api.info.image_format_properties.2d.optimal.r32g32_sfloat` and `.r32g32b32a32_sfloat` fail,
     the last of that group (VK4 R7), out of `tests/deqp/vk.txt`. **Left (VK4 T39's decision)**: an emulation would back
@@ -1099,19 +1104,19 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     image, invalid in WebGPU, and fail. The integer
     limits (`framebufferIntegerColorSampleCounts`, `sampledImageIntegerSampleCounts`) are 1 since L5b, as the 32-bit
     integer formats allow.
-  - **A trap in the module's completion on NVIDIA** (VK3 L9b, seen once): `RuntimeError: table index is out of bounds`
+  - [C] **A trap in the module's completion on NVIDIA** (VK3 L9b, seen once): `RuntimeError: table index is out of bounds`
     from `wg_complete`. VK4 T2 found a sync freed while a submit naming it is pending or held makes the completion call
     the freed sync's type (`function signature mismatch` in Node) and fixed that (`wg_sync_finish`); whether it was
     NVIDIA's trap shows only in the user's next runs there (a completion that throws is still warned: `a submit's
     completion failed`).
-  - **`memory.binding.*.buffer_1048577` fails on NVIDIA** (VK3's final run and L9's, `results/vk3/nvidia-l9b/`): every
+  - [C] **`memory.binding.*.buffer_1048577` fails on NVIDIA** (VK3's final run and L9's, `results/vk3/nvidia-l9b/`): every
     binding mode (regular suballocated, dedicated, overallocated; aliasing suballocated) at 1 MiB + 1 byte, without
     the trap above; every other size passes there, and every one on SwiftShader and the M4. dEQP's message wasn't
     kept (DETAIL's 20 lines went to other cases): the next run there gets it (`nvidia.sh VK2_STEPS=l9b`, now with
     `DETAIL_MATCH=memory` and the guest kernel's log). A size not a
     multiple of 4 against WebGPU's copy and map alignment is the first suspect. Kept in the pass list (an
     adapter-only failure is filed, not removed).
-  - **Synchronization**: a submit waiting on a timeline value nothing has signalled is held until the value is met
+  - [B] **Synchronization**: a submit waiting on a timeline value nothing has signalled is held until the value is met
     (VK3 L6a: `tests/venus-driver.test.ts` "waitBeforeSignal"); of dEQP-VK's `synchronization*.timeline_semaphore.
     wait_before_signal.*` (928 without geometry and tessellation in their names) 26 run since VK4 T33 offered
     `vertexPipelineStoresAndAtomics`, and pass (in the list); the rest ask for tessellation whatever their stages
@@ -1121,7 +1126,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     docs/devices.md "Venus").
     A larger queue isn't the way out: that queue being full is what paces a compositor (docs/devices.md, "Flush replies
     are paced"), and 256 of them would put 4 s of replies ahead of each fence.
-  - **3D ASTC** (VK4 T35, parked 2026-11-07: the census's 187, 18,908 cases of the mustpass list name a 3D ASTC format,
+  - [B] **3D ASTC** (VK4 T35, parked 2026-11-07: the census's 187, 18,908 cases of the mustpass list name a 3D ASTC format,
     6,260 of them SFLOAT): no guest can see `VK_EXT_texture_compression_astc_3d`, whatever the device advertises:
     Mesa's Venus (main, 2026-11-07) doesn't list it, venus-protocol 1.1.3 doesn't encode
     `VkPhysicalDeviceTextureCompressionASTC3DFeaturesEXT`, and vkr's extension allowlist (`vkr_common.c`) doesn't name
@@ -1136,30 +1141,31 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `park/t35-astc-decoder` (`web/astc.ts`, naga-validated, never run). The same decoder could back ASTC LDR on
     adapters without `texture-compression-astc` (NVIDIA's) and `VK_EXT_texture_compression_astc_hdr`, which Venus
     carries; the user's call (2026-11-07): not a priority while real adapters don't offer them.
-  - **Mutable descriptors' leftovers** (VK4 T34; vk/README.md "Descriptors"): of the 10,500 `mutable_descriptor`
-    cases without ray tracing stages 3,561 pass; the rest ask for update after bind (4,557), acceleration structures
+  - [A, B] **Mutable descriptors' leftovers** (VK4 T34; vk/README.md "Descriptors"): of the 10,500 `mutable_descriptor`
+    cases without ray tracing stages 3,561 pass; [B] the rest ask for update after bind (4,557: commands are translated
+    at submit, so bind groups made then would see later updates), acceleration structures
     and ray tracing (1,140), geometry and tessellation (810), variable descriptor counts (144), or aliasing (108:
     several types declared on one binding, which needs `descriptorBindingPartiallyBound`: an unwritten descriptor has
     no WebGPU binding to stand for it, so a dummy of the declared kind would be; and two kinds on one slot would need
     a variant keyed by each slot's written type, the other declarations' accesses left out). Of the rest, 105 are
     layouts the support query says no to (up to 6 mutable descriptors that may be storage images, or texel buffers
-    as storage beside storage buffers: past a stage's WebGPU bindings) and 75 ask for
+    as storage beside storage buffers: past a stage's WebGPU bindings) and [A] 75 ask for
     `shaderUniformTexelBufferArrayDynamicIndexing` (and its storage twin), not advertised though the translator's
-    `if` trees take any descriptor array (a candidate: advertise both and run these). The query counts a mutable
+    `if` trees take any descriptor array (S: both in wg_caps.c's features, beside the other four, then these 75 and a
+    sample of `descriptor_indexing`'s texel buffer cases on both hosts, the passes into the list). The query counts a mutable
     descriptor in every kind its list names and a set alone: a pipeline whose sets together pass a stage's bindings is
-    still refused at its creation, said why. vkd3d-proton's use (descriptor heaps as huge unbounded mutable arrays,
-    update after bind) is past WebGPU without binding arrays, whatever this task did.
-  - **Vertex stages that store's leftovers** (VK4 T33; vk/README.md "Vertex stages that store"): such a draw cuts its
+    still refused at its creation, said why. (vkd3d-proton's bindless heaps: graphics.md "Permanent limitations".)
+  - [B] **Vertex stages that store's leftovers** (VK4 T33; vk/README.md "Vertex stages that store"): such a draw cuts its
     render pass and runs the stage as compute before it (`vs_prepass`), so each costs a pass's store and load (bench/
     vulkan/REPORT.md "VK4 T33": fine for dEQP-VK's and a program's few, not for thousands a frame). Not drawn: an
     indirect draw of such a stage (said once; its counts are on the GPU, and `vsPrepass` sizes its records on the CPU:
     a pre-pass taking the most the binding allows and the GPU's count would do; left by VK4 T45, no program met one). A transform feedback
     capture of such a stage is dropped (said: the capture's pass would run it again). Refused: outputs past WebGPU's
     16 vertex attributes (four words an attribute), a fragment stage reading storage the vertex stage writes (one
-    layout entry, two accesses), and stages past WebGPU's bindings with the pre-pass's one (its parameters, inputs and
+    layout entry, two accesses: two bindings of it would take it), and stages past WebGPU's bindings with the pre-pass's one (its parameters, inputs and
     records in one storage buffer since VK4 T40, which passed T33's 55 such failures of `descriptorset_random.sets4`
     and `sets8`). Geometry and tessellation, the same pre-pass's way, are tier 4's.
-  - **Device addresses' leftovers** (VK4 T7, T41; vk/README.md "Device addresses"): a memory is placed in the address
+  - [B] **Device addresses' leftovers** (VK4 T7, T41; vk/README.md "Device addresses"): a memory is placed in the address
     buffer at its GPUBuffer's making and can't move there later, so one whose GPUBuffer a linear image made first, or
     that has no room left, has buffers whose address is 0 (said once). Regions reach 1 GiB together (an adapter whose
     binding reaches 1 GiB has one, so address memory past it fails there as before): with more than one, every access
@@ -1173,10 +1179,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     copies its reads of all of that region's: unmeasured on a program. Descriptors the pointers' binding can't take in
     ("Usage scopes' leftovers"). The 64 KiB past each memory bounds a uniform block widened past its range there. `buffer_device_address`'s `set15`
     and `set31` (1,344 cases) need `maxBoundDescriptorSets` past the 8 sets the translator has (`WGSL_MAX_SETS`).
-  - **API 1.3's required features** (the user, 2026-10-28: 1.3 stays advertised; the rest of VK3 and VK4 fill them as
-    they go): `timestampComputeAndGraphics` with timestamps that are the CPU's (above). A program that relies on 1.3's
+  - [B] **API 1.3's required features** (the user, 2026-10-28: 1.3 stays advertised; the rest of VK3 and VK4 fill them
+    as they go): `timestampComputeAndGraphics` with timestamps that are the CPU's on Apple's GPUs and adapters without
+    `timestamp-query` ("Queries" above). A program that relies on 1.3's
     guarantees without checking them fails at pipeline or descriptor creation.
-  - **The M4's own failures** (out of `tests/deqp/vk.txt` until they're understood; none is what VK4 T12 fixed there,
+  - [B] **The M4's own failures** (VK4-KICKOFF.md T50; M, on the Mac; out of `tests/deqp/vk.txt` until they're understood; none is what VK4 T12 fixed there,
     `generate_mipmaps.from_previous_level`): the 16 `shader_draw_parameters.draw_index.*` (VK4 T26: one
     vkCmdDraw*Indirect of three draws whose colour is `gl_DrawIndex`'s; SwiftShader passes them): the quads are where they
     should be, but all three read draw index 0 (`results/vk4/t26/m4-draw-index-*.png`); a plain WebGPU page doing what the
@@ -1194,7 +1201,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `rgba32f`/`rgba32ui` `cube_array.comp_compute`, one `rgba32i` `cube.vert`; VK4 T42's sample, the same with the renderer
     before T42: `results/vk4/t42/m4-robustness-*.json`), out of the list since. (`descriptorset_random.sets4`'s were bindings past WebGPU's, on SwiftShader too: "Texel buffers"
     below; the multisampled 16-bit normalized passes, which WebGPU doesn't resolve, are drawn resolves since VK4 T21.)
-  - **SwiftShader compiles zero-initialized workgroup memory slowly** (VK4 T2): Dawn zeroes it through Vulkan's
+  - [B] **SwiftShader compiles zero-initialized workgroup memory slowly** (VK4 T2; SwiftShader's: an upstream report, nothing left here): Dawn zeroes it through Vulkan's
     `VK_KHR_zero_initialize_workgroup_memory`, which costs SwiftShader ~17 s per pipeline with a 16 KiB array (19 ms
     with Tint's loop: `--disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension`, which the
     dEQP-VK runs pass). Only Chromium's SwiftShader WebGPU (`--enable-unsafe-webgpu`) meets it; a guest compute program
@@ -1209,9 +1216,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     26.1–26.6 s, a second binding of the region as the view 25.5 s, the index a base plus a constant 27.1 s, robustness
     off too 21.3 s: SwiftShader compiles a vec4 load from storage as four, so the case stays past the watchdog, and it
     wasn't landed. What T21's 3.1 s had was a quarter of the loads; what's left is SwiftShader's (an upstream report).
-  - **What R7's limits leave** (VK4 R7, its review's B4, B8, D4): 16 vertex bindings need a free bind group and room in the
-    vertex stage's storage buffers, or the draw is refused, said once (four groups in use, or a vertex stage's own storage
-    buffers; VK4-KICKOFF.md T44); 8 dynamic uniform buffers with push constants past the immediates or draw parameters
+  - [B] **What R7's limits leave** (VK4 R7, its review's B4, B8, D4): 16 vertex bindings need a free bind group and room in the
+    vertex stage's storage buffers, or the draw is refused, said once (a four-group program pulls in its group 3 since
+    VK4 T44, from binding 976: one whose group 3 reaches there, or a vertex stage's own storage buffers); 8 dynamic uniform buffers with push constants past the immediates or draw parameters
     put the push buffer on a dynamic storage binding, and a layout with all 4 of those too has its last one a plain
     binding at the offset bound (VK4 T40, `wg_bake_dynamic`: a bind group per offset, its cost unmeasured; a stage full
     of storage buffers is still refused); a
@@ -1219,7 +1226,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `maxBufferSize`) reads a shadow of the block's size since VK4 T37, so its scope pays a copy (`has_big_uniform`
     scans a dispatch for it). A set with inline blocks has a GPUBuffer of 64 KiB more than them, for what its shaders may
     declare.
-  - **maintenance8's cases wait for the guest's Mesa 26.3** (VK4 T24): the device advertises `maintenance8` (offsets
+  - [B] **maintenance8's cases wait for the guest's Mesa 26.3** (VK4 T24; waiting on Arch, 26.2.6 on 2026-11-09): the device advertises `maintenance8` (offsets
     that aren't constants from fetches, depth and stencil copied with colour images, blits between layers and slices),
     but Mesa 26.2's Venus, the tests' guest's (Arch's 26.2.5; 26.2.6 the port's newest on 2026-11-05), leaves it out,
     so its cases are NotSupported in CI. Through 26.3.0-rc3's Venus (`images/deqp/venus-icd.sh`, `DISK2`, `GUEST_ENV`)
@@ -1227,34 +1234,25 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     (`images/deqp/build.sh vk`) and move that list into `tests/deqp/vk.txt`. A sample with such an offset costs the
     fetches' filter (eight `textureLoad`s a trilinear sample) where WGSL's own would do: unmeasured, no program here
     has one (vkd3d's D3D12 layering is what asks).
-  - **maintenance5's and 6's leftovers** (VK4 T24, `results/vk4/t24/`): A8_UNORM is offered since VK4 T38 (an `r8unorm`
-    texture, vk/README.md "Formats a texture holds otherwise") without blending (WebGPU's red blends by the colour
+  - [A, B] **maintenance5's and 6's leftovers** (VK4 T24, `results/vk4/t24/`): A8_UNORM is offered since VK4 T38 (an
+    `r8unorm` texture, vk/README.md "Formats a texture holds otherwise") [A] without blending (WebGPU's red blends by the colour
     factors: a variant with Vulkan's alpha factors as the colour's, `DST_ALPHA` as `dst`, the constant's alpha as its red,
-    would take it), blits (the worker's blit draws know no swizzle) or storage, and only with `texture-component-swizzle`;
-    `maintenance6`'s `memory.binding.maintenance6.aliasing.suballocated.image_*` fail (9 of 9)
-    as the aliasing ones below; an index buffer bound null wants robustness2's `nullDescriptor`.
-  - **Memory**: `memory.binding.aliasing.suballocated.image_*` fail (9 sampled by VK4 R6, 2 others pass): each image is a
-    texture of its own, so two images bound to one range don't share texels. An allocation past the device-local heap, the largest
+    would take it: S, wg_shader.c's blend state and the format's key), [B] blits (the worker's blit draws know no
+    swizzle) or storage, and only with `texture-component-swizzle`; an index buffer bound null wants robustness2's
+    `nullDescriptor`. (maintenance6's aliased images: graphics.md "Permanent limitations".)
+  - [B] **Memory** (images bound to one range, `memory.binding.aliasing.suballocated.image_*`: graphics.md "Permanent
+    limitations"): an allocation past the device-local heap, the largest
     GPUBuffer or the arena, which Venus's guest doesn't wait for, is an empty memory (`memory_refused`): a blob's map gives
     zeros that go nowhere and a buffer past its bytes loses its submit, where a program learns less than from
     `VK_ERROR_OUT_OF_DEVICE_MEMORY`. Host-visible memory the arena has is had past its heap. Only
     the guest's `VN_PERF=no_async_mem_alloc` would give the error back; a program within its budget doesn't meet it
     (VK_EXT_memory_budget is advertised).
-- **Nodes 2 and up in one memory64 behind a second JIT arm** (bench/spike/memory/REPORT.md §6, VK4 T19). Memory 1 stays
-  wasm32 (node 1, and on a Vulkan machine the renderer and window, behind today's arm). Nodes 2 and up, which an access
-  reaches today only through the interpreter (2–17× node 0's time), would share one memory64 of up to 16 GiB, reached
-  by a second arm. That access pays memory64's check and V8's base reload: M0.5's M4 kernels put that layout (D) at
-  +26–32% per access on macOS, where memory 1's accesses carry no check. Each load and store on such a machine would
-  also carry another copy of its body (one arm: +15% wasm bytes). Only a machine with more active pages than memory
-  0 and node 1 hold meets node 2: past ~7 GiB, ~5.5 GiB with Vulkan. Memory 0 as one memory64 was measured and set
-  aside: ~+15–20% on the userspace benchmark on macOS (`--wasm-enforce-bounds-checks` as the stand-in), since V8 checks
-  each memory64 access.
-  - **A render pass's JSON garbled** (seen in VK4 T38's SwiftShader runs, before and after its change, three times in
+  - [B] **A render pass's JSON garbled** (seen in VK4 T38's SwiftShader runs, before and after its change, three times in
     16,024 cases; the case not identified): `gpu_render_pass threw: SyntaxError` on fragments such as `}` and `eight"`,
     so the pass's description reached the worker cut or overwritten (wg_cmd.c's `gpu_render_pass(json, strlen(json))`
     at a pass's replay, or its JSON buffer reused). That pass is lost; nothing failed that names it. Next: run the
     sample with `VIRGL_GPU=virgl,vulkan,debug` and find the case from the trace.
-  - **Texel buffers** (VK3 L6b, vk/README.md "The shader path": a storage buffer of the view's words, its format
+  - [B] **Texel buffers** (VK3 L6b, vk/README.md "The shader path": a storage buffer of the view's words, its format
     decoded in WGSL; storage of texels under a word by atomics since VK4 T38, of 3- and 6-byte ones not offered): each
     takes one of WebGPU's storage buffers a stage (10 on SwiftShader and the M4, 8 by default), which Vulkan counts with
     sampled or storage images (16 and 4). Since VK4 T40 a program whose stages fit only so has the words a stage only
@@ -1272,19 +1270,20 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     buffer binding aliasing", the dispatch dropped; since VK4 T3 a read-only one is copied instead: "Usage scopes'
     leftovers" above); 122 `api.buffer_view.access.uniform_storage_texel_buffer` cases are NotSupported for
     `VK_KHR_extended_flags` (they ask `VK_KHR_maintenance5` too, offered since VK4 T24; not the without-format
-    features, as this said before GD G5 offered them); sRGB and 64-bit formats aren't offered.
-  - **`images/vkframes/venus-profile.json` predates VK4 T11** (2026-10-26; found by GD G6): it says R8_UINT and the
+    features, as this said before GD G5 offered them); sRGB and 64-bit formats aren't offered (64-bit ones as pairs of
+    words, without their atomics).
+  - [A] **`images/vkframes/venus-profile.json` predates VK4 T11** (2026-10-26; found by GD G6; still its last commit on 2026-11-09): it says R8_UINT and the
     other tier1 formats have no storage, which the device has offered since T11, so captures made through it (the
     programs' frames, `bench/vulkan/translate/programs.sh` with that profile) see an older device. Remake it
     (`PROFILE=images/vkframes/venus-profile.json bench/vulkan/venus-run.ts`), rebuild the vkframes disk, check the
-    replays' references still hold.
-  - **Storage images read as textures' leftovers** (GD G4; vk/README.md "Storage images a stage only reads"; the
+    replays' references still hold (S: the profile, a Podman rebuild, `tests/page-venus.test.ts`'s replays).
+  - [B] **Storage images read as textures' leftovers** (GD G4; vk/README.md "Storage images a stage only reads"; the
     out-of-context review of 2026-11-04; VK4 T37 took its invalid commands): a subresource read as a texture and written
     through a storage binding in one scope reads a copy of the image taken at the scope's start (`scope_reads`), but not
     through a view of another format than the image's (an alias texture) or of a plane: said once, left to WebGPU, which
     drops the submit; nor does such a read see what the scope wrote before a barrier inside a dispatch (a pass is cut at
     them). An array's packed copies go a layer at a time through two temporary buffers.
-  - **Storage images as words' leftovers** (VK4 T11; vk/README.md "Storage images as words"): a view past
+  - [B] **Storage images as words' leftovers** (VK4 T11; vk/README.md "Storage images as words"): a view past
     `maxStorageBufferBindingSize` (WebGPU's minimum is 128 MiB: a 4096x4096 `rgba16float` level, loaded and stored) refuses
     its draws and dispatches, said once (VK4 T37: the submit was dropped); a binding a part would draw them. A stage of
     many such images meets the storage and uniform buffers a stage has
@@ -1294,10 +1293,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     shared image's flush has no test of its own; the words' and copies' cost on a real program is unmeasured (`rw.hook` shows
     it working, nothing in the images leans on it). With words, the formats Vulkan's storage doesn't need (sRGB, packed
     16-bit) become possible (`shaderStorageImage*WithoutFormat` are offered since GD G5: a variant per bound format).
-  - **Storage images' cases failing before T11** (VK4 T11: the same on a build without it, 27 of a sample): `robustness.image_robustness`'s
+  - [B] **Storage images' cases failing before T11** (VK4 T11: the same on a build without it, 27 of a sample): `robustness.image_robustness`'s
     out-of-bounds accesses (`sampled_image` of `1d_array` and `3d`, `storage_image` of `r32f`), and `memory_model.message_passing.ext`'s
-    `atomicwrite` with an image as the guard (invocations seeing the guard but not the payload). Neither group is in the list.
-  - **Bindings past WebGPU's** (VK3 L7a, vk/README.md "Bindings past WebGPU's"): what can't be advertised apart from
+    `atomicwrite` with an image as the guard (invocations seeing the guard but not the payload). Neither group is in the
+    list, nor in `vk-main.txt`'s direct set (run them by name).
+  - [A, B] **Bindings past WebGPU's** (VK3 L7a, vk/README.md "Bindings past WebGPU's"): what can't be advertised apart from
     what Vulkan counts with it is refused when a pipeline is made, saying why: a fragment stage's input attachments
     beside 16 sampled images (Vulkan counts them apart, WebGPU as textures; the device keeps Vulkan's 16 and 4: ANGLE's
     ES3 wants 16 texture units), texel buffers beside a full count of storage buffers that don't share a binding (above),
@@ -1305,17 +1305,25 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     buffers), binding numbers past WebGPU's 1,000 or on the driver's from the parameter table's 994 on (sets 3 and up
     share group 3: out of reach within the advertised limits, a guard). A program of four groups (sets 3 and up, the
     push buffer or device addresses in group 3) has a capture's and a storing vertex stage's pre-pass's bindings in a
-    copy of group 3 at its free 995, 997 and 999 (VK4 T33, T40), but no room there for an attachment read's textures
-    (T32's `wg_dst`, up to 9: the draw is refused, said once) or pulled vertices' bindings (up to 16:
-    VK4-KICKOFF.md T44); those would need binding numbers group 3's slots leave (below 994), or, for pulled ones, the
-    copies into one buffer the pre-pass makes. maxPerStageDescriptorUniformBuffers is 14 (vkd3d's) only where 8 storage
+    copy of group 3 at its free 995, 997 and 999 (VK4 T33, T40), and pulled vertices' bindings from 976 (VK4 T44), but
+    [B] no room there for an attachment read's textures (T32's `wg_dst`, up to 9: the draw is refused, said once): those
+    would need binding numbers group 3's slots and the pull's leave. maxPerStageDescriptorUniformBuffers is 14 (vkd3d's) only where 8 storage
     buffers are left beside the three folded ones, an adapter of 11 or more (VK4 T40): SwiftShader's and the M4's 10 keep
-    13, D3D's 8 UAVs at 11_0 taking the eighth storage buffer. Not covered by a test of
-    its own: a draw of more than 64 resources (variants' masks were 64 bits: the masks are 128 now, a render harness
+    13, D3D's 8 UAVs at 11_0 taking the eighth storage buffer. [A] Not covered by a test of its own (S each, in
+    tests/venus-driver.test.ts): a draw of more than 64 resources (variants' masks were 64 bits: the masks are 128 now, a render harness
     with that many bindings would check it) and the split sampler in a render pipeline (`wg_variant_modules`; the
     compute path is `tests/venus-driver.test.ts` "sharedSampler").
-  - **Elsewhere**: the push buffer grows before a submit to 256 bytes a draw and dispatch, up to 256 MiB (a submit past
+  - [B] **Elsewhere**: the push buffer grows before a submit to 256 bytes a draw and dispatch, up to 256 MiB (a submit past
     ~1M draws with push constants past the immediates still wraps, with a warning).
+- **Nodes 2 and up in one memory64 behind a second JIT arm** (bench/spike/memory/REPORT.md §6, VK4 T19). Memory 1 stays
+  wasm32 (node 1, and on a Vulkan machine the renderer and window, behind today's arm). Nodes 2 and up, which an access
+  reaches today only through the interpreter (2–17× node 0's time), would share one memory64 of up to 16 GiB, reached
+  by a second arm. That access pays memory64's check and V8's base reload: M0.5's M4 kernels put that layout (D) at
+  +26–32% per access on macOS, where memory 1's accesses carry no check. Each load and store on such a machine would
+  also carry another copy of its body (one arm: +15% wasm bytes). Only a machine with more active pages than memory
+  0 and node 1 hold meets node 2: past ~7 GiB, ~5.5 GiB with Vulkan. Memory 0 as one memory64 was measured and set
+  aside: ~+15–20% on the userspace benchmark on macOS (`--wasm-enforce-bounds-checks` as the stand-in), since V8 checks
+  each memory64 access.
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 
@@ -1717,11 +1725,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
-- **dEQP-VK's four processes a machine** (VK4 T36, bench/vulkan/REPORT.md "VK4 T36"): since T36 `JOBS=4` hangs no
+- [B] **dEQP-VK's four processes a machine** (VK4 T36, bench/vulkan/REPORT.md "VK4 T36"): since T36 `JOBS=4` hangs no
   case and runs the 2,032-case slice in 143 s against 162–163 at 2 (−12%, one machine of 1,536 MiB). `tests/page-deqp-vk.test.ts`
   takes 2: at 4 the browser peaked at 6.1–6.3 GiB a machine (5.6–5.7 at 2), and `scripts/ci-deqp-vk.sh` runs two
-  machines under 14 GiB. Worth it once a `--full` run at 4 is seen under the cap (its peak measured), or with the
-  cap raised.
+  machines under 14 GiB. Worth it once a `--full` run at 4 is seen under the cap (its peak measured), or
+  with the cap raised.
 - **`tests/page-copy-edit.test.ts` failed twice in `scripts/ci.sh`** (2026-11-06, VK4 T32's run; 2026-11-08, VK4
   T40's, one of four; passed alone at once, three times the second): "words changed where they are shown…" got an unexpected list of highlighted elements
   (`BUTTON[title]`, `SUMMARY[aria-label]`…) where it expected fewer. Not traced: likely an element still rendering when
@@ -1821,7 +1829,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 ## Upstream reports (to file at the project's end)
 
 Bugs found in other projects, kept here until the user's round-up of upstream reports; each with what's needed to
-report it. Nothing has been filed.
+report it. Nothing has been filed. (Vulkan's are [C]: they wait for the user.)
 
 - **Mesa, virgl's VA-API driver offers I420 and YV12 decode surfaces** ([plans/video.md](plans/video.md) §1, §4):
   `virgl_is_video_format_supported` is `vl_video_buffer_is_format_supported`, which only checks that the planes'
@@ -1849,7 +1857,7 @@ report it. Nothing has been filed.
   in the prologue of a locally streaming function compiled with SVE (LLVM saves the vector length with an SVE
   instruction there). Seen with openSUSE's Chromium 153.0.8010.52 on aarch64; libyuv picks SME from
   `getauxval(AT_HWCAP2)`. Our workaround: `tools/nosme` as `LD_PRELOAD` for the tests' Chromium.
-- **Mesa, Venus's async present drops a present after a failed one** ([vk/README.md](../vk/README.md) "The guest's
+- [C] **Mesa, Venus's async present drops a present after a failed one** ([vk/README.md](../vk/README.md) "The guest's
   Mesa"; bench/vulkan/REPORT.md "VK3 L4e"): with no implicit fencing (virtio-gpu's case), `vn_wsi_present_async`
   (`src/virtio/vulkan/vn_wsi.c`, since MR 39283) returns the previous present's result; when that is an error it
   returns it for the next present, of any swapchain, and drops that present without handing it to the present thread,
@@ -1863,7 +1871,7 @@ report it. Nothing has been filed.
   thread, and report a deferred error only for the swapchain it came from. Our workaround: `VN_PERF=no_async_present`
   in the desktop image (images/arch/desktop-setup.sh), which goes away with the fix.
 
-- **Mesa, Venus hands back fd 0 for an opaque-fd semaphore export** (bench/vulkan/REPORT.md "VK3 L7.1b", "VK3 L7.2";
+- [C] **Mesa, Venus hands back fd 0 for an opaque-fd semaphore export** (bench/vulkan/REPORT.md "VK3 L7.1b", "VK3 L7.2";
   backlog "Dawn in the guest's Chromium on Venus"): Venus's guest driver (`src/virtio/vulkan/vn_physical_device.c`)
   offers external semaphores as sync files only, but `vkGetSemaphoreFdKHR` with
   `VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT` on a semaphore made with that export returns `VK_SUCCESS` and fd 0
@@ -1873,14 +1881,14 @@ report it. Nothing has been filed.
   `bench/vulkan/semfd.ts` (ctypes in the guest, `semfd.py`). Fix: refuse the export at creation
   (`VK_ERROR_INVALID_EXTERNAL_HANDLE`) as the properties say, or back it with the DRM syncobj
   (`vn_renderer_sync_export_syncobj(…, false)`).
-- **Chromium (Tint's Metal path or Apple's compiler) hoists a lone subgroup ballot out of an `if`** (bench/vulkan/REPORT.md
+- [C] **Chromium (Tint's Metal path or Apple's compiler) hoists a lone subgroup ballot out of an `if`** (bench/vulkan/REPORT.md
   "VK3 L5"): a compute shader whose `if (odd invocation)` holds a `subgroupBallot` as its only subgroup operation gets
   every invocation's bits (0xffffffff where 0xaaaaaaaa is right) on the M4 with Chrome for Testing 153.0.8010.12
   (macOS 26.6.2); with any other subgroup operation beside it in the `if`, the result is right. Repro: the kernel of
   `web/venus-gpu.ts` `subgroupsRight` in a page with `subgroups` requested. Which layer is at fault (Tint's MSL, Metal's
   compiler) is unknown: compare Tint's MSL output with the hand-written MSL. Our workaround: the page holds subgroups
   where the check fails.
-- **Chromium and macOS: one endless compute dispatch from a web page wedges the M4's GPU for good** (GD
+- [C] **Chromium and macOS: one endless compute dispatch from a web page wedges the M4's GPU for good** (GD
   G4; `bench/results/local/godot-mac-g4b`): a dispatch whose loop never ends (Godot's SDFGI light loop, `i < light_count`
   read as 0xffffffff on Chrome for Testing 153.0.8010.12, whose indirect dispatches read clobbered immediates: fixed by
   153's release) kept the GPU at 100% with nothing to stop it. Neither Dawn (no device loss, no watchdog) nor macOS
@@ -1898,7 +1906,7 @@ report it. Nothing has been filed.
   before their submit's writes). Rules: nothing suspect on the M4 without the cap and the user there; after every Mac
   run, `bench/gpu/mac-leftovers.sh`; a Mac-only GPU failure is checked on the current Stable and Canary Chrome for
   Testing before it's taken for ours.
-- **Mesa: X11's same-GPU check fails for a DRM device that isn't on PCI** (vk/README.md "Presentation", the prime
+- [C] **Mesa: X11's same-GPU check fails for a DRM device that isn't on PCI** (vk/README.md "Presentation", the prime
   blit's buffers, shared since GD G7 at the cost of a copy a frame): `wsi_device_matches_drm_fd` (src/vulkan/wsi/wsi_common_drm.c) compares PCI bus info only, so
   on a virtio-mmio virtio-gpu (DRM_BUS_PLATFORM) Venus's device never matches the X server's DRI3 device and every X11
   swapchain takes the prime blit. Seen with Mesa 26.2.5 (Arch's `vulkan-virtio`) in our desktop guest. Fix: compare the
