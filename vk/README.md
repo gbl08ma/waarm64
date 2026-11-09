@@ -98,10 +98,10 @@ float only float operations read is an f32, a vector only float operations read 
 the integer operations whose bits don't depend on the sign work on the u32s as they are); a scalar ALU value read once,
 later in its block, is inlined into its use (`inline_value`: not past a store to a register its text names, not with
 only constant sources, which could make the use a const-expression, not past 160 characters, and a use whose text
-would hold it twice gets it as a `let` after all); a value is a `let` where its uses stay in its scope and a function-scope `var` declared where the
+would hold it twice gets it as a `let` after all; nor into a barycentric at a sample or offset, whose source each of its loads prints, `use_deferred`); a value is a `let` where its uses stay in its scope and a function-scope `var` declared where the
 scope holding its uses starts otherwise, a register a `var` outside each loop that may read it before writing it in an
 iteration (`place_values`, `carry_list`), a register's load its register's name where nothing stores to it before the
-load's last use, and a loop that runs once (its body ends in its only break: NIR's early returns) its statements in
+load's last use (and no barycentric reads it), and a loop that runs once (its body ends in its only break: NIR's early returns) its statements in
 the scope around it. Constants are `let`s too, so no const-expression can overflow or make a NaN (shader-creation
 errors in WGSL); a float one only floats read is an exact hex literal. Tint's uniformity analysis visits every `var` in
 scope at each loop, break, continue and if: with every value a `var` at the function's top, Godot's Forward+ fragment

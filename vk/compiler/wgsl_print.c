@@ -2098,6 +2098,18 @@ count_reads(nir_src *src, void *data)
    return true;
 }
 
+/* A barycentric at a sample or an offset prints nothing: each load_interpolated_input that reads it prints its source
+ * (emit_input), so a use by it is a use at each of those loads, which may follow a store to a register the source
+ * reads (the review of VK4 T47-T49, finding 1). Neither inline_ok nor alias_loads takes a value whose use is one. */
+static bool
+use_deferred(nir_instr *instr)
+{
+   if (instr->type != nir_instr_type_intrinsic)
+      return false;
+   const nir_intrinsic_op op = nir_instr_as_intrinsic(instr)->intrinsic;
+   return op == nir_intrinsic_load_barycentric_at_sample || op == nir_intrinsic_load_barycentric_at_offset;
+}
+
 /* Register loads whose uses name the register itself (alias): each use in the load's block (an if's condition after
  * it), with no store to the register before the last. */
 static void
@@ -2116,7 +2128,8 @@ alias_loads(struct ctx *c, nir_function_impl *impl)
          nir_foreach_use_including_if (src, &load->def) {
             if (nir_src_is_if(src))
                in_if = nir_cf_node_prev(&nir_src_use_if(src)->cf_node) == &block->cf_node;
-            if (nir_src_is_if(src) ? !in_if : nir_src_use_instr(src)->block != block)
+            if (nir_src_is_if(src) ? !in_if
+                                   : nir_src_use_instr(src)->block != block || use_deferred(nir_src_use_instr(src)))
                ok = false;
             else if (!nir_src_is_if(src))
                left++;
@@ -3430,7 +3443,7 @@ inline_ok(struct ctx *c, nir_instr *instr)
          return false;
    } else {
       end = nir_src_use_instr(use);
-      if (end->block != instr->block)
+      if (end->block != instr->block || use_deferred(end))
          return false;
    }
    c->inl_end = end;

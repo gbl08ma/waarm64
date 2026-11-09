@@ -596,6 +596,32 @@ test('values read once are inlined into their use, not past a store to a registe
   }
 });
 
+test('a barycentric at a sample read by two loads with a register store between them: neither load reads the sample index past the store (the review of VK4 T47-T49, finding 1)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const out: string[] = [];
+    // The sample index computed (T49's inlining) and a copy of the register (alias_loads).
+    for (const defines of [[], ['ALIAS']]) {
+      const r = glslStage(translate, tmp, 'tests/venus/t49/bary-store.frag', {}, 'vulkan1.2', defines);
+      assert.equal(r.rc, 0, r.text);
+      const lines = r.text.split('\n');
+      const at = lines.flatMap((l, i) => (l.includes('let d = wg_sample_pos(') ? [i] : []));
+      assert.equal(at.length, 2, `the two loads at a sample: ${r.text}`);
+      // The names the second load's sample index reads, none of them stored since the first load.
+      const arg = /let d = wg_sample_pos\((.*?)\) - vec2/.exec(lines[at[1]])![1];
+      const stored = lines.slice(at[0] + 1, at[1]).flatMap((l) => /^\s*(t\d+) = /.exec(l)?.[1] ?? []).filter((n) => new RegExp(`\\b${n}\\b`).test(arg));
+      assert.deepEqual(stored, [], `${defines.join() || 'inlined'}: the second load reads ${arg}, stored after the first:\n${lines.slice(at[0], at[1] + 1).join('\n')}`);
+      out.push(r.text);
+    }
+    const errors = await compile(out);
+    if (!errors) return t.skip('SKIPPED: Chromium has no WebGPU adapter here');
+    assert.deepEqual(errors, ['', ''], 'WGSL Chromium rejected');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('16-bit storage on every adapter, 16-bit floats with shader-f16, and scratch arrays (VK3 L5)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
   try {
