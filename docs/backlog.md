@@ -931,13 +931,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     48 of `multiview.*multisample*` ask for `r32g32b32a32_sfloat` and the `image.mutable` r32 ones for views WebGPU can't
     multisample, without a format list saying so: no texture can back those (only the channels split, "Sample counts
     Vulkan wants but WebGPU lacks").
-  - [A, B] **Packed formats' leftovers** (VK4 T12, T30; vk/README.md "Packed formats"): [B] a 16-bit format holds 8 bits a
+  - [B] **Packed formats' leftovers** (VK4 T12, T30; vk/README.md "Packed formats"): [B] a 16-bit format holds 8 bits a
     channel, so what's rendered is sampled unrounded and blends run at 8 bits; a multisampled copy between a packed
     SNORM order (the 10-bit ones) and another layout is skipped with a warning (VK4 T39 carries the others' bits). The 10-bit SNORM orders (VK4 T38) are `rgba16float`: what's rendered there stays unclamped and
     unquantized until copied out (sampled as rendered; Vulkan clamps and rounds at the write), and the most negative
-    code (-512, alpha's -2) is -1 − 2⁻¹⁰ there so that copies keep it, which samples one step from Vulkan's -1:
-    [A] `texture.conversion.snorm_clamp.a2r10g10b10_snorm_pack32` fails on both hosts (still 2026-11-09; S: a sampler
-    key bit clamping such views' samples to [-1, 1], wgsl_sampler.c); [B]
+    code (-512, alpha's -2) is -1 − 2⁻¹⁰ there so that copies keep it (a shader's reads of it clamped, `WGSL_SNORM_KEY`;
+    WebGPU's linear filter weighs the unclamped code, a 2⁻¹⁰ · weight off at most); [B]
     `blit_image.*.astc_8x8_unorm_block.a2b10g10r10_snorm_pack32.general_general_linear` fails on both hosts (still
     2026-11-09), its other ASTC blocks pass on the M4 (not looked into: SwiftShader fails 6 more of them). [B] Not offered: linear tiling of any packed format (~180 of VK4 T31's sample on the M4: a
     linear image's copies to and from its memory would go through the pass); sampling scaled formats (VK4 T31: the spec

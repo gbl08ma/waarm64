@@ -91,8 +91,9 @@ static const struct wg_texture_format table[] = {
    F(A2R10G10B10_SINT_PACK32, "rgba16sint", 8, 1, 1, CS | WG_FMT_RENDER | S | P),
    F(A2B10G10R10_SINT_PACK32, "rgba16sint", 8, 1, 1, CS | WG_FMT_RENDER | S | P),
    /* 10-bit SNORM in half floats (VK4 T38): a 10-bit value within an eighth of a step and back exactly (the most
-    * negative code, which reads -1 as the next does, is -1 - 2^-10 there: web/venus-gpu.ts `conv`), rendered, blended
-    * and filtered on any adapter (rgba16snorm needs tier1 and isn't filterable); clears clamped. */
+    * negative code, which reads -1 as the next does, is -1 - 2^-10 there: web/venus-gpu.ts `conv`; a shader's reads of
+    * it clamped, WGSL_SNORM_KEY), rendered, blended and filtered on any adapter (rgba16snorm needs tier1 and isn't
+    * filterable); clears clamped. */
    F(A2R10G10B10_SNORM_PACK32, "rgba16float", 8, 1, 1, CS | FL | RB | P),
    F(A2B10G10R10_SNORM_PACK32, "rgba16float", 8, 1, 1, CS | FL | RB | P),
 #define SCALED(fmt, u, s, bytes, flags)                                                                               \

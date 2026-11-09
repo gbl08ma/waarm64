@@ -1840,6 +1840,7 @@ view_init(struct wg_device *dev, struct wg_image_view *view, uint32_t loop_tex)
       dim = "2d";
    const bool layered = image->vk.image_type != VK_IMAGE_TYPE_3D;
    dev->slice_views |= !layered && view->vk.view_type != VK_IMAGE_VIEW_TYPE_3D;
+   dev->snorm10_views |= wg_snorm10(view->vk.view_format);
    /* A 2D view of a 3D image (an attachment, or VK_EXT_image_2d_view_of_3d's sampled and storage views) is the 3D texture's
     * view: WebGPU has no 2D view of a 3D texture (`slice` below picks the attachment's depth slice). */
    if (!layered)

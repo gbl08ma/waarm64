@@ -879,8 +879,10 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   `WG_FMT_OPAQUE`), BGRA's integer and snorm orders (`rgba8uint`, `rgba8sint`, `rgba8snorm`), `R8_SRGB` and `R8G8_SRGB` in
   `rgba8unorm-srgb`, the 10-bit SINT orders in `rgba16sint`, and (VK4 T38) the 10-bit SNORM orders in `rgba16float`
   (every adapter renders, blends and filters it, where `rgba16snorm` needs tier1 and doesn't filter; a 10-bit value is
-  within an eighth of a step there and comes back with its bits; clears clamped to [-1, 1], `wg_clear_color`; what's
-  rendered is kept unclamped until copied out). `R32G32B32_SFLOAT` isn't offered as a colour attachment (`WG_FMT_NO_ATTACHMENT`): Vulkan wants a colour attachment format at `framebufferColorSampleCounts`, and WebGPU multisamples no `rgba32float`; its texture is drawn to by the worker's clears and blits all the same. The scaled formats are their integer twins' textures
+  within an eighth of a step there and comes back with its bits, the most negative code as -1 − 2⁻¹⁰; clears clamped to
+  [-1, 1], `wg_clear_color`; what's rendered is kept unclamped until copied out; what a shader reads of such a view is
+  clamped to [-1, 1], a variant's key, `WGSL_SNORM_KEY`: its fetches before the shader's filter, WebGPU's filtered
+  samples after). `R32G32B32_SFLOAT` isn't offered as a colour attachment (`WG_FMT_NO_ATTACHMENT`): Vulkan wants a colour attachment format at `framebufferColorSampleCounts`, and WebGPU multisamples no `rgba32float`; its texture is drawn to by the worker's clears and blits all the same. The scaled formats are their integer twins' textures
   (`rgba8uint`, `rgb10a2uint`, `rg16sint`…, packed where the order or the channels differ) and offer **transfers only**:
   the spec samples them as floats and clears them with `float32`, dEQP-VK samples them through integer samplers and
   clears them with integers (its reference treats them as UINT and SINT), so no sampling is offered, and a clear takes

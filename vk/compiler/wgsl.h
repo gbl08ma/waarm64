@@ -258,6 +258,10 @@ struct wgsl_sampler_key {
  * index): its binding is the level's 3D view, `size[2]` the slice and `size[0]` the level's depth (wgsl_sampler.c
  * `lower_slice`). */
 #define WGSL_SLICE_KEY 0xfffffffdu
+/* A key's `sampler` for a 10-bit SNORM view (`texture` its index; VK4's backlog): its texture is half floats whose most
+ * negative code is -1 - 2^-10 (wg_format.c), so every float the shader reads of it is clamped to [-1, 1] (wgsl_sampler.c
+ * `clamp_snorm`: fetches before the shader's own filter, WebGPU's filtered samples after). */
+#define WGSL_SNORM_KEY 0xfffffffcu
 
 /* The NIR options every stage is compiled with, and spirv_to_nir's. */
 const struct nir_shader_compiler_options *wgsl_nir_options(void);

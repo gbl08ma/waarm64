@@ -541,7 +541,7 @@ for (const [scenario, what] of [
   ['t37Flat', 'a 2D array view of one layer bound where the shader declares a 2D storage image, stored and read as a texture; a merged program of stages that disagree refused'],
   // VK4 T38: formats and features a line or a fetch away.
   ['t38Formats', 'the depth comparison bit, sub-word storage texel buffers, sRGB and packed storage images, A8 and 10-bit SNORM advertised; 10-bit SNORM texels kept through a half-float texture, its clears clamped'],
-  ['t38Stores', 'neighbouring sub-word texel buffer stores, sRGB and R5G6B5 storage stores by words, A8 sampled, a 3D image\'s slices through 2D views fetched and stored'],
+  ['t38Stores', 'neighbouring sub-word texel buffer stores, sRGB and R5G6B5 storage stores by words, A8 sampled, a 3D image\'s slices through 2D views fetched and stored, 10-bit SNORM\'s most negative codes read -1'],
   // VK4 T39.
   ['t39MsBits', 'multisampled copies between a packed format and a plain one, and rgb10a2 and another of 4 bytes, move bits'],
   ['t39Resolves', 'resolves into RGBA8 images of 8 layers, by vkCmdResolveImage and at a pass\'s end, reach every texel'],

@@ -231,6 +231,7 @@ struct wg_device {
    bool padded_views;   /* a view of a padded image, or an E5B9G9R9 one of words, was made: draws look for them
                          * (wg_cmd.c `program_keys`) */
    bool slice_views;    /* a 2D view of a 3D image was made: draws look for them (WGSL_SLICE_KEY) */
+   bool snorm10_views;  /* a 10-bit SNORM view was made: draws look for them (WGSL_SNORM_KEY) */
    /* Host-visible memories (their writes are uploaded at each submit). */
    struct list_head host_memories;
    /* Memories with a shared image bound (wg_device_memory.image). */
@@ -429,6 +430,12 @@ wg_atomic_format(VkFormat format)
 }
 /* Whether a storage image of this format can go by its words (atomics, or an access WebGPU has no texture for). */
 bool wg_storage_words(VkFormat format);
+/* A 10-bit SNORM format (VK4 T38's half-float textures, whose most negative code is past -1: WGSL_SNORM_KEY). */
+static inline bool
+wg_snorm10(VkFormat f)
+{
+   return f == VK_FORMAT_A2R10G10B10_SNORM_PACK32 || f == VK_FORMAT_A2B10G10R10_SNORM_PACK32;
+}
 /* The image's words (made at the first call), a row's bytes and the rows of a slice at a level. */
 uint32_t wg_image_words(struct wg_image *image);
 static inline uint32_t

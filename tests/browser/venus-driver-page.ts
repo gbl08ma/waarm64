@@ -852,14 +852,16 @@ export async function runMisc(scenario: 'copy' | 'rwImage' | 'rwImageWide' | 'mu
     Object.assign(checks, { snormRoundTrip: [0, 8, want], snormClear: [256, 260, want] });
   } else if (scenario === 't38Stores') {
     // VK4 T38 (wg_test.c 110): A8's alpha 128 and colour 0, slice 2 fetched; the texel buffer's four bytes, sRGB's
-    // encoded 0.5, R5G6B5's red and cyan, the 3D image with slice 3 stored, A8's byte.
+    // encoded 0.5, R5G6B5's red and cyan, the 3D image with slice 3 stored, A8's byte; A2B10G10R10_SNORM's most negative
+    // codes -1 fetched and sampled (-1 - 2^-10 unclamped, the half float that keeps the code), 511 1.
     u32(want.subarray(0, 12)).set([128, 0, 30]);
+    new Float32Array(want.buffer, 12, 3).set([-1, -1, 1]);
     want.set([1, 2, 3, 4], 256);
     want.set([0xbc, 0xbc, 0xbc, 0x80], 512);
     new Uint16Array(want.buffer, 768, 2).set([0xf800, 0x07ff]);
     u32(want.subarray(1024, 1040)).set([10, 20, 30, 99]);
     want[1280] = 0x80;
-    Object.assign(checks, { a8Sampled: [0, 8, want], slice2: [8, 12, want], r8TexelStores: [256, 260, want], srgbStore: [512, 516, want],
+    Object.assign(checks, { a8Sampled: [0, 8, want], slice2: [8, 12, want], snormFetched: [12, 16, want], snormSampled: [16, 24, want], r8TexelStores: [256, 260, want], srgbStore: [512, 516, want],
       packedStores: [768, 772, want], slice3: [1024, 1040, want], a8Clear: [1280, 1281, want] });
   } else if (scenario === 't32Reads') {
     // VK4 T32 (wg_test.c 98): (192, 64, 128, 255) onto (51, 153, 204, 255): XOR; MULTIPLY (premultiplied, uncorrelated:

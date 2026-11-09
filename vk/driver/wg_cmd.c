@@ -1543,6 +1543,19 @@ program_keys(struct wg_cmd_buffer *cmd, uint32_t point, const struct wg_program 
       keys[n].size[0] = u_minify(t->view->vk.image->extent.depth, t->view->vk.base_mip_level);
       keys[n++].size[2] = t->view->vk.base_array_layer;
    }
+   /* A 10-bit SNORM view: what the shader reads of it clamped to [-1, 1] (WGSL_SNORM_KEY). */
+   for (uint32_t k = 0; dev->snorm10_views && k < p->resource_count; k++) {
+      const struct wgsl_resource *r = &p->resources[k];
+      if (r->kind != WGSL_TEXTURE)
+         continue;
+      const uint32_t index = (uint32_t)r->group << 16 | r->binding;
+      const struct wg_descriptor *t = pair_descriptor(cmd, point, p, index);
+      if (!t || !t->view || !wg_snorm10(t->view->vk.view_format))
+         continue;
+      memset(&keys[n], 0, sizeof(keys[n]));
+      keys[n].texture = index;
+      keys[n++].sampler = WGSL_SNORM_KEY;
+   }
    return n;
 }
 
@@ -1784,11 +1797,12 @@ program_for(struct wg_cmd_buffer *cmd, uint32_t point, struct wg_program *p)
    if (!p->mixed_known)
       wg_program_mixed(p);
    mask[0] |= p->mixed[0], mask[1] |= p->mixed[1];
-   struct wgsl_sampler_key keys[3 * WGSL_MAX_PAIRS + 2 * WGSL_MAX_RESOURCES];
+   struct wgsl_sampler_key keys[3 * WGSL_MAX_PAIRS + 3 * WGSL_MAX_RESOURCES];
    bool formatless = false; /* or a written storage texture, whose view may be of another format */
    for (uint32_t k = 0; k < p->resource_count; k++)
       formatless |= wgsl_image_keyed(&p->resources[k]);
-   const bool slices = container_of(cmd->vk.base.device, struct wg_device, vk)->slice_views;
+   const bool slices = container_of(cmd->vk.base.device, struct wg_device, vk)->slice_views ||
+                       container_of(cmd->vk.base.device, struct wg_device, vk)->snorm10_views;
    const uint32_t key_count = p->pair_count || p->int_pair_count || p->key_pair_count || dev_padded(cmd) || formatless || slices
                                  ? program_keys(cmd, point, p, keys) : 0;
    /* Shared words stay read-only: a scope that writes their buffer reads them from its shadows. */

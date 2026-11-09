@@ -613,8 +613,9 @@ keyed_text(const struct wg_program *v, const struct wg_stage_nir *n, const struc
       for (uint32_t i = 0; v->keys[k].sampler == WGSL_IMAGE_KEY && i < info->resource_count; i++)
          touched |= wgsl_image_keyed(&info->resources[i]) &&
                     ((uint32_t)info->resources[i].group << 16 | info->resources[i].binding) == v->keys[k].texture;
-      /* A 2D view of a 3D image (VK4 T38), whatever the stage does with it. */
-      for (uint32_t i = 0; v->keys[k].sampler == WGSL_SLICE_KEY && i < info->resource_count; i++)
+      /* A 2D view of a 3D image (VK4 T38), or a 10-bit SNORM view, whatever the stage does with it. */
+      for (uint32_t i = 0; (v->keys[k].sampler == WGSL_SLICE_KEY || v->keys[k].sampler == WGSL_SNORM_KEY) &&
+                           i < info->resource_count; i++)
          touched |= ((uint32_t)info->resources[i].group << 16 | info->resources[i].binding) == v->keys[k].texture;
    }
    if (!touched)

@@ -1406,6 +1406,27 @@ lower_slice(nir_builder *b, nir_instr *instr, void *data)
    return true;
 }
 
+/* A 10-bit SNORM view's reads (WGSL_SNORM_KEY), after lower_tex: each op that gives texels (the fetches lower_tex made
+ * included) clamped to [-1, 1], as Vulkan converts its most negative code. */
+static bool
+clamp_snorm(nir_builder *b, nir_tex_instr *tex, void *data)
+{
+   const struct sampler_pass *s = data;
+   if (tex->is_shadow || nir_alu_type_get_base_type(tex->dest_type) != nir_type_float ||
+       (tex->op != nir_texop_tex && tex->op != nir_texop_txb && tex->op != nir_texop_txl && tex->op != nir_texop_txd &&
+        tex->op != nir_texop_txf && tex->op != nir_texop_txf_ms && tex->op != nir_texop_tg4))
+      return false;
+   bool keyed = false;
+   for (uint32_t i = 0; i < s->key_count && !keyed; i++)
+      keyed = s->keys[i].sampler == WGSL_SNORM_KEY && s->keys[i].texture == tex->texture_index;
+   if (!keyed)
+      return false;
+   b->cursor = nir_after_instr(&tex->instr);
+   nir_def *clamped = nir_fmax(b, nir_fmin(b, &tex->def, nir_imm_float(b, 1.0f)), nir_imm_float(b, -1.0f));
+   nir_def_rewrite_uses_after(&tex->def, clamped);
+   return true;
+}
+
 void
 wgsl_lower_samplers(nir_shader *nir, const struct wgsl_print_options *o, struct wgsl_info *info)
 {
@@ -1420,4 +1441,9 @@ wgsl_lower_samplers(nir_shader *nir, const struct wgsl_print_options *o, struct 
    nir_shader_tex_pass(nir, find_depths, nir_metadata_all, &s);
    nir_shader_tex_pass(nir, find_cubes, nir_metadata_all, &s);
    NIR_PASS(_, nir, nir_shader_tex_pass, lower_tex, nir_metadata_control_flow, &s);
+   for (uint32_t i = 0; i < o->key_count; i++)
+      if (o->keys[i].sampler == WGSL_SNORM_KEY) {
+         NIR_PASS(_, nir, nir_shader_tex_pass, clamp_snorm, nir_metadata_control_flow, &s);
+         break;
+      }
 }

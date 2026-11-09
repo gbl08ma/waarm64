@@ -7874,7 +7874,8 @@ t38_misc(VkCommandBuffer cmd, VkBuffer out)
  * 256; a 1x1 R8G8B8A8_SRGB storage image stored 0.5 (bc bc bc 80), at 512; a 2x1 R5G6B5 one stored red and cyan
  * (f800 07ff), at 768; a 1x1 A8_UNORM image cleared to alpha 0.5, sampled (alpha 128 at 0, colour 0 at 4) and copied
  * out at 1280 (0x80); a 1x1x4 R32_UINT 3D image of 10, 20, 30, 40 by slice through 2D views: slice 2 fetched (30 at 8),
- * slice 3 stored 99, the image at 1024 (10 20 30 99).
+ * slice 3 stored 99, the image at 1024 (10 20 30 99); a 2x1 A2B10G10R10_SNORM image of t38_misc's texels sampled through
+ * a NEAREST sampler: texel 0's R and A (the most negative codes) -1 and G (511) 1, as floats at 12, 16 and 20.
  */
 /* VK4 T40 (`out` as wgt_misc's): 114, t40/dynamic.comp: 8 dynamic uniform buffers (100 + i at 512i of a buffer, 132 + i
  * at 512i + 256) and 4 dynamic storage buffers (200 + j at 512j of another, 232 + j at 512j + 256) beside 128 bytes of
@@ -7970,8 +7971,8 @@ t38_stores(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer 
    PFN_vkCreateBufferView CreateBufferView = (PFN_vkCreateBufferView)GetDeviceProcAddr(dev, "vkCreateBufferView");
    PFN_vkCmdCopyBuffer CmdCopyBuffer = (PFN_vkCmdCopyBuffer)GetDeviceProcAddr(dev, "vkCmdCopyBuffer");
    const VkImageUsageFlags SU = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-   VkImage srgb, packed, a8, vol;
-   VkImageView srgb_v, packed_v, a8_v, s2, s3;
+   VkImage srgb, packed, a8, vol, sn;
+   VkImageView srgb_v, packed_v, a8_v, s2, s3, sn_v;
    VkBuffer tb, src;
    uint32_t *sb;
    if (t37_image(VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_SRGB, (VkExtent3D){ 1, 1, 1 }, 1, SU, 0, &srgb) ||
@@ -7985,6 +7986,9 @@ t38_stores(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer 
                  VK_IMAGE_CREATE_2D_VIEW_COMPATIBLE_BIT_EXT, &vol) ||
        t37_view(vol, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R32_UINT, 2, 1, &s2) ||
        t37_view(vol, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R32_UINT, 3, 1, &s3) ||
+       t37_image(VK_IMAGE_TYPE_2D, VK_FORMAT_A2B10G10R10_SNORM_PACK32, (VkExtent3D){ 2, 1, 1 }, 1,
+                 VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 0, &sn) ||
+       t37_view(sn, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_A2B10G10R10_SNORM_PACK32, 0, 1, &sn_v) ||
        buffer(256, VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false, &tb, NULL) ||
        buffer(256, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, &src, (void **)&sb))
       return 1;
@@ -8000,8 +8004,8 @@ t38_stores(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer 
    CHECK(CreateSampler(dev, &si, NULL, &sampler));
    CmdFillBuffer(cmd, tb, 0, 256, 0);
    const VkImageAspectFlags C = VK_IMAGE_ASPECT_COLOR_BIT;
-   const VkImage all[] = { srgb, packed, a8, vol };
-   for (uint32_t i = 0; i < 4; i++)
+   const VkImage all[] = { srgb, packed, a8, vol, sn };
+   for (uint32_t i = 0; i < 5; i++)
       t24_general(cmd, all[i], C, 1);
    const VkImageSubresourceRange cr = { C, 0, 1, 0, 1 };
    CmdClearColorImage(cmd, a8, VK_IMAGE_LAYOUT_GENERAL, &(VkClearColorValue){ .float32 = { 1, 1, 1, 0.5f } }, 1, &cr);
@@ -8010,27 +8014,34 @@ t38_stores(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer 
    const VkImageSubresourceLayers c1 = { C, 0, 0, 1 };
    CmdCopyBufferToImage(cmd, src, vol, VK_IMAGE_LAYOUT_GENERAL, 1,
                         &(VkBufferImageCopy){ .imageSubresource = c1, .imageExtent = { 1, 1, 4 } });
-   static const VkDescriptorType types[7] = {
+   /* t38_misc's: R -512 and A -2, G 511, B 0; R 300, G -300, B -1, A -1. */
+   sb[8] = 0x200u | (0x1ffu << 10) | (0u << 20) | (2u << 30);
+   sb[9] = 300u | ((uint32_t)(-300 & 1023) << 10) | (0x3ffu << 20) | (3u << 30);
+   CmdCopyBufferToImage(cmd, src, sn, VK_IMAGE_LAYOUT_GENERAL, 1,
+                        &(VkBufferImageCopy){ .bufferOffset = 32, .imageSubresource = c1, .imageExtent = { 2, 1, 1 } });
+   static const VkDescriptorType types[8] = {
       VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
       VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-      VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+      VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
    };
    struct t37_pipe p;
-   if (t37_compute(cs, cs_words, types, 7, &p))
+   if (t37_compute(cs, cs_words, types, 8, &p))
       return 1;
    const VkImageLayout G = VK_IMAGE_LAYOUT_GENERAL;
    const VkDescriptorImageInfo ii[5] = { { VK_NULL_HANDLE, srgb_v, G }, { VK_NULL_HANDLE, packed_v, G },
                                          { sampler, a8_v, G }, { sampler, s2, G }, { VK_NULL_HANDLE, s3, G } };
-   const VkDescriptorBufferInfo bi = { out, 0, 16 };
-   VkWriteDescriptorSet wr[7];
-   for (uint32_t i = 0; i < 7; i++)
+   const VkDescriptorImageInfo sni = { sampler, sn_v, G };
+   const VkDescriptorBufferInfo bi = { out, 0, 24 };
+   VkWriteDescriptorSet wr[8];
+   for (uint32_t i = 0; i < 8; i++)
       wr[i] = (VkWriteDescriptorSet){ .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = p.set, .dstBinding = i,
                                       .descriptorCount = 1, .descriptorType = types[i] };
    wr[0].pTexelBufferView = &tbv;
    for (uint32_t i = 1; i < 6; i++)
       wr[i].pImageInfo = &ii[i - 1];
    wr[6].pBufferInfo = &bi;
-   UpdateDescriptorSets(dev, 7, wr, 0, NULL);
+   wr[7].pImageInfo = &sni;
+   UpdateDescriptorSets(dev, 8, wr, 0, NULL);
    t37_dispatch(cmd, &p);
    CmdCopyBuffer(cmd, tb, out, 1, &(VkBufferCopy){ 0, 256, 4 });
    CmdCopyImageToBuffer(cmd, srgb, G, out, 1, &(VkBufferImageCopy){ .bufferOffset = 512, .imageSubresource = c1, .imageExtent = { 1, 1, 1 } });
