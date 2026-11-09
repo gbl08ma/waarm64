@@ -1,0 +1,72 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "157.0.8103.38",
+ "stride": 50,
+ "offset": 0,
+ "jobs": 1,
+ "adapter": "apple metal-3",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 33,
+ "seconds": 5.133453915999999,
+ "pipelines": {
+  "pipelines": 37,
+  "ready": 37,
+  "readyMs": 801.3150000572205,
+  "deferred": 54,
+  "deferredMs": 1261.905000090599,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 42,
+  "translateMs": 29.535000000000007,
+  "cacheHits": 95,
+  "cacheMisses": 19,
+  "cacheStores": 19,
+  "cacheBytes": 14722,
+  "cacheHeld": 14722,
+  "cacheEntries": 19,
+  "cacheInflateMs": 1.90500009059906
+ },
+ "counts": {
+  "Pass": 33
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-VK.texture.conversion.snorm_clamp_linear.r8_snorm_compute Pass 1",
+  "dEQP-VK.texture.conversion.snorm_clamp.r8g8_snorm Pass 1",
+  "dEQP-VK.image.mutable.2d.b8g8r8a8_srgb_b8g8r8a8_unorm_draw_copy_resolve_mutable_color_att Pass 1",
+  "dEQP-VK.texture.conversion.snorm_clamp_linear.r8g8b8a8_snorm_compute Pass 0",
+  "dEQP-VK.texture.conversion.snorm_clamp_linear.r8g8b8a8_snorm Pass 0",
+  "dEQP-VK.texture.conversion.snorm_clamp_linear.r8g8b8_snorm_compute Pass 0",
+  "dEQP-VK.texture.conversion.snorm_clamp_linear.r8g8b8_snorm Pass 0",
+  "dEQP-VK.texture.conversion.snorm_clamp_linear.r8g8_snorm_compute Pass 0",
+  "dEQP-VK.texture.conversion.snorm_clamp_linear.r8g8_snorm Pass 0",
+  "dEQP-VK.texture.conversion.snorm_clamp_linear.r8_snorm Pass 0"
+ ],
+ "last": "dEQP-VK.texture.conversion.snorm_clamp_linear.r8g8b8_snorm_compute Pass 0dEQP-VK.texture.conversion.snorm_clamp_linear.r8g8b8a8_snorm Pass 0dEQP-VK.texture.conversion.snorm_clamp_linear.r8g8b8a8_snorm_compute Pass 0",
+ "output": [
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    0.951524] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    0.951559] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    0.951579] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    0.951599] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    0.951624] psci_checker: Could not start suspend tests on any CPU",
+  "[    9.857644] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   19.909774] coredump: 426(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 152.7,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 11.6,
+  "arenaHighMiB": 27.9
+ },
+ "warnings": {
+  "venus: the WebGPU device's subgroups are wrong in divergent control flow: subgroups of one invocation": 1,
+  "venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies": 1
+ }
+}

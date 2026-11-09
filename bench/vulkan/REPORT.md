@@ -793,6 +793,29 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` oth
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 backlog easy wins: six of seven [A] items landed, 33 cases join the list
+
+2026-11-09, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,
+`bench/gpu/sway-mac.sh`). The items the audit tagged [A] (docs/backlog.md, 215d3224); JSON in `results/vk4/easy/`.
+Each fix came with its confirming test in tests/venus-driver.test.ts, failing first.
+
+| item | what changed | confirming test (before) | dEQP-VK |
+|---|---|---|---|
+| sRGB-twin resolves | a resolve through a view that is its texture's sRGB twin is drawn (`twinResolve`, web/venus-gpu.ts) | wg_test.c 130: 55, not 128 | the 6 `image.mutable.*_draw_copy_resolve_mutable_{color,resolve}_att` twins pass on both hosts (`twins-sw.json`); `image.mutable`'s 3,447 in the list still pass (`mutable-sw.json`) |
+| 10-bit SNORM's -1 | a variant key (`WGSL_SNORM_KEY`) clamps what a shader reads of such a view to [-1, 1] | wg_test.c 110: -1.000977 | `texture.conversion.snorm_clamp*`: 27 pass on both hosts, none were in the list (`conversion-sw.json`); the list's 1,169 10-bit SNORM cases still pass (`snorm10-sw.json`) |
+| a pull's parameters | read-only storage where the vertex stage's uniform buffers are full | "angleUniformsPulled": refused, now drawn | (nothing in the list meets it) |
+| A8_UNORM blending | Vulkan's alpha factors as WebGPU's colour ones on the `r8unorm` red, the constant's alpha as the blend constant's red | wg_test.c 131: 64 (unblended), now 96 | no A8 blend case in this mustpass; 6,840 A8 cases: no change but 2 SwiftShader cube `*_compute` filters flaky (`a8-before-sw.json`, `a8-after-sw.json`) |
+| tests | a render pipeline's split sampler (132), a draw of 79 resources with an unfilterable view at 77 (133) | each fails with its bug planted (the split off; the masks' bits past 64 dropped: WebGPU errors) | |
+| stale comments | wg_caps.c (A8), wg_device.c (2D views of 3D) | | |
+
+**Not landed: the texel buffers' dynamic indexing.** With `shaderUniformTexelBufferArrayDynamicIndexing` and its
+storage twin advertised, the 75 `mutable_descriptor` cases stayed not supported: dEQP asks
+`isDeviceFunctionalitySupported("VK_EXT_descriptor_indexing")` first, which on Vulkan 1.2 is `descriptorIndexing`, and
+that needs update after bind, partially bound descriptors and runtime arrays (the reasons of all 6,939 not supported:
+`mutable-dynamic-indexing-sw.json`). Not kept (nothing else we run asks); docs/backlog.md's entry is [B] now. The 33 joined
+cases passed on the M4 too (`m4-joined.json`). `scripts/ci.sh` (513 s), `scripts/ci-graphics.sh` (258 s) and
+`scripts/ci-deqp-vk.sh` (a sample of 11,008, seed 3855661911, 1,062 s) passed.
+
 ## VK4 T49 follow-up: the shader store held deflated — fflate's inflateSync, 19 → 3.8 MB for Godot's editor
 
 2026-11-09. The stores Godot 4.7.2's editor (the Forward+ project, `godot.ts`) and vkQuake's two replays

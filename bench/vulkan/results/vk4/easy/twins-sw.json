@@ -1,0 +1,73 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "155.0.8059.84",
+ "stride": 50,
+ "offset": 0,
+ "jobs": 1,
+ "adapter": "google swiftshader",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 216,
+ "seconds": 5.078361904999998,
+ "pipelines": {
+  "pipelines": 147,
+  "ready": 147,
+  "readyMs": 108.49000018835068,
+  "deferred": 294,
+  "deferredMs": 153.41499990224838,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 264,
+  "translateMs": 46.970000000000155,
+  "cacheHits": 800,
+  "cacheMisses": 22,
+  "cacheStores": 22,
+  "cacheBytes": 8296,
+  "cacheHeld": 8296,
+  "cacheEntries": 22,
+  "cacheInflateMs": 11.070000350475311
+ },
+ "counts": {
+  "Pass": 216
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-VK.image.mutable.2d_array.b8g8r8a8_srgb_r32_sfloat_draw_copy_resolve_mutable_resolve_att Pass 1",
+  "dEQP-VK.image.mutable.2d.b8g8r8a8_srgb_r8g8b8a8_sint_draw_copy_resolve Pass 1",
+  "dEQP-VK.image.mutable.2d.b8g8r8a8_srgb_b8g8r8a8_unorm_draw_copy_resolve Pass 1",
+  "dEQP-VK.image.mutable.2d_array.r8g8b8a8_unorm_r8g8b8a8_srgb_draw_copy_resolve_mutable_resolve_att Pass 0",
+  "dEQP-VK.image.mutable.2d_array.r8g8b8a8_unorm_r8g8b8a8_srgb_draw_copy_resolve_mutable_color_att Pass 0",
+  "dEQP-VK.image.mutable.2d_array.r8g8b8a8_unorm_r8g8b8a8_srgb_draw_copy_resolve Pass 0",
+  "dEQP-VK.image.mutable.2d_array.r8g8b8a8_unorm_b8g8r8a8_srgb_draw_copy_resolve_mutable_resolve_att Pass 0",
+  "dEQP-VK.image.mutable.2d_array.r8g8b8a8_unorm_b8g8r8a8_srgb_draw_copy_resolve_mutable_color_att Pass 0",
+  "dEQP-VK.image.mutable.2d_array.r8g8b8a8_unorm_b8g8r8a8_srgb_draw_copy_resolve Pass 0",
+  "dEQP-VK.image.mutable.2d_array.r8g8b8a8_uint_r8g8b8a8_srgb_draw_copy_resolve_mutable_resolve_att Pass 0"
+ ],
+ "last": "dEQP-VK.image.mutable.2d_array.r8g8b8a8_unorm_r8g8b8a8_srgb_draw_copy_resolve Pass 0dEQP-VK.image.mutable.2d_array.r8g8b8a8_unorm_r8g8b8a8_srgb_draw_copy_resolve_mutable_color_att Pass 0dEQP-VK.image.mutable.2d_array.r8g8b8a8_unorm_r8g8b8a8_srgb_draw_copy_resolve_mutable_resolve_att Pass 0",
+ "output": [
+  ": dEQP Core vulkan-cts-1.4.7.0-0-ge272471311301a35aae6364def1a3f5ea35215f7 (0xe2724713) starting..",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    1.129617] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    1.129647] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    1.129669] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    1.129692] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    1.129717] psci_checker: Could not start suspend tests on any CPU",
+  "[   12.043484] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   23.486294] coredump: 422(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 164.7,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 9,
+  "arenaHighMiB": 21.8
+ },
+ "detail": [],
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1,
+  "venus-gpu: WebGPU: The texture usage (TextureUsage::(CopySrc|CopyDst|TextureBinding|RenderAttachment)) includes TextureUsage::RenderAttachment, which is incompatible with the non-renderable format (Te": 1
+ }
+}

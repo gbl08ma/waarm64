@@ -1,0 +1,70 @@
+{
+ "api": "vk",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "155.0.8059.84",
+ "stride": 50,
+ "offset": 0,
+ "jobs": 1,
+ "adapter": "google swiftshader",
+ "info": "7.2.11-arch1-1mesa 1:26.2.5-1 vk vk-main.txt",
+ "cases": 6939,
+ "seconds": 4.875047067,
+ "pipelines": {
+  "pipelines": 0,
+  "ready": 0,
+  "readyMs": 0,
+  "deferred": 0,
+  "deferredMs": 0,
+  "syncPipelines": 0,
+  "premade": 0,
+  "premadeUsed": 0,
+  "translations": 0,
+  "translateMs": 0,
+  "cacheHits": 0,
+  "cacheMisses": 0,
+  "cacheStores": 0,
+  "cacheBytes": 0,
+  "cacheHeld": 0,
+  "cacheEntries": 0,
+  "cacheInflateMs": 0
+ },
+ "counts": {
+  "NotSupported": 6939
+ },
+ "last": "dEQP-VK.binding_model.mutable_descriptor.single_nonmutable.uniform_texel_buffer.update_write.no_source.no_source.pool_same_types.update_after_bind.no_array.comp NotSupported 0dEQP-VK.binding_model.mutable_descriptor.single_nonmutable.uniform_texel_buffer.update_write.no_source.no_source.pool_same_types.update_after_bind.no_array.frag NotSupported 0dEQP-VK.binding_model.mutable_descriptor.single_nonmutable.uniform_texel_buffer.update_write.no_source.no_source.pool_same_types.update_after_bind.no_array.vert NotSupported 0",
+ "kernel": [
+  "[    1.144535] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    1.144575] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    1.144600] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    1.144625] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    1.144655] psci_checker: Could not start suspend tests on any CPU",
+  "[   11.694395] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   44.469350] coredump: 434(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 134.1,
+  "arenaMiB": 1280,
+  "arenaTouchedMiB": 7.9,
+  "arenaHighMiB": 13.3
+ },
+ "detail": [],
+ "warnings": {
+  "venus: Vulkan on google swiftshader adapter; its frames reach virgl by readback": 1
+ },
+ "reasons": {
+  "Update-after-bind not supported for samplers and sampled images": 2250,
+  "VK_KHR_acceleration_structure is not supported": 2106,
+  "Update-after-bind not supported for storage images": 495,
+  "VK_EXT_descriptor_indexing is not supported": 468,
+  "Update-after-bind not supported for uniform texel buffers": 405,
+  "Update-after-bind not supported for storage texel buffers": 315,
+  "Tessellation shaders not supported": 240,
+  "Update-after-bind not supported for uniform buffers": 225,
+  "Update-after-bind not supported for storage buffers": 135,
+  "Geometry shader not supported": 120,
+  "Required descriptor set layout not supported": 105,
+  "Dynamic indexing not supported for uniform texel buffers (vktBindingMutableTests.cpp:2979, with both bits advertised)": 75
+ },
+ "cases_file": "bench/vulkan/results/vk4/t34/swiftshader-candidates.json notPassed"
+}
