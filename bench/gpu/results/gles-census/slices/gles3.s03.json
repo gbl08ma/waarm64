@@ -1,0 +1,60 @@
+{
+ "api": "gles3",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "155.0.8059.84",
+ "stride": 50,
+ "offset": 0,
+ "jobs": 4,
+ "info": "7.2.9-arch1-1mesa 1:26.2.4-1 gles2 gles2-main.txt gles3 gles3-main.txt",
+ "cases": 4811,
+ "seconds": 209.212536258,
+ "counts": {
+  "Pass": 4811
+ },
+ "notPassed": [],
+ "slowest": [
+  "dEQP-GLES3.functional.shaders.precision.float.highp_sub_vertex Pass 3",
+  "dEQP-GLES3.functional.shaders.precision.float.highp_sub_fragment Pass 3",
+  "dEQP-GLES3.functional.shaders.precision.float.highp_mul_vertex Pass 3",
+  "dEQP-GLES3.functional.shaders.precision.float.highp_div_vertex Pass 3",
+  "dEQP-GLES3.functional.shaders.precision.float.highp_add_vertex Pass 3",
+  "dEQP-GLES3.functional.shaders.precision.int.highp_mul_vertex Pass 2",
+  "dEQP-GLES3.functional.shaders.precision.int.highp_div_vertex Pass 2",
+  "dEQP-GLES3.functional.shaders.precision.float.mediump_sub_vertex Pass 2",
+  "dEQP-GLES3.functional.shaders.precision.float.mediump_sub_fragment Pass 2",
+  "dEQP-GLES3.functional.shaders.precision.float.mediump_mul_vertex Pass 2"
+ ],
+ "last": "dEQP-GLES3.functional.shaders.texture_functions.texturegradoffset.isampler2d_fragment Pass 0dEQP-GLES3.functional.shaders.texture_functions.texturegradoffset.usampler2d_vertex Pass 0dEQP-GLES3.functional.shaders.texture_functions.texturegradoffset.usampler2d_fragment Pass 0",
+ "output": [
+  ": dEQP Core opengl-cts-4.6.8.1-0-g067e8832315e79817ede1c4863804e440f5d1c80 (0x067e8832) starting..",
+  ": ERROR: Waiver file '' could not be opened. No tests will be waived.",
+  ": DONE!",
+  ": dEQP Core opengl-cts-4.6.8.1-0-g067e8832315e79817ede1c4863804e440f5d1c80 (0x067e8832) starting..",
+  ": ERROR: Waiver file '' could not be opened. No tests will be waived.",
+  ": DONE!",
+  ": dEQP Core opengl-cts-4.6.8.1-0-g067e8832315e79817ede1c4863804e440f5d1c80 (0x067e8832) starting..",
+  ": ERROR: Waiver file '' could not be opened. No tests will be waived.",
+  ": DONE!",
+  ": dEQP Core opengl-cts-4.6.8.1-0-g067e8832315e79817ede1c4863804e440f5d1c80 (0x067e8832) starting..",
+  ": ERROR: Waiver file '' could not be opened. No tests will be waived.",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    1.358534] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    1.358724] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    1.358754] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    1.358774] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    1.358804] psci_checker: Could not start suspend tests on any CPU",
+  "[   14.508699] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   38.886199] coredump: 428(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 219,
+  "arenaMiB": 0,
+  "arenaTouchedMiB": 0,
+  "arenaHighMiB": 0
+ },
+ "detail": [],
+ "warnings": {}
+}

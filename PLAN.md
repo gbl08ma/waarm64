@@ -89,7 +89,7 @@ What each built is in its doc; numbers in the reports it names. Open loose ends:
 | Snapshots and Suspend | Done 2026-10-01 | [platform.md](docs/platform.md) "Snapshots", [machines.md](docs/machines.md) §5, [frontend.md](docs/frontend.md) "Snapshots" |
 | virtio-gpu 2D (G0, G1) | Done 2026-10-02 | [graphics.md](docs/graphics.md) |
 | Disk I/O speed | Done 2026-10-08 (the overlay's runs; the rest dropped by measurement) | `bench/io/REPORT.md` |
-| 3D through virgl on WebGL2 (G2–G4) | Done 2026-10-10: Firefox, GTK4, dEQP-GLES2/3's whole lists | [graphics.md](docs/graphics.md) |
+| 3D through virgl on WebGL2 (G2–G4) | Done 2026-10-10: Firefox, GTK4, dEQP-GLES2/3's whole lists; 2026-11-09 their census again (no case failing), the pass lists every case that passes (61,426), `ci-deqp.sh` a seeded sample of them | [graphics.md](docs/graphics.md) |
 | G5: 3D's breadth | Snapshots with 3D in use and dEQP on the Mac's GPU done 2026-10-19; the rest open, no kickoff | [graphics.md](docs/graphics.md) "Testing", backlog |
 | Audio | Done 2026-10-12 | [audio.md](docs/audio.md) |
 | Video decoding | Done 2026-10-15 | [plans/video.md](docs/plans/video.md) |

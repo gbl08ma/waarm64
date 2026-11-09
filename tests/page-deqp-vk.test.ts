@@ -14,6 +14,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { availableParallelism, tmpdir, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { cases as listCases, phase, sample, seedFrom } from './deqp-lists.ts';
 
 const root = new URL('..', import.meta.url).pathname;
 const skip = process.env.WEBPC_DEQP_VK !== '1' ? 'SKIPPED: scripts/ci-deqp-vk.sh runs it (WEBPC_DEQP_VK=1)' : false;
@@ -46,37 +47,7 @@ const FULL = process.env.WEBPC_DEQP_VK_FULL === '1';
 const PHASE = process.env.WEBPC_DEQP_VK_PHASE?.match(/^(\d+)\/(\d+)$/)?.slice(1).map(Number);
 const CHECKPOINT = process.env.WEBPC_DEQP_VK_CHECKPOINT;
 const STRIDE = 8;
-const SEED = process.env.WEBPC_DEQP_VK_SEED !== undefined ? Number(process.env.WEBPC_DEQP_VK_SEED) >>> 0 : (Math.random() * 2 ** 32) >>> 0;
-
-/** A seeded generator of 32-bit integers (mulberry32). */
-function random(seed: number) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return (t ^ (t >>> 14)) >>> 0;
-  };
-}
-
-/** Every `stride`-th case of each group, from an offset per group the seed draws (a group shorter than its offset:
- * one case of it), in the list's order. */
-export function sample(cases: string[], stride: number, seed: number): string[] {
-  const groups = new Map<string, number[]>();
-  cases.forEach((c, i) => {
-    const g = c.split('.').slice(1, 4).join('.');
-    let at = groups.get(g);
-    if (!at) groups.set(g, (at = []));
-    at.push(i);
-  });
-  const next = random(seed), keep = new Set<number>();
-  for (const at of groups.values()) {
-    const offset = next() % stride;
-    if (offset >= at.length) keep.add(at[next() % at.length]);
-    for (let k = offset; k < at.length; k += stride) keep.add(at[k]);
-  }
-  return cases.filter((_, i) => keep.has(i));
-}
+const SEED = seedFrom(process.env.WEBPC_DEQP_VK_SEED);
 
 type Result = { adapter?: string | null; cases: number; counts: Record<string, number>; notPassed: string[]; stoppedAt?: string; detail?: string[] };
 
@@ -99,16 +70,9 @@ function runShard(file: string, out: string, gpu: string | undefined, ramMiB?: n
   });
 }
 
-/** The `n`th (from 1) of `m` slices of `cases`, cut at multiples of `round` cases. */
-export function phase(cases: string[], n: number, m: number, round: number): string[] {
-  const rounds = Math.ceil(cases.length / round);
-  const at = (k: number) => Math.round((rounds * k) / m) * round;
-  return cases.slice(at(n - 1), at(n));
-}
-
 /** Runs a pass list on the page in `shards` machines (`gpu`: the machine's ?gpu=, e.g. with `vkycbcr=off`); every case must pass. */
 async function passList(t: { skip(m: string): void; diagnostic(m: string): void }, list: string, shards: number, gpu?: string, sampled = false, slice?: number[]) {
-  const all = readFileSync(list, 'utf8').split('\n').filter((l) => l && !l.startsWith('#'));
+  const all = listCases(readFileSync(list, 'utf8'));
   const cases = sampled ? sample(all, STRIDE, SEED) : slice ? phase(all, slice[0], slice[1], BLOCK * shards) : all;
   const which = sampled ? `a sample of ${cases.length} of ${all.length} (WEBPC_DEQP_VK_SEED=${SEED})` : slice ? `phase ${slice[0]}/${slice[1]}: ${cases.length} of ${all.length}` : `all ${cases.length}`;
   const start = Date.now();

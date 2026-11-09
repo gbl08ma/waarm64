@@ -1,0 +1,66 @@
+{
+ "api": "gles3",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "155.0.8059.84",
+ "stride": 100,
+ "offset": 7,
+ "jobs": 4,
+ "info": "7.2.9-arch1-1mesa 1:26.2.4-1 gles2 gles2-main.txt gles3 gles3-main.txt",
+ "cases": 448,
+ "seconds": 27.534541894999993,
+ "counts": {
+  "NotSupported": 5,
+  "Pass": 443
+ },
+ "notPassed": [
+  "dEQP-GLES3.functional.texture.format.sized.2d.srgb_r8_npot NotSupported",
+  "dEQP-GLES3.functional.texture.filtering.2d_array.formats.srgb_r8_linear_mipmap_nearest NotSupported",
+  "dEQP-GLES3.functional.fbo.msaa.8_samples.srgb8_alpha8 NotSupported",
+  "dEQP-GLES3.functional.transform_feedback.array_element.interleaved.points.lowp_mat3x4 NotSupported",
+  "dEQP-GLES3.functional.draw_buffers_indexed.overwrite_common.common_separate_blend_func_buffer_blend_func NotSupported"
+ ],
+ "slowest": [
+  "dEQP-GLES3.functional.shaders.builtin_functions.precision.refract.lowp_vertex.scalar Pass 4",
+  "dEQP-GLES3.functional.texture.units.8_units.only_cube.2 Pass 2",
+  "dEQP-GLES3.functional.shaders.builtin_functions.precision.length.highp_fragment.vec2 Pass 2",
+  "dEQP-GLES3.functional.shaders.builtin_functions.precision.clamp.mediump_vertex.vec4 Pass 2",
+  "dEQP-GLES3.functional.vertex_arrays.single_attribute.output_types.short.components4_ivec3_quads256 Pass 1",
+  "dEQP-GLES3.functional.vertex_arrays.multiple_attributes.stride.3_float2_8_float2_17_float2_8 Pass 1",
+  "dEQP-GLES3.functional.uniform_api.value.assigned.by_pointer.get_uniform.basic_array_first_elem_without_brackets.bvec4_api_float_fragment Pass 1",
+  "dEQP-GLES3.functional.ubo.single_struct_array.per_block_buffer.shared_vertex Pass 1",
+  "dEQP-GLES3.functional.ubo.single_nested_struct_mixed_matrix_packing.single_buffer.packed_block_row_major_matrix_row_major_matrixarray_row_major_instance_array_vertex Pass 1",
+  "dEQP-GLES3.functional.ubo.single_basic_type.std140.mediump_vec4_fragment Pass 1"
+ ],
+ "last": "dEQP-GLES3.functional.draw.random.155 Pass 0dEQP-GLES3.functional.default_vertex_attrib.mat4.vertex_attrib_3fv Pass 0dEQP-GLES3.functional.draw_buffers_indexed.overwrite_common.common_separate_blend_func_buffer_blend_func NotSupported 0",
+ "output": [
+  ": dEQP Core opengl-cts-4.6.8.1-0-g067e8832315e79817ede1c4863804e440f5d1c80 (0x067e8832) starting..",
+  ": ERROR: Waiver file '' could not be opened. No tests will be waived.",
+  ": DONE!",
+  ": dEQP Core opengl-cts-4.6.8.1-0-g067e8832315e79817ede1c4863804e440f5d1c80 (0x067e8832) starting..",
+  ": ERROR: Waiver file '' could not be opened. No tests will be waived.",
+  ": DONE!",
+  ": dEQP Core opengl-cts-4.6.8.1-0-g067e8832315e79817ede1c4863804e440f5d1c80 (0x067e8832) starting..",
+  ": ERROR: Waiver file '' could not be opened. No tests will be waived.",
+  ": DONE!",
+  ": dEQP Core opengl-cts-4.6.8.1-0-g067e8832315e79817ede1c4863804e440f5d1c80 (0x067e8832) starting..",
+  ": ERROR: Waiver file '' could not be opened. No tests will be waived.",
+  ": DONE!"
+ ],
+ "kernel": [
+  "[    1.148454] psci_checker: cpuidle not available on CPU 0, ignoring",
+  "[    1.148494] psci_checker: cpuidle not available on CPU 1, ignoring",
+  "[    1.148524] psci_checker: cpuidle not available on CPU 2, ignoring",
+  "[    1.148544] psci_checker: cpuidle not available on CPU 3, ignoring",
+  "[    1.148569] psci_checker: Could not start suspend tests on any CPU",
+  "[   12.390334] faux_driver regulatory: Direct firmware load for regulatory.db failed with error -2",
+  "[   23.076659] coredump: 422(sh): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable."
+ ],
+ "memory": {
+  "highMiB": 1021.9,
+  "touchedMiB": 219.9,
+  "arenaMiB": 0,
+  "arenaTouchedMiB": 0,
+  "arenaHighMiB": 0
+ },
+ "warnings": {}
+}

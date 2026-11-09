@@ -949,9 +949,12 @@ Results on SwiftShader (`bench/gpu/results/g4-deqp/`):
 
 Better than the oracle (`tools/virgl-oracle/deqp.sh`: the same binaries on Mesa's virpipe against vtest on llvmpipe's
 GLES 3.0), which fails MSAA. The warnings left are timing (`flush_finish`) and highp `floor`'s precision on SwiftShader.
-**`scripts/ci-deqp.sh`** runs the pass lists in `tests/deqp/`: the every-50th subsets (342 and 889 cases) plus GLES3's
-`lifetime`, `occlusion_query` and `texstorage2d/3d.format` groups, which caught two regressions the subsets didn't
-(a query destroyed while pending hung the guest; the drawn depth upload's `UNPACK_ALIGNMENT`).
+The census of 2026-11-09 (bench/gpu/REPORT.md "dEQP-GLES's census") ran both lists again: the same counts, no case
+failing, every "not supported" WebGL2's limit, the run's configuration or a cap we don't take from WebGL2's extensions
+yet (backlog). **`scripts/ci-deqp.sh`** runs the pass lists in `tests/deqp/`, every case that passed there (17,027
+and 44,399): a seeded sample by default, `--full` the whole lists (docs/testing.md). Groups that caught regressions
+a thin sample missed: GLES3's `lifetime`, `occlusion_query` and `texstorage2d/3d.format` (a query destroyed while
+pending hung the guest; the drawn depth upload's `UNPACK_ALIGNMENT`); a sample takes an eighth of each.
 
 **On the Mac's GPU** (ANGLE on Metal, Apple M4, through `bench/gpu/sway-mac.sh` with `SCRIPT=deqp-run.ts`;
 `bench/gpu/results/g5-deqp-metal/`; dEQP runs ~2.4 times as fast as on the dev VM): GLES2 16,939 pass and 85 fail,
@@ -965,8 +968,10 @@ platforms"). The pass lists stay SwiftShader's (CI's).
 GPU's difference: the case's TGSI (log the shader text in `VirglRenderer.finishShader` behind the trace), its GLSL from
 `generate()` in Node, and that GLSL alone in a WebGL2 page on the Mac with variants. A hang: the hung tasks' stacks in
 the run's `serial.txt` (the harness keeps the serial log on a timeout, disables core dumps in the guest, and reports
-the case dEQP stopped at, `stoppedAt`). A whole GLES3 list is ten slices (`STRIDE=10 OFFSET=$k LIMIT_S=1800` under
-`timeout 2100`, ~17 min each on the dev VM, ~7 on the Mac); a validation run, so other work may run beside it.
+the case dEQP stopped at, `stoppedAt`). A whole list runs as `ci-deqp.sh --full`, or in slices (`CASES` files of
+the mustpass list's contiguous blocks, `JOBS=4 JOBS_BLOCK=16 PASSED=1 DETAIL=400`, two machines at once: the census's
+fourteen slices took ~80 min on the dev VM); `DETAIL_NOTSUPPORTED=1` over the "not supported" cases gives dEQP's
+reasons. A validation run, so other work may run beside it.
 
 ## Tools
 

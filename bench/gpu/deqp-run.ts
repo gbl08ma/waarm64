@@ -16,7 +16,7 @@
 // <out>/virgl-debug.txt), CAPTURE=<file.vglt> (the 3D commands, web/virgl-trace.ts: fixtures for tests/virgl.test.ts),
 // DISK2=<the second disk, a path under the repo, default target/deqp's>, GUEST_ENV=<VAR=value ... for deqp-vk: e.g. a Venus
 // built from another Mesa on that disk, VK_DRIVER_FILES=/mnt/vdb/venus/virtio_icd.json (VK4 T24)>,
-// RAM_MIB=<the guest's RAM, default the session's>, JOBS=<n> (n dEQP processes at once, each a block of the list), LIMIT_S=<seconds the guest may run dEQP, default 1500>, WATCHDOG=disable (no 30 s limit on a case's steps: how long a slow one takes), PASSED=1 (results.passed: the cases that passed), QPA=1 (dEQP's
+// RAM_MIB=<the guest's RAM, default the session's>, JOBS=<n> (n dEQP processes at once, each a block of the list; JOBS_BLOCK=<k>: blocks of k cases dealt in turn), LIMIT_S=<seconds the guest may run dEQP, default 1500>, WATCHDOG=disable (no 30 s limit on a case's steps: how long a slow one takes), PASSED=1 (results.passed: the cases that passed), QPA=1 (dEQP's
 // log with its images, <out>/deqp.qpa: for a few cases), CONSOLE_FILE=<path> (guest-session.ts: the renderers' console
 // lines whole, a shader that didn't compile with its WGSL).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -34,6 +34,13 @@ const STRIDE = Number(process.env.STRIDE ?? 50);
 const OFFSET = Number(process.env.OFFSET ?? 0);
 const LIMIT_S = Number(process.env.LIMIT_S ?? 1500);
 const JOBS = Math.max(1, Number(process.env.JOBS ?? 1));
+// JOBS_BLOCK=<n>: the list dealt to the processes in blocks of n cases, in turn (a slow group shared out: dEQP-GLES3's
+// builtin_functions.precision, ~1,250 cases of up to 30 s, kept one of four processes 1,500 s where the others took
+// 120-400); else each process takes a contiguous block of it (dEQP-VK's runs: neighbours as in the list).
+const JOBS_BLOCK = Number(process.env.JOBS_BLOCK ?? 0);
+const SPLIT = JOBS_BLOCK > 0
+  ? `awk -v b=${JOBS_BLOCK} -v j=${JOBS} '{ f = sprintf("/tmp/jcases.%02d", int((NR - 1) / b) % j); print > f }' /tmp/cases.txt`
+  : `split -n l/${JOBS} -d -a 2 /tmp/cases.txt /tmp/jcases.`;
 const CAPTURE = process.env.CAPTURE;
 // Dawn zeroes workgroup memory through Vulkan's VK_KHR_zero_initialize_workgroup_memory where the device has it, which
 // costs SwiftShader ~17 s of compile for a 16 KiB array (VK4 T2: `max_workgroup_memory.*` timed out, a crash); Tint's
@@ -41,7 +48,7 @@ const CAPTURE = process.env.CAPTURE;
 if (vk) process.env.CHROMIUM_ARGS = `${process.env.CHROMIUM_ARGS ?? ''} --disable-dawn-features=use_vulkan_zero_initialize_workgroup_memory_extension`;
 const s = await openSession({ gpu: (process.env.VIRGL_GPU ?? (vk ? 'virgl,vulkan' : 'virgl')) + (CAPTURE ? ',capture' : ''), image, out, disk2: process.env.DISK2 ? `/${process.env.DISK2.replace(/^\/+/, '')}` : vk ? '/target/deqp/deqp-vk.ext4' : '/target/deqp/deqp.ext4', ...(process.env.RAM_MIB ? { ramMiB: Number(process.env.RAM_MIB) } : {}) });
 const { log, pasteSerial, rootShell, run, runLines } = s;
-const results: Record<string, unknown> = { api, gl: s.gl, chromium: s.browser.version(), stride: STRIDE, offset: OFFSET, jobs: JOBS };
+const results: Record<string, unknown> = { api, gl: s.gl, chromium: s.browser.version(), stride: STRIDE, offset: OFFSET, jobs: JOBS, jobsBlock: JOBS_BLOCK };
 const save = () => {
   writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, warnings: Object.fromEntries(s.warnings) }, null, 1));
   if (s.debugLines.length) writeFileSync(`${out}/virgl-debug.txt`, s.debugLines.join('\n') + '\n');
@@ -110,12 +117,12 @@ cat > /tmp/deqp.sh <<'EOF'
 echo core > /proc/sys/kernel/core_pattern; ulimit -c 0; dmesg -n 7
 start=$(date +%s)
 rm -rf /tmp/j[0-9]* /tmp/jcases.*
-split -n l/JOBS -d -a 2 /tmp/cases.txt /tmp/jcases.
+SPLIT
 k=0; for f in /tmp/jcases.*; do mkdir -p /tmp/j$k; mv $f /tmp/j$k/cases.txt; J=/tmp/j$k sh /tmp/deqp1.sh & k=$((k + 1)); done
 wait
 cat /tmp/j[0-9]*/deqp.res > /tmp/deqp.res; cat /tmp/j[0-9]*/deqp.qpa > /tmp/deqp.qpa; cat /tmp/j[0-9]*/deqp.out > /tmp/deqp.out
 echo "elapsed $(( $(date +%s) - start )); each: $(cat /tmp/j[0-9]*/elapsed | tr '\n' ' ')"
-EOF`.replaceAll('API', api).replaceAll('LIMIT', String(LIMIT_S)).replace('JOBS', String(JOBS)).replace('IMAGES', process.env.QPA ? 'enable' : 'disable').replace('WATCHDOG', process.env.WATCHDOG ?? 'enable').replace('COMMAND', command.replace('/tmp/cases.txt', '$J/rest.txt')));
+EOF`.replaceAll('API', api).replaceAll('LIMIT', String(LIMIT_S)).replace('SPLIT', SPLIT).replace('IMAGES', process.env.QPA ? 'enable' : 'disable').replace('WATCHDOG', process.env.WATCHDOG ?? 'enable').replace('COMMAND', command.replace('/tmp/cases.txt', '$J/rest.txt')));
 const t0 = performance.now();
 const elapsed = await run('sh /tmp/deqp.sh', (LIMIT_S + 120) * 1000);
 const seconds = (performance.now() - t0) / 1000;

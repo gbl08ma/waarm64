@@ -328,19 +328,26 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Platform and devices
 
-- **dEQP-GLES: a census of the whole lists, and pass lists that grow to what passes** (the user's ask, 2026-11-06):
-  `tests/deqp/gles2.txt` and `gles3.txt` hold ~1,560 of the corpus's ~62,000 cases (17,165 GLES2, 44,768 GLES3):
-  every 50th case and a few whole groups that once caught bugs the sample missed, so `scripts/ci-deqp.sh` sees ~2.5% of
-  it and only broad regressions get caught. The whole lists last ran in G4 (2026-10-10, SwiftShader: GLES3 44,033 pass, 326
-  fail; its fixes after: occlusion queries, the colour mask, texture queries, then MSAA and DEPTH32F_STENCIL8;
-  `bench/gpu/results/g4-deqp/full-gles*`) and G5 (2026-10-19, ANGLE on Metal: GLES3 138 fail, GLES2 85, all but four put down
-  to the GPU; `results/g5-deqp-metal/full-gles*`); SwiftShader's leftovers after G4's fixes were never counted again,
-  and no report tallies those runs (their JSON and commit messages only). So there may be gaps nobody has seen since. The
-  task: (1) run both whole lists on SwiftShader again (slices, `bench/gpu/deqp-run.ts gles2|gles3` with `STRIDE`/`OFFSET`
-  or `PREFIX`) and class what fails, as VK4 T1's census did for dEQP-VK, each cause filed here; (2) grow the pass lists to
-  every case that passes (~60,000); (3) give `ci-deqp.sh` `ci-deqp-vk.sh`'s seeded sample (every 8th case of each group
-  from a drawn offset, the seed printed; `--full` the whole list) and its rule: a sample's failure is looked into at
-  once, or filed here and taken out of the list.
+- **virgl's caps from WebGL2's extensions, by what dEQP-GLES asks** (bench/gpu/REPORT.md "dEQP-GLES's census",
+  2026-11-09): `capsFromGl` (web/virgl-caps.ts) takes limits and formats from the browser's context but no capability
+  bit from an extension, and part of the census's "not supported" is what Chromium's WebGL2 offers on SwiftShader:
+  independent blending and per-buffer enables (`OES_draw_buffers_indexed`: GLES3's 79 `draw_buffers_indexed`,
+  `state_query.indexed` and `negative_api.fragment.blend_*i` cases; `virglCaps` leaves independent blending out as
+  if WebGL2 couldn't back it), clip control (`EXT_clip_control`, `VIRGL_CAP_CLIP_HALFZ`: GLES2's 8 `clip_control`
+  cases) and multiview (`OVR_multiview2`: GLES3's 3 `fbo.multiview` cases). `EXT_debug_marker` (GLES2's 3
+  `debug_marker` cases) is the guest's Mesa's: why it isn't exposed with `STRING_MARKER` advertised is to check. Each:
+  the renderer's side of its state (the blend state's per-target functions and enables, the rasterizer's clip
+  control), the bit set only where the browser has the extension (`capsBacked` then refuses a snapshot on a browser
+  without it), a test, and its cases into the pass lists (`bench/gpu/deqp-census.ts --lists` after a run of the group).
+  Desktop GL's programs gain too ("Desktop GL 3.0 and 3.1 on WebGL2" below has the rest of that list).
+- **dEQP-GLES's "not supported" that WebGL2 can't back as it is** (the census, as above): separate depth and stencil
+  attachments (GLES2's 91 `fbo.render.*depth_component16_stencil_index8`, GLES3's 12 `fbo.blit.depth_stencil`; WebGL
+  allows only one depth-stencil attachment: one `DEPTH24_STENCIL8` behind both would do) and sRGB R8 and RG8 textures
+  (GLES3's 64 `EXT_texture_sRGB_R8`/`RG8` cases: an `SRGB8_ALPHA8` texture with the channels expanded on upload). No
+  known program uses either; only if one does. The rest is beyond WebGL2 (wide lines, 8 samples, advanced blending,
+  `EXT_multisampled_render_to_texture`, 4 separate transform feedback components where GLES3's 108
+  `transform_feedback.array_element.separate` cases want more) or the run's configuration (`rgba8888d24s8ms0`: no
+  multisample default framebuffer, 32 cases).
 - **virtio-gpu errors in Firefox's pages session on the Mac's GPU** (2026-11-05, `bench/boot/REPORT.md` "What a function's
   size costs, in the VM and on the Mac"): with `VIRGL_GPU=virgl` on the Mac host (Chrome for Testing 157, the M4's
   GPU) the guest's kernel logs `virtio_gpu_dequeue_ctrl_func` errors while pages load: `ERR_UNSPEC` (0x1200) to a

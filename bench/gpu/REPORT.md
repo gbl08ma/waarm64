@@ -211,3 +211,59 @@ whole scanout on the CPU: 7 to 18 ms until the canvas has it, against 0.2 to 1 m
 canvas 2D where the renderer is software (SwiftShader, llvmpipe, Windows' Basic Render Driver), and the page tests,
 which run on SwiftShader, keep testing that screen; `?gpu=gl2d` forces WebGL2 (`WEBPC_PAGE_QUERY=gpu=2d,gl2d` runs the
 page tests on it), `?gpu=canvas2d` canvas 2D.
+
+## dEQP-GLES's census (2026-11-09)
+
+The whole GLES2 and GLES3 mustpass lists ran again on the dev VM's SwiftShader (Chromium 155.0.8059.84, ANGLE on
+SwiftShader's Vulkan; the guest images/deqp/build.sh's: Arch Linux, Mesa 26.2.4, kernel 7.2.9; commit `6216098f` plus
+this change), last counted whole at G4 (2026-10-10) before that track's last fixes. `bench/gpu/deqp-run.ts` over the
+lists' contiguous slices (`CASES`, 4 slices of GLES2's 17,165 cases and 10 of GLES3's 44,768), four dEQP processes a
+machine (`JOBS=4`), `PASSED=1 DETAIL=400`, two machines at once: ~55 min in all. `bench/gpu/deqp-census.ts` totals
+them (`results/gles-census/`: `census.json`, each slice's result without its passed names, `slices/`).
+
+| whole mustpass list | pass | fail | not supported | warnings |
+|---|---|---|---|---|
+| GLES2 (17,165) | 17,027 | 0 | 136 | 2 |
+| GLES3 (44,768) | 44,399 | 0 | 358 | 11 |
+
+G4's table, one GLES3 case more (a warning there). **No case fails**, and none crashed or hung. The warnings are
+G4's: `flush_finish.finish` and `finish_wait` (timing, both lists), highp `floor`'s precision on SwiftShader (8), and
+`fbo.completeness.renderable.renderbuffer.color0.rbo1_rbo2_rbo4`'s mixed sample counts (a status the spec allows).
+
+**What isn't supported, by dEQP's reason** (the 494 run again with `DETAIL_NOTSUPPORTED=1`:
+`results/gles-census/notsupported-gles*.json`):
+
+| cause | GLES2 | GLES3 | |
+|---|---|---|---|
+| separate depth and stencil attachments (WebGL allows one depth-stencil attachment) | 91 | 12 | could be emulated: backlog |
+| `EXT_draw_buffers_indexed` (WebGL2's `OES_draw_buffers_indexed` is there: a cap we don't take) | | 79 | **backlog** |
+| `EXT_clip_control` (WebGL2's `EXT_clip_control` is there: `CLIP_HALFZ`) | 8 | | **backlog** |
+| multiview (WebGL2's `OVR_multiview2` is there) | | 3 | **backlog** |
+| `EXT_debug_marker` (the guest's Mesa doesn't expose it) | 3 | | backlog |
+| `EXT_texture_sRGB_R8`, `_RG8` (not in WebGL2) | | 64 | could be emulated: backlog |
+| transform feedback's separate components (WebGL2's limit is GLES's minimum, 4) | | 108 | WebGL2 |
+| 8 samples (SwiftShader's WebGL2 has 4) | | 38 | the GPU |
+| wide lines (WebGL2's widths are 1) | 17 | 28 | WebGL2 |
+| `KHR_blend_equation_advanced`, `EXT_multisampled_render_to_texture` (not in WebGL2) | 1 | 10 | WebGL2 |
+| no multisample default framebuffer (the run's `rgba8888d24s8ms0` configuration) | 16 | 16 | the run |
+
+The probe of the page's WebGL2 (`OES_draw_buffers_indexed`, `EXT_clip_control`, `OVR_multiview2` offered;
+`MAX_TRANSFORM_FEEDBACK_SEPARATE_COMPONENTS` 4, `MAX_SAMPLES` 4) is what places each row.
+
+**The pass lists** are now every case that passed (`deqp-census.ts --lists`: 342 → 17,027 and 1,214 → 44,399, the
+old lists' every case among them), and `scripts/ci-deqp.sh` takes `ci-deqp-vk.sh`'s seeded sample of each (every 8th
+case of a group from a drawn offset; `tests/deqp-lists.ts`, shared), both machines at once, `--full` the whole lists.
+
+**dEQP's processes a machine** (a 448-case GLES3 slice, `STRIDE=100 OFFSET=7`; `results/gles-census/jobs/`): dEQP's
+own time 48 s at one process, 30 s at two, 27 s at four, the same results. Four it is (`WEBPC_DEQP_JOBS`): the gain
+past two is small, and more contexts side by side is more of what one process never does. Contiguous quarters of a
+slice are uneven: in the slice holding GLES3's `builtin_functions.precision` group (1,245 cases, up to 32 s each)
+the processes took 121, 1,500 (the limit: 76 cases left, all passing when run alone), 397 and 150 s.
+`deqp-run.ts`'s `JOBS_BLOCK=16` deals the list to the processes in blocks of 16 instead, which the test takes;
+dEQP-VK's runs keep contiguous blocks (its neighbours as in the list).
+
+| `scripts/ci-deqp.sh` (dev VM) | cases | seconds |
+|---|---|---|
+| before (the fixed lists) | 342 + 1,214 | ~360 |
+| a sample (seed 3630069298) | 2,221 + 5,739 | 546 |
+| `--full` | 17,027 + 44,399 | 2,873 (GLES2 1,085 s, GLES3 2,890 s, at once) |
