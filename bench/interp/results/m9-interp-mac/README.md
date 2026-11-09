@@ -13,3 +13,10 @@ bench/interp/REPORT.md "The block interpreter on the Mac, loop 1". The M4 Mac mi
   with it; `counts3.txt` the load/store causes.
 - `nocall/`: main against the build without calls in `hot`, `bench/interp/ab-mac.sh nc 3 main=… nocall=… -- dec_mips
   vm_dec_mmu_mips boot_alpine_dec`, rounds alternated (`nc-r<round>-<arm>-<bench>.json`).
+- `diag/counts4-s18.txt`, `diag/diag4.patch`: the counting core with 262,144 slots (`SLOTS_LOG2=18`) and the misaligned
+  stores counted apart (`g_o_align_st`, `g_s_align_st`; `g_o_align` and `g_s_align` are then the loads).
+- `slots/`: main (`a1ae06f4`) against 262,144 slots. `sl-<arm>-r<round>.json` and `.jit.jsonl.gz`: Firefox's pages
+  session from the snapshot with `PHASE_S=1` (`ab-pages.sh.txt`, rename to `.sh`; `pages-summary.txt` its lines: each
+  page's Firefox start + load, s, and their sum); `sg-r<round>-<arm>-<bench>.json`: the block-interpreter guests and the
+  JIT gates (`bench/interp/ab-mac.sh sg 3 … -- dec_mips vm_dec_mmu_mips boot_alpine_dec alpine_user_jit
+  boot_alpine_jit`).

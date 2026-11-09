@@ -368,7 +368,7 @@ its jump cache and hot words, its helper counts and its counters.
       at most a key per region slot, a few MB a table), when the jump cache lost it to another key; its decoded
       block then counts nothing, so its next jump-cache miss comes back here instead of running interpreted for
       16 dispatches;
-    - **a decoded block put back in its slot** (16,384 direct-mapped, [cpu.md](cpu.md) "The block interpreter"):
+    - **a decoded block put back in its slot** (262,144 direct-mapped, [cpu.md](cpu.md) "The block interpreter"):
       it keeps the quota it had left as well as its count, instead of reporting at once;
     - **a key with no instructions** (an SVC, say, at a block's start): the table's decoded blocks remember it
       (length 0, dropped with its page) and the cache was told the first time.

@@ -498,7 +498,7 @@ fn the_tables_share_the_budget() {
 /// back, it counts on without reporting (a report takes the JIT cache's lock).
 #[test]
 fn a_block_out_of_its_slot_keeps_its_quota() {
-    let t = TestRam::new(0x2_0000);
+    let t = TestRam::new(0x2000 + 4 * SLOTS);
     // Two blocks in one slot: add x0, x0, #1; ret.
     let (a, b) = (0x1000, 0x1000 + 4 * SLOTS as u64);
     for k in [a, b] {

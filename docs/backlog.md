@@ -71,14 +71,13 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
 - **What makes `hot` return in a browser** (counted 2026-11-09, `bench/interp/REPORT.md` "The block interpreter on the
   Mac, loop 1"; Firefox's pages session, 678 M block runs, `hot` entered 266 M times). Two causes are the
   interpreter's own:
-  - **Misaligned loads and stores**: ~7.8 M exits to the generic path (of ~19 M loads and stores off the fast path; TLB
-    misses ~5.2 M). A misaligned load within a page could stay inline (two aligned words and a funnel shift; the
-    architecture asks only for single-copy atomicity of bytes then, without LSE2); a store may write only its own
-    bytes. Split the count into loads and stores first.
-  - **Blocks out of their slot**: 82.5 M of the next-block lookups in `hot` find another block in its slot and return;
-    `count_out` runs 128.6 M times (a map lookup, and `slot_in`'s two). 65,536 slots instead of 16,384 halve both; a
-    hash folding in the higher PA bits does nothing; what the other half is (blocks evicted by clears, ICs, first
-    runs) isn't known.
+  - **Misaligned loads and stores**: ~7.8 M exits to the generic path (loads ~3.5 M, stores ~4.1 M; of ~19 M loads
+    and stores off the fast path, TLB misses ~5.2 M), ~0.3% of the busy time by loop 1's estimate. A misaligned load
+    within a page could stay inline (two aligned words and a funnel shift; the architecture asks only for single-copy
+    atomicity of bytes then, without LSE2); a store may write only its own bytes.
+  - **Blocks out of their slot**: 262,144 slots (from 16,384, 2026-11-09: "loop 2") took the misses from 82.5 M to
+    23.4 M and Firefox's starts and loads 4.4% faster. Each 4× has halved them, for 4× the memory (4 MiB a table now,
+    +15 MiB on four vCPUs): a smaller slot first (it needn't keep the key bits its index implies), then maybe more.
 
 - **More handlers, by workload** (`bench/interp/REPORT.md` "M8-INTERP loop 13" counted Alpine's boot's slow path).
   Left on the boots: CASP (a 128-bit atomic), STTR/LDTR (the EL0 TLB array from EL1: a second context in `Fast`),

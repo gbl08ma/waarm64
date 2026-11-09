@@ -100,7 +100,7 @@ What each built is in its doc; numbers in the reports it names. Open loose ends:
 | Guest RAM past memory 0, the JIT's spill arm | Done 2026-10-19, 2026-10-24 | [spill-memories.md](docs/spill-memories.md) |
 | A browser's code in the JIT (cache size, the memory signal, the compile worker, the cache's lock) | Done 2026-10-20 to 10-23 | [jit.md](docs/jit.md) |
 | The block interpreter's speed | Done 2026-10-22 | [cpu.md](docs/cpu.md) "The block interpreter", `bench/interp/REPORT.md` |
-| The block interpreter on the Mac host | **In progress since 2026-11-09**: why `hot` returns in a browser counted (slots, misaligned accesses), the two calls `hot` held taken out and checked (not a speedup) | `bench/interp/REPORT.md` "The block interpreter on the Mac", [backlog.md](docs/backlog.md) "Interpreter" |
+| The block interpreter on the Mac host | **In progress since 2026-11-09**: why `hot` returns in a browser counted (slots, misaligned accesses), the two calls `hot` held taken out and checked (not a speedup); 262,144 decoded-block slots: Firefox's starts and loads 4.4% faster | `bench/interp/REPORT.md` "The block interpreter on the Mac", [backlog.md](docs/backlog.md) "Interpreter" |
 | Remote disks | Done 2026-10-23 | [remote-disks.md](docs/remote-disks.md), `bench/remote-disk/REPORT.md` |
 | Self-hosted debug | Done 2026-10-23 | [cpu.md](docs/cpu.md) "Self-hosted debug" |
 | Shared folders | Done 2026-10-31 | [shares.md](docs/shares.md), `bench/shares/REPORT.md` |

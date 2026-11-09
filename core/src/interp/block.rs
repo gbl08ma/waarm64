@@ -2444,8 +2444,13 @@ pub const MAX_BUDGET: usize = 1 << 23;
 pub fn budget(tables: usize) -> usize {
     (BUDGET / tables.max(1)).min(MAX_BUDGET)
 }
-/// Direct-mapped entries in front of the map.
-const SLOTS: usize = 16384;
+/// Direct-mapped entries in front of the map (4 MiB a table). A browser's
+/// interpreted code is a large working set: 16,384 slots missed 82.5 M of
+/// `hot`'s next-block lookups in Firefox's pages session, 262,144 miss 23.4 M,
+/// and its starts and loads ran 4.4% faster (folding higher PA bits into the
+/// index changed nothing: capacity, not conflicts; bench/interp/REPORT.md "The
+/// block interpreter on the Mac, loop 2").
+const SLOTS: usize = 1 << 18;
 
 /// Micro-ops of a table's budget per key its map holds before it starts
 /// over, at most [`MAX_KEYS`]: blocks of one micro-op (or none: an SVC at a

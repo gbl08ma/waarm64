@@ -2110,3 +2110,39 @@ core in one session, where they decide (the slot hash above); `hot`'s per-micro-
 guests (`bench/interp/ab-mac.sh … -- dec_mips vm_dec_mmu_mips boot_alpine_dec`, three rounds, ~18 min); Firefox's
 pages session where a change is about cold, short-block code the small guests don't have; the JIT gates and the full
 pages session once per batch of kept changes.
+
+## The block interpreter on the Mac, loop 2: 262,144 slots (2026-11-09)
+
+Loop 1's counts had `hot` return for a next block out of its slot 82.5 M times in Firefox's pages session (16,384
+slots, direct-mapped). With 262,144 (4 MiB a table; `diag/counts4-s18.txt`): 23.4 M, `count_out` 128.6 → 49.3 M,
+`hot`'s entries per block run 0.392 → 0.307. Each 4× about halved the misses (65,536: 44.0 M) and folding higher PA
+bits into the index did nothing: the interpreted code's working set, not conflicts. Raw: `results/m9-interp-mac/slots/`.
+
+**Firefox's pages session** from the snapshot (`PHASE_S=1`; each page's Firefox start and load, which run the cold
+code, summed), three rounds alternated:
+
+| | r1 | r2 | r3 | median |
+|---|---|---|---|---|
+| main (`a1ae06f4`) | 84.0 | 82.0 | 83.6 | 83.6 s |
+| **262,144 slots** | 80.8 | 79.3 | 79.9 | **79.9 s (−4.4%)** |
+
+Every page's start and load moved (wiki 17.4 + 6.1 → 16.8 + 6.3 s, BBC 14.2 + 6.8 → 13.6 + 6.5); interpreted steps
+3.38-3.41 G in both arms. **The block-interpreter guests and the JIT gates**, three rounds alternated:
+
+| | main | **262,144 slots** |
+|---|---|---|
+| `dec_mips` | 514.6 · 515.0 · 515.0 | 515.3 · 514.6 · 513.3 (even) |
+| `vm_dec_mmu_mips` | 507.5 · 514.5 · 505.8 | 515.7 · 509.9 · 515.4 (even; this one's rounds spread ~2%) |
+| Alpine's boot through the block interpreter, MIPS | 242.5 · 240.0 · 240.0 | **254.8 · 254.9 · 254.7 (+6.1%)** |
+| Alpine's boot under the JIT, total ms | 4,156 · 4,164 · 4,105 | **4,047 · 4,065 · 4,071 (−2.0%)** |
+| Alpine's userspace under the JIT, total ms | 10,934 · 11,068 · 10,944 | 10,887 · 10,908 · 10,894 (−0.4%) |
+
+Kept, **for memory**: the slots go from 256 KiB to 4 MiB a table, written at allocation (an empty slot's key is all
+ones), so +15 MiB resident on four vCPUs and +30 on eight, of the core's 1 GiB heap; in this session the decoded
+blocks' arenas held ~198 MiB (`decBytes`) and the renderer ~3.5 GiB (loop 13's VM figure: these sessions didn't record
+its RSS). Not tried: more slots (1 M would be +60 MiB on four vCPUs), before a smaller slot (one needn't keep the key
+bits its index implies).
+
+**Misaligned accesses, loads and stores apart** (the same counting session): LdO loads ~2.1 M and stores ~3.3 M, the
+other single accesses' loads ~1.4 M and stores ~0.8 M. With loop 1's estimate (a `hot` return and the generic path,
+a few tens of ns each) they are ~0.3% of the busy vCPU time, much less than the slots were.

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Firefox's pages session (from the snapshot, PHASE_S=1) alternated between core arms on the Mac; prints each
+# session's Firefox starts and loads (s) and their sum.   ab-pages.sh <prefix> <rounds> <name>=<wasm>...
+cd ~/Development/webpc
+D=bench/results/local/interp
+prefix=$1 rounds=$2; shift 2
+arms=("$@"); na=${#arms[@]}
+for ((r = 1; r <= rounds; r++)); do
+  for ((k = 0; k < na; k++)); do
+    a=${arms[$(( (k + r - 1) % na ))]}; name=${a%%=*}; wasm=${a#*=}; tag=$prefix-$name-r$r
+    WASM=$wasm SCRIPT=firefox-load.ts FROM_SNAPSHOT=target/snapbench/pages.webpcsnap PHASES=pages PHASE_S=1 JITLOG=1 WEBPC_GUEST_USER=alarm MAC_TIMEOUT=600 \
+      timeout 800 bench/gpu/sway-mac.sh virgl target/archarm/desktop.qcow2 $tag > $D/$tag.txt 2>&1 || echo "  $tag exit $?"
+    node -e '
+      const r = require(process.argv[1]); let s = 0; const o = [];
+      for (const k of Object.keys(r)) if (k.startsWith("page-")) { const v = r[k].started + r[k].loadMs / 1000; s += v; o.push(k.slice(5) + " " + r[k].started + "+" + (r[k].loadMs / 1000).toFixed(1)); }
+      const j = require("fs").readFileSync(process.argv[2], "utf8").trim().split("\n"); const last = { decSteps: Number(/"decSteps":(\d+)/.exec(j[j.length - 1])?.[1]) };
+      console.log(`${process.argv[3]}: ${o.join(", ")}; sum ${s.toFixed(1)} s; interpreted ${(last.decSteps / 1e9).toFixed(2)} G`);
+    ' "$PWD/bench/results/local/$tag/results.json" "$PWD/bench/results/local/$tag/jit.jsonl" "$tag" 2>&1 | tail -1
+  done
+done
+timeout 60 bench/gpu/mac-leftovers.sh 2>&1 | tail -1

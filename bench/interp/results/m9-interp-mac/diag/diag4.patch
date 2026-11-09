@@ -1,0 +1,552 @@
+diff --git a/core/src/interp.rs b/core/src/interp.rs
+index 120ae05a..61ddd630 100644
+--- a/core/src/interp.rs
++++ b/core/src/interp.rs
+@@ -5,6 +5,7 @@
+ //! takes them into EL1 the way hardware does.
+ 
+ pub(crate) mod block;
++pub mod diag;
+ pub mod debug;
+ mod float;
+ mod ldst;
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index 4a3e794f..c74589e4 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -26,6 +26,7 @@ use crate::decode::Op;
+ use crate::mem::{self, Host, Mem};
+ use crate::mmu::{Bus, Entry, Flat, Mmu, Slots, TLB_ENTRIES, Use};
+ use std::collections::HashMap;
++use super::diag as D;
+ 
+ /// Micro-op kinds. Field use is listed per kind; `x` holds flags packed as
+ /// noted, `imm` a pre-computed immediate.
+@@ -1401,7 +1402,10 @@ pub fn hot<B: Fast>(
+             let o = unsafe { &*u };
+             let (d, n, w) = (o.d as u32, o.n as u32, o.w);
+             match o.kind() {
+-                K::Generic | K::LdLit => break 'run SLOW,
++                K::Generic | K::LdLit => {
++                    dec.diag.inc(D::SLOW_GENERIC);
++                    break 'run SLOW;
++                }
+                 K::Lse => {
+                     let base = rsp(c, n);
+                     if n == 31 && base & 15 != 0 {
+@@ -1841,6 +1845,7 @@ pub fn hot<B: Fast>(
+                 K::Ld | K::St => {
+                     let base = rsp(c, n);
+                     if n == 31 && base & 15 != 0 {
++                        D::g(4);
+                         break 'run SLOW;
+                     }
+                     let imm = (w as i32 >> 16) as i64 as u64;
+@@ -1859,18 +1864,22 @@ pub fn hot<B: Fast>(
+                     let bytes = 1 << (w & 3);
+                     if o.k == K::St as u8 {
+                         let Some(p) = m.fast_in(fx, addr, bytes, Use::Write) else {
++                            D::g(2);
+                             break 'run SLOW;
+                         };
+                         // SAFETY: `fast_in` found `bytes` bytes of RAM at `p`.
+                         if !unsafe { mem::store_aligned(p, bytes, ra(c, d)) } {
++                            D::g(13);
+                             break 'run SLOW;
+                         }
+                     } else {
+                         let Some(p) = m.fast_in(fx, addr, bytes, Use::Read) else {
++                            D::g(2);
+                             break 'run SLOW;
+                         };
+                         // SAFETY: as for the store.
+                         let Some(v) = (unsafe { mem::load_aligned(p, bytes) }) else {
++                            D::g(3);
+                             break 'run SLOW;
+                         };
+                         let v = match w >> 4 & 3 {
+@@ -1897,27 +1906,40 @@ pub fn hot<B: Fast>(
+         // The block's prefix ran: on to the next, as `jit::interpret` goes.
+         (pc, u) = (next, end);
+         if rest == 0 {
++            dec.diag.inc(D::ST_STOP_REST);
+             break 'run STOP;
+         }
+-        let k = if (next ^ bpc) < 0x1000 && next & 3 == 0 {
++        let same = (next ^ bpc) < 0x1000 && next & 3 == 0;
++        let k = if same {
+             key & !0xfff | next & 0xffc | key & 3
+         } else if next & 3 == 0
+             && let Some(k) = m.ikey(c, next)
+         {
+             k
+         } else {
++            dec.diag.inc(D::ST_NEXT_IKEY);
+             break 'run NEXT;
+         };
+         if compiled(k) {
++            dec.diag.inc(D::ST_STOP_COMPILED);
+             break 'run STOP;
+         }
+-        let s = &mut dec.slots[slot(k)];
+-        if s.key != k {
++        if dec.slots[slot(k)].key != k {
++            dec.diag.inc(D::ST_NEXT_SLOT);
+             break 'run NEXT;
+         }
+-        if s.hits >= s.quota as u16 {
++        if dec.slots[slot(k)].hits >= dec.slots[slot(k)].quota as u16 {
++            dec.diag.inc(D::ST_STOP_QUOTA);
++            if same {
++                dec.diag.inc(D::STOP_QUOTA_SAMEPAGE);
++            }
+             break 'run STOP;
+         }
++        dec.diag.inc(D::CHAINED);
++        if same {
++            dec.diag.inc(D::CHAINED_SAMEPAGE);
++        }
++        let s = &mut dec.slots[slot(k)];
+         s.hits += 1;
+         let n = (s.len as u64).min(rest);
+         // SAFETY: a slotted block's micro-ops are in the arena.
+@@ -1928,6 +1950,10 @@ pub fn hot<B: Fast>(
+         (key, bpc) = (k, next);
+     };
+     (r.u, r.end, r.pc, r.key, r.bpc, r.done) = (u, end, pc, key, bpc, r.left - rest);
++    dec.diag.inc(D::HOT_CALLS);
++    if status == SLOW {
++        dec.diag.inc(D::ST_SLOW);
++    }
+     if status != SLOW {
+         c.pc = pc;
+     }
+@@ -2070,22 +2096,33 @@ fn single_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
+     let (d, n) = (o.d as u32, o.n as u32);
+     let base = rsp(c, n);
+     if n == 31 && base & 15 != 0 {
++        D::g(8);
+         return false;
+     }
+     let addr = base.wrapping_add((o.w as i32 >> 16) as i64 as u64);
+     let bytes = 4 << (o.w & 1);
++    if (addr & 0xfff) + bytes as u64 > 0x1000 {
++        D::g(11);
++    }
+     if o.k == K::StO as u8 {
+         let Some(p) = m.fast_in(fx, addr, bytes, Use::Write) else {
++            D::g(0);
+             return false;
+         };
+         // SAFETY: `fast_in` found `bytes` bytes of RAM at `p`.
+-        unsafe { mem::store_aligned(p, bytes, ra(c, d)) }
++        let ok = unsafe { mem::store_aligned(p, bytes, ra(c, d)) };
++        if !ok {
++            D::g(12);
++        }
++        ok
+     } else {
+         let Some(p) = m.fast_in(fx, addr, bytes, Use::Read) else {
++            D::g(0);
+             return false;
+         };
+         // SAFETY: as for the store.
+         let Some(v) = (unsafe { mem::load_aligned(p, bytes) }) else {
++            D::g(1);
+             return false;
+         };
+         wr(c, d, v);
+@@ -2100,6 +2137,7 @@ fn pair_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
+     let (d, n) = (o.d as u32, o.n as u32);
+     let base = rsp(c, n);
+     if n == 31 && base & 15 != 0 {
++        D::g(7);
+         return false;
+     }
+     let (size, mode) = (o.w & 15, o.w >> 8 & 3);
+@@ -2114,9 +2152,11 @@ fn pair_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
+     let w = if ldp { Use::Read } else { Use::Write };
+     // One probe of both registers' bytes: a pair across pages takes the slow path.
+     let Some(p1) = m.fast_in(fx, addr, 2 * size, w) else {
++        D::g(5);
+         return false;
+     };
+     if p1 as usize & (size as usize - 1) != 0 {
++        D::g(6);
+         return false;
+     }
+     let p2 = p1.wrapping_add(size as usize);
+@@ -2445,7 +2485,21 @@ pub fn budget(tables: usize) -> usize {
+     (BUDGET / tables.max(1)).min(MAX_BUDGET)
+ }
+ /// Direct-mapped entries in front of the map.
+-const SLOTS: usize = 16384;
++const SLOTS: usize = 1 << match option_env!("SLOTS_LOG2") {
++    Some(v) => konst_parse(v),
++    None => 14,
++};
++const SLOT_XOR: bool = option_env!("SLOT_XOR").is_some();
++const fn konst_parse(s: &str) -> usize {
++    let b = s.as_bytes();
++    let mut i = 0;
++    let mut n = 0;
++    while i < b.len() {
++        n = n * 10 + (b[i] - b'0') as usize;
++        i += 1;
++    }
++    n
++}
+ 
+ /// Micro-ops of a table's budget per key its map holds before it starts
+ /// over, at most [`MAX_KEYS`]: blocks of one micro-op (or none: an SVC at a
+@@ -2550,11 +2604,16 @@ pub struct Cache {
+     pub decoded: u64,
+     pub clears: u64,
+     pub rescues: u64,
++    pub diag: super::diag::Diag,
+ }
+ 
+ #[inline(always)]
+ fn slot(key: u64) -> usize {
+-    (key >> 2) as usize & (SLOTS - 1)
++    if SLOT_XOR {
++        ((key >> 2) ^ (key >> 16)) as usize & (SLOTS - 1)
++    } else {
++        (key >> 2) as usize & (SLOTS - 1)
++    }
+ }
+ 
+ impl Cache {
+@@ -2574,6 +2633,7 @@ impl Cache {
+             decoded: 0,
+             clears: 0,
+             rescues: 0,
++            diag: Default::default(),
+         }
+     }
+ 
+@@ -2593,9 +2653,13 @@ impl Cache {
+     #[inline(never)]
+     fn miss(&mut self, key: u64, mem: &Mem) -> Option<(u32, u32)> {
+         match self.map.get(&key) {
+-            Some(e) if e.len() == 0 => return None,
+-            Some(_) => {}
++            Some(e) if e.len() == 0 => {
++                self.diag.inc(D::MISS_LEN0);
++                return None;
++            }
++            Some(_) => self.diag.inc(D::MISS_MAP),
+             None => {
++                self.diag.inc(D::MISS_DECODE);
+                 let mut wide = crate::jit::block::form_with(mem, key & !3, |w, op| {
+                     uop_el(w, op, key & 1 != 0)
+                 });
+@@ -2694,11 +2758,13 @@ impl Cache {
+     /// quota it had left, it counts on without reporting.
+     #[inline(never)]
+     fn count_out(&mut self, key: u64) -> bool {
++        self.diag.inc(D::COUNT_OUT);
+         match self.map.get(&key) {
+             Some(e) if e.len() != 0 && e.hits < e.quota => {}
+             _ => return false,
+         }
+         self.slot_in(key);
++        self.diag.inc(D::COUNT_OUT_TRUE);
+         let s = &mut self.slots[slot(key)];
+         s.hits += 1;
+         true
+diff --git a/core/src/interp/diag.rs b/core/src/interp/diag.rs
+new file mode 100644
+index 00000000..7769d822
+--- /dev/null
++++ b/core/src/interp/diag.rs
+@@ -0,0 +1,147 @@
++//! DIAGNOSTIC (interpreter speed on the Mac; not for commit): why `hot` returns and what its
++//! callers do then, per table. Dumped as `webpc-slow diag2` lines every 20 s.
++
++pub struct Diag {
++    pub c: [u64; N],
++    last: f64,
++}
++
++pub const NAMES: [&str; N] = [
++    "interp_calls",
++    "interp_none",
++    "hot_calls",
++    "st_stop_rest",
++    "st_stop_compiled",
++    "st_stop_quota",
++    "st_slow",
++    "st_next_ikey",
++    "st_next_slot",
++    "chained",
++    "slow_uops",
++    "slow_exit",
++    "slow_nochain",
++    "nx_key_none",
++    "nx_compiled",
++    "nx_count_false",
++    "nx_get_none",
++    "nx_entered",
++    "count_out",
++    "count_out_true",
++    "miss_map",
++    "miss_len0",
++    "miss_decode",
++    "enter_counted",
++    "enter_miss",
++    "jmiss_empty",
++    "jmiss_known",
++    "jmiss_skipped",
++    "jmiss_locked",
++    "slow_ld",
++    "slow_generic",
++    "nx_samepage",
++    "chained_samepage",
++    "stop_quota_samepage",
++    "jmiss_ok",
++];
++pub const N: usize = 35;
++
++pub const INTERP_CALLS: usize = 0;
++pub const INTERP_NONE: usize = 1;
++pub const HOT_CALLS: usize = 2;
++pub const ST_STOP_REST: usize = 3;
++pub const ST_STOP_COMPILED: usize = 4;
++pub const ST_STOP_QUOTA: usize = 5;
++pub const ST_SLOW: usize = 6;
++pub const ST_NEXT_IKEY: usize = 7;
++pub const ST_NEXT_SLOT: usize = 8;
++pub const CHAINED: usize = 9;
++pub const SLOW_UOPS: usize = 10;
++pub const SLOW_EXIT: usize = 11;
++pub const SLOW_NOCHAIN: usize = 12;
++pub const NX_KEY_NONE: usize = 13;
++pub const NX_COMPILED: usize = 14;
++pub const NX_COUNT_FALSE: usize = 15;
++pub const NX_GET_NONE: usize = 16;
++pub const NX_ENTERED: usize = 17;
++pub const COUNT_OUT: usize = 18;
++pub const COUNT_OUT_TRUE: usize = 19;
++pub const MISS_MAP: usize = 20;
++pub const MISS_LEN0: usize = 21;
++pub const MISS_DECODE: usize = 22;
++pub const ENTER_COUNTED: usize = 23;
++pub const ENTER_MISS: usize = 24;
++pub const JMISS_EMPTY: usize = 25;
++pub const JMISS_KNOWN: usize = 26;
++pub const JMISS_SKIPPED: usize = 27;
++pub const JMISS_LOCKED: usize = 28;
++pub const SLOW_LD: usize = 29;
++pub const SLOW_GENERIC: usize = 30;
++pub const NX_SAMEPAGE: usize = 31;
++pub const CHAINED_SAMEPAGE: usize = 32;
++pub const STOP_QUOTA_SAMEPAGE: usize = 33;
++pub const JMISS_OK: usize = 34;
++
++fn now() -> f64 {
++    #[cfg(target_arch = "wasm32")]
++    // SAFETY: a host function with no preconditions.
++    return unsafe { crate::vm::now_ms() };
++    #[cfg(not(target_arch = "wasm32"))]
++    0.0
++}
++
++#[cfg(target_arch = "wasm32")]
++#[link(wasm_import_module = "env")]
++unsafe extern "C" {
++    fn diag_log(ptr: *const u8, len: usize);
++}
++
++impl Default for Diag {
++    fn default() -> Diag {
++        Diag { c: [0; N], last: 0.0 }
++    }
++}
++
++impl Diag {
++    #[inline(always)]
++    pub fn inc(&mut self, i: usize) {
++        self.c[i] += 1;
++    }
++
++    #[inline(always)]
++    pub fn add(&mut self, i: usize, n: u64) {
++        self.c[i] += n;
++    }
++
++    pub fn tick(&mut self, id: usize, dec_steps: u64) {
++        let t = now();
++        if t - self.last < 20_000.0 {
++            return;
++        }
++        self.last = t;
++        let mut s = format!("webpc-slow diag2 {id:x} t {t:.0} dec_steps {dec_steps}");
++        for (n, v) in NAMES.iter().zip(self.c.iter()) {
++            s += &format!(" {n} {v}");
++        }
++        for (n, v) in GNAMES.iter().zip(G.iter()) {
++            s += &format!(" g_{n} {}", v.load(core::sync::atomic::Ordering::Relaxed));
++        }
++        #[cfg(target_arch = "wasm32")]
++        // SAFETY: the host reads `len` bytes at `ptr`.
++        unsafe {
++            diag_log(s.as_ptr(), s.len())
++        };
++        #[cfg(not(target_arch = "wasm32"))]
++        let _ = s;
++    }
++}
++
++/// Global diagnostic counters (relaxed atomics): the load/store fast paths' misses.
++pub static G: [core::sync::atomic::AtomicU64; GN] = [const { core::sync::atomic::AtomicU64::new(0) }; GN];
++pub const GN: usize = 14;
++pub const GNAMES: [&str; GN] = [
++    "o_tlb", "o_align", "s_tlb", "s_align", "s_sp", "p_tlb", "p_align", "p_sp", "o_sp", "fp_any", "other_ld", "o_cross", "o_align_st", "s_align_st",
++];
++#[inline(always)]
++pub fn g(i: usize) {
++    G[i].fetch_add(1, core::sync::atomic::Ordering::Relaxed);
++}
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 2217dab9..1f8d8ec4 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -1856,8 +1856,10 @@ impl Jit {
+             return Ok((j.idx, j.len));
+         }
+         if self.table.dec.count(key) {
++            self.table.dec.diag.inc(interp::diag::ENTER_COUNTED);
+             return Err(0);
+         }
++        self.table.dec.diag.inc(interp::diag::ENTER_MISS);
+         self.miss(key, va, mem)
+     }
+ 
+@@ -1880,6 +1882,7 @@ impl Jit {
+         // and its next dispatch asks again. The waits had come to sit behind
+         // a table emitting a module, a millisecond or more.
+         if self.table.dec.empty(key) {
++            self.table.dec.diag.inc(interp::diag::JMISS_EMPTY);
+             return Err(1);
+         }
+         let len = self.table.dec.decode(key, mem);
+@@ -1887,6 +1890,7 @@ impl Jit {
+             && let Some(&(idx, n)) = self.table.known.get(&key)
+         {
+             self.table.dec.counted(key);
++            self.table.dec.diag.inc(interp::diag::JMISS_KNOWN);
+             self.table.dec.quota(key, 0);
+             self.table.fill(key, idx, n);
+             return Ok((idx, n));
+@@ -1894,6 +1898,7 @@ impl Jit {
+         let mut c = if Arc::strong_count(&self.cache) > 1 {
+             let Some(c) = self.cache.try_lock() else {
+                 self.table.stats.lock_skipped += 1;
++                self.table.dec.diag.inc(interp::diag::JMISS_SKIPPED);
+                 return Err(len.unwrap_or(1));
+             };
+             self.table.stats.locks += 1;
+@@ -1906,6 +1911,7 @@ impl Jit {
+         // The table catches up after the miss, which may have compiled (or
+         // flushed): an entry it fills now and a catch-up then clears is only
+         // a later miss. What it returns is installed before any block runs.
++        self.table.dec.diag.inc(interp::diag::JMISS_LOCKED);
+         let n = self.table.dec.counted(key) + 1;
+         let (r, quota) = c.miss(&mut self.table, key, va, mem, n, len);
+         self.table.dec.quota(key, quota);
+@@ -1921,6 +1927,7 @@ impl Jit {
+                 }
+                 self.table.known.insert(key, (idx, len));
+                 self.table.dec.quota(key, 0);
++                self.table.dec.diag.inc(interp::diag::JMISS_OK);
+                 self.table.fill(key, idx, len);
+                 Ok((idx, len))
+             }
+@@ -2359,8 +2366,13 @@ fn interpret<B: Regime>(
+     left: u64,
+ ) -> Option<(u64, Option<Exit>)> {
+     use interp::block::{NEXT, SLOW, STOP};
++    use interp::diag as D;
+     let pc = cpu.pc;
+-    let b = t.dec.get(key, mem)?;
++    t.dec.diag.inc(D::INTERP_CALLS);
++    let Some(b) = t.dec.get(key, mem) else {
++        t.dec.diag.inc(D::INTERP_NONE);
++        return None;
++    };
+     let mut r = interp::block::Run::new(left);
+     r.enter(b, key, pc);
+     let res = loop {
+@@ -2369,10 +2381,12 @@ fn interpret<B: Regime>(
+             STOP => break (r.done, None),
+             SLOW => {
+                 let (n, u, last) = r.stretch();
++                t.dec.diag.add(D::SLOW_UOPS, n as u64);
+                 let before = r.retired();
+                 let a = t.dec.arena();
+                 let (k, e) = interp::block::run(cpu, m, &a[r.at(a)..], n, r.pc);
+                 if e.is_some() {
++                    t.dec.diag.inc(D::SLOW_EXIT);
+                     break (before + k, e);
+                 }
+                 if !last {
+@@ -2382,6 +2396,7 @@ fn interpret<B: Regime>(
+                 // The block's prefix ran: the PC is the next instruction's
+                 // (or a generic one's branch).
+                 if r.done >= left || !u.chains() {
++                    t.dec.diag.inc(D::SLOW_NOCHAIN);
+                     break (r.done, None);
+                 }
+             }
+@@ -2390,22 +2405,35 @@ fn interpret<B: Regime>(
+         // The next block, through the slow paths.
+         let next = cpu.pc;
+         let k = if (next ^ r.bpc) < 0x1000 && next & 3 == 0 {
++            t.dec.diag.inc(D::NX_SAMEPAGE);
+             r.key & !0xfff | next & 0xffc | r.key & 3
+         } else {
+             match m.key(cpu, next) {
+                 Some(k) => k,
+-                None => break (r.done, None),
++                None => {
++                    t.dec.diag.inc(D::NX_KEY_NONE);
++                    break (r.done, None);
++                }
+             }
+         };
+-        if t.jc[jc_index(k)].key == k || !t.dec.count(k) {
++        if t.jc[jc_index(k)].key == k {
++            t.dec.diag.inc(D::NX_COMPILED);
++            break (r.done, None);
++        }
++        if !t.dec.count(k) {
++            t.dec.diag.inc(D::NX_COUNT_FALSE);
+             break (r.done, None);
+         }
+         let Some(b) = t.dec.get(k, mem) else {
++            t.dec.diag.inc(D::NX_GET_NONE);
+             break (r.done, None);
+         };
+         r.enter(b, k, next);
++        t.dec.diag.inc(D::NX_ENTERED);
+     };
+     t.stats.dec_steps += res.0 + res.1.is_some_and(Exit::retired) as u64;
++    let id = t as *const Table as usize;
++    t.dec.diag.tick(id, t.stats.dec_steps);
+     (t.stats.decoded, t.stats.dec_clears) = (t.dec.decoded, t.dec.clears);
+     t.stats.rescues += core::mem::take(&mut t.dec.rescues);
+     Some(res)
+diff --git a/web/vm.ts b/web/vm.ts
+index f69f483e..d09b4945 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -93,7 +93,7 @@ export function coreImports(memory: WebAssembly.Memory, clock = performance.time
+   const wrap = <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F) => hooks.reduce((g, h) => h(where, g), f);
+   const now_ms = wrap('clock', () => clock + performance.now());
+   const jit = jitHost(memory, now_ms, compile, spill);
+-  return { env: { memory, now_ms, jit_install: wrap('install', jit.install), jit_compile: jit.compile }, ram: spillImports(spill), jit };
++  return { env: { memory, now_ms, jit_install: wrap('install', jit.install), jit_compile: jit.compile, diag_log: (p: number, l: number) => console.debug(new TextDecoder().decode(new Uint8Array(memory.buffer, p >>> 0, l).slice())) }, ram: spillImports(spill), jit };
+ }
+ 
+ /**

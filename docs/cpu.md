@@ -506,7 +506,8 @@ line) made `ldst_fp::exec`'s result `initializes((0, 1))`, and the loop reads th
   counts on instead of reporting at once (before, 62% of the cache's lock acquisitions in Firefox's pages session).
   A key with no instructions (an SVC first, say) is kept too, with length 0, so the dispatcher asks the JIT's cache
   about it once ([jit.md](jit.md) "Sharing").
-- **The cache** (per JIT table, so per vCPU in parallel SMP): 16,384 direct-mapped slots, a map,
+- **The cache** (per JIT table, so per vCPU in parallel SMP): 262,144 direct-mapped slots (4 MiB; a browser's
+  interpreted code is a large working set: 16,384 missed 3.5 times as many next blocks), a map,
   and the micro-ops in one arena, which starts over when full. **The arenas share 16M micro-ops
   (128 MiB, with the blocks' constants among them) among a VM's tables, at most 8M a table** (`interp::block::budget`, through
   `jit::Config::decoded`): 8M on one or two vCPUs, 4M on four, 2M on eight; they grow as they
