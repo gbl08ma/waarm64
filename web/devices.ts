@@ -631,8 +631,20 @@ export function inputConfig(kind: InputSpec['kind'], select: number, subsel: num
 const INPUT_QUEUE = 1024; // events held while the guest has posted no event buffer
 
 /**
+ * Trims queued virtio-input events to at most `max` by dropping the oldest whole frames (through a SYN_REPORT), so the
+ * guest never gets a frame without its head; a frame cut with no SYN_REPORT after the cut goes whole.
+ */
+export function trimInput(events: number[][], max = INPUT_QUEUE): void {
+  const excess = events.length - max;
+  if (excess <= 0) return;
+  let end = events.findIndex((e, i) => i >= excess - 1 && e[0] === 0 && e[1] === 0);
+  if (end < 0) end = events.length - 1;
+  events.splice(0, end + 1);
+}
+
+/**
  * virtio-input: events from `port` fill the guest's event buffers, 8 bytes
- * each (type u16, code u16, value s32), the oldest dropped past INPUT_QUEUE;
+ * each (type u16, code u16, value s32), the oldest frames dropped past INPUT_QUEUE (`trimInput`);
  * status events from the guest go to `port`.
  */
 function input(ctx: Ctx, d: InputSpec): Backend {
@@ -653,7 +665,7 @@ function input(ctx: Ctx, d: InputSpec): Backend {
   const inject = (e: number[][]) => {
     if (e.some((x) => x[0] === 1)) busy.events?.push(performance.timeOrigin + performance.now(), 1);
     events.push(...e);
-    events.splice(0, Math.max(0, events.length - INPUT_QUEUE));
+    trimInput(events);
     deliver();
   };
   if (d.port) d.port.onmessage = (e: MessageEvent) => inject(e.data);

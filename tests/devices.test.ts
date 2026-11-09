@@ -1,5 +1,5 @@
 // Device backends without a guest: the 9P2000.L server (web/9p.ts), the
-// loopback network adapter (web/net.ts), virtio-input's config answers, and
+// loopback network adapter (web/net.ts), virtio-input's config answers and queue, and
 // the blk and net backends' I/O counters (the page's status, `Ctx.io`), the
 // poll's records from before a reset, and the doorbell's server's end
 // (`Devices.serve`, parallel mode in Node).
@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { MemoryTree, P9Server, type P9Tree } from '../web/9p.ts';
-import { blk, deviceEntry, Devices, inputConfig, net, type Ctx } from '../web/devices.ts';
+import { blk, deviceEntry, Devices, inputConfig, net, trimInput, type Ctx } from '../web/devices.ts';
 import { memFile } from '../web/overlay.ts';
 import { loopback, PEER_IP, PEER_MAC } from '../web/net.ts';
 
@@ -354,6 +354,20 @@ test('loopback adapter answers ARP and ping for the peer, and nothing else', () 
   assert.equal(r[34], 0, 'echo reply');
   assert.equal(sum(r.slice(34)), 0, 'ICMP checksum');
   assert.deepEqual(r.slice(38), icmp.slice(4), 'identifier, sequence and data kept');
+});
+
+test('virtio-input drops the oldest whole frames past its queue', () => {
+  const key = (code: number) => [[1, code, 1], [0, 0, 0], [1, code, 0], [0, 0, 0]];
+  const q = [...key(30), ...key(31), ...key(32)]; // 12 events, frames of 2
+  trimInput(q, 12);
+  assert.equal(q.length, 12, 'within the bound: kept');
+  trimInput(q, 11); // one too many: the first frame goes, not just its press
+  assert.deepEqual(q, [...key(30).slice(2), ...key(31), ...key(32)]);
+  trimInput(q, 7); // three too many, a cut after 31's press: through its SYN_REPORT
+  assert.deepEqual(q, [...key(31).slice(2), ...key(32)]);
+  const open = [[1, 30, 1], [1, 31, 1], [1, 32, 1]]; // a frame with no SYN_REPORT yet, cut: all of it
+  trimInput(open, 2);
+  assert.deepEqual(open, []);
 });
 
 test('virtio-input config answers', () => {

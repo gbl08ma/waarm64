@@ -117,7 +117,16 @@ function handshake() {
   assert.deepEqual([n.id, n.event, new TextDecoder().decode(n.extra)], [0, PORT_NAME, AGENT_PORTS[0]], 'named on PORT_READY');
   const open = parse(g.read(ctl[2], 8));
   assert.deepEqual([open.id, open.event, open.value], [0, PORT_OPEN, 1], 'the host end is open');
-  return { g, dev, page: port1, ctl };
+  /** Resolves once the device has handled the page's next message (for one it answers nothing to). */
+  const handled = () => new Promise<void>((resolve) => {
+    const h = port2.onmessage!;
+    port2.onmessage = (e) => {
+      port2.onmessage = h;
+      h.call(port2, e);
+      resolve();
+    };
+  });
+  return { g, dev, page: port1, ctl, handled };
 }
 
 test('the agent device: one port, MULTIPORT, four queues', () => {
@@ -137,11 +146,12 @@ test('the agent device: the handshake names the port; a second PORT_READY or a b
 });
 
 test('the agent device: the guest opens the port; bytes go both ways across buffers; a close drops what waits', async () => {
-  const { g, dev, page } = handshake();
+  const { g, dev, page, handled } = handshake();
   const p = listen(page);
   // Bytes from the page before the guest opens the port: dropped, as Linux drops them.
+  const early = handled();
   page.postMessage({ type: 'data', port: 0, bytes: new Uint8Array([1, 2, 3]) });
-  await new Promise((r) => setTimeout(r, 50));
+  await early;
   dev.request(g.out(CTL_TX, control(0, PORT_OPEN, 1)));
   assert.deepEqual(await p.next((m) => m.type === 'open'), { type: 'open', port: 0, open: true });
   const rx = [g.into(0, 4), g.into(0, 6, 2)];

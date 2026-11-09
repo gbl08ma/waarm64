@@ -611,7 +611,7 @@ a device kind of their own (docs/frontend.md "The guest's clock").
   them from DOM keyboard, pointer and wheel events, keys by `KeyboardEvent.code`, a US PC
   layout; what's held is released when the element or the window loses the focus, and `chord`
   sends combinations the browser keeps, docs/frontend.md "Input"); they wait for event buffers
-  (oldest dropped past 1024: only while the guest takes none, before its driver or in a stall, since a running guest
+  (the oldest whole frames, through a SYN_REPORT, dropped past 1024: only while the guest takes none, before its driver or in a stall, since a running guest
   drains its 64 at once; long text goes through the agent's TYPE, which paces itself). In deterministic mode they land
   where the device worker gets them, not at a step; the native runners inject theirs at the guest's LED, and the page's
   input test runs in realtime. LED status events go to the port (the page lights the on-screen keyboard's lock keys by them). The page's mouse lock and touches: docs/frontend.md "Input".
