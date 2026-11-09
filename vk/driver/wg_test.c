@@ -6192,6 +6192,75 @@ t48_int_clamp(const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBuff
 }
 
 /*
+ * VK4's backlog easy wins, wgt_misc's scenario 131 (`feedback_vs`, `fs`: tests/venus/a8-blend.frag, alpha 0.25): a 4x4
+ * A8_UNORM attachment cleared to 0.5 and drawn over with Vulkan's alpha blend CONSTANT_ALPHA · src + DST_ALPHA · dst
+ * (the dynamic constant (0, 0, 0, 0.5)), the colour factors ZERO: 0.25 · 0.5 + 0.502 · 0.502, 96 at `out`'s 0 (WebGPU
+ * blends the `r8unorm` texture's red by the colour factors: not offered before, drawn unblended, 64).
+ */
+static int
+a8_blend(const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdBeginRendering CmdBeginRendering = (PFN_vkCmdBeginRendering)GetDeviceProcAddr(dev, "vkCmdBeginRendering");
+   PFN_vkCmdEndRendering CmdEndRendering = (PFN_vkCmdEndRendering)GetDeviceProcAddr(dev, "vkCmdEndRendering");
+   PFN_vkCmdSetBlendConstants CmdSetBlendConstants = (PFN_vkCmdSetBlendConstants)GetDeviceProcAddr(dev, "vkCmdSetBlendConstants");
+   const VkFormat format = VK_FORMAT_A8_UNORM_KHR;
+   VkImage color;
+   VkImageView cview;
+   if (t43_image(format, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_IMAGE_ASPECT_COLOR_BIT, &color, &cview))
+      return 1;
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   VkShaderModule vm, fm;
+   if (shader(feedback_vs, feedback_vs_words, &vm) || shader(fs, fs_words, &fm))
+      return 1;
+   const VkPipelineShaderStageCreateInfo stages[2] = {
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = vm, .pName = "main" },
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = fm, .pName = "main" } };
+   const VkPipelineVertexInputStateCreateInfo vis = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+   const VkPipelineInputAssemblyStateCreateInfo ia = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                                                       .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
+   const VkViewport vp = { 0, 0, 4, 4, 0, 1 };
+   const VkRect2D area = { { 0, 0 }, { 4, 4 } };
+   const VkPipelineViewportStateCreateInfo vs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1,
+                                                  .pViewports = &vp, .scissorCount = 1, .pScissors = &area };
+   const VkPipelineRasterizationStateCreateInfo rs = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, .polygonMode = VK_POLYGON_MODE_FILL, .lineWidth = 1 };
+   const VkPipelineMultisampleStateCreateInfo mss = { .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                                                      .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT };
+   const VkPipelineColorBlendAttachmentState ba = {
+      .blendEnable = VK_TRUE, .srcColorBlendFactor = VK_BLEND_FACTOR_ZERO, .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+      .colorBlendOp = VK_BLEND_OP_ADD, .srcAlphaBlendFactor = VK_BLEND_FACTOR_CONSTANT_ALPHA,
+      .dstAlphaBlendFactor = VK_BLEND_FACTOR_DST_ALPHA, .alphaBlendOp = VK_BLEND_OP_ADD, .colorWriteMask = 0xf };
+   const VkPipelineColorBlendStateCreateInfo bs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                                                    .attachmentCount = 1, .pAttachments = &ba };
+   const VkDynamicState dyn = VK_DYNAMIC_STATE_BLEND_CONSTANTS;
+   const VkPipelineDynamicStateCreateInfo ds = { .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+                                                 .dynamicStateCount = 1, .pDynamicStates = &dyn };
+   const VkPipelineRenderingCreateInfo pri = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+                                               .colorAttachmentCount = 1, .pColorAttachmentFormats = &format };
+   const VkGraphicsPipelineCreateInfo gpi = {
+      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &pri, .stageCount = 2, .pStages = stages,
+      .pVertexInputState = &vis, .pInputAssemblyState = &ia, .pViewportState = &vs, .pRasterizationState = &rs,
+      .pMultisampleState = &mss, .pColorBlendState = &bs, .pDynamicState = &ds, .layout = layout };
+   VkPipeline p;
+   CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   const VkRenderingAttachmentInfo att = {
+      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = cview, .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR, .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+      .clearValue = { .color = { .float32 = { 0, 0, 0, 0.5f } } } };
+   const VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = area, .layerCount = 1,
+                                .colorAttachmentCount = 1, .pColorAttachments = &att };
+   CmdBeginRendering(cmd, &ri);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+   CmdSetBlendConstants(cmd, (const float[4]){ 0, 0, 0, 0.5f });
+   CmdDraw(cmd, 3, 1, 0, 0);
+   CmdEndRendering(cmd);
+   copy_texel(cmd, color, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1, out, 0);
+   return 0;
+}
+
+/*
  * The review of VK4 T41 to T43 (findings 2 and 4), wgt_misc's scenario 122 (`feedback_vs`: tests/venus/t43/layer.vert,
  * gl_Layer = 1; `fs`: tests/venus/t43/layered.frag): draws in layer 1 of a layered pass (a framebuffer of two layers of
  * a 16x16 RGBA8 image, layer 0 cleared to (51, 153, 204, 255), layer 1 to (204, 102, 51, 255), the colour attachment
@@ -8051,6 +8120,163 @@ t38_stores(const uint32_t *cs, uint32_t cs_words, VkCommandBuffer cmd, VkBuffer 
    return 0;
 }
 
+/*
+ * VK4's backlog easy wins: render pipelines' samplers (`out` as wgt_misc's, a 4x4 RGBA8 attachment's texel (1, 1) at 0).
+ * 132 (`feedback_vs`, `fs` easy/split.frag): one LINEAR sampler for a 2x1 RGBA8 texture (0, 255) and a D32 view cleared
+ * to 0.75, split into its nearest twin for the depth view (`wg_variant_modules`' render path; the compute one is
+ * scenario 29): (64, 191, 0, 255).
+ * 133 (`feedback_vs` easy/many.vert, `fs` easy/many.frag): 79 resources, the D32 view and its LINEAR sampler the
+ * program's 77th and 78th (the variants' masks were 64 bits): zeros elsewhere, (0, 191, 0, 255).
+ */
+static int
+easy_samplers(uint32_t scenario, const uint32_t *fs, uint32_t fs_words, VkCommandBuffer cmd, VkBuffer out)
+{
+   PFN_vkCmdBeginRendering CmdBeginRendering = (PFN_vkCmdBeginRendering)GetDeviceProcAddr(dev, "vkCmdBeginRendering");
+   PFN_vkCmdEndRendering CmdEndRendering = (PFN_vkCmdEndRendering)GetDeviceProcAddr(dev, "vkCmdEndRendering");
+   PFN_vkCmdClearColorImage CmdClearColorImage = (PFN_vkCmdClearColorImage)GetDeviceProcAddr(dev, "vkCmdClearColorImage");
+   PFN_vkCmdClearDepthStencilImage CmdClearDepthStencilImage =
+      (PFN_vkCmdClearDepthStencilImage)GetDeviceProcAddr(dev, "vkCmdClearDepthStencilImage");
+   const bool many = scenario == 133;
+   const VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+   VkImage target, tex, depth, zero;
+   VkImageView tview, texv, depthv, zerov;
+   if (t43_image(format, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_IMAGE_ASPECT_COLOR_BIT, &target, &tview) ||
+       t37_image(VK_IMAGE_TYPE_2D, format, (VkExtent3D){ 2, 1, 1 }, 1, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                 0, &tex) ||
+       t37_view(tex, VK_IMAGE_VIEW_TYPE_2D, format, 0, 1, &texv) ||
+       t43_image(VK_FORMAT_D32_SFLOAT, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, &depth, &depthv) ||
+       t43_image(format, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT, &zero, &zerov))
+      return 1;
+   VkBuffer src, ubo;
+   uint32_t *sb;
+   void *ub;
+   if (buffer(256, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, &src, (void **)&sb) ||
+       buffer(4096, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true, &ubo, &ub))
+      return 1;
+   memset(ub, 0, 4096);
+   sb[0] = 0, sb[1] = 0xffffffffu;
+   const VkImageSubresourceLayers c1 = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+   CmdCopyBufferToImage(cmd, src, tex, VK_IMAGE_LAYOUT_GENERAL, 1,
+                        &(VkBufferImageCopy){ .imageSubresource = c1, .imageExtent = { 2, 1, 1 } });
+   CmdClearDepthStencilImage(cmd, depth, VK_IMAGE_LAYOUT_GENERAL, &(VkClearDepthStencilValue){ 0.75f, 0 }, 1,
+                             &(VkImageSubresourceRange){ VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 });
+   CmdClearColorImage(cmd, zero, VK_IMAGE_LAYOUT_GENERAL, &(VkClearColorValue){ .float32 = { 0, 0, 0, 0 } }, 1,
+                      &(VkImageSubresourceRange){ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+   VkSampler linear;
+   const VkSamplerCreateInfo si = { .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, .magFilter = VK_FILTER_LINEAR,
+                                    .minFilter = VK_FILTER_LINEAR, .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                    .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                    .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE };
+   CHECK(CreateSampler(dev, &si, NULL, &linear));
+   const VkShaderStageFlags V = VK_SHADER_STAGE_VERTEX_BIT, F = VK_SHADER_STAGE_FRAGMENT_BIT;
+   VkDescriptorSetLayoutBinding b[8];
+   uint32_t nb = 0;
+   if (many) {
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 8, V };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 1, VK_DESCRIPTOR_TYPE_SAMPLER, 15, V };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 2, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 15, V };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 8, F };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 4, VK_DESCRIPTOR_TYPE_SAMPLER, 15, F };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 5, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 15, F };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 6, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, F };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 7, VK_DESCRIPTOR_TYPE_SAMPLER, 1, F };
+   } else {
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, F };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, F };
+      b[nb++] = (VkDescriptorSetLayoutBinding){ 2, VK_DESCRIPTOR_TYPE_SAMPLER, 1, F };
+   }
+   const VkDescriptorSetLayoutCreateInfo dli = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                 .bindingCount = nb, .pBindings = b };
+   VkDescriptorSetLayout dsl;
+   CHECK(CreateDescriptorSetLayout(dev, &dli, NULL, &dsl));
+   const VkDescriptorPoolSize ps[3] = { { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 16 }, { VK_DESCRIPTOR_TYPE_SAMPLER, 32 },
+                                        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 32 } };
+   const VkDescriptorPoolCreateInfo dpi = { .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1,
+                                            .poolSizeCount = 3, .pPoolSizes = ps };
+   VkDescriptorPool dp;
+   CHECK(CreateDescriptorPool(dev, &dpi, NULL, &dp));
+   VkDescriptorSet set;
+   CHECK(AllocateDescriptorSets(dev, &(VkDescriptorSetAllocateInfo){ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                                                     .descriptorPool = dp, .descriptorSetCount = 1,
+                                                                     .pSetLayouts = &dsl },
+                                 &set));
+   const VkImageLayout G = VK_IMAGE_LAYOUT_GENERAL;
+   VkDescriptorBufferInfo bi[8];
+   VkDescriptorImageInfo samplers[15], zeros[15];
+   for (uint32_t i = 0; i < 8; i++)
+      bi[i] = (VkDescriptorBufferInfo){ ubo, 256 * i, 16 };
+   for (uint32_t i = 0; i < 15; i++) {
+      samplers[i] = (VkDescriptorImageInfo){ linear, VK_NULL_HANDLE, G };
+      zeros[i] = (VkDescriptorImageInfo){ VK_NULL_HANDLE, zerov, G };
+   }
+   const VkDescriptorImageInfo texi = { VK_NULL_HANDLE, texv, G }, depthi = { VK_NULL_HANDLE, depthv, G },
+                               lini = { linear, VK_NULL_HANDLE, G };
+   VkWriteDescriptorSet wr[8];
+   uint32_t nw = 0;
+#define WRITE(bind, n, type, field, info)                                                                              \
+   wr[nw++] = (VkWriteDescriptorSet){ .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = bind, \
+                                      .descriptorCount = n, .descriptorType = type, .field = info }
+   if (many) {
+      for (uint32_t k = 0; k < 2; k++) {
+         WRITE(3 * k, 8, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, pBufferInfo, bi);
+         WRITE(3 * k + 1, 15, VK_DESCRIPTOR_TYPE_SAMPLER, pImageInfo, samplers);
+         WRITE(3 * k + 2, 15, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, pImageInfo, zeros);
+      }
+      WRITE(6, 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, pImageInfo, &depthi);
+      WRITE(7, 1, VK_DESCRIPTOR_TYPE_SAMPLER, pImageInfo, &lini);
+   } else {
+      WRITE(0, 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, pImageInfo, &texi);
+      WRITE(1, 1, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, pImageInfo, &depthi);
+      WRITE(2, 1, VK_DESCRIPTOR_TYPE_SAMPLER, pImageInfo, &lini);
+   }
+#undef WRITE
+   UpdateDescriptorSets(dev, nw, wr, 0, NULL);
+   const VkPipelineLayoutCreateInfo pli = { .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1,
+                                            .pSetLayouts = &dsl };
+   VkPipelineLayout layout;
+   CHECK(CreatePipelineLayout(dev, &pli, NULL, &layout));
+   VkShaderModule vm, fm;
+   if (shader(feedback_vs, feedback_vs_words, &vm) || shader(fs, fs_words, &fm))
+      return 1;
+   const VkPipelineShaderStageCreateInfo stages[2] = {
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = vm, .pName = "main" },
+      { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = fm, .pName = "main" } };
+   const VkPipelineVertexInputStateCreateInfo vis = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+   const VkPipelineInputAssemblyStateCreateInfo ia = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                                                       .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
+   const VkViewport vp = { 0, 0, 4, 4, 0, 1 };
+   const VkRect2D area = { { 0, 0 }, { 4, 4 } };
+   const VkPipelineViewportStateCreateInfo vs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, .viewportCount = 1,
+                                                  .pViewports = &vp, .scissorCount = 1, .pScissors = &area };
+   const VkPipelineRasterizationStateCreateInfo rs = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, .polygonMode = VK_POLYGON_MODE_FILL, .lineWidth = 1 };
+   const VkPipelineMultisampleStateCreateInfo mss = { .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                                                      .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT };
+   const VkPipelineColorBlendAttachmentState ba = { .colorWriteMask = 0xf };
+   const VkPipelineColorBlendStateCreateInfo bs = { .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                                                    .attachmentCount = 1, .pAttachments = &ba };
+   const VkPipelineRenderingCreateInfo pri = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+                                               .colorAttachmentCount = 1, .pColorAttachmentFormats = &format };
+   const VkGraphicsPipelineCreateInfo gpi = {
+      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &pri, .stageCount = 2, .pStages = stages,
+      .pVertexInputState = &vis, .pInputAssemblyState = &ia, .pViewportState = &vs, .pRasterizationState = &rs,
+      .pMultisampleState = &mss, .pColorBlendState = &bs, .layout = layout };
+   VkPipeline p;
+   CHECK(CreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gpi, NULL, &p));
+   const VkRenderingAttachmentInfo att = {
+      .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = tview, .imageLayout = G,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR, .storeOp = VK_ATTACHMENT_STORE_OP_STORE };
+   const VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = area, .layerCount = 1,
+                                .colorAttachmentCount = 1, .pColorAttachments = &att };
+   CmdBeginRendering(cmd, &ri);
+   CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+   CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &set, 0, NULL);
+   CmdDraw(cmd, 3, 1, 0, 0);
+   CmdEndRendering(cmd);
+   copy_texel(cmd, target, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1, out, 0);
+   return 0;
+}
+
 /* VK4 T48: the textures of scenario 129's shared images (web/venus-gpu.ts ids), for the test to ask when each was written. */
 uint32_t wg_memory_texture(VkDeviceMemory mem);
 static uint32_t t48_textures[2];
@@ -8795,6 +9021,12 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
          return 1;
    } else if (scenario == 128) {
       if (t48_int_clamp(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 131) {
+      if (a8_blend(cs, cs_words, cmd, out))
+         return 1;
+   } else if (scenario == 132 || scenario == 133) {
+      if (easy_samplers(scenario, cs, cs_words, cmd, out))
          return 1;
    } else if (scenario == 122) {
       if (t43_layered(cs, cs_words, cmd, out))

@@ -3376,6 +3376,7 @@ struct replay {
    bool vs_only, vs_again; /* OP_VS_ONLY's and OP_VS_AGAIN's, for the next draw */
    bool xfb_counted; /* a capture of the render pass so far ended writing a counter (`byte_count_cut`) */
    bool layer_draws;       /* the pipeline's vertex stage writes gl_Layer: drawn in each layer of a layered pass */
+   bool alpha8_constant;   /* the pipeline blends an A8_UNORM attachment by the constant's alpha (wg_key_alpha8_constant) */
    struct wg_device *dev;
    struct wg_submit *submit;
    enum { NONE, RENDER, COMPUTE } pass;
@@ -5506,7 +5507,9 @@ apply(struct replay *r, uint32_t point)
          const int64_t x1 = CLAMP((int64_t)d->scissor[0] + d->scissor[2], x0, r->width);
          const int64_t y1 = CLAMP((int64_t)d->scissor[1] + d->scissor[3], y0, r->height);
          gpu_set_scissor(x0, y0, x1 - x0, y1 - y0);
-         gpu_set_blend_constant(d->blend[0], d->blend[1], d->blend[2], d->blend[3]);
+         /* An A8_UNORM attachment blended by the constant's alpha reads it as the constant's red (wg_key_alpha8_constant;
+          * another attachment's colour factors of the constant's red then see its alpha). */
+         gpu_set_blend_constant(r->alpha8_constant ? d->blend[3] : d->blend[0], d->blend[1], d->blend[2], d->blend[3]);
          gpu_set_stencil_reference(d->stencil_ref);
       }
       /* From their shadows where the pass binds their buffers writable too (VK4 T3). */
@@ -5932,6 +5935,10 @@ replay(struct replay *r, struct wg_cmd_buffer *cmd)
          const struct op_pipeline *op = d;
          r->pipeline = wg_render_pipeline(op->program, &op->key);
          r->layer_draws = op->key.vs->info.writes_layer && !op->program->vs_stores;
+         if (r->alpha8_constant != wg_key_alpha8_constant(&op->key)) {
+            r->alpha8_constant = !r->alpha8_constant;
+            r->dirty |= RD_DYN;
+         }
          if (r->view && per_view(op->key.vs, op->key.fs)) {
             struct wg_pipeline_key per_view = op->key;
             per_view.view = r->view;

@@ -26,7 +26,7 @@ static const struct wg_texture_format table[] = {
    F(R8_UINT, "r8uint", 1, 1, 1, CS | WG_FMT_RENDER | U | T1S),
    F(R8_SINT, "r8sint", 1, 1, 1, CS | WG_FMT_RENDER | S | T1S),
    F(R8G8_UNORM, "rg8unorm", 2, 1, 1, CS | FL | RB | T1S),
-   F(A8_UNORM_KHR, "r8unorm", 1, 1, 1, CS | FL | WG_FMT_RENDER | WG_FMT_ALPHA8),
+   F(A8_UNORM_KHR, "r8unorm", 1, 1, 1, CS | FL | RB | WG_FMT_ALPHA8),
    F(R8G8_SNORM, "rg8snorm", 2, 1, 1, CS | FL | T1R | T1S),
    F(R8G8_UINT, "rg8uint", 2, 1, 1, CS | WG_FMT_RENDER | U | T1S),
    F(R8G8_SINT, "rg8sint", 2, 1, 1, CS | WG_FMT_RENDER | S | T1S),

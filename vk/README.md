@@ -901,8 +901,11 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   whose red holds alpha, offered with `texture-component-swizzle`: sampled through its view's swizzle (the colour 0, alpha
   red: composed with the view's mapping), cleared with alpha in red (`wg_clear_color`), written as an attachment by the
   fragment stage moving its output's alpha to red (`override wg_ar`, the pipeline's bits of its A8 targets; every
-  stage with float outputs declares it) under the alpha bit of its write mask. Not blended (WebGPU's red would blend by
-  the colour factors, `DST_ALPHA` reading 1), blitted (the worker's blit draws know no swizzle) nor storage; its twin
+  stage with float outputs declares it) under the alpha bit of its write mask. Blended by Vulkan's alpha factors and op
+  as WebGPU's colour ones on that red (wg_shader.c `alpha8_factor`: the source's and destination's colour and alpha
+  their red, a constant's alpha the blend constant's red, which the draw sets so while such a pipeline is bound,
+  `wg_key_alpha8_constant`: another attachment's colour factors of the constant then read its alpha). Not blitted (the
+  worker's blit draws know no swizzle) nor storage; its twin
   view (an attachment sampled in its own pass) swizzled the same way. Copies are its bytes. **Depth comparison**: every depth
   format WebGPU samples reports `SAMPLED_IMAGE_DEPTH_COMPARISON` in `VkFormatProperties3` (a comparison sampler on a
   depth texture); colour formats don't (a comparison of one would be the shader's).

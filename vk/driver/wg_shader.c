@@ -1923,6 +1923,19 @@ static const char *const factors[] = { "zero", "one", "src", "one-minus-src", "d
                                        "src1", "one-minus-src1", "src1-alpha", "one-minus-src1-alpha" };
 static const char *const blend_ops[] = { "add", "subtract", "reverse-subtract", "min", "max" };
 
+/* An A8_UNORM attachment's alpha factor as WebGPU's colour factor on its `r8unorm` texture's red, which holds the alpha
+ * (the stage's output's alpha in its red: `wg_ar`): the source's and destination's colour are their alpha there, a
+ * constant's alpha the blend constant's red (wg_cmd.c sets it so: wg_key_alpha8_constant), SRC_ALPHA_SATURATE's 1. */
+static const char *
+alpha8_factor(uint8_t f)
+{
+   static const char *const map[] = { "zero", "one", "src", "one-minus-src", "dst", "one-minus-dst", "src",
+                                      "one-minus-src", "dst", "one-minus-dst", "constant", "one-minus-constant",
+                                      "constant", "one-minus-constant", "one", "src1-alpha", "one-minus-src1-alpha",
+                                      "src1-alpha", "one-minus-src1-alpha" };
+   return map[MIN2(f, 18)];
+}
+
 static void
 stencil_face(struct wg_json *j, const char *name, const uint8_t *f, bool on)
 {
@@ -2992,7 +3005,15 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
          wg_json_printf(&j, "%s{\"format\":\"%s\",\"writeMask\":%u", i ? "," : "", f->name, written ? mask : 0);
          /* A logic op or an advanced blend is the stage's (`fragment_dst`). */
          const bool by_stage = dst && dst_module && ((k->logic_mask & (1u << i)) || k->adv[i].op);
-         if (written && k->blend[i].enable && (f->flags & WG_FMT_BLEND) && !by_stage) {
+         if (written && k->blend[i].enable && (f->flags & WG_FMT_ALPHA8) && !by_stage) {
+            /* A8_UNORM: Vulkan's alpha blend on the texture's red, WebGPU's colour blend (its alpha one, unwritten). */
+            const bool amin = k->blend[i].aop >= 3;
+            const char *op = blend_ops[MIN2(k->blend[i].aop, 4)];
+            const char *src = amin ? "one" : alpha8_factor(k->blend[i].asrc), *dst = amin ? "one" : alpha8_factor(k->blend[i].adst);
+            wg_json_printf(&j, ",\"blend\":{\"color\":{\"operation\":\"%s\",\"srcFactor\":\"%s\",\"dstFactor\":\"%s\"},"
+                           "\"alpha\":{\"operation\":\"%s\",\"srcFactor\":\"%s\",\"dstFactor\":\"%s\"}}",
+                           op, src, dst, op, src, dst);
+         } else if (written && k->blend[i].enable && (f->flags & WG_FMT_BLEND) && !by_stage) {
             const bool cmin = k->blend[i].op >= 3, amin = k->blend[i].aop >= 3;
             wg_json_printf(&j, ",\"blend\":{\"color\":{\"operation\":\"%s\",\"srcFactor\":\"%s\",\"dstFactor\":\"%s\"},"
                            "\"alpha\":{\"operation\":\"%s\",\"srcFactor\":\"%s\",\"dstFactor\":\"%s\"}}",

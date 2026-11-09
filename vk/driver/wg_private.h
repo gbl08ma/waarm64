@@ -903,6 +903,17 @@ wg_key_location(const struct wg_pipeline_key *k, uint32_t i)
 {
    return k->mapped ? k->color_map[i] : (uint8_t)i;
 }
+/* Whether a key blends an A8_UNORM attachment by a constant's alpha: WebGPU blends its `r8unorm` texture's red by the
+ * colour factors, so the draw's blend constant has Vulkan's alpha as its red (wg_shader.c `alpha8_factor`). */
+static inline bool
+wg_key_alpha8_constant(const struct wg_pipeline_key *k)
+{
+   for (uint32_t i = 0; i < k->color_count && i < 8; i++)
+      if (k->colors[i] == VK_FORMAT_A8_UNORM_KHR && k->blend[i].enable &&
+          ((k->blend[i].asrc >= 10 && k->blend[i].asrc <= 13) || (k->blend[i].adst >= 10 && k->blend[i].adst <= 13)))
+         return true;
+   return false;
+}
 /* Whether a key reads its attachments. */
 static inline bool
 wg_key_reads_dst(const struct wg_pipeline_key *k)

@@ -1133,7 +1133,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `park/t35-astc-decoder` (`web/astc.ts`, naga-validated, never run). The same decoder could back ASTC LDR on
     adapters without `texture-compression-astc` (NVIDIA's) and `VK_EXT_texture_compression_astc_hdr`, which Venus
     carries; the user's call (2026-11-07): not a priority while real adapters don't offer them.
-  - [A, B] **Mutable descriptors' leftovers** (VK4 T34; vk/README.md "Descriptors"): of the 10,500 `mutable_descriptor`
+  - [B] **Mutable descriptors' leftovers** (VK4 T34; vk/README.md "Descriptors"): of the 10,500 `mutable_descriptor`
     cases without ray tracing stages 3,561 pass; [B] the rest ask for update after bind (4,557: commands are translated
     at submit, so bind groups made then would see later updates), acceleration structures
     and ray tracing (1,140), geometry and tessellation (810), variable descriptor counts (144), or aliasing (108:
@@ -1141,10 +1141,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     no WebGPU binding to stand for it, so a dummy of the declared kind would be; and two kinds on one slot would need
     a variant keyed by each slot's written type, the other declarations' accesses left out). Of the rest, 105 are
     layouts the support query says no to (up to 6 mutable descriptors that may be storage images, or texel buffers
-    as storage beside storage buffers: past a stage's WebGPU bindings) and [A] 75 ask for
-    `shaderUniformTexelBufferArrayDynamicIndexing` (and its storage twin), not advertised though the translator's
-    `if` trees take any descriptor array (S: both in wg_caps.c's features, beside the other four, then these 75 and a
-    sample of `descriptor_indexing`'s texel buffer cases on both hosts, the passes into the list). The query counts a mutable
+    as storage beside storage buffers: past a stage's WebGPU bindings) and [B] 75 ask for
+    `shaderUniformTexelBufferArrayDynamicIndexing` (and its storage twin) and, before it, VK_EXT_descriptor_indexing:
+    dEQP's `isDeviceFunctionalitySupported` takes that from Vulkan 1.2's `descriptorIndexing`, which needs update after
+    bind, partially bound descriptors and runtime arrays besides (the spec's list), so advertising the two bits alone
+    left all 75 not supported (VK4's backlog easy wins, 2026-11-09: run with them advertised, the reason
+    `vktBindingMutableTests.cpp:2979`'s; not kept: nothing else we run asks). The query counts a mutable
     descriptor in every kind its list names and a set alone: a pipeline whose sets together pass a stage's bindings is
     still refused at its creation, said why. (vkd3d-proton's bindless heaps: graphics.md "Permanent limitations".)
   - [B] **Vertex stages that store's leftovers** (VK4 T33; vk/README.md "Vertex stages that store"): such a draw cuts its
@@ -1226,11 +1228,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     (`images/deqp/build.sh vk`) and move that list into `tests/deqp/vk.txt`. A sample with such an offset costs the
     fetches' filter (eight `textureLoad`s a trilinear sample) where WGSL's own would do: unmeasured, no program here
     has one (vkd3d's D3D12 layering is what asks).
-  - [A, B] **maintenance5's and 6's leftovers** (VK4 T24, `results/vk4/t24/`): A8_UNORM is offered since VK4 T38 (an
-    `r8unorm` texture, vk/README.md "Formats a texture holds otherwise") [A] without blending (WebGPU's red blends by the colour
-    factors: a variant with Vulkan's alpha factors as the colour's, `DST_ALPHA` as `dst`, the constant's alpha as its red,
-    would take it: S, wg_shader.c's blend state and the format's key), [B] blits (the worker's blit draws know no
-    swizzle) or storage, and only with `texture-component-swizzle`; an index buffer bound null wants robustness2's
+  - [B] **maintenance5's and 6's leftovers** (VK4 T24, `results/vk4/t24/`): A8_UNORM is offered since VK4 T38 (an
+    `r8unorm` texture, vk/README.md "Formats a texture holds otherwise"; blended since VK4's backlog easy wins) without
+    blits (the worker's blit draws know no swizzle) or storage, and only with `texture-component-swizzle`; a pipeline
+    blending A8 by the constant's alpha beside another attachment blending by the constant's red reads its alpha there; an index buffer bound null wants robustness2's
     `nullDescriptor`. (maintenance6's aliased images: graphics.md "Permanent limitations".)
   - [B] **Memory** (images bound to one range, `memory.binding.aliasing.suballocated.image_*`: graphics.md "Permanent
     limitations"): an allocation past the device-local heap, the largest
@@ -1289,7 +1290,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     out-of-bounds accesses (`sampled_image` of `1d_array` and `3d`, `storage_image` of `r32f`), and `memory_model.message_passing.ext`'s
     `atomicwrite` with an image as the guard (invocations seeing the guard but not the payload). Neither group is in the
     list, nor in `vk-main.txt`'s direct set (run them by name).
-  - [A, B] **Bindings past WebGPU's** (VK3 L7a, vk/README.md "Bindings past WebGPU's"): what can't be advertised apart from
+  - [B] **Bindings past WebGPU's** (VK3 L7a, vk/README.md "Bindings past WebGPU's"): what can't be advertised apart from
     what Vulkan counts with it is refused when a pipeline is made, saying why: a fragment stage's input attachments
     beside 16 sampled images (Vulkan counts them apart, WebGPU as textures; the device keeps Vulkan's 16 and 4: ANGLE's
     ES3 wants 16 texture units), texel buffers beside a full count of storage buffers that don't share a binding (above),
@@ -1301,10 +1302,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     [B] no room there for an attachment read's textures (T32's `wg_dst`, up to 9: the draw is refused, said once): those
     would need binding numbers group 3's slots and the pull's leave. maxPerStageDescriptorUniformBuffers is 14 (vkd3d's) only where 8 storage
     buffers are left beside the three folded ones, an adapter of 11 or more (VK4 T40): SwiftShader's and the M4's 10 keep
-    13, D3D's 8 UAVs at 11_0 taking the eighth storage buffer. [A] Not covered by a test of its own (S each, in
-    tests/venus-driver.test.ts): a draw of more than 64 resources (variants' masks were 64 bits: the masks are 128 now, a render harness
-    with that many bindings would check it) and the split sampler in a render pipeline (`wg_variant_modules`; the
-    compute path is `tests/venus-driver.test.ts` "sharedSampler").
+    13, D3D's 8 UAVs at 11_0 taking the eighth storage buffer.
   - [B] **Elsewhere**: the push buffer grows before a submit to 256 bytes a draw and dispatch, up to 256 MiB (a submit past
     ~1M draws with push constants past the immediates still wraps, with a warning).
 - **Nodes 2 and up in one memory64 behind a second JIT arm** (bench/spike/memory/REPORT.md §6, VK4 T19). Memory 1 stays
