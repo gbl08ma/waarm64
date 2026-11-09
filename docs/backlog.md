@@ -454,10 +454,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   a host folder there, and a disk kept as a file handle, take the browser down at the next read of their store. Nothing
   tells a page it is off the record. Found by tests/page-folders.test.ts, which runs on a disk profile; not yet tried on
   another Chromium build or filed upstream.
-- **Shared folders, long names on a host folder:** past 248 bytes Linux's errno is wrong: a write to a file of 249 to 255
-  bytes answers `EIO` (its session can't open), and creating a name past 255 `EIO` rather than `ENAMETOOLONG`
-  (bench/shares/REPORT.md). Write permission can't be granted headless, so the tests' host backend writes OPFS directories
-  and `bench/shares/index.html` is opened by hand.
 - **The agent's tests as root** (docs/cloud.md): in a cloud session (root) `x11::tests::only_roots_or_the_users_display_socket_gets_the_cookie` and `serve_test::follows_the_session_and_passes_the_child_its_frames` fail, which stops `scripts/ci.sh` there. Either the tests take a non-root uid where they need one, or the agent's root rules are what fails: not yet looked at.
 - 9p: no HTTP-served tree, as v86's lazy filesystem. The memory tree's umask is the client's even under a default ACL
   (devices.md "9p"); shared folders have no xattrs (docs/shares.md §8).

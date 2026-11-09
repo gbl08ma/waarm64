@@ -3,7 +3,7 @@
 import { P9Server } from '../../web/9p.ts';
 import { FolderTree, type FolderSpec } from '../../web/9p-folders.ts';
 
-const [EPERM, ENOENT, EIO, EBADF, EACCES, EEXIST, EXDEV, ENOTDIR, EISDIR, EINVAL, EROFS, ENOTEMPTY, ESTALE] = [1, 2, 5, 9, 13, 17, 18, 20, 21, 22, 30, 39, 116];
+const [EPERM, ENOENT, EIO, EBADF, EACCES, EEXIST, EXDEV, ENOTDIR, EISDIR, EINVAL, EROFS, ENAMETOOLONG, ENOTEMPTY, ESTALE] = [1, 2, 5, 9, 13, 17, 18, 20, 21, 22, 30, 36, 39, 116];
 const O_WRONLY = 1;
 const O_RDWR = 2;
 const O_TRUNC = 0o1000;
@@ -229,6 +229,42 @@ const cases: Record<string, (r: Rig, kind: string) => Promise<void>> = {
     same(await c.errno(c.call(70, [u32(d), u32(f), 'l'])), EPERM, 'link');
     same(await c.errno(c.call(18, [u32(d), 'n', u32(0o010644), u32(0), u32(0), u32(0)])), EPERM, 'mknod');
     same(await c.errno(c.call(14, [u32(d), 'a\\b', u32(O_WRONLY), u32(0o644), u32(0)])), EINVAL, 'a name a folder can\'t have');
+  },
+  async 'long names: past 255 bytes ENAMETOOLONG; a host file written only to 248'({ c }, kind) {
+    const long = 'é'.repeat(128); // 256 bytes, 128 characters
+    await c.put('a', 'f', 'x');
+    same(await c.errno(c.create('a', long)), ENAMETOOLONG, 'create');
+    same(await c.errno(c.mkdir('a', long)), ENAMETOOLONG, 'mkdir');
+    same(await c.errno(c.walk(`a/${long}`)), ENAMETOOLONG, 'a lookup');
+    same(await c.errno(c.unlink('a', long)), ENAMETOOLONG, 'unlink');
+    same(await c.errno(c.rename('a', 'f', 'a', long)), ENAMETOOLONG, 'a rename to it');
+    const [n248, n249, n255] = ['n'.repeat(248), 'n'.repeat(249), 'm'.repeat(255)];
+    await c.put('a', n248, 'fits');
+    same(await c.readPath(`a/${n248}`), 'fits', 'a file of 248 bytes');
+    await c.mkdir('a', n255);
+    same((await c.statPath(`a/${n255}`)).mode, 0o040755, 'a directory of 255 bytes');
+    if (kind === 'host') {
+      // Its swap file, `<name>.crswap`, would be past 255: a file that couldn't be written isn't made.
+      same(await c.errno(c.create('a', n249)), ENAMETOOLONG, 'a file of 249 bytes');
+      same(await c.errno(c.walk(`a/${n249}`)), ENOENT, 'and none was made');
+      // A rename to it works (its bytes are there to read), but it can't be written.
+      await c.rename('a', n248, 'a/' + n255, n255);
+      same(await c.readPath(`a/${n255}/${n255}`), 'fits', 'renamed to 255 bytes, it reads');
+      const f = await c.walk(`a/${n255}/${n255}`);
+      same(await c.errno(c.open(f, O_WRONLY)), ENAMETOOLONG, 'opened to write');
+      same(await c.errno(c.open(f, O_RDWR)), ENAMETOOLONG, 'opened to read and write');
+      await c.clunk(f);
+      same(await c.errno(c.truncate(`a/${n255}/${n255}`, 0)), ENAMETOOLONG, 'truncated');
+      await c.rename(`a/${n255}`, n255, 'a', 'short');
+      const g = await c.walk('a/short');
+      await c.open(g, O_WRONLY | O_TRUNC);
+      await c.write(g, 0, 'again');
+      await c.clunk(g);
+      same(await c.readPath('a/short'), 'again', 'back to a short name, it writes');
+    } else {
+      await c.put('a', n249, 'opfs');
+      same(await c.readPath(`a/${n249}`), 'opfs', 'a file of 249 bytes in the browser');
+    }
   },
   async 'renames: files, over a file, directories with what\'s in them'({ c, dir }) {
     await c.put('a', 'f', 'one');

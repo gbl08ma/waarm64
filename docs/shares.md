@@ -114,8 +114,11 @@ after the request it names**. What changes while the machine runs comes over the
   or directories don't appear.
 - **Names:** what Chromium refuses answers `EINVAL`. In a folder in the browser that's `/`, `\`, `.` and `..`; a host
   folder refuses more, measured on Linux: `:` in a name, a trailing dot or space, control characters, Windows' device names
-  (`nul`, `CON`), `.lnk`, `.url`, `desktop.ini`. A host file with a name past 248 bytes can't be written, its swap file's
-  name being too long (bench/shares/REPORT.md). On a case-insensitive host, a name differing
+  (`nul`, `CON`), `.lnk`, `.url`, `desktop.ini`. A name past 255 bytes (UTF-8, Linux's `NAME_MAX`, what statfs says)
+  answers `ENAMETOOLONG` to every call that takes one. A host file with a name past 248 bytes can't be written, its
+  swap file's name (`<name>.crswap`) being past 255 (bench/shares/REPORT.md): creating one answers `ENAMETOOLONG`, as
+  does opening one to write or truncating it; a rename to such a name works (the file reads), and a directory's name
+  takes all 255. On a case-insensitive host, a name differing
   only in case from an existing one `EEXIST` (what the host does).
 - **Renames:** `FileSystemFileHandle.move(directory, name)` for files (a host folder refuses `move(name)`), or a copy
   and a remove where a host file has none. Directories

@@ -36,6 +36,7 @@ export const EINVAL = 22;
 export const ENOSPC = 28;
 export const EROFS = 30;
 export const ERANGE = 34;
+export const ENAMETOOLONG = 36;
 export const ENOTEMPTY = 39;
 export const ENODATA = 61;
 export const EOPNOTSUPP = 95;

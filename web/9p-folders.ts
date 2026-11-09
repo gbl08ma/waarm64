@@ -10,7 +10,7 @@
 // A host file is written through a write session: Chromium copies the file into a swap file, and closing swaps it in.
 // A session is closed by the last clunk of a fid writing the file, by a Tfsync and by `flush` (a snapshot, a power-off),
 // so that a file's writes are one session; what it wrote is kept to read back (`Overlay`).
-import { EACCES, EBADF, EBUSY, EEXIST, EINVAL, EIO, EISDIR, ENOENT, ENOSPC, ENOTDIR, ENOTEMPTY, EPERM, EROFS, Err, ESTALE, EXDEV, p9Backend, P9Server, S_IFDIR, S_IFREG, type P9Entry, type P9Fid, type P9SetAttr, type P9Stat, type P9StatFs, type P9Tree, type P9Time } from './9p.ts';
+import { EACCES, EBADF, EBUSY, EEXIST, EINVAL, EIO, EISDIR, ENAMETOOLONG, ENOENT, ENOSPC, ENOTDIR, ENOTEMPTY, EPERM, EROFS, Err, ESTALE, EXDEV, p9Backend, P9Server, S_IFDIR, S_IFREG, type P9Entry, type P9Fid, type P9SetAttr, type P9Stat, type P9StatFs, type P9Tree, type P9Time } from './9p.ts';
 import { uniqueName } from './app/shape.ts';
 import type { Ctx } from './devices.ts';
 
@@ -44,6 +44,11 @@ const PREFILL_WIDTH = 32;
 const OVERLAY_MAX = 64 << 20;
 /** The most a file unlinked while open keeps in memory, bytes: a bigger one answers ESTALE. */
 const ORPHAN_MAX = 64 << 20;
+/** The longest name, bytes of UTF-8 (Linux's NAME_MAX; past it a folder's handle can't be made). */
+const NAME_MAX = 255;
+/** The longest name of a host file that can be written: its session's swap file, `<name>.crswap`, is a name too
+ * (bench/shares/REPORT.md). */
+const HOST_WRITABLE_MAX = NAME_MAX - '.crswap'.length;
 /** A host folder doesn't know its free space: 1 TiB, in 4 KiB blocks. */
 const HOST_BLOCKS = 2 ** 28;
 
@@ -140,6 +145,20 @@ export async function putFile(h: FileSystemFileHandle, blob: Blob) {
 
 const named = (e: unknown, name: string) => (e as Error | undefined)?.name === name;
 const secs = (ms: number): P9Time => [Math.floor(ms / 1000), (ms % 1000) * 1e6];
+
+/** Bytes of `name` in UTF-8. */
+const nameBytes = (name: string) => new TextEncoder().encode(name).length;
+
+/** A name Linux could have: longer answers ENAMETOOLONG, as Linux's own filesystems do. */
+function nameFits(name: string) {
+  if (nameBytes(name) > NAME_MAX) throw new Err(ENAMETOOLONG);
+}
+
+/** A host file can be written only under a name its swap file's fits beside: past it ENAMETOOLONG, where the session
+ * would be `InvalidStateError`. `n` is the file, or the directory `name` is made in. */
+function hostWritable(n: FNode, name = n.name) {
+  if (n.mount?.spec.kind === 'host' && nameBytes(name) > HOST_WRITABLE_MAX) throw new Err(ENAMETOOLONG);
+}
 
 export class FolderTree implements P9Tree<FNode> {
   readonly root: FNode;
@@ -377,6 +396,7 @@ export class FolderTree implements P9Tree<FNode> {
     if (name === '.') return d;
     this.live(d);
     if (name === '..') return d.parent;
+    nameFits(name);
     const c = d.children!.get(name);
     if (!d.mount) return c; // the root's entries are the attachments
     if (c && performance.now() - c.seen < TRUST_MS) return c;
@@ -426,6 +446,7 @@ export class FolderTree implements P9Tree<FNode> {
 
   private async useSession(n: FNode, keep: boolean) {
     if (n.session) return n.session;
+    hostWritable(n);
     const size = keep ? (await this.attrs(n)).size : 0;
     const w = await (await this.fileHandle(n)).createWritable({ keepExistingData: keep });
     n.session = { w, size, base: size, overlay: new Overlay() };
@@ -488,8 +509,10 @@ export class FolderTree implements P9Tree<FNode> {
       return;
     }
     return this.serial([n], async () => {
-      if (write) this.writable(n);
-      else this.live(n);
+      if (write) {
+        this.writable(n);
+        hostWritable(n);
+      } else this.live(n);
       if (flags & O_TRUNC && write) await this.setSize(n, 0);
       n.opens++;
       if (write) n.writers++;
@@ -499,6 +522,8 @@ export class FolderTree implements P9Tree<FNode> {
   create(f: P9Fid<FNode>, name: string, flags: number, mode: number) {
     const d = f.node;
     this.writable(d);
+    nameFits(name);
+    hostWritable(d, name);
     return this.serial([d], async () => {
       if (await this.lookup(d, name)) throw new Err(EEXIST);
       const h = await (await this.dirHandle(d)).getFileHandle(name, { create: true });
@@ -629,6 +654,7 @@ export class FolderTree implements P9Tree<FNode> {
   mkdir(f: P9Fid<FNode>, name: string, mode: number) {
     const d = f.node;
     this.writable(d);
+    nameFits(name);
     return this.serial([d], async () => {
       if (await this.lookup(d, name)) throw new Err(EEXIST);
       const n = this.seen(d, name, await (await this.dirHandle(d)).getDirectoryHandle(name, { create: true }));
@@ -667,6 +693,7 @@ export class FolderTree implements P9Tree<FNode> {
   unlink(f: P9Fid<FNode>, name: string, rmdir: boolean) {
     const d = f.node;
     this.writable(d);
+    nameFits(name);
     const known = d.children!.get(name);
     return this.serial(known ? [d, known] : [d], async () => {
       const n = await this.lookup(d, name);
@@ -687,6 +714,8 @@ export class FolderTree implements P9Tree<FNode> {
     if (od.dir !== true || nd.dir !== true) throw new Err(ENOTDIR);
     if (!od.mount || !nd.mount || od.mount !== nd.mount) throw new Err(EXDEV);
     this.writable(od);
+    nameFits(oname);
+    nameFits(nname);
     const known = od.children!.get(oname);
     const over = nd.children!.get(nname);
     const nodes = new Set([od, nd, ...(known ? this.subtree(known) : []), ...(over ? [over] : [])]);
