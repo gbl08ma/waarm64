@@ -838,7 +838,8 @@ vkQuake's 282 entries (3.7 MB inflated): fflate 0.49 MB held (7.5×), 11.5 ms to
   few ms. vkQuake's second replay: 753 lookups, 28 ms of inflates.
 - **Left**: a dictionary shared by the entries (they are alike: zstd 19's long window reaches 6.4×) would hold less;
   not worth it at these sizes. An entry stays inflated until its write-back (a second after its put).
-- **CI**: see below.
+- **CI**: `scripts/ci.sh` OK (520 s), `scripts/ci-graphics.sh` OK (263 s), `scripts/ci-deqp-vk.sh` OK (1,097 s, seed
+  1445709793).
 
 ## VK4 T49: a program's start — the printer's WGSL a third smaller (Tint −32% on the M4); made at creation, pipelines still lose; Godot's start is the guest's
 
