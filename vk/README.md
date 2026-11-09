@@ -1516,7 +1516,9 @@ description, destroyed at the end in order), `tests/virgl-video.test.ts` the cal
 A machine has Vulkan when its Machines page setting is on (`MachineRecord.vulkan`, beside 3D: docs/machines.md)
 or the page's `?gpu=vulkan` asks; only then does the GPU worker fetch the module. `npm run dist` puts it in the
 static copy as a hashed asset with its licences beside it (`VENUS-LICENSES.txt`, made by vk/build.sh from
-`vk/LICENSES.head`, the sources' licence files and `vk/LLVM-exception.txt`); `npm start` and `npm run dist --
---no-vulkan` include it only when built (vk/build.sh isn't part of their preparation: it builds Mesa and
-virglrenderer natively first). The module is 12.05 MiB, 1.24 MiB gzipped, 0.74 MiB with brotli (bench/vulkan/REPORT.md "VK3: the summary"; how
+`vk/LICENSES.head`, the sources' licence files and `vk/LLVM-exception.txt`), and `npm start` serves that copy. Both
+build it when it isn't current (docs/frontend.md "`npm start`", step 5d): vk/build.sh writes `venus.wasm.inputs`
+beside the module, the key of what decides it (`vk/build.sh --inputs`), and a module whose stamp differs is rebuilt
+by `images/build.sh venus` (vk/build.sh in Podman, its own work tree: docs/images.md "venus"), which installs it in
+`target/vk/` (where Podman isn't, vk/build.sh on the host). The module is 12.05 MiB, 1.24 MiB gzipped, 0.74 MiB with brotli (bench/vulkan/REPORT.md "VK3: the summary"; how
 it's measured: "VK2: the module, a pipeline, a submit").

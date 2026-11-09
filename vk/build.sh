@@ -6,10 +6,19 @@
 # (vk/patches/). Idempotent: built trees are reused.
 #   vk/build.sh            -> target/vk/venus.wasm
 #   vk/build.sh native     -> also target/vk/wgsl (the translator natively, with ASan: one stage's WGSL)
-# Needs what tools/venus-oracle/build.sh needs (meson, ninja, python313-Mako, …) and network the first time.
+#   vk/build.sh --inputs   print the key of what decides the module (vk/ and the arena's size), which a build writes to
+#                          venus.wasm.inputs beside it: `npm start` rebuilds the module when they differ
+# VK_WORK=<dir> builds in <dir> instead of target/vk (images/build.sh venus: in Podman, docs/images.md "venus").
+# Needs what tools/venus-oracle/build.sh needs (meson, ninja, python313-Mako, …), Node and network the first time.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-W=$ROOT/target/vk
+W=${VK_WORK:-$ROOT/target/vk}
+inputs() {
+  { for f in $(cd "$ROOT" && find vk -type f ! -name '*.md' | LC_ALL=C sort); do printf '%s\0' "$f"; cat "$ROOT/$f"; done
+    grep -E '^export const VENUS_ARENA ' "$ROOT/web/ram.ts"; } | sha256sum | cut -c1-16
+}
+if [ "${1:-}" = --inputs ]; then inputs; exit 0; fi
+KEY=$(inputs)
 VIRGL_COMMIT=e0a1caf3b147bb26dfe524dbb85ded1177e7e49e   # virglrenderer main, 2026-10-21 (MIT): the Venus oracle's
 MESA_TAG=mesa-26.2.4                                     # MIT, as the oracle
 case $(uname -m) in
@@ -78,4 +87,5 @@ if [ "${1:-}" = native ]; then ninja -C "$W" -f native.ninja > "$W/native-build.
   section 'Apache-2.0 (Mesa: licenses/Apache-2.0)'; cat "$W/mesa/licenses/Apache-2.0"
   section 'LLVM Exceptions to the Apache 2.0 License'; cat "$ROOT/vk/LLVM-exception.txt"
 } > "$W/LICENSES.txt"
+echo "$KEY" > "$W/venus.wasm.inputs"
 ls -l "$W/venus.wasm"

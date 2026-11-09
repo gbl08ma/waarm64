@@ -143,7 +143,8 @@ net/ts/build.sh                # the Rust tailnet client (tailcat, and Tailscale
 node bench/net/tailcat.ts <tc… address> 5   # it against a tailcat exit node on this machine: startup, RTT, echo throughput
 node bench/net/clients.ts 5    # the Tailscale client in Chromium (the Podman tailnet): load, Running, RTT, throughput, the worker's memory and CPU
 WEBPC_DISTROS=debian WEBPC_START_COLD=1 node --test tests/start.test.ts  # npm start on a fresh copy, building its own core
-vk/build.sh [native]           # Venus's renderer -> target/vk/venus.wasm (vk/README.md)
+vk/build.sh [native]           # Venus's renderer -> target/vk/venus.wasm (vk/README.md), with its stamp venus.wasm.inputs
+images/build.sh venus          # the same in Podman (what npm start runs when the stamp is stale), installed in target/vk/
 npm run bench -- --page bench/interp/index.html [--only jit_mips]       # small guests, CoreMark
 npm run bench -- --page bench/boot/index.html --only boot_alpine_jit    # boots, userspace, openssl, I/O
 bench/interp/build-coremark.sh # CoreMark -> target/bench/

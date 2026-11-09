@@ -597,10 +597,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - [B] **Snapshots while Vulkan (Venus) is in use** (VK1, docs/devices.md "Venus"): refused while a Venus context exists.
   Needs the renderer's objects as data (as virgl's), the blobs' bytes (mapped ones are in the window, which a
   snapshot's RAM chunks don't cover yet) and the window itself: VK4's tier 4 (VK4-KICKOFF.md).
-- [B] **`npm start` doesn't build Vulkan's renderer** (VK2 L7, vk/README.md "On the page"): vk/build.sh clones and builds
-  Mesa and virglrenderer natively first (minutes, meson and Mesa's build dependencies), so the preparation leaves it
-  out and a user's copy has Vulkan only if they built it. A prebuilt module fetched by hash (as the firmware could be)
-  would bring it to every `npm start`.
 - [B] **Pipelines' loose ends** (REPORT.md "VK3 L3", "VK4 T17", "VK4 T49"; vk/README.md "Pipelines made asynchronously",
   "The shader cache"): (1) render pipelines made at vkCreateGraphicsPipelines (`?gpu=vkpremake=on`, VK4 T17) lose for
   both programs measured. vkQuake's capture makes 100 so and draws with 8 (cold, 269 → 26 frames/s on the M4). Godot's

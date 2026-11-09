@@ -1,6 +1,6 @@
 // `npm run dist`: the page as a static site (docs/frontend.md "A static copy"): files to copy to any
 // web server, no Node behind them. It prepares what `npm start` prepares (the npm packages, the wasm
-// core, the tailnet client, the UEFI firmware), then builds the page with Vite (vite.config.ts) into `target/dist/`:
+// core, the tailnet client, the UEFI firmware, clipboard sharing's guest agent, Vulkan's renderer), then builds the page with Vite (vite.config.ts) into `target/dist/`:
 //   index.html                        the page, the commit it was built from in a meta tag (tools/stamp.ts)
 //   assets/                           its code bundled (the page, each worker, the sound worklet; minified, with source
 //                                     maps), its CSS, and the binaries it fetches: the core (webpc_core.wasm), the
@@ -16,19 +16,16 @@
 // deployed copy's images are on their own host, deploy/disks/).
 // The server must send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy:
 // require-corp` with every file (SharedArrayBuffer). The page fetches its own files whole; disks need range requests.
-//   npm run dist [-- --out <dir>] [-- --no-prepare] [-- --no-vulkan] [-- --serve [--port <n>]]
+//   npm run dist [-- --out <dir>] [-- --no-prepare] [-- --serve [--port <n>]]
 // The guest agent must be the build in Podman (images/build.sh agent): one by the host's cargo (no Podman: its
 // HOST-BUILD marker) is for tests and is refused (docs/images.md "agent").
-// The Vulkan renderer isn't built by the preparation (vk/build.sh: Mesa and virglrenderer built natively first, a few
-// minutes and their build tools; docs/devices.md "Venus"): `npm run dist` needs it built, `--no-vulkan` (and `npm
-// start`) make the copy without it, where a machine with Vulkan on fails to start its renderer.
 // --serve previews the copy with Vite's preview server (tools/serve.ts: the same headers and ranges a host must give).
 import { cpSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { build } from 'vite';
 import { APP, ROOT, startServer } from './serve.ts';
-import { AGENT, AGENT_HOST_BUILD, FIRMWARE, main as prepare, Stop, WASM } from './start.ts';
+import { AGENT, AGENT_HOST_BUILD, FIRMWARE, main as prepare, Stop, VENUS, WASM } from './start.ts';
 import { BUNDLED } from './third-party.ts';
 
 export const OUT = join(ROOT, 'target/dist');
@@ -38,8 +35,8 @@ const MARK = '.webpc-dist';
 
 /** The binaries the page fetches, as paths in the repository. */
 export const BINARIES = [relative(ROOT, WASM), 'target/net/ts.wasm', FIRMWARE, BUNDLED['EDK2-LICENSES.txt'], AGENT];
-/** Vulkan's renderer and its licences (vk/build.sh). */
-export const VULKAN = ['target/vk/venus.wasm', BUNDLED['VENUS-LICENSES.txt']];
+/** Vulkan's renderer and its licences (vk/build.sh; images/build.sh venus). */
+export const VULKAN = [VENUS, BUNDLED['VENUS-LICENSES.txt']];
 
 /** Why the guest agent in `root`'s target/ can't go in a copy to distribute (a build by the host's cargo), or undefined. */
 export const hostAgentProblem = (root = ROOT) => existsSync(join(root, AGENT_HOST_BUILD))
@@ -48,7 +45,7 @@ export const hostAgentProblem = (root = ROOT) => existsSync(join(root, AGENT_HOS
 
 /**
  * Writes the static copy of the page to `out` (its binaries must be built; Vulkan's renderer too unless `vulkan` is
- * false, when it goes in only if built; the guest agent built in Podman unless `hostAgent`: `npm start`'s copy, for this
+ * false, for the tests, when it goes in only if built; the guest agent built in Podman unless `hostAgent`: `npm start`'s copy, for this
  * machine only, takes the host's build too); returns the files written, relative to `out`.
  */
 export async function writeDist(out = OUT, { vulkan = true, hostAgent = false }: { vulkan?: boolean; hostAgent?: boolean } = {}) {
@@ -60,7 +57,7 @@ export async function writeDist(out = OUT, { vulkan = true, hostAgent = false }:
   const host = hostAgent ? undefined : hostAgentProblem();
   if (host) throw new Stop(host);
   const vk = VULKAN.every((f) => existsSync(join(ROOT, f)));
-  if (vulkan && !vk) throw new Stop(`Not built: ${VULKAN.filter((f) => !existsSync(join(ROOT, f))).join(', ')} (vk/build.sh builds Vulkan's renderer; --no-vulkan leaves it out).`);
+  if (vulkan && !vk) throw new Stop(`Not built: ${VULKAN.filter((f) => !existsSync(join(ROOT, f))).join(', ')} (\`npm run dist\` without --no-prepare builds them).`);
   await build({ configFile: join(ROOT, 'vite.config.ts'), build: { outDir: out }, logLevel: 'warn' });
   // The license files the About pane links (tools/third-party.ts `BUNDLED`).
   cpSync(join(ROOT, BUNDLED['EDK2-LICENSES.txt']), join(out, 'EDK2-LICENSES.txt'));
@@ -70,11 +67,11 @@ export async function writeDist(out = OUT, { vulkan = true, hostAgent = false }:
 }
 
 if (import.meta.main) {
-  const { values } = parseArgs({ options: { out: { type: 'string' }, 'no-prepare': { type: 'boolean', default: false }, 'no-vulkan': { type: 'boolean', default: false }, serve: { type: 'boolean', default: false }, port: { type: 'string', default: process.env.PORT ?? '8080' } } });
+  const { values } = parseArgs({ options: { out: { type: 'string' }, 'no-prepare': { type: 'boolean', default: false }, serve: { type: 'boolean', default: false }, port: { type: 'string', default: process.env.PORT ?? '8080' } } });
   const out = values.out ? resolve(values.out) : OUT;
   try {
     if (!values['no-prepare']) await prepare(['--prepare-only']);
-    const files = await writeDist(out, { vulkan: !values['no-vulkan'] });
+    const files = await writeDist(out);
     const bytes = files.reduce((n, f) => n + statSync(join(out, f)).size, 0);
     console.log(`\nWrote ${files.length} files (${(bytes / 2 ** 20).toFixed(1)} MiB) to ${out}.\n` +
       'Copy its contents to a web server. It must send these headers with every file (SharedArrayBuffer needs them):\n' +

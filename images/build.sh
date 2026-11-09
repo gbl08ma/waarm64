@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the guest images in rootless Podman, never on the host (docs/images.md).
-#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, alpine-virgl, linux-crypto, linux-gpu, linux-snd, linux-usb, linux-usbhost, debian, ltp, litmus, fptest, edk2, alpine-uefi, agent (default: all)
+#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, alpine-virgl, linux-crypto, linux-gpu, linux-snd, linux-usb, linux-usbhost, debian, ltp, litmus, fptest, edk2, alpine-uefi, agent, venus (default: all)
 #   images/build.sh --check name   exit 0 if target/images/<name> is current, else say how to rebuild
 #   images/build.sh --inputs name  print the key of name's inputs (what --check compares with <name>/.inputs)
 # buildroot: Buildroot's BusyBox root filesystem (rootfs.ext4), with Buildroot's
@@ -77,6 +77,11 @@
 #   cloud session), the host's cargo builds it the same way (rustup's musl target,
 #   rust-lld: no cross gcc) and writes agent/HOST-BUILD beside it, a build for tests
 #   that `npm run dist` refuses (docs/images.md "agent"). Where Podman exists, never.
+# venus: Vulkan's renderer (vk/, vk/README.md), venus.wasm and its licences (LICENSES.txt), which the page ships:
+#   vk/build.sh in Node's Debian image (Node for vk/gen.ts; meson, ninja and Mesa's build tools from
+#   snapshot.debian.org, as edk2), its work tree under target/images/build/venus (Mesa, virglrenderer, wasi-sdk),
+#   the repository at a fixed path (/src) as the agent's. Not a guest image either: also installed where the page and
+#   the tests take it, target/vk/ (with vk/build.sh's stamp, venus.wasm.inputs), over what vk/build.sh made there.
 # Outputs go to target/images/<name>/, downloads to target/images/dl/. Output
 # hashes are compared with images/SHA256SUMS (a mismatch warns: reproducibility
 # is best-effort).
@@ -121,13 +126,16 @@ EDK2_SNAPSHOT=20260924T000000Z
 EDK2_TOOLS="build-essential uuid-dev acpica-tools python3 python-is-python3 dosfstools mtools"
 AGENT_CONTAINER=docker.io/library/rust@sha256:0cce0a5e0e8ba67b455257a3a02a1d99005f382748789d6464460028810f1627 # 1.99.0-alpine3.24, multi-arch
 AGENT_TOOLCHAIN=1.99.0 # the image's, and agent/rust-toolchain.toml's
+VENUS_CONTAINER=docker.io/library/node@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072 # 26.13.0-trixie-slim, multi-arch
+VENUS_SNAPSHOT=20261106T000000Z # after the image's Debian (2026-11-05)
+VENUS_TOOLS="git curl ca-certificates build-essential pkg-config meson ninja-build python3 python3-mako python3-yaml python3-packaging bison flex libdrm-dev libvulkan-dev libzstd-dev zlib1g-dev libexpat1-dev glslang-tools"
 USERLAND_CONTAINER=docker.io/library/alpine@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 # 3.24, multi-arch
 export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 
 cd "$(dirname "$0")/.."
 root=$PWD
 out=target/images
-NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-gl alpine-virgl linux-crypto linux-gpu linux-snd linux-usb linux-usbhost debian ltp litmus fptest edk2 alpine-uefi agent)
+NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-gl alpine-virgl linux-crypto linux-gpu linux-snd linux-usb linux-usbhost debian ltp litmus fptest edk2 alpine-uefi agent venus)
 
 # Buildroot (pinned by tag and checked against the commit) into $1 with the defconfig $2.
 buildroot() {
@@ -667,6 +675,21 @@ build_agent() {
   cp "$b/target/aarch64-unknown-linux-musl/release/webpc-agent" "$dst/"
 }
 
+# Vulkan's renderer (vk/build.sh) in Node's Debian image, its work tree kept for the next build.
+build_venus() {
+  local dst=$out/venus b=$out/build/venus
+  rm -rf "$dst"
+  mkdir -p "$dst" "$b"
+  podman run --rm -v "$root:/src:z" -w /src -e SOURCE_DATE_EPOCH -e VK_WORK="/src/$b" "$VENUS_CONTAINER" bash -ec '
+    export DEBIAN_FRONTEND=noninteractive
+    rm -f /etc/apt/sources.list.d/* /etc/apt/sources.list
+    printf "Types: deb\nURIs: http://snapshot.debian.org/archive/debian/%s\nSuites: trixie trixie-updates\nComponents: main\nCheck-Valid-Until: no\n" "$1" > /etc/apt/sources.list.d/snapshot.sources
+    apt-get update -qq >/dev/null && apt-get install -y -qq --no-install-recommends $2 >/dev/null
+    vk/build.sh
+  ' - "$VENUS_SNAPSHOT" "$VENUS_TOOLS"
+  cp "$b/venus.wasm" "$b/LICENSES.txt" "$dst/"
+}
+
 build_kvm-unit-tests() {
   local dst=$out/kvm-unit-tests src=$out/build/kvm-unit-tests
   rm -rf "$src" "$dst"
@@ -700,8 +723,9 @@ inputs() {
   [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh images/edk2/*.patch $(find images/edk2/WebpcXhciDxe -type f | sort)) && pins='^EDK2_'
   [ "$1" = alpine-uefi ] && files+=(images/alpine-uefi.json) && pins='^$'
   [ "$1" = agent ] && files=(agent/Cargo.toml agent/Cargo.lock agent/rust-toolchain.toml agent/.cargo/config.toml agent/no-unwind.ld $(find agent/src -type f | sort)) && pins='^AGENT_'
+  [ "$1" = venus ] && files=(vk/build.sh) && pins='^VENUS_'
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
-  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd || $1 == linux-usb || $1 == linux-usbhost || $1 == fptest ]]; then declare -f linux_src; fi; if [[ $1 == alpine* ]]; then declare -f alpine_release; fi; if [ "$1" = agent ]; then command -v podman >/dev/null && echo podman || echo host; fi; } |
+  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd || $1 == linux-usb || $1 == linux-usbhost || $1 == fptest ]]; then declare -f linux_src; fi; if [[ $1 == alpine* ]]; then declare -f alpine_release; fi; if [ "$1" = agent ]; then command -v podman >/dev/null && echo podman || echo host; fi; if [ "$1" = venus ]; then vk/build.sh --inputs; fi; } |
     sha256sum | cut -c1-16
 }
 
@@ -726,6 +750,7 @@ outputs() {
     edk2) echo edk2/QEMU_EFI.fd edk2/LICENSES.txt edk2/shell.img ;;
     alpine-uefi) echo alpine-uefi/alpine.qcow2 alpine-uefi/alpine-grub.qcow2 ;;
     agent) echo agent/webpc-agent ;;
+    venus) echo venus/venus.wasm venus/LICENSES.txt ;;
   esac
 }
 
@@ -777,10 +802,10 @@ build() {
 }
 
 if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
-  rest=() br=() alpine= user= gl= virgl= crypto= gpu= snd= usb= usbhost= litmus= fptest= kernel= debian= edk2= alpine_uefi= agent=
+  rest=() br=() alpine= user= gl= virgl= crypto= gpu= snd= usb= usbhost= litmus= fptest= kernel= debian= edk2= alpine_uefi= agent= venus=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
-    if [ "$name" = alpine ]; then alpine=1; elif [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = linux-usb ]; then usb=1; elif [ "$name" = linux-usbhost ]; then usbhost=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = fptest ]; then fptest=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; elif [ "$name" = agent ]; then agent=1; elif [ "$name" = buildroot ] || [ "$name" = ltp ]; then br+=("$name"); else rest+=("$name"); fi
+    if [ "$name" = alpine ]; then alpine=1; elif [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = linux-usb ]; then usb=1; elif [ "$name" = linux-usbhost ]; then usbhost=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = fptest ]; then fptest=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; elif [ "$name" = agent ]; then agent=1; elif [ "$name" = venus ]; then venus=1; elif [ "$name" = buildroot ] || [ "$name" = ltp ]; then br+=("$name"); else rest+=("$name"); fi
   done
   # The Buildroot images, natively in the host's architecture.
   if [ ${#br[@]} -gt 0 ]; then
@@ -815,6 +840,10 @@ if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
   if [ -n "$fptest" ]; then build fptest; fi
   if [ -n "$edk2" ]; then build edk2; fi
   if [ -n "$agent" ]; then build agent; fi # Podman, or the host's cargo without it
+  if [ -n "$venus" ]; then # and where the page and the tests take it (vk/build.sh's place), with its stamp
+    build venus
+    mkdir -p target/vk && cp "$out/venus/venus.wasm" "$out/venus/LICENSES.txt" target/vk/ && vk/build.sh --inputs > target/vk/venus.wasm.inputs
+  fi
   exit 0
 fi
 

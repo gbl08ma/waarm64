@@ -52,7 +52,7 @@ test('the static copy is the page bundled: a few hashed files, its binaries amon
   const scripts = files.filter((f) => f.endsWith('.js'));
   assert.ok(scripts.length < 40, `${scripts.length} scripts: the page isn't bundled`);
   assert.match(readFileSync(join(out, 'THIRD-PARTY-LICENSES.md'), 'utf8'), /@xterm\/xterm[\s\S]*svelte/);
-  // Vulkan's renderer where vk/build.sh built it (`npm run dist` requires it, `--no-vulkan` and `npm start` don't), its
+  // Vulkan's renderer where it is built (`npm run dist` and `npm start` build it; this copy takes it if there), its
   // licences beside it; the GPU worker fetches it by its hashed name.
   assert.equal(files.some((f) => /^assets\/venus-[\w-]{8}\.wasm$/.test(f)), vulkan, 'assets/venus-<hash>.wasm');
   assert.equal(files.includes('VENUS-LICENSES.txt'), vulkan, 'VENUS-LICENSES.txt');

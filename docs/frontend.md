@@ -1616,13 +1616,23 @@ each step skipped when its output is current:
    skipped when `images/build.sh --check edk2` says it's current. Without Podman the start
    stops *before* the long steps, saying how to install it. `tests/start.test.ts` covers the
    message and (with `WEBPC_START_COLD=1`) the build in the copy.
+5c. **Clipboard sharing's guest agent** (`images/build.sh agent`: Rust in Podman, ~1 min the first time; without
+   Podman the host's cargo, a build `npm run dist` refuses: docs/images.md "agent"), when `images/build.sh --check
+   agent` says it isn't current.
+5d. **Vulkan's renderer** (`target/vk/venus.wasm` and its licences, vk/README.md "On the page"), when the key of what
+   decides it (`vk/build.sh --inputs`: `vk/` but its `.md` files, and `VENUS_ARENA` in `web/ram.ts`) differs from the
+   stamp a build writes beside it (`venus.wasm.inputs`; `vk/build.sh` on the host writes it too, so a developer's
+   build counts). Built by `images/build.sh venus` (`vk/build.sh` in Podman, docs/images.md "venus": ~3 min the first
+   time on the dev VM, pulling Node's Debian image and cloning Mesa and virglrenderer; ~1 min after a change in
+   `vk/`), which installs it in `target/vk/`; without Podman (a cloud session, its firmware fetched) `vk/build.sh` on
+   the host.
 6. **The page's build** (`vite build` into `target/dist/`, as `npm run dist` writes it, below, "A static copy"; ~1 s,
    run every time: its output carries the commit) and **the server**, Vite's preview server over it
    (`tools/serve.ts`), on `127.0.0.1:8080` (`PORT` or `--port`; `--host` for
    another interface, with a warning that a remote browser over plain HTTP gets no cross-origin
    isolation, so forwarding the port is the way), then the URL and the `ssh -L` line. A port in
    use stops it with a message rather than moving to another port: **OPFS is per origin, so the
-   saved disks' changes belong to the port**. `--prepare-only` does steps 1–5b and exits.
+   saved disks' changes belong to the port**. `--prepare-only` does steps 1–5d and exits.
    **No disk image:** the page waits for the user's (above, "The machines"); `npm start` downloaded
    Debian until 2026-10-17, when the page stopped starting it.
 
@@ -1644,8 +1654,7 @@ Debian through UEFI).
 
 `npm run dist` (`tools/dist.ts`) writes the page as plain files to `target/dist/` (`--out <dir>`), to copy to any
 web server: no Node behind it. It first does `npm start --prepare-only`'s steps (`--no-prepare` skips them and
-stops if a binary is missing; Vulkan's renderer isn't among them: `vk/build.sh` builds it, `npm run dist` stops
-without it, `--no-vulkan` leaves it out, and `npm start`'s copy has it only when built), then builds the page with Vite (below, "The build") and adds the licenses:
+stops if a binary is missing, Vulkan's renderer among them), then builds the page with Vite (below, "The build") and adds the licenses:
 
 - `index.html`, the page at the site's root (`https://vm.tny.im/?disk=<url>`), with a `<meta name="webpc-build">`
   holding the commit it was built from, its date and "with local changes" when tracked files differed
@@ -1654,7 +1663,8 @@ without it, `--no-vulkan` leaves it out, and `npm start`'s copy has it only when
 - `assets/`: the page's code bundled, minified, with source maps: the page (`index-<hash>.js`, its CSS), each worker
   (machine, vCPU, device, compile, GPU, sampler, timeline, tailnet, tailcat, disk jobs, import, export, inflate,
   deflate) and the sound worklet; and the binaries the page fetches, the core (`webpc_core.wasm`), the tailnet client
-  (`ts.wasm`), EDK2 (`QEMU_EFI.fd`) and Vulkan's renderer (`venus.wasm`, 12 MiB, fetched only by a machine with
+  (`ts.wasm`), EDK2 (`QEMU_EFI.fd`), clipboard sharing's guest agent (`webpc-agent`, fetched only by a machine with
+  the setting) and Vulkan's renderer (`venus.wasm`, 12 MiB, fetched only by a machine with
   Vulkan on: vk/README.md "On the page"). Every name is hashed, so a host's caches never serve a stale file with a new
   page. 21.4 MiB in all, 45 files, half of it the source maps (2026-10-24). **No guest images**: the user opens a disk, or passes `?disk=<url>` (a server that answers
   range requests and, cross-origin, sends CORS and CORP headers). A relative `?disk=` URL is relative to where the

@@ -124,7 +124,7 @@ for (const e of virgl) {
   const src = resolve(e.directory, e.file);
   if (SKIP.test(src)) continue;
   const f = [...flags(e, toWasmConfig), '-include', PREFIX];
-  if (src.includes('/venus/') && !vkrFlags.length) vkrFlags = f;
+  if (src.startsWith(`${VIRGL}/src/venus/`) && !vkrFlags.length) vkrFlags = f;
   compile(src, f);
 }
 
@@ -176,4 +176,4 @@ writeFileSync(`${W}/native.ninja`, [
   'rule cc', `  command = cc ${nflags.map(shq).join(' ').replace(/\$/g, '$$$$')} -I${HERE}/compiler -O1 -g -fsanitize=address -fno-omit-frame-pointer $in ${nlibs.join(' ')} -lSPIRV-Tools -lzstd -lz -ldl -lstdc++ -lm -lpthread -o $out`,
   `build wgsl: cc ${readdirSync(`${HERE}/compiler`).filter((f) => f.endsWith('.c')).sort().map((f) => esc(`${HERE}/compiler/${f}`)).join(' ')}`, '',
 ].join('\n'));
-console.log(`target/vk/wasm.ninja: ${objs.length} objects -> venus.wasm`);
+console.log(`${W}/wasm.ninja: ${objs.length} objects -> venus.wasm`);

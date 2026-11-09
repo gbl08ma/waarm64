@@ -14,7 +14,7 @@ import { test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { download, downloads } from '../tools/debian.ts';
 import { ROOT, startServer } from '../tools/serve.ts';
-import { FIRMWARE, WASM, firmwareStale, npmStale, podmanProblem, wasmInputs } from '../tools/start.ts';
+import { FIRMWARE, VENUS, VENUS_LICENSES, WASM, firmwareStale, npmStale, podmanProblem, venusInputs, venusStale, wasmInputs } from '../tools/start.ts';
 import { tsInputs } from '../tools/tailscale.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { t } from '../web/i18n.ts';
@@ -75,6 +75,35 @@ test('the firmware: built when missing or stale, and Podman, which builds it, sa
   }
   const none = podmanProblem({ PATH: '' });
   assert.match(none!, /^Podman isn't installed\. The page boots disks through UEFI firmware \(EDK2\), which `npm start` builds in a rootless Podman container[^]*Install Podman[^]*then run `npm start` again\.$/);
+});
+
+test("Vulkan's renderer: rebuilt when missing, unstamped or its key moved (vk/ but its docs, and the arena's size)", () => {
+  const d = tmp('venus');
+  try {
+    write(d, 'vk/build.sh', readFileSync(join(ROOT, 'vk/build.sh'), 'utf8'));
+    write(d, 'vk/driver/wg.c', 'int a;');
+    write(d, 'vk/README.md', 'docs');
+    write(d, 'web/ram.ts', 'export const VENUS_ARENA = 1280 << 20;\nexport const OTHER = 1;\n');
+    assert.equal(venusStale(d), "Vulkan's renderer isn't built");
+    write(d, VENUS, 'wasm');
+    write(d, VENUS_LICENSES, 'licences');
+    assert.equal(venusStale(d), "Vulkan's renderer is out of date", 'no stamp: a build from before it');
+    const key = venusInputs(d);
+    assert.match(key, /^[0-9a-f]{16}$/);
+    write(d, VENUS + '.inputs', key + '\n');
+    assert.equal(venusStale(d), undefined);
+    write(d, 'vk/README.md', 'other docs');
+    write(d, 'web/ram.ts', 'export const VENUS_ARENA = 1280 << 20;\nexport const OTHER = 2;\n');
+    write(d, 'vk/driver/wg.c', 'int a;'); // rewritten, the same bytes
+    assert.equal(venusStale(d), undefined);
+    write(d, 'vk/driver/wg.c', 'int b;');
+    assert.equal(venusStale(d), "Vulkan's renderer is out of date");
+    write(d, 'vk/driver/wg.c', 'int a;');
+    write(d, 'web/ram.ts', 'export const VENUS_ARENA = 1024 << 20;\n');
+    assert.equal(venusStale(d), "Vulkan's renderer is out of date");
+  } finally {
+    rmSync(d, { recursive: true });
+  }
 });
 
 test('the download: streamed to a .part file, checked against the pin, then kept and checked again', async () => {
@@ -155,6 +184,10 @@ test('npm start on a fresh copy of the repository: install, build, serve; the pa
     mkdirSync(join(d, 'target/images/edk2'), { recursive: true });
     for (const f of ['QEMU_EFI.fd', 'LICENSES.txt', '.inputs']) copyFileSync(join(ROOT, 'target/images/edk2', f), join(d, 'target/images/edk2', f));
   }
+  if (!cold && !venusStale()) { // Vulkan's renderer too, with its stamp (the copy's vk/ is this checkout's); cold builds it in Podman
+    mkdirSync(join(d, 'target/vk'), { recursive: true });
+    for (const f of [VENUS, VENUS_LICENSES, VENUS + '.inputs']) copyFileSync(join(ROOT, f), join(d, f));
+  }
   const env = { ...process.env, PORT: '0', WEBPC_DL: downloads() };
   const start = performance.now();
   let served = 0;
@@ -180,6 +213,7 @@ test('npm start on a fresh copy of the repository: install, build, serve; the pa
     assert.match(out, cold ? /Building the UEFI firmware/ : /^(?![^]*Building the UEFI firmware)/);
     assert.ok(!existsSync(join(d, 'target/images/debian')));
     assert.ok(existsSync(join(d, FIRMWARE)) && existsSync(join(d, 'target/images/edk2/LICENSES.txt')));
+    assert.ok(!venusStale(d), 'npm start leaves a machine with Vulkan its renderer');
     // The copy's firmware is this checkout's (current: images/SHA256SUMS) unless built cold, and
     // tests/page-debian.test.ts boots Debian to a login three times; so here the page only has to
     // wait for a disk, then start the copy's machine on one: its bundle, core and firmware load and the firmware (or

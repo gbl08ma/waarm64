@@ -1,7 +1,8 @@
 // `npm start` (M8 loop 5; docs/frontend.md "npm start"), after tools/start.js
 // checked Node's version: rustup, the npm packages, the wasm core, the tailnet client, the
 // UEFI firmware (EDK2, built in Podman: images/build.sh edk2), clipboard sharing's guest agent (images/build.sh agent:
-// Podman, or the host's cargo without it), then the page's build (Vite, into target/dist/, as `npm run
+// Podman, or the host's cargo without it), Vulkan's renderer (images/build.sh venus: vk/build.sh in Podman, or on the
+// host without it), then the page's build (Vite, into target/dist/, as `npm run
 // dist` writes it) served on 127.0.0.1 (Vite's preview server) and the URL. Each step but the page's build (~1 s) is
 // skipped when its output is current, so a second start takes about a second. No disk image: the page waits for the user's (docs/frontend.md).
 //   npm start [-- --host <addr>] [-- --port <n>] [-- --prepare-only]
@@ -80,6 +81,21 @@ export function agentStale(root = ROOT): string | undefined {
   return r.status === 0 ? undefined : "clipboard sharing's guest agent is out of date";
 }
 
+/** Vulkan's renderer (vk/build.sh, vk/README.md) and its licences, which the page hands a machine with Vulkan. */
+export const VENUS = 'target/vk/venus.wasm';
+export const VENUS_LICENSES = 'target/vk/LICENSES.txt';
+
+/** What decides Vulkan's renderer (vk/ and the arena's size): the key a build writes beside it, venus.wasm.inputs. */
+export const venusInputs = (root = ROOT) => spawnSync('bash', ['vk/build.sh', '--inputs'], { cwd: root, encoding: 'utf8' }).stdout.trim();
+
+/** Why Vulkan's renderer has to be built (missing, or its inputs changed), or undefined if it is current. */
+export function venusStale(root = ROOT): string | undefined {
+  if (!existsSync(join(root, VENUS)) || !existsSync(join(root, VENUS_LICENSES))) return "Vulkan's renderer isn't built";
+  let stamp = '';
+  try { stamp = readFileSync(join(root, VENUS + '.inputs'), 'utf8').trim(); } catch { /* a build from before the stamp */ }
+  return stamp === venusInputs(root) ? undefined : "Vulkan's renderer is out of date";
+}
+
 /** What to do when building the firmware isn't possible here (no rootless Podman), or undefined if it is. */
 export function podmanProblem(env: NodeJS.ProcessEnv = process.env) {
   if (spawnSync('podman', ['--version'], { stdio: 'ignore', env }).status === 0) return undefined;
@@ -150,13 +166,23 @@ export async function main(argv = process.argv.slice(2)) {
     console.log(`Building clipboard sharing's guest agent (${agent}; Rust in a Podman container: ~1 min the first time, which also pulls the build image)…`);
     if (!run('bash', ['images/build.sh', 'agent'], env) || agentStale()) stop("Clipboard sharing's guest agent didn't build (the errors are above).");
   }
+  const venus = venusStale();
+  if (venus) {
+    // In Podman where it is (as the firmware); without it (a cloud session, whose firmware was fetched), vk/build.sh on
+    // the host, which needs meson, ninja and Mesa's build tools (vk/build.sh says which).
+    const podman = has('podman', ['--version'], env);
+    console.log(podman
+      ? `Building Vulkan's renderer (${venus}; Mesa and virglrenderer for WebAssembly in a Podman container: a few minutes the first time, which also pulls the build image and clones both)…`
+      : `Building Vulkan's renderer (${venus}; vk/build.sh on this machine, as there's no Podman)…`);
+    if (!run('bash', podman ? ['images/build.sh', 'venus'] : ['vk/build.sh'], env) || venusStale()) stop("Vulkan's renderer didn't build (the errors are above).");
+  }
   if (values['prepare-only']) {
     console.log(`Ready in ${((performance.now() - t0) / 1000).toFixed(1)} s (not serving: --prepare-only).`);
     return;
   }
   // The page, built (Vite, ~1 s; tools/dist.ts) and served as the static copy is: what a user should get.
   const { OUT, writeDist } = await import('./dist.ts');
-  await writeDist(OUT, { vulkan: false, hostAgent: true }); // Vulkan's renderer only if vk/build.sh built it; the agent either way
+  await writeDist(OUT, { hostAgent: true }); // the agent the host's cargo built too (no Podman): this copy is for this machine
   const { APP, startServer } = await import('./serve.ts');
   const port = Number(values.port);
   const server = await startServer(port, values.host, OUT).catch((e: NodeJS.ErrnoException) => stop(e.code === 'EADDRINUSE'
