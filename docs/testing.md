@@ -363,30 +363,6 @@ stalled 11 s inside its wait while vCPU 1 is healthy (frozen 13 s), the wait doe
 waiting, not its own stalls (`DsbBudget`, unit-tested in `core/src/vm/tests.rs`). ~40 s in all.
 These guests aren't in `tests/baremetal/`, so the generic bare-metal runners and the oracles skip them.
 
-## Bare-metal device tests (`tests/baremetal/virtio/`)
-
-Requests no Linux driver sends, through the whole path: `virtio/blk.c` is a virtio driver of its own (virtio-mmio
-v2, one split queue of 128, polled, the MMU off so every access is aligned) that posts hand-built chains to three
-virtio-blk disks: a 1 MiB ramdisk, a 64 KiB read-only image and one under an overlay with `discard`.
-`tests/virtio-guest.test.ts` boots it in Node over the TS backends (web/devices.ts `blk`) under the interpreter, the
-JIT (the interpreter's steps and console) and in parallel mode (the backends served from the doorbell; the same
-console), ~1.5 s in all, and compares its transcript (per case the status byte, the used length, its data checks)
-with a table that says why each answer is the one. Linux's drivers stay the tests of the well-formed path (the
-Buildroot device test, the Debian page tests): a driver of ours would share the backends' assumptions there. What
-this covers is a buggy or hostile driver: headers short, long, split or absent; no status byte or an empty one; the
-status byte at the end of the data's buffer; data in the wrong direction or in the header's buffer; reads and writes
-across the end, at it, at byte offsets past 2^53 and 2^64; unknown types; DISCARD and WRITE_ZEROES segments short,
-doubled, absent, past the end or the limits, with unmap or unknown flags; changes to the read-only disk; a chain the
-transport refuses (DEVICE_NEEDS_RESET), then a reset. The rule: an error status or a dropped request, never a host
-exception, a failed device or a changed disk. The backends are more lenient than QEMU in places (an 8-byte header
-is UNSUPP where QEMU fails the device; a read or write that isn't whole sectors is done as asked where QEMU answers
-IOERR), which is fine while nothing on our side can go wrong from it: the disks take byte ranges, and the test
-checks such a write's bytes. Planted: the ramdisk's end check dropped, the status byte written at its buffer's start,
-a backend that throws (each fails it; the throw within a second, with its message). `build.sh` builds `virtio/*.c`
-without oracle variants, and the top-level runners (core/tests/baremetal.rs, tests/boot-node-suite.ts) don't see
-them: they need their disks, and natively the devices are Rust twins (`core/tests/common/`), not these backends.
-Built with clang 23 (2026-11-09), where the top-level tests came out identical but for `isb.bin` (left as it was).
-
 **Realtime windows:** in parallel mode the counter follows the host's clock, so a test can't
 assume the host keeps its vCPU running for any stretch. `timer.c` retries its "not expired yet"
 check (a 1 ms `CNTV_TVAL`, up to 100 times: a host that deschedules the vCPU between the write
@@ -416,6 +392,44 @@ round, waits until CPU 2 has won once more (exit 50 if it never does): the same 
 of 200 runs on 3 cores and 30 of 30 on one, and an idle run takes as long as before (~110 ms).
 To stress it by hand, crowd its parallel runs onto a few cores:
 `WEBPC_PARALLEL_RUNS=30 taskset -c 0-1 node --test --test-name-pattern='tlbi_spin' tests/boot-node-parallel.test.ts`.
+
+## Bare-metal device tests (`tests/baremetal/virtio/`)
+
+Requests no Linux driver sends, through the whole path. `virtio/virtio.h` is a virtio driver of the tests' own
+(virtio-mmio v2, split queues of 128, polled, the MMU off so every access is aligned) with which `blk.c`, `9p.c` and
+`net.c` post hand-built chains to the TS backends. `tests/virtio-guest.test.ts` boots each in Node under the
+interpreter, the JIT (the interpreter's steps and console) and in parallel mode (the backends served from the
+doorbell; the same console), ~0.8 s for the nine runs, and compares its transcript with a table that says why each
+answer is the one. Linux's drivers stay the tests of the well-formed path (the Buildroot device test, the Debian page
+tests): a driver of ours would share the backends' assumptions there. What this covers is a buggy or hostile driver,
+and the rule: an error, a dropped request or frame, never a host exception, a failed device or a changed disk.
+
+- **blk** (a 1 MiB ramdisk, a 64 KiB read-only image, one under an overlay with `discard`): headers short, long,
+  split or absent; no status byte or an empty one; the status byte at the end of the data's buffer; data in the wrong
+  direction or in the header's buffer; reads and writes across the end, at it, at byte offsets past 2^53 and 2^64;
+  unknown types; DISCARD and WRITE_ZEROES segments short, doubled, absent, past the end or the limits, with unmap or
+  unknown flags; changes to the read-only disk; a chain the transport refuses (DEVICE_NEEDS_RESET), then a reset.
+- **9p** (the in-memory tree with /hello.txt): a session, then a `size` past the readable bytes or under 7, too little
+  room, bytes past the size, 1-byte buffers, a count past the room, a reply past it (no answer: a used length of 0);
+  truncated fields, a string past the end, unknown types and fids, a write's count past its data, offsets past 2^40
+  and 2^63, a Tversion ending every fid.
+- **net** (the loopback adapter, which answers ARP and pings): after each case a probe ping, and the frames up to its
+  reply are the case's (so a frame let through shows, and the device is shown alive, in parallel runs too). The
+  checksum the guest leaves to the device (NEEDS_CSUM, its place in the echoed payload); a checksum's place or start
+  past the frame, headers alone or cut short, nothing readable, 1519-byte frames, GSO on a ping, an unknown GSO type,
+  MSS 0, a GSO packet past the largest (all dropped); MSS 1 over 60,000 bytes; the header and frame split into 1-byte
+  buffers; receiving over 32-byte mergeable buffers, with a readable buffer first, and without MRG_RXBUF into a buffer
+  no frame fits (it holds the queue until a reset, each frame dropped, as a NIC drops).
+
+The backends are more lenient than QEMU in places (an 8-byte blk header is UNSUPP where QEMU fails the device; a read
+or write that isn't whole sectors is done as asked where QEMU answers IOERR), which is fine while nothing on our side
+can go wrong from it: the disks take byte ranges, and the test checks such a write's bytes. Planted: the ramdisk's end
+check dropped, blk's status byte written at its buffer's start, a blk backend that throws, 9p's `size` check against
+the readable bytes dropped, net's checksum place unchecked (each fails it; the throw within a second, with its
+message). `build.sh` builds `virtio/*.c` without oracle variants, and the top-level runners (core/tests/baremetal.rs,
+tests/boot-node-suite.ts) don't see them: they need their devices, and natively the devices are Rust twins
+(`core/tests/common/`), not these backends. Built with clang 23 (2026-11-09), where the top-level tests came out
+identical but for `isb.bin` (left as it was).
 
 ## kvm-unit-tests
 

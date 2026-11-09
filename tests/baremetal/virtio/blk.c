@@ -1,75 +1,20 @@
-// virtio-blk requests no Linux driver sends, through the whole path: a driver of its own (virtio-mmio v2, one split
-// queue, polled) posts hand-built chains to three disks and prints, per case, the status byte the device wrote and the
-// used length; tests/virtio-guest.test.ts boots it in Node over the TS backends (web/devices.ts `blk`) and compares
-// the transcript with what it expects. Linux's drivers test the well-formed path (the Buildroot device test, the
-// Debian page tests); this is the rest: short, split or misplaced headers, no status byte, ranges past the disk's
-// end or past 2^53 bytes, data in the wrong direction, unknown types, DISCARD and WRITE_ZEROES segments that don't
-// fit, a write to a read-only disk, a chain the transport refuses (DEVICE_NEEDS_RESET, then a reset and a request).
-// Not in the top-level runners (core/tests/baremetal.rs, tests/boot-node-suite.ts): it needs the disks.
+// virtio-blk requests no Linux driver sends, through the whole path: the device tests' driver (virtio.h) posts
+// hand-built chains to three disks and prints, per case, the status byte the device wrote and the used length;
+// tests/virtio-guest.test.ts boots it in Node over the TS backends (web/devices.ts `blk`) and compares the transcript
+// with what it expects. Linux's drivers test the well-formed path (the Buildroot device test, the Debian page tests);
+// this is the rest: short, split or misplaced headers, no status byte, ranges past the disk's end or past 2^53 bytes,
+// data in the wrong direction, unknown types, DISCARD and WRITE_ZEROES segments that don't fit, a write to a read-only
+// disk, a chain the transport refuses (DEVICE_NEEDS_RESET, then a reset and a request).
 //
 // The disks, in device order: 0 a 1 MiB ramdisk (discard), 1 a 64 KiB read-only image, 2 a 64 KiB image under an
-// overlay (discard). The images hold `pattern(0, offset)`. The MMU stays off, so every access is to Device memory:
-// all of them naturally aligned.
-#include "../lib.h"
-
-typedef unsigned short u16;
-typedef unsigned char u8;
-
-void *memset(void *d, int c, unsigned long n) {
-  volatile u8 *p = d;
-  while (n--) *p++ = (u8)c;
-  return d;
-}
-void *memcpy(void *d, const void *s, unsigned long n) {
-  volatile u8 *p = d;
-  const volatile u8 *q = s;
-  while (n--) *p++ = *q++;
-  return d;
-}
-
-void on_exception(struct frame *f, u64 vec) {
-  (void)f;
-  power_off(100 + vec);
-}
-
-// virtio-mmio v2 (virtio 1.2 §4.2.2).
-#define MMIO 0x0a000000UL
-#define STRIDE 0x200UL
-#define MAGIC 0x000
-#define VERSION 0x004
-#define DEVICE_ID 0x008
-#define DEV_FEATURES 0x010
-#define DEV_FEATURES_SEL 0x014
-#define DRV_FEATURES 0x020
-#define DRV_FEATURES_SEL 0x024
-#define QUEUE_SEL 0x030
-#define QUEUE_NUM_MAX 0x034
-#define QUEUE_NUM 0x038
-#define QUEUE_READY 0x044
-#define QUEUE_NOTIFY 0x050
-#define INT_STATUS 0x060
-#define INT_ACK 0x064
-#define STATUS 0x070
-#define QUEUE_DESC 0x080
-#define QUEUE_AVAIL 0x090
-#define QUEUE_USED 0x0a0
-#define CONFIG 0x100
-#define S_ACK 1
-#define S_DRIVER 2
-#define S_DRIVER_OK 4
-#define S_FEATURES_OK 8
-#define S_NEEDS_RESET 0x40
+// overlay (discard). The images hold `pattern(0, offset)`.
+#include "virtio.h"
 
 #define F_SEG_MAX (1u << 2)
 #define F_RO (1u << 5)
 #define F_FLUSH (1u << 9)
 #define F_DISCARD (1u << 13)
 #define F_WRITE_ZEROES (1u << 14)
-#define F_INDIRECT (1u << 28)
-
-#define D_NEXT 1
-#define D_WRITE 2
-#define D_INDIRECT 4
 
 #define T_IN 0
 #define T_OUT 1
@@ -78,46 +23,17 @@ void on_exception(struct frame *f, u64 vec) {
 #define T_DISCARD 11
 #define T_WRITE_ZEROES 13
 
-#define QN 128 // the queue's size (what the device offers)
-
-struct desc {
-  u64 addr;
-  u32 len;
-  u16 flags, next;
-};
-struct avail {
-  u16 flags, idx, ring[QN], used_event;
-};
-struct used_elem {
-  u32 id, len;
-};
-struct used {
-  u16 flags, idx;
-  struct used_elem ring[QN];
-};
-
-// Memory: the image and its stacks below 1 MiB; a disk's queue at QUEUES + 64 KiB each; the buffers above.
-#define QUEUES 0x40800000UL
 #define HDR 0x40900000UL     // the request header (16 bytes), and what follows it in the same buffer
 #define DATA 0x40910000UL    // data (64 KiB)
 #define STATUS_AT 0x40920000UL
 #define SEG 0x40930000UL     // a DISCARD or WRITE_ZEROES segment
-#define TABLE 0x40940000UL   // an indirect table
 #define SCRATCH 0x40950000UL // a second data buffer (64 KiB)
 
 struct disk {
-  u64 base;
-  struct desc *desc;
-  struct avail *avail;
-  volatile struct used *used;
-  u16 next_avail, last_used;
-  u32 features;
+  struct dev v;
+  int slot;
   u64 sectors;
 } disks[3];
-
-#define R(d, off) mmio32((d)->base + (off))
-
-static void dmb(void) { __asm__ volatile("dmb sy" ::: "memory"); }
 
 // Byte `o` of a disk image as tests/virtio-guest.test.ts makes it (seed 0), a blank disk's (ZERO), or as written here
 // (other seeds).
@@ -137,59 +53,13 @@ static int zeros(u64 buf, u32 len) {
   return 1;
 }
 
-static void hex(u64 v) {
-  char b[17], *p = b + 16;
-  *p = 0;
-  do *--p = "0123456789abcdef"[v & 15]; while (v >>= 4);
-  uart_puts("0x");
-  uart_puts(p);
-}
-
-// Resets the device and brings its queue up again (virtio 1.2 §3.1.1): the features it offers that we take (and
-// VERSION_1), queue 0 at QN entries.
+// Resets the disk and brings its queue up again, and reads its capacity.
 static void init(struct disk *d) {
-  R(d, STATUS) = 0;
-  while (R(d, STATUS))
-    ;
-  R(d, STATUS) = S_ACK;
-  R(d, STATUS) = S_ACK | S_DRIVER;
-  R(d, DEV_FEATURES_SEL) = 0;
-  d->features = R(d, DEV_FEATURES);
-  R(d, DRV_FEATURES_SEL) = 0;
-  R(d, DRV_FEATURES) = d->features & (F_SEG_MAX | F_RO | F_FLUSH | F_DISCARD | F_WRITE_ZEROES | F_INDIRECT);
-  R(d, DRV_FEATURES_SEL) = 1;
-  R(d, DRV_FEATURES) = 1; // VERSION_1
-  R(d, STATUS) = S_ACK | S_DRIVER | S_FEATURES_OK;
-  check(R(d, STATUS) & S_FEATURES_OK, 2);
-  R(d, QUEUE_SEL) = 0;
-  check(R(d, QUEUE_NUM_MAX) >= QN, 3);
-  memset(d->desc, 0, 0x3000);
-  d->next_avail = d->last_used = 0;
-  R(d, QUEUE_NUM) = QN;
-  R(d, QUEUE_DESC) = (u32)(u64)d->desc;
-  R(d, QUEUE_DESC + 4) = 0;
-  R(d, QUEUE_AVAIL) = (u32)(u64)d->avail;
-  R(d, QUEUE_AVAIL + 4) = 0;
-  R(d, QUEUE_USED) = (u32)(u64)d->used;
-  R(d, QUEUE_USED + 4) = 0;
-  R(d, QUEUE_READY) = 1;
-  R(d, STATUS) = S_ACK | S_DRIVER | S_FEATURES_OK | S_DRIVER_OK;
-  d->sectors = R(d, CONFIG) | (u64)R(d, CONFIG + 4) << 32;
+  dev_init(&d->v, d->slot, 1, F_SEG_MAX | F_RO | F_FLUSH | F_DISCARD | F_WRITE_ZEROES | F_INDIRECT, 0);
+  d->sectors = R(&d->v, CONFIG) | (u64)R(&d->v, CONFIG + 4) << 32;
 }
 
-// The chain being built: buffers in order, then `submit` lays them out in the queue's table (or, with `indirect`, in
-// an indirect table that one ring descriptor points at).
-static struct desc chain[80];
-static int nchain;
-static u64 status_at; // the byte `run` reports as the status (preset to 0xee: "not written")
-static void buf(u64 addr, u32 len, u16 flags) {
-  chain[nchain].addr = addr;
-  chain[nchain].len = len;
-  chain[nchain].flags = flags;
-  nchain++;
-}
-#define RD(a, l) buf(a, l, 0)
-#define WR(a, l) buf(a, l, D_WRITE)
+static u64 status_at; // the byte `submit` reports as the status (preset to 0xee: "not written")
 static void header(u32 type, u64 sector) {
   mmio32(HDR) = type;
   mmio32(HDR + 4) = 0;
@@ -215,45 +85,17 @@ static void request(u32 type, u64 sector, u64 data, u32 len, int dir) {
 
 // Posts the chain, waits for its used element and prints `<name> s=<status> n=<used length>`: `s=-` when the status
 // byte wasn't written, `n=-` when nothing came back, and ` reset` when the device asks for one (then it is reset and
-// brought up again, so the next case starts from a working device).
+// brought up again, so the next case starts from a working device). A helper's request (no name: setting a case up,
+// reading its result back) prints only its failure.
 static int submit(struct disk *d, const char *name, int indirect) {
-  int n = nchain;
-  struct desc *t = indirect ? (struct desc *)TABLE : d->desc;
-  for (int i = 0; i < n; i++) {
-    t[i] = chain[i];
-    t[i].next = (u16)(i + 1);
-    if (i + 1 < n) t[i].flags |= D_NEXT;
-  }
-  if (indirect) {
-    d->desc[0].addr = TABLE;
-    d->desc[0].len = (u32)(16 * n);
-    d->desc[0].flags = D_INDIRECT;
-    d->desc[0].next = 0;
-  }
   if (status_at) mmio8(status_at) = 0xee;
-  dmb();
-  d->avail->ring[d->next_avail % QN] = 0;
-  dmb();
-  d->avail->idx = ++d->next_avail;
-  dmb();
-  R(d, QUEUE_NOTIFY) = 0;
-  long got = -1;
-  // Deterministic runs complete a request before the notify returns (the run exits for the device and settles it);
-  // parallel ones (a backend on another thread) a while later. A refused chain completes never: NEEDS_RESET ends the wait.
-  for (long spin = 0; spin < 1L << 28 && !(R(d, STATUS) & S_NEEDS_RESET); spin++) {
-    dmb();
-    if (d->used->idx != d->last_used) {
-      volatile struct used_elem *e = &d->used->ring[d->last_used % QN];
-      check(e->id == 0, 4);
-      got = e->len;
-      d->last_used++;
-      break;
-    }
-  }
-  R(d, INT_ACK) = R(d, INT_STATUS);
+  post(&d->v, 0, 0, indirect);
+  u32 id, len;
+  long got = wait_used(&d->v, 0, &id, &len) ? (long)len : -1;
+  check(got < 0 || id == 0, 4);
   u8 s = status_at ? mmio8(status_at) : 0xee;
-  int reset = (R(d, STATUS) & S_NEEDS_RESET) != 0;
-  if (!*name) { // a helper's request (setting a case up, reading its result back): only its failure is told
+  int reset = needs_reset(&d->v);
+  if (!*name) {
     if (s || got < 0 || reset) uart_puts(" helper-failed");
     if (reset) init(d);
     return s;
@@ -269,11 +111,6 @@ static int submit(struct disk *d, const char *name, int indirect) {
   if (reset) init(d);
   return s;
 }
-static void note(const char *what, int ok) {
-  uart_puts(ok ? " " : " NOT ");
-  uart_puts(what);
-}
-static void end(void) { uart_puts("\n"); }
 
 // What every disk takes: its ID, reads and their failures. `seed` is what its first sectors hold.
 static void reads(struct disk *d, const char *p, u32 seed) {
@@ -574,24 +411,17 @@ static void unmaps(struct disk *d, const char *p) {
 }
 
 int main(void) {
-  int found = 0;
-  for (int i = 0; i < 8 && found < 3; i++) {
-    u64 b = MMIO + i * STRIDE;
-    if (mmio32(b + MAGIC) != 0x74726976 || mmio32(b + VERSION) != 2 || mmio32(b + DEVICE_ID) != 2) continue;
-    struct disk *d = &disks[found];
-    d->base = b;
-    d->desc = (struct desc *)(QUEUES + found * 0x10000UL);
-    d->avail = (struct avail *)((u64)d->desc + 0x1000);
-    d->used = (volatile struct used *)((u64)d->desc + 0x2000);
-    init(d);
-    found++;
+  for (int i = 0; i < 3; i++) {
+    disks[i].v.base = dev_find(2, i);
+    check(disks[i].v.base, 1);
+    disks[i].slot = i;
+    init(&disks[i]);
   }
-  check(found == 3, 1);
   static const char *names[] = {"ram", "ro", "overlay"};
   for (int i = 0; i < 3; i++) {
     uart_puts(names[i]);
     uart_puts(" features=");
-    hex(disks[i].features);
+    hex(disks[i].v.offered[0]);
     uart_puts(" sectors=");
     uart_dec(disks[i].sectors);
     end();

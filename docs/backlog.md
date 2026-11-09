@@ -570,14 +570,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   scan of the whole buffer per animation frame to find the changed rows (~0.4 ms at 1024×768, on the machine
   worker), x8r8g8b8 only, fixed size. Guests with the driver use virtio-gpu ([devices.md](devices.md)); nothing
   is planned for the rest.
-- **Requests no Linux driver sends, past blk:** blk has its bare-metal driver (`tests/baremetal/virtio/blk.c`,
-  `tests/virtio-guest.test.ts`; [testing.md](testing.md) "Bare-metal device tests"). 9p and net don't: their hostile
-  requests reach the backends only as parsed chains in `tests/devices.test.ts` (9p's truncated and unsupported
-  messages), never through a queue. The cases: 9p's `size` past the readable bytes or short of them, a reply with
-  less writable room than `msize` or the `Tread`'s count (`Rread` cut to the room?), a message split over buffers;
-  net's transmit chain shorter than the 12-byte header or past the MTU, receive buffers smaller than a header or a
-  frame (web/devices.ts says such frames are dropped). The same shape: a `virtio/9p.c` and a `virtio/net.c` beside
-  `blk.c` (its init and `submit` are what they need), cases in the test's table, the same three runs.
+- **The gateway's parsers and hostile frames:** the bare-metal net guest ([testing.md](testing.md) "Bare-metal device
+  tests") sends its frames to the loopback adapter; on the page they reach `web/gateway.ts` (ARP, IPv4/6, ICMP,
+  DHCP, DNS, TCP and UDP to the backends), whose malformed-input tests are few (`tests/gateway.test.ts`: IPv6's
+  spoofed, multicast, hop-by-hop and truncated packets). A table of truncated and inconsistent frames (lengths past
+  the frame, header lengths under the minimum, options past the end, DHCP and DNS fields past their packet) fed to
+  the gateway in Node, each answered or dropped, never a throw.
 
 - **HEVC on the host** (dropped with the video track's end, 2026-10-15, the user: H.264, VP9 and AV1 cover what the
   web serves; Chromium on Linux has no HEVC decoder of its own, so only hosts with hardware HEVC would offer it; HEVC
