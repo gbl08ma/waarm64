@@ -245,8 +245,9 @@ for (const [scenario, what, want] of [
   ['flatRestart', 'an indexed strip with primitive restart whose last vertex provokes', { topLeft: yellow, bottomLeft: green, topRight: blue, bottomRight: blue }],
   // L7b (the review's finding 9): ANGLE's ES3 uniform buffers, 13 a stage, each stage's its own, a default block dynamic.
   ['angleUniforms', 'ANGLE\'s layout of 13 uniform buffers in each of two stages', { topLeft: [178, 200, 0, 255], bottomLeft: [178, 200, 0, 255], topRight: [178, 200, 0, 255], bottomRight: [178, 200, 0, 255] }],
-  // The review of VK4 T44 to T46 (finding 3): the pull's uniform buffer past the vertex stage's, refused by the driver.
-  ['angleUniformsPulled', 'ANGLE\'s layout with a vertex input pulled, refused by the driver, not by WebGPU', { topLeft: blue, bottomLeft: blue, topRight: blue, bottomRight: blue }],
+  // The review of VK4 T44 to T46 (finding 3): the pull's uniform buffers past the vertex stage's (refused by the driver
+  // then); since VK4's backlog easy wins, the pull's parameters are read-only storage there.
+  ['angleUniformsPulled', 'ANGLE\'s layout with a vertex input pulled, its parameters past the stage\'s uniform buffers read from storage', { topLeft: [178, 200, 0, 255], bottomLeft: [178, 200, 0, 255], topRight: [178, 200, 0, 255], bottomRight: [178, 200, 0, 255] }],
   // L7.5: draw parameters (each quad's base vertex, base instance, 200 + its draw's index; indirect first instances
   // 0 where the adapter has none: checked below).
   ['drawParams', 'the base vertex, base instance and draw index of direct, indexed and indirect draws in one pass', { topLeft: [10, 20, 200, 255], bottomLeft: [30, 40, 200, 255] }],
@@ -283,7 +284,7 @@ for (const [scenario, what, want] of [
       assert.deepEqual(pixels.topRight, [50, fi ? 60 : 0, 200, 255], `topRight: ${JSON.stringify(pixels)}`);
       assert.deepEqual(pixels.bottomRight, [70, fi ? 80 : 0, 200, 255], `bottomRight: ${JSON.stringify(pixels)}`);
     }
-    if (scenario === 'angleUniformsPulled') assert.ok(logs.some((l) => /refused: its pulled vertex bindings/.test(l)), `not refused: ${JSON.stringify(logs)}`);
+    if (scenario === 'angleUniformsPulled') assert.ok(!logs.some((l) => /refused: its pulled vertex bindings/.test(l)), `refused: ${JSON.stringify(logs)}`);
     if (scenario === 'facesUnused' || scenario === 'facesSplit') assert.equal(r.draws, scenario === 'facesUnused' ? 1 : 2, 'the quad\'s draws');
     if (scenario === 'clearQuery') {
       const [clear, both, quad] = r.query as number[];

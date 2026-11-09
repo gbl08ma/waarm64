@@ -2024,14 +2024,17 @@ wg_pipeline_pull(struct wg_program *p, const struct wg_pipeline_key *k)
       if (u->slots == mask && u->first_instance == first_instance)
          return u;
    /* The vertex stage's storage buffers: its own and these, on WebGPU's limit; and its uniform buffers, its own and the
-    * pull's (the bindings' places, the divisors' first instance: the review of VK4 T44 to T46's finding 3). */
-   uint32_t storage = util_bitcount(mask), uniform = 1 + first_instance;
+    * pull's (the bindings' places, the divisors' first instance: the review of VK4 T44 to T46's finding 3), or, where the
+    * uniform buffers have no room for those, read-only storage ones beside the bindings. */
+   const uint32_t params = 1 + first_instance;
+   uint32_t storage = util_bitcount(mask), uniform = params;
    for (uint32_t k = 0; k < p->resource_count; k++) {
       storage += (p->vis[k] & 1) && (p->resources[k].kind == WGSL_STORAGE || p->resources[k].kind == WGSL_STORAGE_READ);
       uniform += (p->vis[k] & 1) && p->resources[k].kind == WGSL_UNIFORM;
    }
-   if (storage > MIN2(wg_limits.max_storage_buffers, wg_limits.max_storage_buffers_in_vertex_stage) ||
-       uniform > wg_limits.max_uniform_buffers)
+   const uint32_t storage_max = MIN2(wg_limits.max_storage_buffers, wg_limits.max_storage_buffers_in_vertex_stage);
+   const bool storage_params = uniform > wg_limits.max_uniform_buffers;
+   if (storage + (storage_params ? params : 0) > storage_max)
       return NULL;
    /* The first group without resources: past the program's, or one it leaves empty below its push buffer's group 3. */
    uint32_t used = 0;
@@ -2057,6 +2060,7 @@ wg_pipeline_pull(struct wg_program *p, const struct wg_pipeline_key *k)
    u->slots = mask;
    u->group = group;
    u->first_instance = first_instance;
+   u->storage_params = storage_params;
    u->base = base;
    struct wg_json j = { 0 };
    if (base)
@@ -2065,9 +2069,10 @@ wg_pipeline_pull(struct wg_program *p, const struct wg_pipeline_key *k)
       wg_json_printf(&j, "{\"entries\":[");
    u_foreach_bit(s, mask)
       wg_json_printf(&j, "{\"binding\":%u,\"visibility\":1,\"buffer\":{\"type\":\"read-only-storage\"}},", base + s);
+   const char *type = storage_params ? "read-only-storage" : "uniform";
    if (first_instance)
-      wg_json_printf(&j, "{\"binding\":%u,\"visibility\":1,\"buffer\":{\"type\":\"uniform\"}},", base + WG_VERTEX_BINDINGS + 1);
-   wg_json_printf(&j, "{\"binding\":%u,\"visibility\":1,\"buffer\":{\"type\":\"uniform\"}}]}", base + WG_VERTEX_BINDINGS);
+      wg_json_printf(&j, "{\"binding\":%u,\"visibility\":1,\"buffer\":{\"type\":\"%s\"}},", base + WG_VERTEX_BINDINGS + 1, type);
+   wg_json_printf(&j, "{\"binding\":%u,\"visibility\":1,\"buffer\":{\"type\":\"%s\"}}]}", base + WG_VERTEX_BINDINGS, type);
    u->bgl = wg_create_json(WG_KIND_BGL, &j);
    wg_json_printf(&j, "{\"bindGroupLayouts\":[");
    for (uint32_t g = 0; g < MAX2(p->group_count, group + 1); g++)
@@ -2848,7 +2853,8 @@ render_pipeline(struct wg_program *p, const struct wg_pipeline_key *k, bool prem
       wg_json_printf(&j, ",\"wg_layer\":%u", k->view);
    wg_json_printf(&j, "},");
    if (pull)
-      wg_json_printf(&j, "\"pullGroup\":%u,\"pullBase\":%u,", pull->group, pull->base);
+      wg_json_printf(&j, "\"pullGroup\":%u,\"pullBase\":%u,%s", pull->group, pull->base,
+                     pull->storage_params ? "\"pullStorage\":true," : "");
    wg_json_printf(&j, "\"buffers\":[");
    /* A binding none of the shader's inputs reads is left out (else a draw would need its buffer). */
    const uint32_t inputs = k->vs->info.inputs;

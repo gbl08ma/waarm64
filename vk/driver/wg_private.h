@@ -928,6 +928,9 @@ struct wg_pull {
    /* A pulled binding has a divisor (VK4 T44): the draw's first instance read from a place of the push buffer, its draw
     * parameters' (WGSL_DRAW_PARAMS), bound at binding WG_VERTEX_BINDINGS + 1 (`gpu_pull_bind`). */
    bool first_instance;
+   /* The places and the first instance are read-only storage bindings, not uniform ones: the vertex stage's uniform
+    * buffers leave no room for them (ANGLE's 13 with a divisor), its storage buffers do. */
+   bool storage_params;
    /* A program of four groups pulls in its group 3, its bindings these on (WG_PULL_BASE: past the program's, below the
     * driver's at 994; 0: a group of its own). */
    uint32_t base;

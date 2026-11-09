@@ -2138,7 +2138,7 @@ record_draw(struct wg_cmd_buffer *cmd, bool indexed, uint32_t face, int provoke)
    static bool unpulled;
    if (!wg_pipeline_pull_ok(p, &k)) {
       if (!unpulled)
-         fprintf(stderr, "wg: a draw refused: its pulled vertex bindings don't fit (no bind group left, or past the vertex stage's storage or uniform buffers)\n");
+         fprintf(stderr, "wg: a draw refused: its pulled vertex bindings don't fit (no bind group left, or past the vertex stage's storage buffers)\n");
       unpulled = true;
       return false;
    }

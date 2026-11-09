@@ -1809,9 +1809,9 @@ wgt_pull(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_
  * offsets), set 1 12 blocks each stage alone sees (the vertex stage's k + 1, the fragment stage's 2k + 2): 13 uniform
  * buffers a stage, past WebGPU's 12. The image (178, 200, 0, 255) everywhere; wgt_draw_done says when.
  * `pulled` (the review of VK4 T44 to T46, finding 3; `vs` t46/angle-pull.vert): its vertex stage reads a uint at byte 2
- * of an instance binding of zeros (stride 4, divisor 2), which WebGPU's vertex buffers refuse: pulled, its two uniform
- * buffers (the binding's places, the divisors' first instance) past the stage's 12 with the layout's 11, so the draw is
- * refused by the driver (the image as cleared), not by WebGPU.
+ * of an instance binding of zeros (stride 4, divisor 2), which WebGPU's vertex buffers refuse: pulled, its two
+ * parameters (the binding's places, the divisors' first instance) past the stage's 12 uniform buffers with the layout's
+ * 11, so read-only storage bindings beside the pulled one (wg_shader.c `storage_params`): the image as without it.
  */
 static struct {
    VkPipelineLayout layout;

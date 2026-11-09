@@ -1009,9 +1009,11 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   group made of the program's group 3 entries and the pull's at each bind (`pullBind`, the program's dynamic offsets
   kept). Usage scopes see a
   vertex read as before, so shadows serve it. Transform feedback reads the same ranges. Refused still: a program whose
-  group 3 bindings reach 976, more pulled bindings than the vertex stage has storage buffers
-  left, and a vertex stage whose uniform buffers leave no room for the pull's one or two (the bindings' places, the
-  divisors' first instance: a layout at `maxPerStageDescriptorUniformBuffers`' edge; the review of T44–T46). A range past `maxStorageBufferBindingSize` is cut there. **Divisors** (VK4 T44, `VK_KHR_vertex_attribute_divisor`
+  group 3 bindings reach 976, and more pulled bindings than the vertex stage has storage buffers
+  left. The pull's one or two parameters (the bindings' places, the divisors' first instance) are uniform bindings, or
+  read-only storage ones where the vertex stage's uniform buffers leave no room for them (a layout at
+  `maxPerStageDescriptorUniformBuffers`' edge, ANGLE's 13 with a divisor: `storage_params`, `pullStorage` in the
+  pipeline's JSON; refused before, the review of T44–T46), counted among its storage buffers then. A range past `maxStorageBufferBindingSize` is cut there. **Divisors** (VK4 T44, `VK_KHR_vertex_attribute_divisor`
   and the EXT, `vertexAttributeInstanceRateZeroDivisor`, `maxVertexAttribDivisor` 2³²−1): an instance binding whose
   divisor isn't 1 is pulled, its record Vulkan's `first + (iid - first) / divisor` (the first instance's for 0;
   `recordIndex`), the first instance read from a place of the push buffer as draw parameters are (`WGSL_DRAW_PARAMS`,

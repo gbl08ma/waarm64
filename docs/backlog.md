@@ -950,15 +950,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     `r32_sfloat` and `r16_unorm` cases (672 each) stay not supported. A comparison of a colour texture would be the
     shader's, from fetches (as a shadow sample past level 0 is: "Samplers' leftovers"), keyed by the bound view's format
     (M; vkd3d's test_gather_c too).
-  - [A, B] **Pulled vertices' leftovers** (VK4 T5, T44; vk/README.md "Pulled vertices"): [B] more pulled bindings than the
+  - [B] **Pulled vertices' leftovers** (VK4 T5, T44; vk/README.md "Pulled vertices"): [B] more pulled bindings than the
     vertex stage's storage buffers left; a pulled range past `maxStorageBufferBindingSize` is cut there (several
     bindings of one range would take it, a storage buffer each; the adapters we run offer 1 GiB or more, the device
     asks for the adapter's, so only a 128 MiB adapter and a vertex range past it would); a four-group program whose
     group 3 bindings reach 976 has no room to pull in it (refused); a vertex stage whose uniform buffers leave no room
-    for the pull's one or two (its bindings' places, a divisor's first instance: at `maxPerStageDescriptorUniformBuffers`'
-    edge, e.g. ANGLE's 13 with a divisor) is refused (the review of T44–T46's finding 3: WebGPU refused its pipeline
-    before); [A] the pull's parameters as read-only storage where the stage has storage room left would draw it (S: the
-    BGL's type and `pulledCode`'s declaration; nothing we run meets it). [B] A pull with a divisor makes a bind group per change
+    for the pull's parameters takes them as read-only storage (VK4's backlog easy wins), refused only where its storage
+    buffers have no room for them either. [B] A pull with a divisor makes a bind group per change
     of the first instance or the indirect record (unmeasured: vkd3d's instanced tests and dEQP-VK only). Formats WebGPU's vertex buffers lack are pulled since VK4 T31. A direct draw that reads past a vertex buffer's end
     (Vulkan's robust buffer access reads in range or zeros; WebGPU refused it) pulls that binding, zeros past it, since
     VK4 T37; an indirect one isn't checked by WebGPU (its reads clamped in range). The cost of pulling isn't measured:

@@ -1533,12 +1533,13 @@ override bit: u32 = 8u;
           this.xfbByPipeline[id] = x && { stride: x.stride, base: x.base, words: x.words, bgls: ids(x.bgls) as GPUBindGroupLayout[], immediateSize: x.immediateSize,
             code: this.vertexCode.get(j.vertex.module), buffers: JSON.parse(JSON.stringify(j.vertex.buffers ?? [])) };
           if (j.vertex.pullGroup !== undefined) {
-            j.vertex.module = this.pulledModule(j.vertex.module, j.vertex.buffers, j.vertex.pullGroup, j.vertex.pullBase ?? 0);
+            j.vertex.module = this.pulledModule(j.vertex.module, j.vertex.buffers, j.vertex.pullGroup, j.vertex.pullBase ?? 0, !!j.vertex.pullStorage);
             j.vertex.buffers = j.vertex.buffers.map((b: Json | null) => (b?.pull ? null : b));
             // Bindings past WebGPU's vertex buffers are all pulled: nulls don't count, but do past the limit.
             while (j.vertex.buffers.length && !j.vertex.buffers[j.vertex.buffers.length - 1]) j.vertex.buffers.pop();
             delete j.vertex.pullGroup;
             delete j.vertex.pullBase;
+            delete j.vertex.pullStorage;
           }
           if (j.fragment) j.fragment.module = this.objs[j.fragment.module];
         } else {
@@ -1939,8 +1940,8 @@ ${vs}
    * the copy. On the GPU, in the encoder's order: the source's bytes are what earlier commands wrote.
    */
   /** A vertex stage's module with its pulled bindings' fetch (wg_shader.c `wg_vertex_pull`, VK4 T5). */
-  private pulledModule(m: GPUShaderModule, buffers: (PulledBuffer | null)[], group: number, base: number): GPUShaderModule {
-    const code = this.vertexCode.get(m), key = `${group} ${base} ${JSON.stringify(buffers)}`;
+  private pulledModule(m: GPUShaderModule, buffers: (PulledBuffer | null)[], group: number, base: number, storage: boolean): GPUShaderModule {
+    const code = this.vertexCode.get(m), key = `${group} ${base} ${storage} ${JSON.stringify(buffers)}`;
     if (!code) {
       this.warn('vertices pulled for a stage without inputs');
       return m;
@@ -1949,7 +1950,7 @@ ${vs}
     if (!made) this.pulledModules.set(m, (made = new Map()));
     let module = made.get(key);
     if (!module) {
-      const text = pulledCode(code, buffers, group, base);
+      const text = pulledCode(code, buffers, group, base, storage);
       module = this.device!.createShaderModule({ code: text });
       made.set(key, module);
       void module.getCompilationInfo().then((info) => {
@@ -1980,7 +1981,8 @@ ${vs}
       const size = Math.max(Math.min(Math.ceil((v.offset - from + v.size) / 4) * 4, v.b.size - from, d.limits.maxStorageBufferBindingSize), 4);
       entries.push({ binding: base + slot, resource: { buffer: v.b, offset: from, size } });
     }
-    const [u, at] = this.scratch(UNIFORM | COPY_DST, into.byteLength);
+    // A uniform binding, or read-only storage where the stage's uniform buffers are full (wg_shader.c `storage_params`).
+    const [u, at] = this.scratch(UNIFORM | STORAGE | COPY_DST, into.byteLength);
     d.queue.writeBuffer(u, at, into);
     entries.push({ binding: base + PULL_SLOTS, resource: { buffer: u, offset: at, size: into.byteLength } });
     if (dp) entries.push({ binding: base + PULL_SLOTS + 1, resource: { buffer: dp, offset: dpPlace, size: PULL_DRAW_PARAMS + 16 } });
@@ -3586,15 +3588,17 @@ const PULLED_ENTRY = 'iid: u32, i: In) -> Out {\n  wg_vs(vid, iid, i);';
 /** A vertex stage's WGSL with the bindings marked `pull` (the render pipeline's JSON, by slot) read from storage
  * bindings of `group` (`pullBind`) instead of vertex buffers: its other attributes come in as before, in a struct of
  * their own (`In` no longer the entry point's, its @location attributes ignored), and `wg_vs` is given both. The
- * bindings from `first` on (a program's group 3: VK4 T44). */
-export function pulledCode(code: string, buffers: (PulledBuffer | null)[], group: number, first = 0): string {
+ * bindings from `first` on (a program's group 3: VK4 T44); the places and the first instance read-only storage with
+ * `storage` (the stage's uniform buffers full: wg_shader.c `storage_params`). */
+export function pulledCode(code: string, buffers: (PulledBuffer | null)[], group: number, first = 0, storage = false): string {
   const declared = [...code.matchAll(/^ {2}@location\((\d+)\) a\d+: vec4<(f32|i32|u32)>,$/gm)];
   const base: Record<number, string> = {};
   for (const m of declared) base[Number(m[1])] = m[2];
   const pulled = new Set<number>();
-  const lines = [`@group(${group}) @binding(${first + PULL_SLOTS}) var<uniform> wgv_at: array<vec4<u32>, ${PULL_SLOTS / 4}>;`];
+  const space = storage ? 'storage, read' : 'uniform';
+  const lines = [`@group(${group}) @binding(${first + PULL_SLOTS}) var<${space}> wgv_at: array<vec4<u32>, ${PULL_SLOTS / 4}>;`];
   if (buffers.some((b) => b?.pull && b.stepMode === 'instance' && b.divisor !== undefined && b.divisor !== 1))
-    lines.push(`@group(${group}) @binding(${first + PULL_SLOTS + 1}) var<uniform> wgv_dp: array<vec4<u32>, ${PULL_DRAW_PARAMS / 16 + 1}>;`);
+    lines.push(`@group(${group}) @binding(${first + PULL_SLOTS + 1}) var<${space}> wgv_dp: array<vec4<u32>, ${PULL_DRAW_PARAMS / 16 + 1}>;`);
   let fetch = '';
   buffers.forEach((b, slot) => {
     if (!b?.pull) return;
