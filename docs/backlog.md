@@ -1292,7 +1292,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   **Measured to matter on Vulkan** (2026-11-09, `bench/boot/REPORT.md` "Where a busy vCPU's time goes on the Mac, and
   the compile threshold there"): Godot's GI demo in the editor with 6144 MiB of RAM reaches memory 2, and ~16% of its
   busy ticks go to the helper chain (`jit_exec_mmu`, `ldst::exec`, `Mmu::miss`, `spill_load`); at 4608 MiB it took
-  14% fewer busy ticks for the same start. So a Vulkan machine past ~4.5 GiB pays it with an ordinary program.
+  14% fewer busy ticks for the same start. So a Vulkan machine given more than ~4.5 GiB pays it with an ordinary program; the
+  page's default is 2048 MiB, and 6144 was only `bench/vulkan/godot.ts`'s and `t23.ts`'s default, so it's a cost for
+  those who choose that much RAM, not a default one.
   Options short of memory64: `INLINE_SPILL` 2 on Vulkan machines only (another copy of each access's body: ~+15%
   wasm), a layout with node 1's RAM in memory 1 and the arena and window in a later memory (the window's accesses would
   then take the helper; how many a Venus program makes is unmeasured), or capping a Vulkan machine's RAM or warning past
