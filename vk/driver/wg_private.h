@@ -61,6 +61,10 @@ enum wg_feature {
    WG_FEATURE_F16 = 1 << 16,           /* shader-f16 (16-bit floats in the translator) */
    WG_FEATURE_SWIZZLE = 1 << 17,       /* texture-component-swizzle (image views' component mappings) */
    WG_FEATURE_TIMESTAMP = 1 << 18,     /* timestamp-query (Vulkan's timestamps written on the GPU, VK4 T46) */
+   /* Not the adapter's: the translator anchors ballots, elections and reads of the first invocation
+    * (WGSL_SUBGROUP_ANCHOR) on a WebGPU whose are wrong in divergent control flow without (web/venus-gpu.ts
+    * `subgroupsRight`: Chromium on Metal). */
+   WG_FEATURE_SUBGROUP_ANCHOR = 1 << 27,
    /* Not the adapter's: VK3 L9a's suspects back at 4fdc69fb's behaviour for the NVIDIA run's A/B (`?gpu=vkl9=…`,
     * web/venus-gpu.ts `L9_SUSPECTS`; never by default): each pipeline's bind group layouts their own uids (wg_shader.c
     * `bgl_uid`), memories' GPUBuffers without WG_MEMORY_PAD. */

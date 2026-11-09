@@ -575,7 +575,8 @@ print_options(const struct wgsl_varyings *fs)
                                 wg_limits.max_storage_textures },
       .features = ((wg_features & WG_FEATURE_TIER2) ? WGSL_TIER2 : 0) | ((wg_features & WG_FEATURE_TIER1) ? WGSL_TIER1 : 0) |
                   ((wg_features & WG_FEATURE_DUAL_SOURCE) ? WGSL_DUAL_SOURCE : 0) |
-                  (wg_subgroup_size() > 1 ? WGSL_SUBGROUPS : 0) | ((wg_features & WG_FEATURE_F16) ? WGSL_F16 : 0),
+                  (wg_subgroup_size() > 1 ? WGSL_SUBGROUPS : 0) | ((wg_features & WG_FEATURE_F16) ? WGSL_F16 : 0) |
+                  (wg_subgroup_size() > 1 && (wg_features & WG_FEATURE_SUBGROUP_ANCHOR) ? WGSL_SUBGROUP_ANCHOR : 0),
    };
 }
 

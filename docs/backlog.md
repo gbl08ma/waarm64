@@ -617,7 +617,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   depth layout), which matters only if premaking ever wins. (2) A pipeline made at once by a submit (`syncPipelines`)
   is counted, never seen in a program. (SwiftShader's compiles not kept across a restart: graphics.md "Permanent
   limitations".)
-- [A, B] **The printer's WGSL, what Tint still pays for** (GD G2, VK4 T49; vk/README.md "The shader path",
+- [B] **The printer's WGSL, what Tint still pays for** (GD G2, VK4 T49; vk/README.md "The shader path",
   bench/vulkan/REPORT.md "GD G2", "VK4 T49"): since T49 (values read once inlined, float vectors, uniform words by
   literal or aligned indices) Godot's 210 stages take 323 ms of `createShaderModule` on the M4 (475 before), the largest
   41 ms, their WGSL 4.4 MB (7.05). [B] Left, smaller: ~1,200 `bitcast<f32>(t.x)` in the largest stage, of vectors that also
@@ -625,9 +625,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   instead); 8- and 16-bit values aren't inlined; a value read twice stays a let. Tint was read, not profiled (building
   Dawn wasn't allowed in G2's session): a native Tint (Dawn's CMake, `tint` with the WGSL reader) on these stages would
   say what the rest is. A program's start barely moves with it now: Godot's editor's is the guest's own work
-  (REPORT.md "VK4 T49"). [A] Seen beside it: a function-scope `var` declared in a loop came back with the last iteration's
-  value on SwiftShader's path, where WGSL zero-initializes it at each declaration (as far as read: confirm against the
-  spec, then report to Dawn); the printer no longer relies on either.
+  (REPORT.md "VK4 T49"). (A `var` declared in a loop without an initializer keeps the last iteration's value on
+  SwiftShader's path, which the printer doesn't rely on: "Upstream reports" below.)
 - [B, C] **Godot on Venus, GD's leftovers** (GD, ended 2026-11-04 for dEQP-VK's next tasks; bench/vulkan/REPORT.md "GD G4",
   "GD G7–G8"). Godot 4.7.2's editor, its Forward+ and SDFGI scenes and the Global Illumination demo run on the M4 and
   the user's NVIDIA desktop (the demo at 60 frames/s there), X11 and Wayland. Left, ranked:
@@ -652,9 +651,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     (REPORT.md "VK4 T49"). Faster starts are the JIT's and the guest's, not the renderer's.
   - [C] **nvidia.sh's `godot` step, not yet run by the user** (`nvidia-bundle.sh --godot`, then `VK2_STEPS=godot
     bench/vulkan/nvidia.sh page <bundle>`, ~20 min): the bar's NVIDIA half by the harness (the user's hand runs meet it).
-  - [A] **Why one refused bind group froze every window** (the screen-space effects' before the fix): not a held command's
-    throw (`runOp` catches); a test that a refused bind group leaves the compositor alone would say.
-- [A, B, C] **What the device advertises, left for the translator** (VK2 L7, VK3 L5; vk/README.md "The shader path";
+- [B, C] **What the device advertises, left for the translator** (VK2 L7, VK3 L5; vk/README.md "The shader path";
   what WGSL's subgroups, floats and atomics can't give: graphics.md "Permanent limitations"). [C] `gl_SubgroupID`
   assumes subgroups are runs of `local_invocation_index` (true on SwiftShader and Metal; unchecked on NVIDIA). [B] No 8-
   or 16-bit atomics (a compare-exchange on the word would give them; no program asks). Failing on SwiftShader only (the
@@ -665,14 +662,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   base level"), and `ssbo.layout.random.8bit.all_per_block_buffers.5`, which passes in 56 s there (1 s on the M4; past
   dEQP's 30 s watchdog, still 2026-11-09): an 8-bit store is two atomics on its word, and 16-bit random layouts take
   SwiftShader up to 11 s alike; a word written whole where a stage's stores cover it (`nir_opt_load_store_vectorize`)
-  might bring it under. [A] **Subgroups on the Mac are held** (VK3 L5, bench/vulkan/REPORT.md "VK3 L5"): Chromium
-  153's Metal path hoists a ballot that is an `if`'s only subgroup operation out of the `if` (repro: `web/venus-gpu.ts`
-  `subgroupsRight`'s kernel, 0xffffffff for an odd invocation where 0xaaaaaaaa is right; filed in "Upstream reports"
-  below); with the check off, 89 of 503 sampled subgroup cases failed there
-  (`bench/vulkan/results/vk3/l5/mac-before-check.json`), arithmetic and f16 shuffles in graphics. To do: recheck on
-  the current Chrome for Testing (bench/mac-chrome.sh), and try a translator workaround (another subgroup operation
-  beside each ballot in an `if`, wgsl_print.c), then lift the hold where the check passes (S, on the Mac; it also opens
-  `glsl.derivate.*dynamic_*` there: "Shaders" below). [B] On the Mac with `shader-f16`, one graphics shuffle's WGSL
+  might bring it under. [B] **Float subgroup arithmetic on the Mac** (VK4's backlog easy wins; vk/README.md "The shader path": since then the
+  M4's subgroups are anchored, not held): of the 2,081 subgroup and non-uniform derivative cases SwiftShader passes,
+  the M4 (Chrome for Testing 157) passes 1,955, NotSupported 32 (`ballot_broadcast`'s required size 4), and fails the 94
+  float `subgroups.arithmetic` cases, compute and graphics (add, mul, min, max and their scans, float to vec4; "1 / 7
+  values passed": all but one of dEQP's workgroup sizes; `results/vk4/easy2/m4-subgroups-linkage.json`), 39 of them in
+  `tests/deqp/vk.txt` (kept: SwiftShader passes them). The integer twins pass, and a hand kernel's float add, min and
+  max of small values, whole and in an `if`, are right on the M4: dEQP's data (infinities, NaNs or denormals under
+  Metal's fast math, as `float16`'s 16-bit infinities come back 0) is the first suspect; dEQP's shader and data
+  (`QPA=1` keeps no shader source: the CTS source's `vktSubgroupsArithmeticTests.cpp`) would say. [B] On the Mac with `shader-f16`, one graphics shuffle's WGSL
   nests ifs past Tint's 127 (an indexed f16 vector's `if` tree). VK4 T42 ran 7 `float16.opvectorshuffle` cases on the
   M4 (`results/vk4/t42/m4-f16-shuffle.json`): all fail, every stage refused by Tint ("statement nesting depth /
   chaining length exceeds limit of 127", a `let` at 64 levels of `if`), compute and graphics alike. Not reproduced off
@@ -805,7 +803,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     the adapter has 11 storage buffers or more, VK4 T40); a layout's
     texel buffers take uniform bindings too (their parameters), which can push more uniform buffers into storage than
     the 2 the storage count gives up (refused at the pipeline's creation since VK3 L7a, saying why).
-- [A, B] **vkd3d on Venus** (VK3 L7.5, VK4 T47; bench/vulkan/vkd3d.ts, bench/vulkan/REPORT.md "VK4 T47"): Arch's vkd3d
+- [B] **vkd3d on Venus** (VK3 L7.5, VK4 T47; bench/vulkan/vkd3d.ts, bench/vulkan/REPORT.md "VK4 T47"): Arch's vkd3d
   1.19 makes a Direct3D 12 device at feature level 11_0 in the desktop guest. [B] 11_1 and up are refused, since vkd3d
   grants 11_1 only with every 11_0 feature: geometry and tessellation shaders (tier 4's compute pre-passes),
   `multiViewport` (a draw per viewport, as `gl_Layer`'s per layer), cull distances, and 64 storage buffers and images a
@@ -815,19 +813,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   origin to 1/16), 13 uniform buffers a stage on SwiftShader's and the M4's 10 storage buffers, and dual-source blending
   on SwiftShader (the adapters'). Its d3d12 suite (`TESTS=all`, 73 s; `FAILED=<n>` for each test's first failures): 136
   of 174 pass, 35 fail, 3 crash (T48 clamped integer outputs to their attachments' range: test_output_merger_logic_op's
-  354 checks pass). The failures by cause, the larger first:
+  354 checks pass). test_fractional_viewports's 5,120 of 20,594 are SwiftShader's (the texcoords of an origin rounded
+  to 1/16): the M4 passes all 20,594 (2026-11-09). The failures by cause, the larger first:
   - [B] test_gather_c (42 checks): GatherCmp on an R32_FLOAT view. WebGPU compares only depth textures, so the bind
     group is refused. Vulkan wants the format's depth-comparison feature, which the device doesn't report, and vkd3d
     uses it anyway. A compare done in the stage (a variant keyed by the view's format not being depth) would back it
     (M; the same as "Colour formats aren't compared" below).
-  - [A, B] The three crashes (test_clear_unordered_access_view_image, test_depth_load, test_typed_uav_store) are vkd3d's
+  - [B] The three crashes (test_clear_unordered_access_view_image, test_depth_load, test_typed_uav_store) are vkd3d's
     tests dereferencing textures that failed to be made: R16_UNORM and R16G16_UNORM storage images, which only
     `texture-formats-tier1` has as textures at all (SwiftShader's adapter lacks it). Direct3D 12 wants their typed UAV
     stores at 11_0. [B] Without tier1, such an image would need a texture of another format behind it, as packed
-    formats have (M). [A] Unchecked on the M4 (S: `bench/vulkan/vkd3d.ts` there, these three tests).
+    formats have (M). The M4 (tier1) passes all three: 40,677, 103 and 83 checks (2026-11-09, `results/vk4/easy2/m4-vkd3d.txt`).
   - [B] test_vertex_id (52 of 127): its indirect draws' values in stream output, base vertices 3, 8 and 9 (VK4 T40's).
-  - [A] test_fractional_viewports (5,120 of 20,594): SwiftShader's (the texcoords of an origin rounded to 1/16;
-    fragment positions exact). Worth a run on the M4 (S).
   - [B] test_register_space (10): a compute stage of 16 texel buffers' words, past WebGPU's 10 storage buffers.
   - [B] test_multisample_array_texture (9 of 147): a multisampled array's other layers ("Multisampled arrays'
     leftovers").
@@ -962,10 +959,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     VK4 T37; an indirect one isn't checked by WebGPU (its reads clamped in range). The cost of pulling isn't measured:
     nothing we run meets it but dEQP-VK and vkd3d's tests (a bind group per change of the ranges, and a shader's bytes
     decoded per vertex).
-  - [A, B] **Formats**: [B] D24 depth tests fail by one unit (depth24plus's precision: a fragment depth quantized to 24
-    bits would cost the early depth test). [A] `glsl.440.linkage`: all 68 cases pass on SwiftShader (2026-11-09, its
-    RGB32 attachments in `rgba32*` since VK4 T31), 2 of them in `tests/deqp/vk.txt`: run the 68 on the M4 and add those
-    that pass on both (S).
+  - [B] **Formats**: D24 depth tests fail by one unit (depth24plus's precision: a fragment depth quantized to 24
+    bits would cost the early depth test).
   - [B] **Samplers' leftovers** (VK4 T8, T9; vk/README.md "Samplers in the shader"): a border on a view of several levels, a
     shadow sample past level 0 and a mirror-once with an offset pick their levels in the shader, so those samples lose
     anisotropy; a texture of one level sampled at a LOD past 0 through a sampler whose mag and min filters differ reads the
@@ -1006,9 +1001,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     check the limit; the M4 has 8). And `pipeline.monolithic.sampler.view_type.cube*` linear and average-reduced
     samples of `r8g8b8a8_snorm`, `r8g8b8a8_srgb` and their VK4 T31 twins (`b8g8r8_snorm`, `r8g8_srgb`) in a compute
     stage (4 of T31's sample and their 4 twins: "Image mismatch"; the M4 passes them).
-  - [A] **Shaders**: derivatives in non-uniform control flow (`glsl.derivate.*dynamic_*`) pass on SwiftShader (VK4 T42) and
-    aren't supported on the M4, where dEQP asks for quad subgroup operations and the Mac's subgroups are held (VK3 L5:
-    "What the device advertises, left for the translator": its Mac subgroup workaround would open them).
   - [B] **Queries** (occlusion queries count on the GPU since VK3 L6a, in the device's set since VK4 T46: vk/README.md
     "The driver"; precise counts, calibrated timestamps and Chromium's quantization: graphics.md "Permanent
     limitations"): past 4,096 counts in one render pass (a query and each of its cuts by a clear, a part of the pass or
@@ -1872,12 +1864,28 @@ report it. Nothing has been filed. (Vulkan's are [C]: they wait for the user.)
   (`VK_ERROR_INVALID_EXTERNAL_HANDLE`) as the properties say, or back it with the DRM syncobj
   (`vn_renderer_sync_export_syncobj(…, false)`).
 - [C] **Chromium (Tint's Metal path or Apple's compiler) hoists a lone subgroup ballot out of an `if`** (bench/vulkan/REPORT.md
-  "VK3 L5"): a compute shader whose `if (odd invocation)` holds a `subgroupBallot` as its only subgroup operation gets
-  every invocation's bits (0xffffffff where 0xaaaaaaaa is right) on the M4 with Chrome for Testing 153.0.8010.12
-  (macOS 26.6.2); with any other subgroup operation beside it in the `if`, the result is right. Repro: the kernel of
-  `web/venus-gpu.ts` `subgroupsRight` in a page with `subgroups` requested. Which layer is at fault (Tint's MSL, Metal's
-  compiler) is unknown: compare Tint's MSL output with the hand-written MSL. Our workaround: the page holds subgroups
-  where the check fails.
+  "VK3 L5", "VK4 backlog easy wins"): on the M4 (Chrome for Testing 153.0.8010.12 to 157.0.8103.38, macOS 26.6.2), a
+  `subgroupBallot`, `subgroupElect` or `subgroupBroadcastFirst` that is the only subgroup operation in an `if (odd
+  invocation)`, its value stored to a `var` used past the `if`, is computed with every invocation (a ballot 0xffffffff
+  where 0xaaaaaaaa is right, the first invocation 0 where 1 is): if-converted as if it had no side effects. A store
+  inside the `if` or a `subgroupAdd` beside it whose value is stored is right; an add whose value is unused or folded
+  (`>> 31u`) isn't. Separately, `subgroupShuffleUp`/`Down` with a delta that varies across the subgroup are wrong
+  there (WGSL asks the delta uniform, so that one is a WGSL rule, not a bug: Vulkan doesn't). Repro: `web/venus-gpu.ts`
+  `subgroupsKernel(device, false)` in a page with `subgroups` requested. Which layer is at fault (Tint's MSL, Metal's
+  compiler) is unknown: compare Tint's MSL output with hand-written MSL. Our workaround: the translator's anchor
+  (`WGSL_SUBGROUP_ANCHOR`: the add in the three's operands, the shuffles by index) where the page's check finds it
+  needed.
+- [C] **Chromium's SwiftShader path keeps a loop's uninitialized `var` across iterations** (VK4 T49, checked in VK4's
+  backlog easy wins): WGSL's § 7.3 "var Declarations" says a function-scope variable's lifetime "starts when control
+  enters the variable's declaration" and that, created without an initializer, its initial value is "the zero value
+  of the store type" (the uniformity analysis's table agrees: `var x;` is `V(0)`), so a `var` declared in a loop body
+  is zero at each iteration. On the dev VM's SwiftShader (Chromium 155.0.8059.84) it keeps the previous iteration's
+  value; the M4's Metal (Chrome for Testing 157.0.8103.38) is right. Repro (one invocation, binding 0 a storage buffer
+  of 4 words): `for (var i = 0u; i < 4u; i++) { var v: u32; o[i] = v; v = i + 1u; }` writes 0,1,2,3, not 0,0,0,0
+  (also with `var v: array<u32, 4>` indexed dynamically, and with `v` written under an `if` first). Which layer drops
+  the zeroing (Tint's SPIR-V writer hoisting the `OpVariable` without a store at the declaration, or SwiftShader) is
+  not told apart: Tint's SPIR-V for the repro (`tint --format spvasm`) would say. Report to Dawn (Tint) first. The
+  printer relies on neither behaviour since VK4 T49.
 - [C] **Chromium and macOS: one endless compute dispatch from a web page wedges the M4's GPU for good** (GD
   G4; `bench/results/local/godot-mac-g4b`): a dispatch whose loop never ends (Godot's SDFGI light loop, `i < light_count`
   read as 0xffffffff on Chrome for Testing 153.0.8010.12, whose indirect dispatches read clobbered immediates: fixed by

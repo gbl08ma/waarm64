@@ -79,6 +79,9 @@ export type VenusOptions = { syncPipelines?: boolean;
   /** `?gpu=vkhold=<feature>`: adapter features the device doesn't take (web/venus-gpu.ts `gpuFeatures`); `heldFormats`
    * (`?gpu=vkformats=held`): nor `HELD_FEATURES` (libplacebo's advanced path off, as before VK3 L4e). */
   hold?: readonly string[]; heldFormats?: boolean;
+  /** Ballots, elections and reads of the first invocation anchored by an add of the subgroup (web/venus-gpu.ts
+   * `subgroupsRight`'s `anchor`: a WebGPU whose are wrong in divergent control flow without). */
+  subgroupAnchor?: boolean;
   /** YCbCr conversions and the 8-bit multi-planar formats (VK3 L7.2; vk/README.md "The driver"): on unless `false`
    * (`?gpu=vkycbcr=off`). On by default since VK3 L7.3: GTK 4.24 asserts them on a device with dma-buf modifiers, so
    * without them every GTK4 program died on a machine with Vulkan; with them GTK still takes GL (LINEAR alone isn't a
@@ -113,6 +116,8 @@ export type VenusEmul = Record<(typeof EMUL_COUNTS)[number], number> & VenusEmul
 
 /** venus_init's flag for `VenusOptions.ycbcr` (vk/driver/wg_private.h `WG_FEATURE_YCBCR`). */
 const YCBCR = 1 << 30;
+/** venus_init's flag for `VenusOptions.subgroupAnchor` (`WG_FEATURE_SUBGROUP_ANCHOR`). */
+const SUBGROUP_ANCHOR = 1 << 27;
 /** venus_init's flags for `VenusOptions.l9`'s driver suspects (vk/driver/wg_private.h `WG_FEATURE_L9_*`). */
 export const L9_FLAGS: Partial<Record<L9Suspect, number>> = { bindgroups: 1 << 29, pad: 1 << 28 };
 
@@ -237,7 +242,7 @@ export class VenusRenderer {
   /** The module's exports as they are (tests/venus-driver.test.ts calls its test exports). */
   readonly raw: WebAssembly.Exports;
 
-  private constructor(instance: WebAssembly.Instance, memory: WebAssembly.Memory, window: VenusWindow, gpu: VenusGpu, device: GPUDevice | undefined, caps: GpuCaps | undefined, poll: VenusPoll, hold: readonly string[] = [], ycbcr = false, l9: readonly L9Suspect[] = []) {
+  private constructor(instance: WebAssembly.Instance, memory: WebAssembly.Memory, window: VenusWindow, gpu: VenusGpu, device: GPUDevice | undefined, caps: GpuCaps | undefined, poll: VenusPoll, hold: readonly string[] = [], ycbcr = false, l9: readonly L9Suspect[] = [], subgroupAnchor = false) {
     this.poll = poll;
     const ex = instance.exports as unknown as Exports;
     this.raw = instance.exports;
@@ -251,7 +256,7 @@ export class VenusRenderer {
     const limits = gpuLimits(caps);
     const at = this.ex.venus_alloc(limits.byteLength);
     new Uint32Array(memory.buffer, at, limits.length).set(limits);
-    const ok = this.ex.venus_init(gpuFeatures(caps, !!device, hold) | (ycbcr ? YCBCR : 0) | l9.reduce((f, x) => f | (L9_FLAGS[x] ?? 0), 0), at, limits.length, window.at, window.bytes);
+    const ok = this.ex.venus_init(gpuFeatures(caps, !!device, hold) | (ycbcr ? YCBCR : 0) | (subgroupAnchor ? SUBGROUP_ANCHOR : 0) | l9.reduce((f, x) => f | (L9_FLAGS[x] ?? 0), 0), at, limits.length, window.at, window.bytes);
     this.ex.venus_free(at);
     if (!ok) throw new Error('venus: vkr_renderer_init failed');
     const p = this.ex.venus_alloc(4096);
@@ -292,7 +297,7 @@ export class VenusRenderer {
     // ("Insufficient Memory") in 3 of 6 runs of dEQP's query cases, at the first timestamps after ~740 other cases, and
     // never without (docs/backlog.md "Queries").
     const apple = caps?.adapterInfo?.vendor.toLowerCase() === 'apple' ? ['timestamp-query'] : [];
-    self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.heldFormats ? HELD_FEATURES : []), ...apple, ...(options.hold ?? [])], options.ycbcr ?? true, options.l9);
+    self = new VenusRenderer(instance, memory, window, gpu, device, caps, poll, [...(options.heldFormats ? HELD_FEATURES : []), ...apple, ...(options.hold ?? [])], options.ycbcr ?? true, options.l9, options.subgroupAnchor);
     self.nudgeMs = options.nudgeMs ?? NUDGE_MS;
     self.ex.venus_premake?.(options.premake ? 1 : 0);
     if (options.queueFamilies) self.ex.venus_queue_families?.(options.queueFamilies);

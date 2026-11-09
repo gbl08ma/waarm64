@@ -1,0 +1,20 @@
+#version 450
+// VK4 backlog easy wins: a ballot, an election and a read of the first invocation that are an `if`'s only subgroup
+// operations, their values used past it: Chromium on the M4's Metal computes them with every invocation unless
+// anchored (WGSL_SUBGROUP_ANCHOR; tests/wgsl.test.ts checks the anchored WGSL and each odd invocation's results).
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_ballot : require
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) buffer Out { uint o[]; };
+void main() {
+  uint n = gl_LocalInvocationIndex, k = n * 4u;
+  bool odd = (gl_SubgroupInvocationID & 1u) == 1u;
+  uint b = 0u, e = 0u, f = 0u;
+  if (odd) b = subgroupBallot(true).x;
+  if (odd) e = subgroupElect() ? 1u : 0u;
+  if (odd) f = subgroupBroadcastFirst(n * 3u);
+  o[k + 0u] = gl_SubgroupInvocationID;
+  o[k + 1u] = b;
+  o[k + 2u] = e;
+  o[k + 3u] = f;
+}

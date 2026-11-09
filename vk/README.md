@@ -274,10 +274,16 @@ others are vkQuake's variants for a device with 16-bit floats (dumped through th
 SwiftShader, without `shader-f16`, all three stop at their 16-bit arithmetic; its screen effects' palettization, a texel buffer, translates since VK3 L6b). It checks that Tint accepts the
 WGSL, not what it computes: that is the driver's tests' and dEQP-VK's, and L5's runs of translated compute shaders
 (`runCompute`: subgroup operations against each subgroup's members, 16-bit storage, scratch arrays).
-**Subgroups on Metal** (Chromium 153 on the M4): a ballot that is an `if`'s only subgroup operation is computed with
-every invocation (hoisted out of the `if`), which failed 89 of the Mac's 503 sampled subgroup cases; the GPU worker
-checks that case at Venus's start (web/venus-gpu.ts `subgroupsRight`) and, where it's wrong, the device has subgroups
-of one invocation (bench/vulkan/REPORT.md "VK3 L5").
+**Subgroups on Metal** (Chromium 153 to 157 on the M4): a ballot, an election or a read of the first invocation that
+is an `if`'s only other subgroup operation, its value used past the `if`, is computed with every invocation (hoisted
+out of the `if`), and shuffles up and down (and dEQP's xors) are wrong where their delta varies across the subgroup
+(WGSL wants it uniform; Vulkan doesn't): 89 of the Mac's 503 sampled subgroup cases failed (VK3 L5). The GPU worker
+runs a kernel of each at Venus's start (web/venus-gpu.ts `subgroupsRight`): where the plain one is wrong and the
+anchored one right (the M4), the translator anchors (`WGSL_SUBGROUP_ANCHOR`, wgsl_print.c `SG_ANCHOR`: an add of the
+subgroup in the three's operands, `(subgroupAdd(1u) != 0u)`, which keeps Metal from hoisting them, and the shuffles as
+`subgroupShuffle` by the invocation's own index); where both are wrong, subgroups of one invocation (bench/vulkan/REPORT.md
+"VK3 L5", "VK4 backlog easy wins"). Anchored, the M4 passes 1,955 of the 2,081 subgroup and non-uniform derivative
+cases SwiftShader passes; the 94 left are float arithmetic (docs/backlog.md "What the device advertises").
 
 ## The parts
 

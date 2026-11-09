@@ -159,10 +159,12 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
         // Its shaders of earlier runs (web/venus-cache.ts): IndexedDB, the origin's, for this build of the renderer.
         const cache = vkNoCache || typeof indexedDB === 'undefined' ? undefined : (id: string) => ShaderCache.open(id, { backend: idbBackend(), budget: vkShaderBudget });
         // Subgroups only where they're right in divergent control flow (web/venus-gpu.ts `subgroupsRight`).
-        const subgroups = device ? await subgroupsRight(device) : true;
-        if (!subgroups) console.warn('venus: the WebGPU device\'s subgroups are wrong in divergent control flow: subgroups of one invocation');
-        const hold = subgroups ? vkHold : [...(vkHold ?? []), 'subgroups'];
-        venus = await VenusRenderer.create(module, init.memory, { ...init.window, core: init.core }, device, device && adapter ? { features: device.features, limits: device.limits, adapterInfo: vkVendor ? { vendor: vkVendor } : adapter.info } : undefined, vkPoll, { syncPipelines: vkSyncPipelines, pipelineDelayMs: vkPipeDelayMs, cache, nudgeMs: vkNudgeMs, gpuTime: vkGpuTime, ringIdleMs: vkIdleMs, tickMs: vkTickMs, hold, heldFormats: vkHeldFormats, ycbcr: vkYcbcr, l9: l9Suspects(vkL9 ?? []), premake: vkPremake, queueFamilies: vkQueues, skip: vkSkip });
+        // Anchored where only the translator's anchored ballots are right (Chromium on Metal).
+        const subgroups = device ? await subgroupsRight(device) : 'right';
+        if (subgroups === 'wrong') console.warn('venus: the WebGPU device\'s subgroups are wrong in divergent control flow: subgroups of one invocation');
+        if (subgroups === 'anchor') console.log('venus: the WebGPU device\'s ballots are wrong in divergent control flow unless anchored: anchored');
+        const hold = subgroups !== 'wrong' ? vkHold : [...(vkHold ?? []), 'subgroups'];
+        venus = await VenusRenderer.create(module, init.memory, { ...init.window, core: init.core }, device, device && adapter ? { features: device.features, limits: device.limits, adapterInfo: vkVendor ? { vendor: vkVendor } : adapter.info } : undefined, vkPoll, { syncPipelines: vkSyncPipelines, pipelineDelayMs: vkPipeDelayMs, cache, nudgeMs: vkNudgeMs, gpuTime: vkGpuTime, ringIdleMs: vkIdleMs, tickMs: vkTickMs, hold, subgroupAnchor: subgroups === 'anchor', heldFormats: vkHeldFormats, ycbcr: vkYcbcr, l9: l9Suspects(vkL9 ?? []), premake: vkPremake, queueFamilies: vkQueues, skip: vkSkip });
         venusSkip = (paths) => venus?.skip(paths);
         venus.onRetire = () => fenced.release();
         const v = venus;

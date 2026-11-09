@@ -141,46 +141,70 @@ export function gpuLimits(caps: GpuCaps | undefined) {
 
 /**
  * Whether the device's subgroup operations are right in divergent control flow, as Vulkan's must be (VK3 L5): a
- * ballot and an add in an `if` that only odd invocations take must see those alone. Chromium on the M4's Metal (153)
- * computes a ballot that is the `if`'s only subgroup operation with every invocation (hoisted out of the `if`), which
- * broke most of dEQP-VK's subgroup cases there (bench/vulkan/REPORT.md "VK3 L5"). Where this fails, the device advertises
- * subgroups of one invocation (`hold`). Run once at Venus's start; a device without `subgroups` passes untested.
+ * ballot, an election and a read of the first invocation in an `if` that only odd invocations take must see those
+ * alone. Chromium on the M4's Metal (153 to 157 at least) computes those three with every invocation where they are the
+ * `if`'s only other subgroup operations and their values are used past it (hoisted out of the `if`), which broke most
+ * of dEQP-VK's subgroup cases there (bench/vulkan/REPORT.md "VK3 L5"), but not with an add of the subgroup in their
+ * operands (`anchor`: the translator's WGSL_SUBGROUP_ANCHOR, vk/compiler/wgsl_print.c `SG_ANCHOR`; REPORT.md "VK4
+ * backlog easy wins"). `right`: the plain kernel is right; `anchor`: only the anchored one; `wrong`: neither, and the
+ * device advertises subgroups of one invocation (`hold`). Run once at Venus's start; a device without `subgroups`
+ * passes untested.
  */
-export async function subgroupsRight(device: GPUDevice): Promise<boolean> {
-  if (!device.features.has('subgroups')) return true;
+export async function subgroupsRight(device: GPUDevice): Promise<'right' | 'anchor' | 'wrong'> {
+  if (!device.features.has('subgroups')) return 'right';
+  if (await subgroupsKernel(device, false)) return 'right';
+  return await subgroupsKernel(device, true) ? 'anchor' : 'wrong';
+}
+
+/** `subgroupsRight`'s kernel, plain or anchored as the translator prints it: whether an odd invocation's results are its odd invocations'. */
+async function subgroupsKernel(device: GPUDevice, anchored: boolean): Promise<boolean> {
+  const a = anchored ? '(subgroupAdd(1u) != 0u)' : '';
+  const ballot = anchored ? `subgroupBallot(t & ${a})` : 'subgroupBallot(t)';
+  const elect = anchored ? `${a} & subgroupElect()` : 'subgroupElect()';
+  const up = (v: string, d: string) => anchored ? `subgroupShuffle(${v}, inv - ${d})` : `subgroupShuffleUp(${v}, ${d})`;
+  const first = (v: string) => anchored ? `subgroupShuffle(${v}, subgroupBroadcastFirst(select(0u, inv, ${a})))` : `subgroupBroadcastFirst(${v})`;
   const code = `enable subgroups;
 diagnostic(off, subgroup_uniformity);
 @group(0) @binding(0) var<storage, read_write> o: array<u32>;
 @compute @workgroup_size(128) fn main(@builtin(subgroup_invocation_id) inv: u32, @builtin(local_invocation_index) l: u32) {
   var t: bool = true;
-  var m = subgroupBallot(t);
-  var n = subgroupAdd(1u);
   var b = vec4<u32>(0u);
-  if ((inv & 1u) == 1u) { b = subgroupBallot(t); }
+  var e = false;
+  var f = 0u;
+  var n = 0u;
+  if ((inv & 1u) == 1u) { b = ${ballot}; }
+  if ((inv & 1u) == 1u) { e = ${elect}; }
+  if ((inv & 1u) == 1u) { f = ${first('inv * 3u')}; }
   if ((inv & 1u) == 1u) { n = subgroupAdd(1u); }
-  o[l * 2u] = b.x; o[l * 2u + 1u] = n;
+  // A shuffle up by a delta that varies across the subgroup (Metal's shuffles take it uniform): 0 or 1.
+  let s = ${up('inv * 5u + 7u', '((inv >> 2u) & 1u)')};
+  o[512u + l] = s - 5u * (inv - ((inv >> 2u) & 1u));
+  o[l * 4u] = b.x; o[l * 4u + 1u] = select(0u, 1u, e) | (inv << 1u); o[l * 4u + 2u] = f; o[l * 4u + 3u] = n;
 }`;
   try {
     const module = device.createShaderModule({ code });
     const pipeline = await device.createComputePipelineAsync({ layout: 'auto', compute: { module, entryPoint: 'main' } });
-    const buf = device.createBuffer({ size: 128 * 8, usage: 0x80 | 0x4 /* STORAGE | COPY_SRC */ });
-    const read = device.createBuffer({ size: 128 * 8, usage: 0x1 | 0x8 /* MAP_READ | COPY_DST */ });
+    const buf = device.createBuffer({ size: 128 * 20, usage: 0x80 | 0x4 /* STORAGE | COPY_SRC */ });
+    const read = device.createBuffer({ size: 128 * 20, usage: 0x1 | 0x8 /* MAP_READ | COPY_DST */ });
     const enc = device.createCommandEncoder();
     const pass = enc.beginComputePass();
     pass.setPipeline(pipeline);
     pass.setBindGroup(0, device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: buf } }] }));
     pass.dispatchWorkgroups(1);
     pass.end();
-    enc.copyBufferToBuffer(buf, 0, read, 0, 128 * 8);
+    enc.copyBufferToBuffer(buf, 0, read, 0, 128 * 20);
     device.queue.submit([enc.finish()]);
     await read.mapAsync(1 /* GPUMapMode.READ */);
     const o = new Uint32Array(read.getMappedRange().slice(0));
     read.destroy();
     buf.destroy();
     for (let l = 0; l < 128; l++) {
-      const m = o[2 * l], n = o[2 * l + 1];
-      // An odd invocation's ballot has odd invocations only (the first 32 of its subgroup), and its add counts them.
-      if (l & 1 && (m === 0 || (m & 0x55555555) !== 0 || n === 0 || n > 64)) return false;
+      const [m, ei, f, n] = o.subarray(4 * l, 4 * l + 4), inv = ei >>> 1;
+      // An odd invocation's ballot has odd invocations only (the first 32 of its subgroup), its add counts them, and
+      // the first of them (its subgroup's invocation 1) is elected and read.
+      // A shuffle up's value: invocation inv - delta's (7 more than 5 times its index).
+      if (inv > 0 && o[512 + l] !== 7) return false;
+      if (inv & 1 && (m === 0 || (m & 0x55555555) !== 0 || n === 0 || n > 64 || (ei & 1) !== (inv === 1 ? 1 : 0) || f !== 3)) return false;
     }
     return true;
   } catch {

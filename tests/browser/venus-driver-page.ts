@@ -211,9 +211,13 @@ export async function runFences(spirv: { vert: string; frag: string; comp: strin
  *   device's submit).
  * - 'odd': device 0's window memory is `size` bytes (odd) and goes through an R8 image; its first submit uploads it
  *   whole, its second the page the test marked: every byte arrives both times.
+ * - 'refused' (VK4 backlog easy wins; Godot's screen-space effects froze every window once WebGPU refused one of its
+ *   bind groups, GD G4): a third device's scene (`spirv`, wgt_run) recorded while WebGPU refuses every bind group made
+ *   (as it refused Godot's: an invalid one in its place, the error in the worker's scope), so its submit is refused
+ *   too; then devices 0 and 1 submit and read back their own bytes, as before.
  * Each step's bytes read back, against what was written.
  */
-export async function runTwo(scenario: 'watch' | 'serials' | 'odd') {
+export async function runTwo(scenario: 'watch' | 'serials' | 'odd' | 'refused', spirv?: { vert: string; frag: string; comp: string }) {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) return { skipped: 'no WebGPU adapter' };
   const device = await adapter.requestDevice(deviceRequest(adapter));
@@ -249,8 +253,35 @@ export async function runTwo(scenario: 'watch' | 'serials' | 'odd') {
   // Where each check's read-back bytes first differ from what was written (-1: none).
   const differs = (a: Uint8Array, b: Uint8Array) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return i; return -1; };
   const checks: Record<string, number> = {};
+  const extra: Record<string, unknown> = {};
   try {
-    if (scenario === 'odd') {
+    if (scenario === 'refused') {
+      const a0 = write(1, 1, false), b0 = write(0, 2, false);
+      ex.wgt_two_submit(0); await wait(0);
+      ex.wgt_two_submit(1); await wait(1);
+      checks.before0 = differs(read(0), b0);
+      checks.before1 = differs(read(1), a0);
+      // The scene's bind groups refused: made without their entries (WebGPU's invalid object and a validation error).
+      const words = async (url: string) => new Uint8Array(await (await fetch(url)).arrayBuffer());
+      const put = (b: Uint8Array) => { const p = ex.venus_alloc(b.length) >>> 0; new Uint8Array(memory.buffer, p, b.length).set(b); return [p, b.length / 4]; };
+      const [vs, vn] = put(await words(spirv!.vert)), [fs, fn] = put(await words(spirv!.frag)), [cs, cn] = put(await words(spirv!.comp));
+      const make = device.createBindGroup.bind(device);
+      let refused = 0;
+      device.createBindGroup = (desc: GPUBindGroupDescriptor) => { refused++; return make({ ...desc, entries: [] }); };
+      const failed = ex.wgt_run(vs, vn, fs, fn, cs, cn);
+      for (let k = 0; k < 300 && !ex.wgt_done(); k++) await new Promise((r) => setTimeout(r, 10));
+      extra.sceneRun = failed ? text(ex.wgt_error() >>> 0) : 0;
+      extra.sceneDone = !!ex.wgt_done();
+      extra.refused = refused;
+      device.createBindGroup = make;
+      const a1 = write(1, 3, true), b1 = write(0, 4, true);
+      ex.wgt_two_submit(1);
+      ex.wgt_two_submit(0);
+      await wait(1);
+      await wait(0);
+      checks.after1 = differs(read(1), a1);
+      checks.after0 = differs(read(0), b1);
+    } else if (scenario === 'odd') {
       const first = write(0, 1, false);
       ex.wgt_two_submit(0); await wait(0);
       checks.whole = differs(read(0), first);
@@ -282,10 +313,10 @@ export async function runTwo(scenario: 'watch' | 'serials' | 'odd') {
       checks.dev0 = differs(read(0), b0);
     }
   } catch (e) {
-    return { error: String(e), checks, errors, warnings: v.gpu.stats.errors };
+    return { error: String(e), checks, errors, warnings: v.gpu.stats.errors, ...extra };
   }
   device.destroy();
-  return { checks, errors, warnings: v.gpu.stats.errors };
+  return { checks, errors, warnings: v.gpu.stats.errors, ...extra };
 }
 
 /** GPU writes to host-visible memory in flight against the guest's writes to the same page (VK3 L4c-B; the review's

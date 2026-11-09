@@ -171,16 +171,34 @@ for (const [scenario, what] of [
   ['watch', 'a page one device wrote reaches its GPU buffer though another device submitted first'],
   ['serials', 'two devices\' submits with the same count behind them each complete their own'],
   ['odd', 'every byte of an odd-sized host-visible memory is uploaded, whole and by page'],
+  // VK4 backlog easy wins: Godot's refused bind group once froze every window (docs/backlog.md "Godot on Venus").
+  ['refused', 'a device whose bind groups WebGPU refuses leaves the others\' submits and fences alone'],
 ] as const) {
   test(`two devices: ${what}`, { skip, timeout: 60_000 }, async (t) => {
+    const out = join(root, 'target/vk/test');
+    mkdirSync(out, { recursive: true });
+    for (const name of scenario === 'refused' ? ['driver.vert', 'driver.frag', 'driver.comp'] : []) {
+      const r = spawnSync('glslc', ['--target-env=vulkan1.2', '-o', join(out, `${name}.spv`), join(root, 'tests/venus', name)], { encoding: 'utf8' });
+      assert.equal(r.status, 0, r.stderr);
+    }
     const page = await browser.newPage();
-    page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') console.log(`page: ${m.text().slice(0, 2000)}`); });
+    const logs: string[] = [];
+    page.on('console', (m) => { if (m.type() === 'warning' || m.type() === 'error') { logs.push(m.text()); if (scenario !== 'refused') console.log(`page: ${m.text().slice(0, 2000)}`); } });
     await page.goto(`${base}/tests/browser/venus-driver.html`);
     await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready);
-    const r = await page.evaluate((s) => (window as unknown as { venus: { runTwo(s: string): Promise<Record<string, unknown>> } }).venus.runTwo(s), scenario);
+    const r = await page.evaluate((s) => (window as unknown as { venus: { runTwo(s: string, spirv: object): Promise<Record<string, unknown>> } }).venus.runTwo(s,
+      { vert: '/target/vk/test/driver.vert.spv', frag: '/target/vk/test/driver.frag.spv', comp: '/target/vk/test/driver.comp.spv' }), scenario);
     await page.close();
     if (r.skipped) return t.skip(`SKIPPED: ${r.skipped}`);
     assert.equal(r.error, undefined, `${String(r.error)} ${JSON.stringify(r.checks)}`);
+    if (scenario === 'refused') {
+      console.log(JSON.stringify({ sceneRun: r.sceneRun, sceneDone: r.sceneDone, refused: r.refused, warnings: r.warnings, errors: (r.errors as string[]).map((e) => e.slice(0, 160)), logs: logs.map((l) => l.slice(0, 200)).slice(0, 6) }));
+      // The scene's bind groups were refused, and its submit with them (WebGPU's errors, the worker's warnings).
+      assert.ok((r.refused as number) > 0, 'no bind group refused');
+      assert.ok((r.warnings as number) > 0, 'the worker didn\'t warn of the refusal');
+      for (const [k, at] of Object.entries(r.checks as Record<string, number>)) assert.equal(at, -1, `${k}: the bytes read back differ from byte ${at}`);
+      return;
+    }
     assert.deepEqual(r.errors, [], 'WebGPU errors');
     // Each check: the first byte read back that differs from what was written (-1: none).
     const checks = r.checks as Record<string, number>;

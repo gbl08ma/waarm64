@@ -44,6 +44,7 @@ struct ctx {
    uint32_t max_uniform_size; /* a uniform block's declared bytes at most (maxUniformBufferBindingSize) */
    bool dual_source; /* dual-source-blending */
    bool subgroups;   /* subgroups (wgsl_lower's subgroups of the adapter's size); else of one invocation */
+   bool sg_anchor;   /* WGSL_SUBGROUP_ANCHOR */
    bool f16;         /* shader-f16 */
    bool uses_subgroup_ops, uses_sg_inv, uses_sg_size;
    bool uses_texel_buffers;
@@ -939,7 +940,9 @@ gather_intrinsic(struct ctx *c, nir_intrinsic_instr *intr)
          c->uses_sg_size = true;
       else
          c->uses_subgroup_ops = true;
-      if (intr->intrinsic == nir_intrinsic_first_invocation)
+      if (intr->intrinsic == nir_intrinsic_first_invocation ||
+          (c->sg_anchor && (intr->intrinsic == nir_intrinsic_read_first_invocation || intr->intrinsic == nir_intrinsic_shuffle_xor ||
+                            intr->intrinsic == nir_intrinsic_shuffle_up || intr->intrinsic == nir_intrinsic_shuffle_down)))
          c->uses_sg_inv = true;
       break;
    case nir_intrinsic_load_push_constant: {
@@ -2736,6 +2739,13 @@ workgroup_invocations(struct ctx *c)
    return c->nir->info.workgroup_size[0] * c->nir->info.workgroup_size[1] * c->nir->info.workgroup_size[2];
 }
 
+/* WGSL_SUBGROUP_ANCHOR: an add of the subgroup in a ballot's, an election's or a first invocation's operand, true (and
+ * the invocation itself) in every active invocation. Chromium on the M4's Metal (157) computes those three with every
+ * invocation where they are an `if`'s only other subgroup operations, but not with an add in their operand (an add
+ * beside them whose value is unused, or folded, doesn't keep them; bench/vulkan/REPORT.md "VK4 backlog easy wins"). */
+#define SG_ANCHOR "(subgroupAdd(1u) != 0u)"
+#define SG_FIRST "subgroupBroadcastFirst(select(0u, sg_inv, " SG_ANCHOR "))"
+
 static void
 emit_subgroup(struct ctx *c, nir_intrinsic_instr *intr)
 {
@@ -2772,7 +2782,7 @@ emit_subgroup(struct ctx *c, nir_intrinsic_instr *intr)
       }
    }
    unsigned base = WGSL_U32;
-   const char *fn = NULL, *e = NULL;
+   const char *fn = NULL, *e = NULL, *rel = NULL;
    switch (intr->intrinsic) {
    case nir_intrinsic_load_subgroup_invocation:
       line(c, "t%u = sg_inv;", def->index);
@@ -2790,7 +2800,7 @@ emit_subgroup(struct ctx *c, nir_intrinsic_instr *intr)
    case nir_intrinsic_ballot:
       if (def->num_components != 4)
          failf(c, "a ballot of %u components", def->num_components);
-      line(c, "t%u = subgroupBallot(%s);", def->index, src_comp(c, &intr->src[0], 0));
+      line(c, "t%u = subgroupBallot(%s%s);", def->index, src_comp(c, &intr->src[0], 0), c->sg_anchor ? " & " SG_ANCHOR : "");
       return;
    case nir_intrinsic_vote_any:
       line(c, "t%u = subgroupAny(%s);", def->index, src_comp(c, &intr->src[0], 0));
@@ -2799,19 +2809,23 @@ emit_subgroup(struct ctx *c, nir_intrinsic_instr *intr)
       line(c, "t%u = subgroupAll(%s);", def->index, src_comp(c, &intr->src[0], 0));
       return;
    case nir_intrinsic_elect:
-      line(c, "t%u = subgroupElect();", def->index);
+      line(c, "t%u = %ssubgroupElect();", def->index, c->sg_anchor ? SG_ANCHOR " & " : "");
       return;
    case nir_intrinsic_first_invocation:
-      line(c, "t%u = subgroupBroadcastFirst(sg_inv);", def->index);
+      line(c, "t%u = %s;", def->index, c->sg_anchor ? SG_FIRST : "subgroupBroadcastFirst(sg_inv)");
       return;
    case nir_intrinsic_read_first_invocation:
-      e = fmt(c, "subgroupBroadcastFirst(%s)", subgroup_value(c, &intr->src[0], base));
+      /* Anchored, a shuffle from the first invocation (the anchor's select needs a value of the operand's type). */
+      e = c->sg_anchor ? fmt(c, "subgroupShuffle(%s, " SG_FIRST ")", subgroup_value(c, &intr->src[0], base))
+                       : fmt(c, "subgroupBroadcastFirst(%s)", subgroup_value(c, &intr->src[0], base));
       break;
    case nir_intrinsic_read_invocation: fn = "subgroupShuffle"; break;
    case nir_intrinsic_shuffle: fn = "subgroupShuffle"; break;
-   case nir_intrinsic_shuffle_xor: fn = "subgroupShuffleXor"; break;
-   case nir_intrinsic_shuffle_up: fn = "subgroupShuffleUp"; break;
-   case nir_intrinsic_shuffle_down: fn = "subgroupShuffleDown"; break;
+   /* Anchored (Metal's): a shuffle by the invocation's own index, which Metal's shuffles up and down (and dEQP's xors)
+    * get wrong where their delta varies across the subgroup (as Vulkan allows; WGSL's need it uniform). */
+   case nir_intrinsic_shuffle_xor: fn = c->sg_anchor ? "subgroupShuffle" : "subgroupShuffleXor"; rel = "^"; break;
+   case nir_intrinsic_shuffle_up: fn = c->sg_anchor ? "subgroupShuffle" : "subgroupShuffleUp"; rel = "-"; break;
+   case nir_intrinsic_shuffle_down: fn = c->sg_anchor ? "subgroupShuffle" : "subgroupShuffleDown"; rel = "+"; break;
    case nir_intrinsic_quad_broadcast:
       /* WGSL's id is a const-expression (a dynamic one is lowered to shuffles). */
       e = fmt(c, "quadBroadcast(%s, %uu)", subgroup_value(c, &intr->src[0], base), const_index(c, &intr->src[1]));
@@ -2858,7 +2872,9 @@ emit_subgroup(struct ctx *c, nir_intrinsic_instr *intr)
       failf(c, "the intrinsic %s", nir_intrinsic_infos[intr->intrinsic].name);
       return;
    }
-   if (fn)
+   if (fn && rel && c->sg_anchor)
+      e = fmt(c, "%s(%s, sg_inv %s %s)", fn, subgroup_value(c, &intr->src[0], base), rel, src_comp(c, &intr->src[1], 0));
+   else if (fn)
       e = fmt(c, "%s(%s, %s)", fn, subgroup_value(c, &intr->src[0], base), src_comp(c, &intr->src[1], 0));
    if (def->num_components != 1)
       failf(c, "a subgroup operation on vectors");
@@ -3809,6 +3825,7 @@ wgsl_print(void *mem_ctx, nir_shader *nir, const struct wgsl_print_options *o, s
       .max_uniform_size = o->max_uniform_size ? o->max_uniform_size & ~15u : 65536,
       .dual_source = features & WGSL_DUAL_SOURCE,
       .subgroups = features & WGSL_SUBGROUPS,
+      .sg_anchor = features & WGSL_SUBGROUP_ANCHOR,
       .f16 = features & WGSL_F16,
       .storage_limits = o->storage_limits,
       .keys = o->keys,

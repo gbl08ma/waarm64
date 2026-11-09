@@ -114,7 +114,7 @@ async function translator() {
 }
 
 /** vk/compiler/wgsl.h's features. */
-const WGSL = { TIER2: 1, DUAL_SOURCE: 2, SUBGROUPS: 4, F16: 8, TIER1: 16 };
+const WGSL = { TIER2: 1, DUAL_SOURCE: 2, SUBGROUPS: 4, F16: 8, TIER1: 16, SUBGROUP_ANCHOR: 32 };
 /** vk/compiler/wgsl_test.c's flag: the fragment stage of a pipeline with sampleShadingEnable. */
 const TEST_SAMPLE_SHADING = 1 << 16;
 
@@ -491,6 +491,43 @@ test('subgroup operations are WGSL\'s where the device has subgroups of one size
     if (res.min !== res.max) return t.skip(`SKIPPED: the adapter's subgroups vary in size (${res.min}-${res.max})`);
     if (res.min !== 4) res = (await run(res.min))!;
     check(res, res.min, `subgroups of ${res.min}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('anchored, a ballot, an election and a read of the first invocation take an add of the subgroup into their operands, and run right (VK4 backlog easy wins)', { skip: noGlslc, timeout: 120_000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-wgsl-'));
+  try {
+    const translate = await translator();
+    const stage = (features: number, subgroupSize = 4) => {
+      const r = glslStage(translate, tmp, 'tests/venus/easy/sg-anchor.comp', { features, subgroupSize });
+      assert.equal(r.rc, 0, r.text);
+      return r.text;
+    };
+    const plain = stage(WGSL.SUBGROUPS), anchored = stage(WGSL.SUBGROUPS | WGSL.SUBGROUP_ANCHOR);
+    assert.doesNotMatch(plain, /subgroupAdd/);
+    // Chromium on the M4's Metal hoists the three out of their `if` without the add (web/venus-gpu.ts `subgroupsRight`).
+    assert.match(anchored, /subgroupBallot\([^;]* & \(subgroupAdd\(1u\) != 0u\)\)/);
+    assert.match(anchored, /\(subgroupAdd\(1u\) != 0u\) & subgroupElect\(\)/);
+    assert.match(anchored, /subgroupShuffle\([^;]*subgroupBroadcastFirst\(select\(0u, sg_inv, \(subgroupAdd\(1u\) != 0u\)\)\)\)/);
+    assert.doesNotMatch(anchored, /subgroupBroadcastFirst\((?!select)/);
+    // Run: each odd invocation's ballot has its subgroup's odd invocations, the first of them elected and read.
+    const run = (size: number) => runCompute(stage(WGSL.SUBGROUPS | WGSL.SUBGROUP_ANCHOR, size), [{ binding: 0, size: 64 * 4 * 4 }], ['subgroups']);
+    let res = await run(4);
+    if (!res) return t.skip('SKIPPED: the adapter has no subgroups');
+    if (res.min !== res.max) return t.skip(`SKIPPED: the adapter's subgroups vary in size (${res.min}-${res.max})`);
+    if (res.min !== 4) res = (await run(res.min))!;
+    assert.deepEqual(res.errors, []);
+    const o = new Uint32Array(res.out[0].buffer), size = res.min, bad: string[] = [];
+    for (let n = 0; n < 64; n++) {
+      const inv = o[n * 4];
+      if (!(inv & 1)) continue;
+      const first = n - inv + 1, ballot = size >= 32 ? 0xaaaaaaaa : (0xaaaaaaaa & ((1 << size) - 1)) >>> 0;
+      const want = [inv, ballot, inv === 1 ? 1 : 0, first * 3];
+      want.forEach((w, k) => { if (o[n * 4 + k] !== w) bad.push(`invocation ${n} result ${k}: ${o[n * 4 + k]}, not ${w}`); });
+    }
+    assert.deepEqual(bad.slice(0, 8), [], `subgroups of ${size}: of ${bad.length}`);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
