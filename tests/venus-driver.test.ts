@@ -480,6 +480,8 @@ for (const [scenario, what] of [
   // VK4 R4: transfers.
   ['oneRow', 'one row of an image to and from a buffer whose images are taller'],
   ['resolveTwin', 'a drawn resolve into an sRGB view of a UNORM image'],
+  // VK4's backlog: SwiftShader's WebGPU resolves sRGB twins' views by their textures' own formats.
+  ['srgbResolve', 'a pass\'s resolve between an sRGB image and a UNORM one, through views of either, in the views\' format'],
   ['msLayers', 'a multisampled copy of two layers'],
   ['msLayersSrgb', 'a multisampled sRGB copy between two layers of an image'],
   ['msLayersPacked', 'a multisampled packed copy between two layers of an image'],

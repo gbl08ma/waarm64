@@ -594,7 +594,10 @@ compute pass writes `round(depth · 65535)` as halves, so a texel uploaded comes
   `rgba8unorm` or `bgra8unorm` view of a texture of 6 layers or more, a pass's resolve target too, goes into a texture of
   the worker's and is copied into its layer (`shortResolve`, VK4 T39: SwiftShader's WebGPU leaves the level's last
   2 · width − 4 texels unwritten, which dEQP-VK's layered multisampled clears read as zeros or old bytes; Metal's is
-  right; every adapter takes the copy); else a draw over the region
+  right; every adapter takes the copy); one through a view that is its texture's sRGB twin, the source's or the
+  destination's, a pass's resolve target too, is drawn after it (`twinResolve`: SwiftShader's WebGPU averages an sRGB
+  texture's samples through a UNORM view decoded, 0.5 coming out 55, which image.mutable's
+  `*_draw_copy_resolve_mutable_{color,resolve}_att` twins met; every adapter draws them); else a draw over the region
   (`resolveByDraw`: the samples' average, or sample 0 of an integer format), for `vkCmdResolveImage` and for a render
   pass's attachment, which the pass's end resolves that way within its render area, stored whatever its store op, as
   depth's. A multisampled copy between formats moves bits, not values: twins through their linear views, packed

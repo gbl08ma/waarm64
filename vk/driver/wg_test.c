@@ -5427,9 +5427,12 @@ r4_misc(uint32_t scenario, VkCommandBuffer cmd, VkBuffer out)
 }
 
 /* 53 (the review's X2): a pass of 4 samples of RGBA8_UNORM images' SRGB views over a part of them, cleared to 0.5 and
- * resolved into the second's: the resolve's a draw (a render area short of the image), in the views' format: 188 at 0. */
+ * resolved into the second's: the resolve's a draw (a render area short of the image), in the views' format: 188 at 0.
+ * 130: passes over the whole, of an RGBA8_SRGB image's samples resolved into an RGBA8_UNORM image, through both's UNORM
+ * views (128 at 0) and both's SRGB views (188 at 4): SwiftShader's WebGPU averaged the first's samples decoded (55 at 0:
+ * dEQP-VK's image.mutable `*_draw_copy_resolve_mutable_color_att` twins). */
 static int
-r4_resolve(VkCommandBuffer cmd, VkBuffer out)
+r4_resolve_as(VkCommandBuffer cmd, VkBuffer out, const VkFormat own[2], VkFormat view_format, uint32_t area, uint32_t at)
 {
    PFN_vkCmdBeginRendering CmdBeginRendering = (PFN_vkCmdBeginRendering)GetDeviceProcAddr(dev, "vkCmdBeginRendering");
    PFN_vkCmdEndRendering CmdEndRendering = (PFN_vkCmdEndRendering)GetDeviceProcAddr(dev, "vkCmdEndRendering");
@@ -5438,7 +5441,7 @@ r4_resolve(VkCommandBuffer cmd, VkBuffer out)
    for (uint32_t i = 0; i < 2; i++) {
       const VkImageCreateInfo info = {
          .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT, .imageType = VK_IMAGE_TYPE_2D,
-         .format = VK_FORMAT_R8G8B8A8_UNORM, .extent = { 16, 16, 1 }, .mipLevels = 1, .arrayLayers = 1,
+         .format = own[i], .extent = { 16, 16, 1 }, .mipLevels = 1, .arrayLayers = 1,
          .samples = i ? VK_SAMPLE_COUNT_1_BIT : VK_SAMPLE_COUNT_4_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL,
          .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT };
       CHECK(CreateImage(dev, &info, NULL, &images[i]));
@@ -5450,7 +5453,7 @@ r4_resolve(VkCommandBuffer cmd, VkBuffer out)
       CHECK(BindImageMemory(dev, images[i], mem, 0));
       const VkImageViewCreateInfo vi = {
          .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = images[i], .viewType = VK_IMAGE_VIEW_TYPE_2D,
-         .format = VK_FORMAT_R8G8B8A8_SRGB, .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
+         .format = view_format, .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
       CHECK(CreateImageView(dev, &vi, NULL, &views[i]));
    }
    const VkRenderingAttachmentInfo c = {
@@ -5459,12 +5462,23 @@ r4_resolve(VkCommandBuffer cmd, VkBuffer out)
       .resolveImageView = views[1], .resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
       .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR, .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
       .clearValue = { .color = { .float32 = { 0.5f, 0.5f, 0.5f, 1 } } } };
-   const VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = { { 0, 0 }, { 12, 12 } },
+   const VkRenderingInfo ri = { .sType = VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = { { 0, 0 }, { area, area } },
                                 .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &c };
    CmdBeginRendering(cmd, &ri);
    CmdEndRendering(cmd);
-   copy_texel(cmd, images[1], VK_IMAGE_ASPECT_COLOR_BIT, 0, 6, 6, out, 0);
+   copy_texel(cmd, images[1], VK_IMAGE_ASPECT_COLOR_BIT, 0, 6, 6, out, at);
    return 0;
+}
+
+static int
+r4_resolve(uint32_t scenario, VkCommandBuffer cmd, VkBuffer out)
+{
+   if (scenario == 53)
+      return r4_resolve_as(cmd, out, (const VkFormat[2]){ VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM },
+                           VK_FORMAT_R8G8B8A8_SRGB, 12, 0);
+   const VkFormat own[2] = { VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_R8G8B8A8_UNORM };
+   return r4_resolve_as(cmd, out, own, VK_FORMAT_R8G8B8A8_UNORM, 16, 0) ||
+          r4_resolve_as(cmd, out, own, VK_FORMAT_R8G8B8A8_SRGB, 16, 4);
 }
 
 /* VK4 R3's passes (`out` as wgt_misc's):
@@ -8854,8 +8868,8 @@ wgt_misc(uint32_t scenario, const uint32_t *cs, uint32_t cs_words)
    } else if (scenario == 121) {
       if (t41_full(cs, cs_words, cmd, out))
          return 1;
-   } else if (scenario == 53) {
-      if (r4_resolve(cmd, out))
+   } else if (scenario == 53 || scenario == 130) {
+      if (r4_resolve(scenario, cmd, out))
          return 1;
    } else if (scenario == 52 || (scenario >= 55 && scenario <= 59) || scenario == 63 || scenario == 64) {
       if (r4_misc(scenario, cmd, out))

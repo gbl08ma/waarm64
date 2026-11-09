@@ -343,6 +343,8 @@ export class VenusGpu {
   /** `resolveTemp`'s textures, and the open render pass's resolves into them (`endPass` copies them out). */
   private resolveTemps = new Map<string, GPUTexture>();
   private passResolves: ShortResolve[] = [];
+  /** Resolves the pass leaves to draws after it (`twinResolve`): `resolveByDraw`'s jobs. */
+  private passDrawnResolves: Json[] = [];
   /** A texture's bytes are another renderer's resource's from now on (`res`; 0: no longer): web/venus-import.ts, called at the bind (it
    * writes textures in the queue's order itself). `desc` is what the texture was made with; what it returns, the resource's own texture
    * (kept while the resource lives), takes the image's place under its id (VK4 T16). `texture()` is the image's own,
@@ -589,6 +591,7 @@ export class VenusGpu {
         const colors: (GPUTextureFormat | null)[] = [];
         const textures: GPUTexture[] = [];
         const resolves: ShortResolve[] = [];
+        const drawn: Json[] = [];
         let samples = 1;
         const desc: GPURenderPassDescriptor = {
           colorAttachments: (j.colorAttachments as (Json | null)[]).map((a) => {
@@ -602,6 +605,12 @@ export class VenusGpu {
               const r = self.get<View>(a.resolveTarget);
               textures.push(r.tex);
               resolveTarget = r.view;
+              if (twinResolve(v.tex, v.format, r.tex, r.format)) {
+                // Drawn after the pass (`endPass`), from what it stores.
+                drawn.push({ src: v.tex, srcFormat: v.format, srcMip: v.mip, srcLayer: v.layer, dst: r.tex, format: r.format, dstMip: r.mip, dstLayer: r.layer,
+                  w: Math.max(1, r.tex.width >> r.mip), h: Math.max(1, r.tex.height >> r.mip) });
+                return { ...a, ...keepOps, view: v.view, resolveTarget: undefined, storeOp: 'store' } as GPURenderPassColorAttachment;
+              }
               if (shortResolve(r.tex, r.format)) {
                 const w = Math.max(1, r.tex.width >> r.mip), h = Math.max(1, r.tex.height >> r.mip);
                 const t = self.resolveTemp(r.format, w, h);
@@ -642,6 +651,7 @@ export class VenusGpu {
           if (j.keep !== 2) self.flushXfb();
           self.pass = self.enc!.beginRenderPass(self.timed(desc));
           self.passResolves = resolves;
+          self.passDrawnResolves = drawn;
           self.encPasses++;
         });
       },
@@ -1680,7 +1690,7 @@ override bit: u32 = 8u;
       const dw = Math.max(1, tex.width >> j.dstMip), dh = Math.max(1, tex.height >> j.dstMip);
       // WebGPU's own resolve is of a whole level of one size, into a 2D texture, of a format it resolves (not an integer
       // one, a 32-bit float or texture-formats-tier1's 16-bit normalized ones: VK4 T21).
-      if (!/int$|^r(g|gba)?32float$|^r(g|gba)?16[su]norm$/.test(fmt) && tex.dimension !== '3d' && !sx && !sy && !dx && !dy && w === sw && h === sh && w === dw && h === dh && tex.usage & RENDER_ATTACHMENT) {
+      if (!/int$|^r(g|gba)?32float$|^r(g|gba)?16[su]norm$/.test(fmt) && !twinResolve(S, j.srcFormat, tex, fmt) && tex.dimension !== '3d' && !sx && !sy && !dx && !dy && w === sw && h === sh && w === dw && h === dh && tex.usage & RENDER_ATTACHMENT) {
         this.emul.resolves++;
         const src = this.viewOf(j.src, j.srcMip, j.srcLayer, ownFormat(S, j.srcFormat));
         if (shortResolve(tex, fmt)) {
@@ -1991,6 +2001,11 @@ ${vs}
     // Resolves the pass made into a texture of the worker's (`shortResolve`): copied into their layers.
     for (const r of this.passResolves) this.enc!.copyTextureToTexture({ texture: r.t }, { texture: r.dst, mipLevel: r.mip, origin: { x: 0, y: 0, z: r.layer } }, [r.w, r.h, 1]);
     this.passResolves = [];
+    for (const r of this.passDrawnResolves) {
+      this.emul.drawnResolves++;
+      this.resolveByDraw(r, 0, 0, 0, 0, r.w as number, r.h as number);
+    }
+    this.passDrawnResolves = [];
     // A capture still open is one a cut of the Vulkan pass divides (wg_cmd.c `begin_pass`): it goes on in the next part,
     // and the captures ended before it run now (VK4 T45: a later draw by a byte count may read their counters).
     const open = xfbOpen(this.xfbJobs);
@@ -3378,6 +3393,16 @@ const ownFormat = (t: GPUTexture, format: string | undefined) => (format && form
  */
 const shortResolve = (tex: GPUTexture, format: string) =>
   (format === 'rgba8unorm' || format === 'bgra8unorm') && tex.dimension === '2d' && tex.depthOrArrayLayers >= 6 && (tex.usage & TEX_COPY_DST) !== 0;
+
+/**
+ * Whether a resolve from multisampled `src` read through a view of format `srcFormat` into `dst` through one of `format`
+ * is drawn (`resolveByDraw`): where either view is its texture's sRGB twin. SwiftShader's WebGPU averages an sRGB
+ * texture's samples through a UNORM view decoded (0.5's 128 came out 55 in a UNORM texture: bench/results/local/t39/repro.ts,
+ * wg_test.c 130; Metal right), which `image.mutable`'s `*_draw_copy_resolve_mutable_{color,resolve}_att` twins met.
+ * Such resolves are rare: every adapter draws them, the destination's twins too.
+ */
+const twinResolve = (src: GPUTexture, srcFormat: string | undefined, dst: GPUTexture, format: string) =>
+  src.sampleCount > 1 && ((!!srcFormat && src.format !== srcFormat) || dst.format !== format);
 
 type ShortResolve = { t: GPUTexture; dst: GPUTexture; mip: number; layer: number; w: number; h: number };
 

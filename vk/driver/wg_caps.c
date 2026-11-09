@@ -73,8 +73,8 @@ wg_caps_extensions(struct vk_device_extension_table *e)
       .KHR_maintenance3 = true,
       .KHR_maintenance4 = true,
       /* 1.4's: the *2 commands, index buffer ranges, VkBindMemoryStatus, VK_REMAINING_ARRAY_LAYERS in copies, shader
-       * modules chained to a stage (Mesa's runtime), the flags2 words (VK4 T24). A8_UNORM isn't offered (no WebGPU
-       * format); A1B5G5R5 is a packed format (wg_format.c, VK4 T30). */
+       * modules chained to a stage (Mesa's runtime), the flags2 words (VK4 T24). A8_UNORM is an `r8unorm` texture whose
+       * views swizzle red to alpha (wg_format.c's WG_FMT_ALPHA8, VK4 T38); A1B5G5R5 is a packed format (wg_format.c, VK4 T30). */
       .KHR_maintenance5 = true,
       .KHR_maintenance6 = true,
       /* Offsets that aren't constants from fetches (wgsl_sampler.c `dynamic_offset`), depth and stencil copied with

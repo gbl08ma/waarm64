@@ -1840,7 +1840,8 @@ view_init(struct wg_device *dev, struct wg_image_view *view, uint32_t loop_tex)
       dim = "2d";
    const bool layered = image->vk.image_type != VK_IMAGE_TYPE_3D;
    dev->slice_views |= !layered && view->vk.view_type != VK_IMAGE_VIEW_TYPE_3D;
-   /* A 2D view of a 3D image is an attachment (`slice` below; VK_EXT_image_2d_view_of_3d isn't offered): WebGPU has none. */
+   /* A 2D view of a 3D image (an attachment, or VK_EXT_image_2d_view_of_3d's sampled and storage views) is the 3D texture's
+    * view: WebGPU has no 2D view of a 3D texture (`slice` below picks the attachment's depth slice). */
    if (!layered)
       dim = "3d";
    /* A compressed image that isn't whole blocks is a corner of its texture (below, wg_CreateImage): sampled by the shader

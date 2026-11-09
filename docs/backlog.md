@@ -884,16 +884,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     and a colour format are skipped with a warning. A float16's signalling NaN
     doesn't survive it. A linear blit from a padded compressed image filters into the padding at its last texels. GFXReconstruct's trimmed captures restore their depth images through the worker's
     paths (vkQuake's first replayed frame).
-  - [A, B, C] **Views in another format's leftovers** (VK4 T4; vk/README.md "Views in another format"): every failure left in
+  - [B, C] **Views in another format's leftovers** (VK4 T4; vk/README.md "Views in another format"): every failure left in
     `image.mutable` is multisampled: [B] view formats WebGPU can't multisample
     (`r32_sint`, `r32_uint`, the `rg32` ones: such an image's alias can't be made, and its invalid texture loses the
     submit: 124 of VK4 T39's run; channels split into `r32float` textures, "Sample counts Vulkan wants" below, is the
-    shape), in 2D and in arrays, and [A] 3 sRGB-twin resolves, each in both,
-    (`b8g8r8a8_srgb_b8g8r8a8_unorm_draw_copy_resolve_mutable_color_att` and two more: green and blue ~0.26 off).
-    Those are SwiftShader's (VK4 T39, `bench/results/local/t39/repro.ts`'s kind): it resolves a 4-sample sRGB texture
-    through its UNORM view as sRGB (0.5 comes out 55, not 128), Metal rightly; not worked around (S: a drawn resolve
-    for a multisampled sRGB texture resolved through a UNORM view, as `shortResolve` routes SwiftShader's short ones,
-    web/venus-gpu.ts; the 6 cases then join the list). [B] Also not backed: a multisampled copy between SNORM layouts (VK4 T39 carries the others'
+    shape), in 2D and in arrays. [B] Also not backed: a multisampled copy between SNORM layouts (VK4 T39 carries the others'
     bits, `bitsBetween`), a shared or linear
     image's view in another format (what others read is its own texture), views of another block size (uncompressed of
     compressed: `BLOCK_TEXEL_VIEW_COMPATIBLE`), and, in one render pass, a write through one format read through
