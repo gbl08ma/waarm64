@@ -876,6 +876,8 @@ macOS 26.6.2, `bench/gpu/sway-mac.sh`). Eight more [A] items; JSON in `results/v
   The ticker is ~20% faster on iconscroll (the rounds don't overlap): the shorter period's gain alone on Linux, where
   `waitAsync` isn't stretched (T13). GSK on Vulkan draws iconscroll at 2.3× its GL renderer here (on the M4 33 against
   GL's 28–32), and frames at 60 both ways.
+- **CI**: `scripts/ci.sh` OK (513 s), `scripts/ci-graphics.sh` OK (259 s; the replays from the remade disk),
+  `scripts/ci-deqp-vk.sh` OK (1,073 s, a sample of 11,017, seed 460047151), `scripts/ci-debian.sh` OK (340 s).
 
 ## VK4 T49 follow-up: the shader store held deflated — fflate's inflateSync, 19 → 3.8 MB for Godot's editor
 
