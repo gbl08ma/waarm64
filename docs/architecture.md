@@ -96,7 +96,7 @@ wasm64 core was free there), B +31–40%, D +26–32%.
 | `core/fuzz/` | decoder sweep and libFuzzer targets (separate workspace) |
 | `web/` | `vm.ts` (host ABI, parallel SMP's coordinator), `vcpu-worker.ts`, `devices.ts` + `device-worker.ts` (backends), `9p.ts`, `net.ts`, `input.ts`, `display.ts`, `overlay.ts`, `qcow2.ts` + `inflate-pool.ts`, `sampler-worker.ts`, `profiler.ts`; `app/`: the page ([frontend.md](frontend.md)) |
 | `tests/` | Node and Chromium tests, the corpus, the harness, bare-metal tests, qcow2 fixtures, `steps.txt` |
-| `tools/` | `serve.ts` (Vite's dev and preview servers with COOP/COEP and ranges; the build is `vite.config.ts`), `corpus/` (generator and oracle runner), `v8code.ts` (V8 machine code of JIT functions), `wasm-sizes.ts` |
+| `tools/` | `serve.ts` (Vite's dev and preview servers with COOP/COEP and ranges; the build is `vite.config.ts`), `corpus/` (generator and oracle runner), `v8code.ts` (V8 machine code of JIT functions), `wasm-sizes.ts`, `wasm-calls.ts` (the calls a function makes: `interp::block::hot` must make none) |
 | `bench/` | `run.ts` (the harness), `interp/`, `boot/`, `jit/`, `spike/` (pages, suites, reports, committed results) |
 | `images/` | guest image builds ([images.md](images.md)) |
 | `scripts/` | `ci.sh`, `build-wasm.sh`, `testfloat.sh`, `tsan.sh` |

@@ -65,7 +65,20 @@ the steps, so an interpreted step costs ~3.5× a compiled one. The loads' new co
 pages load; in Godot's editor start on Venus 6-7% for 0.85% of the steps (~8×), 21% in its first 20 s. A lower
 compile threshold doesn't take it away there (500 tied, 250 lost: [jit.md](jit.md) "Compile policy"), so the
 interpreter's speed is the lever for loads and starts. The items below are ranked by that; measure them on the Mac
-(the VM's bounds checks distort `hot`'s stores).
+(the VM's bounds checks distort `hot`'s stores), and screen them as `bench/interp/REPORT.md` "The block interpreter on
+the Mac, loop 1" says (counts first; the block-interpreter guests; the pages session for cold-code changes).
+
+- **What makes `hot` return in a browser** (counted 2026-11-09, `bench/interp/REPORT.md` "The block interpreter on the
+  Mac, loop 1"; Firefox's pages session, 678 M block runs, `hot` entered 266 M times). Two causes are the
+  interpreter's own:
+  - **Misaligned loads and stores**: ~7.8 M exits to the generic path (of ~19 M loads and stores off the fast path; TLB
+    misses ~5.2 M). A misaligned load within a page could stay inline (two aligned words and a funnel shift; the
+    architecture asks only for single-copy atomicity of bytes then, without LSE2); a store may write only its own
+    bytes. Split the count into loads and stores first.
+  - **Blocks out of their slot**: 82.5 M of the next-block lookups in `hot` find another block in its slot and return;
+    `count_out` runs 128.6 M times (a map lookup, and `slot_in`'s two). 65,536 slots instead of 16,384 halve both; a
+    hash folding in the higher PA bits does nothing; what the other half is (blocks evicted by clears, ICs, first
+    runs) isn't known.
 
 - **More handlers, by workload** (`bench/interp/REPORT.md` "M8-INTERP loop 13" counted Alpine's boot's slow path).
   Left on the boots: CASP (a 128-bit atomic), STTR/LDTR (the EL0 TLB array from EL1: a second context in `Fast`),
@@ -86,7 +99,10 @@ interpreter's speed is the lever for loads and starts. The items below are ranke
   vCPU's time goes in Firefox"), several times a whole micro-op now. Lost before: a sentinel instead of the `u ==
   end` test, LdO/StO runs in a loop (docs/cpu.md "Tried and not kept"). Any code in `hot` moves V8's register
   allocation for all of it, and a guest branch must stay a host branch (loop 12: a `select` there cost 30%): measure
-  on the small guests too.
+  on the small guests too. `hot` makes no call (`tests/core-wasm.test.ts` checks it): the two it held until
+  2026-11-09 cost it under 1%, so its state is spilled around something else, likely the interrupt check's
+  out-of-line call; no instruction-level profile of `hot` on the Mac yet (V8's `--prof` gives the offsets; the code
+  would come from Node's `--print-wasm-code`, whose V8 (14.6) is older than Chrome 157's).
 - The reference interpreter (`interp::steps`, `VmConfig.jit` 0) still fetches and decodes each
   instruction; the MMU copy runs 35% slower than the flat one. It only runs the interpreter-only
   tests and benchmarks now.

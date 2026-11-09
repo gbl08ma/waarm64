@@ -1,0 +1,15 @@
+// Sums the last `diag2` line of each table in a session's results.json (or text) and prints the counters.
+//   node diag2.ts <results.json|log>
+import { readFileSync } from 'node:fs';
+const f = process.argv[2];
+const t = readFileSync(f, 'utf8');
+const lines = f.endsWith('.json') ? (JSON.parse(t).slow as string[]).filter((l) => l.includes('diag2 ')) : t.split('\n').filter((l) => l.includes('webpc-slow diag2 '));
+const last = new Map<string, string[]>();
+for (const l of lines) { const p = l.slice(l.indexOf('diag2 ') + 6).split(' '); last.set(p[0], p); }
+const sum: Record<string, number> = {};
+for (const p of last.values()) for (let i = 1; i + 1 < p.length; i += 2) sum[p[i]] = (sum[p[i]] ?? 0) + Number(p[i + 1]);
+console.log(`tables ${last.size}`);
+for (const [k, v] of Object.entries(sum)) if (k !== 't') console.log(k.padEnd(22), String(v).padStart(14));
+const s = sum;
+const runs = s.interp_calls - s.interp_none + s.chained + s.nx_entered;
+console.log('\nblock runs', runs, 'steps/run', (s.dec_steps / runs).toFixed(2), 'hot calls/run', (s.hot_calls / runs).toFixed(3), 'interp calls/run', (s.interp_calls / runs).toFixed(3));

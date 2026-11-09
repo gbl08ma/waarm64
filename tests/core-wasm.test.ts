@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { coreImports, MAX_MEMORY0_RAM, memoryLimits, panicMessage, POINTERS, splitError, splitRam, withPanic } from '../web/vm.ts';
 import { VENUS_RESERVE } from '../web/ram.ts';
+import { callsIn, HOT } from '../tools/wasm-calls.ts';
 
 const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
 
@@ -21,6 +22,15 @@ test('core instantiates on shared imported memory and uses atomics', () => {
   const counter = scratch + 64;
   assert.equal(ex.atomic_inc(counter), 0);
   assert.equal(Atomics.load(new Uint32Array(mem.buffer), counter / 4), 1);
+});
+
+// The block interpreter's loop keeps its state in registers only while nothing in it calls: V8 spills every value
+// live across a call at its definition, on every path (docs/v8.md "Spills"). A u128 product LLVM recognized in
+// UMULH's halves (`__multi3`) and SDIV's panic sat in it unnoticed from 2026-10-22 to 2026-11-09.
+test("the block interpreter's hot loop makes no call", () => {
+  const hot = callsIn(readFileSync(WASM), HOT);
+  assert.equal(hot.size, 2, 'hot for the flat bus and the MMU');
+  for (const [name, calls] of hot) assert.deepEqual(calls, [], name);
 });
 
 // A fixed-size memory (ABI 32, web/vm.ts `bootVm`): the host grows its part, the core's heap takes

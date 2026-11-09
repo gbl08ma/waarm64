@@ -2062,3 +2062,51 @@ test that under FZ zero and smallest-normal lanes and exact zero products stay i
 the singles' or doubles' bound one exponent short (the edge cases), `max_u` for `min_u` (edge cases), a zero counted
 as a denormal in singles or doubles (the inline test), no zero clause (the inline test), the zero clause on a zero
 result alone and without FZ's test (the differential test's by-element and three-same FP runs, 4-8 tests).
+
+## The block interpreter on the Mac, loop 1: why `hot` returns, and the calls it held (2026-11-09)
+
+The Mac host (Chrome for Testing 157.0.8103.38, macOS 26.6.2), base `86c6ddf3`; raw `results/m9-interp-mac/` (README).
+The Mac's profile (bench/boot/REPORT.md "Where a busy vCPU's time goes on the Mac, and the compile threshold there")
+puts the block interpreter at 18.4% of the pages session's busy ticks: `hot` 14.05%, then `Cache::miss` 1.23%,
+`Cache::count_out` 1.08%, `jit::interpret` 0.95%, `Cache::slot_in` 0.65%.
+
+**Why `hot` returns** (a counting core, `diag/diag.patch`, one pages session from `pages.webpcsnap`, sums over the four
+tables): 3.50 G interpreted steps in 678 M block runs (5.2 steps a run); `jit::interpret` entered 149 M times (one per
+4.5 block runs: most of the interpreted code sits between compiled blocks), `hot` 266 M. `hot` chained 456 M blocks
+(375 M of them in the same page) and returned for: the next block compiled 126 M, **its slot holding another block
+82.5 M**, a slow micro-op 45 M (generic 26 M, a load or store off its fast path 19 M), the block's quota (a report due)
+4.3 M, no instruction-TLB entry 6.5 M. `count_out` (a block out of its slot: a map lookup and `slot_in`'s two) ran
+128.6 M times, 93.5 M of them putting the block back. 13.1 M blocks were decoded.
+
+**The slots** (16,384, direct-mapped by `key >> 2`): a hash folding in the PA's bits from 16 up changed nothing (82.4 M
+slot misses); 65,536 slots halved them (44.0 M with or without the fold; `count_out` 78 M). So half the misses aren't
+conflicts of nearby blocks; not built yet.
+
+**What sends loads and stores off the fast path** (`diag/counts3.txt`, its `g_` sums divided by the four tables that
+printed them): misaligned 4- and 8-byte accesses at base + offset (LdO/StO) ~5.4 M, their TLB misses ~4.1 M, other
+single accesses misaligned ~2.2 M and missing the TLB ~1.1 M, pairs ~0.6 M; an access across a page ~6 K, an SP off
+16 never. Misaligned accesses are the largest cause, ~7.8 M exits of ~14× a handled micro-op each.
+
+**Two calls in `hot`.** The loop is meant to make none (`Fast`: V8 spills every value live across a call at its
+definition, docs/v8.md "Spills"), but since loop 13 it held two, in both its copies: LLVM had recognized UMULH's
+32-bit halves as a u128 product and made it a call to compiler-rt's `__multi3` (the call the halves were written to
+avoid), and SDIV's 32-bit arm kept `wrapping_div`'s panic (its zero test was on the 64-bit value). Now the halves'
+width is a static read volatile (`HALF`), and each division arm tests its own divisor. A test (`tests/core-wasm.test.ts`,
+through `tools/wasm-calls.ts`, which walks the functions' instructions) fails if `hot` makes any call; it failed on the
+base. Planted bugs, each failing the differential test: SMULH without its signed correction, the 32-bit SDIV dividing
+unsigned, the halves 31 bits wide. Three rounds alternated (`nocall/`), MIPS:
+
+| | base | **no calls** |
+|---|---|---|
+| `dec_mips` | 516.5 · 514.1 · 513.8 | 514.4 · 516.5 · 515.5 (even) |
+| `vm_dec_mmu_mips` | 508.0 · 510.1 · 505.9 | 511.7 · 511.9 · 513.1 (+0.6%, under the bar) |
+| Alpine's boot through the block interpreter | 240.5 · 240.4 · 240.8 | 240.8 · 240.7 · 241.1 (+0.1%) |
+
+**Not a speedup**: the calls cost the loop little, so V8 was already spilling its state around something else
+(`hot`'s interrupt check calls out of line, loop 8). Kept for the rule the loop is written to, now checked.
+
+**How these are measured from now on** (one decision shouldn't take a 70-minute A/B): counts first, from a diagnostic
+core in one session, where they decide (the slot hash above); `hot`'s per-micro-op changes on the block-interpreter
+guests (`bench/interp/ab-mac.sh … -- dec_mips vm_dec_mmu_mips boot_alpine_dec`, three rounds, ~18 min); Firefox's
+pages session where a change is about cold, short-block code the small guests don't have; the JIT gates and the full
+pages session once per batch of kept changes.

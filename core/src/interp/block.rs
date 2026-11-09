@@ -2236,30 +2236,45 @@ fn adc(c: &mut Cpu, f: u32, x: u64, y: u64) -> u64 {
     r
 }
 
-/// UDIV/SDIV (`K::Div`, `f` its `x`): 0 for a divisor of 0.
+/// UDIV/SDIV (`K::Div`, `f` its `x`): 0 for a divisor of 0. Each arm tests its
+/// own divisor, in its type, for 0, so that LLVM drops the division's panic (a
+/// call in [`hot`], which spills its loop's state: [`Fast`]).
 #[inline(always)]
 fn div(f: u32, x: u64, y: u64) -> u64 {
-    let sf = f & 1 != 0;
-    let (x, y) = (trunc(x, sf), trunc(y, sf));
-    match (f >> 1 & 1 != 0, sf) {
-        _ if y == 0 => 0,
-        (false, _) => x / y,
-        (true, true) => (x as i64).wrapping_div(y as i64) as u64,
-        (true, false) => (x as u32 as i32).wrapping_div(y as u32 as i32) as u32 as u64,
+    match (f >> 1 & 1 != 0, f & 1 != 0) {
+        (false, true) => x.checked_div(y).unwrap_or(0),
+        (false, false) => (x as u32).checked_div(y as u32).unwrap_or(0) as u64,
+        (true, true) => match y as i64 {
+            0 => 0,
+            d => (x as i64).wrapping_div(d) as u64,
+        },
+        (true, false) => match y as i32 {
+            0 => 0,
+            d => (x as i32).wrapping_div(d) as u32 as u64,
+        },
     }
 }
+
+/// The halves' width in [`mulh`], read where LLVM can't see it: with a constant
+/// 32 it recognizes the halves' products as a u128 multiply, a call to
+/// compiler-rt in wasm (`__multi3`), and a call in [`hot`] spills its loop's
+/// state ([`Fast`]).
+static HALF: u32 = 32;
 
 /// UMULH/SMULH (`K::Mulh`, `f` its `x`), in 32-bit halves (a u128 product is
 /// a call to compiler-rt in wasm).
 #[inline(always)]
 fn mulh(f: u32, x: u64, y: u64) -> u64 {
-    let (x0, x1, y0, y1) = (x & 0xffff_ffff, x >> 32, y & 0xffff_ffff, y >> 32);
+    // SAFETY: a static's value.
+    let h = unsafe { core::ptr::read_volatile(&HALF) } as u64;
+    let lo = (1u64 << h) - 1;
+    let (x0, x1, y0, y1) = (x & lo, x >> h, y & lo, y >> h);
     let (p00, p01, p10) = (x0 * y0, x0 * y1, x1 * y0);
-    let mid = (p00 >> 32) + (p01 & 0xffff_ffff) + (p10 & 0xffff_ffff);
+    let mid = (p00 >> h) + (p01 & lo) + (p10 & lo);
     let hi = (x1 * y1)
-        .wrapping_add(p01 >> 32)
-        .wrapping_add(p10 >> 32)
-        .wrapping_add(mid >> 32);
+        .wrapping_add(p01 >> h)
+        .wrapping_add(p10 >> h)
+        .wrapping_add(mid >> h);
     if f & 1 == 0 {
         hi
     } else {
