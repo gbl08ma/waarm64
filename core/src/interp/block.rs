@@ -1208,6 +1208,10 @@ pub struct Run {
     /// The steps retired once the block's prefix has run, and at most.
     pub done: u64,
     pub left: u64,
+    /// The key of the compiled block [`hot`] stopped before ([`STOP`]; 0 if
+    /// it stopped for anything else): the dispatcher's next, which it then
+    /// needn't look up again.
+    pub next: u64,
 }
 
 impl Run {
@@ -1221,6 +1225,7 @@ impl Run {
             bpc: 0,
             done: 0,
             left,
+            next: 0,
         }
     }
 
@@ -1909,6 +1914,7 @@ pub fn hot<B: Fast>(
             break 'run NEXT;
         };
         if compiled(k) {
+            r.next = k;
             break 'run STOP;
         }
         let s = &mut dec.slots[slot(k)];

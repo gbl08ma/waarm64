@@ -2218,6 +2218,8 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
     let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
     (vr.jit.jc, vr.jit.hot) = jit.table.ptrs();
     let mut done = 0;
+    // The next block's key when the interpreter found it compiled (`interpret`), else 0.
+    let mut next = 0;
     while done < n {
         let left = n - done;
         // SAFETY: guaranteed by the caller; the reference ends before a block runs.
@@ -2229,7 +2231,17 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
         // their fast paths and comes here, where it's stripped once
         // (`Cpu::branch_addr`; docs/jit.md "Linking").
         vr.cpu.pc = vr.cpu.branch_addr(vr.cpu.pc);
-        let (pc, key) = (vr.cpu.pc, key(vr, mem));
+        // The block the interpreter stopped before, found compiled: its key
+        // is the one `key` would make (the regime can't have changed: a
+        // decoded block chains only after a branch).
+        let key = match core::mem::take(&mut next) {
+            0 => key(vr, mem),
+            k => {
+                debug_assert_eq!(Some(k), key(vr, mem));
+                Some(k)
+            }
+        };
+        let pc = vr.cpu.pc;
         let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
         jit.fresh(mem);
         let r = key.map_or(Err(1), |k| jit.enter(k, pc, mem));
@@ -2287,10 +2299,16 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             // without one (no key, or no instructions there), one instruction
             // at a time.
             let r = match key {
-                Some(k) if k & block::KEY_MMU != 0 => {
-                    interpret(cpu, &mut Mmu::new(mem, Some(&mut *tlb)), t, mem, k, left)
-                }
-                Some(k) => interpret(cpu, &mut Flat(mem), t, mem, k, left),
+                Some(k) if k & block::KEY_MMU != 0 => interpret(
+                    cpu,
+                    &mut Mmu::new(mem, Some(&mut *tlb)),
+                    t,
+                    mem,
+                    k,
+                    left,
+                    &mut next,
+                ),
+                Some(k) => interpret(cpu, &mut Flat(mem), t, mem, k, left, &mut next),
                 None if cpu.interp_only[(cpu.el() & 1) as usize] & INTERP_DEBUG != 0 => {
                     Some(interp::debug::steps(cpu, mem, Some(&mut *tlb), left, true))
                 }
@@ -2344,6 +2362,9 @@ impl Regime for Mmu<'_> {
 /// as the one before has the same translation (a block ends after any
 /// instruction that could change it).
 ///
+/// `next` gets the key of the compiled block the run stopped before, if it
+/// did (0 otherwise), so that the dispatcher runs it without looking it up.
+///
 /// The blocks run in [`interp::block::hot`], a loop with no calls in it, so
 /// that V8 keeps its state in registers; it returns to this one for what
 /// takes a call (a generic micro-op or a slow load or store, which run
@@ -2357,6 +2378,7 @@ fn interpret<B: Regime>(
     mem: &Mem,
     key: u64,
     left: u64,
+    next_key: &mut u64,
 ) -> Option<(u64, Option<Exit>)> {
     use interp::block::{NEXT, SLOW, STOP};
     let pc = cpu.pc;
@@ -2366,7 +2388,10 @@ fn interpret<B: Regime>(
     let res = loop {
         let jc = &t.jc;
         match interp::block::hot(cpu, m, &mut t.dec, |k| jc[jc_index(k)].key == k, &mut r) {
-            STOP => break (r.done, None),
+            STOP => {
+                *next_key = r.next;
+                break (r.done, None);
+            }
             SLOW => {
                 let (n, u, last) = r.stretch();
                 let before = r.retired();
@@ -2397,7 +2422,11 @@ fn interpret<B: Regime>(
                 None => break (r.done, None),
             }
         };
-        if t.jc[jc_index(k)].key == k || !t.dec.count(k) {
+        if t.jc[jc_index(k)].key == k {
+            *next_key = k;
+            break (r.done, None);
+        }
+        if !t.dec.count(k) {
             break (r.done, None);
         }
         let Some(b) = t.dec.get(k, mem) else {

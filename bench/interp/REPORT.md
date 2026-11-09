@@ -2146,3 +2146,25 @@ bits its index implies).
 **Misaligned accesses, loads and stores apart** (the same counting session): LdO loads ~2.1 M and stores ~3.3 M, the
 other single accesses' loads ~1.4 M and stores ~0.8 M. With loop 1's estimate (a `hot` return and the generic path,
 a few tens of ns each) they are ~0.3% of the busy vCPU time, much less than the slots were.
+
+## The block interpreter on the Mac, loop 3: the round trips to compiled code (2026-11-09)
+
+A `--prof` profile of loop 2's core (Firefox's pages session, `PHASE_S=1`; `results/m9-interp-mac/prof/`: `attr.txt`
+with tick offsets in `hot`, `jit::steps` and `jit::interpret`, `hot-node14.6.asm.gz` Node's code for `hot`, 14,492
+bytes against Chrome 157's 14,464): the block interpreter 16.2% of busy ticks (18.4% before loops 1-2), `hot` 12.67,
+`Cache::miss` 1.40 (+ its decoding closure 0.24), `jit::interpret` 0.71, `count_out` 0.64, `slot_in` 0.24; the
+dispatcher (`jit::steps`) 2.18, compiled code's exits (`xmiss_el0`/`el1`) 1.61, `Jit::miss` 0.95. In `hot`, the
+ticks sit on the handlers' first instructions (the indirect branch's landing; 0x1d9c, LdO's, 9% of `hot`) and after
+their register writes, the dispatch head ~6%, the prologue 2.6% and the write-back on exit ~4%: the per-micro-op
+dispatch, as loop 8 found in the VM. (Threaded dispatch, a jump table per handler, isn't expressible in wasm: LLVM's
+backend routes irreducible control flow back through one dispatch block.)
+
+**The round trips.** The dispatcher's loop runs ~311 M times a session: 162 M compiled dispatches and 149 M entries
+to the interpreter, which stops before a compiled block 126 M times. Of what a round trip costs, compiled code's exit
+and `hot`'s entry and exit stay whatever the dispatcher does, and the next PC's key is needed after every compiled
+block; moving the dispatch loop into `jit::interpret` (it would call compiled blocks itself) would save only the
+bookkeeping the two loops repeat, ~0.5-1% of busy time, for a rewrite of the dispatcher's unsafe core: not done.
+Done instead: `hot` hands the dispatcher the key of the compiled block it stopped before (`Run::next`, and
+`jit::interpret`'s jump-cache hit after a slot miss), so it skips `key`'s TLB lookup (~0.25%: not measured, under
+what the pages session resolves). A debug assertion checks it against `key`; a planted key from the next page failed
+the lockstep test (the FP guest, after 100,000 steps); no native test reaches it (compiled blocks exist only in wasm).
