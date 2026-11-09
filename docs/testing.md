@@ -60,7 +60,7 @@ only edits docs: `.md` files or code comments):
   (`WEBPC_DEQP_VK_SEED=<n>` runs that sample again). **A case that fails in a sample is looked into at once, or filed in
   docs/backlog.md and taken out of the list** until it's fixed, flaky or not. `--full` (`WEBPC_DEQP_VK_FULL=1`) runs the whole
   list: at a Vulkan track's end, before the user's NVIDIA runs, after a phase of tasks (VK4's census tasks), and for a
-  change that cuts across groups (the replay, the pipeline key, descriptors); a task proves its own new cases with runs
+  change that cuts across groups (the replay, the pipeline key, descriptors); `--full --phases M [DIR]` runs it in M slices of the list, a boot each (cut at whole rounds of the shards' blocks, so a case keeps its shard and neighbours), each slice's result (counts, the cases that didn't pass, their detail) a checkpoint `DIR/phase-N.json` (default `bench/results/local/deqp-vk-full`): a run that dies resumes at the first slice without one, and a slice that fails doesn't stop the next (VK4's full run: three slices of ~27,000); a task proves its own new cases with runs
   of its own (bench/gpu/deqp-run.ts `CASES`) before they join the list; then `tests/deqp/vk-ycbcr.txt` (YCbCr conversions, VK3 L7.2), a
   second boot), then `page-venus` (the programs' captures against lavapipe's frames,
   also ci-graphics.sh's: VK3 L5b broke vkQuake's first frame, and the three loops after it ran only dEQP-VK); it must pass too when a change touches Vulkan (the renderer's driver

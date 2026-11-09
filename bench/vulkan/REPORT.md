@@ -793,6 +793,32 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` oth
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 full run: the whole pass list, 81,734 of 81,734 pass on SwiftShader
+
+**2026-11-09.** `scripts/ci-deqp-vk.sh --full --phases 3 bench/vulkan/results/vk4/full` at `4368584b` (the wasm core
+and the renderer rebuilt from it) in the dev VM: Chromium 155.0.8059.84, SwiftShader (Google's adapter), two machines
+of 1,536 MiB, two dEQP processes each, under a 14 GiB `MemoryMax`, alone. `--phases` is new with this run (docs/testing.md
+"dEQP-VK"): the list in three slices cut at whole rounds of the shards' 256-case blocks, a boot each, each slice's result
+a checkpoint (`results/vk4/full/phase-N.json`) a resumed run skips.
+
+| Phase | Cases | From … to | Pass | Fail / crash / timeout | Time |
+| --- | ---: | --- | ---: | ---: | ---: |
+| 1/3 | 27,136 | `info.device` … `api.info.image_format_properties.2d.linear.r16g16_sint` | 27,136 | 0 | 1,132 s |
+| 2/3 | 27,648 | … `glsl.atomic_operations.or_unsigned_vertex` | 27,648 | 0 | 1,230 s |
+| 3/3 | 26,950 | … `texture.conversion.snorm_clamp_linear.r8g8b8a8_snorm_compute` | 26,950 | 0 | 1,427 s |
+| **List** | **81,734** | | **81,734** | **0** | **3,789 s** |
+
+Then YCbCr's list (839 of 839, 102 s) and the programs' replays (263 s): the script OK in **4,156 s (69 min)**; `scripts/ci.sh` OK (511 s) with `--phases`. The
+direct list at 21.6 cases/s with the three boots, against T34's 20.9 (47 min at 58,906). In phase 1 shard 0 was done
+at ~16 min of the phase's 19: a phase's time is its slower shard's.
+
+No case failed, crashed or timed out, so nothing was taken out of the list. The two SwiftShader cube `*_compute`
+A8 cases the A8 blends' runs called flaky (`pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_filter.linear_compute`,
+`….mag_reduce.comp_r_g_b_a.average_compute`; not in the list) fail 5 of 5 runs of their group (36 cases, their 34
+listed siblings pass each time: `results/vk4/full/cube-a8-repeats.json`), "Image mismatch": not flaky but SwiftShader's
+cube linear and average-reduced compute samples already filed for other formats (docs/backlog.md "The Vulkan driver's
+gaps", the compute stage's entry), A8 added there. The gate's other full runs, on the M4 and on NVIDIA, aren't this run's.
+
 ## VK4 backlog easy wins: six of seven [A] items landed, 33 cases join the list
 
 2026-11-09, the dev VM (SwiftShader, Chromium 155.0.8059.84) and the M4 (Metal, Chrome for Testing 157.0.8103.38,

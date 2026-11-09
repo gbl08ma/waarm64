@@ -999,7 +999,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     storage images (refused at their pipeline's creation, past the 4 advertised there, Vulkan's minimum; dEQP doesn't
     check the limit; the M4 has 8). And `pipeline.monolithic.sampler.view_type.cube*` linear and average-reduced
     samples of `r8g8b8a8_snorm`, `r8g8b8a8_srgb` and their VK4 T31 twins (`b8g8r8_snorm`, `r8g8_srgb`) in a compute
-    stage (4 of T31's sample and their 4 twins: "Image mismatch"; the M4 passes them).
+    stage (4 of T31's sample and their 4 twins: "Image mismatch"; the M4 passes them), and `a8_unorm`'s `cube`
+    `mag_filter.linear_compute` and `mag_reduce.comp_r_g_b_a.average_compute` (not in the list: 5 of 5 runs fail on
+    their own, VK4's full run; they passed once, in the A8 blends' "before" run: a rare pass, not a flaky failure).
   - [B] **Queries** (occlusion queries count on the GPU since VK3 L6a, in the device's set since VK4 T46: vk/README.md
     "The driver"; precise counts, calibrated timestamps and Chromium's quantization: graphics.md "Permanent
     limitations"): past 4,096 counts in one render pass (a query and each of its cuts by a clear, a part of the pass or

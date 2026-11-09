@@ -17,10 +17,28 @@ for f in target/deqp/deqp-vk.ext4 target/deqp/guest-vk.qcow2 target/vk/venus.was
 done
 export WEBPC_DEQP_VK=1
 # --full: the whole pass list (track ends, before NVIDIA runs, changes across groups); else a seeded sample of it.
+# --full --phases M [DIR]: the whole list in M slices, one boot each, each slice's result a checkpoint DIR/phase-N.json
+# (default bench/results/local/deqp-vk-full); a slice whose checkpoint is there is skipped (a run resumed), one that
+# fails doesn't stop the next; then YCbCr's list (its own test) and the replays as without phases.
 if [ "${1:-}" = --full ]; then export WEBPC_DEQP_VK_FULL=1; fi
+phases=; dir=
+if [ "${2:-}" = --phases ]; then phases=${3:?--phases M}; dir=${4:-bench/results/local/deqp-vk-full}; mkdir -p "$dir"; fi
 what='a sample'; [ "${WEBPC_DEQP_VK_FULL:-}" = 1 ] && what='the whole list'
-step "dEQP-VK on the page ($what)"
-node --disable-warning=ExperimentalWarning --test tests/page-deqp-vk.test.ts
+if [ -n "$phases" ]; then
+  failed=0
+  for n in $(seq 1 "$phases"); do
+    if [ -f "$dir/phase-$n.json" ]; then echo "phase $n/$phases: $dir/phase-$n.json is there, skipped"; continue; fi
+    step "dEQP-VK on the page (the whole list, phase $n/$phases)"
+    WEBPC_DEQP_VK_PHASE=$n/$phases WEBPC_DEQP_VK_CHECKPOINT=$dir/phase-$n.json \
+      node --disable-warning=ExperimentalWarning --test --test-name-pattern="^dEQP-VK's pass list" tests/page-deqp-vk.test.ts || failed=1
+  done
+  step "dEQP-VK on the page (YCbCr's list)"
+  node --disable-warning=ExperimentalWarning --test --test-name-pattern="YCbCr" tests/page-deqp-vk.test.ts || failed=1
+  [ "$failed" = 0 ] || { printf '\nci-deqp-vk: a phase failed (its checkpoint in %s)\n' "$dir"; exit 1; }
+else
+  step "dEQP-VK on the page ($what)"
+  node --disable-warning=ExperimentalWarning --test tests/page-deqp-vk.test.ts
+fi
 step 'The programs replayed through Venus on the page'
 WEBPC_DISTROS=debian node --disable-warning=ExperimentalWarning --test tests/page-venus.test.ts
 printf '\nCI-DEQP-VK OK (%d s)\n' "$SECONDS"

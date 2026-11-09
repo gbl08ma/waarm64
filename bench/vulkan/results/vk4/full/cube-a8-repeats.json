@@ -1,0 +1,95 @@
+{
+ "date": "2026-11-09",
+ "what": "pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.* (34 listed + 2 not), 5 runs on SwiftShader",
+ "adapter": "google swiftshader",
+ "cases": [
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_filter.linear_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_filter.nearest_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_reduce.comp_identity_zero_zero_zero.average_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_reduce.comp_identity_zero_zero_zero.max_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_reduce.comp_identity_zero_zero_zero.min_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_reduce.comp_r_g_b_a.average_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_reduce.comp_r_g_b_a.max_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_reduce.comp_r_g_b_a.min_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_reduce.comp_r_zero_zero_zero.average_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_reduce.comp_r_zero_zero_zero.max_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_reduce.comp_r_zero_zero_zero.min_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.min_filter.linear_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.min_filter.nearest_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.min_reduce.comp_identity_zero_zero_zero.average_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.min_reduce.comp_identity_zero_zero_zero.max_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.min_reduce.comp_identity_zero_zero_zero.min_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.min_reduce.comp_r_g_b_a.average_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.min_reduce.comp_r_g_b_a.max_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.min_reduce.comp_r_g_b_a.min_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.min_reduce.comp_r_zero_zero_zero.average_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.min_reduce.comp_r_zero_zero_zero.max_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.min_reduce.comp_r_zero_zero_zero.min_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mipmap.linear.lod.equal_min_3_max_3_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mipmap.linear.lod.select_bias_2_1_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mipmap.linear.lod.select_bias_2_5_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mipmap.linear.lod.select_bias_3_1_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mipmap.linear.lod.select_bias_3_7_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mipmap.linear.lod.select_max_4_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mipmap.linear.lod.select_min_1_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mipmap.nearest.lod.equal_min_3_max_3_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mipmap.nearest.lod.select_bias_2_1_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mipmap.nearest.lod.select_bias_2_5_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mipmap.nearest.lod.select_bias_3_1_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mipmap.nearest.lod.select_bias_3_7_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mipmap.nearest.lod.select_max_4_compute",
+  "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mipmap.nearest.lod.select_min_1_compute"
+ ],
+ "runs": [
+  {
+   "counts": {
+    "Fail": 2,
+    "Pass": 34
+   },
+   "notPassed": [
+    "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_filter.linear_compute Fail",
+    "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_reduce.comp_r_g_b_a.average_compute Fail"
+   ]
+  },
+  {
+   "counts": {
+    "Fail": 2,
+    "Pass": 34
+   },
+   "notPassed": [
+    "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_filter.linear_compute Fail",
+    "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_reduce.comp_r_g_b_a.average_compute Fail"
+   ]
+  },
+  {
+   "counts": {
+    "Fail": 2,
+    "Pass": 34
+   },
+   "notPassed": [
+    "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_filter.linear_compute Fail",
+    "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_reduce.comp_r_g_b_a.average_compute Fail"
+   ]
+  },
+  {
+   "counts": {
+    "Fail": 2,
+    "Pass": 34
+   },
+   "notPassed": [
+    "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_filter.linear_compute Fail",
+    "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_reduce.comp_r_g_b_a.average_compute Fail"
+   ]
+  },
+  {
+   "counts": {
+    "Fail": 2,
+    "Pass": 34
+   },
+   "notPassed": [
+    "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_filter.linear_compute Fail",
+    "dEQP-VK.pipeline.monolithic.sampler.view_type.cube.format.a8_unorm.mag_reduce.comp_r_g_b_a.average_compute Fail"
+   ]
+  }
+ ]
+}

@@ -40,6 +40,11 @@ const BLOCK = 256;
 const SHARD_RAM_MIB = 1536;
 
 const FULL = process.env.WEBPC_DEQP_VK_FULL === '1';
+// `ci-deqp-vk.sh --full --phases M` (docs/testing.md "dEQP-VK"): WEBPC_DEQP_VK_PHASE=N/M runs the Nth of M slices of the
+// whole list, cut at whole rounds of the shards' blocks (so each case has the shard and neighbours of a whole run), and
+// WEBPC_DEQP_VK_CHECKPOINT=<file> takes its result (counts, the cases that didn't pass, their detail) before the check.
+const PHASE = process.env.WEBPC_DEQP_VK_PHASE?.match(/^(\d+)\/(\d+)$/)?.slice(1).map(Number);
+const CHECKPOINT = process.env.WEBPC_DEQP_VK_CHECKPOINT;
 const STRIDE = 8;
 const SEED = process.env.WEBPC_DEQP_VK_SEED !== undefined ? Number(process.env.WEBPC_DEQP_VK_SEED) >>> 0 : (Math.random() * 2 ** 32) >>> 0;
 
@@ -94,11 +99,19 @@ function runShard(file: string, out: string, gpu: string | undefined, ramMiB?: n
   });
 }
 
+/** The `n`th (from 1) of `m` slices of `cases`, cut at multiples of `round` cases. */
+export function phase(cases: string[], n: number, m: number, round: number): string[] {
+  const rounds = Math.ceil(cases.length / round);
+  const at = (k: number) => Math.round((rounds * k) / m) * round;
+  return cases.slice(at(n - 1), at(n));
+}
+
 /** Runs a pass list on the page in `shards` machines (`gpu`: the machine's ?gpu=, e.g. with `vkycbcr=off`); every case must pass. */
-async function passList(t: { skip(m: string): void; diagnostic(m: string): void }, list: string, shards: number, gpu?: string, sampled = false) {
+async function passList(t: { skip(m: string): void; diagnostic(m: string): void }, list: string, shards: number, gpu?: string, sampled = false, slice?: number[]) {
   const all = readFileSync(list, 'utf8').split('\n').filter((l) => l && !l.startsWith('#'));
-  const cases = sampled ? sample(all, STRIDE, SEED) : all;
-  const which = sampled ? `a sample of ${cases.length} of ${all.length} (WEBPC_DEQP_VK_SEED=${SEED})` : `all ${cases.length}`;
+  const cases = sampled ? sample(all, STRIDE, SEED) : slice ? phase(all, slice[0], slice[1], BLOCK * shards) : all;
+  const which = sampled ? `a sample of ${cases.length} of ${all.length} (WEBPC_DEQP_VK_SEED=${SEED})` : slice ? `phase ${slice[0]}/${slice[1]}: ${cases.length} of ${all.length}` : `all ${cases.length}`;
+  const start = Date.now();
   t.diagnostic(which);
   console.log(`dEQP-VK: ${list.split('/').pop()}: ${which}`);
   const dir = mkdtempSync(join(tmpdir(), 'webpc-deqp-vk-'));
@@ -116,6 +129,12 @@ async function passList(t: { skip(m: string): void; diagnostic(m: string): void 
       passed = true;
       return t.skip('SKIPPED: the page has no WebGPU adapter');
     }
+    if (slice && CHECKPOINT) {
+      const counts: Record<string, number> = {};
+      for (const r of results) for (const [k, v] of Object.entries(r.counts)) counts[k] = (counts[k] ?? 0) + v;
+      writeFileSync(CHECKPOINT, `${JSON.stringify({ phase: `${slice[0]}/${slice[1]}`, date: new Date().toISOString(), adapter: results[0].adapter, seconds: Math.round((Date.now() - start) / 1000),
+        cases: cases.length, first: cases[0], last: cases.at(-1), counts, stoppedAt: results.map((r) => r.stoppedAt ?? null), notPassed: results.flatMap((r) => r.notPassed), detail: results.flatMap((r) => r.detail ?? []) }, null, 1)}\n`);
+    }
     results.forEach((r, i) => {
       assert.equal(r.cases, parts[i].length, 'the guest read the whole list');
       assert.equal(r.stoppedAt, undefined, `dEQP stopped at ${r.stoppedAt} (shard ${i}: ${join(dir, String(i))})`);
@@ -130,7 +149,7 @@ async function passList(t: { skip(m: string): void; diagnostic(m: string): void 
 }
 
 test('dEQP-VK\'s pass list passes on the page', { skip, timeout: (LIMIT_S + 420) * 1000 }, (t) => {
-  return passList(t, join(root, 'tests/deqp/vk.txt'), SHARDS, undefined, !FULL);
+  return passList(t, join(root, 'tests/deqp/vk.txt'), SHARDS, undefined, !FULL && !PHASE, PHASE);
 });
 
 // VK3 L7.2: YCbCr conversions (on by default since L7.3): a second, small run.

@@ -1,0 +1,18 @@
+{
+ "phase": "2/3",
+ "date": "2026-11-09T05:55:30.200Z",
+ "adapter": "google swiftshader",
+ "seconds": 1230,
+ "cases": 27648,
+ "first": "dEQP-VK.api.info.image_format_properties.2d.linear.r16g16_snorm",
+ "last": "dEQP-VK.glsl.atomic_operations.or_unsigned_vertex",
+ "counts": {
+  "Pass": 27648
+ },
+ "stoppedAt": [
+  null,
+  null
+ ],
+ "notPassed": [],
+ "detail": []
+}
