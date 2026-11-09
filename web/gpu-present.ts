@@ -33,9 +33,10 @@ export type DisplayToPage =
    * second from the first scanout on, always (not only with `stats`). `presents` is the canvas's draws since the
    * presenter was made (a total: rates are the page's; at most one a display frame, however many flushes the guest
    * made); `screen` what draws it: WebGL2 on the GPU (with its renderer, read once) or a 2D context (on a browser
-   * whose WebGL2 renders on the CPU, or without one: no renderer to name).
+   * whose WebGL2 renders on the CPU, or without one: no renderer to name). A machine without virtio-gpu sends it from
+   * its machine worker, `framebuffer`: the simple framebuffer's draws (web/display.ts), from the start on.
    */
-  | { type: 'screen-stats'; screen: 'webgl2' | 'canvas2d'; presents: number; renderer?: string; vendor?: string; software?: boolean }
+  | { type: 'screen-stats'; screen: 'webgl2' | 'canvas2d' | 'framebuffer'; presents: number; renderer?: string; vendor?: string; software?: boolean }
   | ScreenPng
   | { type: 'draw-stats'; n: number; median: number; max: number; lag: number; busy: { events?: number[]; request: number; transfer: number; draw: number; requests: number; transfers: number; pixels: number; flushes: number; submits: number; submitBytes: number; commands: Record<string, number>; fences: number; fenceMs: number; fenceMaxMs: number; heldMs: number; behindMs: number; fullMs: number; heldMax: number; fenceBack: { n: number; ms: number; maxMs: number } } };
 export type DisplayFromPage = { type: 'size'; width: number; height: number } | /** "Copy the screen" (docs/plans/clipboard.md §4.4): the screen as a PNG, answered by `ScreenPng`. */ { type: 'png'; id: number };

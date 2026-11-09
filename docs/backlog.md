@@ -1390,12 +1390,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   and in-page imports (`import('/web/app/store.ts')`) stay on the dev server. Two servers in a suite; unmeasured on a
   whole CI run. `npm start` also rebuilds the page every time (~1 s: its output carries the commit); skipping it on
   unchanged inputs would need the stamp in the key.
-- **The status bar's loose ends** (2026-10-24, frontend.md "The status bar"): no frame rate on `?display=simple`
-  (`showFramebuffer` in the machine worker would need a count and a message); USB devices (mass storage included) count
-  in no disk or adapter element (attached while running: the counters are per start); video decode's "hardware" is
-  what a decoder asked for (WebCodecs doesn't say what it got; Chromium's `prefer-hardware` fails rather than fall back,
-  so a decoding stream asked for it is in practice hardware); per-vCPU bars scale to the run's peak, not a fixed scale.
-  The editor is mouse- and keyboard-driven (drag, Alt+←/→, Delete); touch drag isn't handled (HTML5 drag and drop).
+- **The status bar's loose ends** (2026-10-24, frontend.md "The status bar"): video decode's "hardware" is what a
+  decoder asked for (WebCodecs doesn't say what it got; Chromium's `prefer-hardware` fails rather than fall back, so a
+  decoding stream asked for it is in practice hardware): nothing to do until WebCodecs says. The editor's touch drag
+  isn't handled (HTML5 drag and drop; a touchscreen moves a chosen chip with its ←/→ buttons): pointer events would do
+  it, if a touch user asks.
 - **Machines as the unit, loose ends** ([machines.md](machines.md)):
   - **The exit's numbers weren't taken** (the user's call, 2026-10-18: low relevance for now, and they'd go stale
     beside unrelated optimizations). In Chromium 153, `bench/boot/REPORT.md` with JSON: a restore whose pins match

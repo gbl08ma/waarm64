@@ -1,6 +1,7 @@
 // USB on the page with a guest, without host devices (docs/usb.md "The page"): a stored Debian machine with the USB
 // controller, Gadget Zero attached from the toolbar's USB menu (`?usbzero=1`) and seen by the guest, a kept snapshot
-// that asks first, empties the ports and attaches it again (the guest sees it unplugged and back), and a detach.
+// that asks first, empties the ports and attaches it again (the guest sees it unplugged and back), and a detach. The
+// status bar's USB total counts its traffic, and its renderer and frame rate are the simple framebuffer's.
 // Opt-in with WEBPC_DISTROS=debian (scripts/ci-machines.sh); ~50 s.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
@@ -77,6 +78,8 @@ test('Gadget Zero on a stored Debian machine: attached from the menu, seen by th
     store.close();
     return id;
   }, { size, bytes: image.length });
+  // The status bar (docs/frontend.md "The status bar"): the screen's renderer and frame rate, the USB devices' total.
+  await page.evaluate(() => localStorage.setItem('webpc.settings', JSON.stringify({ ...JSON.parse(localStorage.getItem('webpc.settings') ?? '{}'), statusBar: [{ kind: 'gpu' }, { kind: 'fps' }, { kind: 'usbtotal' }] })));
   await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&display=simple&usbzero=1&${credentialsQuery()}`);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 420_000, polling: 250 });
   await shows(page, /login: /);
@@ -89,6 +92,18 @@ test('Gadget Zero on a stored Debian machine: attached from the menu, seen by th
   await page.check('#usb-menu [data-usb-zero] input');
   await page.waitForFunction(() => document.getElementById('usb-menu')?.dataset.attached === '1', null, { timeout: 30_000, polling: 100 });
   assert.equal(await zeros(page, 1), '1');
+  // Its enumeration's descriptors (and the built-in keyboard's, in the firmware) came in over the xHCI.
+  const el = (sel: string) => page.evaluate((sel) => (document.querySelector(`#status ${sel}`)?.textContent ?? '').replace(/\s+/g, ' ').trim(), sel);
+  /** `key`'s words as a pattern, its parameters' places matched by the patterns given. */
+  const pattern = (key: string, re: Record<string, string>) => {
+    let src = words(key, Object.fromEntries(Object.keys(re).map((k) => [k, `\u{E000}${k}\u{E000}`]))).source;
+    for (const [k, v] of Object.entries(re)) src = src.replace(`\u{E000}${k}\u{E000}`, v);
+    return new RegExp(`^${src}$`);
+  };
+  assert.equal(await el('[data-kind=gpu]'), t('statusbar:statusbar.gpu.framebuffer'));
+  assert.match(await el('[data-kind=fps]'), pattern('statusbar:statusbar.fps', { fps: '\\d+' }));
+  const traffic = pattern('statusbar:statusbar.usb', { traffic: pattern('statusbar:statusbar.usb.traffic', { in: '[1-9][\\d.]* (B|KiB|MiB)', out: '[\\d.]+ (B|KiB|MiB)' }).source.slice(1, -1) });
+  assert.match(await el('[data-kind=usbtotal] .sr'), traffic);
 
   // A kept snapshot: asked first (naming it), unplugged while it is written, attached again after.
   await page.click('#save-snapshot');

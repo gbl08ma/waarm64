@@ -28,7 +28,9 @@ export function changedRows(h: number, changed: (y: number) => boolean): [number
 /**
  * Draws `fb` (in `memory`) to `canvas` on each animation frame until `stop`
  * (skipping frames while an element canvas isn't rendered). `draw` draws what
- * changed now and returns those rows, `[first, end)` (empty: none).
+ * changed now and returns those rows, `[first, end)` (empty: none);
+ * `presents()` is how many frames drew something so far (the status bar's
+ * frame rate: at most one a display frame, however often the guest writes).
  * `onContent` is called once, at the first draw that shows a pixel that isn't
  * black (the guest's console took the screen: web/app/ hides its boot card).
  */
@@ -64,9 +66,13 @@ export function showFramebuffer(canvas: HTMLCanvasElement | OffscreenCanvas, mem
     return [first, end];
   };
   const shown = () => !('checkVisibility' in canvas) || canvas.checkVisibility(); // a hidden view: display: none
+  let presents = 0;
   let id = requestAnimationFrame(function frame() {
-    if (shown()) draw();
+    if (shown()) {
+      const [first, end] = draw();
+      if (first !== end) presents++;
+    }
     id = requestAnimationFrame(frame);
   });
-  return { draw, stop: () => cancelAnimationFrame(id) };
+  return { draw, presents: () => presents, stop: () => cancelAnimationFrame(id) };
 }

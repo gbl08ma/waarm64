@@ -1032,7 +1032,7 @@ export type DevicesInit = {
   /**
    * Two I/O byte counters per device, by index (over a SharedArrayBuffer where the backends run in the device worker,
    * so the VM's thread reads them: `Vm.deviceIo`): a blk's bytes read and written, a net's frames' bytes received and
-   * sent (`Ctx.io`). Only this thread writes them (plain stores; a reader may see a value a request old).
+   * sent (`Ctx.io`); then, after the last device's, the xHCI's: its transfers' bytes IN and OUT (`UsbInit.io`). Only this thread writes them (plain stores; a reader may see a value a request old).
    */
   io?: Float64Array;
 };
@@ -1133,7 +1133,7 @@ export class Devices {
       }
     });
     this.epochs = specs.map(() => 0);
-    if (xhci) this.usb = new Usb({ memory, shared: xhci.shared, ram, ramSize, spill, deterministic, kick: () => this.kick(), port: xhci.port, attach: xhci.attach });
+    if (xhci) this.usb = new Usb({ memory, shared: xhci.shared, ram, ramSize, spill, deterministic, kick: () => this.kick(), port: xhci.port, attach: xhci.attach, io: io?.subarray(2 * specs.length, 2 * specs.length + 2) });
     if (state) {
       if (state.length !== specs.length) throw new Error('the snapshot is of a machine with other devices');
       // The devices are as the snapshot left them (their epoch is not a reset), with the backends' state.

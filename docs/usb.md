@@ -272,6 +272,10 @@ devices, and completions come back through `SIGNAL_DEVICE` and are drained at th
 In deterministic mode the device worker answers before it acks the doorbell, so completions land at a
 fixed step.
 
+**The status bar's count** (`UsbInit.io`): `Usb.done` adds each completed transfer's actual length, IN or OUT, to the
+pair of `DevicesInit.io`'s byte counters after the last virtio device's; the machine worker reports them as
+`Status.usb` (docs/frontend.md "The status bar"). All devices together: they come and go while the machine runs.
+
 **Records** (core → host):
 - `w0` = tag | generation << 24. The tag numbers TDs from 1, and is 0 for the other kinds. The
   generation is the connector's detach count, mod 256.

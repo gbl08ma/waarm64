@@ -72,6 +72,11 @@ export type UsbInit = {
   port?: MessagePort;
   /** Attached before the guest runs (its *attach at start* devices). */
   attach?: UsbAttach[];
+  /**
+   * The transfers' bytes since the start, for the status bar (`DevicesInit.io`'s last pair): [0] what the devices gave the
+   * guest (IN), [1] what they took (OUT); a transfer counts its actual length as it completes, whatever its code.
+   */
+  io?: Float64Array;
 };
 
 type Plugged = { dev: UsbDevice; device: UsbIdentity | UsbVirtual };
@@ -336,6 +341,7 @@ export class Usb {
         at += n;
       }
     }
+    if (this.init.io) this.init.io[f.into ? 0 : 1] += actual;
     this.completion([tag | f.gen << 24, CPL_DONE | CODES[r.code] << 8, actual]);
   }
 

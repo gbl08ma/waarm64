@@ -81,6 +81,18 @@ test('per disk and adapter: all summed, each, one from 1; gone when the machine 
   assert.equal(text({ kind: 'link', scope: 'each' }, m), `${t('statusbar:statusbar.link.connected', { name: 'Adapter 1' })} | ${t('statusbar:statusbar.link.off', { name: 'Adapter 2' })}`);
 });
 
+test('USB: its devices together, in and out a second and since the start; gone without a USB controller', () => {
+  const a = status({ usb: { in: MiB, out: 0 } });
+  const b = status({ uptime: 11_000, usb: { in: 3 * MiB, out: 512 } });
+  const m = metrics(b, 1000, { status: a, at: 0, metrics: metrics(a, 0) });
+  const usb = (into: string, out: string) => t('statusbar:statusbar.usb', { traffic: t('statusbar:statusbar.usb.traffic', { in: into, out }) });
+  assert.equal(text({ kind: 'usbrate' }, m), usb('2.0 MiB/s', '512 B/s'));
+  assert.equal(text({ kind: 'usbtotal' }, m), usb('3.0 MiB', '512 B'));
+  assert.deepEqual(render({ kind: 'usbrate' }, m, live)[0].parts!.map((p) => [p.icon, p.text]), [['arrow-down', '2.0 MiB/s'], ['arrow-up', '512 B/s']]);
+  assert.equal(text({ kind: 'usbrate' }, metrics(a, 0)), usb('…', '…'), 'the first status: no rate yet');
+  assert.equal(text({ kind: 'usbtotal' }, second()), '', 'no USB controller: no element');
+});
+
 test('states as tones: the mouse lock, where keys go, the microphone shown only while it records', () => {
   assert.equal(render({ kind: 'pointer' }, undefined, live)[0].tone, 'dim');
   assert.equal(render({ kind: 'pointer' }, undefined, { ...live, mouseLocked: true })[0].tone, 'ok');
@@ -102,6 +114,10 @@ test('graphics: the renderer, frames and video streams a second', () => {
   assert.equal(text({ kind: 'video' }, undefined, l), t('statusbar:statusbar.video.hw.fps', { codecs: 'H.264 High', fps: '30' }));
   assert.equal(text({ kind: 'video' }, undefined, { ...l, gpu: { ...g, video: { ...g.video!, streams: [] } } }), t('statusbar:statusbar.video.idle'));
   assert.equal(text({ kind: 'video' }, undefined, { ...l, gpu: graphics('canvas2d', { presents: 1 }, 0) }), '', '2D: no video');
+  // A machine without virtio-gpu: its simple framebuffer's draws.
+  const fb = graphics('framebuffer', { presents: 30 }, 1000, { g: graphics('framebuffer', { presents: 5 }, 0), at: 0 });
+  assert.equal(text({ kind: 'gpu' }, undefined, { ...live, gpu: fb }), t('statusbar:statusbar.gpu.framebuffer'));
+  assert.equal(text({ kind: 'fps' }, undefined, { ...live, gpu: fb }), t('statusbar:statusbar.fps', { fps: '25' }));
 });
 
 test('vulkan: the guest\'s programs using Venus and their submits a second, idle, or no WebGPU', () => {

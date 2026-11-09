@@ -15,6 +15,10 @@
     "message": "Disks",
     "note": "A group's heading in the palette of the Preferences' status bar editor (Preferences): the elements that can be added, by what they show."
   },
+  "statusbar.group.usb": {
+    "message": "USB",
+    "note": "A group's heading in the palette of the Preferences' status bar editor (Preferences): the elements that can be added, by what they show."
+  },
   "statusbar.group.graphics": {
     "message": "Graphics",
     "note": "A group's heading in the palette of the Preferences' status bar editor (Preferences): the elements that can be added, by what they show."
@@ -162,6 +166,22 @@
   "statusbar.kind.disktotal.about": {
     "message": "Bytes read (R) and written (W) since the machine started.",
     "note": "What the Disk total status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
+  },
+  "statusbar.kind.usbrate": {
+    "message": "USB traffic",
+    "note": "The name of a status bar element (the usbrate kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
+  },
+  "statusbar.kind.usbrate.about": {
+    "message": "Bytes a second the machine's USB devices sent it (in) and took from it (out), all of them together.",
+    "note": "What the USB traffic status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips. In and out are as the guest sees them: in is what a device gave the guest."
+  },
+  "statusbar.kind.usbtotal": {
+    "message": "USB total",
+    "note": "The name of a status bar element (the usbtotal kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
+  },
+  "statusbar.kind.usbtotal.about": {
+    "message": "Bytes the machine's USB devices sent it (in) and took from it (out) since it started.",
+    "note": "What the USB total status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
   "statusbar.kind.gpu": {
     "message": "Renderer",
@@ -394,6 +414,14 @@
   "statusbar.gpu.canvas.title": {
     "message": "The screen is 2D, drawn on a canvas, because this browser has no hardware WebGL2.",
     "note": "Tooltip of the Renderer element in the status bar (the page's footer) when the screen is drawn on a 2D canvas."
+  },
+  "statusbar.gpu.framebuffer": {
+    "message": "Framebuffer",
+    "note": "The Renderer element in the status bar (the page's footer) on a machine whose screen is its simple framebuffer (no virtio-gpu: the address's display=simple), drawn on a 2D canvas."
+  },
+  "statusbar.gpu.framebuffer.title": {
+    "message": "The screen is the machine's simple framebuffer, drawn on a canvas: it has no graphics device.",
+    "note": "Tooltip of the Renderer element in the status bar (the page's footer) on a machine whose screen is its simple framebuffer."
   },
   "statusbar.gpu.3d": {
     "message": "3D",
@@ -690,6 +718,26 @@
   "statusbar.disk.one.rate.title": {
     "message": "Bytes a second read (R) and written (W) on {{name}}.",
     "note": "Tooltip of the Disk speed element for one disk in the status bar (the page's footer): {{name}} is the disk's name."
+  },
+  "statusbar.usb.traffic": {
+    "message": "in {{in}}, out {{out}}",
+    "note": "A USB element's value in the status bar (the page's footer) (traffic: bytes a second; total: bytes since the start): {{in}} what the USB devices gave the guest, {{out}} what they took from it, each a size or a rate (\"1.4 MiB/s\")."
+  },
+  "statusbar.usb": {
+    "message": "USB {{traffic}}",
+    "note": "The USB traffic or total element in the status bar (the page's footer) (its screen-reader text when drawn with arrows): {{traffic}} is in and out."
+  },
+  "statusbar.usb.label": {
+    "message": "USB",
+    "note": "The word before the in and out arrows of the USB element in the status bar (the page's footer)."
+  },
+  "statusbar.usb.rate.title": {
+    "message": "Bytes a second the USB devices gave the machine (in) and took from it (out), all of them together.",
+    "note": "Tooltip of the USB traffic element in the status bar (the page's footer)."
+  },
+  "statusbar.usb.total.title": {
+    "message": "Bytes the USB devices gave the machine (in) and took from it (out) since it started, all of them together.",
+    "note": "Tooltip of the USB total element in the status bar (the page's footer)."
   },
   "statusbar.cpu.mips": {
     "message": "{{value}} MIPS",

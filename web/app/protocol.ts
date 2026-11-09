@@ -284,9 +284,14 @@ export type Status = {
    * Each disk's bytes the guest read and wrote since this start (a restart, a resume or a snapshot's load starts again
    * at 0), counted as its virtio-blk requests complete (failed ones, flushes, discards and write-zeroes count nothing):
    * one per entry of the start message's `disks`, in its order (that is, by slot). Undefined only from a worker that
-   * doesn't count them. USB mass storage isn't in it (the xHCI's devices are the page's, docs/usb.md).
+   * doesn't count them. USB mass storage isn't in it: it is in `usb`.
    */
   disks?: { read: number; written: number }[];
+  /**
+   * A machine with a USB controller (docs/usb.md): its devices' bytes since this start, all of them together (they come
+   * and go while it runs), counted as the xHCI's transfers complete: `in` what they gave the guest, `out` what they took.
+   */
+  usb?: { in: number; out: number };
   /**
    * Each network adapter's bytes since this start, as the guest sees them: `rx` the frames given to the guest, `tx` the
    * frames it sent (Ethernet frames without virtio's header; a large TCP/UDP send counts once, before its segments).

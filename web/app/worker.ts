@@ -13,7 +13,7 @@ import { msg, msgOf, MsgError, toWire, type Msg } from '../msg.ts';
 import { VENUS_RESERVE } from '../ram.ts';
 import { dropSuspend, fileWriter, loadFlash, overlayMeta, saveFlash, suspended, suspendWriter } from '../overlay.ts';
 import { showFramebuffer } from '../display.ts';
-import type { DisplayFromPage, ScreenPng } from '../gpu-present.ts';
+import type { DisplayFromPage, DisplayToPage, ScreenPng } from '../gpu-present.ts';
 import { lzCodec } from '../lz.ts';
 import { openSnapshot, SnapshotError, type SnapshotHeader, type Sink } from '../snapshot-file.ts';
 import { readSnapshot, writeSnapshot, type SnapshotDisk } from '../snapshot.ts';
@@ -486,8 +486,9 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   }
   const devices = liveSpecs = specs ?? here.map((s) => device(s, m, machine));
   const kinds = here.map((s) => s.kind);
-  // The status's disks and adapters (`Status.disks`, `nets`): the device index of each of the page's, in its order.
-  const io = { disks: here.flatMap((s, i) => (s.kind === 'blk' ? [i] : [])), nets: machine.network ? here.flatMap((s, i) => (s.kind === 'net' ? [i] : [])) : undefined };
+  // The status's disks and adapters (`Status.disks`, `nets`): the device index of each of the page's, in its order; the
+  // xHCI's counters (`Status.usb`) follow the last device's.
+  const io = { disks: here.flatMap((s, i) => (s.kind === 'blk' ? [i] : [])), nets: machine.network ? here.flatMap((s, i) => (s.kind === 'net' ? [i] : [])) : undefined, usb: m.usb ? devices.length : undefined };
   session = { name: m.machine, ncpus, disk: m.disks[0] && !m.disks[0].own ? m.disks[0].name : null, kinds, cpu, about: m.about };
   const { ramSize, spill } = split;
   booting = bootVm(core, {
@@ -508,7 +509,9 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   if (restore) await keepFlash(vm, machine); // the restore deleted the copy beside the overlay: the bank the machine has goes back
   if (vm.framebuffer && m.screen) {
     const screen = m.screen;
-    showFramebuffer(screen, vm.memory, vm.framebuffer, () => post({ type: 'screen' })); // on this worker's animation frames
+    const shown = showFramebuffer(screen, vm.memory, vm.framebuffer, () => post({ type: 'screen' })); // on this worker's animation frames
+    // The status bar's renderer and frame rate (the presenter's report on a machine with virtio-gpu: web/gpu-present.ts).
+    setInterval(() => m.display.postMessage({ type: 'screen-stats', screen: 'framebuffer', presents: shown.presents() } satisfies DisplayToPage), 1000);
     // "Copy the screen" (docs/plans/clipboard.md §4.4): the framebuffer's canvas as it shows (a 2D context keeps its
     // pixels). The display port is this worker's on a machine without virtio-gpu.
     m.display.onmessage = (e: MessageEvent<DisplayFromPage>) => {
@@ -729,14 +732,15 @@ async function suspend(sleep = false) {
   }
 }
 
-/** `io`: the device index of each of the page's disks and adapters, in its order (none: a machine without `network`). */
-function status(vm: Vm, ncpus: number, ramMiB: number, uptime: number, loopMaxMs: number, loopAgeMs: number, io: { disks: number[]; nets?: number[] }): Status {
+/** `io`: the device index of each of the page's disks and adapters, in its order (none: a machine without `network`), and the xHCI's (none: no USB controller). */
+function status(vm: Vm, ncpus: number, ramMiB: number, uptime: number, loopMaxMs: number, loopAgeMs: number, io: { disks: number[]; nets?: number[]; usb?: number }): Status {
   const s = vm.stats();
   const c = vm.deviceIo(); // two per device: blk read, written; net received, sent
   return {
     ncpus, ramMiB, uptime, steps: s.steps, jitBlocks: s.jit.blocks, jitFlushes: s.jit.flushes, jitCompileMs: s.jit.compileNs / 1e6, jitSteps: s.jit.steps, jitBytes: s.jit.bytes, irqs: s.irqs, loopMaxMs, loopAgeMs, vcpus: vm.liveness(), stats: s, memory: vm.hostUse(),
     disks: io.disks.map((i) => ({ read: c[2 * i], written: c[2 * i + 1] })),
     nets: io.nets?.map((i) => ({ rx: c[2 * i], tx: c[2 * i + 1] })),
+    usb: io.usb === undefined ? undefined : { in: c[2 * io.usb], out: c[2 * io.usb + 1] },
     cpus: vm.parallel ? vm.cpuStats().map((b) => ({ steps: b.steps, jitSteps: b.jit.steps })) : undefined,
     asleep: vm.suspended(),
   };

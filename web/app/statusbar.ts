@@ -14,12 +14,13 @@ export type Look = 'text' | 'icon' | 'both';
 export type Scope = 'all' | 'each' | 'one';
 type Device = 'cpu' | 'net' | 'disk';
 /** The palette's groups (their names: `groupName`). */
-export type Group = 'machine' | 'cpu' | 'network' | 'disks' | 'graphics' | 'input' | 'layout';
+export type Group = 'machine' | 'cpu' | 'network' | 'disks' | 'usb' | 'graphics' | 'input' | 'layout';
 const GROUP_NAME: Record<Group, string> = {
   machine: 'statusbar:statusbar.group.machine',
   cpu: 'statusbar:statusbar.group.cpu',
   network: 'statusbar:statusbar.group.network',
   disks: 'statusbar:statusbar.group.disks',
+  usb: 'statusbar:statusbar.group.usb',
   graphics: 'statusbar:statusbar.group.graphics',
   input: 'statusbar:statusbar.group.input',
   layout: 'statusbar:statusbar.group.layout',
@@ -47,6 +48,8 @@ export const KINDS = {
   link: { name: 'statusbar:statusbar.kind.link', group: 'network', icon: 'network', device: 'net', scopes: ['each', 'one'], look: 'icon', about: 'statusbar:statusbar.kind.link.about' },
   diskrate: { name: 'statusbar:statusbar.kind.diskrate', group: 'disks', icon: 'database', device: 'disk', scopes: ['all', 'each', 'one'], look: 'text', about: 'statusbar:statusbar.kind.diskrate.about' },
   disktotal: { name: 'statusbar:statusbar.kind.disktotal', group: 'disks', icon: 'database', device: 'disk', scopes: ['all', 'each', 'one'], look: 'text', about: 'statusbar:statusbar.kind.disktotal.about' },
+  usbrate: { name: 'statusbar:statusbar.kind.usbrate', group: 'usb', icon: 'usb', look: 'text', about: 'statusbar:statusbar.kind.usbrate.about' },
+  usbtotal: { name: 'statusbar:statusbar.kind.usbtotal', group: 'usb', icon: 'usb', look: 'text', about: 'statusbar:statusbar.kind.usbtotal.about' },
   gpu: { name: 'statusbar:statusbar.kind.gpu', group: 'graphics', icon: 'device-desktop', look: 'text', about: 'statusbar:statusbar.kind.gpu.about' },
   fps: { name: 'statusbar:statusbar.kind.fps', group: 'graphics', icon: 'keyframes', look: 'text', about: 'statusbar:statusbar.kind.fps.about' },
   video: { name: 'statusbar:statusbar.kind.video', group: 'graphics', icon: 'player-play', look: 'text', about: 'statusbar:statusbar.kind.video.about' },
@@ -147,6 +150,8 @@ export type Metrics = {
   /** Per disk and adapter, in the machine's order: totals, and their rates a second. */
   disks?: { read: number; written: number; readRate?: number; writeRate?: number }[];
   nets?: { rx: number; tx: number; rxRate?: number; txRate?: number }[];
+  /** A machine with a USB controller: its devices' bytes in (to the guest) and out, all together, and their rates a second. */
+  usb?: { in: number; out: number; inRate?: number; outRate?: number };
 };
 export type Sample = { status: Status; at: number; metrics: Metrics };
 
@@ -154,12 +159,13 @@ export type Sample = { status: Status; at: number; metrics: Metrics };
 type Stream = { id: number; profile: string; width: number; height: number; hardware: boolean; open: boolean; decoded: number; fps?: number };
 /**
  * The screen's last second: a 3D machine's GPU worker `stats` (web/gpu-worker.ts), or a 2D machine's presenter's
- * `screen-stats` (web/gpu-present.ts; `webgl2` or `canvas2d`). `fps`: presents a second; the video's decoded pictures a
+ * `screen-stats` (web/gpu-present.ts; `webgl2` or `canvas2d`), or a machine without virtio-gpu's simple framebuffer
+ * (`framebuffer`: its machine worker's `screen-stats`, web/app/worker.ts). `fps`: presents a second; the video's decoded pictures a
  * second, all streams and each. `hardware` is what a decoder asked for: WebCodecs doesn't say what it got (Chromium's
  * `prefer-hardware` fails rather than fall back).
  */
 export type Graphics = {
-  mode: '3d' | 'webgl2' | 'canvas2d';
+  mode: '3d' | 'webgl2' | 'canvas2d' | 'framebuffer';
   renderer?: string;
   vendor?: string;
   software?: boolean;
@@ -213,6 +219,7 @@ export function metrics(s: Status, at: number, prev?: Sample, tabBytes?: number)
     tabBytes,
     disks: s.disks?.map((d, i) => ({ ...d, readRate: rate(d.read, p?.disks?.[i]?.read), writeRate: rate(d.written, p?.disks?.[i]?.written) })),
     nets: s.nets?.map((n, i) => ({ ...n, rxRate: rate(n.rx, p?.nets?.[i]?.rx), txRate: rate(n.tx, p?.nets?.[i]?.tx) })),
+    usb: s.usb && { ...s.usb, inRate: rate(s.usb.in, p?.usb?.in), outRate: rate(s.usb.out, p?.usb?.out) },
   };
 }
 
@@ -318,6 +325,7 @@ export function render(i: Item, m: Metrics | undefined, live: Live): Piece[] {
       // The renderer, on a line of its own under the title.
       const by = g.renderer ? (g.vendor ? t('statusbar:statusbar.gpu.renderer.vendor', { renderer: g.renderer, vendor: g.vendor }) : t('statusbar:statusbar.gpu.renderer', { renderer: g.renderer })) : '';
       const titled = (title: string) => (by ? `${title}\n${by}` : title);
+      if (g.mode === 'framebuffer') return one(t('statusbar:statusbar.gpu.framebuffer'), t('statusbar:statusbar.gpu.2d'), t('statusbar:statusbar.gpu.framebuffer.title'));
       if (g.mode === 'canvas2d') return one(t('statusbar:statusbar.gpu.canvas'), t('statusbar:statusbar.gpu.2d'), t('statusbar:statusbar.gpu.canvas.title'), { tone: 'off' });
       const is3d = g.mode === '3d';
       const what = is3d ? t('statusbar:statusbar.gpu.3d') : t('statusbar:statusbar.gpu.2d');
@@ -421,6 +429,15 @@ export function render(i: Item, m: Metrics | undefined, live: Live): Piece[] {
         return { text: t('statusbar:statusbar.disk.one', { name, traffic }), short: traffic, icon: d.icon, title: total ? t('statusbar:statusbar.disk.one.total.title', { name }) : t('statusbar:statusbar.disk.one.rate.title', { name }) };
       });
     }
+    case 'usbrate': case 'usbtotal': {
+      const u = m.usb;
+      if (!u) return [];
+      const total = i.kind === 'usbtotal';
+      const [into, out] = total ? [size(u.in), size(u.out)] : [perSec(u.inRate), perSec(u.outRate)];
+      const traffic = t('statusbar:statusbar.usb.traffic', { in: into, out });
+      return one(t('statusbar:statusbar.usb', { traffic }), traffic, total ? t('statusbar:statusbar.usb.total.title') : t('statusbar:statusbar.usb.rate.title'),
+        { label: t('statusbar:statusbar.usb.label'), parts: [{ icon: 'arrow-down', text: into }, { icon: 'arrow-up', text: out }] });
+    }
   }
   return [];
 }
@@ -454,7 +471,7 @@ function cpuPieces(i: Item, m: Metrics, icon?: IconName): Piece[] {
 /** Whether a kept list shows anything (none: the bar goes away). */
 export const shows = (items: readonly Item[]) => items.some((i) => i.kind !== 'spacer' && i.kind !== 'divider');
 
-/** What the Preferences' preview draws while no machine runs: a made-up machine with 4 vCPUs, 2 disks and 2 adapters. */
+/** What the Preferences' preview draws while no machine runs: a made-up machine with 4 vCPUs, 2 disks, 2 adapters and a USB controller. */
 export const SAMPLE: { metrics: Metrics; disks: string[]; nets: Live['nets']; gpu: Graphics } = {
   metrics: {
     ncpus: 4, ramMiB: 4096, uptimeMs: 754_000, mips: 812, jit: 98.7, irqs: 2140, blocks: 48_213, flushes: 0, compileMs: 9300,
@@ -462,6 +479,7 @@ export const SAMPLE: { metrics: Metrics; disks: string[]; nets: Live['nets']; gp
     jitLive: 61 * 2 ** 20, jitBudget: 320 * 2 ** 20, tabBytes: 6.2 * 2 ** 30,
     disks: [{ read: 812 * 2 ** 20, written: 96 * 2 ** 20, readRate: 3.1 * 2 ** 20, writeRate: 48 * 2 ** 10 }, { read: 4 * 2 ** 20, written: 0, readRate: 0, writeRate: 0 }],
     nets: [{ rx: 210 * 2 ** 20, tx: 12 * 2 ** 20, rxRate: 1.4 * 2 ** 20, txRate: 31 * 2 ** 10 }, { rx: 2 * 2 ** 20, tx: 1 * 2 ** 20, rxRate: 512, txRate: 300 }],
+    usb: { in: 38 * 2 ** 20, out: 2 * 2 ** 20, inRate: 640 * 2 ** 10, outRate: 12 * 2 ** 10 },
   },
   disks: ['debian.qcow2', 'data.img'], // i18n-ignore: file names
   nets: [{ name: adapterName(1), phase: 'connected', text: t('statusbar:statusbar.sample.net1') }, { name: adapterName(2), phase: 'off', text: t('statusbar:statusbar.sample.net2') }],

@@ -920,8 +920,9 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // The xHCI's messages: the caller's port, or a channel of our own behind `usb.attach`/`usb.detach`.
   const usbChannel = o.usb && !o.usb.port ? new MessageChannel() : undefined;
   const xhci = o.usb ? { shared: ex.vm_xhci(vm), port: o.usb.port ?? usbChannel!.port1, attach: o.usb.attach } : undefined;
-  // Each device's two I/O byte counters (`DevicesInit.io`), shared with the device worker that adds to them.
-  const io = new Float64Array(typeof SharedArrayBuffer === 'function' ? new SharedArrayBuffer(16 * specs.length) : new ArrayBuffer(16 * specs.length));
+  // Each device's two I/O byte counters (`DevicesInit.io`), shared with the device worker that adds to them, then the xHCI's.
+  const ioBytes = 16 * (specs.length + 1);
+  const io = new Float64Array(typeof SharedArrayBuffer === 'function' ? new SharedArrayBuffer(ioBytes) : new ArrayBuffer(ioBytes));
   // The window is memory 1's bytes at `windowAt`; its write-watch's words are memory 0's.
   const venusWindow = windowBytes ? { at: windowAt, bytes: windowBytes, watch: ex.vm_window_watch(vm) } : undefined;
   const layout = ramLayout(o.ramSize, spillSizes, windowBytes, spillAt);
@@ -1170,6 +1171,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     /**
      * Each device's I/O bytes since the VM started (`DevicesInit.io`), by device index (`VmConfig.devices`): [2i] and
      * [2i + 1] are a blk's bytes read and written, a net's bytes received (to the guest) and sent; 0 for other kinds.
+     * The pair after the last device's is the xHCI's (`Usb`): the bytes its devices gave the guest (IN) and took (OUT).
      * The live view (the device worker adds to it): read it, don't keep a copy expecting it to move.
      */
     deviceIo: () => io,
