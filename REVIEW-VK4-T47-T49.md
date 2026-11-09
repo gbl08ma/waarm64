@@ -157,3 +157,25 @@ first instances in one submit, then check each draw's output.
 - **web/venus-share.ts `stored`/`storedOf`.** The swizzles come from virgl's `sample` (B8G8R8A8, X8R8G8B8, B10G10R10A2,
   B5G6R5's R-high packing); `raw` is detected right; X alpha is forced to 1 on conversion; the converted texture is
   freed with its resource.
+
+## Triage (2026-11-09, the fix loop)
+
+1. **Confirmed, fixed** (7ea7196a). Both shapes reproduced in the printer's output (`int k = (s + 1) & 3;` inlined,
+   `int k = s;` aliased). `use_deferred` in vk/compiler/wgsl_print.c: neither `inline_ok` nor `alias_loads` takes a value
+   whose use is a barycentric at a sample or offset, so the source is a let evaluated at its def. Test:
+   tests/wgsl.test.ts "a barycentric at a sample read by two loads…" (tests/venus/t49/bary-store.frag, both variants),
+   failing first; each half planted alone fails its variant.
+2. **Confirmed, fixed** (066dd8c1). Hangs reproduced two ways: on SwiftShader with
+   `--disable-dawn-features=vulkan_use_demote_to_helper_invocation_extension` (Tint's DemoteToHelper; the queue hung 20 s),
+   and on the Mac's Metal (Chrome for Testing 157, apple metal-3: the device lost, "Discarded (victim of GPU
+   error/recovery)"), with a stage that demotes half its fragments then does unsigned min and max on an atomic<i32>
+   array and a compare-exchange of 0 (tests/venus/t47/minmax-demote.frag). Fix: in a fragment stage both loops end after
+   1,024 tries in a row that saw the value they compared (only a spurious failure stalls a real invocation), and the
+   min/max loop after 65,536 tries in all (a helper's indeterminate, varying results). Compute stages print as before.
+   With the fix: [0, 7, 1, 1] natively, under DemoteToHelper and on Metal. Each loop's bound planted off fails the test.
+3. **Not a defect as stated** (660c15ab, a test only). `record_draw` (wg_cmd.c, since T44) already adds a place per
+   draw for a pull with a divisor (`cmd->draws += pass_replays(cmd)`), so the submit reserves 1,024 bytes for such a
+   draw and the 1,100-draw submit grows the push buffer to 2 MiB. Driver test `pullDivisorsMany` (wg_test.c scenario 7:
+   1,100 direct draws, each its own push constants and first instance) passes as the code is; with that reservation
+   planted off it overflows and fails (topLeft clear), so it now guards it. Reusing the push place for the first
+   instance was not taken: `fi` would then change at every draw and rebind the pull's group each time.
