@@ -7,7 +7,8 @@
 // echo lease (docs/network-adapters.md §4); with `ports`, a card per port on the page's end (its leases are the
 // page's to send: the primary's with the default route, the others' with their network's routes only), as the page's
 // machine with several adapters has them (a two-minute lease). `debugNet`: systemd-networkd logs at debug from the boot
-// (a drop-in over SMBIOS; the journal then says what it does with a carrier change or a lease).
+// (a drop-in over SMBIOS; the journal then says what it does with a carrier change or a lease). `disk`: another Debian
+// disk's URL than the page's (images/debian-tools/build.sh's, with an SSH server).
 import { bootVm, Exit } from '../../web/vm.ts';
 import { SEVERAL_ADAPTERS } from '../../web/devices.ts';
 import { credentialFiles, MACHINES } from '../../web/app/machine.ts';
@@ -20,7 +21,7 @@ const get = async (url: string) => {
   return new Uint8Array(await r.arrayBuffer());
 };
 
-self.onmessage = async (e: MessageEvent<{ ip?: MessagePort; ports?: MessagePort[]; page?: boolean; debugNet?: boolean; adapters?: number; serial: MessagePort; overlay?: string }>) => {
+self.onmessage = async (e: MessageEvent<{ ip?: MessagePort; ports?: MessagePort[]; page?: boolean; debugNet?: boolean; adapters?: number; serial: MessagePort; overlay?: string; disk?: string }>) => {
   try {
     const m = MACHINES.debian;
     const [wasm, kernel] = await Promise.all([
@@ -30,7 +31,7 @@ self.onmessage = async (e: MessageEvent<{ ip?: MessagePort; ports?: MessagePort[
       ramSize: m.ramMiB * 2 ** 20, kernel, cmdline: '', jit: 1, ncpus: 2, parallel: true, realtime: true, serialIn: e.data.serial,
       firmware: { fwCfg: [...credentialFiles([...UNATTENDED, ...(e.data.page ? m.network.credentials : [])]), ...(e.data.debugNet ? [{ name: OEM_STRINGS_FILE, data: oemStrings([{ name: 'systemd.unit-dropin.systemd-networkd.service~debug', data: '[Service]\nEnvironment=SYSTEMD_LOG_LEVEL=debug\n' }]).join('\0') }] : [])] },
       devices: [
-        { type: 'rng' }, { type: 'blk', url: m.disk, overlay: e.data.overlay },
+        { type: 'rng' }, { type: 'blk', url: e.data.disk ?? m.disk, overlay: e.data.overlay },
         ...(e.data.ports
           ? e.data.ports.map((ip, n) => ({ type: 'net' as const, mac: `52:54:00:12:34:${(0x56 + n).toString(16)}`, gateway: n, ...SEVERAL_ADAPTERS, adapter: { ip } }))
           : e.data.adapters

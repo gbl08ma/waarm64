@@ -1408,20 +1408,26 @@ and the guest's default way out (below).
     the tunnel's IPv6 by the client, NAT64 to the exit node), IPv6 the tunnel's own
     `fd7a:115c:a1e0:…` address, MTU 1280, resolvers 1.1.1.1 and 2606:4700:4700::1111 (reached
     through the exit node). What the guest reaches is TCP and UDP to wherever that computer
-    reaches, its LAN included; no ping beyond it, no exit-node choice, no Log out.
+    reaches, its LAN included; no ping beyond it, no exit-node choice, no Log out. Connected, the menu shows
+    [This machine's key](ui:network:Network.key) (`nodekey:…`, with Copy) and the command that lets only it use that
+    computer (`tailcat serve --allow=<key> exit-node`): the connection's identity is its node, going online alone too,
+    so a kept connection's key is the same at every connect (an ephemeral one's, until the page closes).
   - [Let tailcat clients in to this machine](ui:network:NetWizard.tailcat.serve): the machine is a tailcat server. The menu
     shows **its own tailcat address** (a password field with Show and Copy) and how to use it:
     on another computer, `tailcat ssh <address>` logs in to the guest's sshd (tailcat runs `ssh`
     with `tailcat <address> 22` as its ProxyCommand) and `tailcat <address> <port>` reaches any
-    port the guest listens on. Clients reach the guest at its tunnel IPv6 address, untranslated,
-    from their own (the client drops anything else); there's no filter beyond the guest's own.
+    port the guest listens on; `tailcat ping <address>` gets its pong over the relay. Clients reach the guest at its tunnel
+    IPv6 address, untranslated, from their own (the client drops anything else); there's no filter beyond the guest's
+    own.
     The address is **kept** with a kept connection: the node key and the address's pre-shared key live in this
     origin's IndexedDB (`webpc-tailcat`, `identity`, under the connection's `identityKey`, its id; `served` for the
     one kept before connections), so it's the same after a reload, and the machine **reconnects by itself** on load
     (`connectAtStart`); an ephemeral connection's is in the page's memory. **[Advanced](ui:network:NetWizard.advanced)**: the **relay for clients** when not going online through a
     computer (that computer's relay serves otherwise): empty for tailcat's public relays, the
     region with the fastest `/derp/probe` (`nearestRegion`, as tailcat's own server picks; the
-    map's first if none answers), or one's own derper's `host[:port]`; and, editing a connection, [New address](ui:network:NetWizard.newAddress), which
+    map's first if none answers), or one's own derper's `host[:port]`; [Let in only these clients](ui:network:NetWizard.allow):
+    the clients' keys as `tailcat genkey --client` prints them, one per line (tailcat's own `--allow`; empty: anyone
+    with the address; `parseAllow`, kept as the connection's `tailcat.allow`); and, editing a connection, [New address](ui:network:NetWizard.newAddress), which
     forgets the kept identity (after a confirmation), so the old address stops working (the adapter that runs it
     connects again at once). Serving alone, the guest gets the same lease without resolvers: it reaches only
     the clients. The status says [Letting tailcat clients in](ui:network:network.servingOnly) (or adds it to the exit node's).

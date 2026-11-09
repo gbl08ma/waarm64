@@ -243,6 +243,21 @@ test('a served machine (tailcat T3): serving alone or beside a tailcat server; t
   assert.deepEqual(cats[1].config, { addr: 'tcEXIT', serve: { relay: '' } });
   cats[1].setState('Running', netmapOf(lease, 'tcSERVED')); // i18n-ignore
   assert.deepEqual(net.view(), { phase: 'connected', address: '192.0.0.2', exitNodes: [], internet: true, text: t('network:network.tailcat.address.serving', { address: '192.0.0.2' }), served: 'tcSERVED' });
+  // Its node key, for the server's `--allow` (the menu shows it through a server only).
+  cats[1].setState('Running', netmapOf(lease, undefined, true, `nodekey:${'ab'.repeat(32)}`)); // i18n-ignore
+  assert.equal(net.view().tailcatKey, `nodekey:${'ab'.repeat(32)}`);
+  await net.disconnect();
+  net.connect({ controlURL: '', hostname: '', tailcatServe: { relay: '' } });
+  cats[2].setState('Running', netmapOf(lease, 'tcSERVED', false, `nodekey:${'ab'.repeat(32)}`)); // i18n-ignore
+  assert.equal(net.view().tailcatKey, undefined, 'serving alone, there is no server to tell');
+});
+
+test("clients let in: tailcat's --allow keys, by commas, spaces or lines; anything else is an error", async () => {
+  const { parseAllow } = await import('../web/app/network.ts');
+  const k = (c: string) => `nodekey:${c.repeat(64)}`;
+  assert.deepEqual(parseAllow(''), { allow: [] });
+  assert.deepEqual(parseAllow(` ${k('a')},${k('B')}\n${k('c')}\n\n${k('A')} `), { allow: [k('a'), k('b'), k('c')] });
+  for (const bad of ['a', `privkey:${'a'.repeat(64)}`, `nodekey:${'a'.repeat(63)}`, `${'a'.repeat(64)}`, `${k('a')}x`]) assert.ok('error' in parseAllow(bad), bad);
 });
 
 test('relays: a host or host:port, nothing that looks like a URL', async () => {

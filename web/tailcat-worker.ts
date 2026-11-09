@@ -4,7 +4,8 @@
 // (web/tailscale.ts `ToTailscale`, `FromTailscale`) as far as tailcat has the
 // same things: start, attach, detach, state, a network map, errors. Serving
 // (T3), it gives the module the kept identity (so the machine's address stays
-// the same) and, on tailcat's public relays, the nearest region. Going online through a server, it checks
+// the same) and, on tailcat's public relays, the nearest region; a kept connection's key is the same going online
+// through a server too (so the server can `--allow` it). Going online through a server, it checks
 // whether the server's machine reaches the internet over IPv6 (web/reach6.ts), and leases the guest no IPv6
 // default route while it doesn't.
 import { MsgError, toWire } from './msg.ts';
@@ -27,6 +28,8 @@ let rank = 0;
 let client: TsClient | undefined;
 let serving: string | undefined;
 let exit = true;
+/** The machine's node key (`nodekey:…`). */
+let selfKey: string | undefined;
 /** Through a server: whether its machine's IPv6 reaches the internet. */
 let reach: Reach6 | undefined;
 /** The clients let in: each a route of its own, so the guest answers them here beside a tailnet's /48 (docs/network-adapters.md §4). */
@@ -79,10 +82,11 @@ self.onmessage = async (e: MessageEvent<ToTailcat>) => {
     if (!ip) return; // detached meanwhile
     exit = !!m.addr;
     const config: TailcatConfig = { addr: m.addr, derpMapURL: m.derpMapURL };
-    if (m.serve) {
-      const id = m.serve.identity ?? await tailcatIdentity(m.serve.identityKey);
+    const id = m.identity ?? (m.identityKey !== undefined || m.serve ? await tailcatIdentity(m.identityKey) : undefined);
+    if (id) config.key = id.key;
+    if (m.serve && id) {
       const region = m.addr || m.serve.relay ? 0 : await nearestRegion(m.derpMapURL ?? 'https://tailcat.dev/derpmap.json').catch(() => 0);
-      Object.assign(config, { key: id.key, serve: { psk: id.psk, relay: m.addr ? '' : m.serve.relay, region } });
+      config.serve = { psk: id.psk, relay: m.addr ? '' : m.serve.relay, region, allow: m.serve.allow ?? [] };
     }
     if (!ip) return; // detached meanwhile
     if (exit) reach = reach6((p) => client?.guest(p), () => ip?.postMessage({ type: 'lease', lease: offered() }), m.probe6);
@@ -90,22 +94,27 @@ self.onmessage = async (e: MessageEvent<ToTailcat>) => {
       packet: (p) => { if (!reach?.take(p)) send?.(p); },
       event(ev) {
         if (ev.type === 'log') return console.log('tailcat:', ev.msg);
-        if (ev.type === 'self') return;
-        if (ev.type === 'client') {
-          console.log('tailcat: a client came in,', ev.key);
-          clients.push([ev.address6, 128]);
+        if (ev.type === 'self') {
+          selfKey = ev.key;
+          return;
+        }
+        if (ev.type === 'client' || ev.type === 'client-gone') {
+          console.log(ev.type === 'client' ? 'tailcat: a client came in,' : 'tailcat: a quiet client made room for another,', ev.key);
+          const same = (p: Prefix) => p[0].every((b, k) => b === ev.address6[k]);
+          clients = clients.filter((p) => !same(p));
+          if (ev.type === 'client') clients.push([ev.address6, 128]);
           return ip?.postMessage({ type: 'lease', lease: offered() });
         }
         if (ev.type === 'serving') {
           serving = ev.addr;
-          if (lease) post({ type: 'netmap', netmap: netmapOf(lease, serving, exit) });
+          if (lease) post({ type: 'netmap', netmap: netmapOf(lease, serving, exit, selfKey) });
           return;
         }
         if (ev.type === 'lease') {
           lease = ev.lease;
           if (lease?.address6) reach?.start(lease.address6);
           ip?.postMessage({ type: 'lease', lease: offered() });
-          post({ type: 'netmap', netmap: netmapOf(lease, serving, exit) });
+          post({ type: 'netmap', netmap: netmapOf(lease, serving, exit, selfKey) });
           return;
         }
         if (ev.type !== 'state') return; // the Tailscale client's events

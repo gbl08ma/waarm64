@@ -4,12 +4,16 @@
 <script type="module">
   // The tailcat backend in Chromium with no guest (tests/tailcat-browser.test.ts): starts
   // web/tailcat.ts on `?addr=` and plays the guest on the gateway's side of its IP port,
-  // sending UDP to `?port=` on the exit node's 127.0.0.1 and counting what comes back.
+  // sending UDP to `?port=` on the exit node's 127.0.0.1 and counting what comes back. `identity` (JSON, web/tailcat.ts
+  // `TailcatIdentity`): the node it is; `serve` (and `relay`): it also lets tailcat clients in, through that relay.
   import { startTailcat } from '../../web/tailcat.ts';
   import { checksum, packetsOf } from '../../web/net.ts';
   const q = new URLSearchParams(location.search);
   const events = [];
-  const ts = startTailcat({ addr: q.get('addr') }, (m) => events.push(m));
+  const ts = startTailcat({
+    addr: q.get('addr') ?? '', identity: q.has('identity') ? JSON.parse(q.get('identity')) : undefined,
+    serve: q.has('serve') ? { relay: q.get('relay') ?? '' } : undefined,
+  }, (m) => events.push(m));
   const port = Number(q.get('port'));
   let lease = null;
   const waiting = new Map();

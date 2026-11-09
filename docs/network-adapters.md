@@ -55,8 +55,9 @@ Disconnect) and `lastUsed` (what the wizard preselects). The state stays where t
   one another tab's machine has is taken from it first, after asking.
 - **The local helper's link** (`local.url`, `ws://127.0.0.1:<port>/<token>`) in the record: a secret, like tailcat's
   `exit`; the helper keeps its token, so the link stays good across its restarts. Nothing else to forget.
-- **tailcat's served identity** in `webpc-tailcat` under `identityKey` (`served` for the one kept before
-  connections). The server address it goes online through (`exit`) is a secret and is kept only in a stored
+- **tailcat's identity** in `webpc-tailcat` under `identityKey` (`served` for the one kept before
+  connections): the node key, the same whether the connection serves or only goes online through a server (which can
+  then `--allow` it), and the served address's pre-shared key. The server address it goes online through (`exit`) is a secret and is kept only in a stored
   connection.
 - **An ephemeral connection** lives in a `Map` in the page, and its client's state goes to an in-memory store instead
   of IndexedDB.

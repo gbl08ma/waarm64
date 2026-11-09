@@ -6,14 +6,15 @@
   // the Tailscale backend (web/tailscale.ts), or with `tailcat=<address>` the tailcat one
   // (web/tailcat.ts), and a Debian machine (tailnet-worker.ts) whose virtio-net is the Ethernet
   // gateway on that backend's IP port. With `serve` (and `relay=<host:port>` without a tailcat
-  // address) the machine also lets tailcat clients in. The test drives the guest's serial console
+  // address) the machine also lets tailcat clients in (`allow`: only these keys, comma-separated). `disk`: another
+  // Debian disk than the page's (images/debian-tools/build.sh's). The test drives the guest's serial console
   // through window.harness.
   import { startTailscale } from '../../web/tailscale.ts';
   import { startTailcat } from '../../web/tailcat.ts';
   const q = new URLSearchParams(location.search);
   const events = [];
   const ts = q.get('tailcat') || q.has('serve')
-    ? startTailcat({ addr: q.get('tailcat') ?? '', serve: q.has('serve') ? { relay: q.get('relay') ?? '' } : undefined, probe6: q.has('probe6') ? JSON.parse(q.get('probe6')) : undefined }, (m) => events.push(m))
+    ? startTailcat({ addr: q.get('tailcat') ?? '', serve: q.has('serve') ? { relay: q.get('relay') ?? '', allow: q.get('allow') ? q.get('allow').split(',') : undefined } : undefined, probe6: q.has('probe6') ? JSON.parse(q.get('probe6')) : undefined }, (m) => events.push(m))
     : startTailscale({ controlURL: q.get('control'), authKey: q.get('authkey') ?? undefined, hostname: q.get('hostname') ?? 'guest' }, (m) => events.push(m));
   const worker = new Worker(new URL('./tailnet-worker.ts', import.meta.url), { type: 'module' });
   const serial = new MessageChannel();
@@ -21,7 +22,7 @@
   let error;
   worker.onmessage = (e) => { if (e.data.serial) output += e.data.serial; else if (e.data.error) error = e.data.error; };
   worker.onerror = (e) => { error = e.message; };
-  worker.postMessage({ ip: ts.ip, serial: serial.port2, overlay: q.get('overlay') }, [ts.ip, serial.port2]);
+  worker.postMessage({ ip: ts.ip, serial: serial.port2, overlay: q.get('overlay'), disk: q.get('disk') ?? undefined }, [ts.ip, serial.port2]);
   window.harness = {
     send: (s) => serial.port1.postMessage(s),
     output: () => output,

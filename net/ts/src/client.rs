@@ -94,6 +94,8 @@ pub struct Serve {
     /// nodes, or a region of the DERP map by ID.
     pub nodes: Vec<tailcat::DerpNode>,
     pub region_id: i64,
+    /// The clients' node keys let in (`tailcat serve --allow`); empty: any with the address.
+    pub allow: Vec<[u8; 32]>,
 }
 
 pub const DEFAULT_DERP_MAP: &str = "https://tailcat.dev/derpmap.json";
@@ -101,8 +103,17 @@ pub const DEFAULT_DERP_MAP: &str = "https://tailcat.dev/derpmap.json";
 pub const GUEST4: [u8; 4] = [192, 0, 0, 2];
 const TUNNEL_MTU: usize = 1280;
 const SERVER: PeerId = PeerId(1);
-/// How many tailcat clients a served VM takes at once (each is a WireGuard peer).
+/// How many tailcat clients a served VM takes at once (each is a WireGuard peer). Past it, the one
+/// heard from least recently makes room if it has been quiet for [`CLIENT_IDLE`].
 const MAX_CLIENTS: usize = 64;
+/// A client quiet this long can make room for a new one: past WireGuard's REJECT_AFTER_TIME (180 s)
+/// its session is dead, so if it's still there its next packet is a handshake initiation, which
+/// lets it in again (tailcat's clients take a fresh key each run, so most are gone for good).
+const CLIENT_IDLE: Duration = Duration::from_secs(190);
+/// A WireGuard handshake initiation's type and size.
+const INITIATION: (u8, usize) = (1, 148);
+/// Disco's address for "over DERP" (magicsock's derpMagicIPAddr); the port is the region.
+const DERP_MAGIC: std::net::Ipv4Addr = std::net::Ipv4Addr::new(127, 3, 3, 40);
 const MEOW_EVERY: Duration = Duration::from_secs(1);
 const MEOW_TIMEOUT: Duration = Duration::from_secs(15);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
@@ -124,6 +135,12 @@ enum State {
 struct Peer {
     key: [u8; 32],
     addr: [u8; 16],
+    /// When it was last heard from.
+    heard: Instant,
+    /// Let in by a handshake alone: on trial until its first data decrypts, which proves it has
+    /// the address's pre-shared key (IKpsk2 mixes it in only at the response). Forgotten after
+    /// `HANDSHAKE_TIMEOUT` without.
+    trial: bool,
 }
 
 pub struct Client {
@@ -132,6 +149,9 @@ pub struct Client {
     exit: Option<tailcat::ConnInfo>,
     /// The served address's pre-shared key, when serving.
     serve_psk: Option<[u8; 32]>,
+    /// The clients let in when serving (empty: any), and the last key refused (said once, not at each meow).
+    allow: Vec<[u8; 32]>,
+    refused: Option<[u8; 32]>,
     /// Our relay region: its ID and nodes (what the served address names).
     region_id: i64,
     region: Vec<tailcat::DerpNode>,
@@ -141,6 +161,8 @@ pub struct Client {
     private: [u8; 32],
     public: [u8; 32],
     disco: [u8; 32],
+    /// The disco key's private half: a served VM answers its clients' disco pings (`tailcat ping`).
+    disco_private: [u8; 32],
     tc6: [u8; 16],
     wg: Endpoint,
     /// The served VM's clients, by WireGuard peer and by tunnel address.
@@ -183,15 +205,15 @@ pub(crate) fn unpad(p: &[u8]) -> Option<&[u8]> {
         .filter(|q| q.len() >= if p[0] >> 4 == 4 { 20 } else { 40 })
 }
 
-/// The disco key a node key implies, so a kept node key keeps its served address. tailcat
-/// derives its own the same way in spirit (`discoPrivateForNode`); only the public half is
-/// ever used here (a browser has no direct paths for disco to find).
-fn disco_for(private: &[u8; 32]) -> [u8; 32] {
+/// The disco key a node key implies (private, public), so a kept node key keeps its served
+/// address. tailcat derives its own the same way in spirit (`discoPrivateForNode`); the private
+/// half only answers pings (a browser has no direct paths for disco to find).
+fn disco_for(private: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
     let mut h = Blake2s256::new();
     h.update(b"webpc tailcat disco key v1");
     h.update(private);
     let secret: [u8; 32] = h.finalize().into();
-    *SecretKey::from(secret).public_key().as_bytes()
+    (secret, *SecretKey::from(secret).public_key().as_bytes())
 }
 
 impl Client {
@@ -228,12 +250,17 @@ impl Client {
             .iter()
             .filter_map(tailcat::DerpNode::browser_url)
             .collect();
+        let (disco_private, disco) = disco_for(&private);
+        let allow = serve.as_ref().map(|s| s.allow.clone()).unwrap_or_default();
         let mut c = Client {
             tc6: tailcat::addr_for_key(&public),
-            disco: disco_for(&private),
+            disco,
+            disco_private,
             cfg,
             exit,
             serve_psk: serve.map(|s| s.psk),
+            allow,
+            refused: None,
             region_id,
             region,
             nodes,
@@ -508,24 +535,22 @@ impl Client {
         if self.exit.as_ref().is_some_and(|ci| ci.server == src) {
             return self.on_server_packet(packet, now);
         }
-        let Some(psk) = self.serve_psk else { return };
+        if self.serve_psk.is_none() {
+            return;
+        }
+        let known = self.peer_of(&src);
+        if let Some(id) = known {
+            self.peers.get_mut(&id).unwrap().heard = now;
+        }
         if tailcat::parse_meow_ping(&packet).is_some() {
             // A client says hello (tailcat takes the relay's word for its key, as here): it
-            // becomes a WireGuard peer with the address's pre-shared key, and is told so.
-            if self.wg.peer_id(NodePublicKey::from_bytes(src)).is_none() {
-                if self.peers.len() >= MAX_CLIENTS {
-                    return self.log(format!(
-                        "tailcat: {MAX_CLIENTS} clients already, one more refused"
-                    ));
-                }
-                let id = PeerId(self.next_peer);
-                self.next_peer += 1;
-                self.wg
-                    .upsert_peer(PeerConfig::new(id, NodePublicKey::from_bytes(src), psk));
-                let addr = tailcat::addr_for_key(&src);
-                self.peers.insert(id, Peer { key: src, addr });
-                self.by_addr.insert(addr, id);
-                self.event(json!({ "type": "client", "key": format!("nodekey:{}", hex(&src)), "address6": addr }));
+            // becomes a WireGuard peer with the address's pre-shared key, and is told so. One
+            // not on the allow list gets no answer, as with tailcat's `--allow`.
+            if known.is_none() {
+                let Some(id) = self.admit(src, now) else {
+                    return;
+                };
+                self.announce_client(id);
             }
             if let Some((conn, d)) = self.derp.as_mut() {
                 d.send(&src, tailcat::MEOWED, now);
@@ -533,18 +558,158 @@ impl Client {
             }
             return;
         }
-        if tailcat::is_meow(&packet) || packet.starts_with(DISCO_MAGIC) {
+        if packet.starts_with(DISCO_MAGIC) {
+            if known.is_some() {
+                self.disco_pong(src, packet, now);
+            }
             return;
         }
-        if self.wg.peer_id(NodePublicKey::from_bytes(src)).is_none() {
+        if tailcat::is_meow(&packet) {
+            return;
+        }
+        let Some(id) = known.or_else(|| {
+            // A client that made room for another (quiet past `CLIENT_IDLE`) and came back: its
+            // handshake lets it in again if it still has the address's pre-shared key.
+            (packet.first() == Some(&INITIATION.0) && packet.len() == INITIATION.1)
+                .then(|| self.admit(src, now))
+                .flatten()
+        }) else {
             return; // not a client of ours: it never meowed
+        };
+        if known.is_none() {
+            self.peers.get_mut(&id).unwrap().trial = true;
         }
         let r = self.wg.recv(now, [PacketMut::from(packet)]);
+        if known.is_none() && r.to_peers.is_empty() {
+            // Not a handshake it could start: it isn't let in.
+            return self.forget(id, false);
+        }
+        if r.to_local.contains_key(&id) && self.peers.get(&id).is_some_and(|p| p.trial) {
+            self.peers.get_mut(&id).unwrap().trial = false;
+            self.announce_client(id);
+        }
         self.send_to_peers(r.to_peers, now);
         for (id, packets) in r.to_local {
             for p in packets {
                 self.on_tunnel_packet(id, p.as_ref());
             }
+        }
+    }
+
+    fn peer_of(&self, key: &[u8; 32]) -> Option<PeerId> {
+        self.wg.peer_id(NodePublicKey::from_bytes(*key))
+    }
+
+    /// Lets client `key` in as a WireGuard peer, if the allow list has it and there's room (made by
+    /// the client quiet longest, if that's past `CLIENT_IDLE`). A meow announces it at once; a
+    /// handshake, once it succeeds.
+    fn admit(&mut self, key: [u8; 32], now: Instant) -> Option<PeerId> {
+        if !self.allow.is_empty() && !self.allow.contains(&key) {
+            if self.refused.replace(key) != Some(key) {
+                self.log(format!(
+                    "tailcat: nodekey:{} isn't on the allow list",
+                    hex(&key)
+                ));
+            }
+            return None;
+        }
+        let psk = self.serve_psk?;
+        if self.peers.len() >= MAX_CLIENTS {
+            let quiet = self
+                .peers
+                .iter()
+                .min_by_key(|(_, p)| p.heard)
+                .filter(|(_, p)| now.saturating_duration_since(p.heard) >= CLIENT_IDLE)
+                .map(|(id, _)| *id);
+            match quiet {
+                Some(id) => self.forget(id, true),
+                None => {
+                    self.log(format!(
+                        "tailcat: {MAX_CLIENTS} clients already, one more refused"
+                    ));
+                    return None;
+                }
+            }
+        }
+        let id = PeerId(self.next_peer);
+        self.next_peer += 1;
+        self.wg
+            .upsert_peer(PeerConfig::new(id, NodePublicKey::from_bytes(key), psk));
+        let addr = tailcat::addr_for_key(&key);
+        self.peers.insert(
+            id,
+            Peer {
+                key,
+                addr,
+                heard: now,
+                trial: false,
+            },
+        );
+        self.by_addr.insert(addr, id);
+        Some(id)
+    }
+
+    fn announce_client(&mut self, id: PeerId) {
+        let Some(p) = self.peers.get(&id) else { return };
+        let (key, addr) = (p.key, p.addr);
+        self.event(
+            json!({ "type": "client", "key": format!("nodekey:{}", hex(&key)), "address6": addr }),
+        );
+    }
+
+    /// Drops client `id` (`gone`: it was announced, so the page hears it went).
+    fn forget(&mut self, id: PeerId, gone: bool) {
+        self.wg.remove_peer(id);
+        if let Some(p) = self.peers.remove(&id) {
+            self.by_addr.remove(&p.addr);
+            if gone && !p.trial {
+                self.event(json!({ "type": "client-gone", "key": format!("nodekey:{}", hex(&p.key)), "address6": p.addr }));
+            }
+        }
+    }
+
+    /// Answers a client's disco ping with a pong over the relay, as tailcat's server does, so
+    /// `tailcat ping` sees the path through DERP work.
+    fn disco_pong(&mut self, src: [u8; 32], mut packet: Vec<u8>, now: Instant) {
+        use ts_disco_protocol::{Encrypted, Packet, Ping, Pong};
+        use ts_keys::{DiscoPrivateKey, DiscoPublicKey};
+        let private = Export::<DiscoPrivateKey>::from_bytes(self.disco_private).import();
+        let Ok(enc) = Packet::<Encrypted>::from_encrypted_bytes_mut(&mut packet) else {
+            return;
+        };
+        let sender = *enc.sender_pubkey().export().as_bytes();
+        let Ok(plain) = enc.decrypt_in_place(&private) else {
+            return;
+        };
+        let Some(ping) = plain.as_msg::<Ping>() else {
+            return;
+        };
+        // The ping names the key the relay says sent it.
+        if *ping.node_key.export().as_bytes() != src {
+            return;
+        }
+        let tx_id = ping.tx_id;
+        let mut out = Packet::<ts_disco_protocol::Plaintext>::vec_for_message(Pong::size());
+        let at = std::net::SocketAddr::from((DERP_MAGIC, self.region_id as u16));
+        let Ok(pong) =
+            Packet::<ts_disco_protocol::Plaintext>::init_from_bytes::<Pong>(&mut out, |m| {
+                m.tx_id = tx_id;
+                m.src = ts_disco_protocol::Endpoint::from_socket_addr(at);
+            })
+        else {
+            return;
+        };
+        let mut nonce = [0u8; 24];
+        if getrandom::fill(&mut nonce).is_err()
+            || pong
+                .encrypt_in_place(&private, &DiscoPublicKey::from_bytes(sender), nonce)
+                .is_err()
+        {
+            return;
+        }
+        if let Some((conn, d)) = self.derp.as_mut() {
+            d.send(&src, &out, now);
+            queue_frames(&mut self.actions, *conn, d.take_output());
         }
     }
 
@@ -675,6 +840,15 @@ impl Client {
     pub fn tick(&mut self, now: Instant) {
         let r = self.wg.dispatch_events(now);
         self.send_to_peers(r.to_peers, now);
+        let failed: Vec<_> = self
+            .peers
+            .iter()
+            .filter(|(_, p)| p.trial && now.saturating_duration_since(p.heard) >= HANDSHAKE_TIMEOUT)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in failed {
+            self.forget(id, false);
+        }
         // A relay that died quietly (or never answered) goes.
         if let Some((_, d)) = self.derp.as_mut() {
             match d.tick(now) {
@@ -711,6 +885,11 @@ impl Client {
             self.meow_at,
             self.reconnect_at,
             self.phase_deadline,
+            self.peers
+                .values()
+                .filter(|p| p.trial)
+                .map(|p| p.heard + HANDSHAKE_TIMEOUT)
+                .min(),
         ]
         .into_iter()
         .flatten()
@@ -1122,6 +1301,8 @@ mod tests {
         wg: Endpoint,
         meowed: bool,
         got: Vec<Vec<u8>>,
+        /// Disco packets from the VM.
+        disco: Vec<Vec<u8>>,
     }
 
     impl TcClient {
@@ -1139,6 +1320,7 @@ mod tests {
                 wg,
                 meowed: false,
                 got: Vec::new(),
+                disco: Vec::new(),
             }
         }
 
@@ -1150,6 +1332,10 @@ mod tests {
         fn input(&mut self, p: Vec<u8>, now: Instant) -> Vec<Vec<u8>> {
             if tailcat::is_meowed(&p) {
                 self.meowed = true;
+                return Vec::new();
+            }
+            if p.starts_with(DISCO_MAGIC) {
+                self.disco.push(p);
                 return Vec::new();
             }
             let r = self.wg.recv(now, [PacketMut::from(p)]);
@@ -1237,6 +1423,7 @@ mod tests {
                     ..Default::default()
                 }],
                 region_id: 0,
+                allow: Vec::new(),
             }),
             ..config(String::new())
         }
@@ -1312,13 +1499,11 @@ mod tests {
         shuttle(&mut c, &mut relay, &mut [&mut a], now);
         assert_eq!(a.got.len(), before);
 
-        // A key that never meowed gets nothing in: its handshake isn't answered.
+        // A key that never meowed but has the address gets in by its handshake, as by a meow (one
+        // that made room for another comes back this way: below). Without the pre-shared key: below.
         let mut b = TcClient::new(51, c.public, [7; 32]);
-        for p in b.send(udp6(b.addr(), c.tc6, b"me too"), now) {
-            c.ws_message(1, &relay.deliver(&b.public, &p), now);
-        }
-        assert!(shuttle(&mut c, &mut relay, &mut [&mut b], now).0.is_empty());
-        assert!(b.got.is_empty() && !b.meowed);
+        let me = udp6(b.addr(), c.tc6, b"me too");
+        assert_eq!(send_in(&mut c, &mut relay, &mut b, &me, now).0, vec![me]);
     }
 
     #[test]
@@ -1407,5 +1592,189 @@ mod tests {
         cfg.key = Some([9; 32]);
         assert_eq!(addr(&mut Client::new(cfg, now).unwrap()), one);
         assert_ne!(addr(&mut Client::new(serving(), now).unwrap()), one);
+    }
+
+    /// Client `a` says hello to the served VM; the events that follow.
+    fn meow_in(
+        c: &mut Client,
+        relay: &mut Relay,
+        a: &mut TcClient,
+        now: Instant,
+    ) -> Vec<serde_json::Value> {
+        c.ws_message(
+            1,
+            &relay.deliver(&a.public, &tailcat::meow_ping(&a.public, &[1; 32])),
+            now,
+        );
+        shuttle(c, relay, &mut [a], now).1
+    }
+
+    /// Sends `p` from client `a` until it reaches the guest (the first send may only start the
+    /// handshake); what reached the guest and the events.
+    fn send_in(
+        c: &mut Client,
+        relay: &mut Relay,
+        a: &mut TcClient,
+        p: &[u8],
+        now: Instant,
+    ) -> (Vec<Vec<u8>>, Vec<serde_json::Value>) {
+        let (mut guest, mut events) = (Vec::new(), Vec::new());
+        for _ in 0..2 {
+            for w in a.send(p.to_vec(), now) {
+                c.ws_message(1, &relay.deliver(&a.public, &w), now);
+                let (g, e) = shuttle(c, relay, &mut [&mut *a], now);
+                guest.extend(g);
+                events.extend(e);
+            }
+            if !guest.is_empty() {
+                break;
+            }
+        }
+        (guest, events)
+    }
+
+    fn node_public(seed: u8) -> [u8; 32] {
+        let pair = NodeKeyPair::from(Export::<NodePrivateKey>::from_bytes([seed; 32]).import());
+        *pair.public.export().as_bytes()
+    }
+
+    #[test]
+    fn the_disco_key_is_the_same_by_either_crate() {
+        let (secret, public) = disco_for(&[9; 32]);
+        let k = Export::<ts_keys::DiscoPrivateKey>::from_bytes(secret).import();
+        assert_eq!(*k.public_key().export().as_bytes(), public);
+    }
+
+    #[test]
+    fn lets_in_only_the_allowed_keys() {
+        let now = Instant::now();
+        let mut relay = Relay::new([43; 32]);
+        let mut cfg = serving();
+        cfg.serve.as_mut().unwrap().allow = vec![node_public(50)];
+        let mut c = Client::new(cfg, now).unwrap();
+        shuttle(&mut c, &mut relay, &mut [], now);
+        // Not on the list: no answer, not a peer, and its handshake isn't answered either.
+        let mut b = TcClient::new(51, c.public, [7; 32]);
+        let events = meow_in(&mut c, &mut relay, &mut b, now);
+        assert!(!b.meowed && !events.iter().any(|e| e["type"] == "client"));
+        let me = udp6(b.addr(), c.tc6, b"me?");
+        assert!(send_in(&mut c, &mut relay, &mut b, &me, now).0.is_empty());
+        assert!(c.peers.is_empty());
+        // On it: in.
+        let mut a = TcClient::new(50, c.public, [7; 32]);
+        let events = meow_in(&mut c, &mut relay, &mut a, now);
+        assert!(a.meowed && events.iter().any(|e| e["type"] == "client"));
+        let hello = udp6(a.addr(), c.tc6, b"hi");
+        assert_eq!(
+            send_in(&mut c, &mut relay, &mut a, &hello, now).0,
+            vec![hello]
+        );
+    }
+
+    #[test]
+    fn answers_a_clients_disco_ping() {
+        use ts_disco_protocol::{Encrypted, Packet, Ping, Plaintext, Pong};
+        use ts_keys::{DiscoPrivateKey, DiscoPublicKey};
+        let now = Instant::now();
+        let mut relay = Relay::new([43; 32]);
+        let mut cfg = serving();
+        cfg.serve.as_mut().unwrap().region_id = 900;
+        let mut c = Client::new(cfg, now).unwrap();
+        shuttle(&mut c, &mut relay, &mut [], now);
+        let mine = Export::<DiscoPrivateKey>::from_bytes([3; 32]).import();
+        let ping = |from: [u8; 32], to: [u8; 32]| {
+            let mut b = Packet::<Plaintext>::vec_for_message(Ping::size_with_padding(0));
+            Packet::<Plaintext>::init_from_bytes::<Ping>(&mut b, |m| {
+                m.tx_id = [5; 12];
+                m.node_key = NodePublicKey::from_bytes(from);
+            })
+            .unwrap()
+            .encrypt_in_place(&mine, &DiscoPublicKey::from_bytes(to), [1; 24])
+            .unwrap();
+            b
+        };
+        let mut a = TcClient::new(50, c.public, [7; 32]);
+        // Not a client yet (it never meowed): no pong.
+        c.ws_message(1, &relay.deliver(&a.public, &ping(a.public, c.disco)), now);
+        shuttle(&mut c, &mut relay, &mut [&mut a], now);
+        assert!(a.disco.is_empty());
+        meow_in(&mut c, &mut relay, &mut a, now);
+        // A ping that names another key than the relay's sender: no pong.
+        c.ws_message(1, &relay.deliver(&a.public, &ping([8; 32], c.disco)), now);
+        shuttle(&mut c, &mut relay, &mut [&mut a], now);
+        assert!(a.disco.is_empty());
+        // Its own: a pong with the ping's transaction, from the relay's region.
+        c.ws_message(1, &relay.deliver(&a.public, &ping(a.public, c.disco)), now);
+        shuttle(&mut c, &mut relay, &mut [&mut a], now);
+        let mut pong = a.disco.pop().expect("a pong");
+        let enc = Packet::<Encrypted>::from_encrypted_bytes_mut(&mut pong).unwrap();
+        assert_eq!(*enc.sender_pubkey().export().as_bytes(), c.disco);
+        let plain = enc.decrypt_in_place(&mine).unwrap();
+        let p = plain.as_msg::<Pong>().unwrap();
+        assert_eq!(p.tx_id, [5; 12]);
+        assert_eq!(
+            p.src,
+            ts_disco_protocol::Endpoint::from_socket_addr(std::net::SocketAddr::from((
+                DERP_MAGIC, 900
+            )))
+        );
+    }
+
+    #[test]
+    fn a_quiet_client_makes_room_and_comes_back_by_its_handshake() {
+        let t0 = Instant::now();
+        let mut relay = Relay::new([43; 32]);
+        let mut c = Client::new(serving(), t0).unwrap();
+        shuttle(&mut c, &mut relay, &mut [], t0);
+        let mut first = TcClient::new(1, c.public, [7; 32]);
+        meow_in(&mut c, &mut relay, &mut first, t0);
+        let t1 = t0 + Duration::from_secs(60);
+        for seed in 2..=MAX_CLIENTS as u8 {
+            let mut x = TcClient::new(seed, c.public, [7; 32]);
+            meow_in(&mut c, &mut relay, &mut x, t1);
+            assert!(x.meowed);
+        }
+        assert_eq!(c.peers.len(), MAX_CLIENTS);
+        // One more while every client was heard from lately: refused.
+        let mut late = TcClient::new(200, c.public, [7; 32]);
+        meow_in(&mut c, &mut relay, &mut late, t1);
+        assert!(!late.meowed);
+        // Once the first has been quiet for CLIENT_IDLE, it makes room (and the page hears it went).
+        let t2 = t0 + CLIENT_IDLE;
+        let events = meow_in(&mut c, &mut relay, &mut late, t2);
+        assert!(late.meowed);
+        let gone: Vec<_> = events
+            .iter()
+            .filter(|e| e["type"] == "client-gone")
+            .collect();
+        assert_eq!(gone.len(), 1);
+        assert_eq!(gone[0]["address6"], json!(first.addr()));
+        assert!(!c.by_addr.contains_key(&first.addr()));
+        assert_eq!(c.peers.len(), MAX_CLIENTS);
+        // A key without the address's pre-shared key gets nothing in by a handshake.
+        let t3 = t1 + CLIENT_IDLE;
+        let mut stranger = TcClient::new(201, c.public, [8; 32]);
+        let x = udp6(stranger.addr(), c.tc6, b"x");
+        let (guest, events) = send_in(&mut c, &mut relay, &mut stranger, &x, t3);
+        assert!(guest.is_empty() && !events.iter().any(|e| e["type"] == "client"));
+        // On trial until its handshake's time is up, then forgotten, quietly.
+        c.tick(t3 + HANDSHAKE_TIMEOUT);
+        assert!(!c.by_addr.contains_key(&stranger.addr()));
+        assert!(
+            !shuttle(&mut c, &mut relay, &mut [], t3)
+                .1
+                .iter()
+                .any(|e| e["type"] == "client-gone")
+        );
+        // The first comes back: its handshake lets it in again, and its packet reaches the guest.
+        let hello = udp6(first.addr(), c.tc6, b"back");
+        let (guest, events) = send_in(&mut c, &mut relay, &mut first, &hello, t3);
+        assert_eq!(guest, vec![hello]);
+        assert!(
+            events
+                .iter()
+                .any(|e| e["type"] == "client" && e["address6"] == json!(first.addr()))
+        );
+        assert!(c.peers.len() <= MAX_CLIENTS);
     }
 }

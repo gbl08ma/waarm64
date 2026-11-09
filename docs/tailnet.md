@@ -118,7 +118,8 @@ WebSockets:
 - **The public relays** are rate-limited, best-effort and revocable; the page recommends one's own
   derper (`tailcat genkey --region=<host>`).
 
-**Going online through a server** (`client.rs`). A fresh node key per connect. Each new relay
+**Going online through a server** (`client.rs`). The connection's node key (`Config.key`, its kept identity's: so a
+server can `--allow` it; a fresh one per connect only when none is given). Each new relay
 connection meows again (the server may have forgotten us), and so does the server's `PeerGone`
 (it left the relay: a restart forgets its clients), every second until it answers; after a
 `PeerGone` the answer also starts a new WireGuard session, since the server lost ours. The guest's lease: IPv6
@@ -138,9 +139,17 @@ goes as is.
 `webpc-tailcat`) makes a kept address: the disco key is derived from the node key (BLAKE2s).
 `tailcat::encode_addr` writes the address: inline nodes for one's own relay, the short region form for
 the public map, whose nearest region the page picks by `/derp/probe` timings. A meowing key becomes a
-WireGuard peer (up to 64); its packets reach the guest only from its own tunnel address; the guest's
+WireGuard peer, if `Serve.allow` (tailcat's `--allow`, the connection's `tailcat.allow`) is empty or has it; one not
+on it gets no answer, as with tailcat. Its packets reach the guest only from its own tunnel address; the guest's
 IPv6 to a client's address goes to that client and anything else to the exit node, or nowhere when
-serving alone (on the relay of one's choice). Both at once share the exit node's relay.
+serving alone (on the relay of one's choice). Both at once share the exit node's relay. A client's disco pings get
+pongs over the relay (`tailcat ping`; the disco key's private half is derived with it). **64 clients at once**: past
+that, the one heard from least recently makes room if it has been quiet for 190 s (`CLIENT_IDLE`, past WireGuard's
+180 s REJECT_AFTER_TIME, so its session is dead), and the page drops its route (`client-gone`); tailcat's clients take
+a fresh key each run, so most such are gone for good. One that is still there comes back by its next packet, a
+handshake initiation: a key with no peer that starts one is let in **on trial** (IKpsk2 mixes the pre-shared key in
+only at the response, so its initiation can't prove it), announced once its first data decrypts and forgotten 20 s
+without, so a key without the address gets nothing in.
 
 ## Tailscale
 
@@ -232,7 +241,11 @@ natively by Go at pinned versions, the relay on `127.0.0.1:8444` with a self-sig
 test tailnet (`tests/net/tailnet.sh`, headscale and a peer in rootless Podman; natively in a cloud
 session, `tests/net/tailnet-native.sh`) under `tests/ts-tailnet.test.ts`,
 `tests/tailscale-browser.test.ts` and `tests/net-tailnet.test.ts`; the tailcat rig again under
-`tests/ts-tailcat.test.ts` (a relay's path cut off while its WebSocket stays open). Because a tailcat exit node reaches
+`tests/ts-tailcat.test.ts` (a relay's path cut off while its WebSocket stays open). Serving, against the real CLI
+(`tests/net/tailcat-cli.ts`): `tailcat ping` (the rig's relay; tailcat's public ones opt-in), a kept key let in by a
+second exit node's `--allow` and a fresh one not (`tests/tailcat-browser.test.ts`), and `tailcat ssh` into
+images/debian-tools/build.sh's Debian with an allow list of the CLI's key (`tests/net-tailcat.test.ts`; over the
+public relays with `WEBPC_TAILCAT_INTERNET=1`: 1.6 s to log in through Frankfurt, 2026-11-09). Because a tailcat exit node reaches
 private addresses, a server on this machine stands in for the internet: the exit-node path is routine
 there, where Tailscale's is opt-in.
 

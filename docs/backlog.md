@@ -1587,14 +1587,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     rather than a socket per adapter. It needs connections modeled as exclusive or shared (a Web Lock holds each now,
     docs/network-adapters.md §2.3) and a UX that stays clear. The helper already puts every socket on one switch, so
     several machines can already share its LAN, each with a connection of its own.
-- **tailcat serving loose ends**: no `--allow` list (any key with the address gets in, as with tailcat's own
-  default; the module would check the meowing key); clients are never dropped (64 WireGuard peers at most, until
-  Disconnect); disco pings aren't answered, so `tailcat ping` gets no pong (the data path works); the public-relay
-  path (`nearestRegion`, the short-form address) is checked by unit tests and by hand against tailcat.dev's map
-  and probes (they answer with CORS), never by a client through the public relays (opt-in by hand: serve with an
-  empty relay, `tailcat ssh` from a machine with the internet); `tailcat ssh` itself wasn't run (the port path it
-  uses is, with a web server in the guest); keeping the client's key when going online through a server (so a
-  server can `--allow` it) isn't offered: serving uses the kept key, going online alone a fresh one.
+- **tailcat serving's leftovers** ([tailnet.md](tailnet.md) "tailcat"): a handshake on trial takes a quiet client's place
+  before it has shown the pre-shared key (that client comes back by its own next handshake, but anyone on the relay who
+  knows the machine's public key can push quiet clients out this way; a trial could wait for room instead); and the
+  guest's packets to a client that made room are dropped until that client sends again (the module could keep the keys
+  of the clients that made room and start the handshake itself).
 - **tailcat loose ends**: an address that names only a region (tailcat's public relays) fetches
   `https://tailcat.dev/derpmap.json`, run against the real map once by hand (2026-10-23: `tailcat serve exit-node`
   with no `--key` on the Mac, region 303 Frankfurt, the page's Debian through it), never in a test; the relay's loss while running is

@@ -103,6 +103,10 @@ struct JsServe {
     relay: String,
     #[serde(default)]
     region: i64,
+    /// The clients let in, as `tailcat serve --allow` takes them (`nodekey:` and 64 hex digits);
+    /// empty: any client with the address.
+    #[serde(default)]
+    allow: Vec<String>,
 }
 
 fn unhex32(s: &str) -> Result<[u8; 32], String> {
@@ -202,6 +206,14 @@ pub unsafe extern "C" fn ts_new(ptr: *mut u8, len: usize) -> i32 {
                         psk: unhex32(&s.psk)?,
                         nodes,
                         region_id: s.region,
+                        allow: s
+                            .allow
+                            .iter()
+                            .map(|k| match k.trim().strip_prefix("nodekey:") {
+                                Some(h) => unhex32(h),
+                                None => Err(format!("not a node key: {k}")),
+                            })
+                            .collect::<Result<_, _>>()?,
                     })
                 })
                 .transpose()?;

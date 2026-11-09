@@ -13,9 +13,9 @@ import { MsgError } from '../msg.ts';
 import { startTailscale, tailscaleBuilt, type FromTailscale, type NetMap, type Tailscale, type TailscaleConfig } from '../tailscale.ts';
 import type { Reach6Options } from '../reach6.ts';
 import { startLocal } from '../local-net.ts';
-import { forgetTailcatIdentity, hasTailcatIdentity, parseRelay, parseTailcatAddr, startTailcat, tailcatBuilt, type TailcatConfig, type TailcatServe } from '../tailcat.ts';
+import { forgetTailcatIdentity, hasTailcatIdentity, parseAllow, parseRelay, parseTailcatAddr, startTailcat, tailcatBuilt, type TailcatConfig, type TailcatIdentity, type TailcatServe } from '../tailcat.ts';
 
-export { tailscaleBuilt, tailcatBuilt, parseTailcatAddr, parseRelay, forgetTailcatIdentity, hasTailcatIdentity };
+export { tailscaleBuilt, tailcatBuilt, parseTailcatAddr, parseRelay, parseAllow, forgetTailcatIdentity, hasTailcatIdentity };
 
 export const DEFAULT_CONTROL = 'https://controlplane.tailscale.com';
 
@@ -88,6 +88,8 @@ export type NetworkView = {
   exitNodes: { id: string; name: string; online: boolean; use: boolean }[];
   /** The machine's own tailcat address, when it lets tailcat clients in. */
   served?: string;
+  /** tailcat through a server: the machine's node key, for the server's `--allow`. */
+  tailcatKey?: string;
   /** The subnets the tailnet's peers route (when any do), and whether they're installed. */
   subnets?: { routes: string[]; on: boolean };
   /** Connected, and it reaches the internet (a tailnet's exit node in use, tailcat through a server, the local helper): it can be the guest's default way out. */
@@ -152,7 +154,8 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
       const text = address
         ? (c.netmap.serving ? t('network:network.tailcat.address.serving', { address }) : t('network:network.tailcat.address', { address }))
         : (c.netmap.serving ? t('network:network.tailcat.serving') : t('network:network.tailcat'));
-      return { phase: 'connected', address, exitNodes: [], internet: true, text, ...served };
+      const key = c.netmap.tailcatKey ? { tailcatKey: c.netmap.tailcatKey } : {};
+      return { phase: 'connected', address, exitNodes: [], internet: true, text, ...served, ...key };
     }
     const doing: Record<string, string> = { FetchingMap: t('network:network.fetchingMap'), Meowing: t('network:network.meowing'), Handshaking: t('network:network.handshaking') };
     return { phase: 'connecting', text: doing[c.state] ?? (c.state === '' ? t('network:network.loadingClient') : t('network:network.connectingRelay')), exitNodes: [] };
@@ -183,11 +186,11 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
 
 /**
  * A tailnet (`controlURL`, …), or tailcat: through a server when `tailcat` (its address) is given, letting clients in with
- * `tailcatServe` (`probe6`: how the server's or the exit node's IPv6 reach is checked, web/reach6.ts). `persist`: the tailnet node's profile in `webpc-tailscale` (web/tailscale-state.ts), so it is kept and
+ * `tailcatServe`, as the node `tailcatIdentity` names (web/tailcat.ts `identityKey`, `identity`) (`probe6`: how the server's or the exit node's IPv6 reach is checked, web/reach6.ts). `persist`: the tailnet node's profile in `webpc-tailscale` (web/tailscale-state.ts), so it is kept and
  * comes back without a login; none: an ephemeral node (a connection kept nowhere, web/app/connections.ts). `local`: the
  * local helper's link (`ws://127.0.0.1:<port>/<token>`, web/local-net.ts), the card's frames to it.
  */
-export type Connect = { controlURL: string; hostname: string; authKey?: string; exitNode?: string; acceptRoutes?: boolean; persist?: string; tailcat?: string; tailcatServe?: TailcatServe; probe6?: Reach6Options; local?: string };
+export type Connect = { controlURL: string; hostname: string; authKey?: string; exitNode?: string; acceptRoutes?: boolean; persist?: string; tailcat?: string; tailcatServe?: TailcatServe; tailcatIdentity?: { identityKey?: string; identity?: TailcatIdentity }; probe6?: Reach6Options; local?: string };
 
 export type Network = {
   /** A new machine's end of the IP port (its device's `{ip: port}`; transfer it). Any client gets the other end. */
@@ -309,7 +312,7 @@ export function createNetwork(
       const t = local
         ? startHelper({ url: c.local!, ip }, onEvent)
         : tailcat
-        ? startCat({ addr: c.tailcat ?? '', serve: c.tailcatServe, probe6: c.probe6, ip }, onEvent)
+        ? startCat({ addr: c.tailcat ?? '', serve: c.tailcatServe, ...c.tailcatIdentity, probe6: c.probe6, ip }, onEvent)
         : start({ controlURL: c.controlURL, authKey: c.authKey || undefined, hostname: c.hostname, exitNode: c.exitNode || undefined, acceptRoutes: c.acceptRoutes, ip, persist: c.persist, probe6: c.probe6 }, onEvent);
       client = t;
       if (!primary || rank) t.setPrimary(primary, rank);

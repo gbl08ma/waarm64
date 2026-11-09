@@ -13,7 +13,7 @@
   import { describe, msg, t, text, type Described, type Msg } from '../i18n.ts';
   import { preselect, type Connection } from './connections.ts';
   import type { PageNetwork } from './net-live.ts';
-  import { DEFAULT_CONTROL, hasTailcatIdentity, parseControlURL, parseHostname, parseRelay, parseTailcatAddr, tailcatBuilt, tailscaleBuilt } from './network.ts';
+  import { DEFAULT_CONTROL, hasTailcatIdentity, parseAllow, parseControlURL, parseHostname, parseRelay, parseTailcatAddr, tailcatBuilt, tailscaleBuilt } from './network.ts';
   import { page, ui } from './ui.svelte.ts';
   import { parseLocalURL } from '../local-net.ts';
   import { installLines, RELEASE, SOURCE, targetName, TARGETS, thisTarget, type Target } from '../local-release.ts';
@@ -31,7 +31,7 @@
   let holders = $state<Record<string, string>>({});
   let editing = $state<Connection>();
   let control = $state(''), hostname = $state(''), authKey = $state(''), reveal = $state(false);
-  let tcExit = $state(true), tcServe = $state(false), tailcat = $state(''), relay = $state('');
+  let tcExit = $state(true), tcServe = $state(false), tailcat = $state(''), relay = $state(''), allow = $state('');
   let advanced = $state(false), identityKept = $state(false);
   let keep = $state(true);
   let localURL = $state(''), target = $state<Target>();
@@ -75,7 +75,8 @@
     tcServe = cat?.serve ?? false;
     tailcat = cat?.exit ?? '';
     relay = cat?.relay ?? '';
-    advanced = !!relay;
+    allow = (cat?.allow ?? []).join('\n');
+    advanced = !!relay || !!allow;
     localURL = editing?.local?.url ?? o.localURL ?? '';
     wizard.open();
     if (editing) return showStep(editing.kind === 'tailnet' ? 'tailscale' : editing.kind === 'local' ? 'local' : 'tailcat');
@@ -145,9 +146,11 @@
       if ('error' in addr) return fail(addr.error);
       const r = tcServe && !tcExit ? parseRelay(relay) : { relay: relay.trim() };
       if ('error' in r) return fail(r.error);
+      const letIn = tcServe ? parseAllow(allow) : { allow: [] };
+      if ('error' in letIn) return fail(letIn.error);
       formError = undefined;
       if (!(await tailcatBuilt())) return fail(msg('network:NetWizard.tailcatNotBuilt'));
-      const settings = { exit: addr.addr || undefined, serve: tcServe, relay: r.relay };
+      const settings = { exit: addr.addr || undefined, serve: tcServe, relay: r.relay, allow: letIn.allow.length ? letIn.allow : undefined };
       if (editing) {
         await page.netEdit({ ...editing, tailcat: { ...editing.tailcat!, ...settings } });
         return close();
@@ -254,6 +257,8 @@
         <details id="net-tc-advanced" bind:open={advanced}><summary>{t('network:NetWizard.advanced')}</summary>
           <label>{t('network:NetWizard.relay')}<input id="net-tc-relay" bind:value={relay} disabled={tcExit} placeholder={t('network:NetWizard.relay.placeholder')} autocomplete="off" spellcheck="false"></label>
           <p class="note"><T k="network:NetWizard.relay.note">{#snippet a(text)}<a href="https://github.com/tailscale/tailscale/tree/main/cmd/derper" target="_blank" rel="noopener">{text}</a>{/snippet}</T></p>
+          <label>{t('network:NetWizard.allow')}<textarea id="net-tc-allow" bind:value={allow} rows="3" placeholder={t('network:NetWizard.allow.placeholder')} autocomplete="off" spellcheck="false"></textarea></label>
+          <p class="note"><T k="network:NetWizard.allow.note" params={{ genkey: 'tailcat genkey --client --key=client-default' }}>{#snippet code(text)}<code>{text}</code>{/snippet}</T></p>
           {#if editing}
             <div class="net-row"><button type="button" id="net-tc-forget" disabled={!identityKept} onclick={forget}>{t('network:NetWizard.newAddress')}</button></div>
             <p class="note">{t('network:NetWizard.newAddress.note')}</p>
@@ -280,4 +285,5 @@
   .net-steps { display: flex; flex-direction: column; gap: 8px; margin: 0; padding-left: 20px; }
   .net-steps li > :is(details, p) { margin-top: 6px; }
   :global(#net-wizard) .net-steps label { color: var(--text); font-size: inherit; gap: 4px; }
+  #net-tc-allow { resize: vertical; font-family: ui-monospace, monospace; font-size: 12px; }
 </style>

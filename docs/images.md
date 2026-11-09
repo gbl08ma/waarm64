@@ -153,9 +153,10 @@ guest kernel"), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and
 
 ## Debian with a compiler (`images/debian-tools/build.sh`)
 
-On demand, as the next section's: the pinned Debian with `gcc`, `libc6-dev`, `make` and `git` installed by apt in QEMU
-(~5 min): `target/images/debian-tools/disk.qcow2`, what `tests/page-folders.test.ts` builds and commits in a shared folder
-on (skipped without it).
+On demand, as the next section's: the pinned Debian with `gcc`, `libc6-dev`, `make`, `git` and `openssh-server` installed
+by apt in QEMU (~5 min): `target/images/debian-tools/disk.qcow2`, what `tests/page-folders.test.ts` builds and commits in a
+shared folder on, and what `tests/net-tailcat.test.ts`'s `tailcat ssh` logs in to (both skipped without it). Its SSH host
+keys were made at the install, so every copy has the same ones: a test image, never one to expose.
 
 ## Debian with sway (`images/debian-sway/build.sh`)
 

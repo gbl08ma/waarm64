@@ -34,7 +34,7 @@ export type TailcatConfig = {
   addr?: string;
   /** The VM as a tailcat server (docs/tailnet.md "tailcat"): the address's pre-shared key (64 hex digits) and,
    * without `addr`, the relay: one's own derper (`host[:port]`), or a region of the DERP map by ID (0: its first). */
-  serve?: { psk: string; relay?: string; region?: number };
+  serve?: { psk: string; relay?: string; region?: number; allow?: string[] };
   /** The DERP map for an address that names only a region (default: tailcat's public one). */
   derpMapURL?: string;
   /** The node's private key, 64 hex digits, to be the same client again (a server may `--allow` only it). */
@@ -63,7 +63,7 @@ export type TsEvent =
   | { type: 'lease'; lease: Lease }
   | { type: 'self'; key: string; address6: number[] }
   | { type: 'serving'; addr: string }
-  | { type: 'client'; key: string; address6: number[] }
+  | { type: 'client' | 'client-gone'; key: string; address6: number[] }
   | { type: 'log'; msg: string }
   /** Tailscale: Go's state names (`Starting`, `NeedsLogin`, `Running`), or `Failed` with why. */
   | ({ type: 'state'; state: 'Starting' | 'NeedsLogin' | 'Running' } & TsFailure)

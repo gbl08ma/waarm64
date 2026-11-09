@@ -14,22 +14,26 @@
 // tests/net/resolver.ts's stand-in on it: the default route is there while it answers, goes when it stops, and comes
 // back with its next answer.
 // The machine also lets tailcat clients in (T3): the real tailcat CLI parses the machine's address,
-// then fetches a page from a web server in the guest through it.
+// then fetches a page from a web server in the guest through it. And on images/debian-tools/build.sh's Debian (on demand),
+// which has an SSH server: serving alone with an allow list of the CLI's own key, `tailcat ssh` logs in to the guest,
+// `tailcat ping` gets a pong, and a client with another key gets nothing; over the rig's relay, or over tailcat's public
+// relays with WEBPC_TAILCAT_INTERNET=1.
 // Realtime: one boot, ~2 min alone. Opt-in: WEBPC_TAILCAT=1 (needs Go for tailcat.sh, the
 // Debian image and target/net/ts.wasm).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
-import { networkInterfaces } from 'node:os';
+import { networkInterfaces, tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { loginRoot, run as runIn } from './serial-console.ts';
 import { probeResolver, type ProbeResolver } from './net/resolver.ts';
-import { tailcat } from './net/tailcat-cli.ts';
+import { clientKey, RIG_RELAY, tailcat, tailcatRun } from './net/tailcat-cli.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const has = (cmd: string, arg = '--version') => spawnSync(cmd, [arg], { stdio: 'ignore' }).status === 0;
@@ -40,6 +44,7 @@ const skip = process.env.WEBPC_TAILCAT !== '1' ? 'SKIPPED: set WEBPC_TAILCAT=1'
   : undefined;
 const script = `${ROOT}tests/net/tailcat.sh`;
 const OVERLAY = 'webpc-tailcat-test';
+const TOOLS = `${ROOT}target/images/debian-tools/disk.qcow2`;
 const BIG = 2 << 20;
 
 /** This machine's addresses the exit node can dial: not loopback, not link-local. */
@@ -223,6 +228,61 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
     } finally {
       await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY).catch(() => {});
       await ctx.close();
+    }
+  });
+});
+
+test('tailcat ssh logs in to the served guest\'s sshd; tailcat ping gets a pong; the allow list keeps other keys out', { skip: skip || (!existsSync(TOOLS) && 'SKIPPED: run images/debian-tools/build.sh'), timeout: 900_000 }, async () => {
+  const internet = process.env.WEBPC_TAILCAT_INTERNET === '1';
+  const relay = internet ? '' : RIG_RELAY;
+  if (!internet) console.log("# SKIPPED: tailcat ssh through tailcat's public relays (opt-in: WEBPC_TAILCAT_INTERNET=1); over the rig's relay instead");
+  const mine = await clientKey();
+  // ssh as tailcat runs it, with a key of the test's own (never the user's).
+  const tmp = mkdtempSync(join(tmpdir(), 'webpc-tailcat-ssh-'));
+  execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'webpc-test', '-f', `${tmp}/id`]);
+  writeFileSync(`${tmp}/ssh`, `#!/bin/sh\nexec /usr/bin/ssh -i ${tmp}/id -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=60 "$@"\n`);
+  chmodSync(`${tmp}/ssh`, 0o755);
+  const cli = { internet, env: { PATH: `${tmp}:${process.env.PATH}` }, timeoutMs: 120_000 };
+  await withDebianLock(async () => {
+    const ctx = await browser.newContext({ ignoreHTTPSErrors: true }); // the relay's self-signed certificate
+    const page = await ctx.newPage();
+    page.on('console', (m) => { if (/rror|panic|tailcat/.test(m.text())) console.log(`# page: ${m.text().slice(0, 300)}`); });
+    const overlay = `${OVERLAY}-ssh`;
+    try {
+      await page.goto(`${base}/tests/browser/core.html`);
+      await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), overlay);
+      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ serve: '', relay, allow: mine, overlay, disk: `${base}/target/images/debian-tools/disk.qcow2` })}`);
+      await page.waitForFunction('window.harness?.tailscale().state === "Running" && window.harness.tailscale().netmap?.serving', null, { timeout: 60_000, polling: 250 })
+        .catch(async (e) => { throw new Error(`${e}; ${JSON.stringify(await harness(page, 'tailscale()'))}; events ${JSON.stringify(await harness(page, 'events()'))}`); });
+      const served = (await harness<{ netmap: { serving: string } }>(page, 'tailscale()')).netmap.serving;
+      const context = async () => `; the client: ${JSON.stringify(await harness(page, 'tailscale()'))}`;
+      const run = (cmd: string, ms = 60_000) => runIn(page, cmd, ms, context);
+      await loginRoot(page, 240_000, context);
+      await run("mkdir -p /run/systemd/network && printf '[Match]\\nName=e*\\n[Network]\\nDHCP=yes\\n' > /run/systemd/network/20-eth.network");
+      await run('systemctl start systemd-networkd', 120_000);
+      await run(`mkdir -p -m 700 /root/.ssh && echo '${readFileSync(`${tmp}/id.pub`, 'utf8').trim()}' > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys`);
+      let up = '';
+      for (let k = 0; k < 60 && !(up.includes('active') && up.includes('fd7a')); k++) {
+        up = await run("systemctl is-active ssh; ip -6 -o addr show scope global | awk '{print $4}'");
+        if (!up.includes('fd7a')) await page.waitForTimeout(1000);
+      }
+      assert.match(up, /^active/m, `the guest's sshd runs: ${up}`);
+      assert.match(up, /fd7a:/, `the guest has its tunnel address: ${up}${await context()}`);
+
+      // Another key than the allowed one: no answer to its hello, so no pong (tailcat's own --allow does the same).
+      const stranger = await tailcatRun(['--key=new', 'ping', '--timeout=10s', served], '', cli);
+      assert.doesNotMatch(stranger.out, /pong/, `a key not on the list got in: ${stranger.out}`);
+      assert.notEqual(stranger.code, 0);
+      const pong = await tailcatRun(['ping', served], '', cli);
+      assert.match(pong.out, /^pong in \S+ via DERP\(/m, `the CLI's own key gets a pong: exit ${pong.code}; ${pong.err.slice(-600)}`);
+      const t0 = performance.now();
+      const r = await tailcatRun(['ssh', `root@${served}`, 'echo hello-over-ssh $(uname -m) $(id -un)'], '', cli);
+      assert.match(r.out, /hello-over-ssh aarch64 root/, `tailcat ssh logged in: exit ${r.code}; ${r.err.slice(-800)}${await context()}`);
+      console.log(`# over ${relay || "tailcat's public relays"}: ${pong.out.trim()}; tailcat ssh in ${((performance.now() - t0) / 1000).toFixed(1)} s: ${r.out.trim()}`);
+    } finally {
+      await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), overlay).catch(() => {});
+      await ctx.close();
+      rmSync(tmp, { recursive: true, force: true });
     }
   });
 });

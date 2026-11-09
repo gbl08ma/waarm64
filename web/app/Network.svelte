@@ -1,7 +1,7 @@
 <!--
   The toolbar's Network menu (docs/frontend.md "Network", docs/network-adapters.md §3.3): a section per network
   adapter of the page's machine (one adapter: no heading), each showing its connection and what can be done with it
-  (Log in…, the exit node, the peers' subnet routes, the machine's tailcat address, Connect, Retry, Disconnect, Log out, Change connection…, which is
+  (Log in…, the exit node, the peers' subnet routes, the machine's tailcat address and key, Connect, Retry, Disconnect, Log out, Change connection…, which is
   the Network wizard, web/app/NetWizard.svelte). Adapter 1's elements keep the ids they always had; adapter n's end in
   `-<n-1>`. Logic is web/app/net-live.ts's, through `page`.
 -->
@@ -61,6 +61,9 @@
     if (!(await ask.confirm(t('network:Network.logout.confirm'), { ok: t('network:Network.logout'), danger: true }))) return;
     await act(i, () => page.netLogout(i));
   }
+  function copyKey(i: number, key: string) {
+    void navigator.clipboard.writeText(key).catch(() => (document.getElementById(`net-key-value${sfx(i)}`) as HTMLInputElement | null)?.select());
+  }
   function copyServed(i: number, addr: string) {
     void navigator.clipboard.writeText(addr).catch(() => {
       revealed = { ...revealed, [i]: true };
@@ -94,6 +97,11 @@
         <label>{t('network:Network.served')}<input id={`net-served-addr${s}`} type={revealed[a.index] ? 'text' : 'password'} readonly spellcheck="false" value={v.served ?? ''}></label>
         <div class="net-row"><button id={`net-served-copy${s}`} onclick={() => copyServed(a.index, v.served ?? '')}>{t('network:Network.copy')}</button><button id={`net-served-show${s}`} onclick={() => (revealed = { ...revealed, [a.index]: !revealed[a.index] })}>{revealed[a.index] ? t('network:Network.hide') : t('network:Network.show')}</button></div>
         <p class="net-note"><T k="network:Network.served.note" params={{ ssh: 'tailcat ssh <address>', connect: 'tailcat <address> <port>' }}>{#snippet code(text)}<code>{text}</code>{/snippet}</T></p>
+      </div>
+      <div id={`net-key${s}`} hidden={!v.tailcatKey}>
+        <label>{t('network:Network.key')}<input id={`net-key-value${s}`} type="text" readonly spellcheck="false" value={v.tailcatKey ?? ''}></label>
+        <div class="net-row"><button id={`net-key-copy${s}`} onclick={() => copyKey(a.index, v.tailcatKey ?? '')}>{t('network:Network.copy')}</button></div>
+        <p class="net-note"><T k="network:Network.key.note" params={{ allow: `tailcat serve --allow=${v.tailcatKey ?? ''} exit-node` }}>{#snippet code(text)}<code>{text}</code>{/snippet}</T></p>
       </div>
       <p id={`net-menu-error${s}`} class="net-note net-menu-error" hidden={!errors[a.index]}>{errors[a.index]?.headline}{#each errors[a.index]?.details ?? [] as d, k (k)}<br>{d}{/each}</p>
       <div id={`net-actions${s}`} class="net-actions">

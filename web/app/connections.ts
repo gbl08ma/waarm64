@@ -28,6 +28,8 @@ export type TailcatConnection = {
   /** Let tailcat clients in, through `relay` when there's no `exit` (empty: tailcat's public relays). */
   serve: boolean;
   relay: string;
+  /** The clients let in when serving, as `tailcat serve --allow` takes them (`nodekey:…`); none or empty: any with the address. */
+  allow?: string[];
   /** The served identity's key in `webpc-tailcat` (`served` for the one kept before connections). */
   identityKey: string;
   /** An ephemeral connection's identity (never stored). */

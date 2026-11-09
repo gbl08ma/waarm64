@@ -58,7 +58,7 @@ function pageOn(channel: string, name: string, records = memoryRecords(), kept: 
 const tailnet = (net: PageNetwork, o: { ephemeral?: boolean } = {}) => net.conns.create({ kind: 'tailnet', ephemeral: o.ephemeral, tailnet: { controlURL: 'https://hs.example', hostname: 'box', exitNode: '' } });
 const adapters = (...conns: (Connection | undefined)[]): Adapter[] => conns.map((c, i) => ({ id: `a${i}`, mac: MAC.replace(/6$/, String(6 + i)), ...(c ? { connection: c.id } : {}) }));
 
-test('a connection starts its client: a stored node under its profile, an ephemeral one not; tailcat with its server, identity and relay', async () => {
+test('a connection starts its client: a stored node under its profile, an ephemeral one not; tailcat with its server, identity, relay and allow list', async () => {
   const p = pageOn('nl-what', 'M');
   const { net } = p;
   const kept = await tailnet(net);
@@ -66,10 +66,14 @@ test('a connection starts its client: a stored node under its profile, an epheme
   assert.deepEqual(connectOf(kept, 'tskey-1'), { controlURL: 'https://hs.example', hostname: 'box', authKey: 'tskey-1', exitNode: undefined, persist: kept.id });
   assert.equal(connectOf(eph).persist, undefined, 'an ephemeral connection is an ephemeral node');
   const cat = await net.conns.create({ kind: 'tailcat', tailcat: { exit: 'tcEXIT', serve: true, relay: 'r.example' } });
-  assert.deepEqual(connectOf(cat), { controlURL: '', hostname: '', tailcat: 'tcEXIT', tailcatServe: { relay: '', identityKey: cat.id, identity: undefined } }, "through a server, its relay serves");
-  const served = await net.conns.create({ kind: 'tailcat', ephemeral: true, tailcat: { serve: true, relay: 'r.example' } });
-  assert.deepEqual(connectOf(served).tailcatServe, { relay: 'r.example', identityKey: served.id, identity: served.tailcat!.identity });
+  assert.deepEqual(connectOf(cat), { controlURL: '', hostname: '', tailcat: 'tcEXIT', tailcatServe: { relay: '' }, tailcatIdentity: { identityKey: cat.id, identity: undefined } }, "through a server, its relay serves");
+  const served = await net.conns.create({ kind: 'tailcat', ephemeral: true, tailcat: { serve: true, relay: 'r.example', allow: [`nodekey:${'ab'.repeat(32)}`] } });
+  assert.deepEqual(connectOf(served).tailcatServe, { relay: 'r.example', allow: [`nodekey:${'ab'.repeat(32)}`] });
+  assert.deepEqual(connectOf(served).tailcatIdentity, { identityKey: served.id, identity: served.tailcat!.identity });
   assert.equal(connectOf(served).tailcat, undefined);
+  // Going online through a server alone: the connection's identity still, so the server can `--allow` its key.
+  const exitOnly = await net.conns.create({ kind: 'tailcat', tailcat: { exit: 'tcEXIT', serve: false, relay: '' } });
+  assert.deepEqual(connectOf(exitOnly), { controlURL: '', hostname: '', tailcat: 'tcEXIT', tailcatIdentity: { identityKey: exitOnly.id, identity: undefined } });
   p.close();
 });
 

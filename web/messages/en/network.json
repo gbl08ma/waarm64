@@ -235,6 +235,18 @@
     "message": "The host name or host:port of your own <a>derper</a>, which is faster than tailcat's public relays, as they are rate-limited. It is used only when the machine doesn't go online through a computer running tailcat; otherwise, that computer's relay serves the clients.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step, Advanced: the text under the relay field. <a>…</a> links to derper (Tailscale's relay server), a program's name."
   },
+  "NetWizard.allow": {
+    "message": "Let in only these clients",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step, Advanced: the label of the field listing the keys of the tailcat clients allowed in (like tailcat's own --allow)."
+  },
+  "NetWizard.allow.placeholder": {
+    "message": "Anyone with the address",
+    "note": "The Network wizard, the tailcat step, Advanced: the placeholder of the empty field of clients let in (what an empty list means)."
+  },
+  "NetWizard.allow.note": {
+    "message": "The clients' keys, one per line, as <code>{{genkey}}</code> prints them on each client. The address alone isn't enough then.",
+    "note": "The Network wizard, the tailcat step, Advanced: the text under the field of clients let in. {{genkey}} is a command (tailcat genkey --client --key=client-default), shown as code."
+  },
   "NetWizard.newAddress": {
     "message": "New address",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step while it edits a connection, Advanced: the button that forgets the connection's tailcat address (it asks first)."
@@ -338,6 +350,14 @@
   "Network.served.note": {
     "message": "On another computer, <code>{{ssh}}</code> logs in to the guest's sshd, and <code>{{connect}}</code> reaches any port the guest listens on. Keep the address to yourself, as it lets anyone in.",
     "note": "The toolbar's Network menu: the text under the machine's tailcat address. {{ssh}} and {{connect}} are commands (tailcat ssh <address>, tailcat <address> <port>), shown as code."
+  },
+  "Network.key": {
+    "message": "This machine's key",
+    "note": "The toolbar's Network menu: the label of the field with the machine's tailcat node key (nodekey:…), when it goes online through a computer running tailcat."
+  },
+  "Network.key.note": {
+    "message": "To let only this machine use that computer, run <code>{{allow}}</code> there. A connection that isn't kept has another key once this page closes.",
+    "note": "The toolbar's Network menu: the text under the machine's tailcat key. {{allow}} is a command (tailcat serve --allow=nodekey:… exit-node), shown as code."
   },
   "Network.connect": {
     "message": "Connect",
@@ -566,6 +586,10 @@
   "tailcat.badRelay": {
     "message": "Enter the relay as a host name or host:port, without https://.",
     "note": "The Network wizard, the tailcat step (Advanced): the error when the relay for clients isn't a host or host:port."
+  },
+  "tailcat.badKey": {
+    "message": "“{{key}}” isn't a client's key. A key starts with “nodekey:” and has 64 hexadecimal digits, as `tailcat genkey --client` prints it.",
+    "note": "The Network wizard, the tailcat step (Advanced): the error when an entry of the clients let in isn't a node key. {{key}} is the entry as typed (cut short). `tailcat genkey --client` is a command, as it is."
   },
   "tailcat.noExitNodes": {
     "message": "A tailcat connection has no exit nodes to choose from.",

@@ -26,6 +26,8 @@ export type NetMap = {
   /** tailcat: whether an exit node carries the guest's traffic, and the machine's own address when it lets clients in. */
   tailcatExit?: boolean;
   serving?: string;
+  /** tailcat: the machine's node key (`nodekey:…`), the same at each connect for a kept connection, so a server can `--allow` it. */
+  tailcatKey?: string;
 };
 
 export type TailscaleConfig = {

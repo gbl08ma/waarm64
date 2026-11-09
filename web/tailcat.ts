@@ -15,9 +15,13 @@ export type TailcatConfig = {
   /** The `tc…` address the server printed: a secret (it lets anyone who has it in). Empty: serve only. */
   addr: string;
   /** Let tailcat clients in to the guest; `relay`, when there's no `addr`: one's own derper (`host[:port]`), or empty
-   * for tailcat's public relays (the nearest region). The machine's address is kept (`webpc-tailcat` in IndexedDB, under
-   * `identityKey`: default `served`), or, given `identity`, is that one's (an ephemeral connection's, kept nowhere). */
+   * for tailcat's public relays (the nearest region); `allow`: the clients' node keys let in (empty: any with the address). */
   serve?: TailcatServe;
+  /** The machine's identity (its node key, and its address when serving): kept in `webpc-tailcat` in IndexedDB under
+   * `identityKey` (default `served` when serving), or, given `identity`, that one (an ephemeral connection's, kept
+   * nowhere). Neither, and not serving: a fresh key each connect. */
+  identityKey?: string;
+  identity?: TailcatIdentity;
   /** The DERP map for an address that names only a region (default: tailcat's public map). */
   derpMapURL?: string;
   /** How the server's machine's IPv6 reach is checked (web/reach6.ts; the tests point it at a resolver of theirs). */
@@ -28,11 +32,11 @@ export type TailcatConfig = {
   ip?: MessagePort;
 };
 
-export type TailcatServe = { relay: string; identityKey?: string; identity?: TailcatIdentity };
+export type TailcatServe = { relay: string; allow?: string[] };
 
 /** Messages to the worker. */
 export type ToTailcat =
-  | { type: 'start'; wasm: string; addr: string; serve?: TailcatServe; derpMapURL?: string; probe6?: Reach6Options; ip: MessagePort }
+  | { type: 'start'; wasm: string; addr: string; serve?: TailcatServe; identityKey?: string; identity?: TailcatIdentity; derpMapURL?: string; probe6?: Reach6Options; ip: MessagePort }
   | { type: 'attach'; ip: MessagePort }
   | { type: 'primary'; primary: boolean; rank?: number }
   | { type: 'detach' };
@@ -58,6 +62,15 @@ const v6text = (b: number[]) => {
   if (best[0] < 0) return groups.join(':');
   return `${groups.slice(0, best[0]).join(':')}::${groups.slice(best[0] + best[1]).join(':')}`;
 };
+
+/** The clients let in, as typed (`tailcat serve --allow`'s keys, `nodekey:` and 64 hex digits, separated by commas,
+ * spaces or lines), or an error to show. Empty: any client with the address. */
+export function parseAllow(input: string): { allow: string[] } | { error: Msg } {
+  const keys = input.split(/[\s,]+/).filter((k) => k);
+  const bad = keys.find((k) => !/^nodekey:[0-9a-fA-F]{64}$/.test(k));
+  if (bad) return { error: msg('network:tailcat.badKey', { key: bad.length > 24 ? `${bad.slice(0, 24)}…` : bad }) };
+  return { allow: [...new Set(keys.map((k) => k.toLowerCase()))] };
+}
 
 /** A relay as typed: `host` or `host:port`, or an error to show (the module checks it again). */
 export function parseRelay(input: string): { relay: string } | { error: Msg } {
@@ -133,9 +146,9 @@ export async function nearestRegion(derpMapURL: string, timeoutMs = 3000): Promi
 }
 
 /** What the menu shows of a tailcat connection: the guest's addresses and resolvers, no peers. */
-export function netmapOf(lease: Lease, serving?: string, exit = true): NetMap {
+export function netmapOf(lease: Lease, serving?: string, exit = true, key?: string): NetMap {
   return {
-    name: '', via: 'tailcat', peers: [], mtu: lease.mtu, exitNode: '', domains: [], serving, tailcatExit: exit,
+    name: '', via: 'tailcat', peers: [], mtu: lease.mtu, exitNode: '', domains: [], serving, tailcatExit: exit, tailcatKey: key,
     addresses: [`${lease.address.join('.')}/32`, ...(lease.address6 ? [`${v6text(lease.address6)}/128`] : [])],
     dns: [...lease.dns.map((d) => d.join('.')), ...(lease.dns6 ?? []).map(v6text)],
   };
@@ -172,7 +185,7 @@ export function startTailcat(config: TailcatConfig, onEvent: (m: FromTailscale) 
   });
   running.catch(() => {});
   const wasm = config.wasm ?? new URL('../target/net/ts.wasm', import.meta.url).href;
-  worker.postMessage({ type: 'start', wasm, addr: config.addr, serve: config.serve, derpMapURL: config.derpMapURL, probe6: config.probe6, ip: port1 } satisfies ToTailcat, [port1]);
+  worker.postMessage({ type: 'start', wasm, addr: config.addr, serve: config.serve, identityKey: config.identityKey, identity: config.identity, derpMapURL: config.derpMapURL, probe6: config.probe6, ip: port1 } satisfies ToTailcat, [port1]);
   return {
     ip: own?.port2, state: () => state, netmap: () => netmap, loginURL: () => undefined, running, timings: () => timings,
     attach: (ip) => worker.postMessage({ type: 'attach', ip } satisfies ToTailcat, [ip]),

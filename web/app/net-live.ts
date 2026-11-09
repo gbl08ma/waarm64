@@ -17,7 +17,9 @@ export function connectOf(c: Connection, authKey?: string): Connect {
   if (c.kind === 'local') return { controlURL: '', hostname: '', local: c.local!.url };
   if (c.kind === 'tailcat') {
     const t = c.tailcat!;
-    return { controlURL: '', hostname: '', tailcat: t.exit || undefined, tailcatServe: t.serve ? { relay: t.exit ? '' : t.relay, identityKey: t.identityKey, identity: t.identity } : undefined };
+    // Its identity always: a kept connection is the same node going online through a server too (a server can `--allow` it).
+    const serve = t.serve ? { tailcatServe: { relay: t.exit ? '' : t.relay, ...(t.allow?.length ? { allow: t.allow } : {}) } } : {};
+    return { controlURL: '', hostname: '', tailcat: t.exit || undefined, ...serve, tailcatIdentity: { identityKey: t.identityKey, identity: t.identity } };
   }
   const t = c.tailnet!;
   // A stored connection's node is kept under its profile (so it comes back without a login, an auth key's too); an ephemeral one's isn't.
