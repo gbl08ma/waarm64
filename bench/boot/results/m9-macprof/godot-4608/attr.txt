@@ -1,0 +1,80 @@
+isolate-0x11c00970000-47314-v8.log: ticks 6 busy 0 (guest 0) idle-path 6 waiting 0 code events 3712
+isolate-0x124007c0000-47316-v8.log: ticks 2 busy 0 (guest 0) idle-path 2 waiting 0 code events 2563
+isolate-0x12400990000-47315-v8.log: ticks 1465 busy 0 (guest 0) idle-path 1465 waiting 0 code events 7788
+isolate-0x12400990000-47319-v8.log: ticks 0 busy 0 (guest 0) idle-path 0 waiting 0 code events 2533
+isolate-0x12405ce0000-47315-v8.log: ticks 3220 busy 3 (guest 0) idle-path 3217 waiting 0 code events 4281
+isolate-0x12405ef0000-47315-v8.log: ticks 7221 busy 0 (guest 0) idle-path 7166 waiting 55 code events 8262
+isolate-0x12407710000-47315-v8.log: ticks 5399 busy 0 (guest 0) idle-path 5399 waiting 0 code events 4851
+isolate-0x1240b610000-47315-v8.log: ticks 515 busy 0 (guest 0) idle-path 515 waiting 0 code events 87140
+isolate-0x1240b640000-47315-v8.log: ticks 207403 busy 68478 (guest 47405) idle-path 14785 waiting 124140 code events 87222
+isolate-0x1240b7c0000-47315-v8.log: ticks 208008 busy 64796 (guest 45809) idle-path 13978 waiting 129234 code events 86733
+isolate-0x1240d530000-47315-v8.log: ticks 207792 busy 64534 (guest 45469) idle-path 14260 waiting 128998 code events 86828
+isolate-0x1240d610000-47315-v8.log: ticks 206992 busy 66964 (guest 46914) idle-path 13649 waiting 126379 code events 87243
+isolate-0x12411a70000-47315-v8.log: ticks 211431 busy 0 (guest 0) idle-path 159 waiting 211272 code events 2553
+isolate-0x124121d0000-47315-v8.log: ticks 189 busy 0 (guest 0) idle-path 189 waiting 0 code events 2616
+isolate-0x12412eb0000-47315-v8.log: ticks 197 busy 0 (guest 0) idle-path 197 waiting 0 code events 2614
+isolate-0x124131b0000-47315-v8.log: ticks 166 busy 0 (guest 0) idle-path 166 waiting 0 code events 2627
+isolate-0x124136c0000-47315-v8.log: ticks 201 busy 0 (guest 0) idle-path 201 waiting 0 code events 2606
+isolate-0x1243aee0000-47315-v8.log: ticks 727 busy 0 (guest 0) idle-path 727 waiting 0 code events 2559
+
+vCPU busy ticks: 264772
+ 30.6%  guest code: body, user turbofan
+ 22.0%  guest code: body, kernel turbofan
+  9.2%  guest code: entry (first instruction), kernel
+  7.2%  core: block interpreter
+  5.1%  guest code: entry (first instruction), user
+  4.2%  native: Google Chrome for Testing Framework
+  3.3%  core: interpreter and helper bodies
+  3.3%  core: dispatcher, Jit::miss, xmiss
+  2.9%  core: helpers' entry
+  2.1%  core: TLB miss, walk
+  2.1%  guest code: body, user liftoff
+  1.8%  native: libsystem_kernel.dylib
+  1.6%  core: run loop, devices
+  1.4%  unresolved
+  1.1%  guest code: body, kernel liftoff
+  0.7%  core: compile, install, sync
+  0.5%  core: allocator, std
+  0.5%  host JS, V8 code
+  0.3%  V8 builtins
+  0.1%  core: other
+  0.1%  native: libsystem_platform.dylib
+  0.1%  native: libdyld.dylib
+  0.0%  native: libsystem_pthread.dylib
+  0.0%  native: libsystem_malloc.dylib
+  0.0%  native: libsystem_c.dylib
+  0.0%  native: libdispatch.dylib
+
+top 14 functions (busy vCPU ticks):
+ 70.10%  (guest code)
+  5.47%  _RINvNtNtCsfyJ81pLjVxE_10webpc_core6interp5block3hotNtNtB6_3mmu3MmuNCINvNtB6_3jit9interpretBN_E0EB6_
+  2.84%  jit_exec_mmu
+  1.75%  _RNvNtCsfyJ81pLjVxE_10webpc_core3jit5steps
+  0.81%  _RNvNtCsfyJ81pLjVxE_10webpc_core3mmu4walk
+  0.79%  xmiss_el0
+  0.75%  _RNvMs2_NtNtCsfyJ81pLjVxE_10webpc_core2vm8parallelNtB7_2Vm7run_cpu
+  0.52%  _RINvNtNtCsfyJ81pLjVxE_10webpc_core6interp4ldst4execNtNtB6_3mmu3MmuEB6_
+  0.49%  _RNvMs4_NtNtCsfyJ81pLjVxE_10webpc_core6interp5blockNtB5_5Cache9count_out
+  0.49%  _RNvMs2_NtCsfyJ81pLjVxE_10webpc_core3mmuNtB5_3Mmu4miss
+  0.45%  _RINvNtCsfyJ81pLjVxE_10webpc_core3jit9interpretNtNtB4_3mmu3MmuEB4_
+  0.41%  _RNvNtNtCsfyJ81pLjVxE_10webpc_core2vm8parallel9fast_exit
+  0.39%  xmiss_el1
+  0.36%  _RNvXs3_NtCsfyJ81pLjVxE_10webpc_core3mmuNtB5_3MmuNtB5_3Bus7read_el
+
+windows of 20 s: entry / interp / guest body / other, % of busy
+    0 s  n= 18069    7.3  23.5  40.7  28.5
+   20 s  n=  6071   12.0  17.5  47.1  23.5
+   40 s  n=  3926   14.0  19.5  42.5  24.0
+   60 s  n= 25170   10.1  17.4  49.8  22.7
+   80 s  n= 32400   12.3  10.1  58.9  18.8
+  100 s  n= 41803    9.5   4.8  71.7  14.1
+  120 s  n= 26316   12.0   3.7  66.9  17.4
+  140 s  n= 13029   18.4   3.0  50.6  28.0
+  160 s  n= 12880   18.4   2.2  50.5  28.9
+  180 s  n= 12969   18.5   1.7  50.7  29.1
+  200 s  n= 12919   20.0   1.8  49.8  28.4
+  220 s  n= 12838   18.9   1.6  51.1  28.4
+  240 s  n= 14393   20.4   2.4  51.3  25.8
+  260 s  n= 14216   20.5   2.5  51.3  25.7
+  280 s  n= 14469   21.0   1.9  52.2  24.9
+  300 s  n=  3307   19.9   2.1  51.3  26.7

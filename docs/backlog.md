@@ -59,7 +59,13 @@ What the block interpreter's speed track (2026-10-21/22, `bench/interp/REPORT.md
 left open, most promising first. Re-profiled 2026-11-04 (`bench/boot/REPORT.md` "Where a busy vCPU's time goes in Firefox, again"): the block interpreter is 13% of a busy
 vCPU's samples in Firefox's pages session (`hot` 9.5%), 14-16% while a page loads and 3-4% while it scrolls; 4.1% of
 the steps, so an interpreted step costs ~3.5× a compiled one. The loads' new code (1.4-1.9 M instructions decoded a
-20 s window, Firefox's own JIT's rewrites among it) runs interpreted until hot.
+20 s window, Firefox's own JIT's rewrites among it) runs interpreted until hot. **On the Mac host it weighs more**
+(2026-11-09, `bench/boot/REPORT.md` "Where a busy vCPU's time goes on the Mac, and the compile threshold there"):
+18.4% of the pages session's busy ticks (`hot` 14%) for 3.96% of the steps, ~5.5× a compiled step, 13-31% while
+pages load; in Godot's editor start on Venus 6-7% for 0.85% of the steps (~8×), 21% in its first 20 s. A lower
+compile threshold doesn't take it away there (500 tied, 250 lost: [jit.md](jit.md) "Compile policy"), so the
+interpreter's speed is the lever for loads and starts. The items below are ranked by that; measure them on the Mac
+(the VM's bounds checks distort `hot`'s stores).
 
 - **More handlers, by workload** (`bench/interp/REPORT.md` "M8-INTERP loop 13" counted Alpine's boot's slow path).
   Left on the boots: CASP (a 128-bit atomic), STTR/LDTR (the EL0 TLB array from EL1: a second context in `Fast`),
@@ -92,7 +98,9 @@ the steps, so an interpreted step costs ~3.5× a compiled one. The loads' new co
   83% of it after a `return_call_indirect` (the code footprint defeats the branch predictor; direct and imported tail
   calls don't stall). Warm members took the jump-cache tails into warm code away (+18% busy MIPS). Re-profiled
   2026-11-04 (`bench/boot/REPORT.md` "Where a busy vCPU's time goes in Firefox, again"): entries 22.0% of the samples (27-29% while pages scroll), 80% of them after a
-  `return_call_indirect`, 15% from the dispatcher; the signature check 3.0%. Returns, 49% of those entries, are host returns now ([jit.md](jit.md) "Calls"); the tails into code
+  `return_call_indirect`, 15% from the dispatcher; the signature check 3.0%. On the Mac host (2026-11-09, `bench/boot/REPORT.md` "Where a
+  busy vCPU's time goes on the Mac, and the compile threshold there") entries are 14.1% of the pages session's busy
+  ticks and 13-14% of Godot's editor start: smaller than in the VM, still the largest single cost after the bodies. Returns, 49% of those entries, are host returns now ([jit.md](jit.md) "Calls"); the tails into code
   compiled later (22%) lost both ways tried, re-emitted and rebound ([jit.md](jit.md) "Tried and not kept"). What
   remains:
   - The dispatcher's entries (15% of the entry stalls on 2026-11-04 for 4.7% of the indirect entries: about three
@@ -1281,6 +1289,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   0 and node 1 hold meets node 2: past ~7 GiB, ~5.5 GiB with Vulkan. Memory 0 as one memory64 was measured and set
   aside: ~+15–20% on the userspace benchmark on macOS (`--wasm-enforce-bounds-checks` as the stand-in), since V8 checks
   each memory64 access.
+  **Measured to matter on Vulkan** (2026-11-09, `bench/boot/REPORT.md` "Where a busy vCPU's time goes on the Mac, and
+  the compile threshold there"): Godot's GI demo in the editor with 6144 MiB of RAM reaches memory 2, and ~16% of its
+  busy ticks go to the helper chain (`jit_exec_mmu`, `ldst::exec`, `Mmu::miss`, `spill_load`); at 4608 MiB it took
+  14% fewer busy ticks for the same start. So a Vulkan machine past ~4.5 GiB pays it with an ordinary program.
+  Options short of memory64: `INLINE_SPILL` 2 on Vulkan machines only (another copy of each access's body: ~+15%
+  wasm), a layout with node 1's RAM in memory 1 and the arena and window in a later memory (the window's accesses would
+  then take the helper; how many a Venus program makes is unmeasured), or capping a Vulkan machine's RAM or warning past
+  ~4.5 GiB on the page. The user's call.
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 

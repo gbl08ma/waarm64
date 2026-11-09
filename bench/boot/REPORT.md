@@ -3055,6 +3055,50 @@ probes is ~0.5% of the wasm, under what the size work found users feel (docs/bac
 go"), and the two rounds of groups (~26 points of probes) moved no time. Not built, by the user's call; docs/jit.md
 "Tried and not kept" keeps the numbers and the one lever left (probes across blocks).
 
+## Where a busy vCPU's time goes on the Mac, and the compile threshold there (2026-11-09)
+
+The M4 Mac mini's host (macOS 26.6.2), Chrome for Testing 157.0.8103.38 through `bench/gpu/sway-mac.sh`, where wasm
+memory accesses carry no explicit bounds checks (the dev VM's do). Profiles: V8's `--prof` (`CHROMIUM_JS_FLAGS=--prof`,
+`CHROMIUM_ARGS=--no-sandbox`, one log per isolate), attributed per tick with `results/m9-macprof/tools/prof-attr.mjs.txt`
+into the categories of "Where a busy vCPU's time goes in Firefox, again" (2026-11-04, the VM). The three profiled
+sessions ran a core from before c49e4a16 (the FZ fast paths: a shared `target/` left it stale), which moves none of
+what follows; the threshold A/B's arms are fresh builds of `307b8d51`. Raw: `results/m9-macprof/` (README).
+
+**Firefox's pages session** (from `pages.webpcsnap`; loads ~10% slower under `--prof`), % of busy vCPU ticks, Mac
+(VM 11-04): TurboFan bodies 40.8 (30.8), **block interpreter 18.4 (13.0)**, entries at a function's first instruction
+14.1 (22.0), Liftoff bodies 5.4, dispatcher and `Jit::miss` 4.6, Chrome's framework 3.4, helper bodies 3.1, TLB miss
+and walk 1.9, helpers' entry 1.8, compile 1.3. Interpreted steps are 3.96% of 88.5 G, so an interpreted step costs
+~5.5× a compiled one here (3.5× in the VM: the VM's bounds checks tax compiled code more than the interpreter's).
+The interpreter is 13-31% of 20 s windows while pages load. The guest's profile is flat (its top function 0.46%).
+
+**Godot's GI demo in the editor on Venus** (`bench/vulkan/godot.ts`, `gi-editor`): interpreted steps 0.85% of ~232
+G, the interpreter 6-7% of the ticks (~8× a compiled step), 21% in the first 20 s and 1.5-2% after 140 s; entries
+13-14%. With the default 6144 MiB of RAM, Godot's pages reach spill memory 2 (no inline arm, `jit::INLINE_SPILL` 1:
+on a Vulkan machine memory 1 holds the Venus arena, the host-visible window and node 1), and ~16% of the busy ticks go
+to its helper chain (`jit_exec_mmu` 6.2%, `ldst::exec` 3.1, `Mmu::miss` 1.9, `read_el`/`write_el` ~2, `spill_load`/
+`store` 1.3, `ldst::single` 1.1). At 4608 MiB (no memory 2) the same start took **14% fewer busy ticks** (309 → 265
+k), `jit_exec_mmu` 2.8% and the spill calls gone; first frame 10.1 → 8.1 s, last held frame 75.8 → 66.7 s (run 2 had
+Metal's shader cache warm, so those two are confounded; the tick counts aren't). Of Godot's log, one texture-array
+preview takes 22-25 s, whichever runs first (`zdm2_indirect.exr` at 6144 MiB, `zdm2_all.exr` at 4608), which looks
+like waiting more than CPU: not chased.
+
+**The compile threshold on the Mac.** The floor and maximum (1000 and 2000) were set by VM rounds (bench/interp/REPORT.md
+"M8-INTERP round 2", "loop 11"); the Mac's dearer interpreted step asked whether they should be lower. Arms floor/max
+1000/2000 (`t1000`, today's), 500/1000, 250/500, rotated over 3 rounds; each round per arm Firefox's pages session from
+the snapshot (sum of the five loads), then `alpine_user_jit` and `boot_alpine_jit` (`bench/run-mac.sh`), ms:
+
+| Arm | Pages loads, r1/r2/r3 | Interpreted steps | Wasm | Alpine userspace total | Alpine boot (warm total) |
+|---|---|---|---|---|---|
+| 1000/2000 | 18,194 / 18,350 / 18,636 | 3.9% | 138 MB | 10,824 / 10,892 / 10,860 | 4,129 / 4,154 / 4,139 |
+| 500/1000 | 18,526 / 18,720 / 18,197 | 3.1% | 167 MB | 10,841 / 11,014 / 10,876 | 4,121 / 4,132 / 4,111 |
+| 250/500 | 18,683 / 18,979 / 19,592 | 2.4% | 206 MB | 11,005 / 11,011 / 11,030 | 4,244 / 4,264 / 4,266 |
+
+250/500 loses everywhere, rounds apart: pages +3.6%, userspace +1.4%, the boot +2.9%. 500/1000 overlaps 1000/2000 in
+every column (pages +0.9%, userspace +0.3%, the boot −0.4%) for 21% more wasm. **The threshold stays.** Halving it
+takes only a fifth of the interpreted steps away (3.9 → 3.1%), at a fifth more wasm and V8 compile: what runs
+interpreted is mostly code that never gets that hot, so the interpreter's own speed is the lever, not the threshold.
+Raw: `results/m9-macprof/thr/` (`run.log`, the pages sessions' results and JIT logs, the Alpine JSON).
+
 ## FEAT_DotProd and FEAT_JSCVT, measured (2026-11-02)
 
 The dev VM (8 vCPUs, the M4 under Lima), Chromium 153.0.8010.52 headless, the guest on 4 vCPUs, alternating arms, a boot

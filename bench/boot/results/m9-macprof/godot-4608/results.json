@@ -1,0 +1,66 @@
+{
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "157.0.8103.38",
+ "runS": 180,
+ "info": "7.2.14-arch1-24mesa 1:26.2.6-1 vulkan-virtio 1:26.2.6-1 sway 1:1.12-4",
+ "sway": "",
+ "vulkan": "apiVersion         = 1.3.296        deviceName         = Virtio-GPU Venus (webpc WebGPU)        driverName         = venus",
+ "gi-editor": {
+  "args": "--path /home/arch/projects/gi --editor --rendering-driver vulkan",
+  "firstFrameS": 8.1,
+  "lastHeldS": 66.7,
+  "lastPipelineS": 66.7,
+  "pipelines": {
+   "pipelines": 203,
+   "ready": 203,
+   "readyMs": 10214.3,
+   "deferred": 38,
+   "deferredMs": 3048.2,
+   "syncPipelines": 0,
+   "premade": 0,
+   "premadeUsed": 0,
+   "translations": 285,
+   "translateMs": 2430.2,
+   "cacheHits": 0,
+   "cacheMisses": 536,
+   "cacheStores": 536,
+   "cacheBytes": 4727631,
+   "cacheHeld": 4727631,
+   "cacheEntries": 536,
+   "cacheInflateMs": 0
+  },
+  "shots": [
+   "gi-editor-020s alive 142       00:21",
+   "gi-editor-040s alive 152       00:41",
+   "gi-editor-060s alive 212       01:01",
+   "gi-editor-080s alive 176       01:21",
+   "gi-editor-100s alive 146       01:41",
+   "gi-editor-120s alive 126       02:01",
+   "gi-editor-140s alive 112       02:21",
+   "gi-editor-160s alive 101       02:41",
+   "gi-editor-180s alive 93.4       03:01"
+  ],
+  "display": "XInput: Absolute pointing device: xwayland-pointer:56XInput: Absolute pointing device: xwayland-pointer:56",
+  "errors": [
+   "LOD 1: 20059 triangles, error 0.02412584424019 (step error 0.02412584424019)"
+  ]
+ },
+ "warnings": {
+  "venus: the WebGPU device's ballots are wrong in divergent control flow unless anchored: anchored": 1,
+  "venus: Vulkan on apple metal-3 adapter; its frames reach virgl by bitmap, checked at the first copies": 1,
+  "venus: wg: the device address buffer's region 0 grows to 128 MiB": 1,
+  "venus: wg: the device address buffer's region 0 grows to 256 MiB": 1,
+  "venus-share: resource 51 (1152x648) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: the bitmap way checked right (3 frames)": 1,
+  "venus-share: resource 66 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: resource 67 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: resource 68 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: resource 69 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus: wg: the device address buffer's region 0 grows to 512 MiB": 1,
+  "venus-share: resource 70 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: resource 71 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: resource 72 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus-share: resource 73 (1372x712) isn't (or no longer) a Vulkan image's or buffer's memory: not shown": 1,
+  "venus: wg: the device address buffer's region 0 grows to 1024 MiB": 1
+ }
+}

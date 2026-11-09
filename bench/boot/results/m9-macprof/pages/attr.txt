@@ -1,0 +1,87 @@
+isolate-0x10c009c0000-42988-v8.log: ticks 0 busy 0 (guest 0) idle-path 0 waiting 0 code events 2533
+isolate-0x124007a0000-42983-v8.log: ticks 10 busy 0 (guest 0) idle-path 10 waiting 0 code events 2563
+isolate-0x13c00970000-42981-v8.log: ticks 23 busy 0 (guest 0) idle-path 23 waiting 0 code events 3888
+isolate-0x13c00990000-42982-v8.log: ticks 1815 busy 1 (guest 0) idle-path 1814 waiting 0 code events 7624
+isolate-0x13c05930000-42982-v8.log: ticks 177331 busy 44728 (guest 26817) idle-path 5538 waiting 127065 code events 95894
+isolate-0x13c06330000-42982-v8.log: ticks 4440 busy 0 (guest 0) idle-path 4440 waiting 0 code events 3417
+isolate-0x13c063b0000-42982-v8.log: ticks 411 busy 0 (guest 0) idle-path 411 waiting 0 code events 95728
+isolate-0x13c06cc0000-42982-v8.log: ticks 177075 busy 52315 (guest 31579) idle-path 5645 waiting 119115 code events 96436
+isolate-0x13c098c0000-42982-v8.log: ticks 5701 busy 1099 (guest 0) idle-path 4602 waiting 0 code events 4284
+isolate-0x13c09a10000-42982-v8.log: ticks 177321 busy 49905 (guest 30315) idle-path 5933 waiting 121483 code events 96358
+isolate-0x13c09c10000-42982-v8.log: ticks 177044 busy 44799 (guest 26729) idle-path 5448 waiting 126797 code events 95924
+isolate-0x13c0e900000-42982-v8.log: ticks 171143 busy 0 (guest 0) idle-path 1365 waiting 169778 code events 2666
+isolate-0x13c249a0000-42982-v8.log: ticks 10 busy 0 (guest 0) idle-path 10 waiting 0 code events 2559
+isolate-0x13c249d0000-42982-v8.log: ticks 6 busy 0 (guest 0) idle-path 6 waiting 0 code events 2559
+isolate-0x13c24ef0000-42982-v8.log: ticks 11 busy 0 (guest 0) idle-path 11 waiting 0 code events 2559
+isolate-0x13c24fa0000-42982-v8.log: ticks 10 busy 0 (guest 0) idle-path 10 waiting 0 code events 2559
+
+vCPU busy ticks: 191747
+ 23.0%  guest code: body, user turbofan
+ 18.4%  core: block interpreter
+ 17.8%  guest code: body, kernel turbofan
+  7.1%  guest code: entry (first instruction), kernel
+  7.0%  guest code: entry (first instruction), user
+  4.6%  core: dispatcher, Jit::miss, xmiss
+  3.9%  guest code: body, user liftoff
+  3.4%  native: Google Chrome for Testing Framework
+  3.1%  core: interpreter and helper bodies
+  1.9%  core: TLB miss, walk
+  1.8%  core: helpers' entry
+  1.6%  native: libsystem_kernel.dylib
+  1.6%  unresolved
+  1.5%  guest code: body, kernel liftoff
+  1.3%  core: compile, install, sync
+  0.9%  core: run loop, devices
+  0.6%  core: allocator, std
+  0.2%  host JS, V8 code
+  0.2%  native: libsystem_platform.dylib
+  0.2%  V8 builtins
+  0.1%  core: other
+  0.0%  native: libsystem_pthread.dylib
+  0.0%  native: libdyld.dylib
+  0.0%  native: libsystem_c.dylib
+  0.0%  native: libsystem_malloc.dylib
+  0.0%  native: libdispatch.dylib
+
+top 25 functions (busy vCPU ticks):
+ 60.20%  (guest code)
+ 14.05%  _RINvNtNtCsfyJ81pLjVxE_10webpc_core6interp5block3hotNtNtB6_3mmu3MmuNCINvNtB6_3jit9interpretBN_E0EB6_
+  2.12%  _RNvNtCsfyJ81pLjVxE_10webpc_core3jit5steps
+  1.72%  jit_exec_mmu
+  1.23%  _RNvMs4_NtNtCsfyJ81pLjVxE_10webpc_core6interp5blockNtB5_5Cache4miss
+  1.23%  xmiss_el0
+  1.08%  _RNvMs4_NtNtCsfyJ81pLjVxE_10webpc_core6interp5blockNtB5_5Cache9count_out
+  0.95%  _RINvNtCsfyJ81pLjVxE_10webpc_core3jit9interpretNtNtB4_3mmu3MmuEB4_
+  0.89%  _RNvMs3_NtCsfyJ81pLjVxE_10webpc_core3jitNtB5_3Jit4miss
+  0.74%  _RNvNtCsfyJ81pLjVxE_10webpc_core3mmu4walk
+  0.65%  _RNvMs4_NtNtCsfyJ81pLjVxE_10webpc_core6interp5blockNtB5_5Cache7slot_in
+  0.51%  _RNvMs2_NtCsfyJ81pLjVxE_10webpc_core3mmuNtB5_3Mmu4miss
+  0.48%  _RINvNtNtCsfyJ81pLjVxE_10webpc_core6interp4ldst4execNtNtB6_3mmu3MmuEB6_
+  0.39%  _RNvMs2_NtNtCsfyJ81pLjVxE_10webpc_core2vm8parallelNtB7_2Vm7run_cpu
+  0.38%  xmiss_el1
+  0.37%  _RNvXs3_NtCsfyJ81pLjVxE_10webpc_core3mmuNtB5_3MmuNtB5_3Bus7read_el
+  0.34%  _RNvXs3_NtCsfyJ81pLjVxE_10webpc_core3mmuNtB5_3MmuNtB5_3Bus8write_el
+  0.34%  _RNvMNtCsfyJ81pLjVxE_10webpc_core3mmuNtB2_3Tlb8flush_va
+  0.28%  _RNvNtCsfyJ81pLjVxE_10webpc_core2lz10decompress
+  0.28%  _RNvMs2_NtCsfyJ81pLjVxE_10webpc_core3jitNtB5_5Table4sync
+  0.27%  _RNvNtNtCsfyJ81pLjVxE_10webpc_core3jit5block6end_op
+  0.20%  _RNvNtNtCsfyJ81pLjVxE_10webpc_core2vm8parallel9fast_exit
+  0.19%  _RNCNvMs4_NtNtCsfyJ81pLjVxE_10webpc_core6interp5blockNtB7_5Cache4miss0Bb_
+  0.19%  _RINvNtNtCsfyJ81pLjVxE_10webpc_core6interp5block3runNtNtB6_3mmu3MmuEB6_
+  0.18%  _RNvMs2_NtNtCsfyJ81pLjVxE_10webpc_core2vm8parallelNtB7_2Vm10handle_par
+
+windows of 20 s: entry / interp / guest body / other, % of busy
+    0 s  n= 16881    5.9  30.7  30.9  32.6
+   20 s  n= 23568   10.0  25.7  39.4  24.9
+   40 s  n= 12365   16.0  16.1  45.1  22.9
+   60 s  n= 21042   12.6  20.5  46.8  20.1
+   80 s  n= 12956   16.2  12.7  48.7  22.5
+  100 s  n=  9691   15.3  12.6  51.6  20.6
+  120 s  n= 20081   14.9  19.1  47.6  18.4
+  140 s  n=  8547   20.7   8.0  50.5  20.7
+  160 s  n= 24387   13.2  19.9  47.9  19.1
+  180 s  n= 10610   17.6  10.5  51.5  20.4
+  200 s  n= 11278   15.1  15.4  50.4  19.1
+  220 s  n= 13663   16.6  16.3  48.2  18.9
+  240 s  n=  6467   21.7   5.7  50.7  21.9
+  260 s  n=  1311   13.9  10.8  53.4  22.0

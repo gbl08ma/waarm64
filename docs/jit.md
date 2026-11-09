@@ -218,6 +218,11 @@ the interpreter's own code.
   flush) and in Firefox's pages session 13% less wasm, V8's code −10%, the tab's RSS −100 MB, busy MIPS +6%;
   Alpine's boot and userspace and `smp_user_jit_4` unchanged (cold code stays under the knee). A maximum of 4000
   compiled no less in the pages session (pressure never takes the threshold past 2000 there).
+- **Checked on the Mac** (2026-11-09, `bench/boot/REPORT.md` "Where a busy vCPU's time goes on the Mac, and the compile
+  threshold there"): the rounds above ran in the dev VM, whose bounds checks make compiled code dearer against the
+  interpreter, so 1000/2000 was raced against 500/1000 and 250/500 on the Mac host. 250/500 lost everywhere (pages
+  +3.6%, Alpine's userspace +1.4%, its boot +2.9%); 500/1000 tied (within the rounds) at 21% more wasm. Halving the
+  threshold takes only a fifth of the interpreted steps away (3.9 → 3.1% in the pages session).
 - **A block reports every 16 dispatches until it has run `warm`, then once at the threshold** (at most 255 at a
   time, a slot's quota; queued blocks every 16 for `BATCH_STEPS`): what a forward region's members need is the
   count up to `warm`, and the batch the crossing. At the floor of 500 it halves the cache's lock acquisitions,
