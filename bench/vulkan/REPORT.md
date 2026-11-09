@@ -793,6 +793,53 @@ T36's ground. **`tests/page-deqp-vk.test.ts` takes 2** (`WEBPC_DEQP_VK_JOBS` oth
 the whole list (58,906, two machines) passed in 2,470 s against 2,873 s at 1 (−14%), the script 3,229 → 2,826 s. The
 sample's time at 2 isn't measured.
 
+## VK4 T49 follow-up: the shader store held deflated — fflate's inflateSync, 19 → 3.8 MB for Godot's editor
+
+2026-11-09. The stores Godot 4.7.2's editor (the Forward+ project, `godot.ts`) and vkQuake's two replays
+(`venus-run.ts`) leave, dumped from the page's IndexedDB on the M4 (`STORE_DUMP=1`, `bench/vulkan/store-dump.ts`),
+measured codec by codec in Node 26.7 on the dev VM (`bench/vulkan/store-codecs.ts`: each entry encoded and decoded
+whole, medians of 7 decodes an entry); then Godot's editor cold then warm a session on the M4 (Chrome for Testing
+157.0.8103.38, macOS 26.6.2, Metal's cache as it was), the store held inflated (base, dec5012b) and deflated (new),
+alternated, 3 rounds. JSON in `results/vk4/t49-store/`.
+
+| Godot's editor: 499 entries, 19.0 MB inflated (largest 0.86 MB) | held (MB) | decode: median / worst / all (ms) | encode, all (ms) |
+| --- | --- | --- | --- |
+| **deflate-raw, fflate's inflateSync** (as stored: CompressionStream at the write-back) | **3.76** (5.1×) | 0.072 / 2.78 / **66** | (fflate 6: 319) |
+| deflate-raw, fflate level 9 | 3.85 | 0.068 / 2.78 / 62 | 925 |
+| LZ4 block (the core's LZ), decoded in JavaScript | 6.02 (3.2×) | 0.066 / 2.91 / 70 | 42 |
+| LZ4 block, the core's wasm (reference: the GPU worker has no core) | 6.02 | 0.016 / 0.61 / 14 | 34 |
+| zstd 3, fzstd (encoded by Node's zstd: a browser needs a wasm build) | 3.58 (5.3×) | 0.245 / 8.89 / 208 | 30 |
+| zstd 19, fzstd | 2.97 (6.4×) | 0.232 / 9.13 / 194 | 2,703 |
+| native zlib / zstd 3 (reference: not in a browser) | 3.75 / 3.58 | 0.015 / 0.67 / 15; 0.013 / 0.39 / 10 | 116 / 27 |
+
+vkQuake's 282 entries (3.7 MB inflated): fflate 0.49 MB held (7.5×), 11.5 ms to inflate them all; LZ4 0.72 MB (5.2×),
+7.2 ms in JavaScript; zstd 3 0.47 MB, 39 ms through fzstd.
+
+- **The choice: deflate-raw as stored, inflated by fflate** (MIT, 0.8.3; `inflateSync` alone bundles to 3.7 KB, 2 KB
+  gzipped). The format is what the store already writes (CompressionStream at the write-back, off the lookups' path),
+  so nothing about the stored entries changes and the load inflates nothing (it did all of them before: ~90-150 ms at
+  Vulkan's start, VK4 T49). LZ4 in JavaScript decoded no faster than fflate's inflate and held 60% more, and would need
+  an encoder of ours (the core's is in the emulator's wasm, which the GPU worker doesn't load). zstd holds 5-20% less
+  than deflate but decodes 3× slower through fzstd, with a worst entry of ~9 ms, and its encoder would be a wasm
+  build of libzstd beside it: ruled out.
+- **On the page** (the A/B; warm: every one of the editor's 499 lookups found and inflated):
+
+  | Godot's editor, held inflated → deflated | cold | warm |
+  | --- | --- | --- |
+  | the store held (MB) | 18.99 → **3.76** | |
+  | the lookups' inflates (ms, in all) | | 127 [121, 134] |
+  | first frame (s) | 8.1 [8.1, 9.1] → 9.1 [8.1, 9.1] | 3.0 [2.0, 3.1] → 2.0 [2.0, 3.0] |
+  | the start's end, `lastHeldS` (s) | 36.2 [36.2, 37.2] → 37.2 [37.2, 39.2] | 22.1 [22.1, 23.1] → 23.1 [23.1, 25.1] |
+  | submits held for pipelines (ms) | 923 [887, 1,024] → 1,001 [965, 1,011] | 885 [863, 892] → 977 [729, 1,041] |
+
+  Nothing that counts: the rounds overlap (a second is the polls' grain), and the cold start, which looks nothing up,
+  moved as much as the warm one. The inflates are 127 ms of the GPU worker's thread over a 23 s start (in Chrome
+  about twice Node's 66 ms), inside the translator's time (`translateMs`, warm 134 → 253 ms), each lookup's at most a
+  few ms. vkQuake's second replay: 753 lookups, 28 ms of inflates.
+- **Left**: a dictionary shared by the entries (they are alike: zstd 19's long window reaches 6.4×) would hold less;
+  not worth it at these sizes. An entry stays inflated until its write-back (a second after its put).
+- **CI**: see below.
+
 ## VK4 T49: a program's start — the printer's WGSL a third smaller (Tint −32% on the M4); made at creation, pipelines still lose; Godot's start is the guest's
 
 2026-11-08. The M4 (Chrome for Testing 157.0.8103.38, macOS 26.6.2) through `bench/gpu/sway-mac.sh`: Godot 4.7.2's
@@ -4575,6 +4622,9 @@ the toolbar's NUMA note now count Venus's share of memory 0.
 
 ## Tools
 
+- VK4 T49 follow-up: `store-dump.ts` (the page's shader store written out at the end of `godot.ts` and `venus-run.ts`
+  with `STORE_DUMP=1`, through `../gpu/sway-mac.sh` too) and `store-codecs.ts` (codecs on such stores: held size, each
+  entry's encode and decode).
 - GD G2: `tint-time.ts` (each WGSL module's `createShaderModule` on a device of its own, `REPEAT` runs of their own
   text, a timeout that relaunches the browser) and `mac-tint-time.sh` (the same on the Mac's GPU); a program's stages
   as WGSL from the native translator (`vk/build.sh native`, `WGSL_DEVICE=<features>,<subgroup size>`).

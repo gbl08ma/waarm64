@@ -1536,7 +1536,7 @@
     "note": "Machines page, Preferences: the default choice of Space for Vulkan's shaders. {{n}}: the size in MiB."
   },
   "MachinesPage.shaderBudget.note": {
-    "message": "Machines with Vulkan keep the shaders they translate, so that a program's next start, on any machine, translates nothing again. When the space is full, those used least recently go first. In use, they take up to about seven times this much memory. A change takes effect at the next start of a machine.",
+    "message": "Machines with Vulkan keep the shaders they translate, so that a program's next start, on any machine, translates nothing again. When the space is full, those used least recently go first. In use, they take about this much memory too. A change takes effect at the next start of a machine.",
     "note": "Machines page, Preferences: the note under Space for Vulkan's shaders."
   }
 }

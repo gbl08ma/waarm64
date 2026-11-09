@@ -6,13 +6,15 @@
 // RUNS: `tag=<godot args>` a line (default: the Forward+ project's scene; `tag:<s>=…` runs that one <s> seconds instead
 // of RUN_S); `{p}` is the projects' copy in the guest's
 // home (~/projects, writable: the editor imports into a project). RUN_S (90), SHOT_S (15), NCPUS (4), RAM_MIB (6144),
-// SCREEN (e.g. 1280x720), GPU_KNOBS (more of `?gpu=`), GODOT_ENV (more of Godot's environment, e.g. `VN_DEBUG=…`).
+// SCREEN (e.g. 1280x720), GPU_KNOBS (more of `?gpu=`), GODOT_ENV (more of Godot's environment, e.g. `VN_DEBUG=…`),
+// STORE_DUMP (the shader store kept at the end: bench/vulkan/store-dump.ts).
 // Each run's results: its first frame, when its start ended by the renderer's account (`lastHeldS`: the last second a
 // submit waited for its pipelines) and its pipeline totals (VK4 T49: two runs of one RUNS line in a session are the
 // editor's cold and warm start).
 // bench/gpu/sway-mac.sh runs it on the Mac (SCRIPT=../vulkan/godot.ts, mode `-`; it copies the disk when it exists).
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { openSession } from '../gpu/guest-session.ts';
+import { dumpStore } from './store-dump.ts';
 
 const image = process.argv[2];
 if (!image) throw new Error('usage: node bench/vulkan/godot.ts <image.qcow2> [outdir]');
@@ -98,4 +100,6 @@ for (const r of RUNS) {
   save();
 }
 save();
+// STORE_DUMP: the shader store as the runs left it (bench/vulkan/store-dump.ts).
+if (process.env.STORE_DUMP) log('store', await dumpStore(page, `${out}/shader-store.json`), 'entries');
 await s.close();

@@ -611,13 +611,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   have keys the creation's guesses miss (not looked into: the sampler variant, a dynamic state's default, a read-only
   depth layout), which matters only if premaking ever wins. (2) SwiftShader's compile isn't kept across a browser
   restart (Metal's and NVIDIA's are, through Dawn's cache in the profile and the driver's own: REPORT.md "VK3: the NVIDIA
-  run after L2b"). (3) The shader store holds its entries inflated in memory, ~5.8-7× what's stored (Godot's editor:
-  499 entries, 4.4 MB stored, 23 MB held; vkQuake's 7.4×): a store kept full at 64 MiB would hold ~450 MB in the GPU
-  worker. Entries could be held deflated and inflated at a lookup (the lookups are synchronous), which needs a
-  synchronous inflate: the platform has only DecompressionStream, so a dependency (fflate, MIT, ~8 KB) or our own
-  inflate, the user's call (CLAUDE.md "Ask before adding one"). It is memory only: the load's inflate happens once, at
-  Vulkan's start, not a program's (Godot's 210 stages' WGSL, 7.0 MB held: ~90-150 ms through DecompressionStream in
-  Node, 10-14 ms through zlib's synchronous inflate), so no program's start gains. (4) A pipeline made at once by a
+  run after L2b"). (3) A pipeline made at once by a
   submit (`syncPipelines`) is counted, never seen.
 - **The printer's WGSL, what Tint still pays for** (GD G2, VK4 T49; vk/README.md "The shader path",
   bench/vulkan/REPORT.md "GD G2", "VK4 T49"): since T49 (values read once inlined, float vectors, uniform words by

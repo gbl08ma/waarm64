@@ -1,0 +1,151 @@
+{
+ "node": "v26.7.0",
+ "reps": 7,
+ "stores": {
+  "quake": {
+   "entries": 282,
+   "raw": 3710413,
+   "stored": 480005,
+   "largest": 76821,
+   "rawMedian": 14939,
+   "codecs": {
+    "deflate-raw, fflate 6": {
+     "note": "fflate inflateSync",
+     "held": 494404,
+     "ratio": 7.505,
+     "decodeMs": {
+      "median": 0.04,
+      "worst": 0.255,
+      "worstRaw": 14422,
+      "total": 11.483
+     },
+     "encodeMs": {
+      "median": 0.126,
+      "worst": 1.51,
+      "total": 42.036
+     },
+     "decodeMBps": 323.133
+    },
+    "deflate-raw, fflate 9": {
+     "note": "fflate inflateSync",
+     "held": 493076,
+     "ratio": 7.525,
+     "decodeMs": {
+      "median": 0.039,
+      "worst": 0.241,
+      "worstRaw": 76821,
+      "total": 10.659
+     },
+     "encodeMs": {
+      "median": 0.198,
+      "worst": 5.792,
+      "total": 65.959
+     },
+     "decodeMBps": 348.106
+    },
+    "deflate-raw, zlib 6 (native, reference)": {
+     "note": "Node's zlib: not in a browser",
+     "held": 479517,
+     "ratio": 7.738,
+     "decodeMs": {
+      "median": 0.008,
+      "worst": 0.053,
+      "worstRaw": 76821,
+      "total": 2.532
+     },
+     "encodeMs": {
+      "median": 0.032,
+      "worst": 0.475,
+      "total": 11.983
+     },
+     "decodeMBps": 1465.229
+    },
+    "lz4 block, the core's LZ (wasm)": {
+     "note": "web/lz.ts",
+     "held": 717758,
+     "ratio": 5.169,
+     "decodeMs": {
+      "median": 0.009,
+      "worst": 0.063,
+      "worstRaw": 76821,
+      "total": 2.52
+     },
+     "encodeMs": {
+      "median": 0.01,
+      "worst": 0.239,
+      "total": 4.098
+     },
+     "decodeMBps": 1472.104
+    },
+    "lz4 block, the core's LZ, decoded in JS": {
+     "note": "a JS decoder",
+     "held": 717758,
+     "ratio": 5.169,
+     "decodeMs": {
+      "median": 0.02,
+      "worst": 0.249,
+      "worstRaw": 76661,
+      "total": 7.196
+     },
+     "encodeMs": {
+      "median": 0.01,
+      "worst": 0.128,
+      "total": 3.883
+     },
+     "decodeMBps": 515.61
+    },
+    "zstd 3, decoded by fzstd": {
+     "note": "encoded by Node's zstd (a browser would need a wasm build)",
+     "held": 474318,
+     "ratio": 7.823,
+     "decodeMs": {
+      "median": 0.15,
+      "worst": 0.853,
+      "worstRaw": 76661,
+      "total": 39.147
+     },
+     "encodeMs": {
+      "median": 0.016,
+      "worst": 0.09,
+      "total": 4.853
+     },
+     "decodeMBps": 94.781
+    },
+    "zstd 19, decoded by fzstd": {
+     "note": "encoded by Node's zstd",
+     "held": 424555,
+     "ratio": 8.74,
+     "decodeMs": {
+      "median": 0.155,
+      "worst": 1.109,
+      "worstRaw": 76661,
+      "total": 41.788
+     },
+     "encodeMs": {
+      "median": 0.911,
+      "worst": 13.368,
+      "total": 297.872
+     },
+     "decodeMBps": 88.792
+    },
+    "zstd 3, native (reference)": {
+     "note": "Node's zstd: not in a browser",
+     "held": 474318,
+     "ratio": 7.823,
+     "decodeMs": {
+      "median": 0.007,
+      "worst": 0.039,
+      "worstRaw": 76821,
+      "total": 2.249
+     },
+     "encodeMs": {
+      "median": 0.015,
+      "worst": 0.157,
+      "total": 5.003
+     },
+     "decodeMBps": 1650.077
+    }
+   }
+  }
+ }
+}

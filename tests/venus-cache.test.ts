@@ -90,18 +90,51 @@ test('entries are stored deflated and come back whole; the budget counts what is
   assert.equal(backend.entries.get('noise')!.packed, false);
   assert.equal(backend.entries.get('noise')!.bytes.length, 500);
   assert.equal(a.stats.bytes, stored.bytes.length + 500, 'after it: what is stored');
-  assert.equal(a.stats.held, text.length + 500);
-  // A later run inflates them; the budget at its load counts the stored bytes (the text alone is larger than it).
+  assert.equal(a.stats.held, stored.bytes.length + 500, 'and what is held (T49 follow-up)');
+  assert.equal(Buffer.compare(a.get('text')!, text), 0, 'inflated at the lookup in this run');
+  // A later run holds them as stored; the budget at its load counts the stored bytes (the text alone is larger than it).
   const b = await ShaderCache.open('b', { backend, budget: 1000 });
+  assert.equal(b.stats.held, stored.bytes.length + 500);
   assert.equal(Buffer.compare(b.get('text')!, text), 0, 'the text came back otherwise');
+  assert.equal(Buffer.compare(b.get('text')!, text), 0, 'and again (a lookup inflates a copy)');
   assert.equal(b.get('noise')!.length, 500);
   assert.equal(b.stats.dropped, 0);
 });
 
-test('a stored entry that fails to inflate is dropped, not an error', async () => {
+test('the store round-trips held deflated: many entries, each inflated whole at each lookup, across runs (VK4 T49 follow-up)', async () => {
+  const backend = memoryBackend();
+  const a = await ShaderCache.open('b', { backend });
+  // WGSL-like entries of sizes from a few bytes to ~200 KB, some of which don't deflate.
+  const entries = new Map<string, Uint8Array>();
+  for (let i = 0; i < 40; i++) {
+    const line = `let t${i} = bitcast<f32>(u.m[${i}].x) * ${i}.5; // ${'x'.repeat(i)}\n`;
+    const text = new TextEncoder().encode(line.repeat(1 + i * i * 4));
+    entries.set(`k${i}`, i % 7 === 3 ? random(100 + i * 50) : text);
+  }
+  for (const [k, v] of entries) a.put(k, v);
+  await a.flush();
+  const raw = [...entries.values()].reduce((n, v) => n + v.length, 0);
+  assert.ok(a.stats.held < raw / 4, `held ${a.stats.held} of ${raw}`);
+  assert.equal(a.stats.held, a.stats.bytes);
+  for (const [k, v] of entries) assert.equal(Buffer.compare(a.get(k)!, v), 0, `${k} in this run`);
+  // A later run: the same; an entry stored without its size (before T49's follow-up) inflates too.
+  delete backend.entries.get('k20')!.size;
+  const b = await ShaderCache.open('b', { backend });
+  assert.equal(b.stats.held, a.stats.held);
+  for (const [k, v] of entries) assert.equal(Buffer.compare(b.get(k)!, v), 0, `${k} in the next run`);
+  assert.equal(Buffer.compare(b.get('k20')!, entries.get('k20')!), 0, 'k20 again, its size learned');
+  assert.ok(b.stats.inflateMs > 0);
+  assert.deepEqual([b.stats.hits, b.stats.misses, b.stats.dropped], [41, 0, 0]);
+});
+
+test('a stored entry that fails to inflate is dropped at its lookup, not an error', async () => {
   const backend = memoryBackend();
   backend.entries.set('bad', { key: 'bad', version: 'b', bytes: new Uint8Array([0xff, 0xff, 0xff]), used: 1, packed: true });
   const c = await ShaderCache.open('b', { backend });
   assert.equal(c.get('bad'), undefined);
   assert.equal(c.stats.dropped, 1);
+  assert.equal(c.stats.held, 0);
+  assert.equal(c.get('bad'), undefined, 'and gone');
+  await c.flush();
+  assert.equal(backend.entries.size, 0, 'from storage too');
 });

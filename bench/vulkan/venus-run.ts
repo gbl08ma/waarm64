@@ -8,10 +8,12 @@
 //   node bench/vulkan/venus-run.ts [image] [outdir]   (the image also IMAGE=, default target/images/debian-vulkan/disk.qcow2;
 //   the form bench/gpu/sway-mac.sh calls with SCRIPT=../vulkan/venus-run.ts, mode `-`); GPU_KNOBS: more of `?gpu=`, comma-separated
 //   (e.g. `vkvendor=nvidia,vkreadback`: web/app/main.ts); AFTER: commands after the replays, one a line; a CMDS line
-//   `@stall <ms>` blocks the GPU worker's thread that long instead (GD G3)
+//   `@stall <ms>` blocks the GPU worker's thread that long instead (GD G3); STORE_DUMP keeps the shader store at the end
+//   (bench/vulkan/store-dump.ts)
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { openSession } from '../gpu/guest-session.ts';
+import { dumpStore } from './store-dump.ts';
 
 const args = process.argv.slice(2);
 const out = args.at(-1) ?? new URL('../results/local/vk1/venus-run/', import.meta.url).pathname;
@@ -66,6 +68,8 @@ try {
   // AFTER: commands run after the replays (a look at their frames, one a line).
   for (const cmd of (process.env.AFTER ?? '').split('\n').filter(Boolean)) results[cmd] = (await s.runLines(cmd, 300_000)).join('\n');
   // How Vulkan's frames reached virgl in the end (web/venus-share.ts: the way and its check), if any were shared.
+  // STORE_DUMP: the shader store as the run left it (bench/vulkan/store-dump.ts).
+  if (process.env.STORE_DUMP) results.storeEntries = await dumpStore(s.page, `${out}/shader-store.json`);
   results.share = await s.page.evaluate(() => ((window as unknown as { __renderStats?: { share?: unknown }[] }).__renderStats ?? []).at(-1)?.share ?? null);
 } finally {
   writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, warnings: Object.fromEntries(s.warnings) }, null, 1));

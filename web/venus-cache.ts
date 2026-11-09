@@ -10,22 +10,25 @@
 // moment after they change. One store for the origin, shared by every machine: an entry is a translation, which depends
 // on the shader and the device, not on the machine. Entries carry the renderer's build ID (`venus_build_id`: a hash of
 // vk/'s sources, which is also in their keys): those of another build are dropped at the load, so a translator change
-// misses every entry and leaves no stale bytes behind. Entries go to IndexedDB compressed (CompressionStream's
-// deflate-raw, VK4 T17; one that doesn't shrink as it is) and are inflated at the load, so the budget counts what is
-// stored: the bytes held in memory are larger by the ratio. The budget is the page's Preferences' (the Machines page:
+// misses every entry and leaves no stale bytes behind. Entries are held and stored compressed (CompressionStream's
+// deflate-raw at the write-back, VK4 T17; one that doesn't shrink as it is), and inflated at each lookup, synchronously
+// (fflate's inflateSync: bench/vulkan/REPORT.md "VK4 T49 follow-up"), so the budget counts what is held too; an entry
+// is held as the renderer gave it only until its write-back. The budget is the page's Preferences' (the Machines page:
 // `Settings.shaderMiB`), and the Machines page's storage line shows the store's size and clears it
 // (`shaderStoreSize`, `clearShaderStore`).
 
-/**
- * An entry as stored: its key (hex), the renderer build it is of, its bytes (deflated when `packed`) and when it was last
- * used (ms since 1970).
- */
-export type CacheEntry = { key: string; version: string; bytes: Uint8Array; used: number; packed?: boolean };
+import { inflateSync } from 'fflate';
 
-/** An entry in memory: its bytes as the renderer reads them, and what is stored of them once known (`stored`, deflated
- * or not: `packed`), whose length the budget counts (the bytes' own until then). */
-type Held = { key: string; version: string; bytes: Uint8Array; used: number; stored?: Uint8Array; packed?: boolean };
-const size = (e: Held) => (e.stored ?? e.bytes).length;
+/**
+ * An entry as stored: its key (hex), the renderer build it is of, its bytes (deflated when `packed`; `size`, their
+ * length inflated, where known) and when it was last used (ms since 1970).
+ */
+export type CacheEntry = { key: string; version: string; bytes: Uint8Array; used: number; packed?: boolean; size?: number };
+
+/** An entry in memory: until its write-back, its bytes as the renderer gave them (`bytes`); from then on what is stored
+ * of them (`stored`, deflated or not: `packed`, `size` long inflated). The budget counts what it holds. */
+type Held = { key: string; version: string; used: number; bytes?: Uint8Array; stored?: Uint8Array; packed?: boolean; size?: number };
+const size = (e: Held) => (e.stored ?? e.bytes)!.length;
 
 /** Where entries persist: IndexedDB in the browser (`idbBackend`), memory in tests. */
 export interface CacheBackend {
@@ -34,18 +37,19 @@ export interface CacheBackend {
   save(put: CacheEntry[], remove: string[]): Promise<void>;
 }
 
-/** `bytes`: what the entries take stored (the budget's measure); `held`: their bytes in memory. */
-export type CacheStats = { hits: number; misses: number; stores: number; evicted: number; bytes: number; held: number; entries: number; dropped: number };
+/** `bytes`: what the entries take stored (the budget's measure); `held`: their bytes in memory (more than `bytes` only
+ * by the entries not yet written back); `inflateMs`: the lookups' inflates, in all. */
+export type CacheStats = { hits: number; misses: number; stores: number; evicted: number; bytes: number; held: number; entries: number; dropped: number; inflateMs: number };
 
 /** The default budget (bytes): VK3 L3 measured the programs' sets (bench/vulkan/REPORT.md "VK3 L3"). */
 export const CACHE_BUDGET = 32 << 20;
-/** The budgets the Preferences offer (MiB): the bytes held in memory are ~7× the stored (vkQuake's; bench/vulkan/REPORT.md "VK4 T17"). */
+/** The budgets the Preferences offer (MiB): the bytes held in memory are the stored (bench/vulkan/REPORT.md "VK4 T49 follow-up"). */
 export const CACHE_BUDGET_CHOICES = [8, 16, 32, 64];
 /** How long after a change the entries are written back (ms). */
 const FLUSH_MS = 1000;
 
 export class ShaderCache {
-  readonly stats: CacheStats = { hits: 0, misses: 0, stores: 0, evicted: 0, bytes: 0, held: 0, entries: 0, dropped: 0 };
+  readonly stats: CacheStats = { hits: 0, misses: 0, stores: 0, evicted: 0, bytes: 0, held: 0, entries: 0, dropped: 0, inflateMs: 0 };
   private readonly entries = new Map<string, Held>();
   private readonly dirty = new Set<string>();
   private readonly removed = new Set<string>();
@@ -74,16 +78,15 @@ export class ShaderCache {
     loaded.sort((a, b) => b.used - a.used);
     const kept: Held[] = [];
     for (const e of loaded) {
-      const bytes = e.version !== version || !(e.bytes instanceof Uint8Array) || c.stats.bytes + e.bytes.length > c.budget ? undefined
-        : e.packed ? await inflate(e.bytes).catch(() => undefined) : e.bytes;
-      if (!bytes) {
+      // Held as stored: a packed entry is inflated at its lookups (one that fails to is dropped there).
+      if (e.version !== version || !(e.bytes instanceof Uint8Array) || c.stats.bytes + e.bytes.length > c.budget) {
         c.removed.add(e.key);
         c.stats.dropped++;
         continue;
       }
-      kept.push({ key: e.key, version: e.version, bytes, used: e.used, stored: e.bytes, packed: !!e.packed });
+      kept.push({ key: e.key, version: e.version, used: e.used, stored: e.bytes, packed: !!e.packed, size: e.size });
       c.stats.bytes += e.bytes.length;
-      c.stats.held += bytes.length;
+      c.stats.held += e.bytes.length;
       c.clock = Math.max(c.clock, e.used);
     }
     for (const e of kept.reverse()) c.entries.set(e.key, e);
@@ -100,6 +103,18 @@ export class ShaderCache {
       this.stats.misses++;
       return undefined;
     }
+    const bytes = e.bytes ?? (e.packed ? this.inflate(e) : e.stored);
+    if (!bytes) {
+      // A stored entry that doesn't inflate: gone, and a miss.
+      this.drop(key);
+      this.stats.dropped++;
+      this.stats.misses++;
+      this.stats.entries = this.entries.size;
+      this.removed.add(key);
+      this.dirty.delete(key);
+      this.schedule();
+      return undefined;
+    }
     this.stats.hits++;
     // Its use, written back too: what the budget keeps at the next load follows it.
     e.used = this.now();
@@ -107,17 +122,32 @@ export class ShaderCache {
     this.entries.set(key, e);
     this.dirty.add(key);
     this.schedule();
-    return e.bytes;
+    return bytes;
+  }
+
+  /** A held entry's bytes inflated (a new array each time: the renderer copies them at once), its size learned. */
+  private inflate(e: Held): Uint8Array | undefined {
+    const t = performance.now();
+    try {
+      const bytes = inflateSync(e.stored!, e.size ? { out: new Uint8Array(e.size) } : undefined);
+      if (e.size !== undefined && bytes.length !== e.size) return undefined;
+      e.size = bytes.length;
+      return bytes;
+    } catch {
+      return undefined;
+    } finally {
+      this.stats.inflateMs += performance.now() - t;
+    }
   }
 
   /** Stores a copy of `bytes` under `key`; the least recently used go while the budget is exceeded. */
   put(key: string, bytes: Uint8Array) {
     if (bytes.length > this.budget / 4) return;
     this.drop(key);
-    const e: Held = { key, version: this.version, bytes: bytes.slice(), used: this.now() };
+    const e: Held = { key, version: this.version, bytes: bytes.slice(), used: this.now(), size: bytes.length };
     this.entries.set(key, e);
     this.stats.bytes += size(e);
-    this.stats.held += e.bytes.length;
+    this.stats.held += size(e);
     this.stats.stores++;
     this.dirty.add(key);
     this.removed.delete(key);
@@ -129,7 +159,7 @@ export class ShaderCache {
     const old = this.entries.get(key);
     if (!old) return;
     this.stats.bytes -= size(old);
-    this.stats.held -= old.bytes.length;
+    this.stats.held -= size(old);
     this.entries.delete(key);
   }
 
@@ -151,7 +181,8 @@ export class ShaderCache {
     this.timer = setTimeout(() => { this.timer = undefined; void this.flush(); }, FLUSH_MS);
   }
 
-  /** Writes the changes back now (tests; the worker's timer otherwise), deflating what isn't yet. */
+  /** Writes the changes back now (tests; the worker's timer otherwise), deflating what isn't yet: from then on that is
+   * what is held. */
   flush(): Promise<void> {
     if (this.timer) { clearTimeout(this.timer); this.timer = undefined; }
     const put = [...this.dirty].map((k) => this.entries.get(k)!).filter(Boolean);
@@ -161,25 +192,27 @@ export class ShaderCache {
     if (!this.backend || (!put.length && !remove.length)) return this.writing;
     this.writing = this.writing.then(async () => {
       for (const e of put) {
-        if (e.stored) continue;
-        const packed = await deflate(e.bytes).catch(() => undefined);
+        if (e.stored || !e.bytes) continue;
+        const raw = e.bytes;
+        const packed = await deflate(raw).catch(() => undefined);
         const before = size(e);
-        [e.stored, e.packed] = packed && packed.length < e.bytes.length ? [packed, true] : [e.bytes, false];
-        // Still held (not dropped meanwhile): what it takes stored now counts.
-        if (this.entries.get(e.key) === e) this.stats.bytes += size(e) - before;
+        [e.stored, e.packed, e.bytes] = packed && packed.length < raw.length ? [packed, true, undefined] : [raw, false, undefined];
+        // Still held: what it takes now counts.
+        if (this.entries.get(e.key) === e) {
+          this.stats.bytes += size(e) - before;
+          this.stats.held += size(e) - before;
+        }
       }
-      await this.backend!.save(put.map((e) => ({ key: e.key, version: e.version, bytes: e.stored!, used: e.used, packed: e.packed })), remove);
+      await this.backend!.save(put.map((e) => ({ key: e.key, version: e.version, bytes: e.stored!, used: e.used, packed: e.packed, size: e.size })), remove);
     }).catch((err) => console.warn('venus-cache: the shaders could not be stored', err));
     return this.writing;
   }
 }
 
-/** Bytes through a CompressionStream or DecompressionStream. */
-async function through(bytes: Uint8Array, stream: CompressionStream | DecompressionStream): Promise<Uint8Array> {
-  return new Uint8Array(await new Response(new Blob([bytes as Uint8Array<ArrayBuffer>]).stream().pipeThrough(stream)).arrayBuffer());
+/** Bytes through a CompressionStream (deflate-raw: what inflateSync reads). */
+async function deflate(bytes: Uint8Array): Promise<Uint8Array> {
+  return new Uint8Array(await new Response(new Blob([bytes as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());
 }
-const deflate = (bytes: Uint8Array) => through(bytes, new CompressionStream('deflate-raw'));
-const inflate = (bytes: Uint8Array) => through(bytes, new DecompressionStream('deflate-raw'));
 
 /** The backend in the browser: IndexedDB `webpc-shaders`, store `entries` keyed by `key`. */
 export function idbBackend(name = 'webpc-shaders'): CacheBackend & { clear(): Promise<void>; close(): void } {

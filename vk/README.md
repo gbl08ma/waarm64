@@ -1266,8 +1266,13 @@ misread.
 The worker's store (web/venus-cache.ts) holds them in memory, loaded from IndexedDB `webpc-shaders` when Vulkan starts.
 It is the origin's, shared by every machine (an entry depends on the shader and the device, not the machine), and kept
 under a byte budget (least recently used out first), written back a second after a change. Entries are stored deflated
-(CompressionStream's deflate-raw; one that doesn't shrink as it is) and inflated at the load (VK4 T17), and the budget
-counts what is stored, so the bytes held in memory are larger by the ratio (vkQuake's 4.7 MB as 0.63 MB: 7.4×). The budget is the page's Preferences'
+(CompressionStream's deflate-raw at the write-back; one that doesn't shrink as it is, VK4 T17) and held so, inflated at
+each lookup by fflate's synchronous `inflateSync` (the lookups are synchronous; an entry is held as the renderer gave it
+only until its write-back): Godot's editor's 499 entries take 3.8 MB held where they took 19 MB inflated, and its warm
+start's 499 lookups inflate in ~66 ms in all (Node; vkQuake's second replay's 753 in 28 ms in Chrome on the M4), the
+largest entry (0.86 MB) in ~3 ms. So the budget counts what is held too. LZ4 (the core's codec in JavaScript) held 60%
+more and inflated no faster; zstd through fzstd decoded 3× slower and has no encoder without a wasm build
+(bench/vulkan/REPORT.md "VK4 T49 follow-up"). The budget is the page's Preferences'
 ("[Space for Vulkan's shaders](ui:machines:MachinesPage.shaderBudget)", 8 to 64 MiB, 32 by default, `webpc.settings`
 `shaderMiB`), taken at a machine's start; the Machines page's storage line shows the store and clears it
 (`shaderStoreSize`, `clearShaderStore`; a machine running with Vulkan keeps what it holds and stores it again as it
@@ -1275,7 +1280,7 @@ changes). Entries carry the
 renderer's build ID (`venus_build_id`), and those of another build are dropped at the load. So a program's second run
 on a machine (or on another machine of the page) translates nothing its first did. What remains is the browser's own
 pipeline compile, which Chromium caches itself (bench/vulkan/REPORT.md "VK3 L3"). `?gpu=vkcache=off` keeps nothing, for
-cold runs and A/B. tests/venus-cache.test.ts checks the store (its deflated entries too), tests/page-modal.test.ts the
+cold runs and A/B. tests/venus-cache.test.ts checks the store (its entries held deflated and round-tripping too), tests/page-modal.test.ts the
 Machines page's line and budget; tests/venus-driver.test.ts a second run of the driver's
 program on a new renderer (no lookup missed, nothing new stored, the same pixels).
 

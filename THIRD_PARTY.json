@@ -497,6 +497,26 @@
           }
         },
         {
+          "id": "npm-fflate",
+          "name": "fflate",
+          "about": "page",
+          "url": "https://www.npmjs.com/package/fflate/v/0.8.3",
+          "version": "0.8.3",
+          "license": "MIT",
+          "licenseTexts": [
+            {
+              "name": "LICENSE",
+              "url": "https://github.com/101arrowz/fflate/blob/dcb3714a6c25db3a2748641019c5277413d09714/LICENSE"
+            }
+          ],
+          "md": {
+            "package": "fflate",
+            "version": "0.8.3",
+            "license": "MIT",
+            "use": "Vulkan's shader store held deflated, inflated at each lookup (`inflateSync`, synchronous: `web/venus-cache.ts` in the GPU worker; bench/vulkan/REPORT.md \"VK4 T49 follow-up\"); bundled from `node_modules`, not vendored"
+          }
+        },
+        {
           "id": "npm-svelte",
           "name": "svelte",
           "about": "page",
