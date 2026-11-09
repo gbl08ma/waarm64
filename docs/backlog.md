@@ -1781,11 +1781,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   a shared one (Buildroot's `make sdk` as an external toolchain, keyed by its own inputs) would
   save that on the second.
 
-- **No consumer left:** `web/bootfs.ts` and `web/ext4.ts` (the ext4 reader that took Debian's
-  kernel and initrd out of its disk; only `tests/ext4.test.ts` uses them: remove them or keep them
-  for a later feature); `images/stress/` and `bench/stress`/`bench/mem`'s `GO` path route Debian's
-  initrd, which the page's UEFI boot ignores (docs/images.md: put the binaries on a second disk
-  to revive them).
 - **Guest images built with Docker where Podman is missing** (the user, 2026-11-01): a cloud session (docs/cloud.md)
   has Docker (`dockerd &` as root pulls from Docker Hub) and no Podman, so `images/build.sh` and `images/deqp/build.sh`
   can't run there, and with them dEQP-VK's disk and guest (`scripts/ci-deqp-vk.sh`), dEQP's, Alpine, Buildroot and the

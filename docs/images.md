@@ -181,60 +181,22 @@ snapshot.debian.org at `images/Containerfile`'s date, installs `chromium` (153.0
 `fonts-dejavu-core`, and writes the overlay flattened and compressed: `target/images/debian-chromium/disk.qcow2`,
 732 MiB (3 GiB virtual, 1.1 GB free in the guest), in ~2 min. The page boots it with `?disk=`.
 
-## Stress workloads in the Debian guest (`images/stress/`)
+## The Go compiler on a second disk (`images/stress/build-goroot.sh`)
 
-**Not usable at the moment:** these tools replace Debian's initrd (`target/images/debian/initrd.img`)
-through a page route, which needs the direct boot of an extracted kernel and initrd; the page
-boots Debian through UEFI since M8 phase B loop 3 (the route has no effect) and the extraction
-was dropped with the direct-boot tests. To revive them, put the binaries on a second disk
-(as the Go compiler's below) instead of in the initrd.
+A real multi-thread compile load for the Debian guest; not part of `images/build.sh` or CI, built on demand (~1 min):
+`target/images/stress/goroot.ext4`, 160 MiB (106 MiB used), a trimmed GOROOT (`go`, `compile`, `link`, `asm`, std
+sources without tests; `go.env` has `CGO_ENABLED=0`, since the guest has no gcc) and `/work/{hello,web}` (the latter
+imports `net/http`, `crypto/tls`, `encoding/json`: ~100 packages). The build proves the trimmed tree builds `web` cold
+before packing. Natively a cold `hello` is 3 s wall and 6 s CPU.
 
-A load with the character of a Go compile on 4 vCPUs: many threads, spinning
-Ms (`procyield`, `osyield`), heavy mmap/mprotect/munmap (so many TLBI IS), the GC and scavenger,
-futexes, fork/exec. Not part of `images/build.sh` or CI; built on demand.
-
-- `images/stress/build.sh [debian-dir]` (~1 min): in Go's arm64 container (`golang:1.26.8-trixie`,
-  pinned by digest, rootless Podman, native) builds `gostress` (static Go, `images/stress/gostress.go`)
-  and `cstress` (static glibc C, `cstress.c`) into `target/images/stress/`, then
-  `mkinitrd.ts` writes `target/images/stress/initrd.img`: Debian's initrd plus one more cpio
-  segment (the kernel unpacks concatenated segments), with the binaries and an init-bottom hook.
-  The hook exists because the initramfs has klibc's `mount` (no remount), no `cp`, `chmod` or
-  `find`, and `/run` is `noexec`: it mounts a tmpfs on `/run/stress` and `cpio -i`s the binaries in
-  (`/run` is what survives `switch_root`). `debian-dir` defaults to `target/images/debian`.
-- **Guest command:** `/run/stress/gostress <seconds> [procs]` or `/run/stress/cstress <seconds>
-  [threads]` (defaults 60 s, 4). One heartbeat line per second (`gostress: t=N allocs=... mmaps=...
-  mprotects=... execs=... chan=... spins=... gc=... threads=...`; `cstress: t=N ...`), then
-  `gostress: done` / `cstress: done`, exit 0. Natively gostress does ~60 k mmap/munmap cycles and ~3 k execs per second on 8 cores.
-- **How the guest gets it:** no core or page change. Serve the variant initrd in place of
-  `target/images/debian/initrd.img`: Playwright `page.route('**/target/images/debian/initrd.img', r =>
-  r.fulfill({ path }))` on the page (`?machine=debian`), or `initrd:` in `runToPowerOff` in Node. The
-  other mechanisms were weighed: the 9p device takes only string contents, isn't in the page's
-  machines and is in-memory (a binary would need `P9Files` to take bytes plus a page device);
-  the disk overlay is OPFS blocks under a qcow2 (no host-side writer of ext4); typing the file
-  over the serial terminal takes minutes; the network needs a tailnet peer.
-- `node images/stress/run-page.ts [seconds] [gostress|cstress] [ncpus]` boots the page in headless
-  Chromium with that route, logs in on the serial terminal, runs the command and reports the
-  heartbeats seen, the longest gap between them (wall ms; a stalled vCPU shows as a gap), the page's
-  state and dmesg's lockup/stall/WARNING lines. `gostress 60` on 4 vCPUs: login at ~38 s, 60 heartbeats,
-  longest gap 1.2 s, no dmesg warnings; `cstress 30`: longest gap 1.0 s, none (Chromium 153, the dev VM).
-- **The real Go compiler** (`images/stress/build-goroot.sh`, ~1 min): `target/images/stress/goroot.ext4`,
-  160 MiB (106 MiB used), a trimmed GOROOT (`go`, `compile`, `link`, `asm`, std sources without
-  tests; `go.env` has `CGO_ENABLED=0`, since the guest has no gcc) and `/work/{hello,web}` (the latter
-  imports `net/http`, `crypto/tls`, `encoding/json`: ~100 packages). The build proves the trimmed tree
-  builds `web` cold before packing. Natively a cold `hello` is 3 s wall and 6 s CPU, so in the
-  guest it is a real multi-thread compile load. It doesn't fit the initrd (`/run` is 10% of RAM) and
-  needs a **second virtio-blk** (`{ type: 'blk', url }` beside the root in `web/app/worker.ts`; not in
-  any machine yet, untested in the guest): `mount -o ro /dev/vdb /mnt; GOROOT=/mnt/go GOCACHE=/tmp/gc
-  GOFLAGS=-mod=mod /mnt/go/bin/go build -o /tmp/web /mnt/work/web` (module cache and the work dir
-  must be writable: copy `/mnt/work` to `/tmp`). Debian's `golang-go` package would need the network and
-  ~250 MB installed, the overlay's writes included.
-  **Under the stress test** (`node bench/stress/stress.ts --initrd target/images/stress/initrd.img --disk2
-  target/images/stress/goroot.ext4 --guest-cmd ...`, docs/testing.md; `?disk2=` in docs/frontend.md): a cold
-  `go build` of `/work/web` alone takes **349 s** on 4 vCPUs in Chromium (the dev VM), and no build
-  (not even `hello`) finished in 300 s beside the stress test's own 10 background loads plus
-  `gostress`. Size a Go loop for that: a long run's builds take 10 minutes or more each. The
-  `gostress` load and `?disk2=` mount (`/dev/vdb`, ext4, read-only) work under `stress.ts`. The
-  harness logs `GOBUILD rc=<n> <s>s` lines a guest loop echoes as `gobuild` events.
+The page serves it as the second disk (`?disk2=`, docs/frontend.md; `/dev/vdb`, ext4, read-only): `mount -o ro
+/dev/vdb /mnt; GOROOT=/mnt/go GOCACHE=/tmp/gc GOFLAGS=-mod=mod /mnt/go/bin/go build -o /tmp/web /mnt/work/web` (module
+cache and the work dir must be writable: copy `/mnt/work` to `/tmp`). Debian's `golang-go` package would need the
+network and ~250 MB installed, the overlay's writes included. Its users: `bench/stress/stress.ts --disk2` (whose
+harness logs the `GOBUILD rc=<n> <s>s` lines a guest loop echoes as `gobuild` events), `bench/stress/go-ab.sh`,
+`bench/mem/memsample.ts` (`GO=1`) and `bench/gpu/warm-snapshots.sh`. A cold `go build` of `/work/web` alone takes
+**349 s** on 4 vCPUs in Chromium (the dev VM); beside the stress test's own background loads, a long run's builds take
+10 minutes or more each.
 
 ## Gotchas
 

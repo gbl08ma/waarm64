@@ -6,7 +6,6 @@
 //
 //   node bench/stress/stress.ts --seconds 600   (sampling time: the ~45 s boot and login come before it) [--out log.jsonl] [--interval 5] [--ncpus 4]
 //     [--guest-cmd '<cmd>']...  extra guest commands, each started in the background as `( cmd ) &`
-//     [--initrd <path>]         serve this initrd for Debian's (images/stress/build.sh: /run/stress/gostress in the guest)
 //     [--disk2 <repo path>]     a read-only second disk, /dev/vdb (images/stress/build-goroot.sh: goroot.ext4)
 //     [--no-load]               no built-in load (the --guest-cmd ones still start)
 //     [--query <a=b&c=d>]       added to the page's query (e.g. `jit=nocw`)
@@ -156,8 +155,6 @@ try {
 }
 emit({ type: 'meta', epoch, args: argv, opt, machine, ncpus, chromium: browser.version(), node: process.version });
 say(`log: ${out}`);
-const initrd = values('--initrd')[0];
-if (initrd) await page.route(`**/target/images/${machine}/initrd.img`, (r) => r.fulfill({ path: initrd }));
 const disk2 = values('--disk2')[0];
 const query = values('--query')[0];
 await page.goto(`${base}/web/app/?machine=${machine}&ncpus=${ncpus}&view=terminal&${unattendedQuery()}${disk2 ? `&disk2=${encodeURIComponent(`/${disk2}`)}` : ''}${query ? `&${query}` : ''}`);

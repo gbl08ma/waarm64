@@ -88,8 +88,7 @@ const smaps = (pid: number) => {
   return cls;
 };
 
-// GO=1: the Go compiler on a second disk as the load (images/stress, docs/images.md), through the variant initrd.
-if (process.env.GO) await page.route('**/target/images/debian/initrd.img', (r) => r.fulfill({ path: 'target/images/stress/initrd.img' }));
+// GO=1: the Go compiler on a second disk as the load (images/stress/build-goroot.sh, docs/images.md).
 // The tests' credentials: no first-boot questions, root without a password (tests/debian-unattended.ts).
 await page.goto(`${base}/web/app/?machine=debian&ncpus=4&view=terminal&${unattendedQuery()}${process.env.GO ? `&disk2=${encodeURIComponent('/target/images/stress/goroot.ext4')}` : ''}${extra}`);
 const state = () => page.evaluate(() => [document.body.dataset.state, document.getElementById('message-text')?.textContent] as const);

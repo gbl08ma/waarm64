@@ -84,9 +84,9 @@ test('the download: streamed to a .part file, checked against the pin, then kept
   try {
     process.env.WEBPC_DL = d;
     const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-    const body = readFileSync(join(ROOT, 'tests/ext4/manifest.json'));
+    const body = readFileSync(join(ROOT, 'tests/gpu/edid.json'));
     const sha512 = createHash('sha512').update(body).digest('hex');
-    const pin = { version: 'test', file: 'image.bin', url: `${base}/tests/ext4/manifest.json`, sha512 };
+    const pin = { version: 'test', file: 'image.bin', url: `${base}/tests/gpu/edid.json`, sha512 };
     const log: string[] = [];
     assert.equal(await download(pin, (s) => log.push(s)), join(d, 'image.bin'));
     assert.deepEqual(readFileSync(join(d, 'image.bin')), body);

@@ -34,7 +34,6 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `tools/dist.ts` | `npm run dist`: the page as a static copy (below, "A static copy") |
 | `tools/tailscale.ts` | builds the Tailscale client when missing or stale, for `npm run serve`, `npm start` and `scripts/ci-net.sh` ("Network") |
 | `tools/debian.ts` | Debian's download and preparation (the tests' guest), for `images/build.sh debian` |
-| `web/bootfs.ts`, `web/ext4.ts` | partition tables, a read-only ext2/3/4 reader, a distribution's kernel and initrd (below, "The disk reader") |
 
 Query parameters (development and tests; no settings UI yet): `?machine=debian|buildroot|snd` (the
 default is `debian`), `?ncpus=N`, `?ram=MiB` (both over the toolbar's Machine menu's choice), `?view=screen|terminal|both` (over the remembered view),
@@ -45,7 +44,7 @@ firmware machine; tests pass `tests/debian-unattended.ts`'s to boot Debian unatt
 passes none), `?clipboard=1` (a transient machine with clipboard sharing's device, docs/devices.md "agent";
 `window.__agent` is the page's end of its port), `?disk2=<url>` (a second,
 read-only virtio-blk over HTTP ranges, `/dev/vdb` in the guest, no overlay; for tests: the stress
-test's `--disk2` gives it the Go toolchain image, docs/images.md "Stress workloads"), `?snd=stats[,timer]`
+test's `--disk2` gives it the Go toolchain image, docs/images.md "The Go compiler on a second disk"), `?snd=stats[,timer]`
 (the sound device's completion timing once a second in `window.__audio.stats`, and the timer instead of the
 worklet's notify; any `?snd=` also exposes `window.__audio`, the serial log and the status, for tests and
 `bench/audio/snd-page.ts`), `?jit=nocw` (the JIT without its compile worker: each vCPU compiles what it installs,
@@ -1638,8 +1637,8 @@ the disk and takes nothing out of it; the pin is `images/debian.json`): the qcow
 otherwise) through a `.part` file, and checked against the pinned SHA512 either way (~1 s); the
 disk is hard-linked from the cache (a copy, reflinked where it can be, if the cache is on another
 filesystem). The output is byte for byte what `images/SHA256SUMS` lists (`images/build.sh debian`
-checks it). The kernel and initrd aren't extracted any more (the direct boot was dropped); the
-disk reader below (`web/bootfs.ts`, `web/ext4.ts`) has no consumer but its tests.
+checks it). The kernel and initrd aren't extracted (the page boots
+Debian through UEFI).
 
 ## A static copy
 
@@ -1722,28 +1721,3 @@ What it gives: `_headers` applies (COOP, COEP on every file), `.wasm` is `applic
 plan). Disks aren't hosted with the page (above). The dev VM's resolver may cache a
 new name's absence for a while after a DNS change: Chromium's `--host-resolver-rules=MAP vm.tny.im <ip>` (the
 script's `MAP=`) checks the real site meanwhile.
-
-## The disk reader
-
-`web/bootfs.ts` and `web/ext4.ts`: no Node APIs, all I/O through `read(off, len)` (a qcow2
-`Disk`'s), so the page can later read `/boot` at start time instead of a preparation step
-([backlog.md](backlog.md) "Booting conventional arm64 disk images unmodified").
-
-- **Partitions:** GPT (512-byte sectors; the protective MBR's `0xEE` entry leads to it) or MBR
-  primaries; a disk with neither is a bare filesystem. `findBootFiles` takes the first partition
-  with an ext2/3/4 filesystem whose `/boot` has `vmlinuz-<version>` (the highest version when
-  there are several), and `initrd.img-<version>`. Debian's nocloud image: partition 1 is the
-  root (partition 15 is the ESP, first on the disk).
-- **ext2/3/4, read-only:** superblock, group descriptors (32- and 64-bit, `meta_bg`), inodes,
-  extent trees of any depth (uninitialized extents and holes read as zeros), ext2/3 block maps
-  (to triple indirect), directories read linearly (htree index blocks look like empty entries;
-  checksum tails have inode 0), fast and slow symlinks (followed, 40 at most). Ignored: checksums,
-  the journal (read as on disk). Refused: compression, a journal device, dirdata (at open), inline
-  data and encrypted files (when read).
-- **Tests** (`tests/ext4.test.ts`): `tests/ext4/make.sh` builds one tree (deterministic content,
-  its `manifest.json`) into an ext4 on GPT (1 KiB blocks, 32 groups in 2 meta groups, 64-bit,
-  metadata_csum, a 400-extent file with a depth-2 tree, a 300-entry htree directory) and an ext2
-  on MBR (block maps to double indirect), both as compressed qcow2 (~360 KB each), with the
-  host's e2fsprogs, sfdisk and qemu-img (fixtures made once, like `tests/qcow2/make.sh`); the test
-  reads every file, link and directory against the manifest. The real image is checked by
-  `images/build.sh debian` against `images/SHA256SUMS`.
