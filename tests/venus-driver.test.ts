@@ -260,6 +260,8 @@ for (const [scenario, what, want] of [
   // VK4 T44: pulled vertices in a program of four groups (group 3 shared), and divisors (records 5, 5, 3 and 0).
   ['pullFourSets', 'pulled draws beside an ordinary one in a layout of four sets', { topLeft: [0, 255, 0, 255], topRight: [255, 0, 0, 255], bottomLeft: [0, 255, 0, 255], bottomRight: [0, 0, 255, 255] }],
   ['pullDivisors', 'instance bindings with divisors of 2 and 0, direct and indirect, from first instances past 0', { topLeft: [255, 0, 0, 255], topRight: [255, 0, 0, 255], bottomLeft: [128, 0, 0, 255], bottomRight: [200, 0, 0, 255] }],
+  // The review of VK4 T47-T49 (finding 3): a submit's push places for draws with draw parameters and a divisor.
+  ['pullDivisorsMany', '1,100 direct draws with draw parameters and a divisor in one submit, each its own push constants and first instance', { topLeft: [200, 0, 0, 255], bottomRight: [77, 0, 0, 255] }],
 ] as const) {
   test(`passes: ${what}`, { skip, timeout: 60_000 }, async (t) => {
     // After the first test, which compiled the shaders.

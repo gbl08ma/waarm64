@@ -1534,6 +1534,10 @@ wgt_draw_params(const uint32_t *vs, uint32_t vs_words, const uint32_t *fs, uint3
  *    and a first instance of 5 (record 5, not 5 / 2); top right likewise indirectly; bottom left, a divisor of 0 and
  *    two instances from 3 (both record 3: the second drawn over the first); bottom right, a divisor of 2 and two
  *    instances from 0 (both record 0).
+ * 7: 1,100 direct draws of 6's divisor of 2 in one submit (the review of VK4 T47-T49, finding 3), each with its own
+ *    push constants and first instance, so each takes two places of the push buffer (its push constants and draw
+ *    parameters, its divisor's first instance), 1.1 MiB, past the buffer's 1 MiB unless the submit reserves both:
+ *    the first top left from record 0 (200), the last bottom right from record 1,099 (77), the others off the target.
  */
 static struct {
    VkPipeline pipeline[4];
@@ -1559,6 +1563,8 @@ pull_stride7(uint32_t at, uint32_t colour)
       memcpy(pull.map + at + 7 * i + 2, &colour, 4);
    }
 }
+
+#define PULL_MANY 1100
 
 static void
 pull_record(VkCommandBuffer cmd, bool in_pass)
@@ -1603,6 +1609,17 @@ pull_record(VkCommandBuffer cmd, bool in_pass)
       CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.pipeline[2]);
       CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16, off[2]);
       CmdDraw(cmd, 6, 2, 0, 3);
+   } else if (pull.scenario == 7) {
+      CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pull.pipeline[3]);
+      const VkBuffer two[2] = { pull.vb, pull.vb };
+      const VkDeviceSize places[2] = { at[3], 28673 };
+      CmdBindVertexBuffers(cmd, 0, 2, two, places);
+      for (uint32_t i = 0; i < PULL_MANY; i++) {
+         const float away[4] = { 4 + i / 1024.0f, 4 };
+         CmdPushConstants(cmd, scene.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 16,
+                          i == 0 ? off[0] : i == PULL_MANY - 1 ? off[3] : away);
+         CmdDraw(cmd, 6, 1, 0, i);
+      }
    } else if (pull.scenario == 2 || pull.scenario == 5) {
       const VkViewport quarter[3] = { { 0, 0, 32, 32, 0, 1 }, { 32, 0, 32, 32, 0, 1 }, { 0, 32, 32, 32, 0, 1 } };
       const uint32_t offsets[4] = { 0, 0, 0, 0 };
@@ -1735,7 +1752,7 @@ wgt_pull(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_
          .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO_KHR, .vertexBindingDivisorCount = 1,
          .pVertexBindingDivisors = &divisor };
       VkPipelineVertexInputStateCreateInfo vis_divided = vis;
-      if (scenario == 6 && i >= 2) {
+      if ((scenario == 6 || scenario == 7) && i >= 2) {
          vis_divided.pVertexBindingDescriptions = shapes[3].b;
          vis_divided.vertexBindingDescriptionCount = shapes[3].bindings;
          vis_divided.pVertexAttributeDescriptions = shapes[3].a;
@@ -1774,8 +1791,10 @@ wgt_pull(uint32_t scenario, const uint32_t *vs, uint32_t vs_words, const uint32_
          pull.map[24576 + 8 * i + 1] = pull_corner[i][1] * 255;
       }
       pull.map[28673 + 2] = 128;
-      if (scenario == 6)
+      if (scenario == 6 || scenario == 7)
          memcpy(pull.map + 28673, (const uint8_t[6]){ 200, 16, 64, 128, 32, 255 }, 6);
+      if (scenario == 7)
+         pull.map[28673 + PULL_MANY - 1] = 77;
    }
    draw_custom = pull_record;
    const int r = draw_with(NULL, 0, 0, pull.pipeline[0]);
