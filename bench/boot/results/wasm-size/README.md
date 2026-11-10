@@ -1,6 +1,6 @@
 # Where the JIT's wasm bytes go: a static census (2026-10-30)
 
-The data behind docs/backlog.md "Where the JIT's wasm bytes go". A diagnostic core (`diag.patch`, applied to main at
+The data behind the backlog's former "Where the JIT's wasm bytes go" (closed by PERF loop 13: `bench/boot/REPORT.md`, docs/jit.md "Tried and not kept"). A diagnostic core (`diag.patch`, applied to main at
 1fbaa7d, not on main) adds a `webpc.diag` custom section to every module the JIT emits: for each function, each guest
 instruction's byte range in the body (inline, helper call, a group's leader or follower), the block's failure chain,
 its tail (edges, write-backs, the PC, chaining, the return), the prologue and the NZCV commit before a branch, and

@@ -1,0 +1,418 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 45ce6b46..18f90418 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -973,9 +973,14 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+         );
+         emit::tier_up(&mut c, word, r.blocks[0].key, e.bt, hot);
+     }
++    let looped = r.looped();
++    if emit::ONE_COUNTER && (n > 1 || looped) {
++        c.local_get(emit::ACC).local_get(emit::LEFT).op(0x6a); // i32.add
++        c.local_set(emit::SUM);
++        c.sum = true;
++    }
+     // The head's state: loaded once, before the loop.
+     c.conform(entry[0]);
+-    let looped = r.looped();
+     if looped {
+         c.loop_();
+     }
+@@ -1131,8 +1136,10 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+             }
+             bad |= matches!(fin[j], In::Lazy(..)) && store(j, lazy);
+             c.conform(entry[j]);
+-            c.local_get(emit::ACC).i32_const(len as i32).op(0x6a); // i32.add
+-            c.local_set(emit::ACC);
++            if !c.sum {
++                c.local_get(emit::ACC).i32_const(len as i32).op(0x6a); // i32.add
++                c.local_set(emit::ACC);
++            }
+             c.local_get(emit::LEFT).i32_const(len as i32).op(0x6b); // i32.sub
+             c.local_set(emit::LEFT);
+             // Around a loop, the stale-code checker runs as at a chained entry.
+@@ -1307,7 +1314,15 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
+         let miss = Some(e.miss(b.key));
+         emit::indirect(c, b.key & 3, miss, len, e.bt, e.checker, x);
+     };
++    // Straight to the miss function (it reads the PC from the `Cpu`).
++    let to_miss = |c: &mut emit::Func| {
++        let miss = emit::To::Func(e.miss(b.key), 0);
++        emit::transfer(c, Xfer::Tail, len, e.bt, miss, 0);
++    };
+     let Some(&(f, tlen, entry)) = f else {
++        if guarded && MISS_UNCOMPILED {
++            return to_miss(c);
++        }
+         if guarded {
+             return by_va(c);
+         }
+@@ -1328,11 +1343,19 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
+     }
+     emit::transfer(c, x, len, e.bt, emit::To::Func(f, entry), 1);
+     c.end();
+-    if guarded && e.jc {
++    if guarded && e.jc && MISS_FALLBACK {
++        to_miss(c);
++    } else if guarded && e.jc {
+         by_va(c);
+     }
+ }
+ 
++/// A/B switches: a guarded chain's fallback, and an uncompiled successor in
++/// another page, as a tail call of the miss function instead of a transfer
++/// cache probe.
++const MISS_FALLBACK: bool = true;
++const MISS_UNCOMPILED: bool = false;
++
+ /// The byte offset of a call's continuation (the instruction after a BL or
+ /// BLR that ends block `words`), if it ends on one.
+ fn call_after(words: &[u32]) -> Option<i64> {
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index 61b785c8..909497ee 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -58,6 +58,11 @@ const ENTRY: u32 = 1;
+ pub const ACC: u32 = 126;
+ pub const LEFT: u32 = 127;
+ pub const TAKEN: u32 = 125;
++/// In a region with edges ([`Func::sum`]): `acc + left` at entry (i32), which
++/// the edges keep, so they update only `left` and `acc` is `SUM - left`.
++pub const SUM: u32 = 138;
++/// A/B switch: [`SUM`] in regions with edges.
++pub const ONE_COUNTER: bool = true;
+ /// The last parameter: how many host calls deep the function runs (0 from
+ /// the dispatcher). A guest call (BL, BLR) below [`MAX_DEPTH`] is a wasm
+ /// `call` with the depth + 1, and a `ret` at a depth above 0 a wasm `return`
+@@ -262,6 +267,8 @@ pub struct Func {
+     /// the failure chains call instead of computing NZCV inline.
+     pub nzcv: Option<[u32; NZCV_HELPERS]>,
+     pub nzcv_used: bool,
++    /// `acc` is `SUM - left` ([`SUM`]).
++    pub sum: bool,
+ }
+ 
+ /// Load and store failure exits that share their write-backs (docs/jit.md
+@@ -312,6 +319,7 @@ impl Func {
+                 || i == DEPTH
+                 || (13..=16).contains(&i)
+                 || i == TAKEN
++                || i == SUM
+                 || i == FPOK
+                 || i == FZOK
+                 || i == HOK
+@@ -544,7 +552,7 @@ impl Func {
+     /// Pushes a lazy setter's NZCV ([`nzcv_of`]); on a cold path, a call of
+     /// the module's helper for it instead of its ~70 bytes inline.
+     fn push_nzcv(&mut self, kind: Kind, sf: bool, cold: bool) {
+-        match (self.nzcv.filter(|_| cold), nzcv_index(kind, sf)) {
++        match (self.nzcv.filter(|_| cold || NZCV_HOT), nzcv_index(kind, sf)) {
+             (Some(f), Some(k)) => {
+                 let (x, y, _) = flag_locals(sf);
+                 self.c.local_get(x).local_get(y).call(f[k]);
+@@ -578,8 +586,17 @@ impl Func {
+ 
+     /// Returns the chain's retired count with `k` more of this block's
+     /// instructions retired (the registers and flags already in the `Cpu`).
++    /// Pushes `acc`: the parameter, or `SUM - left` in a region with edges.
++    pub fn acc(&mut self) {
++        if self.sum {
++            self.c.local_get(SUM).local_get(LEFT).op(0x6b); // i32.sub
++        } else {
++            self.c.local_get(ACC);
++        }
++    }
++
+     pub fn ret(&mut self, k: u32) {
+-        self.c.local_get(ACC);
++        self.acc();
+         if k != 0 {
+             self.c.i32_const(k as i32).op(0x6a); // i32.add
+         }
+@@ -675,7 +692,8 @@ impl Func {
+             self.push_nzcv(kind, sf, true);
+             self.c.i64_extend_i32_u().i64_store(NZCV);
+         }
+-        self.c.local_get(ACC).op(0x6a).return_(); // i32.add
++        self.acc();
++        self.c.op(0x6a).return_(); // i32.add
+         self.c.end();
+     }
+ 
+@@ -946,6 +964,19 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
+             match bits(i, 30, 29) {
+                 // SBFX/ASR/SXT* (imms >= immr): the field imms:immr, sign-extended;
+                 // SBFIZ: the field imms:0 sign-extended, shifted left to immr.
++                // SXTB, SXTH, SXTW: wasm's sign extensions.
++                0 if IDIOMS && immr == 0 && (imms == 7 || imms == 15 || (sf && imms == 31)) => {
++                    set(c, sf, rd, |c| {
++                        get(c, sf, rn);
++                        c.op(match (sf, imms) {
++                            (false, 7) => 0xc0, // i32.extend8_s
++                            (false, _) => 0xc1, // i32.extend16_s
++                            (true, 7) => 0xc2,  // i64.extend8_s
++                            (true, 15) => 0xc3, // i64.extend16_s
++                            _ => 0xc4,          // i64.extend32_s
++                        });
++                    })
++                }
+                 0 => set(c, sf, rd, |c| {
+                     get(c, sf, rn);
+                     shift(c, sf, SHL, w - 1 - imms);
+@@ -972,6 +1003,16 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
+                     arith(c, sf, OR);
+                 }),
+                 // UBFM: the rotated source under both masks (LSL, LSR, UBFX, UXT*).
++                // LSR: the source shifted right, no mask.
++                2 if IDIOMS && imms == w - 1 => set(c, sf, rd, |c| {
++                    get(c, sf, rn);
++                    shift(c, sf, SHR_U, immr);
++                }),
++                // LSL: the source shifted left, no mask.
++                2 if IDIOMS && imms + 1 == immr => set(c, sf, rd, |c| {
++                    get(c, sf, rn);
++                    shift(c, sf, SHL, w - immr);
++                }),
+                 2 => set(c, sf, rd, |c| {
+                     get(c, sf, rn);
+                     shift(c, sf, ROTR, immr);
+@@ -996,6 +1037,24 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
+                 }
+             });
+         }
++        // CSET and CSETM: the condition's inverse as 1 or all ones.
++        CSINC | CSINV if IDIOMS && rn == 31 && rm == 31 => set(c, sf, rd, |c| {
++            cond(c, bits(i, 15, 12));
++            if op == CSINC {
++                c.op(0x45); // i32.eqz
++                if sf {
++                    c.i64_extend_i32_u();
++                }
++            } else {
++                // cond - 1: 0 or all ones.
++                c.op(0x45).op(0x45);
++                if sf {
++                    c.i64_extend_i32_u();
++                }
++                konst(c, sf, 1);
++                arith(c, sf, SUB);
++            }
++        }),
+         CSEL | CSINC | CSINV | CSNEG => set(c, sf, rd, |c| {
+             get(c, sf, rn);
+             if op == CSNEG {
+@@ -1424,7 +1483,8 @@ impl To {
+ /// above [`ENTRY_BIT`]; then the table index for an indirect transfer.
+ fn args(c: &mut Func, len: u32, deeper: bool, to: To) {
+     c.local_get(VCPU);
+-    c.local_get(ACC).i32_const(len as i32).op(ADD);
++    c.acc();
++    c.i32_const(len as i32).op(ADD);
+     c.local_get(LEFT).i32_const(len as i32).op(SUB);
+     c.local_get(DEPTH);
+     if deeper {
+@@ -1479,7 +1539,8 @@ pub const ENTRY_BIT: u32 = 16;
+ /// block's retired count with [`RETURNED`] (the PC is in the `Cpu`).
+ pub fn ret_up(c: &mut Func, len: u32) {
+     c.local_get(DEPTH).if_();
+-    c.local_get(ACC).i32_const(len as i32).op(ADD);
++    c.acc();
++    c.i32_const(len as i32).op(ADD);
+     c.i32_const(RETURNED as i32).op(OR).return_();
+     c.end();
+ }
+@@ -1496,9 +1557,14 @@ pub fn returned(c: &mut Func, len: u32, off: i64) {
+     // left += acc - (result - len); acc = result - len, the flag dropped.
+     c.local_get(RESULT).i32_const(!RETURNED as i32).op(AND);
+     c.i32_const(len as i32).op(SUB).local_set(RESULT);
+-    c.local_get(LEFT).local_get(ACC).op(ADD);
+-    c.local_get(RESULT).op(SUB).local_set(LEFT);
+-    c.local_get(RESULT).local_set(ACC);
++    if c.sum {
++        // acc + left stays SUM.
++        c.local_get(SUM).local_get(RESULT).op(SUB).local_set(LEFT);
++    } else {
++        c.local_get(LEFT).local_get(ACC).op(ADD);
++        c.local_get(RESULT).op(SUB).local_set(LEFT);
++        c.local_get(RESULT).local_set(ACC);
++    }
+     c.local_get(VCPU).i64_load(PC);
+     pc_plus(c, off);
+     c.op(EQ + WC);
+@@ -2384,7 +2450,9 @@ pub fn fp_guard(c: &mut Func, cx: &Ctx, i: u32, k: usize) {
+     // acc + k, plus one if the helper retired it after all.
+     c.local_get(VCPU).i32_const(i as i32);
+     pc_plus(c, 4 * k as i64);
+-    c.call(cx.helper).op(EQZ).local_get(ACC).op(ADD);
++    c.call(cx.helper).op(EQZ);
++    c.acc();
++    c.op(ADD);
+     c.i32_const(k as i32).op(ADD).return_();
+     c.end();
+     c.regs = saved;
+@@ -4082,6 +4150,13 @@ fn sub_nzcv(c: &mut Func, sf: bool, x: u32, y: u32, r: u32) {
+     c.op(OR);
+ }
+ 
++/// A/B switch: UBFM as LSR/LSL, SBFM as SXT*, CSET/CSETM from the condition.
++const IDIOMS: bool = true;
++
++/// A/B switch: every lazy setter's NZCV through the module's helpers, not only
++/// the cold paths'.
++pub const NZCV_HOT: bool = false;
++
+ /// The NZCV helpers a module has ([`nzcv_helper`]): SUBS and ADDS, 32 and 64 bits.
+ pub const NZCV_HELPERS: usize = 4;
+ 
+@@ -4155,7 +4230,7 @@ fn cond(c: &mut Func, cond: u32) {
+                 c.counts.cond_direct += 1;
+             } else {
+                 c.counts.cond_computed += 1;
+-                nzcv_of(c, kind, sf);
++                c.push_nzcv(kind, sf, false);
+                 holds(c, cond);
+             }
+         }
+diff --git a/core/src/jit/wasm.rs b/core/src/jit/wasm.rs
+index 5fc3ec76..b6e48fee 100644
+--- a/core/src/jit/wasm.rs
++++ b/core/src/jit/wasm.rs
+@@ -48,6 +48,9 @@ fn section(out: &mut Vec<u8>, id: u8, count: usize, body: &[u8]) {
+     out.extend(v);
+ }
+ 
++/// A/B switch: the `local.tee` and zero-operand peepholes.
++pub const PEEPHOLES: bool = true;
++
+ /// A function body under construction: locals, then instructions.
+ #[derive(Default)]
+ pub struct Code {
+@@ -62,16 +65,28 @@ pub struct Code {
+     /// or a spill memory's index while a load's or store's spill arm is
+     /// emitted (docs/spill-memories.md "The JIT's spill arm").
+     pub ram_mem: u32,
++    /// Where the last [`Code::mark`] was taken or [`Code::rewind`] returned to: a
++    /// `local.set` that ends there isn't merged with a `local.get` after it
++    /// ([`Code::local_get`]), or a rewind to that mark would keep the merged
++    /// `local.tee`'s value on the stack. Marks nest, so the latest is the only
++    /// one the code can be at.
++    fence: core::cell::Cell<usize>,
++    /// Where the last `i32.const 0` or `i64.const 0` ends (0: none), so an
++    /// `add`, `sub`, `or` or `xor` of it drops both ([`Code::op`]).
++    zero: usize,
+ }
+ 
+ impl Code {
+     /// Where the code is now, for [`Code::rewind`].
+     pub fn mark(&self) -> (usize, usize, usize) {
++        self.fence.set(self.b.len());
+         (self.b.len(), self.locals.len(), self.hints.len())
+     }
+     /// Drops what was emitted since `m`.
+     pub fn rewind(&mut self, m: (usize, usize, usize)) {
+         self.b.truncate(m.0);
++        self.fence.set(m.0);
++        self.zero = 0;
+         self.locals.truncate(m.1);
+         self.hints.truncate(m.2);
+     }
+@@ -88,6 +103,17 @@ impl Code {
+ /// Instruction encoders; each appends one instruction.
+ impl Code {
+     pub fn op(&mut self, op: u8) -> &mut Self {
++        let n = self.b.len();
++        // x + 0, x - 0, x | 0, x ^ 0 (i32: 0x6a, 0x6b, 0x72, 0x73; i64 0x7c, 0x7d, 0x84, 0x85).
++        if PEEPHOLES
++            && self.zero == n
++            && self.fence.get() != n
++            && matches!(op, 0x6a | 0x6b | 0x72 | 0x73 | 0x7c | 0x7d | 0x84 | 0x85)
++        {
++            self.b.truncate(n - 2);
++            self.zero = 0;
++            return self;
++        }
+         self.b.push(op);
+         self
+     }
+@@ -190,7 +216,20 @@ impl Code {
+         self.b.push(i as u8);
+         self
+     }
++    /// `local.get`; right after a `local.set` of the same local (and no
++    /// [`Code::mark`] between them), the set becomes a `local.tee` instead.
+     pub fn local_get(&mut self, i: u32) -> &mut Self {
++        let n = self.b.len();
++        if PEEPHOLES
++            && n >= 2
++            && self.locals.last() == Some(&(n - 1))
++            && self.b[n - 2] == 0x21
++            && self.b[n - 1] as u32 == i
++            && self.fence.get() != n
++        {
++            self.b[n - 2] = 0x22;
++            return self;
++        }
+         self.local(0x20, i)
+     }
+     pub fn global_get(&mut self, i: u32) -> &mut Self {
+@@ -346,11 +385,17 @@ impl Code {
+     pub fn i32_const(&mut self, v: i32) -> &mut Self {
+         self.b.push(0x41);
+         sleb(&mut self.b, v as i64);
++        if v == 0 {
++            self.zero = self.b.len();
++        }
+         self
+     }
+     pub fn i64_const(&mut self, v: i64) -> &mut Self {
+         self.b.push(0x42);
+         sleb(&mut self.b, v);
++        if v == 0 {
++            self.zero = self.b.len();
++        }
+         self
+     }
+     pub fn i64_load(&mut self, offset: u32) -> &mut Self {
+@@ -677,4 +722,42 @@ mod tests {
+         let at = b.windows(want.len()).position(|w| w == want);
+         assert!(at.is_some(), "{b:x?}");
+     }
++
++    #[test]
++    fn peepholes() {
++        // local.set 3; local.get 3 is local.tee 3; local.get of another local isn't merged.
++        let mut c = Code::default();
++        c.local_get(0).local_set(3).local_get(3).local_set(4).local_get(5);
++        assert_eq!(c.b, [0x20, 0, 0x22, 3, 0x21, 4, 0x20, 5]);
++        // Not across a mark: a rewind to it must find the set as it was.
++        let mut c = Code::default();
++        c.local_get(0).local_set(3);
++        let m = c.mark();
++        c.local_get(3);
++        assert_eq!(c.b, [0x20, 0, 0x21, 3, 0x20, 3]);
++        c.rewind(m);
++        assert_eq!(c.b, [0x20, 0, 0x21, 3]);
++        // Nor right after a rewind to one (an outer mark may be there too).
++        c.i32_const(1).local_set(6);
++        let m = c.mark();
++        c.local_get(7);
++        c.rewind(m);
++        c.local_get(6);
++        assert_eq!(c.b, [0x20, 0, 0x21, 3, 0x41, 1, 0x21, 6, 0x20, 6]);
++        // x + 0, x | 0 (i32 and i64) drop the zero; 0 - x and x * 0 don't.
++        let mut c = Code::default();
++        c.local_get(0).i64_const(0).op(0x7c).i32_const(0).op(0x72);
++        assert_eq!(c.b, [0x20, 0]);
++        c.i64_const(0).local_get(1).op(0x7d).i64_const(0).op(0x7e);
++        assert_eq!(c.b, [0x20, 0, 0x42, 0, 0x20, 1, 0x7d, 0x42, 0, 0x7e]);
++        // A zero before a mark stays: the rewind's code may need it.
++        let mut c = Code::default();
++        c.local_get(0).i64_const(0);
++        let m = c.mark();
++        c.op(0x7c);
++        assert_eq!(c.b, [0x20, 0, 0x42, 0, 0x7c]);
++        c.rewind(m);
++        c.local_get(1).op(0x7c);
++        assert_eq!(c.b, [0x20, 0, 0x42, 0, 0x20, 1, 0x7c]);
++    }
+ }

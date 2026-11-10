@@ -242,9 +242,11 @@ the interpreter's own code.
   offset is its key only if the two pages are contiguous physically too: the kernel's image is, a
   process's file pages aren't. So a block compiled at that key is tail-called directly behind a
   check that the successor's VA hits the instruction TLB of the block's EL and maps to that
-  block's host address, and otherwise (nothing compiled there, or the check fails) the successor
-  is found as an indirect branch's target is, by its VA in the transfer cache (below;
-  `block::chain`). Before M8 only the first half existed, and every
+  block's host address. Nothing compiled there: the successor is found as an indirect branch's
+  target is, by its VA in the transfer cache (below; `block::chain`). The check failed (seldom:
+  the VA maps elsewhere now): a tail call of the miss function, which looks it up without a
+  transfer cache probe of the site's own (~3% less wasm; going there for an uncompiled
+  successor too lost: [Tried and not kept](#tried-and-not-kept)). Before M8 only the first half existed, and every
   call, branch and fall-through to another page of a process returned to the dispatcher: 97% of
   the userspace benchmark's dispatches, 10 to 18% of its compute phases' time
   (`bench/boot/REPORT.md` "M8: where the userspace benchmark's time goes").
@@ -279,7 +281,11 @@ the interpreter's own code.
 - **Inside a region:** members are nested wasm `block`s; an edge to a later member is a `br`
   taken when `left` covers it; back-edges to the head branch to a wasm `loop` under the same
   budget check (the budget alone: no atomic load, since `left` never exceeds the chunk). Other
-  edges leave through the tails above.
+  edges leave through the tails above. An edge updates only `left`: a region with edges keeps
+  `acc + left` at its entry in an i32 local (`emit::SUM`; edges and host calls keep the sum) and
+  pushes `acc` as `SUM − left` where it leaves (`Func::acc`). Its exits grow by more than its
+  edges shrink (+0.7% wasm), but a loop's lap has one add less: Alpine's Lua phase 1.7% faster
+  on the Mac (`bench/boot/REPORT.md` "PERF loop 13").
 - **A tagged PC** (TBI: BR, BLR, RET or ERET through a pointer whose top byte isn't bit 55's
   sign extension): `AArch64.BranchAddr` drops the tag, so ADR, BL's X30 and ELR never see it.
   Compiled BR/BLR/RET and the block interpreter's don't strip it, which keeps their hot paths
@@ -689,12 +695,19 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   Locals map: i64 scratch 2..=5, i32 6..=9, the flag locals 10..=16, X registers from 17 (in
   order of first use), V registers 49..=79 then 96, SHA's i32s 80..=95, FT's f64s 97..=99 and
   113..=117 (the double FMA's exact product and sums), PMULL's i64s 100..=112, FZOK 118, VT 119–122,
-  FPOK 123, VTMP 124, TAKEN 125.
+  FPOK 123, VTMP 124, TAKEN 125; past `DEPTH` (128) FP16's HOK 129 and HT 130..=137, SUM 138.
+- **Peepholes in the encoder** (`wasm::Code`): a `local.set N` followed by `local.get N` is one
+  `local.tee N` (1.4% of the wasm: HOST and scratch read at once), and an `add`, `sub`, `or` or
+  `xor` of a just-pushed `i32/i64.const 0` drops both (an access's address at offset 0, `ADD #0`).
+  Neither merges across a `mark` or right after a `rewind` (`Code::fence`): marks nest, so the code
+  can only be at the latest one, and a rewind to it must find the code as it was.
 - **Lazy NZCV:** ADDS/SUBS, ADCS/SBCS, ANDS/BICS keep their operands (or result) in flag locals
   and record their kind; a setter replaced by the next one emits no flag code. Conditions (B.cond,
   CSEL & co, CCMP, ADC's carry) come straight from the operands where the kind allows (SUBS: EQ,
   CS, HI, GE, GT and inverses; ADDS: EQ, CS, MI; logical: all), else from NZCV computed in
-  registers. NZCV is stored before helpers, on a load/store's failure return, and **before** the
+  registers. On the cold paths (a failure chain's return, a slow arm, the FP guard's exit) a SUBS's
+  or ADDS's NZCV is a call of one of the module's four helpers (`emit::nzcv_helper`, defined after
+  the regions and not exported) instead of ~70 bytes inline: 1.6% of the wasm. NZCV is stored before helpers, on a load/store's failure return, and **before** the
   block's branch (after it, TurboFan ran the integer guest 35% slower). In regions, a member
   starts with lazy flags when every edge into it carries the same setter, else in memory or dead;
   an edge stores NZCV only into a member that needs it in memory, and exits store it; a region
@@ -706,7 +719,9 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   moves and aliases, EXTR, variable shifts, CSEL & co, CCMP/CCMN, MADD/MSUB and the long
   multiplies, SMULH/UMULH (from 32-bit halves: wasm has no wide multiply), UDIV/SDIV (with `if`s
   where wasm traps), REV*/RBIT/CLZ/CLS, all branches, the NOP hints. 32-bit forms run on i32 and
-  zero-extend. An instruction is inline only if its handler can't fail, decided from the word.
+  zero-extend. UBFM's LSR and LSL forms are one shift (the rotate and mask for the rest), SBFM's
+  SXTB/SXTH/SXTW wasm's `extendN_s`, CSET and CSETM the condition itself (`eqz`, or `− 1`).
+  An instruction is inline only if its handler can't fail, decided from the word.
 - **Loads and stores (the TLB fast path):** through the TLB array of the block's EL (static:
   EL is in the key), tag = `(va + len − 1) | 0xfff`, host = `va + addend`, entry offset
   `(va >> 5) & 0x7ff80` plus the array's `16 × (3·el + use)`: the six arrays are interleaved by
@@ -1407,6 +1422,17 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   while the guest idles**. The wasm code GC frees Liftoff code that TurboFan replaced, not dead modules' code (a
   module's code goes with the module), so rebuilt functions starting in Liftoff again would add to it, for a module
   saving that measured flat.
+- **Cutting the JIT's wasm for its own sake** (PERF loop 13, 2026-11-10; `bench/boot/REPORT.md` "PERF loop 13: the
+  JIT's wasm size cuts", the arms in `bench/boot/results/perf13/arms.patch`): on the Mac host size costs nothing
+  (`bench/boot/REPORT.md` "What a function's size costs"), so only what changes the work can show, and it didn't:
+  the kept cuts (the peepholes, the integer idioms, the cold paths' NZCV helpers, a failed guard's miss function:
+  −6.4% wasm on Alpine, −2.5% in Firefox's pages session) ran even on the gates and the pages session. Two went
+  further and lost: **every NZCV through the helpers** (the hot sites too, −5% more wasm) ran Alpine's userspace
+  benchmark 1.3% slower than without (one session, rounds apart; the boot 1%);
+  **an uncompiled successor in another page through the miss function** (−3.6% more) ran it 7% slower (Lua 12%,
+  SQLite 10%): that site stays hot (regions aren't re-emitted), and the miss function's instruction TLB and jump-cache
+  lookups each time cost more than the transfer cache's one probe. Not built: register offsets past 128 in one byte
+  (~1 B on half the write-backs, a `Cpu` layout change), whatever is size alone.
 
 ## Validation
 

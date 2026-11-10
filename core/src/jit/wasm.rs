@@ -62,16 +62,28 @@ pub struct Code {
     /// or a spill memory's index while a load's or store's spill arm is
     /// emitted (docs/spill-memories.md "The JIT's spill arm").
     pub ram_mem: u32,
+    /// Where the last [`Code::mark`] was taken or [`Code::rewind`] returned to: a
+    /// `local.set` that ends there isn't merged with a `local.get` after it
+    /// ([`Code::local_get`]), or a rewind to that mark would keep the merged
+    /// `local.tee`'s value on the stack. Marks nest, so the latest is the only
+    /// one the code can be at.
+    fence: core::cell::Cell<usize>,
+    /// Where the last `i32.const 0` or `i64.const 0` ends (0: none), so an
+    /// `add`, `sub`, `or` or `xor` of it drops both ([`Code::op`]).
+    zero: usize,
 }
 
 impl Code {
     /// Where the code is now, for [`Code::rewind`].
     pub fn mark(&self) -> (usize, usize, usize) {
+        self.fence.set(self.b.len());
         (self.b.len(), self.locals.len(), self.hints.len())
     }
     /// Drops what was emitted since `m`.
     pub fn rewind(&mut self, m: (usize, usize, usize)) {
         self.b.truncate(m.0);
+        self.fence.set(m.0);
+        self.zero = 0;
         self.locals.truncate(m.1);
         self.hints.truncate(m.2);
     }
@@ -88,6 +100,16 @@ impl Code {
 /// Instruction encoders; each appends one instruction.
 impl Code {
     pub fn op(&mut self, op: u8) -> &mut Self {
+        let n = self.b.len();
+        // x + 0, x - 0, x | 0, x ^ 0 (i32: 0x6a, 0x6b, 0x72, 0x73; i64 0x7c, 0x7d, 0x84, 0x85).
+        if self.zero == n
+            && self.fence.get() != n
+            && matches!(op, 0x6a | 0x6b | 0x72 | 0x73 | 0x7c | 0x7d | 0x84 | 0x85)
+        {
+            self.b.truncate(n - 2);
+            self.zero = 0;
+            return self;
+        }
         self.b.push(op);
         self
     }
@@ -190,7 +212,19 @@ impl Code {
         self.b.push(i as u8);
         self
     }
+    /// `local.get`; right after a `local.set` of the same local (and no
+    /// [`Code::mark`] between them), the set becomes a `local.tee` instead.
     pub fn local_get(&mut self, i: u32) -> &mut Self {
+        let n = self.b.len();
+        if n >= 2
+            && self.locals.last() == Some(&(n - 1))
+            && self.b[n - 2] == 0x21
+            && self.b[n - 1] as u32 == i
+            && self.fence.get() != n
+        {
+            self.b[n - 2] = 0x22;
+            return self;
+        }
         self.local(0x20, i)
     }
     pub fn global_get(&mut self, i: u32) -> &mut Self {
@@ -346,11 +380,17 @@ impl Code {
     pub fn i32_const(&mut self, v: i32) -> &mut Self {
         self.b.push(0x41);
         sleb(&mut self.b, v as i64);
+        if v == 0 {
+            self.zero = self.b.len();
+        }
         self
     }
     pub fn i64_const(&mut self, v: i64) -> &mut Self {
         self.b.push(0x42);
         sleb(&mut self.b, v);
+        if v == 0 {
+            self.zero = self.b.len();
+        }
         self
     }
     pub fn i64_load(&mut self, offset: u32) -> &mut Self {
@@ -389,6 +429,8 @@ pub struct Module {
     nimports: usize,
     nfunc_imports: u32,
     funcs: Vec<u32>,
+    /// Functions defined past these aren't exported ([`Module::internal`]).
+    nexported: Option<usize>,
     code: Vec<u8>,
     globals: Vec<u8>,
     nglobals: usize,
@@ -466,6 +508,12 @@ impl Module {
         self.nfunc_imports + self.funcs.len() as u32
     }
 
+    /// From here on, the functions defined aren't exported: the module's own
+    /// helpers (the host installs every export as a block, `jit_install`).
+    pub fn internal(&mut self) {
+        self.nexported.get_or_insert(self.funcs.len());
+    }
+
     pub fn func(&mut self, ty: u32, locals: &[(u32, u8)], body: &Code, fname: &str) -> u32 {
         let idx = self.nfunc_imports + self.funcs.len() as u32;
         self.funcs.push(ty);
@@ -507,15 +555,18 @@ impl Module {
         section(&mut out, 2, self.nimports, &self.imports);
         let mut funcs = Vec::new();
         let mut exports = Vec::new();
+        let nexported = self.nexported.unwrap_or(self.funcs.len());
         for (k, &t) in self.funcs.iter().enumerate() {
             uleb(&mut funcs, t as u64);
-            name(&mut exports, &format!("f{k}"));
-            exports.push(0);
-            uleb(&mut exports, self.nfunc_imports as u64 + k as u64);
+            if k < nexported {
+                name(&mut exports, &format!("f{k}"));
+                exports.push(0);
+                uleb(&mut exports, self.nfunc_imports as u64 + k as u64);
+            }
         }
         section(&mut out, 3, self.funcs.len(), &funcs);
         section(&mut out, 6, self.nglobals, &self.globals);
-        section(&mut out, 7, self.funcs.len(), &exports);
+        section(&mut out, 7, nexported, &exports);
         if self.nhinted > 0 {
             // Branch hints, before the code they describe.
             let mut body = Vec::new();
@@ -665,5 +716,47 @@ mod tests {
         ];
         let at = b.windows(want.len()).position(|w| w == want);
         assert!(at.is_some(), "{b:x?}");
+    }
+
+    #[test]
+    fn peepholes() {
+        // local.set 3; local.get 3 is local.tee 3; local.get of another local isn't merged.
+        let mut c = Code::default();
+        c.local_get(0)
+            .local_set(3)
+            .local_get(3)
+            .local_set(4)
+            .local_get(5);
+        assert_eq!(c.b, [0x20, 0, 0x22, 3, 0x21, 4, 0x20, 5]);
+        // Not across a mark: a rewind to it must find the set as it was.
+        let mut c = Code::default();
+        c.local_get(0).local_set(3);
+        let m = c.mark();
+        c.local_get(3);
+        assert_eq!(c.b, [0x20, 0, 0x21, 3, 0x20, 3]);
+        c.rewind(m);
+        assert_eq!(c.b, [0x20, 0, 0x21, 3]);
+        // Nor right after a rewind to one (an outer mark may be there too).
+        c.i32_const(1).local_set(6);
+        let m = c.mark();
+        c.local_get(7);
+        c.rewind(m);
+        c.local_get(6);
+        assert_eq!(c.b, [0x20, 0, 0x21, 3, 0x41, 1, 0x21, 6, 0x20, 6]);
+        // x + 0, x | 0 (i32 and i64) drop the zero; 0 - x and x * 0 don't.
+        let mut c = Code::default();
+        c.local_get(0).i64_const(0).op(0x7c).i32_const(0).op(0x72);
+        assert_eq!(c.b, [0x20, 0]);
+        c.i64_const(0).local_get(1).op(0x7d).i64_const(0).op(0x7e);
+        assert_eq!(c.b, [0x20, 0, 0x42, 0, 0x20, 1, 0x7d, 0x42, 0, 0x7e]);
+        // A zero before a mark stays: the rewind's code may need it.
+        let mut c = Code::default();
+        c.local_get(0).i64_const(0);
+        let m = c.mark();
+        c.op(0x7c);
+        assert_eq!(c.b, [0x20, 0, 0x42, 0, 0x7c]);
+        c.rewind(m);
+        c.local_get(1).op(0x7c);
+        assert_eq!(c.b, [0x20, 0, 0x42, 0, 0x20, 1, 0x7c]);
     }
 }

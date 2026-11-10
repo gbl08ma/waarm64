@@ -571,6 +571,8 @@ struct Env<'a> {
     phys: u64,
     /// Each member's groups of accesses ([`emit::plan`]).
     plans: Vec<Vec<emit::Role>>,
+    /// The module's NZCV helpers ([`emit::nzcv_helper`]).
+    nzcv: Option<[u32; emit::NZCV_HELPERS]>,
 }
 
 impl Env<'_> {
@@ -718,6 +720,11 @@ pub fn module(
             funcs.entry(b.key).or_insert(f);
         }
     }
+    // The NZCV helpers follow the regions (docs/jit.md "Emission").
+    let helpers = first + regions.len() as u32;
+    let nzcv = Some(core::array::from_fn(|k| helpers + k as u32));
+    // Defined only if a region calls one.
+    let mut nzcv_used = false;
 
     let mut out = Emitted {
         bytes: vec![],
@@ -787,6 +794,7 @@ pub fn module(
             base: base as usize as u64,
             phys,
             plans: r.blocks.iter().map(|b| emit::plan(&b.words, &cx)).collect(),
+            nzcv,
         };
         // Twice: the first emission finds the registers to read plainly
         // (`Func::plain`) and what each member's edges carry into it, which
@@ -841,6 +849,7 @@ pub fn module(
             assert!(!x.bad);
         }
         let (mut c, n) = (x.c, x.inl);
+        nzcv_used |= c.nzcv_used;
         let name = format!("{:#x}_pa{:#x}", head.va, head.key & !3);
         let locals = c.locals();
         m.func(bt, &locals, &c.c, &name);
@@ -864,6 +873,14 @@ pub fn module(
         }
         out.links.push(links);
         out.counts += c.counts;
+    }
+    if nzcv_used {
+        m.internal();
+        for k in 0..emit::NZCV_HELPERS {
+            let (_, code, t) = emit::nzcv_helper(k);
+            let ty = m.ty(&[t, t], &[I32]);
+            m.func(ty, &[(1, t)], &code, &format!("nzcv{k}"));
+        }
     }
     out.bytes = m.finish();
     out
@@ -936,6 +953,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
     let head = r.blocks[0].va;
     let mut c = emit::Func::default();
     c.plain = plain;
+    c.nzcv = e.nzcv;
     c.page = (head & 0xfff) as i64;
     let mut into = vec![emit::Regs::default(); n];
     let mut flags = vec![In::Unset; n];
@@ -952,9 +970,14 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
         );
         emit::tier_up(&mut c, word, r.blocks[0].key, e.bt, hot);
     }
+    let looped = r.looped();
+    if n > 1 || looped {
+        c.local_get(emit::ACC).local_get(emit::LEFT).op(0x6a); // i32.add
+        c.local_set(emit::SUM);
+        c.sum = true;
+    }
     // The head's state: loaded once, before the loop.
     c.conform(entry[0]);
-    let looped = r.looped();
     if looped {
         c.loop_();
     }
@@ -1110,8 +1133,10 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
             }
             bad |= matches!(fin[j], In::Lazy(..)) && store(j, lazy);
             c.conform(entry[j]);
-            c.local_get(emit::ACC).i32_const(len as i32).op(0x6a); // i32.add
-            c.local_set(emit::ACC);
+            if !c.sum {
+                c.local_get(emit::ACC).i32_const(len as i32).op(0x6a); // i32.add
+                c.local_set(emit::ACC);
+            }
             c.local_get(emit::LEFT).i32_const(len as i32).op(0x6b); // i32.sub
             c.local_set(emit::LEFT);
             // Around a loop, the stale-code checker runs as at a chained entry.
@@ -1286,6 +1311,11 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
         let miss = Some(e.miss(b.key));
         emit::indirect(c, b.key & 3, miss, len, e.bt, e.checker, x);
     };
+    // Straight to the miss function (it reads the PC from the `Cpu`).
+    let to_miss = |c: &mut emit::Func| {
+        let miss = emit::To::Func(e.miss(b.key), 0);
+        emit::transfer(c, Xfer::Tail, len, e.bt, miss, 0);
+    };
     let Some(&(f, tlen, entry)) = f else {
         if guarded {
             return by_va(c);
@@ -1307,8 +1337,10 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
     }
     emit::transfer(c, x, len, e.bt, emit::To::Func(f, entry), 1);
     c.end();
+    // The guard failed (rare: the VA maps elsewhere now): the miss function
+    // finds the block, without a transfer cache probe of its own here.
     if guarded && e.jc {
-        by_va(c);
+        to_miss(c);
     }
 }
 
@@ -1528,8 +1560,8 @@ mod tests {
         let Emitted { bytes, .. } = build(b);
         #[rustfmt::skip]
         let body = [
-            0x20, 0, 0x29, 3, 16, 0x42, 3, 0x7c, 0x21, 5, // x1 = x2 + 3
-            0x20, 5, 0x42, 1, 0x7c, 0x21, 6,              // x3 = x1 + 1
+            0x20, 0, 0x29, 3, 16, 0x42, 3, 0x7c, 0x22, 5, // x1 = x2 + 3 (kept: a tee)
+            0x42, 1, 0x7c, 0x21, 6,                       // x3 = x1 + 1
         ];
         assert!(has(&bytes, &body));
         assert!(has(
@@ -1691,7 +1723,7 @@ mod tests {
         };
         let e = build(b);
         assert_eq!(e.links, [Vec::<u64>::new()]);
-        assert!(has(&e.bytes, &[0x20, 6, 0x04, 0x40])); // if TAKEN (compacted: after entry and x1)
+        assert!(has(&e.bytes, &[0x22, 6, 0x04, 0x40])); // if TAKEN, teed (compacted: after entry and x1)
         assert!(has(&e.bytes, &[0x0c, 2, 0x0b])); // the loop, from inside `if TAKEN`
         assert_eq!(e.bytes.iter().filter(|&&b| b == 0x12).count(), 0);
         // With the MMU on, a successor in another page is chained only while
@@ -1792,7 +1824,8 @@ mod tests {
                 )
         );
         // Something compiled at the PA that follows: the direct call behind
-        // its check first, then the lookup by VA.
+        // its check first, then (the check failed) a tail call of the miss
+        // function, no transfer cache probe of its own.
         let e = module(
             &[block().into()],
             &test_mem(),
@@ -1804,9 +1837,9 @@ mod tests {
         );
         assert_eq!(e.links, [vec![0x4000_1204 | KEY_MMU]]);
         let call = e.bytes.windows(3).position(|w| w == [0x12, 2, 0x0b]);
-        let ind = e.bytes.windows(tail.len()).position(|w| w == tail);
-        assert!(call.is_some() && call < ind, "{call:?} {ind:?}");
-        assert!(by_va(&e.bytes));
+        let miss = e.bytes.windows(2).rposition(|w| w[0] == 0x12 && w[1] != 2);
+        assert!(call.is_some() && call < miss, "{call:?} {miss:?}");
+        assert!(!has(&e.bytes, &tag) && has(&e.bytes, &[1, b't', 2, b'4', b'0', 0]));
     }
 
     /// A fixed-size memory (`Config::pages`) is imported with exact limits,
@@ -1896,12 +1929,11 @@ mod tests {
         );
         // The head's edges, both inside the `if TAKEN` (depth 1): to the taken
         // side (member 3, br 4) and the fall-through (member 1, br 2), each
-        // when `left` covers the head (2) and the member (2), with acc and
-        // left updated on the way.
+        // when `left` covers the head (2) and the member (2), with left
+        // updated on the way (acc is `acc + left` at entry less left).
         #[rustfmt::skip]
         let taken = [
             0x20, 2, 0x41, 4, 0x4f, 0x04, 0x40,             // if left >= 4:
-            0x20, 1, 0x41, 2, 0x6a, 0x21, 1,                //   acc += 2
             0x20, 2, 0x41, 2, 0x6b, 0x21, 2, 0x0c, 4, 0x0b, //   left -= 2; br 4
         ];
         assert!(has(&e.bytes, &taken));
@@ -1910,7 +1942,7 @@ mod tests {
         #[rustfmt::skip]
         let back = [
             0x20, 2, 0x41, 3, 0x4f, 0x04, 0x40,
-            0x20, 1, 0x41, 1, 0x6a, 0x21, 1, 0x20, 2, 0x41, 1, 0x6b, 0x21, 2, 0x0c, 3, 0x0b,
+            0x20, 2, 0x41, 1, 0x6b, 0x21, 2, 0x0c, 3, 0x0b,
         ];
         assert!(has(&e.bytes, &back));
         // x1 and x2 are loaded once, before the loop, and stay in their
@@ -2233,6 +2265,98 @@ mod tests {
         let mut hot = vec![0x28, 2];
         crate::jit::wasm::uleb(&mut hot, emit::HOT_PTR as u64);
         assert!(!has(&e.bytes, b"jit_hot") && !has(&e.bytes, &hot));
+    }
+
+    /// The function imports of a module (its import section's entries of kind 0).
+    fn func_imports(m: &[u8]) -> u32 {
+        let uleb = |p: &mut usize| {
+            let (mut v, mut sh) = (0u64, 0);
+            loop {
+                let b = m[*p];
+                *p += 1;
+                v |= ((b & 0x7f) as u64) << sh;
+                sh += 7;
+                if b & 0x80 == 0 {
+                    return v;
+                }
+            }
+        };
+        let mut p = 8;
+        while p < m.len() {
+            let (id, size) = (m[p], {
+                p += 1;
+                uleb(&mut p) as usize
+            });
+            if id != 2 {
+                p += size;
+                continue;
+            }
+            let mut funcs = 0;
+            for _ in 0..uleb(&mut p) {
+                for _ in 0..2 {
+                    let n = uleb(&mut p) as usize;
+                    p += n;
+                }
+                let kind = m[p];
+                p += 1;
+                match kind {
+                    0 => {
+                        uleb(&mut p);
+                        funcs += 1;
+                    }
+                    1 => {
+                        p += 1; // the reftype
+                        let flags = m[p];
+                        p += 1;
+                        uleb(&mut p);
+                        if flags & 1 != 0 {
+                            uleb(&mut p);
+                        }
+                    }
+                    2 => {
+                        let flags = m[p];
+                        p += 1;
+                        uleb(&mut p);
+                        if flags & 1 != 0 {
+                            uleb(&mut p);
+                        }
+                    }
+                    _ => p += 2, // a global: its type and mutability
+                }
+            }
+            return funcs;
+        }
+        0
+    }
+
+    #[test]
+    fn failure_chains_take_nzcv_from_the_module_helpers() {
+        // subs x0, x1, x2; ldr x3, [x4]; b.eq .+8 (MMU on): the load's failure
+        // chain stores the SUBS's NZCV by calling the 64-bit SUBS helper
+        // (`nzcv1`, the second function after the module's one region); the
+        // commit before the branch stays inline. The helpers aren't exported:
+        // one export, f0.
+        let b = Block {
+            key: 0x4000_0200 | KEY_MMU,
+            va: 0,
+            words: vec![0xeb020020, 0xf9400083, 0x54000040],
+        };
+        let e = build(b);
+        assert!(has(&e.bytes, b"nzcv1"));
+        let at = e
+            .bytes
+            .windows(3)
+            .position(|w| w == [2, b'f', b'0'])
+            .expect("export f0");
+        assert_eq!(e.bytes[at - 1], 1, "one export");
+        let mut call = vec![0x10];
+        crate::jit::wasm::uleb(&mut call, func_imports(&e.bytes) as u64 + 2);
+        let calls = e
+            .bytes
+            .windows(call.len())
+            .filter(|w| *w == &call[..])
+            .count();
+        assert_eq!(calls, 1, "the chain's end calls nzcv1");
     }
 
     #[test]

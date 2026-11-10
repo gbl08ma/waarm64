@@ -1,0 +1,26 @@
+{
+ "bench/results/local/perf13p-S-1/pages-all.timeline.json": {
+  "seconds": 250,
+  "mips": 349,
+  "busyMips": 347,
+  "busyShare": 0.25,
+  "stallsAtLeastMs": {
+   "20": 2,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 27,
+  "stalledMsPerSecondPerVcpu": 0.05,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

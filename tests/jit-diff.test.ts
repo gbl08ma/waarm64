@@ -51,10 +51,18 @@ const CLASSES: Record<string, [number, number]> = {
   'logical, shifted register': [0x1f000000, 0x0a000000],
   'bitfield, 64-bit': [0x9fc00000, 0x93400000],
   'bitfield, 32-bit': [0x9fe08000, 0x13000000], // immr, imms < 32
+  // The shift and extension forms (LSR/ASR, LSL, SXT*/UXT*; PERF loop 13), which random fields seldom hit.
+  'bitfield, 64-bit, imms 63': [0x9fc0fc00, 0x9340fc00],
+  'bitfield, 32-bit, imms 31': [0x9fe0fc00, 0x13007c00],
+  'bitfield, 64-bit, lsl #1': [0x9ffffc00, 0x937ff800],
+  'bitfield, 32-bit, lsl #1': [0x9ffffc00, 0x131f7800],
+  'bitfield, 64-bit, immr 0, imms 8k+7': [0x9fff1c00, 0x93401c00],
+  'bitfield, 32-bit, immr 0, imms 8k+7': [0x9fff9c00, 0x13001c00],
   'extract, 64-bit': [0xffe00000, 0x93c00000],
   'extract, 32-bit': [0xffe08000, 0x13800000],
   'variable shifts': [0x5fe0f000, 0x1ac02000],
   'conditional select': [0x3fe00800, 0x1a800000],
+  'conditional select of ZR, ZR (CSET, CSETM)': [0x3fff0be0, 0x1a9f03e0],
   'conditional compare': [0x3fe00410, 0x3a400000],
   'conditional branch': [0xff000010, 0x54000000],
   'compare and branch': [0x7e000000, 0x34000000],

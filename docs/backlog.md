@@ -265,40 +265,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
 - Buildroot's warm boot under the JIT has a 10× wider IQR than the interpreter's (V8 tiering
   hundreds of modules at different points, presumably).
 
-- **Where the JIT's wasm bytes go, and what could shrink them.** **Not a lever for users** (2026-11-05,
-  `bench/boot/REPORT.md` "What a function's size costs, in the VM and on the Mac"): ~20% more machine code a function
-  cost Firefox's pages session 3.5% of busy MIPS in the dev VM and nothing on the Mac host; cuts aimed at size are
-  screened on the Mac first (a first one, the cold paths' NZCV through small functions, is in
-  `bench/boot/results/m9-size/`). The census (2026-10-30, a static census of Debian's boot and a
-  shell workload on the page: every module with each instruction's and each piece's byte ranges, 35.1 MB of function
-  bodies; `bench/boot/results/wasm-size/` README, not weighted by execution, no timings; Firefox's pages session and
-  Alpine weren't in that session, so check the shares there first). Block tails are 42% of the code, inline
-  instructions 43% (TLB probes 10.3%, slow arms 7.5%), failure chains 9%, NZCV commits before branches 3.5%, prologues
-  2%. Two costs cut across them: **materializing NZCV, 13.2%** (~67 B each, 86% of them SUBS's; SUBS's has since lost about 16 B of its 74 and 69, `bench/interp/REPORT.md` "SUBS's NZCV from its operands"), and **linking to the
-  next block, 17.3%** (`block::chain` 13.9%: jump-cache tails 6.2%, transfer-cache probes for uncompiled successors in
-  another page 3.5%, guarded direct calls with their probe 3.4% at 190 B each; BR/BLR/RET's probes 3.4%). Register
-  write-backs are 15.6% (7.5 B each) and PC stores 3.2%, what exact state at exits needs. Untried, by size:
-  - **NZCV in small functions of the module** (`nzcv_sub64(x, y)` and kin, the store at the site or in it: 8-11 B a
-    site): in the failure chains alone (cold) ~3.5%, everywhere ~11%. V8 inlines direct wasm calls of up to 500 wire
-    bytes by default, from Liftoff's call counts, but Liftoff's code pays a call, and TurboFan is sensitive to where
-    NZCV is computed (`bench/interp/REPORT.md` "M5 step 6"): the hot sites need an A/B.
-  - **`local.set N; local.get N` as `local.tee N`**: 294,000 pairs, 1.7%, mostly HOST and scratch read at once. A
-    peephole in `wasm::Code::local_get` must not merge across a `mark` a `rewind` can return to (`Func::skip_addr`).
-  - **A guarded chain's fallback as the miss function**: after the instruction-TLB check fails, tail-call the
-    imported `xmiss` (which fills the transfer cache) instead of probing inline: ~1.8%, on a path that seldom runs.
-    The same for an uncompiled successor in another page (~3%) puts a path that stays hot (regions aren't
-    re-emitted) behind two probes and one shared indirect call site: measure.
-  - **One budget counter on region edges**: `acc + left` is constant in a function, so an edge could update one
-    of them (~1.2%), for one local more (Liftoff's zero-fill, the item above).
-  - Below ~0.3% together: a 0 added (`const 0; add`, mostly an access's address at offset 0: 0.22%); UBFM as LSR or
-    LSL (today a rotate and a mask, LSR's mask a 64-bit constant Liftoff builds), SXTB/SXTH/SXTW as `extendN_s`,
-    CSET/CSETM as the condition itself, `ADD #0`: 0.1% in all. Register offsets past 128 take a 2-byte memarg (~1 B
-    on half the write-backs). Folding MOVK chains was counted at ~0.2% before ([jit.md](jit.md) "Tried and not kept").
-  - **Not worth trying again:** outlining the jump-cache tails or BR/BLR/RET's probes into a shared function (6.2% and
-    3.4%) puts every site behind one `return_call_indirect`, losing per-site prediction: out-of-line jump-cache probes
-    were slower ([jit.md](jit.md) "Tried and not kept"), and a browser's time stalls at those tails already (the
-    indirect transfers item above).
-
 ## The core with `simd128`
 
 Off since the pinned nightly miscompiled the JIT's register-mask code three times; nothing needs

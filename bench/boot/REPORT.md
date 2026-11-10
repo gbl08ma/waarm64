@@ -4025,3 +4025,68 @@ round (`lse2b`) in a second session, arms alternated (ms, each round's median; s
 About +0.7% on both, at the bar: V8 lowers the lane moves to `fmov`/`mov v.d[1]` beside the `ldr q`/`str q`, a
 few cycles a pair. Not the obstacle, but not free for a feature that has no user. **Dropped**, the v8.0 alignment
 rules kept (docs/cpu.md "Left out, unadvertised"); the backlog item is gone, its list empty (MOPS's rejection moved to docs/cpu.md). CI: docs only, none run.
+
+## PERF loop 13: the JIT's wasm size cuts (2026-11-10)
+
+The backlog's "Where the JIT's wasm bytes go" sub-items, each built as its own arm behind a switch, sized, and screened
+on the Mac: the M4 Mac mini's host (macOS 26.6.2), Chrome for Testing 157.0.8103.50 headless; the gates through
+`bench/interp/ab-mac.sh` (`boot_alpine_jit alpine_user_jit`, arms alternated each round) and Firefox's pages session
+from `pages.webpcsnap` through `bench/gpu/sway-mac.sh` (`TIMELINE_ALL`, busy MIPS from `bench/gpu/stalls.ts`), base
+`272f7f13`. Raw: `results/perf13/` (README: the arms' patch, sizes, JSON).
+
+**The arms and their size** (wasm compiled over Alpine's boot and userspace benchmark in Node, deterministic: the
+same 10,612,856,957 steps in every arm; base 17,528,836 bytes):
+
+| arm | what | wasm |
+|---|---|---|
+| tee | `local.set N; local.get N` as `local.tee N` (`wasm::Code::local_get`, not across a `mark` or right after a `rewind`) | −1.39% |
+| small | tee, a `const 0` dropped before `add`/`sub`/`or`/`xor`, UBFM's LSR/LSL as one shift, SXTB/H/W as `extendN_s`, CSET/CSETM from the condition | −1.66% |
+| cold | the failure chains', slow arms' and FP guard's NZCV through four helpers of the module (`m9-size/nzcv-helpers.patch`, rebased) | −1.58% |
+| missfb | a guarded chain's fallback (the check failed) a tail call of the miss function, no transfer cache probe | −3.28% |
+| **S** | small + cold + missfb | **−6.44%** |
+| Shot | S, and every NZCV through the helpers (the hot sites: commits before branches, computed conditions) | −11.07% |
+| Sunc | S, and an uncompiled successor in another page through the miss function too | −9.79% |
+| **Scnt** | S, and one budget counter: edges update only `left`, `acc` is `SUM − left` | **−5.81%** (+0.68% over S) |
+
+The counter makes the wasm bigger: every exit pushes `SUM − left` (3 bytes more) where an edge saves `acc += len` (7);
+regions have more exits than edges. Its first session's build shared FP16's local 129 (no FP16 runs in Alpine; the
+differential test's FP16 sequences caught it), the second's is the kept one at 138.
+
+**The gates** (ms, each round's median, the median of rounds; session 1's first round ran ~8% slow on every arm, the
+host settling, so its boot is from rounds 2-3):
+
+| | base | S | Shot | Sunc | Scnt |
+|---|---|---|---|---|---|
+| session 1 `alpine_jit_total` | 4,305 · 4,315 · 3,961 | 4,272 · 3,951 · 3,938 | 4,343 · 3,989 · 3,979 | 4,390 · 4,063 · 4,031 | 3,983 · 3,954 · 3,942 |
+| session 1 `alpine_user_jit_total` | 11,834 · 11,161 · 11,131; **11,161** | 11,897 · 11,086 · 11,083; **11,086** | 11,975 · 11,228 · 11,215; **11,228** | 12,702 · 11,942 · 11,896; **11,942** (+7.0%) | 11,908 · 11,062 · 11,080; **11,080** |
+| session 1 Lua | 2,739 · 2,644 · 2,650 | 2,740 · 2,629 · 2,621 | 2,773 · 2,648 · 2,648 | 3,083 · 2,964 · 2,973 (+12%) | 2,736 · 2,599 · 2,590 |
+| session 2 `alpine_jit_total` | 5,274 · 3,953 · 3,963; **3,963** | 3,962 · 3,923 · 3,944; **3,944** (−0.5%) | | | 3,947 · 3,946 · 3,946; **3,946** (−0.4%) |
+| session 2 `alpine_user_jit_total` | 11,195 · 11,100 · 11,087; **11,100** | 11,128 · 11,091 · 11,076; **11,091** (−0.1%) | | | 11,116 · 11,076 · 11,000; **11,076** (−0.2%) |
+| session 2 Lua | 2,625 · 2,619 · 2,633; **2,625** | 2,632 · 2,622 · 2,631; **2,631** | | | 2,579 · 2,592 · 2,580; **2,580** (−1.7%, rounds apart) |
+
+**Firefox's pages session** (busy MIPS, wasm compiled; 3 rounds, the arms' order rotated each round):
+
+| | busy MIPS | wasm (MiB) |
+|---|---|---|
+| base | 320 · 350 · 327; **327** | 132.8 · 131.9 · 132.2 |
+| S | 347 · 353 · 320; **347** | 128.9 · 129.0 · 128.9 |
+| Scnt | 346 · 348 · 351; **348** | 128.9 · 129.4 · 128.6 |
+
+The rounds overlap (each arm's spread is 3-10% here; base's first session ran first): even, as the size A/B
+predicted (20% more machine code cost nothing on the Mac).
+
+**Kept:** S (the peepholes, the idioms, the cold NZCV helpers, a failed guard's miss function) and the one budget
+counter. Nothing they change shows on the gates or the pages session but the counter's loops (Lua −1.7% against base
+and −1.9% against S in session 2, −1.1% against S in session 1, rounds apart both times); what they save is memory:
+−6.4% of the wasm on Alpine's boot (12.8 → 12.0 MB) and −2.5% in Firefox's pages session (132.2 → 128.9 MiB, less
+for V8's code too), for the JIT's budget to fill later. **Dropped:** every NZCV through the helpers (+1.3% on the
+userspace benchmark against S, rounds apart, the boot +1%) and an uncompiled successor through the miss function (+7%,
+Lua +12%, SQLite +10%: a hot site, two lookups each time instead of one probe). Not built: register offsets past 128 in
+one byte (~1 B on half the write-backs, a `Cpu` layout change) and anything else that is size alone. docs/jit.md has
+the kept rules ("Linking", "Emission") and the dropped ones ("Tried and not kept"); the backlog entry is gone.
+
+Checks: steps unchanged in every arm (the gates' and `tests/steps.txt`'s); new differential classes for the forms
+random fields seldom hit (bitfield shifts and extensions, CSET/CSETM: planted, CSET without its `eqz`, LSL by `immr`,
+SXTB as `extend16_s` and LSR as arithmetic each fail them); `jit::wasm::tests::peepholes` (planted, a tee across a mark
+fails it); the region tests' bytes updated for the counter.
+CI: `scripts/ci.sh` (709 s) and `scripts/ci-jit.sh` passed. Memory: no new state; the JIT's code 2.5-6.4% smaller.

@@ -58,6 +58,9 @@ const ENTRY: u32 = 1;
 pub const ACC: u32 = 126;
 pub const LEFT: u32 = 127;
 pub const TAKEN: u32 = 125;
+/// In a region with edges ([`Func::sum`]): `acc + left` at entry (i32), which
+/// the edges keep, so they update only `left` and `acc` is `SUM - left`.
+pub const SUM: u32 = 138;
 /// The last parameter: how many host calls deep the function runs (0 from
 /// the dispatcher). A guest call (BL, BLR) below [`MAX_DEPTH`] is a wasm
 /// `call` with the depth + 1, and a `ret` at a depth above 0 a wasm `return`
@@ -258,6 +261,12 @@ pub struct Func {
     replay: bool,
     sreads: u64,
     swrites: u64,
+    /// The module's NZCV helpers ([`nzcv_helper`], by [`nzcv_index`]), which
+    /// the failure chains call instead of computing NZCV inline.
+    pub nzcv: Option<[u32; NZCV_HELPERS]>,
+    pub nzcv_used: bool,
+    /// `acc` is `SUM - left` ([`SUM`]).
+    pub sum: bool,
 }
 
 /// Load and store failure exits that share their write-backs (docs/jit.md
@@ -308,6 +317,7 @@ impl Func {
                 || i == DEPTH
                 || (13..=16).contains(&i)
                 || i == TAKEN
+                || i == SUM
                 || i == FPOK
                 || i == FZOK
                 || i == HOK
@@ -516,14 +526,37 @@ impl Func {
     /// Stores lazy flags to the `Cpu` on a path that returns (a load/store's
     /// failure path), leaving them lazy for the other one.
     pub fn store_flags(&mut self) {
+        self.store_flags_in(false);
+    }
+
+    /// [`Func::store_flags`] on a cold path (a slow arm, a trap): through the
+    /// module's NZCV helper where there is one ([`Func::nzcv`]).
+    pub fn store_flags_cold(&mut self) {
+        self.store_flags_in(true);
+    }
+
+    fn store_flags_in(&mut self, cold: bool) {
         self.touched.get_or_insert(true);
         if let Flags::Lazy { kind, sf, .. } = self.flags {
             self.c.local_get(VCPU);
-            nzcv_of(self, kind, sf);
+            self.push_nzcv(kind, sf, cold);
             self.c.i64_extend_i32_u().i64_store(NZCV);
             if let Flags::Lazy { stored, .. } = &mut self.flags {
                 *stored = true;
             }
+        }
+    }
+
+    /// Pushes a lazy setter's NZCV ([`nzcv_of`]); on a cold path, a call of
+    /// the module's helper for it instead of its ~70 bytes inline.
+    fn push_nzcv(&mut self, kind: Kind, sf: bool, cold: bool) {
+        match (self.nzcv.filter(|_| cold), nzcv_index(kind, sf)) {
+            (Some(f), Some(k)) => {
+                let (x, y, _) = flag_locals(sf);
+                self.c.local_get(x).local_get(y).call(f[k]);
+                self.nzcv_used = true;
+            }
+            _ => nzcv_of(self, kind, sf),
         }
     }
 
@@ -551,8 +584,17 @@ impl Func {
 
     /// Returns the chain's retired count with `k` more of this block's
     /// instructions retired (the registers and flags already in the `Cpu`).
+    /// Pushes `acc`: the parameter, or `SUM - left` in a region with edges.
+    pub fn acc(&mut self) {
+        if self.sum {
+            self.c.local_get(SUM).local_get(LEFT).op(0x6b); // i32.sub
+        } else {
+            self.c.local_get(ACC);
+        }
+    }
+
     pub fn ret(&mut self, k: u32) {
-        self.c.local_get(ACC);
+        self.acc();
         if k != 0 {
             self.c.i32_const(k as i32).op(0x6a); // i32.add
         }
@@ -645,10 +687,11 @@ impl Func {
         }
         if let Some((kind, sf)) = ch.flags {
             self.c.local_get(VCPU);
-            nzcv_of(self, kind, sf);
+            self.push_nzcv(kind, sf, true);
             self.c.i64_extend_i32_u().i64_store(NZCV);
         }
-        self.c.local_get(ACC).op(0x6a).return_(); // i32.add
+        self.acc();
+        self.c.op(0x6a).return_(); // i32.add
         self.c.end();
     }
 
@@ -919,6 +962,19 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             match bits(i, 30, 29) {
                 // SBFX/ASR/SXT* (imms >= immr): the field imms:immr, sign-extended;
                 // SBFIZ: the field imms:0 sign-extended, shifted left to immr.
+                // SXTB, SXTH, SXTW: wasm's sign extensions.
+                0 if immr == 0 && (imms == 7 || imms == 15 || (sf && imms == 31)) => {
+                    set(c, sf, rd, |c| {
+                        get(c, sf, rn);
+                        c.op(match (sf, imms) {
+                            (false, 7) => 0xc0, // i32.extend8_s
+                            (false, _) => 0xc1, // i32.extend16_s
+                            (true, 7) => 0xc2,  // i64.extend8_s
+                            (true, 15) => 0xc3, // i64.extend16_s
+                            _ => 0xc4,          // i64.extend32_s
+                        });
+                    })
+                }
                 0 => set(c, sf, rd, |c| {
                     get(c, sf, rn);
                     shift(c, sf, SHL, w - 1 - imms);
@@ -945,6 +1001,16 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
                     arith(c, sf, OR);
                 }),
                 // UBFM: the rotated source under both masks (LSL, LSR, UBFX, UXT*).
+                // LSR: the source shifted right, no mask.
+                2 if imms == w - 1 => set(c, sf, rd, |c| {
+                    get(c, sf, rn);
+                    shift(c, sf, SHR_U, immr);
+                }),
+                // LSL: the source shifted left, no mask.
+                2 if imms + 1 == immr => set(c, sf, rd, |c| {
+                    get(c, sf, rn);
+                    shift(c, sf, SHL, w - immr);
+                }),
                 2 => set(c, sf, rd, |c| {
                     get(c, sf, rn);
                     shift(c, sf, ROTR, immr);
@@ -969,6 +1035,24 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
                 }
             });
         }
+        // CSET and CSETM: the condition's inverse as 1 or all ones.
+        CSINC | CSINV if rn == 31 && rm == 31 => set(c, sf, rd, |c| {
+            cond(c, bits(i, 15, 12));
+            if op == CSINC {
+                c.op(0x45); // i32.eqz
+                if sf {
+                    c.i64_extend_i32_u();
+                }
+            } else {
+                // cond - 1: 0 or all ones.
+                c.op(0x45).op(0x45);
+                if sf {
+                    c.i64_extend_i32_u();
+                }
+                konst(c, sf, 1);
+                arith(c, sf, SUB);
+            }
+        }),
         CSEL | CSINC | CSINV | CSNEG => set(c, sf, rd, |c| {
             get(c, sf, rn);
             if op == CSNEG {
@@ -1397,7 +1481,8 @@ impl To {
 /// above [`ENTRY_BIT`]; then the table index for an indirect transfer.
 fn args(c: &mut Func, len: u32, deeper: bool, to: To) {
     c.local_get(VCPU);
-    c.local_get(ACC).i32_const(len as i32).op(ADD);
+    c.acc();
+    c.i32_const(len as i32).op(ADD);
     c.local_get(LEFT).i32_const(len as i32).op(SUB);
     c.local_get(DEPTH);
     if deeper {
@@ -1452,7 +1537,8 @@ pub const ENTRY_BIT: u32 = 16;
 /// block's retired count with [`RETURNED`] (the PC is in the `Cpu`).
 pub fn ret_up(c: &mut Func, len: u32) {
     c.local_get(DEPTH).if_();
-    c.local_get(ACC).i32_const(len as i32).op(ADD);
+    c.acc();
+    c.i32_const(len as i32).op(ADD);
     c.i32_const(RETURNED as i32).op(OR).return_();
     c.end();
 }
@@ -1469,9 +1555,14 @@ pub fn returned(c: &mut Func, len: u32, off: i64) {
     // left += acc - (result - len); acc = result - len, the flag dropped.
     c.local_get(RESULT).i32_const(!RETURNED as i32).op(AND);
     c.i32_const(len as i32).op(SUB).local_set(RESULT);
-    c.local_get(LEFT).local_get(ACC).op(ADD);
-    c.local_get(RESULT).op(SUB).local_set(LEFT);
-    c.local_get(RESULT).local_set(ACC);
+    if c.sum {
+        // acc + left stays SUM.
+        c.local_get(SUM).local_get(RESULT).op(SUB).local_set(LEFT);
+    } else {
+        c.local_get(LEFT).local_get(ACC).op(ADD);
+        c.local_get(RESULT).op(SUB).local_set(LEFT);
+        c.local_get(RESULT).local_set(ACC);
+    }
     c.local_get(VCPU).i64_load(PC);
     pc_plus(c, off);
     c.op(EQ + WC);
@@ -2353,11 +2444,13 @@ pub fn fp_guard(c: &mut Func, cx: &Ctx, i: u32, k: usize) {
         .if_();
     let saved = c.regs;
     c.flush();
-    c.store_flags();
+    c.store_flags_cold();
     // acc + k, plus one if the helper retired it after all.
     c.local_get(VCPU).i32_const(i as i32);
     pc_plus(c, 4 * k as i64);
-    c.call(cx.helper).op(EQZ).local_get(ACC).op(ADD);
+    c.call(cx.helper).op(EQZ);
+    c.acc();
+    c.op(ADD);
     c.i32_const(k as i32).op(ADD).return_();
     c.end();
     c.regs = saved;
@@ -3593,7 +3686,7 @@ fn fallback_with(
     c.local_get(VCPU).i32_const(i as i32);
     pc_plus(c, here);
     c.call(cx.helper).hint(false).if_();
-    c.store_flags();
+    c.store_flags_cold();
     c.ret((here / 4) as u32);
     c.end();
     post(c);
@@ -4053,6 +4146,37 @@ fn sub_nzcv(c: &mut Func, sf: bool, x: u32, y: u32, r: u32) {
     arith(c, sf, AND);
     sign_to(c, sf, 28);
     c.op(OR);
+}
+
+/// The NZCV helpers a module has ([`nzcv_helper`]): SUBS and ADDS, 32 and 64 bits.
+pub const NZCV_HELPERS: usize = 4;
+
+/// Which NZCV helper computes a lazy setter's NZCV: none for ADC (its
+/// carry in) and the logical setters (short already).
+fn nzcv_index(kind: Kind, sf: bool) -> Option<usize> {
+    match kind {
+        Kind::Sub => Some(sf as usize),
+        Kind::Add => Some(2 + sf as usize),
+        Kind::Adc | Kind::Logic => None,
+    }
+}
+
+/// NZCV helper `k` ([`nzcv_index`]): a function `(x, y) -> nzcv` of the
+/// operation size's type, returning SUBS's or ADDS's NZCV as [`nzcv_of`]
+/// pushes it; its body and its one local (the result).
+pub fn nzcv_helper(k: usize) -> (bool, Code, u8) {
+    let (sub, sf) = (k < 2, k % 2 == 1);
+    let mut c = Func::default();
+    c.local_get(0).local_get(1);
+    arith(&mut c, sf, if sub { SUB } else { ADD });
+    c.local_set(2);
+    if sub {
+        sub_nzcv(&mut c, sf, 0, 1, 2);
+    } else {
+        add_nzcv(&mut c, sf, 0, 1, 2, Carry::Zero);
+    }
+    c.end();
+    (sf, c.c, if sf { I64 } else { I32 })
 }
 
 /// Pushes the NZCV of a lazy setter as an i32 (scratch: `tmp(sf, 2)`).
@@ -5165,15 +5289,28 @@ mod tests {
 
     #[test]
     fn logical_bitfield_shifts() {
-        // lsr x0, x1, #4 (ubfm x0, x1, #4, #63): rotr 4, then the masks
-        let mut want = vec![0x20, 0, 0x29, 3, 8, 0x22, 17, 0x42, 4, 0x8a, 0x42];
-        crate::jit::wasm::sleb(&mut want, 0x0fff_ffff_ffff_ffff);
-        want.extend([0x83, 0x21, 18]);
+        // lsr x0, x1, #4 (ubfm x0, x1, #4, #63): shr_u 4
+        let want = [0x20, 0, 0x29, 3, 8, 0x22, 17, 0x42, 4, 0x88, 0x21, 18];
         assert_eq!(emit(0xd344fc20, 0).unwrap(), want);
-        // sxtw x0, w1 (sbfm x0, x1, #0, #31): shl 32, shr_s 32
-        #[rustfmt::skip]
-        let want = [0x20, 0, 0x29, 3, 8, 0x22, 17, 0x42, 32, 0x86, 0x42, 32, 0x87, 0x21, 18];
+        // lsl x0, x1, #4 (ubfm x0, x1, #60, #59): shl 4
+        let want = [0x20, 0, 0x29, 3, 8, 0x22, 17, 0x42, 4, 0x86, 0x21, 18];
+        assert_eq!(emit(0xd37cec20, 0).unwrap(), want);
+        // ubfx x0, x1, #4, #8 (ubfm x0, x1, #4, #11): rotr 4, then the masks
+        let want = [
+            0x20, 0, 0x29, 3, 8, 0x22, 17, 0x42, 4, 0x8a, 0x42, 0xff, 0x01, 0x83, 0x21, 18,
+        ];
+        assert_eq!(emit(0xd3442c20, 0).unwrap(), want);
+        // sxtw x0, w1 (sbfm x0, x1, #0, #31): i64.extend32_s
+        let want = [0x20, 0, 0x29, 3, 8, 0x22, 17, 0xc4, 0x21, 18];
         assert_eq!(emit(0x93407c20, 0).unwrap(), want);
+        // sxtb w0, w1 (sbfm w0, w1, #0, #7): i32.extend8_s, zero-extended
+        let want = [0x20, 0, 0x29, 3, 8, 0x22, 17, 0xa7, 0xc0, 0xad, 0x21, 18];
+        assert_eq!(emit(0x13001c20, 0).unwrap(), want);
+        // sbfx x0, x1, #4, #8 (sbfm x0, x1, #4, #11): shl 52, shr_s 56
+        let want = [
+            0x20, 0, 0x29, 3, 8, 0x22, 17, 0x42, 52, 0x86, 0x42, 56, 0x87, 0x21, 18,
+        ];
+        assert_eq!(emit(0x93442c20, 0).unwrap(), want);
         // lslv w0, w1, w2: i32.shl takes the amount modulo 32
         #[rustfmt::skip]
         let want = [
@@ -5265,12 +5402,12 @@ mod tests {
         let insn = 0xf9400420u32;
         #[rustfmt::skip]
         let mut want = vec![
-            0x20, 0, 0x29, 3, 8, 0x22, 17, 0x21, 3, // BASE = x1 (loaded into local 17)
-            0x20, 3, 0x42, 8, 0x7c, 0x21, 2,        // ADDR = BASE + 8
+            0x20, 0, 0x29, 3, 8, 0x22, 17, 0x22, 3, // BASE = x1 (loaded into local 17), teed
+            0x42, 8, 0x7c, 0x21, 2,                 // ADDR = BASE + 8
             0x02, 0x40, 0x02, I32,                  // the failure chain's block and this site's segment
             0x20, 2, 0x22, 4, 0x42, 0xf8, 0x1f, 0x58, // OFF = ADDR; OFF <= 0x1000 - 8
-            0x04, 0x40, 0x20, 4, 0xa7, 0x21, 6,     // if: HOST = OFF
-            0x20, 6, 0x29, 0, 0x80, 0x80, 4, 0x21, 18, // x0 (local 18) = [HOST + base]
+            0x04, 0x40, 0x20, 4, 0xa7, 0x22, 6,     // if: HOST = OFF, teed
+            0x29, 0, 0x80, 0x80, 4, 0x21, 18,       // x0 (local 18) = [HOST + base]
             0x05, 0x20, 0, 0x41,                    // else: helper(vcpu, insn, pc)
         ];
         sleb(&mut want, insn as i32 as i64);

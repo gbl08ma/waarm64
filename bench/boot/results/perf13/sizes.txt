@@ -1,0 +1,11 @@
+base   steps 10612856957 wasm bytes 17528836
+tee    steps 10612856957 wasm bytes 17285727
+small  steps 10612856957 wasm bytes 17238045
+cold   steps 10612856957 wasm bytes 17252164
+missfb steps 10612856957 wasm bytes 16954702
+S      steps 10612856957 wasm bytes 16399934
+Shot   steps 10612856957 wasm bytes 15587951
+Sunc   steps 10612856957 wasm bytes 15812425
+Scnt   steps 10612856957 wasm bytes 16510885
+tC     steps 10612856957 wasm bytes 17657112
+final  steps 10612856957 wasm bytes 16510885
