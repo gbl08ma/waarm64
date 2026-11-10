@@ -112,6 +112,7 @@ actor ("The ramdisk is formatted as swap at every boot"); when it isn't, ask.
 | There was no picture of the screen to copy, or this browser didn't let this web app put it on the clipboard. | The screen wasn't copied. There may have been no video output yet, or this web app ran into a browser limitation. |
 | This browser gave this web app no text from the clipboard. | Nothing was typed, because this web app couldn't get text from the clipboard. |
 | A switch in the toolbar pauses the sharing while the machine runs. | The clipboard menu [icon] in the toolbar can pause the sharing while the machine runs. |
+| The clipboard menu [icon] in the toolbar can pause the sharing, and type what you copied into a text console. | You can pause the sharing, or type the clipboard into a text console, from the clipboard menu [icon] in the toolbar. |
 
 ## Open
 
