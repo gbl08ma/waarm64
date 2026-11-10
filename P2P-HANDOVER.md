@@ -37,7 +37,7 @@ cloud session can measure, R4 what needs a person or the dev VM.
   guests in one Chromium: Create, Join by link, the wizard's refusals, the resolver asked directly and through
   resolved, pings both ways by name; ~2 min; in `scripts/ci-net.sh`'s list). All passed in this session.
 
-**CI:** `scripts/ci.sh` OK on R3 (1,669 s; JS 961 passed, 0 failed, 569 skipped; the agent's two root-only tests skipped, docs/cloud.md); `tests/room-browser.test.ts`, `tests/nostr-relay.test.ts` and `tests/ts-client.test.ts` passed alone (`WEBPC_TAILCAT=1`). Before: `scripts/ci.sh` OK on R2 (1,506 s; JS 971 passed, 0 failed, 559 skipped; the agent's two root-only tests skipped, docs/cloud.md); `tests/page-room.test.ts`, `tests/room-browser.test.ts` passed alone (`WEBPC_NET_TESTS=1 WEBPC_DISTROS=debian WEBPC_TAILCAT=1`). **Not done here** (R4's first runs): `scripts/ci-net.sh` whole, `node bench/net/room.ts
+**CI:** `scripts/ci.sh` OK on R3 (1,669 s; JS 961 passed, 0 failed, 569 skipped; the agent's two root-only tests skipped, docs/cloud.md); `tests/room-browser.test.ts`, `tests/nostr-relay.test.ts`, `tests/ts-client.test.ts` and `tests/page-room.test.ts` passed alone (`WEBPC_NET_TESTS=1 WEBPC_DISTROS=debian WEBPC_TAILCAT=1`). Before: `scripts/ci.sh` OK on R2 (1,506 s; JS 971 passed, 0 failed, 559 skipped; the agent's two root-only tests skipped, docs/cloud.md); `tests/page-room.test.ts`, `tests/room-browser.test.ts` passed alone (`WEBPC_NET_TESTS=1 WEBPC_DISTROS=debian WEBPC_TAILCAT=1`). **Not done here** (R4's first runs): `scripts/ci-net.sh` whole, `node bench/net/room.ts
 5 10000 <json>` (R0's numbers), and R2's room on a second adapter beside the local helper (webpc-net is a private
 repository a cloud session can't fetch).
 
