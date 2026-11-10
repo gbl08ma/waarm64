@@ -32,7 +32,8 @@ calls.
 | 13 | JIT: Liftoff's zero-fill (a register allocator over a block's locals) | |
 | 14 | JIT: the core's heap tuning, transfer cache costs, the rest of the JIT section | |
 
-Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL MIDR (the user's call), bug watches
+Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL MIDR (the user, 2026-11-10: don't report another CPU's MIDR for now; the item stays in the backlog —
+add that note to it after loop 10), bug watches
 (Firefox's first page, the lost Firefox process).
 
 ## Loops done
