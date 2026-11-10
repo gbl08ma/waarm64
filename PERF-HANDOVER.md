@@ -21,8 +21,8 @@ calls.
 | 2 | Interpreter: the dispatcher's loop inside `jit::interpret` (round trips to compiled code) | dropped (loop 2) |
 | 3 | Interpreter: `hot`'s per-micro-op cost — SUBS's flags from operands, ADRP+ADD pair, register caching | dropped (loop 3) |
 | 4 | Interpreter: misaligned stores inline; SUBS/ADDS as their own micro-op kinds (loop 3's idea) | SUBS kinds kept, stores dropped (loop 4) |
-| 5 | CPU/ISA: unadvertised M4 extensions — LSE2, LRCPC2, RDM, FHM, FCMA, I8MM, BF16, FP16 (one loop each or grouped) | I8MM unadvertised (loop 5); RDM, LRCPC2 advertised (loop 6); next FCMA, then FP16+FHM, BF16, LSE2 |
-| 6 | JIT: helpers on real paths (MSR DAIFClr/regime/NZCV…, ISB, LSE min/max) | |
+| 5 | CPU/ISA: unadvertised M4 extensions — LSE2, LRCPC2, RDM, FHM, FCMA, I8MM, BF16, FP16 (one loop each or grouped) | I8MM unadvertised (loop 5); RDM, LRCPC2 advertised (loop 6); FCMA unadvertised (loop 7); FP16+FHM, BF16, LSE2 after item 6 |
+| 6 | JIT: helpers on real paths (MSR DAIFClr/regime/NZCV…, ISB, LSE min/max) | next |
 | 7 | JIT: wasm size cuts (local.tee peephole, a guarded chain's fallback as `xmiss`, one budget counter, NZCV functions) | |
 | 8 | JIT: the shared cache's leftovers (one vCPU's 1-2%: a lone table takes the bytes) | |
 | 9 | SMP: the ISB fix's cost; WFE sleeping; an exit's remaining cost | |
@@ -58,3 +58,6 @@ Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL 
   Kernels (`bench/imgdecode/rdmk.c`, codecs.sh `kernels` mode): Q15 FIR −12.6%, Q31 MAC −38.6% (rounds apart), LDAPUR
   ties. Only glycin's loader uses RDM in the images, nothing LRCPC2. Steps moved once (asimdrdm, ilrcpc). CI: ci.sh,
   ci-jit.sh, ci-debian.sh passed.
+- **Loop 7** (`aed95154`): FEAT_FCMA complete, inline over the FMA fast paths, **off by default**: no user in the images;
+  `bench/imgdecode/fcmak.c` FCMLA vector ties, by element +10% and FCADD +3% slower (rounds apart: per-instruction
+  shuffles and sign masks the v8.0 code shares). ABI 63, `?fcma=1`. CI: ci.sh, ci-jit.sh, ci-fp.sh passed.
