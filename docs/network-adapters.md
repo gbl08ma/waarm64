@@ -61,8 +61,9 @@ Disconnect) and `lastUsed` (what the wizard preselects). The state stays where t
   connection.
 - **An ephemeral connection** lives in a `Map` in the page, and its client's state goes to an in-memory store instead
   of IndexedDB.
-- **A p2p room**, if it comes ([plans/networking-p2p.md](plans/networking-p2p.md)), joins as a third kind: its node's
-  one identity across rooms becomes one per connection, like tailcat's.
+- **A p2p room**, if it comes ([plans/networking-p2p.md](plans/networking-p2p.md)), joins as a fourth kind: the room's
+  link and a node key per connection, like tailcat's identity (a connection can take another's key under advanced
+  settings), and a /48 per room, so rooms on several adapters route apart.
 
 ### 2.2 From the single connection kept before
 
