@@ -22,7 +22,7 @@ calls.
 | 3 | Interpreter: `hot`'s per-micro-op cost — SUBS's flags from operands, ADRP+ADD pair, register caching | dropped (loop 3) |
 | 4 | Interpreter: misaligned stores inline; SUBS/ADDS as their own micro-op kinds (loop 3's idea) | SUBS kinds kept, stores dropped (loop 4) |
 | 5 | CPU/ISA: unadvertised M4 extensions — LSE2, LRCPC2, RDM, FHM, FCMA, I8MM, BF16, FP16 (one loop each or grouped) | I8MM unadvertised (loop 5); RDM, LRCPC2 advertised (loop 6); FCMA unadvertised (loop 7); FP16+FHM, BF16, LSE2 after item 6 |
-| 6 | JIT: helpers on real paths (MSR DAIFClr/regime/NZCV…, ISB, LSE min/max) | next |
+| 6 | JIT: helpers on real paths (MSR DAIFClr/regime/NZCV…, ISB, LSE min/max) | unmasking MSRs, DIT, ISB (det.) inline (loop 8) |
 | 7 | JIT: wasm size cuts (local.tee peephole, a guarded chain's fallback as `xmiss`, one budget counter, NZCV functions) | |
 | 8 | JIT: the shared cache's leftovers (one vCPU's 1-2%: a lone table takes the bytes) | |
 | 9 | SMP: the ISB fix's cost; WFE sleeping; an exit's remaining cost | |
@@ -61,3 +61,10 @@ Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL 
 - **Loop 7** (`aed95154`): FEAT_FCMA complete, inline over the FMA fast paths, **off by default**: no user in the images;
   `bench/imgdecode/fcmak.c` FCMLA vector ties, by element +10% and FCADD +3% slower (rounds apart: per-instruction
   shuffles and sign masks the v8.0 code shares). ABI 63, `?fcma=1`. CI: ci.sh, ci-jit.sh, ci-fp.sh passed.
+- **Loop 8** (`217a66fa`): **kept** DAIFClr and `MSR DIT` inline; unmasking DAIF writes inline behind a per-vCPU
+  `jit::State::unmask` word (no IRQ due; parallel SMP also loads the IRQ byte); ISB inline outside parallel SMP.
+  Mac: Alpine's boot −1.9% (rounds apart), userspace −1.2% (overlapping); 8 B a vCPU; steps unchanged. LSE min/max: no
+  workload runs them. ci.sh (second run: the first caught an xHCI-tick divergence, fixed), ci-jit.sh, ci-debian.sh
+  passed. Untested: the parallel IRQ-byte check (a miss waits to the chunk's end). Two gate-only items added to the
+  backlog (counter reads inline in deterministic runs; the gates' timer rate).
+- **Review** after loop 8: out-of-context static review of loops 4-8's code, `review/perf` branch.
