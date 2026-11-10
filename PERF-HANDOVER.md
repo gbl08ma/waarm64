@@ -19,8 +19,8 @@ calls.
 |---|---|---|
 | 1 | Interpreter: blocks out of their slot — a smaller slot, then maybe more slots | dropped (loop 1) |
 | 2 | Interpreter: the dispatcher's loop inside `jit::interpret` (round trips to compiled code) | dropped (loop 2) |
-| 3 | Interpreter: `hot`'s per-micro-op cost — SUBS's flags from operands, ADRP+ADD pair, register caching | next |
-| 4 | Interpreter: misaligned stores inline | |
+| 3 | Interpreter: `hot`'s per-micro-op cost — SUBS's flags from operands, ADRP+ADD pair, register caching | dropped (loop 3) |
+| 4 | Interpreter: misaligned stores inline; SUBS/ADDS as their own micro-op kinds (loop 3's idea) | next |
 | 5 | CPU/ISA: unadvertised M4 extensions — LSE2, LRCPC2, RDM, FHM, FCMA, I8MM, BF16, FP16 (one loop each or grouped) | |
 | 6 | JIT: helpers on real paths (MSR DAIFClr/regime/NZCV…, ISB, LSE min/max) | |
 | 7 | JIT: wasm size cuts (local.tee peephole, a guarded chain's fallback as `xmiss`, one budget counter, NZCV functions) | |
@@ -41,3 +41,5 @@ Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL 
   slots −2.6 to −5.3% on the screen (`hot`'s masked compare). Dropped, docs/cpu.md "Tried and not kept"; entry removed.
 - **Loop 2** (`fda7a22d`): the dispatcher's loop inside `jit::interpret`. Pages session −0.1% (overlapping), JIT
   gates even, the block-interpreter boot −0.5%. Dropped, docs/cpu.md "Tried and not kept"; entry removed.
+- **Loop 3** (`38180965`): `hot`'s per-micro-op cost. SUBS's carry from operands −0.8 to −2.9%, NZCV in a local −1.9
+  to −3.5%, ADRP+ADD fused within ±0.3%. All dropped (docs/cpu.md); entry removed.
