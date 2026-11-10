@@ -899,14 +899,14 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
             c.nzcv = flagm(c, i, op);
         }
         // Unallocated, or features docs/cpu.md leaves out (PAC, BTI, MTE, LOR,
-        // DPB, LS64, WFxT, FP16), or the vCPU doesn't have (SB, FlagM, RCpc, RCpc2).
+        // DPB, LS64, WFxT), or the vCPU doesn't have (SB, FlagM, RCpc, RCpc2).
         UnallocatedEncoding | ADDG | SUBG | PACIA_1 | PACIB_1 | AUTIA_1 | AUTIB_1 | PACDA
         | PACDB | AUTDA | AUTDB | XPAC_1 | PACGA | BLRA | BRA | RETA | ERETA | LDRA | SUBP
         | SUBPS | IRG | GMI | STGP_1 | STGP_2 | STGP_3 | STG_1 | STG_2 | STG_3 | LDG | STZG_1
         | STZG_2 | STZG_3 | ST2G_1 | ST2G_2 | ST2G_3 | STZ2G_1 | STZ2G_2 | STZ2G_3 | STGV
         | LDGV | SB | CFINV | RMIF | SETF8 | SETF16 | XAFlag | AXFlag | LDAPRB | LDAPRH | LDAPR
         | STLUR_gen | LDAPUR_gen | LDAPURS_gen | STLLR | LDLAR | DC_CVAP | LD64B | ST64B
-        | ST64BV | ST64BV0 | WFET | WFIT | FMOV_3 => {
+        | ST64BV | ST64BV0 | WFET | WFIT => {
             return Err(Exit::Undefined);
         }
         // The v8.0 crypto extensions (M6.5; the 64-bit PMULL is in simd_int).
@@ -983,16 +983,27 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
             simd_int::rdm(c, i)?
         }
         // FEAT_FCMA: UNDEFINED without it, and its reserved sizes and the half
-        // forms (FEAT_FP16's), before the FPEN trap.
+        // forms without FEAT_FP16, before the FPEN trap.
         FCMLA_vec | FCADD_vec | FCMLA_elt if c.features & crate::cpu::FEATURE_FCMA != 0 => {
-            if !simd_fp::fcma_allocated(i, op) {
+            if !simd_fp::fcma_allocated(i, op, c.features & crate::cpu::FEATURE_FP16 != 0) {
                 return Err(Exit::Undefined);
             }
             fp_enabled(c)?;
             simd_fp::fcma(c, i, op)?
         }
-        // FP/AdvSIMD beyond v8.0: FHM, BF16, SM3, SM4, and FRINTTS, DotProd,
-        // I8MM, RDM and FCMA without their features.
+        // FEAT_FHM (with FEAT_FP16): sz (22) must be 0, before the FPEN trap.
+        FMLAL_vec_1 | FMLSL_vec_1 | FMLAL_vec_2 | FMLSL_vec_2 | FMLAL_elt_1 | FMLAL_elt_2
+        | FMLSL_elt_1 | FMLSL_elt_2
+            if crate::cpu::has_fhm(c.features) =>
+        {
+            if bit(i, 22) {
+                return Err(Exit::Undefined);
+            }
+            fp_enabled(c)?;
+            simd_fp::fhm(c, i, op)?
+        }
+        // FP/AdvSIMD beyond v8.0: BF16, SM3, SM4, and FRINTTS, DotProd, I8MM,
+        // RDM, FCMA and FHM without their features.
         SQRDMLAH_vec_1 | SQRDMLAH_vec_2 | SQRDMLSH_vec_1 | SQRDMLSH_vec_2 | SQRDMLAH_elt_1
         | SQRDMLSH_elt_1 | SQRDMLAH_elt_2 | SQRDMLSH_elt_2 | SDOT_vec | UDOT_vec | SDOT_elt
         | UDOT_elt | SMMLA_vec | UMMLA_vec | USMMLA_vec | SUDOT_element | USDOT_element
@@ -1002,7 +1013,8 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
         | FRINT32Z_float | FRINT64Z_float | BFCVT | BFCVTN | BFDOT_element | BFDOT_vec
         | BFMLALX_element | BFMLALX_vector | BFMMLA | SM3TT1A | SM3TT1B | SM3TT2A | SM3TT2B
         | SM3PARTW1 | SM3PARTW2 | SM3SS1 | SM4EKEY | SM4E => return Err(Exit::Undefined),
-        // Half-precision AdvSIMD arithmetic (FEAT_FP16).
+        // Half-precision AdvSIMD arithmetic (FEAT_FP16): UNDEFINED without it,
+        // before the FPEN trap.
         FMULX_vec_1 | FCMEQ_reg_1 | FRECPS_1 | FRSQRTS_1 | FCMGE_reg_1 | FACGE_1 | FABD_1
         | FCMGT_reg_1 | FACGT_1 | FCVTNS_1 | FCVTMS_1 | FCVTAS_1 | SCVTF_int_1 | FCMGT_zero_1
         | FCMEQ_zero_1 | FCMLT_1 | FCVTPS_1 | FCVTZS_int_1 | FRECPE_1 | FRECPX_1 | FCVTNU_1
@@ -1017,7 +1029,29 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
         | FCVTPS_3 | FCVTZS_int_3 | FRECPE_3 | FRINTA_1 | FRINTX_1 | FCVTNU_3 | FCVTMU_3
         | FCVTAU_3 | UCVTF_int_3 | FNEG_1 | FRINTI_1 | FCMGE_zero_3 | FCMLE_3 | FCVTPU_3
         | FCVTZU_int_3 | FRSQRTE_3 | FSQRT_1 | FMAXNMV_1 | FMAXV_1 | FMINNMV_1 | FMINV_1
-        | FMLA_elt_3 | FMLS_elt_3 | FMUL_elt_3 | FMULX_elt_3 => return Err(Exit::Undefined),
+        | FMLA_elt_3 | FMLS_elt_3 | FMUL_elt_3 | FMULX_elt_3 | FMOV_3
+            if c.features & crate::cpu::FEATURE_FP16 != 0 =>
+        {
+            fp_enabled(c)?;
+            simd_fp::fp16(c, i, op)?
+        }
+        FMULX_vec_1 | FCMEQ_reg_1 | FRECPS_1 | FRSQRTS_1 | FCMGE_reg_1 | FACGE_1 | FABD_1
+        | FCMGT_reg_1 | FACGT_1 | FCVTNS_1 | FCVTMS_1 | FCVTAS_1 | SCVTF_int_1 | FCMGT_zero_1
+        | FCMEQ_zero_1 | FCMLT_1 | FCVTPS_1 | FCVTZS_int_1 | FRECPE_1 | FRECPX_1 | FCVTNU_1
+        | FCVTMU_1 | FCVTAU_1 | UCVTF_int_1 | FCMGE_zero_1 | FCMLE_1 | FCVTPU_1 | FCVTZU_int_1
+        | FRSQRTE_1 | FMAXNMP_pair_1 | FADDP_pair_1 | FMAXP_pair_1 | FMINNMP_pair_1
+        | FMINP_pair_1 | FMLA_elt_1 | FMLS_elt_1 | FMUL_elt_1 | FMULX_elt_1 | FMULX_vec_3
+        | FCMEQ_reg_3 | FRECPS_3 | FRSQRTS_3 | FCMGE_reg_3 | FACGE_3 | FABD_3 | FCMGT_reg_3
+        | FACGT_3 | FMAXNM_1 | FMLA_vec_1 | FADD_1 | FMAX_1 | FMINNM_1 | FMLS_vec_1 | FSUB_1
+        | FMIN_1 | FMAXNMP_vec_1 | FADDP_vec_1 | FMUL_vec_1 | FMAXP_vec_1 | FDIV_1
+        | FMINNMP_vec_1 | FMINP_vec_1 | FRINTN_1 | FRINTM_1 | FCVTNS_3 | FCVTMS_3 | FCVTAS_3
+        | SCVTF_int_3 | FCMGT_zero_3 | FCMEQ_zero_3 | FCMLT_3 | FABS_1 | FRINTP_1 | FRINTZ_1
+        | FCVTPS_3 | FCVTZS_int_3 | FRECPE_3 | FRINTA_1 | FRINTX_1 | FCVTNU_3 | FCVTMU_3
+        | FCVTAU_3 | UCVTF_int_3 | FNEG_1 | FRINTI_1 | FCMGE_zero_3 | FCMLE_3 | FCVTPU_3
+        | FCVTZU_int_3 | FRSQRTE_3 | FSQRT_1 | FMAXNMV_1 | FMAXV_1 | FMINNMV_1 | FMINV_1
+        | FMLA_elt_3 | FMLS_elt_3 | FMUL_elt_3 | FMULX_elt_3 | FMOV_3 => {
+            return Err(Exit::Undefined);
+        }
 
         // The 64-bit PMULL: UNDEFINED without the feature, before the FPEN trap.
         PMULL if bits(i, 23, 22) == 3 => {

@@ -1015,7 +1015,38 @@ interpreter's; the helper runs the instruction otherwise.
   emulated double path holds a shuffled factor in a local. Cost: one to three shuffles and a sign flip more than an
   FMLA, so a guest's FCMLA #0 + #90 pair is level with the v8.0 sequence it replaces (TRN1, TRN2, REV64, EOR, two
   FMLAs) and the by-element and FCADD forms lose to code that shares a REV64 and keeps its constants in registers
-  (bench/boot/REPORT.md "PERF loop 7: FEAT_FCMA"). The half forms are FEAT_FP16's: the helper (UNDEFINED).
+  (bench/boot/REPORT.md "PERF loop 7: FEAT_FCMA"). The half forms (FEAT_FP16) are the helper's.
+- **Half precision** (FEAT_FP16 and FEAT_FHM, when the vCPU has them; `emit/half.rs`): wasm has no f16, so the lanes go
+  to singles exactly (each sign-extended into an i32 lane, shifted into a single's fields with bits 30:28 cleared:
+  the value × 2^-112, denormals too, then × 2^112), the operation runs in f32, and the result comes back by integer
+  rounding to nearest even (× 2^-112 puts the half's exponent in the single's field, so the rounded magnitude is
+  (m + 0xfff + (m >> 13 & 1)) >> 13 and a zero stays 0; the signs shuffled in with one `bitselect`). That's ARM's
+  result: FADD, FSUB, FMUL, FDIV and FSQRT round twice, innocuous at 24 ≥ 2 × 11 + 2 bits (Figueroa); a half's
+  product is exact in a single (22 bits, from 2^-48), so the FMA forms (FMLA/FMLS vector and by element, FMADD …
+  FNMSUB) are an exact multiply and one rounded add, whose single sum is then tested off a half's midpoint (low 13
+  bits 0x1000: a second rounding there could go the wrong way; TestFloat's f16 cases and a differential case found by
+  search land on it), and, in a branch on some lane failing, let through where the sum was exact (s - p == c and
+  s - c == p: Fast2Sum's error from the larger): exact sums of short significands sit on midpoints often (an axpy by
+  2^-7 ran 9.6× slower with every midpoint a helper call, 27% faster than its v8.0 code with the branch). Guards: FPOK (nearest even, IXC set), and once a block `HOK`, FPCR.FZ16 clear (local 129, past
+  the 0..=127 of the rest; `Func::fp16_ok`); operands with no all-ones exponent (the widening makes ∞ and NaN finite):
+  their lanes shifted left once, the unsigned maximum below 0xf800; a single result from 2^-13 up and below 65520
+  (it rounds to a half in the second binade or up, finite), or ±0 (exact: a zero sum, product or quotient of halves is
+  exact in singles). FMAX/FMIN/FMAXNM/FMINNM and the compares (FCMEQ … FACGT, with zero) work on the halves' bits:
+  x ^ (sign spread & 0x7fff) orders as the values with -0 below +0 and is its own inverse (`i16x8.max_s`/`min_s`, mapped
+  back), (m ^ s) - s orders them with ±0 alike (the compares), FACGE/FACGT compare magnitudes; no NaN operand (∞ is
+  fine), HOK, no FPOK. FABS, FNEG and the FMOVs (register, immediate, general, vector immediate) are bits. Vector,
+  AdvSIMD scalar (lane 0, the rest cleared) and scalar (ftype 3) forms share the code; 8H takes both singles' halves,
+  4H and scalars one (the unused lanes ORed into the masks; a scalar form costs a vector's: scalar f32 locals would be
+  cheaper, [backlog.md](backlog.md)). Cost: FADD 8H about 50 lane ops (two widened operands, 16; the operand test, 4;
+  the op, 2; the result test, 10; the narrowing, 17) where a single FADD 4S is about 5, so per element half precision
+  here is 4-5× single's: code that keeps halves in memory and converts once wins (an axpy, 27%), code that computes
+  in halves loses (a GEMM tile 2×; bench/boot/REPORT.md "PERF loop 10"). **FMLAL/FMLSL(2)** (FEAT_FHM): the halves of Vn and Vm (the low or,
+  "2", the high 2 or 4: Q = 0's moved down by a shuffle), widened, FMLSL's first negated, multiplied (exact) and added
+  to Vd's singles: one rounding, FPMulAddH's; then the single FMA's rules (a fast result or an exact zero, under FZ no
+  denormal addend), the halves used finite, HOK: by vector 17% faster than the FCVTL and FMLA it replaces, by element
+  35% slower (it widens the same B row again for each of a tile's eight). Helpers on purpose (rare in fp16 code, each its own rule):
+  FRECPE/FRSQRTE/FRECPX, FRECPS/FRSQRTS, FRINT*, the pairwise and across-lanes forms, the conversions to and from
+  integers and fixed point, FCMP/FCCMP/FCSEL, FCMLA/FCADD's half forms.
 - **Conversions:** SCVTF/UCVTF inline (RNE, can't overflow), including the forms with the integer
   in a SIMD&FP register and the vector forms (2D lane by lane: no i64x2 convert);
   FCVT{N,M,A,P,Z}{S,U} to W, X and V registers, scalar and vector: the operand rounded in the
@@ -1088,7 +1119,7 @@ interpreter's; the helper runs the instruction otherwise.
   (2a + 1) is an `i32.div_u`; FRSQRTE's search (the least b ≥ 512 with a·(b + 1)² ≥ 2^28) is
   ceil(√(2^28 / a)) - 1 in f64: 2^28 / a is never a square, and its root is at least ~2^-22 from
   an integer, far above f64's error.
-- **Still helper calls on purpose:** FP16 arithmetic (not advertised), and every fast path's
+- **Still helper calls on purpose:** the half-precision forms listed under "Half precision", and every fast path's
   fallback: NaN and denormal operands, FPCR.RMode other than nearest even or FPSR.IXC clear where
   a result may be inexact, results in the smallest normal binade or beyond, the encodings that are
   UNDEFINED.

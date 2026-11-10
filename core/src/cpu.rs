@@ -154,6 +154,15 @@ pub const FEATURE_RCPC2: u64 = 8192;
 /// advertised in ID_AA64ISAR1_EL1 when a VM is given it: off by default
 /// ([`DEFAULT_FEATURES`]).
 pub const FEATURE_FCMA: u64 = 16384;
+/// FEAT_FP16 (ABI 65): half-precision data processing, scalar and AdvSIMD
+/// (arithmetic, compares, conversions, FMA, min/max, rounding, estimates, by
+/// element, pairwise and across lanes, FMOV, FCMLA and FCADD's half forms with
+/// FEAT_FCMA), FPCR.FZ16, advertised in ID_AA64PFR0_EL1 (FP = AdvSIMD = 1).
+pub const FEATURE_FP16: u64 = 32768;
+/// FEAT_FHM (ABI 65): `FMLAL`, `FMLSL` and their "2" forms, vector and by
+/// element; only with `FEATURE_FP16` (ID_AA64ISAR0_EL1.FHM = 1): alone it is
+/// nothing.
+pub const FEATURE_FHM: u64 = 65536;
 /// Every feature bit the core knows.
 pub const FEATURES: u64 = FEATURE_CRYPTO
     | FEATURE_RNG
@@ -169,12 +178,15 @@ pub const FEATURES: u64 = FEATURE_CRYPTO
     | FEATURE_I8MM
     | FEATURE_RDM
     | FEATURE_RCPC2
-    | FEATURE_FCMA;
+    | FEATURE_FCMA
+    | FEATURE_FP16
+    | FEATURE_FHM;
 /// The features a VM gets unless told otherwise (`bootVm`, the native runners,
 /// the page): all but FEAT_I8MM and FEAT_FCMA, implemented but measured
 /// slower than the paths guests take without them (docs/cpu.md, PLAN.md's
-/// rule).
-pub const DEFAULT_FEATURES: u64 = FEATURES & !(FEATURE_I8MM | FEATURE_FCMA);
+/// rule), and FEAT_FP16 and FEAT_FHM (in progress: PERF loop 10).
+pub const DEFAULT_FEATURES: u64 =
+    FEATURES & !(FEATURE_I8MM | FEATURE_FCMA | FEATURE_FP16 | FEATURE_FHM);
 
 /// Whether a vCPU with `features` has FEAT_SHA512 and FEAT_SHA3.
 #[inline]
@@ -185,6 +197,11 @@ pub fn has_sha3(features: u64) -> bool {
 #[inline]
 pub fn has_rcpc2(features: u64) -> bool {
     features & (FEATURE_RCPC | FEATURE_RCPC2) == FEATURE_RCPC | FEATURE_RCPC2
+}
+/// Whether a vCPU with `features` has FEAT_FHM (which needs FEAT_FP16).
+#[inline]
+pub fn has_fhm(features: u64) -> bool {
+    features & (FEATURE_FP16 | FEATURE_FHM) == FEATURE_FP16 | FEATURE_FHM
 }
 /// The GICv3 system-register CPU interface (`ICC_*_EL1`, ID_AA64PFR0_EL1.GIC
 /// = 1). Not a `VmConfig.features` bit: a VM sets it from `VmConfig.gic`; a
@@ -251,8 +268,19 @@ impl Default for Cpu {
 }
 
 /// FPCR bits that hold values: AHP (26), DN (25), FZ (24), RMode (23:22). The
-/// trap enables are RAZ/WI (no trapping, as on the M4); FZ16 and the FEAT_AFP bits aren't implemented.
+/// trap enables are RAZ/WI (no trapping, as on the M4); the FEAT_AFP bits aren't
+/// implemented, FZ16 (19) only with FEAT_FP16 ([`fpcr_mask`]).
 pub const FPCR_MASK: u64 = 0x07c0_0000;
+/// The FPCR bits a vCPU with `features` keeps: [`FPCR_MASK`], and FZ16 with FEAT_FP16.
+#[inline]
+pub fn fpcr_mask(features: u64) -> u64 {
+    FPCR_MASK
+        | if features & FEATURE_FP16 != 0 {
+            1 << 19
+        } else {
+            0
+        }
+}
 /// FPSR bits that hold values: QC (27), IDC (7), IXC, UFC, OFC, DZC, IOC (4:0).
 pub const FPSR_MASK: u64 = 0x0800_009f;
 
@@ -421,7 +449,7 @@ impl Cpu {
             return Err(snapshot::Error::Corrupt);
         }
         *self = Cpu {
-            fpcr: fpcr & FPCR_MASK,
+            fpcr: fpcr & fpcr_mask(self.features),
             fpsr: fpsr & FPSR_MASK,
             pstate,
             sp_other,

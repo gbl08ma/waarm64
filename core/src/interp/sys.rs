@@ -9,8 +9,7 @@
 
 use super::{Exit, R, bit, bits, debug};
 use crate::cpu::{
-    Cpu, DAIF, FPCR_MASK, FPSR_MASK, M_EL0T, M_EL1H, M_EL1T, PSTATE_DIT, PSTATE_I, PSTATE_SS,
-    SPSR_IL, sctlr,
+    Cpu, DAIF, FPSR_MASK, M_EL0T, M_EL1H, M_EL1T, PSTATE_DIT, PSTATE_I, PSTATE_SS, SPSR_IL, sctlr,
 };
 use crate::decode::Op;
 use crate::mem::{Access, Fault, FaultKind};
@@ -28,7 +27,8 @@ const fn sr(op0: u32, op1: u32, crn: u32, crm: u32, op2: u32) -> u32 {
 // Identification. Everything here describes exactly what the core implements.
 /// Implementer 0 (reserved for software use), architecture 0xf (see the ID registers).
 pub(crate) const MIDR: u64 = 0x000f_0000;
-/// EL0 and EL1 AArch64 only; FP and AdvSIMD 0 (present, no FP16); GIC 0 (no
+/// EL0 and EL1 AArch64 only; FP and AdvSIMD 0 (present; 1, with FP16, with
+/// `FEATURE_FP16`: `pfr0`); GIC 0 (no
 /// system register interface; 1 with `FEATURE_GICV3`, `pfr0`). CSV2 and CSV3:
 /// the interpreter and JIT don't speculate, and saying so spares the guest
 /// Spectre mitigations and KPTI.
@@ -36,9 +36,15 @@ const ID_AA64PFR0: u64 = 1 << 60 | 1 << 56 | 1 << 4 | 1;
 
 /// ID_AA64PFR0_EL1 for a vCPU with `features`.
 pub fn pfr0(features: u64) -> u64 {
+    let fp16 = if features & crate::cpu::FEATURE_FP16 != 0 {
+        (1 << 20) | (1 << 16)
+    } else {
+        0
+    };
     ID_AA64PFR0
         | ((features & crate::cpu::FEATURE_GICV3 != 0) as u64) << 24
         | ((features & crate::cpu::FEATURE_DIT != 0) as u64) << 48
+        | fp16
 }
 
 /// The GICv3 CPU interface register an MSR/MRS key (bits 20:5) names, if
@@ -67,6 +73,8 @@ const ISAR0_TS: u64 = 2 << 52;
 const ISAR0_DP: u64 = 1 << 44;
 /// RDM = 1: FEAT_RDM.
 const ISAR0_RDM: u64 = 1 << 28;
+/// FHM = 1: FEAT_FHM.
+const ISAR0_FHM: u64 = 1 << 48;
 
 /// ID_AA64ISAR0_EL1 for a vCPU with `features`.
 pub fn isar0(features: u64) -> u64 {
@@ -76,7 +84,12 @@ pub fn isar0(features: u64) -> u64 {
         | has(crate::cpu::FEATURE_RNG, ISAR0_RNDR)
         | has(crate::cpu::FEATURE_FLAGM, ISAR0_TS)
         | has(crate::cpu::FEATURE_DOTPROD, ISAR0_DP)
-        | has(crate::cpu::FEATURE_RDM, ISAR0_RDM);
+        | has(crate::cpu::FEATURE_RDM, ISAR0_RDM)
+        | if crate::cpu::has_fhm(features) {
+            ISAR0_FHM
+        } else {
+            0
+        };
     if crate::cpu::has_sha3(features) {
         r & !(0xf << 12) | ISAR0_SHA3
     } else {
@@ -590,7 +603,7 @@ fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
         }
         FPCR => {
             super::fp_enabled(c)?;
-            c.fpcr = v & FPCR_MASK;
+            c.fpcr = v & crate::cpu::fpcr_mask(c.features);
         }
         FPSR => {
             super::fp_enabled(c)?;

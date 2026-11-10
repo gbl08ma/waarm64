@@ -585,7 +585,10 @@ fn fpcr_fpsr() {
     let t = T::new(&[0xd51b4421]).x(1, u64::MAX).run();
     assert_eq!(t.c.fpsr, 0x0800_009f);
     let t = T::new(&[0xd51b4401, 0xd53b4400]).x(1, u64::MAX).run();
-    assert_eq!(t.c.x[0], 0x07c0_0000);
+    assert_eq!(t.c.x[0], 0x07c8_0000); // FZ16 (19) with FEAT_FP16
+    let mut t = T::new(&[0xd51b4401, 0xd53b4400]).x(1, u64::MAX);
+    t.c.features &= !crate::cpu::FEATURE_FP16;
+    assert_eq!(t.run().c.x[0], 0x07c0_0000);
 }
 
 #[test]
@@ -632,10 +635,11 @@ fn simd_moves() {
     ] {
         assert_eq!(run(insn).x[0], want, "{insn:#010x}");
     }
-    // fmov h0, w1 (FEAT_FP16) and umov w0, v1.d[0] are UNDEFINED.
-    for insn in [0x1ee70020, 0x0e083c20] {
-        assert_eq!(T::new(&[insn]).step(), Err(Exit::Undefined), "{insn:#010x}");
-    }
+    // umov w0, v1.d[0] is UNDEFINED, and fmov h0, w1 without FEAT_FP16.
+    assert_eq!(T::new(&[0x0e083c20]).step(), Err(Exit::Undefined));
+    let mut t = T::new(&[0x1ee70020]);
+    t.c.features &= !crate::cpu::FEATURE_FP16;
+    assert_eq!(t.step(), Err(Exit::Undefined));
 }
 
 /// A vector from `esize`-bit lanes, lane 0 first.
@@ -2382,23 +2386,147 @@ fn fcma() {
         assert_ne!(t.step(), Err(Exit::Undefined), "{insn:#x}");
     }
     for insn in [
-        0x6e42_c420u32,
-        0x6e02_c420,
+        0x6e02_c420u32,
         0x2ec2_c420,
-        0x6e42_e420,
         0x2ec2_e420,
         0x6fa2_1020,
         0x2f82_1020,
         0x6fc2_1020,
-        0x6f42_1020,
         0x6f02_1020,
+        0x2f42_1820, // the half form by element: H without Q
     ] {
         let mut t = T::new(&[insn]);
         t.c.cpacr_el1 = 0;
         assert_eq!(t.step(), Err(Exit::Undefined), "{insn:#x}");
     }
+    // The half forms are FEAT_FP16's.
+    for insn in [0x6e42_c420u32, 0x6e42_e420, 0x6f42_1020] {
+        let mut t = T::new(&[insn]);
+        t.c.features &= !crate::cpu::FEATURE_FP16;
+        t.c.cpacr_el1 = 0;
+        assert_eq!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+        let mut t = T::new(&[insn]);
+        t.c.cpacr_el1 = 0;
+        assert_ne!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+    }
     assert_eq!(sys::isar1(FEATURE_FCMA) >> 16 & 0xf, 1);
     assert_eq!(sys::isar1(0) >> 16 & 0xf, 0);
+}
+
+#[test]
+fn fp16() {
+    use crate::cpu::{FEATURE_FP16, FEATURES};
+    let run = |insn: u32, fpcr: u64, v: [u128; 3], x1: u64| {
+        let mut t = T::new(&[insn]).x(1, x1);
+        (t.c.v[0], t.c.v[1], t.c.v[2]) = (v[0], v[1], v[2]);
+        t.c.fpcr = fpcr;
+        t.step().unwrap();
+        t.c
+    };
+    let h = |l: &[u64]| vl(16, l);
+    const FZ16: u64 = 1 << 19;
+    // fadd h0, h1, h2: 1.5 + 2.25 (the top of V0 cleared); a denormal sum, flushed
+    // under FZ16 without Input Denormal.
+    let c = run(0x1ee2_2820, 0, [!0, 0x3e00, 0x4080], 0);
+    assert_eq!((c.v[0], c.fpsr), (0x4380, 0));
+    let c = run(0x1ee2_2820, FZ16, [0, 0x0001, 0], 0);
+    assert_eq!((c.v[0], c.fpsr), (0, 0));
+    assert_eq!(run(0x1ee2_2820, 0, [0, 0x0001, 0], 0).v[0], 1);
+    // FZ alone doesn't flush halves; FZ16 a tiny result: Underflow, not Inexact.
+    assert_eq!(run(0x1ee2_2820, 1 << 24, [0, 0x0001, 0], 0).v[0], 1);
+    let c = run(0x1ee2_0820, FZ16, [0, 0x0400, 0x3800], 0); // fmul h0, h1, h2: 2^-14 × 0.5
+    assert_eq!((c.v[0], c.fpsr), (0, crate::fp::UFC));
+    // fadd v0.8h, v1.8h, v2.8h; fmla v0.8h, v1.8h, v2.h[7].
+    let (a, b) = (
+        h(&[0x3c00, 0x4000, 0x4200, 0x4400, 0xbc00, 0, 0x7c00, 0x3800]),
+        h(&[0x3c00; 8]),
+    );
+    assert_eq!(
+        run(0x4e42_1420, 0, [0, a, b], 0).v[0],
+        h(&[0x4000, 0x4200, 0x4400, 0x4500, 0, 0x3c00, 0x7c00, 0x3e00])
+    );
+    let m = h(&[0, 0, 0, 0, 0, 0, 0, 0x4000]);
+    assert_eq!(
+        run(0x4f32_1820, 0, [b, a, m], 0).v[0],
+        h(&[
+            0x4200, 0x4500, 0x4700, 0x4880, 0xbc00, 0x3c00, 0x7c00, 0x4000
+        ])
+    );
+    // fmov h0, #2.5; fmov v0.4h, #2.5 (Q = 0); fmov w0, h1; fmov h0, w1.
+    assert_eq!(run(0x1ee0_9000, 0, [!0, 0, 0], 0).v[0], 0x4100);
+    assert_eq!(run(0x0f00_fc80, 0, [!0, 0, 0], 0).v[0], h(&[0x4100; 4]));
+    assert_eq!(run(0x1ee6_0020, 0, [0, 0xffff_1234, 0], 0).x[0], 0x1234);
+    assert_eq!(run(0x1ee7_0020, 0, [!0, 0, 0], 0xffff_5678).v[0], 0x5678);
+    // fcvtzs w0, h1 (-3.5); scvtf h0, w1 (3); frecpe h0, h1 (2.0: 511/1024).
+    assert_eq!(run(0x1ef8_0020, 0, [0, 0xc300, 0], 0).x[0], 0xffff_fffd);
+    assert_eq!(run(0x1ee2_0020, 0, [0, 0, 0], 3).v[0], 0x4200);
+    assert_eq!(run(0x5ef9_d820, 0, [0, 0x4000, 0], 0).v[0], 0x37fc);
+    // fmaxv h0, v1.8h: Reduce's tree.
+    assert_eq!(run(0x4e30_f820, 0, [0, a, 0], 0).v[0], 0x7c00);
+    // fcvt s0, h1 is v8.0 and ignores FZ16: the denormal converts.
+    assert_eq!(run(0x1ee2_4020, FZ16, [0, 1, 0], 0).v[0], 0x3380_0000);
+    // UNDEFINED without the feature, ahead of the FPEN trap for the AdvSIMD forms.
+    for insn in [
+        0x1ee2_2820u32,
+        0x4e42_1420,
+        0x4f32_1820,
+        0x0f00_fc80,
+        0x1ee7_0020,
+    ] {
+        let mut t = T::new(&[insn]);
+        t.c.features = FEATURES & !FEATURE_FP16;
+        assert_eq!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+    }
+    let mut t = T::new(&[0x4e42_1420]);
+    (t.c.features, t.c.cpacr_el1) = (FEATURES & !FEATURE_FP16, 0);
+    assert_eq!(t.step(), Err(Exit::Undefined));
+    assert_eq!(sys::pfr0(FEATURE_FP16) >> 16 & 0xff, 0x11);
+    assert_eq!(sys::pfr0(0) >> 16 & 0xff, 0);
+}
+
+#[test]
+fn fhm() {
+    use crate::cpu::{FEATURE_FHM, FEATURE_FP16, FEATURES};
+    let run = |insn: u32, v: [u128; 3]| {
+        let mut t = T::new(&[insn]);
+        (t.c.v[0], t.c.v[1], t.c.v[2]) = (v[0], v[1], v[2]);
+        t.step().unwrap();
+        t.c.v[0]
+    };
+    let h = |l: &[u64]| vl(16, l);
+    let s = |l: [f32; 4]| (0..4).fold(0u128, |v, k| v | (l[k].to_bits() as u128) << (32 * k));
+    let a = h(&[
+        0x3c00, 0x4000, 0x4200, 0x4400, 0x3800, 0x3400, 0xbc00, 0x7bff,
+    ]);
+    let b = h(&[0x4000; 8]);
+    let d = s([1., 1., 1., 1.]);
+    // fmlal v0.4s, v1.4h, v2.4h; fmlal2 (the high halves); fmlsl; Q = 0 (2S).
+    assert_eq!(run(0x4e22_ec20, [d, a, b]), s([3., 5., 7., 9.]));
+    assert_eq!(run(0x6e22_cc20, [d, a, b]), s([2., 1.5, -1., 131009.]));
+    assert_eq!(run(0x4ea2_ec20, [d, a, b]), s([-1., -3., -5., -7.]));
+    assert_eq!(run(0x0e22_ec20, [d, a, b]), s([3., 5., 0., 0.]));
+    // fmlal2 v0.2s, v1.2h, v2.2h: bits 63:32 of Vn and Vm.
+    assert_eq!(run(0x2e22_cc20, [d, a, b]), s([7., 9., 0., 0.]));
+    // By element: fmlal v0.4s, v1.4h, v2.h[7].
+    let m = h(&[0, 0, 0, 0, 0, 0, 0, 0xc000]);
+    assert_eq!(run(0x4fb2_0820, [d, a, m]), s([-1., -3., -5., -7.]));
+    // The product is exact, the sum rounded once in single: 2^-24 × 2^-24 beside 1.
+    let tiny = h(&[1; 8]);
+    assert_eq!(run(0x4e22_ec20, [d, tiny, tiny]), d);
+    // A signaling NaN half: quieted and converted to single.
+    let r = run(0x4e22_ec20, [d, h(&[0x7d01, 0, 0, 0]), b]);
+    assert_eq!(r as u32, 0x7fe0_2000);
+    // UNDEFINED without FHM or FP16, and sz = 1.
+    for f in [FEATURES & !FEATURE_FHM, FEATURES & !FEATURE_FP16] {
+        let mut t = T::new(&[0x4e22_ec20]);
+        t.c.features = f;
+        assert_eq!(t.step(), Err(Exit::Undefined));
+    }
+    let mut t = T::new(&[0x4e62_ec20]);
+    t.c.cpacr_el1 = 0;
+    assert_eq!(t.step(), Err(Exit::Undefined));
+    assert_eq!(sys::isar0(FEATURE_FHM | FEATURE_FP16) >> 48 & 0xf, 1);
+    assert_eq!(sys::isar0(FEATURE_FHM) >> 48 & 0xf, 0);
 }
 
 #[test]

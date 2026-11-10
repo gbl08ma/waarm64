@@ -9,11 +9,12 @@ use crate::cpu::Cpu;
 use crate::decode::Op;
 use crate::fp::{D, Fmt, Fpu, H, Rounding, S};
 
-/// The format in ftype (23:22): single or double. Half precision needs FEAT_FP16.
-fn ftype(i: u32) -> R<Fmt> {
+/// The format in ftype (23:22): single, double, or half precision with FEAT_FP16.
+fn ftype(c: &Cpu, i: u32) -> R<Fmt> {
     match bits(i, 23, 22) {
         0 => Ok(S),
         1 => Ok(D),
+        3 if c.features & crate::cpu::FEATURE_FP16 != 0 => Ok(H),
         _ => Err(Exit::Undefined),
     }
 }
@@ -60,7 +61,7 @@ pub(super) fn exec(c: &mut Cpu, i: u32, op: Op) -> R {
             c.nzcv = (z as u64) << 30;
         }
         SCVTF_float_int | UCVTF_float_int | SCVTF_float_fix | UCVTF_float_fix => {
-            let t = ftype(i)?;
+            let t = ftype(c, i)?;
             let (width, fbits) = int_width(i, op == SCVTF_float_fix || op == UCVTF_float_fix)?;
             let unsigned = matches!(op, UCVTF_float_int | UCVTF_float_fix);
             c.v[rd] = f.from_fixed(t, c.reg(rn as u32), fbits, unsigned, width, rmode) as u128;
@@ -68,7 +69,7 @@ pub(super) fn exec(c: &mut Cpu, i: u32, op: Op) -> R {
         FCVTNS_float | FCVTNU_float | FCVTAS_float | FCVTAU_float | FCVTPS_float | FCVTPU_float
         | FCVTMS_float | FCVTMU_float | FCVTZS_float_int | FCVTZU_float_int | FCVTZS_float_fix
         | FCVTZU_float_fix => {
-            let t = ftype(i)?;
+            let t = ftype(c, i)?;
             let fix = matches!(op, FCVTZS_float_fix | FCVTZU_float_fix);
             let (width, fbits) = int_width(i, fix)?;
             // opcode<0> (16) is unsigned; opcode<2> (18) is the ties-away pair.
@@ -84,7 +85,7 @@ pub(super) fn exec(c: &mut Cpu, i: u32, op: Op) -> R {
             c.set_reg(rd as u32, r);
         }
         _ => {
-            let t = ftype(i)?;
+            let t = ftype(c, i)?;
             let w = t.bits();
             let (x, y) = (elem(c.v[rn], 0, w), elem(c.v[rm], 0, w));
             match op {

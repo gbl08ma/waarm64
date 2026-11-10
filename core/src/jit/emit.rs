@@ -24,6 +24,7 @@
 
 mod crypto;
 mod float;
+mod half;
 
 pub use crypto::{CONSTS, Consts};
 mod simd;
@@ -83,6 +84,11 @@ pub const VT: [u32; 4] = [119, 120, 121, 122];
 pub const FPOK: u32 = 123;
 /// FPCR.FZ is clear (i32; `float::fpa_guard`).
 pub const FZOK: u32 = 118;
+/// FPCR.FZ16 is clear (i32; `half::half_guard`, PERF loop 10): past the 0..=127
+/// of the rest, as [`DEPTH`] is (indices are one byte until `Func::locals`).
+pub const HOK: u32 = 129;
+/// v128 scratch locals of the half-precision paths (`half`).
+pub const HT: [u32; 8] = [130, 131, 132, 133, 134, 135, 136, 137];
 /// f64 scratch locals (the double FMA's exact product and sums).
 pub const FT: [u32; 8] = [97, 98, 99, 113, 114, 115, 116, 117];
 /// The V registers' v128 locals, in order of first use: 49..=79, then 96
@@ -224,6 +230,9 @@ pub struct Func {
     /// The block computed its FP guard already (`float::fpa_guard`); false at
     /// each block's start.
     pub fpa_ok: bool,
+    /// The block computed its FZ16 guard already (`half::half_guard`); false
+    /// at each block's start.
+    pub fp16_ok: bool,
     /// `float::vector` is emitting an AdvSIMD scalar form (`Some(d)`: of
     /// doubles if `d`): lane 0 counts, and the rest of Vd is cleared.
     pub vsc: Option<bool>,
@@ -300,12 +309,18 @@ impl Func {
                 || i == TAKEN
                 || i == FPOK
                 || i == FZOK
+                || i == HOK
                 || crypto::I32_LOCALS.contains(&i)
             {
                 I32
             } else if FT.contains(&i) {
                 F64
-            } else if i == VTMP || VT.contains(&i) || VREGS.contains(&i) || i == VREG_LAST {
+            } else if i == VTMP
+                || VT.contains(&i)
+                || HT.contains(&i)
+                || VREGS.contains(&i)
+                || i == VREG_LAST
+            {
                 V128
             } else {
                 I64
@@ -1211,7 +1226,14 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         // AdvSIMD and SIMD&FP moves (M6 loop 4), after the block's FP check;
         // nothing emitted for the rest.
         _ => {
-            let snap = (c.c.mark(), c.flags, c.touched, c.fp_ok, c.fpa_ok, c.regs);
+            let snap = (
+                c.c.mark(),
+                c.flags,
+                c.touched,
+                c.fp_ok,
+                (c.fpa_ok, c.fp16_ok),
+                c.regs,
+            );
             let chain = c.chain.clone();
             fp_guard(c, cx, i, k);
             if !(cx.crypto && crypto::inline(c, i, op))
@@ -1220,15 +1242,17 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
                 && !(cx.features & crate::cpu::FEATURE_I8MM != 0 && simd::inline_i8mm(c, i, op))
                 && !(cx.features & crate::cpu::FEATURE_RDM != 0
                     && (simd::inline_rdm(c, i, op) || simd_lane::inline_rdm(c, i, op)))
+                && !(cx.features & crate::cpu::FEATURE_FP16 != 0 && half::inline(c, cx, i, op, k))
+                && !(crate::cpu::has_fhm(cx.features) && half::fhm(c, cx, i, op, k))
                 && !simd::inline(c, i, op)
                 && !simd_lane::inline(c, i, op)
                 && !float::inline(c, cx, i, op, k)
                 && !float::vector(c, cx, i, op, k)
             {
-                let (mark, flags, touched, fp_ok, fpa_ok, regs) = snap;
+                let (mark, flags, touched, fp_ok, (fpa_ok, fp16_ok), regs) = snap;
                 c.c.rewind(mark);
-                (c.flags, c.touched, c.fp_ok, c.fpa_ok, c.regs) =
-                    (flags, touched, fp_ok, fpa_ok, regs);
+                (c.flags, c.touched, c.fp_ok, c.fpa_ok, c.fp16_ok, c.regs) =
+                    (flags, touched, fp_ok, fpa_ok, fp16_ok, regs);
                 c.chain = chain;
                 return false;
             }

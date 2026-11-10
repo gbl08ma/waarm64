@@ -18,7 +18,9 @@ mkdirSync(out, { recursive: true });
 const first = Number(process.env.FIRST ?? 1);
 
 async function one(round: number, on: boolean): Promise<string> {
-  const s = await openSession({ gpu: 'virgl', image, out: `target/imgdecode/out`, ncpus: 4, ramMiB: 3072, disk2: '/target/imgdecode/codecs.ext4', query: `${feature}=${on ? 1 : 0}` }); // =1 for one that's off by default (i8mm)
+  // =1 for one that's off by default (i8mm); FEAT_FHM needs FEAT_FP16, on in both arms.
+  const query = feature === 'fhm' ? `fp16=1&fhm=${on ? 1 : 0}` : `${feature}=${on ? 1 : 0}`;
+  const s = await openSession({ gpu: 'virgl', image, out: `target/imgdecode/out`, ncpus: 4, ramMiB: 3072, disk2: '/target/imgdecode/codecs.ext4', query });
   await s.rootShell();
   await s.run('mkdir -p /mnt/i; mount -o ro /dev/vdb /mnt/i; systemctl stop greetd 2>/dev/null; dmesg -n 1');
   await s.onSerial(`sh /mnt/i/codecs.sh /mnt/i ${mode} ${repeats} > /tmp/out.txt 2>&1; echo CODECS-""DONE\n`);

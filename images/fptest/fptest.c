@@ -3,7 +3,8 @@
 // edge cases by format and operand count); SoftFloat 3e, linked in, computes
 // what each instruction must give, with ARM's rules on top: tininess before
 // rounding, FZ (denormal inputs flushed with IDC, tiny results flushed with UFC
-// and no IXC), DN, NaN propagation in operand order (the addend first for the
+// and no IXC; for half precision FZ16, whose input flush raises nothing and
+// which conversions ignore), DN, NaN propagation in operand order (the addend first for the
 // FMAs), FPNeg on NaNs, saturating integer conversions. Every case runs every
 // scalar, vector, by-element and general-register form of its operation under
 // each FPCR rounding mode, FZ and DN, with FPSR clear and with IXC already set
@@ -60,7 +61,7 @@ static u64 default_nan(Fmt t) { return ((1ull << t.e) - 1) << t.f | 1ull << (t.f
 
 typedef struct {
     int rm; // FPCR.RMode: 0 nearest, 1 +inf, 2 -inf, 3 zero
-    bool fz, dn, ixc;
+    bool fz, dn, ixc, fz16;
 } Cfg;
 
 // SoftFloat's rounding mode for FPCR.RMode.
@@ -86,18 +87,22 @@ static void sf_start(uint_fast8_t mode) {
     softfloat_exceptionFlags = 0;
 }
 
-// An input under FZ: a denormal single or double becomes a signed zero, with IDC.
+// Whether FPCR flushes format t: FZ for singles and doubles, FZ16 for halves.
+static bool fz_of(Fmt t, const Cfg *c) { return t.bytes == 2 ? c->fz16 : c->fz; }
+
+// An input under FZ: a denormal single or double becomes a signed zero, with IDC;
+// a denormal half under FZ16 too, without a flag.
 static u64 flush_in(Fmt t, u64 x, const Cfg *c, u32 *fl) {
-    if (c->fz && t.bytes != 2 && is_denormal(t, x)) {
-        *fl |= IDC;
+    if (fz_of(t, c) && is_denormal(t, x)) {
+        if (t.bytes != 2) *fl |= IDC;
         return x & sign(t);
     }
     return x;
 }
 
-// A float result under FZ (tiny before rounding: UFC raised, or denormal) and DN.
+// A float result under FZ (FZ16) (tiny before rounding: UFC raised, or denormal) and DN.
 static u64 finish(Fmt t, u64 r, const Cfg *c, u32 *fl) {
-    if (c->fz && t.bytes != 2 && !is_nan(t, r) && ((*fl & UFC) || is_denormal(t, r))) {
+    if (fz_of(t, c) && !is_nan(t, r) && ((*fl & UFC) || is_denormal(t, r))) {
         r &= sign(t);
         *fl = (*fl & ~(IXC | UFC)) | UFC;
     }
@@ -136,6 +141,7 @@ enum Kind {
     K_RECPX,  // FRECPX: the exponent inverted
     K_RECPE,  // FRECPE: the 8-bit reciprocal estimate
     K_RSQRTE, // FRSQRTE: the 8-bit reciprocal square root estimate
+    K_FMAL,   // FMLAL/FMLSL (FEAT_FHM): a single addend plus two halves' product, rounded once to single
 };
 
 // What one lane of a form gives: its parameters.
@@ -156,6 +162,15 @@ static uint_fast8_t mode_of(const Op *o, const Cfg *c) {
 
 // Binary arithmetic in format t (no NaN operand).
 static u64 arith2(enum Kind k, Fmt t, u64 a, u64 b) {
+    if (t.bytes == 2) {
+        float16_t x = h16(a), y = h16(b);
+        switch (k) {
+        case K_ADD: return f16_add(x, y).v;
+        case K_SUB: return f16_sub(x, y).v;
+        case K_DIV: return f16_div(x, y).v;
+        default: return f16_mul(x, y).v;
+        }
+    }
     if (t.bytes == 4) {
         float32_t x = f32(a), y = f32(b);
         switch (k) {
@@ -176,16 +191,22 @@ static u64 arith2(enum Kind k, Fmt t, u64 a, u64 b) {
 
 // a < b and a == b, quietly (no NaN operand).
 static bool lt(Fmt t, u64 a, u64 b) {
+    if (t.bytes == 2) return f16_lt_quiet(h16(a), h16(b));
     return t.bytes == 4 ? f32_lt_quiet(f32(a), f32(b)) : f64_lt_quiet(f64(a), f64(b));
 }
 static bool eq(Fmt t, u64 a, u64 b) {
+    if (t.bytes == 2) return f16_eq(h16(a), h16(b));
     return t.bytes == 4 ? f32_eq(f32(a), f32(b)) : f64_eq(f64(a), f64(b));
 }
 
 static u64 two(Fmt t, bool neg) { return (neg ? sign(t) : 0) | ((1ull << (t.e - 1)) << t.f); }
 static u64 inf(Fmt t, bool neg) { return (neg ? sign(t) : 0) | ((1ull << t.e) - 1) << t.f; }
-static u64 fmul(Fmt t, u64 a, u64 b) { return t.bytes == 4 ? f32_mul(f32(a), f32(b)).v : f64_mul(f64(a), f64(b)).v; }
+static u64 fmul(Fmt t, u64 a, u64 b) {
+    if (t.bytes == 2) return f16_mul(h16(a), h16(b)).v;
+    return t.bytes == 4 ? f32_mul(f32(a), f32(b)).v : f64_mul(f64(a), f64(b)).v;
+}
 static u64 fused(Fmt t, u64 n, u64 m, u64 a) {
+    if (t.bytes == 2) return f16_mulAdd(h16(n), h16(m), h16(a)).v;
     return t.bytes == 4 ? f32_mulAdd(f32(n), f32(m), f32(a)).v : f64_mulAdd(f64(n), f64(m), f64(a)).v;
 }
 // A float constant of format t from a double's bits (exact ones only).
@@ -193,6 +214,7 @@ static u64 kf(Fmt t, double v) {
     u64 b;
     memcpy(&b, &v, 8);
     if (t.bytes == 8) return b;
+    if (t.bytes == 2) return f64_to_f16(f64(b)).v;
     float f = (float)v;
     u32 w;
     memcpy(&w, &f, 4);
@@ -245,15 +267,39 @@ static u64 model(const Op *o, Fmt t, Fmt to, u64 n, u64 m, u64 a, const Cfg *c, 
             }
             return r;
         }
-        r = t.bytes == 4 ? f32_mulAdd(f32(x[1]), f32(x[2]), f32(x[0])).v
-                         : f64_mulAdd(f64(x[1]), f64(x[2]), f64(x[0])).v;
+        r = fused(t, x[1], x[2], x[0]);
         *fl |= sf_flags();
         return finish(t, r, c, fl);
+    }
+    case K_FMAL: {
+        // FPMulAddH(addend, op1, op2): the addend a single, the factors halves
+        // (FZ16), their NaNs converted to single; then FPMulAdd's rules, exact:
+        // the halves are exact singles.
+        if (o->neg & 1) n ^= sign(H);
+        u64 x[3] = {flush_in(S, a, c, fl), flush_in(H, n, c, fl), flush_in(H, m, c, fl)};
+        const Fmt fs[3] = {S, H, H};
+        for (int pass = 0; pass < 2; pass++)
+            for (int k = 0; k < 3; k++)
+                if (pass ? is_nan(fs[k], x[k]) : is_snan(fs[k], x[k])) {
+                    if (pass == 0) *fl |= IOC;
+                    bool iz = (is_inf(H, x[1]) && is_zero(H, x[2])) || (is_zero(H, x[1]) && is_inf(H, x[2]));
+                    if (is_nan(S, x[0]) && !is_snan(S, x[0]) && iz) {
+                        *fl |= IOC;
+                        return default_nan(S);
+                    }
+                    if (c->dn) return default_nan(S);
+                    u64 q = quiet(fs[k], x[k]);
+                    if (k == 0) return q;
+                    return (q & sign(H) ? sign(S) : 0) | 0x7f800000ull | (frac(H, q) << 13);
+                }
+        r = f32_mulAdd(f16_to_f32(h16(x[1])), f16_to_f32(h16(x[2])), f32(x[0])).v;
+        *fl |= sf_flags();
+        return finish(S, r, c, fl);
     }
     case K_SQRT: {
         u64 x = flush_in(t, n, c, fl);
         if (nans(t, &x, 1, c, &r, fl)) return r;
-        r = t.bytes == 4 ? f32_sqrt(f32(x)).v : f64_sqrt(f64(x)).v;
+        r = t.bytes == 2 ? f16_sqrt(h16(x)).v : t.bytes == 4 ? f32_sqrt(f32(x)).v : f64_sqrt(f64(x)).v;
         *fl |= sf_flags();
         return finish(t, r, c, fl);
     }
@@ -343,15 +389,15 @@ static u64 model(const Op *o, Fmt t, Fmt to, u64 n, u64 m, u64 a, const Cfg *c, 
                 *fl |= DZC;
                 return inf(t, neg);
             }
-            // |x| < 2^-128 (single), 2^-1024 (double): the estimate overflows.
-            u64 tiny = t.bytes == 4 ? 0x00200000ull : 0x0004000000000000ull;
+            // |x| < 2^-16 (half), 2^-128 (single), 2^-1024 (double): the estimate overflows.
+            u64 tiny = t.bytes == 2 ? 0x0100ull : t.bytes == 4 ? 0x00200000ull : 0x0004000000000000ull;
             if ((x & ~sign(t)) < tiny) {
                 bool to_inf = c->rm == 0 ? true : c->rm == 1 ? !neg : c->rm == 2 ? neg : false;
                 *fl |= OFC | IXC;
                 return to_inf ? inf(t, neg) : (inf(t, neg) - 1);
             }
-            // FZ: a result in the denormal range flushes (|x| ≥ 2^126, 2^1022).
-            if (c->fz && expo(t, x) >= (u64)(t.bytes == 4 ? 253 : 2045)) {
+            // FZ (FZ16): a result in the denormal range flushes (|x| ≥ 2^14, 2^126, 2^1022).
+            if (fz_of(t, c) && expo(t, x) >= (u64)(t.bytes == 2 ? 29 : t.bytes == 4 ? 253 : 2045)) {
                 *fl |= UFC;
                 return x & sign(t);
             }
@@ -362,7 +408,7 @@ static u64 model(const Op *o, Fmt t, Fmt to, u64 n, u64 m, u64 a, const Cfg *c, 
                 else fr = (fr << 1) & ((1ull << F) - 1);
             }
             u32 scaled = (u32)(0x100 | (fr >> (F - 8)));
-            long re = (t.bytes == 4 ? 253 : 2045) - e;
+            long re = (t.bytes == 2 ? 29 : t.bytes == 4 ? 253 : 2045) - e;
             u64 est = recip_estimate(scaled) & 0xff;
             fr = est << (F - 8);
             if (re == 0) fr = (1ull << (F - 1)) | (fr >> 1);
@@ -385,7 +431,7 @@ static u64 model(const Op *o, Fmt t, Fmt to, u64 n, u64 m, u64 a, const Cfg *c, 
             fr = (fr << 1) & ((1ull << F) - 1);
         }
         u32 scaled = (e & 1) == 0 ? (u32)(0x100 | (fr >> (F - 8))) : (u32)(0x80 | (fr >> (F - 7)));
-        long re = floordiv2((t.bytes == 4 ? 380 : 3068) - e);
+        long re = floordiv2((t.bytes == 2 ? 44 : t.bytes == 4 ? 380 : 3068) - e);
         u64 est = rsqrt_estimate(scaled) & 0xff;
         return ((u64)re & ((1ull << t.e) - 1)) << F | est << (F - 8);
     }
@@ -394,12 +440,17 @@ static u64 model(const Op *o, Fmt t, Fmt to, u64 n, u64 m, u64 a, const Cfg *c, 
         u64 x = flush_in(t, n, c, fl);
         if (nans(t, &x, 1, c, &r, fl)) return r;
         uint_fast8_t md = mode_of(o, c);
-        r = t.bytes == 4 ? f32_roundToInt(f32(x), md, o->exact).v : f64_roundToInt(f64(x), md, o->exact).v;
+        r = t.bytes == 2   ? f16_roundToInt(h16(x), md, o->exact).v
+            : t.bytes == 4 ? f32_roundToInt(f32(x), md, o->exact).v
+                           : f64_roundToInt(f64(x), md, o->exact).v;
         *fl |= sf_flags();
         return r;
     }
     case K_CVT: {
-        u64 x = flush_in(t, n, c, fl);
+        // FPUnpackCV, FPRoundCV: FZ16 doesn't apply.
+        Cfg cv = *c;
+        cv.fz16 = false;
+        u64 x = flush_in(t, n, &cv, fl);
         if (is_nan(t, x)) {
             if (is_snan(t, x)) *fl |= IOC;
             if (c->dn) return default_nan(to);
@@ -419,11 +470,28 @@ static u64 model(const Op *o, Fmt t, Fmt to, u64 n, u64 m, u64 a, const Cfg *c, 
     case K_TOINT: {
         u64 x = flush_in(t, n, c, fl);
         uint_fast8_t md = mode_of(o, c);
-        // Fixed point: x · 2^fbits, exact (or an overflow, which saturates as out of range).
-        if (o->fbits && !is_nan(t, x)) x = fmul(t, x, ((u64)(((1ull << (t.e - 1)) - 1) + o->fbits)) << t.f);
+        // Fixed point: x · 2^fbits, exact (or an overflow, which saturates as out of range);
+        // halves in single precision, where it stays exact.
+        if (o->fbits && !is_nan(t, x) && t.bytes != 2) x = fmul(t, x, ((u64)(((1ull << (t.e - 1)) - 1) + o->fbits)) << t.f);
         softfloat_exceptionFlags = 0;
         int w = o->width;
-        if (t.bytes == 4) {
+        if (t.bytes == 2) {
+            // As a single (exact, the scaling too), through 64 bits, then saturated
+            // to w (16-bit lanes: Invalid past them).
+            float32_t v = f16_to_f32(h16(x));
+            if (o->fbits && !is_nan(t, x)) v = f32_mul(v, f32((u32)(127 + o->fbits) << 23));
+            softfloat_exceptionFlags = 0;
+            int64_t sv = 0;
+            uint64_t uv = 0;
+            if (o->sgn) sv = f32_to_i64(v, md, true);
+            else uv = f32_to_ui64(v, md, true);
+            if (w < 64 && !(softfloat_exceptionFlags & softfloat_flag_invalid)) {
+                int64_t lo = -(1ll << (w - 1)), hi = (1ll << (w - 1)) - 1;
+                if (o->sgn ? (sv < lo || sv > hi) : uv > (1ull << w) - 1)
+                    softfloat_exceptionFlags = softfloat_flag_invalid;
+            }
+            r = o->sgn ? (u64)sv : uv;
+        } else if (t.bytes == 4) {
             float32_t v = f32(x);
             r = o->sgn ? (w == 32 ? (u64)(u32)f32_to_i32(v, md, true) : (u64)f32_to_i64(v, md, true))
                        : (w == 32 ? (u64)f32_to_ui32(v, md, true) : (u64)f32_to_ui64(v, md, true));
@@ -443,16 +511,36 @@ static u64 model(const Op *o, Fmt t, Fmt to, u64 n, u64 m, u64 a, const Cfg *c, 
     }
     case K_FROMINT: {
         int w = o->width;
-        if (to.bytes == 4)
+        if (to.bytes == 2)
+            r = o->sgn ? (w == 16 ? i32_to_f16((int16_t)n).v : w == 32 ? i32_to_f16((int32_t)n).v : i64_to_f16((int64_t)n).v)
+                       : (w == 16 ? ui32_to_f16((uint16_t)n).v : w == 32 ? ui32_to_f16((u32)n).v : ui64_to_f16(n).v);
+        else if (to.bytes == 4)
             r = o->sgn ? (w == 32 ? i32_to_f32((int32_t)n).v : i64_to_f32((int64_t)n).v)
                        : (w == 32 ? ui32_to_f32((u32)n).v : ui64_to_f32(n).v);
         else
             r = o->sgn ? (w == 32 ? i32_to_f64((int32_t)n).v : i64_to_f64((int64_t)n).v)
                        : (w == 32 ? ui32_to_f64((u32)n).v : ui64_to_f64(n).v);
         *fl |= sf_flags();
-        // Fixed point: / 2^fbits, exact.
+        // Fixed point: / 2^fbits, exact; halves through a quad (exact), scaled,
+        // then rounded: a half's range doesn't hold every integer.
+        if (o->fbits && to.bytes == 2) {
+            softfloat_exceptionFlags = 0;
+            float128_t v;
+            if (o->sgn) i64_to_f128M(w == 16 ? (int16_t)n : w == 32 ? (int32_t)n : (int64_t)n, &v);
+            else ui64_to_f128M(w == 16 ? (uint16_t)n : w == 32 ? (u32)n : n, &v);
+            if ((v.v[1] << 1) | v.v[0]) v.v[1] -= (u64)o->fbits << 48;
+            // To a double rounded to odd (53 ≥ 11 + 2 bits: its rounding to half is the quad's), then to half.
+            uint_fast8_t md = softfloat_roundingMode;
+            softfloat_roundingMode = softfloat_round_odd;
+            float64_t d = f128M_to_f64(&v);
+            softfloat_roundingMode = md;
+            softfloat_exceptionFlags = 0;
+            r = f64_to_f16(d).v;
+            *fl = sf_flags();
+            return finish(to, r, c, fl);
+        }
         if (o->fbits && !is_zero(to, r)) r -= (u64)o->fbits << to.f;
-        return r;
+        return to.bytes == 2 ? finish(to, r, c, fl) : r;
     }
     }
     return 0;
@@ -474,7 +562,8 @@ typedef void Run(const In *in, Out *out, u64 fpcr, u64 *fpsr);
 #define RUN(fn, insn)                                                                   \
     static void fn(const In *in, Out *out, u64 fpcr, u64 *fpsr) {                       \
         u64 fs = *fpsr;                                                                 \
-        __asm__ volatile("ldp q1, q2, [%[in]]\n\t"                                      \
+        __asm__ volatile(".arch armv8.2-a+fp16+fp16fml\n\t" /* the forms only */          \
+                         "ldp q1, q2, [%[in]]\n\t"                                      \
                          "ldp q3, q0, [%[in], #32]\n\t"                                 \
                          "ldp x9, x10, [%[in], #64]\n\t"                                \
                          "msr nzcv, x10\n\t"                                            \
@@ -505,7 +594,9 @@ enum Shape {
     NHI,  // FCVTN2/FCVTXN2: Vd's upper lanes out, its lower half kept
     PAIR, // pairwise: Vm:Vn's adjacent lanes, Vn's pairs to the low lanes
     SPAIR, // scalar pairwise: Vn's two lanes to Vd's low element
-    RED,  // across lanes: Vn's four lanes reduced pairwise, to Vd's low element
+    RED,  // across lanes: Vn's four (or `lanes`) lanes reduced pairwise, to Vd's low element
+    WIDE, // FMLAL/FMLSL: Vn's and Vm's half lanes (`part` 1: the upper ones), Vd's single lanes
+    WELT, // FMLAL/FMLSL by element: Vm's half lane `elt` for every lane
 };
 
 typedef struct {
@@ -516,6 +607,7 @@ typedef struct {
     enum Shape shape;
     int lanes, elt;
     bool zero; // compares with zero: Vm's operand is +0
+    int part;  // WIDE, WELT: the "2" forms' upper halves
 } Form;
 
 #define F(name, fn, ...) {name, fn, __VA_ARGS__}
@@ -563,8 +655,8 @@ static void check(const Form *f, const Case *cs, int ncs, int i, const Cfg *c, u
     u32 wfl = 0;
     if (f->shape == PAIR || f->shape == SPAIR || f->shape == RED) {
         // The operand lanes: cases i.. in Vn (and Vm for PAIR); concat = Vm:Vn's lanes.
-        int in_lanes = f->shape == SPAIR ? 2 : f->shape == RED ? 4 : lanes;
-        u64 cat[8];
+        int in_lanes = f->shape == SPAIR ? 2 : f->shape == RED ? (f->lanes ? f->lanes : 4) : lanes;
+        u64 cat[16];
         for (int j = 0; j < in_lanes; j++) {
             const Case *k = &cs[(i + j) % ncs];
             u64 n = (f->shape == SPAIR ? k->v[0] : k->v[0]) & mt, m = k->v[1] & mt;
@@ -583,14 +675,35 @@ static void check(const Form *f, const Case *cs, int ncs, int i, const Cfg *c, u
             lane_set(want.q0, f->to.bytes, 0, model(&f->op, f->t, f->to, cat[0], cat[1], 0, c, &fl));
             wfl |= fl;
         } else {
-            u64 lo = model(&f->op, f->t, f->to, cat[0], cat[1], 0, c, &fl);
-            wfl |= fl;
-            u64 hi = model(&f->op, f->t, f->to, cat[2], cat[3], 0, c, &fl);
-            wfl |= fl;
-            lane_set(want.q0, f->to.bytes, 0, model(&f->op, f->t, f->to, lo, hi, 0, c, &fl));
-            wfl |= fl;
+            // Reduce(): adjacent pairs, then pairs of those.
+            for (int m = in_lanes; m > 1; m /= 2)
+                for (int e = 0; e < m / 2; e++) {
+                    cat[e] = model(&f->op, f->t, f->to, cat[2 * e], cat[2 * e + 1], 0, c, &fl);
+                    wfl |= fl;
+                }
+            lane_set(want.q0, f->to.bytes, 0, cat[0]);
         }
         lanes = in_lanes;
+        goto run;
+    }
+    if (f->shape == WIDE || f->shape == WELT) {
+        // Halves in Vn and Vm (lanes j, or j + lanes with "2"), singles in Vd:
+        // a case's third half as a single, its low bits filled on odd cases.
+        int off = f->part ? lanes : 0;
+        for (int j = 0; j < lanes; j++) {
+            const Case *k = &cs[(i + j) % ncs];
+            u64 n = k->v[0] & 0xffff, m = k->v[1] & 0xffff;
+            u64 a = f16_to_f32(h16(k->v[2])).v;
+            if ((i + j) & 1 && expo(S, a) && expo(S, a) != 0xff) a |= (k->v[0] * 0x9e3779b9u) & 0x1fff;
+            lane_set(in.q1, 2, j + off, n);
+            if (f->shape == WIDE) lane_set(in.q2, 2, j + off, m);
+            else m = melt & 0xffff;
+            lane_set(in.q0, 4, j, a);
+            u32 fl = 0;
+            lane_set(want.q0, 4, j, model(&f->op, f->t, f->to, n, m, a, c, &fl));
+            wfl |= fl;
+        }
+        if (f->shape == WELT) lane_set(in.q2, 2, f->elt, melt & 0xffff);
         goto run;
     }
     for (int j = 0; j < lanes; j++) {
@@ -630,7 +743,7 @@ static void check(const Form *f, const Case *cs, int ncs, int i, const Cfg *c, u
         }
     }
 run:;
-    u64 fpcr = (u64)c->rm << 22 | (u64)c->fz << 24 | (u64)c->dn << 25;
+    u64 fpcr = (u64)c->rm << 22 | (u64)c->fz << 24 | (u64)c->dn << 25 | (u64)c->fz16 << 19;
     u64 fpsr = c->ixc ? IXC : 0, wfpsr = fpsr | wfl;
     Out got;
     f->run(&in, &got, fpcr, &fpsr);
@@ -638,7 +751,7 @@ run:;
     if (memcmp(&got, &want, sizeof got) || fpsr != wfpsr) {
         failures++;
         if ((*fails)++ < 5 || verbose) {
-            printf("FAIL %s rm=%d fz=%d dn=%d ixc=%d:", f->name, c->rm, c->fz, c->dn, c->ixc);
+            printf("FAIL %s rm=%d fz=%d dn=%d ixc=%d fz16=%d:", f->name, c->rm, c->fz, c->dn, c->ixc, c->fz16);
             for (int j = 0; j < lanes; j++) {
                 const Case *k = &cs[(i + j) % ncs];
                 printf(" [%" PRIx64 " %" PRIx64 " %" PRIx64 "]", k->v[0], k->v[1], k->v[2]);
@@ -660,20 +773,20 @@ typedef struct {
 
 static bool is_fp(const Form *f, int bytes, int ops) {
     enum Kind k = f->op.k;
-    int n = k == K_FMA ? 3
+    int n = k == K_FMA || k == K_FMAL ? 3
             : (k == K_SQRT || k == K_RINT || k == K_CVT || k == K_TOINT || k == K_RECPX || k == K_RECPE || k == K_RSQRTE) ? 1
             : f->zero ? 1 : 2;
     return k != K_FROMINT && f->t.bytes == bytes && n == ops;
 }
 #define TAKES(name, b, o) static bool name(const Form *f) { return is_fp(f, b, o); }
-TAKES(h1, 2, 1) TAKES(s1, 4, 1) TAKES(s2, 4, 2) TAKES(s3, 4, 3) TAKES(d1, 8, 1) TAKES(d2, 8, 2) TAKES(d3, 8, 3)
+TAKES(h1, 2, 1) TAKES(h2, 2, 2) TAKES(h3, 2, 3) TAKES(s1, 4, 1) TAKES(s2, 4, 2) TAKES(s3, 4, 3) TAKES(d1, 8, 1) TAKES(d2, 8, 2) TAKES(d3, 8, 3)
 #define INT(name, w, s) static bool name(const Form *f) { return f->op.k == K_FROMINT && f->op.width == w && f->op.sgn == s; }
-INT(ti32, 32, true) INT(tu32, 32, false) INT(ti64, 64, true) INT(tu64, 64, false)
+INT(ti16, 16, true) INT(tu16, 16, false) INT(ti32, 32, true) INT(tu32, 32, false) INT(ti64, 64, true) INT(tu64, 64, false)
 
 static const Type types[] = {
-    {"f16 1", 1, h1}, {"f32 1", 1, s1}, {"f32 2", 2, s2}, {"f32 3", 3, s3}, {"f64 1", 1, d1},
+    {"f16 1", 1, h1}, {"f16 2", 2, h2}, {"f16 3", 3, h3}, {"f32 1", 1, s1}, {"f32 2", 2, s2}, {"f32 3", 3, s3}, {"f64 1", 1, d1},
     {"f64 2", 2, d2}, {"f64 3", 3, d3}, {"i32", 1, ti32}, {"ui32", 1, tu32}, {"i64", 1, ti64},
-    {"ui64", 1, tu64},
+    {"ui64", 1, tu64}, {"i32", 1, ti16}, {"ui32", 1, tu16}, // the 16-bit forms take the 32-bit cases' low halves
 };
 
 #define CHUNK 4096
@@ -734,8 +847,9 @@ int main(int argc, char **argv) {
                 int reps = eof && cases == (u64)ncs ? (int)(65536 / (32 * (long)ncs + 1)) + 1 : 1;
                 for (int rep = 0; rep < reps; rep++)
                     for (int rm = 0; rm < 4; rm++)
-                        for (int b = 0; b < 8; b++) {
-                            Cfg c = {rm, b & 1, (b >> 1) & 1, (b >> 2) & 1};
+                        // Forms with half lanes: FZ16 set and clear too.
+                        for (int b = 0; b < (fm->t.bytes == 2 || fm->to.bytes == 2 ? 16 : 8); b++) {
+                            Cfg c = {rm, b & 1, (b >> 1) & 1, (b >> 2) & 1, (b >> 3) & 1};
                             for (int i = 0; i < ncs; i++) check(fm, cs, ncs, i, &c, &fails[f]);
                         }
             }

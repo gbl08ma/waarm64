@@ -998,6 +998,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
         c.regs = entry[i];
         c.fp_ok = false;
         c.fpa_ok = false;
+        c.fp16_ok = false;
         c.words.clone_from(&b.words);
         c.plan.clone_from(&e.plans[i]);
         c.enter_flags(match fin[i] {

@@ -1,9 +1,9 @@
 # Writes forms.h (one asm function per form) and table.h (what each form computes) for fptest.c into the directory given.
 import sys
 out = sys.argv[1]
-forms = []  # (name, asm, op, t, to, shape, lanes, elt, zero)
-def add(name, asm, op, t, to, shape, lanes=0, elt=0, zero=False):
-    forms.append((name, asm, op, t, to, shape, lanes, elt, zero))
+forms = []  # (name, asm, op, t, to, shape, lanes, elt, zero, part)
+def add(name, asm, op, t, to, shape, lanes=0, elt=0, zero=False, part=0):
+    forms.append((name, asm, op, t, to, shape, lanes, elt, zero, part))
 R = {'s': 'S', 'd': 'D', 'h': 'H'}
 VEC = [('4s', 'S', 4), ('2s', 'S', 2), ('2d', 'D', 2)]
 def op(k, **kw):
@@ -158,6 +158,92 @@ for u in 'su':
         for r in 'sd':
             add(f'fcvtz{u} {g} {r} #64', f'fcvtz{u} {g}9, {r}1, #64', op('TOINT', rmode='softfloat_round_minMag', sgn=sg, width=w, fbits=64), R[r], R[r], 'GOUT')
             add(f'{u}cvtf {r} {g} #64', f'{u}cvtf {r}0, {g}9, #64', op('FROMINT', sgn=sg, width=w, fbits=64), 'D', R[r], 'GIN')
+# FEAT_FP16 (half precision) and FEAT_FHM (FMLAL/FMLSL): the forms above on halves, scalar (h) and vector (8h, 4h).
+HV = [('8h', 'H', 8), ('4h', 'H', 4)]
+for m, k in [('fadd', 'ADD'), ('fsub', 'SUB'), ('fmul', 'MUL'), ('fdiv', 'DIV'), ('fnmul', 'NMUL'), ('fabd', 'ABD'), ('fmulx', 'MULX'),
+             ('frecps', 'RECPS'), ('frsqrts', 'RSQRTS'), ('fmax', 'MAX'), ('fmin', 'MIN'), ('fmaxnm', 'MAXNM'), ('fminnm', 'MINNM')]:
+    add(f'{m} h', f'{m} h0, h1, h2', op(k), 'H', 'H', 'SC')
+    if m == 'fnmul': continue
+    for a, t, n in HV:
+        add(f'{m} {a}', f'{m} v0.{a}, v1.{a}, v2.{a}', op(k), t, t, 'VEC', n)
+for m, k in [('fmul', 'MUL'), ('fmulx', 'MULX')]:
+    for a, t, n in HV:
+        add(f'{m} {a} elt', f'{m} v0.{a}, v1.{a}, v2.h[5]', op(k), t, t, 'ELT', n, 5)
+    add(f'{m} h elt', f'{m} h0, h1, v2.h[5]', op(k), 'H', 'H', 'ELT', 1, 5)
+for m, neg in [('fmadd', 0), ('fmsub', 1), ('fnmadd', 3), ('fnmsub', 2)]:
+    add(f'{m} h', f'{m} h0, h1, h2, h3', op('FMA', neg=neg), 'H', 'H', 'SC')
+for m, neg in [('fmla', 0), ('fmls', 1)]:
+    for a, t, n in HV:
+        add(f'{m} {a}', f'{m} v0.{a}, v1.{a}, v2.{a}', op('FMA', neg=neg), t, t, 'VEC', n)
+        add(f'{m} {a} elt', f'{m} v0.{a}, v1.{a}, v2.h[6]', op('FMA', neg=neg), t, t, 'ELT', n, 6)
+    add(f'{m} h elt', f'{m} h0, h1, v2.h[6]', op('FMA', neg=neg), 'H', 'H', 'ELT', 1, 6)
+add('fsqrt h', 'fsqrt h0, h1', op('SQRT'), 'H', 'H', 'SC')
+for a, t, n in HV:
+    add(f'fsqrt {a}', f'fsqrt v0.{a}, v1.{a}', op('SQRT'), t, t, 'VEC', n)
+for m, c in [('fcmp', 0), ('fcmpe', 1)]:
+    add(f'{m} h', f'{m} h1, h2', op('CMP', cmp=c), 'H', 'H', 'NZ')
+    add(f'{m} h #0', f'{m} h1, #0.0', op('CMP', cmp=c), 'H', 'H', 'NZ', zero=True)
+for m, c in [('fccmp', 2), ('fccmpe', 3)]:
+    add(f'{m} h', f'{m} h1, h2, #5, eq', op('CMP', cmp=c), 'H', 'H', 'NZ')
+add('fcsel h', 'fcsel h0, h1, h2, eq', op('CSEL'), 'H', 'H', 'SC')
+for m, c, ab in VC:
+    for a, t, n in HV:
+        add(f'{m} {a}', f'{m} v0.{a}, v1.{a}, v2.{a}', op('VCMP', cmp=c, neg=ab), t, t, 'VEC', n)
+    add(f'{m} h', f'{m} h0, h1, h2', op('VCMP', cmp=c, neg=ab), 'H', 'H', 'SC')
+for m, c in VZ:
+    for a, t, n in HV:
+        add(f'{m} {a} #0', f'{m} v0.{a}, v1.{a}, #0.0', op('VCMP', cmp=c), t, t, 'VEC', n, zero=True)
+    add(f'{m} h #0', f'{m} h0, h1, #0.0', op('VCMP', cmp=c), 'H', 'H', 'SC', zero=True)
+for m, md, ex in RINT:
+    add(f'{m} h', f'{m} h0, h1', op('RINT', rmode=md, exact=ex), 'H', 'H', 'SC')
+    for a, t, n in HV:
+        add(f'{m} {a}', f'{m} v0.{a}, v1.{a}', op('RINT', rmode=md, exact=ex), t, t, 'VEC', n)
+for c, md in CV:
+    for u in 'su':
+        m = f'fcvt{c}{u}'
+        sg = 'true' if u == 's' else 'false'
+        for g in 'wx':
+            add(f'{m} {g} h', f'{m} {g}9, h1', op('TOINT', rmode=md, sgn=sg, width=32 if g == 'w' else 64), 'H', 'H', 'GOUT')
+        add(f'{m} h', f'{m} h0, h1', op('TOINT', rmode=md, sgn=sg, width=16), 'H', 'H', 'SC')
+        for a, t, n in HV:
+            add(f'{m} {a}', f'{m} v0.{a}, v1.{a}', op('TOINT', rmode=md, sgn=sg, width=16), t, t, 'VEC', n)
+for m in ['scvtf', 'ucvtf']:
+    sg = 'true' if m == 'scvtf' else 'false'
+    for g in 'wx':
+        w = 32 if g == 'w' else 64
+        add(f'{m} h {g}', f'{m} h0, {g}9', op('FROMINT', sgn=sg, width=w), 'S' if w == 32 else 'D', 'H', 'GIN')
+    add(f'{m} h', f'{m} h0, h1', op('FROMINT', sgn=sg, width=16), 'H', 'H', 'SC')
+    for a, t, n in HV:
+        add(f'{m} {a}', f'{m} v0.{a}, v1.{a}', op('FROMINT', sgn=sg, width=16), t, t, 'VEC', n)
+add('frecpx h', 'frecpx h0, h1', op('RECPX'), 'H', 'H', 'SC')
+for m, k in [('frecpe', 'RECPE'), ('frsqrte', 'RSQRTE')]:
+    add(f'{m} h', f'{m} h0, h1', op(k), 'H', 'H', 'SC')
+    for a, t, n in HV:
+        add(f'{m} {a}', f'{m} v0.{a}, v1.{a}', op(k), t, t, 'VEC', n)
+for m, k in [('faddp', 'ADD'), ('fmaxp', 'MAX'), ('fminp', 'MIN'), ('fmaxnmp', 'MAXNM'), ('fminnmp', 'MINNM')]:
+    for a, t, n in HV:
+        add(f'{m} {a}', f'{m} v0.{a}, v1.{a}, v2.{a}', op(k), t, t, 'PAIR', n)
+    add(f'{m} h pair', f'{m} h0, v1.2h', op(k), 'H', 'H', 'SPAIR')
+for m, k in [('fmaxv', 'MAX'), ('fminv', 'MIN'), ('fmaxnmv', 'MAXNM'), ('fminnmv', 'MINNM')]:
+    for a, t, n in HV:
+        add(f'{m} {a}', f'{m} h0, v1.{a}', op(k), 'H', 'H', 'RED', n)
+for u in 'su':
+    sg = 'true' if u == 's' else 'false'
+    for fb in [1, 8, 16]:
+        for g, w in [('w', 32), ('x', 64)]:
+            add(f'fcvtz{u} {g} h #{fb}', f'fcvtz{u} {g}9, h1, #{fb}', op('TOINT', rmode='softfloat_round_minMag', sgn=sg, width=w, fbits=fb), 'H', 'H', 'GOUT')
+            add(f'{u}cvtf h {g} #{fb}', f'{u}cvtf h0, {g}9, #{fb}', op('FROMINT', sgn=sg, width=w, fbits=fb), 'S' if w == 32 else 'D', 'H', 'GIN')
+        add(f'fcvtz{u} h #{fb}', f'fcvtz{u} h0, h1, #{fb}', op('TOINT', rmode='softfloat_round_minMag', sgn=sg, width=16, fbits=fb), 'H', 'H', 'SC')
+        add(f'{u}cvtf h #{fb}', f'{u}cvtf h0, h1, #{fb}', op('FROMINT', sgn=sg, width=16, fbits=fb), 'H', 'H', 'SC')
+        for a, t, n in HV:
+            add(f'fcvtz{u} {a} #{fb}', f'fcvtz{u} v0.{a}, v1.{a}, #{fb}', op('TOINT', rmode='softfloat_round_minMag', sgn=sg, width=16, fbits=fb), t, t, 'VEC', n)
+            add(f'{u}cvtf {a} #{fb}', f'{u}cvtf v0.{a}, v1.{a}, #{fb}', op('FROMINT', sgn=sg, width=16, fbits=fb), t, t, 'VEC', n)
+# FEAT_FHM: the halves of Vn and Vm (with "2" the upper ones), the singles of Vd.
+for m, neg, part in [('fmlal', 0, 0), ('fmlsl', 1, 0), ('fmlal2', 0, 1), ('fmlsl2', 1, 1)]:
+    add(f'{m} 4s', f'{m} v0.4s, v1.4h, v2.4h', op('FMAL', neg=neg), 'H', 'S', 'WIDE', 4, part=part)
+    add(f'{m} 2s', f'{m} v0.2s, v1.2h, v2.2h', op('FMAL', neg=neg), 'H', 'S', 'WIDE', 2, part=part)
+    add(f'{m} 4s elt', f'{m} v0.4s, v1.4h, v2.h[3]', op('FMAL', neg=neg), 'H', 'S', 'WELT', 4, 3, part=part)
+    add(f'{m} 2s elt', f'{m} v0.2s, v1.2h, v2.h[6]', op('FMAL', neg=neg), 'H', 'S', 'WELT', 2, 6, part=part)
 hdr = "// Generated by images/fptest/forms.py: the forms fptest runs.\n"
 with open(f'{out}/forms.h', 'w') as f:
     f.write(hdr)
@@ -165,7 +251,7 @@ with open(f'{out}/forms.h', 'w') as f:
         f.write(f'RUN(run{i}, "{x[1]}")\n')
 with open(f'{out}/table.h', 'w') as f:
     f.write(hdr + 'static const Form forms[] = {\n')
-    for i, (name, asm, o, t, to, shape, lanes, elt, zero) in enumerate(forms):
-        f.write(f'    F("{name}", run{i}, {o}, {t}, {to}, {shape}, {lanes}, {elt}, {"true" if zero else "false"}),\n')
+    for i, (name, asm, o, t, to, shape, lanes, elt, zero, part) in enumerate(forms):
+        f.write(f'    F("{name}", run{i}, {o}, {t}, {to}, {shape}, {lanes}, {elt}, {"true" if zero else "false"}, {part}),\n')
     f.write('};\n')
 print(len(forms), 'forms')

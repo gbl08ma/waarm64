@@ -47,7 +47,10 @@ product as ggml writes it; `js.html` runs ToInt32 kernels in Chromium and Firefo
 (Q15 and Q31 kernels with SQRDMLAH from the `asimdrdm` hwcap, acquire loads at an offset with LDAPUR from `ilrcpc`;
 `KERN <kernel> <ns>`), a round about 80 s on the Mac: `<feature>,kernels`. Since PERF loop 7 it runs `fcmak.c` too
 (FEAT_FCMA's complex multiply-accumulates by vector and by a constant, and a radix-4 butterfly, FCMLA and FCADD from
-the `fcma` hwcap, the v8.0 forms without it); `?fcma=1` is the on arm (FCMA is off by default).
+the `fcma` hwcap, the v8.0 forms without it); `?fcma=1` is the on arm (FCMA is off by default). Since PERF loop 10
+the mode `fp16k` runs `fp16k.c` alone (FEAT_FP16's half axpy, dot product, GEMM tile and scalar Horner from `asimdhp`
+and `fphp`, FEAT_FHM's FMLAL dot product and tile from `asimdfhm`; the v8.0 widening without them), about 32 s a
+round: `fp16,fp16k` (`?fp16=0` against `=1`) and `fhm,fp16k` (`?fp16=1` in both, `?fhm=0` against `=1`).
 
 ## On the desktop guest (2026-10-22)
 

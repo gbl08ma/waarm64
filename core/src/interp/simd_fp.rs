@@ -1,8 +1,8 @@
 //! AdvSIMD floating point, vector and scalar: three same, two-register misc
 //! (including conversions, estimates and FCVTN/FCVTL/FCVTXN), pairwise, across
 //! lanes, by element, and fixed-point conversions by immediate. Lanes are
-//! single or double (sz, bit 22); half-precision arithmetic is FEAT_FP16 and
-//! UNDEFINED (interp.rs lists those classes).
+//! single or double (sz, bit 22), or half precision: FEAT_FP16's encodings of
+//! the same classes ([`fp16`]), UNDEFINED without it (interp.rs lists them).
 
 use super::simd::{elem, set_elem};
 use super::{Exit, R, bit, bits};
@@ -43,6 +43,42 @@ pub(super) fn handler(op: Op) -> Option<fn(&mut Cpu, u32) -> R> {
 /// Lane format from sz (22).
 fn fmt(i: u32) -> Fmt {
     if bit(i, 22) { D } else { S }
+}
+
+/// Whether the vCPU has FEAT_FP16 (its half-precision forms).
+fn has_fp16(c: &Cpu) -> bool {
+    c.features & crate::cpu::FEATURE_FP16 != 0
+}
+
+/// FEAT_FP16's AdvSIMD forms (the caller checks the feature): the v8.0
+/// classes' rules on 16-bit lanes. Three same and two-register misc keep the
+/// single and double forms' U, a and opcode (three same's 3-bit opcode is the
+/// low bits of theirs, 11xxx); by element, the index is H:L:M and Vm 4 bits.
+pub(super) fn fp16(c: &mut Cpu, i: u32, op: Op) -> R {
+    use Op::*;
+    match op {
+        FMULX_vec_1 | FCMEQ_reg_1 | FRECPS_1 | FRSQRTS_1 | FCMGE_reg_1 | FACGE_1 | FABD_1
+        | FCMGT_reg_1 | FACGT_1 | FMULX_vec_3 | FCMEQ_reg_3 | FRECPS_3 | FRSQRTS_3
+        | FCMGE_reg_3 | FACGE_3 | FABD_3 | FCMGT_reg_3 | FACGT_3 | FMAXNM_1 | FMLA_vec_1
+        | FADD_1 | FMAX_1 | FMINNM_1 | FMLS_vec_1 | FSUB_1 | FMIN_1 | FMAXNMP_vec_1
+        | FADDP_vec_1 | FMUL_vec_1 | FMAXP_vec_1 | FDIV_1 | FMINNMP_vec_1 | FMINP_vec_1 => {
+            three_same_f(c, i, H)
+        }
+        FMAXNMP_pair_1 | FADDP_pair_1 | FMAXP_pair_1 | FMINNMP_pair_1 | FMINP_pair_1 => {
+            pair_f(c, i, H)
+        }
+        FMAXNMV_1 | FMAXV_1 | FMINNMV_1 | FMINV_1 => across_f(c, i, H),
+        FMLA_elt_1 | FMLS_elt_1 | FMUL_elt_1 | FMULX_elt_1 | FMLA_elt_3 | FMLS_elt_3
+        | FMUL_elt_3 | FMULX_elt_3 => by_element_f(c, i, H),
+        FMOV_3 => {
+            // FMOV (vector, immediate), half precision: a:b:c (18:16), d:e:f:g:h (9:5).
+            let imm = super::simd::vfp_expand_imm(bits(i, 18, 16) << 5 | bits(i, 9, 5), 16);
+            let v = (0..8).fold(0u128, |v, e| set_elem(v, e, 16, imm));
+            c.v[bits(i, 4, 0) as usize] = if bit(i, 30) { v } else { v as u64 as u128 };
+            Ok(())
+        }
+        _ => two_misc_f(c, i, H),
+    }
 }
 
 /// Lanes for Q (or one for a scalar); a vector of doubles needs Q.
@@ -113,10 +149,19 @@ fn same_op(fpu: &mut Fpu, f: Fmt, key: (bool, bool, u32), x: u64, y: u64, d: u64
 }
 
 fn three_same(c: &mut Cpu, i: u32) -> R {
-    let f = fmt(i);
+    three_same_f(c, i, fmt(i))
+}
+
+fn three_same_f(c: &mut Cpu, i: u32, f: Fmt) -> R {
     let n = lanes(i, f)?;
     let (rd, rn, rm) = regs(i);
-    let key = (bit(i, 29), bit(i, 23), bits(i, 15, 11));
+    // Half precision: a 3-bit opcode (13:11), the low bits of the others' 11xxx.
+    let opc = if f == H {
+        0b11000 | bits(i, 13, 11)
+    } else {
+        bits(i, 15, 11)
+    };
+    let key = (bit(i, 29), bit(i, 23), opc);
     let pairwise = key.0 && matches!(key.2, 24 | 26 | 30) && !(key.1 && key.2 == 26);
     let (a, b, d) = (c.v[rn], c.v[rm], c.v[rd]);
     let w = f.bits();
@@ -161,8 +206,11 @@ pub(super) fn frintts(c: &mut Cpu, i: u32) -> R {
 }
 
 fn two_misc(c: &mut Cpu, i: u32) -> R {
+    two_misc_f(c, i, fmt(i))
+}
+
+fn two_misc_f(c: &mut Cpu, i: u32, f: Fmt) -> R {
     use Rounding::*;
-    let f = fmt(i);
     let n = lanes(i, f)?;
     let (rd, rn, _) = regs(i);
     let (u, a2, opc) = (bit(i, 29), bit(i, 23), bits(i, 16, 12));
@@ -261,7 +309,10 @@ fn convert(c: &mut Cpu, i: u32) -> R {
 
 /// Scalar pairwise (FADDP, FMAXP, FMINP, FMAXNMP, FMINNMP on the two lanes of Vn).
 fn pair(c: &mut Cpu, i: u32) -> R {
-    let f = fmt(i);
+    pair_f(c, i, fmt(i))
+}
+
+fn pair_f(c: &mut Cpu, i: u32, f: Fmt) -> R {
     let (rd, rn, _) = regs(i);
     let w = f.bits();
     let (x, y) = (elem(c.v[rn], 0, w), elem(c.v[rn], 1, w));
@@ -276,44 +327,59 @@ fn pair(c: &mut Cpu, i: u32) -> R {
     Ok(())
 }
 
-/// FMAXV, FMINV, FMAXNMV, FMINNMV: 4S only, reduced as a tree like ARM's Reduce().
+/// FMAXV, FMINV, FMAXNMV, FMINNMV: 4S only (half precision: 4H or 8H),
+/// reduced as a tree like ARM's Reduce().
 fn across(c: &mut Cpu, i: u32) -> R {
     if bit(i, 22) || !bit(i, 30) {
         return Err(Exit::Undefined);
     }
+    across_f(c, i, S)
+}
+
+fn across_f(c: &mut Cpu, i: u32, f: Fmt) -> R {
     let (rd, rn, _) = regs(i);
     let a = c.v[rn];
+    let w = f.bits();
+    let n = if bit(i, 30) { 128 } else { 64 } / w;
     let mut fpu = Fpu::with_fpsr(c.fpcr, c.fpsr);
     let (nm, is_max) = (bits(i, 16, 12) == 0b01100, !bit(i, 23));
     let mut op = |x, y| {
         if nm {
-            fpu.maxnum(S, x, y, is_max)
+            fpu.maxnum(f, x, y, is_max)
         } else {
-            fpu.max(S, x, y, is_max)
+            fpu.max(f, x, y, is_max)
         }
     };
-    let l = op(elem(a, 0, 32), elem(a, 1, 32));
-    let h = op(elem(a, 2, 32), elem(a, 3, 32));
-    let v = op(l, h);
-    finish(c, rd, v as u128, 32, fpu);
+    // Reduce(): each half reduced, then the two; pairs of adjacent lanes first.
+    let mut v: [u64; 8] = core::array::from_fn(|e| elem(a, e as u32 % n, w));
+    let mut m = n as usize;
+    while m > 1 {
+        for e in 0..m / 2 {
+            v[e] = op(v[2 * e], v[2 * e + 1]);
+        }
+        m /= 2;
+    }
+    finish(c, rd, v[0] as u128, w, fpu);
     Ok(())
 }
 
 fn by_element(c: &mut Cpu, i: u32) -> R {
-    let f = fmt(i);
+    by_element_f(c, i, fmt(i))
+}
+
+fn by_element_f(c: &mut Cpu, i: u32, f: Fmt) -> R {
     let n = lanes(i, f)?;
     let (rd, rn, _) = regs(i);
     let (l, h) = (bit(i, 21) as u32, bit(i, 11) as u32);
-    let index = if f == D {
-        if l == 1 {
-            return Err(Exit::Undefined);
-        }
-        h
-    } else {
-        h << 1 | l
+    // Half precision: the index is H:L:M, Vm the low 4 bits (19:16).
+    let (index, rm) = match f {
+        D if l == 1 => return Err(Exit::Undefined),
+        D => (h, bits(i, 20, 16)),
+        S => (h << 1 | l, bits(i, 20, 16)),
+        _ => (h << 2 | l << 1 | bit(i, 20) as u32, bits(i, 19, 16)),
     };
     let w = f.bits();
-    let y = elem(c.v[bits(i, 20, 16) as usize], index, w);
+    let y = elem(c.v[rm as usize], index, w);
     let (a, d) = (c.v[rn], c.v[rd]);
     let mut fpu = Fpu::with_fpsr(c.fpcr, c.fpsr);
     let mut r = 0u128;
@@ -337,7 +403,8 @@ fn fixed(c: &mut Cpu, i: u32) -> R {
     let f = match immh {
         8.. => D,
         4..=7 => S,
-        _ => return Err(Exit::Undefined), // 16-bit lanes are FEAT_FP16
+        2..=3 if has_fp16(c) => H, // FEAT_FP16
+        _ => return Err(Exit::Undefined),
     };
     let w = f.bits();
     let (q, scalar) = (bit(i, 30), bit(i, 28));
@@ -369,15 +436,16 @@ fn fixed(c: &mut Cpu, i: u32) -> R {
     Ok(())
 }
 
-/// Whether FEAT_FCMA's `i` is allocated without FEAT_FP16: size 10 (singles)
-/// or, for the vector forms, 11 with Q (doubles); by element, singles with Q
-/// and L clear (the index is H). Size 01 is FP16's half form, 00 reserved.
-pub(super) fn fcma_allocated(i: u32, op: Op) -> bool {
+/// Whether FEAT_FCMA's `i` is allocated: size 10 (singles) or, for the vector
+/// forms, 11 with Q (doubles); by element, singles with Q and L clear (the
+/// index is H). Size 01 is the half form, with FEAT_FP16 (`fp16`): by element
+/// its index is H:L, H clear without Q. 00 is reserved.
+pub(super) fn fcma_allocated(i: u32, op: Op, fp16: bool) -> bool {
     let (size, q) = (bits(i, 23, 22), bit(i, 30));
     if op == Op::FCMLA_elt {
-        size == 2 && q && !bit(i, 21)
+        size == 2 && q && !bit(i, 21) || size == 1 && fp16 && (q || !bit(i, 11))
     } else {
-        size == 2 || size == 3 && q
+        size == 2 || size == 3 && q || size == 1 && fp16
     }
 }
 
@@ -387,7 +455,11 @@ pub(super) fn fcma_allocated(i: u32, op: Op) -> bool {
 /// Vn's real or imaginary element by Vm's, either negated, the ARM ARM's
 /// element1 to element4), FCADD adds Vm rotated by 90° or 270° (12) to Vn.
 pub(super) fn fcma(c: &mut Cpu, i: u32, op: Op) -> R {
-    let f = fmt(i);
+    let f = match bits(i, 23, 22) {
+        1 => H,
+        2 => S,
+        _ => D,
+    };
     let w = f.bits();
     let n = if bit(i, 30) { 128 } else { 64 } / w;
     let (rd, rn, rm) = regs(i);
@@ -411,7 +483,13 @@ pub(super) fn fcma(c: &mut Cpu, i: u32, op: Op) -> R {
         } else {
             // By element, Vm's pair is the index's (H) in every pair.
             let (rot, m) = if op == Op::FCMLA_elt {
-                (bits(i, 14, 13), 2 * bit(i, 11) as u32)
+                // The pair's index: H (singles) or H:L (halves).
+                let index = if f == H {
+                    bit(i, 11) as u32 * 2 + bit(i, 21) as u32
+                } else {
+                    bit(i, 11) as u32
+                };
+                (bits(i, 14, 13), 2 * index)
             } else {
                 (bits(i, 12, 11), e)
             };
@@ -432,5 +510,42 @@ pub(super) fn fcma(c: &mut Cpu, i: u32, op: Op) -> R {
         r = set_elem(set_elem(r, e, w, lo), e + 1, w, hi);
     }
     finish(c, rd, r, n * w, fpu);
+    Ok(())
+}
+
+/// FEAT_FHM (the caller checks it): FMLAL, FMLSL and their "2" forms, vector
+/// and by element: single lanes of Vd plus the products of Vn's half lanes
+/// (the low half of Vn's 64 or 128 bits, or with "2" its high half) with Vm's
+/// (by element, lane H:L:M of the low 16 registers), the first factor negated
+/// for FMLSL ([`Fpu::muladd_h`]: one rounding, to single). Vector FMLAL2 is
+/// U (29) with opcode 11001, by element U with opcode<3> set; FMLSL is a (23)
+/// vector, opcode<2> (14) by element.
+pub(super) fn fhm(c: &mut Cpu, i: u32, op: Op) -> R {
+    use Op::*;
+    let by_element = matches!(op, FMLAL_elt_1 | FMLAL_elt_2 | FMLSL_elt_1 | FMLSL_elt_2);
+    let q = bit(i, 30);
+    let (part, sub) = (bit(i, 29), if by_element { bit(i, 14) } else { bit(i, 23) });
+    let n = if q { 4 } else { 2 };
+    let (rd, rn, _) = regs(i);
+    // Vpart(n, part) of half the datasize: 32 or 64 bits.
+    let a = if part { c.v[rn] >> (16 * n) } else { c.v[rn] };
+    let b = if by_element {
+        let index = bit(i, 11) as u32 * 4 + bit(i, 21) as u32 * 2 + bit(i, 20) as u32;
+        let y = elem(c.v[bits(i, 19, 16) as usize], index, 16) as u128;
+        (0..4).fold(0u128, |v, e| v | y << (16 * e))
+    } else {
+        let b = c.v[bits(i, 20, 16) as usize];
+        if part { b >> (16 * n) } else { b }
+    };
+    let d = c.v[rd];
+    let mut fpu = Fpu::with_fpsr(c.fpcr, c.fpsr);
+    let mut r = 0u128;
+    for e in 0..n {
+        let x = elem(a, e, 16);
+        let x = if sub { x ^ 0x8000 } else { x };
+        let v = fpu.muladd_h(elem(d, e, 32), x, elem(b, e, 16));
+        r = set_elem(r, e, 32, v);
+    }
+    finish(c, rd, r, 32 * n, fpu);
     Ok(())
 }

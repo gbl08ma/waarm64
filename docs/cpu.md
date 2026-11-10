@@ -100,6 +100,27 @@ match it step for step.
   slower** and a radix-4 butterfly with FCADD **3% slower**, rounds apart. Each FCMLA or FCADD here is its shuffles,
   a sign flip and the FMA (or add) with its checks, where the v8.0 code shares one REV64 between two outputs and keeps
   its constants in registers. bench/boot/REPORT.md "PERF loop 7: FEAT_FCMA".
+- **FEAT_FP16** (half-precision data processing: scalar and AdvSIMD arithmetic, FMA, compares, conditional compare and
+  select, min/max, rounding, estimates and steps, conversions to and from integers and fixed point, pairwise and
+  across lanes, by element, the FMOVs, and FCMLA/FCADD's half forms with FEAT_FCMA; FPCR.FZ16): `VmConfig.features`
+  bit 15 (`FEATURE_FP16`, ABI 65), `ID_AA64PFR0_EL1` FP = AdvSIMD = 1, Linux's `fphp` and `asimdhp` hwcaps, switched as
+  JSCVT is but **off by default** like I8MM (`bootVm`'s `fp16: true`, the page's `?fp16=1`, in the shape's hash when
+  on). The interpreter runs the v8.0 handlers on 16-bit lanes (`interp::simd_fp::fp16`, `float`'s ftype 3) over the
+  generic FP core ("Floating point" below: FZ16); the half encodings are UNDEFINED without it, the AdvSIMD ones
+  ahead of the FPEN trap. FPCR keeps FZ16 only with it (`cpu::fpcr_mask`). Inline in the JIT for the arithmetic, FMA,
+  min/max, compares and bit forms ([jit.md](jit.md) "Half precision"). **FEAT_FHM** (`FMLAL`, `FMLSL`, `FMLAL2`,
+  `FMLSL2`, vector and by element; `interp::simd_fp::fhm`): bit 16 (`FEATURE_FHM`), only with FP16 (`cpu::has_fhm`):
+  `ID_AA64ISAR0_EL1.FHM` = 1, the `asimdfhm` hwcap; off by default too (`fhm: true`, `?fhm=1`), inline. Who uses them:
+  of the desktop and Debian guests' binaries only Highway's `vqsort` on `float16_t` (libhwy_contrib's per-target
+  code) and VapourSynth's filters (FP16 and FMLAL); no codec, browser (Chromium, Firefox), Mesa or ML runtime in the
+  images. Unadvertised (PLAN.md's rule), from kernels written as fp16 libraries pick them from the hwcaps
+  (`bench/imgdecode/fp16k.c`, three rounds on the Mac each): an axpy on halves in memory **27% faster** with FP16
+  (FMLA .8h against FCVTL, FMLA .4s and FCVTN), but a half GEMM tile by element **2.05× slower**, a dot product 6%
+  slower and scalar `_Float16` code (FMADD h) **2.1× slower**; FMLAL by vector **17% faster** than FCVTL and FMLA, by
+  element (a GEMM tile) **35% slower**; all rounds apart. A half operation here is its operands widened to singles,
+  the single op and the rounding back with its checks (about 50 lane ops an FADD .8h against 5 an FADD .4s): what the
+  v8.0 code converts once and reuses, each FP16 or FMLAL instruction converts again. bench/boot/REPORT.md "PERF loop
+  10: FEAT_FP16 and FEAT_FHM".
 - **FEAT_RNG** (`RNDR`, `RNDRRS`, at EL0 and EL1) and **FEAT_E0PD** (`TCR_EL1.E0PD0`/`E0PD1`):
   `VmConfig.features` bits 1 and 2 (`FEATURE_RNG`, `FEATURE_E0PD`, ABI 35). **On by default** in
   `bootVm` (`rng: false`, `e0pd: false` turn them off), the native runners and so the test guests and
@@ -119,8 +140,8 @@ match it step for step.
   which comes from the virtio-rng): bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD".
 - **Left out, unadvertised:** SVE/SME, PAC, BTI, MTE, EL2/EL3, secure state. Their hint-space
   encodings (the PAC and BTI hints, CSDB, …) run as NOPs. Everything else the M4 has beyond v8.0
-  (FP16, BF16, FHM, LSE2, SM3/SM4, LOR, MOPS, HBC) is
-  UNDEFINED and unadvertised; I8MM and FCMA are implemented but off by default (above). Candidates for later are in
+  (BF16, LSE2, SM3/SM4, LOR, MOPS, HBC) is
+  UNDEFINED and unadvertised; I8MM, FCMA, FP16 and FHM are implemented but off by default (above). Candidates for later are in
   [backlog.md](backlog.md) "Unadvertised extensions".
 - **Rule: an optional extension is advertised unless measured slower** (PLAN.md): one that loses stays implemented,
   unadvertised. `ID_AA64DFR0_EL1` advertises
@@ -132,15 +153,15 @@ match it step for step.
 - `MIDR_EL1`: implementer 0 (software use).
 - `MPIDR_EL1`: `Cpu::mpidr`, per vCPU (`gicv3::mpidr`: `1 << 31`, Aff1 = i / 16, Aff0 = i % 16;
   `1 << 31` for one CPU).
-- `ID_AA64PFR0_EL1`: FP and AdvSIMD = 0 (present, no FP16); **CSV2 and CSV3 set** (nothing
+- `ID_AA64PFR0_EL1`: FP and AdvSIMD = 0 (present; 1, with FP16, with FEAT_FP16, off by default); **CSV2 and CSV3 set** (nothing
   speculates, which spares the guest Spectre mitigations and KPTI, unless its kernel has KASLR and
   the CPU no E0PD: above); GIC = 1 in a VM (the GICv3's
   system-register interface, `cpu::FEATURE_GICV3`), 0 for user-mode vCPUs; DIT = 1 with FEAT_DIT.
 - `ID_AA64ISAR0_EL1` (`interp::sys::isar0`): LSE, CRC32, and with the crypto feature AES = 2,
   SHA1 = 1, SHA2 = 1 (0x211120 with it on; the bare-metal `exceptions` test checks this value),
-  with SHA512/SHA3 too SHA2 = 2 and SHA3 = 1 (0x1_0021_2120), RNDR = 1 with FEAT_RNG, TS = 2 with FlagM, DP = 1 with DotProd, RDM = 1 with RDM.
+  with SHA512/SHA3 too SHA2 = 2 and SHA3 = 1 (0x1_0021_2120), RNDR = 1 with FEAT_RNG, TS = 2 with FlagM, DP = 1 with DotProd, RDM = 1 with RDM, FHM = 1 with FHM and FP16 (off by default).
   `ID_AA64ISAR1_EL1` (`interp::sys::isar1`): JSCVT = 1, FCMA = 1 (off by default), LRCPC = 1 (2 with LRCPC2), FRINTTS = 1,
-  SB = 1 and I8MM = 1 (off by default) with their features; none of FHM, BF16; no AFP.
+  SB = 1 and I8MM = 1 (off by default) with their features; no BF16, no AFP.
 - `ID_AA64MMFR0_EL1`: 4K granule, 16-bit ASIDs, 40-bit PA. `ID_AA64MMFR2_EL1` (`interp::sys::mmfr2`):
   E0PD = 1 with FEAT_E0PD, else 0.
 - `CTR_EL0`: IDC = 1 (no data cache to clean), **DIC = 0**, so guests issue `IC IVAU` after
@@ -404,7 +425,12 @@ FMA, so:
   (`__lshrti3`, `__ashlti3`). A vector element is at most 64 bits and within one half of the register,
   so `simd::elem` and `set_elem` pick the half and shift a `u64` (the FP guest +25% through the block
   interpreter; `bench/interp/REPORT.md` "M8-INTERP loop 13").
-- FPCR RMode/FZ/DN/AHP and the FPSR cumulative flags and QC are implemented.
+- FPCR RMode/FZ/DN/AHP/FZ16 and the FPSR cumulative flags and QC are implemented. **FZ16** (FEAT_FP16) flushes half
+  inputs (FPUnpack, raising no Input Denormal, unlike FZ) and tiny half results (Underflow, no Inexact); FZ doesn't
+  touch halves; conversions (FCVT, FPUnpackCV/FPRoundCV) ignore FZ16 and honor AHP, arithmetic ignores AHP. The
+  half estimates use the ARM ARM's half constants (FRECPE: overflow below 2^-16, flush from 2^14, exponent 29 - e;
+  FRSQRTE: (44 - e) / 2). FMLAL's FPMulAddH (`Fpu::muladd_h`): the addend single (FZ), the factors halves (FZ16), a
+  half NaN quieted and converted to single (the addend's first), one rounding to single.
 - **Validation:** TestFloat 3e (`scripts/testfloat.sh`, 51.2M cases under every FZ/DN
   combination) and the golden corpus natively and on wasm (host float behavior is where native
   and wasm builds can diverge).

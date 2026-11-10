@@ -34,7 +34,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 64;
+pub const ABI_VERSION: u32 = 65;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {

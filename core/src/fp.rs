@@ -188,9 +188,14 @@ impl Fpu {
             _ => Rounding::Zero,
         }
     }
+    /// Flush to zero: FPCR.FZ for singles and doubles, FPCR.FZ16 (19) for half
+    /// precision (FEAT_FP16; conversions clear it first: [`Fpu::convert`]).
     fn fz(&self, f: Fmt) -> bool {
-        // FZ applies to single and double; half precision would need FZ16.
-        self.fpcr & (1 << 24) != 0 && f != H
+        if f == H {
+            self.fpcr & (1 << 19) != 0
+        } else {
+            self.fpcr & (1 << 24) != 0
+        }
     }
     fn dn(&self) -> bool {
         self.fpcr & (1 << 25) != 0
@@ -212,7 +217,10 @@ impl Fpu {
             if fr == 0 {
                 (Class::Zero, 0, 0)
             } else if self.fz(f) {
-                self.flags |= IDC;
+                // FPUnpack: FZ16's flush raises no Input Denormal.
+                if f != H {
+                    self.flags |= IDC;
+                }
                 (Class::Zero, 0, 0)
             } else {
                 (Class::Num, f.min_exp() - f.f as i32, fr)
@@ -566,6 +574,64 @@ impl Fpu {
         self.round_sum(f, s)
     }
 
+    /// FPMulAddH (FEAT_FHM's FMLAL and FMLSL): the single `addend` plus the
+    /// product of the halves `a` and `b` (FPCR.FZ16 for them, FZ for the
+    /// addend and the result), rounded once to single. A NaN operand's
+    /// processed NaN is converted to single (FPProcessNaNs3H: the addend first).
+    pub fn muladd_h(&mut self, addend: u64, a: u64, b: u64) -> u64 {
+        let (vc, va, vb) = (self.unpack(S, addend), self.unpack(H, a), self.unpack(H, b));
+        let (ia, ib) = (va.class == Class::Inf, vb.class == Class::Inf);
+        let (za, zb) = (va.class == Class::Zero, vb.class == Class::Zero);
+        let ops = [(S, vc, addend), (H, va, a), (H, vb, b)];
+        let pick = ops
+            .iter()
+            .find(|(_, v, _)| v.class == Class::SNaN)
+            .or_else(|| ops.iter().find(|(_, v, _)| v.class == Class::QNaN));
+        let nan = pick.map(|&(f, v, x)| {
+            let r = self.process_nan(f, &v, x);
+            if f == H {
+                // FPConvertNaN: the sign, the top fraction bits, quiet.
+                (r & 0x8000) << 16 | 0x7fc0_0000 | (r & 0x1ff) << 13
+            } else {
+                r
+            }
+        });
+        // A quiet-NaN addend doesn't hide the Invalid Operation of infinity × zero.
+        if vc.class == Class::QNaN && ((ia && zb) || (za && ib)) {
+            return self.invalid(S);
+        }
+        if let Some(r) = nan {
+            return r;
+        }
+        let sp = va.sign ^ vb.sign;
+        let (ic, ip, zc, zp) = (
+            vc.class == Class::Inf,
+            ia || ib,
+            vc.class == Class::Zero,
+            za || zb,
+        );
+        if (ia && zb) || (za && ib) || (ic && ip && vc.sign != sp) {
+            return self.invalid(S);
+        }
+        if ic || ip {
+            return S.inf(if ic { vc.sign } else { sp });
+        }
+        if zc && zp && vc.sign == sp {
+            return S.zero(vc.sign);
+        }
+        let p = if zp {
+            Term::ZERO
+        } else {
+            Term {
+                sign: sp,
+                exp: va.exp + vb.exp,
+                mant: va.mant as u128 * vb.mant as u128,
+            }
+        };
+        let s = add_exact(term(&vc), p);
+        self.round_sum(S, s)
+    }
+
     /// FPMax / FPMin.
     pub fn max(&mut self, f: Fmt, a: u64, b: u64, is_max: bool) -> u64 {
         let (va, vb) = (self.unpack(f, a), self.unpack(f, b));
@@ -814,8 +880,17 @@ impl Fpu {
         self.round(f, sign, -(fbits as i32), mag, false, rm)
     }
 
-    /// FPConvert between formats (FCVT). Half precision honors FPCR.AHP.
+    /// FPConvert between formats (FCVT). Half precision honors FPCR.AHP and
+    /// ignores FPCR.FZ16 (FPUnpackCV, FPRoundCV).
     pub fn convert(&mut self, from: Fmt, to: Fmt, a: u64, rm: Rounding) -> u64 {
+        let fpcr = self.fpcr;
+        self.fpcr &= !(1 << 19);
+        let r = self.convert_cv(from, to, a, rm);
+        self.fpcr = fpcr;
+        r
+    }
+
+    fn convert_cv(&mut self, from: Fmt, to: Fmt, a: u64, rm: Rounding) -> u64 {
         let alt = self.ahp();
         let va = self.unpack_with(from, a, from == H && alt);
         let alt_out = to == H && alt;
@@ -900,13 +975,13 @@ impl Fpu {
         self.round_sum(f, s)
     }
 
-    /// The fraction (as 52 bits) and biased exponent fields of a single or double.
+    /// The fraction (as 52 bits) and biased exponent fields of a half, single or double.
     fn fields52(f: Fmt, x: u64) -> (u64, i32) {
         let frac = (x & f.frac_mask()) << (52 - f.f);
         (frac, ((x >> f.f) & f.exp_ones()) as i32)
     }
 
-    /// Packs a single or double from sign, biased exponent and a 52-bit fraction.
+    /// Packs a half, single or double from sign, biased exponent and a 52-bit fraction.
     fn pack52(f: Fmt, sign: bool, exp: i32, frac: u64) -> u64 {
         f.zero(sign) | (exp as u64 & f.exp_ones()) << f.f | frac >> (52 - f.f)
     }
@@ -924,7 +999,9 @@ impl Fpu {
             Class::Num => {}
         }
         let top = v.exp + 63 - v.mant.leading_zeros() as i32; // floor(log2 |value|)
-        let (lo, hi, base) = if f == S {
+        let (lo, hi, base) = if f == H {
+            (-16, 14, 29)
+        } else if f == S {
             (-128, 126, 253)
         } else {
             (-1024, 1022, 2045)
@@ -997,7 +1074,12 @@ impl Fpu {
             128 | (frac >> 45)
         };
         let est = rsqrt_estimate_int(scaled as u32) as u64;
-        let rexp = (if f == S { 380 } else { 3068 } - exp) / 2;
+        let rexp = (match f {
+            H => 44,
+            S => 380,
+            _ => 3068,
+        } - exp)
+            / 2;
         Self::pack52(f, false, rexp, (est & 0xff) << 44)
     }
 

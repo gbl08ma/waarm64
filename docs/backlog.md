@@ -11,9 +11,11 @@ What WebGPU can't allow at an acceptable cost isn't here: graphics.md "Permanent
 
 ## CPU and ISA
 
-- **Unadvertised extensions the M4 has**, in case real workloads benefit: FP16 (scalar and
-  AdvSIMD), FHM, BF16, LSE2 (I8MM and FCMA are implemented, off by default: measured slower; RDM and LRCPC2
-  implemented and advertised: docs/cpu.md). Not MOPS (`CPYP`/`SETP` & co as a host `memory.copy`):
+- **Unadvertised extensions the M4 has**, in case real workloads benefit: BF16, LSE2 (I8MM, FCMA, FP16 and FHM are
+  implemented, off by default: measured slower; RDM and LRCPC2 implemented and advertised: docs/cpu.md). BF16's
+  BFMMLA/BFDOT/BFMLAL would meet FHM's cost: each instruction widens its bfloat16 lanes again (a shift, exact), so
+  by-element and GEMM shapes lose to the FCVT-free v8.0 code (a bfloat16 is a single's top half) unless they
+  share the widening. Not MOPS (`CPYP`/`SETP` & co as a host `memory.copy`):
   copies run at 7-21 GB/s under the JIT and are under 2% of a browser's profile (`bench/boot/REPORT.md`
   "M8: the device round trip"). Each needs handlers, corpus groups (the generator
   already knows how to avoid them), the ID fields, a decoder-sweep update, a `VmConfig.features`
@@ -45,7 +47,8 @@ What WebGPU can't allow at an acceptable cost isn't here: graphics.md "Permanent
   fault).
 - **Reserved AdvSIMD encodings with FPEN 0** take the FP trap (`interp.rs`: `fp_enabled` before the handler's field
   checks); on the M4 they're UNDEFINED. Harmless to a kernel that enables FP on the trap: the retry is UNDEFINED. The
-  same order applies to scalar FP16's `ftype` and the by-element forms' reserved sizes, equally harmless.
+  same order applies to scalar FP's `ftype` 3 without FEAT_FP16 (with it, allocated) and the by-element forms'
+  reserved sizes, equally harmless; the AdvSIMD FP16 encodings without it are UNDEFINED ahead of the trap.
 - **Exclusives and LSE on device memory:** an LDXR reads (through `Io`, with LDAR), its STXR and the LSE atomics take
   an external abort. What hardware does there is IMPLEMENTATION DEFINED; not compared with the M4.
 - **Arm AARCHMRS JSON:** its in-package notice is unread (`THIRD_PARTY.json`); read it only to
@@ -178,6 +181,9 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
     indices (the TLB memo's patch has them, [jit.md](jit.md) "Tried and not kept"). Counted 2026-10-20: inline
     scalar FP is 0.5% of the instructions compiled in Firefox's pages session (14,500 of 2.9 M) and none to speak of
     in Alpine's userspace benchmark (30), so it's for the FP guest and FP-heavy guests, not the ranking workloads.
+    FEAT_FP16's scalar forms (ftype 3, `emit/half.rs`) run a whole vector's widening and narrowing for one half (a
+    `_Float16` Horner 2.1× slower than its single code, PERF loop 10): in scalar f32 ops they'd be about a third, if
+    FP16 is ever advertised.
   - **The single FMA's midpoint test** (the emulated arm only: the fused arm has none, so this now reaches only hosts
     without FMA3 or relaxed SIMD; not worth doing for them): folded into the result's mask and reduction, with the
     round-to-odd redo in the failure arm before the helper; saves a reduction (two lane ops), not the test.

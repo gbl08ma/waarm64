@@ -1,0 +1,26 @@
+Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt lrcpc sha3 asimddp sha512 dit ilrcpc flagm sb flagm2 frint rng
+COLD KERN axpy16 7.879 check 116.177 fp16
+COLD KERN dot16 9.619 check 633.609 fp16
+COLD KERN dotw 5.652 check 633.922 neon
+COLD KERN gemm16 4.358 check 66.1025 fp16
+COLD KERN gemmw 1.341 check 66.4143 neon
+COLD KERN poly16 19.434 check -2407.4 fp16
+KERN axpy16 0.740 check 122.76 fp16
+KERN dot16 0.734 check 633.689 fp16
+KERN dotw 0.635 check 633.984 neon
+KERN gemm16 0.555 check 66.1025 fp16
+KERN gemmw 0.251 check 66.4143 neon
+KERN poly16 10.577 check -2407.4 fp16
+KERN axpy16 0.714 check 122.76 fp16
+KERN dot16 0.621 check 633.689 fp16
+KERN dotw 0.588 check 633.984 neon
+KERN gemm16 0.552 check 66.1025 fp16
+KERN gemmw 0.247 check 66.4143 neon
+KERN poly16 10.670 check -2407.4 fp16
+KERN axpy16 0.713 check 122.76 fp16
+KERN dot16 0.640 check 633.689 fp16
+KERN dotw 0.597 check 633.984 neon
+KERN gemm16 0.556 check 66.1025 fp16
+KERN gemmw 0.245 check 66.4143 neon
+KERN poly16 10.539 check -2407.4 fp16
+CODECS-END

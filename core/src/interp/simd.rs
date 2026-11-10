@@ -51,14 +51,18 @@ fn imm5(i: u32) -> R<(u32, u32)> {
     Ok((size, imm5 >> (size + 1)))
 }
 
-/// VFPExpandImm for single (`n` = 32) or double (64) precision.
+/// VFPExpandImm for half (`n` = 16, FEAT_FP16), single (32) or double (64) precision.
 pub(crate) fn vfp_expand_imm(imm8: u32, n: u32) -> u64 {
     let (sign, b6, rest) = (
         (imm8 >> 7) as u64,
         (imm8 >> 6) & 1 == 1,
         (imm8 & 0x3f) as u64,
     );
-    let e = if n == 32 { 8 } else { 11 };
+    let e = match n {
+        16 => 5,
+        32 => 8,
+        _ => 11,
+    };
     // exp = NOT(b):Replicate(b, E-3):imm8<5:4>; frac = imm8<3:0>:Zeros.
     let exp =
         ((!b6 as u64) << (e - 1)) | (if b6 { (1 << (e - 3)) - 1 } else { 0 } << 2) | rest >> 4;
@@ -89,6 +93,7 @@ pub(super) fn exec(c: &mut Cpu, i: u32, op: Op) -> R {
     use Op::*;
     let (rd, rn) = (bits(i, 4, 0) as usize, bits(i, 9, 5));
     let q = bit(i, 30);
+    let fp16 = c.features & crate::cpu::FEATURE_FP16 != 0;
     match op {
         DUP_elt_1 | DUP_elt_2 => {
             let (size, index) = imm5(i)?;
@@ -171,7 +176,14 @@ pub(super) fn exec(c: &mut Cpu, i: u32, op: Op) -> R {
                         c.set_reg(rd as u32, elem(c.v[rn as usize], 1, 64));
                     }
                 }
-                // Half precision needs FEAT_FP16, which we don't advertise.
+                // Half precision (FEAT_FP16): Wd or Xd from Hn, zero-extended, or Hd from the low 16 bits.
+                (_, 3, 0) if fp16 => {
+                    if to_v {
+                        c.v[rd] = (c.reg(rn) & 0xffff) as u128;
+                    } else {
+                        c.set_reg(rd as u32, elem(c.v[rn as usize], 0, 16));
+                    }
+                }
                 _ => return Err(Exit::Undefined),
             }
         }
@@ -179,6 +191,7 @@ pub(super) fn exec(c: &mut Cpu, i: u32, op: Op) -> R {
             let w = match bits(i, 23, 22) {
                 0 => 32,
                 1 => 64,
+                3 if fp16 => 16,
                 _ => return Err(Exit::Undefined),
             };
             c.v[rd] = elem(c.v[rn as usize], 0, w) as u128;
@@ -187,6 +200,7 @@ pub(super) fn exec(c: &mut Cpu, i: u32, op: Op) -> R {
             let n = match bits(i, 23, 22) {
                 0 => 32,
                 1 => 64,
+                3 if fp16 => 16,
                 _ => return Err(Exit::Undefined),
             };
             c.v[rd] = vfp_expand_imm(bits(i, 20, 13), n) as u128;

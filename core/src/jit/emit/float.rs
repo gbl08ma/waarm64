@@ -161,7 +161,14 @@ fn put(c: &mut Func, f: F, rd: u32, r: u32) {
 
 /// `if cond { fast } else { the helper runs instruction i }`, with `cond` an
 /// i32 already on the stack.
-fn guarded(c: &mut Func, cx: &Ctx, i: u32, k: usize, written: u64, fast: impl FnOnce(&mut Func)) {
+pub(super) fn guarded(
+    c: &mut Func,
+    cx: &Ctx,
+    i: u32,
+    k: usize,
+    written: u64,
+    fast: impl FnOnce(&mut Func),
+) {
     c.hint(true).if_();
     let before: Regs = c.regs;
     fast(c);
@@ -242,7 +249,7 @@ fn under_fz(c: &mut Func, test: impl FnOnce(&mut Func)) {
 /// so without FZ it costs no lane op (an `andnot` of a zero did: SIMD ops
 /// are what the FP paths are bound by, bench/interp/REPORT.md "M8: the FP
 /// fast paths' SIMD ops").
-fn under_fz_bad(c: &mut Func, test: impl FnOnce(&mut Func)) {
+pub(super) fn under_fz_bad(c: &mut Func, test: impl FnOnce(&mut Func)) {
     c.local_set(VTMP);
     c.local_get(FZOK).if_t(super::V128);
     c.local_get(VTMP);
@@ -263,7 +270,7 @@ fn under_fz_bad(c: &mut Func, test: impl FnOnce(&mut Func)) {
 /// the first), three a double, where an `and`, a subtraction and a compare
 /// (and doubles' flip) each took one more, and a constant each (V8
 /// rematerializes one per use: a `movi`, a SIMD op too).
-fn denormal_any(c: &mut Func, d: bool, xs: &[&dyn Fn(&mut Func)]) {
+pub(super) fn denormal_any(c: &mut Func, d: bool, xs: &[&dyn Fn(&mut Func)]) {
     let s = 1u64 << 63;
     for (k, x) in xs.iter().enumerate() {
         x(c);
@@ -710,7 +717,7 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         (true, _) => F { d: bit(i, 22) },
         (_, 0) => F { d: false },
         (_, 1) => F { d: true },
-        _ => return false, // half precision: FEAT_FP16 isn't advertised
+        _ => return false, // half precision: `half` (FEAT_FP16)
     };
     let (x, y, a, r) = (f.tmp(0), f.tmp(1), f.tmp(2), f.tmp(3));
     match op {

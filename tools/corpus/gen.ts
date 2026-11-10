@@ -609,17 +609,18 @@ function setFp(r: Rng, m: Map<string, bigint>, n: number, t: FpFmt) {
   m.set(`v${n}`, hi | fpVal(r, t));
 }
 
-/** Random FPCR (RMode, FZ, DN, AHP) and sometimes a nonzero FPSR. */
-function fpEnv(r: Rng, m: Map<string, bigint>) {
+/** Random FPCR (RMode, FZ, DN, AHP; FZ16 with `fz16`) and sometimes a nonzero FPSR. */
+function fpEnv(r: Rng, m: Map<string, bigint>, fz16 = false) {
   let fpcr = BigInt(r.int(4)) << 22n;
   if (r.chance(0.25)) fpcr |= 1n << 24n; // FZ
   if (r.chance(0.25)) fpcr |= 1n << 25n; // DN
   if (r.chance(0.25)) fpcr |= 1n << 26n; // AHP
+  if (fz16 && r.chance(0.3)) fpcr |= 1n << 19n; // FZ16
   if (fpcr) m.set("fpcr", fpcr);
   if (r.chance(0.2)) m.set("fpsr", r.u64() & 0x0800009fn);
 }
 
-function fpForm(name: string, pat: string, count: number, o: { fix?: (r: Rng) => Fields; ok?: (f: Fields) => boolean; fmt?: (f: Fields) => FpFmt; fp?: string; x?: string } = {}): Form {
+function fpForm(name: string, pat: string, count: number, o: { fix?: (r: Rng) => Fields; ok?: (f: Fields) => boolean; fmt?: (f: Fields) => FpFmt; fp?: string; x?: string; fz16?: boolean } = {}): Form {
   return {
     name,
     count,
@@ -630,7 +631,7 @@ function fpForm(name: string, pat: string, count: number, o: { fix?: (r: Rng) =>
       const t = o.fmt?.(f) ?? fpFmt(f.y ?? 0);
       for (const l of o.fp ?? "nma") if (l in f) setFp(r, m, f[l], t);
       for (const l of o.x ?? "") if (l in f && f[l] !== 31) m.set(`x${f[l]}`, r.chance(0.5) ? r.pick(EDGES) : r.u64() >> BigInt(r.int(64)));
-      fpEnv(r, m);
+      fpEnv(r, m, o.fz16);
       return { code: [w], in: m };
     },
   };
@@ -672,7 +673,7 @@ const fpScalar: Form[] = [
 // AdvSIMD floating point: FP edge values in every lane (sz picks single or
 // double). Only v8.0 encodings: the M4 also runs FEAT_FHM (FMLAL), FRINTTS,
 // BF16 and FP16 in this space.
-function vfpForm(name: string, pat: string, count: number, combos: [number, number, number][], o: { fmt?: (f: Fields) => FpFmt; fix?: (r: Rng) => Fields } = {}): Form {
+function vfpForm(name: string, pat: string, count: number, combos: [number, number, number][], o: { fmt?: (f: Fields) => FpFmt; fix?: (r: Rng) => Fields; reg?: (l: string, t: FpFmt) => FpFmt; fz16?: boolean } = {}): Form {
   return {
     name,
     count,
@@ -687,11 +688,12 @@ function vfpForm(name: string, pat: string, count: number, combos: [number, numb
       for (const l of "nmd") {
         if (!(l in f)) continue;
         let v = 0n;
-        const b = 1 + t.e + t.f;
-        for (let k = 0; k < 128 / b; k++) v |= fpVal(r, t) << BigInt(k * b);
+        const tl = o.reg?.(l, t) ?? t;
+        const b = 1 + tl.e + tl.f;
+        for (let k = 0; k < 128 / b; k++) v |= fpVal(r, tl) << BigInt(k * b);
         m.set(`v${f[l]}`, v);
       }
-      fpEnv(r, m);
+      fpEnv(r, m, o.fz16);
       return { code: [w], in: m };
     },
   };
@@ -1052,7 +1054,97 @@ const fcma: Form[] = [
   }),
 ];
 
-export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto, jscvt, ext, dotprod, i8mm, rdm, lrcpc2, fcma };
+// FEAT_FP16 (ABI 65): every half-precision form, scalar and AdvSIMD, on FP edge values (fpVal's half cases) with FPCR
+// varied, FZ16 included; some unallocated (U, a, opcode) combinations, the FMOVs, fixed point (immh 001x) and FCMLA and
+// FCADD's half forms. The v8.0 forms' generators with ftype 3 or the FP16 classes' patterns: three same's opcode is 3
+// bits (the others' 11xxx), two-register misc's class is 1111 00, by element the index H:L:M with a 4-bit Vm.
+const h3 = (ops: number[], u: number, a: number) => ops.map((o) => [u, a, o] as [number, number, number]);
+const fp16Regs = { fmt: () => FH, fz16: true };
+const fp16: Form[] = [
+  fpForm("dp2", "00011110111mmmmmoooo10nnnnnddddd", 900, { fix: (r) => ({ o: r.chance(0.95) ? r.int(9) : r.range(9, 15) }), fmt: () => FH, fz16: true }),
+  fpForm("dp1", "00011110111oooooo10000nnnnnddddd", 600, { fix: (r) => ({ o: r.chance(0.95) ? r.pick([0, ...DP1]) : r.pick([6, 7, 13]) }), fmt: () => FH, fz16: true }),
+  fpForm("dp3", "0001111111AmmmmmBaaaaannnnnddddd", 1000, { fmt: () => FH, fz16: true }),
+  fpForm("fcmp", "00011110111mmmmm001000nnnnnEZ000", 300, { fix: (r): Fields => (r.chance(0.3) ? { Z: 1, m: 0 } : { Z: 0 }), fmt: () => FH, fz16: true }),
+  fpForm("fccmp", "00011110111mmmmmcccc01nnnnnEffff", 250, { fmt: () => FH, fz16: true }),
+  fpForm("fcsel", "00011110111mmmmmcccc11nnnnnddddd", 100, { fmt: () => FH }),
+  fpForm("fp_to_int", "z0011110111rrooo000000nnnnnddddd", 700, {
+    fix: (r): Fields => {
+      const [rr, o] = r.pick([[0, 0], [0, 1], [1, 0], [1, 1], [2, 0], [2, 1], [3, 0], [3, 1], [0, 4], [0, 5]]);
+      return { r: rr, o };
+    },
+    fp: "n",
+    fmt: () => FH,
+    fz16: true,
+  }),
+  fpForm("int_to_fp", "z00111101110001o000000nnnnnddddd", 300, { fp: "", x: "n", fmt: () => FH, fz16: true }),
+  fpForm("fixed", "z0011110110rrooossssssnnnnnddddd", 500, {
+    fix: (r): Fields => {
+      const [rr, o] = r.pick([[0, 2], [0, 3], [3, 0], [3, 1]]);
+      const z = r.int(2);
+      return { r: rr, o, z, s: r.chance(0.95) ? r.range(z ? 0 : 32, 63) : r.int(32) };
+    },
+    fp: "n",
+    x: "n",
+    fmt: () => FH,
+    fz16: true,
+  }),
+  fpForm("fmov_gen", "z00111101110011o000000nnnnnddddd", 150, { fp: "n", x: "n", fmt: () => FH }),
+  fpForm("fmov_imm", "00011110111iiiiiiii10000000ddddd", 60, { fp: "", fmt: () => FH }),
+  vfpForm("vec_same", "0QU01110a10mmmmm00ooo1nnnnnddddd", 1800, [
+    ...h3([0, 1, 2, 3, 4, 6, 7], 0, 0), ...h3([0, 1, 2, 6, 7], 0, 1), ...h3([0, 2, 3, 4, 5, 6, 7], 1, 0), ...h3([0, 2, 4, 5, 6], 1, 1),
+    [0, 0, 5], [0, 1, 4], [1, 0, 1], [1, 1, 7],
+  ], fp16Regs),
+  vfpForm("scalar_same", "01U11110a10mmmmm00ooo1nnnnnddddd", 600, [
+    ...h3([3, 4, 7], 0, 0), [0, 1, 7], ...h3([4, 5], 1, 0), ...h3([2, 4, 5], 1, 1), [0, 0, 2], [1, 0, 3],
+  ], fp16Regs),
+  vfpForm("vec_misc", "0QU01110a111100ooooo10nnnnnddddd", 1600, [
+    ...combos(0, 0, [24, 25, 26, 27, 28, 29]),
+    ...combos(0, 1, [12, 13, 14, 15, 24, 25, 26, 27, 29]),
+    ...combos(1, 0, [24, 25, 26, 27, 28, 29]),
+    ...combos(1, 1, [12, 13, 15, 25, 26, 27, 29, 31]),
+    [0, 1, 28], [1, 0, 22], [0, 0, 23],
+  ], fp16Regs),
+  vfpForm("scalar_misc", "01U11110a111100ooooo10nnnnnddddd", 700, [
+    ...combos(0, 0, [26, 27, 28, 29]),
+    ...combos(0, 1, [12, 13, 14, 26, 27, 29, 31]),
+    ...combos(1, 0, [26, 27, 28, 29]),
+    ...combos(1, 1, [12, 13, 26, 27, 29]),
+    [1, 1, 31], [0, 0, 24],
+  ], fp16Regs),
+  vfpForm("scalar_pair", "01U11110a011000ooooo10nnnnnddddd", 300, [...combos(0, 0, [12, 13, 15]), ...combos(0, 1, [12, 15])], fp16Regs),
+  vfpForm("across", "0QU01110a011000ooooo10nnnnnddddd", 300, [...combos(0, 0, [12, 15]), ...combos(0, 1, [12, 15])], fp16Regs),
+  vfpForm("elem", "0QU0111100LMmmmmooooH0nnnnnddddd", 800, [...combos(0, 0, [1, 5, 9]), [1, 0, 9]], fp16Regs),
+  vfpForm("scalar_elem", "01U1111100LMmmmmooooH0nnnnnddddd", 300, [...combos(0, 0, [1, 5, 9]), [1, 0, 9]], fp16Regs),
+  vfpForm("fixed", "0QU011110hhhhbbbooooo1nnnnnddddd", 400, [...combos(0, 0, [28, 31]), ...combos(1, 0, [28, 31])], {
+    fix: (r): Fields => ({ h: r.pick([2, 3]) }),
+    ...fp16Regs,
+  }),
+  vfpForm("scalar_fixed", "01U111110hhhhbbbooooo1nnnnnddddd", 200, [...combos(0, 0, [28, 31]), ...combos(1, 0, [28, 31])], {
+    fix: (r): Fields => ({ h: r.pick([2, 3]) }),
+    ...fp16Regs,
+  }),
+  vfpForm("fmov_vec", "0Q00111100000iii111111iiiiiddddd", 60, [[0, 0, 0]], fp16Regs),
+  vfpForm("fcmla", "0Q101110010mmmmm110rr1nnnnnddddd", 400, [[0, 0, 0]], fp16Regs),
+  vfpForm("fcadd", "0Q101110010mmmmm111r01nnnnnddddd", 200, [[0, 0, 0]], fp16Regs),
+  vfpForm("fcmla_elt", "0Q10111101Lmmmmm0rr1H0nnnnnddddd", 300, [[0, 0, 0]], fp16Regs),
+];
+
+// FEAT_FHM (ABI 65): FMLAL, FMLSL and the "2" forms, vector and by element: single lanes in Vd, half lanes in Vn and
+// Vm, FPCR varied with FZ16; sz = 1 (unallocated) sometimes.
+const fhmRegs = { fmt: () => FH, reg: (l: string, t: FpFmt) => (l === "d" ? FS : t), fz16: true, fix: (r: Rng): Fields => ({ z: r.chance(0.95) ? 0 : 1 }) };
+const fhm: Form[] = [
+  vfpForm("fmlal", "0Q001110Sz1mmmmm111011nnnnnddddd", 700, [[0, 0, 0]], { ...fhmRegs, fix: (r): Fields => ({ z: r.chance(0.95) ? 0 : 1, S: r.int(2) }) }),
+  vfpForm("fmlal2", "0Q101110Sz1mmmmm110011nnnnnddddd", 700, [[0, 0, 0]], { ...fhmRegs, fix: (r): Fields => ({ z: r.chance(0.95) ? 0 : 1, S: r.int(2) }) }),
+  vfpForm("fmlal_elt", "0QU011111zLMmmmmPS00H0nnnnnddddd", 900, [[0, 0, 0], [1, 0, 0]], {
+    ...fhmRegs,
+    fix: (r): Fields => {
+      const U = r.int(2);
+      return { U, P: U, S: r.int(2), z: r.chance(0.95) ? 0 : 1 };
+    },
+  }),
+];
+
+export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto, jscvt, ext, dotprod, i8mm, rdm, lrcpc2, fcma, fp16, fhm };
 
 /** Generates a group's tests (without oracle results). */
 export function generate(group: string): Test[] {

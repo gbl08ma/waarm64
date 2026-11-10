@@ -297,24 +297,8 @@ fn not_ours(m: &str, ops: &str) -> bool {
     let xs = m == "dsb" && ops.ends_with("nxs");
     sve || dpb
         || xs
-        || fp16(m, ops)
         || NOT_OURS.contains(&m)
         || NOT_OURS_PREFIX.iter().any(|p| m.starts_with(p))
-}
-
-/// FEAT_FP16: floating-point arithmetic, moves and conversions on half precision
-/// (scalar hN or .2h/.4h/.8h lanes). FCVT, FCVTN and FCVTL to and from half are v8.0.
-fn fp16(m: &str, ops: &str) -> bool {
-    let fp = m.starts_with('f') || matches!(m, "scvtf" | "ucvtf");
-    let half = ops
-        .split(|c: char| !c.is_ascii_alphanumeric() && c != '.')
-        .any(|w| {
-            (w.len() >= 2 && w.starts_with('h') && w[1..].bytes().all(|b| b.is_ascii_digit()))
-                || w.ends_with(".2h")
-                || w.ends_with(".4h")
-                || w.ends_with(".8h")
-        });
-    fp && half && !matches!(m, "fcvt" | "fcvtn" | "fcvtn2" | "fcvtl" | "fcvtl2")
 }
 
 const NOT_OURS: &[&str] = &[
@@ -323,10 +307,9 @@ const NOT_OURS: &[&str] = &[
     "ldg", "ldgm", "stgm", "stzgm",
     // FEAT_LOR, FEAT_WFxT, FEAT_LS64 (FlagM, FlagM2 and SB are ours since ABI 59)
     "wfet", "wfit", "ld64b", "st64b", "st64bv", "st64bv0",
-    // FP/AdvSIMD beyond v8.0: FEAT_FHM, FEAT_SM3, FEAT_SM4 (FEAT_JSCVT and FEAT_FRINTTS are
-    // ours since ABI 59, FEAT_DotProd since 60, FEAT_I8MM since 61, FEAT_RDM since 62, FEAT_FCMA
-    // since 63: its half forms are FP16's, as the other FP16 forms below).
-    "fmlal", "fmlal2", "fmlsl", "fmlsl2",
+    // FP/AdvSIMD beyond v8.0: FEAT_SM3, FEAT_SM4 and FEAT_BF16 below (FEAT_JSCVT and FEAT_FRINTTS
+    // are ours since ABI 59, FEAT_DotProd since 60, FEAT_I8MM since 61, FEAT_RDM since 62,
+    // FEAT_FCMA since 63, FEAT_FP16 and FEAT_FHM since 65).
     // At EL0, where `check` runs: HVC and ERET are EL1-only; no EL3 (SMC), no
     // halting or external debug (HLT, DCPS1-3, DRPS).
     "hvc", "eret", "smc", "hlt", "dcps1", "dcps2", "dcps3", "drps",

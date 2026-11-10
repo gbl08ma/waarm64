@@ -1,0 +1,10 @@
+# Every ELF of the desktop (Arch, target/arch/desktop.qcow2) and Debian (debian, debian-browsers, debian-sway, debian-tools) disks: words matching
+# FEAT_FP16's and FEAT_FHM's encodings in executable segments (bench/results/local/fp16/scan.c: 2,458 files on Arch, almost all data), then each
+# such file disassembled (llvm-objdump --mattr=+all; Chromium, libxul and libLLVM whole): instructions on h registers or .4h/.8h lanes (FCVT,
+# FCVTL, FCVTN excluded), and FMLAL/FMLSL. File, FP16 lines, FP16 lines beside another, FHM lines:
+arch: usr/lib/libhwy_contrib.so.1.4.0 2531 1708 0   (Highway's vqsort on float16_t, its per-target code)
+arch: usr/lib/python3.14/site-packages/vapoursynth/libvapoursynthfilters.so 350 270 1588
+arch: usr/lib/libgnutls.so.30.42.0 3 0 0   (isolated: data)
+arch: usr/lib/libleancrypto.so.1.9.1 2 0 0, libleancrypto-fips.so.1.9.1 2 0 0, glycin-loaders/2+/glycin-image-rs 1 0 0   (isolated: data)
+debian, debian-browsers, debian-sway, debian-tools: usr/lib/aarch64-linux-gnu/libgnutls.so.30.40.3 3 0 0   (data)
+# None in Chromium, Firefox's libxul and libgkcodecs, Mesa, FFmpeg, dav1d, libvpx, libaom, x264, x265, libopus, libjxl.

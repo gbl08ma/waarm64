@@ -1,0 +1,87 @@
+{
+ "host": "Mac mini M4, macOS 26.6.2",
+ "browser": "Chrome for Testing 157.0.8103.50 headless",
+ "guest": "target/arch/desktop.qcow2, 4 vCPUs",
+ "arms": "?fp16=1&fhm=0 against ?fp16=1&fhm=1, alternated, a boot per arm and round",
+ "unit": "ns per output or element (fp16k.c), each round the median of three runs in a boot",
+ "kernels": {
+  "axpy16": {
+   "off": [
+    0.68,
+    0.695,
+    0.714
+   ],
+   "on": [
+    0.691,
+    0.691,
+    0.706
+   ],
+   "on/off": 0.994
+  },
+  "dot16": {
+   "off": [
+    0.612,
+    0.633,
+    0.64
+   ],
+   "on": [
+    0.614,
+    0.614,
+    0.628
+   ],
+   "on/off": 0.97
+  },
+  "dotw": {
+   "off": [
+    0.579,
+    0.585,
+    0.597
+   ],
+   "on": [
+    0.488,
+    0.488,
+    0.491
+   ],
+   "on/off": 0.834
+  },
+  "gemm16": {
+   "off": [
+    0.54,
+    0.553,
+    0.555
+   ],
+   "on": [
+    0.543,
+    0.541,
+    0.552
+   ],
+   "on/off": 0.982
+  },
+  "gemmw": {
+   "off": [
+    0.249,
+    0.25,
+    0.247
+   ],
+   "on": [
+    0.336,
+    0.334,
+    0.337
+   ],
+   "on/off": 1.349
+  },
+  "poly16": {
+   "off": [
+    10.346,
+    10.648,
+    10.577
+   ],
+   "on": [
+    10.391,
+    10.332,
+    10.665
+   ],
+   "on/off": 0.982
+  }
+ }
+}

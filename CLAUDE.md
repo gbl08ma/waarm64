@@ -64,7 +64,7 @@ scripts/ci-deqp.sh             # a seeded sample of dEQP-GLES's pass lists on th
 scripts/ci-deqp-vk.sh          # a seeded sample of dEQP-VK's pass list on two machines and the programs' replays on the page (~12.5 min, under a 14 GiB `MemoryMax`): also when a change touches Vulkan (vk/, web/venus-gpu.ts, Venus); --full the whole list (~47 min): Vulkan track ends, cross-cutting changes (docs/testing.md); a sample's failure is fixed at once or filed and taken out of the list; needs images/deqp/build.sh vk
 scripts/ci-usb.sh              # USB through the dev VM's host rigs (dummy_hcd gadgets, uhid; alone): also when a change touches USB; "skipped: <why>" without the rigs (docs/testing.md "USB")
 scripts/ci-jit.sh              # the JIT's JIT-stress and JIT-check variants (~2 min, alone): also when a change touches the JIT (its emitters, runtime, code cache, what compiled code reads), JIT track ends; ci.sh keeps the plain JIT's runs
-scripts/ci-fp.sh               # the FP suite in the guest (~5 min): TestFloat through every FP form under the JIT; also when a change touches floating point (the JIT's FP, the FP core); needs images/build.sh linux fptest
+scripts/ci-fp.sh               # the FP suite in the guest (~8.5 min): TestFloat through every FP form under the JIT; also when a change touches floating point (the JIT's FP, the FP core); needs images/build.sh linux fptest
 scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/webpc_core.wasm
 cargo test                     # native core tests
 npm test                       # JS tests (tests/**/*.test.ts, incl. Chromium; needs the wasm build)

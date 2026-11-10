@@ -5,6 +5,7 @@
 #   codecs.sh <dir> codecs [R]    each codec one-threaded, R + 1 times, the first printed as cold; `CODEC <name> <us>`
 #   codecs.sh <dir> js [R]        js.html in Chromium and Firefox, R runs; `JS <browser> <kernel> <ms>`
 #   codecs.sh <dir> kernels [R]   rdmk.c (FEAT_RDM's and FEAT_LRCPC2's kernels) and fcmak.c (FEAT_FCMA's), R runs; `KERN <kernel> <ns>`
+#   codecs.sh <dir> fp16k [R]     fp16k.c (FEAT_FP16's and FEAT_FHM's kernels), R runs; `KERN <kernel> <ns>`
 D=${1:?usage: codecs.sh <dir> codecs|js [R]}
 MODE=${2:-codecs}
 R=${3:-3}
@@ -20,6 +21,13 @@ timed() { # <name> <command>
     k=$((k + 1))
   done
 }
+if [ "$MODE" = fp16k ]; then
+  "$D/fp16k" 200 | sed 's/^/COLD /'
+  k=0
+  while [ "$k" -lt "$R" ]; do "$D/fp16k" 20000; k=$((k + 1)); done
+  echo CODECS-END
+  exit 0
+fi
 if [ "$MODE" = kernels ]; then
   "$D/rdmk" 10000 | sed 's/^/COLD /'
   "$D/fcmak" 10000 | sed 's/^/COLD /'

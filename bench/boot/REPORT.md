@@ -3854,3 +3854,65 @@ median; raw: `results/perf9/`): `alpine_jit_total` base 3,931 · 3,942 · 3,963 
 (**11,090**). Overlapping, within 0.2%: no change, as expected (round-robin blocks compile the same; the run loop
 gains one branch a chunk). Not measured on the page, where the change is one atomic byte load per DAIF write.
 CI: `scripts/ci.sh`, `scripts/ci-jit.sh` and `scripts/ci-debian.sh` passed.
+
+## PERF loop 10: FEAT_FP16 and FEAT_FHM (2026-11-10)
+
+FEAT_FP16 (every half-precision form, scalar and AdvSIMD, FPCR.FZ16, FCMLA/FCADD's half forms) and FEAT_FHM (FMLAL,
+FMLSL and the "2" forms, vector and by element) in both tiers, inline in the JIT for the arithmetic, FMA, min/max,
+compare and bit forms (docs/jit.md "Half precision"), as `VmConfig.features` bits 15 and 16 (ABI 65; FHM only with
+FP16). The Mac host (M4, macOS 26.6.2), Chrome for Testing 157.0.8103.50 headless, through `bench/gpu/sway-mac.sh`
+(`SCRIPT=../imgdecode/codecs.ts`, mode `fp16k`); the desktop guest on 4 vCPUs, a boot per arm and round, arms
+alternated, each round the median of three runs of `bench/imgdecode/fp16k.c` in a boot. FP16: `?fp16=0` against
+`?fp16=1` (FHM off in both); FHM: `?fp16=1` in both, `?fhm=0` against `?fhm=1`. Raw and medians: `results/fp16/`,
+`results/fhm/` (`results.json`; the scan in `words.txt`).
+
+**Who runs them.** Every ELF of the desktop (Arch) and Debian guests (`debian`, `-browsers`, `-sway`, `-tools`),
+words matching the FP16 and FHM encodings in executable segments (2,458 files on Arch, nearly all data), then each
+such file disassembled (`llvm-objdump --mattr=+all`; Chromium, libxul and libLLVM whole): FP16 only in Highway's
+`vqsort` on `float16_t` (libhwy_contrib, per-target code) and VapourSynth's filters (with 1,588 FMLAL lines); a few
+isolated words in libgnutls, libleancrypto and glycin are data. No codec, browser, Mesa or ML runtime in the images
+has an FP16 or FHM path. So the A/B is kernels written as fp16 libraries write them, each picking its path from
+`asimdhp`/`fphp`/`asimdfhm` (`fp16k.c`): an axpy on halves in memory (FMLA .8h by element, against FCVTL/FCVTL2,
+two FMLA .4s, FCVTN/FCVTN2), a dot product (half accumulators, ggml's F16 vec_dot on fp16 arithmetic, against the
+halves widened into single accumulators), a 4×8 GEMM tile by element (XNNPACK's f16 shape: FMLA .8h by A's lanes,
+against B's row and A's column widened and eight FMLA .4s by element), a scalar `_Float16` Horner (FMADD h, against
+FCVT, FMADD s, FCVT), and FHM's dot product and tile in single accumulators (FMLAL/FMLAL2, vector and by element,
+against the v8.0 widening; both arms compute the same sums: the checks agree).
+
+**On/off of time** (ns per output or element, lower is better), three rounds' medians, then the median:
+
+| Kernel | Off | On | On/off |
+|---|---|---|---|
+| axpy16, FMLA .8h by element (`?fp16`) | 0.947 · 0.944 · 0.946; **0.946** | 0.690 · 0.690 · 0.694; **0.690** | **0.729** |
+| dot16, half accumulators (`?fp16`) | 0.580 · 0.576 · 0.579; **0.579** | 0.612 · 0.617 · 0.615; **0.615** | **1.062** |
+| gemm16, a half tile by element (`?fp16`) | 0.261 · 0.263 · 0.264; **0.263** | 0.539 · 0.541 · 0.540; **0.540** | **2.053** |
+| poly16, scalar FMADD h (`?fp16`) | 4.824 · 4.804 · 4.759; **4.804** | 10.303 · 10.355 · 10.303; **10.303** | **2.145** |
+| dotw, gemmw (`?fp16`, controls: v8.0 code in both arms) | | | 1.003, 1.034 |
+| dotw, FMLAL/FMLAL2 (`?fhm`) | 0.579 · 0.585 · 0.597; **0.585** | 0.488 · 0.488 · 0.491; **0.488** | **0.834** |
+| gemmw, FMLAL by element (`?fhm`) | 0.249 · 0.250 · 0.247; **0.249** | 0.336 · 0.334 · 0.337; **0.336** | **1.349** |
+| axpy16, dot16, gemm16, poly16 (`?fhm`, controls: FP16 code in both) | | | 0.994, 0.970, 0.982, 0.982 |
+
+Every bold pair's rounds are apart. **FP16 wins where the v8.0 code converts both ways around a single operation**
+(the axpy: one FMLA .8h for FCVTL ×2, FMLA ×2, FCVTN ×2) **and loses where the halves are computed on** (the tile 2.05×,
+the scalar Horner 2.1×, the dot product 6%): a half operation here is its operands widened to singles exactly, the
+single operation and the rounding back with its checks, about 50 lane ops an FADD .8h against 5 an FADD .4s, so
+code that widens once and computes in singles is cheaper than code that stays in halves. **FMLAL by vector wins
+17%** (it fuses two FCVTLs into the multiply-add) **and by element loses 35%**: the tile's eight FMLALs each widen
+the same B row again, where the v8.0 tile widens it once a step. The controls move up to 3.4% (gemmw under `?fp16`,
+the same code in both arms), so the 6% dot product is near that noise; the 2× and 35% are not. The first FP16 build
+ran the axpy 9.6× slower: every FMA whose single sum lands on a half's midpoint went to the helper, and exact sums
+of short significands (y + x·2^-7) do that all the time; the branch that lets exact midpoint sums through
+(docs/jit.md "Half precision") fixed it. **Both stay implemented, unadvertised** (PLAN.md's rule: the GEMM shapes,
+fp16 inference's main use, are slower): off by default, `bootVm`'s `fp16: true` and `fhm: true`, the page's
+`?fp16=1` and `?fhm=1`; no guest-visible change by default, so steps and the shape's pinned hash stay. Memory: none.
+
+Correctness: corpus groups `fp16` (12,820) and `fhm` (2,300) on the M4 and QEMU (QEMU 11 disagrees on 60 and 8; we
+match the M4 on all); `tests/jit-diff.test.ts` classes for every FP16 and FHM class plus FP edge cases (a half
+midpoint sum, ±0 and negatives a last place apart for FMAX/FMIN/FCMGE); the FP suite extended to 766 forms (every
+FP16 form and FMLAL/FMLSL(2) on TestFloat's f16 cases, under FZ16 too) passes natively on the M4 (766M checks) and in
+the guest under the JIT, both FMA arms. Found by it: FPCR dropped FZ16 on MSR (`cpu::fpcr_mask` keeps it with FP16);
+the corpus and jit-diff set FPCR directly and missed it. Planted, each failing: the narrowing's rounding constant,
+the FMA midpoint test (jit-diff's scalar class and edge cases, the FP suite's FMA forms), the exact-midpoint test,
+the min/max key's inverse, the compare key, the by-element index, FHM's "2" half, FZ16's guard, the finite test. The
+decoder sweep: 0 mismatch classes (FP16 and FHM out of `NOT_OURS`). CI: `scripts/ci.sh`, `scripts/ci-jit.sh`,
+`scripts/ci-fp.sh` passed.
