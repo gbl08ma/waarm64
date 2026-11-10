@@ -209,7 +209,12 @@ worker as it creates it; packets never touch the main thread.
   delegate, so it can never collide with a real TLD). Not RFC 9476's `.alt`, the first choice: R2 found
   that systemd-resolved (Debian 13's, 2026-11-10) answers any `.alt` name NXDOMAIN itself, whatever the
   link's DNS server and routing domain, so a guest with resolved, as Debian's and Arch's are, never
-  asks the room's resolver (which answered the same query sent to it directly). The module answers at
+  asks the room's resolver (which answered the same query sent to it directly). It's in resolved's
+  source since v255: `dns_scope_good_domain()` refuses a name that `dns_name_dont_resolve()` matches
+  (`*.alt`, with `*.invalid` and a few RFC 6303 reverse zones) before it looks at any link's servers or
+  routing domains, so no answer in a lease (DHCPv6's domain list, the RA's DNSSL) can route it. Other
+  unofficial TLDs (a home LAN's `.lan`, say) aren't on that list and resolve normally. `.internal`
+  is the suffix (the user, 2026-11-10). The module answers at
   the room's `::53` (in its /48, as `MAGIC_DNS6` is
   tailnets' resolver), the lease's `dns6`, with `<tag>.p2p.internal` its routing domain (`domains`): AAAA
   by computing the address, no lookup, nothing to trust, and the module remembers the key for that
@@ -341,4 +346,3 @@ client was built.
   and DERP carry everyone (R4), and what the page says, decide it.
 - Which public Nostr relays by default (Trystero's maintained list is a start), and whether they
   forward a busy room's lookups.
-- The names' suffix: `p2p.internal` since R2 (§5: systemd-resolved refuses `.alt`), the user's to change.

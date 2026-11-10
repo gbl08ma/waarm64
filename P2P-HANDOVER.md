@@ -25,7 +25,7 @@ cloud session can measure, R4 what needs a person or the dev VM.
   `parseRoomLink`, the same text link.rs writes) and `startRoomNet` (the `Tailscale` handle the controller drives,
   a network map of `via: 'room'`). Words in the catalog under docs/copy.md. **The names' suffix is now
   `p2p.internal`**: systemd-resolved answers any `.alt` name NXDOMAIN itself (found by the Debian test; the room's
-  resolver answered the same query sent to it directly), plan §5 and §9 say so; the user may want another.
+  resolver answered the same query sent to it directly), plan §5 says so (and why no lease can route `.alt`: resolved's source); the user accepted it, 2026-11-10.
 - Tests: `cargo test -p webpc_ts room` (34), `tests/room-link.test.ts`, `tests/network.test.ts`'s and
   `tests/connections.test.ts`'s room cases, `tests/room-browser.test.ts`, and `tests/page-room.test.ts` (two Debian
   guests in one Chromium: Create, Join by link, the wizard's refusals, the resolver asked directly and through
@@ -42,5 +42,4 @@ lookup time, the worker's memory and CPU, the relay's load); the lookup's event 
 (`room::KIND`, 26354 a placeholder); what the defaults need from a public relay written down for R4. Then R4 when the
 dev VM is back.
 
-Open questions for the user stay in plan §9 (the default public room, the relays, the `p2p.internal` suffix, the
-event kind); the seal's reuse of the WireGuard key is decided (plan §1, 2026-11-10).
+Open questions for the user stay in plan §9 (the default public room, the relays); the seal's reuse of the WireGuard key is decided (plan §1, 2026-11-10).
