@@ -21,7 +21,7 @@ calls.
 | 2 | Interpreter: the dispatcher's loop inside `jit::interpret` (round trips to compiled code) | dropped (loop 2) |
 | 3 | Interpreter: `hot`'s per-micro-op cost — SUBS's flags from operands, ADRP+ADD pair, register caching | dropped (loop 3) |
 | 4 | Interpreter: misaligned stores inline; SUBS/ADDS as their own micro-op kinds (loop 3's idea) | SUBS kinds kept, stores dropped (loop 4) |
-| 5 | CPU/ISA: unadvertised M4 extensions — LSE2, LRCPC2, RDM, FHM, FCMA, I8MM, BF16, FP16 (one loop each or grouped) | next: I8MM first (dav1d, libvpx, ffmpeg use it) |
+| 5 | CPU/ISA: unadvertised M4 extensions — LSE2, LRCPC2, RDM, FHM, FCMA, I8MM, BF16, FP16 (one loop each or grouped) | I8MM done, unadvertised (loop 5); next RDM, then LRCPC2, FCMA, FP16+FHM, BF16, LSE2 |
 | 6 | JIT: helpers on real paths (MSR DAIFClr/regime/NZCV…, ISB, LSE min/max) | |
 | 7 | JIT: wasm size cuts (local.tee peephole, a guarded chain's fallback as `xmiss`, one budget counter, NZCV functions) | |
 | 8 | JIT: the shared cache's leftovers (one vCPU's 1-2%: a lone table takes the bytes) | |
@@ -49,3 +49,8 @@ Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL 
   timeout). Dropped: misaligned stores inline (loop −3%, unrolled even; ~0.15% bound), CCMP as its own kind (even).
   Its leftover ideas (ADDS shifted/extended kinds; re-screening earlier losers over the SUBS kinds) judged too small
   for a loop: the latter isn't a backlog item.
+- **Loop 5** (`a4e21ce4`): FEAT_I8MM complete (interpreter, inline SIMD128, corpus 2,000 vs M4+QEMU, `?i8mm=1`, ABI
+  61) but **off by default**: codecs tie on the Mac (±3-5% noise), a ggml-style SMMLA tile 19% slower than SDOT's
+  (the M4 itself: 2×). Codec A/B on the Mac: `SCRIPT=../imgdecode/codecs.ts ROUNDS=3 MAC_TIMEOUT=2700
+  bench/gpu/sway-mac.sh <feature>,codecs target/arch/desktop.qcow2 <name>` (~4 min a round); counting script
+  `bench/results/local/i8mm/count.ts`. CI: ci.sh, ci-jit.sh, ci-debian.sh passed.
