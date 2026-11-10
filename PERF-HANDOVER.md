@@ -26,10 +26,11 @@ calls.
 | 7 | JIT: wasm size cuts (local.tee peephole, a guarded chain's fallback as `xmiss`, one budget counter, NZCV functions) | done (loop 13) |
 | 8 | JIT: the shared cache's leftovers (one vCPU's 1-2%: a lone table takes the bytes) | done, nothing to keep (loop 14) |
 | 9 | SMP: the ISB fix's cost; WFE sleeping; an exit's remaining cost | findings, nothing to keep (loop 15) |
-| 10 | Devices: virgl's occlusion-query poll (4 ms) | next |
-| 11 | Interpreter: more handlers (FP in a second `hot` copy, CASP, STTR/LDTR) | |
+| 10 | Devices: virgl's occlusion-query poll (4 ms) | kept (loop 16) |
+| 11 | Interpreter: more handlers (FP in a second `hot` copy, CASP, STTR/LDTR) | next |
 | 12 | JIT: scalar FP in f64/f32 locals | |
 | 13 | JIT: Liftoff's zero-fill (a register allocator over a block's locals) | |
+| 14b | Loop 16's open question: why the guest's first `GL_QUERY_RESULT` wait finds the state not DONE though its fence is held | |
 | 14a | Loop 15's oddity: the guest's counter doesn't count under Node's `runToPowerOff` in parallel realtime (a bug?) | |
 | 14 | JIT: the core's heap tuning, transfer cache costs, the rest of the JIT section | |
 
@@ -93,3 +94,8 @@ Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL 
 - **Loop 15** (`24205773`): parallel SMP. ISB fix ~0.006% (A/B even); WFE yields ≤0.2%, sleeping not built; an exit
   profiled part by part (yield 61-69 ns, `mrs cntfrq` 144-160 ns), every cheap cut ~0.01% of a browser. Three items
   became findings (platform.md, jit.md); parallel make reworded, default vCPU count not perf.
+- **Merged** `claude/fervent-bohr-dqrg38` (docs only, the user's ask): `9dded689`.
+- **Loop 16** (`7c59cc9a`): virgl's query poll. New guest program `glquery`; **kept** `spin` (look at every task for
+  2 ms after the pending set changes, then 4 ms): wait 13-14.5 → 0.72 ms, 15-17 → 279-287 frames/s on the M4. Cost: the
+  GPU worker's thread busy while a query is pending (≤2 ms a change; ~65% of a core for glquery). Fixed a read-back
+  that overwrote a query's state (Mesa's loop). CI: ci.sh, ci-graphics.sh, ci-deqp.sh (one timing warning, passed alone).
