@@ -1,0 +1,180 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-11-10T18:57:15.188Z",
+ "commit": null,
+ "dirty": false,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "darwin",
+  "arch": "arm64",
+  "cpu": "Apple M4",
+  "cores": 10,
+  "memGiB": 24
+ },
+ "browser": {
+  "version": "157.0.8103.50",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "dec_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0,
+     "avgBlock": null,
+     "interpretedPct": 100,
+     "blocks": 0,
+     "modules": 0,
+     "bytes": 0,
+     "compileMs": 0,
+     "inlinePct": null,
+     "inlineStepsPct": null,
+     "flagsElided": 0,
+     "flagsStored": 0,
+     "condDirect": 0,
+     "condComputed": 0,
+     "condMemory": 0,
+     "blocksPerRegion": null,
+     "backEdges": 0,
+     "tierUps": 0
+    }
+   },
+   "samples": [
+    192.21528164337562
+   ],
+   "median": 192.21528164337562,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "dec_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0,
+     "avgBlock": null,
+     "interpretedPct": 100,
+     "blocks": 0,
+     "modules": 0,
+     "bytes": 0,
+     "compileMs": 0,
+     "inlinePct": null,
+     "inlineStepsPct": null,
+     "flagsElided": 0,
+     "flagsStored": 0,
+     "condDirect": 0,
+     "condComputed": 0,
+     "condMemory": 0,
+     "blocksPerRegion": null,
+     "backEdges": 0,
+     "tierUps": 0,
+     "helpers": []
+    },
+    "placements": [
+     {
+      "pad": 0,
+      "samples": [
+       527.078665762383,
+       527.0092236546676,
+       527.6348754042152,
+       527.2871085593806,
+       529.3105734462788
+      ]
+     },
+     {
+      "pad": 7424,
+      "samples": [
+       528.1225243591686,
+       527.495714628046,
+       529.9417062783806,
+       530.4336288883771,
+       528.6110738690389
+      ]
+     },
+     {
+      "pad": 14848,
+      "samples": [
+       527.4957129695364,
+       524.8655029520794,
+       526.8010021128854,
+       526.8010004587414,
+       525.4170489934427
+      ]
+     },
+     {
+      "pad": 22272,
+      "samples": [
+       525.4170506389067,
+       526.1081154156526,
+       525.8314714749972,
+       528.7508255066014,
+       527.9831046071178
+      ]
+     },
+     {
+      "pad": 29696,
+      "samples": [
+       525.7623559425931,
+       523.4231871246529,
+       526.9397981873881,
+       527.5652850097258,
+       526.2465465730651
+      ]
+     },
+     {
+      "pad": 37120,
+      "samples": [
+       525.7623559425931,
+       527.8437584468426,
+       530.6447325454036,
+       530.3632999998005,
+       530.2226931291146
+      ]
+     },
+     {
+      "pad": 44544,
+      "samples": [
+       527.2871085593806,
+       526.4543299547075,
+       523.2177890784961,
+       525.2790554844619,
+       524.3838491741315
+      ]
+     },
+     {
+      "pad": 51968,
+      "samples": [
+       527.7044858200912,
+       530.3632999998005,
+       530.6447325454036,
+       529.5908912372794,
+       529.5207839581627
+      ]
+     }
+    ]
+   },
+   "samples": [
+    527.2871085593806,
+    528.6110738690389,
+    526.8010004587414,
+    526.1081154156526,
+    526.2465465730651,
+    530.2226931291146,
+    525.2790554844619,
+    529.5908912372794
+   ],
+   "median": 527.044054509061,
+   "iqr": 2.6440894273871436,
+   "n": 8
+  }
+ ]
+}

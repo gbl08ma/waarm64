@@ -2447,3 +2447,59 @@ failed it and the differential test; `prfm_runs_as_the_interpreter_runs_it` (and
 with PRFM's opc 3 taken as a hint). The rich copy's handlers had planted bugs failing for every family (a new
 directed test for the conversions: double rounding through f64, negative and unsigned extremes, FZ, the rounding
 modes) and are in `rich.diff` for anyone who comes back to them.
+
+## PERF loop 19: the copy of `hot` chosen per block (2026-11-10)
+
+The Mac host (Apple M4, macOS 26.6.2), Chrome for Testing 157.0.8103.50; base `e78e110b`; raw
+`results/m9-interp-mac/perf19/` (README). Loop 17's rich copy of `hot` (its FP and NEON handlers, `rich.diff`) lost
+~1% of Alpine's boot because integer code ran in it after the first FP block of an `interpret` call. Here each block
+chooses: a decoded block has a micro-op of a rich kind or not (`Cache::rich`, set at decode: bit 31 of the map's
+`Known::at`, a `bool` in the slot beside a `hits` now a `u8`, so both stay 8 and 16 bytes), `interpret` enters a block
+in its copy, and `hot`, chaining into a block of the other copy, enters it and returns `SWITCH`, so `interpret` goes on
+in that copy from the block's start. Integer blocks never run in the rich copy, and the lean copy never meets a rich
+kind. Lean `hot` 13,105 → 13,158 bytes (MMU), 12,651 → 12,693 (flat), rich 15,279 and 14,807; no call in any.
+
+**Arms** (MIPS, medians of each round, `bench/interp/ab-mac.sh`, rounds alternated):
+
+| | main | **blk** (kept) | rich (loop 17's) |
+|---|---|---|---|
+| `dec_mips` | 527.0 · 535.2 · 538.9 | 533.1 · 531.9 · 532.3 (−0.5%, overlapping) | 536.9 · 536.8 · 534.9 |
+| `vm_dec_mmu_mips` | 518.3 · 528.5 · 528.1 | 522.1 · 528.8 · 529.5 | 526.5 · 528.5 · 525.5 |
+| Alpine's boot through the block interpreter | 254.9 · 257.0 · 257.5 | 257.3 · 257.8 · 257.3 (+0.1%, overlapping) | 254.3 · 254.2 · 253.9 (−1.1%) |
+| `dec_fp_mips` | 67.6 · 68.3 · 68.7 | **77.8 · 77.7 · 77.8 (+13.8%)** | 77.4 · 77.6 · 76.2 |
+
+A second session (`p19b`), with **blklit**: blk where a literal load also puts its block in the rich copy (which runs
+them inline; the lean copy's stretches take them, as main's):
+
+| | main | blk | blklit |
+|---|---|---|---|
+| `dec_mips` | 536.3 · 537.6 · 537.4 | 533.7 · 534.4 · 532.1 (−0.7%) | 533.0 · 532.8 · 532.9 |
+| `vm_dec_mmu_mips` | 528.7 · 530.2 · 528.0 | 530.2 · 529.7 · 529.0 | 526.9 · 530.2 · 531.0 |
+| Alpine's boot through the block interpreter | 258.6 · 257.7 · 257.1 | 257.3 · 257.9 · 257.6 (even) | 258.0 · 258.0 · 257.3 |
+| `dec_fp_mips` | 68.8 · 69.4 · 69.4 | 77.6 · 77.8 · 77.9 (+12.2%) | 78.2 · 77.9 · 77.7 |
+
+Firefox's pages session from the snapshot (`PHASE_S=1`, each page's start and load summed, five rounds alternated;
+`pages-summary.txt`): main 85.4 · 78.8 · 78.5 · 79.4 · 81.1 s (median 79.4), blk 89.1 · 81.7 · 79.8 · 79.8 · 79.1
+(median 79.8, +0.5% slower): even, the rounds overlapping (the first round slow in both arms). Interpreted steps 3.32-3.36 G in all.
+A diagnostic build counting the switches: 10.76 M a pages session (beside loop 17's 36.7 M exits from `hot`), 1.45 M
+in Alpine's native boot (4.59 M `interpret` calls, 0.28 M of them starting in the rich copy; loop 17's rich went into
+the rich copy 0.46 M times). At an exit's cost or less (loop 1: ~40 ns with the slow path) that is ~0.2-0.4% of the
+pages session's busy time, against the ~12 M FP and NEON exits the handlers take (loop 17's counts): what the session
+can't resolve either way.
+
+**Kept: blk.** The FP guest +12-14% in both sessions (rounds apart), Alpine's boot even (+0.1% and −0.0%), the MMU
+guest even, the pages session even; `dec_mips` −0.5% and −0.7% (rounds apart in the second session: under ~1%, the
+lean copy's 53 more bytes moving V8's code, as loop 17's `mis` moved it the other way). No memory: the slot and the map
+entry keep their sizes; the code is the rich copy (~15 KB of wasm a regime). **Dropped: blklit** (even with blk
+everywhere: literal loads are too rare in the FP guest and in Alpine to show, and they would put integer blocks in the
+rich copy). Misaligned stores in the rich copy weren't built: a store's alignment isn't known at decode, so a block
+would need its copy chosen at run time (a slot bit set by a slow-path store), for what loop 4 bounds at ~0.15% of a
+browser's busy time.
+
+Correctness: loop 17's tests drive each block through the copy its kinds choose (`run_hot`), and a new one,
+`blocks_chain_into_the_copy_of_hot_that_runs_them` (an integer block, one with an FADD, another integer one, chained
+round and round against `interp::steps`, counting the switches), failed with each planted bug in the mechanism (never
+switching, no rich bit at decode, the steps of a block entered at a switch not counted); a planted bug in each handler
+family (literal loads, VImm, FCSEL, FCMP, FADD/FSUB/FMUL/FDIV, FMOV general, vector logic, vector ADD, DUP, SCVTF/UCVTF,
+FABS/FNEG, FCVT) failed the random-block test or the conversions' directed test. `tests/core-wasm.test.ts` checks the
+four copies of `hot` (lean and rich, flat and MMU) for calls. Steps don't move. `scripts/ci.sh`, `ci-fp.sh` and `ci-jit.sh` passed.

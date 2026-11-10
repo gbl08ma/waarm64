@@ -1,0 +1,18 @@
+// Medians per round, arm and bench of an ab-mac.sh prefix: node p17sum.ts <prefix> <arms,> <benches,>
+import { readFileSync, existsSync } from 'node:fs';
+const [prefix, arms, benches] = process.argv.slice(2);
+for (const b of benches.split(',')) {
+  const row: string[] = [];
+  for (const a of arms.split(',')) {
+    const v: string[] = [];
+    for (let r = 1; r <= 5; r++) {
+      const f = `bench/results/local/mac/${prefix}-r${r}-${a}-${b}.json`;
+      if (!existsSync(f)) continue;
+      const j = JSON.parse(readFileSync(f, 'utf8'));
+      const x = j.results.find((x: { name: string }) => x.name === b) ?? j.results.find((x: { name: string }) => x.name === `${b.replace(/_dec$/, '_dec_mips')}`);
+      v.push(x ? x.median.toFixed(2) : '?');
+    }
+    row.push(`${a} ${v.join(' · ')}`);
+  }
+  console.log(`${b}: ${row.join(' | ')}`);
+}

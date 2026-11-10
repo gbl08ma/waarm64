@@ -2414,17 +2414,29 @@ fn interpret<B: Regime>(
     left: u64,
     next_key: &mut u64,
 ) -> Option<(u64, Option<Exit>)> {
-    use interp::block::{NEXT, SLOW, STOP};
+    use interp::block::{NEXT, SLOW, STOP, SWITCH};
     let pc = cpu.pc;
     let b = t.dec.get(key, mem)?;
     let mut r = interp::block::Run::new(left);
     r.enter(b, key, pc);
+    // `hot`'s rich copy for the blocks that have a micro-op only it runs (FP
+    // and AdvSIMD), the lean one for the rest: chosen at each block's start.
+    let mut rich = t.dec.rich(key);
     let res = loop {
         let jc = &t.jc;
-        match interp::block::hot(cpu, m, &mut t.dec, |k| jc[jc_index(k)].key == k, &mut r) {
+        let s = if rich {
+            interp::block::hot::<_, true>(cpu, m, &mut t.dec, |k| jc[jc_index(k)].key == k, &mut r)
+        } else {
+            interp::block::hot::<_, false>(cpu, m, &mut t.dec, |k| jc[jc_index(k)].key == k, &mut r)
+        };
+        match s {
             STOP => {
                 *next_key = r.next;
                 break (r.done, None);
+            }
+            SWITCH => {
+                rich = !rich;
+                continue;
             }
             SLOW => {
                 let (n, u, last) = r.stretch();
@@ -2467,6 +2479,7 @@ fn interpret<B: Regime>(
             break (r.done, None);
         };
         r.enter(b, k, next);
+        rich = t.dec.rich(k);
     };
     t.stats.dec_steps += res.0 + res.1.is_some_and(Exit::retired) as u64;
     (t.stats.decoded, t.stats.dec_clears) = (t.dec.decoded, t.dec.clears);

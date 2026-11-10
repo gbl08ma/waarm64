@@ -29,7 +29,7 @@ test('core instantiates on shared imported memory and uses atomics', () => {
 // UMULH's halves (`__multi3`) and SDIV's panic sat in it unnoticed from 2026-10-22 to 2026-11-09.
 test("the block interpreter's hot loop makes no call", () => {
   const hot = callsIn(readFileSync(WASM), HOT);
-  assert.equal(hot.size, 2, 'hot for the flat bus and the MMU');
+  assert.equal(hot.size, 4, "hot's lean and rich copies, for the flat bus and the MMU");
   for (const [name, calls] of hot) assert.deepEqual(calls, [], name);
 });
 

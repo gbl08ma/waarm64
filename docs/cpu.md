@@ -589,6 +589,19 @@ line) made `ldst_fp::exec`'s result `initializes((0, 1))`, and the loop reads th
   generic ones (and literal loads) right after it in the prefix, in one `run` (`Run::stretch`), so a run of
   SIMD or FP instructions costs one exit from `hot`, not one each; a generic micro-op runs without being
   unpacked. The FP guest +22-29% through the block interpreter, Alpine's boot +1.2% (loop 13).
+- **FP and NEON in a second copy of `hot`, chosen per block** (`hot::<_, true>`, a const generic; `bench/interp/REPORT.md`
+  "PERF loop 17" and "PERF loop 19"). Its handlers: MOVI/MVNI/FMOV immediate (`VImm`), FCSEL and FMOV, FCMP/FCMPE (NaNs
+  and FZ slow), FADD/FSUB/FMUL/FDIV of S and D on the JIT's fast-path rules (round to nearest, FZ clear, IXC already set,
+  a result normal above the smallest binade), FMOV between general and FP registers, vector AND/BIC/ORR/ORN/EOR and
+  ADD, DUP (general), SCVTF/UCVTF, FABS/FNEG, FCVT between S and D, and the literal loads; anything else (a disabled
+  FPEN, FPCR's other modes) takes the slow path, where `run` runs these kinds as generic micro-ops. A block with one of
+  these kinds (`rich_kind`: a kind after `Msr`) is marked at decode (bit 31 of the map's `Known::at`, a `bool` in its
+  slot: neither grew), `jit::interpret` enters each block in its copy, and `hot`, chaining into a block of the other
+  copy, enters it and returns `SWITCH`; the caller goes on in that copy. So integer code always runs in the lean copy,
+  whose loop the FP handlers would slow (~10% in the rich copy, V8's registers), and the lean copy never meets an FP
+  kind. The FP guest +12-14%, Alpine's boot and the MMU guest even, `dec_mips` −0.5-0.7% (layout), Firefox's pages
+  session even (10.8 M switches a session, 1.45 M on Alpine's boot). Literal loads don't choose the rich copy (they
+  ran even when they did); the lean copy's stretches take them.
 - **Runs of MOVs** (MOVZ, MOVN, MOV of a bitmask immediate: `MovI`) go in one dispatch: each carries
   the number of MovIs right after it (`mov_runs`, at decode), and `hot` writes them all, never past
   the prefix (`run` ignores the count). +2-5% (`bench/interp/REPORT.md` "M8-INTERP loop 4").
@@ -631,15 +644,17 @@ line) made `ldst_fp::exec`'s result `initializes((0, 1))`, and the loop reads th
   blocks when it catches up, before its vCPU runs another block. Flushes of the code cache and the
   links between compiled blocks don't touch decoded ones: tying them to the JIT's dropped keys
   (which follow links transitively) emptied the caches a few dozen times per Chromium render.
-  The map holds 8 bytes a block (where its micro-ops are, the dispatches it counted out of its slot, and the next
-  key of its page by the key's low 12 bits), and the page index a page's last key: an IC's page walks that list.
+  The map holds 8 bytes a block (where its micro-ops are, which copy of `hot` runs it, the dispatches it counted out
+  of its slot, and the next key of its page by the key's low 12 bits), and the page index a page's last key: an IC's
+  page walks that list.
   (It was 12 bytes a block and a `Vec<u64>` of keys a page.)
 - **Tests:** a native differential test of random blocks against `interp::steps`
   (`interp::block::tests`), the golden corpus in it on wasm (`tests/corpus-wasm.test.ts`), the
   native boots through it (`linux_boots_through_the_block_interpreter`,
   `alpine_boots_through_the_block_interpreter`; `WEBPC_NATIVE_JIT=1` for every native guest test),
   and every JIT run's cold code with exact steps. The differential test drives each block through
-  `hot` too (`run_hot`).
+  `hot` too (`run_hot`, in the copy its kinds choose); `blocks_chain_into_the_copy_of_hot_that_runs_them` chains
+  blocks of both copies and counts the switches.
 - **Its speed** (`bench/interp/REPORT.md` from "M8-INTERP loop 0"; the yardstick is
   `bench/interp/yardstick.sh`: the small guests and the boots under `VmConfig.jit` 4, with
   `--config liftoff-only` the JIT's reference): on the dev VM 467 MIPS on the user-mode guest,
@@ -700,18 +715,16 @@ In `bench/interp/REPORT.md` "M8-INTERP loop 2" unless said, the variants' diffs 
   FADD/FSUB/FMUL/FDIV on the JIT's fast-path rules; loop 10): the small guests −1-2%, Firefox's pages session no
   faster. Its generic path is 1.9% of what it interprets, spread over dozens of classes; the code costs `hot` more
   than it wins there.
-- **A second, rich copy of `hot` for FP and NEON** (`hot::<_, true>`, a const generic; `bench/interp/REPORT.md` "PERF loop
-  17: more handlers"): the lean copy left at the new kinds (FMOV, MOVI/MVNI, FCSEL, FCMP/FCMPE, FADD/FSUB/FMUL/FDIV on
-  the JIT's fast-path rules, SCVTF/UCVTF, FCVT between S and D, FABS/FNEG, vector logic and ADD, DUP, and the literal
-  loads) and `jit::interpret` went on in the rich copy, so integer code's loop stayed as it was (the small guests even).
-  The FP guest through the block interpreter +12-13%, but Alpine's boot −1.0 to −1.2% in four sessions (rounds apart),
-  and Firefox's pages session didn't resolve it (80.2 s, rich 79.7, rounds overlapping). The loss is the rich copy's:
-  the kinds decoded but never switched to ran as the lean copy; 8.6% of Alpine's steps ran in the rich copy after a
-  DUP or a NEON op, and integer code there is ~10% slower (a larger loop, V8's registers). Going back to the lean copy
-  after each stop (−1.0%) or keeping the rich kinds in a generic stretch (−1.4%, the FP guest +6%) didn't help. A
+- **The rich copy of `hot` chosen per call, not per block** (`bench/interp/REPORT.md` "PERF loop 17: more handlers"):
+  the lean copy left at the first FP kind and `jit::interpret` went on in the rich copy to the end of its call. The FP
+  guest +12-13%, but Alpine's boot −1.0 to −1.2% in four sessions (rounds apart): 8.6% of its steps ran in the rich copy
+  after a DUP or a NEON op, and integer code there is ~10% slower (a larger loop, V8's registers). Going back to the
+  lean copy after each stop (−1.0%) or keeping the rich kinds in a generic stretch (−1.4%, the FP guest +6%) didn't
+  help; chosen per block, it kept (above). A
   browser's whole FP and NEON generic path is ~1-1.5% of a busy vCPU (19.5 M exits, 48 M micro-ops a session). What
   else leaves `hot` is each under ~0.3% of a browser's busy time or Alpine's boot: misaligned stores (~3.9 M a
-  pages session, above), TLB misses (a walk is a call), literal loads (2.6 M; inline in `hot` lost, above), and on
+  pages session, above; in the rich copy they would need a block's copy chosen at run time, since a store's alignment
+  isn't known at decode), TLB misses (a walk is a call), literal loads (2.6 M; inline in `hot` lost, above), and on
   Alpine STTR/LDTR (0.87 M, below), MRS/MSR the handlers don't know, ISB, ERET and CASP (0.2-0.5 M each).
 - **XZR's writes through a sink slot,** as its reads go through `Cpu::zero` (`bench/interp/REPORT.md` "XZR's writes without
   a compare"): nothing past noise on the boots, the flat guest −23%. A shared TLB probe for pairs of LdOs and StOs

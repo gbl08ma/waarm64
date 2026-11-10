@@ -161,6 +161,31 @@ fn classes() -> Vec<(u32, u32, Op)> {
         LDUMAX,
         LDUMIN,
         SWP,
+        // `hot`'s rich copy.
+        FMOV_float_imm,
+        FMOV_float,
+        FCSEL_float,
+        FCMP_float,
+        FCMPE_float,
+        FMUL_float,
+        FDIV_float,
+        FADD_float,
+        FSUB_float,
+        MOVI,
+        FMOV_2,
+        FMOV_float_gen,
+        AND_asimd,
+        BIC_asimd_reg,
+        ORR_asimd_reg,
+        ORN_asimd,
+        EOR_asimd,
+        ADD_vector,
+        DUP_gen,
+        SCVTF_float_int,
+        UCVTF_float_int,
+        FABS_float,
+        FNEG_float,
+        FCVT_float,
     ];
     let p: Vec<_> = crate::decode::patterns()
         .iter()
@@ -214,7 +239,39 @@ fn state(r: &mut Rng) -> Cpu {
     c.sctlr_el1 = if r.below(4) == 0 { 0 } else { sctlr::DZE };
     for v in &mut c.v {
         *v = (r.next() as u128) << 64 | r.next() as u128;
+        // Half the time, FP values whose results stay normal (the fast paths).
+        let f =
+            |r: &mut Rng| (r.below(1 << 20) as f64 - (1 << 19) as f64) / (1 + r.below(4096)) as f64;
+        // And edge values: products near the smallest normal, NaNs, infinities, zeros, denormals.
+        let edge = |r: &mut Rng, dbl: bool| {
+            let (bias, man) = if dbl { (1023u64, 52) } else { (127, 23) };
+            let frac = r.next() & ((1 << man) - 1);
+            let sign = r.below(2) << (man + if dbl { 11 } else { 8 });
+            let exp = match r.below(6) {
+                0 => bias / 2 + r.below(24) - 12,
+                1 => 0,
+                2 => (2 * bias + 1) * (frac & 1),
+                3 => 2 * bias + 1,
+                _ => 1 + r.below(3),
+            };
+            sign | exp << man | if exp == 0 && r.below(2) == 0 { 0 } else { frac }
+        };
+        match r.below(6) {
+            0 => *v = *v & !(u64::MAX as u128) | f(r).to_bits() as u128,
+            1 => *v = *v & !(u32::MAX as u128) | (f(r) as f32).to_bits() as u128,
+            2 => *v = *v & !(u64::MAX as u128) | edge(r, true) as u128,
+            3 => *v = *v & !(u32::MAX as u128) | edge(r, false) as u128,
+            _ => {}
+        }
     }
+    // FPCR mostly round-to-nearest with FZ and DN clear; FPSR.IXC set half the time.
+    c.fpcr = match r.below(8) {
+        0 => r.below(4) << 22,
+        1 => 1 << 24,
+        2 => 1 << 25,
+        _ => 0,
+    };
+    c.fpsr = if r.below(2) == 0 { 1 << 4 } else { 0 };
     c.x[31] = if r.below(8) == 0 {
         r.below(DATA)
     } else {
@@ -309,7 +366,7 @@ fn blocks_run_as_the_interpreter_runs_them() {
     }
     // Every kind ran (the generator still reaches them).
     assert!(ran > 20_000, "{ran}");
-    for k in 0..=K::LdLit as usize {
+    for k in (0..=K::LdLit as usize).chain(K::VImm as usize..=K::Fcvt as usize) {
         assert!(kinds[k] > 0, "kind {k} never ran: {kinds:?}");
     }
 }
@@ -732,4 +789,195 @@ fn prfm_runs_as_the_interpreter_runs_it() {
         assert_eq!(w2, w1, "{w:#010x}");
         assert_eq!(got, want, "{w:#010x}");
     }
+}
+
+/// A product that rounds up to the smallest normal is tiny before rounding
+/// (UFC): the rich copy's result check must leave the smallest binade to the
+/// slow path, which random operands rarely reach.
+#[test]
+fn a_result_rounded_up_to_the_smallest_normal_underflows() {
+    // FMUL d0, d1, d2 and FMUL s0, s1, s2.
+    for (w, x, y) in [
+        (
+            0x1e62_0820u32,
+            (1.0f64 - f64::EPSILON / 2.0).to_bits(),
+            f64::MIN_POSITIVE.to_bits(),
+        ),
+        (
+            0x1e22_0820,
+            (1.0f32 - f32::EPSILON / 2.0).to_bits() as u64,
+            f32::MIN_POSITIVE.to_bits() as u64,
+        ),
+    ] {
+        let t = TestRam::new(RAM);
+        t.mem.write(CODE, 4, w as u64).unwrap();
+        let mut c0 = Cpu {
+            pc: CODE,
+            cpacr_el1: 3 << 20,
+            fpsr: 1 << 4,
+            ..Cpu::default()
+        };
+        (c0.v[1], c0.v[2]) = (x as u128, y as u128);
+        let mut want = c0.clone();
+        interp::steps(&mut want, &t.mem, None, 1);
+        assert_ne!(want.fpsr & 8, 0, "the interpreter's UFC");
+        let mut got = c0.clone();
+        run_hot(&mut got, &mut Flat(&t.mem), &pack(&[uop(w)]), 1, CODE);
+        assert_eq!(got, want, "{w:#x}");
+    }
+}
+
+/// SCVTF/UCVTF of W and X to S and D, and FCVT between S and D, at their edges
+/// (negative and unsigned extremes, values that round, denormals and NaNs, FZ,
+/// the rounding modes, IXC clear or set), run as the interpreter runs them:
+/// the rich copy's fast paths and the cases they leave to the slow path.
+#[test]
+fn fp_conversions_run_as_the_interpreter_runs_them() {
+    let t = TestRam::new(RAM);
+    let ints = [
+        0u64,
+        1,
+        u64::MAX,
+        i32::MIN as u32 as u64,
+        i32::MIN as i64 as u64,
+        i64::MIN as u64,
+        u32::MAX as u64,
+        (1 << 53) + 1,
+        (1 << 24) + 1,
+        0x8000_0000_0000_0401,
+        0xdead_beef_cafe_f00d,
+        // Rounded twice (through a double) they'd tie and go to even: a single directly rounds up.
+        0x8000_0080_0000_0001,
+        0x4000_0040_0000_0001,
+    ];
+    let floats = [
+        0u64,
+        1.5f64.to_bits(),
+        (-3.25f32).to_bits() as u64,
+        1,           // a single's (and a double's) smallest denormal
+        0x0080_0000, // the smallest normal single
+        f64::MIN_POSITIVE.to_bits(),
+        0x3810_0000_0000_0001, // a double just above a single's smallest normal, inexact
+        0x3800_0000_0000_0000, // a single's denormal range
+        0x47f0_0000_0000_0000, // past a single's largest
+        0x7f80_0001,           // a signalling NaN (single)
+        0x7ff0_0000_0000_0001, // a signalling NaN (double)
+        f64::INFINITY.to_bits(),
+        0x3ff0_0000_1000_0000, // a double that rounds to a single
+    ];
+    let mut ran = 0;
+    for w in [
+        0x9e62_0020u32,
+        0x9e63_0020,
+        0x1e22_0020,
+        0x1e23_0020,
+        0x9e22_0020,
+        0x1e62_0020,
+        0x9e23_0020,
+        0x1e63_0020,
+        0x1e22_c020,
+        0x1e62_4020,
+    ] {
+        t.mem.write(CODE, 4, w as u64).unwrap();
+        for (i, f) in ints
+            .iter()
+            .zip(floats.iter().cycle())
+            .chain(floats.iter().zip(ints.iter().cycle()).map(|(f, i)| (i, f)))
+        {
+            for fpcr in [0, 1 << 24, 1 << 22, 3 << 22] {
+                for fpsr in [0, 1 << 4] {
+                    let mut c0 = Cpu {
+                        pc: CODE,
+                        cpacr_el1: 3 << 20,
+                        fpcr,
+                        fpsr,
+                        ..Cpu::default()
+                    };
+                    c0.x[1] = *i;
+                    c0.v[1] = *f as u128 | 0x5555 << 64;
+                    c0.v[0] = u128::MAX;
+                    let mut want = c0.clone();
+                    interp::steps(&mut want, &t.mem, None, 1);
+                    let mut got = c0.clone();
+                    run_hot(&mut got, &mut Flat(&t.mem), &pack(&[uop(w)]), 1, CODE);
+                    assert_eq!(
+                        got, want,
+                        "{w:#010x} x1 {i:#x} v1 {f:#x} fpcr {fpcr:#x} fpsr {fpsr:#x}"
+                    );
+                    ran += 1;
+                }
+            }
+        }
+    }
+    assert!(ran > 1000, "{ran}");
+}
+
+/// Chaining enters each block in the copy of `hot` that runs it (`Cache::rich`):
+/// an integer block, one with an FADD, another integer one, round and round,
+/// switching copies at each FP block's start and end, as `jit::interpret` does.
+#[test]
+fn blocks_chain_into_the_copy_of_hot_that_runs_them() {
+    let t = TestRam::new(RAM);
+    let b = |from: u64, to: u64| 0x1400_0000 | ((to.wrapping_sub(from) >> 2) as u32 & 0x03ff_ffff);
+    let (a, f, z) = (CODE, CODE + 0x100, CODE + 0x200);
+    // add x0, x0, #1; fadd d0, d0, d1; add x0, x0, #2: each then a B to the next.
+    for (k, w, to) in [
+        (a, 0x9100_0400, f),
+        (f, 0x1e61_2800, z),
+        (z, 0x9100_0800, a),
+    ] {
+        t.mem.write(k, 4, w).unwrap();
+        t.mem.write(k + 4, 4, b(k + 4, to) as u64).unwrap();
+    }
+    let mut dec = Cache::new(MAX_BUDGET);
+    for k in [a, f, z] {
+        dec.decode(k, &t.mem);
+        dec.quota(k, REPORT_IDLE);
+    }
+    let mut c0 = Cpu {
+        pc: a,
+        cpacr_el1: 3 << 20,
+        // IXC set: the FADD's fast path.
+        fpsr: 1 << 4,
+        ..Cpu::default()
+    };
+    c0.v[1] = 1.5f64.to_bits() as u128;
+    let n = 60;
+    let mut want = c0.clone();
+    assert_eq!(interp::steps(&mut want, &t.mem, None, n).0, n);
+    let mut got = c0;
+    let mut r = Run::new(n);
+    r.enter(dec.get(a, &t.mem).unwrap(), a, a);
+    let mut rich = dec.rich(a);
+    assert!(!rich && dec.rich(f) && !dec.rich(z));
+    let (mut switches, mut slow) = (0, 0);
+    let m = &mut Flat(&t.mem);
+    loop {
+        let s = if rich {
+            hot::<_, true>(&mut got, m, &mut dec, |_| false, &mut r)
+        } else {
+            hot::<_, false>(&mut got, m, &mut dec, |_| false, &mut r)
+        };
+        match s {
+            SWITCH => {
+                switches += 1;
+                rich = !rich;
+            }
+            SLOW => {
+                slow += 1;
+                let (k, _, last) = r.stretch();
+                let (_, e) = run(&mut got, m, &dec.arena()[r.at(dec.arena())..], k, r.pc);
+                assert!(e.is_none() && !last);
+                r.step(k);
+            }
+            s => {
+                assert_eq!(s, STOP);
+                break;
+            }
+        }
+    }
+    assert_eq!(r.done, n);
+    assert_eq!(got, want);
+    // Into the FP block and out of it, each time round.
+    assert_eq!((switches, slow), (2 * (n / 6), 0));
 }
