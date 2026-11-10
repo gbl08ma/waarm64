@@ -1,0 +1,29 @@
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index 63b92f05..ba837369 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -1903,7 +1903,23 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+                 &[Guard::sp(rn)],
+                 written,
+                 |c, o| {
+-                    if load {
++                    if len == 8 && load {
++                        // LSE2 PROTOTYPE: one 16-byte access.
++                        c.local_get(HOST).ram_simd(0, 0, o).local_set(VTMP);
++                        set(c, true, rt, |c| {
++                            c.local_get(VTMP).simd_lane(0x1d, 0);
++                        });
++                        set(c, true, rt2, |c| {
++                            c.local_get(VTMP).simd_lane(0x1d, 1);
++                        });
++                    } else if len == 8 {
++                        c.local_get(HOST);
++                        get(c, true, rt);
++                        c.simd(0x12);
++                        get(c, true, rt2);
++                        c.simd_lane(0x1e, 1);
++                        c.ram_simd(11, 0, o);
++                    } else if load {
+                         load_reg(c, rt, o, len, sign, false);
+                         load_reg(c, rt2, o + len, len, sign, false);
+                     } else {

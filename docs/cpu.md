@@ -158,8 +158,18 @@ match it step for step.
 - **Left out, unadvertised:** SVE/SME, PAC, BTI, MTE, EL2/EL3, secure state. Their hint-space
   encodings (the PAC and BTI hints, CSDB, …) run as NOPs. Everything else the M4 has beyond v8.0
   (LSE2, SM3/SM4, LOR, MOPS, HBC) is
-  UNDEFINED and unadvertised; I8MM, FCMA, FP16, FHM and BF16 are implemented but off by default (above). Candidates for later are in
-  [backlog.md](backlog.md) "Unadvertised extensions".
+  UNDEFINED and unadvertised; I8MM, FCMA, FP16, FHM and BF16 are implemented but off by default (above). **FEAT_LSE2** was
+  weighed and dropped (`bench/boot/REPORT.md` "PERF loop 12"): its 16-byte-aligned LDP/STP of X pairs must be
+  single-copy atomic against CASP and STXP, and wasm has no 128-bit RMW. The pair ops' two-CAS write ("Memory accesses
+  and atomics") lets such an LDP read a torn pair (with `uscat`, libatomic's `__atomic_load_16` is a plain LDP), and a
+  one-store write would lose a racing STP; closing that takes every aligned LDP/STP into the pair lock, or a stop of
+  the other vCPUs per pair op. Misaligned RMWs inside a granule but across 8 bytes have the same gap. No guest would
+  gain: nothing in the images uses libatomic's 16-byte atomics (Debian's GLib links it and imports nothing), Firefox's
+  libxul has no pair atomic, and misaligned atomics fault on every CPU without LSE2. The buildable half alone, the
+  JIT's X pairs as one `v128` access, cost Alpine's gates ~0.7%. **MOPS** (`CPYP`/`SETP` & co as a host `memory.copy`) isn't worth it: copies run at 7-21 GB/s under
+  the JIT and are under 2% of a browser's profile (`bench/boot/REPORT.md` "M8: the device round trip"). An extension
+  needs handlers, corpus groups (the generator knows how to avoid the rest), the ID fields, a decoder-sweep update and
+  a `VmConfig.features` bit; the codec A/B (bench/imgdecode/README.md "A CPU feature's A/B") runs on the Mac too.
 - **Rule: an optional extension is advertised unless measured slower** (PLAN.md): one that loses stays implemented,
   unadvertised. `ID_AA64DFR0_EL1` advertises
   v8.0 self-hosted debug with the architectural minimum (2 breakpoints, 2 watchpoints, 1 context

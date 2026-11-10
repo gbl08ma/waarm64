@@ -1,0 +1,7 @@
+# Words of CASP/LDXP/LDAXP/STXP/STLXP on X pairs in the desktop (Arch) guest's ELFs (/usr/lib, /usr/bin; objdump -d), 2026-11-10
+39 lib/libatomic.so.1.2.0
+6 lib/chromium/chromium
+2 lib/libtsan.so.2.0.0
+2 lib/firefox/crashhelper
+2 lib/chromium/chrome_crashpad_handler
+2 bin/chromedriver

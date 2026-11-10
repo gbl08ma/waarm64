@@ -3974,3 +3974,54 @@ Vd (loosened to the finite range) fails nothing: it's a margin (a 400M-case sear
 finite sum). The decoder sweep: 0 mismatch classes (BF16 out of `NOT_OURS_PREFIX`), the system sweep too.
 CI: `scripts/ci.sh` passed but for the known clipboard-toolbar timeout (`tests/page-clipboard-ui.test.ts`, passing
 alone right after), `scripts/ci-jit.sh` and `scripts/ci-fp.sh` passed.
+
+## PERF loop 12: FEAT_LSE2 (2026-11-10)
+
+The backlog's last unadvertised M4 extension, FEAT_LSE2 (`ID_AA64MMFR2_EL1.AT` = 1, Linux's `uscat` hwcap), weighed
+and **dropped**: it can't be both correct and cheap under parallel SMP, and nothing in the guests would use it. Raw:
+`results/perf12/` (the prototype's patch `pairs16.patch`, the scan `pairops-desktop.txt`, the A/B's JSON).
+
+**What LSE2 promises** (the ARM ARM's single-copy atomicity rules and `AArch64.UnalignedAccessFaults`): every load
+and store whose bytes lie in one aligned 16-byte granule is single-copy atomic, misaligned or not (to Normal
+write-back memory); LDP/LDNP/STP of two X registers aligned to 16 bytes are one single-copy-atomic 16-byte access;
+exclusives and LSE atomics don't fault misaligned inside a granule (across one they still do); LDAR/STLR/LDAPR and
+LDAPUR/STLUR inside a granule don't, and across one fault only while `SCTLR_ELx.nAA` is 0. Guests use the pair rule:
+libatomic's `__atomic_load_16`/`__atomic_store_16` (ifuncs, GCC 13+) become a plain LDP/STP with barriers on
+`HWCAP_USCAT`, where without it they're LDXP/STXP loops; its compare-exchange stays CASP.
+
+**Why not correct and cheap.** An LDP or STP that is a 16-byte atomic has to be atomic against CASP and STXP too,
+which wasm can't give: it has no 128-bit RMW. Our pair ops (docs/cpu.md "Memory accesses and atomics") take a lock
+only other pair ops take and write the halves with two 64-bit CASes; an LSE2 LDP between those CASes would read the
+new low half with the old high one (the case that design leaves uncovered because no guest reads pairs that way: with
+LSE2 libatomic's every 16-byte load does). Writing a CASP's new pair as one 16-byte store instead closes that and
+opens another: an STP between the CASP's read and its store is lost while the CASP reports success. Closing either takes every
+16-byte-aligned LDP/STP (every frame's `stp x29, x30, [sp, #-16]!`) into the lock or a check of it, or a stop of the
+other vCPUs per pair op, which docs/cpu.md already rejects at SLUB's one CASP per ~10K instructions. Misaligned atomic
+RMWs inside a granule but across an 8-byte boundary have the same problem (no wasm atomic spans them); those inside an
+aligned 8 bytes could be an i64 CAS loop. The interpreter would also need its misaligned accesses inside a granule
+as one host access, which its split relaxed atomics aren't (a 16-byte one needs `simd128`, which the core is built
+without).
+
+**Who would use it.** Every ELF of the desktop guest (Arch: `/usr/lib`, `/usr/bin`, 3,149 files, disassembled) for
+CASP/LDXP/LDAXP/STXP/STLXP on X pairs, the 16-byte atomics a guest makes: libatomic (39, its own variants), Chromium
+(6), libtsan, Firefox's crashhelper, crashpad and chromedriver (2 each); **Firefox's libxul none**. Nothing links
+libatomic in the desktop guest; in Debian's only GLib does, and it imports nothing from it (over-linking). The Alpine
+images have no libatomic. Misaligned atomics fault on every CPU without LSE2 (and are UB in C), so no guest code
+relies on them; x86 emulators (FEX, Box64) would, and none is in the images. So LSE2's gain here is nil, and counts
+of executed pair ops weren't taken.
+
+**What the cheap half costs.** The one piece that is buildable, LDP/STP of X pairs as one 16-byte host access in the
+JIT (`v128.load` and two `i64x2.extract_lane`; `i64x2.splat`, `replace_lane` and `v128.store`; `pairs16.patch`,
+the interpreter left alone), was measured to bound it: the Mac host (M4, macOS 26.6.2), Chrome for Testing
+157.0.8103.50 headless, `bench/interp/ab-mac.sh lse2 3 base=… new=… -- boot_alpine_jit alpine_user_jit` and one more
+round (`lse2b`) in a second session, arms alternated (ms, each round's median; steps unchanged, 2,652,860,340 and
+10,612,856,957; the compiled wasm +0.39% / +0.36%):
+
+| | base (`56d2a010`) | pairs as 16 bytes | |
+|---|---|---|---|
+| `alpine_jit_total` | 4,505 · 3,920 · 3,929 · 4,122 | 3,946 · 3,968 · 3,951 · 4,040 | base's first round of each session is cold (IQR 354 and 370 ms); rounds 2-3 +0.6 to +1.2%, apart |
+| `alpine_user_jit_total` | 11,014 · 11,078 · 11,080 · 11,127; **11,079** | 11,102 · 11,126 · 11,178 · 11,205; **11,152** | +0.7%, overlapping (round 4's base) |
+
+About +0.7% on both, at the bar: V8 lowers the lane moves to `fmov`/`mov v.d[1]` beside the `ldr q`/`str q`, a
+few cycles a pair. Not the obstacle, but not free for a feature that has no user. **Dropped**, the v8.0 alignment
+rules kept (docs/cpu.md "Left out, unadvertised"); the backlog item is gone, its list empty (MOPS's rejection moved to docs/cpu.md). CI: docs only, none run.
