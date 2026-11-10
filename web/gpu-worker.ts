@@ -129,7 +129,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     }
   };
   let held = 0;
-  // While queries are pending, the next look (`QueryPoll`: by default every task for 2 ms since they last changed, then
+  // While queries are pending, the next look (`QueryPoll`: by default every task for 2 ms since the set last changed, then
   // every 4 ms; PERF loop 16): counted, with the ms some were pending, for the stats.
   let queryPolls = 0, queryPendingMs = 0, pendingSince = 0;
   const schedule = queryScheduler(queryPoll ?? 'spin', () => poll(), () => new Worker(new URL('./venus-ticker.ts', import.meta.url), { type: 'module' }));
@@ -147,7 +147,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
       held = f.id;
       console.warn(`virgl: fence ${f.id} held ${((clock() - f.at) / 1000).toFixed(0)} s for ${queries} occlusion queries' results`);
     }
-    if (queries) pollTimer = schedule.next(queries);
+    if (queries) pollTimer = schedule.next(queries, renderer.queryChanges);
     else schedule.idle();
   };
   const run = (c: WorkerCall) => {

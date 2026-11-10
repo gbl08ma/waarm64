@@ -280,6 +280,8 @@ export class VirglRenderer {
   /** The color attachments the context has, up to the 8 the caps offer (WebGL2 promises 4; SwiftShader's Vulkan has 6). */
   private readonly colorAttachments: number;
   private queries: Query[] = [];
+  /** Changes to the pending queries so far (one added or settled): the GPU worker's poll follows the set, not its size. */
+  queryChanges = 0;
   /**
    * The span counting draws now (WebGL has one occlusion query active, and every context and sub-context draws on the
    * one WebGL context): begun at a sub-context's draw while it has occlusion queries active, ended when anything else
@@ -361,6 +363,7 @@ export class VirglRenderer {
     for (const id of [...this.contexts.keys()]) this.destroyContext(id);
     for (const id of [...this.resources.keys()]) this.unrefResource(id);
     this.queries = [];
+    this.queryChanges++;
     this.counting.clear();
   }
 
@@ -393,6 +396,7 @@ export class VirglRenderer {
       // guest's control queue filled behind them (dEQP-GLES3 hung at a context's end).
       o.v.pending = false;
       this.queries = this.queries.filter((q) => q !== o.v);
+      this.queryChanges++;
     }
   }
 
@@ -2645,6 +2649,7 @@ void main() {
       if (q.pending) {
         q.pending = false;
         this.queries = this.queries.filter((x) => x !== q);
+        this.queryChanges++;
       }
       this.dropSpans(q);
       q.spans = [];
@@ -2671,6 +2676,7 @@ void main() {
       if (q.spans?.length) {
         q.pending = true;
         this.queries.push(q);
+        this.queryChanges++;
       } else {
         q.result = q.passed ? 1 : 0;
         q.spans = undefined;
@@ -2784,6 +2790,7 @@ void main() {
       q.spans = undefined;
       q.pending = false;
       this.queryState(undefined, q, 1);
+      this.queryChanges++;
       return false;
     });
     return this.queries.length;

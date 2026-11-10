@@ -4260,3 +4260,48 @@ The checks were made in the dev VM: Node, 2 vCPUs, parallel, realtime, JIT (`run
   70-77, `svc` 163-183 and the empty loop 0.39-0.41 ns. The rounds sum to 9.9 s against the host's 10.1 s.
 
 Nothing in the core changed, and no numbers move. `docs/platform.md` "Time" says so under parallel SMP.
+
+## PERF loop 20: the second review's fixes (2026-11-10)
+
+An out-of-context review of `15c0dc69..9dd6119b` (the PERF loops 8-19) left five findings; each fix below started
+with its test, failing on `9dd6119b`.
+
+1. **The `spin` query poll followed the count of pending queries, not the set** (web/virgl-host.ts
+   `queryScheduler`): a client that keeps one query in flight (the next ended as the last settles) holds the count at 1
+   and fell to the 4 ms timer 2 ms after its first query. The renderer now counts each query added or settled
+   (`queryChanges`) and the poll restarts its window on that. Test: tests/virgl.test.ts "the poll keeps spinning while
+   the pending set turns over at a steady count" (the scheduler on the test's clock, its 4 ms timers counted: every
+   look past the first 2 ms by the timer before, none after; the loop 16 test moved to that clock too, as both missed
+   their wall-clock bounds under CI's load). glquery waits on each
+   query at once (the count goes 1, 0, 1), so loop 16's numbers stand: on the M4 (Chrome for Testing 157.0.8103.50),
+   3 rounds alternated, the old rule against the new gave waits of 0.81 / 0.775 / 0.77 ms against 0.815 / 0.77 /
+   0.79 ms (medians), 265-275 against 260-272 frames/s (bench/gpu/results/perf20/mac-spin-set.json; bench/gpu/REPORT.md
+   "PERF loop 20").
+2. **A call's failed guard tail-called the miss function** (core/src/jit/block.rs `chain`, loop 13's `missfb`): the
+   callee ran at the caller's depth and the rest of that guest call chain lost its host-call return prediction. The
+   fallback now transfers as the chain does (`Xfer::Call` for a call: a host call below `MAX_DEPTH`, its result
+   through `returned()`). Test: `a_calls_failed_guard_still_calls_the_miss_function` (the module's bytes: `call` of the
+   miss function and `br` to the call's `returned()` block; before, a `return_call`). Planted: the `br` one block too
+   far (inner 1) fails it; Alpine's boot and userspace benchmark took the same 10,612,856,957 steps with it planted,
+   so the path is rare there. **Size:** the wasm compiled over Alpine's boot and userspace benchmark (Node,
+   `bench/boot/userprof.ts`) went from 16,510,885 to 16,626,528 bytes (+0.70%; loop 13's `missfb` had saved 3.28%).
+   **The gate** (`bench/interp/ab-mac.sh perf20 3`, M4, macOS 26.6.2, Chrome for Testing 157.0.8103.50; round 1 ran
+   beside wasm builds in the dev VM and is left out): `alpine_jit_total` tail 3,943 · 3,920, call 3,902 · 3,923 ms;
+   `alpine_user_jit_total` tail 11,001 · 10,988, call 11,032 · 11,021 ms (+0.3%, under the noise); Lua and SQLite
+   even. Kept. JSON in `results/perf20/`.
+3. **`Known::at`'s 25-bit start field** (core/src/interp/block.rs) was guarded by a `debug_assert!` only: a cache's
+   budget is now held under `START_LIMIT` (2^25) in `Cache::new`, and `MAX_BUDGET <= START_LIMIT` is a compile-time
+   assertion. Test: `a_cache_budget_fits_the_start_field` (a cache asked for `usize::MAX` kept it).
+4. **Deterministic round-robin's inline unmask didn't see host signals arriving mid-chunk** (core/src/vm.rs,
+   `jit::Unmask`): a completion, console input or a stop that came while the guest had IRQs masked waited for the
+   chunk's end (up to 32K steps) where the unmask's `Exit::Resync` used to bring the run loop's checks forward. The run
+   loop now points `Unmask::irq` at the signal word, whose low byte holds its bits, and a round-robin block's inline
+   arm loads that byte atomically (as a parallel one loads its IRQ byte). Reproducible runs set the word only between
+   runs (the loop's top clears it), so steps don't move. Test: tests/jit-diff.test.ts "unmasking DAIF writes inline"
+   has the round-robin arm "a host signal pending" (every unmask took the helper after; none before).
+5. **The `ticker` poll's worker is never terminated** (web/virgl-host.ts): not a defect. It is the GPU worker's
+   dedicated child, ended with it (the page terminates the GPU worker; a worker's dedicated workers end with their
+   owner), one per GPU worker, and parked on its word (no CPU) while no query is pending. Said in
+   `queryScheduler`'s comment.
+
+No step count moved. CI: `scripts/ci.sh`, `ci-jit.sh`, `ci-graphics.sh` and `ci-debian.sh` pass.

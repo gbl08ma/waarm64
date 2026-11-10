@@ -1311,10 +1311,12 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64, x: Xfer) {
         let miss = Some(e.miss(b.key));
         emit::indirect(c, b.key & 3, miss, len, e.bt, e.checker, x);
     };
-    // Straight to the miss function (it reads the PC from the `Cpu`).
+    // Straight to the miss function (it reads the PC from the `Cpu`), the
+    // way the chain transfers: a call's a host call, so its callee still
+    // returns to the caller's continuation (docs/jit.md "Calls").
     let to_miss = |c: &mut emit::Func| {
         let miss = emit::To::Func(e.miss(b.key), 0);
-        emit::transfer(c, Xfer::Tail, len, e.bt, miss, 0);
+        emit::transfer(c, x, len, e.bt, miss, 0);
     };
     let Some(&(f, tlen, entry)) = f else {
         if guarded {
@@ -1840,6 +1842,46 @@ mod tests {
         let miss = e.bytes.windows(2).rposition(|w| w[0] == 0x12 && w[1] != 2);
         assert!(call.is_some() && call < miss, "{call:?} {miss:?}");
         assert!(!has(&e.bytes, &tag) && has(&e.bytes, &[1, b't', 2, b'4', b'0', 0]));
+    }
+
+    /// A call (BL) to another page whose guard fails still calls (PERF loop
+    /// 20): the miss function is host-called ([`Xfer::Call`]) below the
+    /// depth limit, the callee's return then checked as the guarded call's
+    /// is, and tail-called only past it.
+    #[test]
+    fn a_calls_failed_guard_still_calls_the_miss_function() {
+        let b = Block {
+            key: 0x4000_0200 | KEY_MMU,
+            va: 0,
+            words: vec![MOVZ, 0x94000400], // bl .+0x1000
+        };
+        let e = module(
+            &[b.into()],
+            &test_mem(),
+            |k| (k == 0x4000_1204 | KEY_MMU).then_some((9, 1)),
+            &Config::DEFAULT,
+            true,
+            crate::cpu::FEATURES,
+            Some(40),
+        );
+        assert_eq!(e.links, [vec![0x4000_1204 | KEY_MMU]]);
+        // The imports: the two exec helpers, the callee (2), the miss function (3).
+        assert_eq!(func_imports(&e.bytes), 4);
+        let miss = 3;
+        // `call f; local.set RESULT; br` to the block that `returned()`
+        // follows: from inside the guard's `if` for the callee (2), from
+        // outside it for the miss function.
+        let host_call = |f: u8| {
+            let at = e.bytes.windows(3).position(|w| w == [0x10, f, 0x21])?;
+            Some((e.bytes[at + 3], e.bytes[at + 4..at + 7].to_vec()))
+        };
+        let (result, br) = host_call(2).expect("the guarded host call");
+        assert_eq!(br, [0x0c, 2, 0x0b]);
+        assert_eq!(
+            host_call(miss),
+            Some((result, vec![0x0c, 1, 0x0b])),
+            "the failed guard's host call of the miss function"
+        );
     }
 
     /// A fixed-size memory (`Config::pages`) is imported with exact limits,

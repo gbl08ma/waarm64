@@ -360,8 +360,9 @@ pub unsafe extern "C" fn jit_parallel(v: *mut mmu::Vcpu, on: u32) {
 
 /// Sets a user-mode vCPU's [`jit::State::unmask`] (as a run loop does before
 /// a chunk): with `ok` nonzero, an MSR that unmasks IRQs stays inline while
-/// the bytes at `irq` and `pending` (wasm addresses, read by parallel SMP's
-/// blocks) are zero. For the differential test (docs/abi.md, ABI 64).
+/// the bytes at `irq` (every block's: round-robin's signal word, parallel
+/// SMP's IRQ line) and `pending` (parallel SMP's blocks') are zero (wasm
+/// addresses). For the differential test (docs/abi.md, ABI 64).
 ///
 /// # Safety
 /// As for [`jit_fma`]; `irq` and `pending` are addresses of live bytes while it's set.

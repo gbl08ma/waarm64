@@ -336,6 +336,9 @@ pub const SIGNAL_STOP: u32 = 1;
 pub const SIGNAL_RX: u32 = 2;
 /// A backend posted completions.
 pub const SIGNAL_DEVICE: u32 = 4;
+// The signal word's bits are in its low byte (little-endian: the byte at its
+// address), which an inline unmask reads (`jit::Unmask`).
+const _: () = assert!((SIGNAL_STOP | SIGNAL_RX | SIGNAL_DEVICE) & !0xff == 0);
 
 /// Written by the vCPU with relaxed stores, read by the host at any time.
 /// `repr(C)`: steps, exceptions by EC, IRQs, the TLB counters (step 8), PC.
@@ -1137,12 +1140,16 @@ impl Vm {
             // (`xhci_tick`), which the exit would bring forward. Not in realtime
             // mode, where chunks don't end at deadlines and devices signal at any
             // time: the exit is what takes a timer or a completion's IRQ at once.
+            // And not once a host signal arrives (a completion, console input, a
+            // stop: the host sets the word at any time): the inline arm reads the
+            // signal word's low byte, which holds its bits, as `irq`.
             let realtime = self.realtime();
             let pl = self.plat.get_mut();
             let quiet = pl.xhci.as_ref().is_none_or(|x| x.due() == u64::MAX);
             let ok = (!realtime && quiet && !pl.gic.irq(c)) as u32;
             self.vcpus[c].jit.unmask = jit::Unmask {
                 ok,
+                irq: &self.shared.signal as *const AtomicU32 as usize as u32,
                 ..Default::default()
             };
             let (k, e) = self.chunk(c, n);

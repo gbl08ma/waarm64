@@ -3022,6 +3022,10 @@ fn pair(c: &mut Cpu, m: &mut impl Bus, u: &Wide) -> R {
 /// (bench/apps/REPORT.md).
 pub const BUDGET: usize = 1 << 24;
 pub const MAX_BUDGET: usize = 1 << 23;
+/// Past the micro-ops a block's start can be ([`Known`]'s 25 bits): a cache's
+/// budget is held under it, as a block starts below its cache's budget.
+const START_LIMIT: usize = 1 << 25;
+const _: () = assert!(MAX_BUDGET <= START_LIMIT);
 
 /// A table's share of [`BUDGET`] among `tables`.
 pub fn budget(tables: usize) -> usize {
@@ -3160,8 +3164,10 @@ fn slot(key: u64) -> usize {
 }
 
 impl Cache {
-    /// A cache of `budget` micro-ops.
+    /// A cache of `budget` micro-ops (at most [`START_LIMIT`]: every block
+    /// starts below the budget, past it the cache starts over).
     pub fn new(budget: usize) -> Cache {
+        let budget = budget.min(START_LIMIT);
         Cache {
             slots: match vec![EMPTY; SLOTS].into_boxed_slice().try_into() {
                 Ok(s) => s,

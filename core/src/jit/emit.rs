@@ -3934,7 +3934,8 @@ fn daif(c: &mut Func, cx: &Ctx, i: u32, here: i64) {
 }
 
 /// Pushes whether an MSR that unmasks IRQs may retire inline ([`super::Unmask`]):
-/// `ok`, and in parallel SMP no IRQ signalled on the vCPU's line and no
+/// `ok`, and the byte at `irq` zero (parallel SMP: no IRQ signalled on the
+/// vCPU's line; round-robin: no host signal pending) and in parallel SMP no
 /// maintenance queued for it (as `Vm::fast` would decide).
 fn unmask_ok(c: &mut Func, cx: &Ctx) {
     use super::{State, Unmask};
@@ -3944,14 +3945,13 @@ fn unmask_ok(c: &mut Func, cx: &Ctx) {
     const PENDING: u32 = (K + offset_of!(Unmask, pending)) as u32;
     const I32_ATOMIC_LOAD8_U: u8 = 0x12;
     c.local_get(VCPU).i32_load(OK);
-    if cx.parallel {
-        for at in [IRQ, PENDING] {
-            c.local_get(VCPU)
-                .i32_load(at)
-                .atomic(I32_ATOMIC_LOAD8_U, 0, 0)
-                .op(EQZ)
-                .op(AND);
-        }
+    let bytes: &[u32] = if cx.parallel { &[IRQ, PENDING] } else { &[IRQ] };
+    for &at in bytes {
+        c.local_get(VCPU)
+            .i32_load(at)
+            .atomic(I32_ATOMIC_LOAD8_U, 0, 0)
+            .op(EQZ)
+            .op(AND);
     }
 }
 

@@ -1,0 +1,243 @@
+{
+ "date": "2026-11-10T21:01:12.603Z",
+ "chromium": "157.0.8103.50",
+ "host": "darwin arm64",
+ "os": "26.6.2",
+ "glq": "300,4,640,480",
+ "rows": [
+  {
+   "arm": "spincount",
+   "round": 0,
+   "renderer": "virgl (webpc)",
+   "fps": 265.44,
+   "msPerFrame": 3.77,
+   "wait": {
+    "n": 1200,
+    "p25": 0.725,
+    "median": 0.81,
+    "p75": 0.845,
+    "max": 14.75
+   },
+   "finish": {
+    "n": 300,
+    "p25": 0.12,
+    "median": 0.135,
+    "p75": 0.15,
+    "max": 1.165
+   },
+   "passed": "1220 of 1220",
+   "seconds": 8.538,
+   "stats": [
+    {
+     "queryPolls": 159419,
+     "queryPendingMs": 371.8,
+     "busyMs": 18,
+     "fences": 676,
+     "fenceMs": 402
+    },
+    {
+     "queryPolls": 214391,
+     "queryPendingMs": 470.8,
+     "busyMs": 11,
+     "fences": 855,
+     "fenceMs": 495
+    }
+   ]
+  },
+  {
+   "arm": "spin",
+   "round": 0,
+   "renderer": "virgl (webpc)",
+   "fps": 260.04,
+   "msPerFrame": 3.85,
+   "wait": {
+    "n": 1200,
+    "p25": 0.735,
+    "median": 0.815,
+    "p75": 0.845,
+    "max": 12.37
+   },
+   "finish": {
+    "n": 300,
+    "p25": 0.12,
+    "median": 0.135,
+    "p75": 0.15,
+    "max": 1.565
+   },
+   "passed": "1220 of 1220",
+   "seconds": 8.094,
+   "stats": [
+    {
+     "queryPolls": 308379,
+     "queryPendingMs": 711.7,
+     "busyMs": 21,
+     "fences": 1241,
+     "fenceMs": 744
+    },
+    {
+     "queryPolls": 74461,
+     "queryPendingMs": 156,
+     "busyMs": 4,
+     "fences": 289,
+     "fenceMs": 164
+    }
+   ]
+  },
+  {
+   "arm": "spin",
+   "round": 1,
+   "renderer": "virgl (webpc)",
+   "fps": 271.92,
+   "msPerFrame": 3.68,
+   "wait": {
+    "n": 1200,
+    "p25": 0.705,
+    "median": 0.77,
+    "p75": 0.835,
+    "max": 8.5
+   },
+   "finish": {
+    "n": 300,
+    "p25": 0.115,
+    "median": 0.125,
+    "p75": 0.14,
+    "max": 1.51
+   },
+   "passed": "1220 of 1220",
+   "seconds": 7.853,
+   "stats": [
+    {
+     "queryPolls": 300387,
+     "queryPendingMs": 682.7,
+     "busyMs": 21,
+     "fences": 1268,
+     "fenceMs": 722
+    },
+    {
+     "queryPolls": 62353,
+     "queryPendingMs": 133.5,
+     "busyMs": 4,
+     "fences": 262,
+     "fenceMs": 144
+    }
+   ]
+  },
+  {
+   "arm": "spincount",
+   "round": 1,
+   "renderer": "virgl (webpc)",
+   "fps": 274.92,
+   "msPerFrame": 3.64,
+   "wait": {
+    "n": 1200,
+    "p25": 0.7,
+    "median": 0.775,
+    "p75": 0.84,
+    "max": 8.665
+   },
+   "finish": {
+    "n": 300,
+    "p25": 0.115,
+    "median": 0.13,
+    "p75": 0.145,
+    "max": 0.92
+   },
+   "passed": "1220 of 1220",
+   "seconds": 8.074,
+   "stats": [
+    {
+     "queryPolls": 300839,
+     "queryPendingMs": 671.3,
+     "busyMs": 21,
+     "fences": 1265,
+     "fenceMs": 719
+    },
+    {
+     "queryPolls": 64401,
+     "queryPendingMs": 136.6,
+     "busyMs": 4,
+     "fences": 265,
+     "fenceMs": 145
+    }
+   ]
+  },
+  {
+   "arm": "spincount",
+   "round": 2,
+   "renderer": "virgl (webpc)",
+   "fps": 272.59,
+   "msPerFrame": 3.67,
+   "wait": {
+    "n": 1200,
+    "p25": 0.695,
+    "median": 0.77,
+    "p75": 0.84,
+    "max": 8.7
+   },
+   "finish": {
+    "n": 300,
+    "p25": 0.115,
+    "median": 0.13,
+    "p75": 0.15,
+    "max": 1.205
+   },
+   "passed": "1220 of 1220",
+   "seconds": 7.805,
+   "stats": [
+    {
+     "queryPolls": 322437,
+     "queryPendingMs": 709.3,
+     "busyMs": 21,
+     "fences": 1335,
+     "fenceMs": 759
+    },
+    {
+     "queryPolls": 44302,
+     "queryPendingMs": 102.4,
+     "busyMs": 3,
+     "fences": 195,
+     "fenceMs": 108
+    }
+   ]
+  },
+  {
+   "arm": "spin",
+   "round": 2,
+   "renderer": "virgl (webpc)",
+   "fps": 268.51,
+   "msPerFrame": 3.72,
+   "wait": {
+    "n": 1200,
+    "p25": 0.705,
+    "median": 0.79,
+    "p75": 0.85,
+    "max": 12.035
+   },
+   "finish": {
+    "n": 300,
+    "p25": 0.12,
+    "median": 0.135,
+    "p75": 0.15,
+    "max": 1.435
+   },
+   "passed": "1220 of 1220",
+   "seconds": 8.099,
+   "stats": [
+    {
+     "queryPolls": 303604,
+     "queryPendingMs": 677.4,
+     "busyMs": 21,
+     "fences": 1272,
+     "fenceMs": 719
+    },
+    {
+     "queryPolls": 63536,
+     "queryPendingMs": 149,
+     "busyMs": 4,
+     "fences": 258,
+     "fenceMs": 157
+    }
+   ]
+  }
+ ]
+}

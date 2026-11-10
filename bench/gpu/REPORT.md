@@ -385,3 +385,11 @@ fix made work, ends at the next look. A realtime guest falls back only when a re
 and then the read-back fix is what keeps it from spinning. Nothing changed, and no performance number moves: realtime
 glquery never takes the fallback. Doc: docs/graphics.md "Fences". The counter question of the same loop is
 bench/boot/REPORT.md "PERF loop 18".
+
+## PERF loop 20: the query poll follows the pending set (2026-11-10)
+
+A review found `spin` restarted its 2 ms window only when the *count* of pending queries changed; it now follows the
+set (bench/boot/REPORT.md "PERF loop 20", finding 1). glquery waits on each query at once, so the count went 1, 0, 1
+and loop 16's numbers stand: the old rule against the new, 3 rounds alternated on the M4 (Chrome for Testing
+157.0.8103.50), waits 0.81 / 0.775 / 0.77 against 0.815 / 0.77 / 0.79 ms, 265.4 / 274.9 / 272.6 against 260.0 /
+271.9 / 268.5 frames/s (`results/perf20/mac-spin-set.json`: `spincount` the old rule, a temporary arm).

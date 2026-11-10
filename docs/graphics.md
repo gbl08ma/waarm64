@@ -306,7 +306,9 @@ has run: uploads read, read-backs written), with every reply behind it in order 
 fence is also held **until the occlusion queries ended before it have their results** (`FenceGate`): GL's results are
 ready at a fence (a guest's `glFinish` sees them), WebGL's only after the task that ended the query, so the worker
 polls them while any are pending (`pollQueries`): **at every task for 2 ms since the pending set last changed
-(`SPIN_MS`, a message to itself), then every 4 ms** (web/virgl-host.ts `QueryPoll` `spin`; `?gpu=querypoll=` takes
+(`SPIN_MS`, a message to itself), then every 4 ms**; the set, not the count: the renderer's `queryChanges` counts each
+query added or settled, so a client that keeps one in flight, ending the next as the last settles, keeps the spin
+(PERF loop 20) (web/virgl-host.ts `QueryPoll` `spin`; `?gpu=querypoll=` takes
 `timeout`, `message`, `wait` and `ticker` for A/Bs). A fence waits only behind a pending query, so ordinary applications
 don't pay, and nothing polls while none is pending. **Why:** a program that waits on `GL_QUERY_RESULT` waits for the
 next look, and WebGL gives a result only a look or two after the GPU has it. On the M4 (bench/gpu/REPORT.md "PERF

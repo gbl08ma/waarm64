@@ -655,22 +655,39 @@ test('virgl renderer: a fence waits for the occlusion queries before it (dEQP-GL
 });
 
 // PERF loop 16: pending queries are looked at every task for SPIN_MS since the pending set last changed, then every 4 ms.
-test('queries: the poll spins at every task for SPIN_MS after a change, then waits 4 ms a look', async () => {
-  const at: number[] = [];
-  let t0 = -1, done!: () => void;
+// The scheduler's clock is the test's (each look 0.1 ms on), and its 4 ms timers are counted: what the poll decides,
+// whatever the host's load.
+const spinLooks = async (looks: number, changes: (look: number) => number) => {
+  const real = globalThis.setTimeout;
+  let timers = 0, look = 0, now = 0, done!: () => void;
   const finished = new Promise<void>((ok) => { done = ok; });
-  const s = queryScheduler('spin', () => {
-    // A first look and none pending (Node's first message takes ~10 ms), then one pending for SPIN_MS + 12 ms.
-    if (t0 < 0) { s.idle(); t0 = performance.now(); s.next(1); return; }
-    at.push(performance.now() - t0);
-    if (performance.now() - t0 < SPIN_MS + 12) s.next(1);
-    else { s.idle(); done(); }
-  });
-  s.next(1);
-  await finished;
-  const spun = at.filter((t) => t < SPIN_MS).length, after = at.filter((t) => t >= SPIN_MS + 0.5);
-  assert.ok(spun > 20, `many looks while it spins (${spun})`);
-  assert.ok(after.length >= 2 && after.length <= 5, `then a look every 4 ms (${after.length} in ~12 ms)`);
+  globalThis.setTimeout = ((f: () => void, ms?: number) => (ms === 4 && timers++, real(f, ms))) as typeof setTimeout;
+  try {
+    const s = queryScheduler('spin', () => {
+      now += 0.1;
+      if (++look < looks) s.next(1, changes(look));
+      else { s.idle(); done(); }
+    }, undefined, () => now);
+    s.next(1, changes(0));
+    await finished;
+  } finally {
+    globalThis.setTimeout = real;
+  }
+  return timers;
+};
+
+test('queries: the poll spins at every task for SPIN_MS after a change, then waits 4 ms a look', async () => {
+  // One pending, unchanged: SPIN_MS / 0.1 looks at every task, then the rest by the timer.
+  const timers = await spinLooks(30, () => 1);
+  assert.ok(timers >= 9 && timers <= 11, `the looks after SPIN_MS by the 4 ms timer (${timers} of 30)`);
+});
+
+// PERF loop 20: a client that keeps one query in flight (one ended as the last settles) keeps the count at 1 while the
+// set turns over; the poll follows the set (`changes`), so it keeps spinning.
+test('queries: the poll keeps spinning while the pending set turns over at a steady count', async () => {
+  // Every 10 looks (1 ms, under SPIN_MS) query N settles and N+1 is pending in its place.
+  const timers = await spinLooks(100, (look) => Math.floor(look / 10));
+  assert.equal(timers, 0, 'no look by the 4 ms timer');
 });
 
 // VK4 R1: a submit held for a signal the guest sends later (a CPU vkSignalSemaphore) holds its ring's fences only.

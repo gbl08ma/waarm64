@@ -244,8 +244,9 @@ the interpreter's own code.
   check that the successor's VA hits the instruction TLB of the block's EL and maps to that
   block's host address. Nothing compiled there: the successor is found as an indirect branch's
   target is, by its VA in the transfer cache (below; `block::chain`). The check failed (seldom:
-  the VA maps elsewhere now): a tail call of the miss function, which looks it up without a
-  transfer cache probe of the site's own (~3% less wasm; going there for an uncompiled
+  the VA maps elsewhere now): the miss function, which looks it up without a transfer cache probe
+  of the site's own, transferred to as the chain is (a call's a host call: [Calls](#calls); PERF loop 20,
+  +0.7% wasm over a tail call) (~3% less wasm; going there for an uncompiled
   successor too lost: [Tried and not kept](#tried-and-not-kept)). Before M8 only the first half existed, and every
   call, branch and fall-through to another page of a process returned to the dispatcher: 97% of
   the userspace benchmark's dispatches, 10 to 18% of its compute phases' time
@@ -821,7 +822,10 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   deterministic round-robin's run loop sets `ok` before each chunk when the GIC signals none to the vCPU
   (nothing raises one within a chunk but an exit: deadlines bound deterministic chunks, devices and
   GIC writes exit) and the xHCI has no event due (its tick fires at the next chunk boundary, which the
-  exit would bring forward: the USB guest's JIT run then parted from the interpreter's). Realtime round-robin never
+  exit would bring forward: the USB guest's JIT run then parted from the interpreter's), and points `irq` at the VM's
+  signal word, whose low byte the block loads atomically: a host signal (a completion, console input, a stop) that
+  arrives mid-chunk sends the unmask to its exit, which brings the run loop's signal checks forward as before (PERF
+  loop 20). Realtime round-robin never
   sets it: its chunks don't end at deadlines and devices signal at any time, so a timer that came due under the mask
   waited for the chunk's end (up to 32K steps; `tests/baremetal/unmask.c`, PERF loop 9). Parallel SMP sets it when the
   chunk has fast completions, and there the block also loads two atomic bytes, the vCPU's IRQ line (`CpuPar::irq`) and
@@ -829,7 +833,8 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   one's next drain point); not the published ASID, which a DAIF write doesn't synchronize (the ISB after a TTBR write
   ends the chunk). Else, and for ERET, the helper's `Exit::Resync` lets the run loop take it. Steps don't move
   (deterministic chunks end at the same places). The differential test runs the inline arm against the interpreter
-  through `jit_unmask` (and `jit_parallel`, ABI 64), and counts the helper calls each condition sends there;
+  through `jit_unmask` (and `jit_parallel`, ABI 64), and counts the helper calls each condition sends there (a
+  round-robin block's signal byte, a parallel one's IRQ and pending bytes);
   `unmask.c` checks the latency in realtime round-robin.
   SIMD&FP instructions check `CPACR_EL1.FPEN` once per block.
 - **NEON → SIMD128** (`emit/simd.rs`): handler by handler after the interpreter's: three-same,

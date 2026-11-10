@@ -639,6 +639,17 @@ fn a_mov_run_stops_at_the_prefix() {
     }
 }
 
+// PERF loop 20: a block's start is 25 bits of `Known::at`; a cache's budget
+// keeps every start under that, whatever it is asked.
+#[test]
+fn a_cache_budget_fits_the_start_field() {
+    for asked in [MAX_BUDGET, 1 << 26, usize::MAX] {
+        assert!(Cache::new(asked).budget <= START_LIMIT, "budget {asked}");
+    }
+    let k = Known::new(START_LIMIT as u32 - 1, 63, 0, true);
+    assert_eq!((k.start(), k.rich()), (START_LIMIT as u32 - 1, true));
+}
+
 #[test]
 fn the_cache_drops_and_starts_over() {
     let t = TestRam::new(RAM);

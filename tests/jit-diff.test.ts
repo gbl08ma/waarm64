@@ -538,8 +538,9 @@ test('JIT vs interpreter: system registers and barriers', () => {
 // Unmasking DAIF writes inline (PERF loops 8 and 9): `jit_unmask` sets what a run loop sets before a chunk, so the
 // inline arm of an MSR DAIF, Xt or DAIFClr that clears PSTATE.I (`emit::daif`) runs here against the interpreter (whose
 // `Exit::Resync` the run export goes on from), at EL1 with DAIF random. Then each condition that sends it to the helper:
-// `ok` 0; in a parallel SMP block (`jit_parallel`, and `cpu::FEATURE_PARALLEL` in `Cpu.features`) the vCPU's IRQ byte and its queue's
-// pending byte, which `fast` checks too. The helper report counts what took the helper: every unmask, or none.
+// `ok` 0; the byte at `irq`: in a parallel SMP block (`jit_parallel`, and `cpu::FEATURE_PARALLEL` in `Cpu.features`) the
+// vCPU's IRQ byte, in round-robin the shared signal word's (a host signal arrived mid-chunk: PERF loop 20); in parallel
+// its queue's pending byte too, which `fast` checks as well. The helper report counts what took the helper: every unmask, or none.
 const FEATURES = 1056, FEATURE_PARALLEL = 1n << 34n;
 for (const parallel of [false, true]) test(`JIT vs interpreter: unmasking DAIF writes inline${parallel ? ' (parallel SMP)' : ''}`, () => {
   const { ex, jit, ca32, cb32, cpus, run, helpers } = setup(8 * WORDS);
@@ -559,7 +560,8 @@ for (const parallel of [false, true]) test(`JIT vs interpreter: unmasking DAIF w
   const arms: [string, number, number, number, boolean][] = [
     ['ok', 1, 0, 0, true],
     ['not ok', 0, 0, 0, false],
-    ...(parallel ? [['an IRQ signalled', 1, 1, 0, false], ['maintenance queued', 1, 0, 1, false]] as [string, number, number, number, boolean][] : []),
+    [parallel ? 'an IRQ signalled' : 'a host signal pending', 1, 1, 0, false],
+    ...(parallel ? [['maintenance queued', 1, 0, 1, false]] as [string, number, number, number, boolean][] : []),
   ];
   const msrCalls = () => helpers().split(', ').filter((h) => h.startsWith('MSR')).reduce((n, h) => n + Number(h.split(' ')[1]), 0);
   for (const [arm, ok, irq, pending, inline] of arms) {

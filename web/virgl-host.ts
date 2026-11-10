@@ -148,34 +148,38 @@ export const fenceLane = (scope?: FenceScope) => (scope?.ringed ? `${scope.ctx}:
  * that ended it, and no event when it comes): `timeout`, a 4 ms timer; `message`, the next task (a message to itself:
  * the thread busy while any are pending); `wait`, `Atomics.waitAsync`'s 0.25 ms timeout; `ticker`, woken by a ticker
  * worker's notify every 0.05 ms (web/venus-ticker.ts, as Venus's pump) while any are pending; `spin`, `message` for
- * `SPIN_MS` since the pending queries last changed, then `timeout`: the default (PERF loop 16, bench/gpu/REPORT.md: a
+ * `SPIN_MS` since the pending set last changed (a query added or settled: `next`'s `changes`, not the count, which a
+ * client keeping one in flight holds at 1), then `timeout`: the default (PERF loop 16, bench/gpu/REPORT.md: a
  * result came ~0.75 ms after its end on the M4, a 4 ms timer saw it ~13 ms after, the thread busy only while it waits).
  */
 export type QueryPoll = 'timeout' | 'message' | 'wait' | 'ticker' | 'spin';
 
-/** How long `spin` polls at every task since the pending queries last changed (ms). */
+/** How long `spin` polls at every task since the pending set last changed (ms). */
 export const SPIN_MS = 2;
 
 /**
- * A scheduler of the next poll, the way asked (`QueryPoll`); `timeout` where the way isn't there. `idle()` says none are
- * pending any more (the ticker stops).
+ * A scheduler of the next poll, the way asked (`QueryPoll`); `timeout` where the way isn't there. `next` is told how many
+ * are pending and a count of the changes to the set so far (the renderer's `queryChanges`); `idle()` says none are pending
+ * any more (the ticker parks: blocked on its word 1, no CPU). The ticker's worker is the GPU worker's child, ended with it
+ * (the page terminates the GPU worker, and a worker's dedicated workers end with their owner); one GPU worker has one
+ * scheduler, made once. `clock` is `spin`'s (ms; tests give their own).
  */
-export function queryScheduler(way: QueryPoll, poll: () => void, ticker?: () => Worker): { next(pending: number): true; idle(): void } {
+export function queryScheduler(way: QueryPoll, poll: () => void, ticker?: () => Worker, clock: () => number = () => performance.now()): { next(pending: number, changes: number): true; idle(): void } {
   const idle = () => {};
   if (way === 'spin' && typeof MessageChannel !== 'undefined') {
     const ch = new MessageChannel();
     ch.port1.onmessage = () => poll();
     (ch.port1 as { unref?: () => void }).unref?.(); // Node's (tests): the port alone doesn't keep the process
-    let since = 0, last = 0;
+    let since = 0, last = -1;
     return {
-      next: (pending) => {
-        const now = performance.now();
-        if (pending !== last) [since, last] = [now, pending];
+      next: (_pending, changes) => {
+        const now = clock();
+        if (changes !== last) [since, last] = [now, changes];
         if (now - since < SPIN_MS) ch.port2.postMessage(0);
         else setTimeout(poll, 4);
         return true;
       },
-      idle: () => { last = 0; },
+      idle: () => { last = -1; },
     };
   }
   if (way === 'ticker' && ticker && typeof Atomics.waitAsync === 'function' && typeof SharedArrayBuffer !== 'undefined') {

@@ -64,17 +64,21 @@ pub struct State {
 }
 
 /// [`State::unmask`]: an MSR that unmasks IRQs stays in the block (no
-/// `Exit::Resync`) while `ok` is nonzero and, when `irq` and `pending` are
-/// (parallel SMP: the wasm addresses of the vCPU's IRQ line `CpuPar::irq` and
-/// of `CpuPar::pending`, its queue of other vCPUs' maintenance), the bytes
-/// there are zero. Deterministic round-robin SMP sets `ok` when the GIC
-/// signals no IRQ to the vCPU (nothing changes that within a chunk but an
-/// exit: deadlines cut the chunk) and the xHCI has no event due (`Vm::xhci_tick`
-/// runs between chunks); realtime round-robin never (a timer comes due, and
-/// devices signal, mid-chunk, and the unmask's exit is what takes their IRQ
-/// at once). Parallel SMP sets it when the chunk has fast completions
-/// (`State::fast`): the inline unmask is then what `fast` would do with its
-/// `Exit::Resync` (no IRQ on the line, nothing queued to drain; it doesn't
+/// `Exit::Resync`) while `ok` is nonzero and the byte at `irq` (a wasm
+/// address; 0 reads the memory's first byte, harmless while `ok` is 0) and,
+/// in parallel SMP, the one at `pending` are zero. Deterministic round-robin
+/// SMP sets `ok` when the GIC signals no IRQ to the vCPU (nothing changes that
+/// within a chunk but an exit: deadlines cut the chunk) and the xHCI has no
+/// event due (`Vm::xhci_tick` runs between chunks), and `irq` to the VM's
+/// signal word, whose low byte holds its bits: a host signal (a completion,
+/// console input, a stop) arriving mid-chunk sends the unmask to its exit,
+/// which brings the run loop's signal checks forward; realtime round-robin
+/// never sets `ok` (a timer comes due, and devices signal, mid-chunk, and the
+/// unmask's exit is what takes their IRQ at once). Parallel SMP sets `ok` when
+/// the chunk has fast completions (`State::fast`), `irq` and `pending` to the
+/// vCPU's IRQ line `CpuPar::irq` and `CpuPar::pending` (its queue of other
+/// vCPUs' maintenance): the inline unmask is then what `fast` would do with
+/// its `Exit::Resync` (no IRQ on the line, nothing queued to drain; it doesn't
 /// look at the published ASID, as a DAIF write isn't context
 /// synchronization: the ISB after a TTBR write still ends the chunk).
 #[repr(C)]
