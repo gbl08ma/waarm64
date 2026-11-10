@@ -48,3 +48,13 @@ test("what a link or the form's relays may not be", () => {
   assert.equal(err(roomLink({ id: 'a', nostr: Array(9).fill('wss://r.example'), derp: [] })), 'network:room.tooMany');
   assert.equal(err(roomLink({ id: 'a', nostr: ['ws://127.0.0.1:7777'], derp: ['127.0.0.1:8444', '0'] })), 'ok', "one's own relays, and a region of the map");
 });
+
+test("a pasted link with raw non-ASCII decodes as link.rs does, and a derper's port fits in 16 bits", () => {
+  const room = (s: string) => { const r = parseRoomLink(s); return 'room' in r ? r.room.id : r.error.key; };
+  assert.equal(room('webpc-room:café%20lan'), 'café lan');
+  assert.equal(room('webpc-room:é%4142'), 'éA42');
+  const err = (r: ReturnType<typeof roomLink>) => ('error' in r ? r.error.key : 'ok');
+  assert.equal(err(roomLink({ id: 'a', nostr: [], derp: ['derp.example:99999'] })), 'network:room.badDerp');
+  assert.equal(err(roomLink({ id: 'a', nostr: [], derp: ['[::1]:65536'] })), 'network:room.badDerp');
+  assert.equal(err(roomLink({ id: 'a', nostr: [], derp: ['derp.example:65535'] })), 'ok');
+});

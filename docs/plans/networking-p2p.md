@@ -28,7 +28,9 @@ key), the Ethernet gateway ([devices.md](../devices.md) "net") and network adapt
   and a node key, kept with the connection as tailcat's identity is, so it travels with a machine as
   its connections do. Keys and rooms are managed apart: adding a room makes a fresh key; under
   advanced settings, a connection can take another connection's key (the same identity in another
-  room) or a second connection can join the same room with another key. Each room has its own /48,
+  room; one of them running at a time, the user's call of 2026-11-10: two DERP connections under one
+  key break each other, §9's question as it was) or a second connection can join the same room with
+  another key. Each room has its own /48,
   so two rooms on two adapters route apart.
 - **WireGuard stays inside the data channel.** A peer's packets are the same WireGuard packets
   whichever path carries them (a data channel when one is open, DERP otherwise), so the address
@@ -367,5 +369,13 @@ client was built.
 - **A public room every machine joins by default** (the user's direction, 2026-11-10): safe if an
   address stays unguessable and lookups to a name stay sealed to the target. Whether public relays
   and DERP carry everyone (R4), and what the page says, decide it.
+- *Decided 2026-11-10, the user: one at a time (a lock per key).* **Two rooms on one key** (the review of R2–R3, 2026-11-10, confirmed against the rig's derper,
+  `bench/net/room-member.ts` with a `key`): §1's "a connection can take another connection's key"
+  runs two clients with one WireGuard key, and each opens its own DERP connection under it; a derper
+  delivers a key's packets to one connection, so with both on one region (the default `derp=0`, or
+  any shared region) the rooms take turns failing (pings 1 ms in one, 6.5 s in the other, then the
+  other way). Separate regions would work. The ways out: one DERP connection per key carrying every
+  room on it (one worker per key, the module routing by the room's PSK); a key a running connection
+  holds can't start in another (a lock per key, an error naming the holder); or the option goes.
 - Which public Nostr relays by default (Trystero's maintained list is a start), and whether they
   forward a busy room's lookups.

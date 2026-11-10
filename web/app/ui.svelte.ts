@@ -236,7 +236,8 @@ export type Page = {
   netEdit(c: Connection): Promise<void>;
   netRename(c: Connection, name: string): Promise<void>;
   netDelete(c: Connection): Promise<void>;
-  netNewAddress(c: Connection): Promise<boolean>;
+  /** Forgets a connection's served identity or room key, after asking: the connection as it is now, or none if not. */
+  netNewAddress(c: Connection): Promise<Connection | undefined>;
   /** The name of the machine (in another tab) that has connection `id`. */
   netHolder(id: string): Promise<string | undefined>;
   /**

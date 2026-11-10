@@ -9,6 +9,8 @@ export type MemberOptions = {
   /** Unix seconds at the start (`Config::unix_time`): a clock shifted to put the hour's turn into the run. */
   unixTime?: number;
   incoming?: boolean;
+  /** The node's private key (64 hex digits): a fresh one without. */
+  key?: string;
 };
 
 export type Member = {
@@ -55,6 +57,7 @@ export async function startMember(wasm: WebAssembly.Module, o: MemberOptions): P
   };
   const client = new TsClient(mod, {
     room: { link: o.link, relayOnly: true, incoming: o.incoming ?? true, unixTime: o.unixTime },
+    ...(o.key ? { key: o.key } : {}),
   }, {
     packet(p) {
       if (p[0] >> 4 !== 6 || p[6] !== 17 || p.length < 52) return;

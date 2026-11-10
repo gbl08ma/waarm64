@@ -25,6 +25,8 @@
   let open = $state(false);
   let errors = $state<Record<number, Described | undefined>>({});
   let revealed = $state<Record<number, boolean>>({});
+  /** Adapters whose room link is shown in a field: the clipboard refused it, so the user copies it from there. */
+  let linkShown = $state<Record<number, boolean>>({});
   let lastPhases: string[] = [];
   $effect(() => {
     const phases = views.map((a) => a.view.phase);
@@ -65,9 +67,12 @@
   function copyKey(i: number, key: string) {
     void navigator.clipboard.writeText(key).catch(() => (document.getElementById(`net-key-value${sfx(i)}`) as HTMLInputElement | null)?.select());
   }
-  /** Copies a room's words (the machine's name, the room's link); where the clipboard refuses, selects the name. */
-  function copyRoom(i: number, words: string) {
-    void navigator.clipboard.writeText(words).catch(() => (document.getElementById(`net-room-name${sfx(i)}`) as HTMLInputElement | null)?.select());
+  /** Copies a room's words (the machine's name, or the room's link); where the clipboard refuses, selects them in their field. */
+  function copyRoom(i: number, words: string, link: boolean) {
+    void navigator.clipboard.writeText(words).catch(() => {
+      if (link) linkShown = { ...linkShown, [i]: true };
+      queueMicrotask(() => (document.getElementById(`${link ? 'net-room-link-value' : 'net-room-name'}${sfx(i)}`) as HTMLInputElement | null)?.select());
+    });
   }
   function copyServed(i: number, addr: string) {
     void navigator.clipboard.writeText(addr).catch(() => {
@@ -110,7 +115,8 @@
       </div>
       <div id={`net-room${s}`} hidden={!v.room}>
         <label>{t('network:Network.room.name')}<input id={`net-room-name${s}`} type="text" readonly spellcheck="false" value={v.room?.name ?? ''}></label>
-        <div class="net-row"><button id={`net-room-name-copy${s}`} onclick={() => copyRoom(a.index, v.room?.name ?? '')}>{t('network:Network.copy')}</button><button id={`net-room-link-copy${s}`} title={t('network:Network.room.copyLink.title')} onclick={() => copyRoom(a.index, v.room?.link ?? '')}>{t('network:Network.room.copyLink')}</button></div>
+        <div class="net-row"><button id={`net-room-name-copy${s}`} onclick={() => copyRoom(a.index, v.room?.name ?? '', false)}>{t('network:Network.copy')}</button><button id={`net-room-link-copy${s}`} title={t('network:Network.room.copyLink.title')} onclick={() => copyRoom(a.index, v.room?.link ?? '', true)}>{t('network:Network.room.copyLink')}</button></div>
+        {#if linkShown[a.index]}<label>{t('network:Network.room.link')}<input id={`net-room-link-value${s}`} type="text" readonly spellcheck="false" value={v.room?.link ?? ''}></label>{/if}
         <p class="net-note">{v.room?.incoming ? t('network:Network.room.note') : t('network:Network.room.note.off')}</p>
       </div>
       <p id={`net-menu-error${s}`} class="net-note net-menu-error" hidden={!errors[a.index]}>{errors[a.index]?.headline}{#each errors[a.index]?.details ?? [] as d, k (k)}<br>{d}{/each}</p>

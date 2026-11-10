@@ -37,7 +37,7 @@
   const conns = $derived((void ui.net, net.connections));
   let picked = $state<string>();
   let holders = $state<Record<string, string>>({});
-  let editing = $state<Connection>();
+  let editing = $state.raw<Connection>(); // raw: the record goes to the store whole (a deep proxy can't be cloned)
   let control = $state(''), hostname = $state(''), authKey = $state(''), reveal = $state(false);
   let tcExit = $state(true), tcServe = $state(false), tailcat = $state(''), relay = $state(''), allow = $state('');
   let advanced = $state(false), identityKept = $state(false);
@@ -222,7 +222,9 @@
   }
 
   async function forget() {
-    if (!editing || !(await page.netNewAddress(editing))) return;
+    const now = editing && (await page.netNewAddress(editing));
+    if (!now) return;
+    editing = now; // what Save writes back: the new key or identity, not the one the wizard opened with
     identityKept = false;
     roomKept = false;
   }

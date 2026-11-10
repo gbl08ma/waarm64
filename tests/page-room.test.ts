@@ -160,6 +160,7 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     await b.click('#net-connect');
     assert.match(await text(b, '#net-error'), words('network:room.badLink'));
     await b.fill('#net-room-link', ra.room.link);
+    await b.uncheck('#net-keep'); // ephemeral: its key lives in the connection's record, which New name changes
     await b.click('#net-connect');
     await menuSays(b, words('network:network.room', { count: 0 }), 60_000);
     const nameB = await b.locator('#net-room-name').inputValue();
@@ -196,6 +197,27 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     const back = await run(a, `ping -6 -c 2 -W 10 ${nameB} | tail -2`, 60_000);
     assert.match(back, / 0% packet loss/, `A pings B by name: ${back}`);
     assert.equal(t('network:Network.room.copyLink'), await text(a, '#net-room-link-copy'));
+    // Where the clipboard refuses, the link is shown in a field of its own and selected (not the machine's name).
+    await a.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new Error('refused')); });
+    if (!(await a.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await a.locator('#network summary').click();
+    await a.click('#net-room-link-copy');
+    await a.waitForFunction(() => document.activeElement?.id === 'net-room-link-value', null, { timeout: 5_000 });
+    assert.equal(await a.evaluate(() => getSelection()?.toString() || (document.activeElement as HTMLInputElement).value.slice((document.activeElement as HTMLInputElement).selectionStart!, (document.activeElement as HTMLInputElement).selectionEnd!)), ra.room.link);
+
+    // New name, then Save in the same Edit: the new key stays (Save once wrote back the record the wizard opened with).
+    await b.click('#machines-open');
+    await b.click('[data-machine="connections"]');
+    await b.click('li[data-connection] [data-action="edit-connection"]');
+    await b.locator('#net-room-new-name').evaluate((e) => e.closest('details')?.setAttribute('open', ''));
+    await b.click('#net-room-new-name');
+    await b.waitForFunction(() => (document.getElementById('net-room-new-name') as HTMLButtonElement).disabled, null, { timeout: 10_000 });
+    await b.click('#net-connect');
+    await b.waitForFunction(() => !(document.getElementById('net-wizard') as HTMLDialogElement).open, null, { timeout: 30_000 })
+      .catch(async (e) => { throw new Error(`${e}; the wizard says ${await text(b, '#net-error')}; step ${await b.evaluate(() => [...document.querySelectorAll('#net-wizard section:not([hidden])')].map((x) => x.id))}`); });
+    await b.click('[data-action="back"]');
+    await b.locator('#network summary').click();
+    await b.waitForFunction((old) => { const v = (document.getElementById('net-room-name') as HTMLInputElement | null)?.value; return !!v && v !== old; }, nameB, { timeout: 30_000 })
+      .catch(async (e) => { throw new Error(`${e}; the name stayed ${await b.locator('#net-room-name').inputValue()}`); });
   } finally {
     for (const c of contexts) await c.close();
   }

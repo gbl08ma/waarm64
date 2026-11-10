@@ -1467,6 +1467,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 - Loose ends: the menu's login-URL and approval states are `viewOf` unit tests only (no Chromium test against headscale); the page's Buildroot machine has no `network` entry (its kernel has virtio-net, but nothing brings the interface up); IPv6 to the internet through an exit node, and a real Tailscale exit node with its own nameservers, are untested; router advertisements repeat every 60 s only on a port backend; the network tests ran in cloud sessions (Chromium 141) as well as here (153), so recheck with `scripts/ci-net.sh` in the dev VM after a change.
 - The Debian tests (`net-guest`, `page-network`, `net-tailnet`) take ~4 min: they run in `scripts/ci-net.sh`, not `scripts/ci.sh`.
+- **Rooms' loose ends** ([tailnet.md](tailnet.md) "Rooms"; from the out-of-context review of R2–R3, 2026-11-10):
+  `peer_of_rtc` scans every peer for each data-channel message, and `tick` counts the open channels for each peer
+  (~1,000 lookups a packet at the 1,024-peer cap with 64 channels; unmeasured: a map from rtc to peer would end it). A
+  failed offer's backoff is skipped when the peer goes idle (the next packet offers at once). A public room's name
+  typed by hand is matched by its bytes (an NFC and an NFD "Café", or another case, are other rooms, silently; the page
+  could NFC-normalize what it writes into a link). `isPrivateRoom` labels any ID ending in a hyphen and 26 base32
+  letters as private, a public name typed that way too (cosmetic). The tests' Nostr relay waits forever on a frame
+  whose declared length never comes, and keeps every event with `keep` on (fine for its tests).
 - **Several adapters' loose ends** ([network-adapters.md](network-adapters.md)): two tailnets both route
   fd7a:115c:a1e0::/48, so over IPv6 only the earlier adapter's peers are reached (per-peer routes as tailcat's would fix
   it, but a tailnet can have far more peers than a router advertisement carries in one piece, and each joining peer

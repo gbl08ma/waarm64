@@ -136,3 +136,18 @@ test('a member reached by its name, and one with incoming connections off not at
   assert.deepEqual((await of(c)).peers, []);
   await close(a, b, c);
 });
+
+test('two workers sharing a key on its first start get the same one, and it is the one kept', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(`${base}/web/room.ts`); // any document of the origin: the test imports the module itself
+  const r = await page.evaluate(async (url) => {
+    const m = await import(url) as typeof import('../web/room.ts');
+    const key = `shared-${Math.random()}`;
+    const [a, b, c, d] = await Promise.all([m.roomIdentity(key), m.roomIdentity(key), m.roomIdentity(key), m.roomIdentity(key)]);
+    const kept = await m.roomIdentity(key);
+    return [a, b, c, d].map((x) => x.key === kept.key);
+  }, '/web/room.ts');
+  assert.deepEqual(r, [true, true, true, true]);
+  await ctx.close();
+});

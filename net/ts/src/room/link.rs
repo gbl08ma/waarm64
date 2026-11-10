@@ -31,6 +31,10 @@ pub struct Link {
     pub id: String,
     pub nostr: Vec<String>,
     pub derp: Vec<Region>,
+    /// `nostr` and `derp` are the defaults, not the link's: [`Link::encode`] leaves them out, so
+    /// a link handed out follows the defaults as they change.
+    pub default_nostr: bool,
+    pub default_derp: bool,
 }
 
 fn decode(s: &str) -> Result<String, String> {
@@ -87,6 +91,8 @@ impl Link {
             id: decode(id)?,
             nostr: Vec::new(),
             derp: Vec::new(),
+            default_nostr: false,
+            default_derp: false,
         };
         for part in query.split('&').filter(|p| !p.is_empty()) {
             let (k, v) = part.split_once('=').unwrap_or((part, ""));
@@ -108,9 +114,11 @@ impl Link {
         }
         if l.nostr.is_empty() {
             l.nostr = DEFAULT_NOSTR.map(String::from).to_vec();
+            l.default_nostr = true;
         }
         if l.derp.is_empty() {
             l.derp = vec![Region::Map(0)];
+            l.default_derp = true;
         }
         l.check()
     }
@@ -121,6 +129,8 @@ impl Link {
             id: id.trim().into(),
             nostr: DEFAULT_NOSTR.map(String::from).to_vec(),
             derp: vec![Region::Map(0)],
+            default_nostr: true,
+            default_derp: true,
         }
         .check()
     }
@@ -143,15 +153,12 @@ impl Link {
     /// The link's text, which [`Link::parse`] reads back.
     pub fn encode(&self) -> String {
         let mut s = format!("{SCHEME}{}", encode(&self.id));
-        let parts = self
-            .nostr
-            .iter()
-            .map(|n| format!("nostr={}", encode(n)))
-            .chain(
-                self.derp
-                    .iter()
-                    .map(|r| format!("derp={}", encode(&region_text(r)))),
-            );
+        let nostr: &[String] = if self.default_nostr { &[] } else { &self.nostr };
+        let derp: &[Region] = if self.default_derp { &[] } else { &self.derp };
+        let parts = nostr.iter().map(|n| format!("nostr={}", encode(n))).chain(
+            derp.iter()
+                .map(|r| format!("derp={}", encode(&region_text(r)))),
+        );
         for (i, p) in parts.enumerate() {
             s.push(if i == 0 { '?' } else { '&' });
             s.push_str(&p);
@@ -194,6 +201,16 @@ mod tests {
         assert_eq!(l.derp, [Region::Map(0)]);
         assert_eq!(l.nostr.len(), DEFAULT_NOSTR.len());
         assert_eq!(Link::parse(&l.encode()).unwrap(), l);
+    }
+
+    #[test]
+    fn the_defaults_arent_written_into_a_link() {
+        for s in ["webpc-room:abc", "abc"] {
+            assert_eq!(Link::parse(s).unwrap().encode(), "webpc-room:abc", "{s}");
+        }
+        let only = Link::parse("webpc-room:abc?derp=900").unwrap();
+        assert_eq!(only.nostr.len(), DEFAULT_NOSTR.len());
+        assert_eq!(only.encode(), "webpc-room:abc?derp=900");
     }
 
     #[test]

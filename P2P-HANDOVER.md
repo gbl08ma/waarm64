@@ -37,16 +37,29 @@ cloud session can measure, R4 what needs a person or the dev VM.
   guests in one Chromium: Create, Join by link, the wizard's refusals, the resolver asked directly and through
   resolved, pings both ways by name; ~2 min; in `scripts/ci-net.sh`'s list). All passed in this session.
 
-**CI:** `scripts/ci.sh` OK on R3 (1,669 s; JS 961 passed, 0 failed, 569 skipped; the agent's two root-only tests skipped, docs/cloud.md); `tests/room-browser.test.ts`, `tests/nostr-relay.test.ts`, `tests/ts-client.test.ts` and `tests/page-room.test.ts` passed alone (`WEBPC_NET_TESTS=1 WEBPC_DISTROS=debian WEBPC_TAILCAT=1`). Before: `scripts/ci.sh` OK on R2 (1,506 s; JS 971 passed, 0 failed, 559 skipped; the agent's two root-only tests skipped, docs/cloud.md); `tests/page-room.test.ts`, `tests/room-browser.test.ts` passed alone (`WEBPC_NET_TESTS=1 WEBPC_DISTROS=debian WEBPC_TAILCAT=1`). **Not done here** (R4's first runs): `scripts/ci-net.sh` whole, `node bench/net/room.ts
+**CI:** `scripts/ci.sh` OK on the review's fixes (1,325 s; JS 973 passed, 0 failed, 560 skipped; the agent's two root-only tests skipped); `tests/room-browser.test.ts`, `tests/nostr-relay.test.ts`, `tests/ts-client.test.ts` and `tests/page-room.test.ts` passed alone. Before: `scripts/ci.sh` OK on R3 (1,669 s; JS 961 passed, 0 failed, 569 skipped; the agent's two root-only tests skipped, docs/cloud.md); `tests/room-browser.test.ts`, `tests/nostr-relay.test.ts`, `tests/ts-client.test.ts` and `tests/page-room.test.ts` passed alone (`WEBPC_NET_TESTS=1 WEBPC_DISTROS=debian WEBPC_TAILCAT=1`). Before: `scripts/ci.sh` OK on R2 (1,506 s; JS 971 passed, 0 failed, 559 skipped; the agent's two root-only tests skipped, docs/cloud.md); `tests/page-room.test.ts`, `tests/room-browser.test.ts` passed alone (`WEBPC_NET_TESTS=1 WEBPC_DISTROS=debian WEBPC_TAILCAT=1`). **Not done here** (R4's first runs): `scripts/ci-net.sh` whole, `node bench/net/room.ts
 5 10000 <json>` (R0's numbers), and R2's room on a second adapter beside the local helper (webpc-net is a private
 repository a cloud session can't fetch).
 
-## Next: R4 (plan §7), and a review
+## The review of R2–R3 (2026-11-10)
+
+An out-of-context review (a fresh agent, branch `review/p2p-rooms`, `P2P-ROOMS-REVIEW.md`) found ten defects; nine are
+fixed, each with its test failing first: a failed client kept reconnecting to its Nostr relays; a member's signalling
+could make the page create RTCPeerConnections as fast as it sent (a peer's new connection now at most every 2 s, our
+offers 4 a second); the copied link wrote the module's placeholder defaults into it; the page's members-reached list
+only grew (a `peer-gone` event now); events under our tags were opened without a budget (256 a second); two workers
+sharing a key raced to make it on its first start (one `add`); the page's link checks disagreed with link.rs (escapes
+after raw non-ASCII, ports past 65535); the edit wizard's Save undid New name, and Save of an ephemeral room
+connection always failed (a Svelte proxy `structuredClone` refused, found by the new test); Copy room link's fallback
+selected the name. The smaller notes are in docs/backlog.md "Rooms' loose ends". The tenth, two room connections sharing a key
+breaking each other on one DERP region (confirmed against the rig's derper), went to the user, who chose one at a
+time: a running room connection holds its key's lock (`roomKeyLock`, web/app/net-live.ts; `tests/net-live.test.ts`).
+
+## Next: R4 (plan §7)
 
 R4 needs the dev VM or a person: `scripts/ci-net.sh` whole, R0's numbers again, the room on a second adapter beside
 the local helper, public Nostr relays against plan §7's "What a room needs from a Nostr relay", the public tailcat
 relays carrying a room, two browsers on different networks, how often ICE fails; the defaults (relays, DERP map,
-STUN) come out of it. A cloud session can meanwhile run the out-of-context review due since R1's (CLAUDE.md: R2's page
-and R3's changes to room.rs; a fresh agent on a `review/p2p` branch).
+STUN) come out of it.
 
 Open questions for the user stay in plan §9 (the default public room, the relays); the seal's reuse of the WireGuard key is decided (plan §1, 2026-11-10).

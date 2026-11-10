@@ -88,6 +88,8 @@ fn link(derp: &[&str]) -> Link {
             .iter()
             .map(|d| Region::Inline(tailcat::parse_relay(d).unwrap()))
             .collect(),
+        default_nostr: false,
+        default_derp: false,
     }
 }
 
@@ -1203,6 +1205,7 @@ fn past_the_channel_cap_peers_go_through_the_relay() {
         n.reach(0, j, b"hi");
         n.advance(Duration::from_millis(200)); // within the lookups' rate
     }
+    n.advance(Duration::from_secs(5)); // the last waited for the connections' rate
     let open = n.ends.keys().filter(|(i, _)| *i == 0).count();
     assert_eq!(open, MAX_RTC, "node 0 holds at most {MAX_RTC} connections");
     for j in 1..seeds.len() {
@@ -1223,6 +1226,7 @@ fn a_peer_made_again_on_one_side_gets_its_channel_back() {
     n.got(1);
     let o = if public(1) < public(2) { 0 } else { 1 };
     assert_eq!(n.paths(o), ["direct"]);
+    n.advance(RTC_GAP);
     // The offerer forgets the other (its region was down a while, say) and makes it again; the
     // other keeps its peer, with what it saw of the offerer's signalling.
     let other = public(if o == 0 { 2 } else { 1 });
@@ -1381,4 +1385,111 @@ fn a_failed_map_doesnt_stop_a_room_whose_home_is_its_own_derper() {
     n.nodes[0].c.fetched(1, false, b"", now);
     n.run();
     assert_eq!(n.nodes[0].c.state, State::Running);
+}
+
+#[test]
+fn a_failed_client_stays_off_nostr() {
+    let mut cfg = config(1);
+    cfg.link.derp = vec![Region::Map(0)];
+    let now = Instant::now();
+    let mut c = Client::new(cfg, now).unwrap();
+    while c.poll().is_some() {}
+    c.fetched(1, false, b"", now); // the map doesn't load: Failed, before the relay's EOSE
+    while c.poll().is_some() {}
+    assert_eq!(c.state, State::Failed);
+    let mut t = now;
+    for _ in 0..30 {
+        let Some(d) = c.deadline() else { break };
+        t = d.max(t);
+        c.tick(t);
+        while let Some(a) = c.poll() {
+            assert!(
+                !matches!(a, Action::WsOpen { .. }),
+                "opened again at {:?}",
+                t - now
+            );
+        }
+    }
+}
+
+#[test]
+fn a_member_cant_churn_our_peer_connections() {
+    let mut n = Net::new(configs(&[1, 2]));
+    n.reach(0, 1, b"a");
+    let o = if public(1) < public(2) { 0 } else { 1 };
+    let a = 1 - o;
+    let id = n.nodes[o].c.by_addr[&n.addr(a)];
+    let before = n.nodes[a].c.next_rtc;
+    let now = n.now;
+    for k in 0..200u32 {
+        let m = Msg {
+            t: "sig".into(),
+            o: 1000 + k,
+            d: json!({ "candidate": "x" }).to_string(),
+            ..Msg::default()
+        };
+        n.nodes[o].c.signal(id, m, now);
+        n.run();
+    }
+    assert_eq!(
+        n.nodes[a].c.next_rtc - before,
+        0,
+        "within the gap of the last"
+    );
+    // Past the gap, one more, however many come.
+    n.now += RTC_GAP;
+    let now = n.now;
+    for k in 0..200u32 {
+        let m = Msg {
+            t: "sig".into(),
+            o: 2000 + k,
+            d: json!({ "candidate": "x" }).to_string(),
+            ..Msg::default()
+        };
+        n.nodes[o].c.signal(id, m, now);
+        n.run();
+    }
+    assert_eq!(n.nodes[a].c.next_rtc - before, 1);
+}
+
+#[test]
+fn a_forgotten_peer_says_so() {
+    let mut n = Net::new(configs(&[1, 2]));
+    n.reach(0, 1, b"a");
+    n.advance(PEER_IDLE + Duration::from_secs(5));
+    assert!(n.nodes[0].c.peers.is_empty());
+    let gone: Vec<&Value> = n.nodes[0]
+        .events
+        .iter()
+        .filter(|e| e["type"] == "peer-gone")
+        .collect();
+    assert_eq!(gone.len(), 1);
+    assert_eq!(gone[0]["address6"], json!(n.addr(1)));
+}
+
+#[test]
+fn junk_under_our_tag_is_opened_only_within_a_budget() {
+    let mut n = Net::new(configs(&[2]));
+    let room = n.nodes[0].c.room.clone();
+    let target = n.addr(0);
+    let tag = room.tag_for(&target, T0 / 3600);
+    let junk = b64().encode([7u8; lookup::SIZE]);
+    for _ in 0..LOOKUP_EVENTS_PER_SECOND {
+        let e = nostr::Author::random()
+            .unwrap()
+            .event(KIND, &tag, &junk, T0);
+        n.forward(&e);
+    }
+    n.run();
+    let good = |nonce: u8| Lookup {
+        key: public(1),
+        region: 0,
+        time: T0,
+        nonce: [nonce; 16],
+    };
+    n.inject(&good(1), &room, None, target, T0 / 3600);
+    assert!(n.nodes[0].c.peers.is_empty(), "past the second's budget");
+    n.advance(Duration::from_millis(1001));
+    n.inject(&good(2), &room, None, target, T0 / 3600);
+    assert_eq!(n.nodes[0].c.peers.len(), 1, "the next second's");
 }

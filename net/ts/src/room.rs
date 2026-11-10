@@ -85,6 +85,10 @@ const LOOKUP_AT: [Duration; 3] = [
 const LOOKUP_GIVE_UP: Duration = Duration::from_secs(6);
 const UNREACHABLE_HOLD: Duration = Duration::from_secs(5);
 const LOOKUP_QUEUE: usize = 16;
+/// Events under our tags are opened (an X25519 and up to two decryptions each) at most this many
+/// a second, and dropped past it: anyone with a node's name, or the relay, can publish junk under
+/// its tag. Well above the call backs' budget, since a dialer sends each lookup up to three times.
+const LOOKUP_EVENTS_PER_SECOND: usize = 256;
 /// A target drops lookups this much older (or newer) than its clock: the tags' window, as a
 /// dialer's clock may be off by most of an hour (plan §3); a copy within it is dropped by its
 /// nonce, remembered for twice as long (at most [`MAX_NONCES`]).
@@ -126,6 +130,12 @@ const RTC_BACKOFF_MAX: Duration = Duration::from_secs(300);
 /// A channel we sent on with nothing back for this long has stalled (WireGuard's passive
 /// keepalive answers data within 10 s): back to DERP.
 const RTC_STALL: Duration = Duration::from_secs(15);
+/// A peer's new WebRTC connection comes at most this often (an answerer ignores new attempts
+/// sooner; an offerer waits), so a member's signalling can't make the page set up connections as
+/// fast as it sends; our own offers, all peers', at most [`RTC_NEW_PER_SECOND`] a second (an
+/// answerer doesn't apply that: an ignored offer costs its offerer 40 s).
+const RTC_GAP: Duration = Duration::from_secs(2);
+const RTC_NEW_PER_SECOND: usize = 4;
 /// The most WebRTC connections open at once; peers beyond go through DERP.
 pub const MAX_RTC: usize = 64;
 /// A channel without the guests' traffic this long is closed (the next packet offers again).
@@ -351,6 +361,8 @@ struct Peer {
     /// The offerer's attempts so far (the answerer: the last one it took).
     attempt: u32,
     backoff: Duration,
+    /// When we last made a WebRTC connection for it ([`RTC_GAP`]).
+    rtc_made: Option<Instant>,
 }
 
 /// What signalling carries, as JSON inside the tunnel.
@@ -461,6 +473,9 @@ pub struct Client {
     trials_in: VecDeque<Instant>,
     /// Call backs waiting for room in `trials_out`: the dialer's key and region.
     calls_waiting: VecDeque<([u8; 32], usize)>,
+    /// When the last events under our tags were opened, and the last WebRTC connections made.
+    lookups_in: VecDeque<Instant>,
+    rtc_new: VecDeque<Instant>,
     published: VecDeque<Instant>,
     /// The DERP map is awaited.
     map_pending: bool,
@@ -566,6 +581,8 @@ impl Client {
             trials_out: VecDeque::new(),
             trials_in: VecDeque::new(),
             calls_waiting: VecDeque::new(),
+            lookups_in: VecDeque::new(),
+            rtc_new: VecDeque::new(),
             published: VecDeque::new(),
             map_pending: false,
             flows: BTreeMap::new(),
@@ -976,7 +993,10 @@ impl Client {
 
     /// An event under tag `x`: a lookup for us, if it opens, is called back.
     fn on_lookup(&mut self, x: &str, content: &str, now: Instant) {
-        if self.state != State::Running || !self.tags().iter().any(|t| t == x) {
+        if self.state != State::Running
+            || !self.tags().iter().any(|t| t == x)
+            || !Self::take(&mut self.lookups_in, LOOKUP_EVENTS_PER_SECOND, now)
+        {
             return;
         }
         let Ok(b) = b64().decode(content) else { return };
@@ -1150,6 +1170,7 @@ impl Client {
                 },
                 attempt: 0,
                 backoff: RTC_BACKOFF,
+                rtc_made: None,
             },
         );
         self.by_addr.insert(addr, id);
@@ -1158,6 +1179,9 @@ impl Client {
     }
 
     fn forget(&mut self, id: PeerId) {
+        if self.peers.get(&id).is_some_and(|p| p.confirmed) {
+            self.peer_event(id, "peer-gone");
+        }
         self.close_rtc(id, None);
         self.wg.remove_peer(id);
         if let Some(p) = self.peers.remove(&id) {
@@ -1574,6 +1598,9 @@ impl Client {
         if offerer || o <= p.attempt {
             return; // not ours to answer, or an older attempt's
         }
+        if self.peers[&id].rtc_made.is_some_and(|t| now < t + RTC_GAP) {
+            return; // too soon: the offerer's attempt runs out and it backs off
+        }
         self.close_rtc(id, None);
         self.peers.get_mut(&id).unwrap().attempt = o;
         if self.rtc_count() >= MAX_RTC {
@@ -1581,6 +1608,7 @@ impl Client {
             return self.signal_at(id, "bye", o, now);
         }
         // A new offer: the page answers it on a new connection.
+        self.rtc_made(id, now);
         let rtc = self.next_rtc;
         self.next_rtc += 1;
         self.peers.get_mut(&id).unwrap().rtc = Rtc::Connecting {
@@ -1642,7 +1670,30 @@ impl Client {
         p.rtc = Rtc::Idle { next };
     }
 
+    /// When a new WebRTC connection for peer `id` may be made, if not now ([`RTC_GAP`],
+    /// [`RTC_NEW_PER_SECOND`]).
+    fn rtc_wait(&mut self, id: PeerId, now: Instant) -> Option<Instant> {
+        let gap = self.peers[&id]
+            .rtc_made
+            .map(|t| t + RTC_GAP)
+            .filter(|t| *t > now);
+        let all = (!Self::room_in(&mut self.rtc_new, RTC_NEW_PER_SECOND, now))
+            .then(|| self.rtc_new.front().map(|t| *t + Duration::from_secs(1)))
+            .flatten();
+        gap.max(all)
+    }
+
+    fn rtc_made(&mut self, id: PeerId, now: Instant) {
+        self.peers.get_mut(&id).unwrap().rtc_made = Some(now);
+        self.rtc_new.push_back(now);
+    }
+
     fn offer(&mut self, id: PeerId, now: Instant) {
+        if let Some(t) = self.rtc_wait(id, now) {
+            self.peers.get_mut(&id).unwrap().rtc = Rtc::Idle { next: Some(t) };
+            return;
+        }
+        self.rtc_made(id, now);
         let rtc = self.next_rtc;
         self.next_rtc += 1;
         let p = self.peers.get_mut(&id).unwrap();
@@ -1887,6 +1938,9 @@ impl Client {
     }
 
     pub fn tick(&mut self, now: Instant) {
+        if self.state == State::Failed {
+            return;
+        }
         let r = self.wg.dispatch_events(now);
         self.send_to_peers(r.to_peers, now);
         let running = self.state == State::Running;
@@ -2046,6 +2100,9 @@ impl Client {
     }
 
     pub fn deadline(&self) -> Option<Instant> {
+        if self.state == State::Failed {
+            return None; // closed: nothing comes back
+        }
         let running = self.state == State::Running;
         let peers = self.peers.values().flat_map(|p| {
             [
@@ -2110,6 +2167,9 @@ impl Client {
                 self.actions.push_back(Action::WsClose { conn });
             }
             n.reconnect_at = None;
+            n.answer_by = None;
+            n.check_at = None;
+            n.sub = None;
         }
         self.pending.clear();
         self.state = State::Failed;

@@ -1782,28 +1782,30 @@ async function netLogoutConnection(c: Connection) {
  * Forgets tailcat connection `c`'s served identity, after asking: whoever has its address can't come in any more. A room
  * connection gets a new key (so a new address and name in its room); a key it shared with another stays that one's.
  */
-async function netNewAddress(c: Connection) {
+async function netNewAddress(c: Connection): Promise<Connection | undefined> {
   const r = c.room;
   if (r) {
-    if (!(await ask.confirm(t('network:main.newName.confirm', { name: c.name }), { ok: t('network:main.newName.ok'), danger: true }))) return false;
+    if (!(await ask.confirm(t('network:main.newName.confirm', { name: c.name }), { ok: t('network:main.newName.ok'), danger: true }))) return undefined;
     if (c.ephemeral) await net.conns.put({ ...c, room: { ...r, identity: newRoomIdentity() } });
     else {
       const shared = await net.conns.sharesKey(c);
       await net.conns.put({ ...c, room: { ...r, identityKey: shared ? `${c.id}.${Date.now()}` : r.identityKey } });
       if (!shared) await forgetRoomIdentity(r.identityKey);
     }
-    if (net.runs(c.id) >= 0) await net.edit((await net.conns.get(c.id))!);
-    return true;
+    const now = (await net.conns.get(c.id))!;
+    if (net.runs(c.id) >= 0) await net.edit(now);
+    return now;
   }
   const tc = c.tailcat;
-  if (!tc) return false;
-  if (!(await ask.confirm(t('network:main.newAddress.confirm', { name: c.name }), { ok: t('network:main.newAddress.ok'), danger: true }))) return false;
+  if (!tc) return undefined;
+  if (!(await ask.confirm(t('network:main.newAddress.confirm', { name: c.name }), { ok: t('network:main.newAddress.ok'), danger: true }))) return undefined;
   // An ephemeral connection's identity is in the page's memory: a new one; a stored one's is made again at its next serve.
   if (c.ephemeral) await net.conns.put({ ...c, tailcat: { ...tc, identity: newTailcatIdentity() } });
   else await forgetTailcatIdentity(tc.identityKey);
   const at = net.runs(c.id);
-  if (at >= 0) await net.edit((await net.conns.get(c.id))!);
-  return true;
+  const now = (await net.conns.get(c.id))!;
+  if (at >= 0) await net.edit(now);
+  return now;
 }
 
 // Full screen, with the Keyboard Lock API (Chromium) so that Ctrl+W, Ctrl+T, Esc and the like reach

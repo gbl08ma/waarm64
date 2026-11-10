@@ -163,6 +163,7 @@ export function startRoom(config: StartRoom, onEvent: (e: TsEvent) => void = () 
           else if (ev.type === 'lease') lease = ev.lease;
           else if (ev.type === 'peer') peers.set(ev.key, { key: ev.key, address6: ev.address6, path: peers.get(ev.key)?.path ?? 'relay' });
           else if (ev.type === 'path') peers.set(ev.key, { key: ev.key, address6: ev.address6, path: ev.path });
+          else if (ev.type === 'peer-gone') peers.delete(ev.key);
           onEvent(ev);
         }
       }
@@ -204,7 +205,7 @@ function idb<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T
       const db = open.result;
       const r = f(db.transaction('identity', mode).objectStore('identity'));
       r.onsuccess = () => { db.close(); resolve(r.result); };
-      r.onerror = () => { db.close(); reject(r.error); };
+      r.onerror = (e) => { e.preventDefault(); db.close(); reject(r.error); }; // handled here (`add`'s refusal)
     };
   });
 }
@@ -216,11 +217,10 @@ export const newRoomIdentity = (): RoomIdentity => ({ key: hex(crypto.getRandomV
 
 /** The identity kept under `key`, made the first time. */
 export async function roomIdentity(key: string): Promise<RoomIdentity> {
-  const kept = await idb<RoomIdentity | undefined>('readonly', (s) => s.get(key));
-  if (kept) return kept;
   const made = newRoomIdentity();
-  await idb('readwrite', (s) => s.put(made, key));
-  return made;
+  // `add` refuses a key that's there (two workers sharing it, starting at once): then the kept one is read.
+  const added = await idb('readwrite', (s) => s.add(made, key)).then(() => true, () => false);
+  return added ? made : (await idb<RoomIdentity | undefined>('readonly', (s) => s.get(key))) ?? Promise.reject(new Error(`no room identity under ${key}`));
 }
 
 /** Whether there's an identity kept under `key`. */
@@ -274,7 +274,7 @@ function dec(s: string): string | undefined {
   const b = new TextEncoder().encode(s);
   for (let i = 0; i < b.length; i++) {
     if (b[i] === 0x25) {
-      const h = s.slice(i + 1, i + 3);
+      const h = String.fromCharCode(b[i + 1] ?? 0, b[i + 2] ?? 0); // the bytes', as link.rs reads them
       if (!/^[0-9a-fA-F]{2}$/.test(h)) return undefined;
       out.push(parseInt(h, 16));
       i += 2;
@@ -300,7 +300,7 @@ export function roomLink(l: RoomLink): { link: string } | { error: Msg } {
   const derp = l.derp.map((d) => d.trim()).filter((d) => d);
   const badRelay = nostr.find((n) => !/^wss?:\/\/[^\s/?#]+/.test(n));
   if (badRelay) return { error: msg('network:room.badRelay', { relay: badRelay }) };
-  const badDerp = derp.find((d) => !DERP.test(d));
+  const badDerp = derp.find((d) => !DERP.test(d) || Number(/:(\d+)$/.exec(d)?.[1] ?? 0) > 65535);
   if (badDerp) return { error: msg('network:room.badDerp', { relay: badDerp }) };
   if (nostr.length > ROOM_MAX_RELAYS || derp.length > ROOM_MAX_RELAYS) return { error: msg('network:room.tooMany', { max: ROOM_MAX_RELAYS }) };
   const parts = [...nostr.map((n) => `nostr=${enc(n)}`), ...derp.map((d) => `derp=${enc(d)}`)];
@@ -399,6 +399,7 @@ export function startRoomNet(c: RoomNetConfig, onEvent: (m: FromTailscale) => vo
       if (ev.type === 'self') me = ev;
       else if (ev.type === 'lease') lease = ev.lease;
       else if (ev.type === 'peer') peers.set(ev.key, { name: ev.name ?? '', address6: ev.address6 });
+      else if (ev.type === 'peer-gone') peers.delete(ev.key);
       else return;
       changed();
     },

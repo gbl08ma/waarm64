@@ -95,6 +95,8 @@ export type TsEvent =
   | { type: 'client' | 'client-gone'; key: string; address6: number[] }
   /** A room: a peer whose data decrypted, and the path a peer's packets take. */
   | { type: 'peer'; key: string; address6: number[]; name?: string }
+  /** A peer confirmed earlier is forgotten (idle, lost, or a trial that ran out). */
+  | { type: 'peer-gone'; key: string; address6: number[]; name?: string }
   | { type: 'path'; key: string; address6: number[]; path: 'direct' | 'relay' }
   | { type: 'log'; msg: string }
   /** Tailscale: Go's state names (`Starting`, `NeedsLogin`, `Running`), or `Failed` with why. */

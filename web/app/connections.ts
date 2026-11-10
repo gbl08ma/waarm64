@@ -99,6 +99,22 @@ export type ConnectionState = {
 /** The connection's Web Lock: held while a running machine has it (in any tab). */
 export const connectionLock = (id: string) => `webpc-net:${id}`;
 
+/**
+ * The lock on a room connection's node key, which a running room connection holds beside its own: two connections on
+ * one key, each with its own DERP connection under it, break each other on a shared region (a derper delivers a key's
+ * packets to one connection), so one key runs in one connection at a time (docs/plans/networking-p2p.md §1). Named
+ * by the key's entry in `webpc-room`, or by a hash of an ephemeral one's key (never the key itself).
+ */
+export async function roomKeyLock(r: RoomConnection): Promise<string> {
+  if (!r.identity) return `webpc-room-key:${r.identityKey}`;
+  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(r.identity.key)));
+  return `webpc-room-key:#${Array.from(h.subarray(0, 16), (b) => b.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Whether two room connections use one node key. */
+export const sameRoomKey = (a: RoomConnection, b: RoomConnection) =>
+  a.identity || b.identity ? a.identity?.key === b.identity?.key : a.identityKey === b.identityKey;
+
 /** A connection's default name: Tailscale, a Headscale's host, tailcat, This computer, or a room's name. */
 export function defaultName(c: Pick<NewConnection, 'kind' | 'tailnet' | 'room'>): string {
   if (c.kind === 'tailcat') return 'tailcat';

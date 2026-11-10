@@ -6,7 +6,7 @@
 // hands it the machine's adapters at each start. DOM-free: tests/net-live.test.ts runs it over a memory store.
 import { errorText, msg, MsgError, text, type Msg } from '../i18n.ts';
 import { isMsg } from '../msg.ts';
-import { connectionLock, Connections, type Connection, type ConnectionState } from './connections.ts';
+import { connectionLock, Connections, roomKeyLock, sameRoomKey, type Connection, type ConnectionState } from './connections.ts';
 import { heldLocks, Locks } from './locks.ts';
 import { createNetwork, logOutNode, primaryOf, ranksOf, viewOf, type Connect, type Network, type NetworkView } from './network.ts';
 import type { Adapter } from './shape.ts';
@@ -98,6 +98,8 @@ export class PageNetwork {
   private leaving = new Set<string>();
   /** The connection each adapter's client runs, while one does. */
   private running: (string | undefined)[] = [];
+  /** The room key locks the running room connections hold, by connection (`roomKeyLock`). */
+  private keyLocks = new Map<string, string>();
   /** What the page has to say about each adapter: a message, or an error its connecting met. */
   private notes: (Msg | unknown)[] = [];
   private primary = -1;
@@ -117,8 +119,16 @@ export class PageNetwork {
     const n = this.nets[i];
     const id = this.running[i];
     this.running[i] = undefined;
-    if (n?.active()) void n.disconnect().then(() => { if (id && !this.running.includes(id)) this.locks.drop(connectionLock(id)); });
-    else if (id && !this.running.includes(id)) this.locks.drop(connectionLock(id));
+    if (n?.active()) void n.disconnect().then(() => { if (id && !this.running.includes(id)) this.let(id); });
+    else if (id && !this.running.includes(id)) this.let(id);
+  }
+
+  /** Lets connection `id` go: its lock, and its room key's. */
+  private let(id: string) {
+    this.locks.drop(connectionLock(id));
+    const k = this.keyLocks.get(id);
+    this.keyLocks.delete(id);
+    if (k) this.locks.drop(k);
   }
 
   /**
@@ -223,7 +233,7 @@ export class PageNetwork {
     if (this.on) return this.connect(i, c, authKey);
     await this.conns.put({ ...c, connectAtStart: true });
     // `takeFrom`'s, if the machine stopped while it was asked.
-    if (!this.running.includes(c.id)) this.locks.drop(connectionLock(c.id));
+    if (!this.running.includes(c.id)) this.let(c.id);
     await this.refresh();
   }
 
@@ -250,11 +260,24 @@ export class PageNetwork {
       if (!this.running.includes(c.id)) this.locks.drop(lock);
       throw refused(new MsgError('network:net-live.off'));
     }
+    if (c.room) {
+      // One key runs in one connection at a time (`roomKeyLock`): this page's other adapters first, then other tabs.
+      const others = await Promise.all(this.running.map((id, k) => (id && id !== c.id && k !== i ? this.conns.get(id) : undefined)));
+      const here = others.find((o) => o?.room && sameRoomKey(o.room, c.room!));
+      const key = await roomKeyLock(c.room);
+      if (here || !(await this.locks.take(key))) {
+        if (!this.running.includes(c.id)) this.locks.drop(lock);
+        const holder = here ? undefined : await this.locks.holder(key);
+        throw refused(here ? new MsgError('network:net-live.keyInUse', { other: here.name })
+          : holder ? new MsgError('network:net-live.keyHeld', { holder }) : new MsgError('network:net-live.keyHeldElsewhere'));
+      }
+      this.keyLocks.set(c.id, key);
+    }
     if (n.active()) await this.disconnect(i, false);
     try {
       n.connect(connectOf(c, authKey));
     } catch (e) {
-      this.locks.drop(lock);
+      this.let(c.id);
       throw refused(e);
     }
     this.running[i] = c.id;
@@ -269,7 +292,7 @@ export class PageNetwork {
     this.running[i] = undefined;
     await this.nets[i]?.disconnect();
     if (id) {
-      this.locks.drop(connectionLock(id));
+      this.let(id);
       const c = byUser ? await this.conns.get(id) : undefined;
       if (c) await this.conns.put({ ...c, connectAtStart: false });
     }
@@ -376,10 +399,11 @@ export class PageNetwork {
     if ([...this.leaving].some((id) => connectionLock(id) === lock)) return; // not until the node is out
     const i = this.running.findIndex((id) => id && connectionLock(id) === lock);
     if (i < 0) return this.locks.drop(lock);
-    const c = await this.conns.get(this.running[i]!);
+    const id = this.running[i]!;
+    const c = await this.conns.get(id);
     this.running[i] = undefined;
     await this.nets[i].disconnect();
-    this.locks.drop(lock);
+    if (!this.running.includes(id)) this.let(id);
     this.notes[i] = c ? msg('network:net-live.taken', { name: c.name }) : msg('network:net-live.takenUnnamed');
     await this.refresh();
   }

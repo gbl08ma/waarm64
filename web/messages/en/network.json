@@ -256,7 +256,7 @@
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: a choice of “Key”: share another room connection's key. {{name}} is that connection's name."
   },
   "NetWizard.room.key.note": {
-    "message": "With another connection's key, this machine's name in this room starts the same as in that connection's room, so members of both rooms can tell it's the same machine.",
+    "message": "With another connection's key, this machine's name in this room starts the same as in that connection's room, so members of both rooms can tell it's the same machine. Only one of the two connections can be connected at a time.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the text under “Key”."
   },
   "NetWizard.room.newName": {
@@ -507,6 +507,10 @@
     "message": "This machine's name in the room",
     "note": "The toolbar's Network menu: the label of the field with the machine's name in a peer-to-peer room (<key>.<tag>.p2p.internal), when its connection is a room's."
   },
+  "Network.room.link": {
+    "message": "The room's link",
+    "note": "The toolbar's Network menu: the label of a field with the room's link (webpc-room:…), shown under the machine's name in a room when Copy room link couldn't use the clipboard, so the user copies it from there."
+  },
   "Network.room.copyLink": {
     "message": "Copy room link",
     "note": "The toolbar's Network menu: the button, beside the machine's name in a room, that copies the room's link."
@@ -554,6 +558,18 @@
   "connections.thisComputer": {
     "message": "Your computer",
     "note": "The default name of a new connection through the local helper (webpc-net), as the Network wizard, the Network menu and the Machines page's Connections show it. It is stored with the connection, which the user can rename."
+  },
+  "net-live.keyInUse": {
+    "message": "Its key is in use by the connection {{other}} on another adapter: a key runs in one room connection at a time.",
+    "note": "Why a room connection didn't connect (after net-live.notConnected): it uses the same node key as another room connection (the Advanced setting that takes another connection's key), which another adapter of this machine is running. {{other}}: that connection's name."
+  },
+  "net-live.keyHeld": {
+    "message": "Its key is in use by a room connection of {{holder}}: a key runs in one room connection at a time.",
+    "note": "Why a room connection didn't connect (after net-live.notConnected): another tab's machine runs a room connection with the same node key. {{holder}}: that machine's name."
+  },
+  "net-live.keyHeldElsewhere": {
+    "message": "Its key is in use by a room connection in another tab: a key runs in one room connection at a time.",
+    "note": "As net-live.keyHeld, when the other tab didn't say its machine's name."
   },
   "net-live.held": {
     "message": "{{name}} is in use by {{holder}}.",

@@ -163,7 +163,8 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
 - **A room's link** (`room::Link`): `webpc-room:<id>?nostr=<wss URL>&…&derp=<region>&…`, each part percent-encoded; a
   `derp` is a region ID of the DERP map (0: its first) or a derper inline (`host[:port]`). Anything without the scheme
   is a bare ID, with the defaults (placeholders until R4: three public Nostr relays, the DERP map's first region). At
-  most 8 relays and 8 regions, an ID of at most 256 bytes. The `self` event carries the link the client read.
+  most 8 relays and 8 regions, an ID of at most 256 bytes. The `self` event carries the link the client read, without
+  the parts that were the defaults (`Link::encode`), so a link copied from the menu follows the defaults as they change.
 - **What the ID derives:** BLAKE2s with labels of their own gives the room's /48 (`fd` and 40 bits; one that would be
   tailcat's `fd7a:115c:a1e0::/48` takes the next label), its tag (those 40 bits in base32), the tag salt and lookup key
   of its lookups, and the WireGuard pre-shared key every pair in the room uses (`room::Room`). A node's address is the
@@ -195,7 +196,8 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
   drops lookups more than an hour off its clock, a nonce it has seen (remembered for three hours, 8,192 at most, the
   oldest let go first; a reloaded target forgets them, so a relay may replay a recent lookup to it, which costs one
   unwanted call back that the dialer refuses unless it takes incoming connections), a region outside the link, its
-  own key, and 1,024 peers at most. Call backs are 16 a second; past that they wait their turn (first come first
+  own key, and 1,024 peers at most. Events under our tags are opened (an X25519 and up to two decryptions) at most 256
+  a second, the rest dropped unread: anyone with a node's name, or the relay, can publish junk under its tag. Call backs are 16 a second; past that they wait their turn (first come first
   served, a key's later lookup only updating its region; 64 at most, so served within 4 s, before the dialer gives
   up; more are dropped), so a crowd of dialers gets in at that rate. When each dials the other at once, only the lower
   key calls back (crossed handshakes each abandon their own for the other's in `ts_tunnel`, and neither completes). A
@@ -243,14 +245,19 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
   connections (`MAX_RTC`): past that the offerer waits for the guests' next packet, and an answerer refuses with a
   `bye`; a channel without the guests' traffic for 60 s (`RTC_IDLE`) is closed, and the offerer offers again at the
   next packet either way (a `bye` for an open channel isn't a failure: no backoff); a full channel drops the packet
-  (`send` throws, `web/ts-client.ts` catches it). Relay only (`relayOnly`) never opens a connection and refuses offers. The `path` event says
-  which path a peer's packets take.
+  (`send` throws, `web/ts-client.ts` catches it). A peer's new connection comes at most every 2 s (`RTC_GAP`: an
+  answerer ignores a newer attempt sooner, so a member's signalling can't make the page set up connections as fast as
+  it sends; an offerer, after a restart's epoch, waits), and our own offers, all peers', at most 4 a second. Relay only
+  (`relayOnly`) never opens a connection and refuses offers. The `path` event says which path a peer's packets take;
+  `peer` says a session is confirmed, and `peer-gone` that such a peer was forgotten (the page's list of members
+  reached follows both).
 - **DERP:** one connection per region in use (`Relay`): the home region (`home`, an index into the link's; the
   `preferred` one) always, another while a peer is reached through it (the dialer's home region a call back joined;
   where a peer's data last came from) and for 60 s after; packets for a region wait (64 at most) until its connection
   is up. Each has tailcat's liveness and reconnects; only the home region's failures before `Running` fail the client,
   and a DERP map that doesn't load fails it only when the home region is the map's (an inline home connects at once).
-  A peer that left a region (`PeerGone`) is sent to its home region, if its `hello` said one.
+  A peer that left a region (`PeerGone`) is sent to its home region, if its `hello` said one. A failed client closes
+  its DERP and Nostr connections and keeps nothing scheduled (no reconnects while the page shows the error).
 - **Tests:** `cargo test -p webpc_ts room` and `nostr` (the client against fake DERP regions, which route a packet only
   to a key on the same region, a fake Nostr relay and a fake WebRTC: lookups, names, sealing, stale, replayed, forged
   and misdirected lookups, the trial rate, incoming off and its flows, two regions, the hour's turn and a clock 40
