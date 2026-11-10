@@ -32,7 +32,7 @@ What WebGPU can't allow at an acceptable cost isn't here: graphics.md "Permanent
   (`bench/boot/REPORT.md` "M9: FEAT_SHA512 and FEAT_SHA3"); GCM is TLS's. Reporting another CPU's MIDR is
   guest-visible beyond OpenSSL: Linux applies that CPU's errata workarounds and Spectre lists, glibc picks string
   functions by MIDR, and only Apple's unlock the Keccak. Needs the user's call on the identity, then an A/B of the
-  long workloads with it.
+  long workloads with it. **The user, 2026-11-10: keep our own MIDR for now.**
 - **Hardware breakpoints and watchpoints at JIT speed:** a task with one armed runs in the debug
   interpreter while it's on the CPU ([cpu.md](cpu.md) "Self-hosted debug"); pages holding a
   breakpoint could stay uncompiled and watched pages out of the TLB instead, so their accesses take

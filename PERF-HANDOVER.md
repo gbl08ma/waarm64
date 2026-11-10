@@ -21,7 +21,7 @@ calls.
 | 2 | Interpreter: the dispatcher's loop inside `jit::interpret` (round trips to compiled code) | dropped (loop 2) |
 | 3 | Interpreter: `hot`'s per-micro-op cost — SUBS's flags from operands, ADRP+ADD pair, register caching | dropped (loop 3) |
 | 4 | Interpreter: misaligned stores inline; SUBS/ADDS as their own micro-op kinds (loop 3's idea) | SUBS kinds kept, stores dropped (loop 4) |
-| 5 | CPU/ISA: unadvertised M4 extensions — LSE2, LRCPC2, RDM, FHM, FCMA, I8MM, BF16, FP16 (one loop each or grouped) | I8MM unadvertised (loop 5); RDM, LRCPC2 advertised (loop 6); FCMA unadvertised (loop 7); FP16+FHM, BF16, LSE2 after item 6 |
+| 5 | CPU/ISA: unadvertised M4 extensions — LSE2, LRCPC2, RDM, FHM, FCMA, I8MM, BF16, FP16 (one loop each or grouped) | I8MM unadvertised (loop 5); RDM, LRCPC2 advertised (loop 6); FCMA (7), FP16, FHM (10) unadvertised; next BF16, LSE2 |
 | 6 | JIT: helpers on real paths (MSR DAIFClr/regime/NZCV…, ISB, LSE min/max) | unmasking MSRs, DIT, ISB (det.) inline (loop 8) |
 | 7 | JIT: wasm size cuts (local.tee peephole, a guarded chain's fallback as `xmiss`, one budget counter, NZCV functions) | |
 | 8 | JIT: the shared cache's leftovers (one vCPU's 1-2%: a lone table takes the bytes) | |
@@ -32,8 +32,7 @@ calls.
 | 13 | JIT: Liftoff's zero-fill (a register allocator over a block's locals) | |
 | 14 | JIT: the core's heap tuning, transfer cache costs, the rest of the JIT section | |
 
-Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL MIDR (the user, 2026-11-10: don't report another CPU's MIDR for now; the item stays in the backlog —
-add that note to it after loop 10), bug watches
+Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL MIDR (the user, 2026-11-10: don't report another CPU's MIDR for now; the item stays in the backlog), bug watches
 (Firefox's first page, the lost Firefox process).
 
 ## Loops done
@@ -72,3 +71,7 @@ add that note to it after loop 10), bug watches
 - **Loop 9** (`67c5f4ca`): the review's four fixes, each failing first: no inline unmask in realtime round-robin (a
   bare-metal guest caught IRQs up to a chunk late); parallel blocks also check the pending-maintenance byte; jit-diff
   covers the inline arm (`jit_unmask`/`jit_parallel` exports, ABI 64); comments. Gates even. CI passed.
+- **Loop 10** (`4af82614`): FEAT_FP16 and FEAT_FHM complete (inline arithmetic, FMA, compares, FMLAL; rare forms
+  helpers), **off by default**: half GEMM 2.05×, scalar FMADD h 2.15×, FMLAL by element 1.35× slower (per-instruction
+  conversions); axpy 0.73×, FMLAL vector 0.83×. Users: only Highway's vqsort and VapourSynth. ABI 65. Fixed FZ16 lost by
+  MSR FPCR. ci-fp.sh now ~8.5 min. Side note: `VIRGL_TOOLS`' `python3=3.14.8-r0` pin is gone from Alpine (fptest's bumped).
