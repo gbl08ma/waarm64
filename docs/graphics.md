@@ -325,6 +325,14 @@ clamped (`bench/vulkan/fence.ts`).
 The query's state is written to the guest's memory and to the buffer's CPU copy: Mesa's `get_query_result`, when its
 wait finds the state not DONE, maps the buffer by transfers from the host in a loop until it reads DONE, and a copy
 without the state overwrote it at each transfer (glquery's first wait spun for good, ~5,500 transfers a second).
+**The wait finds it not DONE only when the guest gave up on the fence.** Mesa flushes and waits for the query
+buffer's fence (`DRM_IOCTL_VIRTGPU_WAIT`), and the fence is held until the state is DONE in guest memory. But the
+kernel's wait gives up after 15 s of guest time (`virtio_gpu_wait_ioctl`), and Mesa then reads the buffer anyway.
+That doesn't happen in realtime unless a result takes 15 s: holding the first result 10 s gave no transfer, holding
+it 16 s gave one. In deterministic time it happens easily: the guest idles while the host holds the fence, and its
+clock jumps from deadline to deadline, at ~400 guest seconds per host second in glquery. So the first wait, whose fence
+the host held ~40 ms (shader compiles), passed 15 s of guest time. That is where loop 16 saw it. (bench/gpu/REPORT.md
+"PERF loop 18")
 
 **A fence that never resolves stops the guest's 3D for good:** the guest's control queue fills (16 entries on the
 page), every 3D client then sleeps uninterruptibly in `virtio_gpu_queue_ctrl_sgs` (hung-task reports name them), the

@@ -12,7 +12,7 @@
 - `exitloop/`: `exitloop.c` is a bare-metal EL1 loop of one exiting instruction. Built as tests/baremetal/build.sh
   builds its tests (`-I tests/baremetal`, with `start.S` and `link.ld`). `-DONLY=<k> -DONLY_N=40000000ull` runs one kind
   with the MMU on: 0 is `mrs cntfrq_el0`, 1 is `isb`, 2 is `wfe`, 3 is `svc`, and 9 is an empty loop. Without `ONLY`
-  it runs every kind in rounds, but its own counter timings aren't valid: that clock doesn't count in
-  `runToPowerOff`, so read the host's `ms`. `BIN=only<k>.bin node run.ts 2` runs one in Node in parallel SMP with 2
+  it runs every kind in rounds and prints its own counter timings (loop 15 read the host's `ms` instead: `report`
+  overflowed u64 past ~0.3 s a phase, which looked like a clock not counting; fixed in PERF loop 18). `BIN=only<k>.bin node run.ts 2` runs one in Node in parallel SMP with 2
   vCPUs, realtime, under the JIT. `perf-only<k>.txt` holds the flat profiles from
   `perf record -F 4999 -g -- node --perf-basic-prof --interpreted-frames-native-stack run.ts 2`.

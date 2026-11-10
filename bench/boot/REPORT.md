@@ -4196,7 +4196,8 @@ waiting for that core. It would also add a wake-up to each waiter's latency (~17
 **An exit's remaining cost, part by part.** The test is `exitloop.c`, a bare-metal loop of 40 M runs of one
 instruction with the MMU on (nG 1 GiB blocks, an ASID). It ran in Node on the dev VM in parallel SMP with 2 vCPUs,
 realtime and under the JIT, timed by the host: the run's ms less an empty loop's 124 ms. The guest's own counter
-timings aren't valid, because the realtime clock doesn't count in `runToPowerOff`. The profiles are `perf record -F
+timings looked invalid, as if the realtime clock didn't count in `runToPowerOff`; it does, and the fault was the
+program's own arithmetic (PERF loop 18, below). The profiles are `perf record -F
 4999 -g` with `node --perf-basic-prof`. Two runs gave these costs per instruction:
 
 | | ns per instruction (two runs) |
@@ -4239,3 +4240,23 @@ The profile is in docs/jit.md "What an exit to the run loop costs".
 
 Memory: nothing kept. Steps: unchanged (no code change). CI: none, since no core code changed (`tsc` passes over the
 two scripts in `results/perf15/`).
+
+## PERF loop 18: the counter in parallel realtime under `runToPowerOff` (2026-11-10)
+
+Loop 15 timed `exitloop.c` by the host's clock because the guest's own timings looked wrong: `mrs cntfrq_el0` at
+1-70 ns where the host said ~145 ns. That read as CNTVCT not advancing in Node's `runToPowerOff` in parallel realtime.
+**It isn't an emulator defect: the counter counts.** The program's `report` overflowed. It computed
+`(t1 - t0) * 10^12 / f / n`, and at 62.5 MHz the product passes 2^64 once a phase runs past ~0.295 s. Every
+exiting phase ran longer than that (0.3-0.7 s), so each wrapped once or twice. A 0.5745 s cntfrq phase wraps to 69.8 ns,
+which is what loop 15 printed in its rounds before the MMU was on (72 ns). With the MMU on, the 0.605 s phases wrapped
+twice and showed 3.7 ns.
+
+The checks were made in the dev VM: Node, 2 vCPUs, parallel, realtime, JIT (`run.ts 2`), with the wasm of `446bff72`.
+- One kind per run, with and without the MMU, each printing its start time and its elapsed counter in µs: the counter's
+  start (~95 ms) plus its elapsed time matched the host's `ms` within 2 ms in all eight runs (cntfrq 4 M: 96 + 605 µs
+  against 701 ms; empty 10^9 iterations: 98 + 412 against 511).
+- `exitloop.c` with `report` computing through µs (`ticks * 10^6 / f * 10^6 / n`, committed in `results/perf15/`): its
+  own timings now agree with the host's and with loop 15's host-timed table. cntfrq gave 138-146 ns, `isb` 15-17, `wfe`
+  70-77, `svc` 163-183 and the empty loop 0.39-0.41 ns. The rounds sum to 9.9 s against the host's 10.1 s.
+
+Nothing in the core changed, and no numbers move. `docs/platform.md` "Time" says so under parallel SMP.

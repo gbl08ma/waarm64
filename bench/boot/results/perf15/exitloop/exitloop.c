@@ -1,12 +1,13 @@
 // PERF loop 15: ns per iteration of an always-exiting `mrs cntfrq_el0`, a fast-completed `isb`, a `wfe` (a yield),
 // and an empty loop, timed with the counter (realtime: the host clock). Prints "<kind> <ps per iteration>".
+// (PERF loop 18: `report` went through µs; ticks × 10^12 overflowed u64 past ~0.3 s, which read as a clock not counting.)
 #include "lib.h"
 static inline u64 cnt(void) { u64 v; __asm__ volatile("isb; mrs %0, cntvct_el0" : "=r"(v)); return v; }
 static inline u64 frq(void) { u64 v; __asm__ volatile("mrs %0, cntfrq_el0" : "=r"(v)); return v; }
 #define N 4000000ull
 static void report(const char *k, u64 t0, u64 t1, u64 n) {
   u64 f = frq();
-  u64 ps = (t1 - t0) * 1000000000000ull / f / n; // picoseconds per iteration
+  u64 ps = (t1 - t0) * 1000000 / f * 1000000 / n; // picoseconds per iteration (via µs: ticks × 10^12 overflows u64 past ~0.3 s)
   uart_puts(k); uart_putc(' '); uart_dec(ps); uart_puts(" ps\n");
 }
 void on_exception(struct frame *f, u64 vec) { if (vec != VEC_EL1H_SYNC || f->esr >> 26 != 0x15) power_off(100 + vec); }

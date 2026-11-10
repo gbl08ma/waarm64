@@ -270,7 +270,10 @@ Two modes, chosen by `VmConfig.deterministic`:
     drifted ~1% from the monotonic clock in the dev VM, so a worker started a minute into a page
     ran ~0.6 s behind the VM's creator, and the guest counter read 0 for that long ("Missing cycle
     counter", the RNG's jitter loop spinning). Each worker measures the creator's clock
-    instead (`web/vm.ts` `clockOffset`: 16 round trips, the shortest one's midpoint).
+    instead (`web/vm.ts` `clockOffset`: 16 round trips, the shortest one's midpoint). The counter counts in Node's
+    `runToPowerOff` too. Loop 15's exit loop seemed to show it standing still, but its own arithmetic overflowed:
+    ticks × 10^12 passes 2^64 at 62.5 MHz past ~0.3 s. A phase's start plus its elapsed counter matches the host's
+    time within 2 ms (bench/boot/REPORT.md "PERF loop 18").
   - **Idle watchdog:** `idleLimitMs` (`web/vm.ts`, on in the boot benchmarks) throws on an idle
     with no deadline for that long: a deadline-less idle that long is a bug either way.
 - Guest-timed benchmarks (`dd`, `fio`, `openssl speed`) are meaningless in deterministic time:

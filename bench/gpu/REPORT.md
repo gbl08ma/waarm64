@@ -310,7 +310,7 @@ task), `spin` (every task for 2 ms since the pending queries last changed, then 
 loop until it reads DONE; the renderer wrote the state only into the guest's memory, and each transfer copied the
 buffer's CPU copy, without it, over it. The state now goes into the CPU copy too (`queryState`); the queries' test in
 tests/virgl-browser.test.ts reads the states after a transfer from the host and failed first. Why the first wait found
-the state not DONE (its fence should have been held for the query) isn't known; with the fix it ends at the next look.
+the state not DONE (its fence should have been held for the query) wasn't known here: the kernel's 15 s wait timed out in deterministic time (PERF loop 18).
 
 | M4, glquery (rounds) | wait median, ms (IQR) | wait max | frames/s | glFinish median |
 | --- | --- | --- | --- | --- |
@@ -344,3 +344,44 @@ CI: `scripts/ci.sh` and `scripts/ci-graphics.sh` pass; `scripts/ci-deqp.sh`'s sa
 2,234 and GLES3's 5,744 of 5,745: `flush_finish.flush` gave a CompatibilityWarning (its calibration's draw times
 jumped 2–50 ms with both lists running at once: timing, no queries in it), and passed alone with `wait` and
 `flush_wait` (`deqp-run.ts`, `CASES=`).
+
+## PERF loop 18: why glquery's first wait read the query not DONE (2026-11-10)
+
+Loop 16 fixed the read-back of a query's state, but left a question open: why did Mesa's `get_query_result` read
+the state not DONE after waiting for the fence that is held for it? **The cause isn't in the renderer. The guest gave
+up on the fence:** the kernel's wait times out after 15 s of guest time, and in deterministic time that happens within
+milliseconds on the host.
+
+**Mesa's side** (virgl as of 26.x, `virgl_query.c`). `end_query` writes WAIT_HOST into the buffer through its mapping,
+encodes END_QUERY and GET_QUERY_RESULT, and adds the buffer to the command buffer. `get_query_result` flushes if the
+buffer is referenced, then calls `resource_wait`, which is `DRM_IOCTL_VIRTGPU_WAIT` on the buffer and so waits for
+the submit's fence. Then it reads the state through the raw mapping, and only if that isn't DONE does it start the
+loop of transfers from the host. The kernel's `virtio_gpu_wait_ioctl` (Linux 6.18) waits `15 * HZ`, and Mesa ignores
+the error. **Our side:** the GPU worker holds that fence (`FenceGate`) until `pollQueries` has written DONE into the
+guest's memory, so a wait that doesn't time out reads DONE.
+
+**The runs.** These were glquery on alpine-virgl in the dev VM's Chromium 155 on SwiftShader (`query-wait.ts`,
+`GLQ=3,4,640,480`, one round). The renderer and the GPU worker logged each submit, each state written, each fence and
+each transfer from the host. In deterministic runs (virgl-boot-worker's `realtime` turned off), the first result was
+also held on purpose for a set time. A transfer from the host of the query's buffer is the sign that Mesa found the
+state not DONE.
+
+| run | fence 4 (the first query's) held | transfers of a query buffer from the host |
+| --- | --- | --- |
+| realtime, `spin` | 33 ms | none |
+| realtime, first result held 10 s | 10.0 s | none |
+| realtime, first result held 16 s | 16.0 s | **1** (the first query's, after the fence) |
+| deterministic, `timeout` | 40 ms | **1** (the first query's, only that one) |
+| deterministic, first result held 3 s | 3.0 s | **1** (the first query's) |
+
+In deterministic time the idle guest's clock jumps from deadline to deadline while the host holds the fence. glquery's
+timed waits read 1.8-4.5 s of guest time for ~9 ms of host time, about 400 guest seconds to the host's second. The first
+query's fence waits ~40 ms on shader compiles, which comes to past 15 s of guest time. Later waits are shorter and stay
+under the timeout. Loop 16's harness ran deterministic until that loop moved it to realtime, which is presumably when the
+spin was seen.
+
+**Correct as it is.** Without the timeout, the fence and the state agree. With it, Mesa's fallback, which the read-back
+fix made work, ends at the next look. A realtime guest falls back only when a result takes 15 s (a lost context's, say),
+and then the read-back fix is what keeps it from spinning. Nothing changed, and no performance number moves: realtime
+glquery never takes the fallback. Doc: docs/graphics.md "Fences". The counter question of the same loop is
+bench/boot/REPORT.md "PERF loop 18".
