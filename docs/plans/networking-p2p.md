@@ -329,7 +329,10 @@ client was built.
   VM is unavailable for a while, so what needs it or a person waits here). First the runs the cloud can't
   do: `scripts/ci-net.sh` whole (the cloud has no Podman or IPv6, docs/cloud.md), R0's numbers again
   (`node bench/net/room.ts 5 10000 <json>`), and R2's room on a second adapter beside the local helper keeping
-  the internet (a Debian test beside `tests/net-local.test.ts`'s). By hand: public
+  the internet (a Debian test beside `tests/net-local.test.ts`'s). *Those three done 2026-11-10 in the dev VM*:
+  `scripts/ci-net.sh` OK (885 s), R0's gate holds there too (direct 183 Mbit/s each way against DERP's 126, 32%
+  less CPU per Mbit; bench/net/REPORT.md), and `tests/net-local.test.ts`'s second case (the helper's adapter the
+  primary, the room's member by name on the second card). By hand: public
   Nostr relays (the fixed kind forwarded, time from a lookup to its call back, Trystero's relay list as
   the start, events dated ahead of their clocks) and the public tailcat relays carrying a room (their
   limits; whether their operators allow this use), two browsers on different networks (the dev VM and a

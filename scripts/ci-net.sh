@@ -2,7 +2,7 @@
 # The network tests on Debian (docs/testing.md "The network on Debian"): run it, besides
 # scripts/ci.sh, when a change touches the network: the gateway, virtio-net, the tailnet client
 # (net/ts, web/tailscale*.ts, web/tailnet-worker.ts, web/tailcat*.ts, web/room*.ts, web/ts-*.ts), the page's Network menu
-# or Debian's network command line. ~8 min. Needs the Debian image and the wasm core (scripts/ci.sh
+# or Debian's network command line. ~15 min. Needs the Debian image and the wasm core (scripts/ci.sh
 # builds it); the tailnet tests also need Podman (WEBPC_TAILNET=0 skips them), and the hand-over
 # test Go (the Go client, net/tailscale, is its fixture); the tailcat tests need Go (tests/net/tailcat.sh builds tailcat and
 # derper; WEBPC_TAILCAT=0 skips them).

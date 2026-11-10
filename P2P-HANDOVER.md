@@ -37,9 +37,7 @@ cloud session can measure, R4 what needs a person or the dev VM.
   guests in one Chromium: Create, Join by link, the wizard's refusals, the resolver asked directly and through
   resolved, pings both ways by name; ~2 min; in `scripts/ci-net.sh`'s list). All passed in this session.
 
-**CI:** `scripts/ci.sh` OK on the review's fixes (1,325 s; JS 973 passed, 0 failed, 560 skipped; the agent's two root-only tests skipped); `tests/room-browser.test.ts`, `tests/nostr-relay.test.ts`, `tests/ts-client.test.ts` and `tests/page-room.test.ts` passed alone. Before: `scripts/ci.sh` OK on R3 (1,669 s; JS 961 passed, 0 failed, 569 skipped; the agent's two root-only tests skipped, docs/cloud.md); `tests/room-browser.test.ts`, `tests/nostr-relay.test.ts`, `tests/ts-client.test.ts` and `tests/page-room.test.ts` passed alone (`WEBPC_NET_TESTS=1 WEBPC_DISTROS=debian WEBPC_TAILCAT=1`). Before: `scripts/ci.sh` OK on R2 (1,506 s; JS 971 passed, 0 failed, 559 skipped; the agent's two root-only tests skipped, docs/cloud.md); `tests/page-room.test.ts`, `tests/room-browser.test.ts` passed alone (`WEBPC_NET_TESTS=1 WEBPC_DISTROS=debian WEBPC_TAILCAT=1`). **Not done here** (R4's first runs): `scripts/ci-net.sh` whole, `node bench/net/room.ts
-5 10000 <json>` (R0's numbers), and R2's room on a second adapter beside the local helper (webpc-net is a private
-repository a cloud session can't fetch).
+**CI:** in the dev VM, 2026-11-10, on the merge and R4's first runs: `scripts/ci.sh` OK (712 s; JS 1,397 passed, 0 failed, 140 skipped), `scripts/ci-net.sh` OK (885 s; 27 tests, the room beside the local helper among them).
 
 ## The review of R2–R3 (2026-11-10)
 
@@ -55,11 +53,20 @@ selected the name. The smaller notes are in docs/backlog.md "Rooms' loose ends".
 breaking each other on one DERP region (confirmed against the rig's derper), went to the user, who chose one at a
 time: a running room connection holds its key's lock (`roomKeyLock`, web/app/net-live.ts; `tests/net-live.test.ts`).
 
-## Next: R4 (plan §7)
+## R4 (plan §7)
 
-R4 needs the dev VM or a person: `scripts/ci-net.sh` whole, R0's numbers again, the room on a second adapter beside
-the local helper, public Nostr relays against plan §7's "What a room needs from a Nostr relay", the public tailcat
-relays carrying a room, two browsers on different networks, how often ICE fails; the defaults (relays, DERP map,
-STUN) come out of it.
+**Done in the dev VM** (2026-11-10): `scripts/ci-net.sh` whole; R0's numbers again (bench/net/REPORT.md "Again in the
+dev VM": the gate holds; `bench/net/room.ts` now counts the CPU of every process it started, as `/usr/bin/chromium`
+is a wrapper there); the room on a second adapter beside the local helper (`tests/net-local.test.ts`'s second case,
+`tests/browser/adapters.html?local=&room=`; planted: the room's worker offering its lease as the primary's, caught).
+Attribution checked for the track (THIRD_PARTY.json: `k256` and `sha2` rows, k256's RustCrypto dependencies under the
+section's Cargo.lock rule; Trystero as a technique, Nostr's NIP-01 and BIP-340 as references).
+
+**Next, by hand (needs the user):** public Nostr relays against plan §7's "What a room needs from a Nostr relay" (the
+kind forwarded, lookup to call back, Trystero's relay list as the start, events dated ahead), the public tailcat
+relays carrying a room (their limits; whether their operators allow it), two browsers on different networks (the dev
+VM and a phone), how often ICE fails; the defaults (relays, DERP map, STUN) come out of it, and §9's public room with
+them. Then the track's end: its out-of-context review, `scripts/ci-debian.sh`, and the outcome into docs/ and PLAN.md
+§3.
 
 Open questions for the user stay in plan §9 (the default public room, the relays); the seal's reuse of the WireGuard key is decided (plan §1, 2026-11-10).

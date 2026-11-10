@@ -1470,7 +1470,8 @@ and the guest's default way out (below).
   The guest's lease: its room address as a /128 (DHCPv6, the router advertisement), IPv4 `192.0.0.2` with no IPv4
   routes, the room's resolver (`<prefix>::53`) and `<tag>.p2p.internal` as its domain, so `ping <name>` works through
   systemd-resolved. A room never reaches the internet, so beside another adapter it is never the default way out and
-  offers its /48 as a route.
+  offers its /48 as a route: beside the local helper, say, the guest's defaults and other names stay the helper's
+  while the room's members are reached by name on the second card (`tests/net-local.test.ts`).
 - **Exit node:** when the tailnet has peers that advertise one (and an admin approved their
   `0.0.0.0/0` routes) the menu shows [Internet through](ui:network:Network.exitNode) with them and [No exit node](ui:network:Network.exitNode.none). Picking one
   calls the client's `setExitNode(id)` (the id is the peer's stable ID, `netmap.peers[].id`), the netmap reports the one in use (`netmap.exitNode`) and the

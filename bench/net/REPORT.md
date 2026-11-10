@@ -371,6 +371,20 @@ the dev VM's (docs/cloud.md), the arms are with each other. JSON: `results/r0/ro
 - Every arm brought back all 10,000 echoes: the unordered, unretransmitted channel lost nothing on loopback at 32 in
   flight (§6 saw 0.7% at saturation).
 
+**Again in the dev VM** (R4, 2026-11-10: openSUSE Tumbleweed aarch64 under Lima on the M4 Mac mini, 8 vCPUs,
+Chromium 155.0.8059.84 headless; `node bench/net/room.ts 5 10000`; JSON: `results/r0/room-2026-11-10-devvm.json`).
+The CPU column counts every process the harness started and the derper (it matched `/usr/bin/chromium`'s command
+line before, which on this VM is a wrapper script, so it read 0 for Chromium):
+
+| Arm | Mbit/s each way, median (IQR) [rounds] | core-ms per Mbit/s | RTT | first echo after `Running` | channel open after the handshake |
+|---|---|---|---|---|---|
+| direct | **183.4** (183.3–184.3) [183.0–186.6] | **13.6** (13.5–13.6) | 0.42 ms | 13.6 ms (through DERP) | 13.8 ms |
+| relay | 125.9 (124.8–126.0) [123.8–130.5] | 19.9 (19.7–20.1) | 0.48 ms | 13.1 ms | — |
+| raw | 239.2 (237.5–240.5) | 6.4 (6.4–6.6) | 0.24 ms | — | 15.8 ms (setup) |
+
+- The cloud's picture holds: direct +46% over relay at the medians (rounds don't overlap), 32% less CPU per Mbit, all
+  10,000 echoes back in every arm. Direct keeps 77% of raw's throughput (the cloud: 72%) at twice its CPU per Mbit.
+
 ## Rooms at scale (R3, 2026-11-10)
 
 docs/plans/networking-p2p.md's R3: what a room costs as it grows, with nothing outside the test harness.

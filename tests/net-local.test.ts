@@ -10,7 +10,7 @@
 // One Debian boot in realtime (~2 min); needs Go (the helper is built at the commit tests/webpc-net.ts pins). Opt-in like the other
 // network tests: scripts/ci-net.sh.
 import assert from 'node:assert/strict';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import dgram from 'node:dgram';
 import { existsSync } from 'node:fs';
@@ -22,6 +22,8 @@ import { startServer } from '../tools/serve.ts';
 import { buildHelper, helperSkip } from './webpc-net.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { loginRoot, run as runIn } from './serial-console.ts';
+import { startNostrRelay } from './net/nostr-relay.ts';
+import { RIG_RELAY } from './net/tailcat-cli.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const skip = process.env.WEBPC_NET_TESTS !== '1' ? 'SKIPPED: scripts/ci-net.sh runs it (WEBPC_NET_TESTS=1)'
@@ -102,6 +104,7 @@ after(async () => {
   helper?.kill();
 });
 
+const harness = <T>(page: Page, f: string) => page.evaluate(`window.harness.${f}`) as Promise<T>;
 const local = (page: Page) => page.evaluate('window.harness.local()') as Promise<{ state: string; error?: string; addresses?: string[] } | undefined>;
 
 /** The close code a WebSocket to `url` gets, from `page`'s origin. */
@@ -207,4 +210,91 @@ test('Debian on the page through the local helper: its lease, DNS, TCP to this m
       await page.context().close();
     }
   });
+});
+
+// A room on a second adapter beside the local helper (docs/plans/networking-p2p.md R2, docs/network-adapters.md §4):
+// tests/browser/adapters.html with card 1 on the helper and card 2 in a room on the tailcat rig's derper and the tests'
+// Nostr relay, whose other member is tests/browser/room.html in another context. The helper's adapter is the primary
+// (`primaryOf`), so the defaults stay its own and the room's adds only its /48 and its names: the guest reaches the room's
+// member by name (UDP to its echo port, through the room's resolver) while names and TCP still go out through the helper.
+// Opt-in also with WEBPC_TAILCAT=1 (Go builds derper). One Debian boot, ~2 min.
+const roomSkip = skip ?? (process.env.WEBPC_TAILCAT !== '1' ? 'SKIPPED: set WEBPC_TAILCAT=1 too (the tailcat rig\'s derper)'
+  : !existsSync(`${ROOT}target/net/ts.wasm`) ? 'SKIPPED: no target/net/ts.wasm (net/ts/build.sh)' : undefined);
+test('a room on a second adapter beside the local helper: the member by name, the internet through the helper', { skip: roomSkip, timeout: 900_000 }, async () => {
+  const rig = `${ROOT}tests/net/tailcat.sh`;
+  execFileSync(rig, ['up'], { encoding: 'utf8', timeout: 300_000 });
+  const nostr = await startNostrRelay();
+  const overlay = `${OVERLAY}-room`;
+  const id = `beside-${randomBytes(4).toString('hex')}`;
+  const link = `webpc-room:${encodeURIComponent(id)}?nostr=${encodeURIComponent(nostr.url)}&derp=${encodeURIComponent(RIG_RELAY)}`;
+  try {
+    await withDebianLock(async () => {
+      const ctx = await browser.newContext({ ignoreHTTPSErrors: true }); // the rig's derper's self-signed certificate
+      const memberCtx = await browser.newContext({ ignoreHTTPSErrors: true });
+      const page = await ctx.newPage();
+      page.on('console', (m) => { if (/rror|panic/.test(m.text())) console.log(`# page: ${m.text().slice(0, 300)}`); });
+      type View = { phase: string; text: string; address?: string; internet?: boolean; local?: boolean; room?: { name: string } };
+      const views = () => harness<View[]>(page, 'views()');
+      const context = async () => `; the adapters: ${JSON.stringify(await views().catch(() => undefined))}\n# helper:\n${helperLog}`;
+      const run = (cmd: string, ms = 60_000) => runIn(page, cmd, ms, context);
+      const until = async (what: string, cmd: string, ok: (s: string) => boolean, ms: number) => {
+        const t0 = Date.now();
+        let out = await run(cmd);
+        while (!ok(out) && Date.now() - t0 < ms) {
+          await page.waitForTimeout(1000);
+          out = await run(cmd);
+        }
+        assert.ok(ok(out), `${what} after ${ms / 1000} s:\n${out}${await context()}`);
+        return out;
+      };
+      try {
+        const member = await memberCtx.newPage();
+        await member.goto(`${base}/tests/browser/room.html?${new URLSearchParams({ room: id, relay: RIG_RELAY, nostr: nostr.url })}`);
+        await member.waitForFunction(() => (window as never as { harness: { room(): { state: string } } }).harness.room().state === 'Running', null, { timeout: 60_000, polling: 250 }); // i18n-ignore
+        const memberName = (await member.evaluate('window.harness.room().self') as { name: string }).name;
+
+        await page.goto(`${base}/tests/browser/core.html`);
+        await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), overlay);
+        await page.goto(`${base}/tests/browser/adapters.html?${new URLSearchParams({ local: ws, room: link, overlay })}`);
+        await page.waitForFunction(() => (window as never as { harness: { views(): { phase: string }[] } }).harness.views().every((v) => v.phase === 'connected'), null, { timeout: 120_000, polling: 250 })
+          .catch(async (e) => { throw new Error(`${e}${await context()}`); });
+        const [lv, rv] = await views();
+        assert.deepEqual([lv.local, lv.internet, rv.internet], [true, true, false], `the helper's reaches the internet, the room's doesn't${await context()}`);
+        assert.equal(await harness<number>(page, 'primary()'), 0, "the helper's adapter is the primary");
+        assert.match(rv.room?.name ?? '', /\.p2p\.internal$/, 'the room gave the machine its name');
+        await loginRoot(page, 240_000, context);
+
+        await until("both leases: the helper's IPv4, the room's IPv6", "ip -o addr show scope global | awk '{print $2, $4}'",
+          (s) => /192\.168\.127\.\d+\//.test(s) && s.includes(`${rv.address!.split('/')[0]}/`), 90_000);
+        const room48 = rv.address!.split(':').slice(0, 3).join(':');
+        const routes = await until("the defaults through the helper's card, the room's /48 through the room's", 'ip -4 route; ip -6 route',
+          (s) => /^default via 192\.168\.127\.1 /m.test(s) && new RegExp(`^${room48}::/48 `, 'm').test(s), 60_000);
+        const roomDev = /^\d+: (\S+) /m.exec(await run(`ip -o -6 addr show to ${rv.address!.split('/')[0]}`))?.[1];
+        assert.ok(roomDev, "the room's card");
+        assert.doesNotMatch(routes, new RegExp(`^default .*dev ${roomDev} `, 'm'), `no default through the room's card: ${routes}`);
+        console.log(`# guest: ${routes.trim().replace(/\n/g, ' | ')}`);
+
+        // The member by its name (the room's resolver, through systemd-resolved's routing domain), UDP to its echo port,
+        // resent each second until the lookup's call back lets the first through; and at once a page from this machine's
+        // server and a name from the helper's resolver.
+        const echo = await run(`for i in $(seq 30); do exec 3<>/dev/udp/${memberName}/7 || { sleep 1; continue; }; printf hello >&3; if timeout 1 head -c 5 <&3; then echo " back after $i"; break; fi; exec 3>&-; done`, 90_000);
+        assert.match(echo, /hello back after \d+/, `the room's member by name: ${echo}; ${await run(`resolvectl query ${memberName}; resolvectl status --no-pager | head -30`)}${await context()}`);
+        console.log(`# the member's echo: ${echo.trim()}`);
+        assert.match(await run(`curl -s -m 20 http://192.168.127.254:${filesPort}/`, 60_000), /hello from the host/, "this machine through the helper");
+        const name = await run('getent ahostsv4 deb.debian.org | head -1', 30_000);
+        assert.match(name, /^\d+\.\d+\.\d+\.\d+\s/m, `deb.debian.org through the helper's DNS beside the room's: ${name}`);
+        const apt = await run('timeout 240 apt-get update -o Acquire::Retries=0 >/tmp/apt.log 2>&1; echo "exit $?"; tail -3 /tmp/apt.log', 300_000);
+        assert.match(apt, /exit 0/, apt);
+        const peers = await member.evaluate('window.harness.room().peers') as unknown[];
+        assert.equal(peers.length, 1, 'the member reached the guest');
+      } finally {
+        await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), overlay).catch(() => {});
+        await ctx.close();
+        await memberCtx.close();
+      }
+    });
+  } finally {
+    await nostr.close();
+    spawnSync(rig, ['down']);
+  }
 });

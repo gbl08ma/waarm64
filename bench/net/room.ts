@@ -22,18 +22,27 @@ const script = `${ROOT}tests/net/tailcat.sh`;
 const RELAY = '127.0.0.1:8444';
 const PACKET = 1280;
 
-/** CPU seconds (utime + stime) of every Chromium process and the rig's derper. */
+/** CPU seconds (utime + stime) of every process this one started (Chromium's, whatever its wrapper execs) and the rig's
+ * derper (started detached by tests/net/tailcat.sh). */
 function cpu() {
   const derper = readFileSync(`${ROOT}target/net/tailcat-test/run/derper.pid`, 'utf8').trim();
-  const exe = process.env.CHROMIUM ?? '/usr/bin/chromium';
-  let ticks = 0;
+  const stats = new Map<string, string[]>();
   for (const pid of readdirSync('/proc').filter((p) => /^\d+$/.test(p))) {
     try {
-      const cmd = readFileSync(`/proc/${pid}/cmdline`, 'utf8');
-      if (pid !== derper && !cmd.startsWith(exe)) continue;
-      const f = readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1].split(' ');
-      ticks += Number(f[11]) + Number(f[12]);
+      stats.set(pid, readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1].split(' '));
     } catch { /* gone */ }
+  }
+  const ours = new Set([String(process.pid)]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const [pid, f] of stats) if (!ours.has(pid) && ours.has(f[1])) ours.add(pid), grew = true;
+  }
+  ours.delete(String(process.pid));
+  ours.add(derper);
+  let ticks = 0;
+  for (const pid of ours) {
+    const f = stats.get(pid);
+    if (f) ticks += Number(f[11]) + Number(f[12]);
   }
   return ticks / 100;
 }
