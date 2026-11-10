@@ -468,7 +468,9 @@ Images are the same path as text with another type: lazy offers, streamed chunks
     so the program is gone when the guest shuts down. This browser may ask for permission to see the clipboard,
     so that the guest can paste what you copy on your computer from its own menus too. A switch in the toolbar
     pauses the sharing while the machine runs." (The draft; the words as settled with the user, 2026-11-07, are
-    the catalog's `MachinesPage.clipboard.note`.)
+    the catalog's `MachinesPage.clipboard.note`. Beta testers found that note too long, so on 2026-11-10 it was cut
+    to three sentences: what it does, what the guest needs, and the toolbar's menu. The rest is in
+    [docs/clipboard.md](../clipboard.md).)
 
   The X11 sentence joins when X11 is built (§6 step 5; **joined**: "An X11 session works too, through the clipboard
   that Copy and Paste use. The middle-click selection isn't shared."), and so does a "text console" sentence when `TYPE` is
