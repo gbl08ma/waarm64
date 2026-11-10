@@ -79,9 +79,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   - **Misaligned stores**: ~4.1 M exits to the generic path a pages session (the loads are inline since loop 5); a
     store may write only its own bytes, so inline it takes pieces by alignment. ~0.15% of busy time by loop 1's
     estimate: under what anything measures.
-  - **Blocks out of their slot**: 262,144 slots (from 16,384, 2026-11-09: "loop 2") took the misses from 82.5 M to
-    23.4 M and Firefox's starts and loads 4.4% faster. Each 4× has halved them, for 4× the memory (4 MiB a table now,
-    +15 MiB on four vCPUs): a smaller slot first (it needn't keep the key bits its index implies), then maybe more.
 
 - **More handlers, by workload** (`bench/interp/REPORT.md` "M8-INTERP loop 13" counted Alpine's boot's slow path).
   Left on the boots: CASP (a 128-bit atomic), STTR/LDTR (the EL0 TLB array from EL1: a second context in `Fast`),

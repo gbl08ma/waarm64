@@ -1,0 +1,350 @@
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index 26fa38e6..42268a24 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -24,7 +24,7 @@ use super::{
+ use crate::cpu::{Cpu, sctlr};
+ use crate::decode::Op;
+ use crate::mem::{self, Host, Mem};
+-use crate::mmu::{Bus, Entry, Flat, Mmu, Slots, TLB_ENTRIES, Use};
++use crate::mmu::{Bus, Entry, Flat, Mmu, PA_BITS, Slots, TLB_ENTRIES, Use};
+ use core::mem::take;
+ use std::collections::HashMap;
+ 
+@@ -1150,7 +1150,8 @@ impl Fast for Flat<'_> {
+ 
+     #[inline(always)]
+     fn ikey(&mut self, c: &Cpu, pc: u64) -> Option<u64> {
+-        Some(pc | c.el() & 1)
++        // (Under `PA_BITS`, as a slot's key: above it there's no RAM.)
++        (pc >> PA_BITS == 0).then(|| pc | c.el() & 1)
+     }
+ }
+ 
+@@ -1928,17 +1929,18 @@ pub fn hot<B: Fast>(
+             r.next = k;
+             break 'run STOP;
+         }
++        // (`k` is under `PA_BITS`: in this page, or `ikey`'s.)
+         let s = &mut dec.slots[slot(k)];
+-        if s.key != k {
++        if (*s ^ k) & TAG != S_FULL {
+             break 'run NEXT;
+         }
+-        if s.hits >= s.quota as u16 {
++        if *s & S_LEFTS == 0 {
+             break 'run STOP;
+         }
+-        s.hits += 1;
+-        let n = (s.len as u64).min(rest);
++        *s = (*s - S_LEFT1) | S_DIRTY;
++        let n = ((*s >> S_LEN) & 63).min(rest);
+         // SAFETY: a slotted block's micro-ops are in the arena.
+-        u = unsafe { arena.add(s.start as usize) };
++        u = unsafe { arena.add((*s >> S_START) as usize) };
+         // SAFETY: n <= its length.
+         end = unsafe { u.add(n as usize) };
+         rest -= n;
+@@ -2461,13 +2463,13 @@ pub const MAX_BUDGET: usize = 1 << 23;
+ pub fn budget(tables: usize) -> usize {
+     (BUDGET / tables.max(1)).min(MAX_BUDGET)
+ }
+-/// Direct-mapped entries in front of the map (4 MiB a table). A browser's
++/// Direct-mapped entries in front of the map (2 MiB a table). A browser's
+ /// interpreted code is a large working set: 16,384 slots missed 82.5 M of
+ /// `hot`'s next-block lookups in Firefox's pages session, 262,144 miss 23.4 M,
+ /// and its starts and loads ran 4.4% faster (folding higher PA bits into the
+ /// index changed nothing: capacity, not conflicts; bench/interp/REPORT.md "The
+ /// block interpreter on the Mac, loop 2").
+-const SLOTS: usize = 1 << 18;
++const SLOTS: usize = 1 << SLOTS_LOG2;
+ 
+ /// Micro-ops of a table's budget per key its map holds before it starts
+ /// over, at most [`MAX_KEYS`]: blocks of one micro-op (or none: an SVC at a
+@@ -2494,20 +2496,63 @@ pub const REPORT: u32 = 16;
+ /// interpreted 2.5× the steps with 255; bench/interp/REPORT.md "M8-INTERP loop 2").
+ pub const REPORT_IDLE: u32 = 255;
+ 
+-#[derive(Clone, Copy)]
+-struct Slot {
+-    key: u64,
+-    start: u32,
+-    len: u8,
+-    /// The dispatches it may count before it reports ([`Cache::quota`]),
+-    /// and the ones it counted since it last reported.
+-    quota: u8,
+-    hits: u16,
++/// A slot: a decoded block's key, where its micro-ops are and the dispatches
++/// it may count before it reports, in 8 bytes (16 until 2026-11-10: the key
++/// whole). It keeps only the key's bits that its index doesn't imply, in
++/// place, so a lookup is one compare under [`TAG`]:
++///
++/// - bits 0-1: the key's regime bits;
++/// - bits 2-9: the dispatches it may count before it reports ([`Cache::quota`]
++///   less what it counted: the map's `quota` keeps what it was given);
++/// - bit 10: it counted since it was slotted (the map's `hits` is stale);
++/// - bits 11-16: its length in micro-ops;
++/// - bits `SLOTS_LOG2 + 2`-39: the key's bits above its index (a key of a
++///   block is a PA and its regime bits, under [`PA_BITS`]);
++/// - bit 40: filled (all zeros is an empty slot, so the table is allocated
++///   zeroed and its untouched pages take no memory);
++/// - bits 41-63: where its micro-ops start in the arena (under [`MAX_BUDGET`]).
++type Slot = u64;
++
++const SLOTS_LOG2: u32 = 18;
++const S_LEFT: u32 = 2;
++const S_LEFT1: u64 = 1 << S_LEFT;
++const S_LEFTS: u64 = 0xff << S_LEFT;
++const S_DIRTY: u64 = 1 << 10;
++const S_LEN: u32 = 11;
++const S_FULL: u64 = 1 << PA_BITS;
++const S_START: u32 = PA_BITS + 1;
++/// The key's bits a slot keeps in place (without [`S_FULL`]).
++const S_KEY: u64 = 3 | ((1 << PA_BITS) - 1) & !((1 << (SLOTS_LOG2 + 2)) - 1);
++/// The bits a lookup compares: a slot holds key `k` when `(s ^ k) & TAG == S_FULL`.
++const TAG: u64 = S_KEY | S_FULL;
++const _: () = assert!(SLOTS_LOG2 + 2 >= S_LEN + 6 && MAX_BUDGET <= 1 << (64 - S_START));
++
++/// Whether slot `s` holds key `k` (one under [`PA_BITS`]: no block's key is
++/// above it, and a key above it would alias one under it).
++#[inline(always)]
++fn slot_holds(s: Slot, k: u64) -> bool {
++    (s ^ k) & TAG == S_FULL && k >> PA_BITS == 0
++}
++
++#[inline(always)]
++fn s_start(s: Slot) -> u32 {
++    (s >> S_START) as u32
++}
++
++#[inline(always)]
++fn s_len(s: Slot) -> u32 {
++    (s >> S_LEN) as u32 & 63
++}
++
++#[inline(always)]
++fn s_left(s: Slot) -> u32 {
++    (s >> S_LEFT) as u32 & 0xff
+ }
+ 
+ /// A decoded block in [`Cache`]'s map: where its micro-ops are (start << 6 |
+-/// length), the dispatches it counted and the quota it had while out of the
+-/// slots (one put back counts on: a report takes the JIT cache's lock), and
++/// length), the quota it was last given and the dispatches it counted of it
++/// while out of the slots (one put back counts on: a report takes the JIT
++/// cache's lock; a slotted one counts in its slot), and
+ /// the next key of its page by its low 12 bits ([`Cache`]'s `pages`; its own
+ /// at the list's end).
+ #[derive(Clone, Copy)]
+@@ -2538,13 +2583,7 @@ impl Known {
+     }
+ }
+ 
+-const EMPTY: Slot = Slot {
+-    key: u64::MAX,
+-    start: 0,
+-    len: 0,
+-    quota: 0,
+-    hits: 0,
+-};
++const EMPTY: Slot = 0;
+ 
+ /// A table's decoded blocks, by JIT block key (`jit::Table`): a direct-mapped
+ /// front, a map of every block, and the micro-ops in one arena. A dropped
+@@ -2586,7 +2625,9 @@ fn slot(key: u64) -> usize {
+ impl Cache {
+     /// A cache of `budget` micro-ops.
+     pub fn new(budget: usize) -> Cache {
++        assert!(budget <= MAX_BUDGET, "a slot's start");
+         Cache {
++            // Zeroed: the allocator's fresh pages, untouched until slotted.
+             slots: match vec![EMPTY; SLOTS].into_boxed_slice().try_into() {
+                 Ok(s) => s,
+                 Err(_) => unreachable!(),
+@@ -2610,8 +2651,8 @@ impl Cache {
+     #[inline(always)]
+     pub fn get(&mut self, key: u64, mem: &Mem) -> Option<&[Uop]> {
+         let s = self.slots[slot(key)];
+-        let (start, len) = if s.key == key {
+-            (s.start, s.len as u32)
++        let (start, len) = if slot_holds(s, key) {
++            (s_start(s), s_len(s))
+         } else {
+             self.miss(key, mem)?
+         };
+@@ -2673,26 +2714,26 @@ impl Cache {
+     /// and the quota it had left while out of it; the block it
+     /// replaces keeps its own in the map.
+     fn slot_in(&mut self, key: u64) -> (u32, u32) {
+-        let e = self.map.get_mut(&key).expect("decoded");
+-        let hits = core::mem::take(&mut e.hits) as u16;
+-        let quota = core::mem::take(&mut e.quota);
+-        let (start, len) = (e.start(), e.len());
+-        let old = self.slots[slot(key)];
+-        if (old.hits != 0 || old.quota != 0)
+-            && let Some(e) = self.map.get_mut(&old.key)
+-        {
+-            // (Never more than its quota, a u8.)
+-            (e.hits, e.quota) = (old.hits as u8, old.quota);
++        debug_assert!(key >> PA_BITS == 0);
++        let i = slot(key);
++        let old = self.slots[i];
++        if old & S_DIRTY != 0 {
++            let k = old & S_KEY | (i as u64) << 2;
++            if let Some(e) = self.map.get_mut(&k) {
++                // (Never more than its quota.)
++                e.hits = e.quota - s_left(old) as u8;
++            }
+         }
+-        self.slots[slot(key)] = Slot {
+-            key,
+-            start,
+-            len: len as u8,
+-            quota,
+-            hits,
+-        };
++        let e = self.map.get(&key).expect("decoded");
++        let left = e.quota.saturating_sub(e.hits) as u64;
++        let (start, len) = (e.start(), e.len());
++        self.slots[i] = key & S_KEY
++            | S_FULL
++            | left << S_LEFT
++            | (len as u64) << S_LEN
++            | (start as u64) << S_START;
+         if self.used.len() < SLOTS / 16 {
+-            self.used.push(slot(key) as u32);
++            self.used.push(i as u32);
+         }
+         (start, len)
+     }
+@@ -2712,9 +2753,9 @@ impl Cache {
+     #[inline(always)]
+     pub fn count(&mut self, key: u64) -> bool {
+         let s = &mut self.slots[slot(key)];
+-        if s.key == key {
+-            if s.hits < s.quota as u16 {
+-                s.hits += 1;
++        if slot_holds(*s, key) {
++            if *s & S_LEFTS != 0 {
++                *s = (*s - S_LEFT1) | S_DIRTY;
+                 return true;
+             }
+             return false;
+@@ -2732,34 +2773,50 @@ impl Cache {
+         }
+         self.slot_in(key);
+         let s = &mut self.slots[slot(key)];
+-        s.hits += 1;
++        *s = (*s - S_LEFT1) | S_DIRTY;
+         true
+     }
+ 
+     /// The dispatches the block at `key` may count before it reports again
+     /// (`jit::Cache::miss` says, at most [`REPORT`]), in its slot or out of it.
++    ///
++    /// (Called after [`Cache::counted`]: the dispatches it counted since
++    /// then, if more than `n`, count as `n`.)
+     pub fn quota(&mut self, key: u64, n: u32) {
+-        let s = &mut self.slots[slot(key)];
+-        if s.key == key {
+-            s.quota = n.min(REPORT_IDLE) as u8;
+-        } else if let Some(e) = self.map.get_mut(&key)
+-            && e.len() != 0
+-        {
+-            // (Never a key with no instructions: it isn't a block to run.)
+-            e.quota = n.min(REPORT_IDLE) as u8;
++        let n = n.min(REPORT_IDLE) as u8;
++        let i = slot(key);
++        let s = self.slots[i];
++        let Some(e) = self.map.get_mut(&key) else {
++            return;
++        };
++        // (Never a key with no instructions: it isn't a block to run.)
++        if e.len() == 0 {
++            return;
++        }
++        if slot_holds(s, key) {
++            let hits = (e.quota - s_left(s) as u8).min(n);
++            (e.hits, e.quota) = (hits, n);
++            self.slots[i] = s & !(S_LEFTS | S_DIRTY) | ((n - hits) as u64) << S_LEFT;
++        } else {
++            e.quota = n;
+         }
+     }
+ 
+     /// The dispatches the block at `key` counted since it last reported,
+     /// which it reports now.
+     pub fn counted(&mut self, key: u64) -> u32 {
+-        let s = &mut self.slots[slot(key)];
+-        if s.key == key {
+-            return core::mem::take(&mut s.hits) as u32;
++        let i = slot(key);
++        let s = self.slots[i];
++        let Some(e) = self.map.get_mut(&key) else {
++            return 0;
++        };
++        if slot_holds(s, key) {
++            let hits = e.quota - s_left(s) as u8;
++            e.hits = 0;
++            self.slots[i] = s & !(S_LEFTS | S_DIRTY) | (e.quota as u64) << S_LEFT;
++            return hits as u32;
+         }
+-        self.map
+-            .get_mut(&key)
+-            .map_or(0, |e| core::mem::take(&mut e.hits) as u32)
++        core::mem::take(&mut e.hits) as u32
+     }
+ 
+     /// Whether `key` was decoded and has no instructions.
+@@ -2775,7 +2832,7 @@ impl Cache {
+ 
+     #[cfg(test)]
+     pub fn slotted(&self, key: u64) -> bool {
+-        self.slots[slot(key)].key == key
++        slot_holds(self.slots[slot(key)], key)
+     }
+ 
+     #[cfg(test)]
+@@ -2797,7 +2854,7 @@ impl Cache {
+             let key = page << 12 | low as u64;
+             let next = self.map.remove(&key).expect("a page's key").next;
+             let s = &mut self.slots[slot(key)];
+-            if s.key == key {
++            if slot_holds(*s, key) {
+                 *s = EMPTY;
+             }
+             if next == low {
+diff --git a/core/src/interp/block/tests.rs b/core/src/interp/block/tests.rs
+index fd6baf61..8359f902 100644
+--- a/core/src/interp/block/tests.rs
++++ b/core/src/interp/block/tests.rs
+@@ -572,6 +572,29 @@ fn a_block_out_of_its_slot_keeps_its_quota() {
+     assert_eq!(c.counted(b), 3);
+ }
+ 
++/// A slot keeps only the key bits its index doesn't imply (and the PA's): a
++/// key above `PA_BITS` (a PC there with the MMU off: no RAM) never matches the
++/// block whose bits it has under them.
++#[test]
++fn a_key_above_the_pa_bits_is_never_slotted() {
++    let t = TestRam::new(RAM);
++    t.mem.write(CODE, 4, 0x9100_0400).unwrap(); // add x0, x0, #1
++    t.mem.write(CODE + 4, 4, 0xd65f_03c0).unwrap(); // ret
++    let mut c = Cache::new(MAX_BUDGET);
++    c.decode(CODE, &t.mem);
++    c.quota(CODE, REPORT);
++    assert!(c.slotted(CODE) && c.count(CODE));
++    for hi in [1u64 << crate::mmu::PA_BITS, 1 << 63] {
++        assert!(!c.slotted(CODE | hi) && !c.count(CODE | hi));
++        assert!(c.get(CODE | hi, &t.mem).is_none());
++    }
++    // Nor another regime's, nor another key of its slot.
++    for k in [CODE | 1, CODE | 2, CODE + 4 * SLOTS as u64] {
++        assert!(!c.slotted(k));
++    }
++    assert_eq!(c.counted(CODE), 1);
++}
++
+ /// A key with no instructions is remembered (the JIT asks its cache about it
+ /// once), until an IC names its page.
+ #[test]

@@ -551,6 +551,9 @@ In `bench/interp/REPORT.md` "M8-INTERP loop 2" unless said, the variants' diffs 
   more loop-carried values, and the conditions' selects cost more than a stored NZCV's bits.
 - **A flag setter fused with its B.cond** (one dispatch for the pair, ~6% of the instructions):
   +1%, twice; with lazy NZCV −4 to −8%; with the MOV runs −2 to +1% (loop 4).
+- **More slots, or smaller ones** (`bench/interp/REPORT.md` "PERF loop 1"): 1,048,576 slots made Firefox's pages
+  session −0.8%, under the bar (loop 2's 4× was −4.4%); 8-byte slots (only the key bits the index doesn't imply, the
+  counts as dispatches left) cost `hot` 2.6-5% on the block-interpreter guests for 2 MiB a table.
 - **Pre-linked successors** (the arena index of each successor and a compiled bit in the slot):
   dropping the jump-cache check altogether, the most they could save, gave 1-1.5%. A block's cost
   is its micro-ops and the reports, not the slot and jump-cache lookups.

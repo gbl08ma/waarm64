@@ -2213,3 +2213,41 @@ Three rounds alternated against `35f9fa41` (`results/m9-interp-mac/misaligned/`)
 rounds apart, under the bar), `vm_dec_mmu_mips` 510.8 → 516.2 (overlapping), Alpine's boot through the block
 interpreter 253.75 → 254.13 MIPS (+0.1%). Nothing slower, so kept; its gain in a browser (~0.15% of busy time by
 loop 1's estimate) is too small for the pages session to show, so not measured there. No memory.
+
+## PERF loop 1: blocks out of their slot, more slots and a smaller slot (2026-11-10)
+
+The Mac host (Apple M4, macOS 26.6.2), Chrome for Testing 157.0.8103.50; base `5d571308`; raw
+`results/m9-interp-mac/perf1/` (README). Loop 2 left the decoded blocks' slots at 262,144 (16 bytes each, 4 MiB a
+table), each 4× having halved the next-block misses, and two ideas: more slots, and a smaller slot to pay for them.
+
+**More slots first, at 16 bytes** (1,048,576: 16 MiB a table, +48 MiB on four vCPUs; built only to see what more
+would buy). Firefox's pages session from the snapshot (`PHASE_S=1`, each page's start and load summed), three rounds
+alternated:
+
+| | r1 | r2 | r3 | median |
+|---|---|---|---|---|
+| main | 79.1 | 78.5 | 78.8 | 78.8 s |
+| 1,048,576 slots | 78.2 | 77.8 | 78.7 | 78.2 s (−0.8%, overlapping) |
+
+Interpreted steps 3.37-3.40 G in both. Loop 2's 4× was −4.4%; this 4× is under the bar, so the slots are past where
+more of them pay, whatever a slot's size.
+
+**A smaller slot** (`slot8.diff`): 8 bytes, one `u64` holding only the key bits the index doesn't imply in place (the
+regime bits and the PA's above the index; the key's bits from `PA_BITS` up are zero for every block, a filled bit
+keeps an all-zero slot empty, so the table is allocated zeroed), the start (23 bits, under `MAX_BUDGET`), the length,
+and the dispatches left before a report (counting down; the map keeps the quota given, so a report reads its count
+as quota less what's left, and a dirty bit says an evicted slot's count must go back to the map). A lookup is
+`(s ^ k) & TAG == FULL`, and `Flat::ikey` refuses a PC from `PA_BITS` up (it would alias one under). The block
+interpreter's tests passed, plus a test of keys above `PA_BITS`; `hot` 11,806 → 11,828 bytes, no call. Three rounds
+alternated (`p1s-r<round>-<arm>-<bench>.json`), MIPS:
+
+| | main | 8-byte slots |
+|---|---|---|
+| `dec_mips` | 517.5 · 518.9 · 517.0 | 499.2 · 501.8 · 499.6 (−3.5%) |
+| `vm_dec_mmu_mips` | 509.6 · 514.9 · 513.6 | 486.4 · 486.3 · 488.1 (−5.3%) |
+| Alpine's boot through the block interpreter | 255.3 · 254.6 · 254.5 | 248.0 · 247.9 · 247.8 (−2.6%) |
+
+**Not kept, either.** The packed slot's compare under a 64-bit mask, its fields' shifts and the full-word store back
+cost `hot`'s chain step more than the 2 MiB a table (8 MiB on four vCPUs) is worth; these guests' reports are rare (no
+compiles: every 255), so the loss is `hot`'s, not the map lookups the reports gained. With more slots not paying,
+a smaller slot would have bought only memory, and not at this price. The slots stay 262,144 of 16 bytes.
