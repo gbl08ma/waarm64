@@ -96,6 +96,9 @@ struct JsRoom {
     relay_only: bool,
     /// Members may open connections to the guest (default: yes).
     incoming: Option<bool>,
+    /// The wall clock at the start, Unix seconds (default: the system's, read each time): a
+    /// benchmark's shifted clock, to put an hour's turn into a run (bench/net/room-scale.ts).
+    unix_time: Option<u64>,
 }
 
 fn node_keys(keys: &[String]) -> Result<Vec<[u8; 32]>, String> {
@@ -239,7 +242,7 @@ pub unsafe extern "C" fn ts_new(ptr: *mut u8, len: usize) -> i32 {
                     known: node_keys(&r.known)?,
                     relay_only: r.relay_only,
                     incoming: r.incoming.unwrap_or(true),
-                    unix_time: None,
+                    unix_time: r.unix_time,
                 };
                 return room::Client::new(cfg, Instant::now()).map(|r| Any::Room(Box::new(r)));
             }

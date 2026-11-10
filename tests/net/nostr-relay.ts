@@ -4,7 +4,8 @@
 // tests against BIP-340's vectors); the id is, as SHA-256 of NIP-01's serialization. No dependency: a small RFC 6455
 // server (text frames, ping, close; no extensions, no fragmentation from us) over node:http's upgrade.
 //
-// As a program: `node tests/net/nostr-relay.ts [port]` prints its ws:// URL and serves until killed.
+// As a program: `node tests/net/nostr-relay.ts [port]` prints its ws:// URL and serves until killed, its `stats` at
+// `GET /stats` (bench/net/room-scale.ts reads them).
 import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -12,6 +13,13 @@ import type { Duplex } from 'node:stream';
 type Event = { id: string; pubkey: string; created_at: number; kind: number; tags: string[][]; content: string; sig: string };
 type Filter = { kinds?: number[]; '#x'?: string[] };
 type Client = { send(text: string): void; subs: Map<string, Filter[]>; close(): void };
+
+/** What the relay carried, for a benchmark: counts since the start, and when each client path first subscribed. */
+export type RelayStats = {
+  connections: number; reqs: number; closes: number; eventsIn: number; forwards: number; bytesIn: number; bytesOut: number;
+  /** The connection's request path (a benchmark gives each member its own) → `Date.now()` at its first REQ. */
+  firstReq: Record<string, number>;
+};
 
 export type NostrRelay = {
   url: string;
@@ -21,6 +29,7 @@ export type NostrRelay = {
   drop: boolean;
   /** How many clients are connected. */
   clients(): number;
+  stats: RelayStats;
   close(): Promise<void>;
 };
 
@@ -35,12 +44,13 @@ function frame(op: number, payload: Buffer): Buffer {
 }
 
 /** Serves one upgraded socket: complete text messages go to `onText`. */
-function serve(socket: Duplex, onText: (s: string) => void, onClose: () => void): Client['send'] {
+function serve(socket: Duplex, onText: (s: string) => void, onClose: () => void, stats: RelayStats): Client['send'] {
   let buf = Buffer.alloc(0);
   let parts: Buffer[] = [];
   let closed = false;
   const close = () => { if (!closed) { closed = true; socket.destroy(); onClose(); } };
   socket.on('data', (d: Buffer) => {
+    stats.bytesIn += d.length;
     buf = Buffer.concat([buf, d]);
     for (;;) {
       if (buf.length < 2) return;
@@ -63,7 +73,12 @@ function serve(socket: Duplex, onText: (s: string) => void, onClose: () => void)
   });
   socket.on('close', close);
   socket.on('error', close);
-  return (text) => { if (!closed) socket.write(frame(1, Buffer.from(text, 'utf8'))); };
+  return (text) => {
+    if (closed) return;
+    const f = frame(1, Buffer.from(text, 'utf8'));
+    stats.bytesOut += f.length;
+    socket.write(f);
+  };
 }
 
 const matches = (e: Event, f: Filter) =>
@@ -72,17 +87,22 @@ const matches = (e: Event, f: Filter) =>
 const idOf = (e: Event) =>
   createHash('sha256').update(JSON.stringify([0, e.pubkey, e.created_at, e.kind, e.tags, e.content])).digest('hex');
 
-export async function startNostrRelay(port = 0): Promise<NostrRelay> {
+/** `keep`: `events` holds every event (the tests'); a benchmark's long run turns it off. */
+export async function startNostrRelay(port = 0, keep = true): Promise<NostrRelay> {
   const clients = new Set<Client>();
   const relay: NostrRelay = {
     url: '', events: [], drop: false,
     clients: () => clients.size,
+    stats: { connections: 0, reqs: 0, closes: 0, eventsIn: 0, forwards: 0, bytesIn: 0, bytesOut: 0, firstReq: {} },
     close: () => new Promise((resolve) => {
       for (const c of clients) c.close();
       server.close(() => resolve());
     }),
   };
-  const server = createServer((_, res) => { res.writeHead(426).end('a Nostr relay: WebSocket only'); });
+  const server = createServer((req, res) => {
+    if (req.url === '/stats') return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(relay.stats));
+    res.writeHead(426).end('a Nostr relay: WebSocket only');
+  });
   server.on('upgrade', (req: IncomingMessage, socket: Duplex) => {
     const key = req.headers['sec-websocket-key'];
     if (typeof key !== 'string' || req.headers.upgrade?.toLowerCase() !== 'websocket') return socket.destroy();
@@ -90,26 +110,35 @@ export async function startNostrRelay(port = 0): Promise<NostrRelay> {
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
     const c: Client = { send: () => {}, subs: new Map(), close: () => socket.destroy() };
     clients.add(c);
+    const stats = relay.stats;
+    stats.connections++;
+    const path = req.url ?? '/';
     c.send = serve(socket, (text) => {
       let m: unknown;
       try { m = JSON.parse(text); } catch { return c.send(JSON.stringify(['NOTICE', 'not JSON'])); }
       if (!Array.isArray(m)) return;
       if (m[0] === 'REQ' && typeof m[1] === 'string') {
+        stats.reqs++;
+        stats.firstReq[path] ??= Date.now();
         c.subs.set(m[1], m.slice(2) as Filter[]);
         c.send(JSON.stringify(['EOSE', m[1]]));
       } else if (m[0] === 'CLOSE' && typeof m[1] === 'string') {
+        stats.closes++;
         c.subs.delete(m[1]);
       } else if (m[0] === 'EVENT' && m[1] && typeof m[1] === 'object') {
         const e = m[1] as Event;
         if (idOf(e) !== e.id) return c.send(JSON.stringify(['OK', e.id, false, 'invalid: the id']));
         c.send(JSON.stringify(['OK', e.id, true, '']));
-        relay.events.push(e);
+        stats.eventsIn++;
+        if (keep) relay.events.push(e);
         if (relay.drop) return;
         for (const o of clients) {
-          for (const [sub, filters] of o.subs) if (filters.some((f) => matches(e, f))) o.send(JSON.stringify(['EVENT', sub, e]));
+          for (const [sub, filters] of o.subs) {
+            if (filters.some((f) => matches(e, f))) { stats.forwards++; o.send(JSON.stringify(['EVENT', sub, e])); }
+          }
         }
       }
-    }, () => clients.delete(c));
+    }, () => clients.delete(c), stats);
   });
   await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
   relay.url = `ws://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -117,6 +146,6 @@ export async function startNostrRelay(port = 0): Promise<NostrRelay> {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const r = await startNostrRelay(Number(process.argv[2] ?? 0));
+  const r = await startNostrRelay(Number(process.argv[2] ?? 0), false);
   console.log(r.url);
 }

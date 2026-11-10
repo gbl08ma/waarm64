@@ -49,6 +49,8 @@ export type RoomConfig = {
     relayOnly?: boolean;
     /** Members may open connections to the guest (default: yes). */
     incoming?: boolean;
+    /** The wall clock at the start, Unix seconds (default: the system's): a benchmark's shifted clock. */
+    unixTime?: number;
   };
   derpMapURL?: string;
   /** The node's private key, 64 hex digits. */
@@ -165,11 +167,13 @@ export class TsModule {
     this.x = x;
   }
 
-  /** Loads target/net/ts.wasm from `source` (a URL, streamed, or the bytes). */
-  static async load(source: string | URL | BufferSource, log?: (line: string) => void): Promise<TsModule> {
+  /** Loads target/net/ts.wasm from `source` (a URL, streamed, the bytes, or compiled: a benchmark's many instances). */
+  static async load(source: string | URL | BufferSource | WebAssembly.Module, log?: (line: string) => void): Promise<TsModule> {
     let memory: WebAssembly.Memory | undefined;
     const imports = wasi(() => memory!, log);
-    const { instance } = source instanceof ArrayBuffer || ArrayBuffer.isView(source)
+    const { instance } = source instanceof WebAssembly.Module
+      ? { instance: await WebAssembly.instantiate(source, imports) }
+      : source instanceof ArrayBuffer || ArrayBuffer.isView(source)
       ? await WebAssembly.instantiate(source, imports)
       : await WebAssembly.instantiateStreaming(fetch(source), imports);
     const x = instance.exports as unknown as Exports;

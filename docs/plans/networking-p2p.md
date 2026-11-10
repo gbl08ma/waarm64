@@ -1,4 +1,4 @@
-# Peer-to-peer rooms over WebRTC (in progress: R0 to R2 done 2026-11-10)
+# Peer-to-peer rooms over WebRTC (in progress: R0 to R3 done 2026-11-10)
 
 VMs in different browsers on one network, with packets going browser to browser over WebRTC and DERP
 only as the fallback. Reaching a peer takes two steps: **joining its room**, and **knowing its
@@ -117,9 +117,12 @@ nobody hands anything out:
 - **the WireGuard pre-shared key** for every pair in the room (IKpsk2, as a tailcat address carries
   one): a node outside the room can't complete a handshake with a member even if it knows the key.
 
-All rooms' lookups share one ephemeral event kind, fixed (R3 picks it, clear of the kinds NIPs
-reserve, such as 22242 for NIP-42's AUTH, 24133 and 27235), so relays can't group lookups by room
-and no room's ID lands on a kind that relays treat specially.
+All rooms' lookups share one ephemeral event kind, fixed, so relays can't group lookups by room
+and no room's ID lands on a kind that relays treat specially: **26354** (R3, 2026-11-10), clear of
+every kind the NIPs list (their ephemeral ones on that day: 21059, 22242, 23194, 23195, 24133, 24242,
+27235, 28934–28936). No ephemeral kind is clear of Trystero's, which hashes each topic onto one of
+20000–29999 (`strToNum(topic, 1e4) + 2e4`, 0.26.0); sharing a kind is harmless, since a relay
+forwards by the `#x` filter too.
 
 A connection's node key is kept in IndexedDB (as `webpc-tailcat` keeps tailcat's identity), so its
 address and name don't change when it rejoins. "New identity" makes a new key.
@@ -129,7 +132,9 @@ address and name don't change when it rejoins. "New identity" makes a new key.
 - **A node's tag** in a room is a hash (BLAKE2s) of the tag salt, the node's address and the hour.
   A node keeps a subscription (`REQ` with the kind and an `#x` filter, as Trystero's) open on each of
   the room's relays for its tags of the previous, current and next hour, so a dialer's clock may be
-  off by most of an hour. The tag a relay sees changes every hour; a relay without the room's ID
+  off by most of an hour. It's renewed each minute (a liveness check), and a turned hour waits for
+  that renewal (R3): the subscription has the new hour's tag already, and renewing at the turn put
+  every member's REQ and CLOSE on the relay in the same second. The tag a relay sees changes every hour; a relay without the room's ID
   can't tie it to an address, though one that sees the same connection's subscriptions can chain a
   session's tags.
 - **A lookup** is an ephemeral event of that kind with the target's tag, carrying the dialer's node
@@ -144,6 +149,9 @@ address and name don't change when it rejoins. "New identity" makes a new key.
   own region reaches only the dialer. A target drops lookups older than a minute, lookups whose
   nonce it has seen, lookups from a key it has a session with (which can only re-route a live peer),
   and beyond a few new on-trial peers a second, so a member can't make it call out without bound.
+  (R3: 16 a second, those past it waiting their turn, 64 at most, so a crowd of dialers gets in at
+  that rate instead of on their resends; 4 a second and dropping let 25 of 200 dialers at once in
+  within 15 s, bench/net/REPORT.md "Rooms at scale".)
   (R1: "older than a minute" became "more than an hour off its clock", the tags' window, since a
   dialer's clock may be off by most of an hour and a copy within it is dropped by its nonce, kept
   three hours; a lookup from a key with a session probes it with a signalling ping and calls back
@@ -295,11 +303,26 @@ client was built.
   one's IP address (§1), beside the room's privacy note. Two Debian guests in one Chromium reach each
   other by name in `scripts/ci-net.sh`, and a room on a second adapter beside the local helper
   keeps the internet (frontend.md "Network" grows a section).
-- **R3 — Scale.** What a cloud session can measure, with nothing outside the test harness: a thousand
-  synthetic members on the test relay (join time, lookup time, the worker's memory and CPU, the relay's
-  load), the lookup's event kind chosen from the NIPs' reserved ranges (§2), and what the defaults need
-  from a relay (the kinds, the `#x` filter, the rate of events a busy room sends) written down for R4
-  to check against real ones.
+- **R3 — Scale.** *Done 2026-11-10* (bench/net/REPORT.md "Rooms at scale", `bench/net/room-scale.ts`): a
+  thousand members (the module, an instance each, relay only, in Node) on the tests' relay and the rig's
+  derper. Joining, idling and lookups at 10 and 50 new pairs a second don't move with the room's size (a
+  member costs ~1.4 MiB and no measurable CPU idle; a lookup to its echo ~5 ms on loopback, one event);
+  two fixes from what it found: a crowd of dialers waits for the target's trial budget (16 a second)
+  instead of being dropped (§3), and the hour's turn waits for each relay's renewal (§3); the event kind
+  decided (§2). The brief as it was: What a cloud session can measure, with nothing outside the test
+  harness: a thousand synthetic members on the test relay (join time, lookup time, the worker's memory
+  and CPU, the relay's load), the lookup's event kind chosen from the NIPs' reserved ranges (§2), and
+  what the defaults need from a relay (the kinds, the `#x` filter, the rate of events a busy room sends)
+  written down for R4 to check against real ones.
+- **What a room needs from a Nostr relay** (R3, for R4 to check public ones against): NIP-01 over a
+  plain WebSocket, no NIP-42 AUTH and no NIP-13 proof of work (a relay that requires either carries no
+  room); ephemeral kind 26354 accepted and forwarded; filters by a single-letter tag (`#x`, three
+  values) with `limit: 0`; `created_at` within the relay's tolerance of the dialer's clock (R1: some
+  refuse events dated ahead). A member holds one connection and one subscription a relay, renewed
+  every minute (one REQ; at the hour's turn, within the next minute, a CLOSE and a REQ under a new
+  subscription ID); a lookup is one event of ~550 bytes on the wire, forwarded to one subscriber (a tag
+  is one node's), again after 1 s and 3 s only while no call back comes, at most 8 lookups a second a
+  member. A thousand members: 17 REQs a second steady, 2.8 KB/s in; each new pair a second one event.
 - **R4 — The real world, by hand and in the dev VM** (split from R3 on 2026-11-10, the user's call: the dev
   VM is unavailable for a while, so what needs it or a person waits here). First the runs the cloud can't
   do: `scripts/ci-net.sh` whole (the cloud has no Podman or IPv6, docs/cloud.md), R0's numbers again

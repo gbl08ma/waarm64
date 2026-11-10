@@ -153,7 +153,7 @@ without, so a key without the address gets nothing in.
 
 ## Rooms
 
-Peer-to-peer rooms ([plans/networking-p2p.md](plans/networking-p2p.md), in progress: R0 to R2 done). `room.rs` is a
+Peer-to-peer rooms ([plans/networking-p2p.md](plans/networking-p2p.md), in progress: R0 to R3 done). `room.rs` is a
 third client of the module (with `room/link.rs`, `room/lookup.rs` and `nostr.rs`); `web/room.ts` and
 `web/room-worker.ts` are its page and worker. A room is a connection kind on the page ([frontend.md](frontend.md)
 "Network": the wizard's Create a room and Join a room, the menu's name and link to copy); the node key a connection
@@ -170,8 +170,9 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
   /48 plus the first 80 bits of its node key, as tailcat's; its name is `<key in base32, 52 characters>.<tag>.p2p.internal`.
 - **Finding a peer** (`room/lookup.rs`, `nostr.rs`): a node's tag in an hour is BLAKE2s of the tag salt, its address
   and the Unix hour (16 bytes, hex); it keeps one subscription on each of the link's Nostr relays (`REQ`, the kind
-  `room::KIND` = 26354, a placeholder, and its tags of the previous, current and next hour; `CLOSE` and a new `REQ` when
-  the hour turns), so a dialer's clock may be off by most of an hour. When the guest sends to a room address nobody
+  `room::KIND` = 26354, and its tags of the previous, current and next hour; after the hour turns, the next renewal is a
+  `CLOSE` and a new `REQ` with the new hour's tags, not at the turn itself, so a room's members don't all renew in the
+  same second), so a dialer's clock may be off by most of an hour. When the guest sends to a room address nobody
   has, the packet waits (16 at most) and a **lookup** goes out as an ephemeral event under the target's tag of the
   dialer's hour, signed with BIP-340 (`k256`) by a key random per session, on every relay: the dialer's node key, its
   home region (an index into the link's regions), the time and a random nonce, sealed with ChaCha20-Poly1305 to the
@@ -194,7 +195,9 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
   drops lookups more than an hour off its clock, a nonce it has seen (remembered for three hours, 8,192 at most, the
   oldest let go first; a reloaded target forgets them, so a relay may replay a recent lookup to it, which costs one
   unwanted call back that the dialer refuses unless it takes incoming connections), a region outside the link, its
-  own key, and beyond 4 call backs a second (1,024 peers at most). When each dials the other at once, only the lower
+  own key, and 1,024 peers at most. Call backs are 16 a second; past that they wait their turn (first come first
+  served, a key's later lookup only updating its region; 64 at most, so served within 4 s, before the dialer gives
+  up; more are dropped), so a crowd of dialers gets in at that rate. When each dials the other at once, only the lower
   key calls back (crossed handshakes each abandon their own for the other's in `ts_tunnel`, and neither completes). A
   lookup from a key whose call back is still on trial sends its initiation again through that lookup's region (at most
   every 0.5 s): a lost one goes again with the dialer's resend, and a forged lookup naming a region the key isn't on
@@ -207,7 +210,7 @@ keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), whi
 - **WireGuard** (`ts_tunnel`, IKpsk2 with the room's key) carries the guest's IPv6 between members, whichever path
   carries its packets. A peer's packets reach the guest only from that peer's own address to ours. A key we don't
   know that starts a handshake is let in **on trial** (incoming connections, on by default) and forgotten 20 s after it
-  came in unless its data decrypted, which only the room's key allows; 4 such a second, a budget apart from call
+  came in unless its data decrypted, which only the room's key allows; 16 such a second, a budget apart from call
   backs', charged only once WireGuard answered the handshake (its MAC1 right), so junk from anyone who knows the key
   can't use it up. DERP proves a packet's sender, so a peer's packets go back through the region its last one came
   from (our response to its new initiation too). A peer is forgotten after 3 minutes without the

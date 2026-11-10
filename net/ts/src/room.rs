@@ -57,8 +57,8 @@ pub const SIGNAL_PORT: u16 = 1;
 /// The names' suffix under the room's tag: `.internal`, which ICANN reserved for private use and
 /// never delegates (plan §5: systemd-resolved answers RFC 9476's `.alt` NXDOMAIN itself).
 pub const SUFFIX: &str = "p2p.internal";
-/// The ephemeral event kind of every room's lookups (a placeholder until R3: clear of the kinds
-/// NIPs reserve, 22242, 24133, 27235).
+/// The ephemeral event kind of every room's lookups (R3: clear of every kind the NIPs list;
+/// docs/plans/networking-p2p.md §2).
 pub const KIND: u32 = 26354;
 /// A WireGuard handshake initiation's type and size.
 const INITIATION: (u8, usize) = (1, 148);
@@ -66,7 +66,13 @@ const INITIATION: (u8, usize) = (1, 148);
 const TRIAL: Duration = Duration::from_secs(20);
 /// At most this many peers come in on trial a second by our call backs, and as many by handshakes
 /// that came unasked (each budget its own, and an unasked one counted only once WireGuard answered it).
-const TRIALS_PER_SECOND: usize = 4;
+/// A forged lookup costs one initiation through one of the room's regions, and trials last
+/// [`TRIAL`], so at most 320 at once (R3: 4 a second let only 25 of 200 dialers at once in within
+/// 15 s, bench/net/REPORT.md "Rooms at scale").
+const TRIALS_PER_SECOND: usize = 16;
+/// Call backs past the budget wait for it, first come first served, at most this many (served
+/// within 4 s, before the dialers give up), and are dropped beyond.
+const MAX_CALLS_WAITING: usize = 4 * TRIALS_PER_SECOND;
 const MAX_PEERS: usize = 1024;
 /// A lookup goes out at once and again after these waits while no call back comes; the guest's
 /// packets wait until [`LOOKUP_GIVE_UP`], then get an ICMPv6 address unreachable, as do its
@@ -453,6 +459,8 @@ pub struct Client {
     /// When the last call backs and unasked trials came in, and the last lookups went out.
     trials_out: VecDeque<Instant>,
     trials_in: VecDeque<Instant>,
+    /// Call backs waiting for room in `trials_out`: the dialer's key and region.
+    calls_waiting: VecDeque<([u8; 32], usize)>,
     published: VecDeque<Instant>,
     /// The DERP map is awaited.
     map_pending: bool,
@@ -557,6 +565,7 @@ impl Client {
             nonce_order: VecDeque::new(),
             trials_out: VecDeque::new(),
             trials_in: VecDeque::new(),
+            calls_waiting: VecDeque::new(),
             published: VecDeque::new(),
             map_pending: false,
             flows: BTreeMap::new(),
@@ -910,7 +919,9 @@ impl Client {
 
     /// Subscribes to our tags on Nostr relay `i` (a REQ with the same ID renews it), to be
     /// answered within [`NOSTR_ANSWER`].
+    /// The hour's tags are taken here, so a turned hour waits for a renewal.
     fn nostr_subscribe(&mut self, i: usize, now: Instant) {
+        self.hour = self.unix(now) / 3600;
         let sub = format!("webpc{}", self.hour);
         if let Some(old) = self.nostr[i].sub.take()
             && old != sub
@@ -1032,13 +1043,29 @@ impl Client {
         self.call_back(l.key, l.region as usize, now);
     }
 
-    /// Answers a lookup from `key`: our handshake through the dialer's home region `r`.
+    /// Answers a lookup from `key`: our handshake through the dialer's home region `r`, or, past
+    /// the budget, once it has room.
     fn call_back(&mut self, key: [u8; 32], r: usize, now: Instant) {
-        if !Self::take(&mut self.trials_out, TRIALS_PER_SECOND, now)
-            || self.peers.len() >= MAX_PEERS
-        {
-            return self.log("lookup dropped: too many new peers".into());
+        if self.peers.len() >= MAX_PEERS {
+            return self.log("lookup dropped: too many peers".into());
         }
+        if !self.calls_waiting.is_empty()
+            || !Self::take(&mut self.trials_out, TRIALS_PER_SECOND, now)
+        {
+            if let Some(w) = self.calls_waiting.iter_mut().find(|(k, _)| *k == key) {
+                w.1 = r; // its latest lookup's region
+            } else if self.calls_waiting.len() < MAX_CALLS_WAITING {
+                self.calls_waiting.push_back((key, r));
+            } else {
+                self.log("lookup dropped: too many new peers".into());
+            }
+            return;
+        }
+        self.call_now(key, r, now);
+    }
+
+    /// A call back the budget has room for (taken).
+    fn call_now(&mut self, key: [u8; 32], r: usize, now: Instant) {
         let id = self.add_peer(key, true, r, now);
         let r = self.wg.send(now, [(id, Vec::new())]);
         self.send_to_peers(r.to_peers, now);
@@ -1046,6 +1073,19 @@ impl Client {
         // Our hello waits for the session, then is acknowledged and resent: the responder can't
         // send until data comes from us, and a lone keepalive lost would leave it unable to.
         self.hello(id, now);
+    }
+
+    /// The call backs that waited, as the budget has room (one that has a peer by now is done).
+    fn serve_calls(&mut self, now: Instant) {
+        while !self.calls_waiting.is_empty()
+            && Self::room_in(&mut self.trials_out, TRIALS_PER_SECOND, now)
+        {
+            let (key, r) = self.calls_waiting.pop_front().unwrap();
+            if self.peers.len() < MAX_PEERS && !self.peers.values().any(|p| p.key == key) {
+                self.trials_out.push_back(now);
+                self.call_now(key, r, now);
+            }
+        }
     }
 
     /// Whether `window` (times in the last second) has room for one more, under `max` a second.
@@ -1850,16 +1890,10 @@ impl Client {
         let r = self.wg.dispatch_events(now);
         self.send_to_peers(r.to_peers, now);
         let running = self.state == State::Running;
-        // The hour turned: subscribe to the new hour's tags.
-        let hour = self.unix(now) / 3600;
-        if hour != self.hour {
-            self.hour = hour;
-            for i in 0..self.nostr.len() {
-                if self.nostr[i].conn.is_some() {
-                    self.nostr_subscribe(i, now);
-                }
-            }
-        }
+        self.serve_calls(now);
+        // The hour's turn waits for each relay's next renewal (within [`NOSTR_CHECK`]): the
+        // subscription has the next hour's tags already, and every member renewing at the same
+        // second would hit the relays at once (R3: a thousand REQs and CLOSEs in one second).
         for i in 0..self.nostr.len() {
             let n = &self.nostr[i];
             if n.reconnect_at.is_some_and(|t| t <= now) {
@@ -2041,24 +2075,21 @@ impl Client {
                 idle.then(|| g.used + REGION_IDLE),
             ]
         });
-        let next_hour = self.t0
-            + Duration::from_secs((self.hour + 1) * 3600)
-                .saturating_sub(Duration::from_secs(self.unix0));
-        [
-            self.wg.next_event().map(|r| r.start()),
-            (self.state != State::Failed).then_some(next_hour),
-        ]
-        .into_iter()
-        .chain(peers)
-        .chain(relays)
-        .chain(
-            self.nostr
-                .iter()
-                .flat_map(|n| [n.reconnect_at, n.answer_by, n.check_at]),
-        )
-        .chain(self.pending.values().map(|w| self.lookup_due(w)))
-        .flatten()
-        .min()
+        let calls = (!self.calls_waiting.is_empty())
+            .then(|| self.trials_out.front().map(|t| *t + Duration::from_secs(1)))
+            .flatten();
+        [self.wg.next_event().map(|r| r.start()), calls]
+            .into_iter()
+            .chain(peers)
+            .chain(relays)
+            .chain(
+                self.nostr
+                    .iter()
+                    .flat_map(|n| [n.reconnect_at, n.answer_by, n.check_at]),
+            )
+            .chain(self.pending.values().map(|w| self.lookup_due(w)))
+            .flatten()
+            .min()
     }
 
     pub fn poll(&mut self) -> Option<Action> {

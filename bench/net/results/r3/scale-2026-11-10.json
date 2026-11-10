@@ -1,0 +1,382 @@
+{
+  "date": "2026-11-10T21:09:33.012Z",
+  "host": "linux x64",
+  "cpus": 4,
+  "node": "v26.13.0",
+  "members": 1000,
+  "processes": 4,
+  "rate": 100,
+  "results": {
+    "join": {
+      "joinSeconds": 10.6,
+      "subscribed": 1000,
+      "failed": 0,
+      "firstReqMs": {
+        "n": 1000,
+        "p50": 4,
+        "p90": 7,
+        "p99": 23,
+        "max": 81
+      },
+      "runningMs": {
+        "n": 1000,
+        "p50": 6.6,
+        "p90": 10.6,
+        "p99": 29.8,
+        "max": 118
+      },
+      "firstReqMsFirstTenth": {
+        "n": 100,
+        "p50": 5,
+        "p90": 22,
+        "p99": 81,
+        "max": 81
+      },
+      "firstReqMsLastTenth": {
+        "n": 100,
+        "p50": 4,
+        "p90": 11,
+        "p99": 27,
+        "max": 27
+      },
+      "seconds": 10.3,
+      "relayPerSecond": {
+        "reqs": 97.2,
+        "closes": 0,
+        "eventsIn": 0,
+        "forwards": 0,
+        "kbIn": 16,
+        "kbOut": 2.3
+      },
+      "relayPeakPerSecond": {
+        "reqs": 101,
+        "eventsIn": 0
+      },
+      "cores": {
+        "relay": 0.1,
+        "derper": 0.2,
+        "workers": 1.1
+      },
+      "rssMB": {
+        "relay": 90.4,
+        "derper": 88.2,
+        "workers": 1110.4
+      }
+    },
+    "idle": {
+      "seconds": 59,
+      "relayPerSecond": {
+        "reqs": 16.9,
+        "closes": 0,
+        "eventsIn": 0,
+        "forwards": 0,
+        "kbIn": 2.8,
+        "kbOut": 0.4
+      },
+      "relayPeakPerSecond": {
+        "reqs": 101,
+        "eventsIn": 0
+      },
+      "cores": {
+        "relay": 0,
+        "derper": 0,
+        "workers": 0
+      },
+      "rssMB": {
+        "relay": 87.1,
+        "derper": 88.4,
+        "workers": 1129.8
+      },
+      "workerCpuMsPerMemberPerSecond": 0,
+      "wasmMemoryKB": {
+        "n": 1000,
+        "p50": 1408,
+        "p90": 1408,
+        "p99": 1408,
+        "max": 1408
+      },
+      "rssKBPerMember": 1155.8
+    },
+    "lookups": {
+      "10PerSecond": {
+        "pairs": 300,
+        "reached": 300,
+        "ms": {
+          "n": 300,
+          "p50": 5.5,
+          "p90": 6.5,
+          "p99": 13.9,
+          "max": 22.3
+        },
+        "seconds": 29,
+        "relayPerSecond": {
+          "reqs": 0,
+          "closes": 0,
+          "eventsIn": 10,
+          "forwards": 10,
+          "kbIn": 5.4,
+          "kbOut": 6.3
+        },
+        "relayPeakPerSecond": {
+          "reqs": 0,
+          "eventsIn": 10
+        },
+        "cores": {
+          "relay": 0,
+          "derper": 0,
+          "workers": 0.1
+        },
+        "rssMB": {
+          "relay": 91.2,
+          "derper": 88.8,
+          "workers": 1184.1
+        }
+      },
+      "50PerSecond": {
+        "pairs": 1500,
+        "reached": 1500,
+        "ms": {
+          "n": 1500,
+          "p50": 5,
+          "p90": 6.4,
+          "p99": 11.3,
+          "max": 120.2
+        },
+        "seconds": 29,
+        "relayPerSecond": {
+          "reqs": 34.5,
+          "closes": 0,
+          "eventsIn": 49.8,
+          "forwards": 49.8,
+          "kbIn": 32.3,
+          "kbOut": 32
+        },
+        "relayPeakPerSecond": {
+          "reqs": 101,
+          "eventsIn": 50
+        },
+        "cores": {
+          "relay": 0,
+          "derper": 0.1,
+          "workers": 0.4
+        },
+        "rssMB": {
+          "relay": 101.8,
+          "derper": 88.8,
+          "workers": 1163.1
+        }
+      }
+    },
+    "afterLookups": {
+      "peers": {
+        "n": 1000,
+        "p50": 3,
+        "p90": 6,
+        "p99": 8,
+        "max": 11
+      },
+      "wasmMemoryKB": {
+        "n": 1000,
+        "p50": 1408,
+        "p90": 1408,
+        "p99": 1408,
+        "max": 1408
+      }
+    },
+    "crowds": {
+      "20": {
+        "reached": 20,
+        "ms": {
+          "n": 20,
+          "p50": 23.7,
+          "p90": 1011.7,
+          "p99": 1011.7,
+          "max": 1011.7
+        },
+        "within": {
+          "1s": 16,
+          "3s": 20,
+          "6s": 20,
+          "15s": 20
+        }
+      },
+      "200": {
+        "reached": 193,
+        "ms": {
+          "n": 193,
+          "p50": 5065.2,
+          "p90": 14056.3,
+          "p99": 15015.6,
+          "max": 15016.7
+        },
+        "within": {
+          "1s": 17,
+          "3s": 49,
+          "6s": 97,
+          "15s": 179
+        }
+      }
+    },
+    "hour": {
+      "reached": 30,
+      "pairs": 30,
+      "failedAt": [],
+      "around": {
+        "seconds": 9,
+        "relayPerSecond": {
+          "reqs": 0,
+          "closes": 0,
+          "eventsIn": 1,
+          "forwards": 1,
+          "kbIn": 0.5,
+          "kbOut": 0.6
+        },
+        "relayPeakPerSecond": {
+          "reqs": 0,
+          "eventsIn": 1
+        },
+        "cores": {
+          "relay": 0,
+          "derper": 0,
+          "workers": 0
+        },
+        "rssMB": {
+          "relay": 97.3,
+          "derper": 110,
+          "workers": 1166.2
+        }
+      },
+      "atTurn": {
+        "seconds": 2,
+        "relayPerSecond": {
+          "reqs": 0,
+          "closes": 0,
+          "eventsIn": 1,
+          "forwards": 1,
+          "kbIn": 0.5,
+          "kbOut": 0.6
+        },
+        "relayPeakPerSecond": {
+          "reqs": 0,
+          "eventsIn": 1
+        },
+        "cores": {
+          "relay": 0,
+          "derper": 0,
+          "workers": 0
+        },
+        "rssMB": {
+          "relay": 97.3,
+          "derper": 110,
+          "workers": 1166.1
+        }
+      },
+      "minuteAfter": {
+        "seconds": 64,
+        "relayPerSecond": {
+          "reqs": 15.6,
+          "closes": 15.6,
+          "eventsIn": 0.3,
+          "forwards": 0.3,
+          "kbIn": 3.2,
+          "kbOut": 0.6
+        },
+        "relayPeakPerSecond": {
+          "reqs": 101,
+          "eventsIn": 1
+        },
+        "cores": {
+          "relay": 0,
+          "derper": 0,
+          "workers": 0
+        },
+        "rssMB": {
+          "relay": 98.5,
+          "derper": 97.1,
+          "workers": 1161.3
+        }
+      },
+      "reqsPerSecondFromTenBefore": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        10,
+        101,
+        99,
+        100,
+        98,
+        101,
+        99,
+        99,
+        98,
+        100,
+        95,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  }
+}

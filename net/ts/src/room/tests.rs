@@ -790,13 +790,47 @@ fn stale_replayed_forged_and_misdirected_lookups_go_unanswered() {
     n.forward(&replay);
     n.run();
     assert_eq!(calls(&n), 0, "replayed");
-    // Beyond a few new peers a second: dropped.
-    for k in 0..10u8 {
-        let mut l = mk(T0 + 21, 0, 20 + k);
-        l.key = public(30 + k);
-        n.inject(&l, &room, None, target, hour);
+}
+
+#[test]
+fn a_crowds_lookups_wait_for_the_budget_and_past_its_queue_are_dropped() {
+    let mut n = Net::new(configs(&[2]));
+    let room = n.nodes[0].c.room.clone();
+    let target = n.addr(0);
+    let hour = T0 / 3600;
+    let calls = |n: &Net| n.nodes[0].c.peers.len();
+    let crowd = TRIALS_PER_SECOND + MAX_CALLS_WAITING + 3;
+    let lookup = |k: usize, nonce: u8| Lookup {
+        key: public(30 + k as u8),
+        region: 0,
+        time: T0,
+        nonce: [nonce; 16],
+    };
+    for k in 0..crowd {
+        n.inject(&lookup(k, k as u8), &room, None, target, hour);
     }
-    assert_eq!(calls(&n), TRIALS_PER_SECOND);
+    assert_eq!(calls(&n), TRIALS_PER_SECOND, "the budget's at once");
+    // A dialer's resend doesn't take a second place.
+    n.inject(&lookup(TRIALS_PER_SECOND, 200), &room, None, target, hour);
+    let dropped = |n: &Net| {
+        n.logs(0)
+            .iter()
+            .filter(|l| l.contains("too many new peers"))
+            .count()
+    };
+    assert_eq!(dropped(&n), 3, "past the queue");
+    n.advance(Duration::from_millis(1001));
+    assert_eq!(calls(&n), 2 * TRIALS_PER_SECOND, "the next second's");
+    n.advance(Duration::from_secs(3));
+    assert_eq!(
+        calls(&n),
+        TRIALS_PER_SECOND + MAX_CALLS_WAITING,
+        "the queue served in order within 4 s"
+    );
+    let first_dropped = public(30 + (TRIALS_PER_SECOND + MAX_CALLS_WAITING) as u8);
+    assert!(n.nodes[0].c.peers.values().all(|p| p.key != first_dropped));
+    n.advance(Duration::from_secs(2));
+    assert_eq!(calls(&n), TRIALS_PER_SECOND + MAX_CALLS_WAITING);
 }
 
 #[test]
@@ -1109,6 +1143,39 @@ fn the_hour_turns_and_a_dialers_clock_may_be_off() {
     assert!(!tags.contains(&n.nodes[0].c.room.tag_for(&n.addr(0), T0 / 3600)));
     n.reach(1, 0, b"later");
     assert_eq!(n.got(0), [b"later".to_vec()]);
+}
+
+#[test]
+fn the_hours_turn_waits_for_the_next_renewal() {
+    // Both clocks 30 s ahead: the hour turns half a minute before a renewal.
+    let mut cfgs = configs(&[1, 2]);
+    for c in &mut cfgs {
+        c.unix_time = Some(T0 + 30);
+    }
+    let mut n = Net::new(cfgs);
+    let tags = |n: &Net| -> Vec<String> {
+        n.subs
+            .iter()
+            .filter(|s| s.node == 0)
+            .flat_map(|s| s.xs.clone())
+            .collect()
+    };
+    let hour = T0 / 3600;
+    let tag = |n: &Net, h: u64| n.nodes[0].c.room.tag_for(&n.addr(0), h);
+    let turn = Duration::from_secs(3600 - (T0 + 30) % 3600);
+    n.advance(turn + Duration::from_secs(1));
+    assert!(
+        !tags(&n).contains(&tag(&n, hour + 2)),
+        "not renewed at the turn"
+    );
+    // A dialer in the new hour finds it: the subscription had the next hour's tag.
+    n.reach(1, 0, b"in the new hour");
+    assert_eq!(n.got(0), [b"in the new hour".to_vec()]);
+    n.advance(Duration::from_secs(60));
+    let t = tags(&n);
+    assert_eq!(t.len(), 3, "one subscription: the old one closed");
+    assert!(t.contains(&tag(&n, hour + 2)), "renewed within a minute");
+    assert!(!t.contains(&tag(&n, hour - 1)));
 }
 
 #[test]
