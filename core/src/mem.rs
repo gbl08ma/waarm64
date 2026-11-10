@@ -702,6 +702,36 @@ pub(crate) unsafe fn load_aligned(p: *const u8, size: u32) -> Option<u64> {
     })
 }
 
+/// [`load`] of a misaligned access within a range of RAM, as two
+/// aligned 8-byte loads at most (the words around it) and a shift: no call,
+/// for the block interpreter's inline paths. Each byte is read once, by an
+/// atomic load, which is all a misaligned access is owed without LSE2.
+///
+/// # Safety
+/// `p..p + size` is guest RAM within a host range of RAM that starts and
+/// ends 8-aligned (a page through the TLB; memory 0 through the flat map),
+/// and `p` isn't aligned to `size` (1 never is).
+#[inline(always)]
+pub(crate) unsafe fn load_misaligned(p: *const u8, size: u32) -> u64 {
+    const O: Ordering = Ordering::Relaxed;
+    let (a, k) = ((p as usize & !7) as *mut u64, p as usize & 7);
+    let sh = 8 * k as u32;
+    // SAFETY: the aligned word holding `p`'s first byte is in the range.
+    let lo = u64::from_le(unsafe { AtomicU64::from_ptr(a) }.load(O)) >> sh;
+    let v = if k + size as usize <= 8 {
+        lo
+    } else {
+        // SAFETY: the access spills into the next aligned word, which starts
+        // at or before its last byte, so it lies in the range too (`sh` > 0).
+        lo | u64::from_le(unsafe { AtomicU64::from_ptr(a.add(1)) }.load(O)) << (64 - sh)
+    };
+    if size >= 8 {
+        v
+    } else {
+        v & ((1 << (8 * size)) - 1)
+    }
+}
+
 /// [`store`] if it is one aligned access (whether it was), as [`load_aligned`].
 ///
 /// # Safety

@@ -2195,3 +2195,21 @@ Two A/A runs came first: a build in the side checkout `../webpc-base` (whose `ta
 in the shared output, the main checkout's next build counted as fresh, and the "change" arm was the base (`cmp` didn't
 tell: the two checkouts' builds differ in their debug info's paths). Both arms agreed within ~0.2% on Alpine's boot,
 which is this screen's noise. An arm is now checked by a changed function's size (`tools/wasm-sizes.ts`).
+
+## The block interpreter on the Mac, loop 5: misaligned loads inline (2026-11-10)
+
+Loop 2's counts had ~3.5 M misaligned loads (and ~4.1 M stores) a pages session leave `hot` for the generic path.
+`hot`'s single-register loads (LdO and Ld) now read one inline where `fast_in` found its bytes in one range of RAM
+(a page through the TLB, memory 0 through the flat map): `mem::load_misaligned`, the aligned 8-byte word holding its
+first byte and, when it spills past it, the next (which starts at or before its last byte, so it's in the range too),
+shifted together. Each byte is read once by an atomic load, all a misaligned access is owed without LSE2. Stores stay
+on the slow path: one may write only its own bytes. `hot` 11,562 → 11,806 bytes of wasm, no call.
+
+Correctness: a directed test (`misaligned_loads_run_as_the_interpreter_runs_them`: LDR X and W, LDRH, LDRSH, LDRSW,
+LDUR and LDR by register at every misaligned offset, at a page's start and up to its last byte, against the reference
+interpreter); a planted bug (the second word's shift 8 bits short) failed it and the differential test.
+
+Three rounds alternated against `35f9fa41` (`results/m9-interp-mac/misaligned/`): `dec_mips` 514.7 → 517.9 (+0.6%,
+rounds apart, under the bar), `vm_dec_mmu_mips` 510.8 → 516.2 (overlapping), Alpine's boot through the block
+interpreter 253.75 → 254.13 MIPS (+0.1%). Nothing slower, so kept; its gain in a browser (~0.15% of busy time by
+loop 1's estimate) is too small for the pages session to show, so not measured there. No memory.

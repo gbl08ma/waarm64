@@ -76,10 +76,9 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
     code's exits and `hot`'s entry and exit stay); not done for the unsafe rewrite it takes.
   - **Decoding** (`Cache::miss` and its closure 1.64% of busy ticks, loop 3; 19% faster natively since loop 4, no
     allocation a block): what's left is compute, the decoder, `pack_into` and `uop_op`'s matches.
-  - **Misaligned loads and stores**: ~7.8 M exits to the generic path (loads ~3.5 M, stores ~4.1 M; of ~19 M loads
-    and stores off the fast path, TLB misses ~5.2 M), ~0.3% of the busy time by loop 1's estimate. A misaligned load
-    within a page could stay inline (two aligned words and a funnel shift; the architecture asks only for single-copy
-    atomicity of bytes then, without LSE2); a store may write only its own bytes.
+  - **Misaligned stores**: ~4.1 M exits to the generic path a pages session (the loads are inline since loop 5); a
+    store may write only its own bytes, so inline it takes pieces by alignment. ~0.15% of busy time by loop 1's
+    estimate: under what anything measures.
   - **Blocks out of their slot**: 262,144 slots (from 16,384, 2026-11-09: "loop 2") took the misses from 82.5 M to
     23.4 M and Firefox's starts and loads 4.4% faster. Each 4× has halved them, for 4× the memory (4 MiB a table now,
     +15 MiB on four vCPUs): a smaller slot first (it needn't keep the key bits its index implies), then maybe more.

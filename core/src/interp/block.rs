@@ -1884,9 +1884,10 @@ pub fn hot<B: Fast>(
                         let Some(p) = m.fast_in(fx, addr, bytes, Use::Read) else {
                             break 'run SLOW;
                         };
-                        // SAFETY: as for the store.
-                        let Some(v) = (unsafe { mem::load_aligned(p, bytes) }) else {
-                            break 'run SLOW;
+                        // SAFETY: as for the store; `fast_in` found them in one range of RAM.
+                        let v = unsafe {
+                            mem::load_aligned(p, bytes)
+                                .unwrap_or_else(|| mem::load_misaligned(p, bytes))
                         };
                         let v = match w >> 4 & 3 {
                             0 => v,
@@ -2100,9 +2101,9 @@ fn single_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
         let Some(p) = m.fast_in(fx, addr, bytes, Use::Read) else {
             return false;
         };
-        // SAFETY: as for the store.
-        let Some(v) = (unsafe { mem::load_aligned(p, bytes) }) else {
-            return false;
+        // SAFETY: as for the store; `fast_in` found them in one range of RAM.
+        let v = unsafe {
+            mem::load_aligned(p, bytes).unwrap_or_else(|| mem::load_misaligned(p, bytes))
         };
         wr(c, d, v);
         true

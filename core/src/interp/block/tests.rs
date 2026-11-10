@@ -356,6 +356,52 @@ fn an_mrs_runs_as_the_interpreter_runs_it() {
     assert!(ran > 25, "{ran}");
 }
 
+/// Misaligned loads of every size, at every offset in an aligned word, at a
+/// page's start and up to its last byte, run as the interpreter runs them:
+/// [`hot`] reads them inline as the words around them (`mem::load_misaligned`).
+#[test]
+fn misaligned_loads_run_as_the_interpreter_runs_them() {
+    let mut r = Rng(0x6a09_e667_f3bc_c909);
+    let t = TestRam::new(RAM);
+    for a in (0..RAM as u64).step_by(8) {
+        t.mem.write(a, 8, r.next()).unwrap();
+    }
+    // LDR X, W (LdO); LDRH, LDRSH, LDRSW, LDUR X #3 and LDR X by register (Ld):
+    // [X1] or [X1, #3] or [X1, X2], into X0; (word, bytes, its offset).
+    let loads = [
+        (0xf940_0020u32, 8, 0),
+        (0xb940_0020, 4, 0),
+        (0x7940_0020, 2, 0),
+        (0x7980_0020, 2, 0),
+        (0xb980_0020, 4, 0),
+        (0xf840_3020, 8, 3),
+        (0xf862_6820, 8, 5),
+    ];
+    let mut ran = 0;
+    for (w, bytes, off) in loads {
+        let u = uop(w);
+        for page in [0u64, 0x1000] {
+            for at in (0..16).chain(0x1000 - 16..0x1000 - bytes as u64 + 1) {
+                let addr = page + at;
+                if addr % bytes as u64 == 0 || addr < off {
+                    continue;
+                }
+                t.mem.write(CODE, 4, w as u64).unwrap();
+                let mut c0 = state(&mut r);
+                (c0.x[1], c0.x[2]) = (addr - off, off);
+                let mut c1 = c0.clone();
+                let want = interp::steps(&mut c1, &t.mem, None, 1);
+                let mut c2 = c0.clone();
+                let got = run_hot(&mut c2, &mut Flat(&t.mem), &pack(&[u]), 1, CODE);
+                assert_eq!(got, want, "{w:#010x} at {addr:#x}");
+                assert_eq!(c2, c1, "{w:#010x} at {addr:#x}");
+                ran += 1;
+            }
+        }
+    }
+    assert!(ran > 250, "{ran}");
+}
+
 /// An MSR that `sys::plain_write` knows, and DAIFSet, run as the interpreter
 /// runs them, at EL0 and EL1 (SPSel either way, IRQs masked or not).
 #[test]
