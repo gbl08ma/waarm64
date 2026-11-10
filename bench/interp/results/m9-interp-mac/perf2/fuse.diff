@@ -1,0 +1,338 @@
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 11bcbb9b..a10a5390 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -2218,7 +2218,7 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
+     let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
+     (vr.jit.jc, vr.jit.hot) = jit.table.ptrs();
+     let mut done = 0;
+-    // The next block's key when the interpreter found it compiled (`interpret`), else 0.
++    // The next block's key when `interpret` made it, else 0.
+     let mut next = 0;
+     while done < n {
+         let left = n - done;
+@@ -2231,9 +2231,10 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
+         // their fast paths and comes here, where it's stripped once
+         // (`Cpu::branch_addr`; docs/jit.md "Linking").
+         vr.cpu.pc = vr.cpu.branch_addr(vr.cpu.pc);
+-        // The block the interpreter stopped before, found compiled: its key
+-        // is the one `key` would make (the regime can't have changed: a
+-        // decoded block chains only after a branch).
++        // The block `interpret` stopped before: its key is the one `key`
++        // would make (the regime can't have changed: a decoded block chains
++        // only after a branch, and after a compiled block `interpret` keys
++        // the PC only in the regime it runs).
+         let key = match core::mem::take(&mut next) {
+             0 => key(vr, mem),
+             k => {
+@@ -2261,30 +2262,9 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
+             if key & block::KEY_MMU != 0 {
+                 vr.tlb.xc_fill(pc, key & 3, idx, len);
+             }
+-            let helped = vr.jit.helper_steps;
+-            // SAFETY: `idx` is a compiled block (the cache drops blocks, and
+-            // the blocks chained to them, before it reuses their slots), and no
+-            // reference into `*v` is live: the block and its helpers use the
+-            // raw pointer. `mem` isn't in `*v`.
+-            let (f, entry) = (idx & IDX_MASK, idx >> ENTRY_SHIFT << emit::ENTRY_BIT);
+-            let k = unsafe { block(f)(v, 0, left.min(i32::MAX as u64) as u32, entry) } as u64;
+-            // Not at depth 0 (`emit::DEPTH`): a depth that reached a function
+-            // with entry bits still set would count ~2^31 steps and end the
+-            // chunk, so it stops here instead, named.
+-            assert!(
+-                k < emit::RETURNED as u64,
+-                "block {key:#x} (index {idx:#x}, entry {entry:#x}) returned {k:#x}"
+-            );
+-            // SAFETY: the block has returned.
+-            let vr = unsafe { &mut *v };
+-            let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
+-            let e = vr.jit.exit.take();
+-            let s = &mut jit.table.stats;
+-            let ran = k + e.is_some_and(Exit::retired) as u64;
+-            s.dispatches += 1;
+-            s.steps += ran;
+-            s.inline_steps += ran - (vr.jit.helper_steps - helped);
+-            jit.table.clock += k;
++            // SAFETY: `idx` is the jump cache's, so installed in this table;
++            // no reference into `*v` is live (`vr` and `jit` end here).
++            let (k, e) = unsafe { run_block(v, mem, key, idx, left) };
+             done += k;
+             if e.is_some() {
+                 return (done, e);
+@@ -2293,29 +2273,33 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
+             let m = match r {
+                 Ok((_, len)) | Err(len) => len.max(1) as u64,
+             };
+-            let crate::mmu::Vcpu { cpu, tlb, .. } = vr;
+-            let t = &mut jit.table;
+-            // The block decoded and the ones after it (`interp::block`);
+-            // without one (no key, or no instructions there), one instruction
+-            // at a time.
++            // The block decoded and the ones after it, and the compiled
++            // blocks they reach (`interpret`); without one (no key, or no
++            // instructions there), one instruction at a time.
++            // SAFETY: guaranteed by the caller; `vr` and `jit` end here.
+             let r = match key {
+-                Some(k) if k & block::KEY_MMU != 0 => interpret(
+-                    cpu,
+-                    &mut Mmu::new(mem, Some(&mut *tlb)),
+-                    t,
+-                    mem,
+-                    k,
+-                    left,
+-                    &mut next,
+-                ),
+-                Some(k) => interpret(cpu, &mut Flat(mem), t, mem, k, left, &mut next),
+-                None if cpu.interp_only[(cpu.el() & 1) as usize] & INTERP_DEBUG != 0 => {
+-                    Some(interp::debug::steps(cpu, mem, Some(&mut *tlb), left, true))
+-                }
++                Some(k) if k & block::KEY_MMU != 0 => unsafe {
++                    interpret::<MmuBus>(v, mem, k, left, &mut next)
++                },
++                Some(k) => unsafe { interpret::<FlatBus>(v, mem, k, left, &mut next) },
+                 None => None,
+             };
+-            let (k, e) = r.unwrap_or_else(|| interp::steps(cpu, mem, Some(tlb), m.min(left)));
+-            t.clock += k;
++            // (`interpret` keeps the table's clock itself.)
++            let (k, e) = r.unwrap_or_else(|| {
++                // SAFETY: guaranteed by the caller; nothing else references `*v` now.
++                let vr = unsafe { &mut *v };
++                let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
++                let crate::mmu::Vcpu { cpu, tlb, .. } = vr;
++                let r = if key.is_none()
++                    && cpu.interp_only[(cpu.el() & 1) as usize] & INTERP_DEBUG != 0
++                {
++                    interp::debug::steps(cpu, mem, Some(&mut *tlb), left, true)
++                } else {
++                    interp::steps(cpu, mem, Some(tlb), m.min(left))
++                };
++                jit.table.clock += r.0;
++                r
++            });
+             done += k;
+             if e.is_some() {
+                 return (done, e);
+@@ -2325,6 +2309,44 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
+     (n, None)
+ }
+ 
++/// Runs compiled block `idx` (at `key`) for at most `left` steps and counts
++/// it in the table's statistics and clock: the steps it ran and its exit.
++///
++/// # Safety
++/// As for [`steps`]; `idx` is a compiled block installed in the vCPU's table
++/// (the cache drops blocks, and the blocks chained to them, before it reuses
++/// their slots), and no reference into `*v` is live: the block and its
++/// helpers use the raw pointer.
++#[inline(always)]
++unsafe fn run_block(v: *mut Vcpu, mem: &Mem, key: u64, idx: u32, left: u64) -> (u64, Option<Exit>) {
++    // SAFETY: guaranteed by the caller; the references end before the call.
++    let helped = unsafe {
++        (*v).jit.mem = mem;
++        (*v).jit.helper_steps
++    };
++    let (f, entry) = (idx & IDX_MASK, idx >> ENTRY_SHIFT << emit::ENTRY_BIT);
++    // SAFETY: guaranteed by the caller (`mem` isn't in `*v`).
++    let k = unsafe { block(f)(v, 0, left.min(i32::MAX as u64) as u32, entry) } as u64;
++    // Not at depth 0 (`emit::DEPTH`): a depth that reached a function
++    // with entry bits still set would count ~2^31 steps and end the
++    // chunk, so it stops here instead, named.
++    assert!(
++        k < emit::RETURNED as u64,
++        "block {key:#x} (index {idx:#x}, entry {entry:#x}) returned {k:#x}"
++    );
++    // SAFETY: the block has returned.
++    let vr = unsafe { &mut *v };
++    let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
++    let e = vr.jit.exit.take();
++    let s = &mut jit.table.stats;
++    let ran = k + e.is_some_and(Exit::retired) as u64;
++    s.dispatches += 1;
++    s.steps += ran;
++    s.inline_steps += ran - (vr.jit.helper_steps - helped);
++    jit.table.clock += k;
++    (k, e)
++}
++
+ /// The bus a run of decoded blocks goes through, and how it finds the key of
+ /// the block at a PC (as [`key`] does; `None`: the dispatcher's to find).
+ trait Regime: interp::block::Fast {
+@@ -2351,27 +2373,163 @@ impl Regime for Mmu<'_> {
+     }
+ }
+ 
+-/// Runs the decoded block at `key` (its dispatch counted: [`Jit::enter`]),
+-/// at the PC, and then the blocks after it for as long as each is decoded
+-/// already, counts its dispatch without reporting it, isn't compiled, and the
+-/// one before it ended on a branch or ran out (not on an instruction run
+-/// generically, which may have changed the regime), within `left` steps.
+-/// Returns what [`interp::steps`] would for those steps; `None` if the first
+-/// block would have no instructions. Blocks in another page are found through
+-/// the instruction TLB, as the dispatcher finds them; a block in the same page
+-/// as the one before has the same translation (a block ends after any
+-/// instruction that could change it).
++/// Which [`Regime`] [`interpret`] makes over the vCPU's TLB each time it
++/// comes back from a compiled block, and the dispatch bits it's for.
++trait Bus {
++    const MMU: bool;
++    type B<'a>: Regime;
++    fn bus<'a>(mem: &'a Mem, tlb: &'a mut crate::mmu::Tlb) -> Self::B<'a>;
++}
++
++struct FlatBus;
++struct MmuBus;
++
++impl Bus for FlatBus {
++    const MMU: bool = false;
++    type B<'a> = Flat<'a>;
++    #[inline(always)]
++    fn bus<'a>(mem: &'a Mem, _: &'a mut crate::mmu::Tlb) -> Flat<'a> {
++        Flat(mem)
++    }
++}
++
++impl Bus for MmuBus {
++    const MMU: bool = true;
++    type B<'a> = Mmu<'a>;
++    #[inline(always)]
++    fn bus<'a>(mem: &'a Mem, tlb: &'a mut crate::mmu::Tlb) -> Mmu<'a> {
++        Mmu::new(mem, Some(tlb))
++    }
++}
++
++/// Runs the decoded block at `key` (its dispatch counted: [`Jit::enter`]) and
++/// the blocks after it ([`decoded`]), and the compiled blocks those reach, as
++/// the dispatcher's loop would: each found in the jump cache, after
++/// [`Jit::fresh`], and the decoded blocks after a compiled one counted as
++/// [`Jit::enter`] counts them. It returns to the dispatcher for what's the
++/// dispatcher's: an exit, the steps run out, a block not in the jump cache
++/// whose decoded block doesn't count its dispatch, a compiled block that
++/// doesn't fit, a tagged PC, a changed regime (`Cpu::dispatch`), a fetch
++/// that would fault, the check mode. Returns what [`steps`] would for those
++/// steps, the table's clock kept as it keeps it; `None` if the first block
++/// would have no instructions.
++///
++/// `next_key` gets the key the dispatcher would look up next, if this found
++/// it (0 otherwise), so that it doesn't make it again.
++///
++/// So a compiled block the interpreter stops before costs one call, not a
++/// trip around the dispatcher's loop each way (bench/interp/REPORT.md "PERF
++/// loop 2").
++///
++/// # Safety
++/// As for [`steps`]: `v` is valid and nothing else references it while this
++/// runs; `R` is its regime (`Cpu::dispatch`) and `key` the block at its PC.
++#[inline(never)]
++unsafe fn interpret<R: Bus>(
++    v: *mut Vcpu,
++    mem: &Mem,
++    key: u64,
++    left: u64,
++    next_key: &mut u64,
++) -> Option<(u64, Option<Exit>)> {
++    let (mut key, mut done) = (key, 0);
++    let regime = if R::MMU { DISPATCH_MMU } else { 0 };
++    loop {
++        *next_key = 0;
++        // SAFETY: guaranteed by the caller; these references end before a
++        // compiled block runs.
++        let vr = unsafe { &mut *v };
++        let t = &mut vr.jit.cache.as_deref_mut().expect("a JIT vCPU").table;
++        let mut m = R::bus(mem, &mut vr.tlb);
++        let Some((k, e)) = decoded(&mut vr.cpu, &mut m, t, mem, key, left - done, next_key) else {
++            // (A block after a compiled one counted its dispatch, so it has instructions.)
++            debug_assert_eq!(done, 0);
++            return (done != 0).then_some((done, None));
++        };
++        t.clock += k;
++        done += k;
++        if e.is_some() || *next_key == 0 || done >= left {
++            return Some((done, e));
++        }
++        // The compiled block it stopped before, and the ones after it.
++        let mut k = *next_key;
++        key = loop {
++            // SAFETY: as above.
++            let vr = unsafe { &mut *v };
++            let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
++            jit.fresh(mem);
++            let j = jit.table.jc[jc_index(k)];
++            if vr.tlb.xdrops != jit.table.drops {
++                vr.tlb.xdrops = jit.table.drops;
++                vr.tlb.bump();
++            }
++            if j.key != k || j.len as u64 > left - done || jit.table.cfg.check {
++                *next_key = k;
++                return Some((done, None));
++            }
++            if R::MMU {
++                vr.tlb.xc_fill(vr.cpu.pc, k & 3, j.idx, j.len);
++            }
++            // SAFETY: `j` is the jump cache's, so installed in this table; no
++            // reference into `*v` is live (`vr` and `jit` end here).
++            let (n, e) = unsafe { run_block(v, mem, k, j.idx, left - done) };
++            done += n;
++            *next_key = 0;
++            if e.is_some() || done >= left {
++                return Some((done, e));
++            }
++            // The next block's key, as the dispatcher's `key` makes it.
++            // SAFETY: the block has returned.
++            let vr = unsafe { &mut *v };
++            let c = &vr.cpu;
++            let nk = if c.dispatch & (DISPATCH_INTERP | DISPATCH_MMU) == regime {
++                R::bus(mem, &mut vr.tlb).key(c, c.pc)
++            } else {
++                None
++            };
++            let Some(nk) = nk else {
++                return Some((done, None));
++            };
++            let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
++            jit.fresh(mem);
++            if jit.table.jc[jc_index(nk)].key == nk {
++                k = nk;
++                continue;
++            }
++            let counted = jit.table.dec.count(nk);
++            if vr.tlb.xdrops != jit.table.drops {
++                vr.tlb.xdrops = jit.table.drops;
++                vr.tlb.bump();
++            }
++            if !counted {
++                *next_key = nk;
++                return Some((done, None));
++            }
++            break nk;
++        };
++    }
++}
++
++/// Runs the decoded block at `key` at the PC, and then the blocks after it
++/// for as long as each is decoded already, counts its dispatch without
++/// reporting it, isn't compiled, and the one before it ended on a branch or
++/// ran out (not on an instruction run generically, which may have changed
++/// the regime), within `left` steps. Returns what [`interp::steps`] would for
++/// those steps; `None` if the first block would have no instructions. Blocks
++/// in another page are found through the instruction TLB, as the dispatcher
++/// finds them; a block in the same page as the one before has the same
++/// translation (a block ends after any instruction that could change it).
+ ///
+-/// `next` gets the key of the compiled block the run stopped before, if it
+-/// did (0 otherwise), so that the dispatcher runs it without looking it up.
++/// `next_key` gets the key of the compiled block the run stopped before, if
++/// it did (left as it is otherwise).
+ ///
+ /// The blocks run in [`interp::block::hot`], a loop with no calls in it, so
+ /// that V8 keeps its state in registers; it returns to this one for what
+ /// takes a call (a generic micro-op or a slow load or store, which run
+ /// through [`interp::block::run`]; a next block out of its slot or a TLB
+ /// miss) and is called again.
+-#[inline(never)]
+-fn interpret<B: Regime>(
++#[inline(always)]
++fn decoded<B: Regime>(
+     cpu: &mut crate::cpu::Cpu,
+     m: &mut B,
+     t: &mut Table,

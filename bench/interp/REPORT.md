@@ -2251,3 +2251,41 @@ alternated (`p1s-r<round>-<arm>-<bench>.json`), MIPS:
 cost `hot`'s chain step more than the 2 MiB a table (8 MiB on four vCPUs) is worth; these guests' reports are rare (no
 compiles: every 255), so the loss is `hot`'s, not the map lookups the reports gained. With more slots not paying,
 a smaller slot would have bought only memory, and not at this price. The slots stay 262,144 of 16 bytes.
+
+## PERF loop 2: the dispatcher's loop inside `jit::interpret` (2026-11-10)
+
+The Mac host (Apple M4, macOS 26.6.2), Chrome for Testing 157.0.8103.50; base `e6f37992`; raw
+`results/m9-interp-mac/perf2/` (README). Loop 3 counted 126 M stops before a compiled block in Firefox's pages
+session and 311 M trips around the dispatcher's loop, and put what a loop inside `jit::interpret` could save at
+~0.5-1% of busy time.
+
+**Built** (`fuse.diff`): `interpret` takes the vCPU's raw pointer and makes its references (the `Cpu`, the table, a
+`Flat` or an `Mmu` over the TLB) afresh after each compiled block. When the decoded run stops before a compiled
+block it runs it itself, as the dispatcher does (`Jit::fresh`, the jump cache, `Tlb::xdrops`, the transfer cache's
+fill, the same statistics and clock through a shared `run_block`), keys the PC after it in the regime it runs
+(`Regime::key`; a changed `Cpu::dispatch`, a tagged PC or a faulting fetch go back), runs a compiled successor the
+same way, and a decoded one if `Cache::count` counts it; anything else goes back to the dispatcher with the key
+made. Same steps and exits as before: lockstep, the differential test and `core-wasm` passed; a planted bug (the
+next key from PC + 4) failed all four lockstep JIT cases. `interpret` 1,864 → 4,225 bytes of wasm (MMU) and
+1,341 → 3,103 (flat), `steps` 2,824 → 2,733, `hot` unchanged (11,806 and 11,391), no memory. Firefox's pages
+session from the snapshot (`PHASE_S=1`, each page's start and load summed), three rounds alternated:
+
+| | r1 | r2 | r3 | median |
+|---|---|---|---|---|
+| main | 79.1 | 79.3 | 79.9 | 79.3 s |
+| the loop in `interpret` | 77.8 | 79.4 | 79.2 | 79.2 s (−0.1%, overlapping) |
+
+Interpreted steps 3.38-3.40 G in both. The JIT gates and the block interpreter's boot, three rounds
+(`p2j-r<round>-<arm>-<bench>.json`):
+
+| | main | the loop in `interpret` |
+|---|---|---|
+| Alpine's boot under the JIT, total ms | 3,957 · 4,022 · 4,022 | 3,971 · 3,978 · 3,992 (overlapping) |
+| Alpine's userspace under the JIT, total ms | 10,814 · 10,886 · 10,894 | 10,825 · 10,859 · 10,881 (even) |
+| Alpine's boot through the block interpreter, MIPS | 254.32 · 254.38 · 254.43 | 253.02 · 253.12 · 252.99 (−0.5%, rounds apart) |
+
+**Not kept.** Nothing gains past the bar, and the block interpreter alone loses 0.5% (its `interpret` is now a
+larger loop with a block call in it, for runs that never reach one). A trip around the dispatcher's loop costs
+little beyond what stays (compiled code's exit, `hot`'s entry and exit, the next PC's key, `Jit::fresh`): the
+loop head's tag strip, a second jump-cache probe, `interpret`'s call and `Run`'s setup, a few ns each time, which
+126 M times a session is under what the pages session resolves. The unsafe rewrite isn't worth it.

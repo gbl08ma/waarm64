@@ -71,9 +71,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
 - **What makes `hot` return in a browser** (counted 2026-11-09, `bench/interp/REPORT.md` "The block interpreter on the
   Mac, loop 1"; Firefox's pages session, 678 M block runs, `hot` entered 266 M times). Two causes are the
   interpreter's own:
-  - **The round trips to compiled code** (loop 3): the interpreter stops before a compiled block 126 M times a session
-    and the dispatcher's loop runs 311 M times. Moving the loop into `jit::interpret` would save ~0.5-1% (compiled
-    code's exits and `hot`'s entry and exit stay); not done for the unsafe rewrite it takes.
   - **Decoding** (`Cache::miss` and its closure 1.64% of busy ticks, loop 3; 19% faster natively since loop 4, no
     allocation a block): what's left is compute, the decoder, `pack_into` and `uop_op`'s matches.
   - **Misaligned stores**: ~4.1 M exits to the generic path a pages session (the loads are inline since loop 5); a

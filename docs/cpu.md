@@ -554,6 +554,10 @@ In `bench/interp/REPORT.md` "M8-INTERP loop 2" unless said, the variants' diffs 
 - **More slots, or smaller ones** (`bench/interp/REPORT.md` "PERF loop 1"): 1,048,576 slots made Firefox's pages
   session −0.8%, under the bar (loop 2's 4× was −4.4%); 8-byte slots (only the key bits the index doesn't imply, the
   counts as dispatches left) cost `hot` 2.6-5% on the block-interpreter guests for 2 MiB a table.
+- **The dispatcher's loop inside `jit::interpret`** (`bench/interp/REPORT.md` "PERF loop 2"): the interpreter running
+  the compiled blocks it stops before itself, and the decoded blocks after them, through the vCPU's raw pointer.
+  Firefox's pages session −0.1% (overlapping), the JIT gates even, the block interpreter's boot −0.5%: what a trip
+  around the dispatcher's loop adds to compiled code's exit and `hot`'s entry is a few ns.
 - **Pre-linked successors** (the arena index of each successor and a compiled bit in the slot):
   dropping the jump-cache check altogether, the most they could save, gave 1-1.5%. A block's cost
   is its micro-ops and the reports, not the slot and jump-cache lookups.
