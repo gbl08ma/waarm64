@@ -3816,3 +3816,41 @@ checks, several of which change mid-chunk), LSE min/max (nothing runs them), the
 each a full exit) are the gates' next lever, in docs/backlog.md.
 CI: `scripts/ci.sh` (its second run; the first found the xHCI case above), `scripts/ci-jit.sh` and
 `scripts/ci-debian.sh` passed.
+
+## PERF loop 9: the review's fixes (2026-11-10)
+
+An out-of-context static review of loops 1-8 (`review/perf`, deleted once triaged) found no wrong result; four
+findings, all about loop 8's inline unmask. Each fix began with a test that failed on `15c0dc69`.
+
+1. **Realtime round-robin delayed IRQs after an unmask (real; fixed).** `Vm::run` set `jit::Unmask::ok` in realtime
+   mode too, where chunks don't end at deadlines and devices signal at any time, so a timer that came due under the
+   mask was taken at the chunk's end, not at the unmask. New bare-metal test `tests/baremetal/unmask.c` (`// round-robin`:
+   not run in parallel SMP, and run in realtime round-robin under the JIT by `tests/boot-node-suite.ts`): CNTV comes
+   due 0.32 µs into a 4K-step masked spin, then DAIFClr or MSR DAIF, Xt in turn; the IRQ must come within 16
+   instructions. On main: exit 11 or 12 every run (a diagnostic build: 1,088 of 3,000 reps late, up to 5,753
+   iterations). Fix: `ok` is 0 in realtime mode, as before loop 8 there. Realtime round-robin is Node's runners and
+   the I/O and script benchmarks: not the gates (deterministic) and not the page (parallel). QEMU TCG takes this IRQ
+   late too (its timer raises the line from its main loop), so the bound is ours: the oracle builds check only that
+   the IRQ comes (TCG and hvf pass).
+2. **Parallel SMP's inline unmask skipped `fast`'s queue check (real, latency; fixed).** With another vCPU's TLBI IS
+   queued, the unmask used to end the chunk and drain it; inline, that vCPU's DSB waited for this one's next drain
+   point (up to a chunk). `jit::Unmask` gains `pending` (`CpuPar::pending`), and parallel blocks load that byte too:
+   one more atomic byte load per DAIF write and 4 bytes a vCPU. The published ASID stays unchecked: a DAIF write
+   isn't context synchronization, and the ISB after a TTBR write ends the chunk (the comment now says so).
+3. **The inline arm had no differential test (real; fixed).** New exports `jit_unmask` and `jit_parallel` (ABI 64)
+   let `tests/jit-diff.test.ts` "unmasking DAIF writes inline" (round-robin and parallel) run the arm against the
+   interpreter. It also counts helper calls: none with `ok`, every unmask with `ok` 0, the IRQ byte or the pending
+   byte. Before fix 2, the parallel case failed with 0 helper calls against 6,295 expected. Planted bugs: the inline
+   store keeping the old I bit fails both cases (2,375 and 2,387 of 4,096 words), while the old system-register test
+   passes; dropping the IRQ byte's load fails the parallel case (0 helper calls against 6,167).
+4. **Stale comments (real; fixed):** `interp/sys.rs` (ERET's note, `PlainWrite::Daif`, `msr_continues`),
+   `jit/block.rs` `Next`, `vm.rs` `CHUNK`, `vm/parallel.rs`; and docs/jit.md, platform.md, abi.md and testing.md.
+
+Steps unchanged (deterministic mode untouched; `tests/steps.txt` as it was). **The gates** (the Mac, M4, Chrome for
+Testing 157.0.8103.50 headless; `bench/interp/ab-mac.sh perf9 3 base=… new=… -- boot_alpine_jit alpine_user_jit`, arms
+alternated; base = `15c0dc69` with only `ABI_VERSION` raised to 64, as the page's JS checks it; ms, each round's
+median; raw: `results/perf9/`): `alpine_jit_total` base 3,931 · 3,942 · 3,963 (**3,942**), new 3,948 · 3,949 · 3,950
+(**3,949**); `alpine_user_jit_total` base 11,081 · 11,087 · 11,436 (**11,087**), new 11,094 · 11,090 · 11,085
+(**11,090**). Overlapping, within 0.2%: no change, as expected (round-robin blocks compile the same; the run loop
+gains one branch a chunk). Not measured on the page, where the change is one atomic byte load per DAIF write.
+CI: `scripts/ci.sh`, `scripts/ci-jit.sh` and `scripts/ci-debian.sh` passed.

@@ -784,14 +784,19 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   TPIDR_EL1 were 91% of Alpine's MRS calls); the MSRs above inline, and DAIFClr and `MSR DIT, #imm`
   (Linux 6.x sets DIT at every kernel entry: one per syscall and IRQ). An MSR that unmasks IRQs (DAIF,
   DAIFClr) stays inline while `jit::State::unmask` says its `Exit::Resync` would find no IRQ to take:
-  round-robin SMP's run loop sets `ok` before each chunk when the GIC signals none to the vCPU
+  deterministic round-robin's run loop sets `ok` before each chunk when the GIC signals none to the vCPU
   (nothing raises one within a chunk but an exit: deadlines bound deterministic chunks, devices and
   GIC writes exit) and the xHCI has no event due (its tick fires at the next chunk boundary, which the
-  exit would bring forward: the USB guest's JIT run then parted from the interpreter's), parallel SMP when the chunk has fast completions, and there the block also loads
-  the vCPU's IRQ line (`CpuPar::irq`, an atomic byte) as `fast` would (its other conditions, the queue and the published
-ASID, are for ISB's and DSB's synchronization: a DAIF write that masks never checked them). Else, and for ERET, the helper's
-  `Exit::Resync` lets the run loop take it. Steps don't move (deterministic chunks end at the same
-  places); the differential test has no IRQs, so the boots' steps and their consoles are its check.
+  exit would bring forward: the USB guest's JIT run then parted from the interpreter's). Realtime round-robin never
+  sets it: its chunks don't end at deadlines and devices signal at any time, so a timer that came due under the mask
+  waited for the chunk's end (up to 32K steps; `tests/baremetal/unmask.c`, PERF loop 9). Parallel SMP sets it when the
+  chunk has fast completions, and there the block also loads two atomic bytes, the vCPU's IRQ line (`CpuPar::irq`) and
+  its queue's `pending`, as `fast` would decide (without the drain, another vCPU's TLBI IS waits in its DSB for this
+  one's next drain point); not the published ASID, which a DAIF write doesn't synchronize (the ISB after a TTBR write
+  ends the chunk). Else, and for ERET, the helper's `Exit::Resync` lets the run loop take it. Steps don't move
+  (deterministic chunks end at the same places). The differential test runs the inline arm against the interpreter
+  through `jit_unmask` (and `jit_parallel`, ABI 64), and counts the helper calls each condition sends there;
+  `unmask.c` checks the latency in realtime round-robin.
   SIMD&FP instructions check `CPACR_EL1.FPEN` once per block.
 - **NEON → SIMD128** (`emit/simd.rs`): handler by handler after the interpreter's: three-same,
   shifts, moves and immediates, widening/narrowing, reductions, compares against zero, UZP/TRN/ZIP
@@ -1117,6 +1122,9 @@ system instructions, and why each stays a helper:
   design (the next block's code depends on them); **FPCR/FPSR** writes 0.18M each there (context switches too), NZCV
   and SPSel writes none worth counting; the timer and GIC registers (CNTV_CTL/CVAL, EOIR, SGI1R: 2.2M there) are the
   run loop's (`Exit::Platform`).
+- **Unmasking DAIF writes in realtime round-robin** (Node's runners, the I/O and script benchmarks; neither the gates
+  nor the page) end the chunk through the helper, as before PERF loop 8: the exit is what takes an IRQ that came due
+  under the mask at once (PERF loop 9). Elsewhere they stay inline while `jit::Unmask` allows ("Emission").
 - **MRS of the counter outside parallel SMP's realtime mode** (the gates' deterministic runs: 0.35M in Alpine's
   boot, 0.37-0.52M in each userspace phase) exits to the run loop, which reads the step clock.
 

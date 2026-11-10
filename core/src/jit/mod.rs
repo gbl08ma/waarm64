@@ -58,23 +58,31 @@ pub struct State {
     /// SMP's realtime run loop before each chunk, zero (`last` 0) elsewhere.
     pub counter: Counter,
     /// Whether an MSR that unmasks IRQs may retire inline (`emit::msr`), set
-    /// by the run loop before each chunk; zero (the helper's) elsewhere.
+    /// by the run loop before each chunk; zero (the helper's) elsewhere but
+    /// through `jit_unmask` (the differential test's).
     pub unmask: Unmask,
 }
 
 /// [`State::unmask`]: an MSR that unmasks IRQs stays in the block (no
-/// `Exit::Resync`) while `ok` is nonzero and, when `irq` is (the wasm
-/// address of parallel SMP's IRQ line for the vCPU, `CpuPar::irq`), the byte
-/// there is zero. Round-robin SMP sets `ok` when the GIC signals no IRQ to the
-/// vCPU (nothing changes that within a chunk but an exit) and the xHCI has no
-/// event due (`Vm::xhci_tick` runs between chunks), parallel SMP when it
-/// has fast completions (`State::fast`); the unmask's `Exit::Resync` would
-/// only have looked for an IRQ.
+/// `Exit::Resync`) while `ok` is nonzero and, when `irq` and `pending` are
+/// (parallel SMP: the wasm addresses of the vCPU's IRQ line `CpuPar::irq` and
+/// of `CpuPar::pending`, its queue of other vCPUs' maintenance), the bytes
+/// there are zero. Deterministic round-robin SMP sets `ok` when the GIC
+/// signals no IRQ to the vCPU (nothing changes that within a chunk but an
+/// exit: deadlines cut the chunk) and the xHCI has no event due (`Vm::xhci_tick`
+/// runs between chunks); realtime round-robin never (a timer comes due, and
+/// devices signal, mid-chunk, and the unmask's exit is what takes their IRQ
+/// at once). Parallel SMP sets it when the chunk has fast completions
+/// (`State::fast`): the inline unmask is then what `fast` would do with its
+/// `Exit::Resync` (no IRQ on the line, nothing queued to drain; it doesn't
+/// look at the published ASID, as a DAIF write isn't context
+/// synchronization: the ISB after a TTBR write still ends the chunk).
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct Unmask {
     pub ok: u32,
     pub irq: u32,
+    pub pending: u32,
 }
 
 /// [`State::counter`]: CNTVCT = `base` + the host clock's ms since `t0`
@@ -1843,6 +1851,14 @@ impl Jit {
     /// `Config::fma`, for what's compiled from now on.
     pub fn set_fma(&self, on: bool) {
         self.cache.lock().cfg.fma = on;
+    }
+
+    /// `cpu::FEATURE_PARALLEL` in the features compiled code assumes, for what's
+    /// compiled from now on (user-mode vCPUs: `jit_parallel`).
+    pub fn set_parallel(&self, on: bool) {
+        let mut c = self.cache.lock();
+        c.features = c.features & !crate::cpu::FEATURE_PARALLEL
+            | if on { crate::cpu::FEATURE_PARALLEL } else { 0 };
     }
 
     /// The code cache's byte budget (`Config::max_bytes`).

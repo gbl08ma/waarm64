@@ -69,7 +69,8 @@ pub const IRQ_UART: usize = 33;
 pub const IRQ_RTC: usize = 34;
 /// Steps between signal checks. Deterministic guests can't tell chunk
 /// boundaries apart (anything that makes an IRQ takeable ends a chunk: MSR or
-/// ERET unmasking, MMIO, timer deadlines), so the size only trades realtime
+/// ERET unmasking, but for an MSR the JIT keeps inline as no IRQ is pending
+/// (`jit::Unmask`), MMIO, timer deadlines), so the size only trades realtime
 /// latency against how long JIT loops run between returns (M6: 1024 → 32768,
 /// Alpine −14% in Node; identical steps at 1024–131072).
 const CHUNK: u64 = 32768;
@@ -1133,11 +1134,17 @@ impl Vm {
             // No IRQ for it now, and none comes within the chunk but at an exit: an
             // unmasking MSR's `Exit::Resync` would find none (`jit::Unmask`). Not
             // while the xHCI has an event due: it fires at the next chunk boundary
-            // (`xhci_tick`), which the exit would bring forward.
+            // (`xhci_tick`), which the exit would bring forward. Not in realtime
+            // mode, where chunks don't end at deadlines and devices signal at any
+            // time: the exit is what takes a timer or a completion's IRQ at once.
+            let realtime = self.realtime();
             let pl = self.plat.get_mut();
             let quiet = pl.xhci.as_ref().is_none_or(|x| x.due() == u64::MAX);
-            let ok = (quiet && !pl.gic.irq(c)) as u32;
-            self.vcpus[c].jit.unmask = jit::Unmask { ok, irq: 0 };
+            let ok = (!realtime && quiet && !pl.gic.irq(c)) as u32;
+            self.vcpus[c].jit.unmask = jit::Unmask {
+                ok,
+                ..Default::default()
+            };
             let (k, e) = self.chunk(c, n);
             self.vcpus[c].jit.unmask = jit::Unmask::default();
             self.retire(k);

@@ -6,7 +6,8 @@
 //! waits (round-robin: at its first idle; parallel: once it printed "ready");
 //! one with `// flash` runs in the firmware configuration (M8 phase B: the
 //! variable store's flash bank). `baremetal_parallel` runs them all again with a thread per vCPU (parallel
-//! SMP, realtime), several times: those runs aren't reproducible.
+//! SMP, realtime), several times: those runs aren't reproducible; but not one with `// round-robin` (it checks what
+//! holds in round-robin only).
 
 mod common;
 
@@ -198,6 +199,13 @@ fn smp_of(bin: &std::path::Path) -> u64 {
         .unwrap_or(1)
 }
 
+/// Whether a test checks what holds in round-robin only (`// round-robin`: an IRQ's latency after an unmask), so
+/// `run_all` doesn't run it in parallel SMP.
+fn round_robin(bin: &std::path::Path) -> bool {
+    let src = std::fs::read_to_string(bin.with_extension("c")).unwrap_or_default();
+    src.lines().any(|l| l == "// round-robin")
+}
+
 /// Whether a test needs a host-visible window and a host that drives its phases (`// window`: [`window_watch`]).
 fn window_of(bin: &std::path::Path) -> bool {
     let src = std::fs::read_to_string(bin.with_extension("c")).unwrap_or_default();
@@ -361,7 +369,11 @@ fn run_all(parallel: bool, runs: usize, snapshots: bool) {
     let mut bins: Vec<_> = std::fs::read_dir(dir)
         .unwrap()
         .map(|e| e.unwrap().path())
-        .filter(|p| p.extension().is_some_and(|x| x == "bin") && !window_of(p))
+        .filter(|p| {
+            p.extension().is_some_and(|x| x == "bin")
+                && !window_of(p)
+                && !(parallel && round_robin(p))
+        })
         .collect();
     bins.sort();
     assert!(!bins.is_empty(), "no tests in {dir}");

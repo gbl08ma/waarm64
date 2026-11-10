@@ -340,7 +340,8 @@ Realtime runs and the rw-overlay boots aren't step-exact.
 and come back through SVC #1) plus one C file per test (all on a GICv3, `lib.h` `gic_init()`; `// smp: N` boots N
 vCPUs, on the oracles too; `// qemu-cpu: <model>` replaces TCG's Cortex-A57, e.g. `max` for LSE; `// flash` runs it in the firmware configuration, for its flash bank (the oracles attach an erased bank 1); `// input: <text>` is typed on
 the serial console once the test waits: at its first idle in round-robin, once it printed `ready` in parallel, after a
-second on the oracles), built with host clang and lld by
+second on the oracles; `// round-robin` checks what holds in round-robin only, an IRQ's latency after an unmask: not
+run in parallel SMP, and run in realtime round-robin under the JIT too, `unmask.c`), built with host clang and lld by
 `build.sh` into committed flat `.bin`s loaded at `0x4000_0000`. Pass = PSCI SYSTEM_OFF with
 x1 = 0; `power_off` also prints `exit <code>`. `oracle.sh` runs the `-DORACLE` builds
 (implementation-specific checks left out) on QEMU TCG, `oracle.sh --hvf` the `-DORACLE -DHVF`

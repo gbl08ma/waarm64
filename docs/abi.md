@@ -1,4 +1,4 @@
-# Host ABI (version 63)
+# Host ABI (version 64)
 
 The contract between the Rust core (`core/src/lib.rs` exports) and its hosts (`web/vm.ts`, the
 native runners in `core/tests/common`, the benchmarks). Exports are `#[unsafe(no_mangle)] extern
@@ -278,7 +278,10 @@ it. In parallel mode all three from any thread; in round-robin, `vm_suspended` f
 `vcpu_new`, `mem_new`, `interp_run`, `interp_run_exit` (EL0-style exits, plus trap-to-EL1 and
 HVC kinds and the EL1 state at the end of `Cpu`), and their JIT twins over a per-vCPU JIT state:
 `jit_new(threshold, batch, capacity, check, region_after)`, `jit_fma(v, on)` (`VmConfig.fma` for such a vCPU, before
-its first run: the emulation unless set), `jit_run`, `jit_run_exit`,
+its first run: the emulation unless set), `jit_unmask(v, ok, irq, pending)` (what a run loop sets before a chunk,
+`jit::Unmask`: an unmasking MSR inline while `ok` and, in a parallel SMP block, the bytes at `irq` and `pending` read 0;
+the helper's otherwise, and unless set), `jit_parallel(v, on)` (its blocks compiled as parallel SMP's, before its first
+run; the host sets `cpu::FEATURE_PARALLEL` in `Cpu.features` too), `jit_run`, `jit_run_exit`,
 `jit_flush` (for hosts that rewrite guest code between runs: drops compiled and decoded blocks),
 `jit_stats`. These vCPUs always
 have every optional feature. The host writes their `Cpu` fields directly between runs (an EL1 test
@@ -588,6 +591,7 @@ implemented by this step).
 | 61 | FEAT_I8MM: `VmConfig.features` bit 11; `ID_AA64ISAR1_EL1` I8MM = 1 |
 | 62 | FEAT_RDM and FEAT_LRCPC2: `VmConfig.features` bits 12 and 13; `ID_AA64ISAR0_EL1` RDM = 1, `ID_AA64ISAR1_EL1` LRCPC = 2 |
 | 63 | FEAT_FCMA: `VmConfig.features` bit 14; `ID_AA64ISAR1_EL1` FCMA = 1 |
+| 64 | `jit_unmask(v, ok, irq, pending)` and `jit_parallel(v, on)`: a user-mode vCPU's `jit::State::unmask` and parallel SMP's blocks, for the differential test |
 | 54 | PSCI SYSTEM_SUSPEND in realtime mode: `vm_suspended`, `vm_wake`, `vm_clock_skip`; snapshot format 3 (a suspended guest) and `snapshot_version_min` (2: format 2 states still restore) |
 | 52 | a JIT module on a machine with spill memory imports spill memory 1 as `env.ram1` (`coreImports(…, spill)` passes them on): loads and stores reach its pages inline |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

@@ -156,9 +156,9 @@ pub struct Block {
 /// a direct branch, both of a conditional one (taken, then not), or the next
 /// instruction when the block just stops (its cap, the page's end, before an
 /// exception-generating instruction) or ends on a system instruction that
-/// can't change the regime (ISB, CLREX, YIELD/SEV, DC: when its
-/// helper retires, the interpreter would go on to the next instruction in
-/// the same regime). None after an indirect branch, ERET, MSR, SYS (TLBI, AT),
+/// can't change the regime (ISB, CLREX, YIELD/SEV, DC: when it retires,
+/// inline as ISB outside parallel SMP or through its helper, the interpreter
+/// would go on to the next instruction in the same regime). None after an indirect branch, ERET, MSR, SYS (TLBI, AT),
 /// IC, WFI/WFE.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Next {

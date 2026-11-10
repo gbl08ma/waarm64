@@ -109,6 +109,18 @@ for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin') && !wind
   }, { max: 50e6, input: input && { data: input.data } }); // at its idle, as core/tests/baremetal.rs
 }
 
+// A `// round-robin` test checks what holds in round-robin only (core/tests/baremetal.rs `round_robin`): not run in
+// parallel SMP, and run here in realtime round-robin too, under the JIT (where its timer's line moves only at the run
+// loop's top: unmask.c, PERF loop 9).
+const roundRobin = (f: string) => /^\/\/ round-robin$/m.test(readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8'));
+for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin') && roundRobin(f)).sort()) {
+  test(`bare-metal ${f}: realtime round-robin, JIT`, async () => {
+    const r = await runToPowerOff(WASM, { ...bareMetal(f), realtime: true, idleLimitMs: 30_000, jit: 1 }, 1e12, undefined, undefined, 120_000);
+    poweredOff(r);
+    assert.equal(r.x[1], 0n, r.console);
+  });
+}
+
 // Parallel SMP (M7 loop 5): each bare-metal test under the JIT and JIT-check
 // (whose checker tolerates the legal cross-modification window here: a stale
 // block is dropped and counted, not a trap).
@@ -126,7 +138,7 @@ const parallel = async (o: BootOptions, jit: 0 | 1 | 2 | 3, check: (r: Run) => v
     }
   }
 };
-for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin') && !windowed(f)).sort()) {
+for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin') && !windowed(f) && !roundRobin(f)).sort()) {
   for (const [mode, jit] of [['JIT', 1], ['JIT-check', 3]] as const) {
     test(`parallel: bare-metal ${f} (${mode})`, { skip: jit === 3 && jitVariantSkip }, () => parallel(bareMetal(f), jit, (r) => {
       poweredOff(r);

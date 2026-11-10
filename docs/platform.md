@@ -85,7 +85,9 @@ NOPs, and every step count is what it was before M7.
 - **Between chunks:** the signal word, device completion rings, the interrupt lines into the GIC,
   and IRQ entry (vector +0x80) when `PSTATE.I` is clear.
 - **An MSR or ERET that unmasks IRQs ends the chunk** (`Exit::Resync`), so a pending IRQ is taken
-  right after it. That makes the chunk size invisible to deterministic guests: every suite takes
+  right after it. Under the JIT, deterministic round-robin keeps an unmasking MSR inline while no IRQ can be pending
+  ([jit.md](jit.md) "Emission", `jit::Unmask`); realtime round-robin never does, as a timer comes due and devices
+  signal mid-chunk (the exit is what takes their IRQ at once; `tests/baremetal/unmask.c`). That makes the chunk size invisible to deterministic guests: every suite takes
   identical steps at any `CHUNK` from 1024 to 131,072. (It was 1024 until M6, when ERET didn't end
   the chunk; the fix let `CHUNK` grow 32×, which cut Alpine's JIT boot by 14%: hot JIT loops return
   to the run loop far less often.)

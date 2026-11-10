@@ -29,6 +29,8 @@ type Exports = {
   interp_run_exit(cpu: number, mem: number, n: bigint, exit: number): bigint;
   jit_new(threshold: number, batch: number, capacity: number, check: number, regionAfter: number): number;
   jit_fma(v: number, on: number): void;
+  jit_unmask(v: number, ok: number, irq: number, pending: number): void;
+  jit_parallel(v: number, on: number): void;
   jit_run_exit(v: number, mem: number, n: bigint, exit: number): bigint;
   jit_stats(v: number): number;
   jit_helper_report(v: number): number;
@@ -471,6 +473,66 @@ test('JIT vs interpreter: system registers and barriers', () => {
   }
   console.log(`system registers and barriers: ${WORDS} words, ${counts()}`);
   assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${WORDS} words differ`);
+});
+
+// Unmasking DAIF writes inline (PERF loops 8 and 9): `jit_unmask` sets what a run loop sets before a chunk, so the
+// inline arm of an MSR DAIF, Xt or DAIFClr that clears PSTATE.I (`emit::daif`) runs here against the interpreter (whose
+// `Exit::Resync` the run export goes on from), at EL1 with DAIF random. Then each condition that sends it to the helper:
+// `ok` 0; in a parallel SMP block (`jit_parallel`, and `cpu::FEATURE_PARALLEL` in `Cpu.features`) the vCPU's IRQ byte and its queue's
+// pending byte, which `fast` checks too. The helper report counts what took the helper: every unmask, or none.
+const FEATURES = 1056, FEATURE_PARALLEL = 1n << 34n;
+for (const parallel of [false, true]) test(`JIT vs interpreter: unmasking DAIF writes inline${parallel ? ' (parallel SMP)' : ''}`, () => {
+  const { ex, jit, ca32, cb32, cpus, run, helpers } = setup(8 * WORDS);
+  ex.jit_parallel(jit, parallel ? 1 : 0);
+  const words = Array.from({ length: WORDS }, () => {
+    const r = rand32() % 4;
+    if (r < 2) return (0xd503401f | (6 + r) << 5 | (rand32() & 0xf) << 8) >>> 0; // MSR DAIFSet, DAIFClr
+    return (0xd51b4220 | (rand32() & 31)) >>> 0; // MSR DAIF, Xt
+  });
+  words.forEach((w, k) => {
+    ca32.set([w, BRK], 2 * k);
+    cb32.set([w, BRK], 2 * k);
+  });
+  // The IRQ and pending bytes: two of a spare vCPU's (never run) x0.
+  const bytes = ex.vcpu_new();
+  const flag = new Uint8Array(cpus()[0].buffer, bytes, 2);
+  const arms: [string, number, number, number, boolean][] = [
+    ['ok', 1, 0, 0, true],
+    ['not ok', 0, 0, 0, false],
+    ...(parallel ? [['an IRQ signalled', 1, 1, 0, false], ['maintenance queued', 1, 0, 1, false]] as [string, number, number, number, boolean][] : []),
+  ];
+  const msrCalls = () => helpers().split(', ').filter((h) => h.startsWith('MSR')).reduce((n, h) => n + Number(h.split(' ')[1]), 0);
+  for (const [arm, ok, irq, pending, inline] of arms) {
+    flag.set([irq, pending]);
+    ex.jit_unmask(jit, ok, bytes, bytes + 1);
+    msrCalls();
+    const failures: string[] = [];
+    let unmasks = 0;
+    for (let k = 0; k < WORDS; k++) {
+      for (let s = 0; s < STATES; s++) {
+        const [a] = cpus();
+        const full = [new BigUint64Array(a.buffer, a.byteOffset, CPU_BYTES / 8), new BigUint64Array(a.buffer, cpus()[1].byteOffset, CPU_BYTES / 8)];
+        for (let r = 0; r < 32; r++) a[r] = rand64();
+        a[32] = BigInt(8 * k);
+        a[33] = BigInt(rand32() & 0xf) << 28n;
+        // EL1t or EL1h, DAIF random (I set half the time).
+        full[0][PSTATE / 8] = BigInt(4 + (rand32() & 1)) | BigInt(rand32() & 0x3c0);
+        full[0][FEATURES / 8] = parallel ? full[0][FEATURES / 8] | FEATURE_PARALLEL : full[0][FEATURES / 8] & ~FEATURE_PARALLEL;
+        full[1].set(full[0]);
+        const masked = full[0][PSTATE / 8] & 0x80n;
+        const what = run(1n, false);
+        if (masked && !(full[0][PSTATE / 8] & 0x80n)) unmasks++;
+        if (what) {
+          failures.push(`${words[k].toString(16).padStart(8, '0')}: ${what} differs`);
+          break;
+        }
+      }
+    }
+    ex.jit_unmask(jit, 0, 0, 0);
+    assert.deepEqual(failures.slice(0, 20), [], `${arm}: ${failures.length} of ${WORDS} words differ`);
+    assert.ok(unmasks > WORDS / 4, `${arm}: ${unmasks} unmasks`);
+    assert.equal(msrCalls(), inline ? 0 : unmasks, `${arm}: the MSRs that took the helper`);
+  }
 });
 
 // FP edge cases (M6 loop 5): operands the random classes rarely produce, at

@@ -34,7 +34,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 63;
+pub const ABI_VERSION: u32 = 64;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -342,6 +342,33 @@ pub unsafe extern "C" fn jit_fma(v: *mut mmu::Vcpu, on: u32) {
     if let Some(j) = v.jit.cache.as_mut() {
         j.set_fma(on != 0);
     }
+}
+
+/// Compiles a user-mode vCPU's blocks as parallel SMP's (`cpu::FEATURE_PARALLEL`
+/// in the cache's features; the host sets it in `Cpu.features` too), before
+/// its first run. For the differential test (ABI 64).
+///
+/// # Safety
+/// As for [`jit_fma`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jit_parallel(v: *mut mmu::Vcpu, on: u32) {
+    // SAFETY: the caller's contract: `v` is a live vCPU no one else is using.
+    if let Some(j) = unsafe { &mut *v }.jit.cache.as_mut() {
+        j.set_parallel(on != 0);
+    }
+}
+
+/// Sets a user-mode vCPU's [`jit::State::unmask`] (as a run loop does before
+/// a chunk): with `ok` nonzero, an MSR that unmasks IRQs stays inline while
+/// the bytes at `irq` and `pending` (wasm addresses, read by parallel SMP's
+/// blocks) are zero. For the differential test (docs/abi.md, ABI 64).
+///
+/// # Safety
+/// As for [`jit_fma`]; `irq` and `pending` are addresses of live bytes while it's set.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jit_unmask(v: *mut mmu::Vcpu, ok: u32, irq: u32, pending: u32) {
+    // SAFETY: the caller's contract: `v` is a live vCPU no one else is using.
+    unsafe { &mut *v }.jit.unmask = jit::Unmask { ok, irq, pending };
 }
 
 /// [`interp_run`] through the JIT.

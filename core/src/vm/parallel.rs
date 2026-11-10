@@ -451,10 +451,13 @@ impl Vm {
                 ctx: (self as *const Vm).cast(),
                 cpu: c,
             });
-            // An unmasking MSR inline (`jit::Unmask`) as `fast` would finish it.
+            // An unmasking MSR inline (`jit::Unmask`) where `fast` would finish its `Exit::Resync`: no IRQ
+            // on the line, nothing queued (another vCPU's DSB waits for the drain). Not the published
+            // ASID: a DAIF write isn't context synchronization, and the ISB after a TTBR write ends the chunk.
             v.jit.unmask = jit::Unmask {
                 ok: v.jit.fast.is_some() as u32,
                 irq: &self.shared.cpus[c].par.irq as *const AtomicBool as usize as u32,
+                pending: &self.shared.cpus[c].par.pending as *const AtomicBool as usize as u32,
             };
             #[cfg(target_arch = "wasm32")]
             if self.realtime() {

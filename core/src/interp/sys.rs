@@ -243,9 +243,11 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
                 return Err(Exit::Wfe);
             }
         }
-        // An ERET that unmasks IRQs ends the chunk as MSR does, so a pending
-        // IRQ is taken right after it (M6: before, it waited for the chunk's
-        // end, which made the chunk size visible to guests).
+        // An ERET that unmasks IRQs ends the chunk, as an unmasking MSR does
+        // here, so a pending IRQ is taken right after it (M6: before, it
+        // waited for the chunk's end, which made the chunk size visible to
+        // guests). The JIT keeps an unmasking MSR inline only while the run
+        // loop says that exit would find no IRQ (`jit::Unmask`).
         // In parallel SMP every ERET ends the chunk (context synchronization:
         // `cpu::FEATURE_PARALLEL`).
         ERET if !el0 => {
@@ -527,8 +529,9 @@ pub enum PlainWrite {
     Field(usize),
     /// SP_EL0 at EL1: `sp_other` while SPSel is 1; UNDEFINED otherwise.
     SpEl0,
-    /// DAIF at EL1: PSTATE's DAIF bits; one that unmasks IRQs leaves through
-    /// `Exit::Resync`, so the JIT runs that case through the helper.
+    /// DAIF at EL1: PSTATE's DAIF bits. One that unmasks IRQs leaves through
+    /// `Exit::Resync` here; the JIT stores it inline while `jit::Unmask` says
+    /// that exit would find no IRQ, and runs it through the helper otherwise.
     Daif,
 }
 
@@ -550,8 +553,9 @@ pub fn plain_write(key: u32, el1: bool) -> Option<PlainWrite> {
 
 /// Whether MSR `i` (register or immediate form) leaves everything a JIT block
 /// assumes as it was, at any EL: no regime, SP selection, FP control or flags
-/// change, and an IRQ it unmasks leaves through `Exit::Resync` (mid-block, as
-/// any helper's exit does). Those don't end a block: DAIFSet, DAIFClr, DIT
+/// change, and one that unmasks IRQs either leaves through its helper's
+/// `Exit::Resync` (mid-block, as any helper's exit does) or, inline, has no
+/// IRQ to take (`jit::Unmask`). Those don't end a block: DAIFSet, DAIFClr, DIT
 /// (it only changes timing), and MSR of DAIF and the registers [`plain_write`]
 /// names.
 pub fn msr_continues(i: u32) -> bool {
@@ -1020,9 +1024,10 @@ mod tests {
             (
                 offset_of!(Cpu, pstate),
                 offset_of!(Cpu, sctlr_el1),
-                offset_of!(Cpu, monitor)
+                offset_of!(Cpu, monitor),
+                offset_of!(Cpu, features)
             ),
-            (832, 888, 272)
+            (832, 888, 272, 1056)
         );
         assert_eq!(size_of::<Cpu>(), 1168);
     }
