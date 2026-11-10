@@ -546,7 +546,12 @@ line) made `ldst_fp::exec`'s result `initializes((0, 1))`, and the loop reads th
   guests, +1.4% on Alpine's boot (`bench/interp/REPORT.md` "M8-INTERP loop 8"). A pair (LDP, STP, their SIMD&FP forms)
   takes one TLB probe of both registers' bytes; one across pages takes the slow path. With the register indexes'
   masks gone, +1.6% on Alpine's boot, +2.5-3.0% on the small guests (`bench/interp/REPORT.md` "No index masks, one
-  probe for a pair"). A register only read needs no compare for XZR: `pack` stores `Cpu::zero`'s slot for it (`reads`),
+  probe for a pair"). A misaligned load whose bytes `fast_in` found in one range of RAM is read inline as the aligned
+  words around it (`mem::load_misaligned`): single registers (loop 5), pairs and SIMD&FP registers, a Q register as two
+  8-byte halves (`load_any`, `load_v`; PERF loop 17: 1.55 M of the 7.2 M exits from `hot` on Alpine's native boot were
+  misaligned LDPs, ~3.9 M of the 36.7 M in Firefox's pages session misaligned SIMD&FP accesses). Stores stay on the slow
+  path (one may write only its own bytes: "Tried and not kept"). PRFM by register is a `Nop`, as the other PRFMs.
+  A register only read needs no compare for XZR: `pack` stores `Cpu::zero`'s slot for it (`reads`),
   `hot` reads it with a plain load and `Uop::wide` maps it back: +3.1% on Alpine's boot and the user-mode guest
   (`bench/interp/REPORT.md` "XZR's reads without a compare").
 - **The structure loads and stores** (LD1–LD4, ST1–ST4, LD1R–LD4R: generic micro-ops, so the interpreter's own
@@ -695,6 +700,19 @@ In `bench/interp/REPORT.md` "M8-INTERP loop 2" unless said, the variants' diffs 
   FADD/FSUB/FMUL/FDIV on the JIT's fast-path rules; loop 10): the small guests −1-2%, Firefox's pages session no
   faster. Its generic path is 1.9% of what it interprets, spread over dozens of classes; the code costs `hot` more
   than it wins there.
+- **A second, rich copy of `hot` for FP and NEON** (`hot::<_, true>`, a const generic; `bench/interp/REPORT.md` "PERF loop
+  17: more handlers"): the lean copy left at the new kinds (FMOV, MOVI/MVNI, FCSEL, FCMP/FCMPE, FADD/FSUB/FMUL/FDIV on
+  the JIT's fast-path rules, SCVTF/UCVTF, FCVT between S and D, FABS/FNEG, vector logic and ADD, DUP, and the literal
+  loads) and `jit::interpret` went on in the rich copy, so integer code's loop stayed as it was (the small guests even).
+  The FP guest through the block interpreter +12-13%, but Alpine's boot −1.0 to −1.2% in four sessions (rounds apart),
+  and Firefox's pages session didn't resolve it (80.2 s, rich 79.7, rounds overlapping). The loss is the rich copy's:
+  the kinds decoded but never switched to ran as the lean copy; 8.6% of Alpine's steps ran in the rich copy after a
+  DUP or a NEON op, and integer code there is ~10% slower (a larger loop, V8's registers). Going back to the lean copy
+  after each stop (−1.0%) or keeping the rich kinds in a generic stretch (−1.4%, the FP guest +6%) didn't help. A
+  browser's whole FP and NEON generic path is ~1-1.5% of a busy vCPU (19.5 M exits, 48 M micro-ops a session). What
+  else leaves `hot` is each under ~0.3% of a browser's busy time or Alpine's boot: misaligned stores (~3.9 M a
+  pages session, above), TLB misses (a walk is a call), literal loads (2.6 M; inline in `hot` lost, above), and on
+  Alpine STTR/LDTR (0.87 M, below), MRS/MSR the handlers don't know, ISB, ERET and CASP (0.2-0.5 M each).
 - **XZR's writes through a sink slot,** as its reads go through `Cpu::zero` (`bench/interp/REPORT.md` "XZR's writes without
   a compare"): nothing past noise on the boots, the flat guest −23%. A shared TLB probe for pairs of LdOs and StOs
   lost it −19.5% the same way: a change to `hot` that reads as smaller can still cross what V8's register allocation holds.

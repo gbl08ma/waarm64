@@ -1,0 +1,45 @@
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 7d470659..2b79c941 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -2419,14 +2419,27 @@ fn interpret<B: Regime>(
+     let b = t.dec.get(key, mem)?;
+     let mut r = interp::block::Run::new(left);
+     r.enter(b, key, pc);
++    // `hot`'s lean copy until it stops at a micro-op only its rich copy runs
++    // (FP and AdvSIMD, literal loads), then the rich copy to the end.
++    let mut rich = false;
+     let res = loop {
+         let jc = &t.jc;
+-        match interp::block::hot(cpu, m, &mut t.dec, |k| jc[jc_index(k)].key == k, &mut r) {
++        let s = if rich {
++            interp::block::hot::<_, true>(cpu, m, &mut t.dec, |k| jc[jc_index(k)].key == k, &mut r)
++        } else {
++            interp::block::hot::<_, false>(cpu, m, &mut t.dec, |k| jc[jc_index(k)].key == k, &mut r)
++        };
++        match s {
+             STOP => {
+                 *next_key = r.next;
+                 break (r.done, None);
+             }
++            SLOW if !rich && r.rich() => {
++                rich = true;
++                continue;
++            }
+             SLOW => {
++                rich = false;
+                 let (n, u, last) = r.stretch();
+                 let before = r.retired();
+                 let a = t.dec.arena();
+@@ -2444,7 +2457,10 @@ fn interpret<B: Regime>(
+                     break (r.done, None);
+                 }
+             }
+-            n => debug_assert_eq!(n, NEXT),
++            n => {
++                rich = false;
++                debug_assert_eq!(n, NEXT)
++            }
+         }
+         // The next block, through the slow paths.
+         let next = cpu.pc;

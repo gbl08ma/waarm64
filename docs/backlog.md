@@ -69,14 +69,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   - **Decoding** (`Cache::miss` and its closure 1.64% of busy ticks, loop 3; 19% faster natively since loop 4, no
     allocation a block): what's left is compute, the decoder, `pack_into` and `uop_op`'s matches.
 
-- **More handlers, by workload** (`bench/interp/REPORT.md` "M8-INTERP loop 13" counted Alpine's boot's slow path).
-  Left on the boots: CASP (a 128-bit atomic), STTR/LDTR (the EL0 TLB array from EL1: a second context in `Fast`),
-  MSRs that change the regime and DAIFClr; ISB and DSB leave with `Exit::Resync` under parallel SMP anyway. A
-  browser's (loop 10, before loop 13): scalar FP and NEON over dozens of classes, whose handlers cost `hot` 1-2% on
-  integer code; since loop 13 a run of them leaves `hot` once (`Run::stretch`) and the FP core's FMA and lane
-  accesses are 3× faster, so the case for handlers is weaker. Untried: those handlers in a second copy of `hot` (a
-  const generic), entered for blocks with FP, so integer code's `hot` stays as it is. Weigh any handler against the
-  small guests (loop 13's cost them 0.6-0.9%).
 - The reference interpreter (`interp::steps`, `VmConfig.jit` 0) still fetches and decodes each
   instruction; the MMU copy runs 35% slower than the flat one. It only runs the interpreter-only
   tests and benchmarks now.

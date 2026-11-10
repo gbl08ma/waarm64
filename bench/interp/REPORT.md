@@ -2375,3 +2375,75 @@ what it resolves. The JIT gates weren't either (the change is `hot`'s only; cold
 `vm_dec_mmu_mips` and −0.7% on Alpine's boot (one round even), for ~4.1 M exits a pages session (loop 2's count),
 ~0.15% of a browser's busy time by loop 1's estimate: a cost the small guests can show, for a gain nothing measures.
 **CCMP's own kind dropped**: even with `subs` alone (Alpine +0.1%, `dec_mips` −0.2%), for 214 more bytes of `hot`.
+
+## PERF loop 17: more handlers (2026-11-10)
+
+The Mac host (Apple M4, macOS 26.6.2), Chrome for Testing 157.0.8103.50; base `215cdba5`; raw
+`results/m9-interp-mac/perf17/` (README). The backlog's "More handlers, by workload": count what still leaves `hot`,
+by class, then build what can reach ~1% of the interpreter's time, the FP handlers as a second copy of `hot`.
+
+**The counts** (`diag.patch`: in `jit::interpret`'s slow branch, each exit from `hot` by its first micro-op's class
+and each micro-op of its stretch; the loads' and stores' exits by cause). Alpine's native boot through the block
+interpreter (`alpine-native-diag17.txt`): 7.19 M exits, 16.2 M micro-ops in their stretches, of 2.65 G steps. By
+exits: **misaligned LDP/STP 1.55 M (21.5%)**, STTR 0.70 M and LDTR 0.17 M, DUP (general) 0.51 M, MSR's slow path (DAIF
+unmasking, SPSel 0) 0.49 M, MRS of what `sys::plain` doesn't know 0.49 M, ISB 0.48 M, MSR immediate 0.31 M, CASP 0.30
+M, ERET 0.20 M, STR (register) 0.17 M (PRFM by register: generic), MOVI 0.16 M, DSB 0.15 M; the SHA-256 loop's
+NEON (`ADD_vector`, `ORR_asimd_reg`, `SHA256*`, ~93 K exits each, 1.1-1.7 M micro-ops: long stretches). Firefox's
+pages session (`pages-p17diag-diag-r1.txt`, `pages-p17diag2-diag-r1.txt`; process-wide over the four vCPUs): 36.7 M
+exits and 66.6 M stretch micro-ops of 3.34 G interpreted steps. The handled kinds' slow paths 16.3 M: **misaligned
+SIMD&FP accesses 3.9 M**, misaligned StO 3.1 M and St 0.8 M, LdO's TLB misses 2.6 M, literal loads 2.6 M (never in
+`hot`); FP and NEON generic 19.5 M exits with 48 M micro-ops: MOVI 3.0 M, FCMP 2.4 M, FMOV (general) 2.1 M, FMUL 1.1 M,
+FADD 0.8 M, FMOV immediate 0.7 M, DUP 0.7 M, LDR (register, SIMD&FP) 0.7 M, FMOV 0.6 M, SCVTF 0.5 M, then a tail;
+everything else 0.9 M. By loop 1's estimate (~40 ns an exit, the busy time ~100 s of vCPU), all of it is ~1.5% of the
+session's busy time plus the generic micro-ops' own cost; the FP and NEON part ~1-1.5%.
+
+**Arms** (MIPS, medians of each round, `bench/interp/ab-mac.sh`, rounds alternated):
+- **`mis`** (kept): misaligned loads of pairs and SIMD&FP registers inline as the words around them (`load_any`,
+  `load_v`: `mem::load_misaligned`, a Q register as two halves); stores stay aligned-only. PRFM by register a `Nop`.
+  `hot` 12,513 → 13,105 bytes (MMU), 12,102 → 12,651 (flat), no call (a closure LLVM left out of line was a call:
+  now `#[inline(always)]` functions).
+- **`rich`**: `hot::<_, RICH>`; the lean copy leaves at the new kinds as at a generic micro-op, and `jit::interpret`
+  (`Run::rich`) goes on in the rich copy to the end of its call. Kinds: `VImm` (MOVI/MVNI/FMOV immediate, the value
+  and the word as two constants), and generic micro-ops of their own kind that `run` runs as generic, the rich copy
+  reading their registers from the word: FCSEL/FMOV, FCMP/FCMPE (NaNs, FZ slow), FADD/FSUB/FMUL/FDIV (RNE, FZ clear,
+  IXC set, a result normal above the smallest binade), FMOV (general), vector AND/BIC/ORR/ORN/EOR and ADD, DUP
+  (general), SCVTF/UCVTF, FABS/FNEG, FCVT between S and D; and the literal loads. On top of `mis`. Lean `hot` 13,116
+  bytes, rich 15,238; no calls in either.
+
+| | main | **mis** | rich |
+|---|---|---|---|
+| `dec_mips` | 520.1 · 520.8 · 520.4 | 536.6 · 538.0 · 537.6 (**+3.3%**) | 535.8 · 536.5 · 534.6 |
+| `vm_dec_mmu_mips` | 525.8 · 526.3 · 526.1 | 528.2 · 527.3 · 529.0 (+0.4%) | 526.6 · 530.0 · 527.7 |
+| Alpine's boot through the block interpreter | 258.5 · 256.2 · 253.3 | 257.8 · 257.2 · 257.0 (+0.4%, overlapping) | 254.3 · 254.3 · 254.1 |
+| `dec_fp_mips` | 69.1 · 69.0 · 69.2 | 68.7 · 69.1 · 68.9 | **77.5 · 77.2 · 77.8 (+12%)** |
+
+Firefox's pages session from the snapshot (`PHASE_S=1`, each page's start and load summed; `pages-summary.txt`):
+main 80.1 · 80.2 · 80.2 s, mis 78.8 · 81.9 · 80.4, rich 79.7 · 78.1 · 82.0: no arm resolves (interpreted steps
+3.32-3.37 G in all).
+
+**Why `rich` costs Alpine's boot.** Three more sessions, Alpine's boot and the FP guest (`p17b`, `p17c`, `p17d`):
+
+| | mis | rich | variant |
+|---|---|---|---|
+| `rich2`: back to the lean copy after each stop | 258.9 · 256.8 · 257.5 | 255.3 · 255.0 · 254.3 (−1.0%) | 255.0 · 255.4 · 255.0 (−1.0%) |
+| FP guest | 69.2 · 68.7 · 68.8 | 77.6 · 77.5 · 77.7 (+12.8%) | 75.9 · 76.0 · 75.9 (+10.4%) |
+| `rich3`: the rich kinds join a generic stretch | 256.5 · 256.8 · 256.9 | 254.3 · 254.3 · 253.6 (−1.0%) | 253.7 · 253.4 · 252.5 (−1.4%) |
+| FP guest | 69.0 · 69.2 · 68.5 | 77.9 · 77.7 · 77.4 (+12.5%) | 73.5 · 73.3 · 73.3 (+6.2%) |
+| `leanonly`: the kinds decoded, the rich copy never entered | 257.5 · 256.6 · 257.3 | 254.1 · 254.4 · 253.8 (−1.2%) | 257.3 · 257.5 · 257.2 (even) |
+
+The decoding, the lean copy's new exits and `interpret`'s two call sites cost nothing (`leanonly`); the rich copy's
+running does. Natively, 460 K switches a boot and 8.6% of the steps run in the rich copy (after memset's DUP, the
+kernel's NEON), so its integer path is ~10% slower than the lean one's: the larger loop moves V8's register allocation,
+as loop 10's handlers did in the one copy. Leaving it after each stop doesn't help (each re-entry is an exit's cost);
+keeping the rich kinds in generic stretches, as main has them, loses the FP guest's gain and not Alpine's loss.
+
+**Not kept: `rich`** (−1.0 to −1.2% on Alpine's boot in four sessions, rounds apart; the browser it was for doesn't
+resolve). **Kept: `mis`**: nothing slower, `dec_mips` +3.3% and `vm_dec_mmu_mips` +0.4% with the rounds apart (neither
+has misaligned accesses: a change in V8's code for `hot`, not the loads), Alpine's boot +0.4% (main's rounds spread
+2%; the counts put its misaligned pairs at ~0.8% of the boot). No memory in either kept change. Correctness: the
+misaligned-load test covers LDP X/W, LDPSW, pre- and post-index, LDR Q/D/S/H, LDUR Q and LDP Q/D at every offset; a
+planted bug in each (the second half of a Q register a byte short, a pair's second register from the first's address)
+failed it and the differential test; `prfm_runs_as_the_interpreter_runs_it` (and the differential test, which failed
+with PRFM's opc 3 taken as a hint). The rich copy's handlers had planted bugs failing for every family (a new
+directed test for the conversions: double rounding through f64, negative and unsigned extremes, FZ, the rounding
+modes) and are in `rich.diff` for anyone who comes back to them.

@@ -1,0 +1,16 @@
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index a243dc67..eb084102 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -831,6 +831,11 @@ fn uop_op(w: u32, op: Op) -> Wide {
+                     (3, 0, option, if bit(w, 12) { size } else { 0 })
+                 }
+             };
++            // PRFM (immediate, unscaled, register): a hint, nothing to run (no fault, no
++            // SP alignment check: `ldst::exec`'s `prefetch`).
++            if size == 3 && opc == 2 && op != STRx_LDRx_imm_1 {
++                return u(K::Nop, 0, 0);
++            }
+             let (k, ext) = match opc {
+                 0 => (K::St, 0),
+                 1 => (K::Ld, 0),

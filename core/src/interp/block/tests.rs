@@ -358,7 +358,8 @@ fn an_mrs_runs_as_the_interpreter_runs_it() {
 
 /// Misaligned loads of every size, at every offset in an aligned word, at a
 /// page's start and up to its last byte, run as the interpreter runs them:
-/// [`hot`] reads them inline as the words around them (`mem::load_misaligned`).
+/// [`hot`] reads them inline as the words around them (`mem::load_misaligned`):
+/// single registers, pairs and SIMD&FP registers.
 #[test]
 fn misaligned_loads_run_as_the_interpreter_runs_them() {
     let mut r = Rng(0x6a09_e667_f3bc_c909);
@@ -376,6 +377,22 @@ fn misaligned_loads_run_as_the_interpreter_runs_them() {
         (0xb980_0020, 4, 0),
         (0xf840_3020, 8, 3),
         (0xf862_6820, 8, 5),
+        // LDP X0, X3 and W0, W3, LDPSW, [X1]; LDP X0, X3, [X1, #16]! (pre-index)
+        // and [X1], #16 (post-index): `pair_h`.
+        (0xa940_0c20, 8, 0),
+        (0x2940_0c20, 4, 0),
+        (0x6940_0c20, 4, 0),
+        (0xa9c1_0c20, 8, 16),
+        (0xa8c1_0c20, 8, 0),
+        // LDR Q0, D0, S0, H0, [X1]; LDUR Q0, [X1, #3]; LDP Q0, Q3 and D0, D3, [X1]:
+        // `hot`'s Fp.
+        (0x3dc0_0020, 16, 0),
+        (0xfd40_0020, 8, 0),
+        (0xbd40_0020, 4, 0),
+        (0x7d40_0020, 2, 0),
+        (0x3cc0_3020, 16, 3),
+        (0xad40_0c20, 16, 0),
+        (0x6d40_0c20, 8, 0),
     ];
     let mut ran = 0;
     for (w, bytes, off) in loads {
@@ -399,7 +416,7 @@ fn misaligned_loads_run_as_the_interpreter_runs_them() {
             }
         }
     }
-    assert!(ran > 250, "{ran}");
+    assert!(ran > 600, "{ran}");
 }
 
 /// ADDS and SUBS (immediate and shifted register, W and X) at the operands
@@ -685,4 +702,34 @@ fn decode_speed() {
         "decode_speed: {blocks} blocks, {:.2} micro-ops each, {best:.1} ns a block",
         uops as f64 / blocks as f64
     );
+}
+
+/// PRFM (register) is a hint the block interpreter skips (`K::Nop`), as the
+/// interpreter does, with no SP alignment check; the pre- and post-index
+/// encodings where it would be are unallocated, and stay the interpreter's.
+#[test]
+fn prfm_runs_as_the_interpreter_runs_it() {
+    let t = TestRam::new(RAM);
+    // PRFM PLDL1KEEP, [X1, X2, LSL #3]; [SP, X2]; the size 3, opc 2 pre- and
+    // post-index words (unallocated).
+    for (w, nop) in [
+        (0xf8a2_7820u32, true),
+        (0xf8a2_6be0, true),
+        (0xf880_0c20, false),
+        (0xf880_0420, false),
+    ] {
+        assert_eq!(uop(w).k == K::Nop, nop, "{w:#010x}");
+        t.mem.write(CODE, 4, w as u64).unwrap();
+        let mut c0 = Cpu {
+            pc: CODE,
+            ..Cpu::default()
+        };
+        (c0.x[1], c0.x[2], c0.x[31]) = (DATA, 3, DATA + 4);
+        let mut want = c0.clone();
+        let w1 = interp::steps(&mut want, &t.mem, None, 1);
+        let mut got = c0.clone();
+        let w2 = run_hot(&mut got, &mut Flat(&t.mem), &pack(&[uop(w)]), 1, CODE);
+        assert_eq!(w2, w1, "{w:#010x}");
+        assert_eq!(got, want, "{w:#010x}");
+    }
 }

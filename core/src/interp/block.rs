@@ -831,6 +831,11 @@ fn uop_op(w: u32, op: Op) -> Wide {
                     (3, 0, option, if bit(w, 12) { size } else { 0 })
                 }
             };
+            // PRFM (immediate, unscaled, register): a hint, nothing to run (no fault, no
+            // SP alignment check: `ldst::exec`'s `prefetch`).
+            if size == 3 && opc == 2 && op != STRx_LDRx_imm_1 {
+                return u(K::Nop, 0, 0);
+            }
             let (k, ext) = match opc {
                 0 => (K::St, 0),
                 1 => (K::Ld, 0),
@@ -1583,23 +1588,17 @@ pub fn hot<B: Fast>(
                         break 'run SLOW;
                     };
                     let p2 = p1.wrapping_add(bytes as usize);
-                    // One access, or two of 8 bytes for a Q register, each aligned.
+                    // A store: one access, or two of 8 bytes for a Q register, each
+                    // aligned (a store writes only its own bytes). A load may be
+                    // misaligned: the words around it, as `Ld`'s.
                     let a = (bytes as usize).min(8) - 1;
-                    if p1 as usize & a != 0 {
+                    if !load && p1 as usize & a != 0 {
                         break 'run SLOW;
                     }
                     let (rt, rt2) = ((d & 31) as usize, (o.m & 31) as usize);
-                    // SAFETY: `fast_in` found `bytes` bytes of RAM at each, aligned
-                    // as each access needs (checked).
+                    // SAFETY: `fast_in` found `span` bytes of RAM at `p1`, in one range;
+                    // a store's accesses aligned as each needs (checked).
                     unsafe {
-                        let ld = |p: *mut u8| -> u128 {
-                            if bytes == 16 {
-                                mem::load_aligned(p, 8).unwrap_or(0) as u128
-                                    | (mem::load_aligned(p.add(8), 8).unwrap_or(0) as u128) << 64
-                            } else {
-                                mem::load_aligned(p, bytes).unwrap_or(0) as u128
-                            }
-                        };
                         let st = |p: *mut u8, v: u128| {
                             if bytes == 16 {
                                 mem::store_aligned(p.add(8), 8, (v >> 64) as u64);
@@ -1609,8 +1608,8 @@ pub fn hot<B: Fast>(
                             }
                         };
                         if load {
-                            let v1 = ld(p1);
-                            let v2 = if pair { ld(p2) } else { 0 };
+                            let v1 = load_v(p1, bytes);
+                            let v2 = if pair { load_v(p2, bytes) } else { 0 };
                             c.v[rt] = v1;
                             if pair {
                                 c.v[rt2] = v2;
@@ -2022,6 +2021,34 @@ pub fn run_hot(
     }
 }
 
+/// `size` bytes at `p`, aligned or not: one aligned load, or the words around
+/// them ([`mem::load_misaligned`]).
+///
+/// # Safety
+/// `p` is `size` bytes in one range of RAM.
+#[inline(always)]
+unsafe fn load_any(p: *mut u8, size: u32) -> u64 {
+    // SAFETY: guaranteed by the caller.
+    unsafe { mem::load_aligned(p, size).unwrap_or_else(|| mem::load_misaligned(p, size)) }
+}
+
+/// A SIMD&FP register's `bytes` bytes at `p`, as [`load_any`]: a Q register
+/// as two 8-byte halves.
+///
+/// # Safety
+/// As for [`load_any`].
+#[inline(always)]
+unsafe fn load_v(p: *mut u8, bytes: u32) -> u128 {
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        if bytes == 16 {
+            load_any(p, 8) as u128 | (load_any(p.add(8), 8) as u128) << 64
+        } else {
+            load_any(p, bytes) as u128
+        }
+    }
+}
+
 /// A sequentially consistent load of `size` bytes (1, 2, 4 or 8) at `p`,
 /// as `mem::load_atomic` without its panic for another size.
 ///
@@ -2173,24 +2200,21 @@ fn pair_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
     let Some(p1) = m.fast_in(fx, addr, 2 * size, w) else {
         return false;
     };
-    if p1 as usize & (size as usize - 1) != 0 {
-        return false;
-    }
     let p2 = p1.wrapping_add(size as usize);
     if ldp {
-        // SAFETY: `fast_in` found RAM at both, aligned (checked).
-        let (v1, v2) = unsafe {
-            (
-                mem::load_aligned(p1, size).unwrap_or(0),
-                mem::load_aligned(p2, size).unwrap_or(0),
-            )
-        };
+        // SAFETY: `fast_in` found both registers' bytes in one range of RAM;
+        // aligned or not (a misaligned pair is owed no atomicity without LSE2).
+        let (v1, v2) = unsafe { (load_any(p1, size), load_any(p2, size)) };
         let ext = |v: u64| if o.w & 16 != 0 { v as i32 as u64 } else { v };
         wr(c, rt, ext(v1));
         wr(c, rt2, ext(v2));
     } else {
+        // A store writes only its own bytes: misaligned, the slow path's.
+        if p1 as usize & (size as usize - 1) != 0 {
+            return false;
+        }
         let (v1, v2) = (ra(c, rt), ra(c, rt2));
-        // SAFETY: as for the loads.
+        // SAFETY: `fast_in` found RAM at both, aligned (checked).
         unsafe {
             mem::store_aligned(p1, size, v1);
             mem::store_aligned(p2, size, v2);

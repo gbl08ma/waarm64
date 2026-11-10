@@ -1,0 +1,212 @@
+diff --git a/core/src/interp.rs b/core/src/interp.rs
+index 3c8f47e3..b971d66a 100644
+--- a/core/src/interp.rs
++++ b/core/src/interp.rs
+@@ -4,7 +4,7 @@
+ //! a user-mode host wants (the golden corpus, the benchmarks); [`run_system`]
+ //! takes them into EL1 the way hardware does.
+ 
+-pub(crate) mod block;
++pub mod block;
+ pub mod debug;
+ mod float;
+ mod ldst;
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index a243dc67..29dfec90 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -2918,3 +2918,149 @@ impl Cache {
+ 
+ #[cfg(test)]
+ mod tests;
++
++/// DIAGNOSTIC (PERF loop 17; not for commit): what `hot`'s slow exits run, by class.
++pub mod diag {
++    use super::{K, Uop};
++    use crate::decode::Op;
++    use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
++    const NOPS: usize = Op::ALL.len();
++    const N: usize = NOPS + 64 + 32;
++    const X: usize = NOPS + 64;
++    /// Exits from `hot` by the first micro-op's class; micro-ops run in stretches by class.
++    static EXITS: [AtomicU64; N] = [const { AtomicU64::new(0) }; N];
++    static UOPS: [AtomicU64; N] = [const { AtomicU64::new(0) }; N];
++    static TOT: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
++    static LAST: AtomicU64 = AtomicU64::new(0);
++
++    fn class(u: &Uop) -> usize {
++        if u.kind() == K::Generic {
++            (u.d as u16 | (u.n as u16) << 8) as usize
++        } else {
++            NOPS + u.k as usize
++        }
++    }
++
++    fn name(i: usize) -> String {
++        if (X..X + 20).contains(&(i)) {
++            let k = ["Ld", "St", "LdO", "StO", "Fp"][(i - X) / 4];
++            return format!("{k}_{}", ["mis", "cross", "other", "fpen"][(i - X) % 4]);
++        }
++        if i == N - 1 {
++            return "pair_misaligned".into();
++        }
++        if i == N - 2 {
++            return "pair_crosspage".into();
++        }
++        if i < NOPS {
++            format!("{:?}", Op::ALL[i])
++        } else {
++            // SAFETY: a K's discriminant.
++            format!("K_{:?}", unsafe { core::mem::transmute::<u8, K>((i - NOPS) as u8) })
++        }
++    }
++
++    /// One exit: the stretch's `n` micro-ops from `b[0]`.
++    pub fn exit(c: &crate::cpu::Cpu, b: &[Uop], n: usize, steps: u64) {
++        let mut k0 = class(&b[0]);
++        let u = &b[0];
++        if matches!(u.kind(), K::Ldp | K::Stp) {
++            let base = c.x[u.n as usize];
++            let (size, mode) = (u.w & 15, u.w >> 8 & 3);
++            let imm = (u.w as i32 >> 16) as i64 as u64;
++            let addr = if mode == 1 { base } else { base.wrapping_add(imm) };
++            if addr & (size as u64 - 1) != 0 {
++                k0 = N - 1;
++            } else if (addr & 0xfff) + 2 * size as u64 > 0x1000 {
++                k0 = N - 2;
++            }
++        }
++        let kinds = [K::Ld, K::St, K::LdO, K::StO, K::Fp];
++        if let Some(j) = kinds.iter().position(|&k| k == u.kind()) {
++            let base = c.x[u.n as usize];
++            let w = u.w;
++            let (addr, bytes, align, fpen) = match u.kind() {
++                K::LdO | K::StO => (base.wrapping_add((w as i32 >> 16) as i64 as u64), 4u64 << (w & 1), 4u64 << (w & 1), true),
++                K::Ld | K::St => {
++                    let imm = (w as i32 >> 16) as i64 as u64;
++                    let a = match w >> 2 & 3 {
++                        0 | 1 => base.wrapping_add(imm),
++                        2 => base,
++                        _ => base.wrapping_add(super::extend(c.reg(u.m as u32), w >> 8 & 7, w >> 12 & 7)),
++                    };
++                    (a, 1u64 << (w & 3), 1u64 << (w & 3), true)
++                }
++                _ => {
++                    // SAFETY: an Fp's `w` is its constant's distance.
++                    let kv = unsafe { super::konst(u) };
++                    let x = (kv >> 32) as u32 & 0xff;
++                    let (log, mode) = (x & 7, x >> 3 & 3);
++                    let off = ((kv as i64) >> 40) as u64;
++                    let a = if mode == 2 { base } else { base.wrapping_add(off) };
++                    let bytes = 1u64 << log;
++                    let span = if x >> 6 & 1 != 0 { 2 * bytes } else { bytes };
++                    let en = c.cpacr_el1 >> 20 & 3;
++                    (a, span, bytes.min(8), en == 3 || en == 1 && c.el() == 1)
++                }
++            };
++            let cause = if !fpen {
++                3
++            } else if addr & (align - 1) != 0 {
++                0
++            } else if (addr & 0xfff) + bytes > 0x1000 {
++                1
++            } else {
++                2
++            };
++            k0 = X + 4 * j + cause;
++        }
++        EXITS[k0].fetch_add(1, Relaxed);
++        for u in &b[..n] {
++            UOPS[class(u)].fetch_add(1, Relaxed);
++        }
++        TOT[0].fetch_add(1, Relaxed);
++        TOT[1].fetch_add(n as u64, Relaxed);
++        let _ = steps;
++    }
++
++    /// Steps interpreted (to put the counts against).
++    pub fn steps(n: u64) {
++        TOT[2].fetch_add(n, Relaxed);
++        TOT[3].fetch_add(1, Relaxed);
++        #[cfg(target_arch = "wasm32")]
++        {
++            // SAFETY: a host function with no preconditions.
++            let t = unsafe { crate::vm::now_ms() } as u64;
++            let l = LAST.load(Relaxed);
++            if t >= l + 20_000 && LAST.compare_exchange(l, t, Relaxed, Relaxed).is_ok() {
++                let s = report();
++                // SAFETY: the host reads `len` bytes at `ptr`.
++                unsafe { diag_log(s.as_ptr(), s.len()) };
++            }
++        }
++    }
++
++    #[cfg(target_arch = "wasm32")]
++    #[link(wasm_import_module = "env")]
++    unsafe extern "C" {
++        fn diag_log(ptr: *const u8, len: usize);
++    }
++
++    /// One line: totals, then every class with exits or micro-ops.
++    pub fn report() -> String {
++        let mut s = format!(
++            "webpc-slow diag17 exits {} uops {} steps {} interps {}",
++            TOT[0].load(Relaxed),
++            TOT[1].load(Relaxed),
++            TOT[2].load(Relaxed),
++            TOT[3].load(Relaxed)
++        );
++        for i in 0..N {
++            let (e, u) = (EXITS[i].load(Relaxed), UOPS[i].load(Relaxed));
++            if e | u != 0 {
++                s += &format!(" {}:{e}:{u}", name(i));
++            }
++        }
++        s
++    }
++}
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 7d470659..f3825d50 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -2430,6 +2430,7 @@ fn interpret<B: Regime>(
+                 let (n, u, last) = r.stretch();
+                 let before = r.retired();
+                 let a = t.dec.arena();
++                interp::block::diag::exit(cpu, &a[r.at(a)..], n, 0);
+                 let (k, e) = interp::block::run(cpu, m, &a[r.at(a)..], n, r.pc);
+                 if e.is_some() {
+                     break (before + k, e);
+@@ -2469,6 +2470,7 @@ fn interpret<B: Regime>(
+         r.enter(b, k, next);
+     };
+     t.stats.dec_steps += res.0 + res.1.is_some_and(Exit::retired) as u64;
++    interp::block::diag::steps(res.0);
+     (t.stats.decoded, t.stats.dec_clears) = (t.dec.decoded, t.dec.clears);
+     t.stats.rescues += core::mem::take(&mut t.dec.rescues);
+     Some(res)
+diff --git a/core/tests/distros.rs b/core/tests/distros.rs
+index 91af46c7..072ebb02 100644
+--- a/core/tests/distros.rs
++++ b/core/tests/distros.rs
+@@ -77,6 +77,7 @@ fn alpine_boots_through_the_block_interpreter() {
+         jit: 1,
+         ..Boot::new(&kernel, d.cmdline)
+     });
++    eprintln!("{}", webpc_core::interp::block::diag::report());
+     eprintln!("\n[{}]", r.summary);
+     assert!(r.console.contains("webpc: test ok\n"), "test failed");
+     assert_eq!(r.steps, common::steps("alpine"));
+diff --git a/web/vm.ts b/web/vm.ts
+index 88209dd1..acea5e4c 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -93,7 +93,7 @@ export function coreImports(memory: WebAssembly.Memory, clock = performance.time
+   const wrap = <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F) => hooks.reduce((g, h) => h(where, g), f);
+   const now_ms = wrap('clock', () => clock + performance.now());
+   const jit = jitHost(memory, now_ms, compile, spill);
+-  return { env: { memory, now_ms, jit_install: wrap('install', jit.install), jit_compile: jit.compile }, ram: spillImports(spill), jit };
++  return { env: { memory, now_ms, jit_install: wrap('install', jit.install), jit_compile: jit.compile, diag_log: (p: number, l: number) => console.debug(new TextDecoder().decode(new Uint8Array(memory.buffer, p >>> 0, l).slice())) }, ram: spillImports(spill), jit };
+ }
+ 
+ /**
