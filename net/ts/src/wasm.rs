@@ -84,16 +84,14 @@ struct JsConfig {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct JsRoom {
-    /// The room's ID.
-    id: String,
-    /// The peers' node keys (`nodekey:` and 64 hex digits).
+    /// The room's link (room/link.rs), or a bare ID.
+    link: String,
+    /// The home region: an index into the link's DERP regions.
     #[serde(default)]
-    peers: Vec<String>,
-    /// The home relay: one's own derper (`host[:port]`), or empty for region `region` of the map.
+    home: usize,
+    /// Node keys known by hand (`nodekey:` and 64 hex digits): lookups to them are sealed to them.
     #[serde(default)]
-    relay: String,
-    #[serde(default)]
-    region: i64,
+    known: Vec<String>,
     #[serde(default)]
     relay_only: bool,
     /// Members may open connections to the guest (default: yes).
@@ -234,17 +232,14 @@ pub unsafe extern "C" fn ts_new(ptr: *mut u8, len: usize) -> i32 {
             let key = c.key.as_deref().map(unhex32).transpose()?;
             if let Some(r) = c.room {
                 let cfg = room::Config {
-                    room: r.id,
+                    link: room::Link::parse(&r.link)?,
                     key,
-                    nodes: match r.relay.trim() {
-                        "" => Vec::new(),
-                        relay => vec![tailcat::parse_relay(relay)?],
-                    },
-                    region_id: r.region,
+                    home: r.home,
                     derp_map_url: c.derp_map_url.unwrap_or_else(|| DEFAULT_DERP_MAP.into()),
-                    peers: node_keys(&r.peers)?,
+                    known: node_keys(&r.known)?,
                     relay_only: r.relay_only,
                     incoming: r.incoming.unwrap_or(true),
+                    unix_time: None,
                 };
                 return room::Client::new(cfg, Instant::now()).map(|r| Any::Room(Box::new(r)));
             }

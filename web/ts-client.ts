@@ -36,13 +36,12 @@ type Exports = {
 /** A room's member (net/ts/src/room.rs, docs/tailnet.md "Rooms"). */
 export type RoomConfig = {
   room: {
-    /** The room's ID. */
-    id: string;
-    /** The peers' node keys (`nodekey:` and 64 hex digits), given by hand. */
-    peers?: string[];
-    /** The home relay: one's own derper (`host[:port]`), or empty for region `region` of the DERP map (0: its first). */
-    relay?: string;
-    region?: number;
+    /** The room's link (`webpc-room:<id>?nostr=…&derp=…`, net/ts/src/room/link.rs), or a bare ID (the defaults). */
+    link: string;
+    /** The home region: an index into the link's DERP regions (default 0). */
+    home?: number;
+    /** Node keys known by hand (`nodekey:` and 64 hex digits): lookups to them are sealed to them. */
+    known?: string[];
     /** No WebRTC: everything through DERP, so no peer learns this machine's IP address. */
     relayOnly?: boolean;
     /** Members may open connections to the guest (default: yes). */
@@ -85,11 +84,12 @@ export type TsFailure = { code?: string; detail?: string };
 export type TsEvent =
   | ({ type: 'state'; state: 'FetchingMap' | 'Connecting' | 'Meowing' | 'Handshaking' | 'Running' | 'Failed' } & TsFailure)
   | { type: 'lease'; lease: Lease }
-  | { type: 'self'; key: string; address6: number[]; tag?: string }
+  /** This node; a room's member also has the room's tag, its own name (`<key>.<tag>.p2p.alt`) and the link. */
+  | { type: 'self'; key: string; address6: number[]; tag?: string; name?: string; link?: string }
   | { type: 'serving'; addr: string }
   | { type: 'client' | 'client-gone'; key: string; address6: number[] }
   /** A room: a peer whose data decrypted, and the path a peer's packets take. */
-  | { type: 'peer'; key: string; address6: number[] }
+  | { type: 'peer'; key: string; address6: number[]; name?: string }
   | { type: 'path'; key: string; address6: number[]; path: 'direct' | 'relay' }
   | { type: 'log'; msg: string }
   /** Tailscale: Go's state names (`Starting`, `NeedsLogin`, `Running`), or `Failed` with why. */
@@ -193,7 +193,7 @@ export class TsClient {
   private readonly m: TsModule;
   private readonly h: number;
   private readonly on: TsHandlers;
-  private readonly sockets = new Map<number, { ws: WebSocket; queue: Uint8Array<ArrayBuffer>[] | null }>();
+  private readonly sockets = new Map<number, { ws: WebSocket; text: boolean; queue: Uint8Array<ArrayBuffer>[] | null }>();
   /** A room's data channels, by connection. */
   private readonly channels = new Map<number, RTCDataChannel>();
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -305,7 +305,7 @@ export class TsClient {
         case 2: {
           const s = this.sockets.get(id);
           if (s?.queue) s.queue.push(rest);
-          else if (s?.ws.readyState === WebSocket.OPEN) s.ws.send(rest);
+          else if (s?.ws.readyState === WebSocket.OPEN) s.ws.send(s.text ? decoder.decode(rest) : rest);
           break;
         }
         case 3:
@@ -346,25 +346,30 @@ export class TsClient {
     if (ms >= 0) this.timer = setTimeout(() => { this.m.x.ts_tick(this.h); this.pump(); }, Math.ceil(ms));
   }
 
+  /** A WebSocket for the module: binary with a subprotocol (DERP), text without one (a room's Nostr relays: the
+   * module's bytes are UTF-8 both ways). */
   private open(conn: number, url: string, protocol: string) {
     let ws: WebSocket;
+    const text = protocol === '';
     try {
-      ws = new WebSocket(url, protocol);
+      ws = text ? new WebSocket(url) : new WebSocket(url, protocol);
     } catch {
       // A URL the browser refuses: closed at once, as far as the module knows (not from inside this pump).
       setTimeout(() => { if (!this.closed) { this.m.x.ts_ws_closed(this.h, conn); this.pump(); } });
       return;
     }
     ws.binaryType = 'arraybuffer';
-    const s = { ws, queue: [] as Uint8Array<ArrayBuffer>[] | null };
+    const s = { ws, text, queue: [] as Uint8Array<ArrayBuffer>[] | null };
     this.sockets.set(conn, s);
     ws.onopen = () => {
-      for (const b of s.queue ?? []) ws.send(b);
+      for (const b of s.queue ?? []) ws.send(text ? decoder.decode(b) : b);
       s.queue = null;
     };
     ws.onmessage = (e: MessageEvent) => {
-      if (this.closed || !(e.data instanceof ArrayBuffer)) return;
-      this.m.x.ts_ws_message(this.h, conn, ...this.m.put(new Uint8Array(e.data)));
+      if (this.closed) return;
+      const b = typeof e.data === 'string' && text ? encoder.encode(e.data) : e.data instanceof ArrayBuffer ? new Uint8Array(e.data) : undefined;
+      if (!b) return;
+      this.m.x.ts_ws_message(this.h, conn, ...this.m.put(b));
       this.pump();
     };
     ws.onclose = () => {

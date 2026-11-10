@@ -14,12 +14,12 @@ I/O. It speaks two protocols, and holds a room's member beside them ("Rooms"):
 What the user sees (the Network wizard and menu, the settings, the lease) is
 [frontend.md](frontend.md) "Network". Why our own client and not Tailscale's Go one built to wasm (the
 page's until 2026-10-17): the Go module was 26.9 MB of wasm (4.3 MB Brotli), a Go runtime and heap of
-20 to 26 MB in its worker, and WireGuard in pure Go on one thread; this one is about 0.5 MB Brotli (511 KB on 2026-10-24) and
+20 to 26 MB in its worker, and WireGuard in pure Go on one thread; this one is about 0.6 MB Brotli (576 KB on 2026-11-10, rooms' lookups and `k256` 42 KB of it) and
 2 MB of memory with twice the throughput ("Numbers"). The decisions that led here (frames at the
 device, the gateway, the guest as the node) are [plans/networking.md](plans/networking.md)'s.
 
 **The files.** `net/ts/src/`: `wasm.rs` (the exports), `client.rs` (the tailcat client, and the
-actions the clients share), `tailcat.rs` (the address), `room.rs` (a room's member), `cbor.rs`, `nat46.rs`, `derp.rs`, `ip.rs`
+actions the clients share), `tailcat.rs` (the address), `room.rs` (a room's member; `room/link.rs`, `room/lookup.rs`, `nostr.rs`), `cbor.rs`, `nat46.rs`, `derp.rs`, `ip.rs`
 (packet builders), `tailnet.rs` (the Tailscale client's data plane), `control.rs` (the control
 session), `noise.rs`, `h2pipe.rs`, `netmap.rs`, `store.rs` (the kept node), `dns.rs`, `dns_tcp.rs` (MagicDNS over TCP). The page's
 side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/ts-wasi.ts`,
@@ -153,27 +153,60 @@ without, so a key without the address gets nothing in.
 
 ## Rooms
 
-Peer-to-peer rooms ([plans/networking-p2p.md](plans/networking-p2p.md), in progress: R0 done, so peers are given by
-key and nothing is on the page's menus yet). `room.rs` is a third client of the module; `web/room.ts` and
-`web/room-worker.ts` are its page and worker.
+Peer-to-peer rooms ([plans/networking-p2p.md](plans/networking-p2p.md), in progress: R0 and R1 done, so members find
+each other by address or name, but nothing is on the page's menus yet: R2). `room.rs` is a third client of the module
+(with `room/link.rs`, `room/lookup.rs` and `nostr.rs`); `web/room.ts` and `web/room-worker.ts` are its page and worker.
 
-- **A room** is an ID its members agree on. BLAKE2s derives from it, with labels of their own: the room's /48 (`fd`
-  and 40 bits; one that would be tailcat's `fd7a:115c:a1e0::/48` takes the next label), its tag (those 40 bits in
-  base32) and the WireGuard pre-shared key every pair in the room uses (`room::Room`). A node's address is the /48
-  plus the first 80 bits of its node key, as tailcat's.
+- **A room's link** (`room::Link`): `webpc-room:<id>?nostr=<wss URL>&…&derp=<region>&…`, each part percent-encoded; a
+  `derp` is a region ID of the DERP map (0: its first) or a derper inline (`host[:port]`). Anything without the scheme
+  is a bare ID, with the defaults (placeholders until R3: three public Nostr relays, the DERP map's first region). At
+  most 8 relays and 8 regions, an ID of at most 256 bytes. The `self` event carries the link the client read.
+- **What the ID derives:** BLAKE2s with labels of their own gives the room's /48 (`fd` and 40 bits; one that would be
+  tailcat's `fd7a:115c:a1e0::/48` takes the next label), its tag (those 40 bits in base32), the tag salt and lookup key
+  of its lookups, and the WireGuard pre-shared key every pair in the room uses (`room::Room`). A node's address is the
+  /48 plus the first 80 bits of its node key, as tailcat's; its name is `<key in base32, 52 characters>.<tag>.p2p.alt`.
+- **Finding a peer** (`room/lookup.rs`, `nostr.rs`): a node's tag in an hour is BLAKE2s of the tag salt, its address
+  and the Unix hour (16 bytes, hex); it keeps one subscription on each of the link's Nostr relays (`REQ`, the kind
+  `room::KIND` = 26354, a placeholder, and its tags of the previous, current and next hour; `CLOSE` and a new `REQ` when
+  the hour turns), so a dialer's clock may be off by most of an hour. When the guest sends to a room address nobody
+  has, the packet waits (16 at most) and a **lookup** goes out as an ephemeral event under the target's tag of the
+  dialer's hour, signed with BIP-340 (`k256`) by a key random per session, on every relay: the dialer's node key, its
+  home region (an index into the link's regions), the time and a random nonce, sealed with ChaCha20-Poly1305 to the
+  target's own key when the dialer knows it (an X25519 box from an ephemeral key; a name the resolver answered, or
+  `known` keys) and with the room's lookup key otherwise; both mix in the lookup key, and the tag is the associated
+  data. Again after 1 s and 3 s; at 6 s the waiting packets get ICMPv6 address unreachable (type 1, code 3, from the
+  room's `::53`), as does anything to that address for 5 s more. The Nostr relays are plain WebSockets in text mode
+  (`WsOpen` with an empty protocol; `web/ts-client.ts` opens it without one and carries the module's bytes as UTF-8),
+  reconnected after 2 s doubling to 60 s.
+- **The call back:** a target that opens a lookup joins the dialer's home region and starts the WireGuard handshake
+  through it, its signalling `hello` queued behind the handshake (so the first data is acknowledged and resent: the
+  dialer, the responder, can't send until something comes, and a lone keepalive lost would leave it unable to). It
+  drops lookups more than an hour off its clock, a nonce it has seen (remembered for three hours, 8,192 at most), a
+  region outside the link, its own key, and beyond 4 new peers on trial a second (1,024 peers at most). A lookup from
+  a key it already has a peer for doesn't move that peer (a member could forge one): it probes the session with a
+  signalling `ping`, and only if nothing decrypts in 4 s (that key's page reloaded, say) forgets it and calls back. The
+  dialer lets in the handshake of a key whose address its lookup waits on, and sends the waiting packets into the
+  session. A lookup is a hint; the handshake with the room's key decides.
 - **WireGuard** (`ts_tunnel`, IKpsk2 with the room's key) carries the guest's IPv6 between members, whichever path
   carries its packets. A peer's packets reach the guest only from that peer's own address to ours. A key we don't
-  know that starts a handshake through DERP is let in **on trial** (incoming connections, on by default; `incoming:
-  false` refuses them) and forgotten 20 s after it came in unless its data decrypted, which only the room's key allows.
-  The lease: the room address as a /128, IPv4 `192.0.0.2` with no IPv4 routes, and the /48 as the route on an adapter
-  that isn't the guest's primary (`prefix6`, web/room-worker.ts); no resolver yet.
+  know that starts a handshake is let in **on trial** (incoming connections, on by default) and forgotten 20 s after it
+  came in unless its data decrypted, which only the room's key allows. A peer is forgotten after 3 minutes without the
+  guests' traffic, or 20 s after we sent it the guest's packets with nothing back (the next packet looks it up again).
+- **Incoming off** (`incoming: false`): lookups go unanswered and handshakes from unknown keys are refused, unless the
+  guest has a flow with that address; a flow table (the peer's address, the protocol, both ports or an echo's
+  identifier; 5 minutes idle, 4,096 at most) lets in only replies to the guest's own flows (and ICMPv6 errors from a
+  peer it has one with).
+- **The resolver** at the room's `<prefix>::53` (the lease's `dns6`, with the room's `<tag>.p2p.alt` as its domain):
+  `<key>.<tag>.p2p.alt` AAAA is the address computed from the key, which the module remembers to seal lookups to it;
+  A for such a name is an empty answer, anything else NXDOMAIN. The lease: the room address as a /128, IPv4
+  `192.0.0.2` with no IPv4 routes, and the /48 as the route on an adapter that isn't the guest's primary (`prefix6`,
+  web/room-worker.ts).
 - **Signalling inside the tunnel:** UDP between the two members' addresses, port 1 both ends (`SIGNAL_PORT`; the
   guest's packets to or from it are dropped), JSON: `hello` (the home region, relay only), `sig` (the page's
-  description or ICE candidate for attempt `o`, opaque to the module), `bye` (attempt `o` closed), `refuse` (relay
-  only). Each message carries the sender's instance (a random number per client, so a peer's restart resets what we
-  knew of its signalling) and a sequence number, and is acknowledged and resent after 0.5, 1 and 2 s. Signalling
-  starts only after the peer's data decrypted, so a member shows its candidates only to one that completed a
-  handshake with the room's key.
+  description or ICE candidate for attempt `o`, opaque to the module), `bye` (attempt `o` closed, or refused by an
+  answerer with too many), `refuse` (relay only), `ping` (the probe above). Each message carries the sender's
+  instance (a random number per client, so a peer's restart resets what we knew of its signalling) and a sequence
+  number, and is acknowledged and resent after 0.5, 1 and 2 s. Candidates go only to a member whose data decrypted.
 - **The direct path:** the member with the lower key offers once the session is confirmed. The module asks the host
   for a connection (`RtcOpen`, actions 7–10 and `ts_rtc_*` in `wasm.rs`); web/room.ts makes an `RTCPeerConnection`
   (STUN only: `STUN_SERVERS`, Cloudflare's and Google's) with a negotiated data channel (id 0, unordered, no
@@ -182,10 +215,24 @@ key and nothing is on the page's menus yet). `room.rs` is a third client of the 
   opens, the peer's WireGuard packets take it, one message each, except handshake messages, which always go
   through DERP (rare, and a peer that restarted has no channel to take ours). An attempt not open in 10 s is closed
   and the next waits 30 s, doubling to 5 min; a closed channel, or one we sent on with nothing back for 15 s (past
-  WireGuard's 10 s passive keepalive), sends the peer back to DERP, and a new offer comes after 30 s. Relay only
-  (`relayOnly`) never opens a connection and refuses offers. The `path` event says which path a peer's packets take.
-- **DERP**: one home region (one's own derper, or a region of the map), with tailcat's liveness and reconnects; the
-  peers are on the same region until R1's call backs join a dialer's.
+  WireGuard's 10 s passive keepalive), sends the peer back to DERP, and a new offer comes after 30 s. At most 64
+  connections (`MAX_RTC`): past that the offerer waits for the guests' next packet, and an answerer refuses with a
+  `bye`; a channel without the guests' traffic for 60 s (`RTC_IDLE`) is closed, and the offerer offers again at the
+  next packet either way. Relay only (`relayOnly`) never opens a connection and refuses offers. The `path` event says
+  which path a peer's packets take.
+- **DERP:** one connection per region in use (`Relay`): the home region (`home`, an index into the link's; the
+  `preferred` one) always, another while a peer is reached through it (the dialer's home region a call back joined;
+  where a peer's data last came from) and for 60 s after; packets for a region wait (64 at most) until its connection
+  is up. Each has tailcat's liveness and reconnects; only the home region's failures before `Running` fail the client.
+  A peer that left a region (`PeerGone`) is sent to its home region, if its `hello` said one.
+- **Tests:** `cargo test -p webpc_ts room` and `nostr` (the client against fake DERP regions, which route a packet only
+  to a key on the same region, a fake Nostr relay and a fake WebRTC: lookups, names, sealing, stale, replayed, forged
+  and misdirected lookups, the trial rate, incoming off and its flows, two regions, the hour's turn and a clock 40
+  minutes off, a forged lookup that doesn't move a live peer, a reloaded peer called back, the channel cap and the idle
+  close, the R0 cases; BIP-340's first vector); `tests/nostr-relay.test.ts` (the tests' relay, `tests/net/nostr-relay.ts`:
+  NIP-01's EVENT, REQ, CLOSE, kind and `#x` filters, forwarding without storing, ids checked, signatures not, a small
+  RFC 6455 server, no dependency); `tests/room-browser.test.ts` (Chromium, `WEBPC_TAILCAT=1`: pages joining one room
+  by its link on the rig's derper and that relay, by address and by name, relay only, incoming off).
 
 ## Tailscale
 

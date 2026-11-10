@@ -1,4 +1,4 @@
-# Peer-to-peer rooms over WebRTC (in progress: R0 done 2026-11-10)
+# Peer-to-peer rooms over WebRTC (in progress: R0 and R1 done 2026-11-10)
 
 VMs in different browsers on one network, with packets going browser to browser over WebRTC and DERP
 only as the fallback. Reaching a peer takes two steps: **joining its room**, and **knowing its
@@ -138,6 +138,12 @@ address and name don't change when it rejoins. "New identity" makes a new key.
   own region reaches only the dialer. A target drops lookups older than a minute, lookups whose
   nonce it has seen, lookups from a key it has a session with (which can only re-route a live peer),
   and beyond a few new on-trial peers a second, so a member can't make it call out without bound.
+  (R1: "older than a minute" became "more than an hour off its clock", the tags' window, since a
+  dialer's clock may be off by most of an hour and a copy within it is dropped by its nonce, kept
+  three hours; a lookup from a key with a session probes it with a signalling ping and calls back
+  only if nothing decrypts in 4 s, so a member whose page reloaded is reached again at once while a
+  forged lookup moves nothing; the caller's signalling hello is queued behind its handshake, as the
+  responder can't send until data comes and a lone keepalive lost would leave it unable to.)
 - **The relays' terms** (rate limits, proof of work as in NIP-13, payment, which kinds they accept)
   decide how far public relays carry a room; R3 checks. A serious room runs its own relay, as it
   would its own derper, and puts them in its link.
@@ -244,7 +250,11 @@ client was built.
   Measure against the DERP path: throughput, RTT, time to the first packet and to the first direct
   packet, CPU per Mbit, with and without the inner WireGuard. **Gate:** if the direct path isn't
   clearly better than DERP, stop and write down why.
-- **R1 — Rooms.** §2's derivations, the link's format, §3's tags, lookups and call backs (with a
+- **R1 — Rooms.** *Done 2026-11-10* (docs/tailnet.md "Rooms"; §3's amendments): the link
+  (`webpc-room:<id>?nostr=…&derp=…`), lookups on Nostr (`k256`, `nostr.rs`, the kind 26354 a placeholder), call backs
+  into a dialer's home region with a DERP connection per region in use, the probe, the caps and idle closes, the
+  resolver, incoming off's flow table; `cargo test -p webpc_ts room` (26 cases), `tests/nostr-relay.test.ts`,
+  `tests/room-browser.test.ts` by link and by name. The brief as it was: §2's derivations, the link's format, §3's tags, lookups and call backs (with a
   minimal Nostr relay in the test harness, in TypeScript: EVENT, REQ, CLOSE, the kind and tag
   filters, forwarding without storing; no dependency), signalling's resends, joining and leaving,
   connections on demand with the cap and idle close, §5's lease, resolver and incoming switch.

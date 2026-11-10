@@ -45,8 +45,8 @@ export type Room = {
   /** The device's end of the IP port, when the config brought none. */
   ip?: MessagePort;
   state(): string;
-  /** This member's node key, address and the room's tag, once known. */
-  self(): { key: string; address6: number[]; tag?: string } | undefined;
+  /** This member's node key, address and name, the room's tag and link, once known. */
+  self(): { key: string; address6: number[]; tag?: string; name?: string; link?: string } | undefined;
   lease(): Lease | null;
   /** The peers whose data decrypted, and the path each one's packets take. */
   peers(): RoomPeer[];
@@ -71,7 +71,7 @@ export function startRoom(config: StartRoom, onEvent: (e: TsEvent) => void = () 
   const conns = new Map<number, Conn>();
   const peers = new Map<string, RoomPeer>();
   let state = '';
-  let me: { key: string; address6: number[]; tag?: string } | undefined;
+  let me: ReturnType<Room['self']>;
   let lease: Lease | null = null;
   let detached: ((ip?: MessagePort) => void) | undefined;
   const t0 = performance.now();

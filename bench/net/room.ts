@@ -5,12 +5,14 @@
 // bare data channel between two workers, no WireGuard). Per arm: the time to the first echo back after `Running`, the
 // direct path's setup after the handshake, the RTT (one echo at a time), throughput (1,280-byte IP packets, i.e.
 // 1,232-byte UDP payloads, 32 in flight, each way) and the CPU over the throughput run: every Chromium process and the
-// derper (from /proc), per Mbit/s of the two directions together. Needs nothing else running.
+// derper (from /proc), per Mbit/s of the two directions together. Since R1 the members find each other through a
+// lookup on the tests' Nostr relay (tests/net/nostr-relay.ts), so the first echo includes it. Needs nothing else running.
 // Usage: node bench/net/room.ts [rounds] [echoes] [out.json]
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
+import { startNostrRelay } from '../../tests/net/nostr-relay.ts';
 
 const ROOT = new URL('../..', import.meta.url).pathname;
 const rounds = Number(process.argv[2] ?? 3);
@@ -66,7 +68,7 @@ async function arm(browser: Browser, base: string, kind: 'direct' | 'relay' | 'r
     } finally { await p.context().close(); }
   }
   const room = `bench ${Math.random()}`;
-  const url = (q: Record<string, string>) => `${base}/tests/browser/room.html?${new URLSearchParams({ room, relay: RELAY, ...q })}`;
+  const url = (q: Record<string, string>) => `${base}/tests/browser/room.html?${new URLSearchParams({ room, relay: RELAY, nostr: nostr.url, ...q })}`;
   const running = 'window.harness?.room().state === "Running"';
   const b = await page(browser, url({}), running);
   try {
@@ -94,6 +96,7 @@ async function arm(browser: Browser, base: string, kind: 'direct' | 'relay' | 'r
 }
 
 execFileSync(script, ['up'], { encoding: 'utf8', timeout: 300_000 });
+const nostr = await startNostrRelay();
 const server = await startServer();
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
@@ -112,6 +115,7 @@ try {
   const version = browser.version();
   await browser.close();
   server.close();
+  await nostr.close();
   spawnSync(script, ['down']);
   if (out) {
     writeFileSync(out, JSON.stringify({ date: new Date().toISOString(), chromium: version, host: `${process.platform} ${process.arch}`, cpus: (await import('node:os')).cpus().length, rounds, echoes: n, packet: PACKET, results }, null, 2) + '\n');

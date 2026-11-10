@@ -7,49 +7,34 @@ significantly less performant than DERP"); do them if a cloud session can, else 
 
 ## State
 
-**R0 is done** (2026-11-10, a cloud session):
+**R0 and R1 are done** (2026-11-10, cloud sessions; how it works: docs/tailnet.md "Rooms"):
 
-- `net/ts/src/room.rs` (a third client of the module, `Any::Room` in `wasm.rs`): §2's derivations (the /48, its tag,
-  the pre-shared key; the tag salt and lookup key wait for R1), WireGuard to peers given by key (`room.peers`),
-  incoming connections on trial (`incoming`, default on), signalling inside the tunnel on UDP port 1 (hello, sig,
-  bye, refuse; an instance nonce, acknowledgements and resends), the lower key offers, ABI actions 7–10 and
-  `ts_rtc_signal/open/message/closed`, the fallback on a closed, stalled (15 s) or never-opened (10 s) channel with
-  the 30 s → 5 min backoff, relay only. Handshake messages always go through DERP (a decision R0 added to plan §4:
-  a restarted peer has no channel to take our response; found by the restart test).
-- `web/room.ts` (the page: `RTCPeerConnection`s, STUN only, the channel transferred to the worker at creation) and
-  `web/room-worker.ts`; `web/ts-client.ts` carries the new actions. Not on the page's menus (R2).
-- Tests: `cargo test -p webpc_ts room` (13 cases on a fake relay and a fake WebRTC; a planted bug in the address
-  binding caught); `tests/room-browser.test.ts` (opt-in `WEBPC_TAILCAT=1`, in `scripts/ci-net.sh`'s list).
-- Measured: bench/net/REPORT.md "Rooms: the direct path against DERP" (`bench/net/room.ts`, JSON in
-  `bench/net/results/r0/`): direct 50.9 Mbit/s each way against DERP's 35.1 on loopback, 31% less CPU per Mbit;
-  the gate holds. Numbers from the cloud's x86_64 container: **repeat `node bench/net/room.ts 5 10000 <json>` in
-  the dev VM** at some point (not blocking).
+- R0: `net/ts/src/room.rs` (a third client of the module), WireGuard over WebRTC data channels with DERP as the
+  fallback, signalling inside the tunnel, `web/room.ts` and `web/room-worker.ts`; measured, the gate held
+  (bench/net/REPORT.md "Rooms").
+- R1: the link (`room/link.rs`), §2's remaining derivations and §3's lookups (`room/lookup.rs`; Nostr events in
+  `nostr.rs` with `k256`, rows in THIRD_PARTY.json), call backs into the dialer's home region (one DERP connection per
+  region in use), the probe of a live peer named by a lookup, connections on demand (lookups for unknown addresses,
+  ICMPv6 unreachable, the 64-channel cap, 60 s idle close, peers forgotten when idle or lost), the resolver at the
+  room's `::53` and the lease's `dns6`/`domains`, incoming off's flow table. `web/ts-client.ts` opens text WebSockets
+  for an empty protocol. `JsRoom` takes `link`, `home`, `known`, `relayOnly`, `incoming` (no more `peers`, `relay`,
+  `region`). Plan §3 amended (the lookup's age window, the probe, the caller's hello).
+- Tests: `cargo test -p webpc_ts room` (26 cases, planted: no nonce check, flows ignored: each caught);
+  `tests/nostr-relay.test.ts` (the tests' relay, `tests/net/nostr-relay.ts`); `tests/room-browser.test.ts` (3 cases:
+  by address, relay only, by name and incoming off; passed in this session, `WEBPC_TAILCAT=1`). The module is 576 KB
+  Brotli (R0's 533).
 
-**CI in this session:** `scripts/ci.sh` OK (1,392 s; JS 955 passed, 0 failed, 567 skipped) but for the agent's `cargo test`, whose two root-only failures (docs/cloud.md) stop it here and were left out of the run; the cloud skips the image-based native tests; `scripts/ci-net.sh` not run whole (the cloud has
-no Podman, and `tests/net-tailcat.test.ts` hangs on its missing IPv6, docs/cloud.md): `tests/room-browser.test.ts`,
-`tests/tailcat-browser.test.ts` and `tests/ts-client.test.ts` ran here. **Run `scripts/ci-net.sh` in the dev VM**
-before R1's end.
+**Not done here:** `scripts/ci-net.sh` whole and `node bench/net/room.ts 5 10000 <json>` (R0's numbers) want the dev
+VM (docs/cloud.md: no Podman, no IPv6); run both there before R2's end. The out-of-context review of R1 (CLAUDE.md):
+see the commit after R1's for its findings, if it ran.
 
-## Next: R1 (plan §7)
+## Next: R2 (plan §7)
 
-In order, each a loop with its tests first:
+The page: a room as a connection kind (docs/network-adapters.md "Connections"), "Create a room" (name, private and its
+suffix, relays and derper under advanced settings: builds the link with `room::Link`'s format) and "Join a room";
+one's own name to copy (the `self` event's `name`), the incoming and relay-only switches, the key under advanced
+settings, who sees one's IP address beside the privacy note; the node key kept in IndexedDB as tailcat's identity.
+Then two Debian guests reaching each other by name in `scripts/ci-net.sh`. Words come from the catalog (docs/i18n.md).
 
-1. §2's remaining derivations (tag salt, lookup key) and the link's format (the room's ID, its Nostr relays, its DERP
-   map: region IDs or a derper inline); `JsRoom` takes a link.
-2. The test harness's Nostr relay in TypeScript (EVENT, REQ, CLOSE, kind and `#x` filters, forwarding without
-   storing; no dependency), and `k256` for BIP-340 signatures (OK'd 2026-10-18; add its THIRD_PARTY.json row).
-   The module needs a WebSocket per Nostr relay (the same `WsOpen` actions, protocol "" or none: check what
-   `web/ts-client.ts` passes for an empty protocol).
-3. §3: tags by the hour (subscriptions for the previous, current and next hour), lookups (sealed to the key when
-   known, else with the lookup key; resent after 1 s and 3 s), call backs into the dialer's home region (so the
-   client needs more than one DERP connection: one per region in use, the home region preferred, 60 s idle close,
-   as tailnet.rs does), the target's checks (age, nonce, a key with a session, a rate of new trials).
-4. Connections on demand: the 64-peer cap, the 60 s idle close; packets waiting for a lookup, ICMPv6 address
-   unreachable when none answers.
-5. §5: the resolver at the room's `::53` (`<key>.<tag>.p2p.alt` AAAA by computing it, NXDOMAIN else), the lease's
-   `dns6` and `domains`, the incoming switch's flow table.
-6. Tests the plan lists (stale, replayed and forged lookups, a region outside the map, the hour's turn, lost
-   signalling) and two pages joining by link, pinging by name. Then an out-of-context review of `room.rs` and
-   `web/room*.ts` (CLAUDE.md "Out-of-context reviews").
-
-Open questions for the user stay in plan §9.
+Open questions for the user stay in plan §9 (the default public room, the relays, the seal's reuse of the WireGuard
+key, the `p2p.alt` suffix, the event kind).
