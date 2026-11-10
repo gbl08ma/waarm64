@@ -139,6 +139,14 @@ const CLASSES: Record<string, [number, number]> = {
   // FEAT_FHM (ABI 65): FMLAL, FMLSL and the 2 forms (U and bit 13 free: the three same codes beside them), by element.
   'AdvSIMD FHM': [0x9f20dc00, 0x0e20cc00],
   'AdvSIMD FHM by element': [0x9f803400, 0x0f800000],
+  // FEAT_BF16 (ABI 66): V registers mostly bfloat16 lanes of plain values (`bfLanes`), single lanes in some.
+  'BF16 BFCVT': [0xfffffc00, 0x1e634000],
+  'AdvSIMD BF16 BFCVTN': [0xbffffc00, 0x0ea16800],
+  'AdvSIMD BF16 BFDOT': [0xbfe0fc00, 0x2e40fc00],
+  'AdvSIMD BF16 BFDOT by element': [0xbfc0f400, 0x0f40f000],
+  'AdvSIMD BF16 BFMLAL': [0xbfe0fc00, 0x2ec0fc00],
+  'AdvSIMD BF16 BFMLAL by element': [0xbfc0f400, 0x0fc0f000],
+  'AdvSIMD BF16 BFMMLA': [0xffe0fc00, 0x6e40ec00],
   // FEAT_FlagM's RMIF (a helper; the rest of FlagM is among the sequences' helpers).
   'RMIF': [0xffe07c10, 0xba000400],
 };
@@ -246,9 +254,13 @@ function halfLane(): bigint {
 const halfLanes = () => [0n, 16n, 32n, 48n].reduce((v, e) => v | (halfLane() << e), 0n);
 /** The classes whose V registers mostly hold half lanes. */
 const HALF_LANES = /FP16|FHM/;
+/** 64 bits of bfloat16s: a single's top half, plain (`fpPlain`) but now and then (one in 32: a BFDOT reads 20 lanes) special (`fpValue`). */
+const bfLanes = () => [0n, 16n, 32n, 48n].reduce((v, e) => v | (((rand32() % 32 === 0 ? fpValue(false) : fpPlain(false)) >> 16n) << e), 0n);
+/** The classes whose V registers mostly hold bfloat16 lanes. */
+const BF_LANES = /BF16/;
 
 /** The classes whose V registers sometimes hold integer lanes of edge values (`intLanes`). */
-const INT_LANES = /^AdvSIMD (?!FP|scalar FP|FCVT|FCMA)|^AdvSIMD load|^CRC32/;
+const INT_LANES = /^AdvSIMD (?!FP|scalar FP|FCVT|FCMA|BF16)|^AdvSIMD load|^CRC32/;
 
 /** 64 bits of `esize`-bit lanes: the signed and unsigned limits and their neighbours, small
  * values of either sign (shift counts), a lane with one bit set, or random bits. */
@@ -278,7 +290,7 @@ const DATA_SIZE = 0x2000;
 const FUSED = fusedFma();
 const ARMS = FUSED ? [true, false] : [false];
 const armName = (fma: boolean) => (fma === FUSED ? '' : ' (FMA emulated)');
-const FMA_CLASSES = new Set(['FP data processing, 3 sources', 'FP16 data processing, 3 sources', 'AdvSIMD FP16 three same', 'AdvSIMD FP16 by element', 'AdvSIMD FHM', 'AdvSIMD FHM by element', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD scalar x indexed element', 'AdvSIMD scalar three same', 'AdvSIMD FCMA', 'AdvSIMD FCMA by element']);
+const FMA_CLASSES = new Set(['FP data processing, 3 sources', 'FP16 data processing, 3 sources', 'AdvSIMD FP16 three same', 'AdvSIMD FP16 by element', 'AdvSIMD FHM', 'AdvSIMD FHM by element', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD scalar x indexed element', 'AdvSIMD scalar three same', 'AdvSIMD FCMA', 'AdvSIMD FCMA by element', 'AdvSIMD BF16 BFMLAL', 'AdvSIMD BF16 BFMLAL by element']);
 
 /** Two vCPUs (interpreter, JIT) on two copies of a RAM that holds `code` bytes
  * of code, a gap, then the data area, which ends the RAM (accesses past it are
@@ -399,7 +411,8 @@ for (const [name, [mask, bits], mem] of [
       for (let r = 0; r < 64; r++) {
         const k = rand32() % 4;
         const lane = (d: boolean) => (rand32() % 8 === 0 ? fpValue(d) : fpPlain(d));
-        va[r] = HALF_LANES.test(name) && mode !== 3 ? (name.includes('FHM') && r % 2 === 0 && rand32() % 2 === 0 ? lane(false) | lane(false) << 32n : halfLanes())
+        va[r] = BF_LANES.test(name) && mode !== 3 ? (rand32() % 6 === 0 ? lane(false) | lane(false) << 32n : bfLanes())
+          : HALF_LANES.test(name) && mode !== 3 ? (name.includes('FHM') && r % 2 === 0 && rand32() % 2 === 0 ? lane(false) | lane(false) << 32n : halfLanes())
           : mode === 0 ? lane(true) : mode === 1 ? lane(false) | lane(false) << 32n
           : mode === 4 ? intLanes(esize)
           : k === 0 ? EDGES[rand32() % EDGES.length] : k === 1 ? fpValue(true) : k === 2 ? fpValue(false) | fpValue(false) << 32n : rand64();
@@ -579,6 +592,7 @@ for (const parallel of [false, true]) test(`JIT vs interpreter: unmasking DAIF w
 const f32bits = (x: number) => { const d = new DataView(new ArrayBuffer(4)); d.setFloat32(0, x, true); return BigInt(d.getUint32(0, true)); };
 const f64bits = (x: number) => { const d = new DataView(new ArrayBuffer(8)); d.setFloat64(0, x, true); return d.getBigUint64(0, true); };
 const lanes = (...l: number[]) => l.map(f32bits) as unknown as bigint;
+const f32of = (bits: number) => new Float32Array(new Uint32Array([bits]).buffer)[0];
 /** The largest single denormal. */
 const DMAX = (2 ** 23 - 1) * 2 ** -149;
 /** "x" lanes of halves: each 32-bit lane two halves, `x` and `y` alternating (lanes 0 and 1 of each pair, `z`, `w` the next). */
@@ -817,6 +831,21 @@ const FP_EDGES: [string, number, bigint[]][] = [
   ['x fmax v0.8h (negatives a last place apart, ±0)', 0x4e423420, [hl(0, 0, 0, 0), hl(0xbc01, 0x8000, 0, 0xfbff), hl(0xbc00, 0, 0x8000, 0xfbfe)]],
   ['x fmin v0.8h (negatives a last place apart, ±0)', 0x4ec23420, [hl(0, 0, 0, 0), hl(0xbc01, 0x8000, 0, 0xfbff), hl(0xbc00, 0, 0x8000, 0xfbfe)]],
   ['x fcmge v0.8h (negatives a last place apart, ±0)', 0x6e422420, [hl(0, 0, 0, 0), hl(0xbc01, 0x8000, 0, 0xfbff), hl(0xbc00, 0, 0x8000, 0xfbfe)]],
+  // FEAT_BF16 (ABI 66): BFDOT's and BFMMLA's sums stepped to odd (1 + 2^-24), zeros of both signs, the operand bound
+  // (2^-56: 0x2380, every lane inline; below it 0x2300, the helper's); BFCVTN at the rounding boundaries (0x7f7f7fff;
+  // 0x7f7f8000, which rounds to infinity; ties to even), and a single denormal (the helper's); BFMLAL's product below the
+  // singles' range, exact in the FMA. A lane on the helper's side sends the whole instruction there: the inline cases
+  // keep every lane inline.
+  ['x bfdot v0.4s, v1.8h, v2.8h (sums to odd, ±0)', 0x6e42fc20, [lanes(1, 0, -0, 1.5), hl(0x3f80, 0x3f80, 0x3f80, 0x8000), hl(0x3380, 0x0000, 0x3f80, 0xbf80)]],
+  ['x bfdot v0.4s, v1.8h, v2.8h (operands at the bound)', 0x6e42fc20, [lanes(0, 1, 0, -(2 ** -112)), hl(0x2380, 0xa380, 0x2381, 0x3f80), hl(0x2380, 0x2380, 0x2380, 0x2380)]],
+  ['x bfdot v0.4s, v1.8h, v2.8h (an operand below the bound)', 0x6e42fc20, [lanes(0, 1, 0, 1), hl(0x2380, 0x3f80, 0x2300, 0x3f80), hl(0x2380, 0x3f80, 0x3f80, 0x2380)]],
+  ['x bfdot v0.4s, v1.8h, v2.2h[1] (by element, a sum cancelling Vd)', 0x4f62f020, [lanes(-2, 2, -(1 + 2 ** -7), 0), hl(0x3f80, 0x3f80, 0x3f81, 0x3f80), hl(0x3f80, 0x3f80, 0x3f80, 0x3f80)]],
+  ['x bfmmla v0.4s, v1.8h, v2.8h (both steps to odd)', 0x6e42ec20, [lanes(1, 1, -1, 2 ** 100), hl(0x3f80, 0x3381, 0x3f80, 0x3381), hl(0x3f80, 0x3f80, 0x3380, 0x3f80)]],
+  ['x bfcvtn v0.4h, v1.4s (rounding boundaries)', 0x0ea16820, [lanes(0, 0, 0, 0), lanes(f32of(0x7f7f7fff), f32of(0x7f7f8000), f32of(0x3f808000), f32of(0x3f818000)), lanes(0, 0, 0, 0)]],
+  ['x bfcvtn v0.4h, v1.4s (the largest finite, a denormal)', 0x0ea16820, [lanes(0, 0, 0, 0), lanes(f32of(0x7f7f7fff), f32of(0x0000ffff), 1, -0), lanes(0, 0, 0, 0)]],
+  ['x bfcvtn2 v0.8h, v1.4s (ties, -0, the largest)', 0x4ea16820, [lanes(1, 2, 3, 4), lanes(f32of(0x3f818000), -0, f32of(0xff7f7fff), f32of(0x00800000)), lanes(0, 0, 0, 0)]],
+  ['x bfmlalb v0.4s, v1.8h, v2.8h (a product below 2^-126)', 0x2ec2fc20, [lanes(1.5, 2 ** -120, -(2 ** -140), 0), hl(0x1c80, 0, 0x1c80, 0), hl(0x1c80, 0, 0x1c80, 0)]],
+  ['x bfmlalt v0.4s, v1.8h, v2.h[3] (by element, cancellation)', 0x4ff2f020, [lanes(-1, 1, -0.5, 0), hl(0, 0x3f80, 0, 0xbf80), hl(0x3f80, 0x3f80, 0x3f80, 0x3f80)]],
 ];
 test('the probe finds the fused madd on arm64', { skip: process.arch !== 'arm64' }, () => {
   // arm64's relaxed madd is always FMLA. If the probe broke, every host would quietly lose the fused arm.
@@ -970,6 +999,7 @@ const VHELPERS = [
 ];
 const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 1 source', 'FP data processing, 2 sources', 'FP data processing, 3 sources', 'FP and general register moves, conversions', 'FP compare', 'FP conditional compare', 'FP conditional select', 'FJCVTZS', 'FRINTTS', 'AdvSIMD FP FRINTTS', 'AdvSIMD DotProd', 'AdvSIMD DotProd by element', 'AdvSIMD I8MM USDOT', 'AdvSIMD I8MM by element', 'AdvSIMD I8MM matrix', 'AdvSIMD RDM', 'AdvSIMD RDM by element', 'AdvSIMD FCMA', 'AdvSIMD FCMA by element', 'conditional select', 'conditional compare'].map((n) => CLASSES[n]);
 const FP16 = Object.keys(CLASSES).filter((n) => HALF_LANES.test(n)).map((n) => CLASSES[n]);
+const BF16 = Object.keys(CLASSES).filter((n) => BF_LANES.test(n)).map((n) => CLASSES[n]);
 const VMEM = ['SIMD&FP load/store, unsigned offset', 'SIMD&FP load/store pair', 'AdvSIMD load/store multiple structures', 'AdvSIMD load/store single structure'].map((n) => MEMORY[n]);
 const ALU = ['PC-relative (ADR, ADRP)', 'add/sub, immediate', 'add/sub, shifted and extended register', 'add/sub with carry', 'logical, immediate', 'logical, shifted register', 'bitfield, 64-bit', 'bitfield, 32-bit', 'variable shifts', 'conditional select', 'conditional compare', 'multiply-add', 'data processing, register'].map((n) => CLASSES[n]);
 const LAST = ['conditional branch', 'compare and branch', 'test and branch', 'branch to register'].map((n) => CLASSES[n]);
@@ -986,6 +1016,8 @@ const SEQUENCES: Record<string, { pool: [number, number][]; helpers: boolean; ae
   'NEON, FP and V helpers': { pool: [...NEON, ...VMEM], helpers: false, vec: true },
   // FEAT_FP16 and FEAT_FHM (ABI 65) among NEON and V loads and stores, half lanes most of the time.
   'FP16, FHM and NEON': { pool: [...FP16, ...FP16, ...NEON.slice(0, 6), ...VMEM], helpers: false, vec: true },
+  // FEAT_BF16 (ABI 66) among NEON and V loads and stores, bfloat16 lanes most of the time.
+  'BF16 and NEON': { pool: [...BF16, ...BF16, ...NEON.slice(0, 6), ...VMEM], helpers: false, vec: true },
 };
 /** mov S, A; sha256h A, E, W; sha256h2 E, S, W (fused by the JIT), one register sometimes off. */
 function shaTriple(): number[] {
@@ -1069,7 +1101,8 @@ for (const [name, { pool, helpers, aes, sha, vec }] of Object.entries(SEQUENCES)
         const mode = rand32() % 3;
         const lane = (d: boolean) => (rand32() % 8 === 0 ? fpValue(d) : fpPlain(d));
         const half = name.includes('FP16') && rand32() % 4 !== 0;
-        for (let r = 0; r < 64; r++) va[r] = half ? halfLanes() : mode === 0 ? lane(true) : mode === 1 ? lane(false) | lane(false) << 32n : rand64();
+        const bf = name.includes('BF16') && rand32() % 4 !== 0;
+        for (let r = 0; r < 64; r++) va[r] = bf ? (r % 4 === 0 ? lane(false) | lane(false) << 32n : bfLanes()) : half ? halfLanes() : mode === 0 ? lane(true) : mode === 1 ? lane(false) | lane(false) << 32n : rand64();
         [va[64], va[65]] = [rand32() % 4 === 0 ? BigInt(rand32() & 0x1f) << 22n : 0n, rand32() % 4 === 0 ? 0n : 16n];
       }
       new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES)); // all of it: V too (a skipped run may leave V different)

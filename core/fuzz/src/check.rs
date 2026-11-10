@@ -307,9 +307,9 @@ const NOT_OURS: &[&str] = &[
     "ldg", "ldgm", "stgm", "stzgm",
     // FEAT_LOR, FEAT_WFxT, FEAT_LS64 (FlagM, FlagM2 and SB are ours since ABI 59)
     "wfet", "wfit", "ld64b", "st64b", "st64bv", "st64bv0",
-    // FP/AdvSIMD beyond v8.0: FEAT_SM3, FEAT_SM4 and FEAT_BF16 below (FEAT_JSCVT and FEAT_FRINTTS
-    // are ours since ABI 59, FEAT_DotProd since 60, FEAT_I8MM since 61, FEAT_RDM since 62,
-    // FEAT_FCMA since 63, FEAT_FP16 and FEAT_FHM since 65).
+    // FP/AdvSIMD beyond v8.0: FEAT_SM3 and FEAT_SM4 below (FEAT_JSCVT and FEAT_FRINTTS are ours
+    // since ABI 59, FEAT_DotProd since 60, FEAT_I8MM since 61, FEAT_RDM since 62, FEAT_FCMA since
+    // 63, FEAT_FP16 and FEAT_FHM since 65, FEAT_BF16 since 66).
     // At EL0, where `check` runs: HVC and ERET are EL1-only; no EL3 (SMC), no
     // halting or external debug (HLT, DCPS1-3, DRPS).
     "hvc", "eret", "smc", "hlt", "dcps1", "dcps2", "dcps3", "drps",
@@ -318,8 +318,8 @@ const NOT_OURS: &[&str] = &[
     "addspl", "rdsvl",
 ];
 const NOT_OURS_PREFIX: &[&str] = &[
-    // FEAT_SM3/SM4, FEAT_BF16 (AES, SHA1 and SHA256 are ours since M6.5, SHA512 and SHA3 since ABI 51)
-    "sm3", "sm4", "bfcvt", "bfdot", "bfmlal", "bfmmla", // FEAT_PAuth
+    // FEAT_SM3/SM4 (AES, SHA1 and SHA256 are ours since M6.5, SHA512 and SHA3 since ABI 51)
+    "sm3", "sm4", // FEAT_PAuth
     "pac", "aut", "xpac", "braa", "brab", "blraa", "blrab", "retaa", "retab", "eretaa", "eretab",
     "ldraa", "ldrab", // FEAT_LOR (FEAT_LRCPC's LDAPR is ours since ABI 59, FEAT_LRCPC2's
     // LDAPUR and STLUR since 62)

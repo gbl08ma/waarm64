@@ -1002,8 +1002,16 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
             fp_enabled(c)?;
             simd_fp::fhm(c, i, op)?
         }
-        // FP/AdvSIMD beyond v8.0: BF16, SM3, SM4, and FRINTTS, DotProd, I8MM,
-        // RDM, FCMA and FHM without their features.
+        // FEAT_BF16: every encoding allocated, UNDEFINED without it (below),
+        // before the FPEN trap.
+        BFCVT | BFCVTN | BFDOT_element | BFDOT_vec | BFMLALX_element | BFMLALX_vector | BFMMLA
+            if c.features & crate::cpu::FEATURE_BF16 != 0 =>
+        {
+            fp_enabled(c)?;
+            simd_fp::bf16(c, i, op)?
+        }
+        // FP/AdvSIMD beyond v8.0: SM3, SM4, and FRINTTS, DotProd, I8MM, RDM,
+        // FCMA, FHM and BF16 without their features.
         SQRDMLAH_vec_1 | SQRDMLAH_vec_2 | SQRDMLSH_vec_1 | SQRDMLSH_vec_2 | SQRDMLAH_elt_1
         | SQRDMLSH_elt_1 | SQRDMLAH_elt_2 | SQRDMLSH_elt_2 | SDOT_vec | UDOT_vec | SDOT_elt
         | UDOT_elt | SMMLA_vec | UMMLA_vec | USMMLA_vec | SUDOT_element | USDOT_element

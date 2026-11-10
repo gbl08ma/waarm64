@@ -34,6 +34,10 @@ pub struct Fmt {
 pub const H: Fmt = Fmt { e: 5, f: 10 };
 pub const S: Fmt = Fmt { e: 8, f: 23 };
 pub const D: Fmt = Fmt { e: 11, f: 52 };
+/// BFloat16 (FEAT_BF16): a single's top half. BFCVT and BFCVTN round singles to
+/// it ([`Fpu::convert`]: FPConvertBF is FPConvert with this format, FPCR.FZ
+/// applying to it as to singles).
+pub const BF: Fmt = Fmt { e: 8, f: 7 };
 
 impl Fmt {
     pub fn bits(self) -> u32 {
@@ -929,6 +933,92 @@ impl Fpu {
             }
         }
     }
+}
+
+// FEAT_BF16's dot products without FEAT_EBF16 (BFDOT, BFMMLA): the ARM ARM's
+// BFDotAdd, BFMul, BFAdd and BFRound. Not IEEE: FPCR is ignored and FPSR left
+// alone, denormal operands and results are flushed to a zero of their sign,
+// every NaN result is the default NaN, and each operation rounds to odd.
+
+/// BFUnpack of a single (a bfloat16 is its top half): (class, sign, exponent,
+/// mantissa) with a zero exponent field a zero (its fraction ignored) and
+/// every NaN quiet.
+fn bf_unpack(x: u32) -> (Class, bool, i32, u64) {
+    let (sign, ex, fr) = (x >> 31 != 0, (x >> 23) & 0xff, x & 0x7f_ffff);
+    match ex {
+        0 => (Class::Zero, sign, 0, 0),
+        0xff if fr == 0 => (Class::Inf, sign, 0, 0),
+        0xff => (Class::QNaN, sign, 0, 0),
+        _ => (Class::Num, sign, ex as i32 - 150, (fr | 1 << 23) as u64),
+    }
+}
+
+/// BFRound: `(mant + sticky) × 2^exp` (nonzero) to a single, rounded to odd,
+/// below the smallest normal a zero of its sign, from 2^128 an infinity.
+fn bf_round(sign: bool, mut exp: i32, mut mant: u128, mut sticky: bool) -> u32 {
+    if mant.leading_zeros() == 0 {
+        sticky |= mant & 1 != 0;
+        mant >>= 1;
+        exp += 1;
+    }
+    let s = (sign as u32) << 31;
+    let exponent = 127 - mant.leading_zeros() as i32 + exp;
+    if exponent < -126 {
+        return s;
+    }
+    let (q, rest) = shift_rest(mant, exponent - 23 - exp, sticky);
+    let q = q as u32 | (rest != Rest::Zero) as u32;
+    let biased = (exponent + 127) as u32;
+    if biased >= 0xff {
+        return s | 0x7f80_0000;
+    }
+    s | biased << 23 | (q & 0x7f_ffff)
+}
+
+/// BFMul: the bfloat16s `a` and `b` multiplied into a single.
+fn bf_mul(a: u16, b: u16) -> u32 {
+    let (ca, sa, ea, ma) = bf_unpack((a as u32) << 16);
+    let (cb, sb, eb, mb) = bf_unpack((b as u32) << 16);
+    let sign = sa ^ sb;
+    match (ca, cb) {
+        (Class::QNaN, _) | (_, Class::QNaN) => S.default_nan() as u32,
+        (Class::Inf, Class::Zero) | (Class::Zero, Class::Inf) => S.default_nan() as u32,
+        (Class::Inf, _) | (_, Class::Inf) => S.inf(sign) as u32,
+        (Class::Zero, _) | (_, Class::Zero) => S.zero(sign) as u32,
+        _ => bf_round(sign, ea + eb, ma as u128 * mb as u128, false),
+    }
+}
+
+/// BFAdd: the singles `a` and `b` added (an exact zero sum of differing signs
+/// is +0, as round to odd has it).
+fn bf_add(a: u32, b: u32) -> u32 {
+    let (ca, sa, ea, ma) = bf_unpack(a);
+    let (cb, sb, eb, mb) = bf_unpack(b);
+    match (ca, cb) {
+        (Class::QNaN, _) | (_, Class::QNaN) => return S.default_nan() as u32,
+        (Class::Inf, Class::Inf) if sa != sb => return S.default_nan() as u32,
+        (Class::Inf, _) => return S.inf(sa) as u32,
+        (_, Class::Inf) => return S.inf(sb) as u32,
+        (Class::Zero, Class::Zero) if sa == sb => return S.zero(sa) as u32,
+        _ => {}
+    }
+    let t = |sign, exp, mant: u64| Term {
+        sign,
+        exp,
+        mant: mant as u128,
+    };
+    let sum = add_exact(t(sa, ea, ma), t(sb, eb, mb));
+    if sum.mant == 0 && !sum.sticky {
+        return 0;
+    }
+    bf_round(sum.sign, sum.exp, sum.mant, sum.sticky)
+}
+
+/// BFDotAdd without FEAT_EBF16 (BFDOT, BFMMLA): `addend + (a0·b0 + a1·b1)`,
+/// the bfloat16 pairs `a` and `b` multiplied, the products added, then the sum
+/// to the single `addend`, each step [`bf_mul`]'s and [`bf_add`]'s.
+pub fn bf_dot_add(addend: u32, a: [u16; 2], b: [u16; 2]) -> u32 {
+    bf_add(addend, bf_add(bf_mul(a[0], b[0]), bf_mul(a[1], b[1])))
 }
 
 // Reciprocal and reciprocal square root: steps and estimates (AdvSIMD).

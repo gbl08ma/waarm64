@@ -98,7 +98,7 @@ pub fn isar0(features: u64) -> u64 {
 }
 /// ID_AA64ISAR1_EL1 for a vCPU with `features`: JSCVT = 1 (15:12), LRCPC = 1
 /// (23:20; 2 with FEAT_LRCPC2 too), FCMA = 1 (19:16), FRINTTS = 1 (35:32),
-/// SB = 1 (39:36) and I8MM = 1 (55:52), each with its feature.
+/// SB = 1 (39:36), BF16 = 1 (47:44) and I8MM = 1 (55:52), each with its feature.
 pub fn isar1(features: u64) -> u64 {
     use crate::cpu::*;
     let has = |f: u64, sh: u32| ((features & f != 0) as u64) << sh;
@@ -107,6 +107,7 @@ pub fn isar1(features: u64) -> u64 {
         | has(FEATURE_RCPC, 20) << has_rcpc2(features) as u32
         | has(FEATURE_FRINTTS, 32)
         | has(FEATURE_SB, 36)
+        | has(FEATURE_BF16, 44)
         | has(FEATURE_I8MM, 52)
 }
 /// 4K granule only (TGran64 = 0xf, TGran16 = 0), 16-bit ASIDs, 40-bit PA.

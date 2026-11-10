@@ -1,0 +1,34 @@
+Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics cpuid asimdrdm jscvt lrcpc sha3 asimddp sha512 dit ilrcpc flagm sb flagm2 frint rng
+COLD KERN dot 4.395 check 290.603 neon
+COLD KERN dotl 0.537 check 290.603 neon
+COLD KERN dotv8 0.494 check 290.603 neon
+COLD KERN gemm 1.262 check 35.2578 neon
+COLD KERN gemmdot 0.452 check 35.2578 neon
+COLD KERN gemmv8 0.266 check 35.2578 neon
+COLD KERN cvt 2.838 check 111.443 neon
+COLD KERN cvts 6.078 check 111.443 neon
+KERN dot 0.420 check 290.543 neon
+KERN dotl 0.378 check 290.543 neon
+KERN dotv8 0.375 check 290.543 neon
+KERN gemm 0.201 check 35.2578 neon
+KERN gemmdot 0.198 check 35.2578 neon
+KERN gemmv8 0.197 check 35.2578 neon
+KERN cvt 0.367 check 111.443 neon
+KERN cvts 2.249 check 111.443 neon
+KERN dot 0.374 check 290.543 neon
+KERN dotl 0.369 check 290.543 neon
+KERN dotv8 0.362 check 290.543 neon
+KERN gemm 0.199 check 35.2578 neon
+KERN gemmdot 0.197 check 35.2578 neon
+KERN gemmv8 0.195 check 35.2578 neon
+KERN cvt 0.342 check 111.443 neon
+KERN cvts 2.225 check 111.443 neon
+KERN dot 0.371 check 290.543 neon
+KERN dotl 0.363 check 290.543 neon
+KERN dotv8 0.363 check 290.543 neon
+KERN gemm 0.196 check 35.2578 neon
+KERN gemmdot 0.196 check 35.2578 neon
+KERN gemmv8 0.196 check 35.2578 neon
+KERN cvt 0.345 check 111.443 neon
+KERN cvts 2.204 check 111.443 neon
+CODECS-END

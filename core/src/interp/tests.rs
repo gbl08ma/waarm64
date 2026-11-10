@@ -2530,6 +2530,45 @@ fn fhm() {
 }
 
 #[test]
+fn bf16() {
+    use crate::cpu::{FEATURE_BF16, FEATURES};
+    let run = |insn: u32, v: [u128; 3]| {
+        let mut t = T::new(&[insn]);
+        (t.c.v[0], t.c.v[1], t.c.v[2]) = (v[0], v[1], v[2]);
+        t.step().unwrap();
+        t.c.v[0]
+    };
+    let h = |l: &[u64]| vl(16, l);
+    let s = |l: [f32; 4]| (0..4).fold(0u128, |v, k| v | (l[k].to_bits() as u128) << (32 * k));
+    let a = h(&[
+        0x3f80, 0x4000, 0x4040, 0x4080, 0xbf80, 0x3f00, 0x4100, 0x0001,
+    ]);
+    let b = h(&[0x4000; 8]);
+    let d = s([1., 1., 1., 1.]);
+    // bfdot v0.4s, v1.8h, v2.8h: pairs; a denormal operand is a zero.
+    assert_eq!(run(0x6e42_fc20, [d, a, b]), s([7., 15., 0., 17.]));
+    // bfmlalb, bfmlalt: the even, the odd halves.
+    assert_eq!(run(0x2ec2_fc20, [d, a, b]), s([3., 7., -1., 17.]));
+    assert_eq!(run(0x6ec2_fc20, [d, a, b]), s([5., 9., 2., 1.]));
+    // bfcvtn v0.4h, v1.4s: to nearest even; bfcvtn2 keeps the low half.
+    let x = s([1. + 1. / 256., 1. + 3. / 256., -0., 3.]);
+    assert_eq!(
+        run(0x0ea1_6820, [0, x, 0]),
+        h(&[0x3f80, 0x3f82, 0x8000, 0x4040])
+    );
+    assert_eq!(
+        run(0x4ea1_6820, [7, x, 0]),
+        7 | h(&[0x3f80, 0x3f82, 0x8000, 0x4040]) << 64
+    );
+    // UNDEFINED without the feature; ISAR1.BF16 with it.
+    let mut t = T::new(&[0x6e42_fc20]);
+    t.c.features = FEATURES & !FEATURE_BF16;
+    assert_eq!(t.step(), Err(Exit::Undefined));
+    assert_eq!(sys::isar1(FEATURE_BF16) >> 44 & 0xf, 1);
+    assert_eq!(sys::isar1(FEATURES & !FEATURE_BF16) >> 44 & 0xf, 0);
+}
+
+#[test]
 fn lrcpc2() {
     use crate::cpu::{FEATURE_RCPC, FEATURE_RCPC2, FEATURES};
     const LDAPUR_X: u32 = 0xd95f_8041; // ldapur x1, [x2, #-8]
@@ -2689,7 +2728,7 @@ fn v8_x_feature_gates() {
     // The ID fields.
     assert_eq!(
         sys::isar1(FEATURES),
-        1 << 52 | 1 << 36 | 1 << 32 | 2 << 20 | 1 << 16 | 1 << 12
+        1 << 52 | 1 << 44 | 1 << 36 | 1 << 32 | 2 << 20 | 1 << 16 | 1 << 12
     );
     assert_eq!(sys::isar0(FEATURE_FLAGM) >> 52 & 0xf, 2);
     assert_eq!(sys::pfr0(FEATURE_DIT) >> 48 & 0xf, 1);

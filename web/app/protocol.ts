@@ -89,11 +89,11 @@ export type ToWorker =
     /** The display posts `flash` when a draw turns the screen's centre bright (the page's `?avprobe`: A/V sync, bench/audio/avsync.ts; times in `window.__flashes`). */
     avProbe?: boolean;
     /**
-     * The vCPUs' optional features (`BootOptions.rng`, `e0pd`, `sha3`, `jscvt`, `rcpc`, `sb`, `flagm`, `dit`, `frintts`, `dotprod`, `i8mm`, `rdm`, `rcpc2`, `fcma`, `fp16`, `fhm`), all on but `i8mm`, `fcma`, `fp16` and `fhm` by default; the page's `?rng=0`,
-     * `?e0pd=0`, `?sha3=0`, `?jscvt=0` and the rest turn one off, `?i8mm=1`, `?fcma=1`, `?fp16=1` and `?fhm=1` turn those on (development: the A/B of bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD").
+     * The vCPUs' optional features (`BootOptions.rng`, `e0pd`, `sha3`, `jscvt`, `rcpc`, `sb`, `flagm`, `dit`, `frintts`, `dotprod`, `i8mm`, `rdm`, `rcpc2`, `fcma`, `fp16`, `fhm`, `bf16`), all on but `i8mm`, `fcma`, `fp16`, `fhm` and `bf16` by default; the page's `?rng=0`,
+     * `?e0pd=0`, `?sha3=0`, `?jscvt=0` and the rest turn one off, `?i8mm=1`, `?fcma=1`, `?fp16=1`, `?fhm=1` and `?bf16=1` turn those on (development: the A/B of bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD").
      * A snapshot's are its own.
      */
-    cpu?: { rng?: boolean; e0pd?: boolean; sha3?: boolean; jscvt?: boolean; rcpc?: boolean; sb?: boolean; flagm?: boolean; dit?: boolean; frintts?: boolean; dotprod?: boolean; i8mm?: boolean; rdm?: boolean; rcpc2?: boolean; fcma?: boolean; fp16?: boolean; fhm?: boolean };
+    cpu?: { rng?: boolean; e0pd?: boolean; sha3?: boolean; jscvt?: boolean; rcpc?: boolean; sb?: boolean; flagm?: boolean; dit?: boolean; frintts?: boolean; dotprod?: boolean; i8mm?: boolean; rdm?: boolean; rcpc2?: boolean; fcma?: boolean; fp16?: boolean; fhm?: boolean; bf16?: boolean };
     /** Extra kernel parameters (the page's `?params=`, for development: e.g. a rescue shell). Not for a `firmware` machine: its bootloader owns the command line. */
     params?: string;
     /**

@@ -1,0 +1,34 @@
+Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics cpuid asimdrdm jscvt lrcpc sha3 asimddp sha512 dit ilrcpc flagm sb flagm2 frint bf16 rng
+COLD KERN dot 9.253 check 290.603 bf16
+COLD KERN dotl 3.424 check 290.603 bf16
+COLD KERN dotv8 3.168 check 290.603 neon
+COLD KERN gemm 4.027 check 35.2578 bf16
+COLD KERN gemmdot 3.308 check 35.2578 bf16
+COLD KERN gemmv8 1.025 check 35.2578 neon
+COLD KERN cvt 3.321 check 111.443 bf16
+COLD KERN cvts 8.007 check 111.443 bf16
+KERN dot 0.606 check 290.543 bf16
+KERN dotl 0.407 check 290.543 bf16
+KERN dotv8 0.416 check 290.543 neon
+KERN gemm 0.544 check 35.2578 bf16
+KERN gemmdot 0.447 check 35.2578 bf16
+KERN gemmv8 0.201 check 35.2578 neon
+KERN cvt 0.422 check 111.443 bf16
+KERN cvts 2.715 check 111.443 bf16
+KERN dot 0.550 check 290.543 bf16
+KERN dotl 0.366 check 290.543 bf16
+KERN dotv8 0.369 check 290.543 neon
+KERN gemm 0.516 check 35.2578 bf16
+KERN gemmdot 0.445 check 35.2578 bf16
+KERN gemmv8 0.198 check 35.2578 neon
+KERN cvt 0.401 check 111.443 bf16
+KERN cvts 2.694 check 111.443 bf16
+KERN dot 0.550 check 290.543 bf16
+KERN dotl 0.361 check 290.543 bf16
+KERN dotv8 0.366 check 290.543 neon
+KERN gemm 0.519 check 35.2578 bf16
+KERN gemmdot 0.450 check 35.2578 bf16
+KERN gemmv8 0.199 check 35.2578 neon
+KERN cvt 0.400 check 111.443 bf16
+KERN cvts 2.684 check 111.443 bf16
+CODECS-END

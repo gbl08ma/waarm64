@@ -122,7 +122,7 @@ and the exact-step boots.
 |---|---|---|
 | Unit tests | `cargo test` (native) | decoder, ALU/flags, bitfields, FP core, crypto KATs, MMU walker, GIC, virtio rings, run loop, DTB, the JIT's structure (block formation, liveness, encoder bytes) |
 | TestFloat | `scripts/testfloat.sh` | `fp.rs` against TestFloat 3e, every op and FZ/DN combination (51.2M cases) |
-| FP suite ([below](#the-fp-suite-imagesbuildsh-fptest)) | `scripts/ci-fp.sh` (`tests/fptest.test.ts`, `WEBPC_FPTEST=1`; not in `scripts/ci.sh`) | TestFloat 3e's level-1 cases through all 766 scalar, vector, by-element, pairwise and general-register FP forms (half precision and FMLAL included, FZ16 too: the guest boots with FEAT_FP16 and FEAT_FHM) in a Linux guest under the JIT (4 parallel vCPUs), every FPCR rounding mode × FZ × DN, FPSR.IXC clear and set, against SoftFloat with ARM's rules, on both arms of the FMA where the host fuses (jit.md "Floating point"); ~770M checks an arm, ~4 min each |
+| FP suite ([below](#the-fp-suite-imagesbuildsh-fptest)) | `scripts/ci-fp.sh` (`tests/fptest.test.ts`, `WEBPC_FPTEST=1`; not in `scripts/ci.sh`) | TestFloat 3e's level-1 cases through all 777 scalar, vector, by-element, pairwise and general-register FP forms (half precision, FMLAL and bfloat16 included, FZ16 too: the guest boots with FEAT_FP16, FEAT_FHM and FEAT_BF16) in a Linux guest under the JIT (4 parallel vCPUs), every FPCR rounding mode × FZ × DN, FPSR.IXC clear and set, against SoftFloat with ARM's rules, on both arms of the FMA where the host fuses (jit.md "Floating point"); ~770M checks an arm, ~4 min each |
 | Golden corpus | `core/tests/corpus.rs` (native interpreter); `tests/corpus-wasm.test.ts` (wasm: interpreter, JIT forced, block interpreter; JIT stress in `ci-jit.sh`) | ~50,000 instruction tests with results from the M4 |
 | Block interpreter ([cpu.md](cpu.md) "The block interpreter") | `interp::block::tests` (`cargo test`); `core/tests/boot.rs` `linux_boots_through_the_block_interpreter`, `core/tests/distros.rs` `alpine_boots_through_the_block_interpreter` (native: there the dispatcher runs everything in it); `WEBPC_NATIVE_JIT=1` runs every native guest test through it; every JIT run's cold code | random blocks of the classes it has handlers for (and some it runs generically) from random states against `interp::steps`: steps, exit, registers, RAM; Buildroot on 1 and 4 vCPUs and Alpine with `tests/steps.txt`'s counts, Buildroot on 4 parallel vCPUs |
 | JIT differential | `tests/jit-diff.test.ts` | JIT vs interpreter on random words per inlined class, from 8 random states each, plus multi-instruction sequences and region shapes (branches, loops); on a host that fuses, the FMA forms' classes, FP edge cases and the NEON sequences again on the forced emulation |
@@ -294,8 +294,11 @@ Realtime runs and the rw-overlay boots aren't step-exact.
   half edge values with FPCR varied, FZ16 included: arithmetic, FMA, compares, conditional compare and select,
   conversions to and from integers and fixed point (immh 001x), FMOVs, estimates, pairwise and across lanes, by element,
   FCMLA and FCADD's half forms, and unallocated combinations beside them; 12,820), fhm (FMLAL, FMLSL and the 2 forms,
-  vector and by element, sz = 1 sometimes; 2,300). QEMU 11 disagrees with the M4 on 60 fp16 vector three-same tests
-  and on 8 fhm ones (it runs FMLAL by element with sz = 1, which the M4 and we make UNDEFINED); we match the M4.
+  vector and by element, sz = 1 sometimes; 2,300), bf16 (BFCVT, BFCVTN/BFCVTN2, BFDOT and BFMLALB/T vector and by
+  element, BFMMLA with Q = 0 sometimes (UNDEFINED); bfloat16 lanes half the tests edge values in every lane, half plain
+  values around 1 so that sums round to odd, FPCR varied; 6,600, QEMU and the M4 agree). QEMU 11 disagrees with the M4
+  on 60 fp16 vector three-same tests and on 8 fhm ones (it runs FMLAL by element with sz = 1, which the M4 and we make
+  UNDEFINED); we match the M4.
 - The generator avoids CONSTRAINED UNPREDICTABLE and IMPLEMENTATION DEFINED cases (e.g. `LDP`
   with `Rt == Rt2`, writeback with `Rn == Rt`), where the oracles legitimately disagree.
 - **Known oracle behavior** (the generator avoids it):
@@ -309,9 +312,9 @@ Realtime runs and the rw-overlay boots aren't step-exact.
     bf16 afp dit`, `lrcpc ilrcpc dcpop dcpodp flagm uscat asimddp asimdrdm fphp
     jscvt fcma`, FP16 (incl. FP16 FMOV and fixed-point conversions with immh = 001x), BF16 (BFCVT
     is the FCVT encoding with ftype 01, opc 10), FHM, RDM, DotProd, I8MM, FCMA, JSCVT, FRINTTS. The
-    generator emits none of them but what's ours since ABI 59 to 65 (groups `jscvt`, `ext`, `dotprod`, `i8mm`, `rdm`,
-    `lrcpc2`, `fcma`, `fp16`, `fhm`): JSCVT, LRCPC, SB, FlagM, FlagM2, DIT, FRINTTS, DotProd, I8MM, RDM, LRCPC2, FCMA,
-    FP16, FHM.
+    generator emits none of them but what's ours since ABI 59 to 66 (groups `jscvt`, `ext`, `dotprod`, `i8mm`, `rdm`,
+    `lrcpc2`, `fcma`, `fp16`, `fhm`, `bf16`): JSCVT, LRCPC, SB, FlagM, FlagM2, DIT, FRINTTS, DotProd, I8MM, RDM, LRCPC2,
+    FCMA, FP16, FHM, BF16. The M4 has no FEAT_EBF16 (FPCR.EBF is RES0 there, as here).
   - **QEMU before 9.0.2 sets FJCVTZS's Z for a denormal flushed under FZ** (Ubuntu 24.04's 8.2 does, so a cloud
     session's run of `jscvt` can disagree); the pseudocode clears it, as the M4 and QEMU 11 do.
   - Corpus depth: some FP flag paths are thin (only 8 `fp_scalar` tests raise Divide-by-Zero).
@@ -673,7 +676,11 @@ SoftFloat instead, and real hardware checks its rules.
   on the M4. Since PERF loop 10 also every FEAT_FP16 form on halves (testfloat_gen's f16 cases with one to three
   operands; the 16-bit integer forms take the 32-bit cases' low halves) under FZ16 set and clear too (FZ16's input
   flush raises nothing; conversions ignore it), and FEAT_FHM's FMLAL/FMLSL(2), vector and by element (a case's third
-  half as the single addend, its low bits filled on odd cases); `tests/fptest.test.ts` boots with `fp16` and `fhm`.
+  half as the single addend, its low bits filled on odd cases). Since PERF loop 11 FEAT_BF16's too (777 forms): BFCVT
+  and BFCVTN/BFCVTN2 on the f32 cases (FPConvertBF: the single rounded at bit 16 in FPCR's mode), BFMLALB/T (the single
+  FMA on the f32 cases' top halves widened), BFDOT vector and by element and BFMMLA (BFDotAdd from the ARM ARM's
+  BFMul, BFAdd and BFRound, written in fptest.c apart from the core's), their bfloat16s the f32 cases' top halves: 791M
+  checks natively on the M4, no failure. `tests/fptest.test.ts` boots with `fp16`, `fhm` and `bf16`.
 
 ## The stress test (`bench/stress/`)
 

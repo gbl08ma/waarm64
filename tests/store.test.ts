@@ -96,6 +96,7 @@ test("the shape: the other devices first, then the disks; its hash is stable and
   assert.notEqual(await shapeHash(shapeOf(m, (id) => DISKS.get(id), { cpu: [...s.cpu, 'i8mm'] })), h, 'i8mm in the hash');
   assert.notEqual(await shapeHash(shapeOf(m, (id) => DISKS.get(id), { cpu: [...s.cpu, 'fcma'] })), h, 'fcma in the hash');
   assert.notEqual(await shapeHash(shapeOf(m, (id) => DISKS.get(id), { cpu: [...s.cpu, 'fp16'] })), h, 'fp16 in the hash');
+  assert.notEqual(await shapeHash(shapeOf(m, (id) => DISKS.get(id), { cpu: [...s.cpu, 'bf16'] })), h, 'bf16 in the hash');
   assert.notEqual(await shapeHash(shapeOf(m, (id) => DISKS.get(id), { display: '2d' })), h, 'a 3D machine run in 2D');
   assert.deepEqual(diffWords(s, shapeOf(machine({ ramMiB: 2048 }), (id) => DISKS.get(id))), [t('machines:shape.diff.ram', { was: 1024, now: 2048 })]);
   assert.deepEqual(diffWords(s, s), []);

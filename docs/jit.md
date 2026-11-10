@@ -1047,6 +1047,32 @@ interpreter's; the helper runs the instruction otherwise.
   35% slower (it widens the same B row again for each of a tile's eight). Helpers on purpose (rare in fp16 code, each its own rule):
   FRECPE/FRSQRTE/FRECPX, FRECPS/FRSQRTS, FRINT*, the pairwise and across-lanes forms, the conversions to and from
   integers and fixed point, FCMP/FCCMP/FCSEL, FCMLA/FCADD's half forms.
+- **BFloat16** (FEAT_BF16, when the vCPU has it; `emit/bf16.rs`; a bfloat16 is a single's top half, so widening is a
+  shift or a mask, exact):
+  - *BFCVT, BFCVTN, BFCVTN2:* FCVTN's rule to bfloat16 under FPOK: lanes that are ±0 or normal singles below
+    0x7f7f8000 (which rounds to infinity) round to nearest even as (u + 0x7fff + (u >> 16 & 1)) >> 16 on the bits;
+    bfloat16 has the single's exponent range, so a normal single makes a normal bfloat16 (no Underflow; FZ and DN
+    don't act) and only Inexact can be raised, set already. One shuffle packs the high halves (BFCVTN2 beside Vd's
+    low half; BFCVT tests lane 0 alone). About 12 lane ops for four lanes.
+  - *BFMLALB, BFMLALT* (vector, by element): the single FMA forms above (both arms, their guards and zero clause) on
+    Vn's and Vm's even (`i32x4.shl` 16) or odd (`and` 0xffff0000) halves; by element, Vm's half shuffled into every
+    lane's top beside zeros. FPMulAdd on singles is ARM's rule for them. The product of two bfloat16s can be below the
+    singles' range, so it isn't FHM's separate multiply and add: the fused op (or the emulation) keeps it exact.
+  - *BFDOT* (vector, by element) *and BFMMLA:* BFDotAdd without FEAT_EBF16 (the M4 has none, so FPCR.EBF is RES0):
+    the two products, their sum, and Vd plus that, each rounded **to odd** with denormal operands and results
+    flushed to a zero of their sign, every NaN the default one, FPCR ignored and no flags (`fp::bf_dot_add`; the M4
+    agrees on the corpus, and from 2^128 an infinity rather than FPRound's largest finite). Inline: with every
+    bfloat16 operand ±0 or from 2^-56 to below 2^63 (biased exponent 71 to 189: the lanes shifted left once, less
+    71 << 8, unsigned below the range, or zero), the products are exact singles from 2^-112, their sum is a multiple of
+    2^-126 (exact by TwoSum: no flush, finite), and Vd and the RNE sum of the second addition ±0 or normal below 2^126
+    (TwoSum's steps stay finite, no flush); then each sum is the RNE sum stepped to odd by TwoSum's error (where it's
+    nonzero, the bits less one if the sum went away from zero, then the last bit set). IEEE's zero signs are BFAdd's
+    (x - x is +0, -0 + -0 is -0). Anything else, a lane at a time, sends the instruction to the helper. BFMMLA is two
+    of those steps on Vn's and Vm's pairs shuffled into the 2×2 block's lanes. Cost: BFDOT .4S about 60 lane ops
+    (the operand tests 10, the widening 4, two TwoSums and odd steps 26, the single tests 10), where the v8.0 code it
+    replaces (two widenings a register and two FMLA .4s) is about 20: 1.48× slower on a dot product, BFMMLA's GEMM
+    tile 2.61× (bench/boot/REPORT.md "PERF loop 11"). The 2^126 bound on Vd is a margin: a 400M-case search for
+    TwoSum overflowing with a finite sum near the singles' largest found none (planting a looser bound fails no test).
 - **Conversions:** SCVTF/UCVTF inline (RNE, can't overflow), including the forms with the integer
   in a SIMD&FP register and the vector forms (2D lane by lane: no i64x2 convert);
   FCVT{N,M,A,P,Z}{S,U} to W, X and V registers, scalar and vector: the operand rounded in the

@@ -1,0 +1,5 @@
+# Every ELF of the desktop (Arch, target/arch/desktop.qcow2) and Debian (debian, debian-browsers, debian-sway, debian-tools, debian-vulkan) disks:
+# words matching FEAT_BF16's encodings in executable segments (bench/results/local/bf16/scan.c), then each such file disassembled
+# (llvm-objdump -d --mattr=+all): BFCVT, BFCVTN(2), BFDOT, BFMLALB/T, BFMMLA lines. Candidates (words, nearly all data in rodata):
+arch 144, debian 69, debian-browsers 82, debian-sway 80, debian-tools 102, debian-vulkan 89 files
+# Disassembled BF16 instructions: none in any file (libopus' 478 words, libavcodec's 82, libLLVM's 75, gtk4-demo's 233 are data).

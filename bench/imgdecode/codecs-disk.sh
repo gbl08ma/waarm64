@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The second disk of codecs.ts: images/arch/media.sh's clips, eight of gen.py's JPEGs (target/imgdecode/files),
-# codecs.sh, js.html, q8dot, rdmk, fcmak and fp16k, built natively (it uses nothing past the guest's glibc), and 12 s of the trailer in
+# codecs.sh, js.html, q8dot, rdmk, fcmak, fp16k and bf16k, built natively (it uses nothing past the guest's glibc), and 12 s of the trailer in
 # HEVC (x265 at its medium preset, made once in rootless Podman: Alpine's ffmpeg).
 #   bench/imgdecode/codecs-disk.sh   -> target/imgdecode/codecs.ext4
 set -euo pipefail
@@ -22,6 +22,7 @@ gcc -O2 -o "$W/tree/q8dot" "$H/q8dot.c"
 gcc -O2 -o "$W/tree/rdmk" "$H/rdmk.c"
 gcc -O2 -o "$W/tree/fcmak" "$H/fcmak.c"
 gcc -O2 -o "$W/tree/fp16k" "$H/fp16k.c"
+gcc -O2 -o "$W/tree/bf16k" "$H/bf16k.c"
 rm -f "$W/codecs.ext4"
 mke2fs -q -t ext4 -L codecs -d "$W/tree" "$W/codecs.ext4" 128M
 rm -rf "$W/tree"

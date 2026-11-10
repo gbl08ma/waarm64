@@ -549,3 +549,88 @@ pub(super) fn fhm(c: &mut Cpu, i: u32, op: Op) -> R {
     finish(c, rd, r, 32 * n, fpu);
     Ok(())
 }
+
+/// FEAT_BF16 (the caller checks the vCPU has it). BFCVT and BFCVTN/BFCVTN2
+/// round singles to bfloat16 as FCVT does (FPConvertBF: FPCR's rounding, FZ,
+/// DN and the flags); BFMLALB/BFMLALT widen the even or odd bfloat16s of Vn and
+/// Vm (or Vm's element) exactly and are FPMulAdd on singles; BFDOT and BFMMLA
+/// are BFDotAdd ([`fp::bf_dot_add`]: FPCR ignored, no flags).
+pub(super) fn bf16(c: &mut Cpu, i: u32, op: Op) -> R {
+    use Op::*;
+    let (rd, rn, rm) = regs(i);
+    let q = bit(i, 30);
+    let (n, d) = (c.v[rn], c.v[rd]);
+    let h = |v: u128, e: u32| elem(v, e, 16) as u16;
+    let w = |v: u128, e: u32| elem(v, e, 32) as u32;
+    match op {
+        BFCVT => {
+            let mut fpu = Fpu::new(c.fpcr);
+            let rm = fpu.rounding();
+            let r = fpu.convert(S, fp::BF, n as u32 as u64, rm);
+            finish(c, rd, r as u128, 16, fpu);
+        }
+        BFCVTN => {
+            let mut fpu = Fpu::new(c.fpcr);
+            let rm = fpu.rounding();
+            let mut r = 0u128;
+            for e in 0..4 {
+                r = set_elem(r, e, 16, fpu.convert(S, fp::BF, w(n, e) as u64, rm));
+            }
+            // BFCVTN2: the upper half, the lower kept.
+            let (r, size) = if q {
+                (r << 64 | d as u64 as u128, 128)
+            } else {
+                (r, 64)
+            };
+            finish(c, rd, r, size, fpu);
+        }
+        BFDOT_vec | BFDOT_element | BFMMLA => {
+            let m = c.v[rm];
+            let mut r = 0u128;
+            if op == BFMMLA {
+                for (i2, j) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+                    let mut sum = w(d, 2 * i2 + j);
+                    for k in 0..2 {
+                        let a = [h(n, 4 * i2 + 2 * k), h(n, 4 * i2 + 2 * k + 1)];
+                        let b = [h(m, 4 * j + 2 * k), h(m, 4 * j + 2 * k + 1)];
+                        sum = fp::bf_dot_add(sum, a, b);
+                    }
+                    r = set_elem(r, 2 * i2 + j, 32, sum as u64);
+                }
+                c.v[rd] = r;
+                return Ok(());
+            }
+            // By element: Vm's pair H:L (Vm is M:Rm, five bits).
+            let index = (bit(i, 11) as u32) << 1 | bit(i, 21) as u32;
+            let lanes = if q { 4 } else { 2 };
+            for e in 0..lanes {
+                let p = if op == BFDOT_element { index } else { e };
+                let a = [h(n, 2 * e), h(n, 2 * e + 1)];
+                let b = [h(m, 2 * p), h(m, 2 * p + 1)];
+                r = set_elem(r, e, 32, fp::bf_dot_add(w(d, e), a, b) as u64);
+            }
+            c.v[rd] = if q { r } else { r as u64 as u128 };
+        }
+        BFMLALX_vector | BFMLALX_element => {
+            // Q picks the odd (top: BFMLALT) or even (BFMLALB) halves.
+            let sel = q as u32;
+            let b = if op == BFMLALX_element {
+                let index = (bit(i, 11) as u32) << 2 | (bit(i, 21) as u32) << 1 | bit(i, 20) as u32;
+                Some(h(c.v[bits(i, 19, 16) as usize], index))
+            } else {
+                None
+            };
+            let m = c.v[rm];
+            let mut fpu = Fpu::with_fpsr(c.fpcr, c.fpsr);
+            let mut r = 0u128;
+            for e in 0..4 {
+                let x = (h(n, 2 * e + sel) as u64) << 16;
+                let y = (b.unwrap_or_else(|| h(m, 2 * e + sel)) as u64) << 16;
+                r = set_elem(r, e, 32, fpu.muladd(S, w(d, e) as u64, x, y));
+            }
+            finish(c, rd, r, 128, fpu);
+        }
+        _ => unreachable!(),
+    }
+    Ok(())
+}

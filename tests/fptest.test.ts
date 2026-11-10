@@ -29,8 +29,9 @@ for (const [name, jit, fma] of modes) {
       cmdline: `console=ttyAMA0 panic=-1${args ? ` webpc.fptest=${args}` : ''}`,
       jit,
       fma,
-      fp16: true, // FEAT_FP16 and FEAT_FHM are off by default: the half and FMLAL forms need them
+      fp16: true, // FEAT_FP16, FEAT_FHM and FEAT_BF16 are off by default: the half, FMLAL and bfloat16 forms need them
       fhm: true,
+      bf16: true,
       ncpus: CPUS,
       parallel: CPUS > 1,
       idleLimitMs: 60_000,

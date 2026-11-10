@@ -121,6 +121,23 @@ match it step for step.
   the single op and the rounding back with its checks (about 50 lane ops an FADD .8h against 5 an FADD .4s): what the
   v8.0 code converts once and reuses, each FP16 or FMLAL instruction converts again. bench/boot/REPORT.md "PERF loop
   10: FEAT_FP16 and FEAT_FHM".
+- **FEAT_BF16** (`BFCVT`, `BFCVTN`/`BFCVTN2`, `BFDOT` vector and by element, `BFMLALB`/`BFMLALT` vector and by element,
+  `BFMMLA`; `interp::simd_fp::bf16`): `VmConfig.features` bit 17 (`FEATURE_BF16`, ABI 66), `ID_AA64ISAR1_EL1.BF16` = 1
+  (no FEAT_EBF16, as on the M4: FPCR.EBF stays RES0), Linux's `bf16` hwcap, switched as JSCVT is but **off by default**
+  like I8MM (`bootVm`'s `bf16: true`, the page's `?bf16=1`, in the shape's hash when on); UNDEFINED without it, ahead of
+  the FPEN trap. BFCVT and BFCVTN are FPConvert to a format with the single's exponent and 7 fraction bits (`fp::BF`:
+  FPCR's mode, FZ, DN, the flags); BFMLALB/T are FPMulAdd on the even or odd bfloat16s widened (exact); BFDOT and
+  BFMMLA are BFDotAdd without EBF16 (`fp::bf_dot_add`): FPCR ignored, no flags, denormal operands and results flushed
+  to zeros of their sign, NaNs the default NaN, each of the three operations rounded **to odd**, an exact sum from
+  2^128 infinite (the M4's result, where FPRound's round to odd would saturate). Inline in the JIT ([jit.md](jit.md)
+  "BFloat16"). Who uses it: nothing in the desktop or Debian guests' binaries (the 566 files with BF16-shaped words have
+  them in data). Unadvertised (PLAN.md's rule), from kernels written as bf16 libraries pick their paths from
+  HWCAP2_BF16 (`bench/imgdecode/bf16k.c`, three rounds on the Mac, all apart): BFDOT's dot product **1.48× slower**
+  than XNNPACK's shift-and-mask widening and FMLA, a GEMM tile with BFMMLA **2.61×** and with BFDOT by element
+  **2.26× slower**, BFMLALB/T level (0.995), BFCVTN **16%** and scalar BFCVT **21% slower** than integer rounding. On
+  the M4 natively BFDOT is 3× faster than that v8.0 code; here each BFDOT is two TwoSums and two steps to odd behind
+  its operand tests (about 60 lane ops against the v8.0 code's 20), and the conversions' FPOK and range tests cost
+  more than the six integer instructions they replace. bench/boot/REPORT.md "PERF loop 11: FEAT_BF16".
 - **FEAT_RNG** (`RNDR`, `RNDRRS`, at EL0 and EL1) and **FEAT_E0PD** (`TCR_EL1.E0PD0`/`E0PD1`):
   `VmConfig.features` bits 1 and 2 (`FEATURE_RNG`, `FEATURE_E0PD`, ABI 35). **On by default** in
   `bootVm` (`rng: false`, `e0pd: false` turn them off), the native runners and so the test guests and
@@ -140,8 +157,8 @@ match it step for step.
   which comes from the virtio-rng): bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD".
 - **Left out, unadvertised:** SVE/SME, PAC, BTI, MTE, EL2/EL3, secure state. Their hint-space
   encodings (the PAC and BTI hints, CSDB, …) run as NOPs. Everything else the M4 has beyond v8.0
-  (BF16, LSE2, SM3/SM4, LOR, MOPS, HBC) is
-  UNDEFINED and unadvertised; I8MM, FCMA, FP16 and FHM are implemented but off by default (above). Candidates for later are in
+  (LSE2, SM3/SM4, LOR, MOPS, HBC) is
+  UNDEFINED and unadvertised; I8MM, FCMA, FP16, FHM and BF16 are implemented but off by default (above). Candidates for later are in
   [backlog.md](backlog.md) "Unadvertised extensions".
 - **Rule: an optional extension is advertised unless measured slower** (PLAN.md): one that loses stays implemented,
   unadvertised. `ID_AA64DFR0_EL1` advertises
@@ -161,7 +178,7 @@ match it step for step.
   SHA1 = 1, SHA2 = 1 (0x211120 with it on; the bare-metal `exceptions` test checks this value),
   with SHA512/SHA3 too SHA2 = 2 and SHA3 = 1 (0x1_0021_2120), RNDR = 1 with FEAT_RNG, TS = 2 with FlagM, DP = 1 with DotProd, RDM = 1 with RDM, FHM = 1 with FHM and FP16 (off by default).
   `ID_AA64ISAR1_EL1` (`interp::sys::isar1`): JSCVT = 1, FCMA = 1 (off by default), LRCPC = 1 (2 with LRCPC2), FRINTTS = 1,
-  SB = 1 and I8MM = 1 (off by default) with their features; no BF16, no AFP.
+  SB = 1, BF16 = 1 (off by default) and I8MM = 1 (off by default) with their features; no AFP.
 - `ID_AA64MMFR0_EL1`: 4K granule, 16-bit ASIDs, 40-bit PA. `ID_AA64MMFR2_EL1` (`interp::sys::mmfr2`):
   E0PD = 1 with FEAT_E0PD, else 0.
 - `CTR_EL0`: IDC = 1 (no data cache to clean), **DIC = 0**, so guests issue `IC IVAU` after

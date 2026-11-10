@@ -50,7 +50,10 @@ product as ggml writes it; `js.html` runs ToInt32 kernels in Chromium and Firefo
 the `fcma` hwcap, the v8.0 forms without it); `?fcma=1` is the on arm (FCMA is off by default). Since PERF loop 10
 the mode `fp16k` runs `fp16k.c` alone (FEAT_FP16's half axpy, dot product, GEMM tile and scalar Horner from `asimdhp`
 and `fphp`, FEAT_FHM's FMLAL dot product and tile from `asimdfhm`; the v8.0 widening without them), about 32 s a
-round: `fp16,fp16k` (`?fp16=0` against `=1`) and `fhm,fp16k` (`?fp16=1` in both, `?fhm=0` against `=1`).
+round: `fp16,fp16k` (`?fp16=0` against `=1`) and `fhm,fp16k` (`?fp16=1` in both, `?fhm=0` against `=1`). Since PERF loop
+11 the mode `bf16k` runs `bf16k.c` alone (FEAT_BF16's dot products with BFDOT and BFMLALB/T, GEMM tiles with BFMMLA
+and BFDOT by element, conversions with BFCVTN and BFCVT, from HWCAP2_BF16; XNNPACK's shift-and-mask widening and FMLA
+.4s without it, and v8.0 controls in both arms): `bf16,bf16k` (`?bf16=0` against `=1`).
 
 ## On the desktop guest (2026-10-22)
 

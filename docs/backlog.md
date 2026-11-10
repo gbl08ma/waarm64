@@ -11,11 +11,8 @@ What WebGPU can't allow at an acceptable cost isn't here: graphics.md "Permanent
 
 ## CPU and ISA
 
-- **Unadvertised extensions the M4 has**, in case real workloads benefit: BF16, LSE2 (I8MM, FCMA, FP16 and FHM are
-  implemented, off by default: measured slower; RDM and LRCPC2 implemented and advertised: docs/cpu.md). BF16's
-  BFMMLA/BFDOT/BFMLAL would meet FHM's cost: each instruction widens its bfloat16 lanes again (a shift, exact), so
-  by-element and GEMM shapes lose to the FCVT-free v8.0 code (a bfloat16 is a single's top half) unless they
-  share the widening. Not MOPS (`CPYP`/`SETP` & co as a host `memory.copy`):
+- **Unadvertised extensions the M4 has**, in case real workloads benefit: LSE2 (I8MM, FCMA, FP16, FHM and BF16 are
+  implemented, off by default: measured slower; RDM and LRCPC2 implemented and advertised: docs/cpu.md). Not MOPS (`CPYP`/`SETP` & co as a host `memory.copy`):
   copies run at 7-21 GB/s under the JIT and are under 2% of a browser's profile (`bench/boot/REPORT.md`
   "M8: the device round trip"). Each needs handlers, corpus groups (the generator
   already knows how to avoid them), the ID fields, a decoder-sweep update, a `VmConfig.features`

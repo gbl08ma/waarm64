@@ -616,3 +616,31 @@ fn fast_paths_with_ixc_set_skip_the_exactness_test() {
     }
     assert!(exact > 500, "{exact} exact cases");
 }
+
+/// BFDotAdd's edge cases, the results the M4 gives (BFDOT on the oracle VM, PERF
+/// loop 11): an exact sum from 2^128 is infinite (BFRound's, where FPRound's
+/// round to odd would saturate), below it rounded to odd, tiny products and
+/// sums flushed, a zero sum of differing signs +0, NaNs the default NaN.
+#[test]
+fn bf_dot_add_edges() {
+    let cases: [(u32, [u16; 2], [u16; 2], u32); 14] = [
+        (0x7f7f_ffff, [0x7f7f, 0], [0x3f80, 0], 0x7f80_0000), // max + ~max
+        (0x7f7f_ffff, [0x3f80, 0], [0x3f80, 0], 0x7f7f_ffff), // max + 1: odd already
+        (0, [0x7f00, 0], [0x4100, 0], 0x7f80_0000),           // a product overflows
+        (0x7f7f_ff00, [0x7f7f, 0], [0x3f80, 0], 0x7f80_0000),
+        (0x7f7f_0000, [0x7300, 0], [0x4b7f, 0], 0x7f80_0000),
+        (0, [0x0080, 0], [0x3f00, 0], 0), // 2^-127: flushed
+        (0, [0x8080, 0], [0x3f00, 0], 0), // -0 + +0 = +0
+        (0x3f80_0000, [0x3f80, 0], [0xbf80, 0], 0), // 1 - 1
+        (0x8000_0000, [0x8000, 0x8000], [0x3f80, 0x3f80], 0x8000_0000), // -0 + -0 + -0
+        (0x8000_0000, [0x8000, 0], [0x3f80, 0], 0), // -0 + (-0 + +0)
+        (0, [0x0081, 0x8080], [0x3f80, 0x3f80], 0), // a sum of 2^-133: flushed
+        (0x3f80_0000, [0x3f80, 0x3f80], [0x3380, 0], 0x3f80_0001), // 1 + 2^-24: odd
+        (0x0000_0001, [0x3f80, 0], [0x0001, 0], 0), // denormal operands are zeros
+        (0, [0x7f81, 0], [0x3f80, 0], 0x7fc0_0000), // a NaN: the default one
+    ];
+    for (acc, a, b, want) in cases {
+        let r = bf_dot_add(acc, a, b);
+        assert_eq!(r, want, "{acc:#x} + {a:x?}·{b:x?}: {r:#x}, want {want:#x}");
+    }
+}

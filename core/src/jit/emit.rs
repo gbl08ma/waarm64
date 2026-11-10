@@ -22,6 +22,7 @@
 //! helper call, on a load/store's failure return and at the block's end. A
 //! setter whose flags the next setter replaces first emits no flag code.
 
+mod bf16;
 mod crypto;
 mod float;
 mod half;
@@ -1244,6 +1245,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
                     && (simd::inline_rdm(c, i, op) || simd_lane::inline_rdm(c, i, op)))
                 && !(cx.features & crate::cpu::FEATURE_FP16 != 0 && half::inline(c, cx, i, op, k))
                 && !(crate::cpu::has_fhm(cx.features) && half::fhm(c, cx, i, op, k))
+                && !(cx.features & crate::cpu::FEATURE_BF16 != 0 && bf16::inline(c, cx, i, op, k))
                 && !simd::inline(c, i, op)
                 && !simd_lane::inline(c, i, op)
                 && !float::inline(c, cx, i, op, k)
@@ -4794,6 +4796,27 @@ mod tests {
         let mut load = vec![0x28, 2];
         crate::jit::wasm::uleb(&mut load, CRC_TABLES[1].as_ptr() as usize as u32 as u64);
         assert!(has(&b, &load));
+    }
+
+    #[test]
+    fn bf16() {
+        // bfdot v0.4s, v1.8h, v2.8h: f32x4.mul of the widened lanes, the masks' i8x16.all_true.
+        let b = emit(0x6e42fc20, 0).unwrap();
+        assert!(has(&b, &[0xfd, 0xe6, 1]) && has(&b, &[0xfd, 0x63]));
+        // bfcvtn: the lanes' high halves packed beside a zero.
+        let b = emit(0x0ea16820, 0).unwrap();
+        assert!(has(&b, &[0xfd, 0x0d, 2, 3, 6, 7, 10, 11, 14, 15, 16]));
+        // Without the feature: the helper (bfcvt, bfcvtn2, bfdot by element, bfmmla, bfmlalb, bfmlalt by element).
+        let off = Ctx {
+            features: crate::cpu::FEATURES & !crate::cpu::FEATURE_BF16,
+            ..FLAT
+        };
+        for i in [
+            0x1e634020, 0x4ea16820, 0x6e42fc20, 0x4f62f020, 0x6e42ec20, 0x2ec2fc20, 0x4ff2f020,
+        ] {
+            assert!(emit(i, 0).is_some(), "{i:08x}");
+            assert_eq!(emit_in(i, 0, &off), None, "{i:08x}");
+        }
     }
 
     #[test]

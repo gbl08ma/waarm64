@@ -44,6 +44,8 @@ typedef struct {
     int bytes, e, f; // size, exponent and fraction bits
 } Fmt;
 static const Fmt H = {2, 5, 10}, S = {4, 8, 23}, D = {8, 11, 52};
+// BFloat16 (FEAT_BF16): a single's top half; only a result format (K_BFCVT's).
+static const Fmt B = {2, 8, 7};
 
 static u64 mask(int bytes) { return bytes == 8 ? ~0ull : (1ull << (8 * bytes)) - 1; }
 static u64 sign(Fmt t) { return 1ull << (t.e + t.f); }
@@ -142,6 +144,8 @@ enum Kind {
     K_RECPE,  // FRECPE: the 8-bit reciprocal estimate
     K_RSQRTE, // FRSQRTE: the 8-bit reciprocal square root estimate
     K_FMAL,   // FMLAL/FMLSL (FEAT_FHM): a single addend plus two halves' product, rounded once to single
+    K_BFCVT,  // BFCVT/BFCVTN (FEAT_BF16): a single rounded to bfloat16 in FPCR's mode (FPConvertBF)
+    K_BFDOT,  // BFDOT/BFMMLA (FEAT_BF16): BFDotAdd without FEAT_EBF16 (the shapes compute it: bf_dot_add)
 };
 
 // What one lane of a form gives: its parameters.
@@ -296,6 +300,25 @@ static u64 model(const Op *o, Fmt t, Fmt to, u64 n, u64 m, u64 a, const Cfg *c, 
         *fl |= sf_flags();
         return finish(S, r, c, fl);
     }
+    case K_BFCVT: {
+        // FPConvertBF: FPConvert to a format with the single's exponent range and 7 fraction bits, so the
+        // result is the single's top half rounded at bit 16, normal or denormal alike; FZ flushes a denormal
+        // operand (IDC) before, which leaves no tiny result to flush.
+        u64 x = flush_in(S, n, c, fl);
+        if (is_nan(S, x)) {
+            if (is_snan(S, x)) *fl |= IOC;
+            return c->dn ? 0x7fc0 : quiet(S, x) >> 16;
+        }
+        u64 sg = x >> 31, mag = x & 0x7fffffff, low = mag & 0xffff, hi = mag >> 16;
+        if (expo(S, x) == 0xff || !low) return x >> 16;
+        bool up = c->rm == 0 ? (low > 0x8000 || (low == 0x8000 && (hi & 1))) : c->rm == 1 ? !sg : c->rm == 2 ? sg : false;
+        *fl |= IXC;
+        if (expo(S, x) == 0) *fl |= UFC; // tiny before rounding
+        hi += up;
+        if (hi >= 0x7f80) *fl |= OFC;
+        return sg << 15 | hi;
+    }
+    case K_BFDOT: return 0;
     case K_SQRT: {
         u64 x = flush_in(t, n, c, fl);
         if (nans(t, &x, 1, c, &r, fl)) return r;
@@ -562,7 +585,7 @@ typedef void Run(const In *in, Out *out, u64 fpcr, u64 *fpsr);
 #define RUN(fn, insn)                                                                   \
     static void fn(const In *in, Out *out, u64 fpcr, u64 *fpsr) {                       \
         u64 fs = *fpsr;                                                                 \
-        __asm__ volatile(".arch armv8.2-a+fp16+fp16fml\n\t" /* the forms only */          \
+        __asm__ volatile(".arch armv8.2-a+fp16+fp16fml+bf16\n\t" /* the forms only */          \
                          "ldp q1, q2, [%[in]]\n\t"                                      \
                          "ldp q3, q0, [%[in], #32]\n\t"                                 \
                          "ldp x9, x10, [%[in], #64]\n\t"                                \
@@ -597,6 +620,11 @@ enum Shape {
     RED,  // across lanes: Vn's four (or `lanes`) lanes reduced pairwise, to Vd's low element
     WIDE, // FMLAL/FMLSL: Vn's and Vm's half lanes (`part` 1: the upper ones), Vd's single lanes
     WELT, // FMLAL/FMLSL by element: Vm's half lane `elt` for every lane
+    BWIDE, // BFMLALB/T (FEAT_BF16): Vn's and Vm's bfloat16 lanes 2j + `part`, Vd's single lanes: K_FMA on them widened
+    BWELT, // BFMLALB/T by element: Vm's bfloat16 lane `elt` for every lane
+    BDOT,  // BFDOT: Vn's and Vm's bfloat16 pairs, Vd's single lanes (`lanes` of them)
+    BDELT, // BFDOT by element: Vm's pair `elt` for every lane
+    BMMLA, // BFMMLA: Vn and Vm 2x4 bfloat16s, Vd's 2x2 singles
 };
 
 typedef struct {
@@ -612,6 +640,83 @@ typedef struct {
 
 #define F(name, fn, ...) {name, fn, __VA_ARGS__}
 #include "table.h"
+
+// ---- BFDotAdd ------------------------------------------------------------
+// FEAT_BF16's BFDOT and BFMMLA without FEAT_EBF16, from the ARM ARM's BFMul, BFAdd and BFRound: FPCR ignored and
+// FPSR untouched; a zero exponent field is a zero of its sign (BFUnpack), every NaN result the default one, each
+// result rounded to odd, below 2^-126 a zero of its sign, from 2^128 an infinity. Values as sign, an exponent and a
+// 64-bit mantissa: a product of two 8-bit significands is exact, and a sum keeps a sticky bit.
+
+typedef struct {
+    int cls; // 0 zero, 1 number, 2 infinity, 3 NaN
+    int sg;
+    int ex;      // value = mt * 2^ex
+    uint64_t mt;
+} BV;
+
+static BV bv_unpack(uint32_t x) {
+    BV v = {0, (int)(x >> 31), 0, 0};
+    uint32_t e = x >> 23 & 0xff, f = x & 0x7fffff;
+    if (e == 0) v.cls = 0;
+    else if (e == 0xff) v.cls = f ? 3 : 2;
+    else v.cls = 1, v.ex = (int)e - 150, v.mt = f | 1u << 23;
+    return v;
+}
+
+// BFRound of (mt + sticky) * 2^ex, mt nonzero.
+static uint32_t bv_round(int sg, int ex, uint64_t mt, bool sticky) {
+    int top = 63 - __builtin_clzll(mt); // mt in [2^top, 2^(top + 1))
+    int exponent = top + ex;
+    uint32_t s = (uint32_t)sg << 31;
+    if (exponent < -126) return s;
+    int sh = top - 23; // to 24 bits
+    uint64_t q;
+    if (sh > 0) {
+        sticky |= (mt & ((1ull << sh) - 1)) != 0;
+        q = mt >> sh;
+    } else q = mt << -sh;
+    if (sticky) q |= 1;
+    if (exponent + 127 >= 0xff) return s | 0x7f800000;
+    return s | (uint32_t)(exponent + 127) << 23 | (uint32_t)(q & 0x7fffff);
+}
+
+static uint32_t bf_mul(uint16_t a, uint16_t b) {
+    BV x = bv_unpack((uint32_t)a << 16), y = bv_unpack((uint32_t)b << 16);
+    int sg = x.sg ^ y.sg;
+    if (x.cls == 3 || y.cls == 3) return 0x7fc00000;
+    if ((x.cls == 2 && y.cls == 0) || (x.cls == 0 && y.cls == 2)) return 0x7fc00000;
+    if (x.cls == 2 || y.cls == 2) return (uint32_t)sg << 31 | 0x7f800000;
+    if (x.cls == 0 || y.cls == 0) return (uint32_t)sg << 31;
+    return bv_round(sg, x.ex + y.ex, x.mt * y.mt, false);
+}
+
+static uint32_t bf_add(uint32_t a, uint32_t b) {
+    BV x = bv_unpack(a), y = bv_unpack(b);
+    if (x.cls == 3 || y.cls == 3) return 0x7fc00000;
+    if (x.cls == 2 && y.cls == 2 && x.sg != y.sg) return 0x7fc00000;
+    if (x.cls == 2) return (uint32_t)x.sg << 31 | 0x7f800000;
+    if (y.cls == 2) return (uint32_t)y.sg << 31 | 0x7f800000;
+    if (x.cls == 0 && y.cls == 0) return x.sg == y.sg ? (uint32_t)x.sg << 31 : 0;
+    if (x.cls == 0) return b; // exact: a normal single stays one (round to odd changes nothing)
+    if (y.cls == 0) return a;
+    // Both 24-bit mantissas: the larger exponent's shifted up by 32 (room below), the other aligned to it.
+    if (x.ex < y.ex || (x.ex == y.ex && x.mt < y.mt)) { BV t = x; x = y; y = t; }
+    int d = x.ex - y.ex;
+    uint64_t xm = x.mt << 32, ym;
+    bool sticky = false;
+    if (d >= 56) ym = 0, sticky = true;
+    else {
+        ym = (y.mt << 32) >> d;
+        sticky = d > 32 && ((y.mt << 32) & ((1ull << d) - 1)) != 0;
+    }
+    uint64_t m = x.sg == y.sg ? xm + ym : xm - ym - (sticky ? 1 : 0);
+    if (!m && !sticky) return 0; // an exact zero: +0
+    return bv_round(x.sg, x.ex - 32, m, sticky);
+}
+
+static uint32_t bf_dot_add(uint32_t acc, uint16_t a0, uint16_t a1, uint16_t b0, uint16_t b1) {
+    return bf_add(acc, bf_add(bf_mul(a0, b0), bf_mul(a1, b1)));
+}
 
 // ---- Driving -------------------------------------------------------------
 
@@ -684,6 +789,39 @@ static void check(const Form *f, const Case *cs, int ncs, int i, const Cfg *c, u
             lane_set(want.q0, f->to.bytes, 0, cat[0]);
         }
         lanes = in_lanes;
+        goto run;
+    }
+    if (f->shape == BWIDE || f->shape == BWELT || f->shape == BDOT || f->shape == BDELT || f->shape == BMMLA) {
+        // bfloat16s: the top halves of a case's singles (testfloat's edge values: zeros, NaNs, infinities, the
+        // extremes, denormals that BFloat16 arithmetic flushes); the addends the cases' third singles.
+        int nb = f->shape == BWIDE || f->shape == BWELT || f->shape == BMMLA ? 8 : 2 * lanes;
+        u64 nl[8], ml[8];
+        for (int j = 0; j < nb; j++) {
+            const Case *k = &cs[(i + j) % ncs];
+            nl[j] = k->v[0] >> 16 & 0xffff, ml[j] = k->v[1] >> 16 & 0xffff;
+            lane_set(in.q1, 2, j, nl[j]);
+            lane_set(in.q2, 2, j, ml[j]);
+        }
+        for (int j = 0; j < lanes; j++) lane_set(in.q0, 4, j, cs[(i + j) % ncs].v[2] & 0xffffffff);
+        u64 acc[4] = {in.q0[0] & 0xffffffff, in.q0[0] >> 32, in.q0[1] & 0xffffffff, in.q0[1] >> 32};
+        for (int j = 0; j < lanes; j++) {
+            u64 r = 0;
+            u32 fl = 0;
+            if (f->shape == BWIDE || f->shape == BWELT) {
+                u64 m = f->shape == BWELT ? ml[f->elt] : ml[2 * j + f->part];
+                r = model(&f->op, S, S, nl[2 * j + f->part] << 16, m << 16, acc[j], c, &fl);
+            } else if (f->shape == BMMLA) {
+                int ii = j / 2, jj = j % 2;
+                r = acc[j];
+                for (int kk = 0; kk < 2; kk++)
+                    r = bf_dot_add((uint32_t)r, nl[4 * ii + 2 * kk], nl[4 * ii + 2 * kk + 1], ml[4 * jj + 2 * kk], ml[4 * jj + 2 * kk + 1]);
+            } else {
+                int p = f->shape == BDELT ? f->elt : j;
+                r = bf_dot_add((uint32_t)acc[j], nl[2 * j], nl[2 * j + 1], ml[2 * p], ml[2 * p + 1]);
+            }
+            lane_set(want.q0, 4, j, r);
+            wfl |= fl;
+        }
         goto run;
     }
     if (f->shape == WIDE || f->shape == WELT) {
@@ -773,8 +911,8 @@ typedef struct {
 
 static bool is_fp(const Form *f, int bytes, int ops) {
     enum Kind k = f->op.k;
-    int n = k == K_FMA || k == K_FMAL ? 3
-            : (k == K_SQRT || k == K_RINT || k == K_CVT || k == K_TOINT || k == K_RECPX || k == K_RECPE || k == K_RSQRTE) ? 1
+    int n = k == K_FMA || k == K_FMAL || k == K_BFDOT ? 3
+            : (k == K_SQRT || k == K_RINT || k == K_CVT || k == K_BFCVT || k == K_TOINT || k == K_RECPX || k == K_RECPE || k == K_RSQRTE) ? 1
             : f->zero ? 1 : 2;
     return k != K_FROMINT && f->t.bytes == bytes && n == ops;
 }

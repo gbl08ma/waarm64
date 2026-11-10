@@ -644,7 +644,7 @@ const fpScalar: Form[] = [
   fpForm("dp1", "00011110yy1oooooo10000nnnnnddddd", 900, { fix: (r) => ({ y: fty(r), o: r.pick(DP1) }) }),
   fpForm("fcvt", "00011110yy10001oo10000nnnnnddddd", 500, {
     // S, D and H in both directions; the same type or type 2 is unallocated,
-    // except D to type 2, which is BFCVT (FEAT_BF16: the M4 has it, we don't).
+    // except D to type 2, which is BFCVT (FEAT_BF16's: group bf16).
     fix: (r) => (r.chance(0.95) ? { y: r.pick([0, 1, 3]), o: r.pick([0, 1, 3]) } : { y: r.pick([0, 3]), o: 2 }),
   }),
   fpForm("dp3", "00011111yyAmmmmmBaaaaannnnnddddd", 1200, { fix: (r) => ({ y: fty(r) }) }),
@@ -1144,7 +1144,51 @@ const fhm: Form[] = [
   }),
 ];
 
-export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto, jscvt, ext, dotprod, i8mm, rdm, lrcpc2, fcma, fp16, fhm };
+// FEAT_BF16 (ABI 66): BFCVT, BFCVTN/BFCVTN2 (singles in Vn), BFDOT vector and by element (Vm is M:Rm whole), BFMLALB/T
+// vector and by element (Vm four bits, the index H:L:M), BFMMLA (Q = 0 unallocated, sometimes): bfloat16 lanes in Vn and
+// Vm, singles in Vd, FPCR varied (BFDOT and BFMMLA ignore it). Half the tests take fpVal's edge values in every lane, half
+// plain normal values a few binades around 1 with an edge value in a lane now and then, so most lanes' sums round
+// (to odd, for BFDOT and BFMMLA) rather than meet a NaN.
+const FB: FpFmt = { e: 8, f: 7 };
+function bfVal(r: Rng, t: FpFmt, plain: boolean): bigint {
+  if (!plain || r.chance(0.04)) return fpVal(r, t);
+  const E = BigInt(t.e), F = BigInt(t.f);
+  const bias = (1n << (E - 1n)) - 1n;
+  const sign = r.chance(0.5) ? 1n << (E + F) : 0n;
+  if (r.chance(0.05)) return sign; // zero
+  return sign | ((bias + BigInt(r.range(-6, 6))) << F) | (r.u64() & ((1n << F) - 1n));
+}
+function bfForm(name: string, pat: string, count: number, o: { fix?: (r: Rng) => Fields; n?: FpFmt; m?: FpFmt; d?: FpFmt } = {}): Form {
+  return {
+    name,
+    count,
+    gen(r) {
+      const { w, f } = enc(r, pat, o.fix?.(r) ?? {});
+      const plain = r.chance(0.5);
+      const m = new Map<string, bigint>();
+      for (const [l, t] of [["n", o.n ?? FB], ["m", o.m ?? FB], ["d", o.d ?? FS]] as [string, FpFmt][]) {
+        if (!(l in f)) continue;
+        let v = 0n;
+        const b = 1 + t.e + t.f;
+        for (let k = 0; k < 128 / b; k++) v |= bfVal(r, t, plain) << BigInt(k * b);
+        m.set(`v${f[l]}`, v);
+      }
+      fpEnv(r, m);
+      return { code: [w], in: m };
+    },
+  };
+}
+const bf16: Form[] = [
+  bfForm("bfcvt", "0001111001100011010000nnnnnddddd", 600, { n: FS }),
+  bfForm("bfcvtn", "0Q00111010100001011010nnnnnddddd", 800, { n: FS }),
+  bfForm("bfdot", "0Q101110010mmmmm111111nnnnnddddd", 1400),
+  bfForm("bfdot_elt", "0Q00111101Lmmmmm1111H0nnnnnddddd", 1000),
+  bfForm("bfmlal", "0Q101110110mmmmm111111nnnnnddddd", 900),
+  bfForm("bfmlal_elt", "0Q00111111LMmmmm1111H0nnnnnddddd", 900),
+  bfForm("bfmmla", "0Q101110010mmmmm111011nnnnnddddd", 1000, { fix: (r): Fields => ({ Q: r.chance(0.95) ? 1 : 0 }) }),
+];
+
+export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto, jscvt, ext, dotprod, i8mm, rdm, lrcpc2, fcma, fp16, fhm, bf16 };
 
 /** Generates a group's tests (without oracle results). */
 export function generate(group: string): Test[] {

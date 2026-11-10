@@ -3916,3 +3916,61 @@ the FMA midpoint test (jit-diff's scalar class and edge cases, the FP suite's FM
 the min/max key's inverse, the compare key, the by-element index, FHM's "2" half, FZ16's guard, the finite test. The
 decoder sweep: 0 mismatch classes (FP16 and FHM out of `NOT_OURS`). CI: `scripts/ci.sh`, `scripts/ci-jit.sh`,
 `scripts/ci-fp.sh` passed.
+
+## PERF loop 11: FEAT_BF16 (2026-11-10)
+
+FEAT_BF16 (BFCVT, BFCVTN/BFCVTN2, BFDOT and BFMLALB/T vector and by element, BFMMLA) in both tiers, inline in the JIT
+(docs/jit.md "BFloat16"), as `VmConfig.features` bit 17 (ABI 66). The M4 has FEAT_BF16 and not FEAT_EBF16
+(`hw.optional.arm.FEAT_EBF16: 0`; the oracle VM's `bf16`, no `ebf16`), so BFDOT and BFMMLA are BFDotAdd's standard
+behavior: FPCR ignored, no flags, denormals flushed, the default NaN, every step rounded to odd, and an exact sum
+from 2^128 infinite (probed on the M4: `0x7f7fffff + 0x7f7f·1` gives `0x7f800000`, where FPRound's round to odd would
+give the largest finite). The Mac host (M4, macOS 26.6.2), Chrome for Testing 157.0.8103.50 headless, through
+`bench/gpu/sway-mac.sh` (`SCRIPT=../imgdecode/codecs.ts`, mode `bf16k`); the desktop guest on 4 vCPUs, `?bf16=0`
+against `?bf16=1`, a boot per arm and round, arms alternated, each round the median of three runs of
+`bench/imgdecode/bf16k.c` in a boot. Raw and medians: `results/bf16/` (`results.json`; the scan in `words.txt`).
+
+**Who runs it.** Every ELF of the desktop (Arch) and Debian guests (`debian`, `-browsers`, `-sway`, `-tools`,
+`-vulkan`): 566 files have words of BF16's encodings in executable segments (libopus 478, gtk4-demo 233, libavcodec
+82, libLLVM 75, …), and disassembled (`llvm-objdump --mattr=+all`) none has a BF16 instruction: the words are data.
+No browser, codec, Mesa or ML runtime in the images has a BF16 path. So the A/B is kernels written as bf16 libraries
+write them, each picking its path from HWCAP2_BF16 (`bf16k.c`), against XNNPACK's "neonfma-shland" (a bfloat16
+widened by a shift or a mask, FMLA .4s): a dot product with BFDOT and with BFMLALB/T, a 4×8 GEMM tile (K = 64) with
+BFMMLA on KleidiAI's packing and with BFDOT by element on XNNPACK's, singles to bfloat16 in memory with BFCVTN/BFCVTN2
+against the integer rounding to nearest even with NaNs quieted, and the same one value at a time (BFCVT, as a
+`(__bf16)` cast compiles); the v8.0 dot product and tile in both arms as controls.
+
+**On/off of time** (ns per output or element, lower is better), three rounds' medians, then the median:
+
+| Kernel | Off | On | On/off |
+|---|---|---|---|
+| dot, BFDOT | 0.374 · 0.373 · 0.373; **0.373** | 0.550 · 0.553 · 0.551; **0.551** | **1.477** |
+| dotl, BFMLALB/T | 0.369 · 0.371 · 0.368; **0.369** | 0.366 · 0.367 · 0.367; **0.367** | **0.995** |
+| gemm, BFMMLA | 0.199 · 0.198 · 0.200; **0.199** | 0.519 · 0.519 · 0.518; **0.519** | **2.608** |
+| gemmdot, BFDOT by element | 0.197 · 0.198 · 0.196; **0.197** | 0.447 · 0.446 · 0.445; **0.446** | **2.264** |
+| cvt, BFCVTN/BFCVTN2 | 0.345 · 0.347 · 0.355; **0.347** | 0.401 · 0.403 · 0.405; **0.403** | **1.161** |
+| cvts, BFCVT | 2.225 · 2.224 · 2.258; **2.225** | 2.694 · 2.713 · 2.696; **2.696** | **1.212** |
+| dotv8, gemmv8 (controls: v8.0 code in both arms) | | | 1.011, 1.015 |
+
+All but dotl's rounds are apart; the controls move 1.5% at most. Natively on the M4 (the dev VM) BFDOT's dot product
+is 3.1× faster than the v8.0 code (0.037 against 0.115 ns) and BFMMLA's tile level with it. **Every BF16 form loses
+or ties here:** a BFDOT is the products, two TwoSums and two steps to odd, and the operand and result tests that keep
+it off the flushes (about 60 lane ops against 20 for the two widenings and two FMLA .4s it replaces); BFMMLA and BFDOT
+by element are worse still, each instruction redoing the shuffles and widening the v8.0 tile does once a step;
+BFMLALB/T is FMLA .4s on lanes widened by one op, as the v8.0 code is; and BFCVTN's FPOK, range and zero tests and the
+packing shuffle cost more than the six integer instructions per four lanes the v8.0 rounding takes (BFCVT the same
+on a whole vector against scalar integer code). **Unadvertised** (PLAN.md's rule): off by default, `bootVm`'s
+`bf16: true`, the page's `?bf16=1`; no guest-visible change by default, so steps and the shape's pinned hash stay.
+Memory: none.
+
+Correctness: corpus group `bf16` (6,600, M4 and QEMU agree, we match both); the FP suite extended to 777 forms (BFCVT,
+BFCVTN(2), BFMLALB/T, BFDOT, BFMMLA on TestFloat's f32 cases and their top halves, against a BFDotAdd written in
+fptest.c apart from the core's): 791M checks natively on the M4, no failure, and in the guest (`scripts/ci-fp.sh`);
+`fp::tests::bf_dot_add_edges` (the M4's results for overflow, flushes and zero signs); `tests/jit-diff.test.ts`
+classes for the seven forms, a BF16 sequence and edge cases (sums to odd, the operand bound, BFCVTN's boundaries,
+a product below the singles' range in BFMLAL). Planted, each failing its classes: BFCVTN's rounding constant, its
+boundary, BFCVTN2's kept half, the operand bound, the away test and the odd bit of the step to odd, BFMMLA's pair
+order, the by-element index (BFDOT's, BFMLAL's), a product's operand, BFMLAL's B/T, the Q = 0 mask; the 2^126 bound on
+Vd (loosened to the finite range) fails nothing: it's a margin (a 400M-case search found no TwoSum overflow with a
+finite sum). The decoder sweep: 0 mismatch classes (BF16 out of `NOT_OURS_PREFIX`), the system sweep too.
+CI: `scripts/ci.sh` passed but for the known clipboard-toolbar timeout (`tests/page-clipboard-ui.test.ts`, passing
+alone right after), `scripts/ci-jit.sh` and `scripts/ci-fp.sh` passed.

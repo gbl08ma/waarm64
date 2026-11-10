@@ -1923,9 +1923,25 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
 
 fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
     use Op::*;
-    let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+    // FEAT_BF16's BFMLALB/BFMLALT (Q picks the odd halves, T): the single FMA
+    // forms on Vn's and Vm's (or Vm's element's) bfloat16s widened, exactly.
+    let bf = matches!(op, BFMLALX_vector | BFMLALX_element);
+    if bf && cx.features & crate::cpu::FEATURE_BF16 == 0 {
+        return false;
+    }
+    let top = bf && bit(i, 30);
+    let (rd, rn) = (bits(i, 4, 0), bits(i, 9, 5));
+    let rm = if op == BFMLALX_element {
+        bits(i, 19, 16)
+    } else {
+        bits(i, 20, 16)
+    };
     let sc = c.vsc.is_some();
-    let (q, d) = (bit(i, 30) && !sc, bit(i, 22));
+    let (q, d) = if bf {
+        (true, false)
+    } else {
+        (bit(i, 30) && !sc, bit(i, 22))
+    };
     if d && !q && !sc && !matches!(op, FCVTL | FCVTN | FCVTXN_2) {
         return false; // a vector of doubles needs Q
     }
@@ -1941,6 +1957,7 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             | FMLS_elt_2
             | FMUL_elt_2
             | FMULX_elt_2
+            | BFMLALX_element
     );
     let index = if d {
         bit(i, 11) as u8
@@ -1993,6 +2010,7 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
     // Vm's lanes: FMLA's by element the element, FCMLA's the pair (swapped
     // for 90° and 270°), FCADD's swapped.
     let mshuf = match op {
+        _ if bf => None,
         _ if by_element => Some(lane_map(&[index])),
         FCMLA_elt if rot & 1 == 0 => Some(lane_map(&[pair, pair + 1])),
         FCMLA_elt => Some(lane_map(&[pair + 1, pair])),
@@ -2016,14 +2034,43 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
     };
     // FCMLA's 180°: both factors' lanes negated, as FMLS's first.
     let fneg = op != FCADD_vec && fcma && rot == 2;
+    // A bfloat16 lane widened: the even ones shifted up, the odd ones masked.
+    let widen = |c: &mut Func| {
+        if top {
+            c.v128_const(splat(false, 0xffff_0000)).simd(op::AND);
+        } else {
+            c.i32_const(16).simd(op::I32X4_SHL);
+        }
+    };
+    // BFMLAL by element: element H:L:M of Vm in every lane's top half.
+    let bf_index = (bit(i, 11) as u8) << 2 | (bit(i, 21) as u8) << 1 | bit(i, 20) as u8;
     let nsrc = |c: &mut Func| {
         vreg(c, rn);
         if let Some(sh) = nshuf {
             vreg(c, rn);
             c.shuffle(sh);
         }
+        if bf {
+            widen(c);
+        }
     };
     let factor = |c: &mut Func| {
+        if bf {
+            vreg(c, rm);
+            if op == BFMLALX_element {
+                c.v128_const(0);
+                c.shuffle(core::array::from_fn(|b| {
+                    if b % 4 < 2 {
+                        16
+                    } else {
+                        2 * bf_index + b as u8 % 2
+                    }
+                }));
+            } else {
+                widen(c);
+            }
+            return;
+        }
         vreg(c, rm);
         if let Some(sh) = mshuf {
             vreg(c, rm);
@@ -2120,7 +2167,8 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         // emulation's). Singles take an exact zero too, as the emulated form
         // does, but there's no double sum to read it from.
         FMLA_vec_2 | FMLS_vec_2 | FMLA_elt_4 | FMLS_elt_4 | FMLA_elt_2 | FMLS_elt_2 | FRECPS_4
-        | FRECPS_2 | FRSQRTS_4 | FRSQRTS_2 | FCMLA_vec | FCMLA_elt
+        | FRECPS_2 | FRSQRTS_4 | FRSQRTS_2 | FCMLA_vec | FCMLA_elt | BFMLALX_vector
+        | BFMLALX_element
             if cx.fma =>
         {
             fpa_guard(c);
@@ -2332,7 +2380,8 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         // nearest, then demoted: correct off the singles' midpoints; with a sum
         // on one, the sums rounded to odd (TwoSum, as the scalar form).
         FMLA_vec_2 | FMLS_vec_2 | FMLA_elt_4 | FMLS_elt_4 | FMLA_elt_2 | FMLS_elt_2 | FRECPS_4
-        | FRECPS_2 | FRSQRTS_4 | FRSQRTS_2 | FCMLA_vec | FCMLA_elt => {
+        | FRECPS_2 | FRSQRTS_4 | FRSQRTS_2 | FCMLA_vec | FCMLA_elt | BFMLALX_vector
+        | BFMLALX_element => {
             fpa_guard(c);
             let (neg, acc, half) = fma_kind(op, d, rd);
             let neg = neg || fneg;
