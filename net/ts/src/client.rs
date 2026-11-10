@@ -43,6 +43,25 @@ pub enum Action {
     ToGuest(Vec<u8>),
     /// A JSON event for the page: `{"type": "state" | "lease" | "self" | "serving" | "client" | "log", …}`.
     Event(String),
+    /// A room's direct path (room.rs): set up WebRTC connection `rtc` with its negotiated data
+    /// channel, making the offer when `offer`; its descriptions and candidates go to `rtc_signal`.
+    RtcOpen {
+        rtc: u32,
+        offer: bool,
+    },
+    /// The peer's description or candidate (JSON, the page's own from the other side) for `rtc`.
+    RtcSignal {
+        rtc: u32,
+        data: String,
+    },
+    /// A message on `rtc`'s data channel.
+    RtcSend {
+        rtc: u32,
+        data: Vec<u8>,
+    },
+    RtcClose {
+        rtc: u32,
+    },
 }
 
 /// The most a relay message carries when frames are joined (see [`queue_frames`]): about three
@@ -994,7 +1013,7 @@ mod tests {
                         }
                     }
                     Action::ToGuest(p) => guest.push(p),
-                    Action::Event(_) | Action::WsClose { .. } | Action::Fetch { .. } => {}
+                    _ => {}
                 }
             }
             guest
@@ -1408,7 +1427,7 @@ mod tests {
                 }
                 Action::ToGuest(p) => guest.push(p),
                 Action::Event(e) => events.push(serde_json::from_str(&e).unwrap()),
-                Action::WsClose { .. } | Action::Fetch { .. } => {}
+                _ => {}
             }
         }
         (guest, events)

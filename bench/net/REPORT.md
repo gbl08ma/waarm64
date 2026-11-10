@@ -342,6 +342,35 @@ one boot each, 12 rounds): 36 uploads with no disconnect or stall, the slowest 8
 the helper's Go tests: under `-race` an idle gVisor stack keeps every core busy (0 CPU without it), and the stacks the earlier tests left starved
 `TestTCPToHost` into its deadline. They're now destroyed in cleanup. Not a defect of the helper.
 
+## Rooms: the direct path against DERP (R0, 2026-11-10)
+
+docs/plans/networking-p2p.md's R0: is a room's direct path (WireGuard inside a WebRTC data channel) clearly better
+than DERP? `bench/net/room.ts`, 5 rounds alternating three arms, fresh pages each: **direct** (two members of a room
+in two pages, tests/browser/room.html, the dialer given the other's key, on the tailcat rig's derper; the first echo
+goes through the relay, then the data channel opens), **relay** (the same, the dialer relay only: no WebRTC) and
+**raw** (bench/net/rtc-raw.html: the same echoes over a bare data channel between two workers, no WireGuard, no
+module, no IP port). Echoes of 1,280-byte IPv6 packets, 32 in flight, 10,000 per arm; RTT one echo at a time; CPU
+of every Chromium process and the derper over the throughput run, per Mbit/s of both directions. **A cloud session**
+(x86_64, 4 vCPUs, Chromium 153.0.8010.12 headless, everything on loopback): absolute numbers aren't comparable with
+the dev VM's (docs/cloud.md), the arms are with each other. JSON: `results/r0/room-2026-11-10.json`.
+
+| Arm | Mbit/s each way, median (IQR) [rounds] | core-ms per Mbit/s | RTT | first echo after `Running` | channel open after the handshake |
+|---|---|---|---|---|---|
+| direct | **50.9** (43.2–56.2) [42.4–63.3] | **23.5** (22.7–23.9) | 0.77 ms | 23 ms (through DERP) | 23 ms |
+| relay | 35.1 (32.6–35.9) [30.8–36.8] | 34.3 (34.1–34.4) | 0.95 ms | 22 ms | — |
+| raw | 70.6 (57.9–74.6) | 16.6 (16.4–16.7) | 0.24 ms | — | 35 ms (setup) |
+
+- **The gate holds**: the direct path's slowest round is faster than the relay's fastest (+45% at the medians), at
+  31% less CPU per Mbit, with a derper on the same machine, DERP's best case; a real relay adds its distance to
+  every packet and caps what it forwards (tailnet.md "tailcat": the public relays are rate-limited). R0's other
+  questions left for R3: setup time across real NATs, and how often ICE fails.
+- **The inner WireGuard and the plumbing** (the module, the worker, the gateway's port) cost about 28% of raw's
+  throughput and 40% more CPU per Mbit; the RTT difference (0.77 against 0.24 ms) is mostly the hops between the
+  harness's page, the worker and the channel, which a guest's packets also take. Not worth a second encryption
+  scheme: WireGuard's binding of address to key and the fallback are what the design rests on (plan §1).
+- Every arm brought back all 10,000 echoes: the unordered, unretransmitted channel lost nothing on loopback at 32 in
+  flight (§6 saw 0.7% at saturation).
+
 ## Reproduce
 ```sh
 # T1: a tailcat exit node on derper, both on this machine
@@ -356,6 +385,8 @@ node bench/net/transfer.ts <label> bench/results/local/<label>.json    # brings 
 # the Go column came from the same harness before the Go client left the page: git show 762cadc:bench/net/clients.ts)
 net/ts/build.sh
 WEBPC_TS_JSON=bench/net/results/t6/clients-m4.json node bench/net/clients.ts 5 20000
+# Rooms (R0): direct, relay only and a bare data channel, alternating (brings tests/net/tailcat.sh's rig up and down itself)
+node bench/net/room.ts 5 10000 bench/net/results/r0/room-<date>.json
 # The local helper: the arms, then (with results/local-helper/variants.patch applied) the client's variants and the MTU
 node bench/net/local.ts bench/net/results/local-helper/arms.json local tailcat public local tailcat public --rounds 3 --mib 32
 node bench/net/local.ts bench/net/results/local-helper/variants.json local local::batch local::worker local::worker,batch local:9000 local:65520 --rounds 3 --mib 32

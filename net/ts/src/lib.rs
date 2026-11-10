@@ -14,6 +14,7 @@ pub mod ip;
 pub mod nat46;
 pub mod netmap;
 pub mod noise;
+pub mod room;
 pub mod store;
 pub mod tailcat;
 pub mod tailnet;

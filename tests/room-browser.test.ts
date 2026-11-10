@@ -1,0 +1,110 @@
+// A room's members (web/room.ts, net/ts's room.rs) in headless Chromium with no guest (docs/tailnet.md "Rooms"): two
+// pages join one room on the tailcat rig's relay (tests/net/tailcat.sh: only its derper is used), one dials the other
+// by its node key, and UDP echoes go through the relay at once, then over the WebRTC data channel the two set up with
+// signalling inside the tunnel; a dropped channel falls back to the relay, and relay only never opens one.
+// Opt-in, with the rig: WEBPC_TAILCAT=1 (Go for derper, and target/net/ts.wasm, net/ts/build.sh).
+import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { after, before, test } from 'node:test';
+import { chromium, type Browser, type Page } from 'playwright-core';
+import { startServer } from '../tools/serve.ts';
+
+const ROOT = new URL('..', import.meta.url).pathname;
+const has = (cmd: string, arg = '--version') => spawnSync(cmd, [arg], { stdio: 'ignore' }).status === 0;
+const skip = process.env.WEBPC_TAILCAT !== '1' ? 'SKIPPED: set WEBPC_TAILCAT=1'
+  : !existsSync(`${ROOT}target/net/ts.wasm`) ? 'SKIPPED: no target/net/ts.wasm (net/ts/build.sh)'
+  : !has('go', 'version') && !existsSync(`${ROOT}target/net/tailcat-test/bin/derper`) ? 'SKIPPED: no Go to build derper'
+  : undefined;
+const script = `${ROOT}tests/net/tailcat.sh`;
+const RELAY = '127.0.0.1:8444';
+
+let browser: Browser;
+let base: string;
+let closeServer: () => void;
+before(async () => {
+  if (skip) return;
+  execFileSync(script, ['up'], { encoding: 'utf8', timeout: 300_000 });
+  const server = await startServer();
+  closeServer = () => server.close();
+  base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+});
+after(async () => {
+  await browser?.close();
+  closeServer?.();
+  if (!skip) spawnSync(script, ['down']);
+});
+
+type Member = { state: string; self?: { key: string; address6: number[]; tag?: string }; peers: { key: string; path: string }[]; timings: { runningMs?: number } };
+type Echoes = { back: number; ms: number; rtts: number[] };
+
+/** A member's page in room `room`, `Running`. */
+async function member(room: string, q: Record<string, string> = {}): Promise<Page> {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true }); // the relay's self-signed certificate
+  const page = await ctx.newPage();
+  page.on('console', (m) => { if (/rror|panic|room:/.test(m.text())) console.log(`# page: ${m.text().slice(0, 300)}`); });
+  page.on('pageerror', (e) => console.log(`# page error: ${e}`));
+  await page.goto(`${base}/tests/browser/room.html?${new URLSearchParams({ room, relay: RELAY, ...q })}`);
+  await page.waitForFunction('window.harness?.room().state === "Running"', null, { timeout: 30_000, polling: 50 })
+    .catch(async (e) => { throw new Error(`${e}; events ${JSON.stringify(await page.evaluate('window.harness?.events()'))}`); });
+  return page;
+}
+
+const of = (p: Page) => p.evaluate('window.harness.room()') as Promise<Member>;
+const pathTo = async (p: Page, key: string) => (await of(p)).peers.find((x) => x.key === key)?.path;
+const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] ?? NaN;
+
+/** Two members of a fresh room, the second dialing the first; `dial` takes extra parameters. */
+async function pair(dial: Record<string, string> = {}) {
+  const room = `test ${Math.random()}`;
+  const b = await member(room);
+  const bs = await of(b);
+  const a = await member(room, { peer: bs.self!.key, ...dial });
+  const as = await of(a);
+  return { a, b, aKey: as.self!.key, bKey: bs.self!.key, to: bs.self!.address6 };
+}
+
+const close = (...ps: Page[]) => Promise.all(ps.map((p) => p.context().close()));
+
+test('two members talk through the relay at once, then over their data channel, and fall back when it drops', { skip, timeout: 120_000 }, async () => {
+  const { a, b, aKey, bKey, to } = await pair();
+  const as = await of(a);
+  assert.equal(as.self!.address6[0], 0xfd);
+  assert.deepEqual(as.self!.address6.slice(0, 6), (await of(b)).self!.address6.slice(0, 6), 'one room, one /48');
+  const firstMs = await a.evaluate(`window.harness.first(${JSON.stringify(to)})`) as number;
+  assert.ok(firstMs >= 0, 'an echo came back');
+  await a.waitForFunction(`window.harness.room().peers.some((p) => p.key === ${JSON.stringify(bKey)} && p.path === 'direct')`, null, { timeout: 15_000, polling: 20 });
+  await b.waitForFunction(`window.harness.room().peers.some((p) => p.key === ${JSON.stringify(aKey)} && p.path === 'direct')`, null, { timeout: 5_000, polling: 20 });
+  const events = await a.evaluate('window.harness.events()') as { ms: number; type: string; path?: string }[];
+  const direct = events.find((e) => e.type === 'path' && e.path === 'direct')!.ms;
+  const peer = events.find((e) => e.type === 'peer')!.ms;
+  console.log(`# first echo ${firstMs.toFixed(0)} ms after Running; the direct path ${(direct - peer).toFixed(0)} ms after the handshake`);
+  const small = await a.evaluate(`window.harness.echoes(${JSON.stringify(to)}, 200, 32, 1)`) as Echoes;
+  assert.equal(small.back, 200);
+  const big = await a.evaluate(`window.harness.echoes(${JSON.stringify(to)}, 4000, 1232, 32)`) as Echoes;
+  console.log(`# direct: RTT ${median(small.rtts).toFixed(2)} ms; 4000 echoes of 1280 B: ${big.back} back, ${(big.back * 1280 * 8 / big.ms / 1000).toFixed(1)} Mbit/s each way`);
+  assert.ok(big.back >= 3900, `the large echoes came back (${big.back} of 4000)`);
+  // The connection fails (as when ICE drops): the relay carries again, at once.
+  await a.evaluate('window.harness.dropDirect()');
+  await a.waitForFunction(`window.harness.room().peers.some((p) => p.path === 'relay')`, null, { timeout: 5_000, polling: 20 });
+  const after = await a.evaluate(`window.harness.echoes(${JSON.stringify(to)}, 50, 32, 4)`) as Echoes;
+  assert.equal(after.back, 50, 'through the relay after the channel dropped');
+  assert.equal(await pathTo(b, aKey), 'relay', 'the other side fell back too');
+  await close(a, b);
+});
+
+test('relay only never opens a data channel, and the relay carries everything', { skip, timeout: 120_000 }, async () => {
+  const { a, b, aKey, bKey, to } = await pair({ relayOnly: '1' });
+  assert.ok(await a.evaluate(`window.harness.first(${JSON.stringify(to)})`) as number >= 0);
+  const small = await a.evaluate(`window.harness.echoes(${JSON.stringify(to)}, 200, 32, 1)`) as Echoes;
+  const big = await a.evaluate(`window.harness.echoes(${JSON.stringify(to)}, 2000, 1232, 32)`) as Echoes;
+  console.log(`# relay only: RTT ${median(small.rtts).toFixed(2)} ms; 2000 echoes of 1280 B: ${big.back} back, ${(big.back * 1280 * 8 / big.ms / 1000).toFixed(1)} Mbit/s each way`);
+  assert.equal(small.back, 200);
+  assert.ok(big.back >= 1950, `${big.back} of 2000`);
+  assert.equal(await pathTo(a, bKey), 'relay');
+  assert.equal(await pathTo(b, aKey), 'relay');
+  const opened = await a.evaluate('window.harness.events().filter((e) => e.type === "path").length') as number;
+  assert.equal(opened, 0, 'no path change: never direct');
+  await close(a, b);
+});

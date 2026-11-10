@@ -27,6 +27,30 @@ type Exports = {
   ts_logout(h: number): void;
   ts_exit_node(h: number, ptr: number, len: number): void;
   ts_accept_routes(h: number, on: number): void;
+  ts_rtc_signal(h: number, rtc: number, ptr: number, len: number): void;
+  ts_rtc_open(h: number, rtc: number): void;
+  ts_rtc_message(h: number, rtc: number, ptr: number, len: number): void;
+  ts_rtc_closed(h: number, rtc: number): void;
+};
+
+/** A room's member (net/ts/src/room.rs, docs/tailnet.md "Rooms"). */
+export type RoomConfig = {
+  room: {
+    /** The room's ID. */
+    id: string;
+    /** The peers' node keys (`nodekey:` and 64 hex digits), given by hand. */
+    peers?: string[];
+    /** The home relay: one's own derper (`host[:port]`), or empty for region `region` of the DERP map (0: its first). */
+    relay?: string;
+    region?: number;
+    /** No WebRTC: everything through DERP, so no peer learns this machine's IP address. */
+    relayOnly?: boolean;
+    /** Members may open connections to the guest (default: yes). */
+    incoming?: boolean;
+  };
+  derpMapURL?: string;
+  /** The node's private key, 64 hex digits. */
+  key?: string;
 };
 
 /** A tailcat server to connect to (`tailcat serve exit-node` printed `addr`), clients to let in (`serve`), or both. */
@@ -61,9 +85,12 @@ export type TsFailure = { code?: string; detail?: string };
 export type TsEvent =
   | ({ type: 'state'; state: 'FetchingMap' | 'Connecting' | 'Meowing' | 'Handshaking' | 'Running' | 'Failed' } & TsFailure)
   | { type: 'lease'; lease: Lease }
-  | { type: 'self'; key: string; address6: number[] }
+  | { type: 'self'; key: string; address6: number[]; tag?: string }
   | { type: 'serving'; addr: string }
   | { type: 'client' | 'client-gone'; key: string; address6: number[] }
+  /** A room: a peer whose data decrypted, and the path a peer's packets take. */
+  | { type: 'peer'; key: string; address6: number[] }
+  | { type: 'path'; key: string; address6: number[]; path: 'direct' | 'relay' }
   | { type: 'log'; msg: string }
   /** Tailscale: Go's state names (`Starting`, `NeedsLogin`, `Running`), or `Failed` with why. */
   | ({ type: 'state'; state: 'Starting' | 'NeedsLogin' | 'Running' } & TsFailure)
@@ -80,6 +107,17 @@ export type TsHandlers = {
   /** An IP packet for the guest (the array is the client's: keep it). */
   packet(p: Uint8Array): void;
   event(e: TsEvent): void;
+  /** A room's WebRTC connections, which the page holds (web/room.ts): it hands each one's data channel back with
+   * `rtcChannel` and its descriptions and candidates with `rtcSignal`. */
+  rtc?: RtcHandlers;
+};
+
+export type RtcHandlers = {
+  /** Set up connection `rtc` with its negotiated data channel, making the offer when `offer`. */
+  open(rtc: number, offer: boolean): void;
+  /** The peer's description or candidate (JSON) for `rtc`. */
+  signal(rtc: number, json: string): void;
+  close(rtc: number): void;
 };
 
 /**
@@ -156,10 +194,12 @@ export class TsClient {
   private readonly h: number;
   private readonly on: TsHandlers;
   private readonly sockets = new Map<number, { ws: WebSocket; queue: Uint8Array<ArrayBuffer>[] | null }>();
+  /** A room's data channels, by connection. */
+  private readonly channels = new Map<number, RTCDataChannel>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private closed = false;
 
-  constructor(m: TsModule, config: TailcatConfig | TailnetConfig, on: TsHandlers) {
+  constructor(m: TsModule, config: TailcatConfig | TailnetConfig | RoomConfig, on: TsHandlers) {
     this.m = m;
     this.on = on;
     const json = encoder.encode(JSON.stringify({ dns4: DNS4, dns6: DNS6, ...config }));
@@ -203,6 +243,39 @@ export class TsClient {
     this.pump();
   }
 
+  /** A room: connection `rtc`'s data channel (made negotiated, as `open` asked), whose messages are the peer's packets. */
+  rtcChannel(rtc: number, dc: RTCDataChannel) {
+    if (this.closed) return dc.close();
+    this.channels.get(rtc)?.close();
+    this.channels.set(rtc, dc);
+    dc.binaryType = 'arraybuffer';
+    const live = () => !this.closed && this.channels.get(rtc) === dc;
+    const opened = () => { if (live()) { this.m.x.ts_rtc_open(this.h, rtc); this.pump(); } };
+    dc.onopen = opened;
+    dc.onmessage = (e: MessageEvent) => {
+      if (!live() || !(e.data instanceof ArrayBuffer)) return;
+      this.m.x.ts_rtc_message(this.h, rtc, ...this.m.put(new Uint8Array(e.data)));
+      this.pump();
+    };
+    dc.onclose = () => this.rtcClosed(rtc, dc);
+    if (dc.readyState === 'open') opened();
+  }
+
+  /** A room: connection `rtc`'s local description or candidate (JSON), for the peer. */
+  rtcSignal(rtc: number, json: string) {
+    if (this.closed) return;
+    this.m.x.ts_rtc_signal(this.h, rtc, ...this.m.put(encoder.encode(json)));
+    this.pump();
+  }
+
+  /** A room: connection `rtc` closed or failed (`dc`: only if that channel is still the connection's). */
+  rtcClosed(rtc: number, dc?: RTCDataChannel) {
+    if (this.closed || (dc && this.channels.get(rtc) !== dc)) return;
+    this.channels.delete(rtc);
+    this.m.x.ts_rtc_closed(this.h, rtc);
+    this.pump();
+  }
+
   close() {
     if (this.closed) return;
     this.m.x.ts_close(this.h);
@@ -211,6 +284,8 @@ export class TsClient {
     clearTimeout(this.timer);
     for (const { ws } of this.sockets.values()) ws.close();
     this.sockets.clear();
+    for (const dc of this.channels.values()) dc.close();
+    this.channels.clear();
     this.m.x.ts_free(this.h);
   }
 
@@ -246,6 +321,24 @@ export class TsClient {
         case 6:
           this.on.event(JSON.parse(decoder.decode(rest)));
           break;
+        case 7:
+          this.on.rtc?.open(id, rest[0] === 1);
+          break;
+        case 8:
+          this.on.rtc?.signal(id, decoder.decode(rest));
+          break;
+        case 9: {
+          const dc = this.channels.get(id);
+          if (dc?.readyState === 'open') dc.send(rest);
+          break;
+        }
+        case 10: {
+          const dc = this.channels.get(id);
+          this.channels.delete(id);
+          dc?.close();
+          this.on.rtc?.close(id);
+          break;
+        }
       }
     }
     clearTimeout(this.timer);

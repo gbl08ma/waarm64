@@ -1,0 +1,151 @@
+{
+  "date": "2026-11-10T16:39:56.219Z",
+  "chromium": "153.0.8010.12",
+  "host": "linux x64",
+  "cpus": 4,
+  "rounds": 5,
+  "echoes": 10000,
+  "packet": 1280,
+  "results": [
+    {
+      "round": 0,
+      "arm": "direct",
+      "firstMs": 19.290000000037253,
+      "directMs": 21.79999999993015,
+      "rttMs": 0.7249999999767169,
+      "back": 10000,
+      "mbpsEachWay": 63.33263238623064,
+      "coreMsPerMbit": 22.656250000000004
+    },
+    {
+      "round": 0,
+      "arm": "relay",
+      "firstMs": 17.73499999998603,
+      "rttMs": 0.9399999999441206,
+      "back": 10000,
+      "mbpsEachWay": 35.13244141305082,
+      "coreMsPerMbit": 34.423828125
+    },
+    {
+      "round": 0,
+      "arm": "raw",
+      "setupMs": 35.39500000001863,
+      "rttMs": 0.2550000000046566,
+      "back": 10000,
+      "mbpsEachWay": 70.57566724675412,
+      "coreMsPerMbit": 16.650390624999996
+    },
+    {
+      "round": 1,
+      "arm": "raw",
+      "setupMs": 33.01500000001397,
+      "rttMs": 0.2449999999953434,
+      "back": 10000,
+      "mbpsEachWay": 74.55650166915052,
+      "coreMsPerMbit": 16.601562500000004
+    },
+    {
+      "round": 1,
+      "arm": "relay",
+      "firstMs": 18.149999999906868,
+      "rttMs": 0.9399999999441206,
+      "back": 10000,
+      "mbpsEachWay": 35.94199439459285,
+      "coreMsPerMbit": 33.984375
+    },
+    {
+      "round": 1,
+      "arm": "direct",
+      "firstMs": 25.479999999981374,
+      "directMs": 33.47999999998137,
+      "rttMs": 0.7700000000186265,
+      "back": 10000,
+      "mbpsEachWay": 42.437767955756215,
+      "coreMsPerMbit": 23.92578125000001
+    },
+    {
+      "round": 2,
+      "arm": "direct",
+      "firstMs": 23.315000000060536,
+      "directMs": 28.940000000060536,
+      "rttMs": 0.7600000000093132,
+      "back": 10000,
+      "mbpsEachWay": 43.21915148650339,
+      "coreMsPerMbit": 21.728515625000014
+    },
+    {
+      "round": 2,
+      "arm": "relay",
+      "firstMs": 23.979999999981374,
+      "rttMs": 0.9499999999534339,
+      "back": 10000,
+      "mbpsEachWay": 30.761281639959883,
+      "coreMsPerMbit": 34.27734375
+    },
+    {
+      "round": 2,
+      "arm": "raw",
+      "setupMs": 37.68000000005122,
+      "rttMs": 0.22999999998137355,
+      "back": 10000,
+      "mbpsEachWay": 43.49894650988784,
+      "coreMsPerMbit": 17.1875
+    },
+    {
+      "round": 3,
+      "arm": "raw",
+      "setupMs": 36.60000000009313,
+      "rttMs": 0.13500000000931323,
+      "back": 10000,
+      "mbpsEachWay": 57.859645157647215,
+      "coreMsPerMbit": 15.136718750000007
+    },
+    {
+      "round": 3,
+      "arm": "relay",
+      "firstMs": 27.54500000004191,
+      "rttMs": 1.0350000000325963,
+      "back": 10000,
+      "mbpsEachWay": 32.641871807335725,
+      "coreMsPerMbit": 36.13281250000001
+    },
+    {
+      "round": 3,
+      "arm": "direct",
+      "firstMs": 16.510000000009313,
+      "directMs": 23.48499999998603,
+      "rttMs": 0.9499999999534339,
+      "back": 10000,
+      "mbpsEachWay": 50.928170887884725,
+      "coreMsPerMbit": 23.48632812499998
+    },
+    {
+      "round": 4,
+      "arm": "direct",
+      "firstMs": 22.809999999939464,
+      "directMs": 23.169999999925494,
+      "rttMs": 0.9399999999441206,
+      "back": 10000,
+      "mbpsEachWay": 56.15867018023886,
+      "coreMsPerMbit": 26.171874999999993
+    },
+    {
+      "round": 4,
+      "arm": "relay",
+      "firstMs": 21.57999999995809,
+      "rttMs": 0.9949999999953434,
+      "back": 10000,
+      "mbpsEachWay": 36.784582087273265,
+      "coreMsPerMbit": 34.08203124999999
+    },
+    {
+      "round": 4,
+      "arm": "raw",
+      "setupMs": 33.050000000046566,
+      "rttMs": 0.2600000000093132,
+      "back": 10000,
+      "mbpsEachWay": 77.04983408702664,
+      "coreMsPerMbit": 16.35742187500001
+    }
+  ]
+}

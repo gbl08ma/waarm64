@@ -3,7 +3,7 @@
 The page's network backends behind the Ethernet gateway ([devices.md](devices.md) "net": frames at
 the device, IP packets on the gateway's port) are one client of our own: `net/ts` (crate `webpc_ts`),
 a small Rust wasm module that holds the protocols' state, driven by a TypeScript worker that does the
-I/O. It speaks two protocols:
+I/O. It speaks two protocols, and holds a room's member beside them ("Rooms"):
 
 - **tailcat** ([tailscale/tailcat](https://github.com/tailscale/tailcat)): Tailscale's data plane with
   no control plane. The guest goes online through a `tailcat serve exit-node` on a computer of the
@@ -19,12 +19,12 @@ page's until 2026-10-17): the Go module was 26.9 MB of wasm (4.3 MB Brotli), a G
 device, the gateway, the guest as the node) are [plans/networking.md](plans/networking.md)'s.
 
 **The files.** `net/ts/src/`: `wasm.rs` (the exports), `client.rs` (the tailcat client, and the
-actions both clients share), `tailcat.rs` (the address), `cbor.rs`, `nat46.rs`, `derp.rs`, `ip.rs`
+actions the clients share), `tailcat.rs` (the address), `room.rs` (a room's member), `cbor.rs`, `nat46.rs`, `derp.rs`, `ip.rs`
 (packet builders), `tailnet.rs` (the Tailscale client's data plane), `control.rs` (the control
 session), `noise.rs`, `h2pipe.rs`, `netmap.rs`, `store.rs` (the kept node), `dns.rs`, `dns_tcp.rs` (MagicDNS over TCP). The page's
 side: `web/ts-client.ts` (the module's I/O: WebSockets, `fetch`, timers), `web/ts-wasi.ts`,
 `web/tailcat.ts` and `web/tailcat-worker.ts`, `web/tailscale.ts` and `web/tailnet-worker.ts`,
-`web/tailscale-state.ts` (the kept node in IndexedDB). Built by `net/ts/build.sh` to
+`web/tailscale-state.ts` (the kept node in IndexedDB), `web/room.ts` and `web/room-worker.ts`. Built by `net/ts/build.sh` to
 `target/net/ts.wasm`; `npm start` and `npm run serve` build it when it's missing or stale
 (`tools/tailscale.ts`, frontend.md "Network").
 
@@ -151,6 +151,42 @@ handshake initiation: a key with no peer that starts one is let in **on trial** 
 only at the response, so its initiation can't prove it), announced once its first data decrypts and forgotten 20 s
 without, so a key without the address gets nothing in.
 
+## Rooms
+
+Peer-to-peer rooms ([plans/networking-p2p.md](plans/networking-p2p.md), in progress: R0 done, so peers are given by
+key and nothing is on the page's menus yet). `room.rs` is a third client of the module; `web/room.ts` and
+`web/room-worker.ts` are its page and worker.
+
+- **A room** is an ID its members agree on. BLAKE2s derives from it, with labels of their own: the room's /48 (`fd`
+  and 40 bits; one that would be tailcat's `fd7a:115c:a1e0::/48` takes the next label), its tag (those 40 bits in
+  base32) and the WireGuard pre-shared key every pair in the room uses (`room::Room`). A node's address is the /48
+  plus the first 80 bits of its node key, as tailcat's.
+- **WireGuard** (`ts_tunnel`, IKpsk2 with the room's key) carries the guest's IPv6 between members, whichever path
+  carries its packets. A peer's packets reach the guest only from that peer's own address to ours. A key we don't
+  know that starts a handshake through DERP is let in **on trial** (incoming connections, on by default; `incoming:
+  false` refuses them) and forgotten 20 s after it came in unless its data decrypted, which only the room's key allows.
+  The lease: the room address as a /128, IPv4 `192.0.0.2` with no IPv4 routes, and the /48 as the route on an adapter
+  that isn't the guest's primary (`prefix6`, web/room-worker.ts); no resolver yet.
+- **Signalling inside the tunnel:** UDP between the two members' addresses, port 1 both ends (`SIGNAL_PORT`; the
+  guest's packets to or from it are dropped), JSON: `hello` (the home region, relay only), `sig` (the page's
+  description or ICE candidate for attempt `o`, opaque to the module), `bye` (attempt `o` closed), `refuse` (relay
+  only). Each message carries the sender's instance (a random number per client, so a peer's restart resets what we
+  knew of its signalling) and a sequence number, and is acknowledged and resent after 0.5, 1 and 2 s. Signalling
+  starts only after the peer's data decrypted, so a member shows its candidates only to one that completed a
+  handshake with the room's key.
+- **The direct path:** the member with the lower key offers once the session is confirmed. The module asks the host
+  for a connection (`RtcOpen`, actions 7–10 and `ts_rtc_*` in `wasm.rs`); web/room.ts makes an `RTCPeerConnection`
+  (STUN only: `STUN_SERVERS`, Cloudflare's and Google's) with a negotiated data channel (id 0, unordered, no
+  retransmits) and transfers the channel to the worker before anything is sent on it (Chromium has no
+  `RTCPeerConnection` in a worker, but transfers a channel), so packets never touch the page's thread. Once it
+  opens, the peer's WireGuard packets take it, one message each, except handshake messages, which always go
+  through DERP (rare, and a peer that restarted has no channel to take ours). An attempt not open in 10 s is closed
+  and the next waits 30 s, doubling to 5 min; a closed channel, or one we sent on with nothing back for 15 s (past
+  WireGuard's 10 s passive keepalive), sends the peer back to DERP, and a new offer comes after 30 s. Relay only
+  (`relayOnly`) never opens a connection and refuses offers. The `path` event says which path a peer's packets take.
+- **DERP**: one home region (one's own derper, or a region of the map), with tailcat's liveness and reconnects; the
+  peers are on the same region until R1's call backs join a dialer's.
+
 ## Tailscale
 
 `tailnet.rs` on `control.rs`; tailscale-rs's `ts_control` and Tailscale's `controlclient` are the
@@ -241,7 +277,9 @@ natively by Go at pinned versions, the relay on `127.0.0.1:8444` with a self-sig
 test tailnet (`tests/net/tailnet.sh`, headscale and a peer in rootless Podman; natively in a cloud
 session, `tests/net/tailnet-native.sh`) under `tests/ts-tailnet.test.ts`,
 `tests/tailscale-browser.test.ts` and `tests/net-tailnet.test.ts`; the tailcat rig again under
-`tests/ts-tailcat.test.ts` (a relay's path cut off while its WebSocket stays open). Serving, against the real CLI
+`tests/ts-tailcat.test.ts` (a relay's path cut off while its WebSocket stays open), and its derper alone under
+`tests/room-browser.test.ts` (two members of a room in two pages: through the relay at once, then over their data
+channel, back to the relay when it drops; relay only). Serving, against the real CLI
 (`tests/net/tailcat-cli.ts`): `tailcat ping` (the rig's relay; tailcat's public ones opt-in), a kept key let in by a
 second exit node's `--allow` and a fresh one not (`tests/tailcat-browser.test.ts`), and `tailcat ssh` into
 images/debian-tools/build.sh's Debian with an allow list of the CLI's key (`tests/net-tailcat.test.ts`; over the

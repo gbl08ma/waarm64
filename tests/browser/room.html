@@ -1,0 +1,76 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<script type="module">
+  // A room's member in Chromium with no guest (tests/room-browser.test.ts): starts web/room.ts in room `?room=`
+  // on the relay `?relay=` and plays the guest on the gateway's side of its IP port. `?peer=` (a node key): the
+  // member it may dial; `?relayOnly`: no WebRTC. Every member echoes the UDP that comes to its port 7 back to the
+  // sender; `echoes` sends to `to`'s port 7 and counts what comes back.
+  import { startRoom } from '../../web/room.ts';
+  import { packetsOf } from '../../web/net.ts';
+  const q = new URLSearchParams(location.search);
+  const events = [];
+  const t0 = performance.now();
+  const room = startRoom({
+    room: { id: q.get('room'), relay: q.get('relay'), peers: q.has('peer') ? [q.get('peer')] : [], relayOnly: q.has('relayOnly') },
+    iceServers: [],
+  }, (e) => events.push({ ms: performance.now() - t0, ...e }));
+  const waiting = new Map();
+  const send = (p) => room.ip.postMessage(p.buffer, [p.buffer]);
+  room.ip.onmessage = (e) => {
+    const packets = packetsOf(e.data);
+    if (!packets) return;
+    for (const p of packets) {
+      if (p[0] >> 4 !== 6 || p[6] !== 17 || p.length < 52) continue;
+      const dport = (p[42] << 8) | p[43];
+      if (dport === 7) { // echo: swap addresses and ports
+        const r = p.slice();
+        r.set(p.subarray(24, 40), 8); r.set(p.subarray(8, 24), 24);
+        r.set(p.subarray(42, 44), 40); r.set(p.subarray(40, 42), 42);
+        send(r);
+      } else waiting.get(new DataView(p.buffer, p.byteOffset).getUint32(48))?.(p);
+    }
+  };
+  /** An IPv6 UDP packet from this member to `to`'s port 7 with `seq` first in its payload (checksum 0: nothing checks it here). */
+  function udp(to, seq, size) {
+    const p = new Uint8Array(48 + size);
+    p.set([0x60, 0, 0, 0, (8 + size) >> 8, (8 + size) & 255, 17, 64]);
+    p.set(room.self().address6, 8);
+    p.set(to, 24);
+    p.set([0x4e, 0x20, 0, 7, (8 + size) >> 8, (8 + size) & 255, 0, 0], 40);
+    new DataView(p.buffer).setUint32(48, seq);
+    return p;
+  }
+  let seq = 0;
+  /** Sends `n` echoes of `size` bytes to `to`, `window` at a time; how many came back, the time, and each one's RTT. */
+  async function echoes(to, n, size, window = 16, timeout = 3000) {
+    let back = 0;
+    const rtts = [];
+    const t = performance.now();
+    const one = () => new Promise((resolve) => {
+      const s = ++seq;
+      const sent = performance.now();
+      const timer = setTimeout(() => { waiting.delete(s); resolve(); }, timeout);
+      waiting.set(s, () => { clearTimeout(timer); waiting.delete(s); back++; rtts.push(performance.now() - sent); resolve(); });
+      send(udp(to, s, size));
+    });
+    let started = 0;
+    await Promise.all(Array.from({ length: window }, async () => { while (started < n) { started++; await one(); } }));
+    return { back, ms: performance.now() - t, rtts };
+  }
+  /** Echoes one at a time until one comes back (or `ms` pass): the time to the first packet back. */
+  async function first(to, ms = 20000) {
+    const t = performance.now();
+    while (performance.now() - t < ms) {
+      const r = await echoes(to, 1, 32, 1, 500);
+      if (r.back) return performance.now() - t;
+    }
+    return -1;
+  }
+  window.harness = {
+    room: () => ({ state: room.state(), self: room.self(), lease: room.lease(), peers: room.peers(), timings: room.timings() }),
+    events: () => events,
+    echoes, first,
+    dropDirect: () => room.dropDirect(),
+  };
+</script>

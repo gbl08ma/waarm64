@@ -1,4 +1,4 @@
-# Peer-to-peer rooms over WebRTC (proposed, not scheduled)
+# Peer-to-peer rooms over WebRTC (in progress: R0 done 2026-11-10)
 
 VMs in different browsers on one network, with packets going browser to browser over WebRTC and DERP
 only as the fallback. Reaching a peer takes two steps: **joining its room**, and **knowing its
@@ -163,9 +163,13 @@ address and name don't change when it rejoins. "New identity" makes a new key.
    acknowledged and resent (after 0.5, 1 and 2 s), since DERP drops when a peer's queue fills; an
    offer not answered with an open channel in 10 s is dropped, and the next waits 30 s, doubling to
    5 minutes. A node drops any signalling from a peer without a current session, and a relay-only
-   node answers an offer with a refusal, so the other side stops asking.
-4. When the channel opens, the peer's WireGuard packets move to it; when it closes or stalls (no
-   packet back while WireGuard's keepalive expects one), back to DERP, and a new offer later. Both
+   node answers an offer with a refusal, so the other side stops asking. (R0: the port is 1; each
+   message carries the sender's instance, a random number per client, so a peer that restarted is
+   seen as one and its signalling starts afresh.)
+4. When the channel opens, the peer's WireGuard packets move to it, except handshake messages, which
+   always go through DERP (R0: they're rare, and a peer that restarted has no channel to take our
+   response); when it closes or stalls (nothing back 15 s after we sent, past WireGuard's 10 s passive
+   keepalive), back to DERP, and a new offer 30 s later. Both
    sides stay joined to a region that reaches the other while the peer is open, so that fallback
    never needs a new lookup.
 
@@ -209,6 +213,12 @@ Chromium on the M4 ([tailnet.md](../tailnet.md) "Numbers"), and Rings managed ~1
 packets (networking.md §2). Loopback hides what matters most: setup time across real NATs, and how
 often ICE fails and DERP carries the room.
 
+**R0** (2026-11-10, the same kind of cloud session, Chromium 153; bench/net/REPORT.md "Rooms: the direct path
+against DERP"): two members in two pages through our module, 1,280-byte echoes 32 in flight, 5 alternated rounds.
+The direct path **50.9 Mbit/s each way** (rounds 42–63) at 23.5 core-ms per Mbit, DERP on loopback 35.1 (31–37) at
+34.3, a bare channel between two workers 70.6 at 16.6. The first echo 23 ms after `Running` (through DERP), the
+channel open 23 ms after the handshake. The gate holds.
+
 SDP size doesn't constrain signalling over DERP, but for the record (Chromium 153, 2026-11-10): with
 both pages ours, a data-channel-only remote description rebuilds from 47 bytes per side (the ufrag,
 3; the password, 18; a SHA-1 fingerprint, 20, which Chromium checks against the remote certificate
@@ -221,7 +231,12 @@ connection (168 bits) and is withdrawing the munging that would fix them, so no 
 Each with tests at the cheapest layer (`cargo test -p webpc_ts` sans I/O first), as the tailnet
 client was built.
 
-- **R0 — The data path, measured.** Two pages, keys exchanged by hand (an address like tailcat's),
+- **R0 — The data path, measured.** *Done 2026-11-10* (docs/tailnet.md "Rooms"; §6): `room.rs` with §2's
+  derivations already, peers given by key, incoming connections on trial, one home region; ABI actions 7–10 and
+  `ts_rtc_*`; `web/room.ts` and `web/room-worker.ts`; `cargo test -p webpc_ts room` (a fake relay and a fake WebRTC:
+  the fallbacks, loss, a restart, relay only, address binding) and `tests/room-browser.test.ts` (two pages on the
+  rig's derper). CPU per Mbit and "without the inner WireGuard" measured as a bare channel's arm; the numbers from
+  a cloud session, to repeat in the dev VM. The brief as it was: Two pages, keys exchanged by hand (an address like tailcat's),
   signalling through the tailcat rig's derper (`tests/net/tailcat.sh`), WireGuard over the data
   channel, the fallback to DERP when the channel is blocked. A fourth connection kind's client in
   `net/ts` (`room.rs`, sharing `derp.rs`, `ts_tunnel`, `ip.rs`); new ABI actions to open, signal, send
