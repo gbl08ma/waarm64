@@ -25,11 +25,12 @@ calls.
 | 6 | JIT: helpers on real paths (MSR DAIFClr/regime/NZCV…, ISB, LSE min/max) | unmasking MSRs, DIT, ISB (det.) inline (loop 8) |
 | 7 | JIT: wasm size cuts (local.tee peephole, a guarded chain's fallback as `xmiss`, one budget counter, NZCV functions) | done (loop 13) |
 | 8 | JIT: the shared cache's leftovers (one vCPU's 1-2%: a lone table takes the bytes) | done, nothing to keep (loop 14) |
-| 9 | SMP: the ISB fix's cost; WFE sleeping; an exit's remaining cost | next |
-| 10 | Devices: virgl's occlusion-query poll (4 ms) | |
+| 9 | SMP: the ISB fix's cost; WFE sleeping; an exit's remaining cost | findings, nothing to keep (loop 15) |
+| 10 | Devices: virgl's occlusion-query poll (4 ms) | next |
 | 11 | Interpreter: more handlers (FP in a second `hot` copy, CASP, STTR/LDTR) | |
 | 12 | JIT: scalar FP in f64/f32 locals | |
 | 13 | JIT: Liftoff's zero-fill (a register allocator over a block's locals) | |
+| 14a | Loop 15's oddity: the guest's counter doesn't count under Node's `runToPowerOff` in parallel realtime (a bug?) | |
 | 14 | JIT: the core's heap tuning, transfer cache costs, the rest of the JIT section | |
 
 Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL MIDR (the user, 2026-11-10: don't report another CPU's MIDR for now; the item stays in the backlog), bug watches
@@ -89,3 +90,6 @@ Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL 
 - **Loop 14** (`df4ce0e2`): shared cache. One vCPU's 1-2% no longer measurable (bytes already shared; lone-table
   constants and no-op catch-ups under 1%, not kept); installs of unrun modules ≤0.5%; ICs per page already; allocations
   under the lock only lengthen holds. Kept: the held-bytes native test (planted bugs fail it). Backlog entry gone.
+- **Loop 15** (`24205773`): parallel SMP. ISB fix ~0.006% (A/B even); WFE yields ≤0.2%, sleeping not built; an exit
+  profiled part by part (yield 61-69 ns, `mrs cntfrq` 144-160 ns), every cheap cut ~0.01% of a browser. Three items
+  became findings (platform.md, jit.md); parallel make reworded, default vCPU count not perf.
