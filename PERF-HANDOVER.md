@@ -24,8 +24,8 @@ calls.
 | 5 | CPU/ISA: unadvertised M4 extensions — LSE2, LRCPC2, RDM, FHM, FCMA, I8MM, BF16, FP16 (one loop each or grouped) | I8MM unadvertised (loop 5); RDM, LRCPC2 advertised (loop 6); FCMA (7), FP16, FHM (10), BF16 (11) unadvertised; LSE2 dropped (12); list done |
 | 6 | JIT: helpers on real paths (MSR DAIFClr/regime/NZCV…, ISB, LSE min/max) | unmasking MSRs, DIT, ISB (det.) inline (loop 8) |
 | 7 | JIT: wasm size cuts (local.tee peephole, a guarded chain's fallback as `xmiss`, one budget counter, NZCV functions) | done (loop 13) |
-| 8 | JIT: the shared cache's leftovers (one vCPU's 1-2%: a lone table takes the bytes) | next |
-| 9 | SMP: the ISB fix's cost; WFE sleeping; an exit's remaining cost | |
+| 8 | JIT: the shared cache's leftovers (one vCPU's 1-2%: a lone table takes the bytes) | done, nothing to keep (loop 14) |
+| 9 | SMP: the ISB fix's cost; WFE sleeping; an exit's remaining cost | next |
 | 10 | Devices: virgl's occlusion-query poll (4 ms) | |
 | 11 | Interpreter: more handlers (FP in a second `hot` copy, CASP, STTR/LDTR) | |
 | 12 | JIT: scalar FP in f64/f32 locals | |
@@ -86,3 +86,6 @@ Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL 
   a guarded chain's fallback as the miss function's tail call (−6.4% wasm on Alpine, −2.5%/−3.3 MiB in the pages
   session; time even, kept for the JIT budget) and one budget counter on region edges (Lua −1.7%, rounds apart). Dropped:
   hot-site NZCV helpers (+1.3%), uncompiled successors via the miss function (+7%). Backlog entry gone. CI passed.
+- **Loop 14** (`df4ce0e2`): shared cache. One vCPU's 1-2% no longer measurable (bytes already shared; lone-table
+  constants and no-op catch-ups under 1%, not kept); installs of unrun modules ≤0.5%; ICs per page already; allocations
+  under the lock only lengthen holds. Kept: the held-bytes native test (planted bugs fail it). Backlog entry gone.
