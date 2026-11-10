@@ -21,7 +21,7 @@ calls.
 | 2 | Interpreter: the dispatcher's loop inside `jit::interpret` (round trips to compiled code) | dropped (loop 2) |
 | 3 | Interpreter: `hot`'s per-micro-op cost — SUBS's flags from operands, ADRP+ADD pair, register caching | dropped (loop 3) |
 | 4 | Interpreter: misaligned stores inline; SUBS/ADDS as their own micro-op kinds (loop 3's idea) | SUBS kinds kept, stores dropped (loop 4) |
-| 5 | CPU/ISA: unadvertised M4 extensions — LSE2, LRCPC2, RDM, FHM, FCMA, I8MM, BF16, FP16 (one loop each or grouped) | I8MM unadvertised (loop 5); RDM, LRCPC2 advertised (loop 6); FCMA (7), FP16, FHM (10) unadvertised; next BF16, LSE2 |
+| 5 | CPU/ISA: unadvertised M4 extensions — LSE2, LRCPC2, RDM, FHM, FCMA, I8MM, BF16, FP16 (one loop each or grouped) | I8MM unadvertised (loop 5); RDM, LRCPC2 advertised (loop 6); FCMA (7), FP16, FHM (10), BF16 (11) unadvertised; next LSE2 |
 | 6 | JIT: helpers on real paths (MSR DAIFClr/regime/NZCV…, ISB, LSE min/max) | unmasking MSRs, DIT, ISB (det.) inline (loop 8) |
 | 7 | JIT: wasm size cuts (local.tee peephole, a guarded chain's fallback as `xmiss`, one budget counter, NZCV functions) | |
 | 8 | JIT: the shared cache's leftovers (one vCPU's 1-2%: a lone table takes the bytes) | |
@@ -75,3 +75,7 @@ Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL 
   helpers), **off by default**: half GEMM 2.05×, scalar FMADD h 2.15×, FMLAL by element 1.35× slower (per-instruction
   conversions); axpy 0.73×, FMLAL vector 0.83×. Users: only Highway's vqsort and VapourSynth. ABI 65. Fixed FZ16 lost by
   MSR FPCR. ci-fp.sh now ~8.5 min. Side note: `VIRGL_TOOLS`' `python3=3.14.8-r0` pin is gone from Alpine (fptest's bumped).
+- **Images** (`16b40a74`): alpine-virgl's four stale pins bumped, alpine-gl and alpine-virgl rebuilt, their tests pass.
+- **Loop 11** (`50760bfa`): FEAT_BF16 complete (M4: no EBF16; BFDotAdd's round-to-odd inline with TwoSum), **off by
+  default**: BFDOT 1.48×, BFMMLA 2.61×, BFDOT by element 2.26×, BFCVTN 1.16× slower, BFMLAL level. No users in the
+  images. ABI 66. ci.sh (bar the known clipboard-toolbar timeout, passed alone), ci-jit.sh, ci-fp.sh passed.
