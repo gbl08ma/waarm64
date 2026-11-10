@@ -4147,3 +4147,95 @@ shedding each fail it.
   each already). Not built.
 
 Memory: nothing kept. Checks: steps unchanged in every arm. CI: `scripts/ci.sh` (the new test the only code change).
+
+## PERF loop 15: the parallel SMP leftovers (2026-11-10)
+
+This loop took the backlog's three parallel SMP items, which are the ISB fix's cost, WFE sleeping and an exit's remaining
+cost. It counted each one first. The raw data is in `results/perf15/`: the counting patch, the A/B's base patch, the
+pages session's counts, the A/B's JSON, and the exit loop with its profiles. **Nothing is kept**, and all three items
+leave the backlog as findings.
+
+**The counts.** They come from Firefox's pages session with a counting core (`diag.patch`), started from
+`pages.webpcsnap` on the Mac host (M4, macOS 26.6.2, Chrome for Testing 157.0.8103.50 headless). The guest had 4 vCPUs
+and ran 218 s, 98 G steps. The vCPUs spent 609 of their 872 s out of the core, which leaves ~263 busy vCPU-seconds.
+
+| over the session, 4 vCPUs | count |
+|---|---|
+| ISBs that read the `behind` counters and completed in place | 13.85 M (loop 8 counted 13.66 M) |
+| ISBs that exited because the JIT table was behind | **5,927** |
+| IC broadcasts | 537 K |
+| WFE yields | **1.92 M** (~2.2 K a second per vCPU) |
+| DSB waits | 36,884, 0.63 s in all |
+
+**The ISB fix's cost.** Each fast ISB pays for one flag and two relaxed loads, ~14 ms over the session at ~1 ns each.
+The 5.9 K exits add ~1.5 ms at the ~240 ns a desktop-guest exit costs. Together that is ~0.006% of the busy time,
+below anything an A/B can resolve. The A/B ran anyway, on the Mac, with `bench/interp/ab-mac.sh perf15 3 nofix=…
+main=… -- smp_user_jit_4` and the arms alternated. The base arm is main without the `behind` check (`nofix.patch`), and
+the arms differ in `fast_exit`'s size, 973 B against 1,040 B. The table gives ms per round (each round's median), with
+the median of the rounds last:
+
+| | nofix | main | main/nofix |
+|---|---|---|---|
+| `smp_user_jit_n4_total` | 11,650 · 11,784 · 11,772; **11,772** | 11,696 · 11,808 · 11,582; **11,696** | 0.994, overlapping |
+| compress | 1,415 · 1,453 · 1,523 | 1,373 · 1,530 · 1,393 | 0.959, overlapping |
+| Lua | 2,441 · 2,423 · 2,503 | 2,502 · 2,417 · 2,494 | 1.022, overlapping |
+| churn | 902 · 910 · 892 | 923 · 896 · 907 | 1.006, overlapping |
+| SQLite | 1,884 · 1,861 · 1,891 | 1,870 · 1,950 · 1,825 | 0.993, overlapping |
+
+The arms' rounds overlap and the difference is within the noise, as the count predicted. The desktop guest's image
+decoding (`bench/imgdecode/`) wasn't run, because its second disk (`target/imgpipe`) isn't built here. The pages
+session decodes the pages' images, and its count covers that case. The finding is in docs/platform.md "Broadcast
+maintenance".
+
+**WFE sleeping.** The session yields 1.92 M times. A yield is an exit with nothing to do: ~65 ns in the profile below,
+and at most the desktop guest's ~240 ns. So the spins that end in a yield take 0.12-0.46 s of 263 busy vCPU-seconds,
+≤0.2%. Sleeping on the event word would save only that host time, and with 4 vCPUs on 10 cores no other thread is
+waiting for that core. It would also add a wake-up to each waiter's latency (~17 µs for a futex in the dev VM).
+**Not built.** The finding is in docs/platform.md "Parallel SMP".
+
+**An exit's remaining cost, part by part.** The test is `exitloop.c`, a bare-metal loop of 40 M runs of one
+instruction with the MMU on (nG 1 GiB blocks, an ASID). It ran in Node on the dev VM in parallel SMP with 2 vCPUs,
+realtime and under the JIT, timed by the host: the run's ms less an empty loop's 124 ms. The guest's own counter
+timings aren't valid, because the realtime clock doesn't count in `runToPowerOff`. The profiles are `perf record -F
+4999 -g` with `node --perf-basic-prof`. Two runs gave these costs per instruction:
+
+| | ns per instruction (two runs) |
+|---|---|
+| `wfe`, a yield: an exit with nothing to do | 61, 69 |
+| `mrs cntfrq_el0`, an always-exiting platform read | 144, 160 |
+| `isb`, completed in place | 18, 25 |
+| `svc` with start.S's handler (288-byte frame, a C call, ERET completed in place) | 155, 151 |
+
+These are the shares of a yield's ~65 ns (`perf-only2.txt`):
+
+| Part | Share |
+|---|---|
+| `jit::steps`' re-entry (`key`, `Cache::enter`, `fresh`) | 20% |
+| `run_cpu`'s own iteration (the atomics, the timer test, the chunk's set-up) | 19% |
+| `jit_exec_mmu` and `interp::sys::exec` (the helper decodes and runs the exiting instruction through the interpreter) | 21% |
+| `publish_cpu` | 4% |
+| `handle_par` | 3% |
+| `Vm::counter`'s u128 division, every chunk | 2.5% |
+| `drain` | 2% |
+| the guest's block | 2% |
+| `fast_exit` | 1% |
+
+The word is decoded three times: by `exec_at`, by `count`, and by `fast`. `cntfrq_el0` (`perf-only0.txt`) adds the
+host clock: `__kernel_clock_gettime` 12%, plus the JS import and its wrapper 4%. Every `Exit::Platform` reads the
+clock first, although CNTFRQ shows no timer. The SVC loop's own `svc #0` begins its block, so that block runs through
+the interpreter each time (`interp::steps` 6%, the decoded block's miss 2.4%). Linux's syscall stubs end a compiled
+block with their SVC instead.
+
+Each part costs a few ns. The cheap cuts would each save 1-3 ns of an exit: the counter's division cached, the clock
+read only for a timer's register, one decode passed on. But exits are ~0.2-0.3% of a busy vCPU's time in a browser
+(this report's "Where a busy vCPU's time goes in Firefox, again"), so each cut would come to ~0.01%. **Nothing cut.**
+The profile is in docs/jit.md "What an exit to the run loop costs".
+
+**The other two items** in the section stay in the backlog:
+- **Parallel `make`**: `images/debian-tools` has gcc and make now. No harness exists yet to boot it at N vCPUs with a
+  source tree, and that isn't a cheap measurement; the 4-vCPU `go build` loop covers compile scaling meanwhile. The
+  entry is reworded.
+- **A default vCPU count for users**: this is about the settings and their advice to the user, not about speed.
+
+Memory: nothing kept. Steps: unchanged (no code change). CI: none, since no core code changed (`tsc` passes over the
+two scripts in `results/perf15/`).

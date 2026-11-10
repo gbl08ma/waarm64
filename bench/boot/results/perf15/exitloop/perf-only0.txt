@@ -1,0 +1,18 @@
+    22.64%  [.] JS:jit_exec_mmu-964-turbofan
+    12.27%  [.] __kernel_clock_gettime
+    11.27%  [.] JS:_RNvNtCsfyJ81pLjVxE_10webpc_core3jit5steps-702-turbofan
+    10.44%  [.] JS:_RNvMs2_NtNtCsfyJ81pLjVxE_10webpc_core2vm8parallelNtB7_2Vm7run_cpu-699-turbofan
+     5.11%  [.] JS:_RNvMs2_NtNtCsfyJ81pLjVxE_10webpc_core2vm8parallelNtB7_2Vm10handle_par-687-turbofan
+     2.81%  [.] JS:*' file:///home/gabriel.guest/Development/webpc/web/vm.ts:94:32
+     2.68%  [.] JS:_RNvNtNtCs1ANigp3HO42_17compiler_builtins3int19specialized_div_rem12u128_div_rem-1169-turbofan
+     2.11%  [.] JS:_RINvNtNtCsfyJ81pLjVxE_10webpc_core6interp3sys4execNtNtB6_3mmu3MmuEB6_-138-turbofan
+     1.91%  [.] JS:0x400019f0_pa0x400019f0-4-turbofan
+     1.71%  [.] JS:_RNvMs2_NtNtCsfyJ81pLjVxE_10webpc_core2vm8parallelNtB7_2Vm11publish_cpu-698-turbofan
+     1.38%  [.] JS:*get node:internal/util:638:17
+     0.91%  [.] JS:_RNvNtNtCsfyJ81pLjVxE_10webpc_core6interp3sys5timer-847-turbofan
+     0.87%  [.] JS:wasm-to-js-<anonymous>-none
+     0.85%  [.] JS:_RNvMs2_NtNtCsfyJ81pLjVxE_10webpc_core2vm8parallelNtB7_2Vm5drain-691-turbofan
+     0.72%  [.] JS:_RNvNtNtCsfyJ81pLjVxE_10webpc_core6interp3sys8platform-697-turbofan
+     0.69%  [.] JS:0x400019f8_pa0x400019f8-3-turbofan
+     0.68%  [.] JS:_RNvNtNtCsfyJ81pLjVxE_10webpc_core6interp3sys4read-258-turbofan
+     0.66%  [.] JS:_RNvNtNtCsfyJ81pLjVxE_10webpc_core2vm8parallel9fast_exit-700-turbofan

@@ -1,0 +1,15 @@
+diff --git a/core/src/vm/parallel.rs b/core/src/vm/parallel.rs
+index eb32cef1..9abe581b 100644
+--- a/core/src/vm/parallel.rs
++++ b/core/src/vm/parallel.rs
+@@ -518,9 +518,7 @@ impl Vm {
+                 // An ISB that follows another vCPU's IC must fetch the new code: the block
+                 // would chain on through links and caches the table hasn't synced yet, so
+                 // it exits to the dispatcher, which catches up (`Jit::fresh`).
+-                if matches!(op, Op::ISB) && v.jit.cache.as_ref().is_some_and(|j| j.behind()) {
+-                    return false;
+-                }
++
+                 if self.vcpus.len() > 1 {
+                     // As the run loop publishes it before a chunk (`broadcast`).
+                     let asid = if v.cpu.sctlr_el1 & sctlr::M != 0 && !v.tlb.low_global {

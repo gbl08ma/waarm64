@@ -117,8 +117,11 @@ indexes of their instance).
   ~17 µs in the dev VM, and the stress's pingpong went from 34 to 10 µs a hand-off); **WFE** is a
   yield (it ends the chunk, as QEMU's MTTCG does), and SEV does nothing (no vCPU sleeps in WFE):
   a vCPU can't cheaply see the store that clears another's exclusive monitor, which is what
-  wakes Linux's LDXR + WFE waits on hardware. Measure before making WFE sleep
-  ([backlog.md](backlog.md)).
+  wakes Linux's LDXR + WFE waits on hardware. Counted, a sleep isn't worth it (2026-11-10, bench/boot/REPORT.md
+  "PERF loop 15"): Firefox's pages session (4 vCPUs, 218 s) yields 1.92M times, ~2.2K a second a vCPU; a yield is
+  an exit with nothing to do (~65 ns in Node on the dev VM, up to the ~240 ns of a desktop-guest exit), so the spins
+  that end in one are ≤0.2% of the session's 263 busy vCPU-seconds, and with 4 vCPUs the host has cores to spare
+  for the spinner.
 - **The worker's event loop:** at the first exit 100 ms after its last return (`VmOptions.vcpuYieldMs`, 0
   never), a vCPU worker returns to its event loop: a sleep (IDLE) waits with `Atomics.waitAsync` instead, a
   BUDGET or DEVICE exit waits a µs on a word nothing writes. The tasks V8 and Blink post to the thread run then
@@ -201,7 +204,10 @@ and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor a
   after a context synchronization event *that follows its seeing the change*, which ends the chunk
   here, or under the JIT a fast-completed ISB (docs/jit.md "Fast completions") exits to the dispatcher
   when the vCPU's table is behind the cache's drops (`Jit::behind`): completed in place, it chained on
-  into the old code (`isb.c`: 3-8 stale calls in 8 rounds before the fix, 2026-11-03). `maint.c` had
+  into the old code (`isb.c`: 3-8 stale calls in 8 rounds before the fix, 2026-11-03). Its cost, counted in
+  Firefox's pages session (4 vCPUs, 218 s; bench/boot/REPORT.md "PERF loop 15"): 13.85M ISBs read the two counters
+  and 5.9K exit for them, ~15 ms of 263 busy vCPU-seconds; the userspace benchmark on 4 vCPUs on the Mac without
+  the check was even with it (rounds overlapping). `maint.c` had
   its ISB before waiting for the rewrite: parallel mode ran the old code (401), and the test was fixed
   (QEMU TCG and hvf pass it either way).
 - **The stale-code checker tolerates** stale blocks in parallel mode (`jit::Cache::tolerant`:

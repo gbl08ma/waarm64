@@ -1237,21 +1237,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 
-- **An exit's remaining cost** (~240 ns in the desktop guest after the fast completions and the throttled timer
-  check and counters, [jit.md](jit.md) "What an exit to the run loop costs"): what's left is unmeasured part by
-  part: the run loop's per-iteration atomics (the signal and wake words, `pending`, the IRQ line, the ASID's SeqCst
-  fence) and `jit::steps`' re-entry (`key`'s translation of the PC, `Cache::enter`'s lookup, `fresh`). Profile it
-  with perf and V8's `--perf-prof` on a loop of an always-exiting instruction (`mrs cntfrq_el0`) before changing
-  any of it. The exits that remain frequent in a browser are syscalls (SVC), faults and IRQs: in Firefox's pages
-  session ~10-15K a second over 4 vCPUs, ~0.2-0.3% of busy vCPU time at 240 ns, the run loop's functions 0.7% of the
-  samples (`bench/boot/REPORT.md` "Where a busy vCPU's time goes in Firefox, again", 2026-11-04). Not worth a loop for the browser.
-- **The ISB fix's cost is unmeasured** (2026-11-03, [platform.md](platform.md) "Broadcast maintenance"): a
-  fast-completed ISB now reads two counters (relaxed) and exits once per invalidation another vCPU made. Expected
-  below the noise; to confirm with `bench/run.ts`'s A/B in Chromium on the long workloads and the desktop guest's image
-  decoding (`bench/imgdecode/`, ~37K fast resyncs a second).
-- **WFE sleeping:** WFE yields (120K per vCPU in 7 s of churn on 4 vCPUs, ~0.1 s); sleep on the
-  event word only if a workload shows yields costing.
-- **Parallel `make`** as a scaling workload (the image has no toolchain yet).
+- **Parallel `make`** as a scaling workload: `images/debian-tools` has gcc and make now, but no harness boots it at
+  N vCPUs with a source tree and times `make -jN`; the 4-vCPU `go build` loop from `debian-go.webpcsnap` is the
+  compile workload in use meanwhile.
 - **A default vCPU count for users:** the page uses `min(4, cores − 2)` (web/app/machine.ts);
   `bootVm`'s `ncpus` still defaults to 1. Telling the user that a host's efficiency cores make N
   above its performance-core count scale poorly (this host: 4 P + 6 E) belongs with M8 phase D's

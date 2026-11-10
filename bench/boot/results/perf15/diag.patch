@@ -1,0 +1,27 @@
+diff --git a/core/src/vm/parallel.rs b/core/src/vm/parallel.rs
+index eb32cef1..9400b7e7 100644
+--- a/core/src/vm/parallel.rs
++++ b/core/src/vm/parallel.rs
+@@ -519,8 +519,12 @@ impl Vm {
+                 // would chain on through links and caches the table hasn't synced yet, so
+                 // it exits to the dispatcher, which catches up (`Jit::fresh`).
+                 if matches!(op, Op::ISB) && v.jit.cache.as_ref().is_some_and(|j| j.behind()) {
++                    bump(&self.shared.cpus[c].counters.par[PAR_LOCK_CONTENDED]); // DIAG: ISB behind
+                     return false;
+                 }
++                if matches!(op, Op::ISB) {
++                    bump(&self.shared.cpus[c].counters.par[PAR_LOCK_WAIT_NS]); // DIAG: ISB checked
++                }
+                 if self.vcpus.len() > 1 {
+                     // As the run loop publishes it before a chunk (`broadcast`).
+                     let asid = if v.cpu.sctlr_el1 & sctlr::M != 0 && !v.tlb.low_global {
+@@ -686,8 +690,7 @@ impl Vm {
+         let t0 = self.clock.ns();
+         let g = self.plat.lock();
+         let k = &self.shared.cpus[c].counters.par;
+-        bump(&k[PAR_LOCK_CONTENDED]);
+-        add(&k[PAR_LOCK_WAIT_NS], self.clock.ns() - t0);
++        let _ = (k, t0); // DIAG: slots reused
+         g
+     }
+ 

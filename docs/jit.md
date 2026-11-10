@@ -685,8 +685,16 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   the host clock (`env.now_ms`, `performance.now()` through an import) costs ~115 ns a call. A timer that comes due
   is then taken up to 4096 steps late, as one inside a chunk always was, but a guest that looks sees it at once:
   every platform access other than a counter read (a timer's ISTATUS, ISR_EL1, the GIC's registers) drives the
-  timer lines first (`drive_timers`; tests/baremetal/timer.c's check 12 polls ISTATUS and then reads ISR_EL1). What's left is in [backlog.md](backlog.md)
-  "Parallel SMP".
+  timer lines first (`drive_timers`; tests/baremetal/timer.c's check 12 polls ISTATUS and then reads ISR_EL1).
+  **What's left, part by part** (2026-11-10, bench/boot/REPORT.md "PERF loop 15"; perf with V8's `--perf-basic-prof`
+  in Node on the dev VM, a bare-metal loop of one exiting instruction with the MMU on, 2 vCPUs, parallel and realtime,
+  timed by the host): a WFE yield, an exit with nothing to do, takes ~65 ns: `jit::steps`' re-entry (`key`, `enter`,
+  `fresh`) a fifth, the run loop's own iteration (the atomics, the timer check's test, the chunk's set-up) a fifth,
+  `jit_exec_mmu` (the interpreter decoding and running the exiting instruction in the helper; the word is decoded
+  again by `count` and by `fast`) a fifth, then `publish_cpu` 4%, `handle_par` 3%, `Vm::counter`'s u128 division
+  (every chunk) 2.5%, `drain` 2%. `mrs cntfrq_el0` takes ~150 ns: every `Exit::Platform` reads the host clock first
+  (16% of it there, though CNTFRQ shows no timer), and the interpreter's MRS. A fast-completed ISB takes ~20 ns.
+  Each part is a few ns, and exits are ~0.2-0.3% of a busy vCPU's time in a browser: nothing to cut.
 
 ## Emission (`emit.rs`)
 
