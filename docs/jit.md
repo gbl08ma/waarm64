@@ -65,9 +65,11 @@ the interpreter's own code.
   the regime, before exception-generating and unallocated words, at the page end, and at **32
   instructions** (`block::CAP`). Hints that are NOPs here (PAC, BTI, CSDB, …) don't end one.
   MRS, DMB/DSB, DC ZVA and the MSRs that can't change what a block assumes
-  (`interp::sys::msr_continues`: DAIFSet, DAIF, SP_EL0, SPSR/ELR_EL1, the TPIDRs) don't end a block
-  either: they're inline, or a helper call that returns from the block mid-way when it doesn't
-  retire. ISB, CLREX, YIELD/SEV and DC (other than ZVA) end a block but chain on.
+  (`interp::sys::msr_continues`: DAIFSet, DAIFClr, DAIF, DIT, SP_EL0, SPSR/ELR_EL1, the TPIDRs) don't end a
+  block either: they're inline, or a helper call that returns from the block mid-way when it doesn't
+  retire. ISB, CLREX, YIELD/SEV and DC (other than ZVA) end a block but chain on (ISB is inline outside
+  parallel SMP, where the interpreter's does nothing; the block's PC is then set as after any
+  non-branch).
 - **Keyed by the guest PA** of the first instruction plus the regime bits that change what the
   code means (EL; `SCTLR_EL1.M`/`.A`, which pick the flat or MMU bus). Chosen over VA + ASID
   because it's what the architecture's PIPT instruction cache promises: the guest's own `IC IVAU`
@@ -779,9 +781,18 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   `arch_counter_enforce_ordering`. Other always-zero forms (`and x, x, xzr`, a multiply by
   zero) aren't covered: no code we know builds dependencies with them.
 - **System:** MRS of plain registers inline (checked against the interpreter's read; SP_EL0 and
-  TPIDR_EL1 were 91% of Alpine's MRS calls); the MSRs above inline; an MSR or ERET that unmasks
-  IRQs leaves through its helper's `Exit::Resync`. SIMD&FP instructions check `CPACR_EL1.FPEN`
-  once per block.
+  TPIDR_EL1 were 91% of Alpine's MRS calls); the MSRs above inline, and DAIFClr and `MSR DIT, #imm`
+  (Linux 6.x sets DIT at every kernel entry: one per syscall and IRQ). An MSR that unmasks IRQs (DAIF,
+  DAIFClr) stays inline while `jit::State::unmask` says its `Exit::Resync` would find no IRQ to take:
+  round-robin SMP's run loop sets `ok` before each chunk when the GIC signals none to the vCPU
+  (nothing raises one within a chunk but an exit: deadlines bound deterministic chunks, devices and
+  GIC writes exit) and the xHCI has no event due (its tick fires at the next chunk boundary, which the
+  exit would bring forward: the USB guest's JIT run then parted from the interpreter's), parallel SMP when the chunk has fast completions, and there the block also loads
+  the vCPU's IRQ line (`CpuPar::irq`, an atomic byte) as `fast` would (its other conditions, the queue and the published
+ASID, are for ISB's and DSB's synchronization: a DAIF write that masks never checked them). Else, and for ERET, the helper's
+  `Exit::Resync` lets the run loop take it. Steps don't move (deterministic chunks end at the same
+  places); the differential test has no IRQs, so the boots' steps and their consoles are its check.
+  SIMD&FP instructions check `CPACR_EL1.FPEN` once per block.
 - **NEON → SIMD128** (`emit/simd.rs`): handler by handler after the interpreter's: three-same,
   shifts, moves and immediates, widening/narrowing, reductions, compares against zero, UZP/TRN/ZIP
   (one shuffle of Vn:Vm built from the interpreter's lane formula), TBL/TBX (as `i8x16.swizzle`,
@@ -1090,11 +1101,26 @@ interpreter's; the helper runs the instruction otherwise.
 
 ## What still runs through helpers
 
-On Alpine's paths (~2.5M helper-retired steps a boot): unmasking MSRs (DAIFClr, an MSR DAIF that
-unmasks), the regime, FP-control, SPSel and NZCV MSRs, ISB, LSE min/max,
-the load/store fallbacks (TLB misses, MMIO); in OpenSSL's GCM path scalar `SHL`. `jit_helper_report`
-has the live histogram. None was worth a loop by itself at M6.5's end. Of the integer NEON (after
-the image decoders' profile, 2026-10-18), what's left as helpers: SUQADD/USQADD on 64-bit lanes,
+Counted on the real workloads (PERF loop 8, 2026-11-10, `bench/boot/REPORT.md` "PERF loop 8"): what's left of the
+system instructions, and why each stays a helper:
+- **ISB in parallel SMP** (Firefox's pages session: 13.7M in 214 s on 4 vCPUs, 3.8M of them at EL0, the vDSO's
+  `isb; mrs cntvct_el0`; Debian's boot 0.66M): finished in place by `fast`, ~20 ns each (`isb; mrs cntvct_el0` ~135
+  ns against the counter read's ~115, "Counter reads compiled inline"): ~0.3 s of the session's 96 G steps (some 100
+  vCPU-seconds), under what a pages A/B resolves. Inline it would need every condition `fast` checks in the block: the queue and
+  IRQ bytes, the table not behind the cache (two shared counters against the table's, and the tier-up flag) and the
+  published ASID (TTBR/TCR and the TLB's `low_global`), each with a way to change mid-chunk. Outside parallel SMP
+  it's inline (it does nothing there).
+- **LSE min/max** (LDSMAX, LDUMIN and kin, their ST forms): none in Alpine's boot and userspace benchmark, Debian's
+  boot and shell, or Firefox's pages session (musl and glibc's atomics and the kernel's use LDADD, SWP, CAS). A CAS
+  loop over wasm atomics would do; nothing runs it.
+- **The regime's MSRs** (TTBR0/1: 0.31M in Firefox's session, at context switches) end the block by
+  design (the next block's code depends on them); **FPCR/FPSR** writes 0.18M each there (context switches too), NZCV
+  and SPSel writes none worth counting; the timer and GIC registers (CNTV_CTL/CVAL, EOIR, SGI1R: 2.2M there) are the
+  run loop's (`Exit::Platform`).
+- **MRS of the counter outside parallel SMP's realtime mode** (the gates' deterministic runs: 0.35M in Alpine's
+  boot, 0.37-0.52M in each userspace phase) exits to the run loop, which reads the step clock.
+
+Of the integer NEON (after the image decoders' profile, 2026-10-18), what's left as helpers: SUQADD/USQADD on 64-bit lanes,
 URECPE/URSQRTE, and the FP forms the FP
 fast paths send there (`WEBPC_JIT_DIFF_HELPERS=1` on the differential test lists them per class).
 

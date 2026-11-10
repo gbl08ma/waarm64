@@ -1130,7 +1130,16 @@ impl Vm {
             }
             let n = CHUNK.min(left).min(self.until_deadline()).min(self.quantum);
             self.vcpus[c].tlb.catch_up(&self.mem, c);
+            // No IRQ for it now, and none comes within the chunk but at an exit: an
+            // unmasking MSR's `Exit::Resync` would find none (`jit::Unmask`). Not
+            // while the xHCI has an event due: it fires at the next chunk boundary
+            // (`xhci_tick`), which the exit would bring forward.
+            let pl = self.plat.get_mut();
+            let quiet = pl.xhci.as_ref().is_none_or(|x| x.due() == u64::MAX);
+            let ok = (quiet && !pl.gic.irq(c)) as u32;
+            self.vcpus[c].jit.unmask = jit::Unmask { ok, irq: 0 };
             let (k, e) = self.chunk(c, n);
+            self.vcpus[c].jit.unmask = jit::Unmask::default();
             self.retire(k);
             self.publish();
             if let Some(e) = e

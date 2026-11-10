@@ -1081,6 +1081,10 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             c.atomic_fence();
         }
         DMB | DSB | SSBB | PSSBB => {}
+        // ISB likewise (the interpreter's does nothing there); it still ends
+        // the block (`block::end`). In parallel SMP it's the helper's, which ends
+        // the chunk unless finished in place (`jit::State::fast`).
+        ISB if !cx.parallel => {}
         MRS => return mrs(c, cx, i, k),
         MSR_reg | MSR_imm => return msr(c, cx, i, k),
         MADD | MSUB => set(c, sf, rd, |c| {
@@ -3724,32 +3728,45 @@ fn counter(c: &mut Func, cx: &Ctx, now: u32, i: u32, k: usize) {
     fallback(c, cx, i, 4 * k as i64, before, xmask(rt));
 }
 
-/// MSR of a register [`sys::plain_write`] names, and DAIFSet, inline at the
-/// block's EL (M6 loop 7); false for the rest (helper calls, which end the
-/// block unless [`sys::msr_continues`]).
+/// MSR of a register [`sys::plain_write`] names, DAIFSet, DAIFClr and DIT
+/// inline at the block's EL (M6 loop 7, PERF loop 8); false for the rest
+/// (helper calls, which end the block unless [`sys::msr_continues`]). A DAIF
+/// write that unmasks IRQs stays inline while [`unmask_ok`]; else the helper's
+/// `Exit::Resync` lets the run loop take one.
 ///
 /// [`sys::plain_write`]: crate::interp::sys::plain_write
 /// [`sys::msr_continues`]: crate::interp::sys::msr_continues
 fn msr(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
-    use crate::cpu::{DAIF, PSTATE_I};
+    use crate::cpu::{DAIF, PSTATE_DIT};
     use crate::interp::sys::{PlainWrite, plain_write};
     const P: u32 = PSTATE as u32;
     let rt = bits(i, 4, 0);
+    let here = 4 * k as i64;
     if bits(i, 20, 19) == 0 {
-        // MSR (immediate): DAIFSet at EL1 only masks (EL0 may trap).
-        if !cx.el1 || (bits(i, 18, 16), bits(i, 7, 5)) != (3, 6) {
-            return false;
+        let crm = bits(i, 11, 8) as i64;
+        match (bits(i, 18, 16), bits(i, 7, 5)) {
+            // DAIFSet only masks; DAIFClr at EL1 (EL0 may trap).
+            (3, 6) if cx.el1 => {
+                c.local_get(VCPU).local_get(VCPU).i64_load(P);
+                c.i64_const(crm << 6).op(OR + W).i64_store(P);
+            }
+            (3, 7) if cx.el1 => {
+                c.local_get(VCPU).i64_load(P);
+                c.i64_const(!(crm << 6)).i64_and().local_set(VALUE);
+                daif(c, cx, i, here);
+            }
+            (3, 2) if cx.features & crate::cpu::FEATURE_DIT != 0 => {
+                c.local_get(VCPU).local_get(VCPU).i64_load(P);
+                c.i64_const(!(PSTATE_DIT as i64)).i64_and();
+                c.i64_const((crm & 1) << 24).op(OR + W).i64_store(P);
+            }
+            _ => return false,
         }
-        c.local_get(VCPU).local_get(VCPU).i64_load(P);
-        c.i64_const((bits(i, 11, 8) as i64) << 6)
-            .op(OR + W)
-            .i64_store(P);
         return true;
     }
     let Some(p) = plain_write(bits(i, 20, 5), cx.el1) else {
         return false;
     };
-    let here = 4 * k as i64;
     match p {
         PlainWrite::Field(off) => {
             c.local_get(VCPU);
@@ -3767,8 +3784,6 @@ fn msr(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
             fallback(c, cx, i, here, before, 0);
         }
         PlainWrite::Daif => {
-            // VALUE = the new PSTATE; stored unless it unmasks IRQs (the
-            // helper's `Exit::Resync` then lets the run loop take one).
             c.local_get(VCPU)
                 .i64_load(P)
                 .i64_const(!DAIF as i64)
@@ -3778,19 +3793,43 @@ fn msr(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
                 .i64_and()
                 .op(OR + W)
                 .local_set(VALUE);
-            c.local_get(VCPU).i64_load(P).local_get(VALUE);
-            c.i64_const(-1).op(XOR + W).i64_and();
-            c.i64_const(PSTATE_I as i64)
-                .i64_and()
-                .op(EQZ + WC)
-                .hint(true)
-                .if_();
-            let before = c.regs;
-            c.local_get(VCPU).local_get(VALUE).i64_store(P);
-            fallback(c, cx, i, here, before, 0);
+            daif(c, cx, i, here);
         }
     }
     true
+}
+
+/// Stores VALUE, the new PSTATE of DAIF write `i`, unless it unmasks IRQs
+/// while not [`unmask_ok`] (then the helper runs `i`).
+fn daif(c: &mut Func, cx: &Ctx, i: u32, here: i64) {
+    use crate::cpu::PSTATE_I;
+    const P: u32 = PSTATE as u32;
+    c.local_get(VCPU).i64_load(P).local_get(VALUE);
+    c.i64_const(-1).op(XOR + W).i64_and();
+    c.i64_const(PSTATE_I as i64).i64_and().op(EQZ + WC);
+    unmask_ok(c, cx);
+    c.op(OR).hint(true).if_();
+    let before = c.regs;
+    c.local_get(VCPU).local_get(VALUE).i64_store(P);
+    fallback(c, cx, i, here, before, 0);
+}
+
+/// Pushes whether an MSR that unmasks IRQs may retire inline ([`super::Unmask`]):
+/// `ok`, and in parallel SMP no IRQ signalled on the vCPU's line.
+fn unmask_ok(c: &mut Func, cx: &Ctx) {
+    use super::{State, Unmask};
+    const K: usize = offset_of!(Vcpu, jit) + offset_of!(State, unmask);
+    const OK: u32 = (K + offset_of!(Unmask, ok)) as u32;
+    const IRQ: u32 = (K + offset_of!(Unmask, irq)) as u32;
+    const I32_ATOMIC_LOAD8_U: u8 = 0x12;
+    c.local_get(VCPU).i32_load(OK);
+    if cx.parallel {
+        c.local_get(VCPU)
+            .i32_load(IRQ)
+            .atomic(I32_ATOMIC_LOAD8_U, 0, 0)
+            .op(EQZ)
+            .op(AND);
+    }
 }
 
 // i32 opcodes. The i64 twin of an arithmetic one is `W` higher, of a

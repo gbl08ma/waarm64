@@ -3757,3 +3757,62 @@ shuffles Vn and the element's pair again and loads its sign mask, and each FCADD
 So FEAT_FCMA is **implemented, unadvertised** (PLAN.md's rule, like I8MM): off by default, `bootVm`'s `fcma: true` and
 the page's `?fcma=1`; no guest-visible change by default, so the steps and the shape's pinned hash stay. Memory:
 none.
+
+## PERF loop 8: the helpers left on real paths (2026-11-10)
+
+The backlog's two JIT entries (unmasking MSRs, ISB, LSE min/max; the MSRs that end a block), counted first, then the
+ones that can matter inline. Raw: `results/perf8/` (the counts, the diagnostic patch and its decoder `diag.ts`, the
+Debian counter `debian-count.ts`, the A/B's JSON).
+
+**Counts** (a diagnostic core: `diag.patch` splits the helper report's MSR and ISB classes by register and EL; Alpine
+in Node through `bench/boot/userprof.ts`, deterministic like the gates; Debian on the page in the dev VM, 2 vCPUs,
+parallel and realtime, the boot to the login prompt and page-ab.ts's fork/dd workload; Firefox's pages session from
+the snapshot on the Mac, 4 vCPUs, summed over the vCPUs):
+
+| Helper calls | Alpine boot (2.1 G steps) | Alpine compress / Lua / churn / SQLite | Debian boot (33 G) | Debian fork+dd (1.2 G) | Firefox pages (96 G) |
+|---|---|---|---|---|---|
+| MSR DAIF that unmasks | 358K | 19K / 17K / 148K / 18K | 2.65M | 1.75M | 4.94M |
+| MSR DAIFClr | 99K | 17K / 11K / 55K / 26K | 201K | 31K | 2.78M |
+| MSR DIT, #1 (Linux 6.x, every kernel entry) | 134K | 44K / 58K / 40K / 43K | 687K | 668K | 2.81M |
+| ISB | 369K | 398K / 566K / 122K / 386K | 690K | 64K | 13.66M (3.8M at EL0) |
+| MRS (all of them; the counter's in Alpine) | 346K | 370K / 517K / 114K / 353K | 67K | 11K | 2.03M |
+| timer and GIC MSRs (CNTV_CTL/CVAL, EOIR, SGI1R) | 126K | 142K / 205K / 35K / 137K | 33K | 11K | 2.16M |
+| TTBR0/1, FPCR/FPSR | 7K | 13K / 0 / 10K / 0 | 28K | 3K | 0.68M |
+| LSE min/max (LD/ST SMAX, UMIN, …) | 0 | 0 | 0 | 0 | 0 |
+
+NZCV and SPSel writes don't show. What each costs differs by mode: in the gates (deterministic, one vCPU) an unmasking
+DAIF or DAIFClr is an `Exit::Resync` to the run loop, DIT and the unmasking forms end the block, ISB is a helper call
+that does nothing; on the page (parallel, realtime) all of them are helper calls finished in place (`fast`, ~20 ns).
+
+**What changed** (docs/jit.md "Emission", "Blocks and keys"): DAIFClr and `MSR DIT, #imm` inline and no longer ending
+a block; an unmasking DAIF write (register or DAIFClr) stays inline while `jit::State::unmask` says the run loop would
+find no IRQ (round-robin SMP: the GIC signals none to the vCPU as of the chunk's start, and nothing raises one inside a
+chunk but an exit; not while the xHCI has an event due, whose tick runs between chunks: the first CI run's USB guest
+parted from its interpreter run without that); parallel SMP: the chunk has fast completions and the vCPU's IRQ byte reads 0); ISB inline outside
+parallel SMP. Steps don't move (checked: Alpine 2,652,860,340 and the userspace benchmark 10,612,856,957 as in
+tests/steps.txt). Planted bugs: DIT's bit and DAIFClr's mask each fail the differential test (81 and 102 of 4,096
+words; it now generates DIT too); ignoring the gate moves both Alpine counts (2,649,165,359; 10,607,750,636); the
+inline ISB without its PC store hangs Alpine's boot after "Switched to clocksource" (a one-word block of it looped).
+The parallel IRQ byte's check isn't seen by any test (a missed one waits for the chunk's end at most).
+
+**The gates** (the Mac host, M4, macOS 26.6.2, Chrome for Testing 157.0.8103.50 headless; `bench/interp/ab-mac.sh perf8
+3 base=… new=… -- boot_alpine_jit alpine_user_jit`, arms alternated; ms, each round's median):
+
+| | base (`eac874a4`) | new | |
+|---|---|---|---|
+| `alpine_jit_total` | 3,934 · 4,004 · 4,027; **4,004** | 3,890 · 3,928 · 3,932; **3,928** | **−1.9%**, rounds apart |
+| `alpine_user_jit_total` | 11,087 · 11,202 · 11,196; **11,196** | 11,370 · 11,057 · 11,048; **11,057** | −1.2%, overlapping (new's first round) |
+| churn (the most DAIF writes) | 799 · 808 · 822; **808** | 802 · 782 · 776; **782** | −3.2%, overlapping |
+| compress / Lua / SQLite | | | −0.4% / −0.6% / 0.0% |
+
+The boot's 76 ms against ~0.6M exits and block ends removed is ~130 ns each, about what an exit to the run loop costs.
+**Kept.** Memory: 8 bytes a vCPU (`jit::State::unmask`); `emit::msr` 3,900 → 3,865 B, `emit::daif` 1,937 B.
+
+**Not A/B'd on the page**: there the removed calls were fast-completed helpers, ~10.5M in the pages session at ~20 ns,
+~0.2 s of its ~100 vCPU-seconds: under what that session resolves. **Left as helpers** (docs/jit.md "What still runs
+through helpers"): ISB in parallel SMP (13.7M in the pages session, ~0.3 s; inline it needs every condition `fast`
+checks, several of which change mid-chunk), LSE min/max (nothing runs them), the regime's and FP control's MSRs
+(context switches), the timer and GIC registers (the run loop's). The deterministic counter reads (0.35-0.52M a phase,
+each a full exit) are the gates' next lever, in docs/backlog.md.
+CI: `scripts/ci.sh` (its second run; the first found the xHCI case above), `scripts/ci-jit.sh` and
+`scripts/ci-debian.sh` passed.

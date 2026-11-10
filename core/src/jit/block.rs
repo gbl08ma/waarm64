@@ -180,11 +180,29 @@ pub fn next(words: &[u32]) -> Next {
         B_uncond | BL => Next::One(at + ofs(25, 0, 28)),
         B_cond | CBZ | CBNZ => Next::Cond(at + ofs(23, 5, 21), at + 4),
         TBZ | TBNZ => Next::Cond(at + ofs(18, 5, 16), at + 4),
-        _ if end(w) == End::No => Next::One(at + 4),
-        ISB | CLREX | YIELD | SEV | SEVL | DC_IVAC | DC_ISW | DC_CSW | DC_CISW | DC_CVAC
-        | DC_CVAU | DC_CIVAC => Next::One(at + 4),
+        _ if end(w) == End::No || goes_on(op) => Next::One(at + 4),
         _ => Next::None,
     }
+}
+
+/// The system instructions that end a block but go on to the next
+/// instruction in the same regime ([`next`]).
+fn goes_on(op: Op) -> bool {
+    use Op::*;
+    matches!(
+        op,
+        ISB | CLREX
+            | YIELD
+            | SEV
+            | SEVL
+            | DC_IVAC
+            | DC_ISW
+            | DC_CSW
+            | DC_CISW
+            | DC_CVAC
+            | DC_CVAU
+            | DC_CIVAC
+    )
 }
 
 /// Blocks per region, at most (step 8).
@@ -1040,8 +1058,9 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
             skip = core::mem::take(&mut c.fused);
             if last {
                 inl += 1;
-                // Branches end blocks and set the PC.
-                last = end(w) == End::No;
+                // Branches end blocks and set the PC; an inline ISB (outside
+                // parallel SMP) ends one and goes on.
+                last = end(w) == End::No || goes_on(op);
                 continue;
             }
             assert!(!c.grouped(), "a helper call inside a group of accesses");
@@ -1402,7 +1421,8 @@ mod tests {
             (0xd50343df, End::No),    // msr daifset, #3
             (0xd51b4220, End::No),    // msr daif, x0
             (0xd5184020, End::No),    // msr elr_el1, x0
-            (0xd50342ff, End::After), // msr daifclr, #2
+            (0xd50342ff, End::No),    // msr daifclr, #2
+            (0xd503415f, End::No),    // msr dit, #1
             (0xd51b4200, End::After), // msr nzcv, x0
             (0xd5181040, End::After), // msr cpacr_el1, x0
         ] {

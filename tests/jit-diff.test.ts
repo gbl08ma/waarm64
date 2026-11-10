@@ -430,7 +430,7 @@ test('JIT vs interpreter: system registers and barriers', () => {
   const words = Array.from({ length: WORDS }, () => {
     const rt = rand32() & 31;
     if (rand32() % 8 === 0) return (0xd503301f | (rand32() & 0xfe0)) >>> 0; // barriers and the rest of that space
-    if (rand32() % 8 === 0) return (0xd503401f | (6 + (rand32() % 2)) << 5 | (rand32() & 0xf) << 8) >>> 0; // MSR DAIFSet, DAIFClr
+    if (rand32() % 8 === 0) return (0xd503401f | [6, 7, 2][rand32() % 3] << 5 | (rand32() & 0xf) << 8) >>> 0; // MSR DAIFSet, DAIFClr, DIT
     if (rand32() % 6 === 0) return (0xd5100000 | MSR_KEYS[rand32() % MSR_KEYS.length] << 5 | rt) >>> 0; // MSR
     if (rand32() % 8 === 0) return (0xd50b7420 | rt) >>> 0; // DC ZVA: SCTLR_EL1.DZE decides at EL0
     if (rand32() % 8 === 0) return ((field(rand32()) & ~0x3f000000) | 0x3d000000) >>> 0; // SIMD&FP load/store: CPACR_EL1.FPEN decides

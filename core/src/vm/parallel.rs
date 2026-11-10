@@ -451,6 +451,11 @@ impl Vm {
                 ctx: (self as *const Vm).cast(),
                 cpu: c,
             });
+            // An unmasking MSR inline (`jit::Unmask`) as `fast` would finish it.
+            v.jit.unmask = jit::Unmask {
+                ok: v.jit.fast.is_some() as u32,
+                irq: &self.shared.cpus[c].par.irq as *const AtomicBool as usize as u32,
+            };
             #[cfg(target_arch = "wasm32")]
             if self.realtime() {
                 v.jit.counter = self.counter();
@@ -464,6 +469,7 @@ impl Vm {
                 interp::steps(&mut v.cpu, &self.mem, Some(&mut v.tlb), n)
             };
             v.jit.fast = None;
+            v.jit.unmask = jit::Unmask::default();
             own.steps += k;
             self.publish_cpu(c, v, own, false);
             if let Some(e) = e

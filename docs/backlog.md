@@ -255,12 +255,13 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   one sample each near the end; `go-cap-nudge*` in `bench/mem/results/summary.json`): the wasm code
   mapping jumps by ~6 GB in under 20 s while compile volume is unchanged. Not seen with 8 s
   sampling. Measure with V8's own counters before trusting the median.
-- Helpers still on real paths: unmasking MSRs, ISB, LSE min/max. None worth a
-  loop alone. (The NEON ones, structures and CRC32 are inline since 2026-10-18: the item at this section's top.)
-- MSR left as helpers that end a block: DAIFClr, the regime, FP-control, SPSel and NZCV writes
-  (Alpine: 0.66M MSR (register) and 0.15M MSR (immediate) helper calls). The differential test
-  can't see an unmasking write done inline (no IRQs in its harness): only a distro boot's steps
-  catch it.
+- **Counter reads in the deterministic runs exit to the run loop** (PERF loop 8's counts: Alpine's userspace benchmark
+  0.37-0.52M `MRS CNTVCT` a phase, its boot 0.35M, each a full exit; the gates run deterministic, users don't). Inline
+  they'd need the step clock in the block (the steps retired so far in the chunk, which the block's budget counter
+  knows). Only the gates gain.
+- **The gates' timer IRQ rate**: Alpine's userspace benchmark reprograms the virtual timer once per ~63K steps
+  (51K CNTV_CVAL writes in the Lua phase's 3.2 G steps), each with ~10 ISBs and counter reads around it. Check that
+  against the guest's HZ through the step clock (`ticks_per_insn`) before tuning the IRQ path for the gates.
 - **CoreMark's gap to TCG (~70%)**: the same transfers between blocks (above) and the store bounds
   checks V8 keeps on Linux arm64. Don't fit the design to it.
 - kvm-unit-tests `timer` runs slower under the JIT than interpreted (short blocks around timer

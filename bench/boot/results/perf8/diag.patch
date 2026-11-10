@@ -1,0 +1,142 @@
+diff --git a/bench/gpu/guest-session.ts b/bench/gpu/guest-session.ts
+index 06414966..6b3e709e 100644
+--- a/bench/gpu/guest-session.ts
++++ b/bench/gpu/guest-session.ts
+@@ -183,8 +183,9 @@ export async function openSession(o: SessionOptions) {
+   // <out>/jit.jsonl ({t: epoch ms, steps, jit}): the flushes, the wasm compiled and alive (bench/boot/results/m8-replay/counts.ts reads it).
+   const jitLog = process.env.JITLOG ? setInterval(async () => {
+     try {
+-      const st = await page.evaluate(() => (window as unknown as { __status?: { stats: { steps: number; jit: unknown } } }).__status?.stats);
+-      if (st) appendFileSync(`${o.out}/jit.jsonl`, JSON.stringify({ t: Date.now(), steps: st.steps, jit: st.jit }) + '\n');
++      const ss = await page.evaluate(() => (window as unknown as { __status?: { stats: { steps: number; jit: unknown }; helpers?: unknown } }).__status);
++      const st = ss?.stats;
++      if (st) appendFileSync(`${o.out}/jit.jsonl`, JSON.stringify({ t: Date.now(), steps: st.steps, jit: st.jit, helpers: ss!.helpers }) + '\n'); // DIAG helpers
+     } catch {}
+   }, 1000) : undefined;
+ 
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 11bcbb9b..472d514a 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -57,6 +57,23 @@ pub struct State {
+     /// The counter as compiled code reads it (`emit::mrs`): set by parallel
+     /// SMP's realtime run loop before each chunk, zero (`last` 0) elsewhere.
+     pub counter: Counter,
++    /// Whether an MSR that unmasks IRQs may retire inline (`emit::msr`), set
++    /// by the run loop before each chunk; zero (the helper's) elsewhere.
++    pub unmask: Unmask,
++}
++
++/// [`State::unmask`]: an MSR that unmasks IRQs stays in the block (no
++/// `Exit::Resync`) while `ok` is nonzero and, when `irq` is (the wasm
++/// address of parallel SMP's IRQ line for the vCPU, `CpuPar::irq`), the byte
++/// there is zero. Round-robin SMP sets `ok` when the GIC signals no IRQ to the
++/// vCPU (nothing changes that within a chunk but an exit), parallel SMP when it
++/// has fast completions (`State::fast`); the unmask's `Exit::Resync` would
++/// only have looked for an IRQ.
++#[repr(C)]
++#[derive(Clone, Copy, Default)]
++pub struct Unmask {
++    pub ok: u32,
++    pub irq: u32,
+ }
+ 
+ /// [`State::counter`]: CNTVCT = `base` + the host clock's ms since `t0`
+@@ -1451,6 +1468,7 @@ pub struct Table {
+     /// Helper calls by instruction class (step 10: the input to M6), and
+     /// the last report of them ([`Table::helper_report`]).
+     helper_ops: Vec<u64>,
++    pub diag: Vec<(u32, u64)>,
+     report: String,
+     /// Steps dispatched so far (the batch timeout's clock), and the cache's
+     /// pending batch and this clock when this table first saw it pending.
+@@ -1496,6 +1514,7 @@ impl Table {
+             redirects: Vec::new(),
+             waiting: 0,
+             helper_ops: vec![0; crate::decode::Op::ALL.len()],
++            diag: Vec::with_capacity(512),
+             report: String::new(),
+             clock: 0,
+             since: (u64::MAX, 0),
+@@ -1774,6 +1793,9 @@ impl Table {
+             .collect();
+         ops.sort_by_key(|a| core::cmp::Reverse(a.0));
+         self.report = ops.iter().map(|(n, op)| format!("{op:?} {n}\n")).collect();
++        for (k, n) in &self.diag {
++            self.report.push_str(&format!("M:{k:x} {n}\n"));
++        }
+         self.report.push('\0');
+         self.report.as_ptr()
+     }
+@@ -2483,8 +2505,9 @@ pub unsafe fn run(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Result<(), Exit>) {
+ pub unsafe extern "C" fn jit_exec_flat(v: *mut Vcpu, insn: u32, pc: u64) -> u32 {
+     // SAFETY: guaranteed by the caller.
+     let (mem, v) = unsafe { (&*(*v).jit.mem, &mut *v) };
++    let el1 = v.cpu.el() != 0;
+     let r = interp::exec_at(&mut v.cpu, &mut Flat(mem), insn, pc);
+-    count(&mut v.jit, insn);
++    count(&mut v.jit, insn, el1);
+     // SAFETY: guaranteed by the caller.
+     let r = unsafe { finish(v, insn, r) };
+     status(&mut v.jit, r)
+@@ -2499,8 +2522,9 @@ pub unsafe extern "C" fn jit_exec_mmu(v: *mut Vcpu, insn: u32, pc: u64) -> u32 {
+     // SAFETY: guaranteed by the caller.
+     let (mem, v) = unsafe { (&*(*v).jit.mem, &mut *v) };
+     let mut m = Mmu::new(mem, Some(&mut v.tlb));
++    let el1 = v.cpu.el() != 0;
+     let r = interp::exec_at(&mut v.cpu, &mut m, insn, pc);
+-    count(&mut v.jit, insn);
++    count(&mut v.jit, insn, el1);
+     // SAFETY: guaranteed by the caller.
+     let r = unsafe { finish(v, insn, r) };
+     status(&mut v.jit, r)
+@@ -2547,9 +2571,21 @@ unsafe fn finish(v: &mut Vcpu, insn: u32, r: Result<(), Exit>) -> Result<(), Exi
+ }
+ 
+ /// Counts a helper call by instruction class.
+-fn count(j: &mut State, insn: u32) {
++fn count(j: &mut State, insn: u32, el1: bool) {
+     if let Some(j) = j.cache.as_deref_mut() {
+         j.table.helper_ops[crate::decode::decode(insn) as usize] += 1;
++        // DIAG: MSRs by register, ISBs, by EL.
++        let op = crate::decode::decode(insn);
++        if matches!(op, crate::decode::Op::MSR_reg | crate::decode::Op::MSR_imm | crate::decode::Op::ISB) {
++            let el1 = el1 as u32;
++            let key = (insn >> 5) & 0xffff | ((op == crate::decode::Op::MSR_imm) as u32) << 16 | el1 << 17 | ((op == crate::decode::Op::ISB) as u32) << 18;
++            let d = &mut j.table.diag;
++            if let Some(e) = d.iter_mut().find(|e| e.0 == key) {
++                e.1 += 1;
++            } else if d.len() < 512 {
++                d.push((key, 1));
++            }
++        }
+     }
+ }
+ 
+diff --git a/web/app/worker.ts b/web/app/worker.ts
+index 2d81a6e5..b8d3c855 100644
+--- a/web/app/worker.ts
++++ b/web/app/worker.ts
+@@ -737,7 +737,8 @@ function status(vm: Vm, ncpus: number, ramMiB: number, uptime: number, loopMaxMs
+   const s = vm.stats();
+   const c = vm.deviceIo(); // two per device: blk read, written; net received, sent
+   return {
+-    ncpus, ramMiB, uptime, steps: s.steps, jitBlocks: s.jit.blocks, jitFlushes: s.jit.flushes, jitCompileMs: s.jit.compileNs / 1e6, jitSteps: s.jit.steps, jitBytes: s.jit.bytes, irqs: s.irqs, loopMaxMs, loopAgeMs, vcpus: vm.liveness(), stats: s, memory: vm.hostUse(),
++    ncpus, ramMiB, uptime, steps: s.steps, jitBlocks: s.jit.blocks, jitFlushes: s.jit.flushes, jitCompileMs: s.jit.compileNs / 1e6, jitSteps: s.jit.steps, jitBytes: s.jit.bytes, irqs: s.irqs, loopMaxMs, loopAgeMs, vcpus: vm.liveness(), stats: s, memory: vm.hostUse(), ...({ helpers: vm.helperReport() } as object), // DIAG
++
+     disks: io.disks.map((i) => ({ read: c[2 * i], written: c[2 * i + 1] })),
+     nets: io.nets?.map((i) => ({ rx: c[2 * i], tx: c[2 * i + 1] })),
+     usb: io.usb === undefined ? undefined : { in: c[2 * io.usb], out: c[2 * io.usb + 1] },
+diff --git a/web/vm.ts b/web/vm.ts
+index 950972a5..f6cbbc2d 100644
+--- a/web/vm.ts
++++ b/web/vm.ts
+@@ -1187,7 +1187,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
+     /** The same for each vCPU's own block (parallel mode; round-robin counts everything in vCPU 0's). */
+     cpuStats: () => blocks.map((b) => stats((i) => Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)))),
+     /** The JIT's helper calls by instruction class, most frequent first (ABI 18; empty without a JIT). */
+-    helperReport: () => helperReport(ex, memory, ex.vm_cpu(vm, 0)),
++    helperReport: () => { const m = new Map<string, number>(); for (let c = 0; c < ncpus; c++) for (const h of helperReport(ex, memory, ex.vm_cpu(vm, c))) m.set(h.op, (m.get(h.op) ?? 0) + h.calls); return [...m].map(([op, calls]) => ({ op, calls })).sort((a, b) => b.calls - a.calls); }, // DIAG
+     /**
+      * Runs up to `budget` steps; returns the exit kind and steps taken. DEVICE
+      * exits are handled here (the backends take the requests, and in

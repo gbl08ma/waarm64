@@ -551,15 +551,16 @@ pub fn plain_write(key: u32, el1: bool) -> Option<PlainWrite> {
 /// Whether MSR `i` (register or immediate form) leaves everything a JIT block
 /// assumes as it was, at any EL: no regime, SP selection, FP control or flags
 /// change, and an IRQ it unmasks leaves through `Exit::Resync` (mid-block, as
-/// any helper's exit does). Those don't end a block: DAIFSet (it only masks),
-/// and MSR of DAIF and the registers [`plain_write`] names.
+/// any helper's exit does). Those don't end a block: DAIFSet, DAIFClr, DIT
+/// (it only changes timing), and MSR of DAIF and the registers [`plain_write`]
+/// names.
 pub fn msr_continues(i: u32) -> bool {
     if bit(i, 21) {
         return false; // MRS
     }
     if bits(i, 20, 19) == 0 {
-        // MSR (immediate): DAIFSet.
-        return (bits(i, 18, 16), bits(i, 7, 5)) == (3, 6);
+        // MSR (immediate): DAIFSet, DAIFClr, DIT.
+        return matches!((bits(i, 18, 16), bits(i, 7, 5)), (3, 6 | 7 | 2));
     }
     matches!(
         bits(i, 20, 5),

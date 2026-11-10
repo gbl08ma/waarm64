@@ -57,6 +57,24 @@ pub struct State {
     /// The counter as compiled code reads it (`emit::mrs`): set by parallel
     /// SMP's realtime run loop before each chunk, zero (`last` 0) elsewhere.
     pub counter: Counter,
+    /// Whether an MSR that unmasks IRQs may retire inline (`emit::msr`), set
+    /// by the run loop before each chunk; zero (the helper's) elsewhere.
+    pub unmask: Unmask,
+}
+
+/// [`State::unmask`]: an MSR that unmasks IRQs stays in the block (no
+/// `Exit::Resync`) while `ok` is nonzero and, when `irq` is (the wasm
+/// address of parallel SMP's IRQ line for the vCPU, `CpuPar::irq`), the byte
+/// there is zero. Round-robin SMP sets `ok` when the GIC signals no IRQ to the
+/// vCPU (nothing changes that within a chunk but an exit) and the xHCI has no
+/// event due (`Vm::xhci_tick` runs between chunks), parallel SMP when it
+/// has fast completions (`State::fast`); the unmask's `Exit::Resync` would
+/// only have looked for an IRQ.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct Unmask {
+    pub ok: u32,
+    pub irq: u32,
 }
 
 /// [`State::counter`]: CNTVCT = `base` + the host clock's ms since `t0`
