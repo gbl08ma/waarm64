@@ -28,11 +28,11 @@ calls.
 | 9 | SMP: the ISB fix's cost; WFE sleeping; an exit's remaining cost | findings, nothing to keep (loop 15) |
 | 10 | Devices: virgl's occlusion-query poll (4 ms) | kept (loop 16) |
 | 11 | Interpreter: more handlers (FP in a second `hot` copy, CASP, STTR/LDTR) | misaligned pair/SIMD loads kept; FP copy dropped (loop 17) |
-| 11b | Loop 17's untried variant: the copy of `hot` picked per block (a "has FP" slot bit), so integer blocks never run in the rich copy | |
+| 11b | Loop 17's untried variant: the copy of `hot` picked per block (a "has FP" slot bit), so integer blocks never run in the rich copy | next |
 | 12 | JIT: scalar FP in f64/f32 locals | |
 | 13 | JIT: Liftoff's zero-fill (a register allocator over a block's locals) | |
-| 14b (next, with 14a) | Loop 16's open question: why the guest's first `GL_QUERY_RESULT` wait finds the state not DONE though its fence is held | |
-| 14a | Loop 15's oddity: the guest's counter doesn't count under Node's `runToPowerOff` in parallel realtime (a bug?) | |
+| 14b (done, loop 18) | Loop 16's open question: why the guest's first `GL_QUERY_RESULT` wait finds the state not DONE though its fence is held | not a bug (loop 18) |
+| 14a | Loop 15's oddity: the guest's counter doesn't count under Node's `runToPowerOff` in parallel realtime (a bug?) | not a bug (loop 18) |
 | 14 | JIT: the core's heap tuning, transfer cache costs, the rest of the JIT section | |
 
 Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL MIDR (the user, 2026-11-10: don't report another CPU's MIDR for now; the item stays in the backlog), bug watches
@@ -104,3 +104,6 @@ Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL 
   generic 19.5 M, misaligned SIMD/stores). **Kept** misaligned pair and SIMD&FP loads inline, PRFM by register a Nop:
   dec_mips +3.3%, others +0.4%, no memory. Dropped the rich FP copy of `hot` (FP guest +12% but Alpine −1%; integer
   code in the copy ~10% slower; pages session unresolved). Backlog entry gone. ci.sh passed.
+- **Loop 18** (`73c02835`): neither oddity a defect. The counter: loop 15's `exitloop.c` overflowed its own
+  arithmetic past ~0.3 s (fixed; timings now match the host). glquery's first wait: the guest kernel's 15 s (guest
+  time) fence wait timed out under deterministic time's clock jumps; realtime never takes Mesa's fallback. Docs only.
