@@ -10,7 +10,9 @@
   const gpu = new Worker(new URL('../../web/gpu-worker.ts', import.meta.url), { type: 'module' });
   const channel = new MessageChannel();
   const offscreen = canvas.transferControlToOffscreen();
-  gpu.postMessage({ type: 'init', canvas: offscreen, port: channel.port1, stats: true }, [offscreen, channel.port1]);
+  // `?querypoll=<way>`: how the worker polls pending occlusion queries (web/virgl-host.ts `QueryPoll`; bench/gpu/query-wait.ts).
+  const queryPoll = new URLSearchParams(location.search).get('querypoll') ?? undefined;
+  gpu.postMessage({ type: 'init', canvas: offscreen, port: channel.port1, stats: true, queryPoll, debug: new URLSearchParams(location.search).has('debug') }, [offscreen, channel.port1]);
   window.renderStats = [];
   gpu.onmessage = (e) => {
     if (e.data.type === 'stats') return; // once a second, for the page's status bar

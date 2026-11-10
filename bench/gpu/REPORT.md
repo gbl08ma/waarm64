@@ -289,3 +289,58 @@ The pass lists take the 85: 17,035 and 44,476. Beside them, the groups the chang
 lists: blending, `fragment_out`, depth ranges, clipping, draw buffers, polygon offset, `rasterization.fbo`), JOBS=4:
 GLES3's 4,025 all pass but one, `rasterization.fbo.rbo_multisample_4.interpolation.triangles`, which uses neither and
 passed alone and in two runs of its group at four processes; GLES2's 1,826 all pass.
+
+## PERF loop 16: virgl's query poll (2026-11-10)
+
+The backlog's "virgl's occlusion-query poll waits 4 ms a turn": a GL program waiting on `GL_QUERY_RESULT` waits for the
+GPU worker's next look at its query. **The workload** is new: `glquery` (images/alpine/gl/glquery.c, in alpine-gl and
+alpine-virgl, `webpc.glq=`), GLES 3.0 on EGL surfaceless through Mesa 26.1.6's virgl: per frame a full-target quad,
+then 4 small quads each in an `ANY_SAMPLES_PASSED` query whose result is waited on at once (an occlusion culler testing
+a box), then a `glFinish`; 300 frames at 640×480, each wait and finish timed in the guest. It runs through
+tests/browser/virgl-boot.html (the page's GPU worker, alpine-virgl under the JIT in a worker, now in realtime when
+glquery runs: in deterministic time the idle guest's clock skipped ahead and a wait read 3.5 s) by
+`bench/gpu/query-wait.ts`, arms alternated, three rounds, on the M4 (macOS 26.6.2, Chrome for Testing 157.0.8103.50,
+Metal) through `sway-mac.sh` (`SCRIPT=query-wait.ts`). JSON in `results/perf16/`. The arms (`?gpu=querypoll=`,
+web/virgl-host.ts `QueryPoll`): `timeout` (HEAD: a 4 ms timer), `wait` (`Atomics.waitAsync`'s 0.25 ms timeout),
+`ticker` (Venus's ticker worker, web/venus-ticker.ts, notifying every 0.05 ms), `message` (a message to itself: every
+task), `spin` (every task for 2 ms since the pending queries last changed, then the 4 ms timer).
+
+**A defect first:** glquery's first wait never ended (the guest made ~5,500 fences a second for good). Mesa's
+`get_query_result`, when its wait finds the state not DONE, maps the query's buffer by transfers from the host in a
+loop until it reads DONE; the renderer wrote the state only into the guest's memory, and each transfer copied the
+buffer's CPU copy, without it, over it. The state now goes into the CPU copy too (`queryState`); the queries' test in
+tests/virgl-browser.test.ts reads the states after a transfer from the host and failed first. Why the first wait found
+the state not DONE (its fence should have been held for the query) isn't known; with the fix it ends at the next look.
+
+| M4, glquery (rounds) | wait median, ms (IQR) | wait max | frames/s | glFinish median |
+| --- | --- | --- | --- | --- |
+| `timeout` (HEAD), session 1 | 14.17 (13.29–15.02), 13.13 (12.25–13.34), 13.16 (12.26–13.38) | 198–218 | 15.75 / 17.03 / 17.07 | 1.0–1.6 |
+| `wait` | 7.17 (6.56–8.10), 7.15 (6.85–7.38), 7.10 (6.83–7.32) | 158–162 | 29.7 / 29.9 / 28.7 | 0.81–0.95 |
+| `ticker` | 2.42 (2.38–3.34), 2.42 (2.38–3.33), 2.42 (2.39–3.33) | 11–12 | 91.1 / 92.9 / 92.8 | 0.13 |
+| `message` | 0.815 (0.735–0.845), 0.81 (0.735–0.845), 0.81 (0.755–0.84) | 6.7–6.9 | 271.1 / 271.3 / 269.7 | 0.13 |
+| `timeout` (HEAD), session 2 | 14.50 (13.56–15.11), 13.39 (12.92–14.69), 13.14 (12.29–13.40) | 157–223 | 14.97 / 16.50 / 17.42 | 1.0–1.7 |
+| **`spin`** | **0.745 (0.68–0.83), 0.72 (0.675–0.79), 0.735 (0.685–0.83)** | 8.4–13.6 | **279.3 / 286.7 / 284.8** | 0.13 |
+| `message`, session 2 | 0.81 (0.76–0.84), 0.815 (0.755–0.845), 0.81 (0.74–0.84) | 5.8–6.0 | 268.6 / 267.3 / 271.7 | 0.13 |
+
+- **A 4 ms timer gave a result ~13 ms after its query ended**, three looks: WebGL makes a query's result available
+  only a look or two after the GPU has it (presumably Blink's `WebGLQuery`, which lets a query's availability change
+  only after a task it posts when a look found none: not checked in Chromium's source), so each look the poller skips costs a period, and the Mac's `waitAsync` turns (~1.5 ms) and even a
+  ticker's 0.08 ms turns didn't land the looks where WebGL wanted them. Looking at every task saw the result ~0.75 ms
+  after the end: **17× the frame rate** of HEAD in this program (16 → 280 frames/s), the wait 18× shorter; `spin` and
+  `message` are the same within their rounds (`spin`'s 0.72–0.745 ms against 0.81 is ~10%, rounds not overlapping, one
+  session; why isn't known).
+- **The cost:** nothing while no query is pending (no poller runs). While one is, `spin` keeps the GPU worker's thread
+  looking (~2 µs a look: ~290,000 looks in a second of ~660 ms pending), so glquery, which does almost nothing but wait,
+  had the worker busy ~0.7 ms a query, ~65% of a core over its frames; under HEAD the same waits left the worker idle
+  and the guest waiting 13 ms. The spin is capped at 2 ms after each change of the pending set (then 4 ms looks), so a
+  result that takes long (a heavy frame on the GPU, a context lost) costs at most 2 ms of a core each time.
+- On the dev VM's SwiftShader (Chromium 155.0.8059.84, one round, 200 frames: `results/perf16/vm-4arms.json`):
+  `timeout` 11.6 ms (17.7 frames/s), `wait` 3.7 (59.8), `ticker` 2.9 (75.6), `message` 1.25 (167.5).
+
+**Kept: `spin` is the default** (`?gpu=querypoll=timeout` for HEAD's). The KDE session the backlog pointed at wasn't run:
+which of its programs use queries isn't known (graphics.md "Queries"), and glquery is the direct case of the wait.
+
+CI: `scripts/ci.sh` and `scripts/ci-graphics.sh` pass; `scripts/ci-deqp.sh`'s sample (seed 2720526300) passed GLES2's
+2,234 and GLES3's 5,744 of 5,745: `flush_finish.flush` gave a CompatibilityWarning (its calibration's draw times
+jumped 2–50 ms with both lists running at once: timing, no queries in it), and passed alone with `wait` and
+`flush_wait` (`deqp-run.ts`, `CASES=`).

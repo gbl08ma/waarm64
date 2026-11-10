@@ -23,7 +23,7 @@
 #   nor unshare, neither of which works in the x86_64 images container (kept for
 #   Buildroot's x86_64 toolchains) under emulation.
 # alpine-gl: the llvmpipe benchmark's root (images/alpine/gl): alpine's rootfs.ext4 plus
-#   Mesa (EGL, GLES, the Gallium drivers: llvmpipe) and glcomp, a compositor's GLES load
+#   Mesa (EGL, GLES, the Gallium drivers: llvmpipe), glcomp, a compositor's GLES load, and glquery (occlusion queries waited on)
 #   compiled in the same container, with its local.d script instead of the boot test's, as
 #   rootfs-gl.ext4 (it boots alpine's Image and initramfs-virt). Built as alpine-user.
 # alpine-virgl: G2's virgl guest (docs/graphics.md "The guest's 3D: Mesa's virgl"): alpine-gl's root plus Mesa
@@ -321,7 +321,8 @@ build_alpine-gl() {
     rm "$r/etc/resolv.conf" "$r/var/log/apk.log" "$r/etc/local.d/webpc.start"
     install -m 755 images/alpine/gl/webpc-gl.start "$r/etc/local.d/"
     gcc -O2 -o "$r/usr/local/bin/glcomp" images/alpine/gl/glcomp.c -lEGL -lGLESv2
-    strip "$r/usr/local/bin/glcomp"
+    gcc -O2 -o "$r/usr/local/bin/glquery" images/alpine/gl/glquery.c -lEGL -lGLESv2
+    strip "$r/usr/local/bin/glcomp" "$r/usr/local/bin/glquery"
     find "$r" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
     E2FSPROGS_FAKE_TIME=$SOURCE_DATE_EPOCH mke2fs -q -t ext4 -d "$r" -L alpine-gl \
       -U 77656270-6300-4000-8000-000000000015 -E hash_seed=77656270-6300-4000-8000-000000000016,no_copy_xattrs \

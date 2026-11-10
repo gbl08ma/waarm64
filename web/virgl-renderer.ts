@@ -2754,7 +2754,7 @@ void main() {
   }
 
   /** Writes a query's state for the guest (struct virgl_host_query_state: state, result size, u64 result). */
-  private queryState(c: Ctx, q: Query, state: number) {
+  private queryState(c: Ctx | undefined, q: Query, state: number) {
     const r = this.resources.get(q.res);
     if (!r) return;
     const b = new Uint8Array(16);
@@ -2763,6 +2763,9 @@ void main() {
     v.setUint32(4, 8, true);
     v.setBigUint64(8, BigInt(q.result), true);
     this.writeBacking(r, q.offset, b);
+    // And the buffer's CPU copy, which a transfer from the host reads back (Mesa's `get_query_result` maps the buffer
+    // that way in a loop until it reads DONE: from a copy without the state, it never did).
+    if (r.shadow && q.offset + 16 <= r.shadow.length) r.shadow.set(b, q.offset);
     void c;
   }
 
@@ -2780,15 +2783,7 @@ void main() {
       q.result = q.passed ? 1 : 0;
       q.spans = undefined;
       q.pending = false;
-      const r = this.resources.get(q.res);
-      if (r) {
-        const b = new Uint8Array(16);
-        const v = new DataView(b.buffer);
-        v.setUint32(0, 1, true);
-        v.setUint32(4, 8, true);
-        v.setBigUint64(8, BigInt(q.result), true);
-        this.writeBacking(r, q.offset, b);
-      }
+      this.queryState(undefined, q, 1);
       return false;
     });
     return this.queries.length;

@@ -144,6 +144,77 @@ export class FenceGate<F> {
 export const fenceLane = (scope?: FenceScope) => (scope?.ringed ? `${scope.ctx}:${scope.ring}` : undefined);
 
 /**
+ * How the GPU worker looks again at pending occlusion queries (WebGL has a query's result only in a task after the one
+ * that ended it, and no event when it comes): `timeout`, a 4 ms timer; `message`, the next task (a message to itself:
+ * the thread busy while any are pending); `wait`, `Atomics.waitAsync`'s 0.25 ms timeout; `ticker`, woken by a ticker
+ * worker's notify every 0.05 ms (web/venus-ticker.ts, as Venus's pump) while any are pending; `spin`, `message` for
+ * `SPIN_MS` since the pending queries last changed, then `timeout`: the default (PERF loop 16, bench/gpu/REPORT.md: a
+ * result came ~0.75 ms after its end on the M4, a 4 ms timer saw it ~13 ms after, the thread busy only while it waits).
+ */
+export type QueryPoll = 'timeout' | 'message' | 'wait' | 'ticker' | 'spin';
+
+/** How long `spin` polls at every task since the pending queries last changed (ms). */
+export const SPIN_MS = 2;
+
+/**
+ * A scheduler of the next poll, the way asked (`QueryPoll`); `timeout` where the way isn't there. `idle()` says none are
+ * pending any more (the ticker stops).
+ */
+export function queryScheduler(way: QueryPoll, poll: () => void, ticker?: () => Worker): { next(pending: number): true; idle(): void } {
+  const idle = () => {};
+  if (way === 'spin' && typeof MessageChannel !== 'undefined') {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = () => poll();
+    (ch.port1 as { unref?: () => void }).unref?.(); // Node's (tests): the port alone doesn't keep the process
+    let since = 0, last = 0;
+    return {
+      next: (pending) => {
+        const now = performance.now();
+        if (pending !== last) [since, last] = [now, pending];
+        if (now - since < SPIN_MS) ch.port2.postMessage(0);
+        else setTimeout(poll, 4);
+        return true;
+      },
+      idle: () => { last = 0; },
+    };
+  }
+  if (way === 'ticker' && ticker && typeof Atomics.waitAsync === 'function' && typeof SharedArrayBuffer !== 'undefined') {
+    const sab = new SharedArrayBuffer(8), w = new Int32Array(sab);
+    let worker: Worker | undefined;
+    return {
+      next: () => {
+        if (!worker) (worker = ticker()).postMessage({ sab, period: 0.05 });
+        Atomics.store(w, 1, 1);
+        Atomics.notify(w, 1);
+        const r = Atomics.waitAsync(w, 0, Atomics.load(w, 0), 4);
+        if (r.async) void r.value.then(poll);
+        else setTimeout(poll, 0);
+        return true;
+      },
+      idle: () => Atomics.store(w, 1, 0),
+    };
+  }
+  if (way === 'message' && typeof MessageChannel !== 'undefined') {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = () => poll();
+    return { next: () => (ch.port2.postMessage(0), true), idle };
+  }
+  if (way === 'wait' && typeof Atomics.waitAsync === 'function' && typeof SharedArrayBuffer !== 'undefined') {
+    const w = new Int32Array(new SharedArrayBuffer(4));
+    return {
+      next: () => {
+        const r = Atomics.waitAsync(w, 0, 0, 0.25);
+        if (r.async) void r.value.then(poll);
+        else setTimeout(poll, 0);
+        return true;
+      },
+      idle,
+    };
+  }
+  return { next: () => (setTimeout(poll, 4), true), idle };
+}
+
+/**
  * What a fence waits for: every earlier call to have run (`backlog`: Venus's wait for its module) and, by its scope,
  * its own retirement (a ring's are in order, and its lane keeps them so; nothing sent after it: a later fence of the
  * ring may wait for what the guest does once this one is answered) or virgl's queries. A hold of the device's (a blob's,

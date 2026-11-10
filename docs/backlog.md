@@ -278,17 +278,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   a 3D context the host failed to create, whose commands then fail. Not seen in the dev VM's sessions (SwiftShader);
   the pages render and the session runs on. Find why the context's creation fails there (the GPU worker's log for it).
 
-- **virgl's occlusion-query poll waits 4 ms a turn** (web/gpu-worker.ts `poll`, `setTimeout(poll, 4)`; what's left of
-  "The host's pollers and their timers", VK3 L2): a GL program waiting on a query's result waits up to ~4.5 ms for the
-  next look. Venus's ring poller, the one that cost a frame (REPORT.md "VK3 L2"), is now web/venus-host.ts's pump
-  (`Atomics.waitAsync`'s 0.25 ms timeout, no nested timer); the same sleep would serve here. Measure a program that
-  waits on queries (KDE's, "A KDE desktop's session on 3D") before changing it. The others were inspected and need
-  nothing: the GPU worker's 20 ms stall check and 4 ms snapshot wait, `Vm.wait` (on `Atomics.waitAsync`), the sound
-  pump (`setInterval` at 5 ms, above the clamp), the screens' frame pacing (a frame's wait), gpu-present's 4 ms lag
-  probes (meant to tick), web/profiler.ts (a dev tool). In a Chromium 153 worker a nested `setTimeout(f, 0)` turn is
-  4.4 ms on Linux and 6.0 ms on the Mac; a timer set from a message's task isn't clamped; `Atomics.waitAsync`'s timeout
-  of 0.25 ms is a 0.49 ms turn on Linux and 1.55 ms on the Mac (`bench/vulkan/fence.ts`).
-
 - **The firmware configuration** (loop 2): fw_cfg has no DMA interface (nothing needs it: the firmware's
   screen is the virtio-gpu's, and ramfb would leave a stale framebuffer beside `virtio_gpu` on virtio-mmio,
   firmware.md "Our patches"), no standard items beside SMBIOS (platform.md); the

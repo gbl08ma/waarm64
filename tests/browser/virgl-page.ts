@@ -508,7 +508,7 @@ export async function presenter2d(format: number, px: number[], canvas2d: boolea
 /**
  * Occlusion queries of two contexts, and of two sub-contexts of one, open at once on the one WebGL2 context: what
  * their results say and whether a fence after them is answered (`FenceGate`). Each query's state (struct
- * virgl_host_query_state: state, size, result) is read from the guest's memory.
+ * virgl_host_query_state: state, size, result) is read from the guest's memory, and again after a transfer from the host.
  */
 export async function overlappingQueries() {
   const gl = new OffscreenCanvas(16, 16).getContext('webgl2')!;
@@ -575,7 +575,11 @@ export async function overlappingQueries() {
   }
   const dv = new DataView(ram.buffer);
   const state = (o: number) => ({ state: dv.getUint32(o, true), result: Number(dv.getBigUint64(o + 8, true)) });
-  return { answered, contexts: [state(0), state(16)], subs: [state(32), state(48)], log, glError: gl.getError() };
+  const states = { contexts: [state(0), state(16)], subs: [state(32), state(48)] };
+  // The states again after a transfer of the buffer from the host (Mesa's `get_query_result` reads them that way when
+  // a wait found them not DONE: the transfer must bring the states, not overwrite them).
+  r.transfer(1, 5, 0, { x: 0, y: 0, z: 0, w: 64, h: 1, d: 1 }, 0, 0, 0, false);
+  return { answered, ...states, readBack: [state(0), state(16), state(32), state(48)], log, glError: gl.getError() };
 }
 
 /**

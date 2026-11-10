@@ -305,8 +305,26 @@ A command with the fence flag has its reply held by the device until the host's 
 has run: uploads read, read-backs written), with every reply behind it in order (devices.md). In the GPU worker a
 fence is also held **until the occlusion queries ended before it have their results** (`FenceGate`): GL's results are
 ready at a fence (a guest's `glFinish` sees them), WebGL's only after the task that ended the query, so the worker
-polls them every 4 ms while any are pending (`pollQueries`). A fence waits only behind a pending query, so ordinary
-applications don't pay.
+polls them while any are pending (`pollQueries`): **at every task for 2 ms since the pending set last changed
+(`SPIN_MS`, a message to itself), then every 4 ms** (web/virgl-host.ts `QueryPoll` `spin`; `?gpu=querypoll=` takes
+`timeout`, `message`, `wait` and `ticker` for A/Bs). A fence waits only behind a pending query, so ordinary applications
+don't pay, and nothing polls while none is pending. **Why:** a program that waits on `GL_QUERY_RESULT` waits for the
+next look, and WebGL gives a result only a look or two after the GPU has it. On the M4 (bench/gpu/REPORT.md "PERF
+loop 16"), glquery's waits were 13–14.5 ms with a 4 ms timer (16 frames/s), 7.1 ms on `Atomics.waitAsync`'s 0.25 ms
+timeout (the Mac's ~1.5 ms turns), 2.4 ms with a ticker worker notifying every 0.05 ms, and **0.73 ms looking at every
+task** (280 frames/s): the result is there ~0.7 ms after the query's end, and only a task-by-task look sees it then.
+Its cost is the worker's thread busy while a query is pending (~0.7 ms a query, ~2 µs a look), capped at 2 ms a change
+so a result that takes long (a heavy frame, a lost context's) doesn't keep a core spinning.
+
+The host's other timers were inspected (bench/vulkan/REPORT.md "VK3 L2") and need nothing: the GPU worker's 20 ms stall
+check and 4 ms snapshot wait, `Vm.wait` (on `Atomics.waitAsync`), the sound pump (`setInterval` at 5 ms, above the
+clamp), the screens' frame pacing, gpu-present's 4 ms lag probes (meant to tick), web/profiler.ts. In a Chromium worker
+a nested `setTimeout(f, 0)` turn is 4.4 ms on Linux and 6.0 ms on the Mac; a timer set from a message's task isn't
+clamped (`bench/vulkan/fence.ts`).
+
+The query's state is written to the guest's memory and to the buffer's CPU copy: Mesa's `get_query_result`, when its
+wait finds the state not DONE, maps the buffer by transfers from the host in a loop until it reads DONE, and a copy
+without the state overwrote it at each transfer (glquery's first wait spun for good, ~5,500 transfers a second).
 
 **A fence that never resolves stops the guest's 3D for good:** the guest's control queue fills (16 entries on the
 page), every 3D client then sleeps uninterruptibly in `virtio_gpu_queue_ctrl_sgs` (hung-task reports name them), the

@@ -12,7 +12,7 @@ import { Gpu, gpuBackend } from '../web/gpu.ts';
 import { CAPS_FIELDS, decodeCaps, virglCaps } from '../web/virgl.ts';
 import { capsBacked, capsFromGl, withBits, withoutFormats } from '../web/virgl-caps.ts';
 import { FORMATS } from '../web/virgl-formats.ts';
-import { clock, FenceGate, fenceSettled, localHost, portHost, type HostCall, type VirglHost } from '../web/virgl-host.ts';
+import { clock, FenceGate, fenceSettled, localHost, portHost, queryScheduler, SPIN_MS, type HostCall, type VirglHost } from '../web/virgl-host.ts';
 import { VirglRenderer, readbackOf, toHalf, type RendererSnapshot } from '../web/virgl-renderer.ts';
 import { replay } from '../web/virgl-replay.ts';
 import { generate, parseTgsi, TgsiError, type ProgramKey } from '../web/virgl-tgsi.ts';
@@ -652,6 +652,25 @@ test('virgl renderer: a fence waits for the occlusion queries before it (dEQP-GL
   gate.release();
   assert.deepEqual(answered, ['before', 'after', 'later']);
   assert.equal(new DataView(ram.buffer).getUint32(0, true), 1, 'the result is written before the fence is answered');
+});
+
+// PERF loop 16: pending queries are looked at every task for SPIN_MS since the pending set last changed, then every 4 ms.
+test('queries: the poll spins at every task for SPIN_MS after a change, then waits 4 ms a look', async () => {
+  const at: number[] = [];
+  let t0 = -1, done!: () => void;
+  const finished = new Promise<void>((ok) => { done = ok; });
+  const s = queryScheduler('spin', () => {
+    // A first look and none pending (Node's first message takes ~10 ms), then one pending for SPIN_MS + 12 ms.
+    if (t0 < 0) { s.idle(); t0 = performance.now(); s.next(1); return; }
+    at.push(performance.now() - t0);
+    if (performance.now() - t0 < SPIN_MS + 12) s.next(1);
+    else { s.idle(); done(); }
+  });
+  s.next(1);
+  await finished;
+  const spun = at.filter((t) => t < SPIN_MS).length, after = at.filter((t) => t >= SPIN_MS + 0.5);
+  assert.ok(spun > 20, `many looks while it spins (${spun})`);
+  assert.ok(after.length >= 2 && after.length <= 5, `then a look every 4 ms (${after.length} in ~12 ms)`);
 });
 
 // VK4 R1: a submit held for a signal the guest sends later (a CPU vkSignalSemaphore) holds its ring's fences only.
