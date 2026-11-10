@@ -288,7 +288,9 @@ Realtime runs and the rw-overlay boots aren't step-exact.
   FlagM and FlagM2, DIT, FRINTTS), dotprod (SDOT, UDOT, reserved sizes included), i8mm (USDOT, SUDOT, SMMLA,
   UMMLA, USMMLA, unallocated sizes and MMLA's Q = 0 included; not the by-element sizes 1 and 3, BF16's on the M4),
   rdm (SQRDMLAH, SQRDMLSH, vector, scalar and by element, reserved sizes included), lrcpc2 (LDAPUR*, STLUR*,
-  aligned, unallocated sizes included, and misaligned across 16 bytes: an alignment fault on all three).
+  aligned, unallocated sizes included, and misaligned across 16 bytes: an alignment fault on all three), fcma (FCMLA
+  vector and by element, FCADD, on FP edge values with FPCR varied; the reserved sizes, doubles without Q and the
+  by-element L = 1 and Q = 0 included, not the half forms: FP16's, which the M4 runs).
 - The generator avoids CONSTRAINED UNPREDICTABLE and IMPLEMENTATION DEFINED cases (e.g. `LDP`
   with `Rt == Rt2`, writeback with `Rn == Rt`), where the oracles legitimately disagree.
 - **Known oracle behavior** (the generator avoids it):
@@ -302,8 +304,8 @@ Realtime runs and the rw-overlay boots aren't step-exact.
     bf16 afp dit`, `lrcpc ilrcpc dcpop dcpodp flagm uscat asimddp asimdrdm fphp
     jscvt fcma`, FP16 (incl. FP16 FMOV and fixed-point conversions with immh = 001x), BF16 (BFCVT
     is the FCVT encoding with ftype 01, opc 10), FHM, RDM, DotProd, I8MM, FCMA, JSCVT, FRINTTS. The
-    generator emits none of them but what's ours since ABI 59 to 62 (groups `jscvt`, `ext`, `dotprod`, `i8mm`, `rdm`,
-    `lrcpc2`): JSCVT, LRCPC, SB, FlagM, FlagM2, DIT, FRINTTS, DotProd, I8MM, RDM, LRCPC2.
+    generator emits none of them but what's ours since ABI 59 to 63 (groups `jscvt`, `ext`, `dotprod`, `i8mm`, `rdm`,
+    `lrcpc2`, `fcma`): JSCVT, LRCPC, SB, FlagM, FlagM2, DIT, FRINTTS, DotProd, I8MM, RDM, LRCPC2, FCMA.
   - **QEMU before 9.0.2 sets FJCVTZS's Z for a denormal flushed under FZ** (Ubuntu 24.04's 8.2 does, so a cloud
     session's run of `jscvt` can disagree); the pseudocode clears it, as the M4 and QEMU 11 do.
   - Corpus depth: some FP flag paths are thin (only 8 `fp_scalar` tests raise Divide-by-Zero).

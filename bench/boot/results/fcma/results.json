@@ -1,0 +1,113 @@
+{
+ "host": "Mac mini M4, macOS 26.6.2",
+ "browser": "Chrome for Testing 157.0.8103.50 headless",
+ "guest": "target/arch/desktop.qcow2, 4 vCPUs",
+ "arms": "?fcma=0 against ?fcma=1, alternated, a boot per arm and round",
+ "unit": "ns per unit (fcmak.c: per complex output; rdmk.c as loop 6), each round the median of three runs in a boot",
+ "kernels": {
+  "fir16": {
+   "off": [
+    9.391,
+    9.332,
+    9.529
+   ],
+   "on": [
+    9.118,
+    9.358,
+    9.295
+   ],
+   "on/off": 0.99
+  },
+  "mac16": {
+   "off": [
+    2.813,
+    2.824,
+    2.799
+   ],
+   "on": [
+    2.739,
+    2.816,
+    2.741
+   ],
+   "on/off": 0.974
+  },
+  "mac32": {
+   "off": [
+    3.372,
+    3.358,
+    3.359
+   ],
+   "on": [
+    3.259,
+    3.408,
+    3.263
+   ],
+   "on/off": 0.971
+  },
+  "acquire": {
+   "off": [
+    5.255,
+    4.771,
+    4.92
+   ],
+   "on": [
+    4.753,
+    4.724,
+    5.077
+   ],
+   "on/off": 0.966
+  },
+  "cmac32": {
+   "off": [
+    1.987,
+    1.975,
+    1.977
+   ],
+   "on": [
+    1.913,
+    1.955,
+    1.989
+   ],
+   "on/off": 0.989
+  },
+  "cmac64": {
+   "off": [
+    3.694,
+    3.701,
+    3.708
+   ],
+   "on": [
+    3.65,
+    3.77,
+    3.684
+   ],
+   "on/off": 0.995
+  },
+  "cgain32": {
+   "off": [
+    1.579,
+    1.584,
+    1.58
+   ],
+   "on": [
+    1.715,
+    1.759,
+    1.743
+   ],
+   "on/off": 1.103
+  },
+  "fft4": {
+   "off": [
+    1.358,
+    1.352,
+    1.348
+   ],
+   "on": [
+    1.369,
+    1.426,
+    1.394
+   ],
+   "on/off": 1.031
+  }
+ }
+}

@@ -3718,3 +3718,42 @@ rule: a tie is advertised): on by default, `?rdm=0` and `?rcpc2=0` for an A/B. M
 
 Steps move (guest-visible: the guests' Linux sees `asimdrdm` and `ilrcpc`, prints them and patches its alternatives):
 Buildroot −0.01%, Alpine +0.06%, Alpine's userspace +0.06%, LTP −0.25%, crypto −1.0%, USB +3.8%; EDK2 doesn't move.
+
+## PERF loop 7: FEAT_FCMA (2026-11-10)
+
+FCMLA (vector and by element) and FCADD on singles and doubles in both tiers, inline in the JIT through the FMA and
+FADD fast paths on shuffled, sign-flipped operands (docs/jit.md "Floating point"), as `VmConfig.features` bit 14 (ABI
+63); the half forms are FEAT_FP16's and stay UNDEFINED. The Mac host (M4, macOS 26.6.2), Chrome for Testing
+157.0.8103.50 headless, through `bench/gpu/sway-mac.sh` (`SCRIPT=../imgdecode/codecs.ts`, mode `fcma,kernels`); the
+desktop guest on 4 vCPUs, `?fcma=0` against `?fcma=1`, alternated, a boot per arm and round, each round the median of
+three runs in a boot. Raw and medians: `results/fcma/` (`results.json`; the scan's words in `words.txt`).
+
+**Who runs them.** Every ELF of the desktop (Arch) and Debian guests (`debian`, `-browsers`, `-sway`, `-tools`),
+words matching the three encodings in executable segments (2,778 files on Arch, 1,162-1,326 on Debian: almost all
+data), then disassembled (`llvm-objdump --mattr=+all`): three FP16 by-element `fcmla` words in libgnutls and
+libleancrypto, which are data (`6f727070`, ASCII); no real FCMLA or FCADD anywhere. FFmpeg's TX/FFT, libopus,
+FFTW, libjxl and Highway, Mesa, Chromium and Firefox have no FCMA path in these builds. So the A/B is kernels
+written as libraries write them, each picking its path from HWCAP_FCMA (`bench/imgdecode/fcmak.c`, run after
+`rdmk.c` in the `kernels` mode): a complex multiply-accumulate of interleaved arrays by vector, singles and doubles
+(FCMLA #0 and #90, against TRN1/TRN2 (DUP for doubles), REV64, EOR and two FMLAs), a multiply-accumulate by a complex
+constant (FCMLA by element, against REV64 and two FMLAs by hoisted constants), and a radix-4 butterfly (FCADD #90 and
+#270, against one REV64, EOR, FADD and FSUB). Both arms compute the same sums (the kernels' checks agree).
+
+**On/off of time** (ns per complex output, lower is better), three rounds' medians, then the median:
+
+| Kernel | Off | On | On/off |
+|---|---|---|---|
+| cmac32, FCMLA vector, singles | 1.987 · 1.975 · 1.977; **1.977** | 1.913 · 1.955 · 1.989; **1.955** | 0.989 |
+| cmac64, FCMLA vector, doubles | 3.694 · 3.701 · 3.708; **3.701** | 3.650 · 3.770 · 3.684; **3.684** | 0.995 |
+| cgain32, FCMLA by element | 1.579 · 1.584 · 1.580; **1.580** | 1.715 · 1.759 · 1.743; **1.743** | **1.103** |
+| fft4, FCADD | 1.358 · 1.352 · 1.348; **1.352** | 1.369 · 1.426 · 1.394; **1.394** | **1.031** |
+| rdmk's fir16, mac16, mac32, acquire (controls: the same code in both arms) | | | 0.990, 0.974, 0.971, 0.966 (each pair of rounds overlapping) |
+
+**FCMLA by vector ties** (−1.1% and −0.5%, rounds overlapping): its two instructions do what the v8.0 sequence's six
+do, but each is its shuffles of Vn and Vm, a sign flip and the fused `madd` with the checks, so the host work is about
+the same. **By element it is 10% slower and FCADD 3% slower, rounds apart**: the v8.0 code keeps the constant's
+negated pair in a register and shares one REV64 between the butterfly's two outputs, where each FCMLA by element
+shuffles Vn and the element's pair again and loads its sign mask, and each FCADD shuffles and flips its own copy.
+So FEAT_FCMA is **implemented, unadvertised** (PLAN.md's rule, like I8MM): off by default, `bootVm`'s `fcma: true` and
+the page's `?fcma=1`; no guest-visible change by default, so the steps and the shape's pinned hash stay. Memory:
+none.

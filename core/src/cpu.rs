@@ -149,6 +149,11 @@ pub const FEATURE_RDM: u64 = 4096;
 /// loads and stores, run as `LDAR`/`STLR` at base + offset; only with
 /// `FEATURE_RCPC` (ID_AA64ISAR1_EL1.LRCPC = 2): alone it is nothing.
 pub const FEATURE_RCPC2: u64 = 8192;
+/// FEAT_FCMA (ABI 63): `FCMLA` (vector and by element) and `FCADD`, single
+/// and double precision (the half forms are FEAT_FP16's: UNDEFINED),
+/// advertised in ID_AA64ISAR1_EL1 when a VM is given it: off by default
+/// ([`DEFAULT_FEATURES`]).
+pub const FEATURE_FCMA: u64 = 16384;
 /// Every feature bit the core knows.
 pub const FEATURES: u64 = FEATURE_CRYPTO
     | FEATURE_RNG
@@ -163,11 +168,13 @@ pub const FEATURES: u64 = FEATURE_CRYPTO
     | FEATURE_DOTPROD
     | FEATURE_I8MM
     | FEATURE_RDM
-    | FEATURE_RCPC2;
+    | FEATURE_RCPC2
+    | FEATURE_FCMA;
 /// The features a VM gets unless told otherwise (`bootVm`, the native runners,
-/// the page): all but FEAT_I8MM, implemented but measured slower than the
-/// DotProd paths guests take without it (docs/cpu.md, PLAN.md's rule).
-pub const DEFAULT_FEATURES: u64 = FEATURES & !FEATURE_I8MM;
+/// the page): all but FEAT_I8MM and FEAT_FCMA, implemented but measured
+/// slower than the paths guests take without them (docs/cpu.md, PLAN.md's
+/// rule).
+pub const DEFAULT_FEATURES: u64 = FEATURES & !(FEATURE_I8MM | FEATURE_FCMA);
 
 /// Whether a vCPU with `features` has FEAT_SHA512 and FEAT_SHA3.
 #[inline]

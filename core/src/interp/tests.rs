@@ -2313,6 +2313,95 @@ fn rdm() {
 }
 
 #[test]
+fn fcma() {
+    use crate::cpu::{FEATURE_FCMA, FEATURES};
+    const FCMLA_4S: u32 = 0x6e82_c420; // fcmla v0.4s, v1.4s, v2.4s, #0 (+ rot << 11)
+    const FCMLA_2D: u32 = 0x6ec2_c420; // fcmla v0.2d, v1.2d, v2.2d, #0
+    const FCMLA_2S: u32 = 0x2e82_c420; // fcmla v0.2s, v1.2s, v2.2s, #0
+    const FCADD_4S: u32 = 0x6e82_e420; // fcadd v0.4s, v1.4s, v2.4s, #90 (#270 with bit 12)
+    const FCADD_2D: u32 = 0x6ec2_f420; // fcadd v0.2d, v1.2d, v2.2d, #270
+    const FCMLA_ELT: u32 = 0x6f82_1020; // fcmla v0.4s, v1.4s, v2.s[0], #0 (H: + 0x800, rot << 13)
+    let run = |insn: u32, d: u128, n: u128, m: u128| {
+        let mut t = T::new(&[insn]);
+        (t.c.v[0], t.c.v[1], t.c.v[2]) = (d, n, m);
+        t.step().unwrap();
+        t.c.v[0]
+    };
+    let s = |l: [f32; 4]| (0..4).fold(0u128, |v, k| v | (l[k].to_bits() as u128) << (32 * k));
+    let dd = |l: [f64; 2]| l[0].to_bits() as u128 | (l[1].to_bits() as u128) << 64;
+    // (1 + 2i, 3 + 4i) by (5 + 6i, 7 + 8i): #0 and #90 make the products, -7 + 16i and -11 + 52i.
+    let (a, b) = (s([1., 2., 3., 4.]), s([5., 6., 7., 8.]));
+    let rots = [
+        [5., 6., 21., 24.],
+        [-12., 10., -32., 28.],
+        [-5., -6., -21., -24.],
+        [12., -10., 32., -28.],
+    ];
+    for (rot, want) in rots.iter().enumerate() {
+        assert_eq!(
+            run(FCMLA_4S | (rot as u32) << 11, 0, a, b),
+            s(*want),
+            "rot {rot}"
+        );
+    }
+    let half = run(FCMLA_4S, 0, a, b);
+    assert_eq!(
+        run(FCMLA_4S | 1 << 11, half, a, b),
+        s([-7., 16., -11., 52.])
+    );
+    // The accumulator, Q = 0 (the top cleared), doubles.
+    assert_eq!(
+        run(FCMLA_2S, s([0.5, 0.25, 9., 9.]), a, b),
+        s([5.5, 6.25, 0., 0.])
+    );
+    assert_eq!(
+        run(FCMLA_2D | 1 << 11, dd([1., 1.]), dd([1., 2.]), dd([5., 6.])),
+        dd([-11., 11.])
+    );
+    // FCADD: Vn ± i·Vm.
+    assert_eq!(run(FCADD_4S, 0, a, b), s([-5., 7., -5., 11.]));
+    assert_eq!(run(FCADD_4S | 1 << 12, 0, a, b), s([7., -3., 11., -3.]));
+    assert_eq!(run(FCADD_2D, 0, dd([1., 2.]), dd([5., 6.])), dd([7., -3.]));
+    // By element: Vm's pair H in every pair.
+    assert_eq!(run(FCMLA_ELT | 0x800, 0, a, b), s([7., 8., 21., 24.]));
+    assert_eq!(run(FCMLA_ELT | 1 << 13, 0, a, b), s([-12., 10., -24., 20.]));
+    // A NaN in Vm, negated before the multiply-add: the quieted NaN keeps the
+    // negation (FPNeg comes first).
+    let nan = f32::from_bits(0x7fa0_0000);
+    let r = run(FCADD_4S, 0, a, s([0., nan, 0., 0.]));
+    assert_eq!(r as u32, 0xffe0_0000);
+    // UNDEFINED without the feature; the half forms (FEAT_FP16), the reserved
+    // sizes, doubles without Q, by element L = 1, Q = 0 or other sizes, ahead
+    // of the FPEN trap.
+    for insn in [FCMLA_4S, FCMLA_2D, FCADD_4S, FCMLA_ELT] {
+        let mut t = T::new(&[insn]);
+        t.c.features = FEATURES & !FEATURE_FCMA;
+        assert_eq!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+        let mut t = T::new(&[insn]);
+        t.c.cpacr_el1 = 0;
+        assert_ne!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+    }
+    for insn in [
+        0x6e42_c420u32,
+        0x6e02_c420,
+        0x2ec2_c420,
+        0x6e42_e420,
+        0x2ec2_e420,
+        0x6fa2_1020,
+        0x2f82_1020,
+        0x6fc2_1020,
+        0x6f42_1020,
+        0x6f02_1020,
+    ] {
+        let mut t = T::new(&[insn]);
+        t.c.cpacr_el1 = 0;
+        assert_eq!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+    }
+    assert_eq!(sys::isar1(FEATURE_FCMA) >> 16 & 0xf, 1);
+    assert_eq!(sys::isar1(0) >> 16 & 0xf, 0);
+}
+
+#[test]
 fn lrcpc2() {
     use crate::cpu::{FEATURE_RCPC, FEATURE_RCPC2, FEATURES};
     const LDAPUR_X: u32 = 0xd95f_8041; // ldapur x1, [x2, #-8]
@@ -2472,7 +2561,7 @@ fn v8_x_feature_gates() {
     // The ID fields.
     assert_eq!(
         sys::isar1(FEATURES),
-        1 << 52 | 1 << 36 | 1 << 32 | 2 << 20 | 1 << 12
+        1 << 52 | 1 << 36 | 1 << 32 | 2 << 20 | 1 << 16 | 1 << 12
     );
     assert_eq!(sys::isar0(FEATURE_FLAGM) >> 52 & 0xf, 2);
     assert_eq!(sys::pfr0(FEATURE_DIT) >> 48 & 0xf, 1);

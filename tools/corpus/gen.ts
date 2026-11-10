@@ -1038,7 +1038,21 @@ const lrcpc2: Form[] = [
   },
 ];
 
-export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto, jscvt, ext, dotprod, i8mm, rdm, lrcpc2 };
+// FEAT_FCMA (ABI 63): FCMLA (vector, by element) and FCADD on FP edge values in every lane, FPCR varied (vfpForm);
+// singles and doubles, the reserved size 0, doubles without Q, and by element L = 1, Q = 0 and sizes 0 and 3 included;
+// not size 1, FEAT_FP16's half forms (the M4 runs them). By element, Vm is M:Rm (16-20) whole.
+const fcmaSize = (r: Rng): Fields => ({ z: r.chance(0.95) ? r.pick([2, 3]) : 0 });
+const fcmaFmt = (f: Fields) => (f.z === 3 ? FD : FS);
+const fcma: Form[] = [
+  vfpForm("fcmla", "0Q101110zz0mmmmm110rr1nnnnnddddd", 1200, [[0, 0, 0]], { fix: fcmaSize, fmt: fcmaFmt }),
+  vfpForm("fcadd", "0Q101110zz0mmmmm111r01nnnnnddddd", 700, [[0, 0, 0]], { fix: fcmaSize, fmt: fcmaFmt }),
+  vfpForm("fcmla_elt", "0Q101111zzLmmmmm0rr1H0nnnnnddddd", 900, [[0, 0, 0]], {
+    fix: (r): Fields => (r.chance(0.92) ? { z: 2, Q: 1, L: 0 } : r.pick<Fields>([{ z: 2, L: 1 }, { z: 2, Q: 0, L: 0 }, { z: 0 }, { z: 3 }])),
+    fmt: fcmaFmt,
+  }),
+];
+
+export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto, jscvt, ext, dotprod, i8mm, rdm, lrcpc2, fcma };
 
 /** Generates a group's tests (without oracle results). */
 export function generate(group: string): Test[] {

@@ -368,3 +368,69 @@ fn fixed(c: &mut Cpu, i: u32) -> R {
     finish(c, rd, r, n * w, fpu);
     Ok(())
 }
+
+/// Whether FEAT_FCMA's `i` is allocated without FEAT_FP16: size 10 (singles)
+/// or, for the vector forms, 11 with Q (doubles); by element, singles with Q
+/// and L clear (the index is H). Size 01 is FP16's half form, 00 reserved.
+pub(super) fn fcma_allocated(i: u32, op: Op) -> bool {
+    let (size, q) = (bits(i, 23, 22), bit(i, 30));
+    if op == Op::FCMLA_elt {
+        size == 2 && q && !bit(i, 21)
+    } else {
+        size == 2 || size == 3 && q
+    }
+}
+
+/// FEAT_FCMA (the caller checks it and [`fcma_allocated`]): on pairs of
+/// lanes (real, imaginary), FCMLA adds one half of a complex product to Vd
+/// (rot, 14:13 by element, 12:11 vector, in 90° steps: one FPMulAdd a lane,
+/// Vn's real or imaginary element by Vm's, either negated, the ARM ARM's
+/// element1 to element4), FCADD adds Vm rotated by 90° or 270° (12) to Vn.
+pub(super) fn fcma(c: &mut Cpu, i: u32, op: Op) -> R {
+    let f = fmt(i);
+    let w = f.bits();
+    let n = if bit(i, 30) { 128 } else { 64 } / w;
+    let (rd, rn, rm) = regs(i);
+    let (a, b, d) = (c.v[rn], c.v[rm], c.v[rd]);
+    let neg = |x: u64| x ^ f.zero(true);
+    let mut fpu = Fpu::with_fpsr(c.fpcr, c.fpsr);
+    let mut r = 0u128;
+    for e in (0..n).step_by(2) {
+        let (lo, hi) = if op == Op::FCADD_vec {
+            // rot 0 (90°): Vn + (-Vm.im, Vm.re); 1 (270°): Vn + (Vm.im, -Vm.re).
+            let (re, im) = (elem(b, e, w), elem(b, e + 1, w));
+            let (x, y) = if bit(i, 12) {
+                (im, neg(re))
+            } else {
+                (neg(im), re)
+            };
+            (
+                fpu.add(f, elem(a, e, w), x),
+                fpu.add(f, elem(a, e + 1, w), y),
+            )
+        } else {
+            // By element, Vm's pair is the index's (H) in every pair.
+            let (rot, m) = if op == Op::FCMLA_elt {
+                (bits(i, 14, 13), 2 * bit(i, 11) as u32)
+            } else {
+                (bits(i, 12, 11), e)
+            };
+            let (re, im) = (elem(b, m, w), elem(b, m + 1, w));
+            // Vn's element (its real part for 0° and 180°), and Vm's two.
+            let x = elem(a, e + (rot & 1), w);
+            let (y0, y1) = match rot {
+                0 => (re, im),
+                1 => (neg(im), re),
+                2 => (neg(re), neg(im)),
+                _ => (im, neg(re)),
+            };
+            (
+                fpu.muladd(f, elem(d, e, w), x, y0),
+                fpu.muladd(f, elem(d, e + 1, w), x, y1),
+            )
+        };
+        r = set_elem(set_elem(r, e, w, lo), e + 1, w, hi);
+    }
+    finish(c, rd, r, n * w, fpu);
+    Ok(())
+}

@@ -4924,6 +4924,60 @@ mod tests {
     }
 
     #[test]
+    fn fcma() {
+        let fused = |w| emit_in(w, 0, &Ctx { fma: true, ..FLAT });
+        // fcmla v0.4s, v1.4s, v2.4s, #0: Vn's real parts twice (a shuffle), `madd`.
+        let b = fused(0x6e82c420).unwrap();
+        let re = [
+            0xfd, 0x0d, 0, 1, 2, 3, 0, 1, 2, 3, 8, 9, 10, 11, 8, 9, 10, 11,
+        ];
+        assert!(has(&b, &re) && has(&b, &[0xfd, 0x85, 2]) && !has(&b, &[0xfd, 0x51]));
+        // #90: the imaginary parts, Vm's pairs swapped, their first lanes negated (v128.xor).
+        let b = fused(0x6e82cc20).unwrap();
+        let im = [
+            0xfd, 0x0d, 4, 5, 6, 7, 4, 5, 6, 7, 12, 13, 14, 15, 12, 13, 14, 15,
+        ];
+        let swap = [
+            0xfd, 0x0d, 4, 5, 6, 7, 0, 1, 2, 3, 12, 13, 14, 15, 8, 9, 10, 11,
+        ];
+        assert!(has(&b, &im) && has(&b, &swap) && has(&b, &[0xfd, 0x51]));
+        // #180: `nmadd`, no sign flip.
+        let b = fused(0x6e82d420).unwrap();
+        assert!(has(&b, &[0xfd, 0x86, 2]) && !has(&b, &[0xfd, 0x51]));
+        // Doubles fused (0x107); emulated: the double FMA's algorithm, and the single's through f64x2.
+        assert!(has(&fused(0x6ec2dc20).unwrap(), &[0xfd, 0x87, 2]));
+        assert!(has(&emit(0x6ec2dc20, 0).unwrap(), &[0xfd, 0xcc, 1]));
+        assert!(has(&emit(0x6e82cc20, 0).unwrap(), &[0xfd, 0x5f]));
+        // By element (pair 1, #0): Vm's lanes 2 and 3 in every pair.
+        let b = fused(0x6f821820).unwrap();
+        assert!(has(
+            &b,
+            &[
+                0xfd, 0x0d, 8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15
+            ]
+        ));
+        // fcadd v0.4s, #90: f32x4.add of Vn and Vm swapped, negated.
+        let b = emit(0x6e82e420, 0).unwrap();
+        assert!(has(&b, &swap) && has(&b, &[0xfd, 0x51]) && has(&b, &[0xfd, 0xe4, 1]));
+        assert!(has(&emit(0x6ec2f420, 0).unwrap(), &[0xfd, 0xf0, 1]));
+        // The half forms (FEAT_FP16), reserved sizes, doubles without Q, by element
+        // L = 1 or Q = 0, and without the feature: the helper.
+        for i in [
+            0x6e42c420, 0x6e02c420, 0x2ec2c420, 0x6e42e420, 0x6fa21020, 0x2f821020, 0x6fc21020,
+        ] {
+            assert_eq!(fused(i), None, "{i:#x}");
+        }
+        let off = Ctx {
+            features: crate::cpu::FEATURES & !crate::cpu::FEATURE_FCMA,
+            fma: true,
+            ..FLAT
+        };
+        for i in [0x6e82c420, 0x6ec2c420, 0x6e82e420, 0x6f821020] {
+            assert_eq!(emit_in(i, 0, &off), None, "{i:#x}");
+        }
+    }
+
+    #[test]
     fn acquire_release_and_dc_zva() {
         // ldar x0, [x1]: an aligned atomic load (0xfe 0x11, alignment 3) behind
         // the address's alignment check (& 7 == 0).

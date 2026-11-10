@@ -583,7 +583,7 @@ isn't asking now: bash printed them as `;1R;80R`).
 | `ncpus` | vCPUs the machine ran with |
 | `disk` | the display name of the disk it was on when that was a chosen disk (file name, or a URL's last segment); `null` for the machine's own |
 | `devices` | the device kinds in slot order (`shape.ts` `slots`: `rng`, `keyboard`, `tablet`, `net`, `gpu`, `snd`, `mouse`, `touch`, then a `blk` per disk); a restore refuses one whose list isn't the machine's now, naming both |
-| `cpu` | the vCPUs' optional features, of `rng`, `e0pd`, `sha3`, `jscvt`, `rcpc`, `sb`, `flagm`, `dit`, `frintts`, `dotprod`, `i8mm`, `rdm` and `rcpc2` (docs/cpu.md; the page's `?<feature>=0` turns one off, `?i8mm=1` turns FEAT_I8MM on); a restore gives the machine the same, and a snapshot without the field (before ABI 35) none. A shape's hash leaves `sha3` out (it came after shapes), so snapshots kept before it still match their machine |
+| `cpu` | the vCPUs' optional features, of `rng`, `e0pd`, `sha3`, `jscvt`, `rcpc`, `sb`, `flagm`, `dit`, `frintts`, `dotprod`, `i8mm`, `rdm`, `rcpc2` and `fcma` (docs/cpu.md; the page's `?<feature>=0` turns one off, `?i8mm=1` and `?fcma=1` turn FEAT_I8MM and FEAT_FCMA on); a restore gives the machine the same, and a snapshot without the field (before ABI 35) none. A shape's hash leaves `sha3` out (it came after shapes), so snapshots kept before it still match their machine |
 | `serial` | the last ~4 KiB of serial output the worker posted, cut at a line start |
 | `name`, `shape`, `shapeHash`, `urls` | a stored machine's (format 2): its name, its shape and the shape's hash (a restore onto a machine whose hash is another is refused), and its URL disks' URLs by slot (a machine like it can be made again) |
 

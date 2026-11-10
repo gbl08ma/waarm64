@@ -988,6 +988,18 @@ interpreter's; the helper runs the instruction otherwise.
     operands, split overflow, sums underflowing to zero, lanes that differ), on both arms; planted
     bugs in each step fail them. `tests/browser.test.ts` runs the FP guest through both arms in
     Chromium (the same `Cpu` after 2G steps), and the FP suite takes both.
+- **FCMLA and FCADD** (FEAT_FCMA, when the vCPU has it; `float::lanes`): FCMLA is the FMA forms above, both arms,
+  on rearranged operands: Vn's real (0°, 180°) or imaginary (90°, 270°) element in both lanes of each pair (one
+  shuffle: TRN1/TRN2 on V8's arm64), Vm's pair (by element the index's, in every pair) swapped for 90° and 270° and one
+  lane of it negated (`v128.xor` with a sign mask), 180° the first factor negated as FMLS's (`nmadd`). FCADD is FADD's
+  rule on Vn and Vm's pairs swapped, one lane negated. Negating before the operation is ARM's order (FPNeg, then the
+  multiply-add), and the checks read those operands as the instruction uses them (FZ's denormal test skips the lanes
+  it doesn't read; a NaN operand ends in a NaN the result check rejects, so the NaN's sign is the helper's business).
+  By element the factor's halves are alike, so the emulated single path promotes it once, as FMLA's by element; the
+  emulated double path holds a shuffled factor in a local. Cost: one to three shuffles and a sign flip more than an
+  FMLA, so a guest's FCMLA #0 + #90 pair is level with the v8.0 sequence it replaces (TRN1, TRN2, REV64, EOR, two
+  FMLAs) and the by-element and FCADD forms lose to code that shares a REV64 and keeps its constants in registers
+  (bench/boot/REPORT.md "PERF loop 7: FEAT_FCMA"). The half forms are FEAT_FP16's: the helper (UNDEFINED).
 - **Conversions:** SCVTF/UCVTF inline (RNE, can't overflow), including the forms with the integer
   in a SIMD&FP register and the vector forms (2D lane by lane: no i64x2 convert);
   FCVT{N,M,A,P,Z}{S,U} to W, X and V registers, scalar and vector: the operand rounded in the

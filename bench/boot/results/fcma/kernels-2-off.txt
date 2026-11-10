@@ -1,0 +1,34 @@
+Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics cpuid asimdrdm jscvt lrcpc sha3 asimddp sha512 dit ilrcpc flagm sb flagm2 frint rng
+COLD KERN fir16 11.205 check -349344 rdm
+COLD KERN mac16 3.019 check -460792 rdm
+COLD KERN mac32 3.559 check -8332816637 rdm
+COLD KERN acquire 4.864 check 8578202661511680 ldapur
+COLD KERN cmac32 2.245 check 4098.1 neon
+COLD KERN cmac64 3.893 check 4098.17 neon
+COLD KERN cgain32 1.719 check 3994.37 neon
+COLD KERN fft4 1.511 check 415.436 neon
+KERN fir16 9.592 check -349344 rdm
+KERN mac16 2.824 check -460792 rdm
+KERN mac32 3.366 check -8589936638 rdm
+KERN acquire 4.717 check 85782028683773952 ldapur
+KERN cmac32 1.978 check 4119.77 neon
+KERN cmac64 3.734 check 4117.73 neon
+KERN cgain32 1.580 check 3081.24 neon
+KERN fft4 1.372 check 415.436 neon
+KERN fir16 9.332 check -349344 rdm
+KERN mac16 2.796 check -460792 rdm
+KERN mac32 3.358 check -8589936638 rdm
+KERN acquire 5.662 check 85782028683773952 ldapur
+KERN cmac32 1.975 check 4119.77 neon
+KERN cmac64 3.697 check 4117.73 neon
+KERN cgain32 1.584 check 3081.24 neon
+KERN fft4 1.348 check 415.436 neon
+KERN fir16 9.282 check -349344 rdm
+KERN mac16 2.824 check -460792 rdm
+KERN mac32 3.337 check -8589936638 rdm
+KERN acquire 4.771 check 85782028683773952 ldapur
+KERN cmac32 1.970 check 4119.77 neon
+KERN cmac64 3.701 check 4117.73 neon
+KERN cgain32 1.609 check 3081.24 neon
+KERN fft4 1.352 check 415.436 neon
+CODECS-END

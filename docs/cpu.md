@@ -86,6 +86,20 @@ match it step for step.
   adds the patterns (`EXTRA`). Who uses it: nothing in the guests' binaries (a couple of words that are data);
   code built for v8.4 and up. Advertised: a chain of acquire loads at an offset is level with the ADD and LDAPR a
   guest runs without it (+0.3%, rounds overlapping; the same report).
+- **FEAT_FCMA** (`FCMLA` vector and by element, `FCADD`, on singles and doubles; `interp::simd_fp::fcma`):
+  `VmConfig.features` bit 14 (`FEATURE_FCMA`, ABI 63), `ID_AA64ISAR1_EL1.FCMA` = 1, Linux's `fcma` hwcap, switched as
+  JSCVT is but **off by default** like I8MM (`bootVm`'s `fcma: true`, the page's `?fcma=1`, in the shape's hash when
+  on); inline in the JIT ([jit.md](jit.md)). The half-precision forms (size 01) are FEAT_FP16's and UNDEFINED with it,
+  as are size 00, doubles without Q, and by element L = 1, Q = 0 or a size but 10, all ahead of the FPEN trap. Each
+  lane is one FPMulAdd (FPAdd for FCADD) of the ARM ARM's elements, the negation before it (a NaN keeps it). Who uses it:
+  nothing in the desktop (Arch) or Debian guests' binaries (every ELF's executable segments, then disassembled: three
+  FP16 `fcmla` words in libgnutls and libleancrypto that are data); FFmpeg, libopus, FFTW, libjxl, Highway, Mesa and the
+  browsers have no FCMA path. Unadvertised (PLAN.md's rule), from kernels written as libraries would pick them from the
+  hwcap (`bench/imgdecode/fcmak.c`, three rounds on the Mac): a complex multiply-accumulate by vector level with the
+  v8.0 form (singles −1.1%, doubles −0.5%, rounds overlapping), but by a complex constant (FCMLA by element) **10%
+  slower** and a radix-4 butterfly with FCADD **3% slower**, rounds apart. Each FCMLA or FCADD here is its shuffles,
+  a sign flip and the FMA (or add) with its checks, where the v8.0 code shares one REV64 between two outputs and keeps
+  its constants in registers. bench/boot/REPORT.md "PERF loop 7: FEAT_FCMA".
 - **FEAT_RNG** (`RNDR`, `RNDRRS`, at EL0 and EL1) and **FEAT_E0PD** (`TCR_EL1.E0PD0`/`E0PD1`):
   `VmConfig.features` bits 1 and 2 (`FEATURE_RNG`, `FEATURE_E0PD`, ABI 35). **On by default** in
   `bootVm` (`rng: false`, `e0pd: false` turn them off), the native runners and so the test guests and
@@ -105,8 +119,8 @@ match it step for step.
   which comes from the virtio-rng): bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD".
 - **Left out, unadvertised:** SVE/SME, PAC, BTI, MTE, EL2/EL3, secure state. Their hint-space
   encodings (the PAC and BTI hints, CSDB, …) run as NOPs. Everything else the M4 has beyond v8.0
-  (FP16, BF16, FHM, FCMA, LSE2, SM3/SM4, LOR, MOPS, HBC) is
-  UNDEFINED and unadvertised; I8MM is implemented but off by default (above). Candidates for later are in
+  (FP16, BF16, FHM, LSE2, SM3/SM4, LOR, MOPS, HBC) is
+  UNDEFINED and unadvertised; I8MM and FCMA are implemented but off by default (above). Candidates for later are in
   [backlog.md](backlog.md) "Unadvertised extensions".
 - **Rule: an optional extension is advertised unless measured slower** (PLAN.md): one that loses stays implemented,
   unadvertised. `ID_AA64DFR0_EL1` advertises
@@ -125,8 +139,8 @@ match it step for step.
 - `ID_AA64ISAR0_EL1` (`interp::sys::isar0`): LSE, CRC32, and with the crypto feature AES = 2,
   SHA1 = 1, SHA2 = 1 (0x211120 with it on; the bare-metal `exceptions` test checks this value),
   with SHA512/SHA3 too SHA2 = 2 and SHA3 = 1 (0x1_0021_2120), RNDR = 1 with FEAT_RNG, TS = 2 with FlagM, DP = 1 with DotProd, RDM = 1 with RDM.
-  `ID_AA64ISAR1_EL1` (`interp::sys::isar1`): JSCVT = 1, LRCPC = 1 (2 with LRCPC2), FRINTTS = 1, SB = 1 and I8MM = 1 (off by
-  default) with their features; none of FHM, FCMA, BF16; no AFP.
+  `ID_AA64ISAR1_EL1` (`interp::sys::isar1`): JSCVT = 1, FCMA = 1 (off by default), LRCPC = 1 (2 with LRCPC2), FRINTTS = 1,
+  SB = 1 and I8MM = 1 (off by default) with their features; none of FHM, BF16; no AFP.
 - `ID_AA64MMFR0_EL1`: 4K granule, 16-bit ASIDs, 40-bit PA. `ID_AA64MMFR2_EL1` (`interp::sys::mmfr2`):
   E0PD = 1 with FEAT_E0PD, else 0.
 - `CTR_EL0`: IDC = 1 (no data cache to clean), **DIC = 0**, so guests issue `IC IVAU` after

@@ -1943,26 +1943,105 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
     if by_element && d && bit(i, 21) {
         return false;
     }
-    let factor = |c: &mut Func| {
-        vreg(c, rm);
-        if by_element {
-            vreg(c, rm);
-            let lb = if d { 8 } else { 4 };
-            c.shuffle(core::array::from_fn(|b| index * lb + (b as u8 % lb)));
+    let lb: u8 = if d { 8 } else { 4 };
+    // A v128 shuffle that puts lane `map[j % map.len()]` in lane j.
+    let lane_map = |map: &[u8]| -> [u8; 16] {
+        core::array::from_fn(|b| map[(b as u8 / lb) as usize % map.len()] * lb + b as u8 % lb)
+    };
+    // FEAT_FCMA (docs/jit.md "Floating point"): FCMLA is the FMA forms with Vn's
+    // real (rot 0°, 180°) or imaginary element in both lanes of a pair and Vm's
+    // pair (by element, the index's), swapped for 90° and 270°, a lane of it
+    // negated (180°: both, through `neg`); FCADD is FADD of Vn and Vm's pairs
+    // swapped, one lane negated. The fast paths' checks then test the lanes the
+    // instruction multiplies and adds, as they are.
+    let fcma = matches!(op, FCMLA_vec | FCMLA_elt | FCADD_vec);
+    if fcma {
+        let size = bits(i, 23, 22);
+        let allocated = if op == FCMLA_elt {
+            size == 2 && q && !bit(i, 21)
+        } else {
+            size == 2 || size == 3 && q
+        };
+        if cx.features & crate::cpu::FEATURE_FCMA == 0 || !allocated {
+            return false;
+        }
+    }
+    let rot = match op {
+        FCMLA_elt => bits(i, 14, 13),
+        FCMLA_vec => bits(i, 12, 11),
+        // FCADD's 90° and 270° negate as FCMLA's do.
+        FCADD_vec => 1 + 2 * bit(i, 12) as u32,
+        _ => 0,
+    };
+    let pair = 2 * bit(i, 11) as u8;
+    // Vn's lanes (FCMLA: the pairs' real or imaginary element twice).
+    let nshuf = (op == FCMLA_vec || op == FCMLA_elt).then(|| {
+        lane_map(&[
+            rot as u8 & 1,
+            rot as u8 & 1,
+            2 | rot as u8 & 1,
+            2 | rot as u8 & 1,
+        ])
+    });
+    // Vm's lanes: FMLA's by element the element, FCMLA's the pair (swapped
+    // for 90° and 270°), FCADD's swapped.
+    let mshuf = match op {
+        _ if by_element => Some(lane_map(&[index])),
+        FCMLA_elt if rot & 1 == 0 => Some(lane_map(&[pair, pair + 1])),
+        FCMLA_elt => Some(lane_map(&[pair + 1, pair])),
+        FCMLA_vec | FCADD_vec if rot & 1 == 1 => Some(lane_map(&[1, 0, 3, 2])),
+        _ => None,
+    };
+    // The negated lanes of Vm's: 90° the pairs' first, 270° their second.
+    let sign = |hi: bool| -> u128 {
+        if d {
+            1 << (63 + 64 * hi as u32)
+        } else {
+            let s = 1u128 << (31 + 32 * hi as u32);
+            s | s << 64
         }
     };
+    let msign = match rot {
+        _ if !fcma => None,
+        1 => Some(sign(false)),
+        3 => Some(sign(true)),
+        _ => None,
+    };
+    // FCMLA's 180°: both factors' lanes negated, as FMLS's first.
+    let fneg = op != FCADD_vec && fcma && rot == 2;
+    let nsrc = |c: &mut Func| {
+        vreg(c, rn);
+        if let Some(sh) = nshuf {
+            vreg(c, rn);
+            c.shuffle(sh);
+        }
+    };
+    let factor = |c: &mut Func| {
+        vreg(c, rm);
+        if let Some(sh) = mshuf {
+            vreg(c, rm);
+            c.shuffle(sh);
+        }
+        if let Some(m) = msign {
+            c.v128_const(m).simd(op::XOR);
+        }
+    };
+    // The factor isn't Vm itself: a shuffle or a sign flip, held in a local
+    // where it's read more than once. Its halves are alike by element.
+    let held_factor = mshuf.is_some() || msign.is_some();
+    let same_halves = by_element || op == FCMLA_elt;
     match op {
         // FADD, FSUB, FMUL, FDIV, FMUL by element, FABD, FMULX: `arith`.
         FADD_2 | FSUB_2 | FMUL_vec_2 | FDIV_2 | FMUL_elt_4 | FMUL_elt_2 | FMULX_vec_4
-        | FMULX_vec_2 | FMULX_elt_4 | FMULX_elt_2 | FABD_4 | FABD_2 => {
+        | FMULX_vec_2 | FMULX_elt_4 | FMULX_elt_2 | FABD_4 | FABD_2 | FCADD_vec => {
             let kk = match op {
-                FADD_2 => 0,
+                FADD_2 | FCADD_vec => 0,
                 FSUB_2 | FABD_4 | FABD_2 => 1,
                 FDIV_2 => 3,
                 _ => 2,
             };
             let abs = matches!(op, FABD_4 | FABD_2);
-            arith(c, cx, i, k, (d, q, rd), kk, abs, &|c| vreg(c, rn), &factor);
+            arith(c, cx, i, k, (d, q, rd), kk, abs, &nsrc, &factor);
         }
         // Pairwise (Vm:Vn's adjacent lanes; the scalar forms Vn's two): the even
         // lanes and the odd ones side by side, then the lane rules.
@@ -2034,12 +2113,13 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         // emulation's). Singles take an exact zero too, as the emulated form
         // does, but there's no double sum to read it from.
         FMLA_vec_2 | FMLS_vec_2 | FMLA_elt_4 | FMLS_elt_4 | FMLA_elt_2 | FMLS_elt_2 | FRECPS_4
-        | FRECPS_2 | FRSQRTS_4 | FRSQRTS_2
+        | FRECPS_2 | FRSQRTS_4 | FRSQRTS_2 | FCMLA_vec | FCMLA_elt
             if cx.fma =>
         {
             fpa_guard(c);
             let (neg, acc, half) = fma_kind(op, d, rd);
-            vreg(c, rn);
+            let neg = neg || fneg;
+            nsrc(c);
             factor(c);
             acc(c);
             c.simd(op::MADD[d as usize][neg as usize]);
@@ -2056,7 +2136,7 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.local_set(tr);
             let fz = |c: &mut Func| {
                 under_fz_bad(c, |c| {
-                    denormal_any(c, d, &[&|c| vreg(c, rn), &factor, &acc]);
+                    denormal_any(c, d, &[&nsrc, &factor, &acc]);
                 })
             };
             c.local_get(tr);
@@ -2078,7 +2158,7 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 lanes_in(c, d, 2);
                 c.local_get(tr);
                 zero_lanes(c, d);
-                vreg(c, rn);
+                nsrc(c);
                 zero_lanes(c, d);
                 factor(c);
                 zero_lanes(c, d);
@@ -2099,15 +2179,16 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         // point"), its guard lane by lane. Five v128 scratch locals: the low
         // halves of the splits are recomputed from the operands.
         FMLA_vec_2 | FMLS_vec_2 | FMLA_elt_4 | FMLS_elt_4 | FMLA_elt_2 | FMLS_elt_2 | FRECPS_4
-        | FRECPS_2 | FRSQRTS_4 | FRSQRTS_2
+        | FRECPS_2 | FRSQRTS_4 | FRSQRTS_2 | FCMLA_vec | FCMLA_elt
             if d =>
         {
             fpa_guard(c);
             let (neg, acc, half) = fma_kind(op, d, rd);
+            let neg = neg || fneg;
             let (p, ah, bh, pl) = (ta, tb, tt, VTMP);
             let (add, sub, mul) = (op::F64X2[0], op::F64X2[1], op::F64X2[2]);
             let va = |c: &mut Func| {
-                vreg(c, rn);
+                nsrc(c);
                 if neg {
                     c.simd(op::F64X2_NEG);
                 }
@@ -2117,14 +2198,14 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             // shuffles: one `dup` each).
             let held = |l: u32| {
                 move |c: &mut Func| {
-                    if by_element {
+                    if held_factor {
                         c.local_get(l);
                     } else {
                         factor(c);
                     }
                 }
             };
-            if by_element {
+            if held_factor {
                 factor(c);
                 c.local_set(tr);
             }
@@ -2209,7 +2290,7 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             // As the scalar form: no denormal factor, a product from 2^-900, or
             // a zero factor (e' = e - 1: (e'a | e'b) ≥ 0, e'a + e'b ≥ 1144); a
             // fast result.
-            if by_element {
+            if held_factor {
                 factor(c);
                 c.local_set(bh);
             }
@@ -2226,7 +2307,7 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.v128_const(splat(true, 1144)).simd(op::I64X2_GE_S);
             c.local_get(ta).local_get(tb).simd(op::OR);
             c.v128_const(0).simd(op::I64X2_GE_S).simd(op::AND);
-            vreg(c, rn);
+            nsrc(c);
             zero_lanes(c, true);
             fb(c);
             zero_lanes(c, true);
@@ -2234,7 +2315,7 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.local_get(tr);
             lanes_in(c, true, 2);
             under_fz_bad(c, |c| {
-                denormal_any(c, true, &[&|c| vreg(c, rn), &fb, &acc]);
+                denormal_any(c, true, &[&nsrc, &fb, &acc]);
             });
             all_lanes(c, true, q, 2);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
@@ -2244,9 +2325,10 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         // nearest, then demoted: correct off the singles' midpoints; with a sum
         // on one, the sums rounded to odd (TwoSum, as the scalar form).
         FMLA_vec_2 | FMLS_vec_2 | FMLA_elt_4 | FMLS_elt_4 | FMLA_elt_2 | FMLS_elt_2 | FRECPS_4
-        | FRECPS_2 | FRSQRTS_4 | FRSQRTS_2 => {
+        | FRECPS_2 | FRSQRTS_4 | FRSQRTS_2 | FCMLA_vec | FCMLA_elt => {
             fpa_guard(c);
             let (neg, acc, half) = fma_kind(op, d, rd);
+            let neg = neg || fneg;
             let halves: &[bool] = if q { &[false, true] } else { &[false] };
             let (add, sub) = (op::F64X2[0], op::F64X2[1]);
             let (p, a) = (VTMP, tr);
@@ -2254,7 +2336,7 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             let sums = |c: &mut Func, odd: bool| {
                 // By element, both halves of the factor are the element: promoted
                 // once, into tb until the second half's sum.
-                if by_element {
+                if same_halves {
                     factor(c);
                     c.simd(op::PROMOTE).local_set(tb);
                 }
@@ -2262,12 +2344,12 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                     // p = promote(half of Vn (negated for FMLS)) × promote(half of
                     // the factor), a = promote(half of Vd).
                     for step in 0..3 {
-                        if step == 1 && by_element {
+                        if step == 1 && same_halves {
                             c.local_get(tb).simd(op::F64X2[2]).local_set(p);
                             continue;
                         }
                         match step {
-                            0 => vreg(c, rn),
+                            0 => nsrc(c),
                             1 => factor(c),
                             _ => acc(c),
                         }
@@ -2362,7 +2444,7 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.shuffle(core::array::from_fn(|b| (b as u8 / 4) * 8 + b as u8 % 4));
             c.simd(op::OR);
             under_fz_bad(c, |c| {
-                denormal_any(c, false, &[&|c| vreg(c, rn), &factor, &acc]);
+                denormal_any(c, false, &[&nsrc, &factor, &acc]);
             });
             all_lanes(c, false, q, 1);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));

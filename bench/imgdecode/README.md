@@ -45,7 +45,9 @@ product as ggml writes it; `js.html` runs ToInt32 kernels in Chromium and Firefo
 `SCRIPT=../imgdecode/codecs.ts ROUNDS=3 MAC_TIMEOUT=2700 bench/gpu/sway-mac.sh <feature>,codecs target/arch/desktop.qcow2 <name>`
 (a round about 4 minutes there). Since PERF loop 6 (FEAT_RDM and FEAT_LRCPC2) the mode `kernels` runs `rdmk.c` alone
 (Q15 and Q31 kernels with SQRDMLAH from the `asimdrdm` hwcap, acquire loads at an offset with LDAPUR from `ilrcpc`;
-`KERN <kernel> <ns>`), a round about 80 s on the Mac: `<feature>,kernels`.
+`KERN <kernel> <ns>`), a round about 80 s on the Mac: `<feature>,kernels`. Since PERF loop 7 it runs `fcmak.c` too
+(FEAT_FCMA's complex multiply-accumulates by vector and by a constant, and a radix-4 butterfly, FCMLA and FCADD from
+the `fcma` hwcap, the v8.0 forms without it); `?fcma=1` is the on arm (FCMA is off by default).
 
 ## On the desktop guest (2026-10-22)
 

@@ -118,6 +118,9 @@ const CLASSES: Record<string, [number, number]> = {
   // FEAT_RDM (ABI 62): SQRDMLAH, SQRDMLSH, vector and scalar (bit 28 free), and by element; reserved sizes included.
   'AdvSIMD RDM': [0xaf20f400, 0x2e008400],
   'AdvSIMD RDM by element': [0xaf00d400, 0x2f00d000],
+  // FEAT_FCMA (ABI 63): FCMLA and FCADD (and 1111 x1 beside them, unallocated), by element; every size (01: FP16's).
+  'AdvSIMD FCMA': [0xbf20c400, 0x2e00c400],
+  'AdvSIMD FCMA by element': [0xbf009400, 0x2f001000],
   // FEAT_FlagM's RMIF (a helper; the rest of FlagM is among the sequences' helpers).
   'RMIF': [0xffe07c10, 0xba000400],
 };
@@ -206,7 +209,7 @@ function fpPlain(d: boolean): bigint {
 }
 
 /** The classes whose V registers sometimes hold integer lanes of edge values (`intLanes`). */
-const INT_LANES = /^AdvSIMD (?!FP|scalar FP|FCVT)|^AdvSIMD load|^CRC32/;
+const INT_LANES = /^AdvSIMD (?!FP|scalar FP|FCVT|FCMA)|^AdvSIMD load|^CRC32/;
 
 /** 64 bits of `esize`-bit lanes: the signed and unsigned limits and their neighbours, small
  * values of either sign (shift counts), a lane with one bit set, or random bits. */
@@ -236,7 +239,7 @@ const DATA_SIZE = 0x2000;
 const FUSED = fusedFma();
 const ARMS = FUSED ? [true, false] : [false];
 const armName = (fma: boolean) => (fma === FUSED ? '' : ' (FMA emulated)');
-const FMA_CLASSES = new Set(['FP data processing, 3 sources', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD scalar x indexed element', 'AdvSIMD scalar three same']);
+const FMA_CLASSES = new Set(['FP data processing, 3 sources', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD scalar x indexed element', 'AdvSIMD scalar three same', 'AdvSIMD FCMA', 'AdvSIMD FCMA by element']);
 
 /** Two vCPUs (interpreter, JIT) on two copies of a RAM that holds `code` bytes
  * of code, a gap, then the data area, which ends the RAM (accesses past it are
@@ -697,6 +700,14 @@ const FP_EDGES: [string, number, bigint[]][] = [
   ['x fdiv v0.4s (a quotient underflows to zero, a zero dividend)', 0x6e22fc20, [lanes(0, 0, 0, 0), lanes(0, 2 ** -100, -0, 1.5), lanes(1.5, 2 ** 100, 3, 2)]],
   ['w fmul v0.2d (underflow to zero)', 0x6e62dc20, [0n, f64bits(2 ** -600), f64bits(2 ** -600)]],
   ['w fmul v0.2d (a zero factor)', 0x6e62dc20, [0n, 1n << 63n, f64bits(1.5)]],
+  // FEAT_FCMA (ABI 63): FCMLA's lanes through the FMA paths, Vn's and Vm's lanes shuffled and negated first.
+  ['x fcmla v0.4s, v1.4s, v2.4s, #90 (a single midpoint, a zero factor)', 0x6e82cc20, [lanes(1 + 2 ** -23, 0, 0, 0), lanes(0, 1 + 2 ** -18, 0, 0), lanes(0, -(2 ** -24 * (1 - 2 ** -18)), 0, 0)]],
+  ['x fcmla v0.4s, v1.4s, v2.4s, #0 (an underflow to zero beside an exact zero)', 0x6e82c420, [lanes(0, 0, 1, 1), lanes(2 ** -100, 0, 1.5, 3), lanes(2 ** -100, 0, 2, -1)]],
+  ['x fcmla v0.4s, v1.4s, v2.s[1], #270 (by element, cancellation)', 0x6f827820, [lanes(-6, 4.5, 0, 0), lanes(0, 1.5, 0, 2), lanes(0, 0, 3, 4)]],
+  ['x fcadd v0.4s, v1.4s, v2.4s, #90 (an exact zero sum)', 0x6e82e420, [lanes(0, 0, 0, 0), lanes(1.5, 2, -0, 1), lanes(0, 1.5, 0, -0)]],
+  ['w fcmla v0.2d, v1.2d, v2.2d, #0 (midpoint)', 0x6ec2c420, [f64bits(2 ** 53 + 2), f64bits(1 + 2 ** -30), f64bits(1 - 2 ** -30)]],
+  ['w fcmla v0.2d, v1.2d, v2.2d, #180 (midpoint)', 0x6ec2d420, [f64bits(-(2 ** 53 + 2)), f64bits(1 + 2 ** -30), f64bits(1 - 2 ** -30)]],
+  ['w fcmla v0.2d, v1.2d, v2.2d, #90 (a denormal factor)', 0x6ec2cc20, [f64bits(1), f64bits(2 ** -1060), f64bits(2 ** 1000)]],
 ];
 test('the probe finds the fused madd on arm64', { skip: process.arch !== 'arm64' }, () => {
   // arm64's relaxed madd is always FMLA. If the probe broke, every host would quietly lose the fused arm.
@@ -848,7 +859,7 @@ const VHELPERS = [
   (d: number, n: number) => 0x6e218800 | (n << 5) | d, // frinta vd.4s, vn.4s
   (d: number, n: number) => 0x7ee03800 | (n << 5) | d, // usqadd dd, dn
 ];
-const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 1 source', 'FP data processing, 2 sources', 'FP data processing, 3 sources', 'FP and general register moves, conversions', 'FP compare', 'FP conditional compare', 'FP conditional select', 'FJCVTZS', 'FRINTTS', 'AdvSIMD FP FRINTTS', 'AdvSIMD DotProd', 'AdvSIMD DotProd by element', 'AdvSIMD I8MM USDOT', 'AdvSIMD I8MM by element', 'AdvSIMD I8MM matrix', 'AdvSIMD RDM', 'AdvSIMD RDM by element', 'conditional select', 'conditional compare'].map((n) => CLASSES[n]);
+const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 1 source', 'FP data processing, 2 sources', 'FP data processing, 3 sources', 'FP and general register moves, conversions', 'FP compare', 'FP conditional compare', 'FP conditional select', 'FJCVTZS', 'FRINTTS', 'AdvSIMD FP FRINTTS', 'AdvSIMD DotProd', 'AdvSIMD DotProd by element', 'AdvSIMD I8MM USDOT', 'AdvSIMD I8MM by element', 'AdvSIMD I8MM matrix', 'AdvSIMD RDM', 'AdvSIMD RDM by element', 'AdvSIMD FCMA', 'AdvSIMD FCMA by element', 'conditional select', 'conditional compare'].map((n) => CLASSES[n]);
 const VMEM = ['SIMD&FP load/store, unsigned offset', 'SIMD&FP load/store pair', 'AdvSIMD load/store multiple structures', 'AdvSIMD load/store single structure'].map((n) => MEMORY[n]);
 const ALU = ['PC-relative (ADR, ADRP)', 'add/sub, immediate', 'add/sub, shifted and extended register', 'add/sub with carry', 'logical, immediate', 'logical, shifted register', 'bitfield, 64-bit', 'bitfield, 32-bit', 'variable shifts', 'conditional select', 'conditional compare', 'multiply-add', 'data processing, register'].map((n) => CLASSES[n]);
 const LAST = ['conditional branch', 'compare and branch', 'test and branch', 'branch to register'].map((n) => CLASSES[n]);

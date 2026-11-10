@@ -24,7 +24,7 @@ import { spillImports } from './spill.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES, ramLayout } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 62;
+export const ABI = 63;
 const RAM_BASE = 0x4000_0000;
 /** The vCPU and compile workers' files for Node's worker_threads (a lookup, so the page's bundler doesn't copy them as assets). */
 const NODE_WORKERS = { vcpu: './vcpu-worker.ts', compile: './jit-compile-worker.ts' };
@@ -587,6 +587,8 @@ export type BootOptions = {
   rdm?: boolean;
   /** `VmConfig.features` bit 13 (ABI 62): FEAT_LRCPC2 (with `rcpc` only); on unless false. */
   rcpc2?: boolean;
+  /** `VmConfig.features` bit 14 (ABI 63): FEAT_FCMA; off unless true (measured slower: docs/cpu.md). */
+  fcma?: boolean;
   /** Test only: stalls one vCPU's host worker (parallel mode), see {@link Stall}; `addr` here is a guest PA. */
   stall?: Stall | Stall[];
   /** `VmConfig.ncpus` (ABI 21): vCPUs (default 1), round-robin on this thread unless `parallel`. */
@@ -870,7 +872,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const seed = deterministic ? new BigUint64Array(4) : crypto.getRandomValues(new BigUint64Array(4));
   const features = (o.crypto === false ? 0n : 1n) | (o.rng === false ? 0n : 2n) | (o.e0pd === false ? 0n : 4n) | (o.sha3 === false ? 0n : 8n) | (o.jscvt === false ? 0n : 16n)
     | (o.rcpc === false ? 0n : 32n) | (o.sb === false ? 0n : 64n) | (o.flagm === false ? 0n : 128n) | (o.dit === false ? 0n : 256n) | (o.frintts === false ? 0n : 512n) | (o.dotprod === false ? 0n : 1024n) | (o.i8mm === true ? 2048n : 0n)
-    | (o.rdm === false ? 0n : 4096n) | (o.rcpc2 === false ? 0n : 8192n);
+    | (o.rdm === false ? 0n : 4096n) | (o.rcpc2 === false ? 0n : 8192n) | (o.fcma === true ? 16384n : 0n);
   new BigUint64Array(memory.buffer, scratch + S_CFG, 36).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
     fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n, ...seed, o.usb ? 0x404n : 0n, // and the xHCI's 4 + 4 ports (ABI 38)
     ...Array.from({ length: MAX_SPILL }, (_, k) => BigInt(spillSizes[k] ?? 0)), // the spill memories' sizes (ABI 39)
