@@ -1,0 +1,18 @@
+{
+ "bench/results/local/perf14/churn/base-1/jit.jsonl": {
+  "query": "",
+  "totals": {
+   "gsteps": 68.11,
+   "flushes": 0,
+   "modules": 20869,
+   "mib": 280.9,
+   "overdue": 0,
+   "parks": 54617,
+   "locks": 29603838,
+   "interpGsteps": 5.94,
+   "share": 0.913,
+   "phases": {}
+  },
+  "flushes": []
+ }
+}

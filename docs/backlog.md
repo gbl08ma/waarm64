@@ -215,31 +215,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
     run-once churn screen (`CHURN='rate=300&calls=120&n=2'`) grew an unbounded map to 3.2 M keys in 12 minutes without a
     flush (heap 630 MiB, mark 725), the crash's path. Check with `TAILCAT=rig PHASES=sites` over 15 minutes and
     Chromium in the guest (in `images/arch/desktop.sh` since 2026-10-22).
-- **The shared cache's leftovers** ([jit.md](jit.md) "Sharing"):
-  - one vCPU pays 1–2% (Alpine's boot +1.8%, userspace +1.2%): partly each module's bytes copied
-    for the catch-up even when the table is the only one (a lone table could take them instead);
-  - a worker installs every module of the epoch, those its vCPU never runs too (an instance and
-    table entries each: small, not measured);
-  - a vCPU that slept through more than `HELD_MAX` (64 MiB) of modules flushes the whole cache when it next runs
-    ([jit.md](jit.md) "Sharing"; `lagFlushes`, none in the sessions measured, the held bytes peaked at 4-10 MiB). A
-    lagging table could instead recompile only what it runs, or take the compile worker's compiled modules, which
-    need no bytes (`env.jit_install` with a number), if the host kept them for the epoch. Worth it only if
-    `lagFlushes` shows up in real sessions. The held-bytes count in `Cache::install` has no native test (the native
-    cache never logs a module without a JIT host; a planted bug there went unseen): a test hook that logs a module
-    would cover it;
-  - **the cache's lock** ([jit.md](jit.md) "Sharing" "What the lock costs"): since a miss no longer waits for it and
-    a guest issues 2 ICs a page (2 KiB lines), the waiting is ~1.8 s over Firefox's pages session (0.7% of the
-    acquisitions found it held; from the snapshot on 2026-11-04 1.66 s, 0.35% of busy vCPU time), ~2.9 s on the churn screen and ~0.4 s in 300 s of the `go build` loop
-    (`bench/boot/REPORT.md` "M8: a miss doesn't wait for the JIT cache's lock, and 2 KiB instruction cache lines").
-    What still waits is catch-ups, tier-ups, flushes and ICs. Not worth a loop alone. Unscreened, by evidence:
-    - **Firefox's own ICs:** in the pages and churn sessions a Firefox started before the change keeps 64-byte steps
-      (it reads CTR_EL0 once), so those sessions' ICs fell by only a third (1.07 M → 0.71 M on the churn). Make the
-      warm snapshots again (`bench/gpu/warm-snapshots.sh firefox debian`, ~6 min) so later A/Bs start from a guest that
-      read 2 KiB; then count `ics` on the churn screen again (expect a few times fewer). `pages.webpcsnap` was remade
-      on 2026-11-04 (Firefox started in that session, so it read 2 KiB); the churn's count is still to take.
-    - **Coalescing ICs per page** until the next context synchronization (not guest-visible): only for a guest that
-      steps by its own line regardless of CTR_EL0; none seen.
-    - **Allocations under the lock** (dlmalloc behind std's global spin lock): count them before doing anything.
 - **V8's per-function overhead** ([jit.md](jit.md) "Memory"): ~8.5 KB per synthetic function of
   ~600 wasm bytes, a third each in PartitionAlloc, code and V8's heap (the instance's exports,
   which every function needs for the table; writing the table from an active element segment

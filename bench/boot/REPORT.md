@@ -4090,3 +4090,60 @@ random fields seldom hit (bitfield shifts and extensions, CSET/CSETM: planted, C
 SXTB as `extend16_s` and LSR as arithmetic each fail them); `jit::wasm::tests::peepholes` (planted, a tee across a mark
 fails it); the region tests' bytes updated for the counter.
 CI: `scripts/ci.sh` (709 s) and `scripts/ci-jit.sh` passed. Memory: no new state; the JIT's code 2.5-6.4% smaller.
+
+## PERF loop 14: the shared cache's leftovers (2026-11-10)
+
+The backlog's "The shared cache's leftovers", each sub-item counted first. Gates on the Mac host (M4 Mac mini, macOS
+26.6.2, Chrome for Testing 157.0.8103.50 headless) through `bench/interp/ab-mac.sh perf14 3 base=… L=… F=… LF=… --
+boot_alpine_jit alpine_user_jit`, arms alternated each round; counts in Node on the dev VM (`bench/boot/userprof.ts`,
+deterministic, the same 10,612,856,957 steps in every arm) and one churn screen on the dev VM's Chromium (`bench/gpu/ab.sh`
+from `pages.webpcsnap`, `PHASES=churn CHURN='rate=60&total=4000'`). Base `367757a9`. Raw: `results/perf14/` (README).
+
+**Where one vCPU's 1-2% went.** It was measured on 2026-10-03 against a cache per vCPU, whose code no longer exists, so
+each remaining cost of the sharing on one table got its own arm (`arms.patch`, build-time switches):
+- **L**: the jump cache's and hot words' addresses as constants in the modules (the one table's), not loaded through
+  the vCPU (`emit::JC_PTR`, `HOT_PTR`: the "one more load"). Wasm −0.45% (16.51 → 16.43 MB over the userspace run).
+- **F**: a catch-up that has nothing to take returns at once. Of the userspace run's 581K lock acquisitions (all
+  uncontended, one table), 571K (98%) caught up with nothing new.
+- The bytes "copied for the catch-up" are no copy any more: a table's `Todo` shares them (`Arc<[u8]>`). What is left is
+  the emitted `Vec` turned into an `Arc` once per module, 16.5 MB over the userspace run (~2 ms of memcpy, 0.02%): not built.
+
+| ms, each round; median of rounds | base | L | F | LF |
+|---|---|---|---|---|
+| `alpine_jit_total` | 3,847 · 3,927 · 3,931; **3,927** | 3,895 · 3,918 · 3,929; **3,918** (−0.2%) | 3,912 · 3,920 · 3,931; **3,920** (−0.2%) | 3,940 · 3,897 · 3,901; **3,901** (−0.7%) |
+| `alpine_user_jit_total` | 10,948 · 10,979 · 11,033; **10,979** | 10,912 · 10,970 · 10,963; **10,963** (−0.2%) | 11,083 · 11,007 · 11,044; **11,044** (+0.6%) | 10,957 · 10,939 · 10,932; **10,939** (−0.4%) |
+| compress | 1,655 · 1,644 · 1,645; **1,645** | 1,627 · 1,636 · 1,627; **1,627** (−1.1%, apart) | **1,651** (+0.4%) | 1,624 · 1,629 · 1,630; **1,629** (−0.9%, apart) |
+| Lua / churn / SQLite | 2,571 / 783 / 2,227 | +0.4 / −2.1 / 0.0% (overlapping) | 0.0 / +1.3 / +0.9% | −0.1 / −0.7 / −0.4% |
+
+All totals within ±0.7%, the rounds overlapping: the 1-2% isn't there any more (what removed it is the work since:
+the known blocks, the decoded blocks' slots, the compile worker's posted modules). The constants are worth ≤0.4% of a
+total (compress ~1%), for one-table VMs only (the gates, a 1-vCPU machine), and they'd make a lone table's bytes
+differ from any other's; the no-op catch-up is even. **Neither kept** (docs/jit.md "Tried and not kept").
+
+**Every module installed by every table.** Firefox's pages session (loop 13's base, the Mac): 2,700 modules, 10,800
+installs, 0.60 s of install time (`compileNs`) over the four vCPUs (~0.6% of the session's ~100 busy vCPU-seconds).
+The churn screen here: 20,856 modules, 83,424 installs, 2.84 s over ~97 s × 4 vCPUs (0.7%). Installing only what a
+table runs would save at most the other tables' three quarters of that (≤0.5% of either), less what a table that needs a module later
+pays to take it then (a parked install, interpreted meanwhile). Under the 1% bar on the costliest workload: dropped.
+
+**Lagging tables.** `lagFlushes` 0 in loop 13's pages sessions and in this churn screen, as in every session measured.
+The recompile-what-it-runs alternative stays unbuilt (docs/jit.md "Sharing"). The held-bytes count in `Cache::install`
+now has a native test (`installed_modules_count_in_the_held_bytes`: two tables, modules emitted through
+`Cache::install`, one falling behind past `HELD_MAX`); planted, the install not counting its bytes and the install not
+shedding each fail it.
+
+**The cache's lock:**
+- **Firefox's ICs** on the churn screen: 638K in a 97 s run (`doneS` 96.9), against 1.07 M with 64-byte lines and 0.71 M
+  with 2 KiB lines on 2026-10-21. Not the few times fewer expected: what's left is ICs over code the guest wrote (a
+  page each), not 64-byte steps. The lock's waiting 2.66 s over 4 vCPUs (0.16% contended, 3.93 M misses run
+  interpreted instead), busy MIPS 288, no stall ≥ 20 ms.
+- **Allocations under the lock** (a diagnostic core counting the allocator's calls, `WEBPC_ALLOCS` in `arms.patch`):
+  over the userspace run 2.79 M calls, of which **all but ~2,000 are under the cache's lock**, 1.66 M (60%) emitting
+  modules (`block::module`, ~3,000 a module), the rest the misses' map and region work. So the allocator's own spin
+  lock is hardly contended by them (the cache's lock serializes them already); what they cost is the lock's hold time,
+  of which emitting is most (5.3 s of the churn screen's 5.3 s held, the waiting 2.7 s). Fewer allocations in the
+  emitter would shorten holds by a part of that part: under what a session resolves. Not worth a loop.
+- **Coalescing ICs per page**: no guest seen that steps by its own line regardless of CTR_EL0 (the ICs left are a page
+  each already). Not built.
+
+Memory: nothing kept. Checks: steps unchanged in every arm. CI: `scripts/ci.sh` (the new test the only code change).

@@ -457,8 +457,19 @@ its jump cache and hot words, its helper counts and its counters.
   25% faster than with a cache per vCPU, every phase (Lua 7.5%, SQLite 10%, churn 43%; rechecked
   after the step-weighted batches, which turned the first measurement's 4–5% loss on Lua and SQLite
   into a gain: `bench/boot/REPORT.md` "M8: the shared cache's single-threaded phases,
-  rechecked"), one vCPU 1–2% slower. On one vCPU the same load compiled 227
-  MiB; four private caches compiled ~2.9× that.
+  rechecked"), one vCPU 1–2% slower then; by PERF loop 14 (2026-11-10) what one table still pays for the sharing
+  measured under 1%: the jump cache and hot words through the vCPU ≤0.4% of a gate's total, catch-ups with nothing to
+  take (98% of a one-table run's 581K) nothing ([Tried and not kept](#tried-and-not-kept)). On one vCPU the same load
+  compiled 227 MiB; four private caches compiled ~2.9× that.
+- **What's left, counted** (PERF loop 14, `bench/boot/REPORT.md` "PERF loop 14: the shared cache's leftovers"): every
+  table installs every module, those its vCPU never runs too: 0.7% of the churn screen's vCPU time is installs
+  (83,424 of 20,856 modules, 2.84 s), ~0.6% of the pages session's busy vCPU time (0.60 s of ~100 s), so installing
+  only what a table runs could save three quarters of that at best (≤0.5%). A lagging table's flush (`lagFlushes`) has never shown in a session; were it to, a lagging table
+  could recompile only what it runs, or take the compile worker's modules if the host kept them for the epoch.
+  Nearly every allocation of a run is under the cache's lock (all but ~2,000 of the userspace benchmark's 2.79 M,
+  60% emitting modules), so they don't contend for the allocator's lock; they only lengthen holds, mostly the
+  emitting. The ICs left on the churn screen (638K in 97 s, with 2 KiB lines) are a page each over code the guest
+  wrote; coalescing them is for a guest that ignores CTR_EL0, none seen.
 
 ## Memory
 
@@ -1207,6 +1218,12 @@ fast paths send there (`WEBPC_JIT_DIFF_HELPERS=1` on the differential test lists
 ## Tried and not kept
 
 Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
+- **A lone table's jump cache and hot words as constants** (PERF loop 14, 2026-11-10; `bench/boot/results/perf14/`):
+  with one table, modules can address its jump cache and hot words directly instead of through the vCPU
+  (`emit::JC_PTR`, `HOT_PTR`). On the Mac's gates −0.2% on the boot and the userspace benchmark (compress −1.1%, apart;
+  the totals' rounds overlapping), −0.45% of the wasm: only for one-table VMs, and a lone table's bytes would differ
+  from any other's. Returning at once from a catch-up with nothing to take (98% of them) was even (+0.6%,
+  overlapping): the lock's uncontended hold is short already.
 - **Per-module eviction, coldest first** (M8, 2026-10-18/19; branch `evict-generations`, not merged;
   `bench/boot/results/m8-evict/` README): about half of a full cache's regions are idle at Firefox's flushes, but
   nearly every module holds one in use (a module is a batch of what got hot together), and V8 frees a module only

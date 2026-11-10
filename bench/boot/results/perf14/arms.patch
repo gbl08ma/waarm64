@@ -1,0 +1,244 @@
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index c802156d..908ce5e1 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -1609,6 +1609,19 @@ fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>, x: X
+ pub const JC_PTR: u32 = (offset_of!(Vcpu, jit) + offset_of!(super::State, jc)) as u32;
+ pub const HOT_PTR: u32 = (offset_of!(Vcpu, jit) + offset_of!(super::State, hot)) as u32;
+ 
++/// (Diagnostic arm L) the table's jump cache (0) or hot words (1): a constant
++/// with one table, else through the vCPU.
++fn lone_ptr(c: &mut Func, which: usize) {
++    match super::lone(which) {
++        0 => {
++            c.local_get(VCPU).i32_load([JC_PTR, HOT_PTR][which]);
++        }
++        b => {
++            c.i32_const(b as i32);
++        }
++    }
++}
++
+ /// The transfer cache's offset in the `Vcpu`, split: [`xc_entry`] ORs the
+ /// high part (a multiple of the cache's size) into the entry's index, and its
+ /// loads take the low part, small enough for V8 to fold into them.
+@@ -1711,17 +1724,24 @@ pub fn via_jc(c: &mut Func, key: Option<u64>, len: u32, ty: u32, check: Option<u
+         None => {
+             c.local_get(KEY).i32_wrap_i64().i32_const(2).op(SHL);
+             c.i32_const((super::JC as i32 - 1) << 4).op(AND);
+-            c.local_get(VCPU)
+-                .i32_load(JC_PTR)
+-                .op(ADD)
++            lone_ptr(c, 0);
++            c.op(ADD)
+                 .local_tee(JCE)
+                 .i64_load(0)
+                 .local_get(KEY);
+         }
+         Some(k) => {
+             let e = (((k >> 2) as u32) & (super::JC as u32 - 1)) * 16;
+-            c.local_get(VCPU).i32_load(JC_PTR).i32_const(e as i32);
+-            c.op(ADD).local_tee(JCE).i64_load(0).i64_const(k as i64);
++            match super::lone(0) {
++                0 => {
++                    c.local_get(VCPU).i32_load(JC_PTR).i32_const(e as i32);
++                    c.op(ADD);
++                }
++                b => {
++                    c.i32_const((b + e) as i32);
++                }
++            }
++            c.local_tee(JCE).i64_load(0).i64_const(k as i64);
+         }
+     }
+     c.op(EQ + WC).op(AND);
+@@ -1762,7 +1782,8 @@ pub fn tier_up(c: &mut Func, word: u32, key: u64, ty: u32, hot: u32) {
+     const V: u32 = 6; // i32 scratch
+     const H: u32 = TLBE; // i32 scratch: the hot words
+     let off = 4 * word;
+-    c.local_get(VCPU).i32_load(HOT_PTR).local_tee(H);
++    lone_ptr(c, 1);
++    c.local_tee(H);
+     c.i32_load(off).local_tee(V);
+     c.i32_const(0).op(LT_S).if_();
+     c.local_get(VCPU)
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 3632f6de..104c9787 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -407,6 +407,13 @@ pub const WARM_TICKS: u8 = 128;
+ /// epoch, up to the whole byte budget.
+ pub const HELD_MAX: u64 = 64 << 20;
+ 
++/// (Diagnostic arm L, `WEBPC_LONE` at build time) the one table's jump cache
++/// and hot words, which its modules then reach as constants.
++static LONE: [AtomicU32; 2] = [AtomicU32::new(0), AtomicU32::new(0)];
++pub(crate) fn lone(which: usize) -> u32 {
++    LONE[which].load(Ordering::Relaxed)
++}
++
+ /// A jump cache entry: the compiled block for a key. Blocks read it too
+ /// (indirect branches, step 7: `emit::indirect`), so its layout is fixed.
+ /// Each table has its own: an entry names a slot of that table.
+@@ -1314,6 +1321,7 @@ impl Cache {
+                 .map(|i| (i.idx, i.len as u32))
+         };
+         let ns = now_ns();
++        let a0 = crate::ALLOC_CALLS.load(Ordering::Relaxed);
+         let block::Emitted {
+             bytes,
+             inl,
+@@ -1329,6 +1337,7 @@ impl Cache {
+             self.features,
+             Some(xmiss),
+         );
++        t.stats.lag_flushes += crate::ALLOC_CALLS.load(Ordering::Relaxed) - a0;
+         let ns = now_ns().saturating_sub(ns);
+         (t.stats.emit_ns, t.stats.emit_locked_ns) =
+             (t.stats.emit_ns + ns, t.stats.emit_locked_ns + ns);
+@@ -1556,6 +1565,21 @@ impl Table {
+     /// running (`jit_hot`); across one it replaces them, so only the
+     /// dispatcher calls it then.
+     fn sync(&mut self, c: &mut Cache, mem: &Mem) {
++        if option_env!("WEBPC_FAST").is_some() {
++            let seen = &c.tables[self.id];
++            if (self.xmiss || c.off)
++                && self.epoch == c.epoch
++                && !seen.all
++                && seen.dropped.is_empty()
++                && seen.ival == c.ival_base + c.ival_log.len() as u64
++                && self.installed == c.log.len()
++                && self.drops == c.drops.load(Ordering::Relaxed)
++            {
++                // (Diagnostic: counted in a word that is 0 in the gates.)
++                self.stats.prune_ns += 1;
++                return;
++            }
++        }
+         self.miss_functions(c, mem);
+         let seen = &mut c.tables[self.id];
+         if self.epoch != c.epoch || seen.all {
+@@ -1785,6 +1809,10 @@ impl Table {
+ 
+     /// The jump cache and the hot words, for `State::jc` and `State::hot`.
+     fn ptrs(&mut self) -> (*mut Jc, *mut u32) {
++        if option_env!("WEBPC_LONE").is_some() {
++            LONE[0].store(self.jc.as_mut_ptr() as usize as u32, Ordering::Relaxed);
++            LONE[1].store(self.hot.as_mut_ptr() as usize as u32, Ordering::Relaxed);
++        }
+         (self.jc.as_mut_ptr(), self.hot.as_mut_ptr())
+     }
+ 
+@@ -1940,11 +1968,14 @@ impl Jit {
+         // The table catches up after the miss, which may have compiled (or
+         // flushed): an entry it fills now and a catch-up then clears is only
+         // a later miss. What it returns is installed before any block runs.
++        let a0 = crate::ALLOC_CALLS.load(Ordering::Relaxed);
+         let n = self.table.dec.counted(key) + 1;
+         let (r, quota) = c.miss(&mut self.table, key, va, mem, n, len);
+         self.table.dec.quota(key, quota);
+         self.table.catch_up(&mut c, mem);
+         drop(c);
++        self.table.stats.rescues += crate::ALLOC_CALLS.load(Ordering::Relaxed) - a0;
++        self.table.stats.prunes = crate::ALLOC_CALLS.load(Ordering::Relaxed);
+         self.install();
+         match r {
+             Ok((idx, len)) if idx & IDX_MASK < self.table.limit => {
+@@ -2015,9 +2046,11 @@ impl Jit {
+     #[inline(never)]
+     fn sync(&mut self, mem: &Mem) {
+         self.hot_synced = false;
++        let a0 = crate::ALLOC_CALLS.load(Ordering::Relaxed);
+         let mut c = lock(&self.cache, &mut self.table.stats);
+         self.table.catch_up(&mut c, mem);
+         drop(c);
++        self.table.stats.rescues += crate::ALLOC_CALLS.load(Ordering::Relaxed) - a0;
+         self.install();
+     }
+ 
+@@ -2047,11 +2080,13 @@ impl Jit {
+         }
+         // The hot words it sets are read only when this returns, by then
+         // with their region installed.
++        let a0 = crate::ALLOC_CALLS.load(Ordering::Relaxed);
+         c.tier_up(&mut self.table, key, va, mem);
+         let seen = (self.table.drops, self.table.ivals);
+         self.table.sync(&mut c, mem);
+         self.hot_synced |= seen != (self.table.drops, self.table.ivals);
+         drop(c);
++        self.table.stats.rescues += crate::ALLOC_CALLS.load(Ordering::Relaxed) - a0;
+         self.install();
+     }
+ }
+@@ -3638,6 +3673,53 @@ mod tests {
+         assert!(!u.lagging && c.epoch == epoch + 1 && c.held == 0 && u.todo.is_empty());
+     }
+ 
++    /// The modules [`Cache::install`] emits count in the held bytes until
++    /// every table has taken them, and past [`HELD_MAX`] the oldest go there
++    /// too (the test above logs its modules by hand).
++    #[test]
++    fn installed_modules_count_in_the_held_bytes() {
++        let mut ram = vec![0u128; 0x2000 / 16];
++        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
++        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x2000) };
++        for at in [0x1000, 0x1010, 0x1020] {
++            mem.write(at, 4, 0x9100_0400).unwrap(); // add x0, x0, #1
++            mem.write(at + 4, 4, 0xd65f_03c0).unwrap(); // ret
++        }
++        let mut c = Cache::new(Config::DEFAULT);
++        let (mut t, mut u) = (Table::new(&mut c), Table::new(&mut c));
++        c.xmiss = Some(1);
++        (t.xmiss, t.base, u.xmiss, u.base) = (true, 1, true, 1);
++        let emit = |c: &mut Cache, t: &mut Table, k: u64| {
++            c.info(k, || 2).queued = true;
++            c.pending.push((k, k));
++            let regions = c.plan(&mem);
++            c.install(t, regions, &mem, c.budget()).expect("installed");
++            c.log.last().unwrap().bytes.len() as u64
++        };
++        let held = |c: &Cache| c.log[c.freed..].iter().map(|l| l.bytes.len() as u64).sum::<u64>();
++        let a = emit(&mut c, &mut t, 0x1000);
++        assert!(a > 0 && c.held == a, "held {} for a module of {a}", c.held);
++        t.sync(&mut c, &mem);
++        assert_eq!(c.held, a, "u hasn't taken it");
++        u.sync(&mut c, &mem);
++        assert_eq!((c.held, c.freed), (0, 1));
++        // u falls behind: an install past HELD_MAX drops the oldest bytes.
++        c.log.push(Logged {
++            slot: c.next,
++            n: 0,
++            seq: 0,
++            bytes: vec![0u8; HELD_MAX as usize].into(),
++            tiers: Vec::new(),
++        });
++        c.held += HELD_MAX;
++        t.sync(&mut c, &mem);
++        let b = emit(&mut c, &mut t, 0x1010);
++        assert_eq!((c.freed, c.held), (2, b), "the big one went");
++        assert_eq!(c.held, held(&c));
++        let d = emit(&mut c, &mut t, 0x1020);
++        assert_eq!((c.held, held(&c)), (b + d, b + d));
++    }
++
+     /// A table's decoded blocks start over at their key bound too (blocks of
+     /// one micro-op, or none, fill the map before the arena).
+     #[test]
+diff --git a/core/src/lib.rs b/core/src/lib.rs
+index 2b5a3445..d5dc8ba4 100644
+--- a/core/src/lib.rs
++++ b/core/src/lib.rs
+@@ -85,7 +85,13 @@ unsafe impl std::alloc::GlobalAlloc for Counting {
+     }
+ }
+ 
++/// (Diagnostic, `WEBPC_ALLOCS`) allocator calls so far (alloc, alloc_zeroed, realloc).
++pub(crate) static ALLOC_CALLS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
++
+ fn counted(d: isize) {
++    if option_env!("WEBPC_ALLOCS").is_some() && d >= 0 {
++        ALLOC_CALLS.fetch_add(1, Ordering::Relaxed);
++    }
+     if d >= 0 {
+         let live = HEAP_LIVE.fetch_add(d as usize, Ordering::Relaxed) + d as usize;
+         if live > HEAP_PEAK.load(Ordering::Relaxed) {

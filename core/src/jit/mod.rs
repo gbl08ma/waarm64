@@ -3638,6 +3638,60 @@ mod tests {
         assert!(!u.lagging && c.epoch == epoch + 1 && c.held == 0 && u.todo.is_empty());
     }
 
+    /// The modules [`Cache::install`] emits count in the held bytes until
+    /// every table has taken them, and past [`HELD_MAX`] the oldest go there
+    /// too (the test above logs its modules by hand).
+    #[test]
+    fn installed_modules_count_in_the_held_bytes() {
+        let mut ram = vec![0u128; 0x2000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x2000) };
+        for at in [0x1000, 0x1010, 0x1020] {
+            mem.write(at, 4, 0x9100_0400).unwrap(); // add x0, x0, #1
+            mem.write(at + 4, 4, 0xd65f_03c0).unwrap(); // ret
+        }
+        let mut c = Cache::new(Config::DEFAULT);
+        let (mut t, mut u) = (Table::new(&mut c), Table::new(&mut c));
+        c.xmiss = Some(1);
+        (t.xmiss, t.base, u.xmiss, u.base) = (true, 1, true, 1);
+        let emit = |c: &mut Cache, t: &mut Table, k: u64| {
+            c.info(k, || 2).queued = true;
+            c.pending.push((k, k));
+            let regions = c.plan(&mem);
+            c.install(t, regions, &mem, c.budget()).expect("installed");
+            c.log.last().unwrap().bytes.len() as u64
+        };
+        let held = |c: &Cache| {
+            c.log[c.freed..]
+                .iter()
+                .map(|l| l.bytes.len() as u64)
+                .sum::<u64>()
+        };
+        let a = emit(&mut c, &mut t, 0x1000);
+        assert!(a > 0 && c.held == a, "held {} for a module of {a}", c.held);
+        t.sync(&mut c, &mem);
+        assert_eq!(c.held, a, "u hasn't taken it");
+        u.sync(&mut c, &mem);
+        assert_eq!((c.held, c.freed), (0, 1));
+        // u falls behind: an install past HELD_MAX drops the oldest bytes.
+        c.log.push(Logged {
+            slot: c.next,
+            n: 0,
+            seq: 0,
+            bytes: vec![0u8; HELD_MAX as usize].into(),
+            tiers: Vec::new(),
+        });
+        c.held += HELD_MAX;
+        t.sync(&mut c, &mem);
+        let b = emit(&mut c, &mut t, 0x1010);
+        assert_eq!((c.freed, c.held), (2, b), "the big one went");
+        assert_eq!(c.held, held(&c));
+        let d = emit(&mut c, &mut t, 0x1020);
+        assert_eq!((c.held, held(&c)), (b + d, b + d));
+        u.catch_up(&mut c, &mem);
+        assert_eq!(u.stats.lag_flushes, 1, "u lacked the big one");
+    }
+
     /// A table's decoded blocks start over at their key bound too (blocks of
     /// one micro-op, or none, fill the map before the arena).
     #[test]
