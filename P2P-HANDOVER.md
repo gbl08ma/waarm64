@@ -45,5 +45,5 @@ one's own name to copy (the `self` event's `name`), the incoming and relay-only 
 settings, who sees one's IP address beside the privacy note; the node key kept in IndexedDB as tailcat's identity.
 Then two Debian guests reaching each other by name in `scripts/ci-net.sh`. Words come from the catalog (docs/i18n.md).
 
-Open questions for the user stay in plan §9 (the default public room, the relays, the seal's reuse of the WireGuard
-key, the `p2p.alt` suffix, the event kind).
+Open questions for the user stay in plan §9 (the default public room, the relays, the `p2p.alt` suffix, the event
+kind); the seal's reuse of the WireGuard key is decided (plan §1, 2026-11-10).

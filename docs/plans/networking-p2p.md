@@ -70,6 +70,12 @@ key), the Ethernet gateway ([devices.md](../devices.md) "net") and network adapt
   ordered and reliable and can't be configured, its peer IDs and Nostr keys are random per page load
   (no lookup by key), and its fallback is TURN. Its Nostr pattern is what §3 takes: ephemeral events,
   the topic in an `x` tag, several relays, a maintained relay list.
+- **Lookups are sealed to the WireGuard node key itself**, no second key (the user, 2026-11-10, after R1's review):
+  an X25519 box from an ephemeral key, its key derived by BLAKE2s with a label of its own, the room's lookup key, the
+  shared secret and both public keys. The review found it sound: the target reveals only whether a lookup opened (by
+  calling back), which takes the shared secret to make, so it's no oracle against the key, and Noise's own KDF chain is
+  separated by its protocol name. So a name stays one key, and nothing more is kept. What it doesn't give, by design:
+  the sender isn't authenticated (a hint, below), and recorded lookups have no forward secrecy if the key leaks.
 - **A lookup is a hint, WireGuard is the truth.** A lookup can't be checked against the key it names
   (a WireGuard key is X25519 and can't sign), and it doesn't need to be: a forged or replayed one can
   only make a peer call a key back in one of the room's own regions, and the handshake (with the
@@ -315,6 +321,4 @@ client was built.
   and DERP carry everyone (R3), and what the page says, decide it.
 - Which public Nostr relays by default (Trystero's maintained list is a start), and whether they
   forward a busy room's lookups.
-- Sealing lookups to the node key reuses a WireGuard static key for a box (with its own label);
-  R1's review checks that, or gives each connection a second key the name would then carry.
 - The names' suffix: `p2p.alt` is a placeholder until R1.
