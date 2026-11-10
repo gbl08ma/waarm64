@@ -1,0 +1,182 @@
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index 26fa38e6..6288501e 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -1052,7 +1052,8 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], len: usize, pc: u64) -> (u6
+                 }
+             }
+             K::Adc => {
+-                let v = adc(c, u.x, c.reg(n), c.reg(u.m as u32));
++                let (x, y) = (c.reg(n), c.reg(u.m as u32));
++                let v = adc(&mut c.nzcv, u.x, x, y);
+                 c.set_reg(d, v)
+             }
+             K::Div => c.set_reg(d, div(u.x, c.reg(n), c.reg(u.m as u32))),
+@@ -1406,6 +1407,8 @@ pub fn hot<B: Fast>(
+     let mut rest = r.left - r.done;
+     let arena = dec.arena.as_ptr();
+     let fx = m.ctx(c);
++    // NZCV, held here and stored on the way out (and around what reads `Cpu`'s).
++    let mut nz = c.nzcv;
+     let status = 'run: loop {
+         // The block's prefix, to the PC after it.
+         let next = 'block: loop {
+@@ -1617,11 +1620,13 @@ pub fn hot<B: Fast>(
+                     if n == 4 && c.pstate & 1 == 0 {
+                         break 'run SLOW;
+                     }
++                    c.nzcv = nz;
+                     wr(c, d, mrs(c, n, imm))
+                 }
+                 K::Msr => {
+                     let (rt, a) = (d & 31, n | (o.m as u32) << 8);
+                     let v = rd(c, rt);
++                    c.nzcv = nz;
+                     match d >> 5 {
+                         // SAFETY: `a` is the offset of a u64 field of `Cpu` (`sys::plain_write`).
+                         0 => unsafe {
+@@ -1646,12 +1651,13 @@ pub fn hot<B: Fast>(
+                         }
+                         _ => c.pstate |= a as u64,
+                     }
++                    nz = c.nzcv;
+                 }
+                 K::Maddl => wr(c, d, maddl(w, ra(c, n), ra(c, o.m as u32), rd(c, w & 31))),
+                 K::Extr => wr(c, d, extr(w, ra(c, n), ra(c, o.m as u32))),
+                 K::Bit1 => wr(c, d, bit1(w, ra(c, n))),
+                 K::Adc => {
+-                    let v = adc(c, w, ra(c, n), ra(c, o.m as u32));
++                    let v = adc(&mut nz, w, ra(c, n), ra(c, o.m as u32));
+                     wr(c, d, v)
+                 }
+                 K::Div => wr(c, d, div(w, ra(c, n), ra(c, o.m as u32))),
+@@ -1686,7 +1692,7 @@ pub fn hot<B: Fast>(
+                 K::AddsI => {
+                     let (x, imm) = (o.m as u32, w as i32 as i64 as u64);
+                     let (v, f) = add_with_carry(rsp(c, n), imm, x & 2 != 0, x & 1 != 0);
+-                    c.nzcv = f;
++                    nz = f;
+                     wr(c, d, v);
+                     if x & 4 != 0 {
+                         and_bcond!('block, u, end, pc, f);
+@@ -1695,15 +1701,15 @@ pub fn hot<B: Fast>(
+                 K::AddR => {
+                     let sf = w >> 8 & 1 != 0;
+                     let y = shift(ra(c, o.m as u32), w & 3, w >> 2 & 63, sf);
+-                    addsub_h(c, w, d, ra(c, n), y, sf, false);
++                    addsub_h(c, &mut nz, w, d, ra(c, n), y, sf, false);
+                     if w & 1 << 11 != 0 {
+-                        and_bcond!('block, u, end, pc, c.nzcv);
++                        and_bcond!('block, u, end, pc, nz);
+                     }
+                 }
+                 K::AddX => {
+                     let sf = w >> 8 & 1 != 0;
+                     let y = extend(ra(c, o.m as u32), w & 7, w >> 3 & 7);
+-                    addsub_h(c, w, d, rsp(c, n), y, sf, true);
++                    addsub_h(c, &mut nz, w, d, rsp(c, n), y, sf, true);
+                 }
+                 K::MovI => {
+                     // SAFETY: a MovI's `w` is its constant's distance if `m` says so.
+@@ -1729,9 +1735,9 @@ pub fn hot<B: Fast>(
+                     let opc = x & 3;
+                     // SAFETY: a LogI's `w` is its constant's distance.
+                     let imm = unsafe { konst(u) };
+-                    logical_h(c, opc, d, op(opc, ra(c, n), imm), x & 4 != 0, true);
++                    logical_h(c, &mut nz, opc, d, op(opc, ra(c, n), imm), x & 4 != 0, true);
+                     if x & 8 != 0 {
+-                        and_bcond!('block, u, end, pc, c.nzcv);
++                        and_bcond!('block, u, end, pc, nz);
+                     }
+                 }
+                 K::LogR => {
+@@ -1739,9 +1745,9 @@ pub fn hot<B: Fast>(
+                     let y = shift(ra(c, o.m as u32), w & 3, w >> 2 & 63, sf);
+                     let y = if w >> 10 & 1 != 0 { !y } else { y };
+                     let opc = w >> 8 & 3;
+-                    logical_h(c, opc, d, op(opc, ra(c, n), y), sf, false);
++                    logical_h(c, &mut nz, opc, d, op(opc, ra(c, n), y), sf, false);
+                     if w & 1 << 12 != 0 {
+-                        and_bcond!('block, u, end, pc, c.nzcv);
++                        and_bcond!('block, u, end, pc, nz);
+                     }
+                 }
+                 K::Ubfm => {
+@@ -1768,7 +1774,7 @@ pub fn hot<B: Fast>(
+                     wr(c, d, shift(ra(c, n), w & 3, amt, sf));
+                 }
+                 K::Csel => {
+-                    let v = if holds(w >> 16, c.nzcv) {
++                    let v = if holds(w >> 16, nz) {
+                         ra(c, n)
+                     } else {
+                         let y = ra(c, o.m as u32);
+@@ -1782,7 +1788,7 @@ pub fn hot<B: Fast>(
+                     wr(c, d, trunc(v, w >> 6 & 1 != 0));
+                 }
+                 K::Ccmp => {
+-                    c.nzcv = if holds(w >> 16, c.nzcv) {
++                    nz = if holds(w >> 16, nz) {
+                         let y = if w >> 4 & 1 != 0 {
+                             o.m as u64
+                         } else {
+@@ -1819,7 +1825,7 @@ pub fn hot<B: Fast>(
+                 }
+                 // SAFETY (the three): `u` is the micro-op.
+                 K::Bcond => {
+-                    let t = holds(n | (o.m as u32) << 8, c.nzcv);
++                    let t = holds(n | (o.m as u32) << 8, nz);
+                     break 'block pc.wrapping_add(if t { unsafe { taken_imm(u) } } else { 4 });
+                 }
+                 K::Cbz => {
+@@ -1945,6 +1951,7 @@ pub fn hot<B: Fast>(
+         (key, bpc) = (k, next);
+     };
+     (r.u, r.end, r.pc, r.key, r.bpc, r.done) = (u, end, pc, key, bpc, r.left - rest);
++    c.nzcv = nz;
+     if status != SLOW {
+         c.pc = pc;
+     }
+@@ -2164,11 +2171,11 @@ fn pair_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
+ 
+ /// [`addsub`] through the inline register accessors.
+ #[inline(always)]
+-fn addsub_h(c: &mut Cpu, f: u32, d: u32, x: u64, y: u64, sf: bool, sp_dest: bool) {
++fn addsub_h(c: &mut Cpu, nz: &mut u64, f: u32, d: u32, x: u64, y: u64, sf: bool, sp_dest: bool) {
+     let (sub, s) = (f >> 10 & 1 != 0, f >> 9 & 1 != 0);
+     let (r, fl) = add_with_carry(x, if sub { !y } else { y }, sub, sf);
+     if s {
+-        c.nzcv = fl;
++        *nz = fl;
+         wr(c, d, r);
+     } else if sp_dest {
+         wsp(c, d, r);
+@@ -2179,11 +2186,11 @@ fn addsub_h(c: &mut Cpu, f: u32, d: u32, x: u64, y: u64, sf: bool, sp_dest: bool
+ 
+ /// [`logical`] through the inline register accessors.
+ #[inline(always)]
+-fn logical_h(c: &mut Cpu, opc: u32, d: u32, r: u64, sf: bool, sp_dest: bool) {
++fn logical_h(c: &mut Cpu, nz: &mut u64, opc: u32, d: u32, r: u64, sf: bool, sp_dest: bool) {
+     let r = trunc(r, sf);
+     if opc == 3 {
+         let n = r >> (if sf { 63 } else { 31 }) & 1 == 1;
+-        c.nzcv = super::nzcv(n, r == 0, false, false);
++        *nz = super::nzcv(n, r == 0, false, false);
+         wr(c, d, r);
+     } else if sp_dest {
+         wsp(c, d, r);
+@@ -2244,11 +2251,11 @@ fn bit1(f: u32, x: u64) -> u64 {
+ 
+ /// ADC & co (`K::Adc`, `f` its `x`) of `x` and `y`: the result (the flags set if S).
+ #[inline(always)]
+-fn adc(c: &mut Cpu, f: u32, x: u64, y: u64) -> u64 {
++fn adc(nz: &mut u64, f: u32, x: u64, y: u64) -> u64 {
+     let y = if f & 4 != 0 { !y } else { y };
+-    let (r, fl) = add_with_carry(x, y, c.nzcv >> 29 & 1 != 0, f & 1 != 0);
++    let (r, fl) = add_with_carry(x, y, *nz >> 29 & 1 != 0, f & 1 != 0);
+     if f & 2 != 0 {
+-        c.nzcv = fl;
++        *nz = fl;
+     }
+     r
+ }

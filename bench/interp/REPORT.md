@@ -2289,3 +2289,40 @@ larger loop with a block call in it, for runs that never reach one). A trip arou
 little beyond what stays (compiled code's exit, `hot`'s entry and exit, the next PC's key, `Jit::fresh`): the
 loop head's tag strip, a second jump-cache probe, `interpret`'s call and `Run`'s setup, a few ns each time, which
 126 M times a session is under what the pages session resolves. The unsafe rewrite isn't worth it.
+
+## PERF loop 3: `hot`'s cost per micro-op: SUBS's carry, NZCV in a local, ADRP+ADD (2026-11-10)
+
+The Mac host (Apple M4, macOS 26.6.2), Chrome for Testing 157.0.8103.50; base `b74e1319`; raw
+`results/m9-interp-mac/perf3/` (README). The backlog's three untried ideas for `hot`'s per-micro-op cost, each its own
+arm against main, all four alternated in one session (`bench/interp/ab-mac.sh p3 3 …`); no memory in any of them.
+
+- **`subs`**: `add_with_carry` in `hot` (AddR, AddX, AddsI, CCMP) replaced by `addc`, C from the operands as the
+  JIT's: one add and `x >= !y` for a subtraction, `r < x` for an addition, instead of two adds, two compares and an
+  OR. `hot` 11,806 → 11,783 bytes of wasm (MMU), 11,391 → 11,372 (flat).
+- **`nzloc`**: register caching where it can be done without a compare a register access: NZCV held in a local
+  across `hot` (stored on the way out and around MRS and MSR, ADC through it), so a flag setter and the B.cond,
+  CSEL or CCMP after it don't go through the `Cpu`. `hot` 11,804 and 11,386 bytes. (The guest's X registers are
+  indexed by a micro-op's byte; caching one, the SP say, would put a compare on every access.)
+- **`adrp`**: ADRP followed by an ADD of an immediate to the same register (not XZR) as one dispatch, marked at
+  decode (`mov_runs`), the ADD's immediate read from the next micro-op as LdO's pairs do, the ADD still in the
+  arena for the slow path and a prefix that ends between them. `hot` 11,880 and 11,464 bytes.
+
+MIPS, three rounds:
+
+| | main | subs | nzloc | adrp |
+|---|---|---|---|---|
+| `dec_mips` | 518.1 · 517.2 · 518.8 | 507.9 · 507.2 · 508.1 (−2.0%) | 499.8 · 499.8 · 499.2 (−3.5%) | 516.2 · 516.4 · 516.8 (−0.3%) |
+| `vm_dec_mmu_mips` | 513.1 · 516.3 · 517.5 | 500.5 · 502.5 · 501.3 (−2.9%) | 506.0 · 504.0 · 504.1 (−2.4%) | 516.7 · 518.5 · 512.8 (+0.1%) |
+| Alpine's boot through the block interpreter | 254.9 · 254.9 · 254.0 | 253.0 · 252.8 · 252.3 (−0.8%) | 249.9 · 250.1 · 249.5 (−1.9%) | 255.5 · 255.2 · 255.1 (+0.1%) |
+
+**None kept.** `subs` and `nzloc` lose on every guest with the rounds apart. `subs` made `hot` smaller and still
+cost it 1-3%: in `hot` the subtraction bit is a micro-op's field, so the JIT's single compare becomes a select between
+two, and the change moved V8's register allocation for the whole loop (as "XZR's writes without a compare" did). The
+JIT's version wins because it knows SUBS from ADDS when it compiles. `nzloc` is one more loop-carried value, the way
+M8-INTERP loop 2's lazy NZCV in locals lost (−2 to −4%): a stored NZCV's load and store are cheaper than what the
+extra live value costs the rest of `hot`. `adrp` moves nothing past the bar (Alpine's boot +0.1%, `dec_mips` −0.3%,
+both rounds apart): the pair is 0.5% of Alpine's dynamic pairs (M8-INTERP loop 0's mix), so at most ~0.5% of the
+dispatches go, and a browser's interpreted code, where `hot` is ~14% of a busy vCPU on the Mac, can't show it either
+(even at several times Alpine's share it would be a few tenths of a percent of busy time); no browser count was made
+for that reason.
+

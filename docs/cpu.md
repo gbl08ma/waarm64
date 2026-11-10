@@ -571,7 +571,16 @@ In `bench/interp/REPORT.md` "M8-INTERP loop 2" unless said, the variants' diffs 
 - **Runs of LdOs and StOs in a loop** (as the MOV runs): −8% on the small guests, −0.6% on Alpine's
   boot; the loop's code slowed `hot` for everything. Straight-line pairs (above) are what's kept;
   **STP+STP pairs** the same way added nothing (−0.5% on the small guests, +0.2% on Alpine's boot).
-  ADRP+ADD (0.5% of the pairs) wasn't tried (loop 8).
+- **`hot`'s per-micro-op cost, three more ways** (`bench/interp/REPORT.md` "PERF loop 3", on the Mac): ADRP+ADD to
+  the same register as one dispatch (0.5% of Alpine's pairs) +0.1% on Alpine's boot, under the bar; SUBS's carry
+  from its operands as the JIT's (`x >= !y`) −0.8 to −2.9%, though `hot` got smaller: the subtraction bit is a
+  micro-op's field there, so the JIT's one compare becomes a select of two, and V8's allocation moved; NZCV held in a
+  local across `hot` (the one register cacheable without a compare an access) −1.9 to −3.5%, one more loop-carried
+  value, as the lazy NZCV above. What a micro-op's dispatch costs is V8's interrupt check at the loop head, the field
+  loads, the jump table's bounds check and the handler's landing (loop 8; the Mac's `--prof`, "The block interpreter
+  on the Mac, loop 3"); threaded dispatch isn't expressible in wasm, and tail-call dispatch (`become`) wasn't built:
+  V8's `return_call_indirect` costs ~15 ns an entry (`bench/boot/REPORT.md` "M8: where a busy vCPU's time goes in
+  Firefox"), several micro-ops' worth.
 - **A browser's FP and NEON classes as handlers** (FMOV, MOVI, FCSEL, vector logic and ADD, DUP, BFM, FCMP,
   FADD/FSUB/FMUL/FDIV on the JIT's fast-path rules; loop 10): the small guests −1-2%, Firefox's pages session no
   faster. Its generic path is 1.9% of what it interprets, spread over dozens of classes; the code costs `hot` more

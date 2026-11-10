@@ -1,0 +1,55 @@
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index 26fa38e6..8c55aacd 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -1685,7 +1685,7 @@ pub fn hot<B: Fast>(
+                 ),
+                 K::AddsI => {
+                     let (x, imm) = (o.m as u32, w as i32 as i64 as u64);
+-                    let (v, f) = add_with_carry(rsp(c, n), imm, x & 2 != 0, x & 1 != 0);
++                    let (v, f) = addc(rsp(c, n), imm, x & 2 != 0, x & 1 != 0);
+                     c.nzcv = f;
+                     wr(c, d, v);
+                     if x & 4 != 0 {
+@@ -1790,7 +1790,7 @@ pub fn hot<B: Fast>(
+                         };
+                         let sub = w >> 5 & 1 != 0;
+                         let y = if sub { !y } else { y };
+-                        add_with_carry(ra(c, n), y, sub, w >> 6 & 1 != 0).1
++                        addc(ra(c, n), y, sub, w >> 6 & 1 != 0).1
+                     } else {
+                         ((w >> 8 & 15) as u64) << 28
+                     };
+@@ -2162,11 +2162,31 @@ fn pair_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
+     true
+ }
+ 
++/// [`add_with_carry`] in [`hot`], where the carry in is `sub` and `y` is the
++/// second operand already inverted for a subtraction: C from the operands, as
++/// the JIT's (`x >= !y` for a subtraction, `r < x` for an addition), one add
++/// and one compare instead of two of each.
++#[inline(always)]
++fn addc(x: u64, y: u64, sub: bool, sf: bool) -> (u64, u64) {
++    if sf {
++        let r = x.wrapping_add(y).wrapping_add(sub as u64);
++        let c = if sub { x >= !y } else { r < x };
++        let v = ((x ^ r) & (y ^ r)) >> 63 == 1;
++        (r, super::nzcv(r >> 63 == 1, r == 0, c, v))
++    } else {
++        let (x, y) = (x as u32, y as u32);
++        let r = x.wrapping_add(y).wrapping_add(sub as u32);
++        let c = if sub { x >= !y } else { r < x };
++        let v = ((x ^ r) & (y ^ r)) >> 31 == 1;
++        (r as u64, super::nzcv(r >> 31 == 1, r == 0, c, v))
++    }
++}
++
+ /// [`addsub`] through the inline register accessors.
+ #[inline(always)]
+ fn addsub_h(c: &mut Cpu, f: u32, d: u32, x: u64, y: u64, sf: bool, sp_dest: bool) {
+     let (sub, s) = (f >> 10 & 1 != 0, f >> 9 & 1 != 0);
+-    let (r, fl) = add_with_carry(x, if sub { !y } else { y }, sub, sf);
++    let (r, fl) = addc(x, if sub { !y } else { y }, sub, sf);
+     if s {
+         c.nzcv = fl;
+         wr(c, d, r);

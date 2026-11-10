@@ -85,21 +85,6 @@ the Mac, loop 1" says (counts first; the block-interpreter guests; the pages ses
   accesses are 3× faster, so the case for handlers is weaker. Untried: those handlers in a second copy of `hot` (a
   const generic), entered for blocks with FP, so integer code's `hot` stays as it is. Weigh any handler against the
   small guests (loop 13's cost them 0.6-0.9%).
-- **`hot`'s cost per micro-op** (profiled 2026-10-21 and 22, `bench/interp/REPORT.md` "M8-INTERP loop 8" and "loop
-  12"): the dispatch is V8's interrupt check at the loop head, the micro-op's field loads, the jump table's bounds
-  check and the handler's first instruction (the indirect branch's redirect). Every store to wasm memory carries an
-  explicit bounds check on arm64 (V8 reloads the memory's size: shared memory can grow; loads use the trap
-  handler), so a register write costs four more instructions; x86_64 wasn't looked at. Untried: register caching;
-  ADRP+ADD as a pair (0.5% of the pairs); SUBS's flags in
-  `hot` from its operands, as the JIT's (`x >= y` for `add_with_carry`'s two carries). Not tried, settled by a measurement: tail-call dispatch (`become`), since
-  V8's `return_call_indirect` costs ~15 ns an entry even among 16 functions (`bench/boot/REPORT.md` "M8: where a busy
-  vCPU's time goes in Firefox"), several times a whole micro-op now. Lost before: a sentinel instead of the `u ==
-  end` test, LdO/StO runs in a loop (docs/cpu.md "Tried and not kept"). Any code in `hot` moves V8's register
-  allocation for all of it, and a guest branch must stay a host branch (loop 12: a `select` there cost 30%): measure
-  on the small guests too. `hot` makes no call (`tests/core-wasm.test.ts` checks it): the two it held until
-  2026-11-09 cost it under 1%, so its state is spilled around something else, likely the interrupt check's
-  out-of-line call; no instruction-level profile of `hot` on the Mac yet (V8's `--prof` gives the offsets; the code
-  would come from Node's `--print-wasm-code`, whose V8 (14.6) is older than Chrome 157's).
 - The reference interpreter (`interp::steps`, `VmConfig.jit` 0) still fetches and decodes each
   instruction; the MMU copy runs 35% slower than the flat one. It only runs the interpreter-only
   tests and benchmarks now.
