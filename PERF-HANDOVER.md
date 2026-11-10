@@ -21,7 +21,7 @@ calls.
 | 2 | Interpreter: the dispatcher's loop inside `jit::interpret` (round trips to compiled code) | dropped (loop 2) |
 | 3 | Interpreter: `hot`'s per-micro-op cost — SUBS's flags from operands, ADRP+ADD pair, register caching | dropped (loop 3) |
 | 4 | Interpreter: misaligned stores inline; SUBS/ADDS as their own micro-op kinds (loop 3's idea) | SUBS kinds kept, stores dropped (loop 4) |
-| 5 | CPU/ISA: unadvertised M4 extensions — LSE2, LRCPC2, RDM, FHM, FCMA, I8MM, BF16, FP16 (one loop each or grouped) | I8MM done, unadvertised (loop 5); next RDM, then LRCPC2, FCMA, FP16+FHM, BF16, LSE2 |
+| 5 | CPU/ISA: unadvertised M4 extensions — LSE2, LRCPC2, RDM, FHM, FCMA, I8MM, BF16, FP16 (one loop each or grouped) | I8MM unadvertised (loop 5); RDM, LRCPC2 advertised (loop 6); next FCMA, then FP16+FHM, BF16, LSE2 |
 | 6 | JIT: helpers on real paths (MSR DAIFClr/regime/NZCV…, ISB, LSE min/max) | |
 | 7 | JIT: wasm size cuts (local.tee peephole, a guarded chain's fallback as `xmiss`, one budget counter, NZCV functions) | |
 | 8 | JIT: the shared cache's leftovers (one vCPU's 1-2%: a lone table takes the bytes) | |
@@ -54,3 +54,7 @@ Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL 
   (the M4 itself: 2×). Codec A/B on the Mac: `SCRIPT=../imgdecode/codecs.ts ROUNDS=3 MAC_TIMEOUT=2700
   bench/gpu/sway-mac.sh <feature>,codecs target/arch/desktop.qcow2 <name>` (~4 min a round); counting script
   `bench/results/local/i8mm/count.ts`. CI: ci.sh, ci-jit.sh, ci-debian.sh passed.
+- **Loop 6** (`1d1843bb`): FEAT_RDM and FEAT_LRCPC2 complete, inline, **advertised** (ABI 62; `?rdm=0`, `?rcpc2=0`).
+  Kernels (`bench/imgdecode/rdmk.c`, codecs.sh `kernels` mode): Q15 FIR −12.6%, Q31 MAC −38.6% (rounds apart), LDAPUR
+  ties. Only glycin's loader uses RDM in the images, nothing LRCPC2. Steps moved once (asimdrdm, ilrcpc). CI: ci.sh,
+  ci-jit.sh, ci-debian.sh passed.
