@@ -1449,11 +1449,13 @@ and the guest's default way out (below).
   number in tailcat's public map, or one's own derper's `host[:port]`; empty: the map's first region), from which
   `roomLink` writes the link link.rs reads (`webpc-room:<id>?nostr=…&derp=…`, percent-encoded). Join takes a link (a
   password field: a private room's link is a secret) or a public room's name (a bare ID, the defaults); `parseRoomLink`
-  checks it as link.rs would. Both have [Let members connect to this machine](ui:network:NetWizard.room.incoming) (on by
-  default; off, only replies to the guest's own flows come in), [Send everything through the
-  relays](ui:network:NetWizard.room.relayOnly) (relay only: no WebRTC), a note on who sees one's IP address (the members
-  it connects to directly, the relays' and STUN servers' operators; one's own relays or a VPN as the remedy), and under
-  Advanced [The machine's key](ui:network:NetWizard.room.key): a new one, or another stored room connection's (the
+  checks it as link.rs would. Both have [Allow direct connections between members](ui:network:NetWizard.room.direct)
+  (on by default; off is relay only, `relayOnly`: no WebRTC, everything through the room's DERP relays), its note
+  saying who can learn one's IP address as the switch stands (with it: the members it connects to directly, the
+  operators of the room's DERP and Nostr relays, and STUN servers; without: the relays' operators only, as no STUN
+  server is asked), each term linked to what explains it, and under
+  Advanced [Let members connect to this machine](ui:network:NetWizard.room.incoming) (on by default; off, only replies
+  to the guest's own flows come in) and [The machine's key](ui:network:NetWizard.room.key): a new one, or another stored room connection's (the
   same key in another room: docs/network-adapters.md §2.1). The connection's default name is the room's (a private
   one's without its suffix); the Machines page says [a peer-to-peer room](ui:machines:MachinesPage.connection.room).
   Editing changes the two switches (the adapter running it connects again), and under Advanced [New

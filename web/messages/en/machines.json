@@ -1032,7 +1032,7 @@
     "note": "Machines page, Connections: tooltip of a tailcat connection's Edit… button."
   },
   "MachinesPage.connection.edit.room": {
-    "message": "Change whether members can connect to this machine, and whether everything goes through the relays.",
+    "message": "Change whether this machine connects directly to members, and whether members can connect to it.",
     "note": "Machines page, Connections: tooltip of a room connection's Edit… button."
   },
   "MachinesPage.connection.edit": {

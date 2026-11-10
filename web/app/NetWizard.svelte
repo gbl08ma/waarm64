@@ -23,6 +23,10 @@
 
   let { net }: { net: PageNetwork } = $props();
 
+  /** What the room's note on one's IP address links to: DERP, Nostr and STUN explained. */
+  const DERP_DOC = 'https://tailscale.com/kb/1232/derp-servers';
+  const NOSTR_DOC = 'https://github.com/nostr-protocol/nips/blob/master/01.md';
+  const STUN_DOC = 'https://en.wikipedia.org/wiki/STUN';
   type Step = 'pick' | 'kind' | 'tailscale' | 'tailcat' | 'local' | 'roomPick' | 'roomCreate' | 'roomJoin' | 'roomEdit';
   const roomStep = (s: Step) => s === 'roomCreate' || s === 'roomJoin' || s === 'roomEdit';
   let wizard: Modal;
@@ -119,7 +123,7 @@
       if (r?.identity) roomKept = true;
       else if (r) void hasRoomIdentity(r.identityKey).then((kept) => { roomKept = kept; });
     }
-    queueMicrotask(() => document.getElementById(to === 'pick' ? (picked ? `net-pick-${picked}` : 'net-pick-new') : to === 'kind' ? 'net-pick-tailnet' : to === 'tailscale' ? (editing ? 'net-hostname' : 'net-control') : to === 'local' ? 'net-local-url' : to === 'roomPick' ? 'net-room-create' : to === 'roomCreate' ? 'net-room-id' : to === 'roomJoin' ? 'net-room-link' : to === 'roomEdit' ? 'net-room-incoming' : 'net-tc-exit')?.focus());
+    queueMicrotask(() => document.getElementById(to === 'pick' ? (picked ? `net-pick-${picked}` : 'net-pick-new') : to === 'kind' ? 'net-pick-tailnet' : to === 'tailscale' ? (editing ? 'net-hostname' : 'net-control') : to === 'local' ? 'net-local-url' : to === 'roomPick' ? 'net-room-create' : to === 'roomCreate' ? 'net-room-id' : to === 'roomJoin' ? 'net-room-link' : to === 'roomEdit' ? 'net-room-direct' : 'net-tc-exit')?.focus());
   }
   const back = () => showStep(step === 'kind' ? 'pick' : step === 'roomCreate' || step === 'roomJoin' ? 'roomPick' : 'kind');
   const close = () => { wizard.close(); ui.netWizard = undefined; };
@@ -258,11 +262,15 @@
         <label>{t('network:NetWizard.room.link')}<input id="net-room-link" bind:value={roomJoin} type="password" autocomplete="off" spellcheck="false"></label>
         <p class="note">{t('network:NetWizard.room.link.note')}</p>
       {/if}
-      <Check id="net-room-incoming" bind:checked={incoming} note={incoming ? t('network:NetWizard.room.incoming.note') : t('network:NetWizard.room.incoming.off')}>{t('network:NetWizard.room.incoming')}</Check>
-      <Check id="net-room-relay-only" bind:checked={relayOnly} note={t('network:NetWizard.room.relayOnly.note')}>{t('network:NetWizard.room.relayOnly')}</Check>
-      <p class="note" id="net-room-ip">{relayOnly ? t('network:NetWizard.room.ip.relayOnly') : t('network:NetWizard.room.ip')}</p>
+      {#snippet link(href: string, text: string)}<a {href} target="_blank" rel="noopener">{text}</a>{/snippet}
+      {#snippet ipNote()}<span id="net-room-ip">{#if relayOnly}<T k="network:NetWizard.room.ip.relayed">{#snippet derp(text)}{@render link(DERP_DOC, text)}{/snippet}{#snippet nostr(text)}{@render link(NOSTR_DOC, text)}{/snippet}</T>{:else}<T k="network:NetWizard.room.ip.direct">{#snippet derp(text)}{@render link(DERP_DOC, text)}{/snippet}{#snippet nostr(text)}{@render link(NOSTR_DOC, text)}{/snippet}{#snippet stun(text)}{@render link(STUN_DOC, text)}{/snippet}</T>{/if}</span>{/snippet}
+      <Check id="net-room-direct" checked={!relayOnly} onchange={(on) => (relayOnly = !on)} note={ipNote}>{t('network:NetWizard.room.direct')}</Check>
+      {#snippet incomingSwitch()}
+        <Check id="net-room-incoming" bind:checked={incoming} note={incoming ? t('network:NetWizard.room.incoming.note') : t('network:NetWizard.room.incoming.off')}>{t('network:NetWizard.room.incoming')}</Check>
+      {/snippet}
       {#if step !== 'roomEdit'}
         <details id="net-room-advanced" bind:open={roomAdvanced}><summary>{t('network:NetWizard.advanced')}</summary>
+          {@render incomingSwitch()}
           {#if step === 'roomCreate'}
             <label>{t('network:NetWizard.room.nostr')}<textarea id="net-room-nostr" bind:value={nostr} rows="2" placeholder={t('network:NetWizard.room.nostr.placeholder')} autocomplete="off" spellcheck="false"></textarea></label>
             <p class="note">{t('network:NetWizard.room.nostr.note')}</p>
@@ -277,6 +285,7 @@
         </details>
       {:else}
         <details id="net-room-advanced" bind:open={roomAdvanced}><summary>{t('network:NetWizard.advanced')}</summary>
+          {@render incomingSwitch()}
           <div class="net-row"><button type="button" id="net-room-new-name" disabled={!roomKept} onclick={forget}>{t('network:NetWizard.room.newName')}</button></div>
           <p class="note">{t('network:NetWizard.room.newName.note')}</p>
         </details>

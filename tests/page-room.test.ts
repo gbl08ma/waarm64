@@ -124,9 +124,15 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     await roomWizard(a);
     await a.click('#net-room-create');
     assert.equal(await a.isChecked('#net-room-private'), true, 'private by default');
+    assert.equal(await a.isChecked('#net-room-direct'), true, 'direct connections by default');
+    assert.equal(await visible(a, '#net-room-incoming'), false, 'incoming connections are under Advanced');
     assert.equal(await a.isChecked('#net-room-incoming'), true, 'members may connect by default');
-    assert.equal(await a.isChecked('#net-room-relay-only'), false);
-    assert.match(await text(a, '#net-room-ip'), words('network:NetWizard.room.ip'));
+    // The note on who can learn this computer's IP address follows the switch.
+    assert.match(await text(a, '#net-room-ip'), words('network:NetWizard.room.ip.direct'));
+    await a.uncheck('#net-room-direct');
+    assert.match(await text(a, '#net-room-ip'), words('network:NetWizard.room.ip.relayed'));
+    await a.check('#net-room-direct');
+    assert.match(await text(a, '#net-room-ip'), words('network:NetWizard.room.ip.direct'));
     await a.click('#net-connect');
     assert.match(await text(a, '#net-error'), words('network:NetWizard.room.noName'));
     await a.fill('#net-room-id', 'test lan');
@@ -139,6 +145,7 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     await a.click('#net-connect');
     await menuSays(a, words('network:network.room', { count: 0 }), 60_000);
     const [ra] = await rooms(a);
+    assert.deepEqual([ra.room.incoming, ra.room.relayOnly], [true, false], 'the switches as they were left');
     assert.equal(ra.name, 'test lan', 'named by the room, without its private suffix');
     assert.match(ra.room.link, /^webpc-room:test%20lan-[a-z2-7]{26}\?nostr=ws%3A%2F%2F127\.0\.0\.1%3A\d+&derp=127\.0\.0\.1%3A8444$/);
     const nameA = await a.locator('#net-room-name').inputValue();

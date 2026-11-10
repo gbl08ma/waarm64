@@ -197,7 +197,7 @@
   },
   "NetWizard.room.incoming": {
     "message": "Let members connect to this machine",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room) and its edit: the checkbox (on by default) that lets the room's members open connections to the guest."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room) and its edit, under Advanced: the checkbox (on by default) that lets the room's members open connections to the guest."
   },
   "NetWizard.room.incoming.note": {
     "message": "Members who have this machine's name in the room can reach any port the guest listens on, such as an SSH server.",
@@ -207,21 +207,17 @@
     "message": "Members can't open connections to the guest. Only replies to connections the guest opens come in.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the line under “Let members connect to this machine” while it isn't ticked."
   },
-  "NetWizard.room.relayOnly": {
-    "message": "Send everything through the relays",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room) and its edit: the checkbox (off by default) that sends all of the machine's traffic through the room's DERP relays instead of directly to other members."
+  "NetWizard.room.direct": {
+    "message": "Allow direct connections between members",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room) and its edit: the checkbox (on by default) that lets the machine connect directly to other members of the room (WebRTC); off, all of its traffic goes through the room's DERP relays."
   },
-  "NetWizard.room.relayOnly.note": {
-    "message": "Members won't learn your computer's IP address, but traffic between the machines is slower.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the line under “Send everything through the relays”."
+  "NetWizard.room.ip.direct": {
+    "message": "Your computer's real, public IP address will be obtainable by members that this machine directly connects to, by operators of the room's <derp>DERP relays</derp> and <nostr>Nostr relays</nostr>, and by <stun>STUN servers</stun>.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the note under “Allow direct connections between members” while it is ticked: who can learn the user's IP address. <derp>…</derp> links to Tailscale's page on DERP, <nostr>…</nostr> to Nostr's protocol, <stun>…</stun> to Wikipedia's article on STUN."
   },
-  "NetWizard.room.ip": {
-    "message": "Members this machine connects to directly can see your computer's public IP address. So can the operators of the room's relays and of the STUN servers. Relays of your own, or a VPN on your computer, keep it from them.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): who sees the user's IP address, a note under the switches while “Send everything through the relays” is off."
-  },
-  "NetWizard.room.ip.relayOnly": {
-    "message": "The operators of the room's relays can see your computer's public IP address. Relays of your own, or a VPN on your computer, keep it from them.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): who sees the user's IP address, a note under the switches while “Send everything through the relays” is on."
+  "NetWizard.room.ip.relayed": {
+    "message": "Your computer's real, public IP address will be obtainable only by operators of the room's <derp>DERP relays</derp> and <nostr>Nostr relays</nostr>.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the note under “Allow direct connections between members” while it isn't ticked (no STUN server is contacted then): who can learn the user's IP address. <derp>…</derp> links to Tailscale's page on DERP, <nostr>…</nostr> to Nostr's protocol."
   },
   "NetWizard.room.nostr": {
     "message": "Nostr relays",
