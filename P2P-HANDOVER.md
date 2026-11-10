@@ -33,7 +33,7 @@ nonce eviction, the uniform lookup format, the `bye` backoff, the Nostr backoff 
 Left: public relays refusing events dated far ahead (a question for R3, plan §3), and a replay to a target that just
 reloaded (accepted, docs/tailnet.md).
 
-**CI:** `scripts/ci.sh` OK on R1's commit (1,224 s; JS 956 passed, 0 failed, 568 skipped; the agent's `cargo test`
+**CI:** `scripts/ci.sh` OK on R1's commit (1,224 s) and on the review's fixes (1,038 s; JS 956 passed, 0 failed, 568 skipped; the agent's `cargo test`
 left out as root, docs/cloud.md). **Not done here:** `scripts/ci-net.sh` whole and `node bench/net/room.ts 5 10000
 <json>` (R0's numbers) want the dev VM (docs/cloud.md: no Podman, no IPv6); run both there before R2's end.
 
