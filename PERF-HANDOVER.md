@@ -28,7 +28,7 @@ calls.
 | 9 | SMP: the ISB fix's cost; WFE sleeping; an exit's remaining cost | findings, nothing to keep (loop 15) |
 | 10 | Devices: virgl's occlusion-query poll (4 ms) | kept (loop 16) |
 | 11 | Interpreter: more handlers (FP in a second `hot` copy, CASP, STTR/LDTR) | misaligned pair/SIMD loads kept; FP copy dropped (loop 17) |
-| 11b | Loop 17's untried variant: the copy of `hot` picked per block (a "has FP" slot bit), so integer blocks never run in the rich copy | next |
+| 11b | Loop 17's untried variant: the copy of `hot` picked per block (a "has FP" slot bit), so integer blocks never run in the rich copy | kept (loop 19) |
 | 12 | JIT: scalar FP in f64/f32 locals | |
 | 13 | JIT: Liftoff's zero-fill (a register allocator over a block's locals) | |
 | 14b (done, loop 18) | Loop 16's open question: why the guest's first `GL_QUERY_RESULT` wait finds the state not DONE though its fence is held | not a bug (loop 18) |
@@ -107,3 +107,8 @@ Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL 
 - **Loop 18** (`73c02835`): neither oddity a defect. The counter: loop 15's `exitloop.c` overflowed its own
   arithmetic past ~0.3 s (fixed; timings now match the host). glquery's first wait: the guest kernel's 15 s (guest
   time) fence wait timed out under deterministic time's clock jumps; realtime never takes Mesa's fallback. Docs only.
+- **Loop 19** (`0b32b936`): **kept** the rich FP copy of `hot` chosen per block (a rich bit at decode; `SWITCH` status
+  at a block of the other copy): FP guest +12.2/+13.8%, Alpine's block-interpreter boot even, dec_mips −0.5/−0.7%
+  (under the bar), pages session even (5 rounds). No memory (slot stays 16 B), ~15 KB code a regime. Dropped literal
+  loads per block (even). CI: ci.sh, ci-fp.sh, ci-jit.sh passed.
+- **Review 2** after loop 19: loops 9-19's code (`15c0dc69..0b32b936`).
