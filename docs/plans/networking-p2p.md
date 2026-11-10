@@ -110,8 +110,9 @@ key.
   decide how far public relays carry a room; R3 checks. A serious room runs its own relay, as it
   would its own derper.
 - **Who's here** isn't this plan's: a node's address reaches others the way the user gives it out
-  (§5, "DNS": the name to copy). A room can still run a list as an application in a guest, with
-  nothing in webpc; a list on the page is left for later (§8).
+  (§5, "DNS": the name to copy). A room's participants can run a directory themselves, as an
+  application on a member whose identity they agree on among themselves (so a well-known address),
+  with nothing in webpc; anything on the page is left for later (§8).
 
 ## 4. Connecting to a peer
 
@@ -225,10 +226,10 @@ client was built.
   would need state nobody keeps.
 - **Spam** in public rooms: any member can flood lookups (proof of work on them, NIP-13; relays'
   own rate limits).
-- **Who's here**: a list of a room's members, each choosing whether to be on it. One shape: a
-  service on a member with a well-known key (so a well-known address), carried in the room's link
-  beside the ID (it can't come from the ID, or every member would hold its private key); members
-  sign up over the room itself, and the page lists them through a small protocol the module speaks.
+- **Who's here on the page**: a directory stays the participants' own (§3: they operate it and
+  agree on its identity, which can't come from the room's ID, or every member would hold its private
+  key); the page could list it if the user gives it that identity's name, through a small protocol
+  such directories would speak.
 - Firefox and Safari: whether they have `RTCPeerConnection` in workers or transfer channels as
   Chromium does is unchecked.
 
