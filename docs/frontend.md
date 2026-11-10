@@ -282,9 +282,10 @@ tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Pref
   the states (mouse lock, keyboard, the connection, the microphone) default to the icon, coloured by their tone.
 - **The editor:** a copy of the bar, its elements as chips that draw what the running machine shows (a made-up
   machine's numbers, `SAMPLE`, while none runs): dragged to move (Alt+←/→ with the focus on one), × or dragged onto the
-  palette to remove, chosen to set their look, bars or numbers and device number (and its ←/→ buttons move it: the
-  way on a touchscreen, which HTML5 drag and drop doesn't serve). The palette under it adds an element
-  at the end on a click, where it's dropped on a drag. Restore defaults forgets the kept list.
+  palette to remove, chosen to set their look, bars or numbers and device number (and its ←/→ buttons move it). A
+  mouse drags through HTML5 drag and drop; a finger or a pen through pointer events, after a long press (350 ms held
+  within 8 px: moving first scrolls the page, and the drag's touchmoves are cancelled so the page stays put under
+  it). The palette under it adds an element at the end on a click, where it's dropped on a drag. Restore defaults forgets the kept list.
 - **In full screen:** off by default (the machine alone, edge to edge: full screen is `<main>`'s); Preferences' [Show the
   status bar in full screen](ui:machines:MachinesPage.statusFullscreen) (`statusFullscreen`) makes it the page's, without its toolbar and message bar (index.html).
 - **Per-vCPU bars** are drawn against the run's highest vCPU MIPS so far (`cpuPeak`): a fixed scale wouldn't fit

@@ -2,7 +2,8 @@
   The Preferences' status bar (docs/frontend.md "The status bar"): a copy of the bar whose elements are chips, dragged
   to reorder them (or moved with Alt+←/→ when one has the focus) and dragged out or × to remove them; a chip chosen
   shows its settings under the bar (its look, a vCPU element's bars or numbers, a `one` element's device). Below, the
-  palette: a click adds an element at the bar's end, a drag puts it where it's dropped. The chips draw what the
+  palette: a click adds an element at the bar's end, a drag puts it where it's dropped. A mouse drags through HTML5
+  drag and drop; a finger or a pen through pointer events, after a long press (a swipe still scrolls the page). The chips draw what the
   running machine shows, or a made-up machine's numbers (statusbar.ts `SAMPLE`) while none runs; one the running
   machine hasn't (a second disk) is dimmed. Kept in the settings at each change.
 -->
@@ -65,6 +66,7 @@
   let drag: Drag | undefined;
   let over = $state<number | undefined>(undefined);
   function start(e: DragEvent, d: Drag) {
+    if (touch) { e.preventDefault(); return; } // a long press's own drag (Chromium on a touchscreen): the pointer's
     drag = d;
     e.dataTransfer!.effectAllowed = 'move';
     e.dataTransfer!.setData('text/plain', d.add ? nameOf(d.add) : nameOf(items[d.from!]));
@@ -98,6 +100,87 @@
     drag = undefined;
     over = undefined;
   }
+  // A finger's or a pen's drag (HTML5 drag and drop serves only the mouse): pressed and held still for `HOLD` ms, it
+  // picks up the chip or palette item, then follows the pointer through hit tests until it's lifted. Moving first is
+  // a scroll (the browser's: touch-action stays auto, and the drag's touchmoves are what's cancelled).
+  const HOLD = 350, SLOP = 8;
+  let touch: { id: number; x: number; y: number; d: Drag; timer?: ReturnType<typeof setTimeout>; active: boolean; out: boolean } | undefined;
+  let lifted = $state<number | undefined>(undefined);
+  let leaving = $state(false);
+  let root: HTMLElement;
+  let swallowClick = false;
+  function press(e: PointerEvent, d: Drag) {
+    if (e.pointerType === 'mouse' || !e.isPrimary || touch) return;
+    touch = { id: e.pointerId, x: e.clientX, y: e.clientY, d, active: false, out: false };
+    touch.timer = setTimeout(() => {
+      if (!touch) return;
+      touch.active = true;
+      drag = touch.d;
+      lifted = touch.d.from;
+      navigator.vibrate?.(10);
+    }, HOLD);
+    addEventListener('pointermove', follow);
+    addEventListener('pointerup', lift);
+    addEventListener('pointercancel', cancel);
+    addEventListener('touchmove', still, { passive: false });
+    addEventListener('contextmenu', still);
+  }
+  /** Where the pointer is: before which chip (by the chips' boxes in its row, so the drop mark that shifts them
+   *  doesn't change the answer), at the bar's end, or over the palette (out). */
+  function aim(x: number, y: number) {
+    const el = document.elementFromPoint(x, y);
+    leaving = false;
+    if (el && el.closest('.bar') && root.contains(el)) {
+      const row = [...root.querySelectorAll<HTMLElement>('.bar .chip')].filter((c) => { const r = c.getBoundingClientRect(); return y >= r.top && y < r.bottom; });
+      const next = row.find((c) => { const r = c.getBoundingClientRect(); return x < r.left + r.width / 2; });
+      over = next ? Number(next.dataset.at) : row.length ? Number(row[row.length - 1].dataset.at) + 1 : items.length;
+    } else {
+      over = undefined;
+      leaving = drag?.from !== undefined && !!el?.closest('.palette') && root.contains(el);
+    }
+  }
+  function follow(e: PointerEvent) {
+    if (!touch || e.pointerId !== touch.id) return;
+    if (!touch.active) {
+      if (Math.hypot(e.clientX - touch.x, e.clientY - touch.y) > SLOP) cancel(e);
+      return;
+    }
+    aim(e.clientX, e.clientY);
+  }
+  function lift(e: PointerEvent) {
+    if (!touch || e.pointerId !== touch.id) return;
+    const held = touch;
+    if (!held.active) { cancel(e); return; }
+    aim(e.clientX, e.clientY);
+    const to = over, out = leaving;
+    cancel(e);
+    swallowClick = true;
+    setTimeout(() => (swallowClick = false), 0);
+    if (held.d.add) { if (to !== undefined) insert(held.d.add, to); }
+    else if (held.d.from !== undefined) {
+      if (out) removeAt(held.d.from);
+      else if (to !== undefined) move(held.d.from, to);
+    }
+  }
+  function cancel(e: Event) {
+    if (touch && e instanceof PointerEvent && e.pointerId !== touch.id) return;
+    clearTimeout(touch?.timer);
+    touch = undefined;
+    lifted = undefined;
+    leaving = false;
+    end();
+    removeEventListener('pointermove', follow);
+    removeEventListener('pointerup', lift);
+    removeEventListener('pointercancel', cancel);
+    removeEventListener('touchmove', still);
+    removeEventListener('contextmenu', still);
+  }
+  /** While a finger drags, the page doesn't scroll under it and the long press opens no menu. */
+  function still(e: Event) { if (touch?.active || e.type === 'contextmenu' && touch) e.preventDefault(); }
+  /** The click a lifted finger may end with isn't a choice or an add. */
+  function guard(e: MouseEvent) { if (swallowClick) { e.stopPropagation(); e.preventDefault(); } }
+  $effect(() => () => { if (touch) cancel(new Event('cancel')); });
+
   function key(e: KeyboardEvent, at: number) {
     if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       e.preventDefault();
@@ -115,13 +198,13 @@
   const INDEX_NOTE = { cpu: 'statusbar:StatusEditor.index.cpu', net: 'statusbar:StatusEditor.index.net', disk: 'statusbar:StatusEditor.index.disk' } as const;
 </script>
 
-<div class="status-edit">
+<div class="status-edit" bind:this={root} onclickcapture={guard}>
   <div class="bar" role="list" aria-label={t('statusbar:StatusEditor.bar')} ondragover={overEnd} ondrop={drop} data-field="status-bar">
     {#each items as it, at (at)}
       {@const pieces = render(it, metrics, live)}
       {#if over === at}<span class="mark" aria-hidden="true"></span>{/if}
-      <div role="listitem" class="chip" class:spacer={it.kind === 'spacer'} class:chosen={chosen === at} class:absent={!pieces.length} draggable="true"
-        ondragstart={(e) => start(e, { from: at })} ondragend={end} ondragover={(e) => overChip(e, at)} data-at={at} data-kind={it.kind}>
+      <div role="listitem" class="chip" class:spacer={it.kind === 'spacer'} class:chosen={chosen === at} class:absent={!pieces.length} class:lifted={lifted === at} draggable="true"
+        onpointerdown={(e) => press(e, { from: at })} ondragstart={(e) => start(e, { from: at })} ondragend={end} ondragover={(e) => overChip(e, at)} data-at={at} data-kind={it.kind}>
         <button class="pick" onclick={() => (chosen = chosen === at ? undefined : at)} onkeydown={(e) => key(e, at)} aria-pressed={chosen === at}
           title={pieces.length ? t('statusbar:StatusEditor.chip.title', { name: nameOf(it), about: aboutOf(it.kind) }) : t('statusbar:StatusEditor.chip.title.absent', { name: nameOf(it), about: aboutOf(it.kind) })}>
           {#if it.kind === 'spacer'}<span class="gap"><Icon name="arrows-horizontal" size={14} />{t('statusbar:StatusEditor.spacer')}</span>
@@ -176,12 +259,12 @@
     </div>
   {/if}
 
-  <div class="palette" role="group" aria-label={t('statusbar:StatusEditor.palette')} ondragover={(e) => { if (drag?.from !== undefined) e.preventDefault(); }} ondrop={dropOut}>
+  <div class="palette" class:leaving role="group" aria-label={t('statusbar:StatusEditor.palette')} ondragover={(e) => { if (drag?.from !== undefined) e.preventDefault(); }} ondrop={dropOut}>
     {#each groups as g (g.group)}
       <span class="group">{groupName(g.group)}</span>
       <div class="chips">
         {#each g.items as it, k (k)}
-          <button class="add" draggable="true" ondragstart={(e) => start(e, { add: it })} ondragend={end} onclick={() => insert(it)} title={t('statusbar:StatusEditor.add.title', { about: aboutOf(it.kind) })} data-add={`${it.kind}${it.scope ? `:${it.scope}` : ''}`}>
+          <button class="add" draggable="true" onpointerdown={(e) => press(e, { add: it })} ondragstart={(e) => start(e, { add: it })} ondragend={end} onclick={() => insert(it)} title={t('statusbar:StatusEditor.add.title', { about: aboutOf(it.kind) })} data-add={`${it.kind}${it.scope ? `:${it.scope}` : ''}`}>
             {#if iconOf(it.kind)}<Icon name={iconOf(it.kind)!} size={14} />{/if}{nameOf(it, true)}
           </button>
         {/each}
@@ -198,6 +281,9 @@
   .chip.spacer .pick { flex: 1; justify-content: center; }
   .chip.chosen { border-color: var(--accent); }
   .chip.absent { opacity: 0.5; border-style: dashed; }
+  .chip.lifted { opacity: 0.5; border-color: var(--accent); }
+  /* A finger's long press picks a chip up: no selection or callout under it. */
+  .chip, .add { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   .pick { display: inline-flex; align-items: center; gap: 8px; padding: 3px 4px 3px 8px; color: inherit; }
   .x { padding: 3px 5px; color: var(--dim); }
   .x:hover { color: var(--text); }
@@ -214,6 +300,7 @@
   .index input { width: 4em; }
   .grow { flex: 1; }
   .note { color: var(--dim); font-size: 12px; }
+  .palette.leaving { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 6px; }
   .palette { display: grid; grid-template-columns: max-content 1fr; gap: 8px 14px; align-items: baseline; }
   .group { color: var(--dim); font-size: 12px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }

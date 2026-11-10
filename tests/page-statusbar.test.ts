@@ -1,6 +1,7 @@
 // The status bar and its Preferences (docs/frontend.md "The status bar"): elements added from the palette (by a click
 // and by a drag), moved, set to another look, shown in the bar with the running machine's numbers (per-vCPU bars,
-// the disk's speed); all removed, no bar, remembered; the defaults back. On Buildroot (seconds).
+// the disk's speed); all removed, no bar, remembered; the defaults back. On Buildroot (seconds). And a finger's drags
+// in the editor (no machine).
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
@@ -128,6 +129,55 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   await page.click('[data-action=status-defaults]');
   assert.equal(await kept(page), undefined);
   await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('status')?.textContent?.replace(/\s+/g, ' ') ?? ''), `${words('statusbar:statusbar.vcpus', { count: 2 }).source} · 256 MiB`, { timeout: 10_000 });
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('the status bar\'s editor on a touchscreen: a long press drags a chip or a palette item, a swipe doesn\'t', async () => {
+  const context = await browser.newContext({ viewport: { width: 900, height: 2000 }, hasTouch: true });
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.goto(`${base}/web/app/`);
+  await page.click('#machines-open');
+  await page.click('[data-machine=preferences]');
+  const chips = '.status-edit .bar .chip';
+  const order = () => kinds(page, chips);
+  const before = await order();
+  const cdp = await context.newCDPSession(page);
+  const centre = async (sel: string, dx = 0) => {
+    const b = (await page.locator(sel).boundingBox())!;
+    return { x: b.x + b.width / 2 + dx * b.width, y: b.y + b.height / 2 };
+  };
+  /** A finger from `from` to `to` in steps, held `hold` ms first. */
+  const finger = async (from: { x: number; y: number }, to: { x: number; y: number }, hold: number) => {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...from, id: 1 }] });
+    await page.waitForTimeout(hold);
+    for (let k = 1; k <= 6; k++) {
+      const p = { x: from.x + (to.x - from.x) * k / 6, y: from.y + (to.y - from.y) * k / 6, id: 1 };
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [p] });
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  };
+
+  // A swipe down from a chip (a scroll, no hold) moves nothing.
+  const first = await centre(`${chips}[data-at="0"]`);
+  await finger(first, { x: first.x, y: first.y + 120 }, 0);
+  assert.deepEqual(await order(), before);
+  // Its fling over first: while one runs, Chromium sends the next touches uncancelable, and the drag that follows
+  // would overscroll into a back navigation (synthetic touches only: a finger's touch ends a fling).
+  await page.waitForTimeout(500);
+  // Held, the first chip goes after the fourth.
+  await finger(await centre(`${chips}[data-at="0"]`), await centre(`${chips}[data-at="3"]`, 0.4), 600);
+  assert.deepEqual(await order(), [...before.slice(1, 4), before[0], ...before.slice(4)]);
+  assert.equal(await page.locator(`${chips}.lifted`).count(), 0);
+  // A palette item held and dropped on the first chip's left half: the clock first.
+  await finger(await centre('[data-add="clock"]'), await centre(`${chips}[data-at="0"]`, -0.45), 600);
+  assert.equal((await order())[0], 'clock');
+  // A chip held and dropped on the palette goes away.
+  await finger(await centre(`${chips}[data-at="0"]`), await centre('[data-add="spacer"]'), 600);
+  assert.deepEqual(await order(), [...before.slice(1, 4), before[0], ...before.slice(4)]);
+  assert.deepEqual((await kept(page)).map((i: { kind: string }) => i.kind), await order());
   assert.deepEqual(errors, []);
   await context.close();
 });
