@@ -69,13 +69,10 @@ interpreter's speed is the lever for loads and starts. The items below are ranke
 the Mac, loop 1" says (counts first; the block-interpreter guests; the pages session for cold-code changes).
 
 - **What makes `hot` return in a browser** (counted 2026-11-09, `bench/interp/REPORT.md` "The block interpreter on the
-  Mac, loop 1"; Firefox's pages session, 678 M block runs, `hot` entered 266 M times). Two causes are the
+  Mac, loop 1"; Firefox's pages session, 678 M block runs, `hot` entered 266 M times). One cause is the
   interpreter's own:
   - **Decoding** (`Cache::miss` and its closure 1.64% of busy ticks, loop 3; 19% faster natively since loop 4, no
     allocation a block): what's left is compute, the decoder, `pack_into` and `uop_op`'s matches.
-  - **Misaligned stores**: ~4.1 M exits to the generic path a pages session (the loads are inline since loop 5); a
-    store may write only its own bytes, so inline it takes pieces by alignment. ~0.15% of busy time by loop 1's
-    estimate: under what anything measures.
 
 - **More handlers, by workload** (`bench/interp/REPORT.md` "M8-INTERP loop 13" counted Alpine's boot's slow path).
   Left on the boots: CASP (a 128-bit atomic), STTR/LDTR (the EL0 TLB array from EL1: a second context in `Fast`),
@@ -1714,9 +1711,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **`baremetal_parallel_through_snapshots` failed once under `scripts/ci.sh`'s load** (2026-11-03, VK4 T16–T17's run;
   no core change): `smp: exit 5 (0x0) on vCPU 0 after 2016 steps`, the test past 60 s where alone it takes 2.4 s; it
   passed alone 5 times and in the next full run. A timing assumption in the test or the SMP snapshot path, unknown.
-- **`tests/page-clipboard-ui.test.ts`'s toolbar test timed out once under `scripts/ci.sh`'s load** (2026-11-08, VK4
-  T49's run; no page change): `page.waitForFunction` past 30 s in `guestReads` (line 51: the terminal never showed the
-  guest's read). It passed alone twice and in the next full run. A wait that assumes the guest's pace, likely.
+- **`tests/page-clipboard-ui.test.ts`'s toolbar test times out under `scripts/ci.sh`'s load** (2026-11-08, VK4
+  T49's run; again 2026-11-10, PERF loop 4's; no page change either time): `page.waitForFunction` past 30 s in
+  `guestReads` (line 51: the terminal never showed the guest's read). It passed alone each time (27.6 s the second: at
+  the edge of its 30 s) and in the next full run. A wait that assumes the guest's pace, likely.
 
 - **THIRD_PARTY.md from THIRD_PARTY.json** ([third-party.md](third-party.md)): a CI job or GitHub workflow that writes
   the Markdown (`node tools/third-party.ts --markdown`) whenever the JSON changes, if a readable page is wanted again.

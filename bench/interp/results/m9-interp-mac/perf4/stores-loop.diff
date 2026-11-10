@@ -1,0 +1,195 @@
+diff --git a/core/src/interp/block.rs b/core/src/interp/block.rs
+index 26fa38e6..981ebd8c 100644
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -1876,9 +1876,11 @@ pub fn hot<B: Fast>(
+                         let Some(p) = m.fast_in(fx, addr, bytes, Use::Write) else {
+                             break 'run SLOW;
+                         };
++                        let v = ra(c, d);
+                         // SAFETY: `fast_in` found `bytes` bytes of RAM at `p`.
+-                        if !unsafe { mem::store_aligned(p, bytes, ra(c, d)) } {
+-                            break 'run SLOW;
++                        if !unsafe { mem::store_aligned(p, bytes, v) } {
++                            // SAFETY: as above, and not aligned.
++                            unsafe { mem::store_misaligned(p, bytes, v) };
+                         }
+                     } else {
+                         let Some(p) = m.fast_in(fx, addr, bytes, Use::Read) else {
+@@ -2095,8 +2097,13 @@ fn single_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
+         let Some(p) = m.fast_in(fx, addr, bytes, Use::Write) else {
+             return false;
+         };
++        let v = ra(c, d);
+         // SAFETY: `fast_in` found `bytes` bytes of RAM at `p`.
+-        unsafe { mem::store_aligned(p, bytes, ra(c, d)) }
++        if !unsafe { mem::store_aligned(p, bytes, v) } {
++            // SAFETY: as above, and not aligned.
++            unsafe { mem::store_misaligned(p, bytes, v) };
++        }
++        true
+     } else {
+         let Some(p) = m.fast_in(fx, addr, bytes, Use::Read) else {
+             return false;
+diff --git a/core/src/interp/block/tests.rs b/core/src/interp/block/tests.rs
+index fd6baf61..5a7911cf 100644
+--- a/core/src/interp/block/tests.rs
++++ b/core/src/interp/block/tests.rs
+@@ -402,6 +402,116 @@ fn misaligned_loads_run_as_the_interpreter_runs_them() {
+     assert!(ran > 250, "{ran}");
+ }
+ 
++/// ADDS and SUBS (immediate and shifted register, W and X) at the operands
++/// where C and V turn, run as the interpreter runs them: [`hot`] computes
++/// each kind's carry with its own compare (`AddsI`, `SubsI`, `SubsR`).
++#[test]
++fn flag_setters_at_their_edges_run_as_the_interpreter_runs_them() {
++    let mut r = Rng(0x3c6e_f372_fe94_f82b);
++    let t = TestRam::new(RAM);
++    let edges = [
++        0u64,
++        1,
++        2,
++        0xfff,
++        0x7fff_ffff,
++        0x8000_0000,
++        0xffff_ffff,
++        0x1_0000_0000,
++        0x7fff_ffff_ffff_ffff,
++        0x8000_0000_0000_0000,
++        u64::MAX,
++        u64::MAX - 1,
++    ];
++    let mut ran = 0;
++    // ADDS, SUBS X0, X1, #imm and W; ADDS, SUBS X0, X1, X2 and W.
++    for base in [0xb100_0020u32, 0x3100_0020, 0xf100_0020, 0x7100_0020] {
++        for imm in [0u32, 1, 2, 0xfff] {
++            for &x in &edges {
++                ran += edge_case(&t, &mut r, base | imm << 10, x, 0);
++            }
++        }
++    }
++    for w in [0xab02_0020u32, 0x2b02_0020, 0xeb02_0020, 0x6b02_0020] {
++        for &x in &edges {
++            for &y in &edges {
++                ran += edge_case(&t, &mut r, w, x, y);
++            }
++        }
++    }
++    assert!(ran > 700, "{ran}");
++}
++
++fn edge_case(t: &TestRam, r: &mut Rng, w: u32, x: u64, y: u64) -> u32 {
++    t.mem.write(CODE, 4, w as u64).unwrap();
++    let mut c0 = state(r);
++    (c0.x[1], c0.x[2]) = (x, y);
++    let mut c1 = c0.clone();
++    let want = interp::steps(&mut c1, &t.mem, None, 1);
++    let mut c2 = c0.clone();
++    let got = run_hot(&mut c2, &mut Flat(&t.mem), &pack(&[uop(w)]), 1, CODE);
++    assert_eq!(got, want, "{w:#010x} {x:#x} {y:#x}");
++    assert_eq!(c2, c1, "{w:#010x} {x:#x} {y:#x}");
++    1
++}
++
++/// Misaligned stores of every size, at every offset in an aligned word, at a
++/// page's start and up to its last byte, run as the interpreter runs them and
++/// write only their own bytes: [`hot`] writes them inline in naturally aligned
++/// pieces (`mem::store_misaligned`).
++#[test]
++fn misaligned_stores_run_as_the_interpreter_runs_them() {
++    let mut r = Rng(0xbb67_ae85_84ca_a73b);
++    let t = TestRam::new(RAM);
++    for a in (0..RAM as u64).step_by(8) {
++        t.mem.write(a, 8, r.next()).unwrap();
++    }
++    // STR X, W (StO); STRH, STUR X #3, STUR W #3, STR X by register and
++    // STR X pre-indexed (St): X0 to [X1] or [X1, #3] or [X1, X2] or [X1, #8]!;
++    // (word, bytes, its offset).
++    let stores = [
++        (0xf900_0020u32, 8, 0),
++        (0xb900_0020, 4, 0),
++        (0x7900_0020, 2, 0),
++        (0xf800_3020, 8, 3),
++        (0xb800_3020, 4, 3),
++        (0xf822_6820, 8, 5),
++        (0xf800_8c20, 8, 8),
++    ];
++    let bytes_at = |a: u64| -> Vec<u8> {
++        (a.saturating_sub(8)..a + 16).map(|b| t.mem.read(b, 1).unwrap() as u8).collect()
++    };
++    let mut ran = 0;
++    for (w, bytes, off) in stores {
++        let u = uop(w);
++        for page in [0u64, 0x1000] {
++            for at in (0..16).chain(0x1000 - 16..0x1000 - bytes as u64 + 1) {
++                let addr = page + at;
++                if addr % bytes as u64 == 0 || addr < off {
++                    continue;
++                }
++                t.mem.write(CODE, 4, w as u64).unwrap();
++                let mut c0 = state(&mut r);
++                (c0.x[1], c0.x[2]) = (addr - off, off);
++                let before = bytes_at(addr);
++                let mut c1 = c0.clone();
++                let want = interp::steps(&mut c1, &t.mem, None, 1);
++                let after = bytes_at(addr);
++                for (i, &b) in before.iter().enumerate() {
++                    t.mem.write(addr.saturating_sub(8) + i as u64, 1, b as u64).unwrap();
++                }
++                let mut c2 = c0.clone();
++                let got = run_hot(&mut c2, &mut Flat(&t.mem), &pack(&[u]), 1, CODE);
++                assert_eq!(got, want, "{w:#010x} at {addr:#x}");
++                assert_eq!(c2, c1, "{w:#010x} at {addr:#x}");
++                assert!(bytes_at(addr) == after, "{w:#010x} at {addr:#x}: memory differs");
++                ran += 1;
++            }
++        }
++    }
++    assert!(ran > 250, "{ran}");
++}
++
+ /// An MSR that `sys::plain_write` knows, and DAIFSet, run as the interpreter
+ /// runs them, at EL0 and EL1 (SPSel either way, IRQs masked or not).
+ #[test]
+diff --git a/core/src/mem.rs b/core/src/mem.rs
+index 6f803c78..c21038be 100644
+--- a/core/src/mem.rs
++++ b/core/src/mem.rs
+@@ -754,6 +754,36 @@ pub(crate) unsafe fn store_aligned(p: *mut u8, size: u32, val: u64) -> bool {
+     true
+ }
+ 
++/// [`store`] of a misaligned access, as [`store_split`] in naturally aligned
++/// pieces (1, 2 or 4 bytes: a misaligned access has no aligned 8) but inline
++/// and with no call, for the block interpreter's inline paths. Each byte is
++/// written once, by an atomic store, and no byte outside the access is
++/// touched (another vCPU may own it), which is all a misaligned access is owed
++/// without LSE2.
++///
++/// # Safety
++/// `p..p + size` is guest RAM, and `p` isn't aligned to `size`.
++#[inline(always)]
++pub(crate) unsafe fn store_misaligned(p: *mut u8, size: u32, val: u64) {
++    const O: Ordering = Ordering::Relaxed;
++    let (mut k, mut v) = (0, val);
++    while k < size {
++        let q = p.wrapping_add(k as usize);
++        // `piece`, written out: inline for certain.
++        let n = 1 << (q as usize as u32).trailing_zeros().min(31 - (size - k).leading_zeros());
++        // SAFETY: `q..q + n` is within the access and aligned to `n`.
++        unsafe {
++            match n {
++                1 => AtomicU8::from_ptr(q).store(v as u8, O),
++                2 => AtomicU16::from_ptr(q as *mut u16).store((v as u16).to_le(), O),
++                _ => AtomicU32::from_ptr(q as *mut u32).store((v as u32).to_le(), O),
++            }
++        }
++        v >>= 8 * n;
++        k += n;
++    }
++}
++
+ /// [`load`] of an unaligned access, in naturally aligned pieces.
+ ///
+ /// # Safety

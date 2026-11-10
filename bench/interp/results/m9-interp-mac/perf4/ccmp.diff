@@ -1,0 +1,88 @@
+--- a/core/src/interp/block.rs
++++ b/core/src/interp/block.rs
+@@ -73,6 +73,9 @@
+     Csel,
+     /// CCMP/CCMN: `m` Rm or imm5, `x` = cond | imm << 4 | sub << 5 | sf << 6 | nzcv << 8.
+     Ccmp,
++    /// CCMP (the subtraction) as `Ccmp`'s but its own kind, so [`hot`] knows
++    /// the carry is `x >= y`; `Ccmp` is then CCMN.
++    CcmpS,
+     /// MADD/MSUB: `x` = Ra | sub << 5 | sf << 6.
+     Madd,
+     /// `Xd = PC + imm`.
+@@ -283,7 +286,7 @@
+             K::Nop | K::Dmb | K::Zva => (d, n, m, 0, w as u64),
+             K::AddI64 | K::AddI32 | K::Adr | K::B | K::Bl => (d, n, m, 0, s),
+             K::Bcond => (d, 0, 0, 0, s),
+-            K::Csel | K::Ccmp => (d, n, m, w & 0xffff, 0),
++            K::Csel | K::Ccmp | K::CcmpS => (d, n, m, w & 0xffff, 0),
+             K::AddsI | K::SubsI | K::Cbz | K::LdLit => (d, n, 0, m, s),
+             K::Adrp => (d, n, m, 0, s << 12),
+             K::Tbz => (d, 0, m, n, s),
+@@ -512,7 +515,7 @@
+             | K::Div
+             | K::Mulh
+             | K::Bfm => p(d, n, m, u.x),
+-            K::Csel | K::Ccmp => p(d, n, m, u.x | (cond_mask(u.x & 15) as u32) << 16),
++            K::Csel | K::Ccmp | K::CcmpS => p(d, n, m, u.x | (cond_mask(u.x & 15) as u32) << 16),
+             K::MovI => {
+                 let run = u.x.min(255) as u8;
+                 match rot_form(u.imm) {
+@@ -739,7 +742,7 @@
+                 | (bit(w, 30) as u32) << 5
+                 | (sf as u32) << 6
+                 | bits(w, 3, 0) << 8;
+-            u(K::Ccmp, x, 0)
++            u(if bit(w, 30) { K::CcmpS } else { K::Ccmp }, x, 0)
+         }
+         SMADDL | SMSUBL | UMADDL | UMSUBL => u(
+             K::Maddl,
+@@ -1015,7 +1018,7 @@
+                 };
+                 c.set_reg(d, trunc(r, u.x >> 6 & 1 != 0));
+             }
+-            K::Ccmp => {
++            K::Ccmp | K::CcmpS => {
+                 c.nzcv = if cond_holds(c.nzcv, u.x & 15) {
+                     let y = if u.x >> 4 & 1 != 0 {
+                         u.m as u64
+@@ -1328,7 +1331,7 @@
+         | K::Mulh
+         | K::Madd
+         | K::Maddl => (false, true, true),
+-        K::Ccmp => (false, true, x >> 4 & 1 == 0),
++        K::Ccmp | K::CcmpS => (false, true, x >> 4 & 1 == 0),
+         K::AddX | K::Mov | K::Lse => (false, false, true),
+         K::LogI | K::Ubfm | K::Sbfm | K::Bit1 | K::Bfm | K::Br | K::Blr => (false, true, false),
+         K::St => (true, false, offset),
+@@ -1811,6 +1814,7 @@
+                     };
+                     wr(c, d, trunc(v, w >> 6 & 1 != 0));
+                 }
++                // CCMN (`Ccmp`) and CCMP (`CcmpS`): the kind says which C.
+                 K::Ccmp => {
+                     c.nzcv = if holds(w >> 16, c.nzcv) {
+                         let y = if w >> 4 & 1 != 0 {
+@@ -1818,9 +1822,19 @@
+                         } else {
+                             ra(c, o.m as u32)
+                         };
+-                        let sub = w >> 5 & 1 != 0;
+-                        let y = if sub { !y } else { y };
+-                        add_with_carry(ra(c, n), y, sub, w >> 6 & 1 != 0).1
++                        adds(ra(c, n), y, w >> 6 & 1 != 0).1
++                    } else {
++                        ((w >> 8 & 15) as u64) << 28
++                    };
++                }
++                K::CcmpS => {
++                    c.nzcv = if holds(w >> 16, c.nzcv) {
++                        let y = if w >> 4 & 1 != 0 {
++                            o.m as u64
++                        } else {
++                            ra(c, o.m as u32)
++                        };
++                        subs(ra(c, n), y, w >> 6 & 1 != 0).1
+                     } else {
+                         ((w >> 8 & 15) as u64) << 28
+                     };

@@ -402,6 +402,59 @@ fn misaligned_loads_run_as_the_interpreter_runs_them() {
     assert!(ran > 250, "{ran}");
 }
 
+/// ADDS and SUBS (immediate and shifted register, W and X) at the operands
+/// where C and V turn, run as the interpreter runs them: [`hot`] computes
+/// each kind's carry with its own compare (`AddsI`, `SubsI`, `SubsR`).
+#[test]
+fn flag_setters_at_their_edges_run_as_the_interpreter_runs_them() {
+    let mut r = Rng(0x3c6e_f372_fe94_f82b);
+    let t = TestRam::new(RAM);
+    let edges = [
+        0u64,
+        1,
+        2,
+        0xfff,
+        0x7fff_ffff,
+        0x8000_0000,
+        0xffff_ffff,
+        0x1_0000_0000,
+        0x7fff_ffff_ffff_ffff,
+        0x8000_0000_0000_0000,
+        u64::MAX,
+        u64::MAX - 1,
+    ];
+    let mut ran = 0;
+    // ADDS, SUBS X0, X1, #imm and W; ADDS, SUBS X0, X1, X2 and W.
+    for base in [0xb100_0020u32, 0x3100_0020, 0xf100_0020, 0x7100_0020] {
+        for imm in [0u32, 1, 2, 0xfff] {
+            for &x in &edges {
+                ran += edge_case(&t, &mut r, base | imm << 10, x, 0);
+            }
+        }
+    }
+    for w in [0xab02_0020u32, 0x2b02_0020, 0xeb02_0020, 0x6b02_0020] {
+        for &x in &edges {
+            for &y in &edges {
+                ran += edge_case(&t, &mut r, w, x, y);
+            }
+        }
+    }
+    assert!(ran > 700, "{ran}");
+}
+
+fn edge_case(t: &TestRam, r: &mut Rng, w: u32, x: u64, y: u64) -> u32 {
+    t.mem.write(CODE, 4, w as u64).unwrap();
+    let mut c0 = state(r);
+    (c0.x[1], c0.x[2]) = (x, y);
+    let mut c1 = c0.clone();
+    let want = interp::steps(&mut c1, &t.mem, None, 1);
+    let mut c2 = c0.clone();
+    let got = run_hot(&mut c2, &mut Flat(&t.mem), &pack(&[uop(w)]), 1, CODE);
+    assert_eq!(got, want, "{w:#010x} {x:#x} {y:#x}");
+    assert_eq!(c2, c1, "{w:#010x} {x:#x} {y:#x}");
+    1
+}
+
 /// An MSR that `sys::plain_write` knows, and DAIFSet, run as the interpreter
 /// runs them, at EL0 and EL1 (SPSel either way, IRQs masked or not).
 #[test]

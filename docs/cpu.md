@@ -476,6 +476,12 @@ line) made `ldst_fp::exec`'s result `initializes((0, 1))`, and the loop reads th
 - **A compare and its B.cond** (CMP/CMN/SUBS/ADDS immediate or shifted register, TST/ANDS immediate or
   register, then a B.cond: marked at decode, `mov_runs`) go in one dispatch: the compare's handler tests the
   B.cond's mask and branches (+0.9-1.0% on the boots and the user-mode guest, loop 13).
+- **SUBS is its own kind** (`SubsI` immediate, `SubsR` shifted register, CMP among them; `AddsI` is then ADDS and CMN
+  only), so `hot` computes C with the one compare the kind implies, as the JIT does: `x >= y` for a subtraction,
+  `r < x` for an addition, where `add_with_carry` took two adds, two compares and an OR. +2.2-3.4% on the small guests,
+  +0.6-0.7% on Alpine's boot, in two sessions on the Mac (`bench/interp/REPORT.md` "PERF loop 4"); the same compares
+  chosen by the micro-op's subtraction bit lost 1-3% ("PERF loop 3"). The extended-register forms, ADDS by
+  shifted register (through `AddR`) and CCMP/CCMN keep `add_with_carry`.
 - **What `hot` can't run goes to the slow path a stretch at a time:** the micro-op it stopped at and the
   generic ones (and literal loads) right after it in the prefix, in one `run` (`Run::stretch`), so a run of
   SIMD or FP instructions costs one exit from `hot`, not one each; a generic micro-op runs without being
@@ -581,6 +587,12 @@ In `bench/interp/REPORT.md` "M8-INTERP loop 2" unless said, the variants' diffs 
   on the Mac, loop 3"); threaded dispatch isn't expressible in wasm, and tail-call dispatch (`become`) wasn't built:
   V8's `return_call_indirect` costs ~15 ns an entry (`bench/boot/REPORT.md` "M8: where a busy vCPU's time goes in
   Firefox"), several micro-ops' worth.
+- **Misaligned stores inline** (`bench/interp/REPORT.md` "PERF loop 4", on the Mac): as the misaligned loads, where
+  `fast_in` found the bytes in RAM, but in naturally aligned pieces (a store may write only its own bytes). As a loop
+  over the pieces (`mem::store_split`'s, inline) −3.2 to −4.3% on the block-interpreter guests: three more wasm loops
+  in `hot` (the StO pair inlines `single_h` twice); as up to eight byte stores, unrolled, −0.7% on Alpine's boot
+  (rounds overlapping), for ~4.1 M exits a pages session, ~0.15% of a browser's busy time. **CCMP as its own kind**
+  (beside SUBS's, CCMN the other): even with SUBS's alone.
 - **A browser's FP and NEON classes as handlers** (FMOV, MOVI, FCSEL, vector logic and ADD, DUP, BFM, FCMP,
   FADD/FSUB/FMUL/FDIV on the JIT's fast-path rules; loop 10): the small guests −1-2%, Firefox's pages session no
   faster. Its generic path is 1.9% of what it interprets, spread over dozens of classes; the code costs `hot` more

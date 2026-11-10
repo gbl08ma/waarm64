@@ -41,10 +41,18 @@ enum K {
     AddI64,
     /// `Wd|WSP = Wn|WSP + imm`, zero-extended.
     AddI32,
-    /// ADDS/SUBS immediate: `x` bit 0 sf, bit 1 carry in; `imm` the operand (inverted for SUBS).
+    /// ADDS immediate (and CMN): `x` bit 0 sf, bit 1 the carry in (clear: SUBS is `SubsI`); `imm`
+    /// the operand.
     AddsI,
-    /// ADD/SUB(S) shifted register: `x` = type | amount << 2 | sf << 8 | S << 9 | sub << 10.
+    /// SUBS immediate (and CMP), as `AddsI`'s SUBS (`imm` inverted, `x` bit 1
+    /// set) but its own kind, so [`hot`] knows the carry is `x >= y`.
+    SubsI,
+    /// ADD/SUB and ADDS shifted register (SUBS is `SubsR`): `x` = type | amount << 2 | sf << 8 | S << 9
+    /// | sub << 10.
     AddR,
+    /// SUBS shifted register (and CMP), as `AddR`'s (S and sub set) but its own
+    /// kind, so [`hot`] knows the carry is `x >= y`.
+    SubsR,
     /// ADD/SUB(S) extended register: `x` = option | amount << 3 | sf << 8 | S << 9 | sub << 10.
     AddX,
     /// `Xd|SP = imm` (MOVZ, MOVN, ORR immediate from XZR; `d` 31 is SP).
@@ -171,8 +179,8 @@ pub fn mov_runs(b: &mut [Wide]) {
     for k in 0..b.len().saturating_sub(1) {
         if b[k + 1].k == K::Bcond {
             match b[k].k {
-                K::AddsI => b[k].x |= 4,
-                K::AddR if b[k].x >> 9 & 1 != 0 => b[k].x |= 1 << 11,
+                K::AddsI | K::SubsI => b[k].x |= 4,
+                K::AddR | K::SubsR if b[k].x >> 9 & 1 != 0 => b[k].x |= 1 << 11,
                 K::LogI if b[k].x & 3 == 3 => b[k].x |= 8,
                 K::LogR if b[k].x >> 8 & 3 == 3 => b[k].x |= 1 << 12,
                 _ => {}
@@ -278,10 +286,11 @@ impl Uop {
             K::AddI64 | K::AddI32 | K::Adr | K::B | K::Bl => (d, n, m, 0, s),
             K::Bcond => (d, 0, 0, 0, s),
             K::Csel | K::Ccmp => (d, n, m, w & 0xffff, 0),
-            K::AddsI | K::Cbz | K::LdLit => (d, n, 0, m, s),
+            K::AddsI | K::SubsI | K::Cbz | K::LdLit => (d, n, 0, m, s),
             K::Adrp => (d, n, m, 0, s << 12),
             K::Tbz => (d, 0, m, n, s),
             K::AddR
+            | K::SubsR
             | K::AddX
             | K::LogR
             | K::Sbfm
@@ -430,7 +439,7 @@ fn ubfm_mask(w: u32) -> u64 {
 /// Packs a block's micro-ops: its [`Uop`]s, then the constants they need. Per kind, what goes where (the
 /// rest as in [`Wide`]):
 /// - `w` the immediate (sign-extended): ADD/SUB immediate, ADR, B, BL, B.cond;
-///   ADRP's shifted right 12; AddsI, CBZ, LdLit with `x` in `m`; TBZ with `x` in `n`;
+///   ADRP's shifted right 12; AddsI, SubsI, CBZ, LdLit with `x` in `m`; TBZ with `x` in `n`;
 /// - `w` = `x`: the register forms, Ubfm (its mask's length and lowest bit
 ///   in bits 1-13), Sbfm, Mov, BR, BLR;
 /// - MovI: `n` its run, `m` and `w` [`rot_form`] or a constant;
@@ -485,10 +494,11 @@ pub fn pack_into(b: &[Wide], out: &mut Vec<Uop>) {
                 let mask = cond_mask(d as u32);
                 p(d, mask as u8, (mask >> 8) as u8, i32w(u.imm))
             }
-            K::AddsI | K::Cbz | K::LdLit => p(d, n, u.x as u8, i32w(u.imm)),
+            K::AddsI | K::SubsI | K::Cbz | K::LdLit => p(d, n, u.x as u8, i32w(u.imm)),
             K::Adrp => p(d, n, m, i32w((u.imm as i64 >> 12) as u64)),
             K::Tbz => p(d, u.x as u8, m, i32w(u.imm)),
             K::AddR
+            | K::SubsR
             | K::AddX
             | K::LogR
             | K::Sbfm
@@ -635,7 +645,7 @@ fn uop_op(w: u32, op: Op) -> Wide {
                 (false, true) => u(K::AddI64, 0, if sub { imm.wrapping_neg() } else { imm }),
                 (false, false) => u(K::AddI32, 0, if sub { imm.wrapping_neg() } else { imm }),
                 (true, _) => u(
-                    K::AddsI,
+                    if sub { K::SubsI } else { K::AddsI },
                     sf as u32 | (sub as u32) << 1,
                     if sub { !imm } else { imm },
                 ),
@@ -647,7 +657,15 @@ fn uop_op(w: u32, op: Op) -> Wide {
                 return generic;
             }
             let x = ty | amt << 2 | (sf as u32) << 8 | bits(w, 30, 29) << 9;
-            u(K::AddR, x, 0)
+            u(
+                if bits(w, 30, 29) == 3 {
+                    K::SubsR
+                } else {
+                    K::AddR
+                },
+                x,
+                0,
+            )
         }
         ADD_ext | ADDS_ext | SUB_ext | SUBS_ext => {
             let amt = bits(w, 12, 10);
@@ -945,12 +963,12 @@ pub fn run(c: &mut Cpu, m: &mut impl Bus, b: &[Uop], len: usize, pc: u64) -> (u6
             K::Nop => {}
             K::AddI64 => c.x[d as usize] = c.x[n as usize].wrapping_add(u.imm),
             K::AddI32 => c.x[d as usize] = c.x[n as usize].wrapping_add(u.imm) as u32 as u64,
-            K::AddsI => {
+            K::AddsI | K::SubsI => {
                 let (r, f) = add_with_carry(c.x[n as usize], u.imm, u.x & 2 != 0, sf);
                 c.nzcv = f;
                 c.set_reg(d, r);
             }
-            K::AddR => {
+            K::AddR | K::SubsR => {
                 let sf = u.x >> 8 & 1 != 0;
                 let y = shift(c.reg(u.m as u32), u.x & 3, u.x >> 2 & 63, sf);
                 addsub(c, u.x, d, c.reg(n), y, sf, false);
@@ -1310,6 +1328,7 @@ fn reads(k: K, x: u32) -> (bool, bool, bool) {
     let offset = x >> 2 & 3 == 3;
     match k {
         K::AddR
+        | K::SubsR
         | K::LogR
         | K::ShiftV
         | K::Csel
@@ -1684,11 +1703,22 @@ pub fn hot<B: Fast>(
                     rsp(c, n).wrapping_add(w as i32 as i64 as u64) as u32 as u64,
                 ),
                 K::AddsI => {
+                    // ADDS only (SUBS is `SubsI`): no carry in.
                     let (x, imm) = (o.m as u32, w as i32 as i64 as u64);
-                    let (v, f) = add_with_carry(rsp(c, n), imm, x & 2 != 0, x & 1 != 0);
+                    let (v, f) = adds(rsp(c, n), imm, x & 1 != 0);
                     c.nzcv = f;
                     wr(c, d, v);
                     if x & 4 != 0 {
+                        and_bcond!('block, u, end, pc, f);
+                    }
+                }
+                K::SubsI => {
+                    // `w` the operand inverted.
+                    let (x, y) = (rsp(c, n), !(w as i32 as i64 as u64));
+                    let (v, f) = subs(x, y, o.m & 1 != 0);
+                    c.nzcv = f;
+                    wr(c, d, v);
+                    if o.m & 4 != 0 {
                         and_bcond!('block, u, end, pc, f);
                     }
                 }
@@ -1698,6 +1728,16 @@ pub fn hot<B: Fast>(
                     addsub_h(c, w, d, ra(c, n), y, sf, false);
                     if w & 1 << 11 != 0 {
                         and_bcond!('block, u, end, pc, c.nzcv);
+                    }
+                }
+                K::SubsR => {
+                    let sf = w >> 8 & 1 != 0;
+                    let y = shift(ra(c, o.m as u32), w & 3, w >> 2 & 63, sf);
+                    let (v, f) = subs(ra(c, n), y, sf);
+                    c.nzcv = f;
+                    wr(c, d, v);
+                    if w & 1 << 11 != 0 {
+                        and_bcond!('block, u, end, pc, f);
                     }
                 }
                 K::AddX => {
@@ -2160,6 +2200,38 @@ fn pair_h<B: Fast>(c: &mut Cpu, m: &mut B, fx: B::Ctx, o: &Uop) -> bool {
         wsp(c, n, base.wrapping_add(imm));
     }
     true
+}
+
+/// ADDS's result and NZCV, `x + y`: the kind says it's an addition, so C is
+/// one compare (`r < x`), as the JIT's.
+#[inline(always)]
+fn adds(x: u64, y: u64, sf: bool) -> (u64, u64) {
+    if sf {
+        let r = x.wrapping_add(y);
+        let v = ((x ^ r) & (y ^ r)) >> 63 == 1;
+        (r, super::nzcv(r >> 63 == 1, r == 0, r < x, v))
+    } else {
+        let (x, y) = (x as u32, y as u32);
+        let r = x.wrapping_add(y);
+        let v = ((x ^ r) & (y ^ r)) >> 31 == 1;
+        (r as u64, super::nzcv(r >> 31 == 1, r == 0, r < x, v))
+    }
+}
+
+/// SUBS's result and NZCV, `x - y`: the kind says it's a subtraction, so C
+/// is one compare (`x >= y`), as the JIT's.
+#[inline(always)]
+fn subs(x: u64, y: u64, sf: bool) -> (u64, u64) {
+    if sf {
+        let r = x.wrapping_sub(y);
+        let v = ((x ^ y) & (x ^ r)) >> 63 == 1;
+        (r, super::nzcv(r >> 63 == 1, r == 0, x >= y, v))
+    } else {
+        let (x, y) = (x as u32, y as u32);
+        let r = x.wrapping_sub(y);
+        let v = ((x ^ y) & (x ^ r)) >> 31 == 1;
+        (r as u64, super::nzcv(r >> 31 == 1, r == 0, x >= y, v))
+    }
 }
 
 /// [`addsub`] through the inline register accessors.

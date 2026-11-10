@@ -2326,3 +2326,52 @@ dispatches go, and a browser's interpreted code, where `hot` is ~14% of a busy v
 (even at several times Alpine's share it would be a few tenths of a percent of busy time); no browser count was made
 for that reason.
 
+
+## PERF loop 4: misaligned stores inline; SUBS and ADDS as their own kinds (2026-11-10)
+
+The Mac host (Apple M4, macOS 26.6.2), Chrome for Testing 157.0.8103.50; base `93307eb8`; raw
+`results/m9-interp-mac/perf4/` (README). Two arms, each against main in one alternated session (`bench/interp/ab-mac.sh
+p4 3 …`), then the kept one again beside two variants (`p4b`); no memory in any of them.
+
+- **`stores`** (`stores-loop.diff`): a misaligned StO or St that `fast_in` found in RAM written inline, in naturally
+  aligned pieces of 1, 2 or 4 bytes (`mem::store_split`'s, as a loop with the piece computed inline: a store may
+  write only its own bytes, so not loop 5's two words). `hot` 11,806 → 12,217 bytes of wasm (MMU), 11,391 → 11,758
+  (flat), no call; a directed test (every misaligned offset at a page's start and end, STR X and W, STRH, STUR X and
+  W, by register, pre-indexed, memory compared around the access) failed with a planted extra piece, as did the
+  differential test.
+- **`subs`** (kept): SUBS immediate and shifted register (CMP among them) are their own kinds, `SubsI` and `SubsR`, so
+  `hot` knows a subtraction from the kind, as the JIT does, and C is one compare: `x >= y`; `AddsI` is then ADDS and
+  CMN only, `r < x`. Loop 3's `subs` had the same compares chosen by the micro-op's subtraction bit. `hot` 11,806 →
+  12,513 bytes (MMU), 11,391 → 12,102 (flat), no call.
+
+MIPS, three rounds (`p4-r<round>-<arm>-<bench>.json`):
+
+| | main | stores | subs |
+|---|---|---|---|
+| `dec_mips` | 519.2 · 520.8 · 517.4 | 491.8 · 502.7 · 502.6 (−3.2%) | 535.1 · 538.1 · 533.8 (+3.1%) |
+| `vm_dec_mmu_mips` | 516.5 · 519.3 · 507.2 | 494.3 · 492.9 · 494.9 (−4.3%) | 527.8 · 526.8 · 528.3 (+2.2%) |
+| Alpine's boot through the block interpreter | 245.2 · 254.7 · 254.4 | 244.3 · 246.9 · 246.0 (−3.3%) | 256.3 · 255.9 · 255.7 (+0.6%) |
+
+`stores`' loop added three wasm loops to `hot` (St's, and StO's `single_h` inlined twice for its pair), which is what
+"Runs of LdOs and StOs in a loop" cost before (docs/cpu.md). So a second session (`p4b-…`, the arms in another order):
+`subs` again; **`both`**, `subs` with the misaligned store as up to eight byte stores, unrolled (`stores-bytes.diff`,
+no loop: `hot` 12,886 and 12,475 bytes); and **`subs2`**, `subs` with CCMP as its own kind beside CCMN (`ccmp.diff`,
+12,727 and 12,316 bytes):
+
+| | main | subs | both | subs2 |
+|---|---|---|---|---|
+| `dec_mips` | 518.4 · 520.7 · 518.9 | 536.3 · 536.3 · 536.3 (+3.4%) | 537.6 · 535.5 · 535.9 | 535.2 · 533.3 · 535.7 |
+| `vm_dec_mmu_mips` | 510.3 · 507.1 · 518.4 | 528.1 · 527.6 · 527.4 (+3.4%) | 528.0 · 525.1 · 526.0 | 528.3 · 528.1 · 528.1 |
+| Alpine's boot through the block interpreter | 254.6 · 254.6 · 254.2 | 256.6 · 256.3 · 255.9 (+0.7%) | 254.5 · 254.6 · 256.5 | 256.6 · 256.5 · 256.7 |
+
+**`subs` kept**: +3.1-3.4% on the small guests and +0.6-0.7% on Alpine's boot, in both sessions with the rounds apart.
+A directed test (`flag_setters_at_their_edges_run_as_the_interpreter_runs_them`: ADDS and SUBS, immediate and
+register, W and X, at the operands where C and V turn) failed with a planted `r <= x` for ADDS W's carry, which the
+random differential test missed; a planted `x > y` for SUBS X failed three tests. Firefox's pages session wasn't run:
+`hot` is ~13% of its busy ticks ("loop 3"), so even the small guests' 3.4% there would be ~0.4% of busy time, under
+what it resolves. The JIT gates weren't either (the change is `hot`'s only; cold code there gains if anything).
+
+**Misaligned stores dropped**: the loop −3.2 to −4.3%; byte stores against `subs` −0.1% on `dec_mips`, −0.3% on
+`vm_dec_mmu_mips` and −0.7% on Alpine's boot (one round even), for ~4.1 M exits a pages session (loop 2's count),
+~0.15% of a browser's busy time by loop 1's estimate: a cost the small guests can show, for a gain nothing measures.
+**CCMP's own kind dropped**: even with `subs` alone (Alpine +0.1%, `dec_mips` −0.2%), for 214 more bytes of `hot`.
