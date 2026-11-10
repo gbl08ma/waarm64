@@ -67,4 +67,7 @@ Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL 
   workload runs them. ci.sh (second run: the first caught an xHCI-tick divergence, fixed), ci-jit.sh, ci-debian.sh
   passed. Untested: the parallel IRQ-byte check (a miss waits to the chunk's end). Two gate-only items added to the
   backlog (counter reads inline in deterministic runs; the gates' timer rate).
-- **Review** after loop 8: out-of-context static review of loops 4-8's code, `review/perf` branch.
+- **Review** after loop 8 (static, loops 4-8's code): no wrong-result defect; four latency/test/comment findings.
+- **Loop 9** (`67c5f4ca`): the review's four fixes, each failing first: no inline unmask in realtime round-robin (a
+  bare-metal guest caught IRQs up to a chunk late); parallel blocks also check the pending-maintenance byte; jit-diff
+  covers the inline arm (`jit_unmask`/`jit_parallel` exports, ABI 64); comments. Gates even. CI passed.
