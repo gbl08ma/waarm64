@@ -153,9 +153,12 @@ without, so a key without the address gets nothing in.
 
 ## Rooms
 
-Peer-to-peer rooms ([plans/networking-p2p.md](plans/networking-p2p.md), in progress: R0 and R1 done, so members find
-each other by address or name, but nothing is on the page's menus yet: R2). `room.rs` is a third client of the module
-(with `room/link.rs`, `room/lookup.rs` and `nostr.rs`); `web/room.ts` and `web/room-worker.ts` are its page and worker.
+Peer-to-peer rooms ([plans/networking-p2p.md](plans/networking-p2p.md), in progress: R0 to R2 done). `room.rs` is a
+third client of the module (with `room/link.rs`, `room/lookup.rs` and `nostr.rs`); `web/room.ts` and
+`web/room-worker.ts` are its page and worker. A room is a connection kind on the page ([frontend.md](frontend.md)
+"Network": the wizard's Create a room and Join a room, the menu's name and link to copy); the node key a connection
+keeps is in `webpc-room` ([network-adapters.md](network-adapters.md) §2.1), which the worker reads at the start
+(`identityKey`; an ephemeral connection's comes as `identity`).
 
 - **A room's link** (`room::Link`): `webpc-room:<id>?nostr=<wss URL>&…&derp=<region>&…`, each part percent-encoded; a
   `derp` is a region ID of the DERP map (0: its first) or a derper inline (`host[:port]`). Anything without the scheme
@@ -164,7 +167,7 @@ each other by address or name, but nothing is on the page's menus yet: R2). `roo
 - **What the ID derives:** BLAKE2s with labels of their own gives the room's /48 (`fd` and 40 bits; one that would be
   tailcat's `fd7a:115c:a1e0::/48` takes the next label), its tag (those 40 bits in base32), the tag salt and lookup key
   of its lookups, and the WireGuard pre-shared key every pair in the room uses (`room::Room`). A node's address is the
-  /48 plus the first 80 bits of its node key, as tailcat's; its name is `<key in base32, 52 characters>.<tag>.p2p.alt`.
+  /48 plus the first 80 bits of its node key, as tailcat's; its name is `<key in base32, 52 characters>.<tag>.p2p.internal`.
 - **Finding a peer** (`room/lookup.rs`, `nostr.rs`): a node's tag in an hour is BLAKE2s of the tag salt, its address
   and the Unix hour (16 bytes, hex); it keeps one subscription on each of the link's Nostr relays (`REQ`, the kind
   `room::KIND` = 26354, a placeholder, and its tags of the previous, current and next hour; `CLOSE` and a new `REQ` when
@@ -213,9 +216,10 @@ each other by address or name, but nothing is on the page's menus yet: R2). `roo
   guest has a flow with that address; a flow table (the peer's address, the protocol, both ports or an echo's
   identifier; 5 minutes idle, 4,096 at most) lets in only replies to the guest's own flows (and ICMPv6 errors from a
   peer it has one with).
-- **The resolver** at the room's `<prefix>::53` (the lease's `dns6`, with the room's `<tag>.p2p.alt` as its domain):
-  `<key>.<tag>.p2p.alt` AAAA is the address computed from the key, which the module remembers to seal lookups to it;
-  A for such a name is an empty answer, anything else NXDOMAIN. The lease: the room address as a /128, IPv4
+- **The resolver** at the room's `<prefix>::53` (the lease's `dns6`, with the room's `<tag>.p2p.internal` as its domain):
+  `<key>.<tag>.p2p.internal` AAAA is the address computed from the key, which the module remembers to seal lookups to it;
+  A for such a name is an empty answer, anything else NXDOMAIN. The suffix is `.internal`, not RFC 9476's `.alt`: systemd-resolved
+  answers `.alt` names NXDOMAIN without asking any server (tests/page-room.test.ts found it). The lease: the room address as a /128, IPv4
   `192.0.0.2` with no IPv4 routes, and the /48 as the route on an adapter that isn't the guest's primary (`prefix6`,
   web/room-worker.ts).
 - **Signalling inside the tunnel:** UDP between the two members' addresses, port 1 both ends (`SIGNAL_PORT`; the

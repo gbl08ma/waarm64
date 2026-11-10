@@ -40,6 +40,7 @@ import { DEFAULT_SHARES_PATH } from './shares-mount.ts';
 import { swapLabel } from './guest-swap.ts';
 import { CLOSE_MS } from '../devices.ts';
 import { forgetTailcatIdentity, hasTailcatIdentity, newTailcatIdentity } from '../tailcat.ts';
+import { forgetRoomIdentity, newRoomIdentity } from '../room.ts';
 import { forgetProfile, keptProfiles } from '../tailscale-state.ts';
 import type { FromWorker, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
 import { adaptersOf, CPU_DEFAULT, CPU_FEATURES, DEFAULT_MAC, KEYBOARD_CONNECTOR, newId, serialOf, shapeDiff, USB_CONNECTORS, type DiskRecord, type FolderAttachment, type MachineRecord, type Shape, type UsbEntry } from './shape.ts';
@@ -289,7 +290,7 @@ const jitBudget = () => jitMiB || JIT_DEFAULT_MIB;
 // sound are made first (their menus show them).
 const net = new PageNetwork({
   store,
-  state: { forgetTailnet: forgetProfile, forgetTailcat: forgetTailcatIdentity },
+  state: { forgetTailnet: forgetProfile, forgetTailcat: forgetTailcatIdentity, forgetRoom: forgetRoomIdentity },
   kept: keptProfiles,
   me: () => machineTitle(),
   onChange: () => { ui.net++; },
@@ -1752,7 +1753,7 @@ async function netDetach(machine: string | undefined, i: number) {
 async function netDelete(c: Connection) {
   const on = (await store.all('machines')).filter((m) => m.adapters?.some((a) => a.connection === c.id)).map((m) => m.name);
   if (settings().transientNet === c.id) on.push(text(spec.title));
-  const what = c.kind === 'tailnet' ? (c.ephemeral ? msg('network:main.delete.leaves') : msg('network:main.delete.loggedOut')) : c.tailcat?.serve ? msg('network:main.delete.tailcat') : undefined;
+  const what = c.kind === 'tailnet' ? (c.ephemeral ? msg('network:main.delete.leaves') : msg('network:main.delete.loggedOut')) : c.tailcat?.serve ? msg('network:main.delete.tailcat') : c.room && !(await net.conns.sharesKey(c)) ? msg('network:main.delete.room') : undefined;
   const question = what
     ? (on.length ? t('network:main.delete.confirm.on.what', { name: c.name, machines: on, what }) : t('network:main.delete.confirm.what', { name: c.name, what }))
     : on.length ? t('network:main.delete.confirm.on', { name: c.name, machines: on }) : t('network:main.delete.confirm', { name: c.name });
@@ -1777,8 +1778,23 @@ async function netLogoutConnection(c: Connection) {
   }
 }
 
-/** Forgets tailcat connection `c`'s served identity, after asking: whoever has its address can't come in any more. */
+/**
+ * Forgets tailcat connection `c`'s served identity, after asking: whoever has its address can't come in any more. A room
+ * connection gets a new key (so a new address and name in its room); a key it shared with another stays that one's.
+ */
 async function netNewAddress(c: Connection) {
+  const r = c.room;
+  if (r) {
+    if (!(await ask.confirm(t('network:main.newName.confirm', { name: c.name }), { ok: t('network:main.newName.ok'), danger: true }))) return false;
+    if (c.ephemeral) await net.conns.put({ ...c, room: { ...r, identity: newRoomIdentity() } });
+    else {
+      const shared = await net.conns.sharesKey(c);
+      await net.conns.put({ ...c, room: { ...r, identityKey: shared ? `${c.id}.${Date.now()}` : r.identityKey } });
+      if (!shared) await forgetRoomIdentity(r.identityKey);
+    }
+    if (net.runs(c.id) >= 0) await net.edit((await net.conns.get(c.id))!);
+    return true;
+  }
   const tc = c.tailcat;
   if (!tc) return false;
   if (!(await ask.confirm(t('network:main.newAddress.confirm', { name: c.name }), { ok: t('network:main.newAddress.ok'), danger: true }))) return false;

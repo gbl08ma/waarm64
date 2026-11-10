@@ -13,6 +13,7 @@ import { MsgError } from '../msg.ts';
 import { startTailscale, tailscaleBuilt, type FromTailscale, type NetMap, type Tailscale, type TailscaleConfig } from '../tailscale.ts';
 import type { Reach6Options } from '../reach6.ts';
 import { startLocal } from '../local-net.ts';
+import { startRoomNet, type RoomNetConfig } from '../room.ts';
 import { forgetTailcatIdentity, hasTailcatIdentity, parseAllow, parseRelay, parseTailcatAddr, startTailcat, tailcatBuilt, type TailcatConfig, type TailcatIdentity, type TailcatServe } from '../tailcat.ts';
 
 export { tailscaleBuilt, tailcatBuilt, parseTailcatAddr, parseRelay, parseAllow, forgetTailcatIdentity, hasTailcatIdentity };
@@ -96,6 +97,8 @@ export type NetworkView = {
   internet?: boolean;
   /** The local helper's: its lease always routes everything through it, so it is the primary first (`primaryOf`). */
   local?: boolean;
+  /** A room's, when connected: the machine's name in it (to give out), the room's link, and whether members may connect. */
+  room?: { name: string; link: string; incoming: boolean };
 };
 
 /**
@@ -122,7 +125,7 @@ export function ranksOf(views: Pick<NetworkView, 'phase'>[]): number[] {
 }
 
 /** What a `Tailscale` client reports, as far as the view needs it. */
-export type ClientReport = { state: string; netmap?: NetMap; loginURL?: string; error?: unknown; tailcat?: boolean; local?: boolean };
+export type ClientReport = { state: string; netmap?: NetMap; loginURL?: string; error?: unknown; tailcat?: boolean; local?: boolean; room?: boolean };
 
 const web = (s: string | undefined) => {
   try {
@@ -145,6 +148,16 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
     if (c.state !== 'Running') return { phase: 'connecting', text: t('network:network.connectingHelper'), exitNodes: [] };
     const address = c.netmap?.addresses[0]?.replace(/\/\d+$/, '');
     return { phase: 'connected', address, exitNodes: [], internet: true, local: true, text: address ? t('network:network.connectedLocal.address', { address }) : t('network:network.connectedLocal') };
+  }
+  if (c.netmap?.via === 'room' || c.room) {
+    const r = c.netmap?.room;
+    if (c.state === 'Running' && c.netmap && r) {
+      const address = c.netmap.addresses[0]?.replace(/\/\d+$/, '');
+      // A room reaches only its members: never the internet, so never the default way out over another adapter's.
+      return { phase: 'connected', address, exitNodes: [], internet: false, room: { name: r.name, link: r.link, incoming: r.incoming }, text: t('network:network.room', { count: c.netmap.peers.length }) };
+    }
+    const doing: Record<string, string> = { FetchingMap: t('network:network.fetchingMap'), Connecting: t('network:network.connectingRelay'), Running: t('network:network.connectingRelay') };
+    return { phase: 'connecting', text: doing[c.state] ?? t('network:network.loadingClient'), exitNodes: [] };
   }
   if (c.netmap?.via === 'tailcat' || c.tailcat) {
     if (c.state === 'Running' && c.netmap) {
@@ -188,9 +201,10 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
  * A tailnet (`controlURL`, …), or tailcat: through a server when `tailcat` (its address) is given, letting clients in with
  * `tailcatServe`, as the node `tailcatIdentity` names (web/tailcat.ts `identityKey`, `identity`) (`probe6`: how the server's or the exit node's IPv6 reach is checked, web/reach6.ts). `persist`: the tailnet node's profile in `webpc-tailscale` (web/tailscale-state.ts), so it is kept and
  * comes back without a login; none: an ephemeral node (a connection kept nowhere, web/app/connections.ts). `local`: the
- * local helper's link (`ws://127.0.0.1:<port>/<token>`, web/local-net.ts), the card's frames to it.
+ * local helper's link (`ws://127.0.0.1:<port>/<token>`, web/local-net.ts), the card's frames to it. `room`: a peer-to-peer
+ * room (web/room.ts), its link, switches and kept identity.
  */
-export type Connect = { controlURL: string; hostname: string; authKey?: string; exitNode?: string; acceptRoutes?: boolean; persist?: string; tailcat?: string; tailcatServe?: TailcatServe; tailcatIdentity?: { identityKey?: string; identity?: TailcatIdentity }; probe6?: Reach6Options; local?: string };
+export type Connect = { controlURL: string; hostname: string; authKey?: string; exitNode?: string; acceptRoutes?: boolean; persist?: string; tailcat?: string; tailcatServe?: TailcatServe; tailcatIdentity?: { identityKey?: string; identity?: TailcatIdentity }; probe6?: Reach6Options; local?: string; room?: Omit<RoomNetConfig, 'ip'> };
 
 export type Network = {
   /** A new machine's end of the IP port (its device's `{ip: port}`; transfer it). Any client gets the other end. */
@@ -252,6 +266,7 @@ export function createNetwork(
   start: (config: TailscaleConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startTailscale,
   startCat: (config: TailcatConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startTailcat,
   startHelper: (config: { url: string; ip: MessagePort }, onEvent: (m: FromTailscale) => void) => Tailscale = startLocal,
+  startRoom: (config: RoomNetConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startRoomNet,
 ): Network {
   /** The page's end of the machine's port, while no client has it. */
   let free: MessagePort | undefined;
@@ -261,12 +276,13 @@ export function createNetwork(
   let error: unknown;
   let tailcat = false;
   let local = false;
+  let room = false;
   /** The card is on frames (a local client had it last): an IP client brings the page's gateway back first. */
   let onFrames = false;
   let primary = true;
   let rank = 0;
 
-  const report = (): ClientReport | undefined => (client ? { state: client.state(), netmap: client.netmap(), loginURL: client.loginURL(), error, tailcat, local } : undefined);
+  const report = (): ClientReport | undefined => (client ? { state: client.state(), netmap: client.netmap(), loginURL: client.loginURL(), error, tailcat, local, room } : undefined);
 
   async function disconnect() {
     const t = client;
@@ -305,12 +321,15 @@ export function createNetwork(
         else if (m.type === 'state' && m.state === 'Running') error = undefined;
         onChange();
       };
-      tailcat = !!(c.tailcat || c.tailcatServe);
+      room = !!c.room;
+      tailcat = !room && !!(c.tailcat || c.tailcatServe);
       local = !!c.local;
       if (onFrames && !local) ip.postMessage({ type: 'gateway' });
       onFrames = local;
       const t = local
         ? startHelper({ url: c.local!, ip }, onEvent)
+        : room
+        ? startRoom({ ...c.room!, ip }, onEvent)
         : tailcat
         ? startCat({ addr: c.tailcat ?? '', serve: c.tailcatServe, ...c.tailcatIdentity, probe6: c.probe6, ip }, onEvent)
         : start({ controlURL: c.controlURL, authKey: c.authKey || undefined, hostname: c.hostname, exitNode: c.exitNode || undefined, acceptRoutes: c.acceptRoutes, ip, persist: c.persist, probe6: c.probe6 }, onEvent);

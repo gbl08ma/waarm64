@@ -6,7 +6,7 @@ import { toWire } from './msg.ts';
 import { batchSender, packetsOf } from './net.ts';
 import { failureOf, TsClient, TsModule, type RoomConfig } from './ts-client.ts';
 import { ranked, routedLease, type Lease, type Prefix } from './gateway.ts';
-import type { FromRoom, ToRoom } from './room.ts';
+import { roomIdentity, type FromRoom, type ToRoom } from './room.ts';
 
 const post = (m: FromRoom) => self.postMessage(m);
 
@@ -60,7 +60,11 @@ self.onmessage = async (e: MessageEvent<ToRoom>) => {
     const mod = await TsModule.load(m.wasm);
     post({ type: 'loaded', ms: performance.now() - t0 });
     if (!ip) return; // detached meanwhile
-    client = new TsClient(mod, m.config, {
+    // The kept identity (docs/network-adapters.md §2.1): the same address and name each time it joins.
+    const id = m.identity ?? (m.identityKey !== undefined ? await roomIdentity(m.identityKey) : undefined);
+    const config = id ? { ...m.config, key: id.key } : m.config;
+    if (!ip) return; // detached meanwhile
+    client = new TsClient(mod, config, {
       packet: (p) => send?.(p),
       rtc: {
         open: (rtc, offer) => post({ type: 'rtc-open', rtc, offer }),

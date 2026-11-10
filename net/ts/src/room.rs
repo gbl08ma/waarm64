@@ -20,7 +20,7 @@
 //!   lower key offers; the page holds the `RTCPeerConnection` (`Action::RtcOpen`, `RtcSignal`,
 //!   `RtcClose`) and the worker the data channel (`RtcSend`, `rtc_message`). At most
 //!   [`MAX_RTC`] channels, each closed after [`RTC_IDLE`] without the guests' traffic.
-//! - **The resolver** at the room's `::53` answers `<key>.<tag>.p2p.alt` by computing the address,
+//! - **The resolver** at the room's `::53` answers `<key>.<tag>.p2p.internal` by computing the address,
 //!   and remembers the key, so lookups to it are sealed to it.
 //! - **Incoming connections** (on by default): a member we don't know may call us. Off, only the
 //!   guest's own flows get their replies, and lookups for it go unanswered unless it has a flow
@@ -54,8 +54,9 @@ const TUNNEL_MTU: usize = 1280;
 /// The UDP port signalling uses between two nodes' addresses, both ends. The module keeps it:
 /// the guest's packets to or from it are dropped.
 pub const SIGNAL_PORT: u16 = 1;
-/// The names' suffix under the room's tag (RFC 9476's `.alt`; a placeholder, plan §9).
-pub const SUFFIX: &str = "p2p.alt";
+/// The names' suffix under the room's tag: `.internal`, which ICANN reserved for private use and
+/// never delegates (plan §5: systemd-resolved answers RFC 9476's `.alt` NXDOMAIN itself).
+pub const SUFFIX: &str = "p2p.internal";
 /// The ephemeral event kind of every room's lookups (a placeholder until R3: clear of the kinds
 /// NIPs reserve, 22242, 24133, 27235).
 pub const KIND: u32 = 26354;
@@ -238,7 +239,7 @@ impl Room {
         a
     }
 
-    /// The names' domain: `<tag>.p2p.alt`.
+    /// The names' domain: `<tag>.p2p.internal`.
     pub fn domain(&self) -> String {
         format!("{}.{SUFFIX}", self.tag)
     }

@@ -1,4 +1,4 @@
-# Peer-to-peer rooms over WebRTC (in progress: R0 and R1 done 2026-11-10)
+# Peer-to-peer rooms over WebRTC (in progress: R0 to R2 done 2026-11-10)
 
 VMs in different browsers on one network, with packets going browser to browser over WebRTC and DERP
 only as the fallback. Reaching a peer takes two steps: **joining its room**, and **knowing its
@@ -51,7 +51,7 @@ key), the Ethernet gateway ([devices.md](../devices.md) "net") and network adapt
 - **A room's link carries where its members meet:** the room's ID, its Nostr relays and its DERP map
   (region IDs in the public tailcat relays' map, or a derper's URL inline). Members with the same link
   find each other; a call back goes only to a region in the link's map (§3). The page builds the link
-  ("Create a room") and takes one ("Join a room"); a bare ID gets the defaults (R4 picks them).
+  ([Create a room](ui:network:NetWizard.room.create)) and takes one ([Join a room](ui:network:NetWizard.room.join)); a bare ID gets the defaults (R4 picks them).
 - **Who sees a node's real IP address:** the members it connects to directly (its public address
   and port from the candidates; a LAN address stays behind Chromium's `.local` name); the operators
   of its DERP regions (with its node key, so its room address, and which keys it exchanges packets
@@ -91,7 +91,7 @@ key), the Ethernet gateway ([devices.md](../devices.md) "net") and network adapt
   (§3, §8).
 - **Public and private rooms, and fast derivation.** A room's secrets come from its ID by BLAKE2s
   (§2), fast, so a relay that keeps its lookups can guess a short ID offline and read them. The page
-  makes the trade-off plain instead of slowing it: "Create a room" asks whether the room is
+  makes the trade-off plain instead of slowing it: [Create a room](ui:network:NetWizard.room.create) asks whether the room is
   private, and a private room's ID is the chosen name plus a random suffix the page generates
   (128 bits, base32), the only form it accepts as private; anything else is public, and the page
   says what that means (anyone can join; addresses still protect each node). Creating and joining
@@ -204,10 +204,14 @@ worker as it creates it; packets never touch the main thread.
   [network-adapters.md](../network-adapters.md) §4) it offers its /48 as its route, so a tailnet or
   tailcat on another adapter keeps the default route and the internet. A machine in several rooms
   has an adapter per room, with distinct /48s.
-- **DNS:** a name is `<key>.<tag>.p2p.alt`: the node key in base32 (52 characters, one label), the
-  room's tag (§2), under `.alt` (RFC 9476's suffix for names outside the DNS, so it can never collide
-  with a real TLD). The module answers at the room's `::53` (in its /48, as `MAGIC_DNS6` is
-  tailnets' resolver), the lease's `dns6`, with `<tag>.p2p.alt` its routing domain (`domains`): AAAA
+- **DNS:** a name is `<key>.<tag>.p2p.internal`: the node key in base32 (52 characters, one label),
+  the room's tag (§2), under `.internal` (which ICANN reserved in 2024 for private use and will never
+  delegate, so it can never collide with a real TLD). Not RFC 9476's `.alt`, the first choice: R2 found
+  that systemd-resolved (Debian 13's, 2026-11-10) answers any `.alt` name NXDOMAIN itself, whatever the
+  link's DNS server and routing domain, so a guest with resolved, as Debian's and Arch's are, never
+  asks the room's resolver (which answered the same query sent to it directly). The module answers at
+  the room's `::53` (in its /48, as `MAGIC_DNS6` is
+  tailnets' resolver), the lease's `dns6`, with `<tag>.p2p.internal` its routing domain (`domains`): AAAA
   by computing the address, no lookup, nothing to trust, and the module remembers the key for that
   address, to seal lookups to it (§3). Anything else is NXDOMAIN. The page shows a node's name and
   lets the user copy it.
@@ -272,9 +276,16 @@ client was built.
   Tests: the client against the fake relay and fake peers (stale, replayed and forged lookups, a
   lookup naming a region outside the map, the hour's turn, lost signalling); two pages joining a
   room by its link, one given the other's name, pinging by name.
-- **R2 — The page.** A room as a connection kind (network-adapters.md "Connections" grows its
-  record): "Create a room" (a name, "private" and its suffix, relays and derper under advanced
-  settings) and "Join a room" (a link or a public ID); one's own name to copy; the incoming switch;
+- **R2 — The page.** *Done 2026-11-10* (frontend.md "Network", network-adapters.md §2.1): the `room` kind, the
+  wizard's [Create a room](ui:network:NetWizard.room.create) (a private room's 128-bit suffix, relays under Advanced)
+  and [Join a room](ui:network:NetWizard.room.join), the switches, another connection's key, the IP-address note, the
+  menu's name and link to copy, New name; the key in `webpc-room`; the names' suffix moved to `.internal` (§5).
+  `tests/page-room.test.ts` (two Debian guests in one Chromium, in `scripts/ci-net.sh`), `tests/room-link.test.ts`,
+  and the controller's, the connections' cases. Left to R4: the room on a second adapter beside the local helper,
+  whose source (a private repository) a cloud session can't fetch; the unit layer checks that a room is never the
+  default way out (`primaryOf`). The brief as it was: A room as a connection kind (network-adapters.md "Connections" grows its
+  record): [Create a room](ui:network:NetWizard.room.create) (a name, "private" and its suffix, relays and derper under advanced
+  settings) and [Join a room](ui:network:NetWizard.room.join) (a link or a public ID); one's own name to copy; the incoming switch;
   the relay-only switch; the key under advanced settings (another connection's, or new); who sees
   one's IP address (§1), beside the room's privacy note. Two Debian guests in one Chromium reach each
   other by name in `scripts/ci-net.sh`, and a room on a second adapter beside the local helper
@@ -287,7 +298,8 @@ client was built.
 - **R4 — The real world, by hand and in the dev VM** (split from R3 on 2026-11-10, the user's call: the dev
   VM is unavailable for a while, so what needs it or a person waits here). First the runs the cloud can't
   do: `scripts/ci-net.sh` whole (the cloud has no Podman or IPv6, docs/cloud.md), R0's numbers again
-  (`node bench/net/room.ts 5 10000 <json>`), and any of R2's tests the cloud couldn't run. By hand: public
+  (`node bench/net/room.ts 5 10000 <json>`), and R2's room on a second adapter beside the local helper keeping
+  the internet (a Debian test beside `tests/net-local.test.ts`'s). By hand: public
   Nostr relays (the fixed kind forwarded, time from a lookup to its call back, Trystero's relay list as
   the start, events dated ahead of their clocks) and the public tailcat relays carrying a room (their
   limits; whether their operators allow this use), two browsers on different networks (the dev VM and a
@@ -329,4 +341,4 @@ client was built.
   and DERP carry everyone (R4), and what the page says, decide it.
 - Which public Nostr relays by default (Trystero's maintained list is a start), and whether they
   forward a busy room's lookups.
-- The names' suffix: `p2p.alt` is a placeholder until R1.
+- The names' suffix: `p2p.internal` since R2 (§5: systemd-resolved refuses `.alt`), the user's to change.

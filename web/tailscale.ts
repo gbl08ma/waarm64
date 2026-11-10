@@ -21,13 +21,16 @@ export type NetMap = {
   domains: string[] | null;
   /** The stable ID of the peer in use as the exit node, or ''. */
   exitNode: string;
-  /** Not a tailnet: the guest's network goes through a tailcat server (web/tailcat.ts), or the local helper (web/local-net.ts). */
-  via?: 'tailcat' | 'local';
+  /** Not a tailnet: the guest's network goes through a tailcat server (web/tailcat.ts), the local helper (web/local-net.ts),
+   * or a peer-to-peer room (web/room.ts, whose `peers` are the members reached). */
+  via?: 'tailcat' | 'local' | 'room';
   /** tailcat: whether an exit node carries the guest's traffic, and the machine's own address when it lets clients in. */
   tailcatExit?: boolean;
   serving?: string;
   /** tailcat: the machine's node key (`nodekey:…`), the same at each connect for a kept connection, so a server can `--allow` it. */
   tailcatKey?: string;
+  /** A room: the member's name to give out (`<key>.<tag>.p2p.internal`), the room's link, and its switches. */
+  room?: { name: string; link: string; incoming: boolean; relayOnly: boolean };
 };
 
 export type TailscaleConfig = {

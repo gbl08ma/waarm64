@@ -87,7 +87,7 @@ export type TsFailure = { code?: string; detail?: string };
 export type TsEvent =
   | ({ type: 'state'; state: 'FetchingMap' | 'Connecting' | 'Meowing' | 'Handshaking' | 'Running' | 'Failed' } & TsFailure)
   | { type: 'lease'; lease: Lease }
-  /** This node; a room's member also has the room's tag, its own name (`<key>.<tag>.p2p.alt`) and the link. */
+  /** This node; a room's member also has the room's tag, its own name (`<key>.<tag>.p2p.internal`) and the link. */
   | { type: 'self'; key: string; address6: number[]; tag?: string; name?: string; link?: string }
   | { type: 'serving'; addr: string }
   | { type: 'client' | 'client-gone'; key: string; address6: number[] }

@@ -7,44 +7,40 @@ significantly less performant than DERP"); do them if a cloud session can, else 
 
 ## State
 
-**R0 and R1 are done** (2026-11-10, cloud sessions; how it works: docs/tailnet.md "Rooms"):
+**R0, R1 and R2 are done** (2026-11-10, cloud sessions; how it works: docs/tailnet.md "Rooms", docs/frontend.md
+"Network"). The plan split R3 on 2026-11-10 (the user's call: the dev VM is unavailable for a while): R3 is what a
+cloud session can measure, R4 what needs a person or the dev VM.
 
-- R0: `net/ts/src/room.rs` (a third client of the module), WireGuard over WebRTC data channels with DERP as the
-  fallback, signalling inside the tunnel, `web/room.ts` and `web/room-worker.ts`; measured, the gate held
-  (bench/net/REPORT.md "Rooms").
-- R1: the link (`room/link.rs`), §2's remaining derivations and §3's lookups (`room/lookup.rs`; Nostr events in
-  `nostr.rs` with `k256`, rows in THIRD_PARTY.json), call backs into the dialer's home region (one DERP connection per
-  region in use), the probe of a live peer named by a lookup, connections on demand (lookups for unknown addresses,
-  ICMPv6 unreachable, the 64-channel cap, 60 s idle close, peers forgotten when idle or lost), the resolver at the
-  room's `::53` and the lease's `dns6`/`domains`, incoming off's flow table. `web/ts-client.ts` opens text WebSockets
-  for an empty protocol. `JsRoom` takes `link`, `home`, `known`, `relayOnly`, `incoming` (no more `peers`, `relay`,
-  `region`). Plan §3 amended (the lookup's age window, the probe, the caller's hello).
-- Tests: `cargo test -p webpc_ts room` (34 cases with the review's, planted: no nonce check, flows ignored: each caught);
-  `tests/nostr-relay.test.ts` (the tests' relay, `tests/net/nostr-relay.ts`); `tests/room-browser.test.ts` (3 cases:
-  by address, relay only, by name and incoming off; passed in this session, `WEBPC_TAILCAT=1`). The module is 576 KB
-  Brotli (R0's 533).
+- R0: `net/ts/src/room.rs`, WireGuard over WebRTC data channels with DERP as the fallback, signalling inside the
+  tunnel, `web/room.ts` and `web/room-worker.ts`; measured, the gate held (bench/net/REPORT.md "Rooms").
+- R1: the link (`room/link.rs`), lookups over Nostr (`room/lookup.rs`, `nostr.rs`, `k256`), call backs into the
+  dialer's region, connections on demand, the resolver, incoming off's flow table; its out-of-context review's 16
+  fixes. Left from it: public relays refusing events dated far ahead (R4), a replay to a target that just reloaded
+  (accepted).
+- R2: the `room` connection kind (web/app/connections.ts: `link`, `incoming`, `relayOnly`, `identityKey`; the key in
+  IndexedDB `webpc-room`, shared by `keyOf` with another stored room connection, forgotten by the last one using
+  it); the wizard's room steps (web/app/NetWizard.svelte: Create a room with its private suffix and relays under
+  Advanced, Join a room by link or public name, the switches, the key, the IP-address note; editing: the switches
+  and New name); the menu's name and link to copy (web/app/Network.svelte); web/room.ts's link (`roomLink`,
+  `parseRoomLink`, the same text link.rs writes) and `startRoomNet` (the `Tailscale` handle the controller drives,
+  a network map of `via: 'room'`). Words in the catalog under docs/copy.md. **The names' suffix is now
+  `p2p.internal`**: systemd-resolved answers any `.alt` name NXDOMAIN itself (found by the Debian test; the room's
+  resolver answered the same query sent to it directly), plan §5 and §9 say so; the user may want another.
+- Tests: `cargo test -p webpc_ts room` (34), `tests/room-link.test.ts`, `tests/network.test.ts`'s and
+  `tests/connections.test.ts`'s room cases, `tests/room-browser.test.ts`, and `tests/page-room.test.ts` (two Debian
+  guests in one Chromium: Create, Join by link, the wizard's refusals, the resolver asked directly and through
+  resolved, pings both ways by name; ~2 min; in `scripts/ci-net.sh`'s list). All passed in this session.
 
-**R1's out-of-context review** (a fresh agent, static, 17 findings) is triaged: 16 fixed in the commit after R1's,
-each with a test that failed first (a peer made again on one side lost its channel for minutes; both dialing at once
-deadlocked crossed handshakes, found while testing the fix for waiting packets; junk initiations used up the trial
-budget; a forged lookup naming another region cut a key off; a guest's sweep unbounded; a relay's CLOSED and silence
-unnoticed; a failed map with an inline home; and the smaller ones: the wall clock across sleep, `dc.send` throwing,
-nonce eviction, the uniform lookup format, the `bye` backoff, the Nostr backoff reset, a bad description's parse).
-Left: public relays refusing events dated far ahead (a question for R3, plan §3), and a replay to a target that just
-reloaded (accepted, docs/tailnet.md).
+**CI:** `scripts/ci.sh` OK on R2 (1,506 s; JS 971 passed, 0 failed, 559 skipped; the agent's two root-only tests skipped, docs/cloud.md); `tests/page-room.test.ts`, `tests/room-browser.test.ts` passed alone (`WEBPC_NET_TESTS=1 WEBPC_DISTROS=debian WEBPC_TAILCAT=1`). **Not done here** (R4's first runs): `scripts/ci-net.sh` whole, `node bench/net/room.ts
+5 10000 <json>` (R0's numbers), and R2's room on a second adapter beside the local helper (webpc-net is a private
+repository a cloud session can't fetch).
 
-**CI:** `scripts/ci.sh` OK on R1's commit (1,224 s) and on the review's fixes (1,038 s; JS 956 passed, 0 failed, 568 skipped; the agent's `cargo test`
-left out as root, docs/cloud.md). **Not done here:** `scripts/ci-net.sh` whole and `node bench/net/room.ts 5 10000
-<json>` (R0's numbers) want the dev VM (docs/cloud.md: no Podman, no IPv6): R4's first runs (the plan split R3 on 2026-11-10, the user's call: the
-dev VM is unavailable for a while, so R4 holds what needs it or a person; R2 and R3 go on in cloud sessions).
+## Next: R3 (plan §7)
 
-## Next: R2 (plan §7)
+Scale, with nothing outside the test harness: a thousand synthetic members on the tests' Nostr relay (join time,
+lookup time, the worker's memory and CPU, the relay's load); the lookup's event kind picked from the NIPs' ranges
+(`room::KIND`, 26354 a placeholder); what the defaults need from a public relay written down for R4. Then R4 when the
+dev VM is back.
 
-The page: a room as a connection kind (docs/network-adapters.md "Connections"), "Create a room" (name, private and its
-suffix, relays and derper under advanced settings: builds the link with `room::Link`'s format) and "Join a room";
-one's own name to copy (the `self` event's `name`), the incoming and relay-only switches, the key under advanced
-settings, who sees one's IP address beside the privacy note; the node key kept in IndexedDB as tailcat's identity.
-Then two Debian guests reaching each other by name in `scripts/ci-net.sh`. Words come from the catalog (docs/i18n.md).
-
-Open questions for the user stay in plan §9 (the default public room, the relays, the `p2p.alt` suffix, the event
-kind); the seal's reuse of the WireGuard key is decided (plan §1, 2026-11-10).
+Open questions for the user stay in plan §9 (the default public room, the relays, the `p2p.internal` suffix, the
+event kind); the seal's reuse of the WireGuard key is decided (plan §1, 2026-11-10).

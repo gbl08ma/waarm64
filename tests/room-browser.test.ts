@@ -121,10 +121,10 @@ test('a member reached by its name, and one with incoming connections off not at
   const c = await member(room, { incoming: '0' });
   const a = await member(room);
   const bs = (await of(b)).self!;
-  assert.match(bs.name!, new RegExp(`^[a-z2-7]{52}\\.${bs.tag}\\.p2p\\.alt$`));
+  assert.match(bs.name!, new RegExp(`^[a-z2-7]{52}\\.${bs.tag}\\.p2p\\.internal$`));
   const to = await a.evaluate(`window.harness.resolve(${JSON.stringify(bs.name)})`) as number[] | null;
   assert.deepEqual(to, bs.address6, 'the name is the address, computed');
-  assert.equal(await a.evaluate(`window.harness.resolve("nobody.${bs.tag}.p2p.alt")`), null, 'NXDOMAIN');
+  assert.equal(await a.evaluate(`window.harness.resolve("nobody.${bs.tag}.p2p.internal")`), null, 'NXDOMAIN');
   const before = nostr.events.length;
   assert.ok(await a.evaluate(`window.harness.first(${JSON.stringify(to)})`) as number >= 0, 'reached by name');
   assert.ok(nostr.events.length > before, 'through a lookup on the Nostr relay');

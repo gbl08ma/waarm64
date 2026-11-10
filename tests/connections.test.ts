@@ -18,7 +18,7 @@ import { t } from '../web/i18n.ts';
 const store = (channel: string | false = false) => new Store(memoryRecords(), memoryFiles(), { channel });
 const fakeState = () => {
   const forgot: string[] = [];
-  return { forgot, state: { forgetTailnet: async (k: string) => { forgot.push(`tailnet:${k}`); }, forgetTailcat: async (k: string) => { forgot.push(`tailcat:${k}`); } } };
+  return { forgot, state: { forgetTailnet: async (k: string) => { forgot.push(`tailnet:${k}`); }, forgetTailcat: async (k: string) => { forgot.push(`tailcat:${k}`); }, forgetRoom: async (k: string) => { forgot.push(`room:${k}`); } } };
 };
 
 test('connections: stored and ephemeral, their names and state keys, deleted with their state', async () => {
@@ -62,6 +62,38 @@ test('connections: stored and ephemeral, their names and state keys, deleted wit
   assert.deepEqual(connectOf(here), { controlURL: '', hostname: '', local: 'ws://127.0.0.1:8740/tok' });
   await conns.delete(here.id);
   assert.deepEqual(forgot, [`tailnet:${hs.id}`, `tailcat:${cat.id}`]);
+});
+
+test('rooms: named by the room, a key of their own or another connection\'s, forgotten when no other connection shares it', async () => {
+  const s = store();
+  const { forgot, state } = fakeState();
+  const conns = new Connections(s, state);
+  const link = 'webpc-room:gabriel-lan';
+  const pub = await conns.create({ kind: 'room', room: { link, incoming: true, relayOnly: false } });
+  const priv = await conns.create({ kind: 'room', room: { link: 'webpc-room:work-abcdefghijklmnopqrstuvwxyz?derp=7', incoming: false, relayOnly: true } });
+  // The same key in another room: its entry in webpc-room is the first one's.
+  const shared = await conns.create({ kind: 'room', room: { link: 'webpc-room:other', incoming: true, relayOnly: false, keyOf: pub.id } });
+  const eph = await conns.create({ kind: 'room', ephemeral: true, room: { link, incoming: true, relayOnly: false } });
+  const ephShared = await conns.create({ kind: 'room', ephemeral: true, room: { link: 'webpc-room:third', incoming: true, relayOnly: false, keyOf: pub.id } });
+  assert.deepEqual([pub.name, priv.name, shared.name, eph.name], ['gabriel-lan', 'work', 'other', 'gabriel-lan (2)'], 'named by the room, a private one without its suffix');
+  assert.equal(pub.room?.identityKey, pub.id);
+  assert.equal(pub.room?.identity, undefined, 'a stored connection\'s key is the client\'s to keep');
+  assert.equal(shared.room?.identityKey, pub.id, 'sharing a key shares its entry');
+  assert.equal(ephShared.room?.identityKey, pub.id, 'an ephemeral connection may share a stored one\'s key');
+  assert.equal(ephShared.room?.identity, undefined);
+  assert.match(eph.room?.identity?.key ?? '', /^[0-9a-f]{64}$/, 'an ephemeral one has its own, in memory');
+  assert.ok(!('keyOf' in (await s.get('connections', shared.id))!.room!), 'the choice isn\'t kept, only the key it names');
+  assert.deepEqual(connectOf(priv), { controlURL: '', hostname: '', room: { link: priv.room!.link, incoming: false, relayOnly: true, identityKey: priv.id, identity: undefined } });
+  // A key another connection shares stays until the last one using it is deleted, ephemeral or not.
+  assert.equal(await conns.sharesKey(pub), true);
+  await conns.delete(pub.id);
+  await conns.delete(shared.id);
+  assert.deepEqual(forgot, [], 'shared: kept');
+  await conns.delete(ephShared.id);
+  assert.deepEqual(forgot, [`room:${pub.id}`], 'the last one using it forgets it');
+  await conns.delete(priv.id);
+  await conns.delete(eph.id);
+  assert.deepEqual(forgot, [`room:${pub.id}`, `room:${priv.id}`], 'a key of its own is forgotten; an ephemeral one\'s own is in memory');
 });
 
 test('the Attach wizard preselects the most recently used connection no other machine holds', () => {

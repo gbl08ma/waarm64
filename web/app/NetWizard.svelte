@@ -1,7 +1,9 @@
 <!--
   The Network wizard (docs/network-adapters.md §3.2), a dialog opened through `ui.netWizard`: attach a connection
   to a machine's adapter (one of the browser's, or a new one: New connection… first), make a new connection on its own,
-  or edit one (what changes without a new node: a tailnet's hostname, tailcat's server and relay). A new connection is
+  or edit one (what changes without a new node: a tailnet's hostname, tailcat's server and relay, a room's switches). A
+  room is created (a name, private or public, its relays under Advanced: web/room.ts builds the link) or joined (a link,
+  or a public room's name), with a key of its own or another room connection's. A new connection is
   kept in this browser unless Keep is off (ephemeral: gone when the page closes). The toolbar's Network menu and the
   Machines page's Network tab and Connections open it; the page (web/app/main.ts) attaches and connects.
 -->
@@ -16,11 +18,13 @@
   import { DEFAULT_CONTROL, hasTailcatIdentity, parseAllow, parseControlURL, parseHostname, parseRelay, parseTailcatAddr, tailcatBuilt, tailscaleBuilt } from './network.ts';
   import { page, ui } from './ui.svelte.ts';
   import { parseLocalURL } from '../local-net.ts';
+  import { hasRoomIdentity, isPrivateRoom, parseRoomLink, privateRoomId, roomLink, type RoomLink } from '../room.ts';
   import { installLines, RELEASE, SOURCE, targetName, TARGETS, thisTarget, type Target } from '../local-release.ts';
 
   let { net }: { net: PageNetwork } = $props();
 
-  type Step = 'pick' | 'kind' | 'tailscale' | 'tailcat' | 'local';
+  type Step = 'pick' | 'kind' | 'tailscale' | 'tailcat' | 'local' | 'roomPick' | 'roomCreate' | 'roomJoin' | 'roomEdit';
+  const roomStep = (s: Step) => s === 'roomCreate' || s === 'roomJoin' || s === 'roomEdit';
   let wizard: Modal;
   let w = $state<NonNullable<typeof ui.netWizard>>({ mode: 'new' });
   let step = $state<Step>('kind');
@@ -35,6 +39,10 @@
   let advanced = $state(false), identityKept = $state(false);
   let keep = $state(true);
   let localURL = $state(''), target = $state<Target>();
+  let roomId = $state(''), roomPrivate = $state(true), roomJoin = $state(''), nostr = $state(''), derp = $state('');
+  let incoming = $state(true), relayOnly = $state(false), keyOf = $state(''), roomAdvanced = $state(false), roomKept = $state(false);
+  /** The room connections whose key a new one may share: the stored ones (an ephemeral one's key is gone with its tab). */
+  const keys = $derived(conns.filter((c) => c.kind === 'room' && !c.ephemeral));
   void thisTarget().then((t) => { target = t; });
   const pickable = $derived(w.mode === 'attach' && conns.length > 0);
   /** Whether what the wizard attaches connects now (the machine is the page's): an auth key is asked for then. */
@@ -48,8 +56,12 @@
   });
 
   const kindMsg = (c: Connection): Msg => {
-    const kind = c.kind === 'tailnet' ? msg('network:NetWizard.kind.tailnet', { host: new URL(c.tailnet!.controlURL).host }) : c.kind === 'local' ? msg('network:NetWizard.kind.local') : c.tailcat?.exit ? msg('network:NetWizard.kind.tailcatExit') : msg('network:NetWizard.kind.tailcatServe');
+    const kind = c.kind === 'tailnet' ? msg('network:NetWizard.kind.tailnet', { host: new URL(c.tailnet!.controlURL).host }) : c.kind === 'local' ? msg('network:NetWizard.kind.local') : c.kind === 'room' ? roomKindMsg(c) : c.tailcat?.exit ? msg('network:NetWizard.kind.tailcatExit') : msg('network:NetWizard.kind.tailcatServe');
     return c.ephemeral ? msg('network:NetWizard.kind.ephemeral', { kind }) : kind;
+  };
+  const roomKindMsg = (c: Connection): Msg => {
+    const l = parseRoomLink(c.room?.link ?? '');
+    return 'room' in l && isPrivateRoom(l.room.id) ? msg('network:NetWizard.kind.roomPrivate') : msg('network:NetWizard.kind.roomPublic');
   };
   /** A connection's line under its name: its kind, and the machine that has it, if one does. */
   const kindText = (c: Connection) => {
@@ -78,8 +90,12 @@
     allow = (cat?.allow ?? []).join('\n');
     advanced = !!relay || !!allow;
     localURL = editing?.local?.url ?? o.localURL ?? '';
+    const r = editing?.room;
+    [roomId, roomPrivate, roomJoin, nostr, derp, keyOf, roomAdvanced] = ['', true, '', '', '', '', false];
+    incoming = r?.incoming ?? true;
+    relayOnly = r?.relayOnly ?? false;
     wizard.open();
-    if (editing) return showStep(editing.kind === 'tailnet' ? 'tailscale' : editing.kind === 'local' ? 'local' : 'tailcat');
+    if (editing) return showStep(editing.kind === 'tailnet' ? 'tailscale' : editing.kind === 'local' ? 'local' : editing.kind === 'room' ? 'roomEdit' : 'tailcat');
     if (o.localURL) return showStep('local'); // the helper's pairing link opened the page
     if (!pickable) return showStep('kind');
     const attached = o.machine === ui.current ? net.views()[o.adapter ?? 0]?.connection?.id : undefined;
@@ -98,9 +114,14 @@
       else if (cat.identity) identityKept = true;
       else void hasTailcatIdentity(cat.identityKey).then((kept) => { identityKept = kept; });
     }
-    queueMicrotask(() => document.getElementById(to === 'pick' ? (picked ? `net-pick-${picked}` : 'net-pick-new') : to === 'kind' ? 'net-pick-tailnet' : to === 'tailscale' ? (editing ? 'net-hostname' : 'net-control') : to === 'local' ? 'net-local-url' : 'net-tc-exit')?.focus());
+    if (to === 'roomEdit') {
+      const r = editing?.room;
+      if (r?.identity) roomKept = true;
+      else if (r) void hasRoomIdentity(r.identityKey).then((kept) => { roomKept = kept; });
+    }
+    queueMicrotask(() => document.getElementById(to === 'pick' ? (picked ? `net-pick-${picked}` : 'net-pick-new') : to === 'kind' ? 'net-pick-tailnet' : to === 'tailscale' ? (editing ? 'net-hostname' : 'net-control') : to === 'local' ? 'net-local-url' : to === 'roomPick' ? 'net-room-create' : to === 'roomCreate' ? 'net-room-id' : to === 'roomJoin' ? 'net-room-link' : to === 'roomEdit' ? 'net-room-incoming' : 'net-tc-exit')?.focus());
   }
-  const back = () => showStep(step === 'kind' ? 'pick' : 'kind');
+  const back = () => showStep(step === 'kind' ? 'pick' : step === 'roomCreate' || step === 'roomJoin' ? 'roomPick' : 'kind');
   const close = () => { wizard.close(); ui.netWizard = undefined; };
 
   /** Attaches `c` (and connects it, on the page's machine); the menu then shows how it goes. */
@@ -123,7 +144,29 @@
     }
   }
 
+  /** The relays as typed: one per line (or separated by spaces or commas). */
+  const lines = (s: string) => s.split(/[\s,]+/).filter((x) => x);
+
+  async function saveRoom() {
+    if (step === 'roomEdit' && editing?.room) {
+      await page.netEdit({ ...editing, room: { ...editing.room, incoming, relayOnly } });
+      return close();
+    }
+    let link: { link: string; room?: RoomLink } | { error: Msg };
+    if (step === 'roomCreate') {
+      const name = roomId.trim();
+      if (!name) return fail(msg('network:NetWizard.room.noName'));
+      link = roomLink({ id: roomPrivate ? privateRoomId(name) : name, nostr: lines(nostr), derp: lines(derp) });
+    } else link = parseRoomLink(roomJoin);
+    if ('error' in link) return fail(link.error);
+    formError = undefined;
+    if (!(await tailcatBuilt())) return fail(msg('network:NetWizard.tailcatNotBuilt'));
+    const c = await page.netCreate({ kind: 'room', ephemeral: !keep, room: { link: link.link, incoming, relayOnly, ...(keyOf ? { keyOf } : {}) } });
+    return w.mode === 'attach' ? attach(c) : close();
+  }
+
   async function save() {
+    if (roomStep(step)) return saveRoom();
     if (step === 'local') {
       const u = parseLocalURL(localURL);
       if ('error' in u) return fail(u.error);
@@ -177,9 +220,10 @@
   async function forget() {
     if (!editing || !(await page.netNewAddress(editing))) return;
     identityKept = false;
+    roomKept = false;
   }
 
-  const title = $derived(editing ? t('network:NetWizard.title.edit', { name: editing.name }) : step === 'pick' ? t('network:NetWizard.title.pick', { adapter: (w.adapter ?? 0) + 1 }) : step === 'kind' ? t('network:NetWizard.title.kind') : step === 'tailscale' ? t('network:NetWizard.title.tailnet') : step === 'local' ? t('network:NetWizard.title.local') : t('network:NetWizard.title.tailcat'));
+  const title = $derived(editing ? t('network:NetWizard.title.edit', { name: editing.name }) : step === 'pick' ? t('network:NetWizard.title.pick', { adapter: (w.adapter ?? 0) + 1 }) : step === 'kind' ? t('network:NetWizard.title.kind') : step === 'tailscale' ? t('network:NetWizard.title.tailnet') : step === 'local' ? t('network:NetWizard.title.local') : step === 'roomCreate' ? t('network:NetWizard.title.roomCreate') : step === 'roomJoin' ? t('network:NetWizard.title.roomJoin') : step === 'roomPick' ? t('network:NetWizard.title.room') : t('network:NetWizard.title.tailcat'));
   /** The install lines shown first: this browser's platform's, else Linux x86-64's. */
   const shown = $derived(target ?? TARGETS[0]);
   const submitLabel = $derived(editing ? t('network:NetWizard.save') : w.mode === 'new' ? t('network:NetWizard.create') : here ? t('network:NetWizard.connect') : t('network:NetWizard.attach'));
@@ -200,6 +244,43 @@
       <button type="button" class="net-choice" id="net-pick-tailnet" onclick={() => showStep('tailscale')}><b>{t('network:NetWizard.kind.pickTailnet')}</b><span>{t('network:NetWizard.kind.pickTailnet.note')}</span></button>
       <button type="button" class="net-choice" id="net-pick-tailcat" onclick={() => showStep('tailcat')}><b>{t('network:NetWizard.kind.pickTailcat')}</b><span>{t('network:NetWizard.kind.pickTailcat.note')}</span></button>
       <button type="button" class="net-choice" id="net-pick-local" onclick={() => showStep('local')}><b>{t('network:NetWizard.kind.pickLocal')}</b><span>{t('network:NetWizard.kind.pickLocal.note')}</span></button>
+      <button type="button" class="net-choice" id="net-pick-room" onclick={() => showStep('roomPick')}><b>{t('network:NetWizard.kind.pickRoom')}</b><span>{t('network:NetWizard.kind.pickRoom.note')}</span></button>
+    </section>
+    <section id="net-step-room-pick" class="net-step" hidden={step !== 'roomPick'}>
+      <button type="button" class="net-choice" id="net-room-create" onclick={() => showStep('roomCreate')}><b>{t('network:NetWizard.room.create')}</b><span>{t('network:NetWizard.room.create.note')}</span></button>
+      <button type="button" class="net-choice" id="net-room-join" onclick={() => showStep('roomJoin')}><b>{t('network:NetWizard.room.join')}</b><span>{t('network:NetWizard.room.join.note')}</span></button>
+    </section>
+    <section id="net-step-room" class="net-step" hidden={!roomStep(step)}>
+      {#if step === 'roomCreate'}
+        <label>{t('network:NetWizard.room.name')}<input id="net-room-id" bind:value={roomId} autocomplete="off" spellcheck="false"></label>
+        <Check id="net-room-private" bind:checked={roomPrivate} note={roomPrivate ? t('network:NetWizard.room.private.note') : t('network:NetWizard.room.public.note')}>{t('network:NetWizard.room.private')}</Check>
+      {:else if step === 'roomJoin'}
+        <label>{t('network:NetWizard.room.link')}<input id="net-room-link" bind:value={roomJoin} type="password" autocomplete="off" spellcheck="false"></label>
+        <p class="note">{t('network:NetWizard.room.link.note')}</p>
+      {/if}
+      <Check id="net-room-incoming" bind:checked={incoming} note={incoming ? t('network:NetWizard.room.incoming.note') : t('network:NetWizard.room.incoming.off')}>{t('network:NetWizard.room.incoming')}</Check>
+      <Check id="net-room-relay-only" bind:checked={relayOnly} note={t('network:NetWizard.room.relayOnly.note')}>{t('network:NetWizard.room.relayOnly')}</Check>
+      <p class="note" id="net-room-ip">{relayOnly ? t('network:NetWizard.room.ip.relayOnly') : t('network:NetWizard.room.ip')}</p>
+      {#if step !== 'roomEdit'}
+        <details id="net-room-advanced" bind:open={roomAdvanced}><summary>{t('network:NetWizard.advanced')}</summary>
+          {#if step === 'roomCreate'}
+            <label>{t('network:NetWizard.room.nostr')}<textarea id="net-room-nostr" bind:value={nostr} rows="2" placeholder={t('network:NetWizard.room.nostr.placeholder')} autocomplete="off" spellcheck="false"></textarea></label>
+            <p class="note">{t('network:NetWizard.room.nostr.note')}</p>
+            <label>{t('network:NetWizard.room.derp')}<textarea id="net-room-derp" bind:value={derp} rows="2" placeholder={t('network:NetWizard.room.derp.placeholder')} autocomplete="off" spellcheck="false"></textarea></label>
+            <p class="note"><T k="network:NetWizard.room.derp.note">{#snippet a(text)}<a href="https://github.com/tailscale/tailscale/tree/main/cmd/derper" target="_blank" rel="noopener">{text}</a>{/snippet}</T></p>
+          {/if}
+          <label>{t('network:NetWizard.room.key')}<select id="net-room-key" bind:value={keyOf}>
+            <option value="">{t('network:NetWizard.room.key.new')}</option>
+            {#each keys as k (k.id)}<option value={k.id}>{t('network:NetWizard.room.key.of', { name: k.name })}</option>{/each}
+          </select></label>
+          <p class="note">{t('network:NetWizard.room.key.note')}</p>
+        </details>
+      {:else}
+        <details id="net-room-advanced" bind:open={roomAdvanced}><summary>{t('network:NetWizard.advanced')}</summary>
+          <div class="net-row"><button type="button" id="net-room-new-name" disabled={!roomKept} onclick={forget}>{t('network:NetWizard.room.newName')}</button></div>
+          <p class="note">{t('network:NetWizard.room.newName.note')}</p>
+        </details>
+      {/if}
     </section>
     <section id="net-step-local" class="net-step" hidden={step !== 'local'}>
       {#snippet localField(label: string)}
@@ -266,7 +347,7 @@
         </details>
       </div>
     </section>
-    {#if !editing && (step === 'tailscale' || step === 'tailcat' || step === 'local')}
+    {#if !editing && (step === 'tailscale' || step === 'tailcat' || step === 'local' || step === 'roomCreate' || step === 'roomJoin')}
       <Check id="net-keep" bind:checked={keep}>
         {t('network:NetWizard.keep')}
         {#snippet note()}<span id="net-keep-note">{keep ? t('network:NetWizard.keep.note') : t('network:NetWizard.keep.ephemeral')}</span>{/snippet}
@@ -276,7 +357,7 @@
     {#snippet buttons()}
       <button type="button" id="net-back" hidden={!!editing || step === 'pick' || (step === 'kind' && !pickable)} onclick={back}>{t('network:NetWizard.back')}</button><span class="grow"></span>
       <button type="button" id="net-cancel" onclick={close}>{t('network:NetWizard.cancel')}</button>
-      <button id="net-connect" class="primary" type="submit" disabled={working} hidden={step === 'kind' || (step === 'pick' && !picked)}>{submitLabel}</button>
+      <button id="net-connect" class="primary" type="submit" disabled={working} hidden={step === 'kind' || step === 'roomPick' || (step === 'pick' && !picked)}>{submitLabel}</button>
     {/snippet}
   </Modal>
 

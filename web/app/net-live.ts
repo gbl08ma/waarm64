@@ -15,6 +15,10 @@ import type { Store } from './store.ts';
 /** What a connection's client is started with (`authKey`: a tailnet's first login, never kept). */
 export function connectOf(c: Connection, authKey?: string): Connect {
   if (c.kind === 'local') return { controlURL: '', hostname: '', local: c.local!.url };
+  if (c.kind === 'room') {
+    const r = c.room!;
+    return { controlURL: '', hostname: '', room: { link: r.link, incoming: r.incoming, relayOnly: r.relayOnly, identityKey: r.identityKey, identity: r.identity } };
+  }
   if (c.kind === 'tailcat') {
     const t = c.tailcat!;
     // Its identity always: a kept connection is the same node going online through a server too (a server can `--allow` it).
@@ -63,6 +67,7 @@ export type PageNetworkOptions = {
   start?: Parameters<typeof createNetwork>[1];
   startCat?: Parameters<typeof createNetwork>[2];
   startLocal?: Parameters<typeof createNetwork>[3];
+  startRoom?: Parameters<typeof createNetwork>[4];
   store: Store;
   state?: ConnectionState;
   /** The profiles that hold a kept node (web/tailscale-state.ts `keptProfiles`). */
@@ -104,7 +109,7 @@ export class PageNetwork {
   }
 
   private fresh(): Network {
-    return createNetwork(() => this.changed(), this.o.start, this.o.startCat, this.o.startLocal);
+    return createNetwork(() => this.changed(), this.o.start, this.o.startCat, this.o.startLocal, this.o.startRoom);
   }
 
   /** Stops adapter `i`'s client, if any, and lets its connection go; the adapter gets a new `Network` (its port goes with the old one). */

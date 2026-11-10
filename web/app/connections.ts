@@ -1,11 +1,13 @@
-// The browser's network connections (docs/network-adapters.md §2): tailnets, tailcat and the local helper, each with its own
-// state, which a machine's adapters attach to. Stored ones are records in IndexedDB `webpc` `connections` (web/app/store.ts);
-// their state stays where the clients keep it: a tailnet's node in `webpc-tailscale` under the profile `stateKey`
-// (web/tailscale-state.ts), tailcat's served identity in `webpc-tailcat` under `identityKey` (web/tailcat.ts). Ephemeral
+// The browser's network connections (docs/network-adapters.md §2): tailnets, tailcat, the local helper and peer-to-peer
+// rooms, each with its own state, which a machine's adapters attach to. Stored ones are records in IndexedDB `webpc`
+// `connections` (web/app/store.ts); their state stays where the clients keep it: a tailnet's node in `webpc-tailscale`
+// under the profile `stateKey` (web/tailscale-state.ts), tailcat's served identity in `webpc-tailcat` under
+// `identityKey` (web/tailcat.ts), a room's node key in `webpc-room` under its `identityKey` (web/room.ts). Ephemeral
 // ones live only in this page's memory, state included. One running machine has a connection at a time: its Web
 // Lock (`connectionLock`, web/app/locks.ts). DOM-free: Node's tests run it over a memory store.
 import { t } from '../i18n.ts';
 import { newTailcatIdentity, type TailcatIdentity } from '../tailcat.ts';
+import { newRoomIdentity, parseRoomLink, roomName, type RoomIdentity } from '../room.ts';
 import { DEFAULT_CONTROL, parseControlURL, type NetworkSettings } from './network.ts';
 import { newId, uniqueName } from './shape.ts';
 import type { Store } from './store.ts';
@@ -41,17 +43,32 @@ export type LocalConnection = {
   url: string;
 };
 
+export type RoomConnection = {
+  /** The room's link (`webpc-room:<id>?…`, web/room.ts `roomLink`): who has it can join (a secret, for a private room). */
+  link: string;
+  /** Members may open connections to the guest (off: only replies to the guest's own). */
+  incoming: boolean;
+  /** No WebRTC: everything through the room's DERP relays, so no member learns this computer's IP address. */
+  relayOnly: boolean;
+  /** The node key's entry in `webpc-room`: the connection's id, or another room connection's (the same key in two rooms). */
+  identityKey: string;
+  /** An ephemeral connection's key (never stored). */
+  identity?: RoomIdentity;
+};
+
 export type Connection = {
   id: string;
   /** The user's; by default from the kind and the server. */
   name: string;
-  kind: 'tailnet' | 'tailcat' | 'local';
+  kind: 'tailnet' | 'tailcat' | 'local' | 'room';
   /** Kept nowhere: gone when this page closes (§1.6). */
   ephemeral: boolean;
   tailnet?: TailnetConnection;
   tailcat?: TailcatConnection;
   /** The local helper on this computer (github.com/gbl08ma/webpc-net, docs/plans/networking-local.md). */
   local?: LocalConnection;
+  /** A peer-to-peer room (docs/plans/networking-p2p.md, docs/tailnet.md "Rooms"). */
+  room?: RoomConnection;
   /** Connect when a machine attached to it starts (off after Disconnect). */
   connectAtStart: boolean;
   /** When a machine last connected it (what the Attach wizard preselects); 0: never. */
@@ -68,20 +85,27 @@ export type NewConnection = {
   tailnet?: Omit<TailnetConnection, 'stateKey'>;
   tailcat?: Omit<TailcatConnection, 'identityKey' | 'identity'>;
   local?: LocalConnection;
+  /** `keyOf`: another stored room connection's id, whose key this one shares; none: a key of its own. */
+  room?: Omit<RoomConnection, 'identityKey' | 'identity'> & { keyOf?: string };
 };
 
 /** Where a stored connection's state is, to forget it with the connection (the page's: IndexedDB; the tests' fakes). */
 export type ConnectionState = {
   forgetTailnet(stateKey: string): Promise<void>;
   forgetTailcat(identityKey: string): Promise<void>;
+  forgetRoom(identityKey: string): Promise<void>;
 };
 
 /** The connection's Web Lock: held while a running machine has it (in any tab). */
 export const connectionLock = (id: string) => `webpc-net:${id}`;
 
-/** A connection's default name: Tailscale, a Headscale's host, tailcat, or This computer. */
-export function defaultName(c: Pick<NewConnection, 'kind' | 'tailnet'>): string {
+/** A connection's default name: Tailscale, a Headscale's host, tailcat, This computer, or a room's name. */
+export function defaultName(c: Pick<NewConnection, 'kind' | 'tailnet' | 'room'>): string {
   if (c.kind === 'tailcat') return 'tailcat';
+  if (c.kind === 'room') {
+    const l = parseRoomLink(c.room?.link ?? '');
+    return 'error' in l ? 'room' : roomName(l.room.id);
+  }
   if (c.kind === 'local') return t('network:connections.thisComputer');
   const url = c.tailnet?.controlURL || DEFAULT_CONTROL;
   return url === DEFAULT_CONTROL ? 'Tailscale' : new URL(url).host;
@@ -92,7 +116,7 @@ export function preselect(all: Connection[], held: (id: string) => boolean): str
   return all.filter((c) => c.lastUsed > 0 && !held(c.id)).sort((a, b) => b.lastUsed - a.lastUsed)[0]?.id;
 }
 
-const NO_STATE: ConnectionState = { forgetTailnet: async () => {}, forgetTailcat: async () => {} };
+const NO_STATE: ConnectionState = { forgetTailnet: async () => {}, forgetTailcat: async () => {}, forgetRoom: async () => {} };
 
 /** The page's connections: the store's, and its own ephemeral ones. */
 export class Connections {
@@ -114,11 +138,24 @@ export class Connections {
     return c ? structuredClone(c) : this.store.get('connections', id);
   }
 
-  /** A new connection: stored, unless `ephemeral`. Its state keys are its id; an ephemeral tailcat one gets its identity now. */
+  /**
+   * A new connection: stored, unless `ephemeral`. Its state keys are its id (a room's that shares another's key: that
+   * one's); an ephemeral tailcat or room one gets its identity now (a room sharing another's: that one's key).
+   */
   async create(o: NewConnection): Promise<Connection> {
     const id = newId();
-    const taken = (await this.list()).map((c) => c.name);
+    const all = await this.list();
+    const taken = all.map((c) => c.name);
     const ephemeral = !!o.ephemeral;
+    const shared = o.room?.keyOf ? all.find((c) => c.id === o.room!.keyOf)?.room : undefined;
+    const room = (r: NonNullable<NewConnection['room']>): RoomConnection => {
+      const rest = { ...r };
+      delete rest.keyOf;
+      // Another connection's key: its entry in `webpc-room` (or its key itself, when it's ephemeral too).
+      const identityKey = shared && !shared.identity ? shared.identityKey : id;
+      const identity = shared?.identity ?? (ephemeral && !shared ? newRoomIdentity() : undefined);
+      return { ...rest, identityKey, ...(identity ? { identity } : {}) };
+    };
     const c: Connection = {
       id,
       name: uniqueName(o.name?.trim() || defaultName(o), taken),
@@ -127,6 +164,7 @@ export class Connections {
       ...(o.kind === 'tailnet' ? { tailnet: { controlURL: DEFAULT_CONTROL, hostname: 'webpc', exitNode: '', ...o.tailnet, stateKey: id } } : {}),
       ...(o.kind === 'local' ? { local: { url: o.local?.url ?? '' } } : {}),
       ...(o.kind === 'tailcat' ? { tailcat: { serve: false, relay: '', ...o.tailcat, identityKey: id, ...(ephemeral ? { identity: newTailcatIdentity() } : {}) } } : {}),
+      ...(o.kind === 'room' ? { room: room({ incoming: true, relayOnly: false, link: '', ...o.room }) } : {}),
       connectAtStart: o.connectAtStart ?? true,
       lastUsed: 0,
       created: Date.now(),
@@ -148,16 +186,29 @@ export class Connections {
   }
 
   /**
-   * Deletes a connection: its record, then its state (a tailnet's node, tailcat's identity), so the next one made is a
-   * new node. The caller has its lock (no machine has it) and has logged a tailnet's node out where it could.
+   * Deletes a connection: its record, then its state (a tailnet's node, tailcat's identity, a room's key unless another
+   * connection shares it), so the next one made is a new node. The caller has its lock (no machine has it) and has
+   * logged a tailnet's node out where it could.
    */
   async delete(id: string) {
-    if (this.memory.delete(id)) return;
+    const eph = this.memory.get(id);
+    if (eph) {
+      this.memory.delete(id);
+      // An ephemeral room connection may use a stored one's kept key: the last to go forgets it.
+      if (eph.room && !eph.room.identity && !(await this.sharesKey(eph))) await this.state.forgetRoom(eph.room.identityKey);
+      return;
+    }
     const c = await this.store.get('connections', id);
     if (!c) return;
     await this.store.forget('connections', id);
     if (c.tailnet) await this.state.forgetTailnet(c.tailnet.stateKey);
     if (c.tailcat) await this.state.forgetTailcat(c.tailcat.identityKey);
+    if (c.room && !c.room.identity && !(await this.sharesKey(c))) await this.state.forgetRoom(c.room.identityKey);
+  }
+
+  /** Whether another room connection (stored, or this page's ephemeral one) uses room connection `c`'s kept key. */
+  async sharesKey(c: Connection): Promise<boolean> {
+    return (await this.list()).some((x) => x.id !== c.id && x.room?.identityKey === c.room?.identityKey && !x.room?.identity);
   }
 }
 

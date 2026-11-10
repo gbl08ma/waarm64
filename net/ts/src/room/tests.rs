@@ -601,7 +601,7 @@ fn a_rooms_derivations() {
     assert_eq!(&r.resolver()[..6], &r.prefix);
     assert_eq!(Ipv6Addr::from(r.resolver()).segments()[7], 0x53);
     let name = r.name(&k);
-    assert_eq!(name, format!("{}.{}.p2p.alt", base32(&k), r.tag));
+    assert_eq!(name, format!("{}.{}.p2p.internal", base32(&k), r.tag));
     assert_eq!(base32(&k).len(), 52);
     assert_eq!(base32(b"\x00\x44\x32\x14\xc7"), "abcdefgh");
     assert_eq!(base32(b"f"), "my", "RFC 4648's vector, lower case");
@@ -692,7 +692,7 @@ fn a_name_resolves_by_computing_and_its_lookup_is_sealed_to_the_key() {
         "no IPv4 between guests"
     );
     for bad in [
-        format!("{}.p2p.alt", n.nodes[0].c.room.tag),
+        format!("{}.p2p.internal", n.nodes[0].c.room.tag),
         format!(
             "{}.{}",
             base32(&public(2)),
