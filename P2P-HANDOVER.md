@@ -25,7 +25,7 @@ significantly less performant than DERP"); do them if a cloud session can, else 
   the gate holds. Numbers from the cloud's x86_64 container: **repeat `node bench/net/room.ts 5 10000 <json>` in
   the dev VM** at some point (not blocking).
 
-**CI in this session:** `scripts/ci.sh` (see the commit's report); `scripts/ci-net.sh` not run whole (the cloud has
+**CI in this session:** `scripts/ci.sh` OK (1,392 s; JS 955 passed, 0 failed, 567 skipped) but for the agent's `cargo test`, whose two root-only failures (docs/cloud.md) stop it here and were left out of the run; the cloud skips the image-based native tests; `scripts/ci-net.sh` not run whole (the cloud has
 no Podman, and `tests/net-tailcat.test.ts` hangs on its missing IPv6, docs/cloud.md): `tests/room-browser.test.ts`,
 `tests/tailcat-browser.test.ts` and `tests/ts-client.test.ts` ran here. **Run `scripts/ci-net.sh` in the dev VM**
 before R1's end.
