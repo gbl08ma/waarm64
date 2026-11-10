@@ -24,10 +24,25 @@ key) and the Ethernet gateway ([devices.md](../devices.md) "net").
   whichever path carries them (a data channel when one is open, DERP otherwise), so the address
   binding, the PSK and the fallback come from the code that exists. That costs a second layer of
   encryption over DTLS; R0 measures whether it matters.
-- **Signalling goes over DERP**, which routes by node key already: a WebRTC offer, answer and ICE
-  candidates travel as raw DERP packets to the peer's key in its home region, sealed with a NaCl box
-  to its disco key (as tailcat's meow and Tailscale's disco are). The relay sees neither the SDP's
-  addresses nor who offers what. No new kind of server: a room needs DERP for the fallback anyway.
+- **Signalling goes inside the WireGuard tunnel**, over DERP, which routes by node key already: a
+  WebRTC offer, answer and ICE candidates are messages in the tunnel to the peer (UDP between the
+  two nodes' addresses on a port the module keeps for itself and the guest can't use; not disco
+  boxes, whose seal doesn't involve the room), so they exist only after a handshake with the room's
+  pre-shared key has completed. A node shows its candidates, and so its real IP address, only to a
+  member it is talking to. The relay sees neither the SDP's addresses nor who offers what. No new
+  kind of server: a room needs DERP for the fallback anyway.
+- **Who sees a node's real IP address:** the members it connects to directly (its public address
+  and port from the candidates; a LAN address stays behind Chromium's `.local` name); the operators
+  of its DERP regions (with its node key, so its room address, and which keys it exchanges packets
+  with), of the room's Nostr relays (with its opaque tags; a relay can match a lookup to the
+  subscriber of its tag, so which IP address looked up which, without the room or the addresses)
+  and of the STUN servers (with no identity). Nobody else: lookups need the room's key, and
+  candidates the handshake. Someone who ever had the room's ID stays a member: the secret can't be
+  revoked. Accepted (2026-11-10); the page says so beside a room's privacy note, with one's own
+  relays and derper (or a VPN under them) as the remedy.
+- **Relay only**, a node's setting, off by default: no WebRTC, everything through DERP, as on a
+  tailcat network, so peers never learn its address. Hiding it from DERP's operators too would take
+  onion routing (§8).
 - **Finding a peer is a live question over Nostr relays** (§3): the one thing DERP can't do is tell a
   node where a peer is. A dialer publishes a sealed lookup as an **ephemeral event** (kinds
   20000–29999, NIP-01: relays forward it to subscribers and store nothing, as Trystero's signalling
@@ -84,14 +99,14 @@ key.
   Trystero's) open on each of the room's relays for its tags of this hour and the next, so the tag a
   relay sees changes every hour and doesn't follow a node across sessions or days.
 - **A lookup** is an ephemeral event of the room's kind with the target's tag, sealed with the
-  lookup key: the dialer's node key, its disco key, its home DERP region (an ID in the relay map, or
+  lookup key: the dialer's node key, its home DERP region (an ID in the relay map, or
   inline for one's own derper, as a tailcat address carries it) and a time. A node publishes it to
   every relay the room lists (three public ones by default) and again after 1 s and 3 s while no
   answer comes, then gives up (§4).
 - **The answer is a call back**, not an event: a target that accepts the dialer (§5, "Incoming
   connections"; a flow the target opened counts) joins the dialer's home region and starts the
   WireGuard handshake through DERP, and §4 goes on from there. One event per lookup, and the
-  target's own region and disco key reach only the dialer. A target ignores lookups older than a
+  target's own region reaches only the dialer. A target ignores lookups older than a
   minute and answers one dialer's repeats once.
 - **The relays' terms** (rate limits, proof of work as in NIP-13, payment, which kinds they accept)
   decide how far public relays carry a room; R3 checks. A serious room runs its own relay, as it
@@ -112,9 +127,11 @@ key.
 2. The peer calls back: it joins the dialer's home region and starts the WireGuard handshake through
    DERP (accepted only from a key whose first 80 bits are the address looked up), so the first
    packets flow over the fallback while WebRTC is set up.
-3. The side with the lower key offers: the page creates an `RTCPeerConnection` and a negotiated data
-   channel (`ordered: false`, `maxRetransmits: 0`, id 0, on both sides), and the offer, answer and
-   candidates cross through DERP, sealed.
+3. Once the handshake has completed (never before: §1, "Signalling"), and unless either side is relay
+   only, the side with the lower key offers: the page creates an `RTCPeerConnection` and a negotiated
+   data channel (`ordered: false`, `maxRetransmits: 0`, id 0, on both sides), and the offer, answer
+   and candidates cross inside the tunnel. A node drops any signalling from a peer without a current
+   session, and a relay-only node answers an offer with a refusal, so the other side stops asking.
 4. When the channel opens, the peer's WireGuard packets move to it; when it closes or stalls (no
    packet back while WireGuard's keepalive expects one), back to DERP, and a new offer later.
 
@@ -135,6 +152,7 @@ worker as it creates it; packets never touch the main thread.
 - **Incoming connections:** off by default. Members can't open connections to the guest; the
   guest's own flows get their replies (a flow table, as the Tailscale client keeps for UDP). "Allow
   incoming from the room" turns it on, and is what a node that serves something sets.
+- **Relay only** (§1): the node's packets all go through DERP; its address reaches no peer.
 
 ## 6. Numbers so far
 
@@ -176,7 +194,8 @@ client was built.
   by name.
 - **R2 — The page.** The Network wizard gets "Join a room" (the room ID; relays and derper under
   advanced settings, and a directory's key if the room has one); one's own name to copy; the
-  incoming switch; the kept identity and "new identity". Two Debian guests in one
+  incoming switch; the relay-only switch; who sees one's IP address (§1), beside the room's privacy
+  note; the kept identity and "new identity". Two Debian guests in one
   Chromium reach each other by name in `scripts/ci-net.sh` (frontend.md "Network" grows a section).
 - **R3 — Scale and the real world.** A thousand synthetic members on the test relay: join time,
   lookup time, the worker's memory. By hand: public Nostr relays (ephemeral kinds forwarded, time
@@ -200,6 +219,9 @@ client was built.
   real TLDs refused, or everything under `.alt`. Browsers don't validate DNSSEC, so validation would
   be the page's (or a guest resolver's with per-TLD trust anchors). The keys TLD above stays
   reserved for names that are keys.
+- **Onion routing**, so that neither peers nor relays see who talks to whom from where: circuits
+  through other members (or volunteer nodes), the address still the key's, as only the outer path
+  changes. A milestone of its own if wanted; relay only (§1) covers hiding from peers until then.
 - **Broadcast and multicast** between guests (mDNS for service discovery), fanned out only to peers
   already connected.
 - **IPv4 between guests.** Key-derived IPv4 addresses would collide (32 bits); a per-node mapping
@@ -216,4 +238,6 @@ client was built.
 - Which public Nostr relays by default (Trystero's maintained list is a start), and whether they
   forward a busy room's lookups.
 - The names' suffix: `p2p.alt` is a placeholder until R1.
-- Whether incoming connections should default on in a room whose ID is long and secret.
+- Whether incoming connections should default on in a room whose ID is long and secret. With them
+  off a node answers no lookups for flows others start, so this decides whether a room works without
+  touching a setting.
