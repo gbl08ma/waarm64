@@ -20,8 +20,8 @@ calls.
 | 1 | Interpreter: blocks out of their slot — a smaller slot, then maybe more slots | dropped (loop 1) |
 | 2 | Interpreter: the dispatcher's loop inside `jit::interpret` (round trips to compiled code) | dropped (loop 2) |
 | 3 | Interpreter: `hot`'s per-micro-op cost — SUBS's flags from operands, ADRP+ADD pair, register caching | dropped (loop 3) |
-| 4 | Interpreter: misaligned stores inline; SUBS/ADDS as their own micro-op kinds (loop 3's idea) | next |
-| 5 | CPU/ISA: unadvertised M4 extensions — LSE2, LRCPC2, RDM, FHM, FCMA, I8MM, BF16, FP16 (one loop each or grouped) | |
+| 4 | Interpreter: misaligned stores inline; SUBS/ADDS as their own micro-op kinds (loop 3's idea) | SUBS kinds kept, stores dropped (loop 4) |
+| 5 | CPU/ISA: unadvertised M4 extensions — LSE2, LRCPC2, RDM, FHM, FCMA, I8MM, BF16, FP16 (one loop each or grouped) | next: I8MM first (dav1d, libvpx, ffmpeg use it) |
 | 6 | JIT: helpers on real paths (MSR DAIFClr/regime/NZCV…, ISB, LSE min/max) | |
 | 7 | JIT: wasm size cuts (local.tee peephole, a guarded chain's fallback as `xmiss`, one budget counter, NZCV functions) | |
 | 8 | JIT: the shared cache's leftovers (one vCPU's 1-2%: a lone table takes the bytes) | |
@@ -43,3 +43,9 @@ Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL 
   gates even, the block-interpreter boot −0.5%. Dropped, docs/cpu.md "Tried and not kept"; entry removed.
 - **Loop 3** (`38180965`): `hot`'s per-micro-op cost. SUBS's carry from operands −0.8 to −2.9%, NZCV in a local −1.9
   to −3.5%, ADRP+ADD fused within ±0.3%. All dropped (docs/cpu.md); entry removed.
+- **Loop 4** (`f5c44c14`): **kept** SUBS immediate/shifted as their own micro-op kinds (one static carry compare):
+  `dec_mips` +3.1/+3.4%, `vm_dec_mmu_mips` +2.2/+3.4%, Alpine's block-interpreter boot +0.6/+0.7% (two sessions,
+  rounds apart), no memory, `hot` +707 B, no calls; ci.sh passed (second run; first hit the known clipboard-toolbar
+  timeout). Dropped: misaligned stores inline (loop −3%, unrolled even; ~0.15% bound), CCMP as its own kind (even).
+  Its leftover ideas (ADDS shifted/extended kinds; re-screening earlier losers over the SUBS kinds) judged too small
+  for a loop: the latter isn't a backlog item.
