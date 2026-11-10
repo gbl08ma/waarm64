@@ -6,7 +6,9 @@
 //! (an X25519 box from an ephemeral key: only the target reads it), else with the room's lookup
 //! key (any member who knows the address could). Both keys mix in the room's lookup key, so only a
 //! member makes one, and the tag is the AEAD's associated data, so one can't be moved to another
-//! address or hour. It's a hint, not a proof: the WireGuard handshake decides.
+//! address or hour. It's a hint, not a proof: the WireGuard handshake decides. Both kinds look
+//! alike to a relay: 32 bytes (the ephemeral key, or random bytes whose first 12 are the nonce),
+//! then the ciphertext; the target tries the seal first.
 
 use blake2::{Blake2s256, Digest};
 use chacha20poly1305::{
@@ -17,9 +19,9 @@ use x25519_dalek::{X25519_BASEPOINT_BYTES, x25519};
 
 use super::Room;
 
-const SEALED: u8 = 1;
-const BARE: u8 = 2;
 const PLAIN: usize = 32 + 2 + 8 + 16;
+/// A lookup's bytes, either kind.
+pub const SIZE: usize = 32 + PLAIN + 16;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Lookup {
@@ -91,7 +93,7 @@ impl Lookup {
                         },
                     )
                     .unwrap();
-                [&[SEALED][..], &eph, &ct].concat()
+                [&eph[..], &ct].concat()
             }
             None => {
                 let nonce = Nonce::from_slice(&rnd[..12]);
@@ -104,7 +106,7 @@ impl Lookup {
                         },
                     )
                     .unwrap();
-                [&[BARE][..], &rnd[..12], &ct].concat()
+                [&rnd[..], &ct].concat()
             }
         }
     }
@@ -118,19 +120,19 @@ impl Lookup {
         b: &[u8],
     ) -> Option<Lookup> {
         let aad = tag.as_bytes();
-        let plain = match *b.first()? {
-            SEALED if b.len() > 33 => {
-                let eph: [u8; 32] = b[1..33].try_into().unwrap();
-                let k = seal_key(&room.lookup, &x25519(*private, eph), &eph, public);
-                ChaCha20Poly1305::new(&k.into())
-                    .decrypt(&Nonce::default(), Payload { msg: &b[33..], aad })
-                    .ok()?
-            }
-            BARE if b.len() > 13 => ChaCha20Poly1305::new(&room.lookup.into())
-                .decrypt(Nonce::from_slice(&b[1..13]), Payload { msg: &b[13..], aad })
-                .ok()?,
-            _ => return None,
-        };
+        if b.len() != SIZE {
+            return None;
+        }
+        let (head, ct) = b.split_at(32);
+        let eph: [u8; 32] = head.try_into().unwrap();
+        let k = seal_key(&room.lookup, &x25519(*private, eph), &eph, public);
+        let plain = ChaCha20Poly1305::new(&k.into())
+            .decrypt(&Nonce::default(), Payload { msg: ct, aad })
+            .or_else(|_| {
+                ChaCha20Poly1305::new(&room.lookup.into())
+                    .decrypt(Nonce::from_slice(&head[..12]), Payload { msg: ct, aad })
+            })
+            .ok()?;
         Lookup::from_plain(&plain)
     }
 }
@@ -160,6 +162,7 @@ mod tests {
         };
         for to in [Some(&tq), None] {
             let b = l.seal(&room, to, &tag);
+            assert_eq!(b.len(), SIZE, "both kinds alike");
             assert_eq!(Lookup::open(&room, &tp, &tq, &tag, &b), Some(l.clone()));
             assert_eq!(Lookup::open(&room, &tp, &tq, "another tag", &b), None);
             assert_eq!(Lookup::open(&Room::derive("r2"), &tp, &tq, &tag, &b), None);

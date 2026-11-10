@@ -45,6 +45,10 @@ struct Faults {
     blackhole_rtc: bool,
     /// About a third of relay packets are lost.
     lossy_relay: bool,
+    /// The next relay packet node `.0` sends is lost.
+    drop_next_from: Option<usize>,
+    /// The Nostr relay takes what nodes send and does nothing (a half-open connection).
+    silent_nostr: bool,
 }
 
 /// A subscription on the fake Nostr relay.
@@ -156,9 +160,15 @@ impl Net {
 
     /// What node `i` sends the Nostr relay.
     fn nostr_in(&mut self, i: usize, conn: u32, text: &[u8]) {
+        if self.faults.silent_nostr {
+            return;
+        }
         let m: Value = serde_json::from_slice(text).unwrap();
         match m[0].as_str().unwrap() {
             "REQ" => {
+                // A REQ with an ID in use replaces it (NIP-01).
+                self.subs
+                    .retain(|s| !(s.node == i && s.conn == conn && s.id == m[1]));
                 let f = &m[2];
                 self.subs.push(Sub {
                     node: i,
@@ -177,6 +187,9 @@ impl Net {
                         .map(|x| x.as_str().unwrap().into())
                         .collect(),
                 });
+                let eose = json!(["EOSE", m[1]]).to_string();
+                let now = self.now;
+                self.nodes[i].c.ws_message(conn, eose.as_bytes(), now);
             }
             "CLOSE" => self
                 .subs
@@ -265,6 +278,10 @@ impl Net {
                 let src = self.nodes[i].c.public;
                 for (dst, p) in sent {
                     self.relayed += 1;
+                    if self.faults.drop_next_from == Some(i) {
+                        self.faults.drop_next_from = None;
+                        continue;
+                    }
                     // A third lost, at random (a fixed sequence).
                     if self.faults.lossy_relay
                         && (self.relayed as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) >> 61 < 3
@@ -470,6 +487,30 @@ impl Net {
             .collect()
     }
 
+    /// A relay packet from key `src` to node `i`, on its first DERP connection.
+    fn deliver(&mut self, i: usize, src: [u8; 32], p: &[u8]) {
+        let (c, frame) = self.nodes[i]
+            .conns
+            .iter()
+            .find_map(|(c, x)| match x {
+                Conn::Derp { server, .. } => Some((*c, server.deliver(&src, p))),
+                Conn::Nostr => None,
+            })
+            .unwrap();
+        let now = self.now;
+        self.nodes[i].c.ws_message(c, &frame, now);
+        self.run();
+    }
+
+    /// How many times node `i` logged trouble with the Nostr relay (each one reconnects).
+    fn nostr_troubles(&self, i: usize) -> usize {
+        self.nodes[i]
+            .events
+            .iter()
+            .filter(|e| e["type"] == "log" && e["msg"].as_str().unwrap().contains("Nostr"))
+            .count()
+    }
+
     /// Node `i`'s open DERP connections, by URL.
     fn regions(&self, i: usize) -> Vec<String> {
         self.nodes[i]
@@ -510,6 +551,16 @@ impl Net {
             .collect();
         (dns::rcode(m), addrs)
     }
+}
+
+/// Whether lookup event `e`, for `target`, is sealed to its key: another member of the room who
+/// knows the address can't read it.
+fn sealed(target: &Client, e: &Value) -> bool {
+    let b = b64().decode(e["content"].as_str().unwrap()).unwrap();
+    let x = e["tags"][0][1].as_str().unwrap();
+    let mine = Lookup::open(&target.room, &target.private, &target.public, x, &b);
+    assert!(mine.is_some(), "the target reads it");
+    Lookup::open(&target.room, &key(99), &public(99), x, &b).is_none()
 }
 
 fn udp(src: [u8; 16], dst: [u8; 16], port: u16, payload: &[u8]) -> Vec<u8> {
@@ -582,9 +633,8 @@ fn a_lookup_finds_a_peer_and_its_packets_then_take_their_channel() {
         n.nodes[1].c.room.tag_for(&n.addr(1), T0 / 3600),
         "node 1's tag of the hour"
     );
-    assert_eq!(
-        b64().decode(lookup["content"].as_str().unwrap()).unwrap()[0],
-        2,
+    assert!(
+        !sealed(&n.nodes[1].c, &lookup),
         "with the room's lookup key: node 0 knows only the address"
     );
     n.send(0, 1, 9, b"second"); // queued with the first, or after it
@@ -666,10 +716,10 @@ fn a_name_resolves_by_computing_and_its_lookup_is_sealed_to_the_key() {
     assert_eq!(lease["dns6"][0], json!(n.nodes[0].c.resolver));
     assert_eq!(lease["domains"][0], n.nodes[0].c.room.domain());
     n.reach(0, 1, b"by name");
-    let sealed = b64()
-        .decode(n.published[0]["content"].as_str().unwrap())
-        .unwrap();
-    assert_eq!(sealed[0], 1, "sealed to node 1's key");
+    assert!(
+        sealed(&n.nodes[1].c, &n.published[0]),
+        "sealed to node 1's key"
+    );
     assert_eq!(n.got(1), [b"by name".to_vec()]);
 }
 
@@ -1084,8 +1134,8 @@ fn past_the_channel_cap_peers_go_through_the_relay() {
     let mut n = Net::new(configs(&seeds));
     for j in 1..seeds.len() {
         n.reach(0, j, b"hi");
+        n.advance(Duration::from_millis(200)); // within the lookups' rate
     }
-    n.advance(Duration::from_millis(10));
     let open = n.ends.keys().filter(|(i, _)| *i == 0).count();
     assert_eq!(open, MAX_RTC, "node 0 holds at most {MAX_RTC} connections");
     for j in 1..seeds.len() {
@@ -1097,4 +1147,171 @@ fn past_the_channel_cap_peers_go_through_the_relay() {
         seeds.len() - 1,
         "every one of them, some through the relay"
     );
+}
+
+#[test]
+fn a_peer_made_again_on_one_side_gets_its_channel_back() {
+    let mut n = Net::new(configs(&[1, 2]));
+    n.reach(0, 1, b"a");
+    n.got(1);
+    let o = if public(1) < public(2) { 0 } else { 1 };
+    assert_eq!(n.paths(o), ["direct"]);
+    // The offerer forgets the other (its region was down a while, say) and makes it again; the
+    // other keeps its peer, with what it saw of the offerer's signalling.
+    let other = public(if o == 0 { 2 } else { 1 });
+    let id = n.nodes[o].c.by_addr[&n.addr(1 - o)];
+    n.nodes[o].c.forget(id);
+    let now = n.now;
+    n.nodes[o].c.add_peer(other, false, 0, now);
+    n.run();
+    n.send(o, 1 - o, 9, b"again");
+    n.advance(Duration::from_secs(1));
+    assert_eq!(n.got(1 - o), [b"again".to_vec()]);
+    assert_eq!(n.paths(o), ["direct", "relay", "direct"], "{:?}", n.logs(o));
+}
+
+#[test]
+fn both_guests_dialing_at_once_get_through() {
+    let mut n = Net::new(configs(&[1, 2]));
+    let (a, b) = (n.addr(0), n.addr(1));
+    let now = n.now;
+    n.nodes[0].c.guest_packet(&udp(a, b, 9, b"from 0"), now);
+    n.nodes[1].c.guest_packet(&udp(b, a, 9, b"from 1"), now);
+    n.run();
+    n.advance(Duration::from_secs(8));
+    assert_eq!(n.got(1), [b"from 0".to_vec()]);
+    assert_eq!(n.got(0), [b"from 1".to_vec()]);
+    assert!(
+        n.icmp(0).is_empty() && n.icmp(1).is_empty(),
+        "nobody told unreachable"
+    );
+}
+
+#[test]
+fn junk_handshakes_dont_use_up_the_trials() {
+    let mut n = Net::new(configs(&[1, 2]));
+    // Anyone on node 1's region, knowing its key, sends initiation-sized junk.
+    for k in 0..20u8 {
+        let mut junk = vec![k; INITIATION.1];
+        junk[0] = INITIATION.0;
+        n.deliver(1, public(50 + k), &junk);
+    }
+    assert!(n.nodes[1].c.peers.is_empty());
+    n.reach(0, 1, b"still");
+    assert_eq!(n.got(1), [b"still".to_vec()]);
+    // And unasked handshakes have their own budget: they don't block call backs.
+    let mut cfgs = configs(&[1, 2]);
+    cfgs[0].link.id = "another room".into(); // its handshakes can't complete in node 1's room
+    let mut n = Net::new(vec![cfgs.remove(0), config(2), config(3)]);
+    let now = n.now;
+    for _ in 0..3 {
+        let id = n.nodes[0].c.add_peer(public(2), false, 0, now);
+        let r = n.nodes[0].c.wg.send(now, [(id, Vec::new())]);
+        n.nodes[0].c.send_to_peers(r.to_peers, now);
+        n.run();
+        n.nodes[0].c.forget(id);
+    }
+    n.reach(2, 1, b"through");
+    assert_eq!(n.got(1), [b"through".to_vec()]);
+}
+
+#[test]
+fn a_forged_lookup_naming_another_region_doesnt_cut_a_key_off() {
+    for dialer in [0, 1] {
+        let mut cfgs = configs(&[1, 2]);
+        for c in &mut cfgs {
+            c.link = link(&["a.test", "b.test"]);
+        }
+        let mut n = Net::new(cfgs);
+        // A member tells node 1 that node 0 looks it up from region 1, where node 0 isn't.
+        let room = n.nodes[1].c.room.clone();
+        let l = Lookup {
+            key: public(1),
+            region: 1,
+            time: T0,
+            nonce: [7; 16],
+        };
+        let to = n.addr(1);
+        n.inject(&l, &room, None, to, T0 / 3600);
+        assert_eq!(
+            n.nodes[1].c.peers.len(),
+            1,
+            "on trial, its initiation lost in region 1"
+        );
+        // Whichever dials, they reach each other at once.
+        n.send(dialer, 1 - dialer, 9, b"hi");
+        n.advance(Duration::from_secs(1));
+        assert_eq!(n.got(1 - dialer), [b"hi".to_vec()], "dialer {dialer}");
+    }
+}
+
+#[test]
+fn a_lost_call_back_is_sent_again_with_the_next_lookup() {
+    let mut n = Net::new(configs(&[1, 2]));
+    n.faults.drop_next_from = Some(1); // node 1's initiation
+    n.send(0, 1, 9, b"a");
+    n.advance(Duration::from_millis(1500));
+    assert_eq!(
+        n.got(1),
+        [b"a".to_vec()],
+        "with the lookup at 1 s, not WireGuard's 5 s"
+    );
+}
+
+#[test]
+fn a_guest_sweeping_the_room_is_bounded() {
+    let mut n = Net::new(configs(&[1]));
+    let room = n.nodes[0].c.room.clone();
+    for k in 0..200u8 {
+        let mut key = [0u8; 32];
+        key[0] = k;
+        n.send_to(0, room.addr(&key), 9, b"scan");
+    }
+    assert_eq!(n.nodes[0].c.pending.len(), MAX_PENDING);
+    assert_eq!(n.icmp(0).len(), 200 - MAX_PENDING, "the rest at once");
+    assert_eq!(
+        n.published.len(),
+        LOOKUPS_PER_SECOND,
+        "a few a second on the relays"
+    );
+    n.advance(Duration::from_secs(7));
+    assert!(n.nodes[0].c.pending.is_empty());
+}
+
+#[test]
+fn a_relay_that_ends_our_subscription_or_goes_silent_is_subscribed_again() {
+    let mut n = Net::new(configs(&[1, 2]));
+    // The relay ends node 1's subscription.
+    let s = n.subs.iter().position(|s| s.node == 1).unwrap();
+    let sub = n.subs.remove(s);
+    let closed = json!(["CLOSED", sub.id, "rate-limited: slow down"]).to_string();
+    let now = n.now;
+    n.nodes[1].c.ws_message(sub.conn, closed.as_bytes(), now);
+    n.advance(Duration::from_secs(11));
+    assert!(n.subs.iter().any(|s| s.node == 1), "subscribed again");
+    n.reach(0, 1, b"found");
+    assert_eq!(n.got(1), [b"found".to_vec()]);
+    // The relay goes silent (a half-open connection): node 1 notices and connects again.
+    let opens = n.nostr_troubles(1);
+    n.faults.silent_nostr = true;
+    n.advance(Duration::from_secs(80));
+    assert!(n.nostr_troubles(1) > opens, "{:?}", n.logs(1));
+    n.faults.silent_nostr = false;
+    n.advance(Duration::from_secs(70));
+    assert!(
+        n.subs
+            .iter()
+            .any(|s| s.node == 1 && n.nodes[1].conns.contains_key(&s.conn))
+    );
+}
+
+#[test]
+fn a_failed_map_doesnt_stop_a_room_whose_home_is_its_own_derper() {
+    let mut cfg = config(1);
+    cfg.link.derp.push(Region::Map(900));
+    let mut n = Net::new(vec![cfg]);
+    let now = n.now;
+    n.nodes[0].c.fetched(1, false, b"", now);
+    n.run();
+    assert_eq!(n.nodes[0].c.state, State::Running);
 }

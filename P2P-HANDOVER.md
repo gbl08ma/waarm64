@@ -19,14 +19,23 @@ significantly less performant than DERP"); do them if a cloud session can, else 
   room's `::53` and the lease's `dns6`/`domains`, incoming off's flow table. `web/ts-client.ts` opens text WebSockets
   for an empty protocol. `JsRoom` takes `link`, `home`, `known`, `relayOnly`, `incoming` (no more `peers`, `relay`,
   `region`). Plan §3 amended (the lookup's age window, the probe, the caller's hello).
-- Tests: `cargo test -p webpc_ts room` (26 cases, planted: no nonce check, flows ignored: each caught);
+- Tests: `cargo test -p webpc_ts room` (34 cases with the review's, planted: no nonce check, flows ignored: each caught);
   `tests/nostr-relay.test.ts` (the tests' relay, `tests/net/nostr-relay.ts`); `tests/room-browser.test.ts` (3 cases:
   by address, relay only, by name and incoming off; passed in this session, `WEBPC_TAILCAT=1`). The module is 576 KB
   Brotli (R0's 533).
 
-**Not done here:** `scripts/ci-net.sh` whole and `node bench/net/room.ts 5 10000 <json>` (R0's numbers) want the dev
-VM (docs/cloud.md: no Podman, no IPv6); run both there before R2's end. The out-of-context review of R1 (CLAUDE.md):
-see the commit after R1's for its findings, if it ran.
+**R1's out-of-context review** (a fresh agent, static, 17 findings) is triaged: 16 fixed in the commit after R1's,
+each with a test that failed first (a peer made again on one side lost its channel for minutes; both dialing at once
+deadlocked crossed handshakes, found while testing the fix for waiting packets; junk initiations used up the trial
+budget; a forged lookup naming another region cut a key off; a guest's sweep unbounded; a relay's CLOSED and silence
+unnoticed; a failed map with an inline home; and the smaller ones: the wall clock across sleep, `dc.send` throwing,
+nonce eviction, the uniform lookup format, the `bye` backoff, the Nostr backoff reset, a bad description's parse).
+Left: public relays refusing events dated far ahead (a question for R3, plan §3), and a replay to a target that just
+reloaded (accepted, docs/tailnet.md).
+
+**CI:** `scripts/ci.sh` OK on R1's commit (1,224 s; JS 956 passed, 0 failed, 568 skipped; the agent's `cargo test`
+left out as root, docs/cloud.md). **Not done here:** `scripts/ci-net.sh` whole and `node bench/net/room.ts 5 10000
+<json>` (R0's numbers) want the dev VM (docs/cloud.md: no Podman, no IPv6); run both there before R2's end.
 
 ## Next: R2 (plan §7)
 

@@ -16,8 +16,9 @@ export function wasi(memory: () => WebAssembly.Memory, log: (line: string) => vo
         return 0;
       },
       clock_time_get(id: number, _precision: bigint, out: number) {
-        // 0: realtime, 1: monotonic (and the CPU clocks, which nothing here asks for)
-        const ms = id === 0 ? performance.timeOrigin + performance.now() : performance.now();
+        // 0: realtime, 1: monotonic (and the CPU clocks, which nothing here asks for). Realtime is the
+        // wall clock itself: timeOrigin + now() stands still where now() does while the computer sleeps.
+        const ms = id === 0 ? Date.now() : performance.now();
         view().setBigUint64(out, BigInt(Math.round(ms * 1e6)), true);
         return 0;
       },

@@ -63,7 +63,8 @@ pub const KIND: u32 = 26354;
 const INITIATION: (u8, usize) = (1, 148);
 /// A peer let in by a handshake alone is forgotten this long without data that decrypts.
 const TRIAL: Duration = Duration::from_secs(20);
-/// At most this many peers come in on trial (by lookups or handshakes) a second.
+/// At most this many peers come in on trial a second by our call backs, and as many by handshakes
+/// that came unasked (each budget its own, and an unasked one counted only once WireGuard answered it).
 const TRIALS_PER_SECOND: usize = 4;
 const MAX_PEERS: usize = 1024;
 /// A lookup goes out at once and again after these waits while no call back comes; the guest's
@@ -82,6 +83,20 @@ const LOOKUP_QUEUE: usize = 16;
 /// nonce, remembered for twice as long (at most [`MAX_NONCES`]).
 const LOOKUP_MAX_AGE: u64 = 3600;
 const MAX_NONCES: usize = 8192;
+/// The guest's lookups: at most this many waiting at once (more get ICMPv6 unreachable at once),
+/// published at most this many a second (more wait for their resend), unreachable addresses
+/// remembered at most this many.
+const MAX_PENDING: usize = 64;
+const LOOKUPS_PER_SECOND: usize = 8;
+const MAX_UNREACHABLE: usize = 1024;
+/// A trial peer's initiation is sent again through a lookup's region at most this often.
+const INIT_AGAIN: Duration = Duration::from_millis(500);
+/// A Nostr relay's subscription is renewed this often, and must answer it (EOSE) within
+/// [`NOSTR_ANSWER`], or the connection is presumed dead; after a CLOSED, renewed after
+/// [`NOSTR_RESUBSCRIBE`].
+const NOSTR_CHECK: Duration = Duration::from_secs(60);
+const NOSTR_ANSWER: Duration = Duration::from_secs(15);
+const NOSTR_RESUBSCRIBE: Duration = Duration::from_secs(10);
 /// A lookup from a key we have a peer for doesn't re-route it (a member could forge one): it
 /// probes the session with a signalling ping, and only a peer that answers nothing in this long
 /// (its page reloaded, say) is forgotten and called back afresh, in the lookup's region.
@@ -315,7 +330,12 @@ struct Peer {
     /// A lookup came from its key: its session is probed until then, and called back in that
     /// region if nothing decrypts.
     probe: Option<(Instant, usize)>,
-    /// Its signalling's instance (a restart changes it) and the sequence numbers seen of it.
+    /// Our signalling's epoch with it: random per peer, so a peer forgotten and made again looks
+    /// like a restart to the other side, which resets what it knew of our sequence and attempts.
+    epoch: u32,
+    /// The last handshake initiation we sent it, and when (sent again through a lookup's region).
+    init: Option<(Vec<u8>, Instant)>,
+    /// Its signalling's epoch (a restart changes it) and the sequence numbers seen of it.
     nonce: Option<u32>,
     seen: BTreeSet<u32>,
     next_seq: u32,
@@ -329,7 +349,7 @@ struct Peer {
 /// What signalling carries, as JSON inside the tunnel.
 #[derive(Serialize, Deserialize, Debug, Default)]
 struct Msg {
-    /// The sender's instance.
+    /// The sender's epoch with us (random per peer it makes).
     n: u32,
     /// The message's sequence number (0: an acknowledgement, `a`).
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -382,6 +402,10 @@ struct Nostr {
     sub: Option<String>,
     failures: u32,
     reconnect_at: Option<Instant>,
+    /// When to renew the subscription (or subscribe again after a CLOSED).
+    check_at: Option<Instant>,
+    /// The relay must answer our last REQ (EOSE) by then.
+    answer_by: Option<Instant>,
 }
 
 /// A lookup the guest's packets wait on.
@@ -403,8 +427,6 @@ pub struct Client {
     public: [u8; 32],
     addr: [u8; 16],
     resolver: [u8; 16],
-    /// This instance's signalling nonce.
-    nonce: u32,
     wg: Endpoint,
     peers: BTreeMap<PeerId, Peer>,
     by_addr: BTreeMap<[u8; 16], PeerId>,
@@ -424,12 +446,25 @@ pub struct Client {
     pending: BTreeMap<[u8; 16], Pending>,
     unreachable: BTreeMap<[u8; 16], Instant>,
     /// Lookups' nonces seen, until they're too old to matter.
-    nonces: BTreeMap<[u8; 16], Instant>,
-    trials: VecDeque<Instant>,
+    nonces: BTreeSet<[u8; 16]>,
+    /// The same, oldest first, for their expiry.
+    nonce_order: VecDeque<([u8; 16], Instant)>,
+    /// When the last call backs and unasked trials came in, and the last lookups went out.
+    trials_out: VecDeque<Instant>,
+    trials_in: VecDeque<Instant>,
+    published: VecDeque<Instant>,
+    /// The DERP map is awaited.
+    map_pending: bool,
     flows: BTreeMap<Flow, Instant>,
     next_conn: u32,
     state: State,
     actions: VecDeque<Action>,
+}
+
+fn random_u32() -> u32 {
+    let mut n = [0u8; 4];
+    let _ = getrandom::fill(&mut n);
+    u32::from_le_bytes(n).max(1)
 }
 
 fn hex(b: &[u8]) -> String {
@@ -451,8 +486,6 @@ impl Client {
                 k
             }
         };
-        let mut n = [0u8; 4];
-        getrandom::fill(&mut n).map_err(|e| format!("no randomness: {e}"))?;
         let pair = NodeKeyPair::from(Export::<NodePrivateKey>::from_bytes(private).import());
         let public = *pair.public.export().as_bytes();
         let unix0 = cfg.unix_time.unwrap_or_else(|| {
@@ -488,6 +521,8 @@ impl Client {
                 sub: None,
                 failures: 0,
                 reconnect_at: None,
+                check_at: None,
+                answer_by: None,
             })
             .collect();
         let known = cfg
@@ -503,7 +538,6 @@ impl Client {
             room,
             private,
             public,
-            nonce: u32::from_le_bytes(n).max(1),
             wg: Endpoint::new(pair),
             peers: BTreeMap::new(),
             by_addr: BTreeMap::new(),
@@ -518,8 +552,12 @@ impl Client {
             known,
             pending: BTreeMap::new(),
             unreachable: BTreeMap::new(),
-            nonces: BTreeMap::new(),
-            trials: VecDeque::new(),
+            nonces: BTreeSet::new(),
+            nonce_order: VecDeque::new(),
+            trials_out: VecDeque::new(),
+            trials_in: VecDeque::new(),
+            published: VecDeque::new(),
+            map_pending: false,
             flows: BTreeMap::new(),
             next_conn: 1,
             state: State::Connecting,
@@ -531,15 +569,19 @@ impl Client {
             "tag": c.room.tag, "name": c.room.name(&public), "link": c.cfg.link.encode(),
         }));
         for i in 0..c.nostr.len() {
-            c.nostr_connect(i);
+            c.nostr_connect(i, now);
         }
+        let home_on_map = matches!(c.cfg.link.derp[c.home], Region::Map(_));
         if c.cfg.link.needs_map() {
-            c.state = State::FetchingMap;
-            c.state_event();
+            c.map_pending = true;
             c.actions.push_back(Action::Fetch {
                 id: 1,
                 url: c.cfg.derp_map_url.clone(),
             });
+        }
+        if home_on_map {
+            c.state = State::FetchingMap;
+            c.state_event();
         } else if c.relays[c.home].nodes.is_empty() {
             c.fail("no-browser-relay", "");
         } else {
@@ -566,8 +608,15 @@ impl Client {
         self.event(json!({ "type": "state", "state": name }));
     }
 
+    /// The wall clock, Unix seconds: the system's, read each time (a monotonic clock may stand
+    /// still while the computer sleeps); the tests' from their `unix_time` and `now`.
     fn unix(&self, now: Instant) -> u64 {
-        self.unix0 + now.saturating_duration_since(self.t0).as_secs()
+        match self.cfg.unix_time {
+            Some(_) => self.unix0 + now.saturating_duration_since(self.t0).as_secs(),
+            None => SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map_or(self.unix0, |d| d.as_secs()),
+        }
     }
 
     fn set_running(&mut self) {
@@ -680,11 +729,18 @@ impl Client {
     }
 
     pub fn fetched(&mut self, id: u32, ok: bool, body: &[u8], now: Instant) {
-        if id != 1 || self.state != State::FetchingMap {
+        if id != 1 || !self.map_pending || self.state == State::Failed {
             return;
         }
+        self.map_pending = false;
+        let home_on_map = self.state == State::FetchingMap;
         if !ok {
             let url = self.cfg.derp_map_url.clone();
+            if !home_on_map {
+                return self.log(format!(
+                    "the DERP map {url} didn't load: only the link's own derpers"
+                ));
+            }
             return self.fail("derp-map", &url);
         }
         for r in 0..self.relays.len() {
@@ -702,6 +758,9 @@ impl Client {
                 Err(e) => self.log(format!("DERP region {r}: {e}")),
             }
         }
+        if !home_on_map {
+            return; // the home region connected already
+        }
         if self.relays[self.home].nodes.is_empty() {
             return self.fail("region-no-browser-relay", "");
         }
@@ -717,9 +776,20 @@ impl Client {
             self.relays[r].conn = None;
             self.relay_lost(r, now, "the connection closed".into());
         } else if let Some(i) = self.nostr.iter().position(|n| n.conn == Some(conn)) {
+            self.nostr_lost(i, now);
+        }
+    }
+
+    /// Nostr relay `i`'s connection is gone: again after a backoff (reset by an answered REQ).
+    fn nostr_lost(&mut self, i: usize, now: Instant) {
+        {
             let n = &mut self.nostr[i];
-            n.conn = None;
+            if let Some(conn) = n.conn.take() {
+                self.actions.push_back(Action::WsClose { conn });
+            }
             n.sub = None;
+            n.check_at = None;
+            n.answer_by = None;
             n.failures += 1;
             let wait = Duration::from_secs(1u64 << n.failures.min(6)).min(Duration::from_secs(60));
             n.reconnect_at = Some(now + wait);
@@ -751,11 +821,28 @@ impl Client {
                 }
             }
         } else if let Some(i) = self.nostr.iter().position(|n| n.conn == Some(conn)) {
-            self.nostr[i].failures = 0;
             match nostr::parse(data) {
                 nostr::FromRelay::Event {
                     kind, x, content, ..
                 } if kind == KIND => self.on_lookup(&x, &content, now),
+                nostr::FromRelay::Eose(sub) if self.nostr[i].sub.as_ref() == Some(&sub) => {
+                    // It answers: alive, and the backoff starts afresh.
+                    let n = &mut self.nostr[i];
+                    n.failures = 0;
+                    n.answer_by = None;
+                    n.check_at = Some(now + NOSTR_CHECK);
+                }
+                nostr::FromRelay::Closed(sub, why) if self.nostr[i].sub.as_ref() == Some(&sub) => {
+                    let n = &mut self.nostr[i];
+                    n.sub = None;
+                    n.answer_by = None;
+                    n.check_at = Some(now + NOSTR_RESUBSCRIBE);
+                    let url = n.url.clone();
+                    self.log(format!(
+                        "Nostr: {url} closed our subscription ({why}); again in {} s",
+                        NOSTR_RESUBSCRIBE.as_secs()
+                    ));
+                }
                 nostr::FromRelay::Said(s) => {
                     let url = self.nostr[i].url.clone();
                     self.log(format!("Nostr: {url} {s}"));
@@ -820,18 +907,25 @@ impl Client {
         }
     }
 
-    fn nostr_subscribe(&mut self, i: usize) {
-        if let Some(old) = self.nostr[i].sub.take() {
+    /// Subscribes to our tags on Nostr relay `i` (a REQ with the same ID renews it), to be
+    /// answered within [`NOSTR_ANSWER`].
+    fn nostr_subscribe(&mut self, i: usize, now: Instant) {
+        let sub = format!("webpc{}", self.hour);
+        if let Some(old) = self.nostr[i].sub.take()
+            && old != sub
+        {
             self.nostr_send(i, nostr::unsubscribe(&old));
         }
-        let sub = format!("webpc{}", self.hour);
         let req = nostr::subscribe(&sub, KIND, &self.tags());
         self.nostr_send(i, req);
-        self.nostr[i].sub = Some(sub);
+        let n = &mut self.nostr[i];
+        n.sub = Some(sub);
+        n.check_at = None;
+        n.answer_by = Some(now + NOSTR_ANSWER);
     }
 
     /// Opens Nostr relay `i` (a plain WebSocket, text) and subscribes to our tags.
-    fn nostr_connect(&mut self, i: usize) {
+    fn nostr_connect(&mut self, i: usize, now: Instant) {
         let conn = self.next_conn;
         self.next_conn += 1;
         let n = &mut self.nostr[i];
@@ -843,11 +937,14 @@ impl Client {
             url,
             protocol: "",
         });
-        self.nostr_subscribe(i);
+        self.nostr_subscribe(i, now);
     }
 
     /// Publishes a lookup for `addr` on every relay of the link.
     fn publish_lookup(&mut self, addr: &[u8; 16], now: Instant) {
+        if !Self::take(&mut self.published, LOOKUPS_PER_SECOND, now) {
+            return; // a guest sweeping the /48: this one waits for its resend
+        }
         let mut nonce = [0u8; 16];
         let _ = getrandom::fill(&mut nonce);
         let unix = self.unix(now);
@@ -880,7 +977,7 @@ impl Client {
             Some("our own key")
         } else if unix.abs_diff(l.time) > LOOKUP_MAX_AGE {
             Some("too old")
-        } else if self.nonces.contains_key(&l.nonce) {
+        } else if self.nonces.contains(&l.nonce) {
             Some("seen")
         } else if self
             .relays
@@ -896,48 +993,78 @@ impl Client {
         if let Some(why) = why {
             return self.log(format!("lookup dropped: {why}"));
         }
-        if self.nonces.len() >= MAX_NONCES {
-            self.nonces.pop_first();
+        if self.nonce_order.len() >= MAX_NONCES
+            && let Some((old, _)) = self.nonce_order.pop_front()
+        {
+            self.nonces.remove(&old);
         }
-        self.nonces.insert(l.nonce, now);
+        self.nonces.insert(l.nonce);
+        self.nonce_order.push_back((l.nonce, now));
         if let Some(&id) = self.by_addr.get(&addr) {
             let p = self.peers.get_mut(&id).unwrap();
-            if p.key != l.key || p.trial || p.probe.is_some() {
-                return; // another key of that address, or our call back is on its way
+            if p.key != l.key {
+                return; // another key of that address
+            }
+            if !p.confirmed {
+                // Our call back is on its way: its initiation goes through this region too (a
+                // forged lookup may have named another; a lost initiation goes again).
+                if let Some((init, at)) = p.init.clone()
+                    && now.saturating_duration_since(at) >= INIT_AGAIN
+                {
+                    p.init = Some((init.clone(), now));
+                    self.relay_send(l.region as usize, &l.key, &init, now);
+                    self.flush_relays();
+                }
+                return;
+            }
+            if p.probe.is_some() {
+                return;
             }
             p.probe = Some((now + PROBE, l.region as usize));
             return self.signal_at(id, "ping", 0, now);
+        }
+        if self.pending.contains_key(&addr) && self.public > l.key {
+            // Each dials the other: only the lower key calls back (crossed handshakes would each
+            // abandon its own for the other's, and neither complete); our lookup brings its call.
+            return;
         }
         self.call_back(l.key, l.region as usize, now);
     }
 
     /// Answers a lookup from `key`: our handshake through the dialer's home region `r`.
     fn call_back(&mut self, key: [u8; 32], r: usize, now: Instant) {
-        if !self.take_trial(now) {
+        if !Self::take(&mut self.trials_out, TRIALS_PER_SECOND, now)
+            || self.peers.len() >= MAX_PEERS
+        {
             return self.log("lookup dropped: too many new peers".into());
         }
         let id = self.add_peer(key, true, r, now);
         let r = self.wg.send(now, [(id, Vec::new())]);
         self.send_to_peers(r.to_peers, now);
+        self.drain_pending(id, now); // the guest dialed it too
         // Our hello waits for the session, then is acknowledged and resent: the responder can't
         // send until data comes from us, and a lone keepalive lost would leave it unable to.
         self.hello(id, now);
     }
 
-    /// Room for another peer on trial (a few a second).
-    fn take_trial(&mut self, now: Instant) -> bool {
-        while self
-            .trials
+    /// Whether `window` (times in the last second) has room for one more, under `max` a second.
+    fn room_in(window: &mut VecDeque<Instant>, max: usize, now: Instant) -> bool {
+        while window
             .front()
             .is_some_and(|t| now.saturating_duration_since(*t) >= Duration::from_secs(1))
         {
-            self.trials.pop_front();
+            window.pop_front();
         }
-        if self.trials.len() >= TRIALS_PER_SECOND || self.peers.len() >= MAX_PEERS {
-            return false;
+        window.len() < max
+    }
+
+    /// Takes a place in `window`, if it has room.
+    fn take(window: &mut VecDeque<Instant>, max: usize, now: Instant) -> bool {
+        let ok = Self::room_in(window, max, now);
+        if ok {
+            window.push_back(now);
         }
-        self.trials.push_back(now);
-        true
+        ok
     }
 
     // ---- Peers ----
@@ -969,6 +1096,8 @@ impl Client {
                 via,
                 region: None,
                 probe: None,
+                epoch: random_u32(),
+                init: None,
                 nonce: None,
                 seen: BTreeSet::new(),
                 next_seq: 1,
@@ -1016,7 +1145,14 @@ impl Client {
     fn on_relay_packet(&mut self, r: usize, src: [u8; 32], packet: Vec<u8>, now: Instant) {
         let known = self.wg.peer_id(NodePublicKey::from_bytes(src));
         let id = match known {
-            Some(id) => id,
+            Some(id) => {
+                // DERP proves the sender's key: where its packets come from reaches it (our
+                // response to its new initiation, say, goes back the way it came).
+                if let Some(p) = self.peers.get_mut(&id) {
+                    p.via = r;
+                }
+                id
+            }
             None => {
                 if src == self.public
                     || packet.first() != Some(&INITIATION.0)
@@ -1031,25 +1167,44 @@ impl Client {
                 if !expected && !(self.cfg.incoming || self.has_flow(&addr, now)) {
                     return;
                 }
-                if (!expected && !self.take_trial(now)) || self.peers.len() >= MAX_PEERS {
+                // An unasked one takes a place only once WireGuard answered it (its MAC checked,
+                // its handshake one we could respond to): junk can't use up the budget.
+                if (!expected && !Self::room_in(&mut self.trials_in, TRIALS_PER_SECOND, now))
+                    || self.peers.len() >= MAX_PEERS
+                {
                     return;
                 }
-                self.add_peer(src, true, r, now)
+                let id = self.add_peer(src, true, r, now);
+                self.peer_packet(id, true, packet, now);
+                if self.peers.contains_key(&id) {
+                    if !expected {
+                        self.trials_in.push_back(now);
+                    }
+                    self.drain_pending(id, now);
+                }
+                return;
             }
         };
-        self.peer_packet(id, known.is_none(), Some(r), packet, now);
-        // The guest's packets that waited on a lookup go now (WireGuard sends them once the
-        // caller confirms its session).
-        if known.is_none()
-            && let Some(p) = self.peers.get(&id)
-        {
-            let (addr, key) = (p.addr, p.key);
-            if let Some(w) = self.pending.remove(&addr) {
-                self.learn(addr, key);
-                for pkt in w.packets {
-                    self.send_guest(id, pkt, now);
-                }
-            }
+        self.peer_packet(id, false, packet, now);
+    }
+
+    /// The guest's packets that waited on a lookup for peer `id`'s address go into its session
+    /// (WireGuard sends them once it's confirmed); the lookup ends once the peer is confirmed.
+    fn drain_pending(&mut self, id: PeerId, now: Instant) {
+        let Some(p) = self.peers.get(&id) else {
+            return;
+        };
+        let (addr, key, confirmed) = (p.addr, p.key, p.confirmed);
+        let Some(w) = self.pending.get_mut(&addr) else {
+            return;
+        };
+        let packets = std::mem::take(&mut w.packets);
+        if confirmed {
+            self.pending.remove(&addr);
+        }
+        self.learn(addr, key);
+        for pkt in packets {
+            self.send_guest(id, pkt, now);
         }
     }
 
@@ -1060,15 +1215,8 @@ impl Client {
         self.known.insert(addr, key);
     }
 
-    /// A WireGuard packet from peer `id` (over region `via`'s relay, or its channel when None).
-    fn peer_packet(
-        &mut self,
-        id: PeerId,
-        new: bool,
-        via: Option<usize>,
-        packet: Vec<u8>,
-        now: Instant,
-    ) {
+    /// A WireGuard packet from peer `id` (through a relay or over its channel).
+    fn peer_packet(&mut self, id: PeerId, new: bool, packet: Vec<u8>, now: Instant) {
         let r = self.wg.recv(now, [PacketMut::from(packet)]);
         if new && r.to_peers.is_empty() {
             // Not a handshake it could start: not let in.
@@ -1081,10 +1229,6 @@ impl Client {
             if !r.to_local.is_empty() {
                 p.waiting = None;
                 p.probe = None;
-                // Its data came this way: our packets go back the same way.
-                if let Some(g) = via {
-                    p.via = g;
-                }
             }
         }
         self.send_to_peers(r.to_peers, now);
@@ -1106,6 +1250,7 @@ impl Client {
         }
         p.confirmed = true;
         p.trial = false;
+        self.drain_pending(id, now);
         self.peer_event(id, "peer");
         self.hello(id, now);
     }
@@ -1133,11 +1278,10 @@ impl Client {
 
     /// Sends signalling message `m` to peer `id`, to be acknowledged (an acknowledgement isn't).
     fn signal(&mut self, id: PeerId, mut m: Msg, now: Instant) {
-        let nonce = self.nonce;
         let Some(p) = self.peers.get_mut(&id) else {
             return;
         };
-        m.n = nonce;
+        m.n = p.epoch;
         if m.a == 0 {
             m.s = p.next_seq;
             p.next_seq += 1;
@@ -1321,8 +1465,19 @@ impl Client {
             }
             "bye" => {
                 if self.rtc_attempt(id) == Some(m.o) {
+                    // An attempt that never opened failed; an open channel the peer closed (idle,
+                    // stalled) is offered again at the guests' next packet.
+                    let failed = matches!(self.peers[&id].rtc, Rtc::Connecting { .. });
                     self.close_rtc(id, None);
-                    self.idle(id, now, true);
+                    match failed {
+                        true => self.idle(id, now, true),
+                        false => {
+                            let p = self.peers.get_mut(&id).unwrap();
+                            if p.rtc != Rtc::Off {
+                                p.rtc = Rtc::Idle { next: None };
+                            }
+                        }
+                    }
                 }
             }
             "sig" => self.on_sig(id, m.o, m.d, now),
@@ -1522,7 +1677,7 @@ impl Client {
         if let Rtc::Open { unanswered, .. } = &mut self.peers.get_mut(&id).unwrap().rtc {
             *unanswered = None;
         }
-        self.peer_packet(id, false, None, data.to_vec(), now);
+        self.peer_packet(id, false, data.to_vec(), now);
     }
 
     /// Sends WireGuard's packets: on a peer's data channel when it's open, else through the relay
@@ -1537,6 +1692,13 @@ impl Client {
                 continue;
             };
             let (key, via) = (p.key, p.via);
+            if let Some(init) = packets
+                .iter()
+                .rev()
+                .find(|k| k.as_ref().first() == Some(&INITIATION.0))
+            {
+                p.init = Some((init.as_ref().to_vec(), now));
+            }
             // Handshake messages (initiation, response, cookie reply) always go through the relay:
             // they're rare, and a peer that restarted has no channel to take ours.
             let (packets, relayed): (Vec<_>, Vec<_>) = packets
@@ -1647,7 +1809,14 @@ impl Client {
             self.note_flow(dst, &info, now);
         }
         if let Some(&id) = self.by_addr.get(&dst) {
-            return self.send_guest(id, p.to_vec(), now);
+            let confirmed = self.peers[&id].confirmed;
+            self.send_guest(id, p.to_vec(), now);
+            // A peer a lookup made (perhaps forged, naming a region it isn't on) doesn't stand in
+            // for our own: until its session is confirmed, ours goes out too.
+            if !confirmed && !self.pending.contains_key(&dst) && self.pending.len() < MAX_PENDING {
+                self.start_lookup(dst, VecDeque::new(), now);
+            }
+            return;
         }
         // Nobody by that address yet: look it up, the packet waits.
         if let Some(w) = self.pending.get_mut(&dst) {
@@ -1656,14 +1825,19 @@ impl Client {
             }
             return;
         }
-        if self.unreachable.get(&dst).is_some_and(|t| *t > now) {
+        if self.unreachable.get(&dst).is_some_and(|t| *t > now) || self.pending.len() >= MAX_PENDING
+        {
             return self.send_unreachable(p);
         }
         self.unreachable.remove(&dst);
+        self.start_lookup(dst, VecDeque::from([p.to_vec()]), now);
+    }
+
+    fn start_lookup(&mut self, dst: [u8; 16], packets: VecDeque<Vec<u8>>, now: Instant) {
         self.pending.insert(
             dst,
             Pending {
-                packets: VecDeque::from([p.to_vec()]),
+                packets,
                 started: now,
                 sent: 1,
             },
@@ -1681,13 +1855,20 @@ impl Client {
             self.hour = hour;
             for i in 0..self.nostr.len() {
                 if self.nostr[i].conn.is_some() {
-                    self.nostr_subscribe(i);
+                    self.nostr_subscribe(i, now);
                 }
             }
         }
         for i in 0..self.nostr.len() {
-            if self.nostr[i].reconnect_at.is_some_and(|t| t <= now) {
-                self.nostr_connect(i);
+            let n = &self.nostr[i];
+            if n.reconnect_at.is_some_and(|t| t <= now) {
+                self.nostr_connect(i, now);
+            } else if n.answer_by.is_some_and(|t| t <= now) {
+                let url = n.url.clone();
+                self.log(format!("Nostr: {url} didn't answer"));
+                self.nostr_lost(i, now);
+            } else if n.conn.is_some() && n.check_at.is_some_and(|t| t <= now) {
+                self.nostr_subscribe(i, now);
             }
         }
         // Lookups: resent, then given up.
@@ -1704,7 +1885,13 @@ impl Client {
                 self.publish_lookup(&addr, now);
             } else {
                 let w = self.pending.remove(&addr).unwrap();
+                if self.by_addr.contains_key(&addr) {
+                    continue; // a peer of that address is still on its way: its packets went in
+                }
                 self.log(format!("lookup: no answer from {}", Ipv6Addr::from(addr)));
+                if self.unreachable.len() >= MAX_UNREACHABLE {
+                    self.unreachable.pop_first();
+                }
                 self.unreachable.insert(addr, now + UNREACHABLE_HOLD);
                 for p in w.packets {
                     self.send_unreachable(&p);
@@ -1712,9 +1899,12 @@ impl Client {
             }
         }
         self.unreachable.retain(|_, t| *t > now);
-        self.nonces.retain(|_, t| {
-            now.saturating_duration_since(*t) < Duration::from_secs(3 * LOOKUP_MAX_AGE)
-        });
+        while let Some(&(old, t)) = self.nonce_order.front()
+            && now.saturating_duration_since(t) >= Duration::from_secs(3 * LOOKUP_MAX_AGE)
+        {
+            self.nonce_order.pop_front();
+            self.nonces.remove(&old);
+        }
         let ids: Vec<PeerId> = self.peers.keys().copied().collect();
         for id in ids {
             let Some(p) = self.peers.get_mut(&id) else {
@@ -1860,7 +2050,11 @@ impl Client {
         .into_iter()
         .chain(peers)
         .chain(relays)
-        .chain(self.nostr.iter().map(|n| n.reconnect_at))
+        .chain(
+            self.nostr
+                .iter()
+                .flat_map(|n| [n.reconnect_at, n.answer_by, n.check_at]),
+        )
         .chain(self.pending.values().map(|w| self.lookup_due(w)))
         .flatten()
         .min()

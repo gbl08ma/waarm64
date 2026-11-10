@@ -86,10 +86,13 @@ pub enum FromRelay {
         x: String,
         content: String,
     },
-    /// `OK` false (a refused event), `NOTICE`, `CLOSED` (a subscription the relay ended) and
-    /// `AUTH`: the words, for the log.
+    /// `EOSE`: the relay answered subscription `sub`.
+    Eose(String),
+    /// `CLOSED`: the relay ended subscription `sub`, and why.
+    Closed(String, String),
+    /// `OK` false (a refused event), `NOTICE` and `AUTH`: the words, for the log.
     Said(String),
-    /// `EOSE`, an accepted `OK`, what isn't understood.
+    /// An accepted `OK`, what isn't understood.
     Other,
 }
 
@@ -121,7 +124,8 @@ pub fn parse(text: &[u8]) -> FromRelay {
             FromRelay::Said(format!("refused an event: {}", s(3)))
         }
         "NOTICE" => FromRelay::Said(format!("notice: {}", s(1))),
-        "CLOSED" => FromRelay::Said(format!("closed subscription {}: {}", s(1), s(2))),
+        "EOSE" => FromRelay::Eose(s(1).into()),
+        "CLOSED" => FromRelay::Closed(s(1).into(), s(2).into()),
         "AUTH" => FromRelay::Said("asks for authentication (NIP-42), which rooms don't do".into()),
         _ => FromRelay::Other,
     }
@@ -186,7 +190,11 @@ mod tests {
 
     #[test]
     fn a_relays_other_words() {
-        assert_eq!(parse(br#"["EOSE","s1"]"#), FromRelay::Other);
+        assert_eq!(parse(br#"["EOSE","s1"]"#), FromRelay::Eose("s1".into()));
+        assert_eq!(
+            parse(br#"["CLOSED","s1","rate-limited"]"#),
+            FromRelay::Closed("s1".into(), "rate-limited".into())
+        );
         assert_eq!(parse(br#"["OK","ab",true,""]"#), FromRelay::Other);
         assert!(matches!(
             parse(br#"["OK","ab",false,"rate-limited: slow down"]"#),

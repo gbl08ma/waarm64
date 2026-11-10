@@ -34,6 +34,9 @@ type Exports = {
 };
 
 /** A room's member (net/ts/src/room.rs, docs/tailnet.md "Rooms"). */
+/** The most messages a WebSocket holds before it opens (a room's lookups while a Nostr relay connects, say). */
+const SOCKET_QUEUE = 256;
+
 export type RoomConfig = {
   room: {
     /** The room's link (`webpc-room:<id>?nostr=…&derp=…`, net/ts/src/room/link.rs), or a bare ID (the defaults). */
@@ -304,7 +307,8 @@ export class TsClient {
         }
         case 2: {
           const s = this.sockets.get(id);
-          if (s?.queue) s.queue.push(rest);
+          // Until it opens; a socket that never does holds at most SOCKET_QUEUE messages.
+          if (s?.queue) { if (s.queue.length < SOCKET_QUEUE) s.queue.push(rest); }
           else if (s?.ws.readyState === WebSocket.OPEN) s.ws.send(s.text ? decoder.decode(rest) : rest);
           break;
         }
@@ -329,7 +333,8 @@ export class TsClient {
           break;
         case 9: {
           const dc = this.channels.get(id);
-          if (dc?.readyState === 'open') dc.send(rest);
+          // A full send queue throws: the packet is lost, as on any congested path.
+          if (dc?.readyState === 'open') try { dc.send(rest); } catch { /* dropped */ }
           break;
         }
         case 10: {

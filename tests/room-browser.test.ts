@@ -129,7 +129,7 @@ test('a member reached by its name, and one with incoming connections off not at
   assert.ok(await a.evaluate(`window.harness.first(${JSON.stringify(to)})`) as number >= 0, 'reached by name');
   assert.ok(nostr.events.length > before, 'through a lookup on the Nostr relay');
   const lookup = nostr.events[before];
-  assert.equal(Buffer.from(lookup.content, 'base64')[0], 1, 'sealed to the key the name carries');
+  assert.equal(Buffer.from(lookup.content, 'base64').length, 106, 'a lookup (sealed to the key the name carries: cargo test checks)');
   const cs = (await of(c)).self!;
   const none = await a.evaluate(`window.harness.echoes(${JSON.stringify(cs.address6)}, 1, 32, 1, 8000)`) as Echoes;
   assert.equal(none.back, 0, 'incoming off: unanswered');

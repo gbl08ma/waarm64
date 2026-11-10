@@ -173,24 +173,41 @@ each other by address or name, but nothing is on the page's menus yet: R2). `roo
   dialer's hour, signed with BIP-340 (`k256`) by a key random per session, on every relay: the dialer's node key, its
   home region (an index into the link's regions), the time and a random nonce, sealed with ChaCha20-Poly1305 to the
   target's own key when the dialer knows it (an X25519 box from an ephemeral key; a name the resolver answered, or
-  `known` keys) and with the room's lookup key otherwise; both mix in the lookup key, and the tag is the associated
-  data. Again after 1 s and 3 s; at 6 s the waiting packets get ICMPv6 address unreachable (type 1, code 3, from the
-  room's `::53`), as does anything to that address for 5 s more. The Nostr relays are plain WebSockets in text mode
-  (`WsOpen` with an empty protocol; `web/ts-client.ts` opens it without one and carries the module's bytes as UTF-8),
-  reconnected after 2 s doubling to 60 s.
+  `known` keys) and with the room's lookup key otherwise; both mix in the lookup key, the tag is the associated
+  data, and both look alike (106 bytes: 32 of an ephemeral key or of random bytes, then the ciphertext; the target
+  tries the seal first). Again after 1 s and 3 s; at 6 s the waiting packets get ICMPv6 address unreachable (type 1, code 3, from the
+  room's `::53`), as does anything to that address for 5 s more. At most 64 lookups wait at once (past that, the
+  guest's packet gets the ICMPv6 at once) and 8 go out a second (more wait for their resend), so a guest sweeping the
+  /48 can't grow the worker or flood the relays. The Nostr relays are plain WebSockets in text mode (`WsOpen` with an
+  empty protocol; `web/ts-client.ts` opens it without one, carries the module's bytes as UTF-8 and holds at most 256
+  messages before it opens). The subscription is renewed every 60 s and must be answered (EOSE) within 15 s, or the
+  connection is presumed dead (half open after a network change, say); a relay's CLOSED of it is subscribed again
+  after 10 s; a lost connection comes back after 2 s doubling to 60 s, reset by an answered REQ. The hour is the
+  wall clock's, read each time (`Date.now()` through WASI, `web/ts-wasi.ts`: `performance.now()` stands still while
+  some computers sleep).
 - **The call back:** a target that opens a lookup joins the dialer's home region and starts the WireGuard handshake
   through it, its signalling `hello` queued behind the handshake (so the first data is acknowledged and resent: the
   dialer, the responder, can't send until something comes, and a lone keepalive lost would leave it unable to). It
-  drops lookups more than an hour off its clock, a nonce it has seen (remembered for three hours, 8,192 at most), a
-  region outside the link, its own key, and beyond 4 new peers on trial a second (1,024 peers at most). A lookup from
-  a key it already has a peer for doesn't move that peer (a member could forge one): it probes the session with a
-  signalling `ping`, and only if nothing decrypts in 4 s (that key's page reloaded, say) forgets it and calls back. The
-  dialer lets in the handshake of a key whose address its lookup waits on, and sends the waiting packets into the
-  session. A lookup is a hint; the handshake with the room's key decides.
+  drops lookups more than an hour off its clock, a nonce it has seen (remembered for three hours, 8,192 at most, the
+  oldest let go first; a reloaded target forgets them, so a relay may replay a recent lookup to it, which costs one
+  unwanted call back that the dialer refuses unless it takes incoming connections), a region outside the link, its
+  own key, and beyond 4 call backs a second (1,024 peers at most). When each dials the other at once, only the lower
+  key calls back (crossed handshakes each abandon their own for the other's in `ts_tunnel`, and neither completes). A
+  lookup from a key whose call back is still on trial sends its initiation again through that lookup's region (at most
+  every 0.5 s): a lost one goes again with the dialer's resend, and a forged lookup naming a region the key isn't on
+  can't keep the real one out. A lookup from a key with a confirmed peer doesn't move that peer (a member could
+  forge one): it probes the session with a signalling `ping`, and only if nothing decrypts in 4 s (that key's page
+  reloaded, say) forgets it and calls back. The dialer lets in the handshake of a key whose address its lookup waits
+  on, and the waiting packets go into that peer's session as soon as it exists, however it came (a call back, its
+  handshake); the lookup goes on until the session is confirmed, so a peer a forged lookup made doesn't stand in for
+  our own. A lookup is a hint; the handshake with the room's key decides.
 - **WireGuard** (`ts_tunnel`, IKpsk2 with the room's key) carries the guest's IPv6 between members, whichever path
   carries its packets. A peer's packets reach the guest only from that peer's own address to ours. A key we don't
   know that starts a handshake is let in **on trial** (incoming connections, on by default) and forgotten 20 s after it
-  came in unless its data decrypted, which only the room's key allows. A peer is forgotten after 3 minutes without the
+  came in unless its data decrypted, which only the room's key allows; 4 such a second, a budget apart from call
+  backs', charged only once WireGuard answered the handshake (its MAC1 right), so junk from anyone who knows the key
+  can't use it up. DERP proves a packet's sender, so a peer's packets go back through the region its last one came
+  from (our response to its new initiation too). A peer is forgotten after 3 minutes without the
   guests' traffic, or 20 s after we sent it the guest's packets with nothing back (the next packet looks it up again).
 - **Incoming off** (`incoming: false`): lookups go unanswered and handshakes from unknown keys are refused, unless the
   guest has a flow with that address; a flow table (the peer's address, the protocol, both ports or an echo's
@@ -205,8 +222,8 @@ each other by address or name, but nothing is on the page's menus yet: R2). `roo
   guest's packets to or from it are dropped), JSON: `hello` (the home region, relay only), `sig` (the page's
   description or ICE candidate for attempt `o`, opaque to the module), `bye` (attempt `o` closed, or refused by an
   answerer with too many), `refuse` (relay only), `ping` (the probe above). Each message carries the sender's
-  instance (a random number per client, so a peer's restart resets what we knew of its signalling) and a sequence
-  number, and is acknowledged and resent after 0.5, 1 and 2 s. Candidates go only to a member whose data decrypted.
+  epoch with us (random per peer it makes, so a restart, or a peer forgotten and made again on one side, resets what
+  the other knew of its sequence numbers and attempts) and a sequence number, and is acknowledged and resent after 0.5, 1 and 2 s. Candidates go only to a member whose data decrypted.
 - **The direct path:** the member with the lower key offers once the session is confirmed. The module asks the host
   for a connection (`RtcOpen`, actions 7–10 and `ts_rtc_*` in `wasm.rs`); web/room.ts makes an `RTCPeerConnection`
   (STUN only: `STUN_SERVERS`, Cloudflare's and Google's) with a negotiated data channel (id 0, unordered, no
@@ -218,18 +235,22 @@ each other by address or name, but nothing is on the page's menus yet: R2). `roo
   WireGuard's 10 s passive keepalive), sends the peer back to DERP, and a new offer comes after 30 s. At most 64
   connections (`MAX_RTC`): past that the offerer waits for the guests' next packet, and an answerer refuses with a
   `bye`; a channel without the guests' traffic for 60 s (`RTC_IDLE`) is closed, and the offerer offers again at the
-  next packet either way. Relay only (`relayOnly`) never opens a connection and refuses offers. The `path` event says
+  next packet either way (a `bye` for an open channel isn't a failure: no backoff); a full channel drops the packet
+  (`send` throws, `web/ts-client.ts` catches it). Relay only (`relayOnly`) never opens a connection and refuses offers. The `path` event says
   which path a peer's packets take.
 - **DERP:** one connection per region in use (`Relay`): the home region (`home`, an index into the link's; the
   `preferred` one) always, another while a peer is reached through it (the dialer's home region a call back joined;
   where a peer's data last came from) and for 60 s after; packets for a region wait (64 at most) until its connection
-  is up. Each has tailcat's liveness and reconnects; only the home region's failures before `Running` fail the client.
+  is up. Each has tailcat's liveness and reconnects; only the home region's failures before `Running` fail the client,
+  and a DERP map that doesn't load fails it only when the home region is the map's (an inline home connects at once).
   A peer that left a region (`PeerGone`) is sent to its home region, if its `hello` said one.
 - **Tests:** `cargo test -p webpc_ts room` and `nostr` (the client against fake DERP regions, which route a packet only
   to a key on the same region, a fake Nostr relay and a fake WebRTC: lookups, names, sealing, stale, replayed, forged
   and misdirected lookups, the trial rate, incoming off and its flows, two regions, the hour's turn and a clock 40
-  minutes off, a forged lookup that doesn't move a live peer, a reloaded peer called back, the channel cap and the idle
-  close, the R0 cases; BIP-340's first vector); `tests/nostr-relay.test.ts` (the tests' relay, `tests/net/nostr-relay.ts`:
+  minutes off, a forged lookup that doesn't move a live peer and one that names another region, a reloaded peer
+  called back, a peer made again on one side, both dialing at once, a lost call back, junk handshakes, a guest sweeping
+  the /48, a relay's CLOSED and silence, a failed map with an inline home, the channel cap and the idle close, the R0
+  cases; BIP-340's first vector); `tests/nostr-relay.test.ts` (the tests' relay, `tests/net/nostr-relay.ts`:
   NIP-01's EVENT, REQ, CLOSE, kind and `#x` filters, forwarding without storing, ids checked, signatures not, a small
   RFC 6455 server, no dependency); `tests/room-browser.test.ts` (Chromium, `WEBPC_TAILCAT=1`: pages joining one room
   by its link on the rig's derper and that relay, by address and by name, relay only, incoming off).

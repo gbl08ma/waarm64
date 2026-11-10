@@ -106,8 +106,9 @@ export function startRoom(config: StartRoom, onEvent: (e: TsEvent) => void = () 
   async function remote(rtc: number, json: string) {
     const c = conns.get(rtc);
     if (!c) return;
-    const v = JSON.parse(json) as RTCSessionDescriptionInit & RTCIceCandidateInit;
     try {
+      const v = JSON.parse(json) as RTCSessionDescriptionInit & RTCIceCandidateInit;
+      if (!v || typeof v !== 'object') throw new Error('not a description or candidate');
       if (v.sdp !== undefined && v.type) {
         await c.pc.setRemoteDescription(v);
         for (const cand of c.pending ?? []) await c.pc.addIceCandidate(cand);

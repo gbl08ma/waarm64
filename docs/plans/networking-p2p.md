@@ -143,7 +143,12 @@ address and name don't change when it rejoins. "New identity" makes a new key.
   three hours; a lookup from a key with a session probes it with a signalling ping and calls back
   only if nothing decrypts in 4 s, so a member whose page reloaded is reached again at once while a
   forged lookup moves nothing; the caller's signalling hello is queued behind its handshake, as the
-  responder can't send until data comes and a lone keepalive lost would leave it unable to.)
+  responder can't send until data comes and a lone keepalive lost would leave it unable to. R1's
+  out-of-context review added: only the lower key calls back when both dial at once; a lookup for
+  a key whose call back is on trial sends its initiation through that region too; the dialer's
+  lookup goes on until its peer is confirmed; budgets for call backs and unasked handshakes apart;
+  caps on the guest's lookups; the subscription renewed and checked. Open for R3: public relays
+  refuse events dated far ahead, so a skewed clock may hold only on a room's own relays.)
 - **The relays' terms** (rate limits, proof of work as in NIP-13, payment, which kinds they accept)
   decide how far public relays carry a room; R3 checks. A serious room runs its own relay, as it
   would its own derper, and puts them in its link.
@@ -253,7 +258,7 @@ client was built.
 - **R1 — Rooms.** *Done 2026-11-10* (docs/tailnet.md "Rooms"; §3's amendments): the link
   (`webpc-room:<id>?nostr=…&derp=…`), lookups on Nostr (`k256`, `nostr.rs`, the kind 26354 a placeholder), call backs
   into a dialer's home region with a DERP connection per region in use, the probe, the caps and idle closes, the
-  resolver, incoming off's flow table; `cargo test -p webpc_ts room` (26 cases), `tests/nostr-relay.test.ts`,
+  resolver, incoming off's flow table, the review's fixes; `cargo test -p webpc_ts room` (34 cases), `tests/nostr-relay.test.ts`,
   `tests/room-browser.test.ts` by link and by name. The brief as it was: §2's derivations, the link's format, §3's tags, lookups and call backs (with a
   minimal Nostr relay in the test harness, in TypeScript: EVENT, REQ, CLOSE, the kind and tag
   filters, forwarding without storing; no dependency), signalling's resends, joining and leaving,
