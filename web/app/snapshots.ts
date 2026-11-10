@@ -10,7 +10,7 @@ import { makeRoom } from '../diskcache.ts';
 import { openSnapshot } from '../snapshot-file.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
 import { createOverlay, identityOf } from './disks.ts';
-import { adaptersOf, canonical, CPU_FEATURES, macsOf, newId, shapeHash, shapeOf, slots, uniqueName, type CpuFeature, type DiskRecord, type Display, type MachineRecord, type Shape } from './shape.ts';
+import { adaptersOf, canonical, CPU_DEFAULT, macsOf, newId, shapeHash, shapeOf, slots, uniqueName, type CpuFeature, type DiskRecord, type Display, type MachineRecord, type Shape } from './shape.ts';
 import { overlayDir, snapshotPath, type Store } from './store.ts';
 import { msg, MsgError, t, type Msg } from '../i18n.ts';
 
@@ -22,7 +22,7 @@ export function effectiveDisplay(m: MachineRecord, page: { webgl2: boolean; simp
 
 /** The machine's shape and its hash as it would run now (its disks by id). */
 export async function currentShape(m: MachineRecord, disks: (id: string) => DiskRecord | undefined, opts: { display?: Display | 'none'; cpu?: CpuFeature[]; vulkan?: boolean } = {}): Promise<{ shape: Shape; hash: string }> {
-  const shape = shapeOf(m, disks, { display: opts.display, cpu: opts.cpu ?? CPU_FEATURES, vulkan: opts.vulkan });
+  const shape = shapeOf(m, disks, { display: opts.display, cpu: opts.cpu ?? CPU_DEFAULT, vulkan: opts.vulkan });
   return { shape, hash: await shapeHash(shape) };
 }
 

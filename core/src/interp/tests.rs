@@ -2060,6 +2060,99 @@ fn dotprod() {
 }
 
 #[test]
+fn i8mm() {
+    use crate::cpu::{FEATURE_I8MM, FEATURES};
+    const USDOT: u32 = 0x4e82_9c20; // usdot v0.4s, v1.16b, v2.16b
+    const USDOT_2S: u32 = 0x0e82_9c20; // usdot v0.2s, v1.8b, v2.8b
+    const USDOT_ELT: u32 = 0x4fa2_f820; // usdot v0.4s, v1.16b, v2.4b[3]
+    const SUDOT_ELT: u32 = 0x4f02_f020; // sudot v0.4s, v1.16b, v2.4b[0]
+    const SUDOT_ELT_2S: u32 = 0x0f02_f820; // sudot v0.2s, v1.8b, v2.4b[2]
+    const SMMLA: u32 = 0x4e82_a420; // smmla v0.4s, v1.16b, v2.16b
+    const UMMLA: u32 = 0x6e82_a420; // ummla v0.4s, v1.16b, v2.16b
+    const USMMLA: u32 = 0x4e82_ac20; // usmmla v0.4s, v1.16b, v2.16b
+    let run = |insn: u32, d: u128, n: u128, m: u128| {
+        let mut t = T::new(&[insn]);
+        (t.c.v[0], t.c.v[1], t.c.v[2]) = (d, n, m);
+        t.step().unwrap();
+        t.c.v[0]
+    };
+    let lanes = |l: [i32; 4]| (0..4).fold(0u128, |v, k| v | (l[k] as u32 as u128) << (32 * k));
+    let splat = |b: u8| u128::from_ne_bytes([b; 16]);
+    // Vn's bytes unsigned and Vm's signed for USDOT, the other way for SUDOT.
+    assert_eq!(run(USDOT, 0, splat(0xff), splat(0xff)), lanes([-1020; 4]));
+    assert_eq!(run(USDOT, 0, splat(0xff), splat(1)), lanes([1020; 4]));
+    assert_eq!(run(USDOT, 0, splat(1), splat(0xff)), lanes([-4; 4]));
+    assert_eq!(run(USDOT, 0, splat(0xff), splat(0x80)), lanes([-130560; 4]));
+    assert_eq!(run(SUDOT_ELT, 0, splat(0xff), splat(1)), lanes([-4; 4]));
+    assert_eq!(run(SUDOT_ELT, 0, splat(1), splat(0xff)), lanes([1020; 4]));
+    // Each lane its own bytes, accumulated modulo 2^32; the 64-bit form clears the top.
+    let n = u128::from_le_bytes(core::array::from_fn(|k| k as u8 + 1));
+    let m = u128::from_le_bytes(core::array::from_fn(|k| [1, 0xff, 2, 0xfe][k % 4]));
+    assert_eq!(
+        run(USDOT, lanes([-1, 1, 2, 3]), n, m),
+        lanes([-4, -2, -1, 0]) // Vd + n·1 - (n+1)·1 + (n+2)·2 - (n+3)·2 for n = 1, 5, 9, 13
+    );
+    assert_eq!(
+        run(USDOT_2S, u128::MAX, 0, 0),
+        u32::MAX as u128 * 0x1_0000_0001
+    );
+    // By element: Vm's lane in every lane.
+    let m = lanes([1, 0, 0, 0x0101_01ff]);
+    assert_eq!(
+        run(USDOT_ELT, 0, n, m),
+        lanes([
+            -1 + 2 + 3 + 4,
+            -5 + 6 + 7 + 8,
+            -9 + 10 + 11 + 12,
+            -13 + 14 + 15 + 16
+        ])
+    );
+    assert_eq!(
+        run(SUDOT_ELT_2S, 0, splat(0xff), lanes([0, 0, 0x0000_00ff, 0])),
+        lanes([-255, -255, 0, 0])
+    );
+    // A 2×8 by 8×2 product: Vn's rows 1..8 and 9..16, Vm's columns of 1s and 2s.
+    let cols = lanes([0x0101_0101, 0x0101_0101, 0x0202_0202, 0x0202_0202]);
+    assert_eq!(
+        run(SMMLA, lanes([1, 2, 3, 4]), n, cols),
+        lanes([37, 74, 103, 204])
+    );
+    assert_eq!(run(UMMLA, 0, n, cols), lanes([36, 72, 100, 200]));
+    assert_eq!(run(USMMLA, 0, n, cols), lanes([36, 72, 100, 200]));
+    assert_eq!(run(SMMLA, 0, splat(0xff), splat(0xff)), lanes([8; 4]));
+    assert_eq!(run(UMMLA, 0, splat(0xff), splat(0xff)), lanes([520200; 4]));
+    assert_eq!(run(USMMLA, 0, splat(0xff), splat(0xff)), lanes([-2040; 4]));
+    assert_eq!(
+        run(USMMLA, 0, splat(0xff), splat(0x80)),
+        lanes([-261120; 4])
+    );
+    assert_eq!(run(SMMLA, 0, splat(0x80), splat(0x80)), lanes([131072; 4]));
+    // UNDEFINED without the feature, and the unallocated sizes and Q ahead of the FPEN trap.
+    for insn in [USDOT, USDOT_ELT, SUDOT_ELT, SMMLA, UMMLA, USMMLA] {
+        let mut t = T::new(&[insn]);
+        t.c.features = FEATURES & !FEATURE_I8MM;
+        assert_eq!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+        let mut t = T::new(&[insn]);
+        t.c.cpacr_el1 = 0;
+        assert_ne!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+    }
+    for insn in [
+        0x4ec2_9c20u32,
+        0x4e02_9c20,
+        0x0e82_a420,
+        0x0e82_ac20,
+        0x2e82_a420,
+        0x6e82_ac20,
+    ] {
+        let mut t = T::new(&[insn]);
+        t.c.cpacr_el1 = 0;
+        assert_eq!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+    }
+    assert_eq!(sys::isar1(FEATURE_I8MM) >> 52 & 0xf, 1);
+    assert_eq!(sys::isar1(0) >> 52 & 0xf, 0);
+}
+
+#[test]
 fn jscvt_feature_gate() {
     // fjcvtzs w1, d2: UNDEFINED without FEATURE_JSCVT, ahead of the FPEN trap;
     // with it, Wd zero-extended and NZCV = 0Z00 whatever NZCV was.
@@ -2151,7 +2244,10 @@ fn v8_x_feature_gates() {
     assert_eq!(step_flags(0x3a00_084d, 0b0010 << 28, 0x180), 0b1010);
     assert_eq!(step_flags(0x3a00_084d, 0, 0x100), 0b0101);
     // The ID fields.
-    assert_eq!(sys::isar1(FEATURES), 1 << 36 | 1 << 32 | 1 << 20 | 1 << 12);
+    assert_eq!(
+        sys::isar1(FEATURES),
+        1 << 52 | 1 << 36 | 1 << 32 | 1 << 20 | 1 << 12
+    );
     assert_eq!(sys::isar0(FEATURE_FLAGM) >> 52 & 0xf, 2);
     assert_eq!(sys::pfr0(FEATURE_DIT) >> 48 & 0xf, 1);
     assert_eq!(sys::pfr0(0) >> 48 & 0xf, 0);

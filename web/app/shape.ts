@@ -196,9 +196,12 @@ export const USER_CONNECTORS = KEYBOARD_CONNECTOR;
 
 /** The device kinds a machine's transports have, in slot order (`slots`). */
 export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'mouse' | 'touch' | 'clock' | '9p' | 'agent' | 'blk';
-/** The vCPUs' optional features (`BootOptions.rng`, `e0pd`, `sha3`, `jscvt`, `rcpc`, `sb`, `flagm`, `dit`, `frintts`, `dotprod`). */
-export type CpuFeature = 'rng' | 'e0pd' | 'sha3' | 'jscvt' | 'rcpc' | 'sb' | 'flagm' | 'dit' | 'frintts' | 'dotprod';
-export const CPU_FEATURES: CpuFeature[] = ['rng', 'e0pd', 'sha3', 'jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod'];
+/** The vCPUs' optional features (`BootOptions.rng`, `e0pd`, `sha3`, `jscvt`, `rcpc`, `sb`, `flagm`, `dit`, `frintts`, `dotprod`, `i8mm`). */
+export type CpuFeature = 'rng' | 'e0pd' | 'sha3' | 'jscvt' | 'rcpc' | 'sb' | 'flagm' | 'dit' | 'frintts' | 'dotprod' | 'i8mm';
+export const CPU_FEATURES: CpuFeature[] = ['rng', 'e0pd', 'sha3', 'jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod', 'i8mm'];
+/** The ones a machine has unless turned off (`?<feature>=0`); the rest only when asked for (`?i8mm=1`: FEAT_I8MM is
+ * implemented but measured slower than what guests do without it, docs/cpu.md). */
+export const CPU_DEFAULT: CpuFeature[] = CPU_FEATURES.filter((f) => f !== 'i8mm');
 /**
  * The features the shape's hash leaves out: the ones that came after shapes did, so that the snapshots and suspended
  * machines kept before them keep their hash. A restore runs with the snapshot's own features (its header's `cpu`),
@@ -279,7 +282,7 @@ export function shapeOf(m: MachineRecord, disks: (id: string) => DiskRecord | un
     ramMiB: m.ramMiB,
     ...(m.ramSplit ? { split: m.ramSplit } : {}),
     display,
-    cpu: CPU_FEATURES.filter((f) => (opts.cpu ?? CPU_FEATURES).includes(f)),
+    cpu: CPU_FEATURES.filter((f) => (opts.cpu ?? CPU_DEFAULT).includes(f)),
     devices: list.map((s) => s.kind),
     disks: list.flatMap((s, slot) => {
       if (s.attachment === undefined) return [];

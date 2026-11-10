@@ -39,7 +39,11 @@ alternating, on the dev VM, with the PC sampler on for both (it runs during the 
 `codecs.sh` on the second disk (`codecs-disk.sh`, needs images/arch/media.sh's clips and gen.py's JPEGs) runs each codec
 one-threaded (dav1d, libvpx, ffvp9, h264, x264, libvpx and libaom encoding, djpeg, tjbench) with `q8dot.c`, an int8 dot
 product as ggml writes it; `js.html` runs ToInt32 kernels in Chromium and Firefox. A round takes 2 to 2.5 minutes.
-`QUERY='&dotprod=0' profile.ts` gives the browsers' side; a boot of its four cases takes 10 minutes.
+`QUERY='&dotprod=0' profile.ts` gives the browsers' side; a boot of its four cases takes 10 minutes. Since PERF loop 5
+(FEAT_I8MM, 2026-11-10) it also decodes 12 s of HEVC (FFmpeg) and encodes with x265, `q8dot` times a 2x2 int8 tile
+(`q8mm`: SMMLA with HWCAP2_I8MM, four SDOTs without), the arms are `?<feature>=0` and `=1`, and it runs on the Mac host:
+`SCRIPT=../imgdecode/codecs.ts ROUNDS=3 MAC_TIMEOUT=2700 bench/gpu/sway-mac.sh <feature>,codecs target/arch/desktop.qcow2 <name>`
+(a round about 4 minutes there).
 
 ## On the desktop guest (2026-10-22)
 

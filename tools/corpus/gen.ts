@@ -405,8 +405,8 @@ const simdMove: Form[] = [
 
 // AdvSIMD integer. Vector sources get edge values lane by lane; shift-by-register
 // operands get small signed shift counts in their low byte. Only v8.0 encodings:
-// the M4 also runs RDM (SQRDMLAH), DotProd, FCMA, I8MM and the crypto
-// instructions, which we leave UNDEFINED.
+// the M4 also runs RDM (SQRDMLAH), FCMA and others, which we leave
+// UNDEFINED (DotProd, I8MM and the crypto instructions have their own groups).
 function laneEdges(esize: number): bigint[] {
   const e = BigInt(esize);
   const ones = (1n << e) - 1n, smin = 1n << (e - 1n), smax = smin - 1n;
@@ -983,7 +983,19 @@ const dotprod: Form[] = [
   vform("elt", "0QU01111zzLMmmmm1110H0nnnnnddddd", 600, { fix: dotSize, esize: () => 8 }),
 ];
 
-export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto, jscvt, ext, dotprod };
+// FEAT_I8MM (ABI 61): USDOT, SUDOT and USDOT by element, SMMLA, UMMLA, USMMLA (U with bit 11: unallocated), bytes with
+// edge values; unallocated sizes and MMLA's Q = 0 included, but not the by-element sizes 1 and 3: the M4 runs them
+// (BF16's BFDOT and BFMLAL).
+const i8mm: Form[] = [
+  vform("usdot", "0Q001110zz0mmmmm100111nnnnnddddd", 600, { fix: dotSize, esize: () => 8 }),
+  vform("dot_elt", "0Q001111zzLMmmmm1111H0nnnnnddddd", 600, { fix: (r) => ({ z: r.pick([0, 2]) }), esize: () => 8 }),
+  vform("mmla", "0QU01110zz0mmmmm1010o1nnnnnddddd", 800, {
+    fix: (r): Fields => (r.chance(0.9) ? { Q: 1, z: 2 } : r.chance(0.5) ? { Q: 0, z: 2 } : { Q: 1, z: r.pick([0, 1, 3]) }),
+    esize: () => 8,
+  }),
+];
+
+export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto, jscvt, ext, dotprod, i8mm };
 
 /** Generates a group's tests (without oracle results). */
 export function generate(group: string): Test[] {

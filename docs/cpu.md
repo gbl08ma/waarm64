@@ -55,6 +55,21 @@ match it step for step.
   the guests' binaries): dav1d (174), x264 (248), libvpx (1,200-2,300), libaom (4,900), Arch's Firefox's libgkcodecs
   (2,900), Chromium (6,500); **not libjpeg-turbo, libwebp, OpenH264 or rav1e** (none). Level with the NEON paths, so
   advertised: bench/boot/REPORT.md "FEAT_DotProd and FEAT_JSCVT, measured".
+- **FEAT_I8MM** (`USDOT` vector and by element, `SUDOT` by element, `SMMLA`, `UMMLA`, `USMMLA`;
+  `interp::simd_int::usdot`, `mmla`): `VmConfig.features` bit 11 (`FEATURE_I8MM`, ABI 61),
+  `ID_AA64ISAR1_EL1.I8MM` = 1, Linux's `i8mm` hwcap, switched as JSCVT is but off by default (below), in the
+  shape's hash when on; inline in the JIT ([jit.md](jit.md)). Who uses it (the desktop guest, from HWCAP2_I8MM; executed
+  through the JIT, a diagnostic build): dav1d's 8-bit motion compensation (5.5 M USDOT and 8.6 M USMMLA in 200
+  frames of AV1), libvpx's VP9 convolutions (62 M in 200 frames decoded, 2 M in 48 encoded), FFmpeg's HEVC (19.5 M
+  USDOT in 288 frames), x264 (11.5 M in 96 frames), x265 (46 M USDOT and 21 M USMMLA in 24 frames), ggml-style int8
+  tiles (SMMLA); libaom's real-time encoder runs none, FFmpeg's VP9 and H.264 none. **Off by default**
+  (`cpu::DEFAULT_FEATURES`; `bootVm`'s `i8mm: true`, the page's `?i8mm=1`, a machine's shape then has it), so
+  unadvertised: the codecs are level with their DotProd paths (six rounds on the Mac, every pair overlapping), and
+  the int8 tile is **19% slower** with SMMLA, rounds apart. A matrix product is about 19-22 host instructions here
+  (wasm has no mixed-sign or matrix multiply, and summing its four outputs across takes two levels of shuffles), so
+  two of them and the zips that feed them cost more than the four SDOTs (8 each) a guest without I8MM runs; USDOT
+  (12) is dearer than SDOT and the bias trick the DotProd paths use. On the M4 itself the tile is slower with SMMLA
+  too (1.32 against 0.65 ns). bench/boot/REPORT.md "PERF loop 5: FEAT_I8MM".
 - **FEAT_RNG** (`RNDR`, `RNDRRS`, at EL0 and EL1) and **FEAT_E0PD** (`TCR_EL1.E0PD0`/`E0PD1`):
   `VmConfig.features` bits 1 and 2 (`FEATURE_RNG`, `FEATURE_E0PD`, ABI 35). **On by default** in
   `bootVm` (`rng: false`, `e0pd: false` turn them off), the native runners and so the test guests and
@@ -74,8 +89,8 @@ match it step for step.
   which comes from the virtio-rng): bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD".
 - **Left out, unadvertised:** SVE/SME, PAC, BTI, MTE, EL2/EL3, secure state. Their hint-space
   encodings (the PAC and BTI hints, CSDB, …) run as NOPs. Everything else the M4 has beyond v8.0
-  (FP16, BF16, FHM, RDM, I8MM, FCMA, LSE2, LRCPC2, SM3/SM4, LOR, MOPS, HBC) is
-  UNDEFINED and unadvertised. Candidates for later are in
+  (FP16, BF16, FHM, RDM, FCMA, LSE2, LRCPC2, SM3/SM4, LOR, MOPS, HBC) is
+  UNDEFINED and unadvertised; I8MM is implemented but off by default (above). Candidates for later are in
   [backlog.md](backlog.md) "Unadvertised extensions".
 - **Rule: an optional extension is advertised unless measured slower** (PLAN.md): one that loses stays implemented,
   unadvertised. `ID_AA64DFR0_EL1` advertises
@@ -94,8 +109,8 @@ match it step for step.
 - `ID_AA64ISAR0_EL1` (`interp::sys::isar0`): LSE, CRC32, and with the crypto feature AES = 2,
   SHA1 = 1, SHA2 = 1 (0x211120 with it on; the bare-metal `exceptions` test checks this value),
   with SHA512/SHA3 too SHA2 = 2 and SHA3 = 1 (0x1_0021_2120), RNDR = 1 with FEAT_RNG, TS = 2 with FlagM, DP = 1 with DotProd.
-  `ID_AA64ISAR1_EL1` (`interp::sys::isar1`): JSCVT = 1, LRCPC = 1, FRINTTS = 1 and SB = 1 with their
-  features; none of FHM, FCMA, BF16, I8MM (RDM is ISAR0's: none); no AFP.
+  `ID_AA64ISAR1_EL1` (`interp::sys::isar1`): JSCVT = 1, LRCPC = 1, FRINTTS = 1, SB = 1 and I8MM = 1 (off by default) with their
+  features; none of FHM, FCMA, BF16 (RDM is ISAR0's: none); no AFP.
 - `ID_AA64MMFR0_EL1`: 4K granule, 16-bit ASIDs, 40-bit PA. `ID_AA64MMFR2_EL1` (`interp::sys::mmfr2`):
   E0PD = 1 with FEAT_E0PD, else 0.
 - `CTR_EL0`: IDC = 1 (no data cache to clean), **DIC = 0**, so guests issue `IC IVAU` after

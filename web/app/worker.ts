@@ -29,7 +29,7 @@ import { AGENT_FILE, agentBinary, agentCredentials } from './guest-agent.ts';
 import { credentialFiles, MACHINES, readyWatcher, splitMsg, withParams, type Machine } from './machine.ts';
 import { Signal } from './memory.ts';
 import type { FromWorker, PowerState, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
-import { CPU_FEATURES, slots, type CpuFeature, type DeviceKind } from './shape.ts';
+import { CPU_DEFAULT, CPU_FEATURES, slots, type CpuFeature, type DeviceKind } from './shape.ts';
 import type { MachineName } from './machine.ts';
 
 const post = (m: FromWorker, transfer: Transferable[] = []) => self.postMessage(m, { transfer });
@@ -437,7 +437,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   ramMiB = m.ramMiB;
   // The transports: the machine's, or a snapshot's (`fromHeader`).
   let here = layout(m, machine);
-  let cpu = CPU_FEATURES.filter((f) => m.cpu?.[f] ?? true);
+  let cpu = CPU_FEATURES.filter((f) => m.cpu?.[f] ?? CPU_DEFAULT.includes(f));
   let restore: Restore | undefined;
   let specs: DeviceSpec[] | undefined;
   // RAM past what memory 0 holds goes to spill memories, NUMA nodes for the guest (docs/spill-memories.md): the
@@ -492,7 +492,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   session = { name: m.machine, ncpus, disk: m.disks[0] && !m.disks[0].own ? m.disks[0].name : null, kinds, cpu, about: m.about };
   const { ramSize, spill } = split;
   booting = bootVm(core, {
-    ramSize, spill, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, jitBytes: m.jitMiB ? m.jitMiB * 2 ** 20 : undefined, ncpus, parallel: true, realtime: true, compileWorker: query.get('jit') !== 'nocw' && !spiderMonkey, fma: query.get('fma') !== 'emul', exactCore: !query.has('growcore'), vcpuYieldMs: query.has('vyield') ? Number(query.get('vyield')) : undefined, rng: cpu.includes('rng'), e0pd: cpu.includes('e0pd'), sha3: cpu.includes('sha3'), jscvt: cpu.includes('jscvt'), rcpc: cpu.includes('rcpc'), sb: cpu.includes('sb'), flagm: cpu.includes('flagm'), dit: cpu.includes('dit'), frintts: cpu.includes('frintts'), dotprod: cpu.includes('dotprod'),
+    ramSize, spill, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, jitBytes: m.jitMiB ? m.jitMiB * 2 ** 20 : undefined, ncpus, parallel: true, realtime: true, compileWorker: query.get('jit') !== 'nocw' && !spiderMonkey, fma: query.get('fma') !== 'emul', exactCore: !query.has('growcore'), vcpuYieldMs: query.has('vyield') ? Number(query.get('vyield')) : undefined, rng: cpu.includes('rng'), e0pd: cpu.includes('e0pd'), sha3: cpu.includes('sha3'), jscvt: cpu.includes('jscvt'), rcpc: cpu.includes('rcpc'), sb: cpu.includes('sb'), flagm: cpu.includes('flagm'), dit: cpu.includes('dit'), frintts: cpu.includes('frintts'), dotprod: cpu.includes('dotprod'), i8mm: cpu.includes('i8mm'),
     framebuffer: kinds.includes('gpu') ? undefined : machine.framebuffer, serialIn: m.serial, restore, devices, usb: m.usb ? { port: m.usb } : undefined, onNotice: (message) => post({ type: 'notice', message }),
     // No idleLimitMs: an idle guest may sleep as long as it likes.
   });

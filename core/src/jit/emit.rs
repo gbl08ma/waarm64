@@ -1209,6 +1209,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             if !(cx.crypto && crypto::inline(c, i, op))
                 && !(cx.sha3 && crypto::inline_sha3(c, i, op))
                 && !(cx.features & crate::cpu::FEATURE_DOTPROD != 0 && simd::inline_dot(c, i, op))
+                && !(cx.features & crate::cpu::FEATURE_I8MM != 0 && simd::inline_i8mm(c, i, op))
                 && !simd::inline(c, i, op)
                 && !simd_lane::inline(c, i, op)
                 && !float::inline(c, cx, i, op, k)
@@ -4678,6 +4679,51 @@ mod tests {
         let mut load = vec![0x28, 2];
         crate::jit::wasm::uleb(&mut load, CRC_TABLES[1].as_ptr() as usize as u32 as u64);
         assert!(has(&b, &load));
+    }
+
+    #[test]
+    fn i8mm() {
+        // usdot v0.4s, v1.16b, v2.16b: Vn widened unsigned, Vm signed, i16x8.mul,
+        // then SDOT's shuffles and signed extadd_pairwise.
+        let b = emit(0x4e829c20, 0).unwrap();
+        assert!(has(&b, &[0xfd, 0x89, 1]) && has(&b, &[0xfd, 0x8a, 1]));
+        assert!(has(&b, &[0xfd, 0x87, 1]) && has(&b, &[0xfd, 0x88, 1]));
+        assert!(has(&b, &[0xfd, 0x95, 1]) && has(&b, &[0xfd, 0x7e]));
+        assert!(has(&b, &[0xfd, 0x0d, 0, 1, 2, 3, 8, 9, 10, 11]));
+        // sudot by element: Vm's lane splat; the 64-bit form clears the top.
+        let b = emit(0x0f02f820, 0).unwrap();
+        assert!(has(&b, &[0xfd, 0x0d, 8, 9, 10, 11, 8, 9, 10, 11]));
+        assert!(!has(&b, &[0xfd, 0x8a, 1]) && has(&b, &[0x42, 0, 0xfd, 0x1e, 1, 0x21]));
+        // smmla: extmuls with Vm and its halves swapped; ummla unsigned ones,
+        // summed unsigned; usmmla widens both; all reduce in two ADDP levels.
+        let b = emit(0x4e82a420, 0).unwrap();
+        assert!(has(&b, &[0xfd, 0x9c, 1]) && has(&b, &[0xfd, 0x9d, 1]));
+        assert!(has(
+            &b,
+            &[0xfd, 0x0d, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3]
+        ));
+        assert!(has(
+            &b,
+            &[0xfd, 0x0d, 0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 18, 19]
+        ));
+        assert!(has(
+            &b,
+            &[0xfd, 0x0d, 0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19]
+        ));
+        let b = emit(0x6e82a420, 0).unwrap();
+        assert!(has(&b, &[0xfd, 0x9e, 1]) && has(&b, &[0xfd, 0x7f]) && !has(&b, &[0xfd, 0x7e]));
+        let b = emit(0x4e82ac20, 0).unwrap();
+        assert!(
+            has(&b, &[0xfd, 0x89, 1]) && has(&b, &[0xfd, 0x88, 1]) && has(&b, &[0xfd, 0x95, 1])
+        );
+        // Without the feature: the helper.
+        let off = Ctx {
+            features: crate::cpu::FEATURES & !crate::cpu::FEATURE_I8MM,
+            ..FLAT
+        };
+        for i in [0x4e829c20, 0x0f02f820, 0x4e82a420, 0x6e82a420, 0x4e82ac20] {
+            assert_eq!(emit_in(i, 0, &off), None);
+        }
     }
 
     #[test]

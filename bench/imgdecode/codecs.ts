@@ -2,18 +2,23 @@
 // the Arch desktop disk on 4 vCPUs, a root shell, codecs.sh on the second disk (codecs-disk.sh), alternating arms, a
 // boot per arm and round. Writes <out>/<round>-<arm>.txt with the guest's lines and prints the medians by arm.
 //   timeout 3000 node bench/imgdecode/codecs.ts <feature> <mode: codecs|js> [rounds, 3] [repeats in a boot, 3]
-// Env: OUT (bench/boot/results/<feature>).
+// Env: OUT (bench/boot/results/<feature>), FIRST (the first round's number, 1).
+// On the Mac host: SCRIPT=../imgdecode/codecs.ts ROUNDS=3 MAC_TIMEOUT=2400 bench/gpu/sway-mac.sh <feature>,<mode> target/arch/desktop.qcow2 <name>
+// (sway-mac.sh's arguments: the mode, the image and its output directory; repeats 3).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { openSession } from '../gpu/guest-session.ts';
 
-const [feature, mode, rounds = '3', repeats = '3'] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const mac = args[1]?.endsWith('.qcow2'); // sway-mac.sh's <feature>,<mode> <image> <out>
+const [feature, mode, rounds = '3', repeats = '3'] = mac ? [...args[0].split(','), process.env.ROUNDS ?? '3'] : args;
 if (!feature || !mode) throw new Error('usage: codecs.ts <feature> <codecs|js> [rounds] [repeats]');
-const out = process.env.OUT ?? `bench/boot/results/${feature}`;
+const out = mac ? args[2] : process.env.OUT ?? `bench/boot/results/${feature}`;
+const image = mac ? args[1] : 'target/arch/desktop.qcow2';
 mkdirSync(out, { recursive: true });
 const first = Number(process.env.FIRST ?? 1);
 
 async function one(round: number, on: boolean): Promise<string> {
-  const s = await openSession({ gpu: 'virgl', image: 'target/arch/desktop.qcow2', out: `target/imgdecode/out`, ncpus: 4, ramMiB: 3072, disk2: '/target/imgdecode/codecs.ext4', query: on ? undefined : `${feature}=0` });
+  const s = await openSession({ gpu: 'virgl', image, out: `target/imgdecode/out`, ncpus: 4, ramMiB: 3072, disk2: '/target/imgdecode/codecs.ext4', query: `${feature}=${on ? 1 : 0}` }); // =1 for one that's off by default (i8mm)
   await s.rootShell();
   await s.run('mkdir -p /mnt/i; mount -o ro /dev/vdb /mnt/i; systemctl stop greetd 2>/dev/null; dmesg -n 1');
   await s.onSerial(`sh /mnt/i/codecs.sh /mnt/i ${mode} ${repeats} > /tmp/out.txt 2>&1; echo CODECS-""DONE\n`);

@@ -154,6 +154,122 @@ pub(super) fn inline_dot(c: &mut Func, i: u32, op: Op) -> bool {
     true
 }
 
+/// FEAT_I8MM's USDOT (vector and by element), SUDOT (by element), SMMLA,
+/// UMMLA and USMMLA; false for anything else. Bytes of mixed signs have no
+/// `extmul`: each side is widened to 16 bits by its own sign and multiplied,
+/// exactly (a product of an unsigned and a signed byte fits in 16 signed
+/// bits). USDOT and SUDOT then sum as SDOT does; a matrix product sums each of
+/// its four row-by-column products of eight bytes across, Vd added last.
+pub(super) fn inline_i8mm(c: &mut Func, i: u32, op: Op) -> bool {
+    let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+    match op {
+        Op::USDOT_vec | Op::USDOT_element | Op::SUDOT_element => {
+            let by_element = op != Op::USDOT_vec;
+            let q = bit(i, 30);
+            // [Vn's, Vm's] sign: unsigned (1) or signed (0).
+            let (un, um) = if op == Op::SUDOT_element {
+                (0, 1)
+            } else {
+                (1, 0)
+            };
+            if by_element {
+                let index = (bit(i, 11) as u32) << 1 | bit(i, 21) as u32;
+                vreg(c, rm);
+                vreg(c, rm);
+                c.shuffle(gather(4, |_| index));
+                c.local_set(VT[3]);
+            }
+            for high in 0..=q as usize {
+                vreg(c, rn);
+                c.simd(EXTEND[un][high][0]);
+                if by_element {
+                    c.local_get(VT[3]);
+                } else {
+                    vreg(c, rm);
+                }
+                c.simd(EXTEND[um][high][0]);
+                c.simd(MUL[1]).local_set(VT[high]);
+            }
+            let (lo, hi) = (VT[0], VT[q as usize]);
+            put(c, rd, q, |c| {
+                for part in 0..2 {
+                    c.local_get(lo).local_get(hi);
+                    c.shuffle(gather(4, |e| 2 * e + part));
+                    c.simd(EXTADD_PAIRWISE[1][0]);
+                }
+                c.simd(ADD[2]);
+                vreg(c, rd);
+                c.simd(ADD[2]);
+            });
+            true
+        }
+        Op::SMMLA_vec | Op::UMMLA_vec | Op::USMMLA_vec => {
+            // P[r][c], Vn's row r by Vm's column c, eight 16-bit products, in
+            // VT[2r + c]. With one sign on both sides they're extmuls of Vn
+            // with Vm and with Vm's halves swapped (VTMP); UMMLA's products
+            // are unsigned 16-bit.
+            let u = (op == Op::UMMLA_vec) as usize;
+            if op == Op::USMMLA_vec {
+                // Vm's columns, then each row of Vn by both (a product
+                // replaces the column it's the last to use).
+                for col in 0..2 {
+                    vreg(c, rm);
+                    c.simd(EXTEND[0][col][0]).local_set(VT[2 + col]);
+                }
+                for row in 0..2 {
+                    vreg(c, rn);
+                    c.simd(EXTEND[1][row][0]).local_set(VTMP);
+                    for col in 0..2 {
+                        c.local_get(VTMP).local_get(VT[2 + col]).simd(MUL[1]);
+                        c.local_set(VT[2 * row + col]);
+                    }
+                }
+            } else {
+                vreg(c, rm);
+                vreg(c, rm);
+                c.shuffle(gather(8, |e| e ^ 1)).local_set(VTMP);
+                for row in 0..2 {
+                    vreg(c, rn);
+                    vreg(c, rm);
+                    c.simd(EXTMUL[u][row][0]).local_set(VT[3 * row]);
+                    vreg(c, rn);
+                    c.local_get(VTMP);
+                    c.simd(EXTMUL[u][row][0]).local_set(VT[1 + row]);
+                }
+            }
+            // Pairs to 32 bits, then the four lanes of each product summed
+            // across two levels of shuffles, as an ADDP of ADDPs.
+            for p in VT {
+                c.local_get(p).simd(EXTADD_PAIRWISE[1][u]).local_set(p);
+            }
+            let addp = |c: &mut Func, x: u32, y: u32, pick: [[u32; 4]; 2]| {
+                for half in pick {
+                    c.local_get(x)
+                        .local_get(y)
+                        .shuffle(gather(4, |e| half[e as usize]));
+                }
+                c.simd(ADD[2]);
+            };
+            for pair in 0..2 {
+                addp(
+                    c,
+                    VT[2 * pair],
+                    VT[2 * pair + 1],
+                    [[0, 1, 4, 5], [2, 3, 6, 7]],
+                );
+                c.local_set(VT[pair]);
+            }
+            put(c, rd, true, |c| {
+                addp(c, VT[0], VT[1], [[0, 2, 4, 6], [1, 3, 5, 7]]);
+                vreg(c, rd);
+                c.simd(ADD[2]);
+            });
+            true
+        }
+        _ => false,
+    }
+}
+
 /// Pushes Vn.
 fn vreg(c: &mut Func, n: u32) {
     c.vget(n);

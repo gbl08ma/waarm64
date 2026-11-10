@@ -673,7 +673,22 @@ fn by_element(c: &mut Cpu, i: u32) -> R {
 /// feature and the size): each 32-bit lane of Vd adds the four products of the
 /// bytes it covers in Vn and in Vm, or in Vm's lane `index`, modulo 2^32.
 pub(super) fn dot(c: &mut Cpu, i: u32) -> R {
-    let (rd, rn, rm, q, u, _, _) = fields(i);
+    let u = bit(i, 29);
+    dot_signs(c, i, u, u)
+}
+
+/// FEAT_I8MM's USDOT (vector and by element: Vn's bytes unsigned, Vm's signed)
+/// and SUDOT (by element: Vn's signed, Vm's unsigned; size 0); the caller
+/// checks the feature (the decoder's patterns fix the rest).
+pub(super) fn usdot(c: &mut Cpu, i: u32) -> R {
+    let sudot = bit(i, 24) && bits(i, 23, 22) == 0;
+    dot_signs(c, i, !sudot, sudot)
+}
+
+/// The four-product dot of each 32-bit lane, with Vn's bytes unsigned if
+/// `un` and Vm's if `um`.
+fn dot_signs(c: &mut Cpu, i: u32, un: bool, um: bool) -> R {
+    let (rd, rn, rm, q, _, _, _) = fields(i);
     let by_element = bit(i, 24);
     let index = (bit(i, 11) as u32) << 1 | bit(i, 21) as u32;
     let (a, b, d) = (c.v[rn], c.v[rm], c.v[rd]);
@@ -681,12 +696,33 @@ pub(super) fn dot(c: &mut Cpu, i: u32) -> R {
     for e in 0..lanes(q, 32, false) {
         let m = if by_element { index } else { e };
         let sum = (0..4).fold(elem(d, e, 32) as i128, |acc, k| {
-            let x = int(elem(a, 4 * e + k, 8), 8, u);
-            acc + x * int(elem(b, 4 * m + k, 8), 8, u)
+            let x = int(elem(a, 4 * e + k, 8), 8, un);
+            acc + x * int(elem(b, 4 * m + k, 8), 8, um)
         });
         o.set(e, 32, sum as u64 & ones(32));
     }
     write(c, rd, o, q);
+    Ok(())
+}
+
+/// FEAT_I8MM's SMMLA, UMMLA and USMMLA (the caller checks the feature): Vn
+/// holds a 2×8 matrix of bytes by rows, Vm a 8×2 one by columns, and Vd's 2×2
+/// 32-bit lanes (row-major) add their product, modulo 2^32. Vn's bytes are
+/// unsigned for UMMLA and USMMLA, Vm's for UMMLA.
+pub(super) fn mmla(c: &mut Cpu, i: u32) -> R {
+    let (rd, rn, rm, _, u, _, _) = fields(i);
+    let (un, um) = (u || bit(i, 11), u);
+    let (a, b, d) = (c.v[rn], c.v[rm], c.v[rd]);
+    let mut o = Out::new();
+    for e in 0..4 {
+        let (row, col) = (e / 2, e % 2);
+        let sum = (0..8).fold(elem(d, e, 32) as i128, |acc, k| {
+            let x = int(elem(a, 8 * row + k, 8), 8, un);
+            acc + x * int(elem(b, 8 * col + k, 8), 8, um)
+        });
+        o.set(e, 32, sum as u64 & ones(32));
+    }
+    write(c, rd, o, true);
     Ok(())
 }
 

@@ -1,0 +1,29 @@
+{
+ "prep": {},
+ "dav1d-av1": {
+  "USDOT_element": 5452217,
+  "USMMLA_vec": 8578954
+ },
+ "libvpx-vp9-dec": {
+  "USDOT_element": 61861919
+ },
+ "ffvp9-dec": {},
+ "h264-dec": {},
+ "hevc-dec": {
+  "USDOT_vec": 19488551
+ },
+ "x264-veryfast": {
+  "USDOT_element": 11520599
+ },
+ "x265-fast": {
+  "USDOT_element": 45555855,
+  "USMMLA_vec": 21092182
+ },
+ "libvpx-vp9-enc": {
+  "USDOT_element": 2061395
+ },
+ "libaom-enc": {},
+ "q8dot": {
+  "SMMLA_vec": 1010834
+ }
+}

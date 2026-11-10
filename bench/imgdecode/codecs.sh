@@ -1,6 +1,7 @@
 #!/bin/sh
-# What FEAT_DotProd and FEAT_JSCVT change for programs that pick their paths from the hwcaps (REPORT in
-# bench/boot/REPORT.md "FEAT_DotProd and FEAT_JSCVT, measured"), run the same in the Arch guest with the feature on and off (codecs.ts).
+# What FEAT_DotProd, FEAT_JSCVT and FEAT_I8MM change for programs that pick their paths from the hwcaps (REPORT in
+# bench/boot/REPORT.md "FEAT_DotProd and FEAT_JSCVT, measured", "PERF loop 5: FEAT_I8MM"), run the same in the Arch
+# guest with the feature on and off (codecs.ts).
 #   codecs.sh <dir> codecs [R]    each codec one-threaded, R + 1 times, the first printed as cold; `CODEC <name> <us>`
 #   codecs.sh <dir> js [R]        js.html in Chromium and Firefox, R runs; `JS <browser> <kernel> <ms>`
 D=${1:?usage: codecs.sh <dir> codecs|js [R]}
@@ -42,14 +43,18 @@ E
 fi
 ffmpeg -v error -threads 1 -i "$D/sintel.webm" -frames:v 96 -pix_fmt yuv420p -y /tmp/s.y4m
 x264 --threads 1 --preset veryfast -o /dev/null /tmp/s.y4m 2>&1 | grep -m1 'using cpu capabilities'
+X265="x265 --pools 1 --frame-threads 1 --no-wpp --lookahead-slices 0 --preset fast --frames 24"
+$X265 --log-level info -o /dev/null /tmp/s.y4m 2>&1 | grep -m1 'capabilities'
 "$D/q8dot" 2000 | sed 's/^/COLD /'
 timed dav1d-av1 ffmpeg -v error -threads 1 -c:v libdav1d -i "$D/sintel-av1.webm" -frames:v 200 -f null -
 timed libvpx-vp9-dec vpxdec --threads=1 --i420 --limit=200 -o /dev/null "$D/sintel.webm"
 timed ffvp9-dec ffmpeg -v error -threads 1 -c:v vp9 -i "$D/sintel.webm" -frames:v 200 -f null -
 timed h264-dec ffmpeg -v error -threads 1 -c:v h264 -i "$D/sintel_trailer-480p.mp4" -frames:v 300 -f null -
+timed hevc-dec ffmpeg -v error -threads 1 -c:v hevc -i "$D/sintel-hevc.mp4" -frames:v 288 -f null -
 timed x264-veryfast x264 --threads 1 --preset veryfast --quiet -o /dev/null /tmp/s.y4m
 timed x264-medium x264 --threads 1 --preset medium --quiet --frames 48 -o /dev/null /tmp/s.y4m
 timed libvpx-vp9-enc vpxenc --codec=vp9 --rt --cpu-used=8 --threads=1 --limit=48 -o /dev/null /tmp/s.y4m
+timed x265-fast $X265 --log-level none -o /dev/null /tmp/s.y4m
 timed libaom-enc aomenc --rt --cpu-used=9 --threads=1 --limit=12 --ivf -o /dev/null /tmp/s.y4m
 timed djpeg sh -c "for i in 0 1 2 3 4 5 6 7; do djpeg -outfile /dev/null $D/\$i.jpg; done"
 k=0

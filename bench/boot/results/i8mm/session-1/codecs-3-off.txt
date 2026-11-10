@@ -1,0 +1,59 @@
+Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics cpuid jscvt lrcpc sha3 asimddp sha512 dit flagm sb flagm2 frint rng
+x264 [info]: using cpu capabilities: ARMv8 NEON DotProd
+x265 [info]: using cpu capabilities: NEON Neon_DotProd
+COLD Q8DOT sdot 5.039 check -83128000
+COLD Q8DOT q8mm 7.383 check -656009408 sdot
+COLD dav1d-av1 2057717
+CODEC dav1d-av1 1356152
+CODEC dav1d-av1 1393494
+CODEC dav1d-av1 1370395
+COLD libvpx-vp9-dec 1179935
+CODEC libvpx-vp9-dec 739385
+CODEC libvpx-vp9-dec 698830
+CODEC libvpx-vp9-dec 648302
+COLD ffvp9-dec 981067
+CODEC ffvp9-dec 879824
+CODEC ffvp9-dec 864490
+CODEC ffvp9-dec 854502
+COLD h264-dec 2157250
+CODEC h264-dec 1703594
+CODEC h264-dec 1692244
+CODEC h264-dec 1632039
+COLD hevc-dec 2691914
+CODEC hevc-dec 1605740
+CODEC hevc-dec 1549250
+CODEC hevc-dec 1587705
+COLD x264-veryfast 3783689
+CODEC x264-veryfast 3222875
+CODEC x264-veryfast 2951564
+CODEC x264-veryfast 3477039
+COLD x264-medium 2768305
+CODEC x264-medium 2581429
+CODEC x264-medium 2568609
+CODEC x264-medium 2664439
+COLD libvpx-vp9-enc 1326919
+CODEC libvpx-vp9-enc 831834
+CODEC libvpx-vp9-enc 774452
+CODEC libvpx-vp9-enc 776559
+COLD x265-fast 3780485
+CODEC x265-fast 2527872
+CODEC x265-fast 2457104
+CODEC x265-fast 2451692
+COLD libaom-enc 758635
+CODEC libaom-enc 301235
+CODEC libaom-enc 262862
+CODEC libaom-enc 236132
+COLD djpeg 203494
+CODEC djpeg 135452
+CODEC djpeg 119344
+CODEC djpeg 121259
+Q8DOT sdot 2.097 check -1662560000
+Q8DOT q8mm 3.326 check -235286272 sdot
+TJ Decompress    --> Frame rate:         120.631588 fps
+Q8DOT sdot 1.956 check -1662560000
+Q8DOT q8mm 3.229 check -235286272 sdot
+TJ Decompress    --> Frame rate:         121.967557 fps
+Q8DOT sdot 1.975 check -1662560000
+Q8DOT q8mm 3.227 check -235286272 sdot
+TJ Decompress    --> Frame rate:         121.366138 fps
+CODECS-END

@@ -803,6 +803,14 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   gathering (an ADDP in shuffles, 8 instructions) 0.51 / 0.51; `i32x4.dot_i16x8_s` on even and odd bytes 0.88 /
   0.89; two SADALPs onto Vd 1.45 / 0.38, whose accumulator chain is what sum loops hit. The ADDP order ran x264
   medium 6.8% slower than its NEON path; this one is level with it (bench/boot/REPORT.md "FEAT_DotProd and FEAT_JSCVT, measured").
+- **USDOT, SUDOT, SMMLA, UMMLA and USMMLA** (`simd::inline_i8mm`, FEAT_I8MM): a product of bytes of mixed signs
+  has no `extmul`, so USDOT and SUDOT widen each side by its own sign (four `extend`s), multiply 16-bit lanes
+  exactly (an unsigned by a signed byte fits) and then sum as SDOT does (two shuffles, two signed `extadd_pairwise`,
+  Vd last): about 12 host instructions. The matrix forms make the four row-by-column products of eight bytes
+  (SMMLA and UMMLA: four `extmul`s of Vn with Vm and with Vm's halves swapped; USMMLA: widened and multiplied),
+  pair each to 32 bits (`extadd_pairwise`, unsigned for UMMLA, whose products are unsigned 16-bit) and sum each
+  across in two levels of shuffles (an ADDP of ADDPs), Vd added last: about 19 and 22 instructions against
+  SMMLA's one. Measured in bench/boot/REPORT.md "PERF loop 5: FEAT_I8MM".
 - **NEON lane by lane** (`emit/simd_lane.rs`): what wasm has no lane op for, in i64 arithmetic per
   lane after the interpreter's i128 formulas: the saturating adds and subtracts on 32- and 64-bit
   lanes, SSHL/USHL/SRSHL/URSHL/SQSHL/UQSHL/SQRSHL/UQRSHL by register, the saturating shifts by

@@ -920,9 +920,9 @@ impl<'a> Boot<'a> {
             max_steps: 20_000_000_000,
             echo: false,
             fb: (0, 0),
-            // Every optional feature (the crypto extensions, FEAT_RNG, FEAT_E0PD, SHA512/SHA3,
-            // JSCVT, LRCPC, SB, FlagM, DIT, FRINTTS), as `bootVm` gives them.
-            features: webpc_core::cpu::FEATURES,
+            // The default features (the crypto extensions, FEAT_RNG, FEAT_E0PD, SHA512/SHA3,
+            // JSCVT, LRCPC, SB, FlagM, DIT, FRINTTS, DotProd; not I8MM), as `bootVm` gives them.
+            features: webpc_core::cpu::DEFAULT_FEATURES,
             ncpus: 1,
             parallel: false,
             input: None,

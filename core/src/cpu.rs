@@ -138,6 +138,10 @@ pub const FEATURE_FRINTTS: u64 = 512;
 /// FEAT_DotProd (ABI 60): `SDOT` and `UDOT`, vector and by element, advertised
 /// in ID_AA64ISAR0_EL1.
 pub const FEATURE_DOTPROD: u64 = 1024;
+/// FEAT_I8MM (ABI 61): `SMMLA`, `UMMLA`, `USMMLA`, `USDOT` (vector and by
+/// element) and `SUDOT` (by element), advertised in ID_AA64ISAR1_EL1 when a
+/// VM is given it: off by default ([`DEFAULT_FEATURES`]).
+pub const FEATURE_I8MM: u64 = 2048;
 /// Every feature bit the core knows.
 pub const FEATURES: u64 = FEATURE_CRYPTO
     | FEATURE_RNG
@@ -149,7 +153,12 @@ pub const FEATURES: u64 = FEATURE_CRYPTO
     | FEATURE_FLAGM
     | FEATURE_DIT
     | FEATURE_FRINTTS
-    | FEATURE_DOTPROD;
+    | FEATURE_DOTPROD
+    | FEATURE_I8MM;
+/// The features a VM gets unless told otherwise (`bootVm`, the native runners,
+/// the page): all but FEAT_I8MM, implemented but measured slower than the
+/// DotProd paths guests take without it (docs/cpu.md, PLAN.md's rule).
+pub const DEFAULT_FEATURES: u64 = FEATURES & !FEATURE_I8MM;
 
 /// Whether a vCPU with `features` has FEAT_SHA512 and FEAT_SHA3.
 #[inline]

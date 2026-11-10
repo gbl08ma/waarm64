@@ -3618,3 +3618,60 @@ and a compare before each cold tail's probe) cost ~2%; binding them cost ~3% mor
 was ~1.4% of the busy vCPU time (4 s over 4 × 257 s × 0.27). The rest is unexplained (V8 keeps a function's tier-up
 budget per instance: a module instantiated again may stay in Liftoff longer; not measured). Not kept: both halves
 lose and the bound tails won nothing back (docs/jit.md "Tried and not kept").
+
+## PERF loop 5: FEAT_I8MM (2026-11-10)
+
+USDOT (vector and by element), SUDOT, SMMLA, UMMLA and USMMLA in both tiers, inline in the JIT (docs/jit.md), as
+`VmConfig.features` bit 11 (ABI 61). The Mac host (M4, macOS 26.6.2), Chrome for Testing 157.0.8103.50 headless,
+through `bench/gpu/sway-mac.sh` (`SCRIPT=../imgdecode/codecs.ts`); the desktop guest on 4 vCPUs, `?i8mm=0` against on,
+alternated, a boot per arm and round, each round the median of three runs in a boot. Raw: `results/i8mm/`.
+
+**Who runs it** (the desktop guest's Linux shows `i8mm`; x264 and x265 say `I8MM` in their capabilities). Words in
+executable segments: x265 7,900 (5,336 USMMLA), libaom 1,600, Chromium 1,200 (SMMLA, USMMLA, USDOT), libvpx 410,
+libavcodec 460, SVT-AV1 530, dav1d 206, libgkcodecs 195, libxul 28. Executed through the JIT (a diagnostic build with
+the forms as helper calls, vCPU 0's helper report, each codec under `taskset -c 0`; `results/i8mm/counts.json`):
+
+| Workload | USDOT | USDOT by element | USMMLA | SMMLA |
+|---|---|---|---|---|
+| dav1d, 200 frames of AV1 | | 5.5 M | 8.6 M | |
+| libvpx, 200 frames of VP9 decoded | | 62 M | | |
+| FFmpeg, 288 frames of HEVC | 19.5 M | | | |
+| x264 veryfast, 96 frames | | 11.5 M | | |
+| x265 fast, 24 frames | | 46 M | 21 M | |
+| libvpx, 48 frames of VP9 encoded | | 2.1 M | | |
+| q8dot's int8 tile | | | | 1.0 M |
+
+None in FFmpeg's VP9 and H.264, libaom's real-time encoder or djpeg (the controls).
+
+**On/off of time** (lower is better), two sessions of three rounds; ms, each round's median, then the median of the
+six (q8dot: ns per 16 bytes):
+
+| Workload | Off | On | On/off |
+|---|---|---|---|
+| dav1d, AV1 decode | 1292 · 1357 · 1370 · 1279 · 1320 · 1269; **1320** | 1412 · 1367 · 1320 · 1256 · 1281 · 1279; **1320** | 1.001 |
+| libvpx, VP9 decode | 635 · 639 · 699 · 625 · 739 · 657; **657** | 676 · 667 · 634 · 620 · 639 · 680; **667** | 1.014 |
+| FFmpeg, HEVC decode | 1503 · 1410 · 1588 · 1440 · 1430 · 1413; **1440** | 1535 · 1560 · 1500 · 1423 · 1444 · 1440; **1500** | 1.042 |
+| x264 veryfast | 2956 · 2890 · 3223 · 2747 · 2822 · 2760; **2890** | 2902 · 3013 · 2737 · 2708 · 2759 · 3170; **2902** | 1.004 |
+| x264 medium | 2598 · 2642 · 2581 · 2651 · 2554 · 2593; **2598** | 2612 · 2631 · 2636 · 2567 · 2640 · 2537; **2631** | 1.012 |
+| x265 fast | 2365 · 2454 · 2457 · 2395 · 2336 · 2378; **2395** | 2425 · 2476 · 2428 · 2372 · 2395 · 2381; **2425** | 1.013 |
+| libvpx, VP9 encode | 812 · 795 · 777 · 774 · 765 · 771; **777** | 801 · 839 · 844 · 749 · 734 · 775; **801** | 1.032 |
+| ffvp9 decode (control) | 780 · 784 · 864 · 744 · 761 · 764; **780** | 794 · 825 · 781 · 757 · 761 · 741; **781** | 1.002 |
+| h264 decode (control) | 1596 · 1474 · 1692 · 1426 · 1391 · 1403; **1474** | 1524 · 1531 · 1476 · 1394 · 1428 · 1426; **1476** | 1.001 |
+| libaom encode (control) | 247 · 252 · 263 · 250 · 241 · 247; **250** | 242 · 248 · 237 · 296 · 241 · 243; **243** | 0.973 |
+| djpeg (control) | 121 · 118 · 121 · 116 · 118 · 115; **118** | 118 · 126 · 121 · 116 · 119 · 111; **119** | 1.008 |
+| q8dot, one SDOT dot (control) | 1.97 · 1.96 · 1.98 · 1.95 · 1.95 · 1.93; **1.96** | 1.98 · 2.05 · 2.00 · 1.96 · 1.97 · 1.95; **1.98** | 1.012 |
+| q8dot, 2×2 int8 tile | 3.21 · 3.18 · 3.23 · 3.17 · 3.15 · 3.16; **3.18** | 3.78 · 3.81 · 3.84 · 3.71 · 3.73 · 3.79; **3.79** | **1.192** |
+
+Every codec's rounds overlap, and the sessions disagree in sign (libvpx's decode 1.044 then 0.972, its encode 1.055
+then 0.972); the controls move as much. **The int8 tile is 19% slower, rounds apart in both sessions**: ggml's q8_0 dot
+with I8MM (two rows at once, their 64-bit halves zipped into SMMLA) against four SDOTs. In wasm a matrix product is
+about 19 host instructions (SMMLA, UMMLA: four `extmul`s of Vn with Vm and with Vm's halves swapped, four
+`extadd_pairwise`, six shuffles and three adds to sum each output across) or 22 (USMMLA widens both sides first),
+SDOT 8, USDOT 12 (no mixed-sign `extmul`), so two SMMLAs and their four zips (42) lose to four SDOTs (32): a perfect
+16-instruction SMMLA would still lose. The codecs' DotProd paths pay for their bias trick about what USDOT costs
+over SDOT, hence the tie. On the M4 itself (`q8dot` natively in the dev VM) the tile is slower with SMMLA too: 1.32
+against 0.65 ns.
+
+**I8MM stays implemented, off by default** (the rule, PLAN.md: a loss stays unadvertised): `cpu::DEFAULT_FEATURES`,
+`bootVm`'s `i8mm: true`, the page's `?i8mm=1`. Nothing a guest sees by default changes: steps and the shape's hash
+stay. Memory: none; the core's wasm grows by `inline_i8mm`'s 7.1 KB.
