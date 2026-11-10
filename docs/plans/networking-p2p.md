@@ -67,9 +67,7 @@ key) and the Ethernet gateway ([devices.md](../devices.md) "net").
 - **No room owner, no membership list, no directory in the protocol.** Anyone who knows a room's ID
   can join. A room is as private as its ID is hard to guess: `gabriel-lan` is effectively public, and
   the page says so. A node is reachable by whoever knows its address (80 bits of its key: not
-  guessable) and its room, and by nobody else. A list of who's here, where a room wants one, is a
-  service inside the network that members choose to sign up with (§3, "Who's here"), so being listed
-  is each node's choice.
+  guessable) and its room, and by nobody else. A list of who's here isn't part of this plan (§8).
 - Dependencies: Nostr events need BIP-340 Schnorr signatures on secp256k1 (RustCrypto's `k256`,
   MIT/Apache-2.0; **OK'd by the user, 2026-10-18**), with a THIRD_PARTY.json row when it lands. The
   signing key is random per session, never derived from the node key, so a relay can't link a node's
@@ -111,13 +109,9 @@ key.
 - **The relays' terms** (rate limits, proof of work as in NIP-13, payment, which kinds they accept)
   decide how far public relays carry a room; R3 checks. A serious room runs its own relay, as it
   would its own derper.
-- **Who's here** isn't the protocol's. A room that wants a list runs it as a service on a member
-  with a well-known key, so a well-known address: the room's link carries that key beside the room's
-  ID (the directory's key can't come from the ID, or every member would hold its private key).
-  Members that want to be listed sign up with it over the room itself, and the others don't; it can
-  carry display names (marked unverified) and what each member serves. The first form is a guest's
-  own: any web page on a member, browsed at its address, with nothing in webpc. A list on the page
-  itself (a small protocol the module speaks to the directory) waits until rooms are used (§8).
+- **Who's here** isn't this plan's: a node's address reaches others the way the user gives it out
+  (§5, "DNS": the name to copy). A room can still run a list as an application in a guest, with
+  nothing in webpc; a list on the page is left for later (§8).
 
 ## 4. Connecting to a peer
 
@@ -150,11 +144,11 @@ worker as it creates it; packets never touch the main thread.
   answers AAAA for it by computing the address: no lookup, nothing to trust. Anything else is
   NXDOMAIN until there's an exit (R4). The page shows a node's name and lets the user copy it.
 - **Incoming connections:** on by default (the user, 2026-11-10): reaching a node already takes the
-  room's secret and its address, which nothing lists unless the node signs up with a directory (§3).
+  room's secret and its address, which nothing lists: only those the user gives it to have it.
   Turned off, members can't open connections to the guest and lookups for it go unanswered; the guest's
   own flows still get their replies (a flow table, as the Tailscale client keeps for UDP). The page
-  says, where a node signs up with a directory, that the room can then reach it, and that what the
-  guest serves (an SSH server, say) is then open to the room.
+  says, beside the name to copy, that whoever has it can reach what the guest serves (an SSH server,
+  say).
 - **Relay only** (§1): the node's packets all go through DERP; its address reaches no peer.
 
 ## 6. Numbers so far
@@ -196,7 +190,7 @@ client was built.
   (stale and replayed lookups, the hour's turn); two pages joining a room by its ID alone and pinging
   by name.
 - **R2 — The page.** The Network wizard gets "Join a room" (the room ID; relays and derper under
-  advanced settings, and a directory's key if the room has one); one's own name to copy; the
+  advanced settings); one's own name to copy; the
   incoming switch; the relay-only switch; who sees one's IP address (§1), beside the room's privacy
   note; the kept identity and "new identity". Two Debian guests in one
   Chromium reach each other by name in `scripts/ci-net.sh` (frontend.md "Network" grows a section).
@@ -231,8 +225,10 @@ client was built.
   would need state nobody keeps.
 - **Spam** in public rooms: any member can flood lookups (proof of work on them, NIP-13; relays'
   own rate limits).
-- **Who's here on the page**: a small protocol between the module and a room's directory service
-  (§3), so the page lists members without a browser in the guest.
+- **Who's here**: a list of a room's members, each choosing whether to be on it. One shape: a
+  service on a member with a well-known key (so a well-known address), carried in the room's link
+  beside the ID (it can't come from the ID, or every member would hold its private key); members
+  sign up over the room itself, and the page lists them through a small protocol the module speaks.
 - Firefox and Safari: whether they have `RTCPeerConnection` in workers or transfer channels as
   Chromium does is unchecked.
 
