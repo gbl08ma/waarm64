@@ -1,0 +1,276 @@
+{
+  "date": "2026-11-10T20:53:06.011Z",
+  "host": "linux x64",
+  "cpus": 4,
+  "node": "v26.13.0",
+  "members": 1000,
+  "processes": 4,
+  "rate": 100,
+  "results": {
+    "join": {
+      "joinSeconds": 10.6,
+      "subscribed": 1000,
+      "failed": 0,
+      "firstReqMs": {
+        "n": 1000,
+        "p50": 4,
+        "p90": 8,
+        "p99": 25,
+        "max": 86
+      },
+      "runningMs": {
+        "n": 1000,
+        "p50": 6.5,
+        "p90": 11.4,
+        "p99": 35.9,
+        "max": 131.2
+      },
+      "firstReqMsFirstTenth": {
+        "n": 100,
+        "p50": 6,
+        "p90": 25,
+        "p99": 86,
+        "max": 86
+      },
+      "firstReqMsLastTenth": {
+        "n": 100,
+        "p50": 4,
+        "p90": 7,
+        "p99": 21,
+        "max": 21
+      },
+      "seconds": 9.7,
+      "relayPerSecond": {
+        "reqs": 97.3,
+        "closes": 0,
+        "eventsIn": 0,
+        "forwards": 0,
+        "kbIn": 16.1,
+        "kbOut": 2.3
+      },
+      "relayPeakPerSecond": {
+        "reqs": 100,
+        "eventsIn": 0
+      },
+      "cores": {
+        "relay": 0.1,
+        "derper": 0.2,
+        "workers": 1.2
+      },
+      "rssMB": {
+        "relay": 90.2,
+        "derper": 78.8,
+        "workers": 1067.5
+      }
+    },
+    "idle": {
+      "seconds": 59,
+      "relayPerSecond": {
+        "reqs": 16.9,
+        "closes": 0,
+        "eventsIn": 0,
+        "forwards": 0,
+        "kbIn": 2.8,
+        "kbOut": 0.4
+      },
+      "relayPeakPerSecond": {
+        "reqs": 100,
+        "eventsIn": 0
+      },
+      "cores": {
+        "relay": 0,
+        "derper": 0,
+        "workers": 0
+      },
+      "rssMB": {
+        "relay": 87.1,
+        "derper": 79,
+        "workers": 1131.7
+      },
+      "workerCpuMsPerMemberPerSecond": 0,
+      "wasmMemoryKB": {
+        "n": 1000,
+        "p50": 1408,
+        "p90": 1408,
+        "p99": 1408,
+        "max": 1408
+      },
+      "rssKBPerMember": 1158.1
+    },
+    "lookups": {
+      "10PerSecond": {
+        "pairs": 300,
+        "reached": 300,
+        "ms": {
+          "n": 300,
+          "p50": 5.7,
+          "p90": 7,
+          "p99": 16.2,
+          "max": 19.5
+        },
+        "seconds": 29,
+        "relayPerSecond": {
+          "reqs": 0,
+          "closes": 0,
+          "eventsIn": 10,
+          "forwards": 10,
+          "kbIn": 5.4,
+          "kbOut": 6.3
+        },
+        "relayPeakPerSecond": {
+          "reqs": 0,
+          "eventsIn": 10
+        },
+        "cores": {
+          "relay": 0,
+          "derper": 0,
+          "workers": 0.1
+        },
+        "rssMB": {
+          "relay": 90.8,
+          "derper": 80.3,
+          "workers": 1167.6
+        }
+      },
+      "50PerSecond": {
+        "pairs": 1500,
+        "reached": 1500,
+        "ms": {
+          "n": 1500,
+          "p50": 4.8,
+          "p90": 5.8,
+          "p99": 9.1,
+          "max": 34.9
+        },
+        "seconds": 29,
+        "relayPerSecond": {
+          "reqs": 34.5,
+          "closes": 0,
+          "eventsIn": 49.8,
+          "forwards": 49.8,
+          "kbIn": 32.4,
+          "kbOut": 32
+        },
+        "relayPeakPerSecond": {
+          "reqs": 100,
+          "eventsIn": 51
+        },
+        "cores": {
+          "relay": 0,
+          "derper": 0.1,
+          "workers": 0.3
+        },
+        "rssMB": {
+          "relay": 101.6,
+          "derper": 86.5,
+          "workers": 1161.4
+        }
+      }
+    },
+    "afterLookups": {
+      "peers": {
+        "n": 1000,
+        "p50": 3,
+        "p90": 6,
+        "p99": 8,
+        "max": 10
+      },
+      "wasmMemoryKB": {
+        "n": 1000,
+        "p50": 1408,
+        "p90": 1408,
+        "p99": 1408,
+        "max": 1408
+      }
+    },
+    "crowds": {
+      "20": {
+        "reached": 20,
+        "ms": {
+          "n": 20,
+          "p50": 3008.5,
+          "p90": 12021.2,
+          "p99": 12021.3,
+          "max": 12021.3
+        },
+        "within": {
+          "1s": 4,
+          "3s": 8,
+          "6s": 12,
+          "15s": 20
+        }
+      },
+      "200": {
+        "reached": 25,
+        "ms": {
+          "n": 25,
+          "p50": 3032.1,
+          "p90": 14031.1,
+          "p99": 14034.3,
+          "max": 14034.3
+        },
+        "within": {
+          "1s": 5,
+          "3s": 9,
+          "6s": 13,
+          "15s": 25
+        }
+      }
+    },
+    "hour": {
+      "reached": 30,
+      "pairs": 30,
+      "failedAt": [],
+      "around": {
+        "seconds": 9,
+        "relayPerSecond": {
+          "reqs": 111.1,
+          "closes": 111.1,
+          "eventsIn": 1,
+          "forwards": 1,
+          "kbIn": 22,
+          "kbOut": 3.2
+        },
+        "relayPeakPerSecond": {
+          "reqs": 1000,
+          "eventsIn": 1
+        },
+        "cores": {
+          "relay": 0,
+          "derper": 0,
+          "workers": 0.1
+        },
+        "rssMB": {
+          "relay": 100.3,
+          "derper": 104.7,
+          "workers": 1159
+        }
+      },
+      "atTurn": {
+        "seconds": 2,
+        "relayPerSecond": {
+          "reqs": 499.8,
+          "closes": 499.8,
+          "eventsIn": 1,
+          "forwards": 1,
+          "kbIn": 97.2,
+          "kbOut": 12.3
+        },
+        "relayPeakPerSecond": {
+          "reqs": 1000,
+          "eventsIn": 1
+        },
+        "cores": {
+          "relay": 0.1,
+          "derper": 0,
+          "workers": 0.2
+        },
+        "rssMB": {
+          "relay": 99.7,
+          "derper": 104.7,
+          "workers": 1159
+        }
+      }
+    }
+  }
+}

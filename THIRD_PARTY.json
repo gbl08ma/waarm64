@@ -1020,6 +1020,54 @@
           }
         },
         {
+          "id": "crate-k256",
+          "name": "k256",
+          "about": "network",
+          "url": "https://crates.io/crates/k256/0.13.4",
+          "version": "0.13.4",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/k256/0.13.4/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/k256/0.13.4/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`k256`",
+            "version": "0.13.4",
+            "license": "MIT or Apache-2.0",
+            "use": "RustCrypto's; BIP-340 Schnorr signatures on secp256k1 for a room's Nostr events (OK'd 2026-10-18)"
+          }
+        },
+        {
+          "id": "crate-sha2",
+          "name": "sha2",
+          "about": "network",
+          "url": "https://crates.io/crates/sha2/0.10.9",
+          "version": "0.10.9",
+          "license": "MIT OR Apache-2.0",
+          "licenseTexts": [
+            {
+              "name": "LICENSE-MIT",
+              "url": "https://docs.rs/crate/sha2/0.10.9/source/LICENSE-MIT"
+            },
+            {
+              "name": "LICENSE-APACHE",
+              "url": "https://docs.rs/crate/sha2/0.10.9/source/LICENSE-APACHE"
+            }
+          ],
+          "md": {
+            "crate": "`sha2`",
+            "version": "0.10.9",
+            "license": "MIT or Apache-2.0",
+            "use": "RustCrypto's; Nostr events' ids (also through `k256`)"
+          }
+        },
+        {
           "id": "crate-ipnet",
           "name": "ipnet",
           "about": "network",

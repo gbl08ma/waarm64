@@ -50,7 +50,7 @@ function pageOn(channel: string, name: string, records = memoryRecords(), kept: 
   const store = new Store(records, memoryFiles(), { channel });
   const c = clients(() => { kept.length = 0; }); // the client forgets the node
   const saved: (string | undefined)[] = [];
-  const net = new PageNetwork({ store, me: () => name, onChange: () => {}, save: async (i, id) => { saved[i] = id; }, start: c.start, startCat: c.startCat, kept: async () => kept });
+  const net = new PageNetwork({ store, me: () => name, onChange: () => {}, save: async (i, id) => { saved[i] = id; }, start: c.start, startCat: c.startCat, startRoom: c.start as unknown as NonNullable<ConstructorParameters<typeof PageNetwork>[0]['startRoom']>, kept: async () => kept });
   const close = () => { net.locks.close(); store.close(); };
   opened.push(close);
   return { store, records, net, saved, ...c, close };
@@ -446,4 +446,35 @@ test('logging out a node another tab has: refused until taken from it', async ()
   assert.deepEqual(kept, []);
   a.close();
   b.close();
+});
+
+/** An error as the page carries it (keys and parameters, its causes too): what a test matches without words. */
+const errorOf = (e: unknown) => JSON.stringify(toWire(e));
+
+test("a room's key runs in one connection at a time: another adapter's, then another tab's, named", async () => {
+  const records = memoryRecords();
+  const p = pageOn('nl-roomkey', 'M', records);
+  const room = (keyOf?: string) => p.net.conns.create({ kind: 'room', room: { link: 'webpc-room:r', incoming: true, relayOnly: false, ...(keyOf ? { keyOf } : {}) } });
+  const first = await room();
+  const second = await room(first.id); // the same key in another room
+  const own = await room();
+  p.net.ports('m1', adapters(first, second, own));
+  await p.net.autoconnect();
+  assert.equal(p.net.runs(first.id), 0);
+  assert.equal(p.net.runs(second.id), -1, 'not beside the first');
+  assert.equal(p.net.runs(own.id), 2, 'a key of its own runs');
+  await assert.rejects(p.net.connect(1, second), (e: Error) => errorOf(e).includes('network:net-live.keyInUse') && errorOf(e).includes(`"other":"${first.name}"`), 'named: the other adapter');
+  // Once the first lets its key go, the second runs.
+  await p.net.disconnect(0);
+  await p.net.connect(1, (await p.net.conns.get(second.id))!);
+  assert.equal(p.net.runs(second.id), 1);
+  // Another tab's machine: the first, on the shared key, is refused there and names this machine.
+  const q = pageOn('nl-roomkey', 'N', records);
+  q.net.ports('m2', adapters(first));
+  await assert.rejects(q.net.connect(0, (await q.net.conns.get(first.id))!), (e: Error) => errorOf(e).includes('network:net-live.keyHeld') && errorOf(e).includes('"holder":"M"'), 'named: this machine');
+  await p.net.disconnect(1);
+  await q.net.connect(0, (await q.net.conns.get(first.id))!);
+  assert.equal(q.net.runs(first.id), 0, 'free once this tab let it go');
+  p.close();
+  q.close();
 });

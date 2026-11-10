@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<script type="module">
+  // R0's "without the inner WireGuard" arm (bench/net/room.ts): two WebRTC connections in this page, each one's
+  // negotiated channel (as web/room.ts makes them) transferred to a worker of its own; one worker sends echoes of
+  // `size` bytes, `window` in flight, the other echoes them back: tests/browser/room.html's echoes with nothing
+  // between the guest's side and the channel.
+  const code = `
+    let dc; const waiting = new Map(); let seq = 0;
+    onmessage = (e) => {
+      if (e.data instanceof RTCDataChannel) {
+        dc = e.data; dc.binaryType = 'arraybuffer';
+        dc.onopen = () => postMessage({ open: true });
+        dc.onmessage = (m) => {
+          const s = new DataView(m.data).getUint32(0);
+          if (self.name === 'echo') dc.send(m.data); else waiting.get(s)?.();
+        };
+        return;
+      }
+      const { n, size, window, timeout } = e.data;
+      let back = 0, started = 0; const rtts = []; const t = performance.now();
+      const one = () => new Promise((resolve) => {
+        const s = ++seq; const sent = performance.now();
+        const timer = setTimeout(() => { waiting.delete(s); resolve(); }, timeout);
+        waiting.set(s, () => { clearTimeout(timer); waiting.delete(s); back++; rtts.push(performance.now() - sent); resolve(); });
+        const b = new Uint8Array(size); new DataView(b.buffer).setUint32(0, s); dc.send(b);
+      });
+      Promise.all(Array.from({ length: window }, async () => { while (started < n) { started++; await one(); } }))
+        .then(() => postMessage({ back, ms: performance.now() - t, rtts }));
+    };`;
+  const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+  const a = new Worker(url, { name: 'dial' }), b = new Worker(url, { name: 'echo' });
+  const pa = new RTCPeerConnection(), pb = new RTCPeerConnection();
+  const o = { negotiated: true, id: 0, ordered: false, maxRetransmits: 0 };
+  const da = pa.createDataChannel('wg', o), db = pb.createDataChannel('wg', o);
+  a.postMessage(da, [da]);
+  b.postMessage(db, [db]);
+  const open = new Promise((resolve) => { a.onmessage = (e) => { if (e.data.open) resolve(); }; });
+  pa.onicecandidate = (e) => e.candidate && pb.addIceCandidate(e.candidate);
+  pb.onicecandidate = (e) => e.candidate && pa.addIceCandidate(e.candidate);
+  const t0 = performance.now();
+  await pa.setLocalDescription(); await pb.setRemoteDescription(pa.localDescription);
+  await pb.setLocalDescription(); await pa.setRemoteDescription(pb.localDescription);
+  await open;
+  const setupMs = performance.now() - t0;
+  window.harness = {
+    setupMs,
+    echoes: (_to, n, size, window = 16, timeout = 3000) => new Promise((resolve) => {
+      a.onmessage = (e) => { if (!e.data.open) resolve(e.data); };
+      a.postMessage({ n, size, window, timeout });
+    }),
+  };
+</script>

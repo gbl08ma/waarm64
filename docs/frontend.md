@@ -1316,8 +1316,8 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
 A machine has up to four **network adapters** (machines with a `network` entry in machine.ts; a stored machine's
 are on its Network tab, above), and each adapter has a **connection** attached, or none (the cable out). A
 connection is the browser's, not the machine's (docs/network-adapters.md): a tailnet (a Tailscale network,
-docs/plans/networking.md; the backend is web/tailscale.ts, the client in its own worker), tailcat (below) or **this
-computer** (the local helper, below), with its state (a tailnet's node, tailcat's served address, the helper's link), kept in IndexedDB `webpc` `connections` (web/app/connections.ts)
+docs/plans/networking.md; the backend is web/tailscale.ts, the client in its own worker), tailcat (below), **this
+computer** (the local helper, below) or a **peer-to-peer room** (below), with its state (a tailnet's node, tailcat's served address, the helper's link, a room's link and key), kept in IndexedDB `webpc` `connections` (web/app/connections.ts)
 unless it is **ephemeral**: then it lives in the page's memory and is gone when the page closes, and its adapter
 comes back detached, saying so. Any machine can use a kept connection; one running machine has it at a time (its Web
 Lock, `webpc-net:<id>`): another tab asking for it is told which machine has it and, after [Use it here](ui:network:main.useHere), takes it
@@ -1327,11 +1327,11 @@ The toolbar's **Network** menu has a section per adapter of the page's machine (
 several; adapter 1's elements keep their ids, adapter n's end in `-<n-1>`): the status, the connection's name,
 [Log in…](ui:network:Network.login), [Internet through](ui:network:Network.exitNode) (a tailnet's exit nodes), **Reach the subnets peers route** (when a tailnet's
 peers route subnets), [This machine's tailcat address](ui:network:Network.served) (when it lets clients
-in), **[Connect](ui:network:Network.connect)** (the attached connection, when it isn't running), **[Retry](ui:network:Network.retry)** (a connection that failed: disconnect and
+in), [This machine's name in the room](ui:network:Network.room.name) (a room's, with Copy and [Copy room link](ui:network:Network.room.copyLink)), **[Connect](ui:network:Network.connect)** (the attached connection, when it isn't running), **[Retry](ui:network:Network.retry)** (a connection that failed: disconnect and
 connect again), **[Disconnect](ui:network:Network.disconnect)**, [Log out](ui:network:Network.logout), and [Connect…](ui:network:Network.setup) or
 [Change connection…](ui:network:Network.change), which opens the **Network wizard** (`NetWizard.svelte`): first the browser's connections,
 the most recently used free one chosen and those in use marked with their machine, after [New connection…](ui:network:NetWizard.pick.new)
-(without connections it starts at the next step); then the kind, [A tailnet](ui:network:NetWizard.kind.pickTailnet), **tailcat** or [Your computer (webpc-net)](ui:network:NetWizard.kind.pickLocal), then that kind's
+(without connections it starts at the next step); then the kind, [A tailnet](ui:network:NetWizard.kind.pickTailnet), **tailcat**, [Your computer (webpc-net)](ui:network:NetWizard.kind.pickLocal) or [A peer-to-peer room](ui:network:NetWizard.kind.pickRoom), then that kind's
 settings and [Keep this connection in this browser](ui:network:NetWizard.keep) (on; off makes it ephemeral), with Back, Cancel (or Esc) and
 Connect. Form errors show in the wizard; Connect closes it (stopping the adapter's running client first) and opens
 the menu, which then says how the connection goes. The same wizard attaches a connection to a machine that isn't on
@@ -1439,6 +1439,38 @@ and the guest's default way out (below).
     forgets the kept identity (after a confirmation), so the old address stops working (the adapter that runs it
     connects again at once). Serving alone, the guest gets the same lease without resolvers: it reaches only
     the clients. The status says [Letting tailcat clients in](ui:network:network.servingOnly) (or adds it to the exit node's).
+- [A peer-to-peer room](ui:network:NetWizard.kind.pickRoom) (docs/tailnet.md "Rooms", plans/networking-p2p.md): machines in
+  other browsers that join the same room reach each other by name, browser to browser over WebRTC when they can and
+  through the room's DERP relays otherwise. The step asks [Create a room](ui:network:NetWizard.room.create) or [Join a
+  room](ui:network:NetWizard.room.join). Create takes the [Room name](ui:network:NetWizard.room.name) and [Private
+  room](ui:network:NetWizard.room.private) (on: the ID is the name, a hyphen and 128 random bits in base32, web/room.ts
+  `privateRoomId`, the only form the page takes as private; off: the name is the ID, and anyone who knows it can join);
+  its [Advanced](ui:network:NetWizard.advanced) has the room's [Nostr relays](ui:network:NetWizard.room.nostr) (`ws://` or
+  `wss://`, one per line; empty: the module's defaults) and [DERP relays](ui:network:NetWizard.room.derp) (a region's
+  number in tailcat's public map, or one's own derper's `host[:port]`; empty: the map's first region), from which
+  `roomLink` writes the link link.rs reads (`webpc-room:<id>?nostr=…&derp=…`, percent-encoded). Join takes a link (a
+  password field: a private room's link is a secret) or a public room's name (a bare ID, the defaults); `parseRoomLink`
+  checks it as link.rs would. Both have [Allow direct connections between members](ui:network:NetWizard.room.direct)
+  (on by default; off is relay only, `relayOnly`: no WebRTC, everything through the room's DERP relays), its note
+  saying who can learn one's IP address as the switch stands (with it: the members it connects to directly, the
+  operators of the room's DERP and Nostr relays, and STUN servers; without: the relays' operators only, as no STUN
+  server is asked), each term linked to what explains it, and under
+  Advanced [Let members connect to this machine](ui:network:NetWizard.room.incoming) (on by default; off, only replies
+  to the guest's own flows come in) and [The machine's key](ui:network:NetWizard.room.key): a new one, or another stored room connection's (the
+  same key in another room: docs/network-adapters.md §2.1). The connection's default name is the room's (a private
+  one's without its suffix); the Machines page says [a peer-to-peer room](ui:machines:MachinesPage.connection.room).
+  Editing changes the two switches (the adapter running it connects again), and under Advanced [New
+  name](ui:network:NetWizard.room.newName) gives the connection a new key after asking, so its old name stops working.
+  The client is net/ts's `room.rs` in web/room-worker.ts, the page's WebRTC in web/room.ts (`startRoomNet`, the
+  `Tailscale` handle the network controller drives, with a network map of `via: 'room'`); the node key is kept in
+  `webpc-room` (an ephemeral connection's in memory). The status goes Loading the client, Connecting to the relay,
+  then [Connected to the room, 1 member reached](ui:network:network.room_one) (the members whose data decrypted). The
+  menu then shows the machine's name in the room (`<key>.<tag>.p2p.internal`) to copy, the room's link to copy and, under
+  them, that whoever has the name can reach any port the guest listens on (or that incoming connections are off).
+  The guest's lease: its room address as a /128 (DHCPv6, the router advertisement), IPv4 `192.0.0.2` with no IPv4
+  routes, the room's resolver (`<prefix>::53`) and `<tag>.p2p.internal` as its domain, so `ping <name>` works through
+  systemd-resolved. A room never reaches the internet, so beside another adapter it is never the default way out and
+  offers its /48 as a route.
 - **Exit node:** when the tailnet has peers that advertise one (and an admin approved their
   `0.0.0.0/0` routes) the menu shows [Internet through](ui:network:Network.exitNode) with them and [No exit node](ui:network:Network.exitNode.none). Picking one
   calls the client's `setExitNode(id)` (the id is the peer's stable ID, `netmap.peers[].id`), the netmap reports the one in use (`netmap.exitNode`) and the
@@ -1476,7 +1508,7 @@ and the guest's default way out (below).
   Tailscale's does; a Headscale needs its reverse proxy to add `Access-Control-Allow-Origin`.
 - Tests: tests/network.test.ts (the controller and its parsers with a fake client),
   tests/net-guest.test.ts (Debian with the card on the echo backend: it configures itself and
-  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in; its peer is an exit node: the guest reaches a server on the host only through it, and its DNS is answered by the exit node's resolver; then two adapters, the tailnet beside tailcat through a server, the guest reaching both at once), tests/page-network.test.ts (the wizard and the menu: both kinds' form errors, a tailcat server that never answers on an ephemeral connection, a served machine on the test relay reached by the tailcat CLI, its address kept over a reload, New address, an ephemeral connection gone after a reload), tests/net-live.test.ts (the adapters live with fake clients: connect at start, a restart, two tabs and a connection's lock, the default way out), tests/page-connections.test.ts (two stored machines on the firmware alone: a new machine connected in one wizard, another tab's machine taking the connection, Detach, an ephemeral one gone after a reload, Connections), tests/net-tailcat.test.ts (Debian through a tailcat exit node on this machine, serving at the same time: the CLI fetches a page from the guest).
+  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in; its peer is an exit node: the guest reaches a server on the host only through it, and its DNS is answered by the exit node's resolver; then two adapters, the tailnet beside tailcat through a server, the guest reaching both at once), tests/page-network.test.ts (the wizard and the menu: both kinds' form errors, a tailcat server that never answers on an ephemeral connection, a served machine on the test relay reached by the tailcat CLI, its address kept over a reload, New address, an ephemeral connection gone after a reload), tests/net-live.test.ts (the adapters live with fake clients: connect at start, a restart, two tabs and a connection's lock, the default way out), tests/page-connections.test.ts (two stored machines on the firmware alone: a new machine connected in one wizard, another tab's machine taking the connection, Detach, an ephemeral one gone after a reload, Connections), tests/net-tailcat.test.ts (Debian through a tailcat exit node on this machine, serving at the same time: the CLI fetches a page from the guest), tests/page-room.test.ts (two Debian guests in one Chromium, two profiles: one creates a private room in the wizard on the tests' Nostr relay and the rig's derper, the other joins by its link, and they ping each other by name; the wizard's refusals), tests/room-link.test.ts (the link as link.rs writes it, a private room's ID, what a link may not be).
   Not tested: a real interactive login and the menu's login states in a browser (they need a
   control server that serves one; the docs/backlog.md "Network" entry says what's missing).
 

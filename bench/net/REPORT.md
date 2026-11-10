@@ -342,6 +342,82 @@ one boot each, 12 rounds): 36 uploads with no disconnect or stall, the slowest 8
 the helper's Go tests: under `-race` an idle gVisor stack keeps every core busy (0 CPU without it), and the stacks the earlier tests left starved
 `TestTCPToHost` into its deadline. They're now destroyed in cleanup. Not a defect of the helper.
 
+## Rooms: the direct path against DERP (R0, 2026-11-10)
+
+docs/plans/networking-p2p.md's R0: is a room's direct path (WireGuard inside a WebRTC data channel) clearly better
+than DERP? `bench/net/room.ts`, 5 rounds alternating three arms, fresh pages each: **direct** (two members of a room
+in two pages, tests/browser/room.html, the dialer given the other's key, on the tailcat rig's derper; the first echo
+goes through the relay, then the data channel opens), **relay** (the same, the dialer relay only: no WebRTC) and
+**raw** (bench/net/rtc-raw.html: the same echoes over a bare data channel between two workers, no WireGuard, no
+module, no IP port). Echoes of 1,280-byte IPv6 packets, 32 in flight, 10,000 per arm; RTT one echo at a time; CPU
+of every Chromium process and the derper over the throughput run, per Mbit/s of both directions. **A cloud session**
+(x86_64, 4 vCPUs, Chromium 153.0.8010.12 headless, everything on loopback): absolute numbers aren't comparable with
+the dev VM's (docs/cloud.md), the arms are with each other. JSON: `results/r0/room-2026-11-10.json`.
+
+| Arm | Mbit/s each way, median (IQR) [rounds] | core-ms per Mbit/s | RTT | first echo after `Running` | channel open after the handshake |
+|---|---|---|---|---|---|
+| direct | **50.9** (43.2–56.2) [42.4–63.3] | **23.5** (22.7–23.9) | 0.77 ms | 23 ms (through DERP) | 23 ms |
+| relay | 35.1 (32.6–35.9) [30.8–36.8] | 34.3 (34.1–34.4) | 0.95 ms | 22 ms | — |
+| raw | 70.6 (57.9–74.6) | 16.6 (16.4–16.7) | 0.24 ms | — | 35 ms (setup) |
+
+- **The gate holds**: the direct path's slowest round is faster than the relay's fastest (+45% at the medians), at
+  31% less CPU per Mbit, with a derper on the same machine, DERP's best case; a real relay adds its distance to
+  every packet and caps what it forwards (tailnet.md "tailcat": the public relays are rate-limited). R0's other
+  questions left for R3: setup time across real NATs, and how often ICE fails.
+- **The inner WireGuard and the plumbing** (the module, the worker, the gateway's port) cost about 28% of raw's
+  throughput and 40% more CPU per Mbit; the RTT difference (0.77 against 0.24 ms) is mostly the hops between the
+  harness's page, the worker and the channel, which a guest's packets also take. Not worth a second encryption
+  scheme: WireGuard's binding of address to key and the fallback are what the design rests on (plan §1).
+- Every arm brought back all 10,000 echoes: the unordered, unretransmitted channel lost nothing on loopback at 32 in
+  flight (§6 saw 0.7% at saturation).
+
+## Rooms at scale (R3, 2026-11-10)
+
+docs/plans/networking-p2p.md's R3: what a room costs as it grows, with nothing outside the test harness.
+`bench/net/room-scale.ts` starts **1,000 members** in 4 Node processes (`bench/net/room-member.ts`: the Rust client
+in a module instance each, as a page's worker holds one, relay only since Node has no WebRTC, its guest an echo on
+UDP port 7) at 100 a second, on the tests' Nostr relay (tests/net/nostr-relay.ts, a process of its own; it matches
+filters by scanning, so its CPU isn't a real relay's, but what it carries is) and the tailcat rig's derper, then
+runs phases: a minute idle, random new pairs at 10 and then 50 a second (the time from the dialer's first packet to
+the first echo back: the lookup, the call back through DERP, the handshake and the echo), 20 and then 200 members
+dialing one member at once, and the hour's turn (the members' clocks shifted so it falls in the run). **A cloud
+session** (x86_64, 4 vCPUs, Node 26, all on loopback): absolute times are loopback's, without a public relay's or
+DERP's distance (R4's). JSON: `results/r3/scale-before-2026-11-10.json` (the code before R3's two fixes) and
+`results/r3/scale-2026-11-10.json` (after); the phases that the fixes don't touch agree within a few percent.
+
+| Phase | |
+|---|---|
+| join, a member's first REQ at the relay after its start | p50 4 ms, p99 23 ms; the last hundred as fast as the first (4 against 5 ms) |
+| join, `Running` (home region connected) | p50 6.6 ms, p99 30 ms; none failed |
+| idle, a thousand members | relay 16.9 REQs/s (each renews a minute), 2.8 KB/s in; the workers' CPU under 0.05 ms a member a second |
+| a member's memory | 1,408 KiB of linear memory (each instance, unchanged by the lookups' peers); ~1.13 MiB RSS a member in Node; the derper ~85 MiB for 1,000 connections |
+| lookups, 10 new pairs/s | 300 of 300; p50 5.5 ms, p99 14 ms; 10 events/s in and forwarded (one each) |
+| lookups, 50 new pairs/s | 1,500 of 1,500; p50 5.0 ms, p99 11 ms; 50 events/s, 32 KB/s in |
+
+What the crowds and the turn found, before and after the fixes in room.rs:
+
+| | before (4 trials/s, the rest dropped; renewed at the turn) | after (16/s, the rest waiting, 64 at most; renewed at the next minute's check) |
+|---|---|---|
+| 20 dialers at once | all 20 in, but 4 within 1 s, 8 within 3 s, the last at 12 s | 16 within 1 s, all 20 within 1.01 s |
+| 200 dialers at once | **25** in within 15 s (5 within 1 s, 13 within 6 s) | **193** (17 within 1 s, 49 within 3 s, 97 within 6 s, the rest through their retries) |
+| the relay at the hour's turn | **1,000 REQs and 1,000 CLOSEs in one second** (from 17 a second) | none at the turn; the renewals in each member's minute slot (here the 10 s they joined in, ~100/s, as in every minute) |
+| 30 pairs dialing from 10 s before the turn to 20 s after | 30 of 30 | 30 of 30 |
+
+- **Nothing grows with the room**: a member's subscription matches only its own tags, so its worker sees only the
+  lookups for it, and a lookup is one event forwarded to one subscriber. The relay's load is the members' renewals
+  (one REQ a member a minute) plus one event per new pair; DERP's, one connection a member.
+- **Crowds** were limited by the target's trial budget: past it, a lookup was dropped and that dialer got in only on
+  its resend (1 s, 3 s) or its next try after giving up (6 s, then 5 s unreachable). A forged lookup costs a target
+  one 148-byte initiation through one of the room's own regions, and a trial lasts 20 s, so 16 a second keeps at
+  most 320 on trial (under the 1,024 peers); the call backs past it now wait their turn, so a crowd gets in at the
+  budget's rate. 200 at once still take ~13 s, which only a busier budget would shorten.
+- **The hour's turn** fell on the same Unix second for every member of every room, on every relay: a room of a
+  thousand sent a thousand REQs and CLOSEs at once, and a public relay carrying many rooms would see them all. The
+  subscription covers the next hour's tag already, so the turn now waits for each relay's next renewal (within a
+  minute), spread as the members' joins are; a dialer more than ~59 minutes ahead of the target misses it for that
+  minute at most.
+- What a room needs from a relay (the kind, the filter, the rates above) is written in the plan's §7 for R4.
+
 ## Reproduce
 ```sh
 # T1: a tailcat exit node on derper, both on this machine
@@ -356,6 +432,10 @@ node bench/net/transfer.ts <label> bench/results/local/<label>.json    # brings 
 # the Go column came from the same harness before the Go client left the page: git show 762cadc:bench/net/clients.ts)
 net/ts/build.sh
 WEBPC_TS_JSON=bench/net/results/t6/clients-m4.json node bench/net/clients.ts 5 20000
+# Rooms (R0): direct, relay only and a bare data channel, alternating (brings tests/net/tailcat.sh's rig up and down itself)
+node bench/net/room.ts 5 10000 bench/net/results/r0/room-<date>.json
+# Rooms at scale (R3): a thousand members in four processes on the tests' relay and the rig's derper (~10 min; brings the rig up and down itself)
+node bench/net/room-scale.ts 1000 4 bench/net/results/r3/scale-<date>.json
 # The local helper: the arms, then (with results/local-helper/variants.patch applied) the client's variants and the MTU
 node bench/net/local.ts bench/net/results/local-helper/arms.json local tailcat public local tailcat public --rounds 3 --mib 32
 node bench/net/local.ts bench/net/results/local-helper/variants.json local local::batch local::worker local::worker,batch local:9000 local:65520 --rounds 3 --mib 32

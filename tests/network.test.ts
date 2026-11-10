@@ -363,3 +363,42 @@ test("a local connection: the helper's link goes to the local client; an IP clie
   assert.equal(primaryOf([c('connected', true, true), c('connected', true, true)]), 0, 'two helpers: the first');
   assert.equal(primaryOf([c('off', false, true), c('connected', true)]), 1);
 });
+
+test('a room connection: its link and switches go to the room client; the view shows its name and never the internet', async () => {
+  const ts = fake();
+  const rooms: { config: { link: string; incoming?: boolean; relayOnly?: boolean; identityKey?: string }; setState(s: string, nm?: NetMap): void; emit(m: FromTailscale): void }[] = [];
+  const startRoom = (config: { link: string; ip?: MessagePort }, onEvent: (m: FromTailscale) => void): Tailscale => {
+    let state = '';
+    let nm: NetMap | undefined;
+    let held = config.ip;
+    rooms.push({ config, emit: onEvent, setState(s, n) { state = s; nm = n; onEvent({ type: 'state', state: s }); } });
+    return {
+      state: () => state, netmap: () => nm, loginURL: () => undefined, running: new Promise<NetMap>(() => {}), timings: () => ({}),
+      setPrimary: () => {}, attach: (ip) => { held = ip; }, detach: async () => { const h = held; held = undefined; return h; },
+      setExitNode: async () => { throw new Error('no'); }, setAcceptRoutes: () => {}, logout: async () => {}, close: () => {},
+    };
+  };
+  const net = createNetwork(() => {}, ts.start, undefined, undefined, startRoom);
+  net.port();
+  const room = { link: 'webpc-room:gabriel-lan', incoming: false, relayOnly: true, identityKey: 'c1' };
+  net.connect({ controlURL: '', hostname: '', room });
+  assert.deepEqual(ts.log, []);
+  assert.deepEqual(rooms.map((r) => ({ link: r.config.link, incoming: r.config.incoming, relayOnly: r.config.relayOnly, identityKey: r.config.identityKey })), [room]);
+  assert.deepEqual(net.view(), { phase: 'connecting', text: t('network:network.loadingClient'), exitNodes: [] });
+  rooms[0].setState('Connecting'); // i18n-ignore
+  assert.equal(net.view().text, t('network:network.connectingRelay'));
+  const name = `${'a'.repeat(52)}.abcdefgh.p2p.internal`;
+  const nm: NetMap = {
+    name, via: 'room', addresses: ['fd12:3456:789a:1:2:3:4:5/128'], mtu: 1280, dns: ['fd12:3456:789a::53'], domains: ['abcdefgh.p2p.internal'], exitNode: '',
+    peers: [{ id: 'nodekey:01', name: 'peer', addresses: ['fd12:3456:789a::1/128'], exitNodeOption: false }],
+    room: { name, link: room.link, incoming: false, relayOnly: true },
+  };
+  rooms[0].setState('Running', nm); // i18n-ignore
+  assert.deepEqual(net.view(), { phase: 'connected', address: 'fd12:3456:789a:1:2:3:4:5', exitNodes: [], internet: false, room: { name, link: room.link, incoming: false }, text: t('network:network.room', { count: 1 }) });
+  assert.equal(primaryOf([net.view(), { phase: 'connected', internet: true }]), 1, 'a room beside a way to the internet is never the default way out');
+  rooms[0].emit({ type: 'error', error: toWire(new Error('the relay closed')) });
+  assert.equal(net.view().phase, 'error');
+  await net.disconnect();
+  net.connect({ controlURL: 'https://c.example', hostname: 'h' });
+  assert.equal(ts.log.length, 1, 'the next connection is a tailnet\'s again');
+});

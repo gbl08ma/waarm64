@@ -587,6 +587,10 @@
     "message": "the helper on your computer",
     "note": "Machines page, Connections: what kind of connection it is, in each connection's line (and after an adapter's connection on the Network tab). Here: the local helper program."
   },
+  "MachinesPage.connection.room": {
+    "message": "a peer-to-peer room",
+    "note": "Machines page, Connections: what kind of connection it is, in each connection's line (and after an adapter's connection on the Network tab). Here: a peer-to-peer room."
+  },
   "MachinesPage.connection.tailcatExit": {
     "message": "tailcat through a server",
     "note": "Machines page, Connections: what kind of connection it is, in each connection's line (and after an adapter's connection on the Network tab). Here: tailcat that goes out through a server."
@@ -1026,6 +1030,10 @@
   "MachinesPage.connection.edit.tailcat": {
     "message": "Change its server and relay.",
     "note": "Machines page, Connections: tooltip of a tailcat connection's Edit… button."
+  },
+  "MachinesPage.connection.edit.room": {
+    "message": "Change whether this machine connects directly to members, and whether members can connect to it.",
+    "note": "Machines page, Connections: tooltip of a room connection's Edit… button."
   },
   "MachinesPage.connection.edit": {
     "message": "Edit…",

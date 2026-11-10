@@ -1,4 +1,4 @@
-# Peer-to-peer rooms over WebRTC (proposed, not scheduled)
+# Peer-to-peer rooms over WebRTC (in progress: R0 to R3 done 2026-11-10)
 
 VMs in different browsers on one network, with packets going browser to browser over WebRTC and DERP
 only as the fallback. Reaching a peer takes two steps: **joining its room**, and **knowing its
@@ -28,7 +28,9 @@ key), the Ethernet gateway ([devices.md](../devices.md) "net") and network adapt
   and a node key, kept with the connection as tailcat's identity is, so it travels with a machine as
   its connections do. Keys and rooms are managed apart: adding a room makes a fresh key; under
   advanced settings, a connection can take another connection's key (the same identity in another
-  room) or a second connection can join the same room with another key. Each room has its own /48,
+  room; one of them running at a time, the user's call of 2026-11-10: two DERP connections under one
+  key break each other, §9's question as it was) or a second connection can join the same room with
+  another key. Each room has its own /48,
   so two rooms on two adapters route apart.
 - **WireGuard stays inside the data channel.** A peer's packets are the same WireGuard packets
   whichever path carries them (a data channel when one is open, DERP otherwise), so the address
@@ -51,7 +53,7 @@ key), the Ethernet gateway ([devices.md](../devices.md) "net") and network adapt
 - **A room's link carries where its members meet:** the room's ID, its Nostr relays and its DERP map
   (region IDs in the public tailcat relays' map, or a derper's URL inline). Members with the same link
   find each other; a call back goes only to a region in the link's map (§3). The page builds the link
-  ("Create a room") and takes one ("Join a room"); a bare ID gets the defaults (R3 picks them).
+  ([Create a room](ui:network:NetWizard.room.create)) and takes one ([Join a room](ui:network:NetWizard.room.join)); a bare ID gets the defaults (R4 picks them).
 - **Who sees a node's real IP address:** the members it connects to directly (its public address
   and port from the candidates; a LAN address stays behind Chromium's `.local` name); the operators
   of its DERP regions (with its node key, so its room address, and which keys it exchanges packets
@@ -70,6 +72,12 @@ key), the Ethernet gateway ([devices.md](../devices.md) "net") and network adapt
   ordered and reliable and can't be configured, its peer IDs and Nostr keys are random per page load
   (no lookup by key), and its fallback is TURN. Its Nostr pattern is what §3 takes: ephemeral events,
   the topic in an `x` tag, several relays, a maintained relay list.
+- **Lookups are sealed to the WireGuard node key itself**, no second key (the user, 2026-11-10, after R1's review):
+  an X25519 box from an ephemeral key, its key derived by BLAKE2s with a label of its own, the room's lookup key, the
+  shared secret and both public keys. The review found it sound: the target reveals only whether a lookup opened (by
+  calling back), which takes the shared secret to make, so it's no oracle against the key, and Noise's own KDF chain is
+  separated by its protocol name. So a name stays one key, and nothing more is kept. What it doesn't give, by design:
+  the sender isn't authenticated (a hint, below), and recorded lookups have no forward secrecy if the key leaks.
 - **A lookup is a hint, WireGuard is the truth.** A lookup can't be checked against the key it names
   (a WireGuard key is X25519 and can't sign), and it doesn't need to be: a forged or replayed one can
   only make a peer call a key back in one of the room's own regions, and the handshake (with the
@@ -85,7 +93,7 @@ key), the Ethernet gateway ([devices.md](../devices.md) "net") and network adapt
   (§3, §8).
 - **Public and private rooms, and fast derivation.** A room's secrets come from its ID by BLAKE2s
   (§2), fast, so a relay that keeps its lookups can guess a short ID offline and read them. The page
-  makes the trade-off plain instead of slowing it: "Create a room" asks whether the room is
+  makes the trade-off plain instead of slowing it: [Create a room](ui:network:NetWizard.room.create) asks whether the room is
   private, and a private room's ID is the chosen name plus a random suffix the page generates
   (128 bits, base32), the only form it accepts as private; anything else is public, and the page
   says what that means (anyone can join; addresses still protect each node). Creating and joining
@@ -111,9 +119,12 @@ nobody hands anything out:
 - **the WireGuard pre-shared key** for every pair in the room (IKpsk2, as a tailcat address carries
   one): a node outside the room can't complete a handshake with a member even if it knows the key.
 
-All rooms' lookups share one ephemeral event kind, fixed (R3 picks it, clear of the kinds NIPs
-reserve, such as 22242 for NIP-42's AUTH, 24133 and 27235), so relays can't group lookups by room
-and no room's ID lands on a kind that relays treat specially.
+All rooms' lookups share one ephemeral event kind, fixed, so relays can't group lookups by room
+and no room's ID lands on a kind that relays treat specially: **26354** (R3, 2026-11-10), clear of
+every kind the NIPs list (their ephemeral ones on that day: 21059, 22242, 23194, 23195, 24133, 24242,
+27235, 28934–28936). No ephemeral kind is clear of Trystero's, which hashes each topic onto one of
+20000–29999 (`strToNum(topic, 1e4) + 2e4`, 0.26.0); sharing a kind is harmless, since a relay
+forwards by the `#x` filter too.
 
 A connection's node key is kept in IndexedDB (as `webpc-tailcat` keeps tailcat's identity), so its
 address and name don't change when it rejoins. "New identity" makes a new key.
@@ -123,7 +134,9 @@ address and name don't change when it rejoins. "New identity" makes a new key.
 - **A node's tag** in a room is a hash (BLAKE2s) of the tag salt, the node's address and the hour.
   A node keeps a subscription (`REQ` with the kind and an `#x` filter, as Trystero's) open on each of
   the room's relays for its tags of the previous, current and next hour, so a dialer's clock may be
-  off by most of an hour. The tag a relay sees changes every hour; a relay without the room's ID
+  off by most of an hour. It's renewed each minute (a liveness check), and a turned hour waits for
+  that renewal (R3): the subscription has the new hour's tag already, and renewing at the turn put
+  every member's REQ and CLOSE on the relay in the same second. The tag a relay sees changes every hour; a relay without the room's ID
   can't tie it to an address, though one that sees the same connection's subscriptions can chain a
   session's tags.
 - **A lookup** is an ephemeral event of that kind with the target's tag, carrying the dialer's node
@@ -138,8 +151,22 @@ address and name don't change when it rejoins. "New identity" makes a new key.
   own region reaches only the dialer. A target drops lookups older than a minute, lookups whose
   nonce it has seen, lookups from a key it has a session with (which can only re-route a live peer),
   and beyond a few new on-trial peers a second, so a member can't make it call out without bound.
+  (R3: 16 a second, those past it waiting their turn, 64 at most, so a crowd of dialers gets in at
+  that rate instead of on their resends; 4 a second and dropping let 25 of 200 dialers at once in
+  within 15 s, bench/net/REPORT.md "Rooms at scale".)
+  (R1: "older than a minute" became "more than an hour off its clock", the tags' window, since a
+  dialer's clock may be off by most of an hour and a copy within it is dropped by its nonce, kept
+  three hours; a lookup from a key with a session probes it with a signalling ping and calls back
+  only if nothing decrypts in 4 s, so a member whose page reloaded is reached again at once while a
+  forged lookup moves nothing; the caller's signalling hello is queued behind its handshake, as the
+  responder can't send until data comes and a lone keepalive lost would leave it unable to. R1's
+  out-of-context review added: only the lower key calls back when both dial at once; a lookup for
+  a key whose call back is on trial sends its initiation through that region too; the dialer's
+  lookup goes on until its peer is confirmed; budgets for call backs and unasked handshakes apart;
+  caps on the guest's lookups; the subscription renewed and checked. Open for R4: public relays
+  refuse events dated far ahead, so a skewed clock may hold only on a room's own relays.)
 - **The relays' terms** (rate limits, proof of work as in NIP-13, payment, which kinds they accept)
-  decide how far public relays carry a room; R3 checks. A serious room runs its own relay, as it
+  decide how far public relays carry a room; R4 checks. A serious room runs its own relay, as it
   would its own derper, and puts them in its link.
 - **Who's here** isn't this plan's: a node's address reaches others the way the user gives it out
   (§5, "DNS": the name to copy). A room's participants can run a directory themselves, as an
@@ -163,9 +190,13 @@ address and name don't change when it rejoins. "New identity" makes a new key.
    acknowledged and resent (after 0.5, 1 and 2 s), since DERP drops when a peer's queue fills; an
    offer not answered with an open channel in 10 s is dropped, and the next waits 30 s, doubling to
    5 minutes. A node drops any signalling from a peer without a current session, and a relay-only
-   node answers an offer with a refusal, so the other side stops asking.
-4. When the channel opens, the peer's WireGuard packets move to it; when it closes or stalls (no
-   packet back while WireGuard's keepalive expects one), back to DERP, and a new offer later. Both
+   node answers an offer with a refusal, so the other side stops asking. (R0: the port is 1; each
+   message carries the sender's instance, a random number per client, so a peer that restarted is
+   seen as one and its signalling starts afresh.)
+4. When the channel opens, the peer's WireGuard packets move to it, except handshake messages, which
+   always go through DERP (R0: they're rare, and a peer that restarted has no channel to take our
+   response); when it closes or stalls (nothing back 15 s after we sent, past WireGuard's 10 s passive
+   keepalive), back to DERP, and a new offer 30 s later. Both
    sides stay joined to a region that reaches the other while the peer is open, so that fallback
    never needs a new lookup.
 
@@ -183,10 +214,19 @@ worker as it creates it; packets never touch the main thread.
   [network-adapters.md](../network-adapters.md) §4) it offers its /48 as its route, so a tailnet or
   tailcat on another adapter keeps the default route and the internet. A machine in several rooms
   has an adapter per room, with distinct /48s.
-- **DNS:** a name is `<key>.<tag>.p2p.alt`: the node key in base32 (52 characters, one label), the
-  room's tag (§2), under `.alt` (RFC 9476's suffix for names outside the DNS, so it can never collide
-  with a real TLD). The module answers at the room's `::53` (in its /48, as `MAGIC_DNS6` is
-  tailnets' resolver), the lease's `dns6`, with `<tag>.p2p.alt` its routing domain (`domains`): AAAA
+- **DNS:** a name is `<key>.<tag>.p2p.internal`: the node key in base32 (52 characters, one label),
+  the room's tag (§2), under `.internal` (which ICANN reserved in 2024 for private use and will never
+  delegate, so it can never collide with a real TLD). Not RFC 9476's `.alt`, the first choice: R2 found
+  that systemd-resolved (Debian 13's, 2026-11-10) answers any `.alt` name NXDOMAIN itself, whatever the
+  link's DNS server and routing domain, so a guest with resolved, as Debian's and Arch's are, never
+  asks the room's resolver (which answered the same query sent to it directly). It's in resolved's
+  source since v255: `dns_scope_good_domain()` refuses a name that `dns_name_dont_resolve()` matches
+  (`*.alt`, with `*.invalid` and a few RFC 6303 reverse zones) before it looks at any link's servers or
+  routing domains, so no answer in a lease (DHCPv6's domain list, the RA's DNSSL) can route it. Other
+  unofficial TLDs (a home LAN's `.lan`, say) aren't on that list and resolve normally. `.internal`
+  is the suffix (the user, 2026-11-10). The module answers at
+  the room's `::53` (in its /48, as `MAGIC_DNS6` is
+  tailnets' resolver), the lease's `dns6`, with `<tag>.p2p.internal` its routing domain (`domains`): AAAA
   by computing the address, no lookup, nothing to trust, and the module remembers the key for that
   address, to seal lookups to it (§3). Anything else is NXDOMAIN. The page shows a node's name and
   lets the user copy it.
@@ -209,6 +249,12 @@ Chromium on the M4 ([tailnet.md](../tailnet.md) "Numbers"), and Rings managed ~1
 packets (networking.md §2). Loopback hides what matters most: setup time across real NATs, and how
 often ICE fails and DERP carries the room.
 
+**R0** (2026-11-10, the same kind of cloud session, Chromium 153; bench/net/REPORT.md "Rooms: the direct path
+against DERP"): two members in two pages through our module, 1,280-byte echoes 32 in flight, 5 alternated rounds.
+The direct path **50.9 Mbit/s each way** (rounds 42–63) at 23.5 core-ms per Mbit, DERP on loopback 35.1 (31–37) at
+34.3, a bare channel between two workers 70.6 at 16.6. The first echo 23 ms after `Running` (through DERP), the
+channel open 23 ms after the handshake. The gate holds.
+
 SDP size doesn't constrain signalling over DERP, but for the record (Chromium 153, 2026-11-10): with
 both pages ours, a data-channel-only remote description rebuilds from 47 bytes per side (the ufrag,
 3; the password, 18; a SHA-1 fingerprint, 20, which Chromium checks against the remote certificate
@@ -221,7 +267,12 @@ connection (168 bits) and is withdrawing the munging that would fix them, so no 
 Each with tests at the cheapest layer (`cargo test -p webpc_ts` sans I/O first), as the tailnet
 client was built.
 
-- **R0 — The data path, measured.** Two pages, keys exchanged by hand (an address like tailcat's),
+- **R0 — The data path, measured.** *Done 2026-11-10* (docs/tailnet.md "Rooms"; §6): `room.rs` with §2's
+  derivations already, peers given by key, incoming connections on trial, one home region; ABI actions 7–10 and
+  `ts_rtc_*`; `web/room.ts` and `web/room-worker.ts`; `cargo test -p webpc_ts room` (a fake relay and a fake WebRTC:
+  the fallbacks, loss, a restart, relay only, address binding) and `tests/room-browser.test.ts` (two pages on the
+  rig's derper). CPU per Mbit and "without the inner WireGuard" measured as a bare channel's arm; the numbers from
+  a cloud session, to repeat in the dev VM. The brief as it was: Two pages, keys exchanged by hand (an address like tailcat's),
   signalling through the tailcat rig's derper (`tests/net/tailcat.sh`), WireGuard over the data
   channel, the fallback to DERP when the channel is blocked. A fourth connection kind's client in
   `net/ts` (`room.rs`, sharing `derp.rs`, `ts_tunnel`, `ip.rs`); new ABI actions to open, signal, send
@@ -229,28 +280,63 @@ client was built.
   Measure against the DERP path: throughput, RTT, time to the first packet and to the first direct
   packet, CPU per Mbit, with and without the inner WireGuard. **Gate:** if the direct path isn't
   clearly better than DERP, stop and write down why.
-- **R1 — Rooms.** §2's derivations, the link's format, §3's tags, lookups and call backs (with a
+- **R1 — Rooms.** *Done 2026-11-10* (docs/tailnet.md "Rooms"; §3's amendments): the link
+  (`webpc-room:<id>?nostr=…&derp=…`), lookups on Nostr (`k256`, `nostr.rs`, the kind 26354 a placeholder), call backs
+  into a dialer's home region with a DERP connection per region in use, the probe, the caps and idle closes, the
+  resolver, incoming off's flow table, the review's fixes; `cargo test -p webpc_ts room` (34 cases), `tests/nostr-relay.test.ts`,
+  `tests/room-browser.test.ts` by link and by name. The brief as it was: §2's derivations, the link's format, §3's tags, lookups and call backs (with a
   minimal Nostr relay in the test harness, in TypeScript: EVENT, REQ, CLOSE, the kind and tag
   filters, forwarding without storing; no dependency), signalling's resends, joining and leaving,
   connections on demand with the cap and idle close, §5's lease, resolver and incoming switch.
   Tests: the client against the fake relay and fake peers (stale, replayed and forged lookups, a
   lookup naming a region outside the map, the hour's turn, lost signalling); two pages joining a
   room by its link, one given the other's name, pinging by name.
-- **R2 — The page.** A room as a connection kind (network-adapters.md "Connections" grows its
-  record): "Create a room" (a name, "private" and its suffix, relays and derper under advanced
-  settings) and "Join a room" (a link or a public ID); one's own name to copy; the incoming switch;
+- **R2 — The page.** *Done 2026-11-10* (frontend.md "Network", network-adapters.md §2.1): the `room` kind, the
+  wizard's [Create a room](ui:network:NetWizard.room.create) (a private room's 128-bit suffix, relays under Advanced)
+  and [Join a room](ui:network:NetWizard.room.join), the switches, another connection's key, the IP-address note, the
+  menu's name and link to copy, New name; the key in `webpc-room`; the names' suffix moved to `.internal` (§5).
+  `tests/page-room.test.ts` (two Debian guests in one Chromium, in `scripts/ci-net.sh`), `tests/room-link.test.ts`,
+  and the controller's, the connections' cases. Left to R4: the room on a second adapter beside the local helper,
+  whose source (a private repository) a cloud session can't fetch; the unit layer checks that a room is never the
+  default way out (`primaryOf`). The brief as it was: A room as a connection kind (network-adapters.md "Connections" grows its
+  record): [Create a room](ui:network:NetWizard.room.create) (a name, "private" and its suffix, relays and derper under advanced
+  settings) and [Join a room](ui:network:NetWizard.room.join) (a link or a public ID); one's own name to copy; the incoming switch;
   the relay-only switch; the key under advanced settings (another connection's, or new); who sees
   one's IP address (§1), beside the room's privacy note. Two Debian guests in one Chromium reach each
   other by name in `scripts/ci-net.sh`, and a room on a second adapter beside the local helper
   keeps the internet (frontend.md "Network" grows a section).
-- **R3 — Scale and the real world.** A thousand synthetic members on the test relay: join time,
-  lookup time, the worker's memory. By hand: public Nostr relays (the fixed kind forwarded, time from
-  a lookup to its call back, Trystero's relay list as the start) and the public tailcat relays
-  carrying a room (their limits; whether their operators allow this use), two browsers on different
-  networks (the dev VM and a phone, say), how often ICE fails. The public tailcat relays are the
-  first choice for DERP (the user, 2026-10-18: try them); they're rate-limited, best-effort and
-  revocable (tailnet.md "tailcat"), so R3 finds out whether rooms fit their limits. The defaults
-  (relays, DERP map, STUN servers, the event kind) come out of this.
+- **R3 — Scale.** *Done 2026-11-10* (bench/net/REPORT.md "Rooms at scale", `bench/net/room-scale.ts`): a
+  thousand members (the module, an instance each, relay only, in Node) on the tests' relay and the rig's
+  derper. Joining, idling and lookups at 10 and 50 new pairs a second don't move with the room's size (a
+  member costs ~1.4 MiB and no measurable CPU idle; a lookup to its echo ~5 ms on loopback, one event);
+  two fixes from what it found: a crowd of dialers waits for the target's trial budget (16 a second)
+  instead of being dropped (§3), and the hour's turn waits for each relay's renewal (§3); the event kind
+  decided (§2). The brief as it was: What a cloud session can measure, with nothing outside the test
+  harness: a thousand synthetic members on the test relay (join time, lookup time, the worker's memory
+  and CPU, the relay's load), the lookup's event kind chosen from the NIPs' reserved ranges (§2), and
+  what the defaults need from a relay (the kinds, the `#x` filter, the rate of events a busy room sends)
+  written down for R4 to check against real ones.
+- **What a room needs from a Nostr relay** (R3, for R4 to check public ones against): NIP-01 over a
+  plain WebSocket, no NIP-42 AUTH and no NIP-13 proof of work (a relay that requires either carries no
+  room); ephemeral kind 26354 accepted and forwarded; filters by a single-letter tag (`#x`, three
+  values) with `limit: 0`; `created_at` within the relay's tolerance of the dialer's clock (R1: some
+  refuse events dated ahead). A member holds one connection and one subscription a relay, renewed
+  every minute (one REQ; at the hour's turn, within the next minute, a CLOSE and a REQ under a new
+  subscription ID); a lookup is one event of ~550 bytes on the wire, forwarded to one subscriber (a tag
+  is one node's), again after 1 s and 3 s only while no call back comes, at most 8 lookups a second a
+  member. A thousand members: 17 REQs a second steady, 2.8 KB/s in; each new pair a second one event.
+- **R4 — The real world, by hand and in the dev VM** (split from R3 on 2026-11-10, the user's call: the dev
+  VM is unavailable for a while, so what needs it or a person waits here). First the runs the cloud can't
+  do: `scripts/ci-net.sh` whole (the cloud has no Podman or IPv6, docs/cloud.md), R0's numbers again
+  (`node bench/net/room.ts 5 10000 <json>`), and R2's room on a second adapter beside the local helper keeping
+  the internet (a Debian test beside `tests/net-local.test.ts`'s). By hand: public
+  Nostr relays (the fixed kind forwarded, time from a lookup to its call back, Trystero's relay list as
+  the start, events dated ahead of their clocks) and the public tailcat relays carrying a room (their
+  limits; whether their operators allow this use), two browsers on different networks (the dev VM and a
+  phone, say), how often ICE fails. The public tailcat relays are the first choice for DERP (the user,
+  2026-10-18: try them); they're rate-limited, best-effort and revocable (tailnet.md "tailcat"), so R4
+  finds out whether rooms fit their limits. The defaults (relays, DERP map, STUN servers) come out of
+  this, and §9's public room is decided with them.
 
 ## 8. Left open (explore later, not planned)
 
@@ -282,9 +368,14 @@ client was built.
 
 - **A public room every machine joins by default** (the user's direction, 2026-11-10): safe if an
   address stays unguessable and lookups to a name stay sealed to the target. Whether public relays
-  and DERP carry everyone (R3), and what the page says, decide it.
+  and DERP carry everyone (R4), and what the page says, decide it.
+- *Decided 2026-11-10, the user: one at a time (a lock per key).* **Two rooms on one key** (the review of R2–R3, 2026-11-10, confirmed against the rig's derper,
+  `bench/net/room-member.ts` with a `key`): §1's "a connection can take another connection's key"
+  runs two clients with one WireGuard key, and each opens its own DERP connection under it; a derper
+  delivers a key's packets to one connection, so with both on one region (the default `derp=0`, or
+  any shared region) the rooms take turns failing (pings 1 ms in one, 6.5 s in the other, then the
+  other way). Separate regions would work. The ways out: one DERP connection per key carrying every
+  room on it (one worker per key, the module routing by the room's PSK); a key a running connection
+  holds can't start in another (a lock per key, an error naming the holder); or the option goes.
 - Which public Nostr relays by default (Trystero's maintained list is a start), and whether they
   forward a busy room's lookups.
-- Sealing lookups to the node key reuses a WireGuard static key for a box (with its own label);
-  R1's review checks that, or gives each connection a second key the name would then carry.
-- The names' suffix: `p2p.alt` is a placeholder until R1.

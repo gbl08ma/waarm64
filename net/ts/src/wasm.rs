@@ -11,9 +11,14 @@
 //! | 4 fetch | id | URL |
 //! | 5 packet for the guest | 0 | the IP packet |
 //! | 6 event | 0 | JSON |
+//! | 7 open a WebRTC connection (a room's) | rtc | 1 to make the offer, 0 to answer |
+//! | 8 a peer's description or candidate for it | rtc | JSON |
+//! | 9 send on its data channel | rtc | the message |
+//! | 10 close it | rtc | |
 //!
 //! `ts_new`'s JSON makes a tailcat client (`addr`, `serve`) or, with `control`, a Tailscale one
-//! (tailnet.rs) on the kept node `state` (the store's entries as the page keeps them: hex).
+//! (tailnet.rs) on the kept node `state` (the store's entries as the page keeps them: hex); with
+//! `room`, a room's (room.rs), whose WebRTC connections come back through `ts_rtc_*`.
 
 use std::{cell::RefCell, collections::BTreeMap, time::Instant};
 
@@ -21,13 +26,14 @@ use serde::Deserialize;
 
 use crate::{
     client::{Action, Client, Config, DEFAULT_DERP_MAP, GUEST4, Serve},
-    control, tailcat, tailnet,
+    control, room, tailcat, tailnet,
 };
 
 /// Either kind of client, behind one set of exports.
 enum Any {
     Tailcat(Client),
     Tailnet(Box<tailnet::Client>),
+    Room(Box<room::Client>),
 }
 
 macro_rules! each {
@@ -35,6 +41,7 @@ macro_rules! each {
         match $c {
             Any::Tailcat($x) => $e,
             Any::Tailnet($x) => $e,
+            Any::Room($x) => $e,
         }
     };
 }
@@ -70,6 +77,37 @@ struct JsConfig {
     exit_node: String,
     /// Peers' subnet routes installed (default: yes, as Tailscale's own apps).
     accept_routes: Option<bool>,
+    /// A room's member (room.rs).
+    room: Option<JsRoom>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JsRoom {
+    /// The room's link (room/link.rs), or a bare ID.
+    link: String,
+    /// The home region: an index into the link's DERP regions.
+    #[serde(default)]
+    home: usize,
+    /// Node keys known by hand (`nodekey:` and 64 hex digits): lookups to them are sealed to them.
+    #[serde(default)]
+    known: Vec<String>,
+    #[serde(default)]
+    relay_only: bool,
+    /// Members may open connections to the guest (default: yes).
+    incoming: Option<bool>,
+    /// The wall clock at the start, Unix seconds (default: the system's, read each time): a
+    /// benchmark's shifted clock, to put an hour's turn into a run (bench/net/room-scale.ts).
+    unix_time: Option<u64>,
+}
+
+fn node_keys(keys: &[String]) -> Result<Vec<[u8; 32]>, String> {
+    keys.iter()
+        .map(|k| match k.trim().strip_prefix("nodekey:") {
+            Some(h) => unhex32(h),
+            None => Err(format!("not a node key: {k}")),
+        })
+        .collect()
 }
 
 #[derive(Deserialize)]
@@ -195,6 +233,19 @@ pub unsafe extern "C" fn ts_new(ptr: *mut u8, len: usize) -> i32 {
                     .map(|t| Any::Tailnet(Box::new(t)));
             }
             let key = c.key.as_deref().map(unhex32).transpose()?;
+            if let Some(r) = c.room {
+                let cfg = room::Config {
+                    link: room::Link::parse(&r.link)?,
+                    key,
+                    home: r.home,
+                    derp_map_url: c.derp_map_url.unwrap_or_else(|| DEFAULT_DERP_MAP.into()),
+                    known: node_keys(&r.known)?,
+                    relay_only: r.relay_only,
+                    incoming: r.incoming.unwrap_or(true),
+                    unix_time: r.unix_time,
+                };
+                return room::Client::new(cfg, Instant::now()).map(|r| Any::Room(Box::new(r)));
+            }
             let serve = c
                 .serve
                 .map(|s| -> Result<Serve, String> {
@@ -206,14 +257,7 @@ pub unsafe extern "C" fn ts_new(ptr: *mut u8, len: usize) -> i32 {
                         psk: unhex32(&s.psk)?,
                         nodes,
                         region_id: s.region,
-                        allow: s
-                            .allow
-                            .iter()
-                            .map(|k| match k.trim().strip_prefix("nodekey:") {
-                                Some(h) => unhex32(h),
-                                None => Err(format!("not a node key: {k}")),
-                            })
-                            .collect::<Result<_, _>>()?,
+                        allow: node_keys(&s.allow)?,
                     })
                 })
                 .transpose()?;
@@ -242,6 +286,7 @@ pub unsafe extern "C" fn ts_new(ptr: *mut u8, len: usize) -> i32 {
 pub extern "C" fn ts_private_key(h: u32) -> u32 {
     with(h, |c| match c {
         Any::Tailcat(c) => set_buf(c.private_key().to_vec()),
+        Any::Room(c) => set_buf(c.private_key().to_vec()),
         Any::Tailnet(_) => 0,
     })
     .unwrap_or(0)
@@ -268,6 +313,10 @@ pub extern "C" fn ts_poll(h: u32) -> u32 {
         Action::Fetch { id, url } => (4, id, url.into_bytes()),
         Action::ToGuest(p) => (5, 0, p),
         Action::Event(json) => (6, 0, json.into_bytes()),
+        Action::RtcOpen { rtc, offer } => (7, rtc, vec![offer as u8]),
+        Action::RtcSignal { rtc, data } => (8, rtc, data.into_bytes()),
+        Action::RtcSend { rtc, data } => (9, rtc, data),
+        Action::RtcClose { rtc } => (10, rtc, Vec::new()),
     };
     let mut b = Vec::with_capacity(5 + rest.len());
     b.push(kind);
@@ -381,4 +430,46 @@ pub extern "C" fn ts_accept_routes(h: u32, on: u32) {
             t.set_accept_routes(on != 0, Instant::now())
         }
     });
+}
+
+fn with_room(h: u32, f: impl FnOnce(&mut room::Client, Instant)) {
+    with(h, |c| {
+        if let Any::Room(r) = c {
+            f(r, Instant::now())
+        }
+    });
+}
+
+/// A room's WebRTC connection `rtc`: the page's local description or candidate (JSON).
+///
+/// # Safety
+/// `ptr` and `len` as for `take`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rtc_signal(h: u32, rtc: u32, ptr: *mut u8, len: usize) {
+    // SAFETY: the host passes a buffer from ts_alloc(len).
+    let data = unsafe { take(ptr, len) };
+    with_room(h, |r, now| r.rtc_signal(rtc, &data, now));
+}
+
+/// Connection `rtc`'s data channel opened.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rtc_open(h: u32, rtc: u32) {
+    with_room(h, |r, now| r.rtc_open(rtc, now));
+}
+
+/// A message on connection `rtc`'s data channel.
+///
+/// # Safety
+/// `ptr` and `len` as for `take`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_rtc_message(h: u32, rtc: u32, ptr: *mut u8, len: usize) {
+    // SAFETY: the host passes a buffer from ts_alloc(len).
+    let data = unsafe { take(ptr, len) };
+    with_room(h, |r, now| r.rtc_message(rtc, &data, now));
+}
+
+/// Connection `rtc` closed or failed.
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_rtc_closed(h: u32, rtc: u32) {
+    with_room(h, |r, now| r.rtc_closed(rtc, now));
 }

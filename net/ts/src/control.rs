@@ -965,7 +965,7 @@ mod tests {
                     }
                 }
                 Action::Event(e) => events.push(serde_json::from_str(&e).unwrap()),
-                Action::WsClose { .. } | Action::ToGuest(_) => {}
+                _ => {}
             }
         }
         events

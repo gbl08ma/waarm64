@@ -212,7 +212,7 @@
   const conns = $derived((void ui.net, net.connections));
   const live = $derived((void ui.net, net.views()));
   const kindText = (c: Connection): Msg => {
-    const kind = c.kind === 'tailnet' ? msg('machines:MachinesPage.connection.tailnet', { host: new URL(c.tailnet!.controlURL).host }) : c.kind === 'local' ? msg('machines:MachinesPage.connection.local') : c.tailcat?.exit ? msg('machines:MachinesPage.connection.tailcatExit') : msg('machines:MachinesPage.connection.tailcatServe');
+    const kind = c.kind === 'tailnet' ? msg('machines:MachinesPage.connection.tailnet', { host: new URL(c.tailnet!.controlURL).host }) : c.kind === 'local' ? msg('machines:MachinesPage.connection.local') : c.kind === 'room' ? msg('machines:MachinesPage.connection.room') : c.tailcat?.exit ? msg('machines:MachinesPage.connection.tailcatExit') : msg('machines:MachinesPage.connection.tailcatServe');
     return c.ephemeral ? msg('machines:MachinesPage.connection.ephemeral', { kind }) : kind;
   };
   /** Who has connection `c` now: an adapter here, a machine in another tab, or no one. */
@@ -366,7 +366,7 @@
                   <input class="conn-name" value={c.name} aria-label={t('machines:MachinesPage.connection.name')} data-field="connection-name" onchange={(e) => { const name = e.currentTarget.value; void act(t('machines:MachinesPage.busy.renaming'), () => page.netRename(c, name)); }}>
                   <span class="meta">{t('machines:MachinesPage.connection.meta', { kind: kindText(c), state: stateOf(c), used: usedBy(c).length ? msg('machines:MachinesPage.connection.usedBy', { machines: usedBy(c) }) : msg('machines:MachinesPage.connection.usedByNone') })}</span>
                 </div>
-                <button onclick={() => page.netWizard({ mode: 'edit', connection: c.id })} data-action="edit-connection" title={c.kind === 'tailnet' ? t('machines:MachinesPage.connection.edit.tailnet') : c.kind === 'local' ? t('machines:MachinesPage.connection.edit.local') : t('machines:MachinesPage.connection.edit.tailcat')}>{t('machines:MachinesPage.connection.edit')}</button>
+                <button onclick={() => page.netWizard({ mode: 'edit', connection: c.id })} data-action="edit-connection" title={c.kind === 'tailnet' ? t('machines:MachinesPage.connection.edit.tailnet') : c.kind === 'local' ? t('machines:MachinesPage.connection.edit.local') : c.kind === 'room' ? t('machines:MachinesPage.connection.edit.room') : t('machines:MachinesPage.connection.edit.tailcat')}>{t('machines:MachinesPage.connection.edit')}</button>
                 {#if c.tailcat?.serve}<button onclick={() => act(t('machines:MachinesPage.busy.forgettingAddress'), () => page.netNewAddress(c))} data-action="new-address" title={t('machines:MachinesPage.connection.newAddress.title')}>{t('machines:MachinesPage.connection.newAddress')}</button>{/if}
                 {#if net.hasNode(c) || (c.tailnet && net.runs(c.id) >= 0)}<button onclick={() => logoutConnection(c)} data-action="logout-connection" title={t('machines:MachinesPage.connection.logout.title')}>{t('machines:MachinesPage.connection.logout')}</button>{/if}
                 <button onclick={() => act(t('machines:MachinesPage.busy.deleting'), () => page.netDelete(c))} data-action="delete-connection" title={t('machines:MachinesPage.connection.delete.title')}><Icon name="trash" size={16} />{t('machines:MachinesPage.connection.delete')}</button>

@@ -1,7 +1,7 @@
 # Network adapters and connections
 
-A machine has up to four network adapters, and each is attached to one of the browser's **connections** (a tailnet or
-tailcat), or to none. This page is the model and the guest side: what a connection is and where its state lives, the
+A machine has up to four network adapters, and each is attached to one of the browser's **connections** (a tailnet,
+tailcat, the local helper or a peer-to-peer room), or to none. This page is the model and the guest side: what a connection is and where its state lives, the
 locks between tabs, the guest's routes over several adapters and the numbers measured. The page's menus and wizard
 are in [frontend.md](frontend.md) "Network" and "The Machines page", the gateway's DHCP and router advertisements in
 [devices.md](devices.md) "net", and the clients in [tailnet.md](tailnet.md). Loose ends are in
@@ -13,11 +13,10 @@ code's comments still cite; machines had first left several adapters for later: 
 1. **A machine has up to 4 network adapters** (`MAX_ADAPTERS`), in order, each with its own MAC. Adapters are part
    of the shape, their order too: virtio-mmio has no hotplug, so adding, removing or moving one needs the machine off
    (as a disk does).
-2. **Connections are the browser's, not the machine's:** a list kept in this browser, each a tailnet, tailcat or
-   the local helper on this computer (`local`: [local-helper.md](local-helper.md); later,
-   perhaps, a p2p room: [plans/networking-p2p.md](plans/networking-p2p.md)). A connection carries its own state
-   (a tailnet's node, tailcat's identity and address), so it keeps working as the user moves from one machine to the
-   next. There is no "default" connection.
+2. **Connections are the browser's, not the machine's:** a list kept in this browser, each a tailnet, tailcat, the
+   local helper on this computer (`local`: [local-helper.md](local-helper.md)) or a peer-to-peer room (`room`:
+   [tailnet.md](tailnet.md) "Rooms"). A connection carries its own state (a tailnet's node, tailcat's identity and
+   address, a room's node key), so it keeps working as the user moves from one machine to the next. There is no "default" connection.
 3. **An adapter with no connection is allowed:** a card with no cable.
 4. **One running machine holds a connection at a time**, through a Web Lock per connection (§2.3). A machine that
    wants a held connection says which machine holds it and offers to take it. A machine that stops (powered off,
@@ -61,9 +60,17 @@ Disconnect) and `lastUsed` (what the wizard preselects). The state stays where t
   connection.
 - **An ephemeral connection** lives in a `Map` in the page, and its client's state goes to an in-memory store instead
   of IndexedDB.
-- **A p2p room**, if it comes ([plans/networking-p2p.md](plans/networking-p2p.md)), joins as a fourth kind: the room's
-  link and a node key per connection, like tailcat's identity (a connection can take another's key under advanced
-  settings), and a /48 per room, so rooms on several adapters route apart.
+- **A room's link and key**: the link (`room.link`, `webpc-room:<id>?nostr=…&derp=…`, web/room.ts `roomLink`; a
+  private room's is a secret) and the switches (`incoming`, `relayOnly`) in the record; the node key in
+  `webpc-room`, object store `identity`, under `room.identityKey` (64 hex digits, made at the first connect), so the
+  machine's address and name in the room stay the same. A connection made with another's key ([The machine's
+  key](ui:network:NetWizard.room.key) under Advanced: the stored room connections) takes that one's `identityKey`:
+  the same key in two rooms, one at a time: a running room connection holds its key's lock (`roomKeyLock`, beside its
+  own), so another connection on that key, on another adapter or in another tab, doesn't connect while it runs and
+  says which has it (two DERP connections under one key break each other on a shared region: a derper delivers the
+  key's packets to one of them). Delete forgets the key only when no other connection uses it, and New name gives the
+  connection a key of its own (a new `identityKey` when it was shared). Each room has its own /48, so rooms on several
+  adapters route apart.
 
 ### 2.2 From the single connection kept before
 
@@ -116,7 +123,8 @@ running in another tab takes effect there at once: that tab hears the record cha
   fd7a:115c:a1e0::/48 (`TAILNET_ROUTES`). tailcat offers no prefix: its tunnel addresses, its clients' too, are in that
   same /48, so each client it lets in is a /128 route of its own, on the primary too (`peers6`, up to 40 options an
   advertisement, as many as 64 clients take): the longest match sends the guest's answers to tailcat's adapter
-  whatever the order, and a tailcat adapter hides no tailnet peer. (With a /48 of its own, the guest answered tailcat
+  whatever the order, and a tailcat adapter hides no tailnet peer. A room offers its own /48 (`prefix6`, web/room-worker.ts) and never
+  reaches the internet, so it is the primary only when nothing else is connected. (With a /48 of its own, the guest answered tailcat
   clients through the tailnet's adapter and they timed out, tests/net-tailnet.test.ts's two adapters.) Two tailnets do
   share the /48, so an adapter's IPv6 routes carry a preference from its rank among the connected adapters (`ranksOf`,
   web/gateway.ts `ranked`: high, medium, then low; RFC 4191's three levels, so a third and fourth tie): the guest's

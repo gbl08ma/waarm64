@@ -125,6 +125,13 @@ pub fn tcp(
     packet(src.0, dst.0, TCP, seg, 16)
 }
 
+/// An ICMPv6 message from `src` to `dst`: `typ`, `code` and `body` (its checksum filled in).
+pub fn icmp6(src: Ipv6Addr, dst: Ipv6Addr, typ: u8, code: u8, body: &[u8]) -> Vec<u8> {
+    let mut seg = vec![typ, code, 0, 0];
+    seg.extend_from_slice(body);
+    packet(IpAddr::V6(src), IpAddr::V6(dst), ICMP6, seg, 2)
+}
+
 /// An IP packet around transport segment `seg`, its checksum (at `sum`) filled in.
 fn packet(src: IpAddr, dst: IpAddr, proto: u8, mut seg: Vec<u8>, sum: usize) -> Vec<u8> {
     let len = seg.len();

@@ -15,6 +15,14 @@
     "message": "tailcat, letting clients in",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the kind of a tailcat connection that only lets tailcat clients in to the machine, under the connection's name."
   },
+  "NetWizard.kind.roomPublic": {
+    "message": "a public room",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the kind of a peer-to-peer room connection whose room anyone who knows its name can join, under the connection's name."
+  },
+  "NetWizard.kind.roomPrivate": {
+    "message": "a private room",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the kind of a peer-to-peer room connection whose room only those with its link can join, under the connection's name."
+  },
   "NetWizard.kind.ephemeral": {
     "message": "{{kind}}, ephemeral",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the kind of a connection that is kept nowhere (gone when its tab closes). {{kind}} is the kind's words (e.g. “a tailnet (controlplane.tailscale.com)”)."
@@ -67,6 +75,18 @@
     "message": "New tailcat connection",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): its title on the step that makes a tailcat connection."
   },
+  "NetWizard.title.room": {
+    "message": "New room connection",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): its title on the step that asks whether to create a peer-to-peer room or join one."
+  },
+  "NetWizard.title.roomCreate": {
+    "message": "Create a room",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): its title on the step that makes a new peer-to-peer room."
+  },
+  "NetWizard.title.roomJoin": {
+    "message": "Join a room",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): its title on the step that joins a peer-to-peer room by its link or a public room's name."
+  },
   "NetWizard.save": {
     "message": "Save",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): the button that saves an edited connection."
@@ -97,7 +117,7 @@
   },
   "NetWizard.kind.note": {
     "message": "How should the machine reach a network? Connecting doesn't restart the machine.",
-    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the text above its three choices."
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the text above its four choices."
   },
   "NetWizard.kind.pickTailnet": {
     "message": "A tailnet",
@@ -122,6 +142,130 @@
   "NetWizard.kind.pickLocal.note": {
     "message": "A small program you run on your computer gives the machine your computer's network, including your LAN and the internet. It runs at your computer's own speed, with no relay and no account.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the line under “This computer (webpc-net)”."
+  },
+  "NetWizard.kind.pickRoom": {
+    "message": "A peer-to-peer room",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the name of the fourth choice, a room that machines in other browsers join."
+  },
+  "NetWizard.kind.pickRoom.note": {
+    "message": "Machines in other browsers that join the same room reach each other by name, directly when they can. No account is needed. A room doesn't reach the internet.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the line under “A peer-to-peer room”."
+  },
+  "NetWizard.room.create": {
+    "message": "Create a room",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step's first choice: make a new room (its button's name)."
+  },
+  "NetWizard.room.create.note": {
+    "message": "Choose a name for a new room, then give its link to the people whose machines should join it.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step: the line under “Create a room”."
+  },
+  "NetWizard.room.join": {
+    "message": "Join a room",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step's second choice: join a room someone else made (its button's name)."
+  },
+  "NetWizard.room.join.note": {
+    "message": "Paste the link someone gave you, or enter the name of a public room.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step: the line under “Join a room”."
+  },
+  "NetWizard.room.name": {
+    "message": "Room name",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the label of the field for the new room's name (Create a room)."
+  },
+  "NetWizard.room.noName": {
+    "message": "Enter a name for the room.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the error when Create is clicked with the room's name empty."
+  },
+  "NetWizard.room.private": {
+    "message": "Private room",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the checkbox (on by default) that makes the new room private: a random suffix is added to its name."
+  },
+  "NetWizard.room.private.note": {
+    "message": "A random suffix is added to the room's name, so only those you give the room's link to can join. Anyone who has had the link can join for as long as the room is in use.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the line under “Private room” while it is ticked."
+  },
+  "NetWizard.room.public.note": {
+    "message": "Anyone who knows the room's name can join it. Members can reach this machine only if you give them its name in the room.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the line under “Private room” while it isn't ticked (the room is public)."
+  },
+  "NetWizard.room.link": {
+    "message": "Paste the room's link, or enter the name of a public room:",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the label of the field for the room to join (Join a room)."
+  },
+  "NetWizard.room.link.note": {
+    "message": "Keep a private room's link to yourself, as it lets anyone join the room.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the note under the field for the room to join, a warning."
+  },
+  "NetWizard.room.incoming": {
+    "message": "Let members connect to this machine",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room) and its edit, under Advanced: the checkbox (on by default) that lets the room's members open connections to the guest."
+  },
+  "NetWizard.room.incoming.note": {
+    "message": "Members who have this machine's name in the room can reach any port the guest listens on, such as an SSH server.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the line under “Let members connect to this machine” while it is ticked."
+  },
+  "NetWizard.room.incoming.off": {
+    "message": "Members can't open connections to the guest. Only replies to connections the guest opens come in.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the line under “Let members connect to this machine” while it isn't ticked."
+  },
+  "NetWizard.room.direct": {
+    "message": "Allow direct connections between members",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room) and its edit: the checkbox (on by default) that lets the machine connect directly to other members of the room (WebRTC); off, all of its traffic goes through the room's DERP relays."
+  },
+  "NetWizard.room.ip.direct": {
+    "message": "Your computer's real, public IP address will be obtainable by members that this machine directly connects to, by operators of the room's <derp>DERP relays</derp> and <nostr>Nostr relays</nostr>, and by <stun>STUN servers</stun>.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the note under “Allow direct connections between members” while it is ticked: who can learn the user's IP address. <derp>…</derp> links to Tailscale's page on DERP, <nostr>…</nostr> to Nostr's protocol, <stun>…</stun> to Wikipedia's article on STUN."
+  },
+  "NetWizard.room.ip.relayed": {
+    "message": "Your computer's real, public IP address will be obtainable only by operators of the room's <derp>DERP relays</derp> and <nostr>Nostr relays</nostr>.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the note under “Allow direct connections between members” while it isn't ticked (no STUN server is contacted then): who can learn the user's IP address. <derp>…</derp> links to Tailscale's page on DERP, <nostr>…</nostr> to Nostr's protocol."
+  },
+  "NetWizard.room.nostr": {
+    "message": "Nostr relays",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced (Create a room): the label of the field for the room's Nostr relays, where members find each other. Nostr is a protocol's name."
+  },
+  "NetWizard.room.nostr.placeholder": {
+    "message": "The default public relays",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the placeholder of the empty Nostr relays field (what is used then)."
+  },
+  "NetWizard.room.nostr.note": {
+    "message": "One wss:// address per line. Machines in the room find each other through these relays.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the text under the Nostr relays field."
+  },
+  "NetWizard.room.derp": {
+    "message": "DERP relays",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced (Create a room): the label of the field for the room's DERP relays, which carry traffic between members that can't connect directly. DERP is Tailscale's relay protocol."
+  },
+  "NetWizard.room.derp.placeholder": {
+    "message": "tailcat's public relays",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the placeholder of the empty DERP relays field (what is used then)."
+  },
+  "NetWizard.room.derp.note": {
+    "message": "One per line: a region's number in tailcat's public relays, or the host name or host:port of your own <a>derper</a>. Traffic between machines goes through these relays when it can't go directly.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the text under the DERP relays field. <a>…</a> links to derper (Tailscale's relay server), a program's name."
+  },
+  "NetWizard.room.key": {
+    "message": "The machine's key",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the label of the list that picks the machine's key in the room: a new one, or another room connection's."
+  },
+  "NetWizard.room.key.new": {
+    "message": "A new key",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the first choice of “Key” (the default): a key of the connection's own."
+  },
+  "NetWizard.room.key.of": {
+    "message": "The same key as {{name}}",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: a choice of “Key”: share another room connection's key. {{name}} is that connection's name."
+  },
+  "NetWizard.room.key.note": {
+    "message": "With another connection's key, this machine's name in this room starts the same as in that connection's room, so members of both rooms can tell it's the same machine. Only one of the two connections can be connected at a time.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the text under “Key”."
+  },
+  "NetWizard.room.newName": {
+    "message": "New name",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection, Advanced: the button that gives the connection a new key, and so a new name in the room (it asks first)."
+  },
+  "NetWizard.room.newName.note": {
+    "message": "Give the machine a new key, and so a new name in the room. Whoever has the old name can't reach the machine any more.",
+    "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection, Advanced: the line under “New name”, what the button does."
   },
   "NetWizard.local.link": {
     "message": "The helper's link",
@@ -288,7 +432,7 @@
     "note": "The toolbar's Network menu: the question asked (OK/Cancel dialog) when the user clicks “Log out” on a tailnet adapter."
   },
   "Network.title": {
-    "message": "Connect the machine's network adapters to a tailnet, tailcat, or your computer.",
+    "message": "Connect the machine's network adapters to a tailnet, tailcat, your computer, or a peer-to-peer room.",
     "note": "The toolbar's Network menu: the tooltip of the toolbar's Network button."
   },
   "Network.adapter": {
@@ -337,7 +481,7 @@
   },
   "Network.copy": {
     "message": "Copy",
-    "note": "The toolbar's Network menu: the button that copies the machine's tailcat address."
+    "note": "The toolbar's Network menu: the button that copies the machine's tailcat address or its name in a room."
   },
   "Network.hide": {
     "message": "Hide",
@@ -358,6 +502,30 @@
   "Network.key.note": {
     "message": "To let only this machine use that computer, run <code>{{allow}}</code> there. A connection that isn't kept has another key once this page closes.",
     "note": "The toolbar's Network menu: the text under the machine's tailcat key. {{allow}} is a command (tailcat serve --allow=nodekey:… exit-node), shown as code."
+  },
+  "Network.room.name": {
+    "message": "This machine's name in the room",
+    "note": "The toolbar's Network menu: the label of the field with the machine's name in a peer-to-peer room (<key>.<tag>.p2p.internal), when its connection is a room's."
+  },
+  "Network.room.link": {
+    "message": "The room's link",
+    "note": "The toolbar's Network menu: the label of a field with the room's link (webpc-room:…), shown under the machine's name in a room when Copy room link couldn't use the clipboard, so the user copies it from there."
+  },
+  "Network.room.copyLink": {
+    "message": "Copy room link",
+    "note": "The toolbar's Network menu: the button, beside the machine's name in a room, that copies the room's link."
+  },
+  "Network.room.copyLink.title": {
+    "message": "Copy the room's link. Others need it to join the room.",
+    "note": "The toolbar's Network menu: the tooltip of “Copy room link”."
+  },
+  "Network.room.note": {
+    "message": "Members who have this name can reach any port the guest listens on. Give it only to those you want to let in.",
+    "note": "The toolbar's Network menu: the text under the machine's name in a room, while members may connect to it."
+  },
+  "Network.room.note.off": {
+    "message": "Incoming connections are off. Members can reach the guest only with replies to connections it opens.",
+    "note": "The toolbar's Network menu: the text under the machine's name in a room, while members may not connect to it (the connection's “Let members connect to this machine” is off)."
   },
   "Network.connect": {
     "message": "Connect",
@@ -390,6 +558,18 @@
   "connections.thisComputer": {
     "message": "Your computer",
     "note": "The default name of a new connection through the local helper (webpc-net), as the Network wizard, the Network menu and the Machines page's Connections show it. It is stored with the connection, which the user can rename."
+  },
+  "net-live.keyInUse": {
+    "message": "Its key is in use by the connection {{other}} on another adapter: a key runs in one room connection at a time.",
+    "note": "Why a room connection didn't connect (after net-live.notConnected): it uses the same node key as another room connection (the Advanced setting that takes another connection's key), which another adapter of this machine is running. {{other}}: that connection's name."
+  },
+  "net-live.keyHeld": {
+    "message": "Its key is in use by a room connection of {{holder}}: a key runs in one room connection at a time.",
+    "note": "Why a room connection didn't connect (after net-live.notConnected): another tab's machine runs a room connection with the same node key. {{holder}}: that machine's name."
+  },
+  "net-live.keyHeldElsewhere": {
+    "message": "Its key is in use by a room connection in another tab: a key runs in one room connection at a time.",
+    "note": "As net-live.keyHeld, when the other tab didn't say its machine's name."
   },
   "net-live.held": {
     "message": "{{name}} is in use by {{holder}}.",
@@ -490,6 +670,14 @@
   "network.tailcat": {
     "message": "Connected through the tailcat server",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): online through a tailcat server (no IPv4 address known)."
+  },
+  "network.room_one": {
+    "message": "Connected to the room, {{count}} member reached",
+    "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): connected to a peer-to-peer room. {{count}} is the number of members the machine has exchanged traffic with."
+  },
+  "network.room_other": {
+    "message": "Connected to the room, {{count}} members reached",
+    "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): connected to a peer-to-peer room. {{count}} is the number of members the machine has exchanged traffic with."
   },
   "network.fetchingMap": {
     "message": "Looking up the relay…",
@@ -594,6 +782,34 @@
   "tailcat.noExitNodes": {
     "message": "A tailcat connection has no exit nodes to choose from.",
     "note": "The cause under “Couldn't use that exit node” (Network menu) on a tailcat connection. A detail line."
+  },
+  "room.noName": {
+    "message": "A room needs a name.",
+    "note": "The Network wizard, the room step: the error when a room's link has an empty name."
+  },
+  "room.longName": {
+    "message": "The room's name is too long. It can be at most {{max}} bytes long as UTF-8 text.",
+    "note": "The Network wizard, the room step: the error when the room's name (with a private room's suffix) is too long. {{max}} is the limit (256)."
+  },
+  "room.badRelay": {
+    "message": "“{{relay}}” isn't a Nostr relay's address. Enter one such as wss://relay.example.com.",
+    "note": "The Network wizard, the room step (Advanced, or a pasted link): the error when a Nostr relay isn't a ws:// or wss:// address. {{relay}} is what was given."
+  },
+  "room.badDerp": {
+    "message": "“{{relay}}” isn't a DERP relay. Enter a region's number, or the host name or host:port of your own derper.",
+    "note": "The Network wizard, the room step (Advanced, or a pasted link): the error when a DERP relay is neither a region's number nor host[:port]. {{relay}} is what was given."
+  },
+  "room.tooMany": {
+    "message": "A room can have at most {{max}} Nostr relays and {{max}} DERP relays.",
+    "note": "The Network wizard, the room step: the error when a room names too many relays. {{max}} is the limit (8)."
+  },
+  "room.pasteLink": {
+    "message": "Paste the room's link, or enter the name of a public room.",
+    "note": "The Network wizard, the room step (Join a room): the error when Join is clicked with the field empty."
+  },
+  "room.badLink": {
+    "message": "The room's link is damaged. Copy it again from whoever gave it to you.",
+    "note": "The Network wizard, the room step (Join a room): the error when a pasted link (webpc-room:…) can't be read."
   },
   "local-net.versions": {
     "message": "This web app and the helper are different versions.",
@@ -719,6 +935,10 @@
     "message": "Its tailcat address will stop working.",
     "note": "What deleting a tailcat connection that lets clients in does, in the question asked by its Delete."
   },
+  "main.delete.room": {
+    "message": "Its name in the room will stop working.",
+    "note": "What deleting a room connection does (when no other connection shares its key), in the question asked by its Delete."
+  },
   "main.delete.confirm": {
     "message": "Delete the connection {{name}}?",
     "note": "Text of the question asked by a connection's Delete (the Machines page's Connections) when no machine has it and deleting it does nothing more; {{name}} is its name."
@@ -754,5 +974,13 @@
   "main.newAddress.ok": {
     "message": "Forget address",
     "note": "The confirm button (drawn as a warning) of the question asked by a tailcat connection's New address."
+  },
+  "main.newName.confirm": {
+    "message": "Give {{name}} a new name in its room? Members who have the machine's current name won't be able to reach it any more.",
+    "note": "Text of the question asked by a room connection's New name (the Network wizard's edit, Advanced); {{name}} is the connection's name."
+  },
+  "main.newName.ok": {
+    "message": "New name",
+    "note": "The confirm button (drawn as a warning) of the question asked by a room connection's New name."
   }
 }
