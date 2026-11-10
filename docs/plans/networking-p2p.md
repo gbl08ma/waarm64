@@ -51,7 +51,7 @@ key), the Ethernet gateway ([devices.md](../devices.md) "net") and network adapt
 - **A room's link carries where its members meet:** the room's ID, its Nostr relays and its DERP map
   (region IDs in the public tailcat relays' map, or a derper's URL inline). Members with the same link
   find each other; a call back goes only to a region in the link's map (§3). The page builds the link
-  ("Create a room") and takes one ("Join a room"); a bare ID gets the defaults (R3 picks them).
+  ("Create a room") and takes one ("Join a room"); a bare ID gets the defaults (R4 picks them).
 - **Who sees a node's real IP address:** the members it connects to directly (its public address
   and port from the candidates; a LAN address stays behind Chromium's `.local` name); the operators
   of its DERP regions (with its node key, so its room address, and which keys it exchanges packets
@@ -153,10 +153,10 @@ address and name don't change when it rejoins. "New identity" makes a new key.
   out-of-context review added: only the lower key calls back when both dial at once; a lookup for
   a key whose call back is on trial sends its initiation through that region too; the dialer's
   lookup goes on until its peer is confirmed; budgets for call backs and unasked handshakes apart;
-  caps on the guest's lookups; the subscription renewed and checked. Open for R3: public relays
+  caps on the guest's lookups; the subscription renewed and checked. Open for R4: public relays
   refuse events dated far ahead, so a skewed clock may hold only on a room's own relays.)
 - **The relays' terms** (rate limits, proof of work as in NIP-13, payment, which kinds they accept)
-  decide how far public relays carry a room; R3 checks. A serious room runs its own relay, as it
+  decide how far public relays carry a room; R4 checks. A serious room runs its own relay, as it
   would its own derper, and puts them in its link.
 - **Who's here** isn't this plan's: a node's address reaches others the way the user gives it out
   (§5, "DNS": the name to copy). A room's participants can run a directory themselves, as an
@@ -279,14 +279,22 @@ client was built.
   one's IP address (§1), beside the room's privacy note. Two Debian guests in one Chromium reach each
   other by name in `scripts/ci-net.sh`, and a room on a second adapter beside the local helper
   keeps the internet (frontend.md "Network" grows a section).
-- **R3 — Scale and the real world.** A thousand synthetic members on the test relay: join time,
-  lookup time, the worker's memory. By hand: public Nostr relays (the fixed kind forwarded, time from
-  a lookup to its call back, Trystero's relay list as the start) and the public tailcat relays
-  carrying a room (their limits; whether their operators allow this use), two browsers on different
-  networks (the dev VM and a phone, say), how often ICE fails. The public tailcat relays are the
-  first choice for DERP (the user, 2026-10-18: try them); they're rate-limited, best-effort and
-  revocable (tailnet.md "tailcat"), so R3 finds out whether rooms fit their limits. The defaults
-  (relays, DERP map, STUN servers, the event kind) come out of this.
+- **R3 — Scale.** What a cloud session can measure, with nothing outside the test harness: a thousand
+  synthetic members on the test relay (join time, lookup time, the worker's memory and CPU, the relay's
+  load), the lookup's event kind chosen from the NIPs' reserved ranges (§2), and what the defaults need
+  from a relay (the kinds, the `#x` filter, the rate of events a busy room sends) written down for R4
+  to check against real ones.
+- **R4 — The real world, by hand and in the dev VM** (split from R3 on 2026-11-10, the user's call: the dev
+  VM is unavailable for a while, so what needs it or a person waits here). First the runs the cloud can't
+  do: `scripts/ci-net.sh` whole (the cloud has no Podman or IPv6, docs/cloud.md), R0's numbers again
+  (`node bench/net/room.ts 5 10000 <json>`), and any of R2's tests the cloud couldn't run. By hand: public
+  Nostr relays (the fixed kind forwarded, time from a lookup to its call back, Trystero's relay list as
+  the start, events dated ahead of their clocks) and the public tailcat relays carrying a room (their
+  limits; whether their operators allow this use), two browsers on different networks (the dev VM and a
+  phone, say), how often ICE fails. The public tailcat relays are the first choice for DERP (the user,
+  2026-10-18: try them); they're rate-limited, best-effort and revocable (tailnet.md "tailcat"), so R4
+  finds out whether rooms fit their limits. The defaults (relays, DERP map, STUN servers) come out of
+  this, and §9's public room is decided with them.
 
 ## 8. Left open (explore later, not planned)
 
@@ -318,7 +326,7 @@ client was built.
 
 - **A public room every machine joins by default** (the user's direction, 2026-11-10): safe if an
   address stays unguessable and lookups to a name stay sealed to the target. Whether public relays
-  and DERP carry everyone (R3), and what the page says, decide it.
+  and DERP carry everyone (R4), and what the page says, decide it.
 - Which public Nostr relays by default (Trystero's maintained list is a start), and whether they
   forward a busy room's lookups.
 - The names' suffix: `p2p.alt` is a placeholder until R1.

@@ -35,7 +35,8 @@ reloaded (accepted, docs/tailnet.md).
 
 **CI:** `scripts/ci.sh` OK on R1's commit (1,224 s) and on the review's fixes (1,038 s; JS 956 passed, 0 failed, 568 skipped; the agent's `cargo test`
 left out as root, docs/cloud.md). **Not done here:** `scripts/ci-net.sh` whole and `node bench/net/room.ts 5 10000
-<json>` (R0's numbers) want the dev VM (docs/cloud.md: no Podman, no IPv6); run both there before R2's end.
+<json>` (R0's numbers) want the dev VM (docs/cloud.md: no Podman, no IPv6): R4's first runs (the plan split R3 on 2026-11-10, the user's call: the
+dev VM is unavailable for a while, so R4 holds what needs it or a person; R2 and R3 go on in cloud sessions).
 
 ## Next: R2 (plan §7)
 

@@ -9,7 +9,7 @@
 use crate::tailcat::{self, DerpNode};
 
 pub const SCHEME: &str = "webpc-room:";
-/// Placeholders until R3 picks the defaults (docs/plans/networking-p2p.md §7).
+/// Placeholders until R4 picks the defaults (docs/plans/networking-p2p.md §7).
 pub const DEFAULT_NOSTR: [&str; 3] = [
     "wss://nos.lol",
     "wss://relay.damus.io",

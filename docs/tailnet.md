@@ -159,7 +159,7 @@ each other by address or name, but nothing is on the page's menus yet: R2). `roo
 
 - **A room's link** (`room::Link`): `webpc-room:<id>?nostr=<wss URL>&…&derp=<region>&…`, each part percent-encoded; a
   `derp` is a region ID of the DERP map (0: its first) or a derper inline (`host[:port]`). Anything without the scheme
-  is a bare ID, with the defaults (placeholders until R3: three public Nostr relays, the DERP map's first region). At
+  is a bare ID, with the defaults (placeholders until R4: three public Nostr relays, the DERP map's first region). At
   most 8 relays and 8 regions, an ID of at most 256 bytes. The `self` event carries the link the client read.
 - **What the ID derives:** BLAKE2s with labels of their own gives the room's /48 (`fd` and 40 bits; one that would be
   tailcat's `fd7a:115c:a1e0::/48` takes the next label), its tag (those 40 bits in base32), the tag salt and lookup key
