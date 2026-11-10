@@ -27,10 +27,11 @@ calls.
 | 8 | JIT: the shared cache's leftovers (one vCPU's 1-2%: a lone table takes the bytes) | done, nothing to keep (loop 14) |
 | 9 | SMP: the ISB fix's cost; WFE sleeping; an exit's remaining cost | findings, nothing to keep (loop 15) |
 | 10 | Devices: virgl's occlusion-query poll (4 ms) | kept (loop 16) |
-| 11 | Interpreter: more handlers (FP in a second `hot` copy, CASP, STTR/LDTR) | next |
+| 11 | Interpreter: more handlers (FP in a second `hot` copy, CASP, STTR/LDTR) | misaligned pair/SIMD loads kept; FP copy dropped (loop 17) |
+| 11b | Loop 17's untried variant: the copy of `hot` picked per block (a "has FP" slot bit), so integer blocks never run in the rich copy | |
 | 12 | JIT: scalar FP in f64/f32 locals | |
 | 13 | JIT: Liftoff's zero-fill (a register allocator over a block's locals) | |
-| 14b | Loop 16's open question: why the guest's first `GL_QUERY_RESULT` wait finds the state not DONE though its fence is held | |
+| 14b (next, with 14a) | Loop 16's open question: why the guest's first `GL_QUERY_RESULT` wait finds the state not DONE though its fence is held | |
 | 14a | Loop 15's oddity: the guest's counter doesn't count under Node's `runToPowerOff` in parallel realtime (a bug?) | |
 | 14 | JIT: the core's heap tuning, transfer cache costs, the rest of the JIT section | |
 
@@ -99,3 +100,7 @@ Left as they are: x86-only (DotProd/JSCVT tuning, `relaxed_trunc`), the OpenSSL 
   2 ms after the pending set changes, then 4 ms): wait 13-14.5 → 0.72 ms, 15-17 → 279-287 frames/s on the M4. Cost: the
   GPU worker's thread busy while a query is pending (≤2 ms a change; ~65% of a core for glquery). Fixed a read-back
   that overwrote a query's state (Mesa's loop). CI: ci.sh, ci-graphics.sh, ci-deqp.sh (one timing warning, passed alone).
+- **Loop 17** (`c7060e7a`): interpreter handlers. Counted exits (Alpine: misaligned LDP/STP 21.5%; Firefox: FP/NEON
+  generic 19.5 M, misaligned SIMD/stores). **Kept** misaligned pair and SIMD&FP loads inline, PRFM by register a Nop:
+  dec_mips +3.3%, others +0.4%, no memory. Dropped the rich FP copy of `hot` (FP guest +12% but Alpine −1%; integer
+  code in the copy ~10% slower; pages session unresolved). Backlog entry gone. ci.sh passed.
