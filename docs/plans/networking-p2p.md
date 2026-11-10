@@ -149,9 +149,12 @@ worker as it creates it; packets never touch the main thread.
   (RFC 9476's suffix for names outside the DNS, so it can never collide with a real TLD). The module
   answers AAAA for it by computing the address: no lookup, nothing to trust. Anything else is
   NXDOMAIN until there's an exit (R4). The page shows a node's name and lets the user copy it.
-- **Incoming connections:** off by default. Members can't open connections to the guest; the
-  guest's own flows get their replies (a flow table, as the Tailscale client keeps for UDP). "Allow
-  incoming from the room" turns it on, and is what a node that serves something sets.
+- **Incoming connections:** on by default (the user, 2026-11-10): reaching a node already takes the
+  room's secret and its address, which nothing lists unless the node signs up with a directory (§3).
+  Turned off, members can't open connections to the guest and lookups for it go unanswered; the guest's
+  own flows still get their replies (a flow table, as the Tailscale client keeps for UDP). The page
+  says, where a node signs up with a directory, that the room can then reach it, and that what the
+  guest serves (an SSH server, say) is then open to the room.
 - **Relay only** (§1): the node's packets all go through DERP; its address reaches no peer.
 
 ## 6. Numbers so far
@@ -238,6 +241,3 @@ client was built.
 - Which public Nostr relays by default (Trystero's maintained list is a start), and whether they
   forward a busy room's lookups.
 - The names' suffix: `p2p.alt` is a placeholder until R1.
-- Whether incoming connections should default on in a room whose ID is long and secret. With them
-  off a node answers no lookups for flows others start, so this decides whether a room works without
-  touching a setting.
