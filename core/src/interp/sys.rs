@@ -65,6 +65,8 @@ const ISAR0_TS: u64 = 2 << 52;
 
 /// DP = 1: FEAT_DotProd.
 const ISAR0_DP: u64 = 1 << 44;
+/// RDM = 1: FEAT_RDM.
+const ISAR0_RDM: u64 = 1 << 28;
 
 /// ID_AA64ISAR0_EL1 for a vCPU with `features`.
 pub fn isar0(features: u64) -> u64 {
@@ -73,7 +75,8 @@ pub fn isar0(features: u64) -> u64 {
         | has(crate::cpu::FEATURE_CRYPTO, ISAR0_CRYPTO)
         | has(crate::cpu::FEATURE_RNG, ISAR0_RNDR)
         | has(crate::cpu::FEATURE_FLAGM, ISAR0_TS)
-        | has(crate::cpu::FEATURE_DOTPROD, ISAR0_DP);
+        | has(crate::cpu::FEATURE_DOTPROD, ISAR0_DP)
+        | has(crate::cpu::FEATURE_RDM, ISAR0_RDM);
     if crate::cpu::has_sha3(features) {
         r & !(0xf << 12) | ISAR0_SHA3
     } else {
@@ -81,13 +84,13 @@ pub fn isar0(features: u64) -> u64 {
     }
 }
 /// ID_AA64ISAR1_EL1 for a vCPU with `features`: JSCVT = 1 (15:12), LRCPC = 1
-/// (23:20), FRINTTS = 1 (35:32), SB = 1 (39:36) and I8MM = 1 (55:52), each
-/// with its feature.
+/// (23:20; 2 with FEAT_LRCPC2 too), FRINTTS = 1 (35:32), SB = 1 (39:36) and
+/// I8MM = 1 (55:52), each with its feature.
 pub fn isar1(features: u64) -> u64 {
     use crate::cpu::*;
     let has = |f: u64, sh: u32| ((features & f != 0) as u64) << sh;
     has(FEATURE_JSCVT, 12)
-        | has(FEATURE_RCPC, 20)
+        | has(FEATURE_RCPC, 20) << has_rcpc2(features) as u32
         | has(FEATURE_FRINTTS, 32)
         | has(FEATURE_SB, 36)
         | has(FEATURE_I8MM, 52)

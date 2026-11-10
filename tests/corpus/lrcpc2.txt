@@ -1,0 +1,5128 @@
+webpc-corpus 1
+oracle m4 2026-11-10
+test lrcpc2.aligned.0000
+code d9d3e2e6
+seed 2f3d6dac6f2920c4
+in x23=0x2020aa
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0001
+code 1947d3e4
+seed 9c5e2bca4351e66e
+in sp=0x201350
+out x4=0x5c
+exit end
+test lrcpc2.aligned.0002
+code 9905e167
+seed 318b0a1875f11562
+in x7=0x100000000 x11=0x200356
+mem 0x2003b4=00000000
+exit end
+test lrcpc2.aligned.0003
+code 191001d3
+seed ce6dad33abd2a3ab
+in x14=0x2001fa
+mem 0x2000fa=14
+exit end
+test lrcpc2.aligned.0004
+code 19c13069
+seed 58c339cc1fa7aee2
+in x3=0x201f47
+out x9=0xffffff8f
+exit end
+test lrcpc2.aligned.0005
+code 595d12de
+seed 7c27a79a7410b012
+in x22=0x200be7
+out x30=0xcbcf
+exit end
+test lrcpc2.aligned.0006
+code 598f239f
+seed 651d5f5b489563c2
+in x28=0x20037e
+exit end
+test lrcpc2.aligned.0007
+code 5942b343
+seed 02d0a466ce5498ac
+in x3=0x80 x26=0x200ab3
+out x3=0xcaa
+exit end
+test lrcpc2.aligned.0008
+code d95321c0
+seed 08b3940f3b7793bc
+in x14=0x20071e
+out x0=0x47280e25b42a12c3
+exit end
+test lrcpc2.aligned.0009
+code d9cbf090
+seed 2f2b2de95f7c5c11
+in x4=0x201579
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0010
+code 599e0092
+seed 9e99ee5296994165
+in x18=0x7fff x4=0x2013c6
+out x18=0xffffffffffffa770
+exit end
+test lrcpc2.aligned.0011
+code 5952417b
+seed 2e384762668bce88
+in x11=0x2004e6
+out x27=0x3710
+exit end
+test lrcpc2.aligned.0012
+code 59c363ae
+seed 43bac148dad89a80
+in x29=0x1fffe6
+out x14=0xffffdf23
+exit end
+test lrcpc2.aligned.0013
+code 194701bb
+seed dd5799682a51d0a3
+in x13=0x20073a
+out x27=0xc8
+exit end
+test lrcpc2.aligned.0014
+code 59950399
+seed cde7535adaeb4142
+in x25=0xffffffff x28=0x2013c2
+out x25=0xffffffffffffd926
+exit end
+test lrcpc2.aligned.0015
+code 998b9340
+seed f24ffb511ed49eeb
+in x0=0x80000000 x26=0x2017a7
+out x0=0x35756c94
+exit end
+test lrcpc2.aligned.0016
+code 19940389
+seed e6de1d42e1f81892
+in x28=0x200416
+out x9=0xffffffffffffff84
+exit end
+test lrcpc2.aligned.0017
+code 99854343
+seed acb6ef9cf33d383c
+in x3=0xffff x26=0x201cc0
+out x3=0xffffffffd9faa5f3
+exit end
+test lrcpc2.aligned.0018
+code d984e14d
+seed 30d859ff4ac62d1a
+in x13=0x100000000 x10=0x201d4a
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0019
+code 5999e191
+seed cc9a7a294a2bcb3c
+in x12=0x2018f8
+out x17=0x4e7
+exit end
+test lrcpc2.aligned.0020
+code 9995615d
+seed 7939cfc120fbea51
+in x29=0xffffffff x10=0x20027e
+out x29=0xffffffff9dda487f
+exit end
+test lrcpc2.aligned.0021
+code 19d7c308
+seed 98f8459270fce7fc
+in x8=0x7fffffff x24=0x2018dd
+out x8=0xffffffc2
+exit end
+test lrcpc2.aligned.0022
+code 195fe3a8
+seed 69e58327580526e0
+in x8=0xffffffff x29=0x200172
+out x8=0xe4
+exit end
+test lrcpc2.aligned.0023
+code d9144101
+seed e01f04da9916421c
+in x8=0x20026c
+mem 0x2001b0=ed81120a40b43697
+exit end
+test lrcpc2.aligned.0024
+code 1987e26d
+seed 237b1f75865f9bb1
+in x19=0x2008a6
+out x13=0xffffffffffffffbc
+exit end
+test lrcpc2.aligned.0025
+code d91e3120
+seed 7a0dffb714b3bdc6
+in x9=0x201345
+mem 0x201328=53 0x20132a=fe266c8099fd
+exit end
+test lrcpc2.aligned.0026
+code 998d6161
+seed e57c9e16fafc61c4
+in x1=0x80 x11=0x1fffd2
+out x1=0xffffffff8ab4ab2f
+exit end
+test lrcpc2.aligned.0027
+code 590a0202
+seed ee50d7604ca12d1c
+in x2=0x80000000 x16=0x2007c6
+mem 0x200866=0000
+exit end
+test lrcpc2.aligned.0028
+code d948b0ac
+seed c78fc0aff9ffb7dd
+in x5=0x201bad
+out x12=0xa858f280202573e
+exit end
+test lrcpc2.aligned.0029
+code 59100144
+seed ba654409e3952f9b
+in x10=0x200a8e
+mem 0x20098e=b047
+exit end
+test lrcpc2.aligned.0030
+code 995a7168
+seed aa8f68a5c13652c7
+in x8=0x7fffffff x11=0x202035
+out x8=0x25a97d34
+exit end
+test lrcpc2.aligned.0031
+code 995d4068
+seed 76999c34113cbe69
+in x3=0x200e78
+out x8=0xc0289a64
+exit end
+test lrcpc2.aligned.0032
+code 190873e6
+seed 78ca720504261b60
+in sp=0x200170
+mem 0x2001f7=f1
+exit end
+test lrcpc2.aligned.0033
+code 19d1d34e
+seed e14e35f9ce5e2e11
+in x26=0x201c26
+out x14=0xffffffb4
+exit end
+test lrcpc2.aligned.0034
+code d98d2247
+seed 083efd4702b68744
+in x18=0x201f0e
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0035
+code 19950198
+seed 0229bba3e4f04753
+in x12=0x200932
+out x24=0x24
+exit end
+test lrcpc2.aligned.0036
+code d94cd07f
+seed bb4d7bc0b5c6b03a
+in x3=0x20016b
+exit end
+test lrcpc2.aligned.0037
+code 59938115
+seed 06731d2f7fb5eae6
+in x21=0xff x8=0x2017e8
+out x21=0x7309
+exit end
+test lrcpc2.aligned.0038
+code 991a633c
+seed 4a077e23c1d8b357
+in x25=0x2018ca
+mem 0x201870=eab5cab2
+exit end
+test lrcpc2.aligned.0039
+code 591ca325
+seed 662578a627bf48ec
+in x5=0x8000000000000001 x25=0x200140
+mem 0x20010a=0100
+exit end
+test lrcpc2.aligned.0040
+code d9cac2fc
+seed 32a1eced74775e79
+in x23=0x200f04
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0041
+code 5941f27a
+seed d76f5e175949e21f
+in x26=0xaaaaaaaaaaaaaaaa x19=0x200233
+out x26=0xf6bd
+exit end
+test lrcpc2.aligned.0042
+code 1906618b
+seed cf3f18fc80c3e4f7
+in x12=0x20131e
+mem 0x201384=7f
+exit end
+test lrcpc2.aligned.0043
+code 990c805a
+seed 3e315acb51cdb16f
+in x2=0x2006d0
+mem 0x200798=8ff4edaa
+exit end
+test lrcpc2.aligned.0044
+code 190351e8
+seed 42c730dffa7b8fd5
+in x15=0x200774
+mem 0x2007a9=af
+exit end
+test lrcpc2.aligned.0045
+code 194c6376
+seed dea718e2638d24f8
+in x27=0x2017da
+out x22=0x6a
+exit end
+test lrcpc2.aligned.0046
+code d9cea01b
+seed 14faabd787eb5fac
+in x0=0x2013f6
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0047
+code 99d5b378
+seed 39614b1936fac434
+in x24=0x7fffffff x27=0x2018e1
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0048
+code 99d1f342
+seed fb14dab91a7ccd10
+in x26=0x200291
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0049
+code 5908e103
+seed 0f7de0bcb249f586
+in x3=0x8000 x8=0x2003b6
+mem 0x200444=0080
+exit end
+test lrcpc2.aligned.0050
+code d9da325c
+seed aa72242be8115c0d
+in x18=0x200705
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0051
+code d991e020
+seed fe856c487399888b
+in x1=0x2010a2
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0052
+code d9df2215
+seed 68ceeee7cc5444a9
+in x21=0x5555555555555555 x16=0x20138e
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0053
+code d91c718d
+seed fd57f42101989517
+in x12=0x200809
+mem 0x2007d0=c79a8d7280fbff58
+exit end
+test lrcpc2.aligned.0054
+code 59ce22bd
+seed e8b3c12aea03a7f6
+in x29=0x0 x21=0x2007b0
+out x29=0xffffac9c
+exit end
+test lrcpc2.aligned.0055
+code 994dc0de
+seed 2f32dc92c38a5ad6
+in x6=0x200fa8
+out x30=0x8fc515b5
+exit end
+test lrcpc2.aligned.0056
+code 19d9e2a3
+seed afae7839ffe7cdc8
+in x21=0x201f28
+out x3=0xffffffc1
+exit end
+test lrcpc2.aligned.0057
+code 99c9302f
+seed 674e4233f7767c75
+in x15=0x5555555555555555 x1=0x20179d
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0058
+code 1993f2b1
+seed 88b4d895164bd962
+in x21=0x201383
+out x17=0x54
+exit end
+test lrcpc2.aligned.0059
+code 9956939e
+seed 0f419cfad9eba465
+in x30=0x7fffffff x28=0x200103
+out x30=0xfebd0bc
+exit end
+test lrcpc2.aligned.0060
+code 198b5225
+seed e74b09374d28873c
+in x17=0x200a6d
+out x5=0x5
+exit end
+test lrcpc2.aligned.0061
+code 995550cf
+seed 545da449c8505d63
+in x6=0x2000af
+out x15=0x5f1dcb1e
+exit end
+test lrcpc2.aligned.0062
+code 59c8f0aa
+seed b484fb2313c56b22
+in x10=0x2 x5=0x200b9f
+out x10=0xffffc754
+exit end
+test lrcpc2.aligned.0063
+code 9906226f
+seed 7df3c402ca1fd0f4
+in x15=0x8000000000000001 x19=0x201d8e
+mem 0x201df0=01000000
+exit end
+test lrcpc2.aligned.0064
+code 1915a066
+seed 251c9af989e1db0a
+in x3=0x20142d
+mem 0x201387=39
+exit end
+test lrcpc2.aligned.0065
+code 598fd2f8
+seed a9422a2186072265
+in x23=0x2003b5
+out x24=0x3bcc
+exit end
+test lrcpc2.aligned.0066
+code 994db2b8
+seed badbdaf4fca343ef
+in x21=0x201f21
+out x24=0x6c48a67a
+exit end
+test lrcpc2.aligned.0067
+code d997b357
+seed 3aecd763793586f0
+in x26=0x201d3d
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0068
+code 99ce701d
+seed 76ce3bc325e61d72
+in x0=0x20036d
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0069
+code 5911b198
+seed a5802e4dfa6eb79e
+in x12=0x2010f5
+mem 0x201010=cc48
+exit end
+test lrcpc2.aligned.0070
+code 594da21d
+seed 943c906a962a1777
+in x29=0x100000000 x16=0x201a16
+out x29=0x3611
+exit end
+test lrcpc2.aligned.0071
+code 599d529d
+seed 2dbb6dd1559e170e
+in x29=0xfffffffffffffffe x20=0x2006d9
+out x29=0x7434
+exit end
+test lrcpc2.aligned.0072
+code d95f7274
+seed 2887af7dff3891db
+in x19=0x201e89
+out x20=0x5943b6d4c01c1696
+exit end
+test lrcpc2.aligned.0073
+code 99d7e12e
+seed 34a8b99597ccc745
+in x9=0x200fa6
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0074
+code 594b8367
+seed 1bc571fd9a39f1f4
+in x27=0x20170a
+out x7=0xeef
+exit end
+test lrcpc2.aligned.0075
+code 9947e23d
+seed 9a62fc898ecbfc1f
+in x17=0x201436
+out x29=0x8e5f8426
+exit end
+test lrcpc2.aligned.0076
+code 599cc10e
+seed 87c6ad99c6b7fa5b
+in x8=0x201a44
+out x14=0x2ce
+exit end
+test lrcpc2.aligned.0077
+code 991503ef
+seed c5b778c9659face8
+in x15=0xffffffff sp=0x201250
+mem 0x2011a0=ffffffff
+exit end
+test lrcpc2.aligned.0078
+code d990d3ad
+seed 6363fb8ce3d0e120
+in x29=0x201673
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0079
+code 19107399
+seed d876cdbb2f0e4a32
+in x28=0x201368
+mem 0x20126f=9d
+exit end
+test lrcpc2.aligned.0080
+code d907327a
+seed 17e4c7358fec4f66
+in x19=0x200195
+mem 0x200208=6398c9576600e61f
+exit end
+test lrcpc2.aligned.0081
+code d9d20099
+seed 99db3724bc482e77
+in x25=0xffffffff00000000 x4=0x200c48
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0082
+code d907a1b0
+seed 0402197eb083d6e9
+in x16=0x7fff x13=0x2014a6
+mem 0x201520=ff7f000000000000
+exit end
+test lrcpc2.aligned.0083
+code 594dc0e1
+seed 9cfb318cd9826d20
+in x7=0x200076
+out x1=0x509a
+exit end
+test lrcpc2.aligned.0084
+code 5951322b
+seed 95c5530bec0acd0e
+in x17=0x2006e7
+out x11=0x2481
+exit end
+test lrcpc2.aligned.0085
+code 9997b19c
+seed 4921ce5a219ed3e2
+in x12=0x200b15
+out x28=0xffffffffeb1cf8aa
+exit end
+test lrcpc2.aligned.0086
+code 5955507e
+seed c8fece3b5cad2c35
+in x30=0x8000 x3=0x2016b5
+out x30=0x736c
+exit end
+test lrcpc2.aligned.0087
+code 994201af
+seed bb6e1671d4a3fe9e
+in x13=0x20158c
+out x15=0x286406e4
+exit end
+test lrcpc2.aligned.0088
+code 994980d1
+seed 8bc6a0622e0b6413
+in x17=0xaaaaaaaaaaaaaaaa x6=0x201a34
+out x17=0x71222564
+exit end
+test lrcpc2.aligned.0089
+code 19c8235f
+seed 2f4f1421815559bf
+in x26=0x20083d
+exit end
+test lrcpc2.aligned.0090
+code 595f0061
+seed f45164235f7741cd
+in x3=0x201190
+out x1=0x5098
+exit end
+test lrcpc2.aligned.0091
+code 198dd2d8
+seed 883ef7dba97bd320
+in x24=0x0 x22=0x2004d9
+out x24=0xfffffffffffffffc
+exit end
+test lrcpc2.aligned.0092
+code 190612bd
+seed 89b14fc8a0af5717
+in x21=0x2018e9
+mem 0x20194a=fd
+exit end
+test lrcpc2.aligned.0093
+code 99d4429d
+seed 885c3e04dfd7fe8f
+in x20=0x201104
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0094
+code 19c81030
+seed 276896197ab49ccb
+in x1=0x201960
+out x16=0x3e
+exit end
+test lrcpc2.aligned.0095
+code 191ee17a
+seed 31ab14c1b15ee3c8
+in x11=0x2016e4
+mem 0x2016d2=44
+exit end
+test lrcpc2.aligned.0096
+code 99871137
+seed 01b65b3e39d12461
+in x23=0xaaaaaaaaaaaaaaaa x9=0x20135b
+out x23=0x29b8a74a
+exit end
+test lrcpc2.aligned.0097
+code 994e5014
+seed 5b0e7d0a7f35ee7d
+in x0=0x200b6b
+out x20=0xe50038d2
+exit end
+test lrcpc2.aligned.0098
+code 19d55351
+seed f84eeb588e8c3ac5
+in x26=0x20025d
+out x17=0x39
+exit end
+test lrcpc2.aligned.0099
+code 995ff312
+seed 631191144c8f53ad
+in x18=0x100000000 x24=0x200d0d
+out x18=0xe3a8a957
+exit end
+test lrcpc2.aligned.0100
+code 999b20c0
+seed 8aa62299e4f90aea
+in x6=0x200e5a
+out x0=0x52b19d0d
+exit end
+test lrcpc2.aligned.0101
+code 9981c000
+seed 5185ece8ad8b0684
+in x0=0x20181c
+out x0=0xffffffffecd63273
+exit end
+test lrcpc2.aligned.0102
+code 994d628d
+seed 6ace02094261e80b
+in x20=0x200a3a
+out x13=0xee81dade
+exit end
+test lrcpc2.aligned.0103
+code 990092ee
+seed fde6ea3c4c6b7fcf
+in x14=0x80 x23=0x20039b
+mem 0x2003a4=80000000
+exit end
+test lrcpc2.aligned.0104
+code 19853224
+seed 9f3da94e981b12c6
+in x4=0xaaaaaaaaaaaaaaaa x17=0x20073e
+out x4=0xffffffffffffff97
+exit end
+test lrcpc2.aligned.0105
+code 595bd133
+seed 55cd7714f7089d29
+in x9=0x2010bf
+out x19=0xae02
+exit end
+test lrcpc2.aligned.0106
+code 1997b1b6
+seed 16aad96735513804
+in x13=0x20018e
+out x22=0x45
+exit end
+test lrcpc2.aligned.0107
+code 190e23fe
+seed f20712a4a791746e
+in x30=0x5555555555555555 sp=0x200ed0
+mem 0x200fb2=55
+exit end
+test lrcpc2.aligned.0108
+code 19cb30ff
+seed 64413c9f50978f8a
+in x7=0x201b82
+exit end
+test lrcpc2.aligned.0109
+code d9c41242
+seed 79c7c8e2967b0315
+in x18=0x201ddf
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0110
+code 194bc018
+seed 038f080987673359
+in x0=0x201a6c
+out x24=0x50
+exit end
+test lrcpc2.aligned.0111
+code d940400b
+seed 74b99dca844b4ab9
+in x0=0x2013f4
+out x11=0xe558e413bb149286
+exit end
+test lrcpc2.aligned.0112
+code d908118e
+seed fe22a00e1f02673d
+in x14=0x7fff x12=0x200f7f
+mem 0x201000=ff7f000000000000
+exit end
+test lrcpc2.aligned.0113
+code 59d41302
+seed 978fe7b01e3726e4
+in x2=0x7fffffffffffffff x24=0x200d47
+out x2=0x43ce
+exit end
+test lrcpc2.aligned.0114
+code 99dd7002
+seed 158b7b43e53b5886
+in x2=0x2 x0=0x20076d
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0115
+code d94b2349
+seed f488a77b6c0c8aac
+in x9=0x8000000000000001 x26=0x2010ce
+out x9=0x53f2900f72dd9048
+exit end
+test lrcpc2.aligned.0116
+code 995751c5
+seed 09cf4c1b3aa4e818
+in x5=0x8000000000000001 x14=0x2004cb
+out x5=0x6f322535
+exit end
+test lrcpc2.aligned.0117
+code d98f403e
+seed 0f4db85b0bb0e5b6
+in x30=0x8000 x1=0x200354
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0118
+code 59c4d0bc
+seed ada82f7faf8b6113
+in x28=0x8000000000000000 x5=0x201221
+out x28=0x7045
+exit end
+test lrcpc2.aligned.0119
+code d98d20fa
+seed 6faf4a5783df8d3a
+in x7=0x20096e
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0120
+code 99cdc199
+seed 64eea487f47a0dd9
+in x25=0x7fff x12=0x20078c
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0121
+code 994731d7
+seed 33e8c6f751142999
+in x23=0xffff x14=0x201f3d
+out x23=0x3e253256
+exit end
+test lrcpc2.aligned.0122
+code d994736e
+seed b32d1f733b5e0f3d
+in x14=0x1 x27=0x2005d9
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0123
+code 59157289
+seed a144d02529bd1bf5
+in x20=0x201bb7
+mem 0x201b0e=2c84
+exit end
+test lrcpc2.aligned.0124
+code d996d261
+seed 216bf3392f2d8a65
+in x19=0x2012bb
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0125
+code 99d9e247
+seed 8a4e1e5015e7a24f
+in x7=0xffff x18=0x20200a
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0126
+code 19da404f
+seed 7d20b537aed79577
+in x2=0x2018ae
+out x15=0x3b
+exit end
+test lrcpc2.aligned.0127
+code 19d920b5
+seed 873f7c49f6d5b525
+in x21=0x0 x5=0x201002
+out x21=0x4e
+exit end
+test lrcpc2.aligned.0128
+code 990e4296
+seed 9d7f3df64ff7be2f
+in x22=0x8000000000000000 x20=0x201e40
+mem 0x201f24=00000000
+exit end
+test lrcpc2.aligned.0129
+code d9878206
+seed 67c192895f54f40a
+in x6=0xfffffffffffffffe x16=0x201cb8
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0130
+code 99cf21d7
+seed 071f451274852583
+in x14=0x2017ee
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0131
+code 990d42fc
+seed 1eef1006e0537dff
+in x23=0x201958
+mem 0x201a2c=82974e77
+exit end
+test lrcpc2.aligned.0132
+code 994df313
+seed 62db198299124cc2
+in x19=0xffffffff00000000 x24=0x2017e9
+out x19=0x980a9379
+exit end
+test lrcpc2.aligned.0133
+code 195693cb
+seed f87308189cfae4c7
+in x30=0x201c86
+out x11=0xf2
+exit end
+test lrcpc2.aligned.0134
+code 59410213
+seed 396db2ed09e94a16
+in x19=0x7fffffff x16=0x2017d0
+out x19=0x8b6c
+exit end
+test lrcpc2.aligned.0135
+code d9493122
+seed ba44a88f75895118
+in x9=0x200a6d
+out x2=0xdb3b9e73f90a39de
+exit end
+test lrcpc2.aligned.0136
+code 19498342
+seed babcbccc8ca9b258
+in x26=0x200bf7
+out x2=0x28
+exit end
+test lrcpc2.aligned.0137
+code 1981931d
+seed 86ba20730fe9dbb7
+in x29=0x5555555555555555 x24=0x2003db
+out x29=0x61
+exit end
+test lrcpc2.aligned.0138
+code 1945b1b6
+seed fbcb58148d2f5728
+in x13=0x201c36
+out x22=0x82
+exit end
+test lrcpc2.aligned.0139
+code 1953011c
+seed ebdb64ebaca6ed02
+in x28=0x7f x8=0x201d15
+out x28=0x3d
+exit end
+test lrcpc2.aligned.0140
+code 1952634f
+seed 7115c0106531ef34
+in x15=0x7f x26=0x200f88
+out x15=0x3c
+exit end
+test lrcpc2.aligned.0141
+code d9dae23e
+seed 27ba8c12135e9de6
+in x30=0xff x17=0x2015ea
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0142
+code 5945d2cc
+seed 87cf3252e109851f
+in x12=0x80000000 x22=0x200171
+out x12=0xeb24
+exit end
+test lrcpc2.aligned.0143
+code d9c090b7
+seed 3446c964e9281c16
+in x5=0x200d47
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0144
+code 99c1a2e6
+seed 398aee7deeab1884
+in x6=0xffff x23=0x200a7e
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0145
+code d9106143
+seed ebb0ba0f4f101e74
+in x10=0x200182
+mem 0x200088=0ffb52f5c09e6367
+exit end
+test lrcpc2.aligned.0146
+code 99125069
+seed 0c21f657a9002ccb
+in x3=0x2014df
+mem 0x201404=80da24e7
+exit end
+test lrcpc2.aligned.0147
+code 59df62e1
+seed 2223891d92ef7793
+in x23=0x201334
+out x1=0x56e4
+exit end
+test lrcpc2.aligned.0148
+code d9ced010
+seed 9068f652138af533
+in x16=0x2 x0=0x200b03
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0149
+code 199bf336
+seed c02d92685ef2660f
+in x25=0x201de3
+out x22=0x42
+exit end
+test lrcpc2.aligned.0150
+code 599c7246
+seed 80355201115c428a
+in x6=0x100000000 x18=0x200147
+out x6=0xffffffffffffed05
+exit end
+test lrcpc2.aligned.0151
+code 590e2162
+seed c4189c2c4440aacc
+in x2=0xff x11=0x2018c2
+mem 0x2019a4=ff00
+exit end
+test lrcpc2.aligned.0152
+code 9985330b
+seed b2c1f01d962cf180
+in x11=0x8000000000000000 x24=0x20090d
+out x11=0xffffffff9016b00f
+exit end
+test lrcpc2.aligned.0153
+code d982f223
+seed 684c55cdd4fd0c05
+in x3=0xffffffff00000000 x17=0x2004b1
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0154
+code d956126e
+seed 20e841168630781d
+in x19=0x2015f7
+out x14=0x349b5b11f90d6573
+exit end
+test lrcpc2.aligned.0155
+code 191cc3a2
+seed 6d40bd992feeed91
+in x2=0x8000000000000000 x29=0x20097c
+mem 0x200948=00
+exit end
+test lrcpc2.aligned.0156
+code d902c335
+seed 67bedb7195f8a0b0
+in x21=0xfffffffffffffffe x25=0x2018f4
+mem 0x201920=feffffffffffffff
+exit end
+test lrcpc2.aligned.0157
+code 995e51ff
+seed d7af19c1c7f9f5d7
+in x15=0x2017ef
+exit end
+test lrcpc2.aligned.0158
+code d914d157
+seed a898fc75a7ba07f7
+in x23=0x0 x10=0x200563
+mem 0x2004b0=0000000000000000
+exit end
+test lrcpc2.aligned.0159
+code 99c55001
+seed ac193d4d4529ba89
+in x0=0x200367
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0160
+code 999773a0
+seed 5fe1ae45155dc814
+in x0=0x8000000000000001 x29=0x200f15
+out x0=0xffffffff9c5cca92
+exit end
+test lrcpc2.aligned.0161
+code 994f3214
+seed c1f72dfd38838b71
+in x16=0x20115d
+out x20=0xa015028d
+exit end
+test lrcpc2.aligned.0162
+code 59923388
+seed 29f00da60ac41935
+in x28=0x200fbd
+out x8=0x3933
+exit end
+test lrcpc2.aligned.0163
+code 99cb4180
+seed 89d4aae6131afe17
+in x0=0xaaaaaaaaaaaaaaaa x12=0x20035c
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0164
+code 59cce147
+seed e01424bf1430ceba
+in x7=0x0 x10=0x201ea2
+out x7=0x2283
+exit end
+test lrcpc2.aligned.0165
+code 19104076
+seed fdd1d3d43bb47bbd
+in x3=0x2014f8
+mem 0x2013fc=71
+exit end
+test lrcpc2.aligned.0166
+code 9904f1ef
+seed bba7e8b3bee82a7b
+in x15=0x201589
+mem 0x2015d8=89152000
+exit end
+test lrcpc2.aligned.0167
+code 595831ad
+seed a0c4ccbe45da2556
+in x13=0x201bab
+out x13=0x1a8f
+exit end
+test lrcpc2.aligned.0168
+code 999870de
+seed 41959148064b086a
+in x30=0x5555555555555555 x6=0x200ef1
+out x30=0xffffffff96e40175
+exit end
+test lrcpc2.aligned.0169
+code 594a9390
+seed 1c7eb0c63f796473
+in x16=0x8000000000000001 x28=0x200e7f
+out x16=0x53d9
+exit end
+test lrcpc2.aligned.0170
+code 19d4426d
+seed 4c3b5ef3b5f1c031
+in x19=0x201fee
+out x13=0x2e
+exit end
+test lrcpc2.aligned.0171
+code 59899258
+seed 88f429203282f634
+in x18=0x201b2f
+out x24=0xffffffffffffc176
+exit end
+test lrcpc2.aligned.0172
+code 5902b2ee
+seed 905750c2f259ed4b
+in x14=0x2 x23=0x201b0f
+mem 0x201b3a=0200
+exit end
+test lrcpc2.aligned.0173
+code 195ee16c
+seed bd5723e9378c716d
+in x11=0x2008c7
+out x12=0xed
+exit end
+test lrcpc2.aligned.0174
+code d9453025
+seed 52452112c972fa29
+in x1=0x200f7d
+out x5=0x17db18f0ea283b6a
+exit end
+test lrcpc2.aligned.0175
+code 99869202
+seed 0f3eeb1ad8772fd7
+in x2=0xffffffff00000000 x16=0x2008cf
+out x2=0xfffffffff897383c
+exit end
+test lrcpc2.aligned.0176
+code 5906d325
+seed 7029241f2b299d9d
+in x5=0xffffffff x25=0x200eed
+mem 0x200f5a=ffff
+exit end
+test lrcpc2.aligned.0177
+code d9856187
+seed 049ac3a5948a30cb
+in x12=0x200432
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0178
+code 19862129
+seed 7ecfbea1867748e4
+in x9=0x201ea1
+out x9=0xffffffffffffffe1
+exit end
+test lrcpc2.aligned.0179
+code 995e71c0
+seed 3b27344117dc4369
+in x0=0x0 x14=0x200d59
+out x0=0xb367072c
+exit end
+test lrcpc2.aligned.0180
+code d9c8f1a4
+seed 107e35b011a783d8
+in x13=0x200d51
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0181
+code 19cd7256
+seed a0f0e11a39e6e9b9
+in x18=0x201a0f
+out x22=0x21
+exit end
+test lrcpc2.aligned.0182
+code 19d6e028
+seed 8283797e75d25071
+in x1=0x201796
+out x8=0xffffff9f
+exit end
+test lrcpc2.aligned.0183
+code 5911737d
+seed 31911bca23a46fd1
+in x29=0x2 x27=0x201719
+mem 0x201630=0200
+exit end
+test lrcpc2.aligned.0184
+code 19124204
+seed d049a55c6a76ea34
+in x4=0xffffffff x16=0x201a19
+mem 0x20193d=ff
+exit end
+test lrcpc2.aligned.0185
+code 199e63fa
+seed ca466bdbc06e8461
+in sp=0x200aa0
+out x26=0xffffffffffffff83
+exit end
+test lrcpc2.aligned.0186
+code d981b14a
+seed 43ef01234edfcb8d
+in x10=0x20065d
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0187
+code 99dd8352
+seed b2152c58873b69b8
+in x26=0x200530
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0188
+code 99d3039e
+seed a497b24bfcda45c8
+in x28=0x201044
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0189
+code d9d8e053
+seed 2797b26bc3e4820a
+in x2=0x20066a
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0190
+code 590402de
+seed a55c60f8e4eb7a0e
+in x22=0x200834
+mem 0x200874=c54a
+exit end
+test lrcpc2.aligned.0191
+code d99db22b
+seed 1e9b5393600dda89
+in x17=0x201dcd
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0192
+code 1996b2f2
+seed 33f693885cac403b
+in x23=0x200e00
+out x18=0x6d
+exit end
+test lrcpc2.aligned.0193
+code d95a73c2
+seed 17a5c1a880e07674
+in x2=0x8000000000000001 x30=0x200e61
+out x2=0x49b5a32668c8d3ba
+exit end
+test lrcpc2.aligned.0194
+code 191c60ef
+seed 09ad61092e074d53
+in x7=0x20046f
+mem 0x200435=45
+exit end
+test lrcpc2.aligned.0195
+code 19c3a3c2
+seed 1b317d710a109f0b
+in x30=0x2010dc
+out x2=0xfffffffa
+exit end
+test lrcpc2.aligned.0196
+code d91813b6
+seed 91ab5fb1578cc16f
+in x22=0xfffffffffffffffe x29=0x201d77
+mem 0x201cf8=feffffffffffffff
+exit end
+test lrcpc2.aligned.0197
+code d9dc4320
+seed 95e2e2d10dc5cdaf
+in x0=0x7fffffffffffffff x25=0x2013ac
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0198
+code 194b6059
+seed 2523d175ea0764f6
+in x2=0x20022a
+out x25=0x19
+exit end
+test lrcpc2.aligned.0199
+code d94d32c7
+seed 34cd872918460222
+in x22=0x201ecd
+out x7=0x77ae9a2460f3b56c
+exit end
+test lrcpc2.aligned.0200
+code 19557356
+seed 3c7ef6e1c11695c9
+in x26=0x20014d
+out x22=0xc3
+exit end
+test lrcpc2.aligned.0201
+code 9906d3c3
+seed 683664779e2c2790
+in x30=0x2016d7
+mem 0x201744=a3cda640
+exit end
+test lrcpc2.aligned.0202
+code d98ed052
+seed f05548a8a8ba3e9d
+in x18=0xaaaaaaaaaaaaaaaa x2=0x200ca3
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0203
+code 194fe06f
+seed 46b39b2fe8609495
+in x3=0x2003cb
+out x15=0xd8
+exit end
+test lrcpc2.aligned.0204
+code 19d733f2
+seed 0a04b17553e99314
+in sp=0x2012d0
+out x18=0xffffff9f
+exit end
+test lrcpc2.aligned.0205
+code 5955b094
+seed e8b43514e74723ce
+in x4=0x201847
+out x20=0xdd03
+exit end
+test lrcpc2.aligned.0206
+code 5901a079
+seed 4f8a729715ae994e
+in x3=0x200fc4
+mem 0x200fde=912b
+exit end
+test lrcpc2.aligned.0207
+code d9ca40c9
+seed cc6cb8c97b73e276
+in x9=0x7f x6=0x201254
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0208
+code d98c407d
+seed de264d18fc07c282
+in x29=0x80 x3=0x2003d4
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0209
+code 999741a9
+seed 618d943580d24291
+in x13=0x201cec
+out x9=0xffffffffa4237c94
+exit end
+test lrcpc2.aligned.0210
+code 59d5e2a8
+seed 3a08cede46c6d399
+in x21=0x2001b6
+out x8=0x4bcd
+exit end
+test lrcpc2.aligned.0211
+code d9cd6294
+seed 2d6c4f876f398b4e
+in x20=0x201952
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0212
+code 19ce51b3
+seed 2aa1dc6bd1d515a0
+in x13=0x201806
+out x19=0xffffffbd
+exit end
+test lrcpc2.aligned.0213
+code d900500e
+seed a6b46c43623cddd0
+in x0=0x2002e3
+mem 0x2002e8=f4d8e5ae2c3ad550
+exit end
+test lrcpc2.aligned.0214
+code 59c6e277
+seed 7e7680ce365506d9
+in x19=0x201424
+out x23=0x150
+exit end
+test lrcpc2.aligned.0215
+code 995d1082
+seed 20bd862c3ef97a67
+in x4=0x201fe7
+out x2=0x15b69ee7
+exit end
+test lrcpc2.aligned.0216
+code 5900f323
+seed 50520332e4550459
+in x25=0x201395
+mem 0x2013a4=a824
+exit end
+test lrcpc2.aligned.0217
+code 59d8b0d2
+seed 823daa0daa20f7a3
+in x6=0x201c65
+out x18=0x6a67
+exit end
+test lrcpc2.aligned.0218
+code d9961210
+seed ef4d47cdaef2a9e4
+in x16=0x200f67
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0219
+code d94a315c
+seed fbb2cdc505e10697
+in x28=0xffffffff x10=0x2001d5
+out x28=0xd9f737fc9c688e75
+exit end
+test lrcpc2.aligned.0220
+code d94ff03c
+seed d6f8b9bba6f8a2bb
+in x28=0x0 x1=0x200fe9
+out x28=0xee8f450188603a9b
+exit end
+test lrcpc2.aligned.0221
+code 1993e1fa
+seed d35005032a923e45
+in x15=0x2008a0
+out x26=0x3b
+exit end
+test lrcpc2.aligned.0222
+code 590f90d1
+seed 69e38cd3769cbc8c
+in x6=0x201b1d
+mem 0x201c16=9a0b
+exit end
+test lrcpc2.aligned.0223
+code 99011035
+seed b2eaee2cb172dfc7
+in x21=0x7fffffff x1=0x20040b
+mem 0x20041c=ffffff7f
+exit end
+test lrcpc2.aligned.0224
+code 591bd37e
+seed 508a49e33972197b
+in x27=0x200b93
+mem 0x200b50=61df
+exit end
+test lrcpc2.aligned.0225
+code 5917f2d1
+seed 37278647bc0b6b3f
+in x22=0x20076b
+mem 0x2006ea=7c43
+exit end
+test lrcpc2.aligned.0226
+code 591652a1
+seed e2d362f98b043ac4
+in x21=0x2018db
+mem 0x201840=1845
+exit end
+test lrcpc2.aligned.0227
+code d9d8f120
+seed dceac9a3f8e05ddf
+in x0=0x7fffffff x9=0x201eb1
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0228
+code d94bb01e
+seed d7524fba34f9818a
+in x0=0x201b6d
+out x30=0x4674eb7b4f6a175b
+exit end
+test lrcpc2.aligned.0229
+code d9ca535d
+seed 2cd85706fa1ee28a
+in x29=0xffffffff x26=0x2014f3
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0230
+code 194ea272
+seed 371bebc45dff87bb
+in x18=0x8000 x19=0x200cc4
+out x18=0x8e
+exit end
+test lrcpc2.aligned.0231
+code d9db4193
+seed bee5e136031dce3a
+in x12=0x201f8c
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0232
+code 590f8258
+seed 711e501e50826ecb
+in x24=0x8000000000000001 x18=0x20028a
+mem 0x200382=0100
+exit end
+test lrcpc2.aligned.0233
+code 5986d150
+seed c7980a90f6e16a87
+in x10=0x1fffa5
+out x16=0x696f
+exit end
+test lrcpc2.aligned.0234
+code 1959a2e4
+seed c56b8a7488dd54bd
+in x23=0x200399
+out x4=0x1e
+exit end
+test lrcpc2.aligned.0235
+code 19c9a345
+seed 95caf9165c88a6cf
+in x5=0x7f x26=0x200d35
+out x5=0xffffffa7
+exit end
+test lrcpc2.aligned.0236
+code 5948d12d
+seed ea69569123168d1a
+in x9=0x2012bb
+out x13=0x447d
+exit end
+test lrcpc2.aligned.0237
+code 598b71f8
+seed b5f9ae06393a56eb
+in x24=0x80 x15=0x201189
+out x24=0x567e
+exit end
+test lrcpc2.aligned.0238
+code 995510d4
+seed b3b9fc9c64cef854
+in x6=0x201e3b
+out x20=0xbbfed837
+exit end
+test lrcpc2.aligned.0239
+code 99da8207
+seed 45a23103dcf0f054
+in x16=0x201088
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0240
+code d91b33b3
+seed 5fbb7a6fe773049a
+in x29=0x20040d
+mem 0x2003c0=e867b2f53583dcaa
+exit end
+test lrcpc2.aligned.0241
+code d99fe1c0
+seed bd242c03406905d8
+in x14=0x2003ea
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0242
+code 99dfa052
+seed c288d4f3d1ce99d2
+in x2=0x201afa
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0243
+code 198cb367
+seed 3a5c50239ae3630e
+in x7=0x1 x27=0x201b43
+out x7=0x1e
+exit end
+test lrcpc2.aligned.0244
+code 195db3f9
+seed 21eae0a8c5e2d59f
+in sp=0x2005d0
+out x25=0xb1
+exit end
+test lrcpc2.aligned.0245
+code 1991117a
+seed 811a3f763192a80a
+in x11=0x201b4a
+out x26=0x3a
+exit end
+test lrcpc2.aligned.0246
+code 59c71120
+seed 41f5b6bcaeab07b1
+in x9=0x2003e1
+out x0=0xffffe1eb
+exit end
+test lrcpc2.aligned.0247
+code d996c13d
+seed 6d9adca74d4957b7
+in x9=0x201154
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0248
+code 990a72c8
+seed f5389be23a210ad1
+in x8=0x100000000 x22=0x2012f1
+mem 0x201398=00000000
+exit end
+test lrcpc2.aligned.0249
+code d9d8a207
+seed 701124763d919093
+in x16=0x201fde
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0250
+code 595672af
+seed 44f043aced7c09bf
+in x15=0x7f x21=0x200aef
+out x15=0x4b7f
+exit end
+test lrcpc2.aligned.0251
+code 99d912ce
+seed ecbe690d2739af67
+in x22=0x20094f
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0252
+code 5911f290
+seed 9d4aa22696cb650d
+in x16=0xffff x20=0x200bff
+mem 0x200b1e=ffff
+exit end
+test lrcpc2.aligned.0253
+code 190912b0
+seed 25f37da058a6a9b0
+in x21=0x200b15
+mem 0x200ba6=75
+exit end
+test lrcpc2.aligned.0254
+code 19d7c32a
+seed 36bf0b9872edb193
+in x25=0x200267
+out x10=0x66
+exit end
+test lrcpc2.aligned.0255
+code 1915e23f
+seed 550ce2db21bce903
+in x17=0x20034d
+mem 0x2002ab=00
+exit end
+test lrcpc2.aligned.0256
+code 991a12e5
+seed 13c48fbe97e831b5
+in x23=0x200bc3
+mem 0x200b64=6c2b7ebd
+exit end
+test lrcpc2.aligned.0257
+code 598b83b8
+seed b963b5d69a6045e2
+in x24=0xaaaaaaaaaaaaaaaa x29=0x200bb8
+out x24=0x2fd3
+exit end
+test lrcpc2.aligned.0258
+code 99c5312d
+seed eba7866feb601d3b
+in x9=0x201451
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0259
+code d95a1113
+seed b857f63d2b75a4a1
+in x19=0x8000 x8=0x200487
+out x19=0xd08f37b8102b24be
+exit end
+test lrcpc2.aligned.0260
+code 99df71ba
+seed cf22c7574ff97cf2
+in x13=0x2019a9
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0261
+code 198d42fb
+seed c463181771a89843
+in x23=0x201569
+out x27=0xffffffffffffffa8
+exit end
+test lrcpc2.aligned.0262
+code 1909a2bf
+seed 733bf58fa903523f
+in x21=0x200ea5
+mem 0x200f3f=00
+exit end
+test lrcpc2.aligned.0263
+code d9413026
+seed 090bf331906e9aee
+in x1=0x200f15
+out x6=0x42babdab9fda1210
+exit end
+test lrcpc2.aligned.0264
+code 595db3d3
+seed 08ac00f4d0104b9c
+in x30=0x20154d
+out x19=0xb84a
+exit end
+test lrcpc2.aligned.0265
+code 999cb050
+seed 7930816d48d74564
+in x16=0x7fffffff x2=0x2007cd
+out x16=0x15d33d70
+exit end
+test lrcpc2.aligned.0266
+code d91e803e
+seed 9c1c823fccdea4e6
+in x1=0x200a38
+mem 0x200a20=856945f6615221eb
+exit end
+test lrcpc2.aligned.0267
+code 1946636f
+seed ac8fb6616918bf2d
+in x15=0x5555555555555555 x27=0x2016a4
+out x15=0x5b
+exit end
+test lrcpc2.aligned.0268
+code d909d134
+seed feda3d5d99b25d14
+in x20=0xff x9=0x201f13
+mem 0x201fb0=ff00000000000000
+exit end
+test lrcpc2.aligned.0269
+code 194cf322
+seed 6f66a8532532cd85
+in x25=0x200126
+out x2=0x44
+exit end
+test lrcpc2.aligned.0270
+code 998f3217
+seed 28ceac3e5fb92638
+in x23=0x7f x16=0x201a41
+out x23=0x5aa6dfe8
+exit end
+test lrcpc2.aligned.0271
+code d9d263b7
+seed d02cecffd4a87e94
+in x29=0x20074a
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0272
+code 59c150b2
+seed c4ed4c8c6fd108cf
+in x5=0x201713
+out x18=0x2b65
+exit end
+test lrcpc2.aligned.0273
+code d9467275
+seed 0afc4f930981e4db
+in x19=0x201051
+out x21=0x70ce791c02d08e66
+exit end
+test lrcpc2.aligned.0274
+code 191a9261
+seed 4af40633043c4325
+in x1=0x80000000 x19=0x2004c9
+mem 0x200472=00
+exit end
+test lrcpc2.aligned.0275
+code 994be3de
+seed bc868e4f311f5f4b
+in x30=0x20065a
+out x30=0x1b1d1e76
+exit end
+test lrcpc2.aligned.0276
+code d9db93b1
+seed 1783334d3cf374df
+in x29=0x201ac7
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0277
+code 19935149
+seed ef9cb7728b63e782
+in x10=0x2006c3
+out x9=0xffffffffffffffb7
+exit end
+test lrcpc2.aligned.0278
+code 199a1069
+seed ca9faeace20e40a0
+in x3=0x201473
+out x9=0xffffffffffffff80
+exit end
+test lrcpc2.aligned.0279
+code 595000c5
+seed fc26dc1ae4168a3e
+in x6=0x200a78
+out x5=0xcb59
+exit end
+test lrcpc2.aligned.0280
+code 99024280
+seed 9681b708a43d57ab
+in x0=0x7fffffff x20=0x200c58
+mem 0x200c7c=ffffff7f
+exit end
+test lrcpc2.aligned.0281
+code 9983338f
+seed 2edaa45a18ab43ae
+in x28=0x20147d
+out x15=0xffffffffedbf05b6
+exit end
+test lrcpc2.aligned.0282
+code 9957433b
+seed c14421ce0e852733
+in x25=0x200e70
+out x27=0xa5bc3ce2
+exit end
+test lrcpc2.aligned.0283
+code 5907e068
+seed 1bfed58fc731a1d1
+in x3=0x2003f6
+mem 0x200474=e708
+exit end
+test lrcpc2.aligned.0284
+code d9ca9023
+seed 1b69698dce1ec7cd
+in x3=0x8000000000000000 x1=0x201a67
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0285
+code 5981b3c5
+seed 5813aa130ea9a183
+in x30=0x2007bd
+out x5=0xffffffffffff88bd
+exit end
+test lrcpc2.aligned.0286
+code d91c8349
+seed 14361fa3d7a8cce6
+in x26=0x200dd8
+mem 0x200da0=3737303efd32eeb4
+exit end
+test lrcpc2.aligned.0287
+code 194e4351
+seed 55b2c0c659a2cc67
+in x26=0x200da0
+out x17=0x13
+exit end
+test lrcpc2.aligned.0288
+code d99d02d9
+seed a45cb1a7f5efb832
+in x22=0x201568
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0289
+code d9ca32cd
+seed 641d63758e592a87
+in x13=0xaaaaaaaaaaaaaaaa x22=0x2015e5
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0290
+code 99424180
+seed 5176e967d098edf0
+in x12=0x2014f8
+out x0=0x7e20ca01
+exit end
+test lrcpc2.aligned.0291
+code 598e2313
+seed d003e8384fc2cacd
+in x24=0x200d70
+out x19=0xffffffffffffeda9
+exit end
+test lrcpc2.aligned.0292
+code d99260e2
+seed 24a8b54d275e9983
+in x7=0x200fda
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0293
+code d9c35306
+seed 521cb3475659b178
+in x6=0xaaaaaaaaaaaaaaaa x24=0x2012e3
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0294
+code 591003e7
+seed 2c474937702b1748
+in sp=0x201b70
+mem 0x201a70=599d
+exit end
+test lrcpc2.aligned.0295
+code 991e5010
+seed 87e01f873df049f5
+in x0=0x201297
+mem 0x20127c=126d0919
+exit end
+test lrcpc2.aligned.0296
+code 59d270be
+seed 3ab8cc1b252168e9
+in x30=0x80 x5=0x201b0d
+out x30=0xffffa6cd
+exit end
+test lrcpc2.aligned.0297
+code 19d9934e
+seed fa8465637009b36c
+in x26=0x2010ec
+out x14=0xffffffdc
+exit end
+test lrcpc2.aligned.0298
+code 19095043
+seed 4b53a9c2b2a6e69f
+in x3=0xffff x2=0x2012aa
+mem 0x20133f=ff
+exit end
+test lrcpc2.aligned.0299
+code 99dc9200
+seed 8d3ee08bac6db232
+in x16=0x200ee3
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0300
+code 99549135
+seed 4367291366d4f506
+in x21=0x8000000000000001 x9=0x200fbb
+out x21=0xad0dc930
+exit end
+test lrcpc2.aligned.0301
+code d945d267
+seed c3a6bc768ee552e0
+in x19=0x20089b
+out x7=0x63a205c8f5752f39
+exit end
+test lrcpc2.aligned.0302
+code d9987003
+seed d2891e17fd775c42
+in x0=0x201181
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0303
+code 594bb3b6
+seed 4d840c0ac707cdcc
+in x29=0x2018d5
+out x22=0x80c2
+exit end
+test lrcpc2.aligned.0304
+code 995d90c8
+seed 6b9fb886abac50f0
+in x6=0x2002db
+out x8=0x95e89a16
+exit end
+test lrcpc2.aligned.0305
+code 9904b1d5
+seed 3235ef4faaa13093
+in x21=0xffffffff x14=0x201f7d
+mem 0x201fc8=ffffffff
+exit end
+test lrcpc2.aligned.0306
+code 599ae2f9
+seed 6c4e22bf488c27e2
+in x25=0x80000000 x23=0x200f6c
+out x25=0xffffffffffffa4dd
+exit end
+test lrcpc2.aligned.0307
+code 1946c036
+seed 747ccea18fbae4d0
+in x22=0x8000 x1=0x200159
+out x22=0x44
+exit end
+test lrcpc2.aligned.0308
+code 9956a2c8
+seed c5a1645a009f502f
+in x8=0x7fffffff x22=0x201d66
+out x8=0xf3cf183a
+exit end
+test lrcpc2.aligned.0309
+code d98d80e9
+seed c4afa2229cea1e1b
+in x7=0x201a20
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0310
+code d952d26e
+seed 0698c72de07ddff7
+in x19=0x200b33
+out x14=0x7b68bfa12e0aee0c
+exit end
+test lrcpc2.aligned.0311
+code 1989e097
+seed 1d9cd957618f58ee
+in x23=0x1 x4=0x200a95
+out x23=0xffffffffffffffea
+exit end
+test lrcpc2.aligned.0312
+code 59ca320a
+seed 15500546afca636a
+in x10=0xffffffff00000000 x16=0x200843
+out x10=0xffff8276
+exit end
+test lrcpc2.aligned.0313
+code d99cb1c0
+seed 8788516c0440624d
+in x14=0x2004ad
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0314
+code 19149292
+seed baa19c40605cbc4a
+in x18=0x5555555555555555 x20=0x200830
+mem 0x200779=55
+exit end
+test lrcpc2.aligned.0315
+code 9901022c
+seed 173487bd0d06d2bc
+in x17=0x200990
+mem 0x2009a0=bba0a2f3
+exit end
+test lrcpc2.aligned.0316
+code 191c0062
+seed af1e419814359197
+in x2=0xffffffff x3=0x20125f
+mem 0x20121f=ff
+exit end
+test lrcpc2.aligned.0317
+code 59c19270
+seed 201a3d9314101f53
+in x16=0x80000000 x19=0x200675
+out x16=0x1b37
+exit end
+test lrcpc2.aligned.0318
+code 59df63ac
+seed ec5a375d5286c020
+in x29=0x201ea8
+out x12=0xffffdd86
+exit end
+test lrcpc2.aligned.0319
+code 195f03fe
+seed 6269dfb11dc46e4b
+in x30=0xaaaaaaaaaaaaaaaa sp=0x2003e0
+out x30=0x91
+exit end
+test lrcpc2.aligned.0320
+code 99c852ec
+seed a811ee0640294e48
+in x23=0x200d9f
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0321
+code 59c4d369
+seed 08d3d2a187e20be1
+in x27=0x2011c3
+out x9=0x2e82
+exit end
+test lrcpc2.aligned.0322
+code d94bc000
+seed c00a561c2ab6815c
+in x0=0x2000ec
+out x0=0xa35bf211c9c8922
+exit end
+test lrcpc2.aligned.0323
+code 5940e3fc
+seed 9c82c6b8f1333cfc
+in x28=0xffffffff sp=0x200470
+out x28=0x6f8
+exit end
+test lrcpc2.aligned.0324
+code 59d98188
+seed d07a1499d1f64fdd
+in x12=0x20010c
+out x8=0x4cbb
+exit end
+test lrcpc2.aligned.0325
+code 590fe215
+seed 7f6fbd0b2c50b76a
+in x16=0x1ffff8
+mem 0x2000f6=230f
+exit end
+test lrcpc2.aligned.0326
+code 99dc7087
+seed cca210f453d1d382
+in x4=0x200e31
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0327
+code d9d6d208
+seed 7f0ab0540b840f01
+in x8=0xffffffff00000000 x16=0x201b23
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0328
+code 5996712c
+seed 2819586773e303c8
+in x9=0x2002af
+out x12=0xffffffffffffbee1
+exit end
+test lrcpc2.aligned.0329
+code 195481e1
+seed bd4f76770859ced2
+in x1=0xffffffffffffffff x15=0x201390
+out x1=0xc5
+exit end
+test lrcpc2.aligned.0330
+code 5998c0cb
+seed 2d59404f9526edef
+in x6=0x201800
+out x11=0xffffffffffffc6e9
+exit end
+test lrcpc2.aligned.0331
+code d9cb92c4
+seed 85913dbe9537fe16
+in x22=0x20171f
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0332
+code d9526014
+seed c473b9072c4f8709
+in x20=0x80 x0=0x201332
+out x20=0x542aae8ca1416334
+exit end
+test lrcpc2.aligned.0333
+code 999c80cb
+seed d019f9c431fb8079
+in x11=0x1 x6=0x2013c4
+out x11=0x41dfc42
+exit end
+test lrcpc2.aligned.0334
+code 9990439c
+seed de7c87cba9caf655
+in x28=0x200340
+out x28=0x3895a3fb
+exit end
+test lrcpc2.aligned.0335
+code 591c2091
+seed 331a3bc6c2710987
+in x4=0x201af0
+mem 0x201ab2=40f9
+exit end
+test lrcpc2.aligned.0336
+code 99d8d141
+seed c84cae5605806860
+in x10=0x2006bf
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0337
+code 99579356
+seed 9a4c835fee248806
+in x26=0x2013ab
+out x22=0xb6de9077
+exit end
+test lrcpc2.aligned.0338
+code 991f9191
+seed 4e3f199a3c56f1d9
+in x17=0xffffffff x12=0x201f83
+mem 0x201f7c=ffffffff
+exit end
+test lrcpc2.aligned.0339
+code 19dcf1a1
+seed f899352d9ace7cbc
+in x13=0x201f97
+out x1=0xffffffdb
+exit end
+test lrcpc2.aligned.0340
+code 598c822e
+seed 264f123cb42b18b0
+in x14=0x8000 x17=0x20138a
+out x14=0xffffffffffff8598
+exit end
+test lrcpc2.aligned.0341
+code 9988d223
+seed bea83660d2042e6d
+in x17=0x2014fb
+out x3=0x17586e54
+exit end
+test lrcpc2.aligned.0342
+code d90532ce
+seed ebf1369604ef4a99
+in x14=0x7f x22=0x20134d
+mem 0x2013a0=7f00000000000000
+exit end
+test lrcpc2.aligned.0343
+code 59c6c2cb
+seed c9c0d0189edf00b3
+in x22=0x2008a8
+out x11=0xfffff91f
+exit end
+test lrcpc2.aligned.0344
+code 994c1371
+seed f1785b3a7ae1d06d
+in x17=0x5555555555555555 x27=0x200e87
+out x17=0xa42a597a
+exit end
+test lrcpc2.aligned.0345
+code 1944a1ce
+seed c35b6d77cd3604f8
+in x14=0x201b7e
+out x14=0xce
+exit end
+test lrcpc2.aligned.0346
+code 99c440c3
+seed de2ba26e14ac32a9
+in x3=0x8000 x6=0x200324
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0347
+code d959a022
+seed 9d7bb78605095557
+in x1=0x20138e
+out x2=0x90d951e7aaafe3ff
+exit end
+test lrcpc2.aligned.0348
+code 994250d6
+seed d479e8303c5bedec
+in x6=0x20154b
+out x22=0xf54b3bc8
+exit end
+test lrcpc2.aligned.0349
+code 999cb371
+seed e72f09dcc9bb42ec
+in x27=0x2017d5
+out x17=0xffffffffbbd9b277
+exit end
+test lrcpc2.aligned.0350
+code d9d40132
+seed 684d28cc4e16294d
+in x18=0x7fffffff x9=0x2015d0
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0351
+code 199220d1
+seed 62ad53758b932b7a
+in x6=0x201358
+out x17=0x59
+exit end
+test lrcpc2.aligned.0352
+code 194a9074
+seed fd46fd783cbf056a
+in x3=0x200237
+out x20=0x33
+exit end
+test lrcpc2.aligned.0353
+code d981029b
+seed ae3ae9ee6df8658b
+in x27=0xffff x20=0x2019b0
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0354
+code 595721f4
+seed c91257af8e67b99f
+in x20=0xffffffff x15=0x20157c
+out x20=0x9886
+exit end
+test lrcpc2.aligned.0355
+code 590c6309
+seed 8fa9d5e2a78b0dde
+in x24=0x201ee4
+mem 0x201faa=a485
+exit end
+test lrcpc2.aligned.0356
+code d9072167
+seed 09efe26294382d81
+in x11=0x2002b6
+mem 0x200328=537c670e359eacca
+exit end
+test lrcpc2.aligned.0357
+code 995060fe
+seed ea2ba29e73499097
+in x7=0x200cc2
+out x30=0x3fbd734e
+exit end
+test lrcpc2.aligned.0358
+code 990fd398
+seed 7888a48cd36ec380
+in x28=0x2016cf
+mem 0x2017cc=97b577e2
+exit end
+test lrcpc2.aligned.0359
+code d903d2cf
+seed 855aa087dd2d6659
+in x22=0x201233
+mem 0x201270=81cff5d3790eddf5
+exit end
+test lrcpc2.aligned.0360
+code d916c236
+seed 999b408baa5d9871
+in x17=0x201c54
+mem 0x201bc0=7c1843c52adf8c5e
+exit end
+test lrcpc2.aligned.0361
+code 59cef1f4
+seed cd970fdb17afe2ea
+in x15=0x2002a9
+out x20=0xffff83f7
+exit end
+test lrcpc2.aligned.0362
+code 595cc333
+seed 6a4d2734760382aa
+in x19=0x100000000 x25=0x200dc6
+out x19=0xe859
+exit end
+test lrcpc2.aligned.0363
+code d996f2db
+seed 71f28a623ec79288
+in x27=0x8000000000000000 x22=0x200741
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0364
+code d91e6162
+seed 2a80576dfb433c55
+in x11=0x2015fa
+mem 0x2015e0=1ac3811115b01d15
+exit end
+test lrcpc2.aligned.0365
+code 9990d25b
+seed e6668e41bfa77962
+in x27=0x8000 x18=0x2015cf
+out x27=0xffffffffa5d4923f
+exit end
+test lrcpc2.aligned.0366
+code 191281fc
+seed 7176008745b15395
+in x15=0x200651
+mem 0x200579=b1
+exit end
+test lrcpc2.aligned.0367
+code 99d0d1ba
+seed c31040edcf9fde44
+in x13=0x201ebb
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0368
+code 1989023e
+seed 04a20844d8ce3923
+in x17=0x200080
+out x30=0xffffffffffffffeb
+exit end
+test lrcpc2.aligned.0369
+code 9996d3a8
+seed 7dc021bc775b0fa0
+in x8=0x2 x29=0x2004a7
+out x8=0xffffffffe978a4d4
+exit end
+test lrcpc2.aligned.0370
+code 599e216e
+seed f56aa97ebc0e94a6
+in x11=0x200720
+out x14=0xffffffffffffff82
+exit end
+test lrcpc2.aligned.0371
+code 590c919d
+seed 220419b2317d52d9
+in x12=0x200963
+mem 0x200a2c=cade
+exit end
+test lrcpc2.aligned.0372
+code 599802ff
+seed 9d95285e27cf3cd0
+in x23=0x201b2e
+exit end
+test lrcpc2.aligned.0373
+code 999a03a4
+seed 265d6b84346793a9
+in x4=0x7fff x29=0x201000
+out x4=0xffffffffca822245
+exit end
+test lrcpc2.aligned.0374
+code d957d39e
+seed e15b60683de178df
+in x28=0x200b4b
+out x30=0xa2e242b752939c17
+exit end
+test lrcpc2.aligned.0375
+code 59473040
+seed 8500a3a717c64eb1
+in x0=0xffffffff x2=0x200811
+out x0=0xa68e
+exit end
+test lrcpc2.aligned.0376
+code 591e3138
+seed ec432e53a5118be1
+in x9=0x20056b
+mem 0x20054e=1d69
+exit end
+test lrcpc2.aligned.0377
+code 990d0143
+seed 35aeb714c76cf09a
+in x3=0x7fff x10=0x20089c
+mem 0x20096c=ff7f0000
+exit end
+test lrcpc2.aligned.0378
+code d98c52fe
+seed 66af99bd0c10659a
+in x30=0xfffffffffffffffe x23=0x201283
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0379
+code 198f61fd
+seed 5f215781347286f7
+in x29=0x0 x15=0x201493
+out x29=0x4e
+exit end
+test lrcpc2.aligned.0380
+code 5912f39a
+seed f2b59555871f2928
+in x28=0x2008b5
+mem 0x2007e4=9e3a
+exit end
+test lrcpc2.aligned.0381
+code 590852f5
+seed c53dd872061936a2
+in x23=0x200d0b
+mem 0x200d90=9090
+exit end
+test lrcpc2.aligned.0382
+code 59d89322
+seed 3a1dc22c2d6214f7
+in x25=0x2003e1
+out x2=0xfffff984
+exit end
+test lrcpc2.aligned.0383
+code 19087357
+seed 4bb92ad5323bd5b6
+in x23=0x80 x26=0x200acb
+mem 0x200b52=80
+exit end
+test lrcpc2.aligned.0384
+code 19c2b176
+seed 5b13715fe172fffb
+in x22=0xffffffff x11=0x201ef2
+out x22=0xb
+exit end
+test lrcpc2.aligned.0385
+code 59df9116
+seed 99cbf843de25183c
+in x8=0x200a79
+out x22=0x6425
+exit end
+test lrcpc2.aligned.0386
+code 994d536f
+seed 2d08b7143f150cc8
+in x27=0x2012c3
+out x15=0xf5312437
+exit end
+test lrcpc2.aligned.0387
+code d9c74082
+seed 2f4a4d1d36faaf1d
+in x4=0x201ca4
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0388
+code 99d272b6
+seed 49939ef074e17431
+in x21=0x20159d
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0389
+code d948c0f8
+seed 80057a7dc39ec623
+in x24=0xffffffffffffffff x7=0x200bfc
+out x24=0x3a2064e67a7e8828
+exit end
+test lrcpc2.aligned.0390
+code d9864149
+seed a1cfb7af13edf045
+in x10=0x200a14
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0391
+code 995c53a7
+seed c9d5fcd112ed5815
+in x7=0xaaaaaaaaaaaaaaaa x29=0x201f33
+out x7=0x33767407
+exit end
+test lrcpc2.aligned.0392
+code 59c0f114
+seed 280c343ae82eca0e
+in x8=0x201e01
+out x20=0x3890
+exit end
+test lrcpc2.aligned.0393
+code 19c86333
+seed a7316ed2ac68cdd7
+in x19=0x80000000 x25=0x2013f0
+out x19=0x25
+exit end
+test lrcpc2.aligned.0394
+code 5946e1f0
+seed 73bdfba110752f31
+in x15=0x200fbe
+out x16=0xa0f0
+exit end
+test lrcpc2.aligned.0395
+code 5905f261
+seed 0bfe319264ae9932
+in x19=0x20151f
+mem 0x20157e=eb6d
+exit end
+test lrcpc2.aligned.0396
+code d94c422e
+seed 9c1eb521cf7c1bb3
+in x17=0x200ee4
+out x14=0xab02f7bcb26a373e
+exit end
+test lrcpc2.aligned.0397
+code 999233bf
+seed 61ce9ce1d61c2e2b
+in x29=0x201375
+exit end
+test lrcpc2.aligned.0398
+code 99408338
+seed bc261c99b1d07930
+in x24=0x2 x25=0x201ab0
+out x24=0x1660ffd2
+exit end
+test lrcpc2.aligned.0399
+code d94741b7
+seed dfa8c90d941e3ebd
+in x13=0x201e4c
+out x23=0x6f0c97510e2684a8
+exit end
+test lrcpc2.aligned.0400
+code 199640fb
+seed 2b460b8f7f03bcfb
+in x7=0x200b9d
+out x27=0xffffffffffffffce
+exit end
+test lrcpc2.aligned.0401
+code d94330e2
+seed 3756cf9a66b32376
+in x7=0x2008f5
+out x2=0xf8c6ee3033888017
+exit end
+test lrcpc2.aligned.0402
+code 595ac2ac
+seed bbd5814f7bda43e4
+in x21=0x201cd2
+out x12=0x8109
+exit end
+test lrcpc2.aligned.0403
+code 19c193f6
+seed 59473934db32693c
+in x22=0x8000000000000001 sp=0x201d90
+out x22=0xffffffdd
+exit end
+test lrcpc2.aligned.0404
+code 19de217c
+seed 7513ff693b5615cc
+in x11=0x200bb8
+out x28=0xfffffff3
+exit end
+test lrcpc2.aligned.0405
+code d9c4435e
+seed 16cac8a99d7dd89f
+in x26=0x201d2c
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0406
+code 99c0a05c
+seed 217c59adb4f46faa
+in x2=0x200dd2
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0407
+code 194cc258
+seed 2790faabb4eb4797
+in x18=0x201a19
+out x24=0x20
+exit end
+test lrcpc2.aligned.0408
+code 591d9225
+seed 9211a6adecf65063
+in x5=0x7f x17=0x200155
+mem 0x20012e=7f00
+exit end
+test lrcpc2.aligned.0409
+code d953630f
+seed bec9d4e45f662e1a
+in x24=0x2015e2
+out x15=0x7dd2f521eba3baa
+exit end
+test lrcpc2.aligned.0410
+code 99832223
+seed 1e6ef980097cabdb
+in x17=0x201116
+out x3=0x627cff5a
+exit end
+test lrcpc2.aligned.0411
+code 1900e0e7
+seed 644816accbf50928
+in x7=0x20009e
+mem 0x2000ac=9e
+exit end
+test lrcpc2.aligned.0412
+code 9942722c
+seed bf6f0fe04f1c668e
+in x17=0x201049
+out x12=0xba8331fe
+exit end
+test lrcpc2.aligned.0413
+code 99d7e1dc
+seed 1ce88fa2a3291bf4
+in x14=0x201892
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0414
+code 59565080
+seed 23135498e535b2b9
+in x0=0x8000 x4=0x201dc5
+out x0=0x3b1c
+exit end
+test lrcpc2.aligned.0415
+code d98ea298
+seed 30ad86696bf0b6a8
+in x24=0x7fffffffffffffff x20=0x2011ae
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0416
+code d9de4160
+seed c0ed002ec6d13118
+in x11=0x200884
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0417
+code 1949218a
+seed 517fa6c3ffa2ca12
+in x10=0xfffffffffffffffe x12=0x2001b1
+out x10=0x16
+exit end
+test lrcpc2.aligned.0418
+code 595da0bc
+seed 4516bd2385723239
+in x5=0x20174a
+out x28=0x99ad
+exit end
+test lrcpc2.aligned.0419
+code 9919d1ef
+seed da3afa821b571fa5
+in x15=0x2013db
+mem 0x201378=db132000
+exit end
+test lrcpc2.aligned.0420
+code d9c9d316
+seed a657bc84c73d462c
+in x24=0x201b1b
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0421
+code 59c5322e
+seed 0a6f63c40e60ce8c
+in x17=0x1fffdf
+out x14=0x60c5
+exit end
+test lrcpc2.aligned.0422
+code 194472cb
+seed 4af43f599a890356
+in x22=0x2011b1
+out x11=0xa0
+exit end
+test lrcpc2.aligned.0423
+code 99926013
+seed 04226f72544d486d
+in x0=0x2017e2
+out x19=0x4cf8201
+exit end
+test lrcpc2.aligned.0424
+code 1947c3c0
+seed 7e8025f2d8b1a3a2
+in x30=0x201770
+out x0=0x7d
+exit end
+test lrcpc2.aligned.0425
+code 59cfe0c9
+seed 7b0dd54f9e689c93
+in x9=0x8000000000000000 x6=0x2018d2
+out x9=0xffff8278
+exit end
+test lrcpc2.aligned.0426
+code 9953f1b5
+seed 8e8f6abe526d7fdc
+in x13=0x201a9d
+out x21=0x8eaff529
+exit end
+test lrcpc2.aligned.0427
+code 99cb73bb
+seed 15c4d33f0bb04250
+in x27=0x2 x29=0x2013ed
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0428
+code 19c6e23f
+seed fff8c0125444fbba
+in x17=0x2011d3
+exit end
+test lrcpc2.aligned.0429
+code 190841e3
+seed bdac8bd3925ef7c8
+in x3=0x8000000000000000 x15=0x2018e2
+mem 0x201966=00
+exit end
+test lrcpc2.aligned.0430
+code 1959620e
+seed c974e99a2bdd3791
+in x16=0x2015f4
+out x14=0x7e
+exit end
+test lrcpc2.aligned.0431
+code 595d43ed
+seed b02316412edf9427
+in sp=0x200780
+out x13=0xcd36
+exit end
+test lrcpc2.aligned.0432
+code 991dd21d
+seed c10c776c0b9f58bb
+in x16=0x2016fb
+mem 0x2016d8=fd8ac2bf
+exit end
+test lrcpc2.aligned.0433
+code 998812f4
+seed b2f2fdd6c60f5028
+in x23=0x200853
+out x20=0xe6a88b1
+exit end
+test lrcpc2.aligned.0434
+code d904214c
+seed 7c2606fe360b9580
+in x12=0x7fffffffffffffff x10=0x2010de
+mem 0x201120=ffffffffffffff7f
+exit end
+test lrcpc2.aligned.0435
+code 1941404f
+seed 26130c0884abee8f
+in x2=0x2013c3
+out x15=0xd9
+exit end
+test lrcpc2.aligned.0436
+code 191c7186
+seed f1a508717e6bcb84
+in x12=0x201641
+mem 0x201608=00
+exit end
+test lrcpc2.aligned.0437
+code 999e704d
+seed db98d06e6674f6e8
+in x2=0x200625
+out x13=0xffffffffb48c0f2e
+exit end
+test lrcpc2.aligned.0438
+code 19917317
+seed 9caac1a3884aad66
+in x23=0xffffffff x24=0x200b3a
+out x23=0xfffffffffffffffb
+exit end
+test lrcpc2.aligned.0439
+code 199d718b
+seed 47dd5a8253268b4f
+in x12=0x2000ff
+out x11=0xffffffffffffffd2
+exit end
+test lrcpc2.aligned.0440
+code 999f0121
+seed 57979c78df1d3729
+in x9=0x200bc4
+out x1=0x417ec077
+exit end
+test lrcpc2.aligned.0441
+code 1913223c
+seed 55a2f04f133061b3
+in x28=0x7f x17=0x2004ce
+mem 0x200400=7f
+exit end
+test lrcpc2.aligned.0442
+code d944b1ee
+seed 6ebc5c1acfe63afb
+in x15=0x200565
+out x14=0x513fec35e0a6e1fb
+exit end
+test lrcpc2.aligned.0443
+code 590ef252
+seed 56287a72026a05dc
+in x18=0x200a63
+mem 0x200b52=630a
+exit end
+test lrcpc2.aligned.0444
+code 999f836c
+seed 443f615f2acf66b5
+in x27=0x200bc4
+out x12=0xffffffffa6b95803
+exit end
+test lrcpc2.aligned.0445
+code d997c197
+seed a1a8ac46195b5241
+in x12=0x200aec
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0446
+code 190db297
+seed 2b1b7a04cfaec1c5
+in x23=0x7f x20=0x2007de
+mem 0x2008b9=7f
+exit end
+test lrcpc2.aligned.0447
+code d991e24e
+seed 66aed26935ea9ff7
+in x18=0x200132
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0448
+code d99f7376
+seed 4a4cb7acb039ec42
+in x22=0xffffffff x27=0x201e01
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0449
+code d90a4162
+seed 1312b48a3ad818e3
+in x11=0x20153c
+mem 0x2015e0=cfa2197f85d2b0a6
+exit end
+test lrcpc2.aligned.0450
+code 191f42c3
+seed 42698345df9b8636
+in x22=0x200d01
+mem 0x200cf5=25
+exit end
+test lrcpc2.aligned.0451
+code 990c402e
+seed 76db659893e27ca4
+in x1=0x200b48
+mem 0x200c0c=08f44ad4
+exit end
+test lrcpc2.aligned.0452
+code 99d54214
+seed 955adcafe3e3d6e0
+in x20=0xfffffffffffffffe x16=0x201830
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0453
+code 9981e0fa
+seed fb992c0464711892
+in x26=0x0 x7=0x200722
+out x26=0x2bb5824d
+exit end
+test lrcpc2.aligned.0454
+code 598ce02e
+seed 51c8d663840c1ff7
+in x14=0x7f x1=0x201872
+out x14=0x6cf
+exit end
+test lrcpc2.aligned.0455
+code 994d0130
+seed d805f006580eef9b
+in x9=0x200a3c
+out x16=0x91129039
+exit end
+test lrcpc2.aligned.0456
+code 591141b1
+seed 15dd56f932f73533
+in x13=0x2009f6
+mem 0x20090a=33bf
+exit end
+test lrcpc2.aligned.0457
+code d90ac1b2
+seed 1e3e4d4bc11f4bfd
+in x13=0x200444
+mem 0x2004f0=5e81fa6806dc9e49
+exit end
+test lrcpc2.aligned.0458
+code 59d8d3bf
+seed 02f6931d0c2c6393
+in x29=0x200275
+exit end
+test lrcpc2.aligned.0459
+code 1945a0d1
+seed 9bd52a7dc2fba1bd
+in x6=0x20168f
+out x17=0x8
+exit end
+test lrcpc2.aligned.0460
+code d953c32d
+seed d36bec69f1ff22eb
+in x13=0xfffffffffffffffe x25=0x2007ac
+out x13=0x8a31bc9c110103f8
+exit end
+test lrcpc2.aligned.0461
+code 9940a2ca
+seed a5e3efec7ddba4d4
+in x22=0x200c6e
+out x10=0xa82bb237
+exit end
+test lrcpc2.aligned.0462
+code d991a3dd
+seed ae7794521d4e37a9
+in x30=0x201fc6
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0463
+code 19497266
+seed b694fcd7e9cf4229
+in x19=0x20149a
+out x6=0x9d
+exit end
+test lrcpc2.aligned.0464
+code 595801f2
+seed 6b1c209dffd23d80
+in x15=0x2018dc
+out x18=0x372b
+exit end
+test lrcpc2.aligned.0465
+code 190ca266
+seed 0eb8bd73e85c9d78
+in x6=0xffffffff x19=0x20112f
+mem 0x2011f9=ff
+exit end
+test lrcpc2.aligned.0466
+code 598b41f4
+seed df75e286aa133bf9
+in x15=0x200bd0
+out x20=0x2bbd
+exit end
+test lrcpc2.aligned.0467
+code 59cf727d
+seed 75181c5c3c1f3e95
+in x19=0x201c55
+out x29=0xffffb884
+exit end
+test lrcpc2.aligned.0468
+code 994583fc
+seed 99d5dc4f4a9c187a
+in x28=0xffff sp=0x2017e0
+out x28=0x8994405
+exit end
+test lrcpc2.aligned.0469
+code 5993c3a5
+seed 5d6d309ea7185437
+in x29=0x2014c2
+out x5=0xffffffffffffd13c
+exit end
+test lrcpc2.aligned.0470
+code 59d6b260
+seed 61fdac2a7f446b60
+in x19=0x2010bd
+out x0=0x7ccf
+exit end
+test lrcpc2.aligned.0471
+code 19dd8357
+seed 4468270b37c1347e
+in x26=0x200af2
+out x23=0xffffffd5
+exit end
+test lrcpc2.aligned.0472
+code 1980f2f3
+seed 123e504c1b8a16e6
+in x23=0x2003ef
+out x19=0xffffffffffffffa6
+exit end
+test lrcpc2.aligned.0473
+code 199d608e
+seed e4f213b51c60e2e4
+in x14=0x80000000 x4=0x201b01
+out x14=0xffffffffffffffda
+exit end
+test lrcpc2.aligned.0474
+code 9917514d
+seed 573fab6ec5265d17
+in x13=0xfffffffffffffffe x10=0x200bf7
+mem 0x200b6c=feffffff
+exit end
+test lrcpc2.aligned.0475
+code d94f824e
+seed 8abaf8396f98a545
+in x18=0x200bd0
+out x14=0x3226475812487276
+exit end
+test lrcpc2.aligned.0476
+code d9cd7182
+seed da1ff1d51af8c0f2
+in x2=0x7fffffffffffffff x12=0x2005b1
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0477
+code 59df52be
+seed f074bc0d40891e28
+in x21=0x2000c5
+out x30=0xffffb34a
+exit end
+test lrcpc2.aligned.0478
+code 1907e2f0
+seed 9da0ca7729b881d8
+in x16=0xaaaaaaaaaaaaaaaa x23=0x200797
+mem 0x200815=aa
+exit end
+test lrcpc2.aligned.0479
+code 19155144
+seed d2ceca6ae4944809
+in x4=0xffffffff00000000 x10=0x2004f4
+mem 0x200449=00
+exit end
+test lrcpc2.aligned.0480
+code 595d519a
+seed 0866ec89e126028a
+in x26=0x7fffffffffffffff x12=0x20100f
+out x26=0x6954
+exit end
+test lrcpc2.aligned.0481
+code 59973329
+seed 7586fe80e5dc9843
+in x9=0x0 x25=0x2013c9
+out x9=0xffffffffffff865b
+exit end
+test lrcpc2.aligned.0482
+code 99447156
+seed d6f423ce196b68fd
+in x10=0x20077d
+out x22=0x864f17c8
+exit end
+test lrcpc2.aligned.0483
+code 199f028e
+seed b4efa3738d17e635
+in x20=0x2011ba
+out x14=0x19
+exit end
+test lrcpc2.aligned.0484
+code 190450fc
+seed 11b4ab45974a3136
+in x28=0x2 x7=0x200b1e
+mem 0x200b63=02
+exit end
+test lrcpc2.aligned.0485
+code 595c80c9
+seed cd05f78a3a8897d8
+in x6=0x20080e
+out x9=0xb74b
+exit end
+test lrcpc2.aligned.0486
+code 5987c3d2
+seed 75188a03a2de3e60
+in x30=0x200c9a
+out x18=0x18ae
+exit end
+test lrcpc2.aligned.0487
+code 19507008
+seed 3cf685f1436f083a
+in x0=0x2009bc
+out x8=0x78
+exit end
+test lrcpc2.aligned.0488
+code 1993e2b2
+seed ed19985d0f7c12f3
+in x21=0x2018e3
+out x18=0xffffffffffffff8f
+exit end
+test lrcpc2.aligned.0489
+code d9dcf042
+seed 70313c042c747bd5
+in x2=0x201da1
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0490
+code 1990f161
+seed ccbf4e6f70429e29
+in x1=0x7fffffff x11=0x2008d8
+out x1=0xffffffffffffffbb
+exit end
+test lrcpc2.aligned.0491
+code 995ae04e
+seed 0ce13d9c0ff1cd79
+in x2=0x201e2a
+out x14=0xe619d6dc
+exit end
+test lrcpc2.aligned.0492
+code 59d9f1eb
+seed 25538035e8b1a618
+in x15=0x2003ab
+out x11=0xffffb59c
+exit end
+test lrcpc2.aligned.0493
+code 194ac1cf
+seed 40fe23c37c1eccc5
+in x14=0x2004e4
+out x15=0xb5
+exit end
+test lrcpc2.aligned.0494
+code 5944723a
+seed f7d1e1e02ef40297
+in x17=0x201485
+out x26=0x2937
+exit end
+test lrcpc2.aligned.0495
+code 194ea060
+seed 8bcefc5ca78f786a
+in x3=0x200862
+out x0=0x88
+exit end
+test lrcpc2.aligned.0496
+code 19cab28a
+seed ed5a14eb17f02c72
+in x20=0x200ad1
+out x10=0xffffffc7
+exit end
+test lrcpc2.aligned.0497
+code 9989e1ee
+seed 65c70ab487ae9174
+in x14=0x7fffffffffffffff x15=0x200d96
+out x14=0xffffffffb52f4d43
+exit end
+test lrcpc2.aligned.0498
+code 19cff2b5
+seed 752d98fe64fe1b95
+in x21=0x2000d4
+out x21=0x32
+exit end
+test lrcpc2.aligned.0499
+code d91c0116
+seed d370560c6be9a714
+in x8=0x200fa8
+mem 0x200f68=6dff80bc703ebe45
+exit end
+test lrcpc2.aligned.0500
+code 99c61032
+seed e85f740fb6299df9
+in x18=0x7fffffff x1=0x200fd3
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0501
+code d91870fd
+seed 2268a6f6d37b1606
+in x29=0xffffffffffffffff x7=0x200969
+mem 0x2008f0=ffffffffffffffff
+exit end
+test lrcpc2.aligned.0502
+code 199f12e9
+seed ab30c9e1caba0e19
+in x23=0x200a4c
+out x9=0xb
+exit end
+test lrcpc2.aligned.0503
+code 594310a9
+seed b18d13b670a92b1d
+in x5=0x201da5
+out x9=0x875c
+exit end
+test lrcpc2.aligned.0504
+code 1904d30c
+seed f4732eb7bb522e70
+in x24=0x201874
+mem 0x2018c1=43
+exit end
+test lrcpc2.aligned.0505
+code 591a203b
+seed 0e084c9d2c045900
+in x1=0x202052
+mem 0x201ff4=5be1
+exit end
+test lrcpc2.aligned.0506
+code 9947b1b6
+seed 5fc910baee1edd49
+in x13=0x200c8d
+out x22=0xc782912d
+exit end
+test lrcpc2.aligned.0507
+code 19516320
+seed 89d62af7ad2d54db
+in x25=0x20154e
+out x0=0x59
+exit end
+test lrcpc2.aligned.0508
+code 590600fa
+seed dd51c30814cf02ae
+in x7=0x201f84
+mem 0x201fe4=4453
+exit end
+test lrcpc2.aligned.0509
+code 59405136
+seed 3e020a8289f7a49d
+in x22=0xffffffff x9=0x20039f
+out x22=0x5ea0
+exit end
+test lrcpc2.aligned.0510
+code d9cad283
+seed be4e258ce8063094
+in x20=0x2016ab
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0511
+code 9919e1cb
+seed a12c5eea0c598b8c
+in x14=0x201f5e
+mem 0x201efc=6b9e5a19
+exit end
+test lrcpc2.aligned.0512
+code 19c1029a
+seed 6ed7d65713e99b5b
+in x20=0x2005cd
+out x26=0x45
+exit end
+test lrcpc2.aligned.0513
+code 99107345
+seed 3f2130f2f755bc16
+in x5=0x2 x26=0x200745
+mem 0x20064c=02000000
+exit end
+test lrcpc2.aligned.0514
+code 99c14344
+seed ceb57cbf84c01da1
+in x4=0xffffffffffffffff x26=0x200614
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0515
+code 1903a1d5
+seed 846e639e891772d4
+in x14=0x20084c
+mem 0x200886=b6
+exit end
+test lrcpc2.aligned.0516
+code d9cf328c
+seed 9ab031f12e6835be
+in x20=0x2018dd
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0517
+code 598f806f
+seed 0638df5d3d7930c1
+in x3=0x201daa
+out x15=0x1982
+exit end
+test lrcpc2.aligned.0518
+code 19d6a082
+seed 79710eaf3f9f8559
+in x4=0x2004b9
+out x2=0xffffff80
+exit end
+test lrcpc2.aligned.0519
+code 194f70fd
+seed bb4801b9ebc946bd
+in x29=0x8000000000000000 x7=0x200ce9
+out x29=0xe1
+exit end
+test lrcpc2.aligned.0520
+code 5912b13d
+seed c6531a0850b7cdd3
+in x9=0x201169
+mem 0x201094=4c8b
+exit end
+test lrcpc2.aligned.0521
+code 19d02359
+seed 527a6b051b54cddd
+in x26=0x2009f1
+out x25=0x3c
+exit end
+test lrcpc2.aligned.0522
+code d9c68204
+seed 9db7d01ee43d0cb6
+in x16=0x201148
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0523
+code 590932e6
+seed e22a040551ea3a3c
+in x23=0x20108f
+mem 0x201122=07b9
+exit end
+test lrcpc2.aligned.0524
+code 19dd1334
+seed c2cd152ea522da15
+in x25=0x2006ce
+out x20=0x3a
+exit end
+test lrcpc2.aligned.0525
+code 9901e08e
+seed d050d139ec60fb41
+in x4=0x2001da
+mem 0x2001f8=dd16089d
+exit end
+test lrcpc2.aligned.0526
+code 998f913f
+seed d43927f9d313c7dd
+in x9=0x201e77
+exit end
+test lrcpc2.aligned.0527
+code 19cb71b9
+seed cf10a99d0d6d13fd
+in x13=0x201b39
+out x25=0xc
+exit end
+test lrcpc2.aligned.0528
+code 99c9a029
+seed 5e2561068db9d9e1
+in x9=0x1 x1=0x2017fe
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0529
+code 99c82196
+seed cc1ffb3ec81e930c
+in x12=0x200a22
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0530
+code 19dd83dd
+seed afa157a98f0e64a7
+in x30=0x2019c7
+out x29=0xfffffffc
+exit end
+test lrcpc2.aligned.0531
+code 998383d6
+seed 041c2fe01c305b89
+in x30=0x200388
+out x22=0xffffffffe53c8cf2
+exit end
+test lrcpc2.aligned.0532
+code 590783c8
+seed 97c55725ae6c5a51
+in x30=0x200056
+mem 0x2000ce=d6b1
+exit end
+test lrcpc2.aligned.0533
+code 1909e04f
+seed 80ec5406c841077b
+in x2=0x201c29
+mem 0x201cc7=21
+exit end
+test lrcpc2.aligned.0534
+code d982d2ac
+seed 95cf4924ca263294
+in x12=0x7fffffff x21=0x20074b
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0535
+code 590bf12b
+seed e993e0b844192088
+in x9=0x2009dd
+mem 0x200a9c=d878
+exit end
+test lrcpc2.aligned.0536
+code d94bd1eb
+seed 0798d04aae4a630e
+in x15=0x2001cb
+out x11=0x48d717359a0b61eb
+exit end
+test lrcpc2.aligned.0537
+code d9dea1a0
+seed 82c51d4767bbfd3e
+in x13=0x201fde
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0538
+code 9947520a
+seed 70d45d71655ff1df
+in x16=0x200bef
+out x10=0x116d3ce5
+exit end
+test lrcpc2.aligned.0539
+code 199bd3fd
+seed ec9190d0e99a77dd
+in x29=0xaaaaaaaaaaaaaaaa sp=0x201760
+out x29=0xffffffffffffffe3
+exit end
+test lrcpc2.aligned.0540
+code 5918b1a6
+seed 455e1d0a5afe978f
+in x13=0x200f79
+mem 0x200f04=0f50
+exit end
+test lrcpc2.aligned.0541
+code d9d5c2d5
+seed d5efc51f6eb734cd
+in x22=0x2017d4
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0542
+code 99cec020
+seed 0d11c875426e900e
+in x1=0x201e40
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0543
+code 991461a7
+seed ad3d4820bdc789c4
+in x13=0x201802
+mem 0x201748=b5fdeeb4
+exit end
+test lrcpc2.aligned.0544
+code 1954f17b
+seed 38ca13895242f224
+in x27=0x100000000 x11=0x200196
+out x27=0x67
+exit end
+test lrcpc2.aligned.0545
+code 59061257
+seed 4964255887668924
+in x18=0x200795
+mem 0x2007f6=e124
+exit end
+test lrcpc2.aligned.0546
+code 59c9e354
+seed b9430753a3b96a51
+in x26=0x201c02
+out x20=0xffff9a5a
+exit end
+test lrcpc2.aligned.0547
+code 990a518e
+seed b879b20196c8638d
+in x14=0xffffffffffffffff x12=0x20119b
+mem 0x201240=ffffffff
+exit end
+test lrcpc2.aligned.0548
+code 99075005
+seed 5a6b3f22d2a92a09
+in x0=0x201ba7
+mem 0x201c1c=9a4e77f1
+exit end
+test lrcpc2.aligned.0549
+code 99d9132c
+seed dec32dc59eb040e4
+in x12=0xffffffff x25=0x201f5f
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0550
+code 59dba1eb
+seed 2552b95735b3d2fe
+in x15=0x20080e
+out x11=0x7c2f
+exit end
+test lrcpc2.aligned.0551
+code 19d51148
+seed aea4dfb211ca1f84
+in x10=0x2013a1
+out x8=0x38
+exit end
+test lrcpc2.aligned.0552
+code 995a700e
+seed 55d4a57dbaf267bf
+in x14=0xfffffffffffffffe x0=0x200b89
+out x14=0x664efc7c
+exit end
+test lrcpc2.aligned.0553
+code 5998927b
+seed e6e1651b5224de4b
+in x19=0x200ec5
+out x27=0x6f6a
+exit end
+test lrcpc2.aligned.0554
+code 190d22f6
+seed f435815efb5cc226
+in x23=0x200fbb
+mem 0x20108d=f4
+exit end
+test lrcpc2.aligned.0555
+code d90110af
+seed e5acaf02555611ca
+in x15=0xffffffff00000000 x5=0x2001bf
+mem 0x2001d0=00000000ffffffff
+exit end
+test lrcpc2.aligned.0556
+code d99ef0b4
+seed bc0743bb6e17f278
+in x20=0xaaaaaaaaaaaaaaaa x5=0x201dd9
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0557
+code 999f30c7
+seed 9b4363092d4dc469
+in x6=0x200875
+out x7=0x5571bc6a
+exit end
+test lrcpc2.aligned.0558
+code d90001c6
+seed ce0943bb1119c5a3
+in x6=0x80000000 x14=0x200388
+mem 0x200388=0000008000000000
+exit end
+test lrcpc2.aligned.0559
+code 5995e346
+seed 520173e6b8b50120
+in x26=0x2019d6
+out x6=0xffffffffffffbf80
+exit end
+test lrcpc2.aligned.0560
+code 9945e101
+seed 881f5bcd41c181e4
+in x1=0x7fff x8=0x200612
+out x1=0x3b76399d
+exit end
+test lrcpc2.aligned.0561
+code 19c7218c
+seed d1a80a51e8064aec
+in x12=0x20011e
+out x12=0x7c
+exit end
+test lrcpc2.aligned.0562
+code 190882fd
+seed 67a98555c36d720d
+in x29=0x1 x23=0x200022
+mem 0x2000aa=01
+exit end
+test lrcpc2.aligned.0563
+code 5954332f
+seed b559b7c11a59da0e
+in x25=0x201485
+out x15=0x190c
+exit end
+test lrcpc2.aligned.0564
+code 190600fd
+seed 537194223e15a119
+in x29=0x1 x7=0x2014ca
+mem 0x20152a=01
+exit end
+test lrcpc2.aligned.0565
+code d9ddc26c
+seed 6088db933ccd515a
+in x12=0xffffffff00000000 x19=0x200b0c
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0566
+code 199a51a5
+seed d9932ff9347381dd
+in x5=0xfffffffffffffffe x13=0x2009ad
+out x5=0x5b
+exit end
+test lrcpc2.aligned.0567
+code 199843a3
+seed cedd8cdb4c2a0570
+in x29=0x200e76
+out x3=0xffffffffffffffc0
+exit end
+test lrcpc2.aligned.0568
+code 5903a0d5
+seed c270150eacda28e9
+in x21=0x5555555555555555 x6=0x2013e6
+mem 0x201420=5555
+exit end
+test lrcpc2.aligned.0569
+code 99c84200
+seed 4e3d194ce8c7cfee
+in x0=0xffffffffffffffff x16=0x2010a8
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0570
+code 19d3f3fb
+seed 29cf464eb423891b
+in sp=0x200ff0
+out x27=0x4b
+exit end
+test lrcpc2.aligned.0571
+code 99c412c1
+seed 65976adbb72c0c2d
+in x1=0x8000000000000001 x22=0x2012e3
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0572
+code 990761a0
+seed 4a92be69a901eccc
+in x0=0x5555555555555555 x13=0x200b0e
+mem 0x200b84=55555555
+exit end
+test lrcpc2.aligned.0573
+code 199e9137
+seed 2eca1586a374e2cc
+in x23=0x7fffffffffffffff x9=0x20083c
+out x23=0xffffffffffffff9e
+exit end
+test lrcpc2.aligned.0574
+code 99cea2b6
+seed a271d9c2ae8fe4df
+in x21=0x200a12
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0575
+code d90d220c
+seed 5be3c4953038b80f
+in x16=0x201366
+mem 0x201438=be893c80da64a089
+exit end
+test lrcpc2.aligned.0576
+code d949c2f6
+seed 6b6b2f55c0d56f48
+in x23=0x2013c4
+out x22=0xc039475a4a2caf94
+exit end
+test lrcpc2.aligned.0577
+code d9d302d6
+seed 1b6fdc4c1112a6cf
+in x22=0x2005c0
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0578
+code 5902f173
+seed 85d0f59cdb78291f
+in x11=0x201931
+mem 0x201960=acef
+exit end
+test lrcpc2.aligned.0579
+code d986b20e
+seed 625fce01bf1c8dc8
+in x16=0x200245
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0580
+code 5981f28c
+seed 134bb2906e50322c
+in x20=0x20177b
+out x12=0x53a5
+exit end
+test lrcpc2.aligned.0581
+code 59c01250
+seed b4797c255b78fd84
+in x18=0x201e21
+out x16=0xffffed19
+exit end
+test lrcpc2.aligned.0582
+code 1916f293
+seed 00e0627fd7cd0f4c
+in x20=0x2014fd
+mem 0x20146c=7b
+exit end
+test lrcpc2.aligned.0583
+code 591a5142
+seed 10a532d6db1cb1a4
+in x10=0x20032f
+mem 0x2002d4=2792
+exit end
+test lrcpc2.aligned.0584
+code d9dc50fd
+seed e3dffbde31d670d8
+in x29=0x2 x7=0x201b23
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0585
+code 99995104
+seed ac3fe89181d6da62
+in x8=0x201ca7
+out x4=0x73dd9afc
+exit end
+test lrcpc2.aligned.0586
+code 99d9a22b
+seed cb31bb2042eb7334
+in x17=0x2016fe
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0587
+code 9954605c
+seed 476cad2fe8ce2e1e
+in x2=0x200dda
+out x28=0xe7a7f539
+exit end
+test lrcpc2.aligned.0588
+code 5992521e
+seed f9664f75cdec1057
+in x16=0x20094f
+out x30=0xffffffffffffb1cf
+exit end
+test lrcpc2.aligned.0589
+code 9994011d
+seed e1d6038e669841d8
+in x8=0x201c64
+out x29=0x2e6b9cc1
+exit end
+test lrcpc2.aligned.0590
+code 59d3f2a7
+seed 1faf47e99e93f9db
+in x21=0x201891
+out x7=0xffffda7f
+exit end
+test lrcpc2.aligned.0591
+code 199813c8
+seed a36219285ad73960
+in x30=0x20137b
+out x8=0x37
+exit end
+test lrcpc2.aligned.0592
+code d90e00a9
+seed 2bd54aab65a16a56
+in x9=0xffffffff00000000 x5=0x200c48
+mem 0x200d28=00000000ffffffff
+exit end
+test lrcpc2.aligned.0593
+code d9dcd15f
+seed 101a35cb3b736746
+in x10=0x200e4b
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0594
+code 99030048
+seed b1c535a8dff74da8
+in x2=0x2001e4
+mem 0x200214=9d3eea43
+exit end
+test lrcpc2.aligned.0595
+code 9954b24a
+seed d7c2a5c1f74d5012
+in x18=0x201a11
+out x10=0x45be14bf
+exit end
+test lrcpc2.aligned.0596
+code 599a81eb
+seed 097604ff38d1feb0
+in x15=0x200a40
+out x11=0xffffffffffffd61d
+exit end
+test lrcpc2.aligned.0597
+code 995e40fa
+seed e2ecc74e850d5397
+in x7=0x200190
+out x26=0xa13d1cc6
+exit end
+test lrcpc2.aligned.0598
+code 195622d9
+seed 455f8d360be51548
+in x25=0xffffffff x22=0x200cae
+out x25=0x93
+exit end
+test lrcpc2.aligned.0599
+code d98e61c3
+seed 14d34fdcc2443d0f
+in x3=0xffff x14=0x200532
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0600
+code 19081199
+seed 22bda9d1914e8f23
+in x12=0x201e5d
+mem 0x201ede=e6
+exit end
+test lrcpc2.aligned.0601
+code 599bf181
+seed e191dad1073b5404
+in x12=0x201ad7
+out x1=0xffffffffffffc6f8
+exit end
+test lrcpc2.aligned.0602
+code 594d3111
+seed a91abb73257e50bf
+in x17=0xffffffff x8=0x200849
+out x17=0xc38a
+exit end
+test lrcpc2.aligned.0603
+code d90371a7
+seed 8fa0f14bf632bb70
+in x13=0x200af1
+mem 0x200b28=539cba6986b309c8
+exit end
+test lrcpc2.aligned.0604
+code d90b71f0
+seed 77131beda4d4c717
+in x16=0x8000 x15=0x200e49
+mem 0x200f00=0080000000000000
+exit end
+test lrcpc2.aligned.0605
+code 59c2a2c0
+seed 61742b8a59bec4c3
+in x22=0x201310
+out x0=0x7e23
+exit end
+test lrcpc2.aligned.0606
+code 19c85333
+seed a4bd3acded11c8cc
+in x19=0x0 x25=0x2006ae
+out x19=0xffffffd4
+exit end
+test lrcpc2.aligned.0607
+code d900e31f
+seed c6c2a155902ab38e
+in x24=0x20105a
+mem 0x201068=0000000000000000
+exit end
+test lrcpc2.aligned.0608
+code 19d251a4
+seed bbeb0428fe9aafc5
+in x13=0x200199
+out x4=0xfffffff5
+exit end
+test lrcpc2.aligned.0609
+code 59c5906d
+seed 1257b1c2e66a1afb
+in x3=0x200321
+out x13=0x3b7f
+exit end
+test lrcpc2.aligned.0610
+code d9d0211b
+seed caa8d08efacde4cb
+in x8=0x20188e
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0611
+code d9db61d6
+seed f41c0200c2fb1758
+in x22=0xffffffffffffffff x14=0x201e62
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0612
+code 59094333
+seed 8b5a7ade5231543a
+in x19=0xffffffffffffffff x25=0x2009a8
+mem 0x200a3c=ffff
+exit end
+test lrcpc2.aligned.0613
+code 99c2e10d
+seed bd3b0375b12eae8d
+in x13=0xffffffffffffffff x8=0x2014f6
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0614
+code 990981dc
+seed bd778c2faa8e0ef3
+in x14=0x200980
+mem 0x200a18=b8ae 0x200a1b=c3
+exit end
+test lrcpc2.aligned.0615
+code d9040068
+seed e70b3d8422c87883
+in x8=0xffffffff x3=0x201140
+mem 0x201180=ffffffff00000000
+exit end
+test lrcpc2.aligned.0616
+code d993111c
+seed 7213d9e2a87a37b3
+in x8=0x20081f
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0617
+code 19d2e33c
+seed 9f3c54ac36e06d44
+in x25=0x201ed5
+out x28=0x32
+exit end
+test lrcpc2.aligned.0618
+code 599b125f
+seed 8145ffb8327beb64
+in x18=0x2002d7
+exit end
+test lrcpc2.aligned.0619
+code d99a034f
+seed 4fa970ac98b9fc8c
+in x15=0x80 x26=0x201c50
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0620
+code 5942b072
+seed bb40b21ab1bb9175
+in x3=0x2001fd
+out x18=0xd095
+exit end
+test lrcpc2.aligned.0621
+code d94601c6
+seed 1d367732011d61e6
+in x6=0xfffffffffffffffe x14=0x200308
+out x6=0x5f97d56baca7faf9
+exit end
+test lrcpc2.aligned.0622
+code d95722d6
+seed 38b4c451f9cbfc84
+in x22=0x2005f6
+out x22=0xbf056a83bbd77196
+exit end
+test lrcpc2.aligned.0623
+code 59c631d8
+seed ffb33af1907e8ef6
+in x24=0x7fffffff x14=0x20148d
+out x24=0xffffe055
+exit end
+test lrcpc2.aligned.0624
+code 9945f00b
+seed cf253de2191f6d1b
+in x0=0x201cc1
+out x11=0x7ec670a6
+exit end
+test lrcpc2.aligned.0625
+code 1987a235
+seed 1b587d76541c1101
+in x21=0x7fffffffffffffff x17=0x2003b8
+out x21=0x6f
+exit end
+test lrcpc2.aligned.0626
+code 591b52c9
+seed 4ff40b961c099f7f
+in x22=0x200e57
+mem 0x200e0c=3cc9
+exit end
+test lrcpc2.aligned.0627
+code 59c0a043
+seed 2374cc1d848afa4b
+in x2=0x20186c
+out x3=0x4ec9
+exit end
+test lrcpc2.aligned.0628
+code d9dc8284
+seed 0f9cce346bae7513
+in x20=0x201fa8
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0629
+code 598e804f
+seed ca66d0f1043aa25c
+in x2=0x2008b4
+out x15=0xffffffffffff8870
+exit end
+test lrcpc2.aligned.0630
+code d991133e
+seed 8144a47e29411d0c
+in x25=0x20028f
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0631
+code d9559049
+seed 73b74b339b86d987
+in x9=0x8000000000000001 x2=0x20184f
+out x9=0xc06e8f7b3b431a65
+exit end
+test lrcpc2.aligned.0632
+code 5986a2fb
+seed 2c4565b8d076c218
+in x23=0x200516
+out x27=0xffffffffffff84a4
+exit end
+test lrcpc2.aligned.0633
+code 59c1a10a
+seed e267304d9c34b305
+in x8=0x200e64
+out x10=0x613
+exit end
+test lrcpc2.aligned.0634
+code 59c6f34f
+seed ccb6bcc9e57028f9
+in x26=0x1fffd9
+out x15=0x694c
+exit end
+test lrcpc2.aligned.0635
+code 59d883c3
+seed 0b491e46d366464a
+in x3=0xffffffff00000000 x30=0x201cf6
+out x3=0xffffc77b
+exit end
+test lrcpc2.aligned.0636
+code 5956028c
+seed 18b7cc75fb61358d
+in x20=0x2016a4
+out x12=0x873f
+exit end
+test lrcpc2.aligned.0637
+code d9110285
+seed cbd04c019ec2c85d
+in x5=0x2 x20=0x201758
+mem 0x201668=0200000000000000
+exit end
+test lrcpc2.aligned.0638
+code 9915a284
+seed 0951fc565792e66b
+in x4=0xfffffffffffffffe x20=0x200656
+mem 0x2005b0=feffffff
+exit end
+test lrcpc2.aligned.0639
+code 994191c2
+seed 3271cf6171226c8b
+in x14=0x201837
+out x2=0x1f396f5c
+exit end
+test lrcpc2.aligned.0640
+code 190a826b
+seed 854c5d924b80d653
+in x19=0x200fc8
+mem 0x201070=9b
+exit end
+test lrcpc2.aligned.0641
+code 19151094
+seed 7867dba5af60237d
+in x20=0x8000 x4=0x201477
+mem 0x2013c8=00
+exit end
+test lrcpc2.aligned.0642
+code 591e7115
+seed 8eb21d169ee19274
+in x8=0x200559
+mem 0x200540=a86c
+exit end
+test lrcpc2.aligned.0643
+code 59c2a217
+seed 852f5438f2dc4228
+in x23=0x0 x16=0x2018b4
+out x23=0xffffeb71
+exit end
+test lrcpc2.aligned.0644
+code 59d503d0
+seed 48db94356c77ef02
+in x16=0xffff x30=0x20076c
+out x16=0xffffc8bf
+exit end
+test lrcpc2.aligned.0645
+code 1983d3aa
+seed d07b31c51cd0f27d
+in x10=0x7fffffffffffffff x29=0x20070d
+out x10=0xffffffffffffffbf
+exit end
+test lrcpc2.aligned.0646
+code 990a3177
+seed b1171e699a1611c2
+in x11=0x201415
+mem 0x2014b8=460c 0x2014bb=a2
+exit end
+test lrcpc2.aligned.0647
+code d9908184
+seed 34cb6aafe3423498
+in x12=0x200170
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0648
+code 99d381c2
+seed 3a6636be1b0af26a
+in x2=0x1 x14=0x201684
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0649
+code 99c2a163
+seed de0cf249e63a28f9
+in x3=0x7fff x11=0x200122
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0650
+code d95e13ab
+seed 3a61fec18be68813
+in x11=0xaaaaaaaaaaaaaaaa x29=0x2006c7
+out x11=0xaacec2a4228a34c6
+exit end
+test lrcpc2.aligned.0651
+code d91f90b5
+seed 7ddf512aa06701f8
+in x21=0xffffffffffffffff x5=0x200de7
+mem 0x200de0=ffffffffffffffff
+exit end
+test lrcpc2.aligned.0652
+code 1942416a
+seed 4e0c9ddc13ef8587
+in x10=0x7fff x11=0x201592
+out x10=0x19
+exit end
+test lrcpc2.aligned.0653
+code 99cc436f
+seed 1560fdbe7737f051
+in x15=0x80000000 x27=0x201b0c
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0654
+code 19c0a18a
+seed 41ab290dd358f826
+in x12=0x201b0d
+out x10=0xffffff97
+exit end
+test lrcpc2.aligned.0655
+code 5947b20b
+seed 842a91e2ff6efe3c
+in x16=0x200cd5
+out x11=0xe1fc
+exit end
+test lrcpc2.aligned.0656
+code 9907802b
+seed 6f3f91aa14c49816
+in x1=0x201d18
+mem 0x201d90=738cda9f
+exit end
+test lrcpc2.aligned.0657
+code d9c1e346
+seed b409e5c1128b1c89
+in x6=0x80000000 x26=0x201142
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0658
+code 5990d18b
+seed 5c4451aa46c1be1a
+in x11=0x8000000000000001 x12=0x2004a3
+out x11=0x608f
+exit end
+test lrcpc2.aligned.0659
+code 595172cb
+seed d0892c93070d8280
+in x11=0x0 x22=0x200a1d
+out x11=0xa9ed
+exit end
+test lrcpc2.aligned.0660
+code 19ccf167
+seed d69f593846ff9196
+in x11=0x201159
+out x7=0xffffffe6
+exit end
+test lrcpc2.aligned.0661
+code 190bf3e8
+seed 44c0492fd8757bb5
+in sp=0x200240
+mem 0x2002ff=5f
+exit end
+test lrcpc2.aligned.0662
+code 190720a4
+seed 6411a009764ae1e7
+in x5=0x2018a9
+mem 0x20191b=b0
+exit end
+test lrcpc2.aligned.0663
+code d9142092
+seed 2c74d412689e364f
+in x18=0x0 x4=0x200456
+mem 0x200398=0000000000000000
+exit end
+test lrcpc2.aligned.0664
+code 5902b3af
+seed 1f8dfe563ff530fa
+in x29=0x20014f
+mem 0x20017a=5b05
+exit end
+test lrcpc2.aligned.0665
+code 594840aa
+seed 119e65157cf97e61
+in x10=0x7f x5=0x200db0
+out x10=0xbfdc
+exit end
+test lrcpc2.aligned.0666
+code 99cad03c
+seed 7597b9413afe455e
+in x1=0x20182b
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0667
+code 99d8401a
+seed 4b37f6a7c374f39a
+in x26=0x0 x0=0x201bd8
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0668
+code d986d1ae
+seed e1622033a6087d9b
+in x14=0x1 x13=0x201d03
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0669
+code 9913439b
+seed ffce66472b74c07d
+in x27=0x7fffffff x28=0x200134
+mem 0x200068=ffffff7f
+exit end
+test lrcpc2.aligned.0670
+code 9950d28c
+seed 9e6d9ceaf6b4ca93
+in x20=0x2013eb
+out x12=0x1810d8e5
+exit end
+test lrcpc2.aligned.0671
+code 9948c128
+seed c572893206638d09
+in x9=0x20116c
+out x8=0xfac81aae
+exit end
+test lrcpc2.aligned.0672
+code 599c00fd
+seed f1f58c6d51c99986
+in x7=0x200348
+out x29=0x7f5c
+exit end
+test lrcpc2.aligned.0673
+code 1952c19a
+seed 7e397c1c8863aa14
+in x12=0x201364
+out x26=0x78
+exit end
+test lrcpc2.aligned.0674
+code 194a62f4
+seed b8f6770304391a76
+in x23=0x201c62
+out x20=0x5c
+exit end
+test lrcpc2.aligned.0675
+code 591f82ee
+seed a6ee52c1045c2877
+in x14=0x8000000000000001 x23=0x200614
+mem 0x20060c=0100
+exit end
+test lrcpc2.aligned.0676
+code 990373ac
+seed 26bd4d31045873b5
+in x12=0x5555555555555555 x29=0x201a01
+mem 0x201a38=55555555
+exit end
+test lrcpc2.aligned.0677
+code 591d6067
+seed b2cd595c36017149
+in x7=0xffffffff00000000 x3=0x2019fa
+mem 0x2019d0=0000
+exit end
+test lrcpc2.aligned.0678
+code 599ae309
+seed c22ea22b3368e3e4
+in x9=0xffffffff x24=0x201136
+out x9=0x1ab5
+exit end
+test lrcpc2.aligned.0679
+code 99472296
+seed 929827ac3f80943a
+in x20=0x1fffb6
+out x22=0x9f1d6ab1
+exit end
+test lrcpc2.aligned.0680
+code d91a12e5
+seed c7eeba94efe301a7
+in x5=0x7fffffffffffffff x23=0x2001e7
+mem 0x200188=ffffffffffffff7f
+exit end
+test lrcpc2.aligned.0681
+code 5950723f
+seed bf8dd1a3fd7b15d9
+in x17=0x200f01
+exit end
+test lrcpc2.aligned.0682
+code d945f3a1
+seed dc22f17afd8ec0ef
+in x1=0x80 x29=0x201f49
+out x1=0xc9eee140a3c0aaee
+exit end
+test lrcpc2.aligned.0683
+code 191ad135
+seed c3a5f7b06869479e
+in x9=0x2002fd
+mem 0x2002aa=51
+exit end
+test lrcpc2.aligned.0684
+code 591163c6
+seed 53a50150250e3f61
+in x30=0x202000
+mem 0x201f16=b565
+exit end
+test lrcpc2.aligned.0685
+code 9911921a
+seed 8de786dc7de73a37
+in x26=0x100000000 x16=0x201727
+mem 0x201640=00000000
+exit end
+test lrcpc2.aligned.0686
+code 5997a211
+seed 11e16b38380d2f4c
+in x17=0x8000000000000000 x16=0x200d50
+out x17=0x73ca
+exit end
+test lrcpc2.aligned.0687
+code 19d0814c
+seed 23f2be436b2dcd1d
+in x12=0xffffffffffffffff x10=0x2012b5
+out x12=0xffffffcf
+exit end
+test lrcpc2.aligned.0688
+code d99aa055
+seed feff20e10fa67d84
+in x2=0x201176
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0689
+code 9914213c
+seed ee92026563123d0a
+in x9=0x2008b6
+mem 0x2007f8=1885ade3
+exit end
+test lrcpc2.aligned.0690
+code 99552162
+seed da2e18ca429fbc9b
+in x2=0xffffffff x11=0x2006ae
+out x2=0x7eb5aca0
+exit end
+test lrcpc2.aligned.0691
+code d9841278
+seed 2adf526b1d6302a7
+in x24=0x5555555555555555 x19=0x20082f
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0692
+code 99035246
+seed 5059455cfec3acba
+in x18=0x200bab
+mem 0x200be0=f0f02dbf
+exit end
+test lrcpc2.aligned.0693
+code 1991f12a
+seed e35e0692b31c7f80
+in x10=0x7fff x9=0x201010
+out x10=0xffffffffffffffc9
+exit end
+test lrcpc2.aligned.0694
+code 990cd2f2
+seed af5cc9ffb6782984
+in x18=0xff x23=0x200ff7
+mem 0x2010c4=ff000000
+exit end
+test lrcpc2.aligned.0695
+code d9cb918d
+seed 8edcbe52091e83c6
+in x13=0x0 x12=0x200727
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0696
+code d9df61c5
+seed 15c9c3d5829df25e
+in x5=0x0 x14=0x201ef2
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0697
+code d94a63a6
+seed 64fa0e8533e1ac8c
+in x29=0x20071a
+out x6=0xc09e44b19fd2b295
+exit end
+test lrcpc2.aligned.0698
+code 5944e17c
+seed bc3c3a0654e55b10
+in x28=0x0 x11=0x201a7c
+out x28=0xaef2
+exit end
+test lrcpc2.aligned.0699
+code d989e276
+seed 118a7717d5baee8c
+in x22=0xffff x19=0x200062
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0700
+code 19122186
+seed b29cb607264d4c7e
+in x6=0x7fff x12=0x200915
+mem 0x200837=ff
+exit end
+test lrcpc2.aligned.0701
+code 1941834a
+seed c9bd43ffa825d2d0
+in x26=0x200ec9
+out x10=0xb1
+exit end
+test lrcpc2.aligned.0702
+code d91be138
+seed b9c0bccaef30b6e5
+in x9=0x20025a
+mem 0x200218=5c9790149172dca8
+exit end
+test lrcpc2.aligned.0703
+code 195780c5
+seed 8debaf9cfbbd29fe
+in x5=0x8000000000000000 x6=0x20108e
+out x5=0xf1
+exit end
+test lrcpc2.aligned.0704
+code 1906c275
+seed 161d8b91f1b7aeb6
+in x21=0x5555555555555555 x19=0x200b9c
+mem 0x200c08=55
+exit end
+test lrcpc2.aligned.0705
+code d9191275
+seed 4dcf84cff91b247d
+in x19=0x200b07
+mem 0x200a98=e30fb8f476fd9f5e
+exit end
+test lrcpc2.aligned.0706
+code 998420ff
+seed 10a4e481c652ee2f
+in x7=0x200d1e
+exit end
+test lrcpc2.aligned.0707
+code 994d5364
+seed eca9b8e1ce28753c
+in x4=0x1 x27=0x200a4f
+out x4=0xd918b04a
+exit end
+test lrcpc2.aligned.0708
+code d90c4098
+seed d912ef7a37b974d2
+in x4=0x2017fc
+mem 0x2018c0=900f67dad836c620
+exit end
+test lrcpc2.aligned.0709
+code d90ac1eb
+seed 997eed665d4ca10e
+in x15=0x201b04
+mem 0x201bb0=c05c0623c14ed3e6
+exit end
+test lrcpc2.aligned.0710
+code 99cd00de
+seed 67c767232ff372e3
+in x30=0x7f x6=0x201018
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0711
+code 1986e3a6
+seed 414c18e5d45c5516
+in x29=0x200949
+out x6=0x43
+exit end
+test lrcpc2.aligned.0712
+code 5989c19d
+seed 4ce6543a13c8866c
+in x12=0x20191e
+out x29=0x2752
+exit end
+test lrcpc2.aligned.0713
+code 19d0302d
+seed 19ef3e65fa19da86
+in x13=0x7fff x1=0x200471
+out x13=0xe
+exit end
+test lrcpc2.aligned.0714
+code 591113ab
+seed 41dd33214a886c2c
+in x29=0x200d5b
+mem 0x200c6c=eb9f
+exit end
+test lrcpc2.aligned.0715
+code 59c410e3
+seed 58c6adcaab0954d6
+in x7=0x200207
+out x3=0xffff9892
+exit end
+test lrcpc2.aligned.0716
+code 99d2521e
+seed 51afe7e86b7745ef
+in x30=0x8000 x16=0x2017d7
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0717
+code d95fc106
+seed 27a2f9c7c6c575e4
+in x8=0x2013ac
+out x6=0xe8547777a44649b6
+exit end
+test lrcpc2.aligned.0718
+code 5904831a
+seed 408ac1846153f27d
+in x26=0x100000000 x24=0x200222
+mem 0x20026a=0000
+exit end
+test lrcpc2.aligned.0719
+code 590ec140
+seed dbaecc6508ed3ffd
+in x0=0xfffffffffffffffe x10=0x2008fc
+mem 0x2009e8=feff
+exit end
+test lrcpc2.aligned.0720
+code 99c652e9
+seed d6b253893df80bbc
+in x9=0x8000 x23=0x2015ef
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0721
+code 9990207c
+seed 8ad210ceb18f2d20
+in x3=0x200b5a
+out x28=0x32bea32c
+exit end
+test lrcpc2.aligned.0722
+code 190361aa
+seed e9bff434413b421e
+in x10=0x100000000 x13=0x201228
+mem 0x20125e=00
+exit end
+test lrcpc2.aligned.0723
+code 594a8333
+seed 40821c2a56d91621
+in x25=0x200b36
+out x19=0x9f99
+exit end
+test lrcpc2.aligned.0724
+code d94dc002
+seed 2788bc8062c25ce4
+in x0=0x2011f4
+out x2=0xd7a6bad55f862003
+exit end
+test lrcpc2.aligned.0725
+code 5990a25b
+seed b4147bf6ca3e7827
+in x18=0x201f9e
+out x27=0xffffffffffffe12b
+exit end
+test lrcpc2.aligned.0726
+code 59de02ba
+seed 372f3b785b8a39e8
+in x21=0x2006a2
+out x26=0x48cf
+exit end
+test lrcpc2.aligned.0727
+code 19811115
+seed 088f48d61ea00598
+in x8=0x20086f
+out x21=0xfffffffffffffff9
+exit end
+test lrcpc2.aligned.0728
+code 998b8366
+seed 37acd65b2aa912f3
+in x6=0x7f x27=0x201bc0
+out x6=0x9bfb676
+exit end
+test lrcpc2.aligned.0729
+code d9c881d8
+seed fe97dde22dbe293b
+in x24=0x80000000 x14=0x2003f8
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0730
+code 990d024f
+seed 70a96910f373c5b9
+in x15=0x2 x18=0x2003c8
+mem 0x200498=02000000
+exit end
+test lrcpc2.aligned.0731
+code 5959f230
+seed 02a0b7b076cddb29
+in x17=0x2006b5
+out x16=0xb527
+exit end
+test lrcpc2.aligned.0732
+code 59dab1ea
+seed 201cc7466ab48c87
+in x15=0x200911
+out x10=0xffffd63b
+exit end
+test lrcpc2.aligned.0733
+code 99d7b2cc
+seed 84e6eb93ffe25290
+in x22=0x2012f9
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0734
+code 59dd72ab
+seed 6b2d45f5c478a6a9
+in x21=0x200165
+out x11=0x33e3
+exit end
+test lrcpc2.aligned.0735
+code 198c72df
+seed e96044c30d276a0d
+in x22=0x201a64
+exit end
+test lrcpc2.aligned.0736
+code 5950a0da
+seed b5bfa883127c2612
+in x26=0x8000000000000001 x6=0x200c94
+out x26=0xef9e
+exit end
+test lrcpc2.aligned.0737
+code 19dee247
+seed b6899dd3e138dea3
+in x7=0x80 x18=0x20126d
+out x7=0xffffffdb
+exit end
+test lrcpc2.aligned.0738
+code 1919c0cd
+seed 8b7efa707d18aeb2
+in x6=0x2003ef
+mem 0x20038b=8a
+exit end
+test lrcpc2.aligned.0739
+code 199ec38a
+seed 34b4f85e64d754a7
+in x10=0x8000 x28=0x201005
+out x10=0xffffffffffffffdb
+exit end
+test lrcpc2.aligned.0740
+code 19901059
+seed 69e9ecca5c3cd4b9
+in x2=0x201fed
+out x25=0x31
+exit end
+test lrcpc2.aligned.0741
+code 59d5127f
+seed aca7f0e572050911
+in x19=0x201c19
+exit end
+test lrcpc2.aligned.0742
+code 998733c6
+seed 26bf44cfe7efc478
+in x30=0x201255
+out x6=0xffffffff9982aa4a
+exit end
+test lrcpc2.aligned.0743
+code d98a1250
+seed b2301c9b125b81b3
+in x18=0x2002b7
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0744
+code d9860337
+seed d60dd3f4e2b02937
+in x25=0x201108
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0745
+code 994ae2bc
+seed 84baa6c4a9e7f0d1
+in x28=0xaaaaaaaaaaaaaaaa x21=0x201112
+out x28=0x5a1ada56
+exit end
+test lrcpc2.aligned.0746
+code d990c225
+seed 03fd1a96841d35c1
+in x17=0x201a6c
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0747
+code 199b1203
+seed 5c002089c40cab01
+in x16=0x2018ac
+out x3=0xffffffffffffffa7
+exit end
+test lrcpc2.aligned.0748
+code 19522321
+seed 167045b8ee77755f
+in x25=0x2002a3
+out x1=0xe8
+exit end
+test lrcpc2.aligned.0749
+code d992a025
+seed 137829e8f2463f42
+in x1=0x2012de
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0750
+code d91091e2
+seed e3a9f0ced84b5057
+in x2=0x7fff x15=0x2006e7
+mem 0x2005f0=ff7f000000000000
+exit end
+test lrcpc2.aligned.0751
+code 19c962ed
+seed ddc1c9877c95731c
+in x13=0xffffffff x23=0x2000be
+out x13=0xffffffa8
+exit end
+test lrcpc2.aligned.0752
+code d9d242f2
+seed 0220d11ff167c8d4
+in x23=0x20082c
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0753
+code 19112334
+seed 6fa1811ea3307a0e
+in x25=0x200ab9
+mem 0x2009cb=f1
+exit end
+test lrcpc2.aligned.0754
+code 990ea330
+seed 9dc20302ada68e1f
+in x25=0x200032
+mem 0x20011c=77039790
+exit end
+test lrcpc2.aligned.0755
+code 5944e151
+seed 8ee44bbb971b79cd
+in x17=0x7fffffffffffffff x10=0x20107c
+out x17=0x60f4
+exit end
+test lrcpc2.aligned.0756
+code d996a040
+seed 35e7336dc9b591ab
+in x0=0x7fff x2=0x20149e
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0757
+code 99166321
+seed c4465dc81c7c82af
+in x25=0x201692
+mem 0x2015f8=5efe9f6e
+exit end
+test lrcpc2.aligned.0758
+code d914e1a3
+seed 4bdeae71e2d0e4c1
+in x3=0x80 x13=0x201d22
+mem 0x201c70=8000000000000000
+exit end
+test lrcpc2.aligned.0759
+code 59da7013
+seed 4c2f70ba19c30526
+in x0=0x201ca1
+out x19=0x48b4
+exit end
+test lrcpc2.aligned.0760
+code d90b33a8
+seed 83dc6ee4a44f774e
+in x29=0x200035
+mem 0x2000e8=99327036983c6356
+exit end
+test lrcpc2.aligned.0761
+code 1912b001
+seed 170ae056b5824f6f
+in x0=0x201731
+mem 0x20165c=09
+exit end
+test lrcpc2.aligned.0762
+code 999f629d
+seed 2b4495385aea8b5c
+in x29=0x8000000000000001 x20=0x200ad6
+out x29=0xffffffffb7ba3ecd
+exit end
+test lrcpc2.aligned.0763
+code d98c3341
+seed 43dd307293369fd2
+in x26=0x200cb5
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0764
+code 99c6524e
+seed 87636f1c9ba491ed
+in x18=0x20164b
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0765
+code 599680e6
+seed 927becd938054df3
+in x7=0x201c9e
+out x6=0xffffffffffffa481
+exit end
+test lrcpc2.aligned.0766
+code d910e11a
+seed a4124c6c5b8a0e77
+in x26=0x80000000 x8=0x20027a
+mem 0x200188=0000008000000000
+exit end
+test lrcpc2.aligned.0767
+code 191a3297
+seed e60a474bbc9f7759
+in x23=0xffff x20=0x201861
+mem 0x201804=ff
+exit end
+test lrcpc2.aligned.0768
+code 5951617c
+seed 5503e1da7a38cc55
+in x11=0x200a02
+out x28=0xfe09
+exit end
+test lrcpc2.aligned.0769
+code d900128c
+seed 65339e3dd455bfa3
+in x12=0xffffffff x20=0x20159f
+mem 0x2015a0=ffffffff00000000
+exit end
+test lrcpc2.aligned.0770
+code d9cf636b
+seed c8b8dcfb7960e834
+in x27=0x200a32
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0771
+code d9127133
+seed 96e84975dcfed315
+in x9=0x201299
+mem 0x2011c0=1480fec133aa78ba
+exit end
+test lrcpc2.aligned.0772
+code d90c83d7
+seed 6d8097b080db819e
+in x23=0x8000000000000000 x30=0x201928
+mem 0x2019f0=0000000000000080
+exit end
+test lrcpc2.aligned.0773
+code 1955b0da
+seed f19423a76ea87981
+in x6=0x201bbe
+out x26=0xf8
+exit end
+test lrcpc2.aligned.0774
+code d916906f
+seed 6fd795fedd6ba99f
+in x3=0x20070f
+mem 0x200678=dc63c61152b24bc6
+exit end
+test lrcpc2.aligned.0775
+code 9903d07b
+seed 0d6c10ee3173e2cd
+in x3=0x201c7b
+mem 0x201cb8=0fdcc281
+exit end
+test lrcpc2.aligned.0776
+code 19daa2e5
+seed e7deb8b4ed1f8adb
+in x23=0x200149
+out x5=0x21
+exit end
+test lrcpc2.aligned.0777
+code 99da0385
+seed a362003a0506a108
+in x28=0x201bdc
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0778
+code 594b718c
+seed 2513c3e3c953dd2b
+in x12=0x2019a5
+out x12=0xeb01
+exit end
+test lrcpc2.aligned.0779
+code 994ad044
+seed 7a8b894582573232
+in x2=0x201403
+out x4=0x177b64c3
+exit end
+test lrcpc2.aligned.0780
+code 19c87391
+seed 0b2486fc13875562
+in x17=0x8000000000000001 x28=0x201448
+out x17=0xfffffff7
+exit end
+test lrcpc2.aligned.0781
+code d9da303d
+seed b8b231f1bf604554
+in x29=0xfffffffffffffffe x1=0x200cc5
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0782
+code d914c20f
+seed 085257f787708079
+in x16=0x20076c
+mem 0x2006b8=9280f52fe04ce84b
+exit end
+test lrcpc2.aligned.0783
+code 1988c0d8
+seed 263f5c78573933d8
+in x6=0x2019fa
+out x24=0xffffffffffffffcd
+exit end
+test lrcpc2.aligned.0784
+code d9453201
+seed 6b8efe341d1af2d6
+in x16=0x200df5
+out x1=0x6b22aa4119db91b4
+exit end
+test lrcpc2.aligned.0785
+code 1943a1cf
+seed 9bb03cb691449e9b
+in x15=0x7f x14=0x201336
+out x15=0xfc
+exit end
+test lrcpc2.aligned.0786
+code 99db81e2
+seed a33a9536088d659b
+in x2=0x7fffffff x15=0x201790
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0787
+code 5995400b
+seed 30d227685545b194
+in x11=0xff x0=0x2006ba
+out x11=0xcfb
+exit end
+test lrcpc2.aligned.0788
+code 994da02b
+seed 71562d08d1ecad34
+in x11=0x8000000000000000 x1=0x1fffd6
+out x11=0x9187d743
+exit end
+test lrcpc2.aligned.0789
+code 59cf42b9
+seed c131fe27186b8534
+in x21=0x2000e4
+out x25=0xffffea1d
+exit end
+test lrcpc2.aligned.0790
+code 99413358
+seed a6679e11177d8683
+in x26=0x200709
+out x24=0xa6ef17e
+exit end
+test lrcpc2.aligned.0791
+code d911716d
+seed 81ecd97a4741cc66
+in x13=0xffffffffffffffff x11=0x200871
+mem 0x200788=ffffffffffffffff
+exit end
+test lrcpc2.aligned.0792
+code 19dbc156
+seed e4c944a9ab612889
+in x10=0x200a6d
+out x22=0xffffff96
+exit end
+test lrcpc2.aligned.0793
+code 595e527e
+seed 682d2040875c9d38
+in x19=0x201077
+out x30=0x9d3c
+exit end
+test lrcpc2.aligned.0794
+code 9993e3ba
+seed 73cf60ceecee8b71
+in x26=0x100000000 x29=0x201246
+out x26=0xd792f96
+exit end
+test lrcpc2.aligned.0795
+code 195e52d5
+seed dd0e4f2cd8404154
+in x22=0x2014ca
+out x21=0xfb
+exit end
+test lrcpc2.aligned.0796
+code 5951828e
+seed cdd9b8afc436fd86
+in x20=0x201166
+out x14=0x37ca
+exit end
+test lrcpc2.aligned.0797
+code d982b01b
+seed 30f3083b3507d4fd
+in x0=0x200ecd
+exit sigill pc=+0 code=1
+test lrcpc2.aligned.0798
+code 59c300a3
+seed c13faee8f3c2f3aa
+in x5=0x200ea8
+out x3=0x72d
+exit end
+test lrcpc2.aligned.0799
+code 595f9096
+seed dc757618a79de33d
+in x22=0xffffffff x4=0x200333
+out x22=0x93e3
+exit end
+test lrcpc2.across.0000
+code d99da150
+seed 4111f2a7c16d68de
+in x10=0x2017e0
+exit sigill pc=+0 code=1
+test lrcpc2.across.0001
+code d95af056
+seed 5e928c49114aa78d
+in x2=0x2018fb
+exit sigbus pc=+0 code=1 addr=0x2018aa
+test lrcpc2.across.0002
+code 598f016a
+seed d22f1064456cc2c9
+in x11=0x20167f
+exit sigbus pc=+0 code=1 addr=0x20176f
+test lrcpc2.across.0003
+code 59d912f2
+seed 2ad350e64fac17e6
+in x23=0x201fae
+exit sigbus pc=+0 code=1 addr=0x201f3f
+test lrcpc2.across.0004
+code d916d017
+seed cbecdb8397096968
+in x23=0x2 x0=0x200ed2
+exit sigbus pc=+0 code=1 addr=0x200e3f
+test lrcpc2.across.0005
+code d9810085
+seed 9b61d0d159dcb826
+in x5=0xffffffffffffffff x4=0x201efe
+exit sigill pc=+0 code=1
+test lrcpc2.across.0006
+code 999cf1ea
+seed f004436f73a137bb
+in x15=0x2012df
+exit sigbus pc=+0 code=1 addr=0x2012ae
+test lrcpc2.across.0007
+code 59940056
+seed b7a0ae6605992797
+in x22=0x7fffffffffffffff x2=0x2010bf
+exit sigbus pc=+0 code=1 addr=0x200fff
+test lrcpc2.across.0008
+code d99130a4
+seed 8c42806cccec256f
+in x5=0x2013bb
+exit sigill pc=+0 code=1
+test lrcpc2.across.0009
+code 99429358
+seed 87b5b3b269d81c05
+in x26=0x2004e5
+exit sigbus pc=+0 code=1 addr=0x20050e
+test lrcpc2.across.0010
+code 5908412e
+seed 29764d2165f82ce7
+in x9=0x20055b
+exit sigbus pc=+0 code=1 addr=0x2005df
+test lrcpc2.across.0011
+code d913624e
+seed 79b6ad9ad4683e1f
+in x18=0x2004d8
+exit sigbus pc=+0 code=1 addr=0x20040e
+test lrcpc2.across.0012
+code d95d019f
+seed 23b925416507b7a9
+in x12=0x200d3e
+exit sigbus pc=+0 code=1 addr=0x200d0e
+test lrcpc2.across.0013
+code d98ff00c
+seed 157e29d56b57537a
+in x0=0x200f4a
+exit sigill pc=+0 code=1
+test lrcpc2.across.0014
+code d90ab1ad
+seed 0d48075cc6404bf9
+in x13=0x200fc4
+exit sigbus pc=+0 code=1 addr=0x20106f
+test lrcpc2.across.0015
+code 994f924b
+seed 594436a9b94f9547
+in x11=0x8000000000000000 x18=0x201405
+exit sigbus pc=+0 code=1 addr=0x2014fe
+test lrcpc2.across.0016
+code 99d0c2ac
+seed d89cec84b31dea6c
+in x12=0x7fffffffffffffff x21=0x2006e2
+exit sigill pc=+0 code=1
+test lrcpc2.across.0017
+code 998a92d3
+seed 7896d3bdfa754a29
+in x19=0xffffffffffffffff x22=0x201414
+exit sigbus pc=+0 code=1 addr=0x2014bd
+test lrcpc2.across.0018
+code d9d7d02e
+seed 4338c64358780bad
+in x1=0x20146e
+exit sigill pc=+0 code=1
+test lrcpc2.across.0019
+code 599c62a8
+seed e541a5ea52a5c377
+in x8=0x8000000000000000 x21=0x200d79
+exit sigbus pc=+0 code=1 addr=0x200d3f
+test lrcpc2.across.0020
+code 590db37f
+seed f39f879ccb34cbca
+in x27=0x2018e4
+exit sigbus pc=+0 code=1 addr=0x2019bf
+test lrcpc2.across.0021
+code 591e320c
+seed 1918f4ab9e7662e4
+in x16=0x201eac
+exit sigbus pc=+0 code=1 addr=0x201e8f
+test lrcpc2.across.0022
+code d99d91b5
+seed 8d5515ed2fb94a84
+in x21=0x0 x13=0x201182
+exit sigill pc=+0 code=1
+test lrcpc2.across.0023
+code d9c28242
+seed 3308e8bd8921dcf6
+in x18=0x201607
+exit sigill pc=+0 code=1
+test lrcpc2.across.0024
+code 5958e0d8
+seed b40c31eccb5b80b0
+in x6=0x201fe1
+exit sigbus pc=+0 code=1 addr=0x201f6f
+test lrcpc2.across.0025
+code d947b134
+seed a75afeaf5112fa72
+in x9=0x201e13
+exit sigbus pc=+0 code=1 addr=0x201e8e
+test lrcpc2.across.0026
+code 59816269
+seed 441b6db6a6554619
+in x19=0x201039
+exit sigbus pc=+0 code=1 addr=0x20104f
+test lrcpc2.across.0027
+code 591cf1d9
+seed b95988b8c8dd1e3a
+in x25=0x8000000000000000 x14=0x2012c0
+exit sigbus pc=+0 code=1 addr=0x20128f
+test lrcpc2.across.0028
+code 9941c0a3
+seed 0f4bea4fd403b4df
+in x5=0x200861
+exit sigbus pc=+0 code=1 addr=0x20087d
+test lrcpc2.across.0029
+code d98ce1b7
+seed e46692dc27e4745f
+in x23=0x80 x13=0x200d80
+exit sigill pc=+0 code=1
+test lrcpc2.across.0030
+code 991803bb
+seed 6070c93e13972cf1
+in x29=0x201c1d
+exit sigbus pc=+0 code=1 addr=0x201b9d
+test lrcpc2.across.0031
+code 9959a11d
+seed ca60561b80ce24cf
+in x29=0x7fffffffffffffff x8=0x201533
+exit sigbus pc=+0 code=1 addr=0x2014cd
+test lrcpc2.across.0032
+code 99ce5335
+seed 1dbb7c62bbe9234d
+in x21=0xffffffffffffffff x25=0x2010b8
+exit sigill pc=+0 code=1
+test lrcpc2.across.0033
+code 9918412d
+seed 664ef055b619ad45
+in x13=0x2 x9=0x201a1a
+exit sigbus pc=+0 code=1 addr=0x20199e
+test lrcpc2.across.0034
+code 998771f7
+seed 588133c55f82385b
+in x15=0x201ed6
+exit sigbus pc=+0 code=1 addr=0x201f4d
+test lrcpc2.across.0035
+code 994290f8
+seed 021d5d4dfafaf5b6
+in x7=0x201385
+exit sigbus pc=+0 code=1 addr=0x2013ae
+test lrcpc2.across.0036
+code 994f4068
+seed 7cda0868311427f5
+in x8=0x8000000000000000 x3=0x2013ea
+exit sigbus pc=+0 code=1 addr=0x2014de
+test lrcpc2.across.0037
+code d90cb374
+seed 79afb6ffc22e0d39
+in x20=0x8000000000000000 x27=0x2004a1
+exit sigbus pc=+0 code=1 addr=0x20056c
+test lrcpc2.across.0038
+code 591e4187
+seed f54467882fa91b23
+in x12=0x201d8b
+exit sigbus pc=+0 code=1 addr=0x201d6f
+test lrcpc2.across.0039
+code 9951f100
+seed 2b5d5acc0761e68a
+in x8=0x2012ee
+exit sigbus pc=+0 code=1 addr=0x20120d
+test lrcpc2.across.0040
+code 59cfb2fd
+seed ec53b55794cb41b5
+in x23=0x2011d4
+exit sigbus pc=+0 code=1 addr=0x2012cf
+test lrcpc2.across.0041
+code 998a53ab
+seed 08758f79bf648ad1
+in x11=0xffffffff x29=0x201679
+exit sigbus pc=+0 code=1 addr=0x20171e
+test lrcpc2.across.0042
+code 590110b5
+seed 5e260ed812d5e411
+in x5=0x200cee
+exit sigbus pc=+0 code=1 addr=0x200cff
+test lrcpc2.across.0043
+code d956935b
+seed 16805af39b9e714b
+in x26=0x200a03
+exit sigbus pc=+0 code=1 addr=0x20096c
+test lrcpc2.across.0044
+code d94f93bb
+seed 5cb6636e32149058
+in x29=0x2002e1
+exit sigbus pc=+0 code=1 addr=0x2003da
+test lrcpc2.across.0045
+code d90b30cb
+seed 830a6ba105fd532f
+in x6=0x201167
+exit sigbus pc=+0 code=1 addr=0x20121a
+test lrcpc2.across.0046
+code d90a225c
+seed bc12b7f8c3652b62
+in x28=0x8000 x18=0x200547
+exit sigbus pc=+0 code=1 addr=0x2005e9
+test lrcpc2.across.0047
+code 59509150
+seed fa63d7d488f747b4
+in x10=0x201486
+exit sigbus pc=+0 code=1 addr=0x20138f
+test lrcpc2.across.0048
+code 995f22f3
+seed 9bb13fc5b51fdfce
+in x23=0x20130c
+exit sigbus pc=+0 code=1 addr=0x2012fe
+test lrcpc2.across.0049
+code 999ee2de
+seed 5ffd295c2db6d829
+in x22=0x201ef1
+exit sigbus pc=+0 code=1 addr=0x201edf
+test lrcpc2.across.0050
+code 99cce0b5
+seed 4d6352d06a08c578
+in x21=0x1 x5=0x2012e0
+exit sigill pc=+0 code=1
+test lrcpc2.across.0051
+code 59d88275
+seed 7e511ca25775fada
+in x19=0x200977
+exit sigbus pc=+0 code=1 addr=0x2008ff
+test lrcpc2.across.0052
+code 590421a1
+seed 5557e3fd53e1b734
+in x13=0x2001ed
+exit sigbus pc=+0 code=1 addr=0x20022f
+test lrcpc2.across.0053
+code d94e802e
+seed 83fda172c6e438f1
+in x14=0x8000000000000001 x1=0x2006f7
+exit sigbus pc=+0 code=1 addr=0x2007df
+test lrcpc2.across.0054
+code 995eb096
+seed 3b71981810840797
+in x22=0x8000000000000000 x4=0x200813
+exit sigbus pc=+0 code=1 addr=0x2007fe
+test lrcpc2.across.0055
+code 59d110d5
+seed 458c22abde1bafd3
+in x21=0xaaaaaaaaaaaaaaaa x6=0x2014ee
+exit sigbus pc=+0 code=1 addr=0x2013ff
+test lrcpc2.across.0056
+code d90f30d3
+seed e4489d8532a608ec
+in x19=0x1 x6=0x200906
+exit sigbus pc=+0 code=1 addr=0x2009f9
+test lrcpc2.across.0057
+code 990f71af
+seed ba71a67e4826df4e
+in x15=0xffffffff00000000 x13=0x201e16
+exit sigbus pc=+0 code=1 addr=0x201f0d
+test lrcpc2.across.0058
+code 994a9115
+seed f3ae0d717f13979e
+in x8=0x201184
+exit sigbus pc=+0 code=1 addr=0x20122d
+test lrcpc2.across.0059
+code d90ff3a9
+seed e6880b3e8070c002
+in x29=0x20073e
+exit sigbus pc=+0 code=1 addr=0x20083d
+test lrcpc2.across.0060
+code 595812fb
+seed 77c5ceb64152e25b
+in x27=0xffffffff00000000 x23=0x20080e
+exit sigbus pc=+0 code=1 addr=0x20078f
+test lrcpc2.across.0061
+code d99321d3
+seed b9718d1925169770
+in x14=0x2015ac
+exit sigill pc=+0 code=1
+test lrcpc2.across.0062
+code d9df03ab
+seed 0946d301f8405a41
+in x29=0x20006d
+exit sigill pc=+0 code=1
+test lrcpc2.across.0063
+code 5994828a
+seed 909b08d4e28354dc
+in x20=0x200177
+exit sigbus pc=+0 code=1 addr=0x2000bf
+test lrcpc2.across.0064
+code 598a6136
+seed 9efb7017def8e0db
+in x9=0x200c59
+exit sigbus pc=+0 code=1 addr=0x200cff
+test lrcpc2.across.0065
+code d991d3de
+seed 18996c1c8dfde809
+in x30=0x201cd1
+exit sigill pc=+0 code=1
+test lrcpc2.across.0066
+code 998b0006
+seed 1deaa00a81e03ab0
+in x6=0xaaaaaaaaaaaaaaaa x0=0x200d2e
+exit sigbus pc=+0 code=1 addr=0x200dde
+test lrcpc2.across.0067
+code 990bf10e
+seed d75785bdbfc272a0
+in x8=0x200a0e
+exit sigbus pc=+0 code=1 addr=0x200acd
+test lrcpc2.across.0068
+code d95fc181
+seed fc6b08c0ad12358d
+in x1=0x80000000 x12=0x200e81
+exit sigbus pc=+0 code=1 addr=0x200e7d
+test lrcpc2.across.0069
+code d947f2ee
+seed 80ce8c5dbe4abc76
+in x23=0x2018f0
+exit sigbus pc=+0 code=1 addr=0x20196f
+test lrcpc2.across.0070
+code d90263aa
+seed 4b7858c299c25878
+in x29=0x2001c4
+exit sigbus pc=+0 code=1 addr=0x2001ea
+test lrcpc2.across.0071
+code 998aa365
+seed 7f9a6507771111f1
+in x5=0x8000000000000001 x27=0x201475
+exit sigbus pc=+0 code=1 addr=0x20151f
+test lrcpc2.across.0072
+code 999da0bb
+seed 6bb505b28d6d4053
+in x5=0x200bf3
+exit sigbus pc=+0 code=1 addr=0x200bcd
+test lrcpc2.across.0073
+code 9956734d
+seed eae624b0bad3659e
+in x26=0x201607
+exit sigbus pc=+0 code=1 addr=0x20156e
+test lrcpc2.across.0074
+code 59d6a0ec
+seed a024fd1428588d63
+in x12=0x80000000 x7=0x200205
+exit sigbus pc=+0 code=1 addr=0x20016f
+test lrcpc2.across.0075
+code 59407380
+seed 4861bd7a4697bf99
+in x28=0x200888
+exit sigbus pc=+0 code=1 addr=0x20088f
+test lrcpc2.across.0076
+code d98fe1d4
+seed bacacfcc8d23c219
+in x20=0xffffffff x14=0x2012ab
+exit sigill pc=+0 code=1
+test lrcpc2.across.0077
+code d991f111
+seed aae9bb38b52af73c
+in x8=0x20162c
+exit sigill pc=+0 code=1
+test lrcpc2.across.0078
+code 59961280
+seed 599fd9243ec57411
+in x0=0xaaaaaaaaaaaaaaaa x20=0x200fee
+exit sigbus pc=+0 code=1 addr=0x200f4f
+test lrcpc2.across.0079
+code 598461ac
+seed 6392cc51994dae86
+in x13=0x200d09
+exit sigbus pc=+0 code=1 addr=0x200d4f
+test lrcpc2.across.0080
+code 590c7054
+seed 5fd00b5d95ded6d4
+in x20=0xffff x2=0x200808
+exit sigbus pc=+0 code=1 addr=0x2008cf
+test lrcpc2.across.0081
+code 59df82c1
+seed 8c13c86db8fa9bd7
+in x22=0x2008d7
+exit sigbus pc=+0 code=1 addr=0x2008cf
+test lrcpc2.across.0082
+code 590cf095
+seed 38cb3ea4388cb2c3
+in x4=0x201010
+exit sigbus pc=+0 code=1 addr=0x2010df
+test lrcpc2.across.0083
+code 594141f7
+seed 9d1fc42877113a8c
+in x23=0x8000 x15=0x200e4b
+exit sigbus pc=+0 code=1 addr=0x200e5f
+test lrcpc2.across.0084
+code d95081a6
+seed fcb6b8d0a63b62ba
+in x13=0x201162
+exit sigbus pc=+0 code=1 addr=0x20106a
+test lrcpc2.across.0085
+code 9909f1c1
+seed 7c503061ed289284
+in x14=0x2003e0
+exit sigbus pc=+0 code=1 addr=0x20047f
+test lrcpc2.across.0086
+code 59da81da
+seed e7e1a04e74658066
+in x26=0x8000 x14=0x2003d7
+exit sigbus pc=+0 code=1 addr=0x20037f
+test lrcpc2.across.0087
+code 9916a1c3
+seed ec88f7dc112a0ecd
+in x3=0x80000000 x14=0x201024
+exit sigbus pc=+0 code=1 addr=0x200f8e
+test lrcpc2.across.0088
+code d905e260
+seed c98b4066cc389856
+in x0=0x5555555555555555 x19=0x2004bc
+exit sigbus pc=+0 code=1 addr=0x20051a
+test lrcpc2.across.0089
+code d9d5d026
+seed a4140ce594c180d0
+in x6=0x8000 x1=0x2007ed
+exit sigill pc=+0 code=1
+test lrcpc2.across.0090
+code d90b42b1
+seed 3ac4761c226ba05c
+in x21=0x200c49
+exit sigbus pc=+0 code=1 addr=0x200cfd
+test lrcpc2.across.0091
+code 99df90b1
+seed 7af2654ce24c0bc0
+in x17=0xffff x5=0x201276
+exit sigill pc=+0 code=1
+test lrcpc2.across.0092
+code 590bc0b6
+seed c5a899af8acfd294
+in x5=0x201753
+exit sigbus pc=+0 code=1 addr=0x20180f
+test lrcpc2.across.0093
+code d956e1da
+seed 9fe552b295f95aa6
+in x14=0x200711
+exit sigbus pc=+0 code=1 addr=0x20067f
+test lrcpc2.across.0094
+code d990d036
+seed 248516c2dc58ccb1
+in x22=0xff x1=0x201861
+exit sigill pc=+0 code=1
+test lrcpc2.across.0095
+code d953a160
+seed 359c5dc965698210
+in x11=0x2019b5
+exit sigbus pc=+0 code=1 addr=0x2018ef
+test lrcpc2.across.0096
+code 998580dd
+seed 5b197661e2aabbf0
+in x6=0x201b46
+exit sigbus pc=+0 code=1 addr=0x201b9e
+test lrcpc2.across.0097
+code d98a21e9
+seed c73c632027fa69f3
+in x15=0x20171c
+exit sigill pc=+0 code=1
+test lrcpc2.across.0098
+code 990fd175
+seed 1a566fc17ce35441
+in x11=0x200262
+exit sigbus pc=+0 code=1 addr=0x20035f
+test lrcpc2.across.0099
+code d9171232
+seed f06901a97b919f24
+in x18=0x2 x17=0x20201c
+exit sigbus pc=+0 code=1 addr=0x201f8d

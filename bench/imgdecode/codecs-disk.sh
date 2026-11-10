@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The second disk of codecs.ts: images/arch/media.sh's clips, eight of gen.py's JPEGs (target/imgdecode/files),
-# codecs.sh, js.html and q8dot, built natively (it uses nothing past the guest's glibc), and 12 s of the trailer in
+# codecs.sh, js.html, q8dot and rdmk, built natively (it uses nothing past the guest's glibc), and 12 s of the trailer in
 # HEVC (x265 at its medium preset, made once in rootless Podman: Alpine's ffmpeg).
 #   bench/imgdecode/codecs-disk.sh   -> target/imgdecode/codecs.ext4
 set -euo pipefail
@@ -19,6 +19,7 @@ cp "$ROOT"/target/arch/media/{sintel.webm,sintel-av1.webm,sintel_trailer-480p.mp
 for i in 0 1 2 3 4 5 6 7; do cp "$W/files/$i.jpg" "$W/tree/"; done
 cp "$H/codecs.sh" "$H/js.html" "$W/tree/"
 gcc -O2 -o "$W/tree/q8dot" "$H/q8dot.c"
+gcc -O2 -o "$W/tree/rdmk" "$H/rdmk.c"
 rm -f "$W/codecs.ext4"
 mke2fs -q -t ext4 -L codecs -d "$W/tree" "$W/codecs.ext4" 128M
 rm -rf "$W/tree"

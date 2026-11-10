@@ -888,6 +888,10 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
         LDAPRB | LDAPRH | LDAPR if c.features & crate::cpu::FEATURE_RCPC != 0 => {
             ldst::exec(c, m, i, pc, LDAR)?
         }
+        // FEAT_LRCPC2: LDAPUR* and STLUR* as LDAR and STLR at base + imm9.
+        STLUR_gen | LDAPUR_gen | LDAPURS_gen if crate::cpu::has_rcpc2(c.features) => {
+            ldst::exec(c, m, i, pc, op)?
+        }
         // FEAT_FlagM and FEAT_FlagM2.
         CFINV | RMIF | SETF8 | SETF16 | XAFlag | AXFlag
             if c.features & crate::cpu::FEATURE_FLAGM != 0 =>
@@ -895,13 +899,14 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
             c.nzcv = flagm(c, i, op);
         }
         // Unallocated, or features docs/cpu.md leaves out (PAC, BTI, MTE, LOR,
-        // DPB, LS64, WFxT, FP16), or the vCPU doesn't have (SB, FlagM, RCpc).
+        // DPB, LS64, WFxT, FP16), or the vCPU doesn't have (SB, FlagM, RCpc, RCpc2).
         UnallocatedEncoding | ADDG | SUBG | PACIA_1 | PACIB_1 | AUTIA_1 | AUTIB_1 | PACDA
         | PACDB | AUTDA | AUTDB | XPAC_1 | PACGA | BLRA | BRA | RETA | ERETA | LDRA | SUBP
         | SUBPS | IRG | GMI | STGP_1 | STGP_2 | STGP_3 | STG_1 | STG_2 | STG_3 | LDG | STZG_1
         | STZG_2 | STZG_3 | ST2G_1 | ST2G_2 | ST2G_3 | STZ2G_1 | STZ2G_2 | STZ2G_3 | STGV
         | LDGV | SB | CFINV | RMIF | SETF8 | SETF16 | XAFlag | AXFlag | LDAPRB | LDAPRH | LDAPR
-        | STLLR | LDLAR | DC_CVAP | LD64B | ST64B | ST64BV | ST64BV0 | WFET | WFIT | FMOV_3 => {
+        | STLUR_gen | LDAPUR_gen | LDAPURS_gen | STLLR | LDLAR | DC_CVAP | LD64B | ST64B
+        | ST64BV | ST64BV0 | WFET | WFIT | FMOV_3 => {
             return Err(Exit::Undefined);
         }
         // The v8.0 crypto extensions (M6.5; the 64-bit PMULL is in simd_int).
@@ -966,8 +971,19 @@ fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
             fp_enabled(c)?;
             simd_int::mmla(c, i)?
         }
-        // FP/AdvSIMD beyond v8.0: RDM, FCMA, FHM, BF16, SM3, SM4, and FRINTTS,
-        // DotProd and I8MM without their features.
+        // FEAT_RDM: UNDEFINED without it, and its reserved sizes, before the FPEN trap.
+        SQRDMLAH_vec_1 | SQRDMLAH_vec_2 | SQRDMLSH_vec_1 | SQRDMLSH_vec_2 | SQRDMLAH_elt_1
+        | SQRDMLSH_elt_1 | SQRDMLAH_elt_2 | SQRDMLSH_elt_2
+            if c.features & crate::cpu::FEATURE_RDM != 0 =>
+        {
+            if !matches!(bits(i, 23, 22), 1 | 2) {
+                return Err(Exit::Undefined);
+            }
+            fp_enabled(c)?;
+            simd_int::rdm(c, i)?
+        }
+        // FP/AdvSIMD beyond v8.0: FCMA, FHM, BF16, SM3, SM4, and FRINTTS,
+        // DotProd, I8MM and RDM without their features.
         SQRDMLAH_vec_1 | SQRDMLAH_vec_2 | SQRDMLSH_vec_1 | SQRDMLSH_vec_2 | SQRDMLAH_elt_1
         | SQRDMLSH_elt_1 | SQRDMLAH_elt_2 | SQRDMLSH_elt_2 | SDOT_vec | UDOT_vec | SDOT_elt
         | UDOT_elt | SMMLA_vec | UMMLA_vec | USMMLA_vec | SUDOT_element | USDOT_element

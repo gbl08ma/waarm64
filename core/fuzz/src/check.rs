@@ -323,10 +323,11 @@ const NOT_OURS: &[&str] = &[
     "ldg", "ldgm", "stgm", "stzgm",
     // FEAT_LOR, FEAT_WFxT, FEAT_LS64 (FlagM, FlagM2 and SB are ours since ABI 59)
     "wfet", "wfit", "ld64b", "st64b", "st64bv", "st64bv0",
-    // FP/AdvSIMD beyond v8.0: FEAT_FHM, FEAT_RDM, FEAT_FCMA, FEAT_SM3, FEAT_SM4 (FEAT_JSCVT
-    // and FEAT_FRINTTS are ours since ABI 59, FEAT_DotProd since 60, FEAT_I8MM since 61).
+    // FP/AdvSIMD beyond v8.0: FEAT_FHM, FEAT_FCMA, FEAT_SM3, FEAT_SM4 (FEAT_JSCVT and
+    // FEAT_FRINTTS are ours since ABI 59, FEAT_DotProd since 60, FEAT_I8MM since 61, FEAT_RDM
+    // since 62).
     "fmlal", "fmlal2", "fmlsl", "fmlsl2",
-    "sqrdmlah", "sqrdmlsh", "fcmla", "fcadd",
+    "fcmla", "fcadd",
     // At EL0, where `check` runs: HVC and ERET are EL1-only; no EL3 (SMC), no
     // halting or external debug (HLT, DCPS1-3, DRPS).
     "hvc", "eret", "smc", "hlt", "dcps1", "dcps2", "dcps3", "drps",
@@ -338,8 +339,9 @@ const NOT_OURS_PREFIX: &[&str] = &[
     // FEAT_SM3/SM4, FEAT_BF16 (AES, SHA1 and SHA256 are ours since M6.5, SHA512 and SHA3 since ABI 51)
     "sm3", "sm4", "bfcvt", "bfdot", "bfmlal", "bfmmla", // FEAT_PAuth
     "pac", "aut", "xpac", "braa", "brab", "blraa", "blrab", "retaa", "retab", "eretaa", "eretab",
-    "ldraa", "ldrab", // FEAT_LRCPC2, FEAT_LOR (FEAT_LRCPC's LDAPR is ours since ABI 59)
-    "ldapur", "stlur", "ldlar", "stllr",
+    "ldraa", "ldrab", // FEAT_LOR (FEAT_LRCPC's LDAPR is ours since ABI 59, FEAT_LRCPC2's
+    // LDAPUR and STLUR since 62)
+    "ldlar", "stllr",
     // FEAT_HBC, FEAT_MOPS, SVE element counts
     "bc.", "cpy", "setp", "setm", "sete", "setg", "sqinc", "sqdec", "uqinc", "uqdec", "incb",
     "inch", "incw", "incd", "cterm", "setffr", "decb", "dech", "decw", "decd", "cntb", "cnth",

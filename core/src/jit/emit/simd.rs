@@ -107,6 +107,127 @@ pub(super) fn inline(c: &mut Func, i: u32, op: Op) -> bool {
     }
 }
 
+/// FEAT_RDM's SQRDMLAH and SQRDMLSH, vector and by element (the scalar forms
+/// are `simd_lane`'s); false for anything else (the reserved sizes among
+/// them). Vd ± the doubled product's rounded high half, saturated once, as
+/// (Vd << esize ± 2xy + round) >> esize = Vd + ((±xy + round / 2) >> (esize − 1)).
+/// Halfwords: `q15mulr_sat_s` is the high half for SQRDMLAH but for MIN × MIN
+/// (1.0, which it saturates: the saturating add then adds the missing 1); for
+/// SQRDMLSH, whose rounding of −2xy rounds a tie the other way, it's one too
+/// many where the product's low 15 bits are a tie (0x4000). Words: the exact
+/// products in i64 lanes, the sum saturated where it isn't its low half
+/// sign-extended. FPSR.QC from the lanes that saturated.
+pub(super) fn inline_rdm(c: &mut Func, i: u32, op: Op) -> bool {
+    use Op::*;
+    let (by_element, sub) = match op {
+        SQRDMLAH_vec_2 => (false, false),
+        SQRDMLSH_vec_2 => (false, true),
+        SQRDMLAH_elt_2 => (true, false),
+        SQRDMLSH_elt_2 => (true, true),
+        _ => return false,
+    };
+    let (rd, rn) = (bits(i, 4, 0), bits(i, 9, 5));
+    let (q, size) = (bit(i, 30), bits(i, 23, 22) as usize);
+    let (l, m, h) = (bit(i, 21) as u32, bit(i, 20) as u32, bit(i, 11) as u32);
+    let (index, rm) = match (size, by_element) {
+        (1 | 2, false) => (0, bits(i, 20, 16)),
+        (1, true) => (h << 2 | l << 1 | m, bits(i, 19, 16)),
+        (2, true) => (h << 1 | l, bits(i, 20, 16)),
+        _ => return false,
+    };
+    let (a, b) = (VT[2], VT[3]);
+    vreg(c, rn);
+    c.local_set(a);
+    vreg(c, rm);
+    if by_element {
+        vreg(c, rm);
+        c.shuffle(gather(1 << size, |_| index));
+    }
+    c.local_set(b);
+    if size == 1 {
+        let min = lanes_of(0x8000, 16);
+        // k: MIN × MIN lanes (all ones), in VT[0]; r: the high half, one short
+        // there (and for SQRDMLSH a tie's one too many taken off), in VT[1].
+        c.local_get(a).v128_const(min).simd(EQ[1]);
+        c.local_get(b)
+            .v128_const(min)
+            .simd(EQ[1])
+            .simd(AND)
+            .local_set(VT[0]);
+        c.local_get(a).local_get(b).simd(Q15MULR_SAT);
+        if sub {
+            c.local_get(a).local_get(b).simd(MUL[1]);
+            c.v128_const(lanes_of(0x7fff, 16)).simd(AND);
+            c.v128_const(lanes_of(0x4000, 16)).simd(EQ[1]).simd(ADD[1]);
+        }
+        c.local_set(VT[1]);
+        // Vd ± r, then ± 1 more for MIN × MIN (k is −1), saturating.
+        let (acc, fix) = if sub {
+            (SUB_SAT[1][0], ADD_SAT[1][0])
+        } else {
+            (ADD_SAT[1][0], SUB_SAT[1][0])
+        };
+        vreg(c, rd);
+        c.local_get(VT[1]).simd(acc).local_get(VT[0]).simd(fix);
+        c.local_tee(VTMP);
+        // Saturated where it isn't the wrapping sum.
+        vreg(c, rd);
+        c.local_get(VT[1]);
+        c.simd(if sub { SUB[1] } else { ADD[1] });
+        c.local_get(VT[0]).simd(if sub { ADD[1] } else { SUB[1] });
+        c.simd(NE[1]);
+    } else {
+        let max = lanes_of(0x7fff_ffff, 64);
+        for half in 0..=q as usize {
+            // The sum in i64 lanes, in VT[1].
+            vreg(c, rd);
+            c.simd(EXTEND[0][half][2]);
+            if sub {
+                c.v128_const(lanes_of(1 << 30, 64));
+            }
+            c.local_get(a).local_get(b).simd(EXTMUL[0][half][2]);
+            if sub {
+                c.simd(SUB[3]);
+            } else {
+                c.v128_const(lanes_of(1 << 30, 64)).simd(ADD[3]);
+            }
+            c.i32_const(31).simd(SHR_S[3]).simd(ADD[3]).local_tee(VT[1]);
+            // MAX or MIN by its sign where the low half sign-extended isn't it.
+            c.i32_const(63).simd(SHR_S[3]).v128_const(max).simd(XOR);
+            c.local_get(VT[1])
+                .local_get(VT[1])
+                .i32_const(32)
+                .simd(SHL[3]);
+            c.i32_const(32).simd(SHR_S[3]).local_get(VT[1]).simd(NE[3]);
+            c.local_tee(VT[0]).simd(BITSELECT);
+            if half == 1 {
+                c.local_get(VTMP).local_get(VT[0]).simd(OR);
+            } else {
+                c.local_get(VT[0]);
+            }
+            c.local_set(VTMP);
+        }
+        if !q {
+            c.v128_const(0);
+        }
+        // The low halves of both.
+        c.shuffle(gather(4, |e| 2 * e));
+        c.vset(rd);
+        c.local_get(VTMP).simd(ANY_TRUE);
+        or_qc(c);
+        return true;
+    }
+    if !q {
+        c.i64_const(0).simd_lane(REPLACE[3], 1);
+    }
+    c.simd(ANY_TRUE);
+    or_qc(c);
+    put(c, rd, q, |c| {
+        c.local_get(VTMP);
+    });
+    true
+}
+
 /// FEAT_DotProd's SDOT and UDOT, vector and by element; false for anything else
 /// (the reserved sizes among them). The sixteen products as two `extmul`s, the
 /// pairs of each 32-bit lane gathered by two shuffles, and two

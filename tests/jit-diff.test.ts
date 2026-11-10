@@ -115,6 +115,9 @@ const CLASSES: Record<string, [number, number]> = {
   'AdvSIMD I8MM USDOT': [0xbfe0fc00, 0x0e809c00],
   'AdvSIMD I8MM by element': [0xbf40f400, 0x0f00f000],
   'AdvSIMD I8MM matrix': [0xdfe0f400, 0x4e80a400],
+  // FEAT_RDM (ABI 62): SQRDMLAH, SQRDMLSH, vector and scalar (bit 28 free), and by element; reserved sizes included.
+  'AdvSIMD RDM': [0xaf20f400, 0x2e008400],
+  'AdvSIMD RDM by element': [0xaf00d400, 0x2f00d000],
   // FEAT_FlagM's RMIF (a helper; the rest of FlagM is among the sequences' helpers).
   'RMIF': [0xffe07c10, 0xba000400],
 };
@@ -138,6 +141,7 @@ const MEMORY: Record<string, [number, number]> = {
   'load literal': [0x3f000000, 0x18000000],
   'load-acquire, store-release': [0x3fa08000, 0x08808000], // LDAR, STLR (M6 loop 1)
   'load-acquire RCpc (LDAPR)': [0x3ffffc00, 0x38bfc000], // FEAT_LRCPC (ABI 59): LDAR's path
+  'RCpc unscaled (LDAPUR, STLUR)': [0x3f200c00, 0x19000000], // FEAT_LRCPC2 (ABI 62): LDAR's and STLR's at base + imm9
   'DC ZVA': [0xffffffe0, 0xd50b7420],
   // M6 loop 7; the exclusives with the monitor armed at random (below).
   'LSE atomics': [0x3f200c00, 0x38200000], // LD<op>, SWP (min/max: helpers)
@@ -844,7 +848,7 @@ const VHELPERS = [
   (d: number, n: number) => 0x6e218800 | (n << 5) | d, // frinta vd.4s, vn.4s
   (d: number, n: number) => 0x7ee03800 | (n << 5) | d, // usqadd dd, dn
 ];
-const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 1 source', 'FP data processing, 2 sources', 'FP data processing, 3 sources', 'FP and general register moves, conversions', 'FP compare', 'FP conditional compare', 'FP conditional select', 'FJCVTZS', 'FRINTTS', 'AdvSIMD FP FRINTTS', 'AdvSIMD DotProd', 'AdvSIMD DotProd by element', 'AdvSIMD I8MM USDOT', 'AdvSIMD I8MM by element', 'AdvSIMD I8MM matrix', 'conditional select', 'conditional compare'].map((n) => CLASSES[n]);
+const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 1 source', 'FP data processing, 2 sources', 'FP data processing, 3 sources', 'FP and general register moves, conversions', 'FP compare', 'FP conditional compare', 'FP conditional select', 'FJCVTZS', 'FRINTTS', 'AdvSIMD FP FRINTTS', 'AdvSIMD DotProd', 'AdvSIMD DotProd by element', 'AdvSIMD I8MM USDOT', 'AdvSIMD I8MM by element', 'AdvSIMD I8MM matrix', 'AdvSIMD RDM', 'AdvSIMD RDM by element', 'conditional select', 'conditional compare'].map((n) => CLASSES[n]);
 const VMEM = ['SIMD&FP load/store, unsigned offset', 'SIMD&FP load/store pair', 'AdvSIMD load/store multiple structures', 'AdvSIMD load/store single structure'].map((n) => MEMORY[n]);
 const ALU = ['PC-relative (ADR, ADRP)', 'add/sub, immediate', 'add/sub, shifted and extended register', 'add/sub with carry', 'logical, immediate', 'logical, shifted register', 'bitfield, 64-bit', 'bitfield, 32-bit', 'variable shifts', 'conditional select', 'conditional compare', 'multiply-add', 'data processing, register'].map((n) => CLASSES[n]);
 const LAST = ['conditional branch', 'compare and branch', 'test and branch', 'branch to register'].map((n) => CLASSES[n]);

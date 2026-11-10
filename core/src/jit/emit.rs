@@ -1068,6 +1068,10 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         LDAPRB | LDAPRH | LDAPR if cx.features & crate::cpu::FEATURE_RCPC != 0 => {
             return ldst(c, cx, i, LDAR, k);
         }
+        // FEAT_LRCPC2: LDAPUR* and STLUR* as LDAR and STLR at base + imm9.
+        STLUR_gen | LDAPUR_gen | LDAPURS_gen if crate::cpu::has_rcpc2(cx.features) => {
+            return ldst(c, cx, i, op, k);
+        }
         // Barriers order nothing for vCPUs sharing a thread (one vCPU or
         // round-robin), and don't end a block. In parallel SMP every flavor is
         // a full fence (`dmb ish` on arm64; stronger than DMB LD/ST need), and
@@ -1210,6 +1214,8 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
                 && !(cx.sha3 && crypto::inline_sha3(c, i, op))
                 && !(cx.features & crate::cpu::FEATURE_DOTPROD != 0 && simd::inline_dot(c, i, op))
                 && !(cx.features & crate::cpu::FEATURE_I8MM != 0 && simd::inline_i8mm(c, i, op))
+                && !(cx.features & crate::cpu::FEATURE_RDM != 0
+                    && (simd::inline_rdm(c, i, op) || simd_lane::inline_rdm(c, i, op)))
                 && !simd::inline(c, i, op)
                 && !simd_lane::inline(c, i, op)
                 && !float::inline(c, cx, i, op, k)
@@ -1901,6 +1907,48 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                     set(c, true, rt, |c| {
                         c.local_get(HOST)
                             .ram_atomic(ATOMIC_LOAD[size as usize], size, off);
+                    });
+                }
+            });
+        }
+        // FEAT_LRCPC2 (the caller checks it): LDAR's and STLR's access at
+        // base + imm9 (aligned, so Sp and Aligned both for an SP base), the
+        // loads extended as LDUR's; the unallocated sizes to the helper.
+        STLUR_gen | LDAPUR_gen | LDAPURS_gen => {
+            let (store, sign, to32) = match opc {
+                0 => (true, false, false),
+                1 => (false, false, false),
+                _ if size == 3 || (size == 2 && opc == 3) => return false,
+                _ => (false, true, opc == 3),
+            };
+            let len = 1 << size;
+            base(c);
+            c.local_get(BASE)
+                .i64_const(sext(bits(i, 20, 12) as u64, 9) as i64)
+                .i64_add()
+                .local_set(ADDR);
+            let guards: &[Guard] = if rn == 31 {
+                &[Guard::Sp, Guard::Aligned]
+            } else {
+                &[Guard::Aligned]
+            };
+            let written = if store { 0 } else { xmask(rt) };
+            access(c, cx, i, here, len, store, guards, written, |c, off| {
+                if store {
+                    c.local_get(HOST);
+                    get(c, true, rt);
+                    c.ram_atomic(ATOMIC_STORE[size as usize], size, off);
+                } else {
+                    set(c, true, rt, |c| {
+                        c.local_get(HOST)
+                            .ram_atomic(ATOMIC_LOAD[size as usize], size, off);
+                        if sign {
+                            // i64.extend8_s, extend16_s, extend32_s
+                            c.op(0xc2 + size as u8);
+                        }
+                        if to32 {
+                            c.i64_const(0xffff_ffff).op(AND + W);
+                        }
                     });
                 }
             });
@@ -4723,6 +4771,61 @@ mod tests {
         };
         for i in [0x4e829c20, 0x0f02f820, 0x4e82a420, 0x6e82a420, 0x4e82ac20] {
             assert_eq!(emit_in(i, 0, &off), None);
+        }
+    }
+
+    #[test]
+    fn rdm() {
+        // sqrdmlah v0.8h: q15mulr_sat_s, then add_sat_s and (MIN × MIN's 1) sub_sat_s.
+        let b = emit(0x6e428420, 0).unwrap();
+        assert!(has(&b, &[0xfd, 0x82, 1]) && has(&b, &[0xfd, 0x8f, 1]));
+        assert!(has(&b, &[0xfd, 0x92, 1]) && !has(&b, &[0xfd, 0x95, 1]));
+        // sqrdmlsh v0.8h: the products' low halves for the ties.
+        assert!(has(&emit(0x6e428c20, 0).unwrap(), &[0xfd, 0x95, 1]));
+        // sqrdmlah v0.4s: i64 extmuls of both halves, i64x2.ne; v0.2s the low one.
+        let b = emit(0x6e828420, 0).unwrap();
+        assert!(has(&b, &[0xfd, 0xdc, 1]) && has(&b, &[0xfd, 0xdd, 1]));
+        assert!(has(&b, &[0xfd, 0xd7, 1]));
+        assert!(!has(&emit(0x2e828420, 0).unwrap(), &[0xfd, 0xdd, 1]));
+        // By element: Vm's lane in every lane.
+        let b = emit(0x6f72d820, 0).unwrap();
+        assert!(has(&b, &[0xfd, 0x0d, 14, 15, 14, 15, 14, 15]));
+        // Scalar, and scalar by element: lane code.
+        for i in [0x7e428420, 0x7e828c20, 0x7f52d020] {
+            assert!(emit(i, 0).is_some(), "{i:#x}");
+        }
+        // The reserved sizes, and without the feature: the helper.
+        for i in [0x6e028420, 0x6ec28420, 0x7e028420, 0x6f32d820] {
+            assert_eq!(emit(i, 0), None, "{i:#x}");
+        }
+        let off = Ctx {
+            features: crate::cpu::FEATURES & !crate::cpu::FEATURE_RDM,
+            ..FLAT
+        };
+        for i in [0x6e428420, 0x6e828c20, 0x7e428420, 0x6f72d820] {
+            assert_eq!(emit_in(i, 0, &off), None);
+        }
+    }
+
+    #[test]
+    fn lrcpc2() {
+        // ldapursw x1, [x2, #4]: an atomic load, sign-extended; stlurh w1, [x2, #2] an
+        // atomic store; ldapursb w1 extended to 32 bits, then masked.
+        let b = emit(0x99804041, 0).unwrap();
+        assert!(has(&b, &[0xfe, 0x16]) && has(&b, &[0xc4]));
+        assert!(has(&emit(0x59002041, 0).unwrap(), &[0xfe, 0x1c]));
+        let b = emit(0x19c01041, 0).unwrap();
+        assert!(has(&b, &[0xfe, 0x14]) && has(&b, &[0xc2]) && has(&b, &[0x83]));
+        // The unallocated sizes, and without the feature (or FEAT_LRCPC): the helper.
+        for i in [0xd9800041, 0x99c00041] {
+            assert_eq!(emit(i, 0), None, "{i:#x}");
+        }
+        for f in [crate::cpu::FEATURE_RCPC2, crate::cpu::FEATURE_RCPC] {
+            let off = Ctx {
+                features: crate::cpu::FEATURES & !f,
+                ..FLAT
+            };
+            assert_eq!(emit_in(0xd95f8041, 0, &off), None);
         }
     }
 

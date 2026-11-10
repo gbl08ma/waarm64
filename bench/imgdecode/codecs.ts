@@ -1,7 +1,7 @@
 // The A/B of a CPU feature on programs that pick their paths from the hwcaps (bench/boot/REPORT.md "FEAT_DotProd and FEAT_JSCVT, measured"):
 // the Arch desktop disk on 4 vCPUs, a root shell, codecs.sh on the second disk (codecs-disk.sh), alternating arms, a
 // boot per arm and round. Writes <out>/<round>-<arm>.txt with the guest's lines and prints the medians by arm.
-//   timeout 3000 node bench/imgdecode/codecs.ts <feature> <mode: codecs|js> [rounds, 3] [repeats in a boot, 3]
+//   timeout 3000 node bench/imgdecode/codecs.ts <feature> <mode: codecs|js|kernels> [rounds, 3] [repeats in a boot, 3]
 // Env: OUT (bench/boot/results/<feature>), FIRST (the first round's number, 1).
 // On the Mac host: SCRIPT=../imgdecode/codecs.ts ROUNDS=3 MAC_TIMEOUT=2400 bench/gpu/sway-mac.sh <feature>,<mode> target/arch/desktop.qcow2 <name>
 // (sway-mac.sh's arguments: the mode, the image and its output directory; repeats 3).
@@ -11,7 +11,7 @@ import { openSession } from '../gpu/guest-session.ts';
 const args = process.argv.slice(2);
 const mac = args[1]?.endsWith('.qcow2'); // sway-mac.sh's <feature>,<mode> <image> <out>
 const [feature, mode, rounds = '3', repeats = '3'] = mac ? [...args[0].split(','), process.env.ROUNDS ?? '3'] : args;
-if (!feature || !mode) throw new Error('usage: codecs.ts <feature> <codecs|js> [rounds] [repeats]');
+if (!feature || !mode) throw new Error('usage: codecs.ts <feature> <codecs|js|kernels> [rounds] [repeats]');
 const out = mac ? args[2] : process.env.OUT ?? `bench/boot/results/${feature}`;
 const image = mac ? args[1] : 'target/arch/desktop.qcow2';
 mkdirSync(out, { recursive: true });
@@ -38,7 +38,7 @@ function table() {
     let text: string;
     try { text = readFileSync(`${out}/${mode}-${r}-${arm}.txt`, 'utf8'); } catch { continue; }
     for (const l of text.split('\n')) {
-      const m = /^(?:CODEC|JS|Q8DOT) (.*?) (\S+?)(?: ms)?(?: check.*)?$/.exec(l.replace(/^JS (\S+) (\S+) /, 'JS $1-$2 '));
+      const m = /^(?:CODEC|JS|Q8DOT|KERN) (.*?) (\S+?)(?: ms)?(?: check.*)?$/.exec(l.replace(/^JS (\S+) (\S+) /, 'JS $1-$2 '));
       if (!m) continue;
       ((((by[m[1]] ??= {})[arm] ??= {})[r] ??= [])).push(Number(m[2]));
     }

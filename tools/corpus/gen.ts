@@ -995,7 +995,50 @@ const i8mm: Form[] = [
   }),
 ];
 
-export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto, jscvt, ext, dotprod, i8mm };
+// FEAT_RDM (ABI 62): SQRDMLAH and SQRDMLSH (o), vector, scalar and by element, lanes with edge values (MIN × MIN
+// among them), the reserved sizes included.
+const rdmSize = (r: Rng): Fields => ({ z: r.chance(0.92) ? r.pick([1, 2]) : r.pick([0, 3]) });
+const rdm: Form[] = [
+  vform("vec", "0Q101110zz0mmmmm1000o1nnnnnddddd", 700, { fix: rdmSize }),
+  vform("scalar", "01111110zz0mmmmm1000o1nnnnnddddd", 400, { fix: rdmSize }),
+  vform("elt", "0Q101111zzLMmmmm11o1H0nnnnnddddd", 700, { fix: rdmSize }),
+  vform("elt_scalar", "01111111zzLMmmmm11o1H0nnnnnddddd", 400, { fix: rdmSize }),
+];
+
+// FEAT_LRCPC2 (ABI 62): LDAPUR* and STLUR* (size s, opc o as LDUR's; the unallocated ones included), aligned, as
+// LDAR's (the oracles' FEAT_LSE2 lets misaligned ones within 16 bytes run), and misaligned across 16 bytes (an
+// alignment fault for all three).
+const LRCPC2 = "ss011001oo0iiiiiiiii00nnnnnttttt";
+const lrcpc2: Form[] = [
+  {
+    name: "aligned",
+    count: 800,
+    gen(r) {
+      const { w, f } = enc(r, LRCPC2);
+      const m = new Map<string, bigint>();
+      edges(r, m, [f.t]);
+      const p = place(r, f.n, sext(f.i, 9), 1 << f.s, 1 << f.s);
+      if (!p) return undefined;
+      m.set(reg(f.n), p.base);
+      return { code: [w], in: m };
+    },
+  },
+  {
+    name: "across",
+    count: 100,
+    gen(r) {
+      const { w, f } = enc(r, LRCPC2, { n: r.int(31), s: r.range(1, 3) });
+      const len = 1 << f.s;
+      const m = new Map<string, bigint>();
+      edges(r, m, [f.t]);
+      const addr = DATA + BigInt(16 * r.range(1, DATA_SIZE / 16 - 2) + 16 - r.range(1, len - 1));
+      m.set(reg(f.n), (addr - sext(f.i, 9)) & M64);
+      return { code: [w], in: m };
+    },
+  },
+];
+
+export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto, jscvt, ext, dotprod, i8mm, rdm, lrcpc2 };
 
 /** Generates a group's tests (without oracle results). */
 export function generate(group: string): Test[] {

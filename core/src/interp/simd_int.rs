@@ -669,6 +669,41 @@ fn by_element(c: &mut Cpu, i: u32) -> R {
     Ok(())
 }
 
+/// FEAT_RDM's SQRDMLAH and SQRDMLSH (S: bit 13 by element, bit 11 otherwise),
+/// vector, scalar and by element (the caller checks the feature and the size):
+/// each lane of Vd plus or minus the doubled product of Vn's and Vm's (or Vm's
+/// lane `index`), rounded to its high half and saturated once, setting FPSR.QC.
+pub(super) fn rdm(c: &mut Cpu, i: u32) -> R {
+    let (rd, rn, rm, q, _, size, scalar) = fields(i);
+    let by_element = bit(i, 24);
+    let esize = 8 << size;
+    let (sub, index, rm) = if by_element {
+        let (l, m, h) = (bit(i, 21) as u32, bit(i, 20) as u32, bit(i, 11) as u32);
+        match size {
+            1 => (bit(i, 13), h << 2 | l << 1 | m, bits(i, 19, 16) as usize),
+            _ => (bit(i, 13), h << 1 | l, rm),
+        }
+    } else {
+        (bit(i, 11), 0, rm)
+    };
+    let (a, b, d) = (c.v[rn], c.v[rm], c.v[rd]);
+    let mut o = Out::new();
+    for e in 0..lanes(q, esize, scalar) {
+        let x = int(elem(a, e, esize), esize, false);
+        let y = int(
+            elem(b, if by_element { index } else { e }, esize),
+            esize,
+            false,
+        );
+        let p = 2 * x * y;
+        let acc = int(elem(d, e, esize), esize, false) << esize;
+        let r = if sub { acc - p } else { acc + p } + (1i128 << (esize - 1));
+        o.set_sat(e, esize, sat(r >> esize, esize, false));
+    }
+    write(c, rd, o, q || scalar);
+    Ok(())
+}
+
 /// FEAT_DotProd's SDOT and UDOT, vector and by element (the caller checks the
 /// feature and the size): each 32-bit lane of Vd adds the four products of the
 /// bytes it covers in Vn and in Vm, or in Vm's lane `index`, modulo 2^32.

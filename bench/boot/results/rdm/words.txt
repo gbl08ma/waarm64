@@ -1,0 +1,6 @@
+usr/lib/glycin-loaders/2+/glycin-image-rs      44 sqrdmlah      44 sqrdmlsh 
+usr/lib/libgnutls.so.30.42.0       1 ldapurh 
+usr/lib/libleancrypto-fips.so.1.9.1       1 ldapurh 
+usr/lib/libleancrypto.so.1.9.1       1 ldapurh 
+usr/bin/chromedriver       2 ldapurh 
+usr/lib/chromium/chromium       2 ldapurh 

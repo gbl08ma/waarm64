@@ -142,6 +142,13 @@ pub const FEATURE_DOTPROD: u64 = 1024;
 /// element) and `SUDOT` (by element), advertised in ID_AA64ISAR1_EL1 when a
 /// VM is given it: off by default ([`DEFAULT_FEATURES`]).
 pub const FEATURE_I8MM: u64 = 2048;
+/// FEAT_RDM (ABI 62): `SQRDMLAH` and `SQRDMLSH`, vector, scalar and by
+/// element, advertised in ID_AA64ISAR0_EL1.
+pub const FEATURE_RDM: u64 = 4096;
+/// FEAT_LRCPC2 (ABI 62): `LDAPUR*` and `STLUR*`, the unscaled-offset RCpc
+/// loads and stores, run as `LDAR`/`STLR` at base + offset; only with
+/// `FEATURE_RCPC` (ID_AA64ISAR1_EL1.LRCPC = 2): alone it is nothing.
+pub const FEATURE_RCPC2: u64 = 8192;
 /// Every feature bit the core knows.
 pub const FEATURES: u64 = FEATURE_CRYPTO
     | FEATURE_RNG
@@ -154,7 +161,9 @@ pub const FEATURES: u64 = FEATURE_CRYPTO
     | FEATURE_DIT
     | FEATURE_FRINTTS
     | FEATURE_DOTPROD
-    | FEATURE_I8MM;
+    | FEATURE_I8MM
+    | FEATURE_RDM
+    | FEATURE_RCPC2;
 /// The features a VM gets unless told otherwise (`bootVm`, the native runners,
 /// the page): all but FEAT_I8MM, implemented but measured slower than the
 /// DotProd paths guests take without it (docs/cpu.md, PLAN.md's rule).
@@ -164,6 +173,11 @@ pub const DEFAULT_FEATURES: u64 = FEATURES & !FEATURE_I8MM;
 #[inline]
 pub fn has_sha3(features: u64) -> bool {
     features & (FEATURE_CRYPTO | FEATURE_SHA3) == FEATURE_CRYPTO | FEATURE_SHA3
+}
+/// Whether a vCPU with `features` has FEAT_LRCPC2 (which needs FEAT_LRCPC).
+#[inline]
+pub fn has_rcpc2(features: u64) -> bool {
+    features & (FEATURE_RCPC | FEATURE_RCPC2) == FEATURE_RCPC | FEATURE_RCPC2
 }
 /// The GICv3 system-register CPU interface (`ICC_*_EL1`, ID_AA64PFR0_EL1.GIC
 /// = 1). Not a `VmConfig.features` bit: a VM sets it from `VmConfig.gic`; a

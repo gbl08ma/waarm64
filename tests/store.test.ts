@@ -27,10 +27,10 @@ test("the shape: the other devices first, then the disks; its hash is stable and
   assert.deepEqual(s.devices, ['rng', 'keyboard', 'tablet', 'net', 'gpu', 'snd', 'blk', 'blk']);
   assert.deepEqual(s.disks.map((d) => [d.slot, d.serial]), [[6, 'webpc-a00000000001'], [7, 'webpc-a00000000002']]);
   assert.ok(serialOf('a00000000001').length <= 20);
-  // Pinned: a hash that moved means every kept snapshot is orphaned by an upgrade of the page (ABI 59's and 60's CPU
+  // Pinned: a hash that moved means every kept snapshot is orphaned by an upgrade of the page (ABI 59's, 60's and 62's CPU
   // features moved it, on purpose: they're in the hash).
   const h = await shapeHash(s);
-  assert.equal(h, 'b2f7db6080bc581a6364ff70b715cb95095d6dba9a98feb446e7736676a584e7');
+  assert.equal(h, 'b23c5b5d57aa7a3d35ef5443deeaf7231bedacd12ab1fedc96058b5dcf7fbd63');
   assert.equal(canonical({ b: 1, a: [2, { d: undefined, c: 3 }] }), '{"a":[2,{"c":3}],"b":1}');
   // Key order and what the guest can't see (names, the chosen overlay, in place, dates) don't move it.
   const same = machine({ name: 'Other', modified: 5, attachments: m.attachments.map((a) => ({ ...a, overlay: 'c00000000009', inPlace: true })) });
@@ -83,12 +83,12 @@ test("the shape: the other devices first, then the disks; its hash is stable and
   assert.equal(await shapeHash(shapeOf(swapM, (id) => DISKS.get(id))), h, 'swap on a blank disk is nothing');
   assert.notEqual(await shapeHash(shapeOf(m, (id) => DISKS.get(id), { cpu: ['e0pd'] })), h, 'cpu features');
   // SHA3 came after shapes: with it or without, a machine's snapshots keep their hash.
-  const noSha3 = shapeOf(m, (id) => DISKS.get(id), { cpu: ['rng', 'e0pd', 'jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod'] });
-  assert.deepEqual(s.cpu, ['rng', 'e0pd', 'sha3', 'jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod']);
+  const noSha3 = shapeOf(m, (id) => DISKS.get(id), { cpu: ['rng', 'e0pd', 'jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod', 'rdm', 'rcpc2'] });
+  assert.deepEqual(s.cpu, ['rng', 'e0pd', 'sha3', 'jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod', 'rdm', 'rcpc2']);
   assert.equal(await shapeHash(noSha3), h, 'sha3 left out of the hash');
   assert.deepEqual(diffWords(noSha3, s), []);
   // The features after it are in the hash (machines kept before them needn't match).
-  for (const f of ['jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod'] as const) {
+  for (const f of ['jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod', 'rdm', 'rcpc2'] as const) {
     const without = shapeOf(m, (id) => DISKS.get(id), { cpu: s.cpu.filter((g) => g !== f) });
     assert.notEqual(await shapeHash(without), h, `${f} in the hash`);
   }

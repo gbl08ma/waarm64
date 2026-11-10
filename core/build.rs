@@ -22,6 +22,25 @@ const RELAX: &[(&str, &str)] = &[
     ("SMULH", "10011011010mmmmm0-----nnnnnddddd"),
     ("UMULH", "10011011110mmmmm0-----nnnnnddddd"),
 ];
+/// Patterns dynarmic's table lacks (it stays verbatim), as `INST(id, name, bits)`.
+const EXTRA: &[(&str, &str, &str)] = &[
+    // FEAT_LRCPC2: the unscaled-offset RCpc loads and stores (size 31:30, opc 23:22 as LDUR's).
+    (
+        "STLUR_gen",
+        "STLURB, STLURH, STLUR",
+        "zz011001000iiiiiiiii00nnnnnttttt",
+    ),
+    (
+        "LDAPUR_gen",
+        "LDAPURB, LDAPURH, LDAPUR",
+        "zz011001010iiiiiiiii00nnnnnttttt",
+    ),
+    (
+        "LDAPURS_gen",
+        "LDAPURSB, LDAPURSH, LDAPURSW",
+        "zz0110011o0iiiiiiiii00nnnnnttttt",
+    ),
+];
 const COMES_FIRST: [&str; 3] = [
     "MOVI, MVNI, ORR, BIC (vector, immediate)",
     "FMOV (vector, immediate)",
@@ -43,7 +62,11 @@ fn main() {
     println!("cargo::rerun-if-changed={TABLE}");
     let src = std::fs::read_to_string(TABLE).unwrap();
     let mut pats = Vec::new();
-    for line in src.lines() {
+    let extra: Vec<String> = EXTRA
+        .iter()
+        .map(|(id, name, bits)| format!("INST({id}, \"{name}\", \"{bits}\")"))
+        .collect();
+    for line in src.lines().chain(extra.iter().map(String::as_str)) {
         let Some(rest) = line.trim_start_matches("//").trim().strip_prefix("INST(") else {
             continue;
         };

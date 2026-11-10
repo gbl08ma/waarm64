@@ -1,0 +1,133 @@
+{
+ "host": "Mac mini M4, macOS 26.6.2",
+ "browser": "Chrome for Testing 157.0.8103.50 headless",
+ "guest": "target/arch/desktop.qcow2, 4 vCPUs",
+ "unit": "ns per unit (rdmk.c), each round the median of three runs in a boot",
+ "rdm": {
+  "fir16": {
+   "off": [
+    10.935,
+    11.048,
+    10.795
+   ],
+   "on": [
+    9.562,
+    9.785,
+    9.119
+   ],
+   "on/off": 0.874
+  },
+  "mac16": {
+   "off": [
+    2.962,
+    3.065,
+    2.94
+   ],
+   "on": [
+    2.913,
+    3.005,
+    2.739
+   ],
+   "on/off": 0.983
+  },
+  "mac32": {
+   "off": [
+    5.487,
+    5.759,
+    5.438
+   ],
+   "on": [
+    3.371,
+    3.462,
+    3.262
+   ],
+   "on/off": 0.614
+  },
+  "acquire": {
+   "off": [
+    4.657,
+    5.188,
+    4.714
+   ],
+   "on": [
+    4.969,
+    5.524,
+    4.774
+   ],
+   "on/off": 1.054
+  }
+ },
+ "rcpc2": {
+  "fir16": {
+   "off": [
+    9.114,
+    9.099,
+    9.102
+   ],
+   "on": [
+    9.092,
+    9.125,
+    9.066
+   ],
+   "on/off": 0.999
+  },
+  "mac16": {
+   "off": [
+    2.738,
+    2.738,
+    2.729
+   ],
+   "on": [
+    2.747,
+    2.735,
+    2.732
+   ],
+   "on/off": 0.999
+  },
+  "mac32": {
+   "off": [
+    3.258,
+    3.284,
+    3.263
+   ],
+   "on": [
+    3.28,
+    3.275,
+    3.264
+   ],
+   "on/off": 1.004
+  },
+  "acquire": {
+   "off": [
+    4.963,
+    4.803,
+    4.606
+   ],
+   "on": [
+    4.818,
+    5.323,
+    4.565
+   ],
+   "on/off": 1.003
+  }
+ },
+ "words": {
+  "desktop (Arch)": {
+   "glycin-image-rs": {
+    "sqrdmlah": 44,
+    "sqrdmlsh": 44
+   },
+   "ldapurh (data in text)": {
+    "libgnutls": 1,
+    "libleancrypto": 1,
+    "chromium": 2,
+    "chromedriver": 2
+   }
+  },
+  "debian": {
+   "ldapurh (data in text)": {
+    "libgnutls": 1
+   }
+  }
+ }
+}

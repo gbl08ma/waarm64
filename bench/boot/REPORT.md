@@ -3675,3 +3675,46 @@ against 0.65 ns.
 **I8MM stays implemented, off by default** (the rule, PLAN.md: a loss stays unadvertised): `cpu::DEFAULT_FEATURES`,
 `bootVm`'s `i8mm: true`, the page's `?i8mm=1`. Nothing a guest sees by default changes: steps and the shape's hash
 stay. Memory: none; the core's wasm grows by `inline_i8mm`'s 7.1 KB.
+
+## PERF loop 6: FEAT_RDM and FEAT_LRCPC2 (2026-11-10)
+
+SQRDMLAH and SQRDMLSH (vector, scalar, by element) and LDAPUR*/STLUR* in both tiers, inline in the JIT (docs/jit.md),
+as `VmConfig.features` bits 12 and 13 (ABI 62). The Mac host (M4, macOS 26.6.2), Chrome for Testing 157.0.8103.50
+headless, through `bench/gpu/sway-mac.sh` (`SCRIPT=../imgdecode/codecs.ts`, mode `<feature>,kernels`); the desktop
+guest on 4 vCPUs, `?<feature>=0` against on, alternated, a boot per arm and round, each round the median of three runs
+of `bench/imgdecode/rdmk.c` in a boot. Raw and medians: `results/rdm/`, `results/rcpc2/` (`results/rdm/results.json`).
+
+**Who runs them.** Every ELF of the desktop (Arch) and Debian guests, words matching the encodings in executable
+segments, then disassembled (`llvm-objdump --mattr=+all`) to drop data: SQRDMLAH/SQRDMLSH only in glycin's image
+loader (`glycin-image-rs`, 44 + 44); no codec (dav1d, libvpx, libaom, x264, x265, FFmpeg, SVT-AV1), no browser
+(Chromium, Firefox's libxul and libgkcodecs), no library dispatches on `asimdrdm`. LDAPUR/STLUR: one or two `ldapurh`
+words in libgnutls, libleancrypto, Chromium and chromedriver, isolated (likely data among the text: none of them
+targets v8.4); nothing built for v8.4+. So no workload to count at run time: the A/B is a kernel each, written as libraries write the paths
+they pick from the hwcap (`rdmk.c`): a Q15 FIR of 8 taps by element, Q15 and Q31 multiply-accumulates by vector
+(SQRDMLAH with `asimdrdm`, SQRDMULH then SQADD without), and a chain of nodes read with two acquire loads at offsets 12
+and 16 (LDAPUR with `ilrcpc`, ADD then LDAPR without). The emitters changed no shared path, so no gates.
+
+**On/off of time** (ns per 8 outputs for fir16 and mac16, per 4 for mac32, per node for acquire; lower is better),
+three rounds' medians, then the median:
+
+| Kernel | Off | On | On/off |
+|---|---|---|---|
+| fir16, Q15 FIR by element (`?rdm`) | 10.94 · 11.05 · 10.80; **10.94** | 9.56 · 9.79 · 9.12; **9.56** | **0.874** |
+| mac16, Q15 multiply-accumulate (`?rdm`) | 2.96 · 3.07 · 2.94; **2.96** | 2.91 · 3.01 · 2.74; **2.91** | 0.983 |
+| mac32, Q31 multiply-accumulate (`?rdm`) | 5.49 · 5.76 · 5.44; **5.49** | 3.37 · 3.46 · 3.26; **3.37** | **0.614** |
+| acquire (`?rdm`, a control: both arms LDAPUR) | 4.66 · 5.19 · 4.71; **4.71** | 4.97 · 5.52 · 4.77; **4.97** | 1.054 |
+| acquire, LDAPUR against ADD and LDAPR (`?rcpc2`) | 4.96 · 4.80 · 4.61; **4.80** | 4.82 · 5.32 · 4.57; **4.82** | 1.003 |
+| fir16 (`?rcpc2`, a control) | 9.11 · 9.10 · 9.10; **9.10** | 9.09 · 9.13 · 9.07; **9.09** | 0.999 |
+| mac32 (`?rcpc2`, a control) | 3.26 · 3.28 · 3.26; **3.26** | 3.28 · 3.28 · 3.26; **3.28** | 1.004 |
+
+**RDM is faster, rounds apart**: the FIR by 12.6% (one SQRDMLAH by element, ~11 host instructions with its QC check,
+about what SQRDMULH and SQADD take between them, but one guest instruction's register traffic instead of two), the Q31
+form by 39% (SQADD on words is lane code here, `simd_lane`, where
+SQRDMLAH's i64 lanes are ~30 instructions for all four); mac16 1.7%, rounds overlapping (it streams three arrays: its
+loads and stores dominate). The two arms compute the same sums (the kernels' checks agree). **LRCPC2 ties** (+0.3%,
+rounds overlapping): the ADD it saves is nothing beside the atomic load and the TLB probe. Both are advertised (PLAN.md's
+rule: a tie is advertised): on by default, `?rdm=0` and `?rcpc2=0` for an A/B. Memory: none; the core's wasm grows by
+`simd::inline_rdm`'s 12.4 KB, `simd_lane::inline_rdm`'s 0.9 KB and the interpreter's 0.9 KB.
+
+Steps move (guest-visible: the guests' Linux sees `asimdrdm` and `ilrcpc`, prints them and patches its alternatives):
+Buildroot −0.01%, Alpine +0.06%, Alpine's userspace +0.06%, LTP −0.25%, crypto −1.0%, USB +3.8%; EDK2 doesn't move.

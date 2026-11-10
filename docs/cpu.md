@@ -37,8 +37,7 @@ match it step for step.
   up, which has no other path anyway; distributions' binaries target v8.0, and nothing known dispatches on the
   hwcap:
   - **FEAT_LRCPC** (bit 5, `FEATURE_RCPC`, `rcpc`): `LDAPR`, `LDAPRB`, `LDAPRH` run as `LDAR` (RCsc is stronger
-    than RCpc asks, which is allowed), the JIT's inline LDAR included. Not FEAT_LRCPC2 (`LDAPUR`, `STLUR`: not
-    in dynarmic's table).
+    than RCpc asks, which is allowed), the JIT's inline LDAR included. FEAT_LRCPC2 is its own bit (below).
   - **FEAT_SB** (bit 6, `FEATURE_SB`, `sb`): `SB` is a NOP (nothing speculates), inline in the JIT.
   - **FEAT_FlagM and FEAT_FlagM2** (bit 7, `FEATURE_FLAGM`, `flagm`): `CFINV`, `RMIF`, `SETF8`, `SETF16`,
     `XAFLAG`, `AXFLAG` (`interp::flagm`); helper calls in the JIT (compilers rarely emit them).
@@ -70,6 +69,23 @@ match it step for step.
   two of them and the zips that feed them cost more than the four SDOTs (8 each) a guest without I8MM runs; USDOT
   (12) is dearer than SDOT and the bias trick the DotProd paths use. On the M4 itself the tile is slower with SMMLA
   too (1.32 against 0.65 ns). bench/boot/REPORT.md "PERF loop 5: FEAT_I8MM".
+- **FEAT_RDM** (`SQRDMLAH`, `SQRDMLSH`, vector, scalar and by element, on halfwords and words;
+  `interp::simd_int::rdm`): `VmConfig.features` bit 12 (`FEATURE_RDM`, ABI 62), `ID_AA64ISAR0_EL1.RDM` = 1, Linux's
+  `asimdrdm` hwcap, on and switched as JSCVT is (`rdm: false`, `?rdm=0`), in the shape's hash; inline in the JIT
+  ([jit.md](jit.md)). One rounding and one saturation of Vd << esize ± 2xy, not SQRDMULH's then SQADD's (they differ
+  by one where MIN × MIN meets a negative Vd). Who uses it: of the desktop and Debian guests' binaries only
+  glycin's image loader (`glycin-image-rs`, 88 words; disassembled, every ELF); no codec, browser or library.
+  Advertised: faster than the SQRDMULH and SQADD a guest runs without it, on the Mac (`bench/imgdecode/rdmk.c`): a
+  Q15 FIR by element 12.6% faster, a Q31 multiply-accumulate 39% (SQADD on words is lane code), a Q15 one 1.7%
+  (rounds overlapping). bench/boot/REPORT.md "PERF loop 6: FEAT_RDM and FEAT_LRCPC2".
+- **FEAT_LRCPC2** (`LDAPUR`, `LDAPURB`, `LDAPURH`, `LDAPURSB`, `LDAPURSH`, `LDAPURSW`, `STLUR`, `STLURB`, `STLURH`:
+  the RCpc loads and stores with an unscaled offset): `VmConfig.features` bit 13 (`FEATURE_RCPC2`, ABI 62), only with
+  FEAT_LRCPC (`cpu::has_rcpc2`): `ID_AA64ISAR1_EL1.LRCPC` = 2, Linux's `ilrcpc` hwcap; on and switched as JSCVT is
+  (`rcpc2: false`, `?rcpc2=0`), in the shape's hash. LDAR and STLR at base + imm9 (aligned, as theirs: no FEAT_LSE2),
+  the loads extended as LDUR's, in both tiers and inline in the JIT. dynarmic's table lacks them: `core/build.rs`
+  adds the patterns (`EXTRA`). Who uses it: nothing in the guests' binaries (a couple of words that are data);
+  code built for v8.4 and up. Advertised: a chain of acquire loads at an offset is level with the ADD and LDAPR a
+  guest runs without it (+0.3%, rounds overlapping; the same report).
 - **FEAT_RNG** (`RNDR`, `RNDRRS`, at EL0 and EL1) and **FEAT_E0PD** (`TCR_EL1.E0PD0`/`E0PD1`):
   `VmConfig.features` bits 1 and 2 (`FEATURE_RNG`, `FEATURE_E0PD`, ABI 35). **On by default** in
   `bootVm` (`rng: false`, `e0pd: false` turn them off), the native runners and so the test guests and
@@ -89,7 +105,7 @@ match it step for step.
   which comes from the virtio-rng): bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD".
 - **Left out, unadvertised:** SVE/SME, PAC, BTI, MTE, EL2/EL3, secure state. Their hint-space
   encodings (the PAC and BTI hints, CSDB, …) run as NOPs. Everything else the M4 has beyond v8.0
-  (FP16, BF16, FHM, RDM, FCMA, LSE2, LRCPC2, SM3/SM4, LOR, MOPS, HBC) is
+  (FP16, BF16, FHM, FCMA, LSE2, SM3/SM4, LOR, MOPS, HBC) is
   UNDEFINED and unadvertised; I8MM is implemented but off by default (above). Candidates for later are in
   [backlog.md](backlog.md) "Unadvertised extensions".
 - **Rule: an optional extension is advertised unless measured slower** (PLAN.md): one that loses stays implemented,
@@ -108,9 +124,9 @@ match it step for step.
   system-register interface, `cpu::FEATURE_GICV3`), 0 for user-mode vCPUs; DIT = 1 with FEAT_DIT.
 - `ID_AA64ISAR0_EL1` (`interp::sys::isar0`): LSE, CRC32, and with the crypto feature AES = 2,
   SHA1 = 1, SHA2 = 1 (0x211120 with it on; the bare-metal `exceptions` test checks this value),
-  with SHA512/SHA3 too SHA2 = 2 and SHA3 = 1 (0x1_0021_2120), RNDR = 1 with FEAT_RNG, TS = 2 with FlagM, DP = 1 with DotProd.
-  `ID_AA64ISAR1_EL1` (`interp::sys::isar1`): JSCVT = 1, LRCPC = 1, FRINTTS = 1, SB = 1 and I8MM = 1 (off by default) with their
-  features; none of FHM, FCMA, BF16 (RDM is ISAR0's: none); no AFP.
+  with SHA512/SHA3 too SHA2 = 2 and SHA3 = 1 (0x1_0021_2120), RNDR = 1 with FEAT_RNG, TS = 2 with FlagM, DP = 1 with DotProd, RDM = 1 with RDM.
+  `ID_AA64ISAR1_EL1` (`interp::sys::isar1`): JSCVT = 1, LRCPC = 1 (2 with LRCPC2), FRINTTS = 1, SB = 1 and I8MM = 1 (off by
+  default) with their features; none of FHM, FCMA, BF16; no AFP.
 - `ID_AA64MMFR0_EL1`: 4K granule, 16-bit ASIDs, 40-bit PA. `ID_AA64MMFR2_EL1` (`interp::sys::mmfr2`):
   E0PD = 1 with FEAT_E0PD, else 0.
 - `CTR_EL0`: IDC = 1 (no data cache to clean), **DIC = 0**, so guests issue `IC IVAU` after

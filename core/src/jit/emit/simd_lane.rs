@@ -100,7 +100,49 @@ pub(super) fn inline(c: &mut Func, i: u32, op: Op) -> bool {
     }
 }
 
-/// Pushes lane `e` of Vn's `8 << size`-bit lanes as an i64, sign- or (`u`)
+/// FEAT_RDM's SQRDMLAH and SQRDMLSH, scalar and scalar by element (the vector
+/// forms are `simd::inline_rdm`'s): Vd + ((±xy + 2^(esize − 2)) >> (esize − 1)),
+/// exact in i64, clamped. False for anything else.
+pub(super) fn inline_rdm(c: &mut Func, i: u32, op: Op) -> bool {
+    use Op::*;
+    let (by_element, sub) = match op {
+        SQRDMLAH_vec_1 => (false, false),
+        SQRDMLSH_vec_1 => (false, true),
+        SQRDMLAH_elt_1 => (true, false),
+        SQRDMLSH_elt_1 => (true, true),
+        _ => return false,
+    };
+    let (rd, rn, size) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 23, 22) as usize);
+    let (l, m, h) = (bit(i, 21) as u32, bit(i, 20) as u32, bit(i, 11) as u32);
+    let (index, rm) = match (size, by_element) {
+        (1 | 2, false) => (0, bits(i, 20, 16)),
+        (1, true) => (h << 2 | l << 1 | m, bits(i, 19, 16)),
+        (2, true) => (h << 1 | l, bits(i, 20, 16)),
+        _ => return false,
+    };
+    let esize = 8u32 << size;
+    sat_begin(c);
+    lanes(c, rd, false, size, 1, 0, |c, _| {
+        get(c, rd, size, 0, false);
+        if sub {
+            c.i64_const(1 << (esize - 2));
+        }
+        get(c, rn, size, 0, false);
+        get(c, rm, size, index, false);
+        c.op(MUL);
+        if sub {
+            c.op(SUB);
+        } else {
+            c.i64_const(1 << (esize - 2)).op(ADD);
+        }
+        c.i64_const(i64::from(esize - 1)).op(SHR_S).op(ADD);
+        clamp(c, range(esize, false));
+    });
+    sat_end(c);
+    true
+}
+
+/// Pushes lane `e` of Vn's `8 << size`-bit lanes as an i64, sign- or (`u`)/// Pushes lane `e` of Vn's `8 << size`-bit lanes as an i64, sign- or (`u`)
 /// zero-extended.
 fn get(c: &mut Func, n: u32, size: usize, e: u32, u: bool) {
     c.vget(n);

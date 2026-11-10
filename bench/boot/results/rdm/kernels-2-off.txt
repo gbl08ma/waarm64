@@ -1,0 +1,18 @@
+Features        : fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics cpuid jscvt lrcpc sha3 asimddp sha512 dit ilrcpc flagm sb flagm2 frint rng
+COLD KERN fir16 13.632 check -349344 neon
+COLD KERN mac16 3.269 check -460792 neon
+COLD KERN mac32 5.932 check -8332816637 neon
+COLD KERN acquire 5.820 check 8578202661511680 ldapur
+KERN fir16 11.593 check -349344 neon
+KERN mac16 3.011 check -460792 neon
+KERN mac32 5.820 check -8589936638 neon
+KERN acquire 5.273 check 85782028683773952 ldapur
+KERN fir16 11.048 check -349344 neon
+KERN mac16 3.065 check -460792 neon
+KERN mac32 5.759 check -8589936638 neon
+KERN acquire 5.188 check 85782028683773952 ldapur
+KERN fir16 10.946 check -349344 neon
+KERN mac16 3.123 check -460792 neon
+KERN mac32 5.707 check -8589936638 neon
+KERN acquire 4.560 check 85782028683773952 ldapur
+CODECS-END

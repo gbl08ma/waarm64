@@ -196,9 +196,9 @@ export const USER_CONNECTORS = KEYBOARD_CONNECTOR;
 
 /** The device kinds a machine's transports have, in slot order (`slots`). */
 export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'mouse' | 'touch' | 'clock' | '9p' | 'agent' | 'blk';
-/** The vCPUs' optional features (`BootOptions.rng`, `e0pd`, `sha3`, `jscvt`, `rcpc`, `sb`, `flagm`, `dit`, `frintts`, `dotprod`, `i8mm`). */
-export type CpuFeature = 'rng' | 'e0pd' | 'sha3' | 'jscvt' | 'rcpc' | 'sb' | 'flagm' | 'dit' | 'frintts' | 'dotprod' | 'i8mm';
-export const CPU_FEATURES: CpuFeature[] = ['rng', 'e0pd', 'sha3', 'jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod', 'i8mm'];
+/** The vCPUs' optional features (`BootOptions.rng`, `e0pd`, `sha3`, `jscvt`, `rcpc`, `sb`, `flagm`, `dit`, `frintts`, `dotprod`, `i8mm`, `rdm`, `rcpc2`). */
+export type CpuFeature = 'rng' | 'e0pd' | 'sha3' | 'jscvt' | 'rcpc' | 'sb' | 'flagm' | 'dit' | 'frintts' | 'dotprod' | 'i8mm' | 'rdm' | 'rcpc2';
+export const CPU_FEATURES: CpuFeature[] = ['rng', 'e0pd', 'sha3', 'jscvt', 'rcpc', 'sb', 'flagm', 'dit', 'frintts', 'dotprod', 'i8mm', 'rdm', 'rcpc2'];
 /** The ones a machine has unless turned off (`?<feature>=0`); the rest only when asked for (`?i8mm=1`: FEAT_I8MM is
  * implemented but measured slower than what guests do without it, docs/cpu.md). */
 export const CPU_DEFAULT: CpuFeature[] = CPU_FEATURES.filter((f) => f !== 'i8mm');

@@ -157,6 +157,26 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R 
             c.set_reg(rt, v);
         }
         STLR => m.write_atomic(c, base, 1 << bits(i, 31, 30), c.reg(rt))?,
+        // FEAT_LRCPC2 (the caller checks it): LDAR and STLR at base + imm9, the
+        // loads extended as LDUR's (opc 2 to 64 bits, 3 to 32).
+        STLUR_gen | LDAPUR_gen | LDAPURS_gen => {
+            let (size, opc) = (bits(i, 31, 30), bits(i, 23, 22));
+            let addr = base.wrapping_add(sext(bits(i, 20, 12) as u64, 9));
+            if opc == 0 {
+                m.write_atomic(c, addr, 1 << size, c.reg(rt))?;
+            } else {
+                let v = m.read_atomic(c, addr, 1 << size)?;
+                let sh = 64 - (8 << size);
+                c.set_reg(
+                    rt,
+                    match opc {
+                        1 => v,
+                        2 => ((v << sh) as i64 >> sh) as u64,
+                        _ => ((v << sh) as i64 >> sh) as u32 as u64,
+                    },
+                );
+            }
+        }
 
         // LSE.
         CAS | CASB | CASH => {
@@ -199,7 +219,7 @@ fn undefined(i: u32, op: Op) -> bool {
         STRx_LDRx_imm_2 | STURx_LDURx => single(true),
         STRx_reg | LDRx_reg => bits(i, 15, 13) & 2 == 0 || single(true),
         STRx_LDRx_imm_1 | STTRB | LDTRB | LDTRSB | STTRH | LDTRH | LDTRSH | STTR | LDTR
-        | LDTRSW => single(false),
+        | LDTRSW | STLUR_gen | LDAPUR_gen | LDAPURS_gen => single(false),
         // STGP, or reserved; LDPSW has no non-temporal form.
         STP_LDP_gen | STNP_LDNP_gen => match size {
             0 | 2 => false,

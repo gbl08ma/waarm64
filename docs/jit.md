@@ -750,7 +750,8 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   the other registers stay in their locals on both arms. Before, each arm wrote back every dirty register and
   stored the flags itself: Alpine's boot made 6.1% less wasm with it, Liftoff 8.6% less code and TurboFan 6%
   (`bench/boot/REPORT.md` "M8: smaller slow arms of loads and stores").
-- **Atomics:** LDAR/STLR (and FEAT_LRCPC's LDAPR*, as LDAR) as aligned wasm atomics, single exclusives and the LSE atomics
+- **Atomics:** LDAR/STLR (and FEAT_LRCPC's LDAPR*, as LDAR; FEAT_LRCPC2's LDAPUR* and STLUR* as LDAR and STLR at
+  base + imm9, sign-extended loads after the atomic load, an SP base guarded for both its alignment and the access's) as aligned wasm atomics, single exclusives and the LSE atomics
   (add/clr/eor/set/swp as `atomic.rmw`, CAS as `cmpxchg`) inline; DC ZVA as a 64-byte zero.
   CASP inline too: the W pair as one 64-bit `cmpxchg`, the X pair as `Mem::cas_pair`'s protocol
   ([cpu.md](cpu.md) "Memory accesses and atomics"), its pair lock taken with an
@@ -811,6 +812,17 @@ bytes emitted aren't browser memory:** every factor here is the renderer's, meas
   pair each to 32 bits (`extadd_pairwise`, unsigned for UMMLA, whose products are unsigned 16-bit) and sum each
   across in two levels of shuffles (an ADDP of ADDPs), Vd added last: about 19 and 22 instructions against
   SMMLA's one. Measured in bench/boot/REPORT.md "PERF loop 5: FEAT_I8MM".
+- **SQRDMLAH and SQRDMLSH** (`simd::inline_rdm`, scalar forms `simd_lane::inline_rdm`, FEAT_RDM): Vd ± the doubled
+  product's rounded high half, saturated once, is Vd + ((±xy + 2^(esize−2)) >> (esize − 1)). On halfwords
+  `q15mulr_sat_s` is that high half except for MIN × MIN (1.0, which it saturates to MAX): a saturating add of it and
+  then a saturating subtract of the MIN × MIN mask (−1) put the missing 1 back. SQRDMLSH rounds −2xy, so a tie
+  (the product's low 15 bits 0x4000, from `i16x8.mul`) rounds the other way: the mask of those lanes added first.
+  QC where the result isn't the wrapping sum. About 10 host instructions with the QC check (SQRDMLSH 14), about what
+  SQRDMULH and SQADD, a guest's path without RDM, cost between them with theirs. On words the exact products in i64 lanes (`extmul`), the rounded
+  shift, Vd widened and added, and the sum saturated where its low half sign-extended isn't it (`i64x2.ne`, MAX or
+  MIN from its sign by `bitselect`), the low halves gathered by one shuffle: about 30 for the Q form, where SQADD
+  on words is lane by lane. The scalar forms in i64 arithmetic. Measured in bench/boot/REPORT.md "PERF loop 6:
+  FEAT_RDM and FEAT_LRCPC2".
 - **NEON lane by lane** (`emit/simd_lane.rs`): what wasm has no lane op for, in i64 arithmetic per
   lane after the interpreter's i128 formulas: the saturating adds and subtracts on 32- and 64-bit
   lanes, SSHL/USHL/SRSHL/URSHL/SQSHL/UQSHL/SQRSHL/UQRSHL by register, the saturating shifts by
@@ -1071,7 +1083,7 @@ unmasks), the regime, FP-control, SPSel and NZCV MSRs, ISB, LSE min/max,
 the load/store fallbacks (TLB misses, MMIO); in OpenSSL's GCM path scalar `SHL`. `jit_helper_report`
 has the live histogram. None was worth a loop by itself at M6.5's end. Of the integer NEON (after
 the image decoders' profile, 2026-10-18), what's left as helpers: SUQADD/USQADD on 64-bit lanes,
-URECPE/URSQRTE, the dot products and SQRDMLAH/SQRDMLSH (not advertised), and the FP forms the FP
+URECPE/URSQRTE, and the FP forms the FP
 fast paths send there (`WEBPC_JIT_DIFF_HELPERS=1` on the differential test lists them per class).
 
 ## Tried and not kept

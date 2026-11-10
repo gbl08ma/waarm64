@@ -2153,6 +2153,232 @@ fn i8mm() {
 }
 
 #[test]
+fn rdm() {
+    use crate::cpu::{FEATURE_RDM, FEATURES};
+    const QC: u64 = 1 << 27;
+    const MLAH_8H: u32 = 0x6e42_8420; // sqrdmlah v0.8h, v1.8h, v2.8h
+    const MLSH_8H: u32 = 0x6e42_8c20; // sqrdmlsh v0.8h, v1.8h, v2.8h
+    const MLAH_4S: u32 = 0x6e82_8420; // sqrdmlah v0.4s, v1.4s, v2.4s
+    const MLAH_4H: u32 = 0x2e42_8420; // sqrdmlah v0.4h, v1.4h, v2.4h
+    const MLAH_H: u32 = 0x7e42_8420; // sqrdmlah h0, h1, h2
+    const MLSH_S: u32 = 0x7e82_8c20; // sqrdmlsh s0, s1, s2
+    const MLAH_ELT_8H: u32 = 0x6f72_d820; // sqrdmlah v0.8h, v1.8h, v2.h[7]
+    const MLSH_ELT_4S: u32 = 0x6fa2_f820; // sqrdmlsh v0.4s, v1.4s, v2.s[3]
+    const MLAH_ELT_H: u32 = 0x7f52_d020; // sqrdmlah h0, h1, v2.h[1]
+    let run = |insn: u32, d: u128, n: u128, m: u128| {
+        let mut t = T::new(&[insn]);
+        (t.c.v[0], t.c.v[1], t.c.v[2]) = (d, n, m);
+        t.step().unwrap();
+        (t.c.v[0], t.c.fpsr & QC != 0)
+    };
+    let h = |l: [i16; 8]| (0..8).fold(0u128, |v, k| v | (l[k] as u16 as u128) << (16 * k));
+    let s = |l: [i32; 4]| (0..4).fold(0u128, |v, k| v | (l[k] as u32 as u128) << (32 * k));
+    // 0.5 × 0.5 doubled is 0.5: 0x2000 added, saturating at 0x7fff (QC).
+    assert_eq!(
+        run(
+            MLAH_8H,
+            h([0, 1, -1, 0x7000, 0, 0, 0, 0]),
+            h([0x4000; 8]),
+            h([0x4000; 8])
+        ),
+        (
+            h([
+                0x2000, 0x2001, 0x1fff, 0x7fff, 0x2000, 0x2000, 0x2000, 0x2000
+            ]),
+            true
+        )
+    );
+    assert_eq!(
+        run(MLSH_8H, h([0; 8]), h([0x4000; 8]), h([0x4000; 8])),
+        (h([-0x2000; 8]), false)
+    );
+    // MIN × MIN is 1.0, past the range only once added: -5 + 1.0 = 32763 (SQRDMULH's
+    // 32767 then SQADD would be 32762), and no QC; with 0 it saturates.
+    let min = h([i16::MIN; 8]);
+    assert_eq!(
+        run(MLAH_8H, h([-5, 0, -1, i16::MIN, 1, 0, 0, 0]), min, min),
+        (
+            h([32763, 32767, 32767, 0, 32767, 32767, 32767, 32767]),
+            true
+        )
+    );
+    assert_eq!(run(MLAH_8H, h([-5; 8]), min, min), (h([32763; 8]), false));
+    assert_eq!(
+        run(MLSH_8H, h([5, 0, 0, 0, 0, 0, 0, 0]), min, min).0 & 0xffff,
+        (-32763i16) as u16 as u128
+    );
+    // Rounding: 1 × 1 doubled is 2^-30, rounded away; 0x4000 × 1 doubled rounds 0.5 up.
+    assert_eq!(run(MLAH_8H, 0, h([1; 8]), h([1; 8])), (0, false));
+    assert_eq!(
+        run(MLAH_8H, 0, h([0x4000; 8]), h([1; 8])),
+        (h([1; 8]), false)
+    );
+    assert_eq!(run(MLSH_8H, 0, h([0x4000; 8]), h([1; 8])), (0, false));
+    // 32-bit lanes; the 64-bit vector clears the top.
+    let smin = s([i32::MIN; 4]);
+    assert_eq!(
+        run(MLAH_4S, s([-5, 0, i32::MAX, 7]), smin, smin),
+        (s([i32::MAX - 4, i32::MAX, i32::MAX, i32::MAX]), true)
+    );
+    assert_eq!(
+        run(
+            MLAH_4S,
+            s([3; 4]),
+            s([0x4000_0000; 4]),
+            s([-0x4000_0000; 4])
+        ),
+        (s([3 - 0x2000_0000; 4]), false)
+    );
+    assert_eq!(run(MLAH_4H, u128::MAX, 0, 0), (u64::MAX as u128, false));
+    // Scalar: lane 0 alone, the rest cleared.
+    assert_eq!(
+        run(
+            MLAH_H,
+            h([7, 1, 1, 1, 1, 1, 1, 1]),
+            h([0x4000; 8]),
+            h([0x4000; 8])
+        ),
+        (h([0x2007, 0, 0, 0, 0, 0, 0, 0]), false)
+    );
+    assert_eq!(
+        run(
+            MLSH_S,
+            s([i32::MIN, 9, 9, 9]),
+            s([0x4000_0000, 0, 0, 0]),
+            s([0x4000_0000, 0, 0, 0])
+        ),
+        (s([i32::MIN, 0, 0, 0]), true)
+    );
+    // By element: Vm's lane in every lane.
+    let m = h([0, 0, 0, 0, 0, 0, 0, 0x4000]);
+    assert_eq!(
+        run(
+            MLAH_ELT_8H,
+            h([1; 8]),
+            h([0x4000, 0x2000, 0, -0x4000, 0, 0, 0, 0]),
+            m
+        ),
+        (h([0x2001, 0x1001, 1, -0x1fff, 1, 1, 1, 1]), false)
+    );
+    assert_eq!(
+        run(
+            MLSH_ELT_4S,
+            s([0; 4]),
+            s([0x4000_0000, 1, 0, 0]),
+            s([0, 0, 0, 0x4000_0000])
+        ),
+        (s([-0x2000_0000, 0, 0, 0]), false)
+    );
+    assert_eq!(
+        run(
+            MLAH_ELT_H,
+            h([1, 2, 3, 4, 5, 6, 7, 8]),
+            h([0x4000; 8]),
+            h([0, 0x4000, 0, 0, 0, 0, 0, 0])
+        ),
+        (h([0x2001, 0, 0, 0, 0, 0, 0, 0]), false)
+    );
+    // UNDEFINED without the feature, and the reserved sizes ahead of the FPEN trap.
+    for insn in [
+        MLAH_8H,
+        MLSH_8H,
+        MLAH_4S,
+        MLAH_H,
+        MLSH_S,
+        MLAH_ELT_8H,
+        MLSH_ELT_4S,
+        MLAH_ELT_H,
+    ] {
+        let mut t = T::new(&[insn]);
+        t.c.features = FEATURES & !FEATURE_RDM;
+        assert_eq!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+        let mut t = T::new(&[insn]);
+        t.c.cpacr_el1 = 0;
+        assert_ne!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+    }
+    for insn in [
+        0x6e02_8420u32,
+        0x6ec2_8420,
+        0x7e02_8420,
+        0x7ec2_8c20,
+        0x6f32_d820,
+        0x6ff2_f820,
+    ] {
+        let mut t = T::new(&[insn]);
+        t.c.cpacr_el1 = 0;
+        assert_eq!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+    }
+    assert_eq!(sys::isar0(FEATURE_RDM) >> 28 & 0xf, 1);
+    assert_eq!(sys::isar0(0) >> 28 & 0xf, 0);
+}
+
+#[test]
+fn lrcpc2() {
+    use crate::cpu::{FEATURE_RCPC, FEATURE_RCPC2, FEATURES};
+    const LDAPUR_X: u32 = 0xd95f_8041; // ldapur x1, [x2, #-8]
+    const LDAPURSB_W: u32 = 0x19c0_1041; // ldapursb w1, [x2, #1]
+    const LDAPURSB_X: u32 = 0x1980_1041; // ldapursb x1, [x2, #1]
+    const LDAPURSW: u32 = 0x9980_4041; // ldapursw x1, [x2, #4]
+    const LDAPURH: u32 = 0x5940_2041; // ldapurh w1, [x2, #2]
+    const STLURH: u32 = 0x5900_2041; // stlurh w1, [x2, #2]
+    const STLUR_X: u32 = 0xd910_0041; // stlur x1, [x2, #-256]
+    let t = T::new(&[LDAPUR_X])
+        .x(2, DATA + 8)
+        .x(1, 7)
+        .mem(DATA, 8, 0x8877_6655_4433_2211)
+        .run();
+    assert_eq!(t.c.x[1], 0x8877_6655_4433_2211);
+    let t = T::new(&[LDAPURSB_W])
+        .x(2, DATA)
+        .x(1, u64::MAX)
+        .mem(DATA, 8, 0x80_00)
+        .run();
+    assert_eq!(t.c.x[1], 0xffff_ff80);
+    let t = T::new(&[LDAPURSB_X]).x(2, DATA).mem(DATA, 8, 0x80_00).run();
+    assert_eq!(t.c.x[1], u64::MAX - 0x7f);
+    let t = T::new(&[LDAPURSW])
+        .x(2, DATA)
+        .mem(DATA, 8, 0x8000_0001 << 32)
+        .run();
+    assert_eq!(t.c.x[1], 0xffff_ffff_8000_0001);
+    let t = T::new(&[LDAPURH])
+        .x(2, DATA)
+        .x(1, u64::MAX)
+        .mem(DATA, 8, 0xfedc_ba98)
+        .run();
+    assert_eq!(t.c.x[1], 0xfedc);
+    let t = T::new(&[STLURH]).x(2, DATA).x(1, 0x1234_5678).run();
+    assert_eq!(t.rd(DATA, 8), 0x5678_0000);
+    let t = T::new(&[STLUR_X])
+        .x(2, DATA + 256)
+        .x(1, 0x0102_0304_0506_0708)
+        .run();
+    assert_eq!(t.rd(DATA, 8), 0x0102_0304_0506_0708);
+    // Misaligned: an alignment fault, as LDAR's (no FEAT_LSE2).
+    for insn in [LDAPURSW, LDAPURH, STLURH] {
+        let mut t = T::new(&[insn]).x(2, DATA + 1);
+        assert!(matches!(t.step(), Err(Exit::Fault(_))), "{insn:#x}");
+    }
+    // UNDEFINED without the feature (or without FEAT_LRCPC), and the unallocated
+    // sizes (opc 1x to 64 bits, opc 11 to 32).
+    for (features, insn) in [
+        (FEATURES & !FEATURE_RCPC2, LDAPUR_X),
+        (FEATURES & !FEATURE_RCPC, LDAPURSW),
+        (FEATURES & !FEATURE_RCPC2, STLURH),
+        (FEATURES, 0xd980_0041),
+        (FEATURES, 0xd9c0_0041),
+        (FEATURES, 0x99c0_0041),
+    ] {
+        let mut t = T::new(&[insn]).x(2, DATA);
+        t.c.features = features;
+        assert_eq!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+    }
+    assert_eq!(sys::isar1(FEATURE_RCPC | FEATURE_RCPC2) >> 20 & 0xf, 2);
+    assert_eq!(sys::isar1(FEATURE_RCPC) >> 20 & 0xf, 1);
+    assert_eq!(sys::isar1(FEATURE_RCPC2) >> 20 & 0xf, 0);
+}
+
+#[test]
 fn jscvt_feature_gate() {
     // fjcvtzs w1, d2: UNDEFINED without FEATURE_JSCVT, ahead of the FPEN trap;
     // with it, Wd zero-extended and NZCV = 0Z00 whatever NZCV was.
@@ -2246,7 +2472,7 @@ fn v8_x_feature_gates() {
     // The ID fields.
     assert_eq!(
         sys::isar1(FEATURES),
-        1 << 52 | 1 << 36 | 1 << 32 | 1 << 20 | 1 << 12
+        1 << 52 | 1 << 36 | 1 << 32 | 2 << 20 | 1 << 12
     );
     assert_eq!(sys::isar0(FEATURE_FLAGM) >> 52 & 0xf, 2);
     assert_eq!(sys::pfr0(FEATURE_DIT) >> 48 & 0xf, 1);

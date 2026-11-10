@@ -43,7 +43,9 @@ product as ggml writes it; `js.html` runs ToInt32 kernels in Chromium and Firefo
 (FEAT_I8MM, 2026-11-10) it also decodes 12 s of HEVC (FFmpeg) and encodes with x265, `q8dot` times a 2x2 int8 tile
 (`q8mm`: SMMLA with HWCAP2_I8MM, four SDOTs without), the arms are `?<feature>=0` and `=1`, and it runs on the Mac host:
 `SCRIPT=../imgdecode/codecs.ts ROUNDS=3 MAC_TIMEOUT=2700 bench/gpu/sway-mac.sh <feature>,codecs target/arch/desktop.qcow2 <name>`
-(a round about 4 minutes there).
+(a round about 4 minutes there). Since PERF loop 6 (FEAT_RDM and FEAT_LRCPC2) the mode `kernels` runs `rdmk.c` alone
+(Q15 and Q31 kernels with SQRDMLAH from the `asimdrdm` hwcap, acquire loads at an offset with LDAPUR from `ilrcpc`;
+`KERN <kernel> <ns>`), a round about 80 s on the Mac: `<feature>,kernels`.
 
 ## On the desktop guest (2026-10-22)
 

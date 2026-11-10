@@ -1,4 +1,4 @@
-# Host ABI (version 61)
+# Host ABI (version 62)
 
 The contract between the Rust core (`core/src/lib.rs` exports) and its hosts (`web/vm.ts`, the
 native runners in `core/tests/common`, the benchmarks). Exports are `#[unsafe(no_mangle)] extern
@@ -109,7 +109,7 @@ Design notes for an ABI change go in this file before the code.
 | `devices`, `ndevices` | address and count (≤ 32) of `DeviceEntry`s (6) |
 | `fb_width`, `fb_height` | a `simple-framebuffer`, 0: none (8) |
 | `jit` | 0 interpreter only (the ABI default), 1 JIT, 2 JIT-stress (10), 3 JIT-check (24), 4 the dispatcher without compiling: the block interpreter (33) |
-| `features` | bit 0 `FEATURE_CRYPTO` (19), bit 1 `FEATURE_RNG`: `RNDR`/`RNDRRS`, bit 2 `FEATURE_E0PD` (35), bit 3 `FEATURE_SHA3`: FEAT_SHA512 and FEAT_SHA3, only with bit 0 (51), bit 4 `FEATURE_JSCVT`: `FJCVTZS`, bits 5 to 9 `FEATURE_RCPC`, `FEATURE_SB`, `FEATURE_FLAGM` (FlagM and FlagM2), `FEATURE_DIT`, `FEATURE_FRINTTS` (59), bit 10 `FEATURE_DOTPROD` (60), bit 11 `FEATURE_I8MM` (61); other bits reserved, and `vm_new` refuses them |
+| `features` | bit 0 `FEATURE_CRYPTO` (19), bit 1 `FEATURE_RNG`: `RNDR`/`RNDRRS`, bit 2 `FEATURE_E0PD` (35), bit 3 `FEATURE_SHA3`: FEAT_SHA512 and FEAT_SHA3, only with bit 0 (51), bit 4 `FEATURE_JSCVT`: `FJCVTZS`, bits 5 to 9 `FEATURE_RCPC`, `FEATURE_SB`, `FEATURE_FLAGM` (FlagM and FlagM2), `FEATURE_DIT`, `FEATURE_FRINTTS` (59), bit 10 `FEATURE_DOTPROD` (60), bit 11 `FEATURE_I8MM` (61), bit 12 `FEATURE_RDM`, bit 13 `FEATURE_RCPC2`: FEAT_LRCPC2, only with bit 5 (62); other bits reserved, and `vm_new` refuses them |
 | `ncpus` | vCPUs, 0 or 1 = one; up to `vm::MAX_CPUS` (123) (21; more than one from 22) |
 | `gic` | 0 or 3: the GICv3; `vm_new` refuses others (21; 2, a GICv2, until 23) |
 | `smp` | 0 round-robin on the calling thread (`vm_run`), 1 parallel: a thread per vCPU (`vm_run_cpu`), realtime only (25) |
@@ -127,8 +127,8 @@ Design notes for an ABI change go in this file before the code.
 | `fma` | non-zero: the host's relaxed-SIMD `madd` fuses in every tier, and the JIT's FMA forms use it (`web/fma.ts` probes it; `bootVm`'s `fma: false` forces the emulation). Nothing the guest can see depends on it |
 
 `bootVm` (`web/vm.ts`) and the native runners set `features` bit 0 unless told `crypto: false`,
-and bits 1 to 10 unless told `rng: false`, `e0pd: false`, `sha3: false` and so on (the bare-metal tests are); bit 11
-(FEAT_I8MM) only when told `i8mm: true` (`cpu::DEFAULT_FEATURES`); the ABI's 0 means none.
+and bits 1 to 10, 12 and 13 unless told `rng: false`, `e0pd: false`, `sha3: false` and so on (the bare-metal tests
+are); bit 11 (FEAT_I8MM) only when told `i8mm: true` (`cpu::DEFAULT_FEATURES`); the ABI's 0 means none.
 
 ### Exit kinds
 
@@ -585,6 +585,7 @@ implemented by this step).
 | 59 | FEAT_JSCVT, FEAT_LRCPC, FEAT_SB, FEAT_FlagM/FlagM2, FEAT_DIT, FEAT_FRINTTS: `VmConfig.features` bits 4 to 9; their ID fields (ISAR0 TS, ISAR1 JSCVT, LRCPC, FRINTTS, SB, PFR0 DIT) |
 | 60 | FEAT_DotProd: `VmConfig.features` bit 10; `ID_AA64ISAR0_EL1` DP = 1 |
 | 61 | FEAT_I8MM: `VmConfig.features` bit 11; `ID_AA64ISAR1_EL1` I8MM = 1 |
+| 62 | FEAT_RDM and FEAT_LRCPC2: `VmConfig.features` bits 12 and 13; `ID_AA64ISAR0_EL1` RDM = 1, `ID_AA64ISAR1_EL1` LRCPC = 2 |
 | 54 | PSCI SYSTEM_SUSPEND in realtime mode: `vm_suspended`, `vm_wake`, `vm_clock_skip`; snapshot format 3 (a suspended guest) and `snapshot_version_min` (2: format 2 states still restore) |
 | 52 | a JIT module on a machine with spill memory imports spill memory 1 as `env.ram1` (`coreImports(…, spill)` passes them on): loads and stores reach its pages inline |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |
