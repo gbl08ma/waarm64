@@ -8,6 +8,7 @@ export const screen = $state<{
   generation: number;
   size: { width: number; height: number };
   scale: number | undefined;
+  fitted: { width: number; height: number; pixelated: boolean } | undefined;
 }>({
   view: 'screen',
   /** Bumped for each start: App.svelte makes the canvas again. */
@@ -16,4 +17,6 @@ export const screen = $state<{
   size: { width: 300, height: 150 },
   /** Device pixels per guest pixel, as the screen was last fitted. */
   scale: undefined,
+  /** The canvas's size on the page (CSS pixels), and whether it is drawn crisp (a whole scale); none until fitted. */
+  fitted: undefined,
 });

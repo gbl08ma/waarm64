@@ -1,6 +1,6 @@
 // The machine's screen (docs/frontend.md "The screen"): the canvas the run draws on, fitted to its box, the guest's
 // cursor on it, and the size the guest is asked for (virtio-gpu machines). web/app/App.svelte renders the elements and
-// gives them here (`attach`); their sizes and the cursor are set on them here, as they follow the guest's.
+// gives them here (`attach`); the canvas's size on the page is `screen.fitted`, the cursor is set on the elements here.
 import type { DisplayFromPage } from '../../gpu-present.ts';
 import { flushSync } from 'svelte';
 import { mouse } from './mouse.svelte.ts';
@@ -88,16 +88,19 @@ export class ScreenView {
   /** The canvas at an integer multiple of the guest's screen in device pixels when that fits (crisp), scaled down to fit (smooth) otherwise. */
   fit() {
     if (!this.#box.clientWidth) return; // hidden
-    const { fb, canvas } = this;
+    const { fb } = this;
     const dpr = devicePixelRatio;
     const box = this.#box.getBoundingClientRect();
     const fits = Math.min((box.width * dpr) / fb.width, (box.height * dpr) / fb.height);
     let scale = fits >= 1 ? Math.floor(fits) : fits;
     // A guest in CSS pixels on a screen of fractional density: one guest pixel is one CSS pixel (a little soft), not a device pixel (a smaller screen).
     if (!settings().hidpi && !Number.isInteger(dpr) && fits >= dpr && scale < dpr) scale = dpr;
-    canvas.style.width = `${(fb.width * scale) / dpr}px`;
-    canvas.style.height = `${(fb.height * scale) / dpr}px`;
-    canvas.style.imageRendering = Number.isInteger(scale) ? 'pixelated' : 'auto';
+    screen.fitted = {
+      width: (fb.width * scale) / dpr,
+      height: (fb.height * scale) / dpr,
+      pixelated: Number.isInteger(scale),
+    };
+    flushSync(); // drawn at its size now: the cursor below is placed by the canvas's measured width
     screen.scale = Math.round(scale * 1000) / 1000; // `data-scale`, the tests' hook
     this.#scale = screen.scale || 1;
     this.showCursor();
@@ -137,7 +140,8 @@ export class ScreenView {
     this.placeCursor();
   }
 
-  // The guest's cursor is the canvas's CSS cursor: the tablet is absolute, so the host's pointer is the guest's and
+  // The guest's cursor is the canvas's CSS cursor (set here, not through state: it follows the guest's cursor messages
+  // as they come, and a cursor image is a list of blob URLs made here): the tablet is absolute, so the host's pointer is the guest's and
   // moves at the host's rate. Drawn at the canvas's scale (a guest pixel is `scale` device pixels), crisp when the
   // scale is whole; Chromium takes cursor images up to 128×128 device pixels, so a bigger one is capped. `none` is the
   // guest hiding it.
@@ -181,6 +185,8 @@ export class ScreenView {
     if (c?.image) this.#lockCursor.getContext('2d')?.putImageData(imageOf({ ...c, image: c.image }), 0, 0);
     this.placeCursor();
   }
+  // Its box is set here, not through state: it follows the guest's pointer, once per cursor message while the mouse
+  // is held, measured against the canvas as it is drawn now.
   placeCursor() {
     const c = this.cursor;
     const el = this.#lockCursor;

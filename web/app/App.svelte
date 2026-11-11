@@ -111,6 +111,9 @@
           width={screen.size.width}
           height={screen.size.height}
           data-scale={screen.scale}
+          style:width={screen.fitted && `${screen.fitted.width}px`}
+          style:height={screen.fitted && `${screen.fitted.height}px`}
+          style:image-rendering={screen.fitted && (screen.fitted.pixelated ? 'pixelated' : 'auto')}
         ></canvas>
       {/key}
       <div id="screen-hint">{mouse.lock ? t('common:App.screen.hintLock') : t('common:App.screen.hint')}</div>
