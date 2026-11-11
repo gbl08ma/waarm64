@@ -1,8 +1,9 @@
-<!-- One piece of a status bar element (web/app/statusbar.ts `Piece`): its words, or its icon and short value (the words for screen readers), a dot, bars. The bar and the Preferences' editor draw them. -->
+<!-- One piece of a status bar element (web/app/statusbar-piece.ts `Piece`): its words, or its icon and short value (the words for screen readers), a dot, bars. The bar and the Preferences' editor draw them. -->
 <script lang="ts">
   import Icon from './ui/Icon.svelte';
   import StatusDot from './ui/StatusDot.svelte';
-  import { lookOf, type Item, type Piece } from './statusbar.ts';
+  import { lookOf, type Item } from './statusbar.ts';
+  import type { Piece } from './statusbar-piece.ts';
   import { power } from './areas/power.svelte.ts';
 
   /** `state`: the power state's piece in the bar, `#state[data-state]` (the tests wait on it). */

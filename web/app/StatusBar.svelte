@@ -8,7 +8,9 @@
 <script lang="ts">
   import StatusPiece from './StatusPiece.svelte';
   import type { PageNetwork } from './net-live.ts';
-  import { render, shows, type Item, type Live, type Piece } from './statusbar.ts';
+  import { shows, type Item } from './statusbar.ts';
+  import type { Live, Piece } from './statusbar-piece.ts';
+  import { render } from './statusbar-render.ts';
   import { power } from './areas/power.svelte.ts';
   import { liveNow } from './areas/status-live.ts';
   import { status } from './areas/status.svelte.ts';

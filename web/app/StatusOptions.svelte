@@ -7,17 +7,8 @@
   import Note from './ui/Note.svelte';
   import Radio from './ui/Radio.svelte';
   import { t } from '../i18n.ts';
-  import {
-    aboutOf,
-    deviceOf,
-    firstIndex,
-    hasLooks,
-    iconOf,
-    lookOf,
-    nameOf,
-    type Item,
-    type Look,
-  } from './statusbar.ts';
+  import { aboutOf, deviceOf, firstIndex, hasLooks, iconOf, lookOf, nameOf, type Item } from './statusbar.ts';
+  import type { Look } from './statusbar-kinds.ts';
 
   type Props = {
     item: Item;

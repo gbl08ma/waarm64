@@ -16,7 +16,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/App.svelte`, `Toolbar.svelte` (its menus: `LoadSnapshotMenu`, `ScreenMenu`, `KeysMenu`, `MouseMenu`, `SizeMenu`, and the areas' `Sound`, `Network`, `UsbMenu`, `FoldersMenu`, `ClipboardMenu`), `BootCard.svelte`, `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the boot card, the status line, the questions |
 | `web/app/osk.ts`, `Osk.svelte`, `OskBar.svelte`, `osk-frame.svelte.ts` | the on-screen keyboard (below, "The on-screen keyboard"): its layout and keys, the overlay |
 | `web/app/areas/`, `web/app/page.ts`, `web/app/changes.ts`, `web/app/command.ts`, `web/app/ask.svelte.ts`, `web/app/settings.ts` | the page's state by area and its actions (`page`), the change signal and the commands they use (below, "The page's code"), the questions (`ask`), what's remembered per browser |
-| `web/app/statusbar.ts`, `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` (`StatusChip.svelte`, `StatusPalette.svelte`, `StatusOptions.svelte`, `status-drag.svelte.ts`), `areas/status-live.ts` | the status bar, its elements and the Preferences' editor (below, "The status bar") |
+| `web/app/statusbar.ts` (`statusbar-kinds.ts`, `-metrics`, `-graphics`, `-traffic`, `-piece`, `-render`, `-sample`), `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` (`StatusChip.svelte`, `StatusPalette.svelte`, `StatusOptions.svelte`, `status-drag.svelte.ts`), `areas/status-live.ts` | the status bar, its elements and the Preferences' editor (below, "The status bar") |
 | `web/app/icons.ts` | the icons (Tabler's, below, "Icons") |
 | `web/app/main.ts` | the composition root: opens the store and the page's machine, builds the areas' modules, assembles `page`, mounts the components, boots |
 | `web/app/run/` (`page-machine.svelte.ts`, `page-disks.ts`, `knobs.ts`, `config.ts`, `dev-knobs.ts`, `runner.ts`, `run.ts`, `worker-messages.ts`, `start-message.ts`, `machine-lock.ts`, `messages.ts`, `problems.ts`, `power-actions.ts`, `size-actions.ts`, `memory-signal.ts`, `replies.ts`, `bench-hooks.ts`, `core.ts`) | the machine's run (below, "The page's code"): the page's machine (the owner the areas share), the address's knobs and what a machine is resolved to, a start and a stop, the workers' messages by type, the state and the message bar, power and size, the memory signal |
@@ -262,8 +262,8 @@ separators; the main gates also have their names. Left to right: **[Machines](ui
 **[Snapshot](ui:toolbar:Toolbar.snapshot)** (one click: a stored machine's is kept in the browser at once, named by the time, renamed later on the
 Snapshots tab, the panic button; a transient machine's is saved to a file), **Load snapshot** (a menu: the machine's
 five latest kept snapshots, orphaned ones disabled; All snapshots… (the Snapshots tab); From a file…), the views
-(Screen, Serial terminal, Both), **Screen** (size and HiDPI, virtio-gpu machines), **Keys**, **[Mouse lock](ui:statusbar:statusbar.kind.pointer)** (a menu: on or
-off, and Pointer or Raw, remembered per browser; the button looks pressed while it's on: "Input", "[Mouse lock](ui:statusbar:statusbar.kind.pointer)"), [Full screen](ui:toolbar:Toolbar.fullscreen),
+(Screen, Serial terminal, Both), **Screen** (size and HiDPI, virtio-gpu machines), **Keys**, **[Mouse lock](ui:statusbar:statusbar-kinds.kind.pointer)** (a menu: on or
+off, and Pointer or Raw, remembered per browser; the button looks pressed while it's on: "Input", "[Mouse lock](ui:statusbar:statusbar-kinds.kind.pointer)"), [Full screen](ui:toolbar:Toolbar.fullscreen),
 **Sound**, **Network**, **USB** (a machine with a USB controller: its remembered devices with attach toggles, the
 offers of a device that just appeared or has no permission here yet, Add a device…; [usb.md](usb.md) "The page"), **Folders**,
 **Clipboard** (below), and for a transient machine (a test's `?machine=`) the **Machine** menu (vCPUs, RAM, graphics);
@@ -330,23 +330,26 @@ the status bar's and dialogs' tables use) at 1.75 stroke, `currentColor`. A new 
 ### The status bar
 
 The bar under the machine is a row of elements the user chooses and orders in **[Preferences](ui:machines:MachinesNav.preferences)** (the Machines page),
-kept per browser as `webpc.settings` `statusBar` (absent: the defaults; `[]`: no bar). `web/app/statusbar.ts` is the
-model, DOM-free (tests/statusbar.test.ts): the kinds (`KINDS`: name, group, icon, default look), the defaults (power
-state, a divider, vCPUs, RAM, uptime, MIPS, JIT share, IRQ/s), `normalize` (a kept list from another version: unknown
-kinds and fields dropped), `metrics` (the last second from two `status` messages; none across a new run, whose
-counters start at 0), `graphics` (the screen's report: a 3D machine's GPU worker `stats`, a 2D one's presenter
-`screen-stats`) and `render` (an element's pieces: words, an icon and a short value, a tone, per-vCPU bars, or values
-with icons of their own, the network's received and sent arrows). `StatusBar.svelte` draws the bar (neighbours split by
+kept per browser as `webpc.settings` `statusBar` (absent: the defaults; `[]`: no bar). The model is DOM-free
+(tests/statusbar.test.ts): `web/app/statusbar-kinds.ts` the kinds (`KINDS`: name, group, icon, default look),
+`statusbar.ts` the elements (the defaults: power state, a divider, vCPUs, RAM, uptime, MIPS, JIT share, IRQ/s;
+`normalize`, a kept list from another version: unknown kinds and fields dropped; names and the palette),
+`statusbar-metrics.ts` `metrics` (the last second from two `status` messages; none across a new run, whose counters
+start at 0), `statusbar-graphics.ts` `graphics` (the screen's report: a 3D machine's GPU worker `stats`, a 2D one's
+presenter `screen-stats`) and its elements' pieces, `statusbar-render.ts` `render` (an element's pieces, a renderer per
+kind: words, an icon and a short value, a tone, per-vCPU bars, or values with icons of their own, `statusbar-piece.ts`;
+the network's, disks' and USB's in `statusbar-traffic.ts`, with the received and sent arrows) and
+`statusbar-sample.ts` the made-up machine the editor's preview draws. `StatusBar.svelte` draws the bar (neighbours split by
 a dot; a spacer is `flex: 1`; no element that shows anything, no bar, and `#state[data-state]` stays, hidden, for the
 tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Preferences' editor (a chip of its bar `StatusChip.svelte`, its palette `StatusPalette.svelte`, its chosen chip's settings `StatusOptions.svelte`, its drags `status-drag.svelte.ts`); what both draw besides the statuses (the power state, the mouse and keys, the adapters' states) is `areas/status-live.ts` `liveNow`.
 - **Elements:** power state, vCPUs, RAM, uptime, clock, tab memory (the memory signal's estimate); MIPS and JIT share,
   IRQ/s, blocks compiled, compile time, the JIT cache against its budget; network traffic and totals, each adapter's
   connection; disk speed and totals; USB traffic and totals (a machine with the USB controller: its devices together,
   in and out as the guest sees them, counted as the xHCI's transfers complete, `web/usb.ts`); the renderer (3D or 2D,
-  WebGL2 or a canvas, amber when WebGL2 is software; [Framebuffer](ui:statusbar:statusbar.gpu.framebuffer) on a machine
+  WebGL2 or a canvas, amber when WebGL2 is software; [Framebuffer](ui:statusbar:statusbar-graphics.gpu.framebuffer) on a machine
   without virtio-gpu, `?display=simple`), frame rate (frames that drew something a second: the GPU worker's or
   presenter's, or the simple framebuffer's draws, which the machine worker counts and reports as `screen-stats`), Vulkan activity (a Vulkan machine's: the guest's Venus contexts, roughly its programs holding a Vulkan device, and
-  the WebGPU submits a second, its draws and the adapter in the tooltip; amber on a software adapter, [Vulkan idle](ui:statusbar:statusbar.vulkan.idle) with
+  the WebGPU submits a second, its draws and the adapter in the tooltip; amber on a software adapter, [Vulkan idle](ui:statusbar:statusbar-graphics.vulkan.idle) with
   none, red without a WebGPU device: the worker's `stats` `vulkan`), video decode (the streams' codecs, hardware as asked: WebCodecs doesn't say what a decoder got, and pictures a
   second); mouse lock, keyboard (where keys go: the machine when the screen or the terminal has the focus, what the
   screen's [Click to type](ui:common:App.screen.hint) hint says otherwise, and its shortcuts too with full screen's Keyboard Lock), microphone (shown while it records);
@@ -1001,7 +1004,7 @@ page writes the context's output latency into the ring's header, and the guest g
   over, and the plain axis gets its notch in the report where the high-resolution sum reaches 120 (Linux's rule for a
   device with both): a reader of the high-resolution axes (libinput) can scroll a touchpad's motion smoothly, a
   reader of the plain ones alone (X's evdev driver, kernels before 5.0) gets the notches as before. Turning back starts a wheel's sum over.
-- **[Mouse lock](ui:statusbar:statusbar.kind.pointer)** (the toolbar's menu, `webpc.settings` `mouseLock` and `mouseLockMode`): a click on the screen takes
+- **[Mouse lock](ui:statusbar:statusbar-kinds.kind.pointer)** (the toolbar's menu, `webpc.settings` `mouseLock` and `mouseLockMode`): a click on the screen takes
   the mouse (Pointer Lock) and isn't the guest's; every button reaches the guest then, the back and forward ones too.
   Esc (the browser's) or the menu lets it go, and so does a change of mode (the next click takes it in the new one);
   the machine stopping (powered off from the page or by the guest, suspended, crashed) lets it go too, and a click on

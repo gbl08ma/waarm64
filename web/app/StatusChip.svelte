@@ -7,7 +7,8 @@
   import Icon from './ui/Icon.svelte';
   import StatusPiece from './StatusPiece.svelte';
   import type { ChipDrag } from './status-drag.svelte.ts';
-  import { aboutOf, nameOf, type Item, type Piece } from './statusbar.ts';
+  import { aboutOf, nameOf, type Item } from './statusbar.ts';
+  import type { Piece } from './statusbar-piece.ts';
   import { t } from '../i18n.ts';
 
   type Props = {

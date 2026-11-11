@@ -100,9 +100,9 @@ test('Gadget Zero on a stored Debian machine: attached from the menu, seen by th
     for (const [k, v] of Object.entries(re)) src = src.replace(`\u{E000}${k}\u{E000}`, v);
     return new RegExp(`^${src}$`);
   };
-  assert.equal(await el('[data-kind=gpu]'), t('statusbar:statusbar.gpu.framebuffer'));
-  assert.match(await el('[data-kind=fps]'), pattern('statusbar:statusbar.fps', { fps: '\\d+' }));
-  const traffic = pattern('statusbar:statusbar.usb', { traffic: pattern('statusbar:statusbar.usb.traffic', { in: '[1-9][\\d.]* (B|KiB|MiB)', out: '[\\d.]+ (B|KiB|MiB)' }).source.slice(1, -1) });
+  assert.equal(await el('[data-kind=gpu]'), t('statusbar:statusbar-graphics.gpu.framebuffer'));
+  assert.match(await el('[data-kind=fps]'), pattern('statusbar:statusbar-graphics.fps', { fps: '\\d+' }));
+  const traffic = pattern('statusbar:statusbar-traffic.usb', { traffic: pattern('statusbar:statusbar-traffic.usb.traffic', { in: '[1-9][\\d.]* (B|KiB|MiB)', out: '[\\d.]+ (B|KiB|MiB)' }).source.slice(1, -1) });
   assert.match(await el('[data-kind=usbtotal] .sr'), traffic);
 
   // A kept snapshot: asked first (naming it), unplugged while it is written, attached again after.

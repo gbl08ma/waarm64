@@ -212,7 +212,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   assert.match(dialogs.at(-1)!, new RegExp(`${words('snapshots:snapshot-restore.load.written', { disk }).source}$|${words('snapshots:snapshot-restore.load.written.size', { disk }).source}$`));
   // The terminal shows the saved output's tail, and the status the snapshot's vCPUs (the page asked for 1).
   await shows(p2, /saved-state/);
-  await p2.waitForFunction((src) => new RegExp(`(?<!\\d)${src}`).test((document.getElementById('status')?.textContent ?? '')), words('statusbar:statusbar.vcpus', { count: 2 }).source, { timeout: 10_000 });
+  await p2.waitForFunction((src) => new RegExp(`(?<!\\d)${src}`).test((document.getElementById('status')?.textContent ?? '')), words('statusbar:statusbar-render.vcpus', { count: 2 }).source, { timeout: 10_000 });
   assert.equal(await p2.locator('#boot').isHidden(), true);
   // The machine is where it was: its variable, its tmpfs file, and a shell that answers.
   await onSerial(p2, 'echo var=[$SNAPVAR]; cat /dev/snapfile; echo af""ter-$((6*7))\n');
@@ -264,7 +264,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   await p2.waitForFunction(() => document.body.dataset.state !== 'failed', null, { timeout: 10_000, polling: 20 });
   await running(p2);
   const bar = await status(p2);
-  assert.ok([1, 2].some((count) => new RegExp(`(?<!\\d)${words('statusbar:statusbar.vcpus', { count }).source}`).test(bar)), bar);
+  assert.ok([1, 2].some((count) => new RegExp(`(?<!\\d)${words('statusbar:statusbar-render.vcpus', { count }).source}`).test(bar)), bar);
   await onSerial(p2, 'echo var=[$SNAPVAR] boo""ted-$((6*7))\n');
   await shows(p2, /var=\[\] booted-42/); // a normal boot: the variable of the snapshot isn't there
 

@@ -3,7 +3,7 @@
 // What a run hears after another took its place is dropped in one place, `guard`.
 import type { Input } from '../../input.ts';
 import type { UsbPorts } from '../usb-live.ts';
-import type { Sample } from '../statusbar.ts';
+import type { Sample } from '../statusbar-metrics.ts';
 import type { FromWorker, ToWorker } from '../protocol.ts';
 import type { Msg } from '../../msg.ts';
 

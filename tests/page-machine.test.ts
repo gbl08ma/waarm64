@@ -29,7 +29,7 @@ const status = (page: Page) => page.evaluate(() => (document.getElementById('sta
 const statusShows = (page: Page, re: RegExp) => page.waitForFunction((src) => new RegExp(src).test(document.getElementById('status')?.textContent ?? ''), re.source, { timeout: 120_000, polling: 200 })
   .catch(async (e) => { throw new Error(`${e}; the status shows: ${await status(page)}`); });
 /** The status bar's vCPUs element, then its RAM's (`<n> MiB`, a size and its unit). */
-const sized = (ncpus: number, mib: number) => new RegExp(`${words('statusbar:statusbar.vcpus', { count: ncpus }).source}\\b.*${mib} MiB`);
+const sized = (ncpus: number, mib: number) => new RegExp(`${words('statusbar:statusbar-render.vcpus', { count: ncpus }).source}\\b.*${mib} MiB`);
 
 test('the Machine menu sets the vCPUs and the RAM, applies them by a restart and is remembered', { skip }, async () => {
   const context = await browser.newContext();

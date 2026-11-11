@@ -6,7 +6,8 @@
 <script lang="ts">
   import Icon from './ui/Icon.svelte';
   import type { ChipDrag } from './status-drag.svelte.ts';
-  import { aboutOf, groupName, iconOf, nameOf, palette, type Item } from './statusbar.ts';
+  import { aboutOf, iconOf, nameOf, palette, type Item } from './statusbar.ts';
+  import { groupName } from './statusbar-kinds.ts';
   import { t } from '../i18n.ts';
 
   type Props = { drag: ChipDrag; oninsert: (item: Item) => void };

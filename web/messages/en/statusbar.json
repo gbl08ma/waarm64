@@ -1,257 +1,257 @@
 {
-  "statusbar.group.machine": {
+  "statusbar-kinds.group.machine": {
     "message": "Machine",
     "note": "A group's heading in the palette of the Preferences' status bar editor (Preferences): the elements that can be added, by what they show."
   },
-  "statusbar.group.cpu": {
+  "statusbar-kinds.group.cpu": {
     "message": "CPU and JIT",
     "note": "A group's heading in the palette of the Preferences' status bar editor (Preferences): the elements that can be added, by what they show."
   },
-  "statusbar.group.network": {
+  "statusbar-kinds.group.network": {
     "message": "Network",
     "note": "A group's heading in the palette of the Preferences' status bar editor (Preferences): the elements that can be added, by what they show."
   },
-  "statusbar.group.disks": {
+  "statusbar-kinds.group.disks": {
     "message": "Disks",
     "note": "A group's heading in the palette of the Preferences' status bar editor (Preferences): the elements that can be added, by what they show."
   },
-  "statusbar.group.usb": {
+  "statusbar-kinds.group.usb": {
     "message": "USB",
     "note": "A group's heading in the palette of the Preferences' status bar editor (Preferences): the elements that can be added, by what they show."
   },
-  "statusbar.group.graphics": {
+  "statusbar-kinds.group.graphics": {
     "message": "Graphics",
     "note": "A group's heading in the palette of the Preferences' status bar editor (Preferences): the elements that can be added, by what they show."
   },
-  "statusbar.group.input": {
+  "statusbar-kinds.group.input": {
     "message": "Input and sound",
     "note": "A group's heading in the palette of the Preferences' status bar editor (Preferences): the elements that can be added, by what they show."
   },
-  "statusbar.group.layout": {
+  "statusbar-kinds.group.layout": {
     "message": "Layout",
     "note": "A group's heading in the palette of the Preferences' status bar editor (Preferences): the elements that can be added, by what they show."
   },
-  "statusbar.kind.state": {
+  "statusbar-kinds.kind.state": {
     "message": "Power state",
     "note": "The name of a status bar element (the state kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.state.about": {
+  "statusbar-kinds.kind.state.about": {
     "message": "Whether the machine is powered off, booting, or running, and what this emulator is doing.",
     "note": "What the Power state status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.vcpus": {
+  "statusbar-kinds.kind.vcpus": {
     "message": "vCPUs",
     "note": "The name of a status bar element (the vcpus kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.vcpus.about": {
+  "statusbar-kinds.kind.vcpus.about": {
     "message": "How many vCPUs the machine has.",
     "note": "What the vCPUs status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.ram": {
+  "statusbar-kinds.kind.ram": {
     "message": "RAM",
     "note": "The name of a status bar element (the ram kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.ram.about": {
+  "statusbar-kinds.kind.ram.about": {
     "message": "The machine's RAM.",
     "note": "What the RAM status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.uptime": {
+  "statusbar-kinds.kind.uptime": {
     "message": "Uptime",
     "note": "The name of a status bar element (the uptime kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.uptime.about": {
+  "statusbar-kinds.kind.uptime.about": {
     "message": "How long the machine has been running.",
     "note": "What the Uptime status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.clock": {
+  "statusbar-kinds.kind.clock": {
     "message": "Clock",
     "note": "The name of a status bar element (the clock kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.clock.about": {
+  "statusbar-kinds.kind.clock.about": {
     "message": "Your computer's time.",
     "note": "What the Clock status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.memory": {
+  "statusbar-kinds.kind.memory": {
     "message": "Tab memory",
     "note": "The name of a status bar element (the memory kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.memory.about": {
+  "statusbar-kinds.kind.memory.about": {
     "message": "How much memory the machine's tab uses, as this emulator counts it.",
     "note": "What the Tab memory status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.mips": {
+  "statusbar-kinds.kind.mips": {
     "message": "MIPS",
     "note": "The name of a status bar element (the mips kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider. Per-device elements wrap it (\"{{name}}, each vCPU\")."
   },
-  "statusbar.kind.mips.about": {
+  "statusbar-kinds.kind.mips.about": {
     "message": "Millions of guest instructions run a second.",
     "note": "What the MIPS status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.jit": {
+  "statusbar-kinds.kind.jit": {
     "message": "JIT share",
     "note": "The name of a status bar element (the jit kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider. Per-device elements wrap it (\"{{name}}, each vCPU\")."
   },
-  "statusbar.kind.jit.about": {
+  "statusbar-kinds.kind.jit.about": {
     "message": "The share of instructions run as compiled code; the rest are interpreted.",
     "note": "What the JIT share status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.irqs": {
+  "statusbar-kinds.kind.irqs": {
     "message": "IRQ/s",
     "note": "The name of a status bar element (the irqs kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.irqs.about": {
+  "statusbar-kinds.kind.irqs.about": {
     "message": "Interrupts taken a second.",
     "note": "What the IRQ/s status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.blocks": {
+  "statusbar-kinds.kind.blocks": {
     "message": "Blocks compiled",
     "note": "The name of a status bar element (the blocks kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.blocks.about": {
+  "statusbar-kinds.kind.blocks.about": {
     "message": "Blocks the JIT has compiled since boot, and how often its cache was flushed.",
     "note": "What the Blocks compiled status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.compile": {
+  "statusbar-kinds.kind.compile": {
     "message": "Compile time",
     "note": "The name of a status bar element (the compile kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.compile.about": {
+  "statusbar-kinds.kind.compile.about": {
     "message": "Time spent compiling since boot, on all vCPUs.",
     "note": "What the Compile time status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.jitcache": {
+  "statusbar-kinds.kind.jitcache": {
     "message": "JIT cache",
     "note": "The name of a status bar element (the jitcache kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.jitcache.about": {
+  "statusbar-kinds.kind.jitcache.about": {
     "message": "How much of the JIT's cache its compiled code fills.",
     "note": "What the JIT cache status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.netrate": {
+  "statusbar-kinds.kind.netrate": {
     "message": "Network traffic",
     "note": "The name of a status bar element (the netrate kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider. Per-device elements wrap it (\"{{name}}, each vCPU\")."
   },
-  "statusbar.kind.netrate.about": {
+  "statusbar-kinds.kind.netrate.about": {
     "message": "Bytes a second received and sent by the machine.",
     "note": "What the Network traffic status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.nettotal": {
+  "statusbar-kinds.kind.nettotal": {
     "message": "Network total",
     "note": "The name of a status bar element (the nettotal kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider. Per-device elements wrap it (\"{{name}}, each vCPU\")."
   },
-  "statusbar.kind.nettotal.about": {
+  "statusbar-kinds.kind.nettotal.about": {
     "message": "Bytes received and sent since the machine started.",
     "note": "What the Network total status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.link": {
+  "statusbar-kinds.kind.link": {
     "message": "Connection",
     "note": "The name of a status bar element (the link kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider. Per-device elements wrap it (\"{{name}}, each vCPU\")."
   },
-  "statusbar.kind.link.about": {
+  "statusbar-kinds.kind.link.about": {
     "message": "The state of an adapter's connection: connected, connecting, waiting for a login, or off.",
     "note": "What the Connection status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.diskrate": {
+  "statusbar-kinds.kind.diskrate": {
     "message": "Disk speed",
     "note": "The name of a status bar element (the diskrate kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider. Per-device elements wrap it (\"{{name}}, each vCPU\")."
   },
-  "statusbar.kind.diskrate.about": {
+  "statusbar-kinds.kind.diskrate.about": {
     "message": "Bytes a second read (R) and written (W).",
     "note": "What the Disk speed status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.disktotal": {
+  "statusbar-kinds.kind.disktotal": {
     "message": "Disk total",
     "note": "The name of a status bar element (the disktotal kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider. Per-device elements wrap it (\"{{name}}, each vCPU\")."
   },
-  "statusbar.kind.disktotal.about": {
+  "statusbar-kinds.kind.disktotal.about": {
     "message": "Bytes read (R) and written (W) since the machine started.",
     "note": "What the Disk total status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.usbrate": {
+  "statusbar-kinds.kind.usbrate": {
     "message": "USB traffic",
     "note": "The name of a status bar element (the usbrate kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.usbrate.about": {
+  "statusbar-kinds.kind.usbrate.about": {
     "message": "Bytes a second the machine's USB devices sent it (in) and took from it (out), all of them together.",
     "note": "What the USB traffic status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips. In and out are as the guest sees them: in is what a device gave the guest."
   },
-  "statusbar.kind.usbtotal": {
+  "statusbar-kinds.kind.usbtotal": {
     "message": "USB total",
     "note": "The name of a status bar element (the usbtotal kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.usbtotal.about": {
+  "statusbar-kinds.kind.usbtotal.about": {
     "message": "Bytes the machine's USB devices sent it (in) and took from it (out) since it started.",
     "note": "What the USB total status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.gpu": {
+  "statusbar-kinds.kind.gpu": {
     "message": "Renderer",
     "note": "The name of a status bar element (the gpu kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.gpu.about": {
+  "statusbar-kinds.kind.gpu.about": {
     "message": "How the screen is drawn: 3D through WebGL2 (virgl), or 2D. It turns amber when this browser renders in software.",
     "note": "What the Renderer status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.fps": {
+  "statusbar-kinds.kind.fps": {
     "message": "Frame rate",
     "note": "The name of a status bar element (the fps kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.fps.about": {
+  "statusbar-kinds.kind.fps.about": {
     "message": "Screen updates drawn a second.",
     "note": "What the Frame rate status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.video": {
+  "statusbar-kinds.kind.video": {
     "message": "Video decode",
     "note": "The name of a status bar element (the video kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.video.about": {
+  "statusbar-kinds.kind.video.about": {
     "message": "The video streams the guest decodes through this browser (VA-API over virgl, on 3D machines), with their codecs and pictures a second.",
     "note": "What the Video decode status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.vulkan": {
+  "statusbar-kinds.kind.vulkan": {
     "message": "Vulkan activity",
     "note": "The name of a status bar element (the vulkan kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.vulkan.about": {
+  "statusbar-kinds.kind.vulkan.about": {
     "message": "The guest's programs using Vulkan (through Venus, on this browser's WebGPU), with their submits a second. Shown on machines with Vulkan.",
     "note": "What the Vulkan activity status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.pointer": {
+  "statusbar-kinds.kind.pointer": {
     "message": "Mouse lock",
     "note": "The name of a status bar element (the pointer kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.pointer.about": {
+  "statusbar-kinds.kind.pointer.about": {
     "message": "Whether the screen holds the mouse (green), will take it on a click (grey), or the mouse lock is off (dim).",
     "note": "What the Mouse lock status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.keyboard": {
+  "statusbar-kinds.kind.keyboard": {
     "message": "Keyboard",
     "note": "The name of a status bar element (the keyboard kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.keyboard.about": {
+  "statusbar-kinds.kind.keyboard.about": {
     "message": "Where typing goes: to the machine (green), or nowhere until you click the screen. In full screen with the keyboard lock, the browser's shortcuts go to the machine too.",
     "note": "What the Keyboard status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.mic": {
+  "statusbar-kinds.kind.mic": {
     "message": "Microphone",
     "note": "The name of a status bar element (the mic kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.mic.about": {
+  "statusbar-kinds.kind.mic.about": {
     "message": "Shown while the machine records from the microphone, or when this browser refused it the microphone.",
     "note": "What the Microphone status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.spacer": {
+  "statusbar-kinds.kind.spacer": {
     "message": "Spacer",
     "note": "The name of a status bar element (the spacer kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.spacer.about": {
+  "statusbar-kinds.kind.spacer.about": {
     "message": "Takes up the free space, pushing what follows to the right.",
     "note": "What the Spacer status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
-  "statusbar.kind.divider": {
+  "statusbar-kinds.kind.divider": {
     "message": "Divider",
     "note": "The name of a status bar element (the divider kind) in the Preferences' status bar editor: on its chip in the palette, over its settings, in tooltips; in the bar itself, the tooltip of a spacer or divider."
   },
-  "statusbar.kind.divider.about": {
+  "statusbar-kinds.kind.divider.about": {
     "message": "A line between elements.",
     "note": "What the Divider status bar element shows: in the Preferences' status bar editor, under the element's name when it's chosen and in its chips' tooltips."
   },
@@ -291,491 +291,491 @@
     "message": "{{name}}, disk {{index}}",
     "note": "The name, in the Preferences' status bar editor and its tooltips, of a status bar element for one disk. {{name}} is the element's name, {{index}} the disk's number (from 1, as the machine's tabs list them)."
   },
-  "statusbar.link.connected": {
+  "statusbar-render.link.connected": {
     "message": "{{name}} connected",
     "note": "The Connection element in the status bar (the page's footer) (or its screen-reader text when drawn as an icon), when the adapter is connected. {{name}} is the adapter's name (Adapter 1…)."
   },
-  "statusbar.link.connecting": {
+  "statusbar-render.link.connecting": {
     "message": "{{name}} connecting",
     "note": "The Connection element in the status bar (the page's footer) (or its screen-reader text when drawn as an icon), when the adapter is connecting. {{name}} is the adapter's name (Adapter 1…)."
   },
-  "statusbar.link.login": {
+  "statusbar-render.link.login": {
     "message": "{{name}} log in",
     "note": "The Connection element in the status bar (the page's footer) (or its screen-reader text when drawn as an icon), when the adapter waits for the user to log in. {{name}} is the adapter's name (Adapter 1…)."
   },
-  "statusbar.link.error": {
+  "statusbar-render.link.error": {
     "message": "{{name}} failed",
     "note": "The Connection element in the status bar (the page's footer) (or its screen-reader text when drawn as an icon), when the adapter failed to connect. {{name}} is the adapter's name (Adapter 1…)."
   },
-  "statusbar.link.off": {
+  "statusbar-render.link.off": {
     "message": "{{name}} off",
     "note": "The Connection element in the status bar (the page's footer) (or its screen-reader text when drawn as an icon), when the adapter has no connection, or it's stopped. {{name}} is the adapter's name (Adapter 1…)."
   },
-  "statusbar.adapter": {
+  "statusbar-piece.adapter": {
     "message": "Adapter {{number}}",
     "note": "A network adapter's name in the status bar (the page's footer) (Connection and network traffic elements) and their tooltips. {{number}} counts from 1, as the machine's Network tab lists them."
   },
-  "statusbar.state.title": {
+  "statusbar-render.state.title": {
     "message": "The machine: {{state}}",
     "note": "Tooltip of the power state at the left of the status bar (the page's footer). {{state}} is the state's words (Running, Powered off, Loading 40%…)."
   },
-  "statusbar.clock.title": {
+  "statusbar-render.clock.title": {
     "message": "Your computer's time: {{time}}",
     "note": "Tooltip of the Clock element in the status bar (the page's footer). {{time}} is your computer's time of day, as the browser's locale writes it."
   },
-  "statusbar.pointer.held": {
+  "statusbar-render.pointer.held": {
     "message": "Mouse held",
     "note": "The Mouse lock element in the status bar (the page's footer) (or its screen-reader text when drawn as an icon) while the screen holds the mouse."
   },
-  "statusbar.pointer.held.title": {
+  "statusbar-render.pointer.held.title": {
     "message": "The screen holds the mouse. Press Esc to release it.",
     "note": "Tooltip of the Mouse lock element in the status bar (the page's footer) while the screen holds the mouse."
   },
-  "statusbar.pointer.on": {
+  "statusbar-render.pointer.on": {
     "message": "Mouse lock on",
     "note": "The Mouse lock element in the status bar (the page's footer) (or its screen-reader text) while the lock is on and a click on the screen would take the mouse."
   },
-  "statusbar.pointer.on.title": {
+  "statusbar-render.pointer.on.title": {
     "message": "A click on the screen will lock the mouse to it.",
     "note": "Tooltip of the Mouse lock element in the status bar (the page's footer) while the lock is on but the screen doesn't hold the mouse."
   },
-  "statusbar.pointer.off": {
+  "statusbar-render.pointer.off": {
     "message": "Mouse lock off",
     "note": "The Mouse lock element in the status bar (the page's footer) (or its screen-reader text) while the toolbar's mouse lock is off."
   },
-  "statusbar.pointer.off.title": {
+  "statusbar-render.pointer.off.title": {
     "message": "The mouse lock is off. Turn it on from the toolbar's Mouse lock menu.",
     "note": "Tooltip of the Mouse lock element in the status bar (the page's footer) while the lock is off."
   },
-  "statusbar.keyboard.locked": {
+  "statusbar-render.keyboard.locked": {
     "message": "Keys locked",
     "note": "The Keyboard element in the status bar (the page's footer) (or its screen-reader text) in full screen with the keyboard lock: every key goes to the machine."
   },
-  "statusbar.keyboard.locked.title": {
+  "statusbar-render.keyboard.locked.title": {
     "message": "Keys and the browser's shortcuts go to the machine, in full screen with the keyboard lock. Hold Esc to leave full screen.",
     "note": "Tooltip of the Keyboard element in the status bar (the page's footer) in full screen with the keyboard lock."
   },
-  "statusbar.keyboard.typing": {
+  "statusbar-render.keyboard.typing": {
     "message": "Typing to the machine",
     "note": "The Keyboard element in the status bar (the page's footer) (or its screen-reader text) while the screen or the terminal has the focus."
   },
-  "statusbar.keyboard.typing.title": {
+  "statusbar-render.keyboard.typing.title": {
     "message": "Keys go to the machine. This browser keeps its own shortcuts; full screen sends them to the machine too.",
     "note": "Tooltip of the Keyboard element in the status bar (the page's footer) while keys go to the machine."
   },
-  "statusbar.keyboard.click": {
+  "statusbar-render.keyboard.click": {
     "message": "Click to type",
     "note": "The Keyboard element in the status bar (the page's footer) (or its screen-reader text) while keys don't go to the machine."
   },
-  "statusbar.keyboard.click.title": {
+  "statusbar-render.keyboard.click.title": {
     "message": "Keys don't go to the machine. Click the screen to type to it.",
     "note": "Tooltip of the Keyboard element in the status bar (the page's footer) while keys don't go to the machine."
   },
-  "statusbar.mic.on": {
+  "statusbar-render.mic.on": {
     "message": "Recording",
     "note": "The Microphone element in the status bar (the page's footer) (or its screen-reader text) while the machine records from the microphone."
   },
-  "statusbar.mic.on.title": {
+  "statusbar-render.mic.on.title": {
     "message": "The machine is recording from the microphone.",
     "note": "Tooltip of the Microphone element in the status bar (the page's footer) while the machine records."
   },
-  "statusbar.mic.denied": {
+  "statusbar-render.mic.denied": {
     "message": "Mic refused",
     "note": "The Microphone element in the status bar (the page's footer) (or its screen-reader text) when the machine records but the browser refused the microphone."
   },
-  "statusbar.mic.denied.title": {
+  "statusbar-render.mic.denied.title": {
     "message": "The machine is recording, but this browser refused it the microphone, so it gets silence.",
     "note": "Tooltip of the Microphone element in the status bar (the page's footer) when the browser refused the microphone."
   },
-  "statusbar.link.other": {
+  "statusbar-render.link.other": {
     "message": "{{name}} {{phase}}",
     "note": "The Connection element in the status bar (the page's footer) for a connection phase the page has no words for (another version's). {{name}} is the adapter's name, {{phase}} the phase's code."
   },
-  "statusbar.link.title": {
+  "statusbar-render.link.title": {
     "message": "{{name}}: {{text}}",
     "note": "Tooltip of the Connection element in the status bar (the page's footer). {{name}} is the adapter's name, {{text}} its connection and how it's going (as the Network menu says it)."
   },
-  "statusbar.gpu.renderer.vendor": {
+  "statusbar-graphics.gpu.renderer.vendor": {
     "message": "{{renderer}} ({{vendor}})",
     "note": "The last line of the Renderer element's tooltip in the status bar (the page's footer): the browser's WebGL2 renderer {{renderer}} and its vendor {{vendor}}, as the browser names them."
   },
-  "statusbar.gpu.renderer": {
+  "statusbar-graphics.gpu.renderer": {
     "message": "{{renderer}}",
     "note": "The last line of the Renderer element's tooltip in the status bar (the page's footer) when the browser names no vendor: {{renderer}} is the WebGL2 renderer, as the browser names it."
   },
-  "statusbar.gpu.canvas": {
+  "statusbar-graphics.gpu.canvas": {
     "message": "2D canvas",
     "note": "The Renderer element in the status bar (the page's footer) when a 2D machine's screen is drawn on a 2D canvas (no hardware WebGL2 in this browser)."
   },
-  "statusbar.gpu.2d": {
+  "statusbar-graphics.gpu.2d": {
     "message": "2D",
     "note": "The Renderer element's short value (next to its icon, when drawn as an icon) in the status bar (the page's footer): the screen is 2D."
   },
-  "statusbar.gpu.canvas.title": {
+  "statusbar-graphics.gpu.canvas.title": {
     "message": "The screen is 2D, drawn on a canvas, because this browser has no hardware WebGL2.",
     "note": "Tooltip of the Renderer element in the status bar (the page's footer) when the screen is drawn on a 2D canvas."
   },
-  "statusbar.gpu.framebuffer": {
+  "statusbar-graphics.gpu.framebuffer": {
     "message": "Framebuffer",
     "note": "The Renderer element in the status bar (the page's footer) on a machine whose screen is its simple framebuffer (no virtio-gpu: the address's display=simple), drawn on a 2D canvas."
   },
-  "statusbar.gpu.framebuffer.title": {
+  "statusbar-graphics.gpu.framebuffer.title": {
     "message": "The screen is the machine's simple framebuffer, drawn on a canvas: it has no graphics device.",
     "note": "Tooltip of the Renderer element in the status bar (the page's footer) on a machine whose screen is its simple framebuffer."
   },
-  "statusbar.gpu.3d": {
+  "statusbar-graphics.gpu.3d": {
     "message": "3D",
     "note": "The Renderer element's short value (next to its icon) in the status bar (the page's footer): the screen is 3D (virgl)."
   },
-  "statusbar.gpu.software.3d": {
+  "statusbar-graphics.gpu.software.3d": {
     "message": "3D software",
     "note": "The Renderer element in the status bar (the page's footer) when a 3D machine's WebGL2 is rendered in software by the browser (slow; drawn amber)."
   },
-  "statusbar.gpu.software.2d": {
+  "statusbar-graphics.gpu.software.2d": {
     "message": "2D software",
     "note": "The Renderer element in the status bar (the page's footer) when a 2D machine's WebGL2 is rendered in software by the browser."
   },
-  "statusbar.gpu.software.3d.title": {
+  "statusbar-graphics.gpu.software.3d.title": {
     "message": "The screen is 3D through WebGL2, which this browser renders in software, so it is slow.",
     "note": "Tooltip of the Renderer element in the status bar (the page's footer), 3D in software (the renderer's name may follow on a line of its own)."
   },
-  "statusbar.gpu.software.2d.title": {
+  "statusbar-graphics.gpu.software.2d.title": {
     "message": "The screen is 2D through WebGL2, which this browser renders in software, so it is slow.",
     "note": "Tooltip of the Renderer element in the status bar (the page's footer), 2D in software (the renderer's name may follow on a line of its own)."
   },
-  "statusbar.gpu.webgl2.3d": {
+  "statusbar-graphics.gpu.webgl2.3d": {
     "message": "3D WebGL2",
     "note": "The Renderer element in the status bar (the page's footer) when a 3D machine draws through WebGL2 on the GPU."
   },
-  "statusbar.gpu.webgl2.2d": {
+  "statusbar-graphics.gpu.webgl2.2d": {
     "message": "2D WebGL2",
     "note": "The Renderer element in the status bar (the page's footer) when a 2D machine's screen is drawn through WebGL2 on the GPU."
   },
-  "statusbar.gpu.webgl2.3d.title": {
+  "statusbar-graphics.gpu.webgl2.3d.title": {
     "message": "The screen is 3D (virgl), drawn through WebGL2 on the GPU.",
     "note": "Tooltip of the Renderer element in the status bar (the page's footer), 3D on the GPU (the renderer's name may follow on a line of its own)."
   },
-  "statusbar.gpu.webgl2.2d.title": {
+  "statusbar-graphics.gpu.webgl2.2d.title": {
     "message": "The screen is 2D, drawn through WebGL2 on the GPU.",
     "note": "Tooltip of the Renderer element in the status bar (the page's footer), 2D on the GPU (the renderer's name may follow on a line of its own)."
   },
-  "statusbar.fps": {
+  "statusbar-graphics.fps": {
     "message": "{{fps}} fps",
     "note": "The Frame rate element in the status bar (the page's footer). {{fps}} is the screen updates drawn in the last second."
   },
-  "statusbar.fps.title": {
+  "statusbar-graphics.fps.title": {
     "message": "{{fps}} screen updates drawn a second.",
     "note": "Tooltip of the Frame rate element in the status bar (the page's footer). {{fps}} is the screen updates drawn in the last second."
   },
-  "statusbar.video.idle": {
+  "statusbar-graphics.video.idle": {
     "message": "video idle",
     "note": "The Video decode element in the status bar (the page's footer) while the guest decodes no video through VA-API."
   },
-  "statusbar.video.idle.title": {
+  "statusbar-graphics.video.idle.title": {
     "message": "The guest isn't decoding any video through VA-API now.",
     "note": "Tooltip of the Video decode element in the status bar (the page's footer) while no stream is decoded."
   },
-  "statusbar.video.hw": {
+  "statusbar-graphics.video.hw": {
     "message": "{{codecs}} hw",
     "note": "The Video decode element in the status bar (the page's footer) before its first second's count: {{codecs}} are the streams' codecs (H.264 High…), comma-separated; hw says every open decoder asked for hardware."
   },
-  "statusbar.video.hw.fps": {
+  "statusbar-graphics.video.hw.fps": {
     "message": "{{codecs}} hw {{fps}} fps",
     "note": "The Video decode element in the status bar (the page's footer): {{codecs}} are the streams' codecs, comma-separated; hw is short for hardware decoding; {{fps}} the pictures decoded in the last second."
   },
-  "statusbar.video.sw": {
+  "statusbar-graphics.video.sw": {
     "message": "{{codecs}} sw",
     "note": "The Video decode element in the status bar (the page's footer) before its first second's count: {{codecs}} are the streams' codecs (H.264 High…), comma-separated; sw says every open decoder asked for software (or not all of them asked for hardware)."
   },
-  "statusbar.video.sw.fps": {
+  "statusbar-graphics.video.sw.fps": {
     "message": "{{codecs}} sw {{fps}} fps",
     "note": "The Video decode element in the status bar (the page's footer): {{codecs}} are the streams' codecs, comma-separated; sw is short for software decoding; {{fps}} the pictures decoded in the last second."
   },
-  "statusbar.video.short": {
+  "statusbar-graphics.video.short": {
     "message": "{{streams}} {{fps}} fps",
     "note": "The Video decode element's short value (next to its icon) in the status bar (the page's footer): {{streams}} is the number of video streams, {{fps}} the pictures decoded in the last second."
   },
-  "statusbar.video.stream.hardware": {
+  "statusbar-graphics.video.stream.hardware": {
     "message": "hardware",
     "note": "In a stream's line of the Video decode element's tooltip in the status bar (the page's footer): its decoder asked for hardware decoding."
   },
-  "statusbar.video.stream.software": {
+  "statusbar-graphics.video.stream.software": {
     "message": "software",
     "note": "In a stream's line of the Video decode element's tooltip in the status bar (the page's footer): its decoder decodes in software."
   },
-  "statusbar.video.stream.closed": {
+  "statusbar-graphics.video.stream.closed": {
     "message": "no decoder now",
     "note": "In a stream's line of the Video decode element's tooltip in the status bar (the page's footer): the stream has no open decoder."
   },
-  "statusbar.video.stream.fps": {
+  "statusbar-graphics.video.stream.fps": {
     "message": "{{fps}} pictures a second",
     "note": "In a stream's line of the Video decode element's tooltip in the status bar (the page's footer): {{fps}} is the stream's pictures decoded in the last second."
   },
-  "statusbar.video.stream": {
+  "statusbar-graphics.video.stream": {
     "message": "{{profile}} {{width}}×{{height}}: {{facts}}",
     "note": "A stream's line in the Video decode element's tooltip in the status bar (the page's footer): {{profile}} its codec, {{width}}×{{height}} its picture size, {{facts}} what's known of its decoder (hardware or software, no decoder now, N pictures a second), comma-separated."
   },
-  "statusbar.video.title": {
+  "statusbar-graphics.video.title": {
     "message": "Video decode. A stream marked hardware asked for a hardware decoder; this browser doesn't say whether it got one.",
     "note": "First line of the Video decode element's tooltip in the status bar (the page's footer); a line per stream follows."
   },
-  "statusbar.video.errors": {
+  "statusbar-graphics.video.errors": {
     "message": "{{errors}} decoder errors",
     "note": "Last line of the Video decode element's tooltip in the status bar (the page's footer), when the browser's decoders failed: {{errors}} is how many times."
   },
-  "statusbar.vulkan.none": {
+  "statusbar-graphics.vulkan.none": {
     "message": "Vulkan: no WebGPU",
     "note": "The Vulkan element in the status bar (the page's footer) when the browser gave the machine no WebGPU device: the guest's Vulkan programs draw nothing."
   },
-  "statusbar.vulkan.none.title": {
+  "statusbar-graphics.vulkan.none.title": {
     "message": "This browser gave the machine no WebGPU device: the guest's Vulkan programs run but draw nothing.",
     "note": "Tooltip of the Vulkan element in the status bar (the page's footer) when there is no WebGPU device."
   },
-  "statusbar.vulkan.idle": {
+  "statusbar-graphics.vulkan.idle": {
     "message": "Vulkan idle",
     "note": "The Vulkan element in the status bar (the page's footer) while no guest program holds a Vulkan device."
   },
-  "statusbar.vulkan.idle.title": {
+  "statusbar-graphics.vulkan.idle.title": {
     "message": "No program in the guest is using Vulkan now.",
     "note": "First line of the Vulkan element's tooltip in the status bar (the page's footer) while no guest program holds a Vulkan device; the adapter's line may follow."
   },
-  "statusbar.vulkan.programs_one": {
+  "statusbar-graphics.vulkan.programs_one": {
     "message": "Vulkan: {{count}} program",
     "note": "The Vulkan element in the status bar (the page's footer) before its first second's count: {{count}} is the guest's programs using Vulkan now (Venus contexts)."
   },
-  "statusbar.vulkan.programs_other": {
+  "statusbar-graphics.vulkan.programs_other": {
     "message": "Vulkan: {{count}} programs",
     "note": "The Vulkan element in the status bar (the page's footer) before its first second's count: {{count}} is the guest's programs using Vulkan now (Venus contexts)."
   },
-  "statusbar.vulkan.programs.rate_one": {
+  "statusbar-graphics.vulkan.programs.rate_one": {
     "message": "Vulkan: {{count}} program, {{submits}}/s",
     "note": "The Vulkan element in the status bar (the page's footer): {{count}} is the guest's programs using Vulkan now, {{submits}} the GPU submits it made in the last second."
   },
-  "statusbar.vulkan.programs.rate_other": {
+  "statusbar-graphics.vulkan.programs.rate_other": {
     "message": "Vulkan: {{count}} programs, {{submits}}/s",
     "note": "The Vulkan element in the status bar (the page's footer): {{count}} is the guest's programs using Vulkan now, {{submits}} the GPU submits they made in the last second."
   },
-  "statusbar.vulkan.short": {
+  "statusbar-graphics.vulkan.short": {
     "message": "{{count}} · {{submits}}/s",
     "note": "The Vulkan element's short value (next to its icon) in the status bar (the page's footer): {{count}} programs using Vulkan, {{submits}} GPU submits in the last second."
   },
-  "statusbar.vulkan.title_one": {
+  "statusbar-graphics.vulkan.title_one": {
     "message": "{{count}} program in the guest is using Vulkan (each Vulkan instance counts as one).",
     "note": "First line of the Vulkan element's tooltip in the status bar (the page's footer): {{count}} is the guest's Venus contexts now."
   },
-  "statusbar.vulkan.title_other": {
+  "statusbar-graphics.vulkan.title_other": {
     "message": "{{count}} programs in the guest are using Vulkan (each Vulkan instance counts as one).",
     "note": "First line of the Vulkan element's tooltip in the status bar (the page's footer): {{count}} is the guest's Venus contexts now."
   },
-  "statusbar.vulkan.rates": {
+  "statusbar-graphics.vulkan.rates": {
     "message": "{{submits}} GPU submits and {{draws}} draws in the last second.",
     "note": "A line of the Vulkan element's tooltip in the status bar (the page's footer): what the guest's Vulkan programs sent to this browser's WebGPU in the last second."
   },
-  "statusbar.vulkan.adapter": {
+  "statusbar-graphics.vulkan.adapter": {
     "message": "Drawn on this browser's WebGPU adapter: {{adapter}}.",
     "note": "Last line of the Vulkan element's tooltip in the status bar (the page's footer): {{adapter}} is the WebGPU adapter's vendor, architecture and description as the browser gives them."
   },
-  "statusbar.vulkan.adapter.software": {
+  "statusbar-graphics.vulkan.adapter.software": {
     "message": "Drawn on this browser's WebGPU adapter: {{adapter}}, which renders in software.",
     "note": "Last line of the Vulkan element's tooltip in the status bar (the page's footer) when the WebGPU adapter is a software one (SwiftShader, a fallback adapter): {{adapter}} is its vendor, architecture and description."
   },
-  "statusbar.vcpus_one": {
+  "statusbar-render.vcpus_one": {
     "message": "{{count}} vCPU",
     "note": "The vCPUs element in the status bar (the page's footer) and its tooltip: {{count}} is the running machine's number of virtual CPUs."
   },
-  "statusbar.vcpus_other": {
+  "statusbar-render.vcpus_other": {
     "message": "{{count}} vCPUs",
     "note": "The vCPUs element in the status bar (the page's footer) and its tooltip: {{count}} is the running machine's number of virtual CPUs."
   },
-  "statusbar.ram.title": {
+  "statusbar-render.ram.title": {
     "message": "RAM: {{mib}} MiB",
     "note": "Tooltip of the RAM element in the status bar (the page's footer): {{mib}} is the machine's RAM in MiB."
   },
-  "statusbar.uptime": {
+  "statusbar-render.uptime": {
     "message": "up {{time}}",
     "note": "The Uptime element in the status bar (the page's footer): {{time}} is how long the machine has run, as hours:minutes:seconds."
   },
-  "statusbar.uptime.title": {
+  "statusbar-render.uptime.title": {
     "message": "Up {{time}}",
     "note": "Tooltip of the Uptime element in the status bar (the page's footer): {{time}} is how long the machine has run, as hours:minutes:seconds."
   },
-  "statusbar.memory": {
+  "statusbar-render.memory": {
     "message": "tab {{size}}",
     "note": "The Tab memory element in the status bar (the page's footer): {{size}} is what the machine costs its browser tab (a size in MiB or GiB)."
   },
-  "statusbar.memory.title": {
+  "statusbar-render.memory.title": {
     "message": "The tab uses about {{size}}, as this emulator counts it.",
     "note": "Tooltip of the Tab memory element in the status bar (the page's footer): {{size}} is the tab's memory (a size in MiB or GiB)."
   },
-  "statusbar.irqs": {
+  "statusbar-render.irqs": {
     "message": "{{irqs}} IRQ/s",
     "note": "The IRQ/s element in the status bar (the page's footer): {{irqs}} is the interrupts taken in the last second."
   },
-  "statusbar.irqs.title": {
+  "statusbar-render.irqs.title": {
     "message": "{{irqs}} interrupts a second.",
     "note": "Tooltip of the IRQ/s element in the status bar (the page's footer): {{irqs}} is the interrupts taken in the last second."
   },
-  "statusbar.blocks.flushed": {
+  "statusbar-render.blocks.flushed": {
     "message": "{{blocks}} blocks compiled (cache flushed {{flushes}}×)",
     "note": "The Blocks compiled element in the status bar (the page's footer) once the JIT's cache was flushed: {{blocks}} blocks compiled since boot, {{flushes}} how many times the cache was flushed."
   },
-  "statusbar.blocks.flushed.short": {
+  "statusbar-render.blocks.flushed.short": {
     "message": "{{blocks}} ({{flushes}}×)",
     "note": "The Blocks compiled element's short value (next to its icon) in the status bar (the page's footer) once the JIT's cache was flushed: {{blocks}} compiled, {{flushes}} flushes."
   },
-  "statusbar.blocks.flushed.title": {
+  "statusbar-render.blocks.flushed.title": {
     "message": "The JIT has compiled {{blocks}} blocks; its cache was flushed {{flushes}}×.",
     "note": "Tooltip of the Blocks compiled element in the status bar (the page's footer) once the JIT's cache was flushed: {{blocks}} compiled since boot, {{flushes}} flushes."
   },
-  "statusbar.blocks": {
+  "statusbar-render.blocks": {
     "message": "{{blocks}} blocks compiled",
     "note": "The Blocks compiled element in the status bar (the page's footer): {{blocks}} blocks the JIT compiled since boot."
   },
-  "statusbar.blocks.title": {
+  "statusbar-render.blocks.title": {
     "message": "The JIT has compiled {{blocks}} blocks.",
     "note": "Tooltip of the Blocks compiled element in the status bar (the page's footer): {{blocks}} blocks the JIT compiled since boot."
   },
-  "statusbar.compile": {
+  "statusbar-render.compile": {
     "message": "{{time}} compiling",
     "note": "The Compile time element in the status bar (the page's footer): {{time}} is the time spent compiling since boot, in seconds (\"9.3 s\")."
   },
-  "statusbar.compile.title": {
+  "statusbar-render.compile.title": {
     "message": "The JIT has spent {{time}} compiling since boot.",
     "note": "Tooltip of the Compile time element in the status bar (the page's footer): {{time}} is the time spent compiling since boot, in seconds."
   },
-  "statusbar.jitcache.use": {
+  "statusbar-render.jitcache.use": {
     "message": "{{live}} of {{budget}}",
     "note": "The JIT cache's use in the status bar (the page's footer) (its short value, and inside its words and tooltip): {{live}} the compiled code alive, {{budget}} the cache's budget (sizes)."
   },
-  "statusbar.jitcache": {
+  "statusbar-render.jitcache": {
     "message": "JIT {{cache}}",
     "note": "The JIT cache element in the status bar (the page's footer): {{cache}} is its use (\"61 MiB of 320 MiB\")."
   },
-  "statusbar.jitcache.title": {
+  "statusbar-render.jitcache.title": {
     "message": "The JIT's cache holds {{cache}}.",
     "note": "Tooltip of the JIT cache element in the status bar (the page's footer): {{cache}} is its use (\"61 MiB of 320 MiB\")."
   },
-  "statusbar.net.traffic": {
+  "statusbar-traffic.net.traffic": {
     "message": "received {{rx}}, sent {{tx}}",
     "note": "A network element's value in the status bar (the page's footer) (traffic: bytes a second; total: bytes since the start): {{rx}} received, {{tx}} sent, each a size or a rate (\"1.4 MiB/s\")."
   },
-  "statusbar.net.all": {
+  "statusbar-traffic.net.all": {
     "message": "net {{traffic}}",
     "note": "The network traffic or total element for every adapter in the status bar (the page's footer) (its screen-reader text when drawn with arrows): {{traffic}} is received and sent."
   },
-  "statusbar.net.all.total.title": {
+  "statusbar-traffic.net.all.total.title": {
     "message": "Bytes received and sent by every adapter since the machine started.",
     "note": "Tooltip of the Network total element for every adapter in the status bar (the page's footer)."
   },
-  "statusbar.net.all.rate.title": {
+  "statusbar-traffic.net.all.rate.title": {
     "message": "Bytes a second received and sent by every adapter.",
     "note": "Tooltip of the Network traffic element for every adapter in the status bar (the page's footer)."
   },
-  "statusbar.net.all.label": {
+  "statusbar-traffic.net.all.label": {
     "message": "net",
     "note": "The word before the received and sent arrows of the network element for every adapter in the status bar (the page's footer): short for network."
   },
-  "statusbar.net.one": {
+  "statusbar-traffic.net.one": {
     "message": "{{name}} {{traffic}}",
     "note": "A network traffic or total element for one adapter in the status bar (the page's footer) (its screen-reader text when drawn with arrows): {{name}} is the adapter's name, {{traffic}} received and sent."
   },
-  "statusbar.net.one.total.title": {
+  "statusbar-traffic.net.one.total.title": {
     "message": "Bytes received and sent by {{name}} since the machine started.",
     "note": "Tooltip of the Network total element for one adapter in the status bar (the page's footer): {{name}} is the adapter's name."
   },
-  "statusbar.net.one.rate.title": {
+  "statusbar-traffic.net.one.rate.title": {
     "message": "Bytes a second received and sent by {{name}}.",
     "note": "Tooltip of the Network traffic element for one adapter in the status bar (the page's footer): {{name}} is the adapter's name."
   },
-  "statusbar.disk.traffic": {
+  "statusbar-traffic.disk.traffic": {
     "message": "R {{read}} W {{written}}",
     "note": "A disk element's value in the status bar (the page's footer) (speed: bytes a second; total: bytes since the start): R read {{read}}, W written {{written}}, each a size or a rate."
   },
-  "statusbar.disk.all": {
+  "statusbar-traffic.disk.all": {
     "message": "disk {{traffic}}",
     "note": "The Disk speed or Disk total element for every disk in the status bar (the page's footer): {{traffic}} is read (R) and written (W)."
   },
-  "statusbar.disk.all.total.title": {
+  "statusbar-traffic.disk.all.total.title": {
     "message": "Bytes read (R) and written (W) on all disks since the machine started.",
     "note": "Tooltip of the Disk total element for every disk in the status bar (the page's footer)."
   },
-  "statusbar.disk.all.rate.title": {
+  "statusbar-traffic.disk.all.rate.title": {
     "message": "Bytes a second read (R) and written (W) on all disks.",
     "note": "Tooltip of the Disk speed element for every disk in the status bar (the page's footer)."
   },
-  "statusbar.disk.name": {
+  "statusbar-traffic.disk.name": {
     "message": "Disk {{number}}",
     "note": "A disk's name in the status bar (the page's footer)'s disk elements when the page doesn't know its file's name: {{number}} counts from 1, as the machine's Disks tab lists them."
   },
-  "statusbar.disk.one": {
+  "statusbar-traffic.disk.one": {
     "message": "{{name}} {{traffic}}",
     "note": "A Disk speed or Disk total element for one disk in the status bar (the page's footer): {{name}} is the disk's name (its file), {{traffic}} read (R) and written (W)."
   },
-  "statusbar.disk.one.total.title": {
+  "statusbar-traffic.disk.one.total.title": {
     "message": "Bytes read (R) and written (W) on {{name}} since the machine started.",
     "note": "Tooltip of the Disk total element for one disk in the status bar (the page's footer): {{name}} is the disk's name."
   },
-  "statusbar.disk.one.rate.title": {
+  "statusbar-traffic.disk.one.rate.title": {
     "message": "Bytes a second read (R) and written (W) on {{name}}.",
     "note": "Tooltip of the Disk speed element for one disk in the status bar (the page's footer): {{name}} is the disk's name."
   },
-  "statusbar.usb.traffic": {
+  "statusbar-traffic.usb.traffic": {
     "message": "in {{in}}, out {{out}}",
     "note": "A USB element's value in the status bar (the page's footer) (traffic: bytes a second; total: bytes since the start): {{in}} what the USB devices gave the guest, {{out}} what they took from it, each a size or a rate (\"1.4 MiB/s\")."
   },
-  "statusbar.usb": {
+  "statusbar-traffic.usb": {
     "message": "USB {{traffic}}",
     "note": "The USB traffic or total element in the status bar (the page's footer) (its screen-reader text when drawn with arrows): {{traffic}} is in and out."
   },
-  "statusbar.usb.label": {
+  "statusbar-traffic.usb.label": {
     "message": "USB",
     "note": "The word before the in and out arrows of the USB element in the status bar (the page's footer)."
   },
-  "statusbar.usb.rate.title": {
+  "statusbar-traffic.usb.rate.title": {
     "message": "Bytes a second the USB devices gave the machine (in) and took from it (out), all of them together.",
     "note": "Tooltip of the USB traffic element in the status bar (the page's footer)."
   },
-  "statusbar.usb.total.title": {
+  "statusbar-traffic.usb.total.title": {
     "message": "Bytes the USB devices gave the machine (in) and took from it (out) since it started, all of them together.",
     "note": "Tooltip of the USB total element in the status bar (the page's footer)."
   },
-  "statusbar.cpu.mips": {
+  "statusbar-render.cpu.mips": {
     "message": "{{value}} MIPS",
     "note": "The MIPS element in the status bar (the page's footer) (and per vCPU in its tooltip): {{value}} is millions of guest instructions run in the last second, or several vCPUs' values separated by spaces, or … before the first second."
   },
-  "statusbar.cpu.jit": {
+  "statusbar-render.cpu.jit": {
     "message": "{{value}} in JIT",
     "note": "The JIT share element in the status bar (the page's footer) (and per vCPU in its tooltip): {{value}} is the percentage of instructions run in compiled code (\"98.7%\"), or several vCPUs' separated by spaces."
   },
-  "statusbar.cpu.mips.title": {
+  "statusbar-render.cpu.mips.title": {
     "message": "{{value}} million instructions a second.",
     "note": "Tooltip of the machine's MIPS element in the status bar (the page's footer): {{value}} is the millions of guest instructions run in the last second."
   },
-  "statusbar.cpu.jit.title": {
+  "statusbar-render.cpu.jit.title": {
     "message": "{{value}} of the instructions run as compiled code.",
     "note": "Tooltip of the machine's JIT share element in the status bar (the page's footer): {{value}} is a percentage (\"98.7%\")."
   },
-  "statusbar.cpu.line": {
+  "statusbar-render.cpu.line": {
     "message": "vCPU {{vcpu}}: {{value}}",
     "note": "A line of the tooltip of a per-vCPU MIPS or JIT share element in the status bar (the page's footer): {{vcpu}} is the vCPU's number (from 0), {{value}} its value with its unit (\"310 MIPS\")."
   },
-  "statusbar.cpu.one": {
+  "statusbar-render.cpu.one": {
     "message": "vCPU {{vcpu}} {{value}}",
     "note": "A MIPS or JIT share element for one vCPU in the status bar (the page's footer): {{vcpu}} is its number (from 0), {{value}} its value with its unit (\"310 MIPS\")."
   },
-  "statusbar.cpu.bars.mips": {
+  "statusbar-render.cpu.bars.mips": {
     "message": "MIPS",
     "note": "Screen-reader text of the MIPS element drawn as a bar per vCPU in the status bar (the page's footer) (the tooltip gives each vCPU's value)."
   },
-  "statusbar.cpu.bars.jit": {
+  "statusbar-render.cpu.bars.jit": {
     "message": "JIT",
     "note": "Screen-reader text of the JIT share element drawn as a bar per vCPU in the status bar (the page's footer) (the tooltip gives each vCPU's value)."
   },
-  "statusbar.sample.net1": {
+  "statusbar-sample.sample.net1": {
     "message": "home tailnet: Connected",
     "note": "Made-up words for the Preferences' status bar editor's preview while no machine runs: the first sample adapter's connection (a tailnet named home) and its state, in a Connection element's tooltip."
   },
-  "statusbar.sample.net2": {
+  "statusbar-sample.sample.net2": {
     "message": "no connection: Not connected",
     "note": "Made-up words for the Preferences' status bar editor's preview while no machine runs: the second sample adapter, with no connection, in a Connection element's tooltip."
   },

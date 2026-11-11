@@ -45,16 +45,16 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   page.on('pageerror', (e) => errors.push(String(e)));
   await answerAsks(page);
   await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=2`);
-  const mips = pattern('statusbar:statusbar.cpu.mips', { value: '\\d+' });
+  const mips = pattern('statusbar:statusbar-render.cpu.mips', { value: '\\d+' });
   await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('status')?.textContent ?? ''), mips, { timeout: 60_000, polling: 200 });
   // And past the boot (a loaded host shows MIPS while the state still says booting).
   const running = `^\\s*${words('machine:messages.state.running').source}\\s`;
   await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('status')?.textContent ?? ''), running, { timeout: 60_000, polling: 200 });
-  const vcpus = words('statusbar:statusbar.vcpus', { count: 2 }).source;
+  const vcpus = words('statusbar:statusbar-render.vcpus', { count: 2 }).source;
   // The power state, a divider, then the rest with a dot between (the bar's drawing, not words).
   assert.match(await bar(page), new RegExp(`^${words('machine:messages.state.running').source} ${[
-    vcpus, '256 MiB', pattern('statusbar:statusbar.uptime', { time: '\\d+:\\d\\d:\\d\\d' }), mips,
-    pattern('statusbar:statusbar.cpu.jit', { value: '[\\d.]+%' }), pattern('statusbar:statusbar.irqs', { irqs: '\\d+' }),
+    vcpus, '256 MiB', pattern('statusbar:statusbar-render.uptime', { time: '\\d+:\\d\\d:\\d\\d' }), mips,
+    pattern('statusbar:statusbar-render.cpu.jit', { value: '[\\d.]+%' }), pattern('statusbar:statusbar-render.irqs', { irqs: '\\d+' }),
   ].join(' · ')}$`));
 
   await page.click('#machines-open');
@@ -79,7 +79,7 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   await page.waitForFunction(() => document.querySelectorAll('#status [data-kind=mips] .bars span').length === 2, null, { timeout: 10_000 });
   assert.equal(await page.locator('#status .spacer').count(), 1);
   const rate = '[\\d.]+ (B|KiB|MiB)/s';
-  assert.match(await bar(page), new RegExp(`${pattern('statusbar:statusbar.disk.all', { traffic: pattern('statusbar:statusbar.disk.traffic', { read: rate, written: rate }) })}$`));
+  assert.match(await bar(page), new RegExp(`${pattern('statusbar:statusbar-traffic.disk.all', { traffic: pattern('statusbar:statusbar-traffic.disk.traffic', { read: rate, written: rate }) })}$`));
   // The look: the vCPUs as an icon and the number.
   const tall = () => page.evaluate(() => document.getElementById('status')!.getBoundingClientRect().height);
   const plainHeight = await tall();
@@ -110,11 +110,11 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   assert.equal(await page.locator('#status').isVisible(), true);
   assert.equal(await page.locator('header.toolbar').isVisible(), false);
   const keysSay = (words: string) => page.waitForFunction((w) => (document.querySelector('#status [data-kind=keyboard]')?.textContent ?? '').includes(w), words, { timeout: 5000 });
-  await keysSay(await page.evaluate(() => 'keyboard' in navigator) ? t('statusbar:statusbar.keyboard.locked') : t('statusbar:statusbar.keyboard.typing'));
+  await keysSay(await page.evaluate(() => 'keyboard' in navigator) ? t('statusbar:statusbar-render.keyboard.locked') : t('statusbar:statusbar-render.keyboard.typing'));
   await page.evaluate(() => document.exitFullscreen());
-  await keysSay(t('statusbar:statusbar.keyboard.typing')); // the screen keeps the focus
+  await keysSay(t('statusbar:statusbar-render.keyboard.typing')); // the screen keeps the focus
   await page.evaluate(() => (document.activeElement as HTMLElement).blur());
-  await keysSay(t('statusbar:statusbar.keyboard.click'));
+  await keysSay(t('statusbar:statusbar-render.keyboard.click'));
   await page.click('#machines-open');
   await page.click('[data-machine=preferences]');
 
@@ -130,7 +130,7 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   await page.click('[data-machine=preferences]');
   await page.click('[data-action=status-defaults]');
   assert.equal(await kept(page), undefined);
-  await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('status')?.textContent?.replace(/\s+/g, ' ') ?? ''), `${words('statusbar:statusbar.vcpus', { count: 2 }).source} · 256 MiB`, { timeout: 10_000 });
+  await page.waitForFunction((src) => new RegExp(src).test(document.getElementById('status')?.textContent?.replace(/\s+/g, ' ') ?? ''), `${words('statusbar:statusbar-render.vcpus', { count: 2 }).source} · 256 MiB`, { timeout: 10_000 });
   assert.deepEqual(errors, []);
   await context.close();
 });

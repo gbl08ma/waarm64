@@ -5,7 +5,7 @@
   numbers, a `one` element's device). Below, the palette (StatusPalette.svelte): a click adds an element at the bar's
   end, a drag puts it where it's dropped. A mouse drags through HTML5 drag and drop; a finger or a pen through pointer
   events, after a long press (a swipe still scrolls the page): status-drag.svelte.ts. The chips draw what the running
-  machine shows, or a made-up machine's numbers (statusbar.ts `SAMPLE`) while none runs; one the running machine
+  machine shows, or a made-up machine's numbers (statusbar-sample.ts `SAMPLE`) while none runs; one the running machine
   hasn't (a second disk) is dimmed. Kept in the settings at each change.
 -->
 <script lang="ts">
@@ -17,7 +17,9 @@
   import StatusOptions from './StatusOptions.svelte';
   import StatusPalette from './StatusPalette.svelte';
   import { ChipDrag } from './status-drag.svelte.ts';
-  import { DEFAULT_ITEMS, lookOf, render, SAMPLE, shows, type Item } from './statusbar.ts';
+  import { DEFAULT_ITEMS, lookOf, shows, type Item } from './statusbar.ts';
+  import { render } from './statusbar-render.ts';
+  import { SAMPLE } from './statusbar-sample.ts';
   import { t } from '../i18n.ts';
   import { liveNow } from './areas/status-live.ts';
   import { status } from './areas/status.svelte.ts';
