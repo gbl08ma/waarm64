@@ -18,6 +18,7 @@
   import type { PageFolders } from './folders-live.ts';
   import type { PageNetwork } from './net-live.ts';
   import type { Store } from './store.ts';
+  import { machinesNav } from './areas/machines-nav.svelte.ts';
   import { page, ui } from './ui.svelte.ts';
   import { t } from '../i18n.ts';
 
@@ -25,11 +26,11 @@
     $props();
 
   $effect(() => {
-    document.body.dataset.page = ui.machinesOpen ? 'machines' : 'machine';
+    document.body.dataset.page = machinesNav.open ? 'machines' : 'machine';
   });
 </script>
 
-<Toolbar {store} {audio} {net} {folders} />
+<Toolbar {audio} {net} {folders} />
 <!-- Its own wrapper: the page in full screen hides it. -->
 <div class="message">
   <ErrorBanner
@@ -88,7 +89,7 @@
       }}
     />{/if}
 </main>
-{#if ui.machinesOpen}<MachinesPage {store} {net} {folders} />{/if}
+{#if machinesNav.open}<MachinesPage {store} {net} {folders} />{/if}
 <StatusBar {net} />
 <NetWizard {net} />
 <FolderWizard {folders} />

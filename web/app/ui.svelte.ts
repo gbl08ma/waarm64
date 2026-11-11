@@ -6,7 +6,7 @@ import type { Folder, NewFolder } from './folders.ts';
 import type { PowerState } from './protocol.ts';
 import type { DiskRecord, MachineRecord, Shape, UsbEntry } from './shape.ts';
 import type { EntryView } from './usb-live.ts';
-import type { ProblemWords } from './usb-ports.ts';
+import type { MachinesTab } from './areas/machines-nav.svelte.ts';
 import type { LockMode } from '../input.ts';
 import type { ReadPermission, ShareState } from './clipboard.ts';
 import type { ModifierMode, Mods } from './osk.ts';
@@ -18,7 +18,6 @@ export type View = 'screen' | 'terminal' | 'both';
 /** The machine's power state, plus the page's own `idle`: no machine yet (waiting for a disk, or for "Start anyway"). */
 export type PageState = PowerState | 'idle';
 export type Action = { label: string; run: (button: HTMLButtonElement) => void };
-export type MachinesTab = 'settings' | 'disks' | 'network' | 'usb' | 'folders' | 'snapshots';
 
 export const ui = $state({
   /** What the toolbar calls the machine. */
@@ -35,11 +34,6 @@ export const ui = $state({
   /** The last snapshot written (its bytes, pause and id), for tools: `#message[data-snapshot]`. */
   snapshotResult: '',
   view: 'screen' as View,
-  /** The Machines page instead of the machine (`#machines` in the address). */
-  machinesOpen: false,
-  machinesTab: 'settings' as MachinesTab,
-  /** The machine chosen on the Machines page (undefined: the page's own, or none). */
-  machinesSelected: undefined as string | undefined,
   /** A stop, start or snapshot in progress: the actions that would overlap it wait. */
   busy: false,
   /** The stored machine on this page (its id), or undefined for a transient one (a test's `?machine=`). */
@@ -127,36 +121,6 @@ export const ui = $state({
     ramChoices: [] as number[],
     gpuLock: '',
   },
-  /** Bumped when the store's records change (the toolbar's snapshot list rereads). */
-  records: 0,
-  /**
-   * The page's machine's USB (docs/usb.md "The page"): `on` when it has a controller (the toolbar's USB menu);
-   * its remembered devices and their states, what is on each connector while it runs, the offers the menu makes (a
-   * device that just appeared, a grant to give), the host's game pads, `zero` with `?usbzero=1` (Gadget Zero in the menu, for tests), and
-   * `open`, bumped to open the menu (something to do there). `tick` is bumped whenever any of it changes.
-   */
-  usb: {
-    on: false,
-    running: false,
-    entries: [] as EntryView[],
-    /** `problems`: what of an attached device the guest doesn't get, in words (web/app/usb-ports.ts `problemText`). */
-    connectors: [] as ({
-      name: string;
-      state: string;
-      entry?: string;
-      virtual?: boolean;
-      builtin?: boolean;
-      pad?: number;
-      problems?: ProblemWords[];
-    } | null)[],
-    /** The host's game pads the Gamepad API lists (`index`: `Gamepad.index`), for the game pad of ours (docs/usb.md "The game pad"); `hasPads`: the page has the API. */
-    pads: [] as { index: number; name: string }[],
-    hasPads: false,
-    offers: [] as { id: string; text: string; label: string }[],
-    zero: false,
-    open: 0,
-    tick: 0,
-  },
 });
 
 /** What the components ask of the page (web/app/main.ts fills it in before the first start). */
@@ -187,7 +151,8 @@ export type Page = {
   saveSettings(m: MachineRecord): Promise<void>;
   /** A transient machine's size from the Machine menu. */
   applySize(ncpus: number, ramMiB: number, gpu: '3d' | '2d'): void;
-  shapeNow(m: MachineRecord): Promise<{ shape: Shape; hash: string }>;
+  /** A machine's shape as it would run on this page now, over the browser's `disks`. */
+  shapeNow(m: MachineRecord, disks: Map<string, DiskRecord>): Promise<{ shape: Shape; hash: string }>;
   setView(v: View): void;
   showLog(): void;
   fullscreen(): void;

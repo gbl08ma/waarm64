@@ -20,6 +20,8 @@
   import { t, text } from '../i18n.ts';
   import { importSnapshot, machineLike } from './snapshots.ts';
   import { opfsDir } from '../overlay.ts';
+  import { machinesNav } from './areas/machines-nav.svelte.ts';
+  import { records } from './areas/records.svelte.ts';
   import { page, ui } from './ui.svelte.ts';
   import { openPicker } from './file-pickers.ts';
 
@@ -31,16 +33,24 @@
   };
   let { store, machine, running = false, act }: Props = $props();
 
-  let kept = $state<SnapshotRecord[]>([]);
+  const kept = $derived(
+    machine ? records.snapshots.filter((s) => s.machine === machine.id).sort((a, b) => b.created - a.created) : [],
+  );
+  /** The machine's shape now (an orphaned snapshot's differs), read again with the records. */
   let now = $state<{ shape: Shape; hash: string } | undefined>();
   $effect(() => {
-    void ui.records;
-    const m = machine;
+    const [m, disks] = [machine, records.disks];
     if (!m) return;
-    void (async () => {
-      kept = (await store.snapshotsOf(m.id)).sort((a, b) => b.created - a.created);
-      now = await page.shapeNow(m).catch(() => undefined);
-    })();
+    let shown = true;
+    void page
+      .shapeNow(m, disks)
+      .catch(() => undefined)
+      .then((n) => {
+        if (shown) now = n;
+      });
+    return () => {
+      shown = false;
+    };
   });
   const orphaned = (s: SnapshotRecord) => !!now && s.shapeHash !== now.hash;
   const why = (s: SnapshotRecord) =>
@@ -104,8 +114,8 @@
   }
   function like(s: SnapshotRecord) {
     void act(t('snapshots:Snapshots.making'), async () => {
-      ui.machinesSelected = (await machineLike(store, s)).id;
-      ui.machinesTab = 'settings';
+      machinesNav.choose((await machineLike(store, s)).id);
+      machinesNav.tab = 'settings';
     });
   }
   function restore(s: SnapshotRecord) {

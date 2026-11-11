@@ -13,6 +13,7 @@
   import { t, type Msg } from '../i18n.ts';
   import type { MachineRecord } from './shape.ts';
   import type { Store } from './store.ts';
+  import { machinesNav } from './areas/machines-nav.svelte.ts';
   import { page, ui } from './ui.svelte.ts';
 
   type Props = {
@@ -73,7 +74,7 @@
     if (!f) return;
     void actions.run(t('machines:MachinesNav.busy.importing'), async () => {
       const r = await importDefinition(store, parseDefinition(await f.text()));
-      ui.machinesSelected = r.machine.id;
+      machinesNav.choose(r.machine.id);
       if (r.toPick.length)
         actions.fail(t('machines:MachinesNav.imported.toPick', { name: r.machine.name, files: r.toPick }));
     });
@@ -83,7 +84,7 @@
 <nav>
   <ul>
     {#if ui.transient}
-      <li class:chosen={ui.machinesSelected === PAGE}>
+      <li class:chosen={machinesNav.selected === PAGE}>
         <button class="pick" onclick={() => onchoose(PAGE)} data-machine={PAGE}>
           <span class="name">{ui.transient.label}</span>
           <span class="meta">{t('machines:MachinesNav.list.transient')}</span>
@@ -91,7 +92,7 @@
       </li>
     {/if}
     {#each machines as m (m.id)}
-      <li class:chosen={m.id === ui.machinesSelected}>
+      <li class:chosen={m.id === machinesNav.selected}>
         <button class="pick" onclick={() => onchoose(m.id)} data-machine={m.id}>
           <span class="name">{m.name}</span>
           <span class="meta">
@@ -125,7 +126,7 @@
   <div class="new">
     {#each panes as p (p.id)}
       <button
-        class:chosen={ui.machinesSelected === p.id}
+        class:chosen={machinesNav.selected === p.id}
         onclick={() => onchoose(p.id)}
         data-machine={p.id}
         title={p.title}

@@ -2,7 +2,7 @@
   The toolbar's USB menu (docs/usb.md "The page"): the running machine's remembered devices with
   attach toggles, the host's game pads (the game pad of ours: docs/usb.md "The game pad"), the offers (a device that just appeared, one that left and may come back as another, a permission to
   give), Add a device…, and the Machines page's USB tab. With `?usbzero=1`, Gadget Zero (the controller's test device).
-  It opens by itself when there is something to do (`ui.usb.open`).
+  It opens by itself when there is something to do (web/app/areas/usb.svelte.ts `openMenu`: an offer).
 -->
 <script lang="ts">
   import AddUsb from './AddUsb.svelte';
@@ -13,26 +13,24 @@
   import { t } from '../i18n.ts';
   import { deviceName } from './usb-ports.ts';
   import { Actions } from './actions.svelte.ts';
+  import { usb } from './areas/usb.svelte.ts';
   import { page, ui } from './ui.svelte.ts';
 
   let open = $state(false);
   let adding = $state(false);
   const runner = new Actions();
-  let lastOpen = 0;
-  $effect(() => {
-    const n = ui.usb.open;
-    if (n !== lastOpen) {
-      lastOpen = n;
-      if (ui.usb.offers.length) open = true;
-    }
-  });
+  $effect(() =>
+    usb.menu.handle(() => {
+      open = true;
+    }),
+  );
   // The built-in keyboard is the machine's own, not a device of the user's: not counted, not listed.
-  const attached = $derived(ui.usb.connectors.filter((c) => c && !c.builtin).length);
-  const zeroOn = $derived(ui.usb.connectors.some((c) => c?.virtual && !c.builtin && c.pad === undefined));
+  const attached = $derived(usb.connectors.filter((c) => c && !c.builtin).length);
+  const zeroOn = $derived(usb.connectors.some((c) => c?.virtual && !c.builtin && c.pad === undefined));
 
   const run = (f: () => Promise<unknown>) => runner.run('', f);
   const toggle = (id: string, on: boolean) => run(() => (on ? page.usbAttach(id) : page.usbDetach(id)));
-  type View = (typeof ui.usb.entries)[number];
+  type View = (typeof usb.entries)[number];
   /** The device's line's tooltip: why it can't be attached now, if it can't. */
   const why = (v: View) =>
     v.state === 'unplugged'
@@ -45,7 +43,7 @@
           ? t('usb:UsbMenu.why.ungranted')
           : '';
   /** What the device's line says at its right: where it is, or why it can't be attached. */
-  function where(v: View, c: (typeof ui.usb.connectors)[number]) {
+  function where(v: View, c: (typeof usb.connectors)[number]) {
     if (c?.entry === v.entry.id && c.state !== 'attached')
       return c.state === 'detaching' ? t('usb:UsbMenu.where.detaching') : t('usb:UsbMenu.where.attaching');
     if (v.state === 'attached') return t('usb:UsbMenu.where.connector', { connector: v.entry.connector + 1 });
@@ -60,7 +58,7 @@
   {#snippet badge()}{#if attached}<span class="count" aria-label={t('usb:UsbMenu.attached', { n: attached })}
         >{attached}</span
       >{/if}{/snippet}
-  {#each ui.usb.offers as o (o.id)}
+  {#each usb.offers as o (o.id)}
     <div class="offer" data-usb-offer={o.id}>
       <p>{o.text}</p>
       <div class="row">
@@ -70,14 +68,14 @@
       </div>
     </div>
   {/each}
-  {#each ui.usb.entries as v (v.entry.id)}
+  {#each usb.entries as v (v.entry.id)}
     {@const on = v.state === 'attached'}
-    {@const c = ui.usb.connectors[v.entry.connector]}
+    {@const c = usb.connectors[v.entry.connector]}
     <label class="device" data-usb-device={v.entry.id} data-state={v.state} title={why(v)}>
       <input
         type="checkbox"
         checked={on || c?.entry === v.entry.id}
-        disabled={!ui.usb.running ||
+        disabled={!usb.running ||
           (!on && (v.state === 'unplugged' || v.state === 'ungranted' || (!!c && c.entry !== v.entry.id)))}
         onchange={(e) => toggle(v.entry.id, (e.currentTarget as HTMLInputElement).checked)}
       />
@@ -94,15 +92,15 @@
   {:else}
     <Note>{t('usb:UsbMenu.none')}</Note>
   {/each}
-  {#if ui.usb.hasPads}
+  {#if usb.hasPads}
     <p class="head">{t('usb:UsbMenu.pads')}</p>
-    {#each ui.usb.pads as g (g.index)}
-      {@const at = ui.usb.connectors.findIndex((c) => c?.pad === g.index)}
+    {#each usb.pads as g (g.index)}
+      {@const at = usb.connectors.findIndex((c) => c?.pad === g.index)}
       <label class="device" data-usb-pad={g.index} title={t('usb:UsbMenu.pad.why')}>
         <input
           type="checkbox"
           checked={at >= 0}
-          disabled={!ui.usb.running}
+          disabled={!usb.running}
           onchange={() => run(() => page.usbPad(g.index))}
         />
         <span class="name">{g.name}</span>
@@ -112,12 +110,12 @@
       <Note>{t('usb:UsbMenu.pads.none')}</Note>
     {/each}
   {/if}
-  {#if ui.usb.zero}
+  {#if usb.zero}
     <label class="device" data-usb-zero
       ><input
         type="checkbox"
         checked={zeroOn}
-        disabled={!ui.usb.running}
+        disabled={!usb.running}
         onchange={() => run(() => page.usbZero())}
       /><span class="name">{t('usb:UsbMenu.zero')}</span><span class="dim">{t('usb:UsbMenu.zero.note')}</span></label
     >
@@ -142,7 +140,7 @@
         }}>{t('usb:UsbMenu.all')}</Button
       >{/if}
   </div>
-  {#if !ui.usb.running}<Note>{t('usb:UsbMenu.stopped')}</Note>{/if}
+  {#if !usb.running}<Note>{t('usb:UsbMenu.stopped')}</Note>{/if}
 </Menu>
 {#if adding}<AddUsb machine={ui.current} name={ui.title} close={() => (adding = false)} />{/if}
 

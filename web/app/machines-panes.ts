@@ -1,5 +1,5 @@
 // The Machines page's panes that aren't a machine's (MachinesNav.svelte lists them, MachinesPage.svelte shows the
-// chosen one): their ids, as `ui.machinesSelected` and each pane's `data-selected` say them.
+// chosen one): their ids, as web/app/areas/machines-nav.svelte.ts `selected` and each pane's `data-selected` say them.
 
 /** The page's own machine (a transient one: PagePane.svelte). */
 export const PAGE = 'page';

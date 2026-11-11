@@ -19,6 +19,7 @@
   import { KEYBOARD_CONNECTOR, USER_CONNECTORS, type MachineRecord } from './shape.ts';
   import { deviceName, hasTwins, idsText } from './usb-ports.ts';
   import type { EntryView } from './usb-live.ts';
+  import { usb } from './areas/usb.svelte.ts';
   import { page, ui } from './ui.svelte.ts';
 
   type Props = {
@@ -31,11 +32,11 @@
   };
   let { machine, running, snapshots, act }: Props = $props();
 
-  const here = $derived(machine.id === ui.current && ui.usb.running);
+  const here = $derived(machine.id === ui.current && usb.running);
   let views = $state<EntryView[]>([]);
+  // Read again when the record changes, and with the page's USB (`usb.entries` is read again at every plug, attach and grant).
   $effect(() => {
-    void ui.records;
-    void ui.usb.tick;
+    void usb.entries;
     const m = $state.snapshot(machine) as MachineRecord;
     void page.usbStates(m).then((v) => {
       views = v;
@@ -87,7 +88,7 @@
   <CardList class="entries" empty={views.length ? undefined : t('usb:Usb.none')}>
     {#each views as v (v.entry.id)}
       {@const e = v.entry}
-      {@const c = here && v.state === 'attached' ? ui.usb.connectors[e.connector] : null}
+      {@const c = here && v.state === 'attached' ? usb.connectors[e.connector] : null}
       <Card data-usb-entry={e.id} data-state={v.state}>
         <div class="named">
           <Icon name={e.api === 'hid' ? 'device-gamepad-2' : 'usb'} size={18} />
@@ -165,7 +166,7 @@
     {/each}
   </CardList>
   {#if machine.usb}
-    {@const k = here ? ui.usb.connectors[KEYBOARD_CONNECTOR] : null}
+    {@const k = here ? usb.connectors[KEYBOARD_CONNECTOR] : null}
     <Note data-usb-builtin data-state={k?.builtin ? k.state : 'detached'}>
       {here
         ? k?.builtin

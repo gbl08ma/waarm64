@@ -23,7 +23,8 @@
   import type { PageNetwork } from './net-live.ts';
   import type { DiskRecord, MachineRecord } from './shape.ts';
   import type { OverlayRecord, Store } from './store.ts';
-  import { page, ui, type MachinesTab } from './ui.svelte.ts';
+  import { machinesNav, type MachinesTab } from './areas/machines-nav.svelte.ts';
+  import { page, ui } from './ui.svelte.ts';
 
   type Props = {
     edit: Editing;
@@ -102,8 +103,8 @@
   {meta}
   metaAttrs={{ 'data-machine-state': '' }}
   {tabs}
-  tab={ui.machinesTab}
-  ontab={(x) => (ui.machinesTab = x as MachinesTab)}
+  tab={machinesNav.tab}
+  ontab={(x) => (machinesNav.tab = x as MachinesTab)}
 >
   {#snippet actions()}
     {#if m.id !== ui.current}
@@ -135,15 +136,15 @@
       {t('machines:MachinePane.machine.delete')}
     </Button>
   {/snippet}
-  {#if ui.machinesTab === 'settings'}
+  {#if machinesNav.tab === 'settings'}
     <SettingsTab {edit} />
-  {:else if ui.machinesTab === 'network'}
+  {:else if machinesNav.tab === 'network'}
     <NetworkTab {edit} {net} {act} />
-  {:else if ui.machinesTab === 'usb'}
+  {:else if machinesNav.tab === 'usb'}
     <UsbTab {edit} machine={saved} {act} />
-  {:else if ui.machinesTab === 'folders'}
+  {:else if machinesNav.tab === 'folders'}
     <FoldersTab {edit} machine={saved} {folders} {act} />
-  {:else if ui.machinesTab === 'disks'}
+  {:else if machinesNav.tab === 'disks'}
     <Disks {store} machine={m} {machines} {disks} {overlays} running={edit.running} {act} {offFirst} />
   {:else}
     <Snapshots {store} machine={m} running={edit.running} {act} />

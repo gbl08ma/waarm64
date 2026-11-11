@@ -8,28 +8,36 @@
   import Note from './ui/Note.svelte';
   import { openPicker } from './file-pickers.ts';
   import { t } from '../i18n.ts';
-  import type { SnapshotRecord, Store } from './store.ts';
+  import { records } from './areas/records.svelte.ts';
   import { page, ui } from './ui.svelte.ts';
-
-  type Props = { store: Store };
-  let { store }: Props = $props();
 
   const LATEST = 5;
   let open = $state(false);
-  let latest = $state<(SnapshotRecord & { orphaned: boolean })[]>([]);
-  // Read from the store while it's open, again when the records change.
+  /** The page's machine's shape now: a snapshot of another can't restore. */
+  let now = $state<{ hash: string }>();
+  const machine = $derived(records.machines.find((m) => m.id === ui.current));
+  // Read while the menu is open, again when the records change.
   $effect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- a change counter's read (docs/frontend-code.md §3.1: to go)
-    void ui.records;
-    const id = ui.current;
-    if (!open || !id) return;
-    void (async () => {
-      const m = await store.get('machines', id);
-      const now = m ? await page.shapeNow(m).catch(() => undefined) : undefined;
-      const kept = (await store.snapshotsOf(id)).sort((a, b) => b.created - a.created).slice(0, LATEST);
-      latest = kept.map((s) => ({ ...s, orphaned: !!now && s.shapeHash !== now.hash }));
-    })();
+    const [m, disks] = [machine, records.disks];
+    if (!open || !m) return;
+    let shown = true;
+    void page
+      .shapeNow(m, disks)
+      .catch(() => undefined)
+      .then((n) => {
+        if (shown) now = n;
+      });
+    return () => {
+      shown = false;
+    };
   });
+  const latest = $derived(
+    records.snapshots
+      .filter((s) => s.machine === ui.current)
+      .sort((a, b) => b.created - a.created)
+      .slice(0, LATEST)
+      .map((s) => ({ ...s, orphaned: !!now && s.shapeHash !== now.hash })),
+  );
   /** Closes the menu, then does `f`. */
   const then = (f: () => void) => () => {
     open = false;

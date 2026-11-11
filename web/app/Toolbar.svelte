@@ -17,12 +17,12 @@
   import type { PageAudio } from '../audio.ts';
   import type { PageFolders } from './folders-live.ts';
   import type { PageNetwork } from './net-live.ts';
-  import type { Store } from './store.ts';
+  import { usb } from './areas/usb.svelte.ts';
+  import { machinesNav } from './areas/machines-nav.svelte.ts';
   import { page, ui, type View } from './ui.svelte.ts';
   import { t } from '../i18n.ts';
 
-  let { store, audio, net, folders }: { store: Store; audio: PageAudio; net: PageNetwork; folders: PageFolders } =
-    $props();
+  let { audio, net, folders }: { audio: PageAudio; net: PageNetwork; folders: PageFolders } = $props();
 
   const running = $derived(ui.state === 'running' || ui.state === 'booting');
   /** What Start says: start an idle machine, retry a failed one, else restart. */
@@ -52,7 +52,7 @@
     labelled
     icon="server-2"
     id="machines-open"
-    aria-pressed={ui.machinesOpen}
+    aria-pressed={machinesNav.open}
     title={t('toolbar:Toolbar.machines.title')}
     onclick={() => page.openMachines()}
   >
@@ -104,7 +104,7 @@
   >
     {t('toolbar:Toolbar.snapshot')}
   </Button>
-  <LoadSnapshotMenu {store} />
+  <LoadSnapshotMenu />
   <span class="sep"></span>
   <span class="views" role="group" aria-label={t('toolbar:Toolbar.views')}>
     {#each VIEWS as { v, icon, title } (v)}
@@ -133,7 +133,7 @@
   <span class="sep"></span>
   <Sound {audio} />
   {#if ui.hasNetwork}<Network {net} />{/if}
-  {#if ui.usb.on}<UsbMenu />{/if}
+  {#if usb.on}<UsbMenu />{/if}
   {#if folders.running}<FoldersMenu {folders} />{/if}
   {#if ui.clipboard.on && running}<ClipboardMenu />{/if}
   {#if !ui.current}<SizeMenu />{/if}

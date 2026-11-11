@@ -16,14 +16,16 @@
   import FoldersPane from './FoldersPane.svelte';
   import MachinePane from './MachinePane.svelte';
   import MachinesNav from './MachinesNav.svelte';
-  import { ABOUT, CONNECTIONS, DISKS, FOLDERS, PAGE, PANES, PREFERENCES } from './machines-panes.ts';
+  import { ABOUT, CONNECTIONS, DISKS, FOLDERS, PAGE, PREFERENCES } from './machines-panes.ts';
   import PagePane from './PagePane.svelte';
   import PreferencesPane from './PreferencesPane.svelte';
   import StorageBar from './StorageBar.svelte';
   import Button from './ui/Button.svelte';
   import ErrorBanner from './ui/ErrorBanner.svelte';
   import Pane from './ui/Pane.svelte';
+  import { untrack } from 'svelte';
   import { Actions } from './actions.svelte.ts';
+  import { records } from './areas/records.svelte.ts';
   import { ask } from './ask.svelte.ts';
   import { msg, t } from '../i18n.ts';
   import { MachineEdit } from './machine-edit.svelte.ts';
@@ -31,59 +33,56 @@
   import { suspended as suspendedCopy } from '../overlay.ts';
   import type { PageFolders } from './folders-live.ts';
   import type { PageNetwork } from './net-live.ts';
-  import type { DiskRecord, MachineRecord } from './shape.ts';
-  import { machineDir, type OverlayRecord, type Store } from './store.ts';
+  import type { MachineRecord } from './shape.ts';
+  import { machineDir, type Store } from './store.ts';
   import { shares } from './areas/shares.svelte.ts';
+  import { machinesNav } from './areas/machines-nav.svelte.ts';
   import { page, ui } from './ui.svelte.ts';
 
   type Props = { store: Store; net: PageNetwork; folders: PageFolders };
   let { store, net, folders }: Props = $props();
 
-  let machines = $state<MachineRecord[]>([]);
-  let disks = $state<Map<string, DiskRecord>>(new Map());
-  let overlays = $state<OverlayRecord[]>([]);
+  const machines = $derived(records.machines);
+  const disks = $derived(records.disks);
+  const overlays = $derived(records.overlays);
+  /** The machines with kept snapshots: only theirs warn, under a control, that a change of shape orphans them. */
+  const withSnapshots = $derived(new Set(records.snapshots.map((s) => s.machine)));
   let running = $state<Set<string>>(new Set());
   /** The machines with a suspended copy (Start resumes them). */
   let suspended = $state<Set<string>>(new Set());
-  /** The machines with kept snapshots: only theirs warn, under a control, that a change of shape orphans them. */
-  let withSnapshots = $state<Set<string>>(new Set());
   let storage = $state<Awaited<ReturnType<typeof storageReport>> | undefined>();
 
   /** The ids of `list`'s machines for which `has` holds. */
   const which = async (list: MachineRecord[], has: (m: MachineRecord) => Promise<unknown>) =>
     new Set((await Promise.all(list.map(async (m) => ((await has(m)) ? m.id : '')))).filter(Boolean));
 
-  async function reread() {
-    machines = (await store.all('machines')).sort((a, b) => a.name.localeCompare(b.name));
-    disks = new Map((await store.all('disks')).map((d) => [d.id, d]));
-    overlays = await store.all('overlays');
-    running = await which(machines, (m) => isRunning(m.id));
-    withSnapshots = new Set((await store.all('snapshots')).map((s) => s.machine));
-    suspended = await which(machines, (m) => suspendedCopy(machineDir(m.id)).catch(() => undefined));
-    ui.machinesSelected ??= ui.current ?? (ui.transient ? PAGE : undefined);
-    const chosen = ui.machinesSelected;
-    if (chosen && !PANES.has(chosen) && !machines.some((m) => m.id === chosen)) ui.machinesSelected = undefined;
-    const m = machines.find((x) => x.id === ui.machinesSelected);
-    edit.follow(m, !!m && withSnapshots.has(m.id), !!m && running.has(m.id));
+  /** What the records don't say: which machines run (their locks, in any tab), which are suspended, the storage. */
+  async function readLive(list: MachineRecord[]) {
+    running = await which(list, (m) => isRunning(m.id));
+    suspended = await which(list, (m) => suspendedCopy(machineDir(m.id)).catch(() => undefined));
     storage = await storageReport(store).catch(() => undefined);
   }
-  const runner = new Actions(reread);
+  // This tab's own writes aren't announced to it: the records are read again after each action.
+  const runner = new Actions(() => records.reread());
   const act = runner.run;
   // The store is the page's one, for the page's life.
   // svelte-ignore state_referenced_locally
   const edit = new MachineEdit(store, runner);
-  // Read now, again when a record changes (in any tab), and when the machine on this page starts or stops (its "running").
-  $effect(() => store.onChange(() => void reread()));
+
+  // Read with the records, and again when the machine on this page starts or stops (its "running").
   $effect(() => {
     void ui.state;
-    void ui.records;
-    void reread();
+    void readLive(machines);
   });
-
+  // The chosen machine's record, as read now, goes to its editor (which keeps a draft being edited).
+  $effect(() => {
+    const m = machines.find((x) => x.id === machinesNav.selected);
+    const [snapshots, runs] = [!!m && withSnapshots.has(m.id), !!m && running.has(m.id)];
+    untrack(() => edit.follow(m, snapshots, runs));
+  });
   function choose(id: string) {
-    ui.machinesSelected = id;
+    machinesNav.choose(id);
     edit.dirty = false;
-    void reread();
   }
   /** Running, suspended or off. */
   function stateText(id: string) {
@@ -115,7 +114,7 @@
     });
     if (!sure) return false;
     await page.powerOff();
-    await reread();
+    await records.reread();
     return true;
   }
 </script>
@@ -147,17 +146,17 @@
   {/if}
   <div class="panes">
     <MachinesNav {store} {machines} {counts} stateOf={listState} actions={runner} onchoose={choose} />
-    {#if ui.machinesSelected === PREFERENCES}
+    {#if machinesNav.selected === PREFERENCES}
       <PreferencesPane {net} />
-    {:else if ui.machinesSelected === ABOUT}
+    {:else if machinesNav.selected === ABOUT}
       <Pane id={ABOUT} title={t('machines:MachinesPage.about')} meta={t('machines:MachinesPage.about.meta')}>
         <About />
       </Pane>
-    {:else if ui.machinesSelected === DISKS}
+    {:else if machinesNav.selected === DISKS}
       <Pane id={DISKS} title={t('machines:MachinesPage.disks.heading')} meta={t('machines:MachinesPage.disks.meta')}>
         <DisksPane {store} {machines} {disks} {overlays} {running} {act} {offFirst} />
       </Pane>
-    {:else if ui.machinesSelected === FOLDERS}
+    {:else if machinesNav.selected === FOLDERS}
       <Pane
         id={FOLDERS}
         title={t('machines:MachinesPage.folders.heading')}
@@ -170,9 +169,9 @@
         {/snippet}
         <FoldersPane {folders} {store} {act} />
       </Pane>
-    {:else if ui.machinesSelected === CONNECTIONS}
+    {:else if machinesNav.selected === CONNECTIONS}
       <ConnectionsPane {net} {machines} {act} />
-    {:else if ui.machinesSelected === PAGE && ui.transient}
+    {:else if machinesNav.selected === PAGE && ui.transient}
       <PagePane {store} {act} label={ui.transient.label} disk={ui.transient.disk} />
     {:else if edit.editing()}
       <MachinePane

@@ -17,9 +17,12 @@ import { describe, errorText, msg, MsgError, said, t, text, type Described, type
 import { devText, fromWire, msgOf } from '../msg.ts';
 import { guestWords } from './guest-words.ts';
 import { clockSync, leaveWarning, remember, settings } from './settings.ts';
-import { page, ui, type Action, type MachinesTab, type PageState, type View } from './ui.svelte.ts';
+import { page, ui, type Action, type PageState, type View } from './ui.svelte.ts';
+import { machinesNav, type MachinesTab } from './areas/machines-nav.svelte.ts';
 import { network } from './areas/network.ts';
 import { shares } from './areas/shares.svelte.ts';
+import { usb } from './areas/usb.svelte.ts';
+import { records } from './areas/records.svelte.ts';
 import type { DisplayFromPage, DisplayToPage } from '../gpu-present.ts';
 import type { FromGpuWorker, ToGpuWorker } from '../gpu-worker.ts';
 import type { QueryPoll } from '../virgl-host.ts';
@@ -505,8 +508,8 @@ function takePairing() {
 }
 takePairing();
 addEventListener('hashchange', takePairing);
+void records.watch(store);
 store.onChange((c) => {
-  ui.records++;
   void net.refresh();
   void folders.refresh();
   if (c.kind === 'machines' && c.id === stored?.record.id) void followRecord();
@@ -543,7 +546,7 @@ const setView = (v: View, save = true) => {
   if (save) remember({ view: v });
   ui.view = v;
   document.body.dataset.view = v;
-  if (ui.machinesOpen) closeMachines();
+  if (machinesNav.open) closeMachines();
   fit();
   if (v !== 'screen') term.refresh(0, term.rows - 1);
   (v === 'terminal' ? term : canvas).focus();
@@ -873,7 +876,7 @@ function setState(s: PageState, message?: Said, actions: Action[] = [], kind: 'e
   showMessage(message ?? note, actions, message ? kind : 'warn');
   ui.boot.shown = (s === 'loading' || s === 'booting') && !ui.boot.done;
   ui.boot.serial = !!spec.firmware && s === 'booting';
-  ui.usb.running = !!run?.usb && (s === 'running' || s === 'booting');
+  usb.running = !!run?.usb && (s === 'running' || s === 'booting');
   // Stopped with no start to follow: a restart doesn't pass here (its clients stay, on the new machine's ports).
   if (s === 'off' || s === 'suspended' || s === 'crashed' || s === 'failed' || s === 'idle') {
     net.machineOff();
@@ -1040,7 +1043,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   const [kbd, tablet, serial] = [new MessageChannel(), new MessageChannel(), new MessageChannel()];
   const sound = audio.attach();
   // A machine with a USB controller: the port its devices are attached over (docs/usb.md "The page").
-  const usb = usbOn() ? new MessageChannel() : undefined;
+  const usbPort = usbOn() ? new MessageChannel() : undefined;
   // A machine with shared folders: the port what's attached while it runs goes over (docs/shares.md).
   const sharesPort = stored?.record.shares ? new MessageChannel() : undefined;
   // A relative mouse (the pointer while the screen holds the mouse) and a touchscreen, on machines that have them.
@@ -1091,7 +1094,13 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   ui.hasMouse = !!mouse;
   canvas.addEventListener('keydown', wakeOnInput);
   canvas.addEventListener('pointerdown', wakeOnInput);
-  const r: Run = { worker, input, serial: serial.port1, display: display.port1, usb: usb && usbPorts(usb.port1) };
+  const r: Run = {
+    worker,
+    input,
+    serial: serial.port1,
+    display: display.port1,
+    usb: usbPort && usbPorts(usbPort.port1),
+  };
   run = r;
   keyboardLive = false;
   last = undefined;
@@ -1312,7 +1321,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
         credentials,
         guest: guestWords(startLayout),
         nets,
-        usb: usb?.port2,
+        usb: usbPort?.port2,
         mouse: mouse?.port2,
         touch: touch?.port2,
         folders: sharesPort && { list: list!, port: sharesPort.port2 },
@@ -1336,7 +1345,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
         ...(s ? [s] : []),
         ...(three ? [three.renderer] : []),
         ...nets.map((n) => n.ip),
-        ...(usb ? [usb.port2] : []),
+        ...(usbPort ? [usbPort.port2] : []),
         ...(sharesPort ? [sharesPort.port2] : []),
         ...(mouse ? [mouse.port2] : []),
         ...(touch ? [touch.port2] : []),
@@ -2225,7 +2234,7 @@ async function keepSnapshot(name: string) {
       blobBytes: result.blobBytes,
       id,
     });
-    ui.records++; // this tab's own writes aren't announced to it (Store.onChange)
+    void records.reread(); // this tab's own writes aren't announced to it (Store.onChange)
     if (run === r && (state === 'running' || state === 'booting')) {
       setState(state);
       const words = { name, size: result.bytes, seconds: (result.pausedMs / 1000).toFixed(1) };
@@ -2490,7 +2499,7 @@ document.addEventListener('drop', (e) => {
 
 /** A directory dropped on the page: a folder of this browser's, offered to the running machine if the page's has shared folders. */
 async function droppedFolder(handle: FileSystemDirectoryHandle) {
-  const here = !ui.machinesOpen && folders.running ? stored?.record : undefined;
+  const here = !machinesNav.open && folders.running ? stored?.record : undefined;
   if (
     here &&
     !(await ask.confirm(t('folders:main.drop.confirm', { folder: handle.name, machine: here.name }), {
@@ -2595,7 +2604,7 @@ async function netAttach(machine: string | undefined, i: number, c: Connection, 
         return;
       await net.takeFrom(i, c, authKey);
     } finally {
-      ui.records++; // the record's attachment, written either way (an off machine's too, which connects at its start)
+      void records.reread(); // the record's attachment, written either way (an off machine's too, which connects at its start)
     }
     return;
   }
@@ -2604,20 +2613,20 @@ async function netAttach(machine: string | undefined, i: number, c: Connection, 
   else remember({ transientNet: c.id });
   if (stored && machine === stored.record.id) stored.record = (await store.get('machines', machine)) ?? stored.record;
   await net.refresh();
-  ui.records++; // this tab's own writes aren't announced to it (the Machines page's adapter rows reread)
+  void records.reread(); // this tab's own writes aren't announced to it (the Machines page's adapter rows reread)
 }
 
 async function netDetach(machine: string | undefined, i: number) {
   if (netLive(machine, i)) {
     await net.detach(i);
-    ui.records++;
+    void records.reread();
     return;
   }
   if (machine) await setAdapterConnection(store, machine, i, undefined);
   else remember({ transientNet: undefined });
   if (stored && machine === stored.record.id) stored.record = (await store.get('machines', machine)) ?? stored.record;
   await net.refresh();
-  ui.records++; // this tab's own writes aren't announced to it (the Machines page's adapter rows reread)
+  void records.reread(); // this tab's own writes aren't announced to it (the Machines page's adapter rows reread)
 }
 
 /** Deletes connection `c` after asking (naming the machines it is attached to): it is detached from them, and its state forgotten. */
@@ -2726,7 +2735,7 @@ type KeyboardLock = { lock(): Promise<void>; unlock(): void };
 const keyboardLock = (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard;
 const mainEl = document.querySelector('main')!;
 function fullscreen() {
-  if (ui.machinesOpen) closeMachines();
+  if (machinesNav.open) closeMachines();
   (ui.view === 'terminal' ? term : canvas).focus();
   // Without the lock (refused, or another browser), the browser keeps its shortcuts.
   // With the status bar along (Preferences), the page goes full screen without its toolbar and message bar (index.html).
@@ -2969,13 +2978,13 @@ async function saveSettings(m: MachineRecord) {
 // The Machines page (docs/machines.md §7; web/app/MachinesPage.svelte): in the machine's place, which runs on behind it.
 // `#machines` in the address opens it (a reload keeps it open).
 function openMachines(tab?: MachinesTab, id?: string) {
-  if (tab) ui.machinesTab = tab;
-  if (id) ui.machinesSelected = id;
-  ui.machinesOpen = true;
+  if (tab) machinesNav.tab = tab;
+  if (id) machinesNav.choose(id);
+  machinesNav.open = true;
   if (location.hash !== '#machines') history.replaceState(null, '', `${location.pathname}${location.search}#machines`);
 }
 function closeMachines() {
-  ui.machinesOpen = false;
+  machinesNav.open = false;
   // What the page changed shows in the toolbar now (a running machine takes it at its next start).
   if (!run && !switching && !saving) void reloadStored();
   if (location.hash) history.replaceState(null, '', `${location.pathname}${location.search}`);
@@ -3120,7 +3129,7 @@ async function editUsbEntriesNow(id: string | undefined, f: (e: UsbEntry[]) => U
     if (!m.usbDevices.length) delete m.usbDevices;
     await store.put('machines', m);
     if (stored?.record.id === id) stored.record.usbDevices = m.usbDevices;
-    ui.records++; // this tab's own writes aren't announced to it
+    void records.reread(); // this tab's own writes aren't announced to it
   }
   syncUsb();
 }
@@ -3147,14 +3156,14 @@ addEventListener('gamepaddisconnected', (ev) => {
   });
   syncUsb();
 });
-/** The page's machine's USB as the menu and the tab show it (`ui.usb`), read again now. */
+/** The page's machine's USB as the menu and the tab show it (web/app/areas/usb.svelte.ts), read again now. */
 let usbReading: Promise<void> | undefined;
 let usbAgain = false;
 function syncUsb() {
-  ui.usb.on = usbOn();
-  ui.usb.zero = params.get('usbzero') === '1';
-  ui.usb.running = usbRunning();
-  ui.usb.connectors = Array.from({ length: USB_CONNECTORS }, (_, i) => {
+  usb.on = usbOn();
+  usb.zero = params.get('usbzero') === '1';
+  usb.running = usbRunning();
+  usb.connectors = Array.from({ length: USB_CONNECTORS }, (_, i) => {
     const c = run?.usb?.connectors[i];
     const d = c?.device;
     const problems =
@@ -3171,8 +3180,8 @@ function syncUsb() {
         }
       : null;
   });
-  ui.usb.hasPads = typeof navigator.getGamepads === 'function';
-  ui.usb.pads = listPads();
+  usb.hasPads = typeof navigator.getGamepads === 'function';
+  usb.pads = listPads();
   padFeed.set(
     new Map(
       (run?.usb?.connectors ?? []).flatMap((c, i) =>
@@ -3180,16 +3189,14 @@ function syncUsb() {
       ),
     ),
   );
-  ui.usb.offers = [...offers.values()].map(({ id, text, label }) => ({ id, text, label }));
-  ui.usb.tick++;
+  usb.offers = [...offers.values()].map(({ id, text, label }) => ({ id, text, label }));
   if (usbReading) {
     usbAgain = true;
     return;
   }
   usbReading = (async () => {
     try {
-      ui.usb.entries = await entryStates(usbEntries(), run?.usb?.attachedEntries() ?? new Set(), usbLocks);
-      ui.usb.tick++;
+      usb.entries = await entryStates(usbEntries(), run?.usb?.attachedEntries() ?? new Set(), usbLocks);
     } finally {
       usbReading = undefined;
       if (usbAgain) {
@@ -3238,8 +3245,8 @@ const REENUMERATION_MS = 60_000;
 const offers = new Map<string, { id: string; text: string; label: string; run: () => Promise<void> }>();
 function offer(id: string, text: string, label: string, f: () => Promise<void>) {
   offers.set(id, { id, text, label, run: f });
-  ui.usb.open++;
   syncUsb();
+  usb.openMenu();
 }
 
 /** An attach's error for the message bar (`again`: an attach after a snapshot): a `UsbError` with problems names the device itself. */
@@ -3532,7 +3539,7 @@ syncUsb();
 /** Reads the page's machine's record again, if `machine` is it. */
 const rereadRecord = async (machine: string) => {
   if (stored?.record.id === machine) stored.record = (await store.get('machines', machine)) ?? stored.record;
-  ui.records++; // this tab's own writes aren't announced to it
+  await records.reread(); // this tab's own writes aren't announced to it
 };
 const folderPage = {
   folderPick: async (readOnly: boolean) => {
@@ -3605,8 +3612,7 @@ Object.assign(page, {
   resetDisk: () => void resetDiskAsked(),
   saveSettings,
   applySize: (n: number, r: number, g: '3d' | '2d') => void applySize(n, r, g),
-  shapeNow: async (m: MachineRecord) => {
-    const disks = new Map((await store.all('disks')).map((d) => [d.id, d]));
+  shapeNow: async (m: MachineRecord, disks: Map<string, DiskRecord>) => {
     const display =
       params.get('display') === 'simple'
         ? 'none'

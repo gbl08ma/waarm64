@@ -17,7 +17,8 @@
   import { t } from '../i18n.ts';
   import { remember, settings } from './settings.ts';
   import type { Store } from './store.ts';
-  import { page, ui, type MachinesTab } from './ui.svelte.ts';
+  import { machinesNav, type MachinesTab } from './areas/machines-nav.svelte.ts';
+  import { page, ui } from './ui.svelte.ts';
 
   type Props = { store: Store; act: Act; label: string; disk: string };
   let { store, act, label, disk }: Props = $props();
@@ -26,7 +27,7 @@
     { id: 'disks', icon: 'database', label: t('machines:PagePane.tab.disks') },
     { id: 'snapshots', icon: 'history', label: t('machines:MachinePane.tab.snapshots') },
   ] as const;
-  const tab = $derived(ui.machinesTab === 'snapshots' ? 'snapshots' : 'disks');
+  const tab = $derived(machinesNav.tab === 'snapshots' ? 'snapshots' : 'disks');
 
   // Its export's options.
   let compress = $state(settings().compress ?? true);
@@ -43,7 +44,7 @@
   meta={t('machines:PagePane.transient.meta')}
   tabs={[...tabs]}
   {tab}
-  ontab={(x) => (ui.machinesTab = x as MachinesTab)}
+  ontab={(x) => (machinesNav.tab = x as MachinesTab)}
 >
   {#if tab === 'disks'}
     <div class="disk" data-attachment={PAGE}>
