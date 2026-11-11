@@ -50,6 +50,7 @@ fi
 # JS dependencies (ci.sh does the same when they're stale).
 PATH=$NODE_DIR/bin:$PATH
 [ node_modules/.package-lock.json -nt package-lock.json ] || npm ci --no-fund --no-audit >/dev/null
+[ tools/lint/node_modules/.package-lock.json -nt tools/lint/package-lock.json ] || npm ci --prefix tools/lint --no-fund --no-audit >/dev/null
 # Pre-fetch the pinned nightly and its std sources (the first cargo call would otherwise do it).
 rustc --version >/dev/null
 # Clipboard sharing's guest agent: without Podman, images/build.sh agent builds it with the host's cargo (rustup installs

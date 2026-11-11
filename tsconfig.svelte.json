@@ -1,5 +1,5 @@
 {
-  // svelte-check's (scripts/ci.sh): the page's components, which tsc doesn't read. It runs TypeScript 6 (tools/svelte-check:
+  // svelte-check's and ESLint's (scripts/ci.sh): the page's components, which tsc doesn't read. It runs TypeScript 6 (tools/lint:
   // svelte-check needs the compiler API TypeScript 7 doesn't have), and module "nodenext" made it fall back to node10.
   "extends": "./tsconfig.json",
   "compilerOptions": {

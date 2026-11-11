@@ -3,9 +3,8 @@
 # and the tools the server needs. Needs Node and npm there (Homebrew's).
 #   mac_packages <host> <dest>
 mac_packages() {
-  ssh "$1" "mkdir -p $2/tools/svelte-check"
+  ssh "$1" "mkdir -p $2/tools"
   rsync -a package.json package-lock.json vite.config.ts THIRD_PARTY.json "$1:$2/"
   rsync -a tools/serve.ts tools/stamp.ts tools/tailscale.ts tools/nosme.ts tools/third-party.ts "$1:$2/tools/"
-  rsync -a tools/svelte-check/package.json "$1:$2/tools/svelte-check/"
   ssh "$1" "cd $2 && PATH=/opt/homebrew/bin:\$PATH npm ci --no-audit --no-fund --loglevel=error"
 }

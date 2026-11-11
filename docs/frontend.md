@@ -170,11 +170,15 @@ A disk in a list is `DiskInfo.svelte` (its kind's icon, name and line), and a di
 **Types:** `tsc` doesn't read the components; `npm run svelte-check` (a step of `scripts/ci.sh`, ~2 s) checks them
 with `tsconfig.svelte.json` (`web/app`, ESM resolution: svelte-check made the shared config's `nodenext` node10) and
 the Svelte options in `vite.config.ts` (`--config`: without it, svelte-check crawls the whole repository, `target/`
-included, for config files). Vite's own types (`vite/client`: CSS imports, `?worker&url`) are in `tsconfig.json`. It
-runs on TypeScript 6, in its own package `tools/svelte-check` (a `file:` dev dependency, its packages in its own
-`node_modules`): svelte-check needs the compiler API TypeScript 7 doesn't have, and a peer can't nest under the root's
-TypeScript 7. A `$derived` that only reads a value to depend on it writes `(void tick, value())`: TypeScript rejects
-an unused left side of a comma.
+included, for config files). Vite's own types (`vite/client`: CSS imports, `?worker&url`) are in `tsconfig.json`.
+svelte-check and the page's linters (ESLint, Stylelint, Prettier: [frontend-code.md](frontend-code.md) §7) run on
+TypeScript 6, in their own package **`tools/lint`** with its own lockfile and `node_modules` (`npm ci --prefix
+tools/lint`, which `scripts/ci.sh` and `scripts/cloud-setup.sh` run when it's stale; its `.npmrc` leaves the peers,
+Svelte, to the root's): they need the compiler API TypeScript 7 doesn't have, and a package linked from the root's
+had its dependencies hoisted next to the root's TypeScript 7, where they loaded it. ESLint runs under
+`tools/lint/ts6.ts`, a module hook that makes every `typescript` import the package's (eslint-plugin-svelte loads it
+from the working directory). A `$derived` that only reads a value to depend on it writes `(void tick, value())`:
+TypeScript rejects an unused left side of a comma.
 
 **Screenshots:** `node tools/screens.ts --label <name>` (headless Chromium on the dev server, ~1 min; `--only <part>`
 for the states whose names contain it) seeds a profile through the page's own modules (two machines, disks with

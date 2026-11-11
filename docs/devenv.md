@@ -30,7 +30,7 @@ the x86_64 desktop (which the user needs for other work).
 A session's worktree (`.claude/worktrees/<name>`) has none of the main checkout's untracked trees, and the page can't
 run on symlinks to them: Vite serves with `fs.strict`, which answers 403 for a file reached through a link out of the
 worktree (pages then fail in ways that look like code bugs). **`scripts/worktree-setup.sh [worktree]`** makes one
-ready: `node_modules` copied, `tools/svelte-check/node_modules` symlinked, `target/images/*` and `target/deqp/*`
+ready: `node_modules` and `tools/lint/node_modules` copied, `target/images/*` and `target/deqp/*`
 hard-linked (their builders delete or rename before writing, so a rebuild in the worktree never writes into the main
 checkout's copy), except `target/images/build/`: `images/build.sh`'s work trees (kernels, Buildroot, venus's Mesa and
 wasi-sdk), which `make` writes in place and which are partly owned by Podman's subordinate uids (so

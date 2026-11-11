@@ -1761,6 +1761,123 @@
           }
         },
         {
+          "id": "dev-lint-eslint-js",
+          "name": "@eslint/js",
+          "md": {
+            "package": "@eslint/js (`tools/lint`)",
+            "version": "10.0.1",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "dev-lint-eslint",
+          "name": "eslint",
+          "md": {
+            "package": "eslint (`tools/lint`)",
+            "version": "10.14.0",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "dev-lint-eslint-plugin-svelte",
+          "name": "eslint-plugin-svelte",
+          "md": {
+            "package": "eslint-plugin-svelte (`tools/lint`)",
+            "version": "3.24.1",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "dev-lint-globals",
+          "name": "globals",
+          "md": {
+            "package": "globals (`tools/lint`)",
+            "version": "17.14.0",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "dev-lint-postcss-html",
+          "name": "postcss-html",
+          "md": {
+            "package": "postcss-html (`tools/lint`)",
+            "version": "2.0.0",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "dev-lint-prettier",
+          "name": "prettier",
+          "md": {
+            "package": "prettier (`tools/lint`)",
+            "version": "3.9.10",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "dev-lint-prettier-plugin-svelte",
+          "name": "prettier-plugin-svelte",
+          "md": {
+            "package": "prettier-plugin-svelte (`tools/lint`)",
+            "version": "4.1.1",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "dev-lint-stylelint",
+          "name": "stylelint",
+          "md": {
+            "package": "stylelint (`tools/lint`)",
+            "version": "18.0.0",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "dev-lint-stylelint-config-recommended",
+          "name": "stylelint-config-recommended",
+          "md": {
+            "package": "stylelint-config-recommended (`tools/lint`)",
+            "version": "19.0.0",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "dev-lint-stylelint-declaration-strict-value",
+          "name": "stylelint-declaration-strict-value",
+          "md": {
+            "package": "stylelint-declaration-strict-value (`tools/lint`)",
+            "version": "1.13.0",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "dev-lint-svelte-check",
+          "name": "svelte-check",
+          "md": {
+            "package": "svelte-check (`tools/lint`)",
+            "version": "4.7.8",
+            "license": "MIT"
+          }
+        },
+        {
+          "id": "dev-lint-typescript",
+          "name": "typescript",
+          "md": {
+            "package": "typescript (`tools/lint`: the page's linters and svelte-check, on TypeScript 6)",
+            "version": "6.0.3",
+            "license": "Apache-2.0"
+          }
+        },
+        {
+          "id": "dev-lint-typescript-eslint",
+          "name": "typescript-eslint",
+          "md": {
+            "package": "typescript-eslint (`tools/lint`)",
+            "version": "8.72.2",
+            "license": "MIT"
+          }
+        },
+        {
           "id": "dev-lunarg-vulkan-sdk",
           "name": "LunarG's Vulkan SDK",
           "md": {
