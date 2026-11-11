@@ -1,0 +1,5 @@
+# Commits git blame skips (git config blame.ignoreRevsFile .git-blame-ignore-revs; GitHub reads it itself):
+# mechanical reformatting.
+
+# web/app: format with Prettier
+6269693f75cf7ec1bdbfacbd068a7d279f73f401
