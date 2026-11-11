@@ -15,7 +15,7 @@
   import { ask } from './ask.svelte.ts';
   import type { Store, SnapshotRecord } from './store.ts';
   import type { MachineRecord, Shape } from './shape.ts';
-  import { shapeDiff } from './shape.ts';
+  import { shapeDiff } from './shape-diff.ts';
   import { snapshotPath } from './store.ts';
   import { t, text } from '../i18n.ts';
   import { importSnapshot, machineLike } from './snapshots.ts';

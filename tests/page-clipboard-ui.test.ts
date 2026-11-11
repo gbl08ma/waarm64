@@ -330,7 +330,7 @@ test("the Machines page's clipboard switch: off by default, its note; ticking it
   });
   assert.equal(saved, true);
   await page.click('.machines [data-tab=snapshots]');
-  await page.locator('.machines', { hasText: t('machines:shape.diff.clipboard.hadNo') }).waitFor();
+  await page.locator('.machines', { hasText: t('machines:shape-diff.clipboard.hadNo') }).waitFor();
   // Off again: the warning says so; unticking asks nothing.
   await page.locator('.machines [data-selected] [data-tab=settings]').click();
   await page.uncheck('.machines [data-field=clipboard]');

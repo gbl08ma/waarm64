@@ -189,7 +189,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   await m.locator('[data-tab=snapshots]').click();
   await page.locator('.machines .orphan').first().waitFor();
   assert.equal(await page.locator('.machines .orphan').count(), 3);
-  assert.match(await page.locator('.machines .orphan').first().textContent() ?? '', words('machines:shape.diff.ram', { was: 1024, now: 2048 }));
+  assert.match(await page.locator('.machines .orphan').first().textContent() ?? '', words('machines:shape-diff.ram', { was: 1024, now: 2048 }));
   await page.locator('.machines [data-action=delete-orphaned]').click();
   await page.waitForFunction(() => document.querySelectorAll('.machines [data-snapshot]').length === 0, null, { timeout: 10_000 });
   assert.equal((await record<unknown[]>(page, `async (store, id) => store.snapshotsOf(id)`, id)).length, 0);

@@ -1,8 +1,7 @@
 // Machines as the unit (docs/machines.md §2, §5.1): what a machine, a disk and an attachment
 // are, the slots a machine's devices take, and the shape: a canonical description of what the guest
 // sees, whose SHA-256 a snapshot is checked against. DOM-free: the page, the workers and Node's
-// tests use it alike. web/app/store.ts keeps these records.
-import { msg, type Msg } from '../msg.ts';
+// tests use it alike. web/app/store.ts keeps these records; web/app/shape-diff.ts says how two shapes differ.
 import { CPU_DEFAULT, CPU_FEATURES, type CpuFeature } from '../cpu-features.ts';
 
 /** The most disks a machine has (docs/machines.md §4.1: room left of the core's 32 transports for devices to come). */
@@ -222,7 +221,7 @@ export { CPU_DEFAULT, CPU_FEATURES, type CpuFeature };
  * whatever the machine's are now, so the hash needn't tell them apart.
  */
 const UNHASHED_CPU: CpuFeature[] = ['sha3'];
-const hashedCpu = (cpu: CpuFeature[]) => cpu.filter((f) => !UNHASHED_CPU.includes(f));
+export const hashedCpu = (cpu: CpuFeature[]) => cpu.filter((f) => !UNHASHED_CPU.includes(f));
 
 /**
  * The machine's transports in slot order: the other devices first, in a fixed order, then the disks
@@ -294,7 +293,7 @@ export type Shape = {
 };
 
 /** The part of a shape its hash covers: what the guest sees (all but `jitMiB` and `UNHASHED_CPU`). */
-const hashed = (s: Shape): Shape => ({ ...s, jitMiB: undefined, cpu: hashedCpu(s.cpu) });
+export const hashed = (s: Shape): Shape => ({ ...s, jitMiB: undefined, cpu: hashedCpu(s.cpu) });
 
 /**
  * A machine's shape, from its record and its disks' (by id). `cpu`: the vCPUs' features (all,
@@ -371,91 +370,6 @@ export function canonical(v: unknown): string {
 export async function shapeHash(s: Shape): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical(hashed(s))));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-/** The devices a shape has or not, as `shapeDiff` says it (its words for each way round). */
-const HAD = {
-  mouse: [msg('machines:shape.diff.mouse.had'), msg('machines:shape.diff.mouse.hadNo')],
-  touch: [msg('machines:shape.diff.touch.had'), msg('machines:shape.diff.touch.hadNo')],
-  clock: [msg('machines:shape.diff.clock.had'), msg('machines:shape.diff.clock.hadNo')],
-  '9p': [msg('machines:shape.diff.shares.had'), msg('machines:shape.diff.shares.hadNo')],
-  agent: [msg('machines:shape.diff.clipboard.had'), msg('machines:shape.diff.clipboard.hadNo')],
-} as const;
-
-/** What differs between two shapes, as messages for the snapshots view (an orphaned snapshot's reason): empty when they're the same. */
-export function shapeDiff(was: Shape, now: Shape): Msg[] {
-  const out: Msg[] = [];
-  if (was.version !== now.version) return [msg('machines:shape.diff.version')];
-  if (was.ncpus !== now.ncpus) out.push(msg('machines:shape.diff.ncpus', { was: was.ncpus, now: now.ncpus }));
-  if (was.ramMiB !== now.ramMiB) out.push(msg('machines:shape.diff.ram', { was: was.ramMiB, now: now.ramMiB }));
-  else if (canonical(was.split ?? []) !== canonical(now.split ?? [])) {
-    const split = (s?: number[]) =>
-      s ? msg('machines:shape.diff.split.sizes', { sizes: s.join(' + ') }) : msg('machines:shape.diff.split.automatic');
-    out.push(msg('machines:shape.diff.split', { was: split(was.split), now: split(now.split) }));
-  }
-  if (was.display !== now.display) out.push(msg('machines:shape.diff.display', { was: was.display, now: now.display }));
-  if (!!was.vulkan !== !!now.vulkan)
-    out.push(was.vulkan ? msg('machines:shape.diff.vulkan.had') : msg('machines:shape.diff.vulkan.hadNo'));
-  const features = (cpu: CpuFeature[]) => (cpu.length ? cpu.join(', ') : msg('machines:shape.diff.cpu.none'));
-  if (canonical(hashedCpu(was.cpu)) !== canonical(hashedCpu(now.cpu)))
-    out.push(msg('machines:shape.diff.cpu', { was: features(was.cpu), now: features(now.cpu) }));
-  const [macsWas, macsNow] = [macsOf(was), macsOf(now)];
-  if (macsWas.length !== macsNow.length)
-    out.push(msg('machines:shape.diff.adapters', { was: macsWas.length, now: macsNow.length }));
-  else
-    for (let i = 0; i < macsWas.length; i++)
-      if (macsWas[i] !== macsNow[i])
-        out.push(msg('machines:shape.diff.mac', { n: i + 1, was: macsWas[i], now: macsNow[i] }));
-  if (!!was.usb !== !!now.usb)
-    out.push(was.usb ? msg('machines:shape.diff.usb.had') : msg('machines:shape.diff.usb.hadNo'));
-  for (const k of ['mouse', 'touch', 'clock', '9p', 'agent'] as const) {
-    if (was.devices.includes(k) !== now.devices.includes(k)) out.push(HAD[k][was.devices.includes(k) ? 0 : 1]);
-  }
-  if (was.disks.length !== now.disks.length)
-    out.push(msg('machines:shape.diff.disks', { was: was.disks.length, now: now.disks.length }));
-  for (let i = 0; i < Math.min(was.disks.length, now.disks.length); i++) {
-    const [a, b] = [was.disks[i], now.disks[i]];
-    const n = i + 1;
-    if (canonical(a.identity) !== canonical(b.identity))
-      out.push(
-        msg('machines:shape.diff.disk.other', {
-          n,
-          was: describeIdentity(a.identity),
-          now: describeIdentity(b.identity),
-        }),
-      );
-    else if (a.size !== b.size) out.push(msg('machines:shape.diff.disk.size', { n, was: a.size, now: b.size }));
-    if (a.readOnly !== b.readOnly)
-      out.push(
-        a.readOnly
-          ? msg('machines:shape.diff.disk.readOnlyThen', { n })
-          : msg('machines:shape.diff.disk.writableThen', { n }),
-      );
-    if (a.serial !== b.serial) out.push(msg('machines:shape.diff.disk.serial', { n }));
-    if (!!a.swap !== !!b.swap)
-      out.push(
-        a.swap ? msg('machines:shape.diff.disk.swapThen', { n }) : msg('machines:shape.diff.disk.notSwapThen', { n }),
-      );
-  }
-  if (!out.length && canonical(hashed(was)) !== canonical(hashed(now))) out.push(msg('machines:shape.diff.order'));
-  return out;
-}
-
-/** A disk identity in words: a URL's file name as it is, else a message. */
-export function describeIdentity(d: DiskIdentity): string | Msg {
-  switch (d.kind) {
-    case 'url':
-      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- a path ending in '/' names no file
-      return d.path.split('/').pop() || d.path;
-    case 'file':
-      return msg('machines:shape.identity.file', { name: d.name });
-    case 'stored':
-      return msg('machines:shape.identity.stored');
-    case 'blank':
-      return msg('machines:shape.identity.blank');
-    case 'ramdisk':
-      return msg('machines:shape.identity.ramdisk');
-  }
 }
 
 /** A new record id: 12 hex digits (48 random bits). Records' files are named by it (machines.md §2). */

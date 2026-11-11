@@ -143,157 +143,157 @@
     "message": "Japanese",
     "note": "A keyboard layout's name: an option of the Keyboard layout menu (Machines page, Settings tab), and the layout named in the notes after Match this browser."
   },
-  "shape.diff.mouse.had": {
+  "shape-diff.mouse.had": {
     "message": "it had a relative mouse",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine had a relative mouse then, not now."
   },
-  "shape.diff.mouse.hadNo": {
+  "shape-diff.mouse.hadNo": {
     "message": "it had no relative mouse",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine has a relative mouse now, not then."
   },
-  "shape.diff.touch.had": {
+  "shape-diff.touch.had": {
     "message": "it had a touchscreen",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine had a touchscreen then, not now."
   },
-  "shape.diff.touch.hadNo": {
+  "shape-diff.touch.hadNo": {
     "message": "it had no touchscreen",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine has a touchscreen now, not then."
   },
-  "shape.diff.clock.had": {
+  "shape-diff.clock.had": {
     "message": "it had a clock device",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine had the clock device then, not now."
   },
-  "shape.diff.clock.hadNo": {
+  "shape-diff.clock.hadNo": {
     "message": "it had no clock device",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine has the clock device now, not then."
   },
-  "shape.diff.clipboard.had": {
+  "shape-diff.clipboard.had": {
     "message": "it shared the clipboard with the guest",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine shared the clipboard then (it had the device for it), not now."
   },
-  "shape.diff.clipboard.hadNo": {
+  "shape-diff.clipboard.hadNo": {
     "message": "it didn't share the clipboard with the guest",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine shares the clipboard now (it has the device for it), not then."
   },
-  "shape.diff.shares.had": {
+  "shape-diff.shares.had": {
     "message": "it had a shared folders device",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine had the shared folders device then, not now."
   },
-  "shape.diff.shares.hadNo": {
+  "shape-diff.shares.hadNo": {
     "message": "it had no shared folders device",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine has the shared folders device now, not then."
   },
-  "shape.diff.version": {
+  "shape-diff.version": {
     "message": "it was made by another version of this emulator",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the snapshot's description of the machine is in another format, so nothing else can be compared."
   },
-  "shape.diff.ncpus": {
+  "shape-diff.ncpus": {
     "message": "processors: {{was}} then, {{now}} now",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{was}}, {{now}}: the vCPU counts."
   },
-  "shape.diff.ram": {
+  "shape-diff.ram": {
     "message": "memory: {{was}} MiB then, {{now}} MiB now",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{was}}, {{now}}: the RAM, MiB."
   },
-  "shape.diff.split.sizes": {
+  "shape-diff.split.sizes": {
     "message": "{{sizes}} MiB",
-    "note": "A memory split as shape.diff.split shows it: {{sizes}} is the sizes, MiB, joined with \" + \" (e.g. 1024 + 512)."
+    "note": "A memory split as shape-diff.split shows it: {{sizes}} is the sizes, MiB, joined with \" + \" (e.g. 1024 + 512)."
   },
-  "shape.diff.split.automatic": {
+  "shape-diff.split.automatic": {
     "message": "automatic",
-    "note": "A memory split as shape.diff.split shows it, when the page chose it (the user set none)."
+    "note": "A memory split as shape-diff.split shows it, when the page chose it (the user set none)."
   },
-  "shape.diff.split": {
+  "shape-diff.split": {
     "message": "memory's split: {{was}} then, {{now}} now",
-    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{was}}, {{now}}: each split (shape.diff.split.sizes or shape.diff.split.automatic)."
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{was}}, {{now}}: each split (shape-diff.split.sizes or shape-diff.split.automatic)."
   },
-  "shape.diff.display": {
+  "shape-diff.display": {
     "message": "display: {{was}} then, {{now}} now",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{was}}, {{now}}: the display's code as it is (3d, 2d, none)."
   },
-  "shape.diff.vulkan.had": {
+  "shape-diff.vulkan.had": {
     "message": "it had Vulkan",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine had Vulkan then, not now."
   },
-  "shape.diff.vulkan.hadNo": {
+  "shape-diff.vulkan.hadNo": {
     "message": "it had no Vulkan",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine has Vulkan now, not then."
   },
-  "shape.diff.cpu.none": {
+  "shape-diff.cpu.none": {
     "message": "none",
-    "note": "The processor features of shape.diff.cpu when there are none."
+    "note": "The processor features of shape-diff.cpu when there are none."
   },
-  "shape.diff.cpu": {
+  "shape-diff.cpu": {
     "message": "processor features: {{was}} then, {{now}} now",
-    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{was}}, {{now}}: the vCPUs' optional features' names, comma-separated, or shape.diff.cpu.none."
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{was}}, {{now}}: the vCPUs' optional features' names, comma-separated, or shape-diff.cpu.none."
   },
-  "shape.diff.adapters": {
+  "shape-diff.adapters": {
     "message": "network adapters: {{was}} then, {{now}} now",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{was}}, {{now}}: the numbers of network adapters."
   },
-  "shape.diff.mac": {
+  "shape-diff.mac": {
     "message": "network adapter {{n}}: MAC {{was}} then, {{now}} now",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{n}}: the adapter's number, from 1; {{was}}, {{now}}: its MAC addresses."
   },
-  "shape.diff.usb.had": {
+  "shape-diff.usb.had": {
     "message": "it had a USB controller",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine had the USB controller then, not now."
   },
-  "shape.diff.usb.hadNo": {
+  "shape-diff.usb.hadNo": {
     "message": "it had no USB controller",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the machine has the USB controller now, not then."
   },
-  "shape.diff.disks": {
+  "shape-diff.disks": {
     "message": "disks: {{was}} then, {{now}} now",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{was}}, {{now}}: the numbers of disks attached."
   },
-  "shape.diff.disk.other": {
+  "shape-diff.disk.other": {
     "message": "disk {{n}}: another disk ({{was}} then, {{now}} now)",
-    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{n}}: the disk's place, from 1; {{was}}, {{now}}: which disk each was (a URL's file name, or a shape.identity message)."
+    "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{n}}: the disk's place, from 1; {{was}}, {{now}}: which disk each was (a URL's file name, or a shape-diff.identity message)."
   },
-  "shape.diff.disk.size": {
+  "shape-diff.disk.size": {
     "message": "disk {{n}}: {{was}} bytes then, {{now}} now",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{n}}: the disk's place, from 1; {{was}}, {{now}}: its sizes, bytes."
   },
-  "shape.diff.disk.readOnlyThen": {
+  "shape-diff.disk.readOnlyThen": {
     "message": "disk {{n}}: read-only then, writable now",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{n}}: the disk's place, from 1."
   },
-  "shape.diff.disk.writableThen": {
+  "shape-diff.disk.writableThen": {
     "message": "disk {{n}}: writable then, read-only now",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{n}}: the disk's place, from 1."
   },
-  "shape.diff.disk.serial": {
+  "shape-diff.disk.serial": {
     "message": "disk {{n}}: attached anew (its serial changed)",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{n}}: the disk's place, from 1."
   },
-  "shape.diff.disk.swapThen": {
+  "shape-diff.disk.swapThen": {
     "message": "disk {{n}}: swap then, not swap now",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{n}}: the disk's place, from 1 (a ramdisk the guest used as swap)."
   },
-  "shape.diff.disk.notSwapThen": {
+  "shape-diff.disk.notSwapThen": {
     "message": "disk {{n}}: not swap then, swap now",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. {{n}}: the disk's place, from 1 (a ramdisk the guest now uses as swap)."
   },
-  "shape.diff.order": {
+  "shape-diff.order": {
     "message": "its devices are in another order",
     "note": "Machines page, Snapshots tab (an orphaned snapshot's reason, with the others joined by semicolons) and the dialog that refuses to restore a snapshot: one way the machine differs from when the snapshot was taken. Here: the same devices, in another order."
   },
-  "shape.identity.file": {
+  "shape-diff.identity.file": {
     "message": "the file {{name}}",
-    "note": "Which disk an attachment was, in shape.diff.disk.other: a file on your computer. {{name}}: its file name."
+    "note": "Which disk an attachment was, in shape-diff.disk.other: a file on your computer. {{name}}: its file name."
   },
-  "shape.identity.stored": {
+  "shape-diff.identity.stored": {
     "message": "a disk stored in this browser",
-    "note": "Which disk an attachment was, in shape.diff.disk.other: a disk stored in the browser."
+    "note": "Which disk an attachment was, in shape-diff.disk.other: a disk stored in the browser."
   },
-  "shape.identity.blank": {
+  "shape-diff.identity.blank": {
     "message": "a blank disk",
-    "note": "Which disk an attachment was, in shape.diff.disk.other: a blank disk."
+    "note": "Which disk an attachment was, in shape-diff.disk.other: a blank disk."
   },
-  "shape.identity.ramdisk": {
+  "shape-diff.identity.ramdisk": {
     "message": "a ramdisk",
-    "note": "Which disk an attachment was, in shape.diff.disk.other: a ramdisk."
+    "note": "Which disk an attachment was, in shape-diff.disk.other: a ramdisk."
   },
   "machines.needsOff.delete": {
     "message": "Couldn't delete the machine",
