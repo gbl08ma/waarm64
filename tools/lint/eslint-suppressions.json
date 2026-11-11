@@ -23,9 +23,6 @@
     },
     "max-lines": {
       "count": 1
-    },
-    "svelte/require-each-key": {
-      "count": 1
     }
   },
   "web/app/AddUsb.svelte": {
@@ -143,9 +140,6 @@
     },
     "@typescript-eslint/use-unknown-in-catch-callback-variable": {
       "count": 2
-    },
-    "max-lines": {
-      "count": 1
     }
   },
   "web/app/MachinesPage.svelte": {
@@ -186,11 +180,6 @@
       "count": 6
     }
   },
-  "web/app/ui/Modal.svelte": {
-    "@typescript-eslint/unbound-method": {
-      "count": 1
-    }
-  },
   "web/app/NetWizard.svelte": {
     "@typescript-eslint/no-meaningless-void-operator": {
       "count": 2
@@ -223,9 +212,6 @@
   "web/app/Network.svelte": {
     "@typescript-eslint/no-meaningless-void-operator": {
       "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 2
     },
     "@typescript-eslint/no-unsafe-argument": {
       "count": 1
@@ -805,6 +791,11 @@
     },
     "@typescript-eslint/no-unnecessary-type-assertion": {
       "count": 9
+    }
+  },
+  "web/app/ui/Modal.svelte": {
+    "@typescript-eslint/unbound-method": {
+      "count": 1
     }
   },
   "web/app/urlcheck.ts": {

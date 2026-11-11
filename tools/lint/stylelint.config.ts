@@ -10,7 +10,11 @@ import type { Config } from 'stylelint';
 const TOKENS: [string[], Record<string, unknown>] = [
   ['/color$/', 'fill', 'stroke', 'background', 'font-size', 'font-weight', 'border-radius', 'gap', 'row-gap', 'column-gap', '/^padding/', '/^margin/', 'box-shadow'],
   {
-    ignoreValues: ['0', 'inherit', 'initial', 'unset', 'currentColor', 'transparent', 'none', 'auto', '1px', '50%', '999px', '/^-?var\\(/'],
+    ignoreValues: [
+      '0', 'inherit', 'initial', 'unset', 'currentColor', 'transparent', 'none', 'auto', 'normal', '1px', '50%', '999px',
+      // A token, and arithmetic over tokens (`calc((var(--control-h) - 22px) / 2)`).
+      '/^-?var\\(/', '/^calc\\(.*var\\(--/',
+    ],
     expandShorthand: true,
     disableFix: true,
   },
@@ -25,9 +29,7 @@ const config: Config = {
     'no-descending-specificity': null,
     // Svelte's scoping: `:global(…)`.
     'selector-pseudo-class-no-unknown': [true, { ignorePseudoClasses: ['global'] }],
-    // Off until the tokens exist (web/app/theme/tokens.css): phase 1b of the frontend refactor turns it on as
-    // `'scale-unlimited/declaration-strict-value': TOKENS`.
-    'scale-unlimited/declaration-strict-value': null,
+    'scale-unlimited/declaration-strict-value': TOKENS,
   },
 };
 export { TOKENS };
