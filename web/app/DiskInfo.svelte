@@ -15,22 +15,25 @@
   let { disk, overlays, users }: { disk: DiskRecord; overlays: OverlayRecord[]; users: string[] } = $props();
   const kind = $derived(diskKind(disk.kind));
   const bytes = $derived(overlays.reduce((n, o) => n + o.bytes, 0));
+  /** Its line: its kind and size, its overlays (a ramdisk has none), the machines that have it. */
+  const line = $derived.by(() => {
+    const parts = [t('disks:DiskInfo.meta', { kind: kind.text, size: bytesText(disk.size) })];
+    if (disk.kind !== 'ramdisk')
+      parts.push(
+        bytes
+          ? t('disks:DiskInfo.overlaysSized', { count: overlays.length, size: bytesText(bytes) })
+          : t('disks:DiskInfo.overlays', { count: overlays.length }),
+      );
+    parts.push(users.length ? t('disks:DiskInfo.on', { machines: users }) : t('disks:DiskInfo.onNone'));
+    return parts.join(' · ');
+  });
 </script>
 
 <div class="disk">
   <span class="kind" title={kind.text}><Icon name={kind.icon} size={18} /></span>
   <div class="what">
     <strong>{disk.name}</strong>
-    <span class="meta"
-      >{t('disks:DiskInfo.meta', {
-        kind: kind.text,
-        size: bytesText(disk.size),
-      })}{#if disk.kind !== 'ramdisk'}{' · '}{bytes
-          ? t('disks:DiskInfo.overlaysSized', { count: overlays.length, size: bytesText(bytes) })
-          : t('disks:DiskInfo.overlays', { count: overlays.length })}{/if}{' · '}{users.length
-        ? t('disks:DiskInfo.on', { machines: users })
-        : t('disks:DiskInfo.onNone')}</span
-    >
+    <span class="meta">{line}</span>
   </div>
 </div>
 

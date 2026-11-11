@@ -31,7 +31,8 @@
   type Props = { net: PageNetwork };
   let { net }: Props = $props();
 
-  let wizard = $state<Modal>();
+  /** The dialog (Modal.svelte's exports). */
+  let wizard = $state<{ open: () => void; close: () => void }>();
   let opened = $state<Opened>({ mode: 'new' });
   let step = $state<Step>('kind');
   let keep = $state(true);

@@ -41,11 +41,6 @@
       "count": 4
     }
   },
-  "web/app/Ask.svelte": {
-    "svelte/prefer-writable-derived": {
-      "count": 1
-    }
-  },
   "web/app/AttachDisk.svelte": {
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
@@ -60,14 +55,6 @@
       "count": 1
     },
     "@typescript-eslint/unbound-method": {
-      "count": 2
-    },
-    "svelte/no-useless-mustaches": {
-      "count": 1
-    }
-  },
-  "web/app/DiskInfo.svelte": {
-    "svelte/no-useless-mustaches": {
       "count": 2
     }
   },
@@ -120,9 +107,6 @@
   "web/app/FoldersMenu.svelte": {
     "@typescript-eslint/no-meaningless-void-operator": {
       "count": 1
-    },
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 1
     }
   },
   "web/app/FoldersPane.svelte": {
@@ -145,17 +129,11 @@
   "web/app/MachinesPage.svelte": {
     "@typescript-eslint/no-meaningless-void-operator": {
       "count": 2
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
     }
   },
   "web/app/NetWizard.svelte": {
     "@typescript-eslint/no-meaningless-void-operator": {
       "count": 1
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 2
     }
   },
   "web/app/Osk.svelte": {
@@ -178,9 +156,6 @@
     },
     "@typescript-eslint/unbound-method": {
       "count": 1
-    },
-    "@typescript-eslint/use-unknown-in-catch-callback-variable": {
-      "count": 3
     }
   },
   "web/app/Snapshots.svelte": {

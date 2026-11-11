@@ -72,7 +72,9 @@
           {#if v.problem === 'held'}<Button data-action="use-folder" onclick={() => act(() => page.folderUseHere(v.id))}
               >{t('folders:FoldersMenu.useHere')}</Button
             >{/if}
-          <Button data-action="detach-folder" onclick={() => act(() => page.folderDetach(ui.current!, v.id))}
+          <Button
+            data-action="detach-folder"
+            onclick={() => act(() => (ui.current ? page.folderDetach(ui.current, v.id) : Promise.resolve()))}
             >{t('folders:FoldersMenu.detach')}</Button
           >
         </span>

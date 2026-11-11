@@ -59,7 +59,7 @@
     running = await which(machines, (m) => isRunning(m.id));
     withSnapshots = new Set((await store.all('snapshots')).map((s) => s.machine));
     suspended = await which(machines, (m) => suspendedCopy(machineDir(m.id)).catch(() => undefined));
-    if (ui.machinesSelected === undefined) ui.machinesSelected = ui.current ?? (ui.transient ? PAGE : undefined);
+    ui.machinesSelected ??= ui.current ?? (ui.transient ? PAGE : undefined);
     const chosen = ui.machinesSelected;
     if (chosen && !PANES.has(chosen) && !machines.some((m) => m.id === chosen)) ui.machinesSelected = undefined;
     const m = machines.find((x) => x.id === ui.machinesSelected);

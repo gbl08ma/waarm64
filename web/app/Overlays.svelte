@@ -49,7 +49,7 @@
     });
     if (name)
       await run(t('disks:Overlays.busy.rename'), () =>
-        renameOverlay(store, o.id, name).catch((e) => {
+        renameOverlay(store, o.id, name).catch((e: unknown) => {
           throw new MsgError('disks:Overlays.failed.rename', {}, { cause: e });
         }),
       );
@@ -63,7 +63,7 @@
     )
       return;
     await run(t('disks:Overlays.busy.delete'), () =>
-      deleteOverlay(store, o.id).catch((e) => {
+      deleteOverlay(store, o.id).catch((e: unknown) => {
         throw new MsgError('disks:Overlays.failed.delete', {}, { cause: e });
       }),
     );
@@ -86,7 +86,7 @@
     )
       return;
     await run(t('disks:Overlays.busy.merge'), () =>
-      mergeIntoDisk(store, o.id).catch((e) => {
+      mergeIntoDisk(store, o.id).catch((e: unknown) => {
         throw new MsgError('disks:Overlays.failed.merge', {}, { cause: e });
       }),
     );

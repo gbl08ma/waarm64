@@ -42,6 +42,11 @@
           ? t('disks:AttachDisk.otherTab')
           : undefined;
 
+  /** A machine's line: its disks, and whether it runs. */
+  function lineOf(m: MachineRecord) {
+    const meta = t('disks:AttachDisk.meta', { n: m.attachments.length, max: MAX_DISKS });
+    return running.has(m.id) ? `${meta} · ${t('disks:AttachDisk.running')}` : meta;
+  }
   async function attachTo(m: MachineRecord) {
     const plain = $state.snapshot(m) as MachineRecord;
     let ok = false;
@@ -66,11 +71,7 @@
       {@const no = why(m)}
       <Card data-machine={m.id}>
         <strong>{m.name}</strong>
-        <Note inline
-          >{t('disks:AttachDisk.meta', { n: m.attachments.length, max: MAX_DISKS })}{#if running.has(m.id)}{' · '}{t(
-              'disks:AttachDisk.running',
-            )}{/if}</Note
-        >
+        <Note inline>{lineOf(m)}</Note>
         {#if no}<Note inline tone="warn" data-why>{no}</Note>{/if}
         {#snippet actions()}
           <Button variant="primary" disabled={!!no} onclick={() => attachTo(m)} data-action="attach-to"

@@ -8,10 +8,7 @@
   let okButton = $state<HTMLButtonElement>();
   const q = $derived(asking.current);
   // A prompt's text, the component's own: the question goes away while the input still holds it.
-  let text = $state('');
-  $effect.pre(() => {
-    text = asking.current?.value ?? '';
-  });
+  let text = $derived(asking.current?.value ?? '');
 
   $effect(() => {
     if (q && !dialog.open) dialog.showModal();
