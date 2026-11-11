@@ -1,10 +1,21 @@
 // The Network wizard's parts (NetWizard.svelte, the shell, and a component per step): its steps, what the shell tells
 // a step, and what a step offers the shell.
 import type { Connection } from './connections.ts';
-import type { ui } from './ui.svelte.ts';
 
-/** How the wizard was opened (`ui.netWizard`). */
-export type Opened = NonNullable<typeof ui.netWizard>;
+/**
+ * How the wizard was opened (web/app/areas/network.ts `openWizard`; docs/network-adapters.md §3.2): `attach` a
+ * connection to `machine`'s adapter `adapter` (machine undefined: the page's transient one), a `new` connection on its
+ * own, or `edit` connection `connection`. `here`: the machine is the page's (it connects now, so an auth key is asked for).
+ */
+export type Opened = {
+  mode: 'attach' | 'new' | 'edit';
+  machine?: string;
+  adapter?: number;
+  connection?: string;
+  here?: boolean;
+  /** The local helper's pairing link (`#net=`): the wizard opens on it. */
+  localURL?: string;
+};
 
 export type Step =
   'pick' | 'kind' | 'tailscale' | 'tailcat' | 'local' | 'roomPick' | 'roomCreate' | 'roomJoin' | 'roomEdit';

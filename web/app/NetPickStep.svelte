@@ -18,8 +18,7 @@
   type Props = { flow: Flow; net: PageNetwork; active: boolean; onsubmit: () => void };
   let { flow, net, active, onsubmit }: Props = $props();
 
-  // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- a change counter's read (docs/frontend-code.md §3.1: to go)
-  const conns = $derived((void ui.net, net.connections));
+  const conns = $derived(net.connections);
   let picked = $state<string>();
   /** Who holds the connections another tab has (their machine's name, as it says). */
   let holders = $state<Record<string, string>>({});

@@ -74,30 +74,16 @@
     }
   },
   "web/app/FolderWizard.svelte": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 2
-    },
     "@typescript-eslint/no-unsafe-call": {
       "count": 2
     }
   },
   "web/app/Folders.svelte": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 2
-    },
     "@typescript-eslint/no-unsafe-argument": {
       "count": 2
     }
   },
-  "web/app/FoldersMenu.svelte": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 1
-    }
-  },
   "web/app/FoldersPane.svelte": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 2
-    },
     "@typescript-eslint/no-non-null-assertion": {
       "count": 2
     },
@@ -114,11 +100,6 @@
   "web/app/MachinesPage.svelte": {
     "@typescript-eslint/no-meaningless-void-operator": {
       "count": 2
-    }
-  },
-  "web/app/NetWizard.svelte": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 1
     }
   },
   "web/app/Osk.svelte": {
@@ -157,11 +138,6 @@
   "web/app/Sound.svelte": {
     "@typescript-eslint/no-meaningless-void-operator": {
       "count": 2
-    }
-  },
-  "web/app/StatusBar.svelte": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 1
     }
   },
   "web/app/StatusEditor.svelte": {
@@ -633,11 +609,6 @@
     },
     "@typescript-eslint/no-unnecessary-type-assertion": {
       "count": 9
-    }
-  },
-  "web/app/ui/Modal.svelte": {
-    "@typescript-eslint/unbound-method": {
-      "count": 1
     }
   },
   "web/app/urlcheck.ts": {

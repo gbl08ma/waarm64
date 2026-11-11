@@ -1,7 +1,6 @@
 <script module lang="ts">
   /** What the page knows besides the statuses, for the elements (reactive: read in a `$derived`). */
   export function liveNow(net: PageNetwork, now: number): Live {
-    void ui.net;
     return {
       state: ui.state,
       stateText: ui.stateText,

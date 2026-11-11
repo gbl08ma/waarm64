@@ -1,5 +1,5 @@
 <!--
-  The Network wizard (docs/network-adapters.md §3.2), a dialog opened through `ui.netWizard`: attach a connection
+  The Network wizard (docs/network-adapters.md §3.2), a dialog opened by web/app/areas/network.ts `openWizard`: attach a connection
   to a machine's adapter (one of the browser's, or a new one: New connection… first), make a new connection on its own,
   or edit one (what changes without a new node: a tailnet's hostname, tailcat's server and relay, a room's switches).
   The shell: the session, the steps' navigation, Keep (a new connection is kept in this browser unless it's off:
@@ -9,7 +9,6 @@
   page (web/app/main.ts) attaches and connects.
 -->
 <script lang="ts">
-  import { untrack } from 'svelte';
   import Button from './ui/Button.svelte';
   import Check from './ui/Check.svelte';
   import Modal from './ui/Modal.svelte';
@@ -26,7 +25,8 @@
   import { t } from '../i18n.ts';
   import type { PageNetwork } from './net-live.ts';
   import { EDIT_STEP, MAKING_STEPS, type Flow, type Opened, type Step, type StepApi } from './net-wizard.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { network } from './areas/network.ts';
+  import { page } from './ui.svelte.ts';
 
   type Props = { net: PageNetwork };
   let { net }: Props = $props();
@@ -38,8 +38,7 @@
   let keep = $state(true);
   let editing = $state.raw<Connection>(); // raw: the record goes to the store whole (a deep proxy can't be cloned)
   const runner = new Actions();
-  // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- a change counter's read (docs/frontend-code.md §3.1: to go)
-  const pickable = $derived(opened.mode === 'attach' && (void ui.net, net.connections).length > 0);
+  const pickable = $derived(opened.mode === 'attach' && net.connections.length > 0);
   const here = $derived(opened.mode === 'attach' && !!opened.here);
 
   // The steps (their components' exports).
@@ -91,18 +90,12 @@
     },
   };
 
-  $effect(() => {
-    const o = ui.netWizard;
-    if (!o) return;
-    void o.tick;
-    untrack(() => begin(o));
-  });
+  $effect(() => network.wizard.handle(begin));
 
   function begin(o: Opened) {
     opened = o;
     keep = true;
-    // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- a change counter's read (docs/frontend-code.md §3.1: to go)
-    editing = o.mode === 'edit' ? (void ui.net, net.connections).find((c) => c.id === o.connection) : undefined;
+    editing = o.mode === 'edit' ? net.connections.find((c) => c.id === o.connection) : undefined;
     for (const s of [pick, kind, tailnet, tailcat, local, roomPick, room]) s?.begin();
     wizard?.open();
     if (editing) show(EDIT_STEP[editing.kind]);
@@ -123,14 +116,13 @@
   }
   function close() {
     wizard?.close();
-    ui.netWizard = undefined;
   }
 
   /** Attaches `c` (and connects it, on the page's machine); the menu then shows how it goes. */
   async function attach(c: Connection, key?: string) {
     await page.netAttach(opened.machine, opened.adapter ?? 0, c, key);
     close();
-    if (here) ui.netMenu++;
+    if (here) network.openMenu();
   }
 
   function submit(e?: SubmitEvent) {
@@ -163,17 +155,7 @@
   const noBack = $derived(!!editing || step === 'pick' || (step === 'kind' && !pickable));
 </script>
 
-<Modal
-  id="net-wizard"
-  bodyId="net-form"
-  bind:this={wizard}
-  {title}
-  auto={false}
-  onclose={() => {
-    ui.netWizard = undefined;
-  }}
-  onsubmit={submit}
->
+<Modal id="net-wizard" bodyId="net-form" bind:this={wizard} {title} auto={false} onsubmit={submit}>
   <NetPickStep bind:this={pick} {flow} {net} active={step === 'pick'} onsubmit={() => submit()} />
   <NetKindStep bind:this={kind} {flow} active={step === 'kind'} />
   <NetRoomPickStep bind:this={roomPick} {flow} active={step === 'roomPick'} />

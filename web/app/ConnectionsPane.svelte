@@ -20,13 +20,13 @@
   import type { PageNetwork } from './net-live.ts';
   import { settings } from './settings.ts';
   import type { MachineRecord } from './shape.ts';
+  import { network } from './areas/network.ts';
   import { page, ui } from './ui.svelte.ts';
 
   type Props = { net: PageNetwork; machines: MachineRecord[]; act: Act };
   let { net, machines, act }: Props = $props();
 
-  // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- a change counter's read (docs/frontend-code.md §3.1: to go)
-  const conns = $derived((void ui.net, net.connections));
+  const conns = $derived(net.connections);
   const EDIT_TITLES: Record<Connection['kind'], string> = {
     tailnet: t('machines:ConnectionsPane.connection.edit.tailnet'),
     local: t('machines:ConnectionsPane.connection.edit.local'),
@@ -70,7 +70,7 @@
   meta={t('machines:ConnectionsPane.connections.meta')}
 >
   {#snippet actions()}
-    <Button icon="plus" onclick={() => page.netWizard({ mode: 'new' })} data-action="new-connection">
+    <Button icon="plus" onclick={() => network.openWizard({ mode: 'new' })} data-action="new-connection">
       {t('machines:ConnectionsPane.connections.new')}
     </Button>
   {/snippet}
@@ -93,7 +93,7 @@
         </div>
         {#snippet actions()}
           <Button
-            onclick={() => page.netWizard({ mode: 'edit', connection: c.id })}
+            onclick={() => network.openWizard({ mode: 'edit', connection: c.id })}
             data-action="edit-connection"
             title={EDIT_TITLES[c.kind]}
           >

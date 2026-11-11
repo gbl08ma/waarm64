@@ -33,6 +33,7 @@
   import type { PageNetwork } from './net-live.ts';
   import type { DiskRecord, MachineRecord } from './shape.ts';
   import { machineDir, type OverlayRecord, type Store } from './store.ts';
+  import { shares } from './areas/shares.svelte.ts';
   import { page, ui } from './ui.svelte.ts';
 
   type Props = { store: Store; net: PageNetwork; folders: PageFolders };
@@ -97,10 +98,8 @@
       : stateText(id);
   const counts = $derived({
     disks: disks.size,
-    // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- a change counter's read (docs/frontend-code.md §3.1: to go)
-    folders: (void ui.folders.tick, folders.folders.length),
-    // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- a change counter's read (docs/frontend-code.md §3.1: to go)
-    connections: (void ui.net, net.connections.length),
+    folders: folders.folders.length,
+    connections: net.connections.length,
   });
 
   /** Powers machine `m` off, after asking, before an edit that needs it off; false if it can't be (or the user says no). */
@@ -165,7 +164,7 @@
         meta={t('machines:MachinesPage.folders.meta')}
       >
         {#snippet actions()}
-          <Button icon="plus" onclick={() => page.folderWizard(undefined, [])} data-action="new-folder">
+          <Button icon="plus" onclick={() => shares.openWizard({})} data-action="new-folder">
             {t('machines:MachinesPage.folders.new')}
           </Button>
         {/snippet}

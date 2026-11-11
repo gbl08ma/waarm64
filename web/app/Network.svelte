@@ -11,13 +11,13 @@
   import { t } from '../i18n.ts';
   import type { PageNetwork } from './net-live.ts';
   import { phaseTone } from './network.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { network } from './areas/network.ts';
+  import { ui } from './ui.svelte.ts';
 
   type Props = { net: PageNetwork };
   let { net }: Props = $props();
 
-  // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- a change counter's read (docs/frontend-code.md §3.1: to go)
-  const views = $derived((void ui.net, net.views()));
+  const views = $derived(net.views());
   /** What the toolbar's dot shows: the default way out's state, else adapter 1's (none without an adapter). */
   const shown = $derived<(typeof views)[number] | undefined>(views.find((a) => a.primary) ?? views[0]);
 
@@ -30,18 +30,16 @@
     if (phases.some((p, i) => p === 'login' && lastPhases[i] !== 'login')) open = true; // the user has something to do
     lastPhases = phases;
   });
-  let opened = 0;
-  $effect(() => {
-    if (ui.netMenu !== opened) {
-      opened = ui.netMenu;
+  $effect(() =>
+    network.menu.handle(() => {
       open = true;
       session++;
-    }
-  });
+    }),
+  );
 
   function wizard(i: number) {
     open = false;
-    page.netWizard({ mode: 'attach', machine: ui.current, adapter: i, here: views[i]?.on });
+    network.openWizard({ mode: 'attach', machine: ui.current, adapter: i, here: views[i]?.on });
   }
 </script>
 

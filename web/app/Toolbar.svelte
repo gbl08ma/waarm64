@@ -134,7 +134,7 @@
   <Sound {audio} />
   {#if ui.hasNetwork}<Network {net} />{/if}
   {#if ui.usb.on}<UsbMenu />{/if}
-  {#if ui.folders.on}<FoldersMenu {folders} />{/if}
+  {#if folders.running}<FoldersMenu {folders} />{/if}
   {#if ui.clipboard.on && running}<ClipboardMenu />{/if}
   {#if !ui.current}<SizeMenu />{/if}
 </header>

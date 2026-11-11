@@ -20,21 +20,21 @@
   import { deleteFolderOf, editFolderOf, folderDirectory, usersOf, withFolder } from './folders-page.ts';
   import type { Folder } from './folders.ts';
   import type { Store } from './store.ts';
-  import { ui } from './ui.svelte.ts';
 
   let { folders, store, act }: { folders: PageFolders; store: Store; act: Act } = $props();
 
-  const all = $derived((void ui.folders.tick, folders.folders));
+  const all = $derived(folders.folders);
   let open = $state<string>();
   let entries = $state<Entry[]>([]);
   let users = $state<Record<string, string[]>>({});
   let copying = $state<(Copying & { what: string }) | undefined>();
   let dropping = $state(false);
 
+  // Who uses each folder: read again with the folders (their list changes with every attach and detach).
   $effect(() => {
-    void ui.folders.tick;
+    const list = all;
     void (async () => {
-      users = await usersOf(store, all);
+      users = await usersOf(store, list);
     })();
   });
   const busy = (f: Folder) => folders.held.has(f.id) || folders.mine(f.id);

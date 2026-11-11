@@ -17,7 +17,7 @@
   import type { PageNetwork } from './net-live.ts';
   import { tailcatBuilt } from './network.ts';
   import { hasRoomIdentity, parseRoomLink, privateRoomId, roomLink, type RoomLink } from '../room.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { page } from './ui.svelte.ts';
 
   type Props = { flow: Flow; net: PageNetwork; step: StepName };
   let { flow, net, step }: Props = $props();
@@ -43,8 +43,7 @@
   let linkInput = $state<HTMLInputElement>();
   let directBox = $state<HTMLInputElement>();
 
-  // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- a change counter's read (docs/frontend-code.md §3.1: to go)
-  const conns = $derived((void ui.net, net.connections));
+  const conns = $derived(net.connections);
   /** The room connections whose key a new one may share: the stored ones (an ephemeral one's key is gone with its tab). */
   const keys = $derived(conns.filter((c) => c.kind === 'room' && !c.ephemeral));
 

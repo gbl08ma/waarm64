@@ -18,6 +18,8 @@ import { devText, fromWire, msgOf } from '../msg.ts';
 import { guestWords } from './guest-words.ts';
 import { clockSync, leaveWarning, remember, settings } from './settings.ts';
 import { page, ui, type Action, type MachinesTab, type PageState, type View } from './ui.svelte.ts';
+import { network } from './areas/network.ts';
+import { shares } from './areas/shares.svelte.ts';
 import type { DisplayFromPage, DisplayToPage } from '../gpu-present.ts';
 import type { FromGpuWorker, ToGpuWorker } from '../gpu-worker.ts';
 import type { QueryPoll } from '../virgl-host.ts';
@@ -66,7 +68,6 @@ import {
   shapeDiff,
   USB_CONNECTORS,
   type DiskRecord,
-  type FolderAttachment,
   type MachineRecord,
   type Shape,
   type UsbEntry,
@@ -469,9 +470,6 @@ const net = new PageNetwork({
   state: { forgetTailnet: forgetProfile, forgetTailcat: forgetTailcatIdentity, forgetRoom: forgetRoomIdentity },
   kept: keptProfiles,
   me: () => machineTitle(),
-  onChange: () => {
-    ui.net++;
-  },
   save: async (i, id) => {
     const s = stored;
     if (!s) return remember({ transientNet: id });
@@ -485,14 +483,7 @@ const audio = new PageAudio();
 ui.current = stored?.record.id;
 ui.firmware = !!spec.firmware;
 ui.hasNetwork = !!spec.network;
-const folders = new PageFolders({
-  store,
-  me: () => machineTitle(),
-  onChange: () => {
-    ui.folders.on = folders.running;
-    ui.folders.tick++;
-  },
-});
+const folders = new PageFolders({ store, me: () => machineTitle() });
 void folders.refresh();
 
 // The local helper's pairing link (webpc-net prints `https://vm.tny.im/#net=ws://127.0.0.1:<port>/<token>`): the
@@ -504,11 +495,12 @@ function takePairing() {
   if (!pairing) return;
   history.replaceState(null, '', `${location.pathname}${location.search}`);
   const p = parseLocalURL(pairing);
-  const tick = (ui.netWizard?.tick ?? 0) + 1;
   if ('url' in p)
-    ui.netWizard = ui.current
-      ? { mode: 'attach', machine: ui.current, adapter: 0, localURL: p.url, tick }
-      : { mode: 'new', localURL: p.url, tick };
+    network.openWizard(
+      ui.current
+        ? { mode: 'attach', machine: ui.current, adapter: 0, localURL: p.url }
+        : { mode: 'new', localURL: p.url },
+    );
   else console.warn(`#net: ${devText(p.error)}`);
 }
 takePairing();
@@ -1050,7 +1042,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   // A machine with a USB controller: the port its devices are attached over (docs/usb.md "The page").
   const usb = usbOn() ? new MessageChannel() : undefined;
   // A machine with shared folders: the port what's attached while it runs goes over (docs/shares.md).
-  const shares = stored?.record.shares ? new MessageChannel() : undefined;
+  const sharesPort = stored?.record.shares ? new MessageChannel() : undefined;
   // A relative mouse (the pointer while the screen holds the mouse) and a touchscreen, on machines that have them.
   const mouse = pointerOn('mouse') ? new MessageChannel() : undefined;
   const touch = pointerOn('touch') ? new MessageChannel() : undefined;
@@ -1263,10 +1255,10 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       return;
     }
     if (run !== r) return;
-    const list = shares ? await folders.begin(stored!.record, shares.port1) : undefined;
-    ui.folders.path = stored ? (sharesPath(stored.record) ?? '') : '';
+    const list = sharesPort ? await folders.begin(stored!.record, sharesPort.port1) : undefined;
+    shares.path = stored ? (sharesPath(stored.record) ?? '') : '';
     if (run !== r) return folders.end();
-    if (folders.views().some((v) => v.problem)) ui.folders.wanted = true; // Allow access…, Use it here
+    if (folders.views().some((v) => v.problem)) shares.openMenu(); // Allow access…, Use it here
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
     const startLayout = await resolveKeyboard(
@@ -1323,8 +1315,8 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
         usb: usb?.port2,
         mouse: mouse?.port2,
         touch: touch?.port2,
-        folders: shares && { list: list!, port: shares.port2 },
-        sharesPath: shares ? sharesPath(stored!.record) : undefined,
+        folders: sharesPort && { list: list!, port: sharesPort.port2 },
+        sharesPath: sharesPort ? sharesPath(stored!.record) : undefined,
         clock: stored ? !!stored.record.clock : params.get('clock') !== '0',
         agent: agent?.port2,
         sound,
@@ -1345,7 +1337,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
         ...(three ? [three.renderer] : []),
         ...nets.map((n) => n.ip),
         ...(usb ? [usb.port2] : []),
-        ...(shares ? [shares.port2] : []),
+        ...(sharesPort ? [sharesPort.port2] : []),
         ...(mouse ? [mouse.port2] : []),
         ...(touch ? [touch.port2] : []),
         ...(agent ? [agent.port2] : []),
@@ -1443,7 +1435,6 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     };
   } else void begin();
   if (nets.length) void net.autoconnect();
-  ui.net++;
 }
 
 /**
@@ -2511,7 +2502,7 @@ async function droppedFolder(handle: FileSystemDirectoryHandle) {
   const f = await createFolder(store, { kind: 'host', name: handle.name, handle });
   if (here) await folderPage.folderAttach(here.id, f, false);
   else await folders.refresh();
-  if (here) ui.folders.wanted = true;
+  if (here) shares.openMenu();
 }
 
 /** Where the guest finds the machine's shared folders; undefined: the page doesn't mount them. */
@@ -3544,9 +3535,6 @@ const rereadRecord = async (machine: string) => {
   ui.records++; // this tab's own writes aren't announced to it
 };
 const folderPage = {
-  folderWizard: (machine: string | undefined, attached: FolderAttachment[]) => {
-    ui.folderWizard = { machine, attached, tick: (ui.folderWizard?.tick ?? 0) + 1 };
-  },
   folderPick: async (readOnly: boolean) => {
     const handle = await (
       globalThis as unknown as { showDirectoryPicker(o: object): Promise<FileSystemDirectoryHandle> }
@@ -3694,9 +3682,6 @@ Object.assign(page, {
   },
   ...usbPage,
   ...folderPage,
-  netWizard: (o: NonNullable<typeof ui.netWizard>) => {
-    ui.netWizard = { ...o, tick: (ui.netWizard?.tick ?? 0) + 1 };
-  },
   netCreate: (n: NewConnection) =>
     net.conns.create(n).then(async (c) => {
       await net.refresh();

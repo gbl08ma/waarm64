@@ -5,6 +5,7 @@
 // page's tab drive it; web/app/main.ts hands it each start's record. DOM-free but for what `FolderAccess` wraps:
 // tests/folders.test.ts runs it over a memory store.
 import type { FolderSpec, FoldersFromDevice, FoldersToDevice } from '../9p-folders.ts';
+import { Changes } from './changes.ts';
 import { MsgError } from '../msg.ts';
 import {
   attachFolder,
@@ -72,11 +73,11 @@ export class PageFolders {
   readonly locks: Locks;
   private store: Store;
   private access: FolderAccess;
-  private onChange: () => void;
-  /** All of the browser's folders, as last read. */
-  folders: Folder[] = [];
-  /** The folders other machines hold now, by id. */
-  held = new Set<string>();
+  private onChange?: () => void;
+  /** What the page shows of it changed (web/app/changes.ts): its reads below track it. */
+  readonly #changes = new Changes();
+  #folders: Folder[] = [];
+  #held = new Set<string>();
   /** The page's machine, while it runs with shared folders. */
   private machine?: string;
   private port?: MessagePort;
@@ -91,16 +92,27 @@ export class PageFolders {
   /** The last refresh: they run one at a time. */
   private refreshing: Promise<void> = Promise.resolve();
 
-  constructor(o: { store: Store; me: () => string; onChange: () => void; access?: FolderAccess }) {
+  /** All of the browser's folders, as last read. */
+  get folders(): Folder[] {
+    this.#changes.track();
+    return this.#folders;
+  }
+  /** The folders other machines hold now, by id. */
+  get held(): Set<string> {
+    this.#changes.track();
+    return this.#held;
+  }
+
+  constructor(o: { store: Store; me: () => string; onChange?: () => void; access?: FolderAccess }) {
     [this.store, this.onChange, this.access] = [o.store, o.onChange, o.access ?? browserAccess];
     this.locks = new Locks(o.store, 'folder', o.me, (lock) => void this.release(lock));
   }
 
   private async read() {
-    this.folders = (await this.store.all('folders')).sort((a, b) => a.created - b.created);
+    this.#folders = (await this.store.all('folders')).sort((a, b) => a.created - b.created);
     const held = await heldLocks();
-    this.held = new Set(
-      this.folders.filter((f) => held.has(folderLock(f.id)) && !this.locks.mine(folderLock(f.id))).map((f) => f.id),
+    this.#held = new Set(
+      this.#folders.filter((f) => held.has(folderLock(f.id)) && !this.locks.mine(folderLock(f.id))).map((f) => f.id),
     );
   }
 
@@ -112,7 +124,7 @@ export class PageFolders {
     const done = this.refreshing.then(async () => {
       await this.read();
       await this.follow();
-      this.onChange();
+      this.changed();
     });
     this.refreshing = done.catch(() => {});
     return done;
@@ -134,8 +146,15 @@ export class PageFolders {
     }
   }
 
+  /** Something the page shows changed. */
+  private changed() {
+    this.#changes.notify();
+    this.onChange?.();
+  }
+
   /** Whether the page's machine runs with this device. */
   get running() {
+    this.#changes.track();
     return !!this.port;
   }
 
@@ -153,7 +172,7 @@ export class PageFolders {
       else this.letting.get(e.data.id)?.();
     };
     for (const a of this.attached) await this.take(a);
-    this.onChange();
+    this.changed();
     const specs = folderSpecs(this.attached, this.folders, this.served);
     this.names = new Map(specs.map((f) => [f.id, f.name]));
     return specs;
@@ -169,7 +188,7 @@ export class PageFolders {
     this.names.clear();
     for (const done of this.letting.values()) done();
     this.locks.dropAll();
-    this.onChange();
+    this.changed();
   }
 
   /** Gets folder `a` ready to serve, or says why not: its grant, then its lock. */
@@ -202,7 +221,7 @@ export class PageFolders {
       this.names.set(id, spec.name);
       this.tell({ type: 'attach', folder: spec });
     }
-    this.onChange();
+    this.changed();
   }
 
   /** Attaches folder `f` to machine `machine` (the page's: at once, while it runs). */
@@ -254,7 +273,7 @@ export class PageFolders {
     if (this.served.has(id)) {
       this.problems.delete(id);
       this.tell({ type: 'granted', id });
-      return this.onChange();
+      return this.changed();
     }
     await this.take(a);
     this.serve(id);
@@ -280,7 +299,7 @@ export class PageFolders {
   /** The device says a grant was lost. */
   private async denied(id: string) {
     this.problems.set(id, { problem: 'permission' });
-    this.onChange();
+    this.changed();
   }
 
   /** Another tab asks for what this machine holds. */
@@ -288,11 +307,12 @@ export class PageFolders {
     const id = lock.slice(folderLock('').length);
     await this.letGo(id);
     this.problems.set(id, { problem: 'held', holder: await this.locks.holder(lock, 1000) });
-    this.onChange();
+    this.changed();
   }
 
   /** The page's machine's folders as the menu and the tab show them. */
   views(): FolderView[] {
+    this.#changes.track();
     return this.attached.map((a) => {
       const folder = this.folders.find((f) => f.id === a.id);
       return {
@@ -307,6 +327,7 @@ export class PageFolders {
 
   /** Whether `id` is what the page's machine has. */
   mine(id: string) {
+    this.#changes.track();
     return this.served.has(id);
   }
 

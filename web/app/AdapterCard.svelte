@@ -18,6 +18,7 @@
   import { movedAdapter, withoutAdapter } from './machines.ts';
   import type { PageNetwork } from './net-live.ts';
   import { adaptersOf, type Adapter } from './shape.ts';
+  import { network } from './areas/network.ts';
   import { page, ui } from './ui.svelte.ts';
 
   type Props = {
@@ -36,11 +37,9 @@
   const saved = $derived(edit.record ? adaptersOf(edit.record) : []);
   const at = $derived(saved.findIndex((x) => x.id === adapter.id));
   /** Its connection, as saved. */
-  // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- a change counter's read (docs/frontend-code.md §3.1: to go)
-  const c = $derived(at >= 0 ? (void ui.net, net.connections).find((x) => x.id === saved[at]?.connection) : undefined);
+  const c = $derived(at >= 0 ? net.connections.find((x) => x.id === saved[at]?.connection) : undefined);
   /** Its state on this page, when the machine is this page's. */
-  // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- a change counter's read (docs/frontend-code.md §3.1: to go)
-  const here = $derived(edit.draft.id === ui.current && at >= 0 ? (void ui.net, net.views())[at] : undefined);
+  const here = $derived(edit.draft.id === ui.current && at >= 0 ? net.views()[at] : undefined);
   /** The connection's line: its name and kind, then its state here and whether it's the default way out. */
   const line = $derived.by(() => {
     const parts = [
@@ -57,7 +56,7 @@
     await net.conns.put({ ...conn, connectAtStart: on });
     await net.refresh();
   }
-  const attach = () => page.netWizard({ mode: 'attach', machine: edit.draft.id, adapter: at, here: !!here?.on });
+  const attach = () => network.openWizard({ mode: 'attach', machine: edit.draft.id, adapter: at, here: !!here?.on });
 </script>
 
 <Card data-adapter={index}>

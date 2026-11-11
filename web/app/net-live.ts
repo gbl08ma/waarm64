@@ -27,6 +27,7 @@ import {
 } from './network.ts';
 import type { Adapter } from './shape.ts';
 import type { Store } from './store.ts';
+import { Changes } from './changes.ts';
 
 /** What a connection's client is started with (`authKey`: a tailnet's first login, never kept). */
 export function connectOf(c: Connection, authKey?: string): Connect {
@@ -115,7 +116,8 @@ export type PageNetworkOptions = {
   kept?: () => Promise<string[]>;
   /** The name of this page's machine (what another tab is told holds a connection). */
   me: () => string;
-  onChange: () => void;
+  /** Called when anything `views()`, `connections` or `held` show changed (the page's reads track it themselves). */
+  onChange?: () => void;
   /** Saves adapter `index`'s attachment into the page's machine (its record, or a transient machine's settings). */
   save: (index: number, connection: string | undefined) => Promise<void>;
 };
@@ -123,10 +125,10 @@ export type PageNetworkOptions = {
 export class PageNetwork {
   readonly conns: Connections;
   readonly locks: Locks;
-  /** The browser's connections (stored and this page's ephemeral ones), as last read (`refresh`). */
-  connections: Connection[] = [];
-  /** The connection ids another tab's machine holds now, as last read. */
-  held = new Set<string>();
+  /** What the page shows of it changed (web/app/changes.ts): its reads below track it. */
+  readonly #changes = new Changes();
+  #connections: Connection[] = [];
+  #held = new Set<string>();
   /** The profiles that hold a kept node, as last read. */
   private keptNodes = new Set<string>();
   private o: PageNetworkOptions;
@@ -144,6 +146,17 @@ export class PageNetwork {
   /** What the page has to say about each adapter: a message, or an error its connecting met. */
   private notes: (Msg | unknown)[] = [];
   private primary = -1;
+
+  /** The browser's connections (stored and this page's ephemeral ones), as last read (`refresh`). */
+  get connections(): Connection[] {
+    this.#changes.track();
+    return this.#connections;
+  }
+  /** The connection ids another tab's machine holds now, as last read. */
+  get held(): Set<string> {
+    this.#changes.track();
+    return this.#held;
+  }
 
   constructor(o: PageNetworkOptions) {
     this.o = o;
@@ -372,6 +385,7 @@ export class PageNetwork {
 
   /** Whether connection `c` has a node kept here, which can be logged out. */
   hasNode(c: Connection) {
+    this.#changes.track();
     return !!c.tailnet && !c.ephemeral && this.keptNodes.has(c.tailnet.stateKey);
   }
 
@@ -474,11 +488,11 @@ export class PageNetwork {
 
   /** Rereads the connections and which are held elsewhere (the store changed, in this tab or another). */
   async refresh() {
-    this.connections = await this.conns.list();
+    this.#connections = await this.conns.list();
     this.keptNodes = new Set((await this.o.kept?.().catch(() => [])) ?? []);
     const held = await heldLocks();
-    this.held = new Set(
-      this.connections
+    this.#held = new Set(
+      this.#connections
         .filter((c) => held.has(connectionLock(c.id)) && !this.locks.mine(connectionLock(c.id)))
         .map((c) => c.id),
     );
@@ -491,11 +505,13 @@ export class PageNetwork {
     this.primary = primaryOf(views);
     const ranks = ranksOf(views);
     for (const [k, n] of this.nets.entries()) n.setPrimary(this.primary < 0 || k === this.primary, ranks[k]);
-    this.o.onChange();
+    this.#changes.notify();
+    this.o.onChange?.();
   }
 
   /** The page's machine's adapters now. */
   views(): AdapterView[] {
+    this.#changes.track();
     const views = this.adapters.map((_, i) => this.nets[i]?.view() ?? viewOf(undefined));
     // Two adapters on local helpers both give the guest a default route (their DHCP, not the page's): said, not fixed.
     const locals = views.flatMap((v, i) => (v.phase === 'connected' && v.local ? [i] : []));
@@ -517,6 +533,7 @@ export class PageNetwork {
 
   /** The adapter whose client runs connection `id` here, or -1. */
   runs(id: string) {
+    this.#changes.track();
     return this.running.indexOf(id);
   }
 

@@ -15,6 +15,7 @@
   import type { PageFolders } from './folders-live.ts';
   import { MAX_FOLDERS } from './folders.ts';
   import type { MachineRecord } from './shape.ts';
+  import { shares } from './areas/shares.svelte.ts';
   import { page, ui } from './ui.svelte.ts';
 
   let {
@@ -28,9 +29,9 @@
     act: Act;
   } = $props();
 
-  const all = $derived((void ui.folders.tick, folders.folders));
+  const all = $derived(folders.folders);
   const here = $derived(machine.id === ui.current && folders.running);
-  const live = $derived((void ui.folders.tick, here ? folders.views() : []));
+  const live = $derived(here ? folders.views() : []);
   /** Where the folder is kept, and whether it is read-only (for every machine). */
   const kindText = (f: { kind: string; readOnly: boolean }) => {
     const kind = f.kind === 'host' ? msg('folders:Folders.kind.host') : msg('folders:Folders.kind.opfs');
@@ -96,7 +97,7 @@
     {#if (machine.folders?.length ?? 0) < MAX_FOLDERS}<div class="row">
         <Button
           icon="plus"
-          onclick={() => page.folderWizard(machine.id, machine.folders ?? [])}
+          onclick={() => shares.openWizard({ machine: machine.id, attached: machine.folders ?? [] })}
           data-action="attach-folder">{t('folders:Folders.attach')}</Button
         >
       </div>{/if}

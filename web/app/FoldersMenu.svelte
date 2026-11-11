@@ -13,19 +13,19 @@
   import { t } from '../i18n.ts';
   import type { PageFolders } from './folders-live.ts';
   import { SHARES_BY_HAND } from './shares-mount.ts';
+  import { shares } from './areas/shares.svelte.ts';
   import { page, ui } from './ui.svelte.ts';
 
   let { folders }: { folders: PageFolders } = $props();
 
   let open = $state(false);
-  const views = $derived((void ui.folders.tick, folders.views()));
+  const views = $derived(folders.views());
   const waiting = $derived(views.some((v) => v.problem));
-  $effect(() => {
-    if (ui.folders.wanted) {
-      ui.folders.wanted = false;
+  $effect(() =>
+    shares.menu.handle(() => {
       open = true;
-    }
-  });
+    }),
+  );
   const runner = new Actions();
   const act = (f: () => Promise<unknown>) => runner.run('', f);
   function stateText(v: (typeof views)[number]) {
@@ -47,7 +47,7 @@
 </script>
 
 <!-- The markers' words stand for what the page puts there (the path and the command): the snippets show those. -->
-{#snippet path()}<code>{ui.folders.path}/&lt;name&gt;</code>{/snippet}
+{#snippet path()}<code>{shares.path}/&lt;name&gt;</code>{/snippet}
 {#snippet command()}<code>{SHARES_BY_HAND}</code>{/snippet}
 
 <Menu
@@ -89,20 +89,18 @@
       id="folder-attach"
       onclick={() => {
         open = false;
-        page.folderWizard(
-          ui.current,
-          folders.views().map((v) => ({ id: v.id, readOnly: v.readOnly })),
-        );
+        shares.openWizard({
+          machine: ui.current,
+          attached: folders.views().map((v) => ({ id: v.id, readOnly: v.readOnly })),
+        });
       }}>{t('folders:FoldersMenu.attach')}</Button
     >
   </div>
   <Note id="folders-where">
-    {#if ui.folders.path}<T
-        k="folders:FoldersMenu.where"
-        params={{ path: ui.folders.path }}
-        {path}
+    {#if shares.path}<T k="folders:FoldersMenu.where" params={{ path: shares.path }} {path} {command} />{:else}<T
+        k="folders:FoldersMenu.where.byHand"
         {command}
-      />{:else}<T k="folders:FoldersMenu.where.byHand" {command} />{/if}
+      />{/if}
   </Note>
 </Menu>
 

@@ -1,11 +1,10 @@
 <!--
-  The Folder wizard (docs/shares.md §4), a dialog opened through `ui.folderWizard`: attach one of the browser's folders to
+  The Folder wizard (docs/shares.md §4), a dialog opened by web/app/areas/shares.svelte.ts `openWizard`: attach one of the browser's folders to
   a machine (those in use marked with their machine), or make a new one: its kind, each explained, then its settings
   (for a folder on this computer, numbered steps that end at Pick the folder…).
   Without a `machine` it only makes a folder (Shared folders, on the Machines page). web/app/main.ts attaches.
 -->
 <script lang="ts">
-  import { untrack } from 'svelte';
   import Button from './ui/Button.svelte';
   import Choice from './ui/Choice.svelte';
   import Field from './ui/Field.svelte';
@@ -17,7 +16,8 @@
   import { preselect, type Folder } from './folders.ts';
   import type { PageFolders } from './folders-live.ts';
   import type { FolderAttachment } from './shape.ts';
-  import { page, ui } from './ui.svelte.ts';
+  import { shares, type FolderWizardOpened } from './areas/shares.svelte.ts';
+  import { page } from './ui.svelte.ts';
 
   let { folders }: { folders: PageFolders } = $props();
 
@@ -32,18 +32,15 @@
   /** An action runs (its buttons wait). */
   const working = $derived(runner.busy !== undefined);
   let holders = $state<Record<string, string>>({});
-  const machine = $derived(ui.folderWizard?.machine);
-  const all = $derived((void ui.folders.tick, folders.folders));
+  /** The machine the wizard attaches to (none: it only makes a folder). */
+  let machine = $state<string>();
+  const all = $derived(folders.folders);
   const choices = $derived(all.filter((f) => !attached.some((a) => a.id === f.id)));
 
-  $effect(() => {
-    const o = ui.folderWizard;
-    if (!o) return;
-    void o.tick;
-    untrack(() => void begin(o));
-  });
+  $effect(() => shares.wizard.handle((o) => void begin(o)));
 
-  async function begin(o: NonNullable<typeof ui.folderWizard>) {
+  async function begin(o: FolderWizardOpened) {
+    machine = o.machine;
     await folders.refresh();
     attached = o.attached ?? [];
     runner.clear();
@@ -60,7 +57,6 @@
   }
   const close = () => {
     wizard.close();
-    ui.folderWizard = undefined;
   };
   /** A folder to pick: who has it, or where it is kept; and whether it is read-only. */
   function stateOf(f: Folder) {
@@ -104,17 +100,7 @@
   const hasPicker = 'showDirectoryPicker' in globalThis;
 </script>
 
-<Modal
-  id="folder-wizard"
-  bodyId="folder-form"
-  bind:this={wizard}
-  {title}
-  auto={false}
-  onclose={() => {
-    ui.folderWizard = undefined;
-  }}
-  onsubmit={makeOpfs}
->
+<Modal id="folder-wizard" bodyId="folder-form" bind:this={wizard} {title} auto={false} onsubmit={makeOpfs}>
   {#if step === 'pick'}
     <section class="step">
       <Note size="md">{t('folders:FolderWizard.pick.note')}</Note>

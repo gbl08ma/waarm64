@@ -4,7 +4,7 @@ import type { Connection, NewConnection } from './connections.ts';
 import type { ExportMode } from './export.ts';
 import type { Folder, NewFolder } from './folders.ts';
 import type { PowerState } from './protocol.ts';
-import type { DiskRecord, FolderAttachment, MachineRecord, Shape, UsbEntry } from './shape.ts';
+import type { DiskRecord, MachineRecord, Shape, UsbEntry } from './shape.ts';
 import type { EntryView } from './usb-live.ts';
 import type { ProblemWords } from './usb-ports.ts';
 import type { LockMode } from '../input.ts';
@@ -79,32 +79,6 @@ export const ui = $state({
   hasMouse: false,
   /** The page can't run here (no cross-origin isolation): no Start. */
   cantRun: false,
-  /** Bumped when the network's state changes (the Network menu, the wizard and the Network tab redraw). */
-  net: 0,
-  /**
-   * The Network wizard, open (web/app/NetWizard.svelte, docs/network-adapters.md §3.2): `attach` a connection to
-   * `machine`'s adapter `adapter` (machine undefined: the page's transient one), a `new` connection on its own, or `edit`
-   * connection `connection`. `here`: the machine is the page's (it connects now, so an auth key is asked for). `tick`
-   * opens it again.
-   */
-  /** Bumped to open the Network menu (a connection was just attached here: it shows how it goes). */
-  netMenu: 0,
-  netWizard: undefined as
-    | undefined
-    | {
-        mode: 'attach' | 'new' | 'edit';
-        machine?: string;
-        adapter?: number;
-        connection?: string;
-        here?: boolean;
-        tick?: number;
-        /** The local helper's pairing link (`#net=`): the wizard opens on it. */ localURL?: string;
-      },
-  /**
-   * The page's machine's shared folders (docs/shares.md §4): `on` while it runs with them (the toolbar's Folders menu);
-   * `path` is where the guest finds them; `wanted` opens the menu (it clears it); `tick` when any of it changes.
-   */
-  folders: { on: false, path: '', wanted: false, tick: 0 },
   /**
    * Clipboard sharing (docs/plans/clipboard.md §5; the toolbar's clipboard menu): `on` while the page's machine has the
    * setting (its button shows while it runs); its `state`, the browser's read `permission`, `stopped` (focus reads stopped
@@ -121,8 +95,6 @@ export const ui = $state({
     failed: undefined as undefined | 'send' | 'type' | 'screen',
     typed: undefined as number | undefined,
   },
-  /** The Folder wizard, open (web/app/FolderWizard.svelte): for `machine`, which has `attached`; none: it only makes a folder. `tick` opens it again. */
-  folderWizard: undefined as undefined | { machine?: string; attached?: FolderAttachment[]; tick?: number },
   boot: { shown: true, done: false, title: '', progress: undefined as number | undefined, line: '', serial: false },
   /**
    * The status bar (web/app/StatusBar.svelte): the last status as JSON (`data`, for tools), the last second's numbers,
@@ -263,7 +235,6 @@ export type Page = {
    * transient one; `adapter`: its index. The page's machine connects what is attached to it at once (one another tab's
    * machine has is taken after asking); another machine connects it when it starts.
    */
-  netWizard(o: NonNullable<typeof ui.netWizard>): void;
   netCreate(n: NewConnection): Promise<Connection>;
   netAttach(machine: string | undefined, adapter: number, c: Connection, authKey?: string): Promise<void>;
   netDetach(machine: string | undefined, adapter: number): Promise<void>;
@@ -288,7 +259,6 @@ export type Page = {
    * Shared folders (docs/shares.md). Attaching, detaching and the list's order are saved at once, running or not; the
    * page's machine takes them while it runs. `folderPick` opens the browser's picker (from a click).
    */
-  folderWizard(machine: string | undefined, attached: FolderAttachment[]): void;
   folderPick(readOnly: boolean): Promise<Folder>;
   folderCreate(n: NewFolder): Promise<Folder>;
   folderAttach(machine: string, f: Folder, readOnly: boolean): Promise<void>;

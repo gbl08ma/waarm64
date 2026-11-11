@@ -13,7 +13,8 @@
     /** The dialog's id; its title's is `<id>-title`. */
     id: string;
     title: string;
-    onclose(): void;
+    /** The dialog closed (Esc, a button, `close()`). */
+    onclose?: () => void;
     /** Makes the body a form (Enter submits). */
     onsubmit?: (e: SubmitEvent) => void;
     /** The body's id. */
