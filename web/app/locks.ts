@@ -33,6 +33,7 @@ export class Locks {
   /** Takes `lock` if no one holds it (`shared`: or others only read): false if another machine does. */
   async take(lock: string, o: { shared?: boolean } = {}): Promise<boolean> {
     if (this.held.has(lock)) return true;
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in Node's tests
     if (!globalThis.navigator?.locks) return true;
     let release!: () => void;
     const kept = new Promise<void>((resolve) => {
@@ -92,6 +93,7 @@ export class Locks {
 
 /** The locks held now by anyone (every tab of this origin). */
 export async function heldLocks(): Promise<Set<string>> {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in Node's tests
   if (!globalThis.navigator?.locks) return new Set();
   const q = await navigator.locks.query();
   return new Set((q.held ?? []).flatMap((l) => (l.name ? [l.name] : [])));

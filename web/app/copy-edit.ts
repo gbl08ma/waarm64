@@ -12,7 +12,8 @@ export function changed(): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [full, words] of Object.entries(copyEdits())) {
     const [ns, k] = full.split(/:(.*)/s);
-    if (CATALOGS[ns]?.[k] && CATALOGS[ns][k].message !== words) out[full] = words;
+    const entry = Object.hasOwn(CATALOGS, ns) && Object.hasOwn(CATALOGS[ns], k) ? CATALOGS[ns][k] : undefined;
+    if (entry && entry.message !== words) out[full] = words;
   }
   return out;
 }
@@ -31,6 +32,7 @@ const commands = {
   /** The changes as JSON (also copied to the clipboard when the page has focus). */
   dump(): string {
     const json = JSON.stringify(changed(), null, 2);
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- no clipboard outside a secure context
     void navigator.clipboard?.writeText(json).catch(() => undefined); // a convenience: the JSON is returned too
     return json;
   },

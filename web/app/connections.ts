@@ -308,7 +308,7 @@ export async function migrateLegacy(conns: Connections, legacy: Legacy): Promise
       // The server's address, a secret, was never kept: the connection serves only until it is edited.
       c = await conns.create({
         kind: 'tailcat',
-        connectAtStart: !!(s?.kind === 'tailcat' && s.autoconnect && s.tailcatServe && !s.tailcatExit),
+        connectAtStart: s?.kind === 'tailcat' && s.autoconnect && s.tailcatServe && !s.tailcatExit,
         tailcat: { serve: true, relay: s?.tailcatRelay ?? '' },
       });
       settingsOf(c, 'tailcat').identityKey = 'served';

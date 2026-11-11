@@ -56,7 +56,7 @@ export class AgentLink {
 
   constructor(port: MessagePort, id = 0) {
     [this.port, this.id] = [port, id];
-    port.onmessage = (e: MessageEvent<AgentFromDevice>) => this.fromDevice(e.data);
+    port.onmessage = (e: MessageEvent<AgentFromDevice | undefined>) => this.fromDevice(e.data);
   }
 
   /** Sends a frame; false (nothing sent) while the agent's end is closed. */
@@ -125,45 +125,54 @@ export class AgentLink {
     }
   }
 
-  private fromDevice(m: AgentFromDevice) {
+  /** A message from the device worker's port: this link's port opened or closed, its bytes taken, the agent's bytes. */
+  private fromDevice(m: AgentFromDevice | undefined) {
     if (m?.port !== this.id) return;
     switch (m.type) {
       case 'open':
-        if (m.open === this.open && !m.restored) return;
-        // A new opening is a new stream both ways: what was half read or queued belonged to the last one.
-        this.open = m.open;
-        this.agent = undefined;
-        this.reader.reset();
-        this.queue = [];
-        this.inflight = 0;
-        if (m.open) {
-          // Restored: the agent's stream may be inside a frame, so it is begun at a SYNC.
-          if (m.restored) this.resync();
-          else this.send(FRAME.HELLO, encodeHello({ version: VERSION, caps: PAGE_CAPS }));
-          // The switch, said either way: an agent restored from a snapshot taken while paused is paused, and the pause
-          // is the run's, not the snapshot's (plan §5).
-          this.send(this.paused ? FRAME.PAUSE : FRAME.RESUME);
-        }
-        this.onOpen?.(m.open);
-        break;
+        return this.opened(m.open, !!m.restored);
       case 'taken':
         this.inflight = Math.max(0, this.inflight - m.n);
         this.pump();
-        break;
+        return;
       case 'data':
-        for (const f of this.reader.push(m.bytes)) {
-          if (f.type === FRAME.HELLO) {
-            const h = decodeHello(f.payload);
-            if (h) {
-              this.agent = h;
-              this.onHello?.(h);
-            }
-          }
-          this.onFrame?.(f);
-        }
-        // Out of step (a frame's length that can't be): begun afresh, at the agent's SYNC.
-        if (this.reader.broken) this.resync();
-        break;
+        return this.received(m.bytes);
     }
+  }
+
+  /** The agent's port opened (`restored`: from a snapshot) or closed. */
+  private opened(open: boolean, restored: boolean) {
+    if (open === this.open && !restored) return;
+    // A new opening is a new stream both ways: what was half read or queued belonged to the last one.
+    this.open = open;
+    this.agent = undefined;
+    this.reader.reset();
+    this.queue = [];
+    this.inflight = 0;
+    if (open) {
+      // Restored: the agent's stream may be inside a frame, so it is begun at a SYNC.
+      if (restored) this.resync();
+      else this.send(FRAME.HELLO, encodeHello({ version: VERSION, caps: PAGE_CAPS }));
+      // The switch, said either way: an agent restored from a snapshot taken while paused is paused, and the pause
+      // is the run's, not the snapshot's (plan §5).
+      this.send(this.paused ? FRAME.PAUSE : FRAME.RESUME);
+    }
+    this.onOpen?.(open);
+  }
+
+  /** The agent's bytes: its frames, a HELLO taken as the agent's. */
+  private received(bytes: Uint8Array) {
+    for (const f of this.reader.push(bytes)) {
+      if (f.type === FRAME.HELLO) {
+        const h = decodeHello(f.payload);
+        if (h) {
+          this.agent = h;
+          this.onHello?.(h);
+        }
+      }
+      this.onFrame?.(f);
+    }
+    // Out of step (a frame's length that can't be): begun afresh, at the agent's SYNC.
+    if (this.reader.broken) this.resync();
   }
 }

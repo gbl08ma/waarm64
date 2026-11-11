@@ -73,6 +73,7 @@
 
   // Read with the records, and again when the machine on this page starts or stops (its "running").
   $effect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- read to track it (the effect's dependency)
     void power.state;
     void readLive(machines);
   });

@@ -100,7 +100,7 @@
   }
 
   // Import.
-  let importInputs = $state<Record<string, HTMLInputElement>>({});
+  let importInputs = $state<Record<string, HTMLInputElement | undefined>>({});
   const imported = (attachment: string) => (e: Event) => {
     const input = e.currentTarget as HTMLInputElement;
     const f = input.files?.[0];

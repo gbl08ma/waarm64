@@ -19,6 +19,7 @@ export async function diskSource(d: DiskRecord): Promise<DiskRef['source']> {
   switch (d.kind) {
     case 'url':
       if (!d.url) throw new Error(`URL disk ${d.id} has no URL`);
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- no location in Node's tests
       return { url: new URL(d.url, globalThis.location?.href).href }; // the page's (a worker's bundle is under assets/)
     case 'file': {
       if (!d.handle) throw new MsgError('disks:disks.pickAgain', { name: d.name });

@@ -126,6 +126,7 @@
         await attach(store, m, d, { readOnly: ro });
       });
     });
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- set by the callback `act` runs
     if (ok) dialog?.close();
   }
   /** The user said no (to a copy into the browser): nothing to show. */

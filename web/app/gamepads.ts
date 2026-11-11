@@ -56,6 +56,7 @@ export function listPads(read = readPads): { index: number; name: string }[] {
 /** `navigator.getGamepads()`, or nothing where there is no Gamepad API (Node, a page without it). */
 export function readPads(): readonly (PadLike | null)[] {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Gamepad API in Node's tests or some browsers
     return (globalThis.navigator as Navigator | undefined)?.getGamepads?.() ?? [];
   } catch {
     return []; // a permissions policy that disallows the gamepad feature throws
@@ -101,6 +102,7 @@ export class PadFeed {
     this.send = send;
     this.again = o.again ?? RUMBLE_AGAIN_MS;
     this.read = o.read ?? readPads;
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- no document in Node's tests
     this.hidden = o.hidden ?? (() => globalThis.document?.visibilityState === 'hidden');
   }
 

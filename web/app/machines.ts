@@ -71,6 +71,7 @@ export async function createMachine(
   const m: MachineRecord = {
     id: newId(),
     name: o.name ? uniqueName(o.name, taken) : generateName(taken),
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no navigator in Node's tests
     ncpus: o.ncpus ?? defaultCpus(globalThis.navigator?.hardwareConcurrency || 4),
     ramMiB: o.ramMiB ?? 2048,
     display: o.display ?? '3d',
@@ -218,6 +219,7 @@ export type NewDisk =
 /** A file's or URL's identity (machines.md §3.1): what makes it the same disk when it's added again. */
 function identityFor(d: NewDisk & { kind: 'url' | 'file' }): DiskIdentity {
   if (d.kind === 'file') return { kind: 'file', name: d.file.name, bytes: d.file.size, modified: d.file.lastModified };
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- no location in Node's tests
   const u = new URL(d.url, globalThis.location?.href);
   return {
     kind: 'url',
@@ -244,6 +246,7 @@ export async function createDisk(store: Store, d: NewDisk): Promise<DiskRecord> 
   const now = Date.now();
   let r: DiskRecord;
   if (d.kind === 'url') {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- no location in Node's tests
     const u = new URL(d.url, globalThis.location?.href);
     r = {
       id,

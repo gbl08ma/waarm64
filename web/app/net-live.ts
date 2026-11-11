@@ -165,7 +165,7 @@ export class PageNetwork {
 
   /** Stops adapter `i`'s client, if any, and lets its connection go; the adapter gets a new `Network` (its port goes with the old one). */
   private retire(i: number) {
-    const n = this.nets[i];
+    const n = this.nets.at(i);
     const id = this.running[i];
     this.running[i] = undefined;
     if (n?.active())
@@ -300,7 +300,7 @@ export class PageNetwork {
 
   /** Connects adapter `i`'s attached connection `c` (it must be attached). */
   async connect(i: number, c: Connection, authKey?: string) {
-    const n = this.nets[i];
+    const n = this.nets.at(i);
     if (!n) throw new Error(`the machine has no adapter ${i + 1}`);
     if (this.running[i] === c.id && n.active()) return;
     const refused = (cause: unknown) => new MsgError('network:net-live.notConnected', { name: c.name }, { cause });
@@ -312,6 +312,7 @@ export class PageNetwork {
     const lock = connectionLock(c.id);
     if (!(await this.locks.take(lock))) throw new HeldError(c, await this.locks.holder(lock));
     // It stopped, or its adapters changed, while the lock was asked for.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- `on` and the adapters can change across the await
     if (!this.on || this.nets[i] !== n) {
       if (!this.running.includes(c.id)) this.locks.drop(lock);
       throw refused(new MsgError('network:net-live.off'));
@@ -526,7 +527,7 @@ export class PageNetwork {
       mac: a.mac,
       connection: this.connections.find((c) => c.id === a.connection),
       view: views[i],
-      active: !!this.nets[i]?.active(),
+      active: !!this.nets.at(i)?.active(),
       note:
         noteText(this.notes[i]) ??
         (locals.length > 1 && locals.includes(i) && i !== this.primary

@@ -97,7 +97,7 @@ export function matchDevices(entries: UsbEntry[], api: 'usb' | 'hid', devices: S
   for (const e of entries) {
     if (e.api !== api) continue;
     const twins = devices.map((d, i) => [d, i] as const).filter(([d]) => sameModel(e, d));
-    const at = e.serialNumber ? twins[0] : twins[e.index ?? 0];
+    const at = e.serialNumber ? twins.at(0) : twins.at(e.index ?? 0);
     if (at) out.set(e.id, at[1]);
   }
   return out;
@@ -186,6 +186,7 @@ export const fromDefinition = (x: DefinitionUsb[] = []): UsbEntry[] =>
 /** The host's OS, for the remedies (they differ). */
 export type HostOs = 'linux' | 'mac' | 'windows' | 'chromeos' | 'other';
 export function hostOs(
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- no navigator in Node's tests
   nav: { userAgent?: string; userAgentData?: { platform?: string } } = globalThis.navigator ?? {},
 ): HostOs {
   const p = `${nav.userAgentData?.platform ?? ''} ${nav.userAgent ?? ''}`.toLowerCase();

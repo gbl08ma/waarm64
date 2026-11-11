@@ -26,7 +26,7 @@
   const all = $derived(folders.folders);
   let open = $state<string>();
   let entries = $state<Entry[]>([]);
-  let users = $state<Record<string, string[]>>({});
+  let users = $state<Record<string, string[] | undefined>>({});
   let copying = $state<(Copying & { what: string }) | undefined>();
   let dropping = $state(false);
 
@@ -143,7 +143,7 @@
     if (busy(f)) return;
     const files = [...(e.dataTransfer?.items ?? [])]
       .filter((i) => i.webkitGetAsEntry()?.isFile)
-      .map((i) => i.getAsFile()!); // a directory is a file here too
+      .flatMap((i) => i.getAsFile() ?? []); // a directory is a file here too
     await act(t('folders:FoldersPane.busy.adding'), async () => {
       await withFolder(f.id, true, async () => addFiles(await dirOf(f), files));
       await refreshOf(f);

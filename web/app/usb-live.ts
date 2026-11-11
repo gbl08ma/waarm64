@@ -192,9 +192,18 @@ export class UsbPorts {
   }
 
   private heard(m: UsbFromWorker) {
-    if (m.type === 'usb-leds') return this.onLeds(m.connector, m.leds);
-    if (m.type === 'usb-rumble') return this.onRumble(m.connector, m.strong, m.weak);
-    if (m.type !== 'usb-state') return;
+    switch (m.type) {
+      case 'usb-leds':
+        return this.onLeds(m.connector, m.leds);
+      case 'usb-rumble':
+        return this.onRumble(m.connector, m.strong, m.weak);
+      case 'usb-state':
+        return this.stateHeard(m);
+    }
+  }
+
+  /** A connector's state: attached, detached or failed, a request waiting on it settled. */
+  private stateHeard(m: Extract<UsbFromWorker, { type: 'usb-state' }>) {
     const c = this.connectors[m.connector];
     const p = this.pending.get(m.connector);
     if (p) {

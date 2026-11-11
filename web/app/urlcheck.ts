@@ -26,9 +26,11 @@ export type UrlCheck = {
 const CORS_HINT = msg('machines:urlcheck.corsHint');
 
 /** Checks `url` from this page (any origin); never throws. */
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- no location in Node's tests
 export async function checkUrl(url: string, origin = globalThis.location?.origin): Promise<UrlCheck> {
   let u: URL;
   try {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- no location in Node's tests
     u = new URL(url, globalThis.location?.href);
   } catch {
     return { ok: false, problems: [msg('machines:urlcheck.notUrl')] };
@@ -97,7 +99,9 @@ async function checkChunked(u: URL, out: UrlCheck): Promise<UrlCheck> {
     return fail(
       e instanceof TypeError
         ? msg('machines:urlcheck.noAnswer', { needs: CORS_HINT })
-        : msg('machines:urlcheck.badManifest', { why: msgOf(e) ?? String((e as Error).message ?? e) }),
+        : msg('machines:urlcheck.badManifest', {
+            why: msgOf(e) ?? String((e as { message?: unknown } | null | undefined)?.message ?? e),
+          }),
     );
   }
   try {

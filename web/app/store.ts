@@ -191,6 +191,7 @@ export class Store {
    * bytes for leftovers before the record is there.
    */
   writing<T>(f: () => Promise<T>): Promise<T> {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in Node's tests
     if (typeof navigator === 'undefined' || !navigator.locks) return f();
     return navigator.locks.request(WRITE_LOCK, { mode: 'shared' }, f);
   }
@@ -288,6 +289,7 @@ export class Store {
       }
       return removed;
     };
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: no Web Locks in Node's tests
     if (typeof navigator === 'undefined' || !navigator.locks) return run();
     return navigator.locks.request(WRITE_LOCK, { mode: 'exclusive' }, run);
   }

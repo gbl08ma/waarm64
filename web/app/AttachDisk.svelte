@@ -54,6 +54,7 @@
     await act(t('disks:AttachDisk.busy'), async () => {
       if (await offFirst(plain)) ok = await runner.run('', () => attach(store, plain, $state.snapshot(disk)));
     });
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- set by the callback `act` runs
     if (ok) dialog.close();
   }
 </script>

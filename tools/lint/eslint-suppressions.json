@@ -1,49 +1,5 @@
 {
-  "web/app/AddDisk.svelte": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    }
-  },
-  "web/app/AttachDisk.svelte": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    }
-  },
-  "web/app/Disks.svelte": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    }
-  },
-  "web/app/FoldersPane.svelte": {
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    }
-  },
-  "web/app/MachinesPage.svelte": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 1
-    }
-  },
-  "web/app/Usb.svelte": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 1
-    }
-  },
-  "web/app/agent-link.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    },
-    "complexity": {
-      "count": 1
-    }
-  },
   "web/app/connections.ts": {
-    "@typescript-eslint/no-unnecessary-type-conversion": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     }
@@ -53,40 +9,12 @@
       "count": 1
     }
   },
-  "web/app/copy-edit.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 3
-    }
-  },
-  "web/app/deflate-pool.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    }
-  },
-  "web/app/disks.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    }
-  },
   "web/app/export-worker.ts": {
     "complexity": {
       "count": 1
     }
   },
-  "web/app/gamepads.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 2
-    }
-  },
-  "web/app/locks.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 4
-    }
-  },
   "web/app/machines.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 3
-    },
     "complexity": {
       "count": 2
     },
@@ -95,12 +23,6 @@
     }
   },
   "web/app/net-live.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unnecessary-type-conversion": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     },
@@ -117,9 +39,6 @@
     }
   },
   "web/app/store.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 2
-    },
     "complexity": {
       "count": 1
     },
@@ -128,28 +47,16 @@
     }
   },
   "web/app/urlcheck.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unnecessary-type-conversion": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     }
   },
   "web/app/usb-live.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     }
   },
   "web/app/usb-ports.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 2
-    },
     "complexity": {
       "count": 1
     },

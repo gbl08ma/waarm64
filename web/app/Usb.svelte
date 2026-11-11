@@ -37,6 +37,7 @@
   let views = $state<EntryView[]>([]);
   // Read again when the record changes, and with the page's USB (`usb.entries` is read again at every plug, attach and grant).
   $effect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- read to track it (the effect's dependency)
     void usb.entries;
     const m = $state.snapshot(machine);
     void page.usbStates(m).then((v) => {

@@ -9,6 +9,7 @@ import type { DeflateRequest, DeflateResult } from './deflate-worker.ts';
  * the machine has stopped, so its cores are free. Workers of the disk-out worker (web/app/export-worker.ts), each with a batch or two.
  */
 export function deflatePool(
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a probe: not every engine says
   n = Math.max(1, Math.min(4, (navigator.hardwareConcurrency ?? 2) - 1)),
 ): Packer & { close(): void } {
   const waiting = new Map<number, { resolve(r: (Uint8Array | undefined)[]): void; reject(e: Error): void }>();
