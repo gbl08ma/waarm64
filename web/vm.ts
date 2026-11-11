@@ -19,6 +19,7 @@ import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { corrupt, SnapshotError } from './snapshot-file.ts';
 import { fromWire, msg, MsgError, type Msg, type WireError } from './msg.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
+import type { FromDeviceWorker, ToDeviceWorker } from './device-worker.ts';
 import type { CompileInit, CompileJob, CompiledJob } from './jit-compile-worker.ts';
 import { spillImports } from './spill.ts';
 import { cpuMask, type CpuFeature } from './cpu-features.ts';
@@ -1695,24 +1696,24 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
   let flushed = () => {};
   const drained: (() => void)[] = []; // one a `drain` message, answered in order
   let closed = (_stats?: unknown) => {};
-  let saved = (_m: { state?: unknown[]; error?: string; wire?: WireError }) => {};
+  let saved = (_m: Extract<FromDeviceWorker, { type: 'saved' }>) => {};
   // Requests for a disk's changes (`written`, `blocks`), answered by id.
-  type DiskAnswer = { written?: { blocks: number[]; generation?: number }; bytes?: Uint8Array; error?: string };
+  type DiskAnswer = Extract<FromDeviceWorker, { type: 'disk' }>;
   const asked = new Map<number, (m: DiskAnswer) => void>();
   let askId = 0;
-  const ask = (m: { type: 'written' | 'blocks'; device: number; blocks?: number[] }) => new Promise<DiskAnswer>((resolve, reject) => {
+  const ask = (m: { type: 'written'; device: number } | { type: 'blocks'; device: number; blocks: number[] }) => new Promise<DiskAnswer>((resolve, reject) => {
     const id = askId++;
     asked.set(id, (a) => {
       asked.delete(id);
       if (a.error) reject(new Error(a.error));
       else resolve(a);
     });
-    worker.postMessage({ ...m, id });
+    worker.postMessage({ ...m, id } satisfies ToDeviceWorker);
   });
   let closing: Promise<unknown> | undefined;
   const ready = new Promise<void>((resolve, reject) => {
     worker.onerror = (e) => reject(new Error(`device worker: ${e.message}`));
-    worker.onmessage = (e: MessageEvent) => {
+    worker.onmessage = (e: MessageEvent<FromDeviceWorker>) => {
       if (e.data.type === 'ready') resolve();
       // The error as the device worker had it (its fields, an overlay's `problem`, kept: web/app/worker.ts `explain`).
       else if (e.data.type === 'error') reject(e.data.error ? fromWire(e.data.error) : new Error(`device worker: ${e.data.message}`));
@@ -1728,7 +1729,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       }
     };
   });
-  worker.postMessage({ type: 'init', ...init, bell: bellAddr }, [...specPorts(init.specs), ...(init.xhci?.port ? [init.xhci.port] : [])]);
+  worker.postMessage({ type: 'init', ...init, bell: bellAddr } satisfies ToDeviceWorker, [...specPorts(init.specs), ...(init.xhci?.port ? [init.xhci.port] : [])]);
   await ready; // before anything blocks on it
   const bell = new Int32Array(init.memory.buffer, bellAddr, 2);
   return {
