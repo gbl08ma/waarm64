@@ -1374,6 +1374,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   with a disable that says why: environment probes (`navigator`, `location`, `document`, Web Locks: absent in Node's
   tests), flags that change across an `await` or in a callback, the effects' tracking reads, and the data tables
   (keymaps.ts, keyboard.ts's layouts, osk-layout.ts's builders).
+- **The harness pages' imports aren't type-checked** (`tests/browser/*.html`, `bench/**/*.html`: their module scripts
+  import the page's modules by path; 2026-11-11): `tsc` reads no HTML, so an export moved by a refactor breaks only the
+  lane that loads the page (the frontend refactor's phase 7 moved `primaryOf`/`ranksOf` to network-view.ts and
+  `tests/browser/adapters.html` failed in ci-net alone). A cheap check in `scripts/ci.sh` would resolve each named
+  import against the module's exports (or move the scripts into `.ts` files the harness pages load).
 - **The screen's cursor styles** (areas/screen-view.ts): the CSS cursor (`showCursor`) and the lock cursor's box
   (`placeCursor`) are still set on the elements, as they follow the guest's cursor messages; through state they would
   render a frame later. Worth it only measured (a cursor message's cost, a lock cursor's lag).

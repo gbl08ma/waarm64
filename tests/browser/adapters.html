@@ -7,7 +7,8 @@
   // machine has them: adapter 1 on a tailnet (`control`, `authkey`, `hostname`) with no exit node, adapter 2 on tailcat
   // through a server, letting clients in (with `local`: the local helper's beside a room, below) (`tailcat`; `probe6`: how it checks the server's IPv6 reach, web/reach6.ts, as JSON). As web/app/net-live.ts does, every change picks the primary again (primaryOf) and
   // tells each adapter whether it is, and its rank (ranksOf). The test drives the guest's serial console through window.harness.
-  import { createNetwork, primaryOf, ranksOf } from '../../web/app/network.ts';
+  import { createNetwork } from '../../web/app/network.ts';
+  import { primaryOf, ranksOf } from '../../web/app/network-view.ts';
   const q = new URLSearchParams(location.search);
   let primary = -1;
   const nets = [];
