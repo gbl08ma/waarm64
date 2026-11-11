@@ -16,6 +16,8 @@ export type PowerDeps = {
   terminal: SerialTerminal;
   /** The Machines page (its Disks tab) and Open disk…. */
   later: { openMachines(tab?: 'disks', id?: string): void; openDisk(): Promise<void> };
+  /** The memory signal's checks (web/app/run/memory-signal.ts): a crash before, too little memory (true: said, not started). */
+  signal: { crashedBefore(): boolean; fits(): boolean };
 };
 
 export class PowerActions {
@@ -132,9 +134,21 @@ export class PowerActions {
     );
   }
 
-  /** The first start: unless what the page can tell won't work (no isolation, the stored machine, no disk, a crash before, too little memory). */
-  boot(signal: { crashedBefore(): boolean; fits(): boolean }) {
-    const { machine: m, messages, runner } = this.#d;
+  /**
+   * A machine opened on the page starts: unless it has no disk yet, its tab went away with it running (a crash before),
+   * or this device hasn't the memory for it (each said, with what to do). The first start and a switch to another
+   * machine alike; a restart doesn't ask again (it was asked for, or offered by these).
+   */
+  startOpened() {
+    const { machine: m, runner, signal } = this.#d;
+    if (needsDisk(m)) return this.waitForDisk();
+    if (signal.crashedBefore() || !signal.fits()) return;
+    runner.start();
+  }
+
+  /** The first start: unless what the page can tell won't work (no isolation, the stored machine, and `startOpened`'s). */
+  boot() {
+    const { machine: m, messages } = this.#d;
     // SharedArrayBuffer (the guest's memory, shared by the vCPU workers) needs cross-origin isolation.
     if (!crossOriginIsolated) {
       messages.setState(
@@ -150,8 +164,6 @@ export class PowerActions {
     }
     if (m.storedError !== undefined)
       return messages.setState('failed', new MsgError('machine:power-actions.cantOpen', {}, { cause: m.storedError }));
-    if (needsDisk(m)) return this.waitForDisk();
-    if (signal.crashedBefore() || !signal.fits()) return;
-    runner.start();
+    this.startOpened();
   }
 }

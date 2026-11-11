@@ -15,7 +15,7 @@ import type { DiskRecord } from '../shape.ts';
 import type { Core } from '../run/core.ts';
 import { params } from '../run/knobs.ts';
 import { MACHINE_PARAMS } from '../run/config.ts';
-import { bootAttachment, diskName, needsDisk, overlayName } from '../run/page-disks.ts';
+import { bootAttachment, diskName, overlayName } from '../run/page-disks.ts';
 import { loadStored, rememberMachine } from '../run/page-machine.svelte.ts';
 import type { Action } from './message-bar.svelte.ts';
 import { isLive, power } from './power.svelte.ts';
@@ -170,8 +170,7 @@ export class DiskActions {
       rememberMachine(id);
       m.onRecord();
       this.#d.terminal.term.reset();
-      if (needsDisk(m)) pw.waitForDisk();
-      else runner.start();
+      pw.startOpened();
     });
   }
 

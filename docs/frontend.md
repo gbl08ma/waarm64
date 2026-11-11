@@ -605,7 +605,8 @@ buttons for the actions that apply. Checked on the page before a worker starts:
   machine's id>`, or `webpc.alive.transient-<machine>`) with its RAM, vCPUs, JIT budget and what it costs by the
   emulator's own accounting (the estimate and its peak), renewed every 10 s and cleared at every clean stop. A mark
   that no tab has renewed for 30 s means the tab was closed for it, most likely out of memory: the next start of that
-  machine (state `idle`) says so, with the estimate, and offers **Start with a 160 MiB JIT cache** (64 if it was 160
+  machine (state `idle`; the page's first start, or the machine opened from the Machines page or by a disk file:
+  `PowerActions.startOpened`, which also makes the memory check above) says so, with the estimate, and offers **Start with a 160 MiB JIT cache** (64 if it was 160
   or less), **Start with N MiB of RAM** (half or less; a stored machine's snapshots of the old size are orphaned, so
   it asks first) and **[Start as it is](ui:machine:memory-signal.crashed.asIs)**. The choice is saved in the stored machine's record, or for a transient
   machine in `webpc.settings` (`jitMiB`, `ramMiB`). While it runs, past what `navigator.deviceMemory` reports the

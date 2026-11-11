@@ -178,6 +178,7 @@ const powerActions: PowerActions = new PowerActions({
   messages,
   terminal,
   later: { openMachines: (tab, id) => pageWindow.openMachines(tab, id), openDisk: () => disks.open() },
+  signal,
 });
 const core = { machine, runner, power: powerActions, messages, terminal };
 const restore = new SnapshotRestore(core);
@@ -274,4 +275,4 @@ pageWindow.firstView();
 if (location.hash === '#machines') pageWindow.openMachines();
 messages.note = standingNote(await hasOpfs());
 await disks.fromAddress();
-powerActions.boot(signal);
+powerActions.boot();
