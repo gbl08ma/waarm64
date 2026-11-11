@@ -7,6 +7,7 @@ import type { KeyboardLayout } from '../keyboard.ts';
 import type { StartDisk, ToWorker } from '../protocol.ts';
 import { credentials, cpuFeatures, params, simpleDisplay } from './knobs.ts';
 import { sharesPath, type PageMachine } from './page-machine.svelte.ts';
+import { parseDevKnobs } from './dev-knobs.ts';
 
 type Start = Extract<ToWorker, { type: 'start' }>;
 
@@ -87,10 +88,7 @@ function devices(m: PageMachine, ch: Channels, w: StartWith) {
 /** The address's knobs the start message carries (development, tests and measurements). */
 const knobs = () => ({
   simple: simpleDisplay || undefined,
-  displayStats: params.has('displaystats') || undefined,
-  ioStats: params.has('iostats') || undefined,
-  noDiskCache: params.get('diskcache') === '0' || undefined,
-  avProbe: params.has('avprobe') || undefined,
+  dev: parseDevKnobs(params),
   cpu: cpuFeatures(),
   params: params.get('params') ?? undefined,
   credentials,
@@ -101,7 +99,6 @@ export function startMessage(m: PageMachine, ch: Channels, w: StartWith): [Start
   const stored = m.stored?.record;
   const message: Start = {
     type: 'start',
-    query: location.search,
     machine: m.name,
     ncpus: m.ncpus,
     ramMiB: m.ramMiB,

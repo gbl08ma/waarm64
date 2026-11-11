@@ -465,7 +465,12 @@ Page → worker:
   machine, beside the machine's own (the network card's). `disks`: the machine's disks in slot order
   (web/app/protocol.ts `StartDisk`: each one's source, a URL, a file, a blank or a ramdisk, and its overlay), the
   transient machine's chosen disk (below, "Your own disk") and `?disk2=` among them; `home`: the OPFS directory of its
-  own files. The message is built in web/app/run/start-message.ts.
+  own files. `cpu`: the vCPUs' features as one list (web/cpu-features.ts: the page's `?<feature>=0|1`, a snapshot's
+  header, a shape and `bootVm`'s mask all go by its table). `dev`: the address's development knobs for the machine
+  worker (web/app/run/dev-knobs.ts `parseDevKnobs`: `?gpu=`'s display tuning, `?snd=`, `?jit=`, `?fma=`, `?growcore`,
+  `?vyield=`, `?sharesasync=`, `?displaystats`, `?iostats`, `?diskcache=0`, `?avprobe`), parsed by the page: the workers
+  read no query (the GPU worker's `init` takes web/gpu-knobs.ts's `parseGpuKnobs`). The message is built in
+  web/app/run/start-message.ts.
   `snapshot`: a `File` to start from instead of booting (below, "Snapshots"); `ncpus` and `ramMiB`, the kernel
   and the command line are then the file's.
 - `snapshot {handle?}`: save a snapshot of the running machine to the file handle's stream, or,

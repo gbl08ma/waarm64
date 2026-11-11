@@ -5,9 +5,7 @@
 // `?keyboard=<id>` the guest's keyboard layout (web/app/keyboard.ts), `?disk2=<url>` a read-only second disk,
 // `?disk=<url>` a root disk of your own, `?snd=stats[,timer]` the sound's measurements, `?avprobe` the screen's
 // flashes for A/V sync (bench/audio/avsync.ts), `?gpu=` the graphics' knobs.
-import type { ToGpuWorker } from '../../gpu-worker.ts';
-import type { QueryPoll } from '../../virgl-host.ts';
-import type { ShareMode } from '../../venus-share.ts';
+import { parseGpuKnobs } from '../../gpu-knobs.ts';
 import { cpuFromQuery } from '../../cpu-features.ts';
 import { settings } from '../settings.ts';
 
@@ -35,59 +33,11 @@ export const benchHooks = params.has('displaystats') || params.has('snd');
 
 /**
  * 3D's knobs (docs/frontend.md "A 3D machine"): `?gpu=2d` (or `virgl-null`, G2's null renderer) off, `?gpu=virgl` on,
- * over the Machine menu's Graphics; `?gpu=vulkan` Vulkan; the rest the GPU worker's (`gpuInitKnobs`).
+ * over the Machine menu's Graphics; `?gpu=vulkan` Vulkan; the rest the GPU worker's (`gpuInitKnobs`, web/gpu-knobs.ts) and the machine worker's (web/app/run/dev-knobs.ts).
  */
 export const gpuKnobs = (params.get('gpu') ?? '').split(',');
 export const gpuAsked =
   gpuKnobs.includes('2d') || gpuKnobs.includes('virgl-null') ? '2d' : gpuKnobs.includes('virgl') ? '3d' : undefined;
 
-/** The value of knob `prefix…` (the first), and of each. */
-const knob = (prefix: string) => gpuKnobs.find((k) => k.startsWith(prefix))?.slice(prefix.length);
-const knobs = (prefix: string) => gpuKnobs.filter((k) => k.startsWith(prefix)).map((k) => k.slice(prefix.length));
-const knobNumber = (prefix: string) => {
-  const v = knob(prefix);
-  return v === undefined ? undefined : Number(v);
-};
-/** A list knob's items (`+` or space between them), every one given. */
-const knobList = (prefix: string) =>
-  knobs(prefix)
-    .flatMap((k) => k.split(/[+ ]/))
-    .filter(Boolean);
-
-type GpuKnobs = Omit<Extract<ToGpuWorker, { type: 'init' }>, 'type' | 'canvas' | 'port'>;
-
-/** The GPU worker's knobs from the address and the settings (its `init` without the canvas and the port). */
-export function gpuInitKnobs(): GpuKnobs {
-  const shaderMiB = settings().shaderMiB;
-  return {
-    stats: params.has('displaystats'),
-    debug: gpuKnobs.includes('debug'),
-    probe: params.has('avprobe'),
-    video: !gpuKnobs.includes('novideo'),
-    softwareVideo: gpuKnobs.includes('swvideo'),
-    waitAttached: gpuKnobs.includes('waitattached'),
-    vkShare: (['readback', 'canvas', 'bitmap'] as const).find((w) => gpuKnobs.includes(`vk${w}`)),
-    vkBreak: knobs('vkbreak=') as ShareMode[],
-    vkVendor: knob('vkvendor='),
-    vkPoll: gpuKnobs.includes('vkpoll=timeout') ? 'timeout' : gpuKnobs.includes('vkpoll=pump') ? 'pump' : undefined,
-    vkSyncPipelines: gpuKnobs.includes('vkpipelines=sync'),
-    vkPipeDelayMs: knobNumber('vkpipedelay='),
-    vkNoCache: gpuKnobs.includes('vkcache=off'),
-    vkImportRewrite: gpuKnobs.includes('vkimport=rewrite'),
-    vkPremake: gpuKnobs.includes('vkpremake=on'),
-    vkQueues: knobNumber('vkqueues='),
-    vkShaderBudget: shaderMiB ? shaderMiB * 2 ** 20 : undefined,
-    vkNudgeMs: knobNumber('vknudge='),
-    vkGpuTime: gpuKnobs.includes('vkgputime'),
-    vkTickMs: knobNumber('vktick='),
-    vkIdleMs: knobNumber('vkidle='),
-    vkHold: knobs('vkhold='),
-    vkHeldFormats: gpuKnobs.includes('vkformats=held'),
-    vkYcbcr: !gpuKnobs.includes('vkycbcr=off'),
-    vkL9: knobs('vkl9='),
-    vkSkip: knobs('vkskip='),
-    capsNo: knobList('capsno='),
-    capsYes: knobList('capsyes='),
-    queryPoll: knob('querypoll=') as QueryPoll | undefined,
-  };
-}
+/** The GPU worker's knobs from the address and the Preferences (its `init` without the canvas and the port). */
+export const gpuInitKnobs = () => parseGpuKnobs(params, settings().shaderMiB);

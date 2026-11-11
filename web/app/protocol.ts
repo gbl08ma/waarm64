@@ -9,6 +9,7 @@ import type { CpuFeature, Shape } from './shape.ts';
 import type { GuestWords } from './guest-unit.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
 import type { Msg, WireError } from '../msg.ts';
+import type { DevKnobs } from './run/dev-knobs.ts';
 
 /**
  * loading: fetching the core and the images; booting: the VM runs, its `ready` output not seen
@@ -34,8 +35,8 @@ export type Problem =
 export type ToWorker =
   | {
       type: 'start';
-      /** The page's query (`location.search`), for the worker's own knobs (`?snd=`, `?gpu=`, `?jit=`, `?fma=`, `?growcore`, `?vyield=`). */
-      query: string;
+      /** The address's development knobs for the machine worker (`?snd=`, `?gpu=`, `?jit=`, `?fma=`, `?growcore`, `?vyield=` and the rest), parsed by the page: the worker reads no query. */
+      dev: DevKnobs;
       machine: MachineName;
       ncpus: number;
       /** The guest's RAM, MiB (the machine's default, or the page's choice; a snapshot's own size wins). */
@@ -73,7 +74,7 @@ export type ToWorker =
        */
       renderer?: MessagePort;
       caps?: Uint8Array;
-      /** Vulkan through Venus beside 3D (the machine's setting or `?gpu=vulkan`; docs/devices.md "Venus"). */
+      /** Vulkan through Venus beside 3D (the machine's setting or `?gpu=vulkan`; docs/devices.md "Venus"): only with `renderer`. */
       vulkan?: boolean;
       /** The display port (web/gpu-present.ts): `mode` messages from a virtio-gpu, and the page's `size` to it; `png` ("Copy the screen") to whoever draws the screen, a virtio-gpu or the framebuffer here. */
       display: MessagePort;
@@ -81,14 +82,6 @@ export type ToWorker =
       size?: { width: number; height: number };
       /** Use the `simple-framebuffer` on a machine that has a virtio-gpu (the page's `?display=simple`). */
       simple?: boolean;
-      /** The display reports its draw latencies (`draw-stats` on the display port, kept in `window.__drawStats`; the page's `?displaystats`, for bench/gpu). */
-      displayStats?: boolean;
-      /** The disks keep stage timers and a trace of their base reads, answered on the `webpc-iostats` BroadcastChannel (the page's `?iostats`, for bench/remote-disk). */
-      ioStats?: boolean;
-      /** A remote disk's blocks aren't kept in OPFS (the page's `?diskcache=0`: bench/remote-disk's A/B). */
-      noDiskCache?: boolean;
-      /** The display posts `flash` when a draw turns the screen's centre bright (the page's `?avprobe`: A/V sync, bench/audio/avsync.ts; times in `window.__flashes`). */
-      avProbe?: boolean;
       /**
        * The vCPUs' features (web/cpu-features.ts, `BootOptions.cpu`): the defaults unless the page's `?<feature>=0` turns
        * one off or `?<feature>=1` another on (development: the A/B of bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD").

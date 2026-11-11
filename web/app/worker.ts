@@ -64,13 +64,9 @@ let current: Machine | undefined;
 /** The OPFS directory of the machine's variable store and suspended copy (the start message's `home`). */
 let home: string | undefined;
 
-/** The page's query (the start message's). */
-let query = new URLSearchParams();
-
 self.onmessage = (e: MessageEvent<ToWorker>) => {
   const m = e.data;
   if (m.type === 'start') {
-    query = new URLSearchParams(m.query);
     start(m).catch((err) => {
       if (stopping) return;
       const [problem, error] = explain(err, MACHINES[m.machine]);
@@ -267,8 +263,7 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
     case 'agent':
       return { type: 'agent', port: m.agent };
     case '9p': {
-      // `?sharesasync=<name>,…` (tests, measurements): folders in the browser served as a folder on the computer is.
-      const asHost = (query.get('sharesasync') ?? '').split(',');
+      const asHost = m.dev.sharesAsync;
       return {
         type: '9p',
         tag: SHARES_TAG,
@@ -277,7 +272,7 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
       };
     }
     case 'blk':
-      return blkSpec(slot.disk!, m.ioStats, m.noDiskCache ? false : undefined);
+      return blkSpec(slot.disk!, m.dev.ioStats || undefined, m.dev.noDiskCache ? false : undefined);
     case 'keyboard':
       return { type: 'input', kind: 'keyboard', port: m.keyboard };
     case 'tablet':
@@ -287,21 +282,19 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
     case 'touch':
       return { type: 'input', kind: 'touch', port: m.touch };
     case 'gpu': {
-      const tuning = gpuTuning();
-      const { vulkan, ...rest } = tuning;
-      // Vulkan through Venus on a 3D machine (its renderer is the GPU worker's: docs/devices.md "Venus").
+      const { virglNull, ...tuning } = m.dev.gpu;
       return {
         type: 'gpu',
         width: m.size?.width ?? machine.framebuffer.width,
         height: m.size?.height ?? machine.framebuffer.height,
         canvas: m.renderer ? undefined : m.screen,
         port: m.display,
-        stats: m.displayStats,
-        probe: m.avProbe,
+        stats: m.dev.displayStats || undefined,
+        probe: m.dev.avProbe || undefined,
         keepConsole: true,
-        ...rest,
-        virgl: tuning.virgl || !!m.renderer,
-        venus: (vulkan || !!m.vulkan) && !!m.renderer,
+        ...tuning,
+        virgl: virglNull || !!m.renderer,
+        venus: venusOn(m),
         renderer: m.renderer,
         caps: m.caps,
       };
@@ -326,45 +319,13 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
         mic: m.sound?.mic,
         port: m.sound?.port,
         mixer: m.sound && { level: m.sound.level, muted: m.sound.muted },
-        ...sndTuning(),
+        ...m.dev.snd,
       };
   }
 }
 
-/**
- * The sound's tuning, for measurements (docs/audio.md "Measurements"): the page's `?snd=timer` completes played messages
- * on a timer instead of the worklet's notify, `stats` posts their timing once a second (kept in `window.__sndStats`).
- */
-function sndTuning() {
-  const knobs = (query.get('snd') ?? '').split(',');
-  return { wake: knobs.includes('timer') ? ('timer' as const) : ('worklet' as const), stats: knobs.includes('stats') };
-}
-/**
- * The display's tuning: flush replies paced to the frame and a queue of 16 (docs/devices.md "virtio-gpu"); the page's
- * `?gpu=nopace,q<N>` changes them, for measurements; `canvas2d` and `gl2d` choose a 2D machine's screen (web/gpu-present.ts: by default WebGL2 on a GPU, a 2D context elsewhere). 3D is the page's choice (a 3D machine, the default: the start
- * message's `renderer`; `?gpu=2d` turns it off). `?gpu=virgl-null` turns on virgl on the null renderer (G2: the
- * guest's 3D commands are counted, nothing is drawn, so a GL desktop's screen stays black); `capture` adds a trace of
- * them on the display port (web/virgl-trace.ts; the page keeps it in `window.__virglCapture` for a test or a tool).
- * `vulkan` offers Vulkan through Venus on a 3D machine (docs/devices.md "Venus"; VK1: on the null renderer).
- * `nowatch` (with `vulkan`) skips the window's write-watch at each submit: its cost, measured against the default.
- */
-function gpuTuning() {
-  const knobs = (query.get('gpu') ?? '').split(',');
-  const q = knobs.find((k) => /^q\d+$/.test(k));
-  return {
-    paceFlushes: !knobs.includes('nopace'),
-    queueSize: q ? Number(q.slice(1)) : 16,
-    virgl: knobs.includes('virgl-null'),
-    vulkan: knobs.includes('vulkan'),
-    noWatch: knobs.includes('nowatch'),
-    capture: knobs.includes('capture'),
-    screen2d: knobs.includes('canvas2d')
-      ? ('canvas2d' as const)
-      : knobs.includes('gl2d')
-        ? ('webgl2' as const)
-        : ('auto' as const),
-  };
-}
+/** Vulkan through Venus on a 3D machine (the page's choice, `vulkan`; its renderer is the GPU worker's: docs/devices.md "Venus"). */
+const venusOn = (m: StartMessage) => !!m.vulkan && !!m.renderer;
 /** A machine with a virtio-gpu draws through it, unless the page asked for the framebuffer. */
 const usesGpu = (m: StartMessage, machine: Machine) => machine.display === 'gpu' && !m.simple;
 
@@ -695,7 +656,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   // RAM past what memory 0 holds goes to spill memories, NUMA nodes for the guest (docs/spill-memories.md): the
   // user's split, else the automatic one; a snapshot's own.
   // A machine with Vulkan keeps its renderer and window in memory 1, before node 1 (docs/devices.md "Venus").
-  const venus = here.some((s) => s.kind === 'gpu') && (gpuTuning().vulkan || !!m.vulkan) && !!m.renderer;
+  const venus = here.some((s) => s.kind === 'gpu') && venusOn(m);
   let split = m.ramSplit
     ? { ramSize: m.ramSplit[0] * 2 ** 20, spill: m.ramSplit.slice(1).map((n) => n * 2 ** 20) }
     : splitRam(ramMiB * 2 ** 20, venus ? VENUS_RESERVE : 0);
@@ -742,7 +703,7 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   }
   // A split made without Vulkan's renderer and window in memory 1 (a definition, `?split=`, a record from before
   // they moved there, a snapshot of a machine without Vulkan) can't be laid out: say why, not "couldn't reserve".
-  const withVenus = here.some((s) => s.kind === 'gpu') && (gpuTuning().vulkan || !!m.vulkan) && !!m.renderer;
+  const withVenus = here.some((s) => s.kind === 'gpu') && venusOn(m);
   const tooBig = withVenus && splitError(split.ramSize, split.spill, VENUS_RESERVE);
   if (tooBig) {
     const why = splitMsg(tooBig);
@@ -784,10 +745,10 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
     ncpus,
     parallel: true,
     realtime: true,
-    compileWorker: query.get('jit') !== 'nocw' && !spiderMonkey,
-    fma: query.get('fma') !== 'emul',
-    exactCore: !query.has('growcore'),
-    vcpuYieldMs: query.has('vyield') ? Number(query.get('vyield')) : undefined,
+    compileWorker: m.dev.compileWorker && !spiderMonkey,
+    fma: m.dev.fma,
+    exactCore: m.dev.exactCore,
+    vcpuYieldMs: m.dev.vcpuYieldMs,
     cpu,
     framebuffer: kinds.includes('gpu') ? undefined : machine.framebuffer,
     serialIn: m.serial,
