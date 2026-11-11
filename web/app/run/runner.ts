@@ -63,8 +63,8 @@ export type RunnerDeps = {
   clipboard: (port: MessagePort | undefined) => ClipboardShare | undefined;
   /** The memory signal's mark (web/app/run/memory-signal.ts): renewed with each status, cleared at a stop. */
   alive: { mark(st: Status): number; clear(): void };
-  /** What can be done about a problem (web/app/run/problems.ts), and a restart. */
-  later: { problems(): Problems; restart(): Promise<void> };
+  /** What can be done about a problem (web/app/run/problems.ts), and the guest's own reset (`PowerActions.rebooted`). */
+  later: { problems(): Problems; rebooted(live: () => boolean): Promise<void> };
 };
 
 /** A start's arguments: booted, or (with `snapshot`) the one the file holds; `resume` false drops a suspended machine. */

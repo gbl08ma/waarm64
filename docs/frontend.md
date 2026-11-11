@@ -525,7 +525,7 @@ Worker → page:
 - `state {state, error?, note?, problem?}`: `loading` (fetching the wasm, kernel, initrd), `booting`
   (the VM runs), `running` (the machine's `ready` marker appeared on the serial console:
   `readyWatcher` in machine.ts, over the output so far, across drains), `off`
-  (PSCI SYSTEM_OFF), `rebooting` (PSCI SYSTEM_RESET: the page starts a new machine), `crashed`
+  (PSCI SYSTEM_OFF), `rebooting` (PSCI SYSTEM_RESET: the page starts a new machine, once a save or a switch under way ends: `PowerActions.rebooted`), `crashed`
   (the guest's `Kernel panic - not syncing` line, an emulator error, an unimplemented exit),
   `failed` (the machine couldn't start). `crashed` and `failed` carry an `error` for the user and a
   `problem` (below, "Errors"), from which the page picks the actions it offers. After a panic the

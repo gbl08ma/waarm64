@@ -113,3 +113,32 @@ test("finding 5: a 3D machine's Copy screen settles (no picture) when its GPU wo
   assert.ok(r.s <= 12, `within the 2D path's 10 s (${r.s} s)`);
   await page.close();
 });
+
+test('finding 6: a guest reboot during a save restarts the machine once the save ends', { timeout: 60_000 }, async () => {
+  const page = await browser.newPage();
+  await page.goto(`${base}/tests/browser/core.html`); // any page of the origin
+  const r = await page.evaluate(async () => {
+    const { PowerActions } = await import('/web/app/run/power-actions.ts' as string);
+    const { power } = await import('/web/app/areas/power.svelte.ts' as string);
+    let started = 0;
+    const actions = new PowerActions({
+      machine: { spec: {}, stored: undefined },
+      runner: { stop: async () => undefined, start: () => void started++ },
+      messages: { setState() {} },
+      terminal: { term: { reset() {} } },
+      later: {},
+      signal: { crashedBefore: () => false, fits: () => true },
+    });
+    power.saving = true; // a snapshot being written when the guest resets
+    const done = actions.rebooted(() => true);
+    await new Promise((r) => setTimeout(r, 300));
+    const during = started;
+    power.saving = false; // the save ends (its job failed: the machine it saved reset)
+    await Promise.race([done, new Promise((r) => setTimeout(r, 5000))]);
+    const replaced = actions.rebooted(() => false); // a reboot of a run replaced meanwhile: nothing
+    await replaced;
+    return { during, after: started };
+  });
+  assert.deepEqual(r, { during: 0, after: 1 });
+  await page.close();
+});

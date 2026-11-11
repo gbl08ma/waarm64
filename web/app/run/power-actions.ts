@@ -80,6 +80,16 @@ export class PowerActions {
     });
   }
 
+  /**
+   * The guest reset itself (PSCI SYSTEM_RESET): a new machine starts in its place. A save or a switch under way
+   * (`busy`, which a restart would be dropped for) ends first; the restart then runs unless the run was replaced
+   * meanwhile (`live` false).
+   */
+  async rebooted(live: () => boolean) {
+    while (power.busy) await new Promise((r) => setTimeout(r, 100));
+    if (live()) await this.restart();
+  }
+
   /** The toolbar's Start, Restart or Retry: a restart of a running machine is a power cut, so it asks first. */
   async restartAsked() {
     if (

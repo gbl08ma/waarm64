@@ -74,7 +74,7 @@ function stateChanged(x: Runner, r: Run, m: StateMessage) {
     bootCard.shown = false;
     x.d.screen.scheduleSize(true); // a restored machine starts at the size it was saved with
   }
-  if (m.state === 'rebooting') void x.d.later.restart();
+  if (m.state === 'rebooting') void x.d.later.rebooted(() => r.live());
   // Its devices go on once the machine runs: at a boot, a resume and a restore alike (a snapshot's ports are empty).
   if ((m.state === 'booting' || m.state === 'running') && r.usb && !r.usbStarted) {
     r.usbStarted = true;

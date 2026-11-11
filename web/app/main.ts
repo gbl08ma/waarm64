@@ -157,7 +157,10 @@ const runner = new Runner({
   },
   clipboard: (port) => clipboardActions.begin(port),
   alive: { mark: (st) => signal.mark(st), clear: () => signal.clear() },
-  later: { problems: () => problems, restart: () => powerActions.restart() },
+  later: {
+    problems: () => problems,
+    rebooted: (live) => powerActions.rebooted(live),
+  },
 });
 const pageWindow: PageWindow = new PageWindow({
   machine,
