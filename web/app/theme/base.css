@@ -1,0 +1,84 @@
+/*
+  The page's element defaults (docs/frontend-code.md §1): the reset, the body's frame, the form controls' look, and
+  `.sr` (words for a screen reader only). Components style what's theirs; the primitives (web/app/ui/) style buttons,
+  rows, notes and fields.
+*/
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+:root {
+  font-family: var(--font);
+  font-size: var(--text-base);
+  line-height: var(--line-height);
+}
+/* The page is a column: the toolbar, the message bar, the machine or the Machines page, the status bar. */
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--text);
+}
+[hidden] {
+  display: none !important;
+}
+button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+}
+button:hover {
+  background: var(--hover-bg);
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  background: transparent;
+}
+select,
+textarea,
+input:not([type='checkbox'], [type='radio'], [type='range']) {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  min-height: var(--control-h);
+  padding: 0 var(--space-3);
+}
+textarea {
+  padding: var(--space-2) var(--space-3);
+}
+a {
+  color: var(--accent);
+}
+hr {
+  width: 100%;
+  margin: var(--space-2) 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+dialog {
+  color: var(--text);
+}
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

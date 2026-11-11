@@ -3,9 +3,9 @@
   (settings, disks, overlays, snapshots). Icons with tooltips; the main gates (Machines, Start) also have their names.
 -->
 <script lang="ts">
-  import Icon from './Icon.svelte';
-  import Menu from './Menu.svelte';
-  import Check from './Check.svelte';
+  import Icon from './ui/Icon.svelte';
+  import Menu from './ui/Menu.svelte';
+  import Check from './ui/Check.svelte';
   import ClipboardMenu from './ClipboardMenu.svelte';
   import FoldersMenu from './FoldersMenu.svelte';
   import Network from './Network.svelte';

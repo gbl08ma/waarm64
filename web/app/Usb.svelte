@@ -5,9 +5,9 @@
   device… opens the wizard (AddUsb.svelte). The controller's switch is the Machines page's (it is in the shape).
 -->
 <script lang="ts">
-  import Check from './Check.svelte';
+  import Check from './ui/Check.svelte';
   import AddUsb from './AddUsb.svelte';
-  import Icon from './Icon.svelte';
+  import Icon from './ui/Icon.svelte';
   import UsbProblems from './UsbProblems.svelte';
   import { t } from '../i18n.ts';
   import { ask } from './ask.svelte.ts';

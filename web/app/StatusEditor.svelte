@@ -8,7 +8,7 @@
   machine hasn't (a second disk) is dimmed. Kept in the settings at each change.
 -->
 <script lang="ts">
-  import Icon from './Icon.svelte';
+  import Icon from './ui/Icon.svelte';
   import type { PageNetwork } from './net-live.ts';
   import { remember } from './settings.ts';
   import { liveNow } from './StatusBar.svelte';

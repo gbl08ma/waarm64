@@ -4,8 +4,8 @@
   and from a folder on the computer, Empty. While a machine writes it (its lock is exclusive) those are off.
 -->
 <script lang="ts">
-  import Check from './Check.svelte';
-  import Icon from './Icon.svelte';
+  import Check from './ui/Check.svelte';
+  import Icon from './ui/Icon.svelte';
   import { ask } from './ask.svelte.ts';
   import { t } from '../i18n.ts';
   import { bytesText } from './bytes.ts';

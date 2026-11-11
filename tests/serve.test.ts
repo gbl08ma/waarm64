@@ -42,7 +42,7 @@ test('the page, its modules compiled, `/` sending the browser to it', async () =
   const ts = await fetch(base + '/web/app/protocol.ts');
   assert.match(ts.headers.get('content-type') ?? '', /javascript/);
   assert.doesNotMatch(await ts.text(), /export type ToWorker/);
-  const component = await (await fetch(base + '/web/app/Icon.svelte')).text();
+  const component = await (await fetch(base + '/web/app/ui/Icon.svelte')).text();
   assert.match(component, /from "\/node_modules\/[^"]*svelte\/src\/internal\/client\/index\.js/);
   assert.doesNotMatch(component, /<script/);
 });

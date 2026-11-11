@@ -6,7 +6,7 @@
   transient machine: files only.
 -->
 <script lang="ts">
-  import Icon from './Icon.svelte';
+  import Icon from './ui/Icon.svelte';
   import { ask } from './ask.svelte.ts';
   import type { Store, SnapshotRecord } from './store.ts';
   import type { MachineRecord, Shape } from './shape.ts';

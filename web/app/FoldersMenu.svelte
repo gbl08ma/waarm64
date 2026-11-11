@@ -4,7 +4,7 @@
   web/app/folders-live.ts's, through `page`.
 -->
 <script lang="ts">
-  import Menu from './Menu.svelte';
+  import Menu from './ui/Menu.svelte';
   import T from './T.svelte';
   import { errorText, t } from '../i18n.ts';
   import type { PageFolders } from './folders-live.ts';

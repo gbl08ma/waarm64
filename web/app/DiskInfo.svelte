@@ -4,7 +4,7 @@
   this browser.
 -->
 <script lang="ts">
-  import Icon from './Icon.svelte';
+  import Icon from './ui/Icon.svelte';
   import { t } from '../i18n.ts';
   import { bytesText } from './bytes.ts';
   import { diskKind } from './disk-kind.ts';

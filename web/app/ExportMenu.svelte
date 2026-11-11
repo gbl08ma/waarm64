@@ -3,8 +3,8 @@
   qcow2 or raw, compressed or not. On a machine's Disks tab (its chosen overlay) and in a disk's Overlays dialog (each one).
 -->
 <script lang="ts">
-  import Check from './Check.svelte';
-  import Menu from './Menu.svelte';
+  import Check from './ui/Check.svelte';
+  import Menu from './ui/Menu.svelte';
   import { t } from '../i18n.ts';
   import type { DiskRecord } from './shape.ts';
   import type { ExportMode } from './export.ts';

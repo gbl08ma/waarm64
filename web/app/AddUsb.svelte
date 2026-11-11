@@ -4,8 +4,8 @@
   remembered by the machine, and attached at once when it runs in this tab.
 -->
 <script lang="ts">
-  import Icon from './Icon.svelte';
-  import Modal from './Modal.svelte';
+  import Icon from './ui/Icon.svelte';
+  import Modal from './ui/Modal.svelte';
   import UsbProblems from './UsbProblems.svelte';
   import { t } from '../i18n.ts';
   import type { IconName } from './icons.ts';

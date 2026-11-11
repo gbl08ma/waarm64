@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
   import AddUsb from './AddUsb.svelte';
-  import Menu from './Menu.svelte';
+  import Menu from './ui/Menu.svelte';
   import UsbProblems from './UsbProblems.svelte';
   import { t } from '../i18n.ts';
   import { deviceName, errorView, type ErrorView } from './usb-ports.ts';

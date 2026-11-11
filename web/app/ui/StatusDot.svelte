@@ -1,0 +1,30 @@
+<!--
+  A state's light: a small dot in the tone of what it says (`ok`: on, connected; `busy`: on its way; `bad`: failed;
+  `off`). The network menu's, an adapter's. `class` and other attributes go on the dot.
+-->
+<script lang="ts">
+  type Props = { tone: 'ok' | 'busy' | 'bad' | 'off'; class?: string; [attr: string]: unknown };
+  let { tone, class: cls, ...rest }: Props = $props();
+</script>
+
+<span class={['dot', tone, cls]} {...rest}></span>
+
+<style>
+  .dot {
+    flex: none;
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--status-off);
+  }
+  .ok {
+    background: var(--status-ok);
+  }
+  .busy {
+    background: var(--status-busy);
+  }
+  .bad {
+    background: var(--status-bad);
+  }
+</style>

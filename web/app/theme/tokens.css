@@ -1,0 +1,89 @@
+/*
+  The page's design tokens (docs/frontend-code.md §1): every color, size of text, weight, space, radius, shadow and
+  control height a component uses. Named by role, so a re-theme changes this file only. The look is a desktop
+  application's, dark.
+*/
+:root {
+  color-scheme: dark;
+
+  /* Surfaces: the page (and what's sunk into a raised surface: a field, a row in a dialog), what's raised on it
+     (panes' rows, menus, dialogs, the Machines page's list), the bars (the toolbar, the status bar). */
+  --surface: #0b0d10;
+  --surface-raised: #15181d;
+  --surface-bar: #1a1e24;
+  /* The machine's screen and what's drawn over it. */
+  --screen-bg: #000;
+  --screen-overlay: #000c;
+  --backdrop: rgb(0 0 0 / 0.55);
+  --border: #262b33;
+
+  --text: #d7dce3;
+  --text-dim: #8a93a0;
+  --accent: #5b9dff;
+
+  /* A control's states. */
+  --hover-bg: #262c34;
+  --pressed-bg: #2c3a50;
+  --pressed-border: #3a4d6a;
+
+  /* The main button of a form or a dialog, and the one that destroys. */
+  --primary-bg: #24406b;
+  --primary-border: #3b6db3;
+  --primary-fg: #fff;
+  --danger-bg: #5c1d22;
+  --danger-border: #a33a40;
+  --danger-fg: #fff;
+
+  /* Words in a tone (a note, a row's line), and the bars that carry one (the message bar, the Machines page's error). */
+  --ok-fg: #8fd18f;
+  --warn-fg: #ffb36b;
+  --warn-bar-fg: #f3d98b;
+  --warn-bg: #2a2312;
+  --warn-border: #5c4b1d;
+  --error-fg: #ff8f8f;
+  --error-bar-fg: #ffb4b6;
+  --error-bg: #2a1215;
+  --error-border: #5c1d22;
+
+  /* A state's light (the status bar, the network menu, the keyboard's LEDs). */
+  --status-ok: #4cc38a;
+  --status-busy: #e0b341;
+  --status-bad: #e5484d;
+  --status-off: #6b7280;
+
+  --shadow-menu: 0 8px 24px #000a;
+  --shadow-dialog: 0 12px 40px #000a;
+  /* A hairline under a strip of tabs. */
+  --shadow-rule: inset 0 -1px var(--border);
+  /* The focus ring of the screen. */
+  --shadow-focus: 0 0 0 2px var(--accent);
+  --shadow-frame: 0 0 0 1px var(--border);
+
+  /* Space: gaps, paddings, margins. */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 24px;
+
+  /* Text. */
+  --font: system-ui, sans-serif;
+  --font-mono: ui-monospace, monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --line-height: 1.4;
+  --weight-normal: 400;
+  --weight-bold: 600;
+
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 8px;
+
+  /* Heights: a button or a field (a form's row), a toolbar button. */
+  --control-h: 28px;
+  --tool-h: 32px;
+}

@@ -6,7 +6,7 @@
 <script lang="ts">
   import AttachDisk from './AttachDisk.svelte';
   import DiskInfo from './DiskInfo.svelte';
-  import Icon from './Icon.svelte';
+  import Icon from './ui/Icon.svelte';
   import Overlays from './Overlays.svelte';
   import { ask } from './ask.svelte.ts';
   import { msg, t } from '../i18n.ts';

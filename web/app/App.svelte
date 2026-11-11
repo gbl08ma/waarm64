@@ -6,7 +6,7 @@
 <script lang="ts">
   import Ask from './Ask.svelte';
   import FolderWizard from './FolderWizard.svelte';
-  import Icon from './Icon.svelte';
+  import Icon from './ui/Icon.svelte';
   import MachinesPage from './MachinesPage.svelte';
   import NetWizard from './NetWizard.svelte';
   import Osk from './Osk.svelte';

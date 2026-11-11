@@ -8,8 +8,8 @@
   `page`.
 -->
 <script lang="ts">
-  import Check from './Check.svelte';
-  import Menu from './Menu.svelte';
+  import Check from './ui/Check.svelte';
+  import Menu from './ui/Menu.svelte';
   import { t } from '../i18n.ts';
   import { TYPED } from '../agent-frame.ts';
   import { page, ui } from './ui.svelte.ts';

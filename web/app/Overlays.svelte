@@ -5,8 +5,8 @@
 -->
 <script lang="ts">
   import ExportMenu from './ExportMenu.svelte';
-  import Icon from './Icon.svelte';
-  import Modal from './Modal.svelte';
+  import Icon from './ui/Icon.svelte';
+  import Modal from './ui/Modal.svelte';
   import { ask } from './ask.svelte.ts';
   import { errorText, msg, MsgError, t } from '../i18n.ts';
   import type { OverlayRecord, Store } from './store.ts';

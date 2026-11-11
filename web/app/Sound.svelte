@@ -5,8 +5,8 @@
   here, and they move its.
 -->
 <script lang="ts">
-  import Menu from './Menu.svelte';
-  import Check from './Check.svelte';
+  import Menu from './ui/Menu.svelte';
+  import Check from './ui/Check.svelte';
   import type { PageAudio } from '../audio.ts';
   import { remember, settings } from './settings.ts';
   import { ui } from './ui.svelte.ts';

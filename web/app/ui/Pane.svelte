@@ -9,7 +9,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Icon from './Icon.svelte';
-  import type { IconName } from './icons.ts';
+  import type { IconName } from '../icons.ts';
 
   type Tab<T extends string> = { id: T; icon: IconName; label: string };
   type Props = {
@@ -53,7 +53,6 @@
 
 <style>
   section {
-    --row: 28px;
     min-width: 0;
     min-height: 0;
     display: flex;
@@ -66,8 +65,8 @@
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
-    gap: 6px 10px;
-    padding: 12px 16px 8px;
+    gap: var(--space-3) var(--space-4);
+    padding: var(--space-4) var(--space-5) var(--space-3);
   }
   /* The title takes the line's room, so a long small line wraps under it and the buttons stay beside it (they go
      under it only when the pane is too narrow for both). */
@@ -77,35 +76,25 @@
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 2px 10px;
-    padding-block: calc((var(--row) - 22px) / 2);
+    gap: var(--space-1) var(--space-4);
+    padding-block: calc((var(--control-h) - 22px) / 2);
   }
   h3 {
     margin: 0;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: var(--text-lg);
+    font-weight: var(--weight-bold);
     line-height: 22px;
   }
   .meta {
-    color: var(--dim);
-    font-size: 12px;
-  }
-  .head > :global(button) {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    min-height: var(--row);
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 3px 10px;
+    color: var(--text-dim);
+    font-size: var(--text-sm);
   }
   .tabs {
     flex: none;
     display: flex;
-    gap: 2px;
-    padding: 0 16px;
-    box-shadow: inset 0 -1px var(--line);
+    gap: var(--space-1);
+    padding: 0 var(--space-5);
+    box-shadow: var(--shadow-rule);
     overflow-x: auto;
     scrollbar-width: none;
   }
@@ -114,20 +103,20 @@
     white-space: nowrap;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 7px 14px;
-    border-radius: 6px 6px 0 0;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-5);
+    border-radius: var(--radius) var(--radius) 0 0;
     border: 1px solid transparent;
     border-bottom: 0;
-    color: var(--dim);
+    color: var(--text-dim);
   }
   .tabs button[aria-selected='true'] {
     color: var(--text);
-    background: var(--bg);
-    border-color: var(--line);
-    border-bottom: 1px solid var(--bg);
+    background: var(--surface);
+    border-color: var(--border);
+    border-bottom: 1px solid var(--surface);
   }
   .tab {
-    padding: 16px;
+    padding: var(--space-5);
   }
 </style>

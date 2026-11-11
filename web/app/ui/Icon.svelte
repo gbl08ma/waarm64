@@ -1,6 +1,6 @@
 <!-- An icon of the page's set (web/app/icons.ts: Tabler's outline icons), in the text's colour. -->
 <script lang="ts">
-  import { ICONS, type IconName } from './icons.ts';
+  import { ICONS, type IconName } from '../icons.ts';
   let { name, size = 20 }: { name: IconName; size?: number } = $props();
   const Glyph = $derived(ICONS[name]);
 </script>

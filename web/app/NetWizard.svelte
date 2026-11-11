@@ -9,8 +9,8 @@
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
-  import Modal from './Modal.svelte';
-  import Check from './Check.svelte';
+  import Modal from './ui/Modal.svelte';
+  import Check from './ui/Check.svelte';
   import T from './T.svelte';
   import { describe, msg, t, text, type Described, type Msg } from '../i18n.ts';
   import { preselect, type Connection } from './connections.ts';

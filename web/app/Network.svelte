@@ -7,8 +7,8 @@
   `-<n-1>`. Logic is web/app/net-live.ts's, through `page`.
 -->
 <script lang="ts">
-  import Menu from './Menu.svelte';
-  import Check from './Check.svelte';
+  import Menu from './ui/Menu.svelte';
+  import Check from './ui/Check.svelte';
   import T from './T.svelte';
   import { describe, t, type Described } from '../i18n.ts';
   import { MsgError } from '../msg.ts';

@@ -1,6 +1,6 @@
 <!-- One piece of a status bar element (web/app/statusbar.ts `Piece`): its words, or its icon and short value (the words for screen readers), a dot, bars. The bar and the Preferences' editor draw them. -->
 <script lang="ts">
-  import Icon from './Icon.svelte';
+  import Icon from './ui/Icon.svelte';
   import { lookOf, type Item, type Piece } from './statusbar.ts';
   import { ui } from './ui.svelte.ts';
 

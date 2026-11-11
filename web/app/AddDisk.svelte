@@ -3,11 +3,11 @@
   then its details (the URL and the server's check, the file, the size) and whether the machine may write to it.
 -->
 <script lang="ts">
-  import Check from './Check.svelte';
+  import Check from './ui/Check.svelte';
   import { onMount } from 'svelte';
   import DiskInfo from './DiskInfo.svelte';
-  import Icon from './Icon.svelte';
-  import Modal from './Modal.svelte';
+  import Icon from './ui/Icon.svelte';
+  import Modal from './ui/Modal.svelte';
   import { ask } from './ask.svelte.ts';
   import { errorText, MsgError, t, text } from '../i18n.ts';
   import { causes } from '../msg.ts';

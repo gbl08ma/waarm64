@@ -61,24 +61,24 @@
   .check {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-3);
   }
   .check.compact {
-    font-size: 13px;
+    font-size: var(--text-md);
     white-space: nowrap;
   }
   .check-field {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-3);
   }
   /* A long note takes the width it's given rather than widening a grid's column; it starts under the words, past the
-     box (its 4 px margin, 13 px, 3 px margin) and the 6 px gap. */
+     box (13 px and its margins, 3 px and 4 px: 20 px) and the gap. */
   .note {
     contain: inline-size;
     margin: 0;
-    padding-left: 26px;
-    color: var(--dim);
-    font-size: 12px;
+    padding-left: calc(20px + var(--space-3));
+    color: var(--text-dim);
+    font-size: var(--text-sm);
   }
 </style>

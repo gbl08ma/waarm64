@@ -4,7 +4,7 @@
   overlays; one that has it already, has as many disks as a machine can, or runs in another tab says so instead.
 -->
 <script lang="ts">
-  import Modal from './Modal.svelte';
+  import Modal from './ui/Modal.svelte';
   import { errorText, t } from '../i18n.ts';
   import type { Store } from './store.ts';
   import { MAX_DISKS, type DiskRecord, type MachineRecord } from './shape.ts';

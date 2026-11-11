@@ -186,7 +186,7 @@
       "count": 6
     }
   },
-  "web/app/Modal.svelte": {
+  "web/app/ui/Modal.svelte": {
     "@typescript-eslint/unbound-method": {
       "count": 1
     }

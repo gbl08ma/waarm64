@@ -6,8 +6,8 @@
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
-  import Modal from './Modal.svelte';
-  import Check from './Check.svelte';
+  import Modal from './ui/Modal.svelte';
+  import Check from './ui/Check.svelte';
   import { errorText, msg, t } from '../i18n.ts';
   import { preselect, type Folder } from './folders.ts';
   import type { PageFolders } from './folders-live.ts';

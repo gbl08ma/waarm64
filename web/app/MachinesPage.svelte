@@ -11,11 +11,11 @@
   import About from './About.svelte';
   import Disks from './Disks.svelte';
   import DisksPane from './DisksPane.svelte';
-  import Icon from './Icon.svelte';
-  import Pane from './Pane.svelte';
+  import Icon from './ui/Icon.svelte';
+  import Pane from './ui/Pane.svelte';
   import MoveButtons from './MoveButtons.svelte';
-  import Menu from './Menu.svelte';
-  import Check from './Check.svelte';
+  import Menu from './ui/Menu.svelte';
+  import Check from './ui/Check.svelte';
   import Snapshots from './Snapshots.svelte';
   import StatusEditor from './StatusEditor.svelte';
   import Usb from './Usb.svelte';

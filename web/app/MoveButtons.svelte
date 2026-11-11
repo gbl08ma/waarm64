@@ -3,7 +3,7 @@
   means there goes in `upTitle` and `downTitle`, and `action` names them for the tests (`<action>-up`, `<action>-down`).
 -->
 <script lang="ts">
-  import Icon from './Icon.svelte';
+  import Icon from './ui/Icon.svelte';
   import { t } from '../i18n.ts';
 
   let {

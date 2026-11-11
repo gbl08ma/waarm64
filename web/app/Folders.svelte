@@ -3,8 +3,8 @@
   switch and the mount in the guest are the Machines page's (they are settings, saved as a draft).
 -->
 <script lang="ts">
-  import Check from './Check.svelte';
-  import Icon from './Icon.svelte';
+  import Check from './ui/Check.svelte';
+  import Icon from './ui/Icon.svelte';
   import MoveButtons from './MoveButtons.svelte';
   import { msg, t } from '../i18n.ts';
   import type { PageFolders } from './folders-live.ts';

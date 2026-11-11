@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import Icon from './Icon.svelte';
+  import Icon from './ui/Icon.svelte';
   import {
     autoLayout,
     COMPACT_HEIGHT,

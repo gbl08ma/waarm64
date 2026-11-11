@@ -5,9 +5,9 @@
   overlay). Add a disk… opens the wizard (AddDisk.svelte).
 -->
 <script lang="ts">
-  import Check from './Check.svelte';
+  import Check from './ui/Check.svelte';
   import AddDisk from './AddDisk.svelte';
-  import Icon from './Icon.svelte';
+  import Icon from './ui/Icon.svelte';
   import MoveButtons from './MoveButtons.svelte';
   import ExportMenu from './ExportMenu.svelte';
   import Overlays from './Overlays.svelte';
