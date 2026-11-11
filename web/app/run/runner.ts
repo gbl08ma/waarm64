@@ -19,13 +19,13 @@ import type { SerialTerminal } from '../areas/serial-terminal.ts';
 import type { ClipboardShare } from '../clipboard.ts';
 import type { PageFolders } from '../folders-live.ts';
 import type { Grab } from '../hooks.ts';
-import { keyboardSetting, resolveKeyboard } from '../keyboard.ts';
+import { resolveKeyboard } from '../keyboard.ts';
 import type { PageNetwork } from '../net-live.ts';
 import type { FromWorker, Status, ToWorker } from '../protocol.ts';
 import type { Sample } from '../statusbar.ts';
 import type { UsbPorts } from '../usb-live.ts';
 import type { SnapshotJob } from '../areas/snapshot-actions.ts';
-import { gpuInitKnobs, params } from './knobs.ts';
+import { gpuInitKnobs } from './knobs.ts';
 import { MachineLock } from './machine-lock.ts';
 import type { Messages } from './messages.ts';
 import { filesNeedingUser, refreshRecords, startDisks } from './page-disks.ts';
@@ -233,9 +233,7 @@ export class Runner {
     }
     if (folders.views().some((v) => v.problem)) shares.openMenu(); // Allow access…, Use it here
     if (m.hasGpu) current.graphics = w.three ? '3d' : '2d'; // `data-graphics`, for tests
-    const layout = await resolveKeyboard(
-      keyboardSetting(params.get('keyboard'), m.stored?.record, params.has('machine')),
-    );
+    const layout = await resolveKeyboard(m.resolve().keyboard);
     keys.layout = layout?.id;
     const screen = w.three ? undefined : w.screen;
     r.worker.postMessage(...startMessage(m, ch, { ...w, ...opened, screen, layout, folders: list }));

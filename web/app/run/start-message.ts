@@ -42,7 +42,7 @@ export function channels(m: PageMachine, sound: Channels['sound'], nets: Channel
     sound,
     nets,
     usb: optional(m.has('usb')),
-    shares: optional(!!m.stored?.record.shares),
+    shares: optional(m.has('shares')),
     mouse: optional(m.has('mouse')),
     touch: optional(m.has('touch')),
     agent: optional(m.has('clipboard')),
@@ -95,8 +95,8 @@ const knobs = () => ({
 
 /** The start message, and what it transfers. */
 export function startMessage(m: PageMachine, ch: Channels, w: StartWith): [Start, Transferable[]] {
-  const stored = m.stored?.record;
   const display = m.display();
+  const switches = m.resolve().devices;
   const message: Start = {
     type: 'start',
     machine: m.name,
@@ -105,14 +105,14 @@ export function startMessage(m: PageMachine, ch: Channels, w: StartWith): [Start
     ramSplit: m.ramSplit,
     jitMiB: m.jitMiB || undefined,
     keyLayout: w.layout?.id,
-    netConfig: (params.get('netconfig') ?? (stored?.netConfig === false ? '0' : '1')) !== '0',
+    netConfig: switches.netConfig,
     disks: w.disks,
     home: w.home,
     ...devices(m, ch, w),
     size: m.hasGpu ? w.size : undefined,
     ...knobs(),
     guest: guestWords(w.layout),
-    clock: stored ? !!stored.clock : params.get('clock') !== '0',
+    clock: switches.clock,
     snapshot: w.snapshot,
     resume: w.resume,
     about: w.about,

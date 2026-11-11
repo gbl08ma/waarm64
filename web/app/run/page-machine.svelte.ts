@@ -3,24 +3,15 @@
 // owner the areas' modules share (web/app/main.ts makes it and hands it to each): what they read and change of the
 // machine is here, not in module globals. Its derived parts are in web/app/run/page-disks.ts.
 import { MsgError } from '../../i18n.ts';
-import { cpuFeatures, gpuAsked, gpuKnobs, jitParam, params, simpleDisplay } from './knobs.ts';
+import { cpuFeatures, params, simpleDisplay } from './knobs.ts';
 import type { Run } from './run.ts';
-import { effectiveDisplay, wants3d, type RunDisplay } from './config.ts';
+import { effectiveDisplay, resolveMachine, type RunDisplay } from './config.ts';
 import { currentShape } from '../snapshots.ts';
 import { settings } from '../settings.ts';
 import { DEFAULT_SHARES_PATH } from '../shares-mount.ts';
 import type { Store } from '../store.ts';
 import { adaptersOf, DEFAULT_MAC, serialOf, type Adapter, type DiskRecord, type MachineRecord } from '../shape.ts';
-import {
-  defaultCpus as defaultCpusFor,
-  JIT_DEFAULT_MIB,
-  MACHINES,
-  RAM_CHOICES,
-  ramSplitError,
-  type DiskChoice,
-  type Machine,
-  type MachineName,
-} from '../machine.ts';
+import { JIT_DEFAULT_MIB, MACHINES, type DiskChoice, type Machine, type MachineName } from '../machine.ts';
 
 /** A stored machine's record and its disks' records, as the page has them (read again as the store changes). */
 export class Stored {
@@ -32,8 +23,7 @@ export class Stored {
   }
 }
 
-/** The vCPU counts the Machine menu offers. */
-export const CPU_CHOICES = [1, 2, 3, 4, 6, 8];
+export { CPU_CHOICES } from './config.ts';
 const NO_WEBGL2 = 'this browser has no WebGL2';
 /** The machine last opened on this page (in this browser): opened again by a page without a query. */
 const LAST = 'webpc.machine';
@@ -80,10 +70,6 @@ export const rememberMachine = (id: string) => {
 /** Where the guest finds the machine's shared folders; undefined: the page doesn't mount them. */
 export const sharesPath = (m: MachineRecord) =>
   m.sharesMount === false ? undefined : (m.sharesPath ?? DEFAULT_SHARES_PATH);
-
-/** A size kept in the settings, if it is one of the choices (0: none). */
-const kept = (n: number | undefined, choices: number[]) => (n && choices.includes(n) ? n : 0);
-const defaultCpus = () => defaultCpusFor(navigator.hardwareConcurrency || 4);
 
 /** A stored machine's disk `id`'s record (its attachments' disks are all loaded with it). */
 export const diskOf = (s: Stored, id: string) => {
@@ -136,23 +122,20 @@ export class PageMachine {
     if (stored) rememberMachine(stored.record.id);
   }
 
+  /** The machine as the address, its record, the browser's settings and the defaults say now (web/app/run/config.ts). */
+  resolve() {
+    const env = {
+      gpu: this.spec.display === 'gpu',
+      ramMiB: this.spec.ramMiB,
+      cores: navigator.hardwareConcurrency || 4,
+    };
+    return resolveMachine(params, this.stored?.record, settings(), env);
+  }
+
   /** The size: the query's, else the stored machine's, else the one chosen last in this browser, else the defaults. */
   #initialSize() {
-    const rec = this.stored?.record;
-    const s = settings();
-    /* eslint-disable @typescript-eslint/prefer-nullish-coalescing -- 0 (an absent query, a NaN) means unset */
-    this.ncpus = Number(params.get('ncpus')) || rec?.ncpus || kept(s.ncpus, CPU_CHOICES) || defaultCpus();
-    this.ramMiB = Number(params.get('ram')) || rec?.ramMiB || kept(s.ramMiB, RAM_CHOICES) || this.spec.ramMiB;
-    this.jitMiB = jitParam() || (rec ? rec.jitMiB : s.jitMiB) || 0;
-    /* eslint-enable @typescript-eslint/prefer-nullish-coalescing */
-    this.#initialSplit();
-  }
-  /** The RAM's split: `?split=3071,1024` (its sum is the RAM, over `?ram=`), else a stored machine's own. */
-  #initialSplit() {
-    const split = params.get('split')?.split(',').map(Number);
-    this.ramSplit =
-      split && !ramSplitError(split) ? split : params.has('ram') ? undefined : this.stored?.record.ramSplit;
-    if (this.ramSplit) this.ramMiB = this.ramSplit.reduce((a, b) => a + b, 0);
+    const r = this.resolve();
+    [this.ncpus, this.ramMiB, this.ramSplit, this.jitMiB] = [r.ncpus, r.ramMiB, r.ramSplit, r.jitMiB];
   }
 
   /** A stored machine's size as its record says (`jit`: its JIT budget, MiB, 0 the default). */
@@ -171,13 +154,7 @@ export class PageMachine {
    * off (`2d`, kept in this browser), and the query is over it (`gpuAsked`). Off where this browser has no WebGL2.
    */
   wants3d() {
-    return wants3d({
-      gpu: this.spec.display === 'gpu',
-      simple: simpleDisplay,
-      asked: gpuAsked,
-      record: this.stored?.record.display,
-      setting: settings().gpu,
-    });
+    return this.resolve().three;
   }
   /** 3D as the machine wants it now, and why it can't have it. */
   choose3d() {
@@ -186,7 +163,7 @@ export class PageMachine {
   }
   /** Vulkan through Venus beside 3D (docs/devices.md "Venus"): a stored machine's setting, or `?gpu=vulkan`. */
   wantsVulkan() {
-    return gpuKnobs.includes('vulkan') || !!this.stored?.record.vulkan;
+    return this.resolve().vulkan;
   }
   /**
    * The display the machine runs with now (`effectiveDisplay`, as `choose3d` chose): a call, not a constant, as the
@@ -225,9 +202,9 @@ export class PageMachine {
     return this.stored ? this.stored.record.id === id : id === undefined;
   }
 
-  /** A device of its: USB (a stored machine's `usb`, a transient one's `?usb=1`), a mouse, a touchscreen, the clipboard. */
-  has(device: 'usb' | 'mouse' | 'touch' | 'clipboard') {
-    return this.stored ? !!this.stored.record[device] : params.get(device) === '1';
+  /** A device of its (web/app/run/config.ts `resolveMachine`): USB, a mouse, a touchscreen, the clipboard, shared folders. */
+  has(device: 'usb' | 'mouse' | 'touch' | 'clipboard' | 'shares') {
+    return this.resolve().devices[device];
   }
 
   /**
