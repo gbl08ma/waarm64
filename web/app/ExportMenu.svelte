@@ -32,6 +32,7 @@
   label={t('disks:ExportMenu.label')}
   bind:open
   align="left"
+  variant="bordered"
 >
   {#if changes}<Button
       variant="item"

@@ -75,31 +75,31 @@
     "message": "Snapshot",
     "note": "Label of the toolbar's Snapshot button: it takes a snapshot of the running machine."
   },
-  "Toolbar.load.title": {
+  "LoadSnapshotMenu.load.title": {
     "message": "Load a snapshot, returning the machine to the state it was in when the snapshot was taken.",
     "note": "Tooltip of the toolbar's Load snapshot menu button (history icon, after Snapshot)."
   },
-  "Toolbar.load.latest": {
+  "LoadSnapshotMenu.load.latest": {
     "message": "Latest snapshots",
     "note": "Heading over the list of the machine's latest snapshots in the toolbar's Load snapshot menu."
   },
-  "Toolbar.load.orphaned.title": {
+  "LoadSnapshotMenu.load.orphaned.title": {
     "message": "This snapshot was taken when the machine had other settings or disks. It can't be restored onto the machine as it is now.",
     "note": "Tooltip of a snapshot shown disabled in the toolbar's Load snapshot menu: the machine's settings or disks changed since it was taken."
   },
-  "Toolbar.load.restore.title": {
+  "LoadSnapshotMenu.load.restore.title": {
     "message": "Restore the snapshot {{name}}.",
     "note": "Tooltip of a snapshot in the toolbar's Load snapshot menu; a click restores it. {{name}} is the snapshot's name."
   },
-  "Toolbar.load.none": {
+  "LoadSnapshotMenu.load.none": {
     "message": "No snapshots yet. Snapshot takes one.",
     "note": "Line in the toolbar's Load snapshot menu when the machine has no snapshot kept; Snapshot is the toolbar's button that takes one."
   },
-  "Toolbar.load.all": {
+  "LoadSnapshotMenu.load.all": {
     "message": "All snapshots…",
     "note": "Item of the toolbar's Load snapshot menu: opens the machine's Snapshots tab on the Machines page."
   },
-  "Toolbar.load.file": {
+  "LoadSnapshotMenu.load.file": {
     "message": "From a file…",
     "note": "Item of the toolbar's Load snapshot menu: picks a snapshot file to restore."
   },
@@ -107,179 +107,179 @@
     "message": "View",
     "note": "Screen-reader name of the toolbar's group of view buttons (screen, serial terminal, both)."
   },
-  "Toolbar.screen.title": {
+  "ScreenMenu.screen.title": {
     "message": "Set the size of the machine's screen.",
     "note": "Tooltip of the toolbar's Screen menu button (machines with a virtio-gpu)."
   },
-  "Toolbar.screen.size": {
+  "ScreenMenu.screen.size": {
     "message": "Size",
     "note": "Label of the screen size dropdown in the toolbar's Screen menu (Fit the window, or a fixed size)."
   },
-  "Toolbar.screen.fit": {
+  "ScreenMenu.screen.fit": {
     "message": "Fit the window",
     "note": "Choice in the toolbar's Screen menu's Size dropdown: the screen follows the page's size."
   },
-  "Toolbar.screen.hidpi.title": {
+  "ScreenMenu.screen.hidpi.title": {
     "message": "Draw the guest in device pixels instead of CSS pixels. The picture is sharper on a HiDPI screen, and text is smaller unless the guest's desktop scales it; the screen's EDID gives the desktop the screen's physical size to scale by.",
     "note": "Tooltip of the HiDPI checkbox in the toolbar's Screen menu."
   },
-  "Toolbar.screen.hidpi": {
+  "ScreenMenu.screen.hidpi": {
     "message": "HiDPI",
     "note": "Checkbox in the toolbar's Screen menu: the screen in device pixels."
   },
-  "Toolbar.screen.hint": {
+  "ScreenMenu.screen.hint": {
     "message": "A text console (fbcon) keeps the size it started with. A new size takes effect at the next boot, and the console is centred until then. A desktop takes the size when it starts; whether it follows a later change depends on its compositor (sway doesn't).",
     "note": "Fine print at the foot of the toolbar's Screen menu: when a new size takes effect."
   },
-  "Toolbar.keys.title": {
+  "KeysMenu.keys.title": {
     "message": "Send key combinations that the browser keeps for itself to the guest.",
     "note": "Tooltip of the toolbar's Keys menu button (keyboard icon): it sends key combinations the browser would take."
   },
-  "Toolbar.keys.osk": {
+  "KeysMenu.keys.osk": {
     "message": "Show the on-screen keyboard",
     "note": "Item at the top of the toolbar's Keys menu: shows a full keyboard over the machine's screen, for keys the browser keeps and for devices without a keyboard."
   },
-  "Toolbar.keys.osk.hide": {
+  "KeysMenu.keys.osk.hide": {
     "message": "Hide the on-screen keyboard",
     "note": "The same item of the toolbar's Keys menu while the on-screen keyboard is shown."
   },
-  "Toolbar.keys.osk.title": {
+  "KeysMenu.keys.osk.title": {
     "message": "A full keyboard over the screen. Every key goes to the guest, including those the browser and your computer keep for themselves. Several keys can be held at once on a touchscreen.",
     "note": "Tooltip of the Keys menu's Show the on-screen keyboard item."
   },
-  "Toolbar.keys.esc": {
+  "KeysMenu.keys.esc": {
     "message": "Esc",
     "note": "Item of the toolbar's Keys menu: sends the Escape key to the machine (the browser takes Esc in full screen). The key's name as the keyboard labels it."
   },
-  "Toolbar.keys.esc.title": {
+  "KeysMenu.keys.esc.title": {
     "message": "Send Esc to the guest. In full screen, the browser keeps Esc for itself.",
     "note": "Tooltip of the Keys menu's Esc item."
   },
-  "Toolbar.keys.holdEsc": {
+  "KeysMenu.keys.holdEsc": {
     "message": "Hold Esc",
     "note": "Item of the toolbar's Keys menu: holds the Escape key down in the machine for 3 seconds."
   },
-  "Toolbar.keys.holdEsc.title": {
+  "KeysMenu.keys.holdEsc.title": {
     "message": "Hold Esc down in the guest for 3 seconds. A browser in the guest leaves full screen on a held Esc when a page has locked the keyboard.",
     "note": "Tooltip of the Keys menu's Hold Esc item."
   },
-  "Toolbar.keys.ctrlW": {
+  "KeysMenu.keys.ctrlW": {
     "message": "Ctrl+W",
     "note": "Item of the toolbar's Keys menu: sends Ctrl+W (close a tab) to the machine. The keys' names as the keyboard labels them."
   },
-  "Toolbar.keys.ctrlW.title": {
+  "KeysMenu.keys.ctrlW.title": {
     "message": "Send Ctrl+W to the guest. The browser keeps it to close this tab.",
     "note": "Tooltip of the Keys menu's Ctrl+W item."
   },
-  "Toolbar.keys.ctrlT": {
+  "KeysMenu.keys.ctrlT": {
     "message": "Ctrl+T",
     "note": "Item of the toolbar's Keys menu: sends Ctrl+T (new tab) to the machine."
   },
-  "Toolbar.keys.ctrlT.title": {
+  "KeysMenu.keys.ctrlT.title": {
     "message": "Send Ctrl+T to the guest. The browser keeps it to open a new tab.",
     "note": "Tooltip of the Keys menu's Ctrl+T item."
   },
-  "Toolbar.keys.ctrlN": {
+  "KeysMenu.keys.ctrlN": {
     "message": "Ctrl+N",
     "note": "Item of the toolbar's Keys menu: sends Ctrl+N (new window) to the machine."
   },
-  "Toolbar.keys.ctrlN.title": {
+  "KeysMenu.keys.ctrlN.title": {
     "message": "Send Ctrl+N to the guest. The browser keeps it to open a new window.",
     "note": "Tooltip of the Keys menu's Ctrl+N item."
   },
-  "Toolbar.keys.ctrlQ": {
+  "KeysMenu.keys.ctrlQ": {
     "message": "Ctrl+Q",
     "note": "Item of the toolbar's Keys menu: sends Ctrl+Q (quit) to the machine."
   },
-  "Toolbar.keys.ctrlQ.title": {
+  "KeysMenu.keys.ctrlQ.title": {
     "message": "Send Ctrl+Q to the guest. Some browsers keep it to quit.",
     "note": "Tooltip of the Keys menu's Ctrl+Q item."
   },
-  "Toolbar.keys.altF4": {
+  "KeysMenu.keys.altF4": {
     "message": "Alt+F4",
     "note": "Item of the toolbar's Keys menu: sends Alt+F4 (close a window) to the machine."
   },
-  "Toolbar.keys.altF4.title": {
+  "KeysMenu.keys.altF4.title": {
     "message": "Send Alt+F4 to the guest. Your computer may keep it to close the browser's window.",
     "note": "Tooltip of the Keys menu's Alt+F4 item."
   },
-  "Toolbar.keys.altTab": {
+  "KeysMenu.keys.altTab": {
     "message": "Alt+Tab",
     "note": "Item of the toolbar's Keys menu: sends Alt+Tab (switch windows) to the machine."
   },
-  "Toolbar.keys.altTab.title": {
+  "KeysMenu.keys.altTab.title": {
     "message": "Send Alt+Tab to the guest. Your computer keeps it to switch windows.",
     "note": "Tooltip of the Keys menu's Alt+Tab item."
   },
-  "Toolbar.keys.super": {
+  "KeysMenu.keys.super": {
     "message": "Super",
     "note": "Item of the toolbar's Keys menu: presses and releases the Super (Windows) key in the machine."
   },
-  "Toolbar.keys.super.title": {
+  "KeysMenu.keys.super.title": {
     "message": "Send the Super key, also called the Windows key, to the guest. Your computer may keep it for itself.",
     "note": "Tooltip of the Keys menu's Super item."
   },
-  "Toolbar.keys.ctrlAltDel": {
+  "KeysMenu.keys.ctrlAltDel": {
     "message": "Ctrl+Alt+Del",
     "note": "Item of the toolbar's Keys menu: sends Ctrl+Alt+Delete to the machine. The keys' names as the keyboard labels them."
   },
-  "Toolbar.keys.ctrlAlt": {
+  "KeysMenu.keys.ctrlAlt": {
     "message": "Ctrl+Alt+",
     "note": "Heading in the toolbar's Keys menu over the row of F1–F12 buttons, each sending Ctrl+Alt and that key."
   },
-  "Toolbar.keys.fkey.title": {
+  "KeysMenu.keys.fkey.title": {
     "message": "Ctrl+Alt+F{{n}}",
     "note": "Tooltip and screen-reader name of a function key button in the toolbar's Keys menu. {{n}} is the function key's number (1 to 12)."
   },
-  "Toolbar.keys.fkey": {
+  "KeysMenu.keys.fkey": {
     "message": "F{{n}}",
     "note": "A function key button in the toolbar's Keys menu, under the Ctrl+Alt+ heading. {{n}} is the function key's number (1 to 12)."
   },
-  "Toolbar.mouse.title.locked": {
+  "MouseMenu.mouse.title.locked": {
     "message": "Mouse lock is on, and the machine has the mouse. Press Esc to release it.",
     "note": "Tooltip of the toolbar's Mouse lock menu button while the screen holds the mouse."
   },
-  "Toolbar.mouse.title.on": {
+  "MouseMenu.mouse.title.on": {
     "message": "Mouse lock is on. Click the screen to give the machine the mouse.",
     "note": "Tooltip of the toolbar's Mouse lock menu button while the lock is on but the screen doesn't hold the mouse."
   },
-  "Toolbar.mouse.title": {
+  "MouseMenu.mouse.title": {
     "message": "Mouse lock. Turn it on to give the machine the mouse, every button included, when you click the screen.",
     "note": "Tooltip of the toolbar's Mouse lock menu button while the lock is off."
   },
-  "Toolbar.mouse.lock.title": {
+  "MouseMenu.mouse.lock.title": {
     "message": "When you click the screen, the machine gets the mouse. Every button reaches it, the back and forward ones included, and the browser hides its pointer. Press Esc to release the mouse.",
     "note": "Tooltip of the Lock the mouse on a click checkbox in the toolbar's Mouse lock menu."
   },
-  "Toolbar.mouse.lock": {
+  "MouseMenu.mouse.lock": {
     "message": "Lock the mouse on a click",
     "note": "Checkbox in the toolbar's Mouse lock menu: turns the mouse lock on."
   },
-  "Toolbar.mouse.pointer.title": {
+  "MouseMenu.mouse.pointer.title": {
     "message": "The pointer moves as it does unlocked, at your computer's speed, and stays within the screen.",
     "note": "Tooltip of the Pointer choice in the toolbar's Mouse lock menu."
   },
-  "Toolbar.mouse.pointer": {
+  "MouseMenu.mouse.pointer": {
     "message": "Pointer: the same speed as unlocked",
     "note": "Radio choice in the toolbar's Mouse lock menu: how the locked mouse moves the machine's pointer (the default)."
   },
-  "Toolbar.mouse.raw.title": {
+  "MouseMenu.mouse.raw.title": {
     "message": "Send the mouse's own motion to the machine's relative mouse, unbounded by the screen, for games that turn with the mouse. The guest's mouse settings set its speed.",
     "note": "Tooltip of the Raw choice in the toolbar's Mouse lock menu, when the machine has a relative mouse."
   },
-  "Toolbar.mouse.raw.title.noMouse": {
+  "MouseMenu.mouse.raw.title.noMouse": {
     "message": "This machine has no relative mouse, so the lock moves the pointer. Turn on Mouse in the machine's settings to use Raw.",
     "note": "Tooltip of the Raw choice in the toolbar's Mouse lock menu, disabled because the machine has no relative mouse (the Mouse setting on the Machines page)."
   },
-  "Toolbar.mouse.raw": {
+  "MouseMenu.mouse.raw": {
     "message": "Raw: unbounded, for games",
     "note": "Radio choice in the toolbar's Mouse lock menu: the mouse's own motion to the machine's relative mouse."
   },
-  "Toolbar.mouse.hint": {
+  "MouseMenu.mouse.hint": {
     "message": "Press Esc to release the mouse. In Raw, the guest's own mouse settings set the speed.",
     "note": "Fine print at the foot of the toolbar's Mouse lock menu, for a machine with a relative mouse."
   },
-  "Toolbar.mouse.hint.noMouse": {
+  "MouseMenu.mouse.hint.noMouse": {
     "message": "Press Esc to release the mouse. In Raw, the guest's own mouse settings set the speed. Raw needs Mouse turned on in the machine's settings.",
     "note": "Fine print at the foot of the toolbar's Mouse lock menu, for a machine without a relative mouse (the Mouse setting on the Machines page)."
   },
@@ -291,47 +291,47 @@
     "message": "Show the machine full screen. Browser shortcuts such as Ctrl+W and Ctrl+T, and Esc, go to the machine; hold Esc to leave.",
     "note": "Tooltip of the toolbar's Full screen button."
   },
-  "Toolbar.size.title": {
+  "SizeMenu.size.title": {
     "message": "Set the machine's vCPUs, RAM, and graphics. A change takes effect when the machine restarts.",
     "note": "Tooltip of the toolbar's Machine menu button (CPU icon), shown for a machine that isn't kept in this browser."
   },
-  "Toolbar.size.cpus": {
+  "SizeMenu.size.cpus": {
     "message": "Processors",
     "note": "Label of the vCPU count dropdown in the toolbar's Machine menu."
   },
-  "Toolbar.size.cpu_one": {
+  "SizeMenu.size.cpu_one": {
     "message": "{{count}} vCPU",
     "note": "A choice of the Processors dropdown in the toolbar's Machine menu: {{count}} is the number of virtual CPUs."
   },
-  "Toolbar.size.cpu_other": {
+  "SizeMenu.size.cpu_other": {
     "message": "{{count}} vCPUs",
     "note": "A choice of the Processors dropdown in the toolbar's Machine menu: {{count}} is the number of virtual CPUs."
   },
-  "Toolbar.size.ram": {
+  "SizeMenu.size.ram": {
     "message": "Memory",
     "note": "Label of the RAM size dropdown in the toolbar's Machine menu (its choices are sizes in MiB or GiB)."
   },
-  "Toolbar.size.gpu.title": {
+  "SizeMenu.size.gpu.title": {
     "message": "3D gives the guest OpenGL ES through this browser's WebGL2 (virgl). 2D is a plain framebuffer.",
     "note": "Tooltip of the Graphics dropdown in the toolbar's Machine menu."
   },
-  "Toolbar.size.gpu": {
+  "SizeMenu.size.gpu": {
     "message": "Graphics",
     "note": "Label of the graphics dropdown (3D or 2D) in the toolbar's Machine menu."
   },
-  "Toolbar.size.gpu.3d": {
+  "SizeMenu.size.gpu.3d": {
     "message": "3D (WebGL2)",
     "note": "Choice of the Graphics dropdown in the toolbar's Machine menu: 3D through virgl on the browser's WebGL2."
   },
-  "Toolbar.size.gpu.2d": {
+  "SizeMenu.size.gpu.2d": {
     "message": "2D",
     "note": "Choice of the Graphics dropdown in the toolbar's Machine menu: a plain framebuffer."
   },
-  "Toolbar.size.apply": {
+  "SizeMenu.size.apply": {
     "message": "Apply and restart",
     "note": "Button in the toolbar's Machine menu: restarts the machine with the size chosen."
   },
-  "Toolbar.size.hint": {
+  "SizeMenu.size.hint": {
     "message": "This size is kept in this browser. A suspended machine resumes with the size it had; Boot instead starts it from its disk with this one.",
     "note": "Fine print at the foot of the toolbar's Machine menu."
   },

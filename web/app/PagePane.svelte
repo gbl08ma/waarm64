@@ -60,6 +60,7 @@
             label={t('machines:PagePane.export')}
             bind:open={exportOpen}
             align="left"
+            variant="bordered"
           >
             <Button
               variant="item"

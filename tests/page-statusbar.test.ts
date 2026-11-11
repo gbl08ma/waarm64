@@ -90,7 +90,7 @@ test('the status bar\'s elements: chosen, ordered and set in Preferences, drawn 
   assert.equal((await kept(page)).find((i: { kind: string }) => i.kind === 'vcpus').look, 'icon');
   // A vCPU element's two sets of options (its look, bars or numbers), each in its own frame.
   await page.click(`${chips}[data-kind=mips][data-at="10"] .pick`);
-  assert.deepEqual(await page.$$eval('[data-field=status-options] fieldset legend', (ls) => ls.map((l) => l.textContent)), [t('statusbar:StatusEditor.look'), t('statusbar:StatusEditor.cpus')]);
+  assert.deepEqual(await page.$$eval('[data-field=status-options] fieldset legend', (ls) => ls.map((l) => l.textContent)), [t('statusbar:StatusOptions.look'), t('statusbar:StatusOptions.cpus')]);
   if (shots) await page.locator('[data-field=status-options]').screenshot({ path: `${shots}/options.png` });
   await page.click(`${chips}[data-kind=vcpus] .pick`);
   if (shots) {

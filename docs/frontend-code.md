@@ -56,7 +56,7 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    - `ErrorBanner`: the dismissible error or warning bar (the message bar, the Machines page's error).
    - `StatusDot`: a state's light.
    - `NameInput`: a row's name, edited where it is (a connection's, a folder's).
-   - `Modal` (a dialog's shell), `Pane` (a pane of the Machines page), `Menu` (a toolbar menu), `Icon`.
+   - `Modal` (a dialog's shell), `Pane` (a pane of the Machines page), `Menu` (a toolbar menu; `variant="bordered"` for one among a pane's or a card's buttons, a disk's Export), `Icon`.
 
    Use a primitive instead of restyling an element; extend it (a prop, a variant) instead of copying it.
 2. **Styles reach only the component's own markup.** No `:global(...)` into children, and no parent styling a child's

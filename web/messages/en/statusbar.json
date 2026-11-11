@@ -791,39 +791,39 @@
     "message": "Running",
     "note": "The power state shown in the Preferences' status bar editor's preview while no machine runs (made-up numbers)."
   },
-  "StatusEditor.look.text": {
+  "StatusOptions.look.text": {
     "message": "Words",
     "note": "Radio choice in the settings of a chosen element in the Preferences' status bar editor: the element shows in words."
   },
-  "StatusEditor.look.icon": {
+  "StatusOptions.look.icon": {
     "message": "Icon",
     "note": "Radio choice in the settings of a chosen element in the Preferences' status bar editor: the element shows as its icon and short value (its words in the tooltip)."
   },
-  "StatusEditor.look.both": {
+  "StatusOptions.look.both": {
     "message": "Icon and words",
     "note": "Radio choice in the settings of a chosen element in the Preferences' status bar editor: its icon and its words."
   },
-  "StatusEditor.device.cpu": {
+  "StatusOptions.device.cpu": {
     "message": "vCPU",
     "note": "Label of the number field (and screen-reader name of its group) in the Preferences' status bar editor for an element that shows one vCPU: which one."
   },
-  "StatusEditor.device.net": {
+  "StatusOptions.device.net": {
     "message": "Adapter",
     "note": "Label of the number field (and screen-reader name of its group) in the Preferences' status bar editor for an element that shows one network adapter: which one."
   },
-  "StatusEditor.device.disk": {
+  "StatusOptions.device.disk": {
     "message": "Disk",
     "note": "Label of the number field (and screen-reader name of its group) in the Preferences' status bar editor for an element that shows one disk: which one."
   },
-  "StatusEditor.index.cpu": {
+  "StatusOptions.index.cpu": {
     "message": "Numbered from 0, as the guest names them (cpu0). Hidden on a machine that doesn't have it.",
     "note": "Note beside the vCPU number field of a one-vCPU element in the Preferences' status bar editor."
   },
-  "StatusEditor.index.net": {
+  "StatusOptions.index.net": {
     "message": "Numbered from 1, as the machine's Network tab lists them. Hidden on a machine that doesn't have it.",
     "note": "Note beside the Adapter number field of a one-adapter element in the Preferences' status bar editor (the Network tab is the Machines page's)."
   },
-  "StatusEditor.index.disk": {
+  "StatusOptions.index.disk": {
     "message": "Numbered from 1, as the machine's Disks tab lists them. Hidden on a machine that doesn't have it.",
     "note": "Note beside the Disk number field of a one-disk element in the Preferences' status bar editor (the Disks tab is the Machines page's)."
   },
@@ -871,31 +871,31 @@
     "message": "Restore defaults",
     "note": "Button under the Preferences' status bar editor's bar: puts back the elements a browser starts with."
   },
-  "StatusEditor.look": {
+  "StatusOptions.look": {
     "message": "Look",
     "note": "Screen-reader name of the group of look choices (Words, Icon, Icon and words) in the settings of a chosen element in the Preferences' status bar editor."
   },
-  "StatusEditor.cpus": {
+  "StatusOptions.cpus": {
     "message": "Each vCPU as",
     "note": "Screen-reader name of the group of choices (Bars, Numbers) for an each-vCPU element in the Preferences' status bar editor."
   },
-  "StatusEditor.cpus.bars": {
+  "StatusOptions.cpus.bars": {
     "message": "Bars",
     "note": "Radio choice for an each-vCPU element in the Preferences' status bar editor: a bar per vCPU."
   },
-  "StatusEditor.cpus.numbers": {
+  "StatusOptions.cpus.numbers": {
     "message": "Numbers",
     "note": "Radio choice for an each-vCPU element in the Preferences' status bar editor: each vCPU's number."
   },
-  "StatusEditor.left": {
+  "StatusOptions.left": {
     "message": "Move the element left.",
     "note": "Tooltip of the left arrow button in the settings of a chosen element in the Preferences' status bar editor."
   },
-  "StatusEditor.right": {
+  "StatusOptions.right": {
     "message": "Move the element right.",
     "note": "Tooltip of the right arrow button in the settings of a chosen element in the Preferences' status bar editor."
   },
-  "StatusEditor.remove": {
+  "StatusOptions.remove": {
     "message": "Remove",
     "note": "Button (with a bin icon) in the settings of a chosen element in the Preferences' status bar editor: removes it from the bar."
   },

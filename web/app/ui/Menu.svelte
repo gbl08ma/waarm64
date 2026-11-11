@@ -5,7 +5,8 @@
   the accent (sound waiting for a click). The panel (`panel`: a form of controls; otherwise a list of commands) is a
   column of what it's given, a step apart: its content is the primitives (`Button variant="item"` for a command,
   Field, Check, Radio, Note) and the caller's own markup. The summary is styled here as Button's `tool` is (a summary
-  can't be a Button).
+  can't be a Button); `variant` `bordered` frames it as a bordered Button (a menu among a pane's or a card's buttons:
+  a disk's Export).
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
@@ -27,6 +28,8 @@
     wide?: boolean;
     /** Which edge the panel lines up with: the toolbar's open under their right edge, a page's under their left. */
     align?: 'left' | 'right';
+    /** The summary's look: a toolbar's tool button, or a bordered button (in a pane or a card). */
+    variant?: 'tool' | 'bordered';
     on?: boolean;
     attention?: boolean;
     children: Snippet;
@@ -44,6 +47,7 @@
     panel = false,
     wide = false,
     align = 'right',
+    variant = 'tool',
     on = false,
     attention = false,
     children,
@@ -81,7 +85,7 @@
   {...rest}
 >
   <summary
-    class={['tool', { attention }]}
+    class={[variant, { attention }]}
     id={summaryId}
     {title}
     aria-label={label ? undefined : title}
@@ -127,10 +131,38 @@
     background: var(--pressed-bg);
     border-color: var(--pressed-border);
   }
+  .bordered {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: var(--control-h);
+    padding: 0 var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .bordered::-webkit-details-marker {
+    display: none;
+  }
+  .bordered:hover {
+    background: var(--hover-bg);
+  }
+  .menu[open] > .bordered {
+    background: var(--pressed-bg);
+    border-color: var(--pressed-border);
+  }
+  .bordered .label {
+    font-size: inherit;
+  }
   .tool.attention {
     border-color: var(--accent);
   }
-  .tool[aria-disabled='true'] {
+  .tool[aria-disabled='true'],
+  .bordered[aria-disabled='true'] {
     opacity: 0.4;
     cursor: default;
     background: transparent;

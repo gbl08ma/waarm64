@@ -13,10 +13,10 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/theme/tokens.css`, `web/app/theme/base.css` | the design tokens (colors, space, text, radii, shadows, control heights, by role) and the element defaults (the reset, form controls, `.sr`): the page's only global styles ([frontend-code.md](frontend-code.md) §1) |
 | `web/app/ui/` | the primitives every component is built of ([frontend-code.md](frontend-code.md) §2): `Button`, `Card`/`CardList`, `Note`, `Field`/`Fields`, `Check`, `Radio`, `Choice`, `ErrorBanner`, `StatusDot`, `NameInput`, `Modal`, `Pane`, `Menu`, `Icon` |
 | `vite.config.ts`, `tools/serve.ts`, `tools/stamp.ts`, `web/app/public/` | the build and the servers (below, "The build"), the build stamp, the static copy's files copied as they are |
-| `web/app/App.svelte`, `Toolbar.svelte`, `Sound.svelte`, `Network.svelte`, `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the status line, the questions |
-| `web/app/osk.ts`, `Osk.svelte` | the on-screen keyboard (below, "The on-screen keyboard"): its layout and keys, the overlay |
+| `web/app/App.svelte`, `Toolbar.svelte` (its menus: `LoadSnapshotMenu`, `ScreenMenu`, `KeysMenu`, `MouseMenu`, `SizeMenu`, and the areas' `Sound`, `Network`, `UsbMenu`, `FoldersMenu`, `ClipboardMenu`), `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the status line, the questions |
+| `web/app/osk.ts`, `Osk.svelte`, `OskBar.svelte`, `osk-frame.svelte.ts` | the on-screen keyboard (below, "The on-screen keyboard"): its layout and keys, the overlay |
 | `web/app/ui.svelte.ts`, `web/app/ask.svelte.ts`, `web/app/settings.ts` | the page's state (`ui`) and actions (`page`), the questions (`ask`), what's remembered per browser |
-| `web/app/statusbar.ts`, `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` | the status bar, its elements and the Preferences' editor (below, "The status bar") |
+| `web/app/statusbar.ts`, `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` (`StatusOptions.svelte`, `status-drag.svelte.ts`) | the status bar, its elements and the Preferences' editor (below, "The status bar") |
 | `web/app/icons.ts` | the icons (Tabler's, below, "Icons") |
 | `web/app/main.ts` | the controller: runs the machine (starts and stops machine workers, the canvas's scaling, xterm.js), writes `ui`, provides `page` |
 | `web/app/worker.ts` | the machine worker: boots a machine with `bootVm` and drives it with `runAsync` |
@@ -291,7 +291,7 @@ counters start at 0), `graphics` (the screen's report: a 3D machine's GPU worker
 `screen-stats`) and `render` (an element's pieces: words, an icon and a short value, a tone, per-vCPU bars, or values
 with icons of their own, the network's received and sent arrows). `StatusBar.svelte` draws the bar (neighbours split by
 a dot; a spacer is `flex: 1`; no element that shows anything, no bar, and `#state[data-state]` stays, hidden, for the
-tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Preferences' editor.
+tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Preferences' editor (its chosen chip's settings `StatusOptions.svelte`, its drags `status-drag.svelte.ts`).
 - **Elements:** power state, vCPUs, RAM, uptime, clock, tab memory (the memory signal's estimate); MIPS and JIT share,
   IRQ/s, blocks compiled, compile time, the JIT cache against its budget; network traffic and totals, each adapter's
   connection; disk speed and totals; USB traffic and totals (a machine with the USB controller: its devices together,
@@ -779,7 +779,7 @@ and draws on its own threads after the page flip, so the screen shows frames lat
 On a 3D machine (below) it should run with `WLR_RENDERER=gles2` instead: Mesa's virgl driver, drawn by the host.
 
 **A 3D machine** ([graphics.md](graphics.md)) gives a virtio-gpu machine virgl, rendered on the host by WebGL2: the default
-wherever the browser has WebGL2 (since G3). The Machine menu's **[Graphics](ui:toolbar:Toolbar.size.gpu)** (3D or 2D, kept in the browser's
+wherever the browser has WebGL2 (since G3). The Machine menu's **[Graphics](ui:toolbar:SizeMenu.size.gpu)** (3D or 2D, kept in the browser's
 settings, applied by a restart) turns it off; the query is over the menu: `?gpu=2d` keeps the 2D path above,
 `?gpu=virgl-null` G2's null renderer, `?gpu=virgl` 3D (the menu's choice is then greyed out, as it is without WebGL2).
 A machine's Vulkan setting (the Machines page's Settings, beside 3D) or `?gpu=vulkan` (with 3D) also gives the machine Vulkan through Venus (devices.md "Venus"; its programs draw on the browser's WebGPU and their frames reach the screen through the virgl renderer; without WebGPU they draw nothing). The renderer's module (vk/build.sh) is fetched only by such a machine. Its translated shaders are kept across runs in IndexedDB `webpc-shaders` (the origin's, for every machine, deflated, under the Preferences' [Space for Vulkan's shaders](ui:machines:PreferencesPane.shaderBudget), 32 MiB by default, an entry of another renderer build dropped at the load; vk/README.md "The shader cache"); `?gpu=vkcache=off` keeps none, `?gpu=vkpipelines=sync` makes its pipelines at once, `?gpu=vkpremake=on` makes render pipelines at `vkCreateGraphicsPipelines` too (not only at draws; a loss, vk/README.md "Pipelines made asynchronously"), `?gpu=vkqueues=1` gives the device its graphics queue family alone (vk/README.md "The driver"), `?gpu=vkimport=rewrite` gives each image imported from a virgl resource a texture of its own (vk/README.md "Imports") and `?gpu=vkskip=<path>` leaves an emulated path's work out (wrong pixels: vk/README.md "What the emulated paths do"; all for A/B). `?gpu=capsno=<FORMAT>[+<FORMAT>…]` (a `+` or a space between names: the query's `+` is a space) takes virgl formats (their names in web/virgl-formats.ts, `Z24_UNORM_S8_UINT`…) out of every mask the 3D caps advertise, for an A/B of what the guest's Mesa and its programs choose (the console says what went; a snapshot taken without them may not load with them); `?gpu=capsyes=<BIT>[+<BIT>…]` offers capability bits vrend has and the renderer doesn't back (`COPY_IMAGE`, `TGSI_FBFETCH`, `INDIRECT_INPUT_ADDR`, `V2_BLEND_EQUATION`…: web/virgl-caps.ts `CAP_BITS`), the guest's paths for them, what needs them possibly drawn wrong.
@@ -810,9 +810,9 @@ query refit it.
 
 **The guest's size follows the page** on a virtio-gpu machine (Debian's page). The page measures the
 screen's box (`wantedSize` in `main.ts`): CSS pixels by default, device pixels with the Screen menu's
-**[HiDPI](ui:toolbar:Toolbar.screen.hidpi)** setting; the width is rounded down to a multiple of 8 (the guest's CVT modes are, and a
+**[HiDPI](ui:toolbar:ScreenMenu.screen.hidpi)** setting; the width is rounded down to a multiple of 8 (the guest's CVT modes are, and a
 sliver would show), at least 640×480, at most 4088 (what the EDID's detailed timing can say). The
-Screen menu's **[Size](ui:toolbar:Toolbar.screen.size)** picks a fixed size instead (1024×768, 1280×800, 1920×1080); both settings are
+Screen menu's **[Size](ui:toolbar:ScreenMenu.screen.size)** picks a fixed size instead (1024×768, 1280×800, 1920×1080); both settings are
 remembered per browser. The start message carries the size (`start.size`: the console and the
 firmware are born at it, no event), and later changes go to the display port as `size`, debounced
 300 ms (a window drag is a stream), once more when the machine is `running` (a restored one starts at
@@ -894,7 +894,7 @@ page writes the context's output latency into the ring's header, and the guest g
   pointer, so a drag that leaves the screen still ends there.
 - **Keys the browser keeps:** the Keys menu shows or hides the on-screen keyboard (below), and sends Esc, Ctrl+W,
   Ctrl+T, Ctrl+N, Ctrl+Q, Alt+F4, Alt+Tab, Super, Ctrl+Alt+Del and Ctrl+Alt+F1 to F12 (a grid of F-keys under
-  "Ctrl+Alt+") to the screen's keyboard (`Input.chord`: pressed in order, released in reverse). **[Hold Esc](ui:toolbar:Toolbar.keys.holdEsc)**
+  "Ctrl+Alt+") to the screen's keyboard (`Input.chord`: pressed in order, released in reverse). **[Hold Esc](ui:toolbar:KeysMenu.keys.holdEsc)**
   holds Escape for 3 s (`page.holdKey`; the guest's kernel repeats it): a browser in the guest whose page locked the
   keyboard in full screen leaves it on a held Esc (Chromium's ~2 s). On Debian, Ctrl+Alt+Del reboots (systemd's `ctrl-alt-del.target`;
   the page then starts a new machine), and Ctrl+Alt+F2 to F6 switch to tty2–tty6, where logind
@@ -968,7 +968,7 @@ page writes the context's output latency into the ring's header, and the guest g
 
 ### The on-screen keyboard
 
-[Show the on-screen keyboard](ui:toolbar:Toolbar.keys.osk) (the Keys menu) puts a PC keyboard over the machine, of 104
+[Show the on-screen keyboard](ui:toolbar:KeysMenu.keys.osk) (the Keys menu) puts a PC keyboard over the machine, of 104
 keys, and ISO's, ABNT2's or JIS's extra keys when the machine's layout has them ("Layouts" below) (`Osk.svelte`, in `main`, so it stays in full screen; hidden with the Machines page): every key reaches the
 guest, those the browser and the host keep included, and it is the keyboard of a device without one. Its bar moves
 it, the ↔ grip in the bar resizes it (the keys scale with its width; a grip in a corner sat on the keypad's Enter);
@@ -977,15 +977,15 @@ height allow. The toolbar's menus open over it.
 
 - **The compact layout** (`osk.ts` `pages`, 10 keys across by 5 rows, as a phone's keyboard): a window narrower than
   600 px (`COMPACT_BELOW`: the full keyboard's keys are ~25 px there) gets it on its own. Its keys are on four pages,
-  chosen by tabs in the bar: [abc](ui:osk:Osk.page.main) (digits, letters, `;`, Shift, Backspace, and a bottom row of
-  Esc, Tab, Ctrl, Super, Alt, Space, Enter), [#+=](ui:osk:Osk.page.symbols) (the other punctuation keys, JIS's
+  chosen by tabs in the bar: [abc](ui:osk:OskBar.page.main) (digits, letters, `;`, Shift, Backspace, and a bottom row of
+  Esc, Tab, Ctrl, Super, Alt, Space, Enter), [#+=](ui:osk:OskBar.page.symbols) (the other punctuation keys, JIS's
   input-method keys, Caps Lock, the
-  right-hand modifiers, Menu, the arrows), [Fn](ui:osk:Osk.page.fn) (F1–F12, Print Screen, Scroll Lock, Pause, the
-  navigation block, the arrows) and [Num](ui:osk:Osk.page.keypad) (the keypad). Every key of the full layout is on one
+  right-hand modifiers, Menu, the arrows), [Fn](ui:osk:OskBar.page.fn) (F1–F12, Print Screen, Scroll Lock, Pause, the
+  navigation block, the arrows) and [Num](ui:osk:OskBar.page.keypad) (the keypad). Every key of the full layout is on one
   page at least; Shift, Ctrl, Alt, Esc, Tab, Backspace and the arrows on several. The pages share `OskKeys`, so a
   modifier latched on one is used by a key on the next, and a pointer lets its key go wherever it lifts (a document
   listener), its key gone with the page another finger changed. The bar's button between the tabs and the grip
-  ([Switch to the full keyboard](ui:osk:Osk.toFull), [Switch to the compact keyboard](ui:osk:Osk.toCompact)) forces the
+  ([Switch to the full keyboard](ui:osk:OskBar.toFull), [Switch to the compact keyboard](ui:osk:OskBar.toCompact)) forces the
   other layout; the forced one is remembered (`settings().osk.layout`) until the window's width crosses the threshold
   to where the automatic choice is the same (a phone turned to landscape and back is compact again). Each layout keeps
   its own width (`w`, `wc`); the bar is a size container, and the title gives way to the tabs below 420 px. A

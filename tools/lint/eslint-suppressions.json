@@ -159,12 +159,6 @@
     }
   },
   "web/app/Osk.svelte": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 1
-    },
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 1
-    },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
     },
@@ -173,9 +167,6 @@
     },
     "@typescript-eslint/unbound-method": {
       "count": 2
-    },
-    "max-lines": {
-      "count": 1
     }
   },
   "web/app/Overlays.svelte": {
@@ -214,15 +205,6 @@
     }
   },
   "web/app/StatusEditor.svelte": {
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-type-assertion": {
-      "count": 1
-    },
     "@typescript-eslint/no-unsafe-argument": {
       "count": 1
     },
@@ -233,29 +215,6 @@
       "count": 1
     },
     "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    },
-    "@typescript-eslint/prefer-optional-chain": {
-      "count": 3
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
-  "web/app/Toolbar.svelte": {
-    "@typescript-eslint/no-meaningless-void-operator": {
-      "count": 1
-    },
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-type-conversion": {
-      "count": 4
-    },
-    "@typescript-eslint/no-unsafe-argument": {
       "count": 1
     },
     "max-lines": {
