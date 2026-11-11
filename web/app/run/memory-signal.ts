@@ -70,10 +70,13 @@ export class MemorySignal {
     return est;
   }
 
-  /** Starts again with a smaller JIT cache or less RAM (a stored machine's record keeps it, a transient one's settings). */
+  /**
+   * Starts again with a smaller JIT cache or less RAM (a stored machine's record keeps it, a transient one's settings).
+   * The address's own size for it goes (`?ram=`, `?split=`, `?jitmb=`): it would win over the choice (config.ts
+   * `resolveSize`) and start the machine at the size that killed it. The mark stays until the choice is made.
+   */
   async #use(o: { jitMiB?: number; ramMiB?: number }) {
     const m = this.#machine;
-    this.clear();
     const s = m.stored;
     if (s) {
       const next = {
@@ -91,6 +94,13 @@ export class MemorySignal {
       }
       s.record = await updateMachine(m.store, next);
     } else remember(o);
+    this.clear();
+    const q = new URLSearchParams(location.search);
+    const over = o.ramMiB ? ['ram', 'split'] : ['jitmb'];
+    if (over.some((k) => q.has(k))) {
+      for (const k of over) q.delete(k);
+      history.replaceState(history.state, '', `?${q}`);
+    }
     if (o.jitMiB) m.jitMiB = o.jitMiB;
     if (o.ramMiB) [m.ramMiB, m.ramSplit] = [o.ramMiB, undefined];
     await this.#restart();

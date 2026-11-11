@@ -610,7 +610,8 @@ buttons for the actions that apply. Checked on the page before a worker starts:
   `PowerActions.startOpened`, which also makes the memory check above) says so, with the estimate, and offers **Start with a 160 MiB JIT cache** (64 if it was 160
   or less), **Start with N MiB of RAM** (half or less; a stored machine's snapshots of the old size are orphaned, so
   it asks first) and **[Start as it is](ui:machine:memory-signal.crashed.asIs)**. The choice is saved in the stored machine's record, or for a transient
-  machine in `webpc.settings` (`jitMiB`, `ramMiB`). While it runs, past what `navigator.deviceMemory` reports the
+  machine in `webpc.settings` (`jitMiB`, `ramMiB`), and the address's own size for it (`?ram=`, `?split=`,
+  `?jitmb=`) goes, as it would win over the choice; the mark goes once the choice is made (a Cancel keeps it). While it runs, past what `navigator.deviceMemory` reports the
   machine worker caps the JIT cache at what it holds (it flushes there).
 - Another browser than Chromium (no `Chromium` brand in `navigator.userAgentData`): a standing
   note that webpc is developed and tested in Chromium; nothing else changes.

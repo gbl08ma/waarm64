@@ -181,3 +181,42 @@ test("finding 8: a notice's end brings back the stopped machine's error and its 
   assert.deepEqual(bar, { text: 'The disk is in use in another tab.', actions: ['Retry'], kind: 'error' });
   await page.close();
 });
+
+test("finding 9: \"Start with N MiB of RAM\" after a crash wins over the address's ?ram=; Cancel keeps the mark", { timeout: 60_000 }, async () => {
+  const page = await browser.newPage();
+  await page.goto(`${base}/tests/browser/core.html?ram=4096&ncpus=2`); // any page of the origin, with the address's size
+  const r = await page.evaluate(async ([ramLabel]) => {
+    const { MemorySignal } = await import('/web/app/run/memory-signal.ts' as string);
+    const { markAlive, lastCrash } = await import('/web/app/memory.ts' as string);
+    const { answer, asking } = await import('/web/app/ask.svelte.ts' as string);
+    const { resolveMachine } = await import('/web/app/run/config.ts' as string);
+    const { Store } = await import('/web/app/store.ts' as string);
+    const store = await Store.open();
+    const now = Date.now();
+    const record = { id: 'aaaaaaaaaaa9', name: 'Big', ncpus: 2, ramMiB: 2048, display: '2d', network: false, attachments: [], created: now, modified: now };
+    await store.put('machines', record);
+    let snapshots: unknown[] = [{}];
+    const m = { name: 'uefi', stored: { record }, store: { ...store, get: (k: string, id: string) => store.get(k, id), put: (k: string, v: unknown) => store.put(k, v), snapshotsOf: async () => snapshots }, jitBudget: () => 320, ramMiB: 4096, ncpus: 2 };
+    let shown: { label: string; run(): void }[] = [];
+    let restarts = 0;
+    const signal = new MemorySignal(m, { setState: (_s: string, _m: unknown, a: typeof shown) => { shown = a; } }, async () => void restarts++);
+    markAlive(record.id, { name: 'Big', ramMiB: 4096, ncpus: 2, jitMiB: 320, gib: 3, peakGiB: 3.2, t: now - 3_600_000 });
+    signal.crashedBefore();
+    // With snapshots: it asks first; Cancel keeps the mark (the next start still warns).
+    shown.find((a) => a.label === ramLabel)!.run();
+    while (!asking.current) await new Promise((r) => setTimeout(r, 20));
+    answer(false);
+    await new Promise((r) => setTimeout(r, 100));
+    const kept = !!lastCrash(record.id);
+    // Without: chosen, the machine starts at it over the address's ?ram=.
+    snapshots = [];
+    shown.find((a) => a.label === ramLabel)!.run();
+    while (!restarts) await new Promise((r) => setTimeout(r, 20));
+    const saved = await store.get('machines', record.id);
+    const resolved = resolveMachine(new URLSearchParams(location.search), saved, {}, { gpu: true, ramMiB: 2048, cores: 8 });
+    store.close();
+    return { kept, cleared: !lastCrash(record.id), ram: resolved.ramMiB, ncpus: resolved.ncpus, address: location.search };
+  }, [t('machine:memory-signal.crashed.ram', { mib: 2048 })]);
+  assert.deepEqual(r, { kept: true, cleared: true, ram: 2048, ncpus: 2, address: '?ncpus=2' });
+  await page.close();
+});
