@@ -215,7 +215,7 @@ type Slot = { kind: DeviceKind; disk?: StartDisk; adapter?: number };
 const layout = (m: StartMessage, machine: Machine): Slot[] =>
   slots({
     nets: machine.network ? (m.nets?.length ?? 0) : 0,
-    display: usesGpu(m, machine) ? '2d' : 'none',
+    display: m.graphics === 'none' ? 'none' : '2d',
     mouse: !!m.mouse,
     touch: !!m.touch,
     clock: !!m.clock,
@@ -326,8 +326,6 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
 
 /** Vulkan through Venus on a 3D machine (the page's choice, `vulkan`; its renderer is the GPU worker's: docs/devices.md "Venus"). */
 const venusOn = (m: StartMessage) => !!m.vulkan && !!m.renderer;
-/** A machine with a virtio-gpu draws through it, unless the page asked for the framebuffer. */
-const usesGpu = (m: StartMessage, machine: Machine) => machine.display === 'gpu' && !m.simple;
 
 /**
  * The devices and vCPU count a snapshot's header says, made from what the page passed. Refuses (a

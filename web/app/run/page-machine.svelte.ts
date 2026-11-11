@@ -5,6 +5,7 @@
 import { MsgError } from '../../i18n.ts';
 import { cpuFeatures, gpuAsked, gpuKnobs, jitParam, params, simpleDisplay } from './knobs.ts';
 import type { Run } from './run.ts';
+import { effectiveDisplay, wants3d, type RunDisplay } from './config.ts';
 import { currentShape } from '../snapshots.ts';
 import { settings } from '../settings.ts';
 import { DEFAULT_SHARES_PATH } from '../shares-mount.ts';
@@ -170,7 +171,13 @@ export class PageMachine {
    * off (`2d`, kept in this browser), and the query is over it (`gpuAsked`). Off where this browser has no WebGL2.
    */
   wants3d() {
-    return this.hasGpu && (gpuAsked ?? this.stored?.record.display ?? settings().gpu ?? '3d') === '3d';
+    return wants3d({
+      gpu: this.spec.display === 'gpu',
+      simple: simpleDisplay,
+      asked: gpuAsked,
+      record: this.stored?.record.display,
+      setting: settings().gpu,
+    });
   }
   /** 3D as the machine wants it now, and why it can't have it. */
   choose3d() {
@@ -180,6 +187,20 @@ export class PageMachine {
   /** Vulkan through Venus beside 3D (docs/devices.md "Venus"): a stored machine's setting, or `?gpu=vulkan`. */
   wantsVulkan() {
     return gpuKnobs.includes('vulkan') || !!this.stored?.record.vulkan;
+  }
+  /**
+   * The display the machine runs with now (`effectiveDisplay`, as `choose3d` chose): a call, not a constant, as the
+   * GPU worker's `failed` turns 3D off (`no3d`) for the next start.
+   */
+  display(): RunDisplay {
+    return effectiveDisplay({
+      gpu: this.hasGpu,
+      simple: false,
+      asked: this.want3d ? '3d' : '2d',
+      webgl2: this.webgl2,
+      refused: !!this.no3d,
+      vulkan: this.wantsVulkan(),
+    });
   }
 
   /** Reads the stored machine's record again, if `id` (by default its own) is it. */
@@ -210,17 +231,17 @@ export class PageMachine {
   }
 
   /**
-   * A stored machine as its snapshots describe it (protocol.ts `about`): its shape as it runs now (`three`: with 3D)
-   * and its URL disks' URLs by slot.
+   * A stored machine as its snapshots describe it (protocol.ts `about`): its shape as it runs now (`display()`) and
+   * its URL disks' URLs by slot.
    */
-  async about(three = this.want3d && !this.no3d) {
+  async about() {
     const s = this.stored;
     if (!s) return undefined;
-    const display = simpleDisplay ? 'none' : three ? '3d' : '2d';
+    const { display, vulkan } = this.display();
     const { shape, hash } = await currentShape(s.record, (id) => s.disks.get(id), {
       display,
       cpu: cpuFeatures(),
-      vulkan: three && this.wantsVulkan(),
+      vulkan,
     });
     const urls: Record<number, string> = {};
     for (const d of shape.disks) {

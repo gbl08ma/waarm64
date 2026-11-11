@@ -5,7 +5,7 @@ import type { FolderSpec } from '../../9p-folders.ts';
 import { guestWords } from '../guest-words.ts';
 import type { KeyboardLayout } from '../keyboard.ts';
 import type { StartDisk, ToWorker } from '../protocol.ts';
-import { credentials, cpuFeatures, params, simpleDisplay } from './knobs.ts';
+import { credentials, cpuFeatures, params } from './knobs.ts';
 import { sharesPath, type PageMachine } from './page-machine.svelte.ts';
 import { parseDevKnobs } from './dev-knobs.ts';
 
@@ -87,7 +87,6 @@ function devices(m: PageMachine, ch: Channels, w: StartWith) {
 
 /** The address's knobs the start message carries (development, tests and measurements). */
 const knobs = () => ({
-  simple: simpleDisplay || undefined,
   dev: parseDevKnobs(params),
   cpu: cpuFeatures(),
   params: params.get('params') ?? undefined,
@@ -97,6 +96,7 @@ const knobs = () => ({
 /** The start message, and what it transfers. */
 export function startMessage(m: PageMachine, ch: Channels, w: StartWith): [Start, Transferable[]] {
   const stored = m.stored?.record;
+  const display = m.display();
   const message: Start = {
     type: 'start',
     machine: m.name,
@@ -118,7 +118,8 @@ export function startMessage(m: PageMachine, ch: Channels, w: StartWith): [Start
     about: w.about,
     plan: w.plan,
     ...w.three,
-    vulkan: w.three && m.wantsVulkan() ? true : undefined,
+    graphics: display.display,
+    vulkan: w.three && display.vulkan ? true : undefined,
   };
   const ends = [ch.usb, ch.shares, ch.mouse, ch.touch, ch.agent].flatMap((c) => (c ? [c.port2] : []));
   const transfer: Transferable[] = [

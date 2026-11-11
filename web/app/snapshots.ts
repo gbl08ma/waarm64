@@ -29,12 +29,6 @@ import {
 import { overlayDir, snapshotPath, type Store } from './store.ts';
 import { msg, MsgError, t, type Msg } from '../i18n.ts';
 
-/** The display a machine runs with on this page: its own, 2D without WebGL2, none with the page's `?display=simple`. */
-export function effectiveDisplay(m: MachineRecord, page: { webgl2: boolean; simple: boolean }): Display | 'none' {
-  if (page.simple) return 'none';
-  return m.display === '3d' && !page.webgl2 ? '2d' : m.display;
-}
-
 /** The machine's shape and its hash as it would run now (its disks by id). */
 export async function currentShape(
   m: MachineRecord,
@@ -60,7 +54,7 @@ export type RestorePlan = {
 /**
  * The plan to restore snapshot `snap` (its pins; `key` identifies it for reusing a fork: a kept snapshot's id, or a
  * file's creation time) onto machine `m`, whose shape the caller checked to be the snapshot's; `display` is the one it
- * runs with (`effectiveDisplay`).
+ * runs with (web/app/run/config.ts `effectiveDisplay`).
  */
 export async function planRestore(
   store: Store,

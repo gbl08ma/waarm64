@@ -111,7 +111,7 @@ export class Runner {
     const r = this.#newRun(canvas, ch);
     this.#loading(snapshot);
     const args = { snapshot, resume, plan };
-    if (m.want3d && !m.no3d) this.#gpu(r, ch, offscreen, args, size);
+    if (m.display().display === '3d') this.#gpu(r, ch, offscreen, args, size);
     else void this.#begin(r, ch, { ...args, screen: offscreen, size });
     if (ch.nets.length) void net.autoconnect();
   }
@@ -223,7 +223,7 @@ export class Runner {
     const { machine: m, folders } = this.d;
     if (!r.live()) return;
     if (!(await this.#holdLock(r))) return;
-    const opened = await this.#openDisks(r, !!w.three);
+    const opened = await this.#openDisks(r);
     if (!opened) return;
     const list = ch.shares && m.stored ? await folders.begin(m.stored.record, ch.shares.port1) : undefined;
     shares.path = m.stored ? (sharesPath(m.stored.record) ?? '') : '';
@@ -263,14 +263,14 @@ export class Runner {
   }
 
   /** The disks to start with and what snapshots say of the machine; none when they can't be opened (said). */
-  async #openDisks(r: Run, three: boolean) {
+  async #openDisks(r: Run) {
     const m = this.d.machine;
     try {
       const needs = m.stored ? await filesNeedingUser(m, m.stored) : [];
       if (needs.length) throw new NeedsUser(needs);
       const { disks, home } = await startDisks(m);
       status.disks = disks.map((d) => d.name);
-      const about = await m.about(three);
+      const about = await m.about();
       return r.live() ? { disks, home, about } : undefined;
     } catch (e) {
       if (!r.live()) return undefined;

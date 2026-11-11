@@ -5,7 +5,7 @@ import type { Timeline } from '../profiler.ts';
 import type { Vm } from '../vm.ts';
 import type { FolderSpec } from '../9p-folders.ts';
 import type { Credential, MachineName } from './machine.ts';
-import type { CpuFeature, Shape } from './shape.ts';
+import type { CpuFeature, Display, Shape } from './shape.ts';
 import type { GuestWords } from './guest-unit.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
 import type { Msg, WireError } from '../msg.ts';
@@ -80,8 +80,12 @@ export type ToWorker =
       display: MessagePort;
       /** The display's size at the start (the page's screen box, `wantedSize` in web/app/areas/screen-view.ts): the console and the firmware get it with no event. Default: the machine's. */
       size?: { width: number; height: number };
-      /** Use the `simple-framebuffer` on a machine that has a virtio-gpu (the page's `?display=simple`). */
-      simple?: boolean;
+      /**
+       * The display it runs with (the page's `effectiveDisplay`, web/app/run/config.ts): `none` for the
+       * `simple-framebuffer` (a machine without a virtio-gpu, or the page's `?display=simple`), else a virtio-gpu, with
+       * virgl when `renderer` is given (`3d`).
+       */
+      graphics: Display | 'none';
       /**
        * The vCPUs' features (web/cpu-features.ts, `BootOptions.cpu`): the defaults unless the page's `?<feature>=0` turns
        * one off or `?<feature>=1` another on (development: the A/B of bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD").

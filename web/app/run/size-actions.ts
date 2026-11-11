@@ -17,6 +17,7 @@ import type { Messages } from './messages.ts';
 import { CPU_CHOICES, type PageMachine } from './page-machine.svelte.ts';
 import type { PowerActions } from './power-actions.ts';
 import type { Runner } from './runner.ts';
+import { effectiveDisplay } from './config.ts';
 
 /** The Machine menu's size: what runs (a stored machine's own settings after a switch) and what it offers. */
 export function sizeOf(m: PageMachine): MachineSize {
@@ -121,18 +122,21 @@ export class SizeActions {
     });
   }
 
-  /** A machine's shape as it would run on this page now, over the browser's `disks`. */
+  /**
+   * A machine's shape as it would run on this page now, over the browser's `disks`: its display by
+   * `effectiveDisplay`, where the address only turns 3D off (`?gpu=2d`) and the GPU worker's failure (`no3d`) counts.
+   */
   shapeNow(r: MachineRecord, disks: Map<string, DiskRecord>) {
     const m = this.#m;
-    const display = simpleDisplay
-      ? 'none'
-      : r.display === '3d' && (!m.webgl2 || m.no3d || gpuAsked === '2d')
-        ? '2d'
-        : r.display;
-    return currentShape(r, (id) => disks.get(id), {
-      display,
-      cpu: cpuFeatures(),
-      vulkan: display === '3d' && (gpuKnobs.includes('vulkan') || !!r.vulkan),
+    const { display, vulkan } = effectiveDisplay({
+      gpu: true,
+      simple: simpleDisplay,
+      asked: gpuAsked === '2d' ? '2d' : undefined,
+      record: r.display,
+      webgl2: m.webgl2,
+      refused: !!m.no3d,
+      vulkan: gpuKnobs.includes('vulkan') || !!r.vulkan,
     });
+    return currentShape(r, (id) => disks.get(id), { display, cpu: cpuFeatures(), vulkan });
   }
 }
