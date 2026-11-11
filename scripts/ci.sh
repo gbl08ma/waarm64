@@ -23,6 +23,7 @@ step npm deps;    [ node_modules/.package-lock.json -nt package-lock.json ] || n
 step lint deps;   [ tools/lint/node_modules/.package-lock.json -nt tools/lint/package-lock.json ] || npm ci --prefix tools/lint --no-fund --no-audit
 step typecheck;   npx tsc --noEmit
 step svelte-check; npm run -s svelte-check
+step lint;        npm run -s lint
 step i18n;        node --disable-warning=ExperimentalWarning tools/i18n-check.ts
 step third-party; node --disable-warning=ExperimentalWarning tools/third-party.ts
 current() { images/build.sh --check "$1" > /dev/null; }

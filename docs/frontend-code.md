@@ -93,13 +93,34 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
 
 ## 7. Enforcement
 
-- **ESLint** (flat config) with `typescript-eslint` (strict, type-checked) and `eslint-plugin-svelte`, over
-  `web/app/`. Among the rules: `no-non-null-assertion`, `consistent-type-assertions`, `no-misused-promises`,
-  `no-floating-promises`, `prefer-nullish-coalescing`, `no-empty`, `max-lines`, `max-lines-per-function`,
-  `complexity`, `svelte/require-each-key`, `svelte/no-dom-manipulating`, `svelte/no-at-html-tags`, and a restricted
-  syntax rule for `getElementById`/`querySelector` in components.
-- **Stylelint** (with `postcss-html` for `.svelte`) and a strict-value rule: colors, `font-size`, `font-weight`,
-  `border-radius`, `gap`, `padding`, `margin` and `box-shadow` take tokens.
-- **Prettier** with `prettier-plugin-svelte` formats `web/app/` (`--check` in CI).
-- What doesn't pass yet is grandfathered in ESLint's suppressions file and shrinks as code is refactored; it never
-  grows.
+`npm run lint` (a step of `scripts/ci.sh`, beside svelte-check; ~10 s) runs the three over `web/app/`, from the
+TypeScript 6 package `tools/lint` ([frontend.md](frontend.md) "Types"); `npm run format` rewrites what Prettier would.
+
+- **ESLint** (`tools/lint/eslint.config.ts`, flat config; `npm run lint:eslint`) with `typescript-eslint`'s
+  `strictTypeChecked` and `stylisticTypeChecked` and `eslint-plugin-svelte`'s recommended set, over `web/app/` (not
+  `web/*.ts` or the core), typed through `tsconfig.svelte.json`. Besides the sets: `max-lines` 300 (blank lines and
+  comments not counted), `max-lines-per-function` 80, `complexity` 15, `no-empty` (a catch too: a comment inside says
+  why), `no-non-null-assertion`, `consistent-type-assertions`, `no-floating-promises`, `no-misused-promises`,
+  `prefer-nullish-coalescing`, `svelte/require-each-key`, `svelte/no-dom-manipulating`, `svelte/no-at-html-tags`,
+  and in components `document.getElementById` (`no-restricted-properties`) and `querySelector`/`querySelectorAll`
+  (`no-restricted-syntax`). `no-empty-function` (in the sets) wants a comment in a `.catch(() => {})`. Tuned out as
+  taste that fights the code's style: `consistent-type-definitions` (`type X = {…}` is how the code writes object
+  types), `consistent-indexed-object-style`, `no-confusing-void-expression` (`() => f()` and `return f()` out of a
+  function that returns nothing), and `restrict-template-expressions` allows numbers and booleans.
+- **Stylelint** (`tools/lint/stylelint.config.ts`, `npm run lint:style`) over the `<style>` of `web/app/**/*.svelte`
+  and `web/app/index.html` (`postcss-html`): `stylelint-config-recommended`'s correctness rules (duplicate selectors
+  and properties, unknown properties, units and pseudo-classes, invalid values…; `:global` allowed,
+  `no-descending-specificity` off), and `stylelint-declaration-strict-value` with the tokens' rule (`TOKENS` in the
+  config: colors, `font-size`, `font-weight`, `border-radius`, `gap`, `padding`, `margin` and `box-shadow` take a
+  `var(--…)` or an allowed literal), configured but **off** until the tokens exist (phase 1b of the refactor turns it
+  on).
+- **Prettier** (`tools/lint/prettier.config.ts` with `prettier-plugin-svelte`: 120 columns, single quotes; `npm run
+  lint:format` checks, `npm run format` writes) formats `web/app/**/*.{svelte,ts}`. The commit that formatted it
+  first is in `.git-blame-ignore-revs` (`git config blame.ignoreRevsFile .git-blame-ignore-revs`). A comment that must
+  stay on its line (`// i18n-ignore`) goes at the end of the line Prettier keeps, or as `// i18n-ignore-next` on the
+  line before; in markup, as a comment inside the tag before the attribute (Svelte allows `//` there).
+- **Suppressions:** what ESLint finds that predates the rules is grandfathered in `tools/lint/eslint-suppressions.json`
+  (counts per file and rule; ESLint's bulk suppressions). It only shrinks: a new violation fails the lint, and so does
+  a suppression no longer used. After a fix, `npm run lint:eslint -- --prune-suppressions` lowers the counts (commit
+  the file with the fix). Never `--suppress-all` or `--suppress-rule` to let new code in: fix it, or, where a rule is
+  wrong at one place, an `// eslint-disable-next-line <rule> -- why` there.

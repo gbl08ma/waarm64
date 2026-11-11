@@ -54,7 +54,7 @@ and `.../guest-vk.qcow2` (fetch them into `target/deqp/`). Details: [docs/cloud.
 ## Commands
 
 ```sh
-scripts/ci.sh                  # what every change runs (~8 min): fmt, clippy, cargo test, TestFloat, wasm build, tsc, svelte-check, the i18n checks, Node + Chromium tests, image tests, the long multi-vCPU runs
+scripts/ci.sh                  # what every change runs (~8 min): fmt, clippy, cargo test, TestFloat, wasm build, tsc, svelte-check, the page's linters, the i18n checks, Node + Chromium tests, image tests, the long multi-vCPU runs
 scripts/ci-net.sh              # the network tests on Debian (~15 min): also when a change touches the network (docs/testing.md)
 scripts/ci-debian.sh           # Debian on the page (~5 min): also for the page, firmware, devices, disks, snapshots, display, guest-visible changes; --platform (~7 min) adds the USB keyboard in the firmware, the clock catch-up and the clipboard with sway, for those and track ends (docs/testing.md)
 scripts/ci-graphics.sh         # graphics on Debian (~3 min): also for the display, 3D, Venus's device, track ends: the Machine menu's 3D or 2D, vkcube through Venus
