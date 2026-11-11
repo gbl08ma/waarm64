@@ -126,7 +126,7 @@ export class PageFolders {
       await this.follow();
       this.changed();
     });
-    this.refreshing = done.catch(() => {});
+    this.refreshing = done.catch(() => undefined); // what waits for the refresh; its failure goes to its caller
     return done;
   }
 
@@ -168,7 +168,7 @@ export class PageFolders {
     this.served.clear();
     this.problems.clear();
     port.onmessage = (e: MessageEvent<FoldersFromDevice>) => {
-      if (e.data.type === 'denied') void this.denied(e.data.id);
+      if (e.data.type === 'denied') this.denied(e.data.id);
       else this.letting.get(e.data.id)?.();
     };
     for (const a of this.attached) await this.take(a);
@@ -297,7 +297,7 @@ export class PageFolders {
   }
 
   /** The device says a grant was lost. */
-  private async denied(id: string) {
+  private denied(id: string) {
     this.problems.set(id, { problem: 'permission' });
     this.changed();
   }

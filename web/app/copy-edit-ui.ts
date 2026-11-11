@@ -32,7 +32,7 @@ export function scan(root: Node = document.body) {
         const v = el.getAttribute(a);
         if (!v?.includes('⁣')) continue;
         let m = inAttrs.get(el);
-        if (!m) inAttrs.set(el, (m = new Map()));
+        if (!m) inAttrs.set(el, (m = new Map<string, number[]>()));
         m.set(a, copyEditor.marks(v));
         el.setAttribute(a, strip(v));
         el.setAttribute('data-copy-edit', '');

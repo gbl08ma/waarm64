@@ -95,7 +95,7 @@ export type ClipLink = {
 export const EMPTY_RUN = 3;
 
 /** A clipboard item as `read()` gives it: its types, and its data by type where the browser gives it. */
-export type HostItem = { types: readonly string[]; getType?(type: string): Promise<Blob> };
+export type HostItem = { types: readonly string[]; getType?: (type: string) => Promise<Blob> };
 
 /**
  * What the clipboard needs of the browser: its clipboard (`readText`, `read` and `write` where it has them) and
@@ -104,10 +104,10 @@ export type HostItem = { types: readonly string[]; getType?(type: string): Promi
 export type Host = {
   clipboard: {
     writeText(text: string): Promise<void>;
-    readText?(): Promise<string>;
-    read?(): Promise<readonly HostItem[]>;
+    readText?: () => Promise<string>;
+    read?: () => Promise<readonly HostItem[]>;
     /** One `ClipboardItem` of these types, whose promises the browser awaits at the write (`write([new ClipboardItem(…)])`). */
-    write?(item: Record<string, Promise<Blob>>): Promise<void>;
+    write?: (item: Record<string, Promise<Blob>>) => Promise<void>;
   };
   hasFocus: () => boolean;
   /** The browser fires `clipboardchange` (the page then reads on it, not on every focus). */
@@ -202,7 +202,7 @@ const isImage = (t: string) => /^image\/./i.test(t);
 /** The PNG of `read()`'s items, if one has it (and the browser gives its data). */
 async function pngOf(items: readonly HostItem[] | undefined): Promise<Blob | undefined> {
   const item = items?.find((i) => i.types.includes(PNG) && i.getType);
-  return item?.getType!(PNG).catch(() => undefined);
+  return item?.getType?.(PNG).catch(() => undefined);
 }
 
 /** Text as HTML that shows it. */
@@ -212,7 +212,7 @@ const escapeHtml = (s: string) => s.replace(/[&<>]/g, (c) => (c === '&' ? '&amp;
 async function textOf(items: readonly HostItem[] | undefined, type = 'text/plain'): Promise<string | undefined> {
   const item = items?.find((i) => i.types.includes(type) && i.getType);
   return (
-    (await item?.getType!(type).then(
+    (await item?.getType?.(type).then(
       (b) => b.text(),
       () => undefined,
     )) || undefined
@@ -314,7 +314,7 @@ export class ClipboardShare {
 
   /** Images cross too: the agent said it shares them, and the browser writes a `ClipboardItem`. */
   get images() {
-    return this.active && (this.link.agent!.caps & CAP.IMAGE) !== 0 && !!this.host.clipboard.write;
+    return this.active && ((this.link.agent?.caps ?? 0) & CAP.IMAGE) !== 0 && !!this.host.clipboard.write;
   }
 
   /** What the toolbar's button shows. */
@@ -492,7 +492,8 @@ export class ClipboardShare {
       this.pendingItem = undefined;
       return this.writeItem(g);
     }
-    const text = this.pending!;
+    const text = this.pending;
+    if (text === undefined) return;
     this.pending = undefined;
     this.write(text);
   }
@@ -532,10 +533,11 @@ export class ClipboardShare {
         return b;
       });
     };
+    const imageType = g.image;
     const image =
-      g.image &&
-      fetch(g.image, IMAGE_CAP).then((bytes) => {
-        const b = new Blob([bytes], { type: g.image!.toLowerCase() });
+      imageType &&
+      fetch(imageType, IMAGE_CAP).then((bytes) => {
+        const b = new Blob([bytes], { type: imageType.toLowerCase() });
         if (b.type === PNG) return b;
         if (!this.host.toPng) throw new DOMException(`no conversion of ${b.type}`, 'DataError');
         return this.host.toPng(b);
@@ -555,7 +557,7 @@ export class ClipboardShare {
         async () => new Blob([escapeHtml((await text?.catch(() => '')) ?? '')], { type: HTML }),
       );
     // A refused write leaves its promises to fail on their own (their requests stopped): not an error of the page's.
-    for (const p of Object.values(item)) p.catch(() => {});
+    for (const p of Object.values(item)) p.catch(() => undefined);
     this.writing = true;
     write(item)
       .then(
@@ -601,7 +603,7 @@ export class ClipboardShare {
   ): Promise<void> | undefined {
     if (!this.active || !isPasteChord(e, this.host.mac)) return undefined;
     this.holding?.();
-    let release = () => {};
+    let release: () => void = () => undefined; // replaced by the promise's resolve at once
     const event = new Promise<void>((resolve) => (release = resolve));
     const done = () => {
       clearTimeout(timer);
@@ -684,7 +686,7 @@ export class ClipboardShare {
       if (s !== undefined && s !== ACK.HELD && this.toGuest === h) this.toGuest = undefined;
       resolve(s);
     });
-    const done = status.then(() => {});
+    const done = status.then(() => undefined);
     this.offering = { hash: h, done };
     const types = [
       ...(bytes ? [{ type: TEXT, size: bytes.length }] : []),
@@ -804,7 +806,8 @@ export class ClipboardShare {
           return;
         }
         if (inline !== undefined) return this.received(inline);
-        const r = this.request(o.serial, t!.type, TEXT_CAP);
+        if (!t) return; // an image or HTML went above
+        const r = this.request(o.serial, t.type, TEXT_CAP);
         void r.bytes.then((b) => b && this.received(new TextDecoder().decode(b)));
         return;
       }

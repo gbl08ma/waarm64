@@ -35,6 +35,6 @@ async function convert(m: ToPng): Promise<Blob> {
 self.onmessage = (e: MessageEvent<ToPng>) => {
   convert(e.data).then(
     (png) => self.postMessage({ png } satisfies FromPng),
-    (err) => self.postMessage({ error: String(err) } satisfies FromPng),
+    (err: unknown) => self.postMessage({ error: String(err) } satisfies FromPng),
   );
 };

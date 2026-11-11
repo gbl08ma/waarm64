@@ -9,6 +9,7 @@
   import Choice from './ui/Choice.svelte';
   import Field from './ui/Field.svelte';
   import Modal from './ui/Modal.svelte';
+  import type { Dialog } from './ui/dialog.ts';
   import Note from './ui/Note.svelte';
   import Check from './ui/Check.svelte';
   import { msg, t } from '../i18n.ts';
@@ -22,7 +23,7 @@
   let { folders }: { folders: PageFolders } = $props();
 
   type Step = 'pick' | 'kind' | 'host' | 'opfs';
-  let wizard: Modal;
+  let wizard: Dialog;
   let step = $state<Step>('kind');
   let attached = $state<FolderAttachment[]>([]);
   let picked = $state<string>();

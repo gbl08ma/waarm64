@@ -11,6 +11,7 @@
   import CardList from './ui/CardList.svelte';
   import Note from './ui/Note.svelte';
   import Modal from './ui/Modal.svelte';
+  import type { Dialog } from './ui/dialog.ts';
   import { ask } from './ask.svelte.ts';
   import { msg, MsgError, t } from '../i18n.ts';
   import { Actions } from './actions.svelte.ts';
@@ -26,11 +27,11 @@
     overlays: OverlayRecord[];
     machines: MachineRecord[];
     act: Act;
-    close(): void;
+    close: () => void;
   };
   let { store, disk, overlays, machines, act, close }: Props = $props();
 
-  let dialog: Modal;
+  let dialog: Dialog;
   /** The dialog's own runner: its errors show here (the page's bar is behind the dialog); the page's `act` says what runs. */
   const runner = new Actions();
 

@@ -151,22 +151,29 @@ export type DefinitionUsb = Omit<UsbEntry, 'id'>;
 export const toDefinition = (entries: UsbEntry[] = []): DefinitionUsb[] => entries.map(({ id: _, ...e }) => e);
 /** Whether `x` is a definition's list of devices (validated before an import). */
 export function validDefinitionUsb(x: unknown): x is DefinitionUsb[] {
-  const u16 = (n: unknown) => Number.isInteger(n) && (n as number) >= 0 && (n as number) <= 0xffff;
+  /** An integer in [lo, hi). */
+  const int = (n: unknown, lo: number, hi: number) => typeof n === 'number' && Number.isInteger(n) && n >= lo && n < hi;
+  const optional = (v: unknown, ok: (v: unknown) => boolean) => v === undefined || ok(v);
+  const isString = (v: unknown) => typeof v === 'string';
   return (
     Array.isArray(x) &&
     x.length <= 64 &&
     x.every(
-      (e) =>
-        e &&
+      (e: unknown) =>
+        typeof e === 'object' &&
+        e !== null &&
+        'api' in e &&
         (e.api === 'usb' || e.api === 'hid') &&
-        u16(e.vendorId) &&
-        u16(e.productId) &&
-        (e.serialNumber === undefined || typeof e.serialNumber === 'string') &&
-        (e.productName === undefined || typeof e.productName === 'string') &&
-        (e.index === undefined || (Number.isInteger(e.index) && e.index >= 0 && e.index < 64)) &&
-        Number.isInteger(e.connector) &&
-        e.connector >= 0 &&
-        e.connector < USB_CONNECTORS &&
+        'vendorId' in e &&
+        int(e.vendorId, 0, 0x10000) &&
+        'productId' in e &&
+        int(e.productId, 0, 0x10000) &&
+        optional('serialNumber' in e ? e.serialNumber : undefined, isString) &&
+        optional('productName' in e ? e.productName : undefined, isString) &&
+        optional('index' in e ? e.index : undefined, (i) => int(i, 0, 64)) &&
+        'connector' in e &&
+        int(e.connector, 0, USB_CONNECTORS) &&
+        'atStart' in e &&
         typeof e.atStart === 'boolean',
     )
   );

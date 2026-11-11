@@ -76,6 +76,13 @@ export type Connection = {
   created: number;
 };
 
+/** Connection `c`'s settings of kind `k` (`c[k]`; `c.kind` is `k`): a connection of that kind without them is broken. */
+export function settingsOf<K extends Connection['kind']>(c: Connection, k: K): NonNullable<Connection[K]> {
+  const v = c[k];
+  if (!v) throw new Error(`connection ${c.id} has no ${k} settings`);
+  return v;
+}
+
 /** What `Connections.create` takes: the kind's settings without the keys it makes. */
 export type NewConnection = {
   kind: Connection['kind'];
@@ -133,9 +140,9 @@ export function preselect(all: Connection[], held: (id: string) => boolean): str
 }
 
 const NO_STATE: ConnectionState = {
-  forgetTailnet: async () => {},
-  forgetTailcat: async () => {},
-  forgetRoom: async () => {},
+  forgetTailnet: () => Promise.resolve(),
+  forgetTailcat: () => Promise.resolve(),
+  forgetRoom: () => Promise.resolve(),
 };
 
 /** The page's connections: the store's, and its own ephemeral ones. */
@@ -169,7 +176,8 @@ export class Connections {
     const all = await this.list();
     const taken = all.map((c) => c.name);
     const ephemeral = !!o.ephemeral;
-    const shared = o.room?.keyOf ? all.find((c) => c.id === o.room!.keyOf)?.room : undefined;
+    const keyOf = o.room?.keyOf;
+    const shared = keyOf ? all.find((c) => c.id === keyOf)?.room : undefined;
     const room = (r: NonNullable<NewConnection['room']>): RoomConnection => {
       const rest = { ...r };
       delete rest.keyOf;
@@ -285,7 +293,7 @@ export async function migrateLegacy(conns: Connections, legacy: Legacy): Promise
           exitNode: (mine && s?.exitNode) || '',
         },
       });
-      c.tailnet!.stateKey = profile;
+      settingsOf(c, 'tailnet').stateKey = profile;
       await conns.put(c);
     }
     out.push(c);
@@ -299,7 +307,7 @@ export async function migrateLegacy(conns: Connections, legacy: Legacy): Promise
         connectAtStart: !!(s?.kind === 'tailcat' && s.autoconnect && s.tailcatServe && !s.tailcatExit),
         tailcat: { serve: true, relay: s?.tailcatRelay ?? '' },
       });
-      c.tailcat!.identityKey = 'served';
+      settingsOf(c, 'tailcat').identityKey = 'served';
       await conns.put(c);
     }
     out.push(c);

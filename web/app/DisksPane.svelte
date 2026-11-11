@@ -24,7 +24,7 @@
     overlays: OverlayRecord[];
     running: Set<string>;
     act: Act;
-    offFirst(m: MachineRecord): Promise<boolean>;
+    offFirst: (m: MachineRecord) => Promise<boolean>;
   };
   let { store, machines, disks, overlays, running, act, offFirst }: Props = $props();
 

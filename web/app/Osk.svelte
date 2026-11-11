@@ -15,13 +15,13 @@
 
   type Props = {
     /** Key `code` down or up, with the modifiers down on the keyboard (for a terminal's characters); `repeat`, a held key's. */
-    send(code: string, down: boolean, mods: Mods, repeat?: boolean): void;
+    send: (code: string, down: boolean, mods: Mods, repeat?: boolean) => void;
     /** The machine's keyboard layout (web/app/keyboard.ts), or none (US): the keys' legends, ISO's or JIS's extra keys. */
     keyLayout?: string;
     mode: ModifierMode;
     /** The guest's LEDs (bit 0 Num, 1 Caps, 2 Scroll Lock): lit on the lock keys. */
     leds: number;
-    onclose(): void;
+    onclose: () => void;
   };
   let { send, keyLayout, mode, leds, onclose }: Props = $props();
   /** The lock keys' LEDs: their bits in `leds`. */

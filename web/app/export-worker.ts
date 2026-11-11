@@ -26,7 +26,7 @@ const post = (m: ExportResult, transfer: Transferable[] = []) => self.postMessag
 self.onmessage = (e: MessageEvent<ExportRequest>) => {
   exportDisk(e.data).then(
     (r) => post({ type: 'done', ...r }),
-    (err) => post({ type: 'error', error: toWire(err) }),
+    (err: unknown) => post({ type: 'error', error: toWire(err) }),
   );
 };
 
@@ -44,7 +44,7 @@ async function exportDisk(r: ExportRequest) {
             { ...('url' in d.source ? { url: d.source.url } : 'file' in d.source ? { file: d.source.file } : {}) },
             base.size,
           ),
-      ).catch((e) => {
+      ).catch((e: unknown) => {
         src.close?.();
         inflater.close();
         throw e;
@@ -103,7 +103,8 @@ async function exportDisk(r: ExportRequest) {
     out = undefined;
     return { bytes: written, blocks };
   } finally {
-    await out?.abort().catch(() => {});
+    // Left open only by a failure (the one reported); an abort that fails has nothing to add to it.
+    await out?.abort().catch(() => undefined);
     files?.close();
     src.close?.();
     inflater.close();

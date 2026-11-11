@@ -9,6 +9,7 @@
   import Card from './ui/Card.svelte';
   import CardList from './ui/CardList.svelte';
   import Modal from './ui/Modal.svelte';
+  import type { Dialog } from './ui/dialog.ts';
   import Note from './ui/Note.svelte';
   import { t } from '../i18n.ts';
   import type { Store } from './store.ts';
@@ -23,12 +24,12 @@
     /** The machines that run, in this tab or another. */
     running: Set<string>;
     act: Act;
-    offFirst(m: MachineRecord): Promise<boolean>;
-    close(): void;
+    offFirst: (m: MachineRecord) => Promise<boolean>;
+    close: () => void;
   };
   let { store, disk, machines, running, act, offFirst, close }: Props = $props();
 
-  let dialog: Modal;
+  let dialog: Dialog;
   /** The dialog's own runner: its errors show here (the page's bar is behind the dialog). */
   const runner = new Actions();
 

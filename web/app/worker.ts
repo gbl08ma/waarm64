@@ -64,7 +64,7 @@ let home: string | undefined;
 self.onmessage = (e: MessageEvent<ToWorker>) => {
   const m = e.data;
   if (m.type === 'start') {
-    start(m).catch((err) => {
+    start(m).catch((err: unknown) => {
       if (stopping) return;
       const [problem, error] = explain(err, MACHINES[m.config.machine]);
       state(vm ? 'crashed' : 'failed', { error, problem });
@@ -435,7 +435,7 @@ function missing(url: string, machine: Machine, status: number) {
 async function download(urls: string[], machine: Machine) {
   const responses = await Promise.all(
     urls.map(async (url) => {
-      const r = await fetch(url).catch((err) => {
+      const r = await fetch(url).catch((err: unknown) => {
         throw failure(
           url === CORE ? 'missing-core' : 'missing-image',
           msg('machine:worker.noServer', { path: repoPath(url) }),
@@ -574,14 +574,15 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   // keeps a suspended machine and its disk together.
   let resume: Blob | undefined;
   if (home && !m.snapshot) {
-    if (m.resume === false) await dropSuspend(home).catch(() => {});
+    // A suspension that can't be dropped doesn't stop the boot the page asked for.
+    if (m.resume === false) await dropSuspend(home).catch(() => undefined);
     else resume = await suspended(home).catch(() => undefined);
   }
   const snapshot: Blob | undefined = m.snapshot ?? resume;
   const snapshotName = m.snapshot?.name ?? msg('machine:worker.suspendedMachine');
   /** A suspended machine that can't be resumed is dropped, and the machine boots (saying why, as a note: no problem). */
   const bootInstead = async (err: unknown) => {
-    if (home) await dropSuspend(home).catch(() => {});
+    if (home) await dropSuspend(home).catch(() => undefined); // the boot goes on, as when it was dropped
     restoring = false;
     return start(
       { ...m, resume: false },
@@ -977,8 +978,9 @@ async function saveSnapshot(id: number, handle?: FileSystemFileHandle, keep?: st
   } finally {
     if (paused) v.resume();
     if (sleep) v.wake();
-    await out?.abort().catch(() => {});
-    await kept?.abort().catch(() => {});
+    // Left open only by a failure (the one reported); an abort that fails has nothing to add to it.
+    await out?.abort().catch(() => undefined);
+    await kept?.abort().catch(() => undefined);
     snapshotting = false;
   }
 }

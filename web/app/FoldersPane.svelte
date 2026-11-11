@@ -58,7 +58,7 @@
 
   const addPicked = (f: Folder) =>
     act(t('folders:FoldersPane.busy.adding'), async () => {
-      const picked = await pickers.showOpenFilePicker({ multiple: true }).catch((e) => {
+      const picked = await pickers.showOpenFilePicker({ multiple: true }).catch((e: unknown) => {
         if (cancelled(e)) return [];
         throw e;
       });
@@ -74,7 +74,7 @@
     f: () => Promise<[FileSystemDirectoryHandle, FileSystemDirectoryHandle] | undefined>,
   ) {
     await act(what, async () => {
-      const pair = await f().catch((e) => {
+      const pair = await f().catch((e: unknown) => {
         if (cancelled(e)) return undefined;
         throw e;
       });
@@ -178,7 +178,7 @@
         <Check
           compact
           checked={f.readOnly}
-          onchange={(readOnly) =>
+          onchange={(readOnly: boolean) =>
             void act(t('folders:FoldersPane.busy.saving'), () => editFolderOf(folders, store, f, { readOnly }))}
           field="folder-ro"
           title={t('folders:FoldersPane.readOnly.title')}>{t('folders:FoldersPane.readOnly')}</Check

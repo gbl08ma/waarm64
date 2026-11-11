@@ -475,10 +475,10 @@ export function createNetwork(
       local = !!c.local;
       if (onFrames && !local) ip.postMessage({ type: 'gateway' });
       onFrames = local;
-      const t = local
-        ? startHelper({ url: c.local!, ip }, onEvent)
-        : room
-          ? startRoom({ ...c.room!, ip }, onEvent)
+      const t = c.local
+        ? startHelper({ url: c.local, ip }, onEvent)
+        : c.room
+          ? startRoom({ ...c.room, ip }, onEvent)
           : tailcat
             ? startCat(
                 { addr: c.tailcat ?? '', serve: c.tailcatServe, ...c.tailcatIdentity, probe6: c.probe6, ip },
@@ -499,7 +499,7 @@ export function createNetwork(
               );
       client = t;
       if (!primary || rank) t.setPrimary(primary, rank);
-      t.running.catch((e) => {
+      t.running.catch((e: unknown) => {
         error = e ?? new Error('failed');
         onChange();
       });

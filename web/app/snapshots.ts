@@ -135,7 +135,8 @@ export async function planRestore(
       for (const p of snap.pins)
         if (!p.ram && p.overlay && !steps.some((s) => s.slot === p.slot)) plan.push({ slot: p.slot, action: 'keep' });
       for (const s of steps) {
-        const a = m.attachments.find((x) => x.id === s.attachment)!;
+        const a = m.attachments.find((x) => x.id === s.attachment);
+        if (!a) throw new Error(`the plan's attachment ${s.attachment} is not the machine's`); // made from m above
         const write = (overlay: string, whole = false): DiskPlan => ({
           slot: s.slot,
           action: 'write',
@@ -247,12 +248,12 @@ export async function machineLike(
 export async function moveSnapshot(store: Store, id: string, to: string) {
   const s = await store.get('snapshots', id);
   if (!s || s.machine === to) return;
-  const from = snapshotPath(s.machine, id).split('/');
-  const name = from.pop()!;
-  const src = await (await opfsDir(from.join('/'))).getFileHandle(name);
+  const path = snapshotPath(s.machine, id);
+  const slash = path.lastIndexOf('/');
+  const name = path.slice(slash + 1);
+  const src = await (await opfsDir(path.slice(0, slash))).getFileHandle(name);
   const dest = await opfsDir(`machines/${to}/snapshots`, true);
-  const move = (src as FileSystemFileHandle & { move?(dir: FileSystemDirectoryHandle): Promise<void> }).move;
-  if (move) await move.call(src, dest);
+  if (src.move) await src.move(dest);
   else {
     const w = await (await dest.getFileHandle(name, { create: true })).createWritable();
     await (await src.getFile()).stream().pipeTo(w);
@@ -278,12 +279,12 @@ export async function importSnapshot(store: Store, machine: string, file: File) 
     const full = (e: unknown) => (e as DOMException)?.name === 'QuotaExceededError';
     try {
       // The storage full: the remote disks' kept blocks go (`makeRoom`), and it's copied once more.
-      await copy().catch(async (e) => {
+      await copy().catch(async (e: unknown) => {
         if (full(e) && (await makeRoom())) return copy();
         throw e;
       });
     } catch (e) {
-      await dir.removeEntry(id).catch(() => {});
+      await dir.removeEntry(id).catch(() => undefined); // tidying up: the failure thrown is the one to report
       if (full(e))
         throw new MsgError('snapshots:snapshots.notKept', { file: file.name }, { cause: await storageFullError() });
       throw e;

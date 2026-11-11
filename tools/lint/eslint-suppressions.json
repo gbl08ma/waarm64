@@ -5,25 +5,6 @@
     },
     "@typescript-eslint/no-unnecessary-type-assertion": {
       "count": 1
-    },
-    "@typescript-eslint/unbound-method": {
-      "count": 2
-    }
-  },
-  "web/app/AddUsb.svelte": {
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    },
-    "@typescript-eslint/unbound-method": {
-      "count": 1
-    }
-  },
-  "web/app/App.svelte": {
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 4
     }
   },
   "web/app/AttachDisk.svelte": {
@@ -31,15 +12,6 @@
       "count": 1
     },
     "@typescript-eslint/no-unnecessary-type-assertion": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    },
-    "@typescript-eslint/unbound-method": {
       "count": 2
     }
   },
@@ -50,21 +22,7 @@
     "@typescript-eslint/no-unnecessary-type-assertion": {
       "count": 1
     },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 4
-    },
-    "@typescript-eslint/unbound-method": {
-      "count": 1
-    },
-    "@typescript-eslint/use-unknown-in-catch-callback-variable": {
-      "count": 1
-    },
     "svelte/no-unused-props": {
-      "count": 1
-    }
-  },
-  "web/app/DisksPane.svelte": {
-    "@typescript-eslint/unbound-method": {
       "count": 1
     }
   },
@@ -73,28 +31,12 @@
       "count": 1
     }
   },
-  "web/app/FolderWizard.svelte": {
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 2
-    }
-  },
-  "web/app/Folders.svelte": {
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 2
-    }
-  },
   "web/app/FoldersPane.svelte": {
     "@typescript-eslint/no-non-null-assertion": {
       "count": 2
     },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/use-unknown-in-catch-callback-variable": {
-      "count": 2
     }
   },
   "web/app/MachinesPage.svelte": {
@@ -104,20 +46,6 @@
   },
   "web/app/Osk.svelte": {
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 1
-    },
-    "@typescript-eslint/unbound-method": {
-      "count": 2
-    }
-  },
-  "web/app/Overlays.svelte": {
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 1
-    },
-    "@typescript-eslint/unbound-method": {
       "count": 1
     }
   },
@@ -152,9 +80,6 @@
     },
     "@typescript-eslint/no-unnecessary-type-assertion": {
       "count": 2
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
     }
   },
   "web/app/UsbMenu.svelte": {
@@ -178,26 +103,12 @@
       "count": 1
     }
   },
-  "web/app/ask.svelte.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 1
-    }
-  },
   "web/app/clipboard.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 3
-    },
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 6
-    },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 3
     },
     "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 4
-    },
-    "@typescript-eslint/unbound-method": {
-      "count": 3
     },
     "complexity": {
       "count": 2
@@ -210,12 +121,6 @@
     }
   },
   "web/app/connections.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 3
-    },
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 3
-    },
     "@typescript-eslint/no-unnecessary-type-conversion": {
       "count": 1
     },
@@ -230,9 +135,6 @@
     "@typescript-eslint/no-non-null-assertion": {
       "count": 2
     },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
     "max-lines-per-function": {
       "count": 1
     },
@@ -241,9 +143,6 @@
     }
   },
   "web/app/copy-edit.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 1
-    },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 3
     }
@@ -271,9 +170,6 @@
     }
   },
   "web/app/disks.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 2
-    },
     "@typescript-eslint/no-non-null-assertion": {
       "count": 4
     },
@@ -285,13 +181,7 @@
     }
   },
   "web/app/export-worker.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 1
-    },
     "@typescript-eslint/no-non-null-assertion": {
-      "count": 2
-    },
-    "@typescript-eslint/use-unknown-in-catch-callback-variable": {
       "count": 2
     },
     "complexity": {
@@ -299,13 +189,7 @@
     }
   },
   "web/app/folders-live.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 1
-    },
     "@typescript-eslint/no-non-null-assertion": {
-      "count": 1
-    },
-    "@typescript-eslint/require-await": {
       "count": 1
     }
   },
@@ -318,20 +202,12 @@
     }
   },
   "web/app/gamepads.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 2
-    },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 2
     }
   },
   "web/app/guest-agent.ts": {
     "@typescript-eslint/restrict-template-expressions": {
-      "count": 1
-    }
-  },
-  "web/app/import-worker.ts": {
-    "@typescript-eslint/use-unknown-in-catch-callback-variable": {
       "count": 1
     }
   },
@@ -377,19 +253,10 @@
     }
   },
   "web/app/net-live.ts": {
-    "@typescript-eslint/await-thenable": {
-      "count": 1
-    },
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 11
-    },
     "@typescript-eslint/no-redundant-type-constituents": {
       "count": 2
     },
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unnecessary-type-assertion": {
       "count": 3
     },
     "@typescript-eslint/no-unnecessary-type-conversion": {
@@ -406,14 +273,8 @@
     }
   },
   "web/app/network.ts": {
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 2
-    },
     "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 3
-    },
-    "@typescript-eslint/use-unknown-in-catch-callback-variable": {
-      "count": 1
     },
     "complexity": {
       "count": 1
@@ -448,9 +309,6 @@
   "web/app/png-worker.ts": {
     "@typescript-eslint/no-non-null-assertion": {
       "count": 2
-    },
-    "@typescript-eslint/use-unknown-in-catch-callback-variable": {
-      "count": 1
     }
   },
   "web/app/shape.ts": {
@@ -465,12 +323,6 @@
     }
   },
   "web/app/snapshots.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 1
-    },
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 2
-    },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
     },
@@ -478,12 +330,6 @@
       "count": 1
     },
     "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
-    },
-    "@typescript-eslint/unbound-method": {
-      "count": 1
-    },
-    "@typescript-eslint/use-unknown-in-catch-callback-variable": {
       "count": 1
     },
     "complexity": {
@@ -514,20 +360,11 @@
     }
   },
   "web/app/store.ts": {
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 3
-    },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 2
     },
     "@typescript-eslint/no-unnecessary-type-assertion": {
       "count": 2
-    },
-    "@typescript-eslint/prefer-promise-reject-errors": {
-      "count": 3
-    },
-    "@typescript-eslint/require-await": {
-      "count": 7
     },
     "complexity": {
       "count": 1
@@ -548,15 +385,6 @@
     }
   },
   "web/app/usb-live.ts": {
-    "@typescript-eslint/await-thenable": {
-      "count": 1
-    },
-    "@typescript-eslint/no-empty-function": {
-      "count": 5
-    },
-    "@typescript-eslint/no-non-null-assertion": {
-      "count": 1
-    },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
     },
@@ -567,9 +395,6 @@
   "web/app/usb-ports.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 16
     },
     "@typescript-eslint/no-unused-vars": {
       "count": 1
@@ -588,9 +413,6 @@
     }
   },
   "web/app/worker.ts": {
-    "@typescript-eslint/no-empty-function": {
-      "count": 4
-    },
     "@typescript-eslint/no-non-null-assertion": {
       "count": 10
     },
@@ -608,9 +430,6 @@
     },
     "@typescript-eslint/prefer-includes": {
       "count": 1
-    },
-    "@typescript-eslint/use-unknown-in-catch-callback-variable": {
-      "count": 2
     },
     "complexity": {
       "count": 6

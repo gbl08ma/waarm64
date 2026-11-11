@@ -131,7 +131,8 @@
           <Check
             compact
             checked={e.atStart}
-            onchange={(on) => act(t('usb:Usb.busy.saving'), () => page.usbEdit(machine.id, e.id, { atStart: on }))}
+            onchange={(on: boolean) =>
+              act(t('usb:Usb.busy.saving'), () => page.usbEdit(machine.id, e.id, { atStart: on }))}
             field="at-start"
             title={t('usb:Usb.atStart.title')}>{t('usb:Usb.atStart')}</Check
           >

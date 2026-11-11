@@ -178,13 +178,13 @@ export class UsbPorts {
     number,
     { resolve(): void; reject(e: Error): void; timer: ReturnType<typeof setTimeout> }
   >();
-  onChange = () => {};
+  onChange: () => void = () => undefined;
   /** The guest set the LEDs of the keyboard on connector `c` (the built-in one's: bit 0 Num, 1 Caps, 2 Scroll Lock). */
-  onLeds: (c: number, leds: number) => void = () => {};
+  onLeds: (c: number, leds: number) => void = () => undefined;
   /** The guest's rumble on the game pad of ours on connector `c` (each motor 0–1; web/usb-gamepad.ts). */
-  onRumble: (c: number, strong: number, weak: number) => void = () => {};
+  onRumble: (c: number, strong: number, weak: number) => void = () => undefined;
   /** `reason`: why it went (`usb-state` detached); `error`: the device worker's error, when it failed by itself. */
-  onGone: (c: number, was: Connector, reason?: 'unplugged' | 'guest' | 'page', error?: Error) => void = () => {};
+  onGone: (c: number, was: Connector, reason?: 'unplugged' | 'guest' | 'page', error?: Error) => void = () => undefined;
 
   constructor(port: MessagePort, locks: UsbLocks) {
     [this.port, this.locks] = [port, locks];
@@ -210,7 +210,9 @@ export class UsbPorts {
         const d = c && 'vendorId' in c.device ? c.device : undefined;
         const words = d ? (m.detail ?? []).map((x) => problemText(x, d)) : [];
         const err = m.error ? fromWire(m.error) : new Error(m.message);
-        p?.reject(words.length ? new UsbError('usb:usb-live.notAttached', { name: c!.name }, m.detail, words) : err);
+        p?.reject(
+          c && words.length ? new UsbError('usb:usb-live.notAttached', { name: c.name }, m.detail, words) : err,
+        );
         if (!p && c) this.onGone(m.connector, c, undefined, err);
       } else {
         p?.resolve();
@@ -298,7 +300,8 @@ export class UsbPorts {
     const was = this.attached()
       .filter((c) => c.state === 'attached')
       .map((c) => ({ connector: c.connector, device: c.device, entry: c.entry }));
-    await Promise.all(this.connectors.map((c, i) => (c ? this.detach(i).catch(() => {}) : undefined)));
+    // A device that fails to detach is let go of anyway (the run stops or resumes without it): nothing to report.
+    await Promise.all(this.connectors.flatMap((c, i) => (c ? [this.detach(i).catch(() => undefined)] : [])));
     return was;
   }
 

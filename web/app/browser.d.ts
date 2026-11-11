@@ -20,6 +20,11 @@ interface FileSystemHandle {
   requestPermission?(o: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
 }
 
+interface FileSystemFileHandle {
+  /** Moves the file into directory `dir` (as `name`), in place (Chromium's OPFS). */
+  move?(dir: FileSystemDirectoryHandle, name?: string): Promise<void>;
+}
+
 interface DataTransferItem {
   /** A dropped item's handle (Chromium), so a file dropped can be read in later sessions too. */
   getAsFileSystemHandle?(): Promise<FileSystemHandle | null>;

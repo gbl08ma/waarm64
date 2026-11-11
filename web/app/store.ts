@@ -299,6 +299,7 @@ export function memoryRecords(): Records {
     Kind,
     Map<string, unknown>
   >;
+  /* eslint-disable @typescript-eslint/require-await -- IndexedDB's contract (a throw is a rejection), nothing to await */
   return {
     get: async (kind, id) => structuredClone(maps[kind].get(id)) as never,
     all: async (kind) => [...maps[kind].values()].map((v) => structuredClone(v)) as never,
@@ -309,12 +310,14 @@ export function memoryRecords(): Records {
       maps[kind].delete(id);
     },
   };
+  /* eslint-enable @typescript-eslint/require-await */
 }
 
 /** Files in memory (Node, tests): a path → size map; `write` makes one (and its directories). */
 export function memoryFiles(): Files & { write(path: string, bytes: number): void; paths(): string[] } {
   const files = new Map<string, number>();
   const under = (dir: string) => [...files.keys()].filter((p) => p.startsWith(`${dir}/`));
+  /* eslint-disable @typescript-eslint/require-await -- OPFS's contract (a throw is a rejection), nothing to await */
   return {
     write: (path, bytes) => {
       files.set(path, bytes);
@@ -325,18 +328,22 @@ export function memoryFiles(): Files & { write(path: string, bytes: number): voi
       files.delete(path);
       for (const p of under(path)) files.delete(p);
     },
-    size: async (path) => (files.get(path) ?? 0) + under(path).reduce((n, p) => n + files.get(p)!, 0),
+    size: async (path) => (files.get(path) ?? 0) + under(path).reduce((n, p) => n + (files.get(p) ?? 0), 0),
   };
+  /* eslint-enable @typescript-eslint/require-await */
 }
 
 /** Node's store (no IndexedDB or OPFS): one per process, as a browser's is one per origin. */
 const sharedMemory = { records: memoryRecords(), files: memoryFiles() };
 
 const DB = 'webpc';
+/** A request's or a transaction's error; none (a transaction aborted without one) is still an Error. */
+const failure = (e: DOMException | null) =>
+  e ?? new DOMException('the IndexedDB transaction was aborted', 'UnknownError');
 const idb = <T>(req: IDBRequest<T>) =>
   new Promise<T>((resolve, reject) => {
     req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onerror = () => reject(failure(req.error));
   });
 
 /** Records in IndexedDB `webpc`: an object store per kind, keyed by `id` (version 2 added `connections`, 3 `folders`). */
@@ -352,7 +359,7 @@ export async function idbRecords(name = DB): Promise<Records> {
       r.result.onversionchange = () => r.result.close();
       resolve(r.result);
     };
-    r.onerror = () => reject(r.error);
+    r.onerror = () => reject(failure(r.error));
   });
   const store = (kind: Kind, mode: IDBTransactionMode) =>
     db.transaction(kind, mode, { durability: 'strict' }).objectStore(kind);
@@ -362,7 +369,7 @@ export async function idbRecords(name = DB): Promise<Records> {
       const s = store(kind, 'readwrite');
       f(s);
       s.transaction.oncomplete = () => resolve();
-      s.transaction.onerror = s.transaction.onabort = () => reject(s.transaction.error);
+      s.transaction.onerror = s.transaction.onabort = () => reject(failure(s.transaction.error));
     });
   return {
     get: (kind, id) => idb(store(kind, 'readonly').get(id)) as never,
@@ -404,9 +411,11 @@ export function opfsFiles(root: FileSystemDirectoryHandle): Files {
     },
     async remove(path) {
       const parts = split(path);
+      const name = parts.at(-1);
+      if (!name) return; // the root itself: never removed
       const d = await dir(parts.slice(0, -1));
       try {
-        await d?.removeEntry(parts.at(-1)!, { recursive: true });
+        await d?.removeEntry(name, { recursive: true });
       } catch (e) {
         if ((e as DOMException).name !== 'NotFoundError') throw e;
       }
@@ -414,8 +423,8 @@ export function opfsFiles(root: FileSystemDirectoryHandle): Files {
     async size(path) {
       const parts = split(path);
       const d = await dir(parts.slice(0, -1));
-      if (!d) return 0;
-      const name = parts.at(-1)!;
+      const name = parts.at(-1);
+      if (!d || !name) return 0;
       const h = await d
         .getFileHandle(name)
         .catch(() => d.getDirectoryHandle(name))

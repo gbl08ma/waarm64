@@ -11,6 +11,7 @@ import {
   Connections,
   roomKeyLock,
   sameRoomKey,
+  settingsOf,
   type Connection,
   type ConnectionState,
 } from './connections.ts';
@@ -31,9 +32,9 @@ import { Changes } from './changes.ts';
 
 /** What a connection's client is started with (`authKey`: a tailnet's first login, never kept). */
 export function connectOf(c: Connection, authKey?: string): Connect {
-  if (c.kind === 'local') return { controlURL: '', hostname: '', local: c.local!.url };
+  if (c.kind === 'local') return { controlURL: '', hostname: '', local: settingsOf(c, 'local').url };
   if (c.kind === 'room') {
-    const r = c.room!;
+    const r = settingsOf(c, 'room');
     return {
       controlURL: '',
       hostname: '',
@@ -47,7 +48,7 @@ export function connectOf(c: Connection, authKey?: string): Connect {
     };
   }
   if (c.kind === 'tailcat') {
-    const t = c.tailcat!;
+    const t = settingsOf(c, 'tailcat');
     // Its identity always: a kept connection is the same node going online through a server too (a server can `--allow` it).
     const serve = t.serve
       ? { tailcatServe: { relay: t.exit ? '' : t.relay, ...(t.allow?.length ? { allow: t.allow } : {}) } }
@@ -60,7 +61,7 @@ export function connectOf(c: Connection, authKey?: string): Connect {
       tailcatIdentity: { identityKey: t.identityKey, identity: t.identity },
     };
   }
-  const t = c.tailnet!;
+  const t = settingsOf(c, 'tailnet');
   // A stored connection's node is kept under its profile (so it comes back without a login, an auth key's too); an ephemeral one's isn't.
   return {
     controlURL: t.controlURL,
@@ -321,13 +322,14 @@ export class PageNetwork {
       if (!this.running.includes(c.id)) this.locks.drop(lock);
       throw refused(new MsgError('network:net-live.off'));
     }
-    if (c.room) {
+    const room = c.room;
+    if (room) {
       // One key runs in one connection at a time (`roomKeyLock`): this page's other adapters first, then other tabs.
       const others = await Promise.all(
-        this.running.map((id, k) => (id && id !== c.id && k !== i ? this.conns.get(id) : undefined)),
+        this.running.flatMap((id, k) => (id && id !== c.id && k !== i ? [this.conns.get(id)] : [])),
       );
-      const here = others.find((o) => o?.room && sameRoomKey(o.room, c.room!));
-      const key = await roomKeyLock(c.room);
+      const here = others.find((o) => o?.room && sameRoomKey(o.room, room));
+      const key = await roomKeyLock(room);
       if (here || !(await this.locks.take(key))) {
         if (!this.running.includes(c.id)) this.locks.drop(lock);
         const holder = here ? undefined : await this.locks.holder(key);
@@ -377,10 +379,16 @@ export class PageNetwork {
 
   /** Logs adapter `i`'s tailnet node out (it is removed from the tailnet and its keys forgotten), then disconnects. */
   async logout(i: number) {
-    const c = this.running[i] ? await this.conns.get(this.running[i]!) : undefined;
+    const c = await this.runningConnection(i);
     if (c && !c.ephemeral) return this.logoutKept(c);
     await this.nets[i]?.logout();
     await this.disconnect(i);
+  }
+
+  /** The connection adapter `i` runs, if it runs one. */
+  private async runningConnection(i: number) {
+    const id = this.running[i];
+    return id ? this.conns.get(id) : undefined;
   }
 
   /** Whether connection `c` has a node kept here, which can be logged out. */
@@ -391,7 +399,7 @@ export class PageNetwork {
 
   /** Whether the node is still kept, read now (a logout that worked forgot it). */
   private async stillKept(c: Connection) {
-    return !!(await this.o.kept?.())?.includes(c.tailnet!.stateKey);
+    return !!(await this.o.kept?.())?.includes(settingsOf(c, 'tailnet').stateKey);
   }
 
   /**
@@ -423,7 +431,11 @@ export class PageNetwork {
         throw new MsgError(
           'network:net-live.notLoggedOut',
           { name: c.name },
-          { cause: new MsgError('network:net-live.notLoggedOut.cause', { host: new URL(c.tailnet!.controlURL).host }) },
+          {
+            cause: new MsgError('network:net-live.notLoggedOut.cause', {
+              host: new URL(settingsOf(c, 'tailnet').controlURL).host,
+            }),
+          },
         );
       await this.conns.put({ ...c, connectAtStart: false });
     });
@@ -433,7 +445,7 @@ export class PageNetwork {
   /** The exit node of adapter `i`'s tailnet (kept in its connection). */
   async setExitNode(i: number, peer: string) {
     await this.nets[i].setExitNode(peer);
-    const c = this.running[i] ? await this.conns.get(this.running[i]!) : undefined;
+    const c = await this.runningConnection(i);
     if (c?.tailnet) await this.conns.put({ ...c, tailnet: { ...c.tailnet, exitNode: peer } });
     await this.refresh();
   }
@@ -441,7 +453,7 @@ export class PageNetwork {
   /** Whether adapter `i`'s tailnet installs its peers' subnet routes (kept in its connection). */
   async setAcceptRoutes(i: number, on: boolean) {
     this.nets[i].setAcceptRoutes(on);
-    const c = this.running[i] ? await this.conns.get(this.running[i]!) : undefined;
+    const c = await this.runningConnection(i);
     if (c?.tailnet) await this.conns.put({ ...c, tailnet: { ...c.tailnet, acceptRoutes: on } });
     await this.refresh();
   }
@@ -476,8 +488,8 @@ export class PageNetwork {
   private async release(lock: string) {
     if ([...this.leaving].some((id) => connectionLock(id) === lock)) return; // not until the node is out
     const i = this.running.findIndex((id) => id && connectionLock(id) === lock);
-    if (i < 0) return this.locks.drop(lock);
-    const id = this.running[i]!;
+    const id = this.running[i];
+    if (!id) return this.locks.drop(lock);
     const c = await this.conns.get(id);
     this.running[i] = undefined;
     await this.nets[i].disconnect();

@@ -68,7 +68,7 @@
               compact
               checked={a.readOnly}
               disabled={here && !v?.problem}
-              onchange={(on) =>
+              onchange={(on: boolean) =>
                 void act(t('folders:Folders.busy.saving'), () => page.folderReadOnly(machine.id, a.id, on))}
               field="folder-read-only"
               title={t('folders:Folders.readOnly.title')}>{t('folders:Folders.readOnly')}</Check
@@ -76,7 +76,8 @@
             <MoveButtons
               index={i}
               count={machine.folders?.length ?? 0}
-              onmove={(by) => act(t('folders:Folders.busy.moving'), () => page.folderMove(machine.id, a.id, by))}
+              onmove={(by: -1 | 1) =>
+                act(t('folders:Folders.busy.moving'), () => page.folderMove(machine.id, a.id, by))}
               action="folder"
             />
             {#if v?.problem === 'permission'}<Button

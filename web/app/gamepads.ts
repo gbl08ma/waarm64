@@ -143,7 +143,7 @@ export class PadFeed {
       if (was)
         actuator(was.index)
           ?.reset()
-          .catch(() => {});
+          .catch(() => undefined); // a pad gone (or busy) has nothing to stop
       return;
     }
     const index = this.pads.get(connector);
@@ -156,7 +156,7 @@ export class PadFeed {
           strongMagnitude: Math.min(1, strong),
           weakMagnitude: Math.min(1, weak),
         })
-        .catch(() => {});
+        .catch(() => undefined); // a pad gone or busy: this rumble is lost, the next one tries again
       this.rumbles.set(connector, { index, timer: setTimeout(play, this.again) });
     };
     play();

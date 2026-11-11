@@ -28,8 +28,8 @@
     store: Store;
     machine: MachineRecord;
     act: Act;
-    offFirst(m: MachineRecord): Promise<boolean>;
-    close(): void;
+    offFirst: (m: MachineRecord) => Promise<boolean>;
+    close: () => void;
   };
   let { store, machine, act, offFirst, close }: Props = $props();
 

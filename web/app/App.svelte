@@ -29,6 +29,7 @@
   import { mouse } from './areas/mouse.svelte.ts';
   import { screen } from './areas/screen.svelte.ts';
   import { page } from './page.ts';
+  import type { Mods } from './osk.ts';
   import { t } from '../i18n.ts';
 
   type Props = { store: Store; audio: PageAudio; net: PageNetwork; folders: PageFolders; view: PageView };
@@ -121,7 +122,7 @@
   </div>
   <div id="terminal-view"><div id="terminal" bind:this={terminal}></div></div>
   {#if keys.osk}<Osk
-      send={(code, down, mods, repeat) => page.oskKey(code, down, mods, repeat)}
+      send={(code: string, down: boolean, mods: Mods, repeat?: boolean) => page.oskKey(code, down, mods, repeat)}
       keyLayout={keys.layout}
       mode={keys.oskModifiers}
       leds={keys.leds}

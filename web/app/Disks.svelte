@@ -36,7 +36,7 @@
     overlays: OverlayRecord[];
     running: boolean;
     act: Act;
-    offFirst(m: MachineRecord): Promise<boolean>;
+    offFirst: (m: MachineRecord) => Promise<boolean>;
   };
   let { store, machine, machines, disks, overlays, act, offFirst }: Props = $props();
 
@@ -61,7 +61,7 @@
   async function switchTo(attachment: string, overlay: string) {
     await act(t('disks:Disks.busy.switch'), async () => {
       if (!(await offFirst(machine))) return;
-      await switchOverlay(store, plain(machine), attachment, overlay).catch((e) => {
+      await switchOverlay(store, plain(machine), attachment, overlay).catch((e: unknown) => {
         throw new MsgError('disks:Disks.failed.switch', {}, { cause: e });
       });
     });
@@ -138,13 +138,13 @@
           compact
           checked={a.readOnly}
           disabled={d?.kind === 'blank' || d?.kind === 'ramdisk'}
-          onchange={(on) => setFlag(a.id, { readOnly: on })}>{t('disks:Disks.readOnly')}</Check
+          onchange={(on: boolean) => setFlag(a.id, { readOnly: on })}>{t('disks:Disks.readOnly')}</Check
         >
         {#if d?.kind === 'ramdisk'}
           <Check
             compact
             checked={!!a.swap}
-            onchange={(on) => setFlag(a.id, { swap: on })}
+            onchange={(on: boolean) => setFlag(a.id, { swap: on })}
             title={t('disks:Disks.swap.title')}>{t('disks:Disks.swap')}</Check
           >
         {/if}
@@ -152,14 +152,14 @@
           <Check
             compact
             checked={!!a.inPlace}
-            onchange={(on) => setFlag(a.id, { inPlace: on })}
+            onchange={(on: boolean) => setFlag(a.id, { inPlace: on })}
             title={t('disks:Disks.inPlace.title')}>{t('disks:Disks.inPlace')}</Check
           >
         {/if}
         <MoveButtons
           index={i}
           count={machine.attachments.length}
-          onmove={(by) =>
+          onmove={(by: -1 | 1) =>
             act(t('disks:Disks.busy.move'), () => editAttachment(store, plain(machine), a.id, { move: by }))}
           upTitle={t('disks:Disks.moveUp.title')}
           downTitle={t('disks:Disks.moveDown.title')}

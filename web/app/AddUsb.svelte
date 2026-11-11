@@ -7,6 +7,7 @@
   import Button from './ui/Button.svelte';
   import Choice from './ui/Choice.svelte';
   import Modal from './ui/Modal.svelte';
+  import type { Dialog } from './ui/dialog.ts';
   import Note from './ui/Note.svelte';
   import { t } from '../i18n.ts';
   import type { IconName } from './icons.ts';
@@ -19,7 +20,7 @@
     /** A stored machine's id; undefined: the page's own (transient) machine. */
     machine: string | undefined;
     name: string;
-    close(): void;
+    close: () => void;
   };
   let { machine, name, close }: Props = $props();
 
@@ -31,7 +32,7 @@
   /** Why a kind can't be chosen: the browser lacks its API. */
   const unavailable: Record<Api, string> = { usb: t('usb:AddUsb.noWebUsb'), hid: t('usb:AddUsb.noWebHid') };
 
-  let dialog: Modal;
+  let dialog: Dialog;
   const runner = new Actions();
   const busy = $derived(runner.busy !== undefined);
 

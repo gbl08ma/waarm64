@@ -141,7 +141,7 @@ export async function loadChangesInto(
         progress,
       );
     } catch (e) {
-      await removeOverlay(overlayDir(id)).catch(() => {});
+      await removeOverlay(overlayDir(id)).catch(() => undefined); // tidying up: the failure thrown is the one to report
       throw e;
     }
     const meta = await overlayMeta(overlayDir(id));
@@ -199,7 +199,7 @@ export async function importStored(
     try {
       r = await job({ type: 'import', file, path: diskDir(id), identity: canonical(identity) }, progress);
     } catch (e) {
-      await store.files.remove(diskDir(id)).catch(() => {});
+      await store.files.remove(diskDir(id)).catch(() => undefined); // tidying up: the failure thrown is the one to report
       throw e;
     }
     // A stored disk is known by its id: its identity's `bytes` stays 0 (its store's `base` file has it as made).

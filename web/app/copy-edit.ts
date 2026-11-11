@@ -31,7 +31,7 @@ const commands = {
   /** The changes as JSON (also copied to the clipboard when the page has focus). */
   dump(): string {
     const json = JSON.stringify(changed(), null, 2);
-    void navigator.clipboard?.writeText(json).catch(() => {});
+    void navigator.clipboard?.writeText(json).catch(() => undefined); // a convenience: the JSON is returned too
     return json;
   },
   /** Forgets the changes. */

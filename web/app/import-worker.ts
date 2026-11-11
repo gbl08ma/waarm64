@@ -32,7 +32,7 @@ self.onmessage = async (e: MessageEvent<ImportRequest>) => {
     .finally(() => base.close?.())
     .then(
       (r) => post({ type: 'done', blocks: r.blocks }),
-      (err) => post({ type: 'error', error: toWire(err) }),
+      (err: unknown) => post({ type: 'error', error: toWire(err) }),
     );
 };
 

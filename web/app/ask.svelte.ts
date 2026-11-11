@@ -60,7 +60,7 @@ export const ask = {
       cancel: '',
       danger: false,
       value: '',
-    }).then(() => {}),
+    }).then(() => undefined),
   /** A line of text, or undefined if cancelled. */
   prompt: (text: string, value = '', o: Options = {}) =>
     show({
