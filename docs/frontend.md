@@ -176,6 +176,15 @@ runs on TypeScript 6, in its own package `tools/svelte-check` (a `file:` dev dep
 TypeScript 7. A `$derived` that only reads a value to depend on it writes `(void tick, value())`: TypeScript rejects
 an unused left side of a comma.
 
+**Screenshots:** `node tools/screens.ts --label <name>` (headless Chromium on the dev server, ~1 min; `--only <part>`
+for the states whose names contain it) seeds a profile through the page's own modules (two machines, disks with
+overlays, kept snapshots, three connections, a folder), then captures each state that needs no guest as
+`bench/results/local/screens/<name>/<state>.png` at 1280×800: the toolbar and each of its menus (with every menu a
+machine can have shown through `ui`), the message bar (warn, error), the Machines page's panes and a machine's tabs
+(also 720 px wide, `-narrow`), every dialog, each Add a disk source, the Network and Folder wizards' steps and the
+page's questions. `missed.txt` lists what it couldn't reach (a guest's states, the browser's pickers). A change to the
+page's look is compared with a baseline set taken before it (`--label before`).
+
 ## The toolbar
 
 A desktop application's toolbar (`Toolbar.svelte`): tool buttons with icons and tooltips, in groups split by
