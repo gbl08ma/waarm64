@@ -303,6 +303,10 @@
     "message": "This snapshot was taken of a machine with a writable disk that this machine doesn't have.",
     "note": "Error headline when a snapshot is restored or loaded onto a machine without the writable disk the snapshot's machine had."
   },
+  "snapshot.keptMoved": {
+    "message": "A disk this snapshot was to keep as it is was written to after the restore was planned, so the snapshot no longer fits it. Nothing was changed. Restore the snapshot again.",
+    "note": "Error headline when a restore was planned to keep a disk's overlay as it was, but the guest wrote to that disk before the machine stopped; a new restore plans again (it then forks the disk)."
+  },
   "snapshot.otherDisk": {
     "message": "This snapshot was taken on another disk, {{was}}, and the disk here is {{here}}. A snapshot only continues on the disk it was taken on. Open that disk first with Open disk…, then load the snapshot.",
     "note": "Error headline when a snapshot is loaded on a machine whose disk isn't the one it was taken on; {{was}} and {{here}} name the two disks (a file's name and date, or a URL's path); “Open disk…” is the toolbar's button."

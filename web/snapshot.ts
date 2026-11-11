@@ -40,12 +40,13 @@ export type SnapshotDisk = { slot: number; identity: string; size: number; block
 
 /**
  * What a restore does with a writable disk the file pins (docs/machines.md §5.2): `keep` its overlay as it is
- * (it is at the pinned generation: the file's blocks for it are skipped), or `write` the file's blocks into overlay
+ * (it is at `generation`, the one the page planned with, else the restore is refused: the file's blocks for it are
+ * skipped), or `write` the file's blocks into overlay
  * `overlay` (emptied first: a fork into a new overlay, or a replace), with `whole` the disk's every block made zeros
  * first (a stored disk written in place, forked over its moved store: the file has the whole disk). A ramdisk's
  * blocks always go to its new chunks.
  */
-export type DiskPlan = { slot: number; action: 'keep' } | { slot: number; action: 'write'; overlay: string; identity: string; size: number; whole?: boolean };
+export type DiskPlan = { slot: number; action: 'keep'; generation: number } | { slot: number; action: 'write'; overlay: string; identity: string; size: number; whole?: boolean };
 
 /** A DISK frame's index: the device slot times this, plus the first block. */
 const SLOT = 2 ** 40;
@@ -162,6 +163,11 @@ export async function readSnapshot(
       }
     }
     const plan = opts.plan?.find((p) => p.slot === d.slot);
+    // A kept overlay must still be at the generation the page planned with: one written since (the guest ran on
+    // between the plan and the stop) would put the snapshot's RAM over a disk that moved on.
+    if (!opts.resume && plan?.action === 'keep' && (await overlayMeta(spec.overlay)).generation !== plan.generation) {
+      throw new SnapshotError('snapshots:snapshot.keptMoved', {}, 'other-disk');
+    }
     targets.set(d.slot, opts.resume || plan?.action === 'keep' ? { kind: 'skip' } : plan?.action === 'write' ? { kind: 'overlay', name: plan.overlay, identity: plan.identity, size: plan.size, whole: plan.whole } : { kind: 'overlay', name: spec.overlay, identity, size: d.size });
   }
   const frames = s.frames();

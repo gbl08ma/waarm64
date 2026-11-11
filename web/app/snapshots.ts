@@ -48,7 +48,11 @@ export type RestorePlan = {
   forks: { disk: string; reused: boolean; replaceable?: { overlay: string; name: string; bytes: number } }[];
   /** Why it can't restore (a disk written in place moved on, and the file hasn't the whole disk). */
   refused?: Msg;
-  /** Creates what the plan needs (fork overlays, attachments switched) and returns the worker's plan; `replace` writes into the attached overlays instead of forking. */
+  /**
+   * Plans again as the overlays are now (call it once the machine stopped), creates what that needs (fork overlays,
+   * attachments switched) and returns the worker's plan; `replace` writes into the attached overlays the user was
+   * asked about (the `forks` with a `replaceable`) instead of forking.
+   */
   commit(replace: boolean): Promise<DiskPlan[]>;
 };
 
@@ -80,61 +84,78 @@ export async function planRestore(
     attachment: string;
     disk: DiskRecord;
     action: 'keep' | 'reuse' | 'fork' | 'fork-whole';
+    /** A kept overlay's generation (as pinned), or the reused fork's. */
+    generation?: number;
     reuse?: string;
     replaceable?: { overlay: string; name: string; bytes: number };
   };
-  const steps: Step[] = [];
-  const kept: string[] = [];
-  let refused: Msg | undefined;
-  for (const p of snap.pins) {
-    if (p.ram || !p.overlay) continue;
-    const at = bySlot[p.slot]?.attachment;
-    const a = at === undefined ? undefined : m.attachments[at];
-    const d = a && disks.get(a.disk);
-    if (!a || !d) throw new Error(`the snapshot pins a disk in slot ${p.slot} that ${m.name} doesn't have`);
-    if (p.overlay.startsWith('disks/')) {
-      // Written in place: no earlier state to fork from.
-      if (a.inPlace && (await overlayMeta(p.overlay)).generation === p.generation) {
-        kept.push(d.name);
+  /** What each pinned disk's overlay calls for as the overlays are on disk now. */
+  async function survey() {
+    const steps: Step[] = [];
+    let refused: Msg | undefined;
+    for (const p of snap.pins) {
+      if (p.ram || !p.overlay) continue;
+      const at = bySlot[p.slot]?.attachment;
+      const a = at === undefined ? undefined : m.attachments[at];
+      const d = a && disks.get(a.disk);
+      if (!a || !d) throw new Error(`the snapshot pins a disk in slot ${p.slot} that ${m.name} doesn't have`);
+      const keep: Step = { slot: p.slot, attachment: a.id, disk: d, action: 'keep', generation: p.generation };
+      if (p.overlay.startsWith('disks/')) {
+        // Written in place: no earlier state to fork from.
+        if (a.inPlace && (await overlayMeta(p.overlay)).generation === p.generation) steps.push(keep);
+        else if (p.blocks > 0) steps.push({ slot: p.slot, attachment: a.id, disk: d, action: 'fork-whole' });
+        else refused = msg('snapshots:snapshots.writtenInPlace', { disk: d.name });
         continue;
       }
-      if (p.blocks > 0) {
-        steps.push({ slot: p.slot, attachment: a.id, disk: d, action: 'fork-whole' });
+      if (
+        a.overlay &&
+        overlayDir(a.overlay) === p.overlay &&
+        (await overlayMeta(p.overlay)).generation === p.generation
+      ) {
+        steps.push(keep);
         continue;
       }
-      refused = msg('snapshots:snapshots.writtenInPlace', { disk: d.name });
-      continue;
-    }
-    if (
-      a.overlay &&
-      overlayDir(a.overlay) === p.overlay &&
-      (await overlayMeta(p.overlay)).generation === p.generation
-    ) {
-      kept.push(d.name);
-      continue;
-    }
-    // An earlier fork of this snapshot that hasn't moved since: attached again rather than forking once more.
-    let reuse: string | undefined;
-    for (const o of await store.overlaysOf(d.id)) {
-      if (o.fork?.snapshot === snap.key && (await overlayMeta(overlayDir(o.id))).generation === o.fork.generation) {
-        reuse = o.id;
-        break;
+      // An earlier fork of this snapshot that hasn't moved since: attached again rather than forking once more.
+      let reuse: { id: string; generation: number } | undefined;
+      for (const o of await store.overlaysOf(d.id)) {
+        if (o.fork?.snapshot === snap.key && (await overlayMeta(overlayDir(o.id))).generation === o.fork.generation) {
+          reuse = { id: o.id, generation: o.fork.generation };
+          break;
+        }
       }
+      const current = a.overlay ? await store.get('overlays', a.overlay) : undefined;
+      const replaceable = current ? { overlay: current.id, name: current.name, bytes: current.bytes } : undefined;
+      steps.push({
+        slot: p.slot,
+        attachment: a.id,
+        disk: d,
+        action: reuse ? 'reuse' : 'fork',
+        reuse: reuse?.id,
+        generation: reuse?.generation,
+        replaceable,
+      });
     }
-    const current = a.overlay ? await store.get('overlays', a.overlay) : undefined;
-    const replaceable = current ? { overlay: current.id, name: current.name, bytes: current.bytes } : undefined;
-    steps.push({ slot: p.slot, attachment: a.id, disk: d, action: reuse ? 'reuse' : 'fork', reuse, replaceable });
+    return { steps, refused };
   }
+  const planned = await survey();
+  const forks = planned.steps.filter((s) => s.action !== 'keep');
+  /** The attachments the user was asked to replace rather than fork (a fresh fork with an overlay attached). */
+  const asked = new Set(forks.flatMap((s) => (s.action === 'fork' && s.replaceable ? [s.attachment] : [])));
   return {
-    kept,
-    forks: steps.map((s) => ({ disk: s.disk.name, reused: s.action === 'reuse', replaceable: s.replaceable })),
-    refused,
+    kept: planned.steps.flatMap((s) => (s.action === 'keep' ? [s.disk.name] : [])),
+    forks: forks.map((s) => ({ disk: s.disk.name, reused: s.action === 'reuse', replaceable: s.replaceable })),
+    refused: planned.refused,
     async commit(replace) {
+      // Planned again: the guest may have written between the plan and the stop, and a disk kept as the plan found it
+      // would take the snapshot's RAM over writes made after it. A disk that moved since forks (its overlay stays as
+      // it is); `replace` holds only for the disks the user was asked about.
+      const { steps, refused } = await survey();
       if (refused) throw new MsgError(refused.key, refused.params);
-      const plan: DiskPlan[] = [];
-      for (const p of snap.pins)
-        if (!p.ram && p.overlay && !steps.some((s) => s.slot === p.slot)) plan.push({ slot: p.slot, action: 'keep' });
+      const plan: DiskPlan[] = steps.flatMap((s) =>
+        s.action === 'keep' ? [{ slot: s.slot, action: 'keep' as const, generation: s.generation ?? 0 }] : [],
+      );
       for (const s of steps) {
+        if (s.action === 'keep') continue;
         const a = m.attachments.find((x) => x.id === s.attachment);
         if (!a) throw new Error(`the plan's attachment ${s.attachment} is not the machine's`); // made from m above
         const write = (overlay: string, whole = false): DiskPlan => ({
@@ -147,8 +168,8 @@ export async function planRestore(
         });
         if (s.action === 'reuse') {
           a.overlay = s.reuse;
-          plan.push({ slot: s.slot, action: 'keep' });
-        } else if (replace && s.action === 'fork' && a.overlay) {
+          plan.push({ slot: s.slot, action: 'keep', generation: s.generation ?? 0 });
+        } else if (replace && asked.has(s.attachment) && s.action === 'fork' && a.overlay) {
           plan.push(write(a.overlay));
         } else {
           // A new overlay with the snapshot's blocks: its generation after the restore is 1 (web/snapshot.ts).

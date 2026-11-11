@@ -333,6 +333,10 @@ The file's format, what the core saves and the page's toolbar and header fields:
   snapshot gets its blocks and is attached, and the old overlay stays as it was. The confirmation says which disks
   fork, and offers to **replace** instead (the attached overlay takes the blocks; what was written since is lost). A
   ramdisk takes the snapshot's blocks. Transient machines have no plan: a restore replaces their overlays.
+- **The plan is made twice:** once for the confirmation, while the guest may still run, and again once the machine
+  has stopped (`commit`): a disk the guest wrote to in between forks then (the replace answer holds only for the
+  disks the confirmation named). The worker refuses a **keep** whose overlay isn't at the generation the plan names
+  ([A disk this snapshot was to keep as it is was written to after the restore was planned, so the snapshot no longer fits it. Nothing was changed. Restore the snapshot again.](ui:snapshots:snapshot.keptMoved)), so the snapshot's RAM never lands on a disk that moved on.
 - **Repeated restores don't pile up forks:** a restore that would fork attaches an earlier fork of the same snapshot
   whose generation hasn't moved since (still 1) instead (**reuse**).
 - **Import a file** copies it into the machine's snapshots after the header check (one of another shape is kept,

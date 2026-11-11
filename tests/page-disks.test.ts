@@ -115,7 +115,7 @@ test("a disk's overlays are named variants: new, rename, switch, delete (a machi
   await context.close();
 });
 
-test("a restore's plan: keep where the pin matches, fork where it moved on, reuse an unmoved fork, replace when asked; written in place, only at its generation or with the whole disk", async () => {
+test("a restore's plan: keep where the pin matches, fork where it moved on, reuse an unmoved fork, replace when asked; written in place, only at its generation or with the whole disk; planned again at the commit (finding 1)", async () => {
   const { context, page } = await fresh();
   const r = await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);
@@ -163,14 +163,29 @@ test("a restore's plan: keep where the pin matches, fork where it moved on, reus
     out.refused = (await plan(pins(4, 6))).refused?.key ?? null;
     const whole = await plan(pins(4, 6, 256));
     out.whole = (await whole.commit(false)).map((p: { action: string; whole?: boolean }) => [p.action, !!p.whole]);
+    // Planned while the guest still ran: both disks as pinned (kept). The guest writes before the stop, moving the
+    // overlay and the store on; the commit plans again: the overlay forks (not replaced: the user wasn't asked about
+    // it), the store written in place is refused (this file hasn't its whole disk).
+    await setGen(`overlays/${a.id}`, 4);
+    await setGen(`disks/${s.id}`, 7);
+    const stale = await plan(pins(4, 7), 'snap-2');
+    out.staleKept = stale.kept;
+    await setGen(`overlays/${a.id}`, 5);
+    const forked = await stale.commit(true);
+    out.stale = forked.map((p: { action: string; overlay?: string }) => [p.action, p.overlay === `overlays/${a.id}`]);
+    await setGen(`disks/${s.id}`, 8);
+    out.staleInPlace = await (await plan(pins(5, 7), 'snap-3')).commit(false).then(() => null, (e: { msg?: { key: string } }) => e.msg?.key ?? String(e));
     store.close();
     return out;
   });
-  assert.deepEqual(r.same, { kept: ['disk.img', 'stored.img'], forks: 0, plan: [{ slot: 5, action: 'keep' }, { slot: 6, action: 'keep' }] });
+  assert.deepEqual(r.same, { kept: ['disk.img', 'stored.img'], forks: 0, plan: [{ slot: 5, action: 'keep', generation: 4 }, { slot: 6, action: 'keep', generation: 7 }] });
   assert.deepEqual(r.moved, { forks: [[false, 'Work']], plan: [['keep', false], ['write', false]], attached: true });
   assert.deepEqual(r.reused, { forks: [true], plan: ['keep', 'keep'] });
   assert.deepEqual(r.replace, { reused: [false], plan: [['keep', false], ['write', true]] });
   assert.equal(r.refused, 'snapshots:snapshots.writtenInPlace');
   assert.deepEqual(r.whole, [['keep', false], ['write', true]]);
+  assert.deepEqual(r.staleKept, ['disk.img', 'stored.img']);
+  assert.deepEqual(r.stale, [['keep', false], ['write', false]], 'a disk written after the plan forks at the commit, never kept');
+  assert.equal(r.staleInPlace, 'snapshots:snapshots.writtenInPlace');
   await context.close();
 });

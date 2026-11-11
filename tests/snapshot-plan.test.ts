@@ -10,6 +10,7 @@ import { lzCodec } from '../web/lz.ts';
 import { openOverlay, overlay, overlayMeta } from '../web/overlay.ts';
 import { swapHeader } from '../web/ramdisk.ts';
 import { readSnapshot, writeSnapshot } from '../web/snapshot.ts';
+import { SnapshotError } from '../web/snapshot-file.ts';
 import { bootVm, compileCore, type BootOptions } from '../web/vm.ts';
 
 const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
@@ -68,7 +69,12 @@ test('a snapshot pins generations and carries the ramdisk; a restore keeps, fork
   // keep: the overlay is left as it is (its block 1 stays 0x22); the ramdisk gets the file's blocks.
   const keep = devices();
   (keep[1] as { ramInit?: unknown }).ramInit = undefined;
-  const r1 = await readSnapshot(file, codec, codec.snapshotVersion, { devices: keep, plan: [{ slot: 0, action: 'keep' }] });
+  // A keep planned at another generation (the guest wrote after the page planned) is refused before anything moves.
+  await assert.rejects(
+    readSnapshot(file, codec, codec.snapshotVersion, { devices: keep, plan: [{ slot: 0, action: 'keep', generation: 1 }] }),
+    (e: unknown) => e instanceof SnapshotError && e.msg.key === 'snapshots:snapshot.keptMoved',
+  );
+  const r1 = await readSnapshot(file, codec, codec.snapshotVersion, { devices: keep, plan: [{ slot: 0, action: 'keep', generation: 2 }] });
   const vm1 = await bootVm(module, { ...o, devices: keep, restore: r1.restore });
   await vm1.close();
   assert.equal(await byteAt(name, 1), 0x22, 'kept');
