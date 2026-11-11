@@ -193,7 +193,7 @@ with tun2socks-style forwarders.
     (§1): v0.1.0 built identically on GitHub's x86_64 and arm64 runners and in the dev VM.
 - **L2, the page:** the kind, the wizard's steps, the client, the primary's rule, the errors.
   - **Done** (2026-11-01, a cloud session; docs/frontend.md "Network", docs/network-adapters.md): the kind `local` (its
-    link in the record); the wizard's [Your computer (webpc-net)](ui:network:NetWizard.kind.pickLocal) step (the link, or the pairing link, pasted; the
+    link in the record); the wizard's [Your computer (webpc-net)](ui:network:NetKindStep.kind.pickLocal) step (the link, or the pairing link, pasted; the
     install lines for the browser's platform from `web/local-release.ts`, the same as `build.sh`'s: v0.1.0's since
     2026-11-02); the pairing link opening the page (`#net=`: out of the address at once, the wizard on it); the client in
     a worker, batched on `setTimeout(0)`; the card's frame path beside the gateway's (`FramePath`) with a **link flap**

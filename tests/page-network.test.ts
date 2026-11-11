@@ -212,7 +212,7 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
     await page.uncheck('#net-tc-exit');
     assert.equal(await visible(page, '#net-tailcat'), false);
     await page.click('#net-connect');
-    assert.match(await text(page, '#net-error'), words('network:NetWizard.chooseTailcat'));
+    assert.match(await text(page, '#net-error'), words('network:NetTailcatStep.chooseTailcat'));
     await page.check('#net-tc-exit');
     await page.fill('#net-tailcat', 'tcnot-an-address');
     await page.click('#net-connect');

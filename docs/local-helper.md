@@ -43,7 +43,7 @@ and their history are in [plans/networking-local.md](plans/networking-local.md).
 - **The kind `local`** (web/app/connections.ts). Its record holds the link, `local.url`, which carries the token: a
   secret, as tailcat's `exit` is ([network-adapters.md](network-adapters.md) §2.1).
 - **The pairing link** (web/app/main.ts): `#net=ws://…` is taken out of the address at once and opens the Network
-  wizard on [Your computer (webpc-net)](ui:network:NetWizard.kind.pickLocal) with the link filled in. Pasting the
+  wizard on [Your computer (webpc-net)](ui:network:NetKindStep.kind.pickLocal) with the link filled in. Pasting the
   link, or just its `ws://` part, does the same (web/local-net.ts `parseLocalURL`). The wizard's steps are in
   [frontend.md](frontend.md) "Network".
 - **The install lines** (web/local-release.ts): the release the page offers (`RELEASE`: its version and SHA256SUMS),

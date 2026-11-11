@@ -21,7 +21,7 @@ and the choices they made then; it grows as the user reviews more of the copy.
   for what an action the user is about to take causes ("This will delete the 12 MiB of changes…", "the machine will
   be started again").
 - **The user is "you"**, in descriptions and instructions ("You will not be asked to select a file again."); steps and
-  prompts are imperatives ([Paste the address it prints, below:](ui:network:NetWizard.tailcat.exit.paste)).
+  prompts are imperatives ([Paste the address it prints, below:](ui:network:NetTailcatStep.tailcat.exit.paste)).
 - **Contractions are fine** (can't, isn't, doesn't), as in speech.
 - **Parentheses sparingly**: for a unit, an abbreviation or a command (`fstrim`), not for a second thought; a second
   thought is a sentence.

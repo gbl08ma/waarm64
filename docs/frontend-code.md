@@ -49,8 +49,10 @@ The linters (§7) enforce what can be checked mechanically; the rest is for revi
    - `Note`: fine print, `tone` `dim`/`warn`/`error`/`ok`, `size` `sm`/`md`, `inline` for a row's small line.
    - `Field` in `Fields`: a label, its control, a button beside it (`after`), a note; in a `Fields` grid the rows line
      up, elsewhere the label sits over the control.
-   - `Check`, `Radio`: a checkbox or a radio button and its words.
+   - `Check`, `Radio`: a checkbox or a radio button and its words (`ref` binds Check's box).
    - `Choice`: a wizard's big choice button (`label`, `icon`, `pressed`, a dim line).
+   - `Step`: a wizard's step (a column, hidden unless `active`); `Steps`: numbered steps to follow; `Disclosure`: more
+     of a form folded under a small line (Advanced).
    - `ErrorBanner`: the dismissible error or warning bar (the message bar, the Machines page's error).
    - `StatusDot`: a state's light.
    - `NameInput`: a row's name, edited where it is (a connection's, a folder's).

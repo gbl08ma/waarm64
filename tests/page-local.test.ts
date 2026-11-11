@@ -107,7 +107,7 @@ test("the helper's pairing link: the wizard on This computer, Attach, connected 
     assert.equal(new URL(page.url()).hash, '', 'the token left the address');
     assert.equal(await page.locator('#net-step-local').isVisible(), true, 'on This computer');
     assert.equal(await page.inputValue('#net-local-url'), ws);
-    assert.equal(await page.locator('#net-local-install summary').textContent(), t('network:NetWizard.install', { version: RELEASE.version }));
+    assert.equal(await page.locator('#net-local-install summary').textContent(), t('network:NetLocalStep.install', { version: RELEASE.version }));
     assert.ok(((await page.locator('#net-local-lines').textContent()) ?? '').includes(`/releases/download/${RELEASE.version}/`), 'the release\'s install lines');
     assert.equal(await page.isChecked('#net-keep'), true);
     assert.equal(await page.locator('#net-connect').textContent(), t('network:NetWizard.attach'), 'the machine is off: attached, connecting at its start');

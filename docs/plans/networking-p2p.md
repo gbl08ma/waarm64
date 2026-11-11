@@ -53,7 +53,7 @@ key), the Ethernet gateway ([devices.md](../devices.md) "net") and network adapt
 - **A room's link carries where its members meet:** the room's ID, its Nostr relays and its DERP map
   (region IDs in the public tailcat relays' map, or a derper's URL inline). Members with the same link
   find each other; a call back goes only to a region in the link's map (§3). The page builds the link
-  ([Create a room](ui:network:NetWizard.room.create)) and takes one ([Join a room](ui:network:NetWizard.room.join)); a bare ID gets the defaults (R4 picks them).
+  ([Create a room](ui:network:NetRoomPickStep.room.create)) and takes one ([Join a room](ui:network:NetRoomPickStep.room.join)); a bare ID gets the defaults (R4 picks them).
 - **Who sees a node's real IP address:** the members it connects to directly, either way round (its public address
   and port from the candidates; a LAN address stays behind Chromium's `.local` name): one whose guest reaches it, with
   incoming on, and every one its own guest reaches, which learn it as it learns theirs, since a direct connection
@@ -95,7 +95,7 @@ key), the Ethernet gateway ([devices.md](../devices.md) "net") and network adapt
   (§3, §8).
 - **Public and private rooms, and fast derivation.** A room's secrets come from its ID by BLAKE2s
   (§2), fast, so a relay that keeps its lookups can guess a short ID offline and read them. The page
-  makes the trade-off plain instead of slowing it: [Create a room](ui:network:NetWizard.room.create) asks whether the room is
+  makes the trade-off plain instead of slowing it: [Create a room](ui:network:NetRoomPickStep.room.create) asks whether the room is
   private, and a private room's ID is the chosen name plus a random suffix the page generates
   (128 bits, base32), the only form it accepts as private; anything else is public, and the page
   says what that means (anyone can join; addresses still protect each node). Creating and joining
@@ -294,15 +294,15 @@ client was built.
   lookup naming a region outside the map, the hour's turn, lost signalling); two pages joining a
   room by its link, one given the other's name, pinging by name.
 - **R2 — The page.** *Done 2026-11-10* (frontend.md "Network", network-adapters.md §2.1): the `room` kind, the
-  wizard's [Create a room](ui:network:NetWizard.room.create) (a private room's 128-bit suffix, relays under Advanced)
-  and [Join a room](ui:network:NetWizard.room.join), the switches, another connection's key, the IP-address note, the
+  wizard's [Create a room](ui:network:NetRoomPickStep.room.create) (a private room's 128-bit suffix, relays under Advanced)
+  and [Join a room](ui:network:NetRoomPickStep.room.join), the switches, another connection's key, the IP-address note, the
   menu's name and link to copy, New name; the key in `webpc-room`; the names' suffix moved to `.internal` (§5).
   `tests/page-room.test.ts` (two Debian guests in one Chromium, in `scripts/ci-net.sh`), `tests/room-link.test.ts`,
   and the controller's, the connections' cases. Left to R4: the room on a second adapter beside the local helper,
   whose source (a private repository) a cloud session can't fetch; the unit layer checks that a room is never the
   default way out (`primaryOf`). The brief as it was: A room as a connection kind (network-adapters.md "Connections" grows its
-  record): [Create a room](ui:network:NetWizard.room.create) (a name, "private" and its suffix, relays and derper under advanced
-  settings) and [Join a room](ui:network:NetWizard.room.join) (a link or a public ID); one's own name to copy; the incoming switch;
+  record): [Create a room](ui:network:NetRoomPickStep.room.create) (a name, "private" and its suffix, relays and derper under advanced
+  settings) and [Join a room](ui:network:NetRoomPickStep.room.join) (a link or a public ID); one's own name to copy; the incoming switch;
   the relay-only switch; the key under advanced settings (another connection's, or new); who sees
   one's IP address (§1), beside the room's privacy note. Two Debian guests in one Chromium reach each
   other by name in `scripts/ci-net.sh`, and a room on a second adapter beside the local helper

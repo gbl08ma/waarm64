@@ -31,7 +31,7 @@ code's comments still cite; machines had first left several adapters for later: 
 7. **Routing over several adapters:** each adapter's gateway has its own addresses, and only the **primary** offers
    the default route (§4).
 8. **Managed on the Machines page's Network tab and from the toolbar's Network menu.** Attaching starts with
-   [New connection…](ui:network:NetWizard.pick.new), which makes the connection in the same wizard, because a new machine's user has none yet.
+   [New connection…](ui:network:NetPickStep.pick.new), which makes the connection in the same wizard, because a new machine's user has none yet.
 
 ## 2. Connections
 
@@ -64,7 +64,7 @@ Disconnect) and `lastUsed` (what the wizard preselects). The state stays where t
   private room's is a secret) and the switches (`incoming`, `relayOnly`) in the record; the node key in
   `webpc-room`, object store `identity`, under `room.identityKey` (64 hex digits, made at the first connect), so the
   machine's address and name in the room stay the same. A connection made with another's key ([The machine's
-  key](ui:network:NetWizard.room.key) under Advanced: the stored room connections) takes that one's `identityKey`:
+  key](ui:network:NetRoomStep.room.key) under Advanced: the stored room connections) takes that one's `identityKey`:
   the same key in two rooms, one at a time: a running room connection holds its key's lock (`roomKeyLock`, beside its
   own), so another connection on that key, on another adapter or in another tab, doesn't connect while it runs and
   says which has it (two DERP connections under one key break each other on a shared region: a derper delivers the

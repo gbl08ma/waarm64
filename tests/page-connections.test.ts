@@ -23,7 +23,7 @@ const CONNECT = t('network:NetWizard.connect');
 const ATTACH = t('network:NetWizard.attach');
 const CHANGE_ADAPTER = t('machines:AdapterCard.adapter.change');
 /** A connection to choose in the wizard, in use by `holder`'s machine. */
-const heldBy = (holder: string) => words('network:NetWizard.kind.held', { holder });
+const heldBy = (holder: string) => words('network:NetPickStep.kind.held', { holder });
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
 const WASM = new URL('../target/net/ts.wasm', import.meta.url);
 const skip = !existsSync(FIRMWARE) ? 'SKIPPED: run images/build.sh edk2' : !existsSync(WASM) ? 'SKIPPED: build the tailnet client (net/ts/build.sh)' : undefined;

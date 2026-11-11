@@ -128,13 +128,13 @@ test('two Debian guests in one Chromium: one creates a private room in the wizar
     assert.equal(await visible(a, '#net-room-incoming'), false, 'incoming connections are under Advanced');
     assert.equal(await a.isChecked('#net-room-incoming'), true, 'members may connect by default');
     // The note on who can learn this computer's IP address follows the switch.
-    assert.match(await text(a, '#net-room-ip'), words('network:NetWizard.room.ip.direct'));
+    assert.match(await text(a, '#net-room-ip'), words('network:NetRoomStep.room.ip.direct'));
     await a.uncheck('#net-room-direct');
-    assert.match(await text(a, '#net-room-ip'), words('network:NetWizard.room.ip.relayed'));
+    assert.match(await text(a, '#net-room-ip'), words('network:NetRoomStep.room.ip.relayed'));
     await a.check('#net-room-direct');
-    assert.match(await text(a, '#net-room-ip'), words('network:NetWizard.room.ip.direct'));
+    assert.match(await text(a, '#net-room-ip'), words('network:NetRoomStep.room.ip.direct'));
     await a.click('#net-connect');
-    assert.match(await text(a, '#net-error'), words('network:NetWizard.room.noName'));
+    assert.match(await text(a, '#net-error'), words('network:NetRoomStep.room.noName'));
     await a.fill('#net-room-id', 'test lan');
     await a.locator('#net-room-advanced summary').click();
     await a.fill('#net-room-nostr', nostr.url);

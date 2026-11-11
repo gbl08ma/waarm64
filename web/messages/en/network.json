@@ -1,53 +1,53 @@
 {
-  "NetWizard.kind.tailnet": {
+  "NetPickStep.kind.tailnet": {
     "message": "a tailnet ({{host}})",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step (which connection an adapter gets): the kind of a tailnet connection, under the connection's name. {{host}} is its control server's host name (e.g. controlplane.tailscale.com)."
   },
-  "NetWizard.kind.local": {
+  "NetPickStep.kind.local": {
     "message": "the helper on your computer",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the kind of a connection through the local helper (webpc-net), under the connection's name."
   },
-  "NetWizard.kind.tailcatExit": {
+  "NetPickStep.kind.tailcatExit": {
     "message": "tailcat through a server",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the kind of a tailcat connection that goes online through a tailcat server, under the connection's name."
   },
-  "NetWizard.kind.tailcatServe": {
+  "NetPickStep.kind.tailcatServe": {
     "message": "tailcat, letting clients in",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the kind of a tailcat connection that only lets tailcat clients in to the machine, under the connection's name."
   },
-  "NetWizard.kind.roomPublic": {
+  "NetPickStep.kind.roomPublic": {
     "message": "a public room",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the kind of a peer-to-peer room connection whose room anyone who knows its name can join, under the connection's name."
   },
-  "NetWizard.kind.roomPrivate": {
+  "NetPickStep.kind.roomPrivate": {
     "message": "a private room",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the kind of a peer-to-peer room connection whose room only those with its link can join, under the connection's name."
   },
-  "NetWizard.kind.ephemeral": {
+  "NetPickStep.kind.ephemeral": {
     "message": "{{kind}}, ephemeral",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the kind of a connection that is kept nowhere (gone when its tab closes). {{kind}} is the kind's words (e.g. “a tailnet (controlplane.tailscale.com)”)."
   },
-  "NetWizard.kind.held": {
+  "NetPickStep.kind.held": {
     "message": "{{kind}}; in use by {{holder}}",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the line under a connection that a machine running in another tab has now. {{kind}} is the kind's words; {{holder}} is that machine's name."
   },
-  "NetWizard.kind.heldElsewhere": {
+  "NetPickStep.kind.heldElsewhere": {
     "message": "{{kind}}; in use by a machine in another tab",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the line under a connection that a machine in another tab has now, when that tab didn't say which machine. {{kind}} is the kind's words."
   },
-  "NetWizard.choose": {
+  "NetPickStep.choose": {
     "message": "Choose a connection, or New connection….",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the error under the list when the user goes on without choosing a connection. “New connection…” is the first choice's name."
   },
-  "NetWizard.chooseTailcat": {
+  "NetTailcatStep.chooseTailcat": {
     "message": "Choose at least one: going online through a computer, or letting tailcat clients in.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step: the error when neither of its two checkboxes (going online through a computer, letting clients in) is ticked."
   },
-  "NetWizard.tailcatNotBuilt": {
+  "NetTailcatStep.tailcatNotBuilt": {
     "message": "The tailnet client isn't built on this server. Start this web app with `npm run serve` or `npm start`, which build it, or run net/ts/build.sh.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step: the error when the server that serves the page lacks the tailnet client's module (a developer's setup). The commands stay as they are."
   },
-  "NetWizard.tailscaleNotBuilt": {
+  "NetTailnetStep.tailscaleNotBuilt": {
     "message": "The Tailscale client isn't built on this server. Start this web app with `npm run serve` or `npm start`, which build it, or run net/ts/build.sh.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step: the error when the server that serves the page lacks the tailnet client's module (a developer's setup). The commands stay as they are."
   },
@@ -103,299 +103,299 @@
     "message": "Attach",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections): the button that attaches the connection to an adapter of a machine that isn't running here (it connects when the machine starts)."
   },
-  "NetWizard.pick.note": {
+  "NetPickStep.pick.note": {
     "message": "Which connection should the adapter have? Connections are stored in this browser, and any of its machines can use them; only one running machine can use a connection at a time.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the text above the list of the browser's connections."
   },
-  "NetWizard.pick.new": {
+  "NetPickStep.pick.new": {
     "message": "New connection…",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the first choice of the list, which goes on to make a new connection."
   },
-  "NetWizard.pick.new.note": {
+  "NetPickStep.pick.new.note": {
     "message": "A tailnet, tailcat, your computer, or a peer-to-peer room.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), its first step: the line under “New connection…”, the kinds it can make."
   },
-  "NetWizard.kind.note": {
+  "NetKindStep.kind.note": {
     "message": "How should the machine reach a network? Connecting doesn't restart the machine.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the text above its four choices."
   },
-  "NetWizard.kind.pickTailnet": {
+  "NetKindStep.kind.pickTailnet": {
     "message": "A tailnet",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the name of the first choice (Tailscale or a Headscale)."
   },
-  "NetWizard.kind.pickTailnet.note": {
+  "NetKindStep.kind.pickTailnet.note": {
     "message": "The machine joins your Tailscale or Headscale network as a device of its own. It reaches the other devices by name, and can reach the internet through an exit node.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the line under “A tailnet”."
   },
-  "NetWizard.kind.pickTailcat": {
+  "NetKindStep.kind.pickTailcat": {
     "message": "tailcat (no account)",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the name of the second choice. tailcat is a program's name, written in lower case."
   },
-  "NetWizard.kind.pickTailcat.note": {
+  "NetKindStep.kind.pickTailcat.note": {
     "message": "A computer running tailcat shares its network with the machine. Other computers can also reach the machine through an address of its own, with ssh or on any port.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the line under “tailcat (no account)”."
   },
-  "NetWizard.kind.pickLocal": {
+  "NetKindStep.kind.pickLocal": {
     "message": "Your computer (webpc-net)",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the name of the third choice, the local helper (webpc-net is its program's name)."
   },
-  "NetWizard.kind.pickLocal.note": {
+  "NetKindStep.kind.pickLocal.note": {
     "message": "A small program you run on your computer gives the machine your computer's network, including your LAN and the internet. It runs at your computer's own speed, with no relay and no account.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the line under “This computer (webpc-net)”."
   },
-  "NetWizard.kind.pickRoom": {
+  "NetKindStep.kind.pickRoom": {
     "message": "A peer-to-peer room",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the name of the fourth choice, a room that machines in other browsers join."
   },
-  "NetWizard.kind.pickRoom.note": {
+  "NetKindStep.kind.pickRoom.note": {
     "message": "Machines in other browsers that join the same room reach each other by name, directly when they can. No account is needed. A room doesn't reach the internet.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the step that asks which kind of connection to make: the line under “A peer-to-peer room”."
   },
-  "NetWizard.room.create": {
+  "NetRoomPickStep.room.create": {
     "message": "Create a room",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step's first choice: make a new room (its button's name)."
   },
-  "NetWizard.room.create.note": {
+  "NetRoomPickStep.room.create.note": {
     "message": "Choose a name for a new room, then give its link to the people whose machines should join it.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step: the line under “Create a room”."
   },
-  "NetWizard.room.join": {
+  "NetRoomPickStep.room.join": {
     "message": "Join a room",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step's second choice: join a room someone else made (its button's name)."
   },
-  "NetWizard.room.join.note": {
+  "NetRoomPickStep.room.join.note": {
     "message": "Paste the link someone gave you, or enter the name of a public room.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step: the line under “Join a room”."
   },
-  "NetWizard.room.name": {
+  "NetRoomStep.room.name": {
     "message": "Room name",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the label of the field for the new room's name (Create a room)."
   },
-  "NetWizard.room.noName": {
+  "NetRoomStep.room.noName": {
     "message": "Enter a name for the room.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the error when Create is clicked with the room's name empty."
   },
-  "NetWizard.room.private": {
+  "NetRoomStep.room.private": {
     "message": "Private room",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the checkbox (on by default) that makes the new room private: a random suffix is added to its name."
   },
-  "NetWizard.room.private.note": {
+  "NetRoomStep.room.private.note": {
     "message": "A random suffix is added to the room's name, so only those you give the room's link to can join. Anyone who has had the link can join for as long as the room is in use.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the line under “Private room” while it is ticked."
   },
-  "NetWizard.room.public.note": {
+  "NetRoomStep.room.public.note": {
     "message": "Anyone who knows the room's name can join it. Members can reach this machine only if you give them its name in the room.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the line under “Private room” while it isn't ticked (the room is public)."
   },
-  "NetWizard.room.link": {
+  "NetRoomStep.room.link": {
     "message": "Paste the room's link, or enter the name of a public room:",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the label of the field for the room to join (Join a room)."
   },
-  "NetWizard.room.link.note": {
+  "NetRoomStep.room.link.note": {
     "message": "Keep a private room's link to yourself, as it lets anyone join the room.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the note under the field for the room to join, a warning."
   },
-  "NetWizard.room.incoming": {
+  "NetRoomStep.room.incoming": {
     "message": "Let members connect to this machine",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room) and its edit, under Advanced: the checkbox (on by default) that lets the room's members open connections to the guest."
   },
-  "NetWizard.room.incoming.note": {
+  "NetRoomStep.room.incoming.note": {
     "message": "Members who have this machine's name in the room can reach any port the guest listens on, such as an SSH server.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the line under “Let members connect to this machine” while it is ticked."
   },
-  "NetWizard.room.incoming.off": {
+  "NetRoomStep.room.incoming.off": {
     "message": "Members can't open connections to the guest. Only replies to connections the guest opens come in.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the line under “Let members connect to this machine” while it isn't ticked."
   },
-  "NetWizard.room.direct": {
+  "NetRoomStep.room.direct": {
     "message": "Allow direct connections between members",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room) and its edit: the checkbox (on by default) that lets the machine connect directly to other members of the room (WebRTC); off, all of its traffic goes through the room's DERP relays."
   },
-  "NetWizard.room.ip.direct": {
+  "NetRoomStep.room.ip.direct": {
     "message": "Your computer's real, public IP address will be obtainable by members that this machine directly connects to, by operators of the room's <derp>DERP relays</derp> and <nostr>Nostr relays</nostr>, and by <stun>STUN servers</stun>.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the note under “Allow direct connections between members” while it is ticked: who can learn the user's IP address. <derp>…</derp> links to Tailscale's page on DERP, <nostr>…</nostr> to Nostr's protocol, <stun>…</stun> to Wikipedia's article on STUN."
   },
-  "NetWizard.room.ip.relayed": {
+  "NetRoomStep.room.ip.relayed": {
     "message": "Your computer's real, public IP address will be obtainable only by operators of the room's <derp>DERP relays</derp> and <nostr>Nostr relays</nostr>.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room): the note under “Allow direct connections between members” while it isn't ticked (no STUN server is contacted then): who can learn the user's IP address. <derp>…</derp> links to Tailscale's page on DERP, <nostr>…</nostr> to Nostr's protocol."
   },
-  "NetWizard.room.nostr": {
+  "NetRoomStep.room.nostr": {
     "message": "Nostr relays",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced (Create a room): the label of the field for the room's Nostr relays, where members find each other. Nostr is a protocol's name."
   },
-  "NetWizard.room.nostr.placeholder": {
+  "NetRoomStep.room.nostr.placeholder": {
     "message": "The default public relays",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the placeholder of the empty Nostr relays field (what is used then)."
   },
-  "NetWizard.room.nostr.note": {
+  "NetRoomStep.room.nostr.note": {
     "message": "One wss:// address per line. Machines in the room find each other through these relays.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the text under the Nostr relays field."
   },
-  "NetWizard.room.derp": {
+  "NetRoomStep.room.derp": {
     "message": "DERP relays",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced (Create a room): the label of the field for the room's DERP relays, which carry traffic between members that can't connect directly. DERP is Tailscale's relay protocol."
   },
-  "NetWizard.room.derp.placeholder": {
+  "NetRoomStep.room.derp.placeholder": {
     "message": "tailcat's public relays",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the placeholder of the empty DERP relays field (what is used then)."
   },
-  "NetWizard.room.derp.note": {
+  "NetRoomStep.room.derp.note": {
     "message": "One per line: a region's number in tailcat's public relays, or the host name or host:port of your own <a>derper</a>. Traffic between machines goes through these relays when it can't go directly.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the text under the DERP relays field. <a>…</a> links to derper (Tailscale's relay server), a program's name."
   },
-  "NetWizard.room.key": {
+  "NetRoomStep.room.key": {
     "message": "The machine's key",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the label of the list that picks the machine's key in the room: a new one, or another room connection's."
   },
-  "NetWizard.room.key.new": {
+  "NetRoomStep.room.key.new": {
     "message": "A new key",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the first choice of “Key” (the default): a key of the connection's own."
   },
-  "NetWizard.room.key.of": {
+  "NetRoomStep.room.key.of": {
     "message": "The same key as {{name}}",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: a choice of “Key”: share another room connection's key. {{name}} is that connection's name."
   },
-  "NetWizard.room.key.note": {
+  "NetRoomStep.room.key.note": {
     "message": "With another connection's key, this machine's name in this room starts the same as in that connection's room, so members of both rooms can tell it's the same machine. Only one of the two connections can be connected at a time.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the room step (Create a room or Join a room), Advanced: the text under “Key”."
   },
-  "NetWizard.room.newName": {
+  "NetRoomStep.room.newName": {
     "message": "New name",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection, Advanced: the button that gives the connection a new key, and so a new name in the room (it asks first)."
   },
-  "NetWizard.room.newName.note": {
+  "NetRoomStep.room.newName.note": {
     "message": "Give the machine a new key, and so a new name in the room. Whoever has the old name can't reach the machine any more.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), while it edits a room connection, Advanced: the line under “New name”, what the button does."
   },
-  "NetWizard.local.link": {
+  "NetLocalStep.local.link": {
     "message": "The helper's link",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step while it edits a connection: the label of the field where the link webpc-net prints is pasted (a new connection has the numbered steps instead)."
   },
-  "NetWizard.local.run": {
+  "NetLocalStep.local.run": {
     "message": "Run <a>webpc-net</a> on your computer.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step (a new connection): its first numbered step; the install lines, or how to build it, follow inside it. <a>…</a> links to the helper's source and releases."
   },
-  "NetWizard.local.paste": {
+  "NetLocalStep.local.paste": {
     "message": "Paste the link it prints, below:",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step (a new connection): its second numbered step, the label of the field where the link webpc-net prints is pasted. “it” is webpc-net."
   },
-  "NetWizard.local.note": {
+  "NetLocalStep.local.note": {
     "message": "Opening the link does the same. Keep the link to yourself, as it lets any page the helper accepts use your network. When this browser asks whether this site may reach devices on your local network, allow it.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step: the note under its numbered steps (below the link's field), for consequences and warnings."
   },
-  "NetWizard.install": {
+  "NetLocalStep.install": {
     "message": "Install webpc-net {{version}}",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step: the summary of the section with the install lines, when there's a release. {{version}} is the release's version (e.g. v1.0.0)."
   },
-  "NetWizard.install.for": {
+  "NetLocalStep.install.for": {
     "message": "For",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step: the label of the list of platforms (e.g. “Linux, x86-64”) whose install lines are shown: “For Linux, x86-64”."
   },
-  "NetWizard.install.note": {
+  "NetLocalStep.install.note": {
     "message": "In a terminal, run these lines, which download webpc-net, check it against its published SHA-256, and run it:",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step, inside its first step's install box: the line above the install lines, for Linux and macOS. The colon introduces the lines."
   },
-  "NetWizard.install.note.windows": {
+  "NetLocalStep.install.note.windows": {
     "message": "In PowerShell, run these lines, which download webpc-net, check it against its published SHA-256, and run it:",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the local helper's step, inside its first step's install box: the line above the install lines, for Windows. The colon introduces the lines."
   },
-  "NetWizard.control": {
+  "NetTailnetStep.control": {
     "message": "Control server",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step: the label of the control server's field (Tailscale's by default, or a Headscale's URL)."
   },
-  "NetWizard.control.placeholder": {
+  "NetTailnetStep.control.placeholder": {
     "message": "Tailscale (default), or a Headscale's URL",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step: the placeholder of the empty control server field."
   },
-  "NetWizard.control.note": {
+  "NetTailnetStep.control.note": {
     "message": "A Headscale server must answer <code>/key</code> with CORS headers.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step (a new connection): the note under the control server's field. <code>/key</code> is a URL path, as it is."
   },
-  "NetWizard.hostname": {
+  "NetTailnetStep.hostname": {
     "message": "Hostname",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step: the label of the field with the machine's name on the tailnet (webpc by default)."
   },
-  "NetWizard.authKey": {
+  "NetTailnetStep.authKey": {
     "message": "Auth key (optional, never saved)",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step, when the connection connects now: the label of the field for a tailnet auth key."
   },
-  "NetWizard.authKey.show": {
+  "NetTailnetStep.authKey.show": {
     "message": "Show the auth key",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step: the checkbox that shows the typed auth key instead of dots."
   },
-  "NetWizard.authKey.note": {
+  "NetTailnetStep.authKey.note": {
     "message": "Without an auth key, you will log in, in a new tab, when the machine connects.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step, when the connection connects now: the note under the auth key and its Show checkbox."
   },
-  "NetWizard.control.edit": {
+  "NetTailnetStep.control.edit": {
     "message": "A different control server needs a new connection.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step while it edits a connection: the text that says why the control server can't be changed."
   },
-  "NetWizard.login.note": {
+  "NetTailnetStep.login.note": {
     "message": "You will log in, in a new tab, when the machine first connects.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailnet step, when the connection doesn't connect now (no auth key is asked for): the note under the fields."
   },
-  "NetWizard.tailcat.exit": {
+  "NetTailcatStep.tailcat.exit": {
     "message": "Go online through a computer",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step: the checkbox that sends the machine's traffic through a tailcat server on a computer of the user's; numbered steps follow it."
   },
-  "NetWizard.tailcat.exit.install": {
+  "NetTailcatStep.tailcat.exit.install": {
     "message": "Install <a>tailcat</a> on a computer with access to the internet or to a network of your choice.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step, under “Go online through a computer”: its first numbered step. <a>…</a> links to tailcat's project."
   },
-  "NetWizard.tailcat.exit.run": {
+  "NetTailcatStep.tailcat.exit.run": {
     "message": "Run <code>tailcat serve exit-node</code>.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step, under “Go online through a computer”: its second numbered step, on that computer. <code>…</code> is a command, as it is."
   },
-  "NetWizard.tailcat.exit.paste": {
+  "NetTailcatStep.tailcat.exit.paste": {
     "message": "Paste the address it prints, below:",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step, under “Go online through a computer”: its third numbered step, the label of the field for the tailcat server's address (which starts with “tc”)."
   },
-  "NetWizard.tailcat.exit.note": {
+  "NetTailcatStep.tailcat.exit.note": {
     "message": "The virtual machines will reach what the computer reaches, including its LAN and the internet. Keep the address to yourself, as it lets anyone use the connection.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step: the note under the numbered steps of “Go online through a computer” (below the address field), for consequences and warnings."
   },
-  "NetWizard.tailcat.serve": {
+  "NetTailcatStep.tailcat.serve": {
     "message": "Let tailcat clients in to this machine",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step: the checkbox that gives the machine a tailcat address other computers reach it by."
   },
-  "NetWizard.tailcat.serve.note": {
+  "NetTailcatStep.tailcat.serve.note": {
     "message": "The connection gets a tailcat address of its own, shown in the Network menu once connected. On another computer, <code>{{ssh}}</code> logs in to the guest's sshd, and <code>{{connect}}</code> reaches any port the guest listens on.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step: the text under “Let tailcat clients in to this machine”. {{ssh}} and {{connect}} are commands (tailcat ssh <address>, tailcat <address> <port>), shown as code."
   },
-  "NetWizard.advanced": {
+  "NetTailcatStep.advanced": {
     "message": "Advanced",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step: the summary of the collapsed section with the relay for clients."
   },
-  "NetWizard.relay": {
+  "NetTailcatStep.relay": {
     "message": "Relay for clients",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step, Advanced: the label of the field for the relay (a derper's host[:port]) clients reach the machine through."
   },
-  "NetWizard.relay.placeholder": {
+  "NetTailcatStep.relay.placeholder": {
     "message": "tailcat's public relays (the nearest)",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step, Advanced: the placeholder of the empty relay field (what is used then)."
   },
-  "NetWizard.relay.note": {
+  "NetTailcatStep.relay.note": {
     "message": "The host name or host:port of your own <a>derper</a>, which is faster than tailcat's public relays, as they are rate-limited. It is used only when the machine doesn't go online through a computer running tailcat; otherwise, that computer's relay serves the clients.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step, Advanced: the text under the relay field. <a>…</a> links to derper (Tailscale's relay server), a program's name."
   },
-  "NetWizard.allow": {
+  "NetTailcatStep.allow": {
     "message": "Let in only these clients",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step, Advanced: the label of the field listing the keys of the tailcat clients allowed in (like tailcat's own --allow)."
   },
-  "NetWizard.allow.placeholder": {
+  "NetTailcatStep.allow.placeholder": {
     "message": "Anyone with the address",
     "note": "The Network wizard, the tailcat step, Advanced: the placeholder of the empty field of clients let in (what an empty list means)."
   },
-  "NetWizard.allow.note": {
+  "NetTailcatStep.allow.note": {
     "message": "The clients' keys, one per line, as <code>{{genkey}}</code> prints them on each client. The address alone isn't enough then.",
     "note": "The Network wizard, the tailcat step, Advanced: the text under the field of clients let in. {{genkey}} is a command (tailcat genkey --client --key=client-default), shown as code."
   },
-  "NetWizard.newAddress": {
+  "NetTailcatStep.newAddress": {
     "message": "New address",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step while it edits a connection, Advanced: the button that forgets the connection's tailcat address (it asks first)."
   },
-  "NetWizard.newAddress.note": {
+  "NetTailcatStep.newAddress.note": {
     "message": "Forget the connection's address. Whoever has it can't come in any more.",
     "note": "The Network wizard (a dialog opened from the toolbar's Network menu, or the Machines page's Network tab and Connections), the tailcat step while it edits a connection, Advanced: the line under “New address”, what the button does."
   },
