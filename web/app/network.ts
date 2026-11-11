@@ -2,7 +2,8 @@
 // (virtio-net on the Ethernet gateway, web/gateway.ts) whose IP packets go to a Tailscale
 // client (web/tailscale.ts), which the user connects and logs in from the toolbar's Network
 // menu, or to tailcat (web/tailcat.ts, the Rust tailnet client): through a tailcat server, letting
-// tailcat clients in, or both. DOM-free, so it's tested in Node (tests/network.test.ts); what the menu shows of it is web/app/network-view.ts's.
+// tailcat clients in, or both. DOM-free, so it's tested in Node (tests/network.test.ts); what the
+// menu shows of it is web/app/network-view.ts's.
 //
 // The machine holds one end of an IP port for as long as it runs; this keeps the other. The
 // client, when there is one, has it (`attach`); a restarted machine brings a new port, and
