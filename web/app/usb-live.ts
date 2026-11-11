@@ -3,23 +3,16 @@
 // can't be told from a device that isn't plugged in, so the page keeps the list), the device locks (a Web Lock per
 // identity, held while a machine has the device; who holds one and "let it go" go over the store's channel), and the
 // running machine's ports: `usb-attach` and `usb-detach` to the device worker, `usb-state` back (web/usb-device.ts).
-// The words and the matching are web/app/usb-ports.ts's; web/app/areas/usb-*.ts drive these for the page's machine.
+// The matching is web/app/usb-ports.ts's, the words web/app/usb-problems.ts's; web/app/areas/usb-*.ts drive these for
+// the page's machine.
 import type { PadState } from '../usb-gamepad.ts';
 import type { UsbFromWorker, UsbIdentity, UsbProblem, UsbSpeed, UsbToWorker, UsbVirtual } from '../usb-device.ts';
 import { fromWire, MsgError, type Params } from '../msg.ts';
 import { USB_CONNECTORS, type UsbEntry } from './shape.ts';
 import { heldLocks, Locks } from './locks.ts';
 import type { Store } from './store.ts';
-import {
-  deviceName,
-  identityAt,
-  identityKey,
-  matchDevices,
-  problemText,
-  usbLock,
-  type ProblemWords,
-  type SeenDevice,
-} from './usb-ports.ts';
+import { deviceName, identityAt, identityKey, matchDevices, usbLock, type SeenDevice } from './usb-ports.ts';
+import { problemText, type ProblemWords } from './usb-problems.ts';
 
 /** A `USBDevice` or a `HIDDevice`, as far as the page uses one (lib.dom has neither). */
 export type HostDevice = SeenDevice & { forget?(): Promise<void>; collections?: unknown[] };
@@ -145,7 +138,7 @@ export type Connector = {
 
 /**
  * Why an attach failed: its message (the headline), and, where the device worker said which problems, their `words` for
- * the page to show under it with their remedies folded (UsbProblems.svelte; usb-ports.ts `errorView`).
+ * the page to show under it with their remedies folded (UsbProblems.svelte; usb-problems.ts `errorView`).
  */
 export class UsbError extends MsgError {
   readonly problems: UsbProblem[];

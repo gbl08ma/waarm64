@@ -789,8 +789,8 @@ controller** (045e:028e), which Linux's `xpad` drives. The guest's rumble goes b
 
 ## The page
 
-Files: `web/app/usb-ports.ts` (DOM-free: identities, lock names, connectors, matching, the messages' words, the
-definition entries), `web/app/usb-live.ts` (the browser's devices and grants, the device locks, the running machine's
+Files: `web/app/usb-ports.ts` (DOM-free: identities, lock names, connectors, matching, the definition entries),
+`web/app/usb-problems.ts` (DOM-free: the problems' words and remedies, an attach's error), `web/app/usb-live.ts` (the browser's devices and grants, the device locks, the running machine's
 ports), `UsbTab.svelte` (the Machines page's USB tab: the controller's switch over `Usb.svelte`, the devices), `AddUsb.svelte` (the Add a device wizard), `UsbMenu.svelte` (the
 toolbar's USB menu, with the host's game pads: "The game pad"), `gamepads.ts` (the Gamepad API's pads and their feed), `UsbProblems.svelte` (a device's problems, with their remedies folded), and `web/app/areas/usb-*.ts`.
 

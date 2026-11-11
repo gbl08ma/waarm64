@@ -223,7 +223,7 @@ test("an existing machine (made before USB) keeps its shape: the controller off,
   assert.equal(after.usb, true);
   assert.notEqual(after.hash, before);
   await page.click('.machines [data-tab=snapshots]');
-  await page.locator('.machines', { hasText: t('machines:shape.diff.usb.hadNo') }).waitFor();
+  await page.locator('.machines', { hasText: t('machines:shape-diff.usb.hadNo') }).waitFor();
   assert.deepEqual(errors, []);
   await c.close();
 });

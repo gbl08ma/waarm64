@@ -1,11 +1,11 @@
 // The components' actions (docs/frontend-code.md §5.6): one runner for what a click starts that can fail. While it runs,
-// `busy` says what it does; when it fails, `error` is the error as the page shows it (usb-ports.ts `errorView`: its
+// `busy` says what it does; when it fails, `error` is the error as the page shows it (usb-problems.ts `errorView`: its
 // words a line each, or a USB attach's headline and its problems' words, which ErrorWords.svelte renders). A component
 // makes its own (`new Actions()`), or takes the one of the page it is in (the Machines page's, passed down as `act`).
 // A control with no place of its own for an error (the toolbar, its menus, the file pickers, a pane its action closes)
 // runs `page`'s action through web/app/page.ts `inBar`: the action says how it went in the message bar, and so does
 // its error.
-import { errorView, type ErrorView } from './usb-ports.ts';
+import { errorView, type ErrorView } from './usb-problems.ts';
 
 /** Runs `f`, saying `what` it does while it runs; resolves false if it failed (the error is the runner's to show). */
 export type Act = (what: string, f: () => Promise<unknown>) => Promise<boolean>;

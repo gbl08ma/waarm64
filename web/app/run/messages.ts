@@ -4,7 +4,7 @@ import { describe, msg, said, t, text, type Described, type Msg, type Said } fro
 import { bootCard } from '../areas/boot-card.svelte.ts';
 import { messageBar, type Action, type MessageKind } from '../areas/message-bar.svelte.ts';
 import { isStopped, power, type PageState } from '../areas/power.svelte.ts';
-import { errorLines } from '../usb-ports.ts';
+import { errorLines } from '../usb-problems.ts';
 import type { PageMachine } from './page-machine.svelte.ts';
 
 /** The state's words (the status bar's state), by state. */
@@ -30,7 +30,7 @@ export function withNote(e: unknown, note: string): Described {
   const d = describe(e);
   return { headline: `${d.headline}\n${note}`, details: d.details };
 }
-/** Words a USB device's error adds under a headline (web/app/usb-ports.ts `errorLines`: its own, then its problems'). */
+/** Words a USB device's error adds under a headline (web/app/usb-problems.ts `errorLines`: its own, then its problems'). */
 export const usbDetails = (headline: string, err: unknown): Described => ({
   headline,
   details: errorLines(err).split('\n'),

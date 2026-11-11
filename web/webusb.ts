@@ -415,7 +415,7 @@ export class WebUsbPassthrough implements UsbDevice {
           this.alternates.set(n, 0);
         } catch (e) {
           failed.add(n);
-          // The browser's words; the remedy for the host's OS is the page's (web/app/usb-ports.ts `problemText`).
+          // The browser's words; the remedy for the host's OS is the page's (web/app/usb-problems.ts `problemText`).
           this.problems.push({ kind: 'claim-failed', interface: n, message: (e as Error).message ?? String(e) });
         }
       }

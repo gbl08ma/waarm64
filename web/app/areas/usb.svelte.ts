@@ -3,9 +3,9 @@
 // (web/app/usb-live.ts), the host's devices and pads whenever any of them changes. The menu opens itself when called (an offer to answer).
 import { Command } from '../command.ts';
 import type { EntryView } from '../usb-live.ts';
-import type { ProblemWords } from '../usb-ports.ts';
+import type { ProblemWords } from '../usb-problems.ts';
 
-/** What is on a connector while the machine runs (`problems`: what of an attached device the guest doesn't get, in words: web/app/usb-ports.ts `problemText`). */
+/** What is on a connector while the machine runs (`problems`: what of an attached device the guest doesn't get, in words: web/app/usb-problems.ts `problemText`). */
 export type ConnectorView = {
   name: string;
   state: string;

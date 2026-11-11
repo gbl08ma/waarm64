@@ -1,11 +1,11 @@
 <!--
-  What of a USB device the guest doesn't get, or why it couldn't be attached, in words (web/app/usb-ports.ts
+  What of a USB device the guest doesn't get, or why it couldn't be attached, in words (web/app/usb-problems.ts
   `problemText`): each problem's short text, and under it, folded, the host's remedy (numbered steps with the commands
   to copy) and the browser's own message.
 -->
 <script lang="ts">
   import { t } from '../i18n.ts';
-  import { browserSaid, type FixStep, type ProblemWords } from './usb-ports.ts';
+  import { browserSaid, type FixStep, type ProblemWords } from './usb-problems.ts';
 
   let { words }: { words: ProblemWords[] } = $props();
 </script>

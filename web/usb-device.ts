@@ -126,7 +126,7 @@ export type UsbState = Extract<UsbFromWorker, { type: 'usb-state' }>;
 /**
  * Why part of a device can't reach the guest, for the page's messages (docs/usb.md "The page"): on a successful attach
  * (`usb-state` attached, `problems`: what was left out) or a failed one (`error`, `detail`). `claim-failed`'s message is
- * the browser's; the remedies are the page's (web/app/usb-ports.ts `problemText`).
+ * the browser's; the remedies are the page's (web/app/usb-problems.ts `problemText`).
  */
 export type UsbProblem =
   | { kind: 'protected-interface'; interface: number; class: number }

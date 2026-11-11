@@ -3,7 +3,7 @@
 // of them changes (a port's change, a plug, a grant, an edit), and the game pads' feed.
 import { listPads, PadFeed } from '../gamepads.ts';
 import { entryStates, type UsbLocks } from '../usb-live.ts';
-import { problemText } from '../usb-ports.ts';
+import { problemText } from '../usb-problems.ts';
 import { USB_CONNECTORS, type UsbEntry } from '../shape.ts';
 import type { UsbIdentity, UsbVirtual } from '../../usb-device.ts';
 import type { PageMachine } from '../run/page-machine.svelte.ts';
