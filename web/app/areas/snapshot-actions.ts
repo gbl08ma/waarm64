@@ -197,7 +197,7 @@ export class SnapshotActions {
     power.saving = true;
     const id = newId();
     try {
-      const about = await m.about();
+      const about = r.about ?? (await m.about());
       if (!about) throw new Error('no stored machine');
       await askPersist();
       const done = await m.store.writing(async () => {

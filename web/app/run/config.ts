@@ -108,16 +108,65 @@ function resolveSize(
   return { ncpus, ramMiB: ramSplit ? ramSplit.reduce((a, b) => a + b, 0) : ramMiB, ramSplit, jitMiB };
 }
 
-/** The devices: a stored machine's record's; a transient machine's by the address (`?usb=1`, …, `?clock=0`). */
+/**
+ * The address's switches, one per device (or setting) a machine may have: `=1` turns it on, `=0` off, over a stored
+ * machine's record and a transient machine's default. A switch to another machine on the page drops them with the
+ * size's (web/app/areas/disk-actions.ts `switchMachine`): they were the address's for the machine it opened.
+ */
+export const SWITCHES = {
+  usb: 'usb',
+  mouse: 'mouse',
+  touch: 'touch',
+  clipboard: 'clipboard',
+  clock: 'clock',
+  netConfig: 'netconfig',
+} as const;
+/** The address's keys a switch to another machine drops: the size's and the switches. */
+export const MACHINE_PARAMS = ['ncpus', 'ram', 'split', 'jitmb', ...Object.values(SWITCHES)];
+
+/**
+ * The devices: each the address's (`?usb=1`, `?mouse=0`, …), else a stored machine's record's, else the default (off,
+ * but the clock and the guest's network settings on; a stored machine's clock off unless its record says, as the
+ * records from before it have none). Shared folders are the record's only.
+ */
 function resolveDevices(q: URLSearchParams, record: MachineRecord | undefined): DeviceSwitches {
-  const flag = (k: 'usb' | 'mouse' | 'touch' | 'clipboard') => (record ? !!record[k] : q.get(k) === '1');
+  const asked = (k: keyof typeof SWITCHES) => {
+    const v = q.get(SWITCHES[k]);
+    return v === '1' ? true : v === '0' ? false : undefined;
+  };
+  const flag = (k: 'usb' | 'mouse' | 'touch' | 'clipboard') => asked(k) ?? !!record?.[k];
   return {
     usb: flag('usb'),
     mouse: flag('mouse'),
     touch: flag('touch'),
     clipboard: flag('clipboard'),
-    clock: record ? !!record.clock : q.get('clock') !== '0',
+    clock: asked('clock') ?? (record ? !!record.clock : true),
     shares: !!record?.shares,
-    netConfig: (q.get('netconfig') ?? (record?.netConfig === false ? '0' : '1')) !== '0',
+    netConfig: asked('netConfig') ?? record?.netConfig !== false,
+  };
+}
+
+/**
+ * A stored machine's record as a start runs it: its size and devices as they were resolved (`Resolved`, or the page's
+ * machine's), the rest its own. Its shape is the one the run's snapshots and suspends carry (docs/machines.md §5.1).
+ */
+export function asRun(
+  r: MachineRecord,
+  x: Pick<Resolved, 'ncpus' | 'ramMiB' | 'ramSplit' | 'jitMiB' | 'devices'>,
+): MachineRecord {
+  const d = x.devices;
+  return {
+    ...r,
+    ncpus: x.ncpus,
+    ramMiB: x.ramMiB,
+    ramSplit: x.ramSplit,
+    jitMiB: x.jitMiB || undefined,
+    usb: d.usb,
+    mouse: d.mouse,
+    touch: d.touch,
+    clipboard: d.clipboard,
+    clock: d.clock,
+    shares: d.shares,
+    netConfig: d.netConfig ? undefined : false,
   };
 }

@@ -14,6 +14,7 @@ import { attach, createDisk, createMachine, knownDisk } from '../machines.ts';
 import type { DiskRecord } from '../shape.ts';
 import type { Core } from '../run/core.ts';
 import { params } from '../run/knobs.ts';
+import { MACHINE_PARAMS } from '../run/config.ts';
 import { bootAttachment, diskName, needsDisk, overlayName } from '../run/page-disks.ts';
 import { loadStored, rememberMachine } from '../run/page-machine.svelte.ts';
 import type { Action } from './message-bar.svelte.ts';
@@ -159,12 +160,13 @@ export class DiskActions {
       runner.d.net.machineOff();
       const next = await loadStored(m.store, id);
       [m.stored, m.storedError, m.chosen] = [next, undefined, undefined];
-      m.takeSize(next.record, next.record.jitMiB ?? 0);
-      m.choose3d();
+      // The address's size and switches were for the machine it opened: this one runs as its record says.
       const q = new URLSearchParams(location.search);
-      for (const k of ['m', 'disk', 'ncpus', 'ram', 'jitmb']) q.delete(k);
+      for (const k of ['m', 'disk', ...MACHINE_PARAMS]) q.delete(k);
       q.set('m', id);
       history.replaceState(null, '', `?${q}`);
+      m.takeSize();
+      m.choose3d();
       rememberMachine(id);
       m.onRecord();
       this.#d.terminal.term.reset();

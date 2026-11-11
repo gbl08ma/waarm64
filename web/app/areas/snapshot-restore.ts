@@ -116,7 +116,7 @@ export class SnapshotRestore {
         s.record,
         s.disks,
         { name: name.replace(/\.webpcsnap$/, ''), key, pins },
-        now.shape.display,
+        now.shape,
       );
       if (!plan.refused) return plan;
       void ask.alert(

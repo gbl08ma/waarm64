@@ -3,7 +3,8 @@
 // table is the rule: a change to it is a change to what machines run with.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { resolveMachine, type DeviceSwitches, type Resolved } from '../web/app/run/config.ts';
+import { asRun, resolveMachine, type DeviceSwitches, type Resolved } from '../web/app/run/config.ts';
+import { shapeHash, shapeOf } from '../web/app/shape.ts';
 import type { Settings } from '../web/app/settings.ts';
 import type { MachineRecord } from '../web/app/shape.ts';
 
@@ -26,9 +27,9 @@ const TABLE: Row[] = [
   ['transient: the clock and the network settings off', 'clock=0&netconfig=0', undefined, {}, { devices: '' }],
   ['transient: =0 of an off one, =1 of an on one', 'usb=0&clock=1&netconfig=1', undefined, {}, { devices: 'clock netConfig' }],
   ['stored, all off: as its record', '', OFF, {}, { devices: 'netConfig' }],
-  ['stored, all off: the address turns each on', 'usb=1&mouse=1&touch=1&clipboard=1&clock=1', OFF, {}, { devices: 'netConfig' }],
+  ['stored, all off: the address turns each on', 'usb=1&mouse=1&touch=1&clipboard=1&clock=1', OFF, {}, { devices: 'usb mouse touch clipboard clock netConfig' }],
   ['stored, all on: as its record', '', ON, {}, { devices: 'usb mouse touch clipboard clock shares' }],
-  ['stored, all on: the address turns each off', 'usb=0&mouse=0&touch=0&clipboard=0&clock=0', ON, {}, { devices: 'usb mouse touch clipboard clock shares' }],
+  ['stored, all on: the address turns each off', 'usb=0&mouse=0&touch=0&clipboard=0&clock=0', ON, {}, { devices: 'shares' }],
   ['stored: ?netconfig=1 over its record', 'netconfig=1', ON, {}, { devices: 'usb mouse touch clipboard clock shares netConfig' }],
   ['stored: ?netconfig=0 over its record', 'netconfig=0', OFF, {}, { devices: '' }],
   // The size.
@@ -68,4 +69,16 @@ test('resolveMachine: the address, the record, the settings and the defaults, as
 
 test('resolveMachine: a kind of machine without a virtio-gpu has no 3D', () => {
   assert.equal(resolveMachine(new URLSearchParams('gpu=virgl'), undefined, {}, { ...ENV, gpu: false }).three, false);
+});
+
+test('asRun: without the address, a stored machine runs as its record (its snapshots keep their shape); with it, as resolved', async () => {
+  const disks = () => ({ id: 'd', kind: 'blank', name: 'd', size: 1 << 30, identity: { kind: 'blank', id: 'd', bytes: 1 << 30 }, created: 0 }) as const;
+  const attachments = [{ id: 'a00000000001', disk: 'd', readOnly: false }];
+  for (const r of [OFF, ON, record({ ramSplit: [768, 256], jitMiB: 160 }), record({ usb: true, clock: true, display: '3d' })].map((x) => ({ ...x, attachments }))) {
+    const run = asRun(r, resolveMachine(new URLSearchParams(''), r, { ncpus: 6, ramMiB: 4096, jitMiB: 64, gpu: '2d' }, ENV));
+    assert.equal(await shapeHash(shapeOf(run, disks)), await shapeHash(shapeOf(r, disks)), r.name);
+    assert.deepEqual(shapeOf(run, disks), shapeOf(r, disks));
+  }
+  const over = shapeOf(asRun({ ...OFF, attachments }, resolveMachine(new URLSearchParams('mouse=1&ncpus=4&ram=2048'), { ...OFF, attachments }, {}, ENV)), disks);
+  assert.deepEqual([over.ncpus, over.ramMiB, over.devices.includes('mouse')], [4, 2048, true]);
 });

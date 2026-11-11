@@ -10,6 +10,8 @@ import { cpuFromQuery } from '../../cpu-features.ts';
 import { settings } from '../settings.ts';
 
 export const params = new URLSearchParams(location.search);
+/** The address's query as it is now (a switch to another machine drops the last one's size and switches from it). */
+export const query = () => new URLSearchParams(location.search);
 
 /** `?credential=name:value` (repeatable): a systemd credential for a firmware machine, for development and tests. */
 export const credentials = params

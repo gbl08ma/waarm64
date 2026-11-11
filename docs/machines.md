@@ -136,7 +136,10 @@ Since decided (the user, 2026-10-17):
   off the record, and under a lowered quota, they say less is used than the browser refuses at
   (tests/storage-full.test.ts checks them against `estimate()`, and each writer's room, in Chromium without a guest).
 - **Transient machines:** the tests' query parameters (`?machine=debian`, `?disk=`, `?disk2=`, `?ncpus=`, `?ram=`)
-  make a machine that is never stored. Its overlays keep their single names (`webpc-debian`, `webpc-buildroot`,
+  make a machine that is never stored. A stored machine's size and devices are its record's, unless the address
+  says otherwise for the run (`?ncpus=`, `?ram=`, `?usb=1`, `?mouse=0`, …: docs/frontend.md "What a machine runs
+  with"): the address is over the record, never written to it, and the run's snapshots carry the shape it ran with
+  (§5.1). Its overlays keep their single names (`webpc-debian`, `webpc-buildroot`,
   `webpc-disk-<hash>` for `?disk=`), which the sweep never touches; its suspended copy is beside its overlay.
 - **Opening a disk the old way stays:** a file dropped on the page or opened (From a disk image…, the first-run
   message's button) makes a stored machine for it, named after the file, or opens the machine that attaches it;
@@ -307,8 +310,12 @@ The file's format, what the core saves and the page's toolbar and header fields:
 - **The pins** (`SnapshotDisk`, web/snapshot.ts): per writable disk, its path (`overlays/<id>`, or `disks/<id>` for
   a disk written in place) and generation, the blocks the file carries, and `ram` for a ramdisk; the page maps
   paths to records.
+- **The shape a snapshot carries is the one its run had:** the record with the size and devices the address gave
+  the run, if it gave any (`?ncpus=`, `?mouse=1`…: frontend.md "What a machine runs with"; the start's `about`), the
+  display it ran with and the page's CPU features. "Now" below is the same rule on the page as it is opened.
 - **Orphaned:** a kept snapshot whose shape hash differs from its machine's now (the user changed RAM, added a
-  disk, turned shared folders on…). Pins don't orphan a snapshot: a moved-on overlay is what the fork is for. The Snapshots tab says what
+  disk, turned shared folders on…, or it was taken under an address that changed the machine and the page is opened
+  without it). Pins don't orphan a snapshot: a moved-on overlay is what the fork is for. The Snapshots tab says what
   differs (`shapeDiff`, from the two shapes), and offers [Create a machine like it](ui:snapshots:Snapshots.like) (`machineLike`: a new machine
   from its shape, disks the browser has attached again by identity, blank disks and ramdisks made again, files picked
   again) and [Delete orphaned snapshots](ui:snapshots:Snapshots.deleteOrphaned).

@@ -8,7 +8,6 @@ import type { Messages } from './messages.ts';
 import { needsDisk } from './page-disks.ts';
 import { loadStored, type PageMachine } from './page-machine.svelte.ts';
 import type { Runner } from './runner.ts';
-import { jitParam } from './knobs.ts';
 
 export type PowerDeps = {
   machine: PageMachine;
@@ -61,9 +60,7 @@ export class PowerActions {
       ]);
       return false;
     }
-    const record = m.stored.record;
-    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- 0 means unset
-    m.takeSize(record, jitParam() || record.jitMiB || 0);
+    m.takeSize();
     m.choose3d();
     m.onRecord();
     return true;

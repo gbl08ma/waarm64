@@ -1,52 +1,14 @@
 // What a start hands the machine worker (web/app/protocol.ts `start`): the machine's configuration, resolved once per
-// start (`machineConfig`: web/app/run/config.ts's rules over the page's machine), the run's channels, one per device
-// the configuration has, and the start message with the ports it transfers.
+// start (`PageMachine.config`: web/app/run/config.ts's rules over the page's machine), the run's channels, one per
+// device the configuration has, and the start message with the ports it transfers.
 import type { PageAudio } from '../../audio.ts';
 import type { FolderSpec } from '../../9p-folders.ts';
 import { guestWords } from '../guest-words.ts';
 import type { KeyboardLayout } from '../keyboard.ts';
 import type { MachineConfig, MachinePorts, StartDisk, ToWorker } from '../protocol.ts';
-import { credentials, cpuFeatures, params } from './knobs.ts';
-import { sharesPath, type PageMachine } from './page-machine.svelte.ts';
-import { parseDevKnobs } from './dev-knobs.ts';
+import type { PageMachine } from './page-machine.svelte.ts';
 
 type Start = Extract<ToWorker, { type: 'start' }>;
-
-/**
- * The page's machine's configuration for a start with `nets` network adapters: its size as the page has it now (the
- * Machine menu's, a stored machine's settings), its devices, display and guest settings by `PageMachine.resolve` and
- * `display`, the address's CPU features and development knobs. The layout is filled in once resolved (`keyLayout`).
- */
-export function machineConfig(m: PageMachine, nets: number): MachineConfig {
-  const stored = m.stored?.record;
-  const resolved = m.resolve().devices;
-  const { display, vulkan } = m.display();
-  return {
-    machine: m.name,
-    ncpus: m.ncpus,
-    ram: { mib: m.ramMiB, split: m.ramSplit },
-    jitMiB: m.jitMiB || undefined,
-    cpu: cpuFeatures(),
-    display,
-    vulkan,
-    devices: {
-      nets,
-      mouse: resolved.mouse,
-      touch: resolved.touch,
-      clock: resolved.clock,
-      shares: resolved.shares,
-      clipboard: resolved.clipboard,
-      usb: resolved.usb,
-    },
-    guest: {
-      netConfig: resolved.netConfig,
-      sharesPath: resolved.shares && stored ? sharesPath(stored) : undefined,
-      params: params.get('params') ?? undefined,
-      credentials,
-    },
-    dev: parseDevKnobs(params),
-  };
-}
 
 /** A run's channels: the page keeps `port1` of each, the worker gets `port2`. */
 export type Channels = {

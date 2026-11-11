@@ -8,16 +8,16 @@ import { isLive, power } from '../areas/power.svelte.ts';
 import type { SerialTerminal } from '../areas/serial-terminal.ts';
 import { JIT_DEFAULT_MIB, RAM_CHOICES } from '../machine.ts';
 import { updateMachine } from '../machines.ts';
-import { remember } from '../settings.ts';
+import { remember, settings } from '../settings.ts';
 import { currentShape } from '../snapshots.ts';
 import type { DiskRecord, MachineRecord } from '../shape.ts';
-import { cpuFeatures, gpuAsked, gpuKnobs, jitParam, params, simpleDisplay } from './knobs.ts';
+import { cpuFeatures, gpuAsked, jitParam, params, query, simpleDisplay } from './knobs.ts';
 import { memoryWarning } from './memory-signal.ts';
 import type { Messages } from './messages.ts';
 import { CPU_CHOICES, type PageMachine } from './page-machine.svelte.ts';
 import type { PowerActions } from './power-actions.ts';
 import type { Runner } from './runner.ts';
-import { effectiveDisplay } from './config.ts';
+import { asRun, effectiveDisplay, resolveMachine } from './config.ts';
 
 /** The Machine menu's size: what runs (a stored machine's own settings after a switch) and what it offers. */
 export function sizeOf(m: PageMachine): MachineSize {
@@ -113,8 +113,7 @@ export class SizeActions {
       await this.#runner.stop();
       s.record = await updateMachine(m.store, next);
       m.onRecord();
-      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- 0 means unset
-      m.takeSize(s.record, jitParam() || s.record.jitMiB || 0);
+      m.takeSize();
       m.choose3d();
       this.#terminal.term.reset();
       if (running) this.#runner.start();
@@ -123,20 +122,25 @@ export class SizeActions {
   }
 
   /**
-   * A machine's shape as it would run on this page now, over the browser's `disks`: its display by
-   * `effectiveDisplay`, where the address only turns 3D off (`?gpu=2d`) and the GPU worker's failure (`no3d`) counts.
+   * A machine's shape as it would run on this page now, over the browser's `disks`: its size and devices as the
+   * address resolves them over its record (`resolveMachine`), its display by `effectiveDisplay` (the GPU worker's
+   * failure, `no3d`, counts). For the page's machine, the shape its next start's snapshots carry (`PageMachine.about`).
    */
   shapeNow(r: MachineRecord, disks: Map<string, DiskRecord>) {
     const m = this.#m;
+    const resolved = resolveMachine(query(), r, settings(), {
+      gpu: true,
+      ramMiB: r.ramMiB,
+      cores: navigator.hardwareConcurrency || 4,
+    });
     const { display, vulkan } = effectiveDisplay({
       gpu: true,
       simple: simpleDisplay,
-      asked: gpuAsked === '2d' ? '2d' : undefined,
-      record: r.display,
+      asked: resolved.three ? '3d' : '2d',
       webgl2: m.webgl2,
       refused: !!m.no3d,
-      vulkan: gpuKnobs.includes('vulkan') || !!r.vulkan,
+      vulkan: resolved.vulkan,
     });
-    return currentShape(r, (id) => disks.get(id), { display, cpu: cpuFeatures(), vulkan });
+    return currentShape(asRun(r, resolved), (id) => disks.get(id), { display, cpu: cpuFeatures(), vulkan });
   }
 }

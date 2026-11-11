@@ -35,7 +35,7 @@ RESUME) is in devices.md "The guest's agent".
 ## The setting and the toolbar
 
 - **The setting** is per machine, off by default, on the Machines page's Settings tab (`MachineRecord.clipboard`;
-  a transient machine has it only from `?clipboard=1`). Turning it on or off changes the machine's shape (it adds or
+  a transient machine has it only from `?clipboard=1`, which, like `?clipboard=0`, is over a stored machine's too). Turning it on or off changes the machine's shape (it adds or
   removes the device), so it warns when snapshots would be orphaned. Ticking it is the click that asks for Chromium's
   `clipboard-read` permission. Its note says what the agent is, what the guest needs (systemd 256+, a Wayland desktop
   with data-control or an X11 session), that nothing is written to the disk, and that the toolbar's menu pauses it.

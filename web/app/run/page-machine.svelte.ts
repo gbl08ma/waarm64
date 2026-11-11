@@ -3,9 +3,11 @@
 // owner the areas' modules share (web/app/main.ts makes it and hands it to each): what they read and change of the
 // machine is here, not in module globals. Its derived parts are in web/app/run/page-disks.ts.
 import { MsgError } from '../../i18n.ts';
-import { cpuFeatures, params, simpleDisplay } from './knobs.ts';
+import { cpuFeatures, credentials, params, query, simpleDisplay } from './knobs.ts';
+import { parseDevKnobs } from './dev-knobs.ts';
+import type { MachineConfig } from '../protocol.ts';
 import type { Run } from './run.ts';
-import { effectiveDisplay, resolveMachine, type RunDisplay } from './config.ts';
+import { asRun, effectiveDisplay, resolveMachine, type RunDisplay } from './config.ts';
 import { currentShape } from '../snapshots.ts';
 import { settings } from '../settings.ts';
 import { DEFAULT_SHARES_PATH } from '../shares-mount.ts';
@@ -129,18 +131,18 @@ export class PageMachine {
       ramMiB: this.spec.ramMiB,
       cores: navigator.hardwareConcurrency || 4,
     };
-    return resolveMachine(params, this.stored?.record, settings(), env);
+    return resolveMachine(query(), this.stored?.record, settings(), env);
   }
 
-  /** The size: the query's, else the stored machine's, else the one chosen last in this browser, else the defaults. */
+  /** The size: the address's, else the stored machine's, else the one chosen last in this browser, else the defaults. */
   #initialSize() {
+    this.takeSize();
+  }
+
+  /** The size as `resolve` says now (a stored machine's record changed, or another opened): the address's over it. */
+  takeSize() {
     const r = this.resolve();
     [this.ncpus, this.ramMiB, this.ramSplit, this.jitMiB] = [r.ncpus, r.ramMiB, r.ramSplit, r.jitMiB];
-  }
-
-  /** A stored machine's size as its record says (`jit`: its JIT budget, MiB, 0 the default). */
-  takeSize(record: MachineRecord, jit: number) {
-    [this.ncpus, this.ramMiB, this.ramSplit, this.jitMiB] = [record.ncpus, record.ramMiB, record.ramSplit, jit];
   }
 
   /** The budget the machine runs with, MiB. */
@@ -208,23 +210,68 @@ export class PageMachine {
   }
 
   /**
-   * A stored machine as its snapshots describe it (protocol.ts `about`): its shape as it runs now (`display()`) and
-   * its URL disks' URLs by slot.
+   * The machine's configuration for a start with `nets` network adapters (web/app/protocol.ts `MachineConfig`): its size
+   * as the page has it now (the address's, the Machine menu's, a stored machine's settings), its devices, display and
+   * guest settings by `resolve` and `display`, the address's CPU features and development knobs. The keyboard layout is
+   * filled in by the start once it is resolved (`guest.keyLayout`).
    */
-  async about() {
+  config(nets: number): MachineConfig {
+    const stored = this.stored?.record;
+    const resolved = this.resolve().devices;
+    const { display, vulkan } = this.display();
+    return {
+      machine: this.name,
+      ncpus: this.ncpus,
+      ram: { mib: this.ramMiB, split: this.ramSplit },
+      jitMiB: this.jitMiB || undefined,
+      cpu: cpuFeatures(),
+      display,
+      vulkan,
+      devices: {
+        nets,
+        mouse: resolved.mouse,
+        touch: resolved.touch,
+        clock: resolved.clock,
+        shares: resolved.shares,
+        clipboard: resolved.clipboard,
+        usb: resolved.usb,
+      },
+      guest: {
+        netConfig: resolved.netConfig,
+        sharesPath: resolved.shares && stored ? sharesPath(stored) : undefined,
+        params: params.get('params') ?? undefined,
+        credentials,
+      },
+      dev: parseDevKnobs(params),
+    };
+  }
+
+  /**
+   * A stored machine as its snapshots describe it (protocol.ts `about`): its shape as `config` runs it (by default the
+   * next start's: its size, devices and display as resolved, so a snapshot taken under the address's `?mouse=1` or
+   * `?ncpus=` says so) and its URL disks' URLs by slot.
+   */
+  async about(config = this.config(0)) {
     const s = this.stored;
     if (!s) return undefined;
-    const { display, vulkan } = this.display();
-    const { shape, hash } = await currentShape(s.record, (id) => s.disks.get(id), {
-      display,
-      cpu: cpuFeatures(),
-      vulkan,
+    const d = config.devices;
+    const record = asRun(s.record, {
+      ncpus: config.ncpus,
+      ramMiB: config.ram.mib,
+      ramSplit: config.ram.split,
+      jitMiB: config.jitMiB ?? 0,
+      devices: { ...d, netConfig: config.guest.netConfig },
+    });
+    const { shape, hash } = await currentShape(record, (id) => s.disks.get(id), {
+      display: config.display,
+      cpu: config.cpu,
+      vulkan: config.vulkan,
     });
     const urls: Record<number, string> = {};
-    for (const d of shape.disks) {
-      const a = s.record.attachments.find((x) => serialOf(x.id) === d.serial);
+    for (const x of shape.disks) {
+      const a = s.record.attachments.find((y) => serialOf(y.id) === x.serial);
       const rec = a && s.disks.get(a.disk);
-      if (rec?.kind === 'url' && rec.url) urls[d.slot] = rec.url;
+      if (rec?.kind === 'url' && rec.url) urls[x.slot] = rec.url;
     }
     return { name: s.record.name, shape, shapeHash: hash, urls };
   }

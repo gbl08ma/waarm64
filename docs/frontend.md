@@ -40,12 +40,12 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `tools/debian.ts` | Debian's download and preparation (the tests' guest), for `images/build.sh debian` |
 
 Query parameters (development and tests; no settings UI yet): `?machine=debian|buildroot|snd` (the
-default is `debian`), `?ncpus=N`, `?ram=MiB` (both over the toolbar's Machine menu's choice), `?view=screen|terminal|both` (over the remembered view),
+default is `debian`), `?ncpus=N`, `?ram=MiB` (both over a stored machine's record and the Machine menu's last choice), `?view=screen|terminal|both` (over the remembered view),
 `?params=…` (extra kernel parameters for a direct-boot machine, placed before a `--`: e.g.
 `init=/nonexistent` to make Buildroot panic, as a test does; Debian's bootloader owns its command
 line: edit it in GRUB), `?credential=name:value` (repeatable: a systemd credential over fw_cfg for a
 firmware machine; tests pass `tests/debian-unattended.ts`'s to boot Debian unattended, the page
-passes none), `?clipboard=1` (a transient machine with clipboard sharing's device, docs/devices.md "agent";
+passes none), `?clipboard=1` (clipboard sharing's device, docs/devices.md "agent";
 `window.__agent` is the page's end of its port), `?disk2=<url>` (a second,
 read-only virtio-blk over HTTP ranges, `/dev/vdb` in the guest, no overlay; for tests: the stress
 test's `--disk2` gives it the Go toolchain image, docs/images.md "The Go compiler on a second disk"), `?snd=stats[,timer]`
@@ -55,9 +55,32 @@ worklet's notify; any `?snd=` also exposes `window.__audio`, the serial log and 
 for A/B measurements; docs/jit.md "Sharing"), `?fma=emul` (the JIT's FMA forms emulated on a host that fuses them, for
 A/B measurements: docs/jit.md "Floating point"), `?growcore` (the core on the memory's growable import instead of its
 exact-limits copy, for A/B measurements: [abi.md](abi.md) "A fixed-size memory"), `?jitmb=MiB` (the JIT's code cache budget, over a stored machine's
-own: `VmConfig.jit_bytes`, docs/jit.md "Memory"), `?usb=1` (a transient machine with a USB controller; a stored machine's is
-its record's), `?usbzero=1` (Gadget Zero in the USB menu, for tests: [usb.md](usb.md) "Gadget Zero on the page"),
+own: `VmConfig.jit_bytes`, docs/jit.md "Memory"), `?usb=1` (a USB controller), `?usbzero=1` (Gadget Zero in the USB menu, for tests: [usb.md](usb.md) "Gadget Zero on the page"),
 `#net=ws://127.0.0.1:<port>/<token>` (the local helper's pairing link: the Network wizard opens on it, "Network" below).
+
+**What a machine runs with** (web/app/run/config.ts `resolveMachine`, tests/config.test.ts's table): every field is the
+address's if it gives one, else a stored machine's record's, else (a transient machine) the browser's settings, else the
+default. A stored machine's record says every field it has (one it leaves unset, the JIT's budget or a device added
+after it was made, is the default, not the settings', which are a transient machine's last choices). Every switch turns
+both ways (`=1` on, `=0` off), so the address can also take a device off a stored machine for a run. The address never
+writes the record; a stored machine run under it tags its snapshots and suspends with the shape it ran with (the
+start's `about`, `PageMachine.about`: its record with the resolved size and devices, web/app/run/config.ts `asRun`), so
+they restore under the same address and are orphaned on the machine as its record has it (docs/machines.md §5.1); the
+Snapshots lists and the Load snapshot menu judge by the same rule (`shapeNow`). Opening another stored machine on the
+page drops the size's keys and the switches from the address (`MACHINE_PARAMS`): they were for the machine it opened.
+
+| Field | Address | Record (stored) | Settings (transient) | Default |
+| --- | --- | --- | --- | --- |
+| vCPUs | `?ncpus=N` | `ncpus` | the Machine menu's last (one it offers) | `min(4, cores − 2)` |
+| RAM, its split | `?ram=MiB`, `?split=a,b,…` (over `?ram=`; `?ram=` alone drops the record's split) | `ramMiB`, `ramSplit` | the Machine menu's last | the machine's |
+| The JIT's budget | `?jitmb=MiB` | `jitMiB` | `jitMiB` (the memory signal's choice) | the core's |
+| 3D or 2D | `?gpu=virgl`, `?gpu=2d` (`virgl-null`: 2D on the page) | `display` | the Machine menu's Graphics | 3D; 2D without WebGL2 or once the GPU worker failed; none with `?display=simple` |
+| Vulkan | `?gpu=vulkan` (on only; 2D takes it off) | `vulkan` | — | off; only beside 3D |
+| USB controller, mouse, touchscreen, clipboard sharing | `?usb=`, `?mouse=`, `?touch=`, `?clipboard=` (`1`, `0`) | `usb`, `mouse`, `touch`, `clipboard` | — | off |
+| The clock device | `?clock=` (`1`, `0`) | `clock` (unset: off, a record from before it) | — | on |
+| The guest takes the network's settings | `?netconfig=` (`1`, `0`) | `netConfig` | — | on |
+| The keyboard layout | `?keyboard=<id>` (`none`) | `keyboard` | — | the browser's; none for the tests' `?machine=` guests |
+| Shared folders | — | `shares` | — | off |
 
 ## The machines
 
@@ -748,7 +771,7 @@ says so once in the message bar, and the next input posts `wake` (`vm_wake`) bef
 while it resumes (under a second on Debian) may be lost, as on a machine still waking.
 
 **The clock device** (virtio-rtc, [devices.md](devices.md) "clock"): a device kind of its own (`clock`, after the
-pointers and before the disks in `slots`), on transient machines unless `?clock=0`, on machines made from now on
+pointers and before the disks in `slots`), on transient machines unless `?clock=0` (`?clock=` turns it either way on any machine), on machines made from now on
 (their Settings' "Clock device"), and off on machines made before it, whose shape is as it was. A guest with a driver
 for it gets a PTP clock that reads the browser's time (chrony's `refclock PHC` keeps its clock there through
 anything) and a read-only RTC. A snapshot or a suspended machine from before the device restores without it (it holds
@@ -968,7 +991,7 @@ page writes the context's output latency into the ring's header, and the guest g
     `movementX/Y` (CSS pixels, accelerated as the host's pointer is) across the canvas's box: the same speed as
     unlocked, whatever the guest's mouse settings; the cursor is kept in the screen.
   - **Raw**: the motion goes to the machine's relative **mouse** (a virtio-input of its own: `MachineRecord.mouse`,
-    `?mouse=1` for a transient machine), unbounded by the screen, for games that turn with the mouse; the lock asks
+    `?mouse=1`), unbounded by the screen, for games that turn with the mouse; the lock asks
     for `unadjustedMovement` (the mouse's own counts, without the host's acceleration: the guest's mouse settings set
     the speed) and takes a plain lock where the platform refuses it. The buttons and the wheel move to the mouse with
     the lock (held ones are released first). A machine without a mouse has Raw disabled.
@@ -1106,7 +1129,7 @@ save. It takes effect at the next boot, without a restart. A transient machine t
 file opened on the page) follows the browser as a new machine does (`keyboardSetting`); the tests' `?machine=` guests
 set none; `?keyboard=` overrides both (`?keyboard=none`: none). The on-screen keyboard shows the layout a start gives the guest ("The on-screen keyboard", "Layouts"); a
 layout added here gets its keymap by `node tools/osk-keymaps.ts`. The network's settings (MTU, search domain; "Take the
-connection's settings") are on for every transient machine, `?netconfig=0` off.
+connection's settings") are on for every transient machine, `?netconfig=0` off (and `?netconfig=` either way on a stored one).
 
 What the guest gets: three systemd credentials (256+: `systemd.extra-unit.*`, `systemd.unit-dropin.*`) as SMBIOS
 type 11 strings (base64, `io.systemd.credential.binary:`), which PID 1 imports in a VM with nothing loaded first. The
@@ -1435,7 +1458,7 @@ and the guest's default way out (below).
   boot, so connecting later never restarts the machine. The card costs no boot time (Debian to
   login, alternating runs, this container: 81.3 s median without it, 79.7 s with it, 3 runs each,
   noise), and the client isn't loaded until Connect. While the machine's [Take the connection's settings in the
-  guest](ui:machines:NetworkTab.netConfig) is on (`?netconfig=0` turns it off on a transient one), a systemd credential
+  guest](ui:machines:NetworkTab.netConfig) is on (`?netconfig=0` turns it off for the run), a systemd credential
   (`network.network.card`, over fw_cfg since phase B loop 3; on the command line before) gives
   networkd a `.network` file (systemd-network-generator writes it as `/run/systemd/network/card.network`), and a unit
   has every `.network` file take the lease's MTU and search domain ("What the page sets in the guest", below) (Debian's own units are all enabled under UEFI), so the guest asks the gateway for DHCP by itself; the gateway offers nothing

@@ -802,7 +802,7 @@ hash). New machines (`createMachine`: New machine, a disk file opened or dropped
 without `machine.usb` imports with it off. It is turned on or off with the **[USB controller](ui:machines:UsbSwitch.usb)** checkbox, which is on
 the Settings tab and on the USB tab. When the machine has snapshots, the checkbox warns that the change orphans them,
 as a RAM change does, and Save asks again. `shapeDiff` says "it had (no) a USB controller".
-A transient machine (a test's) has the controller with `?usb=1` only. With a controller, the page passes a
+A transient machine (a test's) has the controller with `?usb=1` only (`?usb=1` and `?usb=0` are over a stored machine's record too). With a controller, the page passes a
 `MessagePort` in the worker's `start` message (`protocol.ts` `usb`). The page's `usb-attach` and `usb-detach` go
 through it, and the device worker's `usb-state` comes back.
 

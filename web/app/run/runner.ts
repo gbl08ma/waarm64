@@ -33,7 +33,7 @@ import { sharesPath, type PageMachine } from './page-machine.svelte.ts';
 import type { Problems } from './problems.ts';
 import type { Replies } from './replies.ts';
 import { dispatch, Run } from './run.ts';
-import { channels, machineConfig, startMessage, type Channels, type StartWith } from './start-message.ts';
+import { channels, startMessage, type Channels, type StartWith } from './start-message.ts';
 import { displayHandlers, gpuHandlers, workerHandlers } from './worker-messages.ts';
 import type { DiskRecord } from '../shape.ts';
 import type { DiskPlan } from '../../snapshot.ts';
@@ -107,7 +107,7 @@ export class Runner {
     const canvas = screen.freshCanvas(size);
     const offscreen = canvas.transferControlToOffscreen();
     const nets = net.ports(m.netKey(), m.adapters());
-    const config = machineConfig(m, nets.length);
+    const config = m.config(nets.length);
     const ch = channels(config, audio.attach(), nets);
     current.hasNetwork = ch.nets.length > 0;
     const r = this.#newRun(canvas, ch);
@@ -225,7 +225,7 @@ export class Runner {
     const { machine: m, folders } = this.d;
     if (!r.live()) return;
     if (!(await this.#holdLock(r))) return;
-    const opened = await this.#openDisks(r);
+    const opened = await this.#openDisks(r, w.config);
     if (!opened) return;
     const list = ch.shares && m.stored ? await folders.begin(m.stored.record, ch.shares.port1) : undefined;
     shares.path = m.stored ? (sharesPath(m.stored.record) ?? '') : '';
@@ -263,14 +263,15 @@ export class Runner {
   }
 
   /** The disks to start with and what snapshots say of the machine; none when they can't be opened (said). */
-  async #openDisks(r: Run) {
+  async #openDisks(r: Run, config: MachineConfig) {
     const m = this.d.machine;
     try {
       const needs = m.stored ? await filesNeedingUser(m, m.stored) : [];
       if (needs.length) throw new NeedsUser(needs);
       const { disks, home } = await startDisks(m);
       status.disks = disks.map((d) => d.name);
-      const about = await m.about();
+      const about = await m.about(config);
+      r.about = about;
       return r.live() ? { disks, home, about } : undefined;
     } catch (e) {
       if (!r.live()) return undefined;

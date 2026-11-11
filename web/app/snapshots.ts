@@ -21,6 +21,7 @@ import {
   slots,
   uniqueName,
   type CpuFeature,
+  type DeviceKind,
   type DiskRecord,
   type Display,
   type MachineRecord,
@@ -53,26 +54,27 @@ export type RestorePlan = {
 
 /**
  * The plan to restore snapshot `snap` (its pins; `key` identifies it for reusing a fork: a kept snapshot's id, or a
- * file's creation time) onto machine `m`, whose shape the caller checked to be the snapshot's; `display` is the one it
- * runs with (web/app/run/config.ts `effectiveDisplay`).
+ * file's creation time) onto machine `m`, whose shape the caller checked to be the snapshot's; `run` is the shape it
+ * runs with (its display, web/app/run/config.ts `effectiveDisplay`, and its devices, the address's over the record's).
  */
 export async function planRestore(
   store: Store,
   m: MachineRecord,
   disks: Map<string, DiskRecord>,
   snap: { name: string; key: string; pins: SnapshotDisk[] },
-  display: Display | 'none' = m.display,
+  run: { display: Display | 'none'; devices?: DeviceKind[] } = { display: m.display },
 ): Promise<RestorePlan> {
+  const has = (k: DeviceKind, own: boolean | undefined) => (run.devices ? run.devices.includes(k) : own);
   const bySlot = slots({
     nets: adaptersOf(m).length,
-    display,
-    mouse: m.mouse,
-    touch: m.touch,
-    clock: m.clock,
-    shares: m.shares,
-    clipboard: m.clipboard,
+    display: run.display,
+    mouse: has('mouse', m.mouse),
+    touch: has('touch', m.touch),
+    clock: has('clock', m.clock),
+    shares: has('9p', m.shares),
+    clipboard: has('agent', m.clipboard),
     attachments: m.attachments,
-  }); // as the machine runs on the page (its shape's display): the slots the pins name
+  }); // as the machine runs on the page (its shape's display and devices): the slots the pins name
   type Step = {
     slot: number;
     attachment: string;
