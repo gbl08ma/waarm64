@@ -68,6 +68,8 @@ start's `about`, `PageMachine.about`: its record with the resolved size and devi
 they restore under the same address and are orphaned on the machine as its record has it (docs/machines.md §5.1); the
 Snapshots lists and the Load snapshot menu judge by the same rule (`shapeNow`). Opening another stored machine on the
 page drops the size's keys and the switches from the address (`MACHINE_PARAMS`): they were for the machine it opened.
+So the Snapshots tab judges another machine than the page's without them (`addressFor`), and without this page's GPU
+worker failure (`no3d`, which a switch clears): as that machine would run once opened here.
 
 | Field | Address | Record (stored) | Settings (transient) | Default |
 | --- | --- | --- | --- | --- |

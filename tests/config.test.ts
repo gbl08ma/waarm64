@@ -3,7 +3,7 @@
 // table is the rule: a change to it is a change to what machines run with.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { asRun, resolveMachine, type DeviceSwitches, type Resolved } from '../web/app/run/config.ts';
+import { addressFor, asRun, resolveMachine, type DeviceSwitches, type Resolved } from '../web/app/run/config.ts';
 import { shapeHash, shapeOf } from '../web/app/shape.ts';
 import type { Settings } from '../web/app/settings.ts';
 import type { MachineRecord } from '../web/app/shape.ts';
@@ -81,4 +81,18 @@ test('asRun: without the address, a stored machine runs as its record (its snaps
   }
   const over = shapeOf(asRun({ ...OFF, attachments }, resolveMachine(new URLSearchParams('mouse=1&ncpus=4&ram=2048'), { ...OFF, attachments }, {}, ENV)), disks);
   assert.deepEqual([over.ncpus, over.ramMiB, over.devices.includes('mouse')], [4, 2048, true]);
+});
+
+test("addressFor: another machine than the page's resolves without the address's size and switches (finding 2)", async () => {
+  const disks = () => ({ id: 'd', kind: 'blank', name: 'd', size: 1 << 30, identity: { kind: 'blank', id: 'd', bytes: 1 << 30 }, created: 0 }) as const;
+  const attachments = [{ id: 'a00000000001', disk: 'd', readOnly: false }];
+  const q = new URLSearchParams('m=aaaaaaaaaaab&ncpus=4&ram=2048&split=1024,1024&jitmb=96&usb=1&mouse=1&touch=1&clipboard=1&clock=1&netconfig=0&gpu=2d');
+  for (const r of [OFF, ON].map((x) => ({ ...x, attachments }))) {
+    const other = asRun(r, resolveMachine(addressFor(q, false), r, {}, ENV));
+    assert.equal(await shapeHash(shapeOf(other, disks)), await shapeHash(shapeOf(r, disks)), `${r.name}: its kept snapshots' hash`);
+    const own = shapeOf(asRun(r, resolveMachine(addressFor(q, true), r, {}, ENV)), disks);
+    assert.deepEqual([own.ncpus, own.ramMiB], [4, 2048], "the page's own machine: the address's");
+  }
+  assert.equal(addressFor(q, false).get('gpu'), '2d', 'the page-wide keys stay (a switch keeps them)');
+  assert.equal(q.get('ncpus'), '4', "the page's address is left as it is");
 });

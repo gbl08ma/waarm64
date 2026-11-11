@@ -125,6 +125,17 @@ export const SWITCHES = {
 export const MACHINE_PARAMS = ['ncpus', 'ram', 'split', 'jitmb', ...Object.values(SWITCHES)];
 
 /**
+ * The address a machine resolves over: the page's own machine, the whole address; another one (the Machines page's
+ * choice), without the size's and the switches' keys, as `switchMachine` drops them before it runs here.
+ */
+export function addressFor(q: URLSearchParams, own: boolean) {
+  if (own) return q;
+  const other = new URLSearchParams(q);
+  for (const k of MACHINE_PARAMS) other.delete(k);
+  return other;
+}
+
+/**
  * The devices: each the address's (`?usb=1`, `?mouse=0`, …), else a stored machine's record's, else the default (off,
  * but the clock and the guest's network settings on; a stored machine's clock off unless its record says, as the
  * records from before it have none). Shared folders are the record's only.
