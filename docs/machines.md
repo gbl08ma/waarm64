@@ -124,7 +124,7 @@ Since decided (the user, 2026-10-17):
   be recorded, and every later opening refused as another image's).
 - **The storage full outside a guest's disk writes** says so with the same numbers, as the cause under what failed:
   `disks:overlay.storageFull.numbers` ("full, X used of Y", or without numbers where the browser gives none) under
-  [Couldn't save the snapshot](ui:snapshots:worker.notSaved), [Couldn't suspend the machine](ui:machine:worker.suspend.failed),
+  [Couldn't save the snapshot](ui:snapshots:worker-snapshot.notSaved), [Couldn't suspend the machine](ui:machine:worker-snapshot.suspend.failed),
   a restore's [The disk's changes couldn't be written to this browser's storage.](ui:snapshots:snapshot.storageFull), a
   stored disk's import or merge ([The disk can't be written to this browser's storage.](ui:disks:stored.writeFailed)), Import changes… and a
   snapshot file's import ([Couldn't import {{file}}](ui:snapshots:snapshots.notKept)). Each first gets the remote disks'

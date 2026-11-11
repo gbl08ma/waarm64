@@ -1,0 +1,246 @@
+// The machine worker's snapshots and suspension (web/app/worker.ts; docs/frontend.md "Snapshots", "Suspend"): the
+// running machine paused, written, and resumed or closed; the clock catch-up around them (docs/frontend.md "The
+// guest's clock").
+import type { Vm } from '../vm.ts';
+import { msg, MsgError, toWire } from '../msg.ts';
+import { fileWriter, suspendWriter } from '../overlay.ts';
+import type { Codec, SnapshotHeader, Sink } from '../snapshot-file.ts';
+import { writeSnapshot } from '../snapshot.ts';
+import { makeRoom } from '../diskcache.ts';
+import type { lzCodec } from '../lz.ts';
+import type { Machine } from './machine.ts';
+import { header, type Session } from './worker-header.ts';
+import { post, progress, state, throttled } from './worker-post.ts';
+
+/** The tail of the serial output a snapshot carries, so a restored terminal isn't empty. */
+export const TAIL = 4096;
+
+/** The running machine, as a snapshot or a suspension takes it from the worker (web/app/worker.ts `running`). */
+export type Running = {
+  vm: Vm;
+  session: Session;
+  machine: Machine;
+  /** The OPFS directory of the machine's variable store and suspended copy. */
+  home: string | undefined;
+  /** The serial output's tail now. */
+  serial: () => string;
+  /** Whether the disk in `slot` is a stored disk written in place (its overlay is its store). */
+  inPlace: (slot: number) => boolean;
+  /** Whether the machine is being stopped (it can be by the time an `await` returns). */
+  stopping: () => boolean;
+  codec: () => ReturnType<typeof lzCodec>;
+  /** Closes the suspended machine without running another step (its run loop ends without a word). */
+  close: () => Promise<void>;
+};
+
+let snapshotting = false;
+
+/**
+ * How long a snapshot waits for the guest to suspend itself after its sleep key: logind took ~1 s on Debian, and a
+ * guest that never sleeps on it (no logind) costs every snapshot this wait, the catch-up being the default.
+ */
+const SLEEP_MS = 10_000;
+/**
+ * The clock catch-up (docs/frontend.md "The guest's clock"): waits up to `SLEEP_MS` for the guest to suspend itself
+ * (PSCI SYSTEM_SUSPEND) after the page pressed its sleep key; whether it did.
+ */
+async function guestSleeps(r: Running, id: number) {
+  progress(id, msg('snapshots:worker-snapshot.phase.sleep'), 0);
+  for (const until = performance.now() + SLEEP_MS; !r.vm.suspended() && performance.now() < until && !r.stopping();)
+    await new Promise((res) => setTimeout(res, 50));
+  return r.vm.suspended();
+}
+/**
+ * A restored guest that went to sleep for its snapshot (the header's `slept`) wakes with its clock moved on by the time
+ * the file sat (since the header's `created`): its own resume counts that as sleep (docs/platform.md "System suspend").
+ */
+export function wakeRestored(v: Vm, h: SnapshotHeader) {
+  if (!h.slept || !v.suspended()) return;
+  const away = Date.now() - Date.parse(h.created);
+  if (Number.isFinite(away) && away > 0) v.clockSkip(away);
+  v.wake();
+}
+
+/** The header's fields for the machine as it is now, `slept` if it went to sleep for the file. */
+function meta(r: Running, slept: boolean) {
+  // The terminal's tail from a line start: a cut escape sequence would draw garbage in the restored terminal.
+  const serial = r.serial();
+  const cut = serial.length >= TAIL ? serial.indexOf('\n') + 1 : 0;
+  return { ...header(r.session, r.machine.label, serial.slice(cut)), ...(slept ? { slept: true } : {}) };
+}
+
+type Out = { sink: Sink; close: () => Promise<void>; abort: () => Promise<void> };
+/**
+ * Where a snapshot goes: the picked file's stream (`handle`), the store's file `keep`, or the page in chunks. Opened
+ * before the machine is paused, closed (flushed) after it resumed; `abort` drops whatever is still open.
+ */
+async function output(id: number, handle?: FileSystemFileHandle, keep?: string): Promise<Out> {
+  let out = await handle?.createWritable();
+  let kept: Awaited<ReturnType<typeof fileWriter>> | undefined;
+  try {
+    kept = keep ? await fileWriter(keep, makeRoom) : undefined;
+  } catch (err) {
+    await out?.abort().catch(() => undefined);
+    throw err;
+  }
+  const sink: Sink = async (chunk) => {
+    if (kept) return kept.write(chunk);
+    if (out) return out.write(chunk as Uint8Array<ArrayBuffer>);
+    const copy = chunk.slice(); // a transferred buffer must be ours alone
+    post({ type: 'snapshot-chunk', id, data: copy }, [copy.buffer]);
+  };
+  return {
+    sink,
+    close: async () => {
+      await out?.close();
+      out = undefined;
+      kept?.close();
+      kept = undefined;
+    },
+    // Left open only by a failure (the one reported); an abort that fails has nothing to add to it.
+    abort: async () => {
+      await out?.abort().catch(() => undefined);
+      await kept?.abort().catch(() => undefined);
+    },
+  };
+}
+
+/**
+ * Pauses the machine, writes its snapshot to `sink` (a stored disk written in place left out unless `whole`) and
+ * resumes it, also on an error. A guest asleep for the file (`sleep`, and it did) wakes with the time its clock was
+ * held as sleep, so it doesn't fall behind here either.
+ */
+async function pausedWrite(r: Running, id: number, sink: Sink, lz: Codec, o: { sleep: boolean; whole: boolean }) {
+  const v = r.vm;
+  progress(id, msg('snapshots:worker-snapshot.phase.pausing'), 0);
+  if (!(await v.pause())) throw new MsgError('snapshots:worker-snapshot.ended');
+  try {
+    const slept = o.sleep && v.suspended();
+    const held = performance.now(); // the core holds the guest's clock from the state's save until it runs again
+    const w = await writeSnapshot(v, sink, meta(r, slept), lz, {
+      omit: (slot) => !o.whole && r.inPlace(slot),
+      progress: throttled(id, msg('snapshots:worker-snapshot.phase.writing')),
+    });
+    if (slept) v.clockSkip(performance.now() - held);
+    return { ...w, slept };
+  } finally {
+    v.resume();
+  }
+}
+
+/**
+ * Saves a snapshot of the running machine `r` (docs/frontend.md "Snapshots"): the VM is paused, written
+ * to the picked file's stream or sent back in chunks, and resumed, also on an error. Only the
+ * writing is between pause and resume: the file's stream is opened before, and closed (flushed)
+ * after.
+ */
+export async function saveSnapshot(
+  r: Running | undefined,
+  id: number,
+  handle?: FileSystemFileHandle,
+  keep?: string,
+  whole = false,
+  sleep = false,
+) {
+  const fail = (error: unknown) => post({ type: 'snapshot-error', id, error: toWire(error) });
+  if (!r)
+    return fail(
+      new MsgError('snapshots:worker-snapshot.notRunning', undefined, {
+        cause: new MsgError('snapshots:worker-snapshot.notRunning.cause'),
+      }),
+    );
+  if (snapshotting)
+    return fail(
+      new MsgError('snapshots:worker-snapshot.saving', undefined, {
+        cause: new MsgError('snapshots:worker-snapshot.saving.cause'),
+      }),
+    );
+  snapshotting = true;
+  let out: Out | undefined;
+  try {
+    const lz = await r.codec();
+    out = await output(id, handle, keep);
+    if (sleep) await guestSleeps(r, id);
+    const t0 = performance.now();
+    const w = await pausedWrite(r, id, out.sink, lz, { sleep, whole });
+    if (sleep) r.vm.wake(); // asleep for the file only (or late to it: it slept after the wait)
+    const pausedMs = performance.now() - t0;
+    progress(id, msg('snapshots:worker-snapshot.phase.finishing'), 1);
+    await out.close();
+    const { bytes, stateMs, blobBytes, pins, slept } = w;
+    post({ type: 'snapshot-done', id, bytes, pausedMs, stateMs, blobBytes, pins, slept });
+  } catch (err) {
+    fail(new MsgError('snapshots:worker-snapshot.notSaved', {}, { cause: err }));
+  } finally {
+    if (sleep) r.vm.wake();
+    await out?.abort();
+    snapshotting = false;
+  }
+}
+
+/** Writes the suspended copy beside the overlay in `home`; its size. */
+async function writeSuspended(r: Running, home: string, id: number, lz: Codec, sleep: boolean) {
+  const out = await suspendWriter(home, makeRoom);
+  try {
+    const w = await writeSnapshot(r.vm, (chunk) => out.write(chunk), meta(r, sleep && r.vm.suspended()), lz, {
+      suspend: true,
+      progress: throttled(id, msg('machine:worker-snapshot.phase.suspending')),
+    });
+    out.close();
+    return w.bytes;
+  } catch (err) {
+    await out.abort();
+    throw err;
+  }
+}
+
+/** Why the machine can't be suspended now, or none. */
+function cantSuspend(r: Running | undefined) {
+  if (!r)
+    return new MsgError('machine:worker-snapshot.suspend.notRunning', undefined, {
+      cause: new MsgError('machine:worker-snapshot.suspend.notRunning.cause'),
+    });
+  if (!r.home)
+    return new MsgError('machine:worker-snapshot.suspend.noHome', undefined, {
+      cause: new MsgError('machine:worker-snapshot.suspend.noHome.cause'),
+    });
+  if (snapshotting)
+    return new MsgError('machine:worker-snapshot.suspend.busy', undefined, {
+      cause: new MsgError('machine:worker-snapshot.suspend.busy.cause'),
+    });
+  return undefined;
+}
+
+/**
+ * Suspends the machine (docs/frontend.md "Suspend"): paused, its snapshot without the disk's blocks
+ * is written beside the overlay, and the machine is closed without running another step, so the
+ * overlay is exactly what the file's RAM expects. A failure before that leaves it running.
+ */
+export async function suspend(r: Running | undefined, id: number, sleep = false) {
+  const fail = (error: unknown) => post({ type: 'snapshot-error', id, error: toWire(error) });
+  const refused = cantSuspend(r);
+  if (refused || !r?.home) return fail(refused);
+  const home = r.home;
+  snapshotting = true;
+  let paused = false;
+  let closing = false;
+  try {
+    const lz = await r.codec();
+    if (sleep) await guestSleeps(r, id);
+    progress(id, msg('snapshots:worker-snapshot.phase.pausing'), 0);
+    if (!(await r.vm.pause())) throw new MsgError('snapshots:worker-snapshot.ended');
+    paused = true;
+    const bytes = await writeSuspended(r, home, id, lz, sleep);
+    // From here the machine must not run: the file is only good for the disk as it is now.
+    closing = true;
+    await r.close();
+    post({ type: 'suspend-done', id, bytes });
+    state('suspended', { note: msg('machine:worker-snapshot.suspended', { size: bytes }) });
+  } catch (err) {
+    if (paused && !closing) r.vm.resume();
+    if (sleep && !closing) r.vm.wake();
+    fail(new MsgError('machine:worker-snapshot.suspend.failed', {}, { cause: err }));
+  } finally {
+    snapshotting = false;
+  }
+}

@@ -331,7 +331,7 @@
     "message": "This web app is developed and tested in Chromium and Chrome. In this browser, parts of it may not work.",
     "note": "Note in the message bar (under the toolbar) in a browser other than Chromium or Chrome, shown while there is nothing else to say."
   },
-  "worker.suspendedMachine": {
+  "worker-start.suspendedMachine": {
     "message": "the suspended machine",
     "note": "Names the machine kept suspended in this browser in the words of a snapshot that can't be loaded (in place of a file's name), inside a sentence (“Couldn't load the suspended machine”)."
   },
@@ -343,25 +343,25 @@
     "message": "Its suspended memory was discarded, and the machine is booting from its disk instead.",
     "note": "Error details: the cause under the headline machine:worker.notResumed, on the line under it in the same place; what happened."
   },
-  "worker.phase.resuming": {
+  "worker-start.phase.resuming": {
     "message": "Resuming the suspended machine",
     "note": "Line on the boot card and the machine's state in the status bar while a start checks the machine kept suspended in this browser."
   },
-  "worker.diskChanged": {
+  "worker-start.diskChanged": {
     "message": "Its disk has changed since it was suspended.",
     "note": "Detail under “Couldn't resume the suspended machine” in the message bar (under the toolbar): a disk of the machine moved on since the suspend (a reset, a switch of overlay, a merge)."
   },
-  "worker.vulkanSplit": {
+  "worker-start.vulkanSplit": {
     "message": "Couldn't start {{machine}} with Vulkan",
-    "note": "Error in the message bar (under the toolbar) when a machine with Vulkan has a memory split that leaves no room for Vulkan's memory (Retry follows): the headline; why and what to do are the cause under it (machine:worker.vulkanSplit.cause, or machine:worker.vulkanSplit.snapshot.cause for a snapshot); {{machine}} is the machine's name, {{why}} what is wrong with the split (a machines catalog message, lower case)."
+    "note": "Error in the message bar (under the toolbar) when a machine with Vulkan has a memory split that leaves no room for Vulkan's memory (Retry follows): the headline; why and what to do are the cause under it (machine:worker-start.vulkanSplit.cause, or machine:worker-start.vulkanSplit.snapshot.cause for a snapshot); {{machine}} is the machine's name, {{why}} what is wrong with the split (a machines catalog message, lower case)."
   },
-  "worker.vulkanSplit.cause": {
+  "worker-start.vulkanSplit.cause": {
     "message": "Its memory split doesn't work with Vulkan ({{why}}). Change the machine's memory on the Machines page, or the split in the address, or turn Vulkan off for it.",
-    "note": "Error details: the cause under the headline machine:worker.vulkanSplit, on the line under it in the same place; why and what to do. {{why}}: as that entry's note says."
+    "note": "Error details: the cause under the headline machine:worker-start.vulkanSplit, on the line under it in the same place; why and what to do. {{why}}: as that entry's note says."
   },
-  "worker.vulkanSplit.snapshot.cause": {
+  "worker-start.vulkanSplit.snapshot.cause": {
     "message": "The snapshot's memory split doesn't work with Vulkan ({{why}}). Turn Vulkan off for the machine, or start it without the snapshot.",
-    "note": "Error details: the cause under the headline machine:worker.vulkanSplit when a snapshot loaded on a machine with Vulkan has a memory split that leaves no room for Vulkan's memory; why and what to do. {{why}} is what is wrong with the split (a machines catalog message, lower case)."
+    "note": "Error details: the cause under the headline machine:worker-start.vulkanSplit when a snapshot loaded on a machine with Vulkan has a memory split that leaves no room for Vulkan's memory; why and what to do. {{why}} is what is wrong with the split (a machines catalog message, lower case)."
   },
   "worker.panic": {
     "message": "The guest's kernel panicked",
@@ -387,99 +387,99 @@
     "message": "The emulator stopped unexpectedly (exit code {{exit}})",
     "note": "Error headline in the message bar (under the toolbar) when the emulator stopped for a reason it has no words for; {{exit}} is its exit code."
   },
-  "worker.http": {
+  "worker-fetch.http": {
     "message": "HTTP {{status}}",
     "note": "What the server answered for a file the machine needs, in the error that it's missing (“The server answered … for …”); {{status}} is the HTTP status."
   },
-  "worker.http.notFound": {
+  "worker-fetch.http.notFound": {
     "message": "HTTP {{status}} (not found)",
     "note": "What the server answered for a file the machine needs when it isn't there, in the error that it's missing (“The server answered … for …”); {{status}} is the HTTP status (404)."
   },
-  "worker.noCore": {
+  "worker-fetch.noCore": {
     "message": "Couldn't load the emulator core",
-    "note": "Error in the message bar (under the toolbar) when the emulator's core can't be fetched from the server (a development checkout; Retry follows): the headline; why and what to do are the cause under it (machine:worker.noCore.cause); {{path}} is its path in the repository, {{why}} what the server answered (HTTP and its status)."
+    "note": "Error in the message bar (under the toolbar) when the emulator's core can't be fetched from the server (a development checkout; Retry follows): the headline; why and what to do are the cause under it (machine:worker-fetch.noCore.cause); {{path}} is its path in the repository, {{why}} what the server answered (HTTP and its status)."
   },
-  "worker.noCore.cause": {
+  "worker-fetch.noCore.cause": {
     "message": "The server answered {{why}} for {{path}}, so the core may not be built. Run `npm start` in the repository; it builds the core, then serves this web app.",
-    "note": "Error details: the cause under the headline machine:worker.noCore, on the line under it in the same place; why and what to do. {{why}}, {{path}}: as that entry's note says."
+    "note": "Error details: the cause under the headline machine:worker-fetch.noCore, on the line under it in the same place; why and what to do. {{why}}, {{path}}: as that entry's note says."
   },
-  "worker.noImage": {
+  "worker-fetch.noImage": {
     "message": "Couldn't load {{machine}}'s image",
-    "note": "Error in the message bar (under the toolbar) when a file of a test machine can't be fetched from the server (Retry follows): the headline; why and what to do are the cause under it (machine:worker.noImage.cause); {{machine}} is the machine's name, {{path}} the file's path in the repository, {{why}} what the server answered (HTTP and its status), {{prepare}} the command that builds it."
+    "note": "Error in the message bar (under the toolbar) when a file of a test machine can't be fetched from the server (Retry follows): the headline; why and what to do are the cause under it (machine:worker-fetch.noImage.cause); {{machine}} is the machine's name, {{path}} the file's path in the repository, {{why}} what the server answered (HTTP and its status), {{prepare}} the command that builds it."
   },
-  "worker.noImage.cause": {
+  "worker-fetch.noImage.cause": {
     "message": "The server answered {{why}} for {{path}}. Run {{prepare}}, then Retry.",
-    "note": "Error details: the cause under the headline machine:worker.noImage, on the line under it in the same place; why and what to do. {{why}}, {{path}}, {{prepare}}: as that entry's note says."
+    "note": "Error details: the cause under the headline machine:worker-fetch.noImage, on the line under it in the same place; why and what to do. {{why}}, {{path}}, {{prepare}}: as that entry's note says."
   },
-  "worker.noServer": {
+  "worker-fetch.noServer": {
     "message": "Couldn't load {{path}}",
-    "note": "Error in the message bar (under the toolbar) when the server didn't answer for a file the machine needs (Retry follows): the headline; what to check is the cause under it (machine:worker.noServer.cause); {{path}} is the file's path in the repository; the browser's error is the detail under it."
+    "note": "Error in the message bar (under the toolbar) when the server didn't answer for a file the machine needs (Retry follows): the headline; what to check is the cause under it (machine:worker-fetch.noServer.cause); {{path}} is the file's path in the repository; the browser's error is the detail under it."
   },
-  "worker.noServer.cause": {
+  "worker-fetch.noServer.cause": {
     "message": "The server didn't answer. Check that it is still running (`npm start`).",
-    "note": "Error details: the cause under the headline machine:worker.noServer, on the line under it in the same place; what to check."
+    "note": "Error details: the cause under the headline machine:worker-fetch.noServer, on the line under it in the same place; what to check."
   },
-  "worker.diskInUse": {
+  "worker-errors.diskInUse": {
     "message": "Couldn't start {{machine}}",
-    "note": "Error in the message bar (under the toolbar) when the machine's disk is open in another tab (Retry follows): the headline; why and what to do are the cause under it (machine:worker.diskInUse.cause); {{machine}} is the machine's name; the lower-level error is the detail under it."
+    "note": "Error in the message bar (under the toolbar) when the machine's disk is open in another tab (Retry follows): the headline; why and what to do are the cause under it (machine:worker-errors.diskInUse.cause); {{machine}} is the machine's name; the lower-level error is the detail under it."
   },
-  "worker.diskInUse.cause": {
+  "worker-errors.diskInUse.cause": {
     "message": "Another tab or window of this web app is running the machine on the same disk, and the browser lets only one of them open it at a time. Close that tab, then Retry.",
-    "note": "Error details: the cause under the headline machine:worker.diskInUse, on the line under it in the same place; why and what to do."
+    "note": "Error details: the cause under the headline machine:worker-errors.diskInUse, on the line under it in the same place; why and what to do."
   },
-  "worker.diskMismatch": {
+  "worker-errors.diskMismatch": {
     "message": "Couldn't start {{machine}}",
-    "note": "Error in the message bar (under the toolbar) when the changes kept for the machine's disk were made over another image (Reset disk… or Disks… follows): the headline; why and what to do are the cause under it (machine:worker.diskMismatch.cause); {{machine}} is the machine's name; the lower-level error is the detail under it."
+    "note": "Error in the message bar (under the toolbar) when the changes kept for the machine's disk were made over another image (Reset disk… or Disks… follows): the headline; why and what to do are the cause under it (machine:worker-errors.diskMismatch.cause); {{machine}} is the machine's name; the lower-level error is the detail under it."
   },
-  "worker.diskMismatch.cause": {
+  "worker-errors.diskMismatch.cause": {
     "message": "The changes kept for its disk were made over a different image than the one served now. To start over from this image, reset the disk, which deletes those changes.",
-    "note": "Error details: the cause under the headline machine:worker.diskMismatch, on the line under it in the same place; why and what to do."
+    "note": "Error details: the cause under the headline machine:worker-errors.diskMismatch, on the line under it in the same place; why and what to do."
   },
-  "worker.memory": {
+  "worker-errors.memory": {
     "message": "Couldn't reserve memory for the machine",
-    "note": "Error in the message bar (under the toolbar) when the browser refused the machine's memory (Retry follows): the headline; what to do is the cause under it (machine:worker.memory.cause); {{ram}} is the RAM; the browser's error is the detail under it."
+    "note": "Error in the message bar (under the toolbar) when the browser refused the machine's memory (Retry follows): the headline; what to do is the cause under it (machine:worker-errors.memory.cause); {{ram}} is the RAM; the browser's error is the detail under it."
   },
-  "worker.memory.cause": {
+  "worker-errors.memory.cause": {
     "message": "The browser refused {{ram}} MiB for the machine's RAM. Close other tabs, then Retry.",
-    "note": "Error details: the cause under the headline machine:worker.memory, on the line under it in the same place; what to do. {{ram}}: as that entry's note says."
+    "note": "Error details: the cause under the headline machine:worker-errors.memory, on the line under it in the same place; what to do. {{ram}}: as that entry's note says."
   },
-  "worker.emulator": {
+  "worker-errors.emulator": {
     "message": "The emulator stopped with an error",
     "note": "Error headline in the message bar (under the toolbar) when the emulator failed (Show serial log and the like follow); the error and where it happened (for a bug report) are the details under it."
   },
-  "worker.suspend.notRunning": {
+  "worker-snapshot.suspend.notRunning": {
     "message": "Couldn't suspend the machine",
-    "note": "Error in the message bar (under the toolbar) when Suspend reached a machine that had already stopped: the headline; why is the cause under it (machine:worker.suspend.notRunning.cause)."
+    "note": "Error in the message bar (under the toolbar) when Suspend reached a machine that had already stopped: the headline; why is the cause under it (machine:worker-snapshot.suspend.notRunning.cause)."
   },
-  "worker.suspend.notRunning.cause": {
+  "worker-snapshot.suspend.notRunning.cause": {
     "message": "It had already stopped.",
-    "note": "Error details: the cause under the headline machine:worker.suspend.notRunning, on the line under it in the same place; what happened, and what the user can do if anything."
+    "note": "Error details: the cause under the headline machine:worker-snapshot.suspend.notRunning, on the line under it in the same place; what happened, and what the user can do if anything."
   },
-  "worker.suspend.noHome": {
+  "worker-snapshot.suspend.noHome": {
     "message": "Couldn't suspend the machine",
-    "note": "Error in the message bar (under the toolbar) when Suspend is asked of a machine that keeps nothing in this browser: the headline; why is the cause under it (machine:worker.suspend.noHome.cause)."
+    "note": "Error in the message bar (under the toolbar) when Suspend is asked of a machine that keeps nothing in this browser: the headline; why is the cause under it (machine:worker-snapshot.suspend.noHome.cause)."
   },
-  "worker.suspend.noHome.cause": {
+  "worker-snapshot.suspend.noHome.cause": {
     "message": "Only a machine whose disk changes are kept in this browser can be suspended.",
-    "note": "Error details: the cause under the headline machine:worker.suspend.noHome, on the line under it in the same place; what happened, and what the user can do if anything."
+    "note": "Error details: the cause under the headline machine:worker-snapshot.suspend.noHome, on the line under it in the same place; what happened, and what the user can do if anything."
   },
-  "worker.suspend.busy": {
+  "worker-snapshot.suspend.busy": {
     "message": "Couldn't suspend the machine",
-    "note": "Error in the message bar (under the toolbar) when Suspend is asked while a snapshot is being written: the headline; what to do is the cause under it (machine:worker.suspend.busy.cause)."
+    "note": "Error in the message bar (under the toolbar) when Suspend is asked while a snapshot is being written: the headline; what to do is the cause under it (machine:worker-snapshot.suspend.busy.cause)."
   },
-  "worker.suspend.busy.cause": {
+  "worker-snapshot.suspend.busy.cause": {
     "message": "A snapshot is being saved. Suspend the machine once it's done.",
-    "note": "Error details: the cause under the headline machine:worker.suspend.busy, on the line under it in the same place; what to do."
+    "note": "Error details: the cause under the headline machine:worker-snapshot.suspend.busy, on the line under it in the same place; what to do."
   },
-  "worker.phase.suspending": {
+  "worker-snapshot.phase.suspending": {
     "message": "Suspending the machine",
     "note": "The machine's state in the status bar while Suspend writes its memory (a percentage may follow)."
   },
-  "worker.suspended": {
+  "worker-snapshot.suspended": {
     "message": "The machine is suspended, and its memory ({{size, bytes}}) is kept in this browser. Start resumes it where it was. Boot instead starts it from its disk, as after a power cut.",
     "note": "Note in the message bar (under the toolbar) once the machine was suspended (Start and Boot instead follow); {{size}} is what its memory takes in this browser."
   },
-  "worker.suspend.failed": {
+  "worker-snapshot.suspend.failed": {
     "message": "Couldn't suspend the machine",
     "note": "Error headline in the message bar (under the toolbar) when Suspend failed (the machine runs on); why is the detail under it."
   }

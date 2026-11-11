@@ -18,7 +18,7 @@ type Stream = {
 /**
  * The screen's last second: a 3D machine's GPU worker `stats` (web/gpu-worker.ts), or a 2D machine's presenter's
  * `screen-stats` (web/gpu-present.ts; `webgl2` or `canvas2d`), or a machine without virtio-gpu's simple framebuffer
- * (`framebuffer`: its machine worker's `screen-stats`, web/app/worker.ts). `fps`: presents a second; the video's decoded pictures a
+ * (`framebuffer`: its machine worker's `screen-stats`, web/app/worker-start.ts `showScreen`). `fps`: presents a second; the video's decoded pictures a
  * second, all streams and each. `hardware` is what a decoder asked for: WebCodecs doesn't say what it got (Chromium's
  * `prefer-hardware` fails rather than fall back).
  */

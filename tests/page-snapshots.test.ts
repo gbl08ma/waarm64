@@ -177,7 +177,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   await page.goto(url);
   await stateIs(page, 'booting', 'running');
   assert.match(await page.locator('#message-text').textContent() ?? '', words('machine:worker.notResumed'));
-  assert.match(await page.locator('#message-details').textContent() ?? '', words('machine:worker.diskChanged')); // why: the note's detail
+  assert.match(await page.locator('#message-details').textContent() ?? '', words('machine:worker-start.diskChanged')); // why: the note's detail
 
   // A RAM change orphans every snapshot (it asks first; the machine restarts with it); the Machines page deletes them in one action.
   await page.locator('#machines-open').click();

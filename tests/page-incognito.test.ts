@@ -108,7 +108,7 @@ test('off the record, a URL disk\'s block cache leaves room for a kept snapshot,
     // Kept: the toolbar's Snapshot.
     await page.locator('#save-snapshot').click();
     const kept = words('snapshots:snapshot-actions.kept', {}, { start: true }).source;
-    const failed = words('snapshots:worker.notSaved', {}, { start: true }).source;
+    const failed = words('snapshots:worker-snapshot.notSaved', {}, { start: true }).source;
     await page.waitForFunction(([a, b]) => [a, b].some((src) => new RegExp(src).test(document.getElementById('message-text')?.textContent ?? '')), [kept, failed], { timeout: 300_000 });
     assert.match(await page.locator('#message-text').textContent() ?? '', new RegExp(kept), await said(page));
     const after = await storage(page);
@@ -126,7 +126,7 @@ test('off the record, a URL disk\'s block cache leaves room for a kept snapshot,
 
     // Suspended, and resumed by the next load.
     await page.locator('#suspend').click();
-    const notSuspended = words('machine:worker.suspend.failed', {}, { start: true }).source;
+    const notSuspended = words('machine:worker-snapshot.suspend.failed', {}, { start: true }).source;
     await page.waitForFunction((src) => document.body.dataset.state === 'suspended' || new RegExp(src).test(document.getElementById('message-text')?.textContent ?? ''), notSuspended, { timeout: 300_000, polling: 200 });
     assert.equal(await page.evaluate(() => document.body.dataset.state), 'suspended', await said(page));
     await page.goto(url);

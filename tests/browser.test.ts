@@ -588,8 +588,8 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   await page.close();
   // The core, then an image: 404s from the machine worker's fetches; Retry once they're back.
   for (const [pattern, want, why] of [
-    ['**/webpc_core.wasm', words('machine:worker.noCore', {}, { start: true }), words('machine:worker.noCore.cause', { path: 'target/wasm32-unknown-unknown/release/webpc_core.wasm', why: t('machine:worker.http.notFound', { status: 404 }) }, { start: true })],
-    ['**/buildroot/rootfs.ext4', words('machine:worker.noImage', { machine: t('machines:machine.buildroot') }, { start: true }), words('machine:worker.noImage.cause', { path: 'target/images/buildroot/rootfs.ext4', why: t('machine:worker.http.notFound', { status: 404 }) }, { start: true })],
+    ['**/webpc_core.wasm', words('machine:worker-fetch.noCore', {}, { start: true }), words('machine:worker-fetch.noCore.cause', { path: 'target/wasm32-unknown-unknown/release/webpc_core.wasm', why: t('machine:worker-fetch.http.notFound', { status: 404 }) }, { start: true })],
+    ['**/buildroot/rootfs.ext4', words('machine:worker-fetch.noImage', { machine: t('machines:machine.buildroot') }, { start: true }), words('machine:worker-fetch.noImage.cause', { path: 'target/images/buildroot/rootfs.ext4', why: t('machine:worker-fetch.http.notFound', { status: 404 }) }, { start: true })],
   ] as const) {
     page = await open((p) => p.route(pattern, (r) => r.fulfill({ status: 404 })));
     r = await settled(page);
@@ -641,7 +641,7 @@ test("the page says what's wrong: no cross-origin isolation, a missing script, c
   page = await open();
   r = await settled(page);
   assert.equal(r.state, 'failed', r.text!);
-  assert.match(r.text!, words('machine:worker.diskMismatch', { machine: t('machines:machine.buildroot') }, { start: true }));
+  assert.match(r.text!, words('machine:worker-errors.diskMismatch', { machine: t('machines:machine.buildroot') }, { start: true }));
   assert.deepEqual(r.actions, [t('disks:disk-actions.resetDisk')]);
   await answerAsks(page);
   await page.locator('#message-actions button').click();
@@ -693,7 +693,7 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
   assert.equal(await viewOf(second), 'terminal');
   r = await settled(second);
   assert.equal(r.state, 'failed', r.text!);
-  assert.match(r.text!, words('machine:worker.diskInUse', { machine: t('machines:machine.buildroot') }, { start: true }));
+  assert.match(r.text!, words('machine:worker-errors.diskInUse', { machine: t('machines:machine.buildroot') }, { start: true }));
   assert.deepEqual(r.actions, [t('machine:problems.retry')]);
   let asked = '';
   await answerAsks(page, (q) => { asked = q.text; });

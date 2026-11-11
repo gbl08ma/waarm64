@@ -21,9 +21,9 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/main.ts` | the composition root: opens the store and the page's machine, builds the areas' modules, assembles `page`, mounts the components, boots |
 | `web/app/run/` (`page-machine.svelte.ts`, `page-disks.ts`, `knobs.ts`, `config.ts`, `dev-knobs.ts`, `runner.ts`, `run.ts`, `worker-messages.ts`, `start-message.ts`, `machine-lock.ts`, `messages.ts`, `problems.ts`, `power-actions.ts`, `size-actions.ts`, `memory-signal.ts`, `replies.ts`, `bench-hooks.ts`, `core.ts`) | the machine's run (below, "The page's code"): the page's machine (the owner the areas share), the address's knobs and what a machine is resolved to, a start and a stop, the workers' messages by type, the state and the message bar, power and size, the memory signal |
 | `web/app/areas/*-actions.ts`, `screen-view.ts`, `serial-terminal.ts`, `page-window.ts`, `disk-changes.ts`, `disk-export.ts`, `snapshot-restore.ts`, `usb-view.ts`, `usb-attach.ts`, `usb-entries.ts`, `held.ts`, `hooks.ts`, `browser.d.ts` | each area's actions next to its state: the screen and the terminal, the views and the window, disks, snapshots, network, USB, folders, clipboard, keys; the held-by-another-tab flow; the test hooks' and the missing browser APIs' types |
-| `web/app/worker.ts` | the machine worker: boots a machine with `bootVm` and drives it with `runAsync` |
+| `web/app/worker.ts` (`worker-start.ts`, `-devices`, `-header`, `-fetch`, `-errors`, `-snapshot`, `-status`, `-profile`, `-post`) | the machine worker: boots a machine with `bootVm` and drives it with `runAsync`; what a start fetches and makes (the page's machine or a snapshot's, its devices, `bootVm`'s options), a snapshot's header, what stops a start, snapshots and suspension, the status, the benchmarks' profilers, its messages |
 | `web/app/protocol.ts` | the messages between the two (types only) |
-| the toolbar's Snapshot and Load snapshot, `areas/snapshot-actions.ts`'s `save` and `snapshot-restore.ts`'s `load`, `worker.ts`'s `saveSnapshot` and its start from a snapshot | snapshots on the page (below, "Snapshots") |
+| the toolbar's Snapshot and Load snapshot, `areas/snapshot-actions.ts`'s `save` and `snapshot-restore.ts`'s `load`, `worker-snapshot.ts`'s `saveSnapshot` and the worker's start from a snapshot (`worker-start.ts` `openRestore`) | snapshots on the page (below, "Snapshots") |
 | `web/app/shape.ts`, `web/app/store.ts` | machines as the unit (below, "Machines in the browser"): the records and their shape; IndexedDB and OPFS, the sweep, the change notices between tabs |
 | `web/app/machines.ts`, `web/app/disks.ts`, `web/app/urlcheck.ts` | what the Machines page does: machines and attachments; disks, overlays as variants, stored disks (import, merge), exports; a disk URL's check |
 | `web/app/MachinesPage.svelte`, `MachinesNav.svelte`, `machines-panes.ts`, `MachinePane.svelte`, `machine-edit.svelte.ts`, `SettingsTab.svelte` (`RamSplit`, `KeyboardField`, `DeviceSwitches`, `UsbSwitch`, `SaveRow`), `NetworkTab.svelte` (`AdapterCard`), `UsbTab.svelte`, `FoldersTab.svelte`, `PagePane.svelte`, `ConnectionsPane.svelte`, `connection-kind.ts`, `PreferencesPane.svelte`, `StorageBar.svelte`, `Disks.svelte`, `AddDisk.svelte` (`AddDiskUrl`, `AddDiskFile`, `add-disk.ts`: what it makes), `DisksPane.svelte`, `Overlays.svelte`, `AttachDisk.svelte`, `ExportMenu.svelte`, `Snapshots.svelte`, `FoldersPane.svelte`, `About.svelte`, `DiskInfo.svelte` and `disk-kind.ts`, `MoveButtons.svelte` | the Machines page (below, "The Machines page"): the page that composes, its list, a machine's pane and its tabs (the machine being edited, its draft and Save), the transient machine's pane, Connections, Preferences, the storage bar, the Add a disk wizard, the browser's Disks pane and its dialogs, Shared folders, About; a disk's row, an ordered list's Up and Down |
@@ -682,7 +682,7 @@ everything that can be refused before anything is touched (the whole file's chec
 state version, the disk's identity), and only `bootVm` with `restore` replaces the overlay by the
 file's blocks. For a firmware machine the restored flash bank is written back beside the new
 overlay (the restore deleted the copy) before `running` is posted. The state goes from `loading`
-(with `phase` messages: "[Checking the snapshot](ui:snapshots:worker.phase.checking)", "[Restoring the machine](ui:snapshots:worker.phase.restoring)"; there is no byte
+(with `phase` messages: "[Checking the snapshot](ui:snapshots:worker-start.phase.checking)", "[Restoring the machine](ui:snapshots:worker-start.phase.restoring)"; there is no byte
 progress) straight to `running`: the machine is where it was, there is no marker to wait for. The
 saved serial tail is written to the terminal first (`serial` with `replay`: xterm.js answers a
 cursor-position query in it while parsing, and the page doesn't send those answers to the guest, which
@@ -750,12 +750,12 @@ VM without another step, and posts the state `suspended` (its message says the s
 are Start and Boot instead). A failure before that leaves the machine running.
 - **A start resumes.** The worker looks for a suspended machine beside the disk before it
   downloads a kernel (`suspended`), and starts from it as from a snapshot file, except that the
-  overlay is kept (`readSnapshot`'s `resume`): `loading` ("[Resuming the suspended machine](ui:machine:worker.phase.resuming)"), then
+  overlay is kept (`readSnapshot`'s `resume`): `loading` ("[Resuming the suspended machine](ui:machine:worker-start.phase.resuming)"), then
   `running` with the note "[Resumed the suspended machine.](ui:machine:worker.resumed)" If it can't be resumed (another core
   version, a damaged file), it is dropped and the machine boots, with a note saying so.
 - **It resumes only onto its disks as it left them:** the file pins each overlay's path and generation, and the
   worker compares them (`overlayMeta`) before resuming: a switched overlay, a reset, a merge or a boot since moved
-  them on, and the copy is dropped with a note ("[Its disk has changed since it was suspended.](ui:machine:worker.diskChanged)"). The worker also still
+  them on, and the copy is dropped with a note ("[Its disk has changed since it was suspended.](ui:machine:worker-start.diskChanged)"). The worker also still
   drops it (`dropSuspend`) right after a resume's `bootVm` and before a boot the page asked for (`start.resume`
   false: Boot instead). A ramdisk's blocks are in the file (they are nowhere else). A stored machine's copy is
   `machines/<id>/suspend`; a transient one's is beside its overlay.
@@ -778,7 +778,7 @@ default** since 2026-10-25, the user; `?clocksync=1` or `0` decides for the page
 does: Snapshot (both kinds) and Suspend first press the guest's **sleep key** (`KEY_SLEEP` on the virtio-input
 keyboard, `Input.chord('Sleep')`; systemd-logind suspends on it by default), and the worker waits up to 10 s for the
 guest to suspend itself (PSCI SYSTEM_SUSPEND: [platform.md](platform.md) "System suspend"; [Putting the guest to
-sleep](ui:snapshots:worker.phase.sleep) in the state line) before it pauses the machine. A file taken while the guest slept says so (`slept: true` in
+sleep](ui:snapshots:worker-snapshot.phase.sleep) in the state line) before it pauses the machine. A file taken while the guest slept says so (`slept: true` in
 its header), and **loading it** (a snapshot, or a suspended machine resumed) moves the guest's clock on by the time
 since the header's `created` (`vm_clock_skip`) and wakes it: its resume counts that as sleep, so its wall clock is
 the browser's again and its monotonic clock hasn't jumped (nothing it times runs out). The running machine wakes once

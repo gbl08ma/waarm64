@@ -1715,7 +1715,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
     worker.onerror = (e) => reject(new Error(`device worker: ${e.message}`));
     worker.onmessage = (e: MessageEvent<FromDeviceWorker>) => {
       if (e.data.type === 'ready') resolve();
-      // The error as the device worker had it (its fields, an overlay's `problem`, kept: web/app/worker.ts `explain`).
+      // The error as the device worker had it (its fields, an overlay's `problem`, kept: web/app/worker-errors.ts `explain`).
       else if (e.data.type === 'error') reject(e.data.error ? fromWire(e.data.error) : new Error(`device worker: ${e.data.message}`));
       else if (e.data.type === 'console') out(e.data.device, e.data.text);
       else if (e.data.type === 'notice') notice?.(e.data.message);
