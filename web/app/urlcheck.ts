@@ -25,6 +25,10 @@ export type UrlCheck = {
 /** What a server needs for CORS, a parameter of the problems that say so. */
 const CORS_HINT = msg('machines:urlcheck.corsHint');
 
+/** Whether the page may read `u` over plain HTTP: its own origin, or this computer. */
+const plainOk = (u: URL, origin: string | undefined) =>
+  u.origin === origin || u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+
 /** Checks `url` from this page (any origin); never throws. */
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- no location in Node's tests
 export async function checkUrl(url: string, origin = globalThis.location?.origin): Promise<UrlCheck> {
@@ -36,40 +40,55 @@ export async function checkUrl(url: string, origin = globalThis.location?.origin
     return { ok: false, problems: [msg('machines:urlcheck.notUrl')] };
   }
   const problems: Msg[] = [];
-  const sameOrigin = u.origin === origin;
-  if (u.protocol !== 'https:' && !sameOrigin && u.hostname !== 'localhost' && u.hostname !== '127.0.0.1')
-    problems.push(msg('machines:urlcheck.https'));
+  if (u.protocol !== 'https:' && !plainOk(u, origin)) problems.push(msg('machines:urlcheck.https'));
   if (u.protocol !== 'https:' && u.protocol !== 'http:')
     return { ok: false, problems: [msg('machines:urlcheck.httpOnly')] };
   const out: UrlCheck = { ok: false, problems };
   if (isManifestUrl(u.href)) return checkChunked(u, out);
-  // A range read: what the disk does all the time. A failure here is the network or CORS (the browser doesn't say which).
+  const r = await checkRange(u, out);
+  if (!r) return out;
+  await checkSuffix(u, problems);
+  if (out.bytes === undefined && r.status === 200) out.bytes = Number(r.headers.get('content-length')) || undefined;
+  out.ok = problems.length === 0;
+  return out;
+}
+
+/**
+ * A range read: what the disk does all the time. A failure here is the network or CORS (the browser doesn't say
+ * which). Fills `out` from a 206; the response, or nothing when the check ends here.
+ */
+async function checkRange(u: URL, out: UrlCheck): Promise<Response | undefined> {
   let r: Response;
   try {
     r = await fetch(u, { headers: { Range: 'bytes=0-511' }, cache: 'no-store' });
   } catch {
-    problems.push(msg('machines:urlcheck.noAnswer', { needs: CORS_HINT }));
-    return out;
+    out.problems.push(msg('machines:urlcheck.noAnswer', { needs: CORS_HINT }));
+    return undefined;
   }
   if (r.status === 404) {
-    problems.push(msg('machines:urlcheck.notFound'));
-    return out;
+    out.problems.push(msg('machines:urlcheck.notFound'));
+    return undefined;
   }
   if (r.status === 200) {
-    problems.push(msg('machines:urlcheck.noRanges'));
+    out.problems.push(msg('machines:urlcheck.noRanges'));
     void r.body?.cancel();
-  } else if (r.status !== 206) {
-    problems.push(msg('machines:urlcheck.rangeStatus', { status: r.status, statusText: r.statusText }));
-    return out;
-  } else {
-    const range = r.headers.get('content-range');
-    if (!range) problems.push(msg('machines:urlcheck.hiddenRange'));
-    else out.bytes = Number(range.split('/')[1]) || undefined;
-    out.head = new Uint8Array(await r.arrayBuffer());
-    out.etag = r.headers.get('etag') ?? undefined;
-    out.lastModified = r.headers.get('last-modified') ?? undefined;
+    return r;
   }
-  // A suffix range: preflighted (only `bytes=a-b` is CORS-safelisted), so it also checks that OPTIONS allows `Range`.
+  if (r.status !== 206) {
+    out.problems.push(msg('machines:urlcheck.rangeStatus', { status: r.status, statusText: r.statusText }));
+    return undefined;
+  }
+  const range = r.headers.get('content-range');
+  if (!range) out.problems.push(msg('machines:urlcheck.hiddenRange'));
+  else out.bytes = Number(range.split('/')[1]) || undefined;
+  out.head = new Uint8Array(await r.arrayBuffer());
+  out.etag = r.headers.get('etag') ?? undefined;
+  out.lastModified = r.headers.get('last-modified') ?? undefined;
+  return r;
+}
+
+/** A suffix range: preflighted (only `bytes=a-b` is CORS-safelisted), so it also checks that OPTIONS allows `Range`. */
+async function checkSuffix(u: URL, problems: Msg[]): Promise<void> {
   try {
     const s = await fetch(u, { headers: { Range: 'bytes=-512' }, cache: 'no-store' });
     if (s.status !== 206) problems.push(msg('machines:urlcheck.suffixStatus', { status: s.status }));
@@ -77,9 +96,6 @@ export async function checkUrl(url: string, origin = globalThis.location?.origin
   } catch {
     problems.push(msg('machines:urlcheck.preflight'));
   }
-  if (out.bytes === undefined && r.status === 200) out.bytes = Number(r.headers.get('content-length')) || undefined;
-  out.ok = problems.length === 0;
-  return out;
 }
 
 /**

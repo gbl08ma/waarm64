@@ -282,40 +282,44 @@ export async function migrateLegacy(conns: Connections, legacy: Legacy): Promise
   const currentURL = current && 'url' in current ? current.url : DEFAULT_CONTROL;
   const have = await conns.list();
   const out: Connection[] = [];
-  for (const profile of legacy.profiles) {
-    let c = have.find((x) => x.tailnet?.stateKey === profile);
-    if (!c) {
-      const mine = profile === currentURL;
-      c = await conns.create({
-        kind: 'tailnet',
-        connectAtStart: !!(mine && s?.kind !== 'tailcat' && s?.autoconnect),
-        tailnet: {
-          controlURL: profile,
-          // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- not ours (false) or '' is unset
-          hostname: (mine && s?.hostname) || 'webpc',
-          // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- not ours (false) or '' is unset
-          exitNode: (mine && s?.exitNode) || '',
-        },
-      });
-      settingsOf(c, 'tailnet').stateKey = profile;
-      await conns.put(c);
-    }
-    out.push(c);
-  }
-  if (legacy.served) {
-    let c = have.find((x) => x.tailcat?.identityKey === 'served');
-    if (!c) {
-      // The server's address, a secret, was never kept: the connection serves only until it is edited.
-      c = await conns.create({
-        kind: 'tailcat',
-        connectAtStart: s?.kind === 'tailcat' && s.autoconnect && s.tailcatServe && !s.tailcatExit,
-        tailcat: { serve: true, relay: s?.tailcatRelay ?? '' },
-      });
-      settingsOf(c, 'tailcat').identityKey = 'served';
-      await conns.put(c);
-    }
-    out.push(c);
-  }
+  for (const profile of legacy.profiles)
+    out.push(
+      have.find((x) => x.tailnet?.stateKey === profile) ??
+        (await legacyTailnet(conns, profile, profile === currentURL ? s : undefined)),
+    );
+  if (legacy.served) out.push(have.find((x) => x.tailcat?.identityKey === 'served') ?? (await legacyTailcat(conns, s)));
   const first = (c: Connection) => (s?.kind === 'tailcat' ? c.kind === 'tailcat' : c.tailnet?.stateKey === currentURL);
   return [...out.filter(first), ...out.filter((c) => !first(c))];
+}
+
+/** A tailnet connection for a kept node's profile; `s`, the old settings, when they were on this profile. */
+async function legacyTailnet(conns: Connections, profile: string, s: NetworkSettings | undefined) {
+  const c = await conns.create({
+    kind: 'tailnet',
+    connectAtStart: !!(s && s.kind !== 'tailcat' && s.autoconnect),
+    tailnet: {
+      controlURL: profile,
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- '' is unset
+      hostname: s?.hostname || 'webpc',
+      exitNode: s?.exitNode ?? '',
+    },
+  });
+  settingsOf(c, 'tailnet').stateKey = profile;
+  await conns.put(c);
+  return c;
+}
+
+/**
+ * A tailcat connection for the served identity. The server's address, a secret, was never kept: the connection serves
+ * only until it is edited.
+ */
+async function legacyTailcat(conns: Connections, s: NetworkSettings | undefined) {
+  const c = await conns.create({
+    kind: 'tailcat',
+    connectAtStart: s?.kind === 'tailcat' && s.autoconnect && s.tailcatServe && !s.tailcatExit,
+    tailcat: { serve: true, relay: s?.tailcatRelay ?? '' },
+  });
+  settingsOf(c, 'tailcat').identityKey = 'served';
+  await conns.put(c);
+  return c;
 }

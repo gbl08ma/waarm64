@@ -4,10 +4,10 @@
 // Web Lock, so the machine must have stopped (the page stops it first). The output goes to a file
 // handle the page got from `showSaveFilePicker`, or, without one, back to the page in chunks.
 import { hashSource } from '../changes.ts';
-import { diskIdentity } from '../devices.ts';
+import { diskIdentity, type Source } from '../devices.ts';
 import { msg, MsgError, toWire, type Msg } from '../msg.ts';
-import { openOverlay, overlay } from '../overlay.ts';
-import { openDisk } from '../qcow2.ts';
+import { openOverlay, overlay, type WritableDisk } from '../overlay.ts';
+import { openDisk, type Disk } from '../qcow2.ts';
 import {
   changedClusters,
   nonZeroClusters,
@@ -37,14 +37,7 @@ async function exportDisk(r: ExportRequest) {
   const base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : src.read(off, len)), src.size, inflater);
   // Waits for the machine's worker to let go of the overlay. A disk without one is exported as it is (a stored disk).
   const files = d.overlay
-    ? await openOverlay(
-        d.overlay,
-        d.identity ??
-          diskIdentity(
-            { ...('url' in d.source ? { url: d.source.url } : 'file' in d.source ? { file: d.source.file } : {}) },
-            base.size,
-          ),
-      ).catch((e: unknown) => {
+    ? await openOverlay(d.overlay, d.identity ?? identityOf(d.source, base.size)).catch((e: unknown) => {
         src.close?.();
         inflater.close();
         throw e;
@@ -54,61 +47,86 @@ async function exportDisk(r: ExportRequest) {
   try {
     const disk = files ? overlay(base, files.data, files.map) : undefined;
     out = r.handle ? await r.handle.createWritable() : undefined;
-    let written = 0;
-    const sink: Sink = async (chunk, at) => {
-      if (out) {
-        if (at === undefined) await out.write(chunk as Uint8Array<ArrayBuffer>);
-        else {
-          await out.write({ type: 'write', position: at, data: chunk as Uint8Array<ArrayBuffer> });
-          await out.seek(written);
-        }
-      } else {
-        const copy = chunk.slice(); // the writer may reuse nothing, but a transferred buffer must be ours alone
-        post({ type: 'chunk', data: copy, at }, [copy.buffer]);
-      }
-      if (at === undefined) written += chunk.length;
-    };
-    const progress = (phase: Msg, done: number, total: number) => post({ type: 'progress', phase, done, total });
-    let blocks = 0;
+    const sink = sinkTo(out);
     if (r.mode === 'changes' && !disk) throw new MsgError('disks:export-worker.noChanges');
-    const whole = disk ?? base;
-    if (r.mode === 'raw') {
-      for await (const chunk of rawChunks(whole)) {
-        await sink(chunk);
-        progress(msg('disks:export-worker.writingDisk'), written, whole.size);
-      }
-    } else {
-      let clusters;
-      let backing;
-      if (r.mode === 'changes') {
-        if (!disk) throw new Error('changes asked of a disk without an overlay');
-        const hash = await hashSource(src, (done) => progress(msg('disks:export-worker.readingBase'), done, src.size));
-        backing = { name: r.baseName, format: base.format, hash };
-        clusters = progressOf(changedClusters(disk), disk.written().length, (done, total) =>
-          progress(msg('disks:export-worker.writingChanges'), done, total),
-        );
-      } else {
-        clusters = nonZeroClusters(whole, 1 << 20, (done) =>
-          progress(msg('disks:export-worker.writingDisk'), done, whole.size),
-        );
-      }
-      const pool = r.compress ? deflatePool() : undefined;
-      try {
-        const res = await writeQcow2({ size: whole.size, clusters, backing, compress: pool, sink });
-        blocks = res.clusters;
-      } finally {
-        pool?.close();
-      }
-    }
+    const blocks =
+      r.mode === 'raw' ? await writeRaw(disk ?? base, sink) : await writeImage(r, { src, base, disk }, sink);
     await out?.close();
     out = undefined;
-    return { bytes: written, blocks };
+    return { bytes: sink.written(), blocks };
   } finally {
     // Left open only by a failure (the one reported); an abort that fails has nothing to add to it.
     await out?.abort().catch(() => undefined);
     files?.close();
     src.close?.();
     inflater.close();
+  }
+}
+
+/** The identity an overlay was made for, when the page didn't send it: the source's URL or file and the size. */
+function identityOf(source: ExportRequest['disk']['source'], size: number) {
+  return diskIdentity(
+    { ...('url' in source ? { url: source.url } : 'file' in source ? { file: source.file } : {}) },
+    size,
+  );
+}
+
+const progress = (phase: Msg, done: number, total: number) => post({ type: 'progress', phase, done, total });
+
+/** Writes to the file, or back to the page in chunks; counts what it appends. */
+function sinkTo(out: FileSystemWritableFileStream | undefined): Sink & { written(): number } {
+  let written = 0;
+  const sink: Sink = async (chunk, at) => {
+    if (out) {
+      if (at === undefined) await out.write(chunk as Uint8Array<ArrayBuffer>);
+      else {
+        await out.write({ type: 'write', position: at, data: chunk as Uint8Array<ArrayBuffer> });
+        await out.seek(written);
+      }
+    } else {
+      const copy = chunk.slice(); // the writer may reuse nothing, but a transferred buffer must be ours alone
+      post({ type: 'chunk', data: copy, at }, [copy.buffer]);
+    }
+    if (at === undefined) written += chunk.length;
+  };
+  return Object.assign(sink, { written: () => written });
+}
+
+/** The disk as a raw image; no blocks counted. */
+async function writeRaw(whole: Disk, sink: Sink & { written(): number }) {
+  for await (const chunk of rawChunks(whole)) {
+    await sink(chunk);
+    progress(msg('disks:export-worker.writingDisk'), sink.written(), whole.size);
+  }
+  return 0;
+}
+
+/** A qcow2: the disk's changes over its base (a changes file), or the whole disk; the blocks written. */
+async function writeImage(
+  r: ExportRequest,
+  { src, base, disk }: { src: Source; base: Disk; disk: WritableDisk | undefined },
+  sink: Sink,
+) {
+  const whole = disk ?? base;
+  let clusters;
+  let backing;
+  if (r.mode === 'changes') {
+    if (!disk) throw new Error('changes asked of a disk without an overlay');
+    const hash = await hashSource(src, (done) => progress(msg('disks:export-worker.readingBase'), done, src.size));
+    backing = { name: r.baseName, format: base.format, hash };
+    clusters = progressOf(changedClusters(disk), disk.written().length, (done, total) =>
+      progress(msg('disks:export-worker.writingChanges'), done, total),
+    );
+  } else {
+    clusters = nonZeroClusters(whole, 1 << 20, (done) =>
+      progress(msg('disks:export-worker.writingDisk'), done, whole.size),
+    );
+  }
+  const pool = r.compress ? deflatePool() : undefined;
+  try {
+    return (await writeQcow2({ size: whole.size, clusters, backing, compress: pool, sink })).clusters;
+  } finally {
+    pool?.close();
   }
 }
 
