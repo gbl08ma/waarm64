@@ -52,6 +52,11 @@
   };
   const stateText = (v: EntryView) =>
     v.state === 'held' && v.holder ? t('usb:Usb.state.heldBy', { holder: v.holder }) : t(STATE[v.state]);
+  /** The list's note: what attaching does, by where the machine runs. */
+  function noteText() {
+    if (!running) return t('usb:Usb.note.stopped');
+    return here ? t('usb:Usb.note') : t('usb:Usb.note.otherTab');
+  }
   /** The English ordinal's suffix of `n` as the words write it (2nd, 3rd, 4th…): a message each. */
   const nth = (n: number) =>
     n === 2
@@ -177,9 +182,7 @@
   {#if hasTwins(machine.usbDevices ?? [])}
     <Note data-usb-twins>{t('usb:Usb.twins')}</Note>
   {/if}
-  <Note>
-    {running && !here ? t('usb:Usb.note.otherTab') : !running ? t('usb:Usb.note.stopped') : t('usb:Usb.note')}
-  </Note>
+  <Note>{noteText()}</Note>
 </div>
 {#if adding}<AddUsb machine={machine.id} name={machine.name} close={() => (adding = false)} />{/if}
 
