@@ -78,6 +78,15 @@ export type LockMode = 'pointer' | 'raw';
  * presses its left button). `locked` is told when the element takes the mouse or lets it go.
  */
 export type Pointers = { mouse?: MessagePort; touch?: MessagePort; locked?: (on: boolean) => void };
+/** A Linux input event as virtio-input's ports carry them: [type, code, value] (a frame is a list of them). */
+export type EvdevEvent = readonly [type: number, code: number, value: number];
+/** `attachInput`'s ends and hooks: virtio-input's ports (`keyboard`, `tablet`, the `Pointers`), `text`, `hold`. */
+export type InputOptions = Pointers & {
+  keyboard?: MessagePort;
+  tablet?: MessagePort;
+  text?: { live: () => boolean; send: (bytes: string) => void; usb?: (code: string, down: boolean) => boolean };
+  hold?: (e: KeyboardEvent) => Promise<void> | undefined;
+};
 
 const CSI: Record<string, string> = {
   ArrowUp: '\x1b[A', ArrowDown: '\x1b[B', ArrowRight: '\x1b[C', ArrowLeft: '\x1b[D', Home: '\x1b[H', End: '\x1b[F',
@@ -127,12 +136,15 @@ export function terminalBytes(e: KeyLike): string | null {
  * keyboard (web/usb-keyboard.ts: every key, down and up, by `KeyboardEvent.code`; '' releases them all), when it says
  * it took the key; else `send`, the serial console, as a terminal sends them (`terminalBytes`).
  *
- * `hooks.hold`: asked at each key down on the element (not a repeat); a promise holds the key: no `preventDefault`, so
+ * `hold`: asked at each key down on the element (not a repeat); a promise holds the key: no `preventDefault`, so
  * the browser's own action happens (a paste chord's `paste` event: web/app/clipboard.ts), and the key goes to the guest
  * when the promise settles, and the element's key events that came meanwhile after it, in order (the chord's
  * modifiers' releases among them; its own repeats dropped). A release (a blur) drops the held key and those.
  */
-export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: MessagePort, text?: { live: () => boolean; send: (bytes: string) => void; usb?: (code: string, down: boolean) => boolean }, pointers: Pointers = {}, hooks: { hold?: (e: KeyboardEvent) => Promise<void> | undefined } = {}): Input {
+export function attachInput(el: HTMLElement, o: InputOptions = {}): Input {
+  const { keyboard, tablet, text } = o;
+  const pointers: Pointers = { mouse: o.mouse, touch: o.touch, locked: o.locked };
+  const hooks = { hold: o.hold };
   const keys = new Set<number>(); // held, as the guest sees it
   const on = <T extends EventTarget, E extends Event>(target: T, type: string, f: (e: E) => void) => {
     target.addEventListener(type, f as EventListener);

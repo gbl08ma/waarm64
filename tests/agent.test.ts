@@ -1047,7 +1047,8 @@ test("web/input.ts holds the paste chord's key: the keys after it wait behind it
     const keyboard = { postMessage: (m: number[][]) => got.push([m[0][1], m[0][2]]) } as unknown as MessagePort;
     let release = () => {};
     let holds = 0;
-    const input = attachInput(el, keyboard, undefined, undefined, {}, {
+    const input = attachInput(el, {
+      keyboard,
       hold: (e) => (e.code === 'KeyV' && e.ctrlKey ? (holds++, new Promise<void>((r) => (release = r))) : undefined),
     });
     const key = (type: 'keydown' | 'keyup', code: string, ctrlKey = false, repeat = false) => {

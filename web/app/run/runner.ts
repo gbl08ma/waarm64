@@ -3,7 +3,7 @@
 // The workers' and ports' messages go to web/app/run/worker-messages.ts's handlers.
 import { MsgError, t } from '../../i18n.ts';
 import type { PageAudio } from '../../audio.ts';
-import { attachInput } from '../../input.ts';
+import { attachInput, type EvdevEvent } from '../../input.ts';
 import { CLOSE_MS } from '../../devices.ts';
 import type { DisplayToPage } from '../../gpu-present.ts';
 import type { FromGpuWorker, ToGpuWorker } from '../../gpu-worker.ts';
@@ -125,25 +125,22 @@ export class Runner {
     const share = this.d.clipboard(ch.agent?.port1);
     clipboard.follow(share);
     window.__clipboard = share; // the tests' hook
-    const input = attachInput(
-      canvas,
-      ch.keyboard.port1,
-      ch.tablet.port1,
-      {
+    const input = attachInput(canvas, {
+      keyboard: ch.keyboard.port1,
+      tablet: ch.tablet.port1,
+      text: {
         live: () => keys.live,
         send: (d) => terminal.term.input(d, true),
         usb: (code, down) => this.d.usb.keyboardKey(code, down),
       },
-      {
-        mouse: ch.mouse?.port1,
-        touch: ch.touch?.port1,
-        locked: (on) => {
-          mouse.locked = on;
-          screen.placeCursor();
-        },
+      mouse: ch.mouse?.port1,
+      touch: ch.touch?.port1,
+      locked: (on) => {
+        mouse.locked = on;
+        screen.placeCursor();
       },
-      { hold: share && ((e) => share.chord(e)) },
-    );
+      hold: share && ((e) => share.chord(e)),
+    });
     input.mouseLock(mouse.lock, mouse.mode);
     input.onRelease(() => {
       keys.released.emit();
@@ -162,7 +159,7 @@ export class Runner {
     ch.display.port1.onmessage = (e: MessageEvent<DisplayToPage>) => {
       if (r.live()) dispatch(display, e.data);
     };
-    ch.keyboard.port1.onmessage = (e: MessageEvent<number[]>) => ledEvent(e.data);
+    ch.keyboard.port1.onmessage = (e: MessageEvent<EvdevEvent>) => ledEvent(e.data);
     keys.ledBits = { virtio: 0, usb: 0 };
     const fromWorker = workerHandlers(this, r);
     worker.onmessage = r.guard((e: MessageEvent<FromWorker>) => dispatch(fromWorker, e.data));
@@ -325,7 +322,7 @@ export class Runner {
 
 /** The guest's LEDs on the virtio keyboard: its status events (EV_LED, code 0 Num, 1 Caps, 2 Scroll Lock). */
 const EV_LED = 0x11;
-function ledEvent([type, code, value]: number[]) {
+function ledEvent([type, code, value]: EvdevEvent) {
   if (type !== EV_LED || code > 2) return;
   const bits = keys.ledBits;
   bits.virtio = value ? bits.virtio | (1 << code) : bits.virtio & ~(1 << code);
