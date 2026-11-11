@@ -139,7 +139,7 @@ tests/qcow2/make.sh            # regenerate the qcow2 fixtures with qemu-img
 npm start                      # what a user runs: checks, npm ci, wasm core, the tailnet client, the UEFI firmware (images/build.sh edk2, Podman), the page's build, then serves it; the page waits for the user's disk (frontend.md)
 npm run dist                   # the page built (Vite) as static files for any web server -> target/dist/ (no guest images; frontend.md "A static copy")
 npm run serve                  # Vite's dev server with COOP/COEP and hot reloading on :8080 (PORT overrides); builds the tailnet client first if missing or stale (net/ts)
-node tools/screens.ts --label <name>   # screenshots of every page state without a guest (toolbar menus, Machines page wide and 720 px, dialogs, wizard steps) -> bench/results/local/screens/<name>/ (frontend.md "Screenshots")
+node tools/screens.ts --label <name>   # screenshots of every page state without a guest (toolbar menus, Machines page wide and 720 px, dialogs, wizard steps) -> bench/results/local/screens/<name>/; --compare <other> --label <name>: what differs (frontend.md "Screenshots")
 net/tailscale/build.sh         # the Go Tailscale client, the hand-over test's fixture -> target/net/tailscale.wasm (tools/tailscale.ts does it when needed)
 (cd ../webpc-net && go test -race ./...)    # the local network helper, its own repository (its CLAUDE.md); go run . --origin http://127.0.0.1:8080 beside npm run serve
 WEBPC_NET_SRC=../webpc-net node --test tests/page-local.test.ts   # webpc's tests against that checkout instead of the commit tests/webpc-net.ts pins

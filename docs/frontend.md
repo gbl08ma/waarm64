@@ -187,7 +187,9 @@ overlays, kept snapshots, three connections, a folder), then captures each state
 machine can have shown through `ui`), the message bar (warn, error), the Machines page's panes and a machine's tabs
 (also 720 px wide, `-narrow`), every dialog, each Add a disk source, the Network and Folder wizards' steps and the
 page's questions. `missed.txt` lists what it couldn't reach (a guest's states, the browser's pickers). A change to the
-page's look is compared with a baseline set taken before it (`--label before`).
+page's look is compared with a baseline set taken before it (`--label before`): `node tools/screens.ts --compare before
+--label <name>` lists each state whose pixels differ, and where. The seed's times, addresses and orders are fixed, so
+what differs besides the change is the dev server's port (in Add a disk's URL) and a new adapter's MAC.
 
 ## The toolbar
 

@@ -6,13 +6,59 @@
 //   node tools/screens.ts [--label before] [--only <substring>]
 // writes bench/results/local/screens/<label>/<state>.png (label `now` by default) and lists the states it couldn't
 // reach (they need a guest or hardware) in `missed.txt` there.
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+//   node tools/screens.ts --compare before [--label now]
+// compares two sets taken before: each state's changed pixels and where (states only one set has are listed too).
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { chromium, type Page } from 'playwright-core';
 import { ROOT, startServer } from './serve.ts';
 
-const { values: args } = parseArgs({ options: { label: { type: 'string', default: 'now' }, only: { type: 'string' } } });
-const DIR = `${ROOT}bench/results/local/screens/${args.label}`;
+const { values: args } = parseArgs({
+  options: { label: { type: 'string', default: 'now' }, only: { type: 'string' }, compare: { type: 'string' } },
+});
+const SCREENS = `${ROOT}bench/results/local/screens`;
+const DIR = `${SCREENS}/${args.label}`;
+if (args.compare) {
+  await compare(`${SCREENS}/${args.compare}`, DIR);
+  process.exit(0);
+}
+
+/** Compares the PNGs of two sets in Chromium (a canvas each): per state, the pixels that differ and their box. */
+async function compare(a: string, b: string) {
+  const names = (dir: string) => (existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.png')) : []);
+  const [as, bs] = [names(a), names(b)];
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+  const page = await browser.newPage();
+  let same = 0;
+  for (const f of as.filter((f) => bs.includes(f))) {
+    const [x, y] = [a, b].map((d) => readFileSync(`${d}/${f}`).toString('base64'));
+    const r = await page.evaluate(async ([x, y]) => {
+      const load = async (s: string) => {
+        const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${s}`)).blob());
+        const c = new OffscreenCanvas(img.width, img.height).getContext('2d')!;
+        c.drawImage(img, 0, 0);
+        return c.getImageData(0, 0, img.width, img.height);
+      };
+      const [p, q] = [await load(x), await load(y)];
+      if (p.width !== q.width || p.height !== q.height) return `size ${p.width}×${p.height} → ${q.width}×${q.height}`;
+      let n = 0, x0 = p.width, y0 = p.height, x1 = -1, y1 = -1;
+      for (let i = 0; i < p.data.length; i += 4) {
+        if (p.data[i] === q.data[i] && p.data[i + 1] === q.data[i + 1] && p.data[i + 2] === q.data[i + 2]) continue;
+        const px = (i / 4) % p.width, py = Math.floor(i / 4 / p.width);
+        n++;
+        [x0, y0, x1, y1] = [Math.min(x0, px), Math.min(y0, py), Math.max(x1, px), Math.max(y1, py)];
+      }
+      return n ? `${n} px in ${x0},${y0}–${x1},${y1}` : '';
+    }, [x, y] as const);
+    if (r) console.log(`${f.slice(0, -4)}: ${r}`);
+    else same++;
+  }
+  for (const f of as.filter((f) => !bs.includes(f))) console.log(`${f.slice(0, -4)}: only in ${a}`);
+  for (const f of bs.filter((f) => !as.includes(f))) console.log(`${f.slice(0, -4)}: only in ${b}`);
+  console.log(`${same} states the same`);
+  await browser.close();
+}
+
 const WIDE = { width: 1280, height: 800 };
 const NARROW = { width: 720, height: 900 };
 
@@ -42,7 +88,7 @@ async function shot(page: Page, name: string) {
 const settle = (page: Page) => page.waitForTimeout(150);
 
 /** One context (one profile: the seed's records are in it) for every page. */
-const context = await browser.newContext({ viewport: WIDE, colorScheme: 'dark' });
+const context = await browser.newContext({ viewport: WIDE, colorScheme: 'dark', locale: 'en-US', timezoneId: 'UTC' });
 context.setDefaultTimeout(5000);
 /** A page at `viewport`; its errors are listed as missed. */
 async function open(viewport = WIDE, hash = '') {
@@ -66,16 +112,16 @@ async function seed(page: Page): Promise<Seed> {
   const ids = await page.evaluate(async () => {
     const { Store } = await import('/web/app/store.ts' as string);
     const { createMachine, createDisk, attach } = await import('/web/app/machines.ts' as string);
-    const { createOverlay } = await import('/web/app/disks.ts' as string);
     const { createFolder } = await import('/web/app/folders.ts' as string);
     const { newId } = await import('/web/app/shape.ts' as string);
     const { page: actions } = await import('/web/app/ui.svelte.ts' as string);
     const store = await Store.open();
-    const now = Date.now();
-    const tailnet = { id: newId(), name: 'Home tailnet', kind: 'tailnet', ephemeral: false, tailnet: { controlURL: 'https://controlplane.tailscale.com', hostname: 'workbench', exitNode: '', stateKey: '' }, connectAtStart: true, lastUsed: now, created: now };
+    // Fixed times, addresses and the connections' ids (their order), so that two sets differ only where the page does.
+    const now = Date.UTC(2026, 10, 1, 12);
+    const tailnet = { id: 'c00000000001', name: 'Home tailnet', kind: 'tailnet', ephemeral: false, tailnet: { controlURL: 'https://controlplane.tailscale.com', hostname: 'workbench', exitNode: '', stateKey: '' }, connectAtStart: true, lastUsed: now, created: now };
     tailnet.tailnet.stateKey = tailnet.id;
-    const tailcat = { id: newId(), name: 'tailcat', kind: 'tailcat', ephemeral: false, tailcat: { serve: true, relay: '', identityKey: newId() }, connectAtStart: false, lastUsed: 0, created: now };
-    const room = { id: newId(), name: 'Room', kind: 'room', ephemeral: false, room: { link: 'webpc-room:example?r=1', incoming: true, relayOnly: false, identityKey: newId() }, connectAtStart: false, lastUsed: 0, created: now };
+    const tailcat = { id: 'c00000000002', name: 'tailcat', kind: 'tailcat', ephemeral: false, tailcat: { serve: true, relay: '', identityKey: newId() }, connectAtStart: false, lastUsed: 0, created: now };
+    const room = { id: 'c00000000003', name: 'Room', kind: 'room', ephemeral: false, room: { link: 'webpc-room:example?r=1', incoming: true, relayOnly: false, identityKey: newId() }, connectAtStart: false, lastUsed: 0, created: now };
     for (const c of [tailnet, tailcat, room]) await store.put('connections', c);
     const folder = await createFolder(store, { kind: 'opfs', name: 'Shared' });
     const m = await createMachine(store, { name: 'Workbench', ncpus: 2, ramMiB: 2048 });
@@ -84,10 +130,11 @@ async function seed(page: Page): Promise<Seed> {
     const ram = await createDisk(store, { kind: 'ramdisk', size: 32 << 20 });
     await createDisk(store, { kind: 'blank', size: 16 << 20, name: 'Spare' }); // in no machine: Attach to a machine…
     for (const d of [url, blank, ram]) await attach(store, m, d);
-    const overlay = await createOverlay(store, blank, 'Before the upgrade');
-    await createOverlay(store, blank, 'Scratch');
+    const overlay = { id: 'a00000000001', name: 'Before the upgrade', disk: blank.id, identity: blank.identity, generation: 0, bytes: 0, created: now, modified: now };
+    const scratch = { ...overlay, id: 'a00000000002', name: 'Scratch' };
+    for (const o of [overlay, scratch]) await store.put('overlays', o);
     m.attachments[1].overlay = overlay.id;
-    m.adapters[0].connection = tailnet.id;
+    m.adapters[0] = { ...m.adapters[0], mac: '52:54:00:12:34:56', connection: tailnet.id };
     m.usbDevices = [{ id: newId(), api: 'usb', vendorId: 0x0781, productId: 0x5581, productName: 'Ultra USB 3.0', serialNumber: '4C530001', connector: 0, atStart: true }];
     m.folders = [{ id: folder.id, readOnly: false }];
     await store.put('machines', m);
