@@ -7,8 +7,14 @@
   `-<n-1>`. Logic is web/app/net-live.ts's, through `page`.
 -->
 <script lang="ts">
+  /* eslint-disable max-lines -- its styles moved in from index.html; a section per adapter (a NetAdapter.svelte, its
+     keys renamed) would split it */
   import Menu from './ui/Menu.svelte';
   import Check from './ui/Check.svelte';
+  import Button from './ui/Button.svelte';
+  import Field from './ui/Field.svelte';
+  import Note from './ui/Note.svelte';
+  import StatusDot from './ui/StatusDot.svelte';
   import T from './T.svelte';
   import { describe, t, type Described } from '../i18n.ts';
   import { MsgError } from '../msg.ts';
@@ -20,7 +26,16 @@
 
   const views = $derived((void ui.net, net.views()));
   /** What the toolbar's dot shows: the default way out's state, else adapter 1's. */
-  const shown = $derived(views.find((a) => a.primary) ?? views[0]);
+  // None without an adapter (`views[0]` is undefined then).
+  const shown = $derived<(typeof views)[number] | undefined>(views.find((a) => a.primary) ?? views[0]);
+  /** A phase's light. */
+  const TONES: Record<string, 'ok' | 'busy' | 'bad'> = {
+    connecting: 'busy',
+    login: 'busy',
+    connected: 'ok',
+    error: 'bad',
+  };
+  const tone = (phase: string | undefined) => (phase ? TONES[phase] : undefined) ?? 'off';
 
   let open = $state(false);
   let errors = $state<Record<number, Described | undefined>>({});
@@ -106,50 +121,57 @@
   }
 </script>
 
+<!-- A value to copy (an address, a key, a room's name or link), read-only in its field. -->
+{#snippet copyable(id: string, label: string, value: string, type = 'text')}
+  <Field {label}><input {id} {type} readonly spellcheck="false" {value} /></Field>
+{/snippet}
+
 <Menu
   id="network"
   icon="network"
   title={t('network:Network.title')}
   bind:open
   panel
+  wide
   data-phase={shown?.view.phase ?? 'off'}
 >
-  {#snippet badge()}<span class="dot" aria-hidden="true"></span>{/snippet}
+  {#snippet badge()}<StatusDot tone={tone(shown?.view.phase)} aria-hidden="true" />{/snippet}
   {#each views as a (a.index)}
     {@const v = a.view}
     {@const s = sfx(a.index)}
     <section class="net-adapter" data-adapter={a.index} data-phase={v.phase}>
       {#if views.length > 1}<h3 class="net-head">
-          <span class="dot" aria-hidden="true"></span>{a.primary
+          <StatusDot tone={tone(v.phase)} aria-hidden="true" />{a.primary
             ? t('network:Network.adapter.primary', { adapter: a.index + 1 })
             : t('network:Network.adapter', { adapter: a.index + 1 })}
         </h3>{/if}
       <p id={`net-status${s}`} class="net-status">
         {v.text}{#each v.details ?? [] as d, k (k)}<br /><span class="net-detail">{d}</span>{/each}
       </p>
-      <p id={`net-conn${s}`} class="net-note">
+      <Note id={`net-conn${s}`}>
         {a.connection
           ? a.connection.ephemeral
             ? t('network:Network.connection.ephemeral', { name: a.connection.name })
             : a.connection.name
           : t('network:Network.noConnection')}
-      </p>
+      </Note>
       <a id={`net-login${s}`} class="net-login" target="_blank" rel="noopener" href={v.loginURL} hidden={!v.loginURL}
         >{t('network:Network.login')}</a
       >
-      <label id={`net-exit-label${s}`} hidden={v.exitNodes.length === 0}
-        >{t('network:Network.exitNode')}
-        <select
-          id={`net-exit${s}`}
-          value={v.exitNodes.find((e) => e.use)?.id ?? ''}
-          onchange={(e) => chooseExit(a.index, e)}
-        >
-          <option value="">{t('network:Network.exitNode.none')}</option>
-          {#each v.exitNodes as e (e.id)}<option value={e.id}
-              >{e.online ? e.name : t('network:Network.exitNode.offline', { name: e.name })}</option
-            >{/each}
-        </select>
-      </label>
+      <div hidden={v.exitNodes.length === 0}>
+        <Field id={`net-exit-label${s}`} label={t('network:Network.exitNode')}>
+          <select
+            id={`net-exit${s}`}
+            value={v.exitNodes.find((e) => e.use)?.id ?? ''}
+            onchange={(e) => chooseExit(a.index, e)}
+          >
+            <option value="">{t('network:Network.exitNode.none')}</option>
+            {#each v.exitNodes as e (e.id)}<option value={e.id}
+                >{e.online ? e.name : t('network:Network.exitNode.offline', { name: e.name })}</option
+              >{/each}
+          </select>
+        </Field>
+      </div>
       <div id={`net-routes-label${s}`} hidden={!v.subnets}>
         <Check
           id={`net-routes${s}`}
@@ -163,115 +185,148 @@
         </Check>
       </div>
       <div id={`net-served${s}`} class="net-group" hidden={!v.served}>
-        <label
-          >{t('network:Network.served')}<input
-            id={`net-served-addr${s}`}
-            type={revealed[a.index] ? 'text' : 'password'}
-            readonly
-            spellcheck="false"
-            value={v.served ?? ''}
-          /></label
-        >
+        {@render copyable(
+          `net-served-addr${s}`,
+          t('network:Network.served'),
+          v.served ?? '',
+          revealed[a.index] ? 'text' : 'password',
+        )}
         <div class="net-row">
-          <button id={`net-served-copy${s}`} onclick={() => copyServed(a.index, v.served ?? '')}
-            >{t('network:Network.copy')}</button
-          ><button
+          <Button id={`net-served-copy${s}`} onclick={() => copyServed(a.index, v.served ?? '')}
+            >{t('network:Network.copy')}</Button
+          ><Button
             id={`net-served-show${s}`}
             onclick={() => (revealed = { ...revealed, [a.index]: !revealed[a.index] })}
-            >{revealed[a.index] ? t('network:Network.hide') : t('network:Network.show')}</button
+            >{revealed[a.index] ? t('network:Network.hide') : t('network:Network.show')}</Button
           >
         </div>
-        <p class="net-note">
+        <Note>
           <T
             k="network:Network.served.note"
             params={{ ssh: 'tailcat ssh <address>', connect: 'tailcat <address> <port>' }}
             >{#snippet code(text)}<code>{text}</code>{/snippet}</T
           >
-        </p>
+        </Note>
       </div>
       <div id={`net-key${s}`} class="net-group" hidden={!v.tailcatKey}>
-        <label
-          >{t('network:Network.key')}<input
-            id={`net-key-value${s}`}
-            type="text"
-            readonly
-            spellcheck="false"
-            value={v.tailcatKey ?? ''}
-          /></label
-        >
+        {@render copyable(`net-key-value${s}`, t('network:Network.key'), v.tailcatKey ?? '')}
         <div class="net-row">
-          <button id={`net-key-copy${s}`} onclick={() => copyKey(a.index, v.tailcatKey ?? '')}
-            >{t('network:Network.copy')}</button
+          <Button id={`net-key-copy${s}`} onclick={() => copyKey(a.index, v.tailcatKey ?? '')}
+            >{t('network:Network.copy')}</Button
           >
         </div>
-        <p class="net-note">
+        <Note>
           <T k="network:Network.key.note" params={{ allow: `tailcat serve --allow=${v.tailcatKey ?? ''} exit-node` }}
             >{#snippet code(text)}<code>{text}</code>{/snippet}</T
           >
-        </p>
+        </Note>
       </div>
       <div id={`net-room${s}`} class="net-group" hidden={!v.room}>
-        <label
-          >{t('network:Network.room.name')}<input
-            id={`net-room-name${s}`}
-            type="text"
-            readonly
-            spellcheck="false"
-            value={v.room?.name ?? ''}
-          /></label
-        >
+        {@render copyable(`net-room-name${s}`, t('network:Network.room.name'), v.room?.name ?? '')}
         <div class="net-row">
-          <button id={`net-room-name-copy${s}`} onclick={() => copyRoom(a.index, v.room?.name ?? '', false)}
-            >{t('network:Network.copy')}</button
-          ><button
+          <Button id={`net-room-name-copy${s}`} onclick={() => copyRoom(a.index, v.room?.name ?? '', false)}
+            >{t('network:Network.copy')}</Button
+          ><Button
             id={`net-room-link-copy${s}`}
             title={t('network:Network.room.copyLink.title')}
-            onclick={() => copyRoom(a.index, v.room?.link ?? '', true)}>{t('network:Network.room.copyLink')}</button
+            onclick={() => copyRoom(a.index, v.room?.link ?? '', true)}>{t('network:Network.room.copyLink')}</Button
           >
         </div>
-        {#if linkShown[a.index]}<label
-            >{t('network:Network.room.link')}<input
-              id={`net-room-link-value${s}`}
-              type="text"
-              readonly
-              spellcheck="false"
-              value={v.room?.link ?? ''}
-            /></label
-          >{/if}
-        <p class="net-note">{v.room?.incoming ? t('network:Network.room.note') : t('network:Network.room.note.off')}</p>
+        {#if linkShown[a.index]}{@render copyable(
+            `net-room-link-value${s}`,
+            t('network:Network.room.link'),
+            v.room?.link ?? '',
+          )}{/if}
+        <Note>{v.room?.incoming ? t('network:Network.room.note') : t('network:Network.room.note.off')}</Note>
       </div>
-      <p id={`net-menu-error${s}`} class="net-note net-menu-error" hidden={!errors[a.index]}>
+      <Note tone="error" id={`net-menu-error${s}`} hidden={!errors[a.index]}>
         {errors[a.index]?.headline}{#each errors[a.index]?.details ?? [] as d, k (k)}<br />{d}{/each}
-      </p>
+      </Note>
       <div id={`net-actions${s}`} class="net-actions">
-        {#if a.connection && !a.active && a.on}<button
+        {#if a.connection && !a.active && a.on}<Button
             id={`net-connect-now${s}`}
-            onclick={() => act(a.index, () => page.netConnect(a.index))}>{t('network:Network.connect')}</button
+            onclick={() => act(a.index, () => page.netConnect(a.index))}>{t('network:Network.connect')}</Button
           >{/if}
-        {#if a.connection && a.active && v.phase === 'error'}<button
+        {#if a.connection && a.active && v.phase === 'error'}<Button
             id={`net-retry${s}`}
             onclick={() =>
               act(a.index, async () => {
                 await page.netDisconnect(a.index);
                 await page.netConnect(a.index);
-              })}>{t('network:Network.retry')}</button
+              })}>{t('network:Network.retry')}</Button
           >{/if}
-        <button id={`net-setup${s}`} onclick={() => wizard(a.index)}
-          >{a.connection ? t('network:Network.change') : t('network:Network.setup')}</button
+        <Button id={`net-setup${s}`} onclick={() => wizard(a.index)}
+          >{a.connection ? t('network:Network.change') : t('network:Network.setup')}</Button
         >
-        <button
+        <Button
           id={`net-disconnect${s}`}
           hidden={!a.active}
-          onclick={() => act(a.index, () => page.netDisconnect(a.index))}>{t('network:Network.disconnect')}</button
+          onclick={() => act(a.index, () => page.netDisconnect(a.index))}>{t('network:Network.disconnect')}</Button
         >
-        <button
+        <Button
           id={`net-logout${s}`}
           title={t('network:Network.logout.title')}
           hidden={!a.active || a.connection?.kind !== 'tailnet'}
-          onclick={() => logout(a.index)}>{t('network:Network.logout')}</button
+          onclick={() => logout(a.index)}>{t('network:Network.logout')}</Button
         >
       </div>
-      <p id={`net-hint${s}`} class="net-note">{a.note ?? ''}</p>
+      <Note id={`net-hint${s}`}>{a.note ?? ''}</Note>
     </section>
   {/each}
 </Menu>
+
+<style>
+  /* An adapter's section: its state, its connection, what can be done; a rule between adapters. */
+  .net-adapter {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .net-adapter + .net-adapter {
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--border);
+  }
+  .net-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin: 0;
+    font-size: var(--text-md);
+    font-weight: var(--weight-bold);
+  }
+  .net-status {
+    margin: 0;
+    font-weight: var(--weight-bold);
+  }
+  .net-detail {
+    font-weight: var(--weight-normal);
+    color: var(--text-dim);
+    font-size: var(--text-sm);
+  }
+  /* Log in…: a link (it opens the login page in a tab), framed as a button in the accent. */
+  .net-login {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--control-h);
+    padding: 0 var(--space-4);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .net-login:hover {
+    background: var(--hover-bg);
+  }
+  .net-row,
+  .net-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+  .net-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+</style>

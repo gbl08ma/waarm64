@@ -10,6 +10,9 @@
 <script lang="ts">
   import Check from './ui/Check.svelte';
   import Menu from './ui/Menu.svelte';
+  import Button from './ui/Button.svelte';
+  import Note from './ui/Note.svelte';
+  import StatusDot from './ui/StatusDot.svelte';
   import { t } from '../i18n.ts';
   import { TYPED } from '../agent-frame.ts';
   import { page, ui } from './ui.svelte.ts';
@@ -61,68 +64,59 @@
   {title}
   bind:open
   panel
-  data-on={c.state === 'sharing' || undefined}
+  on={c.state === 'sharing'}
   data-state={c.state}
   data-permission={c.permission}
   data-stopped={c.stopped || undefined}
 >
-  {#snippet badge()}{#if marked}<span class="dot" aria-hidden="true"></span>{/if}{/snippet}
+  {#snippet badge()}{#if marked}<StatusDot tone="busy" aria-hidden="true" />{/if}{/snippet}
   {#if c.permission === 'prompt'}
-    <button
+    <Button
       id="clipboard-allow"
       title={t('clipboard:ClipboardMenu.allow.title')}
-      onclick={() => close(() => page.clipboardAsk())}>{t('clipboard:ClipboardMenu.allow')}</button
+      onclick={() => close(() => page.clipboardAsk())}>{t('clipboard:ClipboardMenu.allow')}</Button
     >
   {:else if c.permission === 'denied'}
-    <p class="hint warn" id="clipboard-denied">{t('clipboard:ClipboardMenu.denied')}</p>
+    <Note tone="warn" id="clipboard-denied">{t('clipboard:ClipboardMenu.denied')}</Note>
   {:else if c.permission === 'granted' && !c.stopped}
-    <p class="hint" id="clipboard-granted">{t('clipboard:ClipboardMenu.granted')}</p>
+    <Note id="clipboard-granted">{t('clipboard:ClipboardMenu.granted')}</Note>
   {/if}
-  {#if c.stopped}<p class="hint warn" id="clipboard-stopped">{t('clipboard:ClipboardMenu.stopped')}</p>{/if}
+  {#if c.stopped}<Note tone="warn" id="clipboard-stopped">{t('clipboard:ClipboardMenu.stopped')}</Note>{/if}
   <Check
     id="clipboard-on"
     checked={c.state !== 'paused'}
     onchange={(on) => page.clipboardPause(!on)}
     title={t('clipboard:ClipboardMenu.share.title')}>{t('clipboard:ClipboardMenu.share')}</Check
   >
-  {#if c.state === 'waiting'}<p class="hint" id="clipboard-waiting">
+  {#if c.state === 'waiting'}<Note id="clipboard-waiting">
       {t('clipboard:ClipboardMenu.title.waiting')}
-    </p>{/if}
-  <button
+    </Note>{/if}
+  <Button
     id="clipboard-send"
     disabled={c.state !== 'sharing'}
     title={t('clipboard:ClipboardMenu.send.title')}
-    onclick={() => act(() => page.clipboardSend())}>{t('clipboard:ClipboardMenu.send')}</button
+    onclick={() => act(() => page.clipboardSend())}>{t('clipboard:ClipboardMenu.send')}</Button
   >
-  <button
+  <Button
     id="clipboard-type"
     disabled={!c.canType}
     title={t('clipboard:ClipboardMenu.type.title')}
-    onclick={() => act(() => page.clipboardType(), true)}>{t('clipboard:ClipboardMenu.type')}</button
+    onclick={() => act(() => page.clipboardType(), true)}>{t('clipboard:ClipboardMenu.type')}</Button
   >
-  <button
+  <Button
     id="clipboard-screen"
     title={t('clipboard:ClipboardMenu.screen.title')}
-    onclick={() => act(() => page.clipboardScreen())}>{t('clipboard:ClipboardMenu.screen')}</button
+    onclick={() => act(() => page.clipboardScreen())}>{t('clipboard:ClipboardMenu.screen')}</Button
   >
-  {#if c.failed === 'send'}<p class="hint warn" id="clipboard-failed">{t('clipboard:ClipboardMenu.failed.send')}</p>
-  {:else if c.failed === 'type'}<p class="hint warn" id="clipboard-failed">{t('clipboard:ClipboardMenu.failed')}</p>
-  {:else if c.failed === 'screen'}<p class="hint warn" id="clipboard-failed">
+  {#if c.failed === 'send'}<Note tone="warn" id="clipboard-failed">{t('clipboard:ClipboardMenu.failed.send')}</Note>
+  {:else if c.failed === 'type'}<Note tone="warn" id="clipboard-failed">{t('clipboard:ClipboardMenu.failed')}</Note>
+  {:else if c.failed === 'screen'}<Note tone="warn" id="clipboard-failed">
       {t('clipboard:ClipboardMenu.screen.failed')}
-    </p>{/if}
-  {#if c.typed === TYPED.NOT_TEXT}<p class="hint warn" id="clipboard-not-text">
+    </Note>{/if}
+  {#if c.typed === TYPED.NOT_TEXT}<Note tone="warn" id="clipboard-not-text">
       {t('clipboard:ClipboardMenu.notText')}
-    </p>
-  {:else if c.typed === TYPED.REFUSED || c.typed === TYPED.DROPPED}<p class="hint warn" id="clipboard-untyped">
+    </Note>
+  {:else if c.typed === TYPED.REFUSED || c.typed === TYPED.DROPPED}<Note tone="warn" id="clipboard-untyped">
       {t('clipboard:ClipboardMenu.untyped')}
-    </p>{/if}
+    </Note>{/if}
 </Menu>
-
-<style>
-  .dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--busy);
-  }
-</style>

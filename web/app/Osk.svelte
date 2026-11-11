@@ -132,8 +132,8 @@
   const labels = $derived(layout === 'compact' ? PAGE_KEYS[page] : FULL);
 
   // Where it is and how wide (CSS pixels; a width per layout), kept in the window: its bar, its padding (no top one)
-  // and its border.
-  const PAD = 6,
+  // and its border. The padding is the style's too (`--pad`).
+  const PAD = 8,
     BORDER = 1;
   const DIMS = {
     full: { cols: WIDTH, rows: HEIGHT, bar: 22, min: 320 },
@@ -254,6 +254,7 @@
   style:top={px(y)}
   style:width={px(w)}
   style:--u={px(u)}
+  style:--pad={px(PAD)}
   onmousedown={(e) => e.preventDefault()}
   oncontextmenu={(e) => e.preventDefault()}
 >
@@ -330,11 +331,11 @@
     position: fixed;
     z-index: 1;
     box-sizing: border-box;
-    padding: 0 6px 6px;
-    background: color-mix(in srgb, var(--panel) 92%, transparent);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    box-shadow: 0 6px 24px #0009;
+    padding: 0 var(--pad) var(--pad);
+    background: color-mix(in srgb, var(--surface-raised) 92%, transparent);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-menu);
     user-select: none;
     -webkit-user-select: none;
     touch-action: none;
@@ -343,11 +344,11 @@
   .bar {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--space-1);
     cursor: move;
-    color: var(--dim);
-    font-size: 12px;
-    padding-left: 4px;
+    color: var(--text-dim);
+    font-size: var(--text-sm);
+    padding-left: var(--space-2);
     container-type: inline-size;
   }
   .title {
@@ -369,29 +370,29 @@
   }
   .tabs {
     display: flex;
-    gap: 2px;
+    gap: var(--space-1);
     height: 100%;
-    padding: 2px 0;
+    padding: var(--space-1) 0;
     box-sizing: border-box;
   }
   .tabs button {
     min-width: 36px;
-    padding: 0 8px;
-    color: var(--dim);
+    padding: 0 var(--space-3);
+    color: var(--text-dim);
     background: none;
     border: 1px solid transparent;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font: inherit;
     cursor: pointer;
   }
   .tabs button:hover {
-    background: var(--hover);
+    background: var(--hover-bg);
     color: var(--text);
   }
   .tabs button[aria-selected='true'] {
     color: var(--text);
-    background: var(--bar);
-    border-color: var(--line);
+    background: var(--surface-bar);
+    border-color: var(--border);
   }
   .layout {
     display: grid;
@@ -400,14 +401,14 @@
     height: 20px;
     margin-left: auto;
     padding: 0;
-    color: var(--dim);
+    color: var(--text-dim);
     background: none;
     border: 0;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
   }
   .layout:hover {
-    background: var(--hover);
+    background: var(--hover-bg);
     color: var(--text);
   }
   .grip {
@@ -415,13 +416,13 @@
     place-items: center;
     width: 28px;
     height: 20px;
-    margin-right: 2px;
-    border-radius: 4px;
+    margin-right: var(--space-1);
+    border-radius: var(--radius-sm);
     cursor: ew-resize;
     touch-action: none;
   }
   .grip:hover {
-    background: var(--hover);
+    background: var(--hover-bg);
     color: var(--text);
   }
   .close {
@@ -430,14 +431,14 @@
     width: 22px;
     height: 20px;
     padding: 0;
-    color: var(--dim);
+    color: var(--text-dim);
     background: none;
     border: 0;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
   }
   .close:hover {
-    background: var(--hover);
+    background: var(--hover-bg);
     color: var(--text);
   }
   .keys {
@@ -447,9 +448,9 @@
     position: absolute;
     box-sizing: border-box;
     margin: 0;
-    border: 1px solid var(--line);
+    border: 1px solid var(--border);
     border-radius: calc(var(--u) * 0.12);
-    background: var(--bar);
+    background: var(--surface-bar);
     color: var(--text);
     display: flex;
     flex-direction: column;
@@ -470,8 +471,8 @@
     font-size: calc(var(--u) * 0.27);
   }
   .key .top {
-    color: var(--dim);
-    font-size: 0.85em;
+    color: var(--text-dim);
+    font-size: calc(var(--u) * 0.29); /* 0.85 of a key's legend */
   }
   /* The AltGr character, as a keyboard prints it: small, at the bottom right. */
   .key .alt {
@@ -479,7 +480,7 @@
     right: calc(var(--u) * 0.1);
     bottom: calc(var(--u) * 0.04);
     color: var(--accent);
-    font-size: 0.7em;
+    font-size: calc(var(--u) * 0.24); /* 0.7 of a key's legend */
   }
   /* A lock key's LED, as a keyboard's in its key: dim off, lit on. */
   .key[data-led]::after {
@@ -490,18 +491,18 @@
     width: calc(var(--u) * 0.12);
     height: calc(var(--u) * 0.12);
     border-radius: 50%;
-    background: var(--line);
+    background: var(--border);
   }
   .key[data-led='on']::after {
-    background: var(--ok);
-    box-shadow: 0 0 calc(var(--u) * 0.12) var(--ok);
+    background: var(--status-ok);
+    box-shadow: 0 0 calc(var(--u) * 0.12) var(--status-ok);
   }
   .key[data-state='held'] {
-    background: var(--pressed);
+    background: var(--pressed-bg);
     border-color: var(--accent);
   }
   .key[data-state='latched'] {
-    background: color-mix(in srgb, var(--accent) 35%, var(--bar));
+    background: color-mix(in srgb, var(--accent) 35%, var(--surface-bar));
     border-color: var(--accent);
   }
 </style>

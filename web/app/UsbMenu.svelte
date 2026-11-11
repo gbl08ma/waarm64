@@ -7,6 +7,8 @@
 <script lang="ts">
   import AddUsb from './AddUsb.svelte';
   import Menu from './ui/Menu.svelte';
+  import Button from './ui/Button.svelte';
+  import Note from './ui/Note.svelte';
   import UsbProblems from './UsbProblems.svelte';
   import { t } from '../i18n.ts';
   import { deviceName, errorView, type ErrorView } from './usb-ports.ts';
@@ -68,8 +70,8 @@
     <div class="offer" data-usb-offer={o.id}>
       <p>{o.text}</p>
       <div class="row">
-        <button class="primary" onclick={() => page.usbOffer(o.id, true)}>{o.label}</button><button
-          onclick={() => page.usbOffer(o.id, false)}>{t('usb:UsbMenu.notNow')}</button
+        <Button variant="primary" onclick={() => page.usbOffer(o.id, true)}>{o.label}</Button><Button
+          onclick={() => page.usbOffer(o.id, false)}>{t('usb:UsbMenu.notNow')}</Button
         >
       </div>
     </div>
@@ -89,12 +91,14 @@
       <span class="dim">{where(v, c)}</span>
     </label>
     {#if on && c?.entry === v.entry.id && c.problems?.length}
-      <p class="warn" data-usb-problems={v.entry.id} title={c.problems.map((w) => w.text).join('\n\n')}>
-        {t('usb:UsbMenu.problems')}
-      </p>
+      <div class="problems">
+        <Note tone="warn" data-usb-problems={v.entry.id} title={c.problems.map((w) => w.text).join('\n\n')}>
+          {t('usb:UsbMenu.problems')}
+        </Note>
+      </div>
     {/if}
   {:else}
-    <p class="hint">{t('usb:UsbMenu.none')}</p>
+    <Note>{t('usb:UsbMenu.none')}</Note>
   {/each}
   {#if ui.usb.hasPads}
     <p class="head">{t('usb:UsbMenu.pads')}</p>
@@ -111,7 +115,7 @@
         <span class="dim">{at >= 0 ? t('usb:UsbMenu.where.connector', { connector: at + 1 }) : ''}</span>
       </label>
     {:else}
-      <p class="hint">{t('usb:UsbMenu.pads.none')}</p>
+      <Note>{t('usb:UsbMenu.pads.none')}</Note>
     {/each}
   {/if}
   {#if ui.usb.zero}
@@ -125,36 +129,37 @@
     >
   {/if}
   {#if error}<div class="error" role="alert">
-      {error.text}{#if error.words}<UsbProblems words={error.words} />{/if}
+      <Note tone="error">{error.text}</Note>{#if error.words}<UsbProblems words={error.words} />{/if}
     </div>{/if}
   <div class="row">
-    <button
+    <Button
       id="usb-add"
       onclick={() => {
         open = false;
         adding = true;
-      }}>{t('usb:UsbMenu.add')}</button
+      }}>{t('usb:UsbMenu.add')}</Button
     >
-    {#if ui.current}<button
+    {#if ui.current}<Button
         onclick={() => {
           open = false;
           page.openMachines('usb', ui.current);
-        }}>{t('usb:UsbMenu.all')}</button
+        }}>{t('usb:UsbMenu.all')}</Button
       >{/if}
   </div>
-  {#if !ui.usb.running}<p class="hint">{t('usb:UsbMenu.stopped')}</p>{/if}
+  {#if !ui.usb.running}<Note>{t('usb:UsbMenu.stopped')}</Note>{/if}
 </Menu>
 {#if adding}<AddUsb machine={ui.current} name={ui.title} close={() => (adding = false)} />{/if}
 
 <style>
+  /* An offer (a device that appeared, a permission to give): framed in the warning's colors, it asks. */
   .offer {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 8px;
-    border: 1px solid #5c4a1d;
-    border-radius: 6px;
-    background: #2a2412;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--warn-border);
+    border-radius: var(--radius);
+    background: var(--warn-bg);
   }
   .offer p {
     margin: 0;
@@ -163,55 +168,48 @@
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-3);
   }
   .name {
     overflow-wrap: anywhere;
   }
   .dim {
-    color: var(--dim);
-    font-size: 12px;
+    color: var(--text-dim);
+    font-size: var(--text-sm);
   }
   .row {
     display: flex;
-    gap: 6px;
+    gap: var(--space-3);
     flex-wrap: wrap;
   }
+  /* The number of attached devices, on the menu's button: the primary button's color. */
   .count {
     min-width: 14px;
-    padding: 0 4px;
-    border-radius: 7px;
-    background: #3b6db3;
-    color: #fff;
-    font-size: 10px;
+    padding: 0 var(--space-2);
+    border-radius: 999px;
+    background: var(--primary-border);
+    color: var(--primary-fg);
+    font-size: var(--text-xs);
     line-height: 14px;
     text-align: center;
   }
   .head {
-    margin: 4px 0 0;
-    color: var(--dim);
-    font-size: 12px;
+    margin: var(--space-2) 0 0;
+    color: var(--text-dim);
+    font-size: var(--text-sm);
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
-  .warn {
-    color: #ffb36b;
-    font-size: 12px;
-    margin: -4px 0 0 24px;
+  /* Under its device's line, past the box. */
+  .problems {
     max-width: 360px;
+    padding-left: var(--space-6);
   }
   .error {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    color: #ff8f8f;
-    white-space: pre-wrap;
-    margin: 0;
+    gap: var(--space-3);
     max-width: 360px;
-  }
-  .primary {
-    background: #24406b;
-    border-color: #3b6db3;
-    color: #fff;
+    color: var(--error-fg);
   }
 </style>

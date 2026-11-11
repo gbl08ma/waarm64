@@ -9,12 +9,13 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 
 | File | What |
 |---|---|
-| `web/app/index.html` | the page's stylesheet and its module; the markup is the components' |
+| `web/app/index.html` | the page's shell: the theme's stylesheets, its module, and the fallback that says the scripts didn't load (its few rules); the markup and its styles are the components' |
+| `web/app/theme/tokens.css`, `web/app/theme/base.css` | the design tokens (colors, space, text, radii, shadows, control heights, by role) and the element defaults (the reset, form controls, `.sr`): the page's only global styles ([frontend-code.md](frontend-code.md) §1) |
+| `web/app/ui/` | the primitives every component is built of ([frontend-code.md](frontend-code.md) §2): `Button`, `Card`/`CardList`, `Note`, `Field`/`Fields`, `Check`, `Radio`, `Choice`, `ErrorBanner`, `StatusDot`, `NameInput`, `Modal`, `Pane`, `Menu`, `Icon` |
 | `vite.config.ts`, `tools/serve.ts`, `tools/stamp.ts`, `web/app/public/` | the build and the servers (below, "The build"), the build stamp, the static copy's files copied as they are |
-| `web/app/App.svelte`, `Toolbar.svelte`, `Menu.svelte`, `Icon.svelte`, `Sound.svelte`, `Network.svelte`, `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the status line, the questions |
+| `web/app/App.svelte`, `Toolbar.svelte`, `Sound.svelte`, `Network.svelte`, `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the status line, the questions |
 | `web/app/osk.ts`, `Osk.svelte` | the on-screen keyboard (below, "The on-screen keyboard"): its layout and keys, the overlay |
 | `web/app/ui.svelte.ts`, `web/app/ask.svelte.ts`, `web/app/settings.ts` | the page's state (`ui`) and actions (`page`), the questions (`ask`), what's remembered per browser |
-| `web/app/Check.svelte` | a checkbox and its words, with its fine print under them when it has some: the page's checkboxes (settings, rows, menus, the Network wizard; not the USB menu's device rows) |
 | `web/app/statusbar.ts`, `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` | the status bar, its elements and the Preferences' editor (below, "The status bar") |
 | `web/app/icons.ts` | the icons (Tabler's, below, "Icons") |
 | `web/app/main.ts` | the controller: runs the machine (starts and stops machine workers, the canvas's scaling, xterm.js), writes `ui`, provides `page` |
@@ -152,18 +153,26 @@ main.ts fills in before the first start. Records the components read come from t
 the hidden file inputs `#open-disk-input`, `#load-snapshot-input`, `#load-changes-input`). **Sizes are in binary units**
 everywhere on the page (KiB, MiB, GiB: `bytes.ts` `bytesText`), as the sizes users enter are (a disk in MiB, RAM).
 
-**Styles** are scoped to the component that writes them, and nothing warns when they don't arrive: the Machines page's
-`.settings`, `.row`, `.meta` and button rules reach only its own markup (its snippets too), so a tab's settings
-stay in `MachinesPage.svelte` and a child component holds a list with styles of its own (`Usb.svelte`, `Folders.svelte`).
+**Styles** are the components': each `<style>` is scoped to the component that writes it and reaches only its own
+markup (and the markup it passes to a child as a snippet, which is still its own), never a child's insides. What every
+component shares comes from two places ([frontend-code.md](frontend-code.md) §1–§2): the **tokens** and element
+defaults of `theme/` (`index.html` links them, so the scripts' fallback has them too), and the **primitives** of `ui/`,
+which carry the look of a button, a row of a list, a note, a field, a choice, an error bar. A component builds with them
+(`<Button variant="primary">`, `<CardList>`/`<Card>`, `<Note tone="warn">`, `<Fields>`/`<Field>`) and styles only its
+own layout, on the tokens; a tab or a pane can be a component of its own and still look like the rest. A parent places
+a child with its own wrapper, or passes a CSS custom property (`--card-bg`: Modal sets it, so a dialog's rows take the
+page's background); `class` on a primitive is for a test's hook. Stylelint holds values to the tokens
+([frontend-code.md](frontend-code.md) §7).
 Every pane on the right of the Machines page (a machine, Disks, Shared folders, Connections, Preferences, About) is a
-`Pane.svelte`: its head (title, small line, the `actions` snippet's buttons), its tabs (`tabs`, `tab`, `ontab`) and
+`ui/Pane.svelte`: its head (title, small line, the `actions` snippet's buttons), its tabs (`tabs`, `tab`, `ontab`) and
 its body (`.tab`), so a new pane looks like the others by using it. The title is at one place whether the head has buttons
-or not (its line is a button's height, `--row`), a long small line wraps under the title and leaves the buttons beside it,
+or not (its line is a button's height, `--control-h`), a long small line wraps under the title and leaves the buttons beside it,
 and the body starts at one place under a head of one line (`tests/page-layout.test.ts`).
-Dialogs are built on `Modal.svelte` (Add a disk…, Add a device…, the Network and Folder wizards, a disk's Overlays,
-Attach to a machine; the page's questions are `Ask.svelte`'s): the shell, its title, its row of buttons and the rules its
-content shares (notes, errors, labels, choices, lists of rows, the primary button), so a new dialog looks like the
-others by using it; `index.html` keeps the wizards' choices and what's particular to the Network and Folder wizards.
+Dialogs are built on `ui/Modal.svelte` (Add a disk…, Add a device…, the Network and Folder wizards, a disk's Overlays,
+Attach to a machine; the page's questions are `Ask.svelte`'s): the shell, its title, its row of buttons (`buttons` at
+the end, `back` at the start) and a column for its content, which is made of the primitives (Note, Field, Choice, Card,
+Button), so a new dialog looks like the others by using them. The wizards' particular layout (the Network wizard's
+sub-steps and disclosures) is in their own components.
 A disk in a list is `DiskInfo.svelte` (its kind's icon, name and line), and a disk's kind in words and icon is
 `disk-kind.ts`.
 
@@ -205,7 +214,7 @@ off, and Pointer or Raw, remembered per browser; the button looks pressed while 
 offers of a device that just appeared or has no permission here yet, Add a device…; [usb.md](usb.md) "The page"), **Folders**,
 **Clipboard** (below), and for a transient machine (a test's `?machine=`) the **Machine** menu (vCPUs, RAM, graphics);
 a stored machine's are its Settings. The power state (Booting, Running, Powered off…) is the status bar's first item
-by default (below, "The status bar"). Menus (`Menu.svelte`) keep the `<details>`/`<summary>` shape, close on a click
+by default (below, "The status bar"). Menus (`ui/Menu.svelte`) keep the `<details>`/`<summary>` shape, close on a click
 elsewhere and open under their right edge (a page's Export menus under their left).
 
 **Clipboard** (`ClipboardMenu.svelte`, [plans/clipboard.md](plans/clipboard.md) §4–§5; the logic is
@@ -260,7 +269,7 @@ on the name). What the page does with it:
 
 Tabler Icons' outline set (MIT), from the npm package `@tabler/icons-svelte-runes` (a component per icon). `icons.ts`
 imports the ones the page uses by name (`@tabler/icons-svelte-runes/icons/<name>`: one module each, so the dev server
-loads only those and the build carries only those) into `ICONS`; `Icon.svelte` draws one by name (`IconName`, which
+loads only those and the build carries only those) into `ICONS`; `ui/Icon.svelte` draws one by name (`IconName`, which
 the status bar's and dialogs' tables use) at 1.75 stroke, `currentColor`. A new icon is an import and an entry in
 `icons.ts`; icons aren't drawn by hand. The license reaches the static copy in `THIRD-PARTY-LICENSES.md`.
 
@@ -302,7 +311,7 @@ tests), `StatusPiece.svelte` an element's pieces, `StatusEditor.svelte` the Pref
   within 8 px: moving first scrolls the page, and the drag's touchmoves are cancelled so the page stays put under
   it). The palette under it adds an element at the end on a click, where it's dropped on a drag. Restore defaults forgets the kept list.
 - **In full screen:** off by default (the machine alone, edge to edge: full screen is `<main>`'s); Preferences' [Show the
-  status bar in full screen](ui:machines:MachinesPage.statusFullscreen) (`statusFullscreen`) makes it the page's, without its toolbar and message bar (index.html).
+  status bar in full screen](ui:machines:MachinesPage.statusFullscreen) (`statusFullscreen`) makes it the page's, without its toolbar and message bar (their components' `body:fullscreen` rules).
 - **Per-vCPU bars** are drawn against the run's highest vCPU MIPS so far (`cpuPeak`): a fixed scale wouldn't fit
   every host and guest, whose rates differ by far more than the bars could show (decided 2026-11-09).
 - **Costs:** none to the emulation: the per-vCPU steps were counted already; the disk, adapter and USB bytes are one add per

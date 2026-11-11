@@ -3,7 +3,10 @@
   (settings, disks, overlays, snapshots). Icons with tooltips; the main gates (Machines, Start) also have their names.
 -->
 <script lang="ts">
-  import Icon from './ui/Icon.svelte';
+  import Button from './ui/Button.svelte';
+  import Field from './ui/Field.svelte';
+  import Note from './ui/Note.svelte';
+  import Radio from './ui/Radio.svelte';
   import Menu from './ui/Menu.svelte';
   import Check from './ui/Check.svelte';
   import ClipboardMenu from './ClipboardMenu.svelte';
@@ -108,60 +111,63 @@
 
 <header class="toolbar">
   <h1>{t('toolbar:Toolbar.name')}</h1>
-  <button
+  <Button
+    variant="tool"
+    labelled
+    icon="server-2"
     id="machines-open"
-    class="tool labelled"
     aria-pressed={ui.machinesOpen}
     title={t('toolbar:Toolbar.machines.title')}
     onclick={() => page.openMachines()}
   >
-    <Icon name="server-2" /><span class="label">{t('toolbar:Toolbar.machines')}</span>
-  </button>
+    {t('toolbar:Toolbar.machines')}
+  </Button>
   <span id="machine" title={ui.title}>{ui.title}</span>
   <span class="sep"></span>
-  <button
+  <Button
+    variant="tool"
+    labelled
+    icon={startAs === 'restart' ? 'refresh' : 'player-play'}
     id="restart"
-    class="tool labelled"
     hidden={ui.cantRun}
     disabled={ui.busy}
     title={t(START[startAs].title)}
     onclick={() => page.restart()}
   >
-    <Icon name={startAs === 'restart' ? 'refresh' : 'player-play'} /><span class="label">{t(START[startAs].label)}</span
-    >
-  </button>
-  <button
+    {t(START[startAs].label)}
+  </Button>
+  <Button
+    variant="tool"
+    icon="player-stop"
     id="power-off"
-    class="tool"
     hidden={ui.cantRun || !running}
     disabled={ui.busy}
     aria-label={t('toolbar:Toolbar.powerOff')}
     title={t('toolbar:Toolbar.powerOff.title')}
     onclick={() => page.powerOffAsked()}
-  >
-    <Icon name="player-stop" />
-  </button>
-  <button
+  />
+  <Button
+    variant="tool"
+    icon="zzz"
     id="suspend"
-    class="tool"
     hidden={!ui.hasOverlay || ui.cantRun}
     disabled={!canSnapshot}
     aria-label={t('toolbar:Toolbar.suspend')}
     title={t('toolbar:Toolbar.suspend.title')}
     onclick={() => page.suspend()}
-  >
-    <Icon name="zzz" />
-  </button>
+  />
   <span class="sep"></span>
-  <button
+  <Button
+    variant="tool"
+    labelled
+    icon="history-toggle"
     id="save-snapshot"
-    class="tool labelled"
     disabled={!canSnapshot}
     title={ui.current ? t('toolbar:Toolbar.snapshot.title') : t('toolbar:Toolbar.snapshot.title.file')}
     onclick={() => page.takeSnapshot()}
   >
-    <Icon name="history-toggle" /><span class="label">{t('toolbar:Toolbar.snapshot')}</span>
-  </button>
+    {t('toolbar:Toolbar.snapshot')}
+  </Button>
   <Menu
     id="load-snapshot"
     icon="history"
@@ -170,9 +176,10 @@
     disabled={ui.busy}
   >
     {#if ui.current}
-      <div class="label">{t('toolbar:Toolbar.load.latest')}</div>
+      <div class="heading">{t('toolbar:Toolbar.load.latest')}</div>
       {#each latest as s (s.id)}
-        <button
+        <Button
+          variant="item"
           data-snapshot={s.id}
           disabled={s.orphaned}
           title={s.orphaned
@@ -184,37 +191,39 @@
           }}
         >
           <span>{s.name}</span><span class="dim">{new Date(s.created).toLocaleString()}</span>
-        </button>
+        </Button>
       {:else}
-        <p class="hint">{t('toolbar:Toolbar.load.none')}</p>
+        <div class="hint"><Note>{t('toolbar:Toolbar.load.none')}</Note></div>
       {/each}
       <hr />
-      <button
+      <Button
+        variant="item"
         onclick={() => {
           loadOpen = false;
           page.openMachines('snapshots', ui.current);
-        }}>{t('toolbar:Toolbar.load.all')}</button
+        }}>{t('toolbar:Toolbar.load.all')}</Button
       >
     {/if}
-    <button onclick={loadFile}>{t('toolbar:Toolbar.load.file')}</button>
+    <Button variant="item" onclick={loadFile}>{t('toolbar:Toolbar.load.file')}</Button>
   </Menu>
   <span class="sep"></span>
   <span class="views" role="group" aria-label={t('toolbar:Toolbar.views')}>
     {#each VIEWS as { v, icon, title } (v)}
-      <button
-        class="tool"
+      <Button
+        variant="tool"
+        {icon}
         data-view-button={v}
         aria-pressed={ui.view === v}
         aria-label={title}
         {title}
-        onclick={() => page.setView(v)}><Icon name={icon} /></button
-      >
+        onclick={() => page.setView(v)}
+      />
     {/each}
   </span>
   {#if ui.hasGpu}
     <Menu id="screen-menu" icon="aspect-ratio" title={t('toolbar:Toolbar.screen.title')} panel>
-      <label
-        >{t('toolbar:Toolbar.screen.size')}<select
+      <Field label={t('toolbar:Toolbar.screen.size')}
+        ><select
           id="screen-size"
           bind:value={screenSize}
           onchange={() => {
@@ -224,7 +233,7 @@
         >
           <option value="fit">{t('toolbar:Toolbar.screen.fit')}</option><option value="1024x768">1024×768</option
           ><option value="1280x800">1280×800</option><option value="1920x1080">1920×1080</option>
-        </select></label
+        </select></Field
       >
       <Check
         id="screen-hidpi"
@@ -235,44 +244,51 @@
         }}
         title={t('toolbar:Toolbar.screen.hidpi.title')}>{t('toolbar:Toolbar.screen.hidpi')}</Check
       >
-      <p class="hint">{t('toolbar:Toolbar.screen.hint')}</p>
+      <Note>{t('toolbar:Toolbar.screen.hint')}</Note>
     </Menu>
   {/if}
   <Menu id="keys" icon="keyboard" title={t('toolbar:Toolbar.keys.title')} bind:open={keysOpen}>
-    <button
+    <Button
+      variant="item"
       id="osk-toggle"
       aria-pressed={ui.osk}
       title={t('toolbar:Toolbar.keys.osk.title')}
       onclick={() => {
         keysOpen = false;
         page.showOsk(!ui.osk);
-      }}>{ui.osk ? t('toolbar:Toolbar.keys.osk.hide') : t('toolbar:Toolbar.keys.osk')}</button
+      }}>{ui.osk ? t('toolbar:Toolbar.keys.osk.hide') : t('toolbar:Toolbar.keys.osk')}</Button
     >
     <hr />
     <div class="combos">
       {#each COMBOS as c (c.keys)}
-        <button data-chord={c.keys} title={t(c.title)} onclick={() => chord(c.keys)}>{t(c.label)}</button>
+        <Button variant="item" align="center" data-chord={c.keys} title={t(c.title)} onclick={() => chord(c.keys)}
+          >{t(c.label)}</Button
+        >
       {/each}
-      <button
+      <Button
+        variant="item"
+        align="center"
         id="hold-esc"
         title={t('toolbar:Toolbar.keys.holdEsc.title')}
         onclick={() => {
           keysOpen = false;
           page.holdKey('Escape', HOLD_ESC_MS);
-        }}>{t('toolbar:Toolbar.keys.holdEsc')}</button
+        }}>{t('toolbar:Toolbar.keys.holdEsc')}</Button
       >
     </div>
-    <button data-chord="ControlLeft AltLeft Delete" onclick={() => chord('ControlLeft AltLeft Delete')}
-      >{t('toolbar:Toolbar.keys.ctrlAltDel')}</button
+    <Button variant="item" data-chord="ControlLeft AltLeft Delete" onclick={() => chord('ControlLeft AltLeft Delete')}
+      >{t('toolbar:Toolbar.keys.ctrlAltDel')}</Button
     >
-    <div class="label">{t('toolbar:Toolbar.keys.ctrlAlt')}</div>
+    <div class="heading">{t('toolbar:Toolbar.keys.ctrlAlt')}</div>
     <div class="fkeys" id="fkeys">
       {#each Array.from({ length: 12 }, (_, k) => k + 1) as k (k)}
-        <button
+        <Button
+          variant="item"
+          align="center"
           data-chord={`ControlLeft AltLeft F${k}`}
           title={t('toolbar:Toolbar.keys.fkey.title', { n: k })}
           aria-label={t('toolbar:Toolbar.keys.fkey.title', { n: k })}
-          onclick={() => chord(`ControlLeft AltLeft F${k}`)}>{t('toolbar:Toolbar.keys.fkey', { n: k })}</button
+          onclick={() => chord(`ControlLeft AltLeft F${k}`)}>{t('toolbar:Toolbar.keys.fkey', { n: k })}</Button
         >
       {/each}
     </div>
@@ -285,7 +301,7 @@
       : ui.mouseLock
         ? t('toolbar:Toolbar.mouse.title.on')
         : t('toolbar:Toolbar.mouse.title')}
-    data-on={ui.mouseLock || undefined}
+    on={ui.mouseLock}
     panel
   >
     <Check
@@ -294,40 +310,33 @@
       onchange={(on) => page.setMouseLock(on)}
       title={t('toolbar:Toolbar.mouse.lock.title')}>{t('toolbar:Toolbar.mouse.lock')}</Check
     >
-    <label class="row" title={t('toolbar:Toolbar.mouse.pointer.title')}
-      ><input
-        type="radio"
-        name="mouse-lock-mode"
-        value="pointer"
-        data-mode="pointer"
-        checked={ui.mouseLockMode === 'pointer'}
-        onchange={() => page.setMouseLock(ui.mouseLock, 'pointer')}
-      />
-      {t('toolbar:Toolbar.mouse.pointer')}</label
+    <Radio
+      name="mouse-lock-mode"
+      value="pointer"
+      data-mode="pointer"
+      title={t('toolbar:Toolbar.mouse.pointer.title')}
+      checked={ui.mouseLockMode === 'pointer'}
+      onchange={() => page.setMouseLock(ui.mouseLock, 'pointer')}>{t('toolbar:Toolbar.mouse.pointer')}</Radio
     >
-    <label
-      class="row"
+    <Radio
+      name="mouse-lock-mode"
+      value="raw"
+      data-mode="raw"
       title={ui.hasMouse ? t('toolbar:Toolbar.mouse.raw.title') : t('toolbar:Toolbar.mouse.raw.title.noMouse')}
-      ><input
-        type="radio"
-        name="mouse-lock-mode"
-        value="raw"
-        data-mode="raw"
-        checked={ui.mouseLockMode === 'raw'}
-        disabled={!ui.hasMouse}
-        onchange={() => page.setMouseLock(ui.mouseLock, 'raw')}
-      />
-      {t('toolbar:Toolbar.mouse.raw')}</label
+      checked={ui.mouseLockMode === 'raw'}
+      disabled={!ui.hasMouse}
+      onchange={() => page.setMouseLock(ui.mouseLock, 'raw')}>{t('toolbar:Toolbar.mouse.raw')}</Radio
     >
-    <p class="hint">{ui.hasMouse ? t('toolbar:Toolbar.mouse.hint') : t('toolbar:Toolbar.mouse.hint.noMouse')}</p>
+    <Note>{ui.hasMouse ? t('toolbar:Toolbar.mouse.hint') : t('toolbar:Toolbar.mouse.hint.noMouse')}</Note>
   </Menu>
-  <button
+  <Button
+    variant="tool"
+    icon="maximize"
     id="fullscreen"
-    class="tool"
     aria-label={t('toolbar:Toolbar.fullscreen')}
     title={t('toolbar:Toolbar.fullscreen.title')}
-    onclick={() => page.fullscreen()}><Icon name="maximize" /></button
-  >
+    onclick={() => page.fullscreen()}
+  />
   <span class="sep"></span>
   <Sound {audio} />
   {#if ui.hasNetwork}<Network {net} />{/if}
@@ -336,39 +345,101 @@
   {#if ui.clipboard.on && running}<ClipboardMenu />{/if}
   {#if !ui.current}
     <Menu id="machine-menu" icon="cpu" title={t('toolbar:Toolbar.size.title')} bind:open={sizeOpen} panel>
-      <label
-        >{t('toolbar:Toolbar.size.cpus')}<select id="machine-cpus" bind:value={ncpus}
+      <Field label={t('toolbar:Toolbar.size.cpus')}
+        ><select id="machine-cpus" bind:value={ncpus}
           >{#each ui.size.cpuChoices as n (n)}<option value={n}>{t('toolbar:Toolbar.size.cpu', { count: n })}</option
             >{/each}</select
-        ></label
+        ></Field
       >
-      <label
-        >{t('toolbar:Toolbar.size.ram')}<select id="machine-ram" bind:value={ramMiB}
+      <Field label={t('toolbar:Toolbar.size.ram')}
+        ><select id="machine-ram" bind:value={ramMiB}
           >{#each ui.size.ramChoices as n (n)}<option value={n}>{ramText(n)}</option>{/each}</select
-        ></label
+        ></Field
       >
-      {#if numa}<p class="hint warn" id="machine-numa">{text(numa)}</p>{/if}
+      {#if numa}<Note tone="warn" id="machine-numa">{text(numa)}</Note>{/if}
       {#if ui.hasGpu}
-        <label id="machine-gpu-label" title={t('toolbar:Toolbar.size.gpu.title')}
-          >{t('toolbar:Toolbar.size.gpu')}<select
-            id="machine-gpu"
-            bind:value={gpu}
-            disabled={!!ui.size.gpuLock}
-            title={ui.size.gpuLock}
+        <Field id="machine-gpu-label" title={t('toolbar:Toolbar.size.gpu.title')} label={t('toolbar:Toolbar.size.gpu')}
+          ><select id="machine-gpu" bind:value={gpu} disabled={!!ui.size.gpuLock} title={ui.size.gpuLock}
             ><option value="3d">{t('toolbar:Toolbar.size.gpu.3d')}</option><option value="2d"
               >{t('toolbar:Toolbar.size.gpu.2d')}</option
             ></select
-          ></label
+          ></Field
         >
       {/if}
-      <button
+      <Button
         id="machine-apply"
         onclick={() => {
           sizeOpen = false;
           page.applySize(Number(ncpus), Number(ramMiB), gpu);
-        }}>{t('toolbar:Toolbar.size.apply')}</button
+        }}>{t('toolbar:Toolbar.size.apply')}</Button
       >
-      <p class="hint">{t('toolbar:Toolbar.size.hint')}</p>
+      <Note>{t('toolbar:Toolbar.size.hint')}</Note>
     </Menu>
   {/if}
 </header>
+
+<style>
+  /* The toolbar: tool buttons (an icon, words on the main ones) in groups. */
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface-bar);
+    border-bottom: 1px solid var(--border);
+    user-select: none;
+  }
+  /* Full screen with the status bar (Preferences): the page without its toolbar. */
+  :global(body:fullscreen) .toolbar {
+    display: none;
+  }
+  h1 {
+    margin: 0 var(--space-3) 0 var(--space-2);
+    font-size: var(--text-base);
+    font-weight: var(--weight-bold);
+    color: var(--text-dim);
+    letter-spacing: 0.02em;
+  }
+  .sep {
+    width: 1px;
+    height: 22px;
+    margin: 0 var(--space-3);
+    background: var(--border);
+  }
+  #machine {
+    margin: 0 var(--space-3);
+    font-weight: var(--weight-bold);
+    font-size: var(--text-md);
+    max-width: 28ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .views {
+    display: inline-flex;
+    gap: var(--space-1);
+  }
+  /* In the menus: a group's heading, a snapshot's date, a hint in a list, the keys' grids. */
+  .heading {
+    padding: var(--space-3) var(--space-4) var(--space-1);
+    color: var(--text-dim);
+    font-size: var(--text-sm);
+  }
+  .dim {
+    color: var(--text-dim);
+    font-size: var(--text-sm);
+  }
+  .hint {
+    max-width: 280px;
+    padding: var(--space-2) var(--space-4);
+  }
+  .combos {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .fkeys {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+  }
+</style>

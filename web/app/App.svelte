@@ -6,7 +6,8 @@
 <script lang="ts">
   import Ask from './Ask.svelte';
   import FolderWizard from './FolderWizard.svelte';
-  import Icon from './ui/Icon.svelte';
+  import Button from './ui/Button.svelte';
+  import ErrorBanner from './ui/ErrorBanner.svelte';
   import MachinesPage from './MachinesPage.svelte';
   import NetWizard from './NetWizard.svelte';
   import Osk from './Osk.svelte';
@@ -36,27 +37,29 @@
 </script>
 
 <Toolbar {store} {audio} {net} {folders} />
-<div
-  id="message"
-  role="alert"
-  hidden={!ui.message}
-  data-kind={ui.messageKind}
-  data-snapshot={ui.snapshotResult || undefined}
->
-  <div id="message-body">
+<!-- Its own wrapper: the page in full screen hides it. -->
+<div class="message">
+  <ErrorBanner
+    id="message"
+    role="alert"
+    tone={ui.messageKind === 'warn' ? 'warn' : 'error'}
+    hidden={!ui.message}
+    data-kind={ui.messageKind}
+    data-snapshot={ui.snapshotResult || undefined}
+    bodyId="message-body"
+    actionsId="message-actions"
+    dismissId="message-close"
+    dismissLabel={t('common:App.message.close')}
+    ondismiss={() => page.dismiss()}
+  >
     <pre id="message-text">{ui.message}</pre>
     {#if ui.messageDetails.length}<pre id="message-details">{ui.messageDetails.join('\n')}</pre>{/if}
-  </div>
-  <div id="message-actions">
-    {#each ui.actions as a (a)}<button onclick={(e) => a.run(e.currentTarget)}>{a.label}</button>{/each}
-  </div>
-  <button
-    id="message-close"
-    class="close"
-    aria-label={t('common:App.message.close')}
-    title={t('common:App.message.close')}
-    onclick={() => page.dismiss()}><Icon name="x" size={16} /></button
-  >
+    {#snippet actions()}
+      {#each ui.actions as a (a)}<Button
+          onclick={(e: MouseEvent & { currentTarget: HTMLButtonElement }) => a.run(e.currentTarget)}>{a.label}</Button
+        >{/each}
+    {/snippet}
+  </ErrorBanner>
 </div>
 <main>
   <div id="screen-view">
@@ -72,8 +75,8 @@
           ></progress>{/if}
         <div id="boot-line">{ui.boot.line}</div>
         <div id="boot-serial" hidden={!ui.boot.serial}>
-          <span>{t('common:App.boot.serial')}</span><button id="boot-serial-show" onclick={() => page.showLog()}
-            >{t('common:App.boot.serial.show')}</button
+          <span>{t('common:App.boot.serial')}</span><Button id="boot-serial-show" onclick={() => page.showLog()}
+            >{t('common:App.boot.serial.show')}</Button
           >
         </div>
       </div>
@@ -100,3 +103,163 @@
 <input type="file" id="load-snapshot-input" hidden onchange={take((f) => page.loadSnapshot(f))} />
 <input type="file" id="open-disk-input" hidden onchange={take((f) => page.openDiskFile(f))} />
 <input type="file" id="load-changes-input" hidden onchange={take((f) => page.importChanges(f))} />
+
+<style>
+  pre {
+    margin: 0;
+    white-space: pre-wrap;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+  #message-text::first-line {
+    font-weight: var(--weight-bold);
+  }
+  #message-details {
+    opacity: 0.8;
+  }
+
+  /* The machine: its screen, its serial terminal, or both (`body[data-view]`, which main.ts sets at once with
+     `ui.view`: it measures the screen's room right after). */
+  main {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    gap: var(--space-4);
+    padding: var(--space-4);
+  }
+  main:fullscreen {
+    background: var(--surface);
+  }
+  #screen-view {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #screen-frame {
+    position: relative;
+    display: flex;
+  }
+  #screen {
+    background: var(--screen-bg);
+    outline: none;
+    box-shadow: var(--shadow-frame);
+    touch-action: none;
+  }
+  #screen:focus {
+    box-shadow: var(--shadow-focus);
+  }
+  #screen-hint {
+    position: absolute;
+    bottom: var(--space-5);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: var(--space-2) var(--space-4);
+    border-radius: 999px;
+    background: var(--screen-overlay);
+    color: var(--text);
+    font-size: var(--text-sm);
+    pointer-events: none;
+  }
+  #screen:focus + #screen-hint,
+  :global(body:not([data-state='running'], [data-state='booting'])) #screen-hint {
+    display: none;
+  }
+  /* The guest's cursor under the mouse lock: clipped to the screen, as a cursor is, so it never makes the page overflow. */
+  #screen-cursor-clip {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  #screen-cursor {
+    position: absolute;
+    left: 0;
+    top: 0;
+  }
+  #boot {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-4);
+    padding: var(--space-6);
+    background: var(--screen-bg);
+    color: var(--text-dim);
+    pointer-events: none;
+  }
+  #boot-title {
+    color: var(--text);
+    font-size: var(--text-lg);
+  }
+  #boot progress {
+    width: min(320px, 80%);
+    height: 6px;
+    accent-color: var(--accent);
+  }
+  #boot-serial {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
+    font-size: var(--text-md);
+    pointer-events: auto;
+  }
+  #boot-line {
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+  #terminal-view {
+    min-height: 0;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    overflow: auto;
+  }
+  #terminal {
+    padding: var(--space-3);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+  #terminal:focus-within {
+    border-color: var(--accent);
+  }
+  :global(body[data-view='screen']) #terminal-view,
+  :global(body[data-view='terminal']) #screen-view {
+    display: none;
+  }
+  :global(body[data-view='terminal']) #terminal-view {
+    flex: 1;
+  }
+  :global(body[data-view='screen']) main {
+    padding: 0;
+  }
+  :global(body[data-view='screen']) #screen-view {
+    background: var(--screen-bg);
+  }
+  :global(body[data-view='screen']) #screen {
+    box-shadow: none;
+  }
+  /* The Machines page takes the machine's place; the machine runs on behind it. */
+  :global(body[data-page='machines']) main {
+    display: none;
+  }
+  /* Full screen with the status bar (Preferences): the page, without its toolbar and message bar. */
+  :global(body:fullscreen) .message {
+    display: none;
+  }
+  @media (max-width: 1100px) {
+    :global(body[data-view='both']) main {
+      flex-direction: column;
+    }
+  }
+</style>

@@ -1,12 +1,15 @@
 <!-- One piece of a status bar element (web/app/statusbar.ts `Piece`): its words, or its icon and short value (the words for screen readers), a dot, bars. The bar and the Preferences' editor draw them. -->
 <script lang="ts">
   import Icon from './ui/Icon.svelte';
+  import StatusDot from './ui/StatusDot.svelte';
   import { lookOf, type Item, type Piece } from './statusbar.ts';
   import { ui } from './ui.svelte.ts';
 
   /** `state`: the power state's piece in the bar, `#state[data-state]` (the tests wait on it). */
   let { item, p, state = false }: { item: Item; p: Piece; state?: boolean } = $props();
   const look = $derived(p.icon || p.dot ? lookOf(item) : 'text');
+  /** The dot's light: the piece's tone (a dim one's is busy). */
+  const dotTone = $derived(p.tone && p.tone !== 'dim' ? p.tone : 'busy');
 </script>
 
 <span
@@ -17,7 +20,7 @@
   data-tone={p.tone}
   title={p.title}
 >
-  {#if p.dot}<span class="dot"></span>{/if}
+  {#if p.dot}<StatusDot tone={dotTone} />{/if}
   {#if p.icon && look !== 'text'}<Icon name={p.icon} size={16} />{/if}
   {#if p.parts}
     <span class="sr">{p.text}</span>
@@ -39,43 +42,27 @@
   .el {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-2);
   }
   .part {
     display: inline-flex;
     align-items: center;
   }
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--busy);
-    margin-right: 2px;
-  }
   [data-tone='ok'] {
-    color: var(--ok);
+    color: var(--status-ok);
   }
   [data-tone='busy'] {
-    color: var(--busy);
+    color: var(--status-busy);
   }
   [data-tone='bad'] {
-    color: var(--bad);
+    color: var(--status-bad);
   }
   [data-tone='off'] {
-    color: var(--off);
+    color: var(--status-off);
   }
   /* The power state's tone is its dot's. */
   [data-kind='state'] {
     color: var(--text);
-  }
-  [data-tone='ok'] .dot {
-    background: var(--ok);
-  }
-  [data-tone='off'] .dot {
-    background: var(--off);
-  }
-  [data-tone='bad'] .dot {
-    background: var(--bad);
   }
   .bars {
     display: inline-flex;

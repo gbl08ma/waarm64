@@ -80,28 +80,37 @@
 </footer>
 
 <style>
-  /* The page's footer rule (index.html) draws it. */
+  /* The status bar: the power state first, then the machine's numbers. */
   footer {
-    gap: 0;
+    display: flex;
+    align-items: center;
+    min-height: var(--control-h);
+    padding: var(--space-2) var(--space-5);
+    border-top: 1px solid var(--border);
+    background: var(--surface-bar);
+    color: var(--text-dim);
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
     white-space: nowrap;
     overflow: hidden;
   }
   .group {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-3);
     min-width: 0;
   }
   .sep {
-    padding: 0 6px;
+    padding: 0 var(--space-2);
   }
   .spacer {
     flex: 1;
   }
+  /* A line across the bar's height: past its padding. */
   .divider {
     align-self: stretch;
     width: 1px;
-    margin: -5px 16px;
-    background: var(--line);
+    margin: calc(-1 * var(--space-2)) var(--space-5);
+    background: var(--border);
   }
 </style>

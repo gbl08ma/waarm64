@@ -9,6 +9,9 @@
 -->
 <script lang="ts">
   import Icon from './ui/Icon.svelte';
+  import Button from './ui/Button.svelte';
+  import Note from './ui/Note.svelte';
+  import Radio from './ui/Radio.svelte';
   import type { PageNetwork } from './net-live.ts';
   import { remember } from './settings.ts';
   import { liveNow } from './StatusBar.svelte';
@@ -331,18 +334,20 @@
     {#if !items.length}<span class="empty">{t('statusbar:StatusEditor.empty')}</span>{/if}
   </div>
   <div class="row">
-    <span class="note"
+    <Note inline
       >{sample ? t('statusbar:StatusEditor.sample') : t('statusbar:StatusEditor.running')}
-      {shows(items) ? '' : t('statusbar:StatusEditor.nothing')}</span
+      {shows(items) ? '' : t('statusbar:StatusEditor.nothing')}</Note
     >
     <span class="grow"></span>
-    <button
+    <Button
+      icon="refresh"
+      iconSize={14}
       onclick={() => {
         keep(DEFAULT_ITEMS.map((i) => ({ ...i })));
         remember({ statusBar: undefined });
         chosen = undefined;
       }}
-      data-action="status-defaults"><Icon name="refresh" size={14} />{t('statusbar:StatusEditor.defaults')}</button
+      data-action="status-defaults">{t('statusbar:StatusEditor.defaults')}</Button
     >
   </div>
 
@@ -350,19 +355,13 @@
     {@const at = chosen}
     {@const device = deviceOf(sel.kind)}
     <div class="options" data-field="status-options">
-      <strong>{nameOf(sel)}</strong><span class="note">{aboutOf(sel.kind)}</span>
+      <strong>{nameOf(sel)}</strong><Note inline>{aboutOf(sel.kind)}</Note>
       {#if hasLooks(sel.kind) && iconOf(sel.kind)}
         <fieldset class="set">
           <legend class="sr">{t('statusbar:StatusEditor.look')}</legend>
           {#each ['text', 'icon', 'both'] as const as l (l)}
-            <label
-              ><input
-                type="radio"
-                name="status-look"
-                checked={lookOf(sel) === l}
-                onchange={() => change(at, { look: l })}
-              />
-              {t(LOOK_WORDS[l])}</label
+            <Radio name="status-look" value={l} checked={lookOf(sel) === l} onchange={() => change(at, { look: l })}
+              >{t(LOOK_WORDS[l])}</Radio
             >
           {/each}
         </fieldset>
@@ -370,23 +369,14 @@
       {#if device === 'cpu' && sel.scope === 'each'}
         <fieldset class="set">
           <legend class="sr">{t('statusbar:StatusEditor.cpus')}</legend>
-          <label
-            ><input
-              type="radio"
-              name="status-bars"
-              checked={!sel.numbers}
-              onchange={() => change(at, { numbers: false })}
-            />
-            {t('statusbar:StatusEditor.cpus.bars')}</label
+          <Radio name="status-bars" value="bars" checked={!sel.numbers} onchange={() => change(at, { numbers: false })}
+            >{t('statusbar:StatusEditor.cpus.bars')}</Radio
           >
-          <label
-            ><input
-              type="radio"
-              name="status-bars"
-              checked={!!sel.numbers}
-              onchange={() => change(at, { numbers: true })}
-            />
-            {t('statusbar:StatusEditor.cpus.numbers')}</label
+          <Radio
+            name="status-bars"
+            value="numbers"
+            checked={!!sel.numbers}
+            onchange={() => change(at, { numbers: true })}>{t('statusbar:StatusEditor.cpus.numbers')}</Radio
           >
         </fieldset>
       {/if}
@@ -407,19 +397,25 @@
               data-field="status-index"
             /></label
           >
-          <span class="note">{t(INDEX_NOTE[device])}</span>
+          <Note inline>{t(INDEX_NOTE[device])}</Note>
         </fieldset>
       {/if}
       <span class="grow"></span>
-      <button onclick={() => move(at, at - 1)} disabled={at === 0} title={t('statusbar:StatusEditor.left')}
-        ><Icon name="arrow-left" size={14} /></button
-      >
-      <button
+      <Button
+        icon="arrow-left"
+        iconSize={14}
+        onclick={() => move(at, at - 1)}
+        disabled={at === 0}
+        title={t('statusbar:StatusEditor.left')}
+      />
+      <Button
+        icon="arrow-right"
+        iconSize={14}
         onclick={() => move(at, at + 2)}
         disabled={at === items.length - 1}
-        title={t('statusbar:StatusEditor.right')}><Icon name="arrow-right" size={14} /></button
-      >
-      <button onclick={() => removeAt(at)}><Icon name="trash" size={14} />{t('statusbar:StatusEditor.remove')}</button>
+        title={t('statusbar:StatusEditor.right')}
+      />
+      <Button icon="trash" iconSize={14} onclick={() => removeAt(at)}>{t('statusbar:StatusEditor.remove')}</Button>
     </div>
   {/if}
 
@@ -459,28 +455,29 @@
   .status-edit {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-4);
   }
+  /* The bar as it will be: its chips, in the status bar's look. */
   .bar {
     display: flex;
     flex-wrap: wrap;
     align-items: stretch;
-    gap: 4px;
-    padding: 6px;
+    gap: var(--space-2);
+    padding: var(--space-3);
     min-height: 40px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--bar);
-    color: var(--dim);
-    font-size: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-bar);
+    color: var(--text-dim);
+    font-size: var(--text-sm);
     font-variant-numeric: tabular-nums;
   }
   .chip {
     display: inline-flex;
     align-items: center;
-    border: 1px solid var(--line);
-    border-radius: 5px;
-    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
     cursor: grab;
   }
   .chip.spacer {
@@ -512,13 +509,13 @@
   .pick {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 3px 4px 3px 8px;
+    gap: var(--space-3);
+    padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
     color: inherit;
   }
   .x {
-    padding: 3px 5px;
-    color: var(--dim);
+    padding: var(--space-1) var(--space-2);
+    color: var(--text-dim);
   }
   .x:hover {
     color: var(--text);
@@ -526,13 +523,13 @@
   .gap {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    color: var(--dim);
+    gap: var(--space-2);
+    color: var(--text-dim);
   }
   .line {
     width: 1px;
     height: 14px;
-    background: var(--line);
+    background: var(--border);
   }
   .mark {
     width: 2px;
@@ -541,46 +538,35 @@
     border-radius: 1px;
   }
   .empty {
-    color: var(--dim);
-    padding: 4px;
+    color: var(--text-dim);
+    padding: var(--space-2);
   }
   .row,
   .options {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-4);
     flex-wrap: wrap;
   }
   .options {
-    padding: 8px 10px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-  }
-  .options button,
-  .row button,
-  .add {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 3px 10px;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
   }
   /* Each set of options apart from the next by a line (its legend is for screen readers). */
   .set {
     display: inline-flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-4);
     margin: 0;
-    padding: 0 0 0 16px;
+    padding: 0 0 0 var(--space-5);
     border: 0;
-    border-left: 1px solid var(--line);
+    border-left: 1px solid var(--border);
   }
-  .set label,
   .index {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-2);
   }
   .index input {
     width: 4em;
@@ -588,33 +574,35 @@
   .grow {
     flex: 1;
   }
-  .note {
-    color: var(--dim);
-    font-size: 12px;
-  }
   .palette.leaving {
     outline: 2px dashed var(--accent);
     outline-offset: 4px;
-    border-radius: 6px;
+    border-radius: var(--radius);
   }
   .palette {
     display: grid;
     grid-template-columns: max-content 1fr;
-    gap: 8px 14px;
+    gap: var(--space-3) var(--space-5);
     align-items: baseline;
   }
   .group {
-    color: var(--dim);
-    font-size: 12px;
+    color: var(--text-dim);
+    font-size: var(--text-sm);
   }
   .chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--space-3);
   }
+  /* A palette's element: a chip to drag onto the bar, or click. */
   .add {
-    font-size: 12px;
-    padding: 2px 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: var(--text-sm);
+    padding: var(--space-1) var(--space-3);
     cursor: grab;
   }
 </style>

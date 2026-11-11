@@ -7,6 +7,8 @@
 <script lang="ts">
   import Menu from './ui/Menu.svelte';
   import Check from './ui/Check.svelte';
+  import Field from './ui/Field.svelte';
+  import Note from './ui/Note.svelte';
   import type { PageAudio } from '../audio.ts';
   import { remember, settings } from './settings.ts';
   import { ui } from './ui.svelte.ts';
@@ -64,22 +66,15 @@
   icon={on && !waiting ? 'volume' : 'volume-off'}
   title={summary}
   panel
+  attention={waiting}
   data-waiting={waiting || undefined}
 >
   {#snippet badge()}<span id="sound-summary" class="sr">{summary}</span>{#if micState === 'on'}<span class="tag"
         >{t('sound:Sound.micTag')}</span
       >{/if}{/snippet}
   <Check id="sound-on" bind:checked={on} onchange={keepSound}>{t('sound:Sound.on')}</Check>
-  <label
-    >{t('sound:Sound.volume')}<input
-      id="sound-volume"
-      type="range"
-      min="0"
-      max="100"
-      step="1"
-      bind:value={volume}
-      oninput={keepSound}
-    /></label
+  <Field label={t('sound:Sound.volume')}
+    ><input id="sound-volume" type="range" min="0" max="100" step="1" bind:value={volume} oninput={keepSound} /></Field
   >
   <Check id="mic-on" bind:checked={mic} onchange={keepMic} title={t('sound:Sound.mic.title')}
     >{t('sound:Sound.mic')}</Check
@@ -87,8 +82,16 @@
   <Check id="mic-raw" bind:checked={micRaw} onchange={keepMic} title={t('sound:Sound.micRaw.title')}
     >{t('sound:Sound.micRaw')}</Check
   >
-  <p class="hint" id="sound-hint">{t('sound:Sound.hint')}</p>
-  <p class="hint" id="mic-hint" hidden={micState !== 'denied' && micState !== 'asking'}>
+  <Note id="sound-hint">{t('sound:Sound.hint')}</Note>
+  <Note id="mic-hint" hidden={micState !== 'denied' && micState !== 'asking'}>
     {micState === 'denied' ? t('sound:Sound.mic.denied') : t('sound:Sound.mic.asking')}
-  </p>
+  </Note>
 </Menu>
+
+<style>
+  /* The microphone's tag on the menu's button, while it listens. */
+  .tag {
+    font-size: var(--text-xs);
+    color: var(--accent);
+  }
+</style>
