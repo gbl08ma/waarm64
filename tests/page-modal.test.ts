@@ -408,7 +408,7 @@ test('a detached disk keeps its overlays: attached again from the browser\'s dis
   await m.locator('[data-field=overlay] option', { hasText: t('disks:Disks.newOverlay.name') }).waitFor({ state: 'attached' });
   // The same URL added again is that disk: refused here, where it's attached already.
   await addDisk(page, 'url', { url });
-  await page.locator('#add-disk .error', { hasText: words('disks:AddDisk.attachedAlready') }).waitFor();
+  await page.locator('#add-disk .error', { hasText: words('disks:add-disk.attachedAlready') }).waitFor();
   await page.keyboard.press('Escape');
   // Detached and deleted from the browser's disks (Disks under the list of machines): its record and its overlay go.
   await m.locator('[data-attachment]').first().getByRole('button', { name: t('disks:Disks.detach.button') }).click();

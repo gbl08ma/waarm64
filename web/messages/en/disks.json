@@ -299,31 +299,31 @@
     "message": "Adding the disk",
     "note": "Machines page: the busy line (shown with a trailing …) while the Add a disk wizard attaches or makes the disk."
   },
-  "AddDisk.attachedAlready": {
+  "add-disk.attachedAlready": {
     "message": "{{name}} is already attached to this machine.",
     "note": "Add a disk wizard: the error under the fields when the file or URL chosen is a disk the browser knows that the machine has already. {{name}} is that disk's name."
   },
-  "AddDisk.urlProblems": {
+  "add-disk.urlProblems": {
     "message": "Couldn't add the disk from this URL",
     "note": "Add a disk wizard › From a URL: the headline of the error under the fields when Add finds the server can't serve the URL as a disk; the URL check's problems (machines:urlcheck.*), what fails, are the causes under it, one per line."
   },
-  "AddDisk.pickFirst": {
+  "add-disk.pickFirst": {
     "message": "Select a file first.",
     "note": "Add a disk wizard › A file on your computer or A file, copied into this browser: the error under the fields when Add is pressed before a file is picked."
   },
-  "AddDisk.store.confirm": {
+  "add-disk.store.confirm": {
     "message": "Copy {{name}} into this browser? The copy will take about {{size}} of this browser's storage ({{free}} free), and you can't easily manage it except from this web app.",
     "note": "Add a disk wizard › A file, copied into this browser: the confirmation Add asks before copying. {{name}} is the file's name, {{size}} what the copy takes (estimated), {{free}} the browser's storage left."
   },
-  "AddDisk.store.title": {
+  "add-disk.store.title": {
     "message": "Copy into this browser",
     "note": "Add a disk wizard › A file, copied into this browser: the title of the confirmation before the file is copied."
   },
-  "AddDisk.store.ok": {
+  "add-disk.store.ok": {
     "message": "Copy",
     "note": "Add a disk wizard › A file, copied into this browser: the confirm button that starts the copy."
   },
-  "AddDisk.storing": {
+  "add-disk.storing": {
     "message": "Copying {{name}} into this browser ({{percent}}%)",
     "note": "Add a disk wizard › A file, copied into this browser: the progress line under the fields while the file is copied. {{name}} is the file's name, {{percent}} how much is done (0–100)."
   },
@@ -339,35 +339,35 @@
     "message": "Attach",
     "note": "Add a disk wizard › A disk already in this browser: the button on a listed disk that attaches it to the machine (with its overlays)."
   },
-  "AddDisk.url": {
+  "AddDiskUrl.url": {
     "message": "URL",
     "note": "Add a disk wizard › From a URL: the label of the field for the disk image's URL."
   },
-  "AddDisk.url.checking": {
+  "AddDiskUrl.url.checking": {
     "message": "Checking…",
     "note": "Add a disk wizard › From a URL: the Check button's words while the page asks the server about the URL."
   },
-  "AddDisk.url.check": {
+  "AddDiskUrl.url.check": {
     "message": "Check",
     "note": "Add a disk wizard › From a URL: the button beside the URL field that asks the server whether it can serve the URL as a disk."
   },
-  "AddDisk.url.ok": {
+  "AddDiskUrl.url.ok": {
     "message": "The server can serve it ({{size}}).",
     "note": "Add a disk wizard › From a URL: the line under the field when the check passes and the server said the size; a note on remote disks' first boot follows. {{size}} is the image's size."
   },
-  "AddDisk.url.okUnknown": {
+  "AddDiskUrl.url.okUnknown": {
     "message": "The server can serve it (size unknown).",
     "note": "Add a disk wizard › From a URL: the line under the field when the check passes but the server didn't say the size; a note on remote disks' first boot follows."
   },
-  "AddDisk.pick": {
+  "AddDiskFile.pick": {
     "message": "Select a file…",
     "note": "Add a disk wizard › A file on your computer or A file, copied into this browser: the button that opens the browser's file picker."
   },
-  "AddDisk.picked": {
+  "AddDiskFile.picked": {
     "message": "{{name}} ({{size}})",
     "note": "Add a disk wizard › A file on your computer or A file, copied into this browser: beside Select a file…, the file selected. {{name}} is its name, {{size}} its size."
   },
-  "AddDisk.picked.none": {
+  "AddDiskFile.picked.none": {
     "message": "No file selected",
     "note": "Add a disk wizard › A file on your computer or A file, copied into this browser: beside Select a file… before a file is selected."
   },
