@@ -2,7 +2,8 @@
 // sharing (web/app/clipboard.ts `ClipboardShare`, followed through its `onChange`), the browser's read permission, and
 // which of the menu's actions last failed. web/app/run/runner.ts gives it each run's sharing.
 import { Changes } from '../changes.ts';
-import type { ClipboardShare, ReadPermission, ShareState } from '../clipboard.ts';
+import type { ClipboardShare, ShareState } from '../clipboard.ts';
+import type { ReadPermission } from '../clipboard-host.ts';
 
 class Clipboard {
   /** The running machine's sharing (none: the machine doesn't have the setting, or doesn't run). */

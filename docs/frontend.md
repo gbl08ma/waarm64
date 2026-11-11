@@ -272,7 +272,9 @@ by default (below, "The status bar"). Menus (`ui/Menu.svelte`) keep the `<detail
 elsewhere and open under their right edge (a page's Export menus under their left).
 
 **Clipboard** (`ClipboardMenu.svelte`, [plans/clipboard.md](plans/clipboard.md) §4–§5; the logic is
-`web/app/clipboard.ts`'s `ClipboardShare`, wired in `areas/clipboard-actions.ts`): shown while the running machine has
+`web/app/clipboard.ts`'s `ClipboardShare`, with the guest-to-host way in `clipboard-guest.ts`, the transfers and ACKs in
+`clipboard-transfer.ts`, the held paste chord in `clipboard-chord.ts` and the browser's side, the hashes and the reads in
+`clipboard-host.ts`; wired in `areas/clipboard-actions.ts`): shown while the running machine has
 **[Share the clipboard with the guest](ui:machines:DeviceSwitches.clipboard)** (or `?clipboard=1`). The button's state (`data-state`): *sharing* (pressed), *paused*
 (the icon crossed out), or *waiting* for the guest's program (before its HELLO, or since its port closed), each with
 its tooltip; a mark (and its tooltip says what is limited) while it shares but Chromium's `clipboard-read` permission is

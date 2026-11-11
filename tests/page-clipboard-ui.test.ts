@@ -18,7 +18,7 @@ import { PAGE_QUERY } from './page-query.ts';
 import { answerAsks, type Question } from './page-ask.ts';
 import { CAP, decodeOffer, encodeFrame, encodeHello, encodeOffer, FRAME, FrameReader, TYPED, type Frame } from '../web/agent-frame.ts';
 import { PAGE_CAPS } from '../web/app/agent-link.ts';
-import { TEXT } from '../web/app/clipboard.ts';
+import { TEXT } from '../web/app/clipboard-host.ts';
 import { plain, t } from '../web/i18n.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);

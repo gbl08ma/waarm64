@@ -4,7 +4,8 @@
 import type { DisplayFromPage } from '../../gpu-present.ts';
 import type { ToGpuWorker } from '../../gpu-worker.ts';
 import { AgentLink } from '../agent-link.ts';
-import { ClipboardShare, isPasteChord, onMac, PNG, watchReadPermission, type Host } from '../clipboard.ts';
+import { ClipboardShare } from '../clipboard.ts';
+import { isPasteChord, onMac, PNG, watchReadPermission, type Host } from '../clipboard-host.ts';
 import type { Grab } from '../hooks.ts';
 import type { Page } from '../page.ts';
 import { rgbaPng, toPng } from '../png.ts';

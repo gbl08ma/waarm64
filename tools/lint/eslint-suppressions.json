@@ -40,20 +40,6 @@
       "count": 1
     }
   },
-  "web/app/clipboard.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 3
-    },
-    "complexity": {
-      "count": 2
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 1
-    }
-  },
   "web/app/connections.ts": {
     "@typescript-eslint/no-unnecessary-type-conversion": {
       "count": 1
