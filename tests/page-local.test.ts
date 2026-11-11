@@ -120,7 +120,7 @@ test("the helper's pairing link: the wizard on This computer, Attach, connected 
     await page.reload();
     await phaseIs(page, 'connected');
     await menu(page);
-    assert.match((await page.locator('#net-status').textContent()) ?? '', words('network:network.connectedLocal', {}, { start: true }));
+    assert.match((await page.locator('#net-status').textContent()) ?? '', words('network:network-view.connectedLocal', {}, { start: true }));
     assert.ok(((await page.locator('#net-conn').textContent()) ?? '').includes(t('network:connections.thisComputer')), 'the connection is This computer');
 
     // The helper stops: the menu says so; Retry once it runs again connects again.
@@ -194,7 +194,7 @@ test('from a public origin: granted, the adapter connects; refused, the menu say
       if (granted) {
         await phaseIs(page, 'connected');
         await menu(page);
-        assert.match((await page.locator('#net-status').textContent()) ?? '', words('network:network.connectedLocal', {}, { start: true }));
+        assert.match((await page.locator('#net-status').textContent()) ?? '', words('network:network-view.connectedLocal', {}, { start: true }));
       } else {
         await phaseIs(page, 'error');
         await menu(page);

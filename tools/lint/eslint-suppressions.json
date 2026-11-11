@@ -146,20 +146,6 @@
       "count": 1
     }
   },
-  "web/app/network.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 2
-    },
-    "prefer-const": {
-      "count": 1
-    }
-  },
   "web/app/osk.ts": {
     "complexity": {
       "count": 2

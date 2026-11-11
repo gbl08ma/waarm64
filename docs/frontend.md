@@ -33,7 +33,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts` | the page's sound: the AudioContext, the worklet that plays the device worker's sound ring, the volume (below, "Sound") |
 | `web/app/connections.ts`, `web/app/locks.ts` | the browser's network connections (docs/network-adapters.md §2: stored and ephemeral, their state keys, the migration of the single connection kept before; not on the page yet); the locks of what one running machine has at a time (USB devices, connections) |
 | `web/app/usb-ports.ts`, `web/app/usb-live.ts`, `Usb.svelte`, `AddUsb.svelte`, `UsbMenu.svelte`, `UsbProblems.svelte` | a machine's USB devices: remembered entries, their grants and locks, the running machine's ports, the USB tab, the Add a device wizard, the toolbar's USB menu ([usb.md](usb.md) "The page") |
-| `web/app/network.ts`, `web/app/net-live.ts`, `Network.svelte` (`NetAdapter.svelte` per adapter, `CopyField.svelte`), `NetWizard.svelte` and its `Net*Step.svelte`, `net-wizard.ts` | the network, DOM-free but for the components: settings parsers, the view of a client's state, an adapter's IP port across restarts and disconnects; the page's adapters live (their connections, clients, locks, the default way out); the menu and the wizard (below, "Network") |
+| `web/app/network.ts` (`network-view.ts`: the view of a client's state, the default way out), `web/app/net-live.ts`, `Network.svelte` (`NetAdapter.svelte` per adapter, `CopyField.svelte`), `NetWizard.svelte` and its `Net*Step.svelte`, `net-wizard.ts` | the network, DOM-free but for the components: settings parsers, the view of a client's state, an adapter's IP port across restarts and disconnects; the page's adapters live (their connections, clients, locks, the default way out); the menu and the wizard (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
 | `tools/dist.ts` | `npm run dist`: the page as a static copy (below, "A static copy") |
 | `tools/tailscale.ts` | builds the Tailscale client when missing or stale, for `npm run serve`, `npm start` and `scripts/ci-net.sh` ("Network") |
@@ -1559,7 +1559,7 @@ and the guest's default way out (below).
     with the address; `parseAllow`, kept as the connection's `tailcat.allow`); and, editing a connection, [New address](ui:network:NetTailcatStep.newAddress), which
     forgets the kept identity (after a confirmation), so the old address stops working (the adapter that runs it
     connects again at once). Serving alone, the guest gets the same lease without resolvers: it reaches only
-    the clients. The status says [Letting tailcat clients in](ui:network:network.servingOnly) (or adds it to the exit node's).
+    the clients. The status says [Letting tailcat clients in](ui:network:network-view.servingOnly) (or adds it to the exit node's).
 - [A peer-to-peer room](ui:network:NetKindStep.kind.pickRoom) (docs/tailnet.md "Rooms", plans/networking-p2p.md): machines in
   other browsers that join the same room reach each other by name, browser to browser over WebRTC when they can and
   through the room's DERP relays otherwise. The step asks [Create a room](ui:network:NetRoomPickStep.room.create) or [Join a
@@ -1585,7 +1585,7 @@ and the guest's default way out (below).
   The client is net/ts's `room.rs` in web/room-worker.ts, the page's WebRTC in web/room.ts (`startRoomNet`, the
   `Tailscale` handle the network controller drives, with a network map of `via: 'room'`); the node key is kept in
   `webpc-room` (an ephemeral connection's in memory). The status goes Loading the client, Connecting to the relay,
-  then [Connected to the room](ui:network:network.room) with [1 active connection](ui:network:network.room.connections_one) under it (the members whose data decrypted and whose connection hasn't closed idle: the room may have many more, which no member can count). The
+  then [Connected to the room](ui:network:network-view.room) with [1 active connection](ui:network:network-view.room.connections_one) under it (the members whose data decrypted and whose connection hasn't closed idle: the room may have many more, which no member can count). The
   menu then shows the machine's name in the room (`<key>.<tag>.p2p.internal`) to copy, the room's link to copy and, under
   them, that whoever has the name can reach any port the guest listens on (or that incoming connections are off).
   The guest's lease: its room address as a /128 (DHCPv6, the router advertisement), IPv4 `192.0.0.2` with no IPv4

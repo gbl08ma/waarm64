@@ -16,16 +16,8 @@ import {
   type ConnectionState,
 } from './connections.ts';
 import { heldLocks, Locks } from './locks.ts';
-import {
-  createNetwork,
-  logOutNode,
-  primaryOf,
-  ranksOf,
-  viewOf,
-  type Connect,
-  type Network,
-  type NetworkView,
-} from './network.ts';
+import { createNetwork, logOutNode, type Connect, type Network } from './network.ts';
+import { primaryOf, ranksOf, viewOf, type NetworkView } from './network-view.ts';
 import type { Adapter } from './shape.ts';
 import type { Store } from './store.ts';
 import { Changes } from './changes.ts';

@@ -10,7 +10,7 @@
   import NetAdapter from './NetAdapter.svelte';
   import { t } from '../i18n.ts';
   import type { PageNetwork } from './net-live.ts';
-  import { phaseTone } from './network.ts';
+  import { phaseTone } from './network-view.ts';
   import { network } from './areas/network.ts';
   import { current } from './areas/current.svelte.ts';
 

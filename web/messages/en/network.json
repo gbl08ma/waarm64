@@ -631,127 +631,127 @@
     "message": "The hostname can have up to 63 letters, digits, and hyphens, and can't start or end with a hyphen.",
     "note": "The Network wizard, the tailnet step: the error when the hostname isn't a valid name."
   },
-  "network.notConnected": {
+  "network-view.notConnected": {
     "message": "Not connected",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): no client runs."
   },
-  "network.couldntConnect": {
+  "network-view.couldntConnect": {
     "message": "Couldn't connect",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): the connection failed. Its cause (the client's reason) is shown under it in the Network menu."
   },
-  "network.connectingHelper": {
+  "network-view.connectingHelper": {
     "message": "Connecting to the helper on your computer…",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): connecting to the local helper (webpc-net)."
   },
-  "network.connectedLocal.address": {
+  "network-view.connectedLocal.address": {
     "message": "Connected through your computer ({{address}})",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): connected through the local helper. {{address}} is the guest's IPv4 address."
   },
-  "network.connectedLocal": {
+  "network-view.connectedLocal": {
     "message": "Connected through your computer",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): connected through the local helper, before its DHCP gave the guest an address."
   },
-  "network.servingOnly": {
+  "network-view.servingOnly": {
     "message": "Letting tailcat clients in",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): a tailcat connection that only lets clients in to the machine is up."
   },
-  "network.tailcat.address.serving": {
+  "network-view.tailcat.address.serving": {
     "message": "Connected through the tailcat server ({{address}}), letting tailcat clients in",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): online through a tailcat server, and letting tailcat clients in. {{address}} is the guest's IPv4 address."
   },
-  "network.tailcat.address": {
+  "network-view.tailcat.address": {
     "message": "Connected through the tailcat server ({{address}})",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): online through a tailcat server. {{address}} is the guest's IPv4 address."
   },
-  "network.tailcat.serving": {
+  "network-view.tailcat.serving": {
     "message": "Connected through the tailcat server, letting tailcat clients in",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): online through a tailcat server (no IPv4 address known), and letting tailcat clients in."
   },
-  "network.tailcat": {
+  "network-view.tailcat": {
     "message": "Connected through the tailcat server",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): online through a tailcat server (no IPv4 address known)."
   },
-  "network.room": {
+  "network-view.room": {
     "message": "Connected to the room",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): connected to a peer-to-peer room. Its line below says how many active connections the machine has (network.room.connections)."
   },
-  "network.room.connections_one": {
+  "network-view.room.connections_one": {
     "message": "{{count}} active connection",
     "note": "In the Network menu, under “Connected to the room” (network.room; also the Machines page's Network tab and the status bar's network item's tooltip): how many members of the room this machine exchanges traffic with now. The room may have many more members: nobody can count them, by design."
   },
-  "network.room.connections_other": {
+  "network-view.room.connections_other": {
     "message": "{{count}} active connections",
     "note": "In the Network menu, under “Connected to the room” (network.room; also the Machines page's Network tab and the status bar's network item's tooltip): how many members of the room this machine exchanges traffic with now. The room may have many more members: nobody can count them, by design."
   },
-  "network.fetchingMap": {
+  "network-view.fetchingMap": {
     "message": "Looking up the relay…",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): a tailcat connection loads the list of relays."
   },
-  "network.meowing": {
+  "network-view.meowing": {
     "message": "Waiting for the tailcat server…",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): a tailcat connection waits for the tailcat server to answer."
   },
-  "network.handshaking": {
+  "network-view.handshaking": {
     "message": "Opening the tunnel…",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): a tailcat connection makes its encrypted tunnel with the server."
   },
-  "network.loadingClient": {
+  "network-view.loadingClient": {
     "message": "Loading the client…",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): the tailnet client's module loads."
   },
-  "network.connectingRelay": {
+  "network-view.connectingRelay": {
     "message": "Connecting to the relay…",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): a tailcat connection connects to its relay."
   },
-  "network.connected.as.address": {
+  "network-view.connected.as.address": {
     "message": "Connected as {{name}} ({{address}})",
     "note": "The start of the status line of a connected tailnet (network.connectedPeers' {{connected}}). {{name}} is the node's name on the tailnet; {{address}} the guest's IPv4 address."
   },
-  "network.connected.as": {
+  "network-view.connected.as": {
     "message": "Connected as {{name}}",
     "note": "The start of the status line of a connected tailnet (network.connectedPeers' {{connected}}), when the guest's address isn't known. {{name}} is the node's name."
   },
-  "network.connected.address": {
+  "network-view.connected.address": {
     "message": "Connected ({{address}})",
     "note": "The start of the status line of a connected tailnet (network.connectedPeers' {{connected}}), when the node's name isn't known. {{address}} is the guest's IPv4 address."
   },
-  "network.connected": {
+  "network-view.connected": {
     "message": "Connected",
     "note": "The start of the status line of a connected tailnet (network.connectedPeers' {{connected}}), when neither the node's name nor its address is known."
   },
-  "network.connectedPeers.via_one": {
+  "network-view.connectedPeers.via_one": {
     "message": "{{connected}}, {{count}} peer, internet through {{via}}",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): a connected tailnet with an exit node in use. {{connected}} is “Connected as …”; {{count}} the number of peers; {{via}} the exit node's name."
   },
-  "network.connectedPeers.via_other": {
+  "network-view.connectedPeers.via_other": {
     "message": "{{connected}}, {{count}} peers, internet through {{via}}",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): a connected tailnet with an exit node in use. {{connected}} is “Connected as …”; {{count}} the number of peers; {{via}} the exit node's name."
   },
-  "network.connectedPeers_one": {
+  "network-view.connectedPeers_one": {
     "message": "{{connected}}, {{count}} peer",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): a connected tailnet. {{connected}} is “Connected as …”; {{count}} the number of peers."
   },
-  "network.connectedPeers_other": {
+  "network-view.connectedPeers_other": {
     "message": "{{connected}}, {{count}} peers",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): a connected tailnet. {{connected}} is “Connected as …”; {{count}} the number of peers."
   },
-  "network.logIn": {
+  "network-view.logIn": {
     "message": "Log in to connect",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): the tailnet waits for the user to log in (the menu shows “Log in…”)."
   },
-  "network.contacting": {
+  "network-view.contacting": {
     "message": "Contacting the control server…",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): the tailnet client waits for its control server's first answer."
   },
-  "network.approval": {
+  "network-view.approval": {
     "message": "Waiting for an administrator to approve this machine",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): the tailnet's admin has to approve the node."
   },
-  "network.stopped": {
+  "network-view.stopped": {
     "message": "Stopped",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): the tailnet client stopped."
   },
-  "network.connecting": {
+  "network-view.connecting": {
     "message": "Connecting…",
     "note": "In the Network menu's status line for an adapter (also the Machines page's Network tab and the status bar's network item): the tailnet client starts."
   },

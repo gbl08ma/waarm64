@@ -2,19 +2,19 @@
 // (virtio-net on the Ethernet gateway, web/gateway.ts) whose IP packets go to a Tailscale
 // client (web/tailscale.ts), which the user connects and logs in from the toolbar's Network
 // menu, or to tailcat (web/tailcat.ts, the Rust tailnet client): through a tailcat server, letting
-// tailcat clients in, or both. DOM-free, so it's tested in Node (tests/network.test.ts).
+// tailcat clients in, or both. DOM-free, so it's tested in Node (tests/network.test.ts); what the menu shows of it is web/app/network-view.ts's.
 //
 // The machine holds one end of an IP port for as long as it runs; this keeps the other. The
 // client, when there is one, has it (`attach`); a restarted machine brings a new port, and
 // a disconnected client hands it back (`detach`), so a machine can be connected, disconnected and
 // connected again without a restart.
-import { describe, msg, t, type Msg } from '../i18n.ts';
+import { msg, type Msg } from '../i18n.ts';
 import { MsgError } from '../msg.ts';
+import { viewOf, type ClientReport, type NetworkView } from './network-view.ts';
 import {
   startTailscale,
   tailscaleBuilt,
   type FromTailscale,
-  type NetMap,
   type Tailscale,
   type TailscaleConfig,
 } from '../tailscale.ts';
@@ -101,223 +101,6 @@ export function parseHostname(input: string): { hostname: string } | { error: Ms
   return { hostname: s };
 }
 
-export type Phase =
-  /** No client. */
-  | 'off'
-  /** Loading the client, or waiting for the control server. */
-  | 'connecting'
-  /** The user has something to do: open the login link, or an admin has to approve the machine. */
-  | 'login'
-  | 'connected'
-  | 'error';
-
-/** A phase's light (the Network menu's dot, an adapter's heading: ui/StatusDot.svelte's tones). */
-const PHASE_TONES: Record<Phase, 'ok' | 'busy' | 'bad' | 'off'> = {
-  off: 'off',
-  connecting: 'busy',
-  login: 'busy',
-  connected: 'ok',
-  error: 'bad',
-};
-export const phaseTone = (phase: Phase | undefined) => (phase ? PHASE_TONES[phase] : 'off');
-
-export type NetworkView = {
-  phase: Phase;
-  /** One line for the menu. */
-  text: string;
-  /** Lines under `text`, one each: an error's (`phase` `error`) what it said; a room's its active connections. */
-  details?: string[];
-  /** Where to log in (only http(s) URLs). */
-  loginURL?: string;
-  /** The guest's IPv4 address, when connected. */
-  address?: string;
-  /** The peers that offer to be the exit node (approved by the tailnet's admin), when connected; `use` marks the one in use. */
-  exitNodes: { id: string; name: string; online: boolean; use: boolean }[];
-  /** The machine's own tailcat address, when it lets tailcat clients in. */
-  served?: string;
-  /** tailcat through a server: the machine's node key, for the server's `--allow`. */
-  tailcatKey?: string;
-  /** The subnets the tailnet's peers route (when any do), and whether they're installed. */
-  subnets?: { routes: string[]; on: boolean };
-  /** Connected, and it reaches the internet (a tailnet's exit node in use, tailcat through a server, the local helper): it can be the guest's default way out. */
-  internet?: boolean;
-  /** The local helper's: its lease always routes everything through it, so it is the primary first (`primaryOf`). */
-  local?: boolean;
-  /** A room's, when connected: the machine's name in it (to give out), the room's link, and whether members may connect. */
-  room?: { name: string; link: string; incoming: boolean };
-};
-
-/**
- * Which of a machine's adapters is the guest's default way out (docs/network-adapters.md §4): the first connected
- * local helper's; else the first, in order, that is connected and reaches the internet; without one, the first connected (so a machine with one adapter
- * keeps its default route, as it always had); -1 when none is connected.
- */
-export function primaryOf(views: Pick<NetworkView, 'phase' | 'internet' | 'local'>[]): number {
-  // A local helper's lease always carries a default route (its DHCP, not the page's): it goes first, so a tailnet or
-  // tailcat adapter beside it is the one given only its routes (docs/network-adapters.md §4).
-  const local = views.findIndex((v) => v.phase === 'connected' && v.local);
-  if (local >= 0) return local;
-  const net = views.findIndex((v) => v.phase === 'connected' && v.internet);
-  return net >= 0 ? net : views.findIndex((v) => v.phase === 'connected');
-}
-
-/**
- * Each adapter's rank: how many connected adapters come before it. Its IPv6 routes' preference follows (web/gateway.ts
- * `ranked`), so where two offer the same prefix (a tailnet's and tailcat's /48) the earlier adapter's wins.
- */
-export function ranksOf(views: Pick<NetworkView, 'phase'>[]): number[] {
-  let n = 0;
-  return views.map((v) => (v.phase === 'connected' ? n++ : n));
-}
-
-/** What a `Tailscale` client reports, as far as the view needs it. */
-export type ClientReport = {
-  state: string;
-  netmap?: NetMap;
-  loginURL?: string;
-  error?: unknown;
-  tailcat?: boolean;
-  local?: boolean;
-  room?: boolean;
-};
-
-const web = (s: string | undefined) => {
-  try {
-    const u = new URL(s ?? '');
-    return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : undefined;
-  } catch {
-    return undefined;
-  }
-};
-
-/** The menu's view of a client's report (`undefined`: there's no client). */
-export function viewOf(c: ClientReport | undefined): NetworkView {
-  if (!c) return { phase: 'off', text: t('network:network.notConnected'), exitNodes: [] };
-  if (c.error) {
-    const d = describe(c.error);
-    return {
-      phase: 'error',
-      text: t('network:network.couldntConnect'),
-      details: [d.headline, ...d.details].filter((l) => l),
-      exitNodes: [],
-    };
-  }
-  const loginURL = web(c.loginURL);
-  if (c.local) {
-    if (c.state !== 'Running')
-      return { phase: 'connecting', text: t('network:network.connectingHelper'), exitNodes: [] };
-    const address = c.netmap?.addresses[0]?.replace(/\/\d+$/, '');
-    return {
-      phase: 'connected',
-      address,
-      exitNodes: [],
-      internet: true,
-      local: true,
-      text: address ? t('network:network.connectedLocal.address', { address }) : t('network:network.connectedLocal'),
-    };
-  }
-  if (c.netmap?.via === 'room' || c.room) {
-    const r = c.netmap?.room;
-    if (c.state === 'Running' && c.netmap && r) {
-      const address = c.netmap.addresses[0]?.replace(/\/\d+$/, '');
-      // A room reaches only its members: never the internet, so never the default way out over another adapter's.
-      return {
-        phase: 'connected',
-        address,
-        exitNodes: [],
-        internet: false,
-        room: { name: r.name, link: r.link, incoming: r.incoming },
-        text: t('network:network.room'),
-        details: [t('network:network.room.connections', { count: c.netmap.peers.length })],
-      };
-    }
-    const doing: Record<string, string> = {
-      FetchingMap: t('network:network.fetchingMap'),
-      Connecting: t('network:network.connectingRelay'),
-      Running: t('network:network.connectingRelay'),
-    };
-    return { phase: 'connecting', text: doing[c.state] ?? t('network:network.loadingClient'), exitNodes: [] };
-  }
-  if (c.netmap?.via === 'tailcat' || c.tailcat) {
-    if (c.state === 'Running' && c.netmap) {
-      const served = c.netmap.serving ? { served: c.netmap.serving } : {};
-      if (c.netmap.tailcatExit === false)
-        return {
-          phase: 'connected',
-          exitNodes: [],
-          text: t('network:network.servingOnly'),
-          internet: false,
-          ...served,
-        };
-      const address = c.netmap.addresses.find((a) => !a.includes(':'))?.replace(/\/\d+$/, '');
-      const text = address
-        ? c.netmap.serving
-          ? t('network:network.tailcat.address.serving', { address })
-          : t('network:network.tailcat.address', { address })
-        : c.netmap.serving
-          ? t('network:network.tailcat.serving')
-          : t('network:network.tailcat');
-      const key = c.netmap.tailcatKey ? { tailcatKey: c.netmap.tailcatKey } : {};
-      return { phase: 'connected', address, exitNodes: [], internet: true, text, ...served, ...key };
-    }
-    const doing: Record<string, string> = {
-      FetchingMap: t('network:network.fetchingMap'),
-      Meowing: t('network:network.meowing'),
-      Handshaking: t('network:network.handshaking'),
-    };
-    return {
-      phase: 'connecting',
-      text:
-        doing[c.state] ?? (c.state === '' ? t('network:network.loadingClient') : t('network:network.connectingRelay')),
-      exitNodes: [],
-    };
-  }
-  switch (c.state) {
-    case 'Running': {
-      const address = c.netmap?.addresses.find((a) => !a.includes(':'))?.replace(/\/\d+$/, '');
-      const peers = c.netmap?.peers.length ?? 0;
-      const exitNodes = (c.netmap?.peers ?? [])
-        .filter((p) => p.exitNodeOption || p.id === c.netmap?.exitNode)
-        .map((p) => ({
-          id: p.id,
-          name: p.name.replace(/\.$/, ''),
-          online: p.online !== false,
-          use: p.id === c.netmap?.exitNode,
-        }));
-      const via = exitNodes.find((e) => e.use);
-      const routes = [...new Set((c.netmap?.peers ?? []).flatMap((p) => p.routes ?? []))];
-      const subnets = routes.length ? { subnets: { routes, on: c.netmap?.acceptRoutes !== false } } : {};
-      const name = c.netmap?.name ? c.netmap.name.replace(/\.$/, '') : '';
-      const connected =
-        name && address
-          ? msg('network:network.connected.as.address', { name, address })
-          : name
-            ? msg('network:network.connected.as', { name })
-            : address
-              ? msg('network:network.connected.address', { address })
-              : msg('network:network.connected');
-      const text = via
-        ? t('network:network.connectedPeers.via', { connected, count: peers, via: via.name })
-        : t('network:network.connectedPeers', { connected, count: peers });
-      return { phase: 'connected', address, exitNodes, internet: !!via, ...subnets, text };
-    }
-    case 'NeedsLogin':
-      return loginURL
-        ? { phase: 'login', text: t('network:network.logIn'), loginURL, exitNodes: [] }
-        : { phase: 'connecting', text: t('network:network.contacting'), exitNodes: [] };
-    case 'NeedsMachineAuth':
-      return { phase: 'login', text: t('network:network.approval'), loginURL, exitNodes: [] };
-    case 'Stopped':
-      return { phase: 'off', text: t('network:network.stopped'), exitNodes: [] };
-    default:
-      return {
-        phase: 'connecting',
-        text: c.state === '' ? t('network:network.loadingClient') : t('network:network.connecting'),
-        exitNodes: [],
-      };
-  }
-}
-
 /**
  * A tailnet (`controlURL`, …), or tailcat: through a server when `tailcat` (its address) is given, letting clients in with
  * `tailcatServe`, as the node `tailcatIdentity` names (web/tailcat.ts `identityKey`, `identity`) (`probe6`: how the server's or the exit node's IPv6 reach is checked, web/reach6.ts). `persist`: the tailnet node's profile in `webpc-tailscale` (web/tailscale-state.ts), so it is kept and
@@ -383,6 +166,7 @@ export function logOutNode(
     };
     const timer = setTimeout(() => done(false), ms);
     let leaving = false;
+    // eslint-disable-next-line prefer-const -- read by onEvent, which `start` may call before it returns
     let client: Tailscale | undefined;
     const onEvent = (m: FromTailscale) => {
       if (leaving || !client) return;
@@ -404,129 +188,163 @@ export function logOutNode(
   });
 }
 
+type OnEvent = (m: FromTailscale) => void;
+/** What starts each kind of client (the tests pass their own). */
+type Starters = {
+  start: (config: TailscaleConfig, onEvent: OnEvent) => Tailscale;
+  startCat: (config: TailcatConfig, onEvent: OnEvent) => Tailscale;
+  startHelper: (config: { url: string; ip: MessagePort }, onEvent: OnEvent) => Tailscale;
+  startRoom: (config: RoomNetConfig, onEvent: OnEvent) => Tailscale;
+};
+
+/** What kind of client `c` asks for: a room's, tailcat's (through a server, or letting clients in) or the local helper's. */
+function kindOf(c: Connect) {
+  const room = !!c.room;
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- no server ('') is none
+  const tailcat = !room && !!(c.tailcat || c.tailcatServe);
+  return { room, tailcat, local: !!c.local };
+}
+
+/** The client `c` asks for on the machine's port `ip`: the local helper's, a room's, tailcat's or a tailnet's. */
+function startClient(c: Connect, ip: MessagePort, tailcat: boolean, onEvent: OnEvent, s: Starters): Tailscale {
+  if (c.local) return s.startHelper({ url: c.local, ip }, onEvent);
+  if (c.room) return s.startRoom({ ...c.room, ip }, onEvent);
+  if (tailcat)
+    return s.startCat(
+      { addr: c.tailcat ?? '', serve: c.tailcatServe, ...c.tailcatIdentity, probe6: c.probe6, ip },
+      onEvent,
+    );
+  return s.start(
+    {
+      controlURL: c.controlURL,
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- an empty auth key is none
+      authKey: c.authKey || undefined,
+      hostname: c.hostname,
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- no exit node ('') is none
+      exitNode: c.exitNode || undefined,
+      acceptRoutes: c.acceptRoutes,
+      ip,
+      persist: c.persist,
+      probe6: c.probe6,
+    },
+    onEvent,
+  );
+}
+
+/** A network's state: the machine's port, its client and what kind it is. */
+type State = {
+  onChange: () => void;
+  starters: Starters;
+  /** The page's end of the machine's port, while no client has it. */
+  free?: MessagePort;
+  client?: Tailscale;
+  /** How many ports machines have brought. */
+  ports: number;
+  error?: unknown;
+  kind: { room: boolean; tailcat: boolean; local: boolean };
+  /** The card is on frames (a local client had it last): an IP client brings the page's gateway back first. */
+  onFrames: boolean;
+  primary: boolean;
+  rank: number;
+};
+
+/** A new machine's end of the IP port: the client gets the other, or the page keeps it until one connects. */
+function newPort(s: State) {
+  s.ports++;
+  const { port1, port2 } = new MessageChannel();
+  if (s.client) s.client.attach(port1);
+  else {
+    s.free?.close();
+    s.free = port1;
+    s.onFrames = false; // a new machine's card starts on the gateway
+  }
+  return port2;
+}
+
+/** Starts the client `c` asks for on the machine's port. */
+function connect(s: State, c: Connect) {
+  if (s.client) return;
+  if (!s.free) throw new MsgError('network:network.notStarted');
+  s.error = undefined;
+  const ip = s.free;
+  s.free = undefined;
+  s.kind = kindOf(c);
+  if (s.onFrames && !s.kind.local) ip.postMessage({ type: 'gateway' });
+  s.onFrames = s.kind.local;
+  const onEvent = (m: FromTailscale) => {
+    if (m.type === 'error') s.error = m.error;
+    else if (m.type === 'state' && m.state === 'Running') s.error = undefined;
+    s.onChange();
+  };
+  const t = startClient(c, ip, s.kind.tailcat, onEvent, s.starters);
+  s.client = t;
+  if (!s.primary || s.rank) t.setPrimary(s.primary, s.rank);
+  t.running.catch((e: unknown) => {
+    s.error = e ?? new Error('failed');
+    s.onChange();
+  });
+  s.onChange();
+}
+
+/** Stops the client and takes the port back. */
+async function disconnect(s: State) {
+  const t = s.client;
+  if (!t) return;
+  s.client = undefined;
+  s.error = undefined;
+  // A machine that started meanwhile has brought a new port: the old one is done with.
+  const was = s.ports;
+  const back = await t.detach();
+  if (s.ports !== was) back?.close();
+  else s.free = back;
+  t.close();
+  s.onChange();
+}
+
+/** What the client reports, for the view (`undefined`: there's no client). */
+function report(s: State): ClientReport | undefined {
+  const c = s.client;
+  return c ? { state: c.state(), netmap: c.netmap(), loginURL: c.loginURL(), error: s.error, ...s.kind } : undefined;
+}
+
 export function createNetwork(
   onChange: () => void,
-  start: (config: TailscaleConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startTailscale,
-  startCat: (config: TailcatConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startTailcat,
-  startHelper: (
-    config: { url: string; ip: MessagePort },
-    onEvent: (m: FromTailscale) => void,
-  ) => Tailscale = startLocal,
-  startRoom: (config: RoomNetConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startRoomNet,
+  start: Starters['start'] = startTailscale,
+  startCat: Starters['startCat'] = startTailcat,
+  startHelper: Starters['startHelper'] = startLocal,
+  startRoom: Starters['startRoom'] = startRoomNet,
 ): Network {
-  /** The page's end of the machine's port, while no client has it. */
-  let free: MessagePort | undefined;
-  let client: Tailscale | undefined;
-  /** How many ports machines have brought. */
-  let ports = 0;
-  let error: unknown;
-  let tailcat = false;
-  let local = false;
-  let room = false;
-  /** The card is on frames (a local client had it last): an IP client brings the page's gateway back first. */
-  let onFrames = false;
-  let primary = true;
-  let rank = 0;
-
-  const report = (): ClientReport | undefined =>
-    client
-      ? { state: client.state(), netmap: client.netmap(), loginURL: client.loginURL(), error, tailcat, local, room }
-      : undefined;
-
-  async function disconnect() {
-    const t = client;
-    if (!t) return;
-    client = undefined;
-    error = undefined;
-    // A machine that started meanwhile has brought a new port: the old one is done with.
-    const was = ports;
-    const back = await t.detach();
-    if (ports !== was) back?.close();
-    else free = back;
-    t.close();
-    onChange();
-  }
-
+  const s: State = {
+    onChange,
+    starters: { start, startCat, startHelper, startRoom },
+    ports: 0,
+    kind: { room: false, tailcat: false, local: false },
+    onFrames: false,
+    primary: true,
+    rank: 0,
+  };
   return {
-    port() {
-      ports++;
-      const { port1, port2 } = new MessageChannel();
-      if (client) client.attach(port1);
-      else {
-        free?.close();
-        free = port1;
-        onFrames = false; // a new machine's card starts on the gateway
-      }
-      return port2;
-    },
-    connect(c) {
-      if (client) return;
-      if (!free) throw new MsgError('network:network.notStarted');
-      error = undefined;
-      const ip = free;
-      free = undefined;
-      const onEvent = (m: FromTailscale) => {
-        if (m.type === 'error') error = m.error;
-        else if (m.type === 'state' && m.state === 'Running') error = undefined;
-        onChange();
-      };
-      room = !!c.room;
-      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- no exit node ('') is none
-      tailcat = !room && !!(c.tailcat || c.tailcatServe);
-      local = !!c.local;
-      if (onFrames && !local) ip.postMessage({ type: 'gateway' });
-      onFrames = local;
-      const t = c.local
-        ? startHelper({ url: c.local, ip }, onEvent)
-        : c.room
-          ? startRoom({ ...c.room, ip }, onEvent)
-          : tailcat
-            ? startCat(
-                { addr: c.tailcat ?? '', serve: c.tailcatServe, ...c.tailcatIdentity, probe6: c.probe6, ip },
-                onEvent,
-              )
-            : start(
-                {
-                  controlURL: c.controlURL,
-                  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- an empty auth key is none
-                  authKey: c.authKey || undefined,
-                  hostname: c.hostname,
-                  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- no exit node ('') is none
-                  exitNode: c.exitNode || undefined,
-                  acceptRoutes: c.acceptRoutes,
-                  ip,
-                  persist: c.persist,
-                  probe6: c.probe6,
-                },
-                onEvent,
-              );
-      client = t;
-      if (!primary || rank) t.setPrimary(primary, rank);
-      t.running.catch((e: unknown) => {
-        error = e ?? new Error('failed');
-        onChange();
-      });
-      onChange();
-    },
-    disconnect,
+    port: () => newPort(s),
+    connect: (c) => connect(s, c),
+    disconnect: () => disconnect(s),
     async setExitNode(id) {
-      if (!client) throw new MsgError('network:network.noClient');
-      await client.setExitNode(id);
+      if (!s.client) throw new MsgError('network:network.noClient');
+      await s.client.setExitNode(id);
     },
     setAcceptRoutes(on) {
-      client?.setAcceptRoutes(on);
+      s.client?.setAcceptRoutes(on);
     },
     async logout() {
-      await client?.logout();
-      await disconnect();
+      await s.client?.logout();
+      await disconnect(s);
     },
-    view: () => viewOf(report()),
-    active: () => !!client,
+    view: () => viewOf(report(s)),
+    active: () => !!s.client,
     setPrimary(p, r = 0) {
-      if (p === primary && r === rank) return;
-      primary = p;
-      rank = r;
-      client?.setPrimary(p, r);
+      if (p === s.primary && r === s.rank) return;
+      s.primary = p;
+      s.rank = r;
+      s.client?.setPrimary(p, r);
     },
   };
 }

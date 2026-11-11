@@ -17,7 +17,7 @@
   import { t } from '../i18n.ts';
   import { MsgError } from '../msg.ts';
   import { ask } from './ask.svelte.ts';
-  import { phaseTone } from './network.ts';
+  import { phaseTone } from './network-view.ts';
   import type { AdapterView } from './net-live.ts';
   import { page } from './page.ts';
 
