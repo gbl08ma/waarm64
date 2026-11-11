@@ -505,9 +505,12 @@ Page → worker:
   page: the workers read no query (the GPU worker's `init` takes web/gpu-knobs.ts's `parseGpuKnobs`).
   `snapshot`: a `File` to start from instead of booting (below, "Snapshots"); the size, the devices, the CPU
   features, the kernel and the command line are then the file's.
-- `snapshot {id, handle?}`: save a snapshot of the running machine to the file handle's stream, or,
-  without one, back in `snapshot-chunk` messages; answered by `snapshot-done` or `snapshot-error`.
-- `suspend {id}`: stop the machine with its memory kept beside its disk ("Snapshots": Suspend); answered
+- `snapshot {id, handle?, keep?, whole?, sleep?}`: save a snapshot of the running machine to the file handle's
+  stream, or, without one, back in `snapshot-chunk` messages, or with `keep` into that OPFS file (a kept snapshot,
+  machines.md §5.2); `whole` puts a disk written in place in it whole; `sleep` gives the guest a while to suspend
+  itself first (the clock catch-up's Sleep key), woken once the file is written. Answered by `snapshot-done` or
+  `snapshot-error`.
+- `suspend {id, sleep?}`: stop the machine with its memory kept beside its disk ("Snapshots": Suspend); answered
   by `suspend-done` and the state `suspended`, or by `snapshot-error` (the machine runs on). A save's messages
   (`snapshot-progress`, `snapshot-chunk`, its end) echo its `id`: the page posts it through `Run.save`, which hands
   them to that save's job (web/app/run/run.ts), so no job is global and an old run's answers find none.
@@ -517,8 +520,8 @@ Page → worker:
   boots even if a suspended machine is there (it is dropped); otherwise a start resumes one.
 - `stop`: stop the vCPUs and release the backends (the overlay's OPFS handles); answered by
   `stopped`. A machine still booting (`bootVm` not returned: its device worker may already have
-  the overlay) is closed once it's there. The page then terminates the worker (after 3 s without
-  an answer, anyway). The page stops a run this way too when it can't go on from the page's side (an uncaught error
+  the overlay) is closed once it's there. The page then terminates the worker (after 4 s without
+  an answer, anyway: `CLOSE_MS`, the devices' 2.5 s to close, and 1.5 s more). The page stops a run this way too when it can't go on from the page's side (an uncaught error
   in the machine worker or the GPU worker, a lost WebGL context: `Runner.crash`), and says `crashed`: nothing runs on
   unseen with the machine's lock and disks; a restart meanwhile waits for that stop.
 
@@ -558,8 +561,9 @@ Worker → page:
 - `notice {message}`: what the devices say while the machine runs on (a ramdisk out of memory, the storage full), a
   message.
 - `snapshot-progress {id, phase, fraction}` (the phase a message), `snapshot-chunk {id, data}` (transferred; without a
-  handle), `snapshot-done {id, bytes, pausedMs}` (the file is complete; the ms from the pause request to the
-  resume), `suspend-done {id, bytes}` (the suspend's file is written and the machine closed) and
+  handle), `snapshot-done {id, bytes, pausedMs, stateMs, blobBytes, pins, slept?}` (the file is complete; the ms
+  from the pause request to the resume, and of the devices' state in it; the bytes of their binary parts; the disks
+  it pins, which a kept snapshot's record takes; whether the guest slept through it), `suspend-done {id, bytes}` (the suspend's file is written and the machine closed) and
   `snapshot-error {id, error}` (the machine runs on; `toWire`'s error).
 - `profile {id, samples}`, `timeline {id, timeline}`, `heap {id, heap}`: the benchmarks' answers.
 - `serial` also has `replay` for a restored terminal's saved tail.
