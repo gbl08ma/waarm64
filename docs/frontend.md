@@ -1176,7 +1176,9 @@ runs a POSIX sh script given as a credential of its own (`webpc.<what>.sh`, `Imp
 strings (systemd 256+; the keyboard's paragraph above says how they get there). Nothing is installed: a boot without
 the setting has no unit. Guests without systemd 256 ignore them. Shared folders' **[Mount shared folders in the guest](ui:machines:FoldersTab.sharesMount)**
 gives a `.mount` and an `.automount` the same way ([shares.md](shares.md) §5). A ramdisk's **swap** box on the Machines page gives an `fstab.extra`
-credential the same way, no unit ([machines.md](machines.md) §4.3 "As swap").
+credential the same way, no unit ([machines.md](machines.md) §4.3 "As swap"). The fw_cfg files a start gives a firmware machine (these strings, the
+credentials, clipboard sharing's agent) are one pure function of its start message, `web/app/firmware-files.ts`
+`firmwareFiles` (tests/firmware-files.test.ts pins their bytes).
 
 - **The network's settings** (`web/app/guest-net.ts`): `webpc-network.service`, wanted by and ordered before
   `systemd-networkd.service` (no default dependencies; after `local-fs.target` and `systemd-network-generator.service`,

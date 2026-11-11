@@ -592,7 +592,7 @@
       "count": 4
     },
     "@typescript-eslint/no-non-null-assertion": {
-      "count": 11
+      "count": 10
     },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 13

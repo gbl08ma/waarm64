@@ -30,13 +30,10 @@ import { readSnapshot, writeSnapshot, type SnapshotDisk } from '../snapshot.ts';
 import { SEVERAL_ADAPTERS, type DeviceSpec } from '../devices.ts';
 import { makeRoom } from '../diskcache.ts';
 import { startSampler, startTimeline, type Timeline } from '../profiler.ts';
-import { OEM_STRINGS_FILE, oemStrings } from './guest-unit.ts';
-import { netCredentials } from './guest-net.ts';
-import { keyboardCredentials, keyboardLayout } from './keyboard.ts';
-import { SHARES_TAG, sharesCredentials } from './shares-mount.ts';
-import { swapCredentials } from './guest-swap.ts';
-import { AGENT_FILE, agentBinary, agentCredentials } from './guest-agent.ts';
-import { credentialFiles, MACHINES, readyWatcher, splitMsg, withParams, type Machine } from './machine.ts';
+import { SHARES_TAG } from './shares-mount.ts';
+import { agentBinary } from './guest-agent.ts';
+import { firmwareFiles } from './firmware-files.ts';
+import { MACHINES, readyWatcher, splitMsg, withParams, type Machine } from './machine.ts';
 import { Signal } from './memory.ts';
 import type { FromWorker, PowerState, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
 import { slots, type CpuFeature, type DeviceKind } from './shape.ts';
@@ -620,32 +617,11 @@ async function start(m: StartMessage, note?: unknown): Promise<void> {
   await disk;
   if (stopping) return;
   core = await compileCore(wasm);
-  // The firmware configuration: what the machine's own credentials and the page's (development, tests) say, and the saved variable store.
-  const guest = m.config.guest;
-  const net = !!m.ports.nets.length && !!machine.network && guest.netConfig;
-  const credentials = [...(net ? machine.network!.credentials : []), ...guest.credentials];
+  // The firmware configuration (web/app/firmware-files.ts: the credentials, the units' OEM strings, the agent) and the saved variable store.
   savedFlash = await flash;
-  // The units' credentials (the keyboard layout, the network's settings, swap ramdisks' fstab lines) are too long for fw_cfg's names: the core puts them in SMBIOS (core/src/smbios.rs).
-  const keys = keyboardLayout(guest.keyLayout);
-  const agentBytes = await agent;
-  const units = [
-    ...(keys ? keyboardCredentials(keys, m.words.keyboard, m.words.layout) : []),
-    ...(net ? netCredentials(m.words.network) : []),
-    ...(guest.sharesPath ? sharesCredentials(guest.sharesPath, m.words.shares) : []),
-    ...swapCredentials(m.disks.flatMap((d) => ('swap' in d.source && d.source.swap ? [d.source.swap] : []))),
-    ...(agentBytes ? agentCredentials(m.words.agent) : []),
-  ];
-  const oem = units.length ? [{ name: OEM_STRINGS_FILE, data: oemStrings(units).join('\0') }] : [];
-  const firmware = machine.firmware
-    ? {
-        flash: savedFlash,
-        fwCfg: [
-          ...credentialFiles(credentials),
-          ...oem,
-          ...(agentBytes ? [{ name: AGENT_FILE, data: agentBytes }] : []),
-        ],
-      }
-    : undefined;
+  const files = firmwareFiles(m, await agent);
+  const firmware = files ? { flash: savedFlash, fwCfg: files } : undefined;
+  const guest = m.config.guest;
   if (stopping) return;
   let ncpus = m.config.ncpus;
   ramMiB = m.config.ram.mib;
