@@ -40,6 +40,14 @@
   let canvas = $state<HTMLCanvasElement>();
   let box = $state<HTMLElement>();
   let lockCursor = $state<HTMLCanvasElement>();
+  /** The canvas's size on the page, as areas/screen-view.ts `fit` fitted it (none yet: its own size). */
+  const fitted = $derived(
+    screen.fitted && {
+      width: `${screen.fitted.width}px`,
+      height: `${screen.fitted.height}px`,
+      rendering: screen.fitted.pixelated ? 'pixelated' : 'auto',
+    },
+  );
   let terminal = $state<HTMLElement>();
   let main = $state<HTMLElement>();
   $effect(() => {
@@ -111,9 +119,9 @@
           width={screen.size.width}
           height={screen.size.height}
           data-scale={screen.scale}
-          style:width={screen.fitted && `${screen.fitted.width}px`}
-          style:height={screen.fitted && `${screen.fitted.height}px`}
-          style:image-rendering={screen.fitted && (screen.fitted.pixelated ? 'pixelated' : 'auto')}
+          style:width={fitted?.width}
+          style:height={fitted?.height}
+          style:image-rendering={fitted?.rendering}
         ></canvas>
       {/key}
       <div id="screen-hint">{mouse.lock ? t('common:App.screen.hintLock') : t('common:App.screen.hint')}</div>
