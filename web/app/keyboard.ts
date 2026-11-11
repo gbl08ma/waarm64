@@ -5,6 +5,7 @@
 // libxkbcommon's `XKB_DEFAULT_*` in /etc/environment (wlroots compositors such as sway; every PAM login and the user
 // manager read it). Both stay in the guest's disk: turning the setting off leaves the last layout set. Not in /run, as
 // the network's settings are (web/app/guest-net.ts): Xorg's xorg.conf.d, localed, console-setup and pam_env read /etc only.
+/* eslint-disable max-lines -- the layouts' table (`TABLE`, ~360 lines) is data; the code beside it is short */
 
 import { msg, type Msg } from '../msg.ts';
 import { guestUnit } from './guest-unit.ts';

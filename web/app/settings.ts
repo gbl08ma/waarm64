@@ -4,7 +4,8 @@ import type { NetworkSettings } from './network.ts';
 import type { View } from './areas/screen.svelte.ts';
 import type { LockMode } from '../input.ts';
 import type { Item } from './statusbar.ts';
-import type { Layout, ModifierMode } from './osk.ts';
+import type { ModifierMode } from './osk.ts';
+import type { Layout } from './osk-layout.ts';
 
 /**
  * `net`: the network before connections (docs/network-adapters.md §2.2), read once by the migration, which drops it;

@@ -102,9 +102,10 @@ writeFileSync(new URL('../web/app/keymaps.ts', import.meta.url), `// Generated b
 // the machines' keyboard setting (web/app/keyboard.ts) puts on the keys, by \`KeyboardEvent.code\`: unshifted, shifted,
 // AltGr, AltGr with Shift (a dead key's is its spacing accent). Only the keys its keyboard has: ISO's IntlBackslash,
 // ABNT2's IntlRo, JIS's IntlRo and IntlYen.
+/* eslint-disable max-lines -- a generated table of data, not code to split */
 
 /** A layout's characters: code → its levels'. */
-export type Keymap = Record<string, string[]>;
+export type Keymap = Partial<Record<string, string[]>>;
 
 export const KEYMAPS: Record<string, Keymap> = {
 ${body}

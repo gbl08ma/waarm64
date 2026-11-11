@@ -9,7 +9,8 @@
   import { onMount } from 'svelte';
   import OskBar from './OskBar.svelte';
   import { OskFrame, PAD } from './osk-frame.svelte.ts';
-  import { fullKeys, keymapOf, legends, OskKeys, pages, type Key, type ModifierMode, type Mods } from './osk.ts';
+  import { legends, OskKeys, type ModifierMode, type Mods } from './osk.ts';
+  import { fullKeys, keymapOf, pages, type Key } from './osk-layout.ts';
   import { t } from '../i18n.ts';
   import { keys as pageKeys } from './areas/keys.svelte.ts';
 

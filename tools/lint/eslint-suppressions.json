@@ -78,16 +78,6 @@
       "count": 2
     }
   },
-  "web/app/keyboard.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
-  "web/app/keymaps.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
   "web/app/locks.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 4
@@ -116,17 +106,6 @@
     },
     "max-lines": {
       "count": 1
-    }
-  },
-  "web/app/osk.ts": {
-    "complexity": {
-      "count": 2
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "max-lines-per-function": {
-      "count": 2
     }
   },
   "web/app/shape.ts": {

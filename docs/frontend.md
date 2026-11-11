@@ -14,7 +14,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/ui/` | the primitives every component is built of ([frontend-code.md](frontend-code.md) §2): `Button`, `Card`/`CardList`, `Note`, `Field`/`Fields`, `Check`, `Radio`, `Choice`, `ErrorBanner`, `StatusDot`, `NameInput`, `Step`/`Steps`, `Disclosure`, `Modal`, `Pane`, `Menu`, `Icon` |
 | `vite.config.ts`, `tools/serve.ts`, `tools/stamp.ts`, `web/app/public/` | the build and the servers (below, "The build"), the build stamp, the static copy's files copied as they are |
 | `web/app/App.svelte`, `Toolbar.svelte` (its menus: `LoadSnapshotMenu`, `ScreenMenu`, `KeysMenu`, `MouseMenu`, `SizeMenu`, and the areas' `Sound`, `Network`, `UsbMenu`, `FoldersMenu`, `ClipboardMenu`), `BootCard.svelte`, `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the boot card, the status line, the questions |
-| `web/app/osk.ts`, `Osk.svelte`, `OskBar.svelte`, `osk-frame.svelte.ts` | the on-screen keyboard (below, "The on-screen keyboard"): its layout and keys, the overlay |
+| `web/app/osk.ts` (`osk-layout.ts`: the layouts), `Osk.svelte`, `OskBar.svelte`, `osk-frame.svelte.ts` | the on-screen keyboard (below, "The on-screen keyboard"): its layout and keys, the overlay |
 | `web/app/areas/`, `web/app/page.ts`, `web/app/changes.ts`, `web/app/command.ts`, `web/app/ask.svelte.ts`, `web/app/settings.ts` | the page's state by area and its actions (`page`), the change signal and the commands they use (below, "The page's code"), the questions (`ask`), what's remembered per browser |
 | `web/app/statusbar.ts` (`statusbar-kinds.ts`, `-metrics`, `-graphics`, `-traffic`, `-piece`, `-render`, `-sample`), `StatusBar.svelte`, `StatusPiece.svelte`, `StatusEditor.svelte` (`StatusChip.svelte`, `StatusPalette.svelte`, `StatusOptions.svelte`, `status-drag.svelte.ts`), `areas/status-live.ts` | the status bar, its elements and the Preferences' editor (below, "The status bar") |
 | `web/app/icons.ts` | the icons (Tabler's, below, "Icons") |
@@ -1057,7 +1057,7 @@ it, the ↔ grip in the bar resizes it (the keys scale with its width; a grip in
 where it is and how wide is remembered (`settings().osk`), kept in the window, no wider than the window's width or
 height allow. The toolbar's menus open over it.
 
-- **The compact layout** (`osk.ts` `pages`, 10 keys across by 5 rows, as a phone's keyboard): a window narrower than
+- **The compact layout** (`osk-layout.ts` `pages`, 10 keys across by 5 rows, as a phone's keyboard): a window narrower than
   600 px (`COMPACT_BELOW`: the full keyboard's keys are ~25 px there) gets it on its own. Its keys are on four pages,
   chosen by tabs in the bar: [abc](ui:osk:OskBar.page.main) (digits, letters, `;`, Shift, Backspace, and a bottom row of
   Esc, Tab, Ctrl, Super, Alt, Space, Enter), [#+=](ui:osk:OskBar.page.symbols) (the other punctuation keys, JIS's
@@ -1072,7 +1072,7 @@ height allow. The toolbar's menus open over it.
   to where the automatic choice is the same (a phone turned to landscape and back is compact again). Each layout keeps
   its own width (`w`, `wc`); the bar is a size container, and the title gives way to the tabs below 420 px. A
   layout's extra keys join the symbols' page (its two rows of punctuation share the width).
-- **The letters' page per layout** (`osk.ts` `letterRows`): US's letter block (digits, Q–P, A–L with `;`, Z–M) and,
+- **The letters' page per layout** (`osk-layout.ts` `letterRows`): US's letter block (digits, Q–P, A–L with `;`, Z–M) and,
   in each row, the keys of the full keyboard's same row whose unshifted character is a letter with a capital on the
   machine's layout, in the full keyboard's order: German's Ü after P and Ö, Ä after L, Turkish's Ö and Ç after M,
   Hungarian's Ü and Ó after 0 and Í before Z; ISO's Backslash (Italian's ù, Hungarian's ű) on the home row, ANSI's on

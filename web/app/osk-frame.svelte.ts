@@ -1,7 +1,7 @@
 // The on-screen keyboard's frame (Osk.svelte): its layout (the one the window's width gets, or the one the bar's
 // button forced, kept until the window's width crosses to where the automatic one is the same), where it is and how
 // wide (CSS pixels; a width per layout), kept in the window and remembered; moved by its bar and resized by its grip.
-import { autoLayout, COMPACT_HEIGHT, COMPACT_WIDTH, HEIGHT, layoutOf, WIDTH, type Layout } from './osk.ts';
+import { autoLayout, COMPACT_HEIGHT, COMPACT_WIDTH, HEIGHT, layoutOf, WIDTH, type Layout } from './osk-layout.ts';
 import { remember, settings } from './settings.ts';
 
 /** Its padding (no top one: the bar) and its border, CSS pixels; the padding is the style's too (`--pad`). */

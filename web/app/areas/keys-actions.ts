@@ -1,7 +1,8 @@
 // The keys and the mouse the toolbar and the on-screen keyboard send (docs/frontend.md "Input", "The on-screen
 // keyboard", "Mouse lock"; web/app/page.ts's `chord`, `holdKey`, `oskKey`, `showOsk`, `setMouseLock`).
 import type { LockMode } from '../../input.ts';
-import { eventOf, keymapOf, keyOf, type Mods } from '../osk.ts';
+import { eventOf, keyOf, type Mods } from '../osk.ts';
+import { keymapOf } from '../osk-layout.ts';
 import type { Page } from '../page.ts';
 import { remember } from '../settings.ts';
 import type { PageMachine } from '../run/page-machine.svelte.ts';

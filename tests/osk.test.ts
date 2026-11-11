@@ -4,7 +4,8 @@
 // legends for each keymap.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { autoLayout, COMPACT_BELOW, IME_KEYS, letterRows, COMPACT_HEIGHT, COMPACT_WIDTH, eventOf, fullKeys, HEIGHT, HOLD_MS, keymapOf, keyOf, KEYS, layoutOf, legends, MODIFIERS, OskKeys, pages, PAGES, REPEAT_DELAY_MS, REPEAT_MS, WIDTH, type Key, type ModifierMode, type Mods } from '../web/app/osk.ts';
+import { eventOf, HOLD_MS, keyOf, legends, MODIFIERS, OskKeys, REPEAT_DELAY_MS, REPEAT_MS, type ModifierMode, type Mods } from '../web/app/osk.ts';
+import { autoLayout, COMPACT_BELOW, IME_KEYS, letterRows, COMPACT_HEIGHT, COMPACT_WIDTH, fullKeys, HEIGHT, keymapOf, KEYS, layoutOf, pages, PAGES, WIDTH, type Key } from '../web/app/osk-layout.ts';
 import { KEYMAPS } from '../web/app/keymaps.ts';
 
 /** An `OskKeys` on a clock the test moves (its timers too), and what it sent (`+code` down, `-code` up, `*code` a repeat). */
